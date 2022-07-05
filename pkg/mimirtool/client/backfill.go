@@ -82,7 +82,7 @@ func (c *MimirClient) backfillBlock(ctx context.Context, blockDir string, logger
 	if err != nil {
 		return errors.Wrap(err, "request to start backfill failed")
 	}
-	defer closeResp(resp)
+	closeResp(resp)
 	if resp.StatusCode/100 != 2 {
 		return fmt.Errorf("request to start backfill failed, with HTTP status %d %s", resp.StatusCode, resp.Status)
 	}
@@ -125,7 +125,7 @@ func (c *MimirClient) backfillBlock(ctx context.Context, blockDir string, logger
 		if err != nil {
 			return errors.Wrapf(err, "request to upload backfill of file %q failed", pth)
 		}
-		defer closeResp(resp)
+		closeResp(resp)
 		if resp.StatusCode/100 != 2 {
 			return fmt.Errorf("request to upload backfill file failed, with HTTP status %d %s", resp.StatusCode, resp.Status)
 		}
@@ -140,7 +140,7 @@ func (c *MimirClient) backfillBlock(ctx context.Context, blockDir string, logger
 	if err != nil {
 		return errors.Wrap(err, "request to finish backfill failed")
 	}
-	defer closeResp(resp)
+	closeResp(resp)
 	if resp.StatusCode/100 != 2 {
 		return fmt.Errorf("request to finish backfill failed, with HTTP status %d %s", resp.StatusCode, resp.Status)
 	}
