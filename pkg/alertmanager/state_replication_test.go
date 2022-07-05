@@ -29,6 +29,8 @@ import (
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
 )
 
+const testUserID = "user-1"
+
 type fakeState struct {
 	binary []byte
 	merges [][]byte
@@ -73,8 +75,8 @@ func (f *fakeReplicator) GetPositionForUser(_ string) int {
 }
 
 func (f *fakeReplicator) ReadFullStateForUser(ctx context.Context, userID string) ([]*clusterpb.FullState, error) {
-	if userID != "user-1" {
-		return nil, errors.New("Unexpected userID")
+	if userID != testUserID {
+		return nil, errors.New("unexpected userID")
 	}
 
 	if f.read.blocking {
@@ -121,13 +123,13 @@ func TestStateReplication(t *testing.T) {
 			replicationFactor:  1,
 			message:            &clusterpb.Part{Key: "nflog", Data: []byte("OK")},
 			replicationResults: map[string]clusterpb.Part{},
-			storeResults:       map[string]clusterpb.Part{"user-1": {Key: "nflog", Data: []byte("OK")}},
+			storeResults:       map[string]clusterpb.Part{testUserID: {Key: "nflog", Data: []byte("OK")}},
 		},
 		{
 			name:               "with a replication factor of > 1, state is broadcasted for replication.",
 			replicationFactor:  3,
 			message:            &clusterpb.Part{Key: "nflog", Data: []byte("OK")},
-			replicationResults: map[string]clusterpb.Part{"user-1": {Key: "nflog", Data: []byte("OK")}},
+			replicationResults: map[string]clusterpb.Part{testUserID: {Key: "nflog", Data: []byte("OK")}},
 			storeResults:       map[string]clusterpb.Part{},
 		},
 	}
@@ -145,7 +147,7 @@ func TestStateReplication(t *testing.T) {
 				}))
 			}
 
-			s := newReplicatedStates("user-1", tt.replicationFactor, replicator, store, log.NewNopLogger(), reg)
+			s := newReplicatedStates(testUserID, tt.replicationFactor, replicator, store, log.NewNopLogger(), reg)
 			require.False(t, s.Ready())
 			{
 				ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
