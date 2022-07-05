@@ -309,26 +309,21 @@ func (c *Config) registerServerFlagsWithChangedDefaultValues(fs *flag.FlagSet) {
 	throwaway := flag.NewFlagSet("throwaway", flag.PanicOnError)
 
 	// Register to throwaway flags first. Default values are remembered during registration and cannot be changed,
-	// but we can take values from throwaway flag set and reregister into supplied flags with new default values.
+	// but we can take values from throwaway flag set and re-register into supplied flag set with new default values.
 	c.Server.RegisterFlags(throwaway)
 
+	defaultsOverrides := map[string]string{
+		"server.grpc.keepalive.min-time-between-pings":      "10s",
+		"server.grpc.keepalive.ping-without-stream-allowed": "true",
+		"server.http-listen-port":                           "8080",
+		"server.grpc-max-recv-msg-size-bytes":               strconv.Itoa(100 * 1024 * 1024),
+		"server.grpc-max-send-msg-size-bytes":               strconv.Itoa(100 * 1024 * 1024),
+	}
+
 	throwaway.VisitAll(func(f *flag.Flag) {
-		// Ignore errors when setting new values. We have a test to verify that it works.
-		switch f.Name {
-		case "server.grpc.keepalive.min-time-between-pings":
-			_ = f.Value.Set("10s")
-
-		case "server.grpc.keepalive.ping-without-stream-allowed":
-			_ = f.Value.Set("true")
-
-		case "server.http-listen-port":
-			_ = f.Value.Set("8080")
-
-		case "server.grpc-max-recv-msg-size-bytes":
-			_ = f.Value.Set(strconv.Itoa(100 * 1024 * 1024))
-
-		case "server.grpc-max-send-msg-size-bytes":
-			_ = f.Value.Set(strconv.Itoa(100 * 1024 * 1024))
+		if defaultValue, overridden := defaultsOverrides[f.Name]; overridden {
+			// Ignore errors when setting new values. We have a test to verify that it works.
+			_ = f.Value.Set(defaultValue)
 		}
 
 		fs.Var(f.Value, f.Name, f.Usage)
