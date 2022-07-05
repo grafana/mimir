@@ -1,4 +1,4 @@
-# Grafana Mimir Helm Chart
+# Grafana Mimir Helm chart
 
 Helm chart for deploying [Grafana Mimir](https://grafana.com/docs/mimir/v2.1.x/) or optionally [Grafana Enterprise Metrics](https://grafana.com/docs/enterprise-metrics/v2.1.x/) to Kubernetes. Derived from [Grafana Enterprise Metrics Helm Chart](https://github.com/grafana/helm-charts/blob/main/charts/enterprise-metrics/README.md)
 
