@@ -1,6 +1,6 @@
 ---
 title: "Grafana Mimir tools"
-menuTitle: "Grafana Mimir tools"
+menuTitle: "Tools"
 description: "Tools for Grafana Mimir aid in administration and troubleshooting tasks."
 weight: 100
 ---
@@ -9,4 +9,4 @@ weight: 100
 
 Tools for Grafana Mimir aid in administration and troubleshooting tasks.
 
-{{< section >}}
+{{< section menuTitle="true" >}}

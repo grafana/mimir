@@ -23,4 +23,4 @@ The intended audience for this guide includes:
 
 This guide contains the following sections:
 
-{{< section >}}
+{{< section menuTitle="true" >}}

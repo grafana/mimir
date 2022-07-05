@@ -1,6 +1,6 @@
 ---
 title: "Scaling out Grafana Mimir"
-menuTitle: "Scaling out Grafana Mimir"
+menuTitle: "Scaling out"
 description: "Learn how to scale out Grafana Mimir."
 weight: 30
 ---
