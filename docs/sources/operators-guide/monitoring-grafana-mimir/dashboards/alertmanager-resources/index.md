@@ -1,5 +1,5 @@
 ---
-title: "Grafana Mimir Alertmanager resources dashboards"
+title: "Grafana Mimir Alertmanager resources dashboard"
 menuTitle: "Alertmanager resources"
 description: "View an example Alertmanager resources dashboard."
 weight: 20

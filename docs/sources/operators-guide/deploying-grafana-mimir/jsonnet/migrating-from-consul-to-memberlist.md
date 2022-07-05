@@ -1,6 +1,6 @@
 ---
-title: "Migrating from Consul to Memberlist KV store for hash rings without downtime"
-menuTitle: "Migrating from Consul to Memberlist"
+title: "Migrating from Consul to memberlist KV store for hash rings without downtime"
+menuTitle: "Migrating from Consul to memberlist"
 description: "Learn how to migrate from using Consul as KV store for hash rings to using memberlist without any downtime."
 weight: 40
 ---
