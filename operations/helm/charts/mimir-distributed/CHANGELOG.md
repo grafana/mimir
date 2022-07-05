@@ -12,9 +12,6 @@ Entries should be ordered as follows:
 Entries should include a reference to the Pull Request that introduced the change.
 
 ## main / unreleased
-* [ENHANCEMENT] Update memcached statefulset manifest #2321
-  - Added imagePullSecrets block to pull images from private registry
-  - Added resources block for memcachedExporter
 * [CHANGE] **breaking change** The minimal Kubernetes version is now 1.20. This reflects the fact that Grafana does not test with older versions. #2297
 * [CHANGE] **breaking change** Make `ConfigMap` the default for `configStorageType`. This means that the Mimir (or Enterprise Metrics) configuration is now created in and loaded from a ConfigMap instead of a Secret. #2277
   - Set to `Secret` to keep existing way of working. See related #2031, #2017, #2089.
@@ -47,6 +44,9 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [CHANGE] Remove setting `server.grpc_server_max_recv_msg_size` and `server.grpc_server_max_send_msg_size` to 100MB, since it is the default now, see #1884. #2300
 * [FEATURE] Add `mimir-continuous-test` in smoke-test mode. Use `helm test` to run a smoke test of the read + write path.
 * [FEATURE] Add meta-monitoring via the Grafana Agent Kubernetes operator: scrape metrics and collect logs from Mimir pods and ship them to a remote. #2068
+* [ENHANCEMENT] Update memcached statefulset manifest #2321
+  - Added imagePullSecrets block to pull images from private registry
+  - Added resources block for memcachedExporter
 * [ENHANCEMENT] ServiceMonitor object will now have default values based on release namesapce in the `namespace` and `namespaceSelector` fields. #2123
 * [ENHANCEMENT] Set the `namespace` metadata field for all kubernetes objects to enable using `--namespace` correctly with Helm even if the specified namespace does not exist. #2123
 * [ENHANCEMENT] The new value `serviceMonitor.clusterLabel` controls whether to add a `cluster` label and with what content to ServiceMonitor metrics. #2125
