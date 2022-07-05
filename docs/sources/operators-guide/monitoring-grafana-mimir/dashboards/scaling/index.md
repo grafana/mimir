@@ -1,5 +1,5 @@
 ---
-title: "Grafana Mimir Scaling dashboard"
+title: "Grafana Mimir scaling dashboard"
 menuTitle: "Scaling"
 description: "View an example Scaling dashboard."
 weight: 140

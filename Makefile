@@ -437,8 +437,11 @@ check-doc: doc
 	@find . -name "*.md" | xargs git diff --exit-code -- \
 	|| (echo "Please update generated documentation by running 'make doc' and committing the changes" && false)
 
-check-doc-links:
-	cd ./tools/doc-validator && go run . ../../docs/sources/
+# Tool is developed in the grafana/technical-documentation repository:
+# https://github.com/grafana/technical-documentation/tree/main/tools/doc-validator
+check-doc-validator: ## Check documentation using doc-validator tool
+	docker pull grafana/doc-validator:latest
+	docker run -v "$(CURDIR)/docs/sources:/docs/sources" grafana/doc-validator:latest ./docs/sources
 
 .PHONY: reference-help
 reference-help: cmd/mimir/mimir
