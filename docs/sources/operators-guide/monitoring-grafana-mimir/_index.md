@@ -1,6 +1,6 @@
 ---
 title: "Monitoring Grafana Mimir"
-menuTitle: "Monitoring"
+menuTitle: "Monitoring Mimir"
 description: "View example Grafana Mimir dashboards."
 weight: 50
 keywords:
