@@ -1026,6 +1026,7 @@ memcached:
     tag: 1.6.9-alpine
     # -- Memcached Docker image pull policy
     pullPolicy: IfNotPresent
+    pullSecrets: []
 
   # -- The SecurityContext for memcached pods
   podSecurityContext:
@@ -1051,8 +1052,8 @@ memcachedExporter:
     tag: v0.6.0
     pullPolicy: IfNotPresent
 
-chunks-cache:
-  # -- Specifies whether memcached based chunks-cache should be enabled
+memcached-chunks:
+  # -- Specifies whether memcached-chunks should be enabled
   enabled: false
 
   # -- Total number of chunks-cache replicas
