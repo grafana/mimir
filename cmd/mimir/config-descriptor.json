@@ -5486,7 +5486,7 @@
           "kind": "field",
           "name": "consistency_delay",
           "required": false,
-          "desc": "Minimum age of fresh (non-compacted) blocks before they are being processed. Malformed blocks older than the maximum of consistency-delay and 48h0m0s will be removed.",
+          "desc": "Minimum age of fresh (non-compacted) blocks before they are being processed.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "compactor.consistency-delay",
