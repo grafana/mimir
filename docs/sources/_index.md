@@ -1,5 +1,5 @@
 ---
-title: "Grafana Mimir"
+title: "Grafana Mimir documentation"
 menuTitle: "Grafana Mimir"
 weight: 1
 keywords:
