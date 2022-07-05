@@ -12,7 +12,7 @@ Entries should be ordered as follows:
 Entries should include a reference to the Pull Request that introduced the change.
 
 ## main / unreleased
-* [ENHANCEMENT] Update memcached statefulset manifest
+* [ENHANCEMENT] Update memcached statefulset manifest #2321
   - Added imagePullSecrets block to pull images from private registry
   - Added resources block for memcachedExporter
 * [CHANGE] **breaking change** The minimal Kubernetes version is now 1.20. This reflects the fact that Grafana does not test with older versions. #2297
