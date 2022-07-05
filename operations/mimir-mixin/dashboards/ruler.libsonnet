@@ -19,6 +19,7 @@ local filename = 'mimir-ruler.json';
             /
           sum (rate(cortex_prometheus_rule_evaluation_duration_seconds_count{%s}[$__rate_interval]))
         |||,
+      missedIterations: 'sum(rate(cortex_prometheus_rule_group_iterations_missed_total{%s}[$__rate_interval]))',
     },
     perUserPerGroupEvaluations: {
       failure: 'sum by(rule_group) (rate(cortex_prometheus_rule_evaluation_failures_total{%s}[$__rate_interval])) > 0',
@@ -87,13 +88,14 @@ local filename = 'mimir-ruler.json';
     .addRow(
       $.row('Rule evaluations global')
       .addPanel(
-        $.panel('EPS') +
+        $.panel('Evaluations per second') +
         $.queryPanel(
           [
             $.rulerQueries.ruleEvaluations.success % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)],
             $.rulerQueries.ruleEvaluations.failure % $.jobMatcher($._config.job_names.ruler),
+            $.rulerQueries.ruleEvaluations.missedIterations % $.jobMatcher($._config.job_names.ruler),
           ],
-          ['success', 'failed'],
+          ['success', 'failed', 'missed'],
         ),
       )
       .addPanel(

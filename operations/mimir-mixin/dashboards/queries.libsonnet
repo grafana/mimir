@@ -65,7 +65,7 @@ local filename = 'mimir-queries.json';
         ),
       )
       .addPanel(
-        $.panel('Results cache hit %') +
+        $.panel('Query results cache hit ratio') +
         $.queryPanel(
           |||
             # Query metrics before and after migration to new memcached backend.
@@ -83,12 +83,12 @@ local filename = 'mimir-queries.json';
           ||| % {
             frontend: $.jobMatcher($._config.job_names.query_frontend),
           },
-          'Hit rate',
+          'Hit ratio',
         ) +
         { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) },
       )
       .addPanel(
-        $.panel('Results cache misses') +
+        $.panel('Query results cache misses') +
         $.queryPanel(
           |||
             # Query metrics before and after migration to new memcached backend.
@@ -106,7 +106,7 @@ local filename = 'mimir-queries.json';
           ||| % {
             frontend: $.jobMatcher($._config.job_names.query_frontend),
           },
-          'Miss rate'
+          'Missed query results per second'
         ),
       )
     )

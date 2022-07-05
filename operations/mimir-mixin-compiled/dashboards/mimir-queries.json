@@ -765,7 +765,7 @@
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
-                        "legendFormat": "Hit rate",
+                        "legendFormat": "Hit ratio",
                         "legendLink": null,
                         "step": 10
                      }
@@ -773,7 +773,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Results cache hit %",
+                  "title": "Query results cache hit ratio",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -842,7 +842,7 @@
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
-                        "legendFormat": "Miss rate",
+                        "legendFormat": "Missed query results per second",
                         "legendLink": null,
                         "step": 10
                      }
@@ -850,7 +850,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Results cache misses",
+                  "title": "Query results cache misses",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
