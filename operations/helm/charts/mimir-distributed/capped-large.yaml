@@ -82,6 +82,10 @@ index-cache:
 metadata-cache:
   enabled: true
 
+results-cache:
+  enabled: true
+  replicas: 4
+
 minio:
   enabled: false
 
