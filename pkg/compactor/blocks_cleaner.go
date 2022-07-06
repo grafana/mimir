@@ -530,7 +530,6 @@ func findMostRecentModifiedTimeForBlock(ctx context.Context, blockID ulid.ULID, 
 	err := userBucket.Iter(ctx, blockID.String(), func(name string) error {
 		attrib, err := userBucket.Attributes(ctx, name)
 		if err != nil {
-			level.Error(userLogger).Log("msg", "couldn't get attribute for file in block", "block", blockID.String(), "file", name)
 			return errors.Wrapf(err, "failed to get attributes for %s", name)
 		}
 		if attrib.LastModified.After(modifiedTime) {
