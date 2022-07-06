@@ -18,6 +18,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v2"
 
 	"github.com/grafana/mimir/pkg/mimir"
 	"github.com/grafana/mimir/pkg/util/fieldcategory"
@@ -27,10 +28,11 @@ func TestFlagParsing(t *testing.T) {
 	for name, tc := range map[string]struct {
 		arguments      []string
 		yaml           string
-		stdoutMessage  string // string that must be included in stdout
-		stderrMessage  string // string that must be included in stderr
-		stdoutExcluded string // string that must NOT be included in stdout
-		stderrExcluded string // string that must NOT be included in stderr
+		stdoutMessage  string                                // string that must be included in stdout
+		stderrMessage  string                                // string that must be included in stderr
+		stdoutExcluded string                                // string that must NOT be included in stdout
+		stderrExcluded string                                // string that must NOT be included in stderr
+		assertConfig   func(t *testing.T, cfg *mimir.Config) // if not nil, will assert that stdout is config, unmarshal it as YAML and invoke this function.
 	}{
 		"help-short": {
 			arguments:      []string{"-h"},
@@ -106,11 +108,33 @@ func TestFlagParsing(t *testing.T) {
 			stdoutMessage: "Mimir, version",
 		},
 
+		"common flag inheritance": {
+			arguments: []string{
+				"-common.storage.backend=s3",
+				"-common.storage.s3.region=common-region",
+				"-blocks-storage.s3.region=blocks-storage-region", // overrides common region
+				"-ruler-storage.backend=s3",                       // overrides common backend with same value
+				"-ruler-storage.s3.bucket-name=ruler-bucket",      // sets a specific bucket value for ruler (common is not set)
+				"-alertmanager-storage.backend=local",             // local alertmanager storage
+			},
+			assertConfig: func(t *testing.T, cfg *mimir.Config) {
+				require.Equal(t, "s3", cfg.Common.Storage.Backend)
+				require.Equal(t, "common-region", cfg.Common.Storage.S3.Region)
+				require.Equal(t, "s3", cfg.BlocksStorage.Bucket.Backend, "Blocks storage bucket backend should be inherited from common")
+				require.Equal(t, "blocks-storage-region", cfg.BlocksStorage.Bucket.S3.Region, "Blocks storage bucket s3 region should override common")
+				require.Equal(t, "s3", cfg.RulerStorage.Backend, "Ruler storage backend should stay the same (it's explicitly defined)")
+				require.Equal(t, "common-region", cfg.RulerStorage.S3.Region, "Ruler storage s3 region should be inherited from common")
+				require.Equal(t, "ruler-bucket", cfg.RulerStorage.S3.BucketName, "Ruler storage s3 bucket name should be defined")
+				require.Equal(t, "local", cfg.AlertmanagerStorage.Backend, "Alertmanager storage backend should be local (overriding common)")
+				require.Equal(t, "common-region", cfg.AlertmanagerStorage.S3.Region, "Alertmanager storage s3 region should be inherited from common as overrides don't know about config semantics")
+			},
+		},
+
 		// we cannot test the happy path, as mimir would then fully start
 	} {
 		t.Run(name, func(t *testing.T) {
 			_ = os.Setenv("TARGET", "ingester")
-			testSingle(t, tc.arguments, tc.yaml, []byte(tc.stdoutMessage), []byte(tc.stderrMessage), []byte(tc.stdoutExcluded), []byte(tc.stderrExcluded))
+			testSingle(t, tc.arguments, tc.yaml, []byte(tc.stdoutMessage), []byte(tc.stderrMessage), []byte(tc.stdoutExcluded), []byte(tc.stderrExcluded), tc.assertConfig)
 		})
 	}
 }
@@ -173,7 +197,7 @@ func TestHelp(t *testing.T) {
 	}
 }
 
-func testSingle(t *testing.T, arguments []string, yaml string, stdoutMessage, stderrMessage, stdoutExcluded, stderrExcluded []byte) {
+func testSingle(t *testing.T, arguments []string, configYAML string, stdoutMessage, stderrMessage, stdoutExcluded, stderrExcluded []byte, assertConfig func(*testing.T, *mimir.Config)) {
 	t.Helper()
 	oldArgs, oldStdout, oldStderr, oldTestMode := os.Args, os.Stdout, os.Stderr, testMode
 	restored := false
@@ -189,10 +213,10 @@ func testSingle(t *testing.T, arguments []string, yaml string, stdoutMessage, st
 	}
 	defer restoreIfNeeded()
 
-	if yaml != "" {
+	if configYAML != "" {
 		tempDir := t.TempDir()
 		fpath := filepath.Join(tempDir, "test")
-		err := os.WriteFile(fpath, []byte(yaml), 0600)
+		err := os.WriteFile(fpath, []byte(configYAML), 0600)
 		require.NoError(t, err)
 
 		arguments = append(arguments, "-"+configFileOption, fpath)
@@ -224,6 +248,11 @@ func testSingle(t *testing.T, arguments []string, yaml string, stdoutMessage, st
 	}
 	if len(stderrExcluded) > 0 && bytes.Contains(stderr, stderrExcluded) {
 		t.Errorf("Unexpected output on stderr: %q, stderr: %s\n", stderrExcluded, stderr)
+	}
+	if assertConfig != nil {
+		var cfg mimir.Config
+		require.NoError(t, yaml.Unmarshal(stdout, &cfg), "Can't unmarshal stdout as yaml config")
+		assertConfig(t, &cfg)
 	}
 }
 

@@ -66,6 +66,9 @@ type StorageBackendConfig struct {
 	// Used to inject additional backends into the config. Allows for this config to
 	// be embedded in multiple contexts and support non-object storage based backends.
 	ExtraBackends []string `yaml:"-"`
+
+	// Used to keep track of the flag names registered in this config, to be able to overwrite them later properly.
+	RegisteredFlags util.RegisteredFlags `yaml:"-"`
 }
 
 // Returns the supportedBackends for the package and any custom backends injected into the config.
@@ -79,13 +82,15 @@ func (cfg *StorageBackendConfig) RegisterFlags(f *flag.FlagSet) {
 }
 
 func (cfg *StorageBackendConfig) RegisterFlagsWithPrefixAndDefaultDirectory(prefix, dir string, f *flag.FlagSet) {
-	cfg.S3.RegisterFlagsWithPrefix(prefix, f)
-	cfg.GCS.RegisterFlagsWithPrefix(prefix, f)
-	cfg.Azure.RegisterFlagsWithPrefix(prefix, f)
-	cfg.Swift.RegisterFlagsWithPrefix(prefix, f)
-	cfg.Filesystem.RegisterFlagsWithPrefixAndDefaultDirectory(prefix, dir, f)
+	cfg.RegisteredFlags = util.TrackRegisteredFlags(prefix, f, func(prefix string, f *flag.FlagSet) {
+		cfg.S3.RegisterFlagsWithPrefix(prefix, f)
+		cfg.GCS.RegisterFlagsWithPrefix(prefix, f)
+		cfg.Azure.RegisterFlagsWithPrefix(prefix, f)
+		cfg.Swift.RegisterFlagsWithPrefix(prefix, f)
+		cfg.Filesystem.RegisterFlagsWithPrefixAndDefaultDirectory(prefix, dir, f)
 
-	f.StringVar(&cfg.Backend, prefix+"backend", Filesystem, fmt.Sprintf("Backend storage to use. Supported backends are: %s.", strings.Join(cfg.supportedBackends(), ", ")))
+		f.StringVar(&cfg.Backend, prefix+"backend", Filesystem, fmt.Sprintf("Backend storage to use. Supported backends are: %s.", strings.Join(cfg.supportedBackends(), ", ")))
+	})
 }
 
 func (cfg *StorageBackendConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
