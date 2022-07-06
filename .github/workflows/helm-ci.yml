@@ -1,15 +1,44 @@
 name: helm-ci
 
-on: pull_request
+on:
+  push:
+    branches:
+      - 'dimitar/helm-static-checks'
 
 jobs:
   call-lint:
     uses: grafana/helm-charts/.github/workflows/linter.yml@main
     with:
       filter_regex_include: .*operations/helm/.*
+
   call-lint-test:
     uses: grafana/helm-charts/.github/workflows/lint-test.yaml@main
     with:
       ct_configfile: operations/helm/ct.yaml
       ct_check_version_increment: false
       helm_version: v3.8.2
+
+  conftest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v1
+        with:
+          version: v3.8.2
+
+      - name: Set up conftest
+        uses: artis3n/setup-conftest@v0
+        with:
+          conftest_version: 0.33.0
+          conftest_wrapper: false # don't wrap conftest so that test exit code fail the step
+
+      - name: Run tests
+        env:
+          VALUES_FILES_PATH: ${{ github.workspace }}/operations/helm/charts/mimir-distributed/ci
+          CHART_PATH: ${{ github.workspace }}/operations/helm/charts/mimir-distributed
+          POLICIES_PATH: ${{ github.workspace }}/operations/helm/policies
+          TEMP_DIR: ${{ runner.temp }}/conftest
+        run: $GITHUB_WORKSPACE/.github/workflows/scripts/run-conftest.sh

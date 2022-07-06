@@ -1,0 +1,3 @@
+metaMonitoring:
+  serviceMonitor:
+    enabled: true
