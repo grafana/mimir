@@ -8,6 +8,7 @@
 * [CHANGE] Ruler: Remove unused CLI flags `-ruler.search-pending-for` and `-ruler.flush-period` (and their respective YAML config options). #2288
 * [ENHANCEMENT] Alertmanager: Allow the HTTP `proxy_url` configuration option in the receiver's configuration. #2317
 * [BUGFIX] Compactor: log the actual error on compaction failed. #2261
+* [BUGFIX] Alertmanager: restore state from storage even when running a single replica. #2293
 
 ### Mixin
 
