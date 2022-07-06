@@ -502,7 +502,8 @@
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "server.log-request-at-info-level-enabled",
-          "fieldType": "boolean"
+          "fieldType": "boolean",
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
