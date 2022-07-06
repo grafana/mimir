@@ -564,6 +564,7 @@ func TestBlocksCleaner_ShouldRemoveBlocksOutsideRetentionPeriod(t *testing.T) {
 			cortex_bucket_blocks_marked_for_deletion_count{user="user-2"} 0
 			# HELP cortex_compactor_blocks_marked_for_deletion_total Total number of blocks marked for deletion in compactor.
 			# TYPE cortex_compactor_blocks_marked_for_deletion_total counter
+			cortex_compactor_blocks_marked_for_deletion_total{reason="partial"} 0
 			cortex_compactor_blocks_marked_for_deletion_total{reason="retention"} 0
 			`),
 			"cortex_bucket_blocks_count",
@@ -605,6 +606,7 @@ func TestBlocksCleaner_ShouldRemoveBlocksOutsideRetentionPeriod(t *testing.T) {
 			cortex_bucket_blocks_marked_for_deletion_count{user="user-2"} 0
 			# HELP cortex_compactor_blocks_marked_for_deletion_total Total number of blocks marked for deletion in compactor.
 			# TYPE cortex_compactor_blocks_marked_for_deletion_total counter
+			cortex_compactor_blocks_marked_for_deletion_total{reason="partial"} 0
 			cortex_compactor_blocks_marked_for_deletion_total{reason="retention"} 1
 			`),
 			"cortex_bucket_blocks_count",
@@ -643,6 +645,7 @@ func TestBlocksCleaner_ShouldRemoveBlocksOutsideRetentionPeriod(t *testing.T) {
 			cortex_bucket_blocks_marked_for_deletion_count{user="user-2"} 0
 			# HELP cortex_compactor_blocks_marked_for_deletion_total Total number of blocks marked for deletion in compactor.
 			# TYPE cortex_compactor_blocks_marked_for_deletion_total counter
+			cortex_compactor_blocks_marked_for_deletion_total{reason="partial"} 0
 			cortex_compactor_blocks_marked_for_deletion_total{reason="retention"} 1
 			`),
 			"cortex_bucket_blocks_count",
@@ -672,6 +675,7 @@ func TestBlocksCleaner_ShouldRemoveBlocksOutsideRetentionPeriod(t *testing.T) {
 			cortex_bucket_blocks_marked_for_deletion_count{user="user-2"} 0
 			# HELP cortex_compactor_blocks_marked_for_deletion_total Total number of blocks marked for deletion in compactor.
 			# TYPE cortex_compactor_blocks_marked_for_deletion_total counter
+			cortex_compactor_blocks_marked_for_deletion_total{reason="partial"} 0
 			cortex_compactor_blocks_marked_for_deletion_total{reason="retention"} 3
 			`),
 			"cortex_bucket_blocks_count",
