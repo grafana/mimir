@@ -172,6 +172,8 @@ Usage of ./cmd/mimir/mimir:
     	True to block private and local addresses in Alertmanager receiver integrations. It blocks private addresses defined by  RFC 1918 (IPv4 addresses) and RFC 4193 (IPv6 addresses), as well as loopback, local unicast and local multicast addresses.
   -alertmanager.sharding-ring.consul.acl-token string
     	ACL Token used to interact with Consul.
+  -alertmanager.sharding-ring.consul.cas-retry-delay duration
+    	Maximum duration to wait before retrying a Compare And Swap (CAS) operation. (default 1s)
   -alertmanager.sharding-ring.consul.client-timeout duration
     	HTTP timeout when talking to Consul (default 20s)
   -alertmanager.sharding-ring.consul.consistent-reads
@@ -565,6 +567,8 @@ Usage of ./cmd/mimir/mimir:
     	Number of Go routines to use when syncing block meta files from the long term storage. (default 20)
   -compactor.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
+  -compactor.ring.consul.cas-retry-delay duration
+    	Maximum duration to wait before retrying a Compare And Swap (CAS) operation. (default 1s)
   -compactor.ring.consul.client-timeout duration
     	HTTP timeout when talking to Consul (default 20s)
   -compactor.ring.consul.consistent-reads
@@ -657,6 +661,8 @@ Usage of ./cmd/mimir/mimir:
     	Prometheus label to look for in samples to identify a Prometheus HA cluster. (default "cluster")
   -distributor.ha-tracker.consul.acl-token string
     	ACL Token used to interact with Consul.
+  -distributor.ha-tracker.consul.cas-retry-delay duration
+    	Maximum duration to wait before retrying a Compare And Swap (CAS) operation. (default 1s)
   -distributor.ha-tracker.consul.client-timeout duration
     	HTTP timeout when talking to Consul (default 20s)
   -distributor.ha-tracker.consul.consistent-reads
@@ -737,6 +743,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Per-tenant request rate limit in requests per second. 0 to disable.
   -distributor.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
+  -distributor.ring.consul.cas-retry-delay duration
+    	Maximum duration to wait before retrying a Compare And Swap (CAS) operation. (default 1s)
   -distributor.ring.consul.client-timeout duration
     	HTTP timeout when talking to Consul (default 20s)
   -distributor.ring.consul.consistent-reads
@@ -871,6 +879,8 @@ Usage of ./cmd/mimir/mimir:
     	Period with which to update the per-tenant ingestion rates. (default 15s)
   -ingester.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
+  -ingester.ring.consul.cas-retry-delay duration
+    	Maximum duration to wait before retrying a Compare And Swap (CAS) operation. (default 1s)
   -ingester.ring.consul.client-timeout duration
     	HTTP timeout when talking to Consul (default 20s)
   -ingester.ring.consul.consistent-reads
@@ -1456,6 +1466,8 @@ Usage of ./cmd/mimir/mimir:
     	Minimum amount of time to wait before resending an alert to Alertmanager. (default 1m0s)
   -ruler.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
+  -ruler.ring.consul.cas-retry-delay duration
+    	Maximum duration to wait before retrying a Compare And Swap (CAS) operation. (default 1s)
   -ruler.ring.consul.client-timeout duration
     	HTTP timeout when talking to Consul (default 20s)
   -ruler.ring.consul.consistent-reads
@@ -1584,6 +1596,8 @@ Usage of ./cmd/mimir/mimir:
     	HTTP server key path.
   -server.http-write-timeout duration
     	Write timeout for HTTP server (default 30s)
+  -server.log-request-at-info-level-enabled
+    	Optionally log requests at info level instead of debug level.
   -server.log-source-ips-enabled
     	Optionally log the source IPs.
   -server.log-source-ips-header string
@@ -1596,6 +1610,8 @@ Usage of ./cmd/mimir/mimir:
     	Register the intrumentation handlers (/metrics etc). (default true)
   -store-gateway.sharding-ring.consul.acl-token string
     	ACL Token used to interact with Consul.
+  -store-gateway.sharding-ring.consul.cas-retry-delay duration
+    	Maximum duration to wait before retrying a Compare And Swap (CAS) operation. (default 1s)
   -store-gateway.sharding-ring.consul.client-timeout duration
     	HTTP timeout when talking to Consul (default 20s)
   -store-gateway.sharding-ring.consul.consistent-reads
