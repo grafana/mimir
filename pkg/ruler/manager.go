@@ -98,6 +98,7 @@ func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg
 }
 
 func (r *DefaultMultiTenantManager) SyncRuleGroups(ctx context.Context, ruleGroups map[string]rulespb.RuleGroupList) {
+	// This function is never called concurrently for now, so it doesn't need a lock
 	if !r.cfg.TenantFederation.Enabled {
 		RemoveFederatedRuleGroups(ruleGroups)
 	}
@@ -105,11 +106,6 @@ func (r *DefaultMultiTenantManager) SyncRuleGroups(ctx context.Context, ruleGrou
 	for userID, ruleGroup := range ruleGroups {
 		r.syncRulesToManager(ctx, userID, ruleGroup)
 	}
-
-	// A lock is taken to ensure if this function is called concurrently, then each call
-	// returns after the call map files and check for updates
-	r.userManagerMtx.Lock()
-	defer r.userManagerMtx.Unlock()
 
 	// Check for deleted users and remove them
 	for userID, mngr := range r.userManagers {
@@ -141,36 +137,50 @@ func (r *DefaultMultiTenantManager) syncRulesToManager(ctx context.Context, user
 		return
 	}
 
+	manager, done := r.getOrCreateManager(ctx, user, update)
+	if done {
+		return
+	}
+	err = manager.Update(r.cfg.EvaluationInterval, files, nil, r.cfg.ExternalURL.String(), nil)
+	if err != nil {
+		r.lastReloadSuccessful.WithLabelValues(user).Set(0)
+		level.Error(r.logger).Log("msg", "unable to update rule manager", "user", user, "err", err)
+		return
+	}
+
+	r.lastReloadSuccessful.WithLabelValues(user).Set(1)
+	r.lastReloadSuccessfulTimestamp.WithLabelValues(user).SetToCurrentTime()
+}
+
+// getOrCreateManager retrieves the user manager. if it doesn't exist, it will create and start it first
+func (r *DefaultMultiTenantManager) getOrCreateManager(ctx context.Context, user string, update bool) (RulesManager, bool) {
 	r.userManagerMtx.Lock()
 	defer r.userManagerMtx.Unlock()
 
 	manager, exists := r.userManagers[user]
-	if !exists || update {
-		level.Debug(r.logger).Log("msg", "updating rules", "user", user)
-		r.configUpdatesTotal.WithLabelValues(user).Inc()
-		if !exists {
-			level.Debug(r.logger).Log("msg", "creating rule manager for user", "user", user)
-			manager, err = r.newManager(ctx, user)
-			if err != nil {
-				r.lastReloadSuccessful.WithLabelValues(user).Set(0)
-				level.Error(r.logger).Log("msg", "unable to create rule manager", "user", user, "err", err)
-				return
-			}
-			// manager.Run() starts running the manager and blocks until Stop() is called.
-			// Hence run it as another goroutine.
-			go manager.Run()
-			r.userManagers[user] = manager
-		}
-		err = manager.Update(r.cfg.EvaluationInterval, files, nil, r.cfg.ExternalURL.String(), nil)
-		if err != nil {
-			r.lastReloadSuccessful.WithLabelValues(user).Set(0)
-			level.Error(r.logger).Log("msg", "unable to update rule manager", "user", user, "err", err)
-			return
-		}
-
-		r.lastReloadSuccessful.WithLabelValues(user).Set(1)
-		r.lastReloadSuccessfulTimestamp.WithLabelValues(user).SetToCurrentTime()
+	if exists && !update {
+		return nil, true
 	}
+
+	level.Debug(r.logger).Log("msg", "updating rules", "user", user)
+	r.configUpdatesTotal.WithLabelValues(user).Inc()
+
+	if exists {
+		return manager, false
+	}
+
+	level.Debug(r.logger).Log("msg", "creating rule manager for user", "user", user)
+	manager, err := r.newManager(ctx, user)
+	if err != nil {
+		r.lastReloadSuccessful.WithLabelValues(user).Set(0)
+		level.Error(r.logger).Log("msg", "unable to create rule manager", "user", user, "err", err)
+		return nil, true
+	}
+	// manager.Run() starts running the manager and blocks until Stop() is called.
+	// Hence run it as another goroutine.
+	go manager.Run()
+	r.userManagers[user] = manager
+	return manager, false
 }
 
 // newManager creates a prometheus rule manager wrapped with a user id
@@ -234,10 +244,11 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifie
 func (r *DefaultMultiTenantManager) GetRules(userID string) []*promRules.Group {
 	var groups []*promRules.Group
 	r.userManagerMtx.RLock()
-	if mngr, exists := r.userManagers[userID]; exists {
+	mngr, exists := r.userManagers[userID]
+	r.userManagerMtx.RUnlock()
+	if exists {
 		groups = mngr.RuleGroups()
 	}
-	r.userManagerMtx.RUnlock()
 	return groups
 }
 
