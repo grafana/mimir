@@ -82,7 +82,7 @@ Using a custom namespace solves problems later on because you do not have to ove
    to the external IP address of the Kubernetes cluster.
    For more information, see [Ingress](https://kubernetes.io/docs/concepts/services-networking/ingress/).
 
-   > **Note:** On Linux systems, and if it is not possible for you set up local DNS resolution, you can use the `/etc/hosts` file to define the _`<ingress-host>`_ local address by adding the line `<kubernetes-cluster-external-address> <ingres>`.
+   > **Note:** On Linux systems, and if it is not possible for you set up local DNS resolution, you can use the `--add-host=<ingress-host>:<kubernetes-cluster-external-address>` command line flag to define the _`<ingress-host>`_ local address for the `docker` commands in the examples below.
 
 1. Install Grafana Mimir using the Helm chart:
 
@@ -156,11 +156,13 @@ Make a choice based on whether or not you already have a Prometheus server set u
 
      In this case, your Prometheus server writes metrics to Grafana Mimir that it scrapes from itself.
 
-  1. On a Linux system, start a Prometheus server by using Docker:
+  1. Start a Prometheus server by using Docker:
 
      ```bash
-     docker run --network=host -p 9090:9090  -v <absolute-path-to>/prometheus.yml:/etc/prometheus/prometheus.yml prom/prometheus
+     docker run -p 9090:9090  -v <absolute-path-to>/prometheus.yml:/etc/prometheus/prometheus.yml prom/prometheus
      ```
+
+     > **Note:** On Linux systems, if \<ingress-host\> cannot be resolved by the Prometheus server, use the additional command line flag `--add-host=<ingress-host>:<kubernetes-cluster-external-address>` to set it up.
 
 ## Configure Grafana Agent to write to Grafana Mimir
 
@@ -205,21 +207,25 @@ Make a choice based on whether or not you already have a Grafana Agent set up:
 
   1. Create an empty directory for the write ahead log (WAL) of the Grafana Agent
 
-  1. On a Linux system, start a Grafana Agent by using Docker:
+  1. Start a Grafana Agent by using Docker:
 
      ```bash
-     docker run --network=host  -v <absolute-path-to-wal-directory>:/etc/agent/data -v <absolute-path-to>/agent.yaml:/etc/agent/agent.yaml grafana/agent
+     docker run -v <absolute-path-to-wal-directory>:/etc/agent/data -v <absolute-path-to>/agent.yaml:/etc/agent/agent.yaml -p 12345:12345 grafana/agent
      ```
+
+     > **Note:** On Linux systems, if \<ingress-host\> cannot be resolved by the Grafana Agent, use the additional command line flag `--add-host=<ingress-host>:<kubernetes-cluster-external-address>` to set it up.
 
 ## Query metrics in Grafana
 
 First install Grafana, and then add Mimir as a Prometheus data source.
 
-1. On a Linux system, start Grafana by using Docker:
+1. Start Grafana by using Docker:
 
    ```bash
-   docker run --rm --name=grafana --network=host grafana/grafana
+   docker run --rm --name=grafana -p 3000:3000 grafana/grafana
    ```
+
+   > **Note:** On Linux systems, if \<ingress-host\> cannot be resolved by Grafana, use the additional command line flag `--add-host=<ingress-host>:<kubernetes-cluster-external-address>` to set it up.
 
 1. In a browser, go to the Grafana server at [http://localhost:3000](http://localhost:3000).
 1. Sign in using the default username `admin` and password `admin`.
