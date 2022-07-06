@@ -139,7 +139,7 @@ func parseStructure(structure interface{}, fields map[uintptr]reflect.StructFiel
 		fields[fieldValue.Addr().Pointer()] = field
 
 		// Recurse if a struct
-		if field.Type.Kind() != reflect.Struct || ignoreStructType(field.Type) {
+		if field.Type.Kind() != reflect.Struct || ignoreStructType(field.Type) || !field.IsExported() {
 			continue
 		}
 

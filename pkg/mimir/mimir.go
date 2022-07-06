@@ -165,6 +165,26 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.Common.RegisterFlags(f)
 }
 
+func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	// First unmarshal common into the specific locations.
+	common := configWithCustomCommonUnmarshaler{
+		Common: &commonConfigUnmarshaler{
+			Storage: &specificLocationsUnmarshaler{
+				"blocks_storage":       &c.BlocksStorage.Bucket.StorageBackendConfig,
+				"ruler_storage":        &c.RulerStorage.StorageBackendConfig,
+				"alertmanager_storage": &c.AlertmanagerStorage.StorageBackendConfig,
+			},
+		},
+	}
+	if err := unmarshal(&common); err != nil {
+		return fmt.Errorf("can't unmarshal common config: %w", err)
+	}
+
+	// Then unmarshal config in a standard way.
+	type plain Config
+	return unmarshal((*plain)(c))
+}
+
 func (c *Config) InheritCommonFlagValues(log log.Logger, fs *flag.FlagSet) error {
 	setFlags := map[string]bool{}
 	fs.Visit(func(f *flag.Flag) { setFlags[f.Name] = true })
@@ -384,6 +404,35 @@ type CommonConfig struct {
 // RegisterFlags registers flag.
 func (c *CommonConfig) RegisterFlags(f *flag.FlagSet) {
 	c.Storage.RegisterFlagsWithPrefix("common.storage.", f)
+}
+
+// configWithCustomCommonUnmarshaler unmarshals config with custom unmarshaler for the `common` field.
+type configWithCustomCommonUnmarshaler struct {
+	// Common will unmarshal `common` yaml key using a custom unmarshaler.
+	Common *commonConfigUnmarshaler `yaml:"common"`
+	// Throwaway will contain the rest of the configuration options,
+	// so we can still use strict unmarshaling for common,
+	// but we won't complain about not knowing the rest of the config keys.
+	Throwaway map[string]interface{} `yaml:",inline"`
+}
+
+// commonConfigUnmarshaler will unmarshal each field of the common config into specific locations.
+type commonConfigUnmarshaler struct {
+	Storage *specificLocationsUnmarshaler `yaml:"storage"`
+}
+
+// specificLocationsUnmarshaler will unmarshal yaml into specific locations.
+// Keys are names (used to provide meaningful errors) and values are references to places
+// where this should be unmarshaled.
+type specificLocationsUnmarshaler map[string]interface{}
+
+func (m specificLocationsUnmarshaler) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	for l, v := range m {
+		if err := unmarshal(v); err != nil {
+			return fmt.Errorf("key %q: %w", l, err)
+		}
+	}
+	return nil
 }
 
 // Mimir is the root datastructure for Mimir.

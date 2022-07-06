@@ -108,6 +108,105 @@ func TestFlagParsing(t *testing.T) {
 			stdoutMessage: "Mimir, version",
 		},
 
+		"common yaml inheritance with common config in the first place": {
+			yaml: `
+common:
+  storage:
+    backend: s3
+    s3:
+      region: common-region
+blocks_storage:
+  s3:
+    region: blocks-storage-region
+ruler_storage:
+  backend: s3
+  s3:
+    bucket_name: ruler-bucket
+alertmanager_storage:
+  backend: local
+`,
+			assertConfig: func(t *testing.T, cfg *mimir.Config) {
+				require.Equal(t, "s3", cfg.BlocksStorage.Bucket.Backend, "Blocks storage bucket backend should be inherited from common")
+				require.Equal(t, "blocks-storage-region", cfg.BlocksStorage.Bucket.S3.Region, "Blocks storage bucket s3 region should override common")
+				require.Equal(t, "s3", cfg.RulerStorage.Backend, "Ruler storage backend should stay the same (it's explicitly defined)")
+				require.Equal(t, "common-region", cfg.RulerStorage.S3.Region, "Ruler storage s3 region should be inherited from common")
+				require.Equal(t, "ruler-bucket", cfg.RulerStorage.S3.BucketName, "Ruler storage s3 bucket name should be defined")
+				require.Equal(t, "local", cfg.AlertmanagerStorage.Backend, "Alertmanager storage backend should be local (overriding common)")
+				require.Equal(t, "common-region", cfg.AlertmanagerStorage.S3.Region, "Alertmanager storage s3 region should be inherited from common as overrides don't know about config semantics")
+			},
+		},
+
+		"common yaml inheritance with common config in the last place": {
+			yaml: `
+blocks_storage:
+  s3:
+    region: blocks-storage-region
+ruler_storage:
+  backend: s3
+  s3:
+    bucket_name: ruler-bucket
+alertmanager_storage:
+  backend: local
+common:
+  storage:
+    backend: s3
+    s3:
+      region: common-region
+`,
+			assertConfig: func(t *testing.T, cfg *mimir.Config) {
+				require.Equal(t, "s3", cfg.BlocksStorage.Bucket.Backend, "Blocks storage bucket backend should be inherited from common")
+				require.Equal(t, "blocks-storage-region", cfg.BlocksStorage.Bucket.S3.Region, "Blocks storage bucket s3 region should override common")
+				require.Equal(t, "s3", cfg.RulerStorage.Backend, "Ruler storage backend should stay the same (it's explicitly defined)")
+				require.Equal(t, "common-region", cfg.RulerStorage.S3.Region, "Ruler storage s3 region should be inherited from common")
+				require.Equal(t, "ruler-bucket", cfg.RulerStorage.S3.BucketName, "Ruler storage s3 bucket name should be defined")
+				require.Equal(t, "local", cfg.AlertmanagerStorage.Backend, "Alertmanager storage backend should be local (overriding common)")
+				require.Equal(t, "common-region", cfg.AlertmanagerStorage.S3.Region, "Alertmanager storage s3 region should be inherited from common as overrides don't know about config semantics")
+			},
+		},
+
+		"common yaml sets a value but specific config reverts it back": {
+			yaml: `
+common:
+  storage:
+    backend: s3
+    s3:
+      region: common-region
+blocks_storage:
+  s3:
+    region: ""
+`,
+			assertConfig: func(t *testing.T, cfg *mimir.Config) {
+				require.Equal(t, "", cfg.BlocksStorage.Bucket.S3.Region, "Blocks storage region should be empty since it's explicitly set to be empty")
+				require.Equal(t, "common-region", cfg.RulerStorage.S3.Region, "Ruler storage should inherit the common-region")
+			},
+		},
+
+		"common yaml unmarshaling is strict": {
+			yaml: `
+common:
+  unknown: value
+`,
+			stderrMessage: "field unknown not found",
+		},
+
+		"common yaml overridden by a common flag and specific flag": {
+			yaml: `
+common:
+  storage:
+    backend: s3
+ruler_storage:
+  backend: local
+`,
+			arguments: []string{
+				"-common.storage.backend=swift",
+				"-blocks-storage.backend=gcs",
+			},
+			assertConfig: func(t *testing.T, cfg *mimir.Config) {
+				require.Equal(t, "gcs", cfg.BlocksStorage.Bucket.Backend, "Blocks storage bucket should be overriden")
+				require.Equal(t, "swift", cfg.RulerStorage.Backend, "Ruler storage should be set from the common flag, as flags prevail over yaml")
+			},
+		},
+
 		"common flag inheritance": {
 			arguments: []string{
 				"-common.storage.backend=s3",
@@ -118,8 +217,6 @@ func TestFlagParsing(t *testing.T) {
 				"-alertmanager-storage.backend=local",             // local alertmanager storage
 			},
 			assertConfig: func(t *testing.T, cfg *mimir.Config) {
-				require.Equal(t, "s3", cfg.Common.Storage.Backend)
-				require.Equal(t, "common-region", cfg.Common.Storage.S3.Region)
 				require.Equal(t, "s3", cfg.BlocksStorage.Bucket.Backend, "Blocks storage bucket backend should be inherited from common")
 				require.Equal(t, "blocks-storage-region", cfg.BlocksStorage.Bucket.S3.Region, "Blocks storage bucket s3 region should override common")
 				require.Equal(t, "s3", cfg.RulerStorage.Backend, "Ruler storage backend should stay the same (it's explicitly defined)")
