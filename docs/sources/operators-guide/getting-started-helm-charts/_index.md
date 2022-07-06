@@ -23,7 +23,7 @@ Hardware requirements:
 
 Software requirements:
 
-- Kubernetes 1.10 or higher
+- Kubernetes 1.20 or higher
 - The `kubectl` command for your version of Kubernetes
 - Helm 3 or higher
 
@@ -78,7 +78,11 @@ Using a custom namespace solves problems later on because you do not have to ove
    ```
 
    An ingress enables you to externally access a Kubernetes cluster.
-   Replace _`<ingress-host>`_ with a suitable hostname that DNS can resolve to the external IP address of the Kubernetes cluster. For more information, see [Ingress](https://kubernetes.io/docs/concepts/services-networking/ingress/).
+   Replace _`<ingress-host>`_ with a suitable hostname that DNS can resolve
+   to the external IP address of the Kubernetes cluster.
+   For more information, see [Ingress](https://kubernetes.io/docs/concepts/services-networking/ingress/).
+
+   > **Note:** On Linux systems, and if it is not possible for you set up local DNS resolution, you can use the `/etc/hosts` file to define the _`<ingress-host>`_ local address by adding the line `<kubernetes-cluster-external-address> <ingres>`.
 
 1. Install Grafana Mimir using the Helm chart:
 
@@ -86,7 +90,7 @@ Using a custom namespace solves problems later on because you do not have to ove
    helm -n mimir-test install mimir grafana/mimir-distributed -f custom.yaml
    ```
 
-   > **Note:**: the output of the command contains the write and read URLs necessary for the following steps.
+   > **Note:** The output of the command contains the write and read URLs necessary for the following steps.
 
 1. Check the statuses of the Mimir pods:
 
@@ -97,11 +101,11 @@ Using a custom namespace solves problems later on because you do not have to ove
    The results look similar to this:
 
    ```bash
-   kubectl  -n mimir-test get pod
+   kubectl -n mimir-test get pod
    NAME                                            READY   STATUS      RESTARTS   AGE
    mimir-minio-78b59f5569-fhlhs                    1/1     Running     0          2m4s
    mimir-nginx-74f8bff8dc-7kr7z                    1/1     Running     0          2m5s
-   mimir-mimir-distributed-make-bucket-job-z2hc8   0/1     Completed   0          2m4s
+   mimir-distributed-make-bucket-job-z2hc8         0/1     Completed   0          2m4s
    mimir-overrides-exporter-5fd94b745b-htrdr       1/1     Running     0          2m5s
    mimir-query-frontend-68cbbfbfb5-pt2ng           1/1     Running     0          2m5s
    mimir-ruler-56586c9774-28k7h                    1/1     Running     0          2m5s
@@ -152,7 +156,7 @@ Make a choice based on whether or not you already have a Prometheus server set u
 
      In this case, your Prometheus server writes metrics to Grafana Mimir that it scrapes from itself.
 
-  1. Start a Prometheus server by using Docker:
+  1. On a Linux system, start a Prometheus server by using Docker:
 
      ```bash
      docker run --network=host -p 9090:9090  -v <absolute-path-to>/prometheus.yml:/etc/prometheus/prometheus.yml prom/prometheus
@@ -201,7 +205,7 @@ Make a choice based on whether or not you already have a Grafana Agent set up:
 
   1. Create an empty directory for the write ahead log (WAL) of the Grafana Agent
 
-  1. Start a Grafana Agent by using Docker:
+  1. On a Linux system, start a Grafana Agent by using Docker:
 
      ```bash
      docker run --network=host  -v <absolute-path-to-wal-directory>:/etc/agent/data -v <absolute-path-to>/agent.yaml:/etc/agent/agent.yaml grafana/agent
@@ -211,7 +215,7 @@ Make a choice based on whether or not you already have a Grafana Agent set up:
 
 First install Grafana, and then add Mimir as a Prometheus data source.
 
-1. Start Grafana by using Docker:
+1. On a Linux system, start Grafana by using Docker:
 
    ```bash
    docker run --rm --name=grafana --network=host grafana/grafana
@@ -233,6 +237,7 @@ First install Grafana, and then add Mimir as a Prometheus data source.
 
    You should be able to query metrics in [Grafana Explore](http://localhost:3000/explore),
    as well as create dashboard panels by using your newly configured `Mimir` data source.
+   For more information, see [Monitoring Grafana Mimir]({{<relref "../monitoring-grafana-mimir/" >}}).
 
 ## Set up metamonitoring
 
