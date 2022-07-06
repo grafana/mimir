@@ -44,3 +44,89 @@
 {{- fail "metaMonitoring.grafanaAgent.remote.url is set, but metaMonitoring.serviceMonitor is disabled; you will not see any metrics, so enable the metaMonitoring.serviceMonitor or remove the remote configuration" }}
 {{- end }}
 {{- end }}
+
+{{- with ($calculatedConfig.blocks_storage).bucket_store }}
+  {{- with .chunks_cache }}
+    {{- if and
+        (index $.Values "chunks-cache" "enabled")
+        (eq .backend "memcached")
+        (ne .memcached.addresses (include "mimir.chunksCacheAddress" $))
+        }}
+      {{- fail (cat 
+          "chunks cache is enabled, but blocks_storage.bucket_store.chunks_cache.memcached.addresses is not set to the correct address, expected " 
+          (include "mimir.chunksCacheAddress" $) 
+          ", but got" 
+          .memcached.addresses) 
+        }}
+    {{- end }}
+  {{- end }}
+  {{- with .metadata_cache }}
+    {{- if and
+        (index $.Values "metadata-cache" "enabled")
+        (eq .backend "memcached")
+        (ne .memcached.addresses (include "mimir.metadataCacheAddress" $))
+        }}
+      {{- fail (cat 
+          "metadata cache is enabled, but blocks_storage.bucket_store.metadata_cache.memcached.addresses is not set to the correct address, expected " 
+          (include "mimir.metadataCacheAddress" $) 
+          ", but got" 
+          .memcached.addresses) 
+        }}
+    {{- end }}
+  {{- end }}
+  {{- with .index_cache }}
+    {{- if and
+        (index $.Values "index-cache" "enabled")
+        (eq .backend "memcached")
+        (ne .memcached.addresses (include "mimir.indexCacheAddress" $))
+        }}
+      {{- fail (cat 
+          "index cache is enabled, but blocks_storage.bucket_store.index_cache.memcached.addresses is not set to the correct address, expected " 
+          (include "mimir.indexCacheAddress" $) 
+          ", but got" 
+          .memcached.addresses) 
+        }}
+    {{- end }}
+  {{- end }}
+{{- end }}
+
+{{- with ($calculatedConfig.frontend) }}
+  {{- with .results_cache }}
+    {{- if and
+        (index $.Values "results-cache" "enabled")
+        (eq .backend "memcached")
+        (ne .memcached.addresses (include "mimir.resultsCacheAddress" $))
+        }}
+      {{- fail (cat 
+          "results cache is enabled, but frontend.results_cache.memcached.addresses is not set to the correct address, expected " 
+          (include "mimir.resultsCacheAddress" $) 
+          ", but got" 
+          .memcached.addresses) 
+        }}
+    {{- end }}
+  {{- end }}
+{{- end }}
+
+{{- with .Values.memcached }}
+  {{- if .enabled }}
+    {{- fail "memcached.enabled has been renamed to chunks-cache.enabled" }}
+  {{- end }}
+{{- end }}
+
+{{- with (index .Values "memcached-metadata") }}
+  {{- if .enabled }}
+    {{- fail "memcached-metadata.enabled has been renamed to metadata-cache.enabled" }}
+  {{- end }}
+{{- end }}
+
+{{- with (index .Values "memcached-queries") }}
+  {{- if .enabled }}
+    {{- fail "memcached-queries.enabled has been renamed to index-cache.enabled" }}
+  {{- end }}
+{{- end }}
+
+{{- with (index .Values "memcached-results") }}
+  {{- if .enabled }}
+    {{- fail "memcached-results.enabled has been renamed to results-cache.enabled" }}
+  {{- end }}
+{{- end }}

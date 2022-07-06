@@ -33,18 +33,18 @@ data:
         chunks_cache:
           backend: memcached
           memcached:
-            addresses: dns+test-oss-values-mimir-memcached-chunks.citestns.svc:11211
+            addresses: dns+test-oss-values-mimir-chunks-cache.citestns.svc:11211
             max_item_size: 1048576
             timeout: 450ms
         index_cache:
           backend: memcached
           memcached:
-            addresses: dns+test-oss-values-mimir-memcached-index-queries.citestns.svc:11211
+            addresses: dns+test-oss-values-mimir-index-cache.citestns.svc:11211
             max_item_size: 15728640
         metadata_cache:
           backend: memcached
           memcached:
-            addresses: dns+test-oss-values-mimir-memcached-metadata.citestns.svc:11211
+            addresses: dns+test-oss-values-mimir-metadata-cache.citestns.svc:11211
             max_item_size: 1048576
         sync_dir: /data/tsdb-sync
       s3:
@@ -64,7 +64,7 @@ data:
       results_cache:
         backend: memcached
         memcached:
-          addresses: dns+test-oss-values-mimir-memcached-results.citestns.svc:11211
+          addresses: dns+test-oss-values-mimir-results-cache.citestns.svc:11211
           max_item_size: 1048576
     frontend_worker:
       frontend_address: test-oss-values-mimir-query-frontend-headless.citestns.svc:9095

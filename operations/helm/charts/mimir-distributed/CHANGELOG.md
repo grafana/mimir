@@ -24,19 +24,21 @@ Entries should include a reference to the Pull Request that introduced the chang
   - Added new `rbac.type` option. Allowed values are `psp` and `scc`, for Pod Security Policy and Security Context Constraints (OpenShift) respectively.
   - Added `rbac.create` option to enable/disable RBAC configuration.
   - mc path in Minio changed to be compatible with OpenShift security.
-* [CHANGE] **breaking change** Chart now uses custom memcached templates to remove bitnami dependency. There are changes to the Helm values, listed bellow. #2064
+* [CHANGE] **breaking change** Chart now uses custom memcached templates to remove bitnami dependency. There are changes to the Helm values, listed below. #2064
   - The `memcached` section now contains common values shared across all memcached instances.
   - New `memcachedExporter` section was added to configure memcached metrics exporter.
-  - New `memcached-chunks` section was added that refers to previous `memcached` configuration.
-  - The section `memcached-queries` is renamed to `memcached-index-queries`.
-  - The value `memcached-*.replicaCount` is replaced with `memcached-*.replicas` to align with the rest of the services.
-    - Renamed `memcached.replicaCount` to `memcached-chunks.replicas`.
-    - Renamed `memcached-queries.replicaCount` to `memcached-index-queries.replicas`.
-    - Renamed `memcached-metadata.replicaCount` to `memcached-metadata.replicas`.
-    - Renamed `memcached-results.replicaCount` to `memcached-results.replicas`.
+  - New `chunks-cache` section was added that refers to previous `memcached` configuration.
+  - The section `memcached-queries` is renamed to `index-cache`.
+  - The section `memcached-metadata` is renamed to `metadata-cache`.
+  - The section `memcached-results` is renamed to `results-cache`.
+  - The value `memcached-*.replicaCount` is replaced with `*-cache.replicas` to align with the rest of the services.
+    - Renamed `memcached.replicaCount` to `chunks-cache.replicas`.
+    - Renamed `memcached-queries.replicaCount` to `index-cache.replicas`.
+    - Renamed `memcached-metadata.replicaCount` to `metadata-cache.replicas`.
+    - Renamed `memcached-results.replicaCount` to `results-cache.replicas`.
   - All memcached instances now share the same `ServiceAccount` that the chart uses for its services.
   - The value `memcached-*.architecture` was removed.
-  - The value `memcached-*.arguments` was removed, the default arguments are now encoded in the template. Use `memcached-*.extraArgs` to provide additional arguments as well as the values `memcached-*.allocatedMemory`, `memcached-*.maxItemMemory` and `memcached-*.port` to set the memcached command line flags `-m`, `-I` and `-u`.
+  - The value `memcached-*.arguments` was removed, the default arguments are now encoded in the template. Use `*-cache.extraArgs` to provide additional arguments as well as the values `*-cache.allocatedMemory`, `*-cache.maxItemMemory` and `*-cache.port` to set the memcached command line flags `-m`, `-I` and `-u`.
   - The remaining arguments are aligned with the rest of the chart's services, please consult the values file to check whether a parameter exists or was renamed.
 * [CHANGE] Change default value for `blocks_storage.bucket_store.chunks_cache.memcached.timeout` to `450ms` to increase use of cached data. #2035
 * [CHANGE] Remove setting `server.grpc_server_max_recv_msg_size` and `server.grpc_server_max_send_msg_size` to 100MB, since it is the default now, see #1884. #2300
