@@ -16,7 +16,7 @@ require (
 	github.com/golang/snappy v0.0.4
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.0
-	github.com/grafana/dskit v0.0.0-20220622130855-7bb188ccf75a
+	github.com/grafana/dskit v0.0.0-20220704121012-e441b77be778
 	github.com/grafana/e2e v0.1.1-0.20220519104354-1db01e4751fe
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/json-iterator/go v1.1.12
@@ -39,7 +39,7 @@ require (
 	github.com/stretchr/testify v1.7.2
 	github.com/thanos-io/thanos v0.26.1-0.20220602051129-a6f6ce060ed4
 	github.com/uber/jaeger-client-go v2.30.0+incompatible
-	github.com/weaveworks/common v0.0.0-20211109170639-0684aab3d884
+	github.com/weaveworks/common v0.0.0-20220706100410-67d27ed40fae
 	go.uber.org/atomic v1.9.0
 	go.uber.org/goleak v1.1.12
 	golang.org/x/crypto v0.0.0-20220214200702-86341886e292
@@ -177,7 +177,6 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/common/sigv4 v0.1.0 // indirect
 	github.com/prometheus/exporter-toolkit v0.7.1 // indirect
-	github.com/prometheus/node_exporter v1.0.0-rc.0.0.20200428091818-01054558c289 // indirect
 	github.com/prometheus/procfs v0.7.3 // indirect
 	github.com/rainycape/unidecode v0.0.0-20150907023854-cb7f23ec59be // indirect
 	github.com/rs/cors v1.8.2 // indirect

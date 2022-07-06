@@ -383,6 +383,10 @@ grpc_tls_config:
 # CLI flag: -server.log-source-ips-regex
 [log_source_ips_regex: <string> | default = ""]
 
+# (advanced) Optionally log requests at info level instead of debug level.
+# CLI flag: -server.log-request-at-info-level-enabled
+[log_request_at_info_level_enabled: <boolean> | default = false]
+
 # (advanced) Base path to serve all API routes from (e.g. /v1/)
 # CLI flag: -server.path-prefix
 [http_path_prefix: <string> | default = ""]
@@ -2437,6 +2441,11 @@ The `consul` block configures the consul client. The supported CLI flags `<prefi
 # (advanced) Burst size used in rate limit. Values less than 1 are treated as 1.
 # CLI flag: -<prefix>.consul.watch-burst-size
 [watch_burst_size: <int> | default = 1]
+
+# (advanced) Maximum duration to wait before retrying a Compare And Swap (CAS)
+# operation.
+# CLI flag: -<prefix>.consul.cas-retry-delay
+[cas_retry_delay: <duration> | default = 1s]
 ```
 
 ### memberlist

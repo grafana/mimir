@@ -123,6 +123,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.ApplicationName = "Grafana Mimir"
 	c.Server.MetricsNamespace = "cortex"
 	c.Server.ExcludeRequestInLog = true
+	c.Server.DisableRequestSuccessLog = true
 
 	// Set the default module list to 'all'
 	c.Target = []string{All}
