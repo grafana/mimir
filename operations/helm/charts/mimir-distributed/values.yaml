@@ -1055,8 +1055,8 @@ memcachedExporter:
     requests: {}
     limits: {}
 
-memcached-chunks:
-  # -- Specifies whether memcached-chunks should be enabled
+chunks-cache:
+  # -- Specifies whether memcached based chunks-cache should be enabled
   enabled: false
 
   # -- Total number of chunks-cache replicas
