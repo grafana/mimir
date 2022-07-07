@@ -1,7 +1,9 @@
 ---
-title: "Migrating from Thanos or Prometheus to Grafana Mimir"
-menuTitle: "Migrating from Thanos or Prometheus"
-description: "Learn how to migrate from Thanos or Prometheus to Grafana Mimir."
+aliases:
+  - /docs/mimir/latest/migration-guide/migrating-from-thanos-or-prometheus/
+description: Learn how to migrate from Thanos or Prometheus to Grafana Mimir.
+menuTitle: Migrating from Thanos or Prometheus
+title: Migrating from Thanos or Prometheus to Grafana Mimir
 weight: 10
 ---
 

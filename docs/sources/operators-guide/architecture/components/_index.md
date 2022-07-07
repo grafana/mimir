@@ -1,8 +1,7 @@
 ---
-title: "Grafana Mimir components"
-menuTitle: "Components"
-description: "Grafana Mimir includes a set of components that interact to form a cluster."
-weight: 30
+aliases:
+  - /docs/mimir/latest/operators-guide/architecture/components/
+description: Grafana Mimir includes a set of components that interact to form a cluster.
 keywords:
   - Mimir components
   - Mimir compactor
@@ -14,6 +13,9 @@ keywords:
   - Mimir overrides-exporter
   - Mimir query-scheduler
   - Mimir ruler
+menuTitle: Components
+title: Grafana Mimir components
+weight: 30
 ---
 
 # Grafana Mimir components

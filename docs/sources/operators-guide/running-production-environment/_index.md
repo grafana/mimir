@@ -1,7 +1,9 @@
 ---
-title: "Running Grafana Mimir in production"
-menuTitle: "Running in production"
-description: "Learn how to run Grafana Mimir in production."
+aliases:
+  - /docs/mimir/latest/operators-guide/running-production-environment/
+description: Learn how to run Grafana Mimir in production.
+menuTitle: Running in production
+title: Running Grafana Mimir in production
 weight: 80
 ---
 

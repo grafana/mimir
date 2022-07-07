@@ -1,7 +1,9 @@
 ---
-title: "Securing Grafana Mimir communications with TLS"
-menuTitle: "Securing communications with TLS"
-description: "Learn how to configure TLS between Grafana Mimir components."
+aliases:
+  - /docs/mimir/latest/operators-guide/securing/securing-communications-with-tls/
+description: Learn how to configure TLS between Grafana Mimir components.
+menuTitle: Securing communications with TLS
+title: Securing Grafana Mimir communications with TLS
 weight: 50
 ---
 

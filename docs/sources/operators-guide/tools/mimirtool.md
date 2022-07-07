@@ -1,7 +1,11 @@
 ---
-title: "Grafana Mimirtool"
-menuTitle: "Mimirtool"
-description: "Use Mimirtool to perform common tasks in Grafana Mimir or Grafana Cloud Metrics."
+aliases:
+  - /docs/mimir/latest/operators-guide/tools/mimirtool/
+description:
+  Use Mimirtool to perform common tasks in Grafana Mimir or Grafana Cloud
+  Metrics.
+menuTitle: Mimirtool
+title: Grafana Mimirtool
 weight: 40
 ---
 

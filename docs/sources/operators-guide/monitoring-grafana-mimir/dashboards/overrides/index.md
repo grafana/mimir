@@ -1,10 +1,11 @@
 ---
-title: "Grafana Mimir Overrides dashboard"
-menuTitle: "Overrides"
-description: "View an example Overrides dashboard."
-weight: 70
 aliases:
-  - ../../visualizing-metrics/dashboards/overrides/
+  - /../../visualizing-metrics/dashboards/overrides/
+  - /docs/mimir/latest/operators-guide/monitoring-grafana-mimir/dashboards/overrides/
+description: View an example Overrides dashboard.
+menuTitle: Overrides
+title: Grafana Mimir Overrides dashboard
+weight: 70
 ---
 
 # Grafana Mimir Overrides dashboard

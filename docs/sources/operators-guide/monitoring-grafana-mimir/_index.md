@@ -1,12 +1,13 @@
 ---
-title: "Monitoring Grafana Mimir"
-menuTitle: "Monitoring Mimir"
-description: "View example Grafana Mimir dashboards."
-weight: 50
+aliases:
+  - /docs/mimir/latest/operators-guide/monitoring-grafana-mimir/
+  - /visualizing-metrics/
+description: View example Grafana Mimir dashboards.
 keywords:
   - Mimir dashboards
-aliases:
-  - visualizing-metrics/
+menuTitle: Monitoring Mimir
+title: Monitoring Grafana Mimir
+weight: 50
 ---
 
 # Monitoring Grafana Mimir

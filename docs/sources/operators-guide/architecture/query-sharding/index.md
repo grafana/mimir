@@ -1,7 +1,9 @@
 ---
-title: "Grafana Mimir query sharding"
-menuTitle: "Query sharding"
-description: "Query sharding parallelizes query execution."
+aliases:
+  - /docs/mimir/latest/operators-guide/architecture/query-sharding/
+description: Query sharding parallelizes query execution.
+menuTitle: Query sharding
+title: Grafana Mimir query sharding
 weight: 90
 ---
 

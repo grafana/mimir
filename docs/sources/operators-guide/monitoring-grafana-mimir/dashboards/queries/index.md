@@ -1,10 +1,11 @@
 ---
-title: "Grafana Mimir Queries dashboard"
-menuTitle: "Queries"
-description: "View an example Queries dashboard."
-weight: 80
 aliases:
-  - ../../visualizing-metrics/dashboards/queries/
+  - /../../visualizing-metrics/dashboards/queries/
+  - /docs/mimir/latest/operators-guide/monitoring-grafana-mimir/dashboards/queries/
+description: View an example Queries dashboard.
+menuTitle: Queries
+title: Grafana Mimir Queries dashboard
+weight: 80
 ---
 
 # Grafana Mimir Queries dashboard

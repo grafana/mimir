@@ -1,7 +1,9 @@
 ---
-title: "Deploying Grafana Mimir with Jsonnet and Tanka"
-menuTitle: "Deploying with Jsonnet"
-description: "Learn how to deploy Grafana Mimir on Kubernetes with Jsonnet and Tanka."
+aliases:
+  - /docs/mimir/latest/operators-guide/deploying-grafana-mimir/jsonnet/deploying/
+description: Learn how to deploy Grafana Mimir on Kubernetes with Jsonnet and Tanka.
+menuTitle: Deploying with Jsonnet
+title: Deploying Grafana Mimir with Jsonnet and Tanka
 weight: 10
 ---
 

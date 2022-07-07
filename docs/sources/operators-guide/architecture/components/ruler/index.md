@@ -1,7 +1,11 @@
 ---
-title: "(Optional) Grafana Mimir ruler"
-menuTitle: "(Optional) Ruler"
-description: "The ruler evaluates PromQL expressions defined in recording and alerting rules."
+aliases:
+  - /docs/mimir/latest/operators-guide/architecture/components/ruler/
+description:
+  The ruler evaluates PromQL expressions defined in recording and alerting
+  rules.
+menuTitle: (Optional) Ruler
+title: (Optional) Grafana Mimir ruler
 weight: 130
 ---
 

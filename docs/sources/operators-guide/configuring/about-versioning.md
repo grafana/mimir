@@ -1,7 +1,9 @@
 ---
-title: "About Grafana Mimir versioning"
-menuTitle: "About versioning"
-description: "Learn about guarantees for this Grafana Mimir major release."
+aliases:
+  - /docs/mimir/latest/operators-guide/configuring/about-versioning/
+description: Learn about guarantees for this Grafana Mimir major release.
+menuTitle: About versioning
+title: About Grafana Mimir versioning
 weight: 50
 ---
 

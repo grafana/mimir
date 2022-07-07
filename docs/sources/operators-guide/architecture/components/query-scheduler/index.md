@@ -1,7 +1,9 @@
 ---
-title: "(Optional) Grafana Mimir query-scheduler"
-menuTitle: "(Optional) Query-scheduler"
-description: "The query-scheduler distributes work to queriers."
+aliases:
+  - /docs/mimir/latest/operators-guide/architecture/components/query-scheduler/
+description: The query-scheduler distributes work to queriers.
+menuTitle: (Optional) Query-scheduler
+title: (Optional) Grafana Mimir query-scheduler
 weight: 120
 ---
 

@@ -1,7 +1,9 @@
 ---
-title: "Grafana Mimir ingester"
-menuTitle: "Ingester"
-description: "The ingester writes incoming series to long-term storage."
+aliases:
+  - /docs/mimir/latest/operators-guide/architecture/components/ingester/
+description: The ingester writes incoming series to long-term storage.
+menuTitle: Ingester
+title: Grafana Mimir ingester
 weight: 30
 ---
 

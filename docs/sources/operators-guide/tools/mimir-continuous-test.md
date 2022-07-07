@@ -1,7 +1,11 @@
 ---
-title: "Grafana mimir-continuous-test"
-menuTitle: "Mimir-continuous-test"
-description: "Use mimir-continuous-test to continuously run smoke tests on live Grafana Mimir clusters."
+aliases:
+  - /docs/mimir/latest/operators-guide/tools/mimir-continuous-test/
+description:
+  Use mimir-continuous-test to continuously run smoke tests on live Grafana
+  Mimir clusters.
+menuTitle: Mimir-continuous-test
+title: Grafana mimir-continuous-test
 weight: 30
 ---
 

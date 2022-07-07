@@ -1,7 +1,9 @@
 ---
-title: "Grafana Mimir migration guides"
-menuTitle: "Migration guides"
-description: "Refer to these guides when migrating to Grafana Mimir."
+aliases:
+  - /docs/mimir/latest/migration-guide/
+description: Refer to these guides when migrating to Grafana Mimir.
+menuTitle: Migration guides
+title: Grafana Mimir migration guides
 weight: 30
 ---
 

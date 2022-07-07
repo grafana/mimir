@@ -1,7 +1,9 @@
 ---
-title: "Grafana Mimir key-value store"
-menuTitle: "Key-value store"
-description: "The key-value store is a database that stores data indexed by key."
+aliases:
+  - /docs/mimir/latest/operators-guide/architecture/key-value-store/
+description: The key-value store is a database that stores data indexed by key.
+menuTitle: Key-value store
+title: Grafana Mimir key-value store
 weight: 70
 ---
 
