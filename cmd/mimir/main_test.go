@@ -202,7 +202,7 @@ ruler_storage:
 				"-blocks-storage.backend=gcs",
 			},
 			assertConfig: func(t *testing.T, cfg *mimir.Config) {
-				require.Equal(t, "gcs", cfg.BlocksStorage.Bucket.Backend, "Blocks storage bucket should be overriden")
+				require.Equal(t, "gcs", cfg.BlocksStorage.Bucket.Backend, "Blocks storage bucket should be overridden")
 				require.Equal(t, "swift", cfg.RulerStorage.Backend, "Ruler storage should be set from the common flag, as flags prevail over yaml")
 			},
 		},
