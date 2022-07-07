@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"os"
 	"path"
 	"strings"
 	"testing"
@@ -685,6 +686,95 @@ func TestBlocksCleaner_ShouldRemoveBlocksOutsideRetentionPeriod(t *testing.T) {
 	}
 }
 
+func TestBlocksCleaner_ShouldRemovePartialBlocksOutsideDelayPeriod(t *testing.T) {
+	bucketClient, tempDir := mimir_testutil.PrepareFilesystemBucket(t)
+	bucketClient = bucketindex.BucketWithGlobalMarkers(bucketClient)
+
+	ts := func(hours int) int64 {
+		return time.Now().Add(time.Duration(hours)*time.Hour).Unix() * 1000
+	}
+
+	block1 := createTSDBBlock(t, bucketClient, "user-1", ts(-10), ts(-8), 2, nil)
+	block2 := createTSDBBlock(t, bucketClient, "user-1", ts(-8), ts(-6), 2, nil)
+
+	cfg := BlocksCleanerConfig{
+		DeletionDelay:           time.Hour,
+		CleanupInterval:         time.Minute,
+		CleanupConcurrency:      1,
+		DeleteBlocksConcurrency: 1,
+	}
+
+	ctx := context.Background()
+	logger := test.NewTestingLogger(t)
+	reg := prometheus.NewPedanticRegistry()
+	cfgProvider := newMockConfigProvider()
+
+	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
+
+	assertBlockExists := func(user string, block ulid.ULID, expectExists bool) {
+		exists, err := bucketClient.Exists(ctx, path.Join(user, block.String(), metadata.MetaFilename))
+		require.NoError(t, err)
+		assert.Equal(t, expectExists, exists)
+	}
+
+	makeBlockPartial := func(user string, block ulid.ULID) {
+		err := os.Remove(path.Join(tempDir, user, block.String(), metadata.MetaFilename))
+		require.NoError(t, err)
+	}
+
+	assertBlockExists("user-1", block1, true)
+	assertBlockExists("user-1", block2, true)
+	makeBlockPartial("user-1", block1)
+	assertBlockExists("user-1", block1, false)
+	assertBlockExists("user-1", block2, true)
+	require.NoError(t, cleaner.cleanUser(ctx, "user-1"))
+
+	// Set partial block delay such that block will not be marked for deletion
+	// The comparison is based on inode modification time, so anything more than very recent (< 1 second) won't be
+	// out of range
+	cfgProvider.userPartialBlockDelay["user-1"] = 1 * time.Hour
+	require.NoError(t, cleaner.cleanUser(ctx, "user-1"))
+
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_bucket_blocks_count Total number of blocks in the bucket. Includes blocks marked for deletion, but not partial blocks.
+			# TYPE cortex_bucket_blocks_count gauge
+			cortex_bucket_blocks_count{user="user-1"} 1
+			# HELP cortex_bucket_blocks_marked_for_deletion_count Total number of blocks marked for deletion in the bucket.
+			# TYPE cortex_bucket_blocks_marked_for_deletion_count gauge
+			cortex_bucket_blocks_marked_for_deletion_count{user="user-1"} 0
+			# HELP cortex_compactor_blocks_marked_for_deletion_total Total number of blocks marked for deletion in compactor.
+			# TYPE cortex_compactor_blocks_marked_for_deletion_total counter
+			cortex_compactor_blocks_marked_for_deletion_total{reason="partial"} 0
+			cortex_compactor_blocks_marked_for_deletion_total{reason="retention"} 0
+			`),
+		"cortex_bucket_blocks_count",
+		"cortex_bucket_blocks_marked_for_deletion_count",
+		"cortex_compactor_blocks_marked_for_deletion_total",
+	))
+
+	// Test that partial block does get marked for deletion
+	// The delay time must be very short since these temporary files were just created
+	cfgProvider.userPartialBlockDelay["user-1"] = 1 * time.Nanosecond
+	require.NoError(t, cleaner.cleanUser(ctx, "user-1"))
+
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_bucket_blocks_count Total number of blocks in the bucket. Includes blocks marked for deletion, but not partial blocks.
+			# TYPE cortex_bucket_blocks_count gauge
+			cortex_bucket_blocks_count{user="user-1"} 1
+			# HELP cortex_bucket_blocks_marked_for_deletion_count Total number of blocks marked for deletion in the bucket.
+			# TYPE cortex_bucket_blocks_marked_for_deletion_count gauge
+			cortex_bucket_blocks_marked_for_deletion_count{user="user-1"} 0
+			# HELP cortex_compactor_blocks_marked_for_deletion_total Total number of blocks marked for deletion in compactor.
+			# TYPE cortex_compactor_blocks_marked_for_deletion_total counter
+			cortex_compactor_blocks_marked_for_deletion_total{reason="partial"} 1
+			cortex_compactor_blocks_marked_for_deletion_total{reason="retention"} 0
+			`),
+		"cortex_bucket_blocks_count",
+		"cortex_bucket_blocks_marked_for_deletion_count",
+		"cortex_compactor_blocks_marked_for_deletion_total",
+	))
+}
+
 type mockBucketFailure struct {
 	objstore.Bucket
 
@@ -709,10 +799,11 @@ type mockConfigProvider struct {
 
 func newMockConfigProvider() *mockConfigProvider {
 	return &mockConfigProvider{
-		userRetentionPeriods: make(map[string]time.Duration),
-		splitAndMergeShards:  make(map[string]int),
-		splitGroups:          make(map[string]int),
-		blockUploadEnabled:   make(map[string]bool),
+		userRetentionPeriods:  make(map[string]time.Duration),
+		splitAndMergeShards:   make(map[string]int),
+		splitGroups:           make(map[string]int),
+		blockUploadEnabled:    make(map[string]bool),
+		userPartialBlockDelay: make(map[string]time.Duration),
 	}
 }
 
