@@ -116,25 +116,10 @@ var (
 		}
 	}
 
-	RulerS3Flags = func() map[string]string {
-		return map[string]string{
-			"-ruler-storage.backend":              "s3",
-			"-ruler-storage.s3.access-key-id":     e2edb.MinioAccessKey,
-			"-ruler-storage.s3.secret-access-key": e2edb.MinioSecretKey,
-			"-ruler-storage.s3.bucket-name":       rulestoreBucketName,
-			"-ruler-storage.s3.endpoint":          fmt.Sprintf("%s-minio-9000:9000", networkName),
-			"-ruler-storage.s3.insecure":          "true",
-		}
-	}
-
-	RulerSpecificFlags = func() map[string]string {
+	RulerFlags = func() map[string]string {
 		return map[string]string{
 			"-ruler.poll-interval": "2s",
 		}
-	}
-
-	RulerFlags = func() map[string]string {
-		return mergeFlags(RulerS3Flags(), RulerSpecificFlags())
 	}
 
 	RulerShardingFlags = func(consulAddress string) map[string]string {
@@ -155,7 +140,7 @@ var (
 		}
 	}
 
-	BlocksStorageSpecificFlags = func() map[string]string {
+	BlocksStorageFlags = func() map[string]string {
 		return map[string]string{
 			"-blocks-storage.tsdb.block-ranges-period":          "1m",
 			"-blocks-storage.bucket-store.bucket-index.enabled": "false",
@@ -164,10 +149,6 @@ var (
 			"-blocks-storage.tsdb.ship-interval":                "1m",
 			"-blocks-storage.tsdb.head-compaction-interval":     "1s",
 		}
-	}
-
-	BlocksStorageFlags = func() map[string]string {
-		return mergeFlags(BlocksStorageS3Flags(), BlocksStorageSpecificFlags())
 	}
 
 	CommonStorageBackendFlags = func() map[string]string {
