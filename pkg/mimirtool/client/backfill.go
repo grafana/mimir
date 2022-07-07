@@ -13,10 +13,10 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"regexp"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
