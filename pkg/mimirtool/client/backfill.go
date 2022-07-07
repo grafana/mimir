@@ -13,6 +13,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -172,7 +173,12 @@ func getBlockMeta(blockDir string) (metadata.Meta, error) {
 	if err != nil {
 		return blockMeta, errors.Wrapf(err, "failed to read dir %q", chunksDir)
 	}
+	reChunk := regexp.MustCompile(`^\d{6}$`)
 	for _, e := range entries {
+		if !reChunk.MatchString(e.Name()) {
+			continue
+		}
+
 		pth := filepath.Join(chunksDir, e.Name())
 		st, err := os.Stat(pth)
 		if err != nil {
