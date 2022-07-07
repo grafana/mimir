@@ -55,9 +55,25 @@ When running Grafana Mimir in microservices mode and using the pre-compiled dash
 
 The Grafana Mimir dashboards displaying CPU, memory, disk, and network resources utilization require Prometheus metrics scraped from the following endpoints:
 
-- cAdvisor
-- kubelet
+- [cAdvisor](https://github.com/google/cadvisor)
+- [kubelet](https://kubernetes.io/docs/concepts/cluster-administration/system-metrics/)
 - [node_exporter](https://github.com/prometheus/node_exporter)
 - [kube-state-metrics](https://github.com/kubernetes/kube-state-metrics) exporter
 
 For more information about the kubelet metrics and cAdvisor metrics exported by the kubelet, refer to [Metrics For Kubernetes System Components](https://kubernetes.io/docs/concepts/cluster-administration/system-metrics/).
+
+Metrics from kubelet, kube-state-metrics, and cAdvisor should all have a `cluster` label with the same value as in the
+Mimir metrics.
+
+Metrics from node_exporter should all have an `instance` label on them that has the same value as the `instance` label on Mimir metrics.
+
+## Log labels
+
+The "Slow Queries" dashboard uses a Loki datasource with the logs from Grafana Mimir to visualize slow queries. The query-frontend component logs slow queries as configured by the `-query-frontend.log-queries-longer-than` parameter.
+These logs need to have certain labels in order for the dashboard to work.
+
+| Label Name  | Configurable | Description                                                                                                                                                          |
+| :---------- | :----------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cluster`   | Yes          | The Kubernetes cluster or datacenter where the Mimir cluster is running. The cluster label can be configured with the `per_cluster_label` field in the mixin config. |
+| `namespace` | No           | The Kubernetes namespace where the Mimir cluster is running.                                                                                                         |
+| `name`      | No           | Name of the component. e.g. `query-frontend`                                                                                                                         |
