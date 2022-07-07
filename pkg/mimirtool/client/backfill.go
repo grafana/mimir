@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
@@ -23,7 +22,7 @@ import (
 )
 
 func (c *MimirClient) Backfill(ctx context.Context, blocks []string, logger log.Logger) error {
-	// Scan blocks in source directory
+	// Upload each block
 	var failed []string
 	var succeeded []string
 	var alreadyExists []string
@@ -67,10 +66,9 @@ func (c *MimirClient) backfillBlock(ctx context.Context, blockDir string, logger
 	}
 
 	blockID := blockMeta.ULID.String()
-
 	logger = log.With(logger, "user", c.id, "block", blockID)
 
-	level.Info(logger).Log("msg", "Making request to start block backfill")
+	level.Info(logger).Log("msg", "Making request to start block upload")
 
 	blockPrefix := path.Join("/api/v1/upload/block", url.PathEscape(blockID))
 
@@ -80,27 +78,22 @@ func (c *MimirClient) backfillBlock(ctx context.Context, blockDir string, logger
 	}
 	resp, err := c.doRequest(blockPrefix, http.MethodPost, buf, int64(buf.Len()))
 	if err != nil {
-		return errors.Wrap(err, "request to start backfill failed")
+		return errors.Wrap(err, "request to start block upload failed")
 	}
 	closeResp(resp)
 	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("request to start backfill failed, with HTTP status %d %s", resp.StatusCode, resp.Status)
+		return fmt.Errorf("request to start block upload failed, with HTTP status %d %s",
+			resp.StatusCode, resp.Status)
 	}
 
 	// Upload each block file
-	if err := filepath.WalkDir(blockDir, func(pth string, e fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if e.IsDir() {
-			return nil
+	for _, tf := range blockMeta.Thanos.Files {
+		if tf.RelPath == block.MetaFilename {
+			// Don't upload meta file in this step
+			continue
 		}
 
-		if filepath.Base(pth) == block.MetaFilename {
-			// Don't upload meta.json in this step
-			return nil
-		}
-
+		pth := filepath.Join(blockDir, filepath.FromSlash(tf.RelPath))
 		f, err := os.Open(pth)
 		if err != nil {
 			return errors.Wrapf(err, "failed to open %q", pth)
@@ -111,38 +104,31 @@ func (c *MimirClient) backfillBlock(ctx context.Context, blockDir string, logger
 
 		st, err := f.Stat()
 		if err != nil {
-			return errors.Wrap(err, "failed to get file info")
+			return errors.Wrapf(err, "failed to get file info for %q", pth)
 		}
 
-		relPath, err := filepath.Rel(blockDir, pth)
-		if err != nil {
-			return errors.Wrap(err, "failed to get relative path")
-		}
-		relPath = filepath.ToSlash(relPath)
-		escapedPath := url.QueryEscape(relPath)
+		escapedPath := url.QueryEscape(tf.RelPath)
 		level.Info(logger).Log("msg", "uploading block file", "path", pth, "size", st.Size())
 		resp, err := c.doRequest(path.Join(blockPrefix, fmt.Sprintf("files?path=%s", escapedPath)), http.MethodPost, f, st.Size())
 		if err != nil {
-			return errors.Wrapf(err, "request to upload backfill of file %q failed", pth)
+			return errors.Wrapf(err, "request to upload file %q failed", pth)
 		}
 		closeResp(resp)
 		if resp.StatusCode/100 != 2 {
-			return fmt.Errorf("request to upload backfill file failed, with HTTP status %d %s", resp.StatusCode, resp.Status)
+			return fmt.Errorf("request to upload block file failed, with HTTP status %d %s", resp.StatusCode, resp.Status)
 		}
 
 		return nil
-	}); err != nil {
-		return errors.Wrapf(err, "failed to traverse %q", blockDir)
 	}
 
 	resp, err = c.doRequest(fmt.Sprintf("%s?uploadComplete=true", blockPrefix), http.MethodPost,
 		nil, -1)
 	if err != nil {
-		return errors.Wrap(err, "request to finish backfill failed")
+		return errors.Wrap(err, "request to finish block upload failed")
 	}
 	closeResp(resp)
 	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("request to finish backfill failed, with HTTP status %d %s", resp.StatusCode, resp.Status)
+		return fmt.Errorf("request to finish block upload failed, with HTTP status %d %s", resp.StatusCode, resp.Status)
 	}
 
 	level.Info(logger).Log("msg", "block uploaded successfully")
