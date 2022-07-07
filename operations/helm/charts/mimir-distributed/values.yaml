@@ -1361,7 +1361,7 @@ nginx:
   # -- Pod Disruption Budget
   podDisruptionBudget: {}
   # -- Additional CLI args for nginx
-  extraArgs: []
+  extraArgs: {}
   # -- Environment variables to add to the nginx pods
   extraEnv: []
   # -- Environment variables from secrets or configmaps to add to the nginx pods
