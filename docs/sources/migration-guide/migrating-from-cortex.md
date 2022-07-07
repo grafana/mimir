@@ -1,7 +1,12 @@
 ---
-title: "Migrating from Cortex to Grafana Mimir"
-menuTitle: "Migrating from Cortex"
-description: "Learn how to migrate your deployment of Cortex to Grafana Mimir to simplify the deployment and continued operation of a horizontally scalable, multi-tenant time series database with long-term storage."
+aliases:
+  - /docs/mimir/latest/migration-guide/migrating-from-cortex/
+description:
+  Learn how to migrate your deployment of Cortex to Grafana Mimir to simplify
+  the deployment and continued operation of a horizontally scalable, multi-tenant
+  time series database with long-term storage.
+menuTitle: Migrating from Cortex
+title: Migrating from Cortex to Grafana Mimir
 weight: 10
 ---
 

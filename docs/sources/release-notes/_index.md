@@ -1,10 +1,12 @@
 ---
-title: "Grafana Mimir release notes"
-menuTitle: "Release notes"
-description: "Release notes for all versions of Grafana Mimir."
-weight: 10
+aliases:
+  - /docs/mimir/latest/release-notes/
+description: Release notes for all versions of Grafana Mimir.
 keywords:
   - Grafana Mimir release notes
+menuTitle: Release notes
+title: Grafana Mimir release notes
+weight: 10
 ---
 
 # Grafana Mimir release notes

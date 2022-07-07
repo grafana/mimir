@@ -1,7 +1,9 @@
 ---
-title: "Configuring Grafana Mimir high-availability deduplication"
-menuTitle: "Configuring high-availability deduplication"
-description: "Learn how to configure Grafana Mimir to handle HA Prometheus server deduplication."
+aliases:
+  - /docs/mimir/latest/operators-guide/configuring/configuring-high-availability-deduplication/
+description: Learn how to configure Grafana Mimir to handle HA Prometheus server deduplication.
+menuTitle: Configuring high-availability deduplication
+title: Configuring Grafana Mimir high-availability deduplication
 weight: 70
 ---
 

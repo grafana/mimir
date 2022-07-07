@@ -1,10 +1,11 @@
 ---
-title: "Grafana Mimir Slow queries dashboard"
-menuTitle: "Slow queries"
-description: "Review a description of the Slow queries dashboard."
-weight: 150
 aliases:
-  - ../../visualizing-metrics/dashboards/slow-queries/
+  - /../../visualizing-metrics/dashboards/slow-queries/
+  - /docs/mimir/latest/operators-guide/monitoring-grafana-mimir/dashboards/slow-queries/
+description: Review a description of the Slow queries dashboard.
+menuTitle: Slow queries
+title: Grafana Mimir Slow queries dashboard
+weight: 150
 ---
 
 # Grafana Mimir Slow queries dashboard

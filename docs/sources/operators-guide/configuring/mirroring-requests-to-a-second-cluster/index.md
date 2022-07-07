@@ -1,7 +1,11 @@
 ---
-title: "Mirroring requests to a second Grafana Mimir cluster"
-menuTitle: "Mirroring requests to a second cluster"
-description: "Learn how to set up a testing cluster that receives the same series of the primary cluster."
+aliases:
+  - /docs/mimir/latest/operators-guide/configuring/mirroring-requests-to-a-second-cluster/
+description:
+  Learn how to set up a testing cluster that receives the same series of
+  the primary cluster.
+menuTitle: Mirroring requests to a second cluster
+title: Mirroring requests to a second Grafana Mimir cluster
 weight: 120
 ---
 

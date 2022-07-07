@@ -1,10 +1,11 @@
 ---
-title: "Grafana Mimir Writes dashboard"
-menuTitle: "Writes"
-description: "View an example Writes dashboard."
-weight: 180
 aliases:
-  - ../../visualizing-metrics/dashboards/writes/
+  - /../../visualizing-metrics/dashboards/writes/
+  - /docs/mimir/latest/operators-guide/monitoring-grafana-mimir/dashboards/writes/
+description: View an example Writes dashboard.
+menuTitle: Writes
+title: Grafana Mimir Writes dashboard
+weight: 180
 ---
 
 # Grafana Mimir Writes dashboard

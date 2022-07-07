@@ -1,7 +1,9 @@
 ---
-title: "Grafana Mimir query-frontend"
-menuTitle: "Query-frontend"
-description: "The query-frontend accelerates queries."
+aliases:
+  - /docs/mimir/latest/operators-guide/architecture/components/query-frontend/
+description: The query-frontend accelerates queries.
+menuTitle: Query-frontend
+title: Grafana Mimir query-frontend
 weight: 60
 ---
 

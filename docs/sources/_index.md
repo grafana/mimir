@@ -1,7 +1,6 @@
 ---
-title: "Grafana Mimir documentation"
-menuTitle: "Grafana Mimir"
-weight: 1
+aliases:
+  - /docs/mimir/latest/
 keywords:
   - Grafana Mimir
   - Grafana metrics
@@ -12,6 +11,9 @@ keywords:
   - metrics storage
   - metrics datastore
   - observability
+menuTitle: Grafana Mimir
+title: Grafana Mimir documentation
+weight: 1
 ---
 
 # Grafana Mimir documentation

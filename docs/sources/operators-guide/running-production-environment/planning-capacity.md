@@ -1,7 +1,9 @@
 ---
-title: "Planning Grafana Mimir capacity"
-menuTitle: "Planning capacity"
-description: "Learn how to plan the resources required to deploy Grafana Mimir."
+aliases:
+  - /docs/mimir/latest/operators-guide/running-production-environment/planning-capacity/
+description: Learn how to plan the resources required to deploy Grafana Mimir.
+menuTitle: Planning capacity
+title: Planning Grafana Mimir capacity
 weight: 10
 ---
 

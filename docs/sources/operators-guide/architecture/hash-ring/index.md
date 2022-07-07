@@ -1,7 +1,11 @@
 ---
-title: "Grafana Mimir hash rings"
-menuTitle: "Hash rings"
-description: "Hash rings distribute sharding and replication work among Grafana Mimir components."
+aliases:
+  - /docs/mimir/latest/operators-guide/architecture/hash-ring/
+description:
+  Hash rings distribute sharding and replication work among Grafana Mimir
+  components.
+menuTitle: Hash rings
+title: Grafana Mimir hash rings
 weight: 60
 ---
 

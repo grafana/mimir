@@ -1,7 +1,9 @@
 ---
-title: "Configuring the Grafana Mimir query-frontend to work with Prometheus"
-menuTitle: "Configuring the query-frontend to work with Prometheus"
-description: "Learn how to configure the query-frontend to work with Prometheus."
+aliases:
+  - /docs/mimir/latest/operators-guide/configuring/configuring-the-query-frontend-work-with-prometheus/
+description: Learn how to configure the query-frontend to work with Prometheus.
+menuTitle: Configuring the query-frontend to work with Prometheus
+title: Configuring the Grafana Mimir query-frontend to work with Prometheus
 weight: 90
 ---
 

@@ -1,7 +1,11 @@
 ---
-title: "About Grafana Mimir runtime configuration"
-menuTitle: "About runtime configuration"
-description: "Runtime configuration enables you to change a subset of configurations without restarting Grafana Mimir."
+aliases:
+  - /docs/mimir/latest/operators-guide/configuring/about-runtime-configuration/
+description:
+  Runtime configuration enables you to change a subset of configurations
+  without restarting Grafana Mimir.
+menuTitle: About runtime configuration
+title: About Grafana Mimir runtime configuration
 weight: 40
 ---
 

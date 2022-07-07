@@ -1,10 +1,12 @@
 ---
-title: "Reference: Learning resources"
-menuTitle: "Reference: Learning resources"
-description: "Blog posts, podcasts, and videos about Grafana Mimir"
-weight: 130
+aliases:
+  - /docs/mimir/latest/operators-guide/reference-learning-resources/
+description: Blog posts, podcasts, and videos about Grafana Mimir
 keywords:
   - Grafana Mimir blog posts, podcasts, and videos
+menuTitle: "Reference: Learning resources"
+title: "Reference: Learning resources"
+weight: 130
 ---
 
 # Reference: Learning resources

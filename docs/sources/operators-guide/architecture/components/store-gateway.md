@@ -1,7 +1,9 @@
 ---
-title: "Grafana Mimir store-gateway"
-menuTitle: "Store-gateway"
-description: "The store-gateway queries blocks from long-term storage."
+aliases:
+  - /docs/mimir/latest/operators-guide/architecture/components/store-gateway/
+description: The store-gateway queries blocks from long-term storage.
+menuTitle: Store-gateway
+title: Grafana Mimir store-gateway
 weight: 70
 ---
 
