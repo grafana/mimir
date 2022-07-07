@@ -1,11 +1,11 @@
 ---
-title: "TODO: Upgrading to mimir-distributed 3.0"
+title: "TODO: Grafana Mimir Helm chart version 3.0 Upgrade Guide"
 menuTitle: "TODO: Helm chart v3.0"
 description: "Upgrade guide for the Grafana Mimir Helm chart version 3.0"
 weight: 100
 ---
 
-# Grafana Mimir Helm chart version 3.0 Upgrade Guide
+# TODO: Grafana Mimir Helm chart version 3.0 Upgrade Guide
 
 ## Breaking Changes
 
