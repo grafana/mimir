@@ -2,7 +2,7 @@
 title: "Deploying Grafana Mimir on Kubernetes"
 menuTitle: "Deploying on Kubernetes"
 description: "Learn how to deploy Grafana Mimir on Kubernetes."
-weight: 15
+weight: 12
 keywords:
   - Mimir deployment
   - Mimir Kubernetes
