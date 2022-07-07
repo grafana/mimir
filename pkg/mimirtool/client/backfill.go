@@ -69,7 +69,7 @@ func (c *MimirClient) backfillBlock(ctx context.Context, blockDir string, logger
 	blockID := blockMeta.ULID.String()
 	logger = log.With(logger, "user", c.id, "block", blockID)
 
-	level.Info(logger).Log("msg", "Making request to start block upload")
+	level.Info(logger).Log("msg", "making request to start block upload")
 
 	blockPrefix := path.Join("/api/v1/upload/block", url.PathEscape(blockID))
 
@@ -110,13 +110,15 @@ func (c *MimirClient) backfillBlock(ctx context.Context, blockDir string, logger
 
 		escapedPath := url.QueryEscape(tf.RelPath)
 		level.Info(logger).Log("msg", "uploading block file", "path", pth, "size", st.Size())
-		resp, err := c.doRequest(path.Join(blockPrefix, fmt.Sprintf("files?path=%s", escapedPath)), http.MethodPost, f, st.Size())
+		resp, err := c.doRequest(path.Join(blockPrefix, fmt.Sprintf("files?path=%s", escapedPath)),
+			http.MethodPost, f, st.Size())
 		if err != nil {
 			return errors.Wrapf(err, "request to upload file %q failed", pth)
 		}
 		closeResp(resp)
 		if resp.StatusCode/100 != 2 {
-			return fmt.Errorf("request to upload block file failed, with HTTP status %d %s", resp.StatusCode, resp.Status)
+			return fmt.Errorf("request to upload block file failed, with HTTP status %d %s",
+				resp.StatusCode, resp.Status)
 		}
 
 		return nil
@@ -129,7 +131,8 @@ func (c *MimirClient) backfillBlock(ctx context.Context, blockDir string, logger
 	}
 	closeResp(resp)
 	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("request to finish block upload failed, with HTTP status %d %s", resp.StatusCode, resp.Status)
+		return fmt.Errorf("request to finish block upload failed, with HTTP status %d %s",
+			resp.StatusCode, resp.Status)
 	}
 
 	level.Info(logger).Log("msg", "block uploaded successfully")
