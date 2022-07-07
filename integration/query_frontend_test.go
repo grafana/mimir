@@ -56,6 +56,22 @@ func TestQueryFrontendWithBlocksStorageViaFlags(t *testing.T) {
 	})
 }
 
+func TestQueryFrontendWithBlocksStorageViaCommonFlags(t *testing.T) {
+	runQueryFrontendTest(t, queryFrontendTestConfig{
+		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
+			flags = mergeFlags(
+				CommonStorageBackendFlags(),
+				BlocksStorageFlags(),
+			)
+
+			minio := e2edb.NewMinio(9000, mimirBucketName)
+			require.NoError(t, s.StartAndWaitReady(minio))
+
+			return "", flags
+		},
+	})
+}
+
 func TestQueryFrontendWithBlocksStorageViaFlagsAndQueryStatsEnabled(t *testing.T) {
 	runQueryFrontendTest(t, queryFrontendTestConfig{
 		queryStatsEnabled: true,
