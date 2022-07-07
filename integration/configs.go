@@ -22,6 +22,7 @@ import (
 const (
 	userID              = "e2e-user"
 	defaultNetworkName  = "e2e-mimir-test"
+	mimirBucketName     = "mimir"
 	blocksBucketName    = "mimir-blocks"
 	rulestoreBucketName = "mimir-rules"
 	alertsBucketName    = "mimir-alerts"
@@ -115,9 +116,8 @@ var (
 		}
 	}
 
-	RulerFlags = func() map[string]string {
+	RulerS3Flags = func() map[string]string {
 		return map[string]string{
-			"-ruler.poll-interval":                "2s",
 			"-ruler-storage.backend":              "s3",
 			"-ruler-storage.s3.access-key-id":     e2edb.MinioAccessKey,
 			"-ruler-storage.s3.secret-access-key": e2edb.MinioSecretKey,
@@ -127,6 +127,16 @@ var (
 		}
 	}
 
+	RulerSpecificFlags = func() map[string]string {
+		return map[string]string{
+			"-ruler.poll-interval": "2s",
+		}
+	}
+
+	RulerFlags = func() map[string]string {
+		return mergeFlags(RulerS3Flags(), RulerSpecificFlags())
+	}
+
 	RulerShardingFlags = func(consulAddress string) map[string]string {
 		return map[string]string{
 			"-ruler.ring.store":           "consul",
@@ -134,20 +144,42 @@ var (
 		}
 	}
 
-	BlocksStorageFlags = func() map[string]string {
+	BlocksStorageS3Flags = func() map[string]string {
 		return map[string]string{
-			"-blocks-storage.backend":                           "s3",
+			"-blocks-storage.backend":              "s3",
+			"-blocks-storage.s3.access-key-id":     e2edb.MinioAccessKey,
+			"-blocks-storage.s3.secret-access-key": e2edb.MinioSecretKey,
+			"-blocks-storage.s3.endpoint":          fmt.Sprintf("%s-minio-9000:9000", networkName),
+			"-blocks-storage.s3.insecure":          "true",
+			"-blocks-storage.s3.bucket-name":       blocksBucketName,
+		}
+	}
+
+	BlocksStorageSpecificFlags = func() map[string]string {
+		return map[string]string{
 			"-blocks-storage.tsdb.block-ranges-period":          "1m",
 			"-blocks-storage.bucket-store.bucket-index.enabled": "false",
 			"-blocks-storage.bucket-store.sync-interval":        "5s",
 			"-blocks-storage.tsdb.retention-period":             "5m",
 			"-blocks-storage.tsdb.ship-interval":                "1m",
 			"-blocks-storage.tsdb.head-compaction-interval":     "1s",
-			"-blocks-storage.s3.access-key-id":                  e2edb.MinioAccessKey,
-			"-blocks-storage.s3.secret-access-key":              e2edb.MinioSecretKey,
-			"-blocks-storage.s3.bucket-name":                    blocksBucketName,
-			"-blocks-storage.s3.endpoint":                       fmt.Sprintf("%s-minio-9000:9000", networkName),
-			"-blocks-storage.s3.insecure":                       "true",
+		}
+	}
+
+	BlocksStorageFlags = func() map[string]string {
+		return mergeFlags(BlocksStorageS3Flags(), BlocksStorageSpecificFlags())
+	}
+
+	CommonStorageBackendFlags = func() map[string]string {
+		return map[string]string{
+			"-common.storage.backend":              "s3",
+			"-common.storage.s3.access-key-id":     e2edb.MinioAccessKey,
+			"-common.storage.s3.secret-access-key": e2edb.MinioSecretKey,
+			"-common.storage.s3.endpoint":          fmt.Sprintf("%s-minio-9000:9000", networkName),
+			"-common.storage.s3.insecure":          "true",
+			"-common.storage.s3.bucket-name":       mimirBucketName,
+			// Also prefix blocks storage to allow config sanity checks pass.
+			"-blocks-storage.storage-prefix": "blocks",
 		}
 	}
 

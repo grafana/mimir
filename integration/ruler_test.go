@@ -411,14 +411,14 @@ func TestRulerAlertmanager(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, blocksBucketName, rulestoreBucketName, alertsBucketName)
+	minio := e2edb.NewMinio(9000, mimirBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// Have at least one alertmanager configuration.
-	require.NoError(t, uploadAlertmanagerConfig(minio, "user-1", mimirAlertmanagerUserConfigYaml))
+	require.NoError(t, uploadAlertmanagerConfig(minio, mimirBucketName, "user-1", mimirAlertmanagerUserConfigYaml))
 
 	// Start Alertmanagers.
-	amFlags := mergeFlags(AlertmanagerFlags(), AlertmanagerS3Flags(), AlertmanagerShardingFlags(consul.NetworkHTTPEndpoint(), 1))
+	amFlags := mergeFlags(AlertmanagerFlags(), CommonStorageBackendFlags(), AlertmanagerShardingFlags(consul.NetworkHTTPEndpoint(), 1))
 	am1 := e2emimir.NewAlertmanager("alertmanager1", amFlags)
 	am2 := e2emimir.NewAlertmanager("alertmanager2", amFlags)
 	require.NoError(t, s.StartAndWaitReady(am1, am2))
@@ -428,8 +428,9 @@ func TestRulerAlertmanager(t *testing.T) {
 
 	// Configure the ruler.
 	rulerFlags := mergeFlags(
-		BlocksStorageFlags(),
-		RulerFlags(),
+		CommonStorageBackendFlags(),
+		RulerSpecificFlags(),
+		BlocksStorageSpecificFlags(),
 		map[string]string{
 			// Connect the ruler to Alertmanagers
 			"-ruler.alertmanager-url": strings.Join([]string{am1URL, am2URL}, ","),
@@ -464,7 +465,7 @@ func TestRulerAlertmanagerTLS(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, blocksBucketName, rulestoreBucketName, alertsBucketName)
+	minio := e2edb.NewMinio(9000, mimirBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// set the ca
@@ -495,12 +496,12 @@ func TestRulerAlertmanagerTLS(t *testing.T) {
 	))
 
 	// Have at least one alertmanager configuration.
-	require.NoError(t, uploadAlertmanagerConfig(minio, "user-1", mimirAlertmanagerUserConfigYaml))
+	require.NoError(t, uploadAlertmanagerConfig(minio, mimirBucketName, "user-1", mimirAlertmanagerUserConfigYaml))
 
 	// Start Alertmanagers.
 	amFlags := mergeFlags(
 		AlertmanagerFlags(),
-		AlertmanagerS3Flags(),
+		CommonStorageBackendFlags(),
 		AlertmanagerShardingFlags(consul.NetworkHTTPEndpoint(), 1),
 		getServerHTTPTLSFlags(),
 	)
@@ -509,8 +510,9 @@ func TestRulerAlertmanagerTLS(t *testing.T) {
 
 	// Configure the ruler.
 	rulerFlags := mergeFlags(
-		BlocksStorageFlags(),
-		RulerFlags(),
+		CommonStorageBackendFlags(),
+		RulerSpecificFlags(),
+		BlocksStorageSpecificFlags(),
 		map[string]string{
 			// Connect the ruler to the Alertmanager
 			"-ruler.alertmanager-url": "https://" + am1.HTTPEndpoint(),
