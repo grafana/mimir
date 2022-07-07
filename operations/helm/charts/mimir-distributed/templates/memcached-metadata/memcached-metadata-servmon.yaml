@@ -1,3 +1,0 @@
-{{- if index .Values "memcached-metadata" "enabled" }}
-{{- include "mimir.lib.serviceMonitor" (dict "ctx" $ "component" "memcached-metadata") }}
-{{- end -}}

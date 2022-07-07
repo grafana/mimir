@@ -1,0 +1,1 @@
+{{- include "mimir.memcached.service" (dict "ctx" $ "component" "metadata-cache" ) }}
