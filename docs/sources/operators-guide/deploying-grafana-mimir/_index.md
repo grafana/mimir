@@ -1,13 +1,11 @@
 ---
-aliases:
-  - /docs/mimir/latest/operators-guide/deploying-grafana-mimir/
-description: Learn how to deploy Grafana Mimir on Kubernetes.
+title: "Deploying Grafana Mimir on Kubernetes"
+menuTitle: "Deploying on Kubernetes"
+description: "Learn how to deploy Grafana Mimir on Kubernetes."
+weight: 12
 keywords:
   - Mimir deployment
   - Mimir Kubernetes
-menuTitle: Deploying on Kubernetes
-title: Deploying Grafana Mimir on Kubernetes
-weight: 12
 ---
 
 # Deploying Grafana Mimir on Kubernetes

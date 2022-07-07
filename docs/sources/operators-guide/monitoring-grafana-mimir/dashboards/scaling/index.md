@@ -1,11 +1,10 @@
 ---
-aliases:
-  - /../../visualizing-metrics/dashboards/scaling/
-  - /docs/mimir/latest/operators-guide/monitoring-grafana-mimir/dashboards/scaling/
-description: View an example Scaling dashboard.
-menuTitle: Scaling
-title: Grafana Mimir scaling dashboard
+title: "Grafana Mimir scaling dashboard"
+menuTitle: "Scaling"
+description: "View an example Scaling dashboard."
 weight: 140
+aliases:
+  - ../../visualizing-metrics/dashboards/scaling/
 ---
 
 # Grafana Mimir scaling dashboard

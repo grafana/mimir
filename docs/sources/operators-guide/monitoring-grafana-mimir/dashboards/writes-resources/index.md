@@ -1,11 +1,10 @@
 ---
-aliases:
-  - /../../visualizing-metrics/dashboards/writes-resources/
-  - /docs/mimir/latest/operators-guide/monitoring-grafana-mimir/dashboards/writes-resources/
-description: View an example Writes resources dashboard.
-menuTitle: Writes resources
-title: Grafana Mimir Writes resources dashboard
+title: "Grafana Mimir Writes resources dashboard"
+menuTitle: "Writes resources"
+description: "View an example Writes resources dashboard."
 weight: 200
+aliases:
+  - ../../visualizing-metrics/dashboards/writes-resources/
 ---
 
 # Grafana Mimir Writes resources dashboard

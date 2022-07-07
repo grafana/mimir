@@ -1,8 +1,6 @@
 ---
-aliases:
-  - /docs/mimir/latest/tutorials/
-menuTitle: Tutorials
-title: Tutorials
+title: "Tutorials"
+menuTitle: "Tutorials"
 weight: 40
 ---
 

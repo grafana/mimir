@@ -1,11 +1,7 @@
 ---
-aliases:
-  - /docs/mimir/latest/operators-guide/architecture/components/alertmanager/
-description:
-  The Alertmanager groups alert notifications and routes them to various
-  notification channels.
-menuTitle: (Optional) Alertmanager
-title: (Optional) Grafana Mimir Alertmanager
+title: "(Optional) Grafana Mimir Alertmanager"
+menuTitle: "(Optional) Alertmanager"
+description: "The Alertmanager groups alert notifications and routes them to various notification channels."
 weight: 100
 ---
 

@@ -1,11 +1,7 @@
 ---
-aliases:
-  - /docs/mimir/latest/operators-guide/architecture/components/compactor/
-description:
-  The compactor increases query performance and reduces long-term storage
-  usage.
-menuTitle: Compactor
-title: Grafana Mimir compactor
+title: "Grafana Mimir compactor"
+menuTitle: "Compactor"
+description: "The compactor increases query performance and reduces long-term storage usage."
 weight: 10
 ---
 

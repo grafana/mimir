@@ -1,9 +1,7 @@
 ---
-aliases:
-  - /docs/mimir/latest/operators-guide/tools/
-description: Tools for Grafana Mimir aid in administration and troubleshooting tasks.
-menuTitle: Tools
-title: Grafana Mimir tools
+title: "Grafana Mimir tools"
+menuTitle: "Tools"
+description: "Tools for Grafana Mimir aid in administration and troubleshooting tasks."
 weight: 100
 ---
 

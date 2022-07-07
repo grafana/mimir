@@ -1,9 +1,7 @@
 ---
-aliases:
-  - /docs/mimir/latest/operators-guide/running-production-environment/scaling-out/
-description: Learn how to scale out Grafana Mimir.
-menuTitle: Scaling out
-title: Scaling out Grafana Mimir
+title: "Scaling out Grafana Mimir"
+menuTitle: "Scaling out"
+description: "Learn how to scale out Grafana Mimir."
 weight: 30
 ---
 

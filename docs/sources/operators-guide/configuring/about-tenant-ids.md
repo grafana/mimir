@@ -1,9 +1,7 @@
 ---
-aliases:
-  - /docs/mimir/latest/operators-guide/configuring/about-tenant-ids/
-description: Learn about tenant ID restrictions.
-menuTitle: About tenant IDs
-title: About Grafana Mimir tenant IDs
+title: "About Grafana Mimir tenant IDs"
+menuTitle: "About tenant IDs"
+description: "Learn about tenant ID restrictions."
 weight: 10
 ---
 

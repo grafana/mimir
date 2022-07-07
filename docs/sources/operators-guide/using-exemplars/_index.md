@@ -1,12 +1,10 @@
 ---
-aliases:
-  - /docs/mimir/latest/operators-guide/using-exemplars/
-description: Learn how to use exemplars with Grafana Mimir.
+title: "Using exemplars with Grafana Mimir"
+menuTitle: "Using exemplars"
+description: "Learn how to use exemplars with Grafana Mimir."
+weight: 40
 keywords:
   - Mimir exemplars
-menuTitle: Using exemplars
-title: Using exemplars with Grafana Mimir
-weight: 40
 ---
 
 # Using exemplars with Grafana Mimir

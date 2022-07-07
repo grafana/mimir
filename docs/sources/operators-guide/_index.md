@@ -1,9 +1,8 @@
 ---
-aliases:
-  - /docs/mimir/latest/operators-guide/
-description:
-  This guide contains information about deploying, configuring, and maintaining
-  Grafana Mimir.
+title: "Grafana Mimir operator and user guide"
+menuTitle: "Operator and user guide"
+description: "This guide contains information about deploying, configuring, and maintaining Grafana Mimir."
+weight: 20
 keywords:
   - Grafana Mimir architecture
   - Mimir architecture
@@ -11,9 +10,6 @@ keywords:
   - query sharding
   - Mimir deployment
   - deploying Mimir
-menuTitle: Operator and user guide
-title: Grafana Mimir operator and user guide
-weight: 20
 ---
 
 # Grafana Mimir operator and user guide

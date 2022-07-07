@@ -1,9 +1,7 @@
 ---
-aliases:
-  - /docs/mimir/latest/operators-guide/using-exemplars/before-you-begin/
-description: Refer to this checklist before you begin using exemplars in Grafana Mimir.
-menuTitle: Before you begin
-title: Before you begin using exemplars with Grafana Mimir
+title: "Before you begin using exemplars with Grafana Mimir"
+menuTitle: "Before you begin"
+description: "Refer to this checklist before you begin using exemplars in Grafana Mimir."
 weight: 20
 ---
 

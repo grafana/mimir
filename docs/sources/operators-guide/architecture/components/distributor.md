@@ -1,9 +1,7 @@
 ---
-aliases:
-  - /docs/mimir/latest/operators-guide/architecture/components/distributor/
-description: The distributor validates time-series data and sends the data to ingesters.
-menuTitle: Distributor
-title: Grafana Mimir distributor
+title: "Grafana Mimir distributor"
+menuTitle: "Distributor"
+description: "The distributor validates time-series data and sends the data to ingesters."
 weight: 20
 ---
 
