@@ -1,9 +1,7 @@
 ---
-aliases:
-  - /docs/mimir/latest/operators-guide/configuring/configuring-custom-trackers/
-description: Use the custom tracker to count the number of active series on an ingester.
-menuTitle: Configuring custom active series trackers
-title: Configuring custom active series trackers
+title: "Configuring custom active series trackers"
+menuTitle: "Configuring custom active series trackers"
+description: "Use the custom tracker to count the number of active series on an ingester."
 weight: 55
 ---
 

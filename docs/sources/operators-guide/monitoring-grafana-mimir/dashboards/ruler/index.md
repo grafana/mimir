@@ -1,11 +1,10 @@
 ---
-aliases:
-  - /../../visualizing-metrics/dashboards/ruler/
-  - /docs/mimir/latest/operators-guide/monitoring-grafana-mimir/dashboards/ruler/
-description: View an example Ruler dashboard.
-menuTitle: Ruler
-title: Grafana Mimir Ruler dashboard
+title: "Grafana Mimir Ruler dashboard"
+menuTitle: "Ruler"
+description: "View an example Ruler dashboard."
 weight: 130
+aliases:
+  - ../../visualizing-metrics/dashboards/ruler/
 ---
 
 # Grafana Mimir Ruler dashboard

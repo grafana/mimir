@@ -1,11 +1,7 @@
 ---
-aliases:
-  - /docs/mimir/latest/operators-guide/architecture/deployment-modes/
-description:
-  You can deploy Grafana Mimir in either monolithic mode or microservices
-  mode.
-menuTitle: Deployment modes
-title: Grafana Mimir deployment modes
+title: "Grafana Mimir deployment modes"
+menuTitle: "Deployment modes"
+description: "You can deploy Grafana Mimir in either monolithic mode or microservices mode."
 weight: 20
 ---
 

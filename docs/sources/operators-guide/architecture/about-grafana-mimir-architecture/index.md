@@ -1,9 +1,7 @@
 ---
-aliases:
-  - /docs/mimir/latest/operators-guide/architecture/about-grafana-mimir-architecture/
-description: Learn about the Grafana Mimir architecture.
-menuTitle: About the architecture
-title: About the Grafana Mimir architecture
+title: "About the Grafana Mimir architecture"
+menuTitle: "About the architecture"
+description: "Learn about the Grafana Mimir architecture."
 weight: 10
 ---
 

@@ -1,9 +1,7 @@
 ---
-aliases:
-  - /docs/mimir/latest/operators-guide/architecture/components/querier/
-description: The querier evaluates PromQL expressions.
-menuTitle: Querier
-title: Grafana Mimir querier
+title: "Grafana Mimir querier"
+menuTitle: "Querier"
+description: "The querier evaluates PromQL expressions."
 weight: 50
 ---
 

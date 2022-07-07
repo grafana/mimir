@@ -1,9 +1,7 @@
 ---
-aliases:
-  - /docs/mimir/latest/operators-guide/architecture/
-description: Learn about the Grafana Mimir architecture components and services.
-menuTitle: Architecture
-title: Grafana Mimir architecture
+title: "Grafana Mimir architecture"
+menuTitle: "Architecture"
+description: "Learn about the Grafana Mimir architecture components and services."
 weight: 20
 ---
 

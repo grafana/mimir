@@ -1,11 +1,10 @@
 ---
-aliases:
-  - /../visualizing-metrics/requirements/
-  - /docs/mimir/latest/operators-guide/monitoring-grafana-mimir/requirements/
-description: Requirements for installing Grafana Mimir dashboards and alerts.
-menuTitle: About dashboards and alerts requirements
-title: About Grafana Mimir dashboards and alerts requirements
+title: "About Grafana Mimir dashboards and alerts requirements"
+menuTitle: "About dashboards and alerts requirements"
+description: "Requirements for installing Grafana Mimir dashboards and alerts."
 weight: 10
+aliases:
+  - ../visualizing-metrics/requirements/
 ---
 
 # About Grafana Mimir dashboards and alerts requirements

@@ -1,9 +1,7 @@
 ---
-aliases:
-  - /docs/mimir/latest/operators-guide/tools/listblocks/
-description: Listblocks show the block details of a tenant.
-menuTitle: Listblocks
-title: Grafana Mimir listblocks
+title: "Grafana Mimir listblocks"
+menuTitle: "Listblocks"
+description: "Listblocks show the block details of a tenant."
 weight: 10
 ---
 

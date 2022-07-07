@@ -1,9 +1,7 @@
 ---
-aliases:
-  - /docs/mimir/latest/operators-guide/securing/authentication-and-authorization/
-description: Learn how to configure and run Grafana Mimir with multi-tenancy.
-menuTitle: Authentication and authorization
-title: Grafana Mimir authentication and authorization
+title: "Grafana Mimir authentication and authorization"
+menuTitle: "Authentication and authorization"
+description: "Learn how to configure and run Grafana Mimir with multi-tenancy."
 weight: 20
 ---
 

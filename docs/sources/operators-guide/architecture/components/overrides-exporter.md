@@ -1,11 +1,7 @@
 ---
-aliases:
-  - /docs/mimir/latest/operators-guide/architecture/components/overrides-exporter/
-description:
-  The overrides-exporter exports Prometheus metrics containing the configured
-  per-tenant limits.
-menuTitle: (Optional) Overrides-exporter
-title: (Optional) Grafana Mimir overrides-exporter
+title: "(Optional) Grafana Mimir overrides-exporter"
+menuTitle: "(Optional) Overrides-exporter"
+description: "The overrides-exporter exports Prometheus metrics containing the configured per-tenant limits."
 weight: 110
 ---
 

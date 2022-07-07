@@ -1,11 +1,10 @@
 ---
-aliases:
-  - /../../visualizing-metrics/dashboards/reads/
-  - /docs/mimir/latest/operators-guide/monitoring-grafana-mimir/dashboards/reads/
-description: View an example Reads dashboard.
-menuTitle: Reads
-title: Grafana Mimir Reads dashboard
+title: "Grafana Mimir Reads dashboard"
+menuTitle: "Reads"
+description: "View an example Reads dashboard."
 weight: 90
+aliases:
+  - ../../visualizing-metrics/dashboards/reads/
 ---
 
 # Grafana Mimir Reads dashboard

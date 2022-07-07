@@ -1,9 +1,7 @@
 ---
-aliases:
-  - /docs/mimir/latest/operators-guide/reference-glossary/
-description: Grafana Mimir glossary terms.
-menuTitle: "Reference: Glossary"
 title: "Reference: Grafana Mimir glossary"
+menuTitle: "Reference: Glossary"
+description: "Grafana Mimir glossary terms."
 weight: 130
 ---
 

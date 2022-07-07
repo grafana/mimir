@@ -1,9 +1,7 @@
 ---
-aliases:
-  - /docs/mimir/latest/operators-guide/architecture/bucket-index/
-description: The bucket index enhances query performance.
-menuTitle: Bucket index
-title: Grafana Mimir bucket index
+title: "Grafana Mimir bucket index"
+menuTitle: "Bucket index"
+description: "The bucket index enhances query performance."
 weight: 50
 ---
 

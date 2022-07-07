@@ -1,11 +1,10 @@
 ---
-aliases:
-  - /../visualizing-metrics/installing-dashboards-and-alerts/
-  - /docs/mimir/latest/operators-guide/monitoring-grafana-mimir/installing-dashboards-and-alerts/
-description: Learn how to install Grafana Mimir dashboards and alerts.
-menuTitle: Installing dashboards and alerts
-title: Installing Grafana Mimir dashboards and alerts
+title: "Installing Grafana Mimir dashboards and alerts"
+menuTitle: "Installing dashboards and alerts"
+description: "Learn how to install Grafana Mimir dashboards and alerts."
 weight: 30
+aliases:
+  - ../visualizing-metrics/installing-dashboards-and-alerts/
 ---
 
 # Installing Grafana Mimir dashboards and alerts

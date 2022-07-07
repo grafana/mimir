@@ -1,11 +1,10 @@
 ---
-aliases:
-  - /../../visualizing-metrics/dashboards/alertmanager-resources/
-  - /docs/mimir/latest/operators-guide/monitoring-grafana-mimir/dashboards/alertmanager-resources/
-description: View an example Alertmanager resources dashboard.
-menuTitle: Alertmanager resources
-title: Grafana Mimir Alertmanager resources dashboard
+title: "Grafana Mimir Alertmanager resources dashboard"
+menuTitle: "Alertmanager resources"
+description: "View an example Alertmanager resources dashboard."
 weight: 20
+aliases:
+  - ../../visualizing-metrics/dashboards/alertmanager-resources/
 ---
 
 # Grafana Mimir Alertmanager resources dashboard

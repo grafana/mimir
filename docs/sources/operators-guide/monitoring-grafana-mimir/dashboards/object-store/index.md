@@ -1,11 +1,10 @@
 ---
-aliases:
-  - /../../visualizing-metrics/dashboards/object-store/
-  - /docs/mimir/latest/operators-guide/monitoring-grafana-mimir/dashboards/object-store/
-description: View an example Object Store dashboard.
-menuTitle: Object Store
-title: Grafana Mimir Object Store dashboard
+title: "Grafana Mimir Object Store dashboard"
+menuTitle: "Object Store"
+description: "View an example Object Store dashboard."
 weight: 60
+aliases:
+  - ../../visualizing-metrics/dashboards/object-store/
 ---
 
 # Grafana Mimir Object Store dashboard

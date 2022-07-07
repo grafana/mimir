@@ -1,9 +1,7 @@
 ---
-aliases:
-  - /docs/mimir/latest/operators-guide/configuring/about-configurations/
-description: Learn about Grafana Mimir configuration and key guidelines to consider.
-menuTitle: About configurations
-title: About Grafana Mimir configurations
+title: "About Grafana Mimir configurations"
+menuTitle: "About configurations"
+description: "Learn about Grafana Mimir configuration and key guidelines to consider."
 weight: 10
 ---
 

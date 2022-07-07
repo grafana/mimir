@@ -1,12 +1,10 @@
 ---
-aliases:
-  - /docs/mimir/latest/operators-guide/mimir-runbooks/
-description: Grafana Mimir runbooks.
+title: "Grafana Mimir runbooks"
+menuTitle: "Runbooks"
+description: "Grafana Mimir runbooks."
+weight: 110
 keywords:
   - Mimir runbooks
-menuTitle: Runbooks
-title: Grafana Mimir runbooks
-weight: 110
 ---
 
 # Grafana Mimir runbooks

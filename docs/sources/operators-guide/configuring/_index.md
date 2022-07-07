@@ -1,12 +1,10 @@
 ---
-aliases:
-  - /docs/mimir/latest/operators-guide/configuring/
-description: This section provides links to Grafana Mimir configuration topics.
+title: "Configuring Grafana Mimir"
+menuTitle: "Configuration"
+description: "This section provides links to Grafana Mimir configuration topics."
+weight: 30
 keywords:
   - Mimir configuration
-menuTitle: Configuration
-title: Configuring Grafana Mimir
-weight: 30
 ---
 
 # Configuring Grafana Mimir

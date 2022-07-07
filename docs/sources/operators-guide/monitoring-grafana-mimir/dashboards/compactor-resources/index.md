@@ -1,11 +1,10 @@
 ---
-aliases:
-  - /../../visualizing-metrics/dashboards/compactor-resources/
-  - /docs/mimir/latest/operators-guide/monitoring-grafana-mimir/dashboards/compactor-resources/
-description: View an example Compactor resources dashboard.
-menuTitle: Compactor resources
-title: Grafana Mimir Compactor resources dashboard
+title: "Grafana Mimir Compactor resources dashboard"
+menuTitle: "Compactor resources"
+description: "View an example Compactor resources dashboard."
 weight: 40
+aliases:
+  - ../../visualizing-metrics/dashboards/compactor-resources/
 ---
 
 # Grafana Mimir Compactor resources dashboard

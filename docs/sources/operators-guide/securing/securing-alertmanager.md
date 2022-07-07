@@ -1,9 +1,7 @@
 ---
-aliases:
-  - /docs/mimir/latest/operators-guide/securing/securing-alertmanager/
-description: Learn how to secure the Alertmanager.
-menuTitle: Securing Alertmanager
-title: Securing Grafana Mimir Alertmanager
+title: "Securing Grafana Mimir Alertmanager"
+menuTitle: "Securing Alertmanager"
+description: "Learn how to secure the Alertmanager."
 weight: 40
 ---
 

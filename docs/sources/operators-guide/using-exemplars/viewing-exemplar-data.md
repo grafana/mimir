@@ -1,9 +1,7 @@
 ---
-aliases:
-  - /docs/mimir/latest/operators-guide/using-exemplars/viewing-exemplar-data/
-description: Learn how to view exemplar data in Grafana Mimir.
-menuTitle: Viewing exemplar data
-title: Viewing exemplar data in Grafana Explore
+title: "Viewing exemplar data in Grafana Explore"
+menuTitle: "Viewing exemplar data"
+description: "Learn how to view exemplar data in Grafana Mimir."
 weight: 40
 ---
 

@@ -1,11 +1,7 @@
 ---
-aliases:
-  - /docs/mimir/latest/operators-guide/deploying-grafana-mimir/jsonnet/migrating-from-consul-to-memberlist/
-description:
-  Learn how to migrate from using Consul as KV store for hash rings to
-  using memberlist without any downtime.
-menuTitle: Migrating from Consul to memberlist
-title: Migrating from Consul to memberlist KV store for hash rings without downtime
+title: "Migrating from Consul to memberlist KV store for hash rings without downtime"
+menuTitle: "Migrating from Consul to memberlist"
+description: "Learn how to migrate from using Consul as KV store for hash rings to using memberlist without any downtime."
 weight: 40
 ---
 
