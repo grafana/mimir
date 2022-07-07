@@ -98,7 +98,6 @@ func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg
 }
 
 func (r *DefaultMultiTenantManager) SyncRuleGroups(ctx context.Context, ruleGroups map[string]rulespb.RuleGroupList) {
-	// This function is never called concurrently for now, so it doesn't need a lock
 	if !r.cfg.TenantFederation.Enabled {
 		RemoveFederatedRuleGroups(ruleGroups)
 	}
@@ -106,6 +105,9 @@ func (r *DefaultMultiTenantManager) SyncRuleGroups(ctx context.Context, ruleGrou
 	for userID, ruleGroup := range ruleGroups {
 		r.syncRulesToManager(ctx, userID, ruleGroup)
 	}
+
+	r.userManagerMtx.Lock()
+	defer r.userManagerMtx.Unlock()
 
 	// Check for deleted users and remove them
 	for userID, mngr := range r.userManagers {
@@ -125,8 +127,9 @@ func (r *DefaultMultiTenantManager) SyncRuleGroups(ctx context.Context, ruleGrou
 	r.managersTotal.Set(float64(len(r.userManagers)))
 }
 
-// syncRulesToManager maps the rule files to disk, detects any changes and will create/update the
-// the users Prometheus Rules Manager.
+// syncRulesToManager maps the rule files to disk, detects any changes and will create/update
+// the user's Prometheus Rules Manager. Since this method writes to disk it is not safe to call
+// multiple times for the same user.
 func (r *DefaultMultiTenantManager) syncRulesToManager(ctx context.Context, user string, groups rulespb.RuleGroupList) {
 	// Map the files to disk and return the file names to be passed to the users manager if they
 	// have been updated
@@ -137,10 +140,21 @@ func (r *DefaultMultiTenantManager) syncRulesToManager(ctx context.Context, user
 		return
 	}
 
-	manager, done := r.getOrCreateManager(ctx, user, update)
-	if done {
+	if !update {
+		level.Debug(r.logger).Log("msg", "rules have not changed, skipping rule manager update", "user", user)
 		return
 	}
+
+	manager, err := r.getOrCreateManager(ctx, user)
+	if err != nil {
+		r.lastReloadSuccessful.WithLabelValues(user).Set(0)
+		level.Error(r.logger).Log("msg", "unable to create rule manager", "user", user, "err", err)
+		return
+	}
+
+	level.Debug(r.logger).Log("msg", "updating rules", "user", user)
+	r.configUpdatesTotal.WithLabelValues(user).Inc()
+
 	err = manager.Update(r.cfg.EvaluationInterval, files, nil, r.cfg.ExternalURL.String(), nil)
 	if err != nil {
 		r.lastReloadSuccessful.WithLabelValues(user).Set(0)
@@ -153,34 +167,26 @@ func (r *DefaultMultiTenantManager) syncRulesToManager(ctx context.Context, user
 }
 
 // getOrCreateManager retrieves the user manager. if it doesn't exist, it will create and start it first
-func (r *DefaultMultiTenantManager) getOrCreateManager(ctx context.Context, user string, update bool) (RulesManager, bool) {
+func (r *DefaultMultiTenantManager) getOrCreateManager(ctx context.Context, user string) (RulesManager, error) {
 	r.userManagerMtx.Lock()
 	defer r.userManagerMtx.Unlock()
 
 	manager, exists := r.userManagers[user]
-	if exists && !update {
-		return nil, true
-	}
-
-	level.Debug(r.logger).Log("msg", "updating rules", "user", user)
-	r.configUpdatesTotal.WithLabelValues(user).Inc()
-
 	if exists {
-		return manager, false
+		return manager, nil
 	}
 
 	level.Debug(r.logger).Log("msg", "creating rule manager for user", "user", user)
 	manager, err := r.newManager(ctx, user)
 	if err != nil {
-		r.lastReloadSuccessful.WithLabelValues(user).Set(0)
-		level.Error(r.logger).Log("msg", "unable to create rule manager", "user", user, "err", err)
-		return nil, true
+		return nil, err
 	}
+
 	// manager.Run() starts running the manager and blocks until Stop() is called.
 	// Hence run it as another goroutine.
 	go manager.Run()
 	r.userManagers[user] = manager
-	return manager, false
+	return manager, nil
 }
 
 // newManager creates a prometheus rule manager wrapped with a user id
