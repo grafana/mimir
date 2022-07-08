@@ -1,16 +1,16 @@
 ---
-title: "TODO: Grafana Mimir Helm chart version 3.0 Upgrade Guide"
-menuTitle: "TODO: Helm chart v3.0"
-description: "Upgrade guide for the Grafana Mimir Helm chart version 3.0"
+title: "Upgrade the Grafana Mimir Helm chart from version 2.1 to 3.0"
+menuTitle: "Upgrade Helm chart 2.1 to 3.0"
+description: "Upgrade the Grafana Mimir Helm chart from version 2.1 to 3.0"
 weight: 100
 ---
 
-# TODO: Grafana Mimir Helm chart version 3.0 Upgrade Guide
+# Upgrade the Grafana Mimir Helm chart from version 2.1 to 3.0
 
-## Breaking Changes
+## Breaking changes
 
-Several parameters available in version 2.1 of the mimir-distributed Helm chart have changed.
-Follow these steps to migrate your Helm values file to 3.0.
+Several parameters that were available in version 2.1 of the mimir-distributed Helm chart have changed.
+**To migrate your Helm values file to 3.0:**
 
 - **Configuration Storage has changed**
   - Mimir configuration is now stored in a ConfigMap by default instead of a Secret.
