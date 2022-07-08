@@ -1,7 +1,11 @@
 ---
-title: "About Grafana Mimir DNS service discovery"
-menuTitle: "About DNS service discovery"
-description: "DNS service discovery finds addresses of backend services to which Grafana Mimir connects."
+aliases:
+  - /docs/mimir/latest/operators-guide/configuring/about-dns-service-discovery/
+description:
+  DNS service discovery finds addresses of backend services to which Grafana
+  Mimir connects.
+menuTitle: About DNS service discovery
+title: About Grafana Mimir DNS service discovery
 weight: 20
 ---
 
