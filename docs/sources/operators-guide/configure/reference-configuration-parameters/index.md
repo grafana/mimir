@@ -1,7 +1,9 @@
 ---
-title: "Grafana Mimir configuration parameters"
-menuTitle: "Configuration parameters"
-description: "Describes parameters used to configure Grafana Mimir."
+aliases:
+  - /docs/mimir/latest/operators-guide/configuring/reference-configuration-parameters/
+description: Describes parameters used to configure Grafana Mimir.
+menuTitle: Configuration parameters
+title: Grafana Mimir configuration parameters
 weight: 130
 ---
 

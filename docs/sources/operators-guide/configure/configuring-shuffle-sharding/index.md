@@ -1,7 +1,9 @@
 ---
-title: "Configuring Grafana Mimir shuffle sharding"
-menuTitle: "Configuring shuffle sharding"
-description: "Learn how to configure shuffle sharding."
+aliases:
+  - /docs/mimir/latest/operators-guide/configuring/configuring-shuffle-sharding/
+description: Learn how to configure shuffle sharding.
+menuTitle: Configuring shuffle sharding
+title: Configuring Grafana Mimir shuffle sharding
 weight: 80
 ---
 

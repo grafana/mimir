@@ -50,7 +50,7 @@ If you are using object storage, additional configuration options are required:
   - `ruler_storage_azure_account_name`
   - `ruler_storage_azure_account_key`
 
-> **Note:** You need to manually provide the storage credentials for `s3` and `gcs` by using additional command line arguments as necessary. For more information, see [Grafana Mimir configuration parameters: ruler_storage]({{< relref "../../configuring/reference-configuration-parameters/index.md#ruler_storage" >}}).
+> **Note:** You need to manually provide the storage credentials for `s3` and `gcs` by using additional command line arguments as necessary. For more information, see [Grafana Mimir configuration parameters: ruler_storage]({{< relref "../../configure/reference-configuration-parameters/index.md#ruler_storage" >}}).
 
 ## Operational modes
 

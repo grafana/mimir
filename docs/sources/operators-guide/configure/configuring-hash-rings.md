@@ -1,7 +1,9 @@
 ---
-title: "Configuring Grafana Mimir hash rings"
-menuTitle: "Configuring hash rings"
-description: "Learn how to configure Grafana Mimir hash rings."
+aliases:
+  - /docs/mimir/latest/operators-guide/configuring/configuring-hash-rings/
+description: Learn how to configure Grafana Mimir hash rings.
+menuTitle: Configuring hash rings
+title: Configuring Grafana Mimir hash rings
 weight: 60
 ---
 
@@ -20,7 +22,7 @@ The CLI flags used to configure the hash ring of each component have the followi
 - (Optional) Alertmanagers: `-alertmanager.sharding-ring.*`
 
 The rest of the documentation refers to these prefixes as `<prefix>`.
-You can configure each parameter either via the CLI flag or its respective YAML [config option]({{< relref "../configuring/reference-configuration-parameters/index.md" >}}).
+You can configure each parameter either via the CLI flag or its respective YAML [config option]({{< relref "reference-configuration-parameters/index.md" >}}).
 
 ## Configuring the key-value store
 
@@ -49,7 +51,7 @@ The `-memberlist.join` can be set to:
 
 - An address in the `<ip>:<port>` format.
 - An address in the `<hostname>:<port>` format.
-- An address in the [DNS service discovery]({{< relref "../configuring/about-dns-service-discovery.md" >}}) format.
+- An address in the [DNS service discovery]({{< relref "about-dns-service-discovery.md" >}}) format.
 
 The default port is `7946`.
 
@@ -62,7 +64,7 @@ The default port is `7946`.
 Grafana Mimir supports TLS for memberlist connections between its components.
 For more information about TLS configuration, refer to [secure communications with TLS]({{< relref "../securing/securing-communications-with-tls.md" >}}).
 
-To see all supported configuration parameters, refer to [memberlist]({{< relref "../configuring/reference-configuration-parameters/index.md#memberlist" >}}).
+To see all supported configuration parameters, refer to [memberlist]({{< relref "reference-configuration-parameters/index.md#memberlist" >}}).
 
 #### Configuring the memberlist address and port
 
@@ -99,7 +101,7 @@ To use [Consul](https://www.consul.io) as a backend KV store, set the following 
 - `<prefix>.consul.hostname`: Consul hostname and port separated by colon. For example, `consul:8500`.
 - `<prefix>.consul.acl-token`: [ACL token](https://www.consul.io/docs/security/acl/acl-system) used to authenticate to Consul. If Consul authentication is disabled, you can leave the token empty.
 
-To see all supported configuration parameters, refer [consul]({{< relref "../configuring/reference-configuration-parameters/index.md#consul" >}}).
+To see all supported configuration parameters, refer [consul]({{< relref "reference-configuration-parameters/index.md#consul" >}}).
 
 ### Etcd
 
@@ -112,7 +114,7 @@ To use [etcd](https://etcd.io) as a backend KV store, set the following paramete
 Grafana Mimir supports TLS between its components and etcd.
 For more information about TLS configuration, refer to [secure communications with TLS]({{< relref "../securing/securing-communications-with-tls.md" >}}).
 
-To see all supported configuration parameters, refer to [etcd]({{< relref "../configuring/reference-configuration-parameters/index.md#etcd" >}}).
+To see all supported configuration parameters, refer to [etcd]({{< relref "reference-configuration-parameters/index.md#etcd" >}}).
 
 ### Multi
 
@@ -132,7 +134,7 @@ You can use the following parameters to configure the multi KV store settings:
 
 > **Note**: Grafana Mimir does not log an error if it is unable to mirror writes to the secondary backend store. The total number of errors is only tracked through the metric `cortex_multikv_mirror_write_errors_total`.
 
-The multi KV primary backend and mirroring can also be configured in the [runtime configuration file]({{< relref "../configuring/about-runtime-configuration.md" >}}).
+The multi KV primary backend and mirroring can also be configured in the [runtime configuration file]({{< relref "about-runtime-configuration.md" >}}).
 Changes to a multi KV Store in the runtime configuration apply to _all_ components using a multi KV store.
 
 The following example shows a runtime configuration file for the multi KV store:
@@ -152,9 +154,9 @@ The following steps show how to migrate ingesters from Consul to etcd:
 
 1. Configure `-ingester.ring.store=multi`, `-ingester.ring.multi.primary=consul`, `-ingester.ring.multi.secondary=etcd`, and `-ingester.ring.multi.mirror-enabled=true`. Configure both Consul settings `-ingester.ring.consul.*` and etcd settings `-ingester.ring.etcd.*`.
 1. Apply changes to your Grafana Mimir cluster. After changes have rolled out, Grafana Mimir uses Consul as primary KV store, and all writes are mirrored to etcd too.
-1. Configure `primary: etcd` in the `multi_kv_config` block of the [runtime configuration file]({{< relref "../configuring/about-runtime-configuration.md" >}}). Changes in the runtime configuration file are reloaded live, without the need to restart the process.
+1. Configure `primary: etcd` in the `multi_kv_config` block of the [runtime configuration file]({{< relref "about-runtime-configuration.md" >}}). Changes in the runtime configuration file are reloaded live, without the need to restart the process.
 1. Wait until all Mimir instances have reloaded the updated configuration.
-1. Configure `mirror_enabled: false` in the `multi_kv_config` block of the [runtime configuration file]({{< relref "../configuring/about-runtime-configuration.md" >}}).
+1. Configure `mirror_enabled: false` in the `multi_kv_config` block of the [runtime configuration file]({{< relref "about-runtime-configuration.md" >}}).
 1. Wait until all Mimir instances have reloaded the updated configuration.
 1. Configure `-ingester.ring.store=etcd` and remove both the multi and Consul configuration because they are no longer required.
 1. Apply changes to your Grafana Mimir cluster. After changes have rolled out, Grafana Mimir only uses etcd.
