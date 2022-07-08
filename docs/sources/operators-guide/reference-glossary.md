@@ -108,7 +108,7 @@ node_cpu_seconds_total{instance="10.0.0.2",mode="user"}
 
 A tenant is the owner of a set of series written to and queried from Grafana Mimir.
 Grafana Mimir isolates series and alerts belonging to different tenants.
-To understand how Grafana Mimir authenticates tenants, refer to [Authentication and authorization]({{< relref "securing/authentication-and-authorization.md" >}}).
+To understand how Grafana Mimir authenticates tenants, refer to [Authentication and authorization]({{< relref "secure/authentication-and-authorization.md" >}}).
 
 ## Time series
 
