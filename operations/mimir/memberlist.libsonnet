@@ -4,11 +4,11 @@
     'memberlist.join': 'gossip-ring.%s.svc.cluster.local:%d' % [$._config.namespace, gossipRingPort],
   } + (
     if $._config.memberlist_cluster_label == '' then {} else {
-      'memberlist.label': $._config.memberlist_cluster_label,
+      'memberlist.cluster-label': $._config.memberlist_cluster_label,
     }
   ) + (
     if $._config.memberlist_cluster_label_verification_enabled then {} else {
-      'memberlist.skip-inbound-label-check': true,
+      'memberlist.cluster-label-verification-disabled': true,
     }
   ),
 
