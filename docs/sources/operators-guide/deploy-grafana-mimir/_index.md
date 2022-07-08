@@ -1,14 +1,16 @@
 ---
-title: "Deploying Grafana Mimir on Kubernetes"
-menuTitle: "Deploying on Kubernetes"
-description: "Learn how to deploy Grafana Mimir on Kubernetes."
-weight: 12
+aliases:
+  - /docs/mimir/latest/operators-guide/deploying-grafana-mimir/
+description: Learn how to deploy Grafana Mimir on Kubernetes.
 keywords:
   - Mimir deployment
   - Mimir Kubernetes
+menuTitle: Deploy on Kubernetes
+title: Deploy Grafana Mimir on Kubernetes
+weight: 12
 ---
 
-# Deploying Grafana Mimir on Kubernetes
+# Deploy Grafana Mimir on Kubernetes
 
 You can use Helm or Tanka to deploy Grafana Mimir on Kubernetes.
 
