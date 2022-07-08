@@ -991,6 +991,8 @@ Usage of ./cmd/mimir/mimir:
     	How long to keep gossiping to dead nodes, to give them chance to refute their death. (default 30s)
   -memberlist.join value
     	Other cluster members to join. Can be specified multiple times. It can be an IP, hostname or an entry specified in the DNS Service Discovery format.
+  -memberlist.label string
+    	[experimental] Label is an optional set of bytes to include on the outside of each packet and stream.
   -memberlist.leave-timeout duration
     	Timeout for leaving memberlist cluster. (default 5s)
   -memberlist.left-ingesters-timeout duration
@@ -1017,6 +1019,8 @@ Usage of ./cmd/mimir/mimir:
     	If not 0, how often to rejoin the cluster. Occasional rejoin can help to fix the cluster split issue, and is harmless otherwise. For example when using only few components as a seed nodes (via -memberlist.join), then it's recommended to use rejoin. If -memberlist.join points to dynamic service that resolves to all gossiping nodes (eg. Kubernetes headless service), then rejoin is not needed.
   -memberlist.retransmit-factor int
     	Multiplication factor used when sending out messages (factor * log(N+1)). (default 4)
+  -memberlist.skip-inbound-label-check
+    	[experimental] When enabled we ignore labels on inbound packets and gossip streams.
   -memberlist.stream-timeout duration
     	The timeout for establishing a connection with a remote node, and for read/write operations. (default 10s)
   -memberlist.tls-ca-path string

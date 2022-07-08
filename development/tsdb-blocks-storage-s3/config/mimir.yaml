@@ -30,8 +30,7 @@ ingester:
 # These memberlist options will be only used if memberlist is activated via CLI option.
 memberlist:
   join_members:
-    - distributor:10001
-  rejoin_interval: 10s
+    - distributor-1:10000
 
 blocks_storage:
   backend: s3

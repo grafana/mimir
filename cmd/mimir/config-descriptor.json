@@ -9777,6 +9777,28 @@
         },
         {
           "kind": "field",
+          "name": "label",
+          "required": false,
+          "desc": "Label is an optional set of bytes to include on the outside of each packet and stream.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "memberlist.label",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "skip_inbound_label_check",
+          "required": false,
+          "desc": "When enabled we ignore labels on inbound packets and gossip streams.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "memberlist.skip-inbound-label-check",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "join_members",
           "required": false,
           "desc": "Other cluster members to join. Can be specified multiple times. It can be an IP, hostname or an entry specified in the DNS Service Discovery format.",

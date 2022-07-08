@@ -140,6 +140,9 @@ type KVConfig struct {
 	AdvertiseAddr string `yaml:"advertise_addr"`
 	AdvertisePort int    `yaml:"advertise_port"`
 
+	Label                 string `yaml:"label" category:"experimental"`
+	SkipInboundLabelCheck bool   `yaml:"skip_inbound_label_check" category:"experimental"`
+
 	// List of members to join
 	JoinMembers      flagext.StringSlice `yaml:"join_members"`
 	MinJoinBackoff   time.Duration       `yaml:"min_join_backoff" category:"advanced"`
@@ -193,6 +196,8 @@ func (cfg *KVConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.BoolVar(&cfg.EnableCompression, prefix+"memberlist.compression-enabled", mlDefaults.EnableCompression, "Enable message compression. This can be used to reduce bandwidth usage at the cost of slightly more CPU utilization.")
 	f.StringVar(&cfg.AdvertiseAddr, prefix+"memberlist.advertise-addr", mlDefaults.AdvertiseAddr, "Gossip address to advertise to other members in the cluster. Used for NAT traversal.")
 	f.IntVar(&cfg.AdvertisePort, prefix+"memberlist.advertise-port", mlDefaults.AdvertisePort, "Gossip port to advertise to other members in the cluster. Used for NAT traversal.")
+	f.StringVar(&cfg.Label, prefix+"memberlist.label", mlDefaults.Label, "Label is an optional set of bytes to include on the outside of each packet and stream.")
+	f.BoolVar(&cfg.SkipInboundLabelCheck, prefix+"memberlist.skip-inbound-label-check", mlDefaults.SkipInboundLabelCheck, "When enabled we ignore labels on inbound packets and gossip streams.")
 
 	cfg.TCPTransport.RegisterFlagsWithPrefix(f, prefix)
 }
@@ -398,6 +403,9 @@ func (m *KV) buildMemberlistConfig() (*memberlist.Config, error) {
 
 	mlCfg.AdvertiseAddr = m.cfg.AdvertiseAddr
 	mlCfg.AdvertisePort = m.cfg.AdvertisePort
+
+	mlCfg.Label = m.cfg.Label
+	mlCfg.SkipInboundLabelCheck = m.cfg.SkipInboundLabelCheck
 
 	if m.cfg.NodeName != "" {
 		mlCfg.Name = m.cfg.NodeName

@@ -14,7 +14,7 @@ std.manifestYamlDoc({
     // - consul
     // - memberlist (consul is not started at all)
     // - multi (uses consul as primary and memberlist as secondary, but this can be switched in runtime via runtime.yaml)
-    ring: 'consul',
+    ring: 'memberlist',
   },
 
   // We explicitely list all important services here, so that it's easy to disable them by commenting out.
@@ -60,6 +60,16 @@ std.manifestYamlDoc({
       httpPort: 8003,
       jaegerApp: 'ingester-2',
       extraVolumes: ['.data-ingester-2:/tmp/mimir-tsdb-ingester:delegated'],
+    }),
+
+    'ingester-3': mimirService({
+      target: 'ingester',
+      httpPort: 8010,
+      jaegerApp: 'ingester-3',
+      extraVolumes: ['.data-ingester-3:/tmp/mimir-tsdb-ingester:delegated'],
+
+      // TODO Test: extraneous label. We expect this ingester to NOT join the Mimir cluster.
+      memberlistLabel: 'xxx',
     }),
   },
 
@@ -153,7 +163,7 @@ std.manifestYamlDoc({
       debugPort: self.httpPort + 10000,
       // Extra arguments passed to Mimir command line.
       extraArguments: '',
-      dependsOn: ['minio'] + (if $._config.ring == 'consul' || $._config.ring == 'multi' then ['consul'] else if s.target != 'distributor' then ['distributor'] else []),
+      dependsOn: ['minio'] + (if $._config.ring == 'consul' || $._config.ring == 'multi' then ['consul'] else if s.target != 'distributor' then ['distributor-1'] else []),
       env: {
         JAEGER_AGENT_HOST: 'jaeger',
         JAEGER_AGENT_PORT: 6831,
@@ -164,6 +174,7 @@ std.manifestYamlDoc({
       extraVolumes: [],
       memberlistNodeName: self.jaegerApp,
       memberlistBindPort: self.httpPort + 2000,
+      memberlistLabel: 'mimir',
     },
 
     local options = defaultOptions + serviceOptions,
@@ -181,7 +192,7 @@ std.manifestYamlDoc({
         (if $._config.sleep_seconds > 0 then 'sleep %d &&' % [$._config.sleep_seconds] else null),
         (if $._config.debug then 'exec ./dlv exec ./mimir --listen=:%(debugPort)d --headless=true --api-version=2 --accept-multiclient --continue -- ' % options else 'exec ./mimir'),
         ('-config.file=./config/mimir.yaml -target=%(target)s -server.http-listen-port=%(httpPort)d -server.grpc-listen-port=%(grpcPort)d -activity-tracker.filepath=/activity/%(target)s-%(httpPort)d %(extraArguments)s' % options),
-        (if $._config.ring == 'memberlist' || $._config.ring == 'multi' then '-memberlist.nodename=%(memberlistNodeName)s -memberlist.bind-port=%(memberlistBindPort)d' % options else null),
+        (if $._config.ring == 'memberlist' || $._config.ring == 'multi' then '-memberlist.nodename=%(memberlistNodeName)s -memberlist.bind-port=%(memberlistBindPort)d -memberlist.label=%(memberlistLabel)s' % options else null),
         (if $._config.ring == 'memberlist' then std.join(' ', [x + '.store=memberlist' for x in all_rings]) else null),
         (if $._config.ring == 'multi' then std.join(' ', [x + '.store=multi' for x in all_rings] + [x + '.multi.primary=consul' for x in all_rings] + [x + '.multi.secondary=memberlist' for x in all_rings]) else null),
       ]),

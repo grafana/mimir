@@ -2508,6 +2508,16 @@ The `memberlist` block configures the Gossip memberlist.
 # CLI flag: -memberlist.advertise-port
 [advertise_port: <int> | default = 7946]
 
+# (experimental) Label is an optional set of bytes to include on the outside of
+# each packet and stream.
+# CLI flag: -memberlist.label
+[label: <string> | default = ""]
+
+# (experimental) When enabled we ignore labels on inbound packets and gossip
+# streams.
+# CLI flag: -memberlist.skip-inbound-label-check
+[skip_inbound_label_check: <boolean> | default = false]
+
 # Other cluster members to join. Can be specified multiple times. It can be an
 # IP, hostname or an entry specified in the DNS Service Discovery format.
 # CLI flag: -memberlist.join
