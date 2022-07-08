@@ -12,58 +12,123 @@ Several parameters that were available in version 2.1 of the mimir-distributed H
 
 **To upgrade from Helm chart 2.1 to 3.0:**
 
-1. Change the storage of your configuration.
-   - The configuration of Mimir is now stored in a Kubernetes ConfigMap by default, instead of a Kubernetes Secret.
-   - If you provide the configuration in a user-managed Secret (**`useExternalConfig: true`**), then you must set `configStorageType: Secret`. Conversely, it is now possible to use a ConfigMap to manage your external configuration.
-   - For tips about securing credentials in this new format, see [(Optional) Use the new, simplified configuration method](#optional-use-the-new-simplified-configuration-method).
-   - If you Mimir configuration contains secrets, chose one of two two options before proceeding with the upgrade:
-    - Restore the previous behavior by setting `configStorageType: Secret`.
-    - Externalize secrets:
-      1.  Move secrets to an external [Kubernetes Secret](https://kubernetes.io/docs/concepts/configuration/secret/#working-with-secrets).
-      2.  Mount secrets via `global.extraEnvFrom`.
+1. Decide whether or not you need to change the storage location of your configuration:
 
-          For more information, see [Secrets - Use case: As container environment variables](https://kubernetes.io/docs/concepts/configuration/secret/#use-case-as-container-environment-variables).
+   The configuration of Mimir is now stored in a Kubernetes ConfigMap by default, instead of a Kubernetes Secret.
+   - If you are using external configuration (`useExternalConfig: true`), then you must set `configStorageType: Secret`.
+   
+     > **Note:** It is now possible to use a ConfigMap to manage your external configuration instead. For more information see [(Optional) Use the new, simplified configuration method](#optional-use-the-new-simplified-configuration-method).
+   - If you are not using external configuration (`useExternalConfig: false`), and your Mimir configuration contains secrets, chose one of two options:
+     - Keep the previous location as-is by setting `configStorageType: Secret`.
+     - Externalize secrets:
+       1.  Move secrets from the Mimir configuration to a [Kubernetes Secret](https://kubernetes.io/docs/concepts/configuration/secret/#working-with-secrets).
+       2.  Mount the Kubernetes Secret via `global.extraEnvFrom`:
 
-      3.  Replace the values in the Mimir configuration with environment variable references:
+           ```yaml
+           global:
+              extraEnvFrom:
+                 - secretRef:
+                    name: mysecret
+           ```
+ 
+           For more information, see [Secrets - Use case: As container environment variables](https://kubernetes.io/docs/concepts/configuration/secret/#use-case-as-container-environment-variables).
 
-          For example, `secret_access_key: ${AWS_SECRET_ACCESS_KEY}`.
-1. Update memcached configuration:
-   - The mimir-distributed chart supports four different caches. The configuration parameters have changed as follows:
-   - If you have not enabled any memcached caches, and you are not overriding the value of anything under the `memcached`, `memcached-queries`, `memcached-metadata`, or `memcached-results` sections, then you can safely skip this section.
-   - The `memcached` section now contains common values shared across all memcached instances.
-   - New `memcachedExporter` section was added to configure memcached metrics exporter.
-   - New `chunks-cache` section was added that refers to previous `memcached` configuration.
+       3.  Replace the values in the Mimir configuration with environment variables.
+
+           For example:
+           ```yaml
+           mimir:
+             structuredConfig:
+                blocks_storage:
+                  s3:
+                    secret_access_key: ${AWS_SECRET_ACCESS_KEY}
+           ```
+
+           For more information about `mimir.structuredConfig` see [(Optional) Use the new, simplified configuration method](#optional-use-the-new-simplified-configuration-method).
+             
+    - If you are not using an external configuration (`useExternalConfig: false`), and your Mimir configuration does not contain secrets, then the storage location is automatically changed by Helm and you do not need to do anything.
+
+
+1. Decide whether or not you need to update the memcached configuration, which has changed:
+   
+   The mimir-distributed Helm chart supports multiple cache types.
+   If you have not enabled any memcached caches,
+   and you are not overriding the values of `memcached`, `memcached-queries`, `memcached-metadata`, or `memcached-results` sections,
+   then you do not need to update the memcached configuration. 
+   
+   Otherwise, check to see if you need to change any of the following configuration parameters:
+   - The `memcached` section was repurposed, and `chunks-cache` was added.
+   - The contents of the `memcached` section now contain the following common values that are shared across all memcached instances: `image`, `podSecurityContext`, and `containerSecurityContext`.
    - The following sections were renamed:
      - `memcached-queries` is now `index-cache`
      - `memcached-metadata` is now `metadata-cache`
      - `memcached-results` is now `results-cache`
-   - The value `memcached-*.replicaCount` is replaced with `*-cache.replicas` to align with the rest of the services:
+   - The `memcached*.replicaCount` values were renamed:
      - `memcached.replicaCount` is now `chunks-cache.replicas`
      - `memcached-queries.replicaCount` is now `index-cache.replicas`
      - `memcached-metadata.replicaCount` is now `metadata-cache.replicas`
      - `memcached-results.replicaCount` is now `results-cache.replicas`
-   - All memcached instances now share the same `ServiceAccount` that the chart uses for its services.
-   - The value `memcached-*.architecture` was removed.
-   - The value `memcached-*.arguments` was removed, the default arguments are now encoded in the template. Use `*-cache.extraArgs` to provide additional arguments as well as the values `*-cache.allocatedMemory`, `*-cache.maxItemMemory` and `*-cache.port` to set the memcached command line flags `-m`, `-I` and `-u`.
-    - The remaining arguments are aligned with the rest of the chart's services, please consult the `values.yaml` file to check whether a parameter exists or was renamed.
-   - **Note**: The internal service names for memcached pods have changed. If you have previously copied the value of `mimir.config` into your values file, please see the point below about updating `mimir.config` to ensure the memcached addresses are updated properly in your configuration.
-1. **Update serviceMonitor configuration**:
-   - If you have not enabled `serviceMonitor` and you are not overriding the value of anything under the `serviceMonitor` section, then you can safely skip this section.
-   - `serviceMonitor` was moved to `metaMonitoring.serviceMonitor`.
-1. **Update rbac configuration**:
-   - PodSecurity has been made more flexible to support OpenShift deployment.
-   - If you are not overriding the value of anything under the `rbac` section, then you can safely skip this section.
-   - `rbac.pspEnabled` has been removed.
-   - Use `rbac.create` along with `rbac.type` instead to select either Pod Security Policy or Security Context Constraints.
+   - The `memcached*.architecture` values were removed.
+   - The `memcached*.arguments` values were removed.
+   - The default arguments are now encoded in the Helm chart templates; the values `*-cache.allocatedMemory`, `*-cache.maxItemMemory` and `*-cache.port` control the arguments `-m`, `-I` and `-u`. To provide additional arguments, use `*-cache.extraArgs`.
+   - The `memcached*.metrics` values were consolidated under `memcachedExporter`.
+   - The following examples show memcached configurations in version 2.1 and version 3.0:
+
+      Version 2.1:
+      ```yaml
+      memcached:
+        replicaCount: 12
+        arguments:
+          - -m 2048
+          - -I 128
+          - -u 12345
+        image:
+          repository: memcached
+          tag: 1.6.9-alpine
+
+      memcached-queries:
+        replicaCount: 3
+        architecture: modern
+        image:
+          repository: memcached
+          tag: 1.6.9-alpine
+      ```
+
+      Version 3.0:
+      ```yaml
+      memcached:
+        image:
+          repository: memcached
+          tag: 1.6.9-alpine
+
+      chunks-cache:
+        allocatedMemory: 2048
+        maxItemMemory: 128
+        port: 12345
+        replicas: 12
+
+      index-cache:
+        replicas: 3
+      ```
+
+1. (Conditional) If you have enabled `serviceMonitor`, or you are overriding the value of anything under the `serviceMonitor` section, or both, then move the `serviceMonitor` section under `metaMonitoring`.
+
+1. Update the `rbac` configuration, based on the following changes:
+   - If you are not overriding the value of anything under the `rbac` section, then skip this step.
+   - The `rbac.pspEnabled` value was removed.
+   - Use `rbac.create` along with `rbac.type` to select either Pod Security Policy or Security Context Constraints.
    - The default behavior is unchanged.
-1. **Update `mimir.config`**:
-   - If you are not overriding the value of `mimir.config`, then you can safely skip this section.
+1. Update `mimir.config`:
+   - If you are not overriding the value of `mimir.config`, then skip this section.
    - Before migrating your `mimir.config` value, take a look at how to [use the new simplified configuration method](#optional-use-the-new-simplified-configuration-method).
    - Compare your overridden value of `mimir.config` with the one in the `values.yaml` file in the chart.
-   - In particular, pay special attention to any of the memcached addresses since these have changed.
+   - In particular, pay attention to any of the memcached addresses since these have changed.
+   - The internal service names for memcached pods have changed.
+     If you previously copied the value of `mimir.config` into your values file,
+     see the point below about updating `mimir.config` to ensure the memcached addresses are updated in your configuration.
 1. **Multi-tenancy is enabled by default**
    - The default `mimir.config` now always has multi-tenancy enabled instead of only for enterprise installations.
-   - Unless you have overridden the value of `nginx.nginxConfig.file` _and_ you are using the default `mimir.config`, you can safely skip this section.
+   - Unless you have overridden the value of `nginx.nginxConfig.file` _and_ you are using the default `mimir.config`, then skip this section.
    - If you have overridden the value of `nginx.nginxConfig.file` _and_ you are using the default `mimir.config`, then make sure to compare the overridden `nginx.nginxConfig.file` to the version in the `values.yaml` file in the chart to incorporate the updates. In particular pay special attention to the sections that contain `x_scope_orgid`.
 
 ## (Optional) Use the new, simplified configuration method
