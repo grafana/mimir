@@ -96,15 +96,8 @@ jobs:
         uses: azure/setup-helm@v1
         with:
           version: v3.8.2
-      - name: Set up conftest
-        uses: artis3n/setup-conftest@v0
-        with:
-          conftest_version: 0.33.0
-          conftest_wrapper: false # don't wrap conftest so that non-zero exit code fail the job
       - name: Check Helm Tests
         run: make BUILD_IN_CONTAINER=false check-helm-tests
-      - name: Check Rego Policies Format
-        run: make BUILD_IN_CONTAINER=false check-conftest-fmt
 
   test:
     runs-on: ubuntu-latest

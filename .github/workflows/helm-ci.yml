@@ -44,3 +44,6 @@ jobs:
           POLICIES_PATH: ${{ github.workspace }}/operations/helm/policies
           TEMP_DIR: ${{ runner.temp }}/conftest
         run: $GITHUB_WORKSPACE/.github/workflows/scripts/run-conftest.sh --do-dependency-update
+
+      - name: Lint Rego Policies
+        run: make BUILD_IN_CONTAINER=false check-conftest-fmt
