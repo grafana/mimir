@@ -53,6 +53,7 @@ Several parameters that were available in version 2.1 of the mimir-distributed H
                 s3:
                   secret_access_key: ${AWS_SECRET_ACCESS_KEY}
           ```
+
    - If you are not using an external configuration (`useExternalConfig: false`), and your Mimir configuration does not contain secrets, then the storage location is automatically changed by Helm and you do not need to do anything.
 
    See [Example migrated values file](#example-migrated-values-file).
