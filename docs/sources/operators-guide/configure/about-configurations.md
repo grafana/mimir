@@ -17,6 +17,35 @@ A given configuration loads at startup and cannot be modified at runtime. Howeve
 
 To see the current configuration state of any component, use the [`/config`]({{< relref "../reference-http-api/index.md#configuration" >}}) or [`/runtime_config`]({{< relref "../reference-http-api/index.md#runtime-configuration" >}}) HTTP API endpoint.
 
+## Common configurations
+
+Some configurations, like object storage backend, are repeated for multiple components.
+To avoid the repetition in the configuration file, the [`common`]({{< relref "../configuring/reference-configuration-parameters/index.md#common" >}}) configuration section or `-common.*` CLI flags can be used.
+Common configurations are applied first to all the specific configurations, allowing them to be overridden later by specific values.
+
+For example, this configuration:
+
+```yaml
+common:
+  storage:
+    backend: s3
+    s3:
+      region: us-east
+      bucket_name: mimir
+
+blocks_storage:
+  s3:
+    bucket_name: mimir-blocks
+```
+
+Will use the same Amazon S3 object storage bucket called `mimir` and located in the `us-east` region for both ruler and alertmanager stores, while blocks storage will use the `mimir-blocks`  bucket from the same region. See [object storage configuration reference ]({{< relref "configuring-object-storage-backend.md" >}}) for more detailed reference of this configuration.
+
+Common configuration is applied in the following order (each one overrides the previous):
+- YAML common values
+- YAML specific values
+- CLI common flags
+- CLI specific flags
+
 ## Operational considerations
 
 Use a single configuration file, and either pass it to all replicas of Grafana Mimir (when running multiple single-process Mimir replicas) or to all components of Grafana Mimir (when running Grafana Mimir as microservices). When running Grafana Mimir on Kubernetes, you can achieve this by storing the configuration file in a [ConfigMap](https://kubernetes.io/docs/concepts/configuration/configmap/) and mounting it in each Grafana Mimir container.
