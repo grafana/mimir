@@ -160,16 +160,6 @@ func argsWithDefaults(call *parser.Call) parser.Expressions {
 	return call.Args
 }
 
-// VariadicDateFunc retuns true if .
-func VariadicDateFunc(f parser.Function) bool {
-	for _, v := range NonParallelFuncs {
-		if v == f.Name {
-			return false
-		}
-	}
-	return true
-}
-
 func noAggregates(n parser.Node) bool {
 	hasAggregates, _ := anyNode(n, isAggregateExpr)
 	return !hasAggregates

@@ -468,7 +468,7 @@ func TestQueryShardingCorrectness(t *testing.T) {
 			expectedShardedQueries: 0,
 		},
 		"time()": {
-			query:                  `vector()`,
+			query:                  `time()`,
 			expectedShardedQueries: 0,
 		},
 		"month(sum(metric_counter))": {
