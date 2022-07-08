@@ -156,7 +156,7 @@ jb install github.com/grafana/mimir/operations/mimir-mixin@main
    a. Add the dashboards to Grafana. The dashboards replace your Cortex dashboards and continue to work for monitoring Cortex deployments.
 
    > **Note:** Resource dashboards are now enabled by default and require additional metrics sources.
-   > To understand the required metrics sources, refer to [Additional resources metrics]({{< relref "../operators-guide/monitoring-grafana-mimir/requirements.md#additional-resources-metrics" >}}).
+   > To understand the required metrics sources, refer to [Additional resources metrics]({{< relref "../operators-guide/monitor-grafana-mimir/requirements.md#additional-resources-metrics" >}}).
 
    b. Install the recording and alerting rules into the ruler or a Prometheus server.
 
@@ -181,7 +181,7 @@ jb install github.com/grafana/mimir/operations/mimir-mixin@main
    To extract the flags for each component, refer to [Extracting flags from Jsonnet]({{< relref "../operators-guide/tools/mimirtool.md#extracting-flags-from-jsonnet" >}}).
 1. Apply the updated Jsonnet
 
-To verify that the cluster is operating correctly, use the [monitoring mixin dashboards]({{< relref "../operators-guide/monitoring-grafana-mimir/dashboards/_index.md" >}}).
+To verify that the cluster is operating correctly, use the [monitoring mixin dashboards]({{< relref "../operators-guide/monitor-grafana-mimir/dashboards/_index.md" >}}).
 
 ## Migrating to Grafana Mimir using Helm
 
@@ -207,7 +207,7 @@ You can update to the Grafana Mimir Helm chart from the Cortex Helm chart.
    a. Add the dashboards to Grafana. The dashboards replace your Cortex dashboards and continue to work for monitoring Cortex deployments.
 
    > **Note:** Resource dashboards are now enabled by default and require additional metrics sources.
-   > To understand the required metrics sources, refer to [Additional resources metrics]({{< relref "../operators-guide/monitoring-grafana-mimir/requirements.md#additional-resources-metrics" >}}).
+   > To understand the required metrics sources, refer to [Additional resources metrics]({{< relref "../operators-guide/monitor-grafana-mimir/requirements.md#additional-resources-metrics" >}}).
 
    b. Install the recording and alerting rules into the ruler or a Prometheus server.
 
@@ -335,4 +335,4 @@ You can update to the Grafana Mimir Helm chart from the Cortex Helm chart.
    helm upgrade <RELEASE> grafana/mimir-distributed [-n <NAMESPACE>]
    ```
 
-To verify that the cluster is operating correctly, use the [monitoring mixin dashboards]({{< relref "../operators-guide/monitoring-grafana-mimir/dashboards/_index.md" >}}).
+To verify that the cluster is operating correctly, use the [monitoring mixin dashboards]({{< relref "../operators-guide/monitor-grafana-mimir/dashboards/_index.md" >}}).
