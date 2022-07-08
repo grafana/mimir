@@ -20,4 +20,4 @@ keywords:
 
 Grafana Mimir includes a set of components that interact to form a cluster.
 
-{{< section >}}
+{{< section menuTitle="true" >}}

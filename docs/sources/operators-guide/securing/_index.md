@@ -1,6 +1,6 @@
 ---
 title: "Securing Grafana Mimir"
-menuTitle: "Securing Grafana Mimir"
+menuTitle: "Securing"
 description: "Learn how to secure Grafana Mimir data and communication paths."
 weight: 70
 keywords:
@@ -15,4 +15,4 @@ keywords:
 
 These sections explain how to secure Grafana Mimir data and communication paths.
 
-{{< section >}}
+{{< section menuTitle="true" >}}

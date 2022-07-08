@@ -383,6 +383,10 @@ grpc_tls_config:
 # CLI flag: -server.log-source-ips-regex
 [log_source_ips_regex: <string> | default = ""]
 
+# (advanced) Optionally log requests at info level instead of debug level.
+# CLI flag: -server.log-request-at-info-level-enabled
+[log_request_at_info_level_enabled: <boolean> | default = false]
+
 # (advanced) Base path to serve all API routes from (e.g. /v1/)
 # CLI flag: -server.path-prefix
 [http_path_prefix: <string> | default = ""]
@@ -1298,10 +1302,6 @@ alertmanager_client:
 # CLI flag: -ruler.resend-delay
 [resend_delay: <duration> | default = 1m]
 
-# (advanced) Time to spend searching for a pending ruler when shutting down.
-# CLI flag: -ruler.search-pending-for
-[search_pending_for: <duration> | default = 5m]
-
 ring:
   kvstore:
     # Backend storage to use for the ring. Supported values are: consul, etcd,
@@ -1368,10 +1368,6 @@ ring:
   # (advanced) Number of tokens for each ruler.
   # CLI flag: -ruler.ring.num-tokens
   [num_tokens: <int> | default = 128]
-
-# (advanced) Period with which to attempt to flush rule groups.
-# CLI flag: -ruler.flush-period
-[flush_period: <duration> | default = 1m]
 
 # Enable the ruler config API.
 # CLI flag: -ruler.enable-api
@@ -2445,6 +2441,11 @@ The `consul` block configures the consul client. The supported CLI flags `<prefi
 # (advanced) Burst size used in rate limit. Values less than 1 are treated as 1.
 # CLI flag: -<prefix>.consul.watch-burst-size
 [watch_burst_size: <int> | default = 1]
+
+# (advanced) Maximum duration to wait before retrying a Compare And Swap (CAS)
+# operation.
+# CLI flag: -<prefix>.consul.cas-retry-delay
+[cas_retry_delay: <duration> | default = 1s]
 ```
 
 ### memberlist
@@ -3567,8 +3568,7 @@ The `compactor` block configures the compactor component.
 [meta_sync_concurrency: <int> | default = 20]
 
 # (advanced) Minimum age of fresh (non-compacted) blocks before they are being
-# processed. Malformed blocks older than the maximum of consistency-delay and
-# 48h0m0s will be removed.
+# processed.
 # CLI flag: -compactor.consistency-delay
 [consistency_delay: <duration> | default = 0s]
 

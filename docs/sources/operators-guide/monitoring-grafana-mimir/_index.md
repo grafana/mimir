@@ -1,6 +1,6 @@
 ---
 title: "Monitoring Grafana Mimir"
-menuTitle: "Monitoring Grafana Mimir"
+menuTitle: "Monitoring Mimir"
 description: "View example Grafana Mimir dashboards."
 weight: 50
 keywords:
@@ -13,4 +13,4 @@ aliases:
 
 The following topics guide you in preparing your environment to display dashboards that you can use to monitor Grafana Mimir.
 
-{{< section >}}
+{{< section menuTitle="true" >}}

@@ -17,9 +17,7 @@ For more information, refer to [Deployment modes]({{< relref "../deployment-mode
 
 ## Grafana Mimir components
 
-Most components are stateless and do not require any data persisted between process restarts. Some components are stateful and rely on non-volatile storage to prevent data loss between process restarts. For details about each component, see its page.
-
-{{< section >}}
+Most components are stateless and do not require any data persisted between process restarts. Some components are stateful and rely on non-volatile storage to prevent data loss between process restarts. For details about each component, see its page in [Components]({{< relref "../components/_index.md" >}}).
 
 ### The write path
 

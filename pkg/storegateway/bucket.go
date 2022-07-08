@@ -1158,7 +1158,7 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 		if !b.overlapsClosedInterval(req.Start, req.End) {
 			continue
 		}
-		if len(reqBlockMatchers) > 0 && !b.matchRelabelLabels(reqBlockMatchers) {
+		if len(reqBlockMatchers) > 0 && !b.matchLabels(reqBlockMatchers) {
 			continue
 		}
 
@@ -1319,7 +1319,7 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 		if !b.overlapsClosedInterval(req.Start, req.End) {
 			continue
 		}
-		if len(reqBlockMatchers) > 0 && !b.matchRelabelLabels(reqBlockMatchers) {
+		if len(reqBlockMatchers) > 0 && !b.matchLabels(reqBlockMatchers) {
 			continue
 		}
 
@@ -1561,7 +1561,7 @@ func (s *bucketBlockSet) getFor(mint, maxt, maxResolutionMillis int64, blockMatc
 
 		// Include the block in the list of matching ones only if there are no block-level matchers
 		// or they actually match.
-		if len(blockMatchers) == 0 || b.matchRelabelLabels(blockMatchers) {
+		if len(blockMatchers) == 0 || b.matchLabels(blockMatchers) {
 			bs = append(bs, b)
 		}
 
@@ -1596,7 +1596,7 @@ type bucketBlock struct {
 
 	// Block's labels used by block-level matchers to filter blocks to query. These are used to select blocks using
 	// request hints' BlockMatchers.
-	relabelLabels labels.Labels
+	blockLabels labels.Labels
 
 	expandedPostingsPromises sync.Map
 }
@@ -1625,14 +1625,12 @@ func newBucketBlock(
 		partitioner:       p,
 		meta:              meta,
 		indexHeaderReader: indexHeadReader,
-		// Translate the block's labels and inject the block ID as a label
-		// to allow to match blocks also by ID.
-		relabelLabels: append(labels.FromMap(meta.Thanos.Labels), labels.Label{
+		// Inject the block ID as a label to allow to match blocks by ID.
+		blockLabels: labels.Labels{labels.Label{
 			Name:  block.BlockIDLabel,
 			Value: meta.ULID.String(),
-		}),
+		}},
 	}
-	sort.Sort(b.relabelLabels)
 
 	// Get object handles for all chunk files (segment files) from meta.json, if available.
 	if len(meta.Thanos.SegmentFiles) > 0 {
@@ -1720,10 +1718,10 @@ func (b *bucketBlock) chunkReader(ctx context.Context) *bucketChunkReader {
 	return newBucketChunkReader(ctx, b)
 }
 
-// matchRelabelLabels verifies whether the block matches the given matchers.
-func (b *bucketBlock) matchRelabelLabels(matchers []*labels.Matcher) bool {
+// matchLabels verifies whether the block matches the given matchers.
+func (b *bucketBlock) matchLabels(matchers []*labels.Matcher) bool {
 	for _, m := range matchers {
-		if !m.Matches(b.relabelLabels.Get(m.Name)) {
+		if !m.Matches(b.blockLabels.Get(m.Name)) {
 			return false
 		}
 	}

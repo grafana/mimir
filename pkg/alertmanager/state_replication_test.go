@@ -29,6 +29,8 @@ import (
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
 )
 
+const testUserID = "user-1"
+
 type fakeState struct {
 	binary []byte
 	merges [][]byte
@@ -73,8 +75,8 @@ func (f *fakeReplicator) GetPositionForUser(_ string) int {
 }
 
 func (f *fakeReplicator) ReadFullStateForUser(ctx context.Context, userID string) ([]*clusterpb.FullState, error) {
-	if userID != "user-1" {
-		return nil, errors.New("Unexpected userID")
+	if userID != testUserID {
+		return nil, errors.New("unexpected userID")
 	}
 
 	if f.read.blocking {
@@ -96,31 +98,39 @@ func newFakeAlertStore() *fakeAlertStore {
 	}
 }
 
-func (f *fakeAlertStore) GetFullState(ctx context.Context, user string) (alertspb.FullStateDesc, error) {
+func (f *fakeAlertStore) GetFullState(_ context.Context, user string) (alertspb.FullStateDesc, error) {
 	if result, ok := f.states[user]; ok {
 		return result, nil
 	}
 	return alertspb.FullStateDesc{}, alertspb.ErrNotFound
 }
 
+func (f *fakeAlertStore) SetFullState(_ context.Context, user string, state alertspb.FullStateDesc) error {
+	f.states[user] = state
+	return nil
+}
+
 func TestStateReplication(t *testing.T) {
 	tc := []struct {
-		name              string
-		replicationFactor int
-		message           *clusterpb.Part
-		results           map[string]*clusterpb.Part
+		name               string
+		replicationFactor  int
+		message            *clusterpb.Part
+		replicationResults map[string]clusterpb.Part
+		storeResults       map[string]clusterpb.Part
 	}{
 		{
-			name:              "with a replication factor of <= 1, state is not replicated.",
-			replicationFactor: 1,
-			message:           &clusterpb.Part{Key: "nflog", Data: []byte("OK")},
-			results:           map[string]*clusterpb.Part{},
+			name:               "with a replication factor of <= 1, state is not replicated but loaded from storage.",
+			replicationFactor:  1,
+			message:            &clusterpb.Part{Key: "nflog", Data: []byte("OK")},
+			replicationResults: map[string]clusterpb.Part{},
+			storeResults:       map[string]clusterpb.Part{testUserID: {Key: "nflog", Data: []byte("OK")}},
 		},
 		{
-			name:              "with a replication factor of > 1, state is broadcasted for replication.",
-			replicationFactor: 3,
-			message:           &clusterpb.Part{Key: "nflog", Data: []byte("OK")},
-			results:           map[string]*clusterpb.Part{"user-1": {Key: "nflog", Data: []byte("OK")}},
+			name:               "with a replication factor of > 1, state is broadcasted for replication.",
+			replicationFactor:  3,
+			message:            &clusterpb.Part{Key: "nflog", Data: []byte("OK")},
+			replicationResults: map[string]clusterpb.Part{testUserID: {Key: "nflog", Data: []byte("OK")}},
+			storeResults:       map[string]clusterpb.Part{},
 		},
 	}
 
@@ -129,9 +139,15 @@ func TestStateReplication(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
 			replicator := newFakeReplicator()
 			replicator.read = readStateResult{res: nil, err: nil}
-			store := newFakeAlertStore()
-			s := newReplicatedStates("user-1", tt.replicationFactor, replicator, store, log.NewNopLogger(), reg)
 
+			store := newFakeAlertStore()
+			for user, part := range tt.storeResults {
+				require.NoError(t, store.SetFullState(context.Background(), user, alertspb.FullStateDesc{
+					State: &clusterpb.FullState{Parts: []clusterpb.Part{part}},
+				}))
+			}
+
+			s := newReplicatedStates(testUserID, tt.replicationFactor, replicator, store, log.NewNopLogger(), reg)
 			require.False(t, s.Ready())
 			{
 				ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
@@ -161,47 +177,32 @@ func TestStateReplication(t *testing.T) {
 			require.Eventually(t, func() bool {
 				replicator.mtx.Lock()
 				defer replicator.mtx.Unlock()
-				return len(replicator.results) == len(tt.results)
+				return len(replicator.results) == len(tt.replicationResults)
 			}, time.Second, time.Millisecond)
 
 			if tt.replicationFactor > 1 {
+				// If the replication factor is greater than 1, we expect state to be loaded from other Alertmanagers
 				assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-# HELP alertmanager_state_fetch_replica_state_failed_total Number of times we have failed to read and merge the full state from another replica.
-# TYPE alertmanager_state_fetch_replica_state_failed_total counter
-alertmanager_state_fetch_replica_state_failed_total 0
-# HELP alertmanager_state_fetch_replica_state_total Number of times we have tried to read and merge the full state from another replica.
-# TYPE alertmanager_state_fetch_replica_state_total counter
-alertmanager_state_fetch_replica_state_total 1
-# HELP alertmanager_partial_state_merges_failed_total Number of times we have failed to merge a partial state received for a key.
-# TYPE alertmanager_partial_state_merges_failed_total counter
-alertmanager_partial_state_merges_failed_total{key="nflog"} 0
-# HELP alertmanager_partial_state_merges_total Number of times we have received a partial state to merge for a key.
-# TYPE alertmanager_partial_state_merges_total counter
-alertmanager_partial_state_merges_total{key="nflog"} 0
 # HELP alertmanager_state_initial_sync_completed_total Number of times we have completed syncing initial state for each possible outcome.
 # TYPE alertmanager_state_initial_sync_completed_total counter
 alertmanager_state_initial_sync_completed_total{outcome="failed"} 0
 alertmanager_state_initial_sync_completed_total{outcome="from-replica"} 1
 alertmanager_state_initial_sync_completed_total{outcome="from-storage"} 0
 alertmanager_state_initial_sync_completed_total{outcome="user-not-found"} 0
-# HELP alertmanager_state_initial_sync_total Number of times we have tried to sync initial state from peers or remote storage.
-# TYPE alertmanager_state_initial_sync_total counter
-alertmanager_state_initial_sync_total 1
-# HELP alertmanager_state_replication_failed_total Number of times we have failed to replicate a state to other alertmanagers.
-# TYPE alertmanager_state_replication_failed_total counter
-alertmanager_state_replication_failed_total{key="nflog"} 0
-# HELP alertmanager_state_replication_total Number of times we have tried to replicate a state to other alertmanagers.
-# TYPE alertmanager_state_replication_total counter
-alertmanager_state_replication_total{key="nflog"} 1
 	`),
-					"alertmanager_state_fetch_replica_state_failed_total",
-					"alertmanager_state_fetch_replica_state_total",
-					"alertmanager_partial_state_merges_failed_total",
-					"alertmanager_partial_state_merges_total",
 					"alertmanager_state_initial_sync_completed_total",
-					"alertmanager_state_initial_sync_total",
-					"alertmanager_state_replication_failed_total",
-					"alertmanager_state_replication_total",
+				))
+			} else {
+				// Replication factor is 1, we expect state to be loaded from storage *instead* of other Alertmanagers
+				assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+# HELP alertmanager_state_initial_sync_completed_total Number of times we have completed syncing initial state for each possible outcome.
+# TYPE alertmanager_state_initial_sync_completed_total counter
+alertmanager_state_initial_sync_completed_total{outcome="failed"} 0
+alertmanager_state_initial_sync_completed_total{outcome="from-replica"} 0
+alertmanager_state_initial_sync_completed_total{outcome="from-storage"} 1
+alertmanager_state_initial_sync_completed_total{outcome="user-not-found"} 0
+	`),
+					"alertmanager_state_initial_sync_completed_total",
 				))
 
 			}

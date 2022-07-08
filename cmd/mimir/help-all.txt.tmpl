@@ -172,6 +172,8 @@ Usage of ./cmd/mimir/mimir:
     	True to block private and local addresses in Alertmanager receiver integrations. It blocks private addresses defined by  RFC 1918 (IPv4 addresses) and RFC 4193 (IPv6 addresses), as well as loopback, local unicast and local multicast addresses.
   -alertmanager.sharding-ring.consul.acl-token string
     	ACL Token used to interact with Consul.
+  -alertmanager.sharding-ring.consul.cas-retry-delay duration
+    	Maximum duration to wait before retrying a Compare And Swap (CAS) operation. (default 1s)
   -alertmanager.sharding-ring.consul.client-timeout duration
     	HTTP timeout when talking to Consul (default 20s)
   -alertmanager.sharding-ring.consul.consistent-reads
@@ -546,7 +548,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor.compactor-tenant-shard-size int
     	Max number of compactors that can compact blocks for single tenant. 0 to disable the limit and use all compactors.
   -compactor.consistency-delay duration
-    	Minimum age of fresh (non-compacted) blocks before they are being processed. Malformed blocks older than the maximum of consistency-delay and 48h0m0s will be removed.
+    	Minimum age of fresh (non-compacted) blocks before they are being processed.
   -compactor.data-dir string
     	Directory to temporarily store blocks during compaction. This directory is not required to be persisted between restarts. (default "./data-compactor/")
   -compactor.deletion-delay duration
@@ -565,6 +567,8 @@ Usage of ./cmd/mimir/mimir:
     	Number of Go routines to use when syncing block meta files from the long term storage. (default 20)
   -compactor.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
+  -compactor.ring.consul.cas-retry-delay duration
+    	Maximum duration to wait before retrying a Compare And Swap (CAS) operation. (default 1s)
   -compactor.ring.consul.client-timeout duration
     	HTTP timeout when talking to Consul (default 20s)
   -compactor.ring.consul.consistent-reads
@@ -657,6 +661,8 @@ Usage of ./cmd/mimir/mimir:
     	Prometheus label to look for in samples to identify a Prometheus HA cluster. (default "cluster")
   -distributor.ha-tracker.consul.acl-token string
     	ACL Token used to interact with Consul.
+  -distributor.ha-tracker.consul.cas-retry-delay duration
+    	Maximum duration to wait before retrying a Compare And Swap (CAS) operation. (default 1s)
   -distributor.ha-tracker.consul.client-timeout duration
     	HTTP timeout when talking to Consul (default 20s)
   -distributor.ha-tracker.consul.consistent-reads
@@ -737,6 +743,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Per-tenant request rate limit in requests per second. 0 to disable.
   -distributor.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
+  -distributor.ring.consul.cas-retry-delay duration
+    	Maximum duration to wait before retrying a Compare And Swap (CAS) operation. (default 1s)
   -distributor.ring.consul.client-timeout duration
     	HTTP timeout when talking to Consul (default 20s)
   -distributor.ring.consul.consistent-reads
@@ -871,6 +879,8 @@ Usage of ./cmd/mimir/mimir:
     	Period with which to update the per-tenant ingestion rates. (default 15s)
   -ingester.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
+  -ingester.ring.consul.cas-retry-delay duration
+    	Maximum duration to wait before retrying a Compare And Swap (CAS) operation. (default 1s)
   -ingester.ring.consul.client-timeout duration
     	HTTP timeout when talking to Consul (default 20s)
   -ingester.ring.consul.consistent-reads
@@ -1404,8 +1414,6 @@ Usage of ./cmd/mimir/mimir:
     	How frequently to evaluate rules (default 1m0s)
   -ruler.external.url value
     	URL of alerts return path.
-  -ruler.flush-period duration
-    	Period with which to attempt to flush rule groups. (default 1m0s)
   -ruler.for-grace-period duration
     	Minimum duration between alert and restored "for" state. This is maintained only for alerts with configured "for" time greater than grace period. (default 10m0s)
   -ruler.for-outage-tolerance duration
@@ -1458,6 +1466,8 @@ Usage of ./cmd/mimir/mimir:
     	Minimum amount of time to wait before resending an alert to Alertmanager. (default 1m0s)
   -ruler.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
+  -ruler.ring.consul.cas-retry-delay duration
+    	Maximum duration to wait before retrying a Compare And Swap (CAS) operation. (default 1s)
   -ruler.ring.consul.client-timeout duration
     	HTTP timeout when talking to Consul (default 20s)
   -ruler.ring.consul.consistent-reads
@@ -1518,8 +1528,6 @@ Usage of ./cmd/mimir/mimir:
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -ruler.rule-path string
     	Directory to store temporary rule files loaded by the Prometheus rule managers. This directory is not required to be persisted between restarts. (default "./data-ruler/")
-  -ruler.search-pending-for duration
-    	Time to spend searching for a pending ruler when shutting down. (default 5m0s)
   -ruler.tenant-federation.enabled
     	Enable running rule groups against multiple tenants. The tenant IDs involved need to be in the rule group's 'source_tenants' field. If this flag is set to 'false' when there are already created federated rule groups, then these rules groups will be skipped during evaluations.
   -ruler.tenant-shard-size int
@@ -1588,6 +1596,8 @@ Usage of ./cmd/mimir/mimir:
     	HTTP server key path.
   -server.http-write-timeout duration
     	Write timeout for HTTP server (default 30s)
+  -server.log-request-at-info-level-enabled
+    	Optionally log requests at info level instead of debug level.
   -server.log-source-ips-enabled
     	Optionally log the source IPs.
   -server.log-source-ips-header string
@@ -1600,6 +1610,8 @@ Usage of ./cmd/mimir/mimir:
     	Register the intrumentation handlers (/metrics etc). (default true)
   -store-gateway.sharding-ring.consul.acl-token string
     	ACL Token used to interact with Consul.
+  -store-gateway.sharding-ring.consul.cas-retry-delay duration
+    	Maximum duration to wait before retrying a Compare And Swap (CAS) operation. (default 1s)
   -store-gateway.sharding-ring.consul.client-timeout duration
     	HTTP timeout when talking to Consul (default 20s)
   -store-gateway.sharding-ring.consul.consistent-reads
