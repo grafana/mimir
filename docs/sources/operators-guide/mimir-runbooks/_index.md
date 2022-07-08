@@ -605,8 +605,9 @@ How to **investigate**:
    1. Search in the logs around that time to find the log entry from when the compactor created the block ("compacted blocks" for log message)
    1. From the compactor log entry you found, pick the job ID from the `groupKey` field, f.ex. `0@9748515562602778029-merge--1645711200000-1645718400000`
    1. Then search the logs for the job ID and look for an entry with the message "compaction job finished" and `false` for the `success` field, this will show that the compactor failed uploading the block
+   1. If you found a failed compaction job, as outlined in the previous step, try searching for a corresponding log message (for the same job ID) "compaction job finished" with "success=`true`". This will mean that the compaction job was retried successfully. Note: this should produce a different block ID from the failed upload.
 1. Investigate if it was a partial upload or partial delete
-   1. If it was a partial delete or an upload failed by a compactor you can safely mark the block for deletion, and compactor will delete the block. You can use `markblocks` command from Mimir tools directory: `markblocks -mark deletion -allow-partial -tenant <tenant> <blockID>` with correct backend (eg. GCS) configuration.
+   1. If it was a partial delete or an upload failed by a compactor you can safely mark the block for deletion, and compactor will delete the block. You can use `markblocks` command from Mimir tools directory: `markblocks -mark deletion -allow-partial -tenant <tenant> <blockID>` with correct backend (eg. GCS: `-backend gcs -gcs.bucket-name <bucket-name>`) configuration.
    1. If it was a failed upload by an ingester, but not later retried (ingesters are expected to retry uploads until succeed), further investigate
 
 ### MimirQueriesIncorrect
