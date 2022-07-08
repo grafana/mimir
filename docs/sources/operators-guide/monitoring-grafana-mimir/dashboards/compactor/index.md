@@ -1,10 +1,11 @@
 ---
-title: "Grafana Mimir Compactor dashboard"
-menuTitle: "Compactor"
-description: "View an example Compactor dashboard."
-weight: 30
 aliases:
-  - ../../visualizing-metrics/dashboards/compactor/
+  - /../../visualizing-metrics/dashboards/compactor/
+  - /docs/mimir/latest/operators-guide/monitoring-grafana-mimir/dashboards/compactor/
+description: View an example Compactor dashboard.
+menuTitle: Compactor
+title: Grafana Mimir Compactor dashboard
+weight: 30
 ---
 
 # Grafana Mimir Compactor dashboard

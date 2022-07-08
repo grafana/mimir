@@ -1,10 +1,11 @@
 ---
-title: "Grafana Mimir Rollout progress dashboard"
-menuTitle: "Rollout progress"
-description: "View an example Rollout progress dashboard."
-weight: 120
 aliases:
-  - ../../visualizing-metrics/dashboards/rollout-progress/
+  - /../../visualizing-metrics/dashboards/rollout-progress/
+  - /docs/mimir/latest/operators-guide/monitoring-grafana-mimir/dashboards/rollout-progress/
+description: View an example Rollout progress dashboard.
+menuTitle: Rollout progress
+title: Grafana Mimir Rollout progress dashboard
+weight: 120
 ---
 
 # Grafana Mimir Rollout progress dashboard

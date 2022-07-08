@@ -1,10 +1,11 @@
 ---
-title: "Grafana Mimir Config dashboard"
-menuTitle: "Config"
-description: "View an example Config dashboard."
-weight: 50
 aliases:
-  - ../../visualizing-metrics/dashboards/config/
+  - /../../visualizing-metrics/dashboards/config/
+  - /docs/mimir/latest/operators-guide/monitoring-grafana-mimir/dashboards/config/
+description: View an example Config dashboard.
+menuTitle: Config
+title: Grafana Mimir Config dashboard
+weight: 50
 ---
 
 # Grafana Mimir Config dashboard
