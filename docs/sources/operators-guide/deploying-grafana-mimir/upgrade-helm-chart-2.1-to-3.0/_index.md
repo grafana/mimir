@@ -12,13 +12,18 @@ Several parameters that were available in version 2.1 of the mimir-distributed H
 
 **To upgrade from Helm chart 2.1 to 3.0:**
 
-1. Decide whether or not you need to change the storage location of your configuration:
+1. Understand the improvements that we made to the Mimir configuration in the Helm chart:
 
-   The configuration of Mimir is now stored in a Kubernetes ConfigMap by default, instead of a Kubernetes Secret.
+   - The Mimir configuration is now stored in a Kubernetes ConfigMap by default, instead of a Kubernetes Secret.
+   - You can override individual properties without copying the entire `mimir.config` block. Specify properties you want to override under the `mimir.structuredConfig`.
+   - You can move secrets outside the Mimir configuration via external secrets and environment variables. Environment variables can be used to externalize secrets from the configuration file.
+
+1. Decide whether or not you need to update the Mimir configuration:
 
    - If you are using external configuration (`useExternalConfig: true`), then you must set `configStorageType: Secret`.
 
-     > **Note:** It is now possible to use a ConfigMap to manage your external configuration instead. For more information see [(Optional) Use the new, simplified configuration method](#optional-use-the-new-simplified-configuration-method).
+     > **Note:** It is now possible to use a ConfigMap to manage your external configuration instead.
+     > If your external configuration contains secrets, then you can externalize them and use a ConfigMap. See _Externalize secrets_.
 
    - If you are not using external configuration (`useExternalConfig: false`), and your Mimir configuration contains secrets, chose one of two options:
 
@@ -52,6 +57,8 @@ Several parameters that were available in version 2.1 of the mimir-distributed H
           For more information about `mimir.structuredConfig` see [(Optional) Use the new, simplified configuration method](#optional-use-the-new-simplified-configuration-method).
 
    - If you are not using an external configuration (`useExternalConfig: false`), and your Mimir configuration does not contain secrets, then the storage location is automatically changed by Helm and you do not need to do anything.
+
+   See [Example migrated values file](#example-migrated-values-file).
 
 1. Decide whether or not you need to update the memcached configuration, which has changed:
 
@@ -146,26 +153,15 @@ Several parameters that were available in version 2.1 of the mimir-distributed H
 
      > **Note:** This change allows Mimir clients to keep sending requests without needing to specify a tenant ID, even though multi-tenancy is now enabled by default.
 
-## (Optional) Use the new, simplified configuration method
-
-In version 3.0.0, we've made several improvements to the Mimir configuration:
-
-- You can override individual properties without having to copy the entire `mimir.config` value to your values file.
-  Specify properties you want to override under the `mimir.structuredConfig` section and they will be merged with the default `mimir.config`.
-- You can move secrets outside the Mimir configuration via external secrets and environment variables. You can use environment variables to externalize secrets from the configuration file.
-- Finally, storing the configuration in a ConfigMap which greatly improves visibility into exactly what is changing which each release.
-
-See [Example migrated values file](#example-migrated-values-file) for an example on migrating an example values file.
-
 ## Example migrated values file
 
-Below is an example values file compatible with version 2.1.0 of mimir-distributed.
-This file demonstrates a few things:
+The example values file is compatible with version 2.1 of the mimir-distributed Helm chart, and demonstrates a few things:
 
-- All four caches are enabled and have been scaled according to the cluster's needs
-- The default pod security policy is disabled
-- ServiceMonitors are enabled
-- Object storage credentials for block storage have been specified directly in the `mimir.config` value. The unmodified part of the default `mimir.config` are omitted for brevity, even though in a real 2.1.0 values file they needed to be included.
+- All memcached caches are enabled.
+- The default pod security policy is disabled.
+- ServiceMonitors are enabled.
+- Object storage credentials for block storage are specified directly in the `mimir.config` value.
+  > **Note:** The unmodified parts of the default `mimir.config` are omitted for brevity, even though in a valid 2.1 values file they need to be included.
 
 ```yaml
 rbac:
@@ -191,9 +187,7 @@ serviceMonitor:
   enabled: true
 
 mimir:
-  # The unmodified part of the default mimir.config are omitted for brevity, even though in a real 2.1.0 values file, they needed to be included.
   config: |-
-    ...
     #######
     # default contents omitted for brevity
     #######
@@ -209,12 +203,15 @@ mimir:
     #######
     # default contents omitted for brevity
     #######
-    ...
 ```
 
-After applying the migration steps listed in this guide, the equivalent file for version 3.0.0 is below. This is the complete version of the 3.0.0 values file, no parts have been omitted. The parts that were missing in the 2.1.0 version are automatically included.
+After applying the migration steps listed in this guide,
+you now have a Kubernetes Secret that contains
+the S3 credentials, and a values file for version 3.0.
+The values file is does not have any omissions.
+The parts that were omitted in the 2.1 version are automatically included by the Helm chart in version 3.0.
 
-First, we create an external secret to store the credentials:
+Kubernetes Secret:
 
 ```yaml
 apiVersion: v1
@@ -226,7 +223,7 @@ data:
   AWS_SECRET_ACCESS_KEY: FAKESECRETKEY
 ```
 
-Then we rewrite the values file:
+Values file:
 
 ```yaml
 rbac:
