@@ -139,7 +139,7 @@ This endpoint displays the default configuration values.
 GET /runtime_config
 ```
 
-This endpoint displays the [runtime configuration]({{< relref "../configuring/about-runtime-configuration.md" >}}) currently applied to Grafana Mimir, in YAML format, including default values.
+This endpoint displays the [runtime configuration]({{< relref "../configure/about-runtime-configuration.md" >}}) currently applied to Grafana Mimir, in YAML format, including default values.
 The endpoint is only available if Grafana Mimir is configured with the `-runtime-config.file` option.
 
 #### Different modes
