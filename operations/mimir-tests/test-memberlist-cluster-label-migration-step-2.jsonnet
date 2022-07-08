@@ -18,7 +18,7 @@ mimir {
     alertmanager_client_type: 'gcs',
     alertmanager_gcs_bucket_name: 'alerts-bucket',
 
-    // Step 1: Set the cluster label.
+    // Step 2: Set the cluster label.
     memberlist_ring_enabled: true,
     memberlist_cluster_label: 'my-cluster-label',
     memberlist_cluster_label_verification_disabled: true,

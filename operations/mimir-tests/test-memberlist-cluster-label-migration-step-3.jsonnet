@@ -18,7 +18,7 @@ mimir {
     alertmanager_client_type: 'gcs',
     alertmanager_gcs_bucket_name: 'alerts-bucket',
 
-    // Step 1: Re-enable the cluster label verification.
+    // Step 3: Re-enable the cluster label verification.
     memberlist_ring_enabled: true,
     memberlist_cluster_label: 'my-cluster-label',
     memberlist_cluster_label_verification_disabled: false,
