@@ -16,7 +16,7 @@ jobs:
     with:
       ct_configfile: operations/helm/ct.yaml
       ct_check_version_increment: false
-      helm_version: v3.8.2
+      helm_version: &helm_version v3.8.2
 
   conftest:
     runs-on: ubuntu-latest
@@ -27,7 +27,7 @@ jobs:
       - name: Set up Helm
         uses: azure/setup-helm@v1
         with:
-          version: v3.8.2
+          version: *helm_version
 
       - name: Set up conftest
         uses: artis3n/setup-conftest@v0
@@ -35,10 +35,15 @@ jobs:
           conftest_version: 0.33.0
           conftest_wrapper: false # don't wrap conftest so that test exit code fail the step
 
+      - name: Verify
+        env:
+          POLICIES_PATH: ${{ github.workspace }}/operations/helm/policies
+        run: conftest verify -p $POLICIES_PATH --report notes
+
       - name: Run tests
         env:
           VALUES_FILES_PATH: ${{ github.workspace }}/operations/helm/charts/mimir-distributed/ci
           CHART_PATH: ${{ github.workspace }}/operations/helm/charts/mimir-distributed
           POLICIES_PATH: ${{ github.workspace }}/operations/helm/policies
           TEMP_DIR: ${{ runner.temp }}/conftest
-        run: $GITHUB_WORKSPACE/.github/workflows/scripts/run-conftest.sh
+        run: $GITHUB_WORKSPACE/.github/workflows/scripts/run-conftest.sh --do-dependency-update

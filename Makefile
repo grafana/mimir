@@ -551,3 +551,9 @@ integration-tests: cmd/mimir/$(UPTODATE)
 include docs/docs.mk
 DOCS_DIR = docs/sources
 docs: doc
+
+conftest-fmt:
+	conftest fmt operations/helm/policies
+
+check-conftest-fmt: conftest-fmt
+	@git diff --exit-code -- ./operations/helm/policies || (echo "Please format rego policies with 'make conftest-fmt'" && false)

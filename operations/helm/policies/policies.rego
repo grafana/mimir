@@ -1,8 +1,13 @@
 package main
 
-deny[msg] {
-  input.kind == "Deployment"
-  not input.spec.template.spec.securityContext.runAsNonRoot
+has_key(x, k) {
+	_ = x[k]
+}
 
-  msg := "Containers in Deployments must not run as root"
+deny["Resource doesn't have a namespace"] {
+	not regex.match(".+", input.metadata.namespace)
+}
+
+deny["Resource doesn't have a namespace"] {
+	not has_key(input.metadata, "namespace")
 }

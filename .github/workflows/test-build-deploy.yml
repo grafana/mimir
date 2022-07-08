@@ -44,6 +44,8 @@ jobs:
         run: make BUILD_IN_CONTAINER=false check-license
       - name: Check Docker-Compose YAML
         run: make BUILD_IN_CONTAINER=false check-tsdb-blocks-storage-s3-docker-compose-yaml
+      - name: Check Rego Policies Format
+        run: make BUILD_IN_CONTAINER=false check-conftest-fmt
 
   doc-validator:
     runs-on: ubuntu-latest
