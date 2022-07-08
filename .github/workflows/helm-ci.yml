@@ -1,9 +1,6 @@
 name: helm-ci
 
-on:
-  push:
-    branches:
-      - 'dimitar/helm-static-checks'
+on: pull_request
 
 jobs:
   call-lint:
@@ -33,7 +30,7 @@ jobs:
         uses: artis3n/setup-conftest@v0
         with:
           conftest_version: 0.33.0
-          conftest_wrapper: false # don't wrap conftest so that test exit code fail the step
+          conftest_wrapper: false # don't wrap conftest so that non-zero exit code fail the job
 
       - name: Verify
         env:
