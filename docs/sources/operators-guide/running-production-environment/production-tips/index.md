@@ -121,4 +121,4 @@ Running a dedicated Memcached cluster for each cache type is not required, but r
 ## Security
 
 We recommend securing the Grafana Mimir cluster.
-For more information about securing a Mimir cluster, refer to [Securing Grafana Mimir]({{< relref "../../securing/_index.md" >}}).
+For more information about securing a Mimir cluster, refer to [Secure Grafana Mimir]({{< relref "../../secure/_index.md" >}}).
