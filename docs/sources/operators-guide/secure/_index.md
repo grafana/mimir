@@ -8,12 +8,12 @@ keywords:
   - Mimir authorization
   - Mimir encrypt data at rest
   - Mimir TLS
-menuTitle: Securing
-title: Securing Grafana Mimir
+menuTitle: Secure
+title: Secure Grafana Mimir
 weight: 70
 ---
 
-# Securing Grafana Mimir
+# Secure Grafana Mimir
 
 These sections explain how to secure Grafana Mimir data and communication paths.
 
