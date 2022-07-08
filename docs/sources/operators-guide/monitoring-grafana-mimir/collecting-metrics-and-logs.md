@@ -31,8 +31,8 @@ deployed:
 ### Collect metrics and logs via the Helm chart
 
 Starting from version `3.0.0`, the Helm chart sends metrics to a Prometheus-compatible server and sends logs to a Loki
-cluster. The chart can also scrape additional metrics from kube-state-metrics, kubelet, and cAdvisor. node_exporter
-metrics are not collected by the chart.
+cluster. The chart can also scrape additional metrics from kube-state-metrics, kubelet, and cAdvisor. No node_exporter
+metrics are collected by the chart.
 For more information
 about node_exporter, see [Additional resources metrics]({{< relref "requirements.md#additional-resources-metrics" >}}).
 
