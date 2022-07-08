@@ -7,19 +7,19 @@ weight: 60
 
 # Collecting metrics and logs from Grafana Mimir
 
-This article helps you to collect logs and metrics from a Mimir or GEM cluster. To set up dashboards and alerts,
+You can collect logs and metrics from a Mimir or GEM cluster. To set up dashboards and alerts,
 see [Installing Grafana Mimir dashboards and alerts]({{< relref "installing-dashboards-and-alerts.md" >}})
 or [Grafana Cloud: Self-hosted Grafana Mimir integration](https://grafana.com/docs/grafana-cloud/integrations/integrations/integration-mimir/)
 .
 
-It is easier and recommended to monitor a cluster if it has been installed via
+It is easier and best to monitor a cluster if it was installed via
 the [Grafana Mimir Helm chart](https://github.com/grafana/mimir/tree/main/operations/helm/charts/mimir-distributed). It
-is also possible to use this integration if Mimir has been deployed another way. For more information,
+is also possible to use this integration if Mimir was deployed another way. For more information,
 see [Collect metrics and logs without the Helm chart](#collect-metrics-and-logs-without-the-helm-chart).
 
 ## Collect metrics and logs from the Helm chart
 
-To set up the collection of metrics and logs, follow the steps that are based on the version of the Helm chart that has
+To set up the collection of metrics and logs, follow the steps that are based on the version of the Helm chart that was
 been deployed:
 
 * For a stable release:
@@ -30,11 +30,11 @@ been deployed:
 
 ### Collect metrics and logs via the Helm chart
 
-Starting from version `3.0.0`, the Helm chart sends metrics to a Prometheus-compatible server and logs to a Loki
+Starting from version `3.0.0`, the Helm chart sends metrics to a Prometheus-compatible server and sends logs to a Loki
 cluster. The chart can also scrape additional metrics from kube-state-metrics, kubelet, and cAdvisor. node_exporter
 metrics are not collected by the chart.
-See [Additional resources metrics]({{< relref "requirements.md#additional-resources-metrics" >}}) for more information
-about node_exporter.
+For more information
+about node_exporter, see [Additional resources metrics]({{< relref "requirements.md#additional-resources-metrics" >}}).
 
 The Helm chart uses the Grafana Agent operator. Due to how Helm works, before it can use the operator, you need to
 manually install
@@ -44,8 +44,8 @@ Agent operator.
 #### Credentials
 
 If Prometheus and Loki are running without authentication, then you scan skip this section.
-Metamonitoring supports multiple ways of authentication for metrics and logs. If you are using a secret (e.g. an API
-key) to authenticate with Prometheus or Loki, then you need to create a Kubernetes secret with that secret.
+Metamonitoring supports multiple ways of authentication for metrics and logs. If you are using a secret such as an API
+key to authenticate with Prometheus or Loki, then you need to create a Kubernetes secret with that secret.
 
 This is an example secret:
 
@@ -60,7 +60,7 @@ data:
 ```
 
 For information about how to create a Kubernetes secret, see
-the [Creating a Secret](https://kubernetes.io/docs/concepts/configuration/secret/#creating-a-secret).
+[Creating a Secret](https://kubernetes.io/docs/concepts/configuration/secret/#creating-a-secret).
 
 #### Helm chart values
 
@@ -103,10 +103,10 @@ metaMonitoring:
 ### Collect metrics and logs via Grafana Agent
 
 Older versions of the Helm chart need to be manually instrumented. This means that you need to set up a Grafana Agent
-that collects logs and metrics from Mimir or GEM. Refer
-to [Set up Grafana Agent](https://grafana.com/docs/agent/latest/set-up/) for instructions on setting up the Agent.
+that collects logs and metrics from Mimir or GEM. To set up Grafana Agent,
+see [Set up Grafana Agent](https://grafana.com/docs/agent/latest/set-up/).
 
-Below is an Agent configuration file for collecting logs and metrics. Replace `url`, `password`, and `username` in
+In the following example Grafana Agent configuration file for collecting logs and metrics, replace `url`, `password`, and `username` in
 the `logs` and `metrics` blocks with the details of your Prometheus and Loki clusters.
 
 ```yaml
@@ -318,18 +318,16 @@ server:
 
 ## Collect metrics and logs without the Helm chart
 
-You can still use the dashboards and rules in the monitoring-mixin even if Mimir or GEM is not deployed via the Helm
+You can still use the dashboards and rules in the monitoring-mixin, even if Mimir or GEM is not deployed via the Helm
 chart or if you are using the deprecated enterprise-metrics Helm chart for GEM.
 As a starting point, use the Agent configuration
-from [Collect metrics and logs via Grafana Agent](#collect-metrics-and-logs-via-grafana-agent) as a starting point.
-There may be some
-modifications you need to make to it. See [dashboards and alerts requirements]({{< relref "requirements.md" >}}) for
-more information.
+from [Collect metrics and logs via Grafana Agent](#collect-metrics-and-logs-via-grafana-agent).
+You might need to modify it. For
+more information, see [dashboards and alerts requirements]({{< relref "requirements.md" >}}).
 
 ### Service discovery
 
 The Agent configuration relies on Kubernetes service discovery and pod labels to constrain the collected metrics and
-logs to ones strictly related to the Helm chart. If you are deploying Grafana Mimir on something other than Kubernetes,
-then you
-need to replace the `kubernetes_sd_configs` block with a block from
+logs to ones that are strictly related to the Helm chart. If you are deploying Grafana Mimir on something other than Kubernetes,
+then replace the `kubernetes_sd_configs` block with a block from
 the [Agent configuration](https://grafana.com/docs/agent/latest/configuration/) that can discover the Mimir processes.

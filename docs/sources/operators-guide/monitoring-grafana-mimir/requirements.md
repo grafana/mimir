@@ -62,15 +62,15 @@ The Grafana Mimir dashboards displaying CPU, memory, disk, and network resources
 
 For more information about the kubelet metrics and cAdvisor metrics exported by the kubelet, refer to [Metrics For Kubernetes System Components](https://kubernetes.io/docs/concepts/cluster-administration/system-metrics/).
 
-Metrics from kubelet, kube-state-metrics, and cAdvisor should all have a `cluster` label with the same value as in the
+Metrics from kubelet, kube-state-metrics, and cAdvisor must all have a `cluster` label with the same value as in the
 Mimir metrics.
 
-Metrics from node_exporter should all have an `instance` label on them that has the same value as the `instance` label on Mimir metrics.
+Metrics from node_exporter must all have an `instance` label on them that has the same value as the `instance` label on Mimir metrics.
 
 ## Log labels
 
-The "Slow Queries" dashboard uses a Loki datasource with the logs from Grafana Mimir to visualize slow queries. The query-frontend component logs slow queries as configured by the `-query-frontend.log-queries-longer-than` parameter.
-These logs need to have certain labels in order for the dashboard to work.
+The **Slow queries** dashboard uses a Loki data source with the logs from Grafana Mimir to visualize slow queries. The query-frontend component logs slow queries based on how you configured the `-query-frontend.log-queries-longer-than` parameter.
+These logs need to have specific labels in order for the dashboard to work.
 
 | Label Name  | Configurable | Description                                                                                                                                                          |
 | :---------- | :----------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
