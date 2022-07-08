@@ -2513,7 +2513,7 @@ The `memberlist` block configures the Gossip memberlist.
 # (experimental) The cluster label is an optional string to include in outbound
 # packets and gossip streams. Other members in the memberlist cluster will
 # discard any message whose label doesn't match the configured one, unless the
-# 'cluster-label-verification-disabled' configuration option is enabled.
+# 'cluster-label-verification-disabled' configuration option is set to true.
 # CLI flag: -memberlist.cluster-label
 [cluster_label: <string> | default = ""]
 
