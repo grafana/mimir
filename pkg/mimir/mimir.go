@@ -181,6 +181,8 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 
 	// Then unmarshal config in a standard way.
+	// This will override previously set common values by the specific ones, if they're provided.
+	// (YAML specific takes precedence over YAML common)
 	type plain Config
 	return unmarshal((*plain)(c))
 }
