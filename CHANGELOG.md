@@ -12,6 +12,7 @@
 * [ENHANCEMENT] ring: optimize shuffle-shard computation when lookback is used, and all instances have registered timestamp within the lookback window. In that case we can immediately return origial ring, because we would select all instances anyway. #2309
 * [BUGFIX] Compactor: log the actual error on compaction failed. #2261
 * [BUGFIX] Alertmanager: restore state from storage even when running a single replica. #2293
+* [BUGFIX] Ruler: do not block "List Prometheus rules" API endpoint while synching rules. #2289
 
 ### Mixin
 
