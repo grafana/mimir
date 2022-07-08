@@ -35,10 +35,11 @@ type DefaultMultiTenantManager struct {
 
 	mapper *mapper
 
-	// Structs for holding per-user Prometheus rules Managers
-	// and a corresponding metrics struct
-	userManagerMtx     sync.RWMutex
-	userManagers       map[string]RulesManager
+	// Struct for holding per-user Prometheus rules Managers.
+	userManagerMtx sync.RWMutex
+	userManagers   map[string]RulesManager
+
+	// Prometheus rules managers metrics.
 	userManagerMetrics *ManagerMetrics
 
 	// Per-user notifiers with separate queues.
@@ -129,7 +130,7 @@ func (r *DefaultMultiTenantManager) SyncRuleGroups(ctx context.Context, ruleGrou
 
 // syncRulesToManager maps the rule files to disk, detects any changes and will create/update
 // the user's Prometheus Rules Manager. Since this method writes to disk it is not safe to call
-// multiple times for the same user.
+// concurrently for the same user.
 func (r *DefaultMultiTenantManager) syncRulesToManager(ctx context.Context, user string, groups rulespb.RuleGroupList) {
 	// Map the files to disk and return the file names to be passed to the users manager if they
 	// have been updated
@@ -140,15 +141,16 @@ func (r *DefaultMultiTenantManager) syncRulesToManager(ctx context.Context, user
 		return
 	}
 
-	if !update {
-		level.Debug(r.logger).Log("msg", "rules have not changed, skipping rule manager update", "user", user)
-		return
-	}
-
-	manager, err := r.getOrCreateManager(ctx, user)
+	manager, created, err := r.getOrCreateManager(ctx, user)
 	if err != nil {
 		r.lastReloadSuccessful.WithLabelValues(user).Set(0)
 		level.Error(r.logger).Log("msg", "unable to create rule manager", "user", user, "err", err)
+		return
+	}
+
+	// We need to update the manager only if it was just created or rules on disk have changed.
+	if !(created || update) {
+		level.Debug(r.logger).Log("msg", "rules have not changed, skipping rule manager update", "user", user)
 		return
 	}
 
@@ -166,27 +168,39 @@ func (r *DefaultMultiTenantManager) syncRulesToManager(ctx context.Context, user
 	r.lastReloadSuccessfulTimestamp.WithLabelValues(user).SetToCurrentTime()
 }
 
-// getOrCreateManager retrieves the user manager. if it doesn't exist, it will create and start it first
-func (r *DefaultMultiTenantManager) getOrCreateManager(ctx context.Context, user string) (RulesManager, error) {
+// getOrCreateManager retrieves the user manager. If it doesn't exist, it will create and start it first.
+func (r *DefaultMultiTenantManager) getOrCreateManager(ctx context.Context, user string) (RulesManager, bool, error) {
+	// Check if it already exists. Since rules are synched frequently, we expect to already exist
+	// most of the times.
+	r.userManagerMtx.RLock()
+	manager, exists := r.userManagers[user]
+	r.userManagerMtx.RUnlock()
+
+	if exists {
+		return manager, false, nil
+	}
+
+	// The manager doesn't exist. We take an exclusive lock to create it.
 	r.userManagerMtx.Lock()
 	defer r.userManagerMtx.Unlock()
 
-	manager, exists := r.userManagers[user]
+	// Ensure it hasn't been created in the meanwhile.
+	manager, exists = r.userManagers[user]
 	if exists {
-		return manager, nil
+		return manager, false, nil
 	}
 
 	level.Debug(r.logger).Log("msg", "creating rule manager for user", "user", user)
 	manager, err := r.newManager(ctx, user)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	// manager.Run() starts running the manager and blocks until Stop() is called.
 	// Hence run it as another goroutine.
 	go manager.Run()
 	r.userManagers[user] = manager
-	return manager, nil
+	return manager, true, nil
 }
 
 // newManager creates a prometheus rule manager wrapped with a user id
@@ -248,14 +262,14 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifie
 }
 
 func (r *DefaultMultiTenantManager) GetRules(userID string) []*promRules.Group {
-	var groups []*promRules.Group
 	r.userManagerMtx.RLock()
 	mngr, exists := r.userManagers[userID]
 	r.userManagerMtx.RUnlock()
+
 	if exists {
-		groups = mngr.RuleGroups()
+		return mngr.RuleGroups()
 	}
-	return groups
+	return nil
 }
 
 func (r *DefaultMultiTenantManager) Stop() {
