@@ -60,7 +60,7 @@ if [[ -z "$TEMP_DIR" ]]; then
   TEMP_DIR=$(mktemp -d)
 fi
 
-if [[ -z "$DO_DEPENDENCY_UPDATE" ]]; then
+if (( $DO_DEPENDENCY_UPDATE )); then
   helm dependency update $CHART_PATH
 fi
 
