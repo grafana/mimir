@@ -9,6 +9,7 @@ weight: 70
 
 Grafana Mimir can use different object storage services to persist blocks containing the metrics data, as well as recording rules and alertmanager state.
 The supported alternatives are:
+
 - [Amazon S3](https://aws.amazon.com/s3/) (and compatible implementations like [MinIO](https://min.io/))
 - [Google Cloud Storage](https://cloud.google.com/storage)
 - [Azure Blob Storage](https://azure.microsoft.com/es-es/services/storage/blobs/)
@@ -22,7 +23,8 @@ Ruler and alertmanager support a `local` implementation, which is similar to `fi
 
 The [common configuration]({{< relref "about-configurations.md#common-configurations" >}}) can be used to avoid repetition by filling the [`common`]({{< relref "../configuring/reference-configuration-parameters/index.md#common" >}}) configuration block or by providing the `-common.storage.*` CLI flags.
 
-Note that blocks storage can't be located in the same path of the same bucket as the ruler and alertmanager stores, so when using the common configuration, [`blocks_storage`]({{< relref "../configuring/reference-configuration-parameters/index.md#blocks_storage" >}})  should either:
+Note that blocks storage can't be located in the same path of the same bucket as the ruler and alertmanager stores, so when using the common configuration, [`blocks_storage`]({{< relref "../configuring/reference-configuration-parameters/index.md#blocks_storage" >}}) should either:
+
 - use a different bucket, overriding the common bucket name
 - use a storage prefix
 

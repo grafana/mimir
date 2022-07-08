@@ -38,9 +38,10 @@ blocks_storage:
     bucket_name: mimir-blocks
 ```
 
-Will use the same Amazon S3 object storage bucket called `mimir` and located in the `us-east` region for both ruler and alertmanager stores, while blocks storage will use the `mimir-blocks`  bucket from the same region. See [object storage configuration reference ]({{< relref "configuring-object-storage-backend.md" >}}) for more detailed reference of this configuration.
+Will use the same Amazon S3 object storage bucket called `mimir` and located in the `us-east` region for both ruler and alertmanager stores, while blocks storage will use the `mimir-blocks` bucket from the same region. See [object storage configuration reference ]({{< relref "configuring-object-storage-backend.md" >}}) for more detailed reference of this configuration.
 
 Common configuration is applied in the following order (each one overrides the previous):
+
 - YAML common values
 - YAML specific values
 - CLI common flags
