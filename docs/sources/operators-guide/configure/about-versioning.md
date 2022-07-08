@@ -74,6 +74,10 @@ The following features are currently experimental:
     - `-compactor.ring.heartbeat-period=0`
     - `-store-gateway.sharding-ring.heartbeat-period=0`
   - Exclude ingesters running in specific zones (`-ingester.ring.excluded-zones`)
+- Memberlist
+  - Cluster label support
+    - `-memberlist.cluster-label`
+    - `-memberlist.cluster-label-verification-disabled`
 - Ingester
   - Add variance to chunks end time to spread writing across time (`-blocks-storage.tsdb.head-chunks-end-time-variance`)
   - Using queue and asynchronous chunks disk mapper (`-blocks-storage.tsdb.head-chunks-write-queue-size`)

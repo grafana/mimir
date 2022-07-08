@@ -9777,6 +9777,28 @@
         },
         {
           "kind": "field",
+          "name": "cluster_label",
+          "required": false,
+          "desc": "The cluster label is an optional string to include in outbound packets and gossip streams. Other members in the memberlist cluster will discard any message whose label doesn't match the configured one, unless the 'cluster-label-verification-disabled' configuration option is set to true.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "memberlist.cluster-label",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "cluster_label_verification_disabled",
+          "required": false,
+          "desc": "When true, memberlist doesn't verify that inbound packets and gossip streams have the cluster label matching the configured one. This verification should be disabled while rolling out the change to the configured cluster label in a live memberlist cluster.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "memberlist.cluster-label-verification-disabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "join_members",
           "required": false,
           "desc": "Other cluster members to join. Can be specified multiple times. It can be an IP, hostname or an entry specified in the DNS Service Discovery format.",
