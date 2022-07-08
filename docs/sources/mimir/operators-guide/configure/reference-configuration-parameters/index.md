@@ -2190,6 +2190,12 @@ The `memberlist` block configures the Gossip memberlist.
 # CLI flag: -memberlist.compression-enabled
 [compression_enabled: <boolean> | default = true]
 
+# (advanced) Controls whether to enforce encryption for incoming and outgoing
+# gossip. Used for upshifting from unencrypted to encrypted gossip on a running
+# cluster.
+# CLI flag: -memberlist.verify-secret-enabled
+[verify_secret_enabled: <boolean> | default = true]
+
 # Gossip address to advertise to other members in the cluster. Used for NAT
 # traversal.
 # CLI flag: -memberlist.advertise-addr

@@ -1187,6 +1187,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -memberlist.transport-debug
     	Log debug transport messages. Note: global log.level must be at debug level as well.
+  -memberlist.verify-secret-enabled
+    	Controls whether to enforce encryption for incoming and outgoing gossip. Used for upshifting from unencrypted to encrypted gossip on a running cluster. (default true)
   -modules
     	List available values that can be used as target.
   -print.config

@@ -724,6 +724,8 @@ func (t *Mimir) initMemberlistKV() (services.Service, error) {
 	t.Cfg.MemberlistKV.Codecs = []codec.Codec{
 		ring.GetCodec(),
 	}
+	// XXX: Test memberlist encryption
+	t.Cfg.MemberlistKV.SecretKey = []byte("x!z%C*F-JaNdRgUkXp2s5v8y/B?D(G+K")
 	dnsProviderReg := prometheus.WrapRegistererWithPrefix(
 		"cortex_",
 		prometheus.WrapRegistererWith(

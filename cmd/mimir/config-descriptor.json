@@ -10344,6 +10344,17 @@
         },
         {
           "kind": "field",
+          "name": "verify_secret_enabled",
+          "required": false,
+          "desc": "Controls whether to enforce encryption for incoming and outgoing gossip. Used for upshifting from unencrypted to encrypted gossip on a running cluster.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "memberlist.verify-secret-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "advertise_addr",
           "required": false,
           "desc": "Gossip address to advertise to other members in the cluster. Used for NAT traversal.",
