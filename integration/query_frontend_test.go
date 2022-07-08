@@ -43,9 +43,28 @@ type queryFrontendTestConfig struct {
 func TestQueryFrontendWithBlocksStorageViaFlags(t *testing.T) {
 	runQueryFrontendTest(t, queryFrontendTestConfig{
 		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
-			flags = BlocksStorageFlags()
+			flags = mergeFlags(
+				BlocksStorageFlags(),
+				BlocksStorageS3Flags(),
+			)
 
 			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+			require.NoError(t, s.StartAndWaitReady(minio))
+
+			return "", flags
+		},
+	})
+}
+
+func TestQueryFrontendWithBlocksStorageViaCommonFlags(t *testing.T) {
+	runQueryFrontendTest(t, queryFrontendTestConfig{
+		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
+			flags = mergeFlags(
+				CommonStorageBackendFlags(),
+				BlocksStorageFlags(),
+			)
+
+			minio := e2edb.NewMinio(9000, mimirBucketName)
 			require.NoError(t, s.StartAndWaitReady(minio))
 
 			return "", flags
@@ -57,7 +76,10 @@ func TestQueryFrontendWithBlocksStorageViaFlagsAndQueryStatsEnabled(t *testing.T
 	runQueryFrontendTest(t, queryFrontendTestConfig{
 		queryStatsEnabled: true,
 		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
-			flags = BlocksStorageFlags()
+			flags = mergeFlags(
+				BlocksStorageFlags(),
+				BlocksStorageS3Flags(),
+			)
 
 			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 			require.NoError(t, s.StartAndWaitReady(minio))
@@ -71,7 +93,10 @@ func TestQueryFrontendWithBlocksStorageViaFlagsAndWithQueryScheduler(t *testing.
 	runQueryFrontendTest(t, queryFrontendTestConfig{
 		querySchedulerEnabled: true,
 		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
-			flags = BlocksStorageFlags()
+			flags = mergeFlags(
+				BlocksStorageFlags(),
+				BlocksStorageS3Flags(),
+			)
 
 			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 			require.NoError(t, s.StartAndWaitReady(minio))
@@ -86,7 +111,10 @@ func TestQueryFrontendWithBlocksStorageViaFlagsAndWithQuerySchedulerAndQueryStat
 		querySchedulerEnabled: true,
 		queryStatsEnabled:     true,
 		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
-			flags = BlocksStorageFlags()
+			flags = mergeFlags(
+				BlocksStorageFlags(),
+				BlocksStorageS3Flags(),
+			)
 
 			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 			require.NoError(t, s.StartAndWaitReady(minio))
@@ -101,7 +129,7 @@ func TestQueryFrontendWithBlocksStorageViaConfigFile(t *testing.T) {
 		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
 			require.NoError(t, writeFileToSharedDir(s, mimirConfigFile, []byte(BlocksStorageConfig)))
 
-			minio := e2edb.NewMinio(9000, BlocksStorageFlags()["-blocks-storage.s3.bucket-name"])
+			minio := e2edb.NewMinio(9000, blocksBucketName)
 			require.NoError(t, s.StartAndWaitReady(minio))
 
 			return mimirConfigFile, e2e.EmptyFlags()
@@ -114,6 +142,7 @@ func TestQueryFrontendTLSWithBlocksStorageViaFlags(t *testing.T) {
 		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
 			flags = mergeFlags(
 				BlocksStorageFlags(),
+				BlocksStorageS3Flags(),
 				getServerTLSFlags(),
 				getClientTLSFlagsWithPrefix("ingester.client"),
 				getClientTLSFlagsWithPrefix("querier.frontend-client"),
@@ -322,7 +351,7 @@ func TestQueryFrontendErrorMessageParity(t *testing.T) {
 
 	cfg := &queryFrontendTestConfig{
 		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
-			flags = BlocksStorageFlags()
+			flags = mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags())
 
 			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 			require.NoError(t, s.StartAndWaitReady(minio))

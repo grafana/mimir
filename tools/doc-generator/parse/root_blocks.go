@@ -19,12 +19,17 @@ import (
 	"github.com/grafana/mimir/pkg/frontend"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/mimir"
 	"github.com/grafana/mimir/pkg/querier"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
 	"github.com/grafana/mimir/pkg/scheduler"
+	"github.com/grafana/mimir/pkg/storage/bucket/azure"
+	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
+	"github.com/grafana/mimir/pkg/storage/bucket/gcs"
 	"github.com/grafana/mimir/pkg/storage/bucket/s3"
+	"github.com/grafana/mimir/pkg/storage/bucket/swift"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -34,6 +39,11 @@ var (
 	// RootBlocks is an ordered list of root blocks. The order is the same order that will
 	// follow the markdown generation.
 	RootBlocks = []RootBlock{
+		{
+			Name:       "common",
+			StructType: reflect.TypeOf(mimir.CommonConfig{}),
+			Desc:       "The common block holds configurations that configure multiple components at a time.",
+		},
 		{
 			Name:       "server",
 			StructType: reflect.TypeOf(server.Config{}),
@@ -135,14 +145,34 @@ var (
 			Desc:       "The store_gateway block configures the store-gateway component.",
 		},
 		{
-			Name:       "sse",
-			StructType: reflect.TypeOf(s3.SSEConfig{}),
-			Desc:       "The sse block configures the S3 server-side encryption.",
-		},
-		{
 			Name:       "memcached",
 			StructType: reflect.TypeOf(cache.MemcachedConfig{}),
 			Desc:       "The memcached block configures the Memcached-based caching backend.",
+		},
+		{
+			Name:       "s3_storage_backend",
+			StructType: reflect.TypeOf(s3.Config{}),
+			Desc:       "The s3_backend block configures the connection to Amazon S3 object storage backend.",
+		},
+		{
+			Name:       "gcs_storage_backend",
+			StructType: reflect.TypeOf(gcs.Config{}),
+			Desc:       "The gcs_backend block configures the connection to Google Cloud Storage object storage backend.",
+		},
+		{
+			Name:       "azure_storage_backend",
+			StructType: reflect.TypeOf(azure.Config{}),
+			Desc:       "The azure_storage_backend block configures the connection to Azure object storage backend.",
+		},
+		{
+			Name:       "swift_storage_backend",
+			StructType: reflect.TypeOf(swift.Config{}),
+			Desc:       "The swift_storage_backend block configures the connection to OpenStack Object Storage (Swift) object storage backend.",
+		},
+		{
+			Name:       "filesystem_storage_backend",
+			StructType: reflect.TypeOf(filesystem.Config{}),
+			Desc:       "The filesystem_storage_backend block configures the usage of local file system as object storage backend.",
 		},
 	}
 )

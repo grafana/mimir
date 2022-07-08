@@ -525,6 +525,103 @@ Usage of ./cmd/mimir/mimir:
     	True to enable TSDB WAL compression.
   -blocks-storage.tsdb.wal-segment-size-bytes int
     	TSDB WAL segments files max size (bytes). (default 134217728)
+  -common.storage.azure.account-key string
+    	Azure storage account key
+  -common.storage.azure.account-name string
+    	Azure storage account name
+  -common.storage.azure.container-name string
+    	Azure storage container name
+  -common.storage.azure.endpoint-suffix string
+    	Azure storage endpoint suffix without schema. The account name will be prefixed to this value to create the FQDN. If set to empty string, default endpoint suffix is used.
+  -common.storage.azure.max-retries int
+    	Number of retries for recoverable errors (default 20)
+  -common.storage.azure.msi-resource string
+    	If set, this URL is used instead of https://<storage-account-name>.<endpoint-suffix> for obtaining ServicePrincipalToken from MSI.
+  -common.storage.azure.user-assigned-id string
+    	User assigned identity. If empty, then System assigned identity is used.
+  -common.storage.backend string
+    	Backend storage to use. Supported backends are: s3, gcs, azure, swift, filesystem. (default "filesystem")
+  -common.storage.filesystem.dir string
+    	Local filesystem storage directory.
+  -common.storage.gcs.bucket-name string
+    	GCS bucket name
+  -common.storage.gcs.service-account string
+    	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path. If empty, fallback to Google default logic: 
+    	1. A JSON file whose path is specified by the GOOGLE_APPLICATION_CREDENTIALS environment variable. For workload identity federation, refer to https://cloud.google.com/iam/docs/how-to#using-workload-identity-federation on how to generate the JSON configuration file for on-prem/non-Google cloud platforms.
+    	2. A JSON file in a location known to the gcloud command-line tool: $HOME/.config/gcloud/application_default_credentials.json.
+    	3. On Google Compute Engine it fetches credentials from the metadata server.
+  -common.storage.s3.access-key-id string
+    	S3 access key ID
+  -common.storage.s3.bucket-name string
+    	S3 bucket name
+  -common.storage.s3.endpoint string
+    	The S3 bucket endpoint. It could be an AWS S3 endpoint listed at https://docs.aws.amazon.com/general/latest/gr/s3.html or the address of an S3-compatible service in hostname:port format.
+  -common.storage.s3.expect-continue-timeout duration
+    	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. 0 to send the request body immediately. (default 1s)
+  -common.storage.s3.http.idle-conn-timeout duration
+    	The time an idle connection will remain idle before closing. (default 1m30s)
+  -common.storage.s3.http.insecure-skip-verify
+    	If the client connects to S3 via HTTPS and this option is enabled, the client will accept any certificate and hostname.
+  -common.storage.s3.http.response-header-timeout duration
+    	The amount of time the client will wait for a servers response headers. (default 2m0s)
+  -common.storage.s3.insecure
+    	If enabled, use http:// for the S3 endpoint instead of https://. This could be useful in local dev/test environments while using an S3-compatible backend storage, like Minio.
+  -common.storage.s3.max-connections-per-host int
+    	Maximum number of connections per host. 0 means no limit.
+  -common.storage.s3.max-idle-connections int
+    	Maximum number of idle (keep-alive) connections across all hosts. 0 means no limit. (default 100)
+  -common.storage.s3.max-idle-connections-per-host int
+    	Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used. (default 100)
+  -common.storage.s3.region string
+    	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
+  -common.storage.s3.secret-access-key string
+    	S3 secret access key
+  -common.storage.s3.signature-version string
+    	The signature version to use for authenticating against S3. Supported values are: v4, v2. (default "v4")
+  -common.storage.s3.sse.kms-encryption-context string
+    	KMS Encryption Context used for object encryption. It expects JSON formatted string.
+  -common.storage.s3.sse.kms-key-id string
+    	KMS Key ID used to encrypt objects in S3
+  -common.storage.s3.sse.type string
+    	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
+  -common.storage.s3.tls-handshake-timeout duration
+    	Maximum time to wait for a TLS handshake. 0 means no limit. (default 10s)
+  -common.storage.swift.auth-url string
+    	OpenStack Swift authentication URL
+  -common.storage.swift.auth-version int
+    	OpenStack Swift authentication API version. 0 to autodetect.
+  -common.storage.swift.connect-timeout duration
+    	Time after which a connection attempt is aborted. (default 10s)
+  -common.storage.swift.container-name string
+    	Name of the OpenStack Swift container to put chunks in.
+  -common.storage.swift.domain-id string
+    	OpenStack Swift user's domain ID.
+  -common.storage.swift.domain-name string
+    	OpenStack Swift user's domain name.
+  -common.storage.swift.max-retries int
+    	Max retries on requests error. (default 3)
+  -common.storage.swift.password string
+    	OpenStack Swift API key.
+  -common.storage.swift.project-domain-id string
+    	ID of the OpenStack Swift project's domain (v3 auth only), only needed if it differs the from user domain.
+  -common.storage.swift.project-domain-name string
+    	Name of the OpenStack Swift project's domain (v3 auth only), only needed if it differs from the user domain.
+  -common.storage.swift.project-id string
+    	OpenStack Swift project ID (v2,v3 auth only).
+  -common.storage.swift.project-name string
+    	OpenStack Swift project name (v2,v3 auth only).
+  -common.storage.swift.region-name string
+    	OpenStack Swift Region to use (v2,v3 auth only).
+  -common.storage.swift.request-timeout duration
+    	Time after which an idle request is aborted. The timeout watchdog is reset each time some data is received, so the timeout triggers after X time no data is received on a request. (default 5s)
+  -common.storage.swift.user-domain-id string
+    	OpenStack Swift user's domain ID.
+  -common.storage.swift.user-domain-name string
+    	OpenStack Swift user's domain name.
+  -common.storage.swift.user-id string
+    	OpenStack Swift user ID.
+  -common.storage.swift.username string
+    	OpenStack Swift username.
   -compactor.block-ranges value
     	List of compaction time ranges. (default 2h0m0s,12h0m0s,24h0m0s)
   -compactor.block-sync-concurrency int
