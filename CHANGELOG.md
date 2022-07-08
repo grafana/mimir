@@ -59,6 +59,7 @@
   * `-ingester.out-of-order-time-window`, as duration string, allows you to set how back in time a sample can be. The default is `0s`, where `s` is seconds.
   * `cortex_ingester_tsdb_out_of_order_samples_appended_total` metric tracks the total number of out-of-order samples ingested by the ingester.
   * `cortex_discarded_samples_total` has a new label `reason="sample-too-old"`, when the `-ingester.out-of-order-time-window` flag is greater than zero. The label tracks the number of samples that were discarded for being too old; they were out of order, but beyond the time window allowed.
+* [FEATURE] helm chart: add option to enable query-scheduler #2087
 * [ENHANCEMENT] Distributor: Added limit to prevent tenants from sending excessive number of requests: #1843
   * The following CLI flags (and their respective YAML config options) have been added:
     * `-distributor.request-rate-limit`
