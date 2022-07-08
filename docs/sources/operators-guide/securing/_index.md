@@ -1,14 +1,16 @@
 ---
-title: "Securing Grafana Mimir"
-menuTitle: "Securing"
-description: "Learn how to secure Grafana Mimir data and communication paths."
-weight: 70
+aliases:
+  - /docs/mimir/latest/operators-guide/securing/
+description: Learn how to secure Grafana Mimir data and communication paths.
 keywords:
   - Mimir security
   - Mimir authentication
   - Mimir authorization
   - Mimir encrypt data at rest
   - Mimir TLS
+menuTitle: Securing
+title: Securing Grafana Mimir
+weight: 70
 ---
 
 # Securing Grafana Mimir
