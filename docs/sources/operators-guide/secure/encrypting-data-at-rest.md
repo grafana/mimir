@@ -37,7 +37,7 @@ Configuring AWS S3 SSE globally requires setting SSE for each of the following s
 - [blocks_storage]({{< relref "../configure/reference-configuration-parameters/index.md#blocks_storage" >}})
 - [ruler_storage]({{< relref "../configure/reference-configuration-parameters/index.md#ruler_storage" >}})
 
-For more information about AWS S3 SSE configuration parameters, refer to [sse]({{< relref "../configure/reference-configuration-parameters/index.md#sse" >}}).
+For more information about AWS S3 SSE configuration parameters, refer to [s3_storage_backend]({{< relref "../configure/reference-configuration-parameters/index.md#s3_storage_backend" >}}).
 
 The following code sample shows a snippet of a Grafana Mimir configuration file with every backend storage configured to use AWS S3 SSE with and Amazon S3-managed key.
 
