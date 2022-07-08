@@ -12,5 +12,5 @@ for file in $(find $VALUES_FILES_PATH -name '*.yaml'); do
   output_dir=$TEMP_DIR/$(basename "$file")
   helm template test $CHART_PATH -f $file --output-dir $output_dir --namespace citestns >/dev/null
   echo "Testing with values file $file"
-  conftest test -p $POLICIES_PATH $output_dir
+  conftest test $output_dir -p $POLICIES_PATH --ignore '.*/mimir-distributed/charts/.*'
 done
