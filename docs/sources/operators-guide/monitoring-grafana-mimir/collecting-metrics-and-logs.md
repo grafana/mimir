@@ -19,8 +19,8 @@ see [Collect metrics and logs without the Helm chart](#collect-metrics-and-logs-
 
 ## Collect metrics and logs from the Helm chart
 
-To set up the collection of metrics and logs, follow the steps that are based on the version of the Helm chart that was
-been deployed:
+To set up the collection of metrics and logs, follow the steps that are based on the version of the Helm chart that you
+deployed:
 
 * For a stable release:
     * \>= 3.x.x:
