@@ -145,11 +145,6 @@ var (
 			Desc:       "The store_gateway block configures the store-gateway component.",
 		},
 		{
-			Name:       "sse",
-			StructType: reflect.TypeOf(s3.SSEConfig{}),
-			Desc:       "The sse block configures the S3 server-side encryption.",
-		},
-		{
 			Name:       "memcached",
 			StructType: reflect.TypeOf(cache.MemcachedConfig{}),
 			Desc:       "The memcached block configures the Memcached-based caching backend.",

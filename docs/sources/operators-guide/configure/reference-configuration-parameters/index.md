@@ -3344,32 +3344,6 @@ sharding_ring:
 [thread_pool_size: <int> | default = 0]
 ```
 
-### sse
-
-The `sse` block configures the S3 server-side encryption. The supported CLI flags `<prefix>` used to reference this configuration block are:
-
-- `alertmanager-storage`
-- `blocks-storage`
-- `common.storage`
-- `ruler-storage`
-
-&nbsp;
-
-```yaml
-# Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
-# CLI flag: -<prefix>.s3.sse.type
-[type: <string> | default = ""]
-
-# KMS Key ID used to encrypt objects in S3
-# CLI flag: -<prefix>.s3.sse.kms-key-id
-[kms_key_id: <string> | default = ""]
-
-# KMS Encryption Context used for object encryption. It expects JSON formatted
-# string.
-# CLI flag: -<prefix>.s3.sse.kms-encryption-context
-[kms_encryption_context: <string> | default = ""]
-```
-
 ### memcached
 
 The `memcached` block configures the Memcached-based caching backend. The supported CLI flags `<prefix>` used to reference this configuration block are:
@@ -3469,9 +3443,19 @@ The s3_backend block configures the connection to Amazon S3 object storage backe
 # CLI flag: -<prefix>.s3.signature-version
 [signature_version: <string> | default = "v4"]
 
-# The sse block configures the S3 server-side encryption.
-# The CLI flags prefix for this block configuration is: common.storage
-[sse: <sse>]
+sse:
+  # Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
+  # CLI flag: -<prefix>.s3.sse.type
+  [type: <string> | default = ""]
+
+  # KMS Key ID used to encrypt objects in S3
+  # CLI flag: -<prefix>.s3.sse.kms-key-id
+  [kms_key_id: <string> | default = ""]
+
+  # KMS Encryption Context used for object encryption. It expects JSON formatted
+  # string.
+  # CLI flag: -<prefix>.s3.sse.kms-encryption-context
+  [kms_encryption_context: <string> | default = ""]
 
 http:
   # (advanced) The time an idle connection will remain idle before closing.
