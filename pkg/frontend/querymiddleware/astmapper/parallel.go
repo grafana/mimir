@@ -29,6 +29,21 @@ var NonParallelFuncs = []string{
 	"histogram_quantile",
 	"sort_desc",
 	"sort",
+	"time",
+	"vector",
+}
+
+// FuncsWithDefaultTimeArg is the list of functions that extract date information from a variadic list of params,
+// which defaults to be just time() otherwise.
+var FuncsWithDefaultTimeArg = []string{
+	"day_of_month",
+	"day_of_week",
+	"day_of_year",
+	"days_in_month",
+	"hour",
+	"minute",
+	"month",
+	"year",
 }
 
 // CanParallelize tests if a subtree is parallelizable.
@@ -81,7 +96,7 @@ func CanParallelize(node parser.Node, logger log.Logger) bool {
 			return false
 		}
 
-		for _, e := range n.Args {
+		for _, e := range argsWithDefaults(n) {
 			if !CanParallelize(e, logger) {
 				return false
 			}
@@ -125,6 +140,28 @@ func isAggregateExpr(n parser.Node) (bool, error) {
 
 // ParallelizableFunc ensures that a promql function can be part of a parallel query.
 func ParallelizableFunc(f parser.Function) bool {
+	for _, v := range NonParallelFuncs {
+		if v == f.Name {
+			return false
+		}
+	}
+	return true
+}
+
+// argsWithDefaults returns the arguments of the call, including the omitted defaults.
+func argsWithDefaults(call *parser.Call) parser.Expressions {
+	for _, fn := range FuncsWithDefaultTimeArg {
+		if fn == call.Func.Name && len(call.Args) == 0 {
+			return parser.Expressions{
+				&parser.Call{Func: parser.Functions["time"]},
+			}
+		}
+	}
+	return call.Args
+}
+
+// VariadicDateFunc retuns true if .
+func VariadicDateFunc(f parser.Function) bool {
 	for _, v := range NonParallelFuncs {
 		if v == f.Name {
 			return false
