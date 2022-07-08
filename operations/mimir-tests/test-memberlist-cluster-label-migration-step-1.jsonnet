@@ -21,6 +21,6 @@ mimir {
     // Step 1: Disable verification of cluster label (becaue during the migration we'll
     // have members both with and without the cluster label set).
     memberlist_ring_enabled: true,
-    memberlist_cluster_label_verification_enabled: false,
+    memberlist_cluster_label_verification_disabled: true,
   },
 }

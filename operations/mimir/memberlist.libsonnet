@@ -7,7 +7,7 @@
       'memberlist.cluster-label': $._config.memberlist_cluster_label,
     }
   ) + (
-    if $._config.memberlist_cluster_label_verification_enabled then {} else {
+    if !$._config.memberlist_cluster_label_verification_disabled then {} else {
       'memberlist.cluster-label-verification-disabled': true,
     }
   ),
@@ -30,7 +30,7 @@
     // Configures the memberlist cluster label. When verification is enabled, a memberlist member rejects any packet or stream
     // with a mismatching cluster label.
     memberlist_cluster_label: '',
-    memberlist_cluster_label_verification_enabled: true,
+    memberlist_cluster_label_verification_disabled: false,
 
     // To migrate from Consul to Memberlist check "Migrating from Consul to Memberlist KV store for hash rings" article in Mimir documentation.
     multikv_migration_enabled: false,  // Enable multi KV.

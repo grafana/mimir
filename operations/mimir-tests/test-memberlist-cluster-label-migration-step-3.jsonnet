@@ -21,6 +21,6 @@ mimir {
     // Step 1: Re-enable the cluster label verification.
     memberlist_ring_enabled: true,
     memberlist_cluster_label: 'my-cluster-label',
-    memberlist_cluster_label_verification_enabled: true,
+    memberlist_cluster_label_verification_disabled: false,
   },
 }
