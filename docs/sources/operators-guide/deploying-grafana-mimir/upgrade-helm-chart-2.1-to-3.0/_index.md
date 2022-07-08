@@ -113,23 +113,22 @@ Several parameters that were available in version 2.1 of the mimir-distributed H
 
 1. (Conditional) If you have enabled `serviceMonitor`, or you are overriding the value of anything under the `serviceMonitor` section, or both, then move the `serviceMonitor` section under `metaMonitoring`.
 
-1. Update the `rbac` configuration, based on the following changes:
+1. Update the `rbac` section, based on the following changes:
    - If you are not overriding the value of anything under the `rbac` section, then skip this step.
    - The `rbac.pspEnabled` value was removed.
-   - Use `rbac.create` along with `rbac.type` to select either Pod Security Policy or Security Context Constraints.
-   - The default behavior is unchanged.
-1. Update `mimir.config`:
-   - If you are not overriding the value of `mimir.config`, then skip this section.
-   - Before migrating your `mimir.config` value, take a look at how to [use the new simplified configuration method](#optional-use-the-new-simplified-configuration-method).
-   - Compare your overridden value of `mimir.config` with the one in the `values.yaml` file in the chart.
-   - In particular, pay attention to any of the memcached addresses since these have changed.
-   - The internal service names for memcached pods have changed.
+   - To continue using Pod Security Policy (PSP), set `rbac.create` to `true` and `rbac.type` to `psp`.
+   - To start using Security Context Constraints (SCC) instead of PSP, set `rbac.create` to `true` and `rbac.type` to `scc`.
+
+1. Update the `mimir.config` value, based on the following information:
+   - Compare your overridden value of `mimir.config` with the one in the `values.yaml` file in the chart. If you are not overriding the value of `mimir.config`, then skip this step.
+   - The service names for memcached caches have changed.
      If you previously copied the value of `mimir.config` into your values file,
-     see the point below about updating `mimir.config` to ensure the memcached addresses are updated in your configuration.
-1. **Multi-tenancy is enabled by default**
-   - The default `mimir.config` now always has multi-tenancy enabled instead of only for enterprise installations.
-   - Unless you have overridden the value of `nginx.nginxConfig.file` _and_ you are using the default `mimir.config`, then skip this section.
-   - If you have overridden the value of `nginx.nginxConfig.file` _and_ you are using the default `mimir.config`, then make sure to compare the overridden `nginx.nginxConfig.file` to the version in the `values.yaml` file in the chart to incorporate the updates. In particular pay special attention to the sections that contain `x_scope_orgid`.
+     then take the latest version of the `memcached` configuration in the `mimir.config` from the `values.yaml` file in the Helm chart.
+1. Decide whether or not to update the `nginx` configuration:
+   - Unless you have overridden the value of `nginx.nginxConfig.file`, and you are using the default `mimir.config`, then skip this step.
+   - Otherwise, compare the overridden `nginx.nginxConfig.file` value to the one in the `values.yaml` file in the Helm chart and incorporate the differences.
+   Pay attention to the sections that contain `x_scope_orgid`. The value in the `values.yaml` file contains nginx configuration
+   that adds the `X-Scope-OrgId` header to incoming requests that do not have it already set. This change preserves the default behaviour of the chart with regards to multi-tenancy.
 
 ## (Optional) Use the new, simplified configuration method
 
