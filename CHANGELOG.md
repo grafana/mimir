@@ -24,6 +24,8 @@
 
 ### Jsonnet
 
+* [FEATURE] Memberlist: added support for experimental memberlist cluster label, through the jsonnet configuration options `memberlist_cluster_label` and `memberlist_cluster_label_verification_disabled`. #2349
+
 ### Mimirtool
 
 ### Mimir Continuous Test
