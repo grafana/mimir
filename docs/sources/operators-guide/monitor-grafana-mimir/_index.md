@@ -10,7 +10,7 @@ title: Monitor Grafana Mimir
 weight: 50
 ---
 
-# Monitor Mimir
+# Monitor Grafana Mimir
 
 The following topics guide you in preparing your environment to display dashboards that you can use to monitor Grafana Mimir.
 
