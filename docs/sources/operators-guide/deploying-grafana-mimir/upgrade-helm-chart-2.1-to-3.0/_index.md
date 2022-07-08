@@ -53,9 +53,6 @@ Several parameters that were available in version 2.1 of the mimir-distributed H
                 s3:
                   secret_access_key: ${AWS_SECRET_ACCESS_KEY}
           ```
-
-          For more information about `mimir.structuredConfig` see [(Optional) Use the new, simplified configuration method](#optional-use-the-new-simplified-configuration-method).
-
    - If you are not using an external configuration (`useExternalConfig: false`), and your Mimir configuration does not contain secrets, then the storage location is automatically changed by Helm and you do not need to do anything.
 
    See [Example migrated values file](#example-migrated-values-file).
@@ -135,7 +132,6 @@ Several parameters that were available in version 2.1 of the mimir-distributed H
    - To start using Security Context Constraints (SCC) instead of PSP, set `rbac.create` to `true` and `rbac.type` to `scc`.
 
 1. Update the `mimir.config` value, based on the following information:
-   - Consider first using the [new simplified configuration method](#optional-use-the-new-simplified-configuration-method). It may significantly reduce the size of `mimir.config`.
    - Compare your overridden value of `mimir.config` with the one in the `values.yaml` file in the chart. If you are not overriding the value of `mimir.config`, then skip this step.
    - The service names for memcached caches have changed.
      If you previously copied the value of `mimir.config` into your values file,
