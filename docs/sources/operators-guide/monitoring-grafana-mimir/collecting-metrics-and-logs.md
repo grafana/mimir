@@ -22,11 +22,11 @@ see [Collect metrics and logs without the Helm chart](#collect-metrics-and-logs-
 To set up the collection of metrics and logs, follow the steps that are based on the version of the Helm chart that you
 deployed:
 
-* For a stable release:
-    * \>= 3.x.x:
-      See [Collect metrics and logs via Helm chart built-in metamonitoring](#collect-metrics-and-logs-via-the-helm-chart)
-    * \< 3.x.x: See [Collect metrics and logs via Grafana Agent](#collect-metrics-and-logs-via-grafana-agent)
-* For non-Helm installations or installations of the deprecated enterprise-metrics Helm chart, see [Collect metrics and logs without the helm chart](#collect-metrics-and-logs-without-the-helm-chart).
+- For a stable release:
+  - \>= 3.x.x:
+    See [Collect metrics and logs via Helm chart built-in metamonitoring](#collect-metrics-and-logs-via-the-helm-chart)
+  - \< 3.x.x: See [Collect metrics and logs via Grafana Agent](#collect-metrics-and-logs-via-grafana-agent)
+- For non-Helm installations or installations of the deprecated enterprise-metrics Helm chart, see [Collect metrics and logs without the helm chart](#collect-metrics-and-logs-without-the-helm-chart).
 
 ### Collect metrics and logs via the Helm chart
 
@@ -78,19 +78,19 @@ metaMonitoring:
 
     logs:
       remote:
-        url: 'https://example.com/loki/api/v1/push'
+        url: "https://example.com/loki/api/v1/push"
         auth:
-          username: '12345'
-          passwordSecretName: 'metamonitoring-credentials'
-          passwordSecretKey: 'prometheus-api-key'
+          username: "12345"
+          passwordSecretName: "metamonitoring-credentials"
+          passwordSecretKey: "prometheus-api-key"
 
     metrics:
       remote:
-        url: 'https://example.com/api/v1/push'
+        url: "https://example.com/api/v1/push"
         auth:
-          username: '54321'
-          passwordSecretName: 'metamonitoring-credentials'
-          passwordSecretKey: 'loki-api-key'
+          username: "54321"
+          passwordSecretName: "metamonitoring-credentials"
+          passwordSecretKey: "loki-api-key"
 
       scrapeK8s:
         enabled: true
@@ -125,7 +125,7 @@ logs:
           kubernetes_sd_configs:
             - role: pod
           pipeline_stages:
-            - cri: { }
+            - cri: {}
           relabel_configs:
             - action: keep
               regex: mimir-distributed-.*
