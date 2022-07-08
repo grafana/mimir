@@ -80,7 +80,7 @@ Several parameters that were available in version 2.1 of the mimir-distributed H
         replicaCount: 12
         arguments:
           - -m 2048
-          - -I 128
+          - -I 128m
           - -u 12345
         image:
           repository: memcached
@@ -125,14 +125,20 @@ Several parameters that were available in version 2.1 of the mimir-distributed H
      If you previously copied the value of `mimir.config` into your values file,
      then take the latest version of the `memcached` configuration in the `mimir.config` from the `values.yaml` file in the Helm chart.
 1. Decide whether or not to update the `nginx` configuration:
-   - Unless you have overridden the value of `nginx.nginxConfig.file`, and you are using the default `mimir.config`, then skip this step.
-   - Otherwise, compare the overridden `nginx.nginxConfig.file` value to the one in the `values.yaml` file in the Helm chart and incorporate the differences.
-   Pay attention to the sections that contain `x_scope_orgid`. The value in the `values.yaml` file contains nginx configuration
-   that adds the `X-Scope-OrgId` header to incoming requests that do not have it already set. This change preserves the default behaviour of the chart with regards to multi-tenancy.
+   - Unless you have overridden the value of `nginx.nginxConfig.file`,
+   and you are using the default `mimir.config`, then skip this step.
+   - Otherwise, compare the overridden `nginx.nginxConfig.file` value
+   to the one in the `values.yaml` file in the Helm chart,
+   and incorporate the differences.
+   Pay attention to the sections that contain `x_scope_orgid`.
+   The value in the `values.yaml` file contains Nginx configuration
+   that adds the `X-Scope-OrgId` header to incoming requests that do not already set it.
+   
+     > **Note:** This change allows Mimir clients to keep sending requests without needing to specify a tenant ID, even though multi-tenancy is now enabled by default.
 
 ## (Optional) Use the new, simplified configuration method
 
-In version 2.1.0 of the Helm chart, `mimir.config` is the recommended way to set Mimir configuration properties.
+In version 2.1.0 of the Helm chart, `mimir.config` was the recommended way to set Mimir configuration properties.
 This has lead to a couple problems:
 
 - Changing any property requires copying the entire configuration string and carefully incorporating updates from the chart on each release.
