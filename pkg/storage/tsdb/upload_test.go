@@ -9,6 +9,7 @@ import (
 	"context"
 	"os"
 	"path"
+	"path/filepath"
 	"testing"
 
 	"github.com/go-kit/log"
@@ -103,7 +104,8 @@ func TestUploadBlock(t *testing.T) {
 		// Full block.
 		require.NoError(t, UploadBlock(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), nil))
 		require.Equal(t, 3, len(bkt.Objects()))
-		require.Equal(t, 3751, len(bkt.Objects()[path.Join(b1.String(), block.ChunksDirname, "000001")]))
+		chunkFileSize := getFileSize(t, filepath.Join(tmpDir, b1.String(), block.ChunksDirname, "000001"))
+		require.Equal(t, chunkFileSize, int64(len(bkt.Objects()[path.Join(b1.String(), block.ChunksDirname, "000001")])))
 		require.Equal(t, 401, len(bkt.Objects()[path.Join(b1.String(), block.IndexFilename)]))
 		require.Equal(t, 570, len(bkt.Objects()[path.Join(b1.String(), block.MetaFilename)]))
 
@@ -115,7 +117,7 @@ func TestUploadBlock(t *testing.T) {
 
 		files := uploadedMeta.Thanos.Files
 		require.Len(t, files, 3)
-		require.Equal(t, metadata.File{RelPath: "chunks/000001", SizeBytes: 3751}, files[0])
+		require.Equal(t, metadata.File{RelPath: "chunks/000001", SizeBytes: chunkFileSize}, files[0])
 		require.Equal(t, metadata.File{RelPath: "index", SizeBytes: 401}, files[1])
 		require.Equal(t, metadata.File{RelPath: "meta.json", SizeBytes: 0}, files[2]) // meta.json is added to the files without its size.
 
@@ -129,7 +131,8 @@ func TestUploadBlock(t *testing.T) {
 		// Test Upload is idempotent.
 		require.NoError(t, UploadBlock(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), nil))
 		require.Equal(t, 3, len(bkt.Objects()))
-		require.Equal(t, 3751, len(bkt.Objects()[path.Join(b1.String(), block.ChunksDirname, "000001")]))
+		chunkFileSize := getFileSize(t, filepath.Join(tmpDir, b1.String(), block.ChunksDirname, "000001"))
+		require.Equal(t, chunkFileSize, int64(len(bkt.Objects()[path.Join(b1.String(), block.ChunksDirname, "000001")])))
 		require.Equal(t, 401, len(bkt.Objects()[path.Join(b1.String(), block.IndexFilename)]))
 		require.Equal(t, 570, len(bkt.Objects()[path.Join(b1.String(), block.MetaFilename)]))
 	})
@@ -148,8 +151,9 @@ func TestUploadBlock(t *testing.T) {
 		err = UploadBlock(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, b2.String()), nil)
 		require.NoError(t, err)
 
+		chunkFileSize := getFileSize(t, filepath.Join(tmpDir, b2.String(), block.ChunksDirname, "000001"))
 		require.Equal(t, 6, len(bkt.Objects())) // 3 from b1, 3 from b2
-		require.Equal(t, 3736, len(bkt.Objects()[path.Join(b2.String(), block.ChunksDirname, "000001")]))
+		require.Equal(t, chunkFileSize, int64(len(bkt.Objects()[path.Join(b2.String(), block.ChunksDirname, "000001")])))
 		require.Equal(t, 401, len(bkt.Objects()[path.Join(b2.String(), block.IndexFilename)]))
 		require.Equal(t, 549, len(bkt.Objects()[path.Join(b2.String(), block.MetaFilename)]))
 
@@ -199,4 +203,12 @@ func TestUploadBlock(t *testing.T) {
 		require.Equal(t, updatedMeta.Thanos.Labels, bucketMeta.Thanos.Labels)
 		require.Equal(t, updatedMeta.Thanos.Source, bucketMeta.Thanos.Source)
 	})
+}
+
+func getFileSize(t *testing.T, filepath string) int64 {
+	t.Helper()
+
+	st, err := os.Stat(filepath)
+	require.NoError(t, err)
+	return st.Size()
 }

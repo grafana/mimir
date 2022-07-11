@@ -53,10 +53,9 @@ var (
 	ErrInvalidCharactersInStoragePrefix = errors.New("storage prefix contains invalid characters, it may only contain digits and English alphabet letters")
 )
 
-// Config holds configuration for accessing long-term storage.
-type Config struct {
-	Backend       string `yaml:"backend"`
-	StoragePrefix string `yaml:"storage_prefix" category:"experimental"`
+type StorageBackendConfig struct {
+	Backend string `yaml:"backend"`
+
 	// Backends
 	S3         s3.Config         `yaml:"s3"`
 	GCS        gcs.Config        `yaml:"gcs"`
@@ -64,41 +63,41 @@ type Config struct {
 	Swift      swift.Config      `yaml:"swift"`
 	Filesystem filesystem.Config `yaml:"filesystem"`
 
-	// Not used internally, meant to allow callers to wrap Buckets
-	// created using this config
-	Middlewares []func(objstore.Bucket) (objstore.Bucket, error) `yaml:"-"`
-
 	// Used to inject additional backends into the config. Allows for this config to
 	// be embedded in multiple contexts and support non-object storage based backends.
 	ExtraBackends []string `yaml:"-"`
+
+	// Used to keep track of the flag names registered in this config, to be able to overwrite them later properly.
+	RegisteredFlags util.RegisteredFlags `yaml:"-"`
 }
 
 // Returns the supportedBackends for the package and any custom backends injected into the config.
-func (cfg *Config) supportedBackends() []string {
+func (cfg *StorageBackendConfig) supportedBackends() []string {
 	return append(SupportedBackends, cfg.ExtraBackends...)
 }
 
 // RegisterFlags registers the backend storage config.
-func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
+func (cfg *StorageBackendConfig) RegisterFlags(f *flag.FlagSet) {
 	cfg.RegisterFlagsWithPrefix("", f)
 }
 
-func (cfg *Config) RegisterFlagsWithPrefixAndDefaultDirectory(prefix, dir string, f *flag.FlagSet) {
-	cfg.S3.RegisterFlagsWithPrefix(prefix, f)
-	cfg.GCS.RegisterFlagsWithPrefix(prefix, f)
-	cfg.Azure.RegisterFlagsWithPrefix(prefix, f)
-	cfg.Swift.RegisterFlagsWithPrefix(prefix, f)
-	cfg.Filesystem.RegisterFlagsWithPrefixAndDefaultDirectory(prefix, dir, f)
+func (cfg *StorageBackendConfig) RegisterFlagsWithPrefixAndDefaultDirectory(prefix, dir string, f *flag.FlagSet) {
+	cfg.RegisteredFlags = util.TrackRegisteredFlags(prefix, f, func(prefix string, f *flag.FlagSet) {
+		cfg.S3.RegisterFlagsWithPrefix(prefix, f)
+		cfg.GCS.RegisterFlagsWithPrefix(prefix, f)
+		cfg.Azure.RegisterFlagsWithPrefix(prefix, f)
+		cfg.Swift.RegisterFlagsWithPrefix(prefix, f)
+		cfg.Filesystem.RegisterFlagsWithPrefixAndDefaultDirectory(prefix, dir, f)
 
-	f.StringVar(&cfg.Backend, prefix+"backend", Filesystem, fmt.Sprintf("Backend storage to use. Supported backends are: %s.", strings.Join(cfg.supportedBackends(), ", ")))
-	f.StringVar(&cfg.StoragePrefix, prefix+"storage-prefix", "", "Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.")
+		f.StringVar(&cfg.Backend, prefix+"backend", Filesystem, fmt.Sprintf("Backend storage to use. Supported backends are: %s.", strings.Join(cfg.supportedBackends(), ", ")))
+	})
 }
 
-func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+func (cfg *StorageBackendConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	cfg.RegisterFlagsWithPrefixAndDefaultDirectory(prefix, "", f)
 }
 
-func (cfg *Config) Validate() error {
+func (cfg *StorageBackendConfig) Validate() error {
 	if !util.StringsContain(cfg.supportedBackends(), cfg.Backend) {
 		return ErrUnsupportedStorageBackend
 	}
@@ -109,6 +108,35 @@ func (cfg *Config) Validate() error {
 		}
 	}
 
+	return nil
+}
+
+// Config holds configuration for accessing long-term storage.
+type Config struct {
+	StorageBackendConfig `yaml:",inline"`
+
+	StoragePrefix string `yaml:"storage_prefix" category:"experimental"`
+
+	// Not used internally, meant to allow callers to wrap Buckets
+	// created using this config
+	Middlewares []func(objstore.Bucket) (objstore.Bucket, error) `yaml:"-"`
+}
+
+// RegisterFlags registers the backend storage config.
+func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
+	cfg.RegisterFlagsWithPrefix("", f)
+}
+
+func (cfg *Config) RegisterFlagsWithPrefixAndDefaultDirectory(prefix, dir string, f *flag.FlagSet) {
+	cfg.StorageBackendConfig.RegisterFlagsWithPrefixAndDefaultDirectory(prefix, dir, f)
+	f.StringVar(&cfg.StoragePrefix, prefix+"storage-prefix", "", "Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.")
+}
+
+func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	cfg.RegisterFlagsWithPrefixAndDefaultDirectory(prefix, "", f)
+}
+
+func (cfg *Config) Validate() error {
 	if cfg.StoragePrefix != "" {
 		acceptablePrefixCharacters := regexp.MustCompile(validPrefixCharactersRegex)
 		if !acceptablePrefixCharacters.MatchString(cfg.StoragePrefix) {
@@ -116,7 +144,7 @@ func (cfg *Config) Validate() error {
 		}
 	}
 
-	return nil
+	return cfg.StorageBackendConfig.Validate()
 }
 
 // NewClient creates a new bucket client based on the configured backend

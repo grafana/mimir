@@ -39,11 +39,11 @@ receivers:
 
 // uploadAlertmanagerConfig uploads the provided config to the minio bucket for the specified user.
 // Uses default test minio credentials.
-func uploadAlertmanagerConfig(minio *e2e.HTTPService, user, config string) error {
+func uploadAlertmanagerConfig(minio *e2e.HTTPService, bucket, user, config string) error {
 	client, err := s3.NewBucketClient(s3.Config{
 		Endpoint:        minio.HTTPEndpoint(),
 		Insecure:        true,
-		BucketName:      alertsBucketName,
+		BucketName:      bucket,
 		AccessKeyID:     e2edb.MinioAccessKey,
 		SecretAccessKey: flagext.SecretWithValue(e2edb.MinioSecretKey),
 	}, "test", log.NewNopLogger())
@@ -74,7 +74,7 @@ func TestAlertmanager(t *testing.T) {
 	minio := e2edb.NewMinio(9000, alertsBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
-	require.NoError(t, uploadAlertmanagerConfig(minio, "user-1", mimirAlertmanagerUserConfigYaml))
+	require.NoError(t, uploadAlertmanagerConfig(minio, alertsBucketName, "user-1", mimirAlertmanagerUserConfigYaml))
 
 	alertmanager := e2emimir.NewAlertmanager(
 		"alertmanager",

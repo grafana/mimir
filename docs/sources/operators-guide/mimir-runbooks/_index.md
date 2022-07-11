@@ -605,8 +605,9 @@ How to **investigate**:
    1. Search in the logs around that time to find the log entry from when the compactor created the block ("compacted blocks" for log message)
    1. From the compactor log entry you found, pick the job ID from the `groupKey` field, f.ex. `0@9748515562602778029-merge--1645711200000-1645718400000`
    1. Then search the logs for the job ID and look for an entry with the message "compaction job finished" and `false` for the `success` field, this will show that the compactor failed uploading the block
+   1. If you found a failed compaction job, as outlined in the previous step, try searching for a corresponding log message (for the same job ID) "compaction job finished" with "success=`true`". This will mean that the compaction job was retried successfully. Note: this should produce a different block ID from the failed upload.
 1. Investigate if it was a partial upload or partial delete
-   1. If it was a partial delete or an upload failed by a compactor you can safely mark the block for deletion, and compactor will delete the block. You can use `markblocks` command from Mimir tools directory: `markblocks -mark deletion -allow-partial -tenant <tenant> <blockID>` with correct backend (eg. GCS) configuration.
+   1. If it was a partial delete or an upload failed by a compactor you can safely mark the block for deletion, and compactor will delete the block. You can use `markblocks` command from Mimir tools directory: `markblocks -mark deletion -allow-partial -tenant <tenant> <blockID>` with correct backend (eg. GCS: `-backend gcs -gcs.bucket-name <bucket-name>`) configuration.
    1. If it was a failed upload by an ingester, but not later retried (ingesters are expected to retry uploads until succeed), further investigate
 
 ### MimirQueriesIncorrect
@@ -1381,7 +1382,7 @@ How to **fix** it:
 
 ### err-mimir-tenant-too-many-ha-clusters
 
-This error occurs when a distributor rejects a write request because the number of [high-availability (HA) clusters]({{< relref "../configuring/configuring-high-availability-deduplication.md" >}}) has hit the configured limit for this tenant.
+This error occurs when a distributor rejects a write request because the number of [high-availability (HA) clusters]({{< relref "../configure/configuring-high-availability-deduplication.md" >}}) has hit the configured limit for this tenant.
 
 How it **works**:
 
@@ -1415,7 +1416,7 @@ Common **causes**:
 
 - Your code has a single target that exposes the same time series multiple times, or multiple targets with identical labels.
 - System time of your Prometheus instance has been shifted backwards. If this was a mistake, fix the system time back to normal. Otherwise, wait until the system time catches up to the time it was changed.
-- You are running multiple Prometheus instances pushing the same metrics and [your high-availability tracker is not properly configured for deduplication]({{< relref "../configuring/configuring-high-availability-deduplication.md" >}}).
+- You are running multiple Prometheus instances pushing the same metrics and [your high-availability tracker is not properly configured for deduplication]({{< relref "../configure/configuring-high-availability-deduplication.md" >}}).
 - Prometheus relabelling has been configured and it causes series to clash after the relabelling. Check the error message for information about which series has received a sample out of order.
 - A Prometheus instance was restarted, and it pushed all data from its Write-Ahead Log to remote write upon restart, some of which has already been pushed and ingested. This is normal and can be ignored.
 

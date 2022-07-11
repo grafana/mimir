@@ -55,8 +55,8 @@ local filename = 'mimir-queries.json';
     .addRow(
       $.row('Query-frontend - query splitting and results cache')
       .addPanel(
-        $.panel('Intervals per Query') +
-        $.queryPanel('sum(rate(cortex_frontend_split_queries_total{%s}[$__rate_interval])) / sum(rate(cortex_frontend_query_range_duration_seconds_count{%s, method="split_by_interval"}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.query_frontend), $.jobMatcher($._config.job_names.query_frontend)], 'splitting rate') +
+        $.panel('Intervals per query') +
+        $.queryPanel('sum(rate(cortex_frontend_split_queries_total{%s}[$__rate_interval])) / sum(rate(cortex_frontend_query_range_duration_seconds_count{%s, method="split_by_interval_and_results_cache"}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.query_frontend), $.jobMatcher($._config.job_names.query_frontend)], 'splitting rate') +
         $.panelDescription(
           'Intervals per query',
           |||
@@ -65,7 +65,7 @@ local filename = 'mimir-queries.json';
         ),
       )
       .addPanel(
-        $.panel('Results cache hit %') +
+        $.panel('Query results cache hit ratio') +
         $.queryPanel(
           |||
             # Query metrics before and after migration to new memcached backend.
@@ -83,12 +83,12 @@ local filename = 'mimir-queries.json';
           ||| % {
             frontend: $.jobMatcher($._config.job_names.query_frontend),
           },
-          'Hit rate',
+          'Hit ratio',
         ) +
         { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) },
       )
       .addPanel(
-        $.panel('Results cache misses') +
+        $.panel('Query results cache misses') +
         $.queryPanel(
           |||
             # Query metrics before and after migration to new memcached backend.
@@ -106,7 +106,7 @@ local filename = 'mimir-queries.json';
           ||| % {
             frontend: $.jobMatcher($._config.job_names.query_frontend),
           },
-          'Miss rate'
+          'Missed query results per second'
         ),
       )
     )

@@ -71,7 +71,7 @@ type state struct {
 func newReplicatedStates(userID string, rf int, re Replicator, st alertstore.AlertStore, l log.Logger, r prometheus.Registerer) *state {
 
 	s := &state{
-		logger:            l,
+		logger:            log.With(l, "user", userID),
 		userID:            userID,
 		replicationFactor: rf,
 		replicator:        re,
@@ -199,45 +199,44 @@ func (s *state) starting(ctx context.Context) error {
 	timer := prometheus.NewTimer(s.initialSyncDuration)
 	defer timer.ObserveDuration()
 
-	level.Info(s.logger).Log("msg", "Waiting for notification and silences to settle...")
+	// If replication factor is > 1 attempt to read state from other replicas, falling back to reading from
+	// storage if they are unavailable.
+	if s.replicationFactor > 1 {
+		level.Info(s.logger).Log("msg", "Waiting for notification and silences to settle...")
 
-	// If the replication factor is <= 1, there is nowhere to obtain the state from.
-	if s.replicationFactor <= 1 {
-		level.Info(s.logger).Log("msg", "skipping settling (no replicas)")
-		return nil
-	}
+		// We can check other alertmanager(s) and explicitly ask them to propagate their state to us if available.
+		readCtx, cancel := context.WithTimeout(ctx, s.settleReadTimeout)
+		defer cancel()
 
-	// We can check other alertmanager(s) and explicitly ask them to propagate their state to us if available.
-	readCtx, cancel := context.WithTimeout(ctx, s.settleReadTimeout)
-	defer cancel()
-
-	s.fetchReplicaStateTotal.Inc()
-	fullStates, err := s.replicator.ReadFullStateForUser(readCtx, s.userID)
-	if err == nil {
-		if err = s.mergeFullStates(fullStates); err == nil {
-			level.Info(s.logger).Log("msg", "state settled; proceeding")
-			s.initialSyncCompleted.WithLabelValues(syncFromReplica).Inc()
-			return nil
+		s.fetchReplicaStateTotal.Inc()
+		fullStates, err := s.replicator.ReadFullStateForUser(readCtx, s.userID)
+		if err == nil {
+			if err = s.mergeFullStates(fullStates); err == nil {
+				level.Info(s.logger).Log("msg", "state settled; proceeding")
+				s.initialSyncCompleted.WithLabelValues(syncFromReplica).Inc()
+				return nil
+			}
 		}
+
+		// The user not being found in all of the replicas is not recorded as a failure, as this is
+		// expected when this is the first replica to come up for a user. Note that it is important
+		// to continue and try to read from the state from remote storage, as the replicas may have
+		// lost state due to an all-replica restart.
+		if err != errAllReplicasUserNotFound {
+			s.fetchReplicaStateFailed.Inc()
+		}
+
+		level.Info(s.logger).Log("msg", "unable to read state from other Alertmanager replicas; trying to read from storage", "err", err)
 	}
 
-	// The user not being found in all of the replicas is not recorded as a failure, as this is
-	// expected when this is the first replica to come up for a user. Note that it is important
-	// to continue and try to read from the state from remote storage, as the replicas may have
-	// lost state due to an all-replica restart.
-	if err != errAllReplicasUserNotFound {
-		s.fetchReplicaStateFailed.Inc()
-	}
-
-	level.Info(s.logger).Log("msg", "state not settled; trying to read from storage", "err", err)
-
+	level.Info(s.logger).Log("msg", "reading state from storage")
 	// Attempt to read the state from persistent storage instead.
 	storeReadCtx, cancel := context.WithTimeout(ctx, s.storeReadTimeout)
 	defer cancel()
 
 	fullState, err := s.store.GetFullState(storeReadCtx, s.userID)
 	if errors.Is(err, alertspb.ErrNotFound) {
-		level.Info(s.logger).Log("msg", "no state for user in storage; proceeding", "user", s.userID)
+		level.Info(s.logger).Log("msg", "no state for user in storage; proceeding")
 		s.initialSyncCompleted.WithLabelValues(syncUserNotFound).Inc()
 		return nil
 	}
@@ -271,11 +270,11 @@ func (s *state) mergeFullStates(fs []*clusterpb.FullState) error {
 
 	for _, f := range fs {
 		for _, p := range f.Parts {
-			level.Debug(s.logger).Log("msg", "merging full state", "user", s.userID, "key", p.Key, "bytes", len(p.Data))
+			level.Debug(s.logger).Log("msg", "merging full state", "key", p.Key, "bytes", len(p.Data))
 
 			st, ok := s.states[p.Key]
 			if !ok {
-				level.Error(s.logger).Log("msg", "key not found while merging full state", "user", s.userID, "key", p.Key)
+				level.Error(s.logger).Log("msg", "key not found while merging full state", "key", p.Key)
 				continue
 			}
 
@@ -300,7 +299,7 @@ func (s *state) running(ctx context.Context) error {
 			s.stateReplicationTotal.WithLabelValues(p.Key).Inc()
 			if err := s.replicator.ReplicateStateForUser(ctx, s.userID, p); err != nil {
 				s.stateReplicationFailed.WithLabelValues(p.Key).Inc()
-				level.Error(s.logger).Log("msg", "failed to replicate state to other alertmanagers", "user", s.userID, "key", p.Key, "err", err)
+				level.Error(s.logger).Log("msg", "failed to replicate state to other alertmanagers", "key", p.Key, "err", err)
 			}
 		case <-ctx.Done():
 			return nil

@@ -21,8 +21,8 @@ To evaluate rules, the ruler connects directly to ingesters and store-gateways, 
 
 Configuration of the built-in querier and distributor uses their respective configuration parameters:
 
-- [Querier]({{< relref "../../../configuring/reference-configuration-parameters/index.md#querier" >}})
-- [Distributor]({{< relref "../../../configuring/reference-configuration-parameters/index.md#distributor" >}})
+- [Querier]({{< relref "../../../configure/reference-configuration-parameters/index.md#querier" >}})
+- [Distributor]({{< relref "../../../configure/reference-configuration-parameters/index.md#distributor" >}})
 
 > **Note**: When this mode is used, no query acceleration techniques are used and the evaluation of very high cardinality queries could take longer than the evaluation interval, eventually leading to missing data points in the evaluated recording rules.
 
@@ -50,7 +50,7 @@ After the alert has been active for the entire `for` duration, it enters the **F
 The ruler then notifies Alertmanagers of any **FIRING** (`firing`) alerts.
 
 Configure the addresses of Alertmanagers with the `-ruler.alertmanager-url` flag, which supports the DNS service discovery format.
-For more information about DNS service discovery, refer to [Supported discovery modes]({{< relref "../../../configuring/about-dns-service-discovery.md" >}}).
+For more information about DNS service discovery, refer to [Supported discovery modes]({{< relref "../../../configure/about-dns-service-discovery.md" >}}).
 
 ## Federated rule groups
 
@@ -99,7 +99,7 @@ The ruler supports multi-tenancy and horizontal scalability.
 To achieve horizontal scalability, the ruler shards the execution of rules by rule groups.
 Ruler replicas form their own [hash ring]({{< relref "../../hash-ring/index.md" >}}) stored in the [KV store]({{< relref "../../key-value-store.md" >}}) to divide the work of the executing rules.
 
-To configure the rulers' hash ring, refer to [configuring hash rings]({{< relref "../../../configuring/configuring-hash-rings.md" >}}).
+To configure the rulers' hash ring, refer to [configuring hash rings]({{< relref "../../../configure/configuring-hash-rings.md" >}}).
 
 ## HTTP configuration API
 
