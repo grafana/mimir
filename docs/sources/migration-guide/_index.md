@@ -9,4 +9,4 @@ weight: 30
 
 Refer to the following migration guides when you migrate to Grafana Mimir.
 
-{{< section >}}
+{{< section menuTitle="true" >}}

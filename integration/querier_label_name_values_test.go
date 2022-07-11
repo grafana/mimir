@@ -100,7 +100,7 @@ func TestQuerierLabelNamesAndValues(t *testing.T) {
 			defer s.Close()
 
 			// Set configuration.
-			flags := mergeFlags(BlocksStorageFlags(), map[string]string{
+			flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
 				"-querier.cardinality-analysis-enabled": "true",
 				"-ingester.ring.replication-factor":     "3",
 			})
@@ -321,7 +321,7 @@ func TestQuerierLabelValuesCardinality(t *testing.T) {
 			defer s.Close()
 
 			// Set configuration.
-			flags := mergeFlags(BlocksStorageFlags(), map[string]string{
+			flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
 				"-querier.cardinality-analysis-enabled": "true",
 				"-ingester.ring.replication-factor":     "3",
 			})

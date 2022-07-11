@@ -14,6 +14,7 @@ cmd/metaconvert/metaconvert_linux_arm64
 cmd/mimir-continuous-test/mimir-continuous-test
 cmd/mimir-continuous-test/mimir-continuous-test_linux_amd64
 cmd/mimir-continuous-test/mimir-continuous-test_linux_arm64
+.bak
 .uptodate
 .pkg
 .cache

@@ -1,1 +1,0 @@
-{{- include "mimir.memcached.statefulSet" (dict "ctx" $ "component" "memcached-index-queries" ) }}
