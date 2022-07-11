@@ -446,6 +446,16 @@ func TestShardSummer(t *testing.T) {
 				`)`,
 			expectedShardedQueries: 6,
 		},
+		{
+			in:                     `vector(1) > 0 and vector(1)`,
+			out:                    `vector(1) > 0 and vector(1)`,
+			expectedShardedQueries: 0,
+		},
+		{
+			in:                     `sum(foo) > 0 and vector(1)`,
+			out:                    `sum(` + concatShards(3, `sum(foo{__query_shard__="x_of_y"})`) + `) > 0 and vector(1)`,
+			expectedShardedQueries: 3,
+		},
 	} {
 		tt := tt
 
