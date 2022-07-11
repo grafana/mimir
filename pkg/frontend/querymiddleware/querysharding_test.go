@@ -447,6 +447,38 @@ func TestQueryShardingCorrectness(t *testing.T) {
 			expectedShardedQueries: 0,
 			noRangeQuery:           true,
 		},
+		"day_of_month() >= 1 and day_of_month()": {
+			query:                  `day_of_month() >= 1 and day_of_month()`,
+			expectedShardedQueries: 0,
+		},
+		"month() >= 1 and month()": {
+			query:                  `month() >= 1 and month()`,
+			expectedShardedQueries: 0,
+		},
+		"vector(1) > 0 and vector(1)": {
+			query:                  `vector(1) > 0 and vector(1)`,
+			expectedShardedQueries: 0,
+		},
+		"sum(metric_counter) > 0 and vector(1)": {
+			query:                  `sum(metric_counter) > 0 and vector(1)`,
+			expectedShardedQueries: 1,
+		},
+		"vector(1)": {
+			query:                  `vector(1)`,
+			expectedShardedQueries: 0,
+		},
+		"time()": {
+			query:                  `time()`,
+			expectedShardedQueries: 0,
+		},
+		"month(sum(metric_counter))": {
+			query:                  `month(sum(metric_counter))`,
+			expectedShardedQueries: 1, // Sharded because the contents of `sum()` is sharded.
+		},
+		"month(sum(metric_counter)) > 0 and vector(1)": {
+			query:                  `month(sum(metric_counter)) > 0 and vector(1)`,
+			expectedShardedQueries: 1, // Sharded because the contents of `sum()` is sharded.
+		},
 	}
 
 	series := make([]*promql.StorageSeries, 0, numSeries+(numHistograms*len(histogramBuckets)))
