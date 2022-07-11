@@ -83,7 +83,7 @@ func main() {
 
 	// This sets default values from flags to the config.
 	// It needs to be called before parsing the config file!
-	flagext.RegisterFlagsWithLogger(util_log.Logger, &cfg)
+	cfg.RegisterFlags(flag.CommandLine, util_log.Logger)
 
 	if configFile != "" {
 		if err := LoadConfig(configFile, expandEnv, &cfg); err != nil {
@@ -128,6 +128,13 @@ func main() {
 	if mainFlags.printVersion {
 		fmt.Fprintln(os.Stdout, version.Print("Mimir"))
 		return
+	}
+
+	if err := cfg.InheritCommonFlagValues(util_log.Logger, flag.CommandLine); err != nil {
+		fmt.Fprintf(os.Stderr, "error inheriting common flag values: %v\n", err)
+		if !testMode {
+			os.Exit(1)
+		}
 	}
 
 	// Validate the config once both the config file has been loaded

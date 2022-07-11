@@ -51,7 +51,7 @@ Gossip is a protocol by which components coordinate without the need for a centr
 
 The HA tracker is a feature of the Grafana Mimir distributor.
 It deduplicates time series received from two or more Prometheus servers that are configured to scrape the same targets.
-To configure HA tracking, refer to [Configuring high-availability deduplication]({{< relref "configuring/configuring-high-availability-deduplication.md" >}}).
+To configure HA tracking, refer to [Configuring high-availability deduplication]({{< relref "configure/configuring-high-availability-deduplication.md" >}}).
 
 ## Hash ring
 
@@ -108,7 +108,7 @@ node_cpu_seconds_total{instance="10.0.0.2",mode="user"}
 
 A tenant is the owner of a set of series written to and queried from Grafana Mimir.
 Grafana Mimir isolates series and alerts belonging to different tenants.
-To understand how Grafana Mimir authenticates tenants, refer to [Authentication and authorization]({{< relref "securing/authentication-and-authorization.md" >}}).
+To understand how Grafana Mimir authenticates tenants, refer to [Authentication and authorization]({{< relref "secure/authentication-and-authorization.md" >}}).
 
 ## Time series
 

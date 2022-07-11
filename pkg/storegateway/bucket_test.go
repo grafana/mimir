@@ -211,10 +211,7 @@ func TestBucketBlock_matchLabels(t *testing.T) {
 	meta := &metadata.Meta{
 		BlockMeta: tsdb.BlockMeta{ULID: blockID},
 		Thanos: metadata.Thanos{
-			Labels: map[string]string{
-				"a": "b",
-				"c": "d",
-			},
+			Labels: map[string]string{}, // this is empty in Mimir
 		},
 	}
 
@@ -234,7 +231,7 @@ func TestBucketBlock_matchLabels(t *testing.T) {
 				{Type: labels.MatchEqual, Name: "a", Value: "b"},
 				{Type: labels.MatchEqual, Name: "c", Value: "d"},
 			},
-			match: true,
+			match: false,
 		},
 		{
 			in: []*labels.Matcher{
@@ -283,15 +280,12 @@ func TestBucketBlock_matchLabels(t *testing.T) {
 		},
 	}
 	for _, c := range cases {
-		ok := b.matchRelabelLabels(c.in)
+		ok := b.matchLabels(c.in)
 		assert.Equal(t, c.match, ok)
 	}
 
 	// Ensure block's labels in the meta have not been manipulated.
-	assert.Equal(t, map[string]string{
-		"a": "b",
-		"c": "d",
-	}, meta.Thanos.Labels)
+	assert.Equal(t, map[string]string{}, meta.Thanos.Labels)
 }
 
 func TestBucketBlockSet_addGet(t *testing.T) {

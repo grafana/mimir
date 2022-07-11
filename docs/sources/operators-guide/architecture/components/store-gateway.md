@@ -8,7 +8,7 @@ weight: 70
 # Grafana Mimir store-gateway
 
 The store-gateway component, which is stateful, queries blocks from [long-term storage]({{< relref "../about-grafana-mimir-architecture/index.md#long-term-storage" >}}).
-On the read path, the [querier]({{< relref "./querier.md" >}}) and the [ruler]({{< relref "./ruler/index.md">}}) use the store-gateway when handling the query, whether the query comes from a user or from when a rule is being evaluated.
+On the read path, the [querier]({{< relref "querier.md" >}}) and the [ruler]({{< relref "ruler/index.md" >}}) use the store-gateway when handling the query, whether the query comes from a user or from when a rule is being evaluated.
 
 To find the right blocks to look up at query time, the store-gateway requires an almost up-to-date view of the bucket in long-term storage.
 The store-gateway keeps the bucket view updated using one of the following options:
@@ -75,7 +75,7 @@ The `store_gateway_tenant_shard_size` in the limits overrides can override the s
 
 The default `-store-gateway.tenant-shard-size` value is 0, which means that tenant's blocks are sharded across all store-gateway instances.
 
-For more information about shuffle sharding, refer to [configure shuffle sharding]({{< relref "../../configuring/configuring-shuffle-sharding/index.md" >}}).
+For more information about shuffle sharding, refer to [configure shuffle sharding]({{< relref "../../configure/configuring-shuffle-sharding/index.md" >}}).
 
 ### Auto-forget
 
@@ -86,7 +86,7 @@ The auto-forget feature works as follows: when an healthy store-gateway instance
 
 ### Zone-awareness
 
-Store-gateway replication optionally supports [zone-awareness]({{< relref "../../configuring/configuring-zone-aware-replication.md" >}}). When you enable zone-aware replication and the blocks replication factor is greater than 1, each block is replicated across store-gateway instances located in different availability zones.
+Store-gateway replication optionally supports [zone-awareness]({{< relref "../../configure/configuring-zone-aware-replication.md" >}}). When you enable zone-aware replication and the blocks replication factor is greater than 1, each block is replicated across store-gateway instances located in different availability zones.
 
 **To enable zone-aware replication for the store-gateways**:
 
@@ -128,7 +128,7 @@ The store-gateway supports the following type of caches:
 - [Metadata cache](#metadata-cache)
 
 We recommend that you use caching in a production environment.
-For more information about configuring the cache, refer to [production tips]({{< relref "../../running-production-environment/production-tips/index.md#caching" >}}).
+For more information about configuring the cache, refer to [production tips]({{< relref "../../run-production-environment/production-tips/index.md#caching" >}}).
 
 ### Index cache
 
@@ -164,14 +164,14 @@ For example, if you're running Memcached in Kubernetes, you might:
 
 1. Deploy your Memcached cluster using a [StatefulSet](https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/).
 1. Create a [headless service](https://kubernetes.io/docs/concepts/services-networking/service/#headless-services) for Memcached StatefulSet.
-1. Configure the Mimir's Memcached client address using the `dnssrvnoa+` [service discovery]({{< relref "../../configuring/about-dns-service-discovery.md" >}}).
+1. Configure the Mimir's Memcached client address using the `dnssrvnoa+` [service discovery]({{< relref "../../configure/about-dns-service-discovery.md" >}}).
 
 **To configure the Memcached backend**:
 
 1. Use `-blocks-storage.bucket-store.index-cache.backend=memcached`.
 1. Use the `-blocks-storage.bucket-store.index-cache.memcached.addresses` flag to set the address of the Memcached service.
 
-[DNS service discovery]({{< relref "../../configuring/about-dns-service-discovery.md" >}}) resolves the addresses of the Memcached servers.
+[DNS service discovery]({{< relref "../../configure/about-dns-service-discovery.md" >}}) resolves the addresses of the Memcached servers.
 
 ### Chunks cache
 
@@ -186,7 +186,7 @@ You can configure the Memcached client via flags that include the prefix `-block
 
 ### Metadata cache
 
-Store-gateways and [queriers]({{< relref "./querier.md" >}}) can use memcached to cache the following bucket metadata:
+Store-gateways and [queriers]({{< relref "querier.md" >}}) can use memcached to cache the following bucket metadata:
 
 - List of tenants
 - List of blocks per tenant
@@ -211,4 +211,4 @@ Additional flags for configuring metadata cache begin with the prefix `-blocks-s
 
 ## Store-gateway configuration
 
-For more information about store-gateway configuration, refer to [store_gateway]({{< relref "../../configuring/reference-configuration-parameters/index.md#store_gateway" >}}).
+For more information about store-gateway configuration, refer to [store_gateway]({{< relref "../../configure/reference-configuration-parameters/index.md#store_gateway" >}}).
