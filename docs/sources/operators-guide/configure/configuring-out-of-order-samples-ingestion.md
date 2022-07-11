@@ -48,3 +48,19 @@ overrides:
   tenant2:
     out_of_order_time_window: 30m
 ```
+
+Setting `out_of_order_time_window` to `0s` disables the out-of-order ingestion while you can still continue to query the out-of-order samples ingested till now.
+
+## Query caching with out-of-order ingestion enabled
+
+Once a query has been cached, out-of-order samples that get ingested later can potentially change those query results.
+
+To avoid caching queries that can get outdated, you can set `-query-frontend.max-cache-freshness` to match the `out_of_order_time_window` so that you don't cache queries
+for the time window where you still expect samples to arrive. Doing so can increase the load on your Mimir cluster depending on query characteristics.
+
+## Recording rules when out-of-order ingestion is enabled
+
+Similar to the problem above with query caching, the samples recorded via the recording rules can get outdated with new out-of-order samples being ingested.
+So you should expect some difference in results if you happen to run the raw query of the recording rule. The difference highly depends on your out-of-order ingestion pattern.
+
+If you happen to have a shorter `out_of_order_time_window`, say less than 10 minutes, then you can use `-ruler.evaluation-delay-duration` to delay your rule evaluation up to that time.
