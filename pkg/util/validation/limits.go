@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/thanos-io/thanos/pkg/block"
 	"math"
 	"strings"
 	"time"
@@ -18,6 +17,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/thanos-io/thanos/pkg/block"
 	"golang.org/x/time/rate"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
