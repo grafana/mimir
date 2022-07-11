@@ -5,6 +5,7 @@
 ### Mimirtool
 
 * [BUGFIX] Make mimirtool build for Windows work again. #2273
+* [BUGFIX] Query-frontend: `vector` and `time` functions were sharded, which made expressions like `vector(1) > 0 and vector(1)` fail. #2355
 
 ## 2.2.0-rc.0
 
