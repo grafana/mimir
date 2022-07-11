@@ -280,13 +280,13 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 
 	defer func() {
 		elapsed := time.Since(jobBeginTime)
-		level.Info(jobLogger).Log("msg", "compaction job finished", "success", rerr == nil, "duration", elapsed, "duration_ms", elapsed.Milliseconds())
 
-		// Leave the compact directory for inspection if it is a halt error
-		// or if it is not then so that possibly we would not have to download everything again.
-		if rerr != nil {
-			return
+		if rerr == nil {
+			level.Info(jobLogger).Log("msg", "compaction job succeeded", "duration", elapsed, "duration_ms", elapsed.Milliseconds())
+		} else {
+			level.Error(jobLogger).Log("msg", "compaction job failed", "duration", elapsed, "duration_ms", elapsed.Milliseconds(), "err", rerr)
 		}
+
 		if err := os.RemoveAll(subDir); err != nil {
 			level.Error(jobLogger).Log("msg", "failed to remove compaction group work directory", "path", subDir, "err", err)
 		}

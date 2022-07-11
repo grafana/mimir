@@ -1,6 +1,39 @@
 # Changelog
 
-## 2.2.0-rc.2
+## Grafana Mimir - main / unreleased
+
+### Grafana Mimir
+
+* [CHANGE] Compactor: delete source and output blocks from local disk on compaction failed, to reduce likelihood that subsequent compactions fail because of no space left on disk. #2261
+* [CHANGE] Ruler: Remove unused CLI flags `-ruler.search-pending-for` and `-ruler.flush-period` (and their respective YAML config options). #2288
+* [CHANGE] Successful gRPC requests are no longer logged (only affects internal API calls). #2309
+* [CHANGE] Add new `-*.consul.cas-retry-delay` flags. They have a default value of `1s`, while previously there was no delay between retries. #2309
+* [ENHANCEMENT] Alertmanager: Allow the HTTP `proxy_url` configuration option in the receiver's configuration. #2317
+* [ENHANCEMENT] ring: optimize shuffle-shard computation when lookback is used, and all instances have registered timestamp within the lookback window. In that case we can immediately return origial ring, because we would select all instances anyway. #2309
+* [ENHANCEMENT] Memberlist: added experimental memberlist cluster label support via `-memberlist.cluster-label` and `-memberlist.cluster-label-verification-disabled` CLI flags (and their respective YAML config options). #2354
+* [ENHANCEMENT] Object storage can now be configured for all components using the `common` YAML config option key (or `-common.storage.*` CLI flags). #2330
+* [BUGFIX] Compactor: log the actual error on compaction failed. #2261
+* [BUGFIX] Alertmanager: restore state from storage even when running a single replica. #2293
+* [BUGFIX] Ruler: do not block "List Prometheus rules" API endpoint while synching rules. #2289
+
+### Mixin
+
+* [CHANGE] Dashboards: "Slow Queries" dashboard no longer works with versions older than Grafana 9.0. #2223
+* [ENHANCEMENT] Dashboards: added missed rule evaluations to the "Evaluations per second" panel in the "Mimir / Ruler" dashboard. #2314
+* [ENHANCEMENT] Dashboards: add k8s resource requests to CPU and memory panels. #2346
+* [BUGFIX] Dashboards: fixed unit of latency panels in the "Mimir / Ruler" dashboard. #2312
+* [BUGFIX] Dashboards: fixed "Intervals per query" panel in the "Mimir / Queries" dashboard. #2308
+* [BUGFIX] Dashboards: Make "Slow Queries" dashboard works with Grafana 9.0. #2223
+
+### Jsonnet
+
+* [FEATURE] Memberlist: added support for experimental memberlist cluster label, through the jsonnet configuration options `memberlist_cluster_label` and `memberlist_cluster_label_verification_disabled`. #2349
+
+### Mimirtool
+
+### Mimir Continuous Test
+
+### Documentation
 
 ## 2.2.0-rc.1
 
@@ -149,7 +182,9 @@
 * [BUGFIX] Added missing ring endpoint exposed by Ingesters. #1918
 
 ## 2.1.0
+
 ### Grafana Mimir
+
 * [CHANGE] Compactor: No longer upload debug meta files to object storage. #1257
 * [CHANGE] Default values have changed for the following settings: #1547
     - `-alertmanager.alertmanager-client.grpc-max-recv-msg-size` now defaults to 100 MiB (previously was not configurable and set to 16 MiB)

@@ -12,28 +12,36 @@ Entries should be ordered as follows:
 Entries should include a reference to the Pull Request that introduced the change.
 
 ## main / unreleased
+* [CHANGE] **breaking change** The minimal Kubernetes version is now 1.20. This reflects the fact that Grafana does not test with older versions. #2297
+* [CHANGE] **breaking change** Make `ConfigMap` the default for `configStorageType`. This means that the Mimir (or Enterprise Metrics) configuration is now created in and loaded from a ConfigMap instead of a Secret. #2277
+  - Set to `Secret` to keep existing way of working. See related #2031, #2017, #2089.
+  - In case the configuration is loaded from an external Secret, `useExternalConfig=true`, then `configStorageType` must be set to `Secret`.
+  - Having the configuration in a ConfigMap means that `helm template` now shows the configuration directly and `helm diff upgrade` can show the changes to the configuration.
 * [CHANGE] Enable multi-tenancy by default. This means `multitenancy_enabled` is now `true` for both Mimir and Enterprise Metrics. Nginx will inject `X-Scope-OrgID=anonymous` header if the header is not present, ensuring backwards compatibility. #2117
 * [CHANGE] **breaking change** The value `serviceMonitor` and everything under it is moved to `metaMonitoring.serviceMonitor` to group all meta-monitoring settings under one section. #2236
 * [CHANGE] Added support to install on OpenShift. #2219
-  - **breaking** The value `rbac.pspEnabled` was removed.
+  - **breaking change** The value `rbac.pspEnabled` was removed.
   - Added new `rbac.type` option. Allowed values are `psp` and `scc`, for Pod Security Policy and Security Context Constraints (OpenShift) respectively.
   - Added `rbac.create` option to enable/disable RBAC configuration.
   - mc path in Minio changed to be compatible with OpenShift security.
-* [CHANGE] **breaking change** Chart now uses custom memcached templates to remove bitnami dependency. There are changes to the Helm values, listed bellow. #2064
+* [CHANGE] **breaking change** Chart now uses custom memcached templates to remove bitnami dependency. There are changes to the Helm values, listed below. #2064
   - The `memcached` section now contains common values shared across all memcached instances.
   - New `memcachedExporter` section was added to configure memcached metrics exporter.
-  - New `memcached-chunks` section was added that refers to previous `memcached` configuration.
-  - The section `memcached-queries` is renamed to `memcached-index-queries`.
-  - The value `memcached-*.replicaCount` is replaced with `memcached-*.replicas` to align with the rest of the services.
-    - Renamed `memcached.replicaCount` to `memcached-chunks.replicas`.
-    - Renamed `memcached-queries.replicaCount` to `memcached-index-queries.replicas`.
-    - Renamed `memcached-metadata.replicaCount` to `memcached-metadata.replicas`.
-    - Renamed `memcached-results.replicaCount` to `memcached-results.replicas`.
+  - New `chunks-cache` section was added that refers to previous `memcached` configuration.
+  - The section `memcached-queries` is renamed to `index-cache`.
+  - The section `memcached-metadata` is renamed to `metadata-cache`.
+  - The section `memcached-results` is renamed to `results-cache`.
+  - The value `memcached-*.replicaCount` is replaced with `*-cache.replicas` to align with the rest of the services.
+    - Renamed `memcached.replicaCount` to `chunks-cache.replicas`.
+    - Renamed `memcached-queries.replicaCount` to `index-cache.replicas`.
+    - Renamed `memcached-metadata.replicaCount` to `metadata-cache.replicas`.
+    - Renamed `memcached-results.replicaCount` to `results-cache.replicas`.
   - All memcached instances now share the same `ServiceAccount` that the chart uses for its services.
   - The value `memcached-*.architecture` was removed.
-  - The value `memcached-*.arguments` was removed, the default arguments are now encoded in the template. Use `memcached-*.extraArgs` to provide additional arguments as well as the values `memcached-*.allocatedMemory`, `memcached-*.maxItemMemory` and `memcached-*.port` to set the memcached command line flags `-m`, `-I` and `-u`.
+  - The value `memcached-*.arguments` was removed, the default arguments are now encoded in the template. Use `*-cache.extraArgs` to provide additional arguments as well as the values `*-cache.allocatedMemory`, `*-cache.maxItemMemory` and `*-cache.port` to set the memcached command line flags `-m`, `-I` and `-u`.
   - The remaining arguments are aligned with the rest of the chart's services, please consult the values file to check whether a parameter exists or was renamed.
 * [CHANGE] Change default value for `blocks_storage.bucket_store.chunks_cache.memcached.timeout` to `450ms` to increase use of cached data. #2035
+* [CHANGE] Remove setting `server.grpc_server_max_recv_msg_size` and `server.grpc_server_max_send_msg_size` to 100MB, since it is the default now, see #1884. #2300
 * [FEATURE] Add `mimir-continuous-test` in smoke-test mode. Use `helm test` to run a smoke test of the read + write path.
 * [FEATURE] Add meta-monitoring via the Grafana Agent Kubernetes operator: scrape metrics and collect logs from Mimir pods and ship them to a remote. #2068
 * [ENHANCEMENT] ServiceMonitor object will now have default values based on release namesapce in the `namespace` and `namespaceSelector` fields. #2123
@@ -50,6 +58,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Check for the containerSecurityContext in values file. #2112
 * [ENHANCEMENT] Add `NOTES.txt` to show endpoints URLs for the user at install/upgrade. #2189
 * [ENHANCEMENT] Add ServiceMonitor for overrides-exporter. #2068
+* [ENHANCEMENT] Add `nginx.resolver` for allow custom resolver in nginx configuration and `nginx.extraContainers` which allow add side containers to the nginx deployment #2196
 
 ## 2.1.0
 

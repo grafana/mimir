@@ -69,18 +69,18 @@ ingester:
           topologyKey: 'kubernetes.io/hostname'
 
 
-memcached-chunks:
+chunks-cache:
   enabled: true
   replicas: 32
 
-memcached-index-queries:
+index-cache:
   enabled: true
   replicas: 10
 
-memcached-metadata:
+metadata-cache:
   enabled: true
 
-memcached-results:
+results-cache:
   enabled: true
   replicas: 4
 

@@ -74,6 +74,7 @@ func runBackwardCompatibilityTest(t *testing.T, previousImage string, oldFlagsMa
 
 	flags := mergeFlags(
 		BlocksStorageFlags(),
+		BlocksStorageS3Flags(),
 		flagTSDBPath,
 	)
 
@@ -84,7 +85,7 @@ func runBackwardCompatibilityTest(t *testing.T, previousImage string, oldFlagsMa
 
 	// Start other Mimir components (ingester running on previous version).
 	ingester := e2emimir.NewIngester("ingester-old", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithImage(previousImage), e2emimir.WithFlagMapper(oldFlagsMapper))
-	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), BlocksStorageFlags())
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
 	assert.NoError(t, s.StartAndWaitReady(distributor, ingester))
 
 	// Wait until the distributor has updated the ring.
@@ -130,9 +131,13 @@ func runNewDistributorsCanPushToOldIngestersWithReplication(t *testing.T, previo
 	require.NoError(t, err)
 	defer s.Close()
 
-	flags := mergeFlags(BlocksStorageFlags(), map[string]string{
-		"-ingester.ring.replication-factor": "3",
-	})
+	flags := mergeFlags(
+		BlocksStorageFlags(),
+		BlocksStorageS3Flags(),
+		map[string]string{
+			"-ingester.ring.replication-factor": "3",
+		},
+	)
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()

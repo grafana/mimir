@@ -35,7 +35,10 @@ func TestQuerierRemoteRead(t *testing.T) {
 	require.NoError(t, err)
 	defer s.Close()
 
-	flags := mergeFlags(BlocksStorageFlags(), map[string]string{})
+	flags := mergeFlags(
+		BlocksStorageFlags(),
+		BlocksStorageS3Flags(),
+	)
 
 	// Start dependencies.
 	minio := e2edb.NewMinio(9000, blocksBucketName)
@@ -63,7 +66,7 @@ func TestQuerierRemoteRead(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
 
-	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), BlocksStorageFlags())
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
 	require.NoError(t, s.StartAndWaitReady(querier))
 
 	// Wait until the querier has updated the ring.
@@ -133,7 +136,7 @@ func TestQuerierStreamingRemoteRead(t *testing.T) {
 	require.NoError(t, err)
 	defer s.Close()
 
-	flags := mergeFlags(BlocksStorageFlags(), map[string]string{
+	flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
 		"-distributor.ingestion-rate-limit": "1048576",
 		"-distributor.ingestion-burst-size": "1048576",
 	})
@@ -153,7 +156,7 @@ func TestQuerierStreamingRemoteRead(t *testing.T) {
 	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring
 	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
 
-	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), BlocksStorageFlags())
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
 	require.NoError(t, s.StartAndWaitReady(querier))
 
 	// Wait until the querier has updated the ring.
