@@ -196,3 +196,24 @@ func TestCanParallel_String(t *testing.T) {
 		})
 	}
 }
+
+func TestFunctionsWithDefaultsIsUpToDate(t *testing.T) {
+	for name, f := range parser.Functions {
+		t.Run(name, func(t *testing.T) {
+			if f.Variadic == 0 {
+				return
+			}
+			if f.Name == "label_join" {
+				// label_join has no defaults, it just accepts any number of labels
+				return
+			}
+			if f.Name == "round" {
+				// round has a default value for the second scalar value, which is not relevant for sharding purposes.
+				return
+			}
+
+			// Rest of the functions with known defaults are functions with a default time() argument.
+			require.Containsf(t, FuncsWithDefaultTimeArg, name, "Function %q has variable arguments, and it's not in the list of functions with default time() argument.")
+		})
+	}
+}
