@@ -5,7 +5,6 @@ package log
 import (
 	"bytes"
 	"io"
-	"io/ioutil"
 	"os"
 	"testing"
 	"time"
@@ -163,7 +162,7 @@ func BenchmarkDedupLogger(b *testing.B) {
 
 	for bn, bc := range bcs {
 		b.Run(bn, func(b *testing.B) {
-			tmpFile, err := ioutil.TempFile("", "log-test")
+			tmpFile, err := os.CreateTemp("", "log-test")
 			if err != nil {
 				b.Fatal(err)
 			}

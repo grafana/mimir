@@ -28,7 +28,7 @@
       "kind": "field",
       "name": "log_dedup_enabled",
       "required": false,
-      "desc": "When set to true, selective log deduplicators will be activated.",
+      "desc": "When set to true, selective log deduplication will be activated.",
       "fieldValue": null,
       "fieldDefaultValue": false,
       "fieldFlag": "log.dedup-enabled",

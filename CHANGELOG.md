@@ -2,6 +2,8 @@
 
 ## Grafana Mimir - main / unreleased
 
+* [ENHANCEMENT] Logger: added log deduplicator to reduce redundancy for certain types of logs. #2041
+
 ### Grafana Mimir
 
 ### Mixin
@@ -354,7 +356,6 @@
 * [ENHANCEMENT] `/ready` endpoint now returns and logs detailed services information. #2055
 * [ENHANCEMENT] Memcached client: Reduce number of connections required to fetch cached keys from memcached. #1920
 * [ENHANCEMENT] Improved error message returned when `-querier.query-store-after` validation fails. #1914
-* [ENHANCEMENT] Logger: added log deduplicator to reduce redundancy for certain types of logs. #2041
 * [BUGFIX] Fix regexp parsing panic for regexp label matchers with start/end quantifiers. #1883
 * [BUGFIX] Ingester: fixed deceiving error log "failed to update cached shipped blocks after shipper initialisation", occurring for each new tenant in the ingester. #1893
 * [BUGFIX] Ring: fix bug where instances may appear unhealthy in the hash ring web UI even though they are not. #1933

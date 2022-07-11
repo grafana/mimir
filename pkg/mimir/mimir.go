@@ -142,7 +142,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 		"Use the '-modules' command line flag to get a list of available components, and to see which components are included with 'all'.")
 
 	f.BoolVar(&c.MultitenancyEnabled, "auth.multitenancy-enabled", true, "When set to true, incoming HTTP requests must specify tenant ID in HTTP X-Scope-OrgId header. When set to false, tenant ID from -auth.no-auth-tenant is used instead.")
-	f.BoolVar(&c.LogDedupEnabled, "log.dedup-enabled", false, "When set to true, selective log deduplicators will be activated.")
+	f.BoolVar(&c.LogDedupEnabled, "log.dedup-enabled", false, "When set to true, selective log deduplication will be activated.")
 	f.StringVar(&c.NoAuthTenant, "auth.no-auth-tenant", "anonymous", "Tenant ID to use when multitenancy is disabled.")
 	f.BoolVar(&c.PrintConfig, "print.config", false, "Print the config and exit.")
 
