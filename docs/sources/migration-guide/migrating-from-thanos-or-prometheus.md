@@ -21,7 +21,7 @@ For configuration of remote write to Grafana Mimir, refer to [Configuring Promet
 
 ## Uploading historic TSDB blocks to Grafana Mimir
 
-Grafana Mimir supports uploading of historic TSDB blocks, also from other systems such as Prometheus and Thanos.
+Grafana Mimir supports uploading of historic TSDB blocks, notably from Prometheus.
 In order to enable this functionality, either for all tenants or a specific one, refer to
 [Configuring TSDB block upload]({{< relref "../operators-guide/configure/configuring-tsdb-block-upload.md" >}}).
 
@@ -45,15 +45,7 @@ mimirtool backfill --user=<tenant> --address=http://<mimir-hostname> --id=<tenan
 **Note**: If you need to authenticate against Grafana Mimir, you can provide an API key via the `--key` flag
 (e.g., `--key=$(cat token.txt)`).
 
-Grafana Mimir will perform some conversions of each block, if they are from another system
-(e.g. Prometheus or Thanos). Only one label in meta.json is kept: `__compactor_shard_id__`.
-The following deprecated labels are stripped:
-
-- `__org_id__`
-- `__ingester_id__`
-- `__shard_id__`
-
-Any other labels are rejected. Basic sanity checks of block metadata are also performed.
+Grafana Mimir will perform some sanitization and validation of each block's metadata.
 
 ## Block metadata
 

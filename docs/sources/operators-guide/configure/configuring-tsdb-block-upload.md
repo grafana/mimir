@@ -7,7 +7,7 @@ weight: 120
 
 # Configuring TSDB block upload
 
-Grafana Mimir supports uploading of historic TSDB blocks, sourced from f.ex. Prometheus, Thanos, or
+Grafana Mimir supports uploading of historic TSDB blocks, sourced from f.ex. Prometheus or
 Grafana Mimir itself.
 
 **Note**: Please read about limitations related to importing blocks from Thanos in
@@ -36,3 +36,23 @@ overrides:
   tenant1:
     compactor_block_upload_enabled: true
 ```
+
+## Known limitations of TSDB block upload
+
+### The results-cache needs flushing
+
+After uploading one or more blocks, the results-cache needs flushing. The reason is that Grafana Mimir caches query results
+for queries that don’t touch the most recent 10 minutes of data. After uploading blocks however, queries may return different
+results (because new data was uploaded). Therefore cached results may be wrong, meaning the cache should manually be flushed
+after uploading blocks.
+
+### Blocks that are too new will not be queryable until later
+
+When queriers receive a query for a given [start, end] period, they consult this period to decide whether to read
+data from storage, ingesters, or both. Say `-querier.query-store-after` is set to `12h`. It means that a query
+`[now-13h, now]` will read data from storage. But a query `[now-5h, now]` will _not_. If a user uploads blocks that are
+“too new”, the querier may not query them, because it is configured to only query ingesters for “fresh” time ranges.
+
+### Thanos blocks cannot be uploaded
+
+Because Thanos blocks contain unsupported labels among their metadata, they cannot be uploaded.
