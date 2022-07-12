@@ -44,6 +44,9 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [CHANGE] Remove setting `server.grpc_server_max_recv_msg_size` and `server.grpc_server_max_send_msg_size` to 100MB, since it is the default now, see #1884. #2300
 * [FEATURE] Add `mimir-continuous-test` in smoke-test mode. Use `helm test` to run a smoke test of the read + write path.
 * [FEATURE] Add meta-monitoring via the Grafana Agent Kubernetes operator: scrape metrics and collect logs from Mimir pods and ship them to a remote. #2068
+* [ENHANCEMENT] Update memcached statefulset manifest #2321
+  - Added imagePullSecrets block to pull images from private registry
+  - Added resources block for memcachedExporter
 * [ENHANCEMENT] ServiceMonitor object will now have default values based on release namesapce in the `namespace` and `namespaceSelector` fields. #2123
 * [ENHANCEMENT] Set the `namespace` metadata field for all kubernetes objects to enable using `--namespace` correctly with Helm even if the specified namespace does not exist. #2123
 * [ENHANCEMENT] The new value `serviceMonitor.clusterLabel` controls whether to add a `cluster` label and with what content to ServiceMonitor metrics. #2125
