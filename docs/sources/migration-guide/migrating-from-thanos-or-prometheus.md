@@ -85,4 +85,3 @@ This may cause that incorrect results are returned for the query.
 > **Note**: It is possible to run compaction and deduplicate blocks by Thanos first by using `thanos compact` command
 > with `--compact.enable-vertical-compaction --deduplication.func=penalty --deduplication.replica-label=<LABEL>` flags.
 > Please refer to [Vertical Compaction Use Cases](https://thanos.io/tip/components/compact.md/#vertical-compaction-use-cases) for more details on offline deduplication.
-

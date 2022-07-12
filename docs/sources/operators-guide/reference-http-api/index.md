@@ -914,17 +914,18 @@ POST /api/v1/upload/block/{block}
 ```
 
 Starts the uploading of a TSDB block with a given ID to object storage. The client should send the block's
-meta.json file as the request body. If the complete block already exists in object storage, a
-`409` (Conflict) status code gets returned. If the provided meta.json file is invalid, a `400` (Bad Request)
+`meta.json` file as the request body. If the complete block already exists in object storage, a
+`409` (Conflict) status code gets returned. If the provided `meta.json` file is invalid, a `400` (Bad Request)
 status code gets returned. If the block's max time is before the tenant's retention period, a
 `422` (Unprocessable Entity) status code gets returned.
 
-If all goes well, a sanitized version of the block's meta.json file gets uploaded to object storage as
-`uploading-meta.json`, and a `200` status code gets returned.
+If the API request succeeds, a sanitized version of the block's `meta.json` file gets uploaded to object storage as
+`uploading-meta.json`, and a `200` status code gets returned. Then you can start uploading files, and once
+done, you can request completion of the block upload.
 
 Requires [authentication](#authentication).
 
-### Compactor upload block file
+### Upload block file
 
 ```
 POST /api/v1/upload/block/{block}/files?path={path}
@@ -941,12 +942,12 @@ The client must send the content of the file as the body of the request; if the 
 a `409` (Conflict) status code gets returned. If an in-flight meta file (`uploading-meta.json`) doesn't
 exist in object storage for the block in question, a `404` (Not Found) status code gets returned.
 
-If all goes well, the file gets uploaded with the given path to the block's directory in object storage,
+If the API request succeeds, the file gets uploaded with the given path to the block's directory in object storage,
 and a `200` status code gets returned.
 
 Requires [authentication](#authentication).
 
-### Compactor complete block upload
+### Complete block upload
 
 ```
 POST /api/v1/upload/block/{block}?uploadComplete=true
@@ -957,7 +958,7 @@ exists in object storage, a `409` (Conflict) status code gets returned. If an in
 (`uploading-meta.json`) doesn't exist in object storage for the block in question, a `404` (Not Found)
 status code gets returned.
 
-If all goes well, the in-flight meta file gets renamed to `meta.json` in the block's directory in
+If the API request succeeds, the in-flight meta file gets renamed to `meta.json` in the block's directory in
 object storage, so the block is considered complete, and a `200` status code gets returned.
 
 Requires [authentication](#authentication).
