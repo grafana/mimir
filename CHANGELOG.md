@@ -15,7 +15,6 @@
 * [BUGFIX] Compactor: log the actual error on compaction failed. #2261
 * [BUGFIX] Alertmanager: restore state from storage even when running a single replica. #2293
 * [BUGFIX] Ruler: do not block "List Prometheus rules" API endpoint while synching rules. #2289
-* [BUGFIX] Query-frontend: `vector` and `time` functions were sharded, which made expressions like `vector(1) > 0 and vector(1)` fail. #2355
 
 ### Mixin
 
@@ -36,6 +35,15 @@
 
 ### Documentation
 
+## 2.2.0-rc.1
+
+### Grafana Mimir
+
+* [BUGFIX] Query-frontend: `vector` and `time` functions were sharded, which made expressions like `vector(1) > 0 and vector(1)` fail. #2355
+
+### Mimirtool
+
+* [BUGFIX] Make mimirtool build for Windows work again. #2273
 
 ## 2.2.0-rc.0
 
