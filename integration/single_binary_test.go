@@ -26,7 +26,7 @@ func TestMimirShouldStartInSingleBinaryModeWithAllMemcachedConfigured(t *testing
 	memcached := e2ecache.NewMemcached()
 	require.NoError(t, s.StartAndWaitReady(consul, minio, memcached))
 
-	flags := mergeFlags(BlocksStorageFlags(), map[string]string{
+	flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
 		// Memcached.
 		"-query-frontend.cache-results":                                   "true",
 		"-query-frontend.results-cache.backend":                           "memcached",

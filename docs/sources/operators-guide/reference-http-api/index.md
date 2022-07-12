@@ -95,7 +95,7 @@ If you disable multi-tenancy, Grafana Mimir doesn't require any request to inclu
 
 Multi-tenancy can be enabled and disabled via the `-auth.multitenancy-enabled` flag or its respective YAML configuration option.
 
-For more information about authentication and authorization, refer to [Authentication and Authorization]({{< relref "../securing/authentication-and-authorization.md" >}}).
+For more information about authentication and authorization, refer to [Authentication and Authorization]({{< relref "../secure/authentication-and-authorization.md" >}}).
 
 ## All services
 
@@ -139,7 +139,7 @@ This endpoint displays the default configuration values.
 GET /runtime_config
 ```
 
-This endpoint displays the [runtime configuration]({{< relref "../configuring/about-runtime-configuration.md" >}}) currently applied to Grafana Mimir, in YAML format, including default values.
+This endpoint displays the [runtime configuration]({{< relref "../configure/about-runtime-configuration.md" >}}) currently applied to Grafana Mimir, in YAML format, including default values.
 The endpoint is only available if Grafana Mimir is configured with the `-runtime-config.file` option.
 
 #### Different modes

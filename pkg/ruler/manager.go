@@ -35,10 +35,11 @@ type DefaultMultiTenantManager struct {
 
 	mapper *mapper
 
-	// Structs for holding per-user Prometheus rules Managers
-	// and a corresponding metrics struct
-	userManagerMtx     sync.Mutex
-	userManagers       map[string]RulesManager
+	// Struct for holding per-user Prometheus rules Managers.
+	userManagerMtx sync.RWMutex
+	userManagers   map[string]RulesManager
+
+	// Prometheus rules managers metrics.
 	userManagerMetrics *ManagerMetrics
 
 	// Per-user notifiers with separate queues.
@@ -98,11 +99,6 @@ func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg
 }
 
 func (r *DefaultMultiTenantManager) SyncRuleGroups(ctx context.Context, ruleGroups map[string]rulespb.RuleGroupList) {
-	// A lock is taken to ensure if this function is called concurrently, then each call
-	// returns after the call map files and check for updates
-	r.userManagerMtx.Lock()
-	defer r.userManagerMtx.Unlock()
-
 	if !r.cfg.TenantFederation.Enabled {
 		RemoveFederatedRuleGroups(ruleGroups)
 	}
@@ -110,6 +106,9 @@ func (r *DefaultMultiTenantManager) SyncRuleGroups(ctx context.Context, ruleGrou
 	for userID, ruleGroup := range ruleGroups {
 		r.syncRulesToManager(ctx, userID, ruleGroup)
 	}
+
+	r.userManagerMtx.Lock()
+	defer r.userManagerMtx.Unlock()
 
 	// Check for deleted users and remove them
 	for userID, mngr := range r.userManagers {
@@ -129,8 +128,9 @@ func (r *DefaultMultiTenantManager) SyncRuleGroups(ctx context.Context, ruleGrou
 	r.managersTotal.Set(float64(len(r.userManagers)))
 }
 
-// syncRulesToManager maps the rule files to disk, detects any changes and will create/update the
-// the users Prometheus Rules Manager.
+// syncRulesToManager maps the rule files to disk, detects any changes and will create/update
+// the user's Prometheus Rules Manager. Since this method writes to disk it is not safe to call
+// concurrently for the same user.
 func (r *DefaultMultiTenantManager) syncRulesToManager(ctx context.Context, user string, groups rulespb.RuleGroupList) {
 	// Map the files to disk and return the file names to be passed to the users manager if they
 	// have been updated
@@ -141,33 +141,66 @@ func (r *DefaultMultiTenantManager) syncRulesToManager(ctx context.Context, user
 		return
 	}
 
-	manager, exists := r.userManagers[user]
-	if !exists || update {
-		level.Debug(r.logger).Log("msg", "updating rules", "user", user)
-		r.configUpdatesTotal.WithLabelValues(user).Inc()
-		if !exists {
-			level.Debug(r.logger).Log("msg", "creating rule manager for user", "user", user)
-			manager, err = r.newManager(ctx, user)
-			if err != nil {
-				r.lastReloadSuccessful.WithLabelValues(user).Set(0)
-				level.Error(r.logger).Log("msg", "unable to create rule manager", "user", user, "err", err)
-				return
-			}
-			// manager.Run() starts running the manager and blocks until Stop() is called.
-			// Hence run it as another goroutine.
-			go manager.Run()
-			r.userManagers[user] = manager
-		}
-		err = manager.Update(r.cfg.EvaluationInterval, files, nil, r.cfg.ExternalURL.String(), nil)
-		if err != nil {
-			r.lastReloadSuccessful.WithLabelValues(user).Set(0)
-			level.Error(r.logger).Log("msg", "unable to update rule manager", "user", user, "err", err)
-			return
-		}
-
-		r.lastReloadSuccessful.WithLabelValues(user).Set(1)
-		r.lastReloadSuccessfulTimestamp.WithLabelValues(user).SetToCurrentTime()
+	manager, created, err := r.getOrCreateManager(ctx, user)
+	if err != nil {
+		r.lastReloadSuccessful.WithLabelValues(user).Set(0)
+		level.Error(r.logger).Log("msg", "unable to create rule manager", "user", user, "err", err)
+		return
 	}
+
+	// We need to update the manager only if it was just created or rules on disk have changed.
+	if !(created || update) {
+		level.Debug(r.logger).Log("msg", "rules have not changed, skipping rule manager update", "user", user)
+		return
+	}
+
+	level.Debug(r.logger).Log("msg", "updating rules", "user", user)
+	r.configUpdatesTotal.WithLabelValues(user).Inc()
+
+	err = manager.Update(r.cfg.EvaluationInterval, files, nil, r.cfg.ExternalURL.String(), nil)
+	if err != nil {
+		r.lastReloadSuccessful.WithLabelValues(user).Set(0)
+		level.Error(r.logger).Log("msg", "unable to update rule manager", "user", user, "err", err)
+		return
+	}
+
+	r.lastReloadSuccessful.WithLabelValues(user).Set(1)
+	r.lastReloadSuccessfulTimestamp.WithLabelValues(user).SetToCurrentTime()
+}
+
+// getOrCreateManager retrieves the user manager. If it doesn't exist, it will create and start it first.
+func (r *DefaultMultiTenantManager) getOrCreateManager(ctx context.Context, user string) (RulesManager, bool, error) {
+	// Check if it already exists. Since rules are synched frequently, we expect to already exist
+	// most of the times.
+	r.userManagerMtx.RLock()
+	manager, exists := r.userManagers[user]
+	r.userManagerMtx.RUnlock()
+
+	if exists {
+		return manager, false, nil
+	}
+
+	// The manager doesn't exist. We take an exclusive lock to create it.
+	r.userManagerMtx.Lock()
+	defer r.userManagerMtx.Unlock()
+
+	// Ensure it hasn't been created in the meanwhile.
+	manager, exists = r.userManagers[user]
+	if exists {
+		return manager, false, nil
+	}
+
+	level.Debug(r.logger).Log("msg", "creating rule manager for user", "user", user)
+	manager, err := r.newManager(ctx, user)
+	if err != nil {
+		return nil, false, err
+	}
+
+	// manager.Run() starts running the manager and blocks until Stop() is called.
+	// Hence run it as another goroutine.
+	go manager.Run()
+	r.userManagers[user] = manager
+	return manager, true, nil
 }
 
 // newManager creates a prometheus rule manager wrapped with a user id
@@ -229,13 +262,14 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifie
 }
 
 func (r *DefaultMultiTenantManager) GetRules(userID string) []*promRules.Group {
-	var groups []*promRules.Group
-	r.userManagerMtx.Lock()
-	if mngr, exists := r.userManagers[userID]; exists {
-		groups = mngr.RuleGroups()
+	r.userManagerMtx.RLock()
+	mngr, exists := r.userManagers[userID]
+	r.userManagerMtx.RUnlock()
+
+	if exists {
+		return mngr.RuleGroups()
 	}
-	r.userManagerMtx.Unlock()
-	return groups
+	return nil
 }
 
 func (r *DefaultMultiTenantManager) Stop() {
@@ -249,7 +283,7 @@ func (r *DefaultMultiTenantManager) Stop() {
 	wg := sync.WaitGroup{}
 	r.userManagerMtx.Lock()
 	for user, manager := range r.userManagers {
-		level.Debug(r.logger).Log("msg", "shutting down user  manager", "user", user)
+		level.Debug(r.logger).Log("msg", "shutting down user manager", "user", user)
 		wg.Add(1)
 		go func(manager RulesManager, user string) {
 			manager.Stop()

@@ -68,7 +68,7 @@ The following configuration options determine bucket index update intervals:
   This option configures the frequency with which the bucket store attempts to load a failed bucket index.
 
 If a bucket index is unused for the amount of time configured via `-blocks-storage.bucket-store.bucket-index.idle-timeout`, (for example, if a querier instance is not receiving any query from the tenant), the querier offload its, which stops the querier from updating it at regular intervals.
-This is useful for tenants that are resharded to different queriers when [shuffle sharding]({{< relref "../../configuring/configuring-shuffle-sharding/index.md" >}}) is enabled.
+This is useful for tenants that are resharded to different queriers when [shuffle sharding]({{< relref "../../configure/configuring-shuffle-sharding/index.md" >}}) is enabled.
 
 At query time the querier and ruler determine how old a bucket index is based on its `updated_at`.
 If the age is older than the period configured via `-blocks-storage.bucket-store.bucket-index.max-stale-period` a query fails.

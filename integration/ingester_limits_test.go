@@ -49,7 +49,10 @@ func TestIngesterGlobalLimits(t *testing.T) {
 			require.NoError(t, err)
 			defer s.Close()
 
-			flags := BlocksStorageFlags()
+			flags := mergeFlags(
+				BlocksStorageFlags(),
+				BlocksStorageS3Flags(),
+			)
 			flags["-ingester.ring.replication-factor"] = "1"
 			flags["-distributor.ingestion-tenant-shard-size"] = strconv.Itoa(testData.tenantShardSize)
 			flags["-ingester.max-global-series-per-user"] = strconv.Itoa(testData.maxGlobalSeriesPerTenant)

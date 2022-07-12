@@ -50,11 +50,11 @@ func TestRulerAPI(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, blocksBucketName, rulestoreBucketName)
+	minio := e2edb.NewMinio(9000, mimirBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// Configure the ruler.
-	rulerFlags := mergeFlags(BlocksStorageFlags(), RulerFlags())
+	rulerFlags := mergeFlags(CommonStorageBackendFlags(), RulerFlags(), BlocksStorageFlags())
 
 	// Start Mimir components.
 	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), rulerFlags)
@@ -152,6 +152,7 @@ func TestRulerAPISingleBinary(t *testing.T) {
 
 	flags := mergeFlags(
 		BlocksStorageFlags(),
+		BlocksStorageS3Flags(),
 		map[string]string{
 			"-ruler-storage.local.directory": filepath.Join(e2e.ContainerSharedDir, "ruler_configs"),
 			"-ruler.poll-interval":           "2s",
@@ -217,6 +218,7 @@ func TestRulerEvaluationDelay(t *testing.T) {
 
 	flags := mergeFlags(
 		BlocksStorageFlags(),
+		BlocksStorageS3Flags(),
 		map[string]string{
 			"-ruler-storage.local.directory":   filepath.Join(e2e.ContainerSharedDir, "ruler_configs"),
 			"-ruler.poll-interval":             "2s",
@@ -352,13 +354,14 @@ func TestRulerSharding(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, rulestoreBucketName, blocksBucketName)
+	minio := e2edb.NewMinio(9000, mimirBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// Configure the ruler.
 	rulerFlags := mergeFlags(
-		BlocksStorageFlags(),
+		CommonStorageBackendFlags(),
 		RulerFlags(),
+		BlocksStorageFlags(),
 		RulerShardingFlags(consul.NetworkHTTPEndpoint()),
 		map[string]string{
 			// Enable the bucket index so we can skip the initial bucket scan.
@@ -411,14 +414,14 @@ func TestRulerAlertmanager(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, blocksBucketName, rulestoreBucketName, alertsBucketName)
+	minio := e2edb.NewMinio(9000, mimirBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// Have at least one alertmanager configuration.
-	require.NoError(t, uploadAlertmanagerConfig(minio, "user-1", mimirAlertmanagerUserConfigYaml))
+	require.NoError(t, uploadAlertmanagerConfig(minio, mimirBucketName, "user-1", mimirAlertmanagerUserConfigYaml))
 
 	// Start Alertmanagers.
-	amFlags := mergeFlags(AlertmanagerFlags(), AlertmanagerS3Flags(), AlertmanagerShardingFlags(consul.NetworkHTTPEndpoint(), 1))
+	amFlags := mergeFlags(AlertmanagerFlags(), CommonStorageBackendFlags(), AlertmanagerShardingFlags(consul.NetworkHTTPEndpoint(), 1))
 	am1 := e2emimir.NewAlertmanager("alertmanager1", amFlags)
 	am2 := e2emimir.NewAlertmanager("alertmanager2", amFlags)
 	require.NoError(t, s.StartAndWaitReady(am1, am2))
@@ -428,8 +431,9 @@ func TestRulerAlertmanager(t *testing.T) {
 
 	// Configure the ruler.
 	rulerFlags := mergeFlags(
-		BlocksStorageFlags(),
+		CommonStorageBackendFlags(),
 		RulerFlags(),
+		BlocksStorageFlags(),
 		map[string]string{
 			// Connect the ruler to Alertmanagers
 			"-ruler.alertmanager-url": strings.Join([]string{am1URL, am2URL}, ","),
@@ -464,7 +468,7 @@ func TestRulerAlertmanagerTLS(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, blocksBucketName, rulestoreBucketName, alertsBucketName)
+	minio := e2edb.NewMinio(9000, mimirBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// set the ca
@@ -495,12 +499,12 @@ func TestRulerAlertmanagerTLS(t *testing.T) {
 	))
 
 	// Have at least one alertmanager configuration.
-	require.NoError(t, uploadAlertmanagerConfig(minio, "user-1", mimirAlertmanagerUserConfigYaml))
+	require.NoError(t, uploadAlertmanagerConfig(minio, mimirBucketName, "user-1", mimirAlertmanagerUserConfigYaml))
 
 	// Start Alertmanagers.
 	amFlags := mergeFlags(
 		AlertmanagerFlags(),
-		AlertmanagerS3Flags(),
+		CommonStorageBackendFlags(),
 		AlertmanagerShardingFlags(consul.NetworkHTTPEndpoint(), 1),
 		getServerHTTPTLSFlags(),
 	)
@@ -509,8 +513,9 @@ func TestRulerAlertmanagerTLS(t *testing.T) {
 
 	// Configure the ruler.
 	rulerFlags := mergeFlags(
-		BlocksStorageFlags(),
+		CommonStorageBackendFlags(),
 		RulerFlags(),
+		BlocksStorageFlags(),
 		map[string]string{
 			// Connect the ruler to the Alertmanager
 			"-ruler.alertmanager-url": "https://" + am1.HTTPEndpoint(),
@@ -542,13 +547,14 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, blocksBucketName, rulestoreBucketName)
+	minio := e2edb.NewMinio(9000, mimirBucketName)
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// Configure the ruler.
 	flags := mergeFlags(
-		BlocksStorageFlags(),
+		CommonStorageBackendFlags(),
 		RulerFlags(),
+		BlocksStorageFlags(),
 		map[string]string{
 			// Enable the bucket index so we can skip the initial bucket scan.
 			"-blocks-storage.bucket-store.bucket-index.enabled": "true",
@@ -724,12 +730,13 @@ func TestRulerFederatedRules(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, blocksBucketName, rulestoreBucketName)
+	minio := e2edb.NewMinio(9000, mimirBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio, consul))
 
 	flags := mergeFlags(
-		BlocksStorageFlags(),
+		CommonStorageBackendFlags(),
 		RulerFlags(),
+		BlocksStorageFlags(),
 		map[string]string{
 			"-tenant-federation.enabled":        "true",
 			"-ruler.tenant-federation.enabled":  "true",
@@ -855,12 +862,13 @@ func TestRulerRemoteEvaluation(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, blocksBucketName, rulestoreBucketName)
+	minio := e2edb.NewMinio(9000, mimirBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio, consul))
 
 	flags := mergeFlags(
-		BlocksStorageFlags(),
+		CommonStorageBackendFlags(),
 		RulerFlags(),
+		BlocksStorageFlags(),
 		map[string]string{
 			"-tenant-federation.enabled":        "true",
 			"-ruler.tenant-federation.enabled":  "true",
@@ -1018,11 +1026,11 @@ func TestRulerEnableAPIs(t *testing.T) {
 
 			// Start dependencies.
 			consul := e2edb.NewConsul()
-			minio := e2edb.NewMinio(9000, blocksBucketName, rulestoreBucketName)
+			minio := e2edb.NewMinio(9000, mimirBucketName)
 			require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 			// Configure the ruler.
-			rulerFlags := mergeFlags(BlocksStorageFlags(), RulerFlags(), map[string]string{
+			rulerFlags := mergeFlags(CommonStorageBackendFlags(), RulerFlags(), BlocksStorageFlags(), map[string]string{
 				"-ruler.enable-api": fmt.Sprintf("%t", tc.apiEnabled),
 			})
 

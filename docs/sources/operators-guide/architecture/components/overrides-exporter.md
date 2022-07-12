@@ -11,7 +11,7 @@ Grafana Mimir supports applying overrides on a per-tenant basis.
 A number of overrides configure limits that prevent a single tenant from using too many resources.
 The overrides-exporter component exposes limits as Prometheus metrics so that operators can understand how close tenants are to their limits.
 
-For more information about configuring overrides, refer to [Runtime configuration file]({{< relref "../../configuring/about-runtime-configuration.md" >}}).
+For more information about configuring overrides, refer to [Runtime configuration file]({{< relref "../../configure/about-runtime-configuration.md" >}}).
 
 ## Running the overrides-exporter
 

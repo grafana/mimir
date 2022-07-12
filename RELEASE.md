@@ -105,6 +105,7 @@ To publish a release candidate:
    1. Ensure the `VERSION` file has the `-rc.X` suffix (`X` starting from `0`).
 1. After merging your PR to the release branch, `git tag` the new release (see [How to tag a release](#how-to-tag-a-release)) from the release branch.
 1. Wait until the CI pipeline succeeds (once a tag is created, the release process through GitHub Actions will be triggered for this tag).
+1. Merge the release branch `release-x.y` into `main` (see [Merging release branch into main](#merging-release-branch-into-main))
 1. Create a pre-release on GitHub. See [Creating release on GitHub](#creating-release-on-github).
 
 ### Creating release on GitHub
@@ -142,13 +143,7 @@ To publish a stable release:
 1. After merging your PR to the release branch, `git tag` the new release (see [How to tag a release](#how-to-tag-a-release)) from the release branch.
 1. Wait until the CI pipeline succeeds (once a tag is created, the release process through GitHub Actions will be triggered for this tag)
 1. Create a release on GitHub. This is basically a copy of release notes from pre-release version, with up-to-date CHANGELOG (if there were any changes in release candidates).
-1. Merge the release branch `release-x.y` into `main`
-   - Create `merge-release-X.Y-to-main` branch **from the `release-X.Y` branch** locally
-   - Merge the upstream `main` branch into your `merge-release-X.Y-to-main` branch and resolve conflicts
-   - Make a PR for merging your `merge-release-X.Y-to-main` branch into `main`
-   - Once approved, merge the PR with a **Merge** commit through one of the following strategies:
-     - Temporarily enable "Allow merge commits" option in "Settings > Options"
-     - Locally merge the `merge-release-X.Y-to-main` branch into `main`, and push the changes to `main` back to GitHub. This doesn't break `main` branch protection, since the PR has been approved already, and it also doesn't require removing the protection.
+1. Merge the release branch `release-x.y` into `main` (see [Merging release branch into main](#merging-release-branch-into-main))
 1. Open a PR to add the new version to the backward compatibility integration test (`integration/backward_compatibility_test.go`)
 1. Publish dashboards (done by a Grafana Labs member)
    1. Login to [https://grafana.com](https://grafana.com) with your Grafana Labs account
@@ -190,3 +185,15 @@ Make sure to set `release-X.Y` as the base branch, into which PR should be merge
 After PR with cherry-picked commit is reviewed, do a standard "Squash & Merge" commit that we use in Mimir.
 Keep the commit message suggested by GitHub, which is a combination of original commit message, original PR number, new PR number and cherry-picked commit hash.
 GitHub will properly attribute you and also original commit author as contributors to this change, and will also link to original commit in the UI.
+
+### Merging release branch into main
+
+To merge a release branch `release-X.Y` into `main`, please do the following:
+
+- Create `merge-release-X.Y-to-main` branch **from the upstream `main` branch** locally
+- Merge the `release-X.Y` branch into your `merge-release-X.Y-to-main` branch and resolve conflicts
+  - Keep the `main`'s `VERSION` file contents
+- Make a PR for merging your `merge-release-X.Y-to-main` branch into `main`
+- Once approved, merge the PR with a **Merge** commit through one of the following strategies:
+  - Temporarily enable "Allow merge commits" option in "Settings > Options"
+  - Locally merge the `merge-release-X.Y-to-main` branch into `main`, and push the changes to `main` back to GitHub. This doesn't break `main` branch protection, since the PR has been approved already, and it also doesn't require removing the protection.

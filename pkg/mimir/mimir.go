@@ -116,6 +116,8 @@ type Config struct {
 	RuntimeConfig       runtimeconfig.Config                       `yaml:"runtime_config"`
 	MemberlistKV        memberlist.KVConfig                        `yaml:"memberlist"`
 	QueryScheduler      scheduler.Config                           `yaml:"query_scheduler"`
+
+	Common CommonConfig `yaml:"common"`
 }
 
 // RegisterFlags registers flag.
@@ -159,6 +161,72 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.MemberlistKV.RegisterFlags(f)
 	c.ActivityTracker.RegisterFlags(f)
 	c.QueryScheduler.RegisterFlags(f)
+
+	c.Common.RegisterFlags(f)
+}
+
+func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	// First unmarshal common into the specific locations.
+	common := configWithCustomCommonUnmarshaler{
+		Common: &commonConfigUnmarshaler{
+			Storage: &specificLocationsUnmarshaler{
+				"blocks_storage":       &c.BlocksStorage.Bucket.StorageBackendConfig,
+				"ruler_storage":        &c.RulerStorage.StorageBackendConfig,
+				"alertmanager_storage": &c.AlertmanagerStorage.StorageBackendConfig,
+			},
+		},
+	}
+	if err := unmarshal(&common); err != nil {
+		return fmt.Errorf("can't unmarshal common config: %w", err)
+	}
+
+	// Then unmarshal config in a standard way.
+	// This will override previously set common values by the specific ones, if they're provided.
+	// (YAML specific takes precedence over YAML common)
+	type plain Config
+	return unmarshal((*plain)(c))
+}
+
+func (c *Config) InheritCommonFlagValues(log log.Logger, fs *flag.FlagSet) error {
+	setFlags := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { setFlags[f.Name] = true })
+
+	return multierror.New(
+		inheritFlags(log, c.Common.Storage.RegisteredFlags, c.BlocksStorage.Bucket.RegisteredFlags, setFlags),
+		inheritFlags(log, c.Common.Storage.RegisteredFlags, c.RulerStorage.RegisteredFlags, setFlags),
+		inheritFlags(log, c.Common.Storage.RegisteredFlags, c.AlertmanagerStorage.RegisteredFlags, setFlags),
+	).Err()
+}
+
+// inheritFlags takes flags from the origin set and sets them to the equivalent flags in the dest set, unless those are already set.
+func inheritFlags(log log.Logger, orig util.RegisteredFlags, dest util.RegisteredFlags, set map[string]bool) error {
+	for f, o := range orig.Flags {
+		d, ok := dest.Flags[f]
+		if !ok {
+			return fmt.Errorf("implementation error: flag %q was in flags prefixed with %q (%q) but was not in flags prefixed with %q (%q)", f, orig.Prefix, o.Name, dest.Prefix, d.Name)
+		}
+		if !set[o.Name] {
+			// Nothing to inherit because origin was not set.
+			continue
+		}
+		if set[d.Name] {
+			// Can't inherit because destination was set.
+			continue
+		}
+		if o.Value.String() == d.Value.String() {
+			// Already the same, no need to touch.
+			continue
+		}
+		level.Debug(log).Log(
+			"msg", "Inheriting flag value",
+			"origin_flag", o.Name, "origin_value", o.Value,
+			"destination_flag", d.Name, "destination_value", d.Value,
+		)
+		if err := d.Value.Set(o.Value.String()); err != nil {
+			return fmt.Errorf("can't set flag %q to flag's %q value %q: %s", d.Name, o.Name, o.Value, err)
+		}
+	}
+	return nil
 }
 
 // Validate the mimir config and return an error if the validation
@@ -329,6 +397,44 @@ func (c *Config) registerServerFlagsWithChangedDefaultValues(fs *flag.FlagSet) {
 
 		fs.Var(f.Value, f.Name, f.Usage)
 	})
+}
+
+type CommonConfig struct {
+	Storage bucket.StorageBackendConfig `yaml:"storage"`
+}
+
+// RegisterFlags registers flag.
+func (c *CommonConfig) RegisterFlags(f *flag.FlagSet) {
+	c.Storage.RegisterFlagsWithPrefix("common.storage.", f)
+}
+
+// configWithCustomCommonUnmarshaler unmarshals config with custom unmarshaler for the `common` field.
+type configWithCustomCommonUnmarshaler struct {
+	// Common will unmarshal `common` yaml key using a custom unmarshaler.
+	Common *commonConfigUnmarshaler `yaml:"common"`
+	// Throwaway will contain the rest of the configuration options,
+	// so we can still use strict unmarshaling for common,
+	// but we won't complain about not knowing the rest of the config keys.
+	Throwaway map[string]interface{} `yaml:",inline"`
+}
+
+// commonConfigUnmarshaler will unmarshal each field of the common config into specific locations.
+type commonConfigUnmarshaler struct {
+	Storage *specificLocationsUnmarshaler `yaml:"storage"`
+}
+
+// specificLocationsUnmarshaler will unmarshal yaml into specific locations.
+// Keys are names (used to provide meaningful errors) and values are references to places
+// where this should be unmarshaled.
+type specificLocationsUnmarshaler map[string]interface{}
+
+func (m specificLocationsUnmarshaler) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	for l, v := range m {
+		if err := unmarshal(v); err != nil {
+			return fmt.Errorf("key %q: %w", l, err)
+		}
+	}
+	return nil
 }
 
 // Mimir is the root datastructure for Mimir.
