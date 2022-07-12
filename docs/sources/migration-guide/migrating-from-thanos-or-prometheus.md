@@ -39,7 +39,7 @@ is a single tenant called `anonymous`.
 Use Grafana mimirtool to upload each block, e.g. identified by the previous command, to Grafana Mimir:
 
 ```bash
-mimirtool backfill --user=<tenant> --address=http://<mimir-hostname> --id=<tenant> <block1> <block2>...
+mimirtool backfill --address=http://<mimir-hostname> --id=<tenant> <block1> <block2>...
 ```
 
 **Note**: If you need to authenticate against Grafana Mimir, you can provide an API key via the `--key` flag
