@@ -798,7 +798,6 @@ func TestBlocksCleaner_ShouldNotRemovePartialBlocksInsideDelayPeriod(t *testing.
 	corruptMeta("user-2", block2)
 	requireBlockExists("user-1", block1, false)
 	requireBlockExists("user-1", block2, true)
-	require.NoError(t, cleaner.cleanUser(ctx, "user-1"))
 
 	// Set partial block delay such that block will not be marked for deletion
 	// The comparison is based on inode modification time, so anything more than very recent (< 1 second) won't be

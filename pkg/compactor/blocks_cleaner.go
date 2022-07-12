@@ -463,7 +463,7 @@ func (c *BlocksCleaner) cleanUserPartialBlocks(ctx context.Context, partials map
 		return nil
 	})
 
-	// Check if partial block is older than delay period, and mark for deletion
+	// Check if partial blocks are older than delay period, and mark for deletion
 	if !partialDeletionCutoffTime.IsZero() {
 		for _, blockID := range blocksWithoutMeta {
 			lastModified, err := findMostRecentModifiedTimeForBlock(ctx, blockID, userBucket, userLogger)
