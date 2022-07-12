@@ -1051,6 +1051,10 @@ memcachedExporter:
     tag: v0.6.0
     pullPolicy: IfNotPresent
 
+  resources:
+    requests: {}
+    limits: {}
+
 chunks-cache:
   # -- Specifies whether memcached based chunks-cache should be enabled
   enabled: false
