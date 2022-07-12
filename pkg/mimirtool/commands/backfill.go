@@ -49,7 +49,6 @@ func (c *BackfillCommand) Register(app *kingpin.Application, envVars EnvVarNames
 	cmd.Arg("block", "block to upload").Required().SetValue(&c.blocks)
 	cmd.Flag("address", "Address of the Grafana Mimir cluster").Required().StringVar(&c.clientConfig.Address)
 	cmd.Flag("id", "Grafana Mimir tenant ID").Required().StringVar(&c.clientConfig.ID)
-	cmd.Flag("user", "API user to use when contacting Grafana Mimir").Default("").StringVar(&c.clientConfig.User)
 	cmd.Flag("key", "API key to use when contacting Grafana Mimir").Default("").StringVar(&c.clientConfig.Key)
 	cmd.Flag("tls-ca-path", "TLS CA certificate to verify Grafana Mimir API as part of mTLS").Default("").StringVar(&c.clientConfig.TLS.CAPath)
 	cmd.Flag("tls-cert-path", "TLS client certificate to authenticate with the Grafana Mimir API as part of mTLS").Default("").StringVar(&c.clientConfig.TLS.CertPath)
