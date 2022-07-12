@@ -919,6 +919,9 @@ Starts the uploading of a TSDB block with a given ID to object storage. The clie
 status code gets returned. If the block's max time is before the tenant's retention period, a
 `422` (Unprocessable Entity) status code gets returned.
 
+The provided `meta.json` file must have a `thanos.files` section with the list of the block's files,
+otherwise the request will be rejected.
+
 If the API request succeeds, a sanitized version of the block's `meta.json` file gets uploaded to object storage as
 `uploading-meta.json`, and a `200` status code gets returned. Then you can start uploading files, and once
 done, you can request completion of the block upload.
@@ -962,3 +965,5 @@ If the API request succeeds, the in-flight meta file gets renamed to `meta.json`
 object storage, so the block is considered complete, and a `200` status code gets returned.
 
 Requires [authentication](#authentication).
+
+This API endpoint is experimental and subject to change.

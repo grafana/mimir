@@ -46,6 +46,9 @@ mimirtool backfill --address=http://<mimir-hostname> --id=<tenant> <block1> <blo
 (e.g., `--key=$(cat token.txt)`).
 
 Grafana Mimir will perform some sanitization and validation of each block's metadata.
+As part of this, it will reject Thanos blocks due to unsupported labels.
+The workaround, if you need to upload Thanos blocks, is to upload the blocks directly to the
+Grafana Mimir blocks bucket, prefixed by `<tenant>/<block ID>/`.
 
 ## Block metadata
 
