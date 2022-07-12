@@ -191,9 +191,9 @@ GitHub will properly attribute you and also original commit author as contributo
 To merge a release branch `release-X.Y` into `main`, please do the following:
 
 - Create `merge-release-X.Y-to-main` branch **from the upstream `main` branch** locally
-- Merge the `release-X.Y`  branch into your `merge-release-X.Y-to-main` branch and resolve conflicts
-    - Keep the `main`'s `VERSION` file contents 
+- Merge the `release-X.Y` branch into your `merge-release-X.Y-to-main` branch and resolve conflicts
+  - Keep the `main`'s `VERSION` file contents
 - Make a PR for merging your `merge-release-X.Y-to-main` branch into `main`
 - Once approved, merge the PR with a **Merge** commit through one of the following strategies:
-    - Temporarily enable "Allow merge commits" option in "Settings > Options"
-    - Locally merge the `merge-release-X.Y-to-main` branch into `main`, and push the changes to `main` back to GitHub. This doesn't break `main` branch protection, since the PR has been approved already, and it also doesn't require removing the protection.
+  - Temporarily enable "Allow merge commits" option in "Settings > Options"
+  - Locally merge the `merge-release-X.Y-to-main` branch into `main`, and push the changes to `main` back to GitHub. This doesn't break `main` branch protection, since the PR has been approved already, and it also doesn't require removing the protection.
