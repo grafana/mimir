@@ -39,11 +39,21 @@ is a single tenant called `anonymous`.
 Use Grafana mimirtool to upload each block, e.g. identified by the previous command, to Grafana Mimir:
 
 ```bash
-mimirtool backfill --user=<tenant> --key=$(cat token.txt) --address=http://<mimir-hostname> --id=<tenant> <block1> <block2>...
+mimirtool backfill --user=<tenant> --address=http://<mimir-hostname> --id=<tenant> <block1> <block2>...
 ```
 
-Grafana Mimir will perform the necessary conversions of each block, if they are from another system
-(e.g. Prometheus or Thanos). Additionally, blocks are validated so only healthy blocks are imported.
+**Note**: If you need to authenticate against Grafana Mimir, you can provide an API key via the `--key` flag
+(e.g., `--key=$(cat token.txt)`).
+
+Grafana Mimir will perform some conversions of each block, if they are from another system
+(e.g. Prometheus or Thanos). Only one label in meta.json is kept: `__compactor_shard_id__`.
+The following deprecated labels are stripped:
+
+- `__org_id__`
+- `__ingester_id__`
+- `__shard_id__`
+
+Any other labels are rejected. Basic sanity checks of block metadata are also performed.
 
 ## Block metadata
 

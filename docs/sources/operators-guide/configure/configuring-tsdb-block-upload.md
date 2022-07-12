@@ -10,6 +10,9 @@ weight: 120
 Grafana Mimir supports uploading of historic TSDB blocks, sourced from f.ex. Prometheus, Thanos, or
 Grafana Mimir itself.
 
+**Note**: Please read about limitations related to importing blocks from Thanos in
+[Migrating from Thanos or Prometheus to Grafana Mimir]({{< relref ../../migration-guide/migrating-from-thanos-or-prometheus.md >}}).
+
 The functionality is disabled by default, but can be enabled via the `-compactor.block-upload-enabled`
 CLI flag, or via the corresponding `limits.compactor_block_upload_enabled` configuration parameter:
 
