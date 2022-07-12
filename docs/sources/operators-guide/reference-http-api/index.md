@@ -77,9 +77,9 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Store-gateway tenants](#store-gateway-tenants)                                       | Store-gateway           | `GET /store-gateway/tenants`                                              |
 | [Store-gateway tenant blocks](#store-gateway-tenant-blocks)                           | Store-gateway           | `GET /store-gateway/tenant/{tenant}/blocks`                               |
 | [Compactor ring status](#compactor-ring-status)                                       | Compactor               | `GET /compactor/ring`                                                     |
-| [Start block upload](#compactor-start-block-upload)                                   | Compactor               | `POST /api/v1/upload/block/{block}`                                       |
-| [Upload block file](#compactor-upload-block-file)                                     | Compactor               | `POST /api/v1/upload/block/{block}/files?path={path}`                     |
-| [Complete block upload](#compactor-complete-block-upload)                             | Compactor               | `POST /api/v1/upload/block/{block}?uploadComplete=true`                   |
+| [Start block upload](#start-block-upload)                                             | Compactor               | `POST /api/v1/upload/block/{block}`                                       |
+| [Upload block file](#upload-block-file)                                               | Compactor               | `POST /api/v1/upload/block/{block}/files?path={path}`                     |
+| [Complete block upload](#complete-block-upload)                                       | Compactor               | `POST /api/v1/upload/block/{block}?uploadComplete=true`                   |
 
 ### Path prefixes
 
