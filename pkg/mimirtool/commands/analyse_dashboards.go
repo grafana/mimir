@@ -10,10 +10,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/grafana-tools/sdk"
 	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/grafana/mimir/pkg/mimirtool/analyze"
+	"github.com/grafana/mimir/pkg/mimirtool/minisdk"
 )
 
 type DashboardAnalyzeCommand struct {
@@ -26,7 +26,7 @@ func (cmd *DashboardAnalyzeCommand) run(k *kingpin.ParseContext) error {
 	output.OverallMetrics = make(map[string]struct{})
 
 	for _, file := range cmd.DashFilesList {
-		var board sdk.Board
+		var board minisdk.Board
 		buf, err := loadFile(file)
 		if err != nil {
 			return err
