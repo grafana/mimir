@@ -31,6 +31,8 @@
 
 ### Mimirtool
 
+* [BUGFIX] mimirtool analyze: Fix dashboard JSON unmarshalling errors by using a smaller model. #2386
+
 ### Mimir Continuous Test
 
 ### Documentation
