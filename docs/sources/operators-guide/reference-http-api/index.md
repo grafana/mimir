@@ -907,7 +907,7 @@ GET /compactor/ring
 
 Displays a web page with the compactor hash ring status, including the state, healthy and last heartbeat time of each compactor.
 
-### Compactor start block upload
+### Start block upload
 
 ```
 POST /api/v1/upload/block/{block}
