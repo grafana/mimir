@@ -933,8 +933,8 @@ POST /api/v1/upload/block/{block}/files?path={path}
 Uploads a file with a given path, for a block with a given ID. The file path has to be one of the following,
 otherwise a `400` (Bad Request) status code gets returned:
 
-- index
-- chunks/<6-digit number>
+- `index`
+- `chunks/<6-digit number>`
 
 The client must send the content of the file as the body of the request; if the body is empty, a
 `400` (Bad Request) status code gets returned. If the complete block already exists in object storage,
