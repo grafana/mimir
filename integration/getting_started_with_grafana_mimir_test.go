@@ -5,6 +5,7 @@
 package integration
 
 import (
+	"fmt"
 	"math"
 	"net/http"
 	"testing"
@@ -42,15 +43,29 @@ func TestPlayWithGrafanaMimirTutorial(t *testing.T) {
 	require.NoError(t, copyFileToSharedDir(s, "docs/sources/tutorials/play-with-grafana-mimir/config/mimir.yaml", "mimir.yaml"))
 
 	// Start dependencies.
-	minio := e2edb.NewMinio(9000, mimirBucketName)
+	minio := e2edb.NewMinio(9000, blocksBucketName, rulestoreBucketName, alertsBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio))
 
-	flags := mergeFlags(
+	flags := map[string]string{
 		// Override the storage config.
-		CommonStorageBackendFlags(),
+		"-blocks-storage.s3.access-key-id":           e2edb.MinioAccessKey,
+		"-blocks-storage.s3.secret-access-key":       e2edb.MinioSecretKey,
+		"-blocks-storage.s3.bucket-name":             blocksBucketName,
+		"-blocks-storage.s3.endpoint":                fmt.Sprintf("%s-minio-9000:9000", networkName),
+		"-blocks-storage.s3.insecure":                "true",
+		"-ruler-storage.s3.access-key-id":            e2edb.MinioAccessKey,
+		"-ruler-storage.s3.secret-access-key":        e2edb.MinioSecretKey,
+		"-ruler-storage.s3.bucket-name":              rulestoreBucketName,
+		"-ruler-storage.s3.endpoint":                 fmt.Sprintf("%s-minio-9000:9000", networkName),
+		"-ruler-storage.s3.insecure":                 "true",
+		"-alertmanager-storage.s3.access-key-id":     e2edb.MinioAccessKey,
+		"-alertmanager-storage.s3.secret-access-key": e2edb.MinioSecretKey,
+		"-alertmanager-storage.s3.bucket-name":       alertsBucketName,
+		"-alertmanager-storage.s3.endpoint":          fmt.Sprintf("%s-minio-9000:9000", networkName),
+		"-alertmanager-storage.s3.insecure":          "true",
 		// Override the list of members to join, setting the hostname we expect within the Docker network created by integration tests.
-		map[string]string{"-memberlist.join": networkName + "-mimir-1"},
-	)
+		"-memberlist.join": networkName + "-mimir-1",
+	}
 
 	// Start Mimir (3 replicas).
 	mimir1 := e2emimir.NewSingleBinary("mimir-1", flags, e2emimir.WithConfigFile("mimir.yaml"))
