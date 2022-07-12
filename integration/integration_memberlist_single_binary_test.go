@@ -143,6 +143,7 @@ func newSingleBinary(name string, servername string, join string, testFlags map[
 		mergeFlags(
 			DefaultSingleBinaryFlags(),
 			BlocksStorageFlags(),
+			BlocksStorageS3Flags(),
 			flags,
 			testFlags,
 			getTLSFlagsWithPrefix("memberlist", servername, servername == ""),

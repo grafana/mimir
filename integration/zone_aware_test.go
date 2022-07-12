@@ -30,7 +30,7 @@ func TestZoneAwareReplication(t *testing.T) {
 	require.NoError(t, err)
 	defer s.Close()
 
-	flags := BlocksStorageFlags()
+	flags := mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags())
 	flags["-ingester.ring.replication-factor"] = "3"
 	flags["-ingester.ring.zone-awareness-enabled"] = "true"
 
