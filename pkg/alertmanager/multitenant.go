@@ -58,6 +58,7 @@ var (
 	errEmptyExternalURL                    = errors.New("-alertmanager.web.external-url cannot be empty")
 	errInvalidExternalURLEndingSlash       = errors.New("the configured external URL is invalid: should not end with /")
 	errInvalidExternalURLMissingScheme     = errors.New("the configured external URL is invalid because it's missing the scheme (e.g. https://)")
+	errInvalidExternalURLMissingHostname   = errors.New("the configured external URL is invalid because it's missing the hostname")
 	errZoneAwarenessEnabledWithoutZoneInfo = errors.New("the configured alertmanager has zone awareness enabled but zone is not set")
 	errNotUploadingFallback                = errors.New("not uploading fallback configuration")
 )
@@ -122,6 +123,10 @@ func (cfg *MultitenantAlertmanagerConfig) Validate() error {
 
 	if cfg.ExternalURL.Scheme == "" {
 		return errInvalidExternalURLMissingScheme
+	}
+
+	if cfg.ExternalURL.Host == "" {
+		return errInvalidExternalURLMissingHostname
 	}
 
 	if strings.HasSuffix(cfg.ExternalURL.Path, "/") {

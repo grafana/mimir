@@ -165,6 +165,12 @@ func TestMultitenantAlertmanagerConfig_Validate(t *testing.T) {
 			},
 			expected: errInvalidExternalURLMissingScheme,
 		},
+		"should fail if external URL has no hostname": {
+			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig) {
+				require.NoError(t, cfg.ExternalURL.Set("https:///alertmanager"))
+			},
+			expected: errInvalidExternalURLMissingHostname,
+		},
 		"should fail if zone aware is enabled but zone is not set": {
 			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig) {
 				cfg.ShardingRing.ZoneAwarenessEnabled = true
