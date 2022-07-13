@@ -92,10 +92,10 @@ and health of your Grafana Mimir cluster. The dashboards query Grafana Mimir for
 
 To start, we recommend looking at these dashboards:
 
-- [Writes](http://localhost:9000/d/0156f6d15aa234d452a33a4f13c838e3/mimir-writes)
-- [Reads](http://localhost:9000/d/8d6ba60eccc4b6eedfa329b24b1bd339/mimir-reads)
-- [Queries](http://localhost:9000/d/d9931b1054053c8b972d320774bb8f1d/mimir-queries)
-- [Object store](http://localhost:9000/d/d5a3a4489d57c733b5677fb55370a723/mimir-object-store)
+- [Writes](http://localhost:9000/d/8280707b8f16e7b87b840fc1cc92d4c5/mimir-writes)
+- [Reads](http://localhost:9000/d/e327503188913dc38ad571c647eef643/mimir-reads)
+- [Queries](http://localhost:9000/d/b3abe8d5c040395cc36615cb4334c92d/mimir-queries)
+- [Object Store](http://localhost:9000/d/e1324ee2a434f4158c00a9ee279d3292/mimir-object-store)
 
 A couple of caveats:
 
