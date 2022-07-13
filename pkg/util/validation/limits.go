@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"math"
 	"strings"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/thanos-io/thanos/pkg/block"
 	"golang.org/x/time/rate"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
@@ -125,11 +127,12 @@ type Limits struct {
 	StoreGatewayTenantShardSize int `yaml:"store_gateway_tenant_shard_size" json:"store_gateway_tenant_shard_size"`
 
 	// Compactor.
-	CompactorBlocksRetentionPeriod model.Duration `yaml:"compactor_blocks_retention_period" json:"compactor_blocks_retention_period"`
-	CompactorSplitAndMergeShards   int            `yaml:"compactor_split_and_merge_shards" json:"compactor_split_and_merge_shards"`
-	CompactorSplitGroups           int            `yaml:"compactor_split_groups" json:"compactor_split_groups"`
-	CompactorTenantShardSize       int            `yaml:"compactor_tenant_shard_size" json:"compactor_tenant_shard_size"`
-	CompactorBlockUploadEnabled    bool           `yaml:"compactor_block_upload_enabled" json:"compactor_block_upload_enabled"`
+	CompactorBlocksRetentionPeriod     model.Duration `yaml:"compactor_blocks_retention_period" json:"compactor_blocks_retention_period"`
+	CompactorSplitAndMergeShards       int            `yaml:"compactor_split_and_merge_shards" json:"compactor_split_and_merge_shards"`
+	CompactorSplitGroups               int            `yaml:"compactor_split_groups" json:"compactor_split_groups"`
+	CompactorTenantShardSize           int            `yaml:"compactor_tenant_shard_size" json:"compactor_tenant_shard_size"`
+	CompactorPartialBlockDeletionDelay model.Duration `yaml:"compactor_partial_block_deletion_delay" json:"compactor_partial_block_deletion_delay"`
+	CompactorBlockUploadEnabled        bool           `yaml:"compactor_block_upload_enabled" json:"compactor_block_upload_enabled"`
 
 	// This config doesn't have a CLI flag registered here because they're registered in
 	// their own original config struct.
@@ -208,6 +211,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.CompactorSplitAndMergeShards, "compactor.split-and-merge-shards", 0, "The number of shards to use when splitting blocks. 0 to disable splitting.")
 	f.IntVar(&l.CompactorSplitGroups, "compactor.split-groups", 1, "Number of groups that blocks for splitting should be grouped into. Each group of blocks is then split separately. Number of output split shards is controlled by -compactor.split-and-merge-shards.")
 	f.IntVar(&l.CompactorTenantShardSize, "compactor.compactor-tenant-shard-size", 0, "Max number of compactors that can compact blocks for single tenant. 0 to disable the limit and use all compactors.")
+	f.Var(&l.CompactorPartialBlockDeletionDelay, "compactor.partial-block-deletion-delay", fmt.Sprintf("If a partial block (unfinished block without %s file) hasn't been modified for this time, it will be marked for deletion. 0 to disable.", block.MetaFilename))
 	f.BoolVar(&l.CompactorBlockUploadEnabled, "compactor.block-upload-enabled", false, "Enable block upload API for the tenant.")
 
 	// Store-gateway.
@@ -537,6 +541,11 @@ func (o *Overrides) CompactorSplitAndMergeShards(userID string) int {
 // CompactorSplitGroupsCount returns the number of groups that blocks for splitting should be grouped into.
 func (o *Overrides) CompactorSplitGroups(userID string) int {
 	return o.getOverridesForUser(userID).CompactorSplitGroups
+}
+
+// CompactorPartialBlockDeletionDelay returns the partial block deletion delay time period for a given user.
+func (o *Overrides) CompactorPartialBlockDeletionDelay(userID string) time.Duration {
+	return time.Duration(o.getOverridesForUser(userID).CompactorPartialBlockDeletionDelay)
 }
 
 // CompactorBlockUploadEnabled returns whether block upload is enabled for a certain tenant.
