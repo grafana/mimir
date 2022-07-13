@@ -1,19 +1,21 @@
 ---
 aliases:
-  - /docs/mimir/latest/operators-guide/configuring/configuring-out-of-order-samples-ingestion/
+  - /docs/mimir/latest/operators-guide/configure/configure-out-of-order-samples-ingestion/
 description: Learn how to configure Grafana Mimir to handle out-of-order samples ingestion.
-menuTitle: Configuring out-of-order samples ingestion
-title: Configuring out-of-order samples ingestion
+menuTitle: Configure out-of-order samples ingestion
+title: Configure out-of-order samples ingestion
 weight: 120
 ---
 
-# Configuring out-of-order samples ingestion
+# Configure out-of-order samples ingestion
 
-Grafana Mimir allows ingesting out-of-order samples from 2.2 release onwards. It is currently an experimental feature.
+If you have out-of-order samples, due to the nature of your architecture or the system that you are observing, then you can configure Grafana Mimir to set an out-of-order time-window threshold for how old samples can be ingested.
 
-## Configuring out-of-order samples ingestion instance wide
+As an **experimental** feature, Mimir allows you to ingest out-of-order samples. As a result, no sample is dropped if it is within the configured time window.
 
-To configure Grafana Mimir to accept out-of-order samples, see the following configuration snippet:
+## Configure out-of-order samples ingestion instance-wide
+
+To configure Mimir to accept out-of-order samples, see the following configuration snippet:
 
 ```yaml
 limits:
@@ -23,7 +25,7 @@ limits:
 
 ## Configure out-of-order samples per tenant
 
-If your Grafana Mimir has multitenancy enabled, you can still use the preceding method to set a default out-of-order time window threshold for all tenants.
+If your Mimir has multitenancy enabled, you can still use the preceding method to set a default out-of-order time window threshold for all tenants.
 If a particular tenant needs a custom threshold, you can use the runtime configuration to set a per-tenant override.
 
 1. Enable [runtime configuration]({{< relref "about-runtime-configuration.md" >}}).
@@ -53,18 +55,16 @@ So you should expect some difference in results if you happen to run the raw que
 
 If you happen to have a shorter `out_of_order_time_window`, say less than 10 minutes, then you can use `-ruler.evaluation-delay-duration` to delay your rule evaluation up to that time.
 
-## Meaning of out-of-order
+## Understand out-of-order
 
-Grafana Mimir and the Prometheus TSDB understand out-of-order as follows.
+Previously, Mimir and Prometheus TSDB had a couple of rules over what timestamps are accepted.
 
-The moment that a new series sample arrives, Mimir need to determine if the series already exists, and whether or not the sample is too old:
+The moment that a new series sample arrives, Mimir needs to determine if the series already exists, and whether or not the sample is too old:
 
-- If the series exists, the incoming sample must have a newer timestamp than the latest sample that is stored for the series.
-  Otherwise, it is considered out-of-order and will be dropped by the ingesters.
-- If the series does not exist, then the sample has to be within bounds, which go back 1 hour from TSDB's head-block max time (when using 2 hour block range). If it fails to be within bounds, then it is also considered out-of-bounds and will be dropped by the ingesters.
+- If the series exists within the Head block of the TSDB, the incoming sample must have a newer timestamp than the latest sample that is stored for the series. Otherwise, the ingesters consider it to be out-of-order.
+- If the series does not exist, then the sample has to be within bounds, which go back 1 hour from TSDB's head-block max time (when using 2 hour block range). If it fails to be within bounds, then the ingesters consider it to be out-of-bounds.
+
+The experimental out-of-order ingestion helps fix both the issues.
 
 > **Note:** If you're writing metrics using Prometheus remote write or the Grafana Agent, then out-of-order samples are unexpected.
 > Prometheus and Grafana Agent guarantee that samples are written in-order for the same series.
-
-If you have out-of-order samples due to the nature of your architecture or the system that is being observed, then you can configure Grafana Mimir to set an out-of-order time-window threshold for how old samples can be ingested.
-As a result, none of the preceding samples will be dropped if they are within the configured time window.
