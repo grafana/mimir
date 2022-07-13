@@ -662,6 +662,8 @@ Usage of ./cmd/mimir/mimir:
     	Number of goroutines opening blocks before compaction. (default 1)
   -compactor.meta-sync-concurrency int
     	Number of Go routines to use when syncing block meta files from the long term storage. (default 20)
+  -compactor.partial-block-deletion-delay value
+    	If a partial block (unfinished block without meta.json file) hasn't been modified for this time, it will be marked for deletion. 0 to disable.
   -compactor.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -compactor.ring.consul.cas-retry-delay duration

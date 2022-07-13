@@ -189,6 +189,9 @@ type ConfigProvider interface {
 	// CompactorTenantShardSize returns number of compactors that this user can use. 0 = all compactors.
 	CompactorTenantShardSize(userID string) int
 
+	// CompactorPartialBlockDeletionDelay returns the partial block delay time period for a given user.
+	CompactorPartialBlockDeletionDelay(userID string) time.Duration
+
 	// CompactorBlockUploadEnabled returns whether block upload is enabled for a given tenant.
 	CompactorBlockUploadEnabled(tenantID string) bool
 }

@@ -56,17 +56,18 @@ type BlocksCleaner struct {
 	lastOwnedUsers []string
 
 	// Metrics.
-	runsStarted                 prometheus.Counter
-	runsCompleted               prometheus.Counter
-	runsFailed                  prometheus.Counter
-	runsLastSuccess             prometheus.Gauge
-	blocksCleanedTotal          prometheus.Counter
-	blocksFailedTotal           prometheus.Counter
-	blocksMarkedForDeletion     prometheus.Counter
-	tenantBlocks                *prometheus.GaugeVec
-	tenantMarkedBlocks          *prometheus.GaugeVec
-	tenantPartialBlocks         *prometheus.GaugeVec
-	tenantBucketIndexLastUpdate *prometheus.GaugeVec
+	runsStarted                    prometheus.Counter
+	runsCompleted                  prometheus.Counter
+	runsFailed                     prometheus.Counter
+	runsLastSuccess                prometheus.Gauge
+	blocksCleanedTotal             prometheus.Counter
+	blocksFailedTotal              prometheus.Counter
+	blocksMarkedForDeletion        prometheus.Counter
+	partialBlocksMarkedForDeletion prometheus.Counter
+	tenantBlocks                   *prometheus.GaugeVec
+	tenantMarkedBlocks             *prometheus.GaugeVec
+	tenantPartialBlocks            *prometheus.GaugeVec
+	tenantBucketIndexLastUpdate    *prometheus.GaugeVec
 }
 
 func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, ownUser func(userID string) (bool, error), cfgProvider ConfigProvider, logger log.Logger, reg prometheus.Registerer) *BlocksCleaner {
@@ -105,6 +106,11 @@ func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, own
 			Name:        blocksMarkedForDeletionName,
 			Help:        blocksMarkedForDeletionHelp,
 			ConstLabels: prometheus.Labels{"reason": "retention"},
+		}),
+		partialBlocksMarkedForDeletion: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name:        blocksMarkedForDeletionName,
+			Help:        blocksMarkedForDeletionHelp,
+			ConstLabels: prometheus.Labels{"reason": "partial"},
 		}),
 
 		// The following metrics don't have the "cortex_compactor" prefix because not strictly related to
@@ -349,7 +355,12 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string) (returnErr
 	// Partial blocks with a deletion mark can be cleaned up. This is a best effort, so we don't return
 	// error if the cleanup of partial blocks fail.
 	if len(partials) > 0 {
-		c.cleanUserPartialBlocks(ctx, partials, idx, userBucket, userLogger)
+		delay := c.cfgProvider.CompactorPartialBlockDeletionDelay(userID)
+		var partialDeletionCutoffTime time.Time
+		if delay > 0 {
+			partialDeletionCutoffTime = time.Now().Add(-delay)
+		}
+		c.cleanUserPartialBlocks(ctx, partials, idx, partialDeletionCutoffTime, userBucket, userLogger)
 	}
 
 	// Upload the updated index to the storage.
@@ -400,9 +411,8 @@ func (c *BlocksCleaner) deleteBlocksMarkedForDeletion(ctx context.Context, idx *
 	})
 }
 
-// cleanUserPartialBlocks delete partial blocks which are safe to be deleted. The provided partials map
-// and index are updated accordingly.
-func (c *BlocksCleaner) cleanUserPartialBlocks(ctx context.Context, partials map[ulid.ULID]error, idx *bucketindex.Index, userBucket objstore.InstrumentedBucket, userLogger log.Logger) {
+// cleanUserPartialBlocks deletes partial blocks which are safe to be deleted. The provided index is updated accordingly.
+func (c *BlocksCleaner) cleanUserPartialBlocks(ctx context.Context, partials map[ulid.ULID]error, idx *bucketindex.Index, partialDeletionCutoffTime time.Time, userBucket objstore.InstrumentedBucket, userLogger log.Logger) {
 	// Collect all blocks with missing meta.json into buffered channel.
 	blocks := make([]ulid.ULID, 0, len(partials))
 
@@ -411,11 +421,11 @@ func (c *BlocksCleaner) cleanUserPartialBlocks(ctx context.Context, partials map
 		if !errors.Is(blockErr, bucketindex.ErrBlockMetaNotFound) {
 			continue
 		}
-
 		blocks = append(blocks, blockID)
 	}
 
 	var mu sync.Mutex
+	var blocksWithoutMeta []ulid.ULID
 
 	// We don't want to return errors from our function, as that would stop ForEach loop early.
 	_ = concurrency.ForEachJob(ctx, len(blocks), c.cfg.DeleteBlocksConcurrency, func(ctx context.Context, jobIdx int) error {
@@ -424,6 +434,9 @@ func (c *BlocksCleaner) cleanUserPartialBlocks(ctx context.Context, partials map
 		// We can safely delete only partial blocks with a deletion mark.
 		err := metadata.ReadMarker(ctx, userLogger, userBucket, blockID.String(), &metadata.DeletionMark{})
 		if errors.Is(err, metadata.ErrorMarkerNotFound) {
+			mu.Lock()
+			blocksWithoutMeta = append(blocksWithoutMeta, blockID)
+			mu.Unlock()
 			return nil
 		}
 		if err != nil {
@@ -449,6 +462,23 @@ func (c *BlocksCleaner) cleanUserPartialBlocks(ctx context.Context, partials map
 		level.Info(userLogger).Log("msg", "deleted partial block marked for deletion", "block", blockID)
 		return nil
 	})
+
+	// Check if partial blocks are older than delay period, and mark for deletion
+	if !partialDeletionCutoffTime.IsZero() {
+		for _, blockID := range blocksWithoutMeta {
+			lastModified, err := findMostRecentModifiedTimeForBlock(ctx, blockID, userBucket, userLogger)
+			if err != nil {
+				level.Warn(userLogger).Log("msg", "failed to find last modified time for partial block", "block", blockID, "err", err)
+				continue
+			}
+			if !lastModified.IsZero() && lastModified.Before(partialDeletionCutoffTime) {
+				level.Info(userLogger).Log("msg", "stale partial block found: marking block for deletion", "block", blockID, "last modified", lastModified)
+				if err := block.MarkForDeletion(ctx, userLogger, userBucket, blockID, "stale partial block", c.partialBlocksMarkedForDeletion); err != nil {
+					level.Warn(userLogger).Log("msg", "failed to mark partial block for deletion", "block", blockID, "err", err)
+				}
+			}
+		}
+	}
 }
 
 // applyUserRetentionPeriod marks blocks for deletion which have aged past the retention period.
@@ -492,4 +522,20 @@ func listBlocksOutsideRetentionPeriod(idx *bucketindex.Index, threshold time.Tim
 	}
 
 	return
+}
+
+// findMostRecentModifiedTimeForBlock finds the most recent modification time for all files in a block
+func findMostRecentModifiedTimeForBlock(ctx context.Context, blockID ulid.ULID, userBucket objstore.InstrumentedBucket, userLogger log.Logger) (time.Time, error) {
+	var modifiedTime time.Time
+	err := userBucket.Iter(ctx, blockID.String(), func(name string) error {
+		attrib, err := userBucket.Attributes(ctx, name)
+		if err != nil {
+			return errors.Wrapf(err, "failed to get attributes for %s", name)
+		}
+		if attrib.LastModified.After(modifiedTime) {
+			modifiedTime = attrib.LastModified
+		}
+		return nil
+	})
+	return modifiedTime, err
 }
