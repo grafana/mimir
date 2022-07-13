@@ -18,6 +18,7 @@
 * [BUGFIX] Compactor: log the actual error on compaction failed. #2261
 * [BUGFIX] Alertmanager: restore state from storage even when running a single replica. #2293
 * [BUGFIX] Ruler: do not block "List Prometheus rules" API endpoint while syncing rules. #2289
+* [BUGFIX] Alertmanager: ensure the configured `-alertmanager.web.external-url` is a full URL, including the scheme and hostname. #2381
 
 ### Mixin
 
