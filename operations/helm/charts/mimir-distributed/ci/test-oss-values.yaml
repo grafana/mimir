@@ -47,28 +47,28 @@ testing:
   minio:
     use_secret: true
 
-memcached-chunks:
+chunks-cache:
   enabled: true
   allocatedMemory: 10
   resources:
     requests:
       cpu: 10m
 
-memcached-index-queries:
+index-cache:
   enabled: true
   allocatedMemory: 30
   resources:
     requests:
       cpu: 10m
 
-memcached-metadata:
+metadata-cache:
   enabled: true
   allocatedMemory: 10
   resources:
     requests:
       cpu: 10m
 
-memcached-results:
+results-cache:
   enabled: true
   allocatedMemory: 10
   resources:

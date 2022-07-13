@@ -123,27 +123,27 @@ mimir:
     blocks_storage:
       backend: s3
       bucket_store:
-        {{- if index .Values "memcached-chunks" "enabled" }}
+        {{- if index .Values "chunks-cache" "enabled" }}
         chunks_cache:
           backend: memcached
           memcached:
-            addresses: dns+{{ template "mimir.fullname" . }}-memcached-chunks.{{ .Release.Namespace }}.svc:{{ (index .Values "memcached-chunks").port }}
-            max_item_size: {{ mul (index .Values "memcached-chunks").maxItemMemory 1024 1024 }}
+            addresses: {{ include "mimir.chunksCacheAddress" . }}
+            max_item_size: {{ mul (index .Values "chunks-cache").maxItemMemory 1024 1024 }}
             timeout: 450ms
         {{- end }}
-        {{- if index .Values "memcached-index-queries" "enabled" }}
+        {{- if index .Values "index-cache" "enabled" }}
         index_cache:
           backend: memcached
           memcached:
-            addresses: dns+{{ template "mimir.fullname" . }}-memcached-index-queries.{{ .Release.Namespace }}.svc:{{ (index .Values "memcached-index-queries").port }}
-            max_item_size: {{ mul (index .Values "memcached-index-queries").maxItemMemory 1024 1024 }}
+            addresses: {{ include "mimir.indexCacheAddress" . }}
+            max_item_size: {{ mul (index .Values "index-cache").maxItemMemory 1024 1024 }}
         {{- end }}
-        {{- if index .Values "memcached-metadata" "enabled" }}
+        {{- if index .Values "metadata-cache" "enabled" }}
         metadata_cache:
           backend: memcached
           memcached:
-            addresses: dns+{{ template "mimir.fullname" . }}-memcached-metadata.{{ .Release.Namespace }}.svc:{{ (index .Values "memcached-metadata").port }}
-            max_item_size: {{ mul (index .Values "memcached-metadata").maxItemMemory 1024 1024 }}
+            addresses: {{ include "mimir.metadataCacheAddress" . }}
+            max_item_size: {{ mul (index .Values "metadata-cache").maxItemMemory 1024 1024 }}
         {{- end }}
         sync_dir: /data/tsdb-sync
       {{- if .Values.minio.enabled }}
@@ -167,12 +167,12 @@ mimir:
     frontend:
       align_queries_with_step: true
       log_queries_longer_than: 10s
-      {{- if index .Values "memcached-results" "enabled" }}
+      {{- if index .Values "results-cache" "enabled" }}
       results_cache:
         backend: memcached
         memcached:
-          addresses: dns+{{ template "mimir.fullname" . }}-memcached-results.{{ .Release.Namespace }}.svc:{{ (index .Values "memcached-results").port }}
-          max_item_size: {{ mul (index .Values "memcached-results").maxItemMemory 1024 1024 }}
+          addresses: {{ include "mimir.resultsCacheAddress" . }}
+          max_item_size: {{ mul (index .Values "results-cache").maxItemMemory 1024 1024 }}
       cache_results: true
       {{- end }}
 
@@ -1051,57 +1051,57 @@ memcachedExporter:
     tag: v0.6.0
     pullPolicy: IfNotPresent
 
-memcached-chunks:
-  # -- Specifies whether memcached-chunks should be enabled
+chunks-cache:
+  # -- Specifies whether memcached based chunks-cache should be enabled
   enabled: false
 
-  # -- Total number of memcached-chunks replicas
+  # -- Total number of chunks-cache replicas
   replicas: 1
 
-  # -- Port of the memcached-chunks service
+  # -- Port of the chunks-cache service
   port: 11211
 
-  # -- Amount of memory allocated to memcached-chunks for object storage (in MB).
+  # -- Amount of memory allocated to chunks-cache for object storage (in MB).
   allocatedMemory: 8192
 
-  # -- Maximum item memory for memcached-chunks (in MB).
+  # -- Maximum item memory for chunks-cache (in MB).
   maxItemMemory: 1
 
-  # -- Extra init containers for memcached-chunks pods
+  # -- Extra init containers for chunks-cache pods
   initContainers: []
 
-  # -- Annotations for the memcached-chunks pods
+  # -- Annotations for the chunks-cache pods
   annotations: {}
-  # -- Node selector for memcached-chunks pods
+  # -- Node selector for chunks-cache pods
   nodeSelector: {}
-  # -- Affinity for memcached-chunks pods
+  # -- Affinity for chunks-cache pods
   affinity: {}
-  # -- Tolerations for memcached-chunks pods
+  # -- Tolerations for chunks-cache pods
   tolerations: []
   # -- Pod Disruption Budget
   podDisruptionBudget: {}
-  # -- The name of the PriorityClass for memcached-chunks pods
+  # -- The name of the PriorityClass for chunks-cache pods
   priorityClassName: null
-  # -- Labels for memcached-chunks pods
+  # -- Labels for chunks-cache pods
   podLabels: {}
-  # -- Annotations for memcached-chunks pods
+  # -- Annotations for chunks-cache pods
   podAnnotations: {}
-  # -- Management policy for memcached-chunks pods
+  # -- Management policy for chunks-cache pods
   podManagementPolicy: Parallel
-  # -- Grace period to allow the memcached-chunks to shutdown before it is killed
+  # -- Grace period to allow the chunks-cache to shutdown before it is killed
   terminationGracePeriodSeconds: 60
 
-  # -- Stateful memcached-chunks strategy
+  # -- Stateful chunks-cache strategy
   statefulStrategy:
     type: RollingUpdate
 
-  # -- Additional CLI args for memcached-chunks
+  # -- Additional CLI args for chunks-cache
   extraArgs: []
 
-  # -- Additional containers to be added to the memcached-chunks pod.
+  # -- Additional containers to be added to the chunks-cache pod.
   extraContainers: []
 
-  # -- Resource requests and limits for the memcached-results
+  # -- Resource requests and limits for the chunks-cache
   # By default a safe memory limit will be requested based on allocatedMemory value (floor (* 1.2 allocatedMemory)).
   resources: null
 
@@ -1110,57 +1110,57 @@ memcached-chunks:
     annotations: {}
     labels: {}
 
-memcached-index-queries:
-  # -- Specifies whether memcached-index-queries should be enabled
+index-cache:
+  # -- Specifies whether memcached based index-cache should be enabled
   enabled: false
 
-  # -- Total number of memcached-index-queries replicas
+  # -- Total number of index-cache replicas
   replicas: 1
 
-  # -- Port of the memcached-index-queries service
+  # -- Port of the index-cache service
   port: 11211
 
-  # -- Amount of memory allocated to memcached-index-queries for object storage (in MB).
+  # -- Amount of memory allocated to index-cache for object storage (in MB).
   allocatedMemory: 2048
 
-  # -- Maximum item memcached-index-queries for memcached (in MB).
+  # -- Maximum item index-cache for memcached (in MB).
   maxItemMemory: 15
 
-  # -- Extra init containers for memcached-index-queries pods
+  # -- Extra init containers for index-cache pods
   initContainers: []
 
-  # -- Annotations for the memcached-index-queries pods
+  # -- Annotations for the index-cache pods
   annotations: {}
-  # -- Node selector for memcached-index-queries pods
+  # -- Node selector for index-cache pods
   nodeSelector: {}
-  # -- Affinity for memcached-index-queries pods
+  # -- Affinity for index-cache pods
   affinity: {}
-  # -- Tolerations for memcached-index-queries pods
+  # -- Tolerations for index-cache pods
   tolerations: []
   # -- Pod Disruption Budget
   podDisruptionBudget: {}
-  # -- The name of the PriorityClass for memcached-index-queries pods
+  # -- The name of the PriorityClass for index-cache pods
   priorityClassName: null
-  # -- Labels for memcached-index-queries pods
+  # -- Labels for index-cache pods
   podLabels: {}
-  # -- Annotations for memcached-index-queries pods
+  # -- Annotations for index-cache pods
   podAnnotations: {}
-  # -- Management policy for memcached-index-queries pods
+  # -- Management policy for index-cache pods
   podManagementPolicy: Parallel
-  # -- Grace period to allow the memcached-index-queries to shutdown before it is killed
+  # -- Grace period to allow the index-cache to shutdown before it is killed
   terminationGracePeriodSeconds: 60
 
-  # -- Stateful memcached-index-queries strategy
+  # -- Stateful index-cache strategy
   statefulStrategy:
     type: RollingUpdate
 
-  # -- Additional CLI args for memcached-index-queries
+  # -- Additional CLI args for index-cache
   extraArgs: []
 
-  # -- Additional containers to be added to the memcached-index-queries pod.
+  # -- Additional containers to be added to the index-cache pod.
   extraContainers: []
 
-  # -- Resource requests and limits for the memcached-results
+  # -- Resource requests and limits for the index-cache
   # By default a safe memory limit will be requested based on allocatedMemory value (floor (* 1.2 allocatedMemory)).
   resources: null
 
@@ -1169,57 +1169,57 @@ memcached-index-queries:
     annotations: {}
     labels: {}
 
-memcached-metadata:
-  # -- Specifies whether memcached-metadata should be enabled
+metadata-cache:
+  # -- Specifies whether memcached based metadata-cache should be enabled
   enabled: false
 
-  # -- Total number of memcached-metadata replicas
+  # -- Total number of metadata-cache replicas
   replicas: 1
 
-  # -- Port of the memcached-metadata service
+  # -- Port of the metadata-cache service
   port: 11211
 
-  # -- Amount of memory allocated to memcached-metadata for object storage (in MB).
+  # -- Amount of memory allocated to metadata-cache for object storage (in MB).
   allocatedMemory: 512
 
-  # -- Maximum item memcached-metadata for memcached (in MB).
+  # -- Maximum item metadata-cache for memcached (in MB).
   maxItemMemory: 1
 
-  # -- Extra init containers for memcached-metadata pods
+  # -- Extra init containers for metadata-cache pods
   initContainers: []
 
-  # -- Annotations for the memcached-metadata pods
+  # -- Annotations for the metadata-cache pods
   annotations: {}
-  # -- Node selector for memcached-metadata pods
+  # -- Node selector for metadata-cache pods
   nodeSelector: {}
-  # -- Affinity for memcached-metadata pods
+  # -- Affinity for metadata-cache pods
   affinity: {}
-  # -- Tolerations for memcached-metadata pods
+  # -- Tolerations for metadata-cache pods
   tolerations: []
   # -- Pod Disruption Budget
   podDisruptionBudget: {}
-  # -- The name of the PriorityClass for memcached-metadata pods
+  # -- The name of the PriorityClass for metadata-cache pods
   priorityClassName: null
-  # -- Labels for memcached-metadata pods
+  # -- Labels for metadata-cache pods
   podLabels: {}
-  # -- Annotations for memcached-metadata pods
+  # -- Annotations for metadata-cache pods
   podAnnotations: {}
-  # -- Management policy for memcached-metadata pods
+  # -- Management policy for metadata-cache pods
   podManagementPolicy: Parallel
-  # -- Grace period to allow the memcached-metadata to shutdown before it is killed
+  # -- Grace period to allow the metadata-cache to shutdown before it is killed
   terminationGracePeriodSeconds: 60
 
-  # -- Stateful memcached-metadata strategy
+  # -- Stateful metadata-cache strategy
   statefulStrategy:
     type: RollingUpdate
 
-  # -- Additional CLI args for memcached-metadata
+  # -- Additional CLI args for metadata-cache
   extraArgs: []
 
-  # -- Additional containers to be added to the memcached-metadata pod.
+  # -- Additional containers to be added to the metadata-cache pod.
   extraContainers: []
 
-  # -- Resource requests and limits for the memcached-results
+  # -- Resource requests and limits for the metadata-cache
   # By default a safe memory limit will be requested based on allocatedMemory value (floor (* 1.2 allocatedMemory)).
   resources: null
 
@@ -1228,57 +1228,57 @@ memcached-metadata:
     annotations: {}
     labels: {}
 
-memcached-results:
-  # -- Specifies whether memcached-results should be enabled
+results-cache:
+  # -- Specifies whether memcached based results-cache should be enabled
   enabled: false
 
-  # -- Total number of memcached-results replicas
+  # -- Total number of results-cache replicas
   replicas: 1
 
-  # -- Port of the memcached-results service
+  # -- Port of the results-cache service
   port: 11211
 
-  # -- Amount of memory allocated to memcached-results for object storage (in MB).
+  # -- Amount of memory allocated to results-cache for object storage (in MB).
   allocatedMemory: 512
 
-  # -- Maximum item memcached-results for memcached (in MB).
+  # -- Maximum item results-cache for memcached (in MB).
   maxItemMemory: 1
 
-  # -- Extra init containers for memcached-results pods
+  # -- Extra init containers for results-cache pods
   initContainers: []
 
-  # -- Annotations for the memcached-results pods
+  # -- Annotations for the results-cache pods
   annotations: {}
-  # -- Node selector for memcached-results pods
+  # -- Node selector for results-cache pods
   nodeSelector: {}
-  # -- Affinity for memcached-results pods
+  # -- Affinity for results-cache pods
   affinity: {}
-  # -- Tolerations for memcached-results pods
+  # -- Tolerations for results-cache pods
   tolerations: []
   # -- Pod Disruption Budget
   podDisruptionBudget: {}
-  # -- The name of the PriorityClass for memcached-results pods
+  # -- The name of the PriorityClass for results-cache pods
   priorityClassName: null
-  # -- Labels for memcached-results pods
+  # -- Labels for results-cache pods
   podLabels: {}
-  # -- Annotations for memcached-results pods
+  # -- Annotations for results-cache pods
   podAnnotations: {}
-  # -- Management policy for memcached-results pods
+  # -- Management policy for results-cache pods
   podManagementPolicy: Parallel
-  # -- Grace period to allow the memcached-results to shutdown before it is killed
+  # -- Grace period to allow the results-cache to shutdown before it is killed
   terminationGracePeriodSeconds: 60
 
-  # -- Stateful memcached-results strategy
+  # -- Stateful results-cache strategy
   statefulStrategy:
     type: RollingUpdate
 
-  # -- Additional CLI args for memcached-results
+  # -- Additional CLI args for results-cache
   extraArgs: []
 
-  # -- Additional containers to be added to the memcached-results pod.
+  # -- Additional containers to be added to the results-cache pod.
   extraContainers: []
 
-  # -- Resource requests and limits for the memcached-results
+  # -- Resource requests and limits for the results-cache
   # By default a safe memory limit will be requested based on allocatedMemory value (floor (* 1.2 allocatedMemory)).
   resources: null
 
