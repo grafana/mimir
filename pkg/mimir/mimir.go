@@ -636,8 +636,7 @@ func (t *Mimir) readyHandler(sm *services.Manager) http.HandlerFunc {
 				}
 			}
 
-			logMessage := "some services are not Running: " + strings.Join(serviceNamesStates, ", ")
-			level.Debug(util_log.Logger).Log("msg", logMessage)
+			level.Debug(util_log.Logger).Log("msg", "some services are not Running", "services", serviceNamesStates)
 
 			httpResponse := "Some services are not Running:\n" + strings.Join(serviceNamesStates, "\n")
 			http.Error(w, httpResponse, http.StatusServiceUnavailable)
