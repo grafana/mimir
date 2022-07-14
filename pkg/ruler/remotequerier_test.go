@@ -100,7 +100,7 @@ func TestRemoteQuerier_QueryReqTimeout(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestRemoteQuerier_ErrorResponses(t *testing.T) {
+func TestRemoteQuerier_StatusErrorResponses(t *testing.T) {
 	mockClientFn := func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
 		return &httpgrpc.HTTPResponse{Code: http.StatusUnprocessableEntity, Body: []byte(`{
 							"status": "error","errorType": "execution"
