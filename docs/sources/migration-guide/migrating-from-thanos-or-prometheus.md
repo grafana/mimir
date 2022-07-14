@@ -42,11 +42,11 @@ Use Grafana mimirtool to upload each block, such as those identified by the prev
 mimirtool backfill --address=http://<mimir-hostname> --id=<tenant> <block1> <block2>...
 ```
 
-**Note**: If you need to authenticate against Grafana Mimir, you can provide an API key via the `--key` flag
-(e.g., `--key=$(cat token.txt)`).
+> **Note**: If you need to authenticate against Grafana Mimir, you can provide an API key via the `--key` flag,
+for example `--key=$(cat token.txt)`.
 
-Grafana Mimir will perform some sanitization and validation of each block's metadata.
-As part of this, it will reject Thanos blocks due to unsupported labels.
+Grafana Mimir performs some sanitization and validation of each block's metadata.
+As a result, it rejects Thanos blocks due to unsupported labels.
 The workaround, if you need to upload Thanos blocks, is to upload the blocks directly to the
 Grafana Mimir blocks bucket, prefixed by `<tenant>/<block ID>/`.
 
