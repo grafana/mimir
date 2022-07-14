@@ -77,6 +77,9 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Store-gateway tenants](#store-gateway-tenants)                                       | Store-gateway           | `GET /store-gateway/tenants`                                              |
 | [Store-gateway tenant blocks](#store-gateway-tenant-blocks)                           | Store-gateway           | `GET /store-gateway/tenant/{tenant}/blocks`                               |
 | [Compactor ring status](#compactor-ring-status)                                       | Compactor               | `GET /compactor/ring`                                                     |
+| [Start block upload](#start-block-upload)                                             | Compactor               | `POST /api/v1/upload/block/{block}`                                       |
+| [Upload block file](#upload-block-file)                                               | Compactor               | `POST /api/v1/upload/block/{block}/files?path={path}`                     |
+| [Complete block upload](#complete-block-upload)                                       | Compactor               | `POST /api/v1/upload/block/{block}?uploadComplete=true`                   |
 
 ### Path prefixes
 
@@ -903,3 +906,64 @@ GET /compactor/ring
 ```
 
 Displays a web page with the compactor hash ring status, including the state, healthy and last heartbeat time of each compactor.
+
+### Start block upload
+
+```
+POST /api/v1/upload/block/{block}
+```
+
+Starts the uploading of a TSDB block with a given ID to object storage. The client should send the block's
+`meta.json` file as the request body. If the complete block already exists in object storage, a
+`409` (Conflict) status code gets returned. If the provided `meta.json` file is invalid, a `400` (Bad Request)
+status code gets returned. If the block's max time is before the tenant's retention period, a
+`422` (Unprocessable Entity) status code gets returned.
+
+The provided `meta.json` file must have a `thanos.files` section with the list of the block's files,
+otherwise the request will be rejected.
+
+If the API request succeeds, a sanitized version of the block's `meta.json` file gets uploaded to object storage as
+`uploading-meta.json`, and a `200` status code gets returned. Then you can start uploading files, and once
+done, you can request completion of the block upload.
+
+Requires [authentication](#authentication).
+
+### Upload block file
+
+```
+POST /api/v1/upload/block/{block}/files?path={path}
+```
+
+Uploads a file with a given path, for a block with a given ID. The file path has to be one of the following,
+otherwise a `400` (Bad Request) status code gets returned:
+
+- `index`
+- `chunks/<6-digit number>`
+
+The client must send the content of the file as the body of the request; if the body is empty, a
+`400` (Bad Request) status code gets returned. If the complete block already exists in object storage,
+a `409` (Conflict) status code gets returned. If an in-flight meta file (`uploading-meta.json`) doesn't
+exist in object storage for the block in question, a `404` (Not Found) status code gets returned.
+
+If the API request succeeds, the file gets uploaded with the given path to the block's directory in object storage,
+and a `200` status code gets returned.
+
+Requires [authentication](#authentication).
+
+### Complete block upload
+
+```
+POST /api/v1/upload/block/{block}?uploadComplete=true
+```
+
+Completes the uploading of a TSDB block with a given ID to object storage. If the complete block already
+exists in object storage, a `409` (Conflict) status code gets returned. If an in-flight meta file
+(`uploading-meta.json`) doesn't exist in object storage for the block in question, a `404` (Not Found)
+status code gets returned.
+
+If the API request succeeds, the in-flight meta file gets renamed to `meta.json` in the block's directory in
+object storage, so the block is considered complete, and a `200` status code gets returned.
+
+Requires [authentication](#authentication).
+
+This API endpoint is experimental and subject to change.
