@@ -223,7 +223,7 @@
         },
       ] + [
         {
-          alert: $.alertName('MimirRingMembersMismatch'),
+          alert: $.alertName('RingMembersMismatch'),
           expr: |||
             (
               avg by(%(alert_aggregation_labels)s) (sum by(%(alert_aggregation_labels)s, pod) (cortex_ring_members{name="%(component)s",job=~"%(job)s"}))
