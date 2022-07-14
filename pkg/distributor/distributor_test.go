@@ -512,7 +512,7 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 					assert.Nil(t, err)
 				} else {
 					assert.Nil(t, response)
-					assert.Equal(t, push.expectedError, err)
+					assert.EqualError(t, err, push.expectedError.Error())
 				}
 			}
 		})
@@ -610,6 +610,7 @@ func TestDistributor_PushInstanceLimits(t *testing.T) {
 
 		// limits
 		inflightLimit      int
+		inflightSizeLimit  int64
 		ingestionRateLimit float64
 
 		metricNames     []string
@@ -698,6 +699,22 @@ func TestDistributor_PushInstanceLimits(t *testing.T) {
 				{samples: 5000, expectedError: nil},                        // 896 is below 1000, so this push succeeds, new rate = 896 + 0.2*(5000-896) = 1716.8
 			},
 		},
+
+		"below inflight size limit": {
+			inflightSizeLimit: int64(makeWriteRequest(0, 100, 1, false).Size()),
+
+			pushes: []testPush{
+				{samples: 10, expectedError: nil},
+			},
+		},
+
+		"hits inflight size limit": {
+			inflightSizeLimit: int64(makeWriteRequest(0, 100, 1, false).Size()),
+
+			pushes: []testPush{
+				{samples: 101, expectedError: errMaxInflightRequestsTotalSizeReached},
+			},
+		},
 	}
 
 	for testName, testData := range tests {
@@ -709,12 +726,13 @@ func TestDistributor_PushInstanceLimits(t *testing.T) {
 
 			// Start all expected distributors
 			distributors, _, regs := prepare(t, prepConfig{
-				numIngesters:        3,
-				happyIngesters:      3,
-				numDistributors:     1,
-				limits:              limits,
-				maxInflightRequests: testData.inflightLimit,
-				maxIngestionRate:    testData.ingestionRateLimit,
+				numIngesters:                 3,
+				happyIngesters:               3,
+				numDistributors:              1,
+				limits:                       limits,
+				maxInflightRequests:          testData.inflightLimit,
+				maxInflightRequestsTotalSize: testData.inflightSizeLimit,
+				maxIngestionRate:             testData.ingestionRateLimit,
 			})
 
 			d := distributors[0]
@@ -2719,6 +2737,7 @@ type prepConfig struct {
 	numDistributors              int
 	skipLabelNameValidation      bool
 	maxInflightRequests          int
+	maxInflightRequestsTotalSize int64
 	maxIngestionRate             float64
 	replicationFactor            int
 	enableTracker                bool
@@ -2826,6 +2845,7 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 		distributorCfg.DistributorRing.InstanceAddr = "127.0.0.1"
 		distributorCfg.SkipLabelNameValidation = cfg.skipLabelNameValidation
 		distributorCfg.InstanceLimits.MaxInflightPushRequests = cfg.maxInflightRequests
+		distributorCfg.InstanceLimits.MaxInflightPushRequestsTotalSize = cfg.maxInflightRequestsTotalSize
 		distributorCfg.InstanceLimits.MaxIngestionRate = cfg.maxIngestionRate
 		distributorCfg.ShuffleShardingLookbackPeriod = time.Hour
 

@@ -1333,6 +1333,17 @@
               "fieldFlag": "distributor.instance-limits.max-inflight-push-requests",
               "fieldType": "int",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "max_inflight_push_requests_total_size",
+              "required": false,
+              "desc": "The sum of the request sizes in bytes of inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "distributor.instance-limits.max-inflight-push-requests-total-size",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
             }
           ],
           "fieldValue": null,
