@@ -64,7 +64,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Add `extraEnvFrom` capability to all Mimir services to enable injecting secrets via environment variables. #2017
 * [ENHANCEMENT] Enable `-config.expand-env=true` option in all Mimir services to be able to take secrets/settings from the environment and inject them into the Mimir configuration file. #2017
 * [ENHANCEMENT] Add a simple test for enterprise installation #2027
-* [ENHANCEMENT] Check for the containerSecurityContext in values file. #2112
+* [ENHANCEMENT] Check for the containerSecurityContext in values file. #2112 #2416
 * [ENHANCEMENT] Add `NOTES.txt` to show endpoints URLs for the user at install/upgrade. #2189
 * [ENHANCEMENT] Add ServiceMonitor for overrides-exporter. #2068
 * [ENHANCEMENT] Add `nginx.resolver` for allow custom resolver in nginx configuration and `nginx.extraContainers` which allow add side containers to the nginx deployment #2196
