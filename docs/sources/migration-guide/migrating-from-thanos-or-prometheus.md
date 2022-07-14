@@ -75,7 +75,7 @@ This means that blocks that were originally created by Thanos will not include t
 If you need to have external labels in your query results, this is currently not possible to achieve in Grafana Mimir.
 
 **Grafana Mimir will not respect deduplication labels configured in Thanos when querying the blocks.**
-For the best query performance please only upload Thanos blocks from a single Prometheus replica from each HA pair.
+For best query performance, only upload Thanos blocks from a single Prometheus replica from each HA pair.
 If you upload blocks from both replicas, the query results returned by Mimir will include samples from both replicas.
 
 > **Note**: Thanos provides the `thanos tools bucket rewrite` tool for manipulating blocks in the bucket.

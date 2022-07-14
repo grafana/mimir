@@ -5,7 +5,7 @@ description: "Learn how to configure Grafana Mimir to enable TSDB block upload"
 weight: 120
 ---
 
-# Configuring TSDB block upload
+# Configure TSDB block upload
 
 Grafana Mimir supports uploading of historic TSDB blocks, sourced from f.ex. Prometheus or
 Grafana Mimir itself.
