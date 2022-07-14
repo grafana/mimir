@@ -159,7 +159,7 @@ func (q *RemoteQuerier) Read(ctx context.Context, query *prompb.Query) (*prompb.
 		return nil, err
 	}
 	if resp.Code/100 != 2 {
-		return nil, fmt.Errorf("unexpected response status code %d: %s", resp.Code, string(resp.Body))
+		return nil, httpgrpc.Errorf(int(resp.Code), "unexpected response status code %d: %s", resp.Code, string(resp.Body))
 	}
 	level.Debug(log).Log("msg", "remote read successfully performed", "qs", query)
 
@@ -226,7 +226,7 @@ func (q *RemoteQuerier) query(ctx context.Context, query string, ts time.Time, l
 		return model.ValNone, nil, err
 	}
 	if resp.Code/100 != 2 {
-		return model.ValNone, nil, fmt.Errorf("unexpected response status code %d: %s", resp.Code, string(resp.Body))
+		return model.ValNone, nil, httpgrpc.Errorf(int(resp.Code), "unexpected response status code %d: %s", resp.Code, string(resp.Body))
 	}
 	level.Debug(logger).Log("msg", "query expression successfully evaluated", "qs", query, "tm", ts)
 
