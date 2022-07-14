@@ -98,7 +98,7 @@ github.com/alecthomas/template/parse
 # github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
 ## explicit; go 1.15
 github.com/alecthomas/units
-# github.com/armon/go-metrics v0.3.9
+# github.com/armon/go-metrics v0.3.10
 ## explicit; go 1.12
 github.com/armon/go-metrics
 github.com/armon/go-metrics/prometheus
@@ -236,6 +236,8 @@ github.com/cespare/xxhash
 # github.com/cespare/xxhash/v2 v2.1.2
 ## explicit; go 1.11
 github.com/cespare/xxhash/v2
+# github.com/cncf/xds/go v0.0.0-20211130200136-a8f946100490
+## explicit; go 1.11
 # github.com/coreos/etcd v3.3.25+incompatible
 ## explicit
 github.com/coreos/etcd/pkg/fileutil
@@ -268,6 +270,8 @@ github.com/dimchansky/utfbom
 ## explicit
 github.com/dlclark/regexp2
 github.com/dlclark/regexp2/syntax
+# github.com/docker/go-connections v0.4.1-0.20210727194412-58542c764a11
+## explicit; go 1.13
 # github.com/docker/go-units v0.4.0
 ## explicit
 github.com/docker/go-units
@@ -362,12 +366,13 @@ github.com/go-stack/stack
 # github.com/gofrs/uuid v4.2.0+incompatible
 ## explicit
 github.com/gofrs/uuid
-# github.com/gogo/googleapis v1.4.0
+# github.com/gogo/googleapis v1.4.1
 ## explicit; go 1.12
 github.com/gogo/googleapis/google/rpc
 # github.com/gogo/protobuf v1.3.2
 ## explicit; go 1.15
 github.com/gogo/protobuf/gogoproto
+github.com/gogo/protobuf/jsonpb
 github.com/gogo/protobuf/proto
 github.com/gogo/protobuf/protoc-gen-gogo/descriptor
 github.com/gogo/protobuf/sortkeys
@@ -412,7 +417,7 @@ github.com/google/gopacket/tcpassembly/tcpreader
 # github.com/google/pprof v0.0.0-20220520215854-d04f2422c8a1
 ## explicit; go 1.17
 github.com/google/pprof/profile
-# github.com/google/uuid v1.2.0
+# github.com/google/uuid v1.3.0
 ## explicit
 github.com/google/uuid
 # github.com/googleapis/gax-go/v2 v2.4.0
@@ -421,8 +426,6 @@ github.com/googleapis/gax-go/v2
 github.com/googleapis/gax-go/v2/apierror
 github.com/googleapis/gax-go/v2/apierror/internal/proto
 github.com/googleapis/gax-go/v2/internal
-# github.com/gopherjs/gopherjs v0.0.0-20191106031601-ce3c9ade29de
-## explicit
 # github.com/gorilla/mux v1.8.0
 ## explicit; go 1.12
 github.com/gorilla/mux
@@ -490,7 +493,7 @@ github.com/hashicorp/errwrap
 # github.com/hashicorp/go-cleanhttp v0.5.2
 ## explicit; go 1.13
 github.com/hashicorp/go-cleanhttp
-# github.com/hashicorp/go-hclog v0.16.2 => github.com/hashicorp/go-hclog v0.12.2
+# github.com/hashicorp/go-hclog v1.1.0 => github.com/hashicorp/go-hclog v0.12.2
 ## explicit; go 1.13
 github.com/hashicorp/go-hclog
 # github.com/hashicorp/go-immutable-radix v1.3.1 => github.com/hashicorp/go-immutable-radix v1.2.0
@@ -508,6 +511,8 @@ github.com/hashicorp/go-rootcerts
 # github.com/hashicorp/go-sockaddr v1.0.2
 ## explicit
 github.com/hashicorp/go-sockaddr
+# github.com/hashicorp/go-uuid v1.0.2
+## explicit
 # github.com/hashicorp/golang-lru v0.5.4
 ## explicit; go 1.12
 github.com/hashicorp/golang-lru
@@ -536,13 +541,13 @@ github.com/json-iterator/go
 # github.com/julienschmidt/httprouter v1.3.0
 ## explicit; go 1.7
 github.com/julienschmidt/httprouter
-# github.com/klauspost/compress v1.13.6
-## explicit; go 1.15
+# github.com/klauspost/compress v1.15.6
+## explicit; go 1.16
 github.com/klauspost/compress/s2
 # github.com/klauspost/cpuid v1.3.1
 ## explicit; go 1.12
 github.com/klauspost/cpuid
-# github.com/kr/pretty v0.2.1
+# github.com/kr/pretty v0.3.0
 ## explicit; go 1.12
 # github.com/leanovate/gopter v0.2.4
 ## explicit
@@ -597,7 +602,7 @@ github.com/mitchellh/go-homedir
 # github.com/mitchellh/go-wordwrap v1.0.0
 ## explicit
 github.com/mitchellh/go-wordwrap
-# github.com/mitchellh/mapstructure v1.4.3
+# github.com/mitchellh/mapstructure v1.5.0
 ## explicit; go 1.14
 github.com/mitchellh/mapstructure
 # github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd
@@ -618,6 +623,9 @@ github.com/oklog/run
 # github.com/oklog/ulid v1.3.1
 ## explicit
 github.com/oklog/ulid
+# github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite v0.54.0
+## explicit; go 1.17
+github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite
 # github.com/opentracing-contrib/go-grpc v0.0.0-20210225150812-73cb765af46e
 ## explicit; go 1.11
 github.com/opentracing-contrib/go-grpc
@@ -694,8 +702,8 @@ github.com/prometheus/client_golang/prometheus/testutil/promlint
 # github.com/prometheus/client_model v0.2.0
 ## explicit; go 1.9
 github.com/prometheus/client_model/go
-# github.com/prometheus/common v0.34.0
-## explicit; go 1.15
+# github.com/prometheus/common v0.35.0
+## explicit; go 1.16
 github.com/prometheus/common/config
 github.com/prometheus/common/expfmt
 github.com/prometheus/common/internal/bitbucket.org/ww/goautoneg
@@ -787,18 +795,16 @@ github.com/shurcooL/vfsgen
 # github.com/sirupsen/logrus v1.8.1
 ## explicit; go 1.13
 github.com/sirupsen/logrus
-# github.com/smartystreets/assertions v1.0.1
-## explicit; go 1.12
 # github.com/spaolacci/murmur3 v1.1.0
 ## explicit
 # github.com/spf13/afero v1.6.0
 ## explicit; go 1.13
 github.com/spf13/afero
 github.com/spf13/afero/mem
-# github.com/stretchr/objx v0.2.0
+# github.com/stretchr/objx v0.4.0
 ## explicit; go 1.12
 github.com/stretchr/objx
-# github.com/stretchr/testify v1.7.2
+# github.com/stretchr/testify v1.7.5
 ## explicit; go 1.13
 github.com/stretchr/testify/assert
 github.com/stretchr/testify/mock
@@ -836,6 +842,8 @@ github.com/thanos-io/thanos/pkg/strutil
 github.com/thanos-io/thanos/pkg/testutil
 github.com/thanos-io/thanos/pkg/tracing
 github.com/thanos-io/thanos/pkg/tracing/migration
+# github.com/tidwall/pretty v1.2.0
+## explicit; go 1.16
 # github.com/uber/jaeger-client-go v2.30.0+incompatible
 ## explicit
 github.com/uber/jaeger-client-go
@@ -888,7 +896,7 @@ github.com/weaveworks/promrus
 # go.etcd.io/etcd v3.3.25+incompatible
 ## explicit
 go.etcd.io/etcd/pkg/transport
-# go.etcd.io/etcd/api/v3 v3.5.0
+# go.etcd.io/etcd/api/v3 v3.5.1
 ## explicit; go 1.16
 go.etcd.io/etcd/api/v3/authpb
 go.etcd.io/etcd/api/v3/etcdserverpb
@@ -896,7 +904,7 @@ go.etcd.io/etcd/api/v3/membershippb
 go.etcd.io/etcd/api/v3/mvccpb
 go.etcd.io/etcd/api/v3/v3rpc/rpctypes
 go.etcd.io/etcd/api/v3/version
-# go.etcd.io/etcd/client/pkg/v3 v3.5.0
+# go.etcd.io/etcd/client/pkg/v3 v3.5.1
 ## explicit; go 1.16
 go.etcd.io/etcd/client/pkg/v3/logutil
 go.etcd.io/etcd/client/pkg/v3/systemd
@@ -934,6 +942,31 @@ go.opencensus.io/trace
 go.opencensus.io/trace/internal
 go.opencensus.io/trace/propagation
 go.opencensus.io/trace/tracestate
+# go.opentelemetry.io/collector v0.54.0
+## explicit; go 1.17
+go.opentelemetry.io/collector/consumer/consumererror
+go.opentelemetry.io/collector/service/featuregate
+# go.opentelemetry.io/collector/pdata v0.54.0
+## explicit; go 1.17
+go.opentelemetry.io/collector/pdata/internal
+go.opentelemetry.io/collector/pdata/internal/data
+go.opentelemetry.io/collector/pdata/internal/data/protogen/collector/logs/v1
+go.opentelemetry.io/collector/pdata/internal/data/protogen/collector/metrics/v1
+go.opentelemetry.io/collector/pdata/internal/data/protogen/collector/trace/v1
+go.opentelemetry.io/collector/pdata/internal/data/protogen/common/v1
+go.opentelemetry.io/collector/pdata/internal/data/protogen/logs/v1
+go.opentelemetry.io/collector/pdata/internal/data/protogen/metrics/v1
+go.opentelemetry.io/collector/pdata/internal/data/protogen/resource/v1
+go.opentelemetry.io/collector/pdata/internal/data/protogen/trace/v1
+go.opentelemetry.io/collector/pdata/internal/otlp
+go.opentelemetry.io/collector/pdata/pcommon
+go.opentelemetry.io/collector/pdata/plog
+go.opentelemetry.io/collector/pdata/pmetric
+go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp
+go.opentelemetry.io/collector/pdata/ptrace
+# go.opentelemetry.io/collector/semconv v0.54.0
+## explicit; go 1.17
+go.opentelemetry.io/collector/semconv/v1.6.1
 # go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.32.0
 ## explicit; go 1.16
 go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp
@@ -985,10 +1018,10 @@ go.uber.org/atomic
 ## explicit; go 1.13
 go.uber.org/goleak
 go.uber.org/goleak/internal/stack
-# go.uber.org/multierr v1.7.0
+# go.uber.org/multierr v1.8.0
 ## explicit; go 1.14
 go.uber.org/multierr
-# go.uber.org/zap v1.19.1
+# go.uber.org/zap v1.21.0
 ## explicit; go 1.13
 go.uber.org/zap
 go.uber.org/zap/buffer
@@ -1209,7 +1242,7 @@ google.golang.org/protobuf/types/known/timestamppb
 # gopkg.in/alecthomas/kingpin.v2 v2.2.6
 ## explicit
 gopkg.in/alecthomas/kingpin.v2
-# gopkg.in/ini.v1 v1.57.0
+# gopkg.in/ini.v1 v1.66.2
 ## explicit
 gopkg.in/ini.v1
 # gopkg.in/telebot.v3 v3.0.0

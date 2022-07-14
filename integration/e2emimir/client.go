@@ -27,10 +27,11 @@ import (
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
-	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/prompb" // OTLP protos are not compatible with gogo
 	yaml "gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/ruler"
+	"github.com/grafana/mimir/pkg/util/push"
 )
 
 var ErrNotFound = errors.New("not found")
@@ -113,6 +114,37 @@ func (c *Client) Push(timeseries []prompb.TimeSeries) (*http.Response, error) {
 	req.Header.Add("Content-Encoding", "snappy")
 	req.Header.Set("Content-Type", "application/x-protobuf")
 	req.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
+	req.Header.Set("X-Scope-OrgID", c.orgID)
+
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+
+	// Execute HTTP request
+	res, err := c.httpClient.Do(req.WithContext(ctx))
+	if err != nil {
+		return nil, err
+	}
+
+	defer res.Body.Close()
+	return res, nil
+}
+
+// PushOTLP the input timeseries to the remote endpoint in OTLP format
+func (c *Client) PushOTLP(timeseries []prompb.TimeSeries) (*http.Response, error) {
+	// Create write request
+	otlpRequest := push.TimeseriesToOTLPRequest(timeseries)
+
+	data, err := otlpRequest.MarshalProto()
+	if err != nil {
+		return nil, err
+	}
+
+	// Create HTTP request
+	req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/api/v1/push/otlp/v1/metrics", c.distributorAddress), bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/x-protobuf")
 	req.Header.Set("X-Scope-OrgID", c.orgID)
 
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
