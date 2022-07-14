@@ -29,6 +29,7 @@
 * [BUGFIX] Dashboards: fixed unit of latency panels in the "Mimir / Ruler" dashboard. #2312
 * [BUGFIX] Dashboards: fixed "Intervals per query" panel in the "Mimir / Queries" dashboard. #2308
 * [BUGFIX] Dashboards: Make "Slow Queries" dashboard works with Grafana 9.0. #2223
+* [BUGFIX] Dashboards: add missing API routes to Ruler dashboard. #2412
 
 ### Jsonnet
 
