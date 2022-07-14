@@ -6,7 +6,6 @@
 package mimir
 
 import (
-	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -637,15 +636,11 @@ func (t *Mimir) readyHandler(sm *services.Manager) http.HandlerFunc {
 				}
 			}
 
-			logMessage := bytes.Buffer{}
-			logMessage.WriteString("some services are not Running: ")
-			logMessage.WriteString(strings.Join(serviceNamesStates, ","))
-			level.Debug(util_log.Logger).Log("msg", logMessage.String())
+			logMessage := "some services are not Running: " + strings.Join(serviceNamesStates, ",")
+			level.Debug(util_log.Logger).Log("msg", logMessage)
 
-			httpResponse := bytes.Buffer{}
-			httpResponse.WriteString("Some services are not Running:\n")
-			httpResponse.WriteString(strings.Join(serviceNamesStates, "\n"))
-			http.Error(w, httpResponse.String(), http.StatusServiceUnavailable)
+			httpResponse := "Some services are not Running:\n" + strings.Join(serviceNamesStates, "\n")
+			http.Error(w, httpResponse, http.StatusServiceUnavailable)
 			return
 		}
 
