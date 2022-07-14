@@ -11,11 +11,12 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/grafana-tools/sdk"
 	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/promql/parser"
 	log "github.com/sirupsen/logrus"
+
+	"github.com/grafana/mimir/pkg/mimirtool/minisdk"
 )
 
 type MetricsInGrafana struct {
@@ -32,7 +33,7 @@ type DashboardMetrics struct {
 	ParseErrors []string `json:"parse_errors"`
 }
 
-func ParseMetricsInBoard(mig *MetricsInGrafana, board sdk.Board) {
+func ParseMetricsInBoard(mig *MetricsInGrafana, board minisdk.Board) {
 	var parseErrors []error
 	metrics := make(map[string]struct{})
 
@@ -82,7 +83,7 @@ func ParseMetricsInBoard(mig *MetricsInGrafana, board sdk.Board) {
 
 }
 
-func metricsFromTemplating(templating sdk.Templating, metrics map[string]struct{}) []error {
+func metricsFromTemplating(templating minisdk.Templating, metrics map[string]struct{}) []error {
 	parseErrors := []error{}
 	for _, templateVar := range templating.List {
 		if templateVar.Type != "query" {
@@ -121,7 +122,7 @@ func metricsFromTemplating(templating sdk.Templating, metrics map[string]struct{
 
 // Workaround to support Grafana "timeseries" panel. This should
 // be implemented in grafana/tools-sdk, and removed from here.
-func getCustomPanelTargets(panel sdk.Panel) *[]sdk.Target {
+func getCustomPanelTargets(panel minisdk.Panel) *[]minisdk.Target {
 	if panel.CommonPanel.Type != "timeseries" {
 		return nil
 	}
@@ -136,7 +137,7 @@ func getCustomPanelTargets(panel sdk.Panel) *[]sdk.Target {
 	}
 
 	type panelType struct {
-		Targets []sdk.Target `json:"targets,omitempty"`
+		Targets []minisdk.Target `json:"targets,omitempty"`
 	}
 
 	var parsedPanel panelType
@@ -149,7 +150,7 @@ func getCustomPanelTargets(panel sdk.Panel) *[]sdk.Target {
 	return &parsedPanel.Targets
 }
 
-func metricsFromPanel(panel sdk.Panel, metrics map[string]struct{}) []error {
+func metricsFromPanel(panel minisdk.Panel, metrics map[string]struct{}) []error {
 	var parseErrors []error
 
 	targets := panel.GetTargets()

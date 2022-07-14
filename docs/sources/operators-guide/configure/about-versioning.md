@@ -53,6 +53,7 @@ The following features are currently experimental:
   - Request rate limit
     - `-distributor.request-rate-limit`
     - `-distributor.request-burst-limit`
+  - OTLP ingestion path
 - Purger: Tenant deletion API
 - Exemplar storage
   - `-ingester.max-global-exemplars-per-user`

@@ -3,7 +3,7 @@
 # Provenance-includes-license: Apache-2.0
 # Provenance-includes-copyright: The Cortex Authors.
 
-FROM golang:1.17.8-bullseye
+FROM golang:1.18.4-bullseye
 ARG goproxyValue
 ENV GOPROXY=${goproxyValue}
 RUN apt-get update && apt-get install -y curl python3-requests python3-yaml file jq zip unzip protobuf-compiler libprotobuf-dev shellcheck libpcap-dev skopeo && \

@@ -15,6 +15,7 @@
 * [ENHANCEMENT] ring: optimize shuffle-shard computation when lookback is used, and all instances have registered timestamp within the lookback window. In that case we can immediately return origial ring, because we would select all instances anyway. #2309
 * [ENHANCEMENT] Memberlist: added experimental memberlist cluster label support via `-memberlist.cluster-label` and `-memberlist.cluster-label-verification-disabled` CLI flags (and their respective YAML config options). #2354
 * [ENHANCEMENT] Object storage can now be configured for all components using the `common` YAML config option key (or `-common.storage.*` CLI flags). #2330
+* [ENHANCEMENT] Go: updated to go 1.18.4. #2400
 * [BUGFIX] Compactor: log the actual error on compaction failed. #2261
 * [BUGFIX] Alertmanager: restore state from storage even when running a single replica. #2293
 * [BUGFIX] Ruler: do not block "List Prometheus rules" API endpoint while syncing rules. #2289
@@ -28,12 +29,15 @@
 * [BUGFIX] Dashboards: fixed unit of latency panels in the "Mimir / Ruler" dashboard. #2312
 * [BUGFIX] Dashboards: fixed "Intervals per query" panel in the "Mimir / Queries" dashboard. #2308
 * [BUGFIX] Dashboards: Make "Slow Queries" dashboard works with Grafana 9.0. #2223
+* [BUGFIX] Dashboards: add missing API routes to Ruler dashboard. #2412
 
 ### Jsonnet
 
 * [FEATURE] Memberlist: added support for experimental memberlist cluster label, through the jsonnet configuration options `memberlist_cluster_label` and `memberlist_cluster_label_verification_disabled`. #2349
 
 ### Mimirtool
+
+* [BUGFIX] mimirtool analyze: Fix dashboard JSON unmarshalling errors by using custom parsing. #2386
 
 ### Mimir Continuous Test
 
@@ -68,6 +72,7 @@
 * [CHANGE] Memberlist: `-memberlist.abort-if-join-fails` now defaults to false. Previously it defaulted to true. #2168
 * [CHANGE] Ruler: `/api/v1/rules*` and `/prometheus/rules*` configuration endpoints are removed. Use `/prometheus/config/v1/rules*`. #2182
 * [CHANGE] Ingester: `-ingester.exemplars-update-period` has been renamed to `-ingester.tsdb-config-update-period`. You can use it to update multiple, per-tenant TSDB configurations. #2187
+* [FEATURE] EXPERIMENTAL: OpenTelemetry Metrics ingestion path on `/api/v1/push/otlp/v1/metrics`. #695
 * [FEATURE] Ingester: (Experimental) Add the ability to ingest out-of-order samples up to an allowed limit. If you enable this feature, it requires additional memory and disk space. This feature also enables a write-behind log, which might lead to longer ingester-start replays. When this feature is disabled, there is no overhead on memory, disk space, or startup times. #2187
   * `-ingester.out-of-order-time-window`, as duration string, allows you to set how back in time a sample can be. The default is `0s`, where `s` is seconds.
   * `cortex_ingester_tsdb_out_of_order_samples_appended_total` metric tracks the total number of out-of-order samples ingested by the ingester.

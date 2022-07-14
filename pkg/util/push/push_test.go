@@ -14,11 +14,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/middleware"
+	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -31,7 +33,15 @@ func TestHandler_remoteWrite(t *testing.T) {
 	assert.Equal(t, 200, resp.Code)
 }
 
-func TestHandler_cortexWriteRequest(t *testing.T) {
+func TestHandler_otlpWrite(t *testing.T) {
+	req := createOTLPRequest(t, createOTLPMetricRequest(t))
+	resp := httptest.NewRecorder()
+	handler := OLTPHandler(100000, nil, false, verifyWriteRequestHandler(t, mimirpb.API))
+	handler.ServeHTTP(resp, req)
+	assert.Equal(t, 200, resp.Code)
+}
+
+func TestHandler_mimirWriteRequest(t *testing.T) {
 	req := createRequest(t, createMimirWriteRequestProtobuf(t, false))
 	resp := httptest.NewRecorder()
 	sourceIPs, _ := middleware.NewSourceIPs("SomeField", "(.*)")
@@ -175,6 +185,26 @@ func createRequest(t testing.TB, protobuf []byte) *http.Request {
 	req.Header.Set("Content-Type", "application/x-protobuf")
 	req.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
 	return req
+}
+
+func createOTLPRequest(t testing.TB, metricRequest pmetricotlp.Request) *http.Request {
+	t.Helper()
+
+	rawBytes, err := metricRequest.MarshalProto()
+	require.NoError(t, err)
+
+	req, err := http.NewRequest("POST", "http://localhost/", bytes.NewReader(rawBytes))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/x-protobuf")
+	return req
+}
+
+func createOTLPMetricRequest(t testing.TB) pmetricotlp.Request {
+	input := createPrometheusRemoteWriteProtobuf(t)
+	prwReq := &prompb.WriteRequest{}
+	require.NoError(t, proto.Unmarshal(input, prwReq))
+
+	return TimeseriesToOTLPRequest(prwReq.Timeseries)
 }
 
 func createPrometheusRemoteWriteProtobuf(t testing.TB) []byte {
