@@ -610,13 +610,14 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteRequest, callerCleanup func()) (*mimirpb.WriteResponse, error) {
 	// We will report *this* request in the error too.
 	inflight := d.inflightPushRequests.Inc()
-	inflightSize := d.inflightPushRequestsSize.Add(int64(req.Size()))
+	reqSize := int64(req.Size())
+	inflightSize := d.inflightPushRequestsSize.Add(reqSize)
 
 	// Decrement counter after all ingester calls have finished or been cancelled.
 	cleanup := func() {
 		callerCleanup()
 		d.inflightPushRequests.Dec()
-		d.inflightPushRequestsSize.Sub(int64(req.Size()))
+		d.inflightPushRequestsSize.Sub(reqSize)
 	}
 	cleanupInDefer := true
 	defer func() {
