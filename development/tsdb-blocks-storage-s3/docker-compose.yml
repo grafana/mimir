@@ -6,10 +6,10 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=alertmanager -server.http-listen-port=8031 -server.grpc-listen-port=9031 -activity-tracker.filepath=/activity/alertmanager-8031 -alertmanager.web.external-url=http://localhost:8031/alertmanager"
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=alertmanager -server.http-listen-port=8031 -server.grpc-listen-port=9031 -activity-tracker.filepath=/activity/alertmanager-8031 -alertmanager.web.external-url=http://localhost:8031/alertmanager -memberlist.nodename=alertmanager-1 -memberlist.bind-port=10031 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist"
     "depends_on":
       - "minio"
-      - "consul"
+      - "distributor-1"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
@@ -29,10 +29,10 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=alertmanager -server.http-listen-port=8032 -server.grpc-listen-port=9032 -activity-tracker.filepath=/activity/alertmanager-8032 -alertmanager.web.external-url=http://localhost:8032/alertmanager"
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=alertmanager -server.http-listen-port=8032 -server.grpc-listen-port=9032 -activity-tracker.filepath=/activity/alertmanager-8032 -alertmanager.web.external-url=http://localhost:8032/alertmanager -memberlist.nodename=alertmanager-2 -memberlist.bind-port=10032 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist"
     "depends_on":
       - "minio"
-      - "consul"
+      - "distributor-1"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
@@ -52,10 +52,10 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=alertmanager -server.http-listen-port=8033 -server.grpc-listen-port=9033 -activity-tracker.filepath=/activity/alertmanager-8033 -alertmanager.web.external-url=http://localhost:8033/alertmanager"
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=alertmanager -server.http-listen-port=8033 -server.grpc-listen-port=9033 -activity-tracker.filepath=/activity/alertmanager-8033 -alertmanager.web.external-url=http://localhost:8033/alertmanager -memberlist.nodename=alertmanager-3 -memberlist.bind-port=10033 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist"
     "depends_on":
       - "minio"
-      - "consul"
+      - "distributor-1"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
@@ -75,10 +75,10 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=compactor -server.http-listen-port=8006 -server.grpc-listen-port=9006 -activity-tracker.filepath=/activity/compactor-8006 "
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=compactor -server.http-listen-port=8006 -server.grpc-listen-port=9006 -activity-tracker.filepath=/activity/compactor-8006  -memberlist.nodename=compactor -memberlist.bind-port=10006 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist"
     "depends_on":
       - "minio"
-      - "consul"
+      - "distributor-1"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
@@ -91,15 +91,6 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
-  "consul":
-    "command":
-      - "agent"
-      - "-dev"
-      - "-client=0.0.0.0"
-      - "-log-level=info"
-    "image": "consul"
-    "ports":
-      - "8500:8500"
   "distributor-1":
     "build":
       "context": "."
@@ -107,10 +98,9 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=distributor -server.http-listen-port=8000 -server.grpc-listen-port=9000 -activity-tracker.filepath=/activity/distributor-8000 "
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=distributor -server.http-listen-port=8000 -server.grpc-listen-port=9000 -activity-tracker.filepath=/activity/distributor-8000  -memberlist.nodename=distributor -memberlist.bind-port=10000 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist"
     "depends_on":
       - "minio"
-      - "consul"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
@@ -130,10 +120,9 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=distributor -server.http-listen-port=8001 -server.grpc-listen-port=9001 -activity-tracker.filepath=/activity/distributor-8001 "
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=distributor -server.http-listen-port=8001 -server.grpc-listen-port=9001 -activity-tracker.filepath=/activity/distributor-8001  -memberlist.nodename=distributor -memberlist.bind-port=10001 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist"
     "depends_on":
       - "minio"
-      - "consul"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
@@ -162,10 +151,10 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=ingester -server.http-listen-port=8002 -server.grpc-listen-port=9002 -activity-tracker.filepath=/activity/ingester-8002 "
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=ingester -server.http-listen-port=8002 -server.grpc-listen-port=9002 -activity-tracker.filepath=/activity/ingester-8002  -memberlist.nodename=ingester-1 -memberlist.bind-port=10002 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist"
     "depends_on":
       - "minio"
-      - "consul"
+      - "distributor-1"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
@@ -186,10 +175,10 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=ingester -server.http-listen-port=8003 -server.grpc-listen-port=9003 -activity-tracker.filepath=/activity/ingester-8003 "
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=ingester -server.http-listen-port=8003 -server.grpc-listen-port=9003 -activity-tracker.filepath=/activity/ingester-8003  -memberlist.nodename=ingester-2 -memberlist.bind-port=10003 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist"
     "depends_on":
       - "minio"
-      - "consul"
+      - "distributor-1"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
@@ -238,10 +227,10 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=purger -server.http-listen-port=8014 -server.grpc-listen-port=9014 -activity-tracker.filepath=/activity/purger-8014 "
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=purger -server.http-listen-port=8014 -server.grpc-listen-port=9014 -activity-tracker.filepath=/activity/purger-8014  -memberlist.nodename=purger -memberlist.bind-port=10014 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist"
     "depends_on":
       - "minio"
-      - "consul"
+      - "distributor-1"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
@@ -261,10 +250,10 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=querier -server.http-listen-port=8004 -server.grpc-listen-port=9004 -activity-tracker.filepath=/activity/querier-8004 -querier.scheduler-address=query-scheduler:9011 -querier.frontend-address="
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=querier -server.http-listen-port=8004 -server.grpc-listen-port=9004 -activity-tracker.filepath=/activity/querier-8004 -querier.scheduler-address=query-scheduler:9011 -querier.frontend-address= -memberlist.nodename=querier -memberlist.bind-port=10004 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist"
     "depends_on":
       - "minio"
-      - "consul"
+      - "distributor-1"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
@@ -284,10 +273,10 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=query-frontend -server.http-listen-port=8007 -server.grpc-listen-port=9007 -activity-tracker.filepath=/activity/query-frontend-8007 -store.max-query-length=8760h -query-frontend.scheduler-address=query-scheduler:9011"
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=query-frontend -server.http-listen-port=8007 -server.grpc-listen-port=9007 -activity-tracker.filepath=/activity/query-frontend-8007 -store.max-query-length=8760h -query-frontend.scheduler-address=query-scheduler:9011 -memberlist.nodename=query-frontend -memberlist.bind-port=10007 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist"
     "depends_on":
       - "minio"
-      - "consul"
+      - "distributor-1"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
@@ -307,10 +296,10 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=query-scheduler -server.http-listen-port=8011 -server.grpc-listen-port=9011 -activity-tracker.filepath=/activity/query-scheduler-8011 -store.max-query-length=8760h"
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=query-scheduler -server.http-listen-port=8011 -server.grpc-listen-port=9011 -activity-tracker.filepath=/activity/query-scheduler-8011 -store.max-query-length=8760h -memberlist.nodename=query-scheduler -memberlist.bind-port=10011 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist"
     "depends_on":
       - "minio"
-      - "consul"
+      - "distributor-1"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
@@ -330,10 +319,10 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=ruler -server.http-listen-port=8021 -server.grpc-listen-port=9021 -activity-tracker.filepath=/activity/ruler-8021 "
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=ruler -server.http-listen-port=8021 -server.grpc-listen-port=9021 -activity-tracker.filepath=/activity/ruler-8021  -memberlist.nodename=ruler-1 -memberlist.bind-port=10021 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist"
     "depends_on":
       - "minio"
-      - "consul"
+      - "distributor-1"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
@@ -353,10 +342,10 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=ruler -server.http-listen-port=8022 -server.grpc-listen-port=9022 -activity-tracker.filepath=/activity/ruler-8022 "
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=ruler -server.http-listen-port=8022 -server.grpc-listen-port=9022 -activity-tracker.filepath=/activity/ruler-8022  -memberlist.nodename=ruler-2 -memberlist.bind-port=10022 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist"
     "depends_on":
       - "minio"
-      - "consul"
+      - "distributor-1"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
@@ -376,10 +365,10 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=store-gateway -server.http-listen-port=8008 -server.grpc-listen-port=9008 -activity-tracker.filepath=/activity/store-gateway-8008 "
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=store-gateway -server.http-listen-port=8008 -server.grpc-listen-port=9008 -activity-tracker.filepath=/activity/store-gateway-8008  -memberlist.nodename=store-gateway-1 -memberlist.bind-port=10008 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist"
     "depends_on":
       - "minio"
-      - "consul"
+      - "distributor-1"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
@@ -399,10 +388,10 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=store-gateway -server.http-listen-port=8009 -server.grpc-listen-port=9009 -activity-tracker.filepath=/activity/store-gateway-8009 "
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=store-gateway -server.http-listen-port=8009 -server.grpc-listen-port=9009 -activity-tracker.filepath=/activity/store-gateway-8009  -memberlist.nodename=store-gateway-2 -memberlist.bind-port=10009 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist"
     "depends_on":
       - "minio"
-      - "consul"
+      - "distributor-1"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
