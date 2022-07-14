@@ -14,6 +14,7 @@ import (
 	"os"
 	"reflect"
 	"strconv"
+	"strings"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -629,18 +630,22 @@ func (t *Mimir) Run() error {
 func (t *Mimir) readyHandler(sm *services.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !sm.IsHealthy() {
-			msg := bytes.Buffer{}
-			msg.WriteString("Some services are not Running:\n")
-
+			var serviceNamesStates []string
 			for name, s := range t.ServiceMap {
 				if s.State() != services.Running {
-					msg.WriteString(fmt.Sprintf("%s: %s\n", name, s.State()))
+					serviceNamesStates = append(serviceNamesStates, fmt.Sprintf("%s: %s", name, s.State()))
 				}
 			}
 
-			strMsg := msg.String()
-			level.Debug(util_log.Logger).Log(strMsg)
-			http.Error(w, strMsg, http.StatusServiceUnavailable)
+			logMessage := bytes.Buffer{}
+			logMessage.WriteString("some services are not Running: ")
+			logMessage.WriteString(strings.Join(serviceNamesStates, ","))
+			level.Debug(util_log.Logger).Log("msg", logMessage.String())
+
+			httpResponse := bytes.Buffer{}
+			httpResponse.WriteString("Some services are not Running:\n")
+			httpResponse.WriteString(strings.Join(serviceNamesStates, "\n"))
+			http.Error(w, httpResponse.String(), http.StatusServiceUnavailable)
 			return
 		}
 
