@@ -1,6 +1,4 @@
 ---
-aliases:
-  - /docs/mimir/latest/operators-guide/configure/configure-out-of-order-samples-ingestion/
 description: Learn how to configure Grafana Mimir to handle out-of-order samples ingestion.
 menuTitle: Configure out-of-order samples ingestion
 title: Configure out-of-order samples ingestion
