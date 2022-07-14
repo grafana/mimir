@@ -36,7 +36,7 @@ find <STORAGE TSDB PATH> -name chunks -exec dirname {} \;
 Grafana Mimir supports multiple tenants and stores blocks per tenant. With multi-tenancy disabled, there
 is a single tenant called `anonymous`.
 
-Use Grafana mimirtool to upload each block, e.g. identified by the previous command, to Grafana Mimir:
+Use Grafana mimirtool to upload each block, such as those identified by the previous command, to Grafana Mimir:
 
 ```bash
 mimirtool backfill --address=http://<mimir-hostname> --id=<tenant> <block1> <block2>...
