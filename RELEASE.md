@@ -173,10 +173,10 @@ $ git push origin "mimir-${version}"
 
 To cherry-pick a change (commit) from `main` into release branch we use a GitHub action and labels:
 
-Add a `backport <release-branch>` label to the PR you want to cherry-pick, where `<release-branch>` is the branch name 
-according to [Branch management and versioning strategy](#branch-management-and-versioning-strategy). 
+Add a `backport <release-branch>` label to the PR you want to cherry-pick, where `<release-branch>` is the branch name
+according to [Branch management and versioning strategy](#branch-management-and-versioning-strategy).
 You can add this label before or after the PR is merged. Grafanabot will open a PR targeting the release
-branch with the merge commit of the PR you labelled. See [PR#2290 (original PR)](https://github.com/grafana/mimir/pull/2290) and 
+branch with the merge commit of the PR you labelled. See [PR#2290 (original PR)](https://github.com/grafana/mimir/pull/2290) and
 [PR#2364 (backport PR)](https://github.com/grafana/mimir/pull/2364) for an example pair.
 
 ### Merging release branch into main
