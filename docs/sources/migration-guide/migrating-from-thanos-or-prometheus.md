@@ -43,7 +43,7 @@ mimirtool backfill --address=http://<mimir-hostname> --id=<tenant> <block1> <blo
 ```
 
 > **Note**: If you need to authenticate against Grafana Mimir, you can provide an API key via the `--key` flag,
-for example `--key=$(cat token.txt)`.
+> for example `--key=$(cat token.txt)`.
 
 Grafana Mimir performs some sanitization and validation of each block's metadata.
 As a result, it rejects Thanos blocks due to unsupported labels.
