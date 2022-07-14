@@ -5,6 +5,7 @@ kind: StatefulSet
 metadata:
   name: test-oss-values-mimir-results-cache
   labels:
+    helm.sh/chart: mimir-distributed-2.2.0-weekly.192
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-values
     app.kubernetes.io/component: memcached
@@ -28,6 +29,7 @@ spec:
   template:
     metadata:
       labels:
+        helm.sh/chart: mimir-distributed-2.2.0-weekly.192
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-values
         app.kubernetes.io/version: "2.2.0"

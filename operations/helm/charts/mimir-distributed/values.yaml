@@ -341,6 +341,9 @@ alertmanager:
     initialDelaySeconds: 45
 
   securityContext: {}
+  # -- The SecurityContext for alertmanager containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
 
   # Tolerations for pod assignment
   # ref: https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/

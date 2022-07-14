@@ -5,6 +5,7 @@ kind: Job
 metadata:
   name: test-enterprise-configmap-values-mimir-tokengen
   labels:
+    helm.sh/chart: mimir-distributed-2.2.0-weekly.192
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-enterprise-configmap-values
     app.kubernetes.io/component: tokengen
@@ -21,6 +22,7 @@ spec:
   template:
     metadata:
       labels:
+        helm.sh/chart: mimir-distributed-2.2.0-weekly.192
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-enterprise-configmap-values
         app.kubernetes.io/version: "2.2.0"
@@ -35,6 +37,7 @@ spec:
         []
       containers:
         - name: tokengen
+          image: "grafana/enterprise-metrics:r191-708e13a1"
           imagePullPolicy: IfNotPresent
           args:
             - "-target=tokengen"
@@ -49,6 +52,8 @@ spec:
           envFrom:
             - secretRef:
                 name: mimir-minio-secret
+          securityContext:
+            readOnlyRootFilesystem: true
       restartPolicy: OnFailure
       volumes:
         - name: config

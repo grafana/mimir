@@ -5,6 +5,7 @@ kind: Deployment
 metadata:
   name: test-oss-values-mimir-distributor
   labels:
+    helm.sh/chart: mimir-distributed-2.2.0-weekly.192
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-values
     app.kubernetes.io/component: distributor
@@ -29,6 +30,7 @@ spec:
   template:
     metadata:
       labels:
+        helm.sh/chart: mimir-distributed-2.2.0-weekly.192
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-values
         app.kubernetes.io/version: "2.2.0"
@@ -36,6 +38,7 @@ spec:
         app.kubernetes.io/component: distributor
         app.kubernetes.io/part-of: memberlist
       annotations:
+        checksum/config: 6f319539de0d7087278eeeed993a089b98a8c5c6af4c0ccfb8109289c17a24e5
         minio-secret-version: "42"
       namespace: "citestns"
     spec:
@@ -46,6 +49,7 @@ spec:
         []
       containers:
         - name: distributor
+          image: "grafana/mimir:r191-e11ac85"
           imagePullPolicy: IfNotPresent
           args:
             - "-target=distributor"
