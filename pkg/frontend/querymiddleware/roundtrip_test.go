@@ -132,7 +132,7 @@ func TestInstantTripperware(t *testing.T) {
 	rt := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
 		// We will provide a sample exactly for the requested time,
 		// this way we'll also be able to tell which time was requested.
-		reqTime, err := strconv.ParseFloat(r.URL.Query().Get("time"), 10)
+		reqTime, err := strconv.ParseFloat(r.URL.Query().Get("time"), 64)
 		if err != nil {
 			return nil, err
 		}

@@ -32,14 +32,14 @@ RUN GOARCH=$(go env GOARCH) && \
     curl -fSL -o "/usr/bin/tk" "https://github.com/grafana/tanka/releases/download/v${TANKA_VERSION}/tk-linux-${GOARCH}" && \
     chmod a+x /usr/bin/tk
 
-RUN curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s -- -b /usr/bin v1.27.0
+RUN curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s -- -b /usr/bin v1.46.2
 
 RUN GO111MODULE=on \
 	go install github.com/client9/misspell/cmd/misspell@v0.3.4 && \
 	go install github.com/golang/protobuf/protoc-gen-go@v1.3.1 && \
 	go install github.com/gogo/protobuf/protoc-gen-gogoslick@v1.3.0 && \
 	go install github.com/weaveworks/tools/cover@bdd647e92546027e12cdde3ae0714bb495e43013 && \
-	go install github.com/fatih/faillint@v1.5.0 && \
+	go install github.com/fatih/faillint@v1.10.0 && \
 	go install github.com/campoy/embedmd@v1.0.0 && \
 	go install github.com/jsonnet-bundler/jsonnet-bundler/cmd/jb@v0.4.0 && \
 	go install github.com/monitoring-mixins/mixtool/cmd/mixtool@bca3066 && \
