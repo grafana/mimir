@@ -57,8 +57,7 @@ func TestOverridesManager_GetOverrides(t *testing.T) {
 
 	// Update limits for tenant user1. We only update single field, the rest is copied from defaults.
 	// (That is how limits work when loaded from YAML)
-	l := Limits{}
-	l = defaults
+	l := defaults
 	l.MaxLabelValueLength = 150
 
 	tenantLimits["user1"] = &l
