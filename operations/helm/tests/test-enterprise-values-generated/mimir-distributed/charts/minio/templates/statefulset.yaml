@@ -1,0 +1,106 @@
+---
+# Source: mimir-distributed/charts/minio/templates/statefulset.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-enterprise-values-minio-svc
+  namespace: "citestns"
+  labels:
+    app: minio
+    chart: minio-4.0.3
+    release: "test-enterprise-values"
+    heritage: "Helm"
+spec:
+  publishNotReadyAddresses: true
+  clusterIP: None
+  ports:
+    - name: http
+      port: 9000
+      protocol: TCP
+  selector:
+    app: minio
+    release: test-enterprise-values
+---
+# Source: mimir-distributed/charts/minio/templates/statefulset.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: test-enterprise-values-minio
+  namespace: "citestns"
+  labels:
+    app: minio
+    chart: minio-4.0.3
+    release: test-enterprise-values
+    heritage: Helm
+spec:
+  updateStrategy:
+    type: RollingUpdate
+  podManagementPolicy: "Parallel"
+  serviceName: test-enterprise-values-minio-svc
+  replicas: 16
+  selector:
+    matchLabels:
+      app: minio
+      release: test-enterprise-values
+  template:
+    metadata:
+      name: test-enterprise-values-minio
+      labels:
+        app: minio
+        release: test-enterprise-values
+      annotations:
+        checksum/secrets: d9105d97024075a2eaad9511639d273465b4db7187458093a0ef42d0a1de18aa
+        checksum/config: 98e28c14e3808ad4e793631a25d6261c188a14d5b279d2353cd351fbb6f3664e
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+
+      serviceAccountName: minio-sa
+      containers:
+        - name: minio
+          image: quay.io/minio/minio:RELEASE.2022-05-08T23-50-31Z
+          imagePullPolicy: IfNotPresent
+
+          command: [ "/bin/sh",
+            "-ce",
+            "/usr/bin/docker-entrypoint.sh minio server  http://test-enterprise-values-minio-{0...15}.test-enterprise-values-minio-svc.citestns.svc.cluster.local/export -S /etc/minio/certs/ --address :9000 --console-address :9001" ]
+          volumeMounts:
+            - name: export
+              mountPath: /export            
+          ports:
+            - name: http
+              containerPort: 9000
+            - name: http-console
+              containerPort: 9001
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: test-enterprise-values-minio
+                  key: rootUser
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: test-enterprise-values-minio
+                  key: rootPassword
+            - name: MINIO_PROMETHEUS_AUTH_TYPE
+              value: "public"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi      
+      volumes:
+        - name: minio-user
+          secret:
+            secretName: test-enterprise-values-minio        
+  volumeClaimTemplates:
+    - metadata:
+        name: export
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: 5Gi
