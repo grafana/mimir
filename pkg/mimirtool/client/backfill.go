@@ -120,8 +120,6 @@ func (c *MimirClient) backfillBlock(ctx context.Context, blockDir string, logger
 			return fmt.Errorf("request to upload block file failed, with HTTP status %d %s",
 				resp.StatusCode, resp.Status)
 		}
-
-		return nil
 	}
 
 	resp, err = c.doRequest(fmt.Sprintf("%s?uploadComplete=true", blockPrefix), http.MethodPost,
