@@ -1,6 +1,6 @@
 ---
-title: "Configuring TSDB block upload"
-menuTitle: "Configuring TSDB block upload"
+title: "Configure TSDB block upload"
+menuTitle: "Configure TSDB block upload"
 description: "Learn how to configure Grafana Mimir to enable TSDB block upload"
 weight: 120
 ---
