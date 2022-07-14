@@ -23,6 +23,9 @@ import (
 // Func defines the type of the push. It is similar to http.HandlerFunc.
 type Func func(ctx context.Context, req *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error)
 
+// ParserFunc defines the parser code.
+type ParserFunc func(ctx context.Context, r *http.Request, maxSize int, buffer []byte, req *mimirpb.PreallocWriteRequest) ([]byte, error)
+
 // Wrap a slice in a struct so we can store a pointer in sync.Pool
 type bufHolder struct {
 	buf []byte
@@ -42,6 +45,18 @@ func Handler(
 	allowSkipLabelNameValidation bool,
 	push Func,
 ) http.Handler {
+	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, push, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, dst []byte, req *mimirpb.PreallocWriteRequest) ([]byte, error) {
+		return util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, dst, req, util.RawSnappy)
+	})
+}
+
+// handler requires an additional parser argument.
+func handler(maxRecvMsgSize int,
+	sourceIPs *middleware.SourceIPExtractor,
+	allowSkipLabelNameValidation bool,
+	push Func,
+	parser ParserFunc,
+) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		logger := log.WithContext(ctx, log.Logger)
@@ -54,7 +69,7 @@ func Handler(
 		}
 		bufHolder := bufferPool.Get().(*bufHolder)
 		var req mimirpb.PreallocWriteRequest
-		buf, err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, bufHolder.buf, &req, util.RawSnappy)
+		buf, err := parser(ctx, r, maxRecvMsgSize, bufHolder.buf, &req)
 		if err != nil {
 			level.Error(logger).Log("err", err.Error())
 			http.Error(w, err.Error(), http.StatusBadRequest)

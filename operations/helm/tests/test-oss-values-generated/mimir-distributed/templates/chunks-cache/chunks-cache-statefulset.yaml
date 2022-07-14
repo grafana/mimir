@@ -89,3 +89,6 @@ spec:
           args:
             - "--memcached.address=localhost:11211"
             - "--web.listen-address=0.0.0.0:9150"
+          resources:
+            limits: {}
+            requests: {}

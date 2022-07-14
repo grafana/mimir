@@ -122,57 +122,57 @@ func setupSingleMultitenantAlertmanager(t *testing.T, cfg *MultitenantAlertmanag
 
 func TestMultitenantAlertmanagerConfig_Validate(t *testing.T) {
 	tests := map[string]struct {
-		setup    func(t *testing.T, cfg *MultitenantAlertmanagerConfig, storageCfg *alertstore.Config)
+		setup    func(t *testing.T, cfg *MultitenantAlertmanagerConfig)
 		expected error
 	}{
 		"should pass with default config": {
-			setup:    func(t *testing.T, cfg *MultitenantAlertmanagerConfig, storageCfg *alertstore.Config) {},
+			setup:    func(t *testing.T, cfg *MultitenantAlertmanagerConfig) {},
 			expected: nil,
 		},
 		"should fail with empty external URL": {
-			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig, storageCfg *alertstore.Config) {
+			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig) {
 				require.NoError(t, cfg.ExternalURL.Set(""))
 			},
 			expected: errEmptyExternalURL,
 		},
 		"should fail if persistent interval is 0": {
-			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig, storageCfg *alertstore.Config) {
+			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig) {
 				cfg.Persister.Interval = 0
 			},
 			expected: errInvalidPersistInterval,
 		},
 		"should fail if persistent interval is negative": {
-			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig, storageCfg *alertstore.Config) {
+			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig) {
 				cfg.Persister.Interval = -1
 			},
 			expected: errInvalidPersistInterval,
 		},
 		"should fail if external URL ends with /": {
-			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig, storageCfg *alertstore.Config) {
+			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig) {
 				require.NoError(t, cfg.ExternalURL.Set("http://localhost/prefix/"))
 			},
-			expected: errInvalidExternalURL,
+			expected: errInvalidExternalURLEndingSlash,
 		},
 		"should succeed if external URL does not end with /": {
-			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig, storageCfg *alertstore.Config) {
+			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig) {
 				require.NoError(t, cfg.ExternalURL.Set("http://localhost/prefix"))
 			},
 			expected: nil,
 		},
-		"should succeed if new storage configuration given with bucket client": {
-			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig, storageCfg *alertstore.Config) {
-				storageCfg.Backend = "s3"
+		"should fail if external URL has no scheme": {
+			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig) {
+				require.NoError(t, cfg.ExternalURL.Set("example.com/alertmanager"))
 			},
-			expected: nil,
+			expected: errInvalidExternalURLMissingScheme,
 		},
-		"should succeed if new storage store configuration given with local type": {
-			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig, storageCfg *alertstore.Config) {
-				storageCfg.Backend = "local"
+		"should fail if external URL has no hostname": {
+			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig) {
+				require.NoError(t, cfg.ExternalURL.Set("https:///alertmanager"))
 			},
-			expected: nil,
+			expected: errInvalidExternalURLMissingHostname,
 		},
 		"should fail if zone aware is enabled but zone is not set": {
-			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig, storageCfg *alertstore.Config) {
+			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig) {
 				cfg.ShardingRing.ZoneAwarenessEnabled = true
 			},
 			expected: errZoneAwarenessEnabledWithoutZoneInfo,
@@ -182,11 +182,9 @@ func TestMultitenantAlertmanagerConfig_Validate(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			cfg := &MultitenantAlertmanagerConfig{}
-			storageCfg := alertstore.Config{}
 			flagext.DefaultValues(cfg)
-			flagext.DefaultValues(&storageCfg)
-			testData.setup(t, cfg, &storageCfg)
-			assert.Equal(t, testData.expected, cfg.Validate(storageCfg))
+			testData.setup(t, cfg)
+			assert.Equal(t, testData.expected, cfg.Validate())
 		})
 	}
 }

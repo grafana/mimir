@@ -2545,6 +2545,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -compactor.compactor-tenant-shard-size
 [compactor_tenant_shard_size: <int> | default = 0]
 
+# If a partial block (unfinished block without meta.json file) hasn't been
+# modified for this time, it will be marked for deletion. 0 to disable.
+# CLI flag: -compactor.partial-block-deletion-delay
+[compactor_partial_block_deletion_delay: <duration> | default = 0s]
+
 # Enable block upload API for the tenant.
 # CLI flag: -compactor.block-upload-enabled
 [compactor_block_upload_enabled: <boolean> | default = false]

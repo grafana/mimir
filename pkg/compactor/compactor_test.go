@@ -250,6 +250,7 @@ func TestMultitenantCompactor_ShouldDoNothingOnNoUserBlocks(t *testing.T) {
 		# HELP cortex_compactor_blocks_marked_for_deletion_total Total number of blocks marked for deletion in compactor.
 		# TYPE cortex_compactor_blocks_marked_for_deletion_total counter
 		cortex_compactor_blocks_marked_for_deletion_total{reason="compaction"} 0
+		cortex_compactor_blocks_marked_for_deletion_total{reason="partial"} 0
 		cortex_compactor_blocks_marked_for_deletion_total{reason="retention"} 0
 
 		# TYPE cortex_compactor_block_cleanup_started_total counter
@@ -389,6 +390,7 @@ func TestMultitenantCompactor_ShouldRetryCompactionOnFailureWhileDiscoveringUser
 		# HELP cortex_compactor_blocks_marked_for_deletion_total Total number of blocks marked for deletion in compactor.
 		# TYPE cortex_compactor_blocks_marked_for_deletion_total counter
 		cortex_compactor_blocks_marked_for_deletion_total{reason="compaction"} 0
+		cortex_compactor_blocks_marked_for_deletion_total{reason="partial"} 0
 		cortex_compactor_blocks_marked_for_deletion_total{reason="retention"} 0
 
 		# TYPE cortex_compactor_block_cleanup_started_total counter
@@ -599,6 +601,7 @@ func TestMultitenantCompactor_ShouldIterateOverUsersAndRunCompaction(t *testing.
 		# HELP cortex_compactor_blocks_marked_for_deletion_total Total number of blocks marked for deletion in compactor.
 		# TYPE cortex_compactor_blocks_marked_for_deletion_total counter
 		cortex_compactor_blocks_marked_for_deletion_total{reason="compaction"} 0
+		cortex_compactor_blocks_marked_for_deletion_total{reason="partial"} 0
 		cortex_compactor_blocks_marked_for_deletion_total{reason="retention"} 0
 
 		# TYPE cortex_compactor_block_cleanup_started_total counter
@@ -783,6 +786,7 @@ func TestMultitenantCompactor_ShouldNotCompactBlocksMarkedForDeletion(t *testing
 		# HELP cortex_compactor_blocks_marked_for_deletion_total Total number of blocks marked for deletion in compactor.
 		# TYPE cortex_compactor_blocks_marked_for_deletion_total counter
 		cortex_compactor_blocks_marked_for_deletion_total{reason="compaction"} 0
+		cortex_compactor_blocks_marked_for_deletion_total{reason="partial"} 0
 		cortex_compactor_blocks_marked_for_deletion_total{reason="retention"} 0
 
 		# TYPE cortex_compactor_block_cleanup_started_total counter
@@ -939,6 +943,7 @@ func TestMultitenantCompactor_ShouldNotCompactBlocksForUsersMarkedForDeletion(t 
 		# HELP cortex_compactor_blocks_marked_for_deletion_total Total number of blocks marked for deletion in compactor.
 		# TYPE cortex_compactor_blocks_marked_for_deletion_total counter
 		cortex_compactor_blocks_marked_for_deletion_total{reason="compaction"} 0
+		cortex_compactor_blocks_marked_for_deletion_total{reason="partial"} 0
 		cortex_compactor_blocks_marked_for_deletion_total{reason="retention"} 0
 
 		# TYPE cortex_compactor_block_cleanup_started_total counter
@@ -1069,6 +1074,7 @@ func TestMultitenantCompactor_ShouldCompactAllUsersOnShardingEnabledButOnlyOneIn
 		# HELP cortex_compactor_blocks_marked_for_deletion_total Total number of blocks marked for deletion in compactor.
 		# TYPE cortex_compactor_blocks_marked_for_deletion_total counter
 		cortex_compactor_blocks_marked_for_deletion_total{reason="compaction"} 0
+		cortex_compactor_blocks_marked_for_deletion_total{reason="partial"} 0
 		cortex_compactor_blocks_marked_for_deletion_total{reason="retention"} 0
 	`),
 		"cortex_compactor_runs_started_total",
@@ -1279,6 +1285,7 @@ func TestMultitenantCompactor_ShouldSkipCompactionForJobsNoMoreOwnedAfterPlannin
 		# HELP cortex_compactor_blocks_marked_for_deletion_total Total number of blocks marked for deletion in compactor.
 		# TYPE cortex_compactor_blocks_marked_for_deletion_total counter
 		cortex_compactor_blocks_marked_for_deletion_total{reason="compaction"} 0
+		cortex_compactor_blocks_marked_for_deletion_total{reason="partial"} 0
 		cortex_compactor_blocks_marked_for_deletion_total{reason="retention"} 0
 	`),
 		"cortex_compactor_runs_started_total",

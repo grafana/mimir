@@ -54,6 +54,12 @@ spec:
       tolerations:
         {{- toYaml .tolerations | nindent 8 }}
       terminationGracePeriodSeconds: {{ .terminationGracePeriodSeconds }}
+      {{- if $.ctx.Values.image.pullSecrets }}
+      imagePullSecrets:
+      {{- range $.ctx.Values.image.pullSecrets }}
+        - name: {{ . }}
+      {{- end }}
+      {{- end }}
       containers:
         {{- if .extraContainers }}
         {{ toYaml .extraContainers | nindent 8 }}
@@ -110,6 +116,8 @@ spec:
           args:
             - "--memcached.address=localhost:{{ .port }}"
             - "--web.listen-address=0.0.0.0:9150"
+          resources:
+            {{- toYaml $.ctx.Values.memcachedExporter.resources | nindent 12 }}
       {{- end }}
 {{- end -}}
 {{- end -}}
