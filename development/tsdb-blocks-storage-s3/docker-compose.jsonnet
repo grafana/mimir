@@ -14,7 +14,7 @@ std.manifestYamlDoc({
     // - consul
     // - memberlist (consul is not started at all)
     // - multi (uses consul as primary and memberlist as secondary, but this can be switched in runtime via runtime.yaml)
-    ring: 'consul',
+    ring: 'memberlist',
   },
 
   // We explicitely list all important services here, so that it's easy to disable them by commenting out.
@@ -153,7 +153,7 @@ std.manifestYamlDoc({
       debugPort: self.httpPort + 10000,
       // Extra arguments passed to Mimir command line.
       extraArguments: '',
-      dependsOn: ['minio'] + (if $._config.ring == 'consul' || $._config.ring == 'multi' then ['consul'] else if s.target != 'distributor' then ['distributor'] else []),
+      dependsOn: ['minio'] + (if $._config.ring == 'consul' || $._config.ring == 'multi' then ['consul'] else if s.target != 'distributor' then ['distributor-1'] else []),
       env: {
         JAEGER_AGENT_HOST: 'jaeger',
         JAEGER_AGENT_PORT: 6831,
