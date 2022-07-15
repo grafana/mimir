@@ -22,7 +22,6 @@ var logger = log.NewLogfmtLogger(os.Stderr)
 
 func main() {
 	metricSelector := flag.String("select", "", "PromQL metric selector")
-	printChunks := flag.Bool("show-chunks", false, "Print chunk details")
 	flag.Parse()
 
 	if flag.NArg() == 0 {
@@ -49,7 +48,7 @@ func main() {
 	}
 
 	for _, blockDir := range flag.Args() {
-		printBlockIndex(blockDir, *printChunks, matchers)
+		printBlockIndex(blockDir, matchers)
 	}
 
 	ratio := float64(totalBytes) / float64(totalSamples)
@@ -109,30 +108,28 @@ func printBlockIndex(blockDir string, printChunks bool, matchers []*labels.Match
 		}
 
 		//fmt.Println("series", lbls.String())
-		if printChunks {
-			for _, c := range chks {
-				chk := c.Chunk
-				if chk == nil {
-					chk, err = cr.Chunk(c)
-					if err != nil {
-						panic(err)
-					}
+		for _, c := range chks {
+			chk := c.Chunk
+			if chk == nil {
+				chk, err = cr.Chunk(c)
+				if err != nil {
+					panic(err)
 				}
-
-				bytes := len(chk.Bytes())
-				totalBytes += bytes
-				samples := chk.NumSamples()
-				totalSamples += samples
-				ratio := float64(bytes) / float64(samples)
-				fmt.Println("chunk", c.Ref,
-					"min time:", c.MinTime, timestamp.Time(c.MinTime).UTC().Format(time.RFC3339Nano),
-					"max time:", c.MaxTime, timestamp.Time(c.MaxTime).UTC().Format(time.RFC3339Nano),
-					"bytes:", bytes, "samples:", samples, "ratio:", fmt.Sprintf("%0.2f", ratio),
-				)
-
-				totalRatio := float64(totalBytes) / float64(totalSamples)
-				fmt.Println("total_chunk_bytes:", totalBytes, "total_chunk_samples:", totalSamples, "ratio:", fmt.Sprintf("%0.2f", totalRatio))
 			}
+
+			bytes := len(chk.Bytes())
+			totalBytes += bytes
+			samples := chk.NumSamples()
+			totalSamples += samples
+			ratio := float64(bytes) / float64(samples)
+			fmt.Println("chunk", c.Ref,
+				"min time:", c.MinTime, timestamp.Time(c.MinTime).UTC().Format(time.RFC3339Nano),
+				"max time:", c.MaxTime, timestamp.Time(c.MaxTime).UTC().Format(time.RFC3339Nano),
+				"bytes:", bytes, "samples:", samples, "ratio:", fmt.Sprintf("%0.2f", ratio),
+			)
+
+			totalRatio := float64(totalBytes) / float64(totalSamples)
+			fmt.Println("total_chunk_bytes:", totalBytes, "total_chunk_samples:", totalSamples, "ratio:", fmt.Sprintf("%0.2f", totalRatio))
 		}
 	}
 
