@@ -171,20 +171,13 @@ $ git push origin "mimir-${version}"
 
 ### Cherry-picking changes into release branch
 
-To cherry-pick a change (commit) from `main` into release branch, please do the following:
+To cherry-pick a change (commit) from `main` into release branch we use a GitHub action and labels:
 
-```bash
-$ git checkout release-X.Y                   # Start with the release branch
-$ git checkout -b cherry-pick-pr-ZZZ         # Create new branch for cherry-picking
-$ git cherry-pick -x <commit ID>             # Cherry pick the change using -x option to add original commit ID to the message
-$ git push origin cherry-pick-pr-ZZZ         # Push branch to GitHub.
-```
-
-After pushing branch to GitHub, you can create the PR by opening `https://github.com/grafana/mimir/pull/new/cherry-pick-pr-ZZZ` link.
-Make sure to set `release-X.Y` as the base branch, into which PR should be merged.
-After PR with cherry-picked commit is reviewed, do a standard "Squash & Merge" commit that we use in Mimir.
-Keep the commit message suggested by GitHub, which is a combination of original commit message, original PR number, new PR number and cherry-picked commit hash.
-GitHub will properly attribute you and also original commit author as contributors to this change, and will also link to original commit in the UI.
+Add a `backport <release-branch>` label to the PR you want to cherry-pick, where `<release-branch>` is the branch name
+according to [Branch management and versioning strategy](#branch-management-and-versioning-strategy).
+You can add this label before or after the PR is merged. Grafanabot will open a PR targeting the release
+branch with the merge commit of the PR you labelled. See [PR#2290 (original PR)](https://github.com/grafana/mimir/pull/2290) and
+[PR#2364 (backport PR)](https://github.com/grafana/mimir/pull/2364) for an example pair.
 
 ### Merging release branch into main
 
