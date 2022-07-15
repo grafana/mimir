@@ -263,7 +263,7 @@ type Ingester interface {
 	client.IngesterServer
 	FlushHandler(http.ResponseWriter, *http.Request)
 	ShutdownHandler(http.ResponseWriter, *http.Request)
-	PushWithCleanup(context.Context, *mimirpb.WriteRequest, func()) (*mimirpb.WriteResponse, error)
+	PushWithCleanup(context.Context, *push.Request) (*mimirpb.WriteResponse, error)
 }
 
 // RegisterIngester registers the ingesters HTTP and GRPC service
