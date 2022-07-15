@@ -157,8 +157,8 @@ func (r *MimirClient) doRequest(path, method string, payload io.Reader, contentL
 		return nil, err
 	}
 
-	err = checkResponse(resp)
-	if err != nil {
+	if err := checkResponse(resp); err != nil {
+		_ = resp.Body.Close()
 		return nil, errors.Wrapf(err, "%s request to %s failed", req.Method, req.URL.String())
 	}
 
