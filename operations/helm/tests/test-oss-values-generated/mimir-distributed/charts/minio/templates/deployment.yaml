@@ -1,29 +1,7 @@
 ---
-# Source: mimir-distributed/charts/minio/templates/statefulset.yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: test-oss-values-minio-svc
-  namespace: "citestns"
-  labels:
-    app: minio
-    chart: minio-4.0.3
-    release: "test-oss-values"
-    heritage: "Helm"
-spec:
-  publishNotReadyAddresses: true
-  clusterIP: None
-  ports:
-    - name: http
-      port: 9000
-      protocol: TCP
-  selector:
-    app: minio
-    release: test-oss-values
----
-# Source: mimir-distributed/charts/minio/templates/statefulset.yaml
+# Source: mimir-distributed/charts/minio/templates/deployment.yaml
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
   name: test-oss-values-minio
   namespace: "citestns"
@@ -33,11 +11,12 @@ metadata:
     release: test-oss-values
     heritage: Helm
 spec:
-  updateStrategy:
+  strategy:
     type: RollingUpdate
-  podManagementPolicy: "Parallel"
-  serviceName: test-oss-values-minio-svc
-  replicas: 16
+    rollingUpdate:
+      maxSurge: 100%
+      maxUnavailable: 0
+  replicas: 1
   selector:
     matchLabels:
       app: minio
@@ -49,7 +28,7 @@ spec:
         app: minio
         release: test-oss-values
       annotations:
-        checksum/secrets: 439055f2001009c06b5ebe63d43946543f0d8fd1a4fc81997b809b0c9de5795c
+        checksum/secrets: 989bb07fd002aa66c84835942ef090a41b391039c7ea122220a0a52475941900
         checksum/config: 76906c00e076222189821fe5e30c41d99b9284ae09946ff42801a329461e1ec8
     spec:
       securityContext:
@@ -61,13 +40,16 @@ spec:
       serviceAccountName: minio-sa
       containers:
         - name: minio
-          image: quay.io/minio/minio:RELEASE.2022-05-08T23-50-31Z
+          image: "quay.io/minio/minio:RELEASE.2022-05-08T23-50-31Z"
           imagePullPolicy: IfNotPresent
-
-          command: [ "/bin/sh",
-            "-ce",
-            "/usr/bin/docker-entrypoint.sh minio server  http://test-oss-values-minio-{0...15}.test-oss-values-minio-svc.citestns.svc.cluster.local/export -S /etc/minio/certs/ --address :9000 --console-address :9001" ]
+          command:
+            - "/bin/sh"
+            - "-ce"
+            - "/usr/bin/docker-entrypoint.sh minio server /export -S /etc/minio/certs/ --address :9000 --console-address :9001"
           volumeMounts:
+            - name: minio-user
+              mountPath: "/tmp/credentials"
+              readOnly: true
             - name: export
               mountPath: /export            
           ports:
@@ -93,14 +75,9 @@ spec:
               cpu: 100m
               memory: 128Mi      
       volumes:
+        - name: export
+          persistentVolumeClaim:
+            claimName: test-oss-values-minio
         - name: minio-user
           secret:
-            secretName: test-oss-values-minio        
-  volumeClaimTemplates:
-    - metadata:
-        name: export
-      spec:
-        accessModes: [ "ReadWriteOnce" ]
-        resources:
-          requests:
-            storage: 5Gi
+            secretName: test-oss-values-minio

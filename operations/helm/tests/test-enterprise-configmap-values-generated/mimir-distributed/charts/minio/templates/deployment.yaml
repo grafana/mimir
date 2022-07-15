@@ -1,29 +1,7 @@
 ---
-# Source: mimir-distributed/charts/minio/templates/statefulset.yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: test-enterprise-configmap-values-minio-svc
-  namespace: "citestns"
-  labels:
-    app: minio
-    chart: minio-4.0.3
-    release: "test-enterprise-configmap-values"
-    heritage: "Helm"
-spec:
-  publishNotReadyAddresses: true
-  clusterIP: None
-  ports:
-    - name: http
-      port: 9000
-      protocol: TCP
-  selector:
-    app: minio
-    release: test-enterprise-configmap-values
----
-# Source: mimir-distributed/charts/minio/templates/statefulset.yaml
+# Source: mimir-distributed/charts/minio/templates/deployment.yaml
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
   name: test-enterprise-configmap-values-minio
   namespace: "citestns"
@@ -33,11 +11,12 @@ metadata:
     release: test-enterprise-configmap-values
     heritage: Helm
 spec:
-  updateStrategy:
+  strategy:
     type: RollingUpdate
-  podManagementPolicy: "Parallel"
-  serviceName: test-enterprise-configmap-values-minio-svc
-  replicas: 16
+    rollingUpdate:
+      maxSurge: 100%
+      maxUnavailable: 0
+  replicas: 1
   selector:
     matchLabels:
       app: minio
@@ -49,7 +28,7 @@ spec:
         app: minio
         release: test-enterprise-configmap-values
       annotations:
-        checksum/secrets: 134ad36a8cbea662fe808624e28a2ff361beace3db9c255ca0132d2268aad8f6
+        checksum/secrets: 080fc2cbf15e1d84a8b06740fcc6e025f85eab790a238be93e34f9075ca111c5
         checksum/config: b31e20de590681733b8db0d88d81bee73c227b14a72f420ea9c94aed5b048836
     spec:
       securityContext:
@@ -61,13 +40,16 @@ spec:
       serviceAccountName: minio-sa
       containers:
         - name: minio
-          image: quay.io/minio/minio:RELEASE.2022-05-08T23-50-31Z
+          image: "quay.io/minio/minio:RELEASE.2022-05-08T23-50-31Z"
           imagePullPolicy: IfNotPresent
-
-          command: [ "/bin/sh",
-            "-ce",
-            "/usr/bin/docker-entrypoint.sh minio server  http://test-enterprise-configmap-values-minio-{0...15}.test-enterprise-configmap-values-minio-svc.citestns.svc.cluster.local/export -S /etc/minio/certs/ --address :9000 --console-address :9001" ]
+          command:
+            - "/bin/sh"
+            - "-ce"
+            - "/usr/bin/docker-entrypoint.sh minio server /export -S /etc/minio/certs/ --address :9000 --console-address :9001"
           volumeMounts:
+            - name: minio-user
+              mountPath: "/tmp/credentials"
+              readOnly: true
             - name: export
               mountPath: /export            
           ports:
@@ -93,14 +75,9 @@ spec:
               cpu: 100m
               memory: 128Mi      
       volumes:
+        - name: export
+          persistentVolumeClaim:
+            claimName: test-enterprise-configmap-values-minio
         - name: minio-user
           secret:
-            secretName: test-enterprise-configmap-values-minio        
-  volumeClaimTemplates:
-    - metadata:
-        name: export
-      spec:
-        accessModes: [ "ReadWriteOnce" ]
-        resources:
-          requests:
-            storage: 5Gi
+            secretName: test-enterprise-configmap-values-minio

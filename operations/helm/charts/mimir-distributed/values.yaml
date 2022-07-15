@@ -1296,7 +1296,8 @@ results-cache:
 
 minio:
   enabled: true
-  accessKey: grafana-mimir
+  mode: standalone
+  rootUser: grafana-mimir
   buckets:
     - name: mimir-tsdb
       policy: none
@@ -1319,7 +1320,7 @@ minio:
     requests:
       cpu: 100m
       memory: 128Mi
-  secretKey: supersecret
+  rootPassword: supersecret
   # Changed the mc config path to '/tmp' from '/etc' as '/etc' is only writable by root and OpenShift will not permit this.
   configPathmc: "/tmp/minio/mc/"
 
