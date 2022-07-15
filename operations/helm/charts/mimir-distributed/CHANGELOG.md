@@ -51,6 +51,9 @@ Entries should include a reference to the Pull Request that introduced the chang
   - The remaining arguments are aligned with the rest of the chart's services, please consult the values file to check whether a parameter exists or was renamed.
 * [CHANGE] Change default value for `blocks_storage.bucket_store.chunks_cache.memcached.timeout` to `450ms` to increase use of cached data. #2035
 * [CHANGE] Remove setting `server.grpc_server_max_recv_msg_size` and `server.grpc_server_max_send_msg_size` to 100MB, since it is the default now, see #1884. #2300
+* [CHANGE] **breaking change** Update minio deprecated helm chart (https://helm.min.io/) to the supported chart's version (https://charts.min.io/). #2427
+  - Renamed helm config values `minio.accessKey` to `minio.rootUser`.
+  - Renamed helm config values `minio.secretKey` to `minio.rootPassword`.
 * [FEATURE] Add `mimir-continuous-test` in smoke-test mode. Use `helm test` to run a smoke test of the read + write path.
 * [FEATURE] Add meta-monitoring via the Grafana Agent Kubernetes operator: scrape metrics and collect logs from Mimir pods and ship them to a remote. #2068
 * [ENHANCEMENT] Update memcached statefulset manifest #2321
