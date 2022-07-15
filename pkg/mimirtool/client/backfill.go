@@ -16,7 +16,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
@@ -174,13 +173,15 @@ func getBlockMeta(blockDir string) (metadata.Meta, error) {
 	if err != nil {
 		return blockMeta, errors.Wrapf(err, "failed to read dir %q", chunksDir)
 	}
-	reChunk := regexp.MustCompile(`^\d{6}$`)
 	for _, e := range entries {
-		if !reChunk.MatchString(e.Name()) {
-			continue
+		pth := filepath.Join(chunksDir, e.Name())
+
+		if e.IsDir() {
+			return blockMeta, fmt.Errorf("%q is a directory, there should only be files", pth)
 		}
 
-		pth := filepath.Join(chunksDir, e.Name())
+		// Note that we don't need to be strict about chunk files, the server will validate
+		// the file list
 		st, err := os.Stat(pth)
 		if err != nil {
 			return blockMeta, errors.Wrapf(err, "failed to stat %q", pth)
