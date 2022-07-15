@@ -540,14 +540,6 @@ overrides:
 			expStatusCode: http.StatusBadRequest,
 			expBody:       `{"error":"invalid expression type \"range vector\" for range query, must be Scalar or instant Vector", "errorType":"bad_data", "status":"error"}`,
 		},
-		{
-			name: "error when negative offset is unsupported",
-			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
-				return c.QueryRangeRaw(`count_over_time(up[1m] offset -1m)`, now.Add(-time.Hour), now, time.Minute)
-			},
-			expStatusCode: http.StatusBadRequest,
-			expBody:       `{"error": "negative offsets are not supported", "errorType":"bad_data", "status":"error"}`,
-		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			resp, body, err := tc.query(cQuerier)
