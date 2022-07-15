@@ -610,7 +610,7 @@ func TestDistributor_PushInstanceLimits(t *testing.T) {
 
 		// limits
 		inflightLimit      int
-		inflightSizeLimit  int64
+		inflightSizeLimit  int
 		ingestionRateLimit float64
 
 		metricNames     []string
@@ -701,7 +701,7 @@ func TestDistributor_PushInstanceLimits(t *testing.T) {
 		},
 
 		"below inflight size limit": {
-			inflightSizeLimit: int64(makeWriteRequest(0, 100, 1, false).Size()),
+			inflightSizeLimit: makeWriteRequest(0, 100, 1, false).Size(),
 
 			pushes: []testPush{
 				{samples: 10, expectedError: nil},
@@ -709,7 +709,7 @@ func TestDistributor_PushInstanceLimits(t *testing.T) {
 		},
 
 		"hits inflight size limit": {
-			inflightSizeLimit: int64(makeWriteRequest(0, 100, 1, false).Size()),
+			inflightSizeLimit: makeWriteRequest(0, 100, 1, false).Size(),
 
 			pushes: []testPush{
 				{samples: 101, expectedError: errMaxInflightRequestsTotalSizeReached},
@@ -2737,7 +2737,7 @@ type prepConfig struct {
 	numDistributors              int
 	skipLabelNameValidation      bool
 	maxInflightRequests          int
-	maxInflightRequestsTotalSize int64
+	maxInflightRequestsTotalSize int
 	maxIngestionRate             float64
 	replicationFactor            int
 	enableTracker                bool

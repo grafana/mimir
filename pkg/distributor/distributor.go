@@ -166,7 +166,7 @@ type Config struct {
 type InstanceLimits struct {
 	MaxIngestionRate                 float64 `yaml:"max_ingestion_rate" category:"advanced"`
 	MaxInflightPushRequests          int     `yaml:"max_inflight_push_requests" category:"advanced"`
-	MaxInflightPushRequestsTotalSize int64   `yaml:"max_inflight_push_requests_total_size" category:"advanced"`
+	MaxInflightPushRequestsTotalSize int     `yaml:"max_inflight_push_requests_total_size" category:"advanced"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -181,7 +181,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	flagext.DeprecatedFlag(f, "distributor.extend-writes", "Deprecated: this setting was used to try writing to an additional ingester in the presence of an ingester not in the ACTIVE state. Mimir now behaves as this setting is always disabled.", logger)
 	f.Float64Var(&cfg.InstanceLimits.MaxIngestionRate, maxIngestionRateFlag, 0, "Max ingestion rate (samples/sec) that this distributor will accept. This limit is per-distributor, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. 0 = unlimited.")
 	f.IntVar(&cfg.InstanceLimits.MaxInflightPushRequests, maxInflightPushRequestsFlag, 2000, "Max inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.")
-	f.Int64Var(&cfg.InstanceLimits.MaxInflightPushRequestsTotalSize, maxInflightPushRequestsTotalSizeFlag, 0, "The sum of the request sizes in bytes of inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.")
+	f.IntVar(&cfg.InstanceLimits.MaxInflightPushRequestsTotalSize, maxInflightPushRequestsTotalSizeFlag, 0, "The sum of the request sizes in bytes of inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.")
 }
 
 // Validate config and returns error on failure
@@ -645,7 +645,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		}
 	}
 
-	if d.cfg.InstanceLimits.MaxInflightPushRequestsTotalSize > 0 && inflightSize > d.cfg.InstanceLimits.MaxInflightPushRequestsTotalSize {
+	if d.cfg.InstanceLimits.MaxInflightPushRequestsTotalSize > 0 && inflightSize > int64(d.cfg.InstanceLimits.MaxInflightPushRequestsTotalSize) {
 		return nil, errMaxInflightRequestsTotalSizeReached
 	}
 
