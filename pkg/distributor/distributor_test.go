@@ -1557,7 +1557,7 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 
 func BenchmarkDistributor_Push(b *testing.B) {
 	const (
-		numSeriesPerRequest = 1000
+		numSeriesPerRequest = 480 // 480 ~ 101KiB request
 	)
 	ctx := user.InjectOrgID(context.Background(), "user")
 
@@ -1565,8 +1565,10 @@ func BenchmarkDistributor_Push(b *testing.B) {
 		prepareConfig func(limits *validation.Limits)
 		prepareSeries func() ([]labels.Labels, []mimirpb.Sample)
 		expectedErr   string
+		numIngesters  int
 	}{
-		"all samples successfully pushed": {
+		"shard to 100 ingesters": {
+			numIngesters:  100,
 			prepareConfig: func(limits *validation.Limits) {},
 			prepareSeries: func() ([]labels.Labels, []mimirpb.Sample) {
 				metrics := make([]labels.Labels, numSeriesPerRequest)
@@ -1589,150 +1591,155 @@ func BenchmarkDistributor_Push(b *testing.B) {
 			},
 			expectedErr: "",
 		},
-		"ingestion rate limit reached": {
-			prepareConfig: func(limits *validation.Limits) {
-				limits.IngestionRate = 1
-				limits.IngestionBurstSize = 1
-			},
-			prepareSeries: func() ([]labels.Labels, []mimirpb.Sample) {
-				metrics := make([]labels.Labels, numSeriesPerRequest)
-				samples := make([]mimirpb.Sample, numSeriesPerRequest)
-
-				for i := 0; i < numSeriesPerRequest; i++ {
-					lbls := labels.NewBuilder(labels.Labels{{Name: model.MetricNameLabel, Value: "foo"}})
-					for i := 0; i < 10; i++ {
-						lbls.Set(fmt.Sprintf("name_%d", i), fmt.Sprintf("value_%d", i))
-					}
-
-					metrics[i] = lbls.Labels()
-					samples[i] = mimirpb.Sample{
-						Value:       float64(i),
-						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
-					}
-				}
-
-				return metrics, samples
-			},
-			expectedErr: "ingestion rate limit",
-		},
-		"too many labels limit reached": {
-			prepareConfig: func(limits *validation.Limits) {
-				limits.MaxLabelNamesPerSeries = 30
-			},
-			prepareSeries: func() ([]labels.Labels, []mimirpb.Sample) {
-				metrics := make([]labels.Labels, numSeriesPerRequest)
-				samples := make([]mimirpb.Sample, numSeriesPerRequest)
-
-				for i := 0; i < numSeriesPerRequest; i++ {
-					lbls := labels.NewBuilder(labels.Labels{{Name: model.MetricNameLabel, Value: "foo"}})
-					for i := 1; i < 31; i++ {
-						lbls.Set(fmt.Sprintf("name_%d", i), fmt.Sprintf("value_%d", i))
-					}
-
-					metrics[i] = lbls.Labels()
-					samples[i] = mimirpb.Sample{
-						Value:       float64(i),
-						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
-					}
-				}
-
-				return metrics, samples
-			},
-			expectedErr: "received a series whose number of labels exceeds the limit",
-		},
-		"max label name length limit reached": {
-			prepareConfig: func(limits *validation.Limits) {
-				limits.MaxLabelNameLength = 1024
-			},
-			prepareSeries: func() ([]labels.Labels, []mimirpb.Sample) {
-				metrics := make([]labels.Labels, numSeriesPerRequest)
-				samples := make([]mimirpb.Sample, numSeriesPerRequest)
-
-				for i := 0; i < numSeriesPerRequest; i++ {
-					lbls := labels.NewBuilder(labels.Labels{{Name: model.MetricNameLabel, Value: "foo"}})
-					for i := 0; i < 10; i++ {
-						lbls.Set(fmt.Sprintf("name_%d", i), fmt.Sprintf("value_%d", i))
-					}
-
-					// Add a label with a very long name.
-					lbls.Set(fmt.Sprintf("xxx_%0.2000d", 1), "xxx")
-
-					metrics[i] = lbls.Labels()
-					samples[i] = mimirpb.Sample{
-						Value:       float64(i),
-						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
-					}
-				}
-
-				return metrics, samples
-			},
-			expectedErr: "received a series whose label name length exceeds the limit",
-		},
-		"max label value length limit reached": {
-			prepareConfig: func(limits *validation.Limits) {
-				limits.MaxLabelValueLength = 1024
-			},
-			prepareSeries: func() ([]labels.Labels, []mimirpb.Sample) {
-				metrics := make([]labels.Labels, numSeriesPerRequest)
-				samples := make([]mimirpb.Sample, numSeriesPerRequest)
-
-				for i := 0; i < numSeriesPerRequest; i++ {
-					lbls := labels.NewBuilder(labels.Labels{{Name: model.MetricNameLabel, Value: "foo"}})
-					for i := 0; i < 10; i++ {
-						lbls.Set(fmt.Sprintf("name_%d", i), fmt.Sprintf("value_%d", i))
-					}
-
-					// Add a label with a very long value.
-					lbls.Set("xxx", fmt.Sprintf("xxx_%0.2000d", 1))
-
-					metrics[i] = lbls.Labels()
-					samples[i] = mimirpb.Sample{
-						Value:       float64(i),
-						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
-					}
-				}
-
-				return metrics, samples
-			},
-			expectedErr: "received a series whose label value length exceeds the limit",
-		},
-		"timestamp too new": {
-			prepareConfig: func(limits *validation.Limits) {
-				limits.CreationGracePeriod = model.Duration(time.Minute)
-			},
-			prepareSeries: func() ([]labels.Labels, []mimirpb.Sample) {
-				metrics := make([]labels.Labels, numSeriesPerRequest)
-				samples := make([]mimirpb.Sample, numSeriesPerRequest)
-
-				for i := 0; i < numSeriesPerRequest; i++ {
-					lbls := labels.NewBuilder(labels.Labels{{Name: model.MetricNameLabel, Value: "foo"}})
-					for i := 0; i < 10; i++ {
-						lbls.Set(fmt.Sprintf("name_%d", i), fmt.Sprintf("value_%d", i))
-					}
-
-					metrics[i] = lbls.Labels()
-					samples[i] = mimirpb.Sample{
-						Value:       float64(i),
-						TimestampMs: time.Now().Add(time.Hour).UnixNano() / int64(time.Millisecond),
-					}
-				}
-
-				return metrics, samples
-			},
-			expectedErr: "received a sample whose timestamp is too far in the future",
-		},
+		//"ingestion rate limit reached": {
+		//	prepareConfig: func(limits *validation.Limits) {
+		//		limits.IngestionRate = 1
+		//		limits.IngestionBurstSize = 1
+		//	},
+		//	prepareSeries: func() ([]labels.Labels, []mimirpb.Sample) {
+		//		metrics := make([]labels.Labels, numSeriesPerRequest)
+		//		samples := make([]mimirpb.Sample, numSeriesPerRequest)
+		//
+		//		for i := 0; i < numSeriesPerRequest; i++ {
+		//			lbls := labels.NewBuilder(labels.Labels{{Name: model.MetricNameLabel, Value: "foo"}})
+		//			for i := 0; i < 10; i++ {
+		//				lbls.Set(fmt.Sprintf("name_%d", i), fmt.Sprintf("value_%d", i))
+		//			}
+		//
+		//			metrics[i] = lbls.Labels()
+		//			samples[i] = mimirpb.Sample{
+		//				Value:       float64(i),
+		//				TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
+		//			}
+		//		}
+		//
+		//		return metrics, samples
+		//	},
+		//	expectedErr: "ingestion rate limit",
+		//},
+		//"too many labels limit reached": {
+		//	prepareConfig: func(limits *validation.Limits) {
+		//		limits.MaxLabelNamesPerSeries = 30
+		//	},
+		//	prepareSeries: func() ([]labels.Labels, []mimirpb.Sample) {
+		//		metrics := make([]labels.Labels, numSeriesPerRequest)
+		//		samples := make([]mimirpb.Sample, numSeriesPerRequest)
+		//
+		//		for i := 0; i < numSeriesPerRequest; i++ {
+		//			lbls := labels.NewBuilder(labels.Labels{{Name: model.MetricNameLabel, Value: "foo"}})
+		//			for i := 1; i < 31; i++ {
+		//				lbls.Set(fmt.Sprintf("name_%d", i), fmt.Sprintf("value_%d", i))
+		//			}
+		//
+		//			metrics[i] = lbls.Labels()
+		//			samples[i] = mimirpb.Sample{
+		//				Value:       float64(i),
+		//				TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
+		//			}
+		//		}
+		//
+		//		return metrics, samples
+		//	},
+		//	expectedErr: "received a series whose number of labels exceeds the limit",
+		//},
+		//"max label name length limit reached": {
+		//	prepareConfig: func(limits *validation.Limits) {
+		//		limits.MaxLabelNameLength = 1024
+		//	},
+		//	prepareSeries: func() ([]labels.Labels, []mimirpb.Sample) {
+		//		metrics := make([]labels.Labels, numSeriesPerRequest)
+		//		samples := make([]mimirpb.Sample, numSeriesPerRequest)
+		//
+		//		for i := 0; i < numSeriesPerRequest; i++ {
+		//			lbls := labels.NewBuilder(labels.Labels{{Name: model.MetricNameLabel, Value: "foo"}})
+		//			for i := 0; i < 10; i++ {
+		//				lbls.Set(fmt.Sprintf("name_%d", i), fmt.Sprintf("value_%d", i))
+		//			}
+		//
+		//			// Add a label with a very long name.
+		//			lbls.Set(fmt.Sprintf("xxx_%0.2000d", 1), "xxx")
+		//
+		//			metrics[i] = lbls.Labels()
+		//			samples[i] = mimirpb.Sample{
+		//				Value:       float64(i),
+		//				TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
+		//			}
+		//		}
+		//
+		//		return metrics, samples
+		//	},
+		//	expectedErr: "received a series whose label name length exceeds the limit",
+		//},
+		//"max label value length limit reached": {
+		//	prepareConfig: func(limits *validation.Limits) {
+		//		limits.MaxLabelValueLength = 1024
+		//	},
+		//	prepareSeries: func() ([]labels.Labels, []mimirpb.Sample) {
+		//		metrics := make([]labels.Labels, numSeriesPerRequest)
+		//		samples := make([]mimirpb.Sample, numSeriesPerRequest)
+		//
+		//		for i := 0; i < numSeriesPerRequest; i++ {
+		//			lbls := labels.NewBuilder(labels.Labels{{Name: model.MetricNameLabel, Value: "foo"}})
+		//			for i := 0; i < 10; i++ {
+		//				lbls.Set(fmt.Sprintf("name_%d", i), fmt.Sprintf("value_%d", i))
+		//			}
+		//
+		//			// Add a label with a very long value.
+		//			lbls.Set("xxx", fmt.Sprintf("xxx_%0.2000d", 1))
+		//
+		//			metrics[i] = lbls.Labels()
+		//			samples[i] = mimirpb.Sample{
+		//				Value:       float64(i),
+		//				TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
+		//			}
+		//		}
+		//
+		//		return metrics, samples
+		//	},
+		//	expectedErr: "received a series whose label value length exceeds the limit",
+		//},
+		//"timestamp too new": {
+		//	prepareConfig: func(limits *validation.Limits) {
+		//		limits.CreationGracePeriod = model.Duration(time.Minute)
+		//	},
+		//	prepareSeries: func() ([]labels.Labels, []mimirpb.Sample) {
+		//		metrics := make([]labels.Labels, numSeriesPerRequest)
+		//		samples := make([]mimirpb.Sample, numSeriesPerRequest)
+		//
+		//		for i := 0; i < numSeriesPerRequest; i++ {
+		//			lbls := labels.NewBuilder(labels.Labels{{Name: model.MetricNameLabel, Value: "foo"}})
+		//			for i := 0; i < 10; i++ {
+		//				lbls.Set(fmt.Sprintf("name_%d", i), fmt.Sprintf("value_%d", i))
+		//			}
+		//
+		//			metrics[i] = lbls.Labels()
+		//			samples[i] = mimirpb.Sample{
+		//				Value:       float64(i),
+		//				TimestampMs: time.Now().Add(time.Hour).UnixNano() / int64(time.Millisecond),
+		//			}
+		//		}
+		//
+		//		return metrics, samples
+		//	},
+		//	expectedErr: "received a sample whose timestamp is too far in the future",
+		//},
 	}
 
 	for testName, testData := range tests {
 		b.Run(testName, func(b *testing.B) {
-			// Create an in-memory KV store for the ring with 1 ingester registered.
+			if testData.numIngesters == 0 {
+				testData.numIngesters = 1
+			}
+			// Create an in-memory KV store for the ring with ingesters registered.
 			kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 			b.Cleanup(func() { assert.NoError(b, closer.Close()) })
 
 			err := kvStore.CAS(context.Background(), ingester.IngesterRingKey,
 				func(_ interface{}) (interface{}, bool, error) {
 					d := &ring.Desc{}
-					d.AddIngester("ingester-1", "127.0.0.1", "", ring.GenerateTokens(128, nil), ring.ACTIVE, time.Now())
+					for i := 0; i < testData.numIngesters; i++ {
+						d.AddIngester(fmt.Sprintf("ingester-%d", i), "127.0.0.1", "", ring.GenerateTokens(128, nil), ring.ACTIVE, time.Now())
+					}
 					return d, true, nil
 				},
 			)
@@ -1749,7 +1756,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 				require.NoError(b, services.StopAndAwaitTerminated(context.Background(), ingestersRing))
 			})
 
-			test.Poll(b, time.Second, 1, func() interface{} {
+			test.Poll(b, time.Second, testData.numIngesters, func() interface{} {
 				return ingestersRing.InstancesCount()
 			})
 
@@ -1798,6 +1805,33 @@ func BenchmarkDistributor_Push(b *testing.B) {
 			}
 		})
 	}
+}
+
+func TestTest(t *testing.T) {
+	numSeriesPerRequest := 480
+	prepareSeries := func() ([]labels.Labels, []mimirpb.Sample) {
+		metrics := make([]labels.Labels, numSeriesPerRequest)
+		samples := make([]mimirpb.Sample, numSeriesPerRequest)
+
+		for i := 0; i < numSeriesPerRequest; i++ {
+			lbls := labels.NewBuilder(labels.Labels{{Name: model.MetricNameLabel, Value: "foo"}})
+			for i := 0; i < 10; i++ {
+				lbls.Set(fmt.Sprintf("name_%d", i), fmt.Sprintf("value_%d", i))
+			}
+
+			metrics[i] = lbls.Labels()
+			samples[i] = mimirpb.Sample{
+				Value:       float64(i),
+				TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
+			}
+		}
+
+		return metrics, samples
+	}
+	metrics, samples := prepareSeries()
+
+	req := mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API)
+	t.Log(req.Size())
 }
 
 func TestSlowQueries(t *testing.T) {
