@@ -93,31 +93,8 @@ func (c *MimirClient) backfillBlock(ctx context.Context, blockDir string, logger
 			continue
 		}
 
-		pth := filepath.Join(blockDir, filepath.FromSlash(tf.RelPath))
-		f, err := os.Open(pth)
-		if err != nil {
-			return errors.Wrapf(err, "failed to open %q", pth)
-		}
-		defer func() {
-			_ = f.Close()
-		}()
-
-		st, err := f.Stat()
-		if err != nil {
-			return errors.Wrapf(err, "failed to get file info for %q", pth)
-		}
-
-		escapedPath := url.QueryEscape(tf.RelPath)
-		level.Info(logger).Log("msg", "uploading block file", "path", pth, "size", st.Size())
-		resp, err := c.doRequest(path.Join(blockPrefix, fmt.Sprintf("files?path=%s", escapedPath)),
-			http.MethodPost, f, st.Size())
-		if err != nil {
-			return errors.Wrapf(err, "request to upload file %q failed", pth)
-		}
-		closeResp(resp)
-		if resp.StatusCode/100 != 2 {
-			return fmt.Errorf("request to upload block file failed, with HTTP status %d %s",
-				resp.StatusCode, resp.Status)
+		if err := c.uploadBlockFile(tf, blockDir, blockPrefix, logger); err != nil {
+			return err
 		}
 	}
 
@@ -133,6 +110,37 @@ func (c *MimirClient) backfillBlock(ctx context.Context, blockDir string, logger
 	}
 
 	level.Info(logger).Log("msg", "block uploaded successfully")
+
+	return nil
+}
+
+func (c *MimirClient) uploadBlockFile(tf metadata.File, blockDir, blockPrefix string, logger log.Logger) error {
+	pth := filepath.Join(blockDir, filepath.FromSlash(tf.RelPath))
+	f, err := os.Open(pth)
+	if err != nil {
+		return errors.Wrapf(err, "failed to open %q", pth)
+	}
+	defer func() {
+		_ = f.Close()
+	}()
+
+	st, err := f.Stat()
+	if err != nil {
+		return errors.Wrapf(err, "failed to get file info for %q", pth)
+	}
+
+	escapedPath := url.QueryEscape(tf.RelPath)
+	level.Info(logger).Log("msg", "uploading block file", "path", pth, "size", st.Size())
+	resp, err := c.doRequest(path.Join(blockPrefix, fmt.Sprintf("files?path=%s", escapedPath)),
+		http.MethodPost, f, st.Size())
+	if err != nil {
+		return errors.Wrapf(err, "request to upload file %q failed", pth)
+	}
+	closeResp(resp)
+	if resp.StatusCode/100 != 2 {
+		return fmt.Errorf("request to upload block file failed, with HTTP status %d %s",
+			resp.StatusCode, resp.Status)
+	}
 
 	return nil
 }
