@@ -49,12 +49,22 @@ func main() {
 		printBlockIndex(blockDir, matchers)
 	}
 
+	nl := "\n"
+
 	ratio := float64(totalBytes) / float64(totalSamples)
-	fmt.Println("total_chunk_bytes:", totalBytes, "total_chunk_samples:", totalSamples, "ratio:", fmt.Sprintf("%0.2f", ratio))
-	fmt.Println("same_bytes:", sameBytes, "chunks_with_same_samples:", chunksWithSameSamples, "ratio of same bytes", float64(sameBytes)/float64(totalBytes), "ratio of bytes per chunk with same samples", float64(sameBytes)/float64(chunksWithSameSamples))
+	fmt.Println(
+		"total bytes in all chunks:", totalBytes, nl,
+		"total samples in all chunks:", totalSamples, nl,
+		"sample compression ratio ratio bytes/sample:", fmt.Sprintf("%0.2f", ratio), nl,
+		"bytes in chunks with same samples:", sameBytes, nl,
+		"chunks with same samples:", chunksWithSameSamples, nl,
+		"ratio of chunks with same samples:", float64(chunksWithSameSamples)/float64(totalChunks), nl,
+		"ratio of same bytes:", float64(sameBytes)/float64(totalBytes), nl,
+		"ratio of bytes per chunk with same samples:", float64(sameBytes)/float64(chunksWithSameSamples), nl,
+	)
 }
 
-var totalBytes, totalSamples int
+var totalBytes, totalSamples, totalChunks int
 var sameBytes, chunksWithSameSamples int
 
 func printBlockIndex(blockDir string, matchers []*labels.Matcher) {
@@ -117,6 +127,7 @@ func printBlockIndex(blockDir string, matchers []*labels.Matcher) {
 					panic(err)
 				}
 			}
+			totalChunks++
 
 			bytes := len(chk.Bytes())
 			totalBytes += bytes
