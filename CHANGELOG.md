@@ -21,6 +21,7 @@
 * [BUGFIX] Compactor: log the actual error on compaction failed. #2261
 * [BUGFIX] Alertmanager: restore state from storage even when running a single replica. #2293
 * [BUGFIX] Ruler: do not block "List Prometheus rules" API endpoint while syncing rules. #2289
+* [BUGFIX] Ruler: return proper `*status.Status` error when running in remote operational mode. #2417
 * [BUGFIX] Alertmanager: ensure the configured `-alertmanager.web.external-url` is a full URL, including the scheme and hostname. #2381
 * [BUGFIX] Memberlist: fix problem with loss of some packets, typically ring updates when instances were removed from the ring during shutdown. #2418
 
