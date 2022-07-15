@@ -16,6 +16,7 @@
 * [ENHANCEMENT] Memberlist: added experimental memberlist cluster label support via `-memberlist.cluster-label` and `-memberlist.cluster-label-verification-disabled` CLI flags (and their respective YAML config options). #2354
 * [ENHANCEMENT] Object storage can now be configured for all components using the `common` YAML config option key (or `-common.storage.*` CLI flags). #2330
 * [ENHANCEMENT] Go: updated to go 1.18.4. #2400
+* [ENHANCEMENT] Store-gateway, listblocks: list of blocks now includes stats from `meta.json` file: number of series, samples and chunks. #2425
 * [BUGFIX] Compactor: log the actual error on compaction failed. #2261
 * [BUGFIX] Alertmanager: restore state from storage even when running a single replica. #2293
 * [BUGFIX] Ruler: do not block "List Prometheus rules" API endpoint while syncing rules. #2289
