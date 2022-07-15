@@ -56,7 +56,7 @@ func main() {
 }
 
 var totalBytes, totalSamples int
-var sameBytes, sameSamples int
+var sameBytes, chunksWithSameSamples int
 
 func printBlockIndex(blockDir string, matchers []*labels.Matcher) {
 	block, err := tsdb.OpenBlock(logger, blockDir, nil)
@@ -148,13 +148,13 @@ func printBlockIndex(blockDir string, matchers []*labels.Matcher) {
 					fmt.Println("chunk with same values", val, "chunk_bytes:", bytes, "samples", samples)
 
 					sameBytes += bytes
-					sameSamples += 1
+					chunksWithSameSamples += 1
 				}
 			}
 
 			totalRatio := float64(totalBytes) / float64(totalSamples)
 			fmt.Println("total_chunk_bytes:", totalBytes, "total_chunk_samples:", totalSamples, "ratio:", fmt.Sprintf("%0.2f", totalRatio))
-			fmt.Println("same_bytes:", sameBytes, "chunks_with_same_samples:", sameSamples, "ratio of same bytes", float64(sameBytes)/float64(totalBytes))
+			fmt.Println("same_bytes:", sameBytes, "chunks_with_same_samples:", chunksWithSameSamples, "ratio of same bytes", float64(sameBytes)/float64(totalBytes), "ratio of bytes per chunk with same samples", float64(sameBytes)/float64(chunksWithSameSamples))
 		}
 	}
 
