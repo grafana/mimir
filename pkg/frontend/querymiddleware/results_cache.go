@@ -186,7 +186,7 @@ func isRequestCachable(req Request, maxCacheTime int64, cacheUnalignedRequests b
 		return false
 	}
 
-	if !isAtModifierCachable(req, maxCacheTime, logger) {
+	if !areEvaluationTimeModifiersCachable(req, maxCacheTime, logger) {
 		return false
 	}
 
@@ -206,19 +206,22 @@ func isResponseCachable(r Response, logger log.Logger) bool {
 	return true
 }
 
-var errAtModifierAfterEnd = errors.New("at modifier after end")
+var (
+	errAtModifierAfterEnd = errors.New("at modifier after end")
+	errNegativeOffset     = errors.New("negative offset")
+)
 
-// isAtModifierCachable returns true if the @ modifier result
-// is safe to cache.
-func isAtModifierCachable(r Request, maxCacheTime int64, logger log.Logger) bool {
-	// There are 2 cases when @ modifier is not safe to cache:
+// areEvaluationTimeModifiersCachable returns true if the @ modifier and the offset modifier results are safe to cache.
+func areEvaluationTimeModifiersCachable(r Request, maxCacheTime int64, logger log.Logger) bool {
+	// There are 3 cases when evaluation time modifiers are not safe to cache:
 	//   1. When @ modifier points to time beyond the maxCacheTime.
 	//   2. If the @ modifier time is > the query range end while being
 	//      below maxCacheTime. In such cases if any tenant is intentionally
 	//      playing with old data, we could cache empty result if we look
 	//      beyond query end.
+	//   3. When query contains a negative offset.
 	query := r.GetQuery()
-	if !strings.Contains(query, "@") {
+	if !strings.Contains(query, "@") && !strings.Contains(query, "offset") {
 		return true
 	}
 	expr, err := parser.ParseExpr(query)
@@ -232,30 +235,30 @@ func isAtModifierCachable(r Request, maxCacheTime int64, logger log.Logger) bool
 	expr = promql.PreprocessExpr(expr, timestamp.Time(r.GetStart()), timestamp.Time(r.GetEnd()))
 
 	end := r.GetEnd()
-	atModCachable := true
+	cachable := true
+	check := func(ts *int64, offset time.Duration) error {
+		if offset < 0 {
+			cachable = false
+			return errNegativeOffset
+		}
+		if ts != nil && (*ts > end || *ts > maxCacheTime) {
+			cachable = false
+			return errAtModifierAfterEnd
+		}
+		return nil
+	}
+
 	parser.Inspect(expr, func(n parser.Node, _ []parser.Node) error {
 		switch e := n.(type) {
 		case *parser.VectorSelector:
-			if e.Timestamp != nil && (*e.Timestamp > end || *e.Timestamp > maxCacheTime) {
-				atModCachable = false
-				return errAtModifierAfterEnd
-			}
-		case *parser.MatrixSelector:
-			ts := e.VectorSelector.(*parser.VectorSelector).Timestamp
-			if ts != nil && (*ts > end || *ts > maxCacheTime) {
-				atModCachable = false
-				return errAtModifierAfterEnd
-			}
+			return check(e.Timestamp, e.OriginalOffset)
 		case *parser.SubqueryExpr:
-			if e.Timestamp != nil && (*e.Timestamp > end || *e.Timestamp > maxCacheTime) {
-				atModCachable = false
-				return errAtModifierAfterEnd
-			}
+			return check(e.Timestamp, e.OriginalOffset)
 		}
 		return nil
 	})
 
-	return atModCachable
+	return cachable
 }
 
 func getHeaderValuesWithName(r Response, headerName string) (headerValues []string) {
