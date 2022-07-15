@@ -13,6 +13,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/prometheus/prometheus/model/labels"
+	prom_tsdb "github.com/prometheus/prometheus/tsdb"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb"
@@ -52,6 +53,7 @@ type formattedBlockData struct {
 	Labels          string
 	Sources         []string
 	Parents         []string
+	Stats           prom_tsdb.BlockStats
 }
 
 type richMeta struct {
@@ -127,6 +129,7 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 			Labels:          lbls.String(),
 			Sources:         sources,
 			Parents:         parents,
+			Stats:           m.Stats,
 		})
 		var deletedAt *int64
 		if dt, ok := deletedTimes[m.ULID]; ok {
