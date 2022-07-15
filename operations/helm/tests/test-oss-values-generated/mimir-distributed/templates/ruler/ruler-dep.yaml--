@@ -1,16 +1,16 @@
 ---
-# Source: mimir-distributed/templates/alertmanager/alertmanager-statefulset.yaml
+# Source: mimir-distributed/templates/ruler/ruler-dep.yaml
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
-  name: test-oss-values-mimir-alertmanager
+  name: test-oss-values-mimir-ruler
   labels:
     helm.sh/chart: mimir-distributed-2.2.0-weekly.192
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-values
-    app.kubernetes.io/component: alertmanager
+    app.kubernetes.io/component: ruler
     app.kubernetes.io/part-of: memberlist
-    app.kubernetes.io/version: "2.2.0"
+    app.kubernetes.io/version: "2.1.0"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -21,19 +21,21 @@ spec:
     matchLabels:
       app.kubernetes.io/name: mimir
       app.kubernetes.io/instance: test-oss-values
-      app.kubernetes.io/component: alertmanager
-  updateStrategy:
+      app.kubernetes.io/component: ruler
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
     type: RollingUpdate
-  serviceName: test-oss-values-mimir-alertmanager
   template:
     metadata:
       labels:
         helm.sh/chart: mimir-distributed-2.2.0-weekly.192
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-values
-        app.kubernetes.io/version: "2.2.0"
+        app.kubernetes.io/version: "2.1.0"
         app.kubernetes.io/managed-by: Helm
-        app.kubernetes.io/component: alertmanager
+        app.kubernetes.io/component: ruler
         app.kubernetes.io/part-of: memberlist
       annotations:
         checksum/config: 6f319539de0d7087278eeeed993a089b98a8c5c6af4c0ccfb8109289c17a24e5
@@ -45,33 +47,12 @@ spec:
         {}
       initContainers:
         []
-      nodeSelector:
-        {}
-      affinity:
-        {}
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 60
-      volumes:
-        - name: config
-          configMap:
-            name: test-oss-values-mimir-config
-            items:
-              - key: "mimir.yaml"
-                path: "mimir.yaml"
-        - name: runtime-config
-          configMap:
-            name: test-oss-values-mimir-runtime
-        - name: storage
-          emptyDir: {}
-        - name: tmp
-          emptyDir: {}
       containers:
-        - name: alertmanager
+        - name: ruler
           image: "grafana/mimir:r191-e11ac85"
           imagePullPolicy: IfNotPresent
           args:
-            - "-target=alertmanager"
+            - "-target=ruler"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
           volumeMounts:
@@ -81,8 +62,7 @@ spec:
               mountPath: /var/mimir
             - name: storage
               mountPath: "/data"
-            - name: tmp
-              mountPath: /tmp
+              subPath: 
           ports:
             - name: http-metrics
               containerPort: 8080
@@ -102,11 +82,30 @@ spec:
             initialDelaySeconds: 45
           resources:
             requests:
-              cpu: 10m
-              memory: 32Mi
+              cpu: 100m
+              memory: 128Mi
           securityContext:
             readOnlyRootFilesystem: true
           env:
           envFrom:
             - secretRef:
                 name: mimir-minio-secret
+      nodeSelector:
+        {}
+      affinity:
+        {}
+      tolerations:
+        []
+      terminationGracePeriodSeconds: 180
+      volumes:
+        - name: config
+          configMap:
+            name: test-oss-values-mimir-config
+            items:
+              - key: "mimir.yaml"
+                path: "mimir.yaml"
+        - name: runtime-config
+          configMap:
+            name: test-oss-values-mimir-runtime
+        - name: storage
+          emptyDir: {}

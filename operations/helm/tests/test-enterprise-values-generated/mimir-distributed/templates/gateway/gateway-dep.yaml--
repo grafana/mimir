@@ -1,19 +1,18 @@
 ---
-# Source: mimir-distributed/templates/alertmanager/alertmanager-statefulset.yaml
+# Source: mimir-distributed/templates/gateway/gateway-dep.yaml
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
-  name: test-enterprise-values-mimir-alertmanager
+  annotations:
+    {}
   labels:
     helm.sh/chart: mimir-distributed-2.2.0-weekly.192
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-enterprise-values
-    app.kubernetes.io/component: alertmanager
-    app.kubernetes.io/part-of: memberlist
-    app.kubernetes.io/version: "2.2.0"
+    app.kubernetes.io/component: gateway
+    app.kubernetes.io/version: "2.1.0"
     app.kubernetes.io/managed-by: Helm
-  annotations:
-    {}
+  name: test-enterprise-values-mimir-gateway
   namespace: "citestns"
 spec:
   replicas: 1
@@ -21,20 +20,21 @@ spec:
     matchLabels:
       app.kubernetes.io/name: mimir
       app.kubernetes.io/instance: test-enterprise-values
-      app.kubernetes.io/component: alertmanager
-  updateStrategy:
+      app.kubernetes.io/component: gateway
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
     type: RollingUpdate
-  serviceName: test-enterprise-values-mimir-alertmanager
   template:
     metadata:
       labels:
         helm.sh/chart: mimir-distributed-2.2.0-weekly.192
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-enterprise-values
-        app.kubernetes.io/version: "2.2.0"
+        app.kubernetes.io/version: "2.1.0"
         app.kubernetes.io/managed-by: Helm
-        app.kubernetes.io/component: alertmanager
-        app.kubernetes.io/part-of: memberlist
+        app.kubernetes.io/component: gateway
       annotations:
         checksum/config: b24b6f0c949ab2e6c7f30817762604e634e0b2728f7864491689d2f1f3bafc02
       namespace: "citestns"
@@ -44,55 +44,27 @@ spec:
         {}
       initContainers:
         []
-      nodeSelector:
-        {}
-      affinity:
-        {}
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 60
-      volumes:
-        - name: config
-          secret:
-            secretName: test-enterprise-values-mimir-config
-        - name: license
-          secret:
-            secretName: test-enterprise-values-mimir-license
-        - name: runtime-config
-          configMap:
-            name: test-enterprise-values-mimir-runtime
-        - name: storage
-          emptyDir: {}
-        - name: tmp
-          emptyDir: {}
       containers:
-        - name: alertmanager
+        - name: gateway
           image: "grafana/enterprise-metrics:r191-708e13a1"
           imagePullPolicy: IfNotPresent
           args:
-            - "-target=alertmanager"
+            - "-target=gateway"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
-            - name: license
-              mountPath: /license
             - name: runtime-config
               mountPath: /var/mimir
+            - name: license
+              mountPath: /license
             - name: storage
               mountPath: "/data"
-            - name: tmp
-              mountPath: /tmp
+              subPath: 
           ports:
             - name: http-metrics
               containerPort: 8080
-              protocol: TCP
-            - name: grpc
-              containerPort: 9095
-              protocol: TCP
-            - name: memberlist
-              containerPort: 7946
               protocol: TCP
           livenessProbe:
             null
@@ -109,3 +81,22 @@ spec:
             readOnlyRootFilesystem: true
           env:
           envFrom:
+      nodeSelector:
+        {}
+      affinity:
+        {}
+      tolerations:
+        []
+      terminationGracePeriodSeconds: 60
+      volumes:
+        - name: config
+          secret:
+            secretName: test-enterprise-values-mimir-config
+        - name: runtime-config
+          configMap:
+            name: test-enterprise-values-mimir-runtime
+        - name: license
+          secret:
+            secretName: test-enterprise-values-mimir-license
+        - name: storage
+          emptyDir: {}

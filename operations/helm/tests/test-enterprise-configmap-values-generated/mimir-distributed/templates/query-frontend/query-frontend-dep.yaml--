@@ -1,16 +1,15 @@
 ---
-# Source: mimir-distributed/templates/alertmanager/alertmanager-statefulset.yaml
+# Source: mimir-distributed/templates/query-frontend/query-frontend-dep.yaml
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
-  name: test-enterprise-configmap-values-mimir-alertmanager
+  name: test-enterprise-configmap-values-mimir-query-frontend
   labels:
     helm.sh/chart: mimir-distributed-2.2.0-weekly.192
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-enterprise-configmap-values
-    app.kubernetes.io/component: alertmanager
-    app.kubernetes.io/part-of: memberlist
-    app.kubernetes.io/version: "2.2.0"
+    app.kubernetes.io/component: query-frontend
+    app.kubernetes.io/version: "2.1.0"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -21,20 +20,21 @@ spec:
     matchLabels:
       app.kubernetes.io/name: mimir
       app.kubernetes.io/instance: test-enterprise-configmap-values
-      app.kubernetes.io/component: alertmanager
-  updateStrategy:
+      app.kubernetes.io/component: query-frontend
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
     type: RollingUpdate
-  serviceName: test-enterprise-configmap-values-mimir-alertmanager
   template:
     metadata:
       labels:
         helm.sh/chart: mimir-distributed-2.2.0-weekly.192
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-enterprise-configmap-values
-        app.kubernetes.io/version: "2.2.0"
+        app.kubernetes.io/version: "2.1.0"
         app.kubernetes.io/managed-by: Helm
-        app.kubernetes.io/component: alertmanager
-        app.kubernetes.io/part-of: memberlist
+        app.kubernetes.io/component: query-frontend
       annotations:
         checksum/config: b13ecbf25680c355d43b34a7c4453270ed7fe35dc6f63db68b56f67ec9bb48f1
         minio-secret-version: "42"
@@ -45,13 +45,64 @@ spec:
         {}
       initContainers:
         []
+      containers:
+        - name: query-frontend
+          image: "grafana/enterprise-metrics:r191-708e13a1"
+          imagePullPolicy: IfNotPresent
+          args:
+            - "-target=query-frontend"
+            - "-config.expand-env=true"
+            - "-config.file=/etc/mimir/mimir.yaml"
+          volumeMounts:
+            - name: runtime-config
+              mountPath: /var/mimir
+            - name: license
+              mountPath: /license
+            - name: config
+              mountPath: /etc/mimir
+            - name: storage
+              mountPath: /data
+          ports:
+            - name: http-metrics
+              containerPort: 8080
+              protocol: TCP
+            - name: grpc
+              containerPort: 9095
+              protocol: TCP
+          livenessProbe:
+            null
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http-metrics
+            initialDelaySeconds: 45
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+          env:
+          envFrom:
+            - secretRef:
+                name: mimir-minio-secret
       nodeSelector:
         {}
       affinity:
-        {}
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: target
+                  operator: In
+                  values:
+                  - query-frontend
+              topologyKey: kubernetes.io/hostname
+            weight: 100
       tolerations:
         []
-      terminationGracePeriodSeconds: 60
+      terminationGracePeriodSeconds: 180
       volumes:
         - name: config
           configMap:
@@ -67,51 +118,3 @@ spec:
             name: test-enterprise-configmap-values-mimir-runtime
         - name: storage
           emptyDir: {}
-        - name: tmp
-          emptyDir: {}
-      containers:
-        - name: alertmanager
-          image: "grafana/enterprise-metrics:r191-708e13a1"
-          imagePullPolicy: IfNotPresent
-          args:
-            - "-target=alertmanager"
-            - "-config.expand-env=true"
-            - "-config.file=/etc/mimir/mimir.yaml"
-          volumeMounts:
-            - name: config
-              mountPath: /etc/mimir
-            - name: license
-              mountPath: /license
-            - name: runtime-config
-              mountPath: /var/mimir
-            - name: storage
-              mountPath: "/data"
-            - name: tmp
-              mountPath: /tmp
-          ports:
-            - name: http-metrics
-              containerPort: 8080
-              protocol: TCP
-            - name: grpc
-              containerPort: 9095
-              protocol: TCP
-            - name: memberlist
-              containerPort: 7946
-              protocol: TCP
-          livenessProbe:
-            null
-          readinessProbe:
-            httpGet:
-              path: /ready
-              port: http-metrics
-            initialDelaySeconds: 45
-          resources:
-            requests:
-              cpu: 10m
-              memory: 32Mi
-          securityContext:
-            readOnlyRootFilesystem: true
-          env:
-          envFrom:
-            - secretRef:
-                name: mimir-minio-secret

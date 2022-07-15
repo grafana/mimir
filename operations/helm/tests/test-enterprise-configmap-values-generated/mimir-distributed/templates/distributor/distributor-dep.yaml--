@@ -1,16 +1,16 @@
 ---
-# Source: mimir-distributed/templates/alertmanager/alertmanager-statefulset.yaml
+# Source: mimir-distributed/templates/distributor/distributor-dep.yaml
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
-  name: test-enterprise-configmap-values-mimir-alertmanager
+  name: test-enterprise-configmap-values-mimir-distributor
   labels:
     helm.sh/chart: mimir-distributed-2.2.0-weekly.192
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-enterprise-configmap-values
-    app.kubernetes.io/component: alertmanager
+    app.kubernetes.io/component: distributor
     app.kubernetes.io/part-of: memberlist
-    app.kubernetes.io/version: "2.2.0"
+    app.kubernetes.io/version: "2.1.0"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -21,19 +21,21 @@ spec:
     matchLabels:
       app.kubernetes.io/name: mimir
       app.kubernetes.io/instance: test-enterprise-configmap-values
-      app.kubernetes.io/component: alertmanager
-  updateStrategy:
+      app.kubernetes.io/component: distributor
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
     type: RollingUpdate
-  serviceName: test-enterprise-configmap-values-mimir-alertmanager
   template:
     metadata:
       labels:
         helm.sh/chart: mimir-distributed-2.2.0-weekly.192
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-enterprise-configmap-values
-        app.kubernetes.io/version: "2.2.0"
+        app.kubernetes.io/version: "2.1.0"
         app.kubernetes.io/managed-by: Helm
-        app.kubernetes.io/component: alertmanager
+        app.kubernetes.io/component: distributor
         app.kubernetes.io/part-of: memberlist
       annotations:
         checksum/config: b13ecbf25680c355d43b34a7c4453270ed7fe35dc6f63db68b56f67ec9bb48f1
@@ -45,36 +47,12 @@ spec:
         {}
       initContainers:
         []
-      nodeSelector:
-        {}
-      affinity:
-        {}
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 60
-      volumes:
-        - name: config
-          configMap:
-            name: test-enterprise-configmap-values-mimir-config
-            items:
-              - key: "mimir.yaml"
-                path: "mimir.yaml"
-        - name: license
-          secret:
-            secretName: test-enterprise-configmap-values-mimir-license
-        - name: runtime-config
-          configMap:
-            name: test-enterprise-configmap-values-mimir-runtime
-        - name: storage
-          emptyDir: {}
-        - name: tmp
-          emptyDir: {}
       containers:
-        - name: alertmanager
+        - name: distributor
           image: "grafana/enterprise-metrics:r191-708e13a1"
           imagePullPolicy: IfNotPresent
           args:
-            - "-target=alertmanager"
+            - "-target=distributor"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
           volumeMounts:
@@ -86,8 +64,7 @@ spec:
               mountPath: /var/mimir
             - name: storage
               mountPath: "/data"
-            - name: tmp
-              mountPath: /tmp
+              subPath: 
           ports:
             - name: http-metrics
               containerPort: 8080
@@ -107,11 +84,41 @@ spec:
             initialDelaySeconds: 45
           resources:
             requests:
-              cpu: 10m
-              memory: 32Mi
+              cpu: 100m
+              memory: 512Mi
           securityContext:
             readOnlyRootFilesystem: true
           env:
           envFrom:
             - secretRef:
                 name: mimir-minio-secret
+      nodeSelector:
+        {}
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: target
+                operator: In
+                values:
+                - distributor
+            topologyKey: kubernetes.io/hostname
+      tolerations:
+        []
+      terminationGracePeriodSeconds: 60
+      volumes:
+        - name: config
+          configMap:
+            name: test-enterprise-configmap-values-mimir-config
+            items:
+              - key: "mimir.yaml"
+                path: "mimir.yaml"
+        - name: license
+          secret:
+            secretName: test-enterprise-configmap-values-mimir-license
+        - name: runtime-config
+          configMap:
+            name: test-enterprise-configmap-values-mimir-runtime
+        - name: storage
+          emptyDir: {}

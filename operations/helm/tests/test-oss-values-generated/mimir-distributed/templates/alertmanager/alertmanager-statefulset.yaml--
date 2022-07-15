@@ -10,7 +10,7 @@ metadata:
     app.kubernetes.io/instance: test-oss-values
     app.kubernetes.io/component: alertmanager
     app.kubernetes.io/part-of: memberlist
-    app.kubernetes.io/version: "2.2.0"
+    app.kubernetes.io/version: "2.1.0"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -31,7 +31,7 @@ spec:
         helm.sh/chart: mimir-distributed-2.2.0-weekly.192
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-values
-        app.kubernetes.io/version: "2.2.0"
+        app.kubernetes.io/version: "2.1.0"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: alertmanager
         app.kubernetes.io/part-of: memberlist

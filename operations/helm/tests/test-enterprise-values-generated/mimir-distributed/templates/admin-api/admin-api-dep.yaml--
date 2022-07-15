@@ -1,77 +1,56 @@
 ---
-# Source: mimir-distributed/templates/alertmanager/alertmanager-statefulset.yaml
+# Source: mimir-distributed/templates/admin-api/admin-api-dep.yaml
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
-  name: test-oss-values-mimir-alertmanager
+  annotations:
+    {}
   labels:
     helm.sh/chart: mimir-distributed-2.2.0-weekly.192
     app.kubernetes.io/name: mimir
-    app.kubernetes.io/instance: test-oss-values
-    app.kubernetes.io/component: alertmanager
+    app.kubernetes.io/instance: test-enterprise-values
+    app.kubernetes.io/component: admin-api
     app.kubernetes.io/part-of: memberlist
-    app.kubernetes.io/version: "2.2.0"
+    app.kubernetes.io/version: "2.1.0"
     app.kubernetes.io/managed-by: Helm
-  annotations:
-    {}
+  name: test-enterprise-values-mimir-admin-api
   namespace: "citestns"
 spec:
   replicas: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: mimir
-      app.kubernetes.io/instance: test-oss-values
-      app.kubernetes.io/component: alertmanager
-  updateStrategy:
+      app.kubernetes.io/instance: test-enterprise-values
+      app.kubernetes.io/component: admin-api
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
     type: RollingUpdate
-  serviceName: test-oss-values-mimir-alertmanager
   template:
     metadata:
       labels:
         helm.sh/chart: mimir-distributed-2.2.0-weekly.192
         app.kubernetes.io/name: mimir
-        app.kubernetes.io/instance: test-oss-values
-        app.kubernetes.io/version: "2.2.0"
+        app.kubernetes.io/instance: test-enterprise-values
+        app.kubernetes.io/version: "2.1.0"
         app.kubernetes.io/managed-by: Helm
-        app.kubernetes.io/component: alertmanager
+        app.kubernetes.io/component: admin-api
         app.kubernetes.io/part-of: memberlist
       annotations:
-        checksum/config: 6f319539de0d7087278eeeed993a089b98a8c5c6af4c0ccfb8109289c17a24e5
-        minio-secret-version: "42"
+        checksum/config: b24b6f0c949ab2e6c7f30817762604e634e0b2728f7864491689d2f1f3bafc02
       namespace: "citestns"
     spec:
-      serviceAccountName: test-oss-values-mimir
+      serviceAccountName: test-enterprise-values-mimir
       securityContext:
         {}
       initContainers:
-        []
-      nodeSelector:
-        {}
-      affinity:
-        {}
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 60
-      volumes:
-        - name: config
-          configMap:
-            name: test-oss-values-mimir-config
-            items:
-              - key: "mimir.yaml"
-                path: "mimir.yaml"
-        - name: runtime-config
-          configMap:
-            name: test-oss-values-mimir-runtime
-        - name: storage
-          emptyDir: {}
-        - name: tmp
-          emptyDir: {}
       containers:
-        - name: alertmanager
-          image: "grafana/mimir:r191-e11ac85"
+        - name: admin-api
+          image: "grafana/enterprise-metrics:r191-708e13a1"
           imagePullPolicy: IfNotPresent
           args:
-            - "-target=alertmanager"
+            - "-target=admin-api"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
           volumeMounts:
@@ -79,10 +58,11 @@ spec:
               mountPath: /etc/mimir
             - name: runtime-config
               mountPath: /var/mimir
+            - name: license
+              mountPath: /license
             - name: storage
               mountPath: "/data"
-            - name: tmp
-              mountPath: /tmp
+              subPath: 
           ports:
             - name: http-metrics
               containerPort: 8080
@@ -108,5 +88,22 @@ spec:
             readOnlyRootFilesystem: true
           env:
           envFrom:
-            - secretRef:
-                name: mimir-minio-secret
+      nodeSelector:
+        {}
+      affinity:
+        {}
+      tolerations:
+        []
+      terminationGracePeriodSeconds: 60
+      volumes:
+        - name: config
+          secret:
+            secretName: test-enterprise-values-mimir-config
+        - name: runtime-config
+          configMap:
+            name: test-enterprise-values-mimir-runtime
+        - name: license
+          secret:
+            secretName: test-enterprise-values-mimir-license
+        - name: storage
+          emptyDir: {}

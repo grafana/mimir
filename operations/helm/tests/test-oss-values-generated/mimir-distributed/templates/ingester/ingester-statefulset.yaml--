@@ -1,39 +1,40 @@
 ---
-# Source: mimir-distributed/templates/alertmanager/alertmanager-statefulset.yaml
+# Source: mimir-distributed/templates/ingester/ingester-statefulset.yaml
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: test-oss-values-mimir-alertmanager
+  name: test-oss-values-mimir-ingester
   labels:
     helm.sh/chart: mimir-distributed-2.2.0-weekly.192
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-values
-    app.kubernetes.io/component: alertmanager
+    app.kubernetes.io/component: ingester
     app.kubernetes.io/part-of: memberlist
-    app.kubernetes.io/version: "2.2.0"
+    app.kubernetes.io/version: "2.1.0"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
   namespace: "citestns"
 spec:
-  replicas: 1
+  podManagementPolicy: Parallel
+  replicas: 3
   selector:
     matchLabels:
       app.kubernetes.io/name: mimir
       app.kubernetes.io/instance: test-oss-values
-      app.kubernetes.io/component: alertmanager
+      app.kubernetes.io/component: ingester
   updateStrategy:
     type: RollingUpdate
-  serviceName: test-oss-values-mimir-alertmanager
+  serviceName: test-oss-values-mimir-ingester-headless
   template:
     metadata:
       labels:
         helm.sh/chart: mimir-distributed-2.2.0-weekly.192
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-values
-        app.kubernetes.io/version: "2.2.0"
+        app.kubernetes.io/version: "2.1.0"
         app.kubernetes.io/managed-by: Helm
-        app.kubernetes.io/component: alertmanager
+        app.kubernetes.io/component: ingester
         app.kubernetes.io/part-of: memberlist
       annotations:
         checksum/config: 6f319539de0d7087278eeeed993a089b98a8c5c6af4c0ccfb8109289c17a24e5
@@ -51,7 +52,7 @@ spec:
         {}
       tolerations:
         []
-      terminationGracePeriodSeconds: 60
+      terminationGracePeriodSeconds: 240
       volumes:
         - name: config
           configMap:
@@ -64,16 +65,15 @@ spec:
             name: test-oss-values-mimir-runtime
         - name: storage
           emptyDir: {}
-        - name: tmp
-          emptyDir: {}
       containers:
-        - name: alertmanager
+        - name: ingester
           image: "grafana/mimir:r191-e11ac85"
           imagePullPolicy: IfNotPresent
           args:
-            - "-target=alertmanager"
+            - "-target=ingester"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            - "-ingester.ring.instance-availability-zone=zone-default"
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
@@ -81,8 +81,6 @@ spec:
               mountPath: /var/mimir
             - name: storage
               mountPath: "/data"
-            - name: tmp
-              mountPath: /tmp
           ports:
             - name: http-metrics
               containerPort: 8080
@@ -99,11 +97,11 @@ spec:
             httpGet:
               path: /ready
               port: http-metrics
-            initialDelaySeconds: 45
+            initialDelaySeconds: 60
           resources:
             requests:
               cpu: 10m
-              memory: 32Mi
+              memory: 512Mi
           securityContext:
             readOnlyRootFilesystem: true
           env:
