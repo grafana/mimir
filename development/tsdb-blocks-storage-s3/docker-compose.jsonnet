@@ -30,6 +30,7 @@ std.manifestYamlDoc({
     self.minio +
     self.prometheus +
     self.grafana_agent +
+    self.otel_collector +
     self.memcached +
     self.jaeger +
     (if $._config.ring == 'consul' || $._config.ring == 'multi' then self.consul else {}) +
@@ -252,6 +253,15 @@ std.manifestYamlDoc({
     jaeger: {
       image: 'jaegertracing/all-in-one',
       ports: ['16686:16686', '14268'],
+    },
+  },
+
+  otel_collector:: {
+    otel_collector: {
+      image: 'otel/opentelemetry-collector-contrib:0.54.0',
+      command: ['--config=/etc/otel-collector/otel-collector.yaml'],
+      volumes: ['./config:/etc/otel-collector'],
+      ports: ['8083:8083'],
     },
   },
 

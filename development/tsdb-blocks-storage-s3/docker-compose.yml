@@ -211,6 +211,14 @@
       - "9000:9000"
     "volumes":
       - ".data-minio:/data:delegated"
+  "otel_collector":
+    "command":
+      - "--config=/etc/otel-collector/otel-collector.yaml"
+    "image": "otel/opentelemetry-collector-contrib:0.54.0"
+    "ports":
+      - "8083:8083"
+    "volumes":
+      - "./config:/etc/otel-collector"
   "prometheus":
     "command":
       - "--config.file=/etc/prometheus/prometheus.yaml"
