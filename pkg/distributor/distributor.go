@@ -645,6 +645,10 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		}
 	}
 
+	if d.cfg.InstanceLimits.MaxInflightPushRequestsTotalSize > 0 && inflightSize > d.cfg.InstanceLimits.MaxInflightPushRequestsTotalSize {
+		return nil, errMaxInflightRequestsTotalSizeReached
+	}
+
 	now := mtime.Now()
 	if !d.requestRateLimiter.AllowN(now, userID, 1) {
 		validation.DiscardedRequests.WithLabelValues(validation.ReasonRateLimited, userID).Add(1)
@@ -653,10 +657,6 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		// Client may discard the data or slow down and re-send.
 		// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
 		return nil, httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewRequestRateLimitedError(d.limits.RequestRate(userID), d.limits.RequestBurstSize(userID)).Error())
-	}
-
-	if d.cfg.InstanceLimits.MaxInflightPushRequestsTotalSize > 0 && inflightSize > d.cfg.InstanceLimits.MaxInflightPushRequestsTotalSize {
-		return nil, errMaxInflightRequestsTotalSizeReached
 	}
 
 	d.activeUsers.UpdateUserTimestamp(userID, now)
