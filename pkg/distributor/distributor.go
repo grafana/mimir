@@ -52,9 +52,9 @@ import (
 )
 
 const (
-	maxIngestionRateFlag                 = "distributor.instance-limits.max-ingestion-rate"
-	maxInflightPushRequestsFlag          = "distributor.instance-limits.max-inflight-push-requests"
-	maxInflightPushRequestsTotalSizeFlag = "distributor.instance-limits.max-inflight-push-requests-total-size"
+	maxIngestionRateFlag             = "distributor.instance-limits.max-ingestion-rate"
+	maxInflightPushRequestsFlag      = "distributor.instance-limits.max-inflight-push-requests"
+	maxInflightPushRequestsBytesFlag = "distributor.instance-limits.max-inflight-push-requests-total-bytes"
 )
 
 var (
@@ -62,9 +62,9 @@ var (
 	errInvalidTenantShardSize = errors.New("invalid tenant shard size, the value must be greater or equal to zero")
 
 	// Distributor instance limits errors.
-	errMaxInflightRequestsReached          = errors.New(globalerror.DistributorMaxInflightPushRequests.MessageWithLimitConfig("the write request has been rejected because the distributor exceeded the allowed number of inflight push requests", maxInflightPushRequestsFlag))
-	errMaxIngestionRateReached             = errors.New(globalerror.DistributorMaxIngestionRate.MessageWithLimitConfig("the write request has been rejected because the distributor exceeded the ingestion rate limit", maxIngestionRateFlag))
-	errMaxInflightRequestsTotalSizeReached = errors.New(globalerror.DistributorMaxInflightPushRequestsTotalSize.MessageWithLimitConfig("the write request has been rejected because the distributor exceeded the allowed total size of inflight push requests", maxInflightPushRequestsTotalSizeFlag))
+	errMaxInflightRequestsReached      = errors.New(globalerror.DistributorMaxInflightPushRequests.MessageWithLimitConfig("the write request has been rejected because the distributor exceeded the allowed number of inflight push requests", maxInflightPushRequestsFlag))
+	errMaxIngestionRateReached         = errors.New(globalerror.DistributorMaxIngestionRate.MessageWithLimitConfig("the write request has been rejected because the distributor exceeded the ingestion rate limit", maxIngestionRateFlag))
+	errMaxInflightRequestsBytesReached = errors.New(globalerror.DistributorMaxInflightPushRequestsBytes.MessageWithLimitConfig("the write request has been rejected because the distributor exceeded the allowed total size in bytes of inflight push requests", maxInflightPushRequestsBytesFlag))
 )
 
 const (
@@ -111,9 +111,9 @@ type Distributor struct {
 
 	activeUsers *util.ActiveUsersCleanupService
 
-	ingestionRate            *util_math.EwmaRate
-	inflightPushRequests     atomic.Int64
-	inflightPushRequestsSize atomic.Int64
+	ingestionRate             *util_math.EwmaRate
+	inflightPushRequests      atomic.Int64
+	inflightPushRequestsBytes atomic.Int64
 
 	// Metrics
 	queryDuration                    *instrument.HistogramCollector
@@ -164,9 +164,9 @@ type Config struct {
 }
 
 type InstanceLimits struct {
-	MaxIngestionRate                 float64 `yaml:"max_ingestion_rate" category:"advanced"`
-	MaxInflightPushRequests          int     `yaml:"max_inflight_push_requests" category:"advanced"`
-	MaxInflightPushRequestsTotalSize int     `yaml:"max_inflight_push_requests_total_size" category:"advanced"`
+	MaxIngestionRate             float64 `yaml:"max_ingestion_rate" category:"advanced"`
+	MaxInflightPushRequests      int     `yaml:"max_inflight_push_requests" category:"advanced"`
+	MaxInflightPushRequestsBytes int     `yaml:"max_inflight_push_requests_bytes" category:"advanced"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -181,7 +181,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	flagext.DeprecatedFlag(f, "distributor.extend-writes", "Deprecated: this setting was used to try writing to an additional ingester in the presence of an ingester not in the ACTIVE state. Mimir now behaves as this setting is always disabled.", logger)
 	f.Float64Var(&cfg.InstanceLimits.MaxIngestionRate, maxIngestionRateFlag, 0, "Max ingestion rate (samples/sec) that this distributor will accept. This limit is per-distributor, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. 0 = unlimited.")
 	f.IntVar(&cfg.InstanceLimits.MaxInflightPushRequests, maxInflightPushRequestsFlag, 2000, "Max inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.")
-	f.IntVar(&cfg.InstanceLimits.MaxInflightPushRequestsTotalSize, maxInflightPushRequestsTotalSizeFlag, 0, "The sum of the request sizes in bytes of inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.")
+	f.IntVar(&cfg.InstanceLimits.MaxInflightPushRequestsBytes, maxInflightPushRequestsBytesFlag, 0, "The sum of the request sizes in bytes of inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.")
 }
 
 // Validate config and returns error on failure
@@ -611,13 +611,13 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	// We will report *this* request in the error too.
 	inflight := d.inflightPushRequests.Inc()
 	reqSize := int64(req.Size())
-	inflightSize := d.inflightPushRequestsSize.Add(reqSize)
+	inflightBytes := d.inflightPushRequestsBytes.Add(reqSize)
 
 	// Decrement counter after all ingester calls have finished or been cancelled.
 	cleanup := func() {
 		callerCleanup()
 		d.inflightPushRequests.Dec()
-		d.inflightPushRequestsSize.Sub(reqSize)
+		d.inflightPushRequestsBytes.Sub(reqSize)
 	}
 	cleanupInDefer := true
 	defer func() {
@@ -645,8 +645,8 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		}
 	}
 
-	if d.cfg.InstanceLimits.MaxInflightPushRequestsTotalSize > 0 && inflightSize > int64(d.cfg.InstanceLimits.MaxInflightPushRequestsTotalSize) {
-		return nil, errMaxInflightRequestsTotalSizeReached
+	if d.cfg.InstanceLimits.MaxInflightPushRequestsBytes > 0 && inflightBytes > int64(d.cfg.InstanceLimits.MaxInflightPushRequestsBytes) {
+		return nil, errMaxInflightRequestsBytesReached
 	}
 
 	now := mtime.Now()

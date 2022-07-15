@@ -31,9 +31,9 @@ const (
 	MaxSeriesPerQuery             ID = "max-series-per-query"
 	MaxChunkBytesPerQuery         ID = "max-chunks-bytes-per-query"
 
-	DistributorMaxIngestionRate                 ID = "distributor-max-ingestion-rate"
-	DistributorMaxInflightPushRequests          ID = "distributor-max-inflight-push-requests"
-	DistributorMaxInflightPushRequestsTotalSize ID = "distributor-max-inflight-push-requests-total-size"
+	DistributorMaxIngestionRate             ID = "distributor-max-ingestion-rate"
+	DistributorMaxInflightPushRequests      ID = "distributor-max-inflight-push-requests"
+	DistributorMaxInflightPushRequestsBytes ID = "distributor-max-inflight-push-requests-bytes"
 
 	IngesterMaxIngestionRate        ID = "ingester-max-ingestion-rate"
 	IngesterMaxTenants              ID = "ingester-max-tenants"

@@ -830,7 +830,7 @@ Usage of ./cmd/mimir/mimir:
     	The tenant's shard size used by shuffle-sharding. Must be set both on ingesters and distributors. 0 disables shuffle sharding.
   -distributor.instance-limits.max-inflight-push-requests int
     	Max inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited. (default 2000)
-  -distributor.instance-limits.max-inflight-push-requests-total-size int
+  -distributor.instance-limits.max-inflight-push-requests-total-bytes int
     	The sum of the request sizes in bytes of inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.
   -distributor.instance-limits.max-ingestion-rate float
     	Max ingestion rate (samples/sec) that this distributor will accept. This limit is per-distributor, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. 0 = unlimited.

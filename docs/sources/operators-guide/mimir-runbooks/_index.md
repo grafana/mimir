@@ -1186,19 +1186,19 @@ How to **fix** it:
 - Check the write requests latency through the `Mimir / Writes` dashboard and come back to investigate the root cause of high latency (the higher the latency, the higher the number of in-flight write requests).
 - Consider scaling out the distributors.
 
-### err-mimir-distributor-max-inflight-push-requests-total-size
+### err-mimir-distributor-max-inflight-push-requests-bytes
 
-This error occurs when a distributor rejects a write request because the total size of all in-flight requests limit has been reached.
+This error occurs when a distributor rejects a write request because the total size in bytes of all in-flight requests limit has been reached.
 
 How it **works**:
 
-- The distributor has a per-instance limit on the total size of all in-flight write (push) requests.
-- The limit applies to all in-flight write requests, across all tenants, and it protects the distributor from becoming overloaded in case of high traffic.
-- To configure the limit, set the `-distributor.instance-limits.max-inflight-push-requests-total-size` option.
+- The distributor has a per-instance limit on the total size in bytes of all in-flight write (push) requests.
+- The limit applies to all in-flight write requests, across all tenants, and it protects the distributor from going out of memory in case of high traffic or high latency on the write path.
+- To configure the limit, set the `-distributor.instance-limits.max-inflight-push-requests-bytes` option.
 
 How to **fix** it:
 
-- Increase the limit by setting the `-distributor.instance-limits.max-inflight-push-requests-total-size` option.
+- Increase the limit by setting the `-distributor.instance-limits.max-inflight-push-requests-bytes` option.
 - Check the write requests latency through the `Mimir / Writes` dashboard and come back to investigate the root cause of the increased size of requests or the increased latency (the higher the latency, the higher the number of in-flight write requests, the higher their combined size).
 - Consider scaling out the distributors.
 

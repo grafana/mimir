@@ -602,8 +602,8 @@ instance_limits:
   # (advanced) The sum of the request sizes in bytes of inflight push requests
   # that this distributor can handle. This limit is per-distributor, not
   # per-tenant. Additional requests will be rejected. 0 = unlimited.
-  # CLI flag: -distributor.instance-limits.max-inflight-push-requests-total-size
-  [max_inflight_push_requests_total_size: <int> | default = 0]
+  # CLI flag: -distributor.instance-limits.max-inflight-push-requests-total-bytes
+  [max_inflight_push_requests_bytes: <int> | default = 0]
 
 forwarding:
   # (experimental) Enables the feature to forward certain metrics in
