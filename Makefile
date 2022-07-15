@@ -91,8 +91,7 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 	@echo
 	@echo Go binaries were built using GOOS=$(GOOS) and GOARCH=$(GOARCH)
 	@echo
-	@echo Please use '"make push-multiarch-build-image"' to build and push build image.
-	@echo Please use '"make push-multiarch-mimir"' to build and push Mimir image.
+	@echo Please use '"make push-multiarch-$(shell basename $(@D))"' to build and push a multiarch image.
 	@echo
 	@touch $@
 
