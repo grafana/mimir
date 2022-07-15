@@ -37,6 +37,7 @@
 ### Jsonnet
 
 * [FEATURE] Memberlist: added support for experimental memberlist cluster label, through the jsonnet configuration options `memberlist_cluster_label` and `memberlist_cluster_label_verification_disabled`. #2349
+* [CHANGE] query-scheduler is enabled by default. We advise to deploy the query-scheduler to improve the scalability of the query-frontend. #2431
 
 ### Mimirtool
 
