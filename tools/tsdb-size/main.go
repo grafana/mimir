@@ -6,12 +6,10 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -53,6 +51,7 @@ func main() {
 
 	ratio := float64(totalBytes) / float64(totalSamples)
 	fmt.Println("total_chunk_bytes:", totalBytes, "total_chunk_samples:", totalSamples, "ratio:", fmt.Sprintf("%0.2f", ratio))
+	fmt.Println("same_bytes:", sameBytes, "chunks_with_same_samples:", chunksWithSameSamples, "ratio of same bytes", float64(sameBytes)/float64(totalBytes), "ratio of bytes per chunk with same samples", float64(sameBytes)/float64(chunksWithSameSamples))
 }
 
 var totalBytes, totalSamples int
@@ -85,6 +84,7 @@ func printBlockIndex(blockDir string, matchers []*labels.Matcher) {
 	if err != nil {
 		panic(err)
 	}
+	defer cr.Close()
 
 	for p.Next() {
 		lbls := labels.Labels(nil)
@@ -125,9 +125,10 @@ func printBlockIndex(blockDir string, matchers []*labels.Matcher) {
 			ratio := float64(bytes) / float64(samples)
 
 			fmt.Println("chunk", c.Ref,
-				"min time:", c.MinTime, timestamp.Time(c.MinTime).UTC().Format(time.RFC3339Nano),
-				"max time:", c.MaxTime, timestamp.Time(c.MaxTime).UTC().Format(time.RFC3339Nano),
-				"bytes:", bytes, "samples:", samples, "ratio:", fmt.Sprintf("%0.2f", ratio),
+				"bytes:", bytes,
+				"samples:",
+				samples,
+				"ratio:", fmt.Sprintf("%0.2f", ratio),
 			)
 
 			if samples > 1 {
@@ -145,16 +146,16 @@ func printBlockIndex(blockDir string, matchers []*labels.Matcher) {
 					same = next == val
 				}
 				if same {
-					fmt.Println("chunk with same values", val, "chunk_bytes:", bytes, "samples", samples)
+					fmt.Println(">>>> chunk with same values", "value:", val, "series:", lbls.String())
 
 					sameBytes += bytes
 					chunksWithSameSamples += 1
 				}
 			}
 
-			totalRatio := float64(totalBytes) / float64(totalSamples)
-			fmt.Println("total_chunk_bytes:", totalBytes, "total_chunk_samples:", totalSamples, "ratio:", fmt.Sprintf("%0.2f", totalRatio))
-			fmt.Println("same_bytes:", sameBytes, "chunks_with_same_samples:", chunksWithSameSamples, "ratio of same bytes", float64(sameBytes)/float64(totalBytes), "ratio of bytes per chunk with same samples", float64(sameBytes)/float64(chunksWithSameSamples))
+			//totalRatio := float64(totalBytes) / float64(totalSamples)
+			//fmt.Println("total_chunk_bytes:", totalBytes, "total_chunk_samples:", totalSamples, "ratio:", fmt.Sprintf("%0.2f", totalRatio))
+			//fmt.Println("same_bytes:", sameBytes, "chunks_with_same_samples:", chunksWithSameSamples, "ratio of same bytes", float64(sameBytes)/float64(totalBytes), "ratio of bytes per chunk with same samples", float64(sameBytes)/float64(chunksWithSameSamples))
 		}
 	}
 
