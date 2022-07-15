@@ -1,0 +1,71 @@
+multitenancy_enabled: false
+
+blocks_storage:
+  backend: s3
+  s3:
+    endpoint:          minio:9000
+    bucket_name:       mimir-blocks
+    access_key_id:     mimir
+    secret_access_key: supersecret
+    insecure:          true
+  tsdb:
+    dir: /data/ingester
+
+  bucket_store:
+    index_cache:
+      backend: memcached
+      memcached:
+        addresses: dns+memcached:11211
+
+    chunks_cache:
+      backend: memcached
+      memcached:
+        addresses: dns+memcached:11211
+
+    metadata_cache:
+      backend: memcached
+      memcached:
+        addresses: dns+memcached:11211
+
+
+memberlist:
+  # Use write replicas as seed nodes.
+  join_members: [ write-1, write-2, write-3 ]
+
+ruler:
+  rule_path: /data/ruler
+  # TODO alertmanager_url: http://127.0.0.1:8080/alertmanager
+
+ruler_storage:
+  backend: s3
+  s3:
+    bucket_name:       mimir-ruler
+    endpoint:          minio:9000
+    access_key_id:     mimir
+    secret_access_key: supersecret
+    insecure:          true
+
+# TODO alertmanager:
+#  data_dir: /data/alertmanager
+#  fallback_config_file: /etc/alertmanager-fallback-config.yaml
+#  external_url: http://localhost:9009/alertmanager
+
+# TODO alertmanager_storage:
+#   backend: s3
+#   s3:
+#     endpoint: minio:9000
+#     bucket_name: mimir-alertmanager
+#     access_key_id: mimir
+#     secret_access_key: supersecret
+#     insecure: true
+
+frontend:
+  # TODO we can't specify multiple addresses, but we need to resolve to all read replicas here. How can we do it?
+  scheduler_address: "read-1:9004"
+
+frontend_worker:
+  # TODO we can't specify multiple addresses, but we need to resolve to all read replicas here. How can we do it?
+  scheduler_address: "read-1:9004"
+
+runtime_config:
+  file: ./config/runtime.yaml
