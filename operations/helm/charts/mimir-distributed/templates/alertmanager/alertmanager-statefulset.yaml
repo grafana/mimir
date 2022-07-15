@@ -34,7 +34,7 @@ spec:
         {{- end }}
         {{- end }}
         accessModes:
-          {{ toYaml .Values.alertmanager.persistentVolume.accessModes | nindent 10 }}
+          {{- toYaml .Values.alertmanager.persistentVolume.accessModes | nindent 10 }}
         resources:
           requests:
             storage: "{{ .Values.alertmanager.persistentVolume.size }}"

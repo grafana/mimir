@@ -102,6 +102,11 @@ mimir:
       data_dir: /data
       enable_api: true
       external_url: /alertmanager
+      {{- if .Values.alertmanager.zone_aware_replication.enabled }}
+      sharding_ring:
+        zone_awareness_enabled: true
+        instance_availability_zone: default  # required due to bug in code which requires this field even when set via CLI.
+      {{- end }}
 
     {{- if .Values.minio.enabled }}
     alertmanager_storage:
@@ -207,6 +212,9 @@ mimir:
         final_sleep: 0s
         num_tokens: 512
         unregister_on_shutdown: false
+        {{- if .Values.ingester.zone_aware_replication.enabled }}
+        zone_awareness_enabled: true
+        {{- end }}
 
     ingester_client:
       grpc_client_config:
@@ -397,6 +405,56 @@ alertmanager:
   env: []
   extraEnvFrom: []
 
+  zone_aware_replication:
+    enabled: false
+    max_unavailable: 2
+    zones:
+    - name: zone-a
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: rollout-group
+                    operator: In
+                    values:
+                      - alertmanager
+                  - key: app.kubernetes.io/component
+                    operator: NotIn
+                    values:
+                      - alertmanager-zone-a
+              topologyKey: 'kubernetes.io/hostname'
+    - name: zone-b
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: rollout-group
+                    operator: In
+                    values:
+                      - alertmanager
+                  - key: app.kubernetes.io/component
+                    operator: NotIn
+                    values:
+                      - alertmanager-zone-b
+              topologyKey: 'kubernetes.io/hostname'
+    - name: zone-c
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: rollout-group
+                    operator: In
+                    values:
+                      - alertmanager
+                  - key: app.kubernetes.io/component
+                    operator: NotIn
+                    values:
+                      - alertmanager-zone-c
+              topologyKey: 'kubernetes.io/hostname'
+
 distributor:
   replicas: 1
 
@@ -561,6 +619,56 @@ ingester:
   extraVolumeMounts: []
   env: []
   extraEnvFrom: []
+
+  zone_aware_replication:
+    enabled: false
+    max_unavailable: 2
+    zones:
+    - name: zone-a
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: rollout-group
+                    operator: In
+                    values:
+                      - ingester
+                  - key: app.kubernetes.io/component
+                    operator: NotIn
+                    values:
+                      - ingester-zone-a
+              topologyKey: 'kubernetes.io/hostname'
+    - name: zone-b
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: rollout-group
+                    operator: In
+                    values:
+                      - ingester
+                  - key: app.kubernetes.io/component
+                    operator: NotIn
+                    values:
+                      - ingester-zone-b
+              topologyKey: 'kubernetes.io/hostname'
+    - name: zone-c
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: rollout-group
+                    operator: In
+                    values:
+                      - ingester
+                  - key: app.kubernetes.io/component
+                    operator: NotIn
+                    values:
+                      - ingester-zone-c
+              topologyKey: 'kubernetes.io/hostname'
 
 overrides_exporter:
   enabled: true

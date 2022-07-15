@@ -220,7 +220,7 @@ app.kubernetes.io/managed-by: {{ .ctx.Release.Service }}
 {{- $component_values := index .ctx.Values (printf "%s" .ctx.component_config) -}}
 {{- if $component_values.zone_aware_replication.enabled }}
 app.kubernetes.io/component: "{{ .ctx.component }}-{{ .ctx.rolloutZoneName }}"
-name: "{{ .ctx.component }}-{{ .ctx.rolloutZoneName }}"  # Currently required for rollout-operator. https://github.com/grafana/rollout-operator/issues/15
+name: "{{ .ctx.component }}-{{ .ctx.rolloutZoneName }}" {{- /* Currently required for rollout-operator. https://github.com/grafana/rollout-operator/issues/15 */}}
 rollout-group: {{ .ctx.component }}
 zone: {{ .ctx.rolloutZoneName }}
 {{- end -}}
@@ -262,7 +262,7 @@ app.kubernetes.io/part-of: memberlist
 {{- $component_values := index .ctx.Values (printf "%s" .ctx.component_config) -}}
 {{- if $component_values.zone_aware_replication.enabled }}
 app.kubernetes.io/component: "{{ .ctx.component }}-{{ .ctx.rolloutZoneName }}"
-name: "{{ .ctx.component }}-{{ .ctx.rolloutZoneName }}"  # Currently required for rollout-operator. https://github.com/grafana/rollout-operator/issues/15
+name: "{{ .ctx.component }}-{{ .ctx.rolloutZoneName }}" {{- /* Currently required for rollout-operator. https://github.com/grafana/rollout-operator/issues/15 */}}
 rollout-group: {{ .ctx.component }}
 zone: {{ .ctx.rolloutZoneName }}
 {{- end -}}

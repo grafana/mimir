@@ -1,21 +1,31 @@
 {{- if .Values.ingester.statefulSet.enabled -}}
+{{- $_ := set . "component" "ingester" -}}
+{{- $_ := set . "component_config" "ingester" -}}
+{{- $zonesMap := include "mimir.zoneAwareReplicationMap" $ | fromYaml -}}
+{{- range $zoneName, $rolloutZone := $zonesMap }}
+{{- with $ -}}
+{{- $_ := set . "rolloutZoneName" $zoneName -}}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "ingester") }}
+  name: {{ include "mimir.zonedResourceName" . }}
   labels:
-    {{- include "mimir.labels" (dict "ctx" . "component" "ingester" "memberlist" true) | nindent 4 }}
+    {{- include "mimir.zonedLabels" (dict "ctx" . "memberlist" true) | nindent 4 }}
   annotations:
-    {{- toYaml .Values.ingester.annotations | nindent 4 }}
+    {{- include "mimir.componentAnnotations" . | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
   podManagementPolicy: {{ .Values.ingester.podManagementPolicy }}
   replicas: {{ .Values.ingester.replicas }}
   selector:
     matchLabels:
-      {{- include "mimir.selectorLabels" (dict "ctx" . "component" "ingester" "memberlist" true) | nindent 6 }}
+      {{- include "mimir.zonedSelectorLabels" (dict "ctx" . "memberlist" true) | nindent 6 }}
   updateStrategy:
+    {{- if .Values.ingester.zone_aware_replication.enabled }}
+    type: OnDelete
+    {{- else }}
     {{- toYaml .Values.ingester.statefulStrategy | nindent 4 }}
+    {{- end }}
   serviceName: {{ template "mimir.fullname" . }}-ingester{{- if not .Values.enterprise.legacyLabels -}}-headless{{- end -}}
   {{- if .Values.ingester.persistentVolume.enabled }}
   volumeClaimTemplates:
@@ -34,7 +44,7 @@ spec:
         {{- end }}
         {{- end }}
         accessModes:
-          {{ toYaml .Values.ingester.persistentVolume.accessModes | nindent 10 }}
+          {{- toYaml .Values.ingester.persistentVolume.accessModes | nindent 10 }}
         resources:
           requests:
             storage: "{{ .Values.ingester.persistentVolume.size }}"
@@ -42,7 +52,7 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "mimir.podLabels" (dict "ctx" . "component" "ingester" "memberlist" true) | nindent 8 }}
+        {{- include "mimir.zonedPodLabels" (dict "ctx" . "memberlist" true) | nindent 8 }}
         {{- with .Values.ingester.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -65,9 +75,9 @@ spec:
       {{- end }}
       {{- end }}
       nodeSelector:
-        {{- toYaml .Values.ingester.nodeSelector | nindent 8 }}
+        {{- $rolloutZone.nodeSelector | toYaml | nindent 8 }}
       affinity:
-        {{- toYaml .Values.ingester.affinity | nindent 8 }}
+        {{- $rolloutZone.affinity | toYaml | nindent 8 }}
       tolerations:
         {{- toYaml .Values.ingester.tolerations | nindent 8 }}
       terminationGracePeriodSeconds: {{ .Values.ingester.terminationGracePeriodSeconds }}
@@ -100,7 +110,11 @@ spec:
             - "-target=ingester"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            {{- if .Values.ingester.zone_aware_replication.enabled }}
+            - "-ingester.ring.instance-availability-zone={{ $zoneName }}"
+            {{- else -}}
             - "-ingester.ring.instance-availability-zone=zone-default"
+            {{- end }}
             {{- range $key, $value := .Values.ingester.extraArgs }}
             - "-{{ $key }}={{ $value }}"
             {{- end }}
@@ -154,4 +168,7 @@ spec:
             {{- with .Values.ingester.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+---
+{{- end -}}
+{{- end -}}
 {{- end -}}
