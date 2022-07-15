@@ -56,8 +56,9 @@ func main() {
 }
 
 var totalBytes, totalSamples int
+var sameBytes, sameSamples int
 
-func printBlockIndex(blockDir string, printChunks bool, matchers []*labels.Matcher) {
+func printBlockIndex(blockDir string, matchers []*labels.Matcher) {
 	block, err := tsdb.OpenBlock(logger, blockDir, nil)
 	if err != nil {
 		level.Error(logger).Log("msg", "failed to open block", "dir", blockDir, "err", err)
@@ -122,14 +123,38 @@ func printBlockIndex(blockDir string, printChunks bool, matchers []*labels.Match
 			samples := chk.NumSamples()
 			totalSamples += samples
 			ratio := float64(bytes) / float64(samples)
+
 			fmt.Println("chunk", c.Ref,
 				"min time:", c.MinTime, timestamp.Time(c.MinTime).UTC().Format(time.RFC3339Nano),
 				"max time:", c.MaxTime, timestamp.Time(c.MaxTime).UTC().Format(time.RFC3339Nano),
 				"bytes:", bytes, "samples:", samples, "ratio:", fmt.Sprintf("%0.2f", ratio),
 			)
 
+			if samples > 1 {
+				it := chk.Iterator(nil)
+				var val float64
+				same := true
+				first := true
+				for it.Next() && same {
+					_, next := it.At()
+					if first {
+						first = false
+						val = next
+						continue
+					}
+					same = next == val
+				}
+				if same {
+					fmt.Println("chunk with same values", val, "chunk_bytes:", bytes, "samples", samples)
+
+					sameBytes += bytes
+					sameSamples += 1
+				}
+			}
+
 			totalRatio := float64(totalBytes) / float64(totalSamples)
 			fmt.Println("total_chunk_bytes:", totalBytes, "total_chunk_samples:", totalSamples, "ratio:", fmt.Sprintf("%0.2f", totalRatio))
+			fmt.Println("same_bytes:", sameBytes, "chunks_with_same_samples:", sameSamples, "ratio of same bytes", float64(sameBytes)/float64(totalBytes))
 		}
 	}
 
