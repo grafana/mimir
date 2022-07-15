@@ -36,7 +36,7 @@ func TestHandler_remoteWrite(t *testing.T) {
 func TestHandler_otlpWrite(t *testing.T) {
 	req := createOTLPRequest(t, createOTLPMetricRequest(t))
 	resp := httptest.NewRecorder()
-	handler := OLTPHandler(100000, nil, false, verifyWriteRequestHandler(t, mimirpb.API))
+	handler := OTLPHandler(100000, nil, false, verifyWriteRequestHandler(t, mimirpb.API))
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
 }

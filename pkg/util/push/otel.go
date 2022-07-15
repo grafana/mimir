@@ -35,7 +35,7 @@ const (
 	messageSizeLargerErrFmt = "received message larger than max (%d > %d)"
 )
 
-func OLTPHandler(
+func OTLPHandler(
 	maxRecvMsgSize int,
 	sourceIPs *middleware.SourceIPExtractor,
 	allowSkipLabelNameValidation bool,
