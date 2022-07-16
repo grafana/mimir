@@ -35,7 +35,7 @@ In this tutorial, you'll:
 ## Prerequisites
 
 - Git
-- Docker and Docker Compose
+- [Docker](https://docs.docker.com/) and [Docker Compose](https://docs.docker.com/compose/)
 - Availability of both ports `9000` and `9009` on your host machine
 
 ## Download tutorial configuration
