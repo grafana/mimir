@@ -638,8 +638,9 @@ func TestQueryFrontendWithQueryShardingAndTooManyRequests(t *testing.T) {
 		// Check that query was actually sharded.
 		require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Greater(0), "cortex_frontend_sharded_queries_total"))
 		// Check that we actually discarded the request.
+
 		if cfg.querySchedulerEnabled {
-			require.NoError(t, queryScheduler.WaitSumMetrics(e2e.Greater(0), "cortex_query_frontend_discarded_requests_total"))
+			require.NoError(t, queryScheduler.WaitSumMetrics(e2e.Greater(0), "cortex_query_scheduler_discarded_requests_total"))
 		} else {
 			require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Greater(0), "cortex_query_frontend_discarded_requests_total"))
 		}
@@ -660,6 +661,7 @@ func TestQueryFrontendWithQueryShardingAndTooManyRequests(t *testing.T) {
 			},
 		})
 	})
+
 	t.Run("without query-scheduler", func(t *testing.T) {
 		runQueryFrontendWithQueryShardingAndTooManyRequestsTest(t, queryFrontendTestConfig{
 			querySchedulerEnabled: false,
