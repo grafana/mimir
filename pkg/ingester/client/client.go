@@ -17,10 +17,9 @@ import (
 )
 
 var ingesterClientRequestDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
-	Namespace: "cortex",
-	Name:      "ingester_client_request_duration_seconds",
-	Help:      "Time spent doing Ingester requests.",
-	Buckets:   prometheus.ExponentialBuckets(0.001, 4, 6),
+	Name:    "cortex_ingester_client_request_duration_seconds",
+	Help:    "Time spent doing Ingester requests.",
+	Buckets: prometheus.ExponentialBuckets(0.001, 4, 8),
 }, []string{"operation", "status_code"})
 
 // HealthAndIngesterClient is the union of IngesterClient and grpc_health_v1.HealthClient.
