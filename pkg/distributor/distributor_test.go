@@ -630,6 +630,7 @@ func TestDistributor_PushInstanceLimits(t *testing.T) {
 				# TYPE cortex_distributor_instance_limits gauge
 				cortex_distributor_instance_limits{limit="max_inflight_push_requests"} 0
 				cortex_distributor_instance_limits{limit="max_ingestion_rate"} 0
+		        cortex_distributor_instance_limits{limit="max_inflight_push_requests_bytes"} 0
 			`,
 		},
 		"below inflight limit": {
@@ -649,6 +650,7 @@ func TestDistributor_PushInstanceLimits(t *testing.T) {
 				# TYPE cortex_distributor_instance_limits gauge
 				cortex_distributor_instance_limits{limit="max_inflight_push_requests"} 101
 				cortex_distributor_instance_limits{limit="max_ingestion_rate"} 0
+		        cortex_distributor_instance_limits{limit="max_inflight_push_requests_bytes"} 0
 			`,
 		},
 		"hits inflight limit": {
@@ -676,6 +678,7 @@ func TestDistributor_PushInstanceLimits(t *testing.T) {
 				# TYPE cortex_distributor_instance_limits gauge
 				cortex_distributor_instance_limits{limit="max_inflight_push_requests"} 0
 				cortex_distributor_instance_limits{limit="max_ingestion_rate"} 1000
+		        cortex_distributor_instance_limits{limit="max_inflight_push_requests_bytes"} 0
 			`,
 		},
 		"hits rate limit on first request, but second request can proceed": {
@@ -701,18 +704,31 @@ func TestDistributor_PushInstanceLimits(t *testing.T) {
 		},
 
 		"below inflight size limit": {
-			inflightBytesLimit: makeWriteRequest(0, 100, 1, false).Size(),
+			inflightBytesLimit: 5800, // 5800 ~= size of a singe request with 100 samples
 
 			pushes: []testPush{
 				{samples: 10, expectedError: nil},
 			},
+			metricNames: []string{instanceLimitsMetric, "cortex_distributor_inflight_push_requests_size"},
+
+			expectedMetrics: `
+				# HELP cortex_distributor_inflight_push_requests_size Current sum of inflight push requests in distributor in bytes.
+				# TYPE cortex_distributor_inflight_push_requests_size gauge
+				cortex_distributor_inflight_push_requests_size 0
+
+				# HELP cortex_distributor_instance_limits Instance limits used by this distributor.
+				# TYPE cortex_distributor_instance_limits gauge
+				cortex_distributor_instance_limits{limit="max_inflight_push_requests_bytes"} 5800
+				cortex_distributor_instance_limits{limit="max_inflight_push_requests"} 0
+				cortex_distributor_instance_limits{limit="max_ingestion_rate"} 0
+			`,
 		},
 
 		"hits inflight size limit": {
-			inflightBytesLimit: makeWriteRequest(0, 100, 1, false).Size(),
+			inflightBytesLimit: 5800, // 5800 ~= size of a singe request with 100 samples
 
 			pushes: []testPush{
-				{samples: 101, expectedError: errMaxInflightRequestsBytesReached},
+				{samples: 150, expectedError: errMaxInflightRequestsBytesReached},
 			},
 		},
 	}

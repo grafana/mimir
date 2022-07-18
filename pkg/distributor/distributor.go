@@ -318,6 +318,11 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 		Name:        instanceLimitsMetric,
 		Help:        instanceLimitsMetricHelp,
+		ConstLabels: map[string]string{limitLabel: "max_inflight_push_requests_bytes"},
+	}).Set(float64(cfg.InstanceLimits.MaxInflightPushRequestsBytes))
+	promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+		Name:        instanceLimitsMetric,
+		Help:        instanceLimitsMetricHelp,
 		ConstLabels: map[string]string{limitLabel: "max_ingestion_rate"},
 	}).Set(cfg.InstanceLimits.MaxIngestionRate)
 
@@ -326,6 +331,12 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		Help: "Current number of inflight push requests in distributor.",
 	}, func() float64 {
 		return float64(d.inflightPushRequests.Load())
+	})
+	promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "cortex_distributor_inflight_push_requests_size",
+		Help: "Current sum of inflight push requests in distributor in bytes.",
+	}, func() float64 {
+		return float64(d.inflightPushRequestsBytes.Load())
 	})
 	promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "cortex_distributor_ingestion_rate_samples_per_second",
