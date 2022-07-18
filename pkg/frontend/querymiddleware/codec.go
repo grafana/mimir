@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"math"
 	"net/http"
@@ -264,13 +265,15 @@ func (prometheusCodec) EncodeRequest(ctx context.Context, r Request) (*http.Requ
 
 func (prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _ Request, logger log.Logger) (Response, error) {
 	var resp PrometheusResponse
-	if r.StatusCode/100 == 5 || r.StatusCode == http.StatusTooManyRequests {
-		body, _ := ioutil.ReadAll(r.Body)
+	if r.StatusCode/100 == 5 {
 		return nil, httpgrpc.ErrorFromHTTPResponse(&httpgrpc.HTTPResponse{
 			Code: int32(r.StatusCode),
-			Body: body,
+			Body: mustReadAll(r.Body),
 		})
+	} else if r.StatusCode == http.StatusTooManyRequests {
+		return nil, apierror.New(apierror.TypeTooManyRequests, string(mustReadAll(r.Body)))
 	}
+
 	log, ctx := spanlogger.NewWithLogger(ctx, logger, "ParseQueryRangeResponse") //nolint:ineffassign,staticcheck
 	defer log.Finish()
 	log.LogFields(otlog.Int("status_code", r.StatusCode))
@@ -437,4 +440,9 @@ func decorateWithParamName(err error, field string) error {
 		return apierror.Newf(apierror.TypeBadData, errTmpl, field, status.Message())
 	}
 	return apierror.Newf(apierror.TypeBadData, errTmpl, field, err)
+}
+
+func mustReadAll(r io.Reader) []byte {
+	body, _ := ioutil.ReadAll(r)
+	return body
 }

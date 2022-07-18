@@ -9,7 +9,6 @@ package querymiddleware
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"io/ioutil"
 	"math/rand"
 	"net/http"
@@ -118,22 +117,30 @@ type prometeheusResponseData struct {
 }
 
 func TestDecodeFailedResponse(t *testing.T) {
-	for _, statusCode := range []int{
-		http.StatusInternalServerError,
-		http.StatusTooManyRequests,
-	} {
-		t.Run(fmt.Sprintf("%d", statusCode), func(t *testing.T) {
-			_, err := PrometheusCodec.DecodeResponse(context.Background(), &http.Response{
-				StatusCode: statusCode,
-				Body:       ioutil.NopCloser(strings.NewReader("something failed")),
-			}, nil, log.NewNopLogger())
-			require.Error(t, err)
+	t.Run("internal error", func(t *testing.T) {
+		_, err := PrometheusCodec.DecodeResponse(context.Background(), &http.Response{
+			StatusCode: http.StatusInternalServerError,
+			Body:       ioutil.NopCloser(strings.NewReader("something failed")),
+		}, nil, log.NewNopLogger())
+		require.Error(t, err)
 
-			resp, ok := httpgrpc.HTTPResponseFromError(err)
-			require.True(t, ok, "Error should have an HTTPResponse encoded")
-			require.Equal(t, int32(statusCode), resp.Code)
-		})
-	}
+		resp, ok := httpgrpc.HTTPResponseFromError(err)
+		require.True(t, ok, "Error should have an HTTPResponse encoded")
+		require.Equal(t, int32(http.StatusInternalServerError), resp.Code)
+	})
+
+	t.Run("too many requests", func(t *testing.T) {
+		_, err := PrometheusCodec.DecodeResponse(context.Background(), &http.Response{
+			StatusCode: http.StatusTooManyRequests,
+			Body:       ioutil.NopCloser(strings.NewReader("something failed")),
+		}, nil, log.NewNopLogger())
+		require.Error(t, err)
+
+		require.True(t, apierror.IsAPIError(err))
+		resp, ok := apierror.HTTPResponseFromError(err)
+		require.True(t, ok, "Error should have an HTTPResponse encoded")
+		require.Equal(t, int32(http.StatusTooManyRequests), resp.Code)
+	})
 }
 
 func TestResponseRoundtrip(t *testing.T) {
