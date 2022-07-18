@@ -56,3 +56,5 @@ scrape_configs:
 remote_write:
   - url: http://distributor-1:8000/api/v1/push
     send_exemplars: true
+    headers:
+      "X-Scope-OrgID": "team-b"

@@ -314,6 +314,9 @@ func (t *Mimir) initQueryable() (serv services.Service, err error) {
 	// Create a querier queryable and PromQL engine
 	t.QuerierQueryable, t.ExemplarQueryable, t.QuerierEngine = querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryables, querierRegisterer, util_log.Logger, t.ActivityTracker)
 
+	// Use the distributor to return metric metadata by default
+	t.MetadataSupplier = t.Distributor
+
 	// Register the default endpoints that are always enabled for the querier module
 	t.API.RegisterQueryable(t.QuerierQueryable, t.Distributor)
 
@@ -329,6 +332,7 @@ func (t *Mimir) initTenantFederation() (serv services.Service, err error) {
 		const bypassForSingleQuerier = true
 		t.QuerierQueryable = querier.NewSampleAndChunkQueryable(tenantfederation.NewQueryable(t.QuerierQueryable, bypassForSingleQuerier, util_log.Logger))
 		t.ExemplarQueryable = tenantfederation.NewExemplarQueryable(t.ExemplarQueryable, bypassForSingleQuerier, util_log.Logger)
+		t.MetadataSupplier = tenantfederation.NewMetadataSupplier(t.MetadataSupplier, util_log.Logger)
 	}
 	return nil, nil
 }
@@ -390,6 +394,7 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		t.Cfg.API,
 		t.QuerierQueryable,
 		t.ExemplarQueryable,
+		t.MetadataSupplier,
 		t.QuerierEngine,
 		t.Distributor,
 		prometheus.DefaultRegisterer,
