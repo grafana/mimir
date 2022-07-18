@@ -54,7 +54,7 @@ import (
 const (
 	maxIngestionRateFlag             = "distributor.instance-limits.max-ingestion-rate"
 	maxInflightPushRequestsFlag      = "distributor.instance-limits.max-inflight-push-requests"
-	maxInflightPushRequestsBytesFlag = "distributor.instance-limits.max-inflight-push-requests-total-bytes"
+	maxInflightPushRequestsBytesFlag = "distributor.instance-limits.max-inflight-push-requests-bytes"
 )
 
 var (
