@@ -91,4 +91,4 @@ For more information on shuffle sharding, refer to [Configuring shuffle sharding
 
 Out-of-order samples are discarded by default. If the system writing samples to Mimir produces out-of-order samples, you can enable ingestion of such samples.
 
-For more information about out-of-order samples ingestion, refer to [Configuring out of order samples ingestion]({{< relref "../../configuring/configuring-out-of-order-samples-ingestion.md" >}}).
+For more information about out-of-order samples ingestion, refer to [Configuring out of order samples ingestion]({{< relref "../../configuring/configure-out-of-order-samples-ingestion.md" >}}).
