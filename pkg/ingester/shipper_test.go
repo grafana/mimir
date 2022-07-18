@@ -178,9 +178,7 @@ func TestShipper_DeceivingUploadErrors(t *testing.T) {
 	// Wrap bucket in a decorator so that meta.json file uploads always fail
 	bkt = deceivingUploadBucket{Bucket: bkt, objectBaseName: block.MetaFilename}
 
-	logs := &concurrency.SyncBuffer{}
-	logger := log.NewLogfmtLogger(logs)
-
+	logger := log.NewLogfmtLogger(os.Stderr)
 	s := NewShipper(logger, nil, blocksDir, bkt, metadata.TestSource, metadata.NoneFunc)
 
 	// Create and upload a block
