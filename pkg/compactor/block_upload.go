@@ -88,7 +88,7 @@ func (c *MultitenantCompactor) HandleBlockUpload(w http.ResponseWriter, r *http.
 	}
 
 	if shouldComplete {
-		err = c.completeBlockUpload(ctx, r, logger, userBkt, tenantID, bULID)
+		err = c.completeBlockUpload(ctx, w, r, logger, userBkt, tenantID, bULID)
 	} else {
 		err = c.createBlockUpload(ctx, r, logger, userBkt, tenantID, bULID)
 	}
@@ -269,7 +269,7 @@ func decodeMeta(r io.Reader, name string) (metadata.Meta, error) {
 	return meta, nil
 }
 
-func (c *MultitenantCompactor) completeBlockUpload(ctx context.Context, r *http.Request,
+func (c *MultitenantCompactor) completeBlockUpload(ctx context.Context, w http.ResponseWriter, r *http.Request,
 	logger log.Logger, userBkt objstore.Bucket, tenantID string, blockID ulid.ULID) error {
 	level.Debug(logger).Log("msg", "received request to complete block upload", "content_length", r.ContentLength)
 
@@ -295,7 +295,7 @@ func (c *MultitenantCompactor) completeBlockUpload(ctx context.Context, r *http.
 
 	level.Debug(logger).Log("msg", "completing block upload", "files", len(meta.Thanos.Files))
 
-	if err := c.validateBlock(ctx, blockID, tenantID, userBkt, meta); err != nil {
+	if err := c.validateBlock(ctx, w, blockID, tenantID, userBkt, meta); err != nil {
 		return err
 	}
 
@@ -399,7 +399,7 @@ func (c *MultitenantCompactor) uploadMeta(ctx context.Context, logger log.Logger
 	return nil
 }
 
-func (c *MultitenantCompactor) validateBlock(ctx context.Context, blockID ulid.ULID, tenantID string,
+func (c *MultitenantCompactor) validateBlock(ctx context.Context, w http.ResponseWriter, blockID ulid.ULID, tenantID string,
 	userBkt objstore.Bucket, meta metadata.Meta) error {
 	blockDir, err := os.MkdirTemp("", "")
 	if err != nil {
@@ -411,6 +411,7 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, blockID ulid.U
 		}
 	}()
 
+	var progress downloadProgress
 	if err := userBkt.Iter(ctx, blockID.String(), func(pth string) error {
 		if strings.HasSuffix(pth, ".lock") || pth == "meta.json" {
 			return nil
@@ -429,12 +430,18 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, blockID ulid.U
 		defer func() {
 			_ = f.Close()
 		}()
-		if _, err := io.Copy(f, r); err != nil {
+		bytesWritten, err := io.Copy(f, r)
+		if err != nil {
 			return errors.Wrap(err, "failed writing to temp file")
 		}
+		progress.objectCount += 1
+		progress.objectBytes += bytesWritten
 		if err := f.Close(); err != nil {
-			return errors.Wrap(err, "failed writing to temp file")
+			return errors.Wrap(err, "failed to close temp file")
 		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusMultiStatus)
+		json.NewEncoder(w).Encode(progress)
 
 		return nil
 	}); err != nil {
@@ -634,7 +641,7 @@ func (e errBadGateway) Unwrap() error {
 
 func (c *MultitenantCompactor) verifyChunks(cr *chunks.Reader, lset labels.Labels, chnks []chunks.Meta) error {
 	for _, cm := range chnks {
-		ch, err := cr.Chunk(cm.Ref)
+		ch, err := cr.Chunk(cm)
 		if err != nil {
 			return errors.Wrapf(err, "failed to read chunk %d", cm.Ref)
 		}
@@ -708,4 +715,9 @@ func (r bodyReader) Read(b []byte) (int, error) {
 
 func formatTimestamp(ts int64) string {
 	return fmt.Sprintf("%d (%s)", ts, timestamp.Time(ts).UTC().Format(time.RFC3339Nano))
+}
+
+type downloadProgress struct {
+	objectCount int
+	objectBytes int64
 }
