@@ -441,7 +441,9 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, w http.Respons
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusMultiStatus)
-		json.NewEncoder(w).Encode(progress)
+		if err := json.NewEncoder(w).Encode(progress); err != nil {
+			return errors.Wrap(err, "failed to send download progress")
+		}
 
 		return nil
 	}); err != nil {
