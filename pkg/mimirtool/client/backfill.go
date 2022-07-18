@@ -23,31 +23,28 @@ import (
 
 func (c *MimirClient) Backfill(ctx context.Context, blocks []string, logger log.Logger) error {
 	// Upload each block
-	var failed []string
-	var succeeded []string
-	var alreadyExists []string
+	var succeeded, failed, alreadyExists int
+
 	for _, b := range blocks {
 		if err := c.backfillBlock(ctx, b, logger); err != nil {
 			if errors.Is(err, errConflict) {
-				level.Warn(logger).Log("msg", "failed uploading block since it already exists on server",
-					"path", b)
-				alreadyExists = append(alreadyExists, b)
+				level.Warn(logger).Log("msg", "failed uploading block since it already exists on server", "path", b)
+				alreadyExists++
 			} else {
 				level.Warn(logger).Log("msg", "failed uploading block", "path", b, "err", err)
-				failed = append(failed, b)
+				failed++
 			}
 			continue
 		}
 
 		level.Info(logger).Log("msg", "successfully uploaded block", "path", b)
-		succeeded = append(succeeded, b)
+		succeeded++
 	}
 
-	level.Info(logger).Log("msg", "finished uploading block(s)", "succeeded", len(succeeded),
-		"already_exists", len(alreadyExists), "failed", len(failed))
+	level.Info(logger).Log("msg", "finished uploading block(s)", "succeeded", succeeded, "already_exists", alreadyExists, "failed", failed)
 
-	if len(failed) > 0 {
-		return fmt.Errorf("failed to upload %d block(s)", len(failed))
+	if failed > 0 {
+		return fmt.Errorf("blocks failed to upload %d block(s)", failed)
 	}
 
 	return nil
