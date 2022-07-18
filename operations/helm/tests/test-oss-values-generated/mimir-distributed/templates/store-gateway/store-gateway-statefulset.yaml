@@ -10,6 +10,7 @@ metadata:
     app.kubernetes.io/part-of: memberlist
     app.kubernetes.io/version: "2.1.0"
     app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: store-gateway
   annotations:
     {}
   namespace: "citestns"
@@ -19,6 +20,7 @@ spec:
     matchLabels:
       app.kubernetes.io/name: mimir
       app.kubernetes.io/instance: test-oss-values
+      app.kubernetes.io/component: store-gateway
   updateStrategy:
     type: RollingUpdate
   serviceName: test-oss-values-mimir-store-gateway-headless
@@ -30,6 +32,7 @@ spec:
         app.kubernetes.io/version: "2.1.0"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/part-of: memberlist
+        app.kubernetes.io/component: store-gateway
       annotations:
         minio-secret-version: "42"
       namespace: "citestns"
