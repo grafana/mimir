@@ -189,18 +189,21 @@ func checkResponse(r *http.Response) error {
 	if r.StatusCode == http.StatusNotFound {
 		log.WithFields(log.Fields{
 			"status": r.Status,
+			"msg":    msg,
 		}).Debugln(errMsg)
 		return ErrResourceNotFound
 	}
 	if r.StatusCode == http.StatusConflict {
 		log.WithFields(log.Fields{
 			"status": r.Status,
+			"msg":    msg,
 		}).Debugln(errMsg)
 		return errConflict
 	}
 
 	log.WithFields(log.Fields{
 		"status": r.Status,
+		"msg":    msg,
 	}).Errorln(errMsg)
 
 	return errors.New(errMsg)
