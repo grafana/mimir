@@ -506,6 +506,15 @@ func removeLabel(labelName string, labels *[]mimirpb.LabelAdapter) {
 	}
 }
 
+// Remove labels with value=="" from a slice of LabelPairs, updating the slice in-place.
+func removeEmptyLabelValues(labels *[]mimirpb.LabelAdapter) {
+	for i := len(*labels) - 1; i >= 0; i-- {
+		if (*labels)[i].Value == "" {
+			*labels = append((*labels)[:i], (*labels)[i+1:]...)
+		}
+	}
+}
+
 // Returns a boolean that indicates whether or not we want to remove the replica label going forward,
 // and an error that indicates whether we want to accept samples based on the cluster/replica found in ts.
 // nil for the error means accept the sample.
@@ -745,6 +754,9 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		for _, labelName := range d.limits.DropLabels(userID) {
 			removeLabel(labelName, &ts.Labels)
 		}
+
+		// Prometheus strips empty values before storing, but we could get some. Drop them before sharding.
+		removeEmptyLabelValues(&ts.Labels)
 
 		if len(ts.Labels) == 0 {
 			continue

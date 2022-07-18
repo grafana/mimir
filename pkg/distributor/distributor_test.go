@@ -1190,6 +1190,18 @@ func TestDistributor_Push_LabelRemoval(t *testing.T) {
 				{Name: "cluster", Value: "one"},
 			},
 		},
+		// Remove blank labels.
+		{
+			inputSeries: labels.Labels{
+				{Name: "__name__", Value: "some_metric"},
+				{Name: "blank", Value: ""},
+				{Name: "foo", Value: "bar"},
+			},
+			expectedSeries: labels.Labels{
+				{Name: "__name__", Value: "some_metric"},
+				{Name: "foo", Value: "bar"},
+			},
+		},
 		// Don't remove any labels.
 		{
 			removeReplica: false,
