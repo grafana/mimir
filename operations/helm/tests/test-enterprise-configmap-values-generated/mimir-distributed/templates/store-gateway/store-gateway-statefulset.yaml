@@ -7,7 +7,6 @@ metadata:
   labels:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-enterprise-configmap-values
-    app.kubernetes.io/component: store-gateway
     app.kubernetes.io/part-of: memberlist
     app.kubernetes.io/version: "2.1.0"
     app.kubernetes.io/managed-by: Helm
@@ -20,7 +19,6 @@ spec:
     matchLabels:
       app.kubernetes.io/name: mimir
       app.kubernetes.io/instance: test-enterprise-configmap-values
-      app.kubernetes.io/component: store-gateway
   updateStrategy:
     type: RollingUpdate
   serviceName: test-enterprise-configmap-values-mimir-store-gateway-headless
@@ -31,7 +29,6 @@ spec:
         app.kubernetes.io/instance: test-enterprise-configmap-values
         app.kubernetes.io/version: "2.1.0"
         app.kubernetes.io/managed-by: Helm
-        app.kubernetes.io/component: store-gateway
         app.kubernetes.io/part-of: memberlist
       annotations:
         minio-secret-version: "42"
