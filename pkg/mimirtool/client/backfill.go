@@ -14,34 +14,34 @@ import (
 	"path"
 	"path/filepath"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 )
 
-func (c *MimirClient) Backfill(ctx context.Context, blocks []string, logger log.Logger) error {
+func (c *MimirClient) Backfill(ctx context.Context, blocks []string) error {
 	// Upload each block
 	var succeeded, failed, alreadyExists int
 
 	for _, b := range blocks {
-		if err := c.backfillBlock(ctx, b, logger); err != nil {
+		logctx := logrus.WithFields(logrus.Fields{"path": b})
+		if err := c.backfillBlock(ctx, b, logctx); err != nil {
 			if errors.Is(err, errConflict) {
-				level.Warn(logger).Log("msg", "failed uploading block since it already exists on server", "path", b)
+				logctx.Warning("block already exists on the server")
 				alreadyExists++
 			} else {
-				level.Warn(logger).Log("msg", "failed uploading block", "path", b, "err", err)
+				logctx.WithField("error", err).Error("failed uploading block")
 				failed++
 			}
 			continue
 		}
 
-		level.Info(logger).Log("msg", "successfully uploaded block", "path", b)
+		// no logging, backfillBlock already logged result.
 		succeeded++
 	}
 
-	level.Info(logger).Log("msg", "finished uploading block(s)", "succeeded", succeeded, "already_exists", alreadyExists, "failed", failed)
+	logrus.WithFields(logrus.Fields{"succeeded": succeeded, "already_exists": alreadyExists, "failed": failed}).Info("finished uploading blocks")
 
 	if failed > 0 {
 		return fmt.Errorf("blocks failed to upload %d block(s)", failed)
@@ -56,16 +56,16 @@ func closeResp(resp *http.Response) {
 	resp.Body.Close()
 }
 
-func (c *MimirClient) backfillBlock(ctx context.Context, blockDir string, logger log.Logger) error {
+func (c *MimirClient) backfillBlock(ctx context.Context, blockDir string, logctx *logrus.Entry) error {
 	blockMeta, err := getBlockMeta(blockDir)
 	if err != nil {
 		return err
 	}
 
 	blockID := blockMeta.ULID.String()
-	logger = log.With(logger, "user", c.id, "block", blockID)
+	logctx = logctx.WithFields(logrus.Fields{"block": blockID})
 
-	level.Info(logger).Log("msg", "making request to start block upload")
+	logctx.WithField("file", "meta.json").Info("making request to start block upload")
 
 	blockPrefix := path.Join("/api/v1/upload/block", url.PathEscape(blockID))
 
@@ -90,7 +90,7 @@ func (c *MimirClient) backfillBlock(ctx context.Context, blockDir string, logger
 			continue
 		}
 
-		if err := c.uploadBlockFile(tf, blockDir, blockPrefix, logger); err != nil {
+		if err := c.uploadBlockFile(tf, blockDir, blockPrefix, logctx); err != nil {
 			return err
 		}
 	}
@@ -106,12 +106,12 @@ func (c *MimirClient) backfillBlock(ctx context.Context, blockDir string, logger
 			resp.StatusCode, resp.Status)
 	}
 
-	level.Info(logger).Log("msg", "block uploaded successfully")
+	logctx.Info("block uploaded successfully")
 
 	return nil
 }
 
-func (c *MimirClient) uploadBlockFile(tf metadata.File, blockDir, blockPrefix string, logger log.Logger) error {
+func (c *MimirClient) uploadBlockFile(tf metadata.File, blockDir, blockPrefix string, logctx *logrus.Entry) error {
 	pth := filepath.Join(blockDir, filepath.FromSlash(tf.RelPath))
 	f, err := os.Open(pth)
 	if err != nil {
@@ -127,7 +127,8 @@ func (c *MimirClient) uploadBlockFile(tf metadata.File, blockDir, blockPrefix st
 	}
 
 	escapedPath := url.QueryEscape(tf.RelPath)
-	level.Info(logger).Log("msg", "uploading block file", "path", pth, "size", st.Size())
+	logctx.WithFields(logrus.Fields{"file": tf.RelPath, "size": st.Size()}).Info("uploading block file")
+
 	resp, err := c.doRequest(path.Join(blockPrefix, fmt.Sprintf("files?path=%s", escapedPath)),
 		http.MethodPost, f, st.Size())
 	if err != nil {

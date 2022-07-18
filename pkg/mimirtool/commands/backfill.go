@@ -8,15 +8,13 @@ import (
 	"os"
 	"strings"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
+	"github.com/sirupsen/logrus"
 	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/grafana/mimir/pkg/mimirtool/client"
 )
 
 type BackfillCommand struct {
-	logger       log.Logger
 	clientConfig client.Config
 	blocks       blockList
 }
@@ -54,17 +52,19 @@ func (c *BackfillCommand) Register(app *kingpin.Application, envVars EnvVarNames
 	cmd.Flag("tls-cert-path", "TLS client certificate to authenticate with the Grafana Mimir API as part of mTLS").Default("").StringVar(&c.clientConfig.TLS.CertPath)
 	cmd.Flag("tls-key-path", "TLS client certificate private key to authenticate with the Grafana Mimir API as part of mTLS").
 		Default("").StringVar(&c.clientConfig.TLS.KeyPath)
-
-	c.logger = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 }
 
 func (c *BackfillCommand) backfill(k *kingpin.ParseContext) error {
 	ctx := context.Background()
-	level.Info(c.logger).Log("msg", "Backfilling", "blocks", c.blocks.String(), "user", c.clientConfig.ID)
+	logrus.WithFields(logrus.Fields{
+		"blocks": c.blocks.String(),
+		"user":   c.clientConfig.ID,
+	}).Println("Backfilling")
+
 	cli, err := client.New(c.clientConfig)
 	if err != nil {
 		return err
 	}
 
-	return cli.Backfill(ctx, c.blocks, c.logger)
+	return cli.Backfill(ctx, c.blocks)
 }
