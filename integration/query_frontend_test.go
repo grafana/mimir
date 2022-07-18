@@ -650,12 +650,10 @@ func runQueryFrontendWithQueryShardingAndTooManyRequestsTest(t *testing.T, cfg q
 	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
 	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 
-	// Push a series for each user to Mimir.
+	// Push series for the test user to Mimir.
 	now := time.Now()
-
 	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), queryFrontend.HTTPEndpoint(), "", "", userID)
 	require.NoError(t, err)
-
 	var series []prompb.TimeSeries
 	series, _ = generateSeries("series_1", now)
 
