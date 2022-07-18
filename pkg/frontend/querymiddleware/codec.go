@@ -264,7 +264,7 @@ func (prometheusCodec) EncodeRequest(ctx context.Context, r Request) (*http.Requ
 
 func (prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _ Request, logger log.Logger) (Response, error) {
 	var resp PrometheusResponse
-	if r.StatusCode/100 == 5 {
+	if r.StatusCode/100 == 5 || r.StatusCode == http.StatusTooManyRequests {
 		body, _ := ioutil.ReadAll(r.Body)
 		return nil, httpgrpc.ErrorFromHTTPResponse(&httpgrpc.HTTPResponse{
 			Code: int32(r.StatusCode),
