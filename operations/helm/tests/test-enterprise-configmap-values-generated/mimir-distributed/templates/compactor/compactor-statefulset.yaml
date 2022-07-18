@@ -5,7 +5,6 @@ kind: StatefulSet
 metadata:
   name: test-enterprise-configmap-values-mimir-compactor
   labels:
-    helm.sh/chart: mimir-distributed-2.2.0-weekly.192
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-enterprise-configmap-values
     app.kubernetes.io/component: compactor
@@ -28,7 +27,6 @@ spec:
   template:
     metadata:
       labels:
-        helm.sh/chart: mimir-distributed-2.2.0-weekly.192
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-enterprise-configmap-values
         app.kubernetes.io/version: "2.2.0"
@@ -36,7 +34,6 @@ spec:
         app.kubernetes.io/component: compactor
         app.kubernetes.io/part-of: memberlist
       annotations:
-        checksum/config: b13ecbf25680c355d43b34a7c4453270ed7fe35dc6f63db68b56f67ec9bb48f1
         minio-secret-version: "42"
       namespace: "citestns"
     spec:
@@ -79,7 +76,6 @@ spec:
           emptyDir: {}
       containers:
         - name: compactor
-          image: "grafana/enterprise-metrics:r191-708e13a1"
           imagePullPolicy: IfNotPresent
           args:
             - "-target=compactor"
