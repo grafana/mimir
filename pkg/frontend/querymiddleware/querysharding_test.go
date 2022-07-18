@@ -127,6 +127,14 @@ func TestQueryShardingCorrectness(t *testing.T) {
 			query:                  `sum(metric_counter)`,
 			expectedShardedQueries: 1,
 		},
+		"sum() offset": {
+			query:                  `sum(metric_counter offset 5s)`,
+			expectedShardedQueries: 1,
+		},
+		"sum() negative offset": {
+			query:                  `sum(metric_counter offset -5s)`,
+			expectedShardedQueries: 1,
+		},
 		"sum() grouping 'by'": {
 			query:                  `sum by(group_1) (metric_counter)`,
 			expectedShardedQueries: 1,
@@ -322,6 +330,10 @@ func TestQueryShardingCorrectness(t *testing.T) {
 		},
 		"@ modifier and offset": {
 			query:                  `sum by (group_1)(rate(metric_counter[1h] @ end() offset 1m))`,
+			expectedShardedQueries: 1,
+		},
+		"@ modifier and negative offset": {
+			query:                  `sum by (group_1)(rate(metric_counter[1h] @ start() offset -1m))`,
 			expectedShardedQueries: 1,
 		},
 		"label_replace": {
@@ -1149,25 +1161,27 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 	var (
 		engine        = newEngine()
 		engineTimeout = promql.NewEngine(promql.EngineOpts{
-			Logger:             log.NewNopLogger(),
-			Reg:                nil,
-			MaxSamples:         10e6,
-			Timeout:            50 * time.Millisecond,
-			ActiveQueryTracker: nil,
-			LookbackDelta:      lookbackDelta,
-			EnableAtModifier:   true,
+			Logger:               log.NewNopLogger(),
+			Reg:                  nil,
+			MaxSamples:           10e6,
+			Timeout:              50 * time.Millisecond,
+			ActiveQueryTracker:   nil,
+			LookbackDelta:        lookbackDelta,
+			EnableAtModifier:     true,
+			EnableNegativeOffset: true,
 			NoStepSubqueryIntervalFn: func(rangeMillis int64) int64 {
 				return int64(1 * time.Minute / (time.Millisecond / time.Nanosecond))
 			},
 		})
 		engineSampleLimit = promql.NewEngine(promql.EngineOpts{
-			Logger:             log.NewNopLogger(),
-			Reg:                nil,
-			MaxSamples:         1,
-			Timeout:            time.Hour,
-			ActiveQueryTracker: nil,
-			LookbackDelta:      lookbackDelta,
-			EnableAtModifier:   true,
+			Logger:               log.NewNopLogger(),
+			Reg:                  nil,
+			MaxSamples:           1,
+			Timeout:              time.Hour,
+			ActiveQueryTracker:   nil,
+			LookbackDelta:        lookbackDelta,
+			EnableAtModifier:     true,
+			EnableNegativeOffset: true,
 			NoStepSubqueryIntervalFn: func(rangeMillis int64) int64 {
 				return int64(1 * time.Minute / (time.Millisecond / time.Nanosecond))
 			},
@@ -1376,10 +1390,12 @@ func BenchmarkQuerySharding(b *testing.B) {
 			time.Millisecond / 10,
 		} {
 			engine := promql.NewEngine(promql.EngineOpts{
-				Logger:     log.NewNopLogger(),
-				Reg:        nil,
-				MaxSamples: 100000000,
-				Timeout:    time.Minute,
+				Logger:               log.NewNopLogger(),
+				Reg:                  nil,
+				MaxSamples:           100000000,
+				Timeout:              time.Minute,
+				EnableNegativeOffset: true,
+				EnableAtModifier:     true,
 			})
 
 			queryable := newMockShardedQueryable(
@@ -1850,13 +1866,14 @@ func (i *seriesIteratorMock) Warnings() storage.Warnings {
 // newEngine creates and return a new promql.Engine used for testing.
 func newEngine() *promql.Engine {
 	return promql.NewEngine(promql.EngineOpts{
-		Logger:             log.NewNopLogger(),
-		Reg:                nil,
-		MaxSamples:         10e6,
-		Timeout:            1 * time.Hour,
-		ActiveQueryTracker: nil,
-		LookbackDelta:      lookbackDelta,
-		EnableAtModifier:   true,
+		Logger:               log.NewNopLogger(),
+		Reg:                  nil,
+		MaxSamples:           10e6,
+		Timeout:              1 * time.Hour,
+		ActiveQueryTracker:   nil,
+		LookbackDelta:        lookbackDelta,
+		EnableAtModifier:     true,
+		EnableNegativeOffset: true,
 		NoStepSubqueryIntervalFn: func(rangeMillis int64) int64 {
 			return int64(1 * time.Minute / (time.Millisecond / time.Nanosecond))
 		},

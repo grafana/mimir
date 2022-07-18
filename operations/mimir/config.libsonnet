@@ -365,7 +365,7 @@
     alertmanager_enabled: false,
 
     // Enables query-scheduler component, and reconfigures querier and query-frontend to use it.
-    query_scheduler_enabled: false,
+    query_scheduler_enabled: true,
 
     // Enables streaming of chunks from ingesters using blocks.
     // Changing it will not cause new rollout of ingesters, as it gets passed to them via runtime-config.

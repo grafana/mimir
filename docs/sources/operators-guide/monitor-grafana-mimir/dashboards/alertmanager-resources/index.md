@@ -1,6 +1,6 @@
 ---
 aliases:
-  - /../../visualizing-metrics/dashboards/alertmanager-resources/
+  - ../../visualizing-metrics/dashboards/alertmanager-resources/
   - /docs/mimir/latest/operators-guide/monitoring-grafana-mimir/dashboards/alertmanager-resources/
 description: View an example Alertmanager resources dashboard.
 menuTitle: Alertmanager resources

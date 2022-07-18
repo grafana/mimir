@@ -17,6 +17,7 @@ import (
 	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/grafana/mimir/pkg/mimirtool/analyze"
+	"github.com/grafana/mimir/pkg/mimirtool/minisdk"
 )
 
 type GrafanaAnalyzeCommand struct {
@@ -45,7 +46,12 @@ func (cmd *GrafanaAnalyzeCommand) run(k *kingpin.ParseContext) error {
 	}
 
 	for _, link := range boardLinks {
-		board, _, err := c.GetDashboardByUID(ctx, link.UID)
+		data, _, err := c.GetRawDashboardByUID(ctx, link.UID)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%s for %s %s\n", err, link.UID, link.Title)
+			continue
+		}
+		board, err := unmarshalDashboard(data, link)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s for %s %s\n", err, link.UID, link.Title)
 			continue
@@ -59,6 +65,15 @@ func (cmd *GrafanaAnalyzeCommand) run(k *kingpin.ParseContext) error {
 	}
 
 	return nil
+}
+
+func unmarshalDashboard(data []byte, link sdk.FoundBoard) (minisdk.Board, error) {
+	var board minisdk.Board
+	if err := json.Unmarshal(data, &board); err != nil {
+		return minisdk.Board{}, fmt.Errorf("can't unmarshal dashboard %s (%s): %w", link.UID, link.Title, err)
+	}
+
+	return board, nil
 }
 
 func writeOut(mig *analyze.MetricsInGrafana, outputFile string) error {

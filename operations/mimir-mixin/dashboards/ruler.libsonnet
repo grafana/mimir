@@ -2,7 +2,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
 local filename = 'mimir-ruler.json';
 
 (import 'dashboard-utils.libsonnet') {
-  local ruler_config_api_routes_re = '(prometheus|api_prom)_(rules.*|api_v1_(rules|alerts))',
+  local ruler_config_api_routes_re = '(%s)|(%s)' % [
+    // Prometheus API routes which are also exposed by Mimir.
+    '(api_prom_api_v1|prometheus_api_v1)_(rules|alerts|status_buildinfo)',
+    // Mimir-only API routes used for rule configuration.
+    '(api_prom|api_v1|prometheus|prometheus_config_v1)_rules.*',
+  ],
 
   rulerQueries+:: {
     ruleEvaluations: {

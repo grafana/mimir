@@ -3342,11 +3342,6 @@ sharding_ring:
   # Unregister from the ring upon clean shutdown.
   # CLI flag: -store-gateway.sharding-ring.unregister-on-shutdown
   [unregister_on_shutdown: <boolean> | default = true]
-
-# (experimental) Number of OS threads that are dedicated for handling requests.
-# Set to 0 to disable use of dedicated OS threads for handling requests.
-# CLI flag: -store-gateway.thread-pool-size
-[thread_pool_size: <int> | default = 0]
 ```
 
 ### memcached

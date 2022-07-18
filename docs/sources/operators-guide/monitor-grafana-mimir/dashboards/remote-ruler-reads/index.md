@@ -1,6 +1,6 @@
 ---
 aliases:
-  - /../../visualizing-metrics/dashboards/remote-ruler-reads/
+  - ../../visualizing-metrics/dashboards/remote-ruler-reads/
   - /docs/mimir/latest/operators-guide/monitoring-grafana-mimir/dashboards/remote-ruler-reads/
 description: View an example Remote ruler reads dashboard.
 menuTitle: Remote ruler reads

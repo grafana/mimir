@@ -19,33 +19,36 @@ Each project stores blocks in different places and uses slightly different block
 
 For configuration of remote write to Grafana Mimir, refer to [Configuring Prometheus remote write]({{< relref "../operators-guide/secure/authentication-and-authorization.md#configuring-prometheus-remote-write" >}}).
 
-## Uploading historic blocks to the Grafana Mimir storage bucket
+## Uploading historic TSDB blocks to Grafana Mimir
+
+Grafana Mimir supports uploading of historic TSDB blocks, notably from Prometheus.
+In order to enable this functionality, either for all tenants or a specific one, refer to
+[Configuring TSDB block upload]({{< relref "../operators-guide/configure/configure-tsdb-block-upload.md" >}}).
 
 Prometheus stores TSDB blocks in the path specified in the `--storage.tsdb.path` flag.
 
-To find all blocks directories in the TSDB `<STORAGE TSDB PATH>`, run the following command:
+To find all block directories in the TSDB `<STORAGE TSDB PATH>`, run the following command:
 
 ```bash
 find <STORAGE TSDB PATH> -name chunks -exec dirname {} \;
 ```
 
-Grafana Mimir supports multiple tenants and stores blocks with a tenant prefix.
-With multi-tenancy disabled, there is a single tenant called `anonymous`.
+Grafana Mimir supports multiple tenants and stores blocks per tenant. With multi-tenancy disabled, there
+is a single tenant called `anonymous`.
 
-Copy each directory output from the previous command to the Grafana Mimir object storage bucket with
-your tenant prefix.
-
-- For AWS S3, use the `aws` tool in the following command:
+Use Grafana mimirtool to upload each block, such as those identified by the previous command, to Grafana Mimir:
 
 ```bash
-aws s3 cp <DIRECTORY> s3://<TENANT>/<DIRECTORY>
+mimirtool backfill --address=http://<mimir-hostname> --id=<tenant> <block1> <block2>...
 ```
 
-- For Google Cloud Storage (GCS), use the `gsutil` tool in the following command:
+> **Note**: If you need to authenticate against Grafana Mimir, you can provide an API key via the `--key` flag,
+> for example `--key=$(cat token.txt)`.
 
-```bash
-gsutil -m cp -r <DIRECTORY> gs://<TENANT>/<DIRECTORY>
-```
+Grafana Mimir performs some sanitization and validation of each block's metadata.
+As a result, it rejects Thanos blocks due to unsupported labels.
+As a workaround, if you need to upload Thanos blocks, upload the blocks directly to the
+Grafana Mimir blocks bucket, prefixed by `<tenant>/<block ID>/`.
 
 ## Block metadata
 
@@ -72,10 +75,10 @@ This means that blocks that were originally created by Thanos will not include t
 If you need to have external labels in your query results, this is currently not possible to achieve in Grafana Mimir.
 
 **Grafana Mimir will not respect deduplication labels configured in Thanos when querying the blocks.**
-For the best query performance please only upload Thanos blocks from single Prometheus replica from each HA pair.
+For best query performance, only upload Thanos blocks from a single Prometheus replica from each HA pair.
 If you upload blocks from both replicas, the query results returned by Mimir will include samples from both replicas.
 
-> **Note**: Thanos provides `thanos tools bucket rewrite` tool for manipulating blocks in the bucket.
+> **Note**: Thanos provides the `thanos tools bucket rewrite` tool for manipulating blocks in the bucket.
 > It may be possible to use this tool to embed external labels into blocks.
 > Please refer to [`thanos tools bucket rewrite` documentation](https://thanos.io/tip/components/tools.md/#bucket-rewrite) for more details.
 
