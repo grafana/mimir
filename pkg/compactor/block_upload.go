@@ -434,8 +434,8 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, w http.Respons
 		if err != nil {
 			return errors.Wrap(err, "failed writing to temp file")
 		}
-		progress.objectCount++
-		progress.objectBytes += bytesWritten
+		progress.ObjectCount++
+		progress.ObjectBytes += bytesWritten
 		if err := f.Close(); err != nil {
 			return errors.Wrap(err, "failed to close temp file")
 		}
@@ -720,6 +720,6 @@ func formatTimestamp(ts int64) string {
 }
 
 type downloadProgress struct {
-	objectCount int
-	objectBytes int64
+	ObjectCount int
+	ObjectBytes int64
 }
