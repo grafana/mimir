@@ -434,7 +434,7 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, w http.Respons
 		if err != nil {
 			return errors.Wrap(err, "failed writing to temp file")
 		}
-		progress.objectCount += 1
+		progress.objectCount++
 		progress.objectBytes += bytesWritten
 		if err := f.Close(); err != nil {
 			return errors.Wrap(err, "failed to close temp file")
