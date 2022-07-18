@@ -33,7 +33,7 @@ spec:
         name: storage
         {{- if .Values.ingester.persistentVolume.annotations }}
         annotations:
-          {{ toYaml .Values.ingester.persistentVolume.annotations | nindent 10 }}
+          {{- toYaml .Values.ingester.persistentVolume.annotations | nindent 10 }}
         {{- end }}
       spec:
         {{- if .Values.ingester.persistentVolume.storageClass }}
@@ -112,7 +112,7 @@ spec:
             - "-config.file=/etc/mimir/mimir.yaml"
             {{- if .Values.ingester.zone_aware_replication.enabled }}
             - "-ingester.ring.instance-availability-zone={{ $zoneName }}"
-            {{- else -}}
+            {{- else }}
             - "-ingester.ring.instance-availability-zone=zone-default"
             {{- end }}
             {{- range $key, $value := .Values.ingester.extraArgs }}
