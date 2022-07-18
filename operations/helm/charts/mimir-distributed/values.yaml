@@ -1323,6 +1323,10 @@ minio:
   rootPassword: supersecret
   # Changed the mc config path to '/tmp' from '/etc' as '/etc' is only writable by root and OpenShift will not permit this.
   configPathmc: "/tmp/minio/mc/"
+  image:
+    repository: quay.io/minio/minio
+    tag: RELEASE.2022-05-08T23-50-31Z
+    pullPolicy: IfNotPresent
 
 # Configuration for nginx gateway
 nginx:
