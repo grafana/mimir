@@ -9,7 +9,9 @@ package querymiddleware
 import (
 	"bytes"
 	"context"
+	jsonstd "encoding/json"
 	"io"
+	"io/ioutil"
 	"math/rand"
 	"net/http"
 	"strconv"
@@ -649,6 +651,23 @@ func BenchmarkPrometheusCodec_EncodeResponse(b *testing.B) {
 	}
 }
 
+func TestPrometheusResponse_JSONEncode(t *testing.T) {
+	// Generate mocked response.
+	res := mockPrometheusResponse(1000, 1000)
+
+	resp, err := PrometheusCodec.EncodeResponse(context.Background(), res)
+	require.NoError(t, err)
+
+	out, err := ioutil.ReadAll(resp.Body)
+	require.NoError(t, err)
+
+	stdOut, err := jsonstd.Marshal(res)
+	require.NoError(t, err)
+
+	// Compare against standard json output.
+	require.Equal(t, 0, bytes.Compare(out, stdOut))
+}
+
 func mockPrometheusResponse(numSeries, numSamplesPerSeries int) *PrometheusResponse {
 	stream := make([]SampleStream, numSeries)
 	for s := 0; s < numSeries; s++ {
@@ -677,7 +696,7 @@ func mockPrometheusResponse(numSeries, numSamplesPerSeries int) *PrometheusRespo
 	return &PrometheusResponse{
 		Status: "success",
 		Data: &PrometheusData{
-			ResultType: "vector",
+			ResultType: "matrix",
 			Result:     stream,
 		},
 	}
