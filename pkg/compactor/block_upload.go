@@ -9,7 +9,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"path"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -80,7 +83,7 @@ func (c *MultitenantCompactor) HandleBlockUpload(w http.ResponseWriter, r *http.
 	}
 
 	if shouldComplete {
-		err = c.completeBlockUpload(ctx, r, logger, userBkt, bULID)
+		err = c.completeBlockUpload(ctx, r, w, logger, userBkt, bULID)
 	} else {
 		err = c.createBlockUpload(ctx, r, logger, userBkt, tenantID, bULID)
 	}
@@ -261,7 +264,7 @@ func decodeMeta(r io.Reader, name string) (metadata.Meta, error) {
 	return meta, nil
 }
 
-func (c *MultitenantCompactor) completeBlockUpload(ctx context.Context, r *http.Request,
+func (c *MultitenantCompactor) completeBlockUpload(ctx context.Context, r *http.Request, w http.ResponseWriter,
 	logger log.Logger, userBkt objstore.Bucket, blockID ulid.ULID) error {
 	level.Debug(logger).Log("msg", "received request to complete block upload", "content_length", r.ContentLength)
 
@@ -286,6 +289,11 @@ func (c *MultitenantCompactor) completeBlockUpload(ctx context.Context, r *http.
 	}
 
 	level.Debug(logger).Log("msg", "completing block upload", "files", len(meta.Thanos.Files))
+
+	// Validate blocks by downloading locally and sanitizing
+	if err := c.validateBlock(ctx, w, blockID, userBkt, meta); err != nil {
+		return err
+	}
 
 	// Upload meta file so block is considered complete
 	if err := c.uploadMeta(ctx, logger, meta, blockID, block.MetaFilename, userBkt); err != nil {
@@ -387,6 +395,76 @@ func (c *MultitenantCompactor) uploadMeta(ctx context.Context, logger log.Logger
 	return nil
 }
 
+func (c *MultitenantCompactor) validateBlock(ctx context.Context, w http.ResponseWriter, blockID ulid.ULID,
+	userBkt objstore.Bucket, meta metadata.Meta) error {
+	blockDir, err := os.MkdirTemp(filepath.Join(c.compactorCfg.DataDir), "upload")
+	if err != nil {
+		return errors.Wrap(err, "failed to create temp dir")
+	}
+	defer func() {
+		if err := os.RemoveAll(blockDir); err != nil {
+			level.Warn(c.logger).Log("msg", "failed to remove temp dir", "path", blockDir, "err", err)
+		}
+	}()
+
+	rps := newRequestProgressSender(w)
+	progress := ValidationProgress{Timestamp: time.Now().Unix(), Message: "starting block download"}
+	if err = rps.SendValidationProgress(progress); err != nil {
+		level.Warn(c.logger).Log("msg", "error sending validation progress", "status", progress.Message)
+	}
+	progress.Message = "block download in progress"
+	if err := userBkt.Iter(ctx, blockID.String(), func(pth string) error {
+		if strings.HasSuffix(pth, ".lock") || pth == "meta.json" {
+			return nil
+		}
+
+		r, err := userBkt.Get(ctx, pth)
+		if err != nil {
+			return errors.Wrap(err, fmt.Sprintf("failed to get object %q from object storage", pth))
+		}
+
+		f, err := os.Create(filepath.Join(blockDir, pth))
+		if err != nil {
+			return errors.Wrap(err, "failed creating temp file")
+		}
+		defer func() {
+			_ = f.Close()
+		}()
+		bytesWritten, err := io.Copy(f, r)
+		if err != nil {
+			return errors.Wrap(err, "failed writing to temp file")
+		}
+		progress.ObjectCount++
+		progress.ObjectBytes += bytesWritten
+		progress.Timestamp = time.Now().Unix()
+		if err := f.Close(); err != nil {
+			return errors.Wrap(err, "failed to close temp file")
+		}
+		if err = rps.SendValidationProgress(progress); err != nil {
+			level.Warn(c.logger).Log("msg", "error sending validation progress", "status", progress.Message)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrapf(err, "failed to iterate block %s", blockID.String())
+	}
+	progress.Message = "block download complete"
+	progress.Timestamp = time.Now().Unix()
+	if err = rps.SendValidationProgress(progress); err != nil {
+		level.Warn(c.logger).Log("msg", "error sending validation progress", "status", progress.Message)
+	}
+
+	// TODO: basic validation of file names and sizes
+	progress.Finished = true
+
+	progress.Success = progress.Finished
+	progress.Message = "block validation complete"
+	if err = rps.SendValidationProgress(progress); err != nil {
+		level.Warn(c.logger).Log("msg", "error sending validation progress", "status", progress.Message)
+	}
+
+	return nil
+}
+
 type httpError struct {
 	message    string
 	statusCode int
@@ -412,4 +490,36 @@ func (r bodyReader) ObjectSize() (int64, error) {
 // Read implements io.Reader.
 func (r bodyReader) Read(b []byte) (int, error) {
 	return r.r.Body.Read(b)
+}
+
+type ValidationProgress struct {
+	Timestamp   int64  // current time
+	ObjectCount int64  // objects downloaded
+	ObjectBytes int64  // total bytes downloaded
+	Finished    bool   // will be set to true for last message
+	Success     bool   // only when finished = true
+	Message     string // message for the user.
+}
+
+type progressSender interface {
+	SendValidationProgress(p ValidationProgress) error
+}
+
+type requestProgressSender struct {
+	resp http.ResponseWriter
+	enc  *json.Encoder
+}
+
+func newRequestProgressSender(w http.ResponseWriter) *requestProgressSender {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	return &requestProgressSender{
+		resp: w,
+		enc:  json.NewEncoder(w),
+	}
+}
+
+func (rps *requestProgressSender) SendValidationProgress(p ValidationProgress) error {
+	return rps.enc.Encode(p)
 }
