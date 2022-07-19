@@ -149,6 +149,20 @@ overrides:
 		require.Regexp(t, fmt.Sprintf("msg=\"failed uploading block\"[^\n]+path=%s", badBlockPath), output)
 		require.Error(t, err)
 	}
+
+	{
+		// Let's try block with external labels. Mimir currently rejects those.
+		extLabels := labels.FromStrings("ext", "labels")
+
+		badBlock, err := testhelper.CreateBlock(context.Background(), tmpDir, []labels.Labels{labels.FromStrings("test", "bad")}, 100, blockEnd.Add(-2*time.Hour).UnixMilli(), blockEnd.UnixMilli(), extLabels, 0, metadata.NoneFunc)
+		require.NoError(t, err)
+		badBlockPath := filepath.Join(tmpDir, badBlock.String())
+
+		output, err := runMimirtoolBackfill(t, "--address", compactorURL, "--id", "anonymous", badBlockPath)
+		require.Contains(t, output, "unsupported external label: ext")
+		require.Error(t, err)
+	}
+
 }
 
 func verifyBlock(t *testing.T, client objstore.Bucket, ulid ulid.ULID, localPath string) {
