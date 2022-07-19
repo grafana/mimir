@@ -5,15 +5,12 @@
 package integration
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
-	"sync"
 	"testing"
 	"time"
 
@@ -37,6 +34,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/s3"
 	"github.com/grafana/mimir/pkg/storegateway/testhelper"
+	util_test "github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestMimirtoolBackfill(t *testing.T) {
@@ -195,7 +193,7 @@ func runMimirtoolBackfill(t *testing.T, args ...string) (string, error) {
 		logrus.SetOutput(os.Stderr)
 	}()
 
-	co := captureOutput(t)
+	co := util_test.CaptureOutput(t)
 	// mimirtool uses logrus, which has global logger. We reinitialize it to use our captured Stderr.
 	logrus.SetOutput(os.Stderr)
 
@@ -211,55 +209,6 @@ func runMimirtoolBackfill(t *testing.T, args ...string) (string, error) {
 
 	stdout, stderr := co.Done()
 	return stdout + stderr, err
-}
-
-type capturedOutput struct {
-	stdoutBuf bytes.Buffer
-	stderrBuf bytes.Buffer
-
-	wg                         sync.WaitGroup
-	stdoutReader, stdoutWriter *os.File
-	stderrReader, stderrWriter *os.File
-}
-
-func captureOutput(t *testing.T) *capturedOutput {
-	stdoutR, stdoutW, err := os.Pipe()
-	require.NoError(t, err)
-	os.Stdout = stdoutW
-
-	stderrR, stderrW, err := os.Pipe()
-	require.NoError(t, err)
-	os.Stderr = stderrW
-
-	co := &capturedOutput{
-		stdoutReader: stdoutR,
-		stdoutWriter: stdoutW,
-		stderrReader: stderrR,
-		stderrWriter: stderrW,
-	}
-	co.wg.Add(1)
-	go func() {
-		defer co.wg.Done()
-		_, _ = io.Copy(&co.stdoutBuf, stdoutR)
-	}()
-
-	co.wg.Add(1)
-	go func() {
-		defer co.wg.Done()
-		_, _ = io.Copy(&co.stderrBuf, stderrR)
-	}()
-
-	return co
-}
-
-func (co *capturedOutput) Done() (stdout string, stderr string) {
-	// we need to close writers for readers to stop
-	_ = co.stdoutWriter.Close()
-	_ = co.stderrWriter.Close()
-
-	co.wg.Wait()
-
-	return co.stdoutBuf.String(), co.stderrBuf.String()
 }
 
 func getURL(url string) (string, error) {
