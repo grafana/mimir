@@ -27,6 +27,7 @@
 * [BUGFIX] Ruler: return proper `*status.Status` error when running in remote operational mode. #2417
 * [BUGFIX] Alertmanager: ensure the configured `-alertmanager.web.external-url` is a full URL, including the scheme and hostname. #2381
 * [BUGFIX] Memberlist: fix problem with loss of some packets, typically ring updates when instances were removed from the ring during shutdown. #2418
+* [BUGFIX] Ingester: fix misfiring `MimirIngesterHasUnshippedBlocks` and stale `cortex_ingester_oldest_unshipped_block_timestamp_seconds` when some block uploads fail. #2435
 
 ### Mixin
 
