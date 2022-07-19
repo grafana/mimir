@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"path"
@@ -417,13 +418,17 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, w http.Respons
 		if strings.HasSuffix(pth, ".lock") || pth == "meta.json" {
 			return nil
 		}
+		fname := filepath.Join(blockDir, pth)
+		if pth == uploadingMetaFilename {
+			fname = filepath.Join(blockDir, block.MetaFilename) // rename to final meta.json in temp dir
+		}
 
 		r, err := userBkt.Get(ctx, pth)
 		if err != nil {
 			return errors.Wrap(err, fmt.Sprintf("failed to get object %q from object storage", pth))
 		}
 
-		f, err := os.Create(filepath.Join(blockDir, pth))
+		f, err := os.Create(fname)
 		if err != nil {
 			return errors.Wrap(err, "failed creating temp file")
 		}
@@ -453,7 +458,38 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, w http.Respons
 		level.Warn(c.logger).Log("msg", "error sending validation progress", "status", progress.Message)
 	}
 
-	// TODO: basic validation of file names and sizes
+	// Read metadata file, populate mop of file paths and sizes
+	var blockMetadata metadata.Meta
+	var fileStats map[string]int64
+	file, err := ioutil.ReadFile(filepath.Join(blockDir, block.MetaFilename))
+	if err != nil {
+		return errors.Wrap(err, "error reading block metadata")
+	}
+	if err = json.Unmarshal(file, &blockMetadata); err != nil {
+		return errors.Wrap(err, "error reading block metadata json")
+	}
+	// populate relative path to file size map
+	for _, f := range blockMetadata.Thanos.Files {
+		fileStats[f.RelPath] = f.SizeBytes
+	}
+
+	// Check against downloaded names and sizes. Sizes are determined via OS level "stat" command
+	blockFiles, err := block.GatherFileStats(blockDir, metadata.NoneFunc, c.logger)
+	if err != nil {
+		return errors.Wrap(err, "error gathering block file stats")
+	}
+	for _, f := range blockFiles {
+		if f.RelPath == block.MetaFilename {
+			continue
+		}
+		if val, ok := fileStats[f.RelPath]; ok {
+			if val != f.SizeBytes {
+				return errors.Wrap(err, fmt.Sprintf("file size mismatch for %s", f.RelPath))
+			}
+		} else {
+			return errors.Wrap(err, fmt.Sprintf("file not in metadata %s", f.RelPath))
+		}
+	}
 	progress.Finished = true
 
 	progress.Success = progress.Finished
@@ -499,10 +535,6 @@ type ValidationProgress struct {
 	Finished    bool   // will be set to true for last message
 	Success     bool   // only when finished = true
 	Message     string // message for the user.
-}
-
-type progressSender interface {
-	SendValidationProgress(p ValidationProgress) error
 }
 
 type requestProgressSender struct {
