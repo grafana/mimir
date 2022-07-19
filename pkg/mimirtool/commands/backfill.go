@@ -44,14 +44,37 @@ func (l blockList) IsCumulative() bool {
 func (c *BackfillCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
 	cmd := app.Command("backfill", "Upload Prometheus TSDB blocks to Grafana Mimir.")
 	cmd.Action(c.backfill)
-	cmd.Arg("block", "block to upload").Required().SetValue(&c.blocks)
-	cmd.Flag("address", "Address of the Grafana Mimir cluster").Required().StringVar(&c.clientConfig.Address)
-	cmd.Flag("id", "Grafana Mimir tenant ID").Required().StringVar(&c.clientConfig.ID)
-	cmd.Flag("key", "API key to use when contacting Grafana Mimir").Default("").StringVar(&c.clientConfig.Key)
-	cmd.Flag("tls-ca-path", "TLS CA certificate to verify Grafana Mimir API as part of mTLS").Default("").StringVar(&c.clientConfig.TLS.CAPath)
-	cmd.Flag("tls-cert-path", "TLS client certificate to authenticate with the Grafana Mimir API as part of mTLS").Default("").StringVar(&c.clientConfig.TLS.CertPath)
-	cmd.Flag("tls-key-path", "TLS client certificate private key to authenticate with the Grafana Mimir API as part of mTLS").
-		Default("").StringVar(&c.clientConfig.TLS.KeyPath)
+	cmd.Arg("blockDir", "block to upload").Required().SetValue(&c.blocks)
+
+	cmd.Flag("address", "Address of the Grafana Mimir cluster; alternatively, set "+envVars.Address+".").
+		Envar(envVars.Address).
+		Required().
+		StringVar(&c.clientConfig.Address)
+
+	cmd.Flag("id", "Grafana Mimir tenant ID; alternatively, set "+envVars.TenantID+".").
+		Envar(envVars.TenantID).
+		Required().
+		StringVar(&c.clientConfig.ID)
+
+	cmd.Flag("key", "API key to use when contacting Grafana Mimir; alternatively, set "+envVars.APIKey+".").
+		Default("").
+		Envar(envVars.APIKey).
+		StringVar(&c.clientConfig.Key)
+
+	cmd.Flag("tls-ca-path", "TLS CA certificate to verify Grafana Mimir API as part of mTLS; alternatively, set "+envVars.TLSCAPath+".").
+		Default("").
+		Envar(envVars.TLSCAPath).
+		StringVar(&c.clientConfig.TLS.CAPath)
+
+	cmd.Flag("tls-cert-path", "TLS client certificate to authenticate with the Grafana Mimir API as part of mTLS; alternatively, set "+envVars.TLSCertPath+".").
+		Default("").
+		Envar(envVars.TLSCertPath).
+		StringVar(&c.clientConfig.TLS.CertPath)
+
+	cmd.Flag("tls-key-path", "TLS client certificate private key to authenticate with the Grafana Mimir API as part of mTLS; alternatively, set "+envVars.TLSKeyPath+".").
+		Default("").
+		Envar(envVars.TLSKeyPath).
+		StringVar(&c.clientConfig.TLS.KeyPath)
 }
 
 func (c *BackfillCommand) backfill(k *kingpin.ParseContext) error {
