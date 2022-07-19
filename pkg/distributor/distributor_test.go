@@ -709,12 +709,12 @@ func TestDistributor_PushInstanceLimits(t *testing.T) {
 			pushes: []testPush{
 				{samples: 10, expectedError: nil},
 			},
-			metricNames: []string{instanceLimitsMetric, "cortex_distributor_inflight_push_requests_size"},
+			metricNames: []string{instanceLimitsMetric, "cortex_distributor_inflight_push_requests_bytes"},
 
 			expectedMetrics: `
-				# HELP cortex_distributor_inflight_push_requests_size Current sum of inflight push requests in distributor in bytes.
-				# TYPE cortex_distributor_inflight_push_requests_size gauge
-				cortex_distributor_inflight_push_requests_size 0
+				# HELP cortex_distributor_inflight_push_requests_bytes Current sum of inflight push requests in distributor in bytes.
+				# TYPE cortex_distributor_inflight_push_requests_bytes gauge
+				cortex_distributor_inflight_push_requests_bytes 0
 
 				# HELP cortex_distributor_instance_limits Instance limits used by this distributor.
 				# TYPE cortex_distributor_instance_limits gauge

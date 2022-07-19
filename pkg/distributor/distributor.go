@@ -333,7 +333,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		return float64(d.inflightPushRequests.Load())
 	})
 	promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "cortex_distributor_inflight_push_requests_size",
+		Name: "cortex_distributor_inflight_push_requests_bytes",
 		Help: "Current sum of inflight push requests in distributor in bytes.",
 	}, func() float64 {
 		return float64(d.inflightPushRequestsBytes.Load())
