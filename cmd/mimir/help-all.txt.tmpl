@@ -801,7 +801,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.ha-tracker.failover-timeout duration
     	If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout (default 30s)
   -distributor.ha-tracker.max-clusters int
-    	Maximum number of clusters that HA tracker will keep track of for a single tenant. 0 to disable the limit.
+    	Maximum number of clusters that HA tracker will keep track of for a single tenant. 0 to disable the limit. (default 100)
   -distributor.ha-tracker.multi.mirror-enabled
     	Mirror writes to secondary store.
   -distributor.ha-tracker.multi.mirror-timeout duration

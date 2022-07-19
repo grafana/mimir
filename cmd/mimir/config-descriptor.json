@@ -2544,7 +2544,7 @@
           "required": false,
           "desc": "Maximum number of clusters that HA tracker will keep track of for a single tenant. 0 to disable the limit.",
           "fieldValue": null,
-          "fieldDefaultValue": 0,
+          "fieldDefaultValue": 100,
           "fieldFlag": "distributor.ha-tracker.max-clusters",
           "fieldType": "int"
         },

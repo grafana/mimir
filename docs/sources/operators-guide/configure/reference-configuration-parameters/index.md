@@ -2321,7 +2321,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # Maximum number of clusters that HA tracker will keep track of for a single
 # tenant. 0 to disable the limit.
 # CLI flag: -distributor.ha-tracker.max-clusters
-[ha_max_clusters: <int> | default = 0]
+[ha_max_clusters: <int> | default = 100]
 
 # (advanced) This flag can be used to specify label names that to drop during
 # sample ingestion within the distributor and can be repeated in order to drop
