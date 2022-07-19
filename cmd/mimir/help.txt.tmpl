@@ -309,7 +309,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.ha-tracker.etcd.username string
     	Etcd username.
   -distributor.ha-tracker.max-clusters int
-    	Maximum number of clusters that HA tracker will keep track of for a single tenant. 0 to disable the limit.
+    	Maximum number of clusters that HA tracker will keep track of for a single tenant. 0 to disable the limit. (default 100)
   -distributor.ha-tracker.replica string
     	Prometheus label to look for in samples to identify a Prometheus HA replica. (default "__replica__")
   -distributor.ha-tracker.store string
