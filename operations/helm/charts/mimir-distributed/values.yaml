@@ -845,7 +845,7 @@ query_scheduler:
       cpu: 100m
       memory: 128Mi
 
-  # Additional query-frontend container arguments, e.g. log level (debug, info, warn, error)
+  # Additional query-scheduler container arguments, e.g. log level (debug, info, warn, error)
   extraArgs: {}
 
   # Pod Labels
