@@ -140,7 +140,7 @@ func (c *Client) PushOTLP(timeseries []prompb.TimeSeries) (*http.Response, error
 	}
 
 	// Create HTTP request
-	req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/api/v1/push/otlp/v1/metrics", c.distributorAddress), bytes.NewReader(data))
+	req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/otlp/v1/metrics", c.distributorAddress), bytes.NewReader(data))
 	if err != nil {
 		return nil, err
 	}

@@ -359,19 +359,6 @@
                         }
                      },
                      {
-                        "id": "calculateField",
-                        "options": {
-                           "alias": "Status",
-                           "binary": {
-                              "left": "Last run",
-                              "operator": "*",
-                              "right": 1
-                           },
-                           "mode": "binary",
-                           "replaceFields": false
-                        }
-                     },
-                     {
                         "id": "sortBy",
                         "options": {
                            "sort": [
@@ -598,19 +585,6 @@
                         }
                      },
                      {
-                        "id": "calculateField",
-                        "options": {
-                           "alias": "Status",
-                           "binary": {
-                              "left": "Last run",
-                              "operator": "*",
-                              "right": 1
-                           },
-                           "mode": "binary",
-                           "replaceFields": false
-                        }
-                     },
-                     {
                         "id": "sortBy",
                         "options": {
                            "sort": [
@@ -619,6 +593,32 @@
                                  "field": "Last run"
                               }
                            ]
+                        }
+                     },
+                     {
+                        "id": "calculateField",
+                        "options": {
+                           "alias": "One",
+                           "binary": {
+                              "left": "Last run",
+                              "operator": "/",
+                              "right": "Last run"
+                           },
+                           "mode": "binary",
+                           "replaceFields": false
+                        }
+                     },
+                     {
+                        "id": "calculateField",
+                        "options": {
+                           "alias": "Status",
+                           "binary": {
+                              "left": "Last run",
+                              "operator": "*",
+                              "right": "One"
+                           },
+                           "mode": "binary",
+                           "replaceFields": false
                         }
                      },
                      {
