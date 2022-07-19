@@ -42,7 +42,7 @@ func (l blockList) IsCumulative() bool {
 }
 
 func (c *BackfillCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
-	cmd := app.Command("backfill", "Upload metrics blocks to Grafana Mimir.")
+	cmd := app.Command("backfill", "Upload Prometheus TSDB blocks to Grafana Mimir.")
 	cmd.Action(c.backfill)
 	cmd.Arg("block", "block to upload").Required().SetValue(&c.blocks)
 	cmd.Flag("address", "Address of the Grafana Mimir cluster").Required().StringVar(&c.clientConfig.Address)
