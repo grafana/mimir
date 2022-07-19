@@ -206,9 +206,10 @@ func newQueryTripperware(
 	if cfg.ShardedQueries {
 		// Disable concurrency limits for sharded queries.
 		engineOpts.ActiveQueryTracker = nil
+		engine := promql.NewEngine(engineOpts)
 		queryshardingMiddleware := newQueryShardingMiddleware(
 			log,
-			promql.NewEngine(engineOpts),
+			engine,
 			limits,
 			registerer,
 		)
@@ -219,6 +220,7 @@ func newQueryTripperware(
 		)
 		queryInstantMiddleware = append(
 			queryInstantMiddleware,
+			newSplitByIntervalMiddleware(true, cfg.SplitQueriesByInterval, limits, log, engine),
 			newInstrumentMiddleware("querysharding", metrics, log),
 			queryshardingMiddleware,
 		)
