@@ -18,9 +18,9 @@ spec:
   replicas: 1
   selector:
     matchLabels:
-    app.kubernetes.io/name: mimir
-    app.kubernetes.io/instance: test-enterprise-values
-    app.kubernetes.io/component: alertmanager
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: test-enterprise-values
+      app.kubernetes.io/component: alertmanager
   updateStrategy:
     type: RollingUpdate
   serviceName: test-enterprise-values-mimir-alertmanager

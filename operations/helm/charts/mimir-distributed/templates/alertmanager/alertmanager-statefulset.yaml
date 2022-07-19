@@ -18,7 +18,7 @@ spec:
   replicas: {{ .Values.alertmanager.replicas }}
   selector:
     matchLabels:
-      {{- include "mimir.zonedSelectorLabels" $args | nindent 4 }}
+      {{- include "mimir.zonedSelectorLabels" $args | nindent 6 }}
   updateStrategy:
     {{- if .Values.store_gateway.zone_aware_replication.enabled }}
     type: OnDelete
