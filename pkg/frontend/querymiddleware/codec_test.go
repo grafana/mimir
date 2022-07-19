@@ -13,6 +13,7 @@ import (
 	"math/rand"
 	"net/http"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/go-kit/log"
@@ -21,6 +22,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/user"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
@@ -112,6 +114,33 @@ type prometheusAPIResponse struct {
 type prometeheusResponseData struct {
 	Type   model.ValueType `json:"resultType"`
 	Result model.Value     `json:"result"`
+}
+
+func TestDecodeFailedResponse(t *testing.T) {
+	t.Run("internal error", func(t *testing.T) {
+		_, err := PrometheusCodec.DecodeResponse(context.Background(), &http.Response{
+			StatusCode: http.StatusInternalServerError,
+			Body:       ioutil.NopCloser(strings.NewReader("something failed")),
+		}, nil, log.NewNopLogger())
+		require.Error(t, err)
+
+		resp, ok := httpgrpc.HTTPResponseFromError(err)
+		require.True(t, ok, "Error should have an HTTPResponse encoded")
+		require.Equal(t, int32(http.StatusInternalServerError), resp.Code)
+	})
+
+	t.Run("too many requests", func(t *testing.T) {
+		_, err := PrometheusCodec.DecodeResponse(context.Background(), &http.Response{
+			StatusCode: http.StatusTooManyRequests,
+			Body:       ioutil.NopCloser(strings.NewReader("something failed")),
+		}, nil, log.NewNopLogger())
+		require.Error(t, err)
+
+		require.True(t, apierror.IsAPIError(err))
+		resp, ok := apierror.HTTPResponseFromError(err)
+		require.True(t, ok, "Error should have an HTTPResponse encoded")
+		require.Equal(t, int32(http.StatusTooManyRequests), resp.Code)
+	})
 }
 
 func TestResponseRoundtrip(t *testing.T) {
