@@ -87,11 +87,11 @@ type prometheusChunkIterator struct {
 	it chunkenc.Iterator
 }
 
-func (p *prometheusChunkIterator) Scan() bool {
+func (p *prometheusChunkIterator) Scan() chunkenc.ValueType {
 	return p.it.Next()
 }
 
-func (p *prometheusChunkIterator) FindAtOrAfter(time model.Time) bool {
+func (p *prometheusChunkIterator) FindAtOrAfter(time model.Time) chunkenc.ValueType {
 	// FindAtOrAfter must return OLDEST value at given time. That means we need to start with a fresh iterator,
 	// otherwise we cannot guarantee OLDEST.
 	p.it = p.c.Iterator(p.it)
@@ -114,7 +114,7 @@ func (p *prometheusChunkIterator) Batch(size int) Batch {
 		batch.Timestamps[j] = t
 		batch.Values[j] = v
 		j++
-		if j < size && !p.it.Next() {
+		if j < size && p.it.Next() == chunkenc.ValNone {
 			break
 		}
 	}
@@ -129,8 +129,8 @@ func (p *prometheusChunkIterator) Err() error {
 
 type errorIterator string
 
-func (e errorIterator) Scan() bool                         { return false }
-func (e errorIterator) FindAtOrAfter(time model.Time) bool { return false }
-func (e errorIterator) Value() model.SamplePair            { panic("no values") }
-func (e errorIterator) Batch(size int) Batch               { panic("no values") }
-func (e errorIterator) Err() error                         { return errors.New(string(e)) }
+func (e errorIterator) Scan() chunkenc.ValueType                         { return chunkenc.ValNone }
+func (e errorIterator) FindAtOrAfter(time model.Time) chunkenc.ValueType { return chunkenc.ValNone }
+func (e errorIterator) Value() model.SamplePair                          { panic("no values") }
+func (e errorIterator) Batch(size int) Batch                             { panic("no values") }
+func (e errorIterator) Err() error                                       { return errors.New(string(e)) }

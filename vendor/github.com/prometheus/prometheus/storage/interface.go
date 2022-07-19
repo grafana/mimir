@@ -19,6 +19,7 @@ import (
 	"fmt"
 
 	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -205,6 +206,9 @@ func (f QueryableFunc) Querier(ctx context.Context, mint, maxt int64) (Querier, 
 // It must be completed with a call to Commit or Rollback and must not be reused afterwards.
 //
 // Operations on the Appender interface are not goroutine-safe.
+//
+// The type of samples (float64, histogram, etc) appended for a given series must remain same within an Appender.
+// The behaviour is undefined if samples of different types are appended to the same series in a single Commit().
 type Appender interface {
 	// Append adds a sample pair for the given series.
 	// An optional series reference can be provided to accelerate calls.
@@ -226,6 +230,7 @@ type Appender interface {
 	// Appender has to be discarded after rollback.
 	Rollback() error
 	ExemplarAppender
+	HistogramAppender
 }
 
 // GetRef is an extra interface on Appenders used by downstream projects
@@ -252,6 +257,22 @@ type ExemplarAppender interface {
 	// calls to Append should generate the reference numbers, AppendExemplar
 	// generating a new reference number should be considered possible erroneous behaviour and be logged.
 	AppendExemplar(ref SeriesRef, l labels.Labels, e exemplar.Exemplar) (SeriesRef, error)
+}
+
+// HistogramAppender provides an interface for appending histograms to the storage.
+type HistogramAppender interface {
+	// AppendHistogram adds a histogram for the given series labels. An
+	// optional reference number can be provided to accelerate calls. A
+	// reference number is returned which can be used to add further
+	// histograms in the same or later transactions. Returned reference
+	// numbers are ephemeral and may be rejected in calls to Append() at any
+	// point. Adding the sample via Append() returns a new reference number.
+	// If the reference is 0, it must not be used for caching.
+	//
+	// For efficiency reasons, the histogram is passed as a
+	// pointer. AppendHistogram won't mutate the histogram, but in turn
+	// depends on the caller to not mutate it either.
+	AppendHistogram(ref SeriesRef, l labels.Labels, t int64, h *histogram.Histogram) (SeriesRef, error)
 }
 
 // SeriesSet contains a set of series.

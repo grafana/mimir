@@ -26,6 +26,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/wal"
@@ -250,6 +251,7 @@ type timestampTracker struct {
 	writeStorage         *WriteStorage
 	samples              int64
 	exemplars            int64
+	histograms           int64
 	highestTimestamp     int64
 	highestRecvTimestamp *maxTimestamp
 }
@@ -265,6 +267,14 @@ func (t *timestampTracker) Append(_ storage.SeriesRef, _ labels.Labels, ts int64
 
 func (t *timestampTracker) AppendExemplar(_ storage.SeriesRef, _ labels.Labels, _ exemplar.Exemplar) (storage.SeriesRef, error) {
 	t.exemplars++
+	return 0, nil
+}
+
+func (t *timestampTracker) AppendHistogram(_ storage.SeriesRef, _ labels.Labels, ts int64, _ *histogram.Histogram) (storage.SeriesRef, error) {
+	t.histograms++
+	if ts > t.highestTimestamp {
+		t.highestTimestamp = ts
+	}
 	return 0, nil
 }
 

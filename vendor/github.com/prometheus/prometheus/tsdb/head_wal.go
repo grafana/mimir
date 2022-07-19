@@ -46,6 +46,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 	// for error reporting.
 	var unknownRefs atomic.Uint64
 	var unknownExemplarRefs atomic.Uint64
+	var unknownHistogramRefs atomic.Uint64
 	// Track number of series records that had overlapping m-map chunks.
 	var mmapOverlappingChunks uint64
 
@@ -56,8 +57,9 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 		processors     = make([]walSubsetProcessor, n)
 		exemplarsInput chan record.RefExemplar
 
-		dec    record.Decoder
-		shards = make([][]record.RefSample, n)
+		dec             record.Decoder
+		shards          = make([][]record.RefSample, n)
+		histogramShards = make([][]record.RefHistogram, n)
 
 		decoded                      = make(chan interface{}, 10)
 		decodeErr, seriesCreationErr error
@@ -81,6 +83,11 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 				return []record.RefExemplar{}
 			},
 		}
+		histogramsPool = sync.Pool{
+			New: func() interface{} {
+				return []record.RefHistogram{}
+			},
+		}
 	)
 
 	defer func() {
@@ -100,8 +107,9 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 		processors[i].setup()
 
 		go func(wp *walSubsetProcessor) {
-			unknown := wp.processWALSamples(h)
+			unknown, unknownHistograms := wp.processWALSamples(h)
 			unknownRefs.Add(unknown)
+			unknownHistogramRefs.Add(unknownHistograms)
 			wg.Done()
 		}(&processors[i])
 	}
@@ -184,6 +192,18 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 					return
 				}
 				decoded <- exemplars
+			case record.Histograms:
+				hists := histogramsPool.Get().([]record.RefHistogram)[:0]
+				hists, err = dec.Histograms(rec, hists)
+				if err != nil {
+					decodeErr = &wal.CorruptionErr{
+						Err:     errors.Wrap(err, "decode histograms"),
+						Segment: r.Segment(),
+						Offset:  r.Offset(),
+					}
+					return
+				}
+				decoded <- hists
 			default:
 				// Noop.
 			}
@@ -308,6 +328,34 @@ Outer:
 			}
 			//nolint:staticcheck // Ignore SA6002 relax staticcheck verification.
 			exemplarsPool.Put(v)
+		case []record.RefHistogram:
+			samples := v
+			// We split up the samples into chunks of 5000 samples or less.
+			// With O(300 * #cores) in-flight sample batches, large scrapes could otherwise
+			// cause thousands of very large in flight buffers occupying large amounts
+			// of unused memory.
+			for len(samples) > 0 {
+				m := 5000
+				if len(samples) < m {
+					m = len(samples)
+				}
+				for i := 0; i < n; i++ {
+					histogramShards[i] = processors[i].reuseHistogramBuf()
+				}
+				for _, sam := range samples[:m] {
+					if r, ok := multiRef[sam.Ref]; ok {
+						sam.Ref = r
+					}
+					mod := uint64(sam.Ref) % uint64(n)
+					histogramShards[mod] = append(histogramShards[mod], sam)
+				}
+				for i := 0; i < n; i++ {
+					processors[i].input <- histogramShards[i]
+				}
+				samples = samples[m:]
+			}
+			//nolint:staticcheck // Ignore SA6002 relax staticcheck verification.
+			histogramsPool.Put(v)
 		default:
 			panic(fmt.Errorf("unexpected decoded type: %T", d))
 		}
@@ -334,8 +382,8 @@ Outer:
 		return errors.Wrap(r.Err(), "read records")
 	}
 
-	if unknownRefs.Load() > 0 || unknownExemplarRefs.Load() > 0 {
-		level.Warn(h.logger).Log("msg", "Unknown series references", "samples", unknownRefs.Load(), "exemplars", unknownExemplarRefs.Load())
+	if unknownRefs.Load() > 0 || unknownExemplarRefs.Load() > 0 || unknownHistogramRefs.Load() > 0 {
+		level.Warn(h.logger).Log("msg", "Unknown series references", "samples", unknownRefs.Load(), "exemplars", unknownExemplarRefs.Load(), "histograms", unknownHistogramRefs.Load())
 	}
 	if mmapOverlappingChunks > 0 {
 		level.Info(h.logger).Log("msg", "Overlapping m-map chunks on duplicate series records", "count", mmapOverlappingChunks)
@@ -380,19 +428,23 @@ func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc, oooMmc []*m
 }
 
 type walSubsetProcessor struct {
-	mx     sync.Mutex // Take this lock while modifying series in the subset.
-	input  chan []record.RefSample
-	output chan []record.RefSample
+	mx               sync.Mutex       // Take this lock while modifying series in the subset.
+	input            chan interface{} // Either []record.RefSample or []record.RefHistogram.
+	output           chan []record.RefSample
+	histogramsOutput chan []record.RefHistogram
 }
 
 func (wp *walSubsetProcessor) setup() {
 	wp.output = make(chan []record.RefSample, 300)
-	wp.input = make(chan []record.RefSample, 300)
+	wp.input = make(chan interface{}, 300)
+	wp.histogramsOutput = make(chan []record.RefHistogram, 300)
 }
 
 func (wp *walSubsetProcessor) closeAndDrain() {
 	close(wp.input)
 	for range wp.output {
+	}
+	for range wp.histogramsOutput {
 	}
 }
 
@@ -406,46 +458,89 @@ func (wp *walSubsetProcessor) reuseBuf() []record.RefSample {
 	return nil
 }
 
+// If there is a buffer in the output chan, return it for reuse, otherwise return nil.
+func (wp *walSubsetProcessor) reuseHistogramBuf() []record.RefHistogram {
+	select {
+	case buf := <-wp.histogramsOutput:
+		return buf[:0]
+	default:
+	}
+	return nil
+}
+
 // processWALSamples adds the samples it receives to the head and passes
 // the buffer received to an output channel for reuse.
 // Samples before the minValidTime timestamp are discarded.
-func (wp *walSubsetProcessor) processWALSamples(h *Head) (unknownRefs uint64) {
+func (wp *walSubsetProcessor) processWALSamples(h *Head) (unknownRefs, unknownHistogramRefs uint64) {
 	defer close(wp.output)
+	defer close(wp.histogramsOutput)
 
 	minValidTime := h.minValidTime.Load()
 	mint, maxt := int64(math.MaxInt64), int64(math.MinInt64)
 
-	for samples := range wp.input {
+	for v := range wp.input {
 		wp.mx.Lock()
-		for _, s := range samples {
-			if s.T < minValidTime {
-				continue
+		switch samples := v.(type) {
+		case []record.RefSample:
+			for _, s := range samples {
+				if s.T < minValidTime {
+					continue
+				}
+				ms := h.series.getByID(s.Ref)
+				if ms == nil {
+					unknownRefs++
+					continue
+				}
+				ms.isHistogramSeries = false
+				if s.T <= ms.mmMaxTime {
+					continue
+				}
+				if _, _, chunkCreated := ms.append(s.T, s.V, 0, h.chunkDiskMapper); chunkCreated {
+					h.metrics.chunksCreated.Inc()
+					h.metrics.chunks.Inc()
+				}
+				if s.T > maxt {
+					maxt = s.T
+				}
+				if s.T < mint {
+					mint = s.T
+				}
 			}
-			ms := h.series.getByID(s.Ref)
-			if ms == nil {
-				unknownRefs++
-				continue
+			wp.output <- samples
+		case []record.RefHistogram:
+			for _, s := range samples {
+				if s.T < minValidTime {
+					continue
+				}
+				ms := h.series.getByID(s.Ref)
+				if ms == nil {
+					unknownHistogramRefs++
+					continue
+				}
+				ms.isHistogramSeries = true
+				if s.T <= ms.mmMaxTime {
+					continue
+				}
+				if _, chunkCreated := ms.appendHistogram(s.T, s.H, 0, h.chunkDiskMapper); chunkCreated {
+					h.metrics.chunksCreated.Inc()
+					h.metrics.chunks.Inc()
+				}
+				if s.T > maxt {
+					maxt = s.T
+				}
+				if s.T < mint {
+					mint = s.T
+				}
 			}
-			if s.T <= ms.mmMaxTime {
-				continue
-			}
-			if _, _, chunkCreated := ms.append(s.T, s.V, 0, h.chunkDiskMapper); chunkCreated {
-				h.metrics.chunksCreated.Inc()
-				h.metrics.chunks.Inc()
-			}
-			if s.T > maxt {
-				maxt = s.T
-			}
-			if s.T < mint {
-				mint = s.T
-			}
+			wp.histogramsOutput <- samples
 		}
+
 		wp.mx.Unlock()
-		wp.output <- samples
+
 	}
 	h.updateMinMaxTime(mint, maxt)
 
-	return unknownRefs
+	return unknownRefs, unknownHistogramRefs
 }
 
 func (wp *walSubsetProcessor) waitUntilIdle() {
@@ -453,11 +548,19 @@ func (wp *walSubsetProcessor) waitUntilIdle() {
 	case <-wp.output: // Allow output side to drain to avoid deadlock.
 	default:
 	}
+	select {
+	case <-wp.histogramsOutput: // Allow output side to drain to avoid deadlock.
+	default:
+	}
 	wp.input <- []record.RefSample{}
 	for len(wp.input) != 0 {
 		select {
 		case <-wp.output: // Allow output side to drain to avoid deadlock.
 		case <-time.After(10 * time.Microsecond):
+		}
+		select {
+		case <-wp.histogramsOutput: // Allow output side to drain to avoid deadlock.
+		default:
 		}
 	}
 }

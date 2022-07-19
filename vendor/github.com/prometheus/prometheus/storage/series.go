@@ -17,6 +17,7 @@ import (
 	"math"
 	"sort"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -90,21 +91,39 @@ func (it *listSeriesIterator) At() (int64, float64) {
 	return s.T(), s.V()
 }
 
-func (it *listSeriesIterator) Next() bool {
-	it.idx++
-	return it.idx < it.samples.Len()
+func (it *listSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
+	s := it.samples.Get(it.idx)
+	return s.T(), s.H()
 }
 
-func (it *listSeriesIterator) Seek(t int64) bool {
+func (it *listSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+	s := it.samples.Get(it.idx)
+	return s.T(), s.FH()
+}
+
+func (it *listSeriesIterator) AtT() int64 {
+	s := it.samples.Get(it.idx)
+	return s.T()
+}
+
+func (it *listSeriesIterator) Next() chunkenc.ValueType {
+	it.idx++
+	if it.idx >= it.samples.Len() {
+		return chunkenc.ValNone
+	}
+	return it.samples.Get(it.idx).Type()
+}
+
+func (it *listSeriesIterator) Seek(t int64) chunkenc.ValueType {
 	if it.idx == -1 {
 		it.idx = 0
 	}
 	if it.idx >= it.samples.Len() {
-		return false
+		return chunkenc.ValNone
 	}
 	// No-op check.
 	if s := it.samples.Get(it.idx); s.T() >= t {
-		return true
+		return s.Type()
 	}
 	// Do binary search between current position and end.
 	it.idx += sort.Search(it.samples.Len()-it.idx, func(i int) bool {
@@ -112,7 +131,10 @@ func (it *listSeriesIterator) Seek(t int64) bool {
 		return s.T() >= t
 	})
 
-	return it.idx < it.samples.Len()
+	if it.idx >= it.samples.Len() {
+		return chunkenc.ValNone
+	}
+	return it.samples.Get(it.idx).Type()
 }
 
 func (it *listSeriesIterator) Err() error { return nil }
@@ -230,6 +252,7 @@ func NewSeriesToChunkEncoder(series Series) ChunkSeries {
 }
 
 func (s *seriesToChunkEncoder) Iterator() chunks.Iterator {
+	// TODO(beorn7): Add Histogram support.
 	chk := chunkenc.NewXORChunk()
 	app, err := chk.Appender()
 	if err != nil {
@@ -242,7 +265,7 @@ func (s *seriesToChunkEncoder) Iterator() chunks.Iterator {
 
 	i := 0
 	seriesIter := s.Series.Iterator()
-	for seriesIter.Next() {
+	for seriesIter.Next() == chunkenc.ValFloat {
 		// Create a new chunk if too many samples in the current one.
 		if i >= seriesToChunkEncoderSplit {
 			chks = append(chks, chunks.Meta{
@@ -293,21 +316,34 @@ func (e errChunksIterator) Err() error      { return e.err }
 // ExpandSamples iterates over all samples in the iterator, buffering all in slice.
 // Optionally it takes samples constructor, useful when you want to compare sample slices with different
 // sample implementations. if nil, sample type from this package will be used.
-func ExpandSamples(iter chunkenc.Iterator, newSampleFn func(t int64, v float64) tsdbutil.Sample) ([]tsdbutil.Sample, error) {
+func ExpandSamples(iter chunkenc.Iterator, newSampleFn func(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) tsdbutil.Sample) ([]tsdbutil.Sample, error) {
 	if newSampleFn == nil {
-		newSampleFn = func(t int64, v float64) tsdbutil.Sample { return sample{t, v} }
+		newSampleFn = func(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) tsdbutil.Sample {
+			return sample{t, v, h, fh}
+		}
 	}
 
 	var result []tsdbutil.Sample
-	for iter.Next() {
-		t, v := iter.At()
-		// NaNs can't be compared normally, so substitute for another value.
-		if math.IsNaN(v) {
-			v = -42
+	for {
+		switch iter.Next() {
+		case chunkenc.ValNone:
+			return result, iter.Err()
+		case chunkenc.ValFloat:
+			t, v := iter.At()
+			// NaNs can't be compared normally, so substitute for another value.
+			if math.IsNaN(v) {
+				v = -42
+			}
+			result = append(result, newSampleFn(t, v, nil, nil))
+		case chunkenc.ValHistogram:
+			t, h := iter.AtHistogram()
+			result = append(result, newSampleFn(t, 0, h, nil))
+		case chunkenc.ValFloatHistogram:
+			t, fh := iter.AtFloatHistogram()
+			result = append(result, newSampleFn(t, 0, nil, fh))
+
 		}
-		result = append(result, newSampleFn(t, v))
 	}
-	return result, iter.Err()
 }
 
 // ExpandChunks iterates over all chunks in the iterator, buffering all in slice.

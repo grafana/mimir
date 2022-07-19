@@ -21,6 +21,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -509,7 +510,7 @@ func (o mergedOOOChunks) Bytes() []byte {
 		panic(err)
 	}
 	it := o.Iterator(nil)
-	for it.Next() {
+	for it.Next() == chunkenc.ValFloat {
 		t, v := it.At()
 		app.Append(t, v)
 	}
@@ -558,7 +559,7 @@ func (b boundedChunk) Bytes() []byte {
 	xor := chunkenc.NewXORChunk()
 	a, _ := xor.Appender()
 	it := b.Iterator(nil)
-	for it.Next() {
+	for it.Next() == chunkenc.ValFloat {
 		t, v := it.At()
 		a.Append(t, v)
 	}
@@ -587,33 +588,36 @@ type boundedIterator struct {
 // until its able to find a sample within the bounds minT and maxT.
 // If there are samples within bounds it will advance one by one amongst them.
 // If there are no samples within bounds it will return false.
-func (b boundedIterator) Next() bool {
-	for b.Iterator.Next() {
+func (b boundedIterator) Next() chunkenc.ValueType {
+	for typ := b.Iterator.Next(); typ != chunkenc.ValNone; typ = b.Iterator.Next() {
 		t, _ := b.Iterator.At()
 		if t < b.minT {
 			continue
 		} else if t > b.maxT {
-			return false
+			return chunkenc.ValNone
 		}
-		return true
+		return typ
 	}
-	return false
+	return chunkenc.ValNone
 }
 
-func (b boundedIterator) Seek(t int64) bool {
+func (b boundedIterator) Seek(t int64) chunkenc.ValueType {
 	if t < b.minT {
 		// We must seek at least up to b.minT if it is asked for something before that.
-		ok := b.Iterator.Seek(b.minT)
-		if !ok {
-			return false
+		typ := b.Iterator.Seek(b.minT)
+		if typ == chunkenc.ValNone {
+			return chunkenc.ValNone
 		}
 		t, _ := b.Iterator.At()
-		return t <= b.maxT
+		if t <= b.maxT {
+			return typ
+		}
+		return chunkenc.ValNone
 	}
 	if t > b.maxT {
 		// We seek anyway so that the subsequent Next() calls will also return false.
 		b.Iterator.Seek(t)
-		return false
+		return chunkenc.ValNone
 	}
 	return b.Iterator.Seek(t)
 }
@@ -747,32 +751,46 @@ type memSafeIterator struct {
 	buf   [4]sample
 }
 
-func (it *memSafeIterator) Seek(t int64) bool {
+func (it *memSafeIterator) Seek(t int64) chunkenc.ValueType {
 	if it.Err() != nil {
-		return false
+		return chunkenc.ValNone
 	}
 
-	ts, _ := it.At()
+	var valueType chunkenc.ValueType
+	var ts int64 = math.MinInt64
+
+	if it.i > -1 {
+		ts = it.AtT()
+	}
+
+	if t <= ts {
+		// We are already at the right sample, but we have to find out
+		// its ValueType.
+		if it.total-it.i > 4 {
+			return it.Iterator.Seek(ts)
+		}
+		return it.buf[4-(it.total-it.i)].Type()
+	}
 
 	for t > ts || it.i == -1 {
-		if !it.Next() {
-			return false
+		if valueType = it.Next(); valueType == chunkenc.ValNone {
+			return chunkenc.ValNone
 		}
-		ts, _ = it.At()
+		ts = it.AtT()
 	}
 
-	return true
+	return valueType
 }
 
-func (it *memSafeIterator) Next() bool {
+func (it *memSafeIterator) Next() chunkenc.ValueType {
 	if it.i+1 >= it.stopAfter {
-		return false
+		return chunkenc.ValNone
 	}
 	it.i++
 	if it.total-it.i > 4 {
 		return it.Iterator.Next()
 	}
-	return true
+	return it.buf[4-(it.total-it.i)].Type()
 }
 
 func (it *memSafeIterator) At() (int64, float64) {
@@ -783,6 +801,33 @@ func (it *memSafeIterator) At() (int64, float64) {
 	return s.t, s.v
 }
 
+func (it *memSafeIterator) AtHistogram() (int64, *histogram.Histogram) {
+	if it.total-it.i > 4 {
+		return it.Iterator.AtHistogram()
+	}
+	s := it.buf[4-(it.total-it.i)]
+	return s.t, s.h
+}
+
+func (it *memSafeIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+	if it.total-it.i > 4 {
+		return it.Iterator.AtFloatHistogram()
+	}
+	s := it.buf[4-(it.total-it.i)]
+	if s.fh != nil {
+		return s.t, s.fh
+	}
+	return s.t, s.h.ToFloat()
+}
+
+func (it *memSafeIterator) AtT() int64 {
+	if it.total-it.i > 4 {
+		return it.Iterator.AtT()
+	}
+	s := it.buf[4-(it.total-it.i)]
+	return s.t
+}
+
 // stopIterator wraps an Iterator, but only returns the first
 // stopAfter values, if initialized with i=-1.
 type stopIterator struct {
@@ -791,9 +836,9 @@ type stopIterator struct {
 	i, stopAfter int
 }
 
-func (it *stopIterator) Next() bool {
+func (it *stopIterator) Next() chunkenc.ValueType {
 	if it.i+1 >= it.stopAfter {
-		return false
+		return chunkenc.ValNone
 	}
 	it.i++
 	return it.Iterator.Next()

@@ -31,6 +31,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -357,6 +358,10 @@ type headMetrics struct {
 	mmapChunkCorruptionTotal  prometheus.Counter
 	snapshotReplayErrorTotal  prometheus.Counter // Will be either 0 or 1.
 	oooHistogram              prometheus.Histogram
+
+	// Sparse histogram metrics for experiments.
+	// TODO: remove these in the final version.
+	histogramSamplesTotal prometheus.Counter
 }
 
 func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
@@ -477,6 +482,10 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 				60 * 60 * 12, // 12h
 			},
 		}),
+		histogramSamplesTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_histogram_samples_total",
+			Help: "Total number of histograms samples added.",
+		}),
 	}
 
 	if r != nil {
@@ -507,6 +516,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.mmapChunkCorruptionTotal,
 			m.snapshotReplayErrorTotal,
 			m.oooHistogram,
+			m.histogramSamplesTotal,
 			// Metrics bound to functions and not needed in tests
 			// can be created and registered on the spot.
 			prometheus.NewGaugeFunc(prometheus.GaugeOpts{
@@ -1499,7 +1509,11 @@ func (h *Head) Close() error {
 	h.closedMtx.Lock()
 	defer h.closedMtx.Unlock()
 	h.closed = true
+
 	errs := tsdb_errors.NewMulti(h.chunkDiskMapper.Close())
+	if errs.Err() == nil && h.opts.EnableMemorySnapshotOnShutdown {
+		errs.Add(h.performChunkSnapshot())
+	}
 	if h.wal != nil {
 		errs.Add(h.wal.Close())
 	}
@@ -1783,13 +1797,31 @@ func (s *stripeSeries) getOrSet(hash uint64, lset labels.Labels, createSeries fu
 }
 
 type sample struct {
-	t int64
-	v float64
+	t  int64
+	v  float64
+	h  *histogram.Histogram
+	fh *histogram.FloatHistogram
 }
 
-func newSample(t int64, v float64) tsdbutil.Sample { return sample{t, v} }
-func (s sample) T() int64                          { return s.t }
-func (s sample) V() float64                        { return s.v }
+func newSample(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) tsdbutil.Sample {
+	return sample{t, v, h, fh}
+}
+
+func (s sample) T() int64                      { return s.t }
+func (s sample) V() float64                    { return s.v }
+func (s sample) H() *histogram.Histogram       { return s.h }
+func (s sample) FH() *histogram.FloatHistogram { return s.fh }
+
+func (s sample) Type() chunkenc.ValueType {
+	switch {
+	case s.h != nil:
+		return chunkenc.ValHistogram
+	case s.fh != nil:
+		return chunkenc.ValFloatHistogram
+	default:
+		return chunkenc.ValFloat
+	}
+}
 
 // memSeries is the in-memory representation of a series. None of its methods
 // are goroutine safe and it is the caller's responsibility to lock it.
@@ -1843,6 +1875,10 @@ type memSeries struct {
 
 	// txs is nil if isolation is disabled.
 	txs *txRing
+
+	// TODO(beorn7): The only reason we track this is to create a staleness
+	// marker as either histogram or float sample. Perhaps there is a better way.
+	isHistogramSeries bool
 }
 
 func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, hash uint64, chunkRange, oooCapMin, oooCapMax int64, chunkEndTimeVariance float64, memChunkPool *sync.Pool, isolationDisabled bool) *memSeries {
@@ -2007,4 +2043,23 @@ func (h *Head) updateWALReplayStatusRead(current int) {
 	defer h.stats.WALReplayStatus.Unlock()
 
 	h.stats.WALReplayStatus.Current = current
+}
+
+func GenerateTestHistograms(n int) (r []*histogram.Histogram) {
+	for i := 0; i < n; i++ {
+		r = append(r, &histogram.Histogram{
+			Count:         5 + uint64(i*4),
+			ZeroCount:     2 + uint64(i),
+			ZeroThreshold: 0.001,
+			Sum:           18.4 * float64(i+1),
+			Schema:        1,
+			PositiveSpans: []histogram.Span{
+				{Offset: 0, Length: 2},
+				{Offset: 1, Length: 2},
+			},
+			PositiveBuckets: []int64{int64(i + 1), 1, -1, 0},
+		})
+	}
+
+	return r
 }

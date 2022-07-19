@@ -38,6 +38,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
 // RuleHealth describes the health state of a rule.
@@ -199,7 +200,7 @@ func EngineQueryFunc(engine *promql.Engine, q storage.Queryable) QueryFunc {
 			return v, nil
 		case promql.Scalar:
 			return promql.Vector{promql.Sample{
-				Point:  promql.Point(v),
+				Point:  promql.Point{T: v.T, V: v.V},
 				Metric: labels.Labels{},
 			}}, nil
 		default:
@@ -819,7 +820,7 @@ func (g *Group) RestoreForState(ts time.Time) {
 			var t int64
 			var v float64
 			it := s.Iterator()
-			for it.Next() {
+			for it.Next() == chunkenc.ValFloat {
 				t, v = it.At()
 			}
 			if it.Err() != nil {
