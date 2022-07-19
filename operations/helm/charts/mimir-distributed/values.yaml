@@ -833,7 +833,7 @@ query_frontend:
   extraEnvFrom: []
 
 query_scheduler:
-  enabled: false
+  enabled: true
   replicas: 2
 
   service:
