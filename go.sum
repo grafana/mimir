@@ -1396,8 +1396,8 @@ github.com/vultr/govultr/v2 v2.17.2 h1:gej/rwr91Puc/tgh+j33p/BLR16UrIPnSr+AIwYWZ
 github.com/vultr/govultr/v2 v2.17.2/go.mod h1:ZFOKGWmgjytfyjeyAdhQlSWwTjh2ig+X49cAp50dzXI=
 github.com/weaveworks/common v0.0.0-20210913144402-035033b78a78/go.mod h1:YU9FvnS7kUnRt6HY10G+2qHkwzP3n3Vb1XsXDsJTSp8=
 github.com/weaveworks/common v0.0.0-20220629114710-e3b70df0f08b/go.mod h1:YfOOLoW1Q/jIIu0WLeSwgStmrKjuJEZSKTAUc+0KFvE=
-github.com/weaveworks/common v0.0.0-20220706100410-67d27ed40fae h1:Z8YibUpdBEdCq8nwrYXJQ8vYooevbmEBIdFpseXK3/8=
-github.com/weaveworks/common v0.0.0-20220706100410-67d27ed40fae/go.mod h1:YfOOLoW1Q/jIIu0WLeSwgStmrKjuJEZSKTAUc+0KFvE=
+github.com/weaveworks/common v0.0.0-20220719095404-75757d3e6021 h1:CJ6NZU3C/d4Gjoncota5jYjVGrU/bPLBNJtktHDPYLU=
+github.com/weaveworks/common v0.0.0-20220719095404-75757d3e6021/go.mod h1:YfOOLoW1Q/jIIu0WLeSwgStmrKjuJEZSKTAUc+0KFvE=
 github.com/weaveworks/promrus v1.2.0 h1:jOLf6pe6/vss4qGHjXmGz4oDJQA+AOCqEL3FvvZGz7M=
 github.com/weaveworks/promrus v1.2.0/go.mod h1:SaE82+OJ91yqjrE1rsvBWVzNZKcHYFtMUyS1+Ogs/KA=
 github.com/xanzy/go-gitlab v0.15.0/go.mod h1:8zdQa/ri1dfn8eS3Ir1SyfvOKlw7WBJ8DVThkpGiXrs=

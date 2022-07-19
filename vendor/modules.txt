@@ -886,7 +886,7 @@ github.com/vimeo/galaxycache/http
 github.com/vimeo/galaxycache/lru
 github.com/vimeo/galaxycache/promoter
 github.com/vimeo/galaxycache/singleflight
-# github.com/weaveworks/common v0.0.0-20220706100410-67d27ed40fae
+# github.com/weaveworks/common v0.0.0-20220719095404-75757d3e6021
 ## explicit; go 1.14
 github.com/weaveworks/common/errors
 github.com/weaveworks/common/grpc
