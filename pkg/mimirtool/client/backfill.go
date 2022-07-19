@@ -78,10 +78,6 @@ func (c *MimirClient) backfillBlock(blockDir string, logctx *logrus.Entry) error
 		return errors.Wrap(err, "request to start block upload failed")
 	}
 	drainAndCloseBody(resp)
-	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("request to start block upload failed, with HTTP status %d %s",
-			resp.StatusCode, resp.Status)
-	}
 
 	// Upload each block file
 	for _, tf := range blockMeta.Thanos.Files {
@@ -95,16 +91,11 @@ func (c *MimirClient) backfillBlock(blockDir string, logctx *logrus.Entry) error
 		}
 	}
 
-	resp, err = c.doRequest(fmt.Sprintf("%s?uploadComplete=true", blockUploadEndpointPrefix), http.MethodPost,
-		nil, -1)
+	resp, err = c.doRequest(fmt.Sprintf("%s?uploadComplete=true", blockUploadEndpointPrefix), http.MethodPost, nil, -1)
 	if err != nil {
 		return errors.Wrap(err, "request to finish block upload failed")
 	}
 	drainAndCloseBody(resp)
-	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("request to finish block upload failed, with HTTP status %d %s",
-			resp.StatusCode, resp.Status)
-	}
 
 	logctx.Info("block uploaded successfully")
 
@@ -128,12 +119,7 @@ func (c *MimirClient) uploadBlockFile(tf metadata.File, blockDir, blockUploadEnd
 	if err != nil {
 		return errors.Wrapf(err, "request to upload file %q failed", pth)
 	}
-
 	drainAndCloseBody(resp)
-	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("request to upload block file failed, with HTTP status %d %s",
-			resp.StatusCode, resp.Status)
-	}
 
 	return nil
 }
@@ -157,7 +143,7 @@ func getBlockMeta(blockDir string) (metadata.Meta, error) {
 	}
 
 	if blockMeta.Version != 1 {
-		return blockMeta, errors.Errorf("unexpected meta.json version: %d", blockMeta.Version)
+		return blockMeta, errors.Errorf("only version 1 of meta.json is supported, found: %d", blockMeta.Version)
 	}
 
 	blockMeta.Thanos.Files = []metadata.File{
