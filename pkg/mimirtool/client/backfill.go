@@ -50,13 +50,14 @@ func (c *MimirClient) Backfill(ctx context.Context, blocks []string) error {
 	return nil
 }
 
-func closeResp(resp *http.Response) {
-	// Drain and close the body to let the transport reuse the connection
-	io.Copy(io.Discard, resp.Body)
-	resp.Body.Close()
+// drainAndCloseBody drains and closes the body to let the transport reuse the connection.
+func drainAndCloseBody(resp *http.Response) {
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
 }
 
 func (c *MimirClient) backfillBlock(ctx context.Context, blockDir string, logctx *logrus.Entry) error {
+	// blockMeta returned by getBlockMeta will have thanos.files section pre-populated.
 	blockMeta, err := getBlockMeta(blockDir)
 	if err != nil {
 		return err
@@ -67,17 +68,17 @@ func (c *MimirClient) backfillBlock(ctx context.Context, blockDir string, logctx
 
 	logctx.WithField("file", "meta.json").Info("making request to start block upload")
 
-	blockPrefix := path.Join("/api/v1/upload/block", url.PathEscape(blockID))
+	blockUploadEndpointPrefix := path.Join("/api/v1/upload/block", url.PathEscape(blockID))
 
 	buf := bytes.NewBuffer(nil)
 	if err := json.NewEncoder(buf).Encode(blockMeta); err != nil {
 		return errors.Wrap(err, "failed to JSON encode payload")
 	}
-	resp, err := c.doRequest(blockPrefix, http.MethodPost, buf, int64(buf.Len()))
+	resp, err := c.doRequest(blockUploadEndpointPrefix, http.MethodPost, buf, int64(buf.Len()))
 	if err != nil {
 		return errors.Wrap(err, "request to start block upload failed")
 	}
-	closeResp(resp)
+	drainAndCloseBody(resp)
 	if resp.StatusCode/100 != 2 {
 		return fmt.Errorf("request to start block upload failed, with HTTP status %d %s",
 			resp.StatusCode, resp.Status)
@@ -90,17 +91,17 @@ func (c *MimirClient) backfillBlock(ctx context.Context, blockDir string, logctx
 			continue
 		}
 
-		if err := c.uploadBlockFile(tf, blockDir, blockPrefix, logctx); err != nil {
+		if err := c.uploadBlockFile(tf, blockDir, blockUploadEndpointPrefix, logctx); err != nil {
 			return err
 		}
 	}
 
-	resp, err = c.doRequest(fmt.Sprintf("%s?uploadComplete=true", blockPrefix), http.MethodPost,
+	resp, err = c.doRequest(fmt.Sprintf("%s?uploadComplete=true", blockUploadEndpointPrefix), http.MethodPost,
 		nil, -1)
 	if err != nil {
 		return errors.Wrap(err, "request to finish block upload failed")
 	}
-	closeResp(resp)
+	drainAndCloseBody(resp)
 	if resp.StatusCode/100 != 2 {
 		return fmt.Errorf("request to finish block upload failed, with HTTP status %d %s",
 			resp.StatusCode, resp.Status)
@@ -111,7 +112,7 @@ func (c *MimirClient) backfillBlock(ctx context.Context, blockDir string, logctx
 	return nil
 }
 
-func (c *MimirClient) uploadBlockFile(tf metadata.File, blockDir, blockPrefix string, logctx *logrus.Entry) error {
+func (c *MimirClient) uploadBlockFile(tf metadata.File, blockDir, blockUploadEndpointPrefix string, logctx *logrus.Entry) error {
 	pth := filepath.Join(blockDir, filepath.FromSlash(tf.RelPath))
 	f, err := os.Open(pth)
 	if err != nil {
@@ -121,20 +122,15 @@ func (c *MimirClient) uploadBlockFile(tf metadata.File, blockDir, blockPrefix st
 		_ = f.Close()
 	}()
 
-	st, err := f.Stat()
-	if err != nil {
-		return errors.Wrapf(err, "failed to get file info for %q", pth)
-	}
-
 	escapedPath := url.QueryEscape(tf.RelPath)
-	logctx.WithFields(logrus.Fields{"file": tf.RelPath, "size": st.Size()}).Info("uploading block file")
+	logctx.WithFields(logrus.Fields{"file": tf.RelPath, "size": tf.SizeBytes}).Info("uploading block file")
 
-	resp, err := c.doRequest(path.Join(blockPrefix, fmt.Sprintf("files?path=%s", escapedPath)),
-		http.MethodPost, f, st.Size())
+	resp, err := c.doRequest(path.Join(blockUploadEndpointPrefix, fmt.Sprintf("files?path=%s", escapedPath)), http.MethodPost, f, tf.SizeBytes)
 	if err != nil {
 		return errors.Wrapf(err, "request to upload file %q failed", pth)
 	}
-	closeResp(resp)
+
+	drainAndCloseBody(resp)
 	if resp.StatusCode/100 != 2 {
 		return fmt.Errorf("request to upload block file failed, with HTTP status %d %s",
 			resp.StatusCode, resp.Status)
@@ -143,6 +139,8 @@ func (c *MimirClient) uploadBlockFile(tf metadata.File, blockDir, blockPrefix st
 	return nil
 }
 
+// getBlockMeta reads meta.json file, and adds (or replaces) thanos.files section with
+// list of local files from the local block.
 func getBlockMeta(blockDir string) (metadata.Meta, error) {
 	var blockMeta metadata.Meta
 
@@ -159,42 +157,44 @@ func getBlockMeta(blockDir string) (metadata.Meta, error) {
 		return blockMeta, errors.Wrapf(err, "failed to decode %q", metaPath)
 	}
 
-	idxPath := filepath.Join(blockDir, block.IndexFilename)
-	idxSt, err := os.Stat(idxPath)
-	if err != nil {
-		return blockMeta, errors.Wrapf(err, "failed to stat %q", idxPath)
+	if blockMeta.Version != 1 {
+		return blockMeta, errors.Errorf("unexpected meta.json version: %d", blockMeta.Version)
 	}
+
 	blockMeta.Thanos.Files = []metadata.File{
-		{
-			RelPath:   block.IndexFilename,
-			SizeBytes: idxSt.Size(),
-		},
 		{
 			RelPath: block.MetaFilename,
 		},
 	}
 
-	chunksDir := filepath.Join(blockDir, block.ChunksDirname)
-	entries, err := os.ReadDir(chunksDir)
-	if err != nil {
-		return blockMeta, errors.Wrapf(err, "failed to read dir %q", chunksDir)
-	}
-	for _, e := range entries {
-		pth := filepath.Join(chunksDir, e.Name())
+	relPaths := []string{block.IndexFilename}
 
-		if e.IsDir() {
-			return blockMeta, fmt.Errorf("%q is a directory, there should only be files", pth)
+	// Add segment files to relPaths.
+	{
+		chunksDir := filepath.Join(blockDir, block.ChunksDirname)
+		entries, err := os.ReadDir(chunksDir)
+		if err != nil {
+			return blockMeta, errors.Wrapf(err, "failed to read dir %q", chunksDir)
 		}
 
-		// Note that we don't need to be strict about chunk files, the server will validate
-		// the file list
-		st, err := os.Stat(pth)
+		for _, c := range entries {
+			relPaths = append(relPaths, path.Join(block.ChunksDirname, c.Name()))
+		}
+	}
+
+	for _, relPath := range relPaths {
+		p := filepath.Join(blockDir, filepath.FromSlash(relPath))
+		st, err := os.Stat(p)
 		if err != nil {
-			return blockMeta, errors.Wrapf(err, "failed to stat %q", pth)
+			return blockMeta, errors.Wrapf(err, "failed to stat %q", p)
+		}
+
+		if !st.Mode().IsRegular() {
+			return blockMeta, fmt.Errorf("not a file: %q", p)
 		}
 
 		blockMeta.Thanos.Files = append(blockMeta.Thanos.Files, metadata.File{
-			RelPath:   path.Join(block.ChunksDirname, e.Name()),
+			RelPath:   relPath,
 			SizeBytes: st.Size(),
 		})
 	}

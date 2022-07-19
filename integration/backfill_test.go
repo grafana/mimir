@@ -107,15 +107,15 @@ overrides:
 
 		// Try to upload block using mimirtool. Should fail because upload is not enabled for user.
 		output, err := runMimirtoolBackfill(t, "--address", compactorURL, "--id", "anonymous", block1Path)
-		require.Contains(t, output, fmt.Sprintf("msg=\"successfully uploaded block\" path=%s", block1Path))
+		require.Contains(t, output, fmt.Sprintf("msg=\"block uploaded successfully\" block=%s", block1))
 		require.NoError(t, err)
 	}
 
 	{
 		// Upload block1 and block2. Block 1 already exists, but block2 should be uploaded without problem.
 		output, err := runMimirtoolBackfill(t, "--address", compactorURL, "--id", "anonymous", block1Path, block2Path)
-		require.Contains(t, output, fmt.Sprintf("msg=\"failed uploading block since it already exists on server\" path=%s", block1Path))
-		require.Contains(t, output, fmt.Sprintf("msg=\"successfully uploaded block\" path=%s", block2Path))
+		require.Contains(t, output, fmt.Sprintf("msg=\"block already exists on the server\" path=%s", block1Path))
+		require.Contains(t, output, fmt.Sprintf("msg=\"block uploaded successfully\" block=%s", block2))
 
 		// If blocks exist, it's not an error.
 		require.NoError(t, err)
@@ -146,7 +146,7 @@ overrides:
 		require.NoError(t, os.Remove(filepath.Join(badBlockPath, block.MetaFilename)))
 
 		output, err := runMimirtoolBackfill(t, "--address", compactorURL, "--id", "anonymous", badBlockPath)
-		require.Contains(t, output, fmt.Sprintf("msg=\"failed uploading block\" path=%s", badBlockPath))
+		require.Regexp(t, fmt.Sprintf("msg=\"failed uploading block\"[^\n]+path=%s", badBlockPath), output)
 		require.Error(t, err)
 	}
 }
