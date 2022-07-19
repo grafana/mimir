@@ -1,11 +1,17 @@
 {{- if .Values.alertmanager.enabled -}}
 {{- if .Values.alertmanager.statefulSet.enabled -}}
+{{- $_ := set . "component" "alertmanager" -}}
+{{- $_ := set . "component_config" "alertmanager" -}}
+{{- $zonesMap := include "mimir.zoneAwareReplicationMap" $  | fromYaml -}}
+{{- range $zoneName, $rolloutZone := $zonesMap }}
+{{- with $ -}}
+{{- $_ := set . "rolloutZoneName" $zoneName -}}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "alertmanager") }}
+  name: {{ include "mimir.zonedResourceName" . }}
   labels:
-    {{- include "mimir.labels" (dict "ctx" . "component" "alertmanager" "memberlist" true) | nindent 4 }}
+    {{- include "mimir.zonedLabels" (dict "ctx" . "memberlist" true) | nindent 4 }}
   annotations:
     {{- toYaml .Values.alertmanager.annotations | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
@@ -13,9 +19,13 @@ spec:
   replicas: {{ .Values.alertmanager.replicas }}
   selector:
     matchLabels:
-      {{- include "mimir.selectorLabels" (dict "ctx" . "component" "alertmanager" "memberlist" true) | nindent 6 }}
+      {{- include "mimir.zonedSelectorLabels" (dict "ctx" . "memberlist" true) | nindent 4 }}
   updateStrategy:
-    {{- toYaml .Values.alertmanager.statefulStrategy | nindent 4 }}
+    {{- if .Values.store_gateway.zone_aware_replication.enabled }}
+    type: OnDelete
+    {{- else }}
+    {{- toYaml .Values.store_gateway.strategy | nindent 4 }}
+    {{- end }}
   serviceName: {{ template "mimir.fullname" . }}-alertmanager
   {{- if .Values.alertmanager.persistentVolume.enabled }}
   volumeClaimTemplates:
@@ -42,7 +52,7 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "mimir.podLabels" (dict "ctx" . "component" "alertmanager" "memberlist" true) | nindent 8 }}
+        {{- include "mimir.zonedPodLabels" (dict "ctx" . "memberlist" true) | nindent 8 }}
         {{- with .Values.alertmanager.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -65,9 +75,9 @@ spec:
       {{- end }}
       {{- end }}
       nodeSelector:
-        {{- toYaml .Values.alertmanager.nodeSelector | nindent 8 }}
+        {{- $rolloutZone.nodeSelector | toYaml | nindent 8 }}
       affinity:
-        {{- toYaml .Values.alertmanager.affinity | nindent 8 }}
+        {{- $rolloutZone.affinity | toYaml | nindent 8 }}
       tolerations:
         {{- toYaml .Values.alertmanager.tolerations | nindent 8 }}
       terminationGracePeriodSeconds: {{ .Values.alertmanager.terminationGracePeriodSeconds }}
@@ -102,6 +112,9 @@ spec:
             - "-target=alertmanager"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            {{- if .Values.alertmanager.zone_aware_replication.enabled }}
+            - "-alertmanager.sharding-ring.instance-availability-zone={{ $zoneName }}"
+            {{- end }}
             {{- range $key, $value := .Values.alertmanager.extraArgs }}
             - "-{{ $key }}={{ $value }}"
             {{- end }}
@@ -157,5 +170,9 @@ spec:
             {{- with .Values.alertmanager.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+
+---
+{{- end -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
