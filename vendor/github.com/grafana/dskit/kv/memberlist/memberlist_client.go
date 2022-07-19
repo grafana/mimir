@@ -427,7 +427,12 @@ func (m *KV) buildMemberlistConfig() (*memberlist.Config, error) {
 	mlCfg.ProbeInterval = 5 * time.Second // Probe a random node every this interval. This setting is also the total timeout for the direct + indirect probes.
 	mlCfg.ProbeTimeout = 2 * time.Second  // Timeout for the direct probe.
 
-	level.Info(m.logger).Log("msg", "Using memberlist cluster label %q and node name %q", mlCfg.Label, mlCfg.Name)
+	// Since we use a custom transport based on TCP, having TCP-based fallbacks doesn't give us any benefit.
+	// On the contrary, if we keep TCP pings enabled, each node will effectively run 2x pings against a dead
+	// node, because the TCP-based fallback will always trigger.
+	mlCfg.DisableTcpPings = true
+
+	level.Info(m.logger).Log("msg", "Using memberlist cluster label and node name", "cluster_label", mlCfg.Label, "node", mlCfg.Name)
 
 	return mlCfg, nil
 }
