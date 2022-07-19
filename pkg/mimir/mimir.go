@@ -186,15 +186,32 @@ func (c *Config) UnmarshalYAML(value *yaml.Node) error {
 	return value.DecodeWithOptions((*plain)(c), yaml.DecodeOptions{KnownFields: true})
 }
 
-func (c *Config) InheritCommonFlagValues(log log.Logger, fs *flag.FlagSet) error {
+// CommonFlagInheritance defines how common flag values are inherited by specific values.
+func (c *Config) CommonFlagInheritance() []FlagInheritance {
+	return []FlagInheritance{
+		{Common: c.Common.Storage.RegisteredFlags, Specific: c.BlocksStorage.Bucket.RegisteredFlags},
+		{Common: c.Common.Storage.RegisteredFlags, Specific: c.RulerStorage.RegisteredFlags},
+		{Common: c.Common.Storage.RegisteredFlags, Specific: c.AlertmanagerStorage.RegisteredFlags},
+	}
+}
+
+type FlagInheritance struct {
+	Common   util.RegisteredFlags
+	Specific util.RegisteredFlags
+}
+
+// InheritFlagValues inherits the provided common flag values to the specific ones, unless specific are defined.
+func InheritFlagValues(log log.Logger, fs *flag.FlagSet, fis []FlagInheritance) error {
 	setFlags := map[string]bool{}
 	fs.Visit(func(f *flag.Flag) { setFlags[f.Name] = true })
 
-	return multierror.New(
-		inheritFlags(log, c.Common.Storage.RegisteredFlags, c.BlocksStorage.Bucket.RegisteredFlags, setFlags),
-		inheritFlags(log, c.Common.Storage.RegisteredFlags, c.RulerStorage.RegisteredFlags, setFlags),
-		inheritFlags(log, c.Common.Storage.RegisteredFlags, c.AlertmanagerStorage.RegisteredFlags, setFlags),
-	).Err()
+	for _, fi := range fis {
+		if err := inheritFlags(log, fi.Common, fi.Specific, setFlags); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // inheritFlags takes flags from the origin set and sets them to the equivalent flags in the dest set, unless those are already set.

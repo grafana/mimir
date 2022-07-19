@@ -131,7 +131,7 @@ func main() {
 		return
 	}
 
-	if err := cfg.InheritCommonFlagValues(util_log.Logger, flag.CommandLine); err != nil {
+	if err := mimir.InheritFlagValues(util_log.Logger, flag.CommandLine, cfg.CommonFlagInheritance()); err != nil {
 		fmt.Fprintf(os.Stderr, "error inheriting common flag values: %v\n", err)
 		if !testMode {
 			os.Exit(1)
