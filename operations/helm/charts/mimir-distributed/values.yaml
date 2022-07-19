@@ -834,7 +834,7 @@ query_frontend:
 
 query_scheduler:
   enabled: false
-  replicas: 1
+  replicas: 2
 
   service:
     annotations: {}
