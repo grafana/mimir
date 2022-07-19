@@ -32,7 +32,7 @@ import (
 	"github.com/weaveworks/common/server"
 	"github.com/weaveworks/common/signals"
 	"google.golang.org/grpc/health/grpc_health_v1"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/dskit/tenant"
 
@@ -165,7 +165,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.Common.RegisterFlags(f)
 }
 
-func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *Config) UnmarshalYAML(value *yaml.Node) error {
 	// First unmarshal common into the specific locations.
 	common := configWithCustomCommonUnmarshaler{
 		Common: &commonConfigUnmarshaler{
@@ -176,7 +176,7 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 			},
 		},
 	}
-	if err := unmarshal(&common); err != nil {
+	if err := value.Decode(&common); err != nil {
 		return fmt.Errorf("can't unmarshal common config: %w", err)
 	}
 
@@ -184,7 +184,7 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	// This will override previously set common values by the specific ones, if they're provided.
 	// (YAML specific takes precedence over YAML common)
 	type plain Config
-	return unmarshal((*plain)(c))
+	return value.Decode((*plain)(c))
 }
 
 func (c *Config) InheritCommonFlagValues(log log.Logger, fs *flag.FlagSet) error {
@@ -428,9 +428,9 @@ type commonConfigUnmarshaler struct {
 // where this should be unmarshaled.
 type specificLocationsUnmarshaler map[string]interface{}
 
-func (m specificLocationsUnmarshaler) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (m specificLocationsUnmarshaler) UnmarshalYAML(value *yaml.Node) error {
 	for l, v := range m {
-		if err := unmarshal(v); err != nil {
+		if err := value.Decode(v); err != nil {
 			return fmt.Errorf("key %q: %w", l, err)
 		}
 	}

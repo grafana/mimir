@@ -6,10 +6,11 @@
 package ingester
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
 func TestInstanceLimitsUnmarshal(t *testing.T) {
@@ -25,8 +26,9 @@ func TestInstanceLimitsUnmarshal(t *testing.T) {
 max_ingestion_rate: 125.678
 max_tenants: 50000
 `
-
-	require.NoError(t, yaml.UnmarshalStrict([]byte(input), &l))
+	dec := yaml.NewDecoder(strings.NewReader(input))
+	dec.KnownFields(true)
+	require.NoError(t, dec.Decode(&l))
 	require.Equal(t, float64(125.678), l.MaxIngestionRate)
 	require.Equal(t, int64(50000), l.MaxInMemoryTenants)
 	require.Equal(t, int64(30), l.MaxInMemorySeries)       // default value
