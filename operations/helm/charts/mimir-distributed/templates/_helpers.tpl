@@ -173,14 +173,14 @@ Resource name template
 {{- end -}}
 
 {{- define "mimir.zonedResourceName" -}}
-{{- $component_values := index .Values (printf "%s" .component_config) -}}
+{{- $component_values := index .ctx.Values .component_config -}}
 {{- if $component_values.zone_aware_replication.enabled -}}
 {{- $zoneNameCharLimit := sub 64 (len (printf "%s-" .component)) -}}
 {{- if gt (len .rolloutZoneName) $zoneNameCharLimit -}}
 {{- fail (printf "Zone Name (%s) exceeds character limit (%d)" .rolloutZoneName $zoneNameCharLimit ) -}}
 {{- end -}}
 {{- end -}}
-{{ include "mimir.resourceName" (dict "ctx" . "component" .component) }}{{- if  $component_values.zone_aware_replication.enabled -}}-{{ .rolloutZoneName }}{{- end -}}
+{{ include "mimir.resourceName" . }}{{- if  $component_values.zone_aware_replication.enabled -}}-{{ .rolloutZoneName }}{{- end -}}
 {{- end -}}
 
 {{/*
@@ -217,14 +217,11 @@ app.kubernetes.io/managed-by: {{ .ctx.Release.Service }}
 
 {{- define "mimir.zonedLabels" -}}
 {{ include "mimir.labels" . }}
-{{- $component_values := index .ctx.Values (printf "%s" .ctx.component_config) -}}
+{{- $component_values := index .ctx.Values .component_config -}}
 {{- if $component_values.zone_aware_replication.enabled }}
-app.kubernetes.io/component: {{ .ctx.component }}-{{ .ctx.rolloutZoneName }}
-name: "{{ .ctx.component }}-{{ .ctx.rolloutZoneName }}" {{- /* Currently required for rollout-operator. https://github.com/grafana/rollout-operator/issues/15 */}}
-rollout-group: {{ .ctx.component }}
-zone: {{ .ctx.rolloutZoneName }}
-{{- else }}
-app.kubernetes.io/component: {{ .ctx.component }}
+name: "{{ .component }}-{{ .rolloutZoneName }}" {{- /* Currently required for rollout-operator. https://github.com/grafana/rollout-operator/issues/15 */}}
+rollout-group: {{ .component }}
+zone: {{ .rolloutZoneName }}
 {{- end -}}
 {{- end -}}
 
@@ -261,14 +258,11 @@ app.kubernetes.io/part-of: memberlist
 
 {{- define "mimir.zonedPodLabels" -}}
 {{ include "mimir.podLabels" . }}
-{{- $component_values := index .ctx.Values (printf "%s" .ctx.component_config) -}}
+{{- $component_values := index .ctx.Values .component_config -}}
 {{- if $component_values.zone_aware_replication.enabled }}
-app.kubernetes.io/component: {{ .ctx.component }}-{{ .ctx.rolloutZoneName }}
-name: "{{ .ctx.component }}-{{ .ctx.rolloutZoneName }}" {{- /* Currently required for rollout-operator. https://github.com/grafana/rollout-operator/issues/15 */}}
-rollout-group: {{ .ctx.component }}
-zone: {{ .ctx.rolloutZoneName }}
-{{- else }}
-app.kubernetes.io/component: {{ .ctx.component }}
+name: "{{ .component }}-{{ .rolloutZoneName }}" {{- /* Currently required for rollout-operator. https://github.com/grafana/rollout-operator/issues/15 */}}
+rollout-group: {{ .component }}
+zone: {{ .rolloutZoneName }}
 {{- end -}}
 {{- end -}}
 
@@ -315,13 +309,10 @@ app.kubernetes.io/component: {{ .component }}
 
 {{- define "mimir.zonedSelectorLabels" -}}
 {{ include "mimir.selectorLabels" . }}
-{{- $component_values := index .ctx.Values (printf "%s" .ctx.component_config) -}}
+{{- $component_values := index .ctx.Values .component_config -}}
 {{- if $component_values.zone_aware_replication.enabled }}
-app.kubernetes.io/component: {{ .ctx.component }}-{{ .ctx.rolloutZoneName }}
-rollout-group: {{ .ctx.component }}
-zone: {{ .ctx.rolloutZoneName }}
-{{- else }}
-app.kubernetes.io/component: {{ .ctx.component }}
+rollout-group: {{ .component }}
+zone: {{ .rolloutZoneName }}
 {{- end -}}
 {{- end -}}
 
@@ -373,7 +364,7 @@ Cluster name that shows up in dashboard metrics
 {{/* Creates dict for zone aware replication configuration */}}
 {{- define "mimir.zoneAwareReplicationMap" -}}
 {{- $zonesMap := (dict) -}}
-{{- $config := index .Values (printf "%s" $.component_config) -}}
+{{- $config := index .ctx.Values .component_config -}}
 {{- if $config.zone_aware_replication.enabled -}}
 {{- range $idx, $rolloutZone := $config.zone_aware_replication.zones -}}
 {{- $_ := set $zonesMap $rolloutZone.name (dict "affinity" ($rolloutZone.affinity | default (dict)) "nodeSelector" ($rolloutZone.nodeSelector | default (dict) ) ) -}}
@@ -389,7 +380,7 @@ Cluster name that shows up in dashboard metrics
 
 
 {{- define "mimir.componentAnnotations" -}}
-{{- $component_values := index .Values (printf "%s" .component_config) -}}
+{{- $component_values := index .ctx.Values .component_config -}}
 {{- if $component_values.zone_aware_replication.enabled }}
 {{- $map := dict "rollout-max-unavailable" ($component_values.zone_aware_replication.max_unavailable | toString) -}}
 {{- toYaml (deepCopy $map | mergeOverwrite $component_values.annotations) }}

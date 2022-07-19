@@ -1,16 +1,15 @@
 {{- if .Values.alertmanager.enabled -}}
-{{- $_ := set . "component" "alertmanager" -}}
-{{- $_ := set . "component_config" "alertmanager" -}}
-{{- $zonesMap := include "mimir.zoneAwareReplicationMap" $  | fromYaml -}}
+{{- $args := dict "ctx" . "component" "alertmanager" "component_config" "alertmanager" "memberlist" true -}}
+{{- $zonesMap := include "mimir.zoneAwareReplicationMap" $args | fromYaml -}}
 {{- range $zoneName, $rolloutZone := $zonesMap }}
 {{- with $ -}}
-{{- $_ := set . "rolloutZoneName" $zoneName -}}
+{{- $_ := set $args "rolloutZoneName" $zoneName -}}
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "mimir.zonedResourceName" . }}
+  name: {{ include "mimir.zonedResourceName" $args }}
   labels:
-    {{- include "mimir.zonedLabels" (dict "ctx" . "memberlist" true) | nindent 4 }}
+    {{- include "mimir.zonedLabels" $args | nindent 4 }}
     {{- with .Values.alertmanager.service.labels }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
@@ -29,7 +28,7 @@ spec:
       name: grpc
       targetPort: grpc
   selector:
-    {{- include "mimir.zonedSelectorLabels" (dict "ctx" . "memberlist" true) | nindent 4 }}
+    {{- include "mimir.zonedSelectorLabels" $args | nindent 4 }}
 
 ---
 {{- end -}}
