@@ -7,7 +7,7 @@ metadata:
   namespace: "citestns"
   labels:
     app: minio
-    chart: minio-4.0.5
+    chart: minio-4.0.3
     release: test-enterprise-configmap-values
     heritage: Helm
 data:
@@ -120,10 +120,6 @@ data:
     MC_CONFIG_DIR="/tmp/minio/mc/"
     MC="/usr/bin/mc --insecure --config-dir ${MC_CONFIG_DIR}"
     
-    # AccessKey and secretkey credentials file are added to prevent shell execution errors caused by special characters.
-    # Special characters for example : ',",<,>,{,}
-    MINIO_ACCESSKEY_SECRETKEY_TMP="/tmp/accessKey_and_secretKey_tmp"
-    
     # connectToMinio
     # Use a check-sleep-check loop to wait for MinIO service to be available
     connectToMinio() {
@@ -151,36 +147,28 @@ data:
       return 0
     }
     
-    # checkUserExists ()
+    # checkUserExists ($username)
     # Check if the user exists, by using the exit code of `mc admin user info`
     checkUserExists() {
-      CMD=$(${MC} admin user info myminio $(head -1 $MINIO_ACCESSKEY_SECRETKEY_TMP) > /dev/null 2>&1)
+      USER=$1
+      CMD=$(${MC} admin user info myminio $USER > /dev/null 2>&1)
       return $?
     }
     
-    # createUser ($policy)
+    # createUser ($username, $password, $policy)
     createUser() {
-      POLICY=$1
-      #check accessKey_and_secretKey_tmp file
-      if [[ ! -f $MINIO_ACCESSKEY_SECRETKEY_TMP ]];then
-        echo "credentials file does not exist"
-        return 1
-      fi
-      if [[ $(cat $MINIO_ACCESSKEY_SECRETKEY_TMP|wc -l) -ne 2 ]];then
-        echo "credentials file is invalid"
-        rm -f $MINIO_ACCESSKEY_SECRETKEY_TMP
-        return 1
-      fi
+      USER=$1
+      PASS=$2
+      POLICY=$3
+    
       # Create the user if it does not exist
-      if ! checkUserExists ; then
-        USER=$(head -1 $MINIO_ACCESSKEY_SECRETKEY_TMP)
+      if ! checkUserExists $USER ; then
         echo "Creating user '$USER'"
-        cat $MINIO_ACCESSKEY_SECRETKEY_TMP | ${MC} admin user add myminio
+        ${MC} admin user add myminio $USER $PASS
       else
         echo "User '$USER' already exists."
       fi
-      #clean up credentials files.
-      rm -f $MINIO_ACCESSKEY_SECRETKEY_TMP
+    
     
       # set policy for user
       if [ ! -z $POLICY -a $POLICY != " " ] ; then
@@ -198,9 +186,7 @@ data:
     
     
     # Create the users
-    echo console > $MINIO_ACCESSKEY_SECRETKEY_TMP
-    echo console123 >> $MINIO_ACCESSKEY_SECRETKEY_TMP
-    createUser consoleAdmin
+    createUser console console123 consoleAdmin
     
   add-policy: |-
     #!/bin/sh

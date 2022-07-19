@@ -7,7 +7,7 @@ metadata:
   namespace: "citestns"
   labels:
     app: minio
-    chart: minio-4.0.5
+    chart: minio-4.0.3
     release: test-enterprise-values
     heritage: Helm
 spec:
@@ -28,8 +28,8 @@ spec:
         app: minio
         release: test-enterprise-values
       annotations:
-        checksum/secrets: 4686e31a04eba1ee62c386697b176c855bb6edd9a2f9a3621a0b6aeb8f2af3c4
-        checksum/config: 238db9b439d8ff9e4916739f3592c671154461894a8cbc2bce9d455b2b919ffe
+        checksum/secrets: f409218e44d06962c56b5a86a3a2ecf6d9f75e6c9beff2ebb14ae96290a45554
+        checksum/config: 98e28c14e3808ad4e793631a25d6261c188a14d5b279d2353cd351fbb6f3664e
     spec:
       securityContext:
         runAsUser: 1000
