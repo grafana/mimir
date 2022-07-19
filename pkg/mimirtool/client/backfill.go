@@ -4,7 +4,6 @@ package client
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,13 +19,13 @@ import (
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 )
 
-func (c *MimirClient) Backfill(ctx context.Context, blocks []string) error {
+func (c *MimirClient) Backfill(blocks []string) error {
 	// Upload each block
 	var succeeded, failed, alreadyExists int
 
 	for _, b := range blocks {
 		logctx := logrus.WithFields(logrus.Fields{"path": b})
-		if err := c.backfillBlock(ctx, b, logctx); err != nil {
+		if err := c.backfillBlock(b, logctx); err != nil {
 			if errors.Is(err, errConflict) {
 				logctx.Warning("block already exists on the server")
 				alreadyExists++
@@ -56,7 +55,7 @@ func drainAndCloseBody(resp *http.Response) {
 	_ = resp.Body.Close()
 }
 
-func (c *MimirClient) backfillBlock(ctx context.Context, blockDir string, logctx *logrus.Entry) error {
+func (c *MimirClient) backfillBlock(blockDir string, logctx *logrus.Entry) error {
 	// blockMeta returned by getBlockMeta will have thanos.files section pre-populated.
 	blockMeta, err := getBlockMeta(blockDir)
 	if err != nil {

@@ -3,7 +3,6 @@
 package commands
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -78,7 +77,6 @@ func (c *BackfillCommand) Register(app *kingpin.Application, envVars EnvVarNames
 }
 
 func (c *BackfillCommand) backfill(k *kingpin.ParseContext) error {
-	ctx := context.Background()
 	logrus.WithFields(logrus.Fields{
 		"blocks": c.blocks.String(),
 		"user":   c.clientConfig.ID,
@@ -89,5 +87,5 @@ func (c *BackfillCommand) backfill(k *kingpin.ParseContext) error {
 		return err
 	}
 
-	return cli.Backfill(ctx, c.blocks)
+	return cli.Backfill(c.blocks)
 }
