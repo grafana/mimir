@@ -1,6 +1,6 @@
-{{- /*gotype: github.com/grafana/mimir/pkg/storegateway.blocksContents */ -}}
+{{- /*gotype: github.com/grafana/mimir/pkg/storegateway.blocksPageContents*/ -}}
 <!DOCTYPE html>
-<html>
+<html xmlns="http://www.w3.org/1999/html">
 <head>
     <meta charset="UTF-8">
     <title>Store-gateway: bucket tenant blocks</title>
@@ -8,26 +8,23 @@
 <body>
 <h1>Store-gateway: bucket tenant blocks</h1>
 <p>Current time: {{ .Now }}</p>
-<p>Showing blocks for tenant: {{ .Tenant }}</p>
+<p>Showing blocks for tenant: <strong>{{ .Tenant }}</strong></p>
 <p>
-    {{ if not .ShowDeleted }}
-        <a href="{{ .ShowDeletedQuery }}">Show Deleted</a>
-    {{ end }}
-    {{ if not .ShowSources }}
-        <a href="{{ .ShowSourcesQuery }}">Show Sources</a>
-    {{ end }}
-    {{ if not .ShowParents }}
-        <a href="{{ .ShowParentsQuery }}">Show Parents</a>
-    {{ end }}
-</p>
-<p>
-    Use ?split_count= query param to show split compactor count preview.
+    <form>
+        <input type="checkbox" id="show-deleted" name="show_deleted" {{ if .ShowDeleted }} checked {{ end }}>&nbsp;<label for="show-deleted">Show Deleted</label> &nbsp;&nbsp;
+        <input type="checkbox" id="show-sources" name="show_sources" {{ if .ShowSources }} checked {{ end }}>&nbsp;<label for="show-sources">Show Sources</label> &nbsp;&nbsp;
+        <input type="checkbox" id="show-parents" name="show_parents" {{ if .ShowParents }} checked {{ end }}>&nbsp;<label for="show-parents">Show Parents</label> &nbsp;&nbsp;
+        <label for="split-count">Split count (non-zero value shows block split ID):</label>&nbsp;<input id="split-count" name="split_count" type="text" value="{{ .SplitCount }}" style="width: 6em;" />
+        <button type="submit" style="background-color: lightgrey;">
+            <span style="padding: 0.5em 1em; font-size: 125%;">Reload</span>
+        </button>
+    </form>
 </p>
 <table border="1" cellpadding="5" style="border-collapse: collapse">
     <thead>
     <tr>
         <th>Block ID</th>
-        {{ if .ShowSplitCount }}
+        {{ if gt .SplitCount 0 }}
         <th>Split ID</th>{{ end }}
         <th>ULID Time</th>
         <th>Min Time</th>
@@ -52,8 +49,8 @@
     {{ range .FormattedBlocks }}
         <tr>
             <td>{{ .ULID }}</td>
-            {{ if $page.ShowSplitCount }}
-            <td>{{ .SplitCount }}</td>{{ end }}
+            {{ if gt $page.SplitCount 0 }}
+            <td>{{ .SplitID }}</td>{{ end }}
             <td>{{ .ULIDTime }}</td>
             <td>{{ .MinTime }}</td>
             <td>{{ .MaxTime }}</td>
