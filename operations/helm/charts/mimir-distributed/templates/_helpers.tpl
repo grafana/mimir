@@ -219,12 +219,9 @@ app.kubernetes.io/managed-by: {{ .ctx.Release.Service }}
 {{ include "mimir.labels" . }}
 {{- $component_values := index .ctx.Values .component_config -}}
 {{- if $component_values.zone_aware_replication.enabled }}
-app.kubernetes.io/component: {{ .component }}-{{ .ctx.rolloutZoneName }}
 name: "{{ .component }}-{{ .rolloutZoneName }}" {{- /* Currently required for rollout-operator. https://github.com/grafana/rollout-operator/issues/15 */}}
 rollout-group: {{ .component }}
 zone: {{ .rolloutZoneName }}
-{{- else }}
-app.kubernetes.io/component: {{ .component }}
 {{- end -}}
 {{- end -}}
 
@@ -263,12 +260,9 @@ app.kubernetes.io/part-of: memberlist
 {{ include "mimir.podLabels" . }}
 {{- $component_values := index .ctx.Values .component_config -}}
 {{- if $component_values.zone_aware_replication.enabled }}
-app.kubernetes.io/component: {{ .component }}-{{ .rolloutZoneName }}
 name: "{{ .component }}-{{ .rolloutZoneName }}" {{- /* Currently required for rollout-operator. https://github.com/grafana/rollout-operator/issues/15 */}}
 rollout-group: {{ .component }}
 zone: {{ .rolloutZoneName }}
-{{- else }}
-app.kubernetes.io/component: {{ .component }}
 {{- end -}}
 {{- end -}}
 
@@ -317,11 +311,8 @@ app.kubernetes.io/component: {{ .component }}
 {{ include "mimir.selectorLabels" . }}
 {{- $component_values := index .ctx.Values .component_config -}}
 {{- if $component_values.zone_aware_replication.enabled }}
-app.kubernetes.io/component: {{ .component }}-{{ .rolloutZoneName }}
 rollout-group: {{ .component }}
 zone: {{ .rolloutZoneName }}
-{{- else }}
-app.kubernetes.io/component: {{ .component }}
 {{- end -}}
 {{- end -}}
 

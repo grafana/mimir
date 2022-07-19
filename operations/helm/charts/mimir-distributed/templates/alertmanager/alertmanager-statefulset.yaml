@@ -1,17 +1,16 @@
 {{- if .Values.alertmanager.enabled -}}
 {{- if .Values.alertmanager.statefulSet.enabled -}}
-{{- $_ := set . "component" "alertmanager" -}}
-{{- $_ := set . "component_config" "alertmanager" -}}
-{{- $zonesMap := include "mimir.zoneAwareReplicationMap" $  | fromYaml -}}
+{{- $args := dict "ctx" . "component" "alertmanager" "component_config" "alertmanager" "memberlist" true -}}
+{{- $zonesMap := include "mimir.zoneAwareReplicationMap" $args | fromYaml -}}
 {{- range $zoneName, $rolloutZone := $zonesMap }}
 {{- with $ -}}
-{{- $_ := set . "rolloutZoneName" $zoneName -}}
+{{- $_ := set $args "rolloutZoneName" $zoneName -}}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: {{ include "mimir.zonedResourceName" . }}
+  name: {{ include "mimir.zonedResourceName" $args }}
   labels:
-    {{- include "mimir.zonedLabels" (dict "ctx" . "memberlist" true) | nindent 4 }}
+    {{- include "mimir.zonedLabels" $args | nindent 4 }}
   annotations:
     {{- toYaml .Values.alertmanager.annotations | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
@@ -19,7 +18,7 @@ spec:
   replicas: {{ .Values.alertmanager.replicas }}
   selector:
     matchLabels:
-      {{- include "mimir.zonedSelectorLabels" (dict "ctx" . "memberlist" true) | nindent 4 }}
+      {{- include "mimir.zonedSelectorLabels" $args | nindent 4 }}
   updateStrategy:
     {{- if .Values.store_gateway.zone_aware_replication.enabled }}
     type: OnDelete
@@ -52,12 +51,12 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "mimir.zonedPodLabels" (dict "ctx" . "memberlist" true) | nindent 8 }}
+        {{- include "mimir.zonedPodLabels" $args | nindent 8 }}
         {{- with .Values.alertmanager.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
       annotations:
-        {{- include "mimir.podAnnotations" (dict "ctx" . "component" "alertmanager") | nindent 8 }}
+        {{- include "mimir.podAnnotations" $args | nindent 8 }}
       namespace: {{ .Release.Namespace | quote }}
     spec:
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
