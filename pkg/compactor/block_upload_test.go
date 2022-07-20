@@ -519,7 +519,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 				require.NoError(t, json.NewEncoder(buf).Encode(tc.meta))
 				rdr = buf
 			}
-			r := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/upload/block/%s", tc.blockID), rdr)
+			r := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/upload/block/%s/start", tc.blockID), rdr)
 			if tc.tenantID != "" {
 				r = r.WithContext(user.InjectOrgID(r.Context(), tc.tenantID))
 			}
@@ -527,7 +527,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 				r = mux.SetURLVars(r, map[string]string{"block": tc.blockID})
 			}
 			w := httptest.NewRecorder()
-			c.HandleBlockUpload(w, r)
+			c.StartBlockUpload(w, r)
 
 			resp := w.Result()
 			body, err := io.ReadAll(resp.Body)
@@ -655,11 +655,11 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 				bucketClient: bkt,
 				cfgProvider:  cfgProvider,
 			}
-			r := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/upload/block/%s", blockID), bytes.NewReader(metaJSON))
+			r := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/upload/block/%s/start", blockID), bytes.NewReader(metaJSON))
 			r = r.WithContext(user.InjectOrgID(r.Context(), tenantID))
 			r = mux.SetURLVars(r, map[string]string{"block": blockID})
 			w := httptest.NewRecorder()
-			c.HandleBlockUpload(w, r)
+			c.StartBlockUpload(w, r)
 
 			resp := w.Result()
 			body, err := io.ReadAll(resp.Body)
@@ -888,8 +888,7 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 			if tc.body != "" {
 				rdr = strings.NewReader(tc.body)
 			}
-			r := httptest.NewRequest(http.MethodPost, fmt.Sprintf(
-				"/api/v1/upload/block/%s/files?path=%s", blockID, url.QueryEscape(tc.path)), rdr)
+			r := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/upload/block/%s/files?path=%s", blockID, url.QueryEscape(tc.path)), rdr)
 			if tc.tenantID != "" {
 				r = r.WithContext(user.InjectOrgID(r.Context(), tenantID))
 			}
@@ -986,8 +985,7 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 
 			for _, f := range tc.files {
 				rdr := strings.NewReader(f.content)
-				r := httptest.NewRequest(http.MethodPost, fmt.Sprintf(
-					"/api/v1/upload/block/%s/files?path=%s", blockID, url.QueryEscape(f.path)), rdr)
+				r := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/upload/block/%s/files?path=%s", blockID, url.QueryEscape(f.path)), rdr)
 				urlVars := map[string]string{
 					"block": blockID,
 				}
@@ -1183,8 +1181,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 				bucketClient: &bkt,
 				cfgProvider:  cfgProvider,
 			}
-			r := httptest.NewRequest(http.MethodPost, fmt.Sprintf(
-				"/api/v1/upload/block/%s?uploadComplete=true", tc.blockID), nil)
+			r := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/upload/block/%s/finish", tc.blockID), nil)
 			if tc.tenantID != "" {
 				r = r.WithContext(user.InjectOrgID(r.Context(), tenantID))
 			}
@@ -1192,7 +1189,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 				r = mux.SetURLVars(r, map[string]string{"block": tc.blockID})
 			}
 			w := httptest.NewRecorder()
-			c.HandleBlockUpload(w, r)
+			c.FinishBlockUpload(w, r)
 
 			resp := w.Result()
 			body, err := io.ReadAll(resp.Body)
