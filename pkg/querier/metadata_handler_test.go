@@ -25,7 +25,7 @@ func TestMetadataHandler_Success(t *testing.T) {
 		},
 		nil)
 
-	handler := MetadataHandler(d)
+	handler := NewMetadataHandler(d)
 
 	request, err := http.NewRequest("GET", "/metadata", nil)
 	require.NoError(t, err)
@@ -59,7 +59,7 @@ func TestMetadataHandler_Error(t *testing.T) {
 	d := &mockDistributor{}
 	d.On("MetricsMetadata", mock.Anything).Return([]scrape.MetricMetadata{}, fmt.Errorf("no user id"))
 
-	handler := MetadataHandler(d)
+	handler := NewMetadataHandler(d)
 
 	request, err := http.NewRequest("GET", "/metadata", nil)
 	require.NoError(t, err)

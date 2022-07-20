@@ -6,10 +6,25 @@
 package querier
 
 import (
+	"context"
 	"net/http"
+
+	"github.com/prometheus/prometheus/scrape"
 
 	"github.com/grafana/mimir/pkg/util"
 )
+
+const (
+	statusSuccess = "success"
+	statusError   = "error"
+)
+
+// MetadataSupplier is the metadata specific part of the Distributor interface. It
+// exists to allow us to wrap the default implementation (the distributor embedded
+// in a querier) with logic for handling tenant federated metadata requests.
+type MetadataSupplier interface {
+	MetricsMetadata(ctx context.Context) ([]scrape.MetricMetadata, error)
+}
 
 type metricMetadata struct {
 	Type string `json:"type"`
@@ -17,22 +32,17 @@ type metricMetadata struct {
 	Unit string `json:"unit"`
 }
 
-const (
-	statusSuccess = "success"
-	statusError   = "error"
-)
-
 type metadataResult struct {
 	Status string                      `json:"status"`
 	Data   map[string][]metricMetadata `json:"data,omitempty"`
 	Error  string                      `json:"error,omitempty"`
 }
 
-// MetadataHandler returns metric metadata held by Mimir for a given tenant.
-// It is kept and returned as a set.
-func MetadataHandler(d Distributor) http.Handler {
+// NewMetadataHandler creates a http.Handler for serving metric metadata held by
+// Mimir for a given tenant. It is kept and returned as a set.
+func NewMetadataHandler(m MetadataSupplier) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resp, err := d.MetricsMetadata(r.Context())
+		resp, err := m.MetricsMetadata(r.Context())
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			util.WriteJSONResponse(w, metadataResult{Status: statusError, Error: err.Error()})
