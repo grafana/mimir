@@ -132,7 +132,10 @@ func (b *BucketValidationCommand) validate(k *kingpin.ParseContext) error {
 	}
 
 	for testRun := 0; testRun < b.testRuns; testRun++ {
-		err = b.uploadTestObjects(ctx, "creating test objects")
+		// Initially create the objects with an empty string of content. They will be
+		// overwritten next with the expected content. This helps ensure that uploads
+		// can overwrite existing files and their contents reflect that.
+		err = b.uploadTestObjects(ctx, "", "creating test objects")
 		if err != nil {
 			return errors.Wrap(err, "error when uploading test data")
 		}
@@ -140,7 +143,7 @@ func (b *BucketValidationCommand) validate(k *kingpin.ParseContext) error {
 		// Run the upload test again to verify that we can write to objects that
 		// already exist. Some object storage compatibility APIs don't actually let
 		// objects be overwritten via uploads if they already exist.
-		err = b.uploadTestObjects(ctx, "overwriting test objects")
+		err = b.uploadTestObjects(ctx, b.objectContent, "overwriting test objects")
 		if err != nil {
 			return errors.Wrap(err, "error when overwriting test data")
 		}
@@ -201,14 +204,14 @@ func (b *BucketValidationCommand) setObjectNames() {
 	}
 }
 
-func (b *BucketValidationCommand) uploadTestObjects(ctx context.Context, phase string) error {
+func (b *BucketValidationCommand) uploadTestObjects(ctx context.Context, content string, phase string) error {
 	iteration := 0
 	for dirName, objectName := range b.objectNames {
 		b.report(phase, iteration)
 		iteration++
 
 		objectPath := dirName + objectName
-		err := b.bucketClient.Upload(ctx, objectPath, strings.NewReader(b.objectContent))
+		err := b.bucketClient.Upload(ctx, objectPath, strings.NewReader(content))
 		if err != nil {
 			return errors.Wrapf(err, "failed to upload object (%s)", objectPath)
 		}
