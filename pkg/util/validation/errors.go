@@ -231,7 +231,7 @@ var histogramDifferentNumberSpansBuckets = globalerror.HistogramDifferentNumberS
 
 func newhHistogramDifferentNumberSpansBucketError(sign string, spanBuckets, buckets uint32, metricName string, timestamp int64) ValidationError {
 	return histogramValidationError{
-		message:     sampleTimestampTooNewMsgFormat,
+		message:     histogramDifferentNumberSpansBuckets,
 		sign:        sign,
 		spanBuckets: spanBuckets,
 		buckets:     buckets,
