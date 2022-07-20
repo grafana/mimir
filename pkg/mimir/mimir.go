@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"reflect"
 	"strconv"
 	"strings"
 
@@ -232,10 +231,6 @@ func inheritFlags(log log.Logger, orig util.RegisteredFlags, dest util.Registere
 // Validate the mimir config and return an error if the validation
 // doesn't pass
 func (c *Config) Validate(log log.Logger) error {
-	if err := c.validateYAMLEmptyNodes(); err != nil {
-		return err
-	}
-
 	if err := c.validateBucketConfigs(); err != nil {
 		return fmt.Errorf("%w: %s", errInvalidBucketConfig, err)
 	}
@@ -292,33 +287,6 @@ func (c *Config) isAnyModuleEnabled(modules ...string) bool {
 	}
 
 	return false
-}
-
-// validateYAMLEmptyNodes ensure that no empty node has been specified in the YAML config file.
-// When an empty node is defined in YAML, the YAML parser sets the whole struct to its zero value
-// and so we loose all default values. It's very difficult to detect this case for the user, so we
-// try to prevent it (on the root level) with this custom validation.
-func (c *Config) validateYAMLEmptyNodes() error {
-	defaults := Config{}
-	flagext.DefaultValues(&defaults)
-
-	defStruct := reflect.ValueOf(defaults)
-	cfgStruct := reflect.ValueOf(*c)
-
-	// We expect all structs are the exact same. This check should never fail.
-	if cfgStruct.NumField() != defStruct.NumField() {
-		return errors.New("unable to validate configuration because of mismatching internal config data structure")
-	}
-
-	for i := 0; i < cfgStruct.NumField(); i++ {
-		// If the struct has been reset due to empty YAML value and the zero struct value
-		// doesn't match the default one, then we should warn the user about the issue.
-		if cfgStruct.Field(i).Kind() == reflect.Struct && cfgStruct.Field(i).IsZero() && !defStruct.Field(i).IsZero() {
-			return fmt.Errorf("the %s configuration in YAML has been specified as an empty YAML node", cfgStruct.Type().Field(i).Name)
-		}
-	}
-
-	return nil
 }
 
 func (c *Config) validateBucketConfigs() error {
