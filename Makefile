@@ -398,7 +398,11 @@ dist: ## Generates binaries for a Mimir release.
 		touch $@
 
 build-mixin: check-mixin-jb
-	@rm -rf $(MIXIN_OUT_PATH) && mkdir $(MIXIN_OUT_PATH)
+	# Empty the compiled mixin directories content, without removing the directories itself,
+	# so that Grafana can refresh re-build dashboards when using "make mixin-serve".
+	@mkdir -p $(MIXIN_OUT_PATH)
+	@find $(MIXIN_OUT_PATH) -type f -delete
+
 	@mixtool generate all --output-alerts $(MIXIN_OUT_PATH)/alerts.yaml --output-rules $(MIXIN_OUT_PATH)/rules.yaml --directory $(MIXIN_OUT_PATH)/dashboards ${MIXIN_PATH}/mixin-compiled.libsonnet
 	@./tools/check-rules.sh $(MIXIN_OUT_PATH)/rules.yaml 20 # If any rule group has more than 20 rules, fail. 20 is our default per-tenant limit in the ruler.
 	@cd $(MIXIN_OUT_PATH)/.. && zip -q -r mimir-mixin.zip $$(basename "$(MIXIN_OUT_PATH)")
