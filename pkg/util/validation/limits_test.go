@@ -380,7 +380,7 @@ testuser:
 
 	differentUserOverride := `
 differentuser:
-  alertmanager_notification_limits_per_integration:
+  alertmanager_notification_rate_limit_per_integration:
     email: 500
 `
 
