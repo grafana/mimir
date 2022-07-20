@@ -6,9 +6,12 @@ config:
   frontend:
     align_queries_with_step:
     log_queries_longer_than:
+    scheduler_address:
     results_cache:
       memcached:
         timeout:
+  frontend_worker:
+    scheduler_address:
   limits:
     max_query_length:
     max_cache_freshness:
