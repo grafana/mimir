@@ -392,7 +392,11 @@ func (c *Config) registerServerFlagsWithChangedDefaultValues(fs *flag.FlagSet) {
 }
 
 type CommonConfig struct {
-	Storage                     bucket.StorageBackendConfig             `yaml:"storage"`
+	Storage bucket.StorageBackendConfig `yaml:"storage"`
+	// ExtraSpecificStorageConfigs can be used to programatically add more locations
+	// where common storage config should be applied. Useful for projects extending Mimir.
+	// This should be done before YAML is unmarshaled.
+	// This field has no effect on the configuration itself (has no yaml tag or flag associated).
 	ExtraSpecificStorageConfigs map[string]*bucket.StorageBackendConfig `yaml:"-"`
 }
 
