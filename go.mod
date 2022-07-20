@@ -255,5 +255,7 @@ replace github.com/vimeo/galaxycache => github.com/thanos-community/galaxycache 
 // grpc v1.46.0 removed "WithBalancerName()" API, still in use by weaveworks/commons.
 replace google.golang.org/grpc => google.golang.org/grpc v1.45.0
 
-// gopkg.in/yaml.v3 + https://github.com/go-yaml/yaml/pull/691
-replace gopkg.in/yaml.v3 => github.com/colega/go-yaml-yaml v0.0.0-20220720070545-aaba007ebc22
+// gopkg.in/yaml.v3
+// + https://github.com/go-yaml/yaml/pull/691
+// + https://github.com/go-yaml/yaml/pull/876
+replace gopkg.in/yaml.v3 => github.com/colega/go-yaml-yaml v0.0.0-20220720105220-255a8d16d094
