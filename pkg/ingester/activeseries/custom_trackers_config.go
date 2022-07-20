@@ -126,7 +126,7 @@ func customTrackerFlagValueToMap(s string) (map[string]string, error) {
 // CustomTrackersConfig are marshaled in yaml as a map[string]string, with matcher names as keys and strings as matchers definitions.
 func (c *CustomTrackersConfig) UnmarshalYAML(value *yaml.Node) error {
 	stringMap := map[string]string{}
-	err := value.Decode(&stringMap)
+	err := value.DecodeWithOptions(&stringMap, yaml.DecodeOptions{KnownFields: true})
 	if err != nil {
 		return err
 	}

@@ -176,7 +176,7 @@ func (c *Config) UnmarshalYAML(value *yaml.Node) error {
 			},
 		},
 	}
-	if err := value.Decode(&common); err != nil {
+	if err := value.DecodeWithOptions(&common, yaml.DecodeOptions{KnownFields: true}); err != nil {
 		return fmt.Errorf("can't unmarshal common config: %w", err)
 	}
 
@@ -184,7 +184,7 @@ func (c *Config) UnmarshalYAML(value *yaml.Node) error {
 	// This will override previously set common values by the specific ones, if they're provided.
 	// (YAML specific takes precedence over YAML common)
 	type plain Config
-	return value.Decode((*plain)(c))
+	return value.DecodeWithOptions((*plain)(c), yaml.DecodeOptions{KnownFields: true})
 }
 
 func (c *Config) InheritCommonFlagValues(log log.Logger, fs *flag.FlagSet) error {
@@ -430,7 +430,7 @@ type specificLocationsUnmarshaler map[string]interface{}
 
 func (m specificLocationsUnmarshaler) UnmarshalYAML(value *yaml.Node) error {
 	for l, v := range m {
-		if err := value.Decode(v); err != nil {
+		if err := value.DecodeWithOptions(v, yaml.DecodeOptions{KnownFields: true}); err != nil {
 			return fmt.Errorf("key %q: %w", l, err)
 		}
 	}

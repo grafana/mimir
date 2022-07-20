@@ -39,7 +39,7 @@ func (m NotificationRateLimitMap) Set(s string) error {
 // UnmarshalYAML implements yaml.Unmarshaler.
 func (m NotificationRateLimitMap) UnmarshalYAML(value *yaml.Node) error {
 	newMap := map[string]float64{}
-	return m.updateMap(value.Decode(newMap), newMap)
+	return m.updateMap(value.DecodeWithOptions(newMap, yaml.DecodeOptions{KnownFields: true}), newMap)
 }
 
 func (m NotificationRateLimitMap) updateMap(unmarshalErr error, newMap map[string]float64) error {

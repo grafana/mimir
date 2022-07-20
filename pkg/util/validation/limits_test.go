@@ -462,7 +462,7 @@ testuser:
 			expectedBurstSize: 5,
 		},
 
-		"different user overridem, email": {
+		"different user override, email": {
 			testedIntegration: "email",
 			overrides:         differentUserOverride,
 			expectedRateLimit: 100,

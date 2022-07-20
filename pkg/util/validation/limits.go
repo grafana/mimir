@@ -250,7 +250,7 @@ func (l *Limits) UnmarshalYAML(value *yaml.Node) error {
 	}
 	type plain Limits
 
-	err := value.Decode((*plain)(l))
+	err := value.DecodeWithOptions((*plain)(l), yaml.DecodeOptions{KnownFields: true})
 	if err != nil {
 		return err
 	}

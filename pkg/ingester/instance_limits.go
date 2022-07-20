@@ -54,5 +54,5 @@ func (l *InstanceLimits) UnmarshalYAML(value *yaml.Node) error {
 		*l = *defaultInstanceLimits
 	}
 	type plain InstanceLimits // type indirection to make sure we don't go into recursive loop
-	return value.Decode((*plain)(l))
+	return value.DecodeWithOptions((*plain)(l), yaml.DecodeOptions{KnownFields: true})
 }
