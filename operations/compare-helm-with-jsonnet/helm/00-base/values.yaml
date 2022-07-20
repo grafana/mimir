@@ -1,10 +1,10 @@
-memcached-chunks:
+chunks-cache:
     enabled: true
-memcached-index-queries:
+index-cache:
     enabled: true
-memcached-metadata:
+metadata-cache:
     enabled: true
-memcached-results:
+results-cache:
     enabled: true
 minio:
     enabled: false
