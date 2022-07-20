@@ -42,8 +42,9 @@ var rePath = regexp.MustCompile(`^(index|chunks/\d{6})$`)
 // go ahead. In practice this means to check that the (complete) block isn't already in block
 // storage, and that the meta file is valid.
 func (c *MultitenantCompactor) StartBlockUpload(w http.ResponseWriter, r *http.Request) {
-	blockID, tenantID, userBkt, ok := c.parseBlockUploadParameters(w, r)
-	if !ok {
+	blockID, tenantID, err := c.parseBlockUploadParameters(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -52,6 +53,7 @@ func (c *MultitenantCompactor) StartBlockUpload(w http.ResponseWriter, r *http.R
 
 	const op = "start block upload"
 
+	userBkt := bucket.NewUserBucketClient(tenantID, c.bucketClient, c.cfgProvider)
 	if err := checkForCompleteBlock(ctx, blockID, userBkt); err != nil {
 		writeBlockUploadError(err, op, "while checking for complete block", logger, w)
 		return
@@ -70,8 +72,9 @@ func (c *MultitenantCompactor) StartBlockUpload(w http.ResponseWriter, r *http.R
 // Finishing block upload performs block valiation, and if all checks pass, marks block as finished
 // by uploading meta.json file.
 func (c *MultitenantCompactor) FinishBlockUpload(w http.ResponseWriter, r *http.Request) {
-	blockID, _, userBkt, ok := c.parseBlockUploadParameters(w, r)
-	if !ok {
+	blockID, tenantID, err := c.parseBlockUploadParameters(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -80,6 +83,7 @@ func (c *MultitenantCompactor) FinishBlockUpload(w http.ResponseWriter, r *http.
 
 	const op = "complete block upload"
 
+	userBkt := bucket.NewUserBucketClient(tenantID, c.bucketClient, c.cfgProvider)
 	if err := checkForCompleteBlock(ctx, blockID, userBkt); err != nil {
 		writeBlockUploadError(err, op, "while checking for complete block", logger, w)
 		return
@@ -94,31 +98,23 @@ func (c *MultitenantCompactor) FinishBlockUpload(w http.ResponseWriter, r *http.
 }
 
 // parseBlockUploadParameters parses common parameters from the request: block ID, tenant and checks if tenant has uploads enabled.
-// If it returns ok==false, then HTTP response has been sent.
-func (c *MultitenantCompactor) parseBlockUploadParameters(w http.ResponseWriter, r *http.Request) (blockULID ulid.ULID, tenantID string, userBucket objstore.InstrumentedBucket, ok bool) {
-	var err error
-	blockULID, err = ulid.Parse(mux.Vars(r)["block"])
+func (c *MultitenantCompactor) parseBlockUploadParameters(r *http.Request) (ulid.ULID, string, error) {
+	blockID, err := ulid.Parse(mux.Vars(r)["block"])
 	if err != nil {
-		http.Error(w, "invalid block ID", http.StatusBadRequest)
-		return
+		return ulid.ULID{}, "", errors.New("invalid block ID")
 	}
 
 	ctx := r.Context()
-	tenantID, err = tenant.TenantID(ctx)
+	tenantID, err := tenant.TenantID(ctx)
 	if err != nil {
-		http.Error(w, "invalid tenant ID", http.StatusBadRequest)
-		return
+		return ulid.ULID{}, "", errors.New("invalid tenant ID")
 	}
 
 	if !c.cfgProvider.CompactorBlockUploadEnabled(tenantID) {
-		http.Error(w, "block upload is disabled", http.StatusBadRequest)
-		return
+		return ulid.ULID{}, "", errors.New("block upload is disabled")
 	}
 
-	userBucket = bucket.NewUserBucketClient(tenantID, c.bucketClient, c.cfgProvider)
-
-	ok = true
-	return
+	return blockID, tenantID, nil
 }
 
 func writeBlockUploadError(err error, op, extra string, logger log.Logger, w http.ResponseWriter) {
@@ -192,8 +188,9 @@ func (c *MultitenantCompactor) createBlockUpload(ctx context.Context, r *http.Re
 //
 // It takes the mandatory query parameter "path", specifying the file's destination path.
 func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Request) {
-	blockID, _, userBkt, ok := c.parseBlockUploadParameters(w, r)
-	if !ok {
+	blockID, tenantID, err := c.parseBlockUploadParameters(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -223,6 +220,7 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 	ctx := r.Context()
 	logger := log.With(util_log.WithContext(ctx, c.logger), "block", blockID)
 
+	userBkt := bucket.NewUserBucketClient(tenantID, c.bucketClient, c.cfgProvider)
 	if err := checkForCompleteBlock(ctx, blockID, userBkt); err != nil {
 		writeBlockUploadError(err, op, "while checking for complete block", logger, w)
 		return

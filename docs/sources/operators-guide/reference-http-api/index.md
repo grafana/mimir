@@ -910,7 +910,7 @@ Displays a web page with the compactor hash ring status, including the state, he
 ### Start block upload
 
 ```
-POST /api/v1/upload/block/{block}
+POST /api/v1/upload/block/{block}/start
 ```
 
 Starts the uploading of a TSDB block with a given ID to object storage. The client should send the block's
