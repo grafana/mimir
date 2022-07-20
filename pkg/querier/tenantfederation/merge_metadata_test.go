@@ -69,7 +69,24 @@ func TestMergeMetadataSupplier_MetricsMetadata(t *testing.T) {
 		assert.Contains(t, res, fixtureMetadata1)
 	})
 
-	t.Run("multiple tenants", func(t *testing.T) {
+	t.Run("multiple tenants no duplicates", func(t *testing.T) {
+		upstream := &mockMetadataSupplier{
+			results: map[string][]scrape.MetricMetadata{
+				"team-a": {fixtureMetadata1},
+				"team-b": {fixtureMetadata2},
+			},
+		}
+
+		supplier := NewMetadataSupplier(upstream, test.NewTestingLogger(t))
+		res, err := supplier.MetricsMetadata(user.InjectOrgID(context.Background(), "team-a|team-b"))
+
+		require.NoError(t, err)
+		require.Len(t, res, 2)
+		assert.Contains(t, res, fixtureMetadata1)
+		assert.Contains(t, res, fixtureMetadata2)
+	})
+
+	t.Run("multiple tenants with duplicates", func(t *testing.T) {
 		upstream := &mockMetadataSupplier{
 			results: map[string][]scrape.MetricMetadata{
 				"team-a": {fixtureMetadata1},
@@ -81,7 +98,7 @@ func TestMergeMetadataSupplier_MetricsMetadata(t *testing.T) {
 		res, err := supplier.MetricsMetadata(user.InjectOrgID(context.Background(), "team-a|team-b"))
 
 		require.NoError(t, err)
-		require.Len(t, res, 3)
+		require.Len(t, res, 2)
 		assert.Contains(t, res, fixtureMetadata1)
 		assert.Contains(t, res, fixtureMetadata2)
 	})

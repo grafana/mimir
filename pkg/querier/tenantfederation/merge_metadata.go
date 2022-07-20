@@ -67,9 +67,17 @@ func (m *mergeMetadataSupplier) MetricsMetadata(ctx context.Context) ([]scrape.M
 		return nil, err
 	}
 
+	// Deduplicate results across tenants since the contract for the metadata endpoint
+	// requires that each returned metric metadata is unique.
 	var out []scrape.MetricMetadata
-	for _, metdata := range results {
-		out = append(out, metdata...)
+	unique := make(map[scrape.MetricMetadata]struct{})
+	for _, metadata := range results {
+		for _, m := range metadata {
+			if _, exists := unique[m]; !exists {
+				out = append(out, m)
+				unique[m] = struct{}{}
+			}
+		}
 	}
 
 	return out, nil
