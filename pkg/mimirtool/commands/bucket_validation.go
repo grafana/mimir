@@ -132,9 +132,17 @@ func (b *BucketValidationCommand) validate(k *kingpin.ParseContext) error {
 	}
 
 	for testRun := 0; testRun < b.testRuns; testRun++ {
-		err = b.createTestObjects(ctx)
+		err = b.uploadTestObjects(ctx, "creating test objects")
 		if err != nil {
 			return errors.Wrap(err, "error when uploading test data")
+		}
+
+		// Run the upload test again to verify that we can write to objects that
+		// already exist. Some object storage compatibility APIs don't actually let
+		// objects be overwritten via uploads if they already exist.
+		err = b.uploadTestObjects(ctx, "overwriting test objects")
+		if err != nil {
+			return errors.Wrap(err, "error when overwriting test data")
 		}
 
 		err = b.validateTestObjects(ctx)
@@ -193,10 +201,10 @@ func (b *BucketValidationCommand) setObjectNames() {
 	}
 }
 
-func (b *BucketValidationCommand) createTestObjects(ctx context.Context) error {
+func (b *BucketValidationCommand) uploadTestObjects(ctx context.Context, phase string) error {
 	iteration := 0
 	for dirName, objectName := range b.objectNames {
-		b.report("creating test objects", iteration)
+		b.report(phase, iteration)
 		iteration++
 
 		objectPath := dirName + objectName
@@ -213,7 +221,7 @@ func (b *BucketValidationCommand) createTestObjects(ctx context.Context) error {
 			return errors.Errorf("Expected obj %s to exist, but it did not", objectPath)
 		}
 	}
-	b.report("creating test objects", iteration)
+	b.report(phase, iteration)
 
 	return nil
 }
@@ -254,6 +262,8 @@ func (b *BucketValidationCommand) validateTestObjects(ctx context.Context) error
 		if err != nil {
 			return errors.Wrapf(err, "failed to read object (%s)", objectPath)
 		}
+
+		_ = reader.Close()
 		if string(content) != b.objectContent {
 			return errors.Wrapf(err, "got invalid object content (%s)", objectPath)
 		}
