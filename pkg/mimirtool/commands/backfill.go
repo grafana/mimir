@@ -50,6 +50,12 @@ func (c *BackfillCommand) Register(app *kingpin.Application, envVars EnvVarNames
 		Required().
 		StringVar(&c.clientConfig.Address)
 
+	cmd.Flag("user",
+		fmt.Sprintf("API user to use when contacting Grafana Mimir; alternatively, set %s. If empty, %s is used instead.", envVars.APIUser, envVars.TenantID)).
+		Default("").
+		Envar(envVars.APIUser).
+		StringVar(&c.clientConfig.User)
+
 	cmd.Flag("id", "Grafana Mimir tenant ID; alternatively, set "+envVars.TenantID+".").
 		Envar(envVars.TenantID).
 		Required().
