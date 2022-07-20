@@ -1140,6 +1140,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 				metaJSON, err := json.Marshal(validMeta)
 				require.NoError(t, err)
 				setUpGet(bkt, uploadingMetaPath, metaJSON, nil)
+				bkt.MockIter(path.Join(tenantID, blockID), nil, nil)
 				bkt.MockUpload(metaPath, fmt.Errorf("test"))
 			},
 			expInternalServerError: true,

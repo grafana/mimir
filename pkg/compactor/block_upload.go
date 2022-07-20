@@ -319,7 +319,9 @@ func (c *MultitenantCompactor) completeBlockUpload(ctx context.Context, r *http.
 		return nil
 	}
 
-	rps.SendFinished(true, "block validation complete")
+	if err := rps.SendFinished(true, "block validation complete"); err != nil {
+		return err
+	}
 
 	level.Debug(logger).Log("msg", "successfully completed block upload")
 	return nil
@@ -464,7 +466,7 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, w http.Respons
 
 	// Read metadata file, populate mop of file paths and sizes
 	var blockMetadata metadata.Meta
-	var fileStats map[string]int64
+	fileStats := map[string]int64{}
 	file, err := ioutil.ReadFile(filepath.Join(blockDir, block.MetaFilename))
 	if err != nil {
 		return errors.Wrap(err, "error reading block metadata")
