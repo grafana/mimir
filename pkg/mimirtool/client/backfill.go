@@ -67,13 +67,18 @@ func (c *MimirClient) backfillBlock(blockDir string, logctx *logrus.Entry) error
 
 	logctx.WithField("file", "meta.json").Info("making request to start block upload")
 
-	blockUploadEndpointPrefix := path.Join("/api/v1/upload/block", url.PathEscape(blockID))
+	const (
+		endpointPrefix    = "/api/v1/upload/block"
+		startBlockUpload  = "start"
+		uploadFile        = "files"
+		finishBlockUpload = "finish"
+	)
 
 	buf := bytes.NewBuffer(nil)
 	if err := json.NewEncoder(buf).Encode(blockMeta); err != nil {
 		return errors.Wrap(err, "failed to JSON encode payload")
 	}
-	resp, err := c.doRequest(blockUploadEndpointPrefix, http.MethodPost, buf, int64(buf.Len()))
+	resp, err := c.doRequest(path.Join(endpointPrefix, url.PathEscape(blockID), startBlockUpload), http.MethodPost, buf, int64(buf.Len()))
 	if err != nil {
 		return errors.Wrap(err, "request to start block upload failed")
 	}
@@ -86,12 +91,12 @@ func (c *MimirClient) backfillBlock(blockDir string, logctx *logrus.Entry) error
 			continue
 		}
 
-		if err := c.uploadBlockFile(tf, blockDir, blockUploadEndpointPrefix, logctx); err != nil {
+		if err := c.uploadBlockFile(tf, blockDir, path.Join(endpointPrefix, url.PathEscape(blockID), uploadFile), logctx); err != nil {
 			return err
 		}
 	}
 
-	resp, err = c.doRequest(fmt.Sprintf("%s?uploadComplete=true", blockUploadEndpointPrefix), http.MethodPost, nil, -1)
+	resp, err = c.doRequest(path.Join(endpointPrefix, url.PathEscape(blockID), finishBlockUpload), http.MethodPost, nil, -1)
 	if err != nil {
 		return errors.Wrap(err, "request to finish block upload failed")
 	}
@@ -102,7 +107,7 @@ func (c *MimirClient) backfillBlock(blockDir string, logctx *logrus.Entry) error
 	return nil
 }
 
-func (c *MimirClient) uploadBlockFile(tf metadata.File, blockDir, blockUploadEndpointPrefix string, logctx *logrus.Entry) error {
+func (c *MimirClient) uploadBlockFile(tf metadata.File, blockDir, fileUploadEndpoint string, logctx *logrus.Entry) error {
 	pth := filepath.Join(blockDir, filepath.FromSlash(tf.RelPath))
 	f, err := os.Open(pth)
 	if err != nil {
@@ -112,10 +117,9 @@ func (c *MimirClient) uploadBlockFile(tf metadata.File, blockDir, blockUploadEnd
 		_ = f.Close()
 	}()
 
-	escapedPath := url.QueryEscape(tf.RelPath)
 	logctx.WithFields(logrus.Fields{"file": tf.RelPath, "size": tf.SizeBytes}).Info("uploading block file")
 
-	resp, err := c.doRequest(path.Join(blockUploadEndpointPrefix, fmt.Sprintf("files?path=%s", escapedPath)), http.MethodPost, f, tf.SizeBytes)
+	resp, err := c.doRequest(fmt.Sprintf("%s?path=%s", fileUploadEndpoint, url.QueryEscape(tf.RelPath)), http.MethodPost, f, tf.SizeBytes)
 	if err != nil {
 		return errors.Wrapf(err, "request to upload file %q failed", pth)
 	}
