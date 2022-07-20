@@ -1,6 +1,4 @@
-multitenancy_enabled: true
-tenant_federation:
-  enabled: true
+multitenancy_enabled: false
 
 distributor:
   pool:
