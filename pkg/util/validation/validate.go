@@ -48,6 +48,9 @@ var (
 	reasonExemplarLabelsBlank      = "exemplar_labels_blank"
 	reasonExemplarTooOld           = "exemplar_too_old"
 
+	// Discarded histograms reasons.
+	reasonHistogramDifferentNumberSpansBuckets = metricReasonFromErrorID(globalerror.HistogramDifferentNumberSpansBuckets)
+
 	// Discarded metadata reasons.
 	reasonMetadataMetricNameTooLong = metricReasonFromErrorID(globalerror.MetricMetadataMetricNameTooLong)
 	reasonMetadataHelpTooLong       = metricReasonFromErrorID(globalerror.MetricMetadataHelpTooLong)
@@ -92,6 +95,15 @@ var DiscardedExemplars = prometheus.NewCounterVec(
 	[]string{discardReasonLabel, "user"},
 )
 
+// DiscardedHistograms is a metric of the number of discarded histograms, by reason.const
+var DiscardedHistograms = prometheus.NewCounterVec(
+	prometheus.CounterOpts{
+		Name: "cortex_discarded_histograms_total",
+		Help: "The total number of histograms that were discarded.",
+	},
+	[]string{discardReasonLabel, "user"},
+)
+
 // DiscardedMetadata is a metric of the number of discarded metadata, by reason.
 var DiscardedMetadata = prometheus.NewCounterVec(
 	prometheus.CounterOpts{
@@ -120,7 +132,7 @@ func ValidateSample(now model.Time, cfg SampleValidationConfig, userID string, l
 
 	if model.Time(s.TimestampMs) > now.Add(cfg.CreationGracePeriod(userID)) {
 		DiscardedSamples.WithLabelValues(reasonTooFarInFuture, userID).Inc()
-		return newSampleTimestampTooNewError(unsafeMetricName, s.TimestampMs)
+		return newSampleTimestampTooNewError("sample", unsafeMetricName, s.TimestampMs)
 	}
 
 	return nil
@@ -172,6 +184,39 @@ func ValidateExemplar(userID string, ls []mimirpb.LabelAdapter, e mimirpb.Exempl
 	if !foundValidLabel {
 		DiscardedExemplars.WithLabelValues(reasonExemplarLabelsBlank, userID).Inc()
 		return newExemplarEmptyLabelsError(ls, e.Labels, e.TimestampMs)
+	}
+
+	return nil
+}
+
+// ValidateHistograms returns an err if the histogram is invalid.
+// The returned error may retain the provided series labels.
+// It uses the passed 'now' time to measure the relative time of the histogram.
+func ValidateHistogram(now model.Time, cfg SampleValidationConfig, userID string, ls []mimirpb.LabelAdapter, h mimirpb.Histogram) ValidationError {
+	unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
+
+	if model.Time(h.Timestamp) > now.Add(cfg.CreationGracePeriod(userID)) {
+		DiscardedSamples.WithLabelValues(reasonTooFarInFuture, userID).Inc()
+		return newSampleTimestampTooNewError("histogram", unsafeMetricName, h.Timestamp)
+	}
+
+	checkSpansBucketsNumber := func(sign string, spans []*mimirpb.BucketSpan, buckets []int64) error {
+		var spanBuckets uint32
+		for _, span := range spans {
+			spanBuckets += span.Length
+		}
+		if l := uint32(len(buckets)); spanBuckets != l {
+			DiscardedHistograms.WithLabelValues(reasonHistogramDifferentNumberSpansBuckets, userID).Inc()
+			return newhHistogramDifferentNumberSpansBucketError(sign, spanBuckets, l, unsafeMetricName, h.Timestamp)
+		}
+		return nil
+	}
+
+	if err := checkSpansBucketsNumber("negative", h.NegativeSpans, h.NegativeDeltas); err != nil {
+		return err
+	}
+	if err := checkSpansBucketsNumber("positive", h.PositiveSpans, h.PositiveDeltas); err != nil {
+		return err
 	}
 
 	return nil

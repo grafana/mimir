@@ -61,6 +61,8 @@ const (
 
 	StoreConsistencyCheckFailed ID = "store-consistency-check-failed"
 	BucketIndexTooOld           ID = "bucket-index-too-old"
+
+	HistogramDifferentNumberSpansBuckets ID = "histogram-different-number-spans-buckets"
 )
 
 // Message returns the provided msg, appending the error id.

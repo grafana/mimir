@@ -33,6 +33,7 @@ message TimeSeries {
   // Sorted by time, oldest sample first.
   repeated Sample samples = 2 [(gogoproto.nullable) = false];
   repeated Exemplar exemplars = 3 [(gogoproto.nullable) = false];
+  repeated Histogram histograms = 4 [(gogoproto.nullable) = false];
 }
 
 message LabelPair {
@@ -72,4 +73,42 @@ message Exemplar {
   repeated LabelPair labels = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "LabelAdapter"];
   double value = 2;
   int64 timestamp_ms = 3;
+}
+
+message Histogram {
+  enum ResetHint {
+    option (gogoproto.goproto_enum_prefix) = true;
+    UNKNOWN = 0;
+    YES     = 1;
+    NO      = 2;
+    GAUGE   = 3;
+  }
+
+  oneof count {
+    uint64 count_int   = 1;
+    double count_float = 2;
+  }
+  double sum = 3;
+  sint32 schema             = 4;
+  double zero_threshold     = 5;
+  oneof zero_count {
+    uint64 zero_count_int     = 6;
+    double zero_count_float   = 7;
+  }
+
+  repeated BucketSpan negative_spans =  8;
+  repeated sint64 negative_deltas    =  9;
+  repeated double negative_counts    = 10;
+
+  repeated BucketSpan positive_spans = 11;
+  repeated sint64 positive_deltas    = 12;
+  repeated double positive_counts    = 13;
+
+  ResetHint reset_hint               = 14;
+  int64 timestamp = 15;
+}
+
+message BucketSpan {
+  sint32 offset = 1;
+  uint32 length = 2;
 }

@@ -119,12 +119,16 @@ type Distributor struct {
 	queryDuration                    *instrument.HistogramCollector
 	receivedSamples                  *prometheus.CounterVec
 	receivedExemplars                *prometheus.CounterVec
+	receivedHistograms               *prometheus.CounterVec
 	receivedMetadata                 *prometheus.CounterVec
 	incomingSamples                  *prometheus.CounterVec
 	incomingExemplars                *prometheus.CounterVec
+	incomingHistograms               *prometheus.CounterVec
 	incomingMetadata                 *prometheus.CounterVec
 	nonHASamples                     *prometheus.CounterVec
+	nonHAHistograms                  *prometheus.CounterVec
 	dedupedSamples                   *prometheus.CounterVec
+	dedupedHistograms                *prometheus.CounterVec
 	labelsHistogram                  prometheus.Histogram
 	sampleDelayHistogram             prometheus.Histogram
 	replicationFactor                prometheus.Gauge
@@ -244,6 +248,11 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Name:      "distributor_received_exemplars_total",
 			Help:      "The total number of received exemplars, excluding rejected and deduped exemplars.",
 		}, []string{"user"}),
+		receivedHistograms: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Namespace: "cortex",
+			Name:      "distributor_received_histogramsm_total",
+			Help:      "The total number of received histograms, excluding rejected and deduped histograms.",
+		}, []string{"user"}),
 		receivedMetadata: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_received_metadata_total",
@@ -259,6 +268,11 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Name:      "distributor_exemplars_in_total",
 			Help:      "The total number of exemplars that have come in to the distributor, including rejected or deduped exemplars.",
 		}, []string{"user"}),
+		incomingHistograms: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Namespace: "cortex",
+			Name:      "distributor_histograms_in_total",
+			Help:      "The total number of histograms that have come in to the distributor, including rejected or deduped histograms.",
+		}, []string{"user"}),
 		incomingMetadata: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_metadata_in_total",
@@ -269,10 +283,20 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Name:      "distributor_non_ha_samples_received_total",
 			Help:      "The total number of received samples for a user that has HA tracking turned on, but the sample didn't contain both HA labels.",
 		}, []string{"user"}),
+		nonHAHistograms: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Namespace: "cortex",
+			Name:      "distributor_non_ha_histograms_received_total",
+			Help:      "The total number of received histograms for a user that has HA tracking turned on, but the sample didn't contain both HA labels.",
+		}, []string{"user"}),
 		dedupedSamples: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_deduped_samples_total",
 			Help:      "The total number of deduplicated samples.",
+		}, []string{"user", "cluster"}),
+		dedupedHistograms: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Namespace: "cortex",
+			Name:      "distributor_deduped_histograms_total",
+			Help:      "The total number of deduplicated histograms.",
 		}, []string{"user", "cluster"}),
 		labelsHistogram: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Namespace: "cortex",
@@ -460,9 +484,11 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 
 	d.receivedSamples.DeleteLabelValues(userID)
 	d.receivedExemplars.DeleteLabelValues(userID)
+	d.receivedHistograms.DeleteLabelValues(userID)
 	d.receivedMetadata.DeleteLabelValues(userID)
 	d.incomingSamples.DeleteLabelValues(userID)
 	d.incomingExemplars.DeleteLabelValues(userID)
+	d.incomingHistograms.DeleteLabelValues(userID)
 	d.incomingMetadata.DeleteLabelValues(userID)
 	d.nonHASamples.DeleteLabelValues(userID)
 	d.latestSeenSampleTimestampPerUser.DeleteLabelValues(userID)
@@ -566,6 +592,17 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 		}
 
 		if err := validation.ValidateSample(now, d.limits, userID, ts.Labels, s); err != nil {
+			return err
+		}
+	}
+
+	for _, h := range ts.Histograms {
+		delta := now - model.Time(h.Timestamp)
+		if delta > 0 {
+			d.sampleDelayHistogram.Observe(float64(delta) / 1000)
+		}
+
+		if err := validation.ValidateHistogram(now, d.limits, userID, ts.Labels, h); err != nil {
 			return err
 		}
 	}
@@ -679,13 +716,16 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 
 	numSamples := 0
 	numExemplars := 0
+	numHistograms := 0
 	for _, ts := range req.Timeseries {
 		numSamples += len(ts.Samples)
 		numExemplars += len(ts.Exemplars)
+		numHistograms += len(ts.Histograms)
 	}
 	// Count the total samples in, prior to validation or deduplication, for comparison with other metrics.
 	d.incomingSamples.WithLabelValues(userID).Add(float64(numSamples))
 	d.incomingExemplars.WithLabelValues(userID).Add(float64(numExemplars))
+	d.incomingHistograms.WithLabelValues(userID).Add(float64(numHistograms))
 	// Count the total number of metadata in.
 	d.incomingMetadata.WithLabelValues(userID).Add(float64(len(req.Metadata)))
 
@@ -698,6 +738,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	seriesKeys := make([]uint32, 0, len(req.Timeseries))
 	validatedSamples := 0
 	validatedExemplars := 0
+	validatedHistograms := 0
 
 	if d.limits.AcceptHASamples(userID) && len(req.Timeseries) > 0 {
 		cluster, replica := findHALabels(d.limits.HAReplicaLabel(userID), d.limits.HAClusterLabel(userID), req.Timeseries[0].Labels)
@@ -710,13 +751,15 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		removeReplica, err = d.checkSample(ctx, userID, cluster, replica)
 		if err != nil {
 			if errors.Is(err, replicasNotMatchError{}) {
-				// These samples have been deduped.
+				// These samples and histograms have been deduped.
 				d.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(numSamples))
+				d.dedupedHistograms.WithLabelValues(userID, cluster).Add(float64(numHistograms))
 				return nil, httpgrpc.Errorf(http.StatusAccepted, err.Error())
 			}
 
 			if errors.Is(err, tooManyClustersError{}) {
 				validation.DiscardedSamples.WithLabelValues(validation.ReasonTooManyHAClusters, userID).Add(float64(numSamples))
+				validation.DiscardedHistograms.WithLabelValues(validation.ReasonTooManyHAClusters, userID).Add(float64(numHistograms))
 				return nil, httpgrpc.Errorf(http.StatusBadRequest, err.Error())
 			}
 
@@ -725,6 +768,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		// If there wasn't an error but removeReplica is false that means we didn't find both HA labels.
 		if !removeReplica {
 			d.nonHASamples.WithLabelValues(userID).Add(float64(numSamples))
+			d.nonHASamples.WithLabelValues(userID).Add(float64(numHistograms))
 		}
 	}
 
@@ -734,6 +778,10 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		for _, s := range ts.Samples {
 			earliestSampleTimestampMs = util_math.Min64(earliestSampleTimestampMs, s.TimestampMs)
 			latestSampleTimestampMs = util_math.Max64(latestSampleTimestampMs, s.TimestampMs)
+		}
+		for _, h := range ts.Histograms {
+			earliestSampleTimestampMs = util_math.Min64(earliestSampleTimestampMs, h.Timestamp)
+			latestSampleTimestampMs = util_math.Max64(latestSampleTimestampMs, h.Timestamp)
 		}
 	}
 	// Update this metric even in case of errors.
@@ -818,6 +866,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		validatedTimeseries = append(validatedTimeseries, ts)
 		validatedSamples += len(ts.Samples)
 		validatedExemplars += len(ts.Exemplars)
+		validatedHistograms += len(ts.Histograms)
 	}
 
 	var forwardingErrCh <-chan error
@@ -842,6 +891,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 
 	d.receivedSamples.WithLabelValues(userID).Add(float64(validatedSamples))
 	d.receivedExemplars.WithLabelValues(userID).Add(float64(validatedExemplars))
+	d.receivedHistograms.WithLabelValues(userID).Add(float64(validatedHistograms))
 	d.receivedMetadata.WithLabelValues(userID).Add(float64(len(validatedMetadata)))
 
 	if len(seriesKeys) == 0 && len(metadataKeys) == 0 {
@@ -856,10 +906,11 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		return &mimirpb.WriteResponse{}, firstPartialErr
 	}
 
-	totalN := validatedSamples + validatedExemplars + len(validatedMetadata)
+	totalN := validatedSamples + validatedExemplars + validatedHistograms + len(validatedMetadata)
 	if !d.ingestionRateLimiter.AllowN(now, userID, totalN) {
 		validation.DiscardedSamples.WithLabelValues(validation.ReasonRateLimited, userID).Add(float64(validatedSamples))
 		validation.DiscardedExemplars.WithLabelValues(validation.ReasonRateLimited, userID).Add(float64(validatedExemplars))
+		validation.DiscardedExemplars.WithLabelValues(validation.ReasonRateLimited, userID).Add(float64(validatedHistograms))
 		validation.DiscardedMetadata.WithLabelValues(validation.ReasonRateLimited, userID).Add(float64(len(validatedMetadata)))
 		// Return a 429 here to tell the client it is going too fast.
 		// Client may discard the data or slow down and re-send.
