@@ -93,7 +93,7 @@ type DeploymentOrStatefulSet struct {
 	} `yaml:"spec"`
 }
 
-func (c *ConfigExtractor) ExtractPodSpec(obj *yaml.RNode) (PodSpec, bool, error) {
+func extractPodSpec(obj *yaml.RNode) (PodSpec, bool, error) {
 	switch obj.GetKind() {
 	case "Deployment", "StatefulSet":
 		var dep = new(DeploymentOrStatefulSet)
@@ -116,7 +116,7 @@ func (c *ConfigExtractor) ResolveConfigs() ([]*yaml.RNode, error) {
 	}
 
 	err = concurrency.ForEachJob(context.Background(), len(c.allItems), runtime.NumCPU(), func(ctx context.Context, idx int) error {
-		pod, ok, err := c.ExtractPodSpec(c.allItems[idx])
+		pod, ok, err := extractPodSpec(c.allItems[idx])
 		if err != nil {
 			return err
 		}
@@ -199,6 +199,9 @@ func (c *ConfigExtractor) resolveArgsAndConfigFile(args []string, configFileText
 
 	// This sets default values on the config struct, so it needs to be called before parsing the config file
 	mimirConfig.RegisterFlags(flagSet, log.NewNopLogger())
+
+	// These values are required because they might be set by some templates but they don't exist on the configuration struct
+	// There are other flags defined in main.go that could one day be used, and this would cause the flagSet.Parse() to fail
 	flagSet.Bool("config.expand-env", false, "")
 	flagSet.Int("mem-ballast-size-bytes", 0, "")
 

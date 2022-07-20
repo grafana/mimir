@@ -1,5 +1,5 @@
 resources:
-  - ../03-set-namespace
+  - ../02-configs-and-k8s-defaults
 patches:
   - target:
       name: 'mimir-.+'

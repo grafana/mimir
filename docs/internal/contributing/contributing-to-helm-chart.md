@@ -36,7 +36,7 @@ Install [ct](https://github.com/helm/chart-testing) and run
 ct lint --config operations/helm/ct.yaml --charts operations/helm/charts/mimir-distributed
 ```
 
-## Automated Comparison with Jsonnet
+## Automated comparison with Jsonnet
 
 In order to prevent configuration drift between the Mimir jsonnet library and the Mimir helm chart, an automated diff is performed against every pull request.
 This diff makes extensive use of [kustomize](https://kustomize.io) to remove unimportant or known differences between the two sets of manifests.

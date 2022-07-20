@@ -1,5 +1,5 @@
 resources:
-  - ../04-labels
+  - ../03-labels
 
 patches:
   # TODO(logiraptor): We probably shouldn't publish not ready addresses in the

@@ -1,5 +1,5 @@
 resources:
-  - ../05-memberlist
+  - ../04-memberlist
 patches:
   # TODO(logiraptor): Jsonnet doesn't add a grpc port to the overrides-exporter
   - target:
@@ -21,10 +21,7 @@ patches:
         path: /spec/publishNotReadyAddresses
 
   # TODO(logiraptor): Helm's compactor service is not headless
-  - target:
-      kind: Service
-      name: 'mimir-(compactor)'
-    patch: |-
+  - patch: |-
       apiVersion: v1
       kind: Service
       metadata:

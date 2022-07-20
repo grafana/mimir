@@ -1,5 +1,5 @@
 resources:
-  - ../06-services
+  - ../05-services
 
 components:
   - ../../components/pods
