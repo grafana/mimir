@@ -4,7 +4,7 @@ Helm chart for deploying [Grafana Mimir](https://grafana.com/docs/mimir/v2.2.x/)
 
 # mimir-distributed
 
-![Version: 3.0.0-rc.2](https://img.shields.io/badge/Version-3.0.0--rc.2-informational?style=flat-square) ![AppVersion: 2.2.0](https://img.shields.io/badge/AppVersion-2.2.0-informational?style=flat-square)
+![Version: 3.0.0-rc.3](https://img.shields.io/badge/Version-3.0.0--rc.3-informational?style=flat-square) ![AppVersion: 2.2.0](https://img.shields.io/badge/AppVersion-2.2.0-informational?style=flat-square)
 
 Grafana Mimir
 

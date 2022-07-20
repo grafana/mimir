@@ -1789,8 +1789,7 @@ gateway:
 smoke_test:
   image:
     repository: grafana/mimir-continuous-test
-    # TODO: replace with weekly tag starting with r191
-    tag: helm-smoke-test-d12276bfc
+    tag: 2.2.0-rc.1
     pullPolicy: IfNotPresent
   tenantId: ''
   extraArgs: {}
