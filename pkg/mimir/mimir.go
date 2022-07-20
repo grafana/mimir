@@ -166,13 +166,21 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 func (c *Config) UnmarshalYAML(value *yaml.Node) error {
 	// First unmarshal common into the specific locations.
+	specificStorageLocations := specificLocationsUnmarshaler{
+		"blocks_storage":       &c.BlocksStorage.Bucket.StorageBackendConfig,
+		"ruler_storage":        &c.RulerStorage.StorageBackendConfig,
+		"alertmanager_storage": &c.AlertmanagerStorage.StorageBackendConfig,
+	}
+	for name, loc := range c.Common.ExtraSpecificStorageConfigs {
+		if _, dup := specificStorageLocations[name]; dup {
+			return fmt.Errorf("implementation error: specific storage location %q was defined in both mimir and extra locations", name)
+		}
+		specificStorageLocations[name] = loc
+	}
+
 	common := configWithCustomCommonUnmarshaler{
 		Common: &commonConfigUnmarshaler{
-			Storage: &specificLocationsUnmarshaler{
-				"blocks_storage":       &c.BlocksStorage.Bucket.StorageBackendConfig,
-				"ruler_storage":        &c.RulerStorage.StorageBackendConfig,
-				"alertmanager_storage": &c.AlertmanagerStorage.StorageBackendConfig,
-			},
+			Storage: &specificStorageLocations,
 		},
 	}
 	if err := value.DecodeWithOptions(&common, yaml.DecodeOptions{KnownFields: true}); err != nil {
@@ -190,11 +198,27 @@ func (c *Config) InheritCommonFlagValues(log log.Logger, fs *flag.FlagSet) error
 	setFlags := map[string]bool{}
 	fs.Visit(func(f *flag.Flag) { setFlags[f.Name] = true })
 
-	return multierror.New(
-		inheritFlags(log, c.Common.Storage.RegisteredFlags, c.BlocksStorage.Bucket.RegisteredFlags, setFlags),
-		inheritFlags(log, c.Common.Storage.RegisteredFlags, c.RulerStorage.RegisteredFlags, setFlags),
-		inheritFlags(log, c.Common.Storage.RegisteredFlags, c.AlertmanagerStorage.RegisteredFlags, setFlags),
-	).Err()
+	type flagInheritance struct{ common, specific util.RegisteredFlags }
+	inheritance := map[string]flagInheritance{
+		"blocks_storage":       {c.Common.Storage.RegisteredFlags, c.BlocksStorage.Bucket.RegisteredFlags},
+		"ruler_storage":        {c.Common.Storage.RegisteredFlags, c.RulerStorage.RegisteredFlags},
+		"alertmanager_storage": {c.Common.Storage.RegisteredFlags, c.AlertmanagerStorage.RegisteredFlags},
+	}
+
+	for name, sc := range c.Common.ExtraSpecificStorageConfigs {
+		if _, dup := inheritance[name]; dup {
+			return fmt.Errorf("implementation error: tried to redefine flag inheritance %q by providing extra storage configs", name)
+		}
+		inheritance[name] = flagInheritance{c.Common.Storage.RegisteredFlags, sc.RegisteredFlags}
+	}
+
+	for name, f := range inheritance {
+		if err := inheritFlags(log, f.common, f.specific, setFlags); err != nil {
+			return fmt.Errorf("can't inherit common flags for %q: %w", name, err)
+		}
+	}
+
+	return nil
 }
 
 // inheritFlags takes flags from the origin set and sets them to the equivalent flags in the dest set, unless those are already set.
@@ -369,6 +393,11 @@ func (c *Config) registerServerFlagsWithChangedDefaultValues(fs *flag.FlagSet) {
 
 type CommonConfig struct {
 	Storage bucket.StorageBackendConfig `yaml:"storage"`
+	// ExtraSpecificStorageConfigs can be used to programatically add more locations
+	// where common storage config should be applied. Useful for projects extending Mimir.
+	// This should be done before YAML is unmarshaled.
+	// This field has no effect on the configuration itself (has no yaml tag or flag associated).
+	ExtraSpecificStorageConfigs map[string]*bucket.StorageBackendConfig `yaml:"-"`
 }
 
 // RegisterFlags registers flag.
