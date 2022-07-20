@@ -42,7 +42,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/objstore"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"

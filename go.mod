@@ -47,7 +47,7 @@ require (
 	golang.org/x/sync v0.0.0-20220601150217-0de741cfad7f
 	golang.org/x/time v0.0.0-20220609170525-579cf78fd858
 	google.golang.org/grpc v1.47.0
-	gopkg.in/yaml.v2 v2.4.0
+	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -254,3 +254,6 @@ replace github.com/vimeo/galaxycache => github.com/thanos-community/galaxycache 
 
 // grpc v1.46.0 removed "WithBalancerName()" API, still in use by weaveworks/commons.
 replace google.golang.org/grpc => google.golang.org/grpc v1.45.0
+
+// gopkg.in/yaml.v3 + https://github.com/go-yaml/yaml/pull/691
+replace gopkg.in/yaml.v3 => github.com/colega/go-yaml-yaml v0.0.0-20220720070545-aaba007ebc22

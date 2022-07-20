@@ -16,9 +16,10 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/mimir"
 	"github.com/grafana/mimir/pkg/util/fieldcategory"
@@ -98,9 +99,21 @@ func TestFlagParsing(t *testing.T) {
 			stderrExcluded: "ingester\n",
 		},
 
-		"root level configuration option specified as an empty node in YAML": {
-			yaml:          "querier:",
-			stderrMessage: "the Querier configuration in YAML has been specified as an empty YAML node",
+		"root level configuration option specified as an empty node in YAML does not set entire config to zero value": {
+			yaml: "querier:",
+			assertConfig: func(t *testing.T, cfg *mimir.Config) {
+				defaults := mimir.Config{}
+				flagext.DefaultValues(&defaults)
+
+				require.NotZero(t, defaults.Querier.MaxQueryIntoFuture,
+					"This test asserts that mimir.Config.Querier.MaxQueryIntoFuture default value is not zero. "+
+						"If it's zero, this test is useless. Please change it to use a config value with a non-zero default.",
+				)
+
+				require.Equal(t, cfg.Querier.MaxQueryIntoFuture, defaults.Querier.MaxQueryIntoFuture,
+					"YAML parser has set the [entire] Querier config to zero values by specifying an empty node."+
+						"If this happens again, check git history on how this was checked with previous YAML parser implementation.")
+			},
 		},
 
 		"version": {

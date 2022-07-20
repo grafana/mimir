@@ -6,6 +6,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"flag"
 	"fmt"
@@ -22,7 +23,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/weaveworks/common/tracing"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/mimir"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -252,8 +253,9 @@ func LoadConfig(filename string, expandEnv bool, cfg *mimir.Config) error {
 		buf = expandEnvironmentVariables(buf)
 	}
 
-	err = yaml.UnmarshalStrict(buf, cfg)
-	if err != nil {
+	dec := yaml.NewDecoder(bytes.NewReader(buf))
+	dec.KnownFields(true)
+	if err := dec.Decode(cfg); err != nil {
 		return errors.Wrap(err, "Error parsing config file")
 	}
 

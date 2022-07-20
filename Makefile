@@ -301,6 +301,11 @@ lint: check-makefiles
 	faillint -paths "github.com/NYTimes/gziphandler" \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
+	# We don't want to use yaml.v2 anywhere, because we use yaml.v3 now,
+	# and UnamrshalYAML signature is not compatible between them.
+	faillint -paths "gopkg.in/yaml.v2" \
+		./pkg/... ./cmd/... ./tools/... ./integration/...
+
 	# Ensure packages we imported from Thanos are no longer used.
 	GOFLAGS="-tags=requires_docker" faillint -paths \
 		"github.com/thanos/thanos-io/pkg/store,\

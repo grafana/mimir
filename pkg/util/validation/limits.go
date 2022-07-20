@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/thanos-io/thanos/pkg/block"
 	"golang.org/x/time/rate"
+	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 )
@@ -236,7 +237,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (l *Limits) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (l *Limits) UnmarshalYAML(value *yaml.Node) error {
 	// We want to set l to the defaults and then overwrite it with the input.
 	// To make unmarshal fill the plain data struct rather than calling UnmarshalYAML
 	// again, we have to hide it using a type indirection.  See prometheus/config.
@@ -249,7 +250,7 @@ func (l *Limits) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 	type plain Limits
 
-	err := unmarshal((*plain)(l))
+	err := value.DecodeWithOptions((*plain)(l), yaml.DecodeOptions{KnownFields: true})
 	if err != nil {
 		return err
 	}
