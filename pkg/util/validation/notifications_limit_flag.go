@@ -10,6 +10,7 @@ import (
 	"fmt"
 
 	"github.com/pkg/errors"
+	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -36,9 +37,9 @@ func (m NotificationRateLimitMap) Set(s string) error {
 }
 
 // UnmarshalYAML implements yaml.Unmarshaler.
-func (m NotificationRateLimitMap) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (m NotificationRateLimitMap) UnmarshalYAML(value *yaml.Node) error {
 	newMap := map[string]float64{}
-	return m.updateMap(unmarshal(newMap), newMap)
+	return m.updateMap(value.DecodeWithOptions(newMap, yaml.DecodeOptions{KnownFields: true}), newMap)
 }
 
 func (m NotificationRateLimitMap) updateMap(unmarshalErr error, newMap map[string]float64) error {

@@ -56,6 +56,9 @@ function cleanup() {
 cleanup
 trap cleanup EXIT
 
+# Ensure we run on Grafana latest.
+docker pull grafana/grafana:latest
+
 # Run Grafana.
 echo "Starting Grafana container with name ${DOCKER_CONTAINER_NAME} listening on host port ${GRAFANA_PUBLISHED_PORT}"
 docker run \

@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"reflect"
 	"strconv"
 	"strings"
 
@@ -32,7 +31,7 @@ import (
 	"github.com/weaveworks/common/server"
 	"github.com/weaveworks/common/signals"
 	"google.golang.org/grpc/health/grpc_health_v1"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/dskit/tenant"
 
@@ -165,18 +164,26 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.Common.RegisterFlags(f)
 }
 
-func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *Config) UnmarshalYAML(value *yaml.Node) error {
 	// First unmarshal common into the specific locations.
+	specificStorageLocations := specificLocationsUnmarshaler{
+		"blocks_storage":       &c.BlocksStorage.Bucket.StorageBackendConfig,
+		"ruler_storage":        &c.RulerStorage.StorageBackendConfig,
+		"alertmanager_storage": &c.AlertmanagerStorage.StorageBackendConfig,
+	}
+	for name, loc := range c.Common.ExtraSpecificStorageConfigs {
+		if _, dup := specificStorageLocations[name]; dup {
+			return fmt.Errorf("implementation error: specific storage location %q was defined in both mimir and extra locations", name)
+		}
+		specificStorageLocations[name] = loc
+	}
+
 	common := configWithCustomCommonUnmarshaler{
 		Common: &commonConfigUnmarshaler{
-			Storage: &specificLocationsUnmarshaler{
-				"blocks_storage":       &c.BlocksStorage.Bucket.StorageBackendConfig,
-				"ruler_storage":        &c.RulerStorage.StorageBackendConfig,
-				"alertmanager_storage": &c.AlertmanagerStorage.StorageBackendConfig,
-			},
+			Storage: &specificStorageLocations,
 		},
 	}
-	if err := unmarshal(&common); err != nil {
+	if err := value.DecodeWithOptions(&common, yaml.DecodeOptions{KnownFields: true}); err != nil {
 		return fmt.Errorf("can't unmarshal common config: %w", err)
 	}
 
@@ -184,18 +191,34 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	// This will override previously set common values by the specific ones, if they're provided.
 	// (YAML specific takes precedence over YAML common)
 	type plain Config
-	return unmarshal((*plain)(c))
+	return value.DecodeWithOptions((*plain)(c), yaml.DecodeOptions{KnownFields: true})
 }
 
 func (c *Config) InheritCommonFlagValues(log log.Logger, fs *flag.FlagSet) error {
 	setFlags := map[string]bool{}
 	fs.Visit(func(f *flag.Flag) { setFlags[f.Name] = true })
 
-	return multierror.New(
-		inheritFlags(log, c.Common.Storage.RegisteredFlags, c.BlocksStorage.Bucket.RegisteredFlags, setFlags),
-		inheritFlags(log, c.Common.Storage.RegisteredFlags, c.RulerStorage.RegisteredFlags, setFlags),
-		inheritFlags(log, c.Common.Storage.RegisteredFlags, c.AlertmanagerStorage.RegisteredFlags, setFlags),
-	).Err()
+	type flagInheritance struct{ common, specific util.RegisteredFlags }
+	inheritance := map[string]flagInheritance{
+		"blocks_storage":       {c.Common.Storage.RegisteredFlags, c.BlocksStorage.Bucket.RegisteredFlags},
+		"ruler_storage":        {c.Common.Storage.RegisteredFlags, c.RulerStorage.RegisteredFlags},
+		"alertmanager_storage": {c.Common.Storage.RegisteredFlags, c.AlertmanagerStorage.RegisteredFlags},
+	}
+
+	for name, sc := range c.Common.ExtraSpecificStorageConfigs {
+		if _, dup := inheritance[name]; dup {
+			return fmt.Errorf("implementation error: tried to redefine flag inheritance %q by providing extra storage configs", name)
+		}
+		inheritance[name] = flagInheritance{c.Common.Storage.RegisteredFlags, sc.RegisteredFlags}
+	}
+
+	for name, f := range inheritance {
+		if err := inheritFlags(log, f.common, f.specific, setFlags); err != nil {
+			return fmt.Errorf("can't inherit common flags for %q: %w", name, err)
+		}
+	}
+
+	return nil
 }
 
 // inheritFlags takes flags from the origin set and sets them to the equivalent flags in the dest set, unless those are already set.
@@ -232,10 +255,6 @@ func inheritFlags(log log.Logger, orig util.RegisteredFlags, dest util.Registere
 // Validate the mimir config and return an error if the validation
 // doesn't pass
 func (c *Config) Validate(log log.Logger) error {
-	if err := c.validateYAMLEmptyNodes(); err != nil {
-		return err
-	}
-
 	if err := c.validateBucketConfigs(); err != nil {
 		return fmt.Errorf("%w: %s", errInvalidBucketConfig, err)
 	}
@@ -292,33 +311,6 @@ func (c *Config) isAnyModuleEnabled(modules ...string) bool {
 	}
 
 	return false
-}
-
-// validateYAMLEmptyNodes ensure that no empty node has been specified in the YAML config file.
-// When an empty node is defined in YAML, the YAML parser sets the whole struct to its zero value
-// and so we loose all default values. It's very difficult to detect this case for the user, so we
-// try to prevent it (on the root level) with this custom validation.
-func (c *Config) validateYAMLEmptyNodes() error {
-	defaults := Config{}
-	flagext.DefaultValues(&defaults)
-
-	defStruct := reflect.ValueOf(defaults)
-	cfgStruct := reflect.ValueOf(*c)
-
-	// We expect all structs are the exact same. This check should never fail.
-	if cfgStruct.NumField() != defStruct.NumField() {
-		return errors.New("unable to validate configuration because of mismatching internal config data structure")
-	}
-
-	for i := 0; i < cfgStruct.NumField(); i++ {
-		// If the struct has been reset due to empty YAML value and the zero struct value
-		// doesn't match the default one, then we should warn the user about the issue.
-		if cfgStruct.Field(i).Kind() == reflect.Struct && cfgStruct.Field(i).IsZero() && !defStruct.Field(i).IsZero() {
-			return fmt.Errorf("the %s configuration in YAML has been specified as an empty YAML node", cfgStruct.Type().Field(i).Name)
-		}
-	}
-
-	return nil
 }
 
 func (c *Config) validateBucketConfigs() error {
@@ -401,6 +393,11 @@ func (c *Config) registerServerFlagsWithChangedDefaultValues(fs *flag.FlagSet) {
 
 type CommonConfig struct {
 	Storage bucket.StorageBackendConfig `yaml:"storage"`
+	// ExtraSpecificStorageConfigs can be used to programatically add more locations
+	// where common storage config should be applied. Useful for projects extending Mimir.
+	// This should be done before YAML is unmarshaled.
+	// This field has no effect on the configuration itself (has no yaml tag or flag associated).
+	ExtraSpecificStorageConfigs map[string]*bucket.StorageBackendConfig `yaml:"-"`
 }
 
 // RegisterFlags registers flag.
@@ -428,9 +425,9 @@ type commonConfigUnmarshaler struct {
 // where this should be unmarshaled.
 type specificLocationsUnmarshaler map[string]interface{}
 
-func (m specificLocationsUnmarshaler) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (m specificLocationsUnmarshaler) UnmarshalYAML(value *yaml.Node) error {
 	for l, v := range m {
-		if err := unmarshal(v); err != nil {
+		if err := value.DecodeWithOptions(v, yaml.DecodeOptions{KnownFields: true}); err != nil {
 			return fmt.Errorf("key %q: %w", l, err)
 		}
 	}
@@ -457,6 +454,7 @@ type Mimir struct {
 	RuntimeConfig            *runtimeconfig.Manager
 	QuerierQueryable         prom_storage.SampleAndChunkQueryable
 	ExemplarQueryable        prom_storage.ExemplarQueryable
+	MetadataSupplier         querier.MetadataSupplier
 	QuerierEngine            *promql.Engine
 	QueryFrontendTripperware querymiddleware.Tripperware
 	Ruler                    *ruler.Ruler

@@ -301,6 +301,11 @@ lint: check-makefiles
 	faillint -paths "github.com/NYTimes/gziphandler" \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
+	# We don't want to use yaml.v2 anywhere, because we use yaml.v3 now,
+	# and UnamrshalYAML signature is not compatible between them.
+	faillint -paths "gopkg.in/yaml.v2" \
+		./pkg/... ./cmd/... ./tools/... ./integration/...
+
 	# Ensure packages we imported from Thanos are no longer used.
 	GOFLAGS="-tags=requires_docker" faillint -paths \
 		"github.com/thanos/thanos-io/pkg/store,\
@@ -393,7 +398,11 @@ dist: ## Generates binaries for a Mimir release.
 		touch $@
 
 build-mixin: check-mixin-jb
-	@rm -rf $(MIXIN_OUT_PATH) && mkdir $(MIXIN_OUT_PATH)
+	# Empty the compiled mixin directories content, without removing the directories itself,
+	# so that Grafana can refresh re-build dashboards when using "make mixin-serve".
+	@mkdir -p $(MIXIN_OUT_PATH)
+	@find $(MIXIN_OUT_PATH) -type f -delete
+
 	@mixtool generate all --output-alerts $(MIXIN_OUT_PATH)/alerts.yaml --output-rules $(MIXIN_OUT_PATH)/rules.yaml --directory $(MIXIN_OUT_PATH)/dashboards ${MIXIN_PATH}/mixin-compiled.libsonnet
 	@./tools/check-rules.sh $(MIXIN_OUT_PATH)/rules.yaml 20 # If any rule group has more than 20 rules, fail. 20 is our default per-tenant limit in the ruler.
 	@cd $(MIXIN_OUT_PATH)/.. && zip -q -r mimir-mixin.zip $$(basename "$(MIXIN_OUT_PATH)")

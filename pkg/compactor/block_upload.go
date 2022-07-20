@@ -13,7 +13,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -40,60 +39,85 @@ const uploadingMetaFilename = "uploading-" + block.MetaFilename
 
 var rePath = regexp.MustCompile(`^(index|chunks/\d{6})$`)
 
-// HandleBlockUpload handles requests for starting or completing block uploads.
-//
-// The query parameter uploadComplete (true or false, default false) controls whether the
-// upload should be completed or not.
+// StartBlockUpload handles request for starting block upload.
 //
 // Starting the uploading of a block means to upload a meta file and verify that the upload can
 // go ahead. In practice this means to check that the (complete) block isn't already in block
 // storage, and that the meta file is valid.
-func (c *MultitenantCompactor) HandleBlockUpload(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	blockID := vars["block"]
-	bULID, err := ulid.Parse(blockID)
+func (c *MultitenantCompactor) StartBlockUpload(w http.ResponseWriter, r *http.Request) {
+	blockID, tenantID, err := c.parseBlockUploadParameters(r)
 	if err != nil {
-		http.Error(w, "invalid block ID", http.StatusBadRequest)
-		return
-	}
-	ctx := r.Context()
-	tenantID, err := tenant.TenantID(ctx)
-	if err != nil {
-		http.Error(w, "invalid tenant ID", http.StatusBadRequest)
-		return
-	}
-	if !c.cfgProvider.CompactorBlockUploadEnabled(tenantID) {
-		http.Error(w, "block upload is disabled", http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
+	ctx := r.Context()
 	logger := log.With(util_log.WithContext(ctx, c.logger), "block", blockID)
 
-	shouldComplete := r.URL.Query().Get("uploadComplete") == "true"
-	var op string
-	if shouldComplete {
-		op = "complete block upload"
-	} else {
-		op = "start block upload"
-	}
+	const op = "start block upload"
 
 	userBkt := bucket.NewUserBucketClient(tenantID, c.bucketClient, c.cfgProvider)
-	if err := checkForCompleteBlock(ctx, bULID, userBkt); err != nil {
+	if err := checkForCompleteBlock(ctx, blockID, userBkt); err != nil {
 		writeBlockUploadError(err, op, "while checking for complete block", logger, w)
 		return
 	}
 
-	if shouldComplete {
-		err = c.completeBlockUpload(ctx, r, w, logger, userBkt, bULID)
-	} else {
-		err = c.createBlockUpload(ctx, r, logger, userBkt, tenantID, bULID)
-	}
-	if err != nil {
+	if err := c.createBlockUpload(ctx, r, logger, userBkt, tenantID, blockID); err != nil {
 		writeBlockUploadError(err, op, "", logger, w)
 		return
 	}
 
 	w.WriteHeader(http.StatusOK)
+}
+
+// FinishBlockUpload handles request for finishing block upload.
+//
+// Finishing block upload performs block valiation, and if all checks pass, marks block as finished
+// by uploading meta.json file.
+func (c *MultitenantCompactor) FinishBlockUpload(w http.ResponseWriter, r *http.Request) {
+	blockID, tenantID, err := c.parseBlockUploadParameters(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	ctx := r.Context()
+	logger := log.With(util_log.WithContext(ctx, c.logger), "block", blockID)
+
+	const op = "complete block upload"
+
+	userBkt := bucket.NewUserBucketClient(tenantID, c.bucketClient, c.cfgProvider)
+	if err := checkForCompleteBlock(ctx, blockID, userBkt); err != nil {
+		writeBlockUploadError(err, op, "while checking for complete block", logger, w)
+		return
+	}
+
+	if err := c.completeBlockUpload(ctx, r, w, logger, userBkt, blockID); err != nil {
+		writeBlockUploadError(err, op, "", logger, w)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+// parseBlockUploadParameters parses common parameters from the request: block ID, tenant and checks if tenant has uploads enabled.
+func (c *MultitenantCompactor) parseBlockUploadParameters(r *http.Request) (ulid.ULID, string, error) {
+	blockID, err := ulid.Parse(mux.Vars(r)["block"])
+	if err != nil {
+		return ulid.ULID{}, "", errors.New("invalid block ID")
+	}
+
+	ctx := r.Context()
+	tenantID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return ulid.ULID{}, "", errors.New("invalid tenant ID")
+	}
+
+	if !c.cfgProvider.CompactorBlockUploadEnabled(tenantID) {
+		return ulid.ULID{}, "", errors.New("block upload is disabled")
+	}
+
+	return blockID, tenantID, nil
 }
 
 func writeBlockUploadError(err error, op, extra string, logger log.Logger, w http.ResponseWriter) {
@@ -167,34 +191,17 @@ func (c *MultitenantCompactor) createBlockUpload(ctx context.Context, r *http.Re
 //
 // It takes the mandatory query parameter "path", specifying the file's destination path.
 func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Request) {
-	const op = "block file upload"
-
-	vars := mux.Vars(r)
-	blockID := vars["block"]
-	bULID, err := ulid.Parse(blockID)
+	blockID, tenantID, err := c.parseBlockUploadParameters(r)
 	if err != nil {
-		http.Error(w, "invalid block ID", http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+
 	pth := r.URL.Query().Get("path")
 	if pth == "" {
 		http.Error(w, "missing or invalid file path", http.StatusBadRequest)
 		return
 	}
-
-	ctx := r.Context()
-	tenantID, err := tenant.TenantID(ctx)
-	if err != nil {
-		http.Error(w, "invalid tenant ID", http.StatusBadRequest)
-		return
-	}
-	if !c.cfgProvider.CompactorBlockUploadEnabled(tenantID) {
-		http.Error(w, "block upload is disabled", http.StatusBadRequest)
-		return
-	}
-
-	logger := util_log.WithContext(ctx, c.logger)
-	logger = log.With(logger, "block", blockID)
 
 	if path.Base(pth) == block.MetaFilename {
 		http.Error(w, fmt.Sprintf("%s is not allowed", block.MetaFilename), http.StatusBadRequest)
@@ -211,14 +218,18 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	userBkt := bucket.NewUserBucketClient(tenantID, c.bucketClient, c.cfgProvider)
+	const op = "block file upload"
 
-	if err := checkForCompleteBlock(ctx, bULID, userBkt); err != nil {
+	ctx := r.Context()
+	logger := log.With(util_log.WithContext(ctx, c.logger), "block", blockID)
+
+	userBkt := bucket.NewUserBucketClient(tenantID, c.bucketClient, c.cfgProvider)
+	if err := checkForCompleteBlock(ctx, blockID, userBkt); err != nil {
 		writeBlockUploadError(err, op, "while checking for complete block", logger, w)
 		return
 	}
 
-	metaPath := path.Join(blockID, uploadingMetaFilename)
+	metaPath := path.Join(blockID.String(), uploadingMetaFilename)
 	exists, err := userBkt.Exists(ctx, metaPath)
 	if err != nil {
 		level.Error(logger).Log("msg", "failed to check existence in object storage",
@@ -233,24 +244,19 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 
 	// TODO: Verify that upload path and length correspond to file index
 
-	dst := path.Join(blockID, pth)
+	dst := path.Join(blockID.String(), pth)
 
-	level.Debug(logger).Log("msg", "uploading block file to bucket", "destination", dst,
-		"size", r.ContentLength)
-	reader := bodyReader{
-		r: r,
-	}
+	level.Debug(logger).Log("msg", "uploading block file to bucket", "destination", dst, "size", r.ContentLength)
+	reader := bodyReader{r: r}
 	if err := userBkt.Upload(ctx, dst, reader); err != nil {
-		level.Error(logger).Log("msg", "failed uploading block file to bucket",
-			"operation", op, "destination", dst, "err", err)
+		level.Error(logger).Log("msg", "failed uploading block file to bucket", "operation", op, "destination", dst, "err", err)
 		// We don't know what caused the error; it could be the client's fault (e.g. killed
 		// connection), but internal server error is the safe choice here.
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	level.Debug(logger).Log("msg", "finished uploading block file to bucket",
-		"path", pth)
+	level.Debug(logger).Log("msg", "finished uploading block file to bucket", "path", pth)
 
 	w.WriteHeader(http.StatusOK)
 }
@@ -292,8 +298,14 @@ func (c *MultitenantCompactor) completeBlockUpload(ctx context.Context, r *http.
 	level.Debug(logger).Log("msg", "completing block upload", "files", len(meta.Thanos.Files))
 
 	// Validate blocks by downloading locally and sanitizing
-	if err := c.validateBlock(ctx, w, blockID, userBkt, meta); err != nil {
+	rps := newRequestProgressSender(w)
+	if err = rps.SendProgressMessage("starting block validation"); err != nil {
 		return err
+	}
+	if err := c.validateBlock(ctx, w, blockID, userBkt, meta); err != nil {
+		if err = rps.SendProgressMessage(err.Error()); err != nil {
+			return err
+		}
 	}
 
 	// Upload meta file so block is considered complete
@@ -306,6 +318,8 @@ func (c *MultitenantCompactor) completeBlockUpload(ctx context.Context, r *http.
 			"failed to delete %s from block in object storage", uploadingMetaFilename), "err", err)
 		return nil
 	}
+
+	rps.SendFinished(true, "block validation complete")
 
 	level.Debug(logger).Log("msg", "successfully completed block upload")
 	return nil
@@ -409,15 +423,8 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, w http.Respons
 	}()
 
 	rps := newRequestProgressSender(w)
-	progress := ValidationProgress{Timestamp: time.Now().Unix(), Message: "starting block download"}
-	if err = rps.SendValidationProgress(progress); err != nil {
-		level.Warn(c.logger).Log("msg", "error sending validation progress", "status", progress.Message)
-	}
-	progress.Message = "block download in progress"
+	var objectCount, objectBytes int64
 	if err := userBkt.Iter(ctx, blockID.String(), func(pth string) error {
-		if strings.HasSuffix(pth, ".lock") || pth == "meta.json" {
-			return nil
-		}
 		fname := filepath.Join(blockDir, pth)
 		if pth == uploadingMetaFilename {
 			fname = filepath.Join(blockDir, block.MetaFilename) // rename to final meta.json in temp dir
@@ -437,25 +444,22 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, w http.Respons
 		}()
 		bytesWritten, err := io.Copy(f, r)
 		if err != nil {
-			return errors.Wrap(err, "failed writing to temp file")
+			return err
 		}
-		progress.ObjectCount++
-		progress.ObjectBytes += bytesWritten
-		progress.Timestamp = time.Now().Unix()
+		objectCount++
+		objectBytes += bytesWritten
 		if err := f.Close(); err != nil {
 			return errors.Wrap(err, "failed to close temp file")
 		}
-		if err = rps.SendValidationProgress(progress); err != nil {
-			level.Warn(c.logger).Log("msg", "error sending validation progress", "status", progress.Message)
+		if err = rps.SendProgressMessageWithObjectStats("block download in progress", objectCount, objectBytes); err != nil {
+			return err
 		}
 		return nil
 	}); err != nil {
 		return errors.Wrapf(err, "failed to iterate block %s", blockID.String())
 	}
-	progress.Message = "block download complete"
-	progress.Timestamp = time.Now().Unix()
-	if err = rps.SendValidationProgress(progress); err != nil {
-		level.Warn(c.logger).Log("msg", "error sending validation progress", "status", progress.Message)
+	if err = rps.SendProgressMessage("block download complete"); err != nil {
+		return err
 	}
 
 	// Read metadata file, populate mop of file paths and sizes
@@ -490,12 +494,9 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, w http.Respons
 			return errors.Wrap(err, fmt.Sprintf("file not in metadata %s", f.RelPath))
 		}
 	}
-	progress.Finished = true
 
-	progress.Success = progress.Finished
-	progress.Message = "block validation complete"
-	if err = rps.SendValidationProgress(progress); err != nil {
-		level.Warn(c.logger).Log("msg", "error sending validation progress", "status", progress.Message)
+	if err = rps.SendProgressMessage("finished validating file names and sizes"); err != nil {
+		return err
 	}
 
 	return nil
@@ -554,4 +555,21 @@ func newRequestProgressSender(w http.ResponseWriter) *requestProgressSender {
 
 func (rps *requestProgressSender) SendValidationProgress(p ValidationProgress) error {
 	return rps.enc.Encode(p)
+}
+
+func (rps *requestProgressSender) SendProgressMessage(msg string) error {
+	return rps.enc.Encode(ValidationProgress{Timestamp: time.Now().Unix(), Message: msg})
+}
+
+func (rps *requestProgressSender) SendProgressMessageWithObjectStats(msg string, objectCount, objectBytes int64) error {
+	return rps.enc.Encode(ValidationProgress{
+		Timestamp:   time.Now().Unix(),
+		ObjectCount: objectCount,
+		ObjectBytes: objectBytes,
+		Message:     msg,
+	})
+}
+
+func (rps *requestProgressSender) SendFinished(success bool, msg string) error {
+	return rps.enc.Encode(ValidationProgress{Timestamp: time.Now().Unix(), Finished: success, Success: success, Message: msg})
 }

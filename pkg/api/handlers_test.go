@@ -144,7 +144,7 @@ func TestConfigDiffHandler(t *testing.T) {
 			},
 			expectedStatusCode: 500,
 			expectedBody: "yaml: unmarshal errors:\n" +
-				"  line 1: cannot unmarshal !!str `x` into map[interface {}]interface {}\n",
+				"  line 1: cannot unmarshal !!str `x` into map[string]interface {}\n",
 		},
 	} {
 		defaultCfg := newDefaultDiffConfigMock()
