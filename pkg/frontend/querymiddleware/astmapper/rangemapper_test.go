@@ -27,18 +27,6 @@ func TestRangeMapper(t *testing.T) {
 			expectedSplitQueries: 3,
 		},
 		{
-			// Should add the remainder range interval
-			in:                   `count_over_time({app="foo"}[3m])`,
-			out:                  `sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"count_over_time({app=\\\"foo\\\"}[1m] offset 2m)\",\"count_over_time({app=\\\"foo\\\"}[2m])\"]}"})`,
-			expectedSplitQueries: 3,
-		},
-		{
-			// Should add the remainder range interval
-			in:                   `count_over_time({app="foo"}[5m])`,
-			out:                  `sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"count_over_time({app=\\\"foo\\\"}[1m] offset 4m)\",\"count_over_time({app=\\\"foo\\\"}[2m] offset 2m)\",\"count_over_time({app=\\\"foo\\\"}[2m])\"]}"})`,
-			expectedSplitQueries: 3,
-		},
-		{
 			in:                   `sum_over_time({app="foo"}[4m])`,
 			out:                  `sum without() (` + concatOffsets(splitInterval, 2, `sum_over_time({app="foo"}[x]y)`) + `)`,
 			expectedSplitQueries: 3,
@@ -53,20 +41,9 @@ func TestRangeMapper(t *testing.T) {
 			out:                  `min without() (` + concatOffsets(splitInterval, 2, `min_over_time({app="foo"}[x]y)`) + `)`,
 			expectedSplitQueries: 3,
 		},
-		// TODO: Should support expressions with offset operator
-		//{
-		//	in:                   `count_over_time({app="foo"}[4m] offset 1m)`,
-		//	out:                  `sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"count_over_time({app=\\\"foo\\\"}[1m] offset 3m)\",\"count_over_time({app=\\\"foo\\\"}[2m] offset 2m)\",\"count_over_time({app=\\\"foo\\\"}[2m] offset 1)\"]}"})`,
-		//	expectedSplitQueries: 3,
-		//},
 		{
 			in:                   `sum(count_over_time({app="foo"}[4m]))`,
 			out:                  `sum (sum without () (` + concatOffsets(splitInterval, 2, `sum(count_over_time({app="foo"}[x]y))`) + `))`,
-			expectedSplitQueries: 3,
-		},
-		{
-			in:                   `count(count_over_time({app="foo"}[4m]))`,
-			out:                  `count (sum without () (` + concatOffsets(splitInterval, 2, `count(count_over_time({app="foo"}[x]y))`) + `))`,
 			expectedSplitQueries: 3,
 		},
 		{
@@ -75,10 +52,33 @@ func TestRangeMapper(t *testing.T) {
 			expectedSplitQueries: 3,
 		},
 		{
-			in:                   `sum(count(count_over_time({app="foo"}[4m])))`,
-			out:                  `sum (sum without () (` + concatOffsets(splitInterval, 2, `sum(count(count_over_time({app="foo"}[x]y)))`) + `))`,
+			in:                   `min(count_over_time({app="foo"}[4m]))`,
+			out:                  `min (sum without () (` + concatOffsets(splitInterval, 2, `min(count_over_time({app="foo"}[x]y))`) + `))`,
 			expectedSplitQueries: 3,
 		},
+		// TODO: Should support expressions with offset operator
+		//{
+		//	in:                   `count_over_time({app="foo"}[4m] offset 1m)`,
+		//	out:                  `sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"count_over_time({app=\\\"foo\\\"}[1m] offset 3m)\",\"count_over_time({app=\\\"foo\\\"}[2m] offset 2m)\",\"count_over_time({app=\\\"foo\\\"}[2m] offset 1)\"]}"})`,
+		//	expectedSplitQueries: 3,
+		//},
+		//{
+		//	// Should add the remainder range interval
+		//	in:                   `count_over_time({app="foo"}[3m])`,
+		//	out:                  `sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"count_over_time({app=\\\"foo\\\"}[1m] offset 2m)\",\"count_over_time({app=\\\"foo\\\"}[2m])\"]}"})`,
+		//	expectedSplitQueries: 3,
+		//},
+		//{
+		//	// Should add the remainder range interval
+		//	in:                   `count_over_time({app="foo"}[5m])`,
+		//	out:                  `sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"count_over_time({app=\\\"foo\\\"}[1m] offset 4m)\",\"count_over_time({app=\\\"foo\\\"}[2m] offset 2m)\",\"count_over_time({app=\\\"foo\\\"}[2m])\"]}"})`,
+		//	expectedSplitQueries: 3,
+		//},
+		//{
+		//	in:                   `sum(count(count_over_time({app="foo"}[4m])))`,
+		//	out:                  `sum (sum without () (` + concatOffsets(splitInterval, 2, `sum(count(count_over_time({app="foo"}[x]y)))`) + `))`,
+		//	expectedSplitQueries: 3,
+		//},
 	} {
 		tt := tt
 

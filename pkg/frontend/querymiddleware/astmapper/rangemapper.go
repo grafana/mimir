@@ -12,6 +12,7 @@ import (
 type rangeMapper struct {
 	splitByInterval time.Duration
 	currentSplit    *int
+	downstreamExpr  *parser.Expr
 	// TODO: add metrics
 }
 
@@ -29,6 +30,12 @@ func (r *rangeMapper) CopyWithCurrentSplit(currentSplit int) *rangeMapper {
 	return &rangeMapper
 }
 
+func (r *rangeMapper) CopyWithDownstream(downstreamExpr parser.Expr) *rangeMapper {
+	rangeMapper := *r
+	rangeMapper.downstreamExpr = &downstreamExpr
+	return &rangeMapper
+}
+
 func (r *rangeMapper) MapNode(node parser.Node, stats *MapperStats) (mapped parser.Node, finished bool, err error) {
 	// TODO: check if it is splittable with supported expression types
 
@@ -38,11 +45,11 @@ func (r *rangeMapper) MapNode(node parser.Node, stats *MapperStats) (mapped pars
 		if r.currentSplit != nil {
 			return n, false, nil
 		}
-		return r.splitVectorAggregator(n)
+		return r.mapVectorAggregator(n)
 	case *parser.Call:
 		// TODO: is Call always range vector aggregator? e.g., count_over_time
 		if r.currentSplit == nil {
-			return r.splitRangeAggregator(n)
+			return r.mapRangeAggregator(n)
 		}
 		return n, false, nil
 	case *parser.MatrixSelector:
@@ -72,29 +79,49 @@ func getRangeInterval(node parser.Node) time.Duration {
 		return ms.Range
 	}
 	return 0
-
 }
 
-func getRangeAggregatorExpr(expr parser.Node) *parser.Call {
-	switch e := expr.(type) {
+func (r *rangeMapper) getRangeAggregator(expr parser.Node) (*parser.Call, error) {
+	switch n := expr.(type) {
 	case *parser.Call:
-		return e
+		return n, nil
 	case *parser.AggregateExpr:
-		return getRangeAggregatorExpr(e.Expr)
+		return r.getRangeAggregator(n.Expr)
 	}
-	return nil
+	return nil, fmt.Errorf("no range aggregator expression found")
 }
 
-//  TODO: this should be merged with the splitAndSquashRangeVectorAggregatorNode
-func (r *rangeMapper) splitAndSquashVectorAggregatorNode(expr parser.Expr) (parser.Node, error) {
-	rangeInterval := getRangeInterval(expr)
-
-	// in case the interval is smaller than the configured split interval,
-	// don't split it.
-	if rangeInterval <= r.splitByInterval {
-		return expr, nil
+func (r *rangeMapper) splitNode(expr parser.Expr, currentSplit int) (parser.Node, error) {
+	node, err := cloneNode(expr)
+	if err != nil {
+		return nil, err
 	}
 
+	rangeAggregator, err := r.getRangeAggregator(node)
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO: better way than all these type casts
+	ms, ok := rangeAggregator.Args[0].(*parser.MatrixSelector)
+	if !ok {
+		return expr, fmt.Errorf("unable to get matrix selector from call")
+	}
+	vs, ok := ms.VectorSelector.(*parser.VectorSelector)
+	if !ok {
+		return expr, fmt.Errorf("unable to get vector selector from matrix selector")
+	}
+
+	// Change expression range interval and offset
+	vs.OriginalOffset += time.Duration(currentSplit) * r.splitByInterval
+
+	// TODO: add remainder offset
+	ms.Range = r.splitByInterval
+
+	return node, nil
+}
+
+func (r *rangeMapper) splitAndSquashNode(expr parser.Expr, rangeInterval time.Duration) (parser.Node, error) {
 	// TODO: Make this dynamic based on configuration values
 	splitCount := int(math.Ceil(float64(rangeInterval) / float64(r.splitByInterval)))
 
@@ -104,131 +131,15 @@ func (r *rangeMapper) splitAndSquashVectorAggregatorNode(expr parser.Expr) (pars
 
 	children := make([]parser.Node, 0, splitCount)
 
-	var rangeAggregatorFunc string
+	if r.downstreamExpr != nil {
+		expr = *r.downstreamExpr
+	}
 
 	// Create partial query for each split
 	for split := 0; split < splitCount; split++ {
-		splitNode, err := cloneAndMap(NewASTNodeMapper(r.CopyWithCurrentSplit(split)), expr, nil)
+		splitNode, err := r.splitNode(expr, split)
 		if err != nil {
 			return expr, err
-		}
-
-		rangeAggregatorExpr := getRangeAggregatorExpr(splitNode)
-		if rangeAggregatorExpr == nil {
-			return expr, fmt.Errorf("unable to get range aggregator expression")
-		}
-
-		// TODO: better way than all these type casts
-		ms, ok := rangeAggregatorExpr.Args[0].(*parser.MatrixSelector)
-		if !ok {
-			return expr, fmt.Errorf("unable to convert children split node to matrix selector")
-		}
-		vs, ok := ms.VectorSelector.(*parser.VectorSelector)
-		if !ok {
-			return expr, fmt.Errorf("unable to convert children split node to vector selector")
-		}
-
-		// Change expression range interval and offset
-		vs.OriginalOffset += time.Duration(split) * r.splitByInterval
-
-		// Add remainder offset
-		if split == splitCount-1 {
-			ms.Range = ms.Range - vs.OriginalOffset
-		} else {
-			ms.Range = r.splitByInterval
-		}
-
-		rangeAggregatorFunc = rangeAggregatorExpr.Func.Name
-
-		// Prepend to children vector
-		children = append([]parser.Node{splitNode}, children...)
-	}
-
-	expr, err := vectorSquasher(children...)
-	if err != nil {
-		return nil, err
-	}
-
-	// TODO: this should be mapped recursively!
-	switch rangeAggregatorFunc {
-	case "count_over_time", "sum_over_time":
-		return &parser.AggregateExpr{
-			Op:       parser.SUM,
-			Expr:     expr,
-			Param:    nil,
-			Grouping: nil,
-			Without:  true,
-		}, nil
-	case "max_over_time":
-		return &parser.AggregateExpr{
-			Op:       parser.MAX,
-			Expr:     expr,
-			Param:    nil,
-			Grouping: nil,
-			Without:  true,
-		}, nil
-	case "min_over_time":
-		return &parser.AggregateExpr{
-			Op:       parser.MIN,
-			Expr:     expr,
-			Param:    nil,
-			Grouping: nil,
-			Without:  true,
-		}, nil
-	}
-
-	return vectorSquasher(children...)
-}
-
-//  TODO: this should be merged with the splitAndSquashVectorAggregatorNode
-func (r *rangeMapper) splitAndSquashRangeVectorAggregatorNode(expr parser.Expr) (parser.Node, error) {
-	rangeInterval := getRangeInterval(expr)
-
-	// in case the interval is smaller than the configured split interval,
-	// don't split it.
-	if rangeInterval <= r.splitByInterval {
-		return expr, nil
-	}
-
-	// TODO: Make this dynamic based on configuration values
-	splitCount := int(math.Ceil(float64(rangeInterval) / float64(r.splitByInterval)))
-
-	if splitCount <= 0 {
-		return expr, nil
-	}
-
-	children := make([]parser.Node, 0, splitCount)
-
-	// Create partial query for each split
-	for split := 0; split < splitCount; split++ {
-		splitNode, err := cloneAndMap(NewASTNodeMapper(r.CopyWithCurrentSplit(split)), expr, nil)
-		if err != nil {
-			return expr, err
-		}
-
-		rangeAggregatorExpr := getRangeAggregatorExpr(splitNode)
-		if rangeAggregatorExpr == nil {
-			return expr, fmt.Errorf("unable to get range aggregator expression")
-		}
-
-		// TODO: better way than all these type casts
-		ms, ok := rangeAggregatorExpr.Args[0].(*parser.MatrixSelector)
-		if !ok {
-			return expr, fmt.Errorf("unable to convert children split node to matrix selector")
-		}
-		vs, ok := ms.VectorSelector.(*parser.VectorSelector)
-		if !ok {
-			return expr, fmt.Errorf("unable to convert children split node to vector selector")
-		}
-
-		// Change expression range interval and offset
-		vs.OriginalOffset += time.Duration(split) * r.splitByInterval
-
-		// Add remainder offset
-		if split == splitCount-1 {
-			ms.Range = ms.Range - vs.OriginalOffset
-		} else {
-			ms.Range = r.splitByInterval
 		}
 
 		// Prepend to children vector
@@ -238,40 +149,31 @@ func (r *rangeMapper) splitAndSquashRangeVectorAggregatorNode(expr parser.Expr) 
 	return vectorSquasher(children...)
 }
 
-func (r *rangeMapper) splitVectorExpr(expr *parser.AggregateExpr, op parser.ItemType) (result *parser.AggregateExpr, err error) {
-	mapped, err := r.splitAndSquashVectorAggregatorNode(expr)
+func (r *rangeMapper) mapVectorAggregator(expr *parser.AggregateExpr) (mapped parser.Node, finished bool, err error) {
+	mapped, _, err = NewASTNodeMapper(r.CopyWithDownstream(expr)).MapNode(expr.Expr, nil)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	// Create the parent expression. We need to preserve the grouping as it was in the original one.
 	return &parser.AggregateExpr{
-		Op:       op,
+		Op:       expr.Op,
 		Expr:     mapped.(parser.Expr),
 		Param:    expr.Param,
 		Grouping: expr.Grouping,
 		Without:  expr.Without,
-	}, nil
+	}, true, nil
 }
 
-func (r *rangeMapper) splitVectorAggregator(expr *parser.AggregateExpr) (mapped parser.Node, finished bool, err error) {
-	mapped, err = r.splitVectorExpr(expr, expr.Op)
-	if err != nil {
-		return nil, false, err
-	}
-	return mapped, true, nil
-}
-
-func (r *rangeMapper) splitRangeExpr(node *parser.Call, op parser.ItemType) (parser.Node, error) {
-	mappedNode, err := r.splitAndSquashRangeVectorAggregatorNode(node)
+func (r *rangeMapper) splitAndSquashExpr(node parser.Expr, rangeInterval time.Duration, op parser.ItemType) (parser.Node, error) {
+	mapped, err := r.splitAndSquashNode(node, rangeInterval)
 	if err != nil {
 		return nil, err
 	}
-	vs, ok := mappedNode.(*parser.VectorSelector)
+	vs, ok := mapped.(*parser.VectorSelector)
 	if !ok {
 		return nil, err
 	}
-
 	return &parser.AggregateExpr{
 		Op:       op,
 		Expr:     vs,
@@ -281,23 +183,31 @@ func (r *rangeMapper) splitRangeExpr(node *parser.Call, op parser.ItemType) (par
 	}, nil
 }
 
-func (r *rangeMapper) splitRangeAggregator(node *parser.Call) (mapped parser.Node, finished bool, err error) {
+func (r *rangeMapper) mapRangeAggregator(node *parser.Call) (mapped parser.Node, finished bool, err error) {
+	rangeInterval := getRangeInterval(node)
+
+	// in case the interval is smaller than the configured split interval,
+	// don't split it.
+	if rangeInterval <= r.splitByInterval {
+		return node, true, nil
+	}
+
 	switch node.Func.Name {
 	// TODO: is there a better constant value to use here?
 	case "count_over_time", "sum_over_time":
-		mapped, err := r.splitRangeExpr(node, parser.SUM)
+		mapped, err := r.splitAndSquashExpr(node, rangeInterval, parser.SUM)
 		if err != nil {
 			return nil, false, err
 		}
 		return mapped, true, err
 	case "max_over_time":
-		mapped, err := r.splitRangeExpr(node, parser.MAX)
+		mapped, err := r.splitAndSquashExpr(node, rangeInterval, parser.MAX)
 		if err != nil {
 			return nil, false, err
 		}
 		return mapped, true, err
 	case "min_over_time":
-		mapped, err := r.splitRangeExpr(node, parser.MIN)
+		mapped, err := r.splitAndSquashExpr(node, rangeInterval, parser.MIN)
 		if err != nil {
 			return nil, false, err
 		}

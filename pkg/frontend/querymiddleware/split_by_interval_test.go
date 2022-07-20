@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"sort"
 	"testing"
 	"time"
 
@@ -26,17 +27,26 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 	tests := map[string]struct {
 		query string
 
-		// Expected number of sharded queries per shard (the final expected
-		// number will be multiplied for the number of shards).
 		expectedSplitQueries int
 	}{
-		// TODO: Fixme
-		//"count_over_time": {
-		//	query:                `count_over_time(metric_counter[3m])`,
-		//	expectedSplitQueries: 3,
-		//},
-		"sum(count_over_time)": {
-			query:                `sum(count_over_time(metric_counter[3m]))`,
+		"count_over_time": {
+			query:                `count_over_time(metric_counter[3m])`,
+			expectedSplitQueries: 3,
+		},
+		"sum_over_time": {
+			query:                `sum_over_time(metric_counter[3m])`,
+			expectedSplitQueries: 3,
+		},
+		"max_over_time": {
+			query:                `max_over_time(metric_counter[3m])`,
+			expectedSplitQueries: 3,
+		},
+		"min_over_time": {
+			query:                `min_over_time(metric_counter[3m])`,
+			expectedSplitQueries: 3,
+		},
+		"sum(sum_over_time)": {
+			query:                `sum(sum_over_time(metric_counter[3m]))`,
 			expectedSplitQueries: 3,
 		},
 		"max(sum_over_time)": {
@@ -124,10 +134,11 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 						queryable: queryable,
 					}
 
-					// Run the query without sharding.
+					// Run the query with the normal engine
 					expectedRes, err := downstream.Do(context.Background(), req)
 					require.Nil(t, err)
 					expectedPrometheusRes := expectedRes.(*PrometheusResponse)
+					sort.Sort(byLabels(expectedPrometheusRes.Data.Result))
 
 					// Ensure the query produces some results.
 					require.NotEmpty(t, expectedPrometheusRes.Data.Result)
@@ -135,11 +146,13 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 
 					splittingware := newSplitByIntervalMiddleware(true, 1*time.Minute, mockLimits{}, log.NewNopLogger(), engine)
 
-					// Run the query with sharding.
+					// Run the query with splitting
 					splitRes, err := splittingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
 					require.Nil(t, err)
 
 					splitPrometheusRes := splitRes.(*PrometheusResponse)
+					sort.Sort(byLabels(splitPrometheusRes.Data.Result))
+
 					approximatelyEquals(t, expectedPrometheusRes, splitPrometheusRes)
 				})
 			}
