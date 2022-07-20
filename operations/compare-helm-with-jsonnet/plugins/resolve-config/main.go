@@ -14,10 +14,9 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/pkg/errors"
-
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/pkg/errors"
 	"sigs.k8s.io/kustomize/kyaml/fn/framework"
 	"sigs.k8s.io/kustomize/kyaml/fn/framework/command"
 	"sigs.k8s.io/kustomize/kyaml/kio"
