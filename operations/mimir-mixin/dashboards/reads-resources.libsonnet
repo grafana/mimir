@@ -60,10 +60,16 @@ local filename = 'mimir-reads-resources.json';
         $.containerCPUUsagePanel('CPU', 'ingester'),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel('Memory (workingset)', 'ingester'),
+        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.ingester),
+      )
+    )
+    .addRow(
+      $.row('')
+      .addPanel(
+        $.containerMemoryRSSPanel('Memory (RSS)', 'ingester'),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.ingester),
+        $.containerMemoryWorkingSetPanel('Memory (workingset)', 'ingester'),
       )
     )
     .addRow(
@@ -94,10 +100,16 @@ local filename = 'mimir-reads-resources.json';
         $.containerCPUUsagePanel('CPU', 'store-gateway'),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel('Memory (workingset)', 'store-gateway'),
+        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.store_gateway),
+      )
+    )
+    .addRow(
+      $.row('')
+      .addPanel(
+        $.containerMemoryRSSPanel('Memory (RSS)', 'store-gateway'),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.store_gateway),
+        $.containerMemoryWorkingSetPanel('Memory (workingset)', 'store-gateway'),
       )
     )
     .addRow(

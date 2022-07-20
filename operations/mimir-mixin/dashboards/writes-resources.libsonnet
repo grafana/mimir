@@ -49,6 +49,9 @@ local filename = 'mimir-writes-resources.json';
     .addRow(
       $.row('')
       .addPanel(
+        $.containerMemoryRSSPanel('Memory (RSS)', 'ingester'),
+      )
+      .addPanel(
         $.containerMemoryWorkingSetPanel('Memory (workingset)', 'ingester'),
       )
       .addPanel(
