@@ -9,6 +9,5 @@ jobs:
     - uses: actions/checkout@v2
     - uses: helm/kind-action@v1.2.0
     - uses: frenck/action-setup-yq@a2ad11c46c5d7ba576861216963c9365b53f35bc
-    - uses: unfunco/setup-tanka@afd14f8226fbfd4daff50dc40b74f2db2fb4272e
-    - run: make check-helm-jsonnet-diff
+    - run: make BUILD_IN_CONTAINER=false check-helm-jsonnet-diff
       shell: bash
