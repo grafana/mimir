@@ -1,0 +1,2781 @@
+apiVersion: config.kubernetes.io/v1
+kind: ResourceList
+items:
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      config.kubernetes.io/path: default/service_mimir-memcached-metadata.yaml
+      internal.config.kubernetes.io/path: default/service_mimir-memcached-metadata.yaml
+      kustomize.config.k8s.io/id: |
+        kind: Service
+        name: mimir-memcached-metadata
+        namespace: default
+        version: v1
+      config.kubernetes.io/index: '0'
+      internal.config.kubernetes.io/index: '0'
+      internal.config.kubernetes.io/annotations-migration-resource-id: '0'
+      internal.config.kubernetes.io/id: '1'
+      config.k8s.io/id: '1'
+    labels:
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: memcached-metadata
+      helm.sh/chart: memcached-metadata-5.5.2
+    name: mimir-memcached-metadata
+    namespace: default
+  spec:
+    clusterIP: None
+    clusterIPs:
+    - None
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - name: memcache
+      port: 11211
+      protocol: TCP
+      targetPort: memcache
+    selector:
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/name: memcached-metadata
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+- apiVersion: apps/v1
+  kind: StatefulSet
+  metadata:
+    annotations:
+      config.kubernetes.io/path: default/statefulset_mimir-memcached-metadata.yaml
+      internal.config.kubernetes.io/path: default/statefulset_mimir-memcached-metadata.yaml
+      kustomize.config.k8s.io/id: |
+        group: apps
+        kind: StatefulSet
+        name: mimir-memcached-metadata
+        namespace: default
+        version: v1
+      config.kubernetes.io/index: '1'
+      internal.config.kubernetes.io/index: '1'
+      internal.config.kubernetes.io/annotations-migration-resource-id: '1'
+      internal.config.kubernetes.io/id: '2'
+      config.k8s.io/id: '2'
+    generation: 1
+    labels:
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: memcached-metadata
+      helm.sh/chart: memcached-metadata-5.5.2
+    name: mimir-memcached-metadata
+    namespace: default
+  spec:
+    podManagementPolicy: OrderedReady
+    replicas: 1
+    revisionHistoryLimit: 10
+    selector:
+      matchLabels:
+        app.kubernetes.io/instance: mimir
+        app.kubernetes.io/name: memcached-metadata
+    serviceName: mimir-memcached-metadata
+    template:
+      metadata:
+        annotations:
+          prometheus.io/port: "9150"
+          prometheus.io/scrape: "true"
+        creationTimestamp: null
+        labels:
+          app.kubernetes.io/instance: mimir
+          app.kubernetes.io/managed-by: Helm
+          app.kubernetes.io/name: memcached-metadata
+          helm.sh/chart: memcached-metadata-5.5.2
+      spec:
+        affinity:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+            - podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/instance: mimir
+                    app.kubernetes.io/name: memcached-metadata
+                namespaces:
+                - citestns
+                topologyKey: kubernetes.io/hostname
+              weight: 1
+        containers:
+        - args:
+          - -m 512
+          - -o
+          - modern
+          - -v
+          - -I 1m
+          - -c 1024
+          image: docker.io/memcached:1.6.9
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 6
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            successThreshold: 1
+            tcpSocket:
+              port: memcache
+            timeoutSeconds: 5
+          name: memcached
+          ports:
+          - containerPort: 11211
+            name: memcache
+            protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            successThreshold: 1
+            tcpSocket:
+              port: memcache
+            timeoutSeconds: 3
+          resources:
+            limits:
+              memory: 614Mi
+            requests:
+              cpu: 500m
+              memory: 614Mi
+          securityContext:
+            readOnlyRootFilesystem: false
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+          - mountPath: /tmp
+            name: tmp
+        - image: quay.io/prometheus/memcached-exporter:v0.9.0
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /metrics
+              port: metrics
+              scheme: HTTP
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 5
+          name: metrics
+          ports:
+          - containerPort: 9150
+            name: metrics
+            protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /metrics
+              port: metrics
+              scheme: HTTP
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          resources: {}
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext:
+          fsGroup: 1001
+          runAsUser: 1001
+        terminationGracePeriodSeconds: 30
+        volumes:
+        - emptyDir: {}
+          name: tmp
+    updateStrategy:
+      rollingUpdate:
+        partition: 0
+      type: RollingUpdate
+  status:
+    availableReplicas: 0
+    replicas: 0
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      config.kubernetes.io/path: default/service_mimir-memcached-queries.yaml
+      internal.config.kubernetes.io/path: default/service_mimir-memcached-queries.yaml
+      kustomize.config.k8s.io/id: |
+        kind: Service
+        name: mimir-memcached-queries
+        namespace: default
+        version: v1
+      config.kubernetes.io/index: '2'
+      internal.config.kubernetes.io/index: '2'
+      internal.config.kubernetes.io/annotations-migration-resource-id: '2'
+      internal.config.kubernetes.io/id: '3'
+      config.k8s.io/id: '3'
+    labels:
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: memcached-queries
+      helm.sh/chart: memcached-queries-5.5.2
+    name: mimir-memcached-queries
+    namespace: default
+  spec:
+    clusterIP: None
+    clusterIPs:
+    - None
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - name: memcache
+      port: 11211
+      protocol: TCP
+      targetPort: memcache
+    selector:
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/name: memcached-queries
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+- apiVersion: apps/v1
+  kind: StatefulSet
+  metadata:
+    annotations:
+      config.kubernetes.io/path: default/statefulset_mimir-memcached-queries.yaml
+      internal.config.kubernetes.io/path: default/statefulset_mimir-memcached-queries.yaml
+      kustomize.config.k8s.io/id: |
+        group: apps
+        kind: StatefulSet
+        name: mimir-memcached-queries
+        namespace: default
+        version: v1
+      config.kubernetes.io/index: '3'
+      internal.config.kubernetes.io/index: '3'
+      internal.config.kubernetes.io/annotations-migration-resource-id: '3'
+      internal.config.kubernetes.io/id: '4'
+      config.k8s.io/id: '4'
+    generation: 1
+    labels:
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: memcached-queries
+      helm.sh/chart: memcached-queries-5.5.2
+    name: mimir-memcached-queries
+    namespace: default
+  spec:
+    podManagementPolicy: OrderedReady
+    replicas: 1
+    revisionHistoryLimit: 10
+    selector:
+      matchLabels:
+        app.kubernetes.io/instance: mimir
+        app.kubernetes.io/name: memcached-queries
+    serviceName: mimir-memcached-queries
+    template:
+      metadata:
+        annotations:
+          prometheus.io/port: "9150"
+          prometheus.io/scrape: "true"
+        creationTimestamp: null
+        labels:
+          app.kubernetes.io/instance: mimir
+          app.kubernetes.io/managed-by: Helm
+          app.kubernetes.io/name: memcached-queries
+          helm.sh/chart: memcached-queries-5.5.2
+      spec:
+        affinity:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+            - podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/instance: mimir
+                    app.kubernetes.io/name: memcached-queries
+                namespaces:
+                - citestns
+                topologyKey: kubernetes.io/hostname
+              weight: 1
+        containers:
+        - args:
+          - -m 2048
+          - -o
+          - modern
+          - -v
+          - -I 15m
+          - -c 1024
+          image: docker.io/memcached:1.6.9
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 6
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            successThreshold: 1
+            tcpSocket:
+              port: memcache
+            timeoutSeconds: 5
+          name: memcached
+          ports:
+          - containerPort: 11211
+            name: memcache
+            protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            successThreshold: 1
+            tcpSocket:
+              port: memcache
+            timeoutSeconds: 3
+          resources:
+            limits:
+              memory: 2457Mi
+            requests:
+              cpu: 500m
+              memory: 2457Mi
+          securityContext:
+            readOnlyRootFilesystem: false
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+          - mountPath: /tmp
+            name: tmp
+        - image: quay.io/prometheus/memcached-exporter:v0.9.0
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /metrics
+              port: metrics
+              scheme: HTTP
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 5
+          name: metrics
+          ports:
+          - containerPort: 9150
+            name: metrics
+            protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /metrics
+              port: metrics
+              scheme: HTTP
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          resources: {}
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext:
+          fsGroup: 1001
+          runAsUser: 1001
+        terminationGracePeriodSeconds: 30
+        volumes:
+        - emptyDir: {}
+          name: tmp
+    updateStrategy:
+      rollingUpdate:
+        partition: 0
+      type: RollingUpdate
+  status:
+    availableReplicas: 0
+    replicas: 0
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      config.kubernetes.io/path: default/service_mimir-memcached-results.yaml
+      internal.config.kubernetes.io/path: default/service_mimir-memcached-results.yaml
+      kustomize.config.k8s.io/id: |
+        kind: Service
+        name: mimir-memcached-results
+        namespace: default
+        version: v1
+      config.kubernetes.io/index: '4'
+      internal.config.kubernetes.io/index: '4'
+      internal.config.kubernetes.io/annotations-migration-resource-id: '4'
+      internal.config.kubernetes.io/id: '5'
+      config.k8s.io/id: '5'
+    labels:
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: memcached-results
+      helm.sh/chart: memcached-results-5.5.2
+    name: mimir-memcached-results
+    namespace: default
+  spec:
+    clusterIP: None
+    clusterIPs:
+    - None
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - name: memcache
+      port: 11211
+      protocol: TCP
+      targetPort: memcache
+    selector:
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/name: memcached-results
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+- apiVersion: apps/v1
+  kind: StatefulSet
+  metadata:
+    annotations:
+      config.kubernetes.io/path: default/statefulset_mimir-memcached-results.yaml
+      internal.config.kubernetes.io/path: default/statefulset_mimir-memcached-results.yaml
+      kustomize.config.k8s.io/id: |
+        group: apps
+        kind: StatefulSet
+        name: mimir-memcached-results
+        namespace: default
+        version: v1
+      config.kubernetes.io/index: '5'
+      internal.config.kubernetes.io/index: '5'
+      internal.config.kubernetes.io/annotations-migration-resource-id: '5'
+      internal.config.kubernetes.io/id: '6'
+      config.k8s.io/id: '6'
+    generation: 1
+    labels:
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: memcached-results
+      helm.sh/chart: memcached-results-5.5.2
+    name: mimir-memcached-results
+    namespace: default
+  spec:
+    podManagementPolicy: OrderedReady
+    replicas: 1
+    revisionHistoryLimit: 10
+    selector:
+      matchLabels:
+        app.kubernetes.io/instance: mimir
+        app.kubernetes.io/name: memcached-results
+    serviceName: mimir-memcached-results
+    template:
+      metadata:
+        annotations:
+          prometheus.io/port: "9150"
+          prometheus.io/scrape: "true"
+        creationTimestamp: null
+        labels:
+          app.kubernetes.io/instance: mimir
+          app.kubernetes.io/managed-by: Helm
+          app.kubernetes.io/name: memcached-results
+          helm.sh/chart: memcached-results-5.5.2
+      spec:
+        affinity:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+            - podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/instance: mimir
+                    app.kubernetes.io/name: memcached-results
+                namespaces:
+                - citestns
+                topologyKey: kubernetes.io/hostname
+              weight: 1
+        containers:
+        - args:
+          - -m 512
+          - -o
+          - modern
+          - -v
+          - -I 1m
+          - -c 1024
+          image: docker.io/memcached:1.6.9
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 6
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            successThreshold: 1
+            tcpSocket:
+              port: memcache
+            timeoutSeconds: 5
+          name: memcached
+          ports:
+          - containerPort: 11211
+            name: memcache
+            protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            successThreshold: 1
+            tcpSocket:
+              port: memcache
+            timeoutSeconds: 3
+          resources:
+            limits:
+              memory: 614Mi
+            requests:
+              cpu: 500m
+              memory: 614Mi
+          securityContext:
+            readOnlyRootFilesystem: false
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+          - mountPath: /tmp
+            name: tmp
+        - image: quay.io/prometheus/memcached-exporter:v0.9.0
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /metrics
+              port: metrics
+              scheme: HTTP
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 5
+          name: metrics
+          ports:
+          - containerPort: 9150
+            name: metrics
+            protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /metrics
+              port: metrics
+              scheme: HTTP
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          resources: {}
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext:
+          fsGroup: 1001
+          runAsUser: 1001
+        terminationGracePeriodSeconds: 30
+        volumes:
+        - emptyDir: {}
+          name: tmp
+    updateStrategy:
+      rollingUpdate:
+        partition: 0
+      type: RollingUpdate
+  status:
+    availableReplicas: 0
+    replicas: 0
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      config.kubernetes.io/path: default/service_mimir-memcached.yaml
+      internal.config.kubernetes.io/path: default/service_mimir-memcached.yaml
+      kustomize.config.k8s.io/id: |
+        kind: Service
+        name: mimir-memcached
+        namespace: default
+        version: v1
+      config.kubernetes.io/index: '6'
+      internal.config.kubernetes.io/index: '6'
+      internal.config.kubernetes.io/annotations-migration-resource-id: '6'
+      internal.config.kubernetes.io/id: '7'
+      config.k8s.io/id: '7'
+    labels:
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: memcached
+      helm.sh/chart: memcached-5.5.2
+    name: mimir-memcached
+    namespace: default
+  spec:
+    clusterIP: None
+    clusterIPs:
+    - None
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - name: memcache
+      port: 11211
+      protocol: TCP
+      targetPort: memcache
+    selector:
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/name: memcached
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+- apiVersion: apps/v1
+  kind: StatefulSet
+  metadata:
+    annotations:
+      config.kubernetes.io/path: default/statefulset_mimir-memcached.yaml
+      internal.config.kubernetes.io/path: default/statefulset_mimir-memcached.yaml
+      kustomize.config.k8s.io/id: |
+        group: apps
+        kind: StatefulSet
+        name: mimir-memcached
+        namespace: default
+        version: v1
+      config.kubernetes.io/index: '7'
+      internal.config.kubernetes.io/index: '7'
+      internal.config.kubernetes.io/annotations-migration-resource-id: '7'
+      internal.config.kubernetes.io/id: '8'
+      config.k8s.io/id: '8'
+    generation: 1
+    labels:
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: memcached
+      helm.sh/chart: memcached-5.5.2
+    name: mimir-memcached
+    namespace: default
+  spec:
+    podManagementPolicy: OrderedReady
+    replicas: 1
+    revisionHistoryLimit: 10
+    selector:
+      matchLabels:
+        app.kubernetes.io/instance: mimir
+        app.kubernetes.io/name: memcached
+    serviceName: mimir-memcached
+    template:
+      metadata:
+        annotations:
+          prometheus.io/port: "9150"
+          prometheus.io/scrape: "true"
+        creationTimestamp: null
+        labels:
+          app.kubernetes.io/instance: mimir
+          app.kubernetes.io/managed-by: Helm
+          app.kubernetes.io/name: memcached
+          helm.sh/chart: memcached-5.5.2
+      spec:
+        affinity:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+            - podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/instance: mimir
+                    app.kubernetes.io/name: memcached
+                namespaces:
+                - citestns
+                topologyKey: kubernetes.io/hostname
+              weight: 1
+        containers:
+        - args:
+          - -m 8192
+          - -o
+          - modern
+          - -v
+          - -I 1m
+          - -c 4096
+          image: docker.io/memcached:1.6.9
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 6
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            successThreshold: 1
+            tcpSocket:
+              port: memcache
+            timeoutSeconds: 5
+          name: memcached
+          ports:
+          - containerPort: 11211
+            name: memcache
+            protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            successThreshold: 1
+            tcpSocket:
+              port: memcache
+            timeoutSeconds: 3
+          resources:
+            limits:
+              memory: 9830Mi
+            requests:
+              cpu: 500m
+              memory: 9830Mi
+          securityContext:
+            readOnlyRootFilesystem: false
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+          - mountPath: /tmp
+            name: tmp
+        - image: quay.io/prometheus/memcached-exporter:v0.9.0
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /metrics
+              port: metrics
+              scheme: HTTP
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 5
+          name: metrics
+          ports:
+          - containerPort: 9150
+            name: metrics
+            protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /metrics
+              port: metrics
+              scheme: HTTP
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          resources: {}
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext:
+          fsGroup: 1001
+          runAsUser: 1001
+        terminationGracePeriodSeconds: 30
+        volumes:
+        - emptyDir: {}
+          name: tmp
+    updateStrategy:
+      rollingUpdate:
+        partition: 0
+      type: RollingUpdate
+  status:
+    availableReplicas: 0
+    replicas: 0
+- apiVersion: apps/v1
+  kind: StatefulSet
+  metadata:
+    annotations:
+      config.kubernetes.io/path: default/statefulset_mimir-alertmanager.yaml
+      internal.config.kubernetes.io/path: default/statefulset_mimir-alertmanager.yaml
+      kustomize.config.k8s.io/id: |
+        group: apps
+        kind: StatefulSet
+        name: mimir-alertmanager
+        namespace: default
+        version: v1
+      config.kubernetes.io/index: '8'
+      internal.config.kubernetes.io/index: '8'
+      internal.config.kubernetes.io/annotations-migration-resource-id: '8'
+      internal.config.kubernetes.io/id: '9'
+      config.k8s.io/id: '9'
+    generation: 1
+    labels:
+      app.kubernetes.io/component: alertmanager
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/part-of: memberlist
+      app.kubernetes.io/version: 2.1.0
+    name: mimir-alertmanager
+    namespace: default
+  spec:
+    podManagementPolicy: OrderedReady
+    replicas: 1
+    revisionHistoryLimit: 10
+    selector:
+      matchLabels:
+        app.kubernetes.io/component: alertmanager
+        app.kubernetes.io/instance: mimir
+        app.kubernetes.io/name: mimir
+    serviceName: mimir-alertmanager
+    template:
+      metadata:
+        creationTimestamp: null
+        labels:
+          app.kubernetes.io/component: alertmanager
+          app.kubernetes.io/instance: mimir
+          app.kubernetes.io/managed-by: Helm
+          app.kubernetes.io/name: mimir
+          app.kubernetes.io/part-of: memberlist
+          app.kubernetes.io/version: 2.1.0
+      spec:
+        affinity: {}
+        containers:
+        - args:
+          - -target=alertmanager
+          - -config.expand-env=true
+          - -config.file=/etc/mimir/mimir.yaml
+          image: grafana/mimir:r190-fe20bbd
+          imagePullPolicy: IfNotPresent
+          name: alertmanager
+          ports:
+          - containerPort: 8080
+            name: http-metrics
+            protocol: TCP
+          - containerPort: 9095
+            name: grpc
+            protocol: TCP
+          - containerPort: 7946
+            name: memberlist
+            protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /ready
+              port: http-metrics
+              scheme: HTTP
+            initialDelaySeconds: 45
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+          - mountPath: /etc/mimir
+            name: config
+          - mountPath: /var/mimir
+            name: runtime-config
+          - mountPath: /data
+            name: storage
+          - mountPath: /tmp
+            name: tmp
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext: {}
+        serviceAccount: default
+        serviceAccountName: default
+        terminationGracePeriodSeconds: 60
+        volumes:
+        - name: config
+          secret:
+            defaultMode: 420
+            secretName: mimir-config
+        - configMap:
+            defaultMode: 420
+            name: mimir-runtime
+          name: runtime-config
+        - emptyDir: {}
+          name: tmp
+    updateStrategy:
+      type: RollingUpdate
+    volumeClaimTemplates:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        creationTimestamp: null
+        name: storage
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Gi
+        volumeMode: Filesystem
+      status:
+        phase: Pending
+  status:
+    availableReplicas: 0
+    replicas: 0
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      config.kubernetes.io/path: default/service_mimir-alertmanager-headless.yaml
+      internal.config.kubernetes.io/path: default/service_mimir-alertmanager-headless.yaml
+      kustomize.config.k8s.io/id: |
+        kind: Service
+        name: mimir-alertmanager-headless
+        namespace: default
+        version: v1
+      config.kubernetes.io/index: '9'
+      internal.config.kubernetes.io/index: '9'
+      internal.config.kubernetes.io/annotations-migration-resource-id: '9'
+      internal.config.kubernetes.io/id: '10'
+      config.k8s.io/id: '10'
+    labels:
+      app.kubernetes.io/component: alertmanager
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/part-of: memberlist
+      app.kubernetes.io/version: 2.1.0
+      prometheus.io/service-monitor: "false"
+    name: mimir-alertmanager-headless
+    namespace: default
+  spec:
+    clusterIP: None
+    clusterIPs:
+    - None
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - name: http-metrics
+      port: 8080
+      protocol: TCP
+      targetPort: http-metrics
+    - name: grpc
+      port: 9095
+      protocol: TCP
+      targetPort: grpc
+    - name: cluster
+      port: 9094
+      protocol: TCP
+      targetPort: 9094
+    publishNotReadyAddresses: true
+    selector:
+      app.kubernetes.io/component: alertmanager
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/name: mimir
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+- apiVersion: apps/v1
+  kind: StatefulSet
+  metadata:
+    annotations:
+      config.kubernetes.io/path: default/statefulset_mimir-compactor.yaml
+      internal.config.kubernetes.io/path: default/statefulset_mimir-compactor.yaml
+      kustomize.config.k8s.io/id: |
+        group: apps
+        kind: StatefulSet
+        name: mimir-compactor
+        namespace: default
+        version: v1
+      config.kubernetes.io/index: '10'
+      internal.config.kubernetes.io/index: '10'
+      internal.config.kubernetes.io/annotations-migration-resource-id: '10'
+      internal.config.kubernetes.io/id: '11'
+      config.k8s.io/id: '11'
+    generation: 1
+    labels:
+      app.kubernetes.io/component: compactor
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/part-of: memberlist
+      app.kubernetes.io/version: 2.1.0
+    name: mimir-compactor
+    namespace: default
+  spec:
+    podManagementPolicy: OrderedReady
+    replicas: 1
+    revisionHistoryLimit: 10
+    selector:
+      matchLabels:
+        app.kubernetes.io/component: compactor
+        app.kubernetes.io/instance: mimir
+        app.kubernetes.io/name: mimir
+    serviceName: mimir-compactor
+    template:
+      metadata:
+        creationTimestamp: null
+        labels:
+          app.kubernetes.io/component: compactor
+          app.kubernetes.io/instance: mimir
+          app.kubernetes.io/managed-by: Helm
+          app.kubernetes.io/name: mimir
+          app.kubernetes.io/part-of: memberlist
+          app.kubernetes.io/version: 2.1.0
+      spec:
+        affinity:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+            - podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                  - key: target
+                    operator: In
+                    values:
+                    - compactor
+                topologyKey: kubernetes.io/hostname
+              weight: 100
+        containers:
+        - args:
+          - -target=compactor
+          - -config.expand-env=true
+          - -config.file=/etc/mimir/mimir.yaml
+          image: grafana/mimir:r190-fe20bbd
+          imagePullPolicy: IfNotPresent
+          name: compactor
+          ports:
+          - containerPort: 8080
+            name: http-metrics
+            protocol: TCP
+          - containerPort: 9095
+            name: grpc
+            protocol: TCP
+          - containerPort: 7946
+            name: memberlist
+            protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /ready
+              port: http-metrics
+              scheme: HTTP
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+          - mountPath: /etc/mimir
+            name: config
+          - mountPath: /var/mimir
+            name: runtime-config
+          - mountPath: /data
+            name: storage
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext: {}
+        serviceAccount: default
+        serviceAccountName: default
+        terminationGracePeriodSeconds: 240
+        volumes:
+        - name: config
+          secret:
+            defaultMode: 420
+            secretName: mimir-config
+        - configMap:
+            defaultMode: 420
+            name: mimir-runtime
+          name: runtime-config
+    updateStrategy:
+      type: RollingUpdate
+    volumeClaimTemplates:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        creationTimestamp: null
+        name: storage
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 2Gi
+        volumeMode: Filesystem
+      status:
+        phase: Pending
+  status:
+    availableReplicas: 0
+    replicas: 0
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      config.kubernetes.io/path: default/service_mimir-compactor.yaml
+      internal.config.kubernetes.io/path: default/service_mimir-compactor.yaml
+      kustomize.config.k8s.io/id: |
+        kind: Service
+        name: mimir-compactor
+        namespace: default
+        version: v1
+      config.kubernetes.io/index: '11'
+      internal.config.kubernetes.io/index: '11'
+      internal.config.kubernetes.io/annotations-migration-resource-id: '11'
+      internal.config.kubernetes.io/id: '12'
+      config.k8s.io/id: '12'
+    labels:
+      app.kubernetes.io/component: compactor
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/part-of: memberlist
+      app.kubernetes.io/version: 2.1.0
+    name: mimir-compactor
+    namespace: default
+  spec:
+    clusterIP: 10.43.0.0
+    clusterIPs:
+    - 10.43.0.0
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - name: http-metrics
+      port: 8080
+      protocol: TCP
+      targetPort: http-metrics
+    - name: grpc
+      port: 9095
+      protocol: TCP
+      targetPort: grpc
+    selector:
+      app.kubernetes.io/component: compactor
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/name: mimir
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    annotations:
+      config.kubernetes.io/path: default/deployment_mimir-distributor.yaml
+      internal.config.kubernetes.io/path: default/deployment_mimir-distributor.yaml
+      kustomize.config.k8s.io/id: |
+        group: apps
+        kind: Deployment
+        name: mimir-distributor
+        namespace: default
+        version: v1
+      config.kubernetes.io/index: '12'
+      internal.config.kubernetes.io/index: '12'
+      internal.config.kubernetes.io/annotations-migration-resource-id: '12'
+      internal.config.kubernetes.io/id: '13'
+      config.k8s.io/id: '13'
+    generation: 1
+    labels:
+      app.kubernetes.io/component: distributor
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/part-of: memberlist
+      app.kubernetes.io/version: 2.1.0
+    name: mimir-distributor
+    namespace: default
+  spec:
+    progressDeadlineSeconds: 600
+    replicas: 1
+    revisionHistoryLimit: 10
+    selector:
+      matchLabels:
+        app.kubernetes.io/component: distributor
+        app.kubernetes.io/instance: mimir
+        app.kubernetes.io/name: mimir
+    strategy:
+      rollingUpdate:
+        maxSurge: 0
+        maxUnavailable: 1
+      type: RollingUpdate
+    template:
+      metadata:
+        creationTimestamp: null
+        labels:
+          app.kubernetes.io/component: distributor
+          app.kubernetes.io/instance: mimir
+          app.kubernetes.io/managed-by: Helm
+          app.kubernetes.io/name: mimir
+          app.kubernetes.io/part-of: memberlist
+          app.kubernetes.io/version: 2.1.0
+      spec:
+        affinity:
+          podAntiAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                - key: target
+                  operator: In
+                  values:
+                  - distributor
+              topologyKey: kubernetes.io/hostname
+        containers:
+        - args:
+          - -target=distributor
+          - -config.expand-env=true
+          - -config.file=/etc/mimir/mimir.yaml
+          image: grafana/mimir:r190-fe20bbd
+          imagePullPolicy: IfNotPresent
+          name: distributor
+          ports:
+          - containerPort: 8080
+            name: http-metrics
+            protocol: TCP
+          - containerPort: 9095
+            name: grpc
+            protocol: TCP
+          - containerPort: 7946
+            name: memberlist
+            protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /ready
+              port: http-metrics
+              scheme: HTTP
+            initialDelaySeconds: 45
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+          - mountPath: /etc/mimir
+            name: config
+          - mountPath: /var/mimir
+            name: runtime-config
+          - mountPath: /data
+            name: storage
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext: {}
+        serviceAccount: default
+        serviceAccountName: default
+        terminationGracePeriodSeconds: 60
+        volumes:
+        - name: config
+          secret:
+            defaultMode: 420
+            secretName: mimir-config
+        - configMap:
+            defaultMode: 420
+            name: mimir-runtime
+          name: runtime-config
+        - emptyDir: {}
+          name: storage
+  status: {}
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      config.kubernetes.io/path: default/service_mimir-distributor-headless.yaml
+      internal.config.kubernetes.io/path: default/service_mimir-distributor-headless.yaml
+      kustomize.config.k8s.io/id: |
+        kind: Service
+        name: mimir-distributor-headless
+        namespace: default
+        version: v1
+      config.kubernetes.io/index: '13'
+      internal.config.kubernetes.io/index: '13'
+      internal.config.kubernetes.io/annotations-migration-resource-id: '13'
+      internal.config.kubernetes.io/id: '14'
+      config.k8s.io/id: '14'
+    labels:
+      app.kubernetes.io/component: distributor
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/part-of: memberlist
+      app.kubernetes.io/version: 2.1.0
+      prometheus.io/service-monitor: "false"
+    name: mimir-distributor-headless
+    namespace: default
+  spec:
+    clusterIP: None
+    clusterIPs:
+    - None
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - name: grpc
+      port: 9095
+      protocol: TCP
+      targetPort: grpc
+    selector:
+      app.kubernetes.io/component: distributor
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/name: mimir
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      config.kubernetes.io/path: default/service_mimir-gossip-ring.yaml
+      internal.config.kubernetes.io/path: default/service_mimir-gossip-ring.yaml
+      kustomize.config.k8s.io/id: |
+        kind: Service
+        name: mimir-gossip-ring
+        namespace: default
+        version: v1
+      config.kubernetes.io/index: '14'
+      internal.config.kubernetes.io/index: '14'
+      internal.config.kubernetes.io/annotations-migration-resource-id: '14'
+      internal.config.kubernetes.io/id: '15'
+      config.k8s.io/id: '15'
+    labels:
+      app.kubernetes.io/component: gossip-ring
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/version: 2.1.0
+    name: mimir-gossip-ring
+    namespace: default
+  spec:
+    clusterIP: None
+    clusterIPs:
+    - None
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - name: gossip-ring
+      port: 7946
+      protocol: TCP
+      targetPort: 7946
+    publishNotReadyAddresses: true
+    selector:
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/part-of: memberlist
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+- apiVersion: policy/v1beta1
+  kind: PodDisruptionBudget
+  metadata:
+    annotations:
+      config.kubernetes.io/path: default/poddisruptionbudget_mimir-ingester.yaml
+      internal.config.kubernetes.io/path: default/poddisruptionbudget_mimir-ingester.yaml
+      kustomize.config.k8s.io/id: |
+        group: policy
+        kind: PodDisruptionBudget
+        name: mimir-ingester
+        namespace: default
+        version: v1beta1
+      config.kubernetes.io/index: '15'
+      internal.config.kubernetes.io/index: '15'
+      internal.config.kubernetes.io/annotations-migration-resource-id: '15'
+      internal.config.kubernetes.io/id: '16'
+      config.k8s.io/id: '16'
+    generation: 1
+    labels:
+      app.kubernetes.io/component: ingester
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/part-of: memberlist
+      app.kubernetes.io/version: 2.1.0
+    name: mimir-ingester
+    namespace: default
+  spec:
+    maxUnavailable: 1
+    selector:
+      matchLabels:
+        app.kubernetes.io/component: ingester
+        app.kubernetes.io/instance: mimir
+        app.kubernetes.io/name: mimir
+  status:
+    currentHealthy: 0
+    desiredHealthy: 0
+    disruptionsAllowed: 0
+    expectedPods: 0
+- apiVersion: apps/v1
+  kind: StatefulSet
+  metadata:
+    annotations:
+      config.kubernetes.io/path: default/statefulset_mimir-ingester.yaml
+      internal.config.kubernetes.io/path: default/statefulset_mimir-ingester.yaml
+      kustomize.config.k8s.io/id: |
+        group: apps
+        kind: StatefulSet
+        name: mimir-ingester
+        namespace: default
+        version: v1
+      config.kubernetes.io/index: '16'
+      internal.config.kubernetes.io/index: '16'
+      internal.config.kubernetes.io/annotations-migration-resource-id: '16'
+      internal.config.kubernetes.io/id: '17'
+      config.k8s.io/id: '17'
+    generation: 1
+    labels:
+      app.kubernetes.io/component: ingester
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/part-of: memberlist
+      app.kubernetes.io/version: 2.1.0
+    name: mimir-ingester
+    namespace: default
+  spec:
+    podManagementPolicy: Parallel
+    replicas: 3
+    revisionHistoryLimit: 10
+    selector:
+      matchLabels:
+        app.kubernetes.io/component: ingester
+        app.kubernetes.io/instance: mimir
+        app.kubernetes.io/name: mimir
+    serviceName: mimir-ingester-headless
+    template:
+      metadata:
+        creationTimestamp: null
+        labels:
+          app.kubernetes.io/component: ingester
+          app.kubernetes.io/instance: mimir
+          app.kubernetes.io/managed-by: Helm
+          app.kubernetes.io/name: mimir
+          app.kubernetes.io/part-of: memberlist
+          app.kubernetes.io/version: 2.1.0
+      spec:
+        affinity: {}
+        containers:
+        - args:
+          - -target=ingester
+          - -config.expand-env=true
+          - -config.file=/etc/mimir/mimir.yaml
+          image: grafana/mimir:r190-fe20bbd
+          imagePullPolicy: IfNotPresent
+          name: ingester
+          ports:
+          - containerPort: 8080
+            name: http-metrics
+            protocol: TCP
+          - containerPort: 9095
+            name: grpc
+            protocol: TCP
+          - containerPort: 7946
+            name: memberlist
+            protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /ready
+              port: http-metrics
+              scheme: HTTP
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+          - mountPath: /etc/mimir
+            name: config
+          - mountPath: /var/mimir
+            name: runtime-config
+          - mountPath: /data
+            name: storage
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext: {}
+        serviceAccount: default
+        serviceAccountName: default
+        terminationGracePeriodSeconds: 240
+        volumes:
+        - name: config
+          secret:
+            defaultMode: 420
+            secretName: mimir-config
+        - configMap:
+            defaultMode: 420
+            name: mimir-runtime
+          name: runtime-config
+    updateStrategy:
+      type: RollingUpdate
+    volumeClaimTemplates:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        creationTimestamp: null
+        name: storage
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 2Gi
+        volumeMode: Filesystem
+      status:
+        phase: Pending
+  status:
+    availableReplicas: 0
+    replicas: 0
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      config.kubernetes.io/path: default/service_mimir-ingester.yaml
+      internal.config.kubernetes.io/path: default/service_mimir-ingester.yaml
+      kustomize.config.k8s.io/id: |
+        kind: Service
+        name: mimir-ingester
+        namespace: default
+        version: v1
+      config.kubernetes.io/index: '17'
+      internal.config.kubernetes.io/index: '17'
+      internal.config.kubernetes.io/annotations-migration-resource-id: '17'
+      internal.config.kubernetes.io/id: '18'
+      config.k8s.io/id: '18'
+    labels:
+      app.kubernetes.io/component: ingester
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/part-of: memberlist
+      app.kubernetes.io/version: 2.1.0
+    name: mimir-ingester
+    namespace: default
+  spec:
+    clusterIP: 10.43.0.0
+    clusterIPs:
+    - 10.43.0.0
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - name: http-metrics
+      port: 8080
+      protocol: TCP
+      targetPort: http-metrics
+    - name: grpc
+      port: 9095
+      protocol: TCP
+      targetPort: grpc
+    selector:
+      app.kubernetes.io/component: ingester
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/name: mimir
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+- apiVersion: v1
+  data:
+    mimir.yaml: YWN0aXZpdHlfdHJhY2tlcjoKICBmaWxlcGF0aDogL2RhdGEvbWV0cmljcy1hY3Rpdml0eS5sb2cKYWxlcnRtYW5hZ2VyOgogIGRhdGFfZGlyOiAvZGF0YQogIGVuYWJsZV9hcGk6IHRydWUKICBleHRlcm5hbF91cmw6IC9hbGVydG1hbmFnZXIKYmxvY2tzX3N0b3JhZ2U6CiAgYmFja2VuZDogczMKICBidWNrZXRfc3RvcmU6CiAgICBjaHVua3NfY2FjaGU6CiAgICAgIGJhY2tlbmQ6IG1lbWNhY2hlZAogICAgICBtZW1jYWNoZWQ6CiAgICAgICAgYWRkcmVzc2VzOiBkbnMrbWltaXItbWVtY2FjaGVkLmNpdGVzdG5zLnN2YzoxMTIxMQogICAgICAgIG1heF9pdGVtX3NpemU6IDEwNDg1NzYKICAgICAgICB0aW1lb3V0OiA0NTBtcwogICAgaW5kZXhfY2FjaGU6CiAgICAgIGJhY2tlbmQ6IG1lbWNhY2hlZAogICAgICBtZW1jYWNoZWQ6CiAgICAgICAgYWRkcmVzc2VzOiBkbnMrbWltaXItbWVtY2FjaGVkLXF1ZXJpZXMuY2l0ZXN0bnMuc3ZjOjExMjExCiAgICAgICAgbWF4X2l0ZW1fc2l6ZTogMTU3Mjg2NDAKICAgIG1ldGFkYXRhX2NhY2hlOgogICAgICBiYWNrZW5kOiBtZW1jYWNoZWQKICAgICAgbWVtY2FjaGVkOgogICAgICAgIGFkZHJlc3NlczogZG5zK21pbWlyLW1lbWNhY2hlZC1tZXRhZGF0YS5jaXRlc3Rucy5zdmM6MTEyMTEKICAgICAgICBtYXhfaXRlbV9zaXplOiAxMDQ4NTc2CiAgICBzeW5jX2RpcjogL2RhdGEvdHNkYi1zeW5jCiAgdHNkYjoKICAgIGRpcjogL2RhdGEvdHNkYgpjb21wYWN0b3I6CiAgZGF0YV9kaXI6IC9kYXRhCmZyb250ZW5kOgogIGFsaWduX3F1ZXJpZXNfd2l0aF9zdGVwOiB0cnVlCiAgY2FjaGVfcmVzdWx0czogdHJ1ZQogIGxvZ19xdWVyaWVzX2xvbmdlcl90aGFuOiAxMHMKICByZXN1bHRzX2NhY2hlOgogICAgYmFja2VuZDogbWVtY2FjaGVkCiAgICBtZW1jYWNoZWQ6CiAgICAgIGFkZHJlc3NlczogZG5zK21pbWlyLW1lbWNhY2hlZC1yZXN1bHRzLmNpdGVzdG5zLnN2YzoxMTIxMQogICAgICBtYXhfaXRlbV9zaXplOiAxMDQ4NTc2CmZyb250ZW5kX3dvcmtlcjoKICBmcm9udGVuZF9hZGRyZXNzOiBtaW1pci1xdWVyeS1mcm9udGVuZC1oZWFkbGVzcy5jaXRlc3Rucy5zdmM6OTA5NQppbmdlc3RlcjoKICByaW5nOgogICAgZmluYWxfc2xlZXA6IDBzCiAgICBudW1fdG9rZW5zOiA1MTIKICAgIHVucmVnaXN0ZXJfb25fc2h1dGRvd246IGZhbHNlCmluZ2VzdGVyX2NsaWVudDoKICBncnBjX2NsaWVudF9jb25maWc6CiAgICBtYXhfcmVjdl9tc2dfc2l6ZTogMTA0ODU3NjAwCiAgICBtYXhfc2VuZF9tc2dfc2l6ZTogMTA0ODU3NjAwCmxpbWl0czoge30KbWVtYmVybGlzdDoKICBhYm9ydF9pZl9jbHVzdGVyX2pvaW5fZmFpbHM6IGZhbHNlCiAgY29tcHJlc3Npb25fZW5hYmxlZDogZmFsc2UKICBqb2luX21lbWJlcnM6CiAgLSBtaW1pci1nb3NzaXAtcmluZwptdWx0aXRlbmFuY3lfZW5hYmxlZDogZmFsc2UKcnVsZXI6CiAgYWxlcnRtYW5hZ2VyX3VybDogZG5zc3J2bm9hK2h0dHA6Ly9faHR0cC1tZXRyaWNzLl90Y3AubWltaXItYWxlcnRtYW5hZ2VyLWhlYWRsZXNzLmNpdGVzdG5zLnN2Yy5jbHVzdGVyLmxvY2FsL2FsZXJ0bWFuYWdlcgogIGVuYWJsZV9hcGk6IHRydWUKICBydWxlX3BhdGg6IC9kYXRhCnJ1bnRpbWVfY29uZmlnOgogIGZpbGU6IC92YXIvbWltaXIvcnVudGltZS55YW1sCnNlcnZlcjoKICBncnBjX3NlcnZlcl9tYXhfY29uY3VycmVudF9zdHJlYW1zOiAxMDAwCiAgZ3JwY19zZXJ2ZXJfbWF4X3JlY3ZfbXNnX3NpemU6IDEwNDg1NzYwMAogIGdycGNfc2VydmVyX21heF9zZW5kX21zZ19zaXplOiAxMDQ4NTc2MDA=
+  kind: Secret
+  metadata:
+    annotations:
+      config.kubernetes.io/path: default/secret_mimir-config.yaml
+      internal.config.kubernetes.io/path: default/secret_mimir-config.yaml
+      kustomize.config.k8s.io/id: |
+        kind: Secret
+        name: mimir-config
+        namespace: default
+        version: v1
+      config.kubernetes.io/index: '18'
+      internal.config.kubernetes.io/index: '18'
+      internal.config.kubernetes.io/annotations-migration-resource-id: '18'
+      internal.config.kubernetes.io/id: '19'
+      config.k8s.io/id: '19'
+    labels:
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/version: 2.1.0
+    name: mimir-config
+    namespace: default
+  type: Opaque
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    annotations:
+      config.kubernetes.io/path: default/deployment_mimir-overrides-exporter.yaml
+      internal.config.kubernetes.io/path: default/deployment_mimir-overrides-exporter.yaml
+      kustomize.config.k8s.io/id: |
+        group: apps
+        kind: Deployment
+        name: mimir-overrides-exporter
+        namespace: default
+        version: v1
+      config.kubernetes.io/index: '19'
+      internal.config.kubernetes.io/index: '19'
+      internal.config.kubernetes.io/annotations-migration-resource-id: '19'
+      internal.config.kubernetes.io/id: '20'
+      config.k8s.io/id: '20'
+    generation: 1
+    labels:
+      app.kubernetes.io/component: overrides-exporter
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/version: 2.1.0
+    name: mimir-overrides-exporter
+    namespace: default
+  spec:
+    progressDeadlineSeconds: 600
+    replicas: 1
+    revisionHistoryLimit: 10
+    selector:
+      matchLabels:
+        app.kubernetes.io/component: overrides-exporter
+        app.kubernetes.io/instance: mimir
+        app.kubernetes.io/name: mimir
+    strategy:
+      rollingUpdate:
+        maxSurge: 0
+        maxUnavailable: 1
+      type: RollingUpdate
+    template:
+      metadata:
+        creationTimestamp: null
+        labels:
+          app.kubernetes.io/component: overrides-exporter
+          app.kubernetes.io/instance: mimir
+          app.kubernetes.io/managed-by: Helm
+          app.kubernetes.io/name: mimir
+          app.kubernetes.io/version: 2.1.0
+      spec:
+        affinity: {}
+        containers:
+        - args:
+          - -target=overrides-exporter
+          - -config.expand-env=true
+          - -config.file=/etc/mimir/mimir.yaml
+          image: grafana/mimir:r190-fe20bbd
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /ready
+              port: http-metrics
+              scheme: HTTP
+            initialDelaySeconds: 45
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          name: overrides-exporter
+          ports:
+          - containerPort: 8080
+            name: http-metrics
+            protocol: TCP
+          - containerPort: 9095
+            name: grpc
+            protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /ready
+              port: http-metrics
+              scheme: HTTP
+            initialDelaySeconds: 45
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+          - mountPath: /etc/mimir
+            name: config
+          - mountPath: /var/mimir
+            name: runtime-config
+          - mountPath: /data
+            name: storage
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext: {}
+        serviceAccount: default
+        serviceAccountName: default
+        terminationGracePeriodSeconds: 60
+        volumes:
+        - name: config
+          secret:
+            defaultMode: 420
+            secretName: mimir-config
+        - configMap:
+            defaultMode: 420
+            name: mimir-runtime
+          name: runtime-config
+        - emptyDir: {}
+          name: storage
+  status: {}
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      config.kubernetes.io/path: default/service_mimir-overrides-exporter.yaml
+      internal.config.kubernetes.io/path: default/service_mimir-overrides-exporter.yaml
+      kustomize.config.k8s.io/id: |
+        kind: Service
+        name: mimir-overrides-exporter
+        namespace: default
+        version: v1
+      config.kubernetes.io/index: '20'
+      internal.config.kubernetes.io/index: '20'
+      internal.config.kubernetes.io/annotations-migration-resource-id: '20'
+      internal.config.kubernetes.io/id: '21'
+      config.k8s.io/id: '21'
+    labels:
+      app.kubernetes.io/component: overrides-exporter
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/version: 2.1.0
+    name: mimir-overrides-exporter
+    namespace: default
+  spec:
+    clusterIP: 10.43.0.0
+    clusterIPs:
+    - 10.43.0.0
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - name: http-metrics
+      port: 8080
+      protocol: TCP
+      targetPort: http-metrics
+    - name: grpc
+      port: 9095
+      protocol: TCP
+      targetPort: grpc
+    selector:
+      app.kubernetes.io/component: overrides-exporter
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/name: mimir
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    annotations:
+      config.kubernetes.io/path: default/deployment_mimir-querier.yaml
+      internal.config.kubernetes.io/path: default/deployment_mimir-querier.yaml
+      kustomize.config.k8s.io/id: |
+        group: apps
+        kind: Deployment
+        name: mimir-querier
+        namespace: default
+        version: v1
+      config.kubernetes.io/index: '21'
+      internal.config.kubernetes.io/index: '21'
+      internal.config.kubernetes.io/annotations-migration-resource-id: '21'
+      internal.config.kubernetes.io/id: '22'
+      config.k8s.io/id: '22'
+    generation: 1
+    labels:
+      app.kubernetes.io/component: querier
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/part-of: memberlist
+      app.kubernetes.io/version: 2.1.0
+    name: mimir-querier
+    namespace: default
+  spec:
+    progressDeadlineSeconds: 600
+    replicas: 2
+    revisionHistoryLimit: 10
+    selector:
+      matchLabels:
+        app.kubernetes.io/component: querier
+        app.kubernetes.io/instance: mimir
+        app.kubernetes.io/name: mimir
+    strategy:
+      rollingUpdate:
+        maxSurge: 0
+        maxUnavailable: 1
+      type: RollingUpdate
+    template:
+      metadata:
+        creationTimestamp: null
+        labels:
+          app.kubernetes.io/component: querier
+          app.kubernetes.io/instance: mimir
+          app.kubernetes.io/managed-by: Helm
+          app.kubernetes.io/name: mimir
+          app.kubernetes.io/part-of: memberlist
+          app.kubernetes.io/version: 2.1.0
+      spec:
+        affinity:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+            - podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                  - key: target
+                    operator: In
+                    values:
+                    - querier
+                topologyKey: kubernetes.io/hostname
+              weight: 100
+        containers:
+        - args:
+          - -target=querier
+          - -config.expand-env=true
+          - -config.file=/etc/mimir/mimir.yaml
+          image: grafana/mimir:r190-fe20bbd
+          imagePullPolicy: IfNotPresent
+          name: querier
+          ports:
+          - containerPort: 8080
+            name: http-metrics
+            protocol: TCP
+          - containerPort: 9095
+            name: grpc
+            protocol: TCP
+          - containerPort: 7946
+            name: memberlist
+            protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /ready
+              port: http-metrics
+              scheme: HTTP
+            initialDelaySeconds: 45
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+          - mountPath: /etc/mimir
+            name: config
+          - mountPath: /var/mimir
+            name: runtime-config
+          - mountPath: /data
+            name: storage
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext: {}
+        serviceAccount: default
+        serviceAccountName: default
+        terminationGracePeriodSeconds: 180
+        volumes:
+        - name: config
+          secret:
+            defaultMode: 420
+            secretName: mimir-config
+        - configMap:
+            defaultMode: 420
+            name: mimir-runtime
+          name: runtime-config
+        - emptyDir: {}
+          name: storage
+  status: {}
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      config.kubernetes.io/path: default/service_mimir-querier.yaml
+      internal.config.kubernetes.io/path: default/service_mimir-querier.yaml
+      kustomize.config.k8s.io/id: |
+        kind: Service
+        name: mimir-querier
+        namespace: default
+        version: v1
+      config.kubernetes.io/index: '22'
+      internal.config.kubernetes.io/index: '22'
+      internal.config.kubernetes.io/annotations-migration-resource-id: '22'
+      internal.config.kubernetes.io/id: '23'
+      config.k8s.io/id: '23'
+    labels:
+      app.kubernetes.io/component: querier
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/part-of: memberlist
+      app.kubernetes.io/version: 2.1.0
+    name: mimir-querier
+    namespace: default
+  spec:
+    clusterIP: 10.43.0.0
+    clusterIPs:
+    - 10.43.0.0
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - name: http-metrics
+      port: 8080
+      protocol: TCP
+      targetPort: http-metrics
+    - name: grpc
+      port: 9095
+      protocol: TCP
+      targetPort: grpc
+    selector:
+      app.kubernetes.io/component: querier
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/name: mimir
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    annotations:
+      config.kubernetes.io/path: default/deployment_mimir-query-frontend.yaml
+      internal.config.kubernetes.io/path: default/deployment_mimir-query-frontend.yaml
+      kustomize.config.k8s.io/id: |
+        group: apps
+        kind: Deployment
+        name: mimir-query-frontend
+        namespace: default
+        version: v1
+      config.kubernetes.io/index: '23'
+      internal.config.kubernetes.io/index: '23'
+      internal.config.kubernetes.io/annotations-migration-resource-id: '23'
+      internal.config.kubernetes.io/id: '24'
+      config.k8s.io/id: '24'
+    generation: 1
+    labels:
+      app.kubernetes.io/component: query-frontend
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/version: 2.1.0
+    name: mimir-query-frontend
+    namespace: default
+  spec:
+    progressDeadlineSeconds: 600
+    replicas: 1
+    revisionHistoryLimit: 10
+    selector:
+      matchLabels:
+        app.kubernetes.io/component: query-frontend
+        app.kubernetes.io/instance: mimir
+        app.kubernetes.io/name: mimir
+    strategy:
+      rollingUpdate:
+        maxSurge: 0
+        maxUnavailable: 1
+      type: RollingUpdate
+    template:
+      metadata:
+        creationTimestamp: null
+        labels:
+          app.kubernetes.io/component: query-frontend
+          app.kubernetes.io/instance: mimir
+          app.kubernetes.io/managed-by: Helm
+          app.kubernetes.io/name: mimir
+          app.kubernetes.io/version: 2.1.0
+      spec:
+        affinity:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+            - podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                  - key: target
+                    operator: In
+                    values:
+                    - query-frontend
+                topologyKey: kubernetes.io/hostname
+              weight: 100
+        containers:
+        - args:
+          - -target=query-frontend
+          - -config.expand-env=true
+          - -config.file=/etc/mimir/mimir.yaml
+          image: grafana/mimir:r190-fe20bbd
+          imagePullPolicy: IfNotPresent
+          name: query-frontend
+          ports:
+          - containerPort: 8080
+            name: http-metrics
+            protocol: TCP
+          - containerPort: 9095
+            name: grpc
+            protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /ready
+              port: http-metrics
+              scheme: HTTP
+            initialDelaySeconds: 45
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+          - mountPath: /var/mimir
+            name: runtime-config
+          - mountPath: /etc/mimir
+            name: config
+          - mountPath: /data
+            name: storage
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext: {}
+        serviceAccount: default
+        serviceAccountName: default
+        terminationGracePeriodSeconds: 180
+        volumes:
+        - name: config
+          secret:
+            defaultMode: 420
+            secretName: mimir-config
+        - configMap:
+            defaultMode: 420
+            name: mimir-runtime
+          name: runtime-config
+        - emptyDir: {}
+          name: storage
+  status: {}
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      config.kubernetes.io/path: default/service_mimir-query-frontend-headless.yaml
+      internal.config.kubernetes.io/path: default/service_mimir-query-frontend-headless.yaml
+      kustomize.config.k8s.io/id: |
+        kind: Service
+        name: mimir-query-frontend-headless
+        namespace: default
+        version: v1
+      config.kubernetes.io/index: '24'
+      internal.config.kubernetes.io/index: '24'
+      internal.config.kubernetes.io/annotations-migration-resource-id: '24'
+      internal.config.kubernetes.io/id: '25'
+      config.k8s.io/id: '25'
+    labels:
+      app.kubernetes.io/component: query-frontend
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/version: 2.1.0
+      prometheus.io/service-monitor: "false"
+    name: mimir-query-frontend-headless
+    namespace: default
+  spec:
+    clusterIP: None
+    clusterIPs:
+    - None
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - name: http-metrics
+      port: 8080
+      protocol: TCP
+      targetPort: http-metrics
+    - name: grpc
+      port: 9095
+      protocol: TCP
+      targetPort: grpc
+    publishNotReadyAddresses: true
+    selector:
+      app.kubernetes.io/component: query-frontend
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/name: mimir
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      config.kubernetes.io/path: default/service_mimir-query-frontend.yaml
+      internal.config.kubernetes.io/path: default/service_mimir-query-frontend.yaml
+      kustomize.config.k8s.io/id: |
+        kind: Service
+        name: mimir-query-frontend
+        namespace: default
+        version: v1
+      config.kubernetes.io/index: '25'
+      internal.config.kubernetes.io/index: '25'
+      internal.config.kubernetes.io/annotations-migration-resource-id: '25'
+      internal.config.kubernetes.io/id: '26'
+      config.k8s.io/id: '26'
+    labels:
+      app.kubernetes.io/component: query-frontend
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/version: 2.1.0
+    name: mimir-query-frontend
+    namespace: default
+  spec:
+    clusterIP: 10.43.0.0
+    clusterIPs:
+    - 10.43.0.0
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - name: http-metrics
+      port: 8080
+      protocol: TCP
+      targetPort: http-metrics
+    - name: grpc
+      port: 9095
+      protocol: TCP
+      targetPort: grpc
+    selector:
+      app.kubernetes.io/component: query-frontend
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/name: mimir
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    annotations:
+      config.kubernetes.io/path: default/deployment_mimir-ruler.yaml
+      internal.config.kubernetes.io/path: default/deployment_mimir-ruler.yaml
+      kustomize.config.k8s.io/id: |
+        group: apps
+        kind: Deployment
+        name: mimir-ruler
+        namespace: default
+        version: v1
+      config.kubernetes.io/index: '26'
+      internal.config.kubernetes.io/index: '26'
+      internal.config.kubernetes.io/annotations-migration-resource-id: '26'
+      internal.config.kubernetes.io/id: '27'
+      config.k8s.io/id: '27'
+    generation: 1
+    labels:
+      app.kubernetes.io/component: ruler
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/part-of: memberlist
+      app.kubernetes.io/version: 2.1.0
+    name: mimir-ruler
+    namespace: default
+  spec:
+    progressDeadlineSeconds: 600
+    replicas: 1
+    revisionHistoryLimit: 10
+    selector:
+      matchLabels:
+        app.kubernetes.io/component: ruler
+        app.kubernetes.io/instance: mimir
+        app.kubernetes.io/name: mimir
+    strategy:
+      rollingUpdate:
+        maxSurge: 0
+        maxUnavailable: 1
+      type: RollingUpdate
+    template:
+      metadata:
+        creationTimestamp: null
+        labels:
+          app.kubernetes.io/component: ruler
+          app.kubernetes.io/instance: mimir
+          app.kubernetes.io/managed-by: Helm
+          app.kubernetes.io/name: mimir
+          app.kubernetes.io/part-of: memberlist
+          app.kubernetes.io/version: 2.1.0
+      spec:
+        affinity: {}
+        containers:
+        - args:
+          - -target=ruler
+          - -config.expand-env=true
+          - -config.file=/etc/mimir/mimir.yaml
+          image: grafana/mimir:r190-fe20bbd
+          imagePullPolicy: IfNotPresent
+          name: ruler
+          ports:
+          - containerPort: 8080
+            name: http-metrics
+            protocol: TCP
+          - containerPort: 9095
+            name: grpc
+            protocol: TCP
+          - containerPort: 7946
+            name: memberlist
+            protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /ready
+              port: http-metrics
+              scheme: HTTP
+            initialDelaySeconds: 45
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+          - mountPath: /etc/mimir
+            name: config
+          - mountPath: /var/mimir
+            name: runtime-config
+          - mountPath: /data
+            name: storage
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext: {}
+        serviceAccount: default
+        serviceAccountName: default
+        terminationGracePeriodSeconds: 180
+        volumes:
+        - name: config
+          secret:
+            defaultMode: 420
+            secretName: mimir-config
+        - configMap:
+            defaultMode: 420
+            name: mimir-runtime
+          name: runtime-config
+        - emptyDir: {}
+          name: storage
+  status: {}
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      config.kubernetes.io/path: default/service_mimir-ruler.yaml
+      internal.config.kubernetes.io/path: default/service_mimir-ruler.yaml
+      kustomize.config.k8s.io/id: |
+        kind: Service
+        name: mimir-ruler
+        namespace: default
+        version: v1
+      config.kubernetes.io/index: '27'
+      internal.config.kubernetes.io/index: '27'
+      internal.config.kubernetes.io/annotations-migration-resource-id: '27'
+      internal.config.kubernetes.io/id: '28'
+      config.k8s.io/id: '28'
+    labels:
+      app.kubernetes.io/component: ruler
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/part-of: memberlist
+      app.kubernetes.io/version: 2.1.0
+    name: mimir-ruler
+    namespace: default
+  spec:
+    clusterIP: 10.43.0.0
+    clusterIPs:
+    - 10.43.0.0
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - name: http-metrics
+      port: 8080
+      protocol: TCP
+      targetPort: http-metrics
+    selector:
+      app.kubernetes.io/component: ruler
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/name: mimir
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+- apiVersion: v1
+  data:
+    runtime.yaml: |
+      {}
+  kind: ConfigMap
+  metadata:
+    annotations:
+      config.kubernetes.io/path: default/configmap_mimir-runtime.yaml
+      internal.config.kubernetes.io/path: default/configmap_mimir-runtime.yaml
+      kustomize.config.k8s.io/id: |
+        kind: ConfigMap
+        name: mimir-runtime
+        namespace: default
+        version: v1
+      config.kubernetes.io/index: '28'
+      internal.config.kubernetes.io/index: '28'
+      internal.config.kubernetes.io/annotations-migration-resource-id: '28'
+      internal.config.kubernetes.io/id: '29'
+      config.k8s.io/id: '29'
+    labels:
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/version: 2.1.0
+    name: mimir-runtime
+    namespace: default
+- apiVersion: policy/v1beta1
+  kind: PodDisruptionBudget
+  metadata:
+    annotations:
+      config.kubernetes.io/path: default/poddisruptionbudget_mimir-store-gateway.yaml
+      internal.config.kubernetes.io/path: default/poddisruptionbudget_mimir-store-gateway.yaml
+      kustomize.config.k8s.io/id: |
+        group: policy
+        kind: PodDisruptionBudget
+        name: mimir-store-gateway
+        namespace: default
+        version: v1beta1
+      config.kubernetes.io/index: '29'
+      internal.config.kubernetes.io/index: '29'
+      internal.config.kubernetes.io/annotations-migration-resource-id: '29'
+      internal.config.kubernetes.io/id: '30'
+      config.k8s.io/id: '30'
+    generation: 1
+    labels:
+      app.kubernetes.io/component: store-gateway
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/part-of: memberlist
+      app.kubernetes.io/version: 2.1.0
+    name: mimir-store-gateway
+    namespace: default
+  spec:
+    maxUnavailable: 1
+    selector:
+      matchLabels:
+        app.kubernetes.io/component: store-gateway
+        app.kubernetes.io/instance: mimir
+        app.kubernetes.io/name: mimir
+  status:
+    currentHealthy: 0
+    desiredHealthy: 0
+    disruptionsAllowed: 0
+    expectedPods: 0
+- apiVersion: apps/v1
+  kind: StatefulSet
+  metadata:
+    annotations:
+      config.kubernetes.io/path: default/statefulset_mimir-store-gateway.yaml
+      internal.config.kubernetes.io/path: default/statefulset_mimir-store-gateway.yaml
+      kustomize.config.k8s.io/id: |
+        group: apps
+        kind: StatefulSet
+        name: mimir-store-gateway
+        namespace: default
+        version: v1
+      config.kubernetes.io/index: '30'
+      internal.config.kubernetes.io/index: '30'
+      internal.config.kubernetes.io/annotations-migration-resource-id: '30'
+      internal.config.kubernetes.io/id: '31'
+      config.k8s.io/id: '31'
+    generation: 1
+    labels:
+      app.kubernetes.io/component: store-gateway
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/part-of: memberlist
+      app.kubernetes.io/version: 2.1.0
+    name: mimir-store-gateway
+    namespace: default
+  spec:
+    podManagementPolicy: OrderedReady
+    replicas: 1
+    revisionHistoryLimit: 10
+    selector:
+      matchLabels:
+        app.kubernetes.io/component: store-gateway
+        app.kubernetes.io/instance: mimir
+        app.kubernetes.io/name: mimir
+    serviceName: mimir-store-gateway-headless
+    template:
+      metadata:
+        creationTimestamp: null
+        labels:
+          app.kubernetes.io/component: store-gateway
+          app.kubernetes.io/instance: mimir
+          app.kubernetes.io/managed-by: Helm
+          app.kubernetes.io/name: mimir
+          app.kubernetes.io/part-of: memberlist
+          app.kubernetes.io/version: 2.1.0
+      spec:
+        affinity:
+          podAntiAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                - key: target
+                  operator: In
+                  values:
+                  - store-gateway
+              topologyKey: kubernetes.io/hostname
+        containers:
+        - args:
+          - -target=store-gateway
+          - -config.expand-env=true
+          - -config.file=/etc/mimir/mimir.yaml
+          image: grafana/mimir:r190-fe20bbd
+          imagePullPolicy: IfNotPresent
+          name: store-gateway
+          ports:
+          - containerPort: 8080
+            name: http-metrics
+            protocol: TCP
+          - containerPort: 9095
+            name: grpc
+            protocol: TCP
+          - containerPort: 7946
+            name: memberlist
+            protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /ready
+              port: http-metrics
+              scheme: HTTP
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+          - mountPath: /etc/mimir
+            name: config
+          - mountPath: /var/mimir
+            name: runtime-config
+          - mountPath: /data
+            name: storage
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext: {}
+        serviceAccount: default
+        serviceAccountName: default
+        terminationGracePeriodSeconds: 240
+        volumes:
+        - name: config
+          secret:
+            defaultMode: 420
+            secretName: mimir-config
+        - configMap:
+            defaultMode: 420
+            name: mimir-runtime
+          name: runtime-config
+    updateStrategy:
+      type: RollingUpdate
+    volumeClaimTemplates:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        creationTimestamp: null
+        name: storage
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 2Gi
+        volumeMode: Filesystem
+      status:
+        phase: Pending
+  status:
+    availableReplicas: 0
+    replicas: 0
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      config.kubernetes.io/path: default/service_mimir-store-gateway.yaml
+      internal.config.kubernetes.io/path: default/service_mimir-store-gateway.yaml
+      kustomize.config.k8s.io/id: |
+        kind: Service
+        name: mimir-store-gateway
+        namespace: default
+        version: v1
+      config.kubernetes.io/index: '31'
+      internal.config.kubernetes.io/index: '31'
+      internal.config.kubernetes.io/annotations-migration-resource-id: '31'
+      internal.config.kubernetes.io/id: '32'
+      config.k8s.io/id: '32'
+    labels:
+      app.kubernetes.io/component: store-gateway
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/part-of: memberlist
+      app.kubernetes.io/version: 2.1.0
+    name: mimir-store-gateway
+    namespace: default
+  spec:
+    clusterIP: 10.43.0.0
+    clusterIPs:
+    - 10.43.0.0
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - name: http-metrics
+      port: 8080
+      protocol: TCP
+      targetPort: http-metrics
+    - name: grpc
+      port: 9095
+      protocol: TCP
+      targetPort: grpc
+    selector:
+      app.kubernetes.io/component: store-gateway
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/name: mimir
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      config.kubernetes.io/path: default/service_mimir-memcached-metadata-metrics.yaml
+      internal.config.kubernetes.io/path: default/service_mimir-memcached-metadata-metrics.yaml
+      kustomize.config.k8s.io/id: |
+        kind: Service
+        name: mimir-memcached-metadata-metrics
+        namespace: default
+        version: v1
+      prometheus.io/port: "9150"
+      prometheus.io/scrape: "true"
+      config.kubernetes.io/index: '32'
+      internal.config.kubernetes.io/index: '32'
+      internal.config.kubernetes.io/annotations-migration-resource-id: '32'
+      internal.config.kubernetes.io/id: '33'
+      config.k8s.io/id: '33'
+    labels:
+      app.kubernetes.io/component: metrics
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: memcached-metadata
+      helm.sh/chart: memcached-metadata-5.5.2
+    name: mimir-memcached-metadata-metrics
+    namespace: default
+  spec:
+    clusterIP: 10.43.0.0
+    clusterIPs:
+    - 10.43.0.0
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - name: metrics
+      port: 9150
+      protocol: TCP
+      targetPort: metrics
+    selector:
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/name: memcached-metadata
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      config.kubernetes.io/path: default/service_mimir-memcached-queries-metrics.yaml
+      internal.config.kubernetes.io/path: default/service_mimir-memcached-queries-metrics.yaml
+      kustomize.config.k8s.io/id: |
+        kind: Service
+        name: mimir-memcached-queries-metrics
+        namespace: default
+        version: v1
+      prometheus.io/port: "9150"
+      prometheus.io/scrape: "true"
+      config.kubernetes.io/index: '33'
+      internal.config.kubernetes.io/index: '33'
+      internal.config.kubernetes.io/annotations-migration-resource-id: '33'
+      internal.config.kubernetes.io/id: '34'
+      config.k8s.io/id: '34'
+    labels:
+      app.kubernetes.io/component: metrics
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: memcached-queries
+      helm.sh/chart: memcached-queries-5.5.2
+    name: mimir-memcached-queries-metrics
+    namespace: default
+  spec:
+    clusterIP: 10.43.0.0
+    clusterIPs:
+    - 10.43.0.0
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - name: metrics
+      port: 9150
+      protocol: TCP
+      targetPort: metrics
+    selector:
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/name: memcached-queries
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      config.kubernetes.io/path: default/service_mimir-memcached-results-metrics.yaml
+      internal.config.kubernetes.io/path: default/service_mimir-memcached-results-metrics.yaml
+      kustomize.config.k8s.io/id: |
+        kind: Service
+        name: mimir-memcached-results-metrics
+        namespace: default
+        version: v1
+      prometheus.io/port: "9150"
+      prometheus.io/scrape: "true"
+      config.kubernetes.io/index: '34'
+      internal.config.kubernetes.io/index: '34'
+      internal.config.kubernetes.io/annotations-migration-resource-id: '34'
+      internal.config.kubernetes.io/id: '35'
+      config.k8s.io/id: '35'
+    labels:
+      app.kubernetes.io/component: metrics
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: memcached-results
+      helm.sh/chart: memcached-results-5.5.2
+    name: mimir-memcached-results-metrics
+    namespace: default
+  spec:
+    clusterIP: 10.43.0.0
+    clusterIPs:
+    - 10.43.0.0
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - name: metrics
+      port: 9150
+      protocol: TCP
+      targetPort: metrics
+    selector:
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/name: memcached-results
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+- apiVersion: v1
+  kind: Service
+  metadata:
+    annotations:
+      config.kubernetes.io/path: default/service_mimir-memcached-metrics.yaml
+      internal.config.kubernetes.io/path: default/service_mimir-memcached-metrics.yaml
+      kustomize.config.k8s.io/id: |
+        kind: Service
+        name: mimir-memcached-metrics
+        namespace: default
+        version: v1
+      prometheus.io/port: "9150"
+      prometheus.io/scrape: "true"
+      config.kubernetes.io/index: '35'
+      internal.config.kubernetes.io/index: '35'
+      internal.config.kubernetes.io/annotations-migration-resource-id: '35'
+      internal.config.kubernetes.io/id: '36'
+      config.k8s.io/id: '36'
+    labels:
+      app.kubernetes.io/component: metrics
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: memcached
+      helm.sh/chart: memcached-5.5.2
+    name: mimir-memcached-metrics
+    namespace: default
+  spec:
+    clusterIP: 10.43.0.0
+    clusterIPs:
+    - 10.43.0.0
+    internalTrafficPolicy: Cluster
+    ipFamilies:
+    - IPv4
+    ipFamilyPolicy: SingleStack
+    ports:
+    - name: metrics
+      port: 9150
+      protocol: TCP
+      targetPort: metrics
+    selector:
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/name: memcached
+    sessionAffinity: None
+    type: ClusterIP
+  status:
+    loadBalancer: {}
+functionConfig:
+  apiVersion: grafana.com/v1alpha1
+  kind: ConfigResolver
+  metadata:
+    annotations:
+      config.kubernetes.io/function: |
+        exec:
+          path: ../../plugins/resolve-config/run.sh
+      config.kubernetes.io/local-config: 'true'
+    name: config-resolver
