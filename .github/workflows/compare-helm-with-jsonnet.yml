@@ -16,8 +16,16 @@ jobs:
         file: 'tk-linux-amd64'
         target: 'bin/tk'
         token: ${{ secrets.GITHUB_TOKEN }}
+    - uses: dsaltares/fetch-gh-release-asset@d9376dacd30fd38f49238586cd2e9295a8307f4c
+      with:
+        repo: 'jsonnet-bundler/jsonnet-bundler'
+        version: 'tags/v0.5.1'
+        file: 'jb-linux-amd64'
+        target: 'bin/jb'
+        token: ${{ secrets.GITHUB_TOKEN }}
     - run: |
         set -e
         chmod +x $PWD/bin/tk
+        chmod +x $PWD/bin/jb
         echo $PWD/bin >> $GITHUB_PATH
     - run: make check-helm-jsonnet-diff
