@@ -164,7 +164,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.Common.RegisterFlags(f)
 }
 
-func (c *Config) UnmarshalYAML(value *yaml.Node) error {
+func (c *Config) UnmarshalCommonYAML(value *yaml.Node) error {
 	// First unmarshal common into the specific locations.
 	specificStorageLocations := specificLocationsUnmarshaler{
 		"blocks_storage":       &c.BlocksStorage.Bucket.StorageBackendConfig,
@@ -185,6 +185,14 @@ func (c *Config) UnmarshalYAML(value *yaml.Node) error {
 	}
 	if err := value.DecodeWithOptions(&common, yaml.DecodeOptions{KnownFields: true}); err != nil {
 		return fmt.Errorf("can't unmarshal common config: %w", err)
+	}
+
+	return nil
+}
+
+func (c *Config) UnmarshalYAML(value *yaml.Node) error {
+	if err := c.UnmarshalCommonYAML(value); err != nil {
+		return err
 	}
 
 	// Then unmarshal config in a standard way.
