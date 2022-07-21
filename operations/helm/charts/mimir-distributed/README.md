@@ -2,6 +2,8 @@
 
 Helm chart for deploying [Grafana Mimir](https://grafana.com/docs/mimir/v2.2.x/) or optionally [Grafana Enterprise Metrics](https://grafana.com/docs/enterprise-metrics/v2.2.x/) to Kubernetes. Derived from [Grafana Enterprise Metrics Helm Chart](https://github.com/grafana/helm-charts/blob/main/charts/enterprise-metrics/README.md)
 
+See the [Release Notes](https://grafana.com/docs/mimir/v2.2.x/release-notes/v2.2/) for changes from the previous version and instructions on how to upgrade from the previous version.
+
 # mimir-distributed
 
 ![Version: 3.0.0-rc.3](https://img.shields.io/badge/Version-3.0.0--rc.3-informational?style=flat-square) ![AppVersion: 2.2.0](https://img.shields.io/badge/AppVersion-2.2.0-informational?style=flat-square)
@@ -86,7 +88,7 @@ To install the chart with licensed features enabled, using a local Grafana Enter
 helm install <cluster name> grafana/mimir-distributed --set 'enterprise.enabled=true' --set-file 'license.contents=./license.jwt'
 ```
 
-### Upgrade from a previous version of Grafana Enterprise Metrics
+### Upgrade from version 1.7 of Grafana Enterprise Metrics
 
 Please consult the [migration guide](https://grafana.com/docs/enterprise-metrics/v2.2.x/migrating-from-gem-1.7/) for details on how to prepare the configuration. Prepare a custom values file, with the contents:
 
