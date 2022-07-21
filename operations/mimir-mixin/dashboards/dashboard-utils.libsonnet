@@ -1,6 +1,8 @@
 local utils = import 'mixin-utils/utils.libsonnet';
 
 (import 'grafana-builder/grafana.libsonnet') {
+  local resourceRequestStyle = { alias: 'request', color: '#FFC000', fill: 0, dashes: true, dashLength: 5 },
+  local resourceLimitStyle = { alias: 'limit', color: '#E02F44', fill: 0, dashes: true, dashLength: 5 },
 
   local resourceRequestColor = '#FFC000',
   local resourceLimitColor = '#E02F44',
@@ -214,18 +216,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
     ], ['{{%s}}' % $._config.per_instance_label, 'limit', 'request']) +
     {
       seriesOverrides: [
-        {
-          alias: 'request',
-          color: resourceRequestColor,
-          fill: 0,
-        },
-        {
-          alias: 'limit',
-          color: resourceLimitColor,
-          fill: 0,
-        },
+        resourceRequestStyle,
+        resourceLimitStyle,
       ],
       tooltip: { sort: 2 },  // Sort descending.
+      fill: 0,
     },
 
   containerMemoryWorkingSetPanel(title, containerName)::
@@ -239,19 +234,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
     ], ['{{%s}}' % $._config.per_instance_label, 'limit', 'request']) +
     {
       seriesOverrides: [
-        {
-          alias: 'request',
-          color: resourceRequestColor,
-          fill: 0,
-        },
-        {
-          alias: 'limit',
-          color: resourceLimitColor,
-          fill: 0,
-        },
+        resourceRequestStyle,
+        resourceLimitStyle,
       ],
       yaxes: $.yaxes('bytes'),
       tooltip: { sort: 2 },  // Sort descending.
+      fill: 0,
     },
 
   containerMemoryRSSPanel(title, containerName)::
@@ -265,19 +253,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
     ], ['{{%s}}' % $._config.per_instance_label, 'limit', 'request']) +
     {
       seriesOverrides: [
-        {
-          alias: 'request',
-          color: resourceRequestColor,
-          fill: 0,
-        },
-        {
-          alias: 'limit',
-          color: resourceLimitColor,
-          fill: 0,
-        },
+        resourceRequestStyle,
+        resourceLimitStyle,
       ],
       yaxes: $.yaxes('bytes'),
       tooltip: { sort: 2 },  // Sort descending.
+      fill: 0,
     },
 
   containerNetworkPanel(title, metric, instanceName)::
@@ -359,7 +340,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
         label: $.containerLabelMatcher(containerName),
       }, '{{persistentvolumeclaim}}'
     ) +
-    { yaxes: $.yaxes('percentunit') },
+    {
+      yaxes: $.yaxes('percentunit'),
+      fill: 0,
+    },
 
   containerLabelMatcher(containerName)::
     if containerName == 'ingester' then 'label_name=~"ingester.*"'
@@ -412,6 +396,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     {
       yaxes: $.yaxes('bytes'),
       tooltip: { sort: 2 },  // Sort descending.
+      fill: 0,
     },
 
   newStatPanel(queries, legends='', unit='percentunit', decimals=1, thresholds=[], instant=false, novalue='')::

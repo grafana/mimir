@@ -40,7 +40,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "fill": 1,
+                  "fill": 0,
                   "id": 1,
                   "legend": {
                      "avg": false,
@@ -63,11 +63,15 @@
                      {
                         "alias": "request",
                         "color": "#FFC000",
+                        "dashLength": 5,
+                        "dashes": true,
                         "fill": 0
                      },
                      {
                         "alias": "limit",
                         "color": "#E02F44",
+                        "dashLength": 5,
+                        "dashes": true,
                         "fill": 0
                      }
                   ],
@@ -144,7 +148,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "fill": 1,
+                  "fill": 0,
                   "id": 2,
                   "legend": {
                      "avg": false,
@@ -167,11 +171,15 @@
                      {
                         "alias": "request",
                         "color": "#FFC000",
+                        "dashLength": 5,
+                        "dashes": true,
                         "fill": 0
                      },
                      {
                         "alias": "limit",
                         "color": "#E02F44",
+                        "dashLength": 5,
+                        "dashes": true,
                         "fill": 0
                      }
                   ],
@@ -248,7 +256,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "fill": 1,
+                  "fill": 0,
                   "id": 3,
                   "legend": {
                      "avg": false,
@@ -335,7 +343,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "fill": 1,
+                  "fill": 0,
                   "id": 4,
                   "legend": {
                      "avg": false,
@@ -358,11 +366,15 @@
                      {
                         "alias": "request",
                         "color": "#FFC000",
+                        "dashLength": 5,
+                        "dashes": true,
                         "fill": 0
                      },
                      {
                         "alias": "limit",
                         "color": "#E02F44",
+                        "dashLength": 5,
+                        "dashes": true,
                         "fill": 0
                      }
                   ],
@@ -439,7 +451,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "fill": 1,
+                  "fill": 0,
                   "id": 5,
                   "legend": {
                      "avg": false,
@@ -462,11 +474,15 @@
                      {
                         "alias": "request",
                         "color": "#FFC000",
+                        "dashLength": 5,
+                        "dashes": true,
                         "fill": 0
                      },
                      {
                         "alias": "limit",
                         "color": "#E02F44",
+                        "dashLength": 5,
+                        "dashes": true,
                         "fill": 0
                      }
                   ],
@@ -543,7 +559,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "fill": 1,
+                  "fill": 0,
                   "id": 6,
                   "legend": {
                      "avg": false,
@@ -962,7 +978,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "fill": 1,
+                  "fill": 0,
                   "id": 11,
                   "legend": {
                      "avg": false,

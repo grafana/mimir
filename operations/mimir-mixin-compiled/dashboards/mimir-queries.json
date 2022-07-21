@@ -2556,7 +2556,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "fill": 1,
+                  "fill": 0,
                   "id": 29,
                   "legend": {
                      "avg": false,
@@ -2823,7 +2823,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "fill": 1,
+                  "fill": 0,
                   "id": 32,
                   "legend": {
                      "avg": false,
