@@ -35,3 +35,57 @@ Install [ct](https://github.com/helm/chart-testing) and run
 ```bash
 ct lint --config operations/helm/ct.yaml --charts operations/helm/charts/mimir-distributed
 ```
+
+## Automated Comparison with Jsonnet
+
+In order to prevent configuration drift between the Mimir jsonnet library and the Mimir helm chart, an automated diff is performed against every pull request.
+This diff makes extensive use of [kustomize](https://kustomize.io) to remove unimportant or known differences between the two sets of manifests.
+A custom kustomize function is used to extract the Mimir configuration from kubernetes manifests so that it can also be compared.
+The end goal is to ensure that only "useful" differences appear in the diff output.
+Deciding which differences are useful is a complicated topic, but at a high level we use the following heuristics:
+
+* Differences in Kubernetes annotations and labels are typically not useful, since changes in those will appear in other tests (ie golden record, functionality, etc).
+* Differences in configuration parameters related to urls and file paths are typically not interesting, since they don't change _what_ the cluster does, only _where_ it happens.
+* Differences in performance or scale related properties are typically useful, since these often have difficult-to-test implications on the cluster.
+
+In order to keep the kustomize configuration manageable, it is divided into layers, each named based on the order they are applied.
+
+For example, at the time of writing, the Helm chart is passed through the following layers:
+
+```
+$ ls -1 operations/compare-helm-with-jsonnet/helm
+00-base
+01-ignore
+02-configs-and-k8s-defaults
+03-set-namespace
+04-labels
+05-memberlist
+06-memcached
+07-services
+08-pods
+09-config
+```
+
+Each directory contains a `kustomize.yaml` file that describes the transformations made in that layer.
+A full explanation of kustomize is outside the scope of this document, but generally the layers do one or all of the following:
+
+1. Remove properties that are not useful for diffing
+2. Modify property values so that they match between Helm and Jsonnet
+3. Remove entire objects that only exist in either Helm or Jsonnet
+
+You can use the `make check-helm-jsonnet-diff` target to perform an automatic diff of the Helm and Jsonnet templates.
+This target requires the following:
+
+* `yq`, `kubectl`, and `kustomize` installed and on the PATH
+* A running kubernetes API server selected as the currently active `kubectl` context.
+
+The API server is only used to perform dry-runs of server-side apply.
+No resources are actually created in kubernetes, but API calls will be made against the server.
+It is recommended to use kind, k3d, or some other local development cluster.
+This allows the final diff to ignore any fields that match kubernetes defaults.
+
+If CI reports a difference, you have several options:
+
+1. Modify the Helm chart or Jsonnet library such that the differences are no longer present
+2. Modify the Helm values file or Jsonnet configuration such that the differences are no longer present
+3. If the difference is not useful, modify the kustomize configuration to remove that field or otherwise patch the manifests such that the differences are no longer present
