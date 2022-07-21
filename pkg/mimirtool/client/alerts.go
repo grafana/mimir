@@ -6,6 +6,7 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"io"
 
@@ -31,7 +32,7 @@ func (r *MimirClient) CreateAlertmanagerConfig(ctx context.Context, cfg string, 
 		return err
 	}
 
-	res, err := r.doRequest(alertmanagerAPIPath, "POST", payload)
+	res, err := r.doRequest(alertmanagerAPIPath, "POST", bytes.NewBuffer(payload), int64(len(payload)))
 	if err != nil {
 		return err
 	}
@@ -43,7 +44,7 @@ func (r *MimirClient) CreateAlertmanagerConfig(ctx context.Context, cfg string, 
 
 // DeleteAlermanagerConfig deletes the users alertmanagerconfig
 func (r *MimirClient) DeleteAlermanagerConfig(ctx context.Context) error {
-	res, err := r.doRequest(alertmanagerAPIPath, "DELETE", nil)
+	res, err := r.doRequest(alertmanagerAPIPath, "DELETE", nil, -1)
 	if err != nil {
 		return err
 	}
@@ -53,9 +54,9 @@ func (r *MimirClient) DeleteAlermanagerConfig(ctx context.Context) error {
 	return nil
 }
 
-// GetAlertmanagerConfig retrieves a rule group
+// GetAlertmanagerConfig retrieves a Mimir cluster's Alertmanager config.
 func (r *MimirClient) GetAlertmanagerConfig(ctx context.Context) (string, map[string]string, error) {
-	res, err := r.doRequest(alertmanagerAPIPath, "GET", nil)
+	res, err := r.doRequest(alertmanagerAPIPath, "GET", nil, -1)
 	if err != nil {
 		log.Debugln("no alert config present in response")
 		return "", nil, err

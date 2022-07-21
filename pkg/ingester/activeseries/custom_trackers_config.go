@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	amlabels "github.com/prometheus/alertmanager/pkg/labels"
+	"gopkg.in/yaml.v3"
 )
 
 // CustomTrackersConfig configures active series custom trackers.
@@ -123,9 +124,9 @@ func customTrackerFlagValueToMap(s string) (map[string]string, error) {
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 // CustomTrackersConfig are marshaled in yaml as a map[string]string, with matcher names as keys and strings as matchers definitions.
-func (c *CustomTrackersConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *CustomTrackersConfig) UnmarshalYAML(value *yaml.Node) error {
 	stringMap := map[string]string{}
-	err := unmarshal(&stringMap)
+	err := value.DecodeWithOptions(&stringMap, yaml.DecodeOptions{KnownFields: true})
 	if err != nil {
 		return err
 	}

@@ -1602,6 +1602,11 @@ nginx:
             proxy_pass      http://{{ template "mimir.fullname" . }}-query-frontend.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
           }
 
+          # Compactor endpoint for uploading blocks
+          location /api/v1/upload/block/ {
+            proxy_pass      http://{{ template "mimir.fullname" . }}-compactor.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
+          }
+
           {{- with .Values.nginx.nginxConfig.serverSnippet }}
           {{ . | nindent 4 }}
           {{- end }}
@@ -1789,8 +1794,7 @@ gateway:
 smoke_test:
   image:
     repository: grafana/mimir-continuous-test
-    # TODO: replace with weekly tag starting with r191
-    tag: helm-smoke-test-d12276bfc
+    tag: r191-e11ac85
     pullPolicy: IfNotPresent
   tenantId: ''
   extraArgs: {}

@@ -2,6 +2,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
 (import 'grafana-builder/grafana.libsonnet') {
 
+  local resourceRequestColor = '#FFC000',
+  local resourceLimitColor = '#E02F44',
+
   _config:: error 'must provide _config',
 
   row(title)::
@@ -213,12 +216,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
       seriesOverrides: [
         {
           alias: 'request',
-          color: '#FFC000',
+          color: resourceRequestColor,
           fill: 0,
         },
         {
           alias: 'limit',
-          color: '#E02F44',
+          color: resourceLimitColor,
           fill: 0,
         },
       ],
@@ -238,12 +241,38 @@ local utils = import 'mixin-utils/utils.libsonnet';
       seriesOverrides: [
         {
           alias: 'request',
-          color: '#FFC000',
+          color: resourceRequestColor,
           fill: 0,
         },
         {
           alias: 'limit',
-          color: '#E02F44',
+          color: resourceLimitColor,
+          fill: 0,
+        },
+      ],
+      yaxes: $.yaxes('bytes'),
+      tooltip: { sort: 2 },  // Sort descending.
+    },
+
+  containerMemoryRSSPanel(title, containerName)::
+    $.panel(title) +
+    $.queryPanel([
+      // We use "max" instead of "sum" otherwise during a rolling update of a statefulset we will end up
+      // summing the memory of the old instance/pod (whose metric will be stale for 5m) to the new instance/pod.
+      'max by(%s) (container_memory_rss{%s,container=~"%s"})' % [$._config.per_instance_label, $.namespaceMatcher(), containerName],
+      'min(container_spec_memory_limit_bytes{%s,container=~"%s"} > 0)' % [$.namespaceMatcher(), containerName],
+      'min(kube_pod_container_resource_requests{%s,container=~"%s",resource="memory"})' % [$.namespaceMatcher(), containerName],
+    ], ['{{%s}}' % $._config.per_instance_label, 'limit', 'request']) +
+    {
+      seriesOverrides: [
+        {
+          alias: 'request',
+          color: resourceRequestColor,
+          fill: 0,
+        },
+        {
+          alias: 'limit',
+          color: resourceLimitColor,
           fill: 0,
         },
       ],
