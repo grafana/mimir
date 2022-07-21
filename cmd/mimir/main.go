@@ -131,7 +131,7 @@ func main() {
 		return
 	}
 
-	if err := cfg.InheritCommonFlagValues(util_log.Logger, flag.CommandLine); err != nil {
+	if err := mimir.InheritCommonFlagValues(util_log.Logger, flag.CommandLine, cfg.Common, &cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "error inheriting common flag values: %v\n", err)
 		if !testMode {
 			os.Exit(1)
@@ -255,7 +255,9 @@ func LoadConfig(filename string, expandEnv bool, cfg *mimir.Config) error {
 
 	dec := yaml.NewDecoder(bytes.NewReader(buf))
 	dec.KnownFields(true)
-	if err := dec.Decode(cfg); err != nil {
+
+	// Unmarshal with common config unmarshaler.
+	if err := dec.Decode((*mimir.ConfigWithCommon)(cfg)); err != nil {
 		return errors.Wrap(err, "Error parsing config file")
 	}
 
