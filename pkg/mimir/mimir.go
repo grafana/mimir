@@ -164,30 +164,6 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.Common.RegisterFlags(f)
 }
 
-// UnmarshalCommonYAML provides the implementation for UnmarshalYAML functions to unmarshal the CommonConfig.
-// A list of CommonConfig inheriters can be provided
-func UnmarshalCommonYAML(value *yaml.Node, inheriters ...CommonConfigInheriter) error {
-	for _, inh := range inheriters {
-		specificStorageLocations := specificLocationsUnmarshaler{}
-		inheritance := inh.CommonConfigInheritance()
-		for name, loc := range inheritance.Storage {
-			specificStorageLocations[name] = loc
-		}
-
-		common := configWithCustomCommonUnmarshaler{
-			Common: &commonConfigUnmarshaler{
-				Storage: &specificStorageLocations,
-			},
-		}
-
-		if err := value.DecodeWithOptions(&common, yaml.DecodeOptions{KnownFields: true}); err != nil {
-			return fmt.Errorf("can't unmarshal common config: %w", err)
-		}
-	}
-
-	return nil
-}
-
 func (c *Config) CommonConfigInheritance() CommonConfigInheritance {
 	return CommonConfigInheritance{
 		Storage: map[string]*bucket.StorageBackendConfig{
@@ -196,11 +172,6 @@ func (c *Config) CommonConfigInheritance() CommonConfigInheritance {
 			"alertmanager_storage": &c.AlertmanagerStorage.StorageBackendConfig,
 		},
 	}
-}
-
-// CommonConfigInheriter abstracts config that inherit common config values.
-type CommonConfigInheriter interface {
-	CommonConfigInheritance() CommonConfigInheritance
 }
 
 // ConfigWithCommon should be passed to yaml.Unmarshal to properly unmarshal Common values.
@@ -216,54 +187,6 @@ func (c *ConfigWithCommon) UnmarshalYAML(value *yaml.Node) error {
 	// This will override previously set common values by the specific ones, if they're provided.
 	// (YAML specific takes precedence over YAML common)
 	return value.DecodeWithOptions((*Config)(c), yaml.DecodeOptions{KnownFields: true})
-}
-
-// InheritCommonFlagValues will inherit the values of the provided common flags to all the inheriters.
-func InheritCommonFlagValues(log log.Logger, fs *flag.FlagSet, common CommonConfig, inheriters ...CommonConfigInheriter) error {
-	setFlags := map[string]bool{}
-	fs.Visit(func(f *flag.Flag) { setFlags[f.Name] = true })
-
-	for _, inh := range inheriters {
-		inheritance := inh.CommonConfigInheritance()
-		for desc, loc := range inheritance.Storage {
-			if err := inheritFlags(log, common.Storage.RegisteredFlags, loc.RegisteredFlags, setFlags); err != nil {
-				return fmt.Errorf("can't inherit common flags for %q: %w", desc, err)
-			}
-		}
-	}
-
-	return nil
-}
-
-// inheritFlags takes flags from the origin set and sets them to the equivalent flags in the dest set, unless those are already set.
-func inheritFlags(log log.Logger, orig util.RegisteredFlags, dest util.RegisteredFlags, set map[string]bool) error {
-	for f, o := range orig.Flags {
-		d, ok := dest.Flags[f]
-		if !ok {
-			return fmt.Errorf("implementation error: flag %q was in flags prefixed with %q (%q) but was not in flags prefixed with %q (%q)", f, orig.Prefix, o.Name, dest.Prefix, d.Name)
-		}
-		if !set[o.Name] {
-			// Nothing to inherit because origin was not set.
-			continue
-		}
-		if set[d.Name] {
-			// Can't inherit because destination was set.
-			continue
-		}
-		if o.Value.String() == d.Value.String() {
-			// Already the same, no need to touch.
-			continue
-		}
-		level.Debug(log).Log(
-			"msg", "Inheriting flag value",
-			"origin_flag", o.Name, "origin_value", o.Value,
-			"destination_flag", d.Name, "destination_value", d.Value,
-		)
-		if err := d.Value.Set(o.Value.String()); err != nil {
-			return fmt.Errorf("can't set flag %q to flag's %q value %q: %s", d.Name, o.Name, o.Value, err)
-		}
-	}
-	return nil
 }
 
 // Validate the mimir config and return an error if the validation
@@ -403,6 +326,83 @@ func (c *Config) registerServerFlagsWithChangedDefaultValues(fs *flag.FlagSet) {
 
 		fs.Var(f.Value, f.Name, f.Usage)
 	})
+}
+
+// CommonConfigInheriter abstracts config that inherit common config values.
+type CommonConfigInheriter interface {
+	CommonConfigInheritance() CommonConfigInheritance
+}
+
+// UnmarshalCommonYAML provides the implementation for UnmarshalYAML functions to unmarshal the CommonConfig.
+// A list of CommonConfig inheriters can be provided
+func UnmarshalCommonYAML(value *yaml.Node, inheriters ...CommonConfigInheriter) error {
+	for _, inh := range inheriters {
+		specificStorageLocations := specificLocationsUnmarshaler{}
+		inheritance := inh.CommonConfigInheritance()
+		for name, loc := range inheritance.Storage {
+			specificStorageLocations[name] = loc
+		}
+
+		common := configWithCustomCommonUnmarshaler{
+			Common: &commonConfigUnmarshaler{
+				Storage: &specificStorageLocations,
+			},
+		}
+
+		if err := value.DecodeWithOptions(&common, yaml.DecodeOptions{KnownFields: true}); err != nil {
+			return fmt.Errorf("can't unmarshal common config: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// InheritCommonFlagValues will inherit the values of the provided common flags to all the inheriters.
+func InheritCommonFlagValues(log log.Logger, fs *flag.FlagSet, common CommonConfig, inheriters ...CommonConfigInheriter) error {
+	setFlags := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { setFlags[f.Name] = true })
+
+	for _, inh := range inheriters {
+		inheritance := inh.CommonConfigInheritance()
+		for desc, loc := range inheritance.Storage {
+			if err := inheritFlags(log, common.Storage.RegisteredFlags, loc.RegisteredFlags, setFlags); err != nil {
+				return fmt.Errorf("can't inherit common flags for %q: %w", desc, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// inheritFlags takes flags from the origin set and sets them to the equivalent flags in the dest set, unless those are already set.
+func inheritFlags(log log.Logger, orig util.RegisteredFlags, dest util.RegisteredFlags, set map[string]bool) error {
+	for f, o := range orig.Flags {
+		d, ok := dest.Flags[f]
+		if !ok {
+			return fmt.Errorf("implementation error: flag %q was in flags prefixed with %q (%q) but was not in flags prefixed with %q (%q)", f, orig.Prefix, o.Name, dest.Prefix, d.Name)
+		}
+		if !set[o.Name] {
+			// Nothing to inherit because origin was not set.
+			continue
+		}
+		if set[d.Name] {
+			// Can't inherit because destination was set.
+			continue
+		}
+		if o.Value.String() == d.Value.String() {
+			// Already the same, no need to touch.
+			continue
+		}
+		level.Debug(log).Log(
+			"msg", "Inheriting flag value",
+			"origin_flag", o.Name, "origin_value", o.Value,
+			"destination_flag", d.Name, "destination_value", d.Value,
+		)
+		if err := d.Value.Set(o.Value.String()); err != nil {
+			return fmt.Errorf("can't set flag %q to flag's %q value %q: %s", d.Name, o.Name, o.Value, err)
+		}
+	}
+	return nil
 }
 
 type CommonConfig struct {
