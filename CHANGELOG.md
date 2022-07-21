@@ -63,17 +63,7 @@
 
 ### Documentation
 
-## 2.2.0-rc.1
-
-### Grafana Mimir
-
-* [BUGFIX] Query-frontend: `vector` and `time` functions were sharded, which made expressions like `vector(1) > 0 and vector(1)` fail. #2355
-
-### Mimirtool
-
-* [BUGFIX] Make mimirtool build for Windows work again. #2273
-
-## 2.2.0-rc.0
+## 2.2.0
 
 ### Grafana Mimir
 
@@ -134,6 +124,7 @@
 * [BUGFIX] Memberlist: Fix typo in memberlist admin UI. #2202
 * [BUGFIX] Ruler: fixed typo in error message when ruler failed to decode a rule group. #2151
 * [BUGFIX] Active series custom tracker configuration is now displayed properly on `/runtime_config` page. #2065
+* [BUGFIX] Query-frontend: `vector` and `time` functions were sharded, which made expressions like `vector(1) > 0 and vector(1)` fail. #2355
 
 ### Mixin
 
@@ -183,6 +174,7 @@
 * [CHANGE] mimirtool rules: `--use-legacy-routes` now toggles between using `/prometheus/config/v1/rules` (default) and `/api/v1/rules` (legacy) endpoints. #2182
 * [FEATURE] Added bearer token support for when Mimir is behind a gateway authenticating by bearer token. #2146
 * [BUGFIX] mimirtool analyze: Fix dashboard JSON unmarshalling errors (#1840). #1973
+* [BUGFIX] Make mimirtool build for Windows work again. #2273
 
 ### Mimir Continuous Test
 
