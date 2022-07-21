@@ -31,7 +31,7 @@ func GetDefaultImage() string {
 }
 
 func GetMimirtoolImage() string {
-	if img := os.Getenv("MIMIR_IMAGE"); img != "" {
+	if img := os.Getenv("MIMIRTOOL_IMAGE"); img != "" {
 		return img
 	}
 
