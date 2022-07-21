@@ -5,6 +5,8 @@ on: pull_request
 jobs:
   compare-manifests:
     runs-on: ubuntu-latest
+    container:
+      image: grafana/mimir-build-image:update-build-image-2966639ba
     steps:
     - uses: actions/checkout@v2
     - uses: helm/kind-action@v1.2.0
