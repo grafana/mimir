@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"path"
@@ -302,10 +301,11 @@ func (c *MultitenantCompactor) completeBlockUpload(ctx context.Context, r *http.
 	if err = rps.SendProgressMessage("starting block validation"); err != nil {
 		return err
 	}
-	if err := c.validateBlock(ctx, w, blockID, userBkt, meta); err != nil {
-		if err = rps.SendProgressMessage(err.Error()); err != nil {
+	if err := c.validateBlock(ctx, w, blockID, userBkt, meta, rps); err != nil {
+		if err = rps.SendFinished(false, err.Error()); err != nil {
 			return err
 		}
+		return err
 	}
 
 	// Upload meta file so block is considered complete
@@ -413,7 +413,7 @@ func (c *MultitenantCompactor) uploadMeta(ctx context.Context, logger log.Logger
 }
 
 func (c *MultitenantCompactor) validateBlock(ctx context.Context, w http.ResponseWriter, blockID ulid.ULID,
-	userBkt objstore.Bucket, meta metadata.Meta) error {
+	userBkt objstore.Bucket, meta metadata.Meta, rps *requestProgressSender) error {
 	blockDir, err := os.MkdirTemp(filepath.Join(c.compactorCfg.DataDir), "upload")
 	if err != nil {
 		return errors.Wrap(err, "failed to create temp dir")
@@ -424,7 +424,6 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, w http.Respons
 		}
 	}()
 
-	rps := newRequestProgressSender(w)
 	var objectCount, objectBytes int64
 	if err := userBkt.Iter(ctx, blockID.String(), func(pth string) error {
 		fname := filepath.Join(blockDir, pth)
@@ -465,35 +464,23 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, w http.Respons
 	}
 
 	// Read metadata file, populate mop of file paths and sizes
-	var blockMetadata metadata.Meta
-	fileStats := map[string]int64{}
-	file, err := ioutil.ReadFile(filepath.Join(blockDir, block.MetaFilename))
+	blockMetadata, err := metadata.ReadFromDir(blockDir)
 	if err != nil {
-		return errors.Wrap(err, "error reading block metadata")
-	}
-	if err = json.Unmarshal(file, &blockMetadata); err != nil {
-		return errors.Wrap(err, "error reading block metadata json")
-	}
-	// populate relative path to file size map
-	for _, f := range blockMetadata.Thanos.Files {
-		fileStats[f.RelPath] = f.SizeBytes
+		return errors.Wrap(err, "error reading block metadata file")
 	}
 
-	// Check against downloaded names and sizes. Sizes are determined via OS level "stat" command
-	blockFiles, err := block.GatherFileStats(blockDir, metadata.NoneFunc, c.logger)
-	if err != nil {
-		return errors.Wrap(err, "error gathering block file stats")
-	}
-	for _, f := range blockFiles {
-		if f.RelPath == block.MetaFilename {
-			continue
+	for _, f := range blockMetadata.Thanos.Files {
+		fi, err := os.Stat(filepath.Join(blockDir, filepath.FromSlash(f.RelPath)))
+		if err != nil {
+			return errors.Wrapf(err, "failed to stat %s", f.RelPath)
 		}
-		if val, ok := fileStats[f.RelPath]; ok {
-			if val != f.SizeBytes {
-				return errors.Wrap(err, fmt.Sprintf("file size mismatch for %s", f.RelPath))
-			}
-		} else {
-			return errors.Wrap(err, fmt.Sprintf("file not in metadata %s", f.RelPath))
+
+		if !fi.Mode().IsRegular() {
+			return errors.Errorf("not a file: %s", f.RelPath)
+		}
+
+		if f.RelPath != block.MetaFilename && fi.Size() != f.SizeBytes {
+			return errors.Errorf("file size mismatch for %s", f.RelPath)
 		}
 	}
 
@@ -555,23 +542,19 @@ func newRequestProgressSender(w http.ResponseWriter) *requestProgressSender {
 	}
 }
 
-func (rps *requestProgressSender) SendValidationProgress(p ValidationProgress) error {
+func (rps *requestProgressSender) sendValidationProgress(p ValidationProgress) error {
+	p.Timestamp = time.Now().UnixMilli()
 	return rps.enc.Encode(p)
 }
 
 func (rps *requestProgressSender) SendProgressMessage(msg string) error {
-	return rps.enc.Encode(ValidationProgress{Timestamp: time.Now().Unix(), Message: msg})
+	return rps.sendValidationProgress(ValidationProgress{Message: msg})
 }
 
 func (rps *requestProgressSender) SendProgressMessageWithObjectStats(msg string, objectCount, objectBytes int64) error {
-	return rps.enc.Encode(ValidationProgress{
-		Timestamp:   time.Now().Unix(),
-		ObjectCount: objectCount,
-		ObjectBytes: objectBytes,
-		Message:     msg,
-	})
+	return rps.sendValidationProgress(ValidationProgress{ObjectCount: objectCount, ObjectBytes: objectBytes, Message: msg})
 }
 
 func (rps *requestProgressSender) SendFinished(success bool, msg string) error {
-	return rps.enc.Encode(ValidationProgress{Timestamp: time.Now().Unix(), Finished: success, Success: success, Message: msg})
+	return rps.sendValidationProgress(ValidationProgress{Finished: success, Success: success, Message: msg})
 }
