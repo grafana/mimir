@@ -192,7 +192,6 @@ func runMimirtoolBackfill(sharedDir string, compactor *e2emimir.MimirService, bl
 	}
 
 	out, err := e2e.RunCommandAndGetOutput("docker", dockerArgs...)
-	fmt.Println(string(out))
 	return string(out), err
 }
 
