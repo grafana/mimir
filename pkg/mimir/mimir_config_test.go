@@ -17,17 +17,13 @@ import (
 func TestCommonConfigCanBeExtended(t *testing.T) {
 	t.Run("flag inheritance", func(t *testing.T) {
 		var cfg customExtendedConfig
-		cfg.MimirConfig.Common.ExtraSpecificStorageConfigs = map[string]*bucket.StorageBackendConfig{
-			"custom_storage": &cfg.CustomStorage.StorageBackendConfig,
-		}
-
 		fs := flag.NewFlagSet("test", flag.PanicOnError)
 		cfg.RegisterFlags(fs, log.NewNopLogger())
 
 		args := []string{"-common.storage.backend", "s3"}
 		require.NoError(t, fs.Parse(args))
 
-		require.NoError(t, (&cfg.MimirConfig).InheritCommonFlagValues(log.NewNopLogger(), fs))
+		require.NoError(t, mimir.InheritCommonFlagValues(log.NewNopLogger(), fs, cfg.MimirConfig.Common, &cfg.MimirConfig, &cfg))
 
 		// Value should be properly inherited.
 		require.Equal(t, "s3", cfg.CustomStorage.Backend)
@@ -44,10 +40,6 @@ common:
 `
 
 		var cfg customExtendedConfig
-		cfg.MimirConfig.Common.ExtraSpecificStorageConfigs = map[string]*bucket.StorageBackendConfig{
-			"custom_storage": &cfg.CustomStorage.StorageBackendConfig,
-		}
-
 		fs := flag.NewFlagSet("test", flag.PanicOnError)
 		cfg.RegisterFlags(fs, log.NewNopLogger())
 
@@ -72,8 +64,16 @@ func (c *customExtendedConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger)
 	c.CustomStorage.RegisterFlagsWithPrefix("custom-storage", f)
 }
 
+func (c *customExtendedConfig) CommonConfigInheritance() mimir.CommonConfigInheritance {
+	return mimir.CommonConfigInheritance{
+		Storage: map[string]*bucket.StorageBackendConfig{
+			"custom": &c.CustomStorage.StorageBackendConfig,
+		},
+	}
+}
+
 func (c *customExtendedConfig) UnmarshalYAML(value *yaml.Node) error {
-	if err := c.MimirConfig.UnmarshalCommonYAML(value); err != nil {
+	if err := mimir.UnmarshalCommonYAML(value, &c.MimirConfig, c); err != nil {
 		return err
 	}
 
@@ -88,10 +88,6 @@ custom_storage:
 `
 
 	var cfg customExtendedConfig
-	cfg.MimirConfig.Common.ExtraSpecificStorageConfigs = map[string]*bucket.StorageBackendConfig{
-		"custom_storage": &cfg.CustomStorage.StorageBackendConfig,
-	}
-
 	fs := flag.NewFlagSet("test", flag.PanicOnError)
 	cfg.RegisterFlags(fs, log.NewNopLogger())
 
