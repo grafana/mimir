@@ -189,6 +189,8 @@ func ValidateExemplar(userID string, ls []mimirpb.LabelAdapter, e mimirpb.Exempl
 	return nil
 }
 
+// TODO: validation checks and the extent of them still needs to be figured out.
+
 // ValidateHistograms returns an err if the histogram is invalid.
 // The returned error may retain the provided series labels.
 // It uses the passed 'now' time to measure the relative time of the histogram.
