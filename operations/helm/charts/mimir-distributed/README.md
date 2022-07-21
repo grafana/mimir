@@ -91,7 +91,7 @@ helm install <cluster name> grafana/mimir-distributed --set 'enterprise.enabled=
 ### Upgrade from version 1.7 of Grafana Enterprise Metrics
 
 To make the necessary configuration changes, see [Migrating from Grafana Enterprise Metrics 1.7](https://grafana.com/docs/enterprise-metrics/latest/migrating-from-gem-1.7/).
-Prepare a custom-values file, with the contents:
+Prepare a custom values file, with the contents:
 
 ```yaml
 enterprise:
