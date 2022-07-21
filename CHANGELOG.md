@@ -10,6 +10,7 @@
 * [CHANGE] Add new `-*.consul.cas-retry-delay` flags. They have a default value of `1s`, while previously there was no delay between retries. #2309
 * [CHANGE] Store-gateway: Remove the experimental ability to run requests in a dedicated OS thread pool and associated CLI flag `-store-gateway.thread-pool-size`. #2423
 * [CHANGE] Memberlist: disabled TCP-based ping fallback, because Mimir already uses a custom transport based on TCP. #2456
+* [CHANGE] Change default value for `-distributor.ha-tracker.max-clusters` to `100` to provide a DoS protection. #2465
 * [CHANGE] Experimental block upload API exposed by compactor has changed: Previous `/api/v1/upload/block/{block}` endpoint for starting block upload is now `/api/v1/upload/block/{block}/start`, and previous endpoint `/api/v1/upload/block/{block}?uploadComplete=true` for finishing block upload is now `/api/v1/upload/block/{block}/finish`. #2486
 * [FEATURE] Compactor: Adds the ability to delete partial blocks after a configurable delay. This option can be configured per tenant. #2285
   - `-compactor.partial-block-deletion-delay`, as a duration string, allows you to set the delay since a partial block has been modified before marking it for deletion. A value of `0`, the default, disables this feature.
@@ -33,7 +34,6 @@
 * [BUGFIX] Memberlist: fix problem with loss of some packets, typically ring updates when instances were removed from the ring during shutdown. #2418
 * [BUGFIX] Ingester: fix misfiring `MimirIngesterHasUnshippedBlocks` and stale `cortex_ingester_oldest_unshipped_block_timestamp_seconds` when some block uploads fail. #2435
 * [BUGFIX] Query-frontend: fix incorrect mapping of http status codes 429 to 500 when request queue is full. #2447
-* [CHANGE] Change default value for `-distributor.ha-tracker.max-clusters` to `100` to provide a DoS protection. #2465
 
 ### Mixin
 
