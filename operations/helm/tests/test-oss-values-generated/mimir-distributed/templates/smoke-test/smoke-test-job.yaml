@@ -33,7 +33,7 @@ spec:
         []
       containers:
         - name: smoke-test
-          image: "grafana/mimir-continuous-test:2.2.0-rc.1"
+          image: "grafana/mimir-continuous-test:2.2.0"
           imagePullPolicy: 
           args:
             - "-tests.smoke-test"

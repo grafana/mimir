@@ -19,7 +19,7 @@ fullnameOverride: null
 # Since the image is unique for all microservices, so are image settings.
 image:
   repository: grafana/mimir
-  tag: 2.2.0-rc.1
+  tag: 2.2.0
   pullPolicy: IfNotPresent
   # Optionally specify an array of imagePullSecrets.
   # Secrets must be manually created in the namespace.
@@ -1623,7 +1623,7 @@ enterprise:
   # Container image settings for enterprise, note that pullPolicy and pullSecrets are set in top level .image
   image:
     repository: grafana/enterprise-metrics
-    tag: v2.2.0-rc.0
+    tag: v2.2.0
 
 # In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics
 # license, either by providing the contents of the license.jwt, or the name Kubernetes Secret that contains your license.jwt.
@@ -1789,7 +1789,7 @@ gateway:
 smoke_test:
   image:
     repository: grafana/mimir-continuous-test
-    tag: 2.2.0-rc.1
+    tag: 2.2.0
     pullPolicy: IfNotPresent
   tenantId: ''
   extraArgs: {}
