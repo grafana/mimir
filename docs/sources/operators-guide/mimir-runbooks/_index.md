@@ -1489,7 +1489,7 @@ How to **fix** it:
 - Ensure each compactor replica has successfully updated bucket index of each owned tenant within the double of `-compactor.cleanup-interval` (query below assumes the cleanup interval is set to 15 minutes):
   `time() - cortex_compactor_block_cleanup_last_successful_run_timestamp_seconds > 2 * (15 * 60)`
 
-### err-histogram-different-number-spans-buckets
+### err-mimir-histogram-different-number-spans-buckets
 
 This non-critical error occurs when Mimir receives a write request that contains a native (also known as sparse) histogram whose either negative or positive spans specify
 a different number of buckets then there are provided.
