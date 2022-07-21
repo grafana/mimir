@@ -60,7 +60,6 @@ common:
 		// Mimir's inheritance should still work.
 		require.Equal(t, "s3", cfg.MimirConfig.BlocksStorage.Bucket.Backend)
 	})
-
 }
 
 type customExtendedConfig struct {
@@ -71,4 +70,25 @@ type customExtendedConfig struct {
 func (c *customExtendedConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.MimirConfig.RegisterFlags(f, logger)
 	c.CustomStorage.RegisterFlagsWithPrefix("custom-storage", f)
+}
+
+func TestMimirConfigCanBeInlined(t *testing.T) {
+	const commonYAMLConfig = `
+custom_storage:
+  backend: s3
+`
+
+	var cfg customExtendedConfig
+	cfg.MimirConfig.Common.ExtraSpecificStorageConfigs = map[string]*bucket.StorageBackendConfig{
+		"custom_storage": &cfg.CustomStorage.StorageBackendConfig,
+	}
+
+	fs := flag.NewFlagSet("test", flag.PanicOnError)
+	cfg.RegisterFlags(fs, log.NewNopLogger())
+
+	err := yaml.Unmarshal([]byte(commonYAMLConfig), &cfg)
+	require.NoError(t, err)
+
+	// Value should be properly set.
+	require.Equal(t, "s3", cfg.CustomStorage.Backend)
 }
