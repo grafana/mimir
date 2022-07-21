@@ -4,7 +4,7 @@ resources:
 components:
   - ../../components/pods
 
-# Jsonnet doesn't use a config file, do we can delete the whole object
+# Jsonnet doesn't use a config file, so we can delete the whole object
 patches:
   - target:
       name: mimir-config
@@ -31,7 +31,7 @@ patches:
       - op: remove
         path: /spec/template/spec/containers/0/ports/2
 
-  # TODO(logiraptor): Helm adds an emptyDir volume to several components. This is likely due to the fact that readOnlyRootFilesystem=true and some ephemeral data is written
+  # TODO(logiraptor): Helm adds an emptyDir volume to several components. This is due to the fact that readOnlyRootFilesystem=true and some ephemeral data is written
   - target:
       name: mimir-(distributor|query-frontend|querier|ruler|querier|overrides-exporter|alertmanager)
       kind: Deployment|StatefulSet

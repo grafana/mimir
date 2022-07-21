@@ -512,7 +512,7 @@ check-jsonnet-getting-started:
 operations/helm/charts/mimir-distributed/charts: operations/helm/charts/mimir-distributed/Chart.yaml operations/helm/charts/mimir-distributed/Chart.lock
 	@cd ./operations/helm/charts/mimir-distributed && helm dependency update
 
-check-helm-jsonnet-diff: operations/helm/charts/mimir-distributed/charts
+check-helm-jsonnet-diff: operations/helm/charts/mimir-distributed/charts build-jsonnet-tests
 	@./operations/compare-helm-with-jsonnet/compare-helm-with-jsonnet.sh
 
 build-helm-tests: operations/helm/charts/mimir-distributed/charts
