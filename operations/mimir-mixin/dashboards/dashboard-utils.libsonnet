@@ -239,6 +239,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       ],
       yaxes: $.yaxes('bytes'),
       tooltip: { sort: 2 },  // Sort descending.
+      fill: 0,
     },
 
   containerMemoryRSSPanel(title, containerName)::

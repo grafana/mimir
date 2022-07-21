@@ -148,7 +148,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "fill": 1,
+                  "fill": 0,
                   "id": 2,
                   "legend": {
                      "avg": false,
@@ -451,7 +451,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "fill": 1,
+                  "fill": 0,
                   "id": 5,
                   "legend": {
                      "avg": false,
@@ -754,7 +754,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "fill": 1,
+                  "fill": 0,
                   "id": 8,
                   "legend": {
                      "avg": false,
@@ -1252,7 +1252,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "fill": 1,
+                  "fill": 0,
                   "id": 13,
                   "legend": {
                      "avg": false,
@@ -1569,7 +1569,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "fill": 1,
+                  "fill": 0,
                   "id": 16,
                   "legend": {
                      "avg": false,
@@ -2067,7 +2067,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "fill": 1,
+                  "fill": 0,
                   "id": 21,
                   "legend": {
                      "avg": false,
