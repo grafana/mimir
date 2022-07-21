@@ -598,7 +598,7 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=query-scheduler
-        image: grafana/mimir:2.1.0
+        image: grafana/mimir:2.2.0
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
