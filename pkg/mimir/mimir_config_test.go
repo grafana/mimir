@@ -27,7 +27,7 @@ func TestCommonConfigCanBeExtended(t *testing.T) {
 		args := []string{"-common.storage.backend", "s3"}
 		require.NoError(t, fs.Parse(args))
 
-		require.NoError(t, (*mimir.Config)(&cfg.MimirConfig).InheritCommonFlagValues(log.NewNopLogger(), fs))
+		require.NoError(t, (&cfg.MimirConfig).InheritCommonFlagValues(log.NewNopLogger(), fs))
 
 		// Value should be properly inherited.
 		require.Equal(t, "s3", cfg.CustomStorage.Backend)
@@ -62,20 +62,18 @@ common:
 	})
 }
 
-type inlinedMimirConfig mimir.Config
-
 type customExtendedConfig struct {
-	MimirConfig   inlinedMimirConfig `yaml:",inline"`
-	CustomStorage bucket.Config      `yaml:"custom_storage"`
+	MimirConfig   mimir.Config  `yaml:",inline"`
+	CustomStorage bucket.Config `yaml:"custom_storage"`
 }
 
 func (c *customExtendedConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
-	(*mimir.Config)(&c.MimirConfig).RegisterFlags(f, logger)
+	c.MimirConfig.RegisterFlags(f, logger)
 	c.CustomStorage.RegisterFlagsWithPrefix("custom-storage", f)
 }
 
 func (c *customExtendedConfig) UnmarshalYAML(value *yaml.Node) error {
-	if err := (*mimir.Config)(&c.MimirConfig).UnmarshalCommonYAML(value); err != nil {
+	if err := c.MimirConfig.UnmarshalCommonYAML(value); err != nil {
 		return err
 	}
 

@@ -255,7 +255,9 @@ func LoadConfig(filename string, expandEnv bool, cfg *mimir.Config) error {
 
 	dec := yaml.NewDecoder(bytes.NewReader(buf))
 	dec.KnownFields(true)
-	if err := dec.Decode(cfg); err != nil {
+
+	// Unmarshal with common config unmarshaler.
+	if err := dec.Decode((*mimir.ConfigWithCommon)(cfg)); err != nil {
 		return errors.Wrap(err, "Error parsing config file")
 	}
 

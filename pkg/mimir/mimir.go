@@ -190,16 +190,19 @@ func (c *Config) UnmarshalCommonYAML(value *yaml.Node) error {
 	return nil
 }
 
-func (c *Config) UnmarshalYAML(value *yaml.Node) error {
-	if err := c.UnmarshalCommonYAML(value); err != nil {
+// ConfigWithCommon should be passed to yaml.Unmarshal to properly unmarshal Common values.
+// We don't implement UnmarshalYAML on Config itself because that would disallow inlining it in other configs.
+type ConfigWithCommon Config
+
+func (c *ConfigWithCommon) UnmarshalYAML(value *yaml.Node) error {
+	if err := (*Config)(c).UnmarshalCommonYAML(value); err != nil {
 		return err
 	}
 
 	// Then unmarshal config in a standard way.
 	// This will override previously set common values by the specific ones, if they're provided.
 	// (YAML specific takes precedence over YAML common)
-	type plain Config
-	return value.DecodeWithOptions((*plain)(c), yaml.DecodeOptions{KnownFields: true})
+	return value.DecodeWithOptions((*Config)(c), yaml.DecodeOptions{KnownFields: true})
 }
 
 func (c *Config) InheritCommonFlagValues(log log.Logger, fs *flag.FlagSet) error {
