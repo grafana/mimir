@@ -12,6 +12,11 @@ Entries should be ordered as follows:
 Entries should include a reference to the Pull Request that introduced the change.
 
 ## main / unreleased
+
+* [ENHANCEMENT] Add backfill endpoints to Nginx configuration. #2478
+
+## 3.0.0
+
 * [CHANGE] **breaking change** The minimal Kubernetes version is now 1.20. This reflects the fact that Grafana does not test with older versions. #2297
 * [CHANGE] **breaking change** Make `ConfigMap` the default for `configStorageType`. This means that the Mimir (or Enterprise Metrics) configuration is now created in and loaded from a ConfigMap instead of a Secret. #2277
   - Set to `Secret` to keep existing way of working. See related #2031, #2017, #2089.
@@ -62,7 +67,6 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Add `NOTES.txt` to show endpoints URLs for the user at install/upgrade. #2189
 * [ENHANCEMENT] Add ServiceMonitor for overrides-exporter. #2068
 * [ENHANCEMENT] Add `nginx.resolver` for allow custom resolver in nginx configuration and `nginx.extraContainers` which allow add side containers to the nginx deployment #2196
-* [ENHANCEMENT] Add backfill endpoints to Nginx configuration. #2478
 
 ## 2.1.0
 
