@@ -197,6 +197,7 @@ jobs:
           export IMAGE_TAG=$(make image-tag)
           # skopeo will by default load system-specific version of the image (linux/amd64).
           skopeo copy oci-archive:/tmp/images/mimir.oci "docker-daemon:grafana/mimir:$IMAGE_TAG"
+          skopeo copy oci-archive:/tmp/images/mimirtool.oci "docker-daemon:grafana/mimirtool:$IMAGE_TAG"
           # Print Mimir version and architecture loaded to Docker.
           docker run "grafana/mimir:$IMAGE_TAG" --version
       - name: Preload Images
@@ -208,8 +209,9 @@ jobs:
         run: |
           export IMAGE_TAG=$(make image-tag)
           export MIMIR_IMAGE="grafana/mimir:$IMAGE_TAG"
+          export MIMIRTOOL_IMAGE="grafana/mimirtool:$IMAGE_TAG"
           export MIMIR_CHECKOUT_DIR="/go/src/github.com/grafana/mimir"
-          echo "Running integration tests with image: $MIMIR_IMAGE"
+          echo "Running integration tests with image: $MIMIR_IMAGE (Mimir), $MIMIRTOOL_IMAGE (Mimirtool)"
           echo "Running integration tests (group ${{ matrix.test_group_id }} of ${{ matrix.test_group_total }}) with Go version: $(go version)"
           ./.github/workflows/scripts/run-integration-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }}
 

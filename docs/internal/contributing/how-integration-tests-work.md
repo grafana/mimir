@@ -26,6 +26,8 @@ go test -v -tags=requires_docker ./integration -run "^TestChunksStorageAllIndexB
 
 - **`MIMIR_IMAGE`**<br />
   Docker image used to run Mimir in integration tests (defaults to `grafana/mimir:latest`)
+- **`MIMIRTOOL_IMAGE`**<br />
+  Docker image used to run `mimirtool` in integration tests (defaults to `grafana/mimirtool:latest`)
 - **`MIMIR_CHECKOUT_DIR`**<br />
   The absolute path of the Mimir repository local checkout (defaults to `$GOPATH/src/github.com/grafana/mimir`)
 - **`E2E_TEMP_DIR`**<br />

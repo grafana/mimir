@@ -21,20 +21,16 @@ import (
 	e2edb "github.com/grafana/e2e/db"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"github.com/thanos-io/thanos/pkg/runutil"
-	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/grafana/mimir/integration/e2emimir"
-	"github.com/grafana/mimir/pkg/mimirtool/commands"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/s3"
 	"github.com/grafana/mimir/pkg/storegateway/testhelper"
-	util_test "github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestMimirtoolBackfill(t *testing.T) {
@@ -47,11 +43,9 @@ func TestMimirtoolBackfill(t *testing.T) {
 
 	block1, err := testhelper.CreateBlock(context.Background(), tmpDir, []labels.Labels{labels.FromStrings("test", "test1")}, 100, blockEnd.Add(-2*time.Hour).UnixMilli(), blockEnd.UnixMilli(), nil, 0, metadata.NoneFunc)
 	require.NoError(t, err)
-	block1Path := filepath.Join(tmpDir, block1.String())
 
 	block2, err := testhelper.CreateBlock(context.Background(), tmpDir, []labels.Labels{labels.FromStrings("test", "test2")}, 100, blockEnd.Add(-2*time.Hour).UnixMilli(), blockEnd.UnixMilli(), nil, 0, metadata.NoneFunc)
 	require.NoError(t, err)
-	block2Path := filepath.Join(tmpDir, block2.String())
 
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
@@ -75,11 +69,9 @@ func TestMimirtoolBackfill(t *testing.T) {
 	compactor := e2emimir.NewCompactor("compactor", consul.NetworkHTTPEndpoint(), flags)
 	require.NoError(t, s.StartAndWaitReady(compactor))
 
-	compactorURL := fmt.Sprintf("http://%s/", compactor.HTTPEndpoint())
-
 	{
 		// Try to upload block using mimirtool. Should fail because upload is not enabled for user.
-		output, err := runMimirtoolBackfill(t, "--address", compactorURL, "--id", "anonymous", block1Path)
+		output, err := runMimirtoolBackfill(tmpDir, compactor, block1)
 		require.Contains(t, output, "server returned HTTP status 400 Bad Request: block upload is disabled")
 		require.Error(t, err)
 	}
@@ -104,15 +96,15 @@ overrides:
 		})
 
 		// Try to upload block using mimirtool. Should fail because upload is not enabled for user.
-		output, err := runMimirtoolBackfill(t, "--address", compactorURL, "--id", "anonymous", block1Path)
+		output, err := runMimirtoolBackfill(tmpDir, compactor, block1)
 		require.Contains(t, output, fmt.Sprintf("msg=\"block uploaded successfully\" block=%s", block1))
 		require.NoError(t, err)
 	}
 
 	{
 		// Upload block1 and block2. Block 1 already exists, but block2 should be uploaded without problem.
-		output, err := runMimirtoolBackfill(t, "--address", compactorURL, "--id", "anonymous", block1Path, block2Path)
-		require.Contains(t, output, fmt.Sprintf("msg=\"block already exists on the server\" path=%s", block1Path))
+		output, err := runMimirtoolBackfill(tmpDir, compactor, block1, block2)
+		require.Contains(t, output, fmt.Sprintf("msg=\"block already exists on the server\" path=%s", path.Join(e2e.ContainerSharedDir, block1.String())))
 		require.Contains(t, output, fmt.Sprintf("msg=\"block uploaded successfully\" block=%s", block2))
 
 		// If blocks exist, it's not an error.
@@ -131,20 +123,18 @@ overrides:
 		}, "test", log.NewNopLogger())
 		require.NoError(t, err)
 
-		verifyBlock(t, client, block1, block1Path)
-		verifyBlock(t, client, block2, block2Path)
+		verifyBlock(t, client, block1, filepath.Join(tmpDir, block1.String()))
+		verifyBlock(t, client, block2, filepath.Join(tmpDir, block2.String()))
 	}
 
 	{
-		// Let's try to upload broken block (no meta.json)
-		badBlock, err := testhelper.CreateBlock(context.Background(), tmpDir, []labels.Labels{labels.FromStrings("test", "bad")}, 100, blockEnd.Add(-2*time.Hour).UnixMilli(), blockEnd.UnixMilli(), nil, 0, metadata.NoneFunc)
+		// Let's try to upload block without meta.json.
+		b, err := testhelper.CreateBlock(context.Background(), tmpDir, []labels.Labels{labels.FromStrings("test", "bad")}, 100, blockEnd.Add(-2*time.Hour).UnixMilli(), blockEnd.UnixMilli(), nil, 0, metadata.NoneFunc)
 		require.NoError(t, err)
-		badBlockPath := filepath.Join(tmpDir, badBlock.String())
+		require.NoError(t, os.Remove(filepath.Join(tmpDir, b.String(), block.MetaFilename)))
 
-		require.NoError(t, os.Remove(filepath.Join(badBlockPath, block.MetaFilename)))
-
-		output, err := runMimirtoolBackfill(t, "--address", compactorURL, "--id", "anonymous", badBlockPath)
-		require.Regexp(t, fmt.Sprintf("msg=\"failed uploading block\"[^\n]+path=%s", badBlockPath), output)
+		output, err := runMimirtoolBackfill(tmpDir, compactor, b)
+		require.Regexp(t, fmt.Sprintf("msg=\"failed uploading block\"[^\n]+path=%s", path.Join(e2e.ContainerSharedDir, b.String())), output)
 		require.Error(t, err)
 	}
 
@@ -152,15 +142,13 @@ overrides:
 		// Let's try block with external labels. Mimir currently rejects those.
 		extLabels := labels.FromStrings("ext", "labels")
 
-		badBlock, err := testhelper.CreateBlock(context.Background(), tmpDir, []labels.Labels{labels.FromStrings("test", "bad")}, 100, blockEnd.Add(-2*time.Hour).UnixMilli(), blockEnd.UnixMilli(), extLabels, 0, metadata.NoneFunc)
+		b, err := testhelper.CreateBlock(context.Background(), tmpDir, []labels.Labels{labels.FromStrings("test", "bad")}, 100, blockEnd.Add(-2*time.Hour).UnixMilli(), blockEnd.UnixMilli(), extLabels, 0, metadata.NoneFunc)
 		require.NoError(t, err)
-		badBlockPath := filepath.Join(tmpDir, badBlock.String())
 
-		output, err := runMimirtoolBackfill(t, "--address", compactorURL, "--id", "anonymous", badBlockPath)
+		output, err := runMimirtoolBackfill(tmpDir, compactor, b)
 		require.Contains(t, output, "unsupported external label: ext")
 		require.Error(t, err)
 	}
-
 }
 
 func verifyBlock(t *testing.T, client objstore.Bucket, ulid ulid.ULID, localPath string) {
@@ -184,31 +172,27 @@ func verifyBlock(t *testing.T, client objstore.Bucket, ulid ulid.ULID, localPath
 	require.Equal(t, localMeta.Stats, remoteMeta.Stats)
 }
 
-func runMimirtoolBackfill(t *testing.T, args ...string) (string, error) {
-	oldStdout, oldStderr := os.Stdout, os.Stderr
-	defer func() {
-		os.Stdout = oldStdout
-		os.Stderr = oldStderr
+func runMimirtoolBackfill(sharedDir string, compactor *e2emimir.MimirService, blocksToUpload ...ulid.ULID) (string, error) {
+	dockerArgs := []string{
+		"run",
+		"--rm",
+		"--net=" + networkName,
+		"--name=" + networkName + "-mimirtool-backfill",
+	}
+	dockerArgs = append(dockerArgs, "--volume", fmt.Sprintf("%s:%s:z", sharedDir, e2e.ContainerSharedDir))
+	dockerArgs = append(dockerArgs, e2emimir.GetMimirtoolImage())
 
-		logrus.SetOutput(os.Stderr)
-	}()
+	// Mimirtool args.
+	dockerArgs = append(dockerArgs, "backfill")
+	dockerArgs = append(dockerArgs, "--address", fmt.Sprintf("http://%s:%d/", compactor.Name(), compactor.HTTPPort()))
+	dockerArgs = append(dockerArgs, "--id", "anonymous")
 
-	co := util_test.CaptureOutput(t)
-	// mimirtool uses logrus, which has global logger. We reinitialize it to use our captured Stderr.
-	logrus.SetOutput(os.Stderr)
+	for _, b := range blocksToUpload {
+		dockerArgs = append(dockerArgs, path.Join(e2e.ContainerSharedDir, b.String()))
+	}
 
-	app := kingpin.New("mimirtool", "help")
-	envVars := commands.NewEnvVarsWithPrefix("MIMIR")
-
-	// Only register mimirtool backfill command.
-	backfill := commands.BackfillCommand{}
-	backfill.Register(app, envVars)
-
-	// Run mimirtool (Parse calls any action).
-	_, err := app.Parse(append([]string{"backfill"}, args...))
-
-	stdout, stderr := co.Done()
-	return stdout + stderr, err
+	out, err := e2e.RunCommandAndGetOutput("docker", dockerArgs...)
+	return string(out), err
 }
 
 func getURL(url string) (string, error) {
