@@ -32,7 +32,7 @@ spec:
         {{- end }}
         {{- end }}
         accessModes:
-          {{ toYaml .Values.compactor.persistentVolume.accessModes | nindent 10 }}
+          {{- toYaml .Values.compactor.persistentVolume.accessModes | nindent 10 }}
         resources:
           requests:
             storage: "{{ .Values.compactor.persistentVolume.size }}"

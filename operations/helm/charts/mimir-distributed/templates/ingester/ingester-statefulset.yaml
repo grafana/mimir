@@ -1,21 +1,30 @@
 {{- if .Values.ingester.statefulSet.enabled -}}
+{{- $args := dict "ctx" . "component" "ingester" "component_config" "ingester" "memberlist" true -}}
+{{- $zonesMap := include "mimir.zoneAwareReplicationMap" $args | fromYaml -}}
+{{- range $zoneName, $rolloutZone := $zonesMap }}
+{{- with $ -}}
+{{- $_ := set $args "rolloutZoneName" $zoneName -}}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "ingester") }}
+  name: {{ include "mimir.zonedResourceName" $args }}
   labels:
-    {{- include "mimir.labels" (dict "ctx" . "component" "ingester" "memberlist" true) | nindent 4 }}
+    {{- include "mimir.zonedLabels" $args | nindent 4 }}
   annotations:
-    {{- toYaml .Values.ingester.annotations | nindent 4 }}
+    {{- include "mimir.componentAnnotations" $args | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
   podManagementPolicy: {{ .Values.ingester.podManagementPolicy }}
   replicas: {{ .Values.ingester.replicas }}
   selector:
     matchLabels:
-      {{- include "mimir.selectorLabels" (dict "ctx" . "component" "ingester" "memberlist" true) | nindent 6 }}
+      {{- include "mimir.zonedSelectorLabels" $args | nindent 6 }}
   updateStrategy:
+    {{- if .Values.ingester.zone_aware_replication.enabled }}
+    type: OnDelete
+    {{- else }}
     {{- toYaml .Values.ingester.statefulStrategy | nindent 4 }}
+    {{- end }}
   serviceName: {{ template "mimir.fullname" . }}-ingester{{- if not .Values.enterprise.legacyLabels -}}-headless{{- end -}}
   {{- if .Values.ingester.persistentVolume.enabled }}
   volumeClaimTemplates:
@@ -23,7 +32,7 @@ spec:
         name: storage
         {{- if .Values.ingester.persistentVolume.annotations }}
         annotations:
-          {{ toYaml .Values.ingester.persistentVolume.annotations | nindent 10 }}
+          {{- toYaml .Values.ingester.persistentVolume.annotations | nindent 10 }}
         {{- end }}
       spec:
         {{- if .Values.ingester.persistentVolume.storageClass }}
@@ -34,7 +43,7 @@ spec:
         {{- end }}
         {{- end }}
         accessModes:
-          {{ toYaml .Values.ingester.persistentVolume.accessModes | nindent 10 }}
+          {{- toYaml .Values.ingester.persistentVolume.accessModes | nindent 10 }}
         resources:
           requests:
             storage: "{{ .Values.ingester.persistentVolume.size }}"
@@ -42,12 +51,12 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "mimir.podLabels" (dict "ctx" . "component" "ingester" "memberlist" true) | nindent 8 }}
+        {{- include "mimir.zonedPodLabels" $args | nindent 8 }}
         {{- with .Values.ingester.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
       annotations:
-        {{- include "mimir.podAnnotations" (dict "ctx" . "component" "ingester") | nindent 8 }}
+        {{- include "mimir.podAnnotations" $args | nindent 8 }}
       namespace: {{ .Release.Namespace | quote }}
     spec:
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
@@ -65,9 +74,9 @@ spec:
       {{- end }}
       {{- end }}
       nodeSelector:
-        {{- toYaml .Values.ingester.nodeSelector | nindent 8 }}
+        {{- $rolloutZone.nodeSelector | toYaml | nindent 8 }}
       affinity:
-        {{- toYaml .Values.ingester.affinity | nindent 8 }}
+        {{- $rolloutZone.affinity | toYaml | nindent 8 }}
       tolerations:
         {{- toYaml .Values.ingester.tolerations | nindent 8 }}
       terminationGracePeriodSeconds: {{ .Values.ingester.terminationGracePeriodSeconds }}
@@ -100,7 +109,11 @@ spec:
             - "-target=ingester"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            {{- if .Values.ingester.zone_aware_replication.enabled }}
+            - "-ingester.ring.instance-availability-zone={{ $zoneName }}"
+            {{- else }}
             - "-ingester.ring.instance-availability-zone=zone-default"
+            {{- end }}
             {{- range $key, $value := .Values.ingester.extraArgs }}
             - "-{{ $key }}={{ $value }}"
             {{- end }}
@@ -154,4 +167,7 @@ spec:
             {{- with .Values.ingester.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+---
+{{- end -}}
+{{- end -}}
 {{- end -}}
