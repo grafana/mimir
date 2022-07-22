@@ -570,6 +570,11 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 		}
 	}
 
+	if d.limits.MaxGlobalExemplarsPerUser(userID) == 0 {
+		ts.Exemplars = nil
+		return nil
+	}
+
 	for i := 0; i < len(ts.Exemplars); {
 		e := ts.Exemplars[i]
 		if err := validation.ValidateExemplar(userID, ts.Labels, e); err != nil {
@@ -590,7 +595,6 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 		}
 		i++
 	}
-
 	return nil
 }
 

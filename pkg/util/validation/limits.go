@@ -500,7 +500,7 @@ func (o *Overrides) MaxGlobalMetadataPerMetric(userID string) int {
 	return o.getOverridesForUser(userID).MaxGlobalMetadataPerMetric
 }
 
-// MaxGlobalExemplars returns the maximum number of exemplars held in memory across the cluster.
+// MaxGlobalExemplarsPerUser returns the maximum number of exemplars held in memory across the cluster.
 func (o *Overrides) MaxGlobalExemplarsPerUser(userID string) int {
 	return o.getOverridesForUser(userID).MaxGlobalExemplarsPerUser
 }
