@@ -569,31 +569,32 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 			return err
 		}
 	}
-	if d.limits.MaxGlobalExemplarsPerUser(userID) > 0 {
-		for i := 0; i < len(ts.Exemplars); {
-			e := ts.Exemplars[i]
-			if err := validation.ValidateExemplar(userID, ts.Labels, e); err != nil {
-				// An exemplar validation error prevents ingesting samples
-				// in the same series object. However because the current Prometheus
-				// remote write implementation only populates one or the other,
-				// there never will be any.
-				return err
-			}
-			if !validation.ExemplarTimestampOK(userID, minExemplarTS, e) {
-				// Delete this exemplar by moving the last one on top and shortening the slice
-				last := len(ts.Exemplars) - 1
-				if i < last {
-					ts.Exemplars[i] = ts.Exemplars[last]
-				}
-				ts.Exemplars = ts.Exemplars[:last]
-				continue
-			}
-			i++
-		}
-	} else {
+
+	if d.limits.MaxGlobalExemplarsPerUser(userID) == 0 {
 		ts.Exemplars = make([]mimirpb.Exemplar, 0)
+		return nil
 	}
 
+	for i := 0; i < len(ts.Exemplars); {
+		e := ts.Exemplars[i]
+		if err := validation.ValidateExemplar(userID, ts.Labels, e); err != nil {
+			// An exemplar validation error prevents ingesting samples
+			// in the same series object. However because the current Prometheus
+			// remote write implementation only populates one or the other,
+			// there never will be any.
+			return err
+		}
+		if !validation.ExemplarTimestampOK(userID, minExemplarTS, e) {
+			// Delete this exemplar by moving the last one on top and shortening the slice
+			last := len(ts.Exemplars) - 1
+			if i < last {
+				ts.Exemplars[i] = ts.Exemplars[last]
+			}
+			ts.Exemplars = ts.Exemplars[:last]
+			continue
+		}
+		i++
+	}
 	return nil
 }
 

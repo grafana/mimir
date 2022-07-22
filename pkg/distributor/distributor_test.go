@@ -1618,8 +1618,10 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 				limits:          limits,
 				numDistributors: 1,
 			})
-			err := ds[0].validateSeries(now, tc.req.Timeseries[0], "user", false, tc.minExemplarTS)
-			assert.NoError(t, err)
+			for _, ts := range tc.req.Timeseries {
+				err := ds[0].validateSeries(now, ts, "user", false, tc.minExemplarTS)
+				assert.NoError(t, err)
+			}
 			assert.Equal(t, tc.expectedExemplars, tc.req.Timeseries)
 		})
 	}
