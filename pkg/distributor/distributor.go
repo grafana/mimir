@@ -571,7 +571,7 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 	}
 
 	if d.limits.MaxGlobalExemplarsPerUser(userID) == 0 {
-		ts.Exemplars = make([]mimirpb.Exemplar, 0)
+		ts.Exemplars = nil
 		return nil
 	}
 

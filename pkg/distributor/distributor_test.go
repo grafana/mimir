@@ -1518,7 +1518,7 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			expectedExemplars: []mimirpb.PreallocTimeseries{
 				{TimeSeries: &mimirpb.TimeSeries{
 					Labels:    []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test1"}},
-					Exemplars: []mimirpb.Exemplar{},
+					Exemplars: nil,
 				}},
 			},
 		},
