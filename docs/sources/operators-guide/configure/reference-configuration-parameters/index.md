@@ -3123,7 +3123,7 @@ The `compactor` block configures the compactor component.
 # all compaction time, but also in single-tenant environments to force new
 # discovery of blocks more often. 0 = disabled.
 # CLI flag: -compactor.max-compaction-time
-[max_compaction_time: <duration> | default = 0s]
+[max_compaction_time: <duration> | default = 1h]
 
 # (advanced) Number of goroutines opening blocks before compaction.
 # CLI flag: -compactor.max-opening-blocks-concurrency

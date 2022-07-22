@@ -1100,7 +1100,7 @@ chunks-cache:
     type: RollingUpdate
 
   # -- Additional CLI args for chunks-cache
-  extraArgs: []
+  extraArgs: {}
 
   # -- Additional containers to be added to the chunks-cache pod.
   extraContainers: []
@@ -1159,7 +1159,7 @@ index-cache:
     type: RollingUpdate
 
   # -- Additional CLI args for index-cache
-  extraArgs: []
+  extraArgs: {}
 
   # -- Additional containers to be added to the index-cache pod.
   extraContainers: []
@@ -1218,7 +1218,7 @@ metadata-cache:
     type: RollingUpdate
 
   # -- Additional CLI args for metadata-cache
-  extraArgs: []
+  extraArgs: {}
 
   # -- Additional containers to be added to the metadata-cache pod.
   extraContainers: []
@@ -1277,7 +1277,7 @@ results-cache:
     type: RollingUpdate
 
   # -- Additional CLI args for results-cache
-  extraArgs: []
+  extraArgs: {}
 
   # -- Additional containers to be added to the results-cache pod.
   extraContainers: []
@@ -1361,7 +1361,7 @@ nginx:
   # -- Pod Disruption Budget
   podDisruptionBudget: {}
   # -- Additional CLI args for nginx
-  extraArgs: []
+  extraArgs: {}
   # -- Environment variables to add to the nginx pods
   extraEnv: []
   # -- Environment variables from secrets or configmaps to add to the nginx pods

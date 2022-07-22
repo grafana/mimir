@@ -1478,7 +1478,11 @@ func TestDistributor_Push_ExemplarValidation(t *testing.T) {
 
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
+			limits := &validation.Limits{}
+			flagext.DefaultValues(limits)
+			limits.MaxGlobalExemplarsPerUser = 10
 			ds, _, _ := prepare(t, prepConfig{
+				limits:           limits,
 				numIngesters:     2,
 				happyIngesters:   2,
 				numDistributors:  1,
@@ -1498,11 +1502,30 @@ func TestDistributor_Push_ExemplarValidation(t *testing.T) {
 
 func TestDistributor_ExemplarValidation(t *testing.T) {
 	tests := map[string]struct {
+		prepareConfig     func(limits *validation.Limits)
 		minExemplarTS     int64
 		req               *mimirpb.WriteRequest
 		expectedExemplars []mimirpb.PreallocTimeseries
 	}{
+		"disable exemplars": {
+			prepareConfig: func(limits *validation.Limits) {
+				limits.MaxGlobalExemplarsPerUser = 0
+			},
+			minExemplarTS: 0,
+			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
+				makeExemplarTimeseries([]string{model.MetricNameLabel, "test1"}, 1000, []string{"foo", "bar"}),
+			}},
+			expectedExemplars: []mimirpb.PreallocTimeseries{
+				{TimeSeries: &mimirpb.TimeSeries{
+					Labels:    []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test1"}},
+					Exemplars: nil,
+				}},
+			},
+		},
 		"valid exemplars": {
+			prepareConfig: func(limits *validation.Limits) {
+				limits.MaxGlobalExemplarsPerUser = 1
+			},
 			minExemplarTS: 0,
 			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
 				makeExemplarTimeseries([]string{model.MetricNameLabel, "test1"}, 1000, []string{"foo", "bar"}),
@@ -1514,6 +1537,9 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			},
 		},
 		"one old, one new, separate series": {
+			prepareConfig: func(limits *validation.Limits) {
+				limits.MaxGlobalExemplarsPerUser = 1
+			},
 			minExemplarTS: 300000,
 			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
 				makeExemplarTimeseries([]string{model.MetricNameLabel, "test"}, 1000, []string{"foo", "bar"}),
@@ -1528,6 +1554,9 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			},
 		},
 		"multi exemplars": {
+			prepareConfig: func(limits *validation.Limits) {
+				limits.MaxGlobalExemplarsPerUser = 2
+			},
 			minExemplarTS: 300000,
 			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
 				{
@@ -1552,6 +1581,9 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			},
 		},
 		"one old, one new, same series": {
+			prepareConfig: func(limits *validation.Limits) {
+				limits.MaxGlobalExemplarsPerUser = 2
+			},
 			minExemplarTS: 300000,
 			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
 				{
@@ -1576,14 +1608,20 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			},
 		},
 	}
-	ds, _, _ := prepare(t, prepConfig{
-		numDistributors: 1,
-	})
 	now := mtime.Now()
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
-			err := ds[0].validateSeries(now, tc.req.Timeseries[0], "user", false, tc.minExemplarTS)
-			assert.NoError(t, err)
+			limits := &validation.Limits{}
+			flagext.DefaultValues(limits)
+			tc.prepareConfig(limits)
+			ds, _, _ := prepare(t, prepConfig{
+				limits:          limits,
+				numDistributors: 1,
+			})
+			for _, ts := range tc.req.Timeseries {
+				err := ds[0].validateSeries(now, ts, "user", false, tc.minExemplarTS)
+				assert.NoError(t, err)
+			}
 			assert.Equal(t, tc.expectedExemplars, tc.req.Timeseries)
 		})
 	}
@@ -2429,6 +2467,7 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			flagext.DefaultValues(limits)
 			limits.IngestionRate = 20
 			limits.IngestionBurstSize = 20
+			limits.MaxGlobalExemplarsPerUser = 10
 
 			distributors, ingesters, regs := prepare(t, prepConfig{
 				numIngesters:      1,
@@ -3625,6 +3664,7 @@ func TestDistributorValidation(t *testing.T) {
 
 			limits.CreationGracePeriod = model.Duration(2 * time.Hour)
 			limits.MaxLabelNamesPerSeries = 2
+			limits.MaxGlobalExemplarsPerUser = 10
 
 			ds, _, _ := prepare(t, prepConfig{
 				numIngesters:    3,

@@ -1298,7 +1298,13 @@ func (i *Ingester) queryStreamSamples(ctx context.Context, db *userTSDB, from, t
 
 // queryStreamChunks streams metrics from a TSDB. This implements the client.IngesterServer interface
 func (i *Ingester) queryStreamChunks(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) (numSeries, numSamples int, _ error) {
-	q, err := db.ChunkQuerier(ctx, from, through)
+	var q storage.ChunkQuerier
+	var err error
+	if i.limits.OutOfOrderTimeWindow(db.userID) > 0 {
+		q, err = db.UnorderedChunkQuerier(ctx, from, through)
+	} else {
+		q, err = db.ChunkQuerier(ctx, from, through)
+	}
 	if err != nil {
 		return 0, 0, err
 	}
