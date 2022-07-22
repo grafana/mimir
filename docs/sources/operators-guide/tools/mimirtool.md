@@ -199,13 +199,13 @@ To perform a trial run that does not make changes, you can use the dry run flag 
 mimirtool rules lint <file_path>...
 ```
 
-The format of the file is the same format as shown in [rules load](#load).
+The format of the file is the same format as shown in [rules load](#load-rule-groups).
 
 #### Prepare
 
 This `prepare` command prepares a rules file that you upload to Grafana Mimir.
 It lints all PromQL expressions and adds a label to your PromQL query aggregations in the file.
-The format of the file is the same format as shown in [rules load](#load).
+The format of the file is the same format as shown in [rules load](#load-rule-groups).
 
 > **Note:** This command does not interact with your Grafana Mimir cluster.
 
@@ -289,7 +289,7 @@ groups:
 ERRO[0000] bad recording rule name error="recording rule name does not match level:metric:operation format, must contain at least one colon" file=rules.yaml rule=job_http_inprogress_requests_sum ruleGroup=example
 ```
 
-The format of the file is the same format as shown in [rules load](#load).
+The format of the file is the same format as shown in [rules load](#load-rule-groups).
 
 #### Diff
 
@@ -299,7 +299,7 @@ The following command compares rules against the rules in your Grafana Mimir clu
 mimirtool rules diff <file_path>...
 ```
 
-The format of the file is the same format as shown in [rules load](#load).
+The format of the file is the same format as shown in [rules load](#load-rule-groups).
 
 #### Sync
 
@@ -310,7 +310,7 @@ The command applies any differences to your Grafana Mimir cluster.
 mimirtool rules sync <file_path>...
 ```
 
-The format of the file is the same format as shown in [rules load](#load).
+The format of the file is the same format as shown in [rules load](#load-rule-groups).
 
 ### Remote-read
 
