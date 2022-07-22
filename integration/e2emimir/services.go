@@ -6,6 +6,8 @@
 package e2emimir
 
 import (
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -353,6 +355,36 @@ func WithNoopOption() Option { return func(options *Options) {} }
 
 // FlagMapper is the type of function that maps flags, just to reduce some verbosity.
 type FlagMapper func(flags map[string]string) map[string]string
+
+func (fm *FlagMapper) UnmarshalJSON(data []byte) error {
+	var val struct {
+		Rename map[string]string `json:"rename"`
+		Remove []string          `json:"remove"`
+		Set    map[string]string `json:"set"`
+	}
+	if err := json.Unmarshal(data, &val); err != nil {
+		return err
+	}
+	set := 0
+	var m FlagMapper
+	if len(val.Rename) > 0 {
+		m = RenameFlagMapper(val.Rename)
+		set++
+	}
+	if len(val.Remove) > 0 {
+		m = RemoveFlagMapper(val.Remove)
+		set++
+	}
+	if len(val.Set) > 0 {
+		m = SetFlagMapper(val.Set)
+		set++
+	}
+	if set != 1 {
+		return fmt.Errorf("should set exactly one flag mapper, but %v set %d", val, set)
+	}
+	*fm = m
+	return nil
+}
 
 // NoopFlagMapper is a flag mapper that does not alter the provided flags.
 func NoopFlagMapper(flags map[string]string) map[string]string { return flags }
