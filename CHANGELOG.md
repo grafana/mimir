@@ -52,8 +52,19 @@
 
 ### Jsonnet
 
-* [FEATURE] Memberlist: added support for experimental memberlist cluster label, through the jsonnet configuration options `memberlist_cluster_label` and `memberlist_cluster_label_verification_disabled`. #2349
 * [CHANGE] query-scheduler is enabled by default. We advise to deploy the query-scheduler to improve the scalability of the query-frontend. #2431
+* [CHANGE] Replaced anti-affinity rules with pod topology spread constraints for distributor, query-frontend, querier and ruler.
+  - The following configuration options have been removed:
+    - `distributor_allow_multiple_replicas_on_same_node`
+    - `query_frontend_allow_multiple_replicas_on_same_node`
+    - `querier_allow_multiple_replicas_on_same_node`
+    - `ruler_allow_multiple_replicas_on_same_node`
+  - The following configuration options have been added:
+    - `distributor_topology_spread_max_skew`
+    - `query_frontend_topology_spread_max_skew`
+    - `querier_topology_spread_max_skew`
+    - `ruler_topology_spread_max_skew`
+* [FEATURE] Memberlist: added support for experimental memberlist cluster label, through the jsonnet configuration options `memberlist_cluster_label` and `memberlist_cluster_label_verification_disabled`. #2349
 
 ### Mimirtool
 

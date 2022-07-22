@@ -44,12 +44,14 @@
 
   ruler_deployment:
     if $._config.ruler_enabled then
-      deployment.new('ruler', 2, [$.ruler_container]) +
+      local name = 'ruler';
+
+      deployment.new(name, 2, [$.ruler_container]) +
       (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
       deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(0) +
       deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1) +
       deployment.mixin.spec.template.spec.withTerminationGracePeriodSeconds(600) +
-      (if $._config.ruler_allow_multiple_replicas_on_same_node then {} else $.util.antiAffinity) +
+      $.newMimirSpreadTopology(name, $._config.querier_topology_spread_max_skew) +
       $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint)
     else {},
 
