@@ -3548,6 +3548,19 @@ func (i *mockIngester) UserStats(ctx context.Context, in *client.UserStatsReques
 	}, nil
 }
 
+func match(labels []mimirpb.LabelAdapter, matchers []*labels.Matcher) bool {
+outer:
+	for _, matcher := range matchers {
+		for _, labels := range labels {
+			if matcher.Name == labels.Name && matcher.Matches(labels.Value) {
+				continue outer
+			}
+		}
+		return false
+	}
+	return true
+}
+
 type mockForwarder struct {
 	ingest bool
 
@@ -3588,19 +3601,6 @@ func (m *mockForwarder) Forward(ctx context.Context, forwardingRules validation.
 }
 
 func (m *mockForwarder) Stop() {}
-
-func match(labels []mimirpb.LabelAdapter, matchers []*labels.Matcher) bool {
-outer:
-	for _, matcher := range matchers {
-		for _, labels := range labels {
-			if matcher.Name == labels.Name && matcher.Matches(labels.Value) {
-				continue outer
-			}
-		}
-		return false
-	}
-	return true
-}
 
 func TestDistributorValidation(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "1")
