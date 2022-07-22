@@ -144,7 +144,7 @@ To publish a stable release:
 1. Wait until the CI pipeline succeeds (once a tag is created, the release process through GitHub Actions will be triggered for this tag)
 1. Create a release on GitHub. This is basically a copy of release notes from pre-release version, with up-to-date CHANGELOG (if there were any changes in release candidates).
 1. Merge the release branch `release-x.y` into `main` (see [Merging release branch into main](#merging-release-branch-into-main))
-1. Open a PR to add the new version to the backward compatibility integration test (`integration/backward_compatibility_test.go`)
+1. Open a PR to **add** the new version to the backward compatibility integration test (`integration/backward_compatibility_test.go`)
 1. Publish dashboards (done by a Grafana Labs member)
    1. Login to [https://grafana.com](https://grafana.com) with your Grafana Labs account
    1. Open [https://grafana.com/orgs/grafana/dashboards](https://grafana.com/orgs/grafana/dashboards)
