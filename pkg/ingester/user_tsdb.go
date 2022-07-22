@@ -103,6 +103,10 @@ func (u *userTSDB) ChunkQuerier(ctx context.Context, mint, maxt int64) (storage.
 	return u.db.ChunkQuerier(ctx, mint, maxt)
 }
 
+func (u *userTSDB) UnorderedChunkQuerier(ctx context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
+	return u.db.UnorderedChunkQuerier(ctx, mint, maxt)
+}
+
 func (u *userTSDB) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {
 	return u.db.ExemplarQuerier(ctx)
 }
