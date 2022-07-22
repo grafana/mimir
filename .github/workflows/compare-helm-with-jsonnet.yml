@@ -87,6 +87,7 @@ jobs:
           **Helm <> Jsonnet Diff**
 
           :warning: A difference was detected between the Helm chart and the Jsonnet library.
+          Use `make check-helm-jsonnet-diff` to reproduce the output locally.
           This test is experimental while we gather feedback about its usefulness.
           It does not block your PR from being merged, but we would appreciate you trying to keep feature parity between the Helm chart and Jsonnet library if possible.
 
