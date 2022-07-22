@@ -356,6 +356,7 @@ func WithNoopOption() Option { return func(options *Options) {} }
 // FlagMapper is the type of function that maps flags, just to reduce some verbosity.
 type FlagMapper func(flags map[string]string) map[string]string
 
+// UnmarshalJSON unmarshals a single json object into a single FlagMapper, or an array into a ChainMapper.
 func (fm *FlagMapper) UnmarshalJSON(data []byte) error {
 	var val struct {
 		Rename map[string]string `json:"rename"`
@@ -363,6 +364,12 @@ func (fm *FlagMapper) UnmarshalJSON(data []byte) error {
 		Set    map[string]string `json:"set"`
 	}
 	if err := json.Unmarshal(data, &val); err != nil {
+		// It's not an object, try to unmarshal it as an array, and build a chain mapper.
+		var chain []FlagMapper
+		if chainErr := json.Unmarshal(data, &chain); chainErr == nil {
+			*fm = ChainFlagMappers(chain...)
+			return nil
+		}
 		return err
 	}
 	set := 0
@@ -396,7 +403,7 @@ func ChainFlagMappers(mappers ...FlagMapper) FlagMapper {
 		for _, mapFlags := range mappers {
 			flags = mapFlags(copyFlags(flags))
 		}
-		return flags
+		return copyFlags(flags)
 	}
 }
 

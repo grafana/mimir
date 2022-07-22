@@ -31,22 +31,7 @@ import (
 // see TestParsePreviousImageVersionOverrides for the JSON format to use.
 func previousVersionImages(t *testing.T) map[string]e2emimir.FlagMapper {
 	if overrides := previousImageVersionOverrides(t); len(overrides) > 0 {
-		previousVersionImages := map[string]e2emimir.FlagMapper{}
-
-		for _, override := range overrides {
-			mappers := []e2emimir.FlagMapper{
-				cortexFlagMapper,
-				revertRenameFrontendToQueryFrontendFlagMapper,
-				ingesterRingRename,
-				ingesterRingNewFeatures,
-			}
-			for _, m := range override.MapFlags {
-				mappers = append(mappers, m)
-			}
-			previousVersionImages[override.Image] = e2emimir.ChainFlagMappers(mappers...)
-		}
-
-		return previousVersionImages
+		return overrides
 	}
 
 	return DefaultPreviousVersionImages
@@ -250,21 +235,22 @@ func checkQueries(
 
 type testingLogger interface{ Logf(string, ...interface{}) }
 
-func previousImageVersionOverrides(t *testing.T) []previousImageOverride {
+func previousImageVersionOverrides(t *testing.T) map[string]e2emimir.FlagMapper {
 	overrides, err := parsePrevioiusImageVersionOverrides(os.Getenv("MIMIR_PREVIOUS_IMAGES"), t)
 	require.NoError(t, err)
 	return overrides
 }
 
-func parsePrevioiusImageVersionOverrides(env string, logger testingLogger) (overrides []previousImageOverride, err error) {
+func parsePrevioiusImageVersionOverrides(env string, logger testingLogger) (map[string]e2emimir.FlagMapper, error) {
 	if env == "" {
 		return nil, nil
 	}
 
-	if strings.TrimSpace(env)[0] != '[' {
+	overrides := map[string]e2emimir.FlagMapper{}
+	if strings.TrimSpace(env)[0] != '{' {
 		logger.Logf("Overriding previous images with comma separated image names: %s", env)
 		for _, image := range strings.Split(env, ",") {
-			overrides = append(overrides, previousImageOverride{Image: image})
+			overrides[image] = e2emimir.NoopFlagMapper
 		}
 		return overrides, nil
 	}
@@ -274,11 +260,6 @@ func parsePrevioiusImageVersionOverrides(env string, logger testingLogger) (over
 		return nil, fmt.Errorf("can't unmarshal previous image version overrides as JSON: %w", err)
 	}
 	return overrides, nil
-}
-
-type previousImageOverride struct {
-	Image    string                `json:"image"`
-	MapFlags []e2emimir.FlagMapper `json:"map_flags"`
 }
 
 func TestParsePreviousImageVersionOverrides(t *testing.T) {
@@ -292,15 +273,15 @@ func TestParsePreviousImageVersionOverrides(t *testing.T) {
 		overrides, err := parsePrevioiusImageVersionOverrides("first", t)
 		require.NoError(t, err)
 		require.Len(t, overrides, 1)
-		require.Equal(t, "first", overrides[0].Image)
+		require.NotNil(t, overrides["first"])
 	})
 
 	t.Run("comma separated overrides", func(t *testing.T) {
 		overrides, err := parsePrevioiusImageVersionOverrides("first,second", t)
 		require.NoError(t, err)
 		require.Len(t, overrides, 2)
-		require.Equal(t, "first", overrides[0].Image)
-		require.Equal(t, "second", overrides[1].Image)
+		require.NotNil(t, overrides["first"])
+		require.NotNil(t, overrides["second"])
 	})
 
 	t.Run("json overrides with flag mappers", func(t *testing.T) {
@@ -319,30 +300,23 @@ func TestParsePreviousImageVersionOverrides(t *testing.T) {
 		}
 
 		jsonOverrides := `
-			[
-				{
-					"image": "first",
-					"map_flags": [
-						{"remove": ["c", "d"]},
-						{"rename": {"a": "x", "b": "y"}},
-						{"set": {"z":"10"}}
-					]
-				},
-				{
-					"image": "second"
-				}
-			]`
+			{
+				"first": [
+					{"remove": ["c", "d"]},
+					{"rename": {"a": "x", "b": "y"}},
+					{"set": {"z":"10"}}
+				],
+				"second": []
+			}`
 
 		overrides, err := parsePrevioiusImageVersionOverrides(jsonOverrides, t)
 		require.NoError(t, err)
 		require.Len(t, overrides, 2)
 
-		require.Equal(t, "first", overrides[0].Image)
-		require.Len(t, overrides[0].MapFlags, 3)
-		mapper := e2emimir.ChainFlagMappers(overrides[0].MapFlags...)
-		require.Equal(t, expectedFlags, mapper(inputFlags))
+		require.NotNil(t, overrides["first"])
+		require.Equal(t, expectedFlags, overrides["first"](inputFlags))
 
-		require.Equal(t, "second", overrides[1].Image)
-		require.Empty(t, overrides[1].MapFlags)
+		require.NotNil(t, overrides["second"])
+		require.Equal(t, inputFlags, overrides["second"](inputFlags))
 	})
 }
