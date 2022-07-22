@@ -12,7 +12,7 @@ import (
 )
 
 func TestRangeMapper(t *testing.T) {
-	splitInterval := 2 * time.Minute
+	splitInterval := 1 * time.Minute
 	mapper, err := NewRangeMapper(splitInterval, log.NewNopLogger())
 	require.NoError(t, err)
 
@@ -21,41 +21,108 @@ func TestRangeMapper(t *testing.T) {
 		out                  string
 		expectedSplitQueries int
 	}{
+		// Range vector aggregators
 		{
-			in:                   `count_over_time({app="foo"}[4m])`,
-			out:                  `sum without() (` + concatOffsets(splitInterval, 2, `count_over_time({app="foo"}[x]y)`) + `)`,
+			in:                   `count_over_time({app="foo"}[3m])`,
+			out:                  `sum without() (` + concatOffsets(splitInterval, 3, `count_over_time({app="foo"}[x]y)`) + `)`,
 			expectedSplitQueries: 3,
 		},
 		{
-			in:                   `sum_over_time({app="foo"}[4m])`,
-			out:                  `sum without() (` + concatOffsets(splitInterval, 2, `sum_over_time({app="foo"}[x]y)`) + `)`,
+			in:                   `max_over_time({app="foo"}[3m])`,
+			out:                  `max without() (` + concatOffsets(splitInterval, 3, `max_over_time({app="foo"}[x]y)`) + `)`,
 			expectedSplitQueries: 3,
 		},
 		{
-			in:                   `max_over_time({app="foo"}[4m])`,
-			out:                  `max without() (` + concatOffsets(splitInterval, 2, `max_over_time({app="foo"}[x]y)`) + `)`,
+			in:                   `min_over_time({app="foo"}[3m])`,
+			out:                  `min without() (` + concatOffsets(splitInterval, 3, `min_over_time({app="foo"}[x]y)`) + `)`,
 			expectedSplitQueries: 3,
 		},
 		{
-			in:                   `min_over_time({app="foo"}[4m])`,
-			out:                  `min without() (` + concatOffsets(splitInterval, 2, `min_over_time({app="foo"}[x]y)`) + `)`,
+			in:                   `rate({app="foo"}[3m])`,
+			out:                  `sum without() (` + concatOffsets(splitInterval, 3, `increase({app="foo"}[x]y)`) + `) / 180`,
 			expectedSplitQueries: 3,
 		},
 		{
-			in:                   `sum(count_over_time({app="foo"}[4m]))`,
-			out:                  `sum (sum without () (` + concatOffsets(splitInterval, 2, `sum(count_over_time({app="foo"}[x]y))`) + `))`,
+			in:                   `sum_over_time({app="foo"}[3m])`,
+			out:                  `sum without() (` + concatOffsets(splitInterval, 3, `sum_over_time({app="foo"}[x]y)`) + `)`,
+			expectedSplitQueries: 3,
+		},
+		// Vector aggregators
+		{
+			in:                   `count(sum_over_time({app="foo"}[3m]))`,
+			out:                  `count (sum without() (` + concatOffsets(splitInterval, 3, `sum_over_time({app="foo"}[x]y)`) + `))`,
 			expectedSplitQueries: 3,
 		},
 		{
-			in:                   `max(count_over_time({app="foo"}[4m]))`,
-			out:                  `max (sum without () (` + concatOffsets(splitInterval, 2, `max(count_over_time({app="foo"}[x]y))`) + `))`,
+			in:                   `count by (bar) (sum_over_time({app="foo"}[3m]))`,
+			out:                  `count by (bar) (sum without() (` + concatOffsets(splitInterval, 3, `sum_over_time({app="foo"}[x]y)`) + `))`,
 			expectedSplitQueries: 3,
 		},
 		{
-			in:                   `min(count_over_time({app="foo"}[4m]))`,
-			out:                  `min (sum without () (` + concatOffsets(splitInterval, 2, `min(count_over_time({app="foo"}[x]y))`) + `))`,
+			in:                   `max(sum_over_time({app="foo"}[3m]))`,
+			out:                  `max (sum (` + concatOffsets(splitInterval, 3, `max(sum_over_time({app="foo"}[x]y))`) + `))`,
 			expectedSplitQueries: 3,
 		},
+		{
+			in:                   `max by (bar) (sum_over_time({app="foo"}[3m]))`,
+			out:                  `max by (bar) (sum by (bar) (` + concatOffsets(splitInterval, 3, `max by (bar) (sum_over_time({app="foo"}[x]y))`) + `))`,
+			expectedSplitQueries: 3,
+		},
+		{
+			in:                   `min(sum_over_time({app="foo"}[3m]))`,
+			out:                  `min (sum (` + concatOffsets(splitInterval, 3, `min(sum_over_time({app="foo"}[x]y))`) + `))`,
+			expectedSplitQueries: 3,
+		},
+		{
+			in:                   `min by (bar) (sum_over_time({app="foo"}[3m]))`,
+			out:                  `min by (bar) (sum by (bar) (` + concatOffsets(splitInterval, 3, `min by (bar) (sum_over_time({app="foo"}[x]y))`) + `))`,
+			expectedSplitQueries: 3,
+		},
+		{
+			in:                   `sum(sum_over_time({app="foo"}[3m]))`,
+			out:                  `sum (sum (` + concatOffsets(splitInterval, 3, `sum(sum_over_time({app="foo"}[x]y))`) + `))`,
+			expectedSplitQueries: 3,
+		},
+		{
+			in:                   `sum by (bar) (sum_over_time({app="foo"}[3m]))`,
+			out:                  `sum by (bar) (sum by (bar) (` + concatOffsets(splitInterval, 3, `sum by (bar) (sum_over_time({app="foo"}[x]y))`) + `))`,
+			expectedSplitQueries: 3,
+		},
+		//{
+		//	in:                   `sum(max(sum_over_time({app="foo"}[3m])))`,
+		//	out:                  `sum (max (sum(` + concatOffsets(splitInterval, 3, `sum(max(sum_over_time({app="foo"}[x]y)))`) + `)))`,
+		//	expectedSplitQueries: 3,
+		//},
+		// TODO: binary expressions - if 2 number literals do not split, if one number literal split
+	} {
+		tt := tt
+
+		t.Run(tt.in, func(t *testing.T) {
+			expr, err := parser.ParseExpr(tt.in)
+			require.NoError(t, err)
+			out, err := parser.ParseExpr(tt.out)
+			require.NoError(t, err)
+
+			stats := NewMapperStats()
+			mapped, err := mapper.Map(expr, stats)
+			require.NoError(t, err)
+			require.Equal(t, out.String(), mapped.String())
+
+			//assert.Equal(t, tt.expectedSplitQueries, stats.GetShardedQueries())
+		})
+	}
+}
+
+func TestRangeMapperUnevenRangeInterval(t *testing.T) {
+	splitInterval := 1 * time.Minute
+	mapper, err := NewRangeMapper(splitInterval, log.NewNopLogger())
+	require.NoError(t, err)
+
+	for _, tt := range []struct {
+		in                   string
+		out                  string
+		expectedSplitQueries int
+	}{
 		// TODO: Should support expressions with offset operator
 		//{
 		//	in:                   `count_over_time({app="foo"}[4m] offset 1m)`,
@@ -74,10 +141,37 @@ func TestRangeMapper(t *testing.T) {
 		//	out:                  `sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"count_over_time({app=\\\"foo\\\"}[1m] offset 4m)\",\"count_over_time({app=\\\"foo\\\"}[2m] offset 2m)\",\"count_over_time({app=\\\"foo\\\"}[2m])\"]}"})`,
 		//	expectedSplitQueries: 3,
 		//},
+	} {
+		tt := tt
+
+		t.Run(tt.in, func(t *testing.T) {
+			expr, err := parser.ParseExpr(tt.in)
+			require.NoError(t, err)
+			out, err := parser.ParseExpr(tt.out)
+			require.NoError(t, err)
+
+			stats := NewMapperStats()
+			mapped, err := mapper.Map(expr, stats)
+			require.NoError(t, err)
+			require.Equal(t, out.String(), mapped.String())
+
+			//assert.Equal(t, tt.expectedSplitQueries, stats.GetShardedQueries())
+		})
+	}
+}
+
+func TestRangeMapperNoOp(t *testing.T) {
+	splitInterval := 1 * time.Minute
+	mapper, err := NewRangeMapper(splitInterval, log.NewNopLogger())
+	require.NoError(t, err)
+
+	for _, tt := range []struct {
+		in                   string
+		out                  string
+		expectedSplitQueries int
+	}{
 		//{
-		//	in:                   `sum(count(count_over_time({app="foo"}[4m])))`,
-		//	out:                  `sum (sum without () (` + concatOffsets(splitInterval, 2, `sum(count(count_over_time({app="foo"}[x]y)))`) + `))`,
-		//	expectedSplitQueries: 3,
+		//	in: `count_over_time({app="foo"}[4m])`,
 		//},
 	} {
 		tt := tt

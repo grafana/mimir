@@ -29,12 +29,9 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 
 		expectedSplitQueries int
 	}{
+		// Range vector aggregators
 		"count_over_time": {
 			query:                `count_over_time(metric_counter[3m])`,
-			expectedSplitQueries: 3,
-		},
-		"sum_over_time": {
-			query:                `sum_over_time(metric_counter[3m])`,
 			expectedSplitQueries: 3,
 		},
 		"max_over_time": {
@@ -45,16 +42,45 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 			query:                `min_over_time(metric_counter[3m])`,
 			expectedSplitQueries: 3,
 		},
-		"sum(sum_over_time)": {
-			query:                `sum(sum_over_time(metric_counter[3m]))`,
+		"rate": {
+			query:                `rate(metric_counter[3m])`,
+			expectedSplitQueries: 3,
+		},
+		"sum_over_time": {
+			query:                `sum_over_time(metric_counter[3m])`,
+			expectedSplitQueries: 3,
+		},
+		// Vector aggregators
+		"count(sum_over_time)": {
+			query:                `count(sum_over_time(metric_counter[3m]))`,
+			expectedSplitQueries: 3,
+		},
+		"count(sum_over_time) grouping 'by'": {
+			query:                `count by(group_1) (sum_over_time(metric_counter[3m]))`,
 			expectedSplitQueries: 3,
 		},
 		"max(sum_over_time)": {
 			query:                `max(sum_over_time(metric_counter[3m]))`,
 			expectedSplitQueries: 3,
 		},
+		"max(sum_over_time) grouping 'by'": {
+			query:                `max by(group_1) (sum_over_time(metric_counter[3m]))`,
+			expectedSplitQueries: 3,
+		},
 		"min(sum_over_time)": {
 			query:                `min(sum_over_time(metric_counter[3m]))`,
+			expectedSplitQueries: 3,
+		},
+		"min(sum_over_time) grouping 'by'": {
+			query:                `min by(group_1) (sum_over_time(metric_counter[3m]))`,
+			expectedSplitQueries: 3,
+		},
+		"sum(sum_over_time)": {
+			query:                `sum(sum_over_time(metric_counter[3m]))`,
+			expectedSplitQueries: 3,
+		},
+		"sum(sum_over_time) grouping 'by'": {
+			query:                `sum by(group_1) (sum_over_time(metric_counter[3m]))`,
 			expectedSplitQueries: 3,
 		},
 	}
