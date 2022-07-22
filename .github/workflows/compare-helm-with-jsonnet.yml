@@ -23,6 +23,7 @@ jobs:
 
     - name: Create or update comment
       uses: peter-evans/create-or-update-comment@v2
+      id: progress-comment
       with:
         comment-id: ${{ steps.fc.outputs.comment-id }}
         issue-number: ${{ github.event.pull_request.number }}
@@ -83,7 +84,7 @@ jobs:
       uses: peter-evans/create-or-update-comment@v2
       if: ${{ steps.compare-manifests.outputs.changed == 'true' }}
       with:
-        comment-id: ${{ steps.fc.outputs.comment-id }}
+        comment-id: ${{ steps.progress-comment.outputs.comment-id }}
         issue-number: ${{ github.event.pull_request.number }}
         body: |
           **Helm <> Jsonnet Diff**
@@ -117,7 +118,7 @@ jobs:
       uses: peter-evans/create-or-update-comment@v2
       if: ${{ steps.compare-manifests.outputs.changed == 'false' }}
       with:
-        comment-id: ${{ steps.fc.outputs.comment-id }}
+        comment-id: ${{ steps.progress-comment.outputs.comment-id }}
         issue-number: ${{ github.event.pull_request.number }}
         body: |
           **Helm <> Jsonnet Diff**
