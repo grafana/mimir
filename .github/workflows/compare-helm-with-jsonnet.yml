@@ -63,7 +63,9 @@ jobs:
         # Make dependencies first so their output doesn't appear in the PR comment
         make operations/helm/charts/mimir-distributed/charts
         make build-jsonnet-tests
-        OUTPUT="$(make check-helm-jsonnet-diff 2>&1)"
+
+        OUTPUT="$(./operations/compare-helm-with-jsonnet/compare-helm-with-jsonnet.sh 2>&1)"
+
         if [ $? -eq 0 ]; then
           echo "::set-output name=changed::false"
         else
@@ -98,8 +100,10 @@ jobs:
           <details>
 
           <summary>
-          Please see the results below
+          Expand to see the output
           </summary>
+
+          Output of https://github.com/${{github.repository}}/actions/runs/${{github.run_id}}
 
           ```diff
           ${{ steps.compare-manifests.outputs.diff }}
