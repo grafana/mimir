@@ -68,7 +68,7 @@ The following sections outline the commands that you can run against Grafana Mim
 
 The following commands interact with Grafana Mimir Alertmanager configuration and alert template files.
 
-#### Get configuration
+#### Get Alertmanager configuration
 
 The following command shows the current Alertmanager configuration.
 
@@ -76,7 +76,7 @@ The following command shows the current Alertmanager configuration.
 mimirtool alertmanager get
 ```
 
-#### Load configuration
+#### Load Alertmanager configuration
 
 The following command loads an Alertmanager configuration to the Alertmanager instance.
 
@@ -101,7 +101,7 @@ receivers:
   - name: "example_receiver"
 ```
 
-#### Delete configuration
+#### Delete Alertmanager configuration
 
 The following command deletes the Alertmanager configuration in the Grafana Mimir Alertmanager.
 
@@ -127,7 +127,7 @@ The commands in this section enable you to perform the following actions:
 - Interact with individual rule groups in the Mimir ruler
 - Manipulate local rule files
 
-#### List
+#### List rules
 
 The following command retrieves the names of all rule groups in the Grafana Mimir instance and prints them to the terminal.
 
@@ -135,7 +135,7 @@ The following command retrieves the names of all rule groups in the Grafana Mimi
 mimirtool rules list
 ```
 
-#### Print
+#### Print rules
 
 The following command retrieves all rule groups in the Grafana Mimir instance and prints them to the terminal.
 
@@ -143,7 +143,7 @@ The following command retrieves all rule groups in the Grafana Mimir instance an
 mimirtool rules print
 ```
 
-#### Get
+#### Get rule group
 
 The following command retrieves a single rule group and prints it to the terminal.
 
@@ -151,7 +151,7 @@ The following command retrieves a single rule group and prints it to the termina
 mimirtool rules get <namespace> <rule_group_name>
 ```
 
-#### Delete
+#### Delete rule group
 
 The following command deletes a rule group.
 
@@ -159,7 +159,7 @@ The following command deletes a rule group.
 mimirtool rules delete <namespace> <rule_group_name>
 ```
 
-#### Load
+#### Load rule groups
 
 The following command loads each rule group from the files into Grafana Mimir.
 This command overwrites all existing rule groups with the same name.
