@@ -508,7 +508,13 @@ check-jsonnet-getting-started:
 		| sed 's/\(jb install github.com\/grafana\/mimir\/operations\/mimir@main\)/\1 \&\& rm -fr .\/vendor\/mimir \&\& cp -r ..\/operations\/mimir .\/vendor\/mimir\//g' \
 		| bash
 
-build-helm-tests:
+operations/helm/charts/mimir-distributed/charts: operations/helm/charts/mimir-distributed/Chart.yaml operations/helm/charts/mimir-distributed/Chart.lock
+	@cd ./operations/helm/charts/mimir-distributed && helm dependency update
+
+check-helm-jsonnet-diff: operations/helm/charts/mimir-distributed/charts build-jsonnet-tests
+	@./operations/compare-helm-with-jsonnet/compare-helm-with-jsonnet.sh
+
+build-helm-tests: operations/helm/charts/mimir-distributed/charts
 	@./operations/helm/tests/build.sh
 
 check-helm-tests: build-helm-tests
