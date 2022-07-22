@@ -58,4 +58,17 @@
     statefulSet.mixin.spec.updateStrategy.withType('RollingUpdate') +
     (if podManagementPolicy != null then statefulSet.mixin.spec.withPodManagementPolicy(podManagementPolicy) else {}) +
     (if !std.isObject($._config.node_selector) then {} else statefulSet.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)),
+
+  // Utility to create the default pod topology spread constraint used by Mimir.
+  newMimirSpreadTopology(name, maxSkew)::
+    local deployment = $.apps.v1.deployment;
+    local topologySpreadConstraints = $.core.v1.topologySpreadConstraint;
+
+    deployment.spec.template.spec.withTopologySpreadConstraints(
+      // Evenly spread replicas among available nodes.
+      topologySpreadConstraints.labelSelector.withMatchLabels({ name: name }) +
+      topologySpreadConstraints.withTopologyKey('kubernetes.io/hostname') +
+      topologySpreadConstraints.withWhenUnsatisfiable('ScheduleAnyway') +
+      topologySpreadConstraints.withMaxSkew(maxSkew),
+    ),
 }

@@ -387,13 +387,6 @@ spec:
         gossip_ring_member: "true"
         name: distributor
     spec:
-      affinity:
-        podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchLabels:
-                name: distributor
-            topologyKey: kubernetes.io/hostname
       containers:
       - args:
         - -distributor.ha-tracker.enable=true
@@ -447,6 +440,13 @@ spec:
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
+      topologySpreadConstraints:
+      - labelSelector:
+          matchLabels:
+            name: distributor
+        maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
       volumes:
       - configMap:
           name: overrides
@@ -474,13 +474,6 @@ spec:
         gossip_ring_member: "true"
         name: querier
     spec:
-      affinity:
-        podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchLabels:
-                name: querier
-            topologyKey: kubernetes.io/hostname
       containers:
       - args:
         - -blocks-storage.backend=gcs
@@ -541,6 +534,13 @@ spec:
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
+      topologySpreadConstraints:
+      - labelSelector:
+          matchLabels:
+            name: querier
+        maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
       volumes:
       - configMap:
           name: overrides
@@ -567,13 +567,6 @@ spec:
       labels:
         name: query-frontend
     spec:
-      affinity:
-        podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchLabels:
-                name: query-frontend
-            topologyKey: kubernetes.io/hostname
       containers:
       - args:
         - -query-frontend.align-querier-with-step=false
@@ -613,6 +606,13 @@ spec:
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
+      topologySpreadConstraints:
+      - labelSelector:
+          matchLabels:
+            name: query-frontend
+        maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
       volumes:
       - configMap:
           name: overrides
@@ -703,13 +703,6 @@ spec:
         gossip_ring_member: "true"
         name: ruler
     spec:
-      affinity:
-        podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchLabels:
-                name: ruler
-            topologyKey: kubernetes.io/hostname
       containers:
       - args:
         - -blocks-storage.backend=gcs
@@ -769,6 +762,13 @@ spec:
         - mountPath: /etc/mimir
           name: overrides
       terminationGracePeriodSeconds: 600
+      topologySpreadConstraints:
+      - labelSelector:
+          matchLabels:
+            name: ruler
+        maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
       volumes:
       - configMap:
           name: overrides
