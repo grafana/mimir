@@ -63,6 +63,7 @@ const (
 	BucketIndexTooOld           ID = "bucket-index-too-old"
 
 	HistogramDifferentNumberSpansBuckets ID = "histogram-different-number-spans-buckets"
+	HistogramSpanNegativeOffset          ID = "histogram-span-negative-offset"
 )
 
 // Message returns the provided msg, appending the error id.

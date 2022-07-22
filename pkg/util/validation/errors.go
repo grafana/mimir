@@ -213,31 +213,16 @@ func newExemplarMaxLabelLengthError(seriesLabels []mimirpb.LabelAdapter, exempla
 	}
 }
 
-// histogramValidationError is a ValidationError implementation suitable for histogram validation errors.
-type histogramValidationError struct {
-	message              string
-	sign                 string
-	spanBuckets, buckets uint32
-	metricName           string
-	timestamp            int64
+func newHistogramDifferentNumberSpansBucketError(sign string, spanBuckets, buckets uint32, timestamp int64, metricName string) ValidationError {
+	return fmt.Errorf(globalerror.HistogramDifferentNumberSpansBuckets.Message(
+		"received a histogram whose %s spans require %d buckets, while %s %d buckets are provided, timestamp: %d series: '%.200s'",
+	), sign, spanBuckets, sign, buckets, timestamp, metricName)
 }
 
-func (e histogramValidationError) Error() string {
-	return fmt.Sprintf(e.message, e.spanBuckets, e.buckets, e.timestamp, e.metricName)
-}
-
-var histogramDifferentNumberSpansBuckets = globalerror.HistogramDifferentNumberSpansBuckets.Message(
-	"received a histogram whose negative spans require %d buckets, while %d negative buckets are provided, timestamp: %d series: '%.200s'")
-
-func newhHistogramDifferentNumberSpansBucketError(sign string, spanBuckets, buckets uint32, metricName string, timestamp int64) ValidationError {
-	return histogramValidationError{
-		message:     histogramDifferentNumberSpansBuckets,
-		sign:        sign,
-		spanBuckets: spanBuckets,
-		buckets:     buckets,
-		metricName:  metricName,
-		timestamp:   timestamp,
-	}
+func newHistogramSpanNegativeOffsetError(sign string, span int, offset int32, timestamp int64, metricName string) ValidationError {
+	return fmt.Errorf(globalerror.HistogramSpanNegativeOffset.Message(
+		"received a histogram which has a %s span (number %d) whose offset is negative: %d, timestamp: %d series: '%.200s'",
+	), sign, span, offset, timestamp, metricName)
 }
 
 type metadataMetricNameMissingError struct{}
