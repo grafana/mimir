@@ -37,6 +37,7 @@ spec:
           httpGet:
             port: http-metrics
         volumeMounts: # We mount runtime config differently and also allocate emptyDir volumes when readOnlyRootFilesystem is true in Helm
+      topologySpreadConstraints: # TODO: Add pod topology spread constraints to Helm
       volumes:
       - name: config
         $patch: delete
