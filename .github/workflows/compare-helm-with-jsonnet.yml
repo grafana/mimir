@@ -28,4 +28,4 @@ jobs:
         chmod +x $PWD/bin/tk
         chmod +x $PWD/bin/jb
         echo $PWD/bin >> $GITHUB_PATH
-    - run: make check-helm-jsonnet-diff
+    - run: make check-helm-jsonnet-diff || true
