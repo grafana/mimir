@@ -51,6 +51,9 @@ jobs:
     - id: compare-manifests
       run: |
         set +e
+        # Make dependencies first so their output doesn't appear in the PR comment
+        make operations/helm/charts/mimir-distributed/charts
+        make build-jsonnet-tests
         OUTPUT="$(make check-helm-jsonnet-diff 2>&1)"
         if [ $? -eq 0 ]; then
           echo "::set-output name=changed::false"
