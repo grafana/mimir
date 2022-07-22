@@ -439,9 +439,11 @@ clean-protos:
 list-image-targets:
 	@echo $(UPTODATE_FILES) | tr " " "\n"
 
-clean-doc:
+clean-doc: ## Clean the config file documentation.
 	rm -f $(DOC_TEMPLATES:.template=.md)
 
+check-doc: ## Check the config file is up to date.
+	@./tools/check-doc.sh
 check-doc: doc
 	@find . -name "*.md" | xargs git diff --exit-code -- \
 	|| (echo "Please update generated documentation by running 'make doc' and committing the changes" && false)
