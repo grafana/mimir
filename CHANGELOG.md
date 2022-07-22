@@ -78,6 +78,7 @@
 ### Documentation
 
 * [ENHANCEMENT] Referenced `mimirtool` commands in the HTTP API documentation. #2516
+* [ENHANCEMENT] Improved DNS service discovery documentation. #2513
 
 ## 2.2.0
 
