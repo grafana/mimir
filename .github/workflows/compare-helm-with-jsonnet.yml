@@ -29,7 +29,10 @@ jobs:
         body: |
           **Helm <> Jsonnet Diff**
 
-          Comparison in progress: https://github.com/${{github.repository}}/actions/runs/${{github.run_id}}
+          :hourglass_flowing_sand: Automated comparison in progress: https://github.com/${{github.repository}}/actions/runs/${{github.run_id}}
+
+          This process will check for any unexpected differences between the
+          Helm chart and the Jsonnet library.
         edit-mode: replace
 
     - uses: actions/checkout@v2
@@ -84,7 +87,17 @@ jobs:
         body: |
           **Helm <> Jsonnet Diff**
 
-          A difference was detected between the Helm chart and the Jsonnet library.
+          :warning: A difference was detected between the Helm chart and the
+          Jsonnet library. This test is experimental while we gather feedback
+          about its usefulness. It does not block your PR from being merged, but
+          we would appreciate you trying to keep feature parity between the Helm
+          chart and Jsonnet library if possible.
+
+          If you get stuck on this step and the Mimir maintainers aren't able to
+          help, feel free to merge without making this step pass and tag
+          `@Logiraptor` so the Mimir maintainers can gather feedback later.
+
+          [Please see the contribution docs here for more info.](https://github.com/grafana/mimir/blob/main/docs/internal/contributing/contributing-to-helm-chart.md)
 
           <details>
 
@@ -108,5 +121,5 @@ jobs:
         body: |
           **Helm <> Jsonnet Diff**
 
-          No differences where detected between Helm and Jsonnet :+1:
+          :tada: No differences where detected between Helm and Jsonnet :tada:
         edit-mode: replace
