@@ -142,7 +142,7 @@ To publish a stable release:
    1. Open a PR
 1. After merging your PR to the release branch, `git tag` the new release (see [How to tag a release](#how-to-tag-a-release)) from the release branch.
 1. Wait until the CI pipeline succeeds (once a tag is created, the release process through GitHub Actions will be triggered for this tag)
-1. Create a release on GitHub. 
+1. Create a release on GitHub.
    1. See [Creating release on GitHub](#creating-release-on-github) again.
    1. Copy the release notes from pre-release version, with up-to-date CHANGELOG (if there were any changes in release candidates).
    1. Don't forget the binaries, you'll need to build them again for this version.
