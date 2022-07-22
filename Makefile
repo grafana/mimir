@@ -230,6 +230,7 @@ exes: $(EXES)
 $(EXES):
 	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(GO_FLAGS) -o "$@$(BINARY_SUFFIX)" ./$(@D)
 
+protos: ## Generates protobuf files.
 protos: $(PROTO_GOS)
 
 %.pb.go:
@@ -339,6 +340,7 @@ mod-check:
 	GO111MODULE=on go mod vendor
 	@git diff --exit-code -- go.sum go.mod vendor/
 
+check-protos: ## Check the protobuf files are up to date.
 check-protos: clean-protos protos
 	@git diff --exit-code -- $(PROTO_GOS)
 
@@ -433,7 +435,7 @@ clean:
 	find . -type f -name '*_linux_amd64' -perm +u+x -exec rm {} \;
 	go clean ./...
 
-clean-protos:
+clean-protos: ## Clean protobuf files.
 	rm -rf $(PROTO_GOS)
 
 # List all images building make targets.
