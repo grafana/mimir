@@ -3,12 +3,13 @@ package memberlist
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
+	crypto_rand "crypto/rand"
 	"encoding/binary"
 	"errors"
 	"flag"
 	"fmt"
 	"math"
+	math_rand "math/rand"
 	"strings"
 	"sync"
 	"time"
@@ -208,7 +209,7 @@ func (cfg *KVConfig) RegisterFlags(f *flag.FlagSet) {
 
 func generateRandomSuffix(logger log.Logger) string {
 	suffix := make([]byte, 4)
-	_, err := rand.Read(suffix)
+	_, err := crypto_rand.Read(suffix)
 	if err != nil {
 		level.Error(logger).Log("msg", "failed to generate random suffix", "err", err)
 		return "error"
@@ -437,7 +438,7 @@ func (m *KV) buildMemberlistConfig() (*memberlist.Config, error) {
 	return mlCfg, nil
 }
 
-func (m *KV) starting(_ context.Context) error {
+func (m *KV) starting(ctx context.Context) error {
 	mlCfg, err := m.buildMemberlistConfig()
 	if err != nil {
 		return err
@@ -463,25 +464,21 @@ func (m *KV) starting(_ context.Context) error {
 	}
 	m.initWG.Done()
 
+	// Try to fast-join memberlist cluster in Starting state, so that we don't start with empty KV store.
+	if len(m.cfg.JoinMembers) > 0 {
+		m.fastJoinMembersOnStartup(ctx)
+	}
+
 	return nil
 }
 
 var errFailedToJoinCluster = errors.New("failed to join memberlist cluster on startup")
 
 func (m *KV) running(ctx context.Context) error {
-	// Join the cluster, if configured. We want this to happen in Running state, because started memberlist
-	// is good enough for usage from Client (which checks for Running state), even before it connects to the cluster.
 	if len(m.cfg.JoinMembers) > 0 {
-		// Lookup SRV records for given addresses to discover members.
-		members := m.discoverMembers(ctx, m.cfg.JoinMembers)
-
-		err := m.joinMembersOnStartup(ctx, members)
-		if err != nil {
-			level.Error(m.logger).Log("msg", "failed to join memberlist cluster", "err", err)
-
-			if m.cfg.AbortIfJoinFails {
-				return errFailedToJoinCluster
-			}
+		ok := m.joinMembersOnStartup(ctx)
+		if !ok && m.cfg.AbortIfJoinFails {
+			return errFailedToJoinCluster
 		}
 	}
 
@@ -533,19 +530,45 @@ func (m *KV) JoinMembers(members []string) (int, error) {
 	return m.memberlist.Join(members)
 }
 
-func (m *KV) joinMembersOnStartup(ctx context.Context, members []string) error {
-	reached, err := m.memberlist.Join(members)
-	if err == nil {
-		level.Info(m.logger).Log("msg", "joined memberlist cluster", "reached_nodes", reached)
-		return nil
+// fastJoinMembersOnStartup attempts to reach small subset of nodes (computed as RetransmitMult * log10(number of discovered members + 1)).
+func (m *KV) fastJoinMembersOnStartup(ctx context.Context) {
+	startTime := time.Now()
+
+	nodes := m.discoverMembers(ctx, m.cfg.JoinMembers)
+	math_rand.Shuffle(len(nodes), func(i, j int) {
+		nodes[i], nodes[j] = nodes[j], nodes[i]
+	})
+
+	// This is the same formula as used by memberlist for number of nodes that a single message should be gossiped to.
+	toJoin := m.cfg.RetransmitMult * int(math.Ceil(math.Log10(float64(len(nodes)+1))))
+
+	level.Info(m.logger).Log("msg", "memberlist fast-join starting", "nodes_found", len(nodes), "to_join", toJoin)
+
+	totalJoined := 0
+	for toJoin > 0 && len(nodes) > 0 {
+		reached, err := m.memberlist.Join(nodes[0:1]) // Try to join single node only.
+		if err != nil {
+			level.Debug(m.logger).Log("msg", "fast-joining node failed", "node", nodes[0], "err", err)
+		}
+
+		totalJoined += reached
+		toJoin -= reached
+
+		nodes = nodes[1:]
 	}
 
-	if m.cfg.MaxJoinRetries <= 0 {
-		return err
+	l := level.Info(m.logger)
+	// Warn, if we didn't join any node.
+	if totalJoined == 0 {
+		l = level.Warn(m.logger)
 	}
+	l.Log("msg", "memberlist fast-join finished", "joined_nodes", totalJoined, "elapsed_time", time.Since(startTime))
+}
 
-	level.Debug(m.logger).Log("msg", "attempt to join memberlist cluster failed", "retries", 0, "err", err)
-	lastErr := err
+func (m *KV) joinMembersOnStartup(ctx context.Context) bool {
+	startTime := time.Now()
+
+	level.Info(m.logger).Log("msg", "joining memberlist cluster", "join_members", []string(m.cfg.JoinMembers))
 
 	cfg := backoff.Config{
 		MinBackoff: m.cfg.MinJoinBackoff,
@@ -553,23 +576,28 @@ func (m *KV) joinMembersOnStartup(ctx context.Context, members []string) error {
 		MaxRetries: m.cfg.MaxJoinRetries,
 	}
 
-	backoff := backoff.New(ctx, cfg)
+	boff := backoff.New(ctx, cfg)
+	var lastErr error
 
-	for backoff.Ongoing() {
-		backoff.Wait()
+	for boff.Ongoing() {
+		// We rejoin all nodes, including those that were joined during "fast-join".
+		// This is harmless and simpler.
+		nodes := m.discoverMembers(ctx, m.cfg.JoinMembers)
 
-		reached, err := m.memberlist.Join(members)
-		if err != nil {
-			lastErr = err
-			level.Debug(m.logger).Log("msg", "attempt to join memberlist cluster failed", "retries", backoff.NumRetries(), "err", err)
-			continue
+		reached, err := m.memberlist.Join(nodes) // err is only returned if reached==0.
+		if err == nil {
+			level.Info(m.logger).Log("msg", "joining memberlist cluster succeeded", "reached_nodes", reached, "elapsed_time", time.Since(startTime))
+			return true
 		}
 
-		level.Info(m.logger).Log("msg", "joined memberlist cluster", "reached_nodes", reached)
-		return nil
+		level.Warn(m.logger).Log("msg", "joining memberlist cluster: failed to reach any nodes", "retries", boff.NumRetries(), "err", err)
+		lastErr = err
+
+		boff.Wait()
 	}
 
-	return lastErr
+	level.Error(m.logger).Log("msg", "joining memberlist cluster failed", "last_error", lastErr, "elapsed_time", time.Since(startTime))
+	return false
 }
 
 // Provides a dns-based member disovery to join a memberlist cluster w/o knowning members' addresses upfront.
