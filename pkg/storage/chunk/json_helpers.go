@@ -23,6 +23,7 @@ func init() {
 
 // Override Prometheus' labels.Labels decoder which goes via a map
 func decodeLabels(ptr unsafe.Pointer, iter *jsoniter.Iterator) {
+	panic("decodeLabels called")
 	labelsPtr := (*labels.Labels)(ptr)
 	*labelsPtr = make(labels.Labels, 0, 10)
 	iter.ReadMapCB(func(iter *jsoniter.Iterator, key string) bool {
@@ -37,6 +38,7 @@ func decodeLabels(ptr unsafe.Pointer, iter *jsoniter.Iterator) {
 
 // Override Prometheus' labels.Labels encoder which goes via a map
 func encodeLabels(ptr unsafe.Pointer, stream *jsoniter.Stream) {
+	panic("encodeLabels called")
 	labelsPtr := (*labels.Labels)(ptr)
 	stream.WriteObjectStart()
 	for i, v := range *labelsPtr {
@@ -57,6 +59,7 @@ func labelsIsEmpty(ptr unsafe.Pointer) bool {
 
 // Decode via jsoniter's float64 routine is faster than getting the string data and decoding as two integers
 func decodeModelTime(ptr unsafe.Pointer, iter *jsoniter.Iterator) {
+	panic("decodeModelTime called")
 	pt := (*model.Time)(ptr)
 	f := iter.ReadFloat64()
 	*pt = model.Time(int64(f * 1000))
@@ -65,6 +68,7 @@ func decodeModelTime(ptr unsafe.Pointer, iter *jsoniter.Iterator) {
 // Write out the timestamp as an int divided by 1000. This is ~3x faster than converting to a float.
 // Adapted from https://github.com/prometheus/prometheus/blob/cc39021b2bb6f829c7a626e4bdce2f338d1b76db/web/api/v1/api.go#L829
 func encodeModelTime(ptr unsafe.Pointer, stream *jsoniter.Stream) {
+	panic("encodeModelTime called")
 	pt := (*model.Time)(ptr)
 	t := int64(*pt)
 	if t < 0 {
