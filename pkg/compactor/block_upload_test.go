@@ -1270,8 +1270,8 @@ func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 	}
 }
 
-// marshalAndUploadJSON is a test helper for uploading a meta file to a certain path in a bucket.
-func marshalAndUploadJSON(t *testing.T, bkt objstore.Bucket, pth string, val interface{}) {
+// uploadMeta is a test helper for uploading a meta file to a certain path in a bucket.
+func uploadMeta(t *testing.T, bkt objstore.Bucket, pth string, meta metadata.Meta) {
 	t.Helper()
 	buf, err := json.Marshal(val)
 	require.NoError(t, err)
