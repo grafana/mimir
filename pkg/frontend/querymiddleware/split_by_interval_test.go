@@ -30,6 +30,10 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 		expectedSplitQueries int
 	}{
 		// Range vector aggregators
+		"avg_over_time": {
+			query:                `avg_over_time(metric_counter[3m])`,
+			expectedSplitQueries: 3,
+		},
 		"count_over_time": {
 			query:                `count_over_time(metric_counter[3m])`,
 			expectedSplitQueries: 3,
@@ -51,36 +55,81 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 			expectedSplitQueries: 3,
 		},
 		// Vector aggregators
-		"count(sum_over_time)": {
-			query:                `count(sum_over_time(metric_counter[3m]))`,
+		"avg(rate)": {
+			query:                `avg(rate(metric_counter[3m]))`,
 			expectedSplitQueries: 3,
 		},
-		"count(sum_over_time) grouping 'by'": {
-			query:                `count by(group_1) (sum_over_time(metric_counter[3m]))`,
+		"avg(rate) grouping 'by'": {
+			query:                `avg by(group_1) (rate(metric_counter[3m]))`,
 			expectedSplitQueries: 3,
 		},
-		"max(sum_over_time)": {
-			query:                `max(sum_over_time(metric_counter[3m]))`,
+		"count(rate)": {
+			query:                `count(rate(metric_counter[3m]))`,
 			expectedSplitQueries: 3,
 		},
-		"max(sum_over_time) grouping 'by'": {
-			query:                `max by(group_1) (sum_over_time(metric_counter[3m]))`,
+		"count(rate) grouping 'by'": {
+			query:                `count by(group_1) (rate(metric_counter[3m]))`,
 			expectedSplitQueries: 3,
 		},
-		"min(sum_over_time)": {
-			query:                `min(sum_over_time(metric_counter[3m]))`,
+		"max(rate)": {
+			query:                `max(rate(metric_counter[3m]))`,
 			expectedSplitQueries: 3,
 		},
-		"min(sum_over_time) grouping 'by'": {
-			query:                `min by(group_1) (sum_over_time(metric_counter[3m]))`,
+		"max(rate) grouping 'by'": {
+			query:                `max by(group_1) (rate(metric_counter[3m]))`,
 			expectedSplitQueries: 3,
 		},
-		"sum(sum_over_time)": {
-			query:                `sum(sum_over_time(metric_counter[3m]))`,
+		"min(rate)": {
+			query:                `min(rate(metric_counter[3m]))`,
 			expectedSplitQueries: 3,
 		},
-		"sum(sum_over_time) grouping 'by'": {
-			query:                `sum by(group_1) (sum_over_time(metric_counter[3m]))`,
+		"min(rate) grouping 'by'": {
+			query:                `min by(group_1) (rate(metric_counter[3m]))`,
+			expectedSplitQueries: 3,
+		},
+		"sum(rate)": {
+			query:                `sum(rate(metric_counter[3m]))`,
+			expectedSplitQueries: 3,
+		},
+		"sum(rate) grouping 'by'": {
+			query:                `sum by(group_1) (rate(metric_counter[3m]))`,
+			expectedSplitQueries: 3,
+		},
+		"topk(rate)": {
+			query:                `topk(2, rate(metric_counter[3m]))`,
+			expectedSplitQueries: 3,
+		},
+		"topk(sum(rate))": {
+			query:                `topk(2, sum(rate(metric_counter[3m])))`,
+			expectedSplitQueries: 3,
+		},
+		// Binary operations
+		"rate / rate": {
+			query:                `rate(metric_counter[3m]) / rate(metric_counter[6m])`,
+			expectedSplitQueries: 3,
+		},
+		"rate / 10": {
+			query:                `rate(metric_counter[3m]) / 10`,
+			expectedSplitQueries: 3,
+		},
+		"10 / rate": {
+			query:                `10 / rate(metric_counter[3m])`,
+			expectedSplitQueries: 3,
+		},
+		"sum(sum_over_time + count_over_time)": {
+			query:                `sum(sum_over_time(metric_counter[3m]) + count_over_time(metric_counter[3m]))`,
+			expectedSplitQueries: 3,
+		},
+		"(avg_over_time)": {
+			query:                `(avg_over_time(metric_counter[3m]))`,
+			expectedSplitQueries: 3,
+		},
+		"sum(avg_over_time)": {
+			query:                `sum(avg_over_time(metric_counter[3m]))`,
+			expectedSplitQueries: 3,
+		},
+		"sum(max(rate))": {
+			query:                `sum(max(rate(metric_counter[3m])))`,
 			expectedSplitQueries: 3,
 		},
 	}

@@ -23,6 +23,11 @@ func TestRangeMapper(t *testing.T) {
 	}{
 		// Range vector aggregators
 		{
+			in:                   `avg_over_time({app="foo"}[3m])`,
+			out:                  `(sum without() (` + concatOffsets(splitInterval, 3, `sum_over_time({app="foo"}[x]y)`) + `)) / (sum without() (` + concatOffsets(splitInterval, 3, `count_over_time({app="foo"}[x]y)`) + `))`,
+			expectedSplitQueries: 6,
+		},
+		{
 			in:                   `count_over_time({app="foo"}[3m])`,
 			out:                  `sum without() (` + concatOffsets(splitInterval, 3, `count_over_time({app="foo"}[x]y)`) + `)`,
 			expectedSplitQueries: 3,
@@ -49,51 +54,105 @@ func TestRangeMapper(t *testing.T) {
 		},
 		// Vector aggregators
 		{
-			in:                   `count(sum_over_time({app="foo"}[3m]))`,
-			out:                  `count (sum without() (` + concatOffsets(splitInterval, 3, `sum_over_time({app="foo"}[x]y)`) + `))`,
+			in:                   `avg(rate({app="foo"}[3m]))`,
+			out:                  `avg (sum without() (` + concatOffsets(splitInterval, 3, `increase({app="foo"}[x]y)`) + `) / 180)`,
 			expectedSplitQueries: 3,
 		},
 		{
-			in:                   `count by (bar) (sum_over_time({app="foo"}[3m]))`,
-			out:                  `count by (bar) (sum without() (` + concatOffsets(splitInterval, 3, `sum_over_time({app="foo"}[x]y)`) + `))`,
+			in:                   `avg by (bar) (rate({app="foo"}[3m]))`,
+			out:                  `avg by (bar) (sum without() (` + concatOffsets(splitInterval, 3, `increase({app="foo"}[x]y)`) + `) / 180)`,
 			expectedSplitQueries: 3,
 		},
 		{
-			in:                   `max(sum_over_time({app="foo"}[3m]))`,
-			out:                  `max (sum (` + concatOffsets(splitInterval, 3, `max(sum_over_time({app="foo"}[x]y))`) + `))`,
+			in:                   `count(rate({app="foo"}[3m]))`,
+			out:                  `count (sum without() (` + concatOffsets(splitInterval, 3, `increase({app="foo"}[x]y)`) + `) / 180)`,
 			expectedSplitQueries: 3,
 		},
 		{
-			in:                   `max by (bar) (sum_over_time({app="foo"}[3m]))`,
-			out:                  `max by (bar) (sum by (bar) (` + concatOffsets(splitInterval, 3, `max by (bar) (sum_over_time({app="foo"}[x]y))`) + `))`,
+			in:                   `count by (bar) (rate({app="foo"}[3m]))`,
+			out:                  `count by (bar) (sum without() (` + concatOffsets(splitInterval, 3, `increase({app="foo"}[x]y)`) + `) / 180)`,
 			expectedSplitQueries: 3,
 		},
 		{
-			in:                   `min(sum_over_time({app="foo"}[3m]))`,
-			out:                  `min (sum (` + concatOffsets(splitInterval, 3, `min(sum_over_time({app="foo"}[x]y))`) + `))`,
+			in:                   `max(rate({app="foo"}[3m]))`,
+			out:                  `max (sum (` + concatOffsets(splitInterval, 3, `max(increase({app="foo"}[x]y))`) + `) / 180)`,
 			expectedSplitQueries: 3,
 		},
 		{
-			in:                   `min by (bar) (sum_over_time({app="foo"}[3m]))`,
-			out:                  `min by (bar) (sum by (bar) (` + concatOffsets(splitInterval, 3, `min by (bar) (sum_over_time({app="foo"}[x]y))`) + `))`,
+			in:                   `max by (bar) (rate({app="foo"}[3m]))`,
+			out:                  `max by (bar) (sum by (bar) (` + concatOffsets(splitInterval, 3, `max by (bar) (increase({app="foo"}[x]y))`) + `) / 180)`,
 			expectedSplitQueries: 3,
 		},
 		{
-			in:                   `sum(sum_over_time({app="foo"}[3m]))`,
-			out:                  `sum (sum (` + concatOffsets(splitInterval, 3, `sum(sum_over_time({app="foo"}[x]y))`) + `))`,
+			in:                   `min(rate({app="foo"}[3m]))`,
+			out:                  `min (sum (` + concatOffsets(splitInterval, 3, `min(increase({app="foo"}[x]y))`) + `) / 180)`,
 			expectedSplitQueries: 3,
 		},
 		{
-			in:                   `sum by (bar) (sum_over_time({app="foo"}[3m]))`,
-			out:                  `sum by (bar) (sum by (bar) (` + concatOffsets(splitInterval, 3, `sum by (bar) (sum_over_time({app="foo"}[x]y))`) + `))`,
+			in:                   `min by (bar) (rate({app="foo"}[3m]))`,
+			out:                  `min by (bar) (sum by (bar) (` + concatOffsets(splitInterval, 3, `min by (bar) (increase({app="foo"}[x]y))`) + `) / 180)`,
 			expectedSplitQueries: 3,
 		},
-		//{
-		//	in:                   `sum(max(sum_over_time({app="foo"}[3m])))`,
-		//	out:                  `sum (max (sum(` + concatOffsets(splitInterval, 3, `sum(max(sum_over_time({app="foo"}[x]y)))`) + `)))`,
-		//	expectedSplitQueries: 3,
-		//},
-		// TODO: binary expressions - if 2 number literals do not split, if one number literal split
+		{
+			in:                   `sum(rate({app="foo"}[3m]))`,
+			out:                  `sum (sum (` + concatOffsets(splitInterval, 3, `sum(increase({app="foo"}[x]y))`) + `) / 180)`,
+			expectedSplitQueries: 3,
+		},
+		{
+			in:                   `sum by (bar) (rate({app="foo"}[3m]))`,
+			out:                  `sum by (bar) (sum by (bar) (` + concatOffsets(splitInterval, 3, `sum by (bar) (increase({app="foo"}[x]y))`) + `) / 180)`,
+			expectedSplitQueries: 3,
+		},
+		{
+			in:                   `topk(10, rate({app="foo"}[3m]))`,
+			out:                  `topk(10, sum without() (` + concatOffsets(splitInterval, 3, `increase({app="foo"}[x]y)`) + `) / 180)`,
+			expectedSplitQueries: 3,
+		},
+		{
+			in:                   `topk(10, sum(rate({app="foo"}[3m])))`,
+			out:                  `topk(10, sum(sum(` + concatOffsets(splitInterval, 3, `sum(increase({app="foo"}[x]y))`) + `) / 180))`,
+			expectedSplitQueries: 3,
+		},
+		// Binary operations
+		{
+			in:                   `rate({app="foo"}[3m]) / rate({app="baz"}[6m])`,
+			out:                  `(sum without() (` + concatOffsets(splitInterval, 3, `increase({app="foo"}[x]y)`) + `) / 180) / (sum without() (` + concatOffsets(splitInterval, 6, `increase({app="baz"}[x]y)`) + `) / 360)`,
+			expectedSplitQueries: 3,
+		},
+		{
+			in:                   `rate({app="foo"}[3m]) / 10`,
+			out:                  `(sum without() (` + concatOffsets(splitInterval, 3, `increase({app="foo"}[x]y)`) + `) / 180) / (10)`,
+			expectedSplitQueries: 3,
+		},
+		{
+			in:                   `10 / rate({app="foo"}[3m])`,
+			out:                  `(10) / (sum without() (` + concatOffsets(splitInterval, 3, `increase({app="foo"}[x]y)`) + `) / 180)`,
+			expectedSplitQueries: 3,
+		},
+		// Should map inner binary operations
+		{
+			in:                   `sum(sum_over_time({app="foo"}[3m]) + count_over_time({app="foo"}[3m]))`,
+			out:                  `sum ((sum without() (` + concatOffsets(splitInterval, 3, `sum_over_time({app="foo"}[x]y)`) + `)) + (sum without() (` + concatOffsets(splitInterval, 3, `count_over_time({app="foo"}[x]y)`) + `)))`,
+			expectedSplitQueries: 6,
+		},
+		// Parenthesis expression
+		{
+			in:                   `(avg_over_time({app="foo"}[3m]))`,
+			out:                  `((sum without() (` + concatOffsets(splitInterval, 3, `sum_over_time({app="foo"}[x]y)`) + `)) / (sum without() (` + concatOffsets(splitInterval, 3, `count_over_time({app="foo"}[x]y)`) + `)))`,
+			expectedSplitQueries: 6,
+		},
+		// Vector aggregator of avg_over_time should not be moved downstream
+		{
+			in:                   `sum(avg_over_time({app="foo"}[3m]))`,
+			out:                  `sum((sum without() (` + concatOffsets(splitInterval, 3, `sum_over_time({app="foo"}[x]y)`) + `)) / (sum without() (` + concatOffsets(splitInterval, 3, `count_over_time({app="foo"}[x]y)`) + `)))`,
+			expectedSplitQueries: 3,
+		},
+		// Multi-level vector aggregators should be moved downstream
+		{
+			in:                   `sum(max(rate({app="foo"}[3m])))`,
+			out:                  `sum(max(sum (` + concatOffsets(splitInterval, 3, `sum(max(increase({app="foo"}[x]y)))`) + `) / 180))`,
+			expectedSplitQueries: 3,
+		},
 	} {
 		tt := tt
 
@@ -170,9 +229,7 @@ func TestRangeMapperNoOp(t *testing.T) {
 		out                  string
 		expectedSplitQueries int
 	}{
-		//{
-		//	in: `count_over_time({app="foo"}[4m])`,
-		//},
+		// TODO: should not split binary operation if both operands are number literals
 	} {
 		tt := tt
 
