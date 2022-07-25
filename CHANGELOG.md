@@ -77,6 +77,8 @@
 
 ### Documentation
 
+* [ENHANCEMENT] Referenced `mimirtool` commands in the HTTP API documentation. #2516
+
 ## 2.2.0
 
 ### Grafana Mimir

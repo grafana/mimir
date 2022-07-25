@@ -576,6 +576,8 @@ This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respe
 
 Requires [authentication](#authentication).
 
+> **Note:** To list all rule groups from Mimir, use [`mimirtool rules list` command]({{< relref "../tools/mimirtool.md#list-rules" >}}).
+
 **Example response**
 
 ```yaml
@@ -669,6 +671,8 @@ This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respe
 
 Requires [authentication](#authentication).
 
+> **Note:** To retrieve a single rule group from Mimir, use [`mimirtool rules get` command]({{< relref "../tools/mimirtool.md#get-rule-group" >}}) .
+
 ### Set rule group
 
 ```
@@ -682,6 +686,8 @@ The request body must contain the definition of one and only one rule group.
 This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respective YAML config option).
 
 Requires [authentication](#authentication).
+
+> **Note:** To load one or more rule groups into Mimir, use [`mimirtool rules load` command]({{< relref "../tools/mimirtool.md#load-rule-group" >}}) .
 
 > **Note:** When using `curl` send the request body from a file, ensure that you use the `--data-binary` flag instead of `-d`, `--data`, or `--data-ascii`.
 > The latter options do not preserve carriage returns and newlines.
@@ -708,6 +714,8 @@ Deletes a rule group by namespace and group name. This endpoints returns `202` o
 This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respective YAML config option).
 
 Requires [authentication](#authentication).
+
+> **Note:** To delete a rule group from Mimir, use [`mimirtool rules delete` command]({{< relref "../tools/mimirtool.md#delete-rule-group" >}}).
 
 ### Delete namespace
 
@@ -795,6 +803,8 @@ This endpoint can disabled enabled via the `-alertmanager.enable-api` CLI flag (
 
 Requires [authentication](#authentication).
 
+> **Note:** To retrieve a tenant's Alertmanager configuration from Mimir, use [`mimirtool alertmanager get` command]({{< relref "../tools/mimirtool.md#get-alertmanager-configuration" >}}).
+
 ### Set Alertmanager configuration
 
 ```
@@ -808,6 +818,8 @@ This endpoint expects the Alertmanager **YAML** configuration in the request bod
 This endpoint can disabled enabled via the `-alertmanager.enable-api` CLI flag (or its respective YAML config option).
 
 Requires [authentication](#authentication).
+
+> **Note:** To load a tenant's Alertmanager configuration to Mimir, use [`mimirtool alertmanager load` command]({{< relref "../tools/mimirtool.md#load-alertmanager-configuration" >}}).
 
 > **Note:** When using `curl` send the request body from a file, ensure that you use the `--data-binary` flag instead of `-d`, `--data`, or `--data-ascii`.
 > The latter options do not preserve carriage returns and newlines.
@@ -846,6 +858,8 @@ This endpoint doesn't accept any URL query parameter and returns `200` on succes
 This endpoint can be disabled via the `-alertmanager.enable-api` CLI flag (or its respective YAML config option).
 
 Requires [authentication](#authentication).
+
+> **Note:** To delete a tenant's Alertmanager configuration from Mimir, use [`mimirtool alertmanager delete` command]({{< relref "../tools/mimirtool.md#delete-alertmanager-configuration" >}}).
 
 ## Purger
 

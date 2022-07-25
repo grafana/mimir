@@ -68,7 +68,7 @@ The following sections outline the commands that you can run against Grafana Mim
 
 The following commands interact with Grafana Mimir Alertmanager configuration and alert template files.
 
-#### Get configuration
+#### Get Alertmanager configuration
 
 The following command shows the current Alertmanager configuration.
 
@@ -76,7 +76,7 @@ The following command shows the current Alertmanager configuration.
 mimirtool alertmanager get
 ```
 
-#### Load configuration
+#### Load Alertmanager configuration
 
 The following command loads an Alertmanager configuration to the Alertmanager instance.
 
@@ -101,7 +101,7 @@ receivers:
   - name: "example_receiver"
 ```
 
-#### Delete configuration
+#### Delete Alertmanager configuration
 
 The following command deletes the Alertmanager configuration in the Grafana Mimir Alertmanager.
 
@@ -127,7 +127,7 @@ The commands in this section enable you to perform the following actions:
 - Interact with individual rule groups in the Mimir ruler
 - Manipulate local rule files
 
-#### List
+#### List rules
 
 The following command retrieves the names of all rule groups in the Grafana Mimir instance and prints them to the terminal.
 
@@ -135,7 +135,7 @@ The following command retrieves the names of all rule groups in the Grafana Mimi
 mimirtool rules list
 ```
 
-#### Print
+#### Print rules
 
 The following command retrieves all rule groups in the Grafana Mimir instance and prints them to the terminal.
 
@@ -143,7 +143,7 @@ The following command retrieves all rule groups in the Grafana Mimir instance an
 mimirtool rules print
 ```
 
-#### Get
+#### Get rule group
 
 The following command retrieves a single rule group and prints it to the terminal.
 
@@ -151,7 +151,7 @@ The following command retrieves a single rule group and prints it to the termina
 mimirtool rules get <namespace> <rule_group_name>
 ```
 
-#### Delete
+#### Delete rule group
 
 The following command deletes a rule group.
 
@@ -159,7 +159,7 @@ The following command deletes a rule group.
 mimirtool rules delete <namespace> <rule_group_name>
 ```
 
-#### Load
+#### Load rule group
 
 The following command loads each rule group from the files into Grafana Mimir.
 This command overwrites all existing rule groups with the same name.
@@ -199,13 +199,13 @@ To perform a trial run that does not make changes, you can use the dry run flag 
 mimirtool rules lint <file_path>...
 ```
 
-The format of the file is the same format as shown in [rules load](#load).
+The format of the file is the same format as shown in [rules load](#load-rule-group).
 
 #### Prepare
 
 This `prepare` command prepares a rules file that you upload to Grafana Mimir.
 It lints all PromQL expressions and adds a label to your PromQL query aggregations in the file.
-The format of the file is the same format as shown in [rules load](#load).
+The format of the file is the same format as shown in [rules load](#load-rule-group).
 
 > **Note:** This command does not interact with your Grafana Mimir cluster.
 
@@ -289,7 +289,7 @@ groups:
 ERRO[0000] bad recording rule name error="recording rule name does not match level:metric:operation format, must contain at least one colon" file=rules.yaml rule=job_http_inprogress_requests_sum ruleGroup=example
 ```
 
-The format of the file is the same format as shown in [rules load](#load).
+The format of the file is the same format as shown in [rules load](#load-rule-group).
 
 #### Diff
 
@@ -299,7 +299,7 @@ The following command compares rules against the rules in your Grafana Mimir clu
 mimirtool rules diff <file_path>...
 ```
 
-The format of the file is the same format as shown in [rules load](#load).
+The format of the file is the same format as shown in [rules load](#load-rule-group).
 
 #### Sync
 
@@ -310,7 +310,7 @@ The command applies any differences to your Grafana Mimir cluster.
 mimirtool rules sync <file_path>...
 ```
 
-The format of the file is the same format as shown in [rules load](#load).
+The format of the file is the same format as shown in [rules load](#load-rule-group).
 
 ### Remote-read
 
