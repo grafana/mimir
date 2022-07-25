@@ -341,6 +341,9 @@ alertmanager:
     initialDelaySeconds: 45
 
   securityContext: {}
+  # -- The SecurityContext for alertmanager containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
 
   # Tolerations for pod assignment
   # ref: https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/
@@ -1648,6 +1651,9 @@ tokengenJob:
   extraEnvFrom: []
   annotations: {}
   initContainers: []
+  # -- The SecurityContext for tokenjobgen containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
 
 # Settings for the admin_api service providing authentication and authorization service.
 # Can only be enabled if enterprise.enabled is true - requires license.
