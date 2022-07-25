@@ -22,6 +22,7 @@ jobs:
         body-includes: '**Helm <> Jsonnet Diff**'
 
     - name: Create or update comment
+      continue-on-error: true
       uses: peter-evans/create-or-update-comment@v2
       id: progress-comment
       with:
@@ -82,7 +83,7 @@ jobs:
 
     - name: Create or update comment
       uses: peter-evans/create-or-update-comment@v2
-      if: ${{ steps.compare-manifests.outputs.changed == 'true' }}
+      if: ${{ steps.progress-comment.outcome != 'failure' && steps.compare-manifests.outputs.changed == 'true' }}
       with:
         comment-id: ${{ steps.progress-comment.outputs.comment-id }}
         issue-number: ${{ github.event.pull_request.number }}
@@ -116,7 +117,7 @@ jobs:
 
     - name: Create or update comment
       uses: peter-evans/create-or-update-comment@v2
-      if: ${{ steps.compare-manifests.outputs.changed == 'false' }}
+      if: ${{ steps.progress-comment.outcome != 'failure' && steps.compare-manifests.outputs.changed == 'false' }}
       with:
         comment-id: ${{ steps.progress-comment.outputs.comment-id }}
         issue-number: ${{ github.event.pull_request.number }}
