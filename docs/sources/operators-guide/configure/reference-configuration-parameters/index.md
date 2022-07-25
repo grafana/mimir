@@ -3362,8 +3362,8 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 &nbsp;
 
 ```yaml
-# Comma separated list of memcached addresses. Each address can be an IP,
-# hostname or an entry specified in the DNS Service Discovery format.
+# Comma-separated list of memcached addresses. Each address can be an IP
+# address, hostname, or an entry specified in the DNS Service Discovery format.
 # CLI flag: -<prefix>.memcached.addresses
 [addresses: <string> | default = ""]
 
