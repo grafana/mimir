@@ -69,18 +69,18 @@ func (s *splitByIntervalMiddleware) Do(ctx context.Context, req Request) (Respon
 	}
 
 	stats := astmapper.NewMapperStats()
-	rangedQuery, err := mapper.Map(expr, stats)
+	instantSplitQuery, err := mapper.Map(expr, stats)
 	if err != nil {
 		return s.next.Do(ctx, req)
 	}
 
-	noop := rangedQuery.String() == expr.String()
+	noop := instantSplitQuery.String() == expr.String()
 	if noop {
 		// the query cannot be split, so continue
 		return s.next.Do(ctx, req)
 	}
 
-	req = req.WithQuery(rangedQuery.String())
+	req = req.WithQuery(instantSplitQuery.String())
 	shardedQueryable := newShardedQueryable(req, s.next)
 
 	qry, err := newQuery(req, s.engine, lazyquery.NewLazyQueryable(shardedQueryable))

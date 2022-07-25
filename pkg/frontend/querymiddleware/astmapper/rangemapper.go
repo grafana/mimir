@@ -93,6 +93,7 @@ func (r *rangeMapper) MapNode(node parser.Node, stats *MapperStats) (mapped pars
 }
 
 // copyWithEmbeddedExpr clones a rangeMapper with a new embedded expression.
+// This expression is the one that will be used in all the embedded queries in the split and squash operation
 func (r *rangeMapper) copyWithEmbeddedExpr(embeddedExpr *parser.AggregateExpr) *rangeMapper {
 	rangeMapper := *r
 	rangeMapper.embeddedAggregatorExpr = embeddedExpr
