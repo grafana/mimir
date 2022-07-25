@@ -33,7 +33,7 @@ import (
 // Name of file where we store a block's meta file while it's being uploaded.
 const (
 	uploadingMetaFilename = "uploading-meta.json"
-	validationFile        = "validation.json"
+	validationFilename    = "validation.json"
 )
 
 var rePath = regexp.MustCompile(`^(index|chunks/\d{6})$`)
@@ -392,7 +392,7 @@ func (r bodyReader) Read(b []byte) (int, error) {
 	return r.r.Body.Read(b)
 }
 
-type validation struct {
+type validationFile struct {
 	LastUpdate int64  // UnixMillis of last update time.
 	Error      string // Error message if validation failed.
 }
@@ -411,7 +411,7 @@ const (
 
 var blockStateMessages = map[blockState]string{
 	blockStateUnknown:         "unknown",
-	blockIsComplete:           "block is complete",
+	blockIsComplete:           "block already exists",
 	blockUploadNotStarted:     "block upload not started",
 	blockUploadInProgress:     "block upload in progress",
 	blockValidationInProgress: "block validation in progress",
@@ -429,7 +429,7 @@ func (s blockState) String() string {
 
 // checkBlockState checks blocks state and returns various HTTP status codes for individual states if block
 // upload cannot start, finish or file cannot be uploaded to the block.
-func (c *MultitenantCompactor) checkBlockState(ctx context.Context, userBkt objstore.Bucket, blockID ulid.ULID, requireUploadInProgress bool) (*metadata.Meta, *validation, error) {
+func (c *MultitenantCompactor) checkBlockState(ctx context.Context, userBkt objstore.Bucket, blockID ulid.ULID, requireUploadInProgress bool) (*metadata.Meta, *validationFile, error) {
 	s, m, v, err := c.getBlockState(ctx, userBkt, blockID)
 	if err != nil {
 		return m, v, err
@@ -442,7 +442,7 @@ func (c *MultitenantCompactor) checkBlockState(ctx context.Context, userBkt objs
 		return m, v, httpError{message: s.String(), statusCode: http.StatusBadRequest}
 	case blockUploadNotStarted:
 		if requireUploadInProgress {
-			return m, v, httpError{message: s.String(), statusCode: http.StatusBadRequest}
+			return m, v, httpError{message: s.String(), statusCode: http.StatusNotFound}
 		} else {
 			return m, v, nil
 		}
@@ -458,7 +458,7 @@ func (c *MultitenantCompactor) checkBlockState(ctx context.Context, userBkt objs
 	return m, v, httpError{message: s.String(), statusCode: http.StatusInternalServerError}
 }
 
-func (c *MultitenantCompactor) getBlockState(ctx context.Context, userBkt objstore.Bucket, blockID ulid.ULID) (blockState, *metadata.Meta, *validation, error) {
+func (c *MultitenantCompactor) getBlockState(ctx context.Context, userBkt objstore.Bucket, blockID ulid.ULID) (blockState, *metadata.Meta, *validationFile, error) {
 	exists, err := userBkt.Exists(ctx, path.Join(blockID.String(), block.MetaFilename))
 	if err != nil {
 		return blockStateUnknown, nil, nil, err
@@ -511,8 +511,8 @@ func (c *MultitenantCompactor) loadUploadingMeta(ctx context.Context, userBkt ob
 	return v, nil
 }
 
-func (c *MultitenantCompactor) loadValidation(ctx context.Context, userBkt objstore.Bucket, blockID ulid.ULID) (*validation, error) {
-	r, err := userBkt.Get(ctx, path.Join(blockID.String(), validationFile))
+func (c *MultitenantCompactor) loadValidation(ctx context.Context, userBkt objstore.Bucket, blockID ulid.ULID) (*validationFile, error) {
+	r, err := userBkt.Get(ctx, path.Join(blockID.String(), validationFilename))
 	if err != nil {
 		if userBkt.IsObjNotFoundErr(err) {
 			return nil, nil
@@ -521,7 +521,7 @@ func (c *MultitenantCompactor) loadValidation(ctx context.Context, userBkt objst
 	}
 	defer func() { _ = r.Close() }()
 
-	v := &validation{}
+	v := &validationFile{}
 	err = json.NewDecoder(r).Decode(v)
 	if err != nil {
 		return nil, err

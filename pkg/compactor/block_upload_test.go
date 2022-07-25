@@ -85,6 +85,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 
 	setUpPartialBlock := func(bkt *bucket.ClientMock) {
 		bkt.MockExists(path.Join(tenantID, blockID, block.MetaFilename), false, nil)
+		setUpGet(bkt, path.Join(tenantID, blockID, uploadingMetaFilename), nil, bucket.ErrObjectDoesNotExist)
 	}
 	setUpUpload := func(bkt *bucket.ClientMock) {
 		setUpPartialBlock(bkt)
@@ -364,7 +365,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 			setUpBucketMock: func(bkt *bucket.ClientMock) {
 				bkt.MockExists(path.Join(tenantID, blockID, block.MetaFilename), true, nil)
 			},
-			expConflict: "block already exists in object storage",
+			expConflict: "block already exists",
 		},
 		{
 			name:     "failure uploading meta file",
@@ -592,7 +593,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 				assert.Equal(t, validMeta, downloadMeta(t, bkt, uploadingMetaPath))
 				assert.Equal(t, validMeta, downloadMeta(t, bkt, metaPath))
 			},
-			expConflict: "block already exists in object storage",
+			expConflict: "block already exists",
 		},
 		{
 			name: "invalid request when in-flight meta file exists in object storage",
@@ -686,6 +687,8 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 	uploadingMetaFilename := fmt.Sprintf("uploading-%s", block.MetaFilename)
 	uploadingMetaPath := path.Join(tenantID, blockID, uploadingMetaFilename)
 	metaPath := path.Join(tenantID, blockID, block.MetaFilename)
+
+	chunkBodyContent := "content"
 	validMeta := metadata.Meta{
 		BlockMeta: tsdb.BlockMeta{
 			ULID: ulid.MustParse(blockID),
@@ -701,7 +704,7 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 				},
 				{
 					RelPath:   "chunks/000001",
-					SizeBytes: 1024,
+					SizeBytes: int64(len(chunkBodyContent)),
 				},
 			},
 		},
@@ -793,14 +796,14 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 			setUpBucketMock: func(bkt *bucket.ClientMock) {
 				bkt.MockExists(metaPath, true, nil)
 			},
-			expConflict: "block already exists in object storage",
+			expConflict: "block already exists",
 		},
 		{
 			name:     "failure checking for complete block",
 			tenantID: tenantID,
 			blockID:  blockID,
 			path:     "chunks/000001",
-			body:     "content",
+			body:     chunkBodyContent,
 			setUpBucketMock: func(bkt *bucket.ClientMock) {
 				bkt.MockExists(metaPath, false, fmt.Errorf("test"))
 			},
@@ -811,10 +814,10 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 			tenantID: tenantID,
 			blockID:  blockID,
 			path:     "chunks/000001",
-			body:     "content",
+			body:     chunkBodyContent,
 			setUpBucketMock: func(bkt *bucket.ClientMock) {
 				bkt.MockExists(metaPath, false, nil)
-				bkt.MockExists(uploadingMetaPath, false, fmt.Errorf("test"))
+				setUpGet(bkt, path.Join(tenantID, blockID, uploadingMetaFilename), nil, fmt.Errorf("test"))
 			},
 			expInternalServerError: true,
 		},
@@ -823,35 +826,73 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 			tenantID: tenantID,
 			blockID:  blockID,
 			path:     "chunks/000001",
-			body:     "content",
+			body:     chunkBodyContent,
 			setUpBucketMock: func(bkt *bucket.ClientMock) {
 				bkt.MockExists(metaPath, false, nil)
-				bkt.MockExists(uploadingMetaPath, false, nil)
+				setUpGet(bkt, path.Join(tenantID, blockID, uploadingMetaFilename), nil, bucket.ErrObjectDoesNotExist)
 			},
-			expNotFound: fmt.Sprintf("upload of block %s not started yet", blockID),
+			expNotFound: "block upload not started",
 		},
 		{
 			name:     "file upload fails",
 			tenantID: tenantID,
 			blockID:  blockID,
 			path:     "chunks/000001",
-			body:     "content",
+			body:     chunkBodyContent,
 			setUpBucketMock: func(bkt *bucket.ClientMock) {
-				bkt.MockExists(uploadingMetaPath, true, nil)
 				bkt.MockExists(metaPath, false, nil)
+
+				b, err := json.Marshal(validMeta)
+				setUpGet(bkt, path.Join(tenantID, blockID, uploadingMetaFilename), b, err)
+				setUpGet(bkt, path.Join(tenantID, blockID, validationFilename), nil, bucket.ErrObjectDoesNotExist)
+
 				bkt.MockUpload(path.Join(tenantID, blockID, "chunks/000001"), fmt.Errorf("test"))
 			},
 			expInternalServerError: true,
+		},
+		{
+			name:     "invalid file size",
+			tenantID: tenantID,
+			blockID:  blockID,
+			path:     "chunks/000001",
+			body:     chunkBodyContent + chunkBodyContent,
+			setUpBucketMock: func(bkt *bucket.ClientMock) {
+				bkt.MockExists(metaPath, false, nil)
+
+				b, err := json.Marshal(validMeta)
+				setUpGet(bkt, path.Join(tenantID, blockID, uploadingMetaFilename), b, err)
+				setUpGet(bkt, path.Join(tenantID, blockID, validationFilename), nil, bucket.ErrObjectDoesNotExist)
+			},
+			expBadRequest: "file size doesn't match meta.json",
+		},
+		{
+			name:     "unexpected file",
+			tenantID: tenantID,
+			blockID:  blockID,
+			path:     "chunks/111111",
+			body:     chunkBodyContent,
+			setUpBucketMock: func(bkt *bucket.ClientMock) {
+				bkt.MockExists(metaPath, false, nil)
+
+				b, err := json.Marshal(validMeta)
+				setUpGet(bkt, path.Join(tenantID, blockID, uploadingMetaFilename), b, err)
+				setUpGet(bkt, path.Join(tenantID, blockID, validationFilename), nil, bucket.ErrObjectDoesNotExist)
+			},
+			expBadRequest: "unexpected file",
 		},
 		{
 			name:     "valid request",
 			tenantID: tenantID,
 			blockID:  blockID,
 			path:     "chunks/000001",
-			body:     "content",
+			body:     chunkBodyContent,
 			setUpBucketMock: func(bkt *bucket.ClientMock) {
-				bkt.MockExists(uploadingMetaPath, true, nil)
 				bkt.MockExists(metaPath, false, nil)
+
+				b, err := json.Marshal(validMeta)
+				setUpGet(bkt, path.Join(tenantID, blockID, uploadingMetaFilename), b, err)
+				setUpGet(bkt, path.Join(tenantID, blockID, validationFilename), nil, bucket.ErrObjectDoesNotExist)
+
 				bkt.MockUpload(path.Join(tenantID, blockID, "chunks/000001"), nil)
 			},
 			verifyUpload: func(t *testing.T, bkt *bucket.ClientMock, expContent string) {
@@ -894,6 +935,9 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 			}
 			if tc.blockID != "" {
 				r = mux.SetURLVars(r, map[string]string{"block": tc.blockID})
+			}
+			if tc.body != "" {
+				r.ContentLength = int64(len(tc.body))
 			}
 			w := httptest.NewRecorder()
 			c.UploadBlockFile(w, r)
@@ -945,11 +989,11 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 			files: []file{
 				{
 					path:    "chunks/000001",
-					content: "first",
+					content: strings.Repeat("a", len(chunkBodyContent)),
 				},
 				{
 					path:    "chunks/000001",
-					content: "second",
+					content: strings.Repeat("b", len(chunkBodyContent)),
 				},
 			},
 			setUpBucket: func(t *testing.T, bkt *objstore.InMemBucket) {
@@ -1016,7 +1060,8 @@ func setUpGet(bkt *bucket.ClientMock, pth string, content []byte, err error) {
 func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 	const tenantID = "test"
 	const blockID = "01G3FZ0JWJYJC0ZM6Y9778P6KD"
-	uploadingMetaPath := path.Join(tenantID, blockID, fmt.Sprintf("uploading-%s", block.MetaFilename))
+	uploadingMetaPath := path.Join(tenantID, blockID, uploadingMetaFilename)
+	validationPath := path.Join(tenantID, blockID, validationFilename)
 	metaPath := path.Join(tenantID, blockID, block.MetaFilename)
 	validMeta := metadata.Meta{
 		BlockMeta: tsdb.BlockMeta{
@@ -1044,6 +1089,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 		require.NoError(t, err)
 		bkt.MockExists(metaPath, false, nil)
 		setUpGet(bkt, uploadingMetaPath, metaJSON, nil)
+		setUpGet(bkt, validationPath, nil, bucket.ErrObjectDoesNotExist)
 		bkt.MockUpload(metaPath, nil)
 		bkt.MockDelete(uploadingMetaPath, nil)
 	}
@@ -1090,7 +1136,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 			setUpBucketMock: func(bkt *bucket.ClientMock) {
 				bkt.MockExists(metaPath, true, nil)
 			},
-			expConflict: "block already exists in object storage",
+			expConflict: "block already exists",
 		},
 		{
 			name:     "checking for complete block fails",
@@ -1109,7 +1155,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 				bkt.MockExists(metaPath, false, nil)
 				setUpGet(bkt, uploadingMetaPath, nil, bucket.ErrObjectDoesNotExist)
 			},
-			expNotFound: fmt.Sprintf("upload of block %s not started yet", blockID),
+			expNotFound: "block upload not started",
 		},
 		{
 			name:     "downloading in-flight meta file fails",
@@ -1140,6 +1186,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 				metaJSON, err := json.Marshal(validMeta)
 				require.NoError(t, err)
 				setUpGet(bkt, uploadingMetaPath, metaJSON, nil)
+				setUpGet(bkt, validationPath, nil, bucket.ErrObjectDoesNotExist)
 				bkt.MockUpload(metaPath, fmt.Errorf("test"))
 			},
 			expInternalServerError: true,
@@ -1153,6 +1200,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 				metaJSON, err := json.Marshal(validMeta)
 				require.NoError(t, err)
 				setUpGet(bkt, uploadingMetaPath, metaJSON, nil)
+				setUpGet(bkt, validationPath, nil, bucket.ErrObjectDoesNotExist)
 				bkt.MockUpload(metaPath, nil)
 				bkt.MockDelete(uploadingMetaPath, fmt.Errorf("test"))
 			},
@@ -1223,7 +1271,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 }
 
 // uploadMeta is a test helper for uploading a meta file to a certain path in a bucket.
-func uploadMeta(t *testing.T, bkt *objstore.InMemBucket, pth string, meta metadata.Meta) {
+func uploadMeta(t *testing.T, bkt objstore.Bucket, pth string, meta metadata.Meta) {
 	t.Helper()
 
 	buf := bytes.NewBuffer(nil)
