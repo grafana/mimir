@@ -3,6 +3,7 @@
 package push
 
 import (
+	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
@@ -69,6 +70,22 @@ func OTLPHandler(
 		}
 
 		reader := http.MaxBytesReader(nil, r.Body, int64(maxRecvMsgSize))
+		// Handle compression.
+		switch r.Header.Get("Content-Encoding") {
+		case "gzip":
+			gr, err := gzip.NewReader(reader)
+			if err != nil {
+				return nil, err
+			}
+			reader = gr
+
+		case "":
+			// No compression.
+
+		default:
+			return nil, fmt.Errorf("unsupported compression: %s. Only \"none\" and \"gzip\" supported", r.Header.Get("Content-Encoding"))
+		}
+
 		body, err := io.ReadAll(reader)
 		if err != nil {
 			r.Body.Close()
