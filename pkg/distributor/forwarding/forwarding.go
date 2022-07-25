@@ -4,7 +4,6 @@ package forwarding
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"io"
 	"io/ioutil"
@@ -301,7 +300,11 @@ func (r *request) do() {
 	ctx, cancel := context.WithTimeout(r.ctx, r.timeout)
 	defer cancel()
 
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", r.endpoint, bytes.NewReader(snappyBuf))
+	bytesReader := r.pools.getBytesReader()
+	defer r.pools.putBytesReader(bytesReader)
+
+	bytesReader.Reset(snappyBuf)
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", r.endpoint, bytesReader)
 	if err != nil {
 		// Errors from NewRequest are from unparsable URLs being configured, so this is an internal server error.
 		r.handleError(http.StatusInternalServerError, errors.Wrap(err, "failed to create HTTP request for forwarding"))

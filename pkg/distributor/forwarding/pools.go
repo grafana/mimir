@@ -3,6 +3,7 @@
 package forwarding
 
 import (
+	"bytes"
 	"sync"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -12,28 +13,32 @@ import (
 // Even though protobuf and snappy are both pools of []byte we keep them separate because the slices
 // which they contain are likely to have very different sizes.
 type pools struct {
-	protobuf sync.Pool
-	snappy   sync.Pool
-	request  sync.Pool
+	protobuf    sync.Pool
+	snappy      sync.Pool
+	request     sync.Pool
+	bytesReader sync.Pool
 
 	// Mockable for testing.
-	getProtobuf func() *[]byte
-	putProtobuf func(*[]byte)
-	getSnappy   func() *[]byte
-	putSnappy   func(*[]byte)
-	getReq      func() *request
-	putReq      func(*request)
-	getTs       func() *mimirpb.TimeSeries
-	putTs       func(*mimirpb.TimeSeries)
-	getTsSlice  func() []mimirpb.PreallocTimeseries
-	putTsSlice  func([]mimirpb.PreallocTimeseries)
+	getProtobuf    func() *[]byte
+	putProtobuf    func(*[]byte)
+	getSnappy      func() *[]byte
+	putSnappy      func(*[]byte)
+	getReq         func() *request
+	putReq         func(*request)
+	getBytesReader func() *bytes.Reader
+	putBytesReader func(*bytes.Reader)
+	getTs          func() *mimirpb.TimeSeries
+	putTs          func(*mimirpb.TimeSeries)
+	getTsSlice     func() []mimirpb.PreallocTimeseries
+	putTsSlice     func([]mimirpb.PreallocTimeseries)
 }
 
 func newPools() *pools {
 	p := &pools{
-		protobuf: sync.Pool{New: func() interface{} { return &[]byte{} }},
-		snappy:   sync.Pool{New: func() interface{} { return &[]byte{} }},
-		request:  sync.Pool{New: func() interface{} { return &request{} }},
+		protobuf:    sync.Pool{New: func() interface{} { return &[]byte{} }},
+		snappy:      sync.Pool{New: func() interface{} { return &[]byte{} }},
+		request:     sync.Pool{New: func() interface{} { return &request{} }},
+		bytesReader: sync.Pool{New: func() interface{} { return bytes.NewReader(nil) }},
 	}
 
 	p.getProtobuf = getProtobuf(&p.protobuf)
@@ -42,6 +47,8 @@ func newPools() *pools {
 	p.putSnappy = putSnappy(&p.snappy)
 	p.getReq = getReq(&p.request)
 	p.putReq = putReq(&p.request)
+	p.getBytesReader = getBytesReader(&p.bytesReader)
+	p.putBytesReader = putBytesReader(&p.bytesReader)
 	p.getTs = mimirpb.TimeseriesFromPool
 	p.putTs = mimirpb.ReuseTimeseries
 	p.getTsSlice = mimirpb.PreallocTimeseriesSliceFromPool
@@ -83,5 +90,17 @@ func getReq(pool *sync.Pool) func() *request {
 func putReq(pool *sync.Pool) func(*request) {
 	return func(req *request) {
 		pool.Put(req)
+	}
+}
+
+func getBytesReader(pool *sync.Pool) func() *bytes.Reader {
+	return func() *bytes.Reader {
+		return pool.Get().(*bytes.Reader)
+	}
+}
+
+func putBytesReader(pool *sync.Pool) func(*bytes.Reader) {
+	return func(bytesReader *bytes.Reader) {
+		pool.Put(bytesReader)
 	}
 }

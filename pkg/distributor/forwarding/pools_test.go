@@ -3,6 +3,7 @@
 package forwarding
 
 import (
+	"bytes"
 	"reflect"
 	"sync"
 	"testing"
@@ -26,6 +27,9 @@ func TestUsingPools(t *testing.T) {
 
 	req := pools.getReq()
 	pools.putReq(req)
+
+	bytesReader := pools.getBytesReader()
+	pools.putBytesReader(bytesReader)
 
 	ts := pools.getTs()
 	pools.putTs(ts)
@@ -56,6 +60,10 @@ func validatingPools(t *testing.T, tsSliceCap, protobufCap, snappyCap int) (*poo
 	pools.getReq = validatingRequestPool.get
 	pools.putReq = validatingRequestPool.put
 
+	validatingBytesReaderPool := newValidatingBytesReaderPool(t)
+	pools.getBytesReader = validatingBytesReaderPool.get
+	pools.putBytesReader = validatingBytesReaderPool.put
+
 	validatingMockTsPool := newValidatingTsPool(t)
 	pools.getTs = validatingMockTsPool.get
 	pools.putTs = validatingMockTsPool.put
@@ -68,6 +76,7 @@ func validatingPools(t *testing.T, tsSliceCap, protobufCap, snappyCap int) (*poo
 		validatingProtobufPool.validateUsage()
 		validatingSnappyPool.validateUsage()
 		validatingRequestPool.validateUsage()
+		validatingBytesReaderPool.validateUsage()
 		validatingMockTsPool.validateUsage()
 		validatingMockTsSlicePool.validateUsage()
 	}
@@ -225,6 +234,45 @@ func (v *validatingRequestPool) get() *request {
 
 // put returns a pointer to a request to the pool, it  must have been created by the pool and it must only be returned once.
 func (v *validatingRequestPool) put(obj *request) {
+	v.validatingPool.put(obj)
+}
+
+type validatingBytesReaderPool struct {
+	validatingPool
+}
+
+func newValidatingBytesReaderPool(t *testing.T) *validatingBytesReaderPool {
+	interfaceToType := func(obj interface{}) *bytes.Reader {
+		switch obj := obj.(type) {
+		case *bytes.Reader:
+			return obj
+		default:
+			t.Fatalf("Object of invalid type given: %s", reflect.TypeOf(obj))
+			return nil // Just for linter.
+		}
+	}
+
+	new := func() interface{} {
+		return bytes.NewReader(nil)
+	}
+
+	id := func(obj interface{}) interface{} {
+		objT := interfaceToType(obj)
+
+		// We uniquely identify objects of type *bytes.Reader by the address which the pointer is referring to.
+		return reflect.ValueOf(objT).Pointer()
+	}
+
+	return &validatingBytesReaderPool{*newValidatingPool(t, new, id, nil)}
+}
+
+// get returns a pointer to a bytes reader from the pool, it must be returned to the pool before validateUsage() is called.
+func (v *validatingBytesReaderPool) get() *bytes.Reader {
+	return v.validatingPool.get().(*bytes.Reader)
+}
+
+// put returns a pointer to a bytes reader to the pool, it  must have been created by the pool and it must only be returned once.
+func (v *validatingBytesReaderPool) put(obj *bytes.Reader) {
 	v.validatingPool.put(obj)
 }
 
