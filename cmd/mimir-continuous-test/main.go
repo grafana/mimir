@@ -43,7 +43,7 @@ func main() {
 
 	util_log.InitLogger(&server.Config{
 		LogLevel: cfg.LogLevel,
-	})
+	}, false)
 
 	// Setting the environment variable JAEGER_AGENT_HOST enables tracing.
 	if trace, err := tracing.NewFromEnv("mimir-continuous-test"); err != nil {
