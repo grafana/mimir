@@ -15,6 +15,8 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 * [ENHANCEMENT] Add backfill endpoints to Nginx configuration. #2478
 * [BUGFIX] `nginx.extraArgs` are now actually passed to the nginx container. #2336
+* [BUGFIX] Add the `/ingester` endpoint to the nginx template.  This allows the
+  ingester ring status to be pulled via `/ingester/ring`.
 
 ## 3.0.0
 

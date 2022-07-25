@@ -1607,6 +1607,11 @@ nginx:
             proxy_pass      http://{{ template "mimir.fullname" . }}-compactor.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
           }
 
+          # Ingester endpoint (for ring information)
+          location /ingester {
+            proxy_pass      http://{{ template "mimir.fullname" . }}-ingester.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
+          }
+
           {{- with .Values.nginx.nginxConfig.serverSnippet }}
           {{ . | nindent 4 }}
           {{- end }}
