@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package querymiddleware
 
 import (
@@ -69,6 +71,12 @@ func (s *splitByIntervalMiddleware) Do(ctx context.Context, req Request) (Respon
 	stats := astmapper.NewMapperStats()
 	rangedQuery, err := mapper.Map(expr, stats)
 	if err != nil {
+		return s.next.Do(ctx, req)
+	}
+
+	noop := rangedQuery.String() == expr.String()
+	if noop {
+		// the query cannot be split, so continue
 		return s.next.Do(ctx, req)
 	}
 
