@@ -8,14 +8,12 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
-	"unsafe"
 
 	"github.com/go-kit/log"
 	"github.com/golang/snappy"
@@ -241,7 +239,7 @@ func TestForwardingSamplesWithDifferentErrorsWithPropagation(t *testing.T) {
 	}
 }
 
-func TestForwardingEnsureThatSlicesGetReused(t *testing.T) {
+func TestForwardingEnsureThatPooledObjectsGetReturned(t *testing.T) {
 	sampleCount := 20
 
 	const forwardingTarget1 = "target1"
@@ -368,7 +366,7 @@ func TestForwardingEnsureThatSlicesGetReused(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			forwarder, tsPool, tsSlicePool, validatePoolUsage := getForwarderWithValidatingPools(t, sampleCount)
+			forwarder, validatePoolUsage := getForwarderWithValidatingPools(t, sampleCount, 1000, 1000)
 			url1, _, bodies1, closer1 := newTestServer(t, 200, true)
 			defer closer1()
 			url2, _, bodies2, closer2 := newTestServer(t, 200, true)
@@ -391,12 +389,12 @@ func TestForwardingEnsureThatSlicesGetReused(t *testing.T) {
 			}
 
 			// Generate the TimeSeries slice to submit to the forwarder.
-			tsIn := tsSlicePool.get()
+			tsIn := forwarder.pools.getTsSlice()
 			for metric, sampleCount := range tc.sendSamples {
 				// Ensure that "append" doesn't create a new slice.
 				require.True(t, cap(tsIn) > len(tsIn), "timeseries slice should have enough capacity to append the test data to it")
 
-				tsIn = append(tsIn, mimirpb.PreallocTimeseries{TimeSeries: tsPool.get()})
+				tsIn = append(tsIn, mimirpb.PreallocTimeseries{TimeSeries: forwarder.pools.getTs()})
 				tsWriteIdx := len(tsIn) - 1
 				tsIn[tsWriteIdx].TimeSeries.Labels = []mimirpb.LabelAdapter{
 					{Name: "__name__", Value: metric},
@@ -433,8 +431,8 @@ func TestForwardingEnsureThatSlicesGetReused(t *testing.T) {
 				receivedSamples[ingested] += len(sample.Samples)
 			}
 
-			// Reuse the slice with the samples to ingest, the distributor would do this in its request cleanup.
-			tsSlicePool.reuse(toIngest)
+			// Return the slice with the samples to ingest into the pool, the distributor would do this in its request cleanup.
+			forwarder.pools.putTsSlice(toIngest)
 
 			// Validate pool usage.
 			validatePoolUsage()
@@ -449,188 +447,17 @@ func TestForwardingEnsureThatSlicesGetReused(t *testing.T) {
 }
 
 // getForwarderWithValidatingPools returns a forwarder with validating pools, so the pool usage can be validated to be correct.
-func getForwarderWithValidatingPools(t *testing.T, initialCap int) (*forwarder, *validatingTsPool, *validatingTsSlicePool, func()) {
+// The specified caps must be large enough to hold all the data that will be stored in the respective slices because
+// otherwise any "append()" will replace the slice which will result in a test failure because the original slice
+// won't be returned to the pool.
+func getForwarderWithValidatingPools(t *testing.T, tsSliceCap, protobufCap, snappyCap int) (*forwarder, func()) {
 	t.Helper()
 
-	validatingMockTsPool := newValidatingTsPool(t)
-	validatingMockTsSlicePool := newValidatingTsSlicePool(t, initialCap, validatingMockTsPool.reuse)
-
+	var validateUsage func()
 	forwarder := NewForwarder(testConfig, prometheus.NewRegistry(), log.NewNopLogger()).(*forwarder)
-	forwarder.pools.getTs = validatingMockTsPool.get
-	forwarder.pools.reuseTs = validatingMockTsPool.reuse
-	forwarder.pools.getTsSlice = validatingMockTsSlicePool.get
-	forwarder.pools.reuseTsSlice = validatingMockTsSlicePool.reuse
+	forwarder.pools, validateUsage = validatingPools(t, tsSliceCap, protobufCap, snappyCap)
 
-	validateUsage := func() {
-		validatingMockTsPool.validateUsage()
-		validatingMockTsSlicePool.validateUsage()
-	}
-
-	return forwarder, validatingMockTsPool, validatingMockTsSlicePool, validateUsage
-}
-
-// validatingPool is a pool of obejcts that validates that it is used correctly by keeping track of a unique ID
-// of each object it instantiates and whether the object has been returned to the pool.
-type validatingPool struct {
-	t                   *testing.T
-	objsInstantiated    map[interface{}]bool
-	objsInstantiatedMtx sync.Mutex
-	objsReused          []interface{}
-	new                 func() interface{}
-	id                  func(interface{}) interface{}
-	prepareForReuse     func(interface{}) interface{}
-}
-
-func newValidatingPool(t *testing.T, new func() interface{}, id func(interface{}) interface{}, prepareForReuse func(interface{}) interface{}) *validatingPool {
-	return &validatingPool{
-		t:                t,
-		objsInstantiated: make(map[interface{}]bool),
-		new:              new,
-		id:               id,
-		prepareForReuse:  prepareForReuse,
-	}
-}
-
-// get returns an object from the pool, the object must be returned to the pool before validateUsage() is called.
-func (v *validatingPool) get() interface{} {
-	v.t.Helper()
-
-	obj := v.new()
-	id := v.id(obj)
-
-	v.objsInstantiatedMtx.Lock()
-	defer v.objsInstantiatedMtx.Unlock()
-
-	_, ok := v.objsInstantiated[id]
-	require.False(v.t, ok, "object has already been instantiated")
-	v.objsInstantiated[id] = false
-
-	return obj
-}
-
-// reuse returns an object to the pool, the object must have been created by the pool and it must only be reused once.
-func (v *validatingPool) reuse(obj interface{}) {
-	v.t.Helper()
-
-	id := v.id(obj)
-
-	if v.prepareForReuse != nil {
-		obj = v.prepareForReuse(obj)
-	}
-
-	v.objsInstantiatedMtx.Lock()
-	defer v.objsInstantiatedMtx.Unlock()
-
-	reused, ok := v.objsInstantiated[id]
-	require.True(v.t, ok, "object is not from this pool")
-	require.False(v.t, reused, "this object has already been returned to the pool")
-	v.objsInstantiated[id] = true
-
-	// We need to keep a reference to the reused obj to ensure that the next call to get() cannot return a new
-	// object which happens to have the same id because this would lead to a collision in objsInstantiated.
-	v.objsReused = append(v.objsReused, obj)
-}
-
-// validateUsage validates that all the objects created by the pool have been returned to it.
-func (v *validatingPool) validateUsage() {
-	v.t.Helper()
-
-	v.objsInstantiatedMtx.Lock()
-	defer v.objsInstantiatedMtx.Unlock()
-
-	for id, reused := range v.objsInstantiated {
-		require.True(v.t, reused, "object with id %d has not been returned to pool", id)
-	}
-}
-
-type validatingTsPool struct {
-	validatingPool
-}
-
-func newValidatingTsPool(t *testing.T) *validatingTsPool {
-	interfaceToType := func(obj interface{}) *mimirpb.TimeSeries {
-		switch obj := obj.(type) {
-		case *mimirpb.TimeSeries:
-			return obj
-		default:
-			t.Fatalf("Object of invalid type returned to pool: %s", reflect.TypeOf(obj))
-			return nil // Just for linter.
-		}
-	}
-
-	new := func() interface{} {
-		return &mimirpb.TimeSeries{}
-	}
-
-	id := func(obj interface{}) interface{} {
-		objT := interfaceToType(obj)
-
-		// We uniquely identify objects of type *TimeSeries by the address which the pointer is referring to.
-		return reflect.ValueOf(objT).Pointer()
-	}
-
-	return &validatingTsPool{*newValidatingPool(t, new, id, nil)}
-}
-
-// get returns a time series object from the pool, it must be returned to the pool before validateUsage() is called.
-func (v *validatingTsPool) get() *mimirpb.TimeSeries {
-	return v.validatingPool.get().(*mimirpb.TimeSeries)
-}
-
-// reuse returns a time series object to the pool, it  must have been created by the pool and it must only be reused once.
-func (v *validatingTsPool) reuse(obj *mimirpb.TimeSeries) {
-	v.validatingPool.reuse(obj)
-}
-
-type validatingTsSlicePool struct {
-	validatingPool
-}
-
-func newValidatingTsSlicePool(t *testing.T, initialCap int, reuseTs func(*mimirpb.TimeSeries)) *validatingTsSlicePool {
-	interfaceToType := func(obj interface{}) []mimirpb.PreallocTimeseries {
-		switch obj := obj.(type) {
-		case []mimirpb.PreallocTimeseries:
-			return obj
-		default:
-			t.Fatalf("Object of invalid type returned to pool: %s", reflect.TypeOf(obj))
-			return nil // Just for linter.
-		}
-	}
-
-	new := func() interface{} {
-		return make([]mimirpb.PreallocTimeseries, 0, initialCap)
-	}
-
-	id := func(obj interface{}) interface{} {
-		objT := interfaceToType(obj)
-
-		// We uniquely identify objects of type *TimeSeries by the address of the underlying data array.
-		return (*reflect.SliceHeader)(unsafe.Pointer(&objT)).Data
-	}
-
-	prepareForReuse := func(obj interface{}) interface{} {
-		objT := interfaceToType(obj)
-
-		for _, ts := range objT {
-			// When returning a slice of PreallocTimeseries to the pool we first need to return the contained
-			// TimeSeries objects to their pool, the original methods in the mimirpb package do the same.
-			reuseTs(ts.TimeSeries)
-		}
-
-		return obj
-	}
-
-	return &validatingTsSlicePool{*newValidatingPool(t, new, id, prepareForReuse)}
-}
-
-// get returns a slice of time series from the pool, it must be returned to the pool before validateUsage() is called.
-func (v *validatingTsSlicePool) get() []mimirpb.PreallocTimeseries {
-	return v.validatingPool.get().([]mimirpb.PreallocTimeseries)
-}
-
-// reuse returns a slice of time series to the pool, it  must have been created by the pool and it must only be reused once.
-func (v *validatingTsSlicePool) reuse(obj []mimirpb.PreallocTimeseries) {
-	v.validatingPool.reuse(obj)
+	return forwarder, validateUsage
 }
 
 func newForwarder(t *testing.T) (Forwarder, *prometheus.Registry) {

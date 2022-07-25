@@ -33,61 +33,9 @@ type Forwarder interface {
 	Stop()
 }
 
-// pools is the collection of pools which the forwarding uses when building remote_write requests.
-// Even though protobuf and snappy are both pools of []byte we keep them separate because the slices
-// which they contain are likely to have very different sizes.
-type pools struct {
-	protobuf sync.Pool
-	snappy   sync.Pool
-	request  sync.Pool
-
-	// Mockable for testing.
-	getTs        func() *mimirpb.TimeSeries
-	reuseTs      func(*mimirpb.TimeSeries)
-	getTsSlice   func() []mimirpb.PreallocTimeseries
-	reuseTsSlice func([]mimirpb.PreallocTimeseries)
-}
-
-func newPools() pools {
-	return pools{
-		protobuf: sync.Pool{New: func() interface{} { return &[]byte{} }},
-		snappy:   sync.Pool{New: func() interface{} { return &[]byte{} }},
-		request:  sync.Pool{New: func() interface{} { return &request{} }},
-
-		getTs:        mimirpb.TimeseriesFromPool,
-		reuseTs:      mimirpb.ReuseTimeseries,
-		getTsSlice:   mimirpb.PreallocTimeseriesSliceFromPool,
-		reuseTsSlice: mimirpb.ReuseSlice,
-	}
-}
-
-func (p *pools) getProtobuf() *[]byte {
-	return p.protobuf.Get().(*[]byte)
-}
-
-func (p *pools) putProtobuf(protobuf *[]byte) {
-	p.protobuf.Put(protobuf)
-}
-
-func (p *pools) getSnappy() *[]byte {
-	return p.snappy.Get().(*[]byte)
-}
-
-func (p *pools) putSnappy(snappy *[]byte) {
-	p.snappy.Put(snappy)
-}
-
-func (p *pools) getReq() *request {
-	return p.request.Get().(*request)
-}
-
-func (p *pools) putReq(req *request) {
-	p.request.Put(req)
-}
-
 type forwarder struct {
 	cfg      Config
-	pools    pools
+	pools    *pools
 	client   http.Client
 	log      log.Logger
 	workerWg sync.WaitGroup
@@ -251,7 +199,7 @@ func (f *forwarder) splitByTargets(tsSlice []mimirpb.PreallocTimeseries, rules v
 	// Truncate the toIngest slice to the index up to which we wrote TimeSeries data into it,
 	// all the TimeSeries objects beyond the write index must be returned to the pool.
 	for _, ts := range tsSlice[tsSliceWriteIdx:] {
-		f.pools.reuseTs(ts.TimeSeries)
+		f.pools.putTs(ts.TimeSeries)
 	}
 	tsSlice = tsSlice[:tsSliceWriteIdx]
 
@@ -307,7 +255,7 @@ type request struct {
 func (f *forwarder) newRequest(ctx context.Context, endpoint string, ts tsWithSampleCount, requestWg *sync.WaitGroup, errCh chan error) {
 	req := f.pools.getReq()
 
-	req.pools = &f.pools
+	req.pools = f.pools
 	req.client = &f.client // http client should be re-used so open connections get re-used.
 	req.log = f.log
 	req.ctx = ctx
@@ -406,7 +354,7 @@ func (r *request) handleError(status int, err error) {
 }
 
 func (r *request) cleanup() {
-	r.pools.reuseTsSlice(r.ts.ts)
+	r.pools.putTsSlice(r.ts.ts)
 	r.pools.putReq(r)
 	r.requestWg.Done()
 }
