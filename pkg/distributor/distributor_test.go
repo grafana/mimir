@@ -2123,7 +2123,7 @@ func TestDistributor_MetricsMetadata(t *testing.T) {
 			require.NoError(t, err)
 
 			// Check how many ingesters are queried as part of the shuffle sharding subring.
-			replicationSet, err := ds[0].GetIngestersForMetadata(ctx)
+			replicationSet, err := ds[0].GetIngesters(ctx)
 			require.NoError(t, err)
 			assert.Equal(t, testData.expectedIngesters, len(replicationSet.Instances))
 

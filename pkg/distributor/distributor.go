@@ -977,7 +977,7 @@ func (d *Distributor) ForReplicationSet(ctx context.Context, replicationSet ring
 
 // LabelValuesForLabelName returns all of the label values that are associated with a given label name.
 func (d *Distributor) LabelValuesForLabelName(ctx context.Context, from, to model.Time, labelName model.LabelName, matchers ...*labels.Matcher) ([]string, error) {
-	replicationSet, err := d.GetIngestersForMetadata(ctx)
+	replicationSet, err := d.GetIngesters(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1014,7 +1014,7 @@ func (d *Distributor) LabelValuesForLabelName(ctx context.Context, from, to mode
 
 // LabelNamesAndValues query ingesters for label names and values and returns labels with distinct list of values.
 func (d *Distributor) LabelNamesAndValues(ctx context.Context, matchers []*labels.Matcher) (*ingester_client.LabelNamesAndValuesResponse, error) {
-	replicationSet, err := d.GetIngestersForMetadata(ctx)
+	replicationSet, err := d.GetIngesters(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1160,7 +1160,7 @@ func (d *Distributor) LabelValuesCardinality(ctx context.Context, labelNames []m
 // labelValuesCardinality queries ingesters for label values cardinality of a set of labelNames
 // Returns a LabelValuesCardinalityResponse where each item contains an exclusive label name and associated label values
 func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher) (*ingester_client.LabelValuesCardinalityResponse, error) {
-	replicationSet, err := d.GetIngestersForMetadata(ctx)
+	replicationSet, err := d.GetIngesters(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1278,7 +1278,7 @@ func (cm *labelValuesCardinalityConcurrentMap) toLabelValuesCardinalityResponse(
 
 // LabelNames returns all of the label names.
 func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) ([]string, error) {
-	replicationSet, err := d.GetIngestersForMetadata(ctx)
+	replicationSet, err := d.GetIngesters(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1314,7 +1314,7 @@ func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, match
 
 // MetricsForLabelMatchers gets the metrics that match said matchers
 func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through model.Time, matchers ...*labels.Matcher) ([]labels.Labels, error) {
-	replicationSet, err := d.GetIngestersForMetadata(ctx)
+	replicationSet, err := d.GetIngesters(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1348,7 +1348,7 @@ func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through
 
 // MetricsMetadata returns all metric metadata of a user.
 func (d *Distributor) MetricsMetadata(ctx context.Context) ([]scrape.MetricMetadata, error) {
-	replicationSet, err := d.GetIngestersForMetadata(ctx)
+	replicationSet, err := d.GetIngesters(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1387,7 +1387,7 @@ func (d *Distributor) MetricsMetadata(ctx context.Context) ([]scrape.MetricMetad
 
 // UserStats returns statistics about the current user.
 func (d *Distributor) UserStats(ctx context.Context) (*UserStats, error) {
-	replicationSet, err := d.GetIngestersForMetadata(ctx)
+	replicationSet, err := d.GetIngesters(ctx)
 	if err != nil {
 		return nil, err
 	}
