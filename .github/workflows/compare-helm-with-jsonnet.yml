@@ -21,20 +21,6 @@ jobs:
         comment-author: 'github-actions[bot]'
         body-includes: '**Helm <> Jsonnet Diff**'
 
-    - name: Create or update comment
-      uses: peter-evans/create-or-update-comment@v2
-      id: progress-comment
-      with:
-        comment-id: ${{ steps.fc.outputs.comment-id }}
-        issue-number: ${{ github.event.pull_request.number }}
-        body: |
-          **Helm <> Jsonnet Diff**
-
-          :hourglass_flowing_sand: Automated comparison in progress: https://github.com/${{github.repository}}/actions/runs/${{github.run_id}}
-
-          This process will check for any unexpected differences between the Helm chart and the Jsonnet library.
-        edit-mode: replace
-
     - uses: actions/checkout@v2
     - uses: helm/kind-action@v1.2.0
     - uses: frenck/action-setup-yq@a2ad11c46c5d7ba576861216963c9365b53f35bc
@@ -81,6 +67,7 @@ jobs:
         fi
 
     - name: Create or update comment
+      continue-on-error: true
       uses: peter-evans/create-or-update-comment@v2
       if: ${{ steps.compare-manifests.outputs.changed == 'true' }}
       with:
@@ -112,16 +99,4 @@ jobs:
           ```
 
           </details>
-        edit-mode: replace
-
-    - name: Create or update comment
-      uses: peter-evans/create-or-update-comment@v2
-      if: ${{ steps.compare-manifests.outputs.changed == 'false' }}
-      with:
-        comment-id: ${{ steps.progress-comment.outputs.comment-id }}
-        issue-number: ${{ github.event.pull_request.number }}
-        body: |
-          **Helm <> Jsonnet Diff**
-
-          :tada: No differences where detected between Helm and Jsonnet :tada:
         edit-mode: replace
