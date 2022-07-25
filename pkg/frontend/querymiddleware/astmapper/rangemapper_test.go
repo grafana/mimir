@@ -147,6 +147,12 @@ func TestRangeMapper(t *testing.T) {
 			out:                  `sum((sum without() (` + concatOffsets(splitInterval, 3, `sum_over_time({app="foo"}[x]y)`) + `)) / (sum without() (` + concatOffsets(splitInterval, 3, `count_over_time({app="foo"}[x]y)`) + `)))`,
 			expectedSplitQueries: 3,
 		},
+		// Should split deeper in the tree if an inner expression is splittable
+		{
+			in:                   `topk(10, histogram_quantile(0.9, rate({app="foo"}[3m])))`,
+			out:                  `topk(10, histogram_quantile(0.9, sum without() (` + concatOffsets(splitInterval, 3, `increase({app="foo"}[x]y)`) + `) / 180))`,
+			expectedSplitQueries: 3,
+		},
 		// Multi-level vector aggregators should be moved downstream
 		{
 			in:                   `sum(max(rate({app="foo"}[3m])))`,
@@ -225,26 +231,38 @@ func TestRangeMapperNoOp(t *testing.T) {
 	require.NoError(t, err)
 
 	for _, tt := range []struct {
-		in                   string
-		out                  string
-		expectedSplitQueries int
+		noop string
 	}{
-		// TODO: should not split binary operation if both operands are number literals
+		// should be noop if expression is not splittable
+		{
+			noop: `quantile_over_time(0.95, foo[3m])`,
+		},
+		{
+			noop: `topk(10, histogram_quantile(0.9, irate({app="foo"}[3m])))`,
+		},
+		// should be noop if range interval is lower or equal to split interval (1m)
+		{
+			noop: `rate({app="foo"}[1m])`,
+		},
+		// should be noop if expression is a number literal
+		{
+			noop: `5`,
+		},
+		// Binary expression should be noop if both operands are number literals
+		{
+			noop: `20 / 10`,
+		},
 	} {
 		tt := tt
 
-		t.Run(tt.in, func(t *testing.T) {
-			expr, err := parser.ParseExpr(tt.in)
-			require.NoError(t, err)
-			out, err := parser.ParseExpr(tt.out)
+		t.Run(tt.noop, func(t *testing.T) {
+			expr, err := parser.ParseExpr(tt.noop)
 			require.NoError(t, err)
 
 			stats := NewMapperStats()
 			mapped, err := mapper.Map(expr, stats)
 			require.NoError(t, err)
-			require.Equal(t, out.String(), mapped.String())
-
-			//assert.Equal(t, tt.expectedSplitQueries, stats.GetShardedQueries())
+			require.Equal(t, expr.String(), mapped.String())
 		})
 	}
 }
