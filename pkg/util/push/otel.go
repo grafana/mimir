@@ -21,6 +21,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -31,8 +32,6 @@ const (
 
 	otelParseError = "otlp_parse_error"
 	maxErrMsgLen   = 1024
-
-	messageSizeLargerErrFmt = "received message larger than max (%d > %d)"
 )
 
 func OTLPHandler(
@@ -65,7 +64,7 @@ func OTLPHandler(
 		}
 
 		if r.ContentLength > int64(maxRecvMsgSize) {
-			return nil, fmt.Errorf(messageSizeLargerErrFmt, r.ContentLength, maxRecvMsgSize)
+			return nil, util.NewMsgSizeTooLargeErr(int(r.ContentLength), maxRecvMsgSize)
 		}
 
 		reader := http.MaxBytesReader(nil, r.Body, int64(maxRecvMsgSize))

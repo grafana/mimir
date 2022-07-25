@@ -224,3 +224,10 @@ func TestIsRequestBodyTooLargeRegression(t *testing.T) {
 	_, err := ioutil.ReadAll(http.MaxBytesReader(httptest.NewRecorder(), ioutil.NopCloser(bytes.NewReader([]byte{1, 2, 3, 4})), 1))
 	assert.True(t, util.IsRequestBodyTooLarge(err))
 }
+
+func TestNewMsgSizeTooLargeErr(t *testing.T) {
+	err := util.NewMsgSizeTooLargeErr(100, 50)
+	msg := `the incoming push request has been rejected because its message size of 100 bytes is larger than the allowed limit of 50 bytes (err-mimir-msg-size-too-large). To adjust the related limit, configure -distributor.max-recv-msg-size, or contact your service administrator.`
+
+	assert.Equal(t, msg, err.Error())
+}

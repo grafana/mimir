@@ -61,6 +61,8 @@ const (
 
 	StoreConsistencyCheckFailed ID = "store-consistency-check-failed"
 	BucketIndexTooOld           ID = "bucket-index-too-old"
+
+	MsgSizeTooLarge ID = "msg-size-too-large"
 )
 
 // Message returns the provided msg, appending the error id.
@@ -68,9 +70,7 @@ func (id ID) Message(msg string) string {
 	return fmt.Sprintf("%s (%s%s)", msg, errPrefix, id)
 }
 
-// MessageWithLimitConfig returns the provided msg, appending the error id and a suggestion on
-// which configuration flag(s) to use to change the limit.
-func (id ID) MessageWithLimitConfig(msg, flag string, addFlags ...string) string {
+func (id ID) MessageWithLimitConfigBuilder(template, msg, flag string, addFlags ...string) string {
 	var sb strings.Builder
 	sb.WriteString("-")
 	sb.WriteString(flag)
@@ -84,5 +84,16 @@ func (id ID) MessageWithLimitConfig(msg, flag string, addFlags ...string) string
 		sb.WriteString(" and -")
 		sb.WriteString(addFlags[len(addFlags)-1])
 	}
-	return fmt.Sprintf("%s (%s%s). To adjust the related per-tenant limit%s, configure %s, or contact your service administrator.", msg, errPrefix, id, plural, sb.String())
+	return fmt.Sprintf(template, msg, errPrefix, id, plural, sb.String())
+}
+
+// MessageWithLimitConfig returns the provided msg, appending the error id and a suggestion on
+// which configuration flag(s) to use to change the limit.
+func (id ID) MessageWithLimitConfig(msg, flag string, addFlags ...string) string {
+	return id.MessageWithLimitConfigBuilder("%s (%s%s). To adjust the related per-tenant limit%s, configure %s, or contact your service administrator.", msg, flag, addFlags...)
+}
+
+// MessageWithGlobalLimitConfig is like MessageWithLimitConfig but for non-per-tenant limits
+func (id ID) MessageWithGlobalLimitConfig(msg, flag string, addFlags ...string) string {
+	return id.MessageWithLimitConfigBuilder("%s (%s%s). To adjust the related limit%s, configure %s, or contact your service administrator.", msg, flag, addFlags...)
 }

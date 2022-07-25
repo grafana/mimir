@@ -32,6 +32,18 @@ func TestID_MessageWithLimitConfig(t *testing.T) {
 			expected: "an error (err-mimir-missing-metric-name). To adjust the related per-tenant limits, configure -my-flag1, -my-flag2 and -my-flag3, or contact your service administrator.",
 			actual:   MissingMetricName.MessageWithLimitConfig("an error", "my-flag1", "my-flag2", "my-flag3"),
 		},
+		{
+			expected: "an error (err-mimir-missing-metric-name). To adjust the related limit, configure -my-flag1, or contact your service administrator.",
+			actual:   MissingMetricName.MessageWithGlobalLimitConfig("an error", "my-flag1"),
+		},
+		{
+			expected: "an error (err-mimir-missing-metric-name). To adjust the related limits, configure -my-flag1 and -my-flag2, or contact your service administrator.",
+			actual:   MissingMetricName.MessageWithGlobalLimitConfig("an error", "my-flag1", "my-flag2"),
+		},
+		{
+			expected: "an error (err-mimir-missing-metric-name). To adjust the related limits, configure -my-flag1, -my-flag2 and -my-flag3, or contact your service administrator.",
+			actual:   MissingMetricName.MessageWithGlobalLimitConfig("an error", "my-flag1", "my-flag2", "my-flag3"),
+		},
 	} {
 		assert.Equal(t, tc.expected, tc.actual)
 	}
