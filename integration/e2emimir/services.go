@@ -53,7 +53,12 @@ func getExtraFlags() map[string]string {
 
 func newMimirServiceFromOptions(name string, defaultFlags, flags map[string]string, options ...Option) *MimirService {
 	o := newOptions(options)
-	serviceFlags := o.MapFlags(e2e.MergeFlags(defaultFlags, flags, getExtraFlags()))
+	serviceFlags := o.MapFlags(
+		e2e.MergeFlagsWithoutRemovingEmpty(
+			e2e.MergeFlags(defaultFlags, flags),
+			getExtraFlags(),
+		),
+	)
 	binaryName := getBinaryNameForBackwardsCompatibility(o.Image)
 
 	return NewMimirService(
@@ -227,11 +232,18 @@ func NewAlertmanager(name string, flags map[string]string, options ...Option) *M
 }
 
 func NewAlertmanagerWithTLS(name string, flags map[string]string, options ...Option) *MimirService {
-	o := newOptions(options)
-	serviceFlags := o.MapFlags(e2e.MergeFlags(map[string]string{
+	alertmanagerTargetFlags := map[string]string{
 		"-target":    "alertmanager",
 		"-log.level": "warn",
-	}, flags, getExtraFlags()))
+	}
+
+	o := newOptions(options)
+	serviceFlags := o.MapFlags(
+		e2e.MergeFlagsWithoutRemovingEmpty(
+			e2e.MergeFlags(alertmanagerTargetFlags, flags),
+			getExtraFlags(),
+		),
+	)
 	binaryName := getBinaryNameForBackwardsCompatibility(o.Image)
 
 	return NewMimirService(
