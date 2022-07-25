@@ -442,11 +442,10 @@ clean-protos: ## Clean protobuf files.
 list-image-targets:
 	@echo $(UPTODATE_FILES) | tr " " "\n"
 
-clean-doc: ## Clean the config file documentation.
+clean-doc: ## Clean the documentation files generated from templates.
 	rm -f $(DOC_TEMPLATES:.template=.md)
 
-check-doc: ## Check the config file is up to date.
-	@./tools/check-doc.sh
+check-doc: ## Check the documentation files are up to date.
 check-doc: doc
 	@find . -name "*.md" | xargs git diff --exit-code -- \
 	|| (echo "Please update generated documentation by running 'make doc' and committing the changes" && false)
