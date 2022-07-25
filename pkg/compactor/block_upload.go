@@ -33,7 +33,7 @@ import (
 // Name of file where we store a block's meta file while it's being uploaded.
 const (
 	uploadingMetaFilename = "uploading-meta.json"
-	validationFilename    = "validation.json"
+	validationFile        = "validation.json"
 )
 
 var rePath = regexp.MustCompile(`^(index|chunks/\d{6})$`)
@@ -235,7 +235,7 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 			found = true
 
 			if r.ContentLength != f.SizeBytes {
-				http.Error(w, fmt.Sprintf("file size doesn't match %s", block.MetaFilename), http.StatusBadRequest)
+				http.Error(w, "file size doesn't match meta.json", http.StatusBadRequest)
 				return
 			}
 		}
@@ -392,103 +392,73 @@ func (r bodyReader) Read(b []byte) (int, error) {
 	return r.r.Body.Read(b)
 }
 
-type validationFile struct {
+type validation struct {
 	LastUpdate int64  // UnixMillis of last update time.
 	Error      string // Error message if validation failed.
 }
 
-const validationFileStaleTimeout = 5 * time.Minute
-
-type blockUploadState int
+type blockState int
 
 const (
-	blockStateUnknown         blockUploadState = iota // unknown, default value
-	blockIsComplete                                   // meta.json file exists
-	blockUploadNotStarted                             // meta.json doesn't exist, uploading-meta.json doesn't exist
-	blockUploadInProgress                             // meta.json doesn't exist, but uploading-meta.json does
-	blockValidationInProgress                         // meta.json doesn't exist, uploading-meta.json exists, validation.json exists and is recent
+	blockStateUnknown         blockState = iota // unknown, default value
+	blockIsComplete                             // meta.json file exists
+	blockUploadNotStarted                       // meta.json doesn't exist, uploading-meta.json doesn't exist
+	blockUploadInProgress                       // meta.json doesn't exist, but uploading-meta.json does
+	blockValidationInProgress                   // meta.json doesn't exist, uploading-meta.json exists, validation.json exists and is recent
 	blockValidationFailed
 	blockValidationStale
 )
 
-func (c *MultitenantCompactor) GetBlockUploadStateHandler(w http.ResponseWriter, r *http.Request) {
-	blockID, tenantID, err := c.parseBlockUploadParameters(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+var blockStateMessages = map[blockState]string{
+	blockStateUnknown:         "unknown",
+	blockIsComplete:           "block is complete",
+	blockUploadNotStarted:     "block upload not started",
+	blockUploadInProgress:     "block upload in progress",
+	blockValidationInProgress: "block validation in progress",
+	blockValidationFailed:     "block validation failed",
+	blockValidationStale:      "block validation stale",
+}
+
+func (s blockState) String() string {
+	msg, ok := blockStateMessages[s]
+	if ok {
+		return msg
 	}
-
-	userBkt := bucket.NewUserBucketClient(tenantID, c.bucketClient, c.cfgProvider)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	s, _, v, err := c.getBlockUploadState(r.Context(), userBkt, blockID)
-	if err != nil {
-		writeBlockUploadError(err, "get block state", "", log.With(util_log.WithContext(r.Context(), c.logger), "block", blockID), w)
-		return
-	}
-
-	type result struct {
-		State string `json:"result"`
-		Error string `json:"error,omitempty"`
-	}
-
-	res := result{}
-
-	switch s {
-	case blockIsComplete:
-		res.State = "complete"
-	case blockUploadNotStarted:
-		http.Error(w, "block doesn't exist", http.StatusNotFound)
-		return
-	case blockValidationStale:
-		fallthrough
-	case blockUploadInProgress:
-		res.State = "uploading"
-	case blockValidationInProgress:
-		res.State = "validating"
-	case blockValidationFailed:
-		res.State = "failed"
-		res.Error = v.Error
-	}
-
-	util.WriteJSONResponse(w, res)
+	return "invalid state"
 }
 
 // checkBlockState checks blocks state and returns various HTTP status codes for individual states if block
 // upload cannot start, finish or file cannot be uploaded to the block.
-func (c *MultitenantCompactor) checkBlockState(ctx context.Context, userBkt objstore.Bucket, blockID ulid.ULID, requireUploadInProgress bool) (*metadata.Meta, *validationFile, error) {
-	s, m, v, err := c.getBlockUploadState(ctx, userBkt, blockID)
+func (c *MultitenantCompactor) checkBlockState(ctx context.Context, userBkt objstore.Bucket, blockID ulid.ULID, requireUploadInProgress bool) (*metadata.Meta, *validation, error) {
+	s, m, v, err := c.getBlockState(ctx, userBkt, blockID)
 	if err != nil {
 		return m, v, err
 	}
 
 	switch s {
 	case blockIsComplete:
-		return m, v, httpError{message: "block already exists", statusCode: http.StatusConflict}
+		return m, v, httpError{message: s.String(), statusCode: http.StatusConflict}
 	case blockValidationInProgress:
-		return m, v, httpError{message: "block validation in progress", statusCode: http.StatusBadRequest}
+		return m, v, httpError{message: s.String(), statusCode: http.StatusBadRequest}
 	case blockUploadNotStarted:
 		if requireUploadInProgress {
-			return m, v, httpError{message: "block upload not started", statusCode: http.StatusNotFound}
+			return m, v, httpError{message: s.String(), statusCode: http.StatusBadRequest}
+		} else {
+			return m, v, nil
 		}
-		return m, v, nil
 	case blockValidationStale:
 		// if validation is stale, we treat block as being in "upload in progress" state, and validation can start again.
 		fallthrough
 	case blockUploadInProgress:
 		return m, v, nil
 	case blockValidationFailed:
-		return m, v, httpError{message: "block validation failed", statusCode: http.StatusBadRequest}
+		return m, v, httpError{message: s.String(), statusCode: http.StatusBadRequest}
 	}
 
-	return m, v, httpError{message: "unknown block upload state", statusCode: http.StatusInternalServerError}
+	return m, v, httpError{message: s.String(), statusCode: http.StatusInternalServerError}
 }
 
-// getBlockUploadState returns state of the block upload, and meta and validation objects, if they exist.
-func (c *MultitenantCompactor) getBlockUploadState(ctx context.Context, userBkt objstore.Bucket, blockID ulid.ULID) (blockUploadState, *metadata.Meta, *validationFile, error) {
+func (c *MultitenantCompactor) getBlockState(ctx context.Context, userBkt objstore.Bucket, blockID ulid.ULID) (blockState, *metadata.Meta, *validation, error) {
 	exists, err := userBkt.Exists(ctx, path.Join(blockID.String(), block.MetaFilename))
 	if err != nil {
 		return blockStateUnknown, nil, nil, err
@@ -501,7 +471,7 @@ func (c *MultitenantCompactor) getBlockUploadState(ctx context.Context, userBkt 
 	if err != nil {
 		return blockStateUnknown, nil, nil, err
 	}
-	// If neither meta.json nor uploading-meta.json file exist, we say that the block doesn't exist.
+	// If neither meta.json nor uploading-meta.json file don't exist, we say that block doesn't exist.
 	if meta == nil {
 		return blockUploadNotStarted, nil, nil, err
 	}
@@ -516,7 +486,7 @@ func (c *MultitenantCompactor) getBlockUploadState(ctx context.Context, userBkt 
 	if v.Error != "" {
 		return blockValidationFailed, meta, v, err
 	}
-	if time.Since(time.UnixMilli(v.LastUpdate)) < validationFileStaleTimeout {
+	if time.Since(time.UnixMilli(v.LastUpdate)) < 5*time.Minute {
 		return blockValidationInProgress, meta, v, nil
 	}
 	return blockValidationStale, meta, v, nil
@@ -541,8 +511,8 @@ func (c *MultitenantCompactor) loadUploadingMeta(ctx context.Context, userBkt ob
 	return v, nil
 }
 
-func (c *MultitenantCompactor) loadValidation(ctx context.Context, userBkt objstore.Bucket, blockID ulid.ULID) (*validationFile, error) {
-	r, err := userBkt.Get(ctx, path.Join(blockID.String(), validationFilename))
+func (c *MultitenantCompactor) loadValidation(ctx context.Context, userBkt objstore.Bucket, blockID ulid.ULID) (*validation, error) {
+	r, err := userBkt.Get(ctx, path.Join(blockID.String(), validationFile))
 	if err != nil {
 		if userBkt.IsObjNotFoundErr(err) {
 			return nil, nil
@@ -551,7 +521,7 @@ func (c *MultitenantCompactor) loadValidation(ctx context.Context, userBkt objst
 	}
 	defer func() { _ = r.Close() }()
 
-	v := &validationFile{}
+	v := &validation{}
 	err = json.NewDecoder(r).Decode(v)
 	if err != nil {
 		return nil, err
