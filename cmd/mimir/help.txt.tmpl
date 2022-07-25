@@ -121,7 +121,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.chunks-cache.backend string
     	Backend for chunks cache, if not empty. Supported values: memcached.
   -blocks-storage.bucket-store.chunks-cache.memcached.addresses string
-    	Comma separated list of memcached addresses. Supported prefixes are: dns+ (looked up as an A/AAAA query), dnssrv+ (looked up as a SRV query, dnssrvnoa+ (looked up as a SRV query, with no A/AAAA lookup made after that).
+    	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
   -blocks-storage.bucket-store.chunks-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
   -blocks-storage.bucket-store.index-cache.backend string
@@ -129,13 +129,13 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.index-cache.inmemory.max-size-bytes uint
     	Maximum size in bytes of in-memory index cache used to speed up blocks index lookups (shared between all tenants). (default 1073741824)
   -blocks-storage.bucket-store.index-cache.memcached.addresses string
-    	Comma separated list of memcached addresses. Supported prefixes are: dns+ (looked up as an A/AAAA query), dnssrv+ (looked up as a SRV query, dnssrvnoa+ (looked up as a SRV query, with no A/AAAA lookup made after that).
+    	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
   -blocks-storage.bucket-store.index-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
   -blocks-storage.bucket-store.metadata-cache.backend string
     	Backend for metadata cache, if not empty. Supported values: memcached.
   -blocks-storage.bucket-store.metadata-cache.memcached.addresses string
-    	Comma separated list of memcached addresses. Supported prefixes are: dns+ (looked up as an A/AAAA query), dnssrv+ (looked up as a SRV query, dnssrvnoa+ (looked up as a SRV query, with no A/AAAA lookup made after that).
+    	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
   -blocks-storage.bucket-store.metadata-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
   -blocks-storage.bucket-store.sync-dir string
@@ -427,7 +427,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.results-cache.compression string
     	Enable cache compression, if not empty. Supported values are: snappy.
   -query-frontend.results-cache.memcached.addresses string
-    	Comma separated list of memcached addresses. Supported prefixes are: dns+ (looked up as an A/AAAA query), dnssrv+ (looked up as a SRV query, dnssrvnoa+ (looked up as a SRV query, with no A/AAAA lookup made after that).
+    	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
   -query-frontend.results-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
   -query-frontend.scheduler-address string

@@ -3362,9 +3362,8 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 &nbsp;
 
 ```yaml
-# Comma separated list of memcached addresses. Supported prefixes are: dns+
-# (looked up as an A/AAAA query), dnssrv+ (looked up as a SRV query, dnssrvnoa+
-# (looked up as a SRV query, with no A/AAAA lookup made after that).
+# Comma-separated list of memcached addresses. Each address can be an IP
+# address, hostname, or an entry specified in the DNS Service Discovery format.
 # CLI flag: -<prefix>.memcached.addresses
 [addresses: <string> | default = ""]
 

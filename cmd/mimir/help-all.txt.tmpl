@@ -287,7 +287,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.chunks-cache.max-get-range-requests int
     	Maximum number of sub-GetRange requests that a single GetRange request can be split into when fetching chunks. Zero or negative value = unlimited number of sub-requests. (default 3)
   -blocks-storage.bucket-store.chunks-cache.memcached.addresses string
-    	Comma separated list of memcached addresses. Supported prefixes are: dns+ (looked up as an A/AAAA query), dnssrv+ (looked up as a SRV query, dnssrvnoa+ (looked up as a SRV query, with no A/AAAA lookup made after that).
+    	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
   -blocks-storage.bucket-store.chunks-cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
   -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency int
@@ -317,7 +317,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.index-cache.inmemory.max-size-bytes uint
     	Maximum size in bytes of in-memory index cache used to speed up blocks index lookups (shared between all tenants). (default 1073741824)
   -blocks-storage.bucket-store.index-cache.memcached.addresses string
-    	Comma separated list of memcached addresses. Supported prefixes are: dns+ (looked up as an A/AAAA query), dnssrv+ (looked up as a SRV query, dnssrvnoa+ (looked up as a SRV query, with no A/AAAA lookup made after that).
+    	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
   -blocks-storage.bucket-store.index-cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
   -blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency int
@@ -355,7 +355,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.metadata-cache.chunks-list-ttl duration
     	How long to cache list of chunks for a block. (default 24h0m0s)
   -blocks-storage.bucket-store.metadata-cache.memcached.addresses string
-    	Comma separated list of memcached addresses. Supported prefixes are: dns+ (looked up as an A/AAAA query), dnssrv+ (looked up as a SRV query, dnssrvnoa+ (looked up as a SRV query, with no A/AAAA lookup made after that).
+    	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
   -blocks-storage.bucket-store.metadata-cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
   -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency int
@@ -1301,7 +1301,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.results-cache.compression string
     	Enable cache compression, if not empty. Supported values are: snappy.
   -query-frontend.results-cache.memcached.addresses string
-    	Comma separated list of memcached addresses. Supported prefixes are: dns+ (looked up as an A/AAAA query), dnssrv+ (looked up as a SRV query, dnssrvnoa+ (looked up as a SRV query, with no A/AAAA lookup made after that).
+    	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
   -query-frontend.results-cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
   -query-frontend.results-cache.memcached.max-async-concurrency int

@@ -1,10 +1,10 @@
-local mimir = import "mimir/mimir.libsonnet";
-local overridesExporter = import "mimir/overrides-exporter.libsonnet";
+local mimir = import 'mimir/mimir.libsonnet';
+local overridesExporter = import 'mimir/overrides-exporter.libsonnet';
 
 mimir + overridesExporter {
   _config+:: {
-    namespace: "default",
-    external_url: "mimir.default.svc.cluster.local",
+    namespace: 'default',
+    external_url: 'mimir.default.svc.cluster.local',
     blocks_storage_backend: 'gcs',
     blocks_storage_bucket_name: 'example-blocks-bucket',
     alertmanager_client_type: 'gcs',
