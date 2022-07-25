@@ -687,7 +687,7 @@ This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respe
 
 Requires [authentication](#authentication).
 
-> **Note:** To load one or more rule groups into Mimir, use [`mimirtool rules load` command]({{< relref "../tools/mimirtool.md#load-rule-groups" >}}) .
+> **Note:** To load one or more rule groups into Mimir, use [`mimirtool rules load` command]({{< relref "../tools/mimirtool.md#load-rule-group" >}}) .
 
 > **Note:** When using `curl` send the request body from a file, ensure that you use the `--data-binary` flag instead of `-d`, `--data`, or `--data-ascii`.
 > The latter options do not preserve carriage returns and newlines.
