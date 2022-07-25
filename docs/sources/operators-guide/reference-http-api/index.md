@@ -576,7 +576,7 @@ This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respe
 
 Requires [authentication](#authentication).
 
-> **Note:** We recommend that you use [`mimirtool rules list` command]({{< relref "../tools/mimirtool.md#list-rules" >}}) to list all rule groups from Mimir.
+> **Note:** To list all rule groups from Mimir, use [`mimirtool rules list` command]({{< relref "../tools/mimirtool.md#list-rules" >}}).
 
 **Example response**
 
@@ -671,7 +671,7 @@ This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respe
 
 Requires [authentication](#authentication).
 
-> **Note:** We recommend that you use [`mimirtool rules get` command]({{< relref "../tools/mimirtool.md#get-rule-group" >}}) to retrieve a single rule group from Mimir.
+> **Note:** To retrieve a single rule group from Mimir, use [`mimirtool rules get` command]({{< relref "../tools/mimirtool.md#get-rule-group" >}}) .
 
 ### Set rule group
 
@@ -687,7 +687,7 @@ This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respe
 
 Requires [authentication](#authentication).
 
-> **Note:** We recommend that you use [`mimirtool rules load` command]({{< relref "../tools/mimirtool.md#load-rule-groups" >}}) to load one or more rule groups into Mimir.
+> **Note:** To load one or more rule groups into Mimir, use [`mimirtool rules load` command]({{< relref "../tools/mimirtool.md#load-rule-groups" >}}) .
 
 > **Note:** When using `curl` send the request body from a file, ensure that you use the `--data-binary` flag instead of `-d`, `--data`, or `--data-ascii`.
 > The latter options do not preserve carriage returns and newlines.
@@ -715,7 +715,7 @@ This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respe
 
 Requires [authentication](#authentication).
 
-> **Note:** We recommend that you use [`mimirtool rules delete` command]({{< relref "../tools/mimirtool.md#delete-rule-group" >}}) to delete a rule group from Mimir.
+> **Note:** To delete a rule group from Mimir, use [`mimirtool rules delete` command]({{< relref "../tools/mimirtool.md#delete-rule-group" >}}).
 
 ### Delete namespace
 
@@ -803,7 +803,7 @@ This endpoint can disabled enabled via the `-alertmanager.enable-api` CLI flag (
 
 Requires [authentication](#authentication).
 
-> **Note:** We recommend that you use [`mimirtool alertmanager get` command]({{< relref "../tools/mimirtool.md#get-alertmanager-configuration" >}}) to retrieve a tenant's Alertmanager configuration from Mimir.
+> **Note:** To retrieve a tenant's Alertmanager configuration from Mimir, use [`mimirtool alertmanager get` command]({{< relref "../tools/mimirtool.md#get-alertmanager-configuration" >}}).
 
 ### Set Alertmanager configuration
 
@@ -819,7 +819,7 @@ This endpoint can disabled enabled via the `-alertmanager.enable-api` CLI flag (
 
 Requires [authentication](#authentication).
 
-> **Note:** We recommend that you use [`mimirtool alertmanager load` command]({{< relref "../tools/mimirtool.md#load-alertmanager-configuration" >}}) to load a tenant's Alertmanager configuration to Mimir.
+> **Note:** To load a tenant's Alertmanager configuration to Mimir, use [`mimirtool alertmanager load` command]({{< relref "../tools/mimirtool.md#load-alertmanager-configuration" >}}).
 
 > **Note:** When using `curl` send the request body from a file, ensure that you use the `--data-binary` flag instead of `-d`, `--data`, or `--data-ascii`.
 > The latter options do not preserve carriage returns and newlines.
@@ -859,7 +859,7 @@ This endpoint can be disabled via the `-alertmanager.enable-api` CLI flag (or it
 
 Requires [authentication](#authentication).
 
-> **Note:** We recommend that you use [`mimirtool alertmanager delete` command]({{< relref "../tools/mimirtool.md#delete-alertmanager-configuration" >}}) to delete a tenant's Alertmanager configuration from Mimir.
+> **Note:** To delete a tenant's Alertmanager configuration from Mimir, use [`mimirtool alertmanager delete` command]({{< relref "../tools/mimirtool.md#delete-alertmanager-configuration" >}}).
 
 ## Purger
 
