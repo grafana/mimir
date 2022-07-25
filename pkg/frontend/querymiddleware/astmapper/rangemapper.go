@@ -179,9 +179,9 @@ func (r *rangeMapper) mapAggregatorExpr(expr *parser.AggregateExpr, stats *Mappe
 // mapBinaryExpr maps binary expression expr
 func (r *rangeMapper) mapBinaryExpr(expr *parser.BinaryExpr, stats *MapperStats) (mapped parser.Node, finished bool, err error) {
 	// Noop if both LHS and RHS are literal numbers
-	_, literalLhs := expr.LHS.(*parser.NumberLiteral)
-	_, literalRhs := expr.RHS.(*parser.NumberLiteral)
-	if literalLhs && literalRhs {
+	_, literalLHS := expr.LHS.(*parser.NumberLiteral)
+	_, literalRHS := expr.RHS.(*parser.NumberLiteral)
+	if literalLHS && literalRHS {
 		return expr, false, nil
 	}
 

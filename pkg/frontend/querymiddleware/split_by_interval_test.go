@@ -9,10 +9,11 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/user"
+
+	"github.com/grafana/mimir/pkg/util"
 )
 
 func TestQuerySplittingCorrectness(t *testing.T) {
