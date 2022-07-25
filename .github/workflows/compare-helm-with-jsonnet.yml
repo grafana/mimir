@@ -67,6 +67,7 @@ jobs:
         fi
 
     - name: Create or update comment
+      continue-on-error: true
       uses: peter-evans/create-or-update-comment@v2
       if: ${{ steps.compare-manifests.outputs.changed == 'true' }}
       with:
