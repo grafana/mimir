@@ -370,10 +370,20 @@ func (r *rangeMapper) splitAndSquashCall(expr *parser.Call, rangeInterval time.D
 		embeddedQuery = r.embeddedAggregatorExpr
 	}
 
+	originalOffset := getOffset(expr)
+
 	// Create a partial query for each split
 	embeddedQueries := make([]parser.Node, 0, splitCount)
 	for split := 0; split < splitCount; split++ {
-		splitNode, err := createSplitNode(embeddedQuery, r.splitByInterval, time.Duration(split)*r.splitByInterval)
+		splitOffset := time.Duration(split) * r.splitByInterval
+		// The range interval of the last embedded query can be smaller than r.splitByInterval
+		splitRangeInterval := r.splitByInterval
+		if splitOffset+splitRangeInterval > rangeInterval {
+			splitRangeInterval = rangeInterval - splitOffset
+		}
+		// The offset of the embedded queries is always the original offset + a multiple of r.splitByInterval
+		splitOffset += originalOffset
+		splitNode, err := createSplitNode(embeddedQuery, splitRangeInterval, splitOffset)
 		if err != nil {
 			return nil, false, err
 		}
@@ -390,7 +400,7 @@ func (r *rangeMapper) splitAndSquashCall(expr *parser.Call, rangeInterval time.D
 	return squashExpr, true, nil
 }
 
-// getRangeInterval returns the interval in the range vector node
+// getRangeInterval returns the range interval in the range vector node
 // Returns 0 if no range interval is found
 // Example: expression `count_over_time({app="foo"}[10m])` returns 10m
 func getRangeInterval(node parser.Node) time.Duration {
@@ -408,6 +418,31 @@ func getRangeInterval(node parser.Node) time.Duration {
 		return argRangeInterval
 	case *parser.MatrixSelector:
 		return n.Range
+	default:
+		return 0
+	}
+}
+
+// getOffset returns the offset interval in the range vector node
+// Returns 0 if no offset interval is found
+// Example: expression `count_over_time({app="foo"}[10m]) offset 1m` returns 1m
+func getOffset(node parser.Node) time.Duration {
+	switch n := node.(type) {
+	case *parser.AggregateExpr:
+		return getOffset(n.Expr)
+	case *parser.Call:
+		argRangeInterval := time.Duration(0)
+		// Iterate over Call's arguments until a MatrixSelector is found
+		for _, arg := range n.Args {
+			if argRangeInterval = getOffset(arg); argRangeInterval != 0 {
+				break
+			}
+		}
+		return argRangeInterval
+	case *parser.MatrixSelector:
+		return getOffset(n.VectorSelector)
+	case *parser.VectorSelector:
+		return n.OriginalOffset
 	default:
 		return 0
 	}
@@ -499,7 +534,7 @@ func updateOffset(expr parser.Node, offset time.Duration) bool {
 	case *parser.ParenExpr:
 		return updateOffset(e.Expr, offset)
 	case *parser.VectorSelector:
-		e.OriginalOffset += offset
+		e.OriginalOffset = offset
 		return true
 	default:
 		return false

@@ -181,7 +181,7 @@ func TestRangeMapper(t *testing.T) {
 }
 
 func TestRangeMapperUnevenRangeInterval(t *testing.T) {
-	splitInterval := 1 * time.Minute
+	splitInterval := 2 * time.Minute
 	mapper, err := NewRangeMapper(splitInterval, log.NewNopLogger())
 	require.NoError(t, err)
 
@@ -190,24 +190,27 @@ func TestRangeMapperUnevenRangeInterval(t *testing.T) {
 		out                  string
 		expectedSplitQueries int
 	}{
-		// TODO: Should support expressions with offset operator
-		//{
-		//	in:                   `count_over_time({app="foo"}[4m] offset 1m)`,
-		//	out:                  `sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"count_over_time({app=\\\"foo\\\"}[1m] offset 3m)\",\"count_over_time({app=\\\"foo\\\"}[2m] offset 2m)\",\"count_over_time({app=\\\"foo\\\"}[2m] offset 1)\"]}"})`,
-		//	expectedSplitQueries: 3,
-		//},
-		//{
-		//	// Should add the remainder range interval
-		//	in:                   `count_over_time({app="foo"}[3m])`,
-		//	out:                  `sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"count_over_time({app=\\\"foo\\\"}[1m] offset 2m)\",\"count_over_time({app=\\\"foo\\\"}[2m])\"]}"})`,
-		//	expectedSplitQueries: 3,
-		//},
-		//{
-		//	// Should add the remainder range interval
-		//	in:                   `count_over_time({app="foo"}[5m])`,
-		//	out:                  `sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"count_over_time({app=\\\"foo\\\"}[1m] offset 4m)\",\"count_over_time({app=\\\"foo\\\"}[2m] offset 2m)\",\"count_over_time({app=\\\"foo\\\"}[2m])\"]}"})`,
-		//	expectedSplitQueries: 3,
-		//},
+		{
+			in:                   `rate({app="foo"}[5m])`,
+			out:                  `sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"increase({app=\\\"foo\\\"}[1m] offset 4m)\",\"increase({app=\\\"foo\\\"}[2m] offset 2m)\",\"increase({app=\\\"foo\\\"}[2m])\"]}"}) / 300`,
+			expectedSplitQueries: 3,
+		},
+		{
+			in:                   `avg_over_time({app="foo"}[3m])`,
+			out:                  `(sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"sum_over_time({app=\\\"foo\\\"}[1m] offset 2m)\",\"sum_over_time({app=\\\"foo\\\"}[2m])\"]}"})) / (sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"count_over_time({app=\\\"foo\\\"}[1m] offset 2m)\",\"count_over_time({app=\\\"foo\\\"}[2m])\"]}"}))`,
+			expectedSplitQueries: 4,
+		},
+		// Should support expressions with offset operator
+		{
+			in:                   `sum_over_time({app="foo"}[4m] offset 1m)`,
+			out:                  `sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"sum_over_time({app=\\\"foo\\\"}[2m] offset 3m)\",\"sum_over_time({app=\\\"foo\\\"}[2m] offset 1m)\"]}"})`,
+			expectedSplitQueries: 2,
+		},
+		{
+			in:                   `count_over_time({app="foo"}[3m] offset 1m)`,
+			out:                  `sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"count_over_time({app=\\\"foo\\\"}[1m] offset 3m)\",\"count_over_time({app=\\\"foo\\\"}[2m] offset 1m)\"]}"})`,
+			expectedSplitQueries: 2,
+		},
 	} {
 		tt := tt
 
@@ -274,13 +277,13 @@ func concatOffsets(splitInterval time.Duration, offsets int, queryTemplate strin
 	offsetIndex := offsets
 	for offset := range queries {
 		offsetIndex--
-		offsetQuery := fmt.Sprintf("[%s]%s", splitInterval, getOffset(splitInterval, offsetIndex))
+		offsetQuery := fmt.Sprintf("[%s]%s", splitInterval, getSplitOffset(splitInterval, offsetIndex))
 		queries[offset] = strings.ReplaceAll(queryTemplate, "[x]y", offsetQuery)
 	}
 	return concat(queries...)
 }
 
-func getOffset(splitInterval time.Duration, offset int) string {
+func getSplitOffset(splitInterval time.Duration, offset int) string {
 	if offset == 0 {
 		return ""
 	}
