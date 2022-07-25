@@ -230,6 +230,7 @@ exes: $(EXES)
 $(EXES):
 	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(GO_FLAGS) -o "$@$(BINARY_SUFFIX)" ./$(@D)
 
+protos: ## Generates protobuf files.
 protos: $(PROTO_GOS)
 
 %.pb.go:
@@ -339,6 +340,7 @@ mod-check:
 	GO111MODULE=on go mod vendor
 	@git diff --exit-code -- go.sum go.mod vendor/
 
+check-protos: ## Check the protobuf files are up to date.
 check-protos: clean-protos protos
 	@git diff --exit-code -- $(PROTO_GOS)
 
@@ -356,10 +358,11 @@ doc: clean-doc $(DOC_TEMPLATES:.template=.md) $(DOC_EMBED:.md=.md.embedmd)
 	# Make operations/helm/charts/*/README.md
 	helm-docs
 
-# Add license header to files.
-license:
+
+license: ## Add license header to files.
 	go run ./tools/add-license ./cmd ./integration ./pkg ./tools ./development ./mimir-build-image ./operations ./.github
 
+check-license: ## Check license header of files.
 check-license: license
 	@git diff --exit-code || (echo "Please add the license header running 'make BUILD_IN_CONTAINER=false license'" && false)
 
@@ -432,16 +435,17 @@ clean:
 	find . -type f -name '*_linux_amd64' -perm +u+x -exec rm {} \;
 	go clean ./...
 
-clean-protos:
+clean-protos: ## Clean protobuf files.
 	rm -rf $(PROTO_GOS)
 
 # List all images building make targets.
 list-image-targets:
 	@echo $(UPTODATE_FILES) | tr " " "\n"
 
-clean-doc:
+clean-doc: ## Clean the documentation files generated from templates.
 	rm -f $(DOC_TEMPLATES:.template=.md)
 
+check-doc: ## Check the documentation files are up to date.
 check-doc: doc
 	@find . -name "*.md" | xargs git diff --exit-code -- \
 	|| (echo "Please update generated documentation by running 'make doc' and committing the changes" && false)
