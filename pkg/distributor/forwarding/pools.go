@@ -17,6 +17,7 @@ type pools struct {
 	snappy      sync.Pool
 	request     sync.Pool
 	bytesReader sync.Pool
+	tsByTargets sync.Pool
 
 	// Mockable for testing.
 	getProtobuf    func() *[]byte
@@ -27,6 +28,8 @@ type pools struct {
 	putReq         func(*request)
 	getBytesReader func() *bytes.Reader
 	putBytesReader func(*bytes.Reader)
+	getTsByTargets func() tsByTargets
+	putTsByTargets func(tsByTargets)
 	getTs          func() *mimirpb.TimeSeries
 	putTs          func(*mimirpb.TimeSeries)
 	getTsSlice     func() []mimirpb.PreallocTimeseries
@@ -39,6 +42,7 @@ func newPools() *pools {
 		snappy:      sync.Pool{New: func() interface{} { return &[]byte{} }},
 		request:     sync.Pool{New: func() interface{} { return &request{} }},
 		bytesReader: sync.Pool{New: func() interface{} { return bytes.NewReader(nil) }},
+		tsByTargets: sync.Pool{New: func() interface{} { return make(tsByTargets) }},
 	}
 
 	p.getProtobuf = getProtobuf(&p.protobuf)
@@ -49,6 +53,8 @@ func newPools() *pools {
 	p.putReq = putReq(&p.request)
 	p.getBytesReader = getBytesReader(&p.bytesReader)
 	p.putBytesReader = putBytesReader(&p.bytesReader)
+	p.getTsByTargets = getTsByTargets(&p.tsByTargets)
+	p.putTsByTargets = putTsByTargets(&p.tsByTargets)
 	p.getTs = mimirpb.TimeseriesFromPool
 	p.putTs = mimirpb.ReuseTimeseries
 	p.getTsSlice = mimirpb.PreallocTimeseriesSliceFromPool
@@ -102,5 +108,20 @@ func getBytesReader(pool *sync.Pool) func() *bytes.Reader {
 func putBytesReader(pool *sync.Pool) func(*bytes.Reader) {
 	return func(bytesReader *bytes.Reader) {
 		pool.Put(bytesReader)
+	}
+}
+
+func getTsByTargets(pool *sync.Pool) func() tsByTargets {
+	return func() tsByTargets {
+		return pool.Get().(tsByTargets)
+	}
+}
+
+func putTsByTargets(pool *sync.Pool) func(tsByTargets) {
+	return func(tsByTargets tsByTargets) {
+		for key := range tsByTargets {
+			delete(tsByTargets, key)
+		}
+		pool.Put(tsByTargets)
 	}
 }

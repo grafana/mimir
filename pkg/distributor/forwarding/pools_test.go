@@ -31,6 +31,9 @@ func TestUsingPools(t *testing.T) {
 	bytesReader := pools.getBytesReader()
 	pools.putBytesReader(bytesReader)
 
+	tsByTargets := pools.getTsByTargets()
+	pools.putTsByTargets(tsByTargets)
+
 	ts := pools.getTs()
 	pools.putTs(ts)
 
@@ -64,6 +67,10 @@ func validatingPools(t *testing.T, tsSliceCap, protobufCap, snappyCap int) (*poo
 	pools.getBytesReader = validatingBytesReaderPool.get
 	pools.putBytesReader = validatingBytesReaderPool.put
 
+	validatingTsByTargetsPool := newValidatingTsByTargetsPool(t)
+	pools.getTsByTargets = validatingTsByTargetsPool.get
+	pools.putTsByTargets = validatingTsByTargetsPool.put
+
 	validatingMockTsPool := newValidatingTsPool(t)
 	pools.getTs = validatingMockTsPool.get
 	pools.putTs = validatingMockTsPool.put
@@ -77,6 +84,7 @@ func validatingPools(t *testing.T, tsSliceCap, protobufCap, snappyCap int) (*poo
 		validatingSnappyPool.validateUsage()
 		validatingRequestPool.validateUsage()
 		validatingBytesReaderPool.validateUsage()
+		validatingTsByTargetsPool.validateUsage()
 		validatingMockTsPool.validateUsage()
 		validatingMockTsSlicePool.validateUsage()
 	}
@@ -273,6 +281,46 @@ func (v *validatingBytesReaderPool) get() *bytes.Reader {
 
 // put returns a pointer to a bytes reader to the pool, it  must have been created by the pool and it must only be returned once.
 func (v *validatingBytesReaderPool) put(obj *bytes.Reader) {
+	v.validatingPool.put(obj)
+}
+
+type validatingTsByTargetsPool struct {
+	validatingPool
+}
+
+func newValidatingTsByTargetsPool(t *testing.T) *validatingTsByTargetsPool {
+	interfaceToType := func(obj interface{}) tsByTargets {
+		switch obj := obj.(type) {
+		case tsByTargets:
+			return obj
+		default:
+			t.Fatalf("Object of invalid type given: %s", reflect.TypeOf(obj))
+			return nil // Just for linter.
+		}
+	}
+
+	new := func() interface{} {
+		return make(tsByTargets)
+	}
+
+	id := func(obj interface{}) interface{} {
+		objT := interfaceToType(obj)
+
+		// We uniquely identify objects of type tsByTargets by the address which the pointer
+		// is referring to because map types are just pointers.
+		return reflect.ValueOf(objT).Pointer()
+	}
+
+	return &validatingTsByTargetsPool{*newValidatingPool(t, new, id, nil)}
+}
+
+// get returns a tsByTargets from the pool, it must be returned to the pool before validateUsage() is called.
+func (v *validatingTsByTargetsPool) get() tsByTargets {
+	return v.validatingPool.get().(tsByTargets)
+}
+
+// put returns a tsByTargets to the pool, it  must have been created by the pool and it must only be returned once.
+func (v *validatingTsByTargetsPool) put(obj tsByTargets) {
 	v.validatingPool.put(obj)
 }
 

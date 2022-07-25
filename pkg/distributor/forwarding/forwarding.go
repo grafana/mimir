@@ -108,6 +108,7 @@ func (f *forwarder) Forward(ctx context.Context, rules validation.ForwardingRule
 	}
 
 	notIngestedCounts, toIngest, tsByTargets := f.splitByTargets(in, rules)
+	defer f.pools.putTsByTargets(tsByTargets)
 
 	var requestWg sync.WaitGroup
 	requestWg.Add(len(tsByTargets))
@@ -129,6 +130,8 @@ type tsWithSampleCount struct {
 	counts TimeseriesCounts
 }
 
+type tsByTargets map[string]tsWithSampleCount
+
 type TimeseriesCounts struct {
 	SampleCount   int
 	ExemplarCount int
@@ -140,7 +143,7 @@ func (t *TimeseriesCounts) count(ts mimirpb.PreallocTimeseries) {
 }
 
 // forwardingEndpointAssigner returns a func which takes a timeseries and assigns it endpoints to which it should be forwarded.
-func (f *forwarder) splitByTargets(tsSlice []mimirpb.PreallocTimeseries, rules validation.ForwardingRules) (TimeseriesCounts, []mimirpb.PreallocTimeseries, map[string]tsWithSampleCount) {
+func (f *forwarder) splitByTargets(tsSlice []mimirpb.PreallocTimeseries, rules validation.ForwardingRules) (TimeseriesCounts, []mimirpb.PreallocTimeseries, tsByTargets) {
 	// notIngestedCounts keeps track of the number of samples and exemplars that we don't send to the ingesters,
 	// we need to count these in order to later update some of the distributor's metrics correctly.
 	var notIngestedCounts TimeseriesCounts
@@ -148,7 +151,7 @@ func (f *forwarder) splitByTargets(tsSlice []mimirpb.PreallocTimeseries, rules v
 	// tsSliceWriteIdx is the index in the toIngest slice where we are writing TimeSeries to.
 	tsSliceWriteIdx := 0
 
-	tsByTargets := make(map[string]tsWithSampleCount)
+	tsByTargets := f.pools.getTsByTargets()
 	for tsSliceReadIdx, ts := range tsSlice {
 		ingest := false
 		var forwardingTarget string
