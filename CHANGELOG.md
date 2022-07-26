@@ -67,6 +67,11 @@
     - `querier_topology_spread_max_skew`
     - `ruler_topology_spread_max_skew`
 * [FEATURE] Memberlist: added support for experimental memberlist cluster label, through the jsonnet configuration options `memberlist_cluster_label` and `memberlist_cluster_label_verification_disabled`. #2349
+* [FEATURE] Added ruler-querier autoscaling support. It requires [KEDA](https://keda.sh) installed in the Kubernetes cluster. Ruler-querier autoscaler can be enabled and configure through the following options in the jsonnet config: #2545
+  * `autoscaling_ruler_querier_enabled`: `true` to enable autoscaling.
+  * `autoscaling_ruler_querier_min_replicas`: minimum number of ruler-querier replicas.
+  * `autoscaling_ruler_querier_max_replicas`: maximum number of ruler-querier replicas.
+  * `autoscaling_prometheus_url`: Prometheus base URL from which to scrape Mimir metrics (e.g. `http://prometheus.default:9090/prometheus`).
 
 ### Mimirtool
 
