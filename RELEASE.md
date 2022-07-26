@@ -217,6 +217,7 @@ Either:
    **Note**: the weekly and RC number must be separated with dot (.) for correct version ordering.
 
 1. To make a release you have to merge a version bump to the Helm chart to a branch that allows Helm release (e.g. main, release-x.y), see current list in [helm-release.yaml](https://github.com/grafana/mimir/blob/main/.github/workflows/helm-release.yaml) github action.
+
    1. Open a PR
    1. Set the image versions in [values.yaml](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/values.yaml) as needed. See values:
       - `image.tag` (Mimir)
