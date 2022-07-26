@@ -12,6 +12,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"time"
 
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -19,13 +20,13 @@ import (
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 )
 
-func (c *MimirClient) Backfill(blocks []string) error {
+func (c *MimirClient) Backfill(blocks []string, sleepTime time.Duration) error {
 	// Upload each block
 	var succeeded, failed, alreadyExists int
 
 	for _, b := range blocks {
 		logctx := logrus.WithFields(logrus.Fields{"path": b})
-		if err := c.backfillBlock(b, logctx); err != nil {
+		if err := c.backfillBlock(b, logctx, sleepTime); err != nil {
 			if errors.Is(err, errConflict) {
 				logctx.Warning("block already exists on the server")
 				alreadyExists++
@@ -55,7 +56,7 @@ func drainAndCloseBody(resp *http.Response) {
 	_ = resp.Body.Close()
 }
 
-func (c *MimirClient) backfillBlock(blockDir string, logctx *logrus.Entry) error {
+func (c *MimirClient) backfillBlock(blockDir string, logctx *logrus.Entry, sleepTime time.Duration) error {
 	// blockMeta returned by getBlockMeta will have thanos.files section pre-populated.
 	blockMeta, err := getBlockMeta(blockDir)
 	if err != nil {
@@ -72,6 +73,7 @@ func (c *MimirClient) backfillBlock(blockDir string, logctx *logrus.Entry) error
 		startBlockUpload  = "start"
 		uploadFile        = "files"
 		finishBlockUpload = "finish"
+		checkBlockUpload  = "check"
 	)
 
 	buf := bytes.NewBuffer(nil)
@@ -102,9 +104,47 @@ func (c *MimirClient) backfillBlock(blockDir string, logctx *logrus.Entry) error
 	}
 	drainAndCloseBody(resp)
 
-	logctx.Info("block uploaded successfully")
+	for {
+		uploadResult, err := c.getBlockUpload(path.Join(endpointPrefix, url.PathEscape(blockID), checkBlockUpload))
+		if err != nil {
+			return errors.Wrap(err, "failed to check state of block upload")
+		}
+		logctx.WithField("state", uploadResult.State).Debug("checked block upload state")
 
-	return nil
+		if uploadResult.State == "complete" {
+			logctx.Info("block uploaded successfully")
+			return nil
+		}
+
+		if uploadResult.State == "failed" {
+			return errors.Errorf("block validation failed: %s", uploadResult.Error)
+		}
+
+		// Sleep and then try to get the state again.
+		time.Sleep(sleepTime)
+	}
+}
+
+type result struct {
+	State string `json:"result"`
+	Error string `json:"error,omitempty"`
+}
+
+func (c *MimirClient) getBlockUpload(url string) (result, error) {
+	resp, err := c.doRequest(url, http.MethodGet, nil, -1)
+	if err != nil {
+		return result{}, err
+	}
+	defer drainAndCloseBody(resp)
+
+	var r result
+
+	dec := json.NewDecoder(resp.Body)
+	if err := dec.Decode(&r); err != nil {
+		return result{}, err
+	}
+
+	return r, nil
 }
 
 func (c *MimirClient) uploadBlockFile(tf metadata.File, blockDir, fileUploadEndpoint string, logctx *logrus.Entry) error {
