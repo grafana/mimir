@@ -414,7 +414,11 @@ func (t *TCPTransport) getAdvertisedAddr() string {
 func (t *TCPTransport) WriteTo(b []byte, addr string) (time.Time, error) {
 	t.sentPackets.Inc()
 	t.sentPacketsBytes.Add(float64(len(b)))
+	go t.writeToAsync(b, addr)
+	return time.Now(), nil
+}
 
+func (t *TCPTransport) writeToAsync(b []byte, addr string) {
 	err := t.writeTo(b, addr)
 	if err != nil {
 		t.sentPacketsErrors.Inc()
@@ -429,10 +433,7 @@ func (t *TCPTransport) WriteTo(b []byte, addr string) (time.Time, error) {
 
 		// WriteTo is used to send "UDP" packets. Since we use TCP, we can detect more errors,
 		// but memberlist library doesn't seem to cope with that very well. That is why we return nil instead.
-		return time.Now(), nil
 	}
-
-	return time.Now(), nil
 }
 
 func (t *TCPTransport) writeTo(b []byte, addr string) error {
