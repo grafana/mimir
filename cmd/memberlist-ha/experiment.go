@@ -76,12 +76,17 @@ func watchCurrentValue(ctx context.Context, store kv.Client) {
 			level.Error(util_log.Logger).Log("msg", "received a non-int value", "value", val)
 			return true
 		}
-		latency := time.Now().UnixMilli() - intVal.number
-		currentValueLatency.WithLabelValues(strconv.FormatBool(isLeader)).Set(float64(latency))
-		level.Info(util_log.Logger).Log("msg", "value changed", "new_value", val, "latency_millis", latency)
+		nowMillis := time.Now().UnixMilli()
 
-		staleness := time.Now().UnixMilli() - previousValue.Load()
-		previousValueStaleness.WithLabelValues(strconv.FormatBool(isLeader)).Set(float64(staleness))
+		latency := nowMillis - intVal.number
+		currentValueLatency.WithLabelValues(strconv.FormatBool(isLeader)).Set(float64(latency))
+
+		var staleness int64
+		if p := previousValue.Load(); p > 0 {
+			staleness = nowMillis - p
+			previousValueStaleness.WithLabelValues(strconv.FormatBool(isLeader)).Set(float64(staleness))
+		}
+		level.Info(util_log.Logger).Log("msg", "value changed", "new_value", val, "latency_millis", latency, "previous_staleness_millis", staleness)
 
 		previousValue.Store(intVal.number)
 		return true

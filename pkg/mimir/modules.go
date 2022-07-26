@@ -225,7 +225,7 @@ func (t *Mimir) initRuntimeConfig() (services.Service, error) {
 		t.Cfg.LimitsConfig.ActiveSeriesCustomTrackersConfig = t.Cfg.Ingester.ActiveSeriesCustomTrackers
 	}
 
-	if t.Cfg.RuntimeConfig.LoadPath == "" {
+	if len(t.Cfg.RuntimeConfig.LoadPath) == 0 {
 		// no need to initialize module if load path is empty
 		return nil, nil
 	}
