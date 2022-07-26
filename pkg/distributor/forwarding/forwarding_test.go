@@ -641,11 +641,10 @@ func BenchmarkRemoteWriteForwarding(b *testing.B) {
 					require.NoError(b, <-errChs[errChIdx])
 				}
 
-				var toIngest []mimirpb.PreallocTimeseries
-				_, toIngest, errChs[errChIdx] = forwarder.Forward(ctx, tc.rules, samples)
+				_, samples, errChs[errChIdx] = forwarder.Forward(ctx, tc.rules, samples)
 				errChIdx = (errChIdx + 1) % len(errChs)
 
-				mimirpb.ReuseSlice(toIngest)
+				mimirpb.ReuseSlice(samples)
 			}
 		})
 	}
