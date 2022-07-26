@@ -142,7 +142,13 @@ func (t *TimeseriesCounts) count(ts mimirpb.PreallocTimeseries) {
 	t.ExemplarCount += len(ts.TimeSeries.Exemplars)
 }
 
-// forwardingEndpointAssigner returns a func which takes a timeseries and assigns it endpoints to which it should be forwarded.
+// splitByTargets takes a slice of time series and a set of forwarding rules, then it divides the given time series by
+// the target to which each of them should be forwarded according to the forwarding rules.
+// It returns the following values:
+//
+// - The counts of samples and exemplars that will not be ingested by the ingesters.
+// - A slice of time series to ingest into the ingesters.
+// - A map of slices of time series which is keyed by the target to which they should be forwarded.
 func (f *forwarder) splitByTargets(tsSlice []mimirpb.PreallocTimeseries, rules validation.ForwardingRules) (TimeseriesCounts, []mimirpb.PreallocTimeseries, tsByTargets) {
 	// notIngestedCounts keeps track of the number of samples and exemplars that we don't send to the ingesters,
 	// we need to count these in order to later update some of the distributor's metrics correctly.

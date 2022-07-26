@@ -899,8 +899,8 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	return &mimirpb.WriteResponse{}, firstPartialErr
 }
 
-// forwardingReq returns a forwarding request if one is necessary, given the user ID.
-// if no forwarding request is necessary it returns nil.
+// forwardSamples forwards samples in the given req if the forwarding rules of the given userID say so,
+// it submits the samples which should be ingested to d.PushWithCleanup().
 func (d *Distributor) forwardSamples(ctx context.Context, req *mimirpb.WriteRequest, userID string, cleanup func()) (*mimirpb.WriteResponse, error) {
 	forwardingRules := d.limits.ForwardingRules(userID)
 	if len(forwardingRules) == 0 {
