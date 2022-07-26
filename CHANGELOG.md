@@ -18,6 +18,7 @@
   - `-compactor.partial-block-deletion-delay`, as a duration string, allows you to set the delay since a partial block has been modified before marking it for deletion. A value of `0`, the default, disables this feature.
   - The metric `cortex_compactor_blocks_marked_for_deletion_total` has a new value for the `reason` label `reason="partial"`, when a block deletion marker is triggered by the partial block deletion delay.
 * [FEATURE] Querier: enabled support for queries with negative offsets, which are not cached in the query results cache. #2429
+* [FEATURE] EXPERIMENTAL: OpenTelemetry Metrics ingestion path on `/otlp/v1/metrics`. #695 #2436
 * [FEATURE] Querier: Added support for tenant federation to metric metadata endpoint. #2467
 * [ENHANCEMENT] Alertmanager: Allow the HTTP `proxy_url` configuration option in the receiver's configuration. #2317
 * [ENHANCEMENT] ring: optimize shuffle-shard computation when lookback is used, and all instances have registered timestamp within the lookback window. In that case we can immediately return origial ring, because we would select all instances anyway. #2309
@@ -28,16 +29,16 @@
 * [ENHANCEMENT] Added more buckets to `cortex_ingester_client_request_duration_seconds` histogram metric, to correctly track requests taking longer than 1s (up until 16s). #2445
 * [ENHANCEMENT] Azure client: Improve memory usage for large object storage downloads. #2408
 * [ENHANCEMENT] Distributor: Add `-distributor.instance-limits.max-inflight-push-requests-bytes`. This limit protects the distributor against multiple large requests that together may cause an OOM, but are only a few, so do not trigger the `max-inflight-push-requests` limit. #2413
+* [ENHANCEMENT] Distributor: Drop exemplars in distributor for tenants where exemplars are disabled. #2504
 * [BUGFIX] Compactor: log the actual error on compaction failed. #2261
 * [BUGFIX] Alertmanager: restore state from storage even when running a single replica. #2293
 * [BUGFIX] Ruler: do not block "List Prometheus rules" API endpoint while syncing rules. #2289
 * [BUGFIX] Ruler: return proper `*status.Status` error when running in remote operational mode. #2417
-* [BUGFIX] Alertmanager: ensure the configured `-alertmanager.web.external-url` is a full URL, including the scheme and hostname. #2381
+* [BUGFIX] Alertmanager: ensure the configured `-alertmanager.web.external-url` is either a path starting with `/`, or a full URL including the scheme and hostname. #2381 #2542
 * [BUGFIX] Memberlist: fix problem with loss of some packets, typically ring updates when instances were removed from the ring during shutdown. #2418
 * [BUGFIX] Ingester: fix misfiring `MimirIngesterHasUnshippedBlocks` and stale `cortex_ingester_oldest_unshipped_block_timestamp_seconds` when some block uploads fail. #2435
 * [BUGFIX] Query-frontend: fix incorrect mapping of http status codes 429 to 500 when request queue is full. #2447
 * [BUGFIX] Memberlist: Fix problem with ring being empty right after startup. Memberlist KV store now tries to "fast-join" the cluster to avoid serving empty KV store. #2505
-* [ENHANCEMENT] Distributor: Drop exemplars in distributor for tenants where exemplars are disabled. #2504
 
 ### Mixin
 
@@ -66,6 +67,11 @@
     - `querier_topology_spread_max_skew`
     - `ruler_topology_spread_max_skew`
 * [FEATURE] Memberlist: added support for experimental memberlist cluster label, through the jsonnet configuration options `memberlist_cluster_label` and `memberlist_cluster_label_verification_disabled`. #2349
+* [FEATURE] Added ruler-querier autoscaling support. It requires [KEDA](https://keda.sh) installed in the Kubernetes cluster. Ruler-querier autoscaler can be enabled and configure through the following options in the jsonnet config: #2545
+  * `autoscaling_ruler_querier_enabled`: `true` to enable autoscaling.
+  * `autoscaling_ruler_querier_min_replicas`: minimum number of ruler-querier replicas.
+  * `autoscaling_ruler_querier_max_replicas`: maximum number of ruler-querier replicas.
+  * `autoscaling_prometheus_url`: Prometheus base URL from which to scrape Mimir metrics (e.g. `http://prometheus.default:9090/prometheus`).
 
 ### Mimirtool
 
@@ -99,7 +105,6 @@
 * [CHANGE] Memberlist: `-memberlist.abort-if-join-fails` now defaults to false. Previously it defaulted to true. #2168
 * [CHANGE] Ruler: `/api/v1/rules*` and `/prometheus/rules*` configuration endpoints are removed. Use `/prometheus/config/v1/rules*`. #2182
 * [CHANGE] Ingester: `-ingester.exemplars-update-period` has been renamed to `-ingester.tsdb-config-update-period`. You can use it to update multiple, per-tenant TSDB configurations. #2187
-* [FEATURE] EXPERIMENTAL: OpenTelemetry Metrics ingestion path on `/otlp/v1/metrics`. #695 #2436
 * [FEATURE] Ingester: (Experimental) Add the ability to ingest out-of-order samples up to an allowed limit. If you enable this feature, it requires additional memory and disk space. This feature also enables a write-behind log, which might lead to longer ingester-start replays. When this feature is disabled, there is no overhead on memory, disk space, or startup times. #2187
   * `-ingester.out-of-order-time-window`, as duration string, allows you to set how back in time a sample can be. The default is `0s`, where `s` is seconds.
   * `cortex_ingester_tsdb_out_of_order_samples_appended_total` metric tracks the total number of out-of-order samples ingested by the ingester.

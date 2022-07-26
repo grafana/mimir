@@ -73,6 +73,8 @@ spec:
             {{- with .Values.tokengenJob.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+          securityContext:
+            {{- toYaml .Values.tokengenJob.containerSecurityContext | nindent 12 }}
       restartPolicy: OnFailure
       volumes:
         - name: config

@@ -177,6 +177,18 @@ func TestMultitenantAlertmanagerConfig_Validate(t *testing.T) {
 			},
 			expected: errZoneAwarenessEnabledWithoutZoneInfo,
 		},
+		"should pass if the URL just contains the path with the leading /": {
+			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig) {
+				require.NoError(t, cfg.ExternalURL.Set("/alertmanager"))
+			},
+			expected: nil,
+		},
+		"should fail if the URL just contains the hostname (because it can't be disambiguated with a path)": {
+			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig) {
+				require.NoError(t, cfg.ExternalURL.Set("alertmanager"))
+			},
+			expected: errInvalidExternalURLMissingScheme,
+		},
 	}
 
 	for testName, testData := range tests {

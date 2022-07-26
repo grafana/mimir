@@ -104,11 +104,6 @@ func (c *MultitenantCompactor) FinishBlockUpload(w http.ResponseWriter, r *http.
 	}
 
 	go c.completeBlockUpload(ctx, logger, userBkt, blockID, *m)
-	//
-	//if err := c.completeBlockUpload(ctx, logger, userBkt, blockID, *m); err != nil {
-	//	writeBlockUploadError(err, op, "", logger, w)
-	//	return
-	//}
 
 	w.WriteHeader(http.StatusOK)
 }
@@ -497,19 +492,19 @@ type validationFile struct {
 	Error      string // Error message if validation failed.
 }
 
-type blockState int
+type blockUploadState int
 
 const (
-	blockStateUnknown         blockState = iota // unknown, default value
-	blockIsComplete                             // meta.json file exists
-	blockUploadNotStarted                       // meta.json doesn't exist, uploading-meta.json doesn't exist
-	blockUploadInProgress                       // meta.json doesn't exist, but uploading-meta.json does
-	blockValidationInProgress                   // meta.json doesn't exist, uploading-meta.json exists, validation.json exists and is recent
+	blockStateUnknown         blockUploadState = iota // unknown, default value
+	blockIsComplete                                   // meta.json file exists
+	blockUploadNotStarted                             // meta.json doesn't exist, uploading-meta.json doesn't exist
+	blockUploadInProgress                             // meta.json doesn't exist, but uploading-meta.json does
+	blockValidationInProgress                         // meta.json doesn't exist, uploading-meta.json exists, validation.json exists and is recent
 	blockValidationFailed
 	blockValidationStale
 )
 
-var blockStateMessages = map[blockState]string{
+var blockStateMessages = map[blockUploadState]string{
 	blockStateUnknown:         "unknown",
 	blockIsComplete:           "block already exists",
 	blockUploadNotStarted:     "block upload not started",
@@ -519,7 +514,7 @@ var blockStateMessages = map[blockState]string{
 	blockValidationStale:      "block validation stale",
 }
 
-func (s blockState) String() string {
+func (s blockUploadState) String() string {
 	msg, ok := blockStateMessages[s]
 	if ok {
 		return msg
@@ -530,7 +525,7 @@ func (s blockState) String() string {
 // checkBlockState checks blocks state and returns various HTTP status codes for individual states if block
 // upload cannot start, finish or file cannot be uploaded to the block.
 func (c *MultitenantCompactor) checkBlockState(ctx context.Context, userBkt objstore.Bucket, blockID ulid.ULID, requireUploadInProgress bool) (*metadata.Meta, *validationFile, error) {
-	s, m, v, err := c.getBlockState(ctx, userBkt, blockID)
+	s, m, v, err := c.getBlockUploadState(ctx, userBkt, blockID)
 	if err != nil {
 		return m, v, err
 	}
@@ -557,7 +552,8 @@ func (c *MultitenantCompactor) checkBlockState(ctx context.Context, userBkt objs
 	return m, v, httpError{message: s.String(), statusCode: http.StatusInternalServerError}
 }
 
-func (c *MultitenantCompactor) getBlockState(ctx context.Context, userBkt objstore.Bucket, blockID ulid.ULID) (blockState, *metadata.Meta, *validationFile, error) {
+// getBlockUploadState returns state of the block upload, and meta and validation objects, if they exist.
+func (c *MultitenantCompactor) getBlockUploadState(ctx context.Context, userBkt objstore.Bucket, blockID ulid.ULID) (blockUploadState, *metadata.Meta, *validationFile, error) {
 	exists, err := userBkt.Exists(ctx, path.Join(blockID.String(), block.MetaFilename))
 	if err != nil {
 		return blockStateUnknown, nil, nil, err
