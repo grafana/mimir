@@ -18,21 +18,20 @@ import (
 
 // TODO: add metrics
 
-// splitByIntervalMiddleware is a Middleware that can (optionally) split the query by interval
-type splitByIntervalMiddleware struct {
+// splitByInstantIntervalMiddleware is a Middleware that can (optionally) split the instant query by splitInterval
+type splitByInstantIntervalMiddleware struct {
 	next   Handler
 	limits Limits
 	logger log.Logger
 
 	engine *promql.Engine
 
-	// Split by interval
 	splitEnabled  bool
 	splitInterval time.Duration
 }
 
-// newSplitByIntervalMiddleware makes a new splitAndCacheMiddleware.
-func newSplitByIntervalMiddleware(
+// newSplitByInstantIntervalMiddleware makes a new splitByInstantIntervalMiddleware.
+func newSplitByInstantIntervalMiddleware(
 	splitEnabled bool,
 	splitInterval time.Duration,
 	limits Limits,
@@ -40,7 +39,7 @@ func newSplitByIntervalMiddleware(
 	engine *promql.Engine) Middleware {
 
 	return MiddlewareFunc(func(next Handler) Handler {
-		return &splitByIntervalMiddleware{
+		return &splitByInstantIntervalMiddleware{
 			splitEnabled:  splitEnabled,
 			next:          next,
 			limits:        limits,
@@ -51,14 +50,17 @@ func newSplitByIntervalMiddleware(
 	})
 }
 
-func (s *splitByIntervalMiddleware) Do(ctx context.Context, req Request) (Response, error) {
+func (s *splitByInstantIntervalMiddleware) Do(ctx context.Context, req Request) (Response, error) {
 	_, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	// TODO: configure limit based on tenant ID
-	mapper, err := astmapper.NewRangeMapper(s.splitInterval, s.logger)
+	if !s.splitEnabled || s.splitInterval <= 0 {
+		return s.next.Do(ctx, req)
+	}
+
+	mapper, err := astmapper.NewInstantSplitter(s.splitInterval, s.logger)
 	if err != nil {
 		return s.next.Do(ctx, req)
 	}

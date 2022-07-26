@@ -13,9 +13,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestRangeMapper(t *testing.T) {
+func TestInstantSplitter(t *testing.T) {
 	splitInterval := 1 * time.Minute
-	mapper, err := NewRangeMapper(splitInterval, log.NewNopLogger())
+	splitter, err := NewInstantSplitter(splitInterval, log.NewNopLogger())
 	require.NoError(t, err)
 
 	for _, tt := range []struct {
@@ -171,7 +171,7 @@ func TestRangeMapper(t *testing.T) {
 			require.NoError(t, err)
 
 			stats := NewMapperStats()
-			mapped, err := mapper.Map(expr, stats)
+			mapped, err := splitter.Map(expr, stats)
 			require.NoError(t, err)
 			require.Equal(t, out.String(), mapped.String())
 
@@ -180,9 +180,9 @@ func TestRangeMapper(t *testing.T) {
 	}
 }
 
-func TestRangeMapperUnevenRangeInterval(t *testing.T) {
+func TestInstantSplitterUnevenRangeInterval(t *testing.T) {
 	splitInterval := 2 * time.Minute
-	mapper, err := NewRangeMapper(splitInterval, log.NewNopLogger())
+	splitter, err := NewInstantSplitter(splitInterval, log.NewNopLogger())
 	require.NoError(t, err)
 
 	for _, tt := range []struct {
@@ -221,7 +221,7 @@ func TestRangeMapperUnevenRangeInterval(t *testing.T) {
 			require.NoError(t, err)
 
 			stats := NewMapperStats()
-			mapped, err := mapper.Map(expr, stats)
+			mapped, err := splitter.Map(expr, stats)
 			require.NoError(t, err)
 			require.Equal(t, out.String(), mapped.String())
 
@@ -230,9 +230,9 @@ func TestRangeMapperUnevenRangeInterval(t *testing.T) {
 	}
 }
 
-func TestRangeMapperNoOp(t *testing.T) {
+func TestInstantSplitterNoOp(t *testing.T) {
 	splitInterval := 1 * time.Minute
-	mapper, err := NewRangeMapper(splitInterval, log.NewNopLogger())
+	splitter, err := NewInstantSplitter(splitInterval, log.NewNopLogger())
 	require.NoError(t, err)
 
 	for _, tt := range []struct {
@@ -265,7 +265,7 @@ func TestRangeMapperNoOp(t *testing.T) {
 			require.NoError(t, err)
 
 			stats := NewMapperStats()
-			mapped, err := mapper.Map(expr, stats)
+			mapped, err := splitter.Map(expr, stats)
 			require.NoError(t, err)
 			require.Equal(t, expr.String(), mapped.String())
 		})

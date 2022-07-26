@@ -222,7 +222,7 @@ func newQueryTripperware(
 		)
 		queryInstantMiddleware = append(
 			queryInstantMiddleware,
-			newSplitByIntervalMiddleware(true, cfg.SplitQueriesByInterval, limits, log, engine),
+			newSplitByInstantIntervalMiddleware(cfg.SplitInstantQueriesByInterval > 0, cfg.SplitInstantQueriesByInterval, limits, log, engine),
 			newInstrumentMiddleware("querysharding", metrics, log),
 			queryshardingMiddleware,
 		)
