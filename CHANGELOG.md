@@ -72,6 +72,7 @@
   * `autoscaling_ruler_querier_min_replicas`: minimum number of ruler-querier replicas.
   * `autoscaling_ruler_querier_max_replicas`: maximum number of ruler-querier replicas.
   * `autoscaling_prometheus_url`: Prometheus base URL from which to scrape Mimir metrics (e.g. `http://prometheus.default:9090/prometheus`).
+* [ENHANCEMENT] Memberlist now uses DNS service-discovery by default. #2549
 
 ### Mimirtool
 
