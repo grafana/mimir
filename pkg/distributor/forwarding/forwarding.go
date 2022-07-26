@@ -277,7 +277,10 @@ func (f *forwarder) newRequest(ctx context.Context, endpoint string, ts tsWithSa
 	req.exemplars = f.exemplarsTotal
 	req.latency = f.requestLatencyHistogram
 
-	f.reqCh <- req
+	select {
+	case <-ctx.Done():
+	case f.reqCh <- req:
+	}
 }
 
 // do performs a forwarding request.
