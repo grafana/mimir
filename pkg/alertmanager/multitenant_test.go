@@ -183,7 +183,7 @@ func TestMultitenantAlertmanagerConfig_Validate(t *testing.T) {
 			},
 			expected: nil,
 		},
-		"should file if the URL just contains the hostname (because it can't be disambiguated with a path)": {
+		"should fail if the URL just contains the hostname (because it can't be disambiguated with a path)": {
 			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig) {
 				require.NoError(t, cfg.ExternalURL.Set("alertmanager"))
 			},
