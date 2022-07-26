@@ -10,6 +10,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/kv"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -57,9 +58,18 @@ func watchCurrentValue(ctx context.Context, store kv.Client) {
 	currentValueLatency := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name:      "current_value_latency_milliseconds",
 		Namespace: "experiment",
+		Help:      "How old was the value when we received it",
 	}, []string{"is_leader"})
 	prometheus.MustRegister(currentValueLatency)
 
+	previousValueStaleness := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name:      "previous_value_staleness_milliseconds",
+		Namespace: "experiment",
+		Help:      "How old was our last value when we received an update",
+	}, []string{"is_leader"})
+	prometheus.MustRegister(previousValueStaleness)
+
+	var previousValue atomic.Int64
 	store.WatchKey(ctx, key, func(val interface{}) bool {
 		intVal, ok := val.(*value)
 		if !ok {
@@ -70,6 +80,10 @@ func watchCurrentValue(ctx context.Context, store kv.Client) {
 		currentValueLatency.WithLabelValues(strconv.FormatBool(isLeader)).Set(float64(latency))
 		level.Info(util_log.Logger).Log("msg", "value changed", "new_value", val, "latency_millis", latency)
 
+		staleness := time.Now().UnixMilli() - previousValue.Load()
+		previousValueStaleness.WithLabelValues(strconv.FormatBool(isLeader)).Set(float64(staleness))
+
+		previousValue.Store(intVal.number)
 		return true
 	})
 }

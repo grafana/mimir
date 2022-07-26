@@ -520,3 +520,6 @@ integration-tests: cmd/mimir/$(UPTODATE)
 include docs/docs.mk
 DOCS_DIR = docs/sources
 docs: doc
+
+# push memberlist-ha
+# tag=20; make GOARCH=amd64 cmd/memberlist-ha/.uptodate; docker tag docker.io/grafana/memberlist-ha:latest k3d-grafana.localhost:60433/memberlist-ha:$tag; docker push k3d-grafana.localhost:60433/memberlist-ha:$tag; docker tag docker.io/grafana/memberlist-ha:latest us.gcr.io/kubernetes-dev/memberlist-ha:$tag; docker push us.gcr.io/kubernetes-dev/memberlist-ha:$tag
