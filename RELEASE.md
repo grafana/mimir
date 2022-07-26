@@ -156,7 +156,7 @@ To publish a stable release:
       1. Open the respective dashboard page
       1. Click "Revisions" tab
       1. Click "Upload new revision" and upload the updated `.json`
-1. Create [Helm release](#helm-release).
+1. Create the [Helm release](#helm-release).
 
 ### How to tag a release
 
