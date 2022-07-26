@@ -585,8 +585,8 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 		{
 			name: "valid request when both in-flight meta file and complete meta file exist in object storage",
 			setUp: func(t *testing.T, bkt *objstore.InMemBucket) metadata.Meta {
-				marshalAndUploadJson(t, bkt, uploadingMetaPath, validMeta)
-				marshalAndUploadJson(t, bkt, metaPath, validMeta)
+				marshalAndUploadJSON(t, bkt, uploadingMetaPath, validMeta)
+				marshalAndUploadJSON(t, bkt, metaPath, validMeta)
 				return validMeta
 			},
 			verifyBucket: func(t *testing.T, bkt *objstore.InMemBucket) {
@@ -598,7 +598,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 		{
 			name: "invalid request when in-flight meta file exists in object storage",
 			setUp: func(t *testing.T, bkt *objstore.InMemBucket) metadata.Meta {
-				marshalAndUploadJson(t, bkt, uploadingMetaPath, validMeta)
+				marshalAndUploadJSON(t, bkt, uploadingMetaPath, validMeta)
 
 				meta := validMeta
 				// Invalid version
@@ -613,7 +613,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 		{
 			name: "valid request when same in-flight meta file exists in object storage",
 			setUp: func(t *testing.T, bkt *objstore.InMemBucket) metadata.Meta {
-				marshalAndUploadJson(t, bkt, uploadingMetaPath, validMeta)
+				marshalAndUploadJSON(t, bkt, uploadingMetaPath, validMeta)
 				return validMeta
 			},
 			verifyBucket: func(t *testing.T, bkt *objstore.InMemBucket) {
@@ -629,7 +629,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 				meta := validMeta
 				meta.MinTime -= 1000
 				meta.MaxTime -= 1000
-				marshalAndUploadJson(t, bkt, uploadingMetaPath, meta)
+				marshalAndUploadJSON(t, bkt, uploadingMetaPath, meta)
 
 				// Return meta file that differs from the one in bucket
 				return validMeta
@@ -997,7 +997,7 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 				},
 			},
 			setUpBucket: func(t *testing.T, bkt *objstore.InMemBucket) {
-				marshalAndUploadJson(t, bkt, uploadingMetaPath, validMeta)
+				marshalAndUploadJSON(t, bkt, uploadingMetaPath, validMeta)
 			},
 			verifyBucket: func(t *testing.T, bkt *objstore.InMemBucket, files []file) {
 				t.Helper()
@@ -1270,8 +1270,8 @@ func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 	}
 }
 
-// marshalAndUploadJson is a test helper for uploading a meta file to a certain path in a bucket.
-func marshalAndUploadJson(t *testing.T, bkt objstore.Bucket, pth string, val interface{}) {
+// marshalAndUploadJSON is a test helper for uploading a meta file to a certain path in a bucket.
+func marshalAndUploadJSON(t *testing.T, bkt objstore.Bucket, pth string, val interface{}) {
 	t.Helper()
 	buf, err := json.Marshal(val)
 	require.NoError(t, err)
@@ -1299,7 +1299,7 @@ func TestMultitenantCompactor_GetBlockUploadStateHandler(t *testing.T) {
 
 		"complete block": {
 			setupBucket: func(t *testing.T, bkt objstore.Bucket) {
-				marshalAndUploadJson(t, bkt, path.Join(tenantID, blockID, block.MetaFilename), metadata.Meta{})
+				marshalAndUploadJSON(t, bkt, path.Join(tenantID, blockID, block.MetaFilename), metadata.Meta{})
 			},
 			expectedStatusCode: http.StatusOK,
 			expectedBody:       `{"result":"complete"}`,
@@ -1307,7 +1307,7 @@ func TestMultitenantCompactor_GetBlockUploadStateHandler(t *testing.T) {
 
 		"upload in progress": {
 			setupBucket: func(t *testing.T, bkt objstore.Bucket) {
-				marshalAndUploadJson(t, bkt, path.Join(tenantID, blockID, uploadingMetaFilename), metadata.Meta{})
+				marshalAndUploadJSON(t, bkt, path.Join(tenantID, blockID, uploadingMetaFilename), metadata.Meta{})
 			},
 			expectedStatusCode: http.StatusOK,
 			expectedBody:       `{"result":"uploading"}`,
@@ -1315,8 +1315,8 @@ func TestMultitenantCompactor_GetBlockUploadStateHandler(t *testing.T) {
 
 		"validating": {
 			setupBucket: func(t *testing.T, bkt objstore.Bucket) {
-				marshalAndUploadJson(t, bkt, path.Join(tenantID, blockID, uploadingMetaFilename), metadata.Meta{})
-				marshalAndUploadJson(t, bkt, path.Join(tenantID, blockID, validationFilename), validationFile{LastUpdate: time.Now().UnixMilli()})
+				marshalAndUploadJSON(t, bkt, path.Join(tenantID, blockID, uploadingMetaFilename), metadata.Meta{})
+				marshalAndUploadJSON(t, bkt, path.Join(tenantID, blockID, validationFilename), validationFile{LastUpdate: time.Now().UnixMilli()})
 			},
 			expectedStatusCode: http.StatusOK,
 			expectedBody:       `{"result":"validating"}`,
@@ -1324,8 +1324,8 @@ func TestMultitenantCompactor_GetBlockUploadStateHandler(t *testing.T) {
 
 		"validation failed": {
 			setupBucket: func(t *testing.T, bkt objstore.Bucket) {
-				marshalAndUploadJson(t, bkt, path.Join(tenantID, blockID, uploadingMetaFilename), metadata.Meta{})
-				marshalAndUploadJson(t, bkt, path.Join(tenantID, blockID, validationFilename), validationFile{LastUpdate: time.Now().UnixMilli(), Error: "error during validation"})
+				marshalAndUploadJSON(t, bkt, path.Join(tenantID, blockID, uploadingMetaFilename), metadata.Meta{})
+				marshalAndUploadJSON(t, bkt, path.Join(tenantID, blockID, validationFilename), validationFile{LastUpdate: time.Now().UnixMilli(), Error: "error during validation"})
 			},
 			expectedStatusCode: http.StatusOK,
 			expectedBody:       `{"result":"failed","error":"error during validation"}`,
@@ -1333,8 +1333,8 @@ func TestMultitenantCompactor_GetBlockUploadStateHandler(t *testing.T) {
 
 		"stale validation file": {
 			setupBucket: func(t *testing.T, bkt objstore.Bucket) {
-				marshalAndUploadJson(t, bkt, path.Join(tenantID, blockID, uploadingMetaFilename), metadata.Meta{})
-				marshalAndUploadJson(t, bkt, path.Join(tenantID, blockID, validationFilename), validationFile{LastUpdate: time.Now().Add(-10 * time.Minute).UnixMilli()})
+				marshalAndUploadJSON(t, bkt, path.Join(tenantID, blockID, uploadingMetaFilename), metadata.Meta{})
+				marshalAndUploadJSON(t, bkt, path.Join(tenantID, blockID, validationFilename), validationFile{LastUpdate: time.Now().Add(-10 * time.Minute).UnixMilli()})
 			},
 			expectedStatusCode: http.StatusOK,
 			expectedBody:       `{"result":"uploading"}`,
