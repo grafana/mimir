@@ -157,9 +157,9 @@ func (i *instantSplitter) mapAggregatorExpr(expr *parser.AggregateExpr, stats *M
 	// Note: vector aggregators avg, count and topk are supported but not splittable, so cannot be sent downstream.
 	// Similarly, inner binary operations cannot be sent downstream
 	if i.embeddedAggregatorExpr == nil && isVectorAggregatorSplittable(expr) && !isBinaryExpression(expr.Expr) {
-		mappedNode, finished, err = NewASTNodeMapper(i.copyWithEmbeddedExpr(expr)).MapNode(expr.Expr, nil)
+		mappedNode, finished, err = NewASTNodeMapper(i.copyWithEmbeddedExpr(expr)).MapNode(expr.Expr, stats)
 	} else {
-		mappedNode, finished, err = i.MapNode(expr.Expr, nil)
+		mappedNode, finished, err = i.MapNode(expr.Expr, stats)
 	}
 	if err != nil {
 		return nil, false, err
@@ -255,15 +255,15 @@ func (i *instantSplitter) mapCall(expr *parser.Call, stats *MapperStats) (mapped
 	case avgOverTime:
 		return i.mapCallAvgOverTime(expr, stats)
 	case countOverTime:
-		return i.mapCallByRangeInterval(expr, rangeInterval, parser.SUM)
+		return i.mapCallByRangeInterval(expr, stats, rangeInterval, parser.SUM)
 	case maxOverTime:
-		return i.mapCallByRangeInterval(expr, rangeInterval, parser.MAX)
+		return i.mapCallByRangeInterval(expr, stats, rangeInterval, parser.MAX)
 	case minOverTime:
-		return i.mapCallByRangeInterval(expr, rangeInterval, parser.MIN)
+		return i.mapCallByRangeInterval(expr, stats, rangeInterval, parser.MIN)
 	case rate:
-		return i.mapCallRate(expr, rangeInterval)
+		return i.mapCallRate(expr, stats, rangeInterval)
 	case sumOverTime:
-		return i.mapCallByRangeInterval(expr, rangeInterval, parser.SUM)
+		return i.mapCallByRangeInterval(expr, stats, rangeInterval, parser.SUM)
 	default:
 		return expr, false, nil
 	}
@@ -295,7 +295,7 @@ func (i *instantSplitter) mapCallAvgOverTime(expr *parser.Call, stats *MapperSta
 }
 
 // mapCallRate maps a rate function to expression increase / rangeInterval
-func (i *instantSplitter) mapCallRate(expr *parser.Call, rangeInterval time.Duration) (mapped parser.Node, finished bool, err error) {
+func (i *instantSplitter) mapCallRate(expr *parser.Call, stats *MapperStats, rangeInterval time.Duration) (mapped parser.Node, finished bool, err error) {
 	increaseExpr := &parser.Call{
 		Func:     parser.Functions[string(increase)],
 		Args:     expr.Args,
@@ -311,7 +311,7 @@ func (i *instantSplitter) mapCallRate(expr *parser.Call, rangeInterval time.Dura
 		}
 	}
 
-	mappedNode, finished, err := i.mapCallByRangeInterval(increaseExpr, rangeInterval, parser.SUM)
+	mappedNode, finished, err := i.mapCallByRangeInterval(increaseExpr, stats, rangeInterval, parser.SUM)
 	if err != nil {
 		return nil, false, err
 	}
@@ -331,7 +331,7 @@ func (i *instantSplitter) mapCallRate(expr *parser.Call, rangeInterval time.Dura
 	}, true, nil
 }
 
-func (i *instantSplitter) mapCallByRangeInterval(expr *parser.Call, rangeInterval time.Duration, op parser.ItemType) (mapped parser.Node, finished bool, err error) {
+func (i *instantSplitter) mapCallByRangeInterval(expr *parser.Call, stats *MapperStats, rangeInterval time.Duration, op parser.ItemType) (mapped parser.Node, finished bool, err error) {
 	// Default grouping is 'without' for concatenating the embedded queries
 	var grouping []string
 	groupingWithout := true
@@ -340,7 +340,7 @@ func (i *instantSplitter) mapCallByRangeInterval(expr *parser.Call, rangeInterva
 		groupingWithout = i.embeddedAggregatorExpr.Without
 	}
 
-	embeddedExpr, finished, err := i.splitAndSquashCall(expr, rangeInterval)
+	embeddedExpr, finished, err := i.splitAndSquashCall(expr, stats, rangeInterval)
 	if err != nil {
 		return nil, false, err
 	}
@@ -362,7 +362,7 @@ func (i *instantSplitter) mapCallByRangeInterval(expr *parser.Call, rangeInterva
 // If the outer expression is a vector aggregator, r.embeddedAggregatorExpr will contain the expression
 // In this case, the vector aggregator should be downstream to the embedded queries in order to limit
 // the label cardinality of the parallel queries
-func (i *instantSplitter) splitAndSquashCall(expr *parser.Call, rangeInterval time.Duration) (mapped parser.Expr, finished bool, err error) {
+func (i *instantSplitter) splitAndSquashCall(expr *parser.Call, stats *MapperStats, rangeInterval time.Duration) (mapped parser.Expr, finished bool, err error) {
 	splitCount := int(math.Ceil(float64(rangeInterval) / float64(i.splitByInterval)))
 	if splitCount <= 0 {
 		return expr, false, nil
@@ -400,6 +400,9 @@ func (i *instantSplitter) splitAndSquashCall(expr *parser.Call, rangeInterval ti
 	if err != nil {
 		return nil, false, err
 	}
+
+	// Update stats
+	stats.AddShardedQueries(splitCount)
 
 	return squashExpr, true, nil
 }

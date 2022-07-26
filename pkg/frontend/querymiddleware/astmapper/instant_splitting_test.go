@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -119,7 +120,7 @@ func TestInstantSplitter(t *testing.T) {
 		{
 			in:                   `rate({app="foo"}[3m]) / rate({app="baz"}[6m])`,
 			out:                  `(sum without() (` + concatOffsets(splitInterval, 3, `increase({app="foo"}[x]y)`) + `) / 180) / (sum without() (` + concatOffsets(splitInterval, 6, `increase({app="baz"}[x]y)`) + `) / 360)`,
-			expectedSplitQueries: 3,
+			expectedSplitQueries: 9,
 		},
 		{
 			in:                   `rate({app="foo"}[3m]) / 10`,
@@ -141,13 +142,13 @@ func TestInstantSplitter(t *testing.T) {
 		{
 			in:                   `sum(sum_over_time({app="foo"}[3m]) + count_over_time({app="foo"}[1m]))`,
 			out:                  `sum ((sum without() (` + concatOffsets(splitInterval, 3, `sum_over_time({app="foo"}[x]y)`) + `)) + (count_over_time({app="foo"}[1m])))`,
-			expectedSplitQueries: 6,
+			expectedSplitQueries: 3,
 		},
 		// Should map only right-hand side operand of inner binary operation, if left-hand side range interval is too small
 		{
 			in:                   `sum(sum_over_time({app="foo"}[1m]) + count_over_time({app="foo"}[3m]))`,
 			out:                  `sum ((sum_over_time({app="foo"}[1m])) + (sum without() (` + concatOffsets(splitInterval, 3, `count_over_time({app="foo"}[x]y)`) + `)))`,
-			expectedSplitQueries: 6,
+			expectedSplitQueries: 3,
 		},
 		// Parenthesis expression
 		{
@@ -159,7 +160,7 @@ func TestInstantSplitter(t *testing.T) {
 		{
 			in:                   `sum(avg_over_time({app="foo"}[3m]))`,
 			out:                  `sum((sum without() (` + concatOffsets(splitInterval, 3, `sum_over_time({app="foo"}[x]y)`) + `)) / (sum without() (` + concatOffsets(splitInterval, 3, `count_over_time({app="foo"}[x]y)`) + `)))`,
-			expectedSplitQueries: 3,
+			expectedSplitQueries: 6,
 		},
 		// Should split deeper in the tree if an inner expression is splittable
 		{
@@ -187,7 +188,7 @@ func TestInstantSplitter(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, out.String(), mapped.String())
 
-			//assert.Equal(t, tt.expectedSplitQueries, stats.GetShardedQueries())
+			assert.Equal(t, tt.expectedSplitQueries, stats.GetShardedQueries())
 		})
 	}
 }
@@ -237,7 +238,7 @@ func TestInstantSplitterUnevenRangeInterval(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, out.String(), mapped.String())
 
-			//assert.Equal(t, tt.expectedSplitQueries, stats.GetShardedQueries())
+			assert.Equal(t, tt.expectedSplitQueries, stats.GetShardedQueries())
 		})
 	}
 }
