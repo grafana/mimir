@@ -54,6 +54,7 @@
 
 ### Jsonnet
 
+* [ENHANCEMENT] Memberlist now uses DNS service-discovery by default. #2549
 * [CHANGE] query-scheduler is enabled by default. We advise to deploy the query-scheduler to improve the scalability of the query-frontend. #2431
 * [CHANGE] Replaced anti-affinity rules with pod topology spread constraints for distributor, query-frontend, querier and ruler.
   - The following configuration options have been removed:
