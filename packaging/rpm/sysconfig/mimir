@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/packaging/rpm/sysconfig/cortex
+# Provenance-includes-license: Apache-2.0
+# Provenance-includes-copyright: The Cortex Authors.
+#
+# Log level. Valid levels: [debug, info, warn, error]. Default: "info"
+LOG_LEVEL="info"
+
+# Custom user defined arguments.
+CUSTOM_ARGS=""
+# CUSTOM_ARGS="--config.file /etc/mimir/config.yaml"
+
+# Restart on system upgrade. Default: "true".
+RESTART_ON_UPGRADE="true"

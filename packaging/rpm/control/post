@@ -1,0 +1,33 @@
+#!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
+# Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/packaging/rpm/control/post
+# Provenance-includes-license: Apache-2.0
+# Provenance-includes-copyright: The Cortex Authors.
+
+set -e
+
+# shellcheck disable=1091
+[ -f /etc/sysconfig/mimir ] && . /etc/sysconfig/mimir
+
+# Initial installation: $1 == 1
+# Upgrade: $1 == 2, and configured to restart on upgrade
+if [ "$1" -eq 1 ]; then
+  [ -z "$MIMIR_USER" ] && MIMIR_USER="mimir"
+  [ -z "$MIMIR_GROUP" ] && MIMIR_GROUP="mimir"
+  if ! getent group "$MIMIR_GROUP" >/dev/null 2>&1; then
+    groupadd -r "$MIMIR_GROUP"
+  fi
+  if ! getent passwd "$MIMIR_USER" >/dev/null 2>&1; then
+    useradd -m -r -g mimir -d /var/lib/mimir -s /sbin/nologin -c "mimir user" mimir
+  fi
+
+  chmod 640 /etc/mimir/config.example.yaml
+  chown root:$MIMIR_GROUP /etc/mimir/config.example.yaml
+
+elif [ "$1" -ge 2 ]; then
+  if [ "$RESTART_ON_UPGRADE" = "true" ]; then
+    if command -v systemctl 2>/dev/null; then
+      systemctl daemon-reload
+    fi
+  fi
+fi
