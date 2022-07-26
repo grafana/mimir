@@ -82,7 +82,10 @@ func (s *splitByInstantIntervalMiddleware) Do(ctx context.Context, req Request) 
 		return s.next.Do(ctx, req)
 	}
 
-	req = req.WithQuery(instantSplitQuery.String())
+	// Send hint with number of embedded queries to the sharding middleware
+	hints := &Hints{TotalQueries: int32(stats.GetShardedQueries())}
+
+	req = req.WithQuery(instantSplitQuery.String()).WithHints(hints)
 	shardedQueryable := newShardedQueryable(req, s.next)
 
 	qry, err := newQuery(req, s.engine, lazyquery.NewLazyQueryable(shardedQueryable))
