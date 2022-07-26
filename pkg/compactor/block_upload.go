@@ -443,9 +443,8 @@ func (c *MultitenantCompactor) checkBlockState(ctx context.Context, userBkt objs
 	case blockUploadNotStarted:
 		if requireUploadInProgress {
 			return m, v, httpError{message: s.String(), statusCode: http.StatusNotFound}
-		} else {
-			return m, v, nil
 		}
+		return m, v, nil
 	case blockValidationStale:
 		// if validation is stale, we treat block as being in "upload in progress" state, and validation can start again.
 		fallthrough
