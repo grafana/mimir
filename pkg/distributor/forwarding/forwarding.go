@@ -22,17 +22,20 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/extract"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 type Forwarder interface {
+	services.Service
 	Forward(ctx context.Context, forwardingRules validation.ForwardingRules, ts []mimirpb.PreallocTimeseries) (TimeseriesCounts, []mimirpb.PreallocTimeseries, chan error)
-	Stop()
 }
 
 type forwarder struct {
+	services.Service
+
 	cfg      Config
 	pools    *pools
 	client   http.Client
@@ -87,17 +90,39 @@ func NewForwarder(cfg Config, reg prometheus.Registerer, log log.Logger) Forward
 		}),
 	}
 
-	f.workerWg.Add(f.cfg.RequestConcurrency)
-	for i := 0; i < f.cfg.RequestConcurrency; i++ {
-		go f.worker()
-	}
+	f.Service = services.NewBasicService(f.start, f.loop, f.stop)
 
 	return f
 }
 
-func (f *forwarder) Stop() {
+func (f *forwarder) start(ctx context.Context) error {
+	f.workerWg.Add(f.cfg.RequestConcurrency)
+
+	for i := 0; i < f.cfg.RequestConcurrency; i++ {
+		go f.worker()
+	}
+
+	return nil
+}
+
+func (f *forwarder) loop(ctx context.Context) error {
+	<-ctx.Done()
+	return nil
+}
+
+func (f *forwarder) stop(_ error) error {
 	close(f.reqCh)
 	f.workerWg.Wait()
+	return nil
+}
+
+// worker is a worker go routine which performs the forwarding requests that it receives through a channel.
+func (f *forwarder) worker() {
+	defer f.workerWg.Done()
+
+	for req := range f.reqCh {
+		req.do()
+	}
 }
 
 func (f *forwarder) Forward(ctx context.Context, rules validation.ForwardingRules, in []mimirpb.PreallocTimeseries) (TimeseriesCounts, []mimirpb.PreallocTimeseries, chan error) {
@@ -226,15 +251,6 @@ func (f *forwarder) growTimeseriesSlice(ts []mimirpb.PreallocTimeseries) []mimir
 	ts[newPos].TimeSeries = f.pools.getTs()
 
 	return ts
-}
-
-// worker is a worker go routine which performs the forwarding requests that it receives through a channel.
-func (f *forwarder) worker() {
-	defer f.workerWg.Done()
-
-	for req := range f.reqCh {
-		req.do()
-	}
 }
 
 type request struct {

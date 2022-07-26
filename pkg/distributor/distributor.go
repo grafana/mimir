@@ -48,6 +48,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	util_math "github.com/grafana/mimir/pkg/util/math"
+	"github.com/grafana/mimir/pkg/util/push"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -105,7 +106,7 @@ type Distributor struct {
 	requestRateLimiter   *limiter.RateLimiter
 	ingestionRateLimiter *limiter.RateLimiter
 
-	// Manager for subservices (HA Tracker, distributor ring and client pool)
+	// Manager for subservices (HA Tracker, distributor ring, forwarder and client pool)
 	subservices        *services.Manager
 	subservicesWatcher *services.FailureWatcher
 
@@ -229,7 +230,6 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		ingesterPool:          NewPool(cfg.PoolConfig, ingestersRing, cfg.IngesterClientFactory, log),
 		healthyInstancesCount: atomic.NewUint32(0),
 		limits:                limits,
-		forwarder:             forwarding.NewForwarder(cfg.Forwarding, reg, log),
 		HATracker:             haTracker,
 		ingestionRate:         util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
 
@@ -379,6 +379,12 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	d.replicationFactor.Set(float64(ingestersRing.ReplicationFactor()))
 	d.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(d.cleanupInactiveUser)
 
+	d.forwarder = forwarding.NewForwarder(cfg.Forwarding, reg, log)
+	// The forwarder is an optional feature, if it's disabled then d.forwarder will be nil.
+	if d.forwarder != nil {
+		subservices = append(subservices, d.forwarder)
+	}
+
 	subservices = append(subservices, d.ingesterPool, d.activeUsers)
 	d.subservices, err = services.NewManager(subservices...)
 	if err != nil {
@@ -441,10 +447,6 @@ func (d *Distributor) starting(ctx context.Context) error {
 }
 
 func (d *Distributor) running(ctx context.Context) error {
-	if d.cfg.Forwarding.Enabled && d.forwarder != nil {
-		defer d.forwarder.Stop()
-	}
-
 	ingestionRateTicker := time.NewTicker(instanceIngestionRateTickInterval)
 	defer ingestionRateTicker.Stop()
 
@@ -607,25 +609,66 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 	return nil
 }
 
+// PrePushForwardingMiddleware is used as push.Func middleware in front of PushWithCleanup method.
+// It forwards time series to configured remote_write endpoints if the forwarding rules say so.
+func (d *Distributor) PrePushForwardingMiddleware(next push.Func) push.Func {
+	if d.forwarder == nil {
+		return next
+	}
+
+	return func(ctx context.Context, req *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error) {
+		userID, err := tenant.TenantID(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		var errCh <-chan error
+		req.Timeseries, errCh = d.forwardSamples(ctx, userID, req.Timeseries)
+		resp, nextErr := next(ctx, req, cleanup)
+		errs := []error{nextErr}
+
+	LOOP:
+		for {
+			select {
+			case err, ok := <-errCh:
+				if ok {
+					errs = append(errs, err)
+				} else {
+					break LOOP
+				}
+			case <-ctx.Done():
+				return resp, ctx.Err()
+			}
+		}
+
+		return resp, httpgrpcutil.PrioritizeRecoverableErr(errs...)
+	}
+}
+
+func (d *Distributor) forwardSamples(ctx context.Context, userID string, ts []mimirpb.PreallocTimeseries) ([]mimirpb.PreallocTimeseries, <-chan error) {
+	forwardingErrCh := make(chan error)
+	forwardingRules := d.limits.ForwardingRules(userID)
+	if len(forwardingRules) == 0 {
+		close(forwardingErrCh)
+		return ts, forwardingErrCh
+	}
+
+	var notIngestedCounts forwarding.TimeseriesCounts
+
+	// Reassign req.Timeseries because the forwarder creates a new slice which has been filtered down.
+	// The cleanup func will cleanup the new slice, it's the forwarders responsibility to return the old one to the pool.
+	notIngestedCounts, ts, forwardingErrCh = d.forwarder.Forward(ctx, forwardingRules, ts)
+
+	// Some samples have been forwarded and won't be ingested but we still need to account for them in some of the metrics.
+	d.incomingSamples.WithLabelValues(userID).Add(float64(notIngestedCounts.SampleCount))
+	d.incomingExemplars.WithLabelValues(userID).Add(float64(notIngestedCounts.ExemplarCount))
+
+	return ts, forwardingErrCh
+}
+
 // Push implements client.IngesterServer
 func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
-	cleanup := func() {
-		if len(req.Timeseries) > 0 {
-			mimirpb.ReuseSlice(req.Timeseries)
-		}
-	}
-
-	userID, err := tenant.TenantID(ctx)
-	if err != nil {
-		cleanup()
-		return nil, err
-	}
-
-	if !d.cfg.Forwarding.Enabled {
-		return d.PushWithCleanup(ctx, req, cleanup)
-	}
-
-	return d.forwardSamples(ctx, req, userID, cleanup)
+	return d.PushWithCleanup(ctx, req, func() { mimirpb.ReuseSlice(req.Timeseries) })
 }
 
 // PushWithCleanup takes a WriteRequest and distributes it to ingesters using the ring.
@@ -897,35 +940,6 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		return nil, err
 	}
 	return &mimirpb.WriteResponse{}, firstPartialErr
-}
-
-// forwardSamples forwards samples in the given req if the forwarding rules of the given userID say so,
-// it submits the samples which should be ingested to d.PushWithCleanup().
-func (d *Distributor) forwardSamples(ctx context.Context, req *mimirpb.WriteRequest, userID string, cleanup func()) (*mimirpb.WriteResponse, error) {
-	forwardingRules := d.limits.ForwardingRules(userID)
-	if len(forwardingRules) == 0 {
-		return d.PushWithCleanup(ctx, req, cleanup)
-	}
-
-	var forwardingErrCh <-chan error
-	var notIngestedCounts forwarding.TimeseriesCounts
-
-	// Reassign req.Timeseries because the forwarder creates a new slice which has been filtered down.
-	// The cleanup func will cleanup the new slice, it's the forwarders responsibility to return the old one to the pool.
-	notIngestedCounts, req.Timeseries, forwardingErrCh = d.forwarder.Forward(ctx, forwardingRules, req.Timeseries)
-
-	// Some samples have been forwarded and won't be ingested but we still need to account for them in some of the metrics.
-	d.incomingSamples.WithLabelValues(userID).Add(float64(notIngestedCounts.SampleCount))
-	d.incomingExemplars.WithLabelValues(userID).Add(float64(notIngestedCounts.ExemplarCount))
-
-	resp, err := d.PushWithCleanup(ctx, req, cleanup)
-
-	errs := []error{err}
-	for err := range forwardingErrCh {
-		errs = append(errs, err)
-	}
-
-	return resp, httpgrpcutil.PrioritizeRecoverableErr(errs...)
 }
 
 func copyString(s string) string {
