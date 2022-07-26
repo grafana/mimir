@@ -51,6 +51,10 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	err = manager.AwaitHealthy(context.Background())
+	if err != nil {
+		panic(err)
+	}
 	go runExperiment(ctx, store)
 
 	signalHandler.Loop()
