@@ -334,6 +334,9 @@ alertmanager:
     #
     # storageClass: "-"
 
+    # Allows you to override default volumeClaimTemplates
+    volumeClaimTemplates: []
+
   readinessProbe:
     httpGet:
       path: /ready
@@ -529,6 +532,9 @@ ingester:
     #
     # storageClass: "-"
 
+    # Allows you to override default volumeClaimTemplates
+    volumeClaimTemplates: []
+  
   readinessProbe:
     httpGet:
       path: /ready
@@ -896,6 +902,9 @@ store_gateway:
     #
     # storageClass: "-"
 
+    # Allows you to override default volumeClaimTemplates
+    volumeClaimTemplates: []
+
   readinessProbe:
     httpGet:
       path: /ready
@@ -995,6 +1004,9 @@ compactor:
     #   GKE, AWS & OpenStack)
     #
     # storageClass: "-"
+
+    # Allows you to override default volumeClaimTemplates
+    volumeClaimTemplates: []
 
   readinessProbe:
     httpGet:

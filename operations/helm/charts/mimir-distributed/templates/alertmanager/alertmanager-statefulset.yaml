@@ -18,6 +18,10 @@ spec:
     {{- toYaml .Values.alertmanager.statefulStrategy | nindent 4 }}
   serviceName: {{ template "mimir.fullname" . }}-alertmanager
   {{- if .Values.alertmanager.persistentVolume.enabled }}
+  {{- if .Values.alertmanager.persistentVolume.volumeClaimTemplates }}
+  volumeClaimTemplates:
+      {{- toYaml .Values.alertmanager.persistentVolume.volumeClaimTemplates | nindent 4}}
+  {{- else }}
   volumeClaimTemplates:
     - metadata:
         name: storage
@@ -38,6 +42,7 @@ spec:
         resources:
           requests:
             storage: "{{ .Values.alertmanager.persistentVolume.size }}"
+  {{- end }}
   {{- end }}
   template:
     metadata:

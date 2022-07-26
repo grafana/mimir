@@ -16,6 +16,10 @@ spec:
     {{- toYaml .Values.compactor.strategy | nindent 4 }}
   serviceName: {{ template "mimir.fullname" . }}-compactor
   {{- if .Values.compactor.persistentVolume.enabled }}
+  {{- if .Values.compactor.persistentVolume.volumeClaimTemplates }}
+  volumeClaimTemplates:
+      {{- toYaml .Values.compactor.persistentVolume.volumeClaimTemplates | nindent 4}}
+  {{- else }}
   volumeClaimTemplates:
     - metadata:
         name: storage
@@ -36,6 +40,7 @@ spec:
         resources:
           requests:
             storage: "{{ .Values.compactor.persistentVolume.size }}"
+  {{- end }}
   {{- end }}
   template:
     metadata:
