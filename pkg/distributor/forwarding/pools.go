@@ -45,10 +45,10 @@ func newPools() *pools {
 		tsByTargets: sync.Pool{New: func() interface{} { return make(tsByTargets) }},
 	}
 
-	p.getProtobuf = getProtobuf(&p.protobuf)
-	p.putProtobuf = putProtobuf(&p.protobuf)
-	p.getSnappy = getSnappy(&p.snappy)
-	p.putSnappy = putSnappy(&p.snappy)
+	p.getProtobuf = getByteSlice(&p.protobuf)
+	p.putProtobuf = putByteSlice(&p.protobuf)
+	p.getSnappy = getByteSlice(&p.snappy)
+	p.putSnappy = putByteSlice(&p.snappy)
 	p.getReq = getReq(&p.request)
 	p.putReq = putReq(&p.request)
 	p.getBytesReader = getBytesReader(&p.bytesReader)
@@ -63,27 +63,15 @@ func newPools() *pools {
 	return p
 }
 
-func getProtobuf(pool *sync.Pool) func() *[]byte {
+func getByteSlice(pool *sync.Pool) func() *[]byte {
 	return func() *[]byte {
 		return pool.Get().(*[]byte)
 	}
 }
 
-func putProtobuf(pool *sync.Pool) func(*[]byte) {
+func putByteSlice(pool *sync.Pool) func(*[]byte) {
 	return func(protobuf *[]byte) {
 		pool.Put(protobuf)
-	}
-}
-
-func getSnappy(pool *sync.Pool) func() *[]byte {
-	return func() *[]byte {
-		return pool.Get().(*[]byte)
-	}
-}
-
-func putSnappy(pool *sync.Pool) func(*[]byte) {
-	return func(snappy *[]byte) {
-		pool.Put(snappy)
 	}
 }
 
