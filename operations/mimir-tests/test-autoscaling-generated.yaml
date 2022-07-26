@@ -886,7 +886,7 @@ spec:
         - -ingester.ring.store=memberlist
         - -mem-ballast-size-bytes=268435456
         - -memberlist.bind-port=7946
-        - -memberlist.join=gossip-ring.default.svc.cluster.local:7946
+        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
         - -querier.frontend-client.grpc-max-send-msg-size=104857600
         - -querier.max-concurrent=8
         - -querier.scheduler-address=ruler-query-scheduler-discovery.default.svc.cluster.local:9095
