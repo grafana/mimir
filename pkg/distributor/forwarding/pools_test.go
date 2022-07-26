@@ -171,6 +171,11 @@ type validatingByteSlicePool struct {
 }
 
 func newValidatingByteSlicePool(t *testing.T, capacity int) *validatingByteSlicePool {
+	new := func() interface{} {
+		obj := make([]byte, 0, capacity)
+		return &obj
+	}
+
 	interfaceToType := func(obj interface{}) *[]byte {
 		switch obj := obj.(type) {
 		case *[]byte:
@@ -179,11 +184,6 @@ func newValidatingByteSlicePool(t *testing.T, capacity int) *validatingByteSlice
 			t.Fatalf("Object of invalid type given: %s", reflect.TypeOf(obj))
 			return nil // Just for linter.
 		}
-	}
-
-	new := func() interface{} {
-		obj := make([]byte, 0, capacity)
-		return &obj
 	}
 
 	id := func(obj interface{}) interface{} {
@@ -211,6 +211,10 @@ type validatingRequestPool struct {
 }
 
 func newValidatingRequestPool(t *testing.T) *validatingRequestPool {
+	new := func() interface{} {
+		return &request{}
+	}
+
 	interfaceToType := func(obj interface{}) *request {
 		switch obj := obj.(type) {
 		case *request:
@@ -219,10 +223,6 @@ func newValidatingRequestPool(t *testing.T) *validatingRequestPool {
 			t.Fatalf("Object of invalid type given: %s", reflect.TypeOf(obj))
 			return nil // Just for linter.
 		}
-	}
-
-	new := func() interface{} {
-		return &request{}
 	}
 
 	id := func(obj interface{}) interface{} {
@@ -250,6 +250,10 @@ type validatingBytesReaderPool struct {
 }
 
 func newValidatingBytesReaderPool(t *testing.T) *validatingBytesReaderPool {
+	new := func() interface{} {
+		return bytes.NewReader(nil)
+	}
+
 	interfaceToType := func(obj interface{}) *bytes.Reader {
 		switch obj := obj.(type) {
 		case *bytes.Reader:
@@ -258,10 +262,6 @@ func newValidatingBytesReaderPool(t *testing.T) *validatingBytesReaderPool {
 			t.Fatalf("Object of invalid type given: %s", reflect.TypeOf(obj))
 			return nil // Just for linter.
 		}
-	}
-
-	new := func() interface{} {
-		return bytes.NewReader(nil)
 	}
 
 	id := func(obj interface{}) interface{} {
@@ -289,6 +289,10 @@ type validatingTsByTargetsPool struct {
 }
 
 func newValidatingTsByTargetsPool(t *testing.T) *validatingTsByTargetsPool {
+	new := func() interface{} {
+		return make(tsByTargets)
+	}
+
 	interfaceToType := func(obj interface{}) tsByTargets {
 		switch obj := obj.(type) {
 		case tsByTargets:
@@ -297,10 +301,6 @@ func newValidatingTsByTargetsPool(t *testing.T) *validatingTsByTargetsPool {
 			t.Fatalf("Object of invalid type given: %s", reflect.TypeOf(obj))
 			return nil // Just for linter.
 		}
-	}
-
-	new := func() interface{} {
-		return make(tsByTargets)
 	}
 
 	id := func(obj interface{}) interface{} {
@@ -329,6 +329,10 @@ type validatingTsPool struct {
 }
 
 func newValidatingTsPool(t *testing.T) *validatingTsPool {
+	new := func() interface{} {
+		return &mimirpb.TimeSeries{}
+	}
+
 	interfaceToType := func(obj interface{}) *mimirpb.TimeSeries {
 		switch obj := obj.(type) {
 		case *mimirpb.TimeSeries:
@@ -337,10 +341,6 @@ func newValidatingTsPool(t *testing.T) *validatingTsPool {
 			t.Fatalf("Object of invalid type given: %s", reflect.TypeOf(obj))
 			return nil // Just for linter.
 		}
-	}
-
-	new := func() interface{} {
-		return &mimirpb.TimeSeries{}
 	}
 
 	id := func(obj interface{}) interface{} {
@@ -368,6 +368,10 @@ type validatingTsSlicePool struct {
 }
 
 func newValidatingTsSlicePool(t *testing.T, initialCap int, putTs func(*mimirpb.TimeSeries)) *validatingTsSlicePool {
+	new := func() interface{} {
+		return make([]mimirpb.PreallocTimeseries, 0, initialCap)
+	}
+
 	interfaceToType := func(obj interface{}) []mimirpb.PreallocTimeseries {
 		switch obj := obj.(type) {
 		case []mimirpb.PreallocTimeseries:
@@ -376,10 +380,6 @@ func newValidatingTsSlicePool(t *testing.T, initialCap int, putTs func(*mimirpb.
 			t.Fatalf("Object of invalid type given: %s", reflect.TypeOf(obj))
 			return nil // Just for linter.
 		}
-	}
-
-	new := func() interface{} {
-		return make([]mimirpb.PreallocTimeseries, 0, initialCap)
 	}
 
 	id := func(obj interface{}) interface{} {
