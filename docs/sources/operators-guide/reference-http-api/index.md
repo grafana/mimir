@@ -993,21 +993,22 @@ GET /api/v1/upload/block/{block}/check
 ```
 
 Returns state of the block upload. State is returned as JSON object with field `result`, with following possible values:
+
 - `complete` -- block validation is complete, and block upload is now finished.
 - `uploading` -- block is still being uploaded, and [Complete block upload](#complete-block-upload) has not yet been called on the block.
-- `validating` -- block is being validated. Validation was started by call to [Complete block upload](#complete-block-upload) API. 
+- `validating` -- block is being validated. Validation was started by call to [Complete block upload](#complete-block-upload) API.
 - `failed` -- block validation has failed. Error message is available from `error` field of the returned JSON object.
 
 **Example response**
 
 ```json
-{"result":"uploading"}
+{ "result": "uploading" }
 ```
 
 **Example response**
 
 ```json
-{"result":"failed","error":"missing index file"}
+{ "result": "failed", "error": "missing index file" }
 ```
 
 Requires [authentication](#authentication).
