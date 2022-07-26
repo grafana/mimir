@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCloneNode(t *testing.T) {
+func TestCloneExpr(t *testing.T) {
 	var testExpr = []struct {
 		input    parser.Expr
 		expected parser.Expr
@@ -69,14 +69,14 @@ func TestCloneNode(t *testing.T) {
 
 	for i, c := range testExpr {
 		t.Run(fmt.Sprintf("[%d]", i), func(t *testing.T) {
-			res, err := cloneNode(c.input)
+			res, err := cloneExpr(c.input)
 			require.NoError(t, err)
 			require.Equal(t, c.expected, res)
 		})
 	}
 }
 
-func TestCloneNode_String(t *testing.T) {
+func TestCloneExpr_String(t *testing.T) {
 	var testExpr = []struct {
 		input    string
 		expected string
@@ -99,7 +99,7 @@ sum(rate(http_requests_total{cluster="ops-tools1"}[1m]))
 		t.Run(fmt.Sprintf("[%d]", i), func(t *testing.T) {
 			expr, err := parser.ParseExpr(c.input)
 			require.Nil(t, err)
-			res, err := cloneNode(expr)
+			res, err := cloneExpr(expr)
 			require.Nil(t, err)
 			require.Equal(t, c.expected, res.String())
 		})

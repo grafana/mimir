@@ -485,16 +485,16 @@ func concatShards(shards int, queryTemplate string) string {
 }
 
 func concat(queries ...string) string {
-	nodes := make([]parser.Node, 0, len(queries))
+	exprs := make([]parser.Expr, 0, len(queries))
 	for _, q := range queries {
 		n, err := parser.ParseExpr(q)
 		if err != nil {
 			panic(err)
 		}
-		nodes = append(nodes, n)
+		exprs = append(exprs, n)
 
 	}
-	mapped, err := vectorSquasher(nodes...)
+	mapped, err := vectorSquasher(exprs...)
 	if err != nil {
 		panic(err)
 	}
