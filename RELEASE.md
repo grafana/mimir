@@ -107,7 +107,7 @@ To publish a release candidate:
 1. Wait until the CI pipeline succeeds (once a tag is created, the release process through GitHub Actions will be triggered for this tag).
 1. Merge the release branch `release-x.y` into `main` (see [Merging release branch into main](#merging-release-branch-into-main))
 1. Create a pre-release on GitHub. See [Creating release on GitHub](#creating-release-on-github).
-1. Optionally create [Helm release](#helm-release).
+1. Create the [Helm release](#helm-release).
 
 ### Creating release on GitHub
 
