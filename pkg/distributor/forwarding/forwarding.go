@@ -361,6 +361,12 @@ func (r *request) handleError(status int, err error) {
 
 func (r *request) cleanup() {
 	r.pools.putTsSlice(r.ts.ts)
+
+	// Ensure we don't modify a request property after returning it to the pool by calling .Done() on the wait group.
+	wg := r.requestWg
+	r.requestWg = nil
+
 	r.pools.putReq(r)
-	r.requestWg.Done()
+
+	wg.Done()
 }
