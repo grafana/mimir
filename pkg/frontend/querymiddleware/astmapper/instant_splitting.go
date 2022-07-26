@@ -12,8 +12,13 @@ import (
 )
 
 type instantSplitter struct {
-	splitByInterval        time.Duration
+	splitByInterval time.Duration
+	// In case of outer vector aggregator expressions, this contains the expression that will be used on the
+	// downstream queries, i.e. the query that will be executed in parallel in each partial query.
+	// This is an optimization to send outer vector aggregator expressions to reduce the label sets returned
+	// by queriers, and therefore minimize the merging of results in the query-frontend.
 	embeddedAggregatorExpr *parser.AggregateExpr
+
 	// TODO: add metrics
 }
 
