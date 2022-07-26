@@ -44,7 +44,7 @@
 
     memberlistConfig:: {
       'memberlist.bind-port': gossipRingPort,
-      'memberlist.join': 'gossip-ring.%s.svc.cluster.local:%d' % [$._config.namespace, gossipRingPort],
+      'memberlist.join': 'dns+gossip-ring.%s.svc.cluster.local:%d' % [$._config.namespace, gossipRingPort],
     } + (
       if $._config.memberlist_cluster_label == '' then {} else {
         'memberlist.cluster-label': $._config.memberlist_cluster_label,

@@ -80,6 +80,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Start block upload](#start-block-upload)                                             | Compactor               | `POST /api/v1/upload/block/{block}/start`                                 |
 | [Upload block file](#upload-block-file)                                               | Compactor               | `POST /api/v1/upload/block/{block}/files?path={path}`                     |
 | [Complete block upload](#complete-block-upload)                                       | Compactor               | `POST /api/v1/upload/block/{block}/finish`                                |
+| [Check block upload](#check-block-upload)                                             | Compactor               | `GET /api/v1/upload/block/{block}/check`                                  |
 
 ### Path prefixes
 
@@ -970,13 +971,45 @@ Requires [authentication](#authentication).
 POST /api/v1/upload/block/{block}/finish
 ```
 
-Completes the uploading of a TSDB block with a given ID to object storage. If the complete block already
+Initiates the completion of a TSDB block with a given ID to object storage. If the complete block already
 exists in object storage, a `409` (Conflict) status code gets returned. If an in-flight meta file
 (`uploading-meta.json`) doesn't exist in object storage for the block in question, a `404` (Not Found)
 status code gets returned.
 
-If the API request succeeds, the in-flight meta file gets renamed to `meta.json` in the block's directory in
-object storage, so the block is considered complete, and a `200` status code gets returned.
+If the API request succeeds, compactor will start the block validation in the background. If the background validation
+passes block upload is finished by renaming in-flight meta file to `meta.json` in the block's directory.
+
+This API endpoint returns `200` (OK) at the beginning of the validation. To further check state of the block upload,
+use [Check block upload](#check-block-upload) API endpoint.
+
+Requires [authentication](#authentication).
+
+This API endpoint is experimental and subject to change.
+
+### Check block upload
+
+```
+GET /api/v1/upload/block/{block}/check
+```
+
+Returns state of the block upload. State is returned as JSON object with field `result`, with following possible values:
+
+- `complete` -- block validation is complete, and block upload is now finished.
+- `uploading` -- block is still being uploaded, and [Complete block upload](#complete-block-upload) has not yet been called on the block.
+- `validating` -- block is being validated. Validation was started by call to [Complete block upload](#complete-block-upload) API.
+- `failed` -- block validation has failed. Error message is available from `error` field of the returned JSON object.
+
+**Example response**
+
+```json
+{ "result": "uploading" }
+```
+
+**Example response**
+
+```json
+{ "result": "failed", "error": "missing index file" }
+```
 
 Requires [authentication](#authentication).
 
