@@ -137,6 +137,18 @@ func TestInstantSplitter(t *testing.T) {
 			out:                  `sum ((sum without() (` + concatOffsets(splitInterval, 3, `sum_over_time({app="foo"}[x]y)`) + `)) + (sum without() (` + concatOffsets(splitInterval, 3, `count_over_time({app="foo"}[x]y)`) + `)))`,
 			expectedSplitQueries: 6,
 		},
+		// Should map only left-hand side operand of inner binary operation, if right-hand side range interval is too small
+		{
+			in:                   `sum(sum_over_time({app="foo"}[3m]) + count_over_time({app="foo"}[1m]))`,
+			out:                  `sum ((sum without() (` + concatOffsets(splitInterval, 3, `sum_over_time({app="foo"}[x]y)`) + `)) + (count_over_time({app="foo"}[1m])))`,
+			expectedSplitQueries: 6,
+		},
+		// Should map only right-hand side operand of inner binary operation, if left-hand side range interval is too small
+		{
+			in:                   `sum(sum_over_time({app="foo"}[1m]) + count_over_time({app="foo"}[3m]))`,
+			out:                  `sum ((sum_over_time({app="foo"}[1m])) + (sum without() (` + concatOffsets(splitInterval, 3, `count_over_time({app="foo"}[x]y)`) + `)))`,
+			expectedSplitQueries: 6,
+		},
 		// Parenthesis expression
 		{
 			in:                   `(avg_over_time({app="foo"}[3m]))`,

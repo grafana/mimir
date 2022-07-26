@@ -139,20 +139,19 @@ func isVectorAggregatorSplittable(expr *parser.AggregateExpr) bool {
 	return ok
 }
 
+func isBinaryExpression(expr parser.Expr) bool {
+	_, ok := expr.(*parser.BinaryExpr)
+	return ok
+}
+
 // mapAggregatorExpr maps vector aggregator expression expr
 func (i *instantSplitter) mapAggregatorExpr(expr *parser.AggregateExpr, stats *MapperStats) (mapped parser.Node, finished bool, err error) {
-	// In case the range interval is smaller than the configured split interval,
-	// don't split it
-	rangeInterval := getRangeInterval(expr)
-	if rangeInterval <= i.splitByInterval {
-		return expr, false, nil
-	}
-
 	var mappedNode parser.Node
 
-	// If the embeddedAggregatorExpr is not set, update it
-	// Note: vector aggregators avg, count and topk are supported but not splittable, so cannot be sent downstream
-	if i.embeddedAggregatorExpr == nil && isVectorAggregatorSplittable(expr) {
+	// If the embeddedAggregatorExpr is not set, update it.
+	// Note: vector aggregators avg, count and topk are supported but not splittable, so cannot be sent downstream.
+	// Similarly, inner binary operations cannot be sent downstream
+	if i.embeddedAggregatorExpr == nil && isVectorAggregatorSplittable(expr) && !isBinaryExpression(expr.Expr) {
 		mappedNode, finished, err = NewASTNodeMapper(i.copyWithEmbeddedExpr(expr)).MapNode(expr.Expr, nil)
 	} else {
 		mappedNode, finished, err = i.MapNode(expr.Expr, nil)
@@ -241,10 +240,10 @@ func (i *instantSplitter) mapParenExpr(expr *parser.ParenExpr, stats *MapperStat
 // mapCall maps range vector aggregator expression expr
 func (i *instantSplitter) mapCall(expr *parser.Call, stats *MapperStats) (mapped parser.Node, finished bool, err error) {
 	// In case the range interval is smaller than the configured split interval,
-	// don't split it
+	// don't split it and don't map further nodes (finished=true)
 	rangeInterval := getRangeInterval(expr)
 	if rangeInterval <= i.splitByInterval {
-		return expr, false, nil
+		return expr, true, nil
 	}
 
 	switch RangeVectorName(expr.Func.Name) {
