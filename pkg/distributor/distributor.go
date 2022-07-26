@@ -141,8 +141,6 @@ type Config struct {
 	MaxRecvMsgSize int           `yaml:"max_recv_msg_size" category:"advanced"`
 	RemoteTimeout  time.Duration `yaml:"remote_timeout" category:"advanced"`
 
-	ExtendWrites bool `yaml:"extend_writes" category:"advanced" doc:"hidden"` // TODO Deprecated: remove in Mimir 2.3.0
-
 	// Distributors ring
 	DistributorRing RingConfig `yaml:"ring"`
 
