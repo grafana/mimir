@@ -103,6 +103,12 @@ func (c *MultitenantCompactor) FinishBlockUpload(w http.ResponseWriter, r *http.
 		return
 	}
 
+	// create validation file
+	if err := c.uploadValidation(ctx, logger, blockID, userBkt); err != nil {
+		writeBlockUploadError(err, op, "while creating validation file", logger, w)
+		return
+	}
+
 	go c.completeBlockUpload(ctx, logger, userBkt, blockID, *m)
 	//
 	//if err := c.completeBlockUpload(ctx, logger, userBkt, blockID, *m); err != nil {
@@ -271,40 +277,44 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 func (c *MultitenantCompactor) completeBlockUpload(ctx context.Context, logger log.Logger, userBkt objstore.Bucket, blockID ulid.ULID, meta metadata.Meta) {
 	level.Debug(logger).Log("msg", "completing block upload", "files", len(meta.Thanos.Files))
 
-	// create validation file
-	if err := c.uploadValidation(ctx, logger, blockID, userBkt); err != nil {
-		level.Error(logger).Log("msg", "error creating validation file in object store", "blockID", blockID)
-		return
-	}
 	// start go routine that updates validation file timestamp once per minute
 	ch := make(chan string)
 	var wg sync.WaitGroup
 	wg.Add(1)
-	go c.periodicValidationUpdater(ctx, logger, blockID, userBkt, ch, &wg)
+	ctx, cancel := context.WithCancel(ctx)
+	go c.periodicValidationUpdater(ctx, logger, blockID, userBkt, ch, &wg, cancel)
 
 	if err := c.validateBlock(ctx, blockID, userBkt, meta); err != nil {
-		err := c.uploadValidationWithError(ctx, logger, blockID, userBkt, err.Error())
+		err := c.uploadValidationWithError(ctx, blockID, userBkt, err.Error())
 		if err != nil {
 			level.Error(logger).Log("msg", "error updating validation file after failed validation in object store", "blockID", blockID)
 		}
 		return
 	}
 
+	close(ch)
 	// use waitgroup to ensure validation ts update is complete
-	ch <- "Done"
 	wg.Wait()
 
 	// Upload meta file so block is considered complete
 	if err := c.uploadMeta(ctx, logger, meta, blockID, block.MetaFilename, userBkt); err != nil {
-		//return err
-		// set error message in validation file
+		err := c.uploadValidationWithError(ctx, blockID, userBkt, err.Error())
+		if err != nil {
+			level.Error(logger).Log("msg", "error updating validation file while uploading metadata file", "blockID", blockID)
+		}
+		return
 	}
 
 	if err := userBkt.Delete(ctx, path.Join(blockID.String(), uploadingMetaFilename)); err != nil {
 		level.Warn(logger).Log("msg", fmt.Sprintf(
 			"failed to delete %s from block in object storage", uploadingMetaFilename), "err", err)
-		//return nil
-		// set error message in validation file
+		return
+	}
+
+	if err := userBkt.Delete(ctx, path.Join(blockID.String(), validationFilename)); err != nil {
+		level.Warn(logger).Log("msg", fmt.Sprintf(
+			"failed to delete %s from block in object storage", validationFilename), "err", err)
+		return
 	}
 
 	level.Debug(logger).Log("msg", "successfully completed block upload")
@@ -629,14 +639,13 @@ func (c *MultitenantCompactor) loadValidation(ctx context.Context, userBkt objst
 	return v, nil
 }
 
-func (c *MultitenantCompactor) uploadValidationWithError(ctx context.Context, logger log.Logger, blockID ulid.ULID,
+func (c *MultitenantCompactor) uploadValidationWithError(ctx context.Context, blockID ulid.ULID,
 	userBkt objstore.Bucket, errorStr string) error {
 	val := validationFile{
 		LastUpdate: time.Now().UnixMilli(),
 		Error:      errorStr,
 	}
 	dst := path.Join(blockID.String(), validationFilename)
-	level.Debug(logger).Log("msg", fmt.Sprintf("uploading %s to bucket", validationFilename), "dst", dst)
 	buf := bytes.NewBuffer(nil)
 	if err := json.NewEncoder(buf).Encode(val); err != nil {
 		return errors.Wrap(err, "failed to encode block metadata")
@@ -650,21 +659,22 @@ func (c *MultitenantCompactor) uploadValidationWithError(ctx context.Context, lo
 
 func (c *MultitenantCompactor) uploadValidation(ctx context.Context, logger log.Logger, blockID ulid.ULID,
 	userBkt objstore.Bucket) error {
-	return c.uploadValidationWithError(ctx, logger, blockID, userBkt, "")
+	return c.uploadValidationWithError(ctx, blockID, userBkt, "")
 }
 
 func (c *MultitenantCompactor) periodicValidationUpdater(ctx context.Context, logger log.Logger, blockID ulid.ULID,
-	userBkt objstore.Bucket, ch chan string, wg *sync.WaitGroup) {
+	userBkt objstore.Bucket, ch chan string, wg *sync.WaitGroup, cancelFn func()) {
 	defer wg.Done()
 	for {
 		select {
 		case <-ch:
 			return
 		case <-time.After(1 * time.Minute):
-			break
+			if err := c.uploadValidation(ctx, logger, blockID, userBkt); err != nil {
+				level.Warn(logger).Log("msg", "error during periodic update of validation file", "blockID", blockID)
+				cancelFn()
+				return
+			}
 		}
-	}
-	if err := c.uploadValidation(ctx, logger, blockID, userBkt); err != nil {
-		level.Warn(logger).Log("msg", "error during periodic update of validation file", "blockID", blockID)
 	}
 }
