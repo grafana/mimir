@@ -688,10 +688,10 @@ func TestBlocksCleaner_ShouldRemoveBlocksOutsideRetentionPeriod(t *testing.T) {
 	}
 }
 
-func checkBlock(t *testing.T, user string, bucketClient objstore.Bucket, block ulid.ULID, metaJsonExists bool, markedForDeletion bool) {
+func checkBlock(t *testing.T, user string, bucketClient objstore.Bucket, block ulid.ULID, metaJSONExists bool, markedForDeletion bool) {
 	exists, err := bucketClient.Exists(context.Background(), path.Join(user, block.String(), metadata.MetaFilename))
 	require.NoError(t, err)
-	require.Equal(t, metaJsonExists, exists)
+	require.Equal(t, metaJSONExists, exists)
 
 	exists, err = bucketClient.Exists(context.Background(), path.Join(user, block.String(), metadata.DeletionMarkFilename))
 	require.NoError(t, err)
