@@ -1015,6 +1015,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 		}(tc)
 
 	}
+	wg.Wait()
 }
 
 func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunksPerQueryLimitIsReached(t *testing.T) {
