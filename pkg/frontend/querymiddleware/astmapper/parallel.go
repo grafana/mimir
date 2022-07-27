@@ -111,7 +111,7 @@ func CanParallelize(expr parser.Expr, logger log.Logger) bool {
 		return true
 
 	default:
-		level.Error(logger).Log("err", fmt.Sprintf("CanParallel: unhandled expr type %T", expr)) //lint:ignore faillint allow global logger for now
+		level.Error(logger).Log("err", fmt.Sprintf("CanParallelize: unhandled expr type %T", expr)) //lint:ignore faillint allow global logger for now
 		return false
 	}
 }

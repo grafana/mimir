@@ -160,6 +160,6 @@ func (nm ASTExprMapper) Map(expr parser.Expr, stats *MapperStats) (parser.Expr, 
 		return n, nil
 
 	default:
-		return nil, errors.Errorf("exprMapper: unhandled expr type %T", expr)
+		return nil, errors.Errorf("ASTExprMapper: unhandled expr type %T", expr)
 	}
 }
