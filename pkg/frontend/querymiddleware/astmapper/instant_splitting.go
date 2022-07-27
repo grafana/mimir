@@ -12,7 +12,7 @@ import (
 )
 
 type instantSplitter struct {
-	splitByInterval time.Duration
+	interval time.Duration
 	// In case of outer vector aggregator expressions, this contains the expression that will be used on the
 	// downstream queries, i.e. the query that will be executed in parallel in each partial query.
 	// This is an optimization to send outer vector aggregator expressions to reduce the label sets returned
@@ -24,47 +24,45 @@ type instantSplitter struct {
 
 // Note: avg, count and topk are supported, but not splittable, i.e., cannot be sent downstream,
 // but the inner expressions can still be splittable
-var supportedVectorAggregators = map[parser.ItemType]struct{}{
-	parser.AVG:   {},
-	parser.COUNT: {},
-	parser.MAX:   {},
-	parser.MIN:   {},
-	parser.SUM:   {},
-	parser.TOPK:  {},
+var supportedVectorAggregators = map[parser.ItemType]bool{
+	parser.AVG:   true,
+	parser.COUNT: true,
+	parser.MAX:   true,
+	parser.MIN:   true,
+	parser.SUM:   true,
+	parser.TOPK:  true,
 }
 
-var splittableVectorAggregators = map[parser.ItemType]struct{}{
-	parser.MAX: {},
-	parser.MIN: {},
-	parser.SUM: {},
+var splittableVectorAggregators = map[parser.ItemType]bool{
+	parser.MAX: true,
+	parser.MIN: true,
+	parser.SUM: true,
 }
 
 // Supported range vector aggregators
 
-type RangeVectorName string
+const (
+	avgOverTime   = "avg_over_time"
+	countOverTime = "count_over_time"
+	increase      = "increase"
+	maxOverTime   = "max_over_time"
+	minOverTime   = "min_over_time"
+	rate          = "rate"
+	sumOverTime   = "sum_over_time"
+)
 
-// TODO: are there better constant values to use here?
-const avgOverTime = RangeVectorName("avg_over_time")
-const countOverTime = RangeVectorName("count_over_time")
-const increase = RangeVectorName("increase")
-const maxOverTime = RangeVectorName("max_over_time")
-const minOverTime = RangeVectorName("min_over_time")
-const rate = RangeVectorName("rate")
-const sumOverTime = RangeVectorName("sum_over_time")
-
-var splittableRangeVectorAggregators = map[RangeVectorName]struct{}{
-	avgOverTime:   {},
-	countOverTime: {},
-	maxOverTime:   {},
-	minOverTime:   {},
-	rate:          {},
-	sumOverTime:   {},
+var splittableRangeVectorAggregators = map[string]bool{
+	avgOverTime:   true,
+	countOverTime: true,
+	maxOverTime:   true,
+	minOverTime:   true,
+	rate:          true,
+	sumOverTime:   true,
 }
 
 // NewInstantSplitter creates a new query range mapper.
-func NewInstantSplitter(interval time.Duration, logger log.Logger) (ASTMapper, error) {
-	instantSplitter := NewASTNodeMapper(&instantSplitter{splitByInterval: interval})
-	return instantSplitter, nil
+func NewInstantSplitter(interval time.Duration, logger log.Logger) ASTMapper {
+	return NewASTNodeMapper(&instantSplitter{interval: interval})
 }
 
 // MapNode returns node mapped as embedded queries
@@ -103,23 +101,18 @@ func (i *instantSplitter) copyWithEmbeddedExpr(embeddedExpr *parser.AggregateExp
 	return &instantSplitter
 }
 
-// isSplittable returns whether it is possible to optimize the given
-// sample expression.
-// A vector aggregation is splittable, if the aggregation operation is
-// supported and the inner expression is also splittable.
-// A range aggregation is splittable, if the aggregation operation is
-// supported.
+// isSplittable returns whether it is possible to optimize the given sample expression.
+// A vector aggregation is splittable, if the aggregation operation is supported and the inner expression is also splittable.
+// A range aggregation is splittable, if the aggregation operation is supported.
 // A binary expression is splittable, if at least one operand is splittable.
 func isSplittable(node parser.Node) bool {
 	switch n := node.(type) {
 	case *parser.AggregateExpr:
-		_, ok := supportedVectorAggregators[n.Op]
-		return ok && isSplittable(n.Expr)
+		return supportedVectorAggregators[n.Op] && isSplittable(n.Expr)
 	case *parser.BinaryExpr:
 		return isSplittable(n.LHS) || isSplittable(n.RHS)
 	case *parser.Call:
-		_, ok := splittableRangeVectorAggregators[RangeVectorName(n.Func.Name)]
-		if ok {
+		if splittableRangeVectorAggregators[n.Func.Name] {
 			return true
 		}
 		var isArgSplittable bool
@@ -137,18 +130,13 @@ func isSplittable(node parser.Node) bool {
 	return false
 }
 
-func isVectorAggregatorSplittable(expr *parser.AggregateExpr) bool {
-	_, ok := splittableVectorAggregators[expr.Op]
-	return ok
-}
-
 // mapAggregatorExpr maps vector aggregator expression expr
 func (i *instantSplitter) mapAggregatorExpr(expr *parser.AggregateExpr, stats *MapperStats) (mapped parser.Node, finished bool, err error) {
 	var mappedNode parser.Node
 
 	// If the embeddedAggregatorExpr is not set, update it.
 	// Note: vector aggregators avg, count and topk are supported but not splittable, so cannot be sent downstream.
-	if i.embeddedAggregatorExpr == nil && isVectorAggregatorSplittable(expr) {
+	if i.embeddedAggregatorExpr == nil && splittableVectorAggregators[expr.Op] {
 		mappedNode, finished, err = NewASTNodeMapper(i.copyWithEmbeddedExpr(expr)).MapNode(expr.Expr, stats)
 	} else {
 		mappedNode, finished, err = i.MapNode(expr.Expr, stats)
@@ -185,7 +173,7 @@ func (i *instantSplitter) mapBinaryExpr(expr *parser.BinaryExpr, stats *MapperSt
 	_, literalLHS := expr.LHS.(*parser.NumberLiteral)
 	_, literalRHS := expr.RHS.(*parser.NumberLiteral)
 	if literalLHS && literalRHS {
-		return expr, false, nil
+		return expr, false, fmt.Errorf("both operands of binary expression are number literals '%s'", expr)
 	}
 
 	lhsMapped, lhsFinished, err := i.MapNode(expr.LHS, stats)
@@ -238,16 +226,16 @@ func (i *instantSplitter) mapParenExpr(expr *parser.ParenExpr, stats *MapperStat
 	}, true, nil
 }
 
-// mapCall maps range vector aggregator expression expr
+// mapCall maps a function call if it's a range vector aggregator.
 func (i *instantSplitter) mapCall(expr *parser.Call, stats *MapperStats) (mapped parser.Node, finished bool, err error) {
 	// In case the range interval is smaller than the configured split interval,
 	// don't split it and don't map further nodes (finished=true)
 	rangeInterval := getRangeInterval(expr)
-	if rangeInterval <= i.splitByInterval {
+	if rangeInterval <= i.interval {
 		return expr, true, nil
 	}
 
-	switch RangeVectorName(expr.Func.Name) {
+	switch expr.Func.Name {
 	case avgOverTime:
 		return i.mapCallAvgOverTime(expr, stats)
 	case countOverTime:
@@ -359,7 +347,7 @@ func (i *instantSplitter) mapCallByRangeInterval(expr *parser.Call, stats *Mappe
 // In this case, the vector aggregator should be downstream to the embedded queries in order to limit
 // the label cardinality of the parallel queries
 func (i *instantSplitter) splitAndSquashCall(expr *parser.Call, stats *MapperStats, rangeInterval time.Duration) (mapped parser.Expr, finished bool, err error) {
-	splitCount := int(math.Ceil(float64(rangeInterval) / float64(i.splitByInterval)))
+	splitCount := int(math.Ceil(float64(rangeInterval) / float64(i.interval)))
 	if splitCount <= 0 {
 		return expr, false, nil
 	}
@@ -375,13 +363,13 @@ func (i *instantSplitter) splitAndSquashCall(expr *parser.Call, stats *MapperSta
 	// Create a partial query for each split
 	embeddedQueries := make([]parser.Node, 0, splitCount)
 	for split := 0; split < splitCount; split++ {
-		splitOffset := time.Duration(split) * i.splitByInterval
-		// The range interval of the last embedded query can be smaller than i.splitByInterval
-		splitRangeInterval := i.splitByInterval
+		splitOffset := time.Duration(split) * i.interval
+		// The range interval of the last embedded query can be smaller than i.interval
+		splitRangeInterval := i.interval
 		if splitOffset+splitRangeInterval > rangeInterval {
 			splitRangeInterval = rangeInterval - splitOffset
 		}
-		// The offset of the embedded queries is always the original offset + a multiple of i.splitByInterval
+		// The offset of the embedded queries is always the original offset + a multiple of i.interval
 		splitOffset += originalOffset
 		splitNode, err := createSplitNode(embeddedQuery, splitRangeInterval, splitOffset)
 		if err != nil {

@@ -16,8 +16,7 @@ import (
 
 func TestInstantSplitter(t *testing.T) {
 	splitInterval := 1 * time.Minute
-	splitter, err := NewInstantSplitter(splitInterval, log.NewNopLogger())
-	require.NoError(t, err)
+	splitter := NewInstantSplitter(splitInterval, log.NewNopLogger())
 
 	for _, tt := range []struct {
 		in                   string
@@ -195,8 +194,7 @@ func TestInstantSplitter(t *testing.T) {
 
 func TestInstantSplitterUnevenRangeInterval(t *testing.T) {
 	splitInterval := 2 * time.Minute
-	splitter, err := NewInstantSplitter(splitInterval, log.NewNopLogger())
-	require.NoError(t, err)
+	splitter := NewInstantSplitter(splitInterval, log.NewNopLogger())
 
 	for _, tt := range []struct {
 		in                   string
@@ -245,8 +243,7 @@ func TestInstantSplitterUnevenRangeInterval(t *testing.T) {
 
 func TestInstantSplitterNoOp(t *testing.T) {
 	splitInterval := 1 * time.Minute
-	splitter, err := NewInstantSplitter(splitInterval, log.NewNopLogger())
-	require.NoError(t, err)
+	splitter := NewInstantSplitter(splitInterval, log.NewNopLogger())
 
 	for _, tt := range []struct {
 		noop string
