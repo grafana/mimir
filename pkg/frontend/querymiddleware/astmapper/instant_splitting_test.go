@@ -284,6 +284,14 @@ func TestInstantSplitterNoOp(t *testing.T) {
 	}
 }
 
+func TestSplittableVectorAggregators(t *testing.T) {
+	t.Run("splittable vector aggregators should be in supported vector aggregators", func(t *testing.T) {
+		for it, _ := range splittableVectorAggregators {
+			assert.Equal(t, true, supportedVectorAggregators[it], fmt.Sprintf("itemType '%v' not in supported vector aggregators list", it.String()))
+		}
+	})
+}
+
 func concatOffsets(splitInterval time.Duration, offsets int, queryTemplate string) string {
 	queries := make([]string, offsets)
 	offsetIndex := offsets
