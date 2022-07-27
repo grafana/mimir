@@ -112,12 +112,11 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 	// Increment total number of instant queries attempted to split metrics
 	s.splittingAttempts.Inc()
 
-	mapper := astmapper.NewInstantSplitter(s.splitInterval, s.logger)
+	mapper := astmapper.NewInstantQuerySplitter(s.splitInterval, s.logger)
 
 	expr, err := parser.ParseExpr(req.GetQuery())
 	if err != nil {
-		level.Error(log).Log("msg", "failed to parse the input query, falling back to try executing without splitting", "query", req.GetQuery(), "err", err)
-		return s.next.Do(ctx, req)
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
 	stats := astmapper.NewMapperStats()

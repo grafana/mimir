@@ -60,8 +60,8 @@ var splittableRangeVectorAggregators = map[string]bool{
 	sumOverTime:   true,
 }
 
-// NewInstantSplitter creates a new query range mapper.
-func NewInstantSplitter(interval time.Duration, logger log.Logger) ASTMapper {
+// NewInstantQuerySplitter creates a new query range mapper.
+func NewInstantQuerySplitter(interval time.Duration, logger log.Logger) ASTMapper {
 	return NewASTNodeMapper(&instantSplitter{interval: interval})
 }
 
