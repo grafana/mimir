@@ -878,12 +878,12 @@ The only parameter of the script is a file containing the flags, with each flag 
 
 ### Backfill
 
-Backfill command uploads Prometheus TSDB blocks into Grafana Mimir, by using block upload API exposed by compactor component.
+The `backfill` command uploads Prometheus TSDB blocks into Grafana Mimir, by using the block-upload API that is exposed by the compactor component.
 
-If the command is interrupted it can be started again. Mimirtool will detect which blocks are already uploaded, and will only upload unfinished or new blocks.
+If the command is interrupted, you can restart it. Mimirtool detects which blocks are already uploaded, and will only upload unfinished or new blocks.
 
-Block upload feature is disabled by default.
-To enable block upload feature for user or entire system, refer to [Configure TSDB block upload]({{< relref "../configure/configure-tsdb-block-upload.md" >}}).
+The block-upload feature is disabled by default.
+To enable the block-upload feature for a user or an entire system, refer to [Configure TSDB block upload]({{< relref "../configure/configure-tsdb-block-upload.md" >}}).
 If block upload is not enabled for the user, `mimirtool backfill` will fail.
 
 ##### Example
@@ -892,7 +892,7 @@ If block upload is not enabled for the user, `mimirtool backfill` will fail.
 mimirtool backfill --address=http://mimir-compactor/ --id=anonymous /var/prometheus/{01G803NFXZ0MVKN71GT91HMV3Z,01G8BQ8PRR4TAP7EXZVBNTRBZ4,01G8CB7GTTC5ZXY23WTXHSYQXQ}
 ```
 
-Running the command results in the following output:
+The results of the `backfill` command are as follows:
 
 ```console
 INFO[0000] Backfilling                              blocks="/var/prometheus/01G803NFXZ0MVKN71GT91HMV3Z,/var/prometheus/01G8BQ8PRR4TAP7EXZVBNTRBZ4,/var/prometheus/01G8CB7GTTC5ZXY23WTXHSYQXQ" user=anonymous
@@ -911,4 +911,4 @@ INFO[0001] finished uploading blocks                already_exists=1 failed=0 su
 
 ## License
 
-Licensed AGPLv3, see [LICENSE](https://github.com/grafana/mimir/blob/main/LICENSE).
+This software is licensed as AGPLv3. For more information, see [LICENSE](https://github.com/grafana/mimir/blob/main/LICENSE).
