@@ -107,6 +107,7 @@ To publish a release candidate:
 1. Wait until the CI pipeline succeeds (once a tag is created, the release process through GitHub Actions will be triggered for this tag).
 1. Merge the release branch `release-x.y` into `main` (see [Merging release branch into main](#merging-release-branch-into-main))
 1. Create a pre-release on GitHub. See [Creating release on GitHub](#creating-release-on-github).
+1. Create the [Helm release](#release-helm).
 
 ### Creating release on GitHub
 
@@ -142,9 +143,12 @@ To publish a stable release:
    1. Open a PR
 1. After merging your PR to the release branch, `git tag` the new release (see [How to tag a release](#how-to-tag-a-release)) from the release branch.
 1. Wait until the CI pipeline succeeds (once a tag is created, the release process through GitHub Actions will be triggered for this tag)
-1. Create a release on GitHub. This is basically a copy of release notes from pre-release version, with up-to-date CHANGELOG (if there were any changes in release candidates).
+1. Create a release on GitHub.
+   1. See [Creating release on GitHub](#creating-release-on-github) again.
+   1. Copy the release notes from pre-release version, with up-to-date CHANGELOG (if there were any changes in release candidates).
+   1. Don't forget the binaries, you'll need to build them again for this version.
 1. Merge the release branch `release-x.y` into `main` (see [Merging release branch into main](#merging-release-branch-into-main))
-1. Open a PR to add the new version to the backward compatibility integration test (`integration/backward_compatibility_test.go`)
+1. Open a PR to **add** the new version to the backward compatibility integration test (`integration/backward_compatibility_test.go`)
 1. Publish dashboards (done by a Grafana Labs member)
    1. Login to [https://grafana.com](https://grafana.com) with your Grafana Labs account
    1. Open [https://grafana.com/orgs/grafana/dashboards](https://grafana.com/orgs/grafana/dashboards)
@@ -152,6 +156,7 @@ To publish a stable release:
       1. Open the respective dashboard page
       1. Click "Revisions" tab
       1. Click "Upload new revision" and upload the updated `.json`
+1. Create the [Helm release](#release-helm).
 
 ### How to tag a release
 
@@ -171,20 +176,13 @@ $ git push origin "mimir-${version}"
 
 ### Cherry-picking changes into release branch
 
-To cherry-pick a change (commit) from `main` into release branch, please do the following:
+To cherry-pick a change (commit) from `main` into release branch we use a GitHub action and labels:
 
-```bash
-$ git checkout release-X.Y                   # Start with the release branch
-$ git checkout -b cherry-pick-pr-ZZZ         # Create new branch for cherry-picking
-$ git cherry-pick -x <commit ID>             # Cherry pick the change using -x option to add original commit ID to the message
-$ git push origin cherry-pick-pr-ZZZ         # Push branch to GitHub.
-```
-
-After pushing branch to GitHub, you can create the PR by opening `https://github.com/grafana/mimir/pull/new/cherry-pick-pr-ZZZ` link.
-Make sure to set `release-X.Y` as the base branch, into which PR should be merged.
-After PR with cherry-picked commit is reviewed, do a standard "Squash & Merge" commit that we use in Mimir.
-Keep the commit message suggested by GitHub, which is a combination of original commit message, original PR number, new PR number and cherry-picked commit hash.
-GitHub will properly attribute you and also original commit author as contributors to this change, and will also link to original commit in the UI.
+Add a `backport <release-branch>` label to the PR you want to cherry-pick, where `<release-branch>` is the branch name
+according to [Branch management and versioning strategy](#branch-management-and-versioning-strategy).
+You can add this label before or after the PR is merged. Grafanabot will open a PR targeting the release
+branch with the merge commit of the PR you labelled. See [PR#2290 (original PR)](https://github.com/grafana/mimir/pull/2290) and
+[PR#2364 (backport PR)](https://github.com/grafana/mimir/pull/2364) for an example pair.
 
 ### Merging release branch into main
 
@@ -197,3 +195,37 @@ To merge a release branch `release-X.Y` into `main`, please do the following:
 - Once approved, merge the PR with a **Merge** commit through one of the following strategies:
   - Temporarily enable "Allow merge commits" option in "Settings > Options"
   - Locally merge the `merge-release-X.Y-to-main` branch into `main`, and push the changes to `main` back to GitHub. This doesn't break `main` branch protection, since the PR has been approved already, and it also doesn't require removing the protection.
+
+## Release helm
+
+### Pre-requisites:
+
+Either:
+
+- Both Mimir and Enterprise Metrics (GEM) have container images released to Docker Hub that line up (same weekly, same RC, same release version).
+- Mimir and GEM images do not match, but there are no breaking changes between the two. That is all shared configuration parameters behave the same way. For example GEM has a bugfix in a maintenance version.
+
+### Release process
+
+1. Determine version number
+
+   - Helm [mandates semantic versioning](https://helm.sh/docs/topics/charts/#the-chartyaml-file)
+   - Weekly release should have the version: x.y.z-weekly.w (e.g. 3.1.0-weekly.196)
+   - Release candidate: x.y.z-rc.w (e.g. 3.1.0.rc.1)
+   - Final version: x.y.z (e.g. 3.1.0)
+
+   **Note**: the weekly and RC number must be separated with dot (.) for correct version ordering.
+
+1. To make a release you have to merge a version bump to the Helm chart to a branch that allows Helm release (e.g. main, release-x.y), see current list in [helm-release.yaml](https://github.com/grafana/mimir/blob/main/.github/workflows/helm-release.yaml) github action.
+
+   1. Open a PR
+   1. Set the image versions in [values.yaml](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/values.yaml) as needed. See values:
+      - `image.tag` (Mimir)
+      - `enterprise.image.tag` (GEM)
+      - `smoke_test.image.tag` (Smoke test, usually same as Mimir)
+   1. For final versions, update the [Helm changelog](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/CHANGELOG.md)
+   1. Set the version in the Helm [Chart.yaml](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/Chart.yaml)
+   1. Run `make doc`, to update [README.md](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/README.md) from its template
+   1. Merge the PR after review
+
+   The release process checks and creates a git tag formatted as mimir-distributed-_version_ (e.g. mimir-distributed-3.1.0-weekly.196) on the merge commit. The release process fails if the tag already exists to prevent releasing the same version with different content. The release is published in the [Grafana helm-charts](https://grafana.github.io/helm-charts/) Helm repository.

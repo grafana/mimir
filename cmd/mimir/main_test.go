@@ -6,22 +6,21 @@
 package main
 
 import (
-	"bytes"
 	"flag"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/mimir"
 	"github.com/grafana/mimir/pkg/util/fieldcategory"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestFlagParsing(t *testing.T) {
@@ -98,9 +97,21 @@ func TestFlagParsing(t *testing.T) {
 			stderrExcluded: "ingester\n",
 		},
 
-		"root level configuration option specified as an empty node in YAML": {
-			yaml:          "querier:",
-			stderrMessage: "the Querier configuration in YAML has been specified as an empty YAML node",
+		"root level configuration option specified as an empty node in YAML does not set entire config to zero value": {
+			yaml: "querier:",
+			assertConfig: func(t *testing.T, cfg *mimir.Config) {
+				defaults := mimir.Config{}
+				flagext.DefaultValues(&defaults)
+
+				require.NotZero(t, defaults.Querier.MaxQueryIntoFuture,
+					"This test asserts that mimir.Config.Querier.MaxQueryIntoFuture default value is not zero. "+
+						"If it's zero, this test is useless. Please change it to use a config value with a non-zero default.",
+				)
+
+				require.Equal(t, cfg.Querier.MaxQueryIntoFuture, defaults.Querier.MaxQueryIntoFuture,
+					"YAML parser has set the [entire] Querier config to zero values by specifying an empty node."+
+						"If this happens again, check git history on how this was checked with previous YAML parser implementation.")
+			},
 		},
 
 		"version": {
@@ -231,7 +242,7 @@ ruler_storage:
 	} {
 		t.Run(name, func(t *testing.T) {
 			_ = os.Setenv("TARGET", "ingester")
-			testSingle(t, tc.arguments, tc.yaml, []byte(tc.stdoutMessage), []byte(tc.stderrMessage), []byte(tc.stdoutExcluded), []byte(tc.stderrExcluded), tc.assertConfig)
+			testSingle(t, tc.arguments, tc.yaml, tc.stdoutMessage, tc.stderrMessage, tc.stdoutExcluded, tc.stderrExcluded, tc.assertConfig)
 		})
 	}
 }
@@ -271,7 +282,7 @@ func TestHelp(t *testing.T) {
 			t.Cleanup(restoreIfNeeded)
 
 			testMode = true
-			co := captureOutput(t)
+			co := test.CaptureOutput(t)
 
 			const cmd = "./cmd/mimir/mimir"
 			os.Args = []string{cmd, tc.arg}
@@ -294,7 +305,7 @@ func TestHelp(t *testing.T) {
 	}
 }
 
-func testSingle(t *testing.T, arguments []string, configYAML string, stdoutMessage, stderrMessage, stdoutExcluded, stderrExcluded []byte, assertConfig func(*testing.T, *mimir.Config)) {
+func testSingle(t *testing.T, arguments []string, configYAML string, stdoutMessage, stderrMessage, stdoutExcluded, stderrExcluded string, assertConfig func(*testing.T, *mimir.Config)) {
 	t.Helper()
 	oldArgs, oldStdout, oldStderr, oldTestMode := os.Args, os.Stdout, os.Stderr, testMode
 	restored := false
@@ -323,7 +334,7 @@ func testSingle(t *testing.T, arguments []string, configYAML string, stdoutMessa
 
 	testMode = true
 	os.Args = arguments
-	co := captureOutput(t)
+	co := test.CaptureOutput(t)
 
 	// reset default flags
 	flag.CommandLine = flag.NewFlagSet(arguments[0], flag.ExitOnError)
@@ -334,72 +345,23 @@ func testSingle(t *testing.T, arguments []string, configYAML string, stdoutMessa
 
 	// Restore stdout and stderr before reporting errors to make them visible.
 	restoreIfNeeded()
-	if !bytes.Contains(stdout, stdoutMessage) {
+	if !strings.Contains(stdout, stdoutMessage) {
 		t.Errorf("Expected on stdout: %q, stdout: %s\n", stdoutMessage, stdout)
 	}
-	if !bytes.Contains(stderr, stderrMessage) {
+	if !strings.Contains(stderr, stderrMessage) {
 		t.Errorf("Expected on stderr: %q, stderr: %s\n", stderrMessage, stderr)
 	}
-	if len(stdoutExcluded) > 0 && bytes.Contains(stdout, stdoutExcluded) {
+	if len(stdoutExcluded) > 0 && strings.Contains(stdout, stdoutExcluded) {
 		t.Errorf("Unexpected output on stdout: %q, stdout: %s\n", stdoutExcluded, stdout)
 	}
-	if len(stderrExcluded) > 0 && bytes.Contains(stderr, stderrExcluded) {
+	if len(stderrExcluded) > 0 && strings.Contains(stderr, stderrExcluded) {
 		t.Errorf("Unexpected output on stderr: %q, stderr: %s\n", stderrExcluded, stderr)
 	}
 	if assertConfig != nil {
 		var cfg mimir.Config
-		require.NoError(t, yaml.Unmarshal(stdout, &cfg), "Can't unmarshal stdout as yaml config")
+		require.NoError(t, yaml.Unmarshal([]byte(stdout), &cfg), "Can't unmarshal stdout as yaml config")
 		assertConfig(t, &cfg)
 	}
-}
-
-type capturedOutput struct {
-	stdoutBuf bytes.Buffer
-	stderrBuf bytes.Buffer
-
-	wg                         sync.WaitGroup
-	stdoutReader, stdoutWriter *os.File
-	stderrReader, stderrWriter *os.File
-}
-
-func captureOutput(t *testing.T) *capturedOutput {
-	stdoutR, stdoutW, err := os.Pipe()
-	require.NoError(t, err)
-	os.Stdout = stdoutW
-
-	stderrR, stderrW, err := os.Pipe()
-	require.NoError(t, err)
-	os.Stderr = stderrW
-
-	co := &capturedOutput{
-		stdoutReader: stdoutR,
-		stdoutWriter: stdoutW,
-		stderrReader: stderrR,
-		stderrWriter: stderrW,
-	}
-	co.wg.Add(1)
-	go func() {
-		defer co.wg.Done()
-		io.Copy(&co.stdoutBuf, stdoutR)
-	}()
-
-	co.wg.Add(1)
-	go func() {
-		defer co.wg.Done()
-		io.Copy(&co.stderrBuf, stderrR)
-	}()
-
-	return co
-}
-
-func (co *capturedOutput) Done() (stdout []byte, stderr []byte) {
-	// we need to close writers for readers to stop
-	_ = co.stdoutWriter.Close()
-	_ = co.stderrWriter.Close()
-
-	co.wg.Wait()
-
-	return co.stdoutBuf.Bytes(), co.stderrBuf.Bytes()
 }
 
 func TestExpandEnvironmentVariables(t *testing.T) {

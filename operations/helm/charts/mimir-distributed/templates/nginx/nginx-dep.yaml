@@ -52,6 +52,12 @@ spec:
         - name: nginx
           image: {{ .Values.nginx.image.registry }}/{{ .Values.nginx.image.repository }}:{{ .Values.nginx.image.tag }}
           imagePullPolicy: {{ .Values.nginx.image.pullPolicy }}
+          {{- with .Values.nginx.extraArgs }}
+          args:
+            {{- range $key, $value := . }}
+            - "-{{ $key }} {{ $value }}"
+            {{- end }}
+          {{- end }}
           ports:
             - name: http-metric
               containerPort: 8080

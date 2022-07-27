@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/thanos-io/thanos/pkg/block"
 	"golang.org/x/time/rate"
+	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 )
@@ -167,7 +168,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&l.AcceptHASamples, "distributor.ha-tracker.enable-for-all-users", false, "Flag to enable, for all tenants, handling of samples with external labels identifying replicas in an HA Prometheus setup.")
 	f.StringVar(&l.HAClusterLabel, "distributor.ha-tracker.cluster", "cluster", "Prometheus label to look for in samples to identify a Prometheus HA cluster.")
 	f.StringVar(&l.HAReplicaLabel, "distributor.ha-tracker.replica", "__replica__", "Prometheus label to look for in samples to identify a Prometheus HA replica.")
-	f.IntVar(&l.HAMaxClusters, HATrackerMaxClustersFlag, 0, "Maximum number of clusters that HA tracker will keep track of for a single tenant. 0 to disable the limit.")
+	f.IntVar(&l.HAMaxClusters, HATrackerMaxClustersFlag, 100, "Maximum number of clusters that HA tracker will keep track of for a single tenant. 0 to disable the limit.")
 	f.Var(&l.DropLabels, "distributor.drop-label", "This flag can be used to specify label names that to drop during sample ingestion within the distributor and can be repeated in order to drop multiple labels.")
 	f.IntVar(&l.MaxLabelNameLength, maxLabelNameLengthFlag, 1024, "Maximum length accepted for label names")
 	f.IntVar(&l.MaxLabelValueLength, maxLabelValueLengthFlag, 2048, "Maximum length accepted for label value. This setting also applies to the metric name")
@@ -177,10 +178,10 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.CreationGracePeriod, creationGracePeriodFlag, "Controls how far into the future incoming samples are accepted compared to the wall clock. Any sample with timestamp `t` will be rejected if `t > (now + validation.create-grace-period)`.")
 	f.BoolVar(&l.EnforceMetadataMetricName, "validation.enforce-metadata-metric-name", true, "Enforce every metadata has a metric name.")
 
-	f.IntVar(&l.MaxGlobalSeriesPerUser, MaxSeriesPerUserFlag, 150000, "The maximum number of active series per tenant, across the cluster before replication. 0 to disable.")
-	f.IntVar(&l.MaxGlobalSeriesPerMetric, MaxSeriesPerMetricFlag, 20000, "The maximum number of active series per metric name, across the cluster before replication. 0 to disable.")
+	f.IntVar(&l.MaxGlobalSeriesPerUser, MaxSeriesPerUserFlag, 150000, "The maximum number of in-memory series per tenant, across the cluster before replication. 0 to disable.")
+	f.IntVar(&l.MaxGlobalSeriesPerMetric, MaxSeriesPerMetricFlag, 20000, "The maximum number of in-memory series per metric name, across the cluster before replication. 0 to disable.")
 
-	f.IntVar(&l.MaxGlobalMetricsWithMetadataPerUser, MaxMetadataPerUserFlag, 0, "The maximum number of active metrics with metadata per tenant, across the cluster. 0 to disable.")
+	f.IntVar(&l.MaxGlobalMetricsWithMetadataPerUser, MaxMetadataPerUserFlag, 0, "The maximum number of in-memory metrics with metadata per tenant, across the cluster. 0 to disable.")
 	f.IntVar(&l.MaxGlobalMetadataPerMetric, MaxMetadataPerMetricFlag, 0, "The maximum number of metadata per metric, across the cluster. 0 to disable.")
 	f.IntVar(&l.MaxGlobalExemplarsPerUser, "ingester.max-global-exemplars-per-user", 0, "The maximum number of exemplars in memory, across the cluster. 0 to disable exemplars ingestion.")
 	f.Var(&l.ActiveSeriesCustomTrackersConfig, "ingester.active-series-custom-trackers", "Additional active series metrics, matching the provided matchers. Matchers should be in form <name>:<matcher>, like 'foobar:{foo=\"bar\"}'. Multiple matchers can be provided either providing the flag multiple times or providing multiple semicolon-separated values to a single flag.")
@@ -236,7 +237,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (l *Limits) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (l *Limits) UnmarshalYAML(value *yaml.Node) error {
 	// We want to set l to the defaults and then overwrite it with the input.
 	// To make unmarshal fill the plain data struct rather than calling UnmarshalYAML
 	// again, we have to hide it using a type indirection.  See prometheus/config.
@@ -249,7 +250,7 @@ func (l *Limits) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 	type plain Limits
 
-	err := unmarshal((*plain)(l))
+	err := value.DecodeWithOptions((*plain)(l), yaml.DecodeOptions{KnownFields: true})
 	if err != nil {
 		return err
 	}
@@ -499,7 +500,7 @@ func (o *Overrides) MaxGlobalMetadataPerMetric(userID string) int {
 	return o.getOverridesForUser(userID).MaxGlobalMetadataPerMetric
 }
 
-// MaxGlobalExemplars returns the maximum number of exemplars held in memory across the cluster.
+// MaxGlobalExemplarsPerUser returns the maximum number of exemplars held in memory across the cluster.
 func (o *Overrides) MaxGlobalExemplarsPerUser(userID string) int {
 	return o.getOverridesForUser(userID).MaxGlobalExemplarsPerUser
 }

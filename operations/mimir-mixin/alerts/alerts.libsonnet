@@ -451,7 +451,9 @@
           alert: $.alertName('AllocatingTooMuchMemory'),
           expr: |||
             (
-              container_memory_working_set_bytes{container="ingester"}
+              # We use RSS instead of working set memory because of the ingester's extensive usage of mmap.
+              # See: https://github.com/grafana/mimir/issues/2466
+              container_memory_rss{container="ingester"}
                 /
               ( container_spec_memory_limit_bytes{container="ingester"} > 0 )
             ) > 0.65
@@ -470,7 +472,9 @@
           alert: $.alertName('AllocatingTooMuchMemory'),
           expr: |||
             (
-              container_memory_working_set_bytes{container="ingester"}
+              # We use RSS instead of working set memory because of the ingester's extensive usage of mmap.
+              # See: https://github.com/grafana/mimir/issues/2466
+              container_memory_rss{container="ingester"}
                 /
               ( container_spec_memory_limit_bytes{container="ingester"} > 0 )
             ) > 0.8

@@ -40,6 +40,10 @@ Mimirtool is a command-line tool that operators and tenants can use to execute a
 
   For more information about the `config` command, refer to [Config]({{< relref "#config" >}})
 
+- The `backfill` command uploads existing Prometheus TSDB blocks into Grafana Mimir.
+
+  For more information about the `backfill` command, refer to [Backfill]({{< relref "#backfill" >}})
+
 Mimirtool interacts with:
 
 - User-facing APIs provided by Grafana Mimir.
@@ -68,7 +72,7 @@ The following sections outline the commands that you can run against Grafana Mim
 
 The following commands interact with Grafana Mimir Alertmanager configuration and alert template files.
 
-#### Get configuration
+#### Get Alertmanager configuration
 
 The following command shows the current Alertmanager configuration.
 
@@ -76,7 +80,7 @@ The following command shows the current Alertmanager configuration.
 mimirtool alertmanager get
 ```
 
-#### Load configuration
+#### Load Alertmanager configuration
 
 The following command loads an Alertmanager configuration to the Alertmanager instance.
 
@@ -101,7 +105,7 @@ receivers:
   - name: "example_receiver"
 ```
 
-#### Delete configuration
+#### Delete Alertmanager configuration
 
 The following command deletes the Alertmanager configuration in the Grafana Mimir Alertmanager.
 
@@ -127,7 +131,7 @@ The commands in this section enable you to perform the following actions:
 - Interact with individual rule groups in the Mimir ruler
 - Manipulate local rule files
 
-#### List
+#### List rules
 
 The following command retrieves the names of all rule groups in the Grafana Mimir instance and prints them to the terminal.
 
@@ -135,7 +139,7 @@ The following command retrieves the names of all rule groups in the Grafana Mimi
 mimirtool rules list
 ```
 
-#### Print
+#### Print rules
 
 The following command retrieves all rule groups in the Grafana Mimir instance and prints them to the terminal.
 
@@ -143,7 +147,7 @@ The following command retrieves all rule groups in the Grafana Mimir instance an
 mimirtool rules print
 ```
 
-#### Get
+#### Get rule group
 
 The following command retrieves a single rule group and prints it to the terminal.
 
@@ -151,7 +155,7 @@ The following command retrieves a single rule group and prints it to the termina
 mimirtool rules get <namespace> <rule_group_name>
 ```
 
-#### Delete
+#### Delete rule group
 
 The following command deletes a rule group.
 
@@ -159,7 +163,7 @@ The following command deletes a rule group.
 mimirtool rules delete <namespace> <rule_group_name>
 ```
 
-#### Load
+#### Load rule group
 
 The following command loads each rule group from the files into Grafana Mimir.
 This command overwrites all existing rule groups with the same name.
@@ -199,13 +203,13 @@ To perform a trial run that does not make changes, you can use the dry run flag 
 mimirtool rules lint <file_path>...
 ```
 
-The format of the file is the same format as shown in [rules load](#load).
+The format of the file is the same format as shown in [rules load](#load-rule-group).
 
 #### Prepare
 
 This `prepare` command prepares a rules file that you upload to Grafana Mimir.
 It lints all PromQL expressions and adds a label to your PromQL query aggregations in the file.
-The format of the file is the same format as shown in [rules load](#load).
+The format of the file is the same format as shown in [rules load](#load-rule-group).
 
 > **Note:** This command does not interact with your Grafana Mimir cluster.
 
@@ -289,7 +293,7 @@ groups:
 ERRO[0000] bad recording rule name error="recording rule name does not match level:metric:operation format, must contain at least one colon" file=rules.yaml rule=job_http_inprogress_requests_sum ruleGroup=example
 ```
 
-The format of the file is the same format as shown in [rules load](#load).
+The format of the file is the same format as shown in [rules load](#load-rule-group).
 
 #### Diff
 
@@ -299,7 +303,7 @@ The following command compares rules against the rules in your Grafana Mimir clu
 mimirtool rules diff <file_path>...
 ```
 
-The format of the file is the same format as shown in [rules load](#load).
+The format of the file is the same format as shown in [rules load](#load-rule-group).
 
 #### Sync
 
@@ -310,7 +314,7 @@ The command applies any differences to your Grafana Mimir cluster.
 mimirtool rules sync <file_path>...
 ```
 
-The format of the file is the same format as shown in [rules load](#load).
+The format of the file is the same format as shown in [rules load](#load-rule-group).
 
 ### Remote-read
 
@@ -872,6 +876,39 @@ printf "{\n%s\n}" "${key_values::-1}"
 
 The only parameter of the script is a file containing the flags, with each flag on its own line.
 
+### Backfill
+
+The `backfill` command uploads Prometheus TSDB blocks into Grafana Mimir, by using the block-upload API that is exposed by the compactor component.
+
+If the command is interrupted, you can restart it. Mimirtool detects which blocks are already uploaded, and will only upload unfinished or new blocks.
+
+The block-upload feature is disabled by default.
+To enable the block-upload feature for a user or an entire system, refer to [Configure TSDB block upload]({{< relref "../configure/configure-tsdb-block-upload.md" >}}).
+If block upload is not enabled for the user, `mimirtool backfill` will fail.
+
+##### Example
+
+```bash
+mimirtool backfill --address=http://mimir-compactor/ --id=anonymous /var/prometheus/{01G803NFXZ0MVKN71GT91HMV3Z,01G8BQ8PRR4TAP7EXZVBNTRBZ4,01G8CB7GTTC5ZXY23WTXHSYQXQ}
+```
+
+The results of the `backfill` command are as follows:
+
+```console
+INFO[0000] Backfilling                              blocks="/var/prometheus/01G803NFXZ0MVKN71GT91HMV3Z,/var/prometheus/01G8BQ8PRR4TAP7EXZVBNTRBZ4,/var/prometheus/01G8CB7GTTC5ZXY23WTXHSYQXQ" user=anonymous
+INFO[0000] making request to start block upload     block=01G803NFXZ0MVKN71GT91HMV3Z file=meta.json path=/var/prometheus/01G803NFXZ0MVKN71GT91HMV3Z
+WARN[0000] block already exists on the server       path=/var/prometheus/01G803NFXZ0MVKN71GT91HMV3Z
+INFO[0000] making request to start block upload     block=01G8BQ8PRR4TAP7EXZVBNTRBZ4 file=meta.json path=/var/prometheus/01G8BQ8PRR4TAP7EXZVBNTRBZ4
+INFO[0000] uploading block file                     block=01G8BQ8PRR4TAP7EXZVBNTRBZ4 file=index path=/var/prometheus/01G8BQ8PRR4TAP7EXZVBNTRBZ4 size=259867
+INFO[0000] uploading block file                     block=01G8BQ8PRR4TAP7EXZVBNTRBZ4 file=chunks/000001 path=/var/prometheus/01G8BQ8PRR4TAP7EXZVBNTRBZ4 size=5024391
+INFO[0000] block uploaded successfully              block=01G8BQ8PRR4TAP7EXZVBNTRBZ4 path=/var/prometheus/01G8BQ8PRR4TAP7EXZVBNTRBZ4
+INFO[0000] making request to start block upload     block=01G8CB7GTTC5ZXY23WTXHSYQXQ file=meta.json path=/var/prometheus/01G8CB7GTTC5ZXY23WTXHSYQXQ
+INFO[0000] uploading block file                     block=01G8CB7GTTC5ZXY23WTXHSYQXQ file=index path=/var/prometheus/01G8CB7GTTC5ZXY23WTXHSYQXQ size=151181
+INFO[0000] uploading block file                     block=01G8CB7GTTC5ZXY23WTXHSYQXQ file=chunks/000001 path=/var/prometheus/01G8CB7GTTC5ZXY23WTXHSYQXQ size=1986792
+INFO[0000] block uploaded successfully              block=01G8CB7GTTC5ZXY23WTXHSYQXQ path=/var/prometheus/01G8CB7GTTC5ZXY23WTXHSYQXQ
+INFO[0001] finished uploading blocks                already_exists=1 failed=0 succeeded=2
+```
+
 ## License
 
-Licensed AGPLv3, see [LICENSE](https://github.com/grafana/mimir/blob/main/LICENSE).
+This software is licensed as AGPLv3. For more information, see [LICENSE](https://github.com/grafana/mimir/blob/main/LICENSE).

@@ -8,7 +8,7 @@ metadata:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-values
     app.kubernetes.io/component: nginx
-    app.kubernetes.io/version: "2.1.0"
+    app.kubernetes.io/version: "2.2.0"
     app.kubernetes.io/managed-by: Helm
   namespace: "citestns"
 data:
@@ -97,6 +97,11 @@ data:
         # Buildinfo endpoint can go to any component
         location = /api/v1/status/buildinfo {
           proxy_pass      http://test-oss-values-mimir-query-frontend.citestns.svc.cluster.local:8080$request_uri;
+        }
+    
+        # Compactor endpoint for uploading blocks
+        location /api/v1/upload/block/ {
+          proxy_pass      http://test-oss-values-mimir-compactor.citestns.svc.cluster.local:8080$request_uri;
         }
       }
     }

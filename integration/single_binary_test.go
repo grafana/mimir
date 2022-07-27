@@ -5,6 +5,9 @@
 package integration
 
 import (
+	"io/ioutil"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/grafana/e2e"
@@ -56,5 +59,36 @@ func TestMimirShouldStartInSingleBinaryModeWithAllMemcachedConfigured(t *testing
 
 	// Ensure Mimir successfully starts.
 	mimir := e2emimir.NewSingleBinary("mimir-1", e2e.MergeFlags(DefaultSingleBinaryFlags(), flags))
+	require.NoError(t, s.StartAndWaitReady(mimir))
+}
+
+// TestMimirCanParseIntZeroAsZeroDuration checks that integer 0 can be used as zero duration in the yaml configuration.
+// When parsing config using gopkg.in/yaml.v3 this means that it should include this change: https://github.com/go-yaml/yaml/pull/876
+// It is written as an acceptance test to ensure that software that vendors this (i.e., GEM) will also run this test.
+func TestMimirCanParseIntZeroAsZeroDuration(t *testing.T) {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	const singleProcessConfigFile = "docs/configurations/single-process-config-blocks.yaml"
+
+	// Use an example single process config file.
+	config, err := ioutil.ReadFile(filepath.Join(getMimirProjectDir(), singleProcessConfigFile))
+	require.NoError(t, err, "unable to read config file")
+
+	// Ensure that there's `server:` to replace in the config, otherwise we're testing nothing.
+	require.Containsf(t, string(config), "server:", "Config file %s doesn't contain a 'server:' section anymore.")
+	// Add a 'graceful_shutdown_timeout: 0' after 'server:'.
+	config = []byte(strings.ReplaceAll(string(config), "server:", "server:\n  graceful_shutdown_timeout: 0"))
+	// Write the config and use it.
+	require.NoError(t, writeFileToSharedDir(s, mimirConfigFile, config))
+
+	// Use filesystem as storage backend to run this test faster without minio.
+	flags := map[string]string{
+		"-common.storage.backend":        "filesystem",
+		"-common.storage.filesystem.dir": "./bucket",
+	}
+
+	mimir := e2emimir.NewSingleBinary("mimir-1", flags, e2emimir.WithPorts(9009, 9095), e2emimir.WithConfigFile(mimirConfigFile))
 	require.NoError(t, s.StartAndWaitReady(mimir))
 }

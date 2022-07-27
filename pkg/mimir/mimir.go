@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"reflect"
 	"strconv"
 	"strings"
 
@@ -32,7 +31,7 @@ import (
 	"github.com/weaveworks/common/server"
 	"github.com/weaveworks/common/signals"
 	"google.golang.org/grpc/health/grpc_health_v1"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/dskit/tenant"
 
@@ -165,77 +164,34 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.Common.RegisterFlags(f)
 }
 
-func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	// First unmarshal common into the specific locations.
-	common := configWithCustomCommonUnmarshaler{
-		Common: &commonConfigUnmarshaler{
-			Storage: &specificLocationsUnmarshaler{
-				"blocks_storage":       &c.BlocksStorage.Bucket.StorageBackendConfig,
-				"ruler_storage":        &c.RulerStorage.StorageBackendConfig,
-				"alertmanager_storage": &c.AlertmanagerStorage.StorageBackendConfig,
-			},
+func (c *Config) CommonConfigInheritance() CommonConfigInheritance {
+	return CommonConfigInheritance{
+		Storage: map[string]*bucket.StorageBackendConfig{
+			"blocks_storage":       &c.BlocksStorage.Bucket.StorageBackendConfig,
+			"ruler_storage":        &c.RulerStorage.StorageBackendConfig,
+			"alertmanager_storage": &c.AlertmanagerStorage.StorageBackendConfig,
 		},
 	}
-	if err := unmarshal(&common); err != nil {
-		return fmt.Errorf("can't unmarshal common config: %w", err)
+}
+
+// ConfigWithCommon should be passed to yaml.Unmarshal to properly unmarshal Common values.
+// We don't implement UnmarshalYAML on Config itself because that would disallow inlining it in other configs.
+type ConfigWithCommon Config
+
+func (c *ConfigWithCommon) UnmarshalYAML(value *yaml.Node) error {
+	if err := UnmarshalCommonYAML(value, (*Config)(c)); err != nil {
+		return err
 	}
 
 	// Then unmarshal config in a standard way.
 	// This will override previously set common values by the specific ones, if they're provided.
 	// (YAML specific takes precedence over YAML common)
-	type plain Config
-	return unmarshal((*plain)(c))
-}
-
-func (c *Config) InheritCommonFlagValues(log log.Logger, fs *flag.FlagSet) error {
-	setFlags := map[string]bool{}
-	fs.Visit(func(f *flag.Flag) { setFlags[f.Name] = true })
-
-	return multierror.New(
-		inheritFlags(log, c.Common.Storage.RegisteredFlags, c.BlocksStorage.Bucket.RegisteredFlags, setFlags),
-		inheritFlags(log, c.Common.Storage.RegisteredFlags, c.RulerStorage.RegisteredFlags, setFlags),
-		inheritFlags(log, c.Common.Storage.RegisteredFlags, c.AlertmanagerStorage.RegisteredFlags, setFlags),
-	).Err()
-}
-
-// inheritFlags takes flags from the origin set and sets them to the equivalent flags in the dest set, unless those are already set.
-func inheritFlags(log log.Logger, orig util.RegisteredFlags, dest util.RegisteredFlags, set map[string]bool) error {
-	for f, o := range orig.Flags {
-		d, ok := dest.Flags[f]
-		if !ok {
-			return fmt.Errorf("implementation error: flag %q was in flags prefixed with %q (%q) but was not in flags prefixed with %q (%q)", f, orig.Prefix, o.Name, dest.Prefix, d.Name)
-		}
-		if !set[o.Name] {
-			// Nothing to inherit because origin was not set.
-			continue
-		}
-		if set[d.Name] {
-			// Can't inherit because destination was set.
-			continue
-		}
-		if o.Value.String() == d.Value.String() {
-			// Already the same, no need to touch.
-			continue
-		}
-		level.Debug(log).Log(
-			"msg", "Inheriting flag value",
-			"origin_flag", o.Name, "origin_value", o.Value,
-			"destination_flag", d.Name, "destination_value", d.Value,
-		)
-		if err := d.Value.Set(o.Value.String()); err != nil {
-			return fmt.Errorf("can't set flag %q to flag's %q value %q: %s", d.Name, o.Name, o.Value, err)
-		}
-	}
-	return nil
+	return value.DecodeWithOptions((*Config)(c), yaml.DecodeOptions{KnownFields: true})
 }
 
 // Validate the mimir config and return an error if the validation
 // doesn't pass
 func (c *Config) Validate(log log.Logger) error {
-	if err := c.validateYAMLEmptyNodes(); err != nil {
-		return err
-	}
-
 	if err := c.validateBucketConfigs(); err != nil {
 		return fmt.Errorf("%w: %s", errInvalidBucketConfig, err)
 	}
@@ -292,33 +248,6 @@ func (c *Config) isAnyModuleEnabled(modules ...string) bool {
 	}
 
 	return false
-}
-
-// validateYAMLEmptyNodes ensure that no empty node has been specified in the YAML config file.
-// When an empty node is defined in YAML, the YAML parser sets the whole struct to its zero value
-// and so we loose all default values. It's very difficult to detect this case for the user, so we
-// try to prevent it (on the root level) with this custom validation.
-func (c *Config) validateYAMLEmptyNodes() error {
-	defaults := Config{}
-	flagext.DefaultValues(&defaults)
-
-	defStruct := reflect.ValueOf(defaults)
-	cfgStruct := reflect.ValueOf(*c)
-
-	// We expect all structs are the exact same. This check should never fail.
-	if cfgStruct.NumField() != defStruct.NumField() {
-		return errors.New("unable to validate configuration because of mismatching internal config data structure")
-	}
-
-	for i := 0; i < cfgStruct.NumField(); i++ {
-		// If the struct has been reset due to empty YAML value and the zero struct value
-		// doesn't match the default one, then we should warn the user about the issue.
-		if cfgStruct.Field(i).Kind() == reflect.Struct && cfgStruct.Field(i).IsZero() && !defStruct.Field(i).IsZero() {
-			return fmt.Errorf("the %s configuration in YAML has been specified as an empty YAML node", cfgStruct.Type().Field(i).Name)
-		}
-	}
-
-	return nil
 }
 
 func (c *Config) validateBucketConfigs() error {
@@ -399,8 +328,89 @@ func (c *Config) registerServerFlagsWithChangedDefaultValues(fs *flag.FlagSet) {
 	})
 }
 
+// CommonConfigInheriter abstracts config that inherit common config values.
+type CommonConfigInheriter interface {
+	CommonConfigInheritance() CommonConfigInheritance
+}
+
+// UnmarshalCommonYAML provides the implementation for UnmarshalYAML functions to unmarshal the CommonConfig.
+// A list of CommonConfig inheriters can be provided
+func UnmarshalCommonYAML(value *yaml.Node, inheriters ...CommonConfigInheriter) error {
+	for _, inh := range inheriters {
+		specificStorageLocations := specificLocationsUnmarshaler{}
+		inheritance := inh.CommonConfigInheritance()
+		for name, loc := range inheritance.Storage {
+			specificStorageLocations[name] = loc
+		}
+
+		common := configWithCustomCommonUnmarshaler{
+			Common: &commonConfigUnmarshaler{
+				Storage: &specificStorageLocations,
+			},
+		}
+
+		if err := value.DecodeWithOptions(&common, yaml.DecodeOptions{KnownFields: true}); err != nil {
+			return fmt.Errorf("can't unmarshal common config: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// InheritCommonFlagValues will inherit the values of the provided common flags to all the inheriters.
+func InheritCommonFlagValues(log log.Logger, fs *flag.FlagSet, common CommonConfig, inheriters ...CommonConfigInheriter) error {
+	setFlags := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { setFlags[f.Name] = true })
+
+	for _, inh := range inheriters {
+		inheritance := inh.CommonConfigInheritance()
+		for desc, loc := range inheritance.Storage {
+			if err := inheritFlags(log, common.Storage.RegisteredFlags, loc.RegisteredFlags, setFlags); err != nil {
+				return fmt.Errorf("can't inherit common flags for %q: %w", desc, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// inheritFlags takes flags from the origin set and sets them to the equivalent flags in the dest set, unless those are already set.
+func inheritFlags(log log.Logger, orig util.RegisteredFlags, dest util.RegisteredFlags, set map[string]bool) error {
+	for f, o := range orig.Flags {
+		d, ok := dest.Flags[f]
+		if !ok {
+			return fmt.Errorf("implementation error: flag %q was in flags prefixed with %q (%q) but was not in flags prefixed with %q (%q)", f, orig.Prefix, o.Name, dest.Prefix, d.Name)
+		}
+		if !set[o.Name] {
+			// Nothing to inherit because origin was not set.
+			continue
+		}
+		if set[d.Name] {
+			// Can't inherit because destination was set.
+			continue
+		}
+		if o.Value.String() == d.Value.String() {
+			// Already the same, no need to touch.
+			continue
+		}
+		level.Debug(log).Log(
+			"msg", "Inheriting flag value",
+			"origin_flag", o.Name, "origin_value", o.Value,
+			"destination_flag", d.Name, "destination_value", d.Value,
+		)
+		if err := d.Value.Set(o.Value.String()); err != nil {
+			return fmt.Errorf("can't set flag %q to flag's %q value %q: %s", d.Name, o.Name, o.Value, err)
+		}
+	}
+	return nil
+}
+
 type CommonConfig struct {
 	Storage bucket.StorageBackendConfig `yaml:"storage"`
+}
+
+type CommonConfigInheritance struct {
+	Storage map[string]*bucket.StorageBackendConfig
 }
 
 // RegisterFlags registers flag.
@@ -428,9 +438,9 @@ type commonConfigUnmarshaler struct {
 // where this should be unmarshaled.
 type specificLocationsUnmarshaler map[string]interface{}
 
-func (m specificLocationsUnmarshaler) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (m specificLocationsUnmarshaler) UnmarshalYAML(value *yaml.Node) error {
 	for l, v := range m {
-		if err := unmarshal(v); err != nil {
+		if err := value.DecodeWithOptions(v, yaml.DecodeOptions{KnownFields: true}); err != nil {
 			return fmt.Errorf("key %q: %w", l, err)
 		}
 	}
@@ -457,6 +467,7 @@ type Mimir struct {
 	RuntimeConfig            *runtimeconfig.Manager
 	QuerierQueryable         prom_storage.SampleAndChunkQueryable
 	ExemplarQueryable        prom_storage.ExemplarQueryable
+	MetadataSupplier         querier.MetadataSupplier
 	QuerierEngine            *promql.Engine
 	QueryFrontendTripperware querymiddleware.Tripperware
 	Ruler                    *ruler.Ruler

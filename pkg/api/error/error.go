@@ -18,14 +18,15 @@ type Type string
 
 // adapted from https://github.com/prometheus/prometheus/blob/fdbc40a9efcc8197a94f23f0e479b0b56e52d424/web/api/v1/api.go#L67-L76
 const (
-	TypeNone        Type = ""
-	TypeTimeout     Type = "timeout"
-	TypeCanceled    Type = "canceled"
-	TypeExec        Type = "execution"
-	TypeBadData     Type = "bad_data"
-	TypeInternal    Type = "internal"
-	TypeUnavailable Type = "unavailable"
-	TypeNotFound    Type = "not_found"
+	TypeNone            Type = ""
+	TypeTimeout         Type = "timeout"
+	TypeCanceled        Type = "canceled"
+	TypeExec            Type = "execution"
+	TypeBadData         Type = "bad_data"
+	TypeInternal        Type = "internal"
+	TypeUnavailable     Type = "unavailable"
+	TypeNotFound        Type = "not_found"
+	TypeTooManyRequests Type = "too_many_requests"
 )
 
 type apiError struct {
@@ -50,6 +51,8 @@ func (e *apiError) statusCode() int {
 		return http.StatusInternalServerError
 	case TypeNotFound:
 		return http.StatusNotFound
+	case TypeTooManyRequests:
+		return http.StatusTooManyRequests
 	}
 	return http.StatusInternalServerError
 }

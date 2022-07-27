@@ -18,7 +18,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/limiter"
 	"github.com/grafana/dskit/ring"
@@ -52,8 +51,9 @@ import (
 )
 
 const (
-	maxIngestionRateFlag        = "distributor.instance-limits.max-ingestion-rate"
-	maxInflightPushRequestsFlag = "distributor.instance-limits.max-inflight-push-requests"
+	maxIngestionRateFlag             = "distributor.instance-limits.max-ingestion-rate"
+	maxInflightPushRequestsFlag      = "distributor.instance-limits.max-inflight-push-requests"
+	maxInflightPushRequestsBytesFlag = "distributor.instance-limits.max-inflight-push-requests-bytes"
 )
 
 var (
@@ -61,8 +61,9 @@ var (
 	errInvalidTenantShardSize = errors.New("invalid tenant shard size, the value must be greater or equal to zero")
 
 	// Distributor instance limits errors.
-	errMaxInflightRequestsReached = errors.New(globalerror.DistributorMaxInflightPushRequests.MessageWithLimitConfig("the write request has been rejected because the distributor exceeded the allowed number of inflight push requests", maxInflightPushRequestsFlag))
-	errMaxIngestionRateReached    = errors.New(globalerror.DistributorMaxIngestionRate.MessageWithLimitConfig("the write request has been rejected because the distributor exceeded the ingestion rate limit", maxIngestionRateFlag))
+	errMaxInflightRequestsReached      = errors.New(globalerror.DistributorMaxInflightPushRequests.MessageWithLimitConfig("the write request has been rejected because the distributor exceeded the allowed number of inflight push requests", maxInflightPushRequestsFlag))
+	errMaxIngestionRateReached         = errors.New(globalerror.DistributorMaxIngestionRate.MessageWithLimitConfig("the write request has been rejected because the distributor exceeded the ingestion rate limit", maxIngestionRateFlag))
+	errMaxInflightRequestsBytesReached = errors.New(globalerror.DistributorMaxInflightPushRequestsBytes.MessageWithLimitConfig("the write request has been rejected because the distributor exceeded the allowed total size in bytes of inflight push requests", maxInflightPushRequestsBytesFlag))
 )
 
 const (
@@ -109,8 +110,9 @@ type Distributor struct {
 
 	activeUsers *util.ActiveUsersCleanupService
 
-	ingestionRate        *util_math.EwmaRate
-	inflightPushRequests atomic.Int64
+	ingestionRate             *util_math.EwmaRate
+	inflightPushRequests      atomic.Int64
+	inflightPushRequestsBytes atomic.Int64
 
 	// Metrics
 	queryDuration                    *instrument.HistogramCollector
@@ -138,8 +140,6 @@ type Config struct {
 	MaxRecvMsgSize int           `yaml:"max_recv_msg_size" category:"advanced"`
 	RemoteTimeout  time.Duration `yaml:"remote_timeout" category:"advanced"`
 
-	ExtendWrites bool `yaml:"extend_writes" category:"advanced" doc:"hidden"` // TODO Deprecated: remove in Mimir 2.3.0
-
 	// Distributors ring
 	DistributorRing RingConfig `yaml:"ring"`
 
@@ -161,8 +161,9 @@ type Config struct {
 }
 
 type InstanceLimits struct {
-	MaxIngestionRate        float64 `yaml:"max_ingestion_rate" category:"advanced"`
-	MaxInflightPushRequests int     `yaml:"max_inflight_push_requests" category:"advanced"`
+	MaxIngestionRate             float64 `yaml:"max_ingestion_rate" category:"advanced"`
+	MaxInflightPushRequests      int     `yaml:"max_inflight_push_requests" category:"advanced"`
+	MaxInflightPushRequestsBytes int     `yaml:"max_inflight_push_requests_bytes" category:"advanced"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -174,9 +175,9 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.IntVar(&cfg.MaxRecvMsgSize, "distributor.max-recv-msg-size", 100<<20, "remote_write API max receive message size (bytes).")
 	f.DurationVar(&cfg.RemoteTimeout, "distributor.remote-timeout", 20*time.Second, "Timeout for downstream ingesters.")
-	flagext.DeprecatedFlag(f, "distributor.extend-writes", "Deprecated: this setting was used to try writing to an additional ingester in the presence of an ingester not in the ACTIVE state. Mimir now behaves as this setting is always disabled.", logger)
 	f.Float64Var(&cfg.InstanceLimits.MaxIngestionRate, maxIngestionRateFlag, 0, "Max ingestion rate (samples/sec) that this distributor will accept. This limit is per-distributor, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. 0 = unlimited.")
 	f.IntVar(&cfg.InstanceLimits.MaxInflightPushRequests, maxInflightPushRequestsFlag, 2000, "Max inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.")
+	f.IntVar(&cfg.InstanceLimits.MaxInflightPushRequestsBytes, maxInflightPushRequestsBytesFlag, 0, "The sum of the request sizes in bytes of inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.")
 }
 
 // Validate config and returns error on failure
@@ -313,6 +314,11 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 		Name:        instanceLimitsMetric,
 		Help:        instanceLimitsMetricHelp,
+		ConstLabels: map[string]string{limitLabel: "max_inflight_push_requests_bytes"},
+	}).Set(float64(cfg.InstanceLimits.MaxInflightPushRequestsBytes))
+	promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+		Name:        instanceLimitsMetric,
+		Help:        instanceLimitsMetricHelp,
 		ConstLabels: map[string]string{limitLabel: "max_ingestion_rate"},
 	}).Set(cfg.InstanceLimits.MaxIngestionRate)
 
@@ -321,6 +327,12 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		Help: "Current number of inflight push requests in distributor.",
 	}, func() float64 {
 		return float64(d.inflightPushRequests.Load())
+	})
+	promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "cortex_distributor_inflight_push_requests_bytes",
+		Help: "Current sum of inflight push requests in distributor in bytes.",
+	}, func() float64 {
+		return float64(d.inflightPushRequestsBytes.Load())
 	})
 	promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "cortex_distributor_ingestion_rate_samples_per_second",
@@ -554,6 +566,11 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 		}
 	}
 
+	if d.limits.MaxGlobalExemplarsPerUser(userID) == 0 {
+		ts.Exemplars = nil
+		return nil
+	}
+
 	for i := 0; i < len(ts.Exemplars); {
 		e := ts.Exemplars[i]
 		if err := validation.ValidateExemplar(userID, ts.Labels, e); err != nil {
@@ -574,7 +591,6 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 		}
 		i++
 	}
-
 	return nil
 }
 
@@ -605,11 +621,14 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteRequest, callerCleanup func()) (*mimirpb.WriteResponse, error) {
 	// We will report *this* request in the error too.
 	inflight := d.inflightPushRequests.Inc()
+	reqSize := int64(req.Size())
+	inflightBytes := d.inflightPushRequestsBytes.Add(reqSize)
 
 	// Decrement counter after all ingester calls have finished or been cancelled.
 	cleanup := func() {
 		callerCleanup()
 		d.inflightPushRequests.Dec()
+		d.inflightPushRequestsBytes.Sub(reqSize)
 	}
 	cleanupInDefer := true
 	defer func() {
@@ -635,6 +654,10 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		if rate := d.ingestionRate.Rate(); rate >= d.cfg.InstanceLimits.MaxIngestionRate {
 			return nil, errMaxIngestionRateReached
 		}
+	}
+
+	if d.cfg.InstanceLimits.MaxInflightPushRequestsBytes > 0 && inflightBytes > int64(d.cfg.InstanceLimits.MaxInflightPushRequestsBytes) {
+		return nil, errMaxInflightRequestsBytesReached
 	}
 
 	now := mtime.Now()
@@ -950,7 +973,7 @@ func (d *Distributor) ForReplicationSet(ctx context.Context, replicationSet ring
 
 // LabelValuesForLabelName returns all of the label values that are associated with a given label name.
 func (d *Distributor) LabelValuesForLabelName(ctx context.Context, from, to model.Time, labelName model.LabelName, matchers ...*labels.Matcher) ([]string, error) {
-	replicationSet, err := d.GetIngestersForMetadata(ctx)
+	replicationSet, err := d.GetIngesters(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -987,7 +1010,7 @@ func (d *Distributor) LabelValuesForLabelName(ctx context.Context, from, to mode
 
 // LabelNamesAndValues query ingesters for label names and values and returns labels with distinct list of values.
 func (d *Distributor) LabelNamesAndValues(ctx context.Context, matchers []*labels.Matcher) (*ingester_client.LabelNamesAndValuesResponse, error) {
-	replicationSet, err := d.GetIngestersForMetadata(ctx)
+	replicationSet, err := d.GetIngesters(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1133,7 +1156,7 @@ func (d *Distributor) LabelValuesCardinality(ctx context.Context, labelNames []m
 // labelValuesCardinality queries ingesters for label values cardinality of a set of labelNames
 // Returns a LabelValuesCardinalityResponse where each item contains an exclusive label name and associated label values
 func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher) (*ingester_client.LabelValuesCardinalityResponse, error) {
-	replicationSet, err := d.GetIngestersForMetadata(ctx)
+	replicationSet, err := d.GetIngesters(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1251,7 +1274,7 @@ func (cm *labelValuesCardinalityConcurrentMap) toLabelValuesCardinalityResponse(
 
 // LabelNames returns all of the label names.
 func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) ([]string, error) {
-	replicationSet, err := d.GetIngestersForMetadata(ctx)
+	replicationSet, err := d.GetIngesters(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1287,7 +1310,7 @@ func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, match
 
 // MetricsForLabelMatchers gets the metrics that match said matchers
 func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through model.Time, matchers ...*labels.Matcher) ([]labels.Labels, error) {
-	replicationSet, err := d.GetIngestersForMetadata(ctx)
+	replicationSet, err := d.GetIngesters(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1321,7 +1344,7 @@ func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through
 
 // MetricsMetadata returns all metric metadata of a user.
 func (d *Distributor) MetricsMetadata(ctx context.Context) ([]scrape.MetricMetadata, error) {
-	replicationSet, err := d.GetIngestersForMetadata(ctx)
+	replicationSet, err := d.GetIngesters(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1360,7 +1383,7 @@ func (d *Distributor) MetricsMetadata(ctx context.Context) ([]scrape.MetricMetad
 
 // UserStats returns statistics about the current user.
 func (d *Distributor) UserStats(ctx context.Context) (*UserStats, error) {
-	replicationSet, err := d.GetIngestersForMetadata(ctx)
+	replicationSet, err := d.GetIngesters(ctx)
 	if err != nil {
 		return nil, err
 	}

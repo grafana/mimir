@@ -178,7 +178,6 @@ pkg/querier/stats/stats.pb.go: pkg/querier/stats/stats.proto
 pkg/distributor/ha_tracker.pb.go: pkg/distributor/ha_tracker.proto
 pkg/ruler/rulespb/rules.pb.go: pkg/ruler/rulespb/rules.proto
 pkg/ruler/ruler.pb.go: pkg/ruler/ruler.proto
-pkg/ring/kv/memberlist/kv.pb.go: pkg/ring/kv/memberlist/kv.proto
 pkg/scheduler/schedulerpb/scheduler.pb.go: pkg/scheduler/schedulerpb/scheduler.proto
 pkg/storegateway/storegatewaypb/gateway.pb.go: pkg/storegateway/storegatewaypb/gateway.proto
 pkg/alertmanager/alertmanagerpb/alertmanager.pb.go: pkg/alertmanager/alertmanagerpb/alertmanager.proto
@@ -231,6 +230,7 @@ exes: $(EXES)
 $(EXES):
 	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(GO_FLAGS) -o "$@$(BINARY_SUFFIX)" ./$(@D)
 
+protos: ## Generates protobuf files.
 protos: $(PROTO_GOS)
 
 %.pb.go:
@@ -238,6 +238,7 @@ protos: $(PROTO_GOS)
 	@# to configure all such relative paths.
 	protoc -I $(GOPATH)/src:./vendor/github.com/thanos-io/thanos/pkg:./vendor/github.com/gogo/protobuf:./vendor:./$(@D) --gogoslick_out=plugins=grpc,Mgoogle/protobuf/any.proto=github.com/gogo/protobuf/types,:./$(@D) ./$(patsubst %.pb.go,%.proto,$@)
 
+lint: ## Run lints to check for style issues.
 lint: check-makefiles
 	misspell -error docs/sources
 
@@ -301,6 +302,11 @@ lint: check-makefiles
 	faillint -paths "github.com/NYTimes/gziphandler" \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
+	# We don't want to use yaml.v2 anywhere, because we use yaml.v3 now,
+	# and UnamrshalYAML signature is not compatible between them.
+	faillint -paths "gopkg.in/yaml.v2" \
+		./pkg/... ./cmd/... ./tools/... ./integration/...
+
 	# Ensure packages we imported from Thanos are no longer used.
 	GOFLAGS="-tags=requires_docker" faillint -paths \
 		"github.com/thanos/thanos-io/pkg/store,\
@@ -308,17 +314,17 @@ lint: check-makefiles
 		github.com/thanos-io/thanos/pkg/store/cache" \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
-format:
+format: ## Run gofmt and goimports.
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec gofmt -w -s {} \;
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec goimports -w -local github.com/grafana/mimir {} \;
 
-test:
+test: ## Run all unit tests.
 	go test -timeout 30m ./...
 
-test-with-race:
+test-with-race: ## Run all unit tests with data race detect.
 	go test -tags netgo -timeout 30m -race -count 1 ./...
 
-cover:
+cover: ## Run all unit tests with code coverage and generates reports.
 	$(eval COVERDIR := $(shell mktemp -d coverage.XXXXXXXXXX))
 	$(eval COVERFILE := $(shell mktemp $(COVERDIR)/unit.XXXXXXXXXX))
 	go test -tags netgo -timeout 30m -race -count 1 -coverprofile=$(COVERFILE) ./...
@@ -328,13 +334,14 @@ cover:
 shell:
 	bash
 
-mod-check:
+mod-check: ## Check the go mod is clean and tidy.
 	GO111MODULE=on go mod download
 	GO111MODULE=on go mod verify
 	GO111MODULE=on go mod tidy
 	GO111MODULE=on go mod vendor
 	@git diff --exit-code -- go.sum go.mod vendor/
 
+check-protos: ## Check the protobuf files are up to date.
 check-protos: clean-protos protos
 	@git diff --exit-code -- $(PROTO_GOS)
 
@@ -352,10 +359,11 @@ doc: clean-doc $(DOC_TEMPLATES:.template=.md) $(DOC_EMBED:.md=.md.embedmd)
 	# Make operations/helm/charts/*/README.md
 	helm-docs
 
-# Add license header to files.
-license:
+
+license: ## Add license header to files.
 	go run ./tools/add-license ./cmd ./integration ./pkg ./tools ./development ./mimir-build-image ./operations ./.github
 
+check-license: ## Check license header of files.
 check-license: license
 	@git diff --exit-code || (echo "Please add the license header running 'make BUILD_IN_CONTAINER=false license'" && false)
 
@@ -393,7 +401,11 @@ dist: ## Generates binaries for a Mimir release.
 		touch $@
 
 build-mixin: check-mixin-jb
-	@rm -rf $(MIXIN_OUT_PATH) && mkdir $(MIXIN_OUT_PATH)
+	# Empty the compiled mixin directories content, without removing the directories itself,
+	# so that Grafana can refresh re-build dashboards when using "make mixin-serve".
+	@mkdir -p $(MIXIN_OUT_PATH)
+	@find $(MIXIN_OUT_PATH) -type f -delete
+
 	@mixtool generate all --output-alerts $(MIXIN_OUT_PATH)/alerts.yaml --output-rules $(MIXIN_OUT_PATH)/rules.yaml --directory $(MIXIN_OUT_PATH)/dashboards ${MIXIN_PATH}/mixin-compiled.libsonnet
 	@./tools/check-rules.sh $(MIXIN_OUT_PATH)/rules.yaml 20 # If any rule group has more than 20 rules, fail. 20 is our default per-tenant limit in the ruler.
 	@cd $(MIXIN_OUT_PATH)/.. && zip -q -r mimir-mixin.zip $$(basename "$(MIXIN_OUT_PATH)")
@@ -424,16 +436,17 @@ clean:
 	find . -type f -name '*_linux_amd64' -perm +u+x -exec rm {} \;
 	go clean ./...
 
-clean-protos:
+clean-protos: ## Clean protobuf files.
 	rm -rf $(PROTO_GOS)
 
 # List all images building make targets.
 list-image-targets:
 	@echo $(UPTODATE_FILES) | tr " " "\n"
 
-clean-doc:
+clean-doc: ## Clean the documentation files generated from templates.
 	rm -f $(DOC_TEMPLATES:.template=.md)
 
+check-doc: ## Check the documentation files are up to date.
 check-doc: doc
 	@find . -name "*.md" | xargs git diff --exit-code -- \
 	|| (echo "Please update generated documentation by running 'make doc' and committing the changes" && false)
@@ -500,7 +513,13 @@ check-jsonnet-getting-started:
 		| sed 's/\(jb install github.com\/grafana\/mimir\/operations\/mimir@main\)/\1 \&\& rm -fr .\/vendor\/mimir \&\& cp -r ..\/operations\/mimir .\/vendor\/mimir\//g' \
 		| bash
 
-build-helm-tests:
+operations/helm/charts/mimir-distributed/charts: operations/helm/charts/mimir-distributed/Chart.yaml operations/helm/charts/mimir-distributed/Chart.lock
+	@cd ./operations/helm/charts/mimir-distributed && helm dependency update
+
+check-helm-jsonnet-diff: operations/helm/charts/mimir-distributed/charts build-jsonnet-tests
+	@./operations/compare-helm-with-jsonnet/compare-helm-with-jsonnet.sh
+
+build-helm-tests: operations/helm/charts/mimir-distributed/charts
 	@./operations/helm/tests/build.sh
 
 check-helm-tests: build-helm-tests

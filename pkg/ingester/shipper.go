@@ -151,6 +151,7 @@ func (s *Shipper) Sync(ctx context.Context) (uploaded int, err error) {
 		}
 		if ok {
 			meta.Uploaded = append(meta.Uploaded, m.ULID)
+			uploaded++ // the last upload must have failed, report the block as if it was uploaded successfully now
 			continue
 		}
 

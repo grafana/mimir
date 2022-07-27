@@ -12,7 +12,7 @@ import (
 
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/runtimeconfig"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/util"
@@ -67,7 +67,7 @@ func loadRuntimeConfig(r io.Reader) (interface{}, error) {
 	var overrides = &runtimeConfigValues{}
 
 	decoder := yaml.NewDecoder(r)
-	decoder.SetStrict(true)
+	decoder.KnownFields(true)
 
 	// Decode the first document. An empty document (EOF) is OK.
 	if err := decoder.Decode(&overrides); err != nil && !errors.Is(err, io.EOF) {

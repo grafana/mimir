@@ -11,10 +11,16 @@ local filename = 'mimir-compactor-resources.json';
         $.containerCPUUsagePanel('CPU', 'compactor'),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel('Memory (workingset)', 'compactor'),
+        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.compactor),
+      )
+    )
+    .addRow(
+      $.row('')
+      .addPanel(
+        $.containerMemoryRSSPanel('Memory (RSS)', 'compactor'),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.compactor),
+        $.containerMemoryWorkingSetPanel('Memory (workingset)', 'compactor'),
       )
     )
     .addRow(

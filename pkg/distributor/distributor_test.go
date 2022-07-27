@@ -512,7 +512,7 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 					assert.Nil(t, err)
 				} else {
 					assert.Nil(t, response)
-					assert.Equal(t, push.expectedError, err)
+					assert.EqualError(t, err, push.expectedError.Error())
 				}
 			}
 		})
@@ -610,6 +610,7 @@ func TestDistributor_PushInstanceLimits(t *testing.T) {
 
 		// limits
 		inflightLimit      int
+		inflightBytesLimit int
 		ingestionRateLimit float64
 
 		metricNames     []string
@@ -629,6 +630,7 @@ func TestDistributor_PushInstanceLimits(t *testing.T) {
 				# TYPE cortex_distributor_instance_limits gauge
 				cortex_distributor_instance_limits{limit="max_inflight_push_requests"} 0
 				cortex_distributor_instance_limits{limit="max_ingestion_rate"} 0
+		        cortex_distributor_instance_limits{limit="max_inflight_push_requests_bytes"} 0
 			`,
 		},
 		"below inflight limit": {
@@ -648,6 +650,7 @@ func TestDistributor_PushInstanceLimits(t *testing.T) {
 				# TYPE cortex_distributor_instance_limits gauge
 				cortex_distributor_instance_limits{limit="max_inflight_push_requests"} 101
 				cortex_distributor_instance_limits{limit="max_ingestion_rate"} 0
+		        cortex_distributor_instance_limits{limit="max_inflight_push_requests_bytes"} 0
 			`,
 		},
 		"hits inflight limit": {
@@ -675,6 +678,7 @@ func TestDistributor_PushInstanceLimits(t *testing.T) {
 				# TYPE cortex_distributor_instance_limits gauge
 				cortex_distributor_instance_limits{limit="max_inflight_push_requests"} 0
 				cortex_distributor_instance_limits{limit="max_ingestion_rate"} 1000
+		        cortex_distributor_instance_limits{limit="max_inflight_push_requests_bytes"} 0
 			`,
 		},
 		"hits rate limit on first request, but second request can proceed": {
@@ -698,6 +702,35 @@ func TestDistributor_PushInstanceLimits(t *testing.T) {
 				{samples: 5000, expectedError: nil},                        // 896 is below 1000, so this push succeeds, new rate = 896 + 0.2*(5000-896) = 1716.8
 			},
 		},
+
+		"below inflight size limit": {
+			inflightBytesLimit: 5800, // 5800 ~= size of a singe request with 100 samples
+
+			pushes: []testPush{
+				{samples: 10, expectedError: nil},
+			},
+			metricNames: []string{instanceLimitsMetric, "cortex_distributor_inflight_push_requests_bytes"},
+
+			expectedMetrics: `
+				# HELP cortex_distributor_inflight_push_requests_bytes Current sum of inflight push requests in distributor in bytes.
+				# TYPE cortex_distributor_inflight_push_requests_bytes gauge
+				cortex_distributor_inflight_push_requests_bytes 0
+
+				# HELP cortex_distributor_instance_limits Instance limits used by this distributor.
+				# TYPE cortex_distributor_instance_limits gauge
+				cortex_distributor_instance_limits{limit="max_inflight_push_requests_bytes"} 5800
+				cortex_distributor_instance_limits{limit="max_inflight_push_requests"} 0
+				cortex_distributor_instance_limits{limit="max_ingestion_rate"} 0
+			`,
+		},
+
+		"hits inflight size limit": {
+			inflightBytesLimit: 5800, // 5800 ~= size of a singe request with 100 samples
+
+			pushes: []testPush{
+				{samples: 150, expectedError: errMaxInflightRequestsBytesReached},
+			},
+		},
 	}
 
 	for testName, testData := range tests {
@@ -709,12 +742,13 @@ func TestDistributor_PushInstanceLimits(t *testing.T) {
 
 			// Start all expected distributors
 			distributors, _, regs := prepare(t, prepConfig{
-				numIngesters:        3,
-				happyIngesters:      3,
-				numDistributors:     1,
-				limits:              limits,
-				maxInflightRequests: testData.inflightLimit,
-				maxIngestionRate:    testData.ingestionRateLimit,
+				numIngesters:             3,
+				happyIngesters:           3,
+				numDistributors:          1,
+				limits:                   limits,
+				maxInflightRequests:      testData.inflightLimit,
+				maxInflightRequestsBytes: testData.inflightBytesLimit,
+				maxIngestionRate:         testData.ingestionRateLimit,
 			})
 
 			d := distributors[0]
@@ -1444,7 +1478,11 @@ func TestDistributor_Push_ExemplarValidation(t *testing.T) {
 
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
+			limits := &validation.Limits{}
+			flagext.DefaultValues(limits)
+			limits.MaxGlobalExemplarsPerUser = 10
 			ds, _, _ := prepare(t, prepConfig{
+				limits:           limits,
 				numIngesters:     2,
 				happyIngesters:   2,
 				numDistributors:  1,
@@ -1464,11 +1502,30 @@ func TestDistributor_Push_ExemplarValidation(t *testing.T) {
 
 func TestDistributor_ExemplarValidation(t *testing.T) {
 	tests := map[string]struct {
+		prepareConfig     func(limits *validation.Limits)
 		minExemplarTS     int64
 		req               *mimirpb.WriteRequest
 		expectedExemplars []mimirpb.PreallocTimeseries
 	}{
+		"disable exemplars": {
+			prepareConfig: func(limits *validation.Limits) {
+				limits.MaxGlobalExemplarsPerUser = 0
+			},
+			minExemplarTS: 0,
+			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
+				makeExemplarTimeseries([]string{model.MetricNameLabel, "test1"}, 1000, []string{"foo", "bar"}),
+			}},
+			expectedExemplars: []mimirpb.PreallocTimeseries{
+				{TimeSeries: &mimirpb.TimeSeries{
+					Labels:    []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test1"}},
+					Exemplars: nil,
+				}},
+			},
+		},
 		"valid exemplars": {
+			prepareConfig: func(limits *validation.Limits) {
+				limits.MaxGlobalExemplarsPerUser = 1
+			},
 			minExemplarTS: 0,
 			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
 				makeExemplarTimeseries([]string{model.MetricNameLabel, "test1"}, 1000, []string{"foo", "bar"}),
@@ -1480,6 +1537,9 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			},
 		},
 		"one old, one new, separate series": {
+			prepareConfig: func(limits *validation.Limits) {
+				limits.MaxGlobalExemplarsPerUser = 1
+			},
 			minExemplarTS: 300000,
 			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
 				makeExemplarTimeseries([]string{model.MetricNameLabel, "test"}, 1000, []string{"foo", "bar"}),
@@ -1494,6 +1554,9 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			},
 		},
 		"multi exemplars": {
+			prepareConfig: func(limits *validation.Limits) {
+				limits.MaxGlobalExemplarsPerUser = 2
+			},
 			minExemplarTS: 300000,
 			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
 				{
@@ -1518,6 +1581,9 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			},
 		},
 		"one old, one new, same series": {
+			prepareConfig: func(limits *validation.Limits) {
+				limits.MaxGlobalExemplarsPerUser = 2
+			},
 			minExemplarTS: 300000,
 			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
 				{
@@ -1542,14 +1608,20 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			},
 		},
 	}
-	ds, _, _ := prepare(t, prepConfig{
-		numDistributors: 1,
-	})
 	now := mtime.Now()
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
-			err := ds[0].validateSeries(now, tc.req.Timeseries[0], "user", false, tc.minExemplarTS)
-			assert.NoError(t, err)
+			limits := &validation.Limits{}
+			flagext.DefaultValues(limits)
+			tc.prepareConfig(limits)
+			ds, _, _ := prepare(t, prepConfig{
+				limits:          limits,
+				numDistributors: 1,
+			})
+			for _, ts := range tc.req.Timeseries {
+				err := ds[0].validateSeries(now, ts, "user", false, tc.minExemplarTS)
+				assert.NoError(t, err)
+			}
 			assert.Equal(t, tc.expectedExemplars, tc.req.Timeseries)
 		})
 	}
@@ -2051,7 +2123,7 @@ func TestDistributor_MetricsMetadata(t *testing.T) {
 			require.NoError(t, err)
 
 			// Check how many ingesters are queried as part of the shuffle sharding subring.
-			replicationSet, err := ds[0].GetIngestersForMetadata(ctx)
+			replicationSet, err := ds[0].GetIngesters(ctx)
 			require.NoError(t, err)
 			assert.Equal(t, testData.expectedIngesters, len(replicationSet.Instances))
 
@@ -2395,6 +2467,7 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			flagext.DefaultValues(limits)
 			limits.IngestionRate = 20
 			limits.IngestionBurstSize = 20
+			limits.MaxGlobalExemplarsPerUser = 10
 
 			distributors, ingesters, regs := prepare(t, prepConfig{
 				numIngesters:      1,
@@ -2719,6 +2792,7 @@ type prepConfig struct {
 	numDistributors              int
 	skipLabelNameValidation      bool
 	maxInflightRequests          int
+	maxInflightRequestsBytes     int
 	maxIngestionRate             float64
 	replicationFactor            int
 	enableTracker                bool
@@ -2826,6 +2900,7 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 		distributorCfg.DistributorRing.InstanceAddr = "127.0.0.1"
 		distributorCfg.SkipLabelNameValidation = cfg.skipLabelNameValidation
 		distributorCfg.InstanceLimits.MaxInflightPushRequests = cfg.maxInflightRequests
+		distributorCfg.InstanceLimits.MaxInflightPushRequestsBytes = cfg.maxInflightRequestsBytes
 		distributorCfg.InstanceLimits.MaxIngestionRate = cfg.maxIngestionRate
 		distributorCfg.ShuffleShardingLookbackPeriod = time.Hour
 
@@ -3589,6 +3664,7 @@ func TestDistributorValidation(t *testing.T) {
 
 			limits.CreationGracePeriod = model.Duration(2 * time.Hour)
 			limits.MaxLabelNamesPerSeries = 2
+			limits.MaxGlobalExemplarsPerUser = 10
 
 			ds, _, _ := prepare(t, prepConfig{
 				numIngesters:    3,

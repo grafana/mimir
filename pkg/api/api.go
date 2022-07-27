@@ -242,7 +242,7 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 	wrappedDistributor := a.cfg.wrapDistributorPush(d)
 
 	a.RegisterRoute("/api/v1/push", push.Handler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, wrappedDistributor), true, false, "POST")
-	a.RegisterRoute("/api/v1/push/otlp/v1/metrics", push.OLTPHandler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, wrappedDistributor), true, false, "POST")
+	a.RegisterRoute("/otlp/v1/metrics", push.OTLPHandler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, wrappedDistributor), true, false, "POST")
 
 	a.indexPage.AddLinks(defaultWeight, "Distributor", []IndexPageLink{
 		{Desc: "Ring status", Path: "/distributor/ring"},
@@ -345,10 +345,10 @@ func (a *API) RegisterCompactor(c *compactor.MultitenantCompactor) {
 		{Desc: "Ring status", Path: "/compactor/ring"},
 	})
 	a.RegisterRoute("/compactor/ring", http.HandlerFunc(c.RingHandler), false, true, "GET", "POST")
-	a.RegisterRoute("/api/v1/upload/block/{block}", http.HandlerFunc(c.HandleBlockUpload), true,
-		false, http.MethodPost)
-	a.RegisterRoute("/api/v1/upload/block/{block}/files", http.HandlerFunc(c.UploadBlockFile),
-		true, false, http.MethodPost)
+	a.RegisterRoute("/api/v1/upload/block/{block}/start", http.HandlerFunc(c.StartBlockUpload), true, false, http.MethodPost)
+	a.RegisterRoute("/api/v1/upload/block/{block}/files", http.HandlerFunc(c.UploadBlockFile), true, false, http.MethodPost)
+	a.RegisterRoute("/api/v1/upload/block/{block}/finish", http.HandlerFunc(c.FinishBlockUpload), true, false, http.MethodPost)
+	a.RegisterRoute("/api/v1/upload/block/{block}/check", http.HandlerFunc(c.GetBlockUploadStateHandler), true, false, http.MethodGet)
 }
 
 type Distributor interface {

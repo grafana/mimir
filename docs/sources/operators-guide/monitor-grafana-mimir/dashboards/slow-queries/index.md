@@ -1,6 +1,6 @@
 ---
 aliases:
-  - /../../visualizing-metrics/dashboards/slow-queries/
+  - ../../visualizing-metrics/dashboards/slow-queries/
   - /docs/mimir/latest/operators-guide/monitoring-grafana-mimir/dashboards/slow-queries/
 description: Review a description of the Slow queries dashboard.
 menuTitle: Slow queries

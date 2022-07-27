@@ -1,4 +1,4 @@
-Mimir integration tests are written in Go and based on a [custom framework](https://github.com/grafana/mimir/tree/main/integration/e2e) running Mimir and its dependencies in Docker containers and using the Go [`testing`](https://golang.org/pkg/testing/) package for assertions. Integration tests run in CI for every PR, and can be easily executed locally during development (it just requires Docker).
+Mimir integration tests are written in Go and based on a [custom framework](https://github.com/grafana/e2e) running Mimir and its dependencies in Docker containers and using the Go [`testing`](https://golang.org/pkg/testing/) package for assertions. Integration tests run in CI for every PR, and can be easily executed locally during development (it just requires Docker).
 
 ## How to run integration tests
 
@@ -26,6 +26,8 @@ go test -v -tags=requires_docker ./integration -run "^TestChunksStorageAllIndexB
 
 - **`MIMIR_IMAGE`**<br />
   Docker image used to run Mimir in integration tests (defaults to `grafana/mimir:latest`)
+- **`MIMIRTOOL_IMAGE`**<br />
+  Docker image used to run `mimirtool` in integration tests (defaults to `grafana/mimirtool:latest`)
 - **`MIMIR_CHECKOUT_DIR`**<br />
   The absolute path of the Mimir repository local checkout (defaults to `$GOPATH/src/github.com/grafana/mimir`)
 - **`E2E_TEMP_DIR`**<br />

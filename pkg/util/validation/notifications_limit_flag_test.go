@@ -12,7 +12,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
 func TestNotificationLimitsMap(t *testing.T) {
@@ -68,7 +68,7 @@ func TestNotificationsLimitMapYaml(t *testing.T) {
 
 	require.NoError(t, testStruct.Flag.Set("{\"email\": 500 }"))
 	expected := []byte(`flag:
-  email: 500
+    email: 500
 `)
 
 	actual, err := yaml.Marshal(testStruct)

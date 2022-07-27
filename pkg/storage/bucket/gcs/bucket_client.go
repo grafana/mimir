@@ -11,7 +11,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"github.com/thanos-io/thanos/pkg/objstore/gcs"
-	yaml "gopkg.in/yaml.v2"
+	yaml "gopkg.in/yaml.v3"
 )
 
 // NewBucketClient creates a new GCS bucket client

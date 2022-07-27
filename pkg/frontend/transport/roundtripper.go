@@ -47,7 +47,10 @@ func (a *grpcRoundTripperAdapter) RoundTrip(r *http.Request) (*http.Response, er
 
 	resp, err := a.roundTripper.RoundTripGRPC(r.Context(), req)
 	if err != nil {
-		return nil, err
+		var ok bool
+		if resp, ok = httpgrpc.HTTPResponseFromError(err); !ok {
+			return nil, err
+		}
 	}
 
 	httpResp := &http.Response{

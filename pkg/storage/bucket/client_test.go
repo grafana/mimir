@@ -17,7 +17,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	yaml "gopkg.in/yaml.v2"
+	yaml "gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	util_log "github.com/grafana/mimir/pkg/util/log"

@@ -6,6 +6,7 @@
 package querymiddleware
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"testing"
@@ -219,6 +220,28 @@ func TestIsRequestCachable(t *testing.T) {
 		{
 			name:     "@ modifier on subqueries with end() after maxCacheTime",
 			request:  &PrometheusRangeQueryRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ end())", Start: 100000, End: 200000, Step: 5},
+			expected: false,
+		},
+		// offset modifier on vector selectors.
+		{
+			name:     "positive offset on vector selector",
+			request:  &PrometheusRangeQueryRequest{Query: "metric offset 1ms", End: 200000, Step: 5},
+			expected: true,
+		},
+		{
+			name:     "negative offset on vector selector",
+			request:  &PrometheusRangeQueryRequest{Query: "metric offset -1ms", End: 125000, Step: 5},
+			expected: false,
+		},
+		// offset modifier on subqueries.
+		{
+			name:     "positive offset on subqueries",
+			request:  &PrometheusRangeQueryRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] offset 1ms)", Start: 100000, End: 200000, Step: 5},
+			expected: true,
+		},
+		{
+			name:     "negative offset on subqueries",
+			request:  &PrometheusRangeQueryRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] offset -1ms)", Start: 100000, End: 200000, Step: 5},
 			expected: false,
 		},
 		// On step aligned and non-aligned requests
@@ -506,6 +529,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 
 func TestConstSplitter_generateCacheKey(t *testing.T) {
 	t.Parallel()
+	ctx := context.Background()
 
 	tests := []struct {
 		name     string
@@ -526,7 +550,7 @@ func TestConstSplitter_generateCacheKey(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(fmt.Sprintf("%s - %s", tt.name, tt.interval), func(t *testing.T) {
-			if got := constSplitter(tt.interval).GenerateCacheKey("fake", tt.r); got != tt.want {
+			if got := ConstSplitter(tt.interval).GenerateCacheKey(ctx, "fake", tt.r); got != tt.want {
 				t.Errorf("generateKey() = %v, want %v", got, tt.want)
 			}
 		})

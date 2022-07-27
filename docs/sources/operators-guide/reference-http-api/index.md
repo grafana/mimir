@@ -77,9 +77,10 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Store-gateway tenants](#store-gateway-tenants)                                       | Store-gateway           | `GET /store-gateway/tenants`                                              |
 | [Store-gateway tenant blocks](#store-gateway-tenant-blocks)                           | Store-gateway           | `GET /store-gateway/tenant/{tenant}/blocks`                               |
 | [Compactor ring status](#compactor-ring-status)                                       | Compactor               | `GET /compactor/ring`                                                     |
-| [Start block upload](#start-block-upload)                                             | Compactor               | `POST /api/v1/upload/block/{block}`                                       |
+| [Start block upload](#start-block-upload)                                             | Compactor               | `POST /api/v1/upload/block/{block}/start`                                 |
 | [Upload block file](#upload-block-file)                                               | Compactor               | `POST /api/v1/upload/block/{block}/files?path={path}`                     |
-| [Complete block upload](#complete-block-upload)                                       | Compactor               | `POST /api/v1/upload/block/{block}?uploadComplete=true`                   |
+| [Complete block upload](#complete-block-upload)                                       | Compactor               | `POST /api/v1/upload/block/{block}/finish`                                |
+| [Check block upload](#check-block-upload)                                             | Compactor               | `GET /api/v1/upload/block/{block}/check`                                  |
 
 ### Path prefixes
 
@@ -576,6 +577,8 @@ This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respe
 
 Requires [authentication](#authentication).
 
+> **Note:** To list all rule groups from Mimir, use [`mimirtool rules list` command]({{< relref "../tools/mimirtool.md#list-rules" >}}).
+
 **Example response**
 
 ```yaml
@@ -669,6 +672,8 @@ This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respe
 
 Requires [authentication](#authentication).
 
+> **Note:** To retrieve a single rule group from Mimir, use [`mimirtool rules get` command]({{< relref "../tools/mimirtool.md#get-rule-group" >}}) .
+
 ### Set rule group
 
 ```
@@ -682,6 +687,8 @@ The request body must contain the definition of one and only one rule group.
 This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respective YAML config option).
 
 Requires [authentication](#authentication).
+
+> **Note:** To load one or more rule groups into Mimir, use [`mimirtool rules load` command]({{< relref "../tools/mimirtool.md#load-rule-group" >}}) .
 
 > **Note:** When using `curl` send the request body from a file, ensure that you use the `--data-binary` flag instead of `-d`, `--data`, or `--data-ascii`.
 > The latter options do not preserve carriage returns and newlines.
@@ -708,6 +715,8 @@ Deletes a rule group by namespace and group name. This endpoints returns `202` o
 This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respective YAML config option).
 
 Requires [authentication](#authentication).
+
+> **Note:** To delete a rule group from Mimir, use [`mimirtool rules delete` command]({{< relref "../tools/mimirtool.md#delete-rule-group" >}}).
 
 ### Delete namespace
 
@@ -795,6 +804,8 @@ This endpoint can disabled enabled via the `-alertmanager.enable-api` CLI flag (
 
 Requires [authentication](#authentication).
 
+> **Note:** To retrieve a tenant's Alertmanager configuration from Mimir, use [`mimirtool alertmanager get` command]({{< relref "../tools/mimirtool.md#get-alertmanager-configuration" >}}).
+
 ### Set Alertmanager configuration
 
 ```
@@ -808,6 +819,8 @@ This endpoint expects the Alertmanager **YAML** configuration in the request bod
 This endpoint can disabled enabled via the `-alertmanager.enable-api` CLI flag (or its respective YAML config option).
 
 Requires [authentication](#authentication).
+
+> **Note:** To load a tenant's Alertmanager configuration to Mimir, use [`mimirtool alertmanager load` command]({{< relref "../tools/mimirtool.md#load-alertmanager-configuration" >}}).
 
 > **Note:** When using `curl` send the request body from a file, ensure that you use the `--data-binary` flag instead of `-d`, `--data`, or `--data-ascii`.
 > The latter options do not preserve carriage returns and newlines.
@@ -846,6 +859,8 @@ This endpoint doesn't accept any URL query parameter and returns `200` on succes
 This endpoint can be disabled via the `-alertmanager.enable-api` CLI flag (or its respective YAML config option).
 
 Requires [authentication](#authentication).
+
+> **Note:** To delete a tenant's Alertmanager configuration from Mimir, use [`mimirtool alertmanager delete` command]({{< relref "../tools/mimirtool.md#delete-alertmanager-configuration" >}}).
 
 ## Purger
 
@@ -910,7 +925,7 @@ Displays a web page with the compactor hash ring status, including the state, he
 ### Start block upload
 
 ```
-POST /api/v1/upload/block/{block}
+POST /api/v1/upload/block/{block}/start
 ```
 
 Starts the uploading of a TSDB block with a given ID to object storage. The client should send the block's
@@ -953,16 +968,48 @@ Requires [authentication](#authentication).
 ### Complete block upload
 
 ```
-POST /api/v1/upload/block/{block}?uploadComplete=true
+POST /api/v1/upload/block/{block}/finish
 ```
 
-Completes the uploading of a TSDB block with a given ID to object storage. If the complete block already
+Initiates the completion of a TSDB block with a given ID to object storage. If the complete block already
 exists in object storage, a `409` (Conflict) status code gets returned. If an in-flight meta file
 (`uploading-meta.json`) doesn't exist in object storage for the block in question, a `404` (Not Found)
 status code gets returned.
 
-If the API request succeeds, the in-flight meta file gets renamed to `meta.json` in the block's directory in
-object storage, so the block is considered complete, and a `200` status code gets returned.
+If the API request succeeds, compactor will start the block validation in the background. If the background validation
+passes block upload is finished by renaming in-flight meta file to `meta.json` in the block's directory.
+
+This API endpoint returns `200` (OK) at the beginning of the validation. To further check state of the block upload,
+use [Check block upload](#check-block-upload) API endpoint.
+
+Requires [authentication](#authentication).
+
+This API endpoint is experimental and subject to change.
+
+### Check block upload
+
+```
+GET /api/v1/upload/block/{block}/check
+```
+
+Returns state of the block upload. State is returned as JSON object with field `result`, with following possible values:
+
+- `complete` -- block validation is complete, and block upload is now finished.
+- `uploading` -- block is still being uploaded, and [Complete block upload](#complete-block-upload) has not yet been called on the block.
+- `validating` -- block is being validated. Validation was started by call to [Complete block upload](#complete-block-upload) API.
+- `failed` -- block validation has failed. Error message is available from `error` field of the returned JSON object.
+
+**Example response**
+
+```json
+{ "result": "uploading" }
+```
+
+**Example response**
+
+```json
+{ "result": "failed", "error": "missing index file" }
+```
 
 Requires [authentication](#authentication).
 

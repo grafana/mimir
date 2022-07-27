@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv/codec"
 	"github.com/grafana/dskit/kv/memberlist"
 	"github.com/grafana/dskit/modules"
@@ -211,20 +210,6 @@ func (t *Mimir) initRing() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initRuntimeConfig() (services.Service, error) {
-	// TODO Remove in Mimir 2.3.
-	//      Previously ActiveSeriesCustomTrackers was an ingester config, now it's in LimitsConfig.
-	//      We provide backwards compatibility for it by parsing the old YAML location and copying it to LimitsConfig here,
-	//      unless it's also defined in the limits, which is invalid.
-	//      This needs to be set before setting default limits for unmarshalling.
-	if !t.Cfg.Ingester.ActiveSeriesCustomTrackers.Empty() {
-		if !t.Cfg.LimitsConfig.ActiveSeriesCustomTrackersConfig.Empty() {
-			return nil, fmt.Errorf("can't define active series custom trackers in both ingester and limits config, please define them only in the limits")
-		}
-		level.Warn(util_log.Logger).Log("msg", "active_series_custom_trackers is defined as an ingester config, this location is deprecated, please move it to the limits config")
-		flagext.DeprecatedFlagsUsed.Inc()
-		t.Cfg.LimitsConfig.ActiveSeriesCustomTrackersConfig = t.Cfg.Ingester.ActiveSeriesCustomTrackers
-	}
-
 	if t.Cfg.RuntimeConfig.LoadPath == "" {
 		// no need to initialize module if load path is empty
 		return nil, nil
@@ -314,6 +299,9 @@ func (t *Mimir) initQueryable() (serv services.Service, err error) {
 	// Create a querier queryable and PromQL engine
 	t.QuerierQueryable, t.ExemplarQueryable, t.QuerierEngine = querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryables, querierRegisterer, util_log.Logger, t.ActivityTracker)
 
+	// Use the distributor to return metric metadata by default
+	t.MetadataSupplier = t.Distributor
+
 	// Register the default endpoints that are always enabled for the querier module
 	t.API.RegisterQueryable(t.QuerierQueryable, t.Distributor)
 
@@ -329,6 +317,7 @@ func (t *Mimir) initTenantFederation() (serv services.Service, err error) {
 		const bypassForSingleQuerier = true
 		t.QuerierQueryable = querier.NewSampleAndChunkQueryable(tenantfederation.NewQueryable(t.QuerierQueryable, bypassForSingleQuerier, util_log.Logger))
 		t.ExemplarQueryable = tenantfederation.NewExemplarQueryable(t.ExemplarQueryable, bypassForSingleQuerier, util_log.Logger)
+		t.MetadataSupplier = tenantfederation.NewMetadataSupplier(t.MetadataSupplier, util_log.Logger)
 	}
 	return nil, nil
 }
@@ -390,6 +379,7 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		t.Cfg.API,
 		t.QuerierQueryable,
 		t.ExemplarQueryable,
+		t.MetadataSupplier,
 		t.QuerierEngine,
 		t.Distributor,
 		prometheus.DefaultRegisterer,

@@ -11,11 +11,13 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
+	"github.com/gogo/status"
 	"github.com/golang/snappy"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 )
 
 type mockHTTPGRPCClient func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error)
@@ -96,4 +98,24 @@ func TestRemoteQuerier_QueryReqTimeout(t *testing.T) {
 	tm := time.Unix(1649092025, 515834)
 	_, err := q.Query(context.Background(), "qs", tm)
 	require.Error(t, err)
+}
+
+func TestRemoteQuerier_StatusErrorResponses(t *testing.T) {
+	mockClientFn := func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
+		return &httpgrpc.HTTPResponse{Code: http.StatusUnprocessableEntity, Body: []byte(`{
+							"status": "error","errorType": "execution"
+						}`)}, nil
+	}
+	q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, "/prometheus", log.NewNopLogger())
+
+	tm := time.Unix(1649092025, 515834)
+
+	_, err := q.Query(context.Background(), "qs", tm)
+
+	require.Error(t, err)
+
+	st, ok := status.FromError(err)
+
+	require.True(t, ok)
+	require.Equal(t, codes.Code(http.StatusUnprocessableEntity), st.Code())
 }

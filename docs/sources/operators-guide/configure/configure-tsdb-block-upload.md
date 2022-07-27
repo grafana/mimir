@@ -13,6 +13,8 @@ Grafana Mimir itself.
 For information about limitations that relate to importing blocks from Thanos, see
 [Migrating from Thanos or Prometheus to Grafana Mimir]({{< relref "../../migration-guide/migrating-from-thanos-or-prometheus.md" >}}).
 
+To upload blocks, refer to the [mimirtool backfill]({{< relref "../tools/mimirtool.md#backfill" >}}) command.
+
 The functionality is disabled by default, but you can enable it via the `-compactor.block-upload-enabled`
 CLI flag, or via the corresponding `limits.compactor_block_upload_enabled` configuration parameter:
 

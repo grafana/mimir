@@ -150,10 +150,6 @@ remote_write:
 The configuration for an Agent that scrapes itself for metrics and writes those metrics to Grafana Mimir looks similar to this:
 
 ```yaml
-server:
-  http_listen_port: 12345
-  grpc_listen_port: 54321
-
 metrics:
   wal_directory: /tmp/grafana-agent/wal
 

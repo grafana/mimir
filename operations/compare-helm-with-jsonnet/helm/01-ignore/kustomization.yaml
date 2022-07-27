@@ -1,0 +1,38 @@
+resources:
+  - ../00-base
+
+patches:
+
+  - target:
+      name: 'mimir-ingester-headless'
+      kind: Service
+    patch: &deletePatch |-
+      kind: NotImportant
+      metadata:
+        name: not-important
+      $patch: delete
+
+  - target:
+      name: 'mimir-smoke-test'
+      kind: Job
+    patch: *deletePatch
+
+  - target:
+      name: 'mimir-store-gateway-headless'
+      kind: Service
+    patch: *deletePatch
+
+  - target:
+      name: 'mimir-alertmanager'
+      kind: Service
+    patch: *deletePatch
+
+  - target:
+      name: 'mimir-distributor'
+      kind: Service
+    patch: *deletePatch
+
+  - target:
+      name: 'mimir-runtime'
+      kind: ConfigMap
+    patch: *deletePatch

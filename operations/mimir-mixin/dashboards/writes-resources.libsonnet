@@ -40,6 +40,7 @@ local filename = 'mimir-writes-resources.json';
         ) +
         {
           tooltip: { sort: 2 },  // Sort descending.
+          fill: 0,
         },
       )
       .addPanel(
@@ -48,6 +49,9 @@ local filename = 'mimir-writes-resources.json';
     )
     .addRow(
       $.row('')
+      .addPanel(
+        $.containerMemoryRSSPanel('Memory (RSS)', 'ingester'),
+      )
       .addPanel(
         $.containerMemoryWorkingSetPanel('Memory (workingset)', 'ingester'),
       )

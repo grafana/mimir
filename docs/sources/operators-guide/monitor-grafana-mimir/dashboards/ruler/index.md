@@ -1,6 +1,6 @@
 ---
 aliases:
-  - /../../visualizing-metrics/dashboards/ruler/
+  - ../../visualizing-metrics/dashboards/ruler/
   - /docs/mimir/latest/operators-guide/monitoring-grafana-mimir/dashboards/ruler/
 description: View an example Ruler dashboard.
 menuTitle: Ruler

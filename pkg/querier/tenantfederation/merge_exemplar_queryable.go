@@ -48,6 +48,7 @@ func NewMergeExemplarQueryable(idLabelName string, upstream storage.ExemplarQuer
 		idLabelName:             idLabelName,
 		bypassWithSingleQuerier: bypassWithSingleQuerier,
 		upstream:                upstream,
+		resolver:                tenant.NewMultiResolver(),
 	}
 }
 
@@ -56,11 +57,12 @@ type mergeExemplarQueryable struct {
 	idLabelName             string
 	bypassWithSingleQuerier bool
 	upstream                storage.ExemplarQueryable
+	resolver                tenant.Resolver
 }
 
 // tenantsAndQueriers returns a list of tenant IDs and corresponding queriers based on the context
 func (m *mergeExemplarQueryable) tenantsAndQueriers(ctx context.Context) ([]string, []storage.ExemplarQuerier, error) {
-	tenantIDs, err := tenant.TenantIDs(ctx)
+	tenantIDs, err := m.resolver.TenantIDs(ctx)
 	if err != nil {
 		return nil, nil, err
 	}

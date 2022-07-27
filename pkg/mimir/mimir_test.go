@@ -11,7 +11,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
@@ -25,10 +24,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
-	"github.com/grafana/dskit/modules"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -44,7 +41,6 @@ import (
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
 	"github.com/grafana/mimir/pkg/ingester"
-	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
@@ -480,86 +476,6 @@ func TestFlagDefaults(t *testing.T) {
 
 	require.Equal(t, true, c.Server.GRPCServerPingWithoutStreamAllowed)
 	require.Equal(t, 10*time.Second, c.Server.GRPCServerMinTimeBetweenPings)
-}
-
-// TODO Remove in Mimir 2.3.
-func (t *Mimir) initTest() (services.Service, error) {
-
-	return services.NewBasicService(
-		nil,
-		func(_ context.Context) error {
-			// Sleep to avoid issue https://github.com/grafana/dskit/issues/151 .
-			time.Sleep(100 * time.Millisecond)
-			if t.Overrides.ActiveSeriesCustomTrackersConfig("1235").Empty() {
-				return errors.New("active series config should not be empty")
-			}
-			return modules.ErrStopProcess
-		},
-		nil), nil
-}
-
-// TODO Remove in Mimir 2.3.
-//      Previously ActiveSeriesCustomTrackers was an ingester config, now it's in LimitsConfig.
-//      We provide backwards compatibility for it by parsing the old YAML location and copying it to LimitsConfig here,
-//      unless it's also defined in the limits, which is invalid.
-//		This needs to be set before setting default limits for unmarshalling.
-// 		For more context see https://github.com/grafana/mimir/pull/1188#discussion_r830129443
-func TestActiveSeriesDeprecationDefaultOverrideWithSomeRuntimeOverrides(t *testing.T) {
-	prepareGlobalMetricsRegistry(t)
-	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
-	yamlContent := `
-overrides:
-  '1235':
-    ingestion_burst_size: 15000
-    ingestion_rate: 1500
-    max_global_series_per_metric: 7000
-    max_global_series_per_user: 15000
-    ruler_max_rule_groups_per_tenant: 20
-    ruler_max_rules_per_rule_group: 20
-`
-	TestModuleName := "test"
-	cfg := Config{}
-
-	// This sets default values from flags to the config.
-	flagext.RegisterFlagsWithLogger(log.NewNopLogger(), &cfg)
-
-	// Creating test file with runtime overrides.
-	tmpDir := t.TempDir()
-	cfg.RuntimeConfig.LoadPath = filepath.Join(tmpDir, "overrides.yml")
-	err := ioutil.WriteFile(cfg.RuntimeConfig.LoadPath, []byte(yamlContent), 0777)
-	require.NoError(t, err, "Failed to write test override.yml.")
-
-	// Setting up tracker config value as an deprecated ingester config.
-	cfg.Ingester.ActiveSeriesCustomTrackers, err = activeseries.NewCustomTrackersConfig(map[string]string{
-		"bool_is_true_flag-based": `{bool="true"}`,
-		"bool_is_false_flagbased": `{bool="false"}`,
-	})
-	require.NoError(t, err)
-
-	cfg.Target = []string{TestModuleName}
-	cfg.Server = getServerConfig(t)
-	require.NoError(t, cfg.Server.LogFormat.Set("logfmt"))
-	require.NoError(t, cfg.Server.LogLevel.Set("debug"))
-	util_log.InitLogger(&cfg.Server)
-
-	c, err := New(cfg)
-	require.NoError(t, err)
-	// Creating a test module to ensure that runtime config check happens after initialization.
-	c.ModuleManager.RegisterModule(TestModuleName, c.initTest)
-	err = c.ModuleManager.AddDependency(TestModuleName, Overrides)
-	require.NoError(t, err)
-
-	errCh := make(chan error)
-	go func() {
-		errCh <- c.Run()
-	}()
-
-	select {
-	case <-time.After(5 * time.Second):
-		require.Fail(t, "Mimir didn't stop in time")
-	case err := <-errCh:
-		require.NoError(t, err, "Active series deprecation override not in place!")
-	}
 }
 
 // Generates server config, with gRPC listening on random port.

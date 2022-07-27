@@ -243,7 +243,9 @@ func TestTSDBMetrics(t *testing.T) {
 
 			# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
 			# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
-			cortex_ingester_tsdb_out_of_order_samples_appended_total 9
+			cortex_ingester_tsdb_out_of_order_samples_appended_total{user="user1"} 3
+			cortex_ingester_tsdb_out_of_order_samples_appended_total{user="user2"} 3
+			cortex_ingester_tsdb_out_of_order_samples_appended_total{user="user3"} 3
 
 			# HELP cortex_ingester_tsdb_exemplar_exemplars_in_storage Number of TSDB exemplars currently in storage.
 			# TYPE cortex_ingester_tsdb_exemplar_exemplars_in_storage gauge
@@ -476,7 +478,8 @@ func TestTSDBMetricsWithRemoval(t *testing.T) {
 
 			# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
 			# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
-			cortex_ingester_tsdb_out_of_order_samples_appended_total 9
+			cortex_ingester_tsdb_out_of_order_samples_appended_total{user="user1"} 3
+			cortex_ingester_tsdb_out_of_order_samples_appended_total{user="user2"} 3
 	`))
 	require.NoError(t, err)
 }

@@ -1,0 +1,70 @@
+kind: Component
+apiVersion: kustomize.config.k8s.io/v1alpha1
+
+patches:
+  - target:
+      kind: MimirConfig
+    path: ./irrelevant-config.yaml
+
+  # TODO: Differences that apply to every component
+  - target:
+      kind: MimirConfig
+    path: ./common-config.yaml
+
+  # TODO: Compactor differences
+  - target:
+      kind: MimirConfig
+    path: ./compactor-config.yaml
+
+  # TODO: Read path differences
+  - target:
+      kind: MimirConfig
+    path: ./read-path-config.yaml
+
+  # TODO: Write path differences
+  - target:
+      kind: MimirConfig
+    path: ./write-path-config.yaml
+
+  # Remove fields on components where they are not relevant. For example, the
+  # ingester ring configuration is not relevant to the compactor Since jsonnet
+  # tends to set only the relevant CLI flags while Helm sets every property for
+  # every component, there tends to be a lot of noise in the diff without this
+  # filtering
+
+  - target:
+      kind: MimirConfig
+      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|querier|ruler|query-frontend'
+    patch: |-
+      - op: remove
+        path: /config/blocks_storage/bucket_store/index_cache
+      - op: remove
+        path: /config/blocks_storage/bucket_store/chunks_cache
+
+  - target:
+      kind: MimirConfig
+      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|query-frontend'
+    patch: |-
+      - op: remove
+        path: /config/blocks_storage/bucket_store/metadata_cache
+
+  - target:
+      kind: MimirConfig
+      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|querier|ruler|store-gateway'
+    patch: |-
+      - op: remove
+        path: /config/frontend
+
+  - target:
+      kind: MimirConfig
+      name: 'alertmanager|compactor|store-gateway|query-frontend|overrides-exporter'
+    patch: |-
+      - op: remove
+        path: /config/ingester
+
+  - target:
+      kind: MimirConfig
+      name: 'query-frontend|overrides-exporter'
+    patch: |-
+      - op: remove
+        path: /config/memberlist

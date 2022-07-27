@@ -56,7 +56,7 @@ func NewPromQLEngineOptions(cfg Config, activityTracker *activitytracker.Activit
 		Timeout:              cfg.Timeout,
 		LookbackDelta:        cfg.LookbackDelta,
 		EnableAtModifier:     true,
-		EnableNegativeOffset: false, // If this can be enabled, please change the error mapping in errorTranslateQueryEngine.
+		EnableNegativeOffset: true,
 		NoStepSubqueryIntervalFn: func(int64) int64 {
 			return cfg.DefaultEvaluationInterval.Milliseconds()
 		},

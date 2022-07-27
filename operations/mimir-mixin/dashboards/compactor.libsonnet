@@ -77,7 +77,6 @@ local fixTargetsForTransformations(panel, refIds) = panel {
         ['%s' % $._config.per_instance_label]: 'Compactor',
       },
     }),
-    $.transformationCalculateField('Status', 'Last run', '*', 1),  // Duplicate field to be transformed
     $.transformation('sortBy', {
       sort: [
         {
@@ -204,11 +203,17 @@ local fixTargetsForTransformations(panel, refIds) = panel {
           targets: [target { format: 'table', instant: true } for target in super.targets],
           transformations:
             lastRunCommonTransformations +
-            [$.transformation('filterFieldsByName', {
-              include: {  // Only include these fields in the display
-                names: ['Compactor', 'Last run', 'Status'],
-              },
-            })],
+            [
+              // Grafana 8.5+ does not support constant numbers (e.g., 1), so we make a "One" field
+              $.transformationCalculateField('One', 'Last run', '/', 'Last run'),
+              // Duplicate field of "Last run" to provide "Status" text based on lastRunThresholds.mappings
+              $.transformationCalculateField('Status', 'Last run', '*', 'One'),
+              $.transformation('filterFieldsByName', {
+                include: {  // Only include these fields in the display
+                  names: ['Compactor', 'Last run', 'Status'],
+                },
+              }),
+            ],
           fieldConfig: {
             overrides: [
               $.overrideFieldByName('Status', [

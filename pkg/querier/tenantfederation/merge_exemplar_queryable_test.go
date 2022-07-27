@@ -93,8 +93,6 @@ func (m *mockExemplarQuerier) matches(res exemplar.QueryResult, matchers []*labe
 }
 
 func TestMergeExemplarQueryable_ExemplarQuerier(t *testing.T) {
-	tenant.WithDefaultResolver(tenant.NewMultiResolver())
-
 	t.Run("error getting tenant IDs", func(t *testing.T) {
 		upstream := &mockExemplarQueryable{}
 		federated := NewExemplarQueryable(upstream, false, test.NewTestingLogger(t))
@@ -161,7 +159,6 @@ func TestMergeExemplarQueryable_ExemplarQuerier(t *testing.T) {
 }
 
 func TestMergeExemplarQuerier_Select(t *testing.T) {
-	tenant.WithDefaultResolver(tenant.NewMultiResolver())
 	now := time.Now()
 
 	// fixtureResults returns two slices of exemplar results, one for each of two

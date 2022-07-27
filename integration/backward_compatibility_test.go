@@ -8,6 +8,7 @@
 package integration
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -23,32 +24,21 @@ import (
 	"github.com/grafana/mimir/integration/e2emimir"
 )
 
-// previousVersionImages returns a list of previous image version to test backwards
-// compatibility against. If MIMIR_PREVIOUS_IMAGES is set to a comma separted list of image versions,
-// then those will be used instead of the default versions. Note that the overriding of flags
-// is not currently possible when overriding the previous image versions via the environment variable.
-func previousVersionImages() map[string]e2emimir.FlagMapper {
-	if overrideImageVersions := os.Getenv("MIMIR_PREVIOUS_IMAGES"); overrideImageVersions != "" {
-		previousVersionImages := map[string]e2emimir.FlagMapper{}
-
-		// Overriding of flags is not currently supported when overriding the list of images.
-		for _, image := range strings.Split(overrideImageVersions, ",") {
-			previousVersionImages[image] = e2emimir.ChainFlagMappers(
-				cortexFlagMapper,
-				revertRenameFrontendToQueryFrontendFlagMapper,
-				ingesterRingRename,
-				ingesterRingNewFeatures,
-			)
-		}
-
-		return previousVersionImages
+// previousVersionImages returns a list of previous image version to test backwards compatibility against.
+// If MIMIR_PREVIOUS_IMAGES is set to a comma separted list of image versions,
+// then those will be used instead of the default versions.
+// If MIMIR_PREVIOUS_IMAGES is set to a JSON, it supports mapping flags for those versions,
+// see TestParsePreviousImageVersionOverrides for the JSON format to use.
+func previousVersionImages(t *testing.T) map[string]e2emimir.FlagMapper {
+	if overrides := previousImageVersionOverrides(t); len(overrides) > 0 {
+		return overrides
 	}
 
 	return DefaultPreviousVersionImages
 }
 
 func TestBackwardCompatibility(t *testing.T) {
-	for previousImage, oldFlagsMapper := range previousVersionImages() {
+	for previousImage, oldFlagsMapper := range previousVersionImages(t) {
 		t.Run(fmt.Sprintf("Backward compatibility upgrading from %s", previousImage), func(t *testing.T) {
 			runBackwardCompatibilityTest(t, previousImage, oldFlagsMapper)
 		})
@@ -56,7 +46,7 @@ func TestBackwardCompatibility(t *testing.T) {
 }
 
 func TestNewDistributorsCanPushToOldIngestersWithReplication(t *testing.T) {
-	for previousImage, oldFlagsMapper := range previousVersionImages() {
+	for previousImage, oldFlagsMapper := range previousVersionImages(t) {
 		t.Run(fmt.Sprintf("Backward compatibility upgrading from %s", previousImage), func(t *testing.T) {
 			runNewDistributorsCanPushToOldIngestersWithReplication(t, previousImage, oldFlagsMapper)
 		})
@@ -241,4 +231,92 @@ func checkQueries(
 			}
 		})
 	}
+}
+
+type testingLogger interface{ Logf(string, ...interface{}) }
+
+func previousImageVersionOverrides(t *testing.T) map[string]e2emimir.FlagMapper {
+	overrides, err := parsePrevioiusImageVersionOverrides(os.Getenv("MIMIR_PREVIOUS_IMAGES"), t)
+	require.NoError(t, err)
+	return overrides
+}
+
+func parsePrevioiusImageVersionOverrides(env string, logger testingLogger) (map[string]e2emimir.FlagMapper, error) {
+	if env == "" {
+		return nil, nil
+	}
+
+	overrides := map[string]e2emimir.FlagMapper{}
+	if strings.TrimSpace(env)[0] != '{' {
+		logger.Logf("Overriding previous images with comma separated image names: %s", env)
+		for _, image := range strings.Split(env, ",") {
+			overrides[image] = e2emimir.NoopFlagMapper
+		}
+		return overrides, nil
+	}
+	logger.Logf("Overriding previous images with JSON: %s", env)
+
+	if err := json.Unmarshal([]byte(env), &overrides); err != nil {
+		return nil, fmt.Errorf("can't unmarshal previous image version overrides as JSON: %w", err)
+	}
+	return overrides, nil
+}
+
+func TestParsePreviousImageVersionOverrides(t *testing.T) {
+	t.Run("empty overrides", func(t *testing.T) {
+		overrides, err := parsePrevioiusImageVersionOverrides("", t)
+		require.NoError(t, err)
+		require.Empty(t, overrides)
+	})
+
+	t.Run("one version override", func(t *testing.T) {
+		overrides, err := parsePrevioiusImageVersionOverrides("first", t)
+		require.NoError(t, err)
+		require.Len(t, overrides, 1)
+		require.NotNil(t, overrides["first"])
+	})
+
+	t.Run("comma separated overrides", func(t *testing.T) {
+		overrides, err := parsePrevioiusImageVersionOverrides("first,second", t)
+		require.NoError(t, err)
+		require.Len(t, overrides, 2)
+		require.NotNil(t, overrides["first"])
+		require.NotNil(t, overrides["second"])
+	})
+
+	t.Run("json overrides with flag mappers", func(t *testing.T) {
+		inputFlags := map[string]string{
+			"a": "1",
+			"b": "2",
+			"c": "3",
+			"d": "4",
+			"e": "5",
+		}
+		expectedFlags := map[string]string{
+			"x": "1",
+			"y": "2",
+			"e": "5",
+			"z": "10",
+		}
+
+		jsonOverrides := `
+			{
+				"first": [
+					{"remove": ["c", "d"]},
+					{"rename": {"a": "x", "b": "y"}},
+					{"set": {"z":"10"}}
+				],
+				"second": []
+			}`
+
+		overrides, err := parsePrevioiusImageVersionOverrides(jsonOverrides, t)
+		require.NoError(t, err)
+		require.Len(t, overrides, 2)
+
+		require.NotNil(t, overrides["first"])
+		require.Equal(t, expectedFlags, overrides["first"](inputFlags))
+
+		require.NotNil(t, overrides["second"])
+		require.Equal(t, inputFlags, overrides["second"](inputFlags))
+	})
 }

@@ -247,7 +247,8 @@ local filename = 'mimir-queries.json';
       $.row('')
       .addPanel(
         $.panel('Blocks currently loaded') +
-        $.queryPanel('cortex_bucket_store_blocks_loaded{component="store-gateway",%s}' % $.jobMatcher($._config.job_names.store_gateway), '{{%s}}' % $._config.per_instance_label)
+        $.queryPanel('cortex_bucket_store_blocks_loaded{component="store-gateway",%s}' % $.jobMatcher($._config.job_names.store_gateway), '{{%s}}' % $._config.per_instance_label) +
+        { fill: 0 }
       )
       .addPanel(
         $.successFailurePanel(
@@ -268,7 +269,8 @@ local filename = 'mimir-queries.json';
       $.row('')
       .addPanel(
         $.panel('Lazy loaded index-headers') +
-        $.queryPanel('cortex_bucket_store_indexheader_lazy_load_total{%s} - cortex_bucket_store_indexheader_lazy_unload_total{%s}' % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)], '{{%s}}' % $._config.per_instance_label)
+        $.queryPanel('cortex_bucket_store_indexheader_lazy_load_total{%s} - cortex_bucket_store_indexheader_lazy_unload_total{%s}' % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)], '{{%s}}' % $._config.per_instance_label) +
+        { fill: 0 }
       )
       .addPanel(
         $.panel('Index-header lazy load duration') +

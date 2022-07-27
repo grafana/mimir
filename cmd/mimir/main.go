@@ -6,6 +6,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"flag"
 	"fmt"
@@ -22,7 +23,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/weaveworks/common/tracing"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/mimir"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -130,7 +131,7 @@ func main() {
 		return
 	}
 
-	if err := cfg.InheritCommonFlagValues(util_log.Logger, flag.CommandLine); err != nil {
+	if err := mimir.InheritCommonFlagValues(util_log.Logger, flag.CommandLine, cfg.Common, &cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "error inheriting common flag values: %v\n", err)
 		if !testMode {
 			os.Exit(1)
@@ -252,8 +253,11 @@ func LoadConfig(filename string, expandEnv bool, cfg *mimir.Config) error {
 		buf = expandEnvironmentVariables(buf)
 	}
 
-	err = yaml.UnmarshalStrict(buf, cfg)
-	if err != nil {
+	dec := yaml.NewDecoder(bytes.NewReader(buf))
+	dec.KnownFields(true)
+
+	// Unmarshal with common config unmarshaler.
+	if err := dec.Decode((*mimir.ConfigWithCommon)(cfg)); err != nil {
 		return errors.Wrap(err, "Error parsing config file")
 	}
 

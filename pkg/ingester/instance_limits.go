@@ -9,6 +9,7 @@ import (
 	"flag"
 
 	"github.com/pkg/errors"
+	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/util/globalerror"
 )
@@ -48,10 +49,10 @@ func (l *InstanceLimits) RegisterFlags(f *flag.FlagSet) {
 var defaultInstanceLimits *InstanceLimits = nil
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface. If give
-func (l *InstanceLimits) UnmarshalYAML(unmarshal func(interface{}) error) error {
+func (l *InstanceLimits) UnmarshalYAML(value *yaml.Node) error {
 	if defaultInstanceLimits != nil {
 		*l = *defaultInstanceLimits
 	}
 	type plain InstanceLimits // type indirection to make sure we don't go into recursive loop
-	return unmarshal((*plain)(l))
+	return value.DecodeWithOptions((*plain)(l), yaml.DecodeOptions{KnownFields: true})
 }

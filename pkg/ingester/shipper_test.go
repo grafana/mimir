@@ -7,6 +7,8 @@ package ingester
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"os"
 	"path"
 	"testing"
@@ -18,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
+	"github.com/thanos-io/thanos/pkg/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 )
@@ -144,4 +147,63 @@ func TestShipper(t *testing.T) {
 	})
 
 	t.Log(logs.String())
+}
+
+// deceivingUploadBucket proxies the calls to the underlying bucket. On uploads and when
+// the base name of the object matches objectBaseName, after proxying the call
+// an error is returned regardless of what the underlying Bucket returned.
+// Useful for when you want to simulate a particular file _appearing_ to fail uploading, but actually succeeding.
+type deceivingUploadBucket struct {
+	objstore.Bucket
+
+	objectBaseName string
+}
+
+func (b deceivingUploadBucket) Upload(ctx context.Context, name string, r io.Reader) error {
+	actualErr := b.Bucket.Upload(ctx, name, r)
+	if actualErr != nil {
+		return actualErr
+	} else if path.Base(name) == b.objectBaseName {
+		return fmt.Errorf("base name matches, will fail upload")
+	}
+	return nil
+}
+
+func TestShipper_DeceivingUploadErrors(t *testing.T) {
+	blocksDir := t.TempDir()
+	bucketDir := t.TempDir()
+
+	bkt, err := filesystem.NewBucketClient(filesystem.Config{Directory: bucketDir})
+	require.NoError(t, err)
+	// Wrap bucket in a decorator so that meta.json file uploads always fail
+	bkt = deceivingUploadBucket{Bucket: bkt, objectBaseName: block.MetaFilename}
+
+	logger := log.NewLogfmtLogger(os.Stderr)
+	s := NewShipper(logger, nil, blocksDir, bkt, metadata.TestSource, metadata.NoneFunc)
+
+	// Create and upload a block
+	id1 := ulid.MustNew(1, nil)
+	createBlock(t, blocksDir, id1, metadata.Meta{
+		BlockMeta: tsdb.BlockMeta{
+			ULID:    id1,
+			MaxTime: 2000,
+			MinTime: 1000,
+			Version: 1,
+			Stats: tsdb.BlockStats{
+				NumSamples: 100, // Shipper checks if number of samples is greater than 0.
+			},
+		},
+		Thanos: metadata.Thanos{Labels: map[string]string{"a": "b"}},
+	})
+
+	// Let shipper sync the blocks, expecting the meta.json upload to fail.
+	uploaded, err := s.Sync(context.Background())
+	require.Error(t, err)
+	require.Equal(t, 0, uploaded)
+
+	// Sync again. This time the shipper should find the meta.json existing in the bucket and
+	// should report an uploaded block without retrying to upload the whole block again.
+	uploaded, err = s.Sync(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, 1, uploaded)
 }
