@@ -145,6 +145,23 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 			query:                `sum(max(rate(metric_counter[3m])))`,
 			expectedSplitQueries: 3,
 		},
+		// Histograms
+		"histogram_quantile() grouping only 'by' le": {
+			query:                `histogram_quantile(0.5, sum by(le) (rate(metric_histogram_bucket[3m])))`,
+			expectedSplitQueries: 3,
+		},
+		"histogram_quantile() grouping 'by'": {
+			query:                `histogram_quantile(0.5, sum by(group_1, le) (rate(metric_histogram_bucket[3m])))`,
+			expectedSplitQueries: 3,
+		},
+		"histogram_quantile() grouping 'without'": {
+			query:                `histogram_quantile(0.5, sum without(group_1, group_2, unique) (rate(metric_histogram_bucket[3m])))`,
+			expectedSplitQueries: 3,
+		},
+		"histogram_quantile() with no effective grouping because all groups have 1 series": {
+			query:                `histogram_quantile(0.5, sum by(unique, le) (rate(metric_histogram_bucket{group_1="0"}[3m])))`,
+			expectedSplitQueries: 3,
+		},
 		// Subqueries
 		"subquery": {
 			query:                `sum(sum_over_time(metric_counter[1h:1m]) * 60) by (group_1)`,
