@@ -43,9 +43,9 @@ type instantQuerySplittingMetrics struct {
 
 // Parsing evaluation result used in instantQuerySplittingMetrics
 const (
-	SuccessKey = "success"
-	FailureKey = "failure"
-	NoopKey    = "noop"
+	successKey = "success"
+	failureKey = "failure"
+	noopKey    = "noop"
 )
 
 func newInstantQuerySplittingMetrics(registerer prometheus.Registerer) instantQuerySplittingMetrics {
@@ -57,7 +57,7 @@ func newInstantQuerySplittingMetrics(registerer prometheus.Registerer) instantQu
 		}),
 		mappedSplitQueries: promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
-			Name:      "frontend_instant_query_sharding_rewrites_succeeded_total",
+			Name:      "frontend_instant_query_splitting_rewrites_succeeded_total",
 			Help:      "Number of instant queries the query-frontend attempted to split by evaluation type.",
 		}, []string{"evaluation"}),
 		splitQueries: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
@@ -124,7 +124,7 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 	instantSplitQuery, err := mapper.Map(expr, stats)
 	if err != nil {
 		level.Error(log).Log("msg", "failed to map the input query, falling back to try executing without splitting", "query", req.GetQuery(), "err", err)
-		s.mappedSplitQueries.WithLabelValues(FailureKey).Inc()
+		s.mappedSplitQueries.WithLabelValues(failureKey).Inc()
 		return s.next.Do(ctx, req)
 	}
 
@@ -132,7 +132,7 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 	if noop {
 		// the query cannot be split, so continue
 		level.Debug(log).Log("msg", "input query resulted in a no operation, falling back to try executing without splitting", "query", req.GetQuery())
-		s.mappedSplitQueries.WithLabelValues(NoopKey).Inc()
+		s.mappedSplitQueries.WithLabelValues(noopKey).Inc()
 		return s.next.Do(ctx, req)
 	}
 
@@ -142,7 +142,7 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 	hints := &Hints{TotalQueries: int32(stats.GetShardedQueries())}
 
 	// Update metrics
-	s.mappedSplitQueries.WithLabelValues(SuccessKey).Inc()
+	s.mappedSplitQueries.WithLabelValues(successKey).Inc()
 	s.splitQueries.Add(float64(stats.GetShardedQueries()))
 	s.splitQueriesPerQuery.Observe(float64(stats.GetShardedQueries()))
 
@@ -158,7 +158,7 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 	res := qry.Exec(ctx)
 	extracted, err := promqlResultToSamples(res)
 	if err != nil {
-		level.Warn(log).Log("msg", "failed to extract promql results from splittable request", "res", res, "err", err)
+		level.Warn(log).Log("msg", "failed to execute split instant query", "err", err)
 		return nil, mapEngineError(err)
 	}
 	return &PrometheusResponse{

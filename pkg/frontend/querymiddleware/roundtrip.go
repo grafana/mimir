@@ -156,6 +156,8 @@ func newQueryTripperware(
 	engineOpts promql.EngineOpts,
 	registerer prometheus.Registerer,
 ) (Tripperware, error) {
+	engine := promql.NewEngine(engineOpts)
+
 	// Metric used to keep track of each middleware execution duration.
 	metrics := newInstrumentMiddlewareMetrics(registerer)
 
@@ -205,10 +207,17 @@ func newQueryTripperware(
 
 	queryInstantMiddleware := []Middleware{newLimitsMiddleware(limits, log)}
 
+	if cfg.SplitInstantQueriesByInterval > 0 {
+		queryInstantMiddleware = append(
+			queryInstantMiddleware,
+			newSplitInstantQueryByIntervalMiddleware(cfg.SplitInstantQueriesByInterval > 0, cfg.SplitInstantQueriesByInterval, limits, log, engine, registerer),
+			newInstrumentMiddleware("querysharding", metrics, log),
+		)
+	}
+
 	if cfg.ShardedQueries {
 		// Disable concurrency limits for sharded queries.
 		engineOpts.ActiveQueryTracker = nil
-		engine := promql.NewEngine(engineOpts)
 		queryshardingMiddleware := newQueryShardingMiddleware(
 			log,
 			engine,
@@ -222,8 +231,6 @@ func newQueryTripperware(
 		)
 		queryInstantMiddleware = append(
 			queryInstantMiddleware,
-			newSplitInstantQueryByIntervalMiddleware(cfg.SplitInstantQueriesByInterval > 0, cfg.SplitInstantQueriesByInterval, limits, log, engine, registerer),
-			newInstrumentMiddleware("querysharding", metrics, log),
 			queryshardingMiddleware,
 		)
 	}

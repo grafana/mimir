@@ -265,12 +265,12 @@ func (i *instantSplitter) mapCallAvgOverTime(expr *parser.Call, stats *MapperSta
 	avgOverTimeExpr := &parser.BinaryExpr{
 		Op: parser.DIV,
 		LHS: &parser.Call{
-			Func:     parser.Functions[string(sumOverTime)],
+			Func:     parser.Functions[sumOverTime],
 			Args:     expr.Args,
 			PosRange: expr.PosRange,
 		},
 		RHS: &parser.Call{
-			Func:     parser.Functions[string(countOverTime)],
+			Func:     parser.Functions[countOverTime],
 			Args:     expr.Args,
 			PosRange: expr.PosRange,
 		},
@@ -288,7 +288,7 @@ func (i *instantSplitter) mapCallAvgOverTime(expr *parser.Call, stats *MapperSta
 // mapCallRate maps a rate function to expression increase / rangeInterval
 func (i *instantSplitter) mapCallRate(expr *parser.Call, stats *MapperStats, rangeInterval time.Duration) (mapped parser.Node, finished bool, err error) {
 	increaseExpr := &parser.Call{
-		Func:     parser.Functions[string(increase)],
+		Func:     parser.Functions[increase],
 		Args:     expr.Args,
 		PosRange: expr.PosRange,
 	}
