@@ -159,6 +159,24 @@ type tsWithSampleCount struct {
 
 type tsByTargets map[string]tsWithSampleCount
 
+// copyToTarget copies the given time series into the given target and does the necessary accounting.
+// The time series is deep-copied, so the passed in time series can be returned to the pool without affecting the copy.
+func (t tsByTargets) copyToTarget(target string, ts *mimirpb.TimeSeries, pool *pools) {
+	tsByTarget, ok := t[target]
+	if !ok {
+		tsByTarget.ts = pool.getTsSlice()
+	}
+
+	newTsIdx := len(tsByTarget.ts)
+	tsByTarget.ts = append(tsByTarget.ts, mimirpb.PreallocTimeseries{
+		TimeSeries: pool.getTs(),
+	})
+	mimirpb.DeepCopyTimeseries(tsByTarget.ts[newTsIdx].TimeSeries, ts)
+	tsByTarget.counts.count(tsByTarget.ts[newTsIdx])
+
+	t[target] = tsByTarget
+}
+
 type TimeseriesCounts struct {
 	SampleCount   int
 	ExemplarCount int
@@ -191,17 +209,7 @@ func (f *forwarder) splitByTargets(tsSliceIn []mimirpb.PreallocTimeseries, rules
 	for tsSliceReadIdx, ts := range tsSliceIn {
 		forwardingTarget, ingest := findTargetsForLabels(ts.Labels, rules)
 		if forwardingTarget != "" {
-			tsByTarget, ok := tsByTargets[forwardingTarget]
-			if !ok {
-				tsByTarget.ts = f.pools.getTsSlice()
-			}
-
-			tsByTarget.ts = f.growTimeseriesSlice(tsByTarget.ts)
-			tsWriteIdx := len(tsByTarget.ts) - 1
-			mimirpb.DeepCopyTimeseries(tsByTarget.ts[tsWriteIdx].TimeSeries, ts.TimeSeries)
-			tsByTarget.counts.count(tsByTarget.ts[tsWriteIdx])
-
-			tsByTargets[forwardingTarget] = tsByTarget
+			tsByTargets.copyToTarget(forwardingTarget, ts.TimeSeries, f.pools)
 		}
 
 		if ingest {
@@ -232,20 +240,6 @@ func findTargetsForLabels(labels []mimirpb.LabelAdapter, rules validation.Forwar
 	}
 
 	return rule.Endpoint, rule.Ingest
-}
-
-func (f *forwarder) growTimeseriesSlice(ts []mimirpb.PreallocTimeseries) []mimirpb.PreallocTimeseries {
-	newPos := len(ts)
-
-	if cap(ts) > len(ts) {
-		ts = ts[:newPos+1]
-	} else {
-		ts = append(ts, mimirpb.PreallocTimeseries{})
-	}
-
-	ts[newPos].TimeSeries = f.pools.getTs()
-
-	return ts
 }
 
 type request struct {
