@@ -45,16 +45,16 @@ func newPools() *pools {
 		tsByTargets: sync.Pool{New: func() interface{} { return make(tsByTargets) }},
 	}
 
-	p.getProtobuf = getByteSlice(&p.protobuf)
-	p.putProtobuf = putByteSlice(&p.protobuf)
-	p.getSnappy = getByteSlice(&p.snappy)
-	p.putSnappy = putByteSlice(&p.snappy)
-	p.getReq = getReq(&p.request)
-	p.putReq = putReq(&p.request)
-	p.getBytesReader = getBytesReader(&p.bytesReader)
-	p.putBytesReader = putBytesReader(&p.bytesReader)
-	p.getTsByTargets = getTsByTargets(&p.tsByTargets)
-	p.putTsByTargets = putTsByTargets(&p.tsByTargets)
+	p.getProtobuf = getter[*[]byte](&p.protobuf)
+	p.putProtobuf = putter[*[]byte](&p.protobuf)
+	p.getSnappy = getter[*[]byte](&p.snappy)
+	p.putSnappy = putter[*[]byte](&p.snappy)
+	p.getReq = getter[*request](&p.request)
+	p.putReq = putter[*request](&p.request)
+	p.getBytesReader = getter[*bytes.Reader](&p.bytesReader)
+	p.putBytesReader = putter[*bytes.Reader](&p.bytesReader)
+	p.getTsByTargets = getter[tsByTargets](&p.tsByTargets)
+	p.putTsByTargets = cleanTsByTargets(putter[tsByTargets](&p.tsByTargets))
 	p.getTs = mimirpb.TimeseriesFromPool
 	p.putTs = mimirpb.ReuseTimeseries
 	p.getTsSlice = mimirpb.PreallocTimeseriesSliceFromPool
@@ -63,53 +63,23 @@ func newPools() *pools {
 	return p
 }
 
-func getByteSlice(pool *sync.Pool) func() *[]byte {
-	return func() *[]byte {
-		return pool.Get().(*[]byte)
+func getter[T any](pool *sync.Pool) func() T {
+	return func() T {
+		return pool.Get().(T)
 	}
 }
 
-func putByteSlice(pool *sync.Pool) func(*[]byte) {
-	return func(protobuf *[]byte) {
-		pool.Put(protobuf)
+func putter[T any](pool *sync.Pool) func(T) {
+	return func(val T) {
+		pool.Put(val)
 	}
 }
 
-func getReq(pool *sync.Pool) func() *request {
-	return func() *request {
-		return pool.Get().(*request)
-	}
-}
-
-func putReq(pool *sync.Pool) func(*request) {
-	return func(req *request) {
-		pool.Put(req)
-	}
-}
-
-func getBytesReader(pool *sync.Pool) func() *bytes.Reader {
-	return func() *bytes.Reader {
-		return pool.Get().(*bytes.Reader)
-	}
-}
-
-func putBytesReader(pool *sync.Pool) func(*bytes.Reader) {
-	return func(bytesReader *bytes.Reader) {
-		pool.Put(bytesReader)
-	}
-}
-
-func getTsByTargets(pool *sync.Pool) func() tsByTargets {
-	return func() tsByTargets {
-		return pool.Get().(tsByTargets)
-	}
-}
-
-func putTsByTargets(pool *sync.Pool) func(tsByTargets) {
-	return func(tsByTargets tsByTargets) {
-		for key := range tsByTargets {
-			delete(tsByTargets, key)
+func cleanTsByTargets(putter func(val tsByTargets)) func(tsByTargets) {
+	return func(val tsByTargets) {
+		for key := range val {
+			delete(val, key)
 		}
-		pool.Put(tsByTargets)
+		putter(val)
 	}
 }
