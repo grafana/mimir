@@ -632,7 +632,9 @@ func (d *Distributor) PrePushForwardingMiddleware(next push.Func) push.Func {
 			select {
 			case err, ok := <-errCh:
 				if ok {
-					errs = append(errs, err)
+					if err != nil {
+						errs = append(errs, err)
+					}
 				} else {
 					break LOOP
 				}
