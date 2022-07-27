@@ -393,6 +393,8 @@ func (r *request) cleanup() {
 	wg := r.requestWg
 	r.requestWg = nil
 
+	// Return request to the pool before calling wg.Done() because otherwise the tests can't wait for the request to
+	// be completely done in order to validate the pool usage.
 	r.pools.putReq(r)
 
 	wg.Done()
