@@ -142,6 +142,9 @@ func (f *forwarder) Forward(ctx context.Context, rules validation.ForwardingRule
 	}
 
 	go func() {
+		// Waiting for the requestWg in a go routine allows Forward() to return early, that way the call site can
+		// continue doing whatever it needs to do and read the returned errCh later to wait for the forwarding requests
+		// to complete and handle potential errors yielded by the forwarding requests.
 		requestWg.Wait()
 		close(errCh)
 	}()
