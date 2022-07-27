@@ -144,19 +144,13 @@ func isVectorAggregatorSplittable(expr *parser.AggregateExpr) bool {
 	return ok
 }
 
-func isBinaryExpression(expr parser.Expr) bool {
-	_, ok := expr.(*parser.BinaryExpr)
-	return ok
-}
-
 // mapAggregatorExpr maps vector aggregator expression expr
 func (i *instantSplitter) mapAggregatorExpr(expr *parser.AggregateExpr, stats *MapperStats) (mapped parser.Node, finished bool, err error) {
 	var mappedNode parser.Node
 
 	// If the embeddedAggregatorExpr is not set, update it.
 	// Note: vector aggregators avg, count and topk are supported but not splittable, so cannot be sent downstream.
-	// Similarly, inner binary operations cannot be sent downstream
-	if i.embeddedAggregatorExpr == nil && isVectorAggregatorSplittable(expr) && !isBinaryExpression(expr.Expr) {
+	if i.embeddedAggregatorExpr == nil && isVectorAggregatorSplittable(expr) {
 		mappedNode, finished, err = NewASTNodeMapper(i.copyWithEmbeddedExpr(expr)).MapNode(expr.Expr, stats)
 	} else {
 		mappedNode, finished, err = i.MapNode(expr.Expr, stats)
@@ -185,6 +179,10 @@ func (i *instantSplitter) mapAggregatorExpr(expr *parser.AggregateExpr, stats *M
 
 // mapBinaryExpr maps binary expression expr
 func (i *instantSplitter) mapBinaryExpr(expr *parser.BinaryExpr, stats *MapperStats) (mapped parser.Node, finished bool, err error) {
+	// Binary expressions cannot be sent downstream, only their respective operands.
+	// Therefore, the embedded aggregator expression needs to be reset.
+	i.embeddedAggregatorExpr = nil
+
 	// Noop if both LHS and RHS are literal numbers
 	_, literalLHS := expr.LHS.(*parser.NumberLiteral)
 	_, literalRHS := expr.RHS.(*parser.NumberLiteral)
