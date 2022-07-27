@@ -324,7 +324,7 @@ test: ## Run all unit tests.
 test-with-race: ## Run all unit tests with data race detect.
 	go test -tags netgo -timeout 30m -race -count 1 ./...
 
-cover: ## Run all test with code coverage and generates reports.
+cover: ## Run all unit tests with code coverage and generates reports.
 	$(eval COVERDIR := $(shell mktemp -d coverage.XXXXXXXXXX))
 	$(eval COVERFILE := $(shell mktemp $(COVERDIR)/unit.XXXXXXXXXX))
 	go test -tags netgo -timeout 30m -race -count 1 -coverprofile=$(COVERFILE) ./...
