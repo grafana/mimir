@@ -130,7 +130,7 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 	noop := instantSplitQuery.String() == expr.String()
 	if noop {
 		// the query cannot be split, so continue
-		level.Debug(log).Log("msg", "input query resulted in a no operation, falling back to try executing without splitting", "query", req.GetQuery(), "err", err)
+		level.Debug(log).Log("msg", "input query resulted in a no operation, falling back to try executing without splitting", "query", req.GetQuery())
 		s.mappedSplitQueries.WithLabelValues(NoopKey).Inc()
 		return s.next.Do(ctx, req)
 	}

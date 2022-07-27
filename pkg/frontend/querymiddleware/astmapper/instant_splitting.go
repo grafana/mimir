@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
@@ -18,6 +19,7 @@ type instantSplitter struct {
 	// This is an optimization to send outer vector aggregator expressions to reduce the label sets returned
 	// by queriers, and therefore minimize the merging of results in the query-frontend.
 	embeddedAggregatorExpr *parser.AggregateExpr
+	logger                 log.Logger
 }
 
 // Supported vector aggregators
@@ -62,12 +64,18 @@ var splittableRangeVectorAggregators = map[string]bool{
 
 // NewInstantQuerySplitter creates a new query range mapper.
 func NewInstantQuerySplitter(interval time.Duration, logger log.Logger) ASTMapper {
-	return NewASTNodeMapper(&instantSplitter{interval: interval})
+	return NewASTNodeMapper(
+		&instantSplitter{
+			interval: interval,
+			logger:   logger,
+		},
+	)
 }
 
 // MapNode returns node mapped as embedded queries
 func (i *instantSplitter) MapNode(node parser.Node, stats *MapperStats) (mapped parser.Node, finished bool, err error) {
 	if !isSplittable(node) {
+		level.Debug(i.logger).Log("msg", "node is not supported for split by interval", "node", node)
 		// If no node in the tree is splittable, finish the AST traversal
 		return node, true, nil
 	}
@@ -232,6 +240,7 @@ func (i *instantSplitter) mapCall(expr *parser.Call, stats *MapperStats) (mapped
 	// don't split it and don't map further nodes (finished=true)
 	rangeInterval := getRangeInterval(expr)
 	if rangeInterval <= i.interval {
+		level.Debug(i.logger).Log("msg", "unable to split expression because range interval is smaller than configured split interval", "expr", expr, "interval", i.interval)
 		return expr, true, nil
 	}
 
