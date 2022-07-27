@@ -18,8 +18,8 @@ type instantSplitter struct {
 	// downstream queries, i.e. the query that will be executed in parallel in each partial query.
 	// This is an optimization to send outer vector aggregator expressions to reduce the label sets returned
 	// by queriers, and therefore minimize the merging of results in the query-frontend.
-	embeddedAggregatorExpr *parser.AggregateExpr
-	logger                 log.Logger
+	outerAggregationExpr *parser.AggregateExpr
+	logger               log.Logger
 }
 
 // Supported vector aggregators
@@ -105,7 +105,7 @@ func (i *instantSplitter) MapNode(node parser.Node, stats *MapperStats) (mapped 
 // This expression is the one that will be used in all the embedded queries in the split and squash operation
 func (i *instantSplitter) copyWithEmbeddedExpr(embeddedExpr *parser.AggregateExpr) *instantSplitter {
 	instantSplitter := *i
-	instantSplitter.embeddedAggregatorExpr = embeddedExpr
+	instantSplitter.outerAggregationExpr = embeddedExpr
 	return &instantSplitter
 }
 
@@ -140,9 +140,9 @@ func isSplittable(node parser.Node) bool {
 func (i *instantSplitter) mapAggregatorExpr(expr *parser.AggregateExpr, stats *MapperStats) (mapped parser.Node, finished bool, err error) {
 	var mappedNode parser.Node
 
-	// If the embeddedAggregatorExpr is not set, update it.
+	// If the outerAggregationExpr is not set, update it.
 	// Note: vector aggregators avg, count and topk are supported but not splittable, so cannot be sent downstream.
-	if i.embeddedAggregatorExpr == nil && splittableVectorAggregators[expr.Op] {
+	if i.outerAggregationExpr == nil && splittableVectorAggregators[expr.Op] {
 		mappedNode, finished, err = NewASTNodeMapper(i.copyWithEmbeddedExpr(expr)).MapNode(expr.Expr, stats)
 	} else {
 		mappedNode, finished, err = i.MapNode(expr.Expr, stats)
@@ -173,7 +173,7 @@ func (i *instantSplitter) mapAggregatorExpr(expr *parser.AggregateExpr, stats *M
 func (i *instantSplitter) mapBinaryExpr(expr *parser.BinaryExpr, stats *MapperStats) (mapped parser.Node, finished bool, err error) {
 	// Binary expressions cannot be sent downstream, only their respective operands.
 	// Therefore, the embedded aggregator expression needs to be reset.
-	i.embeddedAggregatorExpr = nil
+	i.outerAggregationExpr = nil
 
 	// Noop if both LHS and RHS are literal numbers
 	_, literalLHS := expr.LHS.(*parser.NumberLiteral)
@@ -278,8 +278,8 @@ func (i *instantSplitter) mapCallAvgOverTime(expr *parser.Call, stats *MapperSta
 
 	// If avg_over_time is wrapped by a vector aggregator,
 	// the embedded query cannot be sent downstream
-	if i.embeddedAggregatorExpr != nil {
-		i.embeddedAggregatorExpr = nil
+	if i.outerAggregationExpr != nil {
+		i.outerAggregationExpr = nil
 	}
 
 	return i.MapNode(avgOverTimeExpr, stats)
@@ -295,10 +295,10 @@ func (i *instantSplitter) mapCallRate(expr *parser.Call, stats *MapperStats, ran
 
 	// If rate is wrapped by a vector aggregator,
 	// the embedded query also needs to be updated to use increase
-	if i.embeddedAggregatorExpr != nil {
-		updatedExpr := updateEmbeddedExpr(i.embeddedAggregatorExpr, increaseExpr)
+	if i.outerAggregationExpr != nil {
+		updatedExpr := updateEmbeddedExpr(i.outerAggregationExpr, increaseExpr)
 		if updatedExpr == nil {
-			i.embeddedAggregatorExpr = nil
+			i.outerAggregationExpr = nil
 		}
 	}
 
@@ -326,9 +326,9 @@ func (i *instantSplitter) mapCallByRangeInterval(expr *parser.Call, stats *Mappe
 	// Default grouping is 'without' for concatenating the embedded queries
 	var grouping []string
 	groupingWithout := true
-	if i.embeddedAggregatorExpr != nil {
-		grouping = append(grouping, i.embeddedAggregatorExpr.Grouping...)
-		groupingWithout = i.embeddedAggregatorExpr.Without
+	if i.outerAggregationExpr != nil {
+		grouping = append(grouping, i.outerAggregationExpr.Grouping...)
+		groupingWithout = i.outerAggregationExpr.Without
 	}
 
 	embeddedExpr, finished, err := i.splitAndSquashCall(expr, stats, rangeInterval)
@@ -350,7 +350,7 @@ func (i *instantSplitter) mapCallByRangeInterval(expr *parser.Call, stats *Mappe
 }
 
 // expr is the range vector aggregator expression
-// If the outer expression is a vector aggregator, r.embeddedAggregatorExpr will contain the expression
+// If the outer expression is a vector aggregator, r.outerAggregationExpr will contain the expression
 // In this case, the vector aggregator should be downstream to the embedded queries in order to limit
 // the label cardinality of the parallel queries
 func (i *instantSplitter) splitAndSquashCall(expr *parser.Call, stats *MapperStats, rangeInterval time.Duration) (mapped parser.Expr, finished bool, err error) {
@@ -361,8 +361,8 @@ func (i *instantSplitter) splitAndSquashCall(expr *parser.Call, stats *MapperSta
 
 	var embeddedQuery parser.Expr = expr
 
-	if i.embeddedAggregatorExpr != nil {
-		embeddedQuery = i.embeddedAggregatorExpr
+	if i.outerAggregationExpr != nil {
+		embeddedQuery = i.outerAggregationExpr
 	}
 
 	originalOffset := getOffset(expr)
