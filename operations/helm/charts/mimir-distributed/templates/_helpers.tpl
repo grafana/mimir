@@ -100,7 +100,7 @@ Calculate the config from structured and unstructred text input
 {{- end -}}
 
 {{/*
-Calculate the config from structured and unstructred text input
+Calculate the config from the unstructred text input
 */}}
 {{- define "mimir.unstructuredConfig" -}}
 {{ include (print $.Template.BasePath "/_config-render.tpl") . }}
