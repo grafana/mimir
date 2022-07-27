@@ -613,6 +613,7 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 // It forwards time series to configured remote_write endpoints if the forwarding rules say so.
 func (d *Distributor) PrePushForwardingMiddleware(next push.Func) push.Func {
 	if d.forwarder == nil {
+		// Forwarding is disabled, no need to wrap "next".
 		return next
 	}
 

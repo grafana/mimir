@@ -2804,7 +2804,6 @@ type prepConfig struct {
 	ingestersSeriesCountTotal    uint64
 	ingesterZones                []string
 	zonesResponseDelay           map[string]time.Duration
-	postPushCallback             func()
 	forwarding                   bool
 	getForwarder                 func() forwarding.Forwarder
 }
@@ -2959,12 +2958,6 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 	}
 
 	t.Cleanup(func() { stopAll(distributors, ingestersRing) })
-
-	if cfg.postPushCallback != nil {
-		for ingesterIdx := range ingesters {
-			ingesters[ingesterIdx].postPushCallback = cfg.postPushCallback
-		}
-	}
 
 	return distributors, ingesters, registries
 }
@@ -3135,7 +3128,6 @@ type mockIngester struct {
 	seriesCountTotal uint64
 	zone             string
 	responseDelay    time.Duration
-	postPushCallback func()
 }
 
 func (i *mockIngester) series() map[uint32]*mimirpb.PreallocTimeseries {
@@ -3163,9 +3155,6 @@ func (i *mockIngester) Close() error {
 }
 
 func (i *mockIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, opts ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
-	if i.postPushCallback != nil {
-		defer i.postPushCallback()
-	}
 
 	i.Lock()
 	defer i.Unlock()

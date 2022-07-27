@@ -52,7 +52,7 @@ func TestDistributorForwarding(t *testing.T) {
 	type testCase struct {
 		name                             string
 		forwardingRules                  validation.ForwardingRules
-		sendMetrics                      []string
+		submitMetrics                    []string
 		expectedIngestedMetrics          []string
 		expectedForwardedMetricsByTarget map[string][]string
 	}
@@ -63,7 +63,7 @@ func TestDistributorForwarding(t *testing.T) {
 			forwardingRules: validation.ForwardingRules{
 				metric1: validation.ForwardingRule{Endpoint: target1, Ingest: false},
 			},
-			sendMetrics:             []string{metric1},
+			submitMetrics:           []string{metric1},
 			expectedIngestedMetrics: []string{},
 			expectedForwardedMetricsByTarget: map[string][]string{
 				target1: {metric1},
@@ -74,19 +74,19 @@ func TestDistributorForwarding(t *testing.T) {
 				metric1: validation.ForwardingRule{Endpoint: target1, Ingest: true},
 				metric2: validation.ForwardingRule{Endpoint: target2, Ingest: true},
 			},
-			sendMetrics:             []string{metric1, metric2},
+			submitMetrics:           []string{metric1, metric2},
 			expectedIngestedMetrics: []string{metric1, metric2},
 			expectedForwardedMetricsByTarget: map[string][]string{
 				target1: {metric1},
 				target2: {metric2},
 			},
 		}, {
-			name: "ingest three metrics, forward two of them, ingest two others",
+			name: "submit three metrics, forward two of them to two targets, ingest two others",
 			forwardingRules: validation.ForwardingRules{
 				metric2: validation.ForwardingRule{Endpoint: target2, Ingest: true},
 				metric3: validation.ForwardingRule{Endpoint: target3, Ingest: false},
 			},
-			sendMetrics:             []string{metric1, metric2, metric3},
+			submitMetrics:           []string{metric1, metric2, metric3},
 			expectedIngestedMetrics: []string{metric1, metric2},
 			expectedForwardedMetricsByTarget: map[string][]string{
 				target1: {},
@@ -96,7 +96,7 @@ func TestDistributorForwarding(t *testing.T) {
 		}, {
 			name:                    "forward nothing and ingest everything",
 			forwardingRules:         validation.ForwardingRules{},
-			sendMetrics:             []string{metric1, metric2, metric3},
+			submitMetrics:           []string{metric1, metric2, metric3},
 			expectedIngestedMetrics: []string{metric1, metric2, metric3},
 			expectedForwardedMetricsByTarget: map[string][]string{
 				target1: {},
@@ -152,11 +152,10 @@ func TestDistributorForwarding(t *testing.T) {
 				BlocksStorageFlags(),
 				BlocksStorageS3Flags(),
 				map[string]string{
-					"-ingester.ring.replication-factor":           "1",
-					"-ingester.ring.heartbeat-period":             "1s",
-					"-distributor.forwarding.enabled":             "true",
-					"-distributor.forwarding.request-concurrency": "5",
-					"-runtime-config.file":                        filepath.Join(e2e.ContainerSharedDir, runtimeConfig),
+					"-ingester.ring.replication-factor": "1",
+					"-ingester.ring.heartbeat-period":   "1s",
+					"-distributor.forwarding.enabled":   "true",
+					"-runtime-config.file":              filepath.Join(e2e.ContainerSharedDir, runtimeConfig),
 				},
 			)
 
@@ -178,17 +177,17 @@ func TestDistributorForwarding(t *testing.T) {
 			mimirClient, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", tenant)
 			require.NoError(t, err)
 
-			// Send metrics to Mimir.
+			// Submit metrics to Mimir.
 			now := time.Now()
-			for _, metric := range tc.sendMetrics {
+			for _, metric := range tc.submitMetrics {
 				series, _ := generateSeries(metric, now)
 				res, err := mimirClient.Push(series)
 				require.NoError(t, err)
 				require.Equal(t, 200, res.StatusCode)
 			}
 
-			// Query Mimir and the Prometheus servers to check which metrics have been sent where.
-			for _, checkMetric := range tc.sendMetrics {
+			// Query Mimir and the Prometheus servers to check which of the submitted metrics have been sent to where.
+			for _, checkMetric := range tc.submitMetrics {
 
 				// Check forwarding targets for the metric.
 				for target, expectedMetrics := range tc.expectedForwardedMetricsByTarget {
@@ -225,10 +224,10 @@ func TestDistributorForwarding(t *testing.T) {
 				val, err := mimirClient.Query(checkMetric, now)
 				require.NoError(t, err)
 				if expected {
-					// The metric "checkMetric" is expected to have been ingested.
+					// The metric "checkMetric" is expected to have been ingested by Mimir.
 					require.Contains(t, val.String(), checkMetric)
 				} else {
-					// The metric "checkMetric" is expected to not have been ingested.
+					// The metric "checkMetric" is expected to not have been ingested by Mimir.
 					require.NotContains(t, val.String(), checkMetric)
 				}
 			}
