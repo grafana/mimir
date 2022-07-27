@@ -84,8 +84,8 @@ type ASTExprMapper struct {
 }
 
 // Map implements ASTMapper from a ExprMapper
-func (nm ASTExprMapper) Map(expr parser.Expr, stats *MapperStats) (parser.Expr, error) {
-	expr, finished, err := nm.MapExpr(expr, stats)
+func (em ASTExprMapper) Map(expr parser.Expr, stats *MapperStats) (parser.Expr, error) {
+	expr, finished, err := em.MapExpr(expr, stats)
 	if err != nil {
 		return nil, err
 	}
@@ -100,7 +100,7 @@ func (nm ASTExprMapper) Map(expr parser.Expr, stats *MapperStats) (parser.Expr, 
 		return nil, nil
 
 	case *parser.AggregateExpr:
-		expr, err := nm.Map(n.Expr, stats)
+		expr, err := em.Map(n.Expr, stats)
 		if err != nil {
 			return nil, err
 		}
@@ -108,13 +108,13 @@ func (nm ASTExprMapper) Map(expr parser.Expr, stats *MapperStats) (parser.Expr, 
 		return n, nil
 
 	case *parser.BinaryExpr:
-		lhs, err := nm.Map(n.LHS, stats)
+		lhs, err := em.Map(n.LHS, stats)
 		if err != nil {
 			return nil, err
 		}
 		n.LHS = lhs
 
-		rhs, err := nm.Map(n.RHS, stats)
+		rhs, err := em.Map(n.RHS, stats)
 		if err != nil {
 			return nil, err
 		}
@@ -124,7 +124,7 @@ func (nm ASTExprMapper) Map(expr parser.Expr, stats *MapperStats) (parser.Expr, 
 
 	case *parser.Call:
 		for i, e := range n.Args {
-			mapped, err := nm.Map(e, stats)
+			mapped, err := em.Map(e, stats)
 			if err != nil {
 				return nil, err
 			}
@@ -133,7 +133,7 @@ func (nm ASTExprMapper) Map(expr parser.Expr, stats *MapperStats) (parser.Expr, 
 		return n, nil
 
 	case *parser.SubqueryExpr:
-		mapped, err := nm.Map(n.Expr, stats)
+		mapped, err := em.Map(n.Expr, stats)
 		if err != nil {
 			return nil, err
 		}
@@ -141,7 +141,7 @@ func (nm ASTExprMapper) Map(expr parser.Expr, stats *MapperStats) (parser.Expr, 
 		return n, nil
 
 	case *parser.ParenExpr:
-		mapped, err := nm.Map(n.Expr, stats)
+		mapped, err := em.Map(n.Expr, stats)
 		if err != nil {
 			return nil, err
 		}
@@ -149,7 +149,7 @@ func (nm ASTExprMapper) Map(expr parser.Expr, stats *MapperStats) (parser.Expr, 
 		return n, nil
 
 	case *parser.UnaryExpr:
-		mapped, err := nm.Map(n.Expr, stats)
+		mapped, err := em.Map(n.Expr, stats)
 		if err != nil {
 			return nil, err
 		}
