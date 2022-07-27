@@ -23,6 +23,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
 
+	"github.com/grafana/dskit/services"
+
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -37,7 +39,7 @@ var testConfig = Config{
 func TestForwardingSamplesSuccessfullyToCorrectTarget(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UnixMilli()
-	forwarder, reg := newForwarder(t)
+	forwarder, reg := newForwarder(t, testConfig, true)
 
 	url1, reqs1, bodies1, close1 := newTestServer(t, 200, true)
 	defer close1()
@@ -176,8 +178,7 @@ func TestForwardingSamplesWithDifferentErrorsWithPropagation(t *testing.T) {
 
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {
-			reg := prometheus.NewRegistry()
-			forwarder := NewForwarder(tc.config, reg, log.NewNopLogger())
+			forwarder, reg := newForwarder(t, tc.config, true)
 			urls := make([]string, len(tc.remoteStatusCodes))
 			closers := make([]func(), len(tc.remoteStatusCodes))
 			expectedErrorsByStatusCode := make(map[int]int)
@@ -454,18 +455,32 @@ func getForwarderWithValidatingPools(t *testing.T, tsSliceCap, protobufCap, snap
 	t.Helper()
 
 	var validateUsage func()
-	forwarder := NewForwarder(testConfig, prometheus.NewRegistry(), log.NewNopLogger()).(*forwarder)
-	forwarder.pools, validateUsage = validatingPools(t, tsSliceCap, protobufCap, snappyCap)
+	f, _ := newForwarder(t, testConfig, false)
+	fTyped := f.(*forwarder)
+	fTyped.pools, validateUsage = validatingPools(t, tsSliceCap, protobufCap, snappyCap)
 
-	return forwarder, validateUsage
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), f))
+
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), f))
+	})
+
+	return fTyped, validateUsage
 }
 
-func newForwarder(t *testing.T) (Forwarder, *prometheus.Registry) {
+func newForwarder(tb testing.TB, cfg Config, start bool) (Forwarder, *prometheus.Registry) {
 	reg := prometheus.NewPedanticRegistry()
 	log := log.NewNopLogger()
 
-	forwarder := NewForwarder(testConfig, reg, log)
-	t.Cleanup(forwarder.Stop)
+	forwarder := NewForwarder(cfg, reg, log)
+
+	if start {
+		require.NoError(tb, services.StartAndAwaitRunning(context.Background(), forwarder))
+
+		tb.Cleanup(func() {
+			require.NoError(tb, services.StopAndAwaitTerminated(context.Background(), forwarder))
+		})
+	}
 
 	return forwarder, reg
 }
@@ -606,10 +621,11 @@ func BenchmarkRemoteWriteForwarding(b *testing.B) {
 		rulesWithoutForwarding["non-existent-metric"] = validation.ForwardingRule{Endpoint: "http://localhost/", Ingest: false}
 	}
 
-	forwarder := NewForwarder(testConfig, prometheus.NewRegistry(), log.NewNopLogger()).(*forwarder)
+	f, _ := newForwarder(b, testConfig, true)
 
 	// No-op client because we don't want the benchmark to be skewed by TCP performance.
-	forwarder.client = http.Client{Transport: &noopRoundTripper{}}
+	fTyped := f.(*forwarder)
+	fTyped.client = http.Client{Transport: &noopRoundTripper{}}
 
 	errChs := make([]chan error, testConfig.RequestConcurrency)
 	var errChIdx int
@@ -641,7 +657,7 @@ func BenchmarkRemoteWriteForwarding(b *testing.B) {
 					require.NoError(b, <-errChs[errChIdx])
 				}
 
-				_, samples, errChs[errChIdx] = forwarder.Forward(ctx, tc.rules, samples)
+				_, samples, errChs[errChIdx] = f.Forward(ctx, tc.rules, samples)
 				errChIdx = (errChIdx + 1) % len(errChs)
 
 				mimirpb.ReuseSlice(samples)

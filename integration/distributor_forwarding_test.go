@@ -17,9 +17,10 @@ import (
 
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
+	"github.com/stretchr/testify/require"
+
 	"github.com/grafana/mimir/integration/e2emimir"
 	"github.com/grafana/mimir/pkg/util/validation"
-	"github.com/stretchr/testify/require"
 )
 
 func runPrometheus(name string, args ...string) *e2e.HTTPService {

@@ -26,6 +26,7 @@ import (
 	"github.com/grafana/dskit/ring"
 	ring_client "github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -42,8 +43,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
-
-	"github.com/grafana/dskit/tenant"
 
 	"github.com/grafana/mimir/pkg/distributor/forwarding"
 	"github.com/grafana/mimir/pkg/ingester"
@@ -2485,7 +2484,8 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 				getForwarder:      getForwarder,
 			})
 
-			response, err := distributors[0].Push(ctx, tc.request)
+			wrappedPush := distributors[0].PrePushForwardingMiddleware(distributors[0].PushWithCleanup)
+			response, err := wrappedPush(ctx, tc.request, func() {})
 			assert.NoError(t, err)
 			assert.Equal(t, emptyResponse, response)
 			assert.Equal(t, 1, int(forwardReqCnt.Load()))
@@ -3562,6 +3562,8 @@ outer:
 }
 
 type mockForwarder struct {
+	services.Service
+
 	ingest bool
 
 	// Optional callback to run in place of the actual forwarding request.
@@ -3599,8 +3601,6 @@ func (m *mockForwarder) Forward(ctx context.Context, forwardingRules validation.
 
 	return notIngestedCounts, nil, errCh
 }
-
-func (m *mockForwarder) Stop() {}
 
 func TestDistributorValidation(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "1")
