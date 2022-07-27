@@ -971,43 +971,49 @@ func TestDistributor_PushQuery(t *testing.T) {
 		}
 	}
 
+	wg := sync.WaitGroup{}
+	wg.Add(len(testcases))
 	for _, tc := range testcases {
-		t.Run(tc.name, func(t *testing.T) {
-			cfg := prepConfig{
-				numIngesters:    tc.numIngesters,
-				happyIngesters:  tc.happyIngesters,
-				numDistributors: 1,
-			}
+		go func(tc testcase) {
+			defer wg.Done()
+			t.Run(tc.name, func(t *testing.T) {
+				cfg := prepConfig{
+					numIngesters:    tc.numIngesters,
+					happyIngesters:  tc.happyIngesters,
+					numDistributors: 1,
+				}
 
-			cfg.shuffleShardSize = tc.shuffleShardSize
+				cfg.shuffleShardSize = tc.shuffleShardSize
 
-			ds, ingesters, _ := prepare(t, cfg)
+				ds, ingesters, _ := prepare(t, cfg)
 
-			request := makeWriteRequest(0, tc.samples, tc.metadata, false)
-			writeResponse, err := ds[0].Push(ctx, request)
-			assert.Equal(t, &mimirpb.WriteResponse{}, writeResponse)
-			assert.Nil(t, err)
+				request := makeWriteRequest(0, tc.samples, tc.metadata, false)
+				writeResponse, err := ds[0].Push(ctx, request)
+				assert.Equal(t, &mimirpb.WriteResponse{}, writeResponse)
+				assert.Nil(t, err)
 
-			series, err := ds[0].QueryStream(ctx, 0, 10, tc.matchers...)
-			assert.Equal(t, tc.expectedError, err)
+				series, err := ds[0].QueryStream(ctx, 0, 10, tc.matchers...)
+				assert.Equal(t, tc.expectedError, err)
 
-			var response model.Matrix
-			if series == nil {
-				response, err = chunkcompat.SeriesChunksToMatrix(0, 10, nil)
-			} else {
-				response, err = chunkcompat.SeriesChunksToMatrix(0, 10, series.Chunkseries)
-			}
-			assert.NoError(t, err)
-			assert.Equal(t, tc.expectedResponse.String(), response.String())
+				var response model.Matrix
+				if series == nil {
+					response, err = chunkcompat.SeriesChunksToMatrix(0, 10, nil)
+				} else {
+					response, err = chunkcompat.SeriesChunksToMatrix(0, 10, series.Chunkseries)
+				}
+				assert.NoError(t, err)
+				assert.Equal(t, tc.expectedResponse.String(), response.String())
 
-			// Check how many ingesters have been queried.
-			// Due to the quorum the distributor could cancel the last request towards ingesters
-			// if all other ones are successful, so we're good either has been queried X or X-1
-			// ingesters.
-			if tc.expectedError == nil {
-				assert.Contains(t, []int{tc.expectedIngesters, tc.expectedIngesters - 1}, countMockIngestersCalls(ingesters, "QueryStream"))
-			}
-		})
+				// Check how many ingesters have been queried.
+				// Due to the quorum the distributor could cancel the last request towards ingesters
+				// if all other ones are successful, so we're good either has been queried X or X-1
+				// ingesters.
+				if tc.expectedError == nil {
+					assert.Contains(t, []int{tc.expectedIngesters, tc.expectedIngesters - 1}, countMockIngestersCalls(ingesters, "QueryStream"))
+				}
+			})
+		}(tc)
+
 	}
 }
 
