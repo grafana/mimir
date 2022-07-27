@@ -94,70 +94,70 @@ func (em ASTExprMapper) Map(expr parser.Expr, stats *MapperStats) (parser.Expr, 
 		return expr, nil
 	}
 
-	switch n := expr.(type) {
+	switch e := expr.(type) {
 	case nil:
 		// nil handles cases where we check optional fields that are not set
 		return nil, nil
 
 	case *parser.AggregateExpr:
-		expr, err := em.Map(n.Expr, stats)
+		expr, err := em.Map(e.Expr, stats)
 		if err != nil {
 			return nil, err
 		}
-		n.Expr = expr
-		return n, nil
+		e.Expr = expr
+		return e, nil
 
 	case *parser.BinaryExpr:
-		lhs, err := em.Map(n.LHS, stats)
+		lhs, err := em.Map(e.LHS, stats)
 		if err != nil {
 			return nil, err
 		}
-		n.LHS = lhs
+		e.LHS = lhs
 
-		rhs, err := em.Map(n.RHS, stats)
+		rhs, err := em.Map(e.RHS, stats)
 		if err != nil {
 			return nil, err
 		}
-		n.RHS = rhs
+		e.RHS = rhs
 
-		return n, nil
+		return e, nil
 
 	case *parser.Call:
-		for i, e := range n.Args {
-			mapped, err := em.Map(e, stats)
+		for i, arg := range e.Args {
+			mapped, err := em.Map(arg, stats)
 			if err != nil {
 				return nil, err
 			}
-			n.Args[i] = mapped
+			e.Args[i] = mapped
 		}
-		return n, nil
+		return e, nil
 
 	case *parser.SubqueryExpr:
-		mapped, err := em.Map(n.Expr, stats)
+		mapped, err := em.Map(e.Expr, stats)
 		if err != nil {
 			return nil, err
 		}
-		n.Expr = mapped
-		return n, nil
+		e.Expr = mapped
+		return e, nil
 
 	case *parser.ParenExpr:
-		mapped, err := em.Map(n.Expr, stats)
+		mapped, err := em.Map(e.Expr, stats)
 		if err != nil {
 			return nil, err
 		}
-		n.Expr = mapped
-		return n, nil
+		e.Expr = mapped
+		return e, nil
 
 	case *parser.UnaryExpr:
-		mapped, err := em.Map(n.Expr, stats)
+		mapped, err := em.Map(e.Expr, stats)
 		if err != nil {
 			return nil, err
 		}
-		n.Expr = mapped
-		return n, nil
+		e.Expr = mapped
+		return e, nil
 
 	case *parser.NumberLiteral, *parser.StringLiteral, *parser.VectorSelector, *parser.MatrixSelector:
-		return n, nil
+		return e, nil
 
 	default:
 		return nil, errors.Errorf("ASTExprMapper: unhandled expr type %T", expr)
