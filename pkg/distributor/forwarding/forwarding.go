@@ -127,6 +127,8 @@ func (f *forwarder) worker() {
 // Forward takes a set of forwarding rules and a slice of time series, it forwards the time series according to the rules.
 // This function may return before the forwarding requests have completed, the caller can use the returned chan of errors
 // to determine whether all forwarding requests have completed by checking if it is closed.
+// The forwarding requests get executed with a limited concurrency which is configurable, in a situation where the
+// concurrency limit is exhausted this function will block until a go routine is available to execute the requests.
 // The slice of time series which gets passed into this function must not be returned to the pool by the caller, the
 // returned slice of time series must be returned to the pool by the caller once it is done using it.
 //
