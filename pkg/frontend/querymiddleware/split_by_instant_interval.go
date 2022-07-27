@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -16,10 +17,11 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-// splitByInstantIntervalMiddleware is a Middleware that can (optionally) split the instant query by splitInterval
-type splitByInstantIntervalMiddleware struct {
+// splitInstantQueryByIntervalMiddleware is a Middleware that can (optionally) split the instant query by splitInterval
+type splitInstantQueryByIntervalMiddleware struct {
 	next   Handler
 	limits Limits
 	logger log.Logger
@@ -72,8 +74,8 @@ func newInstantQuerySplittingMetrics(registerer prometheus.Registerer) instantQu
 	}
 }
 
-// newSplitByInstantIntervalMiddleware makes a new splitByInstantIntervalMiddleware.
-func newSplitByInstantIntervalMiddleware(
+// newSplitInstantQueryByIntervalMiddleware makes a new splitInstantQueryByIntervalMiddleware.
+func newSplitInstantQueryByIntervalMiddleware(
 	splitEnabled bool,
 	splitInterval time.Duration,
 	limits Limits,
@@ -82,7 +84,7 @@ func newSplitByInstantIntervalMiddleware(
 	registerer prometheus.Registerer) Middleware {
 
 	return MiddlewareFunc(func(next Handler) Handler {
-		return &splitByInstantIntervalMiddleware{
+		return &splitInstantQueryByIntervalMiddleware{
 			splitEnabled:                 splitEnabled,
 			next:                         next,
 			limits:                       limits,
@@ -94,7 +96,10 @@ func newSplitByInstantIntervalMiddleware(
 	})
 }
 
-func (s *splitByInstantIntervalMiddleware) Do(ctx context.Context, req Request) (Response, error) {
+func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Request) (Response, error) {
+	log, ctx := spanlogger.NewWithLogger(ctx, s.logger, "splitInstantQueryByIntervalMiddleware.Do")
+	defer log.Span.Finish()
+
 	_, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
@@ -107,27 +112,27 @@ func (s *splitByInstantIntervalMiddleware) Do(ctx context.Context, req Request) 
 	// Increment total number of instant queries attempted to split metrics
 	s.splittingAttempts.Inc()
 
-	mapper, err := astmapper.NewInstantSplitter(s.splitInterval, s.logger)
-	if err != nil {
-		return s.next.Do(ctx, req)
-	}
+	mapper := astmapper.NewInstantSplitter(s.splitInterval, s.logger)
 
 	expr, err := parser.ParseExpr(req.GetQuery())
 	if err != nil {
+		level.Error(log).Log("msg", "failed to parse the input query, falling back to try executing without splitting", "query", req.GetQuery(), "err", err)
 		return s.next.Do(ctx, req)
 	}
 
 	stats := astmapper.NewMapperStats()
 	instantSplitQuery, err := mapper.Map(expr, stats)
 	if err != nil {
+		level.Error(log).Log("msg", "failed to map the input query, falling back to try executing without splitting", "query", req.GetQuery(), "err", err)
 		s.mappedSplitQueries.WithLabelValues(FailureKey).Inc()
 		return s.next.Do(ctx, req)
 	}
 
 	noop := instantSplitQuery.String() == expr.String()
 	if noop {
-		s.mappedSplitQueries.WithLabelValues(NoopKey).Inc()
 		// the query cannot be split, so continue
+		level.Debug(log).Log("msg", "input query resulted in a no operation, falling back to try executing without splitting", "query", req.GetQuery(), "err", err)
+		s.mappedSplitQueries.WithLabelValues(NoopKey).Inc()
 		return s.next.Do(ctx, req)
 	}
 

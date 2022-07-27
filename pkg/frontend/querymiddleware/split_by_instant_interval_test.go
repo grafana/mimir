@@ -222,7 +222,7 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 					require.NotEmpty(t, expectedPrometheusRes.Data.Result)
 					requireValidSamples(t, expectedPrometheusRes.Data.Result)
 
-					splittingware := newSplitByInstantIntervalMiddleware(true, 1*time.Minute, mockLimits{}, log.NewNopLogger(), engine, nil)
+					splittingware := newSplitInstantQueryByIntervalMiddleware(true, 1*time.Minute, mockLimits{}, log.NewNopLogger(), engine, nil)
 
 					// Run the query with splitting
 					splitRes, err := splittingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
