@@ -78,7 +78,7 @@ func CanParallelize(expr parser.Expr, logger log.Logger) bool {
 		}
 		// If e.VectorMatching is not nil, then both hands are vector operators, so none of them is a constant scalar, so we can't shard it.
 		// It is just a shortcut, but the other two operations should imply the same.
-		return e.VectorMatching == nil && (parallelisable(e.LHS, e.RHS) || parallelisable(e.RHS, e.LHS))
+		return e.VectorMatching == nil && !e.ReturnBool && (parallelisable(e.LHS, e.RHS) || parallelisable(e.RHS, e.LHS))
 
 	case *parser.Call:
 		if e.Func == nil {
