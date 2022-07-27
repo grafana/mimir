@@ -116,6 +116,7 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 
 	expr, err := parser.ParseExpr(req.GetQuery())
 	if err != nil {
+		level.Warn(log).Log("msg", "failed to parse query", "query", req.GetQuery(), "err", err)
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
@@ -150,12 +151,14 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 
 	qry, err := newQuery(req, s.engine, lazyquery.NewLazyQueryable(shardedQueryable))
 	if err != nil {
+		level.Warn(log).Log("msg", "failed to create new query from splittable request", "req", req.GetQuery(), "err", err)
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
 	res := qry.Exec(ctx)
 	extracted, err := promqlResultToSamples(res)
 	if err != nil {
+		level.Warn(log).Log("msg", "failed to extract promql results from splittable request", "res", res, "err", err)
 		return nil, mapEngineError(err)
 	}
 	return &PrometheusResponse{
