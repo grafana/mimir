@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -608,7 +609,12 @@ func concatOffsets(splitInterval time.Duration, offsets int, queryTemplate strin
 	offsetIndex := offsets
 	for offset := range queries {
 		offsetIndex--
-		offsetQuery := fmt.Sprintf("[%s]%s", splitInterval, getSplitOffset(splitInterval, offsetIndex))
+		offsetSplitInterval := splitInterval
+		if offset > 0 {
+			offsetSplitInterval -= time.Millisecond
+		}
+
+		offsetQuery := fmt.Sprintf("[%s]%s", model.Duration(offsetSplitInterval), getSplitOffset(splitInterval, offsetIndex))
 		queries[offset] = strings.ReplaceAll(queryTemplate, "[x]y", offsetQuery)
 	}
 	return concat(queries...)
