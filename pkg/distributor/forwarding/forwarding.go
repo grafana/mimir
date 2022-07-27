@@ -138,7 +138,7 @@ func (f *forwarder) Forward(ctx context.Context, rules validation.ForwardingRule
 	requestWg.Add(len(tsByTargets))
 	errCh := make(chan error, len(tsByTargets))
 	for endpoint, ts := range tsByTargets {
-		f.newRequest(ctx, endpoint, ts, &requestWg, errCh)
+		f.submitForwardingRequest(ctx, endpoint, ts, &requestWg, errCh)
 	}
 
 	go func() {
@@ -276,9 +276,9 @@ type request struct {
 	latency   prometheus.Histogram
 }
 
-// newRequest launches a new forwarding request and sends it to a worker via a channel.
+// submitForwardingRequest launches a new forwarding request and sends it to a worker via a channel.
 // It might block if all the workers are busy.
-func (f *forwarder) newRequest(ctx context.Context, endpoint string, ts tsWithSampleCount, requestWg *sync.WaitGroup, errCh chan error) {
+func (f *forwarder) submitForwardingRequest(ctx context.Context, endpoint string, ts tsWithSampleCount, requestWg *sync.WaitGroup, errCh chan error) {
 	req := f.pools.getReq()
 
 	req.pools = f.pools
