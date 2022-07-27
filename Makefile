@@ -523,7 +523,8 @@ build-helm-tests: operations/helm/charts/mimir-distributed/charts
 	@./operations/helm/tests/build.sh
 
 check-helm-tests: build-helm-tests
-	@git diff --exit-code -- ./operations/helm/tests || (echo "Please rebuild helm tests output 'make build-helm-tests'" && false)
+	@git diff --exit-code -- ./operations/helm/tests || (echo "Difference found. Please rebuild helm tests output 'make build-helm-tests'" && false)
+	@git ls-files --others --exclude-standard | grep "^operations/helm/tests" && (echo "Untracked files found. Please rebuild helm tests output 'make build-helm-tests'" && false) || true
 
 build-jsonnet-tests:
 	@./operations/mimir-tests/build.sh
