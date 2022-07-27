@@ -98,6 +98,10 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 			query:                `sum by(group_1) (rate(metric_counter[3m]))`,
 			expectedSplitQueries: 3,
 		},
+		"sum(rate() or rate())": {
+			query:                `sum(rate(metric_counter{group_2="0"}[3m]) or rate(metric_counter{group_2="1"}[3m]))`,
+			expectedSplitQueries: 6,
+		},
 		"topk(rate)": {
 			query:                `topk(2, rate(metric_counter[3m]))`,
 			expectedSplitQueries: 3,
@@ -134,6 +138,11 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 		"sum(max(rate))": {
 			query:                `sum(max(rate(metric_counter[3m])))`,
 			expectedSplitQueries: 3,
+		},
+		// Subqueries
+		"subquery": {
+			query:                `sum(sum_over_time(metric_counter[1h:1m]) * 60) by (group_1)`,
+			expectedSplitQueries: 1,
 		},
 	}
 
