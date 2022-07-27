@@ -135,6 +135,8 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 		return s.next.Do(ctx, req)
 	}
 
+	level.Debug(log).Log("msg", "instant query has been split by interval", "original", req.GetQuery(), "rewritten", instantSplitQuery, "split_queries", stats.GetShardedQueries())
+
 	// Send hint with number of embedded queries to the sharding middleware
 	hints := &Hints{TotalQueries: int32(stats.GetShardedQueries())}
 

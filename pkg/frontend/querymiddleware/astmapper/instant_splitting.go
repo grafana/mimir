@@ -110,28 +110,26 @@ func (i *instantSplitter) copyWithEmbeddedExpr(embeddedExpr *parser.AggregateExp
 }
 
 // isSplittable returns whether it is possible to optimize the given sample expression.
-// A vector aggregation is splittable, if the aggregation operation is supported and the inner expression is also splittable.
-// A range aggregation is splittable, if the aggregation operation is supported.
-// A binary expression is splittable, if at least one operand is splittable.
 func isSplittable(node parser.Node) bool {
 	switch n := node.(type) {
 	case *parser.AggregateExpr:
+		// A vector aggregation is splittable, if the aggregation operation is supported and the inner expression is also splittable.
 		return supportedVectorAggregators[n.Op] && isSplittable(n.Expr)
 	case *parser.BinaryExpr:
+		// A binary expression is splittable, if at least one operand is splittable.
 		return isSplittable(n.LHS) || isSplittable(n.RHS)
 	case *parser.Call:
+		// A range aggregation is splittable, if the aggregation operation is supported.
 		if splittableRangeVectorAggregators[n.Func.Name] {
 			return true
 		}
-		var isArgSplittable bool
 		// It is considered splittable if at least a Call argument is splittable
 		for _, arg := range n.Args {
-			isArgSplittable = isSplittable(arg)
-			if isArgSplittable {
-				break
+			if isSplittable(arg) {
+				return true
 			}
 		}
-		return isArgSplittable
+		return false
 	case *parser.ParenExpr:
 		return isSplittable(n.Expr)
 	}
@@ -425,20 +423,21 @@ func getRangeInterval(node parser.Node) time.Duration {
 
 // getOffset returns the offset interval in the range vector node
 // Returns 0 if no offset interval is found
-// Example: expression `count_over_time({app="foo"}[10m]) offset 1m` returns 1m
+// Examples:
+//   * `count_over_time({app="foo"}[10m])` returns 0
+//   * `count_over_time({app="foo"}[10m]) offset 1m` returns 1m
 func getOffset(node parser.Node) time.Duration {
 	switch n := node.(type) {
 	case *parser.AggregateExpr:
 		return getOffset(n.Expr)
 	case *parser.Call:
-		argRangeInterval := time.Duration(0)
-		// Iterate over Call's arguments until a MatrixSelector is found
+		// Iterate over Call's arguments until a VectorSelector is found and a valid offset is found
 		for _, arg := range n.Args {
-			if argRangeInterval = getOffset(arg); argRangeInterval != 0 {
-				break
+			if argRangeInterval := getOffset(arg); argRangeInterval > 0 {
+				return argRangeInterval
 			}
 		}
-		return argRangeInterval
+		return time.Duration(0)
 	case *parser.MatrixSelector:
 		return getOffset(n.VectorSelector)
 	case *parser.VectorSelector:
