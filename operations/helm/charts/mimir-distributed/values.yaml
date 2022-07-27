@@ -229,7 +229,7 @@ mimir:
       abort_if_cluster_join_fails: false
       compression_enabled: false
       join_members:
-      - dns+{{ include "mimir.fullname" . }}-gossip-ring
+      - dns+{{ include "mimir.fullname" . }}-gossip-ring.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.memberlistBindPort" . }}
 
     ruler:
       alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.{{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}/alertmanager

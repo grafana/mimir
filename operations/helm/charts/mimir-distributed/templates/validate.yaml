@@ -21,6 +21,10 @@
 {{- fail "The setting 'server.grpc_listen_port' is not allowed in 'mimir.config' as it leads to a circular dependency. Set it in 'mimir.structuredConfig' instead." }}
 {{- end }}
 
+{{- if ($unstructuredConfig.memberlist).bind_port }}
+{{- fail "The setting 'memberlist.bind_port' is not allowed in 'mimir.config' as it leads to a circular dependency. Set it in 'mimir.structuredConfig' instead." }}
+{{- end }}
+
 {{- if not (has .Values.configStorageType (list "Secret" "ConfigMap")) }}
 {{- fail "The setting 'configStorageType' should be one of 'Secret' or 'ConfigMap'." }}
 {{- end }}

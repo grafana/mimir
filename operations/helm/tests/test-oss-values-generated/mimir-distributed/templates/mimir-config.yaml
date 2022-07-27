@@ -82,7 +82,7 @@ data:
       abort_if_cluster_join_fails: false
       compression_enabled: false
       join_members:
-      - dns+test-oss-values-mimir-gossip-ring
+      - dns+test-oss-values-mimir-gossip-ring.citestns.svc.cluster.local:7946
     ruler:
       alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.test-oss-values-mimir-alertmanager-headless.citestns.svc.cluster.local/alertmanager
       enable_api: true
