@@ -7,11 +7,15 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/user"
 
@@ -31,11 +35,13 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 		query string
 
 		expectedSplitQueries int
+
+		noop bool
 	}{
 		// Range vector aggregators
 		"avg_over_time": {
 			query:                `avg_over_time(metric_counter[3m])`,
-			expectedSplitQueries: 3,
+			expectedSplitQueries: 6,
 		},
 		"count_over_time": {
 			query:                `count_over_time(metric_counter[3m])`,
@@ -113,7 +119,7 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 		// Binary operations
 		"rate / rate": {
 			query:                `rate(metric_counter[3m]) / rate(metric_counter[6m])`,
-			expectedSplitQueries: 3,
+			expectedSplitQueries: 9,
 		},
 		"rate / 10": {
 			query:                `rate(metric_counter[3m]) / 10`,
@@ -125,15 +131,15 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 		},
 		"sum(sum_over_time + count_over_time)": {
 			query:                `sum(sum_over_time(metric_counter[3m]) + count_over_time(metric_counter[3m]))`,
-			expectedSplitQueries: 3,
+			expectedSplitQueries: 6,
 		},
 		"(avg_over_time)": {
 			query:                `(avg_over_time(metric_counter[3m]))`,
-			expectedSplitQueries: 3,
+			expectedSplitQueries: 6,
 		},
 		"sum(avg_over_time)": {
 			query:                `sum(avg_over_time(metric_counter[3m]))`,
-			expectedSplitQueries: 3,
+			expectedSplitQueries: 6,
 		},
 		"sum(max(rate))": {
 			query:                `sum(max(rate(metric_counter[3m])))`,
@@ -142,7 +148,8 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 		// Subqueries
 		"subquery": {
 			query:                `sum(sum_over_time(metric_counter[1h:1m]) * 60) by (group_1)`,
-			expectedSplitQueries: 1,
+			expectedSplitQueries: 0,
+			noop:                 true,
 		},
 	}
 
@@ -215,6 +222,7 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 
 			for _, req := range reqs {
 				t.Run(fmt.Sprintf("%T", req), func(t *testing.T) {
+					reg := prometheus.NewPedanticRegistry()
 					engine := newEngine()
 					downstream := &downstreamHandler{
 						engine:    engine,
@@ -231,7 +239,7 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 					require.NotEmpty(t, expectedPrometheusRes.Data.Result)
 					requireValidSamples(t, expectedPrometheusRes.Data.Result)
 
-					splittingware := newSplitInstantQueryByIntervalMiddleware(true, 1*time.Minute, mockLimits{}, log.NewNopLogger(), engine, nil)
+					splittingware := newSplitInstantQueryByIntervalMiddleware(true, 1*time.Minute, mockLimits{}, log.NewNopLogger(), engine, reg)
 
 					// Run the query with splitting
 					splitRes, err := splittingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
@@ -241,6 +249,37 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 					sort.Sort(byLabels(splitPrometheusRes.Data.Result))
 
 					approximatelyEquals(t, expectedPrometheusRes, splitPrometheusRes)
+
+					// Assert metrics
+					assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+						# HELP cortex_frontend_instant_query_splitting_rewrites_attempted_total Total number of instant queries the query-frontend attempted to split.
+						# TYPE cortex_frontend_instant_query_splitting_rewrites_attempted_total counter
+						cortex_frontend_instant_query_splitting_rewrites_attempted_total 1
+					`),
+						"cortex_frontend_instant_query_splitting_rewrites_attempted_total"))
+
+					assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+						# HELP cortex_frontend_instant_query_split_queries_total Total number of split partial queries.
+        	            # TYPE cortex_frontend_instant_query_split_queries_total counter
+						cortex_frontend_instant_query_split_queries_total %d
+					`, testData.expectedSplitQueries)),
+						"cortex_frontend_instant_query_split_queries_total"))
+
+					if testData.noop {
+						assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+						# HELP cortex_frontend_instant_query_splitting_rewrites_succeeded_total Number of instant queries the query-frontend attempted to split by evaluation type.
+        	            # TYPE cortex_frontend_instant_query_splitting_rewrites_succeeded_total counter
+						cortex_frontend_instant_query_splitting_rewrites_succeeded_total{evaluation="noop"} 1
+					`),
+							"cortex_frontend_instant_query_splitting_rewrites_succeeded_total"))
+					} else {
+						assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+						# HELP cortex_frontend_instant_query_splitting_rewrites_succeeded_total Number of instant queries the query-frontend attempted to split by evaluation type.
+        	            # TYPE cortex_frontend_instant_query_splitting_rewrites_succeeded_total counter
+						cortex_frontend_instant_query_splitting_rewrites_succeeded_total{evaluation="success"} 1
+					`),
+							"cortex_frontend_instant_query_splitting_rewrites_succeeded_total"))
+					}
 				})
 			}
 		})

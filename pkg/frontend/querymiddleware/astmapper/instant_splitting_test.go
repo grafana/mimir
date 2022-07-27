@@ -278,6 +278,8 @@ func TestInstantSplitterNoOp(t *testing.T) {
 			mapped, err := splitter.Map(expr, stats)
 			require.NoError(t, err)
 			require.Equal(t, expr.String(), mapped.String())
+
+			assert.Equal(t, 0, stats.GetShardedQueries())
 		})
 	}
 }
