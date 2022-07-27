@@ -6,6 +6,7 @@
 package querymiddleware
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"testing"
@@ -528,6 +529,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 
 func TestConstSplitter_generateCacheKey(t *testing.T) {
 	t.Parallel()
+	ctx := context.Background()
 
 	tests := []struct {
 		name     string
@@ -548,7 +550,7 @@ func TestConstSplitter_generateCacheKey(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(fmt.Sprintf("%s - %s", tt.name, tt.interval), func(t *testing.T) {
-			if got := constSplitter(tt.interval).GenerateCacheKey("fake", tt.r); got != tt.want {
+			if got := ConstSplitter(tt.interval).GenerateCacheKey(ctx, "fake", tt.r); got != tt.want {
 				t.Errorf("generateKey() = %v, want %v", got, tt.want)
 			}
 		})

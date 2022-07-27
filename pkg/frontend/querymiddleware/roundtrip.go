@@ -41,6 +41,10 @@ type Config struct {
 	MaxRetries             int  `yaml:"max_retries" category:"advanced"`
 	ShardedQueries         bool `yaml:"parallelize_shardable_queries"`
 	CacheUnalignedRequests bool `yaml:"cache_unaligned_requests" category:"advanced"`
+
+	// CacheSplitter allows to inject a CacheSplitter to use for generating cache keys.
+	// If nil, the querymiddleware package uses a ConstSplitter with SplitQueriesByInterval.
+	CacheSplitter CacheSplitter `yaml:"-"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
@@ -186,6 +190,11 @@ func newQueryTripperware(
 			return !r.GetOptions().CacheDisabled
 		}
 
+		splitter := cfg.CacheSplitter
+		if splitter == nil {
+			splitter = ConstSplitter(cfg.SplitQueriesByInterval)
+		}
+
 		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("split_by_interval_and_results_cache", metrics, log), newSplitAndCacheMiddleware(
 			cfg.SplitQueriesByInterval > 0,
 			cfg.CacheResults,
@@ -194,7 +203,7 @@ func newQueryTripperware(
 			limits,
 			codec,
 			c,
-			constSplitter(cfg.SplitQueriesByInterval),
+			splitter,
 			cacheExtractor,
 			shouldCache,
 			log,

@@ -143,7 +143,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 				continue
 			}
 
-			splitReq.cacheKey = s.splitter.GenerateCacheKey(tenant.JoinTenantIDs(tenantIDs), splitReq.orig)
+			splitReq.cacheKey = s.splitter.GenerateCacheKey(ctx, tenant.JoinTenantIDs(tenantIDs), splitReq.orig)
 			lookupKeys = append(lookupKeys, splitReq.cacheKey)
 			lookupReqs = append(lookupReqs, splitReq)
 		}
