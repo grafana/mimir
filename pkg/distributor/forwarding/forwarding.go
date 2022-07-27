@@ -124,6 +124,18 @@ func (f *forwarder) worker() {
 	}
 }
 
+// Forward takes a set of forwarding rules and a slice of time series, it forwards the time series according to the rules.
+// This function may return before the forwarding requests have completed, the caller can use the returned chan of errors
+// to determine whether all forwarding requests have completed by checking if it is closed.
+// The slice of time series which gets passed into this function must not be returned to the pool by the caller, the
+// returned slice of time series must be returned to the pool by the caller once it is done using it.
+//
+// The return values are:
+// - A TimeSeriesCounts object containing the sample / exemplar counts that were removed from the
+//   given time series slice relative to the returned slice.
+// - A slice of time series which should be sent to the ingesters, based on the given rule set.
+//   The Forward() method does not send the time series to the ingesters itself, it expects the caller to do that.
+// - A chan of errors which resulted from forwarding the time series, the chan gets closed when all forwarding requests have completed.
 func (f *forwarder) Forward(ctx context.Context, rules validation.ForwardingRules, in []mimirpb.PreallocTimeseries) (TimeseriesCounts, []mimirpb.PreallocTimeseries, chan error) {
 	if !f.cfg.Enabled {
 		errCh := make(chan error)
