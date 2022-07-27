@@ -321,7 +321,7 @@ format: ## Run gofmt and goimports.
 test: ## Run all unit tests.
 	go test -timeout 30m ./...
 
-test-with-race: ## Run all tests with data race detect.
+test-with-race: ## Run all unit tests with data race detect.
 	go test -tags netgo -timeout 30m -race -count 1 ./...
 
 cover: ## Run all test with code coverage and generates reports.
