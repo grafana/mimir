@@ -275,6 +275,8 @@ func TestDistributor_Push(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
 			limits := &validation.Limits{}
 			flagext.DefaultValues(limits)
 			limits.IngestionRate = 20
@@ -489,6 +491,8 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 		testData := testData
 
 		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
 			limits := &validation.Limits{}
 			flagext.DefaultValues(limits)
 			limits.RequestRate = testData.requestRate
@@ -565,6 +569,8 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 		testData := testData
 
 		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
 			limits := &validation.Limits{}
 			flagext.DefaultValues(limits)
 			limits.IngestionRate = testData.ingestionRate
@@ -737,6 +743,8 @@ func TestDistributor_PushInstanceLimits(t *testing.T) {
 		testData := testData
 
 		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
 			limits := &validation.Limits{}
 			flagext.DefaultValues(limits)
 
@@ -832,6 +840,8 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 		},
 	} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			t.Parallel()
+
 			var limits validation.Limits
 			flagext.DefaultValues(&limits)
 			limits.AcceptHASamples = true
@@ -973,6 +983,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			cfg := prepConfig{
 				numIngesters:    tc.numIngesters,
 				happyIngesters:  tc.happyIngesters,
@@ -1350,6 +1361,8 @@ func TestDistributor_Push_ShouldGuaranteeShardingTokenConsistencyOverTheTime(t *
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
 			ds, ingesters, _ := prepare(t, prepConfig{
 				numIngesters:    2,
 				happyIngesters:  2,
@@ -1409,6 +1422,8 @@ func TestDistributor_Push_LabelNameValidation(t *testing.T) {
 
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
 			ds, _, _ := prepare(t, prepConfig{
 				numIngesters:            2,
 				happyIngesters:          2,
@@ -1970,6 +1985,8 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
 			now := model.Now()
 
 			// Create distributor
@@ -2055,6 +2072,8 @@ func TestDistributor_LabelNames(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
 			now := model.Now()
 
 			// Create distributor
@@ -2106,6 +2125,8 @@ func TestDistributor_MetricsMetadata(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
 			// Create distributor
 			ds, _, _ := prepare(t, prepConfig{
 				numIngesters:     numIngesters,
@@ -2160,6 +2181,8 @@ func TestDistributor_LabelNamesAndValuesLimitTest(t *testing.T) {
 	}
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
 			ctx := user.InjectOrgID(context.Background(), "label-names-values")
 
 			// Create distributor
@@ -2230,6 +2253,8 @@ func TestDistributor_LabelNamesAndValues(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
 			ctx := user.InjectOrgID(context.Background(), "label-names-values")
 
 			// Create distributor
@@ -2712,6 +2737,8 @@ func TestDistributor_LabelValuesCardinalityLimit(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
 			// Create distributor
 			limits := validation.Limits{}
 			flagext.DefaultValues(&limits)
