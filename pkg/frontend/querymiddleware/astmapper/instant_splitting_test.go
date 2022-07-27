@@ -286,7 +286,7 @@ func TestInstantSplitterNoOp(t *testing.T) {
 
 func TestSplittableVectorAggregators(t *testing.T) {
 	t.Run("splittable vector aggregators should be in supported vector aggregators", func(t *testing.T) {
-		for it, _ := range splittableVectorAggregators {
+		for it := range splittableVectorAggregators {
 			assert.Equal(t, true, supportedVectorAggregators[it], fmt.Sprintf("itemType '%v' not in supported vector aggregators list", it.String()))
 		}
 	})
