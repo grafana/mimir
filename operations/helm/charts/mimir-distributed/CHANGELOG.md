@@ -15,6 +15,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 * [ENHANCEMENT] Add backfill endpoints to Nginx configuration. #2478
 * [ENHANCEMENT] Memberlist now uses DNS service-discovery by default. #2549
+* [ENHANCEMENT] The Mimir configuration parameters `server.http_listen_port` and `server.grpc_listen_port` are now configurable in `mimir.structuredConfig`.
 * [BUGFIX] `nginx.extraArgs` are now actually passed to the nginx container. #2336
 * [BUGFIX] Add missing `containerSecurityContext` to alertmanager and tokengen job. #2416
 
