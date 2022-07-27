@@ -318,7 +318,7 @@ format: ## Run gofmt and goimports.
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec gofmt -w -s {} \;
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec goimports -w -local github.com/grafana/mimir {} \;
 
-test: ## Run all tests.
+test: ## Run all unit tests.
 	go test -timeout 30m ./...
 
 test-with-race: ## Run all tests with data race detect.
