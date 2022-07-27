@@ -176,35 +176,20 @@ func (t *TimeseriesCounts) count(ts mimirpb.PreallocTimeseries) {
 // - The counts of samples and exemplars that will not be ingested by the ingesters.
 // - A slice of time series to ingest into the ingesters.
 // - A map of slices of time series which is keyed by the target to which they should be forwarded.
-func (f *forwarder) splitByTargets(tsSlice []mimirpb.PreallocTimeseries, rules validation.ForwardingRules) (TimeseriesCounts, []mimirpb.PreallocTimeseries, tsByTargets) {
+func (f *forwarder) splitByTargets(tsSliceIn []mimirpb.PreallocTimeseries, rules validation.ForwardingRules) (TimeseriesCounts, []mimirpb.PreallocTimeseries, tsByTargets) {
+	// This functions copies all the entries of tsSliceIn into new slices so tsSliceIn can be recycled,
+	// we adjust the length of the slice to 0 to prevent that the contained *mimirpb.TimeSeries objects that have been
+	// reassigned (not deep copied) get returned while they are still referred to by another slice.
+	defer f.pools.putTsSlice(tsSliceIn[:0])
+
 	// notIngestedCounts keeps track of the number of samples and exemplars that we don't send to the ingesters,
 	// we need to count these in order to later update some of the distributor's metrics correctly.
 	var notIngestedCounts TimeseriesCounts
 
-	// tsSliceWriteIdx is the index in the toIngest slice where we are writing TimeSeries to.
-	tsSliceWriteIdx := 0
-
+	tsToIngest := f.pools.getTsSlice()
 	tsByTargets := f.pools.getTsByTargets()
-	for tsSliceReadIdx, ts := range tsSlice {
-		ingest := false
-		var forwardingTarget string
-
-		metric, err := extract.UnsafeMetricNameFromLabelAdapters(ts.Labels)
-		if err != nil {
-			// Can't check whether a timeseries should be forwarded if it has no metric name.
-			// Send it to the Ingesters and don't forward it.
-			ingest = true
-		} else {
-			rule, ok := rules[metric]
-			if !ok {
-				// There is no forwarding rule for this metric, send it to the Ingesters and don't forward it.
-				ingest = true
-			} else {
-				forwardingTarget = rule.Endpoint
-				ingest = rule.Ingest
-			}
-		}
-
+	for tsSliceReadIdx, ts := range tsSliceIn {
+		forwardingTarget, ingest := findTargetsForLabels(ts.Labels, rules)
 		if forwardingTarget != "" {
 			tsByTarget, ok := tsByTargets[forwardingTarget]
 			if !ok {
@@ -220,25 +205,33 @@ func (f *forwarder) splitByTargets(tsSlice []mimirpb.PreallocTimeseries, rules v
 		}
 
 		if ingest {
-			if tsSliceWriteIdx != tsSliceReadIdx {
-				// Swap the timeseries at the reading and writing indices,
-				// later we'll return all timeseries beyond the write index to the pool.
-				tsSlice[tsSliceWriteIdx], tsSlice[tsSliceReadIdx] = tsSlice[tsSliceReadIdx], tsSlice[tsSliceWriteIdx]
-			}
-			tsSliceWriteIdx++
+			// Only when reassigning time series to tsToIngest we don't deep copy them,
+			// the distributor will return them to the pool when it is done sending them to the ingesters.
+			tsToIngest = append(tsToIngest, tsSliceIn[tsSliceReadIdx])
 		} else {
+			f.pools.putTs(tsSliceIn[tsSliceReadIdx].TimeSeries)
 			notIngestedCounts.count(ts)
 		}
 	}
 
-	// Truncate the toIngest slice to the index up to which we wrote TimeSeries data into it,
-	// all the TimeSeries objects beyond the write index must be returned to the pool.
-	for _, ts := range tsSlice[tsSliceWriteIdx:] {
-		f.pools.putTs(ts.TimeSeries)
-	}
-	tsSlice = tsSlice[:tsSliceWriteIdx]
+	return notIngestedCounts, tsToIngest, tsByTargets
+}
 
-	return notIngestedCounts, tsSlice, tsByTargets
+func findTargetsForLabels(labels []mimirpb.LabelAdapter, rules validation.ForwardingRules) (string, bool) {
+	metric, err := extract.UnsafeMetricNameFromLabelAdapters(labels)
+	if err != nil {
+		// Can't check whether a timeseries should be forwarded if it has no metric name.
+		// Ingest it and don't forward it.
+		return "", true
+	}
+
+	rule, ok := rules[metric]
+	if !ok {
+		// There is no forwarding rule for this metric, ingest it and don't forward it.
+		return "", true
+	}
+
+	return rule.Endpoint, rule.Ingest
 }
 
 func (f *forwarder) growTimeseriesSlice(ts []mimirpb.PreallocTimeseries) []mimirpb.PreallocTimeseries {
