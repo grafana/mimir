@@ -1040,10 +1040,16 @@ grpc_client_config:
 # CLI flag: -query-frontend.instance-port
 [port: <int> | default = 0]
 
-# (advanced) Split queries by an interval and execute in parallel. You should
-# use a multiple of 24 hours to optimize querying blocks. 0 to disable it.
+# (advanced) Split range queries by an interval and execute in parallel. You
+# should use a multiple of 24 hours to optimize querying blocks. 0 to disable
+# it.
 # CLI flag: -query-frontend.split-queries-by-interval
 [split_queries_by_interval: <duration> | default = 24h]
+
+# (experimental) Split instant queries by an interval and execute in parallel. 0
+# to disable it.
+# CLI flag: -query-frontend.split-instant-queries-by-interval
+[split_instant_queries_by_interval: <duration> | default = 0s]
 
 # Mutate incoming queries to align their start and end with their step.
 # CLI flag: -query-frontend.align-querier-with-step
