@@ -355,7 +355,7 @@ func (i *instantSplitter) mapCallByRangeInterval(expr *parser.Call, stats *Mappe
 // the label cardinality of the parallel queries
 func (i *instantSplitter) splitAndSquashCall(expr *parser.Call, stats *MapperStats, rangeInterval time.Duration) (mapped parser.Expr, finished bool, err error) {
 	splitCount := int(math.Ceil(float64(rangeInterval) / float64(i.interval)))
-	if splitCount <= 0 {
+	if splitCount <= 1 {
 		return expr, false, nil
 	}
 
