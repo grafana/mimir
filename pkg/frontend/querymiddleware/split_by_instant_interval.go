@@ -82,6 +82,7 @@ func newSplitInstantQueryByIntervalMiddleware(
 	logger log.Logger,
 	engine *promql.Engine,
 	registerer prometheus.Registerer) Middleware {
+	metrics := newInstantQuerySplittingMetrics(registerer)
 
 	return MiddlewareFunc(func(next Handler) Handler {
 		return &splitInstantQueryByIntervalMiddleware{
@@ -91,7 +92,7 @@ func newSplitInstantQueryByIntervalMiddleware(
 			splitInterval:                splitInterval,
 			logger:                       logger,
 			engine:                       engine,
-			instantQuerySplittingMetrics: newInstantQuerySplittingMetrics(registerer),
+			instantQuerySplittingMetrics: metrics,
 		}
 	})
 }
