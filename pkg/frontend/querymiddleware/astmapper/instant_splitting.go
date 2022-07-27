@@ -18,8 +18,6 @@ type instantSplitter struct {
 	// This is an optimization to send outer vector aggregator expressions to reduce the label sets returned
 	// by queriers, and therefore minimize the merging of results in the query-frontend.
 	embeddedAggregatorExpr *parser.AggregateExpr
-
-	// TODO: add metrics
 }
 
 // Supported vector aggregators
