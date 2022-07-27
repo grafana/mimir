@@ -98,8 +98,11 @@ func newSplitInstantQueryByIntervalMiddleware(
 }
 
 func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Request) (Response, error) {
-	log, ctx := spanlogger.NewWithLogger(ctx, s.logger, "splitInstantQueryByIntervalMiddleware.Do")
-	defer log.Span.Finish()
+	// Log the instant query and its timestamp in every error log, so that we have more information for debugging failures.
+	logger := log.With(s.logger, "query", req.GetQuery(), "query_timestamp", req.GetStart())
+
+	spanLog, ctx := spanlogger.NewWithLogger(ctx, logger, "splitInstantQueryByIntervalMiddleware.Do")
+	defer spanLog.Span.Finish()
 
 	_, err := tenant.TenantIDs(ctx)
 	if err != nil {
@@ -117,14 +120,14 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 
 	expr, err := parser.ParseExpr(req.GetQuery())
 	if err != nil {
-		level.Warn(log).Log("msg", "failed to parse query", "query", req.GetQuery(), "err", err)
+		level.Warn(spanLog).Log("msg", "failed to parse query", "err", err)
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
 	stats := astmapper.NewMapperStats()
 	instantSplitQuery, err := mapper.Map(expr, stats)
 	if err != nil {
-		level.Error(log).Log("msg", "failed to map the input query, falling back to try executing without splitting", "query", req.GetQuery(), "err", err)
+		level.Error(spanLog).Log("msg", "failed to map the input query, falling back to try executing without splitting", "err", err)
 		s.mappedSplitQueries.WithLabelValues(failureKey).Inc()
 		return s.next.Do(ctx, req)
 	}
@@ -132,12 +135,12 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 	noop := instantSplitQuery.String() == expr.String()
 	if noop {
 		// the query cannot be split, so continue
-		level.Debug(log).Log("msg", "input query resulted in a no operation, falling back to try executing without splitting", "query", req.GetQuery())
+		level.Debug(spanLog).Log("msg", "input query resulted in a no operation, falling back to try executing without splitting")
 		s.mappedSplitQueries.WithLabelValues(noopKey).Inc()
 		return s.next.Do(ctx, req)
 	}
 
-	level.Debug(log).Log("msg", "instant query has been split by interval", "original", req.GetQuery(), "rewritten", instantSplitQuery, "split_queries", stats.GetShardedQueries())
+	level.Debug(spanLog).Log("msg", "instant query has been split by interval", "rewritten", instantSplitQuery, "split_queries", stats.GetShardedQueries())
 
 	// Send hint with number of embedded queries to the sharding middleware
 	hints := &Hints{TotalQueries: int32(stats.GetShardedQueries())}
@@ -152,14 +155,14 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 
 	qry, err := newQuery(req, s.engine, lazyquery.NewLazyQueryable(shardedQueryable))
 	if err != nil {
-		level.Warn(log).Log("msg", "failed to create new query from splittable request", "req", req.GetQuery(), "err", err)
+		level.Warn(spanLog).Log("msg", "failed to create new query from splittable request", "err", err)
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
 	res := qry.Exec(ctx)
 	extracted, err := promqlResultToSamples(res)
 	if err != nil {
-		level.Warn(log).Log("msg", "failed to execute split instant query", "err", err)
+		level.Warn(spanLog).Log("msg", "failed to execute split instant query", "err", err)
 		return nil, mapEngineError(err)
 	}
 	return &PrometheusResponse{
