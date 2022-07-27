@@ -670,7 +670,7 @@ func (d *Distributor) forwardSamples(ctx context.Context, userID string, ts []mi
 
 // Push implements client.IngesterServer
 func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
-	return d.PushWithCleanup(ctx, req, func() { mimirpb.ReuseSlice(req.Timeseries) })
+	return d.PrePushForwardingMiddleware(d.PushWithCleanup)(ctx, req, func() { mimirpb.ReuseSlice(req.Timeseries) })
 }
 
 // PushWithCleanup takes a WriteRequest and distributes it to ingesters using the ring.
