@@ -238,6 +238,7 @@ protos: $(PROTO_GOS)
 	@# to configure all such relative paths.
 	protoc -I $(GOPATH)/src:./vendor/github.com/thanos-io/thanos/pkg:./vendor/github.com/gogo/protobuf:./vendor:./$(@D) --gogoslick_out=plugins=grpc,Mgoogle/protobuf/any.proto=github.com/gogo/protobuf/types,:./$(@D) ./$(patsubst %.pb.go,%.proto,$@)
 
+lint: ## Run lints to check for style issues.
 lint: check-makefiles
 	misspell -error docs/sources
 
@@ -313,17 +314,17 @@ lint: check-makefiles
 		github.com/thanos-io/thanos/pkg/store/cache" \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
-format:
+format: ## Run gofmt and goimports.
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec gofmt -w -s {} \;
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec goimports -w -local github.com/grafana/mimir {} \;
 
-test:
+test: ## Run all unit tests.
 	go test -timeout 30m ./...
 
-test-with-race:
+test-with-race: ## Run all unit tests with data race detect.
 	go test -tags netgo -timeout 30m -race -count 1 ./...
 
-cover:
+cover: ## Run all unit tests with code coverage and generates reports.
 	$(eval COVERDIR := $(shell mktemp -d coverage.XXXXXXXXXX))
 	$(eval COVERFILE := $(shell mktemp $(COVERDIR)/unit.XXXXXXXXXX))
 	go test -tags netgo -timeout 30m -race -count 1 -coverprofile=$(COVERFILE) ./...
@@ -333,7 +334,7 @@ cover:
 shell:
 	bash
 
-mod-check:
+mod-check: ## Check the go mod is clean and tidy.
 	GO111MODULE=on go mod download
 	GO111MODULE=on go mod verify
 	GO111MODULE=on go mod tidy
