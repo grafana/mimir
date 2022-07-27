@@ -74,7 +74,7 @@ func CanParallelize(expr parser.Expr, logger log.Logger) bool {
 		// this function doesn't decide that.
 		// Since we don't care about the order in which binary op is written, we extract the condition into a lambda and check both ways.
 		parallelisable := func(a, b parser.Expr) bool {
-			return CanParallelize(a, logger) && noAggregates(a) && isConstantScalar(b)
+			return CanParallelize(a, logger) && noAggregates(a) && !isConstantScalar(a) && isConstantScalar(b)
 		}
 		// If e.VectorMatching is not nil, then both hands are vector operators, so none of them is a constant scalar, so we can't shard it.
 		// It is just a shortcut, but the other two operations should imply the same.

@@ -491,6 +491,10 @@ func TestQueryShardingCorrectness(t *testing.T) {
 			query:                  `month(sum(metric_counter)) > 0 and vector(1)`,
 			expectedShardedQueries: 1, // Sharded because the contents of `sum()` is sharded.
 		},
+		"0 < bool 1": {
+			query:                  `0 < bool 1`,
+			expectedShardedQueries: 0,
+		},
 	}
 
 	series := make([]*promql.StorageSeries, 0, numSeries+(numHistograms*len(histogramBuckets)))
