@@ -24,17 +24,6 @@ type instantSplitter struct {
 
 // Supported vector aggregators
 
-// Note: avg, count and topk are supported, but not splittable, i.e., cannot be sent downstream,
-// but the inner expressions can still be splittable
-var supportedVectorAggregators = map[parser.ItemType]bool{
-	parser.AVG:   true,
-	parser.COUNT: true,
-	parser.MAX:   true,
-	parser.MIN:   true,
-	parser.SUM:   true,
-	parser.TOPK:  true,
-}
-
 var splittableVectorAggregators = map[parser.ItemType]bool{
 	parser.MAX: true,
 	parser.MIN: true,
