@@ -460,7 +460,7 @@ check-doc-validator: ## Check documentation using doc-validator tool
 	docker run -v "$(CURDIR)/docs/sources:/docs/sources" grafana/doc-validator:latest ./docs/sources
 
 .PHONY: reference-help
-reference-help: ## Generate the reference help documentation.
+reference-help: ## Generates the reference help documentation.
 reference-help: cmd/mimir/mimir
 	@(./cmd/mimir/mimir -h || true) > cmd/mimir/help.txt.tmpl
 	@(./cmd/mimir/mimir -help-all || true) > cmd/mimir/help-all.txt.tmpl
