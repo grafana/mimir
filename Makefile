@@ -401,6 +401,7 @@ dist: ## Generates binaries for a Mimir release.
 		done; \
 		touch $@
 
+build-mixin: ## Generates the mimir mixin zip file.
 build-mixin: check-mixin-jb
 	# Empty the compiled mixin directories content, without removing the directories itself,
 	# so that Grafana can refresh re-build dashboards when using "make mixin-serve".
@@ -412,15 +413,16 @@ build-mixin: check-mixin-jb
 	@cd $(MIXIN_OUT_PATH)/.. && zip -q -r mimir-mixin.zip $$(basename "$(MIXIN_OUT_PATH)")
 	@echo "The mixin has been compiled to $(MIXIN_OUT_PATH) and archived to $$(realpath --relative-to=$$(pwd) $(MIXIN_OUT_PATH)/../mimir-mixin.zip)"
 
-check-mixin-tests:
+check-mixin-tests: ## Test the mixin files.
 	@./operations/mimir-mixin-tests/run.sh || (echo "Mixin tests are failing. Please fix the reported issues. You can run mixin tests with 'make check-mixin-tests'" && false)
 
-format-mixin:
+format-mixin: ## Format the mixin files.
 	@find $(MIXIN_PATH) -type f -name '*.libsonnet' | xargs jsonnetfmt -i
 
 endif
 
 .PHONY: check-makefiles
+check-makefiles: ## Check the makefiles format.
 check-makefiles: format-makefiles
 	@git diff --exit-code -- $(MAKE_FILES) || (echo "Please format Makefiles by running 'make format-makefiles'" && false)
 
@@ -429,7 +431,7 @@ format-makefiles: ## Format all Makefiles.
 format-makefiles: $(MAKE_FILES)
 	$(SED) -i -e 's/^\(\t*\)  /\1\t/g' -e 's/^\(\t*\) /\1/' -- $?
 
-clean:
+clean: ## Cleanup the docker images, object files and executables.
 	$(SUDO) docker rmi $(IMAGE_NAMES) >/dev/null 2>&1 || true
 	rm -rf -- $(UPTODATE_FILES) $(EXES) .cache dist
 	# Remove executables built for multiarch images.
@@ -440,8 +442,7 @@ clean:
 clean-protos: ## Clean protobuf files.
 	rm -rf $(PROTO_GOS)
 
-# List all images building make targets.
-list-image-targets:
+list-image-targets: ## List all images building make targets.
 	@echo $(UPTODATE_FILES) | tr " " "\n"
 
 clean-doc: ## Clean the documentation files generated from templates.
@@ -459,18 +460,21 @@ check-doc-validator: ## Check documentation using doc-validator tool
 	docker run -v "$(CURDIR)/docs/sources:/docs/sources" grafana/doc-validator:latest ./docs/sources
 
 .PHONY: reference-help
+reference-help: ## Generate the reference help documentation.
 reference-help: cmd/mimir/mimir
 	@(./cmd/mimir/mimir -h || true) > cmd/mimir/help.txt.tmpl
 	@(./cmd/mimir/mimir -help-all || true) > cmd/mimir/help-all.txt.tmpl
 	@(go run ./tools/config-inspector || true) > cmd/mimir/config-descriptor.json
 
-clean-white-noise:
+clean-white-noise: ## Clean the white noise in the markdown files.
 	@find . -path ./.pkg -prune -o -path "*/vendor/*" -prune -or -type f -name "*.md" -print | \
 	SED_BIN="$(SED)" xargs ./tools/cleanup-white-noise.sh
 
+check-white-noise: ## Check the white noise in the markdown files.
 check-white-noise: clean-white-noise
 	@git diff --exit-code -- '*.md' || (echo "Please remove trailing whitespaces running 'make clean-white-noise'" && false)
 
+check-mixin: ## Build, format and check the mixin files.
 check-mixin: build-mixin format-mixin check-mixin-jb check-mixin-mixtool check-mixin-runbooks
 	@echo "Checking diff:"
 	@./tools/find-diff-or-untracked.sh $(MIXIN_PATH) $(MIXIN_OUT_PATH) || (echo "Please build and format mixin by running 'make build-mixin format-mixin'" && false)
@@ -497,14 +501,15 @@ mixin-screenshots: ## Generates mixin dashboards screenshots.
 	@find docs/sources/operators-guide/monitoring-grafana-mimir/dashboards -name '*.png' -delete
 	@./operations/mimir-mixin-tools/screenshots/run.sh
 
+check-jsonnet-manifests: ## Check the jsonnet manifests.
 check-jsonnet-manifests: format-jsonnet-manifests
 	@echo "Checking diff:"
 	@./tools/find-diff-or-untracked.sh "$(JSONNET_MANIFESTS_PATH)" || (echo "Please format jsonnet manifests by running 'make format-jsonnet-manifests'" && false)
 
-format-jsonnet-manifests:
+format-jsonnet-manifests: ## Format the jsonnet manifests.
 	@find $(JSONNET_MANIFESTS_PATH) -type f -name '*.libsonnet' -print -o -name '*.jsonnet' -print | xargs jsonnetfmt -i
 
-check-jsonnet-getting-started:
+check-jsonnet-getting-started: ## Check the jsonnet getting started.
 	# Start from a clean setup.
 	rm -rf jsonnet-example
 
@@ -517,24 +522,29 @@ check-jsonnet-getting-started:
 operations/helm/charts/mimir-distributed/charts: operations/helm/charts/mimir-distributed/Chart.yaml operations/helm/charts/mimir-distributed/Chart.lock
 	@cd ./operations/helm/charts/mimir-distributed && helm dependency update
 
+check-helm-jsonnet-diff: ## Check the helm jsonnet diff.
 check-helm-jsonnet-diff: operations/helm/charts/mimir-distributed/charts build-jsonnet-tests
 	@./operations/compare-helm-with-jsonnet/compare-helm-with-jsonnet.sh
 
+build-helm-tests: ## Build the helm jsonnet tests.
 build-helm-tests: operations/helm/charts/mimir-distributed/charts
 	@./operations/helm/tests/build.sh
 
+check-helm-tests: ## Check the helm jsonnet tests output.
 check-helm-tests: build-helm-tests
 	@./tools/find-diff-or-untracked.sh operations/helm/tests || (echo "Please rebuild helm tests output 'make build-helm-tests'" && false)
 
-build-jsonnet-tests:
+build-jsonnet-tests: ## Build the jsonnet tests.
 	@./operations/mimir-tests/build.sh
 
+check-jsonnet-tests: ## Check the jsonnet tests output.
 check-jsonnet-tests: build-jsonnet-tests
 	@./tools/find-diff-or-untracked.sh operations/mimir-tests || (echo "Please rebuild jsonnet tests output 'make build-jsonnet-tests'" && false)
 
-check-tsdb-blocks-storage-s3-docker-compose-yaml:
+check-tsdb-blocks-storage-s3-docker-compose-yaml: ## Check the josnnet and docker-compose diff.
 	cd development/tsdb-blocks-storage-s3 && make check
 
+integration-tests: ## Run all integration tests.
 integration-tests: cmd/mimir/$(UPTODATE)
 	go test -tags=requires_docker ./integration/...
 
