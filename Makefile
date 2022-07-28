@@ -68,7 +68,7 @@ DOC_EMBED := docs/sources/operators-guide/configure/configuring-the-query-fronte
 	docs/sources/operators-guide/deploy-grafana-mimir/jsonnet/deploying.md
 
 .PHONY: image-tag
-image-tag:
+image-tag: ## Print the docker image tag.
 	@echo $(IMAGE_TAG)
 
 # Support gsed on OSX (installed via brew), falling back to sed. On Linux
@@ -113,18 +113,19 @@ push-multiarch-%/$(UPTODATE):
 	fi
 	$(SUDO) docker buildx build -o $(PUSH_MULTIARCH_TARGET) --platform linux/amd64,linux/arm64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) --build-arg=USE_BINARY_SUFFIX=true -t $(IMAGE_PREFIX)$(shell basename $(DIR)):$(IMAGE_TAG) $(DIR)/
 
+push-multiarch-mimir: ## Push mimir docker image.
 push-multiarch-mimir: push-multiarch-cmd/mimir/.uptodate
 
 # This target fetches current build image, and tags it with "latest" tag. It can be used instead of building the image locally.
 .PHONY: fetch-build-image
-fetch-build-image:
+fetch-build-image: ## Fetch latest docker build image. It can be used instead of building the image locally.
 	docker pull $(BUILD_IMAGE):$(LATEST_BUILD_IMAGE_TAG)
 	docker tag $(BUILD_IMAGE):$(LATEST_BUILD_IMAGE_TAG) $(BUILD_IMAGE):latest
 	touch mimir-build-image/.uptodate
 
 # push-multiarch-build-image requires the ability to build images for multiple platforms:
 # https://docs.docker.com/buildx/working-with-buildx/#build-multi-platform-images
-push-multiarch-build-image:
+push-multiarch-build-image: ## Push docker build image.
 	@echo
 	# Build image for each platform separately... it tends to generate fewer errors.
 	$(SUDO) docker buildx build --platform linux/amd64 --progress=plain --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) mimir-build-image/
@@ -147,7 +148,7 @@ DOCKERFILES := $(shell find . $(DONT_FIND) -type f -name 'Dockerfile' -print)
 UPTODATE_FILES := $(patsubst %/Dockerfile,%/$(UPTODATE),$(DOCKERFILES))
 DOCKER_IMAGE_DIRS := $(patsubst %/Dockerfile,%,$(DOCKERFILES))
 IMAGE_NAMES := $(foreach dir,$(DOCKER_IMAGE_DIRS),$(patsubst %,$(IMAGE_PREFIX)%,$(shell basename $(dir))))
-images:
+images: ## Print all image names.
 	$(info $(IMAGE_NAMES))
 	@echo > /dev/null
 
