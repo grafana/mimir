@@ -49,7 +49,7 @@ type seriesStripe struct {
 type seriesEntry struct {
 	lbs     labels.Labels
 	nanos   *atomic.Int64 // Unix timestamp in nanoseconds. Needs to be a pointer because we don't store pointers to entries in the stripe.
-	matches []bool        // Which matchers of Matchers does this series match
+	matches map[int]bool  //  Index of the matcher matching -> true map showing only matching matchers
 }
 
 func NewActiveSeries(asm *Matchers, timeout time.Duration) *ActiveSeries {
