@@ -5,7 +5,7 @@ description: "Learn how to customize, secure and update the Grafana Mimir config
 weight: 80
 ---
 
-# Manage the configuration of Grafana Mimmir with Helm
+# Manage the configuration of Grafana Mimir with Helm
 
 The `mimir-distributed` Helm chart provides a single interface to set Grafana Mimir [configuration parameters]({{< relref "../configure/reference-configuration-parameters/" >}}) and customize how Grafana Mimir is deployed on a Kubernetes cluster. This document is about the configuration parameters.
 
