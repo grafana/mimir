@@ -7,6 +7,6 @@ weight: 80
 
 # Run Grafana Mimir in production using the Helm chart
 
-The following topics provide guidance for you to consider when you run Grafana Mimir in a production environment using the `mimir-distributed` Helm chart.
+The following topics provide guidance when you run Grafana Mimir in a production environment using the `mimir-distributed` Helm chart.
 
 {{< section >}}
