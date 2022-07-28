@@ -307,8 +307,12 @@ func (f *forwarder) submitForwardingRequest(ctx context.Context, endpoint string
 func (r *request) do() {
 	defer r.cleanup()
 
-	protoBufBytes := (*r.pools.getProtobuf())[:0]
-	defer r.pools.putProtobuf(&protoBufBytes)
+	protoBufBytesRef := r.pools.getProtobuf()
+	protoBufBytes := (*protoBufBytesRef)[:0]
+	defer func() {
+		*protoBufBytesRef = protoBufBytes // just in case we increased its capacity
+		r.pools.putProtobuf(protoBufBytesRef)
+	}()
 
 	protoBuf := proto.NewBuffer(protoBufBytes)
 	err := protoBuf.Marshal(&mimirpb.WriteRequest{Timeseries: r.ts.ts})
