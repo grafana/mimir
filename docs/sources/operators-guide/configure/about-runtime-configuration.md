@@ -27,7 +27,7 @@ To enable runtime configuration, specify a comma-separated list of file paths up
 
 By default, Grafana Mimir reloads the contents of these files every 10 seconds and merges these files from left to right. You can configure this interval by using the `-runtime-config.reload-period=<duration>` CLI flag or by specifying the `period` value in your YAML configuration file.
 
-When running Grafana Mimir on Kubernetes, store the runtime configuration files a [ConfigMap](https://kubernetes.io/docs/concepts/configuration/configmap/) and mount the ConfigMaps in each container.
+When running Grafana Mimir on Kubernetes, store the runtime configuration files in a [ConfigMap](https://kubernetes.io/docs/concepts/configuration/configmap/) and mount the ConfigMaps in each container.
 
 ## Viewing the runtime configuration
 
