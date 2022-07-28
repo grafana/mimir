@@ -32,11 +32,8 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 	)
 
 	tests := map[string]struct {
-		query string
-
+		query                string
 		expectedSplitQueries int
-
-		noop bool
 	}{
 		// Range vector aggregators
 		"avg_over_time": {
@@ -166,7 +163,6 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 		"subquery": {
 			query:                `sum(sum_over_time(metric_counter[1h:1m]) * 60) by (group_1)`,
 			expectedSplitQueries: 0,
-			noop:                 true,
 		},
 	}
 
@@ -268,35 +264,36 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 					approximatelyEquals(t, expectedPrometheusRes, splitPrometheusRes)
 
 					// Assert metrics
-					assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-						# HELP cortex_frontend_instant_query_splitting_rewrites_attempted_total Total number of instant queries the query-frontend attempted to split.
-						# TYPE cortex_frontend_instant_query_splitting_rewrites_attempted_total counter
-						cortex_frontend_instant_query_splitting_rewrites_attempted_total 1
-					`),
-						"cortex_frontend_instant_query_splitting_rewrites_attempted_total"))
+					expectedSucceeded := 1
+					expectedNoop := 0
+					if testData.expectedSplitQueries == 0 {
+						expectedSucceeded = 0
+						expectedNoop = 1
+					}
 
 					assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+						# HELP cortex_frontend_instant_query_splitting_rewrites_attempted_total Total number of instant queries the query-frontend attempted to split by interval.
+						# TYPE cortex_frontend_instant_query_splitting_rewrites_attempted_total counter
+						cortex_frontend_instant_query_splitting_rewrites_attempted_total 1
+
 						# HELP cortex_frontend_instant_query_split_queries_total Total number of split partial queries.
         	            # TYPE cortex_frontend_instant_query_split_queries_total counter
 						cortex_frontend_instant_query_split_queries_total %d
-					`, testData.expectedSplitQueries)),
-						"cortex_frontend_instant_query_split_queries_total"))
 
-					if testData.noop {
-						assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-						# HELP cortex_frontend_instant_query_splitting_rewrites_succeeded_total Number of instant queries the query-frontend attempted to split by evaluation type.
+						# HELP cortex_frontend_instant_query_splitting_rewrites_succeeded_total Total number of instant queries the query-frontend successfully split by interval.
         	            # TYPE cortex_frontend_instant_query_splitting_rewrites_succeeded_total counter
-						cortex_frontend_instant_query_splitting_rewrites_succeeded_total{evaluation="noop"} 1
-					`),
-							"cortex_frontend_instant_query_splitting_rewrites_succeeded_total"))
-					} else {
-						assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-						# HELP cortex_frontend_instant_query_splitting_rewrites_succeeded_total Number of instant queries the query-frontend attempted to split by evaluation type.
-        	            # TYPE cortex_frontend_instant_query_splitting_rewrites_succeeded_total counter
-						cortex_frontend_instant_query_splitting_rewrites_succeeded_total{evaluation="success"} 1
-					`),
-							"cortex_frontend_instant_query_splitting_rewrites_succeeded_total"))
-					}
+						cortex_frontend_instant_query_splitting_rewrites_succeeded_total %d
+
+						# HELP cortex_frontend_instant_query_splitting_rewrites_skipped_total Total number of instant queries the query-frontend skipped or failed to split by interval.
+						# TYPE cortex_frontend_instant_query_splitting_rewrites_skipped_total counter
+						cortex_frontend_instant_query_splitting_rewrites_skipped_total{reason="parsing-failed"} 0
+						cortex_frontend_instant_query_splitting_rewrites_skipped_total{reason="mapping-failed"} 0
+						cortex_frontend_instant_query_splitting_rewrites_skipped_total{reason="noop"} %d
+					`, testData.expectedSplitQueries, expectedSucceeded, expectedNoop)),
+						"cortex_frontend_instant_query_splitting_rewrites_attempted_total",
+						"cortex_frontend_instant_query_split_queries_total",
+						"cortex_frontend_instant_query_splitting_rewrites_succeeded_total",
+						"cortex_frontend_instant_query_splitting_rewrites_skipped_total"))
 				})
 			}
 		})
