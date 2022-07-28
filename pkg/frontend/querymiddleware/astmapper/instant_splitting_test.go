@@ -246,32 +246,48 @@ func TestInstantSplitterNoOp(t *testing.T) {
 	splitter := NewInstantQuerySplitter(splitInterval, log.NewNopLogger())
 
 	for _, tt := range []struct {
-		noop string
+		query string
 	}{
 		// should be noop if expression is not splittable
 		{
-			noop: `quantile_over_time(0.95, foo[3m])`,
+			query: `quantile_over_time(0.95, foo[3m])`,
 		},
 		{
-			noop: `topk(10, histogram_quantile(0.9, irate({app="foo"}[3m])))`,
+			query: `topk(10, histogram_quantile(0.9, irate({app="foo"}[3m])))`,
 		},
 		// should be noop if range interval is lower or equal to split interval (1m)
 		{
-			noop: `rate({app="foo"}[1m])`,
+			query: `rate({app="foo"}[1m])`,
 		},
 		// should be noop if expression is a number literal
 		{
-			noop: `5`,
+			query: `5`,
 		},
-		// Binary expression should be noop if both operands are number literals
+		// should be noop if binary expression's operands are both number literals
 		{
-			noop: `20 / 10`,
+			query: `20 / 10`,
+		},
+		{
+			query: `(20 / 10)`,
+		},
+		{
+			query: `(20) / (10)`,
+		},
+		// should be noop if subquery
+		{
+			query: `sum_over_time(metric_counter[1h:5m])`,
+		},
+		{
+			query: `sum(rate(metric_counter[30m:5s]))`,
+		},
+		{
+			query: `sum(avg_over_time(metric_counter[1h:5m])) by (bar)`,
 		},
 	} {
 		tt := tt
 
-		t.Run(tt.noop, func(t *testing.T) {
-			expr, err := parser.ParseExpr(tt.noop)
+		t.Run(tt.query, func(t *testing.T) {
+			expr, err := parser.ParseExpr(tt.query)
 			require.NoError(t, err)
 
 			stats := NewMapperStats()
