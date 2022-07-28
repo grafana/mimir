@@ -319,7 +319,10 @@ func (i *instantSplitter) splitAndSquashCall(expr *parser.Call, stats *MapperSta
 		embeddedQuery = i.outerAggregationExpr
 	}
 
-	originalOffset := getOffset(expr)
+	originalOffset, err := i.assertOffset(expr)
+	if err != nil {
+		return nil, false, err
+	}
 
 	// Create a partial query for each split
 	embeddedQueries := make([]parser.Expr, 0, splitCount)
@@ -393,30 +396,39 @@ func getRangeIntervals(expr parser.Expr) []time.Duration {
 	return ranges
 }
 
-// getOffset returns the offset interval in the range vector expression
-// Returns 0 if no offset interval is found
-// Examples:
-//   * `count_over_time({app="foo"}[10m])` returns 0
-//   * `count_over_time({app="foo"}[10m]) offset 1m` returns 1m
-func getOffset(expr parser.Expr) time.Duration {
-	switch e := expr.(type) {
-	case *parser.AggregateExpr:
-		return getOffset(e.Expr)
-	case *parser.Call:
-		// Iterate over Call's arguments until a VectorSelector and a valid offset are found
-		for _, arg := range e.Args {
-			if argRangeInterval := getOffset(arg); argRangeInterval > 0 {
-				return argRangeInterval
-			}
-		}
-		return time.Duration(0)
-	case *parser.MatrixSelector:
-		return getOffset(e.VectorSelector)
-	case *parser.VectorSelector:
-		return e.OriginalOffset
-	default:
-		return 0
+// assertOffset returns the offset specified in the input expr
+// Note that the returned offset can be zero or negative
+func (i *instantSplitter) assertOffset(expr parser.Expr) (offset time.Duration, err error) {
+	offsets := getOffsets(expr)
+	if len(offsets) == 0 {
+		return time.Duration(0), nil
 	}
+	if len(offsets) > 1 {
+		return time.Duration(0), fmt.Errorf("found %d offsets while expecting at most 1", len(offsets))
+	}
+
+	return offsets[0], nil
+}
+
+// getOffsets recursively visit the input expr and returns a slice containing all offsets found.
+func getOffsets(expr parser.Expr) []time.Duration {
+	// Due to how this function is used, we expect to always find at most 1 offset
+	// so we preallocate it accordingly.
+	offsets := make([]time.Duration, 0, 1)
+
+	// Ignore the error since we never return it.
+	_, _ = anyNode(expr, func(entry parser.Node) (bool, error) {
+		switch e := entry.(type) {
+		case *parser.VectorSelector:
+			offsets = append(offsets, e.OriginalOffset)
+		case *parser.SubqueryExpr:
+			offsets = append(offsets, e.OriginalOffset)
+		}
+
+		return false, nil
+	})
+
+	return offsets
 }
 
 // expr can be a parser.Call or a parser.AggregateExpr

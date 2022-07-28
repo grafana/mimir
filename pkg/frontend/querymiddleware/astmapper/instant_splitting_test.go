@@ -176,6 +176,37 @@ func TestInstantSplitter(t *testing.T) {
 			out:                  `sum((sum without() (` + concatOffsets(splitInterval, 3, `sum_over_time({app="foo"}[x]y)`) + `)) / (sum without() (` + concatOffsets(splitInterval, 3, `count_over_time({app="foo"}[x]y)`) + `)))`,
 			expectedSplitQueries: 6,
 		},
+		// Offset operator
+		{
+			in:                   `rate({app="foo"}[3m] offset 3m)`,
+			out:                  `sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"increase({app=\\\"foo\\\"}[1m] offset 5m)\",\"increase({app=\\\"foo\\\"}[1m] offset 4m)\",\"increase({app=\\\"foo\\\"}[1m] offset 3m)\"]}"}) / 180`,
+			expectedSplitQueries: 3,
+		},
+		{
+			in:                   `avg_over_time({app="foo"}[3m] offset 5m)`,
+			out:                  `(sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"sum_over_time({app=\\\"foo\\\"}[1m] offset 7m)\",\"sum_over_time({app=\\\"foo\\\"}[1m] offset 6m)\",\"sum_over_time({app=\\\"foo\\\"}[1m] offset 5m)\"]}"})) / (sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"count_over_time({app=\\\"foo\\\"}[1m] offset 7m)\",\"count_over_time({app=\\\"foo\\\"}[1m] offset 6m)\",\"count_over_time({app=\\\"foo\\\"}[1m] offset 5m)\"]}"}))`,
+			expectedSplitQueries: 6,
+		},
+		{
+			in:                   `rate({app="foo"}[3m] offset 30s)`,
+			out:                  `sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"increase({app=\\\"foo\\\"}[1m] offset 2m30s)\",\"increase({app=\\\"foo\\\"}[1m] offset 1m30s)\",\"increase({app=\\\"foo\\\"}[1m] offset 30s)\"]}"}) / 180`,
+			expectedSplitQueries: 3,
+		},
+		{
+			in:                   `count_over_time({app="foo"}[3m] offset -3m)`,
+			out:                  `sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"count_over_time({app=\\\"foo\\\"}[1m] offset -1m)\",\"count_over_time({app=\\\"foo\\\"}[1m] offset -2m)\",\"count_over_time({app=\\\"foo\\\"}[1m] offset -3m)\"]}"})`,
+			expectedSplitQueries: 3,
+		},
+		{
+			in:                   `avg_over_time({app="foo"}[3m] offset -5m)`,
+			out:                  `(sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"sum_over_time({app=\\\"foo\\\"}[1m] offset -3m)\",\"sum_over_time({app=\\\"foo\\\"}[1m] offset -4m)\",\"sum_over_time({app=\\\"foo\\\"}[1m] offset -5m)\"]}"})) / (sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"count_over_time({app=\\\"foo\\\"}[1m] offset -3m)\",\"count_over_time({app=\\\"foo\\\"}[1m] offset -4m)\",\"count_over_time({app=\\\"foo\\\"}[1m] offset -5m)\"]}"}))`,
+			expectedSplitQueries: 6,
+		},
+		{
+			in:                   `count_over_time({app="foo"}[3m] offset -30s)`,
+			out:                  `sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"count_over_time({app=\\\"foo\\\"}[1m] offset 1m30s)\",\"count_over_time({app=\\\"foo\\\"}[1m] offset 30s)\",\"count_over_time({app=\\\"foo\\\"}[1m] offset -30s)\"]}"})`,
+			expectedSplitQueries: 3,
+		},
 		// Should split deeper in the tree if an inner expression is splittable
 		{
 			in:                   `topk(10, histogram_quantile(0.9, rate({app="foo"}[3m])))`,
@@ -501,6 +532,46 @@ func TestUpdateOffset(t *testing.T) {
 			} else {
 				assert.Equal(t, testData.expectedExpr, expr.String())
 			}
+		})
+	}
+}
+
+func TestGetOffsets(t *testing.T) {
+	tests := []struct {
+		query    string
+		expected []time.Duration
+	}{
+		{
+			query:    `time()`,
+			expected: []time.Duration{},
+		},
+		{
+			query:    `sum(rate(metric[5m] offset 1m))`,
+			expected: []time.Duration{time.Minute},
+		},
+		{
+			query:    `sum(rate(metric[5m] offset 3m)) + sum(rate(metric[5m] offset 5m))`,
+			expected: []time.Duration{3 * time.Minute, 5 * time.Minute},
+		},
+		{
+			query:    `rate(metric[5m] offset 5s)`,
+			expected: []time.Duration{5 * time.Second},
+		},
+		{
+			query:    `avg_over_time(metric[5m] offset -5m)`,
+			expected: []time.Duration{-5 * time.Minute},
+		},
+		{
+			query:    `sum_over_time(rate(metric[5m] offset 3s)[1h:5m] offset 1m)`,
+			expected: []time.Duration{time.Minute, 3 * time.Second},
+		},
+	}
+
+	for _, testData := range tests {
+		t.Run(testData.query, func(t *testing.T) {
+			expr, err := parser.ParseExpr(testData.query)
+			require.NoError(t, err)
+			assert.Equal(t, testData.expected, getOffsets(expr))
 		})
 	}
 }
