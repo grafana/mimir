@@ -330,7 +330,36 @@ func TestInstantSplitterNoOp(t *testing.T) {
 			query: `sum(rate(metric_counter[30m:5s]))`,
 		},
 		{
+			// Parenthesis expression between sum_over_time() and the subquery.
+			query: `sum_over_time((metric_counter[30m:5s]))`,
+		},
+		{
+			// Multiple parenthesis expressions between sum_over_time() and the subquery.
+			query: `sum_over_time((((metric_counter[30m:5s]))))`,
+		},
+		{
+			query: `quantile_over_time(1, metric_counter[10m:1m])`,
+		},
+		{
 			query: `sum(avg_over_time(metric_counter[1h:5m])) by (bar)`,
+		},
+		{
+			query: `min_over_time(sum by(group_1) (rate(metric_counter[5m]))[10m:2m])`,
+		},
+		{
+			query: `max_over_time(stddev_over_time(deriv(rate(metric_counter[10m])[5m:1m])[2m:])[10m:])`,
+		},
+		{
+			query: `rate(sum by(group_1) (rate(metric_counter[5m]))[10m:])`,
+		},
+		{
+			query: `absent_over_time(rate(metric_counter[5m])[10m:])`,
+		},
+		{
+			query: `max_over_time(stddev_over_time(deriv(sort(metric_counter)[5m:1m])[2m:])[10m:])`,
+		},
+		{
+			query: `max_over_time(absent_over_time(deriv(rate(metric_counter[1m])[5m:1m])[2m:])[10m:])`,
 		},
 	} {
 		tt := tt
@@ -347,6 +376,35 @@ func TestInstantSplitterNoOp(t *testing.T) {
 			_, err = splitter.Map(expr, stats)
 			require.NoError(t, err)
 			assert.Equal(t, 0, stats.GetShardedQueries())
+		})
+	}
+}
+
+func TestGetRangeIntervals(t *testing.T) {
+	tests := []struct {
+		query    string
+		expected []time.Duration
+	}{
+		{
+			query:    `time()`,
+			expected: []time.Duration{},
+		}, {
+			query:    `sum(rate(metric[1m]))`,
+			expected: []time.Duration{time.Minute},
+		}, {
+			query:    `sum(rate(metric[1m])) + sum(rate(metric[5m]))`,
+			expected: []time.Duration{time.Minute, 5 * time.Minute},
+		}, {
+			query:    `sum_over_time(rate(metric[1m])[1h:5m])`,
+			expected: []time.Duration{time.Hour, time.Minute},
+		},
+	}
+
+	for _, testData := range tests {
+		t.Run(testData.query, func(t *testing.T) {
+			expr, err := parser.ParseExpr(testData.query)
+			require.NoError(t, err)
+			assert.Equal(t, testData.expected, getRangeIntervals(expr))
 		})
 	}
 }

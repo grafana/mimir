@@ -71,9 +71,17 @@ func (i *instantSplitter) MapExpr(expr parser.Expr, stats *MapperStats) (mapped 
 	case *parser.BinaryExpr:
 		return i.mapBinaryExpr(e, stats)
 	case *parser.Call:
+		if isSubqueryCall(e) {
+			// Subqueries are currently not supported by splitting, so we stop the mapping here.
+			return e, true, nil
+		}
+
 		return i.mapCall(e, stats)
 	case *parser.ParenExpr:
 		return i.mapParenExpr(e, stats)
+	case *parser.SubqueryExpr:
+		// Subqueries are currently not supported by splitting, so we stop the mapping here.
+		return e, true, nil
 	default:
 		return e, false, nil
 	}
@@ -216,7 +224,10 @@ func (i *instantSplitter) mapCallAvgOverTime(expr *parser.Call, stats *MapperSta
 func (i *instantSplitter) mapCallRate(expr *parser.Call, stats *MapperStats) (mapped parser.Expr, finished bool, err error) {
 	// In case the range interval is smaller than the configured split interval,
 	// don't split it and don't map further nodes (finished=true).
-	rangeInterval, canSplit := i.assertSplittableRangeInterval(expr)
+	rangeInterval, canSplit, err := i.assertSplittableRangeInterval(expr)
+	if err != nil {
+		return nil, true, err
+	}
 	if !canSplit {
 		return expr, true, nil
 	}
@@ -254,7 +265,10 @@ func (i *instantSplitter) mapCallRate(expr *parser.Call, stats *MapperStats) (ma
 func (i *instantSplitter) mapCallVectorAggregation(expr *parser.Call, stats *MapperStats, op parser.ItemType) (mapped parser.Expr, finished bool, err error) {
 	// In case the range interval is smaller than the configured split interval,
 	// don't split it and don't map further nodes (finished=true).
-	rangeInterval, canSplit := i.assertSplittableRangeInterval(expr)
+	rangeInterval, canSplit, err := i.assertSplittableRangeInterval(expr)
+	if err != nil {
+		return nil, false, err
+	}
 	if !canSplit {
 		return expr, true, nil
 	}
@@ -340,37 +354,43 @@ func (i *instantSplitter) splitAndSquashCall(expr *parser.Call, stats *MapperSta
 
 // assertSplittableRangeInterval returns the range interval specified in the input expr and whether it is greater than
 // the configured split interval.
-func (i *instantSplitter) assertSplittableRangeInterval(expr parser.Expr) (rangeInterval time.Duration, canSplit bool) {
-	rangeInterval = getRangeInterval(expr)
+func (i *instantSplitter) assertSplittableRangeInterval(expr parser.Expr) (rangeInterval time.Duration, canSplit bool, err error) {
+	rangeIntervals := getRangeIntervals(expr)
+	if len(rangeIntervals) == 0 {
+		return time.Duration(0), false, nil
+	}
+	if len(rangeIntervals) > 1 {
+		return time.Duration(0), false, fmt.Errorf("found %d range intervals while expecting at most 1", len(rangeIntervals))
+	}
+
+	rangeInterval = rangeIntervals[0]
 	if rangeInterval > i.interval {
-		return rangeInterval, true
+		return rangeInterval, true, nil
 	}
 
 	level.Debug(i.logger).Log("msg", "unable to split expression because range interval is smaller than configured split interval", "expr", expr, "range_interval", rangeInterval, "split_interval", i.interval)
-	return time.Duration(0), false
+	return time.Duration(0), false, nil
 }
 
-// getRangeInterval returns the range interval in the range vector expression
-// Returns 0 if no range interval is found
-// Example: expression `count_over_time({app="foo"}[10m])` returns 10m
-func getRangeInterval(expr parser.Expr) time.Duration {
-	switch e := expr.(type) {
-	case *parser.AggregateExpr:
-		return getRangeInterval(e.Expr)
-	case *parser.Call:
-		// Iterate over Call's arguments until a MatrixSelector and a valid range interval are found
-		for _, arg := range e.Args {
-			if argRangeInterval := getRangeInterval(arg); argRangeInterval != 0 {
-				return argRangeInterval
-			}
+// getRangeIntervals recursively visit the input expr and returns a slice containing all range intervals found.
+func getRangeIntervals(expr parser.Expr) []time.Duration {
+	// Due to how this function is used, we expect to always find at most 1 range interval
+	// so we preallocate it accordingly.
+	ranges := make([]time.Duration, 0, 1)
+
+	// Ignore the error since we never return it.
+	_, _ = anyNode(expr, func(entry parser.Node) (bool, error) {
+		switch e := entry.(type) {
+		case *parser.MatrixSelector:
+			ranges = append(ranges, e.Range)
+		case *parser.SubqueryExpr:
+			ranges = append(ranges, e.Range)
 		}
-		return time.Duration(0)
-	case *parser.MatrixSelector:
-		return e.Range
-	default:
-		// parser.SubqueryExpr and parser.BinaryExpr should return 0
-		return 0
-	}
+
+		return false, nil
+	})
+
+	return ranges
 }
 
 // getOffset returns the offset interval in the range vector expression
