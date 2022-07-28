@@ -549,11 +549,7 @@ func TestShardSummerWithEncoding(t *testing.T) {
 	}
 }
 
-<<<<<<< HEAD
 func TestIsSubqueryCall(t *testing.T) {
-=======
-func TestIsSubquery(t *testing.T) {
->>>>>>> 3646b1db7... Fix isSubquery() to work with quantile_over_time() too
 	tests := []struct {
 		query    string
 		expected bool

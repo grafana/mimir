@@ -71,7 +71,7 @@ func (i *instantSplitter) MapExpr(expr parser.Expr, stats *MapperStats) (mapped 
 	case *parser.BinaryExpr:
 		return i.mapBinaryExpr(e, stats)
 	case *parser.Call:
-		if isSubquery(e) {
+		if isSubqueryCall(e) {
 			// Subqueries are currently not supported by splitting, so we stop the mapping here.
 			return e, true, nil
 		}
