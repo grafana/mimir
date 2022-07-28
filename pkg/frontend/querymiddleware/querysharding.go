@@ -64,25 +64,21 @@ func newQueryShardingMiddleware(
 ) Middleware {
 	metrics := queryShardingMetrics{
 		shardingAttempts: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
-			Namespace: "cortex",
-			Name:      "frontend_query_sharding_rewrites_attempted_total",
-			Help:      "Total number of queries the query-frontend attempted to shard.",
+			Name: "cortex_frontend_query_sharding_rewrites_attempted_total",
+			Help: "Total number of queries the query-frontend attempted to shard.",
 		}),
 		shardingSuccesses: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
-			Namespace: "cortex",
-			Name:      "frontend_query_sharding_rewrites_succeeded_total",
-			Help:      "Total number of queries the query-frontend successfully rewritten in a shardable way.",
+			Name: "cortex_frontend_query_sharding_rewrites_succeeded_total",
+			Help: "Total number of queries the query-frontend successfully rewritten in a shardable way.",
 		}),
 		shardedQueries: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
-			Namespace: "cortex",
-			Name:      "frontend_sharded_queries_total",
-			Help:      "Total number of sharded queries.",
+			Name: "cortex_frontend_sharded_queries_total",
+			Help: "Total number of sharded queries.",
 		}),
 		shardedQueriesPerQuery: promauto.With(registerer).NewHistogram(prometheus.HistogramOpts{
-			Namespace: "cortex",
-			Name:      "frontend_sharded_queries_per_query",
-			Help:      "Number of sharded queries a single query has been rewritten to.",
-			Buckets:   prometheus.ExponentialBuckets(2, 2, 10),
+			Name:    "cortex_frontend_sharded_queries_per_query",
+			Help:    "Number of sharded queries a single query has been rewritten to.",
+			Buckets: prometheus.ExponentialBuckets(2, 2, 10),
 		}),
 	}
 	return MiddlewareFunc(func(next Handler) Handler {
