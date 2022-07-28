@@ -316,7 +316,6 @@ func (i *instantSplitter) mapCallVectorAggregation(expr *parser.Call, stats *Map
 }
 
 func (i *instantSplitter) mapCallByRangeInterval(expr *parser.Call, stats *MapperStats, rangeInterval time.Duration, op parser.ItemType) (mapped parser.Expr, finished bool, err error) {
-
 	// Default grouping is 'without' for concatenating the embedded queries
 	var grouping []string
 	groupingWithout := true
