@@ -220,6 +220,24 @@ func TestShardSummer(t *testing.T) {
 			3,
 		},
 		{
+			// Parenthesis expression between the parallelizeable function call and the subquery.
+			`max_over_time((
+				stddev_over_time(
+					deriv(
+						rate(metric_counter[10m])
+					[5m:1m])
+				[2m:])
+			[10m:]))`,
+			concatShards(3, `max_over_time((
+					stddev_over_time(
+						deriv(
+							rate(metric_counter{__query_shard__="x_of_y"}[10m])
+						[5m:1m])
+					[2m:])
+				[10m:]))`),
+			3,
+		},
+		{
 			`rate(
 				sum by(group_1) (
 					rate(metric_counter[5m])
@@ -527,6 +545,48 @@ func TestShardSummerWithEncoding(t *testing.T) {
 			require.Nil(t, err)
 
 			require.Equal(t, expected.String(), res.String())
+		})
+	}
+}
+
+func TestIsSubqueryCall(t *testing.T) {
+	tests := []struct {
+		query    string
+		expected bool
+	}{
+		{
+			query:    `time()`,
+			expected: false,
+		}, {
+			query:    `rate(metric[1m])`,
+			expected: false,
+		}, {
+			query:    `rate(metric[1h:5m])`,
+			expected: true,
+		}, {
+			query:    `quantile_over_time(1, metric[1h:5m])`,
+			expected: true,
+		}, {
+			// Parenthesis expression between sum_over_time() and the subquery.
+			query:    `sum_over_time((metric_counter[30m:5s]))`,
+			expected: true,
+		},
+		{
+			// Multiple parenthesis expressions between sum_over_time() and the subquery.
+			query:    `sum_over_time((((metric_counter[30m:5s]))))`,
+			expected: true,
+		},
+	}
+
+	for _, testData := range tests {
+		t.Run(testData.query, func(t *testing.T) {
+			expr, err := parser.ParseExpr(testData.query)
+			require.NoError(t, err)
+
+			call, ok := expr.(*parser.Call)
+			require.True(t, ok)
+
+			assert.Equal(t, testData.expected, isSubqueryCall(call))
 		})
 	}
 }
