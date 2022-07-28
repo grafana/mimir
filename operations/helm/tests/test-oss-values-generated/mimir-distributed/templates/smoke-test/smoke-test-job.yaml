@@ -12,6 +12,7 @@ metadata:
     app.kubernetes.io/managed-by: Helm
   annotations:
     "helm.sh/hook": test
+  namespace: "citestns"
 spec:
   backoffLimit: 5
   completions: 1
