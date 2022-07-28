@@ -409,6 +409,102 @@ func TestGetRangeIntervals(t *testing.T) {
 	}
 }
 
+func TestUpdateRangeInterval(t *testing.T) {
+	tests := []struct {
+		expr         string
+		interval     time.Duration
+		expectedExpr string
+		expectedErr  string
+	}{
+		{
+			expr:        `time()`,
+			interval:    time.Hour,
+			expectedErr: "no matrix selector has been found",
+		}, {
+			expr:         `sum(rate(metric[1m]))`,
+			interval:     time.Hour,
+			expectedExpr: `sum(rate(metric[1h]))`,
+		}, {
+			expr:         `sum(label_replace(rate(metric[1m]), "dst", "$1", "src", ".*"))`,
+			interval:     time.Hour,
+			expectedExpr: `sum(label_replace(rate(metric[1h]), "dst", "$1", "src", ".*"))`,
+		}, {
+			expr:        `sum(rate(metric[1m])) + sum(rate(metric[5m]))`,
+			interval:    time.Hour,
+			expectedErr: "multiple matrix selectors have been found",
+		}, {
+			expr:        `sum(rate(metric[1m]))`,
+			interval:    -time.Minute,
+			expectedErr: "negative interval",
+		},
+	}
+
+	for _, testData := range tests {
+		t.Run(testData.expr, func(t *testing.T) {
+			expr, err := parser.ParseExpr(testData.expr)
+			require.NoError(t, err)
+
+			actualErr := updateRangeInterval(expr, testData.interval)
+			if testData.expectedErr != "" {
+				require.Error(t, actualErr)
+				assert.Contains(t, actualErr.Error(), testData.expectedErr)
+			} else {
+				assert.Equal(t, testData.expectedExpr, expr.String())
+			}
+		})
+	}
+}
+
+func TestUpdateOffset(t *testing.T) {
+	tests := []struct {
+		expr         string
+		offset       time.Duration
+		expectedExpr string
+		expectedErr  string
+	}{
+		{
+			expr:        `time()`,
+			offset:      time.Hour,
+			expectedErr: "no vector selector has been found",
+		}, {
+			expr:         `sum(rate(metric[1m]))`,
+			offset:       time.Hour,
+			expectedExpr: `sum(rate(metric[1m] offset 1h))`,
+		}, {
+			expr:         `sum(rate(metric[1m]))`,
+			offset:       -time.Hour,
+			expectedExpr: `sum(rate(metric[1m] offset -1h))`,
+		}, {
+			expr:         `sum(label_replace(rate(metric[1m]), "dst", "$1", "src", ".*"))`,
+			offset:       time.Hour,
+			expectedExpr: `sum(label_replace(rate(metric[1m] offset 1h), "dst", "$1", "src", ".*"))`,
+		}, {
+			expr:         `sum(label_replace(rate(metric[1m]), "dst", "$1", "src", ".*"))`,
+			offset:       -time.Hour,
+			expectedExpr: `sum(label_replace(rate(metric[1m] offset -1h), "dst", "$1", "src", ".*"))`,
+		}, {
+			expr:        `sum(rate(metric[1m])) + sum(rate(metric[5m]))`,
+			offset:      time.Hour,
+			expectedErr: "multiple vector selectors have been found",
+		},
+	}
+
+	for _, testData := range tests {
+		t.Run(testData.expr, func(t *testing.T) {
+			expr, err := parser.ParseExpr(testData.expr)
+			require.NoError(t, err)
+
+			actualErr := updateOffset(expr, testData.offset)
+			if testData.expectedErr != "" {
+				require.Error(t, actualErr)
+				assert.Contains(t, actualErr.Error(), testData.expectedErr)
+			} else {
+				assert.Equal(t, testData.expectedExpr, expr.String())
+			}
+		})
+	}
+}
+
 func concatOffsets(splitInterval time.Duration, offsets int, queryTemplate string) string {
 	queries := make([]string, offsets)
 	offsetIndex := offsets

@@ -425,13 +425,11 @@ func createSplitExpr(expr parser.Expr, rangeInterval time.Duration, offset time.
 	if err != nil {
 		return nil, err
 	}
-	rangeIntervalUpdated := updateRangeInterval(splitExpr, rangeInterval)
-	if !rangeIntervalUpdated {
-		return nil, fmt.Errorf("unable to update range interval on expression: %v", splitExpr)
+	if err = updateRangeInterval(splitExpr, rangeInterval); err != nil {
+		return nil, err
 	}
-	offsetUpdated := updateOffset(splitExpr, offset)
-	if !offsetUpdated {
-		return nil, fmt.Errorf("unable to update offset operator on expression: %v", splitExpr)
+	if err = updateOffset(splitExpr, offset); err != nil {
+		return nil, err
 	}
 
 	return splitExpr, nil
@@ -453,56 +451,52 @@ func updateEmbeddedExpr(expr parser.Expr, call *parser.Call) parser.Expr {
 	}
 }
 
-// updateRangeInterval returns true if range interval was updated successfully,
-// false otherwise
-func updateRangeInterval(expr parser.Expr, rangeInterval time.Duration) bool {
-	switch e := expr.(type) {
-	case *parser.AggregateExpr:
-		return updateRangeInterval(e.Expr, rangeInterval)
-	case *parser.Call:
-		var updated bool
-		// Iterate over Call's arguments until a MatrixSelector is found
-		for _, arg := range e.Args {
-			updated = updateRangeInterval(arg, rangeInterval)
-			if updated {
-				break
-			}
-		}
-		return updated
-	case *parser.MatrixSelector:
-		e.Range = rangeInterval
-		return true
-	case *parser.ParenExpr:
-		return updateRangeInterval(e.Expr, rangeInterval)
-	default:
-		return false
+// updateRangeInterval modifies the input expr in-place and updates the range interval on the matrix selector.
+// Returns an error if 0 or 2+ matrix selectors are found.
+func updateRangeInterval(expr parser.Expr, rangeInterval time.Duration) error {
+	if rangeInterval <= 0 {
+		return fmt.Errorf("unable to update range interval on expression, because a negative interval %d was provided: %v", rangeInterval, expr)
 	}
+
+	updates := 0
+
+	// Ignore the error since we never return it.
+	_, _ = anyNode(expr, func(entry parser.Node) (bool, error) {
+		if matrix, ok := entry.(*parser.MatrixSelector); ok {
+			matrix.Range = rangeInterval
+			updates++
+		}
+		return false, nil
+	})
+
+	if updates == 0 {
+		return fmt.Errorf("unable to update range interval on expression, because no matrix selector has been found: %v", expr)
+	}
+	if updates > 1 {
+		return fmt.Errorf("unable to update range interval on expression, because multiple matrix selectors have been found: %v", expr)
+	}
+	return nil
 }
 
-// updateOffset returns true if offset operator was updated successfully,
-// false otherwise
-func updateOffset(expr parser.Expr, offset time.Duration) bool {
-	switch e := expr.(type) {
-	case *parser.AggregateExpr:
-		return updateOffset(e.Expr, offset)
-	case *parser.Call:
-		var updated bool
-		// Iterate over Call's arguments until a VectorSelector is found
-		for _, arg := range e.Args {
-			updated = updateOffset(arg, offset)
-			if updated {
-				break
-			}
+// updateOffset modifies the input expr in-place and updates the offset modifier on the vector selector.
+// Returns an error if 0 or 2+ vector selectors are found.
+func updateOffset(expr parser.Expr, offset time.Duration) error {
+	updates := 0
+
+	// Ignore the error since we never return it.
+	_, _ = anyNode(expr, func(entry parser.Node) (bool, error) {
+		if vector, ok := entry.(*parser.VectorSelector); ok {
+			vector.OriginalOffset = offset
+			updates++
 		}
-		return updated
-	case *parser.MatrixSelector:
-		return updateOffset(e.VectorSelector, offset)
-	case *parser.ParenExpr:
-		return updateOffset(e.Expr, offset)
-	case *parser.VectorSelector:
-		e.OriginalOffset = offset
-		return true
-	default:
-		return false
+		return false, nil
+	})
+
+	if updates == 0 {
+		return fmt.Errorf("unable to update offset modifier on expression, because no vector selector has been found: %v", expr)
 	}
+	if updates > 1 {
+		return fmt.Errorf("unable to update offset modifier on expression, because multiple vector selectors have been found: %v", expr)
+	}
+	return nil
 }
