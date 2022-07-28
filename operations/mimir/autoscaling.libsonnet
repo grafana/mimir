@@ -3,6 +3,11 @@
     autoscaling_querier_enabled: false,
     autoscaling_querier_min_replicas: error 'you must set autoscaling_querier_min_replicas in the _config',
     autoscaling_querier_max_replicas: error 'you must set autoscaling_querier_max_replicas in the _config',
+
+    autoscaling_ruler_querier_enabled: false,
+    autoscaling_ruler_querier_min_replicas: error 'you must set autoscaling_ruler_querier_min_replicas in the _config',
+    autoscaling_ruler_querier_max_replicas: error 'you must set autoscaling_ruler_querier_max_replicas in the _config',
+
     autoscaling_prometheus_url: 'http://prometheus.default:9090/prometheus',
   },
 
@@ -119,4 +124,43 @@
 
   query_frontend_deployment+: if !$._config.query_sharding_enabled || !$._config.autoscaling_querier_enabled then {} else
     queryFrontendReplicas($._config.autoscaling_querier_max_replicas),
+
+  //
+  // Ruler-queriers
+  //
+
+  newRulerQuerierScaledObject(name, querier_cpu_requests, min_replicas, max_replicas):: self.newScaledObject(name, $._config.namespace, {
+    min_replica_count: min_replicas,
+    max_replica_count: max_replicas,
+    metric_name: 'cortex_%s_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],
+
+    // Due to the more predicatable nature of the ruler-querier workload we can scale on CPU usage.
+    // To scale out relatively quickly, but scale in slower, we look at the average CPU utilization per ruler-querier over 5m (rolling window)
+    // and then we pick the highest value over the last 15m.
+    query: 'max_over_time(sum(rate(container_cpu_usage_seconds_total{container="%s",namespace="%s"}[5m]))[15m:])' % [name, $._config.namespace],
+
+    threshold: querier_cpu_requests,
+  }),
+
+  ruler_querier_scaled_object: if !$._config.autoscaling_ruler_querier_enabled || !$._config.ruler_remote_evaluation_enabled then null else
+    $.newRulerQuerierScaledObject(
+      name='ruler-querier',
+      querier_cpu_requests=$.ruler_querier_container.resources.requests.cpu,
+      min_replicas=$._config.autoscaling_ruler_querier_min_replicas,
+      max_replicas=$._config.autoscaling_ruler_querier_max_replicas,
+    ),
+
+  ruler_querier_deployment: if !$._config.ruler_remote_evaluation_enabled then null else (
+    super.ruler_querier_deployment + (
+      if !$._config.autoscaling_ruler_querier_enabled then {} else
+        removeReplicasFromSpec
+    )
+  ),
+
+  ruler_query_frontend_deployment: if !$._config.ruler_remote_evaluation_enabled then null else (
+    super.ruler_query_frontend_deployment + (
+      if !$._config.query_sharding_enabled || !$._config.autoscaling_ruler_querier_enabled then {} else
+        queryFrontendReplicas($._config.autoscaling_ruler_querier_max_replicas)
+    )
+  ),
 }

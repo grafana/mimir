@@ -28,11 +28,11 @@ define docs_docker_run
 endef
 
 .PHONY: docs-docker-rm
-docs-docker-rm:
+docs-docker-rm: ## Remove the docs container.
 	docker rm -f $(DOCS_DOCKER_CONTAINER)
 
 .PHONY: docs-pull
-docs-pull:
+docs-pull: ## Pull documentation base image.
 	docker pull $(DOCS_IMAGE)
 
 .PHONY: docs

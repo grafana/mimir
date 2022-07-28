@@ -47,6 +47,8 @@ spec:
               mountPath: /license
           env:
           envFrom:
+          securityContext:
+            readOnlyRootFilesystem: true
       restartPolicy: OnFailure
       volumes:
         - name: config

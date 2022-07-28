@@ -230,6 +230,7 @@ exes: $(EXES)
 $(EXES):
 	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(GO_FLAGS) -o "$@$(BINARY_SUFFIX)" ./$(@D)
 
+protos: ## Generates protobuf files.
 protos: $(PROTO_GOS)
 
 %.pb.go:
@@ -237,6 +238,7 @@ protos: $(PROTO_GOS)
 	@# to configure all such relative paths.
 	protoc -I $(GOPATH)/src:./vendor/github.com/thanos-io/thanos/pkg:./vendor/github.com/gogo/protobuf:./vendor:./$(@D) --gogoslick_out=plugins=grpc,Mgoogle/protobuf/any.proto=github.com/gogo/protobuf/types,:./$(@D) ./$(patsubst %.pb.go,%.proto,$@)
 
+lint: ## Run lints to check for style issues.
 lint: check-makefiles
 	misspell -error docs/sources
 
@@ -312,17 +314,17 @@ lint: check-makefiles
 		github.com/thanos-io/thanos/pkg/store/cache" \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
-format:
+format: ## Run gofmt and goimports.
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec gofmt -w -s {} \;
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec goimports -w -local github.com/grafana/mimir {} \;
 
-test:
+test: ## Run all unit tests.
 	go test -timeout 30m ./...
 
-test-with-race:
+test-with-race: ## Run all unit tests with data race detect.
 	go test -tags netgo -timeout 30m -race -count 1 ./...
 
-cover:
+cover: ## Run all unit tests with code coverage and generates reports.
 	$(eval COVERDIR := $(shell mktemp -d coverage.XXXXXXXXXX))
 	$(eval COVERFILE := $(shell mktemp $(COVERDIR)/unit.XXXXXXXXXX))
 	go test -tags netgo -timeout 30m -race -count 1 -coverprofile=$(COVERFILE) ./...
@@ -332,15 +334,16 @@ cover:
 shell:
 	bash
 
-mod-check:
+mod-check: ## Check the go mod is clean and tidy.
 	GO111MODULE=on go mod download
 	GO111MODULE=on go mod verify
 	GO111MODULE=on go mod tidy
 	GO111MODULE=on go mod vendor
-	@git diff --exit-code -- go.sum go.mod vendor/
+	@./tools/find-diff-or-untracked.sh go.sum go.mod vendor/ || (echo "Please update vendoring by running 'make mod-check'" && false)
 
+check-protos: ## Check the protobuf files are up to date.
 check-protos: clean-protos protos
-	@git diff --exit-code -- $(PROTO_GOS)
+	@./tools/find-diff-or-untracked.sh $(PROTO_GOS) || (echo "Please rebuild protobuf code by running 'check-protos'" && false)
 
 %.md : %.template
 	go run ./tools/doc-generator $< > $@
@@ -356,10 +359,11 @@ doc: clean-doc $(DOC_TEMPLATES:.template=.md) $(DOC_EMBED:.md=.md.embedmd)
 	# Make operations/helm/charts/*/README.md
 	helm-docs
 
-# Add license header to files.
-license:
+
+license: ## Add license header to files.
 	go run ./tools/add-license ./cmd ./integration ./pkg ./tools ./development ./mimir-build-image ./operations ./.github
 
+check-license: ## Check license header of files.
 check-license: license
 	@git diff --exit-code || (echo "Please add the license header running 'make BUILD_IN_CONTAINER=false license'" && false)
 
@@ -432,16 +436,17 @@ clean:
 	find . -type f -name '*_linux_amd64' -perm +u+x -exec rm {} \;
 	go clean ./...
 
-clean-protos:
+clean-protos: ## Clean protobuf files.
 	rm -rf $(PROTO_GOS)
 
 # List all images building make targets.
 list-image-targets:
 	@echo $(UPTODATE_FILES) | tr " " "\n"
 
-clean-doc:
+clean-doc: ## Clean the documentation files generated from templates.
 	rm -f $(DOC_TEMPLATES:.template=.md)
 
+check-doc: ## Check the documentation files are up to date.
 check-doc: doc
 	@find . -name "*.md" | xargs git diff --exit-code -- \
 	|| (echo "Please update generated documentation by running 'make doc' and committing the changes" && false)
@@ -467,7 +472,7 @@ check-white-noise: clean-white-noise
 
 check-mixin: build-mixin format-mixin check-mixin-jb check-mixin-mixtool check-mixin-runbooks
 	@echo "Checking diff:"
-	@git diff --exit-code -- $(MIXIN_PATH) $(MIXIN_OUT_PATH) || (echo "Please build and format mixin by running 'make build-mixin format-mixin'" && false)
+	@./tools/find-diff-or-untracked.sh $(MIXIN_PATH) $(MIXIN_OUT_PATH) || (echo "Please build and format mixin by running 'make build-mixin format-mixin'" && false)
 
 	@cd $(MIXIN_PATH) && \
 	jb install && \
@@ -493,7 +498,7 @@ mixin-screenshots: ## Generates mixin dashboards screenshots.
 
 check-jsonnet-manifests: format-jsonnet-manifests
 	@echo "Checking diff:"
-	@git diff --exit-code -- $(JSONNET_MANIFESTS_PATH) || (echo "Please format jsonnet manifests by running 'make format-jsonnet-manifests'" && false)
+	@./tools/find-diff-or-untracked.sh "$(JSONNET_MANIFESTS_PATH)" || (echo "Please format jsonnet manifests by running 'make format-jsonnet-manifests'" && false)
 
 format-jsonnet-manifests:
 	@find $(JSONNET_MANIFESTS_PATH) -type f -name '*.libsonnet' -print -o -name '*.jsonnet' -print | xargs jsonnetfmt -i
@@ -508,17 +513,23 @@ check-jsonnet-getting-started:
 		| sed 's/\(jb install github.com\/grafana\/mimir\/operations\/mimir@main\)/\1 \&\& rm -fr .\/vendor\/mimir \&\& cp -r ..\/operations\/mimir .\/vendor\/mimir\//g' \
 		| bash
 
-build-helm-tests:
+operations/helm/charts/mimir-distributed/charts: operations/helm/charts/mimir-distributed/Chart.yaml operations/helm/charts/mimir-distributed/Chart.lock
+	@cd ./operations/helm/charts/mimir-distributed && helm dependency update
+
+check-helm-jsonnet-diff: operations/helm/charts/mimir-distributed/charts build-jsonnet-tests
+	@./operations/compare-helm-with-jsonnet/compare-helm-with-jsonnet.sh
+
+build-helm-tests: operations/helm/charts/mimir-distributed/charts
 	@./operations/helm/tests/build.sh
 
 check-helm-tests: build-helm-tests
-	@git diff --exit-code -- ./operations/helm/tests || (echo "Please rebuild helm tests output 'make build-helm-tests'" && false)
+	@./tools/find-diff-or-untracked.sh operations/helm/tests || (echo "Please rebuild helm tests output 'make build-helm-tests'" && false)
 
 build-jsonnet-tests:
 	@./operations/mimir-tests/build.sh
 
 check-jsonnet-tests: build-jsonnet-tests
-	@git diff --exit-code -- ./operations/mimir-tests || (echo "Please rebuild jsonnet tests output 'make build-jsonnet-tests'" && false)
+	@./tools/find-diff-or-untracked.sh operations/mimir-tests || (echo "Please rebuild jsonnet tests output 'make build-jsonnet-tests'" && false)
 
 check-tsdb-blocks-storage-s3-docker-compose-yaml:
 	cd development/tsdb-blocks-storage-s3 && make check

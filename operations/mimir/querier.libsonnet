@@ -54,7 +54,7 @@
 
   newQuerierDeployment(name, container)::
     deployment.new(name, $._config.querier.replicas, [container]) +
-    (if $._config.querier_allow_multiple_replicas_on_same_node then {} else $.util.antiAffinity) +
+    $.newMimirSpreadTopology(name, $._config.querier_topology_spread_max_skew) +
     $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint) +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(5) +

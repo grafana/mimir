@@ -1,0 +1,33 @@
+resources:
+  - ../06-services
+
+components:
+  - ../../components/pods
+
+patches:
+  # TODO(logiraptor): Jsonnet sets JAEGER_REPORTER_MAX_QUEUE_SIZE on the querier
+  - target:
+      name: mimir-querier
+      kind: Deployment
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/containers/0/env
+
+  # TODO(logiraptor): Jsonnet sets POD_IP on the alertmanager
+  - target:
+      name: mimir-alertmanager
+      kind: StatefulSet
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/containers/0/env
+
+  # TODO(logiraptor): Jsonnet uses a deprecated PodDisruptionBudget api version
+  - target:
+      name: mimir-(ingester|store-gateway)
+      kind: PodDisruptionBudget
+      version: v1beta1
+      group: policy
+    patch: |-
+      - op: replace
+        path: /apiVersion
+        value: policy/v1

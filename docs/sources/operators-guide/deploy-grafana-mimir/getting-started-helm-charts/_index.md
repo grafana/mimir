@@ -192,10 +192,6 @@ Make a choice based on whether or not you already have a Grafana Agent set up:
   1. Write the following configuration to an `agent.yaml` file:
 
      ```yaml
-     server:
-       http_listen_port: 12345
-       grpc_listen_port: 54321
-
      metrics:
        wal_directory: /tmp/grafana-agent/wal
 

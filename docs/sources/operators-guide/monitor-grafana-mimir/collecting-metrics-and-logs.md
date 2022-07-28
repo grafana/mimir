@@ -313,8 +313,6 @@ metrics:
   global:
     scrape_interval: 15s
   wal_directory: /tmp/grafana-agent-wal
-server:
-  http_listen_port: 12345
 ```
 
 ## Collect metrics and logs without the Helm chart

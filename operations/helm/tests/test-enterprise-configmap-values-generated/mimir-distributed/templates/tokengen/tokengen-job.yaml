@@ -49,6 +49,8 @@ spec:
           envFrom:
             - secretRef:
                 name: mimir-minio-secret
+          securityContext:
+            readOnlyRootFilesystem: true
       restartPolicy: OnFailure
       volumes:
         - name: config

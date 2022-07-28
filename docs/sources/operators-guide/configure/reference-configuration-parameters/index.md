@@ -779,21 +779,6 @@ ring:
 # CLI flag: -ingester.active-series-metrics-idle-timeout
 [active_series_metrics_idle_timeout: <duration> | default = 10m]
 
-# (advanced) [Deprecated] This config has been moved to the limits config,
-# please set it there. Additional custom trackers for active metrics. If there
-# are active series matching a provided matcher (map value), the count will be
-# exposed in the custom trackers metric labeled using the tracker name (map
-# key). Zero valued counts are not exposed (and removed when they go back to
-# zero).
-# Example:
-#   The following configuration will count the active series coming from dev and
-#   prod namespaces for each tenant and label them as {name="dev"} and
-#   {name="prod"} in the cortex_ingester_active_series_custom_tracker metric.
-#   active_series_custom_trackers:
-#       dev: '{namespace=~"dev-.*"}'
-#       prod: '{namespace=~"prod-.*"}'
-[active_series_custom_trackers: <map of tracker name (string) to matcher (string)> | default = ]
-
 # (experimental) Period with which to update the per-tenant TSDB configuration.
 # CLI flag: -ingester.tsdb-config-update-period
 [tsdb_config_update_period: <duration> | default = 15s]
@@ -1055,10 +1040,16 @@ grpc_client_config:
 # CLI flag: -query-frontend.instance-port
 [port: <int> | default = 0]
 
-# (advanced) Split queries by an interval and execute in parallel. You should
-# use a multiple of 24 hours to optimize querying blocks. 0 to disable it.
+# (advanced) Split range queries by an interval and execute in parallel. You
+# should use a multiple of 24 hours to optimize querying blocks. 0 to disable
+# it.
 # CLI flag: -query-frontend.split-queries-by-interval
 [split_queries_by_interval: <duration> | default = 24h]
+
+# (experimental) Split instant queries by an interval and execute in parallel. 0
+# to disable it.
+# CLI flag: -query-frontend.split-instant-queries-by-interval
+[split_instant_queries_by_interval: <duration> | default = 0s]
 
 # Mutate incoming queries to align their start and end with their step.
 # CLI flag: -query-frontend.align-querier-with-step
@@ -2367,17 +2358,17 @@ The `limits` block configures default and per-tenant limits imposed by component
 # Prometheus server, e.g. remote_write.write_relabel_configs.
 [metric_relabel_configs: <relabel_config...> | default = ]
 
-# The maximum number of active series per tenant, across the cluster before
+# The maximum number of in-memory series per tenant, across the cluster before
 # replication. 0 to disable.
 # CLI flag: -ingester.max-global-series-per-user
 [max_global_series_per_user: <int> | default = 150000]
 
-# The maximum number of active series per metric name, across the cluster before
-# replication. 0 to disable.
+# The maximum number of in-memory series per metric name, across the cluster
+# before replication. 0 to disable.
 # CLI flag: -ingester.max-global-series-per-metric
 [max_global_series_per_metric: <int> | default = 20000]
 
-# The maximum number of active metrics with metadata per tenant, across the
+# The maximum number of in-memory metrics with metadata per tenant, across the
 # cluster. 0 to disable.
 # CLI flag: -ingester.max-global-metadata-per-user
 [max_global_metadata_per_user: <int> | default = 0]
@@ -3123,7 +3114,7 @@ The `compactor` block configures the compactor component.
 # all compaction time, but also in single-tenant environments to force new
 # discovery of blocks more often. 0 = disabled.
 # CLI flag: -compactor.max-compaction-time
-[max_compaction_time: <duration> | default = 0s]
+[max_compaction_time: <duration> | default = 1h]
 
 # (advanced) Number of goroutines opening blocks before compaction.
 # CLI flag: -compactor.max-opening-blocks-concurrency
@@ -3362,9 +3353,8 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 &nbsp;
 
 ```yaml
-# Comma separated list of memcached addresses. Supported prefixes are: dns+
-# (looked up as an A/AAAA query), dnssrv+ (looked up as a SRV query, dnssrvnoa+
-# (looked up as a SRV query, with no A/AAAA lookup made after that).
+# Comma-separated list of memcached addresses. Each address can be an IP
+# address, hostname, or an entry specified in the DNS Service Discovery format.
 # CLI flag: -<prefix>.memcached.addresses
 [addresses: <string> | default = ""]
 

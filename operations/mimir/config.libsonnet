@@ -19,12 +19,15 @@
     // Controls whether multiple pods for the same service can be scheduled on the same node.
     // Distributing the pods over different nodes improves performance and also realiability,
     // especially important in case of ingester where losing multiple ingesters can cause data loss.
-    distributor_allow_multiple_replicas_on_same_node: false,
     ingester_allow_multiple_replicas_on_same_node: false,
-    ruler_allow_multiple_replicas_on_same_node: false,
-    querier_allow_multiple_replicas_on_same_node: false,
-    query_frontend_allow_multiple_replicas_on_same_node: false,
     store_gateway_allow_multiple_replicas_on_same_node: false,
+
+    // Controls the max skew for pod topology spread constraints.
+    // See: https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/
+    distributor_topology_spread_max_skew: 1,
+    query_frontend_topology_spread_max_skew: 1,
+    querier_topology_spread_max_skew: 1,
+    ruler_topology_spread_max_skew: 1,
 
     test_exporter_enabled: false,
     test_exporter_start_time: error 'must specify test exporter start time',

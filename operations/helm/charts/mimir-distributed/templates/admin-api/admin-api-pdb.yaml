@@ -1,16 +1,3 @@
 {{- if .Values.enterprise.enabled -}}
-{{- if .Values.admin_api.podDisruptionBudget -}}
-apiVersion: policy/v1beta1
-kind: PodDisruptionBudget
-metadata:
-  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "admin-api") }}
-  labels:
-    {{- include "mimir.labels" (dict "ctx" . "component" "admin-api" "memberlist" true) | nindent 4 }}
-  namespace: {{ .Release.Namespace | quote }}
-spec:
-  selector:
-    matchLabels:
-      {{- include "mimir.selectorLabels" (dict "ctx" . "component" "admin-api" "memberlist" true) | nindent 6 }}
-{{ toYaml .Values.admin_api.podDisruptionBudget | indent 2 }}
-{{- end -}}
+{{- include "mimir.lib.podDisruptionBudget" (dict "ctx" $ "component" "admin-api" "memberlist" true) }}
 {{- end -}}

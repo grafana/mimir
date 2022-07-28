@@ -23,7 +23,7 @@ For configuration of remote write to Grafana Mimir, refer to [Configuring Promet
 
 Grafana Mimir supports uploading of historic TSDB blocks, notably from Prometheus.
 In order to enable this functionality, either for all tenants or a specific one, refer to
-[Configuring TSDB block upload]({{< relref "../operators-guide/configure/configure-tsdb-block-upload.md" >}}).
+[Configure TSDB block upload]({{< relref "../operators-guide/configure/configure-tsdb-block-upload.md" >}}).
 
 Prometheus stores TSDB blocks in the path specified in the `--storage.tsdb.path` flag.
 

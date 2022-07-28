@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/sirupsen/logrus"
 	"gopkg.in/alecthomas/kingpin.v2"
@@ -16,6 +17,7 @@ import (
 type BackfillCommand struct {
 	clientConfig client.Config
 	blocks       blockList
+	sleepTime    time.Duration
 }
 
 type blockList []string
@@ -80,6 +82,10 @@ func (c *BackfillCommand) Register(app *kingpin.Application, envVars EnvVarNames
 		Default("").
 		Envar(envVars.TLSKeyPath).
 		StringVar(&c.clientConfig.TLS.KeyPath)
+
+	cmd.Flag("sleep-time", "How long to sleep between checking state of block upload after uploading all files for the block.").
+		Default("20s").
+		DurationVar(&c.sleepTime)
 }
 
 func (c *BackfillCommand) backfill(k *kingpin.ParseContext) error {
@@ -93,5 +99,5 @@ func (c *BackfillCommand) backfill(k *kingpin.ParseContext) error {
 		return err
 	}
 
-	return cli.Backfill(c.blocks)
+	return cli.Backfill(c.blocks, c.sleepTime)
 }
