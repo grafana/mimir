@@ -89,7 +89,7 @@ func NewForwarder(cfg Config, reg prometheus.Registerer, log log.Logger) Forward
 		}),
 	}
 
-	f.Service = services.NewBasicService(f.start, f.loop, f.stop)
+	f.Service = services.NewIdleService(f.start, f.stop)
 
 	return f
 }
@@ -101,11 +101,6 @@ func (f *forwarder) start(ctx context.Context) error {
 		go f.worker()
 	}
 
-	return nil
-}
-
-func (f *forwarder) loop(ctx context.Context) error {
-	<-ctx.Done()
 	return nil
 }
 
