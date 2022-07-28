@@ -454,6 +454,10 @@ func updateEmbeddedExpr(expr parser.Expr, call *parser.Call) parser.Expr {
 // updateRangeInterval modifies the input expr in-place and updates the range interval on the matrix selector.
 // Returns an error if 0 or 2+ matrix selectors are found.
 func updateRangeInterval(expr parser.Expr, rangeInterval time.Duration) error {
+	if rangeInterval <= 0 {
+		return fmt.Errorf("unable to update range interval on expression, because a negative interval %d was provided: %v", rangeInterval, expr)
+	}
+
 	updates := 0
 
 	// Ignore the error since we never return it.
