@@ -12,13 +12,14 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/user"
+
+	"github.com/grafana/mimir/pkg/util"
 )
 
 func TestQuerySplittingCorrectness(t *testing.T) {
@@ -141,8 +142,15 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 			query:                `sum(max(rate(metric_counter[3m])))`,
 			expectedSplitQueries: 3,
 		},
-		"rate / rate > 0.5": {
-			query:                `rate(metric_counter[1m]) / rate(metric_counter[1m]) > 0.5`,
+		"rate(3m) / rate(3m) > 0.5": {
+			query:                `rate(metric_counter[3m]) / rate(metric_counter[3m]) > 0.5`,
+			expectedSplitQueries: 6,
+		},
+		// should not be mapped if both operands are not splittable
+		//   - first operand `rate(metric_counter[1m])` has a smaller range interval than the configured splitting
+		//   - second operand `rate(metric_counter[5h:5m])` is a subquery
+		"rate(1m) / rate(subquery) > 0.5": {
+			query:                `rate(metric_counter[1m]) / rate(metric_counter[5h:5m]) > 0.5`,
 			expectedSplitQueries: 0,
 		},
 		// Histograms
