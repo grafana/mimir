@@ -1,4 +1,5 @@
 {{- $calculatedConfig := include "mimir.calculatedConfig" . | fromYaml }}
+{{- $unstructuredConfig := include "mimir.unstructuredConfig" . | fromYaml }}
 
 {{- if .Values.config }}
 {{- fail "Top level 'config' is not allowed. In 'mimir.config', provide the configuration as a string that can contain template expressions. Alternatively, you can provide the configuration as an external secret." }}
@@ -12,12 +13,16 @@
 {{- fail "The 'activity_tracker.filepath' in 'mimir.config' should be set to a path that is on a writeable volume. For example: '/data/metrics-activity.log'." }}
 {{- end }}
 
-{{- if ($calculatedConfig.server).http_listen_port }}
-{{- fail "The setting 'server.http_listen_port' is not allowed in 'mimir.config' as it leads to circular dependency and thus is not supported. Use 'nginx.service.port' or 'gateway.service.port' for enterprise to expose services on a different port." }}
+{{- if ($unstructuredConfig.server).http_listen_port }}
+{{- fail "The setting 'server.http_listen_port' is not allowed in 'mimir.config' as it leads to a circular dependency. Set it in 'mimir.structuredConfig' instead." }}
 {{- end }}
 
-{{- if ($calculatedConfig.server).grpc_listen_port }}
-{{- fail "The setting 'server.grpc_listen_port' is not allowed in 'mimir.config' as it leads to circular dependency and thus is not supported." }}
+{{- if ($unstructuredConfig.server).grpc_listen_port }}
+{{- fail "The setting 'server.grpc_listen_port' is not allowed in 'mimir.config' as it leads to a circular dependency. Set it in 'mimir.structuredConfig' instead." }}
+{{- end }}
+
+{{- if ($unstructuredConfig.memberlist).bind_port }}
+{{- fail "The setting 'memberlist.bind_port' is not allowed in 'mimir.config' as it leads to a circular dependency. Set it in 'mimir.structuredConfig' instead." }}
 {{- end }}
 
 {{- if not (has .Values.configStorageType (list "Secret" "ConfigMap")) }}
