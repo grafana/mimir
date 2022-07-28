@@ -456,13 +456,27 @@ func shardMatrixSelector(curshard, shards int, selector *parser.MatrixSelector) 
 	return nil, fmt.Errorf("invalid selector type: %T", selector.VectorSelector)
 }
 
-// isSubquery returns true if the given function call expression is a subquery.
+// isSubquery returns true if the given function call expression is a subquery,
+// or a subquery wrapped by parenthesis.
 func isSubquery(n *parser.Call) bool {
-	if len(n.Args) == 0 {
+	for _, arg := range n.Args {
+		if ok := isSubqueryVisitFn(arg); ok {
+			return true
+		}
+	}
+
+	return false
+}
+
+func isSubqueryVisitFn(expr parser.Expr) bool {
+	switch e := expr.(type) {
+	case *parser.ParenExpr:
+		return isSubqueryVisitFn(e.Expr)
+	case *parser.SubqueryExpr:
+		return true
+	default:
 		return false
 	}
-	_, ok := n.Args[0].(*parser.SubqueryExpr)
-	return ok
 }
 
 func copyTimestamp(original *int64) *int64 {
