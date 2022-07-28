@@ -549,7 +549,7 @@ func TestShardSummerWithEncoding(t *testing.T) {
 	}
 }
 
-func TestIsSubquery(t *testing.T) {
+func TestIsSubqueryCall(t *testing.T) {
 	tests := []struct {
 		query    string
 		expected bool
@@ -586,7 +586,7 @@ func TestIsSubquery(t *testing.T) {
 			call, ok := expr.(*parser.Call)
 			require.True(t, ok)
 
-			assert.Equal(t, testData.expected, isSubquery(call))
+			assert.Equal(t, testData.expected, isSubqueryCall(call))
 		})
 	}
 }
