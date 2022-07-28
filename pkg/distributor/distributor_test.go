@@ -972,6 +972,9 @@ func TestDistributor_PushQuery(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
+		// Change scope to ensure it work fine when test cases are executed concurrently.
+		tc := tc
+
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			cfg := prepConfig{
