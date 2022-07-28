@@ -113,6 +113,14 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 			query:                `topk(2, sum(rate(metric_counter[3m])))`,
 			expectedSplitQueries: 3,
 		},
+		"stddev(rate)": {
+			query:                `stddev(rate(metric_counter[3m]))`,
+			expectedSplitQueries: 3,
+		},
+		"count_values(count_over_time)": {
+			query:                `count_values("dst", count_over_time(metric_counter[3m]))`,
+			expectedSplitQueries: 3,
+		},
 		// Binary operations
 		"rate / rate": {
 			query:                `rate(metric_counter[3m]) / rate(metric_counter[6m])`,

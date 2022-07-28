@@ -172,6 +172,16 @@ func TestInstantSplitter(t *testing.T) {
 			out:                  `topk(10, histogram_quantile(0.9, sum without() (` + concatOffsets(splitInterval, 3, `increase({app="foo"}[x]y)`) + `) / 180))`,
 			expectedSplitQueries: 3,
 		},
+		{
+			in:                   `stddev(rate(metric[3m]))`,
+			out:                  `stddev(sum without() (` + concatOffsets(splitInterval, 3, `increase(metric[x]y)`) + `) / 180)`,
+			expectedSplitQueries: 3,
+		},
+		{
+			in:                   `count_values("dst", count_over_time(metric[3m]))`,
+			out:                  `count_values("dst", sum without() (` + concatOffsets(splitInterval, 3, `count_over_time(metric[x]y)`) + `))`,
+			expectedSplitQueries: 3,
+		},
 		// Multi-level vector aggregators should be moved downstream
 		{
 			in:                   `sum(max(rate({app="foo"}[3m])))`,
