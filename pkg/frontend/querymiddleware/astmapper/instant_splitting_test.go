@@ -268,7 +268,7 @@ func TestInstantSplitterNoOp(t *testing.T) {
 		{
 			query: `5`,
 		},
-		// should be noop if binary expression's operands are both number literals
+		// should be noop if binary expression's operands are both constant scalars
 		{
 			query: `20 / 10`,
 		},
@@ -277,6 +277,9 @@ func TestInstantSplitterNoOp(t *testing.T) {
 		},
 		{
 			query: `(20) / (10)`,
+		},
+		{
+			query: `time() != bool 0`,
 		},
 		// should be noop if binary operation is not mapped
 		//   - first operand `rate(metric_counter[1m])` has a smaller range interval than the configured splitting
