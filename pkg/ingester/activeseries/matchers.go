@@ -35,15 +35,15 @@ func (m *Matchers) Config() CustomTrackersConfig {
 	return m.cfg
 }
 
-// Matches returns a map[int]bool containing only matching matchers with ordinal number of matcher -> true if matches
-func (m *Matchers) Matches(series labels.Labels) map[int]bool {
+// Matches returns a []int containing only matcher indexes which are matching
+func (m *Matchers) Matches(series labels.Labels) []int {
 	if len(m.matchers) == 0 {
 		return nil
 	}
-	matches := map[int]bool{}
+	matches := []int{}
 	for i, sm := range m.matchers {
 		if sm.Matches(series) {
-			matches[i] = true
+			matches = append(matches, i)
 		}
 	}
 	return matches
