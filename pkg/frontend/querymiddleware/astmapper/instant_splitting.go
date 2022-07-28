@@ -269,7 +269,7 @@ func (i *instantSplitter) mapCallAvgOverTime(expr *parser.Call, stats *MapperSta
 func (i *instantSplitter) mapCallRate(expr *parser.Call, stats *MapperStats) (mapped parser.Expr, finished bool, err error) {
 	// In case the range interval is smaller than the configured split interval,
 	// don't split it and don't map further nodes (finished=true).
-	rangeInterval, canSplit := i.assertRangeInterval(expr)
+	rangeInterval, canSplit := i.assertSplittableRangeInterval(expr)
 	if !canSplit {
 		return expr, true, nil
 	}
@@ -307,7 +307,7 @@ func (i *instantSplitter) mapCallRate(expr *parser.Call, stats *MapperStats) (ma
 func (i *instantSplitter) mapCallVectorAggregation(expr *parser.Call, stats *MapperStats, op parser.ItemType) (mapped parser.Expr, finished bool, err error) {
 	// In case the range interval is smaller than the configured split interval,
 	// don't split it and don't map further nodes (finished=true).
-	rangeInterval, canSplit := i.assertRangeInterval(expr)
+	rangeInterval, canSplit := i.assertSplittableRangeInterval(expr)
 	if !canSplit {
 		return expr, true, nil
 	}
@@ -391,9 +391,9 @@ func (i *instantSplitter) splitAndSquashCall(expr *parser.Call, stats *MapperSta
 	return squashExpr, true, nil
 }
 
-// assertRangeInterval returns the range interval specified in the input expr and whether it is greater than
+// assertSplittableRangeInterval returns the range interval specified in the input expr and whether it is greater than
 // the configured split interval.
-func (i *instantSplitter) assertRangeInterval(expr parser.Expr) (rangeInterval time.Duration, canSplit bool) {
+func (i *instantSplitter) assertSplittableRangeInterval(expr parser.Expr) (rangeInterval time.Duration, canSplit bool) {
 	rangeInterval = getRangeInterval(expr)
 	if rangeInterval > i.interval {
 		return rangeInterval, true
