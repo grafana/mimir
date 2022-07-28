@@ -27,7 +27,7 @@ import (
 
 func TestQueryGap(t *testing.T) {
 	// Going too high starts hitting file descriptor limit, since we run all queriers concurrently.
-	const numQueries = 100
+	const numQueries = 1
 
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
@@ -81,8 +81,8 @@ func TestQueryGap(t *testing.T) {
 	// Wait until distributor and queriers have updated the ring.
 	// The distributor should have 5*512 tokens for the ingester ring and 1 for the distributor ring
 	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals((5*512)+1), "cortex_ring_tokens_total"))
-	require.NoError(t, querier1.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
-	require.NoError(t, querier2.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
+	require.NoError(t, querier1.WaitSumMetrics(e2e.Equals(5*512), "cortex_ring_tokens_total"))
+	require.NoError(t, querier2.WaitSumMetrics(e2e.Equals(5*512), "cortex_ring_tokens_total"))
 
 	// Push a series for each user to Mimir.
 	now := time.Now()
@@ -93,37 +93,60 @@ func TestQueryGap(t *testing.T) {
 	// TODO: Change this and add samples over 12h for >1 series.
 	startTime := now.Add(-12 * time.Hour)
 	startTime = time.Unix(60*(startTime.Unix()/60), 0) // Align to 1 minute.
-	numSeries := 10
+	numSeries := 1
 	series := make([]prompb.TimeSeries, numSeries)
 	expMatrix := make(model.Matrix, numSeries)
-	for i := 0; i < 10; i++ {
+	for i := 0; i < numSeries; i++ {
 		series[i] = prompb.TimeSeries{
 			Labels: []prompb.Label{
 				{Name: "__name__", Value: "cortex_test_total"},
 				{Name: "id", Value: fmt.Sprintf("%d", i)},
 			},
 		}
-		expMatrix[i].Metric = model.Metric{
-			"__name__": "cortex_test_total",
-			"id":       model.LabelValue(fmt.Sprintf("%d", i)),
+		expMatrix[i] = &model.SampleStream{
+			Metric: model.Metric{
+				"__name__": "cortex_test_total",
+				"id":       model.LabelValue(fmt.Sprintf("%d", i)),
+			},
 		}
 	}
+	fmt.Println("Ingestion started")
 	sampleValue := float64(0)
-	for ts := startTime; now.Sub(ts) > 0; ts = ts.Add(15 * time.Second) {
-		for i := 0; i < 10; i++ {
+	for ts := startTime; now.Sub(ts) > 0; ts = ts.Add(time.Minute) {
+		for i := 0; i < numSeries; i++ {
 			tsMillis, val := e2e.TimeToMilliseconds(ts), sampleValue
 			series[i].Samples = []prompb.Sample{
 				{Value: val, Timestamp: tsMillis},
+				{Value: val + 10, Timestamp: tsMillis + (15 * time.Second.Milliseconds())},
+				{Value: val + 20, Timestamp: tsMillis + (30 * time.Second.Milliseconds())},
+				{Value: val + 30, Timestamp: tsMillis + (45 * time.Second.Milliseconds())},
 			}
-			expMatrix[i].Values = append(expMatrix[i].Values, model.SamplePair{
-				Timestamp: model.Time(tsMillis),
-				Value:     model.SampleValue(val),
-			})
-			res, err := distClient.Push(series)
-			require.NoError(t, err)
-			require.Equal(t, 200, res.StatusCode)
-			sampleValue += 10
+			expMatrix[i].Values = append(expMatrix[i].Values,
+				model.SamplePair{
+					Timestamp: model.Time(tsMillis),
+					Value:     model.SampleValue(val),
+				},
+				model.SamplePair{
+					Timestamp: model.Time(tsMillis + (15 * time.Second.Milliseconds())),
+					Value:     model.SampleValue(val + 10),
+				},
+				model.SamplePair{
+					Timestamp: model.Time(tsMillis + (30 * time.Second.Milliseconds())),
+					Value:     model.SampleValue(val + 20),
+				},
+				model.SamplePair{
+					Timestamp: model.Time(tsMillis + (45 * time.Second.Milliseconds())),
+					Value:     model.SampleValue(val + 30),
+				},
+			)
+			if ts.Add(45 * time.Second).After(now) {
+				now = ts.Add(45 * time.Second)
+			}
 		}
+		sampleValue += 40
+		res, err := distClient.Push(series)
+		require.NoError(t, err)
+		require.Equal(t, 200, res.StatusCode)
 	}
 
 	//var series []prompb.TimeSeries
@@ -133,9 +156,10 @@ func TestQueryGap(t *testing.T) {
 	//require.Equal(t, 200, res.StatusCode)
 
 	wg := sync.WaitGroup{}
-
+	fmt.Println("Ingestion done")
 	// Run all queries concurrently to get better distribution of requests between queriers.
 	for i := 0; i < numQueries; i++ {
+		fmt.Println("Query", i)
 		wg.Add(1)
 
 		go func() {
@@ -144,7 +168,7 @@ func TestQueryGap(t *testing.T) {
 			require.NoError(t, err)
 
 			// TODO: change this to query range and a sum(rate()) query.
-			result, err := c.QueryRange("cortex_test_total", startTime, now, 15*time.Second)
+			result, err := c.QueryRange("sum(cortex_test_total)", startTime, now, 15*time.Second)
 			require.NoError(t, err)
 			require.Equal(t, model.ValMatrix, result.Type())
 			assert.Equal(t, expMatrix, result.(model.Matrix))
