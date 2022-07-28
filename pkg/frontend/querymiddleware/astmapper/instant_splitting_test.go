@@ -273,6 +273,14 @@ func TestInstantSplitterNoOp(t *testing.T) {
 		{
 			query: `(20) / (10)`,
 		},
+		// should be noop if binary operation is not mapped
+		{
+			query: `rate({app="foo"}[1m]) / rate({app="bar"}[1m]) > 0.5`,
+		},
+		// should be noop if inner binary operation is not mapped
+		{
+			query: `sum(rate({app="foo"}[1h:5m]) * 60) by (bar)`,
+		},
 		// should be noop if subquery
 		{
 			query: `sum_over_time(metric_counter[1h:5m])`,
@@ -282,14 +290,6 @@ func TestInstantSplitterNoOp(t *testing.T) {
 		},
 		{
 			query: `sum(avg_over_time(metric_counter[1h:5m])) by (bar)`,
-		},
-		// should be noop if binary operation is not mapped
-		{
-			noop: `rate({app="foo"}[1m]) / rate({app="bar"}[1m]) > 0.5`,
-		},
-		// should be noop if inner binary operation is not mapped
-		{
-			noop: `sum(rate({app="foo"}[1h:5m]) * 60) by (bar)`,
 		},
 	} {
 		tt := tt
