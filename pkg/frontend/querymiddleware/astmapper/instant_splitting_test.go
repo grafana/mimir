@@ -332,6 +332,24 @@ func TestInstantSplitterNoOp(t *testing.T) {
 		{
 			query: `sum(avg_over_time(metric_counter[1h:5m])) by (bar)`,
 		},
+		{
+			query: `min_over_time(sum by(group_1) (rate(metric_counter[5m]))[10m:2m])`,
+		},
+		{
+			query: `max_over_time(stddev_over_time(deriv(rate(metric_counter[10m])[5m:1m])[2m:])[10m:])`,
+		},
+		{
+			query: `rate(sum by(group_1) (rate(metric_counter[5m]))[10m:])`,
+		},
+		{
+			query: `absent_over_time(rate(metric_counter[5m])[10m:])`,
+		},
+		{
+			query: `max_over_time(stddev_over_time(deriv(sort(metric_counter)[5m:1m])[2m:])[10m:])`,
+		},
+		{
+			query: `max_over_time(absent_over_time(deriv(rate(metric_counter[1m])[5m:1m])[2m:])[10m:])`,
+		},
 	} {
 		tt := tt
 
