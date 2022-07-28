@@ -140,7 +140,7 @@ type haClusterInfo struct {
 	nonElectedLastSeenTimestamp int64
 }
 
-// NewClusterTracker returns a new HA cluster tracker using either Consul
+// newHATracker returns a new HA cluster tracker using either Consul
 // or in-memory KV store. Tracker must be started via StartAsync().
 func newHATracker(cfg HATrackerConfig, limits haTrackerLimits, reg prometheus.Registerer, logger log.Logger) (*haTracker, error) {
 	var jitter time.Duration
@@ -403,7 +403,7 @@ func (h *haTracker) cleanupOldReplicas(ctx context.Context, deadline time.Time) 
 }
 
 // checkReplica checks the cluster and replica against the local cache to see
-// if we should accept the incomming sample. It will return replicasNotMatchError
+// if we should accept the incoming sample. It will return replicasNotMatchError
 // if we shouldn't store this sample but are accepting samples from another
 // replica for the cluster.
 // Updates to and from the KV store are handled in the background, except

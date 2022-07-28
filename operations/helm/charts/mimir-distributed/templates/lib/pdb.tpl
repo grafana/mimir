@@ -1,11 +1,14 @@
 {{/*
-memcached PodDisruptionBudget
+Mimir common PodDisruptionBudget definition
+Params:
+  ctx = . context
+  component = name of the component
 */}}
-{{- define "mimir.memcached.podDisruptionBudget" -}}
-{{ with (index $.ctx.Values $.component) }}
-{{- if .enabled -}}
+{{- define "mimir.lib.podDisruptionBudget" -}}
+{{- $componentSection := include "mimir.componentSectionFromName" . }}
+{{ with (index $.ctx.Values $componentSection) }}
 {{- if .podDisruptionBudget -}}
-apiVersion: {{ include "mimir.podDisruptionBudget.apiVersion" $ }}
+apiVersion: {{ include "mimir.podDisruptionBudget.apiVersion" $.ctx }}
 kind: PodDisruptionBudget
 metadata:
   name: {{ include "mimir.resourceName" (dict "ctx" $.ctx "component" $.component) }}
@@ -17,7 +20,6 @@ spec:
     matchLabels:
       {{- include "mimir.selectorLabels" (dict "ctx" $.ctx "component" $.component) | nindent 6 }}
 {{ toYaml .podDisruptionBudget | indent 2 }}
-{{- end -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

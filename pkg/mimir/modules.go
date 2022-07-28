@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv/codec"
 	"github.com/grafana/dskit/kv/memberlist"
 	"github.com/grafana/dskit/modules"
@@ -211,6 +210,7 @@ func (t *Mimir) initRing() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initRuntimeConfig() (services.Service, error) {
+<<<<<<< HEAD
 	// TODO Remove in Mimir 2.3.
 	//      Previously ActiveSeriesCustomTrackers was an ingester config, now it's in LimitsConfig.
 	//      We provide backwards compatibility for it by parsing the old YAML location and copying it to LimitsConfig here,
@@ -226,6 +226,9 @@ func (t *Mimir) initRuntimeConfig() (services.Service, error) {
 	}
 
 	if len(t.Cfg.RuntimeConfig.LoadPath) == 0 {
+=======
+	if t.Cfg.RuntimeConfig.LoadPath == "" {
+>>>>>>> origin
 		// no need to initialize module if load path is empty
 		return nil, nil
 	}

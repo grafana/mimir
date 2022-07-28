@@ -96,7 +96,14 @@ Create the app name for clients. Defaults to the same logic as "mimir.fullname",
 Calculate the config from structured and unstructred text input
 */}}
 {{- define "mimir.calculatedConfig" -}}
-{{ tpl (mergeOverwrite (include (print $.Template.BasePath "/_config-render.tpl") . | fromYaml) .Values.mimir.structuredConfig | toYaml) . }}
+{{ tpl (mergeOverwrite (include "mimir.unstructuredConfig" . | fromYaml) .Values.mimir.structuredConfig | toYaml) . }}
+{{- end -}}
+
+{{/*
+Calculate the config from the unstructred text input
+*/}}
+{{- define "mimir.unstructuredConfig" -}}
+{{ include (print $.Template.BasePath "/_config-render.tpl") . }}
 {{- end -}}
 
 {{/*
@@ -119,14 +126,14 @@ configMap:
 Internal servers http listen port - derived from Mimir default
 */}}
 {{- define "mimir.serverHttpListenPort" -}}
-8080
+{{ (((.Values.mimir).structuredConfig).server).http_listen_port | default "8080" }}
 {{- end -}}
 
 {{/*
 Internal servers grpc listen port - derived from Mimir default
 */}}
 {{- define "mimir.serverGrpcListenPort" -}}
-9095
+{{ (((.Values.mimir).structuredConfig).server).grpc_listen_port | default "9095" }}
 {{- end -}}
 
 {{/*
@@ -158,11 +165,7 @@ dns+{{ template "mimir.fullname" . }}-results-cache.{{ .Release.Namespace }}.svc
 Memberlist bind port
 */}}
 {{- define "mimir.memberlistBindPort" -}}
-{{- if (include "mimir.calculatedConfig" . | fromYaml).memberlist -}}
-{{ (include "mimir.calculatedConfig" . | fromYaml).memberlist.bind_port | default "7946" }}
-{{- else -}}
-{{- print "7946" -}}
-{{- end -}}
+{{ (((.Values.mimir).structuredConfig).memberlist).bind_port | default "7946" }}
 {{- end -}}
 
 {{/*
@@ -248,7 +251,7 @@ checksum/config: {{ include (print .ctx.Template.BasePath "/mimir-config.yaml") 
 {{ toYaml . }}
 {{- end }}
 {{- if .component }}
-{{- $componentSection := .component | replace "-" "_" }}
+{{- $componentSection := include "mimir.componentSectionFromName" . }}
 {{- if not (hasKey .ctx.Values $componentSection) }}
 {{- print "Component section " $componentSection " does not exist" | fail }}
 {{- end }}
@@ -318,4 +321,12 @@ Cluster name that shows up in dashboard metrics
   {{- else -}}
     {{- print "policy/v1beta1" -}}
   {{- end -}}
+{{- end -}}
+
+{{/*
+Calculate values.yaml section name from component name
+Expects the component name in .component on the passed context
+*/}}
+{{- define "mimir.componentSectionFromName" -}}
+{{- .component | replace "-" "_" -}}
 {{- end -}}

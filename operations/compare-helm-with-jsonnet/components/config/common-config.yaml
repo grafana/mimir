@@ -1,0 +1,10 @@
+kind: MimirConfig
+apiVersion: grafana.com/v1alpha1
+metadata:
+  name: not-important
+config:
+  multitenancy_enabled:
+  server:
+    grpc_server_max_concurrent_streams:
+  memberlist:
+    compression_enabled:

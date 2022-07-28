@@ -2,11 +2,11 @@
 
 Helm chart for deploying [Grafana Mimir](https://grafana.com/docs/mimir/v2.2.x/) or optionally [Grafana Enterprise Metrics](https://grafana.com/docs/enterprise-metrics/v2.2.x/) to Kubernetes. Derived from [Grafana Enterprise Metrics Helm Chart](https://github.com/grafana/helm-charts/blob/main/charts/enterprise-metrics/README.md)
 
-See the [Grafana Mimir version 2.2 release notes](https://grafana.com/docs/mimir/v2.2.x/release-notes/v2.2/) and [Upgrade the Grafana Mimir Helm chart from version 2.1 to 3.0](https://grafana.com/docs/mimir/latest/operators-guide/deploy-grafana-mimir/upgrade-helm-chart-2.1-to-3.0/).
+See the [Grafana Mimir version 2.2 release notes](https://grafana.com/docs/mimir/v2.2.x/release-notes/v2.2/) and [Upgrade the Grafana Mimir Helm chart from version 2.1 to 3.0](https://grafana.com/docs/mimir/latest/operators-guide/deploying-grafana-mimir/upgrade-helm-chart-2.1-to-3.0/).
 
 # mimir-distributed
 
-![Version: 3.0.0](https://img.shields.io/badge/Version-3.0.0-informational?style=flat-square) ![AppVersion: 2.2.0](https://img.shields.io/badge/AppVersion-2.2.0-informational?style=flat-square)
+![Version: 3.1.0-weekly.196](https://img.shields.io/badge/Version-3.1.0--weekly.196-informational?style=flat-square) ![AppVersion: 2.2.0](https://img.shields.io/badge/AppVersion-2.2.0-informational?style=flat-square)
 
 Grafana Mimir
 

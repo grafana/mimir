@@ -23,12 +23,19 @@ func NewMimirService(
 	grpcPort int,
 	otherPorts ...int,
 ) *MimirService {
-	return &MimirService{
+	s := &MimirService{
 		// We don't expose the gRPC port cause we don't need to access it from the host
 		// (exposing ports have a negative performance impact on starting/stopping containers).
 		HTTPService: e2e.NewHTTPService(name, image, command, readiness, httpPort, otherPorts...),
 		grpcPort:    grpcPort,
 	}
+	// Add jaeger configuration with a 50% sampling rate so that we can trigger
+	// code paths that rely on a trace being sampled.
+	s.SetEnvVars(map[string]string{
+		"JAEGER_SAMPLER_TYPE":  "const",
+		"JAEGER_SAMPLER_PARAM": "0.5",
+	})
+	return s
 }
 
 func (s *MimirService) NetworkGRPCEndpoint() string {

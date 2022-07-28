@@ -60,6 +60,14 @@ func mockHandlerWith(resp *PrometheusResponse, err error) Handler {
 	})
 }
 
+func sampleStreamsStrings(ss []SampleStream) []string {
+	strs := make([]string, len(ss))
+	for i := range ss {
+		strs[i] = mimirpb.FromLabelAdaptersToMetric(ss[i].Labels).String()
+	}
+	return strs
+}
+
 // approximatelyEquals ensures two responses are approximately equal, up to 6 decimals precision per sample
 func approximatelyEquals(t *testing.T, a, b *PrometheusResponse) {
 	// Ensure both queries succeeded.
@@ -71,7 +79,7 @@ func approximatelyEquals(t *testing.T, a, b *PrometheusResponse) {
 	bs, err := responseToSamples(b)
 	require.Nil(t, err)
 
-	require.Equal(t, len(as), len(bs), "expected same number of series")
+	require.Equalf(t, len(as), len(bs), "expected same number of series: one contains %v, other %v", sampleStreamsStrings(as), sampleStreamsStrings(bs))
 
 	for i := 0; i < len(as); i++ {
 		a := as[i]
@@ -490,6 +498,18 @@ func TestQueryShardingCorrectness(t *testing.T) {
 		"month(sum(metric_counter)) > 0 and vector(1)": {
 			query:                  `month(sum(metric_counter)) > 0 and vector(1)`,
 			expectedShardedQueries: 1, // Sharded because the contents of `sum()` is sharded.
+		},
+		"0 < bool 1": {
+			query:                  `0 < bool 1`,
+			expectedShardedQueries: 0,
+		},
+		"scalar(metric_counter{const=\"fixed\"}) < bool 1": {
+			query:                  `scalar(metric_counter{const="fixed"}) < bool 1`,
+			expectedShardedQueries: 0,
+		},
+		"scalar(sum(metric_counter)) < bool 1": {
+			query:                  `scalar(sum(metric_counter)) < bool 1`,
+			expectedShardedQueries: 1,
 		},
 	}
 

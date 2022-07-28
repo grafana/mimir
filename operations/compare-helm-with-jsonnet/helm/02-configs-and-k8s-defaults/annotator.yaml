@@ -1,0 +1,9 @@
+apiVersion: grafana.com/v1alpha1
+kind: K8sDefaultApplier
+metadata:
+  name: k8s-defaults
+  annotations:
+    # path is relative to kustomization.yaml
+    config.kubernetes.io/function: |
+      exec:
+        path: ../../plugins/k8s-defaults.sh

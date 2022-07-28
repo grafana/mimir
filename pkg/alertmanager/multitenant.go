@@ -121,12 +121,15 @@ func (cfg *MultitenantAlertmanagerConfig) Validate() error {
 		return errEmptyExternalURL
 	}
 
-	if cfg.ExternalURL.Scheme == "" {
-		return errInvalidExternalURLMissingScheme
-	}
+	// Either the configured URL is clearly a path (starting with /) or it must be a full URL.
+	if !strings.HasPrefix(cfg.ExternalURL.String(), "/") {
+		if cfg.ExternalURL.Scheme == "" {
+			return errInvalidExternalURLMissingScheme
+		}
 
-	if cfg.ExternalURL.Host == "" {
-		return errInvalidExternalURLMissingHostname
+		if cfg.ExternalURL.Host == "" {
+			return errInvalidExternalURLMissingHostname
+		}
 	}
 
 	if strings.HasSuffix(cfg.ExternalURL.Path, "/") {

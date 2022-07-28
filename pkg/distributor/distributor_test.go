@@ -972,7 +972,11 @@ func TestDistributor_PushQuery(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
+		// Change scope to ensure it work fine when test cases are executed concurrently.
+		tc := tc
+
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			cfg := prepConfig{
 				numIngesters:    tc.numIngesters,
 				happyIngesters:  tc.happyIngesters,
@@ -2123,7 +2127,7 @@ func TestDistributor_MetricsMetadata(t *testing.T) {
 			require.NoError(t, err)
 
 			// Check how many ingesters are queried as part of the shuffle sharding subring.
-			replicationSet, err := ds[0].GetIngestersForMetadata(ctx)
+			replicationSet, err := ds[0].GetIngesters(ctx)
 			require.NoError(t, err)
 			assert.Equal(t, testData.expectedIngesters, len(replicationSet.Instances))
 

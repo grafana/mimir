@@ -18,7 +18,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/limiter"
 	"github.com/grafana/dskit/ring"
@@ -141,8 +140,6 @@ type Config struct {
 	MaxRecvMsgSize int           `yaml:"max_recv_msg_size" category:"advanced"`
 	RemoteTimeout  time.Duration `yaml:"remote_timeout" category:"advanced"`
 
-	ExtendWrites bool `yaml:"extend_writes" category:"advanced" doc:"hidden"` // TODO Deprecated: remove in Mimir 2.3.0
-
 	// Distributors ring
 	DistributorRing RingConfig `yaml:"ring"`
 
@@ -178,7 +175,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.IntVar(&cfg.MaxRecvMsgSize, "distributor.max-recv-msg-size", 100<<20, "remote_write API max receive message size (bytes).")
 	f.DurationVar(&cfg.RemoteTimeout, "distributor.remote-timeout", 20*time.Second, "Timeout for downstream ingesters.")
-	flagext.DeprecatedFlag(f, "distributor.extend-writes", "Deprecated: this setting was used to try writing to an additional ingester in the presence of an ingester not in the ACTIVE state. Mimir now behaves as this setting is always disabled.", logger)
 	f.Float64Var(&cfg.InstanceLimits.MaxIngestionRate, maxIngestionRateFlag, 0, "Max ingestion rate (samples/sec) that this distributor will accept. This limit is per-distributor, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. 0 = unlimited.")
 	f.IntVar(&cfg.InstanceLimits.MaxInflightPushRequests, maxInflightPushRequestsFlag, 2000, "Max inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.")
 	f.IntVar(&cfg.InstanceLimits.MaxInflightPushRequestsBytes, maxInflightPushRequestsBytesFlag, 0, "The sum of the request sizes in bytes of inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.")
@@ -977,7 +973,7 @@ func (d *Distributor) ForReplicationSet(ctx context.Context, replicationSet ring
 
 // LabelValuesForLabelName returns all of the label values that are associated with a given label name.
 func (d *Distributor) LabelValuesForLabelName(ctx context.Context, from, to model.Time, labelName model.LabelName, matchers ...*labels.Matcher) ([]string, error) {
-	replicationSet, err := d.GetIngestersForMetadata(ctx)
+	replicationSet, err := d.GetIngesters(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1014,7 +1010,7 @@ func (d *Distributor) LabelValuesForLabelName(ctx context.Context, from, to mode
 
 // LabelNamesAndValues query ingesters for label names and values and returns labels with distinct list of values.
 func (d *Distributor) LabelNamesAndValues(ctx context.Context, matchers []*labels.Matcher) (*ingester_client.LabelNamesAndValuesResponse, error) {
-	replicationSet, err := d.GetIngestersForMetadata(ctx)
+	replicationSet, err := d.GetIngesters(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1160,7 +1156,7 @@ func (d *Distributor) LabelValuesCardinality(ctx context.Context, labelNames []m
 // labelValuesCardinality queries ingesters for label values cardinality of a set of labelNames
 // Returns a LabelValuesCardinalityResponse where each item contains an exclusive label name and associated label values
 func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher) (*ingester_client.LabelValuesCardinalityResponse, error) {
-	replicationSet, err := d.GetIngestersForMetadata(ctx)
+	replicationSet, err := d.GetIngesters(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1278,7 +1274,7 @@ func (cm *labelValuesCardinalityConcurrentMap) toLabelValuesCardinalityResponse(
 
 // LabelNames returns all of the label names.
 func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) ([]string, error) {
-	replicationSet, err := d.GetIngestersForMetadata(ctx)
+	replicationSet, err := d.GetIngesters(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1314,7 +1310,7 @@ func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, match
 
 // MetricsForLabelMatchers gets the metrics that match said matchers
 func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through model.Time, matchers ...*labels.Matcher) ([]labels.Labels, error) {
-	replicationSet, err := d.GetIngestersForMetadata(ctx)
+	replicationSet, err := d.GetIngesters(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1348,7 +1344,7 @@ func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through
 
 // MetricsMetadata returns all metric metadata of a user.
 func (d *Distributor) MetricsMetadata(ctx context.Context) ([]scrape.MetricMetadata, error) {
-	replicationSet, err := d.GetIngestersForMetadata(ctx)
+	replicationSet, err := d.GetIngesters(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1387,7 +1383,7 @@ func (d *Distributor) MetricsMetadata(ctx context.Context) ([]scrape.MetricMetad
 
 // UserStats returns statistics about the current user.
 func (d *Distributor) UserStats(ctx context.Context) (*UserStats, error) {
-	replicationSet, err := d.GetIngestersForMetadata(ctx)
+	replicationSet, err := d.GetIngesters(ctx)
 	if err != nil {
 		return nil, err
 	}

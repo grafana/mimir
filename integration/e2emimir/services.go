@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/grafana/e2e"
 )
@@ -40,35 +39,27 @@ func GetMimirtoolImage() string {
 	return "grafana/mimirtool:latest"
 }
 
-// GetExtraArgs returns the extra args to pass to the Docker command used to run Mimir.
-func GetExtraArgs() []string {
-	// Get extra args from the MIMIR_EXTRA_ARGS env variable
-	// falling back to an empty list
-	if os.Getenv("MIMIR_EXTRA_ARGS") != "" {
-		return strings.Fields(os.Getenv("MIMIR_EXTRA_ARGS"))
+func getExtraFlags() map[string]string {
+	str := os.Getenv("MIMIR_EXTRA_FLAGS")
+	if str == "" {
+		return nil
 	}
-
-	return nil
-}
-
-func buildArgsWithExtra(args []string) []string {
-	extraArgs := GetExtraArgs()
-	if len(extraArgs) > 0 {
-		return append(extraArgs, args...)
+	extraArgs := map[string]string{}
+	if err := json.Unmarshal([]byte(str), &extraArgs); err != nil {
+		panic(fmt.Errorf("can't unmarshal MIMIR_EXTRA_FLAGS as JSON, it should be a map of arg name to arg value: %s", err))
 	}
-
-	return args
+	return extraArgs
 }
 
 func newMimirServiceFromOptions(name string, defaultFlags, flags map[string]string, options ...Option) *MimirService {
 	o := newOptions(options)
-	serviceFlags := o.MapFlags(e2e.MergeFlags(defaultFlags, flags))
+	serviceFlags := o.MapFlags(e2e.MergeFlags(defaultFlags, flags, getExtraFlags()))
 	binaryName := getBinaryNameForBackwardsCompatibility(o.Image)
 
 	return NewMimirService(
 		name,
 		o.Image,
-		e2e.NewCommandWithoutEntrypoint(binaryName, buildArgsWithExtra(e2e.BuildArgs(serviceFlags))...),
+		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(serviceFlags)...),
 		e2e.NewHTTPReadinessProbe(o.HTTPPort, "/ready", 200, 299),
 		o.HTTPPort,
 		o.GRPCPort,
@@ -240,13 +231,13 @@ func NewAlertmanagerWithTLS(name string, flags map[string]string, options ...Opt
 	serviceFlags := o.MapFlags(e2e.MergeFlags(map[string]string{
 		"-target":    "alertmanager",
 		"-log.level": "warn",
-	}, flags))
+	}, flags, getExtraFlags()))
 	binaryName := getBinaryNameForBackwardsCompatibility(o.Image)
 
 	return NewMimirService(
 		name,
 		o.Image,
-		e2e.NewCommandWithoutEntrypoint(binaryName, buildArgsWithExtra(e2e.BuildArgs(serviceFlags))...),
+		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(serviceFlags)...),
 		e2e.NewTCPReadinessProbe(o.HTTPPort),
 		o.HTTPPort,
 		o.GRPCPort,

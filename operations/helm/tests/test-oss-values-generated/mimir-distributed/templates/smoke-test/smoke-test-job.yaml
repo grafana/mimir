@@ -12,6 +12,7 @@ metadata:
     app.kubernetes.io/managed-by: Helm
   annotations:
     "helm.sh/hook": test
+  namespace: "citestns"
 spec:
   backoffLimit: 5
   completions: 1
@@ -33,7 +34,6 @@ spec:
         []
       containers:
         - name: smoke-test
-          image: "grafana/mimir-continuous-test:2.2.0"
           imagePullPolicy: 
           args:
             - "-tests.smoke-test"
