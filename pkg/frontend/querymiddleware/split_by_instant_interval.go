@@ -28,7 +28,6 @@ type splitInstantQueryByIntervalMiddleware struct {
 
 	engine *promql.Engine
 
-	splitEnabled  bool
 	splitInterval time.Duration
 
 	instantQuerySplittingMetrics
@@ -76,7 +75,6 @@ func newInstantQuerySplittingMetrics(registerer prometheus.Registerer) instantQu
 
 // newSplitInstantQueryByIntervalMiddleware makes a new splitInstantQueryByIntervalMiddleware.
 func newSplitInstantQueryByIntervalMiddleware(
-	splitEnabled bool,
 	splitInterval time.Duration,
 	limits Limits,
 	logger log.Logger,
@@ -86,7 +84,6 @@ func newSplitInstantQueryByIntervalMiddleware(
 
 	return MiddlewareFunc(func(next Handler) Handler {
 		return &splitInstantQueryByIntervalMiddleware{
-			splitEnabled:                 splitEnabled,
 			next:                         next,
 			limits:                       limits,
 			splitInterval:                splitInterval,
@@ -109,7 +106,7 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	if !s.splitEnabled || s.splitInterval <= 0 {
+	if s.splitInterval <= 0 {
 		return s.next.Do(ctx, req)
 	}
 
