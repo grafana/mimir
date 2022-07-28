@@ -183,6 +183,23 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 			query:                `sum(sum_over_time(metric_counter[1h:5m]) * 60) by (group_1)`,
 			expectedSplitQueries: 0,
 		},
+		// Splittable aggregations wrapped by non-aggregative functions.
+		"ceil(sum(sum_over_time()))": {
+			query:                `ceil(sum(sum_over_time(metric_counter[3m])))`,
+			expectedSplitQueries: 3,
+		},
+		"ceil(sum(sum_over_time()) + sum(sum_over_time())) and both legs of the binary operation are splittable": {
+			query:                `ceil(sum(sum_over_time(metric_counter[3m])) + sum(sum_over_time(metric_counter[3m])))`,
+			expectedSplitQueries: 6,
+		},
+		"ceil(sum(sum_over_time()) + sum(sum_over_time())) and only right leg of the binary operation is splittable": {
+			query:                `ceil(sum(sum_over_time(metric_counter[1m])) + sum(sum_over_time(metric_counter[3m])))`,
+			expectedSplitQueries: 3,
+		},
+		"ceil(sum(sum_over_time()) + sum(sum_over_time())) and only left leg of the binary operation is splittable": {
+			query:                `ceil(sum(sum_over_time(metric_counter[3m])) + sum(sum_over_time(metric_counter[1m])))`,
+			expectedSplitQueries: 3,
+		},
 	}
 
 	series := make([]*promql.StorageSeries, 0, numSeries+(numHistograms*len(histogramBuckets)))

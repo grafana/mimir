@@ -145,13 +145,23 @@ func TestInstantSplitter(t *testing.T) {
 		// Should map only left-hand side operand of inner binary operation, if right-hand side range interval is too small
 		{
 			in:                   `sum(sum_over_time({app="foo"}[3m]) + count_over_time({app="foo"}[1m]))`,
-			out:                  `sum ((sum without() (` + concatOffsets(splitInterval, 3, `sum_over_time({app="foo"}[x]y)`) + `)) + (count_over_time({app="foo"}[1m])))`,
+			out:                  `sum ((sum without() (` + concatOffsets(splitInterval, 3, `sum_over_time({app="foo"}[x]y)`) + `)) + ` + concat(`(count_over_time({app="foo"}[1m]))`) + `)`,
+			expectedSplitQueries: 3,
+		},
+		{
+			in:                   `sum_over_time({app="foo"}[3m]) * count_over_time({app="foo"}[1m])`,
+			out:                  `(sum without() (` + concatOffsets(splitInterval, 3, `sum_over_time({app="foo"}[x]y)`) + `)) * ` + concat(`(count_over_time({app="foo"}[1m]))`),
 			expectedSplitQueries: 3,
 		},
 		// Should map only right-hand side operand of inner binary operation, if left-hand side range interval is too small
 		{
 			in:                   `sum(sum_over_time({app="foo"}[1m]) + count_over_time({app="foo"}[3m]))`,
-			out:                  `sum ((sum_over_time({app="foo"}[1m])) + (sum without() (` + concatOffsets(splitInterval, 3, `count_over_time({app="foo"}[x]y)`) + `)))`,
+			out:                  `sum (` + concat(`(sum_over_time({app="foo"}[1m]))`) + ` + (sum without() (` + concatOffsets(splitInterval, 3, `count_over_time({app="foo"}[x]y)`) + `)))`,
+			expectedSplitQueries: 3,
+		},
+		{
+			in:                   `sum_over_time({app="foo"}[1m]) * count_over_time({app="foo"}[3m])`,
+			out:                  concat(`(sum_over_time({app="foo"}[1m]))`) + ` * (sum without() (` + concatOffsets(splitInterval, 3, `count_over_time({app="foo"}[x]y)`) + `))`,
 			expectedSplitQueries: 3,
 		},
 		// Parenthesis expression
@@ -176,6 +186,17 @@ func TestInstantSplitter(t *testing.T) {
 		{
 			in:                   `sum(max(rate({app="foo"}[3m])))`,
 			out:                  `sum(max(sum (` + concatOffsets(splitInterval, 3, `sum(max(increase({app="foo"}[x]y)))`) + `) / 180))`,
+			expectedSplitQueries: 3,
+		},
+		// Non-aggregative functions should not stop the mapping, cause children could be split anyway.
+		{
+			in:                   `label_replace(sum(sum_over_time(up[1m]) + count_over_time(up[3m])), "dst", "$1", "src", "(.*)")`,
+			out:                  `label_replace(sum(` + concat(`(sum_over_time(up[1m]))`) + ` + (sum without() (` + concatOffsets(splitInterval, 3, `count_over_time(up[x]y)`) + `))), "dst", "$1", "src", "(.*)")`,
+			expectedSplitQueries: 3,
+		},
+		{
+			in:                   `ceil(sum(sum_over_time(up[1m]) + count_over_time(up[3m])))`,
+			out:                  `ceil(sum(` + concat(`(sum_over_time(up[1m]))`) + ` + (sum without() (` + concatOffsets(splitInterval, 3, `count_over_time(up[x]y)`) + `))))`,
 			expectedSplitQueries: 3,
 		},
 	} {
@@ -306,10 +327,12 @@ func TestInstantSplitterNoOp(t *testing.T) {
 			require.NoError(t, err)
 
 			stats := NewMapperStats()
-			mapped, err := splitter.Map(expr, stats)
-			require.NoError(t, err)
-			require.Equal(t, expr.String(), mapped.String())
 
+			// Do not assert if the mapped expression is equal to the input one, because it could actually be slightly
+			// transformed (e.g. added parenthesis). The actual way to check if it was split or not is to read it from
+			// the statistics.
+			_, err = splitter.Map(expr, stats)
+			require.NoError(t, err)
 			assert.Equal(t, 0, stats.GetShardedQueries())
 		})
 	}

@@ -64,11 +64,16 @@ var splittableRangeVectorAggregators = map[string]bool{
 
 // NewInstantQuerySplitter creates a new query range mapper.
 func NewInstantQuerySplitter(interval time.Duration, logger log.Logger) ASTMapper {
-	return NewASTExprMapper(
+	instantQueryMapper := NewASTExprMapper(
 		&instantSplitter{
 			interval: interval,
 			logger:   logger,
 		},
+	)
+
+	return NewMultiMapper(
+		instantQueryMapper,
+		newSubtreeFolder(),
 	)
 }
 
@@ -216,28 +221,21 @@ func (i *instantSplitter) mapParenExpr(expr *parser.ParenExpr, stats *MapperStat
 
 // mapCall maps a function call if it's a range vector aggregator.
 func (i *instantSplitter) mapCall(expr *parser.Call, stats *MapperStats) (mapped parser.Expr, finished bool, err error) {
-	// In case the range interval is smaller than the configured split interval,
-	// don't split it and don't map further nodes (finished=true)
-	rangeInterval := getRangeInterval(expr)
-	if rangeInterval <= i.interval {
-		level.Debug(i.logger).Log("msg", "unable to split expression because range interval is smaller than configured split interval", "expr", expr, "interval", i.interval)
-		return expr, true, nil
-	}
-
 	switch expr.Func.Name {
 	case avgOverTime:
 		return i.mapCallAvgOverTime(expr, stats)
 	case countOverTime:
-		return i.mapCallByRangeInterval(expr, stats, rangeInterval, parser.SUM)
+		return i.mapCallVectorAggregation(expr, stats, parser.SUM)
 	case maxOverTime:
-		return i.mapCallByRangeInterval(expr, stats, rangeInterval, parser.MAX)
+		return i.mapCallVectorAggregation(expr, stats, parser.MAX)
 	case minOverTime:
-		return i.mapCallByRangeInterval(expr, stats, rangeInterval, parser.MIN)
+		return i.mapCallVectorAggregation(expr, stats, parser.MIN)
 	case rate:
-		return i.mapCallRate(expr, stats, rangeInterval)
+		return i.mapCallRate(expr, stats)
 	case sumOverTime:
-		return i.mapCallByRangeInterval(expr, stats, rangeInterval, parser.SUM)
+		return i.mapCallVectorAggregation(expr, stats, parser.SUM)
 	default:
+		// Continue the mapping on child expressions.
 		return expr, false, nil
 	}
 }
@@ -268,7 +266,14 @@ func (i *instantSplitter) mapCallAvgOverTime(expr *parser.Call, stats *MapperSta
 }
 
 // mapCallRate maps a rate function to expression increase / rangeInterval
-func (i *instantSplitter) mapCallRate(expr *parser.Call, stats *MapperStats, rangeInterval time.Duration) (mapped parser.Expr, finished bool, err error) {
+func (i *instantSplitter) mapCallRate(expr *parser.Call, stats *MapperStats) (mapped parser.Expr, finished bool, err error) {
+	// In case the range interval is smaller than the configured split interval,
+	// don't split it and don't map further nodes (finished=true).
+	rangeInterval, canSplit := i.assertSplittableRangeInterval(expr)
+	if !canSplit {
+		return expr, true, nil
+	}
+
 	increaseExpr := &parser.Call{
 		Func:     parser.Functions[increase],
 		Args:     expr.Args,
@@ -297,6 +302,17 @@ func (i *instantSplitter) mapCallRate(expr *parser.Call, stats *MapperStats, ran
 		LHS: mappedExpr,
 		RHS: &parser.NumberLiteral{Val: rangeInterval.Seconds()},
 	}, true, nil
+}
+
+func (i *instantSplitter) mapCallVectorAggregation(expr *parser.Call, stats *MapperStats, op parser.ItemType) (mapped parser.Expr, finished bool, err error) {
+	// In case the range interval is smaller than the configured split interval,
+	// don't split it and don't map further nodes (finished=true).
+	rangeInterval, canSplit := i.assertSplittableRangeInterval(expr)
+	if !canSplit {
+		return expr, true, nil
+	}
+
+	return i.mapCallByRangeInterval(expr, stats, rangeInterval, op)
 }
 
 func (i *instantSplitter) mapCallByRangeInterval(expr *parser.Call, stats *MapperStats, rangeInterval time.Duration, op parser.ItemType) (mapped parser.Expr, finished bool, err error) {
@@ -373,6 +389,18 @@ func (i *instantSplitter) splitAndSquashCall(expr *parser.Call, stats *MapperSta
 	stats.AddShardedQueries(splitCount)
 
 	return squashExpr, true, nil
+}
+
+// assertSplittableRangeInterval returns the range interval specified in the input expr and whether it is greater than
+// the configured split interval.
+func (i *instantSplitter) assertSplittableRangeInterval(expr parser.Expr) (rangeInterval time.Duration, canSplit bool) {
+	rangeInterval = getRangeInterval(expr)
+	if rangeInterval > i.interval {
+		return rangeInterval, true
+	}
+
+	level.Debug(i.logger).Log("msg", "unable to split expression because range interval is smaller than configured split interval", "expr", expr, "range_interval", rangeInterval, "split_interval", i.interval)
+	return time.Duration(0), false
 }
 
 // getRangeInterval returns the range interval in the range vector expression
