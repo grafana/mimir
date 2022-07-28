@@ -118,14 +118,14 @@ push-multiarch-mimir: push-multiarch-cmd/mimir/.uptodate
 
 # This target fetches current build image, and tags it with "latest" tag. It can be used instead of building the image locally.
 .PHONY: fetch-build-image
-fetch-build-image: ## Fetch latest docker build image. It can be used instead of building the image locally.
+fetch-build-image: ## Fetch latest the docker build image. It can be used instead of building the image locally.
 	docker pull $(BUILD_IMAGE):$(LATEST_BUILD_IMAGE_TAG)
 	docker tag $(BUILD_IMAGE):$(LATEST_BUILD_IMAGE_TAG) $(BUILD_IMAGE):latest
 	touch mimir-build-image/.uptodate
 
 # push-multiarch-build-image requires the ability to build images for multiple platforms:
 # https://docs.docker.com/buildx/working-with-buildx/#build-multi-platform-images
-push-multiarch-build-image: ## Push docker build image.
+push-multiarch-build-image: ## Push the docker build image.
 	@echo
 	# Build image for each platform separately... it tends to generate fewer errors.
 	$(SUDO) docker buildx build --platform linux/amd64 --progress=plain --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) mimir-build-image/
@@ -509,7 +509,7 @@ check-jsonnet-manifests: format-jsonnet-manifests
 format-jsonnet-manifests: ## Format the jsonnet manifests.
 	@find $(JSONNET_MANIFESTS_PATH) -type f -name '*.libsonnet' -print -o -name '*.jsonnet' -print | xargs jsonnetfmt -i
 
-check-jsonnet-getting-started: ## Check the jsonnet getting started.
+check-jsonnet-getting-started: ## Check the jsonnet getting started examples.
 	# Start from a clean setup.
 	rm -rf jsonnet-example
 
