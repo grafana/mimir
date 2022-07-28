@@ -1,1 +1,3 @@
-{{- include "mimir.memcached.podDisruptionBudget" (dict "ctx" $ "component" "metadata-cache" ) }}
+{{- if index .Values "metadata-cache" "enabled" }}
+{{- include "mimir.lib.podDisruptionBudget" (dict "ctx" $ "component" "metadata-cache" ) }}
+{{- end -}}

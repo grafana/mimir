@@ -1,16 +1,3 @@
 {{- if .Values.overrides_exporter.enabled -}}
-{{- if .Values.overrides_exporter.podDisruptionBudget -}}
-apiVersion: {{ include "mimir.podDisruptionBudget.apiVersion" . }}
-kind: PodDisruptionBudget
-metadata:
-  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "overrides-exporter") }}
-  labels:
-    {{- include "mimir.labels" (dict "ctx" . "component" "overrides-exporter") | nindent 4 }}
-  namespace: {{ .Release.Namespace | quote }}
-spec:
-  selector:
-    matchLabels:
-      {{- include "mimir.selectorLabels" (dict "ctx" . "component" "overrides-exporter") | nindent 6 }}
-{{ toYaml .Values.overrides_exporter.podDisruptionBudget | indent 2 }}
-{{- end -}}
+{{- include "mimir.lib.podDisruptionBudget" (dict "ctx" $ "component" "overrides-exporter") }}
 {{- end -}}

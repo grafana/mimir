@@ -251,7 +251,7 @@ checksum/config: {{ include (print .ctx.Template.BasePath "/mimir-config.yaml") 
 {{ toYaml . }}
 {{- end }}
 {{- if .component }}
-{{- $componentSection := .component | replace "-" "_" }}
+{{- $componentSection := include "mimir.componentSectionFromName" . }}
 {{- if not (hasKey .ctx.Values $componentSection) }}
 {{- print "Component section " $componentSection " does not exist" | fail }}
 {{- end }}
@@ -321,4 +321,12 @@ Cluster name that shows up in dashboard metrics
   {{- else -}}
     {{- print "policy/v1beta1" -}}
   {{- end -}}
+{{- end -}}
+
+{{/*
+Calculate values.yaml section name from component name
+Expects the component name in .component on the passed context
+*/}}
+{{- define "mimir.componentSectionFromName" -}}
+{{- .component | replace "-" "_" -}}
 {{- end -}}
