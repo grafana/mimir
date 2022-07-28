@@ -14,6 +14,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 ## main / unreleased
 
 * [ENHANCEMENT] Add backfill endpoints to Nginx configuration. #2478
+* [ENHANCEMENT] Add `namespace` to smoke-test helm template to allow the job to be deployed within the same namespace as the rest of the deployment. #2515
 
 ## 3.0.0
 
@@ -67,7 +68,6 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Add `NOTES.txt` to show endpoints URLs for the user at install/upgrade. #2189
 * [ENHANCEMENT] Add ServiceMonitor for overrides-exporter. #2068
 * [ENHANCEMENT] Add `nginx.resolver` for allow custom resolver in nginx configuration and `nginx.extraContainers` which allow add side containers to the nginx deployment #2196
-* [ENHANCEMENT] Add `namespace` to smoke-test helm template to allow the job to be deployed within the same namespace as the rest of the deployment. #2515
 
 ## 2.1.0
 
