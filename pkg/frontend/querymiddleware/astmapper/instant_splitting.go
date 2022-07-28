@@ -24,17 +24,6 @@ type instantSplitter struct {
 
 // Supported vector aggregators
 
-// Note: avg, count and topk are supported, but not splittable, i.e., cannot be sent downstream,
-// but the inner expressions can still be splittable
-var supportedVectorAggregators = map[parser.ItemType]bool{
-	parser.AVG:   true,
-	parser.COUNT: true,
-	parser.MAX:   true,
-	parser.MIN:   true,
-	parser.SUM:   true,
-	parser.TOPK:  true,
-}
-
 var splittableVectorAggregators = map[parser.ItemType]bool{
 	parser.MAX: true,
 	parser.MIN: true,
@@ -53,15 +42,6 @@ const (
 	sumOverTime   = "sum_over_time"
 )
 
-var splittableRangeVectorAggregators = map[string]bool{
-	avgOverTime:   true,
-	countOverTime: true,
-	maxOverTime:   true,
-	minOverTime:   true,
-	rate:          true,
-	sumOverTime:   true,
-}
-
 // NewInstantQuerySplitter creates a new query range mapper.
 func NewInstantQuerySplitter(interval time.Duration, logger log.Logger) ASTMapper {
 	instantQueryMapper := NewASTExprMapper(
@@ -79,12 +59,6 @@ func NewInstantQuerySplitter(interval time.Duration, logger log.Logger) ASTMappe
 
 // MapExpr returns expr mapped as embedded queries
 func (i *instantSplitter) MapExpr(expr parser.Expr, stats *MapperStats) (mapped parser.Expr, finished bool, err error) {
-	if !isSplittable(expr) {
-		level.Debug(i.logger).Log("msg", "expr is not supported for split by interval", "expr", expr)
-		// If no node in the tree is splittable, finish the AST traversal
-		return expr, true, nil
-	}
-
 	// Immediately clone the expr to avoid mutating the original
 	expr, err = cloneExpr(expr)
 	if err != nil {
@@ -111,33 +85,6 @@ func (i *instantSplitter) copyWithEmbeddedExpr(embeddedExpr *parser.AggregateExp
 	instantSplitter := *i
 	instantSplitter.outerAggregationExpr = embeddedExpr
 	return &instantSplitter
-}
-
-// isSplittable returns whether it is possible to optimize the given sample expression.
-func isSplittable(expr parser.Expr) bool {
-	switch e := expr.(type) {
-	case *parser.AggregateExpr:
-		// A vector aggregation is splittable, if the aggregation operation is supported and the inner expression is also splittable.
-		return supportedVectorAggregators[e.Op] && isSplittable(e.Expr)
-	case *parser.BinaryExpr:
-		// A binary expression is splittable, if at least one operand is splittable.
-		return isSplittable(e.LHS) || isSplittable(e.RHS)
-	case *parser.Call:
-		// A range aggregation is splittable, if the aggregation operation is supported.
-		if splittableRangeVectorAggregators[e.Func.Name] {
-			return true
-		}
-		// It is considered splittable if at least a Call argument is splittable
-		for _, arg := range e.Args {
-			if isSplittable(arg) {
-				return true
-			}
-		}
-		return false
-	case *parser.ParenExpr:
-		return isSplittable(e.Expr)
-	}
-	return false
 }
 
 // mapAggregatorExpr maps vector aggregator expression expr
@@ -174,11 +121,11 @@ func (i *instantSplitter) mapBinaryExpr(expr *parser.BinaryExpr, stats *MapperSt
 	// Therefore, the embedded aggregator expression needs to be reset.
 	i.outerAggregationExpr = nil
 
-	// Noop if both LHS and RHS are literal numbers
-	_, literalLHS := expr.LHS.(*parser.NumberLiteral)
-	_, literalRHS := expr.RHS.(*parser.NumberLiteral)
-	if literalLHS && literalRHS {
-		return expr, false, fmt.Errorf("both operands of binary expression are number literals '%s'", expr)
+	// Noop if both LHS and RHS are constant scalars.
+	isLHSConst := isConstantScalar(expr.LHS)
+	isRHSConst := isConstantScalar(expr.RHS)
+	if isLHSConst && isRHSConst {
+		return expr, true, nil
 	}
 
 	lhsMapped, lhsFinished, err := i.MapExpr(expr.LHS, stats)

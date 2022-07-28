@@ -182,6 +182,16 @@ func TestInstantSplitter(t *testing.T) {
 			out:                  `topk(10, histogram_quantile(0.9, sum without() (` + concatOffsets(splitInterval, 3, `increase({app="foo"}[x]y)`) + `) / 180))`,
 			expectedSplitQueries: 3,
 		},
+		{
+			in:                   `stddev(rate(metric[3m]))`,
+			out:                  `stddev(sum without() (` + concatOffsets(splitInterval, 3, `increase(metric[x]y)`) + `) / 180)`,
+			expectedSplitQueries: 3,
+		},
+		{
+			in:                   `count_values("dst", count_over_time(metric[3m]))`,
+			out:                  `count_values("dst", sum without() (` + concatOffsets(splitInterval, 3, `count_over_time(metric[x]y)`) + `))`,
+			expectedSplitQueries: 3,
+		},
 		// Multi-level vector aggregators should be moved downstream
 		{
 			in:                   `sum(max(rate({app="foo"}[3m])))`,
@@ -289,7 +299,7 @@ func TestInstantSplitterNoOp(t *testing.T) {
 		{
 			query: `5`,
 		},
-		// should be noop if binary expression's operands are both number literals
+		// should be noop if binary expression's operands are both constant scalars
 		{
 			query: `20 / 10`,
 		},
@@ -298,6 +308,9 @@ func TestInstantSplitterNoOp(t *testing.T) {
 		},
 		{
 			query: `(20) / (10)`,
+		},
+		{
+			query: `time() != bool 0`,
 		},
 		// should be noop if binary operation is not mapped
 		//   - first operand `rate(metric_counter[1m])` has a smaller range interval than the configured splitting
@@ -336,14 +349,6 @@ func TestInstantSplitterNoOp(t *testing.T) {
 			assert.Equal(t, 0, stats.GetShardedQueries())
 		})
 	}
-}
-
-func TestSplittableVectorAggregators(t *testing.T) {
-	t.Run("splittable vector aggregators should be in supported vector aggregators", func(t *testing.T) {
-		for it := range splittableVectorAggregators {
-			assert.Equal(t, true, supportedVectorAggregators[it], fmt.Sprintf("itemType '%v' not in supported vector aggregators list", it.String()))
-		}
-	})
 }
 
 func concatOffsets(splitInterval time.Duration, offsets int, queryTemplate string) string {
