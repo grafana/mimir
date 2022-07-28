@@ -351,6 +351,32 @@ func TestInstantSplitterNoOp(t *testing.T) {
 	}
 }
 
+func TestGetRangeIntervals(t *testing.T) {
+	tests := []struct {
+		query    string
+		expected []time.Duration
+	}{
+		{
+			query:    `time()`,
+			expected: []time.Duration{},
+		}, {
+			query:    `sum(rate(metric[1m]))`,
+			expected: []time.Duration{time.Minute},
+		}, {
+			query:    `sum(rate(metric[1m])) + sum(rate(metric[5m]))`,
+			expected: []time.Duration{time.Minute, 5 * time.Minute},
+		},
+	}
+
+	for _, testData := range tests {
+		t.Run(testData.query, func(t *testing.T) {
+			expr, err := parser.ParseExpr(testData.query)
+			require.NoError(t, err)
+			assert.Equal(t, testData.expected, getRangeIntervals(expr))
+		})
+	}
+}
+
 func concatOffsets(splitInterval time.Duration, offsets int, queryTemplate string) string {
 	queries := make([]string, offsets)
 	offsetIndex := offsets
