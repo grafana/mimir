@@ -9,6 +9,7 @@ package integration
 
 import (
 	"fmt"
+	"math/rand"
 	"strconv"
 	"sync"
 	"testing"
@@ -27,7 +28,7 @@ import (
 
 func TestQueryGap(t *testing.T) {
 	// Going too high starts hitting file descriptor limit, since we run all queriers concurrently.
-	const numQueries = 1
+	const numQueries = 50
 
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
@@ -43,15 +44,13 @@ func TestQueryGap(t *testing.T) {
 		"-query-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
 		"-query-frontend.results-cache.compression":         "snappy",
 		"-querier.max-outstanding-requests-per-tenant":      strconv.Itoa(numQueries), // To avoid getting errors.
+		"-query-frontend.query-sharding-total-shards":       "16",
+		"-ingester.out-of-order-time-window":                "10m",
+		//"-blocks-storage.tsdb.head-compaction-interval":     "5s", TODO: how to make compaction happen better? Blocks seem to be for 1 minute range!
 	})
 
 	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 	require.NoError(t, s.StartAndWaitReady(minio))
-
-	// Use only single querier for each user.
-	flags["-query-frontend.max-queriers-per-tenant"] = "1"
-	// Enable out of order ingestion for 10 minutes.
-	flags["-ingester.out-of-order-time-window"] = "10m"
 
 	// Start the query-scheduler if enabled.
 	var queryScheduler *e2emimir.MimirService
@@ -90,12 +89,10 @@ func TestQueryGap(t *testing.T) {
 	distClient, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", userID)
 	require.NoError(t, err)
 
-	// TODO: Change this and add samples over 12h for >1 series.
 	startTime := now.Add(-12 * time.Hour)
 	startTime = time.Unix(60*(startTime.Unix()/60), 0) // Align to 1 minute.
-	numSeries := 1
+	numSeries := 10
 	series := make([]prompb.TimeSeries, numSeries)
-	expMatrix := make(model.Matrix, numSeries)
 	for i := 0; i < numSeries; i++ {
 		series[i] = prompb.TimeSeries{
 			Labels: []prompb.Label{
@@ -103,42 +100,18 @@ func TestQueryGap(t *testing.T) {
 				{Name: "id", Value: fmt.Sprintf("%d", i)},
 			},
 		}
-		expMatrix[i] = &model.SampleStream{
-			Metric: model.Metric{
-				"__name__": "cortex_test_total",
-				"id":       model.LabelValue(fmt.Sprintf("%d", i)),
-			},
-		}
 	}
 	fmt.Println("Ingestion started")
 	sampleValue := float64(0)
 	for ts := startTime; now.Sub(ts) > 0; ts = ts.Add(time.Minute) {
+		tsMillis, val := e2e.TimeToMilliseconds(ts), sampleValue
 		for i := 0; i < numSeries; i++ {
-			tsMillis, val := e2e.TimeToMilliseconds(ts), sampleValue
 			series[i].Samples = []prompb.Sample{
 				{Value: val, Timestamp: tsMillis},
 				{Value: val + 10, Timestamp: tsMillis + (15 * time.Second.Milliseconds())},
 				{Value: val + 20, Timestamp: tsMillis + (30 * time.Second.Milliseconds())},
 				{Value: val + 30, Timestamp: tsMillis + (45 * time.Second.Milliseconds())},
 			}
-			expMatrix[i].Values = append(expMatrix[i].Values,
-				model.SamplePair{
-					Timestamp: model.Time(tsMillis),
-					Value:     model.SampleValue(val),
-				},
-				model.SamplePair{
-					Timestamp: model.Time(tsMillis + (15 * time.Second.Milliseconds())),
-					Value:     model.SampleValue(val + 10),
-				},
-				model.SamplePair{
-					Timestamp: model.Time(tsMillis + (30 * time.Second.Milliseconds())),
-					Value:     model.SampleValue(val + 20),
-				},
-				model.SamplePair{
-					Timestamp: model.Time(tsMillis + (45 * time.Second.Milliseconds())),
-					Value:     model.SampleValue(val + 30),
-				},
-			)
 			if ts.Add(45 * time.Second).After(now) {
 				now = ts.Add(45 * time.Second)
 			}
@@ -147,32 +120,60 @@ func TestQueryGap(t *testing.T) {
 		res, err := distClient.Push(series)
 		require.NoError(t, err)
 		require.Equal(t, 200, res.StatusCode)
+
+		if tsMillis%(2*time.Minute.Milliseconds()) == 0 {
+			// Add a OOO sample every 2 mins.
+			sIdx := rand.Intn(numSeries)
+			scrapesOld := rand.Intn(30) + 1
+			oooSeries := []prompb.TimeSeries{
+				{
+					Labels: series[sIdx].Labels,
+					Samples: []prompb.Sample{
+						{
+							Value:     val - float64(scrapesOld*10),
+							Timestamp: tsMillis - (int64(scrapesOld) * 15 * time.Second.Milliseconds()),
+						},
+					},
+				},
+			}
+			res, err := distClient.Push(oooSeries)
+			require.NoError(t, err)
+			require.Equal(t, 200, res.StatusCode)
+		}
+
+		//igi
 	}
 
-	//var series []prompb.TimeSeries
-	//series, expectedVector := generateSeries("series_1", now)
-	//res, err := distClient.Push(series)
-	//require.NoError(t, err)
-	//require.Equal(t, 200, res.StatusCode)
+	startTime = startTime.Add(5 * time.Minute)
 
 	wg := sync.WaitGroup{}
 	fmt.Println("Ingestion done")
 	// Run all queries concurrently to get better distribution of requests between queriers.
 	for i := 0; i < numQueries; i++ {
-		fmt.Println("Query", i)
 		wg.Add(1)
 
-		go func() {
+		go func(idx int) {
 			defer wg.Done()
 			c, err := e2emimir.NewClient("", queryFrontend.HTTPEndpoint(), "", "", userID)
 			require.NoError(t, err)
 
-			// TODO: change this to query range and a sum(rate()) query.
-			result, err := c.QueryRange("sum(cortex_test_total)", startTime, now, 15*time.Second)
+			result, err := c.QueryRange(fmt.Sprintf("sum(rate(cortex_test_total[5m])) + %d", idx), startTime, now, 30*time.Second)
 			require.NoError(t, err)
 			require.Equal(t, model.ValMatrix, result.Type())
+
+			expMatrix := model.Matrix{
+				&model.SampleStream{Metric: model.Metric{}},
+			}
+			for ts := startTime; now.Sub(ts) > 0; ts = ts.Add(30 * time.Second) {
+				expMatrix[0].Values = append(expMatrix[0].Values,
+					model.SamplePair{
+						Timestamp: model.Time(e2e.TimeToMilliseconds(ts)),
+						Value:     model.SampleValue(float64(idx) + (float64(numSeries) * float64(10) / float64(15))),
+					},
+				)
+			}
 			assert.Equal(t, expMatrix, result.(model.Matrix))
-		}()
+		}(i)
 	}
 
 	wg.Wait()
