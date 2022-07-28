@@ -131,6 +131,11 @@ func TestInstantSplitter(t *testing.T) {
 			out:                  `(10) / (sum without() (` + concatOffsets(splitInterval, 3, `increase({app="foo"}[x]y)`) + `) / 180)`,
 			expectedSplitQueries: 3,
 		},
+		{
+			in:                   `rate({app="foo"}[3m]) / rate({app="foo"}[3m]) > 0.5`,
+			out:                  `((sum without() (` + concatOffsets(splitInterval, 3, `increase({app="foo"}[x]y)`) + `) / 180) / (sum without() (` + concatOffsets(splitInterval, 3, `increase({app="foo"}[x]y)`) + `) / 180)) > (0.5)`,
+			expectedSplitQueries: 6,
+		},
 		// Should map inner binary operations
 		{
 			in:                   `sum(sum_over_time({app="foo"}[3m]) + count_over_time({app="foo"}[3m]))`,
@@ -272,6 +277,16 @@ func TestInstantSplitterNoOp(t *testing.T) {
 		},
 		{
 			query: `(20) / (10)`,
+		},
+		// should be noop if binary operation is not mapped
+		//   - first operand `rate(metric_counter[1m])` has a smaller range interval than the configured splitting
+		//   - second operand `rate(metric_counter[5h:5m])` is a subquery
+		{
+			query: `rate({app="foo"}[1m]) / rate({app="bar"}[5h:5m]) > 0.5`,
+		},
+		// should be noop if inner binary operation is not mapped
+		{
+			query: `sum(rate({app="foo"}[1h:5m]) * 60) by (bar)`,
 		},
 		// should be noop if subquery
 		{

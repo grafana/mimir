@@ -142,6 +142,17 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 			query:                `sum(max(rate(metric_counter[3m])))`,
 			expectedSplitQueries: 3,
 		},
+		"rate(3m) / rate(3m) > 0.5": {
+			query:                `rate(metric_counter[3m]) / rate(metric_counter[3m]) > 0.5`,
+			expectedSplitQueries: 6,
+		},
+		// should not be mapped if both operands are not splittable
+		//   - first operand `rate(metric_counter[1m])` has a smaller range interval than the configured splitting
+		//   - second operand `rate(metric_counter[5h:5m])` is a subquery
+		"rate(1m) / rate(subquery) > 0.5": {
+			query:                `rate(metric_counter[1m]) / rate(metric_counter[5h:5m]) > 0.5`,
+			expectedSplitQueries: 0,
+		},
 		// Histograms
 		"histogram_quantile() grouping only 'by' le": {
 			query:                `histogram_quantile(0.5, sum by(le) (rate(metric_histogram_bucket[3m])))`,
@@ -169,7 +180,7 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 			expectedSplitQueries: 0,
 		},
 		"subquery sum grouping 'by'": {
-			query:                `sum(sum_over_time(metric_counter[1h:1m]) * 60) by (group_1)`,
+			query:                `sum(sum_over_time(metric_counter[1h:5m]) * 60) by (group_1)`,
 			expectedSplitQueries: 0,
 		},
 	}
