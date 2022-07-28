@@ -409,6 +409,43 @@ func TestGetRangeIntervals(t *testing.T) {
 	}
 }
 
+func TestUpdateRangeInterval(t *testing.T) {
+	tests := []struct {
+		expr         string
+		expectedExpr string
+		expectedErr  string
+	}{
+		{
+			expr:        `time()`,
+			expectedErr: "no matrix selector has been found",
+		}, {
+			expr:         `sum(rate(metric[1m]))`,
+			expectedExpr: `sum(rate(metric[1h]))`,
+		}, {
+			expr:         `sum(label_replace(rate(metric[1m]), "dst", "$1", "src", ".*"))`,
+			expectedExpr: `sum(label_replace(rate(metric[1h]), "dst", "$1", "src", ".*"))`,
+		}, {
+			expr:        `sum(rate(metric[1m])) + sum(rate(metric[5m]))`,
+			expectedErr: "multiple matrix selectors have been found",
+		},
+	}
+
+	for _, testData := range tests {
+		t.Run(testData.expr, func(t *testing.T) {
+			expr, err := parser.ParseExpr(testData.expr)
+			require.NoError(t, err)
+
+			actualErr := updateRangeInterval(expr, time.Hour)
+			if testData.expectedErr != "" {
+				require.Error(t, actualErr)
+				assert.Contains(t, actualErr.Error(), testData.expectedErr)
+			} else {
+				assert.Equal(t, testData.expectedExpr, expr.String())
+			}
+		})
+	}
+}
+
 func concatOffsets(splitInterval time.Duration, offsets int, queryTemplate string) string {
 	queries := make([]string, offsets)
 	offsetIndex := offsets
