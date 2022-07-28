@@ -330,6 +330,14 @@ func TestInstantSplitterNoOp(t *testing.T) {
 			query: `sum(rate(metric_counter[30m:5s]))`,
 		},
 		{
+			// Parenthesis expression between sum_over_time() and the subquery.
+			query: `sum_over_time((metric_counter[30m:5s]))`,
+		},
+		{
+			// Multiple parenthesis expressions between sum_over_time() and the subquery.
+			query: `sum_over_time((((metric_counter[30m:5s]))))`,
+		},
+		{
 			query: `quantile_over_time(1, metric_counter[10m:1m])`,
 		},
 		{
