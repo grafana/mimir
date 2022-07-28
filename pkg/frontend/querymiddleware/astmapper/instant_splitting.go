@@ -429,8 +429,8 @@ func getRangeInterval(expr parser.Expr) time.Duration {
 	}
 }
 
-// assertSplittableRangeInterval returns the range interval specified in the input expr and whether it is greater than
-// the configured split interval.
+// assertOffset returns the offset specified in the input expr
+// Note that the returned offset can be zero or negative
 func (i *instantSplitter) assertOffset(expr parser.Expr) (offset time.Duration, err error) {
 	offsets := getOffsets(expr)
 	if len(offsets) == 0 {
@@ -440,9 +440,7 @@ func (i *instantSplitter) assertOffset(expr parser.Expr) (offset time.Duration, 
 		return time.Duration(0), fmt.Errorf("found %d offsets while expecting at most 1", len(offsets))
 	}
 
-	// Possible to have negative offsets
-	offset = offsets[0]
-	return offset, nil
+	return offsets[0], nil
 }
 
 // getOffsets recursively visit the input expr and returns a slice containing all offsets found.

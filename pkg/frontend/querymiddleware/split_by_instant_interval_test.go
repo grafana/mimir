@@ -166,13 +166,13 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 			query:                `sum_over_time(metric_counter[3m] offset 30s)`,
 			expectedSplitQueries: 3,
 		},
-		"count_over_time[3m] offset -3m": {
-			query:                `sum_over_time(metric_counter[3m] offset -3m)`,
+		"count_over_time[3m] offset -2m": {
+			query:                `sum_over_time(metric_counter[3m] offset -2m)`,
 			expectedSplitQueries: 3,
 		},
-		"avg_over_time[3m] offset -5m": {
-			query:                `avg_over_time(metric_counter[3m] offset -5m)`,
-			expectedSplitQueries: 3,
+		"avg_over_time[3m] offset -1m": {
+			query:                `avg_over_time(metric_counter[3m] offset -1m)`,
+			expectedSplitQueries: 6,
 		},
 		"count_over_time[3m] offset -30s": {
 			query:                `count_over_time(metric_counter[3m] offset -30s)`,
