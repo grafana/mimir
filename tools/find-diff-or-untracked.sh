@@ -15,7 +15,7 @@ function find_diff_or_untracked {
 }
 
 if [ $# -eq 0 ] ; then
-  echo "Too few argument to $0. Provide a messages and paths"
+  echo "Too few arguments to $0. Provide paths to check"
   exit 1
 fi
 
