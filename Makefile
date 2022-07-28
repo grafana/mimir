@@ -68,7 +68,7 @@ DOC_EMBED := docs/sources/operators-guide/configure/configuring-the-query-fronte
 	docs/sources/operators-guide/deploy-grafana-mimir/jsonnet/deploying.md
 
 .PHONY: image-tag
-image-tag:
+image-tag: ## Print the docker image tag.
 	@echo $(IMAGE_TAG)
 
 # Support gsed on OSX (installed via brew), falling back to sed. On Linux
@@ -113,18 +113,19 @@ push-multiarch-%/$(UPTODATE):
 	fi
 	$(SUDO) docker buildx build -o $(PUSH_MULTIARCH_TARGET) --platform linux/amd64,linux/arm64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) --build-arg=USE_BINARY_SUFFIX=true -t $(IMAGE_PREFIX)$(shell basename $(DIR)):$(IMAGE_TAG) $(DIR)/
 
+push-multiarch-mimir: ## Push mimir docker image.
 push-multiarch-mimir: push-multiarch-cmd/mimir/.uptodate
 
 # This target fetches current build image, and tags it with "latest" tag. It can be used instead of building the image locally.
 .PHONY: fetch-build-image
-fetch-build-image:
+fetch-build-image: ## Fetch latest the docker build image. It can be used instead of building the image locally.
 	docker pull $(BUILD_IMAGE):$(LATEST_BUILD_IMAGE_TAG)
 	docker tag $(BUILD_IMAGE):$(LATEST_BUILD_IMAGE_TAG) $(BUILD_IMAGE):latest
 	touch mimir-build-image/.uptodate
 
 # push-multiarch-build-image requires the ability to build images for multiple platforms:
 # https://docs.docker.com/buildx/working-with-buildx/#build-multi-platform-images
-push-multiarch-build-image:
+push-multiarch-build-image: ## Push the docker build image.
 	@echo
 	# Build image for each platform separately... it tends to generate fewer errors.
 	$(SUDO) docker buildx build --platform linux/amd64 --progress=plain --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) mimir-build-image/
@@ -147,7 +148,7 @@ DOCKERFILES := $(shell find . $(DONT_FIND) -type f -name 'Dockerfile' -print)
 UPTODATE_FILES := $(patsubst %/Dockerfile,%/$(UPTODATE),$(DOCKERFILES))
 DOCKER_IMAGE_DIRS := $(patsubst %/Dockerfile,%,$(DOCKERFILES))
 IMAGE_NAMES := $(foreach dir,$(DOCKER_IMAGE_DIRS),$(patsubst %,$(IMAGE_PREFIX)%,$(shell basename $(dir))))
-images:
+images: ## Print all image names.
 	$(info $(IMAGE_NAMES))
 	@echo > /dev/null
 
@@ -400,6 +401,7 @@ dist: ## Generates binaries for a Mimir release.
 		done; \
 		touch $@
 
+build-mixin: ## Generates the mimir mixin zip file.
 build-mixin: check-mixin-jb
 	# Empty the compiled mixin directories content, without removing the directories itself,
 	# so that Grafana can refresh re-build dashboards when using "make mixin-serve".
@@ -411,15 +413,16 @@ build-mixin: check-mixin-jb
 	@cd $(MIXIN_OUT_PATH)/.. && zip -q -r mimir-mixin.zip $$(basename "$(MIXIN_OUT_PATH)")
 	@echo "The mixin has been compiled to $(MIXIN_OUT_PATH) and archived to $$(realpath --relative-to=$$(pwd) $(MIXIN_OUT_PATH)/../mimir-mixin.zip)"
 
-check-mixin-tests:
+check-mixin-tests: ## Test the mixin files.
 	@./operations/mimir-mixin-tests/run.sh || (echo "Mixin tests are failing. Please fix the reported issues. You can run mixin tests with 'make check-mixin-tests'" && false)
 
-format-mixin:
+format-mixin: ## Format the mixin files.
 	@find $(MIXIN_PATH) -type f -name '*.libsonnet' | xargs jsonnetfmt -i
 
 endif
 
 .PHONY: check-makefiles
+check-makefiles: ## Check the makefiles format.
 check-makefiles: format-makefiles
 	@git diff --exit-code -- $(MAKE_FILES) || (echo "Please format Makefiles by running 'make format-makefiles'" && false)
 
@@ -428,7 +431,7 @@ format-makefiles: ## Format all Makefiles.
 format-makefiles: $(MAKE_FILES)
 	$(SED) -i -e 's/^\(\t*\)  /\1\t/g' -e 's/^\(\t*\) /\1/' -- $?
 
-clean:
+clean: ## Cleanup the docker images, object files and executables.
 	$(SUDO) docker rmi $(IMAGE_NAMES) >/dev/null 2>&1 || true
 	rm -rf -- $(UPTODATE_FILES) $(EXES) .cache dist
 	# Remove executables built for multiarch images.
@@ -439,8 +442,7 @@ clean:
 clean-protos: ## Clean protobuf files.
 	rm -rf $(PROTO_GOS)
 
-# List all images building make targets.
-list-image-targets:
+list-image-targets: ## List all images building make targets.
 	@echo $(UPTODATE_FILES) | tr " " "\n"
 
 clean-doc: ## Clean the documentation files generated from templates.
@@ -458,18 +460,21 @@ check-doc-validator: ## Check documentation using doc-validator tool
 	docker run -v "$(CURDIR)/docs/sources:/docs/sources" grafana/doc-validator:latest ./docs/sources
 
 .PHONY: reference-help
+reference-help: ## Generates the reference help documentation.
 reference-help: cmd/mimir/mimir
 	@(./cmd/mimir/mimir -h || true) > cmd/mimir/help.txt.tmpl
 	@(./cmd/mimir/mimir -help-all || true) > cmd/mimir/help-all.txt.tmpl
 	@(go run ./tools/config-inspector || true) > cmd/mimir/config-descriptor.json
 
-clean-white-noise:
+clean-white-noise: ## Clean the white noise in the markdown files.
 	@find . -path ./.pkg -prune -o -path "*/vendor/*" -prune -or -type f -name "*.md" -print | \
 	SED_BIN="$(SED)" xargs ./tools/cleanup-white-noise.sh
 
+check-white-noise: ## Check the white noise in the markdown files.
 check-white-noise: clean-white-noise
 	@git diff --exit-code -- '*.md' || (echo "Please remove trailing whitespaces running 'make clean-white-noise'" && false)
 
+check-mixin: ## Build, format and check the mixin files.
 check-mixin: build-mixin format-mixin check-mixin-jb check-mixin-mixtool check-mixin-runbooks
 	@echo "Checking diff:"
 	@./tools/find-diff-or-untracked.sh $(MIXIN_PATH) $(MIXIN_OUT_PATH) || (echo "Please build and format mixin by running 'make build-mixin format-mixin'" && false)
@@ -496,14 +501,15 @@ mixin-screenshots: ## Generates mixin dashboards screenshots.
 	@find docs/sources/operators-guide/monitoring-grafana-mimir/dashboards -name '*.png' -delete
 	@./operations/mimir-mixin-tools/screenshots/run.sh
 
+check-jsonnet-manifests: ## Check the jsonnet manifests.
 check-jsonnet-manifests: format-jsonnet-manifests
 	@echo "Checking diff:"
 	@./tools/find-diff-or-untracked.sh "$(JSONNET_MANIFESTS_PATH)" || (echo "Please format jsonnet manifests by running 'make format-jsonnet-manifests'" && false)
 
-format-jsonnet-manifests:
+format-jsonnet-manifests: ## Format the jsonnet manifests.
 	@find $(JSONNET_MANIFESTS_PATH) -type f -name '*.libsonnet' -print -o -name '*.jsonnet' -print | xargs jsonnetfmt -i
 
-check-jsonnet-getting-started:
+check-jsonnet-getting-started: ## Check the jsonnet getting started examples.
 	# Start from a clean setup.
 	rm -rf jsonnet-example
 
@@ -516,24 +522,29 @@ check-jsonnet-getting-started:
 operations/helm/charts/mimir-distributed/charts: operations/helm/charts/mimir-distributed/Chart.yaml operations/helm/charts/mimir-distributed/Chart.lock
 	@cd ./operations/helm/charts/mimir-distributed && helm dependency update
 
+check-helm-jsonnet-diff: ## Check the helm jsonnet diff.
 check-helm-jsonnet-diff: operations/helm/charts/mimir-distributed/charts build-jsonnet-tests
 	@./operations/compare-helm-with-jsonnet/compare-helm-with-jsonnet.sh
 
+build-helm-tests: ## Build the helm jsonnet tests.
 build-helm-tests: operations/helm/charts/mimir-distributed/charts
 	@./operations/helm/tests/build.sh
 
+check-helm-tests: ## Check the helm jsonnet tests output.
 check-helm-tests: build-helm-tests
 	@./tools/find-diff-or-untracked.sh operations/helm/tests || (echo "Please rebuild helm tests output 'make build-helm-tests'" && false)
 
-build-jsonnet-tests:
+build-jsonnet-tests: ## Build the jsonnet tests.
 	@./operations/mimir-tests/build.sh
 
+check-jsonnet-tests: ## Check the jsonnet tests output.
 check-jsonnet-tests: build-jsonnet-tests
 	@./tools/find-diff-or-untracked.sh operations/mimir-tests || (echo "Please rebuild jsonnet tests output 'make build-jsonnet-tests'" && false)
 
-check-tsdb-blocks-storage-s3-docker-compose-yaml:
+check-tsdb-blocks-storage-s3-docker-compose-yaml: ## Check the josnnet and docker-compose diff.
 	cd development/tsdb-blocks-storage-s3 && make check
 
+integration-tests: ## Run all integration tests.
 integration-tests: cmd/mimir/$(UPTODATE)
 	go test -tags=requires_docker ./integration/...
 
