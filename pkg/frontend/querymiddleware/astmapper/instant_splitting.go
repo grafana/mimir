@@ -184,18 +184,18 @@ func (i *instantSplitter) mapBinaryExpr(expr *parser.BinaryExpr, stats *MapperSt
 	if err != nil {
 		return nil, false, err
 	}
-	finished = lhsFinished || rhsFinished
-	// Wrap binary operands in parentheses expression
-	if finished {
+	// if query was split and at least one operand successfully finished, the binary operations is mapped.
+	// The binary operands need to be wrapped in a parentheses' expression to ensure operator precedence.
+	if stats.GetShardedQueries() > 0 && (lhsFinished || rhsFinished) {
 		expr.LHS = &parser.ParenExpr{
 			Expr: lhsMapped,
 		}
 		expr.RHS = &parser.ParenExpr{
 			Expr: rhsMapped,
 		}
+		return expr, true, nil
 	}
-
-	return expr, finished, nil
+	return expr, false, nil
 }
 
 // mapParenExpr maps parenthesis expression expr

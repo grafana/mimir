@@ -142,6 +142,10 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 			query:                `sum(max(rate(metric_counter[3m])))`,
 			expectedSplitQueries: 3,
 		},
+		"rate / rate > 0.5": {
+			query:                `rate(metric_counter[1m]) / rate(metric_counter[1m]) > 0.5`,
+			expectedSplitQueries: 0,
+		},
 		// Histograms
 		"histogram_quantile() grouping only 'by' le": {
 			query:                `histogram_quantile(0.5, sum by(le) (rate(metric_histogram_bucket[3m])))`,
@@ -161,7 +165,7 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 		},
 		// Subqueries
 		"subquery": {
-			query:                `sum(sum_over_time(metric_counter[1h:1m]) * 60) by (group_1)`,
+			query:                `sum(sum_over_time(metric_counter[1h:5m]) * 60) by (group_1)`,
 			expectedSplitQueries: 0,
 		},
 	}

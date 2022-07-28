@@ -267,6 +267,14 @@ func TestInstantSplitterNoOp(t *testing.T) {
 		{
 			noop: `20 / 10`,
 		},
+		// should be noop if binary operation is not mapped
+		{
+			noop: `rate({app="foo"}[1m]) / rate({app="bar"}[1m]) > 0.5`,
+		},
+		// should be noop if inner binary operation is not mapped
+		{
+			noop: `sum(rate({app="foo"}[1h:5m]) * 60) by (bar)`,
+		},
 	} {
 		tt := tt
 
