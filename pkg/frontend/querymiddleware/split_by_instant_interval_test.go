@@ -12,14 +12,13 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/user"
-
-	"github.com/grafana/mimir/pkg/util"
 )
 
 func TestQuerySplittingCorrectness(t *testing.T) {
@@ -164,7 +163,15 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 			expectedSplitQueries: 3,
 		},
 		// Subqueries
-		"subquery": {
+		"subquery sum_over_time": {
+			query:                `sum_over_time(metric_counter[1h:5m])`,
+			expectedSplitQueries: 0,
+		},
+		"subquery sum(rate)": {
+			query:                `sum(rate(metric_counter[30m:5s]))`,
+			expectedSplitQueries: 0,
+		},
+		"subquery sum grouping 'by'": {
 			query:                `sum(sum_over_time(metric_counter[1h:5m]) * 60) by (group_1)`,
 			expectedSplitQueries: 0,
 		},

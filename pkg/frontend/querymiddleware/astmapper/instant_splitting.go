@@ -383,17 +383,17 @@ func getRangeInterval(expr parser.Expr) time.Duration {
 	case *parser.AggregateExpr:
 		return getRangeInterval(e.Expr)
 	case *parser.Call:
-		argRangeInterval := time.Duration(0)
-		// Iterate over Call's arguments until a MatrixSelector is found
+		// Iterate over Call's arguments until a MatrixSelector and a valid range interval are found
 		for _, arg := range e.Args {
-			if argRangeInterval = getRangeInterval(arg); argRangeInterval != 0 {
-				break
+			if argRangeInterval := getRangeInterval(arg); argRangeInterval != 0 {
+				return argRangeInterval
 			}
 		}
-		return argRangeInterval
+		return time.Duration(0)
 	case *parser.MatrixSelector:
 		return e.Range
 	default:
+		// parser.SubqueryExpr and parser.BinaryExpr should return 0
 		return 0
 	}
 }
@@ -408,7 +408,7 @@ func getOffset(expr parser.Expr) time.Duration {
 	case *parser.AggregateExpr:
 		return getOffset(e.Expr)
 	case *parser.Call:
-		// Iterate over Call's arguments until a VectorSelector is found and a valid offset is found
+		// Iterate over Call's arguments until a VectorSelector and a valid offset are found
 		for _, arg := range e.Args {
 			if argRangeInterval := getOffset(arg); argRangeInterval > 0 {
 				return argRangeInterval
