@@ -10,7 +10,9 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -26,6 +28,7 @@ import (
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/objstore"
 
+	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
@@ -685,6 +688,16 @@ func TestBlocksCleaner_ShouldRemoveBlocksOutsideRetentionPeriod(t *testing.T) {
 	}
 }
 
+func checkBlock(t *testing.T, user string, bucketClient objstore.Bucket, block ulid.ULID, metaJSONExists bool, markedForDeletion bool) {
+	exists, err := bucketClient.Exists(context.Background(), path.Join(user, block.String(), metadata.MetaFilename))
+	require.NoError(t, err)
+	require.Equal(t, metaJSONExists, exists)
+
+	exists, err = bucketClient.Exists(context.Background(), path.Join(user, block.String(), metadata.DeletionMarkFilename))
+	require.NoError(t, err)
+	require.Equal(t, markedForDeletion, exists)
+}
+
 func TestBlocksCleaner_ShouldRemovePartialBlocksOutsideDelayPeriod(t *testing.T) {
 	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
 	bucketClient = bucketindex.BucketWithGlobalMarkers(bucketClient)
@@ -710,28 +723,32 @@ func TestBlocksCleaner_ShouldRemovePartialBlocksOutsideDelayPeriod(t *testing.T)
 
 	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
 
-	requireBlockExists := func(user string, block ulid.ULID, expectExists bool) {
-		exists, err := bucketClient.Exists(ctx, path.Join(user, block.String(), metadata.MetaFilename))
-		require.NoError(t, err)
-		require.Equal(t, expectExists, exists)
-	}
-
 	makeBlockPartial := func(user string, block ulid.ULID) {
 		err := bucketClient.Delete(ctx, path.Join(user, block.String(), metadata.MetaFilename))
 		require.NoError(t, err)
 	}
 
-	requireBlockExists("user-1", block1, true)
-	requireBlockExists("user-1", block2, true)
+	checkBlock(t, "user-1", bucketClient, block1, true, false)
+	checkBlock(t, "user-1", bucketClient, block2, true, false)
 	makeBlockPartial("user-1", block1)
-	requireBlockExists("user-1", block1, false)
-	requireBlockExists("user-1", block2, true)
+	checkBlock(t, "user-1", bucketClient, block1, false, false)
+	checkBlock(t, "user-1", bucketClient, block2, true, false)
+
 	require.NoError(t, cleaner.cleanUser(ctx, "user-1"))
+
+	// check that no blocks were marked for deletion, because deletion delay is set to 0.
+	checkBlock(t, "user-1", bucketClient, block1, false, false)
+	checkBlock(t, "user-1", bucketClient, block2, true, false)
 
 	// Test that partial block does get marked for deletion
 	// The delay time must be very short since these temporary files were just created
 	cfgProvider.userPartialBlockDelay["user-1"] = 1 * time.Nanosecond
+
 	require.NoError(t, cleaner.cleanUser(ctx, "user-1"))
+
+	// check that first block was marked for deletion (partial block updated far in the past), but not the second one, because it's not partial.
+	checkBlock(t, "user-1", bucketClient, block1, false, true)
+	checkBlock(t, "user-1", bucketClient, block2, true, false)
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_bucket_blocks_count Total number of blocks in the bucket. Includes blocks marked for deletion, but not partial blocks.
@@ -760,7 +777,7 @@ func TestBlocksCleaner_ShouldNotRemovePartialBlocksInsideDelayPeriod(t *testing.
 	}
 
 	block1 := createTSDBBlock(t, bucketClient, "user-1", ts(-10), ts(-8), 2, nil)
-	block2 := createTSDBBlock(t, bucketClient, "user-1", ts(-8), ts(-6), 2, nil)
+	block2 := createTSDBBlock(t, bucketClient, "user-2", ts(-8), ts(-6), 2, nil)
 
 	cfg := BlocksCleanerConfig{
 		DeletionDelay:           time.Hour,
@@ -776,12 +793,6 @@ func TestBlocksCleaner_ShouldNotRemovePartialBlocksInsideDelayPeriod(t *testing.
 
 	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
 
-	requireBlockExists := func(user string, block ulid.ULID, expectExists bool) {
-		exists, err := bucketClient.Exists(ctx, path.Join(user, block.String(), metadata.MetaFilename))
-		require.NoError(t, err)
-		require.Equal(t, expectExists, exists)
-	}
-
 	makeBlockPartial := func(user string, block ulid.ULID) {
 		err := bucketClient.Delete(ctx, path.Join(user, block.String(), metadata.MetaFilename))
 		require.NoError(t, err)
@@ -792,20 +803,28 @@ func TestBlocksCleaner_ShouldNotRemovePartialBlocksInsideDelayPeriod(t *testing.
 		require.NoError(t, err)
 	}
 
-	requireBlockExists("user-1", block1, true)
-	requireBlockExists("user-1", block2, true)
+	checkBlock(t, "user-1", bucketClient, block1, true, false)
+	checkBlock(t, "user-2", bucketClient, block2, true, false)
+
 	makeBlockPartial("user-1", block1)
 	corruptMeta("user-2", block2)
-	requireBlockExists("user-1", block1, false)
-	requireBlockExists("user-1", block2, true)
+
+	checkBlock(t, "user-1", bucketClient, block1, false, false)
+	checkBlock(t, "user-2", bucketClient, block2, true, false)
 
 	// Set partial block delay such that block will not be marked for deletion
 	// The comparison is based on inode modification time, so anything more than very recent (< 1 second) won't be
 	// out of range
 	cfgProvider.userPartialBlockDelay["user-1"] = 1 * time.Hour
 	cfgProvider.userPartialBlockDelay["user-2"] = 1 * time.Nanosecond
+
 	require.NoError(t, cleaner.cleanUser(ctx, "user-1"))
+	checkBlock(t, "user-1", bucketClient, block1, false, false) // This block was updated too recently, so we don't mark it for deletion just yet.
+	checkBlock(t, "user-2", bucketClient, block2, true, false)  // No change for user-2.
+
 	require.NoError(t, cleaner.cleanUser(ctx, "user-2"))
+	checkBlock(t, "user-1", bucketClient, block1, false, false) // No change for user-1
+	checkBlock(t, "user-2", bucketClient, block2, true, false)  // Block with corrupted meta is NOT marked for deletion.
 
 	// The cortex_compactor_blocks_marked_for_deletion_total{reason="partial"} counter should be zero since for user-1
 	// the time since modification is shorter than the delay, and for user-2, the metadata is corrupted but the file
@@ -813,7 +832,7 @@ func TestBlocksCleaner_ShouldNotRemovePartialBlocksInsideDelayPeriod(t *testing.
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_bucket_blocks_count Total number of blocks in the bucket. Includes blocks marked for deletion, but not partial blocks.
 			# TYPE cortex_bucket_blocks_count gauge
-			cortex_bucket_blocks_count{user="user-1"} 1
+			cortex_bucket_blocks_count{user="user-1"} 0
 			cortex_bucket_blocks_count{user="user-2"} 0
 			# HELP cortex_bucket_blocks_marked_for_deletion_count Total number of blocks marked for deletion in the bucket.
 			# TYPE cortex_bucket_blocks_marked_for_deletion_count gauge
@@ -828,6 +847,33 @@ func TestBlocksCleaner_ShouldNotRemovePartialBlocksInsideDelayPeriod(t *testing.
 		"cortex_bucket_blocks_marked_for_deletion_count",
 		"cortex_compactor_blocks_marked_for_deletion_total",
 	))
+}
+
+func TestFindMostRecentModifiedTimeForBlock(t *testing.T) {
+	b, dir := mimir_testutil.PrepareFilesystemBucket(t)
+
+	const tenant = "user"
+
+	blockID := createTSDBBlock(t, b, tenant, time.Now().Add(-1*time.Hour).UnixMilli(), time.Now().UnixMilli(), 2, nil)
+
+	hourAgo := time.Now().Add(-1 * time.Hour).Truncate(time.Second) // ignore milliseconds, as not all filesystems store them.
+	for _, f := range []string{"meta.json", "index", "chunks/000001", "tombstones"} {
+		require.NoError(t, os.Chtimes(filepath.Join(dir, tenant, blockID.String(), filepath.FromSlash(f)), hourAgo, hourAgo))
+	}
+
+	userBucket := bucket.NewUserBucketClient(tenant, b, nil)
+
+	mt, err := findMostRecentModifiedTimeForBlock(context.Background(), blockID, userBucket)
+	require.NoError(t, err)
+	require.Equal(t, hourAgo.Unix(), mt.Unix())
+
+	// Now update timestamp for file inside "chunks" to be the most recent one.
+	now := time.Now().Truncate(time.Second)
+	require.NoError(t, os.Chtimes(filepath.Join(dir, tenant, blockID.String(), filepath.FromSlash("chunks/000001")), now, now))
+
+	mt, err = findMostRecentModifiedTimeForBlock(context.Background(), blockID, userBucket)
+	require.NoError(t, err)
+	require.Equal(t, now.Unix(), mt.Unix())
 }
 
 type mockBucketFailure struct {
