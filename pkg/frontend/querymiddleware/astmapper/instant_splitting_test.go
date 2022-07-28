@@ -365,6 +365,9 @@ func TestGetRangeIntervals(t *testing.T) {
 		}, {
 			query:    `sum(rate(metric[1m])) + sum(rate(metric[5m]))`,
 			expected: []time.Duration{time.Minute, 5 * time.Minute},
+		}, {
+			query:    `sum_over_time(rate(metric[1m])[1h:5m])`,
+			expected: []time.Duration{time.Hour, time.Minute},
 		},
 	}
 

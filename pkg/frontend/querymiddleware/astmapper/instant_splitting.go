@@ -71,9 +71,17 @@ func (i *instantSplitter) MapExpr(expr parser.Expr, stats *MapperStats) (mapped 
 	case *parser.BinaryExpr:
 		return i.mapBinaryExpr(e, stats)
 	case *parser.Call:
+		if isSubquery(e) {
+			// Subqueries are currently not supported by splitting, so we stop the mapping here.
+			return e, true, nil
+		}
+
 		return i.mapCall(e, stats)
 	case *parser.ParenExpr:
 		return i.mapParenExpr(e, stats)
+	case *parser.SubqueryExpr:
+		// Subqueries are currently not supported by splitting, so we stop the mapping here.
+		return e, true, nil
 	default:
 		return e, false, nil
 	}
@@ -372,12 +380,13 @@ func getRangeIntervals(expr parser.Expr) []time.Duration {
 
 	// Ignore the error since we never return it.
 	_, _ = anyNode(expr, func(entry parser.Node) (bool, error) {
-		matrix, ok := entry.(*parser.MatrixSelector)
-		if !ok {
-			return false, nil
+		switch e := entry.(type) {
+		case *parser.MatrixSelector:
+			ranges = append(ranges, e.Range)
+		case *parser.SubqueryExpr:
+			ranges = append(ranges, e.Range)
 		}
 
-		ranges = append(ranges, matrix.Range)
 		return false, nil
 	})
 
