@@ -339,11 +339,11 @@ mod-check: ## Check the go mod is clean and tidy.
 	GO111MODULE=on go mod verify
 	GO111MODULE=on go mod tidy
 	GO111MODULE=on go mod vendor
-	@git diff --exit-code -- go.sum go.mod vendor/
+	@./tools/find-diff-or-untracked.sh go.sum go.mod vendor/ || (echo "Please update vendoring by running 'make mod-check'" && false)
 
 check-protos: ## Check the protobuf files are up to date.
 check-protos: clean-protos protos
-	@git diff --exit-code -- $(PROTO_GOS)
+	@./tools/find-diff-or-untracked.sh $(PROTO_GOS) || (echo "Please rebuild protobuf code by running 'check-protos'" && false)
 
 %.md : %.template
 	go run ./tools/doc-generator $< > $@
@@ -472,7 +472,7 @@ check-white-noise: clean-white-noise
 
 check-mixin: build-mixin format-mixin check-mixin-jb check-mixin-mixtool check-mixin-runbooks
 	@echo "Checking diff:"
-	@git diff --exit-code -- $(MIXIN_PATH) $(MIXIN_OUT_PATH) || (echo "Please build and format mixin by running 'make build-mixin format-mixin'" && false)
+	@./tools/find-diff-or-untracked.sh $(MIXIN_PATH) $(MIXIN_OUT_PATH) || (echo "Please build and format mixin by running 'make build-mixin format-mixin'" && false)
 
 	@cd $(MIXIN_PATH) && \
 	jb install && \
@@ -498,7 +498,7 @@ mixin-screenshots: ## Generates mixin dashboards screenshots.
 
 check-jsonnet-manifests: format-jsonnet-manifests
 	@echo "Checking diff:"
-	@git diff --exit-code -- $(JSONNET_MANIFESTS_PATH) || (echo "Please format jsonnet manifests by running 'make format-jsonnet-manifests'" && false)
+	@./tools/find-diff-or-untracked.sh "$(JSONNET_MANIFESTS_PATH)" || (echo "Please format jsonnet manifests by running 'make format-jsonnet-manifests'" && false)
 
 format-jsonnet-manifests:
 	@find $(JSONNET_MANIFESTS_PATH) -type f -name '*.libsonnet' -print -o -name '*.jsonnet' -print | xargs jsonnetfmt -i
@@ -523,13 +523,13 @@ build-helm-tests: operations/helm/charts/mimir-distributed/charts
 	@./operations/helm/tests/build.sh
 
 check-helm-tests: build-helm-tests
-	@git diff --exit-code -- ./operations/helm/tests || (echo "Please rebuild helm tests output 'make build-helm-tests'" && false)
+	@./tools/find-diff-or-untracked.sh operations/helm/tests || (echo "Please rebuild helm tests output 'make build-helm-tests'" && false)
 
 build-jsonnet-tests:
 	@./operations/mimir-tests/build.sh
 
 check-jsonnet-tests: build-jsonnet-tests
-	@git diff --exit-code -- ./operations/mimir-tests || (echo "Please rebuild jsonnet tests output 'make build-jsonnet-tests'" && false)
+	@./tools/find-diff-or-untracked.sh operations/mimir-tests || (echo "Please rebuild jsonnet tests output 'make build-jsonnet-tests'" && false)
 
 check-tsdb-blocks-storage-s3-docker-compose-yaml:
 	cd development/tsdb-blocks-storage-s3 && make check

@@ -3646,12 +3646,23 @@
           "kind": "field",
           "name": "split_queries_by_interval",
           "required": false,
-          "desc": "Split queries by an interval and execute in parallel. You should use a multiple of 24 hours to optimize querying blocks. 0 to disable it.",
+          "desc": "Split range queries by an interval and execute in parallel. You should use a multiple of 24 hours to optimize querying blocks. 0 to disable it.",
           "fieldValue": null,
           "fieldDefaultValue": 86400000000000,
           "fieldFlag": "query-frontend.split-queries-by-interval",
           "fieldType": "duration",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "split_instant_queries_by_interval",
+          "required": false,
+          "desc": "Split instant queries by an interval and execute in parallel. 0 to disable it.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "query-frontend.split-instant-queries-by-interval",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",

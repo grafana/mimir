@@ -973,6 +973,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			cfg := prepConfig{
 				numIngesters:    tc.numIngesters,
 				happyIngesters:  tc.happyIngesters,
