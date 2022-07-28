@@ -186,6 +186,27 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 			query:                `count_over_time(metric_counter[3m] offset -30s)`,
 			expectedSplitQueries: 3,
 		},
+		// @ modifier
+		"sum_over_time @ start()": {
+			query:                `sum_over_time(metric_counter[3m] @ start())`,
+			expectedSplitQueries: 3,
+		},
+		"sum(sum_over_time @ end())": {
+			query:                `sum(sum_over_time(metric_counter[3m] @ end()))`,
+			expectedSplitQueries: 3,
+		},
+		"avg(avg_over_time @ time.Now())": {
+			query:                fmt.Sprintf(`avg(avg_over_time(metric_counter[3m] @ %v))`, time.Now().Unix()),
+			expectedSplitQueries: 6,
+		},
+		"max_over_time @ time.Now() offset 1m)": {
+			query:                fmt.Sprintf(`max_over_time(metric_counter[3m] @ %v offset 1m)`, time.Now().Unix()),
+			expectedSplitQueries: 3,
+		},
+		"min_over_time offset 1m @ time.Now())": {
+			query:                fmt.Sprintf(`min_over_time(metric_counter[3m] offset 1m @ %v)`, time.Now().Unix()),
+			expectedSplitQueries: 3,
+		},
 		// Histograms
 		"histogram_quantile() grouping only 'by' le": {
 			query:                `histogram_quantile(0.5, sum by(le) (rate(metric_histogram_bucket[3m])))`,

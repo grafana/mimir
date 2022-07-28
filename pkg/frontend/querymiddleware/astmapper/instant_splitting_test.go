@@ -207,6 +207,33 @@ func TestInstantSplitter(t *testing.T) {
 			out:                  `sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"count_over_time({app=\\\"foo\\\"}[1m] offset 1m30s)\",\"count_over_time({app=\\\"foo\\\"}[1m] offset 30s)\",\"count_over_time({app=\\\"foo\\\"}[1m] offset -30s)\"]}"})`,
 			expectedSplitQueries: 3,
 		},
+		// @ modifier
+		{
+			in:                   `rate({app="foo"}[3m] @ start())`,
+			out:                  `sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"increase({app=\\\"foo\\\"}[1m] @ start() offset 2m)\",\"increase({app=\\\"foo\\\"}[1m] @ start() offset 1m)\",\"increase({app=\\\"foo\\\"}[1m] @ start())\"]}"}) / 180`,
+			expectedSplitQueries: 3,
+		},
+		{
+			in:                   `sum(sum_over_time({app="foo"}[3m] @ end()))`,
+			out:                  `sum(sum(__embedded_queries__{__queries__="{\"Concat\":[\"sum(sum_over_time({app=\\\"foo\\\"}[1m] @ end() offset 2m))\",\"sum(sum_over_time({app=\\\"foo\\\"}[1m] @ end() offset 1m))\",\"sum(sum_over_time({app=\\\"foo\\\"}[1m] @ end()))\"]}"}))`,
+			expectedSplitQueries: 3,
+		},
+		{
+			in:                   `avg(avg_over_time({app="foo"}[3m] @ 1609746000))`,
+			out:                  `avg((sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"sum_over_time({app=\\\"foo\\\"}[1m] @ 1609746000.000 offset 2m)\",\"sum_over_time({app=\\\"foo\\\"}[1m] @ 1609746000.000 offset 1m)\",\"sum_over_time({app=\\\"foo\\\"}[1m] @ 1609746000.000)\"]}"})) / (sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"count_over_time({app=\\\"foo\\\"}[1m] @ 1609746000.000 offset 2m)\",\"count_over_time({app=\\\"foo\\\"}[1m] @ 1609746000.000 offset 1m)\",\"count_over_time({app=\\\"foo\\\"}[1m] @ 1609746000.000)\"]}"})))`,
+			expectedSplitQueries: 6,
+		},
+		// Should support both offset and @ operators
+		{
+			in:                   `max_over_time({app="foo"}[3m] @ 1609746000 offset 1m)`,
+			out:                  `max without() (__embedded_queries__{__queries__="{\"Concat\":[\"max_over_time({app=\\\"foo\\\"}[1m] @ 1609746000.000 offset 3m)\",\"max_over_time({app=\\\"foo\\\"}[1m] @ 1609746000.000 offset 2m)\",\"max_over_time({app=\\\"foo\\\"}[1m] @ 1609746000.000 offset 1m)\"]}"})`,
+			expectedSplitQueries: 3,
+		},
+		{
+			in:                   `max_over_time({app="foo"}[3m] offset 1m @ 1609746000)`,
+			out:                  `max without() (__embedded_queries__{__queries__="{\"Concat\":[\"max_over_time({app=\\\"foo\\\"}[1m] @ 1609746000.000 offset 3m)\",\"max_over_time({app=\\\"foo\\\"}[1m] @ 1609746000.000 offset 2m)\",\"max_over_time({app=\\\"foo\\\"}[1m] @ 1609746000.000 offset 1m)\"]}"})`,
+			expectedSplitQueries: 3,
+		},
 		// Should split deeper in the tree if an inner expression is splittable
 		{
 			in:                   `topk(10, histogram_quantile(0.9, rate({app="foo"}[3m])))`,
