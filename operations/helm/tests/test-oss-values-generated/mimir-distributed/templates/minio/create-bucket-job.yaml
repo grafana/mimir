@@ -7,7 +7,8 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: test-oss-values-mimir-distributed-make-bucket-job
+
+  name: test-oss-values-mimir-make-minio-buckets
   namespace: "citestns"
   labels:
     app: mimir-distributed-make-bucket-job
