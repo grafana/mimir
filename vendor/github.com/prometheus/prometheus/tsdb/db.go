@@ -1340,9 +1340,6 @@ func (db *DB) reloadBlocks() (err error) {
 	for _, b := range toLoad {
 		blockMetas = append(blockMetas, b.Meta())
 	}
-	if overlaps := OverlappingBlocks(blockMetas); len(overlaps) > 0 {
-		level.Warn(db.logger).Log("msg", "Overlapping blocks found during reloadBlocks", "detail", overlaps.String())
-	}
 
 	// Append blocks to old, deletable blocks, so we can close them.
 	for _, b := range oldBlocks {

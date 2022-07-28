@@ -46,7 +46,7 @@ func TestQueryGap(t *testing.T) {
 		"-querier.max-outstanding-requests-per-tenant":      strconv.Itoa(numQueries), // To avoid getting errors.
 		"-query-frontend.query-sharding-total-shards":       "16",
 		"-ingester.out-of-order-time-window":                "10m",
-		//"-blocks-storage.tsdb.head-compaction-interval":     "5s", TODO: how to make compaction happen better? Blocks seem to be for 1 minute range!
+		"-blocks-storage.tsdb.head-compaction-interval":     "5s",
 	})
 
 	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
@@ -90,7 +90,9 @@ func TestQueryGap(t *testing.T) {
 	require.NoError(t, err)
 
 	startTime := now.Add(-12 * time.Hour)
-	startTime = time.Unix(60*(startTime.Unix()/60), 0) // Align to 1 minute.
+	startTime = time.Unix(7200*(startTime.Unix()/7200), 0).Add(-2 * time.Hour) // Align to 2h.
+	now = time.Unix(7200*(now.Unix()/7200), 0).Add(-time.Hour)                 // Align to the odd hours.
+
 	numSeries := 10
 	series := make([]prompb.TimeSeries, numSeries)
 	for i := 0; i < numSeries; i++ {
@@ -141,7 +143,11 @@ func TestQueryGap(t *testing.T) {
 			require.Equal(t, 200, res.StatusCode)
 		}
 
-		//igi
+		if tsMillis%(2*time.Hour.Milliseconds()) == 0 {
+			// Wait for a compaction every 2hr.
+			fmt.Println("Waiting 10 seconds for compaction")
+			<-time.After(10 * time.Second)
+		}
 	}
 
 	startTime = startTime.Add(5 * time.Minute)
