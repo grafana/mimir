@@ -61,6 +61,8 @@ type Config struct {
 
 	// This allows downstream projects to wrap the distributor push function
 	// and access the deserialized write requests before/after they are pushed.
+	// This function will only receive samples that don't get forwarded to an
+	// alternative remote_write endpoint by the distributor's forwarding feature.
 	DistributorPushWrapper DistributorPushWrapper `yaml:"-"`
 
 	// The CustomConfigHandler allows for providing a different handler for the
