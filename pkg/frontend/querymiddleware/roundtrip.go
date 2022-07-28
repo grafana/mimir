@@ -221,7 +221,7 @@ func newQueryTripperware(
 	if cfg.SplitInstantQueriesByInterval > 0 {
 		queryInstantMiddleware = append(
 			queryInstantMiddleware,
-			newSplitInstantQueryByIntervalMiddleware(cfg.SplitInstantQueriesByInterval > 0, cfg.SplitInstantQueriesByInterval, limits, log, engine, registerer),
+			newSplitInstantQueryByIntervalMiddleware(cfg.SplitInstantQueriesByInterval, limits, log, engine, registerer),
 		)
 	}
 
