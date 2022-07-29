@@ -42,7 +42,6 @@ const (
 	minOverTime     = "min_over_time"
 	presentOverTime = "present_over_time"
 	rate            = "rate"
-	resets          = "resets"
 	sumOverTime     = "sum_over_time"
 )
 
