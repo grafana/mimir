@@ -15,22 +15,24 @@ The supported backends are:
 - [Azure Blob Storage](https://azure.microsoft.com/es-es/services/storage/blobs/)
 - [Swift (OpenStack Object Storage)](https://wiki.openstack.org/wiki/Swift)
 
-Additionally, a file system emulated [`filesystem`]({{< relref "../configure/reference-configuration-parameters/index.md#filesystem_storage_backend" >}}) object storage implementation can be also used for testing purposes (it's not recommended for production workloads).
+Additionally and for non-production testing purposes, you can use a file-system emulated [`filesystem`]({{< relref "../configure/reference-configuration-parameters/index.md#filesystem_storage_backend" >}}) object storage implementation.
 
-[Ruler and alertmanager support a `local` implementation]({{< relref "../architecture/components/ruler/index.md#local-storage" >}}), which is similar to `filesystem` in the way that it uses the local file system, but it is a read-only data source and can be used to provision state into those components.
+[Ruler and alertmanager support a `local` implementation]({{< relref "../architecture/components/ruler/index.md#local-storage" >}}),
+which is similar to `filesystem` in the way that it uses the local file system,
+but it is a read-only data source and can be used to provision state into those components.
 
 ## Common configuration
 
-The [common configuration]({{< relref "about-configurations.md#common-configurations" >}}) can be used to avoid repetition by filling the [`common`]({{< relref "../configure/reference-configuration-parameters/index.md#common" >}}) configuration block or by providing the `-common.storage.*` CLI flags.
+To avoid repetition, you can use the [common configuration]({{< relref "about-configurations.md#common-configurations" >}}) and fill the [`common`]({{< relref "../configure/reference-configuration-parameters/index.md#common" >}}) configuration block or by providing the `-common.storage.*` CLI flags.
 
-Note that blocks storage can't be located in the same path of the same bucket as the ruler and alertmanager stores, so when using the common configuration, [`blocks_storage`]({{< relref "../configure/reference-configuration-parameters/index.md#blocks_storage" >}}) should either:
+> **Note:** Blocks storage cannot be located in the same path of the same bucket as the ruler and alertmanager stores. When using the common configuration, make [`blocks_storage`]({{< relref "../configure/reference-configuration-parameters/index.md#blocks_storage" >}}) use either a:
 
-- use a different bucket, overriding the common bucket name
-- use a storage prefix
+- different bucket, overriding the common bucket name
+- storage prefix
 
-Grafana Mimir will fail to start if blocks storage is configured to use the same bucket and storage prefix as alertmanager or ruler store.
+Grafana Mimir will fail to start if you configure blocks storage to use the same bucket and storage prefix that the  alertmanager or ruler store uses.
 
-A valid configuration for the object storage (taken from the ["Play with Grafana Mimir" tutorial](https://grafana.com/tutorials/play-with-grafana-mimir/)) would be:
+A valid configuration for the object storage (taken from the ["Play with Grafana Mimir" tutorial](https://grafana.com/tutorials/play-with-grafana-mimir/)) looks as follows:
 
 ```yaml
 common:
@@ -47,4 +49,4 @@ blocks_storage:
   storage_prefix: blocks
 ```
 
-> **Note**: If you're using a mix of YAML files and CLI flags, pay attention to the [precedence logic]({{< relref "about-configurations.md#common-configurations" >}}) of those.
+> **Note**: If you're using a mixture of YAML files and CLI flags, pay attention to their [precedence logic]({{< relref "about-configurations.md#common-configurations" >}}).

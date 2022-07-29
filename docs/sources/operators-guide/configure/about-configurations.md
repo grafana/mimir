@@ -20,10 +20,10 @@ To see the current configuration state of any component, use the [`/config`]({{<
 ## Common configurations
 
 Some configurations, such as object storage backend, are repeated for multiple components.
-To avoid the repetition in the configuration file, use the [`common`]({{< relref "../configure/reference-configuration-parameters/index.md#common" >}}) configuration section or `-common.*` CLI flags.
-Common configurations are first applied to all the specific configurations, which allows them to be overridden later by specific values.
+To avoid repetition in the configuration file, use the [`common`]({{< relref "../configure/reference-configuration-parameters/index.md#common" >}}) configuration section or `-common.*` CLI flags.
+Common configurations are first applied to all of the specific configurations, which allows the common configurations to be overridden later by specific values.
 
-For example, the following configuration uses the same Amazon S3 object storage bucket called `mimir`. The common storage is located in the `us-east` region for both ruler and alertmanager stores, and the blocks storage uses the `mimir-blocks` bucket from the same region:
+For example, the following configuration uses the same Amazon S3 object storage bucket called `mimir`. The common storage is located in the `us-east` region for both the ruler and alertmanager stores, and the blocks storage uses the `mimir-blocks` bucket from the same region:
 
 ```yaml
 common:
@@ -38,7 +38,7 @@ blocks_storage:
     bucket_name: mimir-blocks
 ```
 
-For a reference of this configuration, see [object storage configuration reference ]({{< relref "configure-object-storage-backend.md" >}}).
+For a reference of this configuration, see [Configure Grafana Mimir object storage backend]({{< relref "configure-object-storage-backend.md" >}}).
 
 The precedence of the common configuration is as follows, where each configuration overrides the previous one:
 
@@ -49,7 +49,7 @@ The precedence of the common configuration is as follows, where each configurati
 
 ## Operational considerations
 
-Use a single configuration file, and either pass it to all replicas of Grafana Mimir (when running multiple single-process Mimir replicas) or to all components of Grafana Mimir (when running Grafana Mimir as microservices). When running Grafana Mimir on Kubernetes, you can achieve this by storing the configuration file in a [ConfigMap](https://kubernetes.io/docs/concepts/configuration/configmap/) and mounting it in each Grafana Mimir container.
+Use a single configuration file, and either pass it to all replicas of Grafana Mimir (if you are running multiple single-process Mimir replicas) or to all components of Grafana Mimir (if you are running Grafana Mimir as microservices). If you are running Grafana Mimir on Kubernetes, you can achieve this by storing the configuration file in a [ConfigMap](https://kubernetes.io/docs/concepts/configuration/configmap/) and mounting it in each Grafana Mimir container.
 
 This recommendation helps to avoid a common misconfiguration pitfall: while certain configuration parameters might look like they’re only needed by one type of component, they might in fact be used by multiple components. For example, the `-ingester.ring.replication-factor` CLI flag is not only required by ingesters, but also by distributors, queriers, and rulers (in [internal]({{< relref "../architecture/components/ruler/index.md#internal" >}}) operational mode).
 
