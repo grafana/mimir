@@ -14,6 +14,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -23,6 +24,8 @@ import (
 )
 
 func TestQuerySplittingCorrectness(t *testing.T) {
+	const splitInterval = time.Minute
+
 	for _, startString := range []string{
 		"2020-01-01T03:00:00.100Z",
 		"2020-01-01T03:00:00Z",
@@ -63,6 +66,10 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 				},
 				"rate": {
 					query:                `rate(metric_counter[3m])`,
+					expectedSplitQueries: 3,
+				},
+				"unaligned counter with resets rate": {
+					query:                `rate(metric_unaligned_breaking_rate_total[3m])`,
 					expectedSplitQueries: 3,
 				},
 				"sum_over_time": {
@@ -298,6 +305,14 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 				start.Add(5*time.Minute), end, step, factor(2)))
 			seriesID++
 
+			series = append(series, newSeries(labels.FromStrings("__name__", "metric_unaligned_breaking_rate_total"),
+				start.Add(splitInterval/4), end.Add(-splitInterval/4), splitInterval/2, func(ts int64) float64 {
+					// This function is increasingWithinTheMinute within a minute, with a difference of 30000 between 15s and 45s timestamps.
+					increasingWithinTheMinute := ts % time.Minute.Milliseconds() // this is 15000 for 15s and 45000 for 45s
+					resettingEveryMinute := (end.UnixMilli() - ts) / time.Minute.Milliseconds() * time.Minute.Milliseconds()
+					return float64(increasingWithinTheMinute + resettingEveryMinute)
+				}))
+
 			// Add histogram series.
 			for i := 0; i < numHistograms; i++ {
 				for bucketIdx, bucketLe := range histogramBuckets {
@@ -352,7 +367,7 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 							require.NotEmpty(t, expectedPrometheusRes.Data.Result)
 							requireValidSamples(t, expectedPrometheusRes.Data.Result)
 
-							splittingware := newSplitInstantQueryByIntervalMiddleware(1*time.Minute, mockLimits{}, log.NewNopLogger(), engine, reg)
+							splittingware := newSplitInstantQueryByIntervalMiddleware(splitInterval, mockLimits{}, log.NewNopLogger(), engine, reg)
 
 							// Run the query with splitting
 							splitRes, err := splittingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
