@@ -2238,12 +2238,12 @@ func TestDistributor_LabelNamesAndValues(t *testing.T) {
 
 			// Create distributor
 			ds, _, _ := prepare(t, prepConfig{
-				numIngesters:       12,
-				happyIngesters:     12,
-				numDistributors:    1,
-				replicationFactor:  3,
-				ingesterZones:      testData.zones,
-				zonesResponseDelay: testData.zonesResponseDelay,
+				numIngesters:                       12,
+				happyIngesters:                     12,
+				numDistributors:                    1,
+				replicationFactor:                  3,
+				ingesterZones:                      testData.zones,
+				labelNamesStreamZonesResponseDelay: testData.zonesResponseDelay,
 			})
 			t.Cleanup(func() {
 				require.NoError(t, services.StopAndAwaitTerminated(ctx, ds[0]))
@@ -2541,7 +2541,7 @@ func prepareWithZoneAwarenessAndZoneDelay(t *testing.T, fixtures []series) (cont
 		numDistributors:   1,
 		replicationFactor: 3,
 		ingesterZones:     []string{"ZONE-A", "ZONE-B", "ZONE-C"},
-		zonesResponseDelay: map[string]time.Duration{
+		labelNamesStreamZonesResponseDelay: map[string]time.Duration{
 			// ingesters from zones A and B will respond in 1 second but ingesters from zone C will respond in 2 seconds.
 			"ZONE-A": 1 * time.Second,
 			"ZONE-B": 1 * time.Second,
@@ -2789,21 +2789,22 @@ func mockWriteRequest(lbls labels.Labels, value float64, timestampMs int64) *mim
 }
 
 type prepConfig struct {
-	numIngesters, happyIngesters int
-	queryDelay                   time.Duration
-	shuffleShardSize             int
-	limits                       *validation.Limits
-	numDistributors              int
-	skipLabelNameValidation      bool
-	maxInflightRequests          int
-	maxInflightRequestsBytes     int
-	maxIngestionRate             float64
-	replicationFactor            int
-	enableTracker                bool
-	ingestersSeriesCountTotal    uint64
-	ingesterZones                []string
-	zonesResponseDelay           map[string]time.Duration
-	forwarding                   bool
+	numIngesters, happyIngesters       int
+	queryDelay                         time.Duration
+	pushDelay                          time.Duration
+	shuffleShardSize                   int
+	limits                             *validation.Limits
+	numDistributors                    int
+	skipLabelNameValidation            bool
+	maxInflightRequests                int
+	maxInflightRequestsBytes           int
+	maxIngestionRate                   float64
+	replicationFactor                  int
+	enableTracker                      bool
+	ingestersSeriesCountTotal          uint64
+	ingesterZones                      []string
+	labelNamesStreamZonesResponseDelay map[string]time.Duration
+	forwarding                         bool
 }
 
 func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*prometheus.Registry) {
@@ -2813,21 +2814,23 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 		if len(cfg.ingesterZones) > 0 {
 			zone = cfg.ingesterZones[i%len(cfg.ingesterZones)]
 		}
-		var responseDelay time.Duration
-		if len(cfg.zonesResponseDelay) > 0 {
-			responseDelay = cfg.zonesResponseDelay[zone]
+		var labelNamesStreamResponseDelay time.Duration
+		if len(cfg.labelNamesStreamZonesResponseDelay) > 0 {
+			labelNamesStreamResponseDelay = cfg.labelNamesStreamZonesResponseDelay[zone]
 		}
 		ingesters = append(ingesters, mockIngester{
-			happy:            true,
-			queryDelay:       cfg.queryDelay,
-			seriesCountTotal: cfg.ingestersSeriesCountTotal,
-			zone:             zone,
-			responseDelay:    responseDelay,
+			happy:                         true,
+			queryDelay:                    cfg.queryDelay,
+			pushDelay:                     cfg.pushDelay,
+			seriesCountTotal:              cfg.ingestersSeriesCountTotal,
+			zone:                          zone,
+			labelNamesStreamResponseDelay: labelNamesStreamResponseDelay,
 		})
 	}
 	for i := cfg.happyIngesters; i < cfg.numIngesters; i++ {
 		ingesters = append(ingesters, mockIngester{
 			queryDelay:       cfg.queryDelay,
+			pushDelay:        cfg.pushDelay,
 			seriesCountTotal: cfg.ingestersSeriesCountTotal,
 		})
 	}
@@ -3111,15 +3114,16 @@ type mockIngester struct {
 	sync.Mutex
 	client.IngesterClient
 	grpc_health_v1.HealthClient
-	happy            bool
-	stats            client.UsersStatsResponse
-	timeseries       map[uint32]*mimirpb.PreallocTimeseries
-	metadata         map[uint32]map[mimirpb.MetricMetadata]struct{}
-	queryDelay       time.Duration
-	calls            map[string]int
-	seriesCountTotal uint64
-	zone             string
-	responseDelay    time.Duration
+	happy                         bool
+	stats                         client.UsersStatsResponse
+	timeseries                    map[uint32]*mimirpb.PreallocTimeseries
+	metadata                      map[uint32]map[mimirpb.MetricMetadata]struct{}
+	queryDelay                    time.Duration
+	pushDelay                     time.Duration
+	calls                         map[string]int
+	seriesCountTotal              uint64
+	zone                          string
+	labelNamesStreamResponseDelay time.Duration
 }
 
 func (i *mockIngester) series() map[uint32]*mimirpb.PreallocTimeseries {
@@ -3147,6 +3151,8 @@ func (i *mockIngester) Close() error {
 }
 
 func (i *mockIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, opts ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
+	time.Sleep(i.pushDelay)
+
 	i.Lock()
 	defer i.Unlock()
 
@@ -3369,7 +3375,7 @@ func (i *mockIngester) LabelNamesAndValues(_ context.Context, _ *client.LabelNam
 		items = append(items, &client.LabelValues{LabelName: labelName, Values: values})
 	}
 	resp := &client.LabelNamesAndValuesResponse{Items: items}
-	return &labelNamesAndValuesMockStream{responses: []*client.LabelNamesAndValuesResponse{resp}, responseDelay: i.responseDelay}, nil
+	return &labelNamesAndValuesMockStream{responses: []*client.LabelNamesAndValuesResponse{resp}, responseDelay: i.labelNamesStreamResponseDelay}, nil
 }
 
 type labelNamesAndValuesMockStream struct {
@@ -3858,4 +3864,36 @@ func countMockIngestersCalls(ingesters []mockIngester, name string) int {
 		}
 	}
 	return count
+}
+
+func TestDistributor_CleanupIsDoneAfterLastIngesterReturns(t *testing.T) {
+	// We want to decrement inflight requests and other counters that we use for limits
+	// only after the last ingester has returned.
+	// Distributor.Push and Distributor.PushWithCleanup return after a quorum of ingesters have returned.
+	// But there are still resources occupied within the distributor while it's
+	// waiting for all ingesters to return. So we want the instance limits to accurately reflect that.
+
+	distributors, ingesters, _ := prepare(t, prepConfig{
+		numIngesters:        3,
+		happyIngesters:      3,
+		numDistributors:     1,
+		maxInflightRequests: 1,
+		replicationFactor:   3,
+		enableTracker:       false,
+	})
+	ingesters[2].labelNamesStreamResponseDelay = time.Second // give the test enough time to do assertions
+
+	lbls := labels.Labels{
+		{Name: "__name__", Value: "metric_1"},
+		{Name: "key", Value: "value_1"},
+	}
+	ctx := user.InjectOrgID(context.Background(), "user")
+
+	_, err := distributors[0].Push(ctx, mockWriteRequest(lbls, 1, 1))
+	assert.NoError(t, err)
+
+	// First push request returned, but there's still an ingester call inflight.
+	// This means that the push request is counted as inflight, so another incoming request should be rejected.
+	_, err = distributors[0].Push(ctx, mockWriteRequest(nil, 1, 1))
+	assert.ErrorIs(t, err, errMaxInflightRequestsReached)
 }
