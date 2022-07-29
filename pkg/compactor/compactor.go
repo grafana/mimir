@@ -76,19 +76,20 @@ type BlocksCompactorFactory func(
 
 // Config holds the MultitenantCompactor config.
 type Config struct {
-	BlockRanges           mimir_tsdb.DurationList `yaml:"block_ranges" category:"advanced"`
-	BlockSyncConcurrency  int                     `yaml:"block_sync_concurrency" category:"advanced"`
-	MetaSyncConcurrency   int                     `yaml:"meta_sync_concurrency" category:"advanced"`
-	ConsistencyDelay      time.Duration           `yaml:"consistency_delay" category:"advanced"`
-	DataDir               string                  `yaml:"data_dir"`
-	CompactionInterval    time.Duration           `yaml:"compaction_interval" category:"advanced"`
-	CompactionRetries     int                     `yaml:"compaction_retries" category:"advanced"`
-	CompactionConcurrency int                     `yaml:"compaction_concurrency" category:"advanced"`
-	CleanupInterval       time.Duration           `yaml:"cleanup_interval" category:"advanced"`
-	CleanupConcurrency    int                     `yaml:"cleanup_concurrency" category:"advanced"`
-	DeletionDelay         time.Duration           `yaml:"deletion_delay" category:"advanced"`
-	TenantCleanupDelay    time.Duration           `yaml:"tenant_cleanup_delay" category:"advanced"`
-	MaxCompactionTime     time.Duration           `yaml:"max_compaction_time" category:"advanced"`
+	BlockRanges                 mimir_tsdb.DurationList `yaml:"block_ranges" category:"advanced"`
+	BlockSyncConcurrency        int                     `yaml:"block_sync_concurrency" category:"advanced"`
+	MetaSyncConcurrency         int                     `yaml:"meta_sync_concurrency" category:"advanced"`
+	ConsistencyDelay            time.Duration           `yaml:"consistency_delay" category:"advanced"`
+	DataDir                     string                  `yaml:"data_dir"`
+	CompactionInterval          time.Duration           `yaml:"compaction_interval" category:"advanced"`
+	CompactionRetries           int                     `yaml:"compaction_retries" category:"advanced"`
+	CompactionConcurrency       int                     `yaml:"compaction_concurrency" category:"advanced"`
+	CleanupInterval             time.Duration           `yaml:"cleanup_interval" category:"advanced"`
+	CleanupConcurrency          int                     `yaml:"cleanup_concurrency" category:"advanced"`
+	DeletionDelay               time.Duration           `yaml:"deletion_delay" category:"advanced"`
+	TenantCleanupDelay          time.Duration           `yaml:"tenant_cleanup_delay" category:"advanced"`
+	MaxCompactionTime           time.Duration           `yaml:"max_compaction_time" category:"advanced"`
+	DisableBackgroundValidation bool                    `yaml:"-"` // used for unit tests only
 
 	// Compactor concurrency options
 	MaxOpeningBlocksConcurrency int `yaml:"max_opening_blocks_concurrency" category:"advanced"` // Number of goroutines opening blocks before compaction.

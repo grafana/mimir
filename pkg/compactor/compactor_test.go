@@ -1306,6 +1306,8 @@ func createTSDBBlock(t *testing.T, bkt objstore.Bucket, userID string, minT, max
 	// Create a temporary dir for the snapshot.
 	snapshotDir := t.TempDir()
 
+	fmt.Println(tempDir, snapshotDir)
+
 	// Create a new TSDB.
 	db, err := tsdb.Open(tempDir, nil, nil, &tsdb.Options{
 		MinBlockDuration:  int64(2 * 60 * 60 * 1000), // 2h period
