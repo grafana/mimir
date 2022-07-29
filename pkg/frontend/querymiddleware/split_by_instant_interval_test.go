@@ -31,7 +31,7 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 		t.Run(fmt.Sprintf("start=%s", startString), func(t *testing.T) {
 			start, err := time.Parse(time.RFC3339Nano, startString)
 			require.NoError(t, err)
-			end := start.Add(30 * time.Minute)
+
 			var (
 				numSeries          = 1000
 				numStaleSeries     = 100
@@ -267,6 +267,7 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 
 			series := make([]*promql.StorageSeries, 0, numSeries+(numHistograms*len(histogramBuckets)))
 			seriesID := 0
+			end := start.Add(30 * time.Minute)
 
 			// Add counter series.
 			for i := 0; i < numSeries; i++ {
