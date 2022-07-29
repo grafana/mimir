@@ -30,7 +30,7 @@ To avoid repetition, you can use the [common configuration]({{< relref "about-co
 - different bucket, overriding the common bucket name
 - storage prefix
 
-Grafana Mimir will fail to start if you configure blocks storage to use the same bucket and storage prefix that the  alertmanager or ruler store uses.
+Grafana Mimir will fail to start if you configure blocks storage to use the same bucket and storage prefix that the alertmanager or ruler store uses.
 
 A valid configuration for the object storage (taken from the ["Play with Grafana Mimir" tutorial](https://grafana.com/tutorials/play-with-grafana-mimir/)) looks as follows:
 
