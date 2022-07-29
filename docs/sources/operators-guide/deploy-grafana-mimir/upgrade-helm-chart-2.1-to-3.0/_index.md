@@ -62,6 +62,8 @@ Several parameters that were available in version 2.1 of the mimir-distributed H
 
 1. Decide whether or not you need to update the memcached configuration, which has changed:
 
+   > **Note**: this section describes changes to Helm values related to memcached. For impact on `mimir.config` and `mimir.structuredConfig` see the next section.
+
    The mimir-distributed Helm chart supports multiple cache types.
    If you have not enabled any memcached caches,
    and you are not overriding the values of `memcached`, `memcached-queries`, `memcached-metadata`, or `memcached-results` sections,
@@ -124,6 +126,13 @@ Several parameters that were available in version 2.1 of the mimir-distributed H
      index-cache:
        replicas: 3
      ```
+
+1. Decide whether or not you need to update the Mimir configuration due to memcached changes:
+
+   - If you have copied and customized `mimir.config`, you'll need to merge in the changes from the chart as the settings for memcached have changed.
+   - If you do not customize `mimir.config`:
+     - In general the defaults should work so there is no need to customise memcached related parameters via `mimir.structuredConfig`.
+     - If you have set the memcached related Mimir parameters (`*.memcached.addresses` or `*.memcached.max_item_size`) in `mimir.structuredConfig`, then those need to be updated. Please consult the `mimir.config` for defaults.
 
 1. (Conditional) If you have enabled `serviceMonitor`, or you are overriding the value of anything under the `serviceMonitor` section, or both, then move the `serviceMonitor` section under `metaMonitoring`.
 
