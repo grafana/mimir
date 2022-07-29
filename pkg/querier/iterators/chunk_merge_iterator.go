@@ -7,6 +7,7 @@ package iterators
 
 import (
 	"container/heap"
+	"errors"
 	"sort"
 
 	"github.com/prometheus/common/model"
@@ -137,12 +138,12 @@ func (c *chunkMergeIterator) At() (t int64, v float64) {
 
 // Histogram support isn't complete yet, so this function just returns (0, nil).
 func (c *chunkMergeIterator) AtHistogram() (int64, *histogram.Histogram) {
-	return 0, nil
+	panic(errors.New("chunkMergeIterator: AtHistogram is not implemented"))
 }
 
 // Histogram suppport isn't complete yet, so this function just returns (0, nil).
 func (c *chunkMergeIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
-	return 0, nil
+	panic(errors.New("chunkMergeIterator: AtFloatHistogram is not implemented"))
 }
 
 func (c *chunkMergeIterator) AtT() int64 {

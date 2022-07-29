@@ -6,6 +6,8 @@
 package batch
 
 import (
+	"errors"
+
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -137,16 +139,14 @@ func (a *iteratorAdapter) At() (int64, float64) {
 	return a.curr.Timestamps[a.curr.Index], a.curr.Values[a.curr.Index]
 }
 
-// AtHistogram implements chunkenc.Iterator. Histogram support isn't complete yet,
-// so this function just returns (0, nil).
+// AtHistogram implements chunkenc.Iterator.
 func (a *iteratorAdapter) AtHistogram() (int64, *histogram.Histogram) {
-	return 0, nil
+	panic(errors.New("iteratorAdapter: AtHistogram not implemented"))
 }
 
-// AtFloatHistogram implements chunkenc.Iterator. Histogram suppport isn't complete
-// yet, so this function just returns (0, nil).
+// AtFloatHistogram implements chunkenc.Iterator.
 func (a *iteratorAdapter) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
-	return 0, nil
+	panic(errors.New("iteratorAdapter: AtFloatHistogram not implemented"))
 }
 
 // AtT implements chunkenc.Iterator.

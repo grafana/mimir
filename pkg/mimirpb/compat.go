@@ -157,6 +157,7 @@ func FromExemplarProtosToExemplars(es []Exemplar) []exemplar.Exemplar {
 }
 
 // FromPointsToSamples converts []promql.Point to []Sample.
+// TODO: adapt to also return histograms.
 func FromPointsToSamples(points []promql.Point) []Sample {
 	samples := make([]Sample, len(points))
 	for i := 0; i < len(points); i++ {

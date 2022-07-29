@@ -407,8 +407,8 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 		{
 			Labels: seriesWithOutOfOrderChunks,
 			Chunks: []chunks.Meta{
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{t: 20, v: 20, h: nil, fh: nil}, sample{t: 21, v: 21, h: nil, fh: nil}}),
-				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{t: 10, v: 10, h: nil, fh: nil}, sample{t: 11, v: 11, h: nil, fh: nil}}),
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{t: 20, v: 20}, sample{t: 21, v: 21}}),
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{t: 10, v: 10}, sample{t: 11, v: 11}}),
 			},
 		},
 		// Series with out of order and overlapping chunks.
