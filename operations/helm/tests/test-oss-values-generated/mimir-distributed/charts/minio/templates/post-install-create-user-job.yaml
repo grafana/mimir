@@ -1,24 +1,24 @@
 ---
-# Source: mimir-distributed/templates/minio/create-bucket-job.yaml
-# Minio provides post-install hook to create bucket
-# however the hook won't be executed if helm install is run
-# with --wait flag. Hence this job is a workaround for that.
-# See https://github.com/grafana/mimir/issues/2464
+# Source: mimir-distributed/charts/minio/templates/post-install-create-user-job.yaml
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: test-enterprise-values-mimir-make-minio-buckets
+  name: test-oss-values-minio-make-user-job
   namespace: "citestns"
   labels:
-    app: mimir-distributed-make-bucket-job
-    release: test-enterprise-values
+    app: minio-make-user-job
+    chart: minio-4.0.3
+    release: test-oss-values
     heritage: Helm
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-delete-policy": hook-succeeded,before-hook-creation
 spec:
   template:
     metadata:
       labels:
-        app: mimir-distributed-job
-        release: test-enterprise-values
+        app: minio-job
+        release: test-oss-values
     spec:
       restartPolicy: OnFailure      
       volumes:
@@ -26,17 +26,17 @@ spec:
           projected:
             sources:
             - configMap:
-                name: test-enterprise-values-minio
+                name: test-oss-values-minio
             - secret:
-                name: test-enterprise-values-minio
+                name: test-oss-values-minio
       containers:
       - name: minio-mc
         image: "quay.io/minio/mc:RELEASE.2022-05-09T04-08-26Z"
         imagePullPolicy: IfNotPresent
-        command: ["/bin/sh", "/config/initialize"]
+        command: ["/bin/sh", "/config/add-user"]
         env:
           - name: MINIO_ENDPOINT
-            value: test-enterprise-values-minio
+            value: test-oss-values-minio
           - name: MINIO_PORT
             value: "9000"
         volumeMounts:

@@ -90,11 +90,11 @@ mimir:
       storage:
         type: s3
         s3:
-          access_key_id: {{ .Values.minio.accessKey }}
+          access_key_id: {{ .Values.minio.rootUser }}
           bucket_name: enterprise-metrics-admin
           endpoint: {{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
           insecure: true
-          secret_access_key: {{ .Values.minio.secretKey }}
+          secret_access_key: {{ .Values.minio.rootPassword }}
       {{- end }}
     {{- end }}
 
@@ -107,11 +107,11 @@ mimir:
     alertmanager_storage:
       backend: s3
       s3:
-        access_key_id: {{ .Values.minio.accessKey }}
+        access_key_id: {{ .Values.minio.rootUser }}
         bucket_name: {{ include "mimir.minioBucketPrefix" . }}-ruler
         endpoint: {{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
         insecure: true
-        secret_access_key: {{ .Values.minio.secretKey }}
+        secret_access_key: {{ .Values.minio.rootPassword }}
     {{- end }}
 
     {{- if .Values.enterprise.enabled }}
@@ -148,11 +148,11 @@ mimir:
         sync_dir: /data/tsdb-sync
       {{- if .Values.minio.enabled }}
       s3:
-        access_key_id: {{ .Values.minio.accessKey }}
+        access_key_id: {{ .Values.minio.rootUser }}
         bucket_name: {{ include "mimir.minioBucketPrefix" . }}-tsdb
         endpoint: {{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
         insecure: true
-        secret_access_key: {{ .Values.minio.secretKey }}
+        secret_access_key: {{ .Values.minio.rootPassword }}
       {{- end }}
       tsdb:
         dir: /data/tsdb
@@ -242,8 +242,8 @@ mimir:
       s3:
         endpoint: {{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
         bucket_name: {{ include "mimir.minioBucketPrefix" . }}-ruler
-        access_key_id: {{ .Values.minio.accessKey }}
-        secret_access_key: {{ .Values.minio.secretKey }}
+        access_key_id: {{ .Values.minio.rootUser }}
+        secret_access_key: {{ .Values.minio.rootPassword }}
         insecure: true
     {{- end }}
 
@@ -1296,7 +1296,8 @@ results-cache:
 
 minio:
   enabled: true
-  accessKey: grafana-mimir
+  mode: standalone
+  rootUser: grafana-mimir
   buckets:
     - name: mimir-tsdb
       policy: none
@@ -1319,7 +1320,7 @@ minio:
     requests:
       cpu: 100m
       memory: 128Mi
-  secretKey: supersecret
+  rootPassword: supersecret
   # Changed the mc config path to '/tmp' from '/etc' as '/etc' is only writable by root and OpenShift will not permit this.
   configPathmc: "/tmp/minio/mc/"
 

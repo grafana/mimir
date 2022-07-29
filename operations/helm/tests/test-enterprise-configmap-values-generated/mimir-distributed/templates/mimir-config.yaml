@@ -24,11 +24,11 @@ data:
     admin_client:
       storage:
         s3:
-          access_key_id: ${MINIO_ACCESS_KEY_ID}
+          access_key_id: ${MINIO_ROOT_USER}
           bucket_name: enterprise-metrics-admin
           endpoint: test-enterprise-configmap-values-minio.citestns.svc:9000
           insecure: true
-          secret_access_key: ${MINIO_SECRET_ACCESS_KEY}
+          secret_access_key: ${MINIO_ROOT_PASSWORD}
         type: s3
     alertmanager:
       data_dir: /data
@@ -37,11 +37,11 @@ data:
     alertmanager_storage:
       backend: s3
       s3:
-        access_key_id: ${MINIO_ACCESS_KEY_ID}
+        access_key_id: ${MINIO_ROOT_USER}
         bucket_name: mimir-ruler
         endpoint: test-enterprise-configmap-values-minio.citestns.svc:9000
         insecure: true
-        secret_access_key: ${MINIO_SECRET_ACCESS_KEY}
+        secret_access_key: ${MINIO_ROOT_PASSWORD}
     auth:
       type: enterprise
     blocks_storage:
@@ -49,11 +49,11 @@ data:
       bucket_store:
         sync_dir: /data/tsdb-sync
       s3:
-        access_key_id: ${MINIO_ACCESS_KEY_ID}
+        access_key_id: ${MINIO_ROOT_USER}
         bucket_name: mimir-tsdb
         endpoint: test-enterprise-configmap-values-minio.citestns.svc:9000
         insecure: true
-        secret_access_key: ${MINIO_SECRET_ACCESS_KEY}
+        secret_access_key: ${MINIO_ROOT_PASSWORD}
       tsdb:
         dir: /data/tsdb
     cluster_name: test-enterprise-configmap-values
@@ -112,11 +112,11 @@ data:
     ruler_storage:
       backend: s3
       s3:
-        access_key_id: ${MINIO_ACCESS_KEY_ID}
+        access_key_id: ${MINIO_ROOT_USER}
         bucket_name: mimir-ruler
         endpoint: test-enterprise-configmap-values-minio.citestns.svc:9000
         insecure: true
-        secret_access_key: ${MINIO_SECRET_ACCESS_KEY}
+        secret_access_key: ${MINIO_ROOT_PASSWORD}
     runtime_config:
       file: /var/mimir/runtime.yaml
     server:

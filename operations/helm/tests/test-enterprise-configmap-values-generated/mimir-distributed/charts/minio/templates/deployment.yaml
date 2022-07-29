@@ -4,9 +4,10 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: test-enterprise-configmap-values-minio
+  namespace: "citestns"
   labels:
     app: minio
-    chart: minio-8.0.10
+    chart: minio-4.0.3
     release: test-enterprise-configmap-values
     heritage: Helm
 spec:
@@ -15,6 +16,7 @@ spec:
     rollingUpdate:
       maxSurge: 100%
       maxUnavailable: 0
+  replicas: 1
   selector:
     matchLabels:
       app: minio
@@ -26,39 +28,48 @@ spec:
         app: minio
         release: test-enterprise-configmap-values
       annotations:
-        checksum/secrets: dc5f87186fbd122d4616e916d60a0c95a6939d0e3e70914edfc0362ee64a5c2c
-        checksum/config: a93cb8a58b08a5d5b8889b99ed92fa3ac7dde37d1ca5413212ba7fbd5ec02b13
+        checksum/secrets: 080fc2cbf15e1d84a8b06740fcc6e025f85eab790a238be93e34f9075ca111c5
+        checksum/config: b31e20de590681733b8db0d88d81bee73c227b14a72f420ea9c94aed5b048836
     spec:
-      serviceAccountName: "test-enterprise-configmap-values-minio"
       securityContext:
         runAsUser: 1000
         runAsGroup: 1000
         fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+
+      serviceAccountName: minio-sa
       containers:
         - name: minio
-          image: "minio/minio:RELEASE.2021-02-14T04-01-33Z"
+          image: "quay.io/minio/minio:RELEASE.2022-05-08T23-50-31Z"
           imagePullPolicy: IfNotPresent
           command:
             - "/bin/sh"
             - "-ce"
-            - "/usr/bin/docker-entrypoint.sh minio -S /etc/minio/certs/ server /export"
+            - "/usr/bin/docker-entrypoint.sh minio server /export -S /etc/minio/certs/ --address :9000 --console-address :9001"
           volumeMounts:
+            - name: minio-user
+              mountPath: "/tmp/credentials"
+              readOnly: true
             - name: export
               mountPath: /export            
           ports:
             - name: http
               containerPort: 9000
+            - name: http-console
+              containerPort: 9001
           env:
-            - name: MINIO_ACCESS_KEY
+            - name: MINIO_ROOT_USER
               valueFrom:
                 secretKeyRef:
                   name: test-enterprise-configmap-values-minio
-                  key: accesskey
-            - name: MINIO_SECRET_KEY
+                  key: rootUser
+            - name: MINIO_ROOT_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: test-enterprise-configmap-values-minio
-                  key: secretkey
+                  key: rootPassword
+            - name: MINIO_PROMETHEUS_AUTH_TYPE
+              value: "public"
           resources:
             requests:
               cpu: 100m

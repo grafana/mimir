@@ -22,11 +22,11 @@ data:
     alertmanager_storage:
       backend: s3
       s3:
-        access_key_id: ${MINIO_ACCESS_KEY_ID}
+        access_key_id: ${MINIO_ROOT_USER}
         bucket_name: mimir-ruler
         endpoint: test-oss-values-minio.citestns.svc:9000
         insecure: true
-        secret_access_key: ${MINIO_SECRET_ACCESS_KEY}
+        secret_access_key: ${MINIO_ROOT_PASSWORD}
     blocks_storage:
       backend: s3
       bucket_store:
@@ -48,11 +48,11 @@ data:
             max_item_size: 1048576
         sync_dir: /data/tsdb-sync
       s3:
-        access_key_id: ${MINIO_ACCESS_KEY_ID}
+        access_key_id: ${MINIO_ROOT_USER}
         bucket_name: mimir-tsdb
         endpoint: test-oss-values-minio.citestns.svc:9000
         insecure: true
-        secret_access_key: ${MINIO_SECRET_ACCESS_KEY}
+        secret_access_key: ${MINIO_ROOT_PASSWORD}
       tsdb:
         dir: /data/tsdb
     compactor:
@@ -90,11 +90,11 @@ data:
     ruler_storage:
       backend: s3
       s3:
-        access_key_id: ${MINIO_ACCESS_KEY_ID}
+        access_key_id: ${MINIO_ROOT_USER}
         bucket_name: mimir-ruler
         endpoint: test-oss-values-minio.citestns.svc:9000
         insecure: true
-        secret_access_key: ${MINIO_SECRET_ACCESS_KEY}
+        secret_access_key: ${MINIO_ROOT_PASSWORD}
     runtime_config:
       file: /var/mimir/runtime.yaml
     server:
