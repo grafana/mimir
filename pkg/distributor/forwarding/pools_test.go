@@ -19,12 +19,6 @@ import (
 func TestUsingPools(t *testing.T) {
 	pools := newPools()
 
-	labelBackingSlices := pools.getLabelBackingSlices()
-	pools.putLabelBackingSlices(labelBackingSlices)
-
-	labelBackingSlice := pools.getLabelBackingSlice()
-	pools.putLabelBackingSlice(labelBackingSlice)
-
 	protoBuf := pools.getProtobuf()
 	pools.putProtobuf(protoBuf)
 
@@ -56,22 +50,6 @@ func validatingPools(t *testing.T, labelBackingSliceCap, labelBackingSlicesCap, 
 	t.Helper()
 
 	pools := &pools{}
-
-	validatingLabelBackingSlicePool := newByteSlicePool(t, labelBackingSliceCap)
-	pools.getLabelBackingSlice = validatingLabelBackingSlicePool.get
-	pools.putLabelBackingSlice = validatingLabelBackingSlicePool.put
-
-	validatingLabelBackingSlicesPool := newValidatingPool(t,
-		func() *[]*[]byte {
-			objRef := make([]*[]byte, 0, labelBackingSlicesCap)
-			return &objRef
-		},
-		func(objRef *[]*[]byte) int {
-			return int((*reflect.SliceHeader)(unsafe.Pointer(objRef)).Data)
-		}, nil,
-	)
-	pools.getLabelBackingSlices = validatingLabelBackingSlicesPool.get
-	pools.putLabelBackingSlices = validatingLabelBackingSlicesPool.put
 
 	validatingProtobufPool := newByteSlicePool(t, protobufCap)
 	pools.getProtobuf = validatingProtobufPool.get
@@ -150,8 +128,6 @@ func validatingPools(t *testing.T, labelBackingSliceCap, labelBackingSlicesCap, 
 	pools.putTsSlice = validatingTsSlicePool.put
 
 	validateUsage := func() {
-		validatingLabelBackingSlicePool.validateUsage()
-		validatingLabelBackingSlicesPool.validateUsage()
 		validatingProtobufPool.validateUsage()
 		validatingSnappyPool.validateUsage()
 		validatingRequestPool.validateUsage()

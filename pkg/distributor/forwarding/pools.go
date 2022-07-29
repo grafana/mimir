@@ -22,24 +22,20 @@ type pools struct {
 	tsByTargets        sync.Pool
 
 	// Mockable for testing.
-	getLabelBackingSlice  func() *[]byte
-	putLabelBackingSlice  func(*[]byte)
-	getLabelBackingSlices func() *[]*[]byte
-	putLabelBackingSlices func(*[]*[]byte)
-	getProtobuf           func() *[]byte
-	putProtobuf           func(*[]byte)
-	getSnappy             func() *[]byte
-	putSnappy             func(*[]byte)
-	getReq                func() *request
-	putReq                func(*request)
-	getBytesReader        func() *bytes.Reader
-	putBytesReader        func(*bytes.Reader)
-	getTsByTargets        func() tsByTargets
-	putTsByTargets        func(tsByTargets)
-	getTs                 func() *mimirpb.TimeSeries
-	putTs                 func(*mimirpb.TimeSeries)
-	getTsSlice            func() []mimirpb.PreallocTimeseries
-	putTsSlice            func([]mimirpb.PreallocTimeseries)
+	getProtobuf    func() *[]byte
+	putProtobuf    func(*[]byte)
+	getSnappy      func() *[]byte
+	putSnappy      func(*[]byte)
+	getReq         func() *request
+	putReq         func(*request)
+	getBytesReader func() *bytes.Reader
+	putBytesReader func(*bytes.Reader)
+	getTsByTargets func() tsByTargets
+	putTsByTargets func(tsByTargets)
+	getTs          func() *mimirpb.TimeSeries
+	putTs          func(*mimirpb.TimeSeries)
+	getTsSlice     func() []mimirpb.PreallocTimeseries
+	putTsSlice     func([]mimirpb.PreallocTimeseries)
 }
 
 func newPools() *pools {
@@ -53,10 +49,6 @@ func newPools() *pools {
 		tsByTargets:        sync.Pool{New: func() interface{} { return make(tsByTargets) }},
 	}
 
-	p.getLabelBackingSlice = getter[*[]byte](&p.labelBackingSlice)
-	p.putLabelBackingSlice = putter[*[]byte](&p.labelBackingSlice)
-	p.getLabelBackingSlices = getter[*[]*[]byte](&p.labelBackingSlices)
-	p.putLabelBackingSlices = putter[*[]*[]byte](&p.labelBackingSlices)
 	p.getProtobuf = getter[*[]byte](&p.protobuf)
 	p.putProtobuf = putter[*[]byte](&p.protobuf)
 	p.getSnappy = getter[*[]byte](&p.snappy)

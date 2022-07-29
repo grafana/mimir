@@ -162,13 +162,7 @@ func (f *forwarder) Forward(ctx context.Context, rules validation.ForwardingRule
 }
 
 type tsWithSampleCount struct {
-	ts []mimirpb.PreallocTimeseries
-
-	// backingSlices is a slice of references to byte slices which are used as underlying data array for the strings
-	// which contain the label names and values of the time series.
-	backingSlices []*[]byte
-
-	// counts contains the number of samples and exemplars in the time series.
+	ts     []mimirpb.PreallocTimeseries
 	counts TimeseriesCounts
 }
 
@@ -176,18 +170,16 @@ type tsByTargets map[string]tsWithSampleCount
 
 // copyToTarget copies the given time series into the given target and does the necessary accounting.
 // The time series is deep-copied, so the passed in time series can be returned to the pool without affecting the copy.
-func (t tsByTargets) copyToTarget(target string, ts *mimirpb.TimeSeries, pool *pools) {
+func (t tsByTargets) copyToTarget(target string, ts mimirpb.PreallocTimeseries, pool *pools) {
 	tsByTarget, ok := t[target]
 	if !ok {
 		tsByTarget.ts = pool.getTsSlice()
-		tsByTarget.backingSlices = *pool.getLabelBackingSlices()
 	}
 
 	tsIdx := len(tsByTarget.ts)
 	tsByTarget.ts = append(tsByTarget.ts, mimirpb.PreallocTimeseries{TimeSeries: pool.getTs()})
-	tsByTarget.backingSlices = append(tsByTarget.backingSlices, pool.getLabelBackingSlice())
 
-	mimirpb.DeepCopyTimeseries(tsByTarget.backingSlices[tsIdx], tsByTarget.ts[tsIdx].TimeSeries, ts)
+	tsByTarget.ts[tsIdx] = mimirpb.DeepCopyTimeseries(tsByTarget.ts[tsIdx], ts)
 	tsByTarget.counts.count(tsByTarget.ts[tsIdx])
 
 	t[target] = tsByTarget
@@ -225,7 +217,7 @@ func (f *forwarder) splitByTargets(tsSliceIn []mimirpb.PreallocTimeseries, rules
 	for tsSliceReadIdx, ts := range tsSliceIn {
 		forwardingTarget, ingest := findTargetsForLabels(ts.Labels, rules)
 		if forwardingTarget != "" {
-			tsByTargets.copyToTarget(forwardingTarget, ts.TimeSeries, f.pools)
+			tsByTargets.copyToTarget(forwardingTarget, ts, f.pools)
 		}
 
 		if ingest {
@@ -394,14 +386,6 @@ func (r *request) handleError(status int, err error) {
 }
 
 func (r *request) cleanup() {
-	// Return all backing slices to their pool, then return the slice of backing slices to its pool.
-	backingSlices := r.ts.backingSlices
-	for _, backingSlice := range backingSlices {
-		r.pools.putLabelBackingSlice(backingSlice)
-	}
-	backingSlices = backingSlices[:0]
-	r.pools.putLabelBackingSlices(&backingSlices)
-
 	ts := r.ts.ts
 	r.pools.putTsSlice(ts)
 

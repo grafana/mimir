@@ -98,30 +98,31 @@ func TestCopyYoloString(t *testing.T) {
 }
 
 func TestDeepCopyTimeseries(t *testing.T) {
-	buf := make([]byte, 0, 1000)
-	src := &TimeSeries{
-		Labels: []LabelAdapter{
-			{Name: "sampleLabel1", Value: "sampleValue1"},
-			{Name: "sampleLabel2", Value: "sampleValue2"},
-		},
-		Samples: []Sample{
-			{Value: 1, TimestampMs: 2},
-			{Value: 3, TimestampMs: 4},
-		},
-		Exemplars: []Exemplar{{
-			Value:       1,
-			TimestampMs: 2,
+	src := PreallocTimeseries{
+		TimeSeries: &TimeSeries{
 			Labels: []LabelAdapter{
-				{Name: "exemplarLabel1", Value: "exemplarValue1"},
-				{Name: "exemplarLabel2", Value: "exemplarValue2"},
+				{Name: "sampleLabel1", Value: "sampleValue1"},
+				{Name: "sampleLabel2", Value: "sampleValue2"},
 			},
-		}},
+			Samples: []Sample{
+				{Value: 1, TimestampMs: 2},
+				{Value: 3, TimestampMs: 4},
+			},
+			Exemplars: []Exemplar{{
+				Value:       1,
+				TimestampMs: 2,
+				Labels: []LabelAdapter{
+					{Name: "exemplarLabel1", Value: "exemplarValue1"},
+					{Name: "exemplarLabel2", Value: "exemplarValue2"},
+				},
+			}},
+		},
 	}
-	dst := &TimeSeries{}
-	DeepCopyTimeseries(&buf, dst, src)
+	dst := PreallocTimeseries{}
+	dst = DeepCopyTimeseries(dst, src)
 
 	// Check that the values in ts1 and ts2 are the same.
-	assert.Equal(t, src, dst)
+	assert.Equal(t, src.TimeSeries, dst.TimeSeries)
 
 	// Check that ts1 refers to a different address than t2.
 	assert.NotSame(t, src, dst)

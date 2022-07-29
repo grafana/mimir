@@ -44,6 +44,17 @@ var (
 			}
 		},
 	}
+
+	// yoloSlicePool is a pool of byte slices which are used to back the yoloStrings of this package.
+	yoloSlicePool = sync.Pool{
+		New: func() interface{} {
+			// The initial cap of 200 is an arbitrary number which has been chosen because the default
+			// of 0 is guaranteed to be insufficient, so any number greater than 0 would be better.
+			// 200 should be enough to back all the strings of one TimeSeries in many cases.
+			val := make([]byte, 0, 200)
+			return &val
+		},
+	}
 )
 
 // PreallocWriteRequest is a WriteRequest which preallocs slices on Unmarshal.
@@ -60,6 +71,12 @@ func (p *PreallocWriteRequest) Unmarshal(dAtA []byte) error {
 // PreallocTimeseries is a TimeSeries which preallocs slices on Unmarshal.
 type PreallocTimeseries struct {
 	*TimeSeries
+
+	// yoloSlice may contain a reference to the byte slice which was used to back the yolo strings
+	// of the properties and sub-properties of this TimeSeries.
+	// If it is set to a non-nil value then it must be returned to the yoloSlicePool on cleanup,
+	// if it is set to nil then it can be ignored because the backing byte slice came from somewhere else.
+	yoloSlice *[]byte
 }
 
 // Unmarshal implements proto.Message.
@@ -273,6 +290,11 @@ func PreallocTimeseriesSliceFromPool() []PreallocTimeseries {
 func ReuseSlice(ts []PreallocTimeseries) {
 	for i := range ts {
 		ReuseTimeseries(ts[i].TimeSeries)
+
+		if ts[i].yoloSlice != nil {
+			reuseYoloSlice(ts[i].yoloSlice)
+			ts[i].yoloSlice = nil
+		}
 	}
 
 	slicePool.Put(ts[:0]) //nolint:staticcheck //see comment on slicePool for more details
@@ -304,44 +326,61 @@ func ReuseTimeseries(ts *TimeSeries) {
 	timeSeriesPool.Put(ts)
 }
 
+func yoloSliceFromPool() *[]byte {
+	return yoloSlicePool.Get().(*[]byte)
+}
+
+func reuseYoloSlice(val *[]byte) {
+	*val = (*val)[:0]
+	yoloSlicePool.Put(val)
+}
+
 // DeepCopyTimeseries copies the timeseries from one pointer into the timeseries of a second pointer.
 // It copies all the properties, sub-properties and strings by value to ensure that the two timeseries are not sharing
 // anything after the deep copying.
 // The first argument is a pointer to a byte slice which will be used to store the underlying data of string properties,
 // if its capicity is insufficient for it to store all string contents it will be replaced with a new one that's larger.
-func DeepCopyTimeseries(bufRef *[]byte, tsOut, tsIn *TimeSeries) *TimeSeries {
+func DeepCopyTimeseries(dst, src PreallocTimeseries) PreallocTimeseries {
+	if dst.TimeSeries == nil {
+		dst.TimeSeries = TimeseriesFromPool()
+	}
+
+	srcTs := src.TimeSeries
+	dstTs := dst.TimeSeries
+
 	// Prepare a buffer which is large enough to hold all the label names and values of tsIn.
-	requiredYoloSliceCap := countTotalLabelLen(tsIn)
-	buf := ensureCap(bufRef, requiredYoloSliceCap)
+	requiredYoloSliceCap := countTotalLabelLen(src.TimeSeries)
+	dst.yoloSlice = yoloSliceFromPool()
+	buf := ensureCap(dst.yoloSlice, requiredYoloSliceCap)
 
 	// Copy the time series labels by using the prepared buffer.
-	tsOut.Labels, buf = copyToYoloLabels(buf, tsOut.Labels, tsIn.Labels)
+	dst.TimeSeries.Labels, buf = copyToYoloLabels(buf, dstTs.Labels, srcTs.Labels)
 
 	// Copy the samples.
-	if cap(tsOut.Samples) < len(tsIn.Samples) {
-		tsOut.Samples = make([]Sample, len(tsIn.Samples))
+	if cap(dst.TimeSeries.Samples) < len(src.TimeSeries.Samples) {
+		dstTs.Samples = make([]Sample, len(src.Samples))
 	} else {
-		tsOut.Samples = tsOut.Samples[:len(tsIn.Samples)]
+		dstTs.Samples = dstTs.Samples[:len(src.Samples)]
 	}
-	copy(tsOut.Samples, tsIn.Samples)
+	copy(dstTs.Samples, srcTs.Samples)
 
 	// Prepare the slice of exemplars.
-	if cap(tsOut.Exemplars) < len(tsIn.Exemplars) {
-		tsOut.Exemplars = make([]Exemplar, len(tsIn.Exemplars))
+	if cap(dstTs.Exemplars) < len(srcTs.Exemplars) {
+		dstTs.Exemplars = make([]Exemplar, len(srcTs.Exemplars))
 	} else {
-		tsOut.Exemplars = tsOut.Exemplars[:len(tsIn.Exemplars)]
+		dstTs.Exemplars = dstTs.Exemplars[:len(srcTs.Exemplars)]
 	}
 
-	for exemplarIdx := range tsIn.Exemplars {
+	for exemplarIdx := range src.Exemplars {
 		// Copy the exemplar labels by using the prepared buffer.
-		tsOut.Exemplars[exemplarIdx].Labels, buf = copyToYoloLabels(buf, tsOut.Exemplars[exemplarIdx].Labels, tsIn.Exemplars[exemplarIdx].Labels)
+		dstTs.Exemplars[exemplarIdx].Labels, buf = copyToYoloLabels(buf, dstTs.Exemplars[exemplarIdx].Labels, src.Exemplars[exemplarIdx].Labels)
 
 		// Copy the other exemplar properties.
-		tsOut.Exemplars[exemplarIdx].Value = tsIn.Exemplars[exemplarIdx].Value
-		tsOut.Exemplars[exemplarIdx].TimestampMs = tsIn.Exemplars[exemplarIdx].TimestampMs
+		dstTs.Exemplars[exemplarIdx].Value = src.Exemplars[exemplarIdx].Value
+		dstTs.Exemplars[exemplarIdx].TimestampMs = src.Exemplars[exemplarIdx].TimestampMs
 	}
 
-	return tsOut
+	return dst
 }
 
 // ensureCap takes a pointer to a byte slice and ensures that the capacity of the referred slice is at least equal to
