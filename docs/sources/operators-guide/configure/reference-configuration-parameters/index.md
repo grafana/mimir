@@ -882,11 +882,6 @@ store_gateway_client:
 # CLI flag: -querier.shuffle-sharding-ingesters-enabled
 [shuffle_sharding_ingesters_enabled: <boolean> | default = true]
 
-# The maximum number of concurrent queries. This config option should be set on
-# query-frontend too when query sharding is enabled.
-# CLI flag: -querier.max-concurrent
-[max_concurrent: <int> | default = 20]
-
 # The timeout for a query. This config option should be set on query-frontend
 # too when query sharding is enabled. This also applies to queries evaluated by
 # the ruler (internally or remotely).
@@ -1928,6 +1923,10 @@ The `frontend_worker` block configures the worker running within the querier, pi
 # address.
 # CLI flag: -querier.dns-lookup-period
 [dns_lookup_duration: <duration> | default = 10s]
+
+# The maximum number of concurrent queries.
+# CLI flag: -querier.max-concurrent
+[max-concurrent: <int> | default = 20]
 
 # (advanced) Querier ID, sent to the query-frontend to identify requests from
 # the same querier. Defaults to hostname.
