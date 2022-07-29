@@ -26,6 +26,7 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 	for _, startString := range []string{
 		"2020-01-01T03:00:00.100Z",
 		"2020-01-01T03:00:00Z",
+		time.Now().Format(time.RFC3339Nano),
 	} {
 		t.Run(fmt.Sprintf("start=%s", startString), func(t *testing.T) {
 			start, err := time.Parse(time.RFC3339Nano, startString)
