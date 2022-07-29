@@ -77,10 +77,6 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 					query:                `rate(metric_counter[3m])`,
 					expectedSplitQueries: 3,
 				},
-				"resets": {
-					query:                `resets(metric_counter[3m])`,
-					expectedSplitQueries: 3,
-				},
 				"sum_over_time": {
 					query:                `sum_over_time(metric_counter[3m])`,
 					expectedSplitQueries: 3,
@@ -378,6 +374,10 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 				},
 				"quantile_over_time": {
 					query:                `quantile_over_time(0.95, metric_counter[1m])`,
+					expectedSplitQueries: 0,
+				},
+				"resets": {
+					query:                `resets(metric_counter[3m])`,
 					expectedSplitQueries: 0,
 				},
 				"stddev_over_time": {

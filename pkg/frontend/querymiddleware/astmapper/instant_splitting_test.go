@@ -65,11 +65,6 @@ func TestInstantSplitter(t *testing.T) {
 			expectedSplitQueries: 3,
 		},
 		{
-			in:                   `resets({app="foo"}[3m])`,
-			out:                  `sum without() (` + concatOffsets(splitInterval, 3, true, `resets({app="foo"}[x]y)`) + `)`,
-			expectedSplitQueries: 3,
-		},
-		{
 			in:                   `sum_over_time({app="foo"}[3m])`,
 			out:                  `sum without() (` + concatOffsets(splitInterval, 3, false, `sum_over_time({app="foo"}[x]y)`) + `)`,
 			expectedSplitQueries: 3,
@@ -482,6 +477,9 @@ func TestInstantSplitterNoOp(t *testing.T) {
 		},
 		{
 			query: `quantile_over_time(0.95, foo[3m])`,
+		},
+		{
+			query: `resets(foo[3m])`,
 		},
 		{
 			query: `stddev_over_time(foo[3m])`,

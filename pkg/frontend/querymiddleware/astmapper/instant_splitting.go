@@ -209,8 +209,6 @@ func (i *instantSplitter) mapCall(expr *parser.Call) (mapped parser.Expr, finish
 		return i.mapCallVectorAggregation(expr, parser.MAX)
 	case rate:
 		return i.mapCallRate(expr)
-	case resets:
-		return i.mapCallVectorAggregation(expr, parser.SUM)
 	case sumOverTime:
 		return i.mapCallVectorAggregation(expr, parser.SUM)
 	default:
