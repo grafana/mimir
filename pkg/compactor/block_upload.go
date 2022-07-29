@@ -501,7 +501,7 @@ func (c *MultitenantCompactor) getBlockUploadState(ctx context.Context, userBkt 
 	if err != nil {
 		return blockStateUnknown, nil, nil, err
 	}
-	// If neither meta.json nor uploading-meta.json file don't exist, we say that block doesn't exist.
+	// If neither meta.json nor uploading-meta.json file exist, we say that the block doesn't exist.
 	if meta == nil {
 		return blockUploadNotStarted, nil, nil, err
 	}
