@@ -1616,6 +1616,116 @@ nginx:
         }
       }
 
+metaMonitoring:
+  # ServiceMonitor configuration for monitoring Kubernetes Services with Prometheus Operator and/or Grafana Agent
+  serviceMonitor:
+    # -- If enabled, ServiceMonitor resources for Prometheus Operator are created
+    enabled: false
+    # -- To disable setting a 'cluster' label in metrics, set to 'null'.
+    # To overwrite the 'cluster' label with your own value, set to a non-empty string.
+    # Keep empty string "" to have the default value in the 'cluster' label, which is the helm release name for Mimir and the actual cluster name for Enterprise Metrics.
+    clusterLabel: ""
+    # -- Alternative namespace for ServiceMonitor resources
+    # If left unset, the default is to install the ServiceMonitor resources in the namespace where the chart is installed, i.e. the namespace specified for the helm command.
+    namespace: null
+    # -- Namespace selector for ServiceMonitor resources
+    # If left unset, the default is to select the namespace where the chart is installed, i.e. the namespace specified for the helm command.
+    namespaceSelector: null
+    # -- ServiceMonitor annotations
+    annotations: {}
+    # -- Additional ServiceMonitor labels
+    labels: {}
+    # -- ServiceMonitor scrape interval
+    interval: null
+    # -- ServiceMonitor scrape timeout in Go duration format (e.g. 15s)
+    scrapeTimeout: null
+    # -- ServiceMonitor relabel configs to apply to samples before scraping
+    # https://github.com/prometheus-operator/prometheus-operator/blob/master/Documentation/api.md#relabelconfig
+    relabelings: []
+    # -- ServiceMonitor will use http by default, but you can pick https as well
+    scheme: http
+    # -- ServiceMonitor will use these tlsConfig settings to make the health check requests
+    tlsConfig: null
+
+  # metaMonitoringAgent configures the built in Grafana Agent that can scrape metrics and logs and send them to a local or remote destination
+  grafanaAgent:
+    # -- Controls whether to create PodLogs, MetricsInstance, LogsInstance, and GrafanaAgent CRs to scrape the
+    # ServiceMonitors of the chart and ship metrics and logs to the remote endpoints below.
+    # Note that you need to configure serviceMonitor in order to have some metrics available.
+    enabled: false
+
+    # -- Controls whether to install the Grafana Agent Operator and its CRDs.
+    # Note that helm will not install CRDs if this flag is enabled during an upgrade.
+    # In that case install the CRDs manually from https://github.com/grafana/agent/tree/main/production/operator/crds
+    installOperator: false
+
+    logs:
+      # -- Default destination for logs. The config here is translated to Promtail client
+      # configuration to write logs to this Loki-compatible remote. Optional.
+      remote:
+        # -- Full URL for Loki push endpoint. Usually ends in /loki/api/v1/push
+        url: ''
+
+        auth:
+          # -- Used to set X-Scope-OrgID header on requests. Usually not used in combination with username and password.
+          tenantId: ''
+
+          # -- Basic authentication username. Optional.
+          username: ''
+
+          # -- The value under key passwordSecretKey in this secret will be used as the basic authentication password. Required only if passwordSecretKey is set.
+          passwordSecretName: ''
+          # -- The value under this key in passwordSecretName will be used as the basic authentication password. Required only if passwordSecretName is set.
+          passwordSecretKey: ''
+
+      # -- Client configurations for the LogsInstance that will scrape Mimir pods. Follows the format of .remote.
+      additionalClientConfigs: []
+
+    metrics:
+      # -- Default destination for metrics. The config here is translated to remote_write
+      # configuration to push metrics to this Prometheus-compatible remote. Optional.
+      # Note that you need to configure serviceMonitor in order to have some metrics available.
+      remote:
+        # -- Full URL for Prometheus remote-write. Usually ends in /push
+        url: ''
+
+        # -- Used to add HTTP headers to remote-write requests.
+        headers: {}
+        auth:
+          # -- Basic authentication username. Optional.
+          username: ''
+
+          # -- The value under key passwordSecretKey in this secret will be used as the basic authentication password. Required only if passwordSecretKey is set.
+          passwordSecretName: ''
+          # -- The value under this key in passwordSecretName will be used as the basic authentication password. Required only if passwordSecretName is set.
+          passwordSecretKey: ''
+
+      # -- Additional remote-write for the MetricsInstance that will scrape Mimir pods. Follows the format of .remote.
+      additionalRemoteWriteConfigs: []
+
+      scrapeK8s:
+        # -- When grafanaAgent.enabled and serviceMonitor.enabled, controls whether to create ServiceMonitors CRs
+        # for cadvisor, kubelet, and kube-state-metrics. The scraped metrics are reduced to those pertaining to
+        # Mimir pods only.
+        enabled: true
+
+        # -- Controls service discovery of kube-state-metrics.
+        kubeStateMetrics:
+          namespace: kube-system
+          labelSelectors:
+            app.kubernetes.io/name: kube-state-metrics
+
+    # -- Sets the namespace of the resources. Leave empty or unset to use the same namespace as the Helm release.
+    namespace: ''
+
+    # -- Labels to add to all monitoring.grafana.com custom resources.
+    # Does not affect the ServiceMonitors for kubernetes metrics; use serviceMonitor.labels for that.
+    labels: {}
+
+    # -- Annotations to add to all monitoring.grafana.com custom resources.
+    # Does not affect the ServiceMonitors for kubernetes metrics; use serviceMonitor.annotations for that.
+    annotations: {}
+
 ##############################################################################
 # The values in and after the `enterprise:` key configure the enterprise features
 enterprise:
@@ -1808,113 +1918,3 @@ smoke_test:
   extraEnvFrom: []
   annotations: {}
   initContainers: []
-
-metaMonitoring:
-  # ServiceMonitor configuration for monitoring Kubernetes Services with Prometheus Operator and/or Grafana Agent
-  serviceMonitor:
-    # -- If enabled, ServiceMonitor resources for Prometheus Operator are created
-    enabled: false
-    # -- To disable setting a 'cluster' label in metrics, set to 'null'.
-    # To overwrite the 'cluster' label with your own value, set to a non-empty string.
-    # Keep empty string "" to have the default value in the 'cluster' label, which is the helm release name for Mimir and the actual cluster name for Enterprise Metrics.
-    clusterLabel: ""
-    # -- Alternative namespace for ServiceMonitor resources
-    # If left unset, the default is to install the ServiceMonitor resources in the namespace where the chart is installed, i.e. the namespace specified for the helm command.
-    namespace: null
-    # -- Namespace selector for ServiceMonitor resources
-    # If left unset, the default is to select the namespace where the chart is installed, i.e. the namespace specified for the helm command.
-    namespaceSelector: null
-    # -- ServiceMonitor annotations
-    annotations: {}
-    # -- Additional ServiceMonitor labels
-    labels: {}
-    # -- ServiceMonitor scrape interval
-    interval: null
-    # -- ServiceMonitor scrape timeout in Go duration format (e.g. 15s)
-    scrapeTimeout: null
-    # -- ServiceMonitor relabel configs to apply to samples before scraping
-    # https://github.com/prometheus-operator/prometheus-operator/blob/master/Documentation/api.md#relabelconfig
-    relabelings: []
-    # -- ServiceMonitor will use http by default, but you can pick https as well
-    scheme: http
-    # -- ServiceMonitor will use these tlsConfig settings to make the health check requests
-    tlsConfig: null
-
-  # metaMonitoringAgent configures the built in Grafana Agent that can scrape metrics and logs and send them to a local or remote destination
-  grafanaAgent:
-    # -- Controls whether to create PodLogs, MetricsInstance, LogsInstance, and GrafanaAgent CRs to scrape the
-    # ServiceMonitors of the chart and ship metrics and logs to the remote endpoints below.
-    # Note that you need to configure serviceMonitor in order to have some metrics available.
-    enabled: false
-
-    # -- Controls whether to install the Grafana Agent Operator and its CRDs.
-    # Note that helm will not install CRDs if this flag is enabled during an upgrade.
-    # In that case install the CRDs manually from https://github.com/grafana/agent/tree/main/production/operator/crds
-    installOperator: false
-
-    logs:
-      # -- Default destination for logs. The config here is translated to Promtail client
-      # configuration to write logs to this Loki-compatible remote. Optional.
-      remote:
-        # -- Full URL for Loki push endpoint. Usually ends in /loki/api/v1/push
-        url: ''
-
-        auth:
-          # -- Used to set X-Scope-OrgID header on requests. Usually not used in combination with username and password.
-          tenantId: ''
-
-          # -- Basic authentication username. Optional.
-          username: ''
-
-          # -- The value under key passwordSecretKey in this secret will be used as the basic authentication password. Required only if passwordSecretKey is set.
-          passwordSecretName: ''
-          # -- The value under this key in passwordSecretName will be used as the basic authentication password. Required only if passwordSecretName is set.
-          passwordSecretKey: ''
-
-      # -- Client configurations for the LogsInstance that will scrape Mimir pods. Follows the format of .remote.
-      additionalClientConfigs: []
-
-    metrics:
-      # -- Default destination for metrics. The config here is translated to remote_write
-      # configuration to push metrics to this Prometheus-compatible remote. Optional.
-      # Note that you need to configure serviceMonitor in order to have some metrics available.
-      remote:
-        # -- Full URL for Prometheus remote-write. Usually ends in /push
-        url: ''
-
-        # -- Used to add HTTP headers to remote-write requests.
-        headers: {}
-        auth:
-          # -- Basic authentication username. Optional.
-          username: ''
-
-          # -- The value under key passwordSecretKey in this secret will be used as the basic authentication password. Required only if passwordSecretKey is set.
-          passwordSecretName: ''
-          # -- The value under this key in passwordSecretName will be used as the basic authentication password. Required only if passwordSecretName is set.
-          passwordSecretKey: ''
-
-      # -- Additional remote-write for the MetricsInstance that will scrape Mimir pods. Follows the format of .remote.
-      additionalRemoteWriteConfigs: []
-
-      scrapeK8s:
-        # -- When grafanaAgent.enabled and serviceMonitor.enabled, controls whether to create ServiceMonitors CRs
-        # for cadvisor, kubelet, and kube-state-metrics. The scraped metrics are reduced to those pertaining to
-        # Mimir pods only.
-        enabled: true
-
-        # -- Controls service discovery of kube-state-metrics.
-        kubeStateMetrics:
-          namespace: kube-system
-          labelSelectors:
-            app.kubernetes.io/name: kube-state-metrics
-
-    # -- Sets the namespace of the resources. Leave empty or unset to use the same namespace as the Helm release.
-    namespace: ''
-
-    # -- Labels to add to all monitoring.grafana.com custom resources.
-    # Does not affect the ServiceMonitors for kubernetes metrics; use serviceMonitor.labels for that.
-    labels: {}
-
-    # -- Annotations to add to all monitoring.grafana.com custom resources.
-    # Does not affect the ServiceMonitors for kubernetes metrics; use serviceMonitor.annotations for that.
-    annotations: {}
