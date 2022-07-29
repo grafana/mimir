@@ -22,60 +22,45 @@ func TestMatcher_MatchesSeries(t *testing.T) {
 
 	for _, tc := range []struct {
 		series   labels.Labels
-		expected []bool
+		expected []int
 	}{
 		{
 			series: labels.Labels{{Name: "foo", Value: "true"}, {Name: "baz", Value: "unrelated"}},
-			expected: []bool{
-				false, // bar_starts_with_1
-				false, // does_not_have_foo_label
-				false, // has_foo_and_bar_starts_with_1
-				true,  // has_foo_label
+			expected: []int{
+				3, // has_foo_label
 			},
 		},
 		{
 			series: labels.Labels{{Name: "foo", Value: "true"}, {Name: "bar", Value: "100"}, {Name: "baz", Value: "unrelated"}},
-			expected: []bool{
-				true,  // bar_starts_with_1
-				false, // does_not_have_foo_label
-				true,  // has_foo_and_bar_starts_with_1
-				true,  // has_foo_label
+			expected: []int{
+				0, // bar_starts_with_1
+				2, // has_foo_and_bar_starts_with_1
+				3, // has_foo_label
 			},
 		},
 		{
 			series: labels.Labels{{Name: "foo", Value: "true"}, {Name: "bar", Value: "200"}, {Name: "baz", Value: "unrelated"}},
-			expected: []bool{
-				false, // bar_starts_with_1
-				false, // does_not_have_foo_label
-				false, // has_foo_and_bar_starts_with_1
-				true,  // has_foo_label
+			expected: []int{
+				3, // has_foo_label
 			},
 		},
 		{
 			series: labels.Labels{{Name: "bar", Value: "200"}, {Name: "baz", Value: "unrelated"}},
-			expected: []bool{
-				false, // bar_starts_with_1
-				true,  // does_not_have_foo_label
-				false, // has_foo_and_bar_starts_with_1
-				false, // has_foo_label
+			expected: []int{
+				1, // does_not_have_foo_label
 			},
 		},
 		{
 			series: labels.Labels{{Name: "bar", Value: "100"}, {Name: "baz", Value: "unrelated"}},
-			expected: []bool{
-				true,  // bar_starts_with_1
-				true,  // does_not_have_foo_label
-				false, // has_foo_and_bar_starts_with_1
-				false, // has_foo_label
+			expected: []int{
+				0, // bar_starts_with_1
+				1, // does_not_have_foo_label
 			},
 		},
 		{
 			series: labels.Labels{{Name: "baz", Value: "unrelated"}},
-			expected: []bool{
-				false, // bar_starts_with_1
-				true,  // does_not_have_foo_label
-				false, // has_foo_and_bar_starts_with_1
-				false, // has_foo_label
+			expected: []int{
+				1, // does_not_have_foo_label
 			},
 		},
 	} {

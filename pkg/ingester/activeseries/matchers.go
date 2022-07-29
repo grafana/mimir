@@ -35,13 +35,16 @@ func (m *Matchers) Config() CustomTrackersConfig {
 	return m.cfg
 }
 
-func (m *Matchers) Matches(series labels.Labels) []bool {
+// Matches returns a []int containing only matcher indexes which are matching
+func (m *Matchers) Matches(series labels.Labels) []int {
 	if len(m.matchers) == 0 {
 		return nil
 	}
-	matches := make([]bool, len(m.matchers))
+	matches := []int{}
 	for i, sm := range m.matchers {
-		matches[i] = sm.Matches(series)
+		if sm.Matches(series) {
+			matches = append(matches, i)
+		}
 	}
 	return matches
 }
