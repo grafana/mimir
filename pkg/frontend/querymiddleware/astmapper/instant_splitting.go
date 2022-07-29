@@ -34,13 +34,16 @@ var splittableVectorAggregators = map[parser.ItemType]bool{
 // Supported range vector aggregators
 
 const (
-	avgOverTime   = "avg_over_time"
-	countOverTime = "count_over_time"
-	increase      = "increase"
-	maxOverTime   = "max_over_time"
-	minOverTime   = "min_over_time"
-	rate          = "rate"
-	sumOverTime   = "sum_over_time"
+	avgOverTime     = "avg_over_time"
+	countOverTime   = "count_over_time"
+	increase        = "increase"
+	irate           = "irate"
+	maxOverTime     = "max_over_time"
+	minOverTime     = "min_over_time"
+	presentOverTime = "present_over_time"
+	rate            = "rate"
+	resets          = "resets"
+	sumOverTime     = "sum_over_time"
 )
 
 // cannotDoubleCountBoundaries is the list of functions that cannot double count the boundaries points when being split by range.
@@ -194,12 +197,20 @@ func (i *instantSplitter) mapCall(expr *parser.Call) (mapped parser.Expr, finish
 		return i.mapCallAvgOverTime(expr)
 	case countOverTime:
 		return i.mapCallVectorAggregation(expr, parser.SUM)
+	case increase:
+		return i.mapCallVectorAggregation(expr, parser.SUM)
+	case irate:
+		return i.mapCallRate(expr)
 	case maxOverTime:
 		return i.mapCallVectorAggregation(expr, parser.MAX)
 	case minOverTime:
 		return i.mapCallVectorAggregation(expr, parser.MIN)
+	case presentOverTime:
+		return i.mapCallVectorAggregation(expr, parser.MAX)
 	case rate:
 		return i.mapCallRate(expr)
+	case resets:
+		return i.mapCallVectorAggregation(expr, parser.SUM)
 	case sumOverTime:
 		return i.mapCallVectorAggregation(expr, parser.SUM)
 	default:
