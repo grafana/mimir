@@ -3,6 +3,8 @@
 package activeseries
 
 import (
+	"fmt"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -68,6 +70,48 @@ func TestMatcher_MatchesSeries(t *testing.T) {
 			got := asm.Matches(tc.series)
 			assert.Equal(t, tc.expected, got)
 		})
+	}
+}
+
+func BenchmarkMatchesSeries(b *testing.B) {
+
+	trackerCounts := []int{10, 100, 1000, 10000}
+	asms := make([]*Matchers, len(trackerCounts))
+
+	for i, matcherCount := range trackerCounts {
+		configMap := map[string]string{}
+		for j := 0; j < matcherCount; j++ {
+			configMap[strconv.Itoa(j)] = fmt.Sprintf("{grafanacloud_usage_group=~%d.*}", j)
+		}
+		config, _ := NewCustomTrackersConfig(configMap)
+		asms[i] = NewMatchers(config)
+
+	}
+
+	labelCounts := []int{1, 10, 100}
+	series := make([]labels.Labels, len(labelCounts))
+	for i, labelCount := range labelCounts {
+		l := labels.Labels{
+			{Name: "grafanacloud_usage_group", Value: "1"}, // going to match exactly to one matcher
+		}
+		for j := 1; j < labelCount; j++ {
+			labelEntry := labels.Label{Name: fmt.Sprintf("foo%d", j), Value: "true"}
+			l = append(l, labelEntry)
+		}
+		series[i] = l
+	}
+
+	for i, trackerCount := range trackerCounts {
+		for j, labelCount := range labelCounts {
+			b.Run(fmt.Sprintf("TrackerCount: %d, LabelCount: %d", trackerCount, labelCount), func(b *testing.B) {
+				for x := 0; x < b.N; x++ {
+					got := asms[i].Matches(series[j])
+					if len(got) > 2 {
+						b.FailNow()
+					}
+				}
+			})
+		}
 	}
 }
 
