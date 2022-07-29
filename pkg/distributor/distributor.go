@@ -536,7 +536,7 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 	// At this point we know we have both HA labels, we should lookup
 	// the cluster/instance here to see if we want to accept this sample.
 	err := d.HATracker.checkReplica(ctx, userID, cluster, replica, time.Now())
-	// checkReplica would only have returned an error if there was a real error talking to Consul,
+	// checkReplica would have returned an error if there was a real error talking to Consul,
 	// or if the replica is not the currently elected replica.
 	if err != nil { // Don't accept the sample.
 		return false, err
