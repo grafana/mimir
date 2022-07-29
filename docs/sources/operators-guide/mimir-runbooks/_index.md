@@ -70,32 +70,39 @@ How to **fix** it:
 2. **Check if shuffle-sharding shard size is correct**<br />
 
 - When shuffle-sharding is enabled, we target up to 100K series / tenant / ingester assuming tenants on average use 50% of their max series limit.
-- Run the following **instant query** to find tenants that might cause higher pressure on some ingesters:
+- Run the following **instant query** to find tenants that might cause higher pressure on ingesters. The query excludes tenants which are already sharded across all ingesters:
 
   ```
-  (
-    sum by(user) (cortex_ingester_memory_series_created_total{namespace="<namespace>"}
-    -
-    cortex_ingester_memory_series_removed_total{namespace="<namespace>"})
+  topk by (pod) (5, # top 5 tenants per ingester
+      sum by (user, pod) ( # get in-memory series for each tenant on each pod
+          cortex_ingester_memory_series_created_total{namespace="<namespace>"} - cortex_ingester_memory_series_removed_total{namespace="<namespace>"}
+      )
+      and on(user) # intersection with tenants that are exceeding 50% of their series limit (added acorss ingesters & accounting for replication)
+      (
+          sum by (user) ( # total in-memory series for the tenant across ingesters
+              cortex_ingester_memory_series_created_total{namespace="<namespace>"} - cortex_ingester_memory_series_removed_total{namespace="<namespace>"}
+          )
+          > 200000 # show only big tenants - with more than 200k series across ingesters
+          >
+          (
+              max by(user) (cortex_limits_overrides{namespace="<namespace>", limit_name="max_global_series_per_user"}) # global limit
+              *
+              scalar(max(cortex_distributor_replication_factor{namespace="<namespace>"})) # with replication
+              *
+              0.5 # 50%
+          )
+      )
+      and on (pod) ( # intersection with top 3 ingesters by in-memory series
+          topk(3,
+              sum by (pod) (cortex_ingester_memory_series{namespace="<namespace>"})
+          )
+      )
+      and on(user) ( # intersection with the tenants which don't have series on all ingesters
+          count by (user) (cortex_ingester_memory_series_created_total{namespace="<namespace>"}) # count ingesters where each tenant has series
+          !=
+          scalar(count(count by (pod) (cortex_ingester_memory_series{namespace="<namespace>"}))) # count total ingesters: first `count` counts series by ingester (we ignore the counted number), second `count` counts rows in series per ingester, second count gives the number of ingesters
+      )
   )
-  >
-  (
-    max by(user) (cortex_limits_overrides{namespace="<namespace>",limit_name="max_global_series_per_user"})
-    *
-    scalar(max(cortex_distributor_replication_factor{namespace="<namespace>"}))
-    *
-    0.5
-  )
-  > 200000
-
-  # Decomment the following to show only tenants beloging to a specific ingester's shard.
-  # and count by(user) (cortex_ingester_active_series{namespace="<namespace>",pod="ingester-<id>"})
-  ```
-
-- Run the following **instant query** to find tenants that contribute the most to active series on a specific ingester:
-
-  ```
-  topk(10, sum by(user) (cortex_ingester_memory_series_created_total{namespace="<namespace>",pod="ingester-<id>"} - cortex_ingester_memory_series_removed_total{namespace="<namespace>",pod="ingester-<id>"}))
   ```
 
 - Check the current shard size of each tenant in the output and, if they're not already sharded across all ingesters, you may consider to double their shard size
