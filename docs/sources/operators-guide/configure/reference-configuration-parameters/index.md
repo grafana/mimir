@@ -203,11 +203,12 @@ activity_tracker:
 [alertmanager_storage: <alertmanager_storage>]
 
 runtime_config:
-  # (advanced) How often to check runtime config file.
+  # (advanced) How often to check runtime config files.
   # CLI flag: -runtime-config.reload-period
   [period: <duration> | default = 10s]
 
-  # File with the configuration that can be updated in runtime.
+  # Comma separated list of yaml files with the configuration that can be
+  # updated at runtime. Runtime config files will be merged from left to right.
   # CLI flag: -runtime-config.file
   [file: <string> | default = ""]
 

@@ -216,7 +216,7 @@ func TestMultiKVSetup(t *testing.T) {
 			cfg.Target = []string{target}
 
 			// Must be set, otherwise MultiKV config provider will not be set.
-			cfg.RuntimeConfig.LoadPath = filepath.Join(dir, "config.yaml")
+			cfg.RuntimeConfig.LoadPath = []string{filepath.Join(dir, "config.yaml")}
 
 			c, err := New(cfg)
 			require.NoError(t, err)

@@ -210,7 +210,7 @@ func (t *Mimir) initRing() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initRuntimeConfig() (services.Service, error) {
-	if t.Cfg.RuntimeConfig.LoadPath == "" {
+	if len(t.Cfg.RuntimeConfig.LoadPath) == 0 {
 		// no need to initialize module if load path is empty
 		return nil, nil
 	}
