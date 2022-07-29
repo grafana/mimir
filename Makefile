@@ -217,7 +217,7 @@ GOVOLUMES=	-v $(shell pwd)/.cache:/go/cache:delegated,z \
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
 SSHVOLUME=  -v ~/.ssh/:/root/.ssh:delegated,z
 
-exes $(EXES) protos $(PROTO_GOS) lint test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license: fetch-build-image
+exes $(EXES) protos $(PROTO_GOS) lint test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt conftest: fetch-build-image
 	@mkdir -p $(shell pwd)/.pkg
 	@mkdir -p $(shell pwd)/.cache
 	@echo
@@ -419,6 +419,16 @@ check-mixin-tests: ## Test the mixin files.
 format-mixin: ## Format the mixin files.
 	@find $(MIXIN_PATH) -type f -name '*.libsonnet' | xargs jsonnetfmt -i
 
+conftest-fmt:
+	@conftest fmt operations/helm/policies
+
+check-conftest-fmt: conftest-fmt
+	@./tools/find-diff-or-untracked.sh ./operations/helm/policies || (echo "Please format rego policies with 'make conftest-fmt'" && false)
+
+conftest:
+	@conftest verify -p operations/helm/policies --report notes
+	@tools/run-conftest.sh --do-dependency-update
+
 endif
 
 .PHONY: check-makefiles
@@ -551,9 +561,3 @@ integration-tests: cmd/mimir/$(UPTODATE)
 include docs/docs.mk
 DOCS_DIR = docs/sources
 docs: doc
-
-conftest-fmt:
-	conftest fmt operations/helm/policies
-
-check-conftest-fmt: conftest-fmt
-	@git diff --exit-code -- ./operations/helm/policies || (echo "Please format rego policies with 'make conftest-fmt'" && false)
