@@ -17,7 +17,6 @@ import (
 
 func TestInstantSplitter(t *testing.T) {
 	splitInterval := 1 * time.Minute
-	splitter := NewInstantQuerySplitter(splitInterval, log.NewNopLogger())
 
 	for _, tt := range []struct {
 		in                   string
@@ -272,13 +271,15 @@ func TestInstantSplitter(t *testing.T) {
 		tt := tt
 
 		t.Run(tt.in, func(t *testing.T) {
+			stats := NewMapperStats()
+			mapper := NewInstantQuerySplitter(splitInterval, log.NewNopLogger(), stats)
+
 			expr, err := parser.ParseExpr(tt.in)
 			require.NoError(t, err)
 			out, err := parser.ParseExpr(tt.out)
 			require.NoError(t, err)
 
-			stats := NewMapperStats()
-			mapped, err := splitter.Map(expr, stats)
+			mapped, err := mapper.Map(expr)
 			require.NoError(t, err)
 			require.Equal(t, out.String(), mapped.String())
 
@@ -289,7 +290,6 @@ func TestInstantSplitter(t *testing.T) {
 
 func TestInstantSplitterUnevenRangeInterval(t *testing.T) {
 	splitInterval := 2 * time.Minute
-	splitter := NewInstantQuerySplitter(splitInterval, log.NewNopLogger())
 
 	for _, tt := range []struct {
 		in                   string
@@ -321,13 +321,15 @@ func TestInstantSplitterUnevenRangeInterval(t *testing.T) {
 		tt := tt
 
 		t.Run(tt.in, func(t *testing.T) {
+			stats := NewMapperStats()
+			mapper := NewInstantQuerySplitter(splitInterval, log.NewNopLogger(), stats)
+
 			expr, err := parser.ParseExpr(tt.in)
 			require.NoError(t, err)
 			out, err := parser.ParseExpr(tt.out)
 			require.NoError(t, err)
 
-			stats := NewMapperStats()
-			mapped, err := splitter.Map(expr, stats)
+			mapped, err := mapper.Map(expr)
 			require.NoError(t, err)
 			require.Equal(t, out.String(), mapped.String())
 
@@ -338,7 +340,6 @@ func TestInstantSplitterUnevenRangeInterval(t *testing.T) {
 
 func TestInstantSplitterNoOp(t *testing.T) {
 	splitInterval := 1 * time.Minute
-	splitter := NewInstantQuerySplitter(splitInterval, log.NewNopLogger())
 
 	for _, tt := range []struct {
 		query string
@@ -424,15 +425,16 @@ func TestInstantSplitterNoOp(t *testing.T) {
 		tt := tt
 
 		t.Run(tt.query, func(t *testing.T) {
+			stats := NewMapperStats()
+			mapper := NewInstantQuerySplitter(splitInterval, log.NewNopLogger(), stats)
+
 			expr, err := parser.ParseExpr(tt.query)
 			require.NoError(t, err)
-
-			stats := NewMapperStats()
 
 			// Do not assert if the mapped expression is equal to the input one, because it could actually be slightly
 			// transformed (e.g. added parenthesis). The actual way to check if it was split or not is to read it from
 			// the statistics.
-			_, err = splitter.Map(expr, stats)
+			_, err = mapper.Map(expr)
 			require.NoError(t, err)
 			assert.Equal(t, 0, stats.GetShardedQueries())
 		})

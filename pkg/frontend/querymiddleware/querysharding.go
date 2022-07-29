@@ -13,14 +13,13 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/status"
+	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
-
-	"github.com/grafana/dskit/tenant"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
@@ -224,7 +223,8 @@ func mapEngineError(err error) error {
 // to be executed by PromQL engine with shardedQueryable or an empty string if the input query
 // can't be sharded.
 func (s *querySharding) shardQuery(query string, totalShards int) (string, *astmapper.MapperStats, error) {
-	mapper, err := astmapper.NewSharding(totalShards, s.logger)
+	stats := astmapper.NewMapperStats()
+	mapper, err := astmapper.NewSharding(totalShards, s.logger, stats)
 	if err != nil {
 		return "", nil, err
 	}
@@ -234,8 +234,7 @@ func (s *querySharding) shardQuery(query string, totalShards int) (string, *astm
 		return "", nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	stats := astmapper.NewMapperStats()
-	shardedQuery, err := mapper.Map(expr, stats)
+	shardedQuery, err := mapper.Map(expr)
 	if err != nil {
 		return "", nil, err
 	}

@@ -478,15 +478,15 @@ func TestShardSummer(t *testing.T) {
 		tt := tt
 
 		t.Run(tt.in, func(t *testing.T) {
-			mapper, err := NewSharding(3, log.NewNopLogger())
+			stats := NewMapperStats()
+			mapper, err := NewSharding(3, log.NewNopLogger(), stats)
 			require.NoError(t, err)
 			expr, err := parser.ParseExpr(tt.in)
 			require.NoError(t, err)
 			out, err := parser.ParseExpr(tt.out)
 			require.NoError(t, err)
 
-			stats := NewMapperStats()
-			mapped, err := mapper.Map(expr, stats)
+			mapped, err := mapper.Map(expr)
 			require.NoError(t, err)
 			require.Equal(t, out.String(), mapped.String())
 			assert.Equal(t, tt.expectedShardedQueries, stats.GetShardedQueries())
@@ -532,13 +532,13 @@ func TestShardSummerWithEncoding(t *testing.T) {
 		},
 	} {
 		t.Run(fmt.Sprintf("[%d]", i), func(t *testing.T) {
-			summer, err := newShardSummer(c.shards, vectorSquasher, log.NewNopLogger())
+			stats := NewMapperStats()
+			summer, err := newShardSummer(c.shards, vectorSquasher, log.NewNopLogger(), stats)
 			require.Nil(t, err)
 			expr, err := parser.ParseExpr(c.input)
 			require.Nil(t, err)
 
-			stats := NewMapperStats()
-			res, err := summer.Map(expr, stats)
+			res, err := summer.Map(expr)
 			require.Nil(t, err)
 			assert.Equal(t, c.shards, stats.GetShardedQueries())
 			expected, err := parser.ParseExpr(c.expected)
