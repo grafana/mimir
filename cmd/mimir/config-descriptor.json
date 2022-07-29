@@ -1546,16 +1546,6 @@
         },
         {
           "kind": "field",
-          "name": "max_concurrent",
-          "required": false,
-          "desc": "The maximum number of concurrent queries. This config option should be set on query-frontend too when query sharding is enabled.",
-          "fieldValue": null,
-          "fieldDefaultValue": 20,
-          "fieldFlag": "querier.max-concurrent",
-          "fieldType": "int"
-        },
-        {
-          "kind": "field",
           "name": "timeout",
           "required": false,
           "desc": "The timeout for a query. This config option should be set on query-frontend too when query sharding is enabled. This also applies to queries evaluated by the ruler (internally or remotely).",
@@ -3131,6 +3121,16 @@
           "fieldFlag": "querier.dns-lookup-period",
           "fieldType": "duration",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "max-concurrent",
+          "required": false,
+          "desc": "The maximum number of concurrent queries.",
+          "fieldValue": null,
+          "fieldDefaultValue": 20,
+          "fieldFlag": "querier.max-concurrent",
+          "fieldType": "int"
         },
         {
           "kind": "field",
