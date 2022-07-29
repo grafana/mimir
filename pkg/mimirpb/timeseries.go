@@ -335,11 +335,10 @@ func reuseYoloSlice(val *[]byte) {
 	yoloSlicePool.Put(val)
 }
 
-// DeepCopyTimeseries copies the timeseries from one pointer into the timeseries of a second pointer.
+// DeepCopyTimeseries copies the timeseries of one PreallocTimeseries into another one.
 // It copies all the properties, sub-properties and strings by value to ensure that the two timeseries are not sharing
 // anything after the deep copying.
-// The first argument is a pointer to a byte slice which will be used to store the underlying data of string properties,
-// if its capicity is insufficient for it to store all string contents it will be replaced with a new one that's larger.
+// The returned PreallocTimeseries has a yoloSlice property which should be returned to the yoloSlicePool on cleanup.
 func DeepCopyTimeseries(dst, src PreallocTimeseries) PreallocTimeseries {
 	if dst.TimeSeries == nil {
 		dst.TimeSeries = TimeseriesFromPool()
