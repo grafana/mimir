@@ -221,6 +221,42 @@
             message: '{{ $labels.job }}/%(alert_instance_variable)s has a number of mmap-ed areas close to the limit.' % $._config,
           },
         },
+      ] + [
+        {
+          alert: $.alertName('RingMembersMismatch'),
+          expr: |||
+            (
+              avg by(%(alert_aggregation_labels)s) (sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ring_members{name="%(component)s",job=~"%(job)s"}))
+              != sum by(%(alert_aggregation_labels)s) (up{job=~"%(job)s"})
+            )
+            and
+            (
+              count by(%(alert_aggregation_labels)s) (cortex_build_info) > 0
+            )
+          ||| % {
+            alert_aggregation_labels: $._config.alert_aggregation_labels,
+            per_instance_label: $._config.per_instance_label,
+            component: component_job[0],
+            job: component_job[1],
+          },
+          'for': '15m',
+          labels: {
+            component: component_job[0],
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              Number of members in Mimir %(component)s hash ring does not match the expected number in %(alert_aggregation_variables)s.
+            ||| % { component: component_job[0], alert_aggregation_variables: $._config.alert_aggregation_variables },
+          },
+        }
+        for component_job in [
+          ['compactor', '.*/compactor'],
+          ['distributor', '.*/distributor'],
+          ['ingester', '.*/ingester.*'],
+          ['ruler', '.*/ruler'],
+          ['store-gateway', '.*/store-gateway.*'],
+        ]
       ],
     },
     {
