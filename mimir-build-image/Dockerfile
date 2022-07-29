@@ -3,6 +3,7 @@
 # Provenance-includes-license: Apache-2.0
 # Provenance-includes-copyright: The Cortex Authors.
 
+FROM alpine/helm:3.8.2 as helm
 FROM golang:1.18.4-bullseye
 ARG goproxyValue
 ENV GOPROXY=${goproxyValue}
@@ -46,8 +47,10 @@ RUN GO111MODULE=on \
 	go install github.com/mikefarah/yq/v4@v4.13.4 && \
 	go install github.com/google/go-jsonnet/cmd/jsonnetfmt@v0.17.0 && \
 	go install github.com/norwoodj/helm-docs/cmd/helm-docs@v1.8.1 && \
+  go install github.com/open-policy-agent/conftest@v0.33.2 && \
 	rm -rf /go/pkg /go/src /root/.cache
 
+COPY --from=helm /usr/bin/helm /usr/bin/helm
 ENV NODE_PATH=/usr/lib/node_modules
 COPY build.sh /
 ENV GOCACHE=/go/cache
