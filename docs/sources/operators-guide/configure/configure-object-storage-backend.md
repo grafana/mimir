@@ -8,7 +8,7 @@ weight: 70
 # Configuring Grafana Mimir object storage backend
 
 Grafana Mimir can use different object storage services to persist blocks containing the metrics data, as well as recording rules and alertmanager state.
-The supported alternatives are:
+The supported backends are:
 
 - [Amazon S3](https://aws.amazon.com/s3/) (and compatible implementations like [MinIO](https://min.io/))
 - [Google Cloud Storage](https://cloud.google.com/storage)

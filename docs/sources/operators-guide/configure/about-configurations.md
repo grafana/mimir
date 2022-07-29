@@ -19,11 +19,11 @@ To see the current configuration state of any component, use the [`/config`]({{<
 
 ## Common configurations
 
-Some configurations, like object storage backend, are repeated for multiple components.
-To avoid the repetition in the configuration file, the [`common`]({{< relref "../configuring/reference-configuration-parameters/index.md#common" >}}) configuration section or `-common.*` CLI flags can be used.
-Common configurations are applied first to all the specific configurations, allowing them to be overridden later by specific values.
+Some configurations, such as object storage backend, are repeated for multiple components.
+To avoid the repetition in the configuration file, use the [`common`]({{< relref "../configuring/reference-configuration-parameters/index.md#common" >}}) configuration section or `-common.*` CLI flags.
+Common configurations are first applied to all the specific configurations, which allows  them to be overridden later by specific values.
 
-For example, this configuration:
+For example, the following configuration uses the same Amazon S3 object storage bucket called `mimir`. The common storage is located in the `us-east` region for both ruler and alertmanager stores, and the blocks storage uses the `mimir-blocks` bucket from the same region:
 
 ```yaml
 common:
@@ -38,9 +38,9 @@ blocks_storage:
     bucket_name: mimir-blocks
 ```
 
-Will use the same Amazon S3 object storage bucket called `mimir` and located in the `us-east` region for both ruler and alertmanager stores, while blocks storage will use the `mimir-blocks` bucket from the same region. See [object storage configuration reference ]({{< relref "configuring-object-storage-backend.md" >}}) for more detailed reference of this configuration.
+For a reference of this configuration, see [object storage configuration reference ]({{< relref "configuring-object-storage-backend.md" >}}).
 
-Common configuration is applied in the following order (each one overrides the previous):
+The precedence of the common configuration is as follows, where each configuration overrides the previous one:
 
 - YAML common values
 - YAML specific values
