@@ -225,10 +225,11 @@ func (f *forwarder) splitByTargets(tsSliceIn []mimirpb.PreallocTimeseries, rules
 			// the distributor will return them to the pool when it is done sending them to the ingesters.
 			tsToIngest = append(tsToIngest, ts)
 		} else {
+			notIngestedCounts.count(ts)
+
 			// This ts won't be returned to the distributor because it should not be ingested according to the rules,
 			// so we have to return it to the pool now to prevent that its reference gets lost.
 			f.pools.putTs(ts.TimeSeries)
-			notIngestedCounts.count(ts)
 		}
 	}
 
