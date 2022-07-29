@@ -204,16 +204,16 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 					query:                `sum(sum_over_time(metric_counter[3m] @ end()))`,
 					expectedSplitQueries: 3,
 				},
-				"avg(avg_over_time @ time.Now())": {
-					query:                fmt.Sprintf(`avg(avg_over_time(metric_counter[3m] @ %v))`, time.Now().Unix()),
+				"avg(avg_over_time @ `start`)": {
+					query:                fmt.Sprintf(`avg(avg_over_time(metric_counter[3m] @ %v))`, start.Unix()),
 					expectedSplitQueries: 6,
 				},
-				"max_over_time @ time.Now() offset 1m)": {
-					query:                fmt.Sprintf(`max_over_time(metric_counter[3m] @ %v offset 1m)`, time.Now().Unix()),
+				"max_over_time @ `start` offset 1m)": {
+					query:                fmt.Sprintf(`max_over_time(metric_counter[3m] @ %v offset 1m)`, start.Unix()),
 					expectedSplitQueries: 3,
 				},
-				"min_over_time offset 1m @ time.Now())": {
-					query:                fmt.Sprintf(`min_over_time(metric_counter[3m] offset 1m @ %v)`, time.Now().Unix()),
+				"min_over_time offset 1m @ `start`)": {
+					query:                fmt.Sprintf(`min_over_time(metric_counter[3m] offset 1m @ %v)`, start.Unix()),
 					expectedSplitQueries: 3,
 				},
 				// Histograms
