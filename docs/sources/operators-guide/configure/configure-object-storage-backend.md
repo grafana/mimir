@@ -1,11 +1,11 @@
 ---
-title: "Configuring Grafana Mimir object storage backend"
-menuTitle: "Configuring object storage"
+title: "Configure Grafana Mimir object storage backend"
+menuTitle: "Configure object storage"
 description: "Learn how to configure Grafana Mimir to use different object storage backend implementations."
 weight: 70
 ---
 
-# Configuring Grafana Mimir object storage backend
+# Configure Grafana Mimir object storage backend
 
 Grafana Mimir can use different object storage services to persist blocks containing the metrics data, as well as recording rules and alertmanager state.
 The supported backends are:
