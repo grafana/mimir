@@ -162,7 +162,13 @@ func (f *forwarder) Forward(ctx context.Context, rules validation.ForwardingRule
 }
 
 type tsWithSampleCount struct {
-	ts     []mimirpb.PreallocTimeseries
+	ts []mimirpb.PreallocTimeseries
+
+	// backingSlices is a slice of references to byte slices which are used as underlying data array for the strings
+	// which contain the label names and values of the time series.
+	backingSlices []*[]byte
+
+	// counts contains the number of samples and exemplars in the time series.
 	counts TimeseriesCounts
 }
 
@@ -174,14 +180,15 @@ func (t tsByTargets) copyToTarget(target string, ts *mimirpb.TimeSeries, pool *p
 	tsByTarget, ok := t[target]
 	if !ok {
 		tsByTarget.ts = pool.getTsSlice()
+		tsByTarget.backingSlices = *pool.getLabelBackingSlices()
 	}
 
-	newTsIdx := len(tsByTarget.ts)
-	tsByTarget.ts = append(tsByTarget.ts, mimirpb.PreallocTimeseries{
-		TimeSeries: pool.getTs(),
-	})
-	mimirpb.DeepCopyTimeseries(tsByTarget.ts[newTsIdx].TimeSeries, ts)
-	tsByTarget.counts.count(tsByTarget.ts[newTsIdx])
+	tsIdx := len(tsByTarget.ts)
+	tsByTarget.ts = append(tsByTarget.ts, mimirpb.PreallocTimeseries{TimeSeries: pool.getTs()})
+	tsByTarget.backingSlices = append(tsByTarget.backingSlices, pool.getLabelBackingSlice())
+
+	mimirpb.DeepCopyTimeseries(tsByTarget.backingSlices[tsIdx], tsByTarget.ts[tsIdx].TimeSeries, ts)
+	tsByTarget.counts.count(tsByTarget.ts[tsIdx])
 
 	t[target] = tsByTarget
 }
@@ -387,7 +394,16 @@ func (r *request) handleError(status int, err error) {
 }
 
 func (r *request) cleanup() {
-	r.pools.putTsSlice(r.ts.ts)
+	// Return all backing slices to their pool, then return the slice of backing slices to its pool.
+	backingSlices := r.ts.backingSlices
+	for _, backingSlice := range backingSlices {
+		r.pools.putLabelBackingSlice(backingSlice)
+	}
+	backingSlices = backingSlices[:0]
+	r.pools.putLabelBackingSlices(&backingSlices)
+
+	ts := r.ts.ts
+	r.pools.putTsSlice(ts)
 
 	// Ensure we don't modify a request property after returning it to the pool by calling .Done() on the wait group.
 	wg := r.requestWg

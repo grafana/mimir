@@ -304,14 +304,20 @@ func ReuseTimeseries(ts *TimeSeries) {
 	timeSeriesPool.Put(ts)
 }
 
-func DeepCopyTimeseries(tsOut, tsIn *TimeSeries) *TimeSeries {
-	if cap(tsOut.Labels) < len(tsIn.Labels) {
-		tsOut.Labels = make([]LabelAdapter, len(tsIn.Labels))
-	} else {
-		tsOut.Labels = tsOut.Labels[:len(tsIn.Labels)]
-	}
-	copy(tsOut.Labels, tsIn.Labels)
+// DeepCopyTimeseries copies the timeseries from one pointer into the timeseries of a second pointer.
+// It copies all the properties, sub-properties and strings by value to ensure that the two timeseries are not sharing
+// anything after the deep copying.
+// The first argument is a pointer to a byte slice which will be used to store the underlying data of string properties,
+// if its capicity is insufficient for it to store all string contents it will be replaced with a new one that's larger.
+func DeepCopyTimeseries(bufRef *[]byte, tsOut, tsIn *TimeSeries) *TimeSeries {
+	// Prepare a buffer which is large enough to hold all the label names and values of tsIn.
+	requiredYoloSliceCap := countTotalLabelLen(tsIn)
+	buf := ensureCap(bufRef, requiredYoloSliceCap)
 
+	// Copy the time series labels by using the prepared buffer.
+	tsOut.Labels, buf = copyToYoloLabels(buf, tsOut.Labels, tsIn.Labels)
+
+	// Copy the samples.
 	if cap(tsOut.Samples) < len(tsIn.Samples) {
 		tsOut.Samples = make([]Sample, len(tsIn.Samples))
 	} else {
@@ -319,6 +325,7 @@ func DeepCopyTimeseries(tsOut, tsIn *TimeSeries) *TimeSeries {
 	}
 	copy(tsOut.Samples, tsIn.Samples)
 
+	// Prepare the slice of exemplars.
 	if cap(tsOut.Exemplars) < len(tsIn.Exemplars) {
 		tsOut.Exemplars = make([]Exemplar, len(tsIn.Exemplars))
 	} else {
@@ -326,20 +333,68 @@ func DeepCopyTimeseries(tsOut, tsIn *TimeSeries) *TimeSeries {
 	}
 
 	for exemplarIdx := range tsIn.Exemplars {
-		if cap(tsOut.Exemplars[exemplarIdx].Labels) < len(tsIn.Exemplars[exemplarIdx].Labels) {
-			tsOut.Exemplars[exemplarIdx].Labels = make([]LabelAdapter, len(tsIn.Exemplars[exemplarIdx].Labels))
-		} else {
-			tsOut.Exemplars[exemplarIdx].Labels = tsOut.Exemplars[exemplarIdx].Labels[:len(tsIn.Exemplars[exemplarIdx].Labels)]
-		}
+		// Copy the exemplar labels by using the prepared buffer.
+		tsOut.Exemplars[exemplarIdx].Labels, buf = copyToYoloLabels(buf, tsOut.Exemplars[exemplarIdx].Labels, tsIn.Exemplars[exemplarIdx].Labels)
 
-		for labelIdx := range tsIn.Exemplars[exemplarIdx].Labels {
-			tsOut.Exemplars[exemplarIdx].Labels[labelIdx].Name = tsIn.Exemplars[exemplarIdx].Labels[labelIdx].Name
-			tsOut.Exemplars[exemplarIdx].Labels[labelIdx].Value = tsIn.Exemplars[exemplarIdx].Labels[labelIdx].Value
-		}
-
+		// Copy the other exemplar properties.
 		tsOut.Exemplars[exemplarIdx].Value = tsIn.Exemplars[exemplarIdx].Value
 		tsOut.Exemplars[exemplarIdx].TimestampMs = tsIn.Exemplars[exemplarIdx].TimestampMs
 	}
 
 	return tsOut
+}
+
+// ensureCap takes a pointer to a byte slice and ensures that the capacity of the referred slice is at least equal to
+// the given capacity, if not then the byte slice referred to by the pointer gets replaced with a new, larger one.
+// The return value is the byte slice which is now referred by the given pointer which has at least the given capacity.
+func ensureCap(bufRef *[]byte, requiredCap int) []byte {
+	buf := *bufRef
+	if cap(buf) >= requiredCap {
+		return buf[:0]
+	}
+
+	buf = make([]byte, 0, requiredCap)
+	*bufRef = buf
+	return buf
+}
+
+// countTotalLabelLen takes a time series and calculates the sum of the lengths of all label names and values.
+func countTotalLabelLen(ts *TimeSeries) int {
+	var labelLen int
+	for _, label := range ts.Labels {
+		labelLen += len(label.Name) + len(label.Value)
+	}
+
+	for _, exemplar := range ts.Exemplars {
+		for _, label := range exemplar.Labels {
+			labelLen += len(label.Name) + len(label.Value)
+		}
+	}
+
+	return labelLen
+}
+
+// copyToYoloLabels copies the values of src to dst, it uses the given buffer to store all the string values in it.
+// The returned buffer is the remainder of the given buffer, which remains unused after the copying complete.
+func copyToYoloLabels(buf []byte, dst, src []LabelAdapter) ([]LabelAdapter, []byte) {
+	if cap(dst) < len(src) {
+		dst = make([]LabelAdapter, len(src))
+	} else {
+		dst = dst[:len(src)]
+	}
+
+	for labelIdx := range src {
+		dst[labelIdx].Name, buf = copyToYoloString(buf, src[labelIdx].Name)
+		dst[labelIdx].Value, buf = copyToYoloString(buf, src[labelIdx].Value)
+	}
+
+	return dst, buf
+}
+
+// copyToYoloString takes a string and creates a new string which uses the given buffer as underlying byte array.
+// It requires that the buffer has a capacitity which is greater than or equal to the length of the source string.
+func copyToYoloString(buf []byte, src string) (string, []byte) {
+	buf = buf[:len(src)]
+	copy(buf, *((*[]byte)(unsafe.Pointer(&src))))
+	return yoloString(buf), buf[len(buf):]
 }

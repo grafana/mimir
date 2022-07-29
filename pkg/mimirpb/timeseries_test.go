@@ -72,7 +72,33 @@ func TestTimeseriesFromPool(t *testing.T) {
 	})
 }
 
+func TestCopyYoloString(t *testing.T) {
+	testString := yoloString([]byte("testString"))
+	testStringByteArray := (*reflect.SliceHeader)(unsafe.Pointer(&testString)).Data
+
+	// Verify that the unsafe copy is unsafe.
+	unsafeCopy := testString
+	unsafeCopyByteArray := (*reflect.SliceHeader)(unsafe.Pointer(&unsafeCopy)).Data
+	assert.Equal(t, testStringByteArray, unsafeCopyByteArray)
+
+	// Create a safe copy by using the newBuf byte slice.
+	newBuf := make([]byte, 0, len(testString))
+	safeCopy, remainingBuf := copyToYoloString(newBuf, unsafeCopy)
+
+	// Verify that the safe copy is safe by checking that the underlying byte arrays are different.
+	safeCopyByteArray := (*reflect.SliceHeader)(unsafe.Pointer(&safeCopy)).Data
+	assert.NotEqual(t, testStringByteArray, safeCopyByteArray)
+
+	// Verify that the remainingBuf has been used up completely.
+	assert.Len(t, remainingBuf, 0)
+
+	// Verify that the remainingBuf is using the same underlying byte array as safeCopy but advanced by the length.
+	remainingBufArray := (*reflect.SliceHeader)(unsafe.Pointer(&remainingBuf)).Data
+	assert.Equal(t, int(safeCopyByteArray)+len(newBuf), int(remainingBufArray))
+}
+
 func TestDeepCopyTimeseries(t *testing.T) {
+	buf := make([]byte, 0, 1000)
 	src := &TimeSeries{
 		Labels: []LabelAdapter{
 			{Name: "sampleLabel1", Value: "sampleValue1"},
@@ -92,7 +118,7 @@ func TestDeepCopyTimeseries(t *testing.T) {
 		}},
 	}
 	dst := &TimeSeries{}
-	DeepCopyTimeseries(dst, src)
+	DeepCopyTimeseries(&buf, dst, src)
 
 	// Check that the values in ts1 and ts2 are the same.
 	assert.Equal(t, src, dst)

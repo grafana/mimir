@@ -19,6 +19,12 @@ import (
 func TestUsingPools(t *testing.T) {
 	pools := newPools()
 
+	labelBackingSlices := pools.getLabelBackingSlices()
+	pools.putLabelBackingSlices(labelBackingSlices)
+
+	labelBackingSlice := pools.getLabelBackingSlice()
+	pools.putLabelBackingSlice(labelBackingSlice)
+
 	protoBuf := pools.getProtobuf()
 	pools.putProtobuf(protoBuf)
 
@@ -46,68 +52,146 @@ func TestUsingPools(t *testing.T) {
 // The specified caps must be large enough to hold all the data that will be stored in the respective slices because
 // otherwise any "append()" will replace the slice which will result in a test failure because the original slice
 // won't be returned to the pool.
-func validatingPools(t *testing.T, tsSliceCap, protobufCap, snappyCap int) (*pools, func()) {
+func validatingPools(t *testing.T, labelBackingSliceCap, labelBackingSlicesCap, tsSliceCap, protobufCap, snappyCap int) (*pools, func()) {
 	t.Helper()
 
 	pools := &pools{}
 
-	validatingProtobufPool := newValidatingByteSlicePool(t, protobufCap)
+	validatingLabelBackingSlicePool := newByteSlicePool(t, labelBackingSliceCap)
+	pools.getLabelBackingSlice = validatingLabelBackingSlicePool.get
+	pools.putLabelBackingSlice = validatingLabelBackingSlicePool.put
+
+	validatingLabelBackingSlicesPool := newValidatingPool(t,
+		func() *[]*[]byte {
+			objRef := make([]*[]byte, 0, labelBackingSlicesCap)
+			return &objRef
+		},
+		func(objRef *[]*[]byte) int {
+			return int((*reflect.SliceHeader)(unsafe.Pointer(objRef)).Data)
+		}, nil,
+	)
+	pools.getLabelBackingSlices = validatingLabelBackingSlicesPool.get
+	pools.putLabelBackingSlices = validatingLabelBackingSlicesPool.put
+
+	validatingProtobufPool := newByteSlicePool(t, protobufCap)
 	pools.getProtobuf = validatingProtobufPool.get
 	pools.putProtobuf = validatingProtobufPool.put
 
-	validatingSnappyPool := newValidatingByteSlicePool(t, snappyCap)
+	validatingSnappyPool := newByteSlicePool(t, snappyCap)
 	pools.getSnappy = validatingSnappyPool.get
 	pools.putSnappy = validatingSnappyPool.put
 
-	validatingRequestPool := newValidatingRequestPool(t)
+	validatingRequestPool := newValidatingPool(t,
+		func() *request {
+			return &request{}
+		},
+		func(obj *request) int {
+			// We uniquely identify objects of type *request by the address which the pointer is referring to.
+			return int(reflect.ValueOf(obj).Pointer())
+		}, nil,
+	)
 	pools.getReq = validatingRequestPool.get
 	pools.putReq = validatingRequestPool.put
 
-	validatingBytesReaderPool := newValidatingBytesReaderPool(t)
+	validatingBytesReaderPool := newValidatingPool(t,
+		func() *bytes.Reader {
+			return bytes.NewReader(nil)
+		}, func(obj *bytes.Reader) int {
+			// We uniquely identify objects of type *bytes.Reader by the address which the pointer is referring to.
+			return int(reflect.ValueOf(obj).Pointer())
+		}, nil,
+	)
 	pools.getBytesReader = validatingBytesReaderPool.get
 	pools.putBytesReader = validatingBytesReaderPool.put
 
-	validatingTsByTargetsPool := newValidatingTsByTargetsPool(t)
+	validatingTsByTargetsPool := newValidatingPool(t,
+		func() tsByTargets {
+			return make(tsByTargets)
+		},
+		func(obj tsByTargets) int {
+			// We uniquely identify objects of type tsByTargets by the address which the pointer
+			// is referring to because map types are just pointers.
+			return int(reflect.ValueOf(obj).Pointer())
+		}, nil,
+	)
 	pools.getTsByTargets = validatingTsByTargetsPool.get
 	pools.putTsByTargets = validatingTsByTargetsPool.put
 
-	validatingMockTsPool := newValidatingTsPool(t)
-	pools.getTs = validatingMockTsPool.get
-	pools.putTs = validatingMockTsPool.put
+	validatingTsPool := newValidatingPool(t,
+		func() *mimirpb.TimeSeries {
+			return &mimirpb.TimeSeries{}
+		},
+		func(obj *mimirpb.TimeSeries) int {
+			// We uniquely identify objects of type *TimeSeries by the address which the pointer is referring to.
+			return int(reflect.ValueOf(obj).Pointer())
+		}, nil,
+	)
+	pools.getTs = validatingTsPool.get
+	pools.putTs = validatingTsPool.put
 
-	validatingMockTsSlicePool := newValidatingTsSlicePool(t, tsSliceCap, validatingMockTsPool.put)
-	pools.getTsSlice = validatingMockTsSlicePool.get
-	pools.putTsSlice = validatingMockTsSlicePool.put
+	validatingTsSlicePool := newValidatingPool(t,
+		func() []mimirpb.PreallocTimeseries {
+			return make([]mimirpb.PreallocTimeseries, 0, tsSliceCap)
+		},
+		func(obj []mimirpb.PreallocTimeseries) int {
+			// We uniquely identify objects of type []mimirpb.PreallocTimeseries by the address of the underlying data array.
+			return int((*reflect.SliceHeader)(unsafe.Pointer(&obj)).Data)
+		},
+		func(obj []mimirpb.PreallocTimeseries) []mimirpb.PreallocTimeseries {
+			for _, ts := range obj {
+				// When returning a slice of PreallocTimeseries to the pool we first need to return the contained
+				// TimeSeries objects to their pool, the original methods in the mimirpb package do the same.
+				validatingTsPool.put(ts.TimeSeries)
+			}
+			return obj
+		},
+	)
+	pools.getTsSlice = validatingTsSlicePool.get
+	pools.putTsSlice = validatingTsSlicePool.put
 
 	validateUsage := func() {
+		validatingLabelBackingSlicePool.validateUsage()
+		validatingLabelBackingSlicesPool.validateUsage()
 		validatingProtobufPool.validateUsage()
 		validatingSnappyPool.validateUsage()
 		validatingRequestPool.validateUsage()
 		validatingBytesReaderPool.validateUsage()
 		validatingTsByTargetsPool.validateUsage()
-		validatingMockTsPool.validateUsage()
-		validatingMockTsSlicePool.validateUsage()
+		validatingTsPool.validateUsage()
+		validatingTsSlicePool.validateUsage()
 	}
 
 	return pools, validateUsage
 }
 
-// validatingPool is a pool of objects that validates that it is used correctly by keeping track of a unique ID
-// of each object it instantiates and whether the object has been returned to the pool.
-type validatingPool struct {
-	t                   *testing.T
-	objsInstantiated    map[interface{}]bool
-	objsInstantiatedMtx sync.Mutex
-	objsReturned        []interface{}
-	new                 func() interface{}
-	id                  func(interface{}) interface{}
-	prepareForPut       func(interface{}) interface{}
+func newByteSlicePool(t *testing.T, cap int) *validatingPool[*[]byte] {
+	return newValidatingPool(t,
+		func() *[]byte {
+			obj := make([]byte, 0, cap)
+			return &obj
+		},
+		func(obj *[]byte) int {
+			return int((*reflect.SliceHeader)(unsafe.Pointer(obj)).Data)
+		}, nil,
+	)
 }
 
-func newValidatingPool(t *testing.T, new func() interface{}, id func(interface{}) interface{}, prepareForPut func(interface{}) interface{}) *validatingPool {
-	return &validatingPool{
+// validatingPool is a pool of objects that validates that it is used correctly by keeping track of a unique ID
+// of each object it instantiates and whether the object has been returned to the pool.
+type validatingPool[T any] struct {
+	t                   *testing.T
+	objsInstantiated    map[int]bool
+	objsInstantiatedMtx sync.Mutex
+	objsReturned        []T
+	new                 func() T
+	id                  func(T) int
+	prepareForPut       func(T) T
+}
+
+func newValidatingPool[T any](t *testing.T, new func() T, id func(T) int, prepareForPut func(T) T) *validatingPool[T] {
+	return &validatingPool[T]{
 		t:                t,
-		objsInstantiated: make(map[interface{}]bool),
+		objsInstantiated: make(map[int]bool),
 		new:              new,
 		id:               id,
 		prepareForPut:    prepareForPut,
@@ -115,7 +199,7 @@ func newValidatingPool(t *testing.T, new func() interface{}, id func(interface{}
 }
 
 // get returns an object from the pool, the object must be returned to the pool before validateUsage() is called.
-func (v *validatingPool) get() interface{} {
+func (v *validatingPool[T]) get() T {
 	v.t.Helper()
 
 	obj := v.new()
@@ -132,7 +216,7 @@ func (v *validatingPool) get() interface{} {
 }
 
 // put returns an object to the pool, the object must have been created by the pool and it must only be returned once.
-func (v *validatingPool) put(obj interface{}) {
+func (v *validatingPool[T]) put(obj T) {
 	v.t.Helper()
 
 	id := v.id(obj)
@@ -155,7 +239,7 @@ func (v *validatingPool) put(obj interface{}) {
 }
 
 // validateUsage validates that all the objects created by the pool have been returned to it.
-func (v *validatingPool) validateUsage() {
+func (v *validatingPool[T]) validateUsage() {
 	v.t.Helper()
 
 	v.objsInstantiatedMtx.Lock()
@@ -164,252 +248,4 @@ func (v *validatingPool) validateUsage() {
 	for id, returned := range v.objsInstantiated {
 		require.True(v.t, returned, "object with id %d has not been returned to pool", id)
 	}
-}
-
-type validatingByteSlicePool struct {
-	validatingPool
-}
-
-func newValidatingByteSlicePool(t *testing.T, capacity int) *validatingByteSlicePool {
-	new := func() interface{} {
-		obj := make([]byte, 0, capacity)
-		return &obj
-	}
-
-	interfaceToType := func(obj interface{}) *[]byte {
-		switch obj := obj.(type) {
-		case *[]byte:
-			return obj
-		default:
-			t.Fatalf("Object of invalid type given: %s", reflect.TypeOf(obj))
-			return nil // Just for linter.
-		}
-	}
-
-	id := func(obj interface{}) interface{} {
-		objT := interfaceToType(obj)
-
-		// We uniquely identify objects of type *[]byte by the address of the underlying data array.
-		return (*reflect.SliceHeader)(unsafe.Pointer(objT)).Data
-	}
-
-	return &validatingByteSlicePool{*newValidatingPool(t, new, id, nil)}
-}
-
-// get returns a pointer to a byte slice from the pool, it must be returned to the pool before validateUsage() is called.
-func (v *validatingByteSlicePool) get() *[]byte {
-	return v.validatingPool.get().(*[]byte)
-}
-
-// put returns a pointer to a byte slice to the pool, it  must have been created by the pool and it must only be returned once.
-func (v *validatingByteSlicePool) put(obj *[]byte) {
-	v.validatingPool.put(obj)
-}
-
-type validatingRequestPool struct {
-	validatingPool
-}
-
-func newValidatingRequestPool(t *testing.T) *validatingRequestPool {
-	new := func() interface{} {
-		return &request{}
-	}
-
-	interfaceToType := func(obj interface{}) *request {
-		switch obj := obj.(type) {
-		case *request:
-			return obj
-		default:
-			t.Fatalf("Object of invalid type given: %s", reflect.TypeOf(obj))
-			return nil // Just for linter.
-		}
-	}
-
-	id := func(obj interface{}) interface{} {
-		objT := interfaceToType(obj)
-
-		// We uniquely identify objects of type *request by the address which the pointer is referring to.
-		return reflect.ValueOf(objT).Pointer()
-	}
-
-	return &validatingRequestPool{*newValidatingPool(t, new, id, nil)}
-}
-
-// get returns a pointer to a request from the pool, it must be returned to the pool before validateUsage() is called.
-func (v *validatingRequestPool) get() *request {
-	return v.validatingPool.get().(*request)
-}
-
-// put returns a pointer to a request to the pool, it  must have been created by the pool and it must only be returned once.
-func (v *validatingRequestPool) put(obj *request) {
-	v.validatingPool.put(obj)
-}
-
-type validatingBytesReaderPool struct {
-	validatingPool
-}
-
-func newValidatingBytesReaderPool(t *testing.T) *validatingBytesReaderPool {
-	new := func() interface{} {
-		return bytes.NewReader(nil)
-	}
-
-	interfaceToType := func(obj interface{}) *bytes.Reader {
-		switch obj := obj.(type) {
-		case *bytes.Reader:
-			return obj
-		default:
-			t.Fatalf("Object of invalid type given: %s", reflect.TypeOf(obj))
-			return nil // Just for linter.
-		}
-	}
-
-	id := func(obj interface{}) interface{} {
-		objT := interfaceToType(obj)
-
-		// We uniquely identify objects of type *bytes.Reader by the address which the pointer is referring to.
-		return reflect.ValueOf(objT).Pointer()
-	}
-
-	return &validatingBytesReaderPool{*newValidatingPool(t, new, id, nil)}
-}
-
-// get returns a pointer to a bytes reader from the pool, it must be returned to the pool before validateUsage() is called.
-func (v *validatingBytesReaderPool) get() *bytes.Reader {
-	return v.validatingPool.get().(*bytes.Reader)
-}
-
-// put returns a pointer to a bytes reader to the pool, it  must have been created by the pool and it must only be returned once.
-func (v *validatingBytesReaderPool) put(obj *bytes.Reader) {
-	v.validatingPool.put(obj)
-}
-
-type validatingTsByTargetsPool struct {
-	validatingPool
-}
-
-func newValidatingTsByTargetsPool(t *testing.T) *validatingTsByTargetsPool {
-	new := func() interface{} {
-		return make(tsByTargets)
-	}
-
-	interfaceToType := func(obj interface{}) tsByTargets {
-		switch obj := obj.(type) {
-		case tsByTargets:
-			return obj
-		default:
-			t.Fatalf("Object of invalid type given: %s", reflect.TypeOf(obj))
-			return nil // Just for linter.
-		}
-	}
-
-	id := func(obj interface{}) interface{} {
-		objT := interfaceToType(obj)
-
-		// We uniquely identify objects of type tsByTargets by the address which the pointer
-		// is referring to because map types are just pointers.
-		return reflect.ValueOf(objT).Pointer()
-	}
-
-	return &validatingTsByTargetsPool{*newValidatingPool(t, new, id, nil)}
-}
-
-// get returns a tsByTargets from the pool, it must be returned to the pool before validateUsage() is called.
-func (v *validatingTsByTargetsPool) get() tsByTargets {
-	return v.validatingPool.get().(tsByTargets)
-}
-
-// put returns a tsByTargets to the pool, it  must have been created by the pool and it must only be returned once.
-func (v *validatingTsByTargetsPool) put(obj tsByTargets) {
-	v.validatingPool.put(obj)
-}
-
-type validatingTsPool struct {
-	validatingPool
-}
-
-func newValidatingTsPool(t *testing.T) *validatingTsPool {
-	new := func() interface{} {
-		return &mimirpb.TimeSeries{}
-	}
-
-	interfaceToType := func(obj interface{}) *mimirpb.TimeSeries {
-		switch obj := obj.(type) {
-		case *mimirpb.TimeSeries:
-			return obj
-		default:
-			t.Fatalf("Object of invalid type given: %s", reflect.TypeOf(obj))
-			return nil // Just for linter.
-		}
-	}
-
-	id := func(obj interface{}) interface{} {
-		objT := interfaceToType(obj)
-
-		// We uniquely identify objects of type *TimeSeries by the address which the pointer is referring to.
-		return reflect.ValueOf(objT).Pointer()
-	}
-
-	return &validatingTsPool{*newValidatingPool(t, new, id, nil)}
-}
-
-// get returns a time series object from the pool, it must be returned to the pool before validateUsage() is called.
-func (v *validatingTsPool) get() *mimirpb.TimeSeries {
-	return v.validatingPool.get().(*mimirpb.TimeSeries)
-}
-
-// put returns a time series object to the pool, it  must have been created by the pool and it must only be returned once.
-func (v *validatingTsPool) put(obj *mimirpb.TimeSeries) {
-	v.validatingPool.put(obj)
-}
-
-type validatingTsSlicePool struct {
-	validatingPool
-}
-
-func newValidatingTsSlicePool(t *testing.T, initialCap int, putTs func(*mimirpb.TimeSeries)) *validatingTsSlicePool {
-	new := func() interface{} {
-		return make([]mimirpb.PreallocTimeseries, 0, initialCap)
-	}
-
-	interfaceToType := func(obj interface{}) []mimirpb.PreallocTimeseries {
-		switch obj := obj.(type) {
-		case []mimirpb.PreallocTimeseries:
-			return obj
-		default:
-			t.Fatalf("Object of invalid type given: %s", reflect.TypeOf(obj))
-			return nil // Just for linter.
-		}
-	}
-
-	id := func(obj interface{}) interface{} {
-		objT := interfaceToType(obj)
-
-		// We uniquely identify objects of type *TimeSeries by the address of the underlying data array.
-		return (*reflect.SliceHeader)(unsafe.Pointer(&objT)).Data
-	}
-
-	prepareForPut := func(obj interface{}) interface{} {
-		objT := interfaceToType(obj)
-
-		for _, ts := range objT {
-			// When returning a slice of PreallocTimeseries to the pool we first need to return the contained
-			// TimeSeries objects to their pool, the original methods in the mimirpb package do the same.
-			putTs(ts.TimeSeries)
-		}
-
-		return obj
-	}
-
-	return &validatingTsSlicePool{*newValidatingPool(t, new, id, prepareForPut)}
-}
-
-// get returns a slice of time series from the pool, it must be returned to the pool before validateUsage() is called.
-func (v *validatingTsSlicePool) get() []mimirpb.PreallocTimeseries {
-	return v.validatingPool.get().([]mimirpb.PreallocTimeseries)
-}
-
-// put returns a slice of time series to the pool, it  must have been created by the pool and it must only be returned once.
-func (v *validatingTsSlicePool) put(obj []mimirpb.PreallocTimeseries) {
-	v.validatingPool.put(obj)
 }

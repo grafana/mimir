@@ -367,7 +367,7 @@ func TestForwardingEnsureThatPooledObjectsGetReturned(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			forwarder, validatePoolUsage := getForwarderWithValidatingPools(t, sampleCount, 1000, 1000)
+			forwarder, validatePoolUsage := getForwarderWithValidatingPools(t, 1000, 1000, sampleCount, 1000, 1000)
 			url1, _, bodies1, closer1 := newTestServer(t, 200, true)
 			defer closer1()
 			url2, _, bodies2, closer2 := newTestServer(t, 200, true)
@@ -451,13 +451,13 @@ func TestForwardingEnsureThatPooledObjectsGetReturned(t *testing.T) {
 // The specified caps must be large enough to hold all the data that will be stored in the respective slices because
 // otherwise any "append()" will replace the slice which will result in a test failure because the original slice
 // won't be returned to the pool.
-func getForwarderWithValidatingPools(t *testing.T, tsSliceCap, protobufCap, snappyCap int) (*forwarder, func()) {
+func getForwarderWithValidatingPools(t *testing.T, labelBackingSliceCap, labelBackingSlicesCap, tsSliceCap, protobufCap, snappyCap int) (*forwarder, func()) {
 	t.Helper()
 
 	var validateUsage func()
 	f, _ := newForwarder(t, testConfig, false)
 	fTyped := f.(*forwarder)
-	fTyped.pools, validateUsage = validatingPools(t, tsSliceCap, protobufCap, snappyCap)
+	fTyped.pools, validateUsage = validatingPools(t, labelBackingSliceCap, labelBackingSlicesCap, tsSliceCap, protobufCap, snappyCap)
 
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), f))
 

@@ -13,38 +13,50 @@ import (
 // Even though protobuf and snappy are both pools of []byte we keep them separate because the slices
 // which they contain are likely to have very different sizes.
 type pools struct {
-	protobuf    sync.Pool
-	snappy      sync.Pool
-	request     sync.Pool
-	bytesReader sync.Pool
-	tsByTargets sync.Pool
+	labelBackingSlice  sync.Pool
+	labelBackingSlices sync.Pool
+	protobuf           sync.Pool
+	snappy             sync.Pool
+	request            sync.Pool
+	bytesReader        sync.Pool
+	tsByTargets        sync.Pool
 
 	// Mockable for testing.
-	getProtobuf    func() *[]byte
-	putProtobuf    func(*[]byte)
-	getSnappy      func() *[]byte
-	putSnappy      func(*[]byte)
-	getReq         func() *request
-	putReq         func(*request)
-	getBytesReader func() *bytes.Reader
-	putBytesReader func(*bytes.Reader)
-	getTsByTargets func() tsByTargets
-	putTsByTargets func(tsByTargets)
-	getTs          func() *mimirpb.TimeSeries
-	putTs          func(*mimirpb.TimeSeries)
-	getTsSlice     func() []mimirpb.PreallocTimeseries
-	putTsSlice     func([]mimirpb.PreallocTimeseries)
+	getLabelBackingSlice  func() *[]byte
+	putLabelBackingSlice  func(*[]byte)
+	getLabelBackingSlices func() *[]*[]byte
+	putLabelBackingSlices func(*[]*[]byte)
+	getProtobuf           func() *[]byte
+	putProtobuf           func(*[]byte)
+	getSnappy             func() *[]byte
+	putSnappy             func(*[]byte)
+	getReq                func() *request
+	putReq                func(*request)
+	getBytesReader        func() *bytes.Reader
+	putBytesReader        func(*bytes.Reader)
+	getTsByTargets        func() tsByTargets
+	putTsByTargets        func(tsByTargets)
+	getTs                 func() *mimirpb.TimeSeries
+	putTs                 func(*mimirpb.TimeSeries)
+	getTsSlice            func() []mimirpb.PreallocTimeseries
+	putTsSlice            func([]mimirpb.PreallocTimeseries)
 }
 
 func newPools() *pools {
 	p := &pools{
-		protobuf:    sync.Pool{New: func() interface{} { return &[]byte{} }},
-		snappy:      sync.Pool{New: func() interface{} { return &[]byte{} }},
-		request:     sync.Pool{New: func() interface{} { return &request{} }},
-		bytesReader: sync.Pool{New: func() interface{} { return bytes.NewReader(nil) }},
-		tsByTargets: sync.Pool{New: func() interface{} { return make(tsByTargets) }},
+		labelBackingSlice:  sync.Pool{New: func() interface{} { return &[]byte{} }},
+		labelBackingSlices: sync.Pool{New: func() interface{} { return &[]*[]byte{} }},
+		protobuf:           sync.Pool{New: func() interface{} { return &[]byte{} }},
+		snappy:             sync.Pool{New: func() interface{} { return &[]byte{} }},
+		request:            sync.Pool{New: func() interface{} { return &request{} }},
+		bytesReader:        sync.Pool{New: func() interface{} { return bytes.NewReader(nil) }},
+		tsByTargets:        sync.Pool{New: func() interface{} { return make(tsByTargets) }},
 	}
 
+	p.getLabelBackingSlice = getter[*[]byte](&p.labelBackingSlice)
+	p.putLabelBackingSlice = putter[*[]byte](&p.labelBackingSlice)
+	p.getLabelBackingSlices = getter[*[]*[]byte](&p.labelBackingSlices)
+	p.putLabelBackingSlices = putter[*[]*[]byte](&p.labelBackingSlices)
 	p.getProtobuf = getter[*[]byte](&p.protobuf)
 	p.putProtobuf = putter[*[]byte](&p.protobuf)
 	p.getSnappy = getter[*[]byte](&p.snappy)
