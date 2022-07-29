@@ -21,7 +21,7 @@ To see the current configuration state of any component, use the [`/config`]({{<
 
 Some configurations, such as object storage backend, are repeated for multiple components.
 To avoid the repetition in the configuration file, use the [`common`]({{< relref "../configuring/reference-configuration-parameters/index.md#common" >}}) configuration section or `-common.*` CLI flags.
-Common configurations are first applied to all the specific configurations, which allows  them to be overridden later by specific values.
+Common configurations are first applied to all the specific configurations, which allows them to be overridden later by specific values.
 
 For example, the following configuration uses the same Amazon S3 object storage bucket called `mimir`. The common storage is located in the `us-east` region for both ruler and alertmanager stores, and the blocks storage uses the `mimir-blocks` bucket from the same region:
 

@@ -17,7 +17,7 @@ The supported backends are:
 
 Additionally, a file system emulated [`filesystem`]({{< relref "../configuring/reference-configuration-parameters/index.md#filesystem_storage_backend" >}}) object storage implementation can be also used for testing purposes (it's not recommended for production workloads).
 
-Ruler and alertmanager support a `local` implementation, which is similar to `filesystem` in the way that it uses the local file system, but it is a read-only data source and can be used to provision state into those components.
+[Ruler and alertmanager support a `local` implementation]({{< relref "../architecture/components/ruler/index.md#local-storage" >}}), which is similar to `filesystem` in the way that it uses the local file system, but it is a read-only data source and can be used to provision state into those components.
 
 ## Common configuration
 
