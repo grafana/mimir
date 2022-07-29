@@ -211,6 +211,21 @@ func (i *instantSplitter) mapCall(expr *parser.Call) (mapped parser.Expr, finish
 		return i.mapCallRate(expr)
 	case resets:
 		return i.mapCallVectorAggregation(expr, parser.SUM)
+	case "sort", "sort_desc":
+		mapped, finished, err := i.mapCallVectorAggregation(expr, parser.SUM)
+		if err != nil {
+			return nil, false, err
+		}
+		if !finished {
+			return expr, false, nil
+		}
+		// TODO: ugly
+		expr.Args[0] = mapped
+		return &parser.Call{
+			Func:     parser.Functions[expr.Func.Name],
+			Args:     expr.Args,
+			PosRange: expr.PosRange,
+		}, true, nil
 	case sumOverTime:
 		return i.mapCallVectorAggregation(expr, parser.SUM)
 	default:
@@ -327,6 +342,24 @@ func (i *instantSplitter) mapCallByRangeInterval(expr *parser.Call, rangeInterva
 	}, true, nil
 }
 
+func assertDoubleCountBoundaries(expr parser.Expr) bool {
+	var res []bool
+	_, _ = anyNode(expr, func(entry parser.Node) (bool, error) {
+		switch e := entry.(type) {
+		case *parser.Call:
+			res = append(res, cannotDoubleCountBoundaries[e.Func.Name])
+		}
+
+		return false, nil
+	})
+
+	var result = false
+	for _, r := range res {
+		result = result || r
+	}
+	return result
+}
+
 // expr is the range vector aggregator expression
 // If the outer expression is a vector aggregator, r.outerAggregationExpr will contain the expression
 // In this case, the vector aggregator should be downstream to the embedded queries in order to limit
@@ -354,7 +387,7 @@ func (i *instantSplitter) splitAndSquashCall(expr *parser.Call, rangeInterval ti
 		splitOffset := time.Duration(split) * i.interval
 		// The range interval of the last embedded query can be smaller than i.interval
 		splitRangeInterval := i.interval
-		if lastSplit := split == splitCount-1; cannotDoubleCountBoundaries[expr.Func.Name] && !lastSplit {
+		if lastSplit := split == splitCount-1; assertDoubleCountBoundaries(expr) && !lastSplit {
 			splitRangeInterval -= time.Millisecond
 		}
 		if splitOffset+splitRangeInterval > rangeInterval {

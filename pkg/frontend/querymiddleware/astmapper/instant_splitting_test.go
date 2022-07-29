@@ -152,12 +152,12 @@ func TestInstantSplitter(t *testing.T) {
 		},
 		{
 			in:                   `sort(sum_over_time({app="foo"}[3m]))`,
-			out:                  `sort(sum without() (` + concatOffsets(splitInterval, 3, false, `sum_over_time({app="foo"}[x]y)`) + `))`,
+			out:                  `sort(sum without() (` + concatOffsets(splitInterval, 3, false, `sort(sum_over_time({app="foo"}[x]y))`) + `))`,
 			expectedSplitQueries: 3,
 		},
 		{
 			in:                   `sort_desc(sum_over_time({app="foo"}[3m]))`,
-			out:                  `sort_desc(sum without() (` + concatOffsets(splitInterval, 3, false, `sum_over_time({app="foo"}[x]y)`) + `))`,
+			out:                  `sort_desc(sum without() (` + concatOffsets(splitInterval, 3, false, `sort_desc(sum_over_time({app="foo"}[x]y))`) + `))`,
 			expectedSplitQueries: 3,
 		},
 		{
