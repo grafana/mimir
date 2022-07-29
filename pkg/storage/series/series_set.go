@@ -6,9 +6,11 @@
 package series
 
 import (
+	"errors"
 	"sort"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -89,11 +91,14 @@ func NewConcreteSeriesIterator(series *ConcreteSeries) chunkenc.Iterator {
 	}
 }
 
-func (c *concreteSeriesIterator) Seek(t int64) bool {
+func (c *concreteSeriesIterator) Seek(t int64) chunkenc.ValueType {
 	c.cur = sort.Search(len(c.series.samples), func(n int) bool {
 		return c.series.samples[n].Timestamp >= model.Time(t)
 	})
-	return c.cur < len(c.series.samples)
+	if c.cur < len(c.series.samples) {
+		return chunkenc.ValFloat
+	}
+	return chunkenc.ValNone
 }
 
 func (c *concreteSeriesIterator) At() (t int64, v float64) {
@@ -101,9 +106,25 @@ func (c *concreteSeriesIterator) At() (t int64, v float64) {
 	return int64(s.Timestamp), float64(s.Value)
 }
 
-func (c *concreteSeriesIterator) Next() bool {
+func (c *concreteSeriesIterator) Next() chunkenc.ValueType {
 	c.cur++
-	return c.cur < len(c.series.samples)
+	if c.cur < len(c.series.samples) {
+		return chunkenc.ValFloat
+	}
+	return chunkenc.ValNone
+}
+
+func (c *concreteSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
+	panic(errors.New("concreteSeriesIterator: AtHistogram not implemented"))
+}
+
+func (c *concreteSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+	panic(errors.New("concreteSeriesIterator: AtHistogram not implemented"))
+}
+
+func (c *concreteSeriesIterator) AtT() int64 {
+	s := c.series.samples[c.cur]
+	return int64(s.Timestamp)
 }
 
 func (c *concreteSeriesIterator) Err() error {
@@ -120,16 +141,28 @@ type errIterator struct {
 	err error
 }
 
-func (errIterator) Seek(int64) bool {
-	return false
+func (errIterator) Seek(int64) chunkenc.ValueType {
+	return chunkenc.ValNone
 }
 
-func (errIterator) Next() bool {
-	return false
+func (errIterator) Next() chunkenc.ValueType {
+	return chunkenc.ValNone
 }
 
 func (errIterator) At() (t int64, v float64) {
 	return 0, 0
+}
+
+func (errIterator) AtHistogram() (int64, *histogram.Histogram) {
+	return 0, nil
+}
+
+func (errIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+	return 0, nil
+}
+
+func (errIterator) AtT() int64 {
+	return 0
 }
 
 func (e errIterator) Err() error {

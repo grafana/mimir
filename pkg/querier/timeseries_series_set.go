@@ -8,6 +8,8 @@ package querier
 import (
 	"sort"
 
+	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -80,7 +82,7 @@ func (t *timeseries) Iterator() chunkenc.Iterator {
 }
 
 // Seek implements SeriesIterator interface
-func (t *timeSeriesSeriesIterator) Seek(s int64) bool {
+func (t *timeSeriesSeriesIterator) Seek(s int64) chunkenc.ValueType {
 	offset := 0
 	if t.i > 0 {
 		offset = t.i // only advance via Seek
@@ -90,7 +92,10 @@ func (t *timeSeriesSeriesIterator) Seek(s int64) bool {
 		return t.ts.series.Samples[offset+i].TimestampMs >= s
 	}) + offset
 
-	return t.i < len(t.ts.series.Samples)
+	if t.i < len(t.ts.series.Samples) {
+		return chunkenc.ValFloat
+	}
+	return chunkenc.ValNone
 }
 
 // At implements the SeriesIterator interface
@@ -101,8 +106,30 @@ func (t *timeSeriesSeriesIterator) At() (int64, float64) {
 	return t.ts.series.Samples[t.i].TimestampMs, t.ts.series.Samples[t.i].Value
 }
 
+// AtHistogram implements chunkenc.Iterator.
+func (t *timeSeriesSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
+	panic(errors.New("timeSeriesSeriesIterator: AtFloatHistogram is not implemented"))
+}
+
+// AtFloatHistogram implements chunkenc.Iterator.
+func (t *timeSeriesSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+	panic(errors.New("timeSeriesSeriesIterator: AtFloatHistogram is not implemented"))
+}
+
+// AtT implements the SeriesIterator interface
+func (t *timeSeriesSeriesIterator) AtT() int64 {
+	ts, _ := t.At()
+	return ts
+}
+
 // Next implements the SeriesIterator interface
-func (t *timeSeriesSeriesIterator) Next() bool { t.i++; return t.i < len(t.ts.series.Samples) }
+func (t *timeSeriesSeriesIterator) Next() chunkenc.ValueType {
+	t.i++
+	if t.i < len(t.ts.series.Samples) {
+		return chunkenc.ValFloat
+	}
+	return chunkenc.ValNone
+}
 
 // Err implements the SeriesIterator interface
 func (t *timeSeriesSeriesIterator) Err() error { return nil }

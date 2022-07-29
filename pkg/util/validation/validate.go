@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 
@@ -47,6 +48,12 @@ var (
 	reasonExemplarTimestampInvalid = metricReasonFromErrorID(globalerror.ExemplarTimestampInvalid)
 	reasonExemplarLabelsBlank      = "exemplar_labels_blank"
 	reasonExemplarTooOld           = "exemplar_too_old"
+
+	// Discarded histograms reasons.
+	reasonHistogramSpansBucketsMismatch = metricReasonFromErrorID(globalerror.HistogramSpansBucketsMismatch)
+	reasonHistogramSpanNegativeOffset   = metricReasonFromErrorID(globalerror.HistogramSpanNegativeOffset)
+	reasonHistogramNegativeBucketCount  = metricReasonFromErrorID(globalerror.HistogramNegativeBucketCount)
+	reasonHistogramCountNotBigEnough    = metricReasonFromErrorID(globalerror.HistogramCountNotBigEnough)
 
 	// Discarded metadata reasons.
 	reasonMetadataMetricNameTooLong = metricReasonFromErrorID(globalerror.MetricMetadataMetricNameTooLong)
@@ -92,6 +99,15 @@ var DiscardedExemplars = prometheus.NewCounterVec(
 	[]string{discardReasonLabel, "user"},
 )
 
+// DiscardedHistograms is a metric of the number of discarded histograms, by reason.const
+var DiscardedHistograms = prometheus.NewCounterVec(
+	prometheus.CounterOpts{
+		Name: "cortex_discarded_histograms_total",
+		Help: "The total number of histograms that were discarded.",
+	},
+	[]string{discardReasonLabel, "user"},
+)
+
 // DiscardedMetadata is a metric of the number of discarded metadata, by reason.
 var DiscardedMetadata = prometheus.NewCounterVec(
 	prometheus.CounterOpts{
@@ -120,7 +136,7 @@ func ValidateSample(now model.Time, cfg SampleValidationConfig, userID string, l
 
 	if model.Time(s.TimestampMs) > now.Add(cfg.CreationGracePeriod(userID)) {
 		DiscardedSamples.WithLabelValues(reasonTooFarInFuture, userID).Inc()
-		return newSampleTimestampTooNewError(unsafeMetricName, s.TimestampMs)
+		return newSampleTimestampTooNewError("sample", unsafeMetricName, s.TimestampMs)
 	}
 
 	return nil
@@ -172,6 +188,74 @@ func ValidateExemplar(userID string, ls []mimirpb.LabelAdapter, e mimirpb.Exempl
 	if !foundValidLabel {
 		DiscardedExemplars.WithLabelValues(reasonExemplarLabelsBlank, userID).Inc()
 		return newExemplarEmptyLabelsError(ls, e.Labels, e.TimestampMs)
+	}
+
+	return nil
+}
+
+// ValidateHistograms returns an err if the histogram is invalid.
+// The returned error may retain the provided series labels.
+// It uses the passed 'now' time to measure the relative time of the histogram.
+func ValidateHistogram(now model.Time, cfg SampleValidationConfig, userID string, ls []mimirpb.LabelAdapter, h mimirpb.Histogram) ValidationError {
+	unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
+
+	if model.Time(h.Timestamp) > now.Add(cfg.CreationGracePeriod(userID)) {
+		DiscardedSamples.WithLabelValues(reasonTooFarInFuture, userID).Inc()
+		return newSampleTimestampTooNewError("histogram", unsafeMetricName, h.Timestamp)
+	}
+
+	checkSpans := func(spans []*mimirpb.BucketSpan, numBuckets int) error {
+		var spanBuckets int
+		for n, span := range spans {
+			if n > 0 && span.Offset < 0 {
+				DiscardedHistograms.WithLabelValues(reasonHistogramSpanNegativeOffset, userID).Inc()
+				return newHistogramSpanNegativeOffsetError(n+1, span.Offset, h.Timestamp, unsafeMetricName)
+			}
+			spanBuckets += int(span.Length)
+		}
+		if spanBuckets != numBuckets {
+			DiscardedHistograms.WithLabelValues(reasonHistogramSpansBucketsMismatch, userID).Inc()
+			return newHistogramDifferentNumberSpansBucketsError(spanBuckets, numBuckets, h.Timestamp, unsafeMetricName)
+		}
+		return nil
+	}
+
+	if err := checkSpans(h.NegativeSpans, len(h.NegativeDeltas)); err != nil {
+		return errors.Wrap(err, "negative side")
+	}
+	if err := checkSpans(h.PositiveSpans, len(h.PositiveDeltas)); err != nil {
+		return errors.Wrap(err, "positive side")
+	}
+
+	checkBuckets := func(buckets []int64) (uint64, error) {
+		if len(buckets) == 0 {
+			return 0, nil
+		}
+		var count uint64
+		var last int64
+		for i := 0; i < len(buckets); i++ {
+			last += buckets[i]
+			if last < 0 {
+				DiscardedHistograms.WithLabelValues(reasonHistogramNegativeBucketCount, userID).Inc()
+				return 0, newHistogramNegativeBucketCountError(i+1, last, h.Timestamp, unsafeMetricName)
+			}
+			count += uint64(last)
+		}
+		return count, nil
+	}
+
+	negativeCount, err := checkBuckets(h.NegativeDeltas)
+	if err != nil {
+		return errors.Wrap(err, "negative side")
+	}
+	positiveCount, err := checkBuckets(h.PositiveDeltas)
+	if err != nil {
+		return errors.Wrap(err, "positive side")
+	}
+
+	if c := negativeCount + positiveCount; c > h.GetCountInt() {
+		DiscardedHistograms.WithLabelValues(reasonHistogramCountNotBigEnough, userID).Inc()
+		return newHistogramCountNotBigEnoughError(c, h.GetCountInt(), h.Timestamp, unsafeMetricName)
 	}
 
 	return nil

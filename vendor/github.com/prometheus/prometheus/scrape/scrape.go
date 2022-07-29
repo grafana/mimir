@@ -40,6 +40,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/model/textparse"
@@ -756,7 +757,7 @@ type targetScraper struct {
 
 var errBodySizeLimit = errors.New("body size limit exceeded")
 
-const acceptHeader = `application/openmetrics-text;version=1.0.0,application/openmetrics-text;version=0.0.1;q=0.75,text/plain;version=0.0.4;q=0.5,*/*;q=0.1`
+const acceptHeader = `application/vnd.google.protobuf; proto=io.prometheus.client.MetricFamily; encoding=delimited,application/openmetrics-text;version=1.0.0;q=0.75,text/plain;version=0.0.4;q=0.5,*/*;q=0.1`
 
 var UserAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 
@@ -1475,8 +1476,12 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 loop:
 	for {
 		var (
-			et          textparse.Entry
-			sampleAdded bool
+			et                       textparse.Entry
+			sampleAdded, isHistogram bool
+			met                      []byte
+			parsedTimestamp          *int64
+			val                      float64
+			h                        *histogram.Histogram
 		)
 		if et, err = p.Next(); err != nil {
 			if err == io.EOF {
@@ -1496,17 +1501,23 @@ loop:
 			continue
 		case textparse.EntryComment:
 			continue
+		case textparse.EntryHistogram:
+			isHistogram = true
 		default:
 		}
 		total++
 
 		t := defTime
-		met, tp, v := p.Series()
-		if !sl.honorTimestamps {
-			tp = nil
+		if isHistogram {
+			met, parsedTimestamp, h = p.Histogram()
+		} else {
+			met, parsedTimestamp, val = p.Series()
 		}
-		if tp != nil {
-			t = *tp
+		if !sl.honorTimestamps {
+			parsedTimestamp = nil
+		}
+		if parsedTimestamp != nil {
+			t = *parsedTimestamp
 		}
 
 		if sl.cache.getDropped(yoloString(met)) {
@@ -1549,8 +1560,12 @@ loop:
 			}
 		}
 
-		ref, err = app.Append(ref, lset, t, v)
-		sampleAdded, err = sl.checkAddError(ce, met, tp, err, &sampleLimitErr, &appErrs)
+		if isHistogram {
+			ref, err = app.AppendHistogram(ref, lset, t, h)
+		} else {
+			ref, err = app.Append(ref, lset, t, val)
+		}
+		sampleAdded, err = sl.checkAddError(ce, met, parsedTimestamp, err, &sampleLimitErr, &appErrs)
 		if err != nil {
 			if err != storage.ErrNotFound {
 				level.Debug(sl.l).Log("msg", "Unexpected error", "series", string(met), "err", err)
@@ -1559,7 +1574,7 @@ loop:
 		}
 
 		if !ok {
-			if tp == nil {
+			if parsedTimestamp == nil {
 				// Bypass staleness logic if there is an explicit timestamp.
 				sl.cache.trackStaleness(hash, lset)
 			}

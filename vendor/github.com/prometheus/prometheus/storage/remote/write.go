@@ -26,6 +26,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/wal"
@@ -43,6 +44,12 @@ var (
 		Subsystem: subsystem,
 		Name:      "exemplars_in_total",
 		Help:      "Exemplars in to remote storage, compare to exemplars out for queue managers.",
+	})
+	histogramsIn = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: namespace,
+		Subsystem: subsystem,
+		Name:      "histograms_in_total",
+		Help:      "Histograms in to remote storage, compare to histograms out for queue managers.",
 	})
 )
 
@@ -187,6 +194,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rws.highestTimestamp,
 			rws.scraper,
 			rwConf.SendExemplars,
+			rwConf.SendNativeHistograms,
 		)
 		// Keep track of which queues are new so we know which to start.
 		newHashes = append(newHashes, hash)
@@ -250,6 +258,7 @@ type timestampTracker struct {
 	writeStorage         *WriteStorage
 	samples              int64
 	exemplars            int64
+	histograms           int64
 	highestTimestamp     int64
 	highestRecvTimestamp *maxTimestamp
 }
@@ -268,12 +277,21 @@ func (t *timestampTracker) AppendExemplar(_ storage.SeriesRef, _ labels.Labels, 
 	return 0, nil
 }
 
+func (t *timestampTracker) AppendHistogram(_ storage.SeriesRef, _ labels.Labels, ts int64, h *histogram.Histogram) (storage.SeriesRef, error) {
+	t.histograms++
+	if ts > t.highestTimestamp {
+		t.highestTimestamp = ts
+	}
+	return 0, nil
+}
+
 // Commit implements storage.Appender.
 func (t *timestampTracker) Commit() error {
-	t.writeStorage.samplesIn.incr(t.samples + t.exemplars)
+	t.writeStorage.samplesIn.incr(t.samples + t.exemplars + t.histograms)
 
 	samplesIn.Add(float64(t.samples))
 	exemplarsIn.Add(float64(t.exemplars))
+	histogramsIn.Add(float64(t.histograms))
 	t.highestRecvTimestamp.Set(float64(t.highestTimestamp / 1000))
 	return nil
 }

@@ -301,5 +301,6 @@ func ReuseTimeseries(ts *TimeSeries) {
 		}
 	}
 	ts.Exemplars = ts.Exemplars[:0]
+	ts.Histograms = ts.Histograms[:0]
 	timeSeriesPool.Put(ts)
 }
