@@ -155,7 +155,7 @@ func (f *Frontend) cleanupInactiveUserMetrics(user string) {
 	f.discardedRequests.DeleteLabelValues(user)
 }
 
-// RoundTripGRPC round trips a proto (instead of a HTTP request).
+// RoundTripGRPC round trips a proto (instead of an HTTP request).
 func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error) {
 	// Propagate trace context in gRPC too - this will be ignored if using HTTP.
 	tracer, span := opentracing.GlobalTracer(), opentracing.SpanFromContext(ctx)

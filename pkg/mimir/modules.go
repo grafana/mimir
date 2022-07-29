@@ -423,7 +423,6 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		return nil, nil
 	}
 
-	t.Cfg.Worker.MaxConcurrentRequests = t.Cfg.Querier.EngineConfig.MaxConcurrent
 	return querier_worker.NewQuerierWorker(t.Cfg.Worker, httpgrpc_server.NewServer(internalQuerierRouter), util_log.Logger, prometheus.DefaultRegisterer)
 }
 

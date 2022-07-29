@@ -23,15 +23,10 @@ type queryTracker struct {
 }
 
 // newQueryTracker creates new queryTracker for use by PromQL engine. Activity tracker may be nil.
-func newQueryTracker(maxConcurrent int, tracker *activitytracker.ActivityTracker) *queryTracker {
-	semaIniValue := maxConcurrent
-	if semaIniValue <= 0 {
-		semaIniValue = math.MaxInt
-	}
-
+func newQueryTracker(tracker *activitytracker.ActivityTracker) *queryTracker {
 	return &queryTracker{
-		maxConcurrent: maxConcurrent,
-		sema:          semaphore.NewWeighted(int64(semaIniValue)),
+		maxConcurrent: math.MaxInt,
+		sema:          semaphore.NewWeighted(int64(math.MaxInt)),
 		tracker:       tracker,
 	}
 }

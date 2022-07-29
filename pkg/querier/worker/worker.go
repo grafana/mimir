@@ -28,13 +28,14 @@ type Config struct {
 	FrontendAddress       string        `yaml:"frontend_address"`
 	SchedulerAddress      string        `yaml:"scheduler_address"`
 	DNSLookupPeriod       time.Duration `yaml:"dns_lookup_duration" category:"advanced"`
-	MaxConcurrentRequests int           `yaml:"-"` // Must be same as passed to PromQL Engine.
+	MaxConcurrentRequests int           `yaml:"max-concurrent"`
 	QuerierID             string        `yaml:"id" category:"advanced"`
 
 	GRPCClientConfig grpcclient.Config `yaml:"grpc_client_config"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
+	f.IntVar(&cfg.MaxConcurrentRequests, "querier.max-concurrent", 20, "The maximum number of concurrent queries.")
 	f.StringVar(&cfg.SchedulerAddress, "querier.scheduler-address", "", "Address of the query-scheduler component, in host:port format. Only one of -querier.frontend-address or -querier.scheduler-address can be set. If neither is set, queries are only received via HTTP endpoint.")
 	f.StringVar(&cfg.FrontendAddress, "querier.frontend-address", "", "Address of the query-frontend component, in host:port format. Only one of -querier.frontend-address or -querier.scheduler-address can be set. If neither is set, queries are only received via HTTP endpoint.")
 	f.DurationVar(&cfg.DNSLookupPeriod, "querier.dns-lookup-period", 10*time.Second, "How often to query DNS for query-frontend or query-scheduler address.")

@@ -82,10 +82,6 @@ To balance the number of workers connected to each query-frontend, the querier w
 If you run more query-frontend replicas than the number of workers per querier, the querier increases the number of internal workers to match the query-frontend replicas.
 This ensures that all query-frontends have some of the workers connected.
 
-However, the PromQL engine running in the querier is also configured with a max concurrency equal to `-querier.max-concurrent`.
-If the number of querier workers is higher than the PromQL engine maximum concurrency, a worker might pull a query from the query-frontend, but not be able to execute it because the maximum concurrency has been reached.
-The queries exceeding the configured maximum concurrency create a backlog in the querier until other queries have been executed.
-
 The backlog might cause a suboptimal utilization of querier resources, which can result in poor query performance when you run Grafana Mimir at scale.
 
 The [query-scheduler]({{< relref "../query-scheduler/index.md" >}}) is an optional component that you can deploy to overcome the query-frontend scalability limitations.
