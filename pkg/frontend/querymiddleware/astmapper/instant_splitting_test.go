@@ -303,18 +303,18 @@ func TestInstantSplitterUnevenRangeInterval(t *testing.T) {
 		},
 		{
 			in:                   `avg_over_time({app="foo"}[3m])`,
-			out:                  `(sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"sum_over_time({app=\\\"foo\\\"}[1m] offset 2m)\",\"sum_over_time({app=\\\"foo\\\"}[2m])\"]}"})) / (sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"count_over_time({app=\\\"foo\\\"}[1m] offset 2m)\",\"count_over_time({app=\\\"foo\\\"}[2m])\"]}"}))`,
+			out:                  `(sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"sum_over_time({app=\\\"foo\\\"}[1m] offset 2m)\",\"sum_over_time({app=\\\"foo\\\"}[1m59s999ms])\"]}"})) / (sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"count_over_time({app=\\\"foo\\\"}[1m] offset 2m)\",\"count_over_time({app=\\\"foo\\\"}[1m59s999ms])\"]}"}))`,
 			expectedSplitQueries: 4,
 		},
 		// Should support expressions with offset operator
 		{
 			in:                   `sum_over_time({app="foo"}[4m] offset 1m)`,
-			out:                  `sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"sum_over_time({app=\\\"foo\\\"}[2m] offset 3m)\",\"sum_over_time({app=\\\"foo\\\"}[2m] offset 1m)\"]}"})`,
+			out:                  `sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"sum_over_time({app=\\\"foo\\\"}[2m] offset 3m)\",\"sum_over_time({app=\\\"foo\\\"}[1m59s999ms] offset 1m)\"]}"})`,
 			expectedSplitQueries: 2,
 		},
 		{
 			in:                   `count_over_time({app="foo"}[3m] offset 1m)`,
-			out:                  `sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"count_over_time({app=\\\"foo\\\"}[1m] offset 3m)\",\"count_over_time({app=\\\"foo\\\"}[2m] offset 1m)\"]}"})`,
+			out:                  `sum without() (__embedded_queries__{__queries__="{\"Concat\":[\"count_over_time({app=\\\"foo\\\"}[1m] offset 3m)\",\"count_over_time({app=\\\"foo\\\"}[1m59s999ms] offset 1m)\"]}"})`,
 			expectedSplitQueries: 2,
 		},
 	} {
