@@ -6,7 +6,7 @@
 package mimirpb
 
 import (
-	reflect "reflect"
+	"reflect"
 	"testing"
 	"unsafe"
 
@@ -72,13 +72,17 @@ func TestTimeseriesFromPool(t *testing.T) {
 	})
 }
 
-func TestCopyYoloString(t *testing.T) {
+func TestCopyToYoloString(t *testing.T) {
+	stringByteArray := func(val string) uintptr {
+		return (*reflect.SliceHeader)(unsafe.Pointer(&val)).Data
+	}
+
 	testString := yoloString([]byte("testString"))
-	testStringByteArray := (*reflect.SliceHeader)(unsafe.Pointer(&testString)).Data
+	testStringByteArray := stringByteArray(testString)
 
 	// Verify that the unsafe copy is unsafe.
 	unsafeCopy := testString
-	unsafeCopyByteArray := (*reflect.SliceHeader)(unsafe.Pointer(&unsafeCopy)).Data
+	unsafeCopyByteArray := stringByteArray(unsafeCopy)
 	assert.Equal(t, testStringByteArray, unsafeCopyByteArray)
 
 	// Create a safe copy by using the newBuf byte slice.
@@ -86,7 +90,7 @@ func TestCopyYoloString(t *testing.T) {
 	safeCopy, remainingBuf := copyToYoloString(newBuf, unsafeCopy)
 
 	// Verify that the safe copy is safe by checking that the underlying byte arrays are different.
-	safeCopyByteArray := (*reflect.SliceHeader)(unsafe.Pointer(&safeCopy)).Data
+	safeCopyByteArray := stringByteArray(safeCopy)
 	assert.NotEqual(t, testStringByteArray, safeCopyByteArray)
 
 	// Verify that the remainingBuf has been used up completely.
@@ -121,11 +125,11 @@ func TestDeepCopyTimeseries(t *testing.T) {
 	dst := PreallocTimeseries{}
 	dst = DeepCopyTimeseries(dst, src)
 
-	// Check that the values in ts1 and ts2 are the same.
+	// Check that the values in src and dst are the same.
 	assert.Equal(t, src.TimeSeries, dst.TimeSeries)
 
-	// Check that ts1 refers to a different address than t2.
-	assert.NotSame(t, src, dst)
+	// Check that the TimeSeries in dst refers to a different address than the one in src.
+	assert.NotSame(t, src.TimeSeries, dst.TimeSeries)
 
 	// Check all the slices in the struct to ensure that
 	// none of them refer to the same underlying array.

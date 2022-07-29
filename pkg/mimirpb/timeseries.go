@@ -347,7 +347,7 @@ func DeepCopyTimeseries(dst, src PreallocTimeseries) PreallocTimeseries {
 	srcTs := src.TimeSeries
 	dstTs := dst.TimeSeries
 
-	// Prepare a buffer which is large enough to hold all the label names and values of tsIn.
+	// Prepare a buffer which is large enough to hold all the label names and values of src.
 	requiredYoloSliceCap := countTotalLabelLen(src.TimeSeries)
 	dst.yoloSlice = yoloSliceFromPool()
 	buf := ensureCap(dst.yoloSlice, requiredYoloSliceCap)
@@ -413,7 +413,7 @@ func countTotalLabelLen(ts *TimeSeries) int {
 }
 
 // copyToYoloLabels copies the values of src to dst, it uses the given buffer to store all the string values in it.
-// The returned buffer is the remainder of the given buffer, which remains unused after the copying complete.
+// The returned buffer is the remainder of the given buffer, which remains unused after the copying is complete.
 func copyToYoloLabels(buf []byte, dst, src []LabelAdapter) ([]LabelAdapter, []byte) {
 	if cap(dst) < len(src) {
 		dst = make([]LabelAdapter, len(src))
