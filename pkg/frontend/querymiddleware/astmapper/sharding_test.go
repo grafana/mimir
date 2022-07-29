@@ -11,10 +11,11 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/storage/sharding"
 )
 
 func TestShardSummer(t *testing.T) {

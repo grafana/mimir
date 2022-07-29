@@ -9,10 +9,11 @@ import (
 	"fmt"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
+
+	"github.com/grafana/mimir/pkg/storage/sharding"
 )
 
 // NewSharding creates a new query sharding mapper.
