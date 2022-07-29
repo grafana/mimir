@@ -46,3 +46,5 @@ common:
 blocks_storage:
   storage_prefix: blocks
 ```
+
+> **Note**: If you're using a mix of YAML files and CLI flags, pay attention to the [precedence logic]({{< relref "about-configurations.md#common-configurations" >}}) of those.
