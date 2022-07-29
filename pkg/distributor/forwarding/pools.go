@@ -13,13 +13,11 @@ import (
 // Even though protobuf and snappy are both pools of []byte we keep them separate because the slices
 // which they contain are likely to have very different sizes.
 type pools struct {
-	labelBackingSlice  sync.Pool
-	labelBackingSlices sync.Pool
-	protobuf           sync.Pool
-	snappy             sync.Pool
-	request            sync.Pool
-	bytesReader        sync.Pool
-	tsByTargets        sync.Pool
+	protobuf    sync.Pool
+	snappy      sync.Pool
+	request     sync.Pool
+	bytesReader sync.Pool
+	tsByTargets sync.Pool
 
 	// Mockable for testing.
 	getProtobuf    func() *[]byte
@@ -40,13 +38,11 @@ type pools struct {
 
 func newPools() *pools {
 	p := &pools{
-		labelBackingSlice:  sync.Pool{New: func() interface{} { return &[]byte{} }},
-		labelBackingSlices: sync.Pool{New: func() interface{} { return &[]*[]byte{} }},
-		protobuf:           sync.Pool{New: func() interface{} { return &[]byte{} }},
-		snappy:             sync.Pool{New: func() interface{} { return &[]byte{} }},
-		request:            sync.Pool{New: func() interface{} { return &request{} }},
-		bytesReader:        sync.Pool{New: func() interface{} { return bytes.NewReader(nil) }},
-		tsByTargets:        sync.Pool{New: func() interface{} { return make(tsByTargets) }},
+		protobuf:    sync.Pool{New: func() interface{} { return &[]byte{} }},
+		snappy:      sync.Pool{New: func() interface{} { return &[]byte{} }},
+		request:     sync.Pool{New: func() interface{} { return &request{} }},
+		bytesReader: sync.Pool{New: func() interface{} { return bytes.NewReader(nil) }},
+		tsByTargets: sync.Pool{New: func() interface{} { return make(tsByTargets) }},
 	}
 
 	p.getProtobuf = getter[*[]byte](&p.protobuf)

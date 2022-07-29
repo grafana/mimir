@@ -46,7 +46,7 @@ func TestUsingPools(t *testing.T) {
 // The specified caps must be large enough to hold all the data that will be stored in the respective slices because
 // otherwise any "append()" will replace the slice which will result in a test failure because the original slice
 // won't be returned to the pool.
-func validatingPools(t *testing.T, labelBackingSliceCap, labelBackingSlicesCap, tsSliceCap, protobufCap, snappyCap int) (*pools, func()) {
+func validatingPools(t *testing.T, tsSliceCap, protobufCap, snappyCap int) (*pools, func()) {
 	t.Helper()
 
 	pools := &pools{}
@@ -147,6 +147,7 @@ func newByteSlicePool(t *testing.T, cap int) *validatingPool[*[]byte] {
 			return &obj
 		},
 		func(obj *[]byte) int {
+			// We uniquely identify objects of type []byte by the address of the underlying data array.
 			return int((*reflect.SliceHeader)(unsafe.Pointer(obj)).Data)
 		}, nil,
 	)
@@ -166,11 +167,20 @@ type validatingPool[T any] struct {
 
 func newValidatingPool[T any](t *testing.T, new func() T, id func(T) int, prepareForPut func(T) T) *validatingPool[T] {
 	return &validatingPool[T]{
-		t:                t,
+		t: t,
+
+		// objsInstantiated is keyed by the ids of the objects that have been instantiated by the pool,
+		// the bool value indicates whether this object has already been returned to the pool.
 		objsInstantiated: make(map[int]bool),
-		new:              new,
-		id:               id,
-		prepareForPut:    prepareForPut,
+
+		// new is the function to instantiate a new object.
+		new: new,
+
+		// id is the function to generate a unique id for a given object.
+		id: id,
+
+		// prepareForPut is an optional function which is called on a given object when it is returned to the pool.
+		prepareForPut: prepareForPut,
 	}
 }
 
@@ -195,11 +205,11 @@ func (v *validatingPool[T]) get() T {
 func (v *validatingPool[T]) put(obj T) {
 	v.t.Helper()
 
-	id := v.id(obj)
-
 	if v.prepareForPut != nil {
 		obj = v.prepareForPut(obj)
 	}
+
+	id := v.id(obj)
 
 	v.objsInstantiatedMtx.Lock()
 	defer v.objsInstantiatedMtx.Unlock()

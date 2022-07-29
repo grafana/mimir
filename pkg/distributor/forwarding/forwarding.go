@@ -214,8 +214,8 @@ func (f *forwarder) splitByTargets(tsSliceIn []mimirpb.PreallocTimeseries, rules
 
 	tsToIngest := f.pools.getTsSlice()
 	tsByTargets := f.pools.getTsByTargets()
-	for tsSliceReadIdx, ts := range tsSliceIn {
-		forwardingTarget, ingest := findTargetsForLabels(ts.Labels, rules)
+	for _, ts := range tsSliceIn {
+		forwardingTarget, ingest := findTargetForLabels(ts.Labels, rules)
 		if forwardingTarget != "" {
 			tsByTargets.copyToTarget(forwardingTarget, ts, f.pools)
 		}
@@ -223,9 +223,11 @@ func (f *forwarder) splitByTargets(tsSliceIn []mimirpb.PreallocTimeseries, rules
 		if ingest {
 			// Only when reassigning time series to tsToIngest we don't deep copy them,
 			// the distributor will return them to the pool when it is done sending them to the ingesters.
-			tsToIngest = append(tsToIngest, tsSliceIn[tsSliceReadIdx])
+			tsToIngest = append(tsToIngest, ts)
 		} else {
-			f.pools.putTs(tsSliceIn[tsSliceReadIdx].TimeSeries)
+			// This ts won't be returned to the distributor because it should not be ingested according to the rules,
+			// so we have to return it to the pool now to prevent that its reference gets lost.
+			f.pools.putTs(ts.TimeSeries)
 			notIngestedCounts.count(ts)
 		}
 	}
@@ -233,7 +235,7 @@ func (f *forwarder) splitByTargets(tsSliceIn []mimirpb.PreallocTimeseries, rules
 	return notIngestedCounts, tsToIngest, tsByTargets
 }
 
-func findTargetsForLabels(labels []mimirpb.LabelAdapter, rules validation.ForwardingRules) (string, bool) {
+func findTargetForLabels(labels []mimirpb.LabelAdapter, rules validation.ForwardingRules) (string, bool) {
 	metric, err := extract.UnsafeMetricNameFromLabelAdapters(labels)
 	if err != nil {
 		// Can't check whether a timeseries should be forwarded if it has no metric name.
@@ -389,7 +391,7 @@ func (r *request) cleanup() {
 	ts := r.ts.ts
 	r.pools.putTsSlice(ts)
 
-	// Ensure we don't modify a request property after returning it to the pool by calling .Done() on the wait group.
+	// Ensure that we don't modify a request property after returning it to the pool by calling .Done() on the wg.
 	wg := r.requestWg
 	r.requestWg = nil
 
