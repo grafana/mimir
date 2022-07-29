@@ -16,6 +16,10 @@ spec:
     {{- toYaml .Values.store_gateway.strategy | nindent 4 }}
   serviceName: {{ template "mimir.fullname" . }}-store-gateway{{- if not .Values.enterprise.legacyLabels -}}-headless{{- end -}}
   {{- if .Values.store_gateway.persistentVolume.enabled }}
+  {{- if .Values.store_gateway.persistentVolume.volumeClaimTemplates }}
+  volumeClaimTemplates:
+      {{- toYaml .Values.store_gateway.persistentVolume.volumeClaimTemplates | nindent 4}}
+  {{- else }}
   volumeClaimTemplates:
     - metadata:
         name: storage
@@ -36,6 +40,7 @@ spec:
         resources:
           requests:
             storage: "{{ .Values.store_gateway.persistentVolume.size }}"
+  {{- end }}
   {{- end }}
   template:
     metadata:
