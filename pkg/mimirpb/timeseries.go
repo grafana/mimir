@@ -44,6 +44,17 @@ var (
 			}
 		},
 	}
+
+	// yoloSlicePool is a pool of byte slices which are used to back the yoloStrings of this package.
+	yoloSlicePool = sync.Pool{
+		New: func() interface{} {
+			// The initial cap of 200 is an arbitrary number which has been chosen because the default
+			// of 0 is guaranteed to be insufficient, so any number greater than 0 would be better.
+			// 200 should be enough to back all the strings of one TimeSeries in many cases.
+			val := make([]byte, 0, 200)
+			return &val
+		},
+	}
 )
 
 // PreallocWriteRequest is a WriteRequest which preallocs slices on Unmarshal.
@@ -60,6 +71,12 @@ func (p *PreallocWriteRequest) Unmarshal(dAtA []byte) error {
 // PreallocTimeseries is a TimeSeries which preallocs slices on Unmarshal.
 type PreallocTimeseries struct {
 	*TimeSeries
+
+	// yoloSlice may contain a reference to the byte slice which was used to back the yolo strings
+	// of the properties and sub-properties of this TimeSeries.
+	// If it is set to a non-nil value then it must be returned to the yoloSlicePool on cleanup,
+	// if it is set to nil then it can be ignored because the backing byte slice came from somewhere else.
+	yoloSlice *[]byte
 }
 
 // Unmarshal implements proto.Message.
@@ -273,6 +290,11 @@ func PreallocTimeseriesSliceFromPool() []PreallocTimeseries {
 func ReuseSlice(ts []PreallocTimeseries) {
 	for i := range ts {
 		ReuseTimeseries(ts[i].TimeSeries)
+
+		if ts[i].yoloSlice != nil {
+			reuseYoloSlice(ts[i].yoloSlice)
+			ts[i].yoloSlice = nil
+		}
 	}
 
 	slicePool.Put(ts[:0]) //nolint:staticcheck //see comment on slicePool for more details
@@ -302,4 +324,115 @@ func ReuseTimeseries(ts *TimeSeries) {
 	}
 	ts.Exemplars = ts.Exemplars[:0]
 	timeSeriesPool.Put(ts)
+}
+
+func yoloSliceFromPool() *[]byte {
+	return yoloSlicePool.Get().(*[]byte)
+}
+
+func reuseYoloSlice(val *[]byte) {
+	*val = (*val)[:0]
+	yoloSlicePool.Put(val)
+}
+
+// DeepCopyTimeseries copies the timeseries of one PreallocTimeseries into another one.
+// It copies all the properties, sub-properties and strings by value to ensure that the two timeseries are not sharing
+// anything after the deep copying.
+// The returned PreallocTimeseries has a yoloSlice property which should be returned to the yoloSlicePool on cleanup.
+func DeepCopyTimeseries(dst, src PreallocTimeseries) PreallocTimeseries {
+	if dst.TimeSeries == nil {
+		dst.TimeSeries = TimeseriesFromPool()
+	}
+
+	srcTs := src.TimeSeries
+	dstTs := dst.TimeSeries
+
+	// Prepare a buffer which is large enough to hold all the label names and values of src.
+	requiredYoloSliceCap := countTotalLabelLen(src.TimeSeries)
+	dst.yoloSlice = yoloSliceFromPool()
+	buf := ensureCap(dst.yoloSlice, requiredYoloSliceCap)
+
+	// Copy the time series labels by using the prepared buffer.
+	dst.TimeSeries.Labels, buf = copyToYoloLabels(buf, dstTs.Labels, srcTs.Labels)
+
+	// Copy the samples.
+	if cap(dst.TimeSeries.Samples) < len(src.TimeSeries.Samples) {
+		dstTs.Samples = make([]Sample, len(src.Samples))
+	} else {
+		dstTs.Samples = dstTs.Samples[:len(src.Samples)]
+	}
+	copy(dstTs.Samples, srcTs.Samples)
+
+	// Prepare the slice of exemplars.
+	if cap(dstTs.Exemplars) < len(srcTs.Exemplars) {
+		dstTs.Exemplars = make([]Exemplar, len(srcTs.Exemplars))
+	} else {
+		dstTs.Exemplars = dstTs.Exemplars[:len(srcTs.Exemplars)]
+	}
+
+	for exemplarIdx := range src.Exemplars {
+		// Copy the exemplar labels by using the prepared buffer.
+		dstTs.Exemplars[exemplarIdx].Labels, buf = copyToYoloLabels(buf, dstTs.Exemplars[exemplarIdx].Labels, src.Exemplars[exemplarIdx].Labels)
+
+		// Copy the other exemplar properties.
+		dstTs.Exemplars[exemplarIdx].Value = src.Exemplars[exemplarIdx].Value
+		dstTs.Exemplars[exemplarIdx].TimestampMs = src.Exemplars[exemplarIdx].TimestampMs
+	}
+
+	return dst
+}
+
+// ensureCap takes a pointer to a byte slice and ensures that the capacity of the referred slice is at least equal to
+// the given capacity, if not then the byte slice referred to by the pointer gets replaced with a new, larger one.
+// The return value is the byte slice which is now referred by the given pointer which has at least the given capacity.
+func ensureCap(bufRef *[]byte, requiredCap int) []byte {
+	buf := *bufRef
+	if cap(buf) >= requiredCap {
+		return buf[:0]
+	}
+
+	buf = make([]byte, 0, requiredCap)
+	*bufRef = buf
+	return buf
+}
+
+// countTotalLabelLen takes a time series and calculates the sum of the lengths of all label names and values.
+func countTotalLabelLen(ts *TimeSeries) int {
+	var labelLen int
+	for _, label := range ts.Labels {
+		labelLen += len(label.Name) + len(label.Value)
+	}
+
+	for _, exemplar := range ts.Exemplars {
+		for _, label := range exemplar.Labels {
+			labelLen += len(label.Name) + len(label.Value)
+		}
+	}
+
+	return labelLen
+}
+
+// copyToYoloLabels copies the values of src to dst, it uses the given buffer to store all the string values in it.
+// The returned buffer is the remainder of the given buffer, which remains unused after the copying is complete.
+func copyToYoloLabels(buf []byte, dst, src []LabelAdapter) ([]LabelAdapter, []byte) {
+	if cap(dst) < len(src) {
+		dst = make([]LabelAdapter, len(src))
+	} else {
+		dst = dst[:len(src)]
+	}
+
+	for labelIdx := range src {
+		dst[labelIdx].Name, buf = copyToYoloString(buf, src[labelIdx].Name)
+		dst[labelIdx].Value, buf = copyToYoloString(buf, src[labelIdx].Value)
+	}
+
+	return dst, buf
+}
+
+// copyToYoloString takes a string and creates a new string which uses the given buffer as underlying byte array.
+// It requires that the buffer has a capacitity which is greater than or equal to the length of the source string.
+func copyToYoloString(buf []byte, src string) (string, []byte) {
+	buf = buf[:len(src)]
+	copy(buf, *((*[]byte)(unsafe.Pointer(&src))))
+	return yoloString(buf), buf[len(buf):]
 }
