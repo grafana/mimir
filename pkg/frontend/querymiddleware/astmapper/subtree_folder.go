@@ -21,7 +21,7 @@ func newSubtreeFolder() ASTMapper {
 }
 
 // MapExpr implements ExprMapper.
-func (f *subtreeFolder) MapExpr(expr parser.Expr, _ *MapperStats) (mapped parser.Expr, finished bool, err error) {
+func (f *subtreeFolder) MapExpr(expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
 	hasEmbeddedQueries, err := anyNode(expr, hasEmbeddedQueries)
 	if err != nil {
 		return nil, true, err
