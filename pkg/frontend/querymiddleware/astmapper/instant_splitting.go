@@ -42,6 +42,17 @@ const (
 	sumOverTime   = "sum_over_time"
 )
 
+// cannotDoubleCountBoundaries is the list of functions that cannot double count the boundaries points when being split by range.
+// Consider a timeline with samples at 1s,2s,3s,4s,5s...
+// Prometheus ranges are closed on both ends, so range [2s,4s] includes samples at 2s and 4s.
+// If we split that into [2s, 3s] and [3s, 4s], then we will include the sample at 3s in both ranges.
+// This cannot be done for some sample-aggregating functions like `count_over_time`: we would count 4 samples (2s,3s,3s,4s) after splitting.
+// However, for other functions, like `rate`, it is important to have both ends includes, as the rate is (start-end)/range.
+var cannotDoubleCountBoundaries = map[string]bool{
+	countOverTime: true,
+	sumOverTime:   true,
+}
+
 // NewInstantQuerySplitter creates a new query range mapper.
 func NewInstantQuerySplitter(interval time.Duration, logger log.Logger) ASTMapper {
 	instantQueryMapper := NewASTExprMapper(
@@ -330,6 +341,9 @@ func (i *instantSplitter) splitAndSquashCall(expr *parser.Call, stats *MapperSta
 		splitOffset := time.Duration(split) * i.interval
 		// The range interval of the last embedded query can be smaller than i.interval
 		splitRangeInterval := i.interval
+		if lastSplit := split == splitCount-1; cannotDoubleCountBoundaries[expr.Func.Name] && !lastSplit {
+			splitRangeInterval -= time.Millisecond
+		}
 		if splitOffset+splitRangeInterval > rangeInterval {
 			splitRangeInterval = rangeInterval - splitOffset
 		}
