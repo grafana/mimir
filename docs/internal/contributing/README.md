@@ -34,6 +34,7 @@ To build:
 make
 ```
 
+You can use `make help` to see the available targets.
 (By default, the build runs in a Docker container, using an image built
 with all the tools required. The source code is mounted from where you
 run `make` into the build container as a Docker volume.)
