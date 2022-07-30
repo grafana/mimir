@@ -6,9 +6,15 @@ set -o errexit
 set -o pipefail
 
 DO_DEPENDENCY_UPDATE=0
+POLICIES_PATH=$GIT_REPO_ROOT/operations/helm/policies
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+  --policies-path)
+    POLICIES_PATH="$2"
+    shift # skip --policies-path
+    shift # skip policies-path value
+    ;;
   --temp-dir)
     TEMP_DIR="$2"
     shift # skip --temp-dir
@@ -25,7 +31,6 @@ while [[ $# -gt 0 ]]; do
 done
 
 GIT_REPO_ROOT=$(git rev-parse --show-toplevel || echo -n '/')
-POLICIES_PATH=$GIT_REPO_ROOT/operations/helm/policies
 CHART_PATH=$GIT_REPO_ROOT/operations/helm/charts/mimir-distributed
 VALUES_FILES_PATH=$GIT_REPO_ROOT/operations/helm/charts/mimir-distributed/ci
 

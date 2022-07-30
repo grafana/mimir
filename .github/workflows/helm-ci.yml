@@ -26,7 +26,7 @@ jobs:
       - name: Conftest
         env:
           TEMP_DIR: ${{ runner.temp }}/conftest
-        run: make BUILD_IN_CONTAINER=false conftest
+        run: make BUILD_IN_CONTAINER=false conftest-verify conftest-fmt
 
       - name: Lint Rego Policies
         run: make BUILD_IN_CONTAINER=false check-conftest-fmt
