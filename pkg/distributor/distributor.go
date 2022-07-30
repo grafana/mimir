@@ -640,8 +640,16 @@ func (d *Distributor) PrePushHaDedupeMiddleware(next push.Func) push.Func {
 
 				return nil, err
 			}
-			// If there wasn't an error but removeReplica is false that means we didn't find both HA labels.
-			if !removeReplica {
+
+			if removeReplica {
+				// If we found both the cluster and replica labels, we only want to include the cluster label when
+				// storing series in Mimir. If we kept the replica label we would end up with another series for the same
+				// series we're trying to dedupe when HA tracking moves over to a different replica.
+				for _, ts := range req.Timeseries {
+					removeLabel(d.limits.HAReplicaLabel(userID), &ts.Labels)
+				}
+			} else {
+				// If there wasn't an error but removeReplica is false that means we didn't find both HA labels.
 				d.nonHASamples.WithLabelValues(userID).Add(float64(numSamples))
 			}
 		}
@@ -775,7 +783,6 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	source := util.GetSourceIPsFromOutgoingCtx(ctx)
 
 	var firstPartialErr error
-	removeReplica := false
 
 	numSamples := 0
 	numExemplars := 0
@@ -825,13 +832,6 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		if mrc := d.limits.MetricRelabelConfigs(userID); len(mrc) > 0 {
 			l := relabel.Process(mimirpb.FromLabelAdaptersToLabels(ts.Labels), mrc...)
 			ts.Labels = mimirpb.FromLabelsToLabelAdapters(l)
-		}
-
-		// If we found both the cluster and replica labels, we only want to include the cluster label when
-		// storing series in Mimir. If we kept the replica label we would end up with another series for the same
-		// series we're trying to dedupe when HA tracking moves over to a different replica.
-		if removeReplica {
-			removeLabel(d.limits.HAReplicaLabel(userID), &ts.Labels)
 		}
 
 		for _, labelName := range d.limits.DropLabels(userID) {
