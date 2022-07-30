@@ -61,6 +61,8 @@ type Config struct {
 
 	// This allows downstream projects to wrap the distributor push function
 	// and access the deserialized write requests before/after they are pushed.
+	// This function will only receive samples that don't get forwarded to an
+	// alternative remote_write endpoint by the distributor's forwarding feature.
 	DistributorPushWrapper DistributorPushWrapper `yaml:"-"`
 
 	// The CustomConfigHandler allows for providing a different handler for the
@@ -239,7 +241,7 @@ func (a *API) RegisterRuntimeConfig(runtimeConfigHandler http.HandlerFunc) {
 func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distributor.Config) {
 	distributorpb.RegisterDistributorServer(a.server.GRPC, d)
 
-	wrappedDistributor := a.cfg.wrapDistributorPush(d)
+	wrappedDistributor := d.PrePushForwardingMiddleware(a.cfg.wrapDistributorPush(d))
 
 	a.RegisterRoute("/api/v1/push", push.Handler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, wrappedDistributor), true, false, "POST")
 	a.RegisterRoute("/otlp/v1/metrics", push.OTLPHandler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, wrappedDistributor), true, false, "POST")

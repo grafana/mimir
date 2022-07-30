@@ -26,6 +26,7 @@ import (
 	"github.com/grafana/dskit/ring"
 	ring_client "github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -42,8 +43,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
-
-	"github.com/grafana/dskit/tenant"
 
 	"github.com/grafana/mimir/pkg/distributor/forwarding"
 	"github.com/grafana/mimir/pkg/ingester"
@@ -392,7 +391,7 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 		cortex_distributor_received_samples_total{user="userA"} 5
 		cortex_distributor_received_samples_total{user="userB"} 10
 
-		# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected and deduped exemplars.
+		# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected, forwarded and deduped exemplars.
 		# TYPE cortex_distributor_received_exemplars_total counter
 		cortex_distributor_received_exemplars_total{user="userA"} 5
 		cortex_distributor_received_exemplars_total{user="userB"} 10
@@ -401,7 +400,7 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 		# TYPE cortex_distributor_samples_in_total counter
 		cortex_distributor_samples_in_total{user="userA"} 5
 
-		# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected or deduped exemplars.
+		# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected, forwarded or deduped exemplars.
 		# TYPE cortex_distributor_exemplars_in_total counter
 		cortex_distributor_exemplars_in_total{user="userA"} 5
 		`), metrics...))
@@ -429,14 +428,14 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 		# TYPE cortex_distributor_received_samples_total counter
 		cortex_distributor_received_samples_total{user="userB"} 10
 
-		# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected and deduped exemplars.
+		# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected, forwarded and deduped exemplars.
 		# TYPE cortex_distributor_received_exemplars_total counter
 		cortex_distributor_received_exemplars_total{user="userB"} 10
 
 		# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.
 		# TYPE cortex_distributor_samples_in_total counter
 
-		# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected or deduped exemplars.
+		# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected, forwarded or deduped exemplars.
 		# TYPE cortex_distributor_exemplars_in_total counter
 		`), metrics...))
 }
@@ -2318,7 +2317,7 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected, forwarded and deduped samples.
 			# TYPE cortex_distributor_received_samples_total counter
 			cortex_distributor_received_samples_total{user="user"} 5
-			# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected and deduped exemplars.
+			# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected, forwarded and deduped exemplars.
 			# TYPE cortex_distributor_received_exemplars_total counter
 			cortex_distributor_received_exemplars_total{user="user"} 0
 			# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
@@ -2327,7 +2326,7 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.
 			# TYPE cortex_distributor_samples_in_total counter
 			cortex_distributor_samples_in_total{user="user"} 5
-			# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected or deduped exemplars.
+			# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected, forwarded or deduped exemplars.
 			# TYPE cortex_distributor_exemplars_in_total counter
 			cortex_distributor_exemplars_in_total{user="user"} 0
 			# HELP cortex_distributor_metadata_in_total The total number of metadata the have come in to the distributor, including rejected.
@@ -2343,7 +2342,7 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected, forwarded and deduped samples.
 			# TYPE cortex_distributor_received_samples_total counter
 			cortex_distributor_received_samples_total{user="user"} 0
-			# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected and deduped exemplars.
+			# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected, forwarded and deduped exemplars.
 			# TYPE cortex_distributor_received_exemplars_total counter
 			cortex_distributor_received_exemplars_total{user="user"} 0
 			# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
@@ -2352,7 +2351,7 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.
 			# TYPE cortex_distributor_samples_in_total counter
 			cortex_distributor_samples_in_total{user="user"} 5
-			# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected or deduped exemplars.
+			# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected, forwarded or deduped exemplars.
 			# TYPE cortex_distributor_exemplars_in_total counter
 			cortex_distributor_exemplars_in_total{user="user"} 0
 			# HELP cortex_distributor_metadata_in_total The total number of metadata the have come in to the distributor, including rejected.
@@ -2368,7 +2367,7 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected, forwarded and deduped samples.
 			# TYPE cortex_distributor_received_samples_total counter
 			cortex_distributor_received_samples_total{user="user"} 5
-			# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected and deduped exemplars.
+			# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected, forwarded and deduped exemplars.
 			# TYPE cortex_distributor_received_exemplars_total counter
 			cortex_distributor_received_exemplars_total{user="user"} 0
 			# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
@@ -2377,7 +2376,7 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.
 			# TYPE cortex_distributor_samples_in_total counter
 			cortex_distributor_samples_in_total{user="user"} 5
-			# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected or deduped exemplars.
+			# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected, forwarded or deduped exemplars.
 			# TYPE cortex_distributor_exemplars_in_total counter
 			cortex_distributor_exemplars_in_total{user="user"} 0
 			# HELP cortex_distributor_metadata_in_total The total number of metadata the have come in to the distributor, including rejected.
@@ -2393,7 +2392,7 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected, forwarded and deduped samples.
 			# TYPE cortex_distributor_received_samples_total counter
 			cortex_distributor_received_samples_total{user="user"} 0
-			# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected and deduped exemplars.
+			# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected, forwarded and deduped exemplars.
 			# TYPE cortex_distributor_received_exemplars_total counter
 			cortex_distributor_received_exemplars_total{user="user"} 0
 			# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
@@ -2402,7 +2401,7 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.
 			# TYPE cortex_distributor_samples_in_total counter
 			cortex_distributor_samples_in_total{user="user"} 5
-			# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected or deduped exemplars.
+			# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected, forwarded or deduped exemplars.
 			# TYPE cortex_distributor_exemplars_in_total counter
 			cortex_distributor_exemplars_in_total{user="user"} 0
 			# HELP cortex_distributor_metadata_in_total The total number of metadata the have come in to the distributor, including rejected.
@@ -2418,7 +2417,7 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected, forwarded and deduped samples.
 			# TYPE cortex_distributor_received_samples_total counter
 			cortex_distributor_received_samples_total{user="user"} 5
-			# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected and deduped exemplars.
+			# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected, forwarded and deduped exemplars.
 			# TYPE cortex_distributor_received_exemplars_total counter
 			cortex_distributor_received_exemplars_total{user="user"} 5
 			# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
@@ -2427,7 +2426,7 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.
 			# TYPE cortex_distributor_samples_in_total counter
 			cortex_distributor_samples_in_total{user="user"} 5
-			# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected or deduped exemplars.
+			# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected, forwarded or deduped exemplars.
 			# TYPE cortex_distributor_exemplars_in_total counter
 			cortex_distributor_exemplars_in_total{user="user"} 5
 			# HELP cortex_distributor_metadata_in_total The total number of metadata the have come in to the distributor, including rejected.
@@ -2443,7 +2442,7 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected, forwarded and deduped samples.
 			# TYPE cortex_distributor_received_samples_total counter
 			cortex_distributor_received_samples_total{user="user"} 0
-			# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected and deduped exemplars.
+			# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected, forwarded and deduped exemplars.
 			# TYPE cortex_distributor_received_exemplars_total counter
 			cortex_distributor_received_exemplars_total{user="user"} 0
 			# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
@@ -2452,7 +2451,7 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.
 			# TYPE cortex_distributor_samples_in_total counter
 			cortex_distributor_samples_in_total{user="user"} 5
-			# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected or deduped exemplars.
+			# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected, forwarded or deduped exemplars.
 			# TYPE cortex_distributor_exemplars_in_total counter
 			cortex_distributor_exemplars_in_total{user="user"} 5
 			# HELP cortex_distributor_metadata_in_total The total number of metadata the have come in to the distributor, including rejected.
@@ -2473,6 +2472,12 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			limits.IngestionBurstSize = 20
 			limits.MaxGlobalExemplarsPerUser = 10
 
+			var forwardReqCnt atomic.Uint32
+			forwardReqCallback := func() { forwardReqCnt.Inc() }
+			getForwarder := func() forwarding.Forwarder {
+				return newMockForwarder(tc.ingestSample, forwardReqCallback)
+			}
+
 			distributors, ingesters, regs := prepare(t, prepConfig{
 				numIngesters:      1,
 				happyIngesters:    1,
@@ -2480,14 +2485,14 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 				numDistributors:   1,
 				limits:            limits,
 				forwarding:        true,
+				getForwarder:      getForwarder,
 			})
 
-			forwarder := setMockForwarder(distributors[0], tc.ingestSample)
-
-			response, err := distributors[0].Push(ctx, tc.request)
+			wrappedPush := distributors[0].PrePushForwardingMiddleware(distributors[0].PushWithCleanup)
+			response, err := wrappedPush(ctx, tc.request, func() {})
 			assert.NoError(t, err)
 			assert.Equal(t, emptyResponse, response)
-			assert.Equal(t, 1, int(forwarder.sendCount.Load()))
+			assert.Equal(t, 1, int(forwardReqCnt.Load()))
 
 			ingestedMetrics := getIngestedMetrics(ctx, t, &ingesters[0])
 			assert.Equal(t, tc.expectIngestedMetrics, ingestedMetrics)
@@ -2804,6 +2809,7 @@ type prepConfig struct {
 	ingesterZones                []string
 	zonesResponseDelay           map[string]time.Duration
 	forwarding                   bool
+	getForwarder                 func() forwarding.Forwarder
 }
 
 func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*prometheus.Registry) {
@@ -2911,6 +2917,7 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 		if cfg.forwarding {
 			distributorCfg.Forwarding.Enabled = true
 			distributorCfg.Forwarding.RequestTimeout = 10 * time.Second
+			distributorCfg.Forwarding.RequestConcurrency = 5
 		}
 
 		cfg.limits.IngestionTenantShardSize = cfg.shuffleShardSize
@@ -2935,6 +2942,11 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 		reg := prometheus.NewPedanticRegistry()
 		d, err := New(distributorCfg, clientConfig, overrides, ingestersRing, true, reg, log.NewNopLogger())
 		require.NoError(t, err)
+
+		if cfg.forwarding && cfg.getForwarder != nil {
+			d.forwarder = cfg.getForwarder()
+		}
+
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), d))
 
 		distributors = append(distributors, d)
@@ -3147,6 +3159,7 @@ func (i *mockIngester) Close() error {
 }
 
 func (i *mockIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, opts ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
+
 	i.Lock()
 	defer i.Unlock()
 
@@ -3541,35 +3554,45 @@ outer:
 	return true
 }
 
-func setMockForwarder(distributor *Distributor, ingest bool) *mockForwarder {
-	forwarder := &mockForwarder{ingest: ingest}
-	distributor.forwarder = forwarder
-	return forwarder
-}
-
 type mockForwarder struct {
-	ingest    bool
-	sendCount atomic.Uint32
+	services.Service
+
+	ingest bool
+
+	// Optional callback to run in place of the actual forwarding request.
+	forwardReqCallback func()
 }
 
-func (m *mockForwarder) NewRequest(ctx context.Context, tenant string, _ validation.ForwardingRules) forwarding.Request {
-	return &mockForwardingRequest{forwarder: m}
+func newMockForwarder(ingest bool, forwardReqCallback func()) forwarding.Forwarder {
+	return &mockForwarder{
+		ingest:             ingest,
+		forwardReqCallback: forwardReqCallback,
+	}
 }
 
-type mockForwardingRequest struct {
-	forwarder *mockForwarder
-}
-
-func (m *mockForwardingRequest) Add(sample mimirpb.PreallocTimeseries) bool {
-	return m.forwarder.ingest
-}
-
-func (m *mockForwardingRequest) Send(ctx context.Context) <-chan error {
-	m.forwarder.sendCount.Inc()
-
+func (m *mockForwarder) Forward(ctx context.Context, forwardingRules validation.ForwardingRules, ts []mimirpb.PreallocTimeseries) (forwarding.TimeseriesCounts, []mimirpb.PreallocTimeseries, chan error) {
 	errCh := make(chan error)
-	close(errCh)
-	return errCh
+
+	go func() {
+		defer close(errCh)
+
+		if m.forwardReqCallback != nil {
+			m.forwardReqCallback()
+		}
+	}()
+
+	var notIngestedCounts forwarding.TimeseriesCounts
+
+	if m.ingest {
+		return notIngestedCounts, ts, errCh
+	}
+
+	for _, t := range ts {
+		notIngestedCounts.SampleCount += len(t.Samples)
+		notIngestedCounts.ExemplarCount += len(t.Exemplars)
+	}
+
+	return notIngestedCounts, nil, errCh
 }
 
 func TestDistributorValidation(t *testing.T) {
