@@ -606,6 +606,50 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 	return nil
 }
 
+func (d *Distributor) PrePushHaDedupeMiddleware(next push.Func) push.Func {
+	if !d.cfg.HATrackerConfig.EnableHATracker {
+		// HA tracker is disabled, no need to wrap "next".
+		return next
+	}
+
+	return func(ctx context.Context, req *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error) {
+		userID, err := tenant.TenantID(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		if d.limits.AcceptHASamples(userID) && len(req.Timeseries) > 0 {
+			cluster, replica := findHALabels(d.limits.HAReplicaLabel(userID), d.limits.HAClusterLabel(userID), req.Timeseries[0].Labels)
+			// Make a copy of these, since they may be retained as labels on our metrics, e.g. dedupedSamples.
+			cluster, replica = copyString(cluster), copyString(replica)
+
+			numSamples := 0 // TODO(replay) fix this
+			removeReplica := false
+			removeReplica, err = d.checkSample(ctx, userID, cluster, replica)
+			if err != nil {
+				if errors.Is(err, replicasNotMatchError{}) {
+					// These samples have been deduped.
+					d.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(numSamples))
+					return nil, httpgrpc.Errorf(http.StatusAccepted, err.Error())
+				}
+
+				if errors.Is(err, tooManyClustersError{}) {
+					validation.DiscardedSamples.WithLabelValues(validation.ReasonTooManyHAClusters, userID).Add(float64(numSamples))
+					return nil, httpgrpc.Errorf(http.StatusBadRequest, err.Error())
+				}
+
+				return nil, err
+			}
+			// If there wasn't an error but removeReplica is false that means we didn't find both HA labels.
+			if !removeReplica {
+				d.nonHASamples.WithLabelValues(userID).Add(float64(numSamples))
+			}
+		}
+
+		return next(ctx, req, cleanup)
+	}
+}
+
 // PrePushForwardingMiddleware is used as push.Func middleware in front of PushWithCleanup method.
 // It forwards time series to configured remote_write endpoints if the forwarding rules say so.
 func (d *Distributor) PrePushForwardingMiddleware(next push.Func) push.Func {
@@ -754,35 +798,6 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	seriesKeys := make([]uint32, 0, len(req.Timeseries))
 	validatedSamples := 0
 	validatedExemplars := 0
-
-	if d.limits.AcceptHASamples(userID) && len(req.Timeseries) > 0 {
-		cluster, replica := findHALabels(d.limits.HAReplicaLabel(userID), d.limits.HAClusterLabel(userID), req.Timeseries[0].Labels)
-		// Make a copy of these, since they may be retained as labels on our metrics, e.g. dedupedSamples.
-		cluster, replica = copyString(cluster), copyString(replica)
-		if span != nil {
-			span.SetTag("cluster", cluster)
-			span.SetTag("replica", replica)
-		}
-		removeReplica, err = d.checkSample(ctx, userID, cluster, replica)
-		if err != nil {
-			if errors.Is(err, replicasNotMatchError{}) {
-				// These samples have been deduped.
-				d.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(numSamples))
-				return nil, httpgrpc.Errorf(http.StatusAccepted, err.Error())
-			}
-
-			if errors.Is(err, tooManyClustersError{}) {
-				validation.DiscardedSamples.WithLabelValues(validation.ReasonTooManyHAClusters, userID).Add(float64(numSamples))
-				return nil, httpgrpc.Errorf(http.StatusBadRequest, err.Error())
-			}
-
-			return nil, err
-		}
-		// If there wasn't an error but removeReplica is false that means we didn't find both HA labels.
-		if !removeReplica {
-			d.nonHASamples.WithLabelValues(userID).Add(float64(numSamples))
-		}
-	}
 
 	// Find the earliest and latest samples in the batch.
 	earliestSampleTimestampMs, latestSampleTimestampMs := int64(math.MaxInt64), int64(0)
