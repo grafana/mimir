@@ -240,6 +240,7 @@ func (a *API) RegisterRuntimeConfig(runtimeConfigHandler http.HandlerFunc) {
 func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distributor.Config) {
 	distributorpb.RegisterDistributorServer(a.server.GRPC, d)
 
+	// TODO(replay) implement better way to chain middlewares.
 	wrappedDistributor := d.PrePushForwardingMiddleware(
 		d.PrePushHaDedupeMiddleware(
 			a.cfg.wrapDistributorPush(d),
