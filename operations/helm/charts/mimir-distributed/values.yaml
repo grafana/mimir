@@ -275,9 +275,9 @@ alertmanager:
   service:
     annotations: {}
     labels: {}
-  
+
   headlessService:
-    enabled : false
+    enabled: false
 
   resources:
     requests:
