@@ -766,7 +766,7 @@ query_frontend:
   service:
     annotations: {}
     labels: {}
-  
+
   headlessService:
     enabled: false
 
