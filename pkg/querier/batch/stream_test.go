@@ -60,7 +60,7 @@ func mkBatch(from int64) chunk.Batch {
 	var result chunk.Batch
 	for i := int64(0); i < chunk.BatchSize; i++ {
 		result.Timestamps[i] = from + i
-		result.Values[i] = float64(from + i)
+		result.SampleValues[i] = float64(from + i)
 	}
 	result.Length = chunk.BatchSize
 	return result

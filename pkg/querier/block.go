@@ -179,14 +179,24 @@ func (it *blockQuerierSeriesIterator) At() (int64, float64) {
 	return t, v
 }
 
-// AtHistogram returns (0, nil) because histograms aren't implemented yet.
 func (it *blockQuerierSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
-	return 0, nil
+	if it.i >= len(it.iterators) {
+		return 0, nil
+	}
+
+	t, h := it.iterators[it.i].AtHistogram()
+	it.lastT = t
+	return t, h
 }
 
-// AtFloatHistogram returns (0, nil) because histograms aren't implemented yet.
 func (it *blockQuerierSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
-	return 0, nil
+	if it.i >= len(it.iterators) {
+		return 0, nil
+	}
+
+	t, fh := it.iterators[it.i].AtFloatHistogram()
+	it.lastT = t
+	return t, fh
 }
 
 func (it *blockQuerierSeriesIterator) AtT() int64 {

@@ -6,8 +6,6 @@
 package batch
 
 import (
-	"errors"
-
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -95,14 +93,14 @@ func (a *iteratorAdapter) Seek(t int64) chunkenc.ValueType {
 		if t <= a.curr.Timestamps[a.curr.Index] {
 			//In this case, the interface's requirement is met, so state of this
 			//iterator does not need any change.
-			return chunkenc.ValFloat
+			return a.curr.ValueTypes
 		} else if t <= a.curr.Timestamps[a.curr.Length-1] {
 			//In this case, some timestamp between current sample and end of batch can fulfill
 			//the seek. Let's find it.
 			for a.curr.Index < a.curr.Length && t > a.curr.Timestamps[a.curr.Index] {
 				a.curr.Index++
 			}
-			return chunkenc.ValFloat
+			return a.curr.ValueTypes
 		}
 	}
 
@@ -120,7 +118,7 @@ func (a *iteratorAdapter) Seek(t int64) chunkenc.ValueType {
 // Next implements chunkenc.Iterator.
 func (a *iteratorAdapter) Next() chunkenc.ValueType {
 	a.curr.Index++
-	for a.curr.Index >= a.curr.Length && a.underlying.Next(a.batchSize) == chunkenc.ValFloat {
+	for a.curr.Index >= a.curr.Length && a.underlying.Next(a.batchSize) != chunkenc.ValNone {
 		a.curr = a.underlying.Batch()
 		a.batchSize = a.batchSize * 2
 		if a.batchSize > chunk.BatchSize {
@@ -129,24 +127,33 @@ func (a *iteratorAdapter) Next() chunkenc.ValueType {
 	}
 
 	if a.curr.Index < a.curr.Length {
-		return chunkenc.ValFloat
+		return a.curr.ValueTypes
 	}
 	return chunkenc.ValNone
 }
 
 // At implements chunkenc.Iterator.
 func (a *iteratorAdapter) At() (int64, float64) {
-	return a.curr.Timestamps[a.curr.Index], a.curr.Values[a.curr.Index]
+	return a.curr.Timestamps[a.curr.Index], a.curr.SampleValues[a.curr.Index]
 }
 
 // AtHistogram implements chunkenc.Iterator.
 func (a *iteratorAdapter) AtHistogram() (int64, *histogram.Histogram) {
-	panic(errors.New("iteratorAdapter: AtHistogram not implemented"))
+	return a.curr.Timestamps[a.curr.Index], a.curr.HistogramValues[a.curr.Index]
 }
 
 // AtFloatHistogram implements chunkenc.Iterator.
 func (a *iteratorAdapter) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
-	panic(errors.New("iteratorAdapter: AtFloatHistogram not implemented"))
+	// It seems this method is sometimes called when there aren't any float histograms
+	// but there are regular histograms, so we can get of those instead.
+	var h *histogram.FloatHistogram
+	if a.curr.FloatHistogramValues != nil {
+		h = a.curr.FloatHistogramValues[a.curr.Index]
+	}
+	if h == nil {
+		h = a.curr.HistogramValues[a.curr.Index].ToFloat()
+	}
+	return a.curr.Timestamps[a.curr.Index], h
 }
 
 // AtT implements chunkenc.Iterator.

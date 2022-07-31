@@ -43,7 +43,7 @@ func newMergeIterator(cs []GenericChunk) *mergeIterator {
 	}
 
 	for _, iter := range c.its {
-		if iter.Next(1) == chunkenc.ValFloat {
+		if iter.Next(1) != chunkenc.ValNone {
 			c.h = append(c.h, iter)
 			continue
 		}
@@ -81,7 +81,7 @@ found:
 		c.batches = c.batches[:0]
 
 		for _, iter := range c.its {
-			if iter.Seek(t, size) == chunkenc.ValFloat {
+			if iter.Seek(t, size) != chunkenc.ValNone {
 				c.h = append(c.h, iter)
 				continue
 			}
@@ -121,7 +121,7 @@ func (c *mergeIterator) buildNextBatch(size int) chunkenc.ValueType {
 		c.batchesBuf = mergeStreams(c.batches, c.nextBatchBuf[:], c.batchesBuf, size)
 		c.batches = append(c.batches[:0], c.batchesBuf...)
 
-		if c.h[0].Next(size) == chunkenc.ValFloat {
+		if c.h[0].Next(size) != chunkenc.ValNone {
 			heap.Fix(&c.h, 0)
 		} else {
 			heap.Pop(&c.h)
@@ -129,7 +129,7 @@ func (c *mergeIterator) buildNextBatch(size int) chunkenc.ValueType {
 	}
 
 	if len(c.batches) > 0 {
-		return chunkenc.ValFloat
+		return c.batches[0].ValueTypes
 	}
 	return chunkenc.ValNone
 }

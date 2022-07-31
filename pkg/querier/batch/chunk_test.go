@@ -126,7 +126,7 @@ func (i *mockIterator) Value() model.SamplePair {
 	return model.SamplePair{}
 }
 
-func (i *mockIterator) Batch(size int) chunk.Batch {
+func (i *mockIterator) Batch(size int, valueType chunkenc.ValueType) chunk.Batch {
 	batch := chunk.Batch{
 		Length: chunk.BatchSize,
 	}
