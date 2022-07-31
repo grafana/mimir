@@ -1,0 +1,119 @@
+---
+# Source: mimir-distributed/templates/compactor/compactor-statefulset.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: test-enterprise-configmap-values-mimir-compactor
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-enterprise-configmap-values
+    app.kubernetes.io/component: compactor
+    app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "2.2.0"
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    {}
+  namespace: "citestns"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: test-enterprise-configmap-values
+      app.kubernetes.io/component: compactor
+  updateStrategy:
+    type: RollingUpdate
+  serviceName: test-enterprise-configmap-values-mimir-compactor
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mimir
+        app.kubernetes.io/instance: test-enterprise-configmap-values
+        app.kubernetes.io/version: "2.2.0"
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/component: compactor
+        app.kubernetes.io/part-of: memberlist
+      annotations:
+        minio-secret-version: "42"
+      namespace: "citestns"
+    spec:
+      serviceAccountName: test-enterprise-configmap-values-mimir
+      securityContext:
+        {}
+      initContainers:
+        []
+      nodeSelector:
+        {}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: target
+                  operator: In
+                  values:
+                  - compactor
+              topologyKey: kubernetes.io/hostname
+            weight: 100
+      tolerations:
+        []
+      terminationGracePeriodSeconds: 240
+      volumes:
+        - name: config
+          configMap:
+            name: test-enterprise-configmap-values-mimir-config
+            items:
+              - key: "mimir.yaml"
+                path: "mimir.yaml"
+        - name: license
+          secret:
+            secretName: test-enterprise-configmap-values-mimir-license
+        - name: runtime-config
+          configMap:
+            name: test-enterprise-configmap-values-mimir-runtime
+        - name: storage
+          emptyDir: {}
+      containers:
+        - name: compactor
+          imagePullPolicy: IfNotPresent
+          args:
+            - "-target=compactor"
+            - "-config.expand-env=true"
+            - "-config.file=/etc/mimir/mimir.yaml"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/mimir
+            - name: license
+              mountPath: /license
+            - name: runtime-config
+              mountPath: /var/mimir
+            - name: storage
+              mountPath: "/data"
+          ports:
+            - name: http-metrics
+              containerPort: 8080
+              protocol: TCP
+            - name: grpc
+              containerPort: 9095
+              protocol: TCP
+            - name: memberlist
+              containerPort: 7946
+              protocol: TCP
+          livenessProbe:
+            null
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http-metrics
+            initialDelaySeconds: 60
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+          env:
+          envFrom:
+            - secretRef:
+                name: mimir-minio-secret

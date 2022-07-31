@@ -1,0 +1,115 @@
+---
+# Source: mimir-distributed/templates/querier/querier-dep.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-enterprise-values-mimir-querier
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-enterprise-values
+    app.kubernetes.io/component: querier
+    app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "2.2.0"
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    {}
+  namespace: "citestns"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: test-enterprise-values
+      app.kubernetes.io/component: querier
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mimir
+        app.kubernetes.io/instance: test-enterprise-values
+        app.kubernetes.io/version: "2.2.0"
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/component: querier
+        app.kubernetes.io/part-of: memberlist
+      annotations:
+    spec:
+      serviceAccountName: test-enterprise-values-mimir
+      securityContext:
+        {}
+      initContainers:
+        []
+      containers:
+        - name: querier
+          imagePullPolicy: IfNotPresent
+          args:
+            - "-target=querier"
+            - "-config.expand-env=true"
+            - "-config.file=/etc/mimir/mimir.yaml"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/mimir
+            - name: license
+              mountPath: /license
+            - name: runtime-config
+              mountPath: /var/mimir
+            - name: storage
+              mountPath: "/data"
+              subPath: 
+          ports:
+            - name: http-metrics
+              containerPort: 8080
+              protocol: TCP
+            - name: grpc
+              containerPort: 9095
+              protocol: TCP
+            - name: memberlist
+              containerPort: 7946
+              protocol: TCP
+          livenessProbe:
+            null
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http-metrics
+            initialDelaySeconds: 45
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+          env:
+          envFrom:
+      nodeSelector:
+        {}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: target
+                  operator: In
+                  values:
+                  - querier
+              topologyKey: kubernetes.io/hostname
+            weight: 100
+      tolerations:
+        []
+      terminationGracePeriodSeconds: 180
+      volumes:
+        - name: config
+          secret:
+            secretName: test-enterprise-values-mimir-config
+        - name: license
+          secret:
+            secretName: test-enterprise-values-mimir-license
+        - name: runtime-config
+          configMap:
+            name: test-enterprise-values-mimir-runtime
+        - name: storage
+          emptyDir: {}
