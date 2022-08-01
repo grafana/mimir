@@ -90,7 +90,7 @@
         (ne .memcached.addresses (include "mimir.indexCacheAddress" $))
         }}
       {{- fail (cat 
-          "you set index-cache.enabled, but the address of the index cache in the calculated Mimir configuration in 'blocks_storage.bucket_store.index_cache.memcached.addresses'"
+          "you set index-cache.enabled, but the address of the index cache in the Mimir configuration in 'blocks_storage.bucket_store.index_cache.memcached.addresses'"
           " is different from the address of the memcached instance created by the chart. (actual: "
           .memcached.addresses
           ", expected: "
