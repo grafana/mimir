@@ -1,14 +1,3 @@
 {{- if .Values.query_scheduler.podDisruptionBudget -}}
-apiVersion: {{ include "mimir.podDisruptionBudget.apiVersion" . }}
-kind: PodDisruptionBudget
-metadata:
-  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "query-scheduler") }}
-  namespace: {{ .Release.Namespace | quote }}
-  labels:
-    {{- include "mimir.labels" (dict "ctx" . "component" "query-scheduler") | nindent 4 }}
-spec:
-  selector:
-    matchLabels:
-      {{- include "mimir.selectorLabels" (dict "ctx" . "component" "query-scheduler") | nindent 6 }}
-{{ toYaml .Values.query_scheduler.podDisruptionBudget | indent 2 }}
+{{- include "mimir.lib.podDisruptionBudget" (dict "ctx" $ "component" "query-scheduler") }}
 {{- end -}}
