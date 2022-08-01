@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 set -exo pipefail
-
+crane ls grafana/mimir
 # Uses docker hub image tags to figure out what is the latest image tag
 find_latest_image_tag() {
   docker_hub_repo=$1
