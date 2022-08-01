@@ -62,7 +62,7 @@ Several parameters that were available in version 2.1 of the mimir-distributed H
 
 1. Decide whether or not you need to update the memcached configuration, which has changed:
 
-   > **Note**: this section describes changes to Helm values related to memcached. For impact on Mimir configuration see the [Update the `mimir.config`](#configupdate).
+   > **Note:** Some Helm values related to memcached have changed. For information about how they affect your Mimir configuration, see the [Update the `mimir.config`](#configupdate).
 
    The mimir-distributed Helm chart supports multiple cache types.
    If you have not enabled any memcached caches,
