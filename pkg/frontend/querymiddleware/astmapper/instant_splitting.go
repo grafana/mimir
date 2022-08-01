@@ -202,6 +202,8 @@ func (i *instantSplitter) mapCall(expr *parser.Call) (mapped parser.Expr, finish
 	case minOverTime:
 		return i.mapCallVectorAggregation(expr, parser.MIN)
 	case presentOverTime:
+		// present_over_time returns the value 1 for any series in the specified interval,
+		// therefore, using aggregator MAX enforces that all 1 values are returned.
 		return i.mapCallVectorAggregation(expr, parser.MAX)
 	case rate:
 		return i.mapCallRate(expr)
