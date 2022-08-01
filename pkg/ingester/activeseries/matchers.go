@@ -40,7 +40,7 @@ func (m *Matchers) Matches(series labels.Labels) []int {
 	if len(m.matchers) == 0 {
 		return nil
 	}
-	matches := []int{}
+	var matches []int
 	for i, sm := range m.matchers {
 		if sm.Matches(series) {
 			matches = append(matches, i)
