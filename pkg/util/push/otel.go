@@ -77,7 +77,8 @@ func OTLPHandler(
 			if err != nil {
 				return nil, err
 			}
-			reader = gr
+			// Protect against compression blowing up too.
+			reader = http.MaxBytesReader(nil, gr, int64(maxRecvMsgSize))
 
 		case "":
 			// No compression.

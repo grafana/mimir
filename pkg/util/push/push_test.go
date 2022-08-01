@@ -7,6 +7,7 @@ package push
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"fmt"
 	"net/http"
@@ -33,8 +34,16 @@ func TestHandler_remoteWrite(t *testing.T) {
 	assert.Equal(t, 200, resp.Code)
 }
 
-func TestHandler_otlpWrite(t *testing.T) {
-	req := createOTLPRequest(t, createOTLPMetricRequest(t))
+func TestHandler_otlpWriteNoCompression(t *testing.T) {
+	req := createOTLPRequest(t, createOTLPMetricRequest(t), false)
+	resp := httptest.NewRecorder()
+	handler := OTLPHandler(100000, nil, false, verifyWriteRequestHandler(t, mimirpb.API))
+	handler.ServeHTTP(resp, req)
+	assert.Equal(t, 200, resp.Code)
+}
+
+func TestHandler_otlpWriteWithCompression(t *testing.T) {
+	req := createOTLPRequest(t, createOTLPMetricRequest(t), true)
 	resp := httptest.NewRecorder()
 	handler := OTLPHandler(100000, nil, false, verifyWriteRequestHandler(t, mimirpb.API))
 	handler.ServeHTTP(resp, req)
@@ -187,15 +196,31 @@ func createRequest(t testing.TB, protobuf []byte) *http.Request {
 	return req
 }
 
-func createOTLPRequest(t testing.TB, metricRequest pmetricotlp.Request) *http.Request {
+func createOTLPRequest(t testing.TB, metricRequest pmetricotlp.Request, compress bool) *http.Request {
 	t.Helper()
 
 	rawBytes, err := metricRequest.MarshalProto()
 	require.NoError(t, err)
 
-	req, err := http.NewRequest("POST", "http://localhost/", bytes.NewReader(rawBytes))
+	body := rawBytes
+
+	if compress {
+		var b bytes.Buffer
+		gz := gzip.NewWriter(&b)
+		_, err := gz.Write(rawBytes)
+		require.NoError(t, err)
+		require.NoError(t, gz.Close())
+
+		body = b.Bytes()
+	}
+
+	req, err := http.NewRequest("POST", "http://localhost/", bytes.NewReader(body))
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/x-protobuf")
+
+	if compress {
+		req.Header.Set("Content-Encoding", "gzip")
+	}
 	return req
 }
 
