@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 
-set -eo pipefail
+set -exo pipefail
 
 # Uses docker hub image tags to figure out what is the latest image tag
 find_latest_image_tag() {
   docker_hub_repo=$1
-  echo $(crane ls "${docker_hub_repo}" | grep -E 'r\d\+-[a-z0-9]\+' | sort -Vur | head -1)
+  echo $(crane ls "${docker_hub_repo}" | grep -E 'r\d+-[a-z0-9]+' | sort -Vur | head -1)
 }
 
 # This generates a new file where the yaml node is updated.
