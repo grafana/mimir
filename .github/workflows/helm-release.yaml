@@ -30,14 +30,12 @@ jobs:
 #    if: github.event.schedule != ''
     steps:
       - uses: actions/checkout@v3
-
       - uses: actions/setup-go@v2
-
       - run: go install github.com/google/go-containerregistry/cmd/crane@latest
 
       - name: Update/regenerate files
         id: update
-        run: bash .github/workflows/scripts/helm-weekly-release.sh
+        run: PATH=$PATH:$(go env GOROOT) bash .github/workflows/scripts/helm-weekly-release.sh
 
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v4
