@@ -865,7 +865,7 @@ query_scheduler:
                 - key: target
                   operator: In
                   values:
-                    - query-frontend
+                    - query-scheduler
             topologyKey: 'kubernetes.io/hostname'
 
   annotations: {}
