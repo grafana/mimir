@@ -8,6 +8,7 @@ on:
     branches:
       - main
       - "release-[0-9]+.[0-9]+"
+      - dimitar/helm-weekly-release
 
   workflow_dispatch: # for manual testing
 
