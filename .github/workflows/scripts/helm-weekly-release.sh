@@ -2,7 +2,13 @@
 
 set -exo pipefail
 crane ls grafana/mimir
-crane ls grafana/mimir | grep r194
+crane ls grafana/mimir | grep 'r\d+'
+crane ls grafana/mimir | grep 'r\d\+'
+crane ls grafana/mimir | grep 'r\\d\\+'
+crane ls grafana/mimir | grep 'r\\d\+'
+crane ls grafana/mimir | grep 'r\\\\d\\\\+'
+crane ls grafana/mimir | grep 'r\\\\d+'
+exit 1
 # Uses docker hub image tags to figure out what is the latest image tag
 find_latest_image_tag() {
   docker_hub_repo=$1
