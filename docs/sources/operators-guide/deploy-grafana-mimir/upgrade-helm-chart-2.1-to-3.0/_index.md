@@ -137,6 +137,7 @@ Several parameters that were available in version 2.1 of the mimir-distributed H
    - To start using Security Context Constraints (SCC) instead of PSP, set `rbac.create` to `true` and `rbac.type` to `scc`.
 
 1. <a id="configupdate"></a>Update the `mimir.config` value, based on the following information:
+
    - Compare your overridden value of `mimir.config` with the one in the `values.yaml` file in the chart. If you are not overriding the value of `mimir.config`, then skip this step.
    - The service names for memcached caches have changed.
      - If you previously copied the value of `mimir.config` into your values file,
