@@ -74,7 +74,7 @@
         (ne .memcached.addresses (include "mimir.metadataCacheAddress" $))
         }}
       {{- fail (cat 
-          "you set metadata-cache.enabled, but the address of the metadata cache in the calculated Mimir configuration in 'blocks_storage.bucket_store.metadata_cache.memcached.addresses'"
+          "you set metadata-cache.enabled, but the address of the metadata cache in the Mimir configuration in 'blocks_storage.bucket_store.metadata_cache.memcached.addresses'"
           " is different from the address of the memcached instance created by the chart. (actual: "
           .memcached.addresses
           ", expected: "
