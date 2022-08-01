@@ -68,9 +68,9 @@ func (id ID) Message(msg string) string {
 	return fmt.Sprintf("%s (%s%s)", msg, errPrefix, id)
 }
 
-// MessageWithLimitConfig returns the provided msg, appending the error id and a suggestion on
+// MessageWithPerTenantLimitConfig returns the provided msg, appending the error id and a suggestion on
 // which configuration flag(s) to use to change the limit.
-func (id ID) MessageWithLimitConfig(msg, flag string, addFlags ...string) string {
+func (id ID) MessageWithPerTenantLimitConfig(msg, flag string, addFlags ...string) string {
 	var sb strings.Builder
 	sb.WriteString("-")
 	sb.WriteString(flag)
