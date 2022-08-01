@@ -75,6 +75,14 @@ func anyNode(node parser.Node, fn predicate) (bool, error) {
 	return v.result, nil
 }
 
+// visitNode recursively traverse the node's subtree and call fn for each node encountered.
+func visitNode(node parser.Node, fn func(node parser.Node)) {
+	_ = parser.Walk(&visitor{fn: func(node parser.Node) (bool, error) {
+		fn(node)
+		return false, nil
+	}}, node, nil)
+}
+
 type predicate = func(parser.Node) (bool, error)
 
 type visitor struct {
