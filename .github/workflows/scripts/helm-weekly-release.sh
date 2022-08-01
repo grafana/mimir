@@ -8,6 +8,7 @@ crane ls grafana/mimir | grep 'r\\d\\+'
 crane ls grafana/mimir | grep 'r\\d\+'
 crane ls grafana/mimir | grep 'r\\\\d\\\\+'
 crane ls grafana/mimir | grep 'r\\\\d+'
+echo qwerty
 exit 1
 # Uses docker hub image tags to figure out what is the latest image tag
 find_latest_image_tag() {
