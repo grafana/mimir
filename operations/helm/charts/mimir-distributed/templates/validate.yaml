@@ -109,7 +109,7 @@
         (ne .memcached.addresses (include "mimir.resultsCacheAddress" $))
         }}
       {{- fail (cat 
-          "you set results-cache.enabled, but the address of the results cache in the calculated Mimir configuration in 'frontend.results_cache.memcached.addresses'"
+          "you set results-cache.enabled, but the address of the results cache in the Mimir configuration in 'frontend.results_cache.memcached.addresses'"
           " is different from the address of the memcached instance created by the chart. (actual: "
           .memcached.addresses
           ", expected: "
