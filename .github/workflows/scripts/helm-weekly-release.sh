@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+set -exo pipefail
+
 # Uses docker hub image tags to figure out what is the latest image tag
 find_latest_image_tag() {
   docker_hub_repo=$1
@@ -63,4 +65,3 @@ update_yaml_node $chart_file .version $new_chart_version
 make build-helm-tests doc
 
 echo "::set-output name=new_chart_version::$new_chart_version"
-echo "::set-output name="

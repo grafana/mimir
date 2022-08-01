@@ -32,8 +32,6 @@ jobs:
       - uses: actions/checkout@v3
 
       - uses: actions/setup-go@v2
-        with:
-          go-version: '1.17.8'
 
       - run: go install github.com/google/go-containerregistry/cmd/crane@latest
 
