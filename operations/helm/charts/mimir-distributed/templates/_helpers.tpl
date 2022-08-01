@@ -330,3 +330,10 @@ Expects the component name in .component on the passed context
 {{- define "mimir.componentSectionFromName" -}}
 {{- .component | replace "-" "_" -}}
 {{- end -}}
+
+{{/*
+Get the no_auth_tenant from the configuration
+*/}}
+{{- define "mimir.noAuthTenant" -}}
+{{- (include "mimir.calculatedConfig" . | fromYaml).no_auth_tenant | default "anonymous" -}}
+{{- end -}}
