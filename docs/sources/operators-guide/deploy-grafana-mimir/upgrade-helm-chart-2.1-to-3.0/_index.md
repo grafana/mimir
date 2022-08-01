@@ -132,7 +132,7 @@ Several parameters that were available in version 2.1 of the mimir-distributed H
    - If you have copied and customized `mimir.config`, you'll need to merge in the changes from the chart as the settings for memcached have changed.
    - If you do not customize `mimir.config`:
      - The defaults should work so there is no need to customise memcached related parameters via `mimir.structuredConfig`.
-     - If you have set the memcached related Mimir parameters (`*.memcached.addresses` or `*.memcached.max_item_size`) in `mimir.structuredConfig`, then those need to be updated. Please consult the `mimir.config` for defaults.
+    - If you have set the memcached-related Mimir parameters (`*.memcached.addresses` or `*.memcached.max_item_size`) in `mimir.structuredConfig`, then those need to be updated. Please consult the `mimir.config` for defaults.
 
 1. (Conditional) If you have enabled `serviceMonitor`, or you are overriding the value of anything under the `serviceMonitor` section, or both, then move the `serviceMonitor` section under `metaMonitoring`.
 
