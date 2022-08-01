@@ -1,19 +1,18 @@
 #!/usr/bin/env bash
 
-set -exo pipefail
 crane ls grafana/mimir
-crane ls grafana/mimir | grep 'r\d+'
-crane ls grafana/mimir | grep 'r\d\+'
-crane ls grafana/mimir | grep 'r\\d\\+'
-crane ls grafana/mimir | grep 'r\\d\+'
-crane ls grafana/mimir | grep 'r\\\\d\\\\+'
-crane ls grafana/mimir | grep 'r\\\\d+'
+crane ls grafana/mimir | grep -P 'r\d+'
+crane ls grafana/mimir | grep -P 'r\d\+'
+crane ls grafana/mimir | grep -P 'r\\d\\+'
+crane ls grafana/mimir | grep -P 'r\\d\+'
+crane ls grafana/mimir | grep -P 'r\\\\d\\\\+'
+crane ls grafana/mimir | grep -P 'r\\\\d+'
 echo qwerty
 exit 1
 # Uses docker hub image tags to figure out what is the latest image tag
 find_latest_image_tag() {
   docker_hub_repo=$1
-  echo $(crane ls "${docker_hub_repo}" | grep -E 'r\d+-[a-z0-9]+' | sort -Vur | head -1)
+  echo $(crane ls "${docker_hub_repo}" | grep -P 'r\d+-[a-z0-9]+' | sort -Vur | head -1)
 }
 
 # This generates a new file where the yaml node is updated.
@@ -51,8 +50,8 @@ chart_file=operations/helm/charts/mimir-distributed/Chart.yaml
 
 calculate_next_chart_version() {
   current_chart_version=$(get_yaml_node $chart_file .version)
-  current_chart_semver=$(echo $current_chart_version | grep -o '^\(\d\+.\)\{2\}\d\+')
-  new_chart_weekly=$(echo $latest_mimir_tag | grep 'r\d\+' -o | grep -o '\d\+')
+  current_chart_semver=$(echo $current_chart_version | grep -P -o '^(\d+.){2}\d+')
+  new_chart_weekly=$(echo $latest_mimir_tag | grep -P -o 'r\d+' | grep -P -o '\d+')
   new_chart_semver=$current_chart_semver
   if [[ $current_chart_version != *weekly* ]]; then
     # If previous version was not a weekly, then it was a stable release.
