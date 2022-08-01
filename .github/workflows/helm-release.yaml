@@ -1,14 +1,20 @@
 name: helm-release
 
 on:
+  schedule:
+    - cron: '0 12 * * 1' # 12 UTC on Mondays for weekly release; images for GEM and Mimir should have already been pushed
+
   push:
     branches:
       - main
       - "release-[0-9]+.[0-9]+"
 
+  workflow_dispatch: # for manual testing
+
 jobs:
-  call-update-helm-repo:
+  stable-release:
     uses: grafana/helm-charts/.github/workflows/update-helm-repo.yaml@main
+    if: github.event.schedule == '' # for triggers by the
     with:
       charts_dir: operations/helm/charts
       cr_configfile: operations/helm/cr.yaml
@@ -17,3 +23,27 @@ jobs:
       helm_repo_token: ${{ secrets.GH_BOT_ACCESS_TOKEN }}
       # See https://github.com/grafana/helm-charts/blob/main/INTERNAL.md about this key
       gpg_key_base64: ${{ secrets.HELM_SIGN_KEY_BASE64 }}
+
+  weekly-release:
+    runs-on: ubuntu-latest
+    if: github.event.schedule != ''
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-go@v2
+        with:
+          go-version: '1.17.8'
+
+      - run: go install github.com/google/go-containerregistry/cmd/crane@latest
+
+      - name: Update/regenerate files
+        id: update
+        run: bash .github/workflows/scripts/helm-weekly-release.sh
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v4
+        with:
+          commit-message: Update mimir-distributed chart to ${{ steps.update.outputs.new_chart_version }}
+          branch: helm-chart-weekly-${{ steps.update.outputs.new_chart_version }}
+          title: Release mimir-distributed chart version ${{ steps.update.outputs.new_chart_version }}
+          body: Automated PR created by [helm-release.yaml](https://github.com/grafana/mimir/blob/main/.github/workflows/helm-release.yaml)
