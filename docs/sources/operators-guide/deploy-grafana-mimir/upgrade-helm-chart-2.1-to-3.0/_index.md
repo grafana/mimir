@@ -62,7 +62,7 @@ Several parameters that were available in version 2.1 of the mimir-distributed H
 
 1. Decide whether or not you need to update the memcached configuration, which has changed:
 
-   > **Note**: this section describes changes to Helm values related to memcached. For impact on `mimir.config` and `mimir.structuredConfig` see the next section.
+   > **Note**: this section describes changes to Helm values related to memcached. For impact on Mimir configuration see the [Update the `mimir.config`](#configupdate).
 
    The mimir-distributed Helm chart supports multiple cache types.
    If you have not enabled any memcached caches,
@@ -127,13 +127,6 @@ Several parameters that were available in version 2.1 of the mimir-distributed H
        replicas: 3
      ```
 
-1. Decide whether or not you need to update the Mimir configuration due to memcached changes:
-
-   - If you have copied and customized `mimir.config`, you'll need to merge in the changes from the chart as the settings for memcached have changed.
-   - If you do not customize `mimir.config`:
-     - The defaults should work so there is no need to customise memcached related parameters via `mimir.structuredConfig`.
-    - If you have set the memcached-related Mimir parameters (`*.memcached.addresses` or `*.memcached.max_item_size`) in `mimir.structuredConfig`, then those need to be updated. Please consult the `mimir.config` for defaults.
-
 1. (Conditional) If you have enabled `serviceMonitor`, or you are overriding the value of anything under the `serviceMonitor` section, or both, then move the `serviceMonitor` section under `metaMonitoring`.
 
 1. Update the `rbac` section, based on the following changes:
@@ -143,11 +136,12 @@ Several parameters that were available in version 2.1 of the mimir-distributed H
    - To continue using Pod Security Policy (PSP), set `rbac.create` to `true` and `rbac.type` to `psp`.
    - To start using Security Context Constraints (SCC) instead of PSP, set `rbac.create` to `true` and `rbac.type` to `scc`.
 
-1. Update the `mimir.config` value, based on the following information:
+1. <a id="configupdate"></a>Update the `mimir.config` value, based on the following information:
    - Compare your overridden value of `mimir.config` with the one in the `values.yaml` file in the chart. If you are not overriding the value of `mimir.config`, then skip this step.
    - The service names for memcached caches have changed.
-     If you previously copied the value of `mimir.config` into your values file,
-     then take the latest version of the `memcached` configuration in the `mimir.config` from the `values.yaml` file in the Helm chart.
+     - If you previously copied the value of `mimir.config` into your values file,
+       then take the latest version of the `memcached` configuration in the `mimir.config` from the `values.yaml` file in the Helm chart.
+
 1. Decide whether or not to update the `nginx` configuration:
 
    - Unless you have overridden the value of `nginx.nginxConfig.file`,
