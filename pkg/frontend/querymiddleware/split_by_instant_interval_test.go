@@ -44,13 +44,17 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 				query                string
 				expectedSplitQueries int
 			}{
-				// Range vector aggregators
+				// Splittable range vector aggregators
 				"avg_over_time": {
 					query:                `avg_over_time(metric_counter[3m])`,
 					expectedSplitQueries: 6,
 				},
 				"count_over_time": {
 					query:                `count_over_time(metric_counter[3m])`,
+					expectedSplitQueries: 3,
+				},
+				"increase": {
+					query:                `increase(metric_counter[3m])`,
 					expectedSplitQueries: 3,
 				},
 				"max_over_time": {
@@ -61,12 +65,97 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 					query:                `min_over_time(metric_counter[3m])`,
 					expectedSplitQueries: 3,
 				},
+				"present_over_time": {
+					query:                `present_over_time(metric_counter[3m])`,
+					expectedSplitQueries: 3,
+				},
 				"rate": {
 					query:                `rate(metric_counter[3m])`,
 					expectedSplitQueries: 3,
 				},
 				"sum_over_time": {
 					query:                `sum_over_time(metric_counter[3m])`,
+					expectedSplitQueries: 3,
+				},
+				// Splittable aggregations wrapped by non-aggregative functions.
+				"absent": {
+					query:                `absent(sum_over_time(nonexistent[3m]))`,
+					expectedSplitQueries: 3,
+				},
+				"ceil(sum(sum_over_time()))": {
+					query:                `ceil(sum(sum_over_time(metric_counter[3m])))`,
+					expectedSplitQueries: 3,
+				},
+				"ceil(sum(sum_over_time()) + sum(sum_over_time())) and both legs of the binary operation are splittable": {
+					query:                `ceil(sum(sum_over_time(metric_counter[3m])) + sum(sum_over_time(metric_counter[3m])))`,
+					expectedSplitQueries: 6,
+				},
+				"ceil(sum(sum_over_time()) + sum(sum_over_time())) and only right leg of the binary operation is splittable": {
+					query:                `ceil(sum(sum_over_time(metric_counter[1m])) + sum(sum_over_time(metric_counter[3m])))`,
+					expectedSplitQueries: 3,
+				},
+				"ceil(sum(sum_over_time()) + sum(sum_over_time())) and only left leg of the binary operation is splittable": {
+					query:                `ceil(sum(sum_over_time(metric_counter[3m])) + sum(sum_over_time(metric_counter[1m])))`,
+					expectedSplitQueries: 3,
+				},
+				"clamp": {
+					query:                `clamp(sum_over_time(metric_counter[3m]), 1, 10)`,
+					expectedSplitQueries: 3,
+				},
+				"clamp_max": {
+					query:                `clamp_max(sum_over_time(metric_counter[3m]), 10)`,
+					expectedSplitQueries: 3,
+				},
+				"clamp_min": {
+					query:                `clamp_min(sum_over_time(metric_counter[3m]), 1)`,
+					expectedSplitQueries: 3,
+				},
+				"exp": {
+					query:                `exp(sum_over_time(metric_counter[3m]))`,
+					expectedSplitQueries: 3,
+				},
+				"floor": {
+					query:                `floor(sum_over_time(metric_counter[3m]))`,
+					expectedSplitQueries: 3,
+				},
+				"histogram_quantile": {
+					query:                `histogram_quantile(0.5, rate(metric_histogram_bucket[3m]))`,
+					expectedSplitQueries: 3,
+				},
+				"label_join": {
+					query:                `label_join(sum_over_time(metric_counter{group_1="0"}[3m]), "foo", ",", "group_1", "group_2", "const")`,
+					expectedSplitQueries: 3,
+				},
+				"label_replace": {
+					query:                `label_replace(sum_over_time(metric_counter{group_1="0"}[3m]), "foo", "bar$1", "group_2", "(.*)")`,
+					expectedSplitQueries: 3,
+				},
+				"ln": {
+					query:                `ln(sum_over_time(metric_counter[3m]))`,
+					expectedSplitQueries: 3,
+				},
+				"log2": {
+					query:                `log2(sum_over_time(metric_counter[3m]))`,
+					expectedSplitQueries: 3,
+				},
+				"round": {
+					query:                `round(sum_over_time(metric_counter[3m]))`,
+					expectedSplitQueries: 3,
+				},
+				"sgn": {
+					query:                `sgn(sum_over_time(metric_counter[3m]))`,
+					expectedSplitQueries: 3,
+				},
+				"sort": {
+					query:                `sort(sum_over_time(metric_counter[3m]))`,
+					expectedSplitQueries: 3,
+				},
+				"sort_desc": {
+					query:                `sort_desc(sum_over_time(metric_counter[3m]))`,
+					expectedSplitQueries: 3,
+				},
+				"sqrt": {
+					query:                `sqrt(sum_over_time(metric_counter[3m]))`,
 					expectedSplitQueries: 3,
 				},
 				// Vector aggregators
@@ -163,13 +252,6 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 					query:                `rate(metric_counter[3m]) / rate(metric_counter[3m]) > 0.5`,
 					expectedSplitQueries: 6,
 				},
-				// should not be mapped if both operands are not splittable
-				//   - first operand `rate(metric_counter[1m])` has a smaller range interval than the configured splitting
-				//   - second operand `rate(metric_counter[5h:5m])` is a subquery
-				"rate(1m) / rate(subquery) > 0.5": {
-					query:                `rate(metric_counter[1m]) / rate(metric_counter[5h:5m]) > 0.5`,
-					expectedSplitQueries: 0,
-				},
 				// Offset operator
 				"sum_over_time[3m] offset 3m": {
 					query:                `sum_over_time(metric_counter[3m] offset 3m)`,
@@ -246,22 +328,73 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 					query:                `sum(sum_over_time(metric_counter[1h:5m]) * 60) by (group_1)`,
 					expectedSplitQueries: 0,
 				},
-				// Splittable aggregations wrapped by non-aggregative functions.
-				"ceil(sum(sum_over_time()))": {
-					query:                `ceil(sum(sum_over_time(metric_counter[3m])))`,
-					expectedSplitQueries: 3,
+				// should not be mapped if both operands are not splittable
+				//   - first operand `rate(metric_counter[1m])` has a smaller range interval than the configured splitting
+				//   - second operand `rate(metric_counter[5h:5m])` is a subquery
+				"rate(1m) / rate(subquery) > 0.5": {
+					query:                `rate(metric_counter[1m]) / rate(metric_counter[5h:5m]) > 0.5`,
+					expectedSplitQueries: 0,
 				},
-				"ceil(sum(sum_over_time()) + sum(sum_over_time())) and both legs of the binary operation are splittable": {
-					query:                `ceil(sum(sum_over_time(metric_counter[3m])) + sum(sum_over_time(metric_counter[3m])))`,
-					expectedSplitQueries: 6,
+				// should not be mapped if range vector aggregator is not splittable
+				"absent_over_time": {
+					query:                `absent_over_time(nonexistent[1m])`,
+					expectedSplitQueries: 0,
 				},
-				"ceil(sum(sum_over_time()) + sum(sum_over_time())) and only right leg of the binary operation is splittable": {
-					query:                `ceil(sum(sum_over_time(metric_counter[1m])) + sum(sum_over_time(metric_counter[3m])))`,
-					expectedSplitQueries: 3,
+				"changes": {
+					query:                `changes(metric_counter[1m])`,
+					expectedSplitQueries: 0,
 				},
-				"ceil(sum(sum_over_time()) + sum(sum_over_time())) and only left leg of the binary operation is splittable": {
-					query:                `ceil(sum(sum_over_time(metric_counter[3m])) + sum(sum_over_time(metric_counter[1m])))`,
-					expectedSplitQueries: 3,
+				"delta": {
+					query:                `delta(metric_counter[1m])`,
+					expectedSplitQueries: 0,
+				},
+				"deriv": {
+					query:                `deriv(metric_counter[1m])`,
+					expectedSplitQueries: 0,
+				},
+				"holt_winters": {
+					query:                `holt_winters(metric_counter[1m], 0.5, 0.9)`,
+					expectedSplitQueries: 0,
+				},
+				"idelta": {
+					query:                `idelta(metric_counter[1m])`,
+					expectedSplitQueries: 0,
+				},
+				"irate": {
+					query:                `irate(metric_counter[3m])`,
+					expectedSplitQueries: 0,
+				},
+				"last_over_time": {
+					query:                `last_over_time(metric_counter[1m])`,
+					expectedSplitQueries: 0,
+				},
+				"predict_linear": {
+					query:                `last_over_time(metric_counter[1m])`,
+					expectedSplitQueries: 0,
+				},
+				"quantile_over_time": {
+					query:                `quantile_over_time(0.95, metric_counter[1m])`,
+					expectedSplitQueries: 0,
+				},
+				"resets": {
+					query:                `resets(metric_counter[3m])`,
+					expectedSplitQueries: 0,
+				},
+				"stddev_over_time": {
+					query:                `stddev_over_time(metric_counter[1m])`,
+					expectedSplitQueries: 0,
+				},
+				"stdvar_over_time": {
+					query:                `stdvar_over_time(metric_counter[1m])`,
+					expectedSplitQueries: 0,
+				},
+				"time()": {
+					query:                `time()`,
+					expectedSplitQueries: 0,
+				},
+				"vector(10)": {
+					query:                `vector(10)`,
+					expectedSplitQueries: 0,
 				},
 			}
 

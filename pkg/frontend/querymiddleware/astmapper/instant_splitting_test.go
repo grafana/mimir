@@ -23,7 +23,7 @@ func TestInstantSplitter(t *testing.T) {
 		out                  string
 		expectedSplitQueries int
 	}{
-		// Range vector aggregators
+		// Splittable range vector aggregators
 		{
 			in:                   `avg_over_time({app="foo"}[3m])`,
 			out:                  `(sum without() (` + concatOffsets(splitInterval, 3, false, `sum_over_time({app="foo"}[x]y)`) + `)) / (sum without() (` + concatOffsets(splitInterval, 3, false, `count_over_time({app="foo"}[x]y)`) + `))`,
@@ -32,6 +32,11 @@ func TestInstantSplitter(t *testing.T) {
 		{
 			in:                   `count_over_time({app="foo"}[3m])`,
 			out:                  `sum without() (` + concatOffsets(splitInterval, 3, false, `count_over_time({app="foo"}[x]y)`) + `)`,
+			expectedSplitQueries: 3,
+		},
+		{
+			in:                   `increase({app="foo"}[3m])`,
+			out:                  `sum without() (` + concatOffsets(splitInterval, 3, true, `increase({app="foo"}[x]y)`) + `)`,
 			expectedSplitQueries: 3,
 		},
 		{
@@ -45,6 +50,11 @@ func TestInstantSplitter(t *testing.T) {
 			expectedSplitQueries: 3,
 		},
 		{
+			in:                   `present_over_time({app="foo"}[3m])`,
+			out:                  `max without() (` + concatOffsets(splitInterval, 3, true, `present_over_time({app="foo"}[x]y)`) + `)`,
+			expectedSplitQueries: 3,
+		},
+		{
 			in:                   `rate({app="foo"}[3m])`,
 			out:                  `sum without() (` + concatOffsets(splitInterval, 3, true, `increase({app="foo"}[x]y)`) + `) / 180`,
 			expectedSplitQueries: 3,
@@ -52,6 +62,97 @@ func TestInstantSplitter(t *testing.T) {
 		{
 			in:                   `sum_over_time({app="foo"}[3m])`,
 			out:                  `sum without() (` + concatOffsets(splitInterval, 3, false, `sum_over_time({app="foo"}[x]y)`) + `)`,
+			expectedSplitQueries: 3,
+		},
+		// Splittable aggregations wrapped by non-aggregative functions.
+		{
+			in:                   `absent(sum_over_time({app="foo"}[3m]))`,
+			out:                  `absent(sum without() (` + concatOffsets(splitInterval, 3, false, `sum_over_time({app="foo"}[x]y)`) + `))`,
+			expectedSplitQueries: 3,
+		},
+		{
+			in:                   `ceil(sum_over_time({app="foo"}[3m]))`,
+			out:                  `ceil(sum without() (` + concatOffsets(splitInterval, 3, false, `sum_over_time({app="foo"}[x]y)`) + `))`,
+			expectedSplitQueries: 3,
+		},
+		{
+			in:                   `clamp(sum_over_time({app="foo"}[3m]), 1, 10)`,
+			out:                  `clamp(sum without() (` + concatOffsets(splitInterval, 3, false, `sum_over_time({app="foo"}[x]y)`) + `), 1, 10)`,
+			expectedSplitQueries: 3,
+		},
+		{
+			in:                   `clamp_max(sum_over_time({app="foo"}[3m]), 10)`,
+			out:                  `clamp_max(sum without() (` + concatOffsets(splitInterval, 3, false, `sum_over_time({app="foo"}[x]y)`) + `), 10)`,
+			expectedSplitQueries: 3,
+		},
+		{
+			in:                   `clamp_min(sum_over_time({app="foo"}[3m]), 1)`,
+			out:                  `clamp_min(sum without() (` + concatOffsets(splitInterval, 3, false, `sum_over_time({app="foo"}[x]y)`) + `), 1)`,
+			expectedSplitQueries: 3,
+		},
+		{
+			in:                   `exp(sum_over_time({app="foo"}[3m]))`,
+			out:                  `exp(sum without() (` + concatOffsets(splitInterval, 3, false, `sum_over_time({app="foo"}[x]y)`) + `))`,
+			expectedSplitQueries: 3,
+		},
+		{
+			in:                   `floor(sum_over_time({app="foo"}[3m]))`,
+			out:                  `floor(sum without() (` + concatOffsets(splitInterval, 3, false, `sum_over_time({app="foo"}[x]y)`) + `))`,
+			expectedSplitQueries: 3,
+		},
+		{
+			in:                   `histogram_quantile(0.9, sum_over_time({app="foo"}[3m]))`,
+			out:                  `histogram_quantile(0.9, sum without() (` + concatOffsets(splitInterval, 3, false, `sum_over_time({app="foo"}[x]y)`) + `) )`,
+			expectedSplitQueries: 3,
+		},
+		{
+			in:                   `label_join(sum_over_time({app="foo"}[3m]), "foo", ",", "group_1", "group_2", "const")`,
+			out:                  `label_join(sum without() (` + concatOffsets(splitInterval, 3, false, `sum_over_time({app="foo"}[x]y)`) + `), "foo", ",", "group_1", "group_2", "const")`,
+			expectedSplitQueries: 3,
+		},
+		{
+			in:                   `label_replace(sum_over_time({app="foo"}[3m]), "foo", "bar$1", "group_2", "(.*)")`,
+			out:                  `label_replace(sum without() (` + concatOffsets(splitInterval, 3, false, `sum_over_time({app="foo"}[x]y)`) + `), "foo", "bar$1", "group_2", "(.*)")`,
+			expectedSplitQueries: 3,
+		},
+		{
+			in:                   `ln(sum_over_time({app="foo"}[3m]))`,
+			out:                  `ln(sum without() (` + concatOffsets(splitInterval, 3, false, `sum_over_time({app="foo"}[x]y)`) + `))`,
+			expectedSplitQueries: 3,
+		},
+		{
+			in:                   `log2(sum_over_time({app="foo"}[3m]))`,
+			out:                  `log2(sum without() (` + concatOffsets(splitInterval, 3, false, `sum_over_time({app="foo"}[x]y)`) + `))`,
+			expectedSplitQueries: 3,
+		},
+		{
+			in:                   `round(sum_over_time({app="foo"}[3m]))`,
+			out:                  `round(sum without() (` + concatOffsets(splitInterval, 3, false, `sum_over_time({app="foo"}[x]y)`) + `))`,
+			expectedSplitQueries: 3,
+		},
+		{
+			in:                   `scalar(sum_over_time({app="foo"}[3m]))`,
+			out:                  `scalar(sum without() (` + concatOffsets(splitInterval, 3, false, `sum_over_time({app="foo"}[x]y)`) + `))`,
+			expectedSplitQueries: 3,
+		},
+		{
+			in:                   `sgn(sum_over_time({app="foo"}[3m]))`,
+			out:                  `sgn(sum without() (` + concatOffsets(splitInterval, 3, false, `sum_over_time({app="foo"}[x]y)`) + `))`,
+			expectedSplitQueries: 3,
+		},
+		{
+			in:                   `sort(sum_over_time({app="foo"}[3m]))`,
+			out:                  `sort(sum without() (` + concatOffsets(splitInterval, 3, false, `sum_over_time({app="foo"}[x]y)`) + `))`,
+			expectedSplitQueries: 3,
+		},
+		{
+			in:                   `sort_desc(sum_over_time({app="foo"}[3m]))`,
+			out:                  `sort_desc(sum without() (` + concatOffsets(splitInterval, 3, false, `sum_over_time({app="foo"}[x]y)`) + `))`,
+			expectedSplitQueries: 3,
+		},
+		{
+			in:                   `sqrt(sum_over_time({app="foo"}[3m]))`,
+			out:                  `sqrt(sum without() (` + concatOffsets(splitInterval, 3, false, `sum_over_time({app="foo"}[x]y)`) + `))`,
 			expectedSplitQueries: 3,
 		},
 		// Vector aggregators
@@ -344,12 +445,55 @@ func TestInstantSplitterNoOp(t *testing.T) {
 	for _, tt := range []struct {
 		query string
 	}{
-		// should be noop if expression is not splittable
+		// should be noop if range vector aggregator is not splittable
+		{
+			query: `absent_over_time({app="foo"}[3m])`,
+		},
+		{
+			query: `changes({app="foo"}[3m])`,
+		},
+		{
+			query: `delta({app="foo"}[3m])`,
+		},
+		{
+			query: `deriv({app="foo"}[3m])`,
+		},
+		{
+			query: `holt_winters({app="foo"}[3m], 1, 10)`,
+		},
+		{
+			query: `idelta({app="foo"}[3m])`,
+		},
+		{
+			query: `irate({app="foo"}[3m])`,
+		},
+		{
+			query: `last_over_time({app="foo"}[3m])`,
+		},
+		{
+			query: `predict_linear({app="foo"}[3m], 1)`,
+		},
 		{
 			query: `quantile_over_time(0.95, foo[3m])`,
 		},
 		{
-			query: `topk(10, histogram_quantile(0.9, irate({app="foo"}[3m])))`,
+			query: `resets(foo[3m])`,
+		},
+		{
+			query: `stddev_over_time(foo[3m])`,
+		},
+		{
+			query: `stdvar_over_time(foo[3m])`,
+		},
+		{
+			query: `time()`,
+		},
+		{
+			query: `vector(10)`,
+		},
+		// should be noop if expression is not splittable
+		{
+			query: `topk(10, histogram_quantile(0.9, delta({app="foo"}[3m])))`,
 		},
 		// should be noop if range interval is lower or equal to split interval (1m)
 		{
