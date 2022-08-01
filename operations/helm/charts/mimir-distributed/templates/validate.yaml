@@ -58,10 +58,12 @@
         (ne .memcached.addresses (include "mimir.chunksCacheAddress" $))
         }}
       {{- fail (cat 
-          "chunks cache is enabled, but blocks_storage.bucket_store.chunks_cache.memcached.addresses is not set to the correct address, expected " 
-          (include "mimir.chunksCacheAddress" $) 
-          ", but got" 
-          .memcached.addresses) 
+          "you set chunks-cache.enabled, but the address of the chunks cache in the Mimir configuration in 'blocks_storage.bucket_store.chunks_cache.memcached.addresses'"
+          " is different from the address of the memcached instance created by the chart. (actual: "
+          .memcached.addresses
+          ", expected: "
+          (include "mimir.chunksCacheAddress" $)
+          "). If you want to use your own memcached cluster, disable chunks-cache.enabled and keep the Mimir configuration in mimir.config or mimir.structuredConfig")
         }}
     {{- end }}
   {{- end }}
@@ -72,10 +74,12 @@
         (ne .memcached.addresses (include "mimir.metadataCacheAddress" $))
         }}
       {{- fail (cat 
-          "metadata cache is enabled, but blocks_storage.bucket_store.metadata_cache.memcached.addresses is not set to the correct address, expected " 
-          (include "mimir.metadataCacheAddress" $) 
-          ", but got" 
-          .memcached.addresses) 
+          "you set metadata-cache.enabled, but the address of the metadata cache in the Mimir configuration in 'blocks_storage.bucket_store.metadata_cache.memcached.addresses'"
+          " is different from the address of the memcached instance created by the chart. (actual: "
+          .memcached.addresses
+          ", expected: "
+          (include "mimir.metadataCacheAddress" $)
+          "). If you want to use your own memcached cluster, disable metadata-cache.enabled and keep the Mimir configuration in mimir.config or mimir.structuredConfig")
         }}
     {{- end }}
   {{- end }}
@@ -86,10 +90,12 @@
         (ne .memcached.addresses (include "mimir.indexCacheAddress" $))
         }}
       {{- fail (cat 
-          "index cache is enabled, but blocks_storage.bucket_store.index_cache.memcached.addresses is not set to the correct address, expected " 
-          (include "mimir.indexCacheAddress" $) 
-          ", but got" 
-          .memcached.addresses) 
+          "you set index-cache.enabled, but the address of the index cache in the Mimir configuration in 'blocks_storage.bucket_store.index_cache.memcached.addresses'"
+          " is different from the address of the memcached instance created by the chart. (actual: "
+          .memcached.addresses
+          ", expected: "
+          (include "mimir.indexCacheAddress" $)
+          "). If you want to use your own memcached cluster, disable index-cache.enabled and keep the Mimir configuration in mimir.config or mimir.structuredConfig")
         }}
     {{- end }}
   {{- end }}
@@ -103,10 +109,12 @@
         (ne .memcached.addresses (include "mimir.resultsCacheAddress" $))
         }}
       {{- fail (cat 
-          "results cache is enabled, but frontend.results_cache.memcached.addresses is not set to the correct address, expected " 
-          (include "mimir.resultsCacheAddress" $) 
-          ", but got" 
-          .memcached.addresses) 
+          "you set results-cache.enabled, but the address of the results cache in the Mimir configuration in 'frontend.results_cache.memcached.addresses'"
+          " is different from the address of the memcached instance created by the chart. (actual: "
+          .memcached.addresses
+          ", expected: "
+          (include "mimir.resultsCacheAddress" $)
+          "). If you want to use your own memcached cluster, disable results-cache.enabled and keep the Mimir configuration in mimir.config or mimir.structuredConfig")
         }}
     {{- end }}
   {{- end }}
