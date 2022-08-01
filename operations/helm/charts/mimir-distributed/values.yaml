@@ -879,6 +879,10 @@ query_scheduler:
     initialDelaySeconds: 45
 
   securityContext: {}
+  
+  # -- The SecurityContext for query_scheduler containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
 
   strategy:
     type: RollingUpdate
