@@ -1,17 +1,15 @@
 ---
-aliases:
-  - /docs/mimir/latest/operators-guide/configuring/configuring-otel-collector/
-description: Learn how to write data from OpenTelemetry Collector into Mimir
-menuTitle: Configuring OTel Collector
-title: Configuring OpenTelemetry Collector to write data into Mimir
+description: Learn how to write metrics from OpenTelemetry Collector into Mimir
+menuTitle: Configure OTel Collector
+title: Configure the OpenTelemetry Collector to write metrics into Mimir
 weight: 150
 ---
 
-# Configuring OpenTelemetry Collector to write data into Mimir
+# Configure the OpenTelemetry Collector to write metrics into Mimir
 
-When using the OpenTelemetry Collector, you can write metrics data into Mimir via two options: `remote_write` and `otlphttp`.
+When using the [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/), you can write metrics into Mimir via two options: `prometheusremotewrite` and `otlphttp`.
 
-We recommend using the `remote_write` exporter when possible because the remote_write ingest path is tested and proven at scale.
+We recommend using the `prometheusremotewrite` exporter when possible because the remote write ingest path is tested and proven at scale.
 
 ## Remote Write
 
@@ -22,10 +20,10 @@ In the `exporters` section add:
 ```yaml
 exporters:
   prometheusremotewrite:
-    endpoint: http://<mimir-endpoint>/api/prom/push
+    endpoint: http://<mimir-endpoint>/api/v1/push
 ```
 
-And use the same in the `service.pipelines`:
+And enable it in the `service.pipelines`:
 
 ```yaml
 service:
@@ -49,7 +47,7 @@ exporters:
   prometheusremotewrite:
     auth:
       authenticator: basicauth/prw
-    endpoint: http://<mimir-endpoint>/api/prom/push
+    endpoint: http://<mimir-endpoint>/api/v1/push
 
 service:
   extensions: [basicauth/prw]
@@ -62,7 +60,7 @@ service:
 
 ## OTLP
 
-We support a native OTLP over HTTP on Mimir. To configure the collector to use the interface, we use the [`otlphttp`](https://github.com/open-telemetry/opentelemetry-collector/tree/main/exporter/otlphttpexporter) exporter:
+Mimir supports native OTLP over HTTP. To configure the collector to use the OTLP interface, you use the [`otlphttp`](https://github.com/open-telemetry/opentelemetry-collector/tree/main/exporter/otlphttpexporter) exporter:
 
 ```yaml
 exporters:
@@ -70,7 +68,7 @@ exporters:
     endpoint: http://<mimir-endpoint>/otlp
 ```
 
-And use the same in the `service.pipelines`:
+And enable it in `service.pipelines`:
 
 ```yaml
 service:
@@ -91,10 +89,10 @@ extensions:
       password: password
 
 exporters:
-  prometheusremotewrite:
+  otlphttp:
     auth:
       authenticator: basicauth/otlp
-    endpoint: http://<mimir-endpoint>/api/prom/push
+    endpoint: http://<mimir-endpoint>/otlp
 
 service:
   extensions: [basicauth/otlp]
