@@ -13,6 +13,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [FEATURE] helm chart: add option to enable query-scheduler #2087
 * [CHANGE] **breaking change** Update minio deprecated helm chart (<https://helm.min.io/>) to the supported chart's version (<https://charts.min.io/>). #2427
   - Renamed helm config values `minio.accessKey` to `minio.rootUser`.
   - Renamed helm config values `minio.secretKey` to `minio.rootPassword`.
