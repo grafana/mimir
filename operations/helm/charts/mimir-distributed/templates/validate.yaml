@@ -114,7 +114,7 @@
           .memcached.addresses
           ", expected: "
           (include "mimir.resultsCacheAddress" $)
-          "). If you want to use your own memcached cluster, disable results-cache.enabled and keep the mimir configuration in mimir.config or mimir.structuredConfig")
+          "). If you want to use your own memcached cluster, disable results-cache.enabled and keep the Mimir configuration in mimir.config or mimir.structuredConfig")
         }}
     {{- end }}
   {{- end }}
