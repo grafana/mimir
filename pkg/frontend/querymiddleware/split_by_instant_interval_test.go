@@ -57,10 +57,6 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 					query:                `increase(metric_counter[3m])`,
 					expectedSplitQueries: 3,
 				},
-				"irate": {
-					query:                `irate(metric_counter[3m])`,
-					expectedSplitQueries: 3,
-				},
 				"max_over_time": {
 					query:                `max_over_time(metric_counter[3m])`,
 					expectedSplitQueries: 3,
@@ -362,6 +358,10 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 				},
 				"idelta": {
 					query:                `idelta(metric_counter[1m])`,
+					expectedSplitQueries: 0,
+				},
+				"irate": {
+					query:                `irate(metric_counter[3m])`,
 					expectedSplitQueries: 0,
 				},
 				"last_over_time": {

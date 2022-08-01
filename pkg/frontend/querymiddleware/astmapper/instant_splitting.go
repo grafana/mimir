@@ -37,7 +37,6 @@ const (
 	avgOverTime     = "avg_over_time"
 	countOverTime   = "count_over_time"
 	increase        = "increase"
-	irate           = "irate"
 	maxOverTime     = "max_over_time"
 	minOverTime     = "min_over_time"
 	presentOverTime = "present_over_time"
@@ -198,8 +197,6 @@ func (i *instantSplitter) mapCall(expr *parser.Call) (mapped parser.Expr, finish
 		return i.mapCallVectorAggregation(expr, parser.SUM)
 	case increase:
 		return i.mapCallVectorAggregation(expr, parser.SUM)
-	case irate:
-		return i.mapCallRate(expr)
 	case maxOverTime:
 		return i.mapCallVectorAggregation(expr, parser.MAX)
 	case minOverTime:

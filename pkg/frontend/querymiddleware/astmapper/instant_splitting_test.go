@@ -40,11 +40,6 @@ func TestInstantSplitter(t *testing.T) {
 			expectedSplitQueries: 3,
 		},
 		{
-			in:                   `irate({app="foo"}[3m])`,
-			out:                  `sum without() (` + concatOffsets(splitInterval, 3, true, `increase({app="foo"}[x]y)`) + `) / 180`,
-			expectedSplitQueries: 3,
-		},
-		{
 			in:                   `max_over_time({app="foo"}[3m])`,
 			out:                  `max without() (` + concatOffsets(splitInterval, 3, true, `max_over_time({app="foo"}[x]y)`) + `)`,
 			expectedSplitQueries: 3,
@@ -468,6 +463,9 @@ func TestInstantSplitterNoOp(t *testing.T) {
 		},
 		{
 			query: `idelta({app="foo"}[3m])`,
+		},
+		{
+			query: `irate({app="foo"}[3m])`,
 		},
 		{
 			query: `last_over_time({app="foo"}[3m])`,
