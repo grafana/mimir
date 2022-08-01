@@ -1,14 +1,7 @@
 #!/usr/bin/env bash
 
-crane ls grafana/mimir
-crane ls grafana/mimir | grep -P 'r\d+'
-crane ls grafana/mimir | grep -P 'r\d\+'
-crane ls grafana/mimir | grep -P 'r\\d\\+'
-crane ls grafana/mimir | grep -P 'r\\d\+'
-crane ls grafana/mimir | grep -P 'r\\\\d\\\\+'
-crane ls grafana/mimir | grep -P 'r\\\\d+'
-echo qwerty
-exit 1
+set -exo pipefail
+
 # Uses docker hub image tags to figure out what is the latest image tag
 find_latest_image_tag() {
   docker_hub_repo=$1
