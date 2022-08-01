@@ -95,7 +95,7 @@
           .memcached.addresses
           ", expected: "
           (include "mimir.indexCacheAddress" $)
-          "). If you want to use your own memcached cluster, disable index-cache.enabled and keep the mimir configuration in mimir.config or mimir.structuredConfig")
+          "). If you want to use your own memcached cluster, disable index-cache.enabled and keep the Mimir configuration in mimir.config or mimir.structuredConfig")
         }}
     {{- end }}
   {{- end }}
