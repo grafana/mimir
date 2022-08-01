@@ -5,8 +5,7 @@ crane ls grafana/mimir
 # Uses docker hub image tags to figure out what is the latest image tag
 find_latest_image_tag() {
   docker_hub_repo=$1
-  crane_output=$(crane ls "${docker_hub_repo}")
-  crane_output=$(echo -n $crane_output | grep 'r\d\+-[a-z0-9]\+' )
+  crane_output=$(crane ls "${docker_hub_repo}" | grep 'r\d\+-[a-z0-9]\+')
   crane_output=$(echo -n $crane_output | sort -Vur)
   crane_output=$(echo -n $crane_output | head -1)
   echo $crane_output
