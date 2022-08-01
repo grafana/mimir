@@ -35,7 +35,7 @@ jobs:
 
       - name: Update/regenerate files
         id: update
-        run: PATH=$PATH:$(go env GOROOT) bash .github/workflows/scripts/helm-weekly-release.sh
+        run: PATH=$PATH:$(go env GOPATH)/bin bash .github/workflows/scripts/helm-weekly-release.sh
 
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v4

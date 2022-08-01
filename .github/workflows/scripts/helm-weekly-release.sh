@@ -2,8 +2,6 @@
 
 set -exo pipefail
 
-grep --version
-which grep
 # Uses docker hub image tags to figure out what is the latest image tag
 find_latest_image_tag() {
   docker_hub_repo=$1
