@@ -285,6 +285,8 @@ func (c *MultitenantCompactor) completeBlockUpload(ctx context.Context, logger l
 	if err := c.validateBlock(ctx, blockID, userBkt, meta); err != nil {
 		level.Error(logger).Log("msg", "error while validating block")
 		if !errors.Is(err, context.Canceled) {
+			close(ch)
+			wg.Wait()
 			err := c.uploadValidationWithError(ctx, blockID, userBkt, err.Error())
 			if err != nil {
 				level.Error(logger).Log("msg", "error updating validation file after failed validation in object store")
@@ -417,7 +419,7 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, blockID ulid.U
 	}()
 
 	if err := userBkt.Iter(ctx, blockID.String(), func(pth string) error {
-		fname := filepath.Join(blockDir, pth)
+		fname := filepath.Join(blockDir, filepath.FromSlash(pth))
 		if strings.HasSuffix("/", fname) {
 			if err := os.Mkdir(fname, os.ModeDir); err != nil {
 				return errors.Wrap(err, fmt.Sprintf("Error creating directory: %s", fname))
@@ -452,7 +454,6 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, blockID ulid.U
 		return errors.Wrapf(err, "failed to iterate block %s", blockID.String())
 	}
 
-	// Read metadata file, populate mop of file paths and sizes
 	blockMetadata, err := metadata.ReadFromDir(blockDir)
 	if err != nil {
 		return errors.Wrap(err, "error reading block metadata file")

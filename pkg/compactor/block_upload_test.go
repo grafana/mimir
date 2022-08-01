@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -33,6 +32,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 )
 
 func verifyUploadedMeta(t *testing.T, bkt *bucket.ClientMock, expMeta metadata.Meta) {
@@ -1332,7 +1332,7 @@ func TestMultitenantCompactor_GetBlockUploadStateHandler(t *testing.T) {
 				bucketClient: bkt,
 				cfgProvider:  cfgProvider,
 			}
-
+			c.compactorCfg.DisableBackgroundValidation = true
 			r := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/upload/block/%s/check", blockID), nil)
 			urlVars := map[string]string{"block": blockID}
 			r = mux.SetURLVars(r, urlVars)
