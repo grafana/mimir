@@ -62,7 +62,7 @@ Several parameters that were available in version 2.1 of the mimir-distributed H
 
 1. Decide whether or not you need to update the memcached configuration, which has changed:
 
-   > **Note:** Some Helm values related to memcached have changed. For information about how they affect your Mimir configuration, see the [Update the `mimir.config`](#configupdate).
+   > **Note:** Some Helm values related to memcached have changed. For information about how they affect your Mimir configuration, see step 6 later.
 
    The mimir-distributed Helm chart supports multiple cache types.
    If you have not enabled any memcached caches,
@@ -136,7 +136,7 @@ Several parameters that were available in version 2.1 of the mimir-distributed H
    - To continue using Pod Security Policy (PSP), set `rbac.create` to `true` and `rbac.type` to `psp`.
    - To start using Security Context Constraints (SCC) instead of PSP, set `rbac.create` to `true` and `rbac.type` to `scc`.
 
-1. <a id="configupdate"></a>Update the `mimir.config` value, based on the following information:
+1. Update the `mimir.config` value, based on the following information:
 
    - Compare your overridden value of `mimir.config` with the one in the `values.yaml` file in the chart. If you are not overriding the value of `mimir.config`, then skip this step.
    - The service names for memcached caches have changed.
