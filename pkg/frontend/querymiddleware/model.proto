@@ -92,6 +92,8 @@ message Options {
   bool CacheDisabled = 1;
   bool ShardingDisabled = 2;
   int32 TotalShards = 3;
+  bool InstantSplitDisabled = 4;
+  int64 InstantSplitInterval = 5;
 }
 
 message Hints {

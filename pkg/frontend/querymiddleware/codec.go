@@ -48,6 +48,9 @@ const (
 	statusError = "error"
 
 	totalShardsControlHeader = "Sharding-Control"
+
+	// Instant query specific options
+	instantSplitIntervalControlHeader = "Instant-Split-Interval-Control"
 )
 
 // Codec is used to encode/decode query range requests and responses so they can be passed down to middlewares.
@@ -203,6 +206,7 @@ func (c prometheusCodec) decodeInstantQueryRequest(r *http.Request) (Request, er
 	result.Query = r.FormValue("query")
 	result.Path = r.URL.Path
 	decodeOptions(r, &result.Options)
+	decodeInstantQueryOptions(r, &result.Options)
 	return &result, nil
 }
 
@@ -222,6 +226,19 @@ func decodeOptions(r *http.Request, opts *Options) {
 		opts.TotalShards = int32(shards)
 		if opts.TotalShards < 1 {
 			opts.ShardingDisabled = true
+		}
+	}
+}
+
+func decodeInstantQueryOptions(r *http.Request, opts *Options) {
+	for _, value := range r.Header.Values(instantSplitIntervalControlHeader) {
+		splitInterval, err := time.ParseDuration(value)
+		if err != nil {
+			break
+		}
+		opts.InstantSplitInterval = splitInterval.Nanoseconds()
+		if opts.InstantSplitInterval < 1 {
+			opts.InstantSplitDisabled = true
 		}
 	}
 }

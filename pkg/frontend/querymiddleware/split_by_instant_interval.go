@@ -108,12 +108,14 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, logger, "splitInstantQueryByIntervalMiddleware.Do")
 	defer spanLog.Span.Finish()
 
-	_, err := tenant.TenantIDs(ctx)
+	tenantsIds, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	if s.splitInterval <= 0 {
+	splitInterval := s.getSplitIntervalForQuery(tenantsIds, req, logger)
+	if splitInterval <= 1 {
+		level.Debug(logger).Log("msg", "query splitting is disabled for this query or tenant")
 		return s.next.Do(ctx, req)
 	}
 
@@ -177,4 +179,16 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 		},
 		Headers: shardedQueryable.getResponseHeaders(),
 	}, nil
+}
+
+// getSplitIntervalForQuery calculates and return the split interval that should be used to run the instant query.
+func (s *splitInstantQueryByIntervalMiddleware) getSplitIntervalForQuery(tenantIDs []string, r Request, spanLog log.Logger) int {
+	// Check if splitting is disabled for the given request.
+	if r.GetOptions().InstantSplitDisabled {
+		return 1
+	}
+
+	// TODO(ssncferreira): fix merge conflict with https://github.com/grafana/mimir/pull/2633
+
+	return 0
 }

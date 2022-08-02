@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	jsoniter "github.com/json-iterator/go"
@@ -736,6 +737,45 @@ func Test_DecodeOptions(t *testing.T) {
 			t.Parallel()
 			actual := &Options{}
 			decodeOptions(tt.input, actual)
+			require.Equal(t, tt.expected, actual)
+		})
+	}
+}
+
+func Test_DecodeInstantQueryOptions(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		input    *http.Request
+		expected *Options
+	}{
+		{
+			name: "custom instant query splitting",
+			input: &http.Request{
+				Header: http.Header{
+					instantSplitIntervalControlHeader: []string{"1h"},
+				},
+			},
+			expected: &Options{
+				InstantSplitInterval: time.Hour.Nanoseconds(),
+			},
+		},
+		{
+			name: "disable instant query splitting",
+			input: &http.Request{
+				Header: http.Header{
+					instantSplitIntervalControlHeader: []string{"0"},
+				},
+			},
+			expected: &Options{
+				InstantSplitDisabled: true,
+			},
+		},
+	} {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			actual := &Options{}
+			decodeInstantQueryOptions(tt.input, actual)
 			require.Equal(t, tt.expected, actual)
 		})
 	}
