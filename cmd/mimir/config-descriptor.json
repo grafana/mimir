@@ -2828,6 +2828,17 @@
         },
         {
           "kind": "field",
+          "name": "split_instant_queries_by_interval",
+          "required": false,
+          "desc": "Split instant queries by an interval and execute in parallel. 0 to disable it.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "query-frontend.split-instant-queries-by-interval",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "cardinality_analysis_enabled",
           "required": false,
           "desc": "Enables endpoints used for cardinality analysis.",
@@ -3663,17 +3674,6 @@
           "fieldFlag": "query-frontend.split-queries-by-interval",
           "fieldType": "duration",
           "fieldCategory": "advanced"
-        },
-        {
-          "kind": "field",
-          "name": "split_instant_queries_by_interval",
-          "required": false,
-          "desc": "Split instant queries by an interval and execute in parallel. 0 to disable it.",
-          "fieldValue": null,
-          "fieldDefaultValue": 0,
-          "fieldFlag": "query-frontend.split-instant-queries-by-interval",
-          "fieldType": "duration",
-          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
