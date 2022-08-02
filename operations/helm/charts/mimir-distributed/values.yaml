@@ -1541,10 +1541,10 @@ nginx:
         {{ . | nindent 2 }}
         {{- end }}
 
-        # Ensure that X-Scope-OrgID is always present, default to "anonymous" for backwards compatibility when multi-tenancy was turned off.
+        # Ensure that X-Scope-OrgID is always present, default to the no_auth_tenant for backwards compatibility when multi-tenancy was turned off.
         map $http_x_scope_orgid $ensured_x_scope_orgid {
           default $http_x_scope_orgid;
-          "" "anonymous";
+          "" "{{ include "mimir.noAuthTenant" . }}";
         }
 
         server {
