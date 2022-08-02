@@ -2,8 +2,8 @@
 
 package config
 
-// GEM170ToGEM200Mapper maps from gem-1.7.0 to gem-2.0.0 configurations
-func GEM170ToGEM200Mapper() Mapper {
+// GEM170ToGEMMapper maps from gem-1.7.0 to current gem configuration
+func GEM170ToGEMMapper() Mapper {
 	nonExistentGEMPaths := map[string]struct{}{
 		"blocks_storage.tsdb.max_exemplars":         {},
 		"query_range.parallelise_shardable_queries": {},
@@ -39,6 +39,9 @@ func GEM170ToGEM200Mapper() Mapper {
 		"gateway.proxy.graphite.tls_server_name":          RenameMapping("gateway.proxy.graphite_querier.tls_server_name"),
 		"gateway.proxy.graphite.url":                      RenameMapping("gateway.proxy.graphite_querier.url"),
 		"gateway.proxy.graphite.write_timeout":            RenameMapping("gateway.proxy.graphite_querier.write_timeout"),
+
+		// Renames done in 2.1, 2.2 and 2.3
+		"ingester.exemplars_update_period": RenameMapping("ingester.tsdb_config_update_period"),
 	}
 	for path, mapping := range cortexRenameMappings {
 		if _, notInGEM := nonExistentGEMPaths[path]; notInGEM {
@@ -175,4 +178,8 @@ var gemRemovedConfigPath = []string{
 	"compactor.compaction_strategy", // -compactor.compaction-strategy
 
 	"querier.query_label_names_with_matchers_enabled", // -querier.query-label-names-with-matchers-enabled
+
+	// Removed in 2.1, 2.2 and 2.3
+	"graphite.querier.enable_remote_subquerier", // -graphite.querier.enable-remote-subquerier
+	"graphite.querier.enable_remote_subquerier", // -graphite.querier.use-remote-results
 }

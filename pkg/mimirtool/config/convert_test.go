@@ -43,11 +43,11 @@ func testConvertCortexAndGEM(t *testing.T, tc conversionInput, test func(t *test
 }
 
 func testConvertGEM(t *testing.T, tc conversionInput, test func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error)) {
-	t.Run("gem170->gem200", func(t *testing.T) {
+	t.Run("gem170->gem", func(t *testing.T) {
 		t.Parallel()
 
 		expectedCommonYAML, expectedCommonFlags := tc.loadCommonOpts(t, "testdata/gem/common-options-old.yaml", "testdata/gem/common-options-new.yaml", "testdata/gem/common-flags-old.txt", "testdata/gem/common-flags-new.txt")
-		outYAML, outFlags, notices, err := Convert(tc.yaml, tc.flags, GEM170ToGEM200Mapper(), DefaultGEM170Config, DefaultGEM200COnfig, tc.useNewDefaults, tc.outputDefaults)
+		outYAML, outFlags, notices, err := Convert(tc.yaml, tc.flags, GEM170ToGEMMapper(), DefaultGEM170Config, DefaultGEMConfig, tc.useNewDefaults, tc.outputDefaults)
 
 		if expectedCommonYAML != nil {
 			assert.YAMLEq(t, string(expectedCommonYAML), string(outYAML), "common config options did not map correctly")
@@ -570,6 +570,14 @@ var changedCortexDefaults = []ChangedDefault{
 	{Path: "store_gateway.sharding_ring.instance_interface_names", OldDefault: "eth0,en0", NewDefault: "<nil>"},
 	{Path: "store_gateway.sharding_ring.kvstore.store", OldDefault: "consul", NewDefault: "memberlist"},
 	{Path: "store_gateway.sharding_ring.wait_stability_min_duration", OldDefault: "1m0s", NewDefault: "0s"},
+
+	// Changed in 2.1, 2.2 and 2.3
+	{Path: "alertmanager.max_recv_msg_size", OldDefault: "16777216", NewDefault: "104857600"},
+	{Path: "limits.ha_max_clusters", OldDefault: "0", NewDefault: "100"},
+	{Path: "memberlist.abort_if_cluster_join_fails", OldDefault: "true", NewDefault: "false"},
+	{Path: "querier.query_store_after", OldDefault: "0s", NewDefault: "12h0m0s"},
+	{Path: "server.grpc_server_max_recv_msg_size", OldDefault: "4194304", NewDefault: "104857600"},
+	{Path: "server.grpc_server_max_send_msg_size", OldDefault: "4194304", NewDefault: "104857600"},
 }
 
 func TestChangedCortexDefaults(t *testing.T) {
@@ -616,6 +624,9 @@ func TestChangedGEMDefaults(t *testing.T) {
 		{Path: "instrumentation.enabled", OldDefault: "false", NewDefault: "true"},
 		{Path: "limits.compactor_split_groups", OldDefault: "4", NewDefault: "1"},
 		{Path: "limits.compactor_tenant_shard_size", OldDefault: "1", NewDefault: "0"},
+
+		// Changed in 2.1
+		{Path: "blocks_storage.bucket_store.chunks_cache.attributes_in_memory_max_items", OldDefault: "0", NewDefault: "50000"},
 	}
 
 	// These slipped through from Mimir into GEM 1.7.0
