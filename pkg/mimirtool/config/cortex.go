@@ -150,9 +150,6 @@ var cortexRenameMappings = map[string]Mapping{
 	notInYaml + ".ingester-lifecycler-id":                            RenameMapping("ingester.ring.instance_id"),
 
 	"auth_enabled": RenameMapping("multitenancy_enabled"),
-
-	// Renamed in 2.1, 2.2 and 2.3
-	"ingester.exemplars_update_period": RenameMapping("ingester.tsdb_config_update_period"),
 }
 
 func updateKVStoreValue(source, target Parameters) error {
