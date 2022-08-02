@@ -308,9 +308,9 @@ local filename = 'mimir-rollout-progress.json';
 
       templating+: {
         list: [
-          // Do not allow to include all clusters/namespaces cause this dashboard is designed to show
+          // Do not allow to include all namespaces cause this dashboard is designed to show
           // 1 cluster at a time.
-          l + (if (l.name == 'cluster' || l.name == 'namespace') then { includeAll: false } else {})
+          l + (if (l.name == 'namespace') then { includeAll: false } else {})
           for l in super.list
         ],
       },

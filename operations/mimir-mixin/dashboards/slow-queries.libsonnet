@@ -175,9 +175,9 @@ local filename = 'mimir-slow-queries.json';
     } + {
       templating+: {
         list: [
-          // Do not allow to include all clusters/namespaces otherwise this dashboard
+          // Do not allow to include all namespaces otherwise this dashboard
           // risks to explode because it shows resources per pod.
-          l + (if (l.name == 'cluster' || l.name == 'namespace') then { includeAll: false } else {})
+          l + (if (l.name == 'namespace') then { includeAll: false } else {})
           for l in super.list
         ],
       },
