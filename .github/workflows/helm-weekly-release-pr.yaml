@@ -5,9 +5,6 @@ on:
     - cron: '0 10 * * 1-5' # 10 UTC on weekdays; if we miss published images one day, they should align the day after
 
   workflow_dispatch: # for manual testing
-  push:
-    branches:
-      - dimitar/helm-weekly-release
 
 jobs:
   weekly-release-pr:
