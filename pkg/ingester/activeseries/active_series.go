@@ -49,7 +49,7 @@ type seriesStripe struct {
 type seriesEntry struct {
 	lbs     labels.Labels
 	nanos   *atomic.Int64 // Unix timestamp in nanoseconds. Needs to be a pointer because we don't store pointers to entries in the stripe.
-	matches []int         //  Index of the matcher matching
+	matches fixedSlice    //  Index of the matcher matching
 }
 
 func NewActiveSeries(asm *Matchers, timeout time.Duration) *ActiveSeries {
@@ -191,10 +191,11 @@ func (s *seriesStripe) findOrCreateEntryForSeries(fingerprint uint64, series lab
 	}
 
 	matches := s.matchers.Matches(series)
+	matchesLen := matches.len()
 
 	s.active++
-	for _, matcherIdx := range matches {
-		s.activeMatching[matcherIdx]++
+	for i := 0; i < matchesLen; i++ {
+		s.activeMatching[matches.get(i)]++
 	}
 
 	e := seriesEntry{
@@ -258,8 +259,9 @@ func (s *seriesStripe) purge(keepUntil time.Time) {
 			}
 
 			s.active++
-			for _, matcherIdx := range entries[0].matches {
-				s.activeMatching[matcherIdx]++
+			ml := entries[0].matches.len()
+			for i := 0; i < ml; i++ {
+				s.activeMatching[entries[0].matches.get(i)]++
 			}
 			if ts < oldest {
 				oldest = ts
@@ -288,8 +290,9 @@ func (s *seriesStripe) purge(keepUntil time.Time) {
 		} else {
 			s.active += cnt
 			for i := range entries {
-				for _, matcherIdx := range entries[i].matches {
-					s.activeMatching[matcherIdx]++
+				ml := entries[i].matches.len()
+				for i := 0; i < ml; i++ {
+					s.activeMatching[entries[i].matches.get(i)]++
 				}
 			}
 
