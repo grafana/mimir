@@ -5,6 +5,9 @@ on:
     - cron: '0 12 * * 1' # 12 UTC on Mondays for weekly release; images for GEM and Mimir should have already been pushed
 
   workflow_dispatch: # for manual testing
+  push:
+    branches:
+      - dimitar/helm-weekly-release
 
 jobs:
   weekly-release-pr:
