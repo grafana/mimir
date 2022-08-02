@@ -405,15 +405,13 @@ func getRangeIntervals(expr parser.Expr) []time.Duration {
 	ranges := make([]time.Duration, 0, 1)
 
 	// Ignore the error since we never return it.
-	_, _ = anyNode(expr, func(entry parser.Node) (bool, error) {
+	visitNode(expr, func(entry parser.Node) {
 		switch e := entry.(type) {
 		case *parser.MatrixSelector:
 			ranges = append(ranges, e.Range)
 		case *parser.SubqueryExpr:
 			ranges = append(ranges, e.Range)
 		}
-
-		return false, nil
 	})
 
 	return ranges
@@ -440,15 +438,13 @@ func getOffsets(expr parser.Expr) []time.Duration {
 	offsets := make([]time.Duration, 0, 1)
 
 	// Ignore the error since we never return it.
-	_, _ = anyNode(expr, func(entry parser.Node) (bool, error) {
+	visitNode(expr, func(entry parser.Node) {
 		switch e := entry.(type) {
 		case *parser.VectorSelector:
 			offsets = append(offsets, e.OriginalOffset)
 		case *parser.SubqueryExpr:
 			offsets = append(offsets, e.OriginalOffset)
 		}
-
-		return false, nil
 	})
 
 	return offsets
@@ -496,12 +492,11 @@ func updateRangeInterval(expr parser.Expr, rangeInterval time.Duration) error {
 	updates := 0
 
 	// Ignore the error since we never return it.
-	_, _ = anyNode(expr, func(entry parser.Node) (bool, error) {
+	visitNode(expr, func(entry parser.Node) {
 		if matrix, ok := entry.(*parser.MatrixSelector); ok {
 			matrix.Range = rangeInterval
 			updates++
 		}
-		return false, nil
 	})
 
 	if updates == 0 {
@@ -519,12 +514,11 @@ func updateOffset(expr parser.Expr, offset time.Duration) error {
 	updates := 0
 
 	// Ignore the error since we never return it.
-	_, _ = anyNode(expr, func(entry parser.Node) (bool, error) {
+	visitNode(expr, func(entry parser.Node) {
 		if vector, ok := entry.(*parser.VectorSelector); ok {
 			vector.OriginalOffset = offset
 			updates++
 		}
-		return false, nil
 	})
 
 	if updates == 0 {
