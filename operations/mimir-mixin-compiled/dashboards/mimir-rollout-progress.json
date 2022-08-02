@@ -1338,14 +1338,14 @@
                "type": "datasource"
             },
             {
-               "allValue": null,
+               "allValue": ".*",
                "current": {
                   "text": "prod",
                   "value": "prod"
                },
                "datasource": "$datasource",
                "hide": 0,
-               "includeAll": false,
+               "includeAll": true,
                "label": "cluster",
                "multi": false,
                "name": "cluster",
