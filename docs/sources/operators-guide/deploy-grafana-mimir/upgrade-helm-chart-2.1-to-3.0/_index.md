@@ -60,37 +60,41 @@ Several parameters that were available in version 2.1 of the mimir-distributed H
 
    See [Example migrated values file](#example-of-migrated-values).
 
-1. Decide whether or not you need to update the memcached configuration, which has changed:
+1. Update your memcached configuration via your customized Helm chart values, if needed:
 
-   1. Decide whether or not you need to update your memcached configuration that is related to _Helm chart values_.
+   The mimir-distributed Helm chart supports multiple cache types.
+   If you have not enabled any memcached caches,
+   and you are not overriding the values of `memcached`,
+   `memcached-queries`,
+   `memcached-metadata`,
+   or `memcached-results` sections,
+   then you do not need to update the memcached configuration.
 
-      The mimir-distributed Helm chart supports multiple cache types.
-      If you have not enabled any memcached caches,
-      and you are not overriding the values of `memcached`, `memcached-queries`, `memcached-metadata`, or `memcached-results` sections,
-      then you do not need to update the memcached configuration.
+   Otherwise, check to see if you need to change any of the following configuration parameters:
 
-      Otherwise, check to see if you need to change any of the following configuration parameters:
+   - The `memcached` section was repurposed, and `chunks-cache` was added.
+   - The contents of the `memcached` section now contain the following common values that are shared across all memcached instances: `image`, `podSecurityContext`, and `containerSecurityContext`.
+   - The following sections were renamed:
+     - `memcached-queries` is now `index-cache`
+     - `memcached-metadata` is now `metadata-cache`
+     - `memcached-results` is now `results-cache`
+   - The `memcached*.replicaCount` values were renamed:
+     - `memcached.replicaCount` is now `chunks-cache.replicas`
+     - `memcached-queries.replicaCount` is now `index-cache.replicas`
+     - `memcached-metadata.replicaCount` is now `metadata-cache.replicas`
+     - `memcached-results.replicaCount` is now `results-cache.replicas`
+   - The `memcached*.architecture` values were removed.
+   - The `memcached*.arguments` values were removed.
+   - The default arguments are now encoded in the Helm chart templates; the values `*-cache.allocatedMemory`, `*-cache.maxItemMemory` and `*-cache.port` control the arguments `-m`, `-I` and `-u`. To provide additional arguments, use `*-cache.extraArgs`.
+   - The `memcached*.metrics` values were consolidated under `memcachedExporter`.
 
-      - The `memcached` section was repurposed, and `chunks-cache` was added.
-      - The contents of the `memcached` section now contain the following common values that are shared across all memcached instances: `image`, `podSecurityContext`, and `containerSecurityContext`.
-      - The following sections were renamed:
-        - `memcached-queries` is now `index-cache`
-        - `memcached-metadata` is now `metadata-cache`
-        - `memcached-results` is now `results-cache`
-      - The `memcached*.replicaCount` values were renamed:
-        - `memcached.replicaCount` is now `chunks-cache.replicas`
-        - `memcached-queries.replicaCount` is now `index-cache.replicas`
-        - `memcached-metadata.replicaCount` is now `metadata-cache.replicas`
-        - `memcached-results.replicaCount` is now `results-cache.replicas`
-      - The `memcached*.architecture` values were removed.
-      - The `memcached*.arguments` values were removed.
-      - The default arguments are now encoded in the Helm chart templates; the values `*-cache.allocatedMemory`, `*-cache.maxItemMemory` and `*-cache.port` control the arguments `-m`, `-I` and `-u`. To provide additional arguments, use `*-cache.extraArgs`.
-      - The `memcached*.metrics` values were consolidated under `memcachedExporter`.
+   See also an [example of migration of customized memcached values between versions 2.1 and 3.0](#example-of-migration-of-customized-memcached-values-between-versions-21-and-30).
 
-   1. Decide whether or not you need to update `mimir.config`:
+1. Update your memcached-related Mimir configuration
+   via your customized Helm chart value that is named `mimir.config`, if needed:
 
-      The configuration parameters for memcached `addresses` and `max_item_size` have changed in the default `mimir.config` value.
-      If you previously copied the value of `mimir.config` into your values file, then take the latest version of the `memcached` configuration in the `mimir.config` from the `values.yaml` file in the Helm chart.
+   The configuration parameters for memcached `addresses` and `max_item_size` have changed in the default `mimir.config` value.
+   If you previously copied the value of `mimir.config` into your values file, then take the latest version of the `memcached` configuration in the `mimir.config` from the `values.yaml` file in the Helm chart.
 
 1. (Conditional) If you have enabled `serviceMonitor`, or you are overriding the value of anything under the `serviceMonitor` section, or both, then move the `serviceMonitor` section under `metaMonitoring`.
 
