@@ -120,7 +120,7 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 	// Increment total number of instant queries attempted to split metrics
 	s.metrics.splittingAttempts.Inc()
 
-	stats := astmapper.NewMapperStats()
+	stats := astmapper.NewInstantSplitterStats()
 	mapper := astmapper.NewInstantQuerySplitter(s.splitInterval, s.logger, stats)
 
 	expr, err := parser.ParseExpr(req.GetQuery())
@@ -137,22 +137,22 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 		return s.next.Do(ctx, req)
 	}
 
-	if stats.GetShardedQueries() == 0 {
+	if stats.GetSplitQueries() == 0 {
 		// the query cannot be split, so continue
 		level.Debug(spanLog).Log("msg", "input query resulted in a no operation, falling back to try executing without splitting")
 		s.metrics.splittingSkipped.WithLabelValues(skippedReasonNoop).Inc()
 		return s.next.Do(ctx, req)
 	}
 
-	level.Debug(spanLog).Log("msg", "instant query has been split by interval", "rewritten", instantSplitQuery, "split_queries", stats.GetShardedQueries())
+	level.Debug(spanLog).Log("msg", "instant query has been split by interval", "rewritten", instantSplitQuery, "split_queries", stats.GetSplitQueries())
 
 	// Send hint with number of embedded queries to the sharding middleware
-	hints := &Hints{TotalQueries: int32(stats.GetShardedQueries())}
+	hints := &Hints{TotalQueries: int32(stats.GetSplitQueries())}
 
 	// Update metrics
 	s.metrics.splittingSuccesses.Inc()
-	s.metrics.splitQueries.Add(float64(stats.GetShardedQueries()))
-	s.metrics.splitQueriesPerQuery.Observe(float64(stats.GetShardedQueries()))
+	s.metrics.splitQueries.Add(float64(stats.GetSplitQueries()))
+	s.metrics.splitQueriesPerQuery.Observe(float64(stats.GetSplitQueries()))
 
 	req = req.WithQuery(instantSplitQuery.String()).WithHints(hints)
 	shardedQueryable := newShardedQueryable(req, s.next)
