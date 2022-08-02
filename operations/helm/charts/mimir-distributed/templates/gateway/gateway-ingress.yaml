@@ -45,10 +45,10 @@ spec:
               service:
                 name: {{ include "mimir.resourceName" (dict "ctx" $ "component" "gateway") }}
                 port:
-                  number: {{ $.Values.gateway.service.port | default (include "mimir.serverHttpListenPort" . ) }}
+                  number: {{ $.Values.gateway.service.port | default (include "mimir.serverHttpListenPort" $ ) }}
               {{- else }}
               serviceName: {{ include "mimir.resourceName" (dict "ctx" $ "component" "gateway") }}
-              servicePort: {{ $.Values.gateway.service.port | default (include "mimir.serverHttpListenPort" . ) }}
+              servicePort: {{ $.Values.gateway.service.port | default (include "mimir.serverHttpListenPort" $ ) }}
               {{- end }}
           {{- end }}
     {{- end }}
