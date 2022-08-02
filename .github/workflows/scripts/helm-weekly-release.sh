@@ -63,15 +63,15 @@ validate_version_update() {
   local latest_gem_tag=$3
   local latest_mimir_tag=$4
 
-  if [[ $new_chart_version -eq $current_chart_version ]]; then
+  if [[ "$new_chart_version" == "$current_chart_version" ]]; then
     echo "New chart version ($new_chart_version) is the same as current version ($current_chart_version); not submitting weekly PR"
     exit 1
   fi
 
   local gem_weekly_version=$(extract_r_version $latest_gem_tag)
   local mimir_weekly_version=$(extract_r_version $latest_mimir_tag)
-  if [[ $gem_weekly_number -ne $mimir_weekly_version ]]; then
-    echo "GEM weekly version ($gem_weekly_number) does not match Mimir weekly version ($mimir_weekly_version); not submitting PR"
+  if [[ "$gem_weekly_version" != "$mimir_weekly_version" ]]; then
+    echo "GEM weekly version ($gem_weekly_version) does not match Mimir weekly version ($mimir_weekly_version); not submitting PR"
     exit 1
   fi
 }
