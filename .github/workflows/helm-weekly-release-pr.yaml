@@ -2,7 +2,7 @@ name: helm-weekly-release-pr
 
 on:
   schedule:
-    - cron: '0 12 * * 1' # 12 UTC on Mondays for weekly release; images for GEM and Mimir should have already been pushed
+    - cron: '0 10 * * 1-5' # 10 UTC on weekdays; if we miss published images one day, they should align the day after
 
   workflow_dispatch: # for manual testing
   push:
