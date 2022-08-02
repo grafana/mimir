@@ -35,15 +35,15 @@ func (m *Matchers) Config() CustomTrackersConfig {
 	return m.cfg
 }
 
-// Matches returns a []int containing only matcher indexes which are matching
-func (m *Matchers) Matches(series labels.Labels) []int {
+// Matches returns a fixedSlice containing only matcher indexes which are matching
+func (m *Matchers) Matches(series labels.Labels) fixedSlice {
 	if len(m.matchers) == 0 {
-		return nil
+		return fixedSlice{}
 	}
-	var matches []int
+	var matches fixedSlice
 	for i, sm := range m.matchers {
 		if sm.Matches(series) {
-			matches = append(matches, i)
+			matches.append(i)
 		}
 	}
 	return matches
@@ -79,4 +79,32 @@ func (m *Matchers) Swap(i, j int) {
 func amlabelMatcherToProm(m *amlabels.Matcher) *labels.Matcher {
 	// labels.MatchType(m.Type) is a risky conversion because it depends on the iota order, but we have a test for it
 	return labels.MustNewMatcher(labels.MatchType(m.Type), m.Name, m.Value)
+}
+
+const fixedSliceSize = 4
+
+type fixedSlice struct {
+	arr  [fixedSliceSize]int
+	arrl int
+	rest []int
+}
+
+func (fs *fixedSlice) append(val int) {
+	if fs.arrl < fixedSliceSize {
+		fs.arr[fs.arrl] = val
+		fs.arrl++
+		return
+	}
+	fs.rest = append(fs.rest, val)
+}
+
+func (fs *fixedSlice) get(idx int) int {
+	if idx < fixedSliceSize {
+		return fs.arr[idx]
+	}
+	return fs.rest[idx-fixedSliceSize]
+}
+
+func (fs *fixedSlice) len() int {
+	return fs.arrl + len(fs.rest)
 }

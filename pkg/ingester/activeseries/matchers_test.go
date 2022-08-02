@@ -68,9 +68,17 @@ func TestMatcher_MatchesSeries(t *testing.T) {
 	} {
 		t.Run(tc.series.String(), func(t *testing.T) {
 			got := asm.Matches(tc.series)
-			assert.Equal(t, tc.expected, got)
+			assert.Equal(t, tc.expected, fixedSliceToSlice(got))
 		})
 	}
+}
+
+func fixedSliceToSlice(fixed fixedSlice) []int {
+	slice := make([]int, fixed.len())
+	for i := 0; i < fixed.len(); i++ {
+		slice[i] = fixed.get(i)
+	}
+	return slice
 }
 
 func BenchmarkMatchesSeries(b *testing.B) {
@@ -106,7 +114,7 @@ func BenchmarkMatchesSeries(b *testing.B) {
 			b.Run(fmt.Sprintf("TrackerCount: %d, LabelCount: %d", trackerCount, labelCount), func(b *testing.B) {
 				for x := 0; x < b.N; x++ {
 					got := asms[i].Matches(series[j])
-					if len(got) > 2 {
+					if got.len() > 2 {
 						b.FailNow()
 					}
 				}
