@@ -92,6 +92,6 @@ update_yaml_node $values_file .enterprise.image.tag $latest_gem_tag
 update_yaml_node $chart_file .appVersion $(extract_r_version $latest_mimir_tag)
 update_yaml_node $chart_file .version $new_chart_version
 
-make TTY='' build-helm-tests doc
+make TTY='' doc
 
 echo "::set-output name=new_chart_version::$new_chart_version"
