@@ -25,7 +25,7 @@ for FILEPATH in $TESTS; do
   echo "Templating $TEST_NAME"
   helm template "${TEST_NAME}" ${CHART_PATH} -f "${FILEPATH}" --output-dir "${OUTPUT_DIR}" --namespace citestns
 
-  echo "Removing mutable config checksum, helm chart, image tag version for clarity"
-  find "${OUTPUT_DIR}/$(basename ${CHART_PATH})/templates" -type f -print0 | xargs -0 "${SED}" -E -i -- "/^\s+(checksum\/config|(helm.sh\/)?chart|image: \"grafana\/(mimir|mimir-continuous-test|enterprise-metrics)):/d"
+  echo "Removing mutable config checksum, helm chart, application, image tag version for clarity"
+  find "${OUTPUT_DIR}/$(basename ${CHART_PATH})/templates" -type f -print0 | xargs -0 "${SED}" -E -i -- "/^\s+(checksum\/config|(helm.sh\/)?chart|app.kubernetes.io\/version|image: \"grafana\/(mimir|mimir-continuous-test|enterprise-metrics)):/d"
 
 done

@@ -8,7 +8,6 @@ metadata:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-enterprise-values
     app.kubernetes.io/component: tokengen
-    app.kubernetes.io/version: "2.2.0"
     app.kubernetes.io/managed-by: Helm
   annotations:
     "helm.sh/hook": post-install
@@ -23,7 +22,6 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-enterprise-values
-        app.kubernetes.io/version: "2.2.0"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: tokengen
       namespace: "citestns"

@@ -8,7 +8,6 @@ metadata:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-enterprise-values
     app.kubernetes.io/component: overrides-exporter
-    app.kubernetes.io/version: "2.2.0"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
