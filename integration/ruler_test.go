@@ -24,6 +24,7 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
+	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
@@ -616,7 +617,7 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 		"too_many_chunks_group": `sum(metric)`,
 	} {
 		t.Run(groupName, func(t *testing.T) {
-			require.NoError(t, c.SetRuleGroup(ruleGroupWithRule(groupName, "rule", expression), namespace))
+			require.NoError(t, c.SetRuleGroup(ruleGroupWithRecordingRule(groupName, "rule", expression), namespace))
 			m := ruleGroupMatcher(user, namespace, groupName)
 
 			// Wait until ruler has loaded the group.
@@ -654,7 +655,7 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 		const groupName = "good_rule"
 		const expression = `sum(metric{foo=~"1|2"})`
 
-		require.NoError(t, c.SetRuleGroup(ruleGroupWithRule(groupName, "rule", expression), namespace))
+		require.NoError(t, c.SetRuleGroup(ruleGroupWithRecordingRule(groupName, "rule", expression), namespace))
 		m := ruleGroupMatcher(user, namespace, groupName)
 
 		// Wait until ruler has loaded the group.
@@ -801,7 +802,7 @@ func TestRulerFederatedRules(t *testing.T) {
 			// Create federated rule group
 			namespace := "test_namespace"
 			ruleName := "federated_rule_name"
-			g := ruleGroupWithRule("x", ruleName, tc.ruleExpression)
+			g := ruleGroupWithRecordingRule("x", ruleName, tc.ruleExpression)
 			g.Interval = model.Duration(time.Second / 4)
 			g.SourceTenants = tc.groupSourceTenants
 			require.NoError(t, c.SetRuleGroup(g, namespace))
@@ -914,10 +915,6 @@ func TestRulerRemoteEvaluation(t *testing.T) {
 				require.Equal(t, 200, res.StatusCode)
 			}
 
-			// Create a client as owner tenant to upload groups and then make assertions
-			c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", ruler.HTTPEndpoint(), tc.ruleGroupOwner)
-			require.NoError(t, err)
-
 			// Obtain total series before rule evaluation
 			totalSeriesBeforeEval, err := ingester.SumMetrics([]string{"cortex_ingester_memory_series"})
 			require.NoError(t, err)
@@ -926,10 +923,14 @@ func TestRulerRemoteEvaluation(t *testing.T) {
 			managersTotalBeforeCreate, err := ruler.SumMetrics([]string{"cortex_ruler_managers_total"})
 			require.NoError(t, err)
 
+			// Create a client as owner tenant to upload groups and then make assertions
+			c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", ruler.HTTPEndpoint(), tc.ruleGroupOwner)
+			require.NoError(t, err)
+
 			// Create rule group
 			namespace := "test_namespace"
 			ruleName := "rule_name"
-			g := ruleGroupWithRule("x", ruleName, tc.ruleExpression)
+			g := ruleGroupWithRecordingRule("x", ruleName, tc.ruleExpression)
 			g.Interval = model.Duration(time.Second / 4)
 			g.SourceTenants = tc.groupSourceTenants
 			require.NoError(t, c.SetRuleGroup(g, namespace))
@@ -959,6 +960,72 @@ func TestRulerRemoteEvaluation(t *testing.T) {
 			tc.assertEvalResult(result.(model.Vector))
 		})
 	}
+}
+
+func TestRuler_RestoreWithLongForPeriod(t *testing.T) {
+	s, err := e2e.NewScenario(networkName)
+	assert.NoError(t, err)
+	t.Cleanup(s.Close)
+	// Start dependencies.
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, mimirBucketName)
+	assert.NoError(t, s.StartAndWaitReady(minio, consul))
+
+	flags := mergeFlags(
+		CommonStorageBackendFlags(),
+		RulerFlags(),
+		BlocksStorageFlags(),
+		map[string]string{
+			"-ruler.for-grace-period":           "10s",
+			"-auth.multitenancy-enabled":        "true",
+			"-ingester.ring.replication-factor": "1",
+			"-log.level":                        "debug",
+		},
+	)
+
+	// Start up services
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
+	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), flags)
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
+	assert.NoError(t, s.StartAndWaitReady(distributor, ingester, ruler, querier))
+
+	// Wait until both the distributor and ruler are ready
+	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring
+	assert.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
+	// Ruler will see 512 tokens from ingester, and 128 tokens from itself.
+	assert.NoError(t, ruler.WaitSumMetrics(e2e.Equals(512+128), "cortex_ring_tokens_total"))
+
+	// Create a client to upload groups and then make assertions
+	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", ruler.HTTPEndpoint(), "tenant-1")
+	assert.NoError(t, err)
+
+	// Create rule group
+	namespace := "test_namespace"
+	ruleName := "rule_name"
+	g := ruleGroupWithAlertingRule("x", ruleName, "1")
+	g.Interval = model.Duration(time.Second)
+	g.Rules[0].For = model.Duration(time.Second * 15) // more than the for-grace-period
+	assert.NoError(t, c.SetRuleGroup(g, namespace))
+	assert.NoError(t, ruler.WaitSumMetrics(e2e.Equals(1), "cortex_ruler_managers_total"))
+
+	time.Sleep(time.Duration(g.Rules[0].For) + time.Second*2)
+	rules, err := c.GetPrometheusRules()
+	assert.NoError(t, err)
+	assert.Equal(t, "firing", rules[0].Rules[0].(v1.AlertingRule).State)
+
+	assert.NoError(t, s.Stop(ruler))
+	time.Sleep(time.Second * 2) // just to give the ALERTS and ALERTS_FOR_STATE some time to get old
+	assert.NoError(t, s.StartAndWaitReady(ruler))
+	// Ruler will see 512 tokens from ingester, and 128 tokens from itself.
+	assert.NoError(t, ruler.WaitSumMetrics(e2e.Equals(512+128), "cortex_ring_tokens_total"))
+	c, err = e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", ruler.HTTPEndpoint(), "tenant-1")
+	assert.NoError(t, err)
+
+	time.Sleep(time.Duration(g.Interval) * 4) // wait for at least two evaluations (4 to be sure) so that state restoration happens
+	rules, err = c.GetPrometheusRules()
+	assert.NoError(t, err)
+	assert.Equal(t, "firing", rules[0].Rules[0].(v1.AlertingRule).State)
 }
 
 func TestRulerEnableAPIs(t *testing.T) {
@@ -1083,7 +1150,7 @@ func ruleGroupMatcher(user, namespace, groupName string) *labels.Matcher {
 	return labels.MustNewMatcher(labels.MatchEqual, "rule_group", fmt.Sprintf("data-ruler/%s/%s;%s", user, namespace, groupName))
 }
 
-func ruleGroupWithRule(groupName string, ruleName string, expression string) rulefmt.RuleGroup {
+func ruleGroupWithRecordingRule(groupName string, ruleName string, expression string) rulefmt.RuleGroup {
 	// Prepare rule group with invalid rule.
 	var recordNode = yaml.Node{}
 	var exprNode = yaml.Node{}
@@ -1097,6 +1164,25 @@ func ruleGroupWithRule(groupName string, ruleName string, expression string) rul
 		Rules: []rulefmt.RuleNode{{
 			Record: recordNode,
 			Expr:   exprNode,
+		}},
+	}
+}
+
+func ruleGroupWithAlertingRule(groupName string, ruleName string, expression string) rulefmt.RuleGroup {
+	// Prepare rule group with invalid rule.
+	var recordNode = yaml.Node{}
+	var exprNode = yaml.Node{}
+
+	recordNode.SetString(ruleName)
+	exprNode.SetString(expression)
+
+	return rulefmt.RuleGroup{
+		Name:     groupName,
+		Interval: 10,
+		Rules: []rulefmt.RuleNode{{
+			Alert: recordNode,
+			Expr:  exprNode,
+			For:   30,
 		}},
 	}
 }

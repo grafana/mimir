@@ -827,6 +827,7 @@ func (g *Group) RestoreForState(ts time.Time) {
 					labels.AlertName, alertRule.Name(), "stage", "Iterator", "err", it.Err())
 				return
 			}
+			level.Info(g.logger).Log("msg", "values for restoring for state query", "t", t, "v", v)
 			if value.IsStaleNaN(v) { // Alert was not active.
 				return
 			}

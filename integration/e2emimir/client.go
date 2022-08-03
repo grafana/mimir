@@ -25,12 +25,12 @@ import (
 	"github.com/prometheus/alertmanager/types"
 	promapi "github.com/prometheus/client_golang/api"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
+	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/prompb" // OTLP protos are not compatible with gogo
 	yaml "gopkg.in/yaml.v3"
 
-	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/util/push"
 )
 
@@ -298,7 +298,7 @@ type ServerStatus struct {
 }
 
 // GetPrometheusRules fetches the rules from the Prometheus endpoint /api/v1/rules.
-func (c *Client) GetPrometheusRules() ([]*ruler.RuleGroup, error) {
+func (c *Client) GetPrometheusRules() ([]*v1.RuleGroup, error) {
 	// Create HTTP request
 	req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/prometheus/api/v1/rules", c.rulerAddress), nil)
 	if err != nil {
@@ -323,8 +323,10 @@ func (c *Client) GetPrometheusRules() ([]*ruler.RuleGroup, error) {
 
 	// Decode the response.
 	type response struct {
-		Status string              `json:"status"`
-		Data   ruler.RuleDiscovery `json:"data"`
+		Status string `json:"status"`
+		Data   struct {
+			RuleGroups []*v1.RuleGroup `json:"groups"`
+		} `json:"data"`
 	}
 
 	decoded := &response{}
