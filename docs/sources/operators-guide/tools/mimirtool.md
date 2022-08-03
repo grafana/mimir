@@ -40,6 +40,10 @@ Mimirtool is a command-line tool that operators and tenants can use to execute a
 
   For more information about the `config` command, refer to [Config]({{< relref "#config" >}})
 
+- The `backfill` command uploads existing Prometheus TSDB blocks into Grafana Mimir.
+
+  For more information about the `backfill` command, refer to [Backfill]({{< relref "#backfill" >}})
+
 Mimirtool interacts with:
 
 - User-facing APIs provided by Grafana Mimir.
@@ -872,6 +876,39 @@ printf "{\n%s\n}" "${key_values::-1}"
 
 The only parameter of the script is a file containing the flags, with each flag on its own line.
 
+### Backfill
+
+The `backfill` command uploads Prometheus TSDB blocks into Grafana Mimir, by using the block-upload API that is exposed by the compactor component.
+
+If the command is interrupted, you can restart it. Mimirtool detects which blocks are already uploaded, and will only upload unfinished or new blocks.
+
+The block-upload feature is disabled by default.
+To enable the block-upload feature for a user or an entire system, refer to [Configure TSDB block upload]({{< relref "../configure/configure-tsdb-block-upload.md" >}}).
+If block upload is not enabled for the user, `mimirtool backfill` will fail.
+
+##### Example
+
+```bash
+mimirtool backfill --address=http://mimir-compactor/ --id=anonymous /var/prometheus/{01G803NFXZ0MVKN71GT91HMV3Z,01G8BQ8PRR4TAP7EXZVBNTRBZ4,01G8CB7GTTC5ZXY23WTXHSYQXQ}
+```
+
+The results of the `backfill` command are as follows:
+
+```console
+INFO[0000] Backfilling                              blocks="/var/prometheus/01G803NFXZ0MVKN71GT91HMV3Z,/var/prometheus/01G8BQ8PRR4TAP7EXZVBNTRBZ4,/var/prometheus/01G8CB7GTTC5ZXY23WTXHSYQXQ" user=anonymous
+INFO[0000] making request to start block upload     block=01G803NFXZ0MVKN71GT91HMV3Z file=meta.json path=/var/prometheus/01G803NFXZ0MVKN71GT91HMV3Z
+WARN[0000] block already exists on the server       path=/var/prometheus/01G803NFXZ0MVKN71GT91HMV3Z
+INFO[0000] making request to start block upload     block=01G8BQ8PRR4TAP7EXZVBNTRBZ4 file=meta.json path=/var/prometheus/01G8BQ8PRR4TAP7EXZVBNTRBZ4
+INFO[0000] uploading block file                     block=01G8BQ8PRR4TAP7EXZVBNTRBZ4 file=index path=/var/prometheus/01G8BQ8PRR4TAP7EXZVBNTRBZ4 size=259867
+INFO[0000] uploading block file                     block=01G8BQ8PRR4TAP7EXZVBNTRBZ4 file=chunks/000001 path=/var/prometheus/01G8BQ8PRR4TAP7EXZVBNTRBZ4 size=5024391
+INFO[0000] block uploaded successfully              block=01G8BQ8PRR4TAP7EXZVBNTRBZ4 path=/var/prometheus/01G8BQ8PRR4TAP7EXZVBNTRBZ4
+INFO[0000] making request to start block upload     block=01G8CB7GTTC5ZXY23WTXHSYQXQ file=meta.json path=/var/prometheus/01G8CB7GTTC5ZXY23WTXHSYQXQ
+INFO[0000] uploading block file                     block=01G8CB7GTTC5ZXY23WTXHSYQXQ file=index path=/var/prometheus/01G8CB7GTTC5ZXY23WTXHSYQXQ size=151181
+INFO[0000] uploading block file                     block=01G8CB7GTTC5ZXY23WTXHSYQXQ file=chunks/000001 path=/var/prometheus/01G8CB7GTTC5ZXY23WTXHSYQXQ size=1986792
+INFO[0000] block uploaded successfully              block=01G8CB7GTTC5ZXY23WTXHSYQXQ path=/var/prometheus/01G8CB7GTTC5ZXY23WTXHSYQXQ
+INFO[0001] finished uploading blocks                already_exists=1 failed=0 succeeded=2
+```
+
 ## License
 
-Licensed AGPLv3, see [LICENSE](https://github.com/grafana/mimir/blob/main/LICENSE).
+This software is licensed as AGPLv3. For more information, see [LICENSE](https://github.com/grafana/mimir/blob/main/LICENSE).

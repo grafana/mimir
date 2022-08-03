@@ -245,7 +245,7 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 			found = true
 
 			if r.ContentLength != f.SizeBytes {
-				http.Error(w, "file size doesn't match meta.json", http.StatusBadRequest)
+				http.Error(w, fmt.Sprintf("file size doesn't match %s", block.MetaFilename), http.StatusBadRequest)
 				return
 			}
 		}
@@ -613,7 +613,7 @@ func (c *MultitenantCompactor) getBlockUploadState(ctx context.Context, userBkt 
 	if err != nil {
 		return blockStateUnknown, nil, nil, err
 	}
-	// If neither meta.json nor uploading-meta.json file don't exist, we say that block doesn't exist.
+	// If neither meta.json nor uploading-meta.json file exist, we say that the block doesn't exist.
 	if meta == nil {
 		return blockUploadNotStarted, nil, nil, err
 	}

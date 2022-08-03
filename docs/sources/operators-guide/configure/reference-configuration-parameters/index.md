@@ -611,6 +611,11 @@ forwarding:
   # CLI flag: -distributor.forwarding.enabled
   [enabled: <boolean> | default = false]
 
+  # (experimental) Maximum concurrency at which forwarding requests get
+  # performed.
+  # CLI flag: -distributor.forwarding.request-concurrency
+  [request_concurrency: <int> | default = 10]
+
   # (experimental) Timeout for requests to ingestion endpoints to which we
   # forward metrics.
   # CLI flag: -distributor.forwarding.request-timeout
@@ -778,21 +783,6 @@ ring:
 # (advanced) After what time a series is considered to be inactive.
 # CLI flag: -ingester.active-series-metrics-idle-timeout
 [active_series_metrics_idle_timeout: <duration> | default = 10m]
-
-# (advanced) [Deprecated] This config has been moved to the limits config,
-# please set it there. Additional custom trackers for active metrics. If there
-# are active series matching a provided matcher (map value), the count will be
-# exposed in the custom trackers metric labeled using the tracker name (map
-# key). Zero valued counts are not exposed (and removed when they go back to
-# zero).
-# Example:
-#   The following configuration will count the active series coming from dev and
-#   prod namespaces for each tenant and label them as {name="dev"} and
-#   {name="prod"} in the cortex_ingester_active_series_custom_tracker metric.
-#   active_series_custom_trackers:
-#       dev: '{namespace=~"dev-.*"}'
-#       prod: '{namespace=~"prod-.*"}'
-[active_series_custom_trackers: <map of tracker name (string) to matcher (string)> | default = ]
 
 # (experimental) Period with which to update the per-tenant TSDB configuration.
 # CLI flag: -ingester.tsdb-config-update-period
@@ -1055,8 +1045,9 @@ grpc_client_config:
 # CLI flag: -query-frontend.instance-port
 [port: <int> | default = 0]
 
-# (advanced) Split queries by an interval and execute in parallel. You should
-# use a multiple of 24 hours to optimize querying blocks. 0 to disable it.
+# (advanced) Split range queries by an interval and execute in parallel. You
+# should use a multiple of 24 hours to optimize querying blocks. 0 to disable
+# it.
 # CLI flag: -query-frontend.split-queries-by-interval
 [split_queries_by_interval: <duration> | default = 24h]
 
@@ -2489,6 +2480,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # 0 to disable limit.
 # CLI flag: -query-frontend.query-sharding-max-sharded-queries
 [query_sharding_max_sharded_queries: <int> | default = 128]
+
+# (experimental) Split instant queries by an interval and execute in parallel. 0
+# to disable it.
+# CLI flag: -query-frontend.split-instant-queries-by-interval
+[split_instant_queries_by_interval: <duration> | default = 0s]
 
 # Enables endpoints used for cardinality analysis.
 # CLI flag: -querier.cardinality-analysis-enabled

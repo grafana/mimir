@@ -4,9 +4,10 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: test-oss-values-minio
+  namespace: "citestns"
   labels:
     app: minio
-    chart: minio-8.0.10
+    chart: minio-4.0.3
     release: test-oss-values
     heritage: Helm
 spec:
@@ -15,6 +16,7 @@ spec:
     rollingUpdate:
       maxSurge: 100%
       maxUnavailable: 0
+  replicas: 1
   selector:
     matchLabels:
       app: minio
@@ -26,39 +28,48 @@ spec:
         app: minio
         release: test-oss-values
       annotations:
-        checksum/secrets: f7d601b8641bf40718836a3781f3547aa41f4d5a36774f49fbe5353840847956
-        checksum/config: 0caf46963792266c1f713344c89cc4557f3053454d026fd2cd72e98b853a9d67
+        checksum/secrets: 989bb07fd002aa66c84835942ef090a41b391039c7ea122220a0a52475941900
+        checksum/config: 76906c00e076222189821fe5e30c41d99b9284ae09946ff42801a329461e1ec8
     spec:
-      serviceAccountName: "test-oss-values-minio"
       securityContext:
         runAsUser: 1000
         runAsGroup: 1000
         fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+
+      serviceAccountName: minio-sa
       containers:
         - name: minio
-          image: "minio/minio:RELEASE.2021-02-14T04-01-33Z"
+          image: "quay.io/minio/minio:RELEASE.2022-05-08T23-50-31Z"
           imagePullPolicy: IfNotPresent
           command:
             - "/bin/sh"
             - "-ce"
-            - "/usr/bin/docker-entrypoint.sh minio -S /etc/minio/certs/ server /export"
+            - "/usr/bin/docker-entrypoint.sh minio server /export -S /etc/minio/certs/ --address :9000 --console-address :9001"
           volumeMounts:
+            - name: minio-user
+              mountPath: "/tmp/credentials"
+              readOnly: true
             - name: export
               mountPath: /export            
           ports:
             - name: http
               containerPort: 9000
+            - name: http-console
+              containerPort: 9001
           env:
-            - name: MINIO_ACCESS_KEY
+            - name: MINIO_ROOT_USER
               valueFrom:
                 secretKeyRef:
                   name: test-oss-values-minio
-                  key: accesskey
-            - name: MINIO_SECRET_KEY
+                  key: rootUser
+            - name: MINIO_ROOT_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: test-oss-values-minio
-                  key: secretkey
+                  key: rootPassword
+            - name: MINIO_PROMETHEUS_AUTH_TYPE
+              value: "public"
           resources:
             requests:
               cpu: 100m

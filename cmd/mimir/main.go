@@ -32,7 +32,7 @@ import (
 )
 
 // configHash exposes information about the loaded config
-var configHash *prometheus.GaugeVec = prometheus.NewGaugeVec(
+var configHash = prometheus.NewGaugeVec(
 	prometheus.GaugeOpts{
 		Name: "cortex_config_hash",
 		Help: "Hash of the currently active config file.",

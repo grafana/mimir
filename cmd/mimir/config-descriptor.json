@@ -1368,6 +1368,17 @@
             },
             {
               "kind": "field",
+              "name": "request_concurrency",
+              "required": false,
+              "desc": "Maximum concurrency at which forwarding requests get performed.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10,
+              "fieldFlag": "distributor.forwarding.request-concurrency",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "request_timeout",
               "required": false,
               "desc": "Timeout for requests to ingestion endpoints to which we forward metrics.",
@@ -2351,16 +2362,6 @@
         },
         {
           "kind": "field",
-          "name": "active_series_custom_trackers",
-          "required": false,
-          "desc": "[Deprecated] This config has been moved to the limits config, please set it there. Additional custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count will be exposed in the custom trackers metric labeled using the tracker name (map key). Zero valued counts are not exposed (and removed when they go back to zero).",
-          "fieldValue": null,
-          "fieldDefaultValue": {},
-          "fieldType": "map of tracker name (string) to matcher (string)",
-          "fieldCategory": "advanced"
-        },
-        {
-          "kind": "field",
           "name": "tsdb_config_update_period",
           "required": false,
           "desc": "Period with which to update the per-tenant TSDB configuration.",
@@ -2824,6 +2825,17 @@
           "fieldDefaultValue": 128,
           "fieldFlag": "query-frontend.query-sharding-max-sharded-queries",
           "fieldType": "int"
+        },
+        {
+          "kind": "field",
+          "name": "split_instant_queries_by_interval",
+          "required": false,
+          "desc": "Split instant queries by an interval and execute in parallel. 0 to disable it.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "query-frontend.split-instant-queries-by-interval",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
@@ -3656,7 +3668,7 @@
           "kind": "field",
           "name": "split_queries_by_interval",
           "required": false,
-          "desc": "Split queries by an interval and execute in parallel. You should use a multiple of 24 hours to optimize querying blocks. 0 to disable it.",
+          "desc": "Split range queries by an interval and execute in parallel. You should use a multiple of 24 hours to optimize querying blocks. 0 to disable it.",
           "fieldValue": null,
           "fieldDefaultValue": 86400000000000,
           "fieldFlag": "query-frontend.split-queries-by-interval",

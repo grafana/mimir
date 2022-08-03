@@ -141,7 +141,7 @@ local filename = 'mimir-overrides.json';
         list: [
           // Do not allow to include all clusters/namespaces otherwise this dashboard
           // risks to explode because it shows limits per tenant.
-          l + (if (l.name == 'cluster' || l.name == 'namespace') then { includeAll: false } else {})
+          l + (if (l.name == 'namespace') then { includeAll: false } else {})
           for l in super.list
         ],
       },

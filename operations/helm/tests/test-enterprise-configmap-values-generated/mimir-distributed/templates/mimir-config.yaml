@@ -7,7 +7,6 @@ metadata:
   labels:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-enterprise-configmap-values
-    app.kubernetes.io/version: "2.2.0"
     app.kubernetes.io/managed-by: Helm
   namespace: "citestns"
 data:
@@ -24,11 +23,11 @@ data:
     admin_client:
       storage:
         s3:
-          access_key_id: ${MINIO_ACCESS_KEY_ID}
+          access_key_id: ${MINIO_ROOT_USER}
           bucket_name: enterprise-metrics-admin
           endpoint: test-enterprise-configmap-values-minio.citestns.svc:9000
           insecure: true
-          secret_access_key: ${MINIO_SECRET_ACCESS_KEY}
+          secret_access_key: ${MINIO_ROOT_PASSWORD}
         type: s3
     alertmanager:
       data_dir: /data
@@ -37,11 +36,11 @@ data:
     alertmanager_storage:
       backend: s3
       s3:
-        access_key_id: ${MINIO_ACCESS_KEY_ID}
+        access_key_id: ${MINIO_ROOT_USER}
         bucket_name: mimir-ruler
         endpoint: test-enterprise-configmap-values-minio.citestns.svc:9000
         insecure: true
-        secret_access_key: ${MINIO_SECRET_ACCESS_KEY}
+        secret_access_key: ${MINIO_ROOT_PASSWORD}
     auth:
       type: enterprise
     blocks_storage:
@@ -49,11 +48,11 @@ data:
       bucket_store:
         sync_dir: /data/tsdb-sync
       s3:
-        access_key_id: ${MINIO_ACCESS_KEY_ID}
+        access_key_id: ${MINIO_ROOT_USER}
         bucket_name: mimir-tsdb
         endpoint: test-enterprise-configmap-values-minio.citestns.svc:9000
         insecure: true
-        secret_access_key: ${MINIO_SECRET_ACCESS_KEY}
+        secret_access_key: ${MINIO_ROOT_PASSWORD}
       tsdb:
         dir: /data/tsdb
     cluster_name: test-enterprise-configmap-values
@@ -104,7 +103,7 @@ data:
       abort_if_cluster_join_fails: false
       compression_enabled: false
       join_members:
-      - dns+test-enterprise-configmap-values-mimir-gossip-ring
+      - dns+test-enterprise-configmap-values-mimir-gossip-ring.citestns.svc.cluster.local:7946
     ruler:
       alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.test-enterprise-configmap-values-mimir-alertmanager-headless.citestns.svc.cluster.local/alertmanager
       enable_api: true
@@ -112,11 +111,11 @@ data:
     ruler_storage:
       backend: s3
       s3:
-        access_key_id: ${MINIO_ACCESS_KEY_ID}
+        access_key_id: ${MINIO_ROOT_USER}
         bucket_name: mimir-ruler
         endpoint: test-enterprise-configmap-values-minio.citestns.svc:9000
         insecure: true
-        secret_access_key: ${MINIO_SECRET_ACCESS_KEY}
+        secret_access_key: ${MINIO_ROOT_PASSWORD}
     runtime_config:
       file: /var/mimir/runtime.yaml
     server:

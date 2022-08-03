@@ -147,14 +147,14 @@ func (PrometheusResponseExtractor) ResponseWithoutHeaders(resp Response) Respons
 // CacheSplitter generates cache keys. This is a useful interface for downstream
 // consumers who wish to implement their own strategies.
 type CacheSplitter interface {
-	GenerateCacheKey(userID string, r Request) string
+	GenerateCacheKey(ctx context.Context, userID string, r Request) string
 }
 
-// constSplitter is a utility for using a constant split interval when determining cache keys
-type constSplitter time.Duration
+// ConstSplitter is a utility for using a constant split interval when determining cache keys
+type ConstSplitter time.Duration
 
 // GenerateCacheKey generates a cache key based on the userID, Request and interval.
-func (t constSplitter) GenerateCacheKey(userID string, r Request) string {
+func (t ConstSplitter) GenerateCacheKey(_ context.Context, userID string, r Request) string {
 	startInterval := r.GetStart() / time.Duration(t).Milliseconds()
 	stepOffset := r.GetStart() % r.GetStep()
 

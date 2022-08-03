@@ -754,6 +754,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enables the feature to forward certain metrics in remote_write requests, depending on defined rules.
   -distributor.forwarding.propagate-errors
     	[experimental] If disabled then forwarding requests are always considered to be successful, errors are ignored. (default true)
+  -distributor.forwarding.request-concurrency int
+    	[experimental] Maximum concurrency at which forwarding requests get performed. (default 10)
   -distributor.forwarding.request-timeout duration
     	[experimental] Timeout for requests to ingestion endpoints to which we forward metrics. (default 10s)
   -distributor.ha-tracker.cluster string
@@ -1322,8 +1324,10 @@ Usage of ./cmd/mimir/mimir:
     	How often to resolve the scheduler-address, in order to look for new query-scheduler instances. (default 10s)
   -query-frontend.scheduler-worker-concurrency int
     	Number of concurrent workers forwarding queries to single query-scheduler. (default 5)
+  -query-frontend.split-instant-queries-by-interval value
+    	[experimental] Split instant queries by an interval and execute in parallel. 0 to disable it.
   -query-frontend.split-queries-by-interval duration
-    	Split queries by an interval and execute in parallel. You should use a multiple of 24 hours to optimize querying blocks. 0 to disable it. (default 24h0m0s)
+    	Split range queries by an interval and execute in parallel. You should use a multiple of 24 hours to optimize querying blocks. 0 to disable it. (default 24h0m0s)
   -query-scheduler.grpc-client-config.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -query-scheduler.grpc-client-config.backoff-min-period duration

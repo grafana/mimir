@@ -13,20 +13,20 @@ mimir:
     admin_client:
       storage:
         s3:
-          access_key_id: "${MINIO_ACCESS_KEY_ID}"
-          secret_access_key: "${MINIO_SECRET_ACCESS_KEY}"
+          access_key_id: "${MINIO_ROOT_USER}"
+          secret_access_key: "${MINIO_ROOT_PASSWORD}"
     alertmanager_storage:
       s3:
-        access_key_id: "${MINIO_ACCESS_KEY_ID}"
-        secret_access_key: "${MINIO_SECRET_ACCESS_KEY}"
+        access_key_id: "${MINIO_ROOT_USER}"
+        secret_access_key: "${MINIO_ROOT_PASSWORD}"
     blocks_storage:
       s3:
-        access_key_id: "${MINIO_ACCESS_KEY_ID}"
-        secret_access_key: "${MINIO_SECRET_ACCESS_KEY}"
+        access_key_id: "${MINIO_ROOT_USER}"
+        secret_access_key: "${MINIO_ROOT_PASSWORD}"
     ruler_storage:
       s3:
-        access_key_id: "${MINIO_ACCESS_KEY_ID}"
-        secret_access_key: "${MINIO_SECRET_ACCESS_KEY}"
+        access_key_id: "${MINIO_ROOT_USER}"
+        secret_access_key: "${MINIO_ROOT_PASSWORD}"
 
 enterprise:
   enabled: true

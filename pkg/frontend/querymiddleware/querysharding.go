@@ -13,14 +13,13 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/status"
+	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
-
-	"github.com/grafana/dskit/tenant"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
@@ -64,25 +63,21 @@ func newQueryShardingMiddleware(
 ) Middleware {
 	metrics := queryShardingMetrics{
 		shardingAttempts: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
-			Namespace: "cortex",
-			Name:      "frontend_query_sharding_rewrites_attempted_total",
-			Help:      "Total number of queries the query-frontend attempted to shard.",
+			Name: "cortex_frontend_query_sharding_rewrites_attempted_total",
+			Help: "Total number of queries the query-frontend attempted to shard.",
 		}),
 		shardingSuccesses: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
-			Namespace: "cortex",
-			Name:      "frontend_query_sharding_rewrites_succeeded_total",
-			Help:      "Total number of queries the query-frontend successfully rewritten in a shardable way.",
+			Name: "cortex_frontend_query_sharding_rewrites_succeeded_total",
+			Help: "Total number of queries the query-frontend successfully rewritten in a shardable way.",
 		}),
 		shardedQueries: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
-			Namespace: "cortex",
-			Name:      "frontend_sharded_queries_total",
-			Help:      "Total number of sharded queries.",
+			Name: "cortex_frontend_sharded_queries_total",
+			Help: "Total number of sharded queries.",
 		}),
 		shardedQueriesPerQuery: promauto.With(registerer).NewHistogram(prometheus.HistogramOpts{
-			Namespace: "cortex",
-			Name:      "frontend_sharded_queries_per_query",
-			Help:      "Number of sharded queries a single query has been rewritten to.",
-			Buckets:   prometheus.ExponentialBuckets(2, 2, 10),
+			Name:    "cortex_frontend_sharded_queries_per_query",
+			Help:    "Number of sharded queries a single query has been rewritten to.",
+			Buckets: prometheus.ExponentialBuckets(2, 2, 10),
 		}),
 	}
 	return MiddlewareFunc(func(next Handler) Handler {
@@ -228,7 +223,8 @@ func mapEngineError(err error) error {
 // to be executed by PromQL engine with shardedQueryable or an empty string if the input query
 // can't be sharded.
 func (s *querySharding) shardQuery(query string, totalShards int) (string, *astmapper.MapperStats, error) {
-	mapper, err := astmapper.NewSharding(totalShards, s.logger)
+	stats := astmapper.NewMapperStats()
+	mapper, err := astmapper.NewSharding(totalShards, s.logger, stats)
 	if err != nil {
 		return "", nil, err
 	}
@@ -238,8 +234,7 @@ func (s *querySharding) shardQuery(query string, totalShards int) (string, *astm
 		return "", nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	stats := astmapper.NewMapperStats()
-	shardedQuery, err := mapper.Map(expr, stats)
+	shardedQuery, err := mapper.Map(expr)
 	if err != nil {
 		return "", nil, err
 	}

@@ -220,6 +220,24 @@ func TestShardSummer(t *testing.T) {
 			3,
 		},
 		{
+			// Parenthesis expression between the parallelizeable function call and the subquery.
+			`max_over_time((
+				stddev_over_time(
+					deriv(
+						rate(metric_counter[10m])
+					[5m:1m])
+				[2m:])
+			[10m:]))`,
+			concatShards(3, `max_over_time((
+					stddev_over_time(
+						deriv(
+							rate(metric_counter{__query_shard__="x_of_y"}[10m])
+						[5m:1m])
+					[2m:])
+				[10m:]))`),
+			3,
+		},
+		{
 			`rate(
 				sum by(group_1) (
 					rate(metric_counter[5m])
@@ -460,15 +478,15 @@ func TestShardSummer(t *testing.T) {
 		tt := tt
 
 		t.Run(tt.in, func(t *testing.T) {
-			mapper, err := NewSharding(3, log.NewNopLogger())
+			stats := NewMapperStats()
+			mapper, err := NewSharding(3, log.NewNopLogger(), stats)
 			require.NoError(t, err)
 			expr, err := parser.ParseExpr(tt.in)
 			require.NoError(t, err)
 			out, err := parser.ParseExpr(tt.out)
 			require.NoError(t, err)
 
-			stats := NewMapperStats()
-			mapped, err := mapper.Map(expr, stats)
+			mapped, err := mapper.Map(expr)
 			require.NoError(t, err)
 			require.Equal(t, out.String(), mapped.String())
 			assert.Equal(t, tt.expectedShardedQueries, stats.GetShardedQueries())
@@ -485,16 +503,16 @@ func concatShards(shards int, queryTemplate string) string {
 }
 
 func concat(queries ...string) string {
-	nodes := make([]parser.Node, 0, len(queries))
+	exprs := make([]parser.Expr, 0, len(queries))
 	for _, q := range queries {
 		n, err := parser.ParseExpr(q)
 		if err != nil {
 			panic(err)
 		}
-		nodes = append(nodes, n)
+		exprs = append(exprs, n)
 
 	}
-	mapped, err := vectorSquasher(nodes...)
+	mapped, err := vectorSquasher(exprs...)
 	if err != nil {
 		panic(err)
 	}
@@ -514,19 +532,60 @@ func TestShardSummerWithEncoding(t *testing.T) {
 		},
 	} {
 		t.Run(fmt.Sprintf("[%d]", i), func(t *testing.T) {
-			summer, err := newShardSummer(c.shards, vectorSquasher, log.NewNopLogger())
+			stats := NewMapperStats()
+			summer, err := newShardSummer(c.shards, vectorSquasher, log.NewNopLogger(), stats)
 			require.Nil(t, err)
 			expr, err := parser.ParseExpr(c.input)
 			require.Nil(t, err)
 
-			stats := NewMapperStats()
-			res, err := summer.Map(expr, stats)
+			res, err := summer.Map(expr)
 			require.Nil(t, err)
 			assert.Equal(t, c.shards, stats.GetShardedQueries())
 			expected, err := parser.ParseExpr(c.expected)
 			require.Nil(t, err)
 
 			require.Equal(t, expected.String(), res.String())
+		})
+	}
+}
+
+func TestIsSubqueryCall(t *testing.T) {
+	tests := []struct {
+		query    string
+		expected bool
+	}{
+		{
+			query:    `time()`,
+			expected: false,
+		}, {
+			query:    `rate(metric[1m])`,
+			expected: false,
+		}, {
+			query:    `rate(metric[1h:5m])`,
+			expected: true,
+		}, {
+			query:    `quantile_over_time(1, metric[1h:5m])`,
+			expected: true,
+		}, {
+			// Parenthesis expression between sum_over_time() and the subquery.
+			query:    `sum_over_time((metric_counter[30m:5s]))`,
+			expected: true,
+		},
+		{
+			// Multiple parenthesis expressions between sum_over_time() and the subquery.
+			query:    `sum_over_time((((metric_counter[30m:5s]))))`,
+			expected: true,
+		},
+	}
+
+	for _, testData := range tests {
+		t.Run(testData.query, func(t *testing.T) {
+			expr, err := parser.ParseExpr(testData.query)
+			require.NoError(t, err)
+
+			call, ok := expr.(*parser.Call)
+			require.True(t, ok)
+			assert.Equal(t, testData.expected, isSubqueryCall(call))
 		})
 	}
 }

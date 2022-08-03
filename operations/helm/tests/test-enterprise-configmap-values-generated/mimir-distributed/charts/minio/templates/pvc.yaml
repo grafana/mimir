@@ -4,9 +4,10 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: test-enterprise-configmap-values-minio
+  namespace: "citestns"
   labels:
     app: minio
-    chart: minio-8.0.10
+    chart: minio-4.0.3
     release: test-enterprise-configmap-values
     heritage: Helm
 spec:

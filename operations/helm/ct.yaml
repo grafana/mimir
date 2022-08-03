@@ -4,7 +4,7 @@ target-branch: main
 chart-dirs:
   - operations/helm/charts
 chart-repos:
-  - minio=https://helm.min.io
+  - minio=https://charts.min.io/
   - grafana=https://grafana.github.io/helm-charts
 helm-extra-args: --timeout 600s
 validate-maintainers: false

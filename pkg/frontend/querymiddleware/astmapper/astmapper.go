@@ -12,8 +12,8 @@ import (
 
 // ASTMapper is the exported interface for mapping between multiple AST representations
 type ASTMapper interface {
-	// Map the input node and returns the mapped node.
-	Map(node parser.Node, stats *MapperStats) (mapped parser.Node, err error)
+	// Map the input expr and returns the mapped expr.
+	Map(expr parser.Expr) (mapped parser.Expr, err error)
 }
 
 // MultiMapper can compose multiple ASTMappers
@@ -22,8 +22,8 @@ type MultiMapper struct {
 }
 
 // Map implements ASTMapper
-func (m *MultiMapper) Map(node parser.Node, stats *MapperStats) (parser.Node, error) {
-	var result = node
+func (m *MultiMapper) Map(expr parser.Expr) (parser.Expr, error) {
+	var result = expr
 	var err error
 
 	if len(m.mappers) == 0 {
@@ -31,7 +31,7 @@ func (m *MultiMapper) Map(node parser.Node, stats *MapperStats) (parser.Node, er
 	}
 
 	for _, x := range m.mappers {
-		result, err = x.Map(result, stats)
+		result, err = x.Map(result)
 		if err != nil {
 			return nil, err
 		}
@@ -42,7 +42,7 @@ func (m *MultiMapper) Map(node parser.Node, stats *MapperStats) (parser.Node, er
 
 // Register adds ASTMappers into a multimapper.
 // Since registered functions are applied in the order they're registered, it's advised to register them
-// in decreasing priority and only operate on nodes that each function cares about, defaulting to cloneNode.
+// in decreasing priority and only operate on exprs that each function cares about, defaulting to cloneExpr.
 func (m *MultiMapper) Register(xs ...ASTMapper) {
 	m.mappers = append(m.mappers, xs...)
 }
@@ -54,130 +54,112 @@ func NewMultiMapper(xs ...ASTMapper) *MultiMapper {
 	return m
 }
 
-// cloneNode is a helper function to clone a node.
-func cloneNode(node parser.Node) (parser.Node, error) {
-	return parser.ParseExpr(node.String())
+// cloneExpr is a helper function to clone an expr.
+func cloneExpr(expr parser.Expr) (parser.Expr, error) {
+	return parser.ParseExpr(expr.String())
 }
 
-func cloneAndMap(mapper ASTNodeMapper, node parser.Expr, stats *MapperStats) (parser.Node, error) {
-	cloned, err := cloneNode(node)
+func cloneAndMap(mapper ASTExprMapper, expr parser.Expr) (parser.Expr, error) {
+	cloned, err := cloneExpr(expr)
 	if err != nil {
 		return nil, err
 	}
-	return mapper.Map(cloned, stats)
+	return mapper.Map(cloned)
 }
 
-type NodeMapper interface {
-	// MapNode either maps a single AST node or returns the unaltered node.
+type ExprMapper interface {
+	// MapExpr either maps a single AST expr or returns the unaltered expr.
 	// It returns a finished bool to signal whether no further recursion is necessary.
-	MapNode(node parser.Node, stats *MapperStats) (mapped parser.Node, finished bool, err error)
+	MapExpr(expr parser.Expr) (mapped parser.Expr, finished bool, err error)
 }
 
-// NewASTNodeMapper creates an ASTMapper from a NodeMapper
-func NewASTNodeMapper(mapper NodeMapper) ASTNodeMapper {
-	return ASTNodeMapper{mapper}
+// NewASTExprMapper creates an ASTMapper from a ExprMapper
+func NewASTExprMapper(mapper ExprMapper) ASTExprMapper {
+	return ASTExprMapper{mapper}
 }
 
-// ASTNodeMapper is an ASTMapper adapter which uses a NodeMapper internally.
-type ASTNodeMapper struct {
-	NodeMapper
+// ASTExprMapper is an ASTMapper adapter which uses a ExprMapper internally.
+type ASTExprMapper struct {
+	ExprMapper
 }
 
-// Map implements ASTMapper from a NodeMapper
-func (nm ASTNodeMapper) Map(node parser.Node, stats *MapperStats) (parser.Node, error) {
-	node, finished, err := nm.MapNode(node, stats)
+// Map implements ASTMapper from a ExprMapper
+func (em ASTExprMapper) Map(expr parser.Expr) (parser.Expr, error) {
+	expr, finished, err := em.MapExpr(expr)
 	if err != nil {
 		return nil, err
 	}
 
 	if finished {
-		return node, nil
+		return expr, nil
 	}
 
-	switch n := node.(type) {
+	switch e := expr.(type) {
 	case nil:
 		// nil handles cases where we check optional fields that are not set
 		return nil, nil
 
-	case parser.Expressions:
-		for i, e := range n {
-			mapped, err := nm.Map(e, stats)
-			if err != nil {
-				return nil, err
-			}
-			n[i] = mapped.(parser.Expr)
-		}
-		return n, nil
-
 	case *parser.AggregateExpr:
-		expr, err := nm.Map(n.Expr, stats)
+		expr, err := em.Map(e.Expr)
 		if err != nil {
 			return nil, err
 		}
-		n.Expr = expr.(parser.Expr)
-		return n, nil
+		e.Expr = expr
+		return e, nil
 
 	case *parser.BinaryExpr:
-		lhs, err := nm.Map(n.LHS, stats)
+		lhs, err := em.Map(e.LHS)
 		if err != nil {
 			return nil, err
 		}
-		n.LHS = lhs.(parser.Expr)
+		e.LHS = lhs
 
-		rhs, err := nm.Map(n.RHS, stats)
+		rhs, err := em.Map(e.RHS)
 		if err != nil {
 			return nil, err
 		}
-		n.RHS = rhs.(parser.Expr)
+		e.RHS = rhs
 
-		return n, nil
+		return e, nil
 
 	case *parser.Call:
-		for i, e := range n.Args {
-			mapped, err := nm.Map(e, stats)
+		for i, arg := range e.Args {
+			mapped, err := em.Map(arg)
 			if err != nil {
 				return nil, err
 			}
-			n.Args[i] = mapped.(parser.Expr)
+			e.Args[i] = mapped
 		}
-		return n, nil
+		return e, nil
 
 	case *parser.SubqueryExpr:
-		mapped, err := nm.Map(n.Expr, stats)
+		mapped, err := em.Map(e.Expr)
 		if err != nil {
 			return nil, err
 		}
-		n.Expr = mapped.(parser.Expr)
-		return n, nil
+		e.Expr = mapped
+		return e, nil
 
 	case *parser.ParenExpr:
-		mapped, err := nm.Map(n.Expr, stats)
+		mapped, err := em.Map(e.Expr)
 		if err != nil {
 			return nil, err
 		}
-		n.Expr = mapped.(parser.Expr)
-		return n, nil
+		e.Expr = mapped
+		return e, nil
 
 	case *parser.UnaryExpr:
-		mapped, err := nm.Map(n.Expr, stats)
+		mapped, err := em.Map(e.Expr)
 		if err != nil {
 			return nil, err
 		}
-		n.Expr = mapped.(parser.Expr)
-		return n, nil
-
-	case *parser.EvalStmt:
-		mapped, err := nm.Map(n.Expr, stats)
-		if err != nil {
-			return nil, err
-		}
-		n.Expr = mapped.(parser.Expr)
-		return n, nil
+		e.Expr = mapped
+		return e, nil
 
 	case *parser.NumberLiteral, *parser.StringLiteral, *parser.VectorSelector, *parser.MatrixSelector:
-		return n, nil
+		return e, nil
 
 	default:
-		return nil, errors.Errorf("nodeMapper: unhandled node type %T", node)
+		return nil, errors.Errorf("ASTExprMapper: unhandled expr type %T", expr)
 	}
 }
