@@ -265,7 +265,11 @@ func (r *AlertingRule) QueryforStateSeries(alert *Alert, q storage.Querier) (sto
 		}
 		matchers = append(matchers, mt)
 	}
-	sset := q.Select(false, nil, matchers...)
+	sset := q.Select(false, &storage.SelectHints{
+		Start:           time.Now().Add(-10*time.Hour).UnixMilli(),
+		End:             time.Now().UnixMilli(),
+		Step:            time.Second.Milliseconds(),
+	}, matchers...)
 
 	var s storage.Series
 	for sset.Next() {
