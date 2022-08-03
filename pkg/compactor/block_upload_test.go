@@ -515,7 +515,6 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 				bucketClient: &bkt,
 				cfgProvider:  cfgProvider,
 			}
-			c.compactorCfg.DisableBackgroundValidation = true
 			var rdr io.Reader
 			if tc.body != "" {
 				rdr = strings.NewReader(tc.body)
@@ -660,7 +659,6 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 				bucketClient: bkt,
 				cfgProvider:  cfgProvider,
 			}
-			c.compactorCfg.DisableBackgroundValidation = true
 			r := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/upload/block/%s/start", blockID), bytes.NewReader(metaJSON))
 			r = r.WithContext(user.InjectOrgID(r.Context(), tenantID))
 			r = mux.SetURLVars(r, map[string]string{"block": blockID})
@@ -930,7 +928,6 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 				bucketClient: &bkt,
 				cfgProvider:  cfgProvider,
 			}
-			c.compactorCfg.DisableBackgroundValidation = true
 			var rdr io.Reader
 			if tc.body != "" {
 				rdr = strings.NewReader(tc.body)
@@ -1032,7 +1029,6 @@ func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 				bucketClient: bkt,
 				cfgProvider:  cfgProvider,
 			}
-			c.compactorCfg.DisableBackgroundValidation = true
 			for _, f := range tc.files {
 				rdr := strings.NewReader(f.content)
 				r := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/upload/block/%s/files?path=%s", blockID, url.QueryEscape(f.path)), rdr)
@@ -1215,7 +1211,6 @@ func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 				bucketClient: &bkt,
 				cfgProvider:  cfgProvider,
 			}
-			c.compactorCfg.DisableBackgroundValidation = true
 			r := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/upload/block/%s/finish", tc.blockID), nil)
 			if tc.tenantID != "" {
 				r = r.WithContext(user.InjectOrgID(r.Context(), tenantID))
@@ -1336,7 +1331,6 @@ func TestMultitenantCompactor_GetBlockUploadStateHandler(t *testing.T) {
 				bucketClient: bkt,
 				cfgProvider:  cfgProvider,
 			}
-			c.compactorCfg.DisableBackgroundValidation = true
 			r := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/upload/block/%s/check", blockID), nil)
 			urlVars := map[string]string{"block": blockID}
 			r = mux.SetURLVars(r, urlVars)
@@ -1421,7 +1415,6 @@ func TestMultitenantCompactor_FinishBlockUpload(t *testing.T) {
 				bucketClient: bucketClient,
 				cfgProvider:  cfgProvider,
 			}
-			c.compactorCfg.DisableBackgroundValidation = true
 			r := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/upload/block/%s/finish", tc.blockID), nil)
 			if tc.tenantID != "" {
 				r = r.WithContext(user.InjectOrgID(r.Context(), tc.tenantID))
