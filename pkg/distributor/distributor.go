@@ -623,7 +623,10 @@ func (d *Distributor) PrePushHaDedupeMiddleware(next push.Func) push.Func {
 			// Make a copy of these, since they may be retained as labels on our metrics, e.g. dedupedSamples.
 			cluster, replica = copyString(cluster), copyString(replica)
 
-			numSamples := 0 // TODO(replay) fix this
+			numSamples := 0
+			for _, ts := range req.Timeseries {
+				numSamples += len(ts.Samples)
+			}
 			removeReplica := false
 			removeReplica, err = d.checkSample(ctx, userID, cluster, replica)
 			if err != nil {
