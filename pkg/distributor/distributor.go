@@ -639,6 +639,12 @@ func (d *Distributor) PrePushHaDedupeMiddleware(next push.Func) push.Func {
 			// Make a copy of these, since they may be retained as labels on our metrics, e.g. dedupedSamples.
 			cluster, replica = copyString(cluster), copyString(replica)
 
+			span := opentracing.SpanFromContext(ctx)
+			if span != nil {
+				span.SetTag("cluster", cluster)
+				span.SetTag("replica", replica)
+			}
+
 			numSamples := 0
 			for _, ts := range req.Timeseries {
 				numSamples += len(ts.Samples)
