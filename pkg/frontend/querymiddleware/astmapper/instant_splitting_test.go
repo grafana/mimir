@@ -372,7 +372,7 @@ func TestInstantSplitter(t *testing.T) {
 		tt := tt
 
 		t.Run(tt.in, func(t *testing.T) {
-			stats := NewMapperStats()
+			stats := NewInstantSplitterStats()
 			mapper := NewInstantQuerySplitter(splitInterval, log.NewNopLogger(), stats)
 
 			expr, err := parser.ParseExpr(tt.in)
@@ -384,7 +384,7 @@ func TestInstantSplitter(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, out.String(), mapped.String())
 
-			assert.Equal(t, tt.expectedSplitQueries, stats.GetShardedQueries())
+			assert.Equal(t, tt.expectedSplitQueries, stats.GetSplitQueries())
 		})
 	}
 }
@@ -422,7 +422,7 @@ func TestInstantSplitterUnevenRangeInterval(t *testing.T) {
 		tt := tt
 
 		t.Run(tt.in, func(t *testing.T) {
-			stats := NewMapperStats()
+			stats := NewInstantSplitterStats()
 			mapper := NewInstantQuerySplitter(splitInterval, log.NewNopLogger(), stats)
 
 			expr, err := parser.ParseExpr(tt.in)
@@ -434,7 +434,7 @@ func TestInstantSplitterUnevenRangeInterval(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, out.String(), mapped.String())
 
-			assert.Equal(t, tt.expectedSplitQueries, stats.GetShardedQueries())
+			assert.Equal(t, tt.expectedSplitQueries, stats.GetSplitQueries())
 		})
 	}
 }
@@ -569,7 +569,7 @@ func TestInstantSplitterNoOp(t *testing.T) {
 		tt := tt
 
 		t.Run(tt.query, func(t *testing.T) {
-			stats := NewMapperStats()
+			stats := NewInstantSplitterStats()
 			mapper := NewInstantQuerySplitter(splitInterval, log.NewNopLogger(), stats)
 
 			expr, err := parser.ParseExpr(tt.query)
@@ -580,7 +580,7 @@ func TestInstantSplitterNoOp(t *testing.T) {
 			// the statistics.
 			_, err = mapper.Map(expr)
 			require.NoError(t, err)
-			assert.Equal(t, 0, stats.GetShardedQueries())
+			assert.Equal(t, 0, stats.GetSplitQueries())
 		})
 	}
 }

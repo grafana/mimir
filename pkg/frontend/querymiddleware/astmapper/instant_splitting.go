@@ -20,7 +20,7 @@ type instantSplitter struct {
 	// by queriers, and therefore minimize the merging of results in the query-frontend.
 	outerAggregationExpr *parser.AggregateExpr
 	logger               log.Logger
-	stats                *MapperStats
+	stats                *InstantSplitterStats
 }
 
 // Supported vector aggregators
@@ -56,7 +56,7 @@ var cannotDoubleCountBoundaries = map[string]bool{
 }
 
 // NewInstantQuerySplitter creates a new query range mapper.
-func NewInstantQuerySplitter(interval time.Duration, logger log.Logger, stats *MapperStats) ASTMapper {
+func NewInstantQuerySplitter(interval time.Duration, logger log.Logger, stats *InstantSplitterStats) ASTMapper {
 	instantQueryMapper := NewASTExprMapper(
 		&instantSplitter{
 			interval: interval,
@@ -160,7 +160,7 @@ func (i *instantSplitter) mapBinaryExpr(expr *parser.BinaryExpr) (mapped parser.
 	}
 	// if query was split and at least one operand successfully finished, the binary operations is mapped.
 	// The binary operands need to be wrapped in a parentheses' expression to ensure operator precedence.
-	if i.stats.GetShardedQueries() > 0 && (lhsFinished || rhsFinished) {
+	if i.stats.GetSplitQueries() > 0 && (lhsFinished || rhsFinished) {
 		expr.LHS = &parser.ParenExpr{
 			Expr: lhsMapped,
 		}
@@ -373,7 +373,7 @@ func (i *instantSplitter) splitAndSquashCall(expr *parser.Call, rangeInterval ti
 	}
 
 	// Update stats
-	i.stats.AddShardedQueries(splitCount)
+	i.stats.AddSplitQueries(splitCount)
 
 	return squashExpr, true, nil
 }
