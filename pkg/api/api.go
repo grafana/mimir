@@ -83,15 +83,6 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.StringVar(&cfg.PrometheusHTTPPrefix, prefix+"http.prometheus-http-prefix", "/prometheus", "HTTP URL path under which the Prometheus api will be served.")
 }
 
-// Push either wraps the distributor push function as configured or returns the distributor push directly.
-func (cfg *Config) wrapDistributorPush(d *distributor.Distributor) push.Func {
-	if cfg.DistributorPushWrapper != nil {
-		return cfg.DistributorPushWrapper(d.PushWithCleanup)
-	}
-
-	return d.PushWithCleanup
-}
-
 type API struct {
 	AuthMiddleware middleware.Interface
 
@@ -240,12 +231,15 @@ func (a *API) RegisterRuntimeConfig(runtimeConfigHandler http.HandlerFunc) {
 func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distributor.Config) {
 	distributorpb.RegisterDistributorServer(a.server.GRPC, d)
 
-	wrappedDistributor := a.cfg.wrapDistributorPush(d)
-	wrappedDistributor = d.PrePushForwardingMiddleware(wrappedDistributor)
-	wrappedDistributor = d.PrePushHaDedupeMiddleware(wrappedDistributor)
+	wrappedPush := d.PushWithCleanup
+	wrappedPush = d.PrePushForwardingMiddleware(wrappedPush)
+	wrappedPush = d.PrePushHaDedupeMiddleware(wrappedPush)
+	if a.cfg.DistributorPushWrapper != nil {
+		wrappedPush = a.cfg.DistributorPushWrapper(wrappedPush)
+	}
 
-	a.RegisterRoute("/api/v1/push", push.Handler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, wrappedDistributor), true, false, "POST")
-	a.RegisterRoute("/otlp/v1/metrics", push.OTLPHandler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, wrappedDistributor), true, false, "POST")
+	a.RegisterRoute("/api/v1/push", push.Handler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, wrappedPush), true, false, "POST")
+	a.RegisterRoute("/otlp/v1/metrics", push.OTLPHandler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, wrappedPush), true, false, "POST")
 
 	a.indexPage.AddLinks(defaultWeight, "Distributor", []IndexPageLink{
 		{Desc: "Ring status", Path: "/distributor/ring"},
