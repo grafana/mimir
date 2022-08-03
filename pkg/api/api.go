@@ -83,6 +83,15 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.StringVar(&cfg.PrometheusHTTPPrefix, prefix+"http.prometheus-http-prefix", "/prometheus", "HTTP URL path under which the Prometheus api will be served.")
 }
 
+// Push either wraps the distributor push function as configured or returns the distributor push directly.
+func (cfg *Config) wrapDistributorPush(next push.Func) push.Func {
+	if cfg.DistributorPushWrapper != nil {
+		return cfg.DistributorPushWrapper(next)
+	}
+
+	return next
+}
+
 type API struct {
 	AuthMiddleware middleware.Interface
 
@@ -231,10 +240,7 @@ func (a *API) RegisterRuntimeConfig(runtimeConfigHandler http.HandlerFunc) {
 func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distributor.Config) {
 	distributorpb.RegisterDistributorServer(a.server.GRPC, d)
 
-	wrappedPush := d.PushWithMiddlewares
-	if a.cfg.DistributorPushWrapper != nil {
-		wrappedPush = a.cfg.DistributorPushWrapper(wrappedPush)
-	}
+	wrappedPush := a.cfg.wrapDistributorPush(d.PushWithMiddlewares)
 	a.RegisterRoute("/api/v1/push", push.Handler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, wrappedPush), true, false, "POST")
 	a.RegisterRoute("/otlp/v1/metrics", push.OTLPHandler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, wrappedPush), true, false, "POST")
 
