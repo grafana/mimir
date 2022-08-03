@@ -780,7 +780,10 @@ func TestConvert_PassingOnlyFlagsReturnsOnlyFlags(t *testing.T) {
 	})
 }
 
-func TestConvert_RemovedFlagsAreCorrect(t *testing.T) {
+// TestRemovedParamsAndFlagsAreCorrect checks if what we have in removedCLIOptions and removedConfigPaths makes sense.
+// It cannot test for all flags that were present at some point but now don't exist because some of them could be renamed
+// or merged with other flags.
+func TestRemovedParamsAndFlagsAreCorrect(t *testing.T) {
 	t.Parallel()
 
 	allParameterPaths := func(p Parameters) map[string]bool {

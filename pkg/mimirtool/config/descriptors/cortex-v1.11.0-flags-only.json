@@ -121,6 +121,5 @@
       "fieldFlag": "frontend.cache-split-interval",
       "fieldType": "int"
     }
-
   ]
 }
