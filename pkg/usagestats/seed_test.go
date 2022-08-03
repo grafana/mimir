@@ -281,9 +281,7 @@ func TestInitSeedFile_CreatingConcurrency(t *testing.T) {
 	for i := 0; i < numReplicas; i++ {
 		group.Go(func() error {
 			// Wait for the start.
-			select {
-			case <-start:
-			}
+			<-start
 
 			seed, err := initSeedFile(context.Background(), objstore.BucketWithMetrics("", bucketClient, nil), minStability, log.NewNopLogger())
 			if err != nil {
