@@ -7,7 +7,9 @@ package stats
 
 import (
 	"context"
-	"sync/atomic" //lint:ignore faillint we can't use go.uber.org/atomic with a protobuf struct without wrapping it.
+
+	// lint:ignore faillint we can't use go.uber.org/atomic with a protobuf struct without wrapping it.
+	"sync/atomic"
 	"time"
 
 	"github.com/weaveworks/common/httpgrpc"
@@ -121,6 +123,22 @@ func (s *Stats) LoadShardedQueries() uint32 {
 	}
 
 	return atomic.LoadUint32(&s.ShardedQueries)
+}
+
+func (s *Stats) AddSplitQueries(num uint32) {
+	if s == nil {
+		return
+	}
+
+	atomic.AddUint32(&s.SplitQueries, num)
+}
+
+func (s *Stats) LoadSplitQueries() uint32 {
+	if s == nil {
+		return 0
+	}
+
+	return atomic.LoadUint32(&s.SplitQueries)
 }
 
 // Merge the provided Stats into this one.
