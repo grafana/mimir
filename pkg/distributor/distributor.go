@@ -634,7 +634,8 @@ func (d *Distributor) PrePushHaDedupeMiddleware(next push.Func) push.Func {
 		}
 
 		if d.limits.AcceptHASamples(userID) && len(req.Timeseries) > 0 {
-			cluster, replica := findHALabels(d.limits.HAReplicaLabel(userID), d.limits.HAClusterLabel(userID), req.Timeseries[0].Labels)
+			haReplicaLabel := d.limits.HAReplicaLabel(userID)
+			cluster, replica := findHALabels(haReplicaLabel, d.limits.HAClusterLabel(userID), req.Timeseries[0].Labels)
 			// Make a copy of these, since they may be retained as labels on our metrics, e.g. dedupedSamples.
 			cluster, replica = copyString(cluster), copyString(replica)
 
@@ -664,7 +665,7 @@ func (d *Distributor) PrePushHaDedupeMiddleware(next push.Func) push.Func {
 				// storing series in Mimir. If we kept the replica label we would end up with another series for the same
 				// series we're trying to dedupe when HA tracking moves over to a different replica.
 				for _, ts := range req.Timeseries {
-					removeLabel(d.limits.HAReplicaLabel(userID), &ts.Labels)
+					removeLabel(haReplicaLabel, &ts.Labels)
 				}
 			} else {
 				// If there wasn't an error but removeReplica is false that means we didn't find both HA labels.
