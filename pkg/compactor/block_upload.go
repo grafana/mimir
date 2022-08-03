@@ -110,7 +110,7 @@ func (c *MultitenantCompactor) FinishBlockUpload(w http.ResponseWriter, r *http.
 		return
 	}
 
-	if !c.compactorCfg.DisableBackgroundValidation {
+	if c.compactorCfg.EnableBackgroundValidation {
 		go c.completeBlockUpload(ctx, logger, userBkt, blockID, *m)
 	}
 
