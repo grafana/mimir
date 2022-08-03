@@ -15,13 +15,14 @@ nameOverride: null
 # Note: Grafana provided dashboards rely on the default naming and will need changes.
 fullnameOverride: null
 
-# Container image settings.
-# Since the image is unique for all microservices, so are image settings.
 image:
+  # -- Grafana Mimir container image repository. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.repository'
   repository: grafana/mimir
+  # -- Grafana Mimir container image tag. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.tag'
   tag: r197-62e2f93
+  # -- Container pull policy - shared between Grafana Mimir and Grafana Enterprise Metrics
   pullPolicy: IfNotPresent
-  # Optionally specify an array of imagePullSecrets.
+  # -- Optionally specify an array of imagePullSecrets - shared between Grafana Mimir and Grafana Enterprise Metrics
   # Secrets must be manually created in the namespace.
   # ref: https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/
   # pullSecrets:
@@ -1324,7 +1325,8 @@ minio:
   # Changed the mc config path to '/tmp' from '/etc' as '/etc' is only writable by root and OpenShift will not permit this.
   configPathmc: "/tmp/minio/mc/"
 
-# Configuration for nginx gateway
+# Configuration for nginx gateway.
+# Can only be enabled when 'enterprise.enabled' is false.
 nginx:
   # -- Specifies whether nginx should be enabled
   enabled: true
@@ -1739,10 +1741,13 @@ enterprise:
   # it to false.
   legacyLabels: false
 
-  # Container image settings for enterprise, note that pullPolicy and pullSecrets are set in top level .image
   image:
+    # -- Grafana Enterprise Metrics container image repository. Note: for Grafana Mimir use the value 'image.repository'
     repository: grafana/enterprise-metrics
+    # -- Grafana Enterprise Metrics container image tag. Note: for Grafana Mimir use the value 'image.tag'
     tag: r197-c28774dd
+    # Note: pullPolicy and optional pullSecrets are set in toplevel 'image' section, not here
+
 # In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics
 # license, either by providing the contents of the license.jwt, or the name Kubernetes Secret that contains your license.jwt.
 # To set the license contents, use the flag `--set-file 'license.contents=./license.jwt'`
