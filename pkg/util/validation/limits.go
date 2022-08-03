@@ -113,6 +113,7 @@ type Limits struct {
 	MaxQueriersPerTenant           int            `yaml:"max_queriers_per_tenant" json:"max_queriers_per_tenant"`
 	QueryShardingTotalShards       int            `yaml:"query_sharding_total_shards" json:"query_sharding_total_shards"`
 	QueryShardingMaxShardedQueries int            `yaml:"query_sharding_max_sharded_queries" json:"query_sharding_max_sharded_queries"`
+	SplitInstantQueriesByInterval  model.Duration `yaml:"split_instant_queries_by_interval" json:"split_instant_queries_by_interval" category:"experimental"`
 	// Cardinality
 	CardinalityAnalysisEnabled                    bool `yaml:"cardinality_analysis_enabled" json:"cardinality_analysis_enabled"`
 	LabelNamesAndValuesResultsMaxSizeBytes        int  `yaml:"label_names_and_values_results_max_size_bytes" json:"label_names_and_values_results_max_size_bytes"`
@@ -202,6 +203,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxQueriersPerTenant, "query-frontend.max-queriers-per-tenant", 0, "Maximum number of queriers that can handle requests for a single tenant. If set to 0 or value higher than number of available queriers, *all* queriers will handle requests for the tenant. Each frontend (or query-scheduler, if used) will select the same set of queriers for the same tenant (given that all queriers are connected to all frontends / query-schedulers). This option only works with queriers connecting to the query-frontend / query-scheduler, not when using downstream URL.")
 	f.IntVar(&l.QueryShardingTotalShards, "query-frontend.query-sharding-total-shards", 16, "The amount of shards to use when doing parallelisation via query sharding by tenant. 0 to disable query sharding for tenant. Query sharding implementation will adjust the number of query shards based on compactor shards. This allows querier to not search the blocks which cannot possibly have the series for given query shard.")
 	f.IntVar(&l.QueryShardingMaxShardedQueries, "query-frontend.query-sharding-max-sharded-queries", 128, "The max number of sharded queries that can be run for a given received query. 0 to disable limit.")
+	f.Var(&l.SplitInstantQueriesByInterval, "query-frontend.split-instant-queries-by-interval", "Split instant queries by an interval and execute in parallel. 0 to disable it.")
 
 	f.Var(&l.RulerEvaluationDelay, "ruler.evaluation-delay-duration", "Duration to delay the evaluation of rules to ensure the underlying metrics have been pushed.")
 	f.IntVar(&l.RulerTenantShardSize, "ruler.tenant-shard-size", 0, "The tenant's shard size when sharding is used by ruler. Value of 0 disables shuffle sharding for the tenant, and tenant rules will be sharded across all ruler replicas.")
@@ -483,6 +485,12 @@ func (o *Overrides) QueryShardingTotalShards(userID string) int {
 // be run for a given received query. 0 to disable limit.
 func (o *Overrides) QueryShardingMaxShardedQueries(userID string) int {
 	return o.getOverridesForUser(userID).QueryShardingMaxShardedQueries
+}
+
+// SplitInstantQueriesByInterval returns the split time interval to use when splitting an instant query
+// via the query-frontend. 0 to disable limit.
+func (o *Overrides) SplitInstantQueriesByInterval(userID string) time.Duration {
+	return time.Duration(o.getOverridesForUser(userID).SplitInstantQueriesByInterval)
 }
 
 // EnforceMetadataMetricName whether to enforce the presence of a metric name on metadata.

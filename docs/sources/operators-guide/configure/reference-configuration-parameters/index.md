@@ -1051,11 +1051,6 @@ grpc_client_config:
 # CLI flag: -query-frontend.split-queries-by-interval
 [split_queries_by_interval: <duration> | default = 24h]
 
-# (experimental) Split instant queries by an interval and execute in parallel. 0
-# to disable it.
-# CLI flag: -query-frontend.split-instant-queries-by-interval
-[split_instant_queries_by_interval: <duration> | default = 0s]
-
 # Mutate incoming queries to align their start and end with their step.
 # CLI flag: -query-frontend.align-querier-with-step
 [align_queries_with_step: <boolean> | default = false]
@@ -2485,6 +2480,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # 0 to disable limit.
 # CLI flag: -query-frontend.query-sharding-max-sharded-queries
 [query_sharding_max_sharded_queries: <int> | default = 128]
+
+# (experimental) Split instant queries by an interval and execute in parallel. 0
+# to disable it.
+# CLI flag: -query-frontend.split-instant-queries-by-interval
+[split_instant_queries_by_interval: <duration> | default = 0s]
 
 # Enables endpoints used for cardinality analysis.
 # CLI flag: -querier.cardinality-analysis-enabled
