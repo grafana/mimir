@@ -231,13 +231,10 @@ func (a *API) RegisterRuntimeConfig(runtimeConfigHandler http.HandlerFunc) {
 func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distributor.Config) {
 	distributorpb.RegisterDistributorServer(a.server.GRPC, d)
 
-	wrappedPush := d.PushWithCleanup
-	wrappedPush = d.PrePushForwardingMiddleware(wrappedPush)
-	wrappedPush = d.PrePushHaDedupeMiddleware(wrappedPush)
+	wrappedPush := d.PushWithMiddlewares
 	if a.cfg.DistributorPushWrapper != nil {
 		wrappedPush = a.cfg.DistributorPushWrapper(wrappedPush)
 	}
-
 	a.RegisterRoute("/api/v1/push", push.Handler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, wrappedPush), true, false, "POST")
 	a.RegisterRoute("/otlp/v1/metrics", push.OTLPHandler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, wrappedPush), true, false, "POST")
 

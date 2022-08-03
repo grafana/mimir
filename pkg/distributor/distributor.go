@@ -129,6 +129,8 @@ type Distributor struct {
 	sampleDelayHistogram             prometheus.Histogram
 	replicationFactor                prometheus.Gauge
 	latestSeenSampleTimestampPerUser *prometheus.GaugeVec
+
+	PushWithMiddlewares push.Func
 }
 
 // Config contains the configuration required to
@@ -381,6 +383,8 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		subservices = append(subservices, d.forwarder)
 	}
 
+	d.PushWithMiddlewares = d.pushWithMiddlewares()
+
 	subservices = append(subservices, d.ingesterPool, d.activeUsers)
 	d.subservices, err = services.NewManager(subservices...)
 	if err != nil {
@@ -606,12 +610,23 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 	return nil
 }
 
-func (d *Distributor) PrePushHaDedupeMiddleware(next push.Func) push.Func {
-	if !d.cfg.HATrackerConfig.EnableHATracker {
-		// HA tracker is disabled, no need to wrap "next".
-		return next
+func (d *Distributor) pushWithMiddlewares() push.Func {
+	var middlewares []func(push.Func) push.Func
+
+	// The middlewares will be applied in the order of the slice "middlewares",
+	// requests will traverse them in the reverse order.
+	middlewares = append(middlewares, d.PrePushForwardingMiddleware)
+	middlewares = append(middlewares, d.PrePushHaDedupeMiddleware)
+
+	push := d.PushWithCleanup
+	for _, middleware := range middlewares {
+		push = middleware(push)
 	}
 
+	return push
+}
+
+func (d *Distributor) PrePushHaDedupeMiddleware(next push.Func) push.Func {
 	return func(ctx context.Context, req *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error) {
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
@@ -723,7 +738,7 @@ func (d *Distributor) forwardSamples(ctx context.Context, userID string, ts []mi
 
 // Push implements client.IngesterServer
 func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
-	return d.PrePushForwardingMiddleware(d.PushWithCleanup)(ctx, req, func() { mimirpb.ReuseSlice(req.Timeseries) })
+	return d.PushWithMiddlewares(ctx, req, func() { mimirpb.ReuseSlice(req.Timeseries) })
 }
 
 // PushWithCleanup takes a WriteRequest and distributes it to ingesters using the ring.
