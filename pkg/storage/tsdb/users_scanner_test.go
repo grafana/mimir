@@ -33,7 +33,6 @@ func TestUsersScanner_ScanUsers_ShouldReturnedOwnedUsersOnly(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{"user-1"}, actual)
 	assert.Equal(t, []string{"user-3"}, deleted)
-
 }
 
 func TestUsersScanner_ScanUsers_ShouldReturnUsersForWhichOwnerCheckOrTenantDeletionCheckFailed(t *testing.T) {
@@ -53,4 +52,16 @@ func TestUsersScanner_ScanUsers_ShouldReturnUsersForWhichOwnerCheckOrTenantDelet
 	require.NoError(t, err)
 	assert.Equal(t, expected, actual)
 	assert.Empty(t, deleted)
+}
+
+func TestUsersScanner_ScanUsers_ShouldNotReturnPrefixedUsedByMimirInternals(t *testing.T) {
+	bucketClient := &bucket.ClientMock{}
+	bucketClient.MockIter("", []string{"user-1", "user-2", bucket.MimirInternalsPrefix}, nil)
+	bucketClient.MockExists(path.Join("user-1", TenantDeletionMarkPath), false, nil)
+	bucketClient.MockExists(path.Join("user-2", TenantDeletionMarkPath), false, nil)
+
+	s := NewUsersScanner(bucketClient, AllUsers, log.NewNopLogger())
+	actual, _, err := s.ScanUsers(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, []string{"user-1", "user-2"}, actual)
 }
