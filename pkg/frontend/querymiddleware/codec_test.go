@@ -752,7 +752,7 @@ func Test_DecodeInstantQueryOptions(t *testing.T) {
 			name: "custom instant query splitting",
 			input: &http.Request{
 				Header: http.Header{
-					instantSplitIntervalControlHeader: []string{"1h"},
+					instantSplitControlHeader: []string{"1h"},
 				},
 			},
 			expected: &Options{
@@ -763,7 +763,7 @@ func Test_DecodeInstantQueryOptions(t *testing.T) {
 			name: "disable instant query splitting",
 			input: &http.Request{
 				Header: http.Header{
-					instantSplitIntervalControlHeader: []string{"0"},
+					instantSplitControlHeader: []string{"0"},
 				},
 			},
 			expected: &Options{

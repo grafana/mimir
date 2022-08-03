@@ -190,6 +190,11 @@ func (s *splitInstantQueryByIntervalMiddleware) getSplitIntervalForQuery(tenants
 		return 0
 	}
 
+	// Honor the split interval specified in the request (if any).
+	if r.GetOptions().InstantSplitInterval > 0 {
+		splitInterval = time.Duration(r.GetOptions().InstantSplitInterval)
+	}
+
 	level.Debug(spanLog).Log("msg", "getting split instant query interval", "tenantsIds", tenantsIds, "split interval", splitInterval)
 
 	return splitInterval

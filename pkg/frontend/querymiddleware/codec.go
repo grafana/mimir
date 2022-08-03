@@ -231,11 +231,12 @@ func decodeOptions(r *http.Request, opts *Options) {
 }
 
 func decodeInstantQueryOptions(r *http.Request, opts *Options) {
-	for _, value := range r.Header.Values(instantSplitIntervalControlHeader) {
+	for _, value := range r.Header.Values(instantSplitControlHeader) {
 		splitInterval, err := time.ParseDuration(value)
 		if err != nil {
-			break
+			continue
 		}
+		// Instant split by time interval unit stored in nanoseconds (time.Duration unit in int64)
 		opts.InstantSplitInterval = splitInterval.Nanoseconds()
 		if opts.InstantSplitInterval < 1 {
 			opts.InstantSplitDisabled = true

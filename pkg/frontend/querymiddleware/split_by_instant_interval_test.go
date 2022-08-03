@@ -15,14 +15,16 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/util"
 )
 
-func TestQuerySplittingCorrectness(t *testing.T) {
+func TestInstantQuerySplittingCorrectness(t *testing.T) {
 	for _, startString := range []string{
 		"2020-01-01T03:00:00.100Z",
 		"2020-01-01T03:00:00Z",
@@ -531,6 +533,60 @@ func TestQuerySplittingCorrectness(t *testing.T) {
 					}
 				})
 			}
+		})
+	}
+}
+
+func TestInstantQuerySplittingHTTPOptions(t *testing.T) {
+	for _, tt := range []struct {
+		name                   string
+		httpOptions            Options
+		data                   *PrometheusData
+		expectedDownstreamCall int
+	}{
+		{
+			name: "should skip instant query splitting if disabled via HTTP option",
+			httpOptions: Options{
+				InstantSplitDisabled: true,
+			},
+			data:                   nil,
+			expectedDownstreamCall: 1,
+		},
+		{
+			name: "should override instant query splitting interval specified in HTTP option",
+			httpOptions: Options{
+				InstantSplitInterval: time.Hour.Nanoseconds(),
+			},
+			data: &PrometheusData{
+				ResultType: string(parser.ValueTypeVector),
+			},
+			expectedDownstreamCall: 3, // [3h] range interval with 1h split interval should be split in 3 partial queries
+		},
+	} {
+		tt := tt
+
+		t.Run(tt.name, func(t *testing.T) {
+			req := &PrometheusInstantQueryRequest{
+				Path:    "/query",
+				Time:    time.Now().UnixNano(),
+				Query:   "sum_over_time(metric_counter[3h])", // splittable instant query
+				Options: tt.httpOptions,
+			}
+
+			// Split by interval middleware with a limit configuration of split instant query interval of 1m
+			splittingware := newSplitInstantQueryByIntervalMiddleware(mockLimits{splitInstantQueriesInterval: 1 * time.Minute}, log.NewNopLogger(), newEngine(), nil)
+
+			downstream := &mockHandler{}
+			downstream.On("Do", mock.Anything, mock.Anything).Return(&PrometheusResponse{
+				Status: statusSuccess, Data: tt.data,
+			}, nil)
+
+			res, err := splittingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
+			require.NoError(t, err)
+			assert.Equal(t, statusSuccess, res.(*PrometheusResponse).GetStatus())
+
+			downstream.AssertCalled(t, "Do", mock.Anything, mock.Anything)
+			downstream.AssertNumberOfCalls(t, "Do", tt.expectedDownstreamCall)
 		})
 	}
 }

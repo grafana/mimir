@@ -575,6 +575,7 @@ type Options struct {
 	ShardingDisabled     bool  `protobuf:"varint,2,opt,name=ShardingDisabled,proto3" json:"ShardingDisabled,omitempty"`
 	TotalShards          int32 `protobuf:"varint,3,opt,name=TotalShards,proto3" json:"TotalShards,omitempty"`
 	InstantSplitDisabled bool  `protobuf:"varint,4,opt,name=InstantSplitDisabled,proto3" json:"InstantSplitDisabled,omitempty"`
+	// Instant split by time interval unit stored in nanoseconds (time.Duration unit in int64)
 	InstantSplitInterval int64 `protobuf:"varint,5,opt,name=InstantSplitInterval,proto3" json:"InstantSplitInterval,omitempty"`
 }
 
