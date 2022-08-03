@@ -780,6 +780,62 @@ func TestConvert_PassingOnlyFlagsReturnsOnlyFlags(t *testing.T) {
 	})
 }
 
+func TestConvert_RemovedFlagsAreCorrect(t *testing.T) {
+	t.Parallel()
+
+	allParameterPaths := func(p Parameters) map[string]bool {
+		paths := map[string]bool{}
+		assert.NoError(t, p.Walk(func(path string, _ Value) error {
+			paths[path] = true
+			return nil
+		}))
+		return paths
+	}
+
+	allCLIFlagsNames := func(p Parameters) map[string]bool {
+		flags := map[string]bool{}
+		assert.NoError(t, p.Walk(func(path string, v Value) error {
+			flagName, err := p.GetFlag(path)
+			assert.NoError(t, err)
+			flags[flagName] = true
+			return nil
+		}))
+		return flags
+	}
+
+	// Test that whatever we claim to be removed is actually not present now
+	gemPaths := allParameterPaths(DefaultGEMConfig())
+	mimirPaths := allParameterPaths(DefaultMimirConfig())
+	for _, path := range removedConfigPaths {
+		assert.NotContains(t, gemPaths, path)
+		assert.NotContains(t, mimirPaths, path)
+	}
+
+	gemFlags := allCLIFlagsNames(DefaultGEMConfig())
+	mimirFlags := allCLIFlagsNames(DefaultMimirConfig())
+	for _, path := range removedCLIOptions {
+		assert.NotContains(t, mimirFlags, path)
+		assert.NotContains(t, gemFlags, path)
+	}
+
+	// Test that whatever we claim to be removed was actually present in either GEM or cortex previously
+	oldGEMPaths := allParameterPaths(DefaultGEM170Config())
+	cortexPaths := allParameterPaths(DefaultCortexConfig())
+	for _, path := range removedConfigPaths {
+		cortexHas := cortexPaths[path]
+		gemHas := oldGEMPaths[path]
+		assert.Truef(t, cortexHas || gemHas, "path %s is expected to exist in either old GEM or old Cortex config, but was found in neither", path)
+	}
+
+	oldGEMFlags := allCLIFlagsNames(DefaultGEM170Config())
+	cortexFlags := allCLIFlagsNames(DefaultCortexConfig())
+	for _, flag := range removedCLIOptions {
+		cortexHas := oldGEMFlags[flag]
+		gemHas := cortexFlags[flag]
+		assert.Truef(t, cortexHas || gemHas, "CLI flag %s is expected to exist in either old GEM or old Cortex config, but was found in neither", flag)
+	}
+}
+
 func loadFile(t testing.TB, fileName string) []byte {
 	t.Helper()
 

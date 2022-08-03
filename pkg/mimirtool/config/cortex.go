@@ -1068,9 +1068,9 @@ var removedConfigPaths = append(gemRemovedConfigPath, []string{
 
 	// Removed in 2.1, 2.2 and 2.3
 	"distributor.extend_writes",                          // -distributor.extend-writes
-	"ingester.join_after",                                // -ingester.join-after; is deprecated and will be removed in 2.4, but we can remove it now
+	"ingester.lifecycler.join_after",                     // -ingester.join-after; is deprecated and will be removed in 2.4, but we can remove it now
 	"querier.shuffle_sharding_ingesters_lookback_period", // -querier.shuffle-sharding-ingesters-lookback-period
-	"ruler.flush-period",                                 // -ruler.flush-period
+	"ruler.flush_period",                                 // -ruler.flush-period
 	"ruler.search_pending_for",                           // -ruler.search-pending-for
 }...)
 
@@ -1082,7 +1082,7 @@ var removedCLIOptions = []string{
 	"ingester-client.expected-samples-per-series",
 	"ingester-client.expected-timeseries",
 	"ingester.chunk-encoding",
-	"ingester.lifecycler.address",
+	"ingester.lifecycler.addr",
 	"ingester.lifecycler.id",
 	"ingester.lifecycler.port",
 	"querier.query-parallelism",
