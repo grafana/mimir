@@ -111,7 +111,7 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 	}
 
 	splitInterval := s.getSplitIntervalForQuery(tenantsIds, req, logger)
-	if splitInterval <= 1 {
+	if splitInterval <= 0 {
 		level.Debug(logger).Log("msg", "query splitting is disabled for this query or tenant")
 		return s.next.Do(ctx, req)
 	}
@@ -179,18 +179,18 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 }
 
 // getSplitIntervalForQuery calculates and return the split interval that should be used to run the instant query.
-func (s *splitInstantQueryByIntervalMiddleware) getSplitIntervalForQuery(tenantIDs []string, r Request, spanLog log.Logger) time.Duration {
+func (s *splitInstantQueryByIntervalMiddleware) getSplitIntervalForQuery(tenantsIds []string, r Request, spanLog log.Logger) time.Duration {
 	// Check if splitting is disabled for the given request.
 	if r.GetOptions().InstantSplitDisabled {
 		return 0
 	}
 
-	splitInterval := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, s.limits.SplitInstantQueriesByInterval)
+	splitInterval := validation.SmallestPositiveNonZeroDurationPerTenant(tenantsIds, s.limits.SplitInstantQueriesByInterval)
 	if splitInterval <= 0 {
 		return 0
 	}
 
-	level.Debug(spanLog).Log("msg", "getting split instant query interval", "tenantIDs", tenantIDs, "split interval", splitInterval)
+	level.Debug(spanLog).Log("msg", "getting split instant query interval", "tenantsIds", tenantsIds, "split interval", splitInterval)
 
 	return splitInterval
 }
