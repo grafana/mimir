@@ -174,10 +174,11 @@ func TestWaitSeedFileStability(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
+			startTime := time.Now()
+
 			bucketClient := &bucket.ClientMock{}
 			testData.setup(bucketClient)
 
-			startTime := time.Now()
 			actualSeed, err := waitSeedFileStability(context.Background(), objstore.BucketWithMetrics("", bucketClient, nil), minStability, log.NewNopLogger())
 			if testData.expectedErr != nil {
 				require.Error(t, err)
