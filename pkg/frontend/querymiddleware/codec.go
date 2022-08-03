@@ -50,7 +50,7 @@ const (
 	totalShardsControlHeader = "Sharding-Control"
 
 	// Instant query specific options
-	instantSplitIntervalControlHeader = "Instant-Split-Interval-Control"
+	instantSplitControlHeader = "Instant-Split-Control"
 )
 
 // Codec is used to encode/decode query range requests and responses so they can be passed down to middlewares.
