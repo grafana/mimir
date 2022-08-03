@@ -120,16 +120,14 @@ func TestWriteSeedFile(t *testing.T) {
 func TestWaitSeedFileStability(t *testing.T) {
 	const minStability = 3 * time.Second
 
-	now := time.Now()
-	oldSeed := ClusterSeed{UID: "old", CreatedAt: now.Add(-2 * minStability)}
-	newSeed := ClusterSeed{UID: "new", CreatedAt: now}
-
-	tests := map[string]struct {
+	type testConfig struct {
 		setup               func(bucketClient *bucket.ClientMock)
 		expectedSeed        ClusterSeed
 		expectedErr         error
 		expectedMinDuration time.Duration
-	}{
+	}
+
+	tests := map[string]testConfig{
 		"should immediately return if seed file does not exist": {
 			setup: func(bucketClient *bucket.ClientMock) {
 				bucketClient.MockGet(ClusterSeedFileName, "", bucket.ErrObjectDoesNotExist)
@@ -142,24 +140,32 @@ func TestWaitSeedFileStability(t *testing.T) {
 			},
 			expectedErr: errClusterSeedFileCorrupted,
 		},
-		"should immediately return if seed file was created more than 'min stability' time ago": {
-			setup: func(bucketClient *bucket.ClientMock) {
-				data, err := json.Marshal(oldSeed)
-				require.NoError(t, err)
-				bucketClient.MockGet(ClusterSeedFileName, string(data), nil)
-			},
-			expectedSeed:        oldSeed,
-			expectedMinDuration: 0,
-		},
-		"should wait for 'min stability' and return the seed file if was created less than 'min stability' time ago": {
-			setup: func(bucketClient *bucket.ClientMock) {
-				data, err := json.Marshal(newSeed)
-				require.NoError(t, err)
-				bucketClient.MockGet(ClusterSeedFileName, string(data), nil)
-			},
-			expectedSeed:        newSeed,
-			expectedMinDuration: minStability,
-		},
+		"should immediately return if seed file was created more than 'min stability' time ago": func() testConfig {
+			oldSeed := ClusterSeed{UID: "old", CreatedAt: time.Now().Add(-2 * minStability)}
+
+			return testConfig{
+				setup: func(bucketClient *bucket.ClientMock) {
+					data, err := json.Marshal(oldSeed)
+					require.NoError(t, err)
+					bucketClient.MockGet(ClusterSeedFileName, string(data), nil)
+				},
+				expectedSeed:        oldSeed,
+				expectedMinDuration: 0,
+			}
+		}(),
+		"should wait for 'min stability' and return the seed file if was created less than 'min stability' time ago": func() testConfig {
+			newSeed := ClusterSeed{UID: "new", CreatedAt: time.Now()}
+
+			return testConfig{
+				setup: func(bucketClient *bucket.ClientMock) {
+					data, err := json.Marshal(newSeed)
+					require.NoError(t, err)
+					bucketClient.MockGet(ClusterSeedFileName, string(data), nil)
+				},
+				expectedSeed:        newSeed,
+				expectedMinDuration: minStability,
+			}
+		}(),
 	}
 
 	for testName, testData := range tests {
