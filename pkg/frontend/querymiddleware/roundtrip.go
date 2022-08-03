@@ -33,14 +33,13 @@ const (
 
 // Config for query_range middleware chain.
 type Config struct {
-	SplitQueriesByInterval        time.Duration `yaml:"split_queries_by_interval" category:"advanced"`
-	SplitInstantQueriesByInterval time.Duration `yaml:"split_instant_queries_by_interval" category:"experimental"`
-	AlignQueriesWithStep          bool          `yaml:"align_queries_with_step"`
-	ResultsCacheConfig            `yaml:"results_cache"`
-	CacheResults                  bool `yaml:"cache_results"`
-	MaxRetries                    int  `yaml:"max_retries" category:"advanced"`
-	ShardedQueries                bool `yaml:"parallelize_shardable_queries"`
-	CacheUnalignedRequests        bool `yaml:"cache_unaligned_requests" category:"advanced"`
+	SplitQueriesByInterval time.Duration `yaml:"split_queries_by_interval" category:"advanced"`
+	AlignQueriesWithStep   bool          `yaml:"align_queries_with_step"`
+	ResultsCacheConfig     `yaml:"results_cache"`
+	CacheResults           bool `yaml:"cache_results"`
+	MaxRetries             int  `yaml:"max_retries" category:"advanced"`
+	ShardedQueries         bool `yaml:"parallelize_shardable_queries"`
+	CacheUnalignedRequests bool `yaml:"cache_unaligned_requests" category:"advanced"`
 
 	// CacheSplitter allows to inject a CacheSplitter to use for generating cache keys.
 	// If nil, the querymiddleware package uses a ConstSplitter with SplitQueriesByInterval.
@@ -51,7 +50,6 @@ type Config struct {
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.MaxRetries, "query-frontend.max-retries-per-request", 5, "Maximum number of retries for a single request; beyond this, the downstream error is returned.")
 	f.DurationVar(&cfg.SplitQueriesByInterval, "query-frontend.split-queries-by-interval", 24*time.Hour, "Split range queries by an interval and execute in parallel. You should use a multiple of 24 hours to optimize querying blocks. 0 to disable it.")
-	f.DurationVar(&cfg.SplitInstantQueriesByInterval, "query-frontend.split-instant-queries-by-interval", 0, "Split instant queries by an interval and execute in parallel. 0 to disable it.")
 	f.BoolVar(&cfg.AlignQueriesWithStep, "query-frontend.align-querier-with-step", false, "Mutate incoming queries to align their start and end with their step.")
 	f.BoolVar(&cfg.CacheResults, "query-frontend.cache-results", false, "Cache query results.")
 	f.BoolVar(&cfg.ShardedQueries, "query-frontend.parallelize-shardable-queries", false, "True to enable query sharding.")
@@ -218,12 +216,10 @@ func newQueryTripperware(
 
 	queryInstantMiddleware := []Middleware{newLimitsMiddleware(limits, log)}
 
-	if cfg.SplitInstantQueriesByInterval > 0 {
-		queryInstantMiddleware = append(
-			queryInstantMiddleware,
-			newSplitInstantQueryByIntervalMiddleware(cfg.SplitInstantQueriesByInterval, limits, log, engine, registerer),
-		)
-	}
+	queryInstantMiddleware = append(
+		queryInstantMiddleware,
+		newSplitInstantQueryByIntervalMiddleware(limits, log, engine, registerer),
+	)
 
 	if cfg.ShardedQueries {
 		queryshardingMiddleware := newQueryShardingMiddleware(

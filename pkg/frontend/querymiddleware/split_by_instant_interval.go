@@ -4,7 +4,6 @@ package querymiddleware
 
 import (
 	"context"
-	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -18,6 +17,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const (
@@ -33,8 +33,6 @@ type splitInstantQueryByIntervalMiddleware struct {
 	logger log.Logger
 
 	engine *promql.Engine
-
-	splitInterval time.Duration
 
 	metrics instantQuerySplittingMetrics
 }
@@ -82,7 +80,6 @@ func newInstantQuerySplittingMetrics(registerer prometheus.Registerer) instantQu
 
 // newSplitInstantQueryByIntervalMiddleware makes a new splitInstantQueryByIntervalMiddleware.
 func newSplitInstantQueryByIntervalMiddleware(
-	splitInterval time.Duration,
 	limits Limits,
 	logger log.Logger,
 	engine *promql.Engine,
@@ -91,12 +88,11 @@ func newSplitInstantQueryByIntervalMiddleware(
 
 	return MiddlewareFunc(func(next Handler) Handler {
 		return &splitInstantQueryByIntervalMiddleware{
-			next:          next,
-			limits:        limits,
-			splitInterval: splitInterval,
-			logger:        logger,
-			engine:        engine,
-			metrics:       metrics,
+			next:    next,
+			limits:  limits,
+			logger:  logger,
+			engine:  engine,
+			metrics: metrics,
 		}
 	})
 }
@@ -108,12 +104,13 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, logger, "splitInstantQueryByIntervalMiddleware.Do")
 	defer spanLog.Span.Finish()
 
-	_, err := tenant.TenantIDs(ctx)
+	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	if s.splitInterval <= 0 {
+	splitInterval := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, s.limits.SplitInstantQueriesByInterval)
+	if splitInterval <= 0 {
 		return s.next.Do(ctx, req)
 	}
 
@@ -121,7 +118,7 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 	s.metrics.splittingAttempts.Inc()
 
 	stats := astmapper.NewInstantSplitterStats()
-	mapper := astmapper.NewInstantQuerySplitter(s.splitInterval, s.logger, stats)
+	mapper := astmapper.NewInstantQuerySplitter(splitInterval, s.logger, stats)
 
 	expr, err := parser.ParseExpr(req.GetQuery())
 	if err != nil {
