@@ -21,9 +21,11 @@ import (
 )
 
 const (
-	skippedReasonParsingFailed = "parsing-failed"
-	skippedReasonMappingFailed = "mapping-failed"
-	skippedReasonNoop          = "noop"
+	skippedReasonParsingFailed     = "parsing-failed"
+	skippedReasonMappingFailed     = "mapping-failed"
+	skippedReasonNoopSmallInterval = "noop-small-interval"
+	skippedReasonNoopSubquery      = "noop-subquery"
+	skippedReasonNoopNonSplittable = "noop-non-splittable"
 )
 
 // splitInstantQueryByIntervalMiddleware is a Middleware that can (optionally) split the instant query by splitInterval
@@ -71,7 +73,8 @@ func newInstantQuerySplittingMetrics(registerer prometheus.Registerer) instantQu
 	}
 
 	// Initialize known label values.
-	for _, reason := range []string{skippedReasonParsingFailed, skippedReasonMappingFailed, skippedReasonNoop} {
+	for _, reason := range []string{skippedReasonParsingFailed, skippedReasonMappingFailed,
+		skippedReasonNoopSmallInterval, skippedReasonNoopSubquery, skippedReasonNoopNonSplittable} {
 		m.splittingSkipped.WithLabelValues(reason)
 	}
 
@@ -134,10 +137,18 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 		return s.next.Do(ctx, req)
 	}
 
-	if stats.GetSplitQueries() == 0 {
+	if stats.GetSplitQueries() <= 0 {
 		// the query cannot be split, so continue
 		level.Debug(spanLog).Log("msg", "input query resulted in a no operation, falling back to try executing without splitting")
-		s.metrics.splittingSkipped.WithLabelValues(skippedReasonNoop).Inc()
+		if stats.GetNoOpSmallIntervalQuery() {
+			s.metrics.splittingSkipped.WithLabelValues(skippedReasonNoopSmallInterval).Inc()
+		}
+		if stats.GetNoOpSubquery() {
+			s.metrics.splittingSkipped.WithLabelValues(skippedReasonNoopSubquery).Inc()
+		}
+		if stats.GetNoOpNonSplittableQuery() {
+			s.metrics.splittingSkipped.WithLabelValues(skippedReasonNoopNonSplittable).Inc()
+		}
 		return s.next.Do(ctx, req)
 	}
 
