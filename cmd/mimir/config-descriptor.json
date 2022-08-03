@@ -8328,6 +8328,7 @@
             "Host": "localhost:8080",
             "Path": "/alertmanager",
             "RawPath": "",
+            "OmitHost": false,
             "ForceQuery": false,
             "RawQuery": "",
             "Fragment": "",

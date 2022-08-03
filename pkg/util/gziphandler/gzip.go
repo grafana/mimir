@@ -323,6 +323,7 @@ func NewGzipLevelAndMinSize(level, minSize int) (func(http.Handler) http.Handler
 }
 
 // GzipHandlerWithOpts creates a middleware that wraps http.Handler with GzipHandler, configured with provided options.
+//
 //nolint:golint
 func GzipHandlerWithOpts(opts ...Option) (func(http.Handler) http.Handler, error) {
 	c := &config{

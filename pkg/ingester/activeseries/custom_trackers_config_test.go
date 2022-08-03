@@ -75,8 +75,8 @@ func TestCustomTrackersConfigs(t *testing.T) {
 			expected: mustNewCustomTrackersConfigFromMap(t, map[string]string{`foo`: `{foo="bar"}`}),
 		},
 		{
-			name: "whitespaces are trimmed from name and matcher",
-			flags: []string{`-ingester.active-series-custom-trackers= foo :	{foo="bar"}` + "\n "},
+			name:     "whitespaces are trimmed from name and matcher",
+			flags:    []string{`-ingester.active-series-custom-trackers= foo :	{foo="bar"}` + "\n "},
 			expected: mustNewCustomTrackersConfigFromMap(t, map[string]string{`foo`: `{foo="bar"}`}),
 		},
 		{

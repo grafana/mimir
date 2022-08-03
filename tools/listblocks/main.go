@@ -88,6 +88,7 @@ func main() {
 }
 
 // nolint:errcheck
+//
 //goland:noinspection GoUnhandledErrorResult
 func printMetas(metas map[ulid.ULID]*metadata.Meta, deletedTimes map[ulid.ULID]time.Time, cfg config) {
 	blocks := listblocks.SortBlocks(metas)
