@@ -75,8 +75,7 @@ func (am *MultitenantAlertmanager) GetUserConfig(w http.ResponseWriter, r *http.
 	cfg, err := am.store.GetAlertConfig(r.Context(), userID)
 	if err != nil {
 		if err == alertspb.ErrNotFound {
-			level.Info(logger).Log("msg", "config requested for user but alertmanager is not configured for that user", "user", userID)
-			http.Error(w, err.Error(), http.StatusPreconditionFailed)
+			http.Error(w, err.Error(), http.StatusNotFound)
 		} else {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
