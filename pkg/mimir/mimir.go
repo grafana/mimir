@@ -116,7 +116,7 @@ type Config struct {
 	RuntimeConfig       runtimeconfig.Config                       `yaml:"runtime_config"`
 	MemberlistKV        memberlist.KVConfig                        `yaml:"memberlist"`
 	QueryScheduler      scheduler.Config                           `yaml:"query_scheduler"`
-	UsageReport         usagestats.Config                          `yaml:"usage_reporter"`
+	UsageStats          usagestats.Config                          `yaml:"usage_stats"`
 
 	Common CommonConfig `yaml:"common"`
 }
@@ -162,7 +162,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.MemberlistKV.RegisterFlags(f)
 	c.ActivityTracker.RegisterFlags(f)
 	c.QueryScheduler.RegisterFlags(f)
-	c.UsageReport.RegisterFlags(f)
+	c.UsageStats.RegisterFlags(f)
 
 	c.Common.RegisterFlags(f)
 }
@@ -480,7 +480,7 @@ type Mimir struct {
 	StoreGateway             *storegateway.StoreGateway
 	MemberlistKV             *memberlist.KVInitService
 	ActivityTracker          *activitytracker.ActivityTracker
-	UsageReporter            *usagestats.Reporter
+	UsageStatsReporter       *usagestats.Reporter
 	BuildInfoHandler         http.Handler
 
 	// Queryables that the querier should use to query the long term storage.

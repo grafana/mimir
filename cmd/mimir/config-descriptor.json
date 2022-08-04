@@ -10246,7 +10246,7 @@
     },
     {
       "kind": "block",
-      "name": "usage_reporter",
+      "name": "usage_stats",
       "required": false,
       "desc": "",
       "blockEntries": [
@@ -10257,7 +10257,7 @@
           "desc": "Enable anonymous usage reporting.",
           "fieldValue": null,
           "fieldDefaultValue": false,
-          "fieldFlag": "usage-reporter.enabled",
+          "fieldFlag": "usage-stats.enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         }

@@ -89,7 +89,7 @@ const (
 	Purger                   string = "purger"
 	QueryScheduler           string = "query-scheduler"
 	TenantFederation         string = "tenant-federation"
-	UsageReporter            string = "usage-reporter"
+	UsageStats               string = "usage-stats"
 	All                      string = "all"
 )
 
@@ -758,8 +758,8 @@ func (t *Mimir) initQueryScheduler() (services.Service, error) {
 	return s, nil
 }
 
-func (t *Mimir) initUsageReporter() (services.Service, error) {
-	if !t.Cfg.UsageReport.Enabled {
+func (t *Mimir) initUsageStats() (services.Service, error) {
+	if !t.Cfg.UsageStats.Enabled {
 		return nil, nil
 	}
 
@@ -769,13 +769,13 @@ func (t *Mimir) initUsageReporter() (services.Service, error) {
 		return nil, nil
 	}
 
-	bucketClient, err := bucket.NewClient(context.Background(), t.Cfg.BlocksStorage.Bucket, "usage-reporter", util_log.Logger, prometheus.DefaultRegisterer)
+	bucketClient, err := bucket.NewClient(context.Background(), t.Cfg.BlocksStorage.Bucket, "usage-stats", util_log.Logger, prometheus.DefaultRegisterer)
 	if err != nil {
 		return nil, err
 	}
 
-	t.UsageReporter = usagestats.NewReporter(bucketClient, util_log.Logger)
-	return t.UsageReporter, nil
+	t.UsageStatsReporter = usagestats.NewReporter(bucketClient, util_log.Logger)
+	return t.UsageStatsReporter, nil
 }
 
 func (t *Mimir) setupModuleManager() error {
@@ -811,12 +811,12 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(Purger, nil)
 	mm.RegisterModule(QueryScheduler, t.initQueryScheduler)
 	mm.RegisterModule(TenantFederation, t.initTenantFederation, modules.UserInvisibleModule)
-	mm.RegisterModule(UsageReporter, t.initUsageReporter, modules.UserInvisibleModule)
+	mm.RegisterModule(UsageStats, t.initUsageStats, modules.UserInvisibleModule)
 	mm.RegisterModule(All, nil)
 
 	// Add dependencies
 	deps := map[string][]string{
-		Server:                   {ActivityTracker, SanityCheck, UsageReporter},
+		Server:                   {ActivityTracker, SanityCheck, UsageStats},
 		API:                      {Server},
 		MemberlistKV:             {API},
 		RuntimeConfig:            {API},

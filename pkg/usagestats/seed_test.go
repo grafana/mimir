@@ -282,6 +282,9 @@ func TestInitSeedFile_CreatingConcurrency(t *testing.T) {
 	bucketClient, err := filesystem.NewBucketClient(filesystem.Config{Directory: t.TempDir()})
 	require.NoError(t, err)
 
+	// Add a random delay to each API call to increase the likelihood of having multiple replicas creating the seed file.
+	bucketClient = bucket.NewDelayedBucketClient(bucketClient, 5*time.Millisecond, 10*time.Millisecond)
+
 	// Run replicas.
 	group := errgroup.Group{}
 

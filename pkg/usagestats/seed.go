@@ -76,14 +76,15 @@ func initSeedFile(ctx context.Context, bucket objstore.InstrumentedBucket, minSt
 
 		// Ensure the seed file hasn't been created in the meanwhile.
 		// If so, we should get back to wait for its stability.
-		if _, err := readSeedFile(ctx, bucket, logger); err == nil {
+		if seed, err := readSeedFile(ctx, bucket, logger); err == nil {
+			level.Debug(logger).Log("msg", "skipping creation of cluster seed file because found one", "cluster_id", seed.UID, "created_at", seed.CreatedAt.String())
 			backoff.Wait()
 			continue
 		}
 
 		// Create or re-create the seed file.
 		seed = newClusterSeed()
-		level.Info(logger).Log("msg", "creating cluster seed file", "uid", seed.UID)
+		level.Info(logger).Log("msg", "creating cluster seed file", "cluster_id", seed.UID)
 
 		if err := writeSeedFile(ctx, bucket, seed); err != nil {
 			level.Warn(logger).Log("msg", "failed to create cluster seed file", "err", err)
@@ -137,6 +138,7 @@ func waitSeedFileStability(ctx context.Context, bucket objstore.InstrumentedBuck
 
 		// Wait until the min stability should have been reached. We add an extra jitter: in case there are many
 		// replicas they will not look up the seed file at the same time.
+		level.Info(logger).Log("msg", "found a cluster seed file created recently, waiting until stable", "cluster_id", seed.UID, "created_at", seed.CreatedAt.String())
 		select {
 		case <-time.After(util.DurationWithPositiveJitter(minStability-createdTimeAgo, 0.2)):
 		case <-ctx.Done():

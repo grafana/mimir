@@ -21,7 +21,7 @@ type Config struct {
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
-	f.BoolVar(&cfg.Enabled, "usage-reporter.enabled", false, "Enable anonymous usage reporting.")
+	f.BoolVar(&cfg.Enabled, "usage-stats.enabled", false, "Enable anonymous usage reporting.")
 }
 
 type Reporter struct {
@@ -53,7 +53,7 @@ func (r *Reporter) running(ctx context.Context) error {
 		return err
 	}
 
-	level.Info(r.logger).Log("msg", "usage reporter initialized", "cluster_id", seed.UID)
+	level.Info(r.logger).Log("msg", "usage stats reporter initialized", "cluster_id", seed.UID)
 
 	// TODO Periodically send usage report.
 
