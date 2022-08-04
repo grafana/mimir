@@ -127,10 +127,6 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 		return nil, err
 	}
 
-	// Update query stats.
-	queryStats := stats.FromContext(ctx)
-	queryStats.AddSplitQueries(uint32(len(splitReqs)))
-
 	isCacheEnabled := s.cacheEnabled && (s.shouldCacheReq == nil || s.shouldCacheReq(req))
 	maxCacheFreshness := validation.MaxDurationPerTenant(tenantIDs, s.limits.MaxCacheFreshness)
 	maxCacheTime := int64(model.Now().Add(-maxCacheFreshness))
@@ -194,6 +190,11 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 
 	// Prepare and execute the downstream requests.
 	execReqs := splitReqs.prepareDownstreamRequests()
+
+	// Update query stats.
+	// Only consider the actual number of downstream requests, not the cache hits.
+	queryStats := stats.FromContext(ctx)
+	queryStats.AddSplitQueries(uint32(len(execReqs)))
 
 	if len(execReqs) > 0 {
 		execResps, err := doRequests(ctx, s.next, execReqs, true)
