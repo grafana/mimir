@@ -55,6 +55,16 @@ type HTTPConfig struct {
 
 	// Allow upstream callers to inject a round tripper
 	Transport http.RoundTripper `yaml:"-"`
+
+	TLSConfig TLSConfig `yaml:"tls_config"`
+}
+
+// TLSConfig configures the options for TLS connections.
+type TLSConfig struct {
+	CAFile     string `yaml:"ca_file" category:"advanced"`
+	CertFile   string `yaml:"cert_file" category:"advanced"`
+	KeyFile    string `yaml:"key_file" category:"advanced"`
+	ServerName string `yaml:"server_name" category:"advanced"`
 }
 
 // RegisterFlagsWithPrefix registers the flags for s3 storage with the provided prefix
@@ -67,6 +77,15 @@ func (cfg *HTTPConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.IntVar(&cfg.MaxIdleConns, prefix+"s3.max-idle-connections", 100, "Maximum number of idle (keep-alive) connections across all hosts. 0 means no limit.")
 	f.IntVar(&cfg.MaxIdleConnsPerHost, prefix+"s3.max-idle-connections-per-host", 100, "Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used.")
 	f.IntVar(&cfg.MaxConnsPerHost, prefix+"s3.max-connections-per-host", 0, "Maximum number of connections per host. 0 means no limit.")
+	cfg.TLSConfig.RegisterFlagsWithPrefix(prefix, f)
+}
+
+// RegisterFlagsWithPrefix registers the flags for s3 storage with the provided prefix.
+func (cfg *TLSConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	f.StringVar(&cfg.CAFile, prefix+"s3.http.tls.ca-file", "", "The CA certificate file path.")
+	f.StringVar(&cfg.CertFile, prefix+"s3.http.tls.cert-file", "", "The client certificate file path.")
+	f.StringVar(&cfg.KeyFile, prefix+"s3.http.tls.key-file", "", "The client key file path.")
+	f.StringVar(&cfg.ServerName, prefix+"s3.http.tls.server-name", "", "The name of the server for verification.")
 }
 
 // Config holds the config options for an S3 backend

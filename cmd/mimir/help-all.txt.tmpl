@@ -44,6 +44,14 @@ Usage of ./cmd/mimir/mimir:
     	If the client connects to S3 via HTTPS and this option is enabled, the client will accept any certificate and hostname.
   -alertmanager-storage.s3.http.response-header-timeout duration
     	The amount of time the client will wait for a servers response headers. (default 2m0s)
+  -alertmanager-storage.s3.http.tls.ca-file string
+    	The CA certificate file path.
+  -alertmanager-storage.s3.http.tls.cert-file string
+    	The client certificate file path.
+  -alertmanager-storage.s3.http.tls.key-file string
+    	The client key file path.
+  -alertmanager-storage.s3.http.tls.server-name string
+    	The name of the server for verification.
   -alertmanager-storage.s3.insecure
     	If enabled, use http:// for the S3 endpoint instead of https://. This could be useful in local dev/test environments while using an S3-compatible backend storage, like Minio.
   -alertmanager-storage.s3.max-connections-per-host int
@@ -419,6 +427,14 @@ Usage of ./cmd/mimir/mimir:
     	If the client connects to S3 via HTTPS and this option is enabled, the client will accept any certificate and hostname.
   -blocks-storage.s3.http.response-header-timeout duration
     	The amount of time the client will wait for a servers response headers. (default 2m0s)
+  -blocks-storage.s3.http.tls.ca-file string
+    	The CA certificate file path.
+  -blocks-storage.s3.http.tls.cert-file string
+    	The client certificate file path.
+  -blocks-storage.s3.http.tls.key-file string
+    	The client key file path.
+  -blocks-storage.s3.http.tls.server-name string
+    	The name of the server for verification.
   -blocks-storage.s3.insecure
     	If enabled, use http:// for the S3 endpoint instead of https://. This could be useful in local dev/test environments while using an S3-compatible backend storage, like Minio.
   -blocks-storage.s3.max-connections-per-host int
@@ -564,6 +580,14 @@ Usage of ./cmd/mimir/mimir:
     	If the client connects to S3 via HTTPS and this option is enabled, the client will accept any certificate and hostname.
   -common.storage.s3.http.response-header-timeout duration
     	The amount of time the client will wait for a servers response headers. (default 2m0s)
+  -common.storage.s3.http.tls.ca-file string
+    	The CA certificate file path.
+  -common.storage.s3.http.tls.cert-file string
+    	The client certificate file path.
+  -common.storage.s3.http.tls.key-file string
+    	The client key file path.
+  -common.storage.s3.http.tls.server-name string
+    	The name of the server for verification.
   -common.storage.s3.insecure
     	If enabled, use http:// for the S3 endpoint instead of https://. This could be useful in local dev/test environments while using an S3-compatible backend storage, like Minio.
   -common.storage.s3.max-connections-per-host int
@@ -1403,6 +1427,14 @@ Usage of ./cmd/mimir/mimir:
     	If the client connects to S3 via HTTPS and this option is enabled, the client will accept any certificate and hostname.
   -ruler-storage.s3.http.response-header-timeout duration
     	The amount of time the client will wait for a servers response headers. (default 2m0s)
+  -ruler-storage.s3.http.tls.ca-file string
+    	The CA certificate file path.
+  -ruler-storage.s3.http.tls.cert-file string
+    	The client certificate file path.
+  -ruler-storage.s3.http.tls.key-file string
+    	The client key file path.
+  -ruler-storage.s3.http.tls.server-name string
+    	The name of the server for verification.
   -ruler-storage.s3.insecure
     	If enabled, use http:// for the S3 endpoint instead of https://. This could be useful in local dev/test environments while using an S3-compatible backend storage, like Minio.
   -ruler-storage.s3.max-connections-per-host int

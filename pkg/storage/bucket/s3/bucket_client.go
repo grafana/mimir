@@ -8,6 +8,7 @@ package s3
 import (
 	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
+	"github.com/thanos-io/thanos/pkg/exthttp"
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"github.com/thanos-io/thanos/pkg/objstore/s3"
 )
@@ -56,6 +57,12 @@ func newS3Config(cfg Config) (s3.Config, error) {
 			MaxIdleConnsPerHost:   cfg.HTTP.MaxIdleConnsPerHost,
 			MaxConnsPerHost:       cfg.HTTP.MaxConnsPerHost,
 			Transport:             cfg.HTTP.Transport,
+			TLSConfig: exthttp.TLSConfig{
+				CAFile:     cfg.HTTP.TLSConfig.CAFile,
+				CertFile:   cfg.HTTP.TLSConfig.CertFile,
+				KeyFile:    cfg.HTTP.TLSConfig.KeyFile,
+				ServerName: cfg.HTTP.TLSConfig.ServerName,
+			},
 		},
 		// Enforce signature version 2 if CLI flag is set
 		SignatureV2: cfg.SignatureVersion == SignatureVersionV2,

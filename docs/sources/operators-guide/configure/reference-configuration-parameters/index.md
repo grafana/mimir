@@ -3501,6 +3501,23 @@ http:
   # (advanced) Maximum number of connections per host. 0 means no limit.
   # CLI flag: -<prefix>.s3.max-connections-per-host
   [max_connections_per_host: <int> | default = 0]
+
+  tls_config:
+    # (advanced) The CA certificate file path.
+    # CLI flag: -<prefix>.s3.http.tls.ca-file
+    [ca_file: <string> | default = ""]
+
+    # (advanced) The client certificate file path.
+    # CLI flag: -<prefix>.s3.http.tls.cert-file
+    [cert_file: <string> | default = ""]
+
+    # (advanced) The client key file path.
+    # CLI flag: -<prefix>.s3.http.tls.key-file
+    [key_file: <string> | default: ""]
+
+    # (advanced) The name of the server for verification.
+    # CLI flag: -<prefix>.s3.http.tls.server-name
+    [server_name: <string> | default: ""]
 ```
 
 ### gcs_storage_backend

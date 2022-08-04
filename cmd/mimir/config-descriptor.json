@@ -4095,6 +4095,60 @@
                   "fieldFlag": "blocks-storage.s3.max-connections-per-host",
                   "fieldType": "int",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "block",
+                  "name": "tls_config",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "ca_file",
+                      "required": false,
+                      "desc": "The CA certificate file path.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "blocks-storage.s3.http.tls.ca-file",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "cert_file",
+                      "required": false,
+                      "desc": "The client certificate file path.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "blocks-storage.s3.http.tls.cert-file",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "key_file",
+                      "required": false,
+                      "desc": "The client key file path.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "blocks-storage.s3.http.tls.key-file",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "server_name",
+                      "required": false,
+                      "desc": "The name of the server for verification.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "blocks-storage.s3.http.tls.server-name",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
                 }
               ],
               "fieldValue": null,
@@ -7931,6 +7985,60 @@
                   "fieldFlag": "ruler-storage.s3.max-connections-per-host",
                   "fieldType": "int",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "block",
+                  "name": "tls_config",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "ca_file",
+                      "required": false,
+                      "desc": "The CA certificate file path.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "ruler-storage.s3.http.tls.ca-file",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "cert_file",
+                      "required": false,
+                      "desc": "The client certificate file path.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "ruler-storage.s3.http.tls.cert-file",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "key_file",
+                      "required": false,
+                      "desc": "The client key file path.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "ruler-storage.s3.http.tls.key-file",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "server_name",
+                      "required": false,
+                      "desc": "The name of the server for verification.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "ruler-storage.s3.http.tls.server-name",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
                 }
               ],
               "fieldValue": null,
@@ -9260,6 +9368,60 @@
                   "fieldFlag": "alertmanager-storage.s3.max-connections-per-host",
                   "fieldType": "int",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "block",
+                  "name": "tls_config",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "ca_file",
+                      "required": false,
+                      "desc": "The CA certificate file path.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "alertmanager-storage.s3.http.tls.ca-file",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "cert_file",
+                      "required": false,
+                      "desc": "The client certificate file path.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "alertmanager-storage.s3.http.tls.cert-file",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "key_file",
+                      "required": false,
+                      "desc": "The client key file path.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "alertmanager-storage.s3.http.tls.key-file",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "server_name",
+                      "required": false,
+                      "desc": "The name of the server for verification.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "alertmanager-storage.s3.http.tls.server-name",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
                 }
               ],
               "fieldValue": null,
@@ -10498,6 +10660,60 @@
                       "fieldFlag": "common.storage.s3.max-connections-per-host",
                       "fieldType": "int",
                       "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "block",
+                      "name": "tls_config",
+                      "required": false,
+                      "desc": "",
+                      "blockEntries": [
+                        {
+                          "kind": "field",
+                          "name": "ca_file",
+                          "required": false,
+                          "desc": "The CA certificate file path.",
+                          "fieldValue": null,
+                          "fieldDefaultValue": "",
+                          "fieldFlag": "common.storage.s3.http.tls.ca-file",
+                          "fieldType": "string",
+                          "fieldCategory": "advanced"
+                        },
+                        {
+                          "kind": "field",
+                          "name": "cert_file",
+                          "required": false,
+                          "desc": "The client certificate file path.",
+                          "fieldValue": null,
+                          "fieldDefaultValue": "",
+                          "fieldFlag": "common.storage.s3.http.tls.cert-file",
+                          "fieldType": "string",
+                          "fieldCategory": "advanced"
+                        },
+                        {
+                          "kind": "field",
+                          "name": "key_file",
+                          "required": false,
+                          "desc": "The client key file path.",
+                          "fieldValue": null,
+                          "fieldDefaultValue": "",
+                          "fieldFlag": "common.storage.s3.http.tls.key-file",
+                          "fieldType": "string",
+                          "fieldCategory": "advanced"
+                        },
+                        {
+                          "kind": "field",
+                          "name": "server_name",
+                          "required": false,
+                          "desc": "The name of the server for verification.",
+                          "fieldValue": null,
+                          "fieldDefaultValue": "",
+                          "fieldFlag": "common.storage.s3.http.tls.server-name",
+                          "fieldType": "string",
+                          "fieldCategory": "advanced"
+                        }
+                      ],
+                      "fieldValue": null,
+                      "fieldDefaultValue": null
                     }
                   ],
                   "fieldValue": null,
