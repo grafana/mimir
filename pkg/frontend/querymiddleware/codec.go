@@ -206,7 +206,6 @@ func (c prometheusCodec) decodeInstantQueryRequest(r *http.Request) (Request, er
 	result.Query = r.FormValue("query")
 	result.Path = r.URL.Path
 	decodeOptions(r, &result.Options)
-	decodeInstantQueryOptions(r, &result.Options)
 	return &result, nil
 }
 
@@ -214,23 +213,21 @@ func decodeOptions(r *http.Request, opts *Options) {
 	for _, value := range r.Header.Values(cacheControlHeader) {
 		if strings.Contains(value, noStoreValue) {
 			opts.CacheDisabled = true
-			break
+			continue
 		}
 	}
 
 	for _, value := range r.Header.Values(totalShardsControlHeader) {
 		shards, err := strconv.ParseInt(value, 10, 32)
 		if err != nil {
-			break
+			continue
 		}
 		opts.TotalShards = int32(shards)
 		if opts.TotalShards < 1 {
 			opts.ShardingDisabled = true
 		}
 	}
-}
 
-func decodeInstantQueryOptions(r *http.Request, opts *Options) {
 	for _, value := range r.Header.Values(instantSplitControlHeader) {
 		splitInterval, err := time.ParseDuration(value)
 		if err != nil {
