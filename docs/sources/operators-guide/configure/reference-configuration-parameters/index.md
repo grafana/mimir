@@ -217,6 +217,11 @@ runtime_config:
 # The query_scheduler block configures the query-scheduler.
 [query_scheduler: <query_scheduler>]
 
+usage_stats:
+  # (experimental) Enable anonymous usage reporting.
+  # CLI flag: -usage-stats.enabled
+  [enabled: <boolean> | default = false]
+
 # The common block holds configurations that configure multiple components at a
 # time.
 [common: <common>]
