@@ -2,11 +2,19 @@
 
 package astmapper
 
+type noOpReason string
+
+// Possible noop reasons
+const (
+	SmallIntervalNoOpReason = noOpReason("small_interval")
+	SubqueryNoOpReason      = noOpReason("subquery")
+	NonSplittableNoOpReason = noOpReason("non_splittable")
+	noneNoOpReason          = noOpReason("none")
+)
+
 type InstantSplitterStats struct {
-	splitQueries           int  // counter of split queries (0 if non-splittable)
-	noOpSmallIntervalQuery bool // query is a noop due to a small range interval
-	noOpSubquery           bool // query is a subquery (non-splittable)
-	noOpNonSplittableQuery bool // query is non-splittable
+	splitQueries    int        // counter of split queries (0 if non-splittable)
+	noOpQueryReason noOpReason // reason the initial query is a no operation
 }
 
 func NewInstantSplitterStats() *InstantSplitterStats {
@@ -23,38 +31,27 @@ func (s *InstantSplitterStats) GetSplitQueries() int {
 	return s.splitQueries
 }
 
-// SetNoOpSmallRangeInterval set query as a no operation due to a small range interval.
-func (s *InstantSplitterStats) SetNoOpSmallRangeInterval() {
-	s.noOpSmallIntervalQuery = true
+// SetNoOpQueryReason set no operation reason for query.
+func (s *InstantSplitterStats) SetNoOpQueryReason(reason noOpReason) {
+	if s.isNoOpQueryReasonSet() {
+		return
+	}
+	s.noOpQueryReason = reason
 }
 
-// GetNoOpSmallIntervalQuery returns whether the query is a no operation due to a small range interval.
-func (s *InstantSplitterStats) GetNoOpSmallIntervalQuery() bool {
+// GetNoOpQueryReason returns the reason a query is a no operation.
+// If number of split queries is greater than 0, it means the query is splittable
+// Otherwise, if no noop reason is set, it means the query is non-splittable
+func (s *InstantSplitterStats) GetNoOpQueryReason() noOpReason {
 	if s.GetSplitQueries() > 0 {
-		s.noOpSmallIntervalQuery = false
+		return noneNoOpReason
 	}
-	return s.noOpSmallIntervalQuery
+	if s.isNoOpQueryReasonSet() {
+		return s.noOpQueryReason
+	}
+	return NonSplittableNoOpReason
 }
 
-// SetNoOpSubquery increment num of no operation queries that are subqueries to the counter.
-func (s *InstantSplitterStats) SetNoOpSubquery() {
-	s.noOpSubquery = true
-}
-
-// GetNoOpSubquery returns whether the query is a subquery.
-func (s *InstantSplitterStats) GetNoOpSubquery() bool {
-	if s.GetSplitQueries() > 0 {
-		s.noOpSubquery = false
-	}
-	return s.noOpSubquery
-}
-
-// GetNoOpNonSplittableQuery returns whether the query is non-splittable.
-// Note: if the query results in a noop and both noOpSmallIntervalQuery and noOpSubquery are false,
-// then noOpNonSplittableQuery is true
-func (s *InstantSplitterStats) GetNoOpNonSplittableQuery() bool {
-	if s.splitQueries <= 0 && !s.GetNoOpSmallIntervalQuery() && !s.GetNoOpSubquery() {
-		s.noOpNonSplittableQuery = true
-	}
-	return s.noOpNonSplittableQuery
+func (s *InstantSplitterStats) isNoOpQueryReasonSet() bool {
+	return len(s.noOpQueryReason) > 0
 }

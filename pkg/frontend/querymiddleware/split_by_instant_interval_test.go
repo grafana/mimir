@@ -343,7 +343,6 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 					query:                     `rate(metric_counter[1m]) / rate(metric_counter[5h:5m]) > 0.5`,
 					expectedSplitQueries:      0,
 					expectedNoOpSmallInterval: 1,
-					expectedNoOpSubquery:      1,
 				},
 				// should not be mapped if range vector aggregator is not splittable
 				"absent_over_time": {

@@ -385,9 +385,7 @@ func TestInstantSplitter(t *testing.T) {
 			require.Equal(t, out.String(), mapped.String())
 
 			assert.Equal(t, tt.expectedSplitQueries, stats.GetSplitQueries())
-			assert.Equal(t, false, stats.GetNoOpSmallIntervalQuery())
-			assert.Equal(t, false, stats.GetNoOpSubquery())
-			assert.Equal(t, false, stats.GetNoOpNonSplittableQuery())
+			assert.Equal(t, noneNoOpReason, stats.GetNoOpQueryReason())
 		})
 	}
 }
@@ -438,9 +436,7 @@ func TestInstantSplitterUnevenRangeInterval(t *testing.T) {
 			require.Equal(t, out.String(), mapped.String())
 
 			assert.Equal(t, tt.expectedSplitQueries, stats.GetSplitQueries())
-			assert.Equal(t, false, stats.GetNoOpSmallIntervalQuery())
-			assert.Equal(t, false, stats.GetNoOpSubquery())
-			assert.Equal(t, false, stats.GetNoOpNonSplittableQuery())
+			assert.Equal(t, noneNoOpReason, stats.GetNoOpQueryReason())
 		})
 	}
 }
@@ -449,167 +445,164 @@ func TestInstantSplitterNoOp(t *testing.T) {
 	splitInterval := 1 * time.Minute
 
 	for _, tt := range []struct {
-		query                     string
-		expectedNoOpSmallInterval bool
-		expectedNoOpSubquery      bool
-		expectedNoOpNonSplittable bool
+		query      string
+		noOpReason noOpReason
 	}{
 		// should be noop if range vector aggregator is not splittable
 		{
-			query:                     `absent_over_time({app="foo"}[3m])`,
-			expectedNoOpNonSplittable: true,
+			query:      `absent_over_time({app="foo"}[3m])`,
+			noOpReason: NonSplittableNoOpReason,
 		},
 		{
-			query:                     `changes({app="foo"}[3m])`,
-			expectedNoOpNonSplittable: true,
+			query:      `changes({app="foo"}[3m])`,
+			noOpReason: NonSplittableNoOpReason,
 		},
 		{
-			query:                     `delta({app="foo"}[3m])`,
-			expectedNoOpNonSplittable: true,
+			query:      `delta({app="foo"}[3m])`,
+			noOpReason: NonSplittableNoOpReason,
 		},
 		{
-			query:                     `deriv({app="foo"}[3m])`,
-			expectedNoOpNonSplittable: true,
+			query:      `deriv({app="foo"}[3m])`,
+			noOpReason: NonSplittableNoOpReason,
 		},
 		{
-			query:                     `holt_winters({app="foo"}[3m], 1, 10)`,
-			expectedNoOpNonSplittable: true,
+			query:      `holt_winters({app="foo"}[3m], 1, 10)`,
+			noOpReason: NonSplittableNoOpReason,
 		},
 		{
-			query:                     `idelta({app="foo"}[3m])`,
-			expectedNoOpNonSplittable: true,
+			query:      `idelta({app="foo"}[3m])`,
+			noOpReason: NonSplittableNoOpReason,
 		},
 		{
-			query:                     `irate({app="foo"}[3m])`,
-			expectedNoOpNonSplittable: true,
+			query:      `irate({app="foo"}[3m])`,
+			noOpReason: NonSplittableNoOpReason,
 		},
 		{
-			query:                     `last_over_time({app="foo"}[3m])`,
-			expectedNoOpNonSplittable: true,
+			query:      `last_over_time({app="foo"}[3m])`,
+			noOpReason: NonSplittableNoOpReason,
 		},
 		{
-			query:                     `predict_linear({app="foo"}[3m], 1)`,
-			expectedNoOpNonSplittable: true,
+			query:      `predict_linear({app="foo"}[3m], 1)`,
+			noOpReason: NonSplittableNoOpReason,
 		},
 		{
-			query:                     `quantile_over_time(0.95, foo[3m])`,
-			expectedNoOpNonSplittable: true,
+			query:      `quantile_over_time(0.95, foo[3m])`,
+			noOpReason: NonSplittableNoOpReason,
 		},
 		{
-			query:                     `resets(foo[3m])`,
-			expectedNoOpNonSplittable: true,
+			query:      `resets(foo[3m])`,
+			noOpReason: NonSplittableNoOpReason,
 		},
 		{
-			query:                     `stddev_over_time(foo[3m])`,
-			expectedNoOpNonSplittable: true,
+			query:      `stddev_over_time(foo[3m])`,
+			noOpReason: NonSplittableNoOpReason,
 		},
 		{
-			query:                     `stdvar_over_time(foo[3m])`,
-			expectedNoOpNonSplittable: true,
+			query:      `stdvar_over_time(foo[3m])`,
+			noOpReason: NonSplittableNoOpReason,
 		},
 		{
-			query:                     `time()`,
-			expectedNoOpNonSplittable: true,
+			query:      `time()`,
+			noOpReason: NonSplittableNoOpReason,
 		},
 		{
-			query:                     `vector(10)`,
-			expectedNoOpNonSplittable: true,
+			query:      `vector(10)`,
+			noOpReason: NonSplittableNoOpReason,
 		},
 		// should be noop if expression is not splittable
 		{
-			query:                     `topk(10, histogram_quantile(0.9, delta({app="foo"}[3m])))`,
-			expectedNoOpNonSplittable: true,
+			query:      `topk(10, histogram_quantile(0.9, delta({app="foo"}[3m])))`,
+			noOpReason: NonSplittableNoOpReason,
 		},
 		// should be noop if range interval is lower or equal to split interval (1m)
 		{
-			query:                     `rate({app="foo"}[1m])`,
-			expectedNoOpSmallInterval: true,
+			query:      `rate({app="foo"}[1m])`,
+			noOpReason: SmallIntervalNoOpReason,
 		},
 		// should be noop if expression is a number literal
 		{
-			query:                     `5`,
-			expectedNoOpNonSplittable: true,
+			query:      `5`,
+			noOpReason: NonSplittableNoOpReason,
 		},
 		// should be noop if binary expression's operands are both constant scalars
 		{
-			query:                     `20 / 10`,
-			expectedNoOpNonSplittable: true,
+			query:      `20 / 10`,
+			noOpReason: NonSplittableNoOpReason,
 		},
 		{
-			query:                     `(20 / 10)`,
-			expectedNoOpNonSplittable: true,
+			query:      `(20 / 10)`,
+			noOpReason: NonSplittableNoOpReason,
 		},
 		{
-			query:                     `(20) / (10)`,
-			expectedNoOpNonSplittable: true,
+			query:      `(20) / (10)`,
+			noOpReason: NonSplittableNoOpReason,
 		},
 		{
-			query:                     `time() != bool 0`,
-			expectedNoOpNonSplittable: true,
+			query:      `time() != bool 0`,
+			noOpReason: NonSplittableNoOpReason,
 		},
 		// should be noop if binary operation is not mapped
 		//   - first operand `rate(metric_counter[1m])` has a smaller range interval than the configured splitting
 		//   - second operand `rate(metric_counter[5h:5m])` is a subquery
 		{
-			query:                     `rate({app="foo"}[1m]) / rate({app="bar"}[5h:5m]) > 0.5`,
-			expectedNoOpSmallInterval: true,
-			expectedNoOpSubquery:      true,
+			query:      `rate({app="foo"}[1m]) / rate({app="bar"}[5h:5m]) > 0.5`,
+			noOpReason: SmallIntervalNoOpReason,
 		},
 		// should be noop if inner binary operation is not mapped
 		{
-			query:                `sum(rate({app="foo"}[1h:5m]) * 60) by (bar)`,
-			expectedNoOpSubquery: true,
+			query:      `sum(rate({app="foo"}[1h:5m]) * 60) by (bar)`,
+			noOpReason: SubqueryNoOpReason,
 		},
 		// should be noop if subquery
 		{
-			query:                `sum_over_time(metric_counter[1h:5m])`,
-			expectedNoOpSubquery: true,
+			query:      `sum_over_time(metric_counter[1h:5m])`,
+			noOpReason: SubqueryNoOpReason,
 		},
 		{
-			query:                `sum(rate(metric_counter[30m:5s]))`,
-			expectedNoOpSubquery: true,
+			query:      `sum(rate(metric_counter[30m:5s]))`,
+			noOpReason: SubqueryNoOpReason,
 		},
 		{
 			// Parenthesis expression between sum_over_time() and the subquery.
-			query:                `sum_over_time((metric_counter[30m:5s]))`,
-			expectedNoOpSubquery: true,
+			query:      `sum_over_time((metric_counter[30m:5s]))`,
+			noOpReason: SubqueryNoOpReason,
 		},
 		{
 			// Multiple parenthesis expressions between sum_over_time() and the subquery.
-			query:                `sum_over_time((((metric_counter[30m:5s]))))`,
-			expectedNoOpSubquery: true,
+			query:      `sum_over_time((((metric_counter[30m:5s]))))`,
+			noOpReason: SubqueryNoOpReason,
 		},
 		{
-			query:                `quantile_over_time(1, metric_counter[10m:1m])`,
-			expectedNoOpSubquery: true,
+			query:      `quantile_over_time(1, metric_counter[10m:1m])`,
+			noOpReason: SubqueryNoOpReason,
 		},
 		{
-			query:                `sum(avg_over_time(metric_counter[1h:5m])) by (bar)`,
-			expectedNoOpSubquery: true,
+			query:      `sum(avg_over_time(metric_counter[1h:5m])) by (bar)`,
+			noOpReason: SubqueryNoOpReason,
 		},
 		{
-			query:                `min_over_time(sum by(group_1) (rate(metric_counter[5m]))[10m:2m])`,
-			expectedNoOpSubquery: true,
+			query:      `min_over_time(sum by(group_1) (rate(metric_counter[5m]))[10m:2m])`,
+			noOpReason: SubqueryNoOpReason,
 		},
 		{
-			query:                `max_over_time(stddev_over_time(deriv(rate(metric_counter[10m])[5m:1m])[2m:])[10m:])`,
-			expectedNoOpSubquery: true,
+			query:      `max_over_time(stddev_over_time(deriv(rate(metric_counter[10m])[5m:1m])[2m:])[10m:])`,
+			noOpReason: SubqueryNoOpReason,
 		},
 		{
-			query:                `rate(sum by(group_1) (rate(metric_counter[5m]))[10m:])`,
-			expectedNoOpSubquery: true,
+			query:      `rate(sum by(group_1) (rate(metric_counter[5m]))[10m:])`,
+			noOpReason: SubqueryNoOpReason,
 		},
 		{
-			query:                `absent_over_time(rate(metric_counter[5m])[10m:])`,
-			expectedNoOpSubquery: true,
+			query:      `absent_over_time(rate(metric_counter[5m])[10m:])`,
+			noOpReason: SubqueryNoOpReason,
 		},
 		{
-			query:                `max_over_time(stddev_over_time(deriv(sort(metric_counter)[5m:1m])[2m:])[10m:])`,
-			expectedNoOpSubquery: true,
+			query:      `max_over_time(stddev_over_time(deriv(sort(metric_counter)[5m:1m])[2m:])[10m:])`,
+			noOpReason: SubqueryNoOpReason,
 		},
 		{
-			query:                `max_over_time(absent_over_time(deriv(rate(metric_counter[1m])[5m:1m])[2m:])[10m:])`,
-			expectedNoOpSubquery: true,
+			query:      `max_over_time(absent_over_time(deriv(rate(metric_counter[1m])[5m:1m])[2m:])[10m:])`,
+			noOpReason: SubqueryNoOpReason,
 		},
 	} {
 		tt := tt
@@ -628,9 +621,7 @@ func TestInstantSplitterNoOp(t *testing.T) {
 			require.NoError(t, err)
 
 			assert.Equal(t, 0, stats.GetSplitQueries())
-			assert.Equal(t, tt.expectedNoOpSmallInterval, stats.GetNoOpSmallIntervalQuery())
-			assert.Equal(t, tt.expectedNoOpSubquery, stats.GetNoOpSubquery())
-			assert.Equal(t, tt.expectedNoOpNonSplittable, stats.GetNoOpNonSplittableQuery())
+			assert.Equal(t, tt.noOpReason, stats.GetNoOpQueryReason())
 		})
 	}
 }
