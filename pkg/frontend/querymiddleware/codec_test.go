@@ -731,23 +731,6 @@ func Test_DecodeOptions(t *testing.T) {
 				ShardingDisabled: true,
 			},
 		},
-	} {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			actual := &Options{}
-			decodeOptions(tt.input, actual)
-			require.Equal(t, tt.expected, actual)
-		})
-	}
-}
-
-func Test_DecodeInstantQueryOptions(t *testing.T) {
-	for _, tt := range []struct {
-		name     string
-		input    *http.Request
-		expected *Options
-	}{
 		{
 			name: "custom instant query splitting",
 			input: &http.Request{
@@ -775,7 +758,7 @@ func Test_DecodeInstantQueryOptions(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			actual := &Options{}
-			decodeInstantQueryOptions(tt.input, actual)
+			decodeOptions(tt.input, actual)
 			require.Equal(t, tt.expected, actual)
 		})
 	}
