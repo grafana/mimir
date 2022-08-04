@@ -4,6 +4,7 @@ package querymiddleware
 
 import (
 	"context"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -104,13 +105,14 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, logger, "splitInstantQueryByIntervalMiddleware.Do")
 	defer spanLog.Span.Finish()
 
-	tenantIDs, err := tenant.TenantIDs(ctx)
+	tenantsIds, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	splitInterval := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, s.limits.SplitInstantQueriesByInterval)
+	splitInterval := s.getSplitIntervalForQuery(tenantsIds, req, logger)
 	if splitInterval <= 0 {
+		level.Debug(logger).Log("msg", "query splitting is disabled for this query or tenant")
 		return s.next.Do(ctx, req)
 	}
 
@@ -174,4 +176,26 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 		},
 		Headers: shardedQueryable.getResponseHeaders(),
 	}, nil
+}
+
+// getSplitIntervalForQuery calculates and return the split interval that should be used to run the instant query.
+func (s *splitInstantQueryByIntervalMiddleware) getSplitIntervalForQuery(tenantsIds []string, r Request, spanLog log.Logger) time.Duration {
+	// Check if splitting is disabled for the given request.
+	if r.GetOptions().InstantSplitDisabled {
+		return 0
+	}
+
+	splitInterval := validation.SmallestPositiveNonZeroDurationPerTenant(tenantsIds, s.limits.SplitInstantQueriesByInterval)
+	if splitInterval <= 0 {
+		return 0
+	}
+
+	// Honor the split interval specified in the request (if any).
+	if r.GetOptions().InstantSplitInterval > 0 {
+		splitInterval = time.Duration(r.GetOptions().InstantSplitInterval)
+	}
+
+	level.Debug(spanLog).Log("msg", "getting split instant query interval", "tenantsIds", tenantsIds, "split interval", splitInterval)
+
+	return splitInterval
 }

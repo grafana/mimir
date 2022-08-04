@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	jsoniter "github.com/json-iterator/go"
@@ -728,6 +729,28 @@ func Test_DecodeOptions(t *testing.T) {
 			},
 			expected: &Options{
 				ShardingDisabled: true,
+			},
+		},
+		{
+			name: "custom instant query splitting",
+			input: &http.Request{
+				Header: http.Header{
+					instantSplitControlHeader: []string{"1h"},
+				},
+			},
+			expected: &Options{
+				InstantSplitInterval: time.Hour.Nanoseconds(),
+			},
+		},
+		{
+			name: "disable instant query splitting",
+			input: &http.Request{
+				Header: http.Header{
+					instantSplitControlHeader: []string{"0"},
+				},
+			},
+			expected: &Options{
+				InstantSplitDisabled: true,
 			},
 		},
 	} {
