@@ -25,8 +25,7 @@ std.manifestYamlDoc({
     self.store_gateways +
     self.compactor +
     self.rulers(2) +
-    self.alertmanagers(3) +
-    self.purger +
+    self.alertmanagers(3) + 
     self.minio +
     self.prometheus +
     self.grafana_agent +
@@ -130,13 +129,6 @@ std.manifestYamlDoc({
       target: 'store-gateway',
       httpPort: 8009,
       jaegerApp: 'store-gateway-2',
-    }),
-  },
-
-  purger:: {
-    purger: mimirService({
-      target: 'purger',
-      httpPort: 8014,
     }),
   },
 
