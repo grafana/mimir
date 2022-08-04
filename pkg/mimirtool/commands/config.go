@@ -61,7 +61,7 @@ func (c *ConfigCommand) convertConfig(_ *kingpin.ParseContext) error {
 
 	sourceFactory, targetFactory, mapper := config.DefaultCortexConfig, config.DefaultMimirConfig, config.CortexToMimirMapper()
 	if c.gem {
-		sourceFactory, targetFactory, mapper = config.DefaultGEM170Config, config.DefaultGEM200COnfig, config.GEM170ToGEM200Mapper()
+		sourceFactory, targetFactory, mapper = config.DefaultGEM170Config, config.DefaultGEMConfig, config.GEM170ToGEMMapper()
 	}
 
 	convertedYAML, flagsFlags, notices, err := config.Convert(yamlContents, flagsFlags, mapper, sourceFactory, targetFactory, c.updateDefaults, c.includeDefaults)
