@@ -244,7 +244,6 @@ func (q querier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Mat
 	// See: https://github.com/prometheus/prometheus/pull/8050
 	if sp == nil {
 		sp = &storage.SelectHints{
-			Func:  "series",
 			Start: q.mint,
 			End:   q.maxt,
 		}
@@ -312,7 +311,7 @@ func (q querier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Mat
 	return q.mergeSeriesSets(result)
 }
 
-// LabelsValue implements storage.Querier.
+// LabelValues implements storage.Querier.
 func (q querier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
 	if len(q.queriers) == 1 {
 		return q.queriers[0].LabelValues(name, matchers...)
@@ -486,7 +485,7 @@ func (alwaysTrueFilterQueryable) UseQueryable(_ time.Time, _, _ int64) bool {
 	return true
 }
 
-// Wraps storage.Queryable into QueryableWithFilter, with no query filtering.
+// UseAlwaysQueryable wraps storage.Queryable into QueryableWithFilter, with no query filtering.
 func UseAlwaysQueryable(q storage.Queryable) QueryableWithFilter {
 	return alwaysTrueFilterQueryable{Queryable: q}
 }
@@ -503,7 +502,7 @@ func (u useBeforeTimestampQueryable) UseQueryable(_ time.Time, queryMinT, _ int6
 	return queryMinT < u.ts
 }
 
-// Returns QueryableWithFilter, that is used only if query starts before given timestamp.
+// UseBeforeTimestampQueryable returns QueryableWithFilter, that is used only if query starts before given timestamp.
 // If timestamp is zero (time.IsZero), queryable is always used.
 func UseBeforeTimestampQueryable(queryable storage.Queryable, ts time.Time) QueryableWithFilter {
 	t := int64(0)
