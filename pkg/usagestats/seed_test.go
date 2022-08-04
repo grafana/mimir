@@ -197,31 +197,37 @@ func TestWaitSeedFileStability(t *testing.T) {
 func TestInitSeedFile(t *testing.T) {
 	const minStability = 3 * time.Second
 
-	now := time.Now()
-	oldSeed := ClusterSeed{UID: "old", CreatedAt: now.Add(-2 * minStability)}
-	newSeed := ClusterSeed{UID: "new", CreatedAt: now}
-
-	tests := map[string]struct {
+	type testConfig struct {
 		setup               func(bucketClient objstore.Bucket)
 		expectedErr         error
 		expectedMinDuration time.Duration
-	}{
-		"should immediately return if seed file exists and it was created more than 'min stability' time ago": {
-			setup: func(bucketClient objstore.Bucket) {
-				data, err := json.Marshal(oldSeed)
-				require.NoError(t, err)
-				require.NoError(t, bucketClient.Upload(context.Background(), ClusterSeedFileName, bytes.NewReader(data)))
-			},
-			expectedMinDuration: 0,
-		},
-		"should wait for 'min stability' and return the seed file if it exists and was created less than 'min stability' time ago": {
-			setup: func(bucketClient objstore.Bucket) {
-				data, err := json.Marshal(newSeed)
-				require.NoError(t, err)
-				require.NoError(t, bucketClient.Upload(context.Background(), ClusterSeedFileName, bytes.NewReader(data)))
-			},
-			expectedMinDuration: minStability,
-		},
+	}
+
+	tests := map[string]testConfig{
+		"should immediately return if seed file exists and it was created more than 'min stability' time ago": func() testConfig {
+			oldSeed := ClusterSeed{UID: "old", CreatedAt: time.Now().Add(-2 * minStability)}
+
+			return testConfig{
+				setup: func(bucketClient objstore.Bucket) {
+					data, err := json.Marshal(oldSeed)
+					require.NoError(t, err)
+					require.NoError(t, bucketClient.Upload(context.Background(), ClusterSeedFileName, bytes.NewReader(data)))
+				},
+				expectedMinDuration: 0,
+			}
+		}(),
+		"should wait for 'min stability' and return the seed file if it exists and was created less than 'min stability' time ago": func() testConfig {
+			newSeed := ClusterSeed{UID: "new", CreatedAt: time.Now()}
+
+			return testConfig{
+				setup: func(bucketClient objstore.Bucket) {
+					data, err := json.Marshal(newSeed)
+					require.NoError(t, err)
+					require.NoError(t, bucketClient.Upload(context.Background(), ClusterSeedFileName, bytes.NewReader(data)))
+				},
+				expectedMinDuration: minStability,
+			}
+		}(),
 		"should create the seed file if doesn't exist and then wait for 'min stability'": {
 			setup:               func(bucketClient objstore.Bucket) {},
 			expectedMinDuration: minStability,
