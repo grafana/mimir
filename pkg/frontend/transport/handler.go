@@ -219,6 +219,7 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 		"fetched_chunk_bytes", numBytes,
 		"fetched_chunks_count", numChunks,
 		"sharded_queries", stats.LoadShardedQueries(),
+		"split_queries", stats.LoadSplitQueries(),
 	}, formatQueryString(queryString)...)
 
 	level.Info(util_log.WithContext(r.Context(), f.log)).Log(logMessage...)
