@@ -150,6 +150,7 @@ func (s *Stats) Merge(other *Stats) {
 	s.AddFetchedChunkBytes(other.LoadFetchedChunkBytes())
 	s.AddFetchedChunks(other.LoadFetchedChunks())
 	s.AddShardedQueries(other.LoadShardedQueries())
+	s.AddSplitQueries(other.LoadSplitQueries())
 }
 
 func ShouldTrackHTTPGRPCResponse(r *httpgrpc.HTTPResponse) bool {
