@@ -123,6 +123,22 @@ func (s *Stats) LoadShardedQueries() uint32 {
 	return atomic.LoadUint32(&s.ShardedQueries)
 }
 
+func (s *Stats) AddSplitQueries(num uint32) {
+	if s == nil {
+		return
+	}
+
+	atomic.AddUint32(&s.SplitQueries, num)
+}
+
+func (s *Stats) LoadSplitQueries() uint32 {
+	if s == nil {
+		return 0
+	}
+
+	return atomic.LoadUint32(&s.SplitQueries)
+}
+
 // Merge the provided Stats into this one.
 func (s *Stats) Merge(other *Stats) {
 	if s == nil || other == nil {
@@ -134,6 +150,7 @@ func (s *Stats) Merge(other *Stats) {
 	s.AddFetchedChunkBytes(other.LoadFetchedChunkBytes())
 	s.AddFetchedChunks(other.LoadFetchedChunks())
 	s.AddShardedQueries(other.LoadShardedQueries())
+	s.AddSplitQueries(other.LoadSplitQueries())
 }
 
 func ShouldTrackHTTPGRPCResponse(r *httpgrpc.HTTPResponse) bool {

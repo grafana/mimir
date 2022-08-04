@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -354,17 +353,7 @@ func (u *BucketStores) LabelValues(ctx context.Context, req *storepb.LabelValues
 // scanUsers in the bucket and return the list of found users. If an error occurs while
 // iterating the bucket, it may return both an error and a subset of the users in the bucket.
 func (u *BucketStores) scanUsers(ctx context.Context) ([]string, error) {
-	var users []string
-
-	// Iterate the bucket to find all users in the bucket. Due to how the bucket listing
-	// caching works, it's more likely to have a cache hit if there's no delay while
-	// iterating the bucket, so we do load all users in memory and later process them.
-	err := u.bucket.Iter(ctx, "", func(s string) error {
-		users = append(users, strings.TrimSuffix(s, "/"))
-		return nil
-	})
-
-	return users, err
+	return tsdb.ListUsers(ctx, u.bucket)
 }
 
 func (u *BucketStores) getStore(userID string) *BucketStore {

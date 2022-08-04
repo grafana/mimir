@@ -28,6 +28,7 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/cache"
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -189,6 +190,11 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 
 	// Prepare and execute the downstream requests.
 	execReqs := splitReqs.prepareDownstreamRequests()
+
+	// Update query stats.
+	// Only consider the actual number of downstream requests, not the cache hits.
+	queryStats := stats.FromContext(ctx)
+	queryStats.AddSplitQueries(uint32(len(execReqs)))
 
 	if len(execReqs) > 0 {
 		execResps, err := doRequests(ctx, s.next, execReqs, true)

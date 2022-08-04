@@ -726,14 +726,7 @@ func (c *MultitenantCompactor) discoverUsersWithRetries(ctx context.Context) ([]
 }
 
 func (c *MultitenantCompactor) discoverUsers(ctx context.Context) ([]string, error) {
-	var users []string
-
-	err := c.bucketClient.Iter(ctx, "", func(entry string) error {
-		users = append(users, strings.TrimSuffix(entry, "/"))
-		return nil
-	})
-
-	return users, err
+	return mimir_tsdb.ListUsers(ctx, c.bucketClient)
 }
 
 // shardingStrategy describes whether compactor "owns" given user or job.

@@ -75,6 +75,51 @@
       "fieldDefaultValue": null,
       "fieldFlag": "ingester.lifecycler.id",
       "fieldType": "string"
+    },
+    {
+      "kind": "field",
+      "name": "ingester-lifecycler-port",
+      "required": false,
+      "desc": "port to advertise in consul (defaults to server.grpc-listen-port).",
+      "fieldDefaultValue": null,
+      "fieldFlag": "ingester.lifecycler.port",
+      "fieldType": "int"
+    },
+    {
+      "kind": "field",
+      "name": "ingester-client-expected-timeseries",
+      "required": false,
+      "desc": "Expected number of timeseries per request, used for preallocations.",
+      "fieldDefaultValue": 100,
+      "fieldFlag": "ingester-client.expected-timeseries",
+      "fieldType": "int"
+    },
+    {
+      "kind": "field",
+      "name": "ingester-client-expected-labels",
+      "required": false,
+      "desc": "Expected number of labels per timeseries, used for preallocations.",
+      "fieldDefaultValue": 20,
+      "fieldFlag": "ingester-client.expected-labels",
+      "fieldType": "int"
+    },
+    {
+      "kind": "field",
+      "name": "ingester-client-expected-samples-per-series",
+      "required": false,
+      "desc": "Expected number of samples per timeseries, used for preallocations.",
+      "fieldDefaultValue": 10,
+      "fieldFlag": "ingester-client.expected-samples-per-series",
+      "fieldType": "int"
+    },
+    {
+      "kind": "field",
+      "name": "frontend-cache-split-interval",
+      "required": false,
+      "desc": "Deprecated: The maximum interval expected for each request, results will be cached per single interval. This behavior is now determined by querier.split-queries-by-interval.",
+      "fieldDefaultValue": 10,
+      "fieldFlag": "frontend.cache-split-interval",
+      "fieldType": "int"
     }
   ]
 }

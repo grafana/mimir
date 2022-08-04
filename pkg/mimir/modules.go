@@ -49,7 +49,9 @@ import (
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/scheduler"
+	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storegateway"
+	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -87,6 +89,7 @@ const (
 	Purger                   string = "purger"
 	QueryScheduler           string = "query-scheduler"
 	TenantFederation         string = "tenant-federation"
+	UsageStats               string = "usage-stats"
 	All                      string = "all"
 )
 
@@ -755,6 +758,26 @@ func (t *Mimir) initQueryScheduler() (services.Service, error) {
 	return s, nil
 }
 
+func (t *Mimir) initUsageStats() (services.Service, error) {
+	if !t.Cfg.UsageStats.Enabled {
+		return nil, nil
+	}
+
+	// Since it requires the access to the blocks storage, we enable it only for components
+	// accessing the blocks storage.
+	if !t.Cfg.isAnyModuleEnabled(All, Ingester, Querier, StoreGateway, Compactor) {
+		return nil, nil
+	}
+
+	bucketClient, err := bucket.NewClient(context.Background(), t.Cfg.BlocksStorage.Bucket, "usage-stats", util_log.Logger, prometheus.DefaultRegisterer)
+	if err != nil {
+		return nil, err
+	}
+
+	t.UsageStatsReporter = usagestats.NewReporter(bucketClient, util_log.Logger)
+	return t.UsageStatsReporter, nil
+}
+
 func (t *Mimir) setupModuleManager() error {
 	mm := modules.NewManager(util_log.Logger)
 
@@ -788,11 +811,12 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(Purger, nil)
 	mm.RegisterModule(QueryScheduler, t.initQueryScheduler)
 	mm.RegisterModule(TenantFederation, t.initTenantFederation, modules.UserInvisibleModule)
+	mm.RegisterModule(UsageStats, t.initUsageStats, modules.UserInvisibleModule)
 	mm.RegisterModule(All, nil)
 
 	// Add dependencies
 	deps := map[string][]string{
-		Server:                   {ActivityTracker, SanityCheck},
+		Server:                   {ActivityTracker, SanityCheck, UsageStats},
 		API:                      {Server},
 		MemberlistKV:             {API},
 		RuntimeConfig:            {API},

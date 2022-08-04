@@ -10246,6 +10246,27 @@
     },
     {
       "kind": "block",
+      "name": "usage_stats",
+      "required": false,
+      "desc": "",
+      "blockEntries": [
+        {
+          "kind": "field",
+          "name": "enabled",
+          "required": false,
+          "desc": "Enable anonymous usage reporting.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "usage-stats.enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        }
+      ],
+      "fieldValue": null,
+      "fieldDefaultValue": null
+    },
+    {
+      "kind": "block",
       "name": "common",
       "required": false,
       "desc": "",
