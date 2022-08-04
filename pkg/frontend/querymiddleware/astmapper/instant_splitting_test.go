@@ -446,7 +446,7 @@ func TestInstantSplitterNoOp(t *testing.T) {
 
 	for _, tt := range []struct {
 		query      string
-		noOpReason noOpReason
+		noOpReason NoOpReason
 	}{
 		// should be noop if range vector aggregator is not splittable
 		{

@@ -2,19 +2,19 @@
 
 package astmapper
 
-type noOpReason string
+type NoOpReason string
 
 // Possible noop reasons
 const (
-	SmallIntervalNoOpReason = noOpReason("small_interval")
-	SubqueryNoOpReason      = noOpReason("subquery")
-	NonSplittableNoOpReason = noOpReason("non_splittable")
-	noneNoOpReason          = noOpReason("none")
+	SmallIntervalNoOpReason = NoOpReason("small_interval")
+	SubqueryNoOpReason      = NoOpReason("subquery")
+	NonSplittableNoOpReason = NoOpReason("non_splittable")
+	noneNoOpReason          = NoOpReason("none")
 )
 
 type InstantSplitterStats struct {
 	splitQueries    int        // counter of split queries (0 if non-splittable)
-	noOpQueryReason noOpReason // reason the initial query is a no operation
+	noOpQueryReason NoOpReason // reason the initial query is a no operation
 }
 
 func NewInstantSplitterStats() *InstantSplitterStats {
@@ -32,7 +32,7 @@ func (s *InstantSplitterStats) GetSplitQueries() int {
 }
 
 // SetNoOpQueryReason set no operation reason for query.
-func (s *InstantSplitterStats) SetNoOpQueryReason(reason noOpReason) {
+func (s *InstantSplitterStats) SetNoOpQueryReason(reason NoOpReason) {
 	if s.isNoOpQueryReasonSet() {
 		return
 	}
@@ -42,7 +42,7 @@ func (s *InstantSplitterStats) SetNoOpQueryReason(reason noOpReason) {
 // GetNoOpQueryReason returns the reason a query is a no operation.
 // If number of split queries is greater than 0, it means the query is splittable
 // Otherwise, if no noop reason is set, it means the query is non-splittable
-func (s *InstantSplitterStats) GetNoOpQueryReason() noOpReason {
+func (s *InstantSplitterStats) GetNoOpQueryReason() NoOpReason {
 	if s.GetSplitQueries() > 0 {
 		return noneNoOpReason
 	}
