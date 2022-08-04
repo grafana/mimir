@@ -34,11 +34,15 @@ func NewDelayedBucketClient(wrapped objstore.Bucket, minDelay, maxDelay time.Dur
 
 func (m *DelayedBucketClient) Upload(ctx context.Context, name string, r io.Reader) error {
 	m.delay()
+	defer m.delay()
+
 	return m.wrapped.Upload(ctx, name, r)
 }
 
 func (m *DelayedBucketClient) Delete(ctx context.Context, name string) error {
 	m.delay()
+	defer m.delay()
+
 	return m.wrapped.Delete(ctx, name)
 }
 
@@ -48,20 +52,28 @@ func (m *DelayedBucketClient) Name() string {
 
 func (m *DelayedBucketClient) Iter(ctx context.Context, dir string, f func(string) error, options ...objstore.IterOption) error {
 	m.delay()
+	defer m.delay()
+
 	return m.wrapped.Iter(ctx, dir, f, options...)
 }
 
 func (m *DelayedBucketClient) Get(ctx context.Context, name string) (io.ReadCloser, error) {
 	m.delay()
+	defer m.delay()
+
 	return m.wrapped.Get(ctx, name)
 }
 func (m *DelayedBucketClient) GetRange(ctx context.Context, name string, off, length int64) (io.ReadCloser, error) {
 	m.delay()
+	defer m.delay()
+
 	return m.wrapped.GetRange(ctx, name, off, length)
 }
 
 func (m *DelayedBucketClient) Exists(ctx context.Context, name string) (bool, error) {
 	m.delay()
+	defer m.delay()
+
 	return m.wrapped.Exists(ctx, name)
 }
 
@@ -71,6 +83,8 @@ func (m *DelayedBucketClient) IsObjNotFoundErr(err error) bool {
 
 func (m *DelayedBucketClient) Attributes(ctx context.Context, name string) (objstore.ObjectAttributes, error) {
 	m.delay()
+	defer m.delay()
+
 	return m.wrapped.Attributes(ctx, name)
 }
 
