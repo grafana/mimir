@@ -79,10 +79,17 @@
     },
 
     deployment_type: 'container',
+    // System mount point where mimir stores its data, used for baremetal
+    // deployment only.
+    instance_data_mountpoint: '/',
     resources_panel_series: {
       container: {
         network_receive_bytes_metrics: 'container_network_receive_bytes_total',
         network_transmit_bytes_metrics: 'container_network_transmit_bytes_total',
+      },
+      baremetal: {
+        network_receive_bytes_metrics: 'node_network_receive_bytes_total',
+        network_transmit_bytes_metrics: 'node_network_transmit_bytes_total',
       },
     },
     resources_panel_queries: {
@@ -132,6 +139,50 @@
                 %(label)s
               }
             )
+          |||,
+      },
+      baremetal: {
+        // Somes queries does not makes sens when running mimir on baremetal
+        // no need to define them
+        cpu_usage: 'sum by(%(instance)s) (rate(node_cpu_seconds_total{mode="user",%(namespace)s,%(instance)s=~".*%(instanceName)s.*"}[$__rate_interval]))',
+        memory_working_usage:
+          |||
+            node_memory_MemTotal_bytes{%(namespace)s,%(instance)s=~".*%(containerName)s.*"}
+            - node_memory_MemFree_bytes{%(namespace)s,%(instance)s=~".*%(containerName)s.*"}
+            - node_memory_Buffers_bytes{%(namespace)s,%(instance)s=~".*%(containerName)s.*"}
+            - node_memory_Cached_bytes{%(namespace)s,%(instance)s=~".*%(containerName)s.*"}
+            - node_memory_Slab_bytes{%(namespace)s,%(instance)s=~".*%(containerName)s.*"}
+            - node_memory_PageTables_bytes{%(namespace)s,%(instance)s=~".*%(containerName)s.*"}
+            - node_memory_SwapCached_bytes{%(namespace)s,%(instance)s=~".*%(containerName)s.*"}
+          |||,
+        // From cAdvisor code, the memory RSS is:
+        // The amount of anonymous and swap cache memory (includes transparent hugepages).
+        memory_rss_usage:
+          |||
+            node_memory_Active_anon_bytes{%(namespace)s,%(instance)s=~".*%(containerName)s.*"}
+            + node_memory_SwapCached_bytes{%(namespace)s,%(instance)s=~".*%(containerName)s.*"}
+          |||,
+        network: 'sum by(%(instance)s) (rate(%(metric)s{%(namespace)s,%(instance)s=~".*%(instanceName)s.*"}[$__rate_interval]))',
+        disk_writes:
+          |||
+            sum by(%(instanceLabel)s, %(instance)s, device) (
+              rate(
+                node_disk_written_bytes_total{%(namespace)s,%(instance)s=~".*%(containerName)s.*"}[$__rate_interval]
+              )
+            )
+          |||,
+        disk_reads:
+          |||
+            sum by(%(instanceLabel)s, %(instance)s, device) (
+              rate(
+                node_disk_read_bytes_total{%(namespace)s,%(instance)s=~".*%(containerName)s.*"}[$__rate_interval]
+              )
+            )
+          |||,
+        disk_utilization:
+          |||
+            1 - ((node_filesystem_avail_bytes{%(namespace)s,%(instance)s=~".*%(containerName)s.*", mountpoint="%(instanceDataDir)s"})
+                / node_filesystem_size_bytes{%(namespace)s,%(instance)s=~".*%(containerName)s.*", mountpoint="%(instanceDataDir)s"})
           |||,
       },
     },
