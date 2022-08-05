@@ -181,9 +181,19 @@ local utils = import 'mixin-utils/utils.libsonnet';
   containerCPUUsagePanel(title, containerName)::
     $.panel(title) +
     $.queryPanel([
-      $._config.resources_panel_queries[$._config.deployment_type].cpu_usage % [$._config.per_instance_label, $.namespaceMatcher(), containerName],
-      $._config.resources_panel_queries[$._config.deployment_type].cpu_limit % [$.namespaceMatcher(), containerName, $.namespaceMatcher(), containerName],
-      $._config.resources_panel_queries[$._config.deployment_type].cpu_request % [$.namespaceMatcher(), containerName],
+      $._config.resources_panel_queries[$._config.deployment_type].cpu_usage % {
+        instance: $._config.per_instance_label,
+        namespace: $.namespaceMatcher(),
+        instanceName: containerName,
+      },
+      $._config.resources_panel_queries[$._config.deployment_type].cpu_limit % {
+        namespace: $.namespaceMatcher(),
+        containerName: containerName,
+      },
+      $._config.resources_panel_queries[$._config.deployment_type].cpu_request % {
+        namespace: $.namespaceMatcher(),
+        containerName: containerName,
+      },
     ], ['{{%s}}' % $._config.per_instance_label, 'limit', 'request']) +
     {
       seriesOverrides: [
@@ -197,9 +207,19 @@ local utils = import 'mixin-utils/utils.libsonnet';
   containerMemoryWorkingSetPanel(title, containerName)::
     $.panel(title) +
     $.queryPanel([
-      $._config.resources_panel_queries[$._config.deployment_type].memory_working_usage % [$._config.per_instance_label, $.namespaceMatcher(), containerName],
-      $._config.resources_panel_queries[$._config.deployment_type].memory_working_limit % [$.namespaceMatcher(), containerName],
-      $._config.resources_panel_queries[$._config.deployment_type].memory_working_request % [$.namespaceMatcher(), containerName],
+      $._config.resources_panel_queries[$._config.deployment_type].memory_working_usage % {
+        instance: $._config.per_instance_label,
+        namespace: $.namespaceMatcher(),
+        containerName: containerName,
+      },
+      $._config.resources_panel_queries[$._config.deployment_type].memory_working_limit % {
+        namespace: $.namespaceMatcher(),
+        containerName: containerName,
+      },
+      $._config.resources_panel_queries[$._config.deployment_type].memory_working_request % {
+        namespace: $.namespaceMatcher(),
+        containerName: containerName,
+      },
     ], ['{{%s}}' % $._config.per_instance_label, 'limit', 'request']) +
     {
       seriesOverrides: [
@@ -214,9 +234,19 @@ local utils = import 'mixin-utils/utils.libsonnet';
   containerMemoryRSSPanel(title, containerName)::
     $.panel(title) +
     $.queryPanel([
-      $._config.resources_panel_queries[$._config.deployment_type].memory_rss_usage % [$._config.per_instance_label, $.namespaceMatcher(), containerName],
-      $._config.resources_panel_queries[$._config.deployment_type].memory_rss_limit % [$.namespaceMatcher(), containerName],
-      $._config.resources_panel_queries[$._config.deployment_type].memory_rss_request % [$.namespaceMatcher(), containerName],
+      $._config.resources_panel_queries[$._config.deployment_type].memory_rss_usage % {
+        instance: $._config.per_instance_label,
+        namespace: $.namespaceMatcher(),
+        containerName: containerName,
+      },
+      $._config.resources_panel_queries[$._config.deployment_type].memory_rss_limit % {
+        namespace: $.namespaceMatcher(),
+        containerName: containerName,
+      },
+      $._config.resources_panel_queries[$._config.deployment_type].memory_rss_request % {
+        namespace: $.namespaceMatcher(),
+        containerName: containerName,
+      },
     ], ['{{%s}}' % $._config.per_instance_label, 'limit', 'request']) +
     {
       seriesOverrides: [
@@ -250,11 +280,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
   containerDiskWritesPanel(title, containerName)::
     $.panel(title) +
     $.queryPanel(
-      $._config.resources_panel_queries[$._config.deployment_type].disk_writes % [
-        $._config.per_node_label,
-        $._config.per_instance_label,
-        $.filterNodeDiskContainer(containerName),
-      ],
+      $._config.resources_panel_queries[$._config.deployment_type].disk_writes % {
+        instanceLabel: $._config.per_node_label,
+        instance: $._config.per_instance_label,
+        filterNodeDiskContainer: $.filterNodeDiskContainer(containerName),
+      },
       '{{%s}} - {{device}}' % $._config.per_instance_label
     ) +
     $.stack +
@@ -263,11 +293,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
   containerDiskReadsPanel(title, containerName)::
     $.panel(title) +
     $.queryPanel(
-      $._config.resources_panel_queries[$._config.deployment_type].disk_reads % [
-        $._config.per_node_label,
-        $._config.per_instance_label,
-        $.filterNodeDiskContainer(containerName),
-      ],
+      $._config.resources_panel_queries[$._config.deployment_type].disk_reads % {
+        instanceLabel: $._config.per_node_label,
+        instance: $._config.per_instance_label,
+        filterNodeDiskContainer: $.filterNodeDiskContainer(containerName),
+      },
       '{{%s}} - {{device}}' % $._config.per_instance_label
     ) +
     $.stack +
