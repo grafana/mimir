@@ -95,18 +95,18 @@
     resources_panel_queries: {
       container: {
         cpu_usage: 'sum by(%(instance)s) (rate(container_cpu_usage_seconds_total{%(namespace)s,container=~"%(instanceName)s"}[$__rate_interval]))',
-        cpu_limit: 'min(container_spec_cpu_quota{%(namespace)s,container=~"%(containerName)s"} / container_spec_cpu_period{%(namespace)s,container=~"%(containerName)s"})',
-        cpu_request: 'min(kube_pod_container_resource_requests{%(namespace)s,container=~"%(containerName)s",resource="cpu"})',
+        cpu_limit: 'min(container_spec_cpu_quota{%(namespace)s,container=~"%(instanceName)s"} / container_spec_cpu_period{%(namespace)s,container=~"%(instanceName)s"})',
+        cpu_request: 'min(kube_pod_container_resource_requests{%(namespace)s,container=~"%(instanceName)s",resource="cpu"})',
         // We use "max" instead of "sum" otherwise during a rolling update of a statefulset we will end up
         // summing the memory of the old instance/pod (whose metric will be stale for 5m) to the new instance/pod.
-        memory_working_usage: 'max by(%(instance)s) (container_memory_working_set_bytes{%(namespace)s,container=~"%(containerName)s"})',
-        memory_working_limit: 'min(container_spec_memory_limit_bytes{%(namespace)s,container=~"%(containerName)s"} > 0)',
-        memory_working_request: 'min(kube_pod_container_resource_requests{%(namespace)s,container=~"%(containerName)s",resource="memory"})',
+        memory_working_usage: 'max by(%(instance)s) (container_memory_working_set_bytes{%(namespace)s,container=~"%(instanceName)s"})',
+        memory_working_limit: 'min(container_spec_memory_limit_bytes{%(namespace)s,container=~"%(instanceName)s"} > 0)',
+        memory_working_request: 'min(kube_pod_container_resource_requests{%(namespace)s,container=~"%(instanceName)s",resource="memory"})',
         // We use "max" instead of "sum" otherwise during a rolling update of a statefulset we will end up
         // summing the memory of the old instance/pod (whose metric will be stale for 5m) to the new instance/pod.
-        memory_rss_usage: 'max by(%(instance)s) (container_memory_rss{%(namespace)s,container=~"%(containerName)s"})',
-        memory_rss_limit: 'min(container_spec_memory_limit_bytes{%(namespace)s,container=~"%(containerName)s"} > 0)',
-        memory_rss_request: 'min(kube_pod_container_resource_requests{%(namespace)s,container=~"%(containerName)s",resource="memory"})',
+        memory_rss_usage: 'max by(%(instance)s) (container_memory_rss{%(namespace)s,container=~"%(instanceName)s"})',
+        memory_rss_limit: 'min(container_spec_memory_limit_bytes{%(namespace)s,container=~"%(instanceName)s"} > 0)',
+        memory_rss_request: 'min(kube_pod_container_resource_requests{%(namespace)s,container=~"%(instanceName)s",resource="memory"})',
         network: 'sum by(%(instance)s) (rate(%(metric)s{%(namespace)s,%(instance)s=~"%(instanceName)s"}[$__rate_interval]))',
         disk_writes:
           |||
@@ -142,32 +142,32 @@
           |||,
       },
       baremetal: {
-        // Somes queries does not makes sens when running mimir on baremetal
+        // Somes queries does not makes sense when running mimir on baremetal
         // no need to define them
         cpu_usage: 'sum by(%(instance)s) (rate(node_cpu_seconds_total{mode="user",%(namespace)s,%(instance)s=~".*%(instanceName)s.*"}[$__rate_interval]))',
         memory_working_usage:
           |||
-            node_memory_MemTotal_bytes{%(namespace)s,%(instance)s=~".*%(containerName)s.*"}
-            - node_memory_MemFree_bytes{%(namespace)s,%(instance)s=~".*%(containerName)s.*"}
-            - node_memory_Buffers_bytes{%(namespace)s,%(instance)s=~".*%(containerName)s.*"}
-            - node_memory_Cached_bytes{%(namespace)s,%(instance)s=~".*%(containerName)s.*"}
-            - node_memory_Slab_bytes{%(namespace)s,%(instance)s=~".*%(containerName)s.*"}
-            - node_memory_PageTables_bytes{%(namespace)s,%(instance)s=~".*%(containerName)s.*"}
-            - node_memory_SwapCached_bytes{%(namespace)s,%(instance)s=~".*%(containerName)s.*"}
+            node_memory_MemTotal_bytes{%(namespace)s,%(instance)s=~".*%(instanceName)s.*"}
+            - node_memory_MemFree_bytes{%(namespace)s,%(instance)s=~".*%(instanceName)s.*"}
+            - node_memory_Buffers_bytes{%(namespace)s,%(instance)s=~".*%(instanceName)s.*"}
+            - node_memory_Cached_bytes{%(namespace)s,%(instance)s=~".*%(instanceName)s.*"}
+            - node_memory_Slab_bytes{%(namespace)s,%(instance)s=~".*%(instanceName)s.*"}
+            - node_memory_PageTables_bytes{%(namespace)s,%(instance)s=~".*%(instanceName)s.*"}
+            - node_memory_SwapCached_bytes{%(namespace)s,%(instance)s=~".*%(instanceName)s.*"}
           |||,
         // From cAdvisor code, the memory RSS is:
         // The amount of anonymous and swap cache memory (includes transparent hugepages).
         memory_rss_usage:
           |||
-            node_memory_Active_anon_bytes{%(namespace)s,%(instance)s=~".*%(containerName)s.*"}
-            + node_memory_SwapCached_bytes{%(namespace)s,%(instance)s=~".*%(containerName)s.*"}
+            node_memory_Active_anon_bytes{%(namespace)s,%(instance)s=~".*%(instanceName)s.*"}
+            + node_memory_SwapCached_bytes{%(namespace)s,%(instance)s=~".*%(instanceName)s.*"}
           |||,
         network: 'sum by(%(instance)s) (rate(%(metric)s{%(namespace)s,%(instance)s=~".*%(instanceName)s.*"}[$__rate_interval]))',
         disk_writes:
           |||
             sum by(%(instanceLabel)s, %(instance)s, device) (
               rate(
-                node_disk_written_bytes_total{%(namespace)s,%(instance)s=~".*%(containerName)s.*"}[$__rate_interval]
+                node_disk_written_bytes_total{%(namespace)s,%(instance)s=~".*%(instanceName)s.*"}[$__rate_interval]
               )
             )
           |||,
@@ -175,14 +175,14 @@
           |||
             sum by(%(instanceLabel)s, %(instance)s, device) (
               rate(
-                node_disk_read_bytes_total{%(namespace)s,%(instance)s=~".*%(containerName)s.*"}[$__rate_interval]
+                node_disk_read_bytes_total{%(namespace)s,%(instance)s=~".*%(instanceName)s.*"}[$__rate_interval]
               )
             )
           |||,
         disk_utilization:
           |||
-            1 - ((node_filesystem_avail_bytes{%(namespace)s,%(instance)s=~".*%(containerName)s.*", mountpoint="%(instanceDataDir)s"})
-                / node_filesystem_size_bytes{%(namespace)s,%(instance)s=~".*%(containerName)s.*", mountpoint="%(instanceDataDir)s"})
+            1 - ((node_filesystem_avail_bytes{%(namespace)s,%(instance)s=~".*%(instanceName)s.*", mountpoint="%(instanceDataDir)s"})
+                / node_filesystem_size_bytes{%(namespace)s,%(instance)s=~".*%(instanceName)s.*", mountpoint="%(instanceDataDir)s"})
           |||,
       },
     },

@@ -181,39 +181,37 @@ local utils = import 'mixin-utils/utils.libsonnet';
   resourcesPanelLegend(first_legend)::
     if $._config.deployment_type == 'container'
     then [first_legend, 'limit', 'request']
-    // limit and request does not makes sens when running on baremetal
+    // limit and request does not makes sense when running on baremetal
     else [first_legend],
 
-  resourcesPanelQueries(metric, containerName)::
+  resourcesPanelQueries(metric, instanceName)::
     if $._config.deployment_type == 'container'
     then [
       $._config.resources_panel_queries[$._config.deployment_type]['%s_usage' % metric] % {
         instance: $._config.per_instance_label,
         namespace: $.namespaceMatcher(),
-        instanceName: containerName,
-        containerName: containerName,
+        instanceName: instanceName,
       },
       $._config.resources_panel_queries[$._config.deployment_type]['%s_limit' % metric] % {
         namespace: $.namespaceMatcher(),
-        containerName: containerName,
+        instanceName: instanceName,
       },
       $._config.resources_panel_queries[$._config.deployment_type]['%s_request' % metric] % {
         namespace: $.namespaceMatcher(),
-        containerName: containerName,
+        instanceName: instanceName,
       },
     ]
     else [
       $._config.resources_panel_queries[$._config.deployment_type]['%s_usage' % metric] % {
         instance: $._config.per_instance_label,
         namespace: $.namespaceMatcher(),
-        instanceName: containerName,
-        containerName: containerName,
+        instanceName: instanceName,
       },
     ],
 
-  containerCPUUsagePanel(title, containerName)::
+  containerCPUUsagePanel(title, instanceName)::
     $.panel(title) +
-    $.queryPanel($.resourcesPanelQueries('cpu', containerName), $.resourcesPanelLegend('{{%s}}' % $._config.per_instance_label)) +
+    $.queryPanel($.resourcesPanelQueries('cpu', instanceName), $.resourcesPanelLegend('{{%s}}' % $._config.per_instance_label)) +
     {
       seriesOverrides: [
         resourceRequestStyle,
@@ -223,9 +221,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
       fill: 0,
     },
 
-  containerMemoryWorkingSetPanel(title, containerName)::
+  containerMemoryWorkingSetPanel(title, instanceName)::
     $.panel(title) +
-    $.queryPanel($.resourcesPanelQueries('memory_working', containerName), $.resourcesPanelLegend('{{%s}}' % $._config.per_instance_label)) +
+    $.queryPanel($.resourcesPanelQueries('memory_working', instanceName), $.resourcesPanelLegend('{{%s}}' % $._config.per_instance_label)) +
     {
       seriesOverrides: [
         resourceRequestStyle,
@@ -236,9 +234,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
       fill: 0,
     },
 
-  containerMemoryRSSPanel(title, containerName)::
+  containerMemoryRSSPanel(title, instanceName)::
     $.panel(title) +
-    $.queryPanel($.resourcesPanelQueries('memory_rss', containerName), $.resourcesPanelLegend('{{%s}}' % $._config.per_instance_label)) +
+    $.queryPanel($.resourcesPanelQueries('memory_rss', instanceName), $.resourcesPanelLegend('{{%s}}' % $._config.per_instance_label)) +
     {
       seriesOverrides: [
         resourceRequestStyle,
@@ -268,44 +266,44 @@ local utils = import 'mixin-utils/utils.libsonnet';
   containerNetworkTransmitBytesPanel(instanceName)::
     $.containerNetworkPanel('Transmit bandwidth', $._config.resources_panel_series[$._config.deployment_type].network_transmit_bytes_metrics, instanceName),
 
-  containerDiskWritesPanel(title, containerName)::
+  containerDiskWritesPanel(title, instanceName)::
     $.panel(title) +
     $.queryPanel(
       $._config.resources_panel_queries[$._config.deployment_type].disk_writes % {
         namespace: $.namespaceMatcher(),
         instanceLabel: $._config.per_node_label,
         instance: $._config.per_instance_label,
-        filterNodeDiskContainer: $.filterNodeDiskContainer(containerName),
-        containerName: containerName,
+        filterNodeDiskContainer: $.filterNodeDiskContainer(instanceName),
+        instanceName: instanceName,
       },
       '{{%s}} - {{device}}' % $._config.per_instance_label
     ) +
     $.stack +
     { yaxes: $.yaxes('Bps') },
 
-  containerDiskReadsPanel(title, containerName)::
+  containerDiskReadsPanel(title, instanceName)::
     $.panel(title) +
     $.queryPanel(
       $._config.resources_panel_queries[$._config.deployment_type].disk_reads % {
         namespace: $.namespaceMatcher(),
         instanceLabel: $._config.per_node_label,
         instance: $._config.per_instance_label,
-        filterNodeDiskContainer: $.filterNodeDiskContainer(containerName),
-        containerName: containerName,
+        filterNodeDiskContainer: $.filterNodeDiskContainer(instanceName),
+        instanceName: instanceName,
       },
       '{{%s}} - {{device}}' % $._config.per_instance_label
     ) +
     $.stack +
     { yaxes: $.yaxes('Bps') },
 
-  containerDiskSpaceUtilization(title, containerName)::
+  containerDiskSpaceUtilization(title, instanceName)::
     $.panel(title) +
     $.queryPanel(
       $._config.resources_panel_queries[$._config.deployment_type].disk_utilization % {
         namespace: $.namespaceMatcher(),
-        label: $.containerLabelMatcher(containerName),
+        label: $.containerLabelMatcher(instanceName),
         instance: $._config.per_instance_label,
-        containerName: containerName,
+        instanceName: instanceName,
         instanceDataDir: $._config.instance_data_mountpoint,
       }, '{{persistentvolumeclaim}}'
     ) +
@@ -314,10 +312,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
       fill: 0,
     },
 
-  containerLabelMatcher(containerName)::
-    if containerName == 'ingester' then 'label_name=~"ingester.*"'
-    else if containerName == 'store-gateway' then 'label_name=~"store-gateway.*"'
-    else 'label_name="%s"' % containerName,
+  containerLabelMatcher(instanceName)::
+    if instanceName == 'ingester' then 'label_name=~"ingester.*"'
+    else if instanceName == 'store-gateway' then 'label_name=~"store-gateway.*"'
+    else 'label_name="%s"' % instanceName,
 
   jobNetworkingRow(title, name)::
     local vars = $._config {
@@ -559,7 +557,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       { yaxes: $.yaxes('percentunit') }
     ),
 
-  filterNodeDiskContainer(containerName)::
+  filterNodeDiskContainer(instanceName)::
     |||
       ignoring(%s) group_right() (
         label_replace(
@@ -586,7 +584,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $._config.per_node_label,
       $._config.per_instance_label,
       $.namespaceMatcher(),
-      containerName,
+      instanceName,
     ],
 
   filterKedaMetricByHPA(query, hpa_name)::
