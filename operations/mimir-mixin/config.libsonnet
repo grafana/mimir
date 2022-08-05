@@ -79,6 +79,12 @@
     },
 
     deployment_type: 'container',
+    resources_panel_series: {
+      container: {
+        network_receive_bytes_metrics: 'container_network_receive_bytes_total',
+        network_transmit_bytes_metrics: 'container_network_transmit_bytes_total',
+      },
+    },
     resources_panel_queries: {
       container: {
         cpu_usage: 'sum by(%(instance)s) (rate(container_cpu_usage_seconds_total{%(namespace)s,container=~"%(instanceName)s"}[$__rate_interval]))',

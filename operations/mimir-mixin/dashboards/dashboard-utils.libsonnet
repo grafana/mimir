@@ -272,10 +272,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
     { yaxes: $.yaxes('Bps') },
 
   containerNetworkReceiveBytesPanel(instanceName)::
-    $.containerNetworkPanel('Receive bandwidth', 'container_network_receive_bytes_total', instanceName),
+    $.containerNetworkPanel('Receive bandwidth', $._config.resources_panel_series[$._config.deployment_type].network_receive_bytes_metrics, instanceName),
 
   containerNetworkTransmitBytesPanel(instanceName)::
-    $.containerNetworkPanel('Transmit bandwidth', 'container_network_transmit_bytes_total', instanceName),
+    $.containerNetworkPanel('Transmit bandwidth', $._config.resources_panel_series[$._config.deployment_type].network_transmit_bytes_metrics, instanceName),
 
   containerDiskWritesPanel(title, containerName)::
     $.panel(title) +
