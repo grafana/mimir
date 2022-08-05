@@ -1,0 +1,30 @@
+name: helm-weekly-release-pr
+
+on:
+  schedule:
+    - cron: '0 10 * * 1-5' # 10 UTC on weekdays; if we miss published images one day, they should align the day after
+
+  workflow_dispatch: # for manual testing
+
+jobs:
+  weekly-release-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: imjasonh/setup-crane@v0.1
+
+      - name: Update/regenerate files
+        id: update
+        run: bash .github/workflows/scripts/helm-weekly-release.sh
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v4
+        with:
+          token: ${{ secrets.GH_BOT_ACCESS_TOKEN }}
+          title: Release mimir-distributed Helm chart ${{ steps.update.outputs.new_chart_version }}
+          body: Automated PR created by [helm-weekly-release-pr.yaml](https://github.com/grafana/mimir/blob/main/.github/workflows/helm-weekly-release-pr.yaml)
+          commit-message: Update mimir-distributed chart to ${{ steps.update.outputs.new_chart_version }}
+          author: grafanabot <grafanabot@grafana.com>
+          branch: helm-chart-weekly-${{ steps.update.outputs.new_chart_version }}
+          base: main
+          labels: helm
