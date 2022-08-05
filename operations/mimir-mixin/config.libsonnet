@@ -78,6 +78,58 @@
       gateway: helmCompatibleName('(gateway|cortex-gw|cortex-gw).*'),
     },
 
+    deployment_type: 'container',
+    resources_panel_queries: {
+      container: {
+        cpu_usage: 'sum by(%s) (rate(container_cpu_usage_seconds_total{%s,container=~"%s"}[$__rate_interval]))',
+        cpu_limit: 'min(container_spec_cpu_quota{%s,container=~"%s"} / container_spec_cpu_period{%s,container=~"%s"})',
+        cpu_request: 'min(kube_pod_container_resource_requests{%s,container=~"%s",resource="cpu"})',
+        // We use "max" instead of "sum" otherwise during a rolling update of a statefulset we will end up
+        // summing the memory of the old instance/pod (whose metric will be stale for 5m) to the new instance/pod.
+        memory_working_usage: 'max by(%s) (container_memory_working_set_bytes{%s,container=~"%s"})',
+        memory_working_limit: 'min(container_spec_memory_limit_bytes{%s,container=~"%s"} > 0)',
+        memory_working_request: 'min(kube_pod_container_resource_requests{%s,container=~"%s",resource="memory"})',
+        // We use "max" instead of "sum" otherwise during a rolling update of a statefulset we will end up
+        // summing the memory of the old instance/pod (whose metric will be stale for 5m) to the new instance/pod.
+        memory_rss_usage: 'max by(%s) (container_memory_rss{%s,container=~"%s"})',
+        memory_rss_limit: 'min(container_spec_memory_limit_bytes{%s,container=~"%s"} > 0)',
+        memory_rss_request: 'min(kube_pod_container_resource_requests{%s,container=~"%s",resource="memory"})',
+        network: 'sum by(%(instance)s) (rate(%(metric)s{%(namespace)s,%(instance)s=~"%(instanceName)s"}[$__rate_interval]))',
+        disk_writes:
+          |||
+            sum by(%s, %s, device) (
+              rate(
+                node_disk_written_bytes_total[$__rate_interval]
+              )
+            )
+            +
+            %s
+          |||,
+        disk_reads:
+          |||
+            sum by(%s, %s, device) (
+              rate(
+                node_disk_read_bytes_total[$__rate_interval]
+              )
+            ) + %s
+          |||,
+        disk_utilization:
+          |||
+            max by(persistentvolumeclaim) (
+              kubelet_volume_stats_used_bytes{%(namespace)s} /
+              kubelet_volume_stats_capacity_bytes{%(namespace)s}
+            )
+            and
+            count by(persistentvolumeclaim) (
+              kube_persistentvolumeclaim_labels{
+                %(namespace)s,
+                %(label)s
+              }
+            )
+          |||,
+      },
+    },
+
     // The label used to differentiate between different nodes (i.e. servers).
     per_node_label: 'instance',
 

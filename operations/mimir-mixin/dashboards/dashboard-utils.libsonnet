@@ -181,9 +181,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
   containerCPUUsagePanel(title, containerName)::
     $.panel(title) +
     $.queryPanel([
-      'sum by(%s) (rate(container_cpu_usage_seconds_total{%s,container=~"%s"}[$__rate_interval]))' % [$._config.per_instance_label, $.namespaceMatcher(), containerName],
-      'min(container_spec_cpu_quota{%s,container=~"%s"} / container_spec_cpu_period{%s,container=~"%s"})' % [$.namespaceMatcher(), containerName, $.namespaceMatcher(), containerName],
-      'min(kube_pod_container_resource_requests{%s,container=~"%s",resource="cpu"})' % [$.namespaceMatcher(), containerName],
+      $._config.resources_panel_queries[$._config.deployment_type].cpu_usage % [$._config.per_instance_label, $.namespaceMatcher(), containerName],
+      $._config.resources_panel_queries[$._config.deployment_type].cpu_limit % [$.namespaceMatcher(), containerName, $.namespaceMatcher(), containerName],
+      $._config.resources_panel_queries[$._config.deployment_type].cpu_request % [$.namespaceMatcher(), containerName],
     ], ['{{%s}}' % $._config.per_instance_label, 'limit', 'request']) +
     {
       seriesOverrides: [
@@ -197,11 +197,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
   containerMemoryWorkingSetPanel(title, containerName)::
     $.panel(title) +
     $.queryPanel([
-      // We use "max" instead of "sum" otherwise during a rolling update of a statefulset we will end up
-      // summing the memory of the old instance/pod (whose metric will be stale for 5m) to the new instance/pod.
-      'max by(%s) (container_memory_working_set_bytes{%s,container=~"%s"})' % [$._config.per_instance_label, $.namespaceMatcher(), containerName],
-      'min(container_spec_memory_limit_bytes{%s,container=~"%s"} > 0)' % [$.namespaceMatcher(), containerName],
-      'min(kube_pod_container_resource_requests{%s,container=~"%s",resource="memory"})' % [$.namespaceMatcher(), containerName],
+      $._config.resources_panel_queries[$._config.deployment_type].memory_working_usage % [$._config.per_instance_label, $.namespaceMatcher(), containerName],
+      $._config.resources_panel_queries[$._config.deployment_type].memory_working_limit % [$.namespaceMatcher(), containerName],
+      $._config.resources_panel_queries[$._config.deployment_type].memory_working_request % [$.namespaceMatcher(), containerName],
     ], ['{{%s}}' % $._config.per_instance_label, 'limit', 'request']) +
     {
       seriesOverrides: [
@@ -216,11 +214,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
   containerMemoryRSSPanel(title, containerName)::
     $.panel(title) +
     $.queryPanel([
-      // We use "max" instead of "sum" otherwise during a rolling update of a statefulset we will end up
-      // summing the memory of the old instance/pod (whose metric will be stale for 5m) to the new instance/pod.
-      'max by(%s) (container_memory_rss{%s,container=~"%s"})' % [$._config.per_instance_label, $.namespaceMatcher(), containerName],
-      'min(container_spec_memory_limit_bytes{%s,container=~"%s"} > 0)' % [$.namespaceMatcher(), containerName],
-      'min(kube_pod_container_resource_requests{%s,container=~"%s",resource="memory"})' % [$.namespaceMatcher(), containerName],
+      $._config.resources_panel_queries[$._config.deployment_type].memory_rss_usage % [$._config.per_instance_label, $.namespaceMatcher(), containerName],
+      $._config.resources_panel_queries[$._config.deployment_type].memory_rss_limit % [$.namespaceMatcher(), containerName],
+      $._config.resources_panel_queries[$._config.deployment_type].memory_rss_request % [$.namespaceMatcher(), containerName],
     ], ['{{%s}}' % $._config.per_instance_label, 'limit', 'request']) +
     {
       seriesOverrides: [
@@ -235,7 +231,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   containerNetworkPanel(title, metric, instanceName)::
     $.panel(title) +
     $.queryPanel(
-      'sum by(%(instance)s) (rate(%(metric)s{%(namespace)s,%(instance)s=~"%(instanceName)s"}[$__rate_interval]))' % {
+      $._config.resources_panel_queries[$._config.deployment_type].network % {
         namespace: $.namespaceMatcher(),
         metric: metric,
         instance: $._config.per_instance_label,
@@ -254,15 +250,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   containerDiskWritesPanel(title, containerName)::
     $.panel(title) +
     $.queryPanel(
-      |||
-        sum by(%s, %s, device) (
-          rate(
-            node_disk_written_bytes_total[$__rate_interval]
-          )
-        )
-        +
-        %s
-      ||| % [
+      $._config.resources_panel_queries[$._config.deployment_type].disk_writes % [
         $._config.per_node_label,
         $._config.per_instance_label,
         $.filterNodeDiskContainer(containerName),
@@ -275,13 +263,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   containerDiskReadsPanel(title, containerName)::
     $.panel(title) +
     $.queryPanel(
-      |||
-        sum by(%s, %s, device) (
-          rate(
-            node_disk_read_bytes_total[$__rate_interval]
-          )
-        ) + %s
-      ||| % [
+      $._config.resources_panel_queries[$._config.deployment_type].disk_reads % [
         $._config.per_node_label,
         $._config.per_instance_label,
         $.filterNodeDiskContainer(containerName),
@@ -294,19 +276,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   containerDiskSpaceUtilization(title, containerName)::
     $.panel(title) +
     $.queryPanel(
-      |||
-        max by(persistentvolumeclaim) (
-          kubelet_volume_stats_used_bytes{%(namespace)s} /
-          kubelet_volume_stats_capacity_bytes{%(namespace)s}
-        )
-        and
-        count by(persistentvolumeclaim) (
-          kube_persistentvolumeclaim_labels{
-            %(namespace)s,
-            %(label)s
-          }
-        )
-      ||| % {
+      $._config.resources_panel_queries[$._config.deployment_type].disk_utilization % {
         namespace: $.namespaceMatcher(),
         label: $.containerLabelMatcher(containerName),
       }, '{{persistentvolumeclaim}}'
