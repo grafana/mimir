@@ -504,9 +504,7 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.nonHASamples.DeleteLabelValues(userID)
 	d.latestSeenSampleTimestampPerUser.DeleteLabelValues(userID)
 
-	if err := util.DeleteMatchingLabels(d.dedupedSamples, map[string]string{"user": userID}); err != nil {
-		level.Warn(d.log).Log("msg", "failed to remove cortex_distributor_deduped_samples_total metric for user", "user", userID, "err", err)
-	}
+	d.dedupedSamples.DeletePartialMatch(prometheus.Labels{"user": userID})
 
 	validation.DeletePerUserValidationMetrics(userID, d.log)
 }

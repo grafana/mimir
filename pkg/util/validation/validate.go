@@ -11,13 +11,11 @@ import (
 	"unicode/utf8"
 
 	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/extract"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 )
@@ -275,18 +273,10 @@ func ValidateMetadata(cfg MetadataValidationConfig, userID string, metadata *mim
 }
 
 func DeletePerUserValidationMetrics(userID string, log log.Logger) {
-	filter := map[string]string{"user": userID}
+	filter := prometheus.Labels{"user": userID}
 
-	if err := util.DeleteMatchingLabels(DiscardedRequests, filter); err != nil {
-		level.Warn(log).Log("msg", "failed to remove cortex_discarded_requests_total metric for user", "user", userID, "err", err)
-	}
-	if err := util.DeleteMatchingLabels(DiscardedSamples, filter); err != nil {
-		level.Warn(log).Log("msg", "failed to remove cortex_discarded_samples_total metric for user", "user", userID, "err", err)
-	}
-	if err := util.DeleteMatchingLabels(DiscardedExemplars, filter); err != nil {
-		level.Warn(log).Log("msg", "failed to remove cortex_discarded_exemplars_total metric for user", "user", userID, "err", err)
-	}
-	if err := util.DeleteMatchingLabels(DiscardedMetadata, filter); err != nil {
-		level.Warn(log).Log("msg", "failed to remove cortex_discarded_metadata_total metric for user", "user", userID, "err", err)
-	}
+	DiscardedRequests.DeletePartialMatch(filter)
+	DiscardedSamples.DeletePartialMatch(filter)
+	DiscardedExemplars.DeletePartialMatch(filter)
+	DiscardedMetadata.DeletePartialMatch(filter)
 }
