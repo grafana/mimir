@@ -568,7 +568,7 @@ func (m *KV) fastJoinMembersOnStartup(ctx context.Context) {
 func (m *KV) joinMembersOnStartup(ctx context.Context) bool {
 	startTime := time.Now()
 
-	level.Info(m.logger).Log("msg", "joining memberlist cluster", "join_members", []string(m.cfg.JoinMembers))
+	level.Info(m.logger).Log("msg", "joining memberlist cluster", "join_members", strings.Join(m.cfg.JoinMembers, ","))
 
 	cfg := backoff.Config{
 		MinBackoff: m.cfg.MinJoinBackoff,
@@ -619,7 +619,7 @@ func (m *KV) discoverMembers(ctx context.Context, members []string) []string {
 
 	err := m.provider.Resolve(ctx, resolve)
 	if err != nil {
-		level.Error(m.logger).Log("msg", "failed to resolve members", "addrs", strings.Join(resolve, ","))
+		level.Error(m.logger).Log("msg", "failed to resolve members", "addrs", strings.Join(resolve, ","), "err", err)
 	}
 
 	ms = append(ms, m.provider.Addresses()...)
