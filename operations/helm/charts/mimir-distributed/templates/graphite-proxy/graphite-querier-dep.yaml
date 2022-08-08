@@ -1,0 +1,140 @@
+{{- if .Values.graphite.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "graphite-querier") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "graphite-querier") | nindent 4 }}
+  annotations:
+    {{- toYaml .Values.graphite_querier.annotations | nindent 4 }}
+  namespace: {{ .Release.Namespace | quote }}
+spec:
+  replicas: {{ .Values.graphite_querier.replicas }}
+  selector:
+    matchLabels:
+      {{- include "mimir.selectorLabels" (dict "ctx" . "component" "graphite-querier") | nindent 6 }}
+  strategy:
+    {{- toYaml .Values.graphite_querier.strategy | nindent 4 }}
+  template:
+    metadata:
+      labels:
+        {{- include "mimir.podLabels" (dict "ctx" . "component" "graphite-querier") | nindent 8 }}
+        {{- with .Values.graphite_write_proxy.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        {{- include "mimir.podAnnotations" (dict "ctx" . "component" "graphite-querier") | nindent 8 }}
+      namespace: {{ .Release.Namespace | quote }}
+    spec:
+      serviceAccountName: {{ template "mimir.serviceAccountName" . }}
+      {{- if .Values.graphite_querier.priorityClassName }}
+      priorityClassName: {{ .Values.graphite_querier.priorityClassName }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.graphite_querier.securityContext | nindent 8 }}
+      initContainers:
+        {{- with .Values.graphite_querier.initContainers }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- if .Values.image.pullSecrets }}
+      imagePullSecrets:
+      {{- range .Values.image.pullSecrets }}
+        - name: {{ . }}
+      {{- end }}
+      {{- end }}
+      containers:
+        - name: graphite-querier
+          image: "{{ include "mimir.imageReference" . }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - -target=graphite-querier
+            - -config.file=/etc/mimir/mimir.yaml
+            - -graphite.enabled=true
+            - -graphite.querier.query-address=http://{{ template "mimir.fullname" . }}-query-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" .  }}/api/prom
+            - -graphite.querier.graphite-fallback=http://{{ template "mimir.fullname" . }}-graphite-web.{{ .Release.Namespace}}.svc:{{ include "mimir.serverHttpListenPort" .  }}
+            - -graphite.querier.schemas.default-storage-schemas-file=/etc/graphite-proxy/storage-schemas.conf
+            - -graphite.querier.schemas.default-storage-aggregations-file=/etc/graphite-proxy/storage-aggregations.conf
+            - -graphite.querier.aggregation-cache.memcached.addresses=dnssrvnoa+{{ template "mimir.fullname" . }}-graphite-aggregation-cache.{{ .Release.Namespace}}.svc:11211
+            - -graphite.querier.aggregation-cache.memcached.timeout=1s
+            - -graphite.querier.metric-name-cache.memcached.addresses=dnssrvnoa+{{ template "mimir.fullname" . }}-graphite-metric-name-cache.{{ .Release.Namespace}}.svc:11211
+            - -graphite.querier.metric-name-cache.memcached.timeout=1s
+            {{- if .Values.minio.enabled }}
+            - -admin.client.backend-type=s3
+            - -admin.client.s3.endpoint={{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
+            - -admin.client.s3.bucket-name=enterprise-metrics-admin
+            - -admin.client.s3.access-key-id=enterprise-metrics
+            - -admin.client.s3.secret-access-key=supersecret
+            - -admin.client.s3.insecure=true
+            {{- end }}
+          {{- range $key, $value := .Values.graphite_querier.extraArgs }}
+            - "-{{ $key }}={{ $value }}"
+          {{- end }}
+          volumeMounts:
+            {{- if .Values.graphite_querier.extraVolumeMounts }}
+              {{ toYaml .Values.graphite_querier.extraVolumeMounts | nindent 12}}
+            {{- end }}
+            - name: config
+              mountPath: /etc/mimir
+            - name: runtime-config
+              mountPath: /var/{{ include "mimir.name" . }}
+            - name: graphite-schemas
+              mountPath: /etc/graphite-proxy
+            - name: license
+              mountPath: /license
+            - name: storage
+              mountPath: "/data"
+              subPath: {{ .Values.graphite_querier.persistence.subPath }}
+          ports:
+            - name: http-metrics
+              containerPort: {{ include "mimir.serverHttpListenPort" . }}
+              protocol: TCP
+            - name: grpc
+              containerPort: {{ include "mimir.serverGrpcListenPort" . }}
+              protocol: TCP
+          livenessProbe:
+            {{- toYaml .Values.graphite_querier.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.graphite_querier.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.graphite_querier.resources | nindent 12 }}
+          securityContext:
+            readOnlyRootFilesystem: true
+          env:
+            {{- with .Values.global.extraEnv }}
+              {{ toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.graphite_querier.env }}
+              {{ toYaml . | nindent 12 }}
+            {{- end }}
+          envFrom:
+            {{- with .Values.global.extraEnvFrom }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.admin_api.extraEnvFrom }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+      nodeSelector:
+        {{- toYaml .Values.graphite_querier.nodeSelector | nindent 8 }}
+      affinity:
+        {{- toYaml .Values.graphite_querier.affinity | nindent 8 }}
+      tolerations:
+        {{- toYaml .Values.graphite_querier.tolerations | nindent 8 }}
+      terminationGracePeriodSeconds: {{ .Values.graphite_querier.terminationGracePeriodSeconds }}
+      volumes:
+        - name: config
+          {{- include "mimir.configVolume" . | nindent 10 }}
+        - name: runtime-config
+          configMap:
+            name: {{ template "mimir.fullname" . }}-runtime
+        - name: graphite-schemas
+          configMap:
+            name: {{ template "mimir.fullname" . }}-graphite-schemas
+        {{- if .Values.graphite_querier.extraVolumes }}
+        {{ toYaml .Values.graphite_querier.extraVolumes | indent 8}}
+        {{- end }}
+        - name: license
+          secret:
+            secretName: {{ tpl .Values.license.secretName . }}
+        - name: storage
+          emptyDir: {}
+{{- end -}}

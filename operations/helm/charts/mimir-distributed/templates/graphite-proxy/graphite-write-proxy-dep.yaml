@@ -1,0 +1,125 @@
+{{- if .Values.graphite.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "graphite-write-proxy") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "graphite-write-proxy") | nindent 4 }}
+  annotations:
+    {{- toYaml .Values.graphite_write_proxy.annotations | nindent 4 }}
+  namespace: {{ .Release.Namespace | quote }}
+spec:
+  replicas: {{ .Values.graphite_write_proxy.replicas }}
+  selector:
+    matchLabels:
+      {{- include "mimir.selectorLabels" (dict "ctx" . "component" "graphite-write-proxy") | nindent 6 }}
+  strategy:
+    {{- toYaml .Values.graphite_write_proxy.strategy | nindent 4 }}
+  template:
+    metadata:
+      labels:
+        {{- include "mimir.podLabels" (dict "ctx" . "component" "graphite-write-proxy") | nindent 8 }}
+        {{- with .Values.graphite_write_proxy.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        {{- include "mimir.podAnnotations" (dict "ctx" . "component" "graphite-write-proxy") | nindent 8 }}
+      namespace: {{ .Release.Namespace | quote }}
+    spec:
+      serviceAccountName: {{ template "mimir.serviceAccountName" . }}
+      {{- if .Values.graphite_write_proxy.priorityClassName }}
+      priorityClassName: {{ .Values.graphite_write_proxy.priorityClassName }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.graphite_write_proxy.securityContext | nindent 8 }}
+      initContainers:
+        {{- with .Values.graphite_querier.initContainers }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- if .Values.image.pullSecrets }}
+      imagePullSecrets:
+      {{- range .Values.image.pullSecrets }}
+        - name: {{ . }}
+      {{- end}}
+      {{- end }}
+      containers:
+        - name: graphite-write-proxy
+          image: "{{ include "mimir.imageReference" . }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - -target=graphite-write-proxy
+            - -config.file=/etc/mimir/mimir.yaml
+            - -license.path=/license/license.jwt
+            - -server.http-listen-port={{ include "mimir.serverHttpListenPort" . }}
+            - -graphite.enabled=true
+            - -graphite.write-proxy.distributor-client.address=dns:///{{ template "mimir.fullname" . }}-distributor.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" .  }}
+          {{- range $key, $value := .Values.graphite_write_proxy.extraArgs }}
+            - "-{{ $key }}={{ $value }}"
+          {{- end }}
+          volumeMounts:
+            {{- if .Values.graphite_write_proxy.extraVolumeMounts }}
+              {{ toYaml .Values.graphite_write_proxy.extraVolumeMounts | nindent 12}}
+            {{- end }}
+            - name: config
+              mountPath: /etc/mimir
+            - name: runtime-config
+              mountPath: /var/{{ include "mimir.name" . }}
+            - name: license
+              mountPath: /license
+            - name: storage
+              mountPath: "/data"
+              subPath: {{ .Values.graphite_write_proxy.persistence.subPath }}
+          ports:
+            - name: http-metrics
+              containerPort: {{ include "mimir.serverHttpListenPort" . }}
+              protocol: TCP
+            - name: grpc
+              containerPort: {{ include "mimir.serverGrpcListenPort" . }}
+              protocol: TCP
+          livenessProbe:
+            {{- toYaml .Values.graphite_write_proxy.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.graphite_write_proxy.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.graphite_write_proxy.resources | nindent 12 }}
+          securityContext:
+            readOnlyRootFilesystem: true
+          env:
+            {{- with .Values.global.extraEnv }}
+              {{ toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.graphite_querier.env }}
+              {{ toYaml . | nindent 12 }}
+            {{- end }}
+          envFrom:
+            {{- with .Values.global.extraEnvFrom }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.admin_api.extraEnvFrom }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+      nodeSelector:
+        {{- toYaml .Values.graphite_write_proxy.nodeSelector | nindent 8 }}
+      affinity:
+        {{- toYaml .Values.graphite_write_proxy.affinity | nindent 8 }}
+      tolerations:
+        {{- toYaml .Values.graphite_write_proxy.tolerations | nindent 8 }}
+      terminationGracePeriodSeconds: {{ .Values.graphite_write_proxy.terminationGracePeriodSeconds }}
+      volumes:
+        - name: config
+          {{- include "mimir.configVolume" . | nindent 10 }}
+        - name: runtime-config
+          configMap:
+            name: {{ template "mimir.fullname" . }}-runtime
+        - name: graphite-schemas
+          configMap:
+            name: {{ template "mimir.fullname" . }}-graphite-schemas
+        {{- if .Values.graphite_write_proxy.extraVolumes }}
+        {{ toYaml .Values.graphite_write_proxy.extraVolumes | indent 8}}
+        {{- end }}
+        - name: license
+          secret:
+            secretName: {{ tpl .Values.license.secretName . }}
+        - name: storage
+          emptyDir: {}
+{{- end -}}

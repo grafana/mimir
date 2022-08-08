@@ -1,0 +1,3 @@
+{{- if .Values.graphite.enabled -}}
+{{- include "mimir.lib.serviceMonitor" (dict "ctx" $ "component" "graphite-aggregation-cache") }}
+{{- end -}}
