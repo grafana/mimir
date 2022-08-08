@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/user"
 
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -478,7 +479,8 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 							}
 
 							// Run the query with the normal engine
-							expectedRes, err := downstream.Do(context.Background(), req)
+							_, ctx := stats.ContextWithEmptyStats(context.Background())
+							expectedRes, err := downstream.Do(ctx, req)
 							require.Nil(t, err)
 							expectedPrometheusRes := expectedRes.(*PrometheusResponse)
 							sort.Sort(byLabels(expectedPrometheusRes.Data.Result))
@@ -490,7 +492,7 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 							splittingware := newSplitInstantQueryByIntervalMiddleware(mockLimits{splitInstantQueriesInterval: 1 * time.Minute}, log.NewNopLogger(), engine, reg)
 
 							// Run the query with splitting
-							splitRes, err := splittingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
+							splitRes, err := splittingware.Wrap(downstream).Do(user.InjectOrgID(ctx, "test"), req)
 							require.Nil(t, err)
 
 							splitPrometheusRes := splitRes.(*PrometheusResponse)
@@ -529,6 +531,10 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 								"cortex_frontend_instant_query_split_queries_total",
 								"cortex_frontend_instant_query_splitting_rewrites_succeeded_total",
 								"cortex_frontend_instant_query_splitting_rewrites_skipped_total"))
+
+							// Assert query stats from context
+							queryStats := stats.FromContext(ctx)
+							assert.Equal(t, uint32(testData.expectedSplitQueries), queryStats.LoadSplitQueries())
 						})
 					}
 				})
