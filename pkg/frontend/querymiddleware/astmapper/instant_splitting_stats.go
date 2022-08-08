@@ -4,17 +4,17 @@ package astmapper
 
 type SkippedReason string
 
-// Possible noop reasons
+// Possible skipped reasons
 const (
 	SkippedReasonSmallInterval = SkippedReason("small-interval")
 	SkippedReasonSubquery      = SkippedReason("subquery")
 	SkippedReasonNonSplittable = SkippedReason("non-splittable")
-	noneNoOpReason             = SkippedReason("none")
+	noneSkippedReason          = SkippedReason("")
 )
 
 type InstantSplitterStats struct {
-	splitQueries    int           // counter of split queries (0 if non-splittable)
-	noOpQueryReason SkippedReason // reason the initial query is a no operation
+	splitQueries  int           // counter of split queries (0 if non-splittable)
+	skippedReason SkippedReason // reason the initial query is a no operation
 }
 
 func NewInstantSplitterStats() *InstantSplitterStats {
@@ -31,27 +31,27 @@ func (s *InstantSplitterStats) GetSplitQueries() int {
 	return s.splitQueries
 }
 
-// SetNoOpQueryReason set no operation reason for query.
-func (s *InstantSplitterStats) SetNoOpQueryReason(reason SkippedReason) {
-	if s.isNoOpQueryReasonSet() {
+// SetSkippedReason set no operation reason for query.
+func (s *InstantSplitterStats) SetSkippedReason(reason SkippedReason) {
+	if s.isSkippedReasonSet() {
 		return
 	}
-	s.noOpQueryReason = reason
+	s.skippedReason = reason
 }
 
-// GetNoOpQueryReason returns the reason a query is a no operation.
+// GetSkippedReason returns the reason a query is a no operation.
 // If number of split queries is greater than 0, it means the query is splittable
-// Otherwise, if no noop reason is set, it means the query is non-splittable
-func (s *InstantSplitterStats) GetNoOpQueryReason() SkippedReason {
+// Otherwise, if no skipped reason is set, it means the query is non-splittable
+func (s *InstantSplitterStats) GetSkippedReason() SkippedReason {
 	if s.GetSplitQueries() > 0 {
-		return noneNoOpReason
+		return noneSkippedReason
 	}
-	if s.isNoOpQueryReasonSet() {
-		return s.noOpQueryReason
+	if s.isSkippedReasonSet() {
+		return s.skippedReason
 	}
 	return SkippedReasonNonSplittable
 }
 
-func (s *InstantSplitterStats) isNoOpQueryReasonSet() bool {
-	return len(s.noOpQueryReason) > 0
+func (s *InstantSplitterStats) isSkippedReasonSet() bool {
+	return len(s.skippedReason) > 0
 }

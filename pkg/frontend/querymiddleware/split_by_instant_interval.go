@@ -140,13 +140,13 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 	if mapperStats.GetSplitQueries() == 0 {
 		// the query cannot be split, so continue
 		level.Debug(spanLog).Log("msg", "input query resulted in a no operation, falling back to try executing without splitting")
-		switch mapperStats.GetNoOpQueryReason() {
+		switch mapperStats.GetSkippedReason() {
 		case astmapper.SkippedReasonSmallInterval:
 			s.metrics.splittingSkipped.WithLabelValues(string(astmapper.SkippedReasonSmallInterval)).Inc()
 		case astmapper.SkippedReasonSubquery:
 			s.metrics.splittingSkipped.WithLabelValues(string(astmapper.SkippedReasonSubquery)).Inc()
 		default:
-			// If there are no split queries, the default noop reason case is a non-splittable query
+			// If there are no split queries, the default skipped reason case is a non-splittable query
 			s.metrics.splittingSkipped.WithLabelValues(string(astmapper.SkippedReasonNonSplittable)).Inc()
 		}
 		return s.next.Do(ctx, req)
