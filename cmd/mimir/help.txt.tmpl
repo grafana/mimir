@@ -86,13 +86,13 @@ Usage of ./cmd/mimir/mimir:
     	Per-tenant rate limit for sending notifications from Alertmanager in notifications/sec. 0 = rate limit disabled. Negative value = no notifications are allowed.
   -alertmanager.notification-rate-limit-per-integration value
     	Per-integration notification rate limits. Value is a map, where each key is integration name and value is a rate-limit (float). On command line, this map is given in JSON format. Rate limit has the same meaning as -alertmanager.notification-rate-limit, but only applies for specific integration. Allowed integration names: webhook, email, pagerduty, opsgenie, wechat, slack, victorops, pushover, sns. (default {})
-  -alertmanager.receivers-firewall-block-cidr-networks value
+  -alertmanager.receivers-firewall-block-cidr-networks comma-separated-list-of-string
     	Comma-separated list of network CIDRs to block in Alertmanager receiver integrations.
   -alertmanager.receivers-firewall-block-private-addresses
     	True to block private and local addresses in Alertmanager receiver integrations. It blocks private addresses defined by  RFC 1918 (IPv4 addresses) and RFC 4193 (IPv6 addresses), as well as loopback, local unicast and local multicast addresses.
   -alertmanager.sharding-ring.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
-  -alertmanager.sharding-ring.etcd.endpoints value
+  -alertmanager.sharding-ring.etcd.endpoints string
     	The etcd endpoints to connect to.
   -alertmanager.sharding-ring.etcd.password string
     	Etcd password.
@@ -102,7 +102,7 @@ Usage of ./cmd/mimir/mimir:
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -alertmanager.storage.path string
     	Directory to store Alertmanager state and temporarily configuration files. The content of this directory is not required to be persisted between restarts unless Alertmanager replication has been disabled. (default "./data-alertmanager/")
-  -alertmanager.web.external-url value
+  -alertmanager.web.external-url string
     	The URL under which Alertmanager is externally reachable (eg. could be different than -http.alertmanager-http-prefix in case Alertmanager is served via a reverse proxy). This setting is used both to configure the internal requests router and to generate links in alert templates. If the external URL has a path portion, it will be used to prefix all HTTP endpoints served by Alertmanager, both the UI and API. (default http://localhost:8080/alertmanager)
   -auth.multitenancy-enabled
     	When set to true, incoming HTTP requests must specify tenant ID in HTTP X-Scope-OrgId header. When set to false, tenant ID from -auth.no-auth-tenant is used instead. (default true)
@@ -266,23 +266,23 @@ Usage of ./cmd/mimir/mimir:
     	OpenStack Swift username.
   -compactor.block-upload-enabled
     	Enable block upload API for the tenant.
-  -compactor.blocks-retention-period value
+  -compactor.blocks-retention-period duration
     	Delete blocks containing samples older than the specified retention period. 0 to disable.
   -compactor.compactor-tenant-shard-size int
     	Max number of compactors that can compact blocks for single tenant. 0 to disable the limit and use all compactors.
   -compactor.data-dir string
     	Directory to temporarily store blocks during compaction. This directory is not required to be persisted between restarts. (default "./data-compactor/")
-  -compactor.partial-block-deletion-delay value
+  -compactor.partial-block-deletion-delay duration
     	If a partial block (unfinished block without meta.json file) hasn't been modified for this time, it will be marked for deletion. 0 to disable.
   -compactor.ring.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
-  -compactor.ring.etcd.endpoints value
+  -compactor.ring.etcd.endpoints string
     	The etcd endpoints to connect to.
   -compactor.ring.etcd.password string
     	Etcd password.
   -compactor.ring.etcd.username string
     	Etcd username.
-  -compactor.ring.instance-interface-names value
+  -compactor.ring.instance-interface-names string
     	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
   -compactor.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
@@ -302,7 +302,7 @@ Usage of ./cmd/mimir/mimir:
     	Enable the distributors HA tracker so that it can accept samples from Prometheus HA replicas gracefully (requires labels).
   -distributor.ha-tracker.enable-for-all-users
     	Flag to enable, for all tenants, handling of samples with external labels identifying replicas in an HA Prometheus setup.
-  -distributor.ha-tracker.etcd.endpoints value
+  -distributor.ha-tracker.etcd.endpoints string
     	The etcd endpoints to connect to.
   -distributor.ha-tracker.etcd.password string
     	Etcd password.
@@ -322,13 +322,13 @@ Usage of ./cmd/mimir/mimir:
     	The tenant's shard size used by shuffle-sharding. Must be set both on ingesters and distributors. 0 disables shuffle sharding.
   -distributor.ring.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
-  -distributor.ring.etcd.endpoints value
+  -distributor.ring.etcd.endpoints string
     	The etcd endpoints to connect to.
   -distributor.ring.etcd.password string
     	Etcd password.
   -distributor.ring.etcd.username string
     	Etcd username.
-  -distributor.ring.instance-interface-names value
+  -distributor.ring.instance-interface-names string
     	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
   -distributor.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
@@ -348,7 +348,7 @@ Usage of ./cmd/mimir/mimir:
     	The maximum number of in-memory series per tenant, across the cluster before replication. 0 to disable. (default 150000)
   -ingester.ring.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
-  -ingester.ring.etcd.endpoints value
+  -ingester.ring.etcd.endpoints string
     	The etcd endpoints to connect to.
   -ingester.ring.etcd.password string
     	Etcd password.
@@ -372,11 +372,11 @@ Usage of ./cmd/mimir/mimir:
     	Gossip address to advertise to other members in the cluster. Used for NAT traversal.
   -memberlist.advertise-port int
     	Gossip port to advertise to other members in the cluster. Used for NAT traversal. (default 7946)
-  -memberlist.bind-addr value
+  -memberlist.bind-addr string
     	IP address to listen on for gossip messages. Multiple addresses may be specified. Defaults to 0.0.0.0
   -memberlist.bind-port int
     	Port to listen on for gossip messages. (default 7946)
-  -memberlist.join value
+  -memberlist.join string
     	Other cluster members to join. Can be specified multiple times. It can be an IP, hostname or an entry specified in the DNS Service Discovery format.
   -modules
     	List available values that can be used as target.
@@ -398,7 +398,7 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of chunks that can be fetched in a single query from ingesters and long-term storage. This limit is enforced in the querier, ruler and store-gateway. 0 to disable. (default 2000000)
   -querier.max-fetched-series-per-query int
     	The maximum number of unique series for which a query can fetch samples from each ingesters and storage. This limit is enforced in the querier and ruler. 0 to disable
-  -querier.max-query-lookback value
+  -querier.max-query-lookback duration
     	Limit how long back data (series and metadata) can be queried, up until <lookback> duration ago. This limit is enforced in the query-frontend, querier and ruler. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.
   -querier.max-query-parallelism int
     	Maximum number of split (by time) or partial (by shard) queries that will be scheduled in parallel by the query-frontend for a single input query. This limit is introduced to have a fairer query scheduling and avoid a single query over a large time range saturating all available queriers. (default 14)
@@ -509,9 +509,9 @@ Usage of ./cmd/mimir/mimir:
     	Comma-separated list of URL(s) of the Alertmanager(s) to send notifications to. Each URL is treated as a separate group. Multiple Alertmanagers in HA per group can be supported by using DNS service discovery format. Basic auth is supported as part of the URL.
   -ruler.enable-api
     	Enable the ruler config API. (default true)
-  -ruler.evaluation-delay-duration value
+  -ruler.evaluation-delay-duration duration
     	Duration to delay the evaluation of rules to ensure the underlying metrics have been pushed.
-  -ruler.external.url value
+  -ruler.external.url string
     	URL of alerts return path.
   -ruler.max-rule-groups-per-tenant int
     	Maximum number of rule groups per-tenant. 0 to disable. (default 70)
@@ -521,13 +521,13 @@ Usage of ./cmd/mimir/mimir:
     	GRPC listen address of the query-frontend(s). Must be a DNS address (prefixed with dns:///) to enable client side load balancing.
   -ruler.ring.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
-  -ruler.ring.etcd.endpoints value
+  -ruler.ring.etcd.endpoints string
     	The etcd endpoints to connect to.
   -ruler.ring.etcd.password string
     	Etcd password.
   -ruler.ring.etcd.username string
     	Etcd username.
-  -ruler.ring.instance-interface-names value
+  -ruler.ring.instance-interface-names string
     	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
   -ruler.ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
@@ -549,7 +549,7 @@ Usage of ./cmd/mimir/mimir:
     	HTTP server listen port. (default 8080)
   -store-gateway.sharding-ring.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
-  -store-gateway.sharding-ring.etcd.endpoints value
+  -store-gateway.sharding-ring.etcd.endpoints string
     	The etcd endpoints to connect to.
   -store-gateway.sharding-ring.etcd.password string
     	Etcd password.
@@ -557,7 +557,7 @@ Usage of ./cmd/mimir/mimir:
     	Etcd username.
   -store-gateway.sharding-ring.instance-availability-zone string
     	The availability zone where this instance is running. Required if zone-awareness is enabled.
-  -store-gateway.sharding-ring.instance-interface-names value
+  -store-gateway.sharding-ring.instance-interface-names string
     	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
   -store-gateway.sharding-ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
@@ -569,11 +569,11 @@ Usage of ./cmd/mimir/mimir:
     	True to enable zone-awareness and replicate blocks across different availability zones. This option needs be set both on the store-gateway, querier and ruler when running in microservices mode.
   -store-gateway.tenant-shard-size int
     	The tenant's shard size, used when store-gateway sharding is enabled. Value of 0 disables shuffle sharding for the tenant, that is all tenant blocks are sharded across all store-gateway replicas.
-  -store.max-labels-query-length value
+  -store.max-labels-query-length duration
     	Limit the time range (end - start time) of series, label names and values queries. This limit is enforced in the querier. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.
-  -store.max-query-length value
+  -store.max-query-length duration
     	Limit the query time range (end - start time). This limit is enforced in the query-frontend (on the received query), in the querier (on the query possibly split by the query-frontend) and ruler. 0 to disable.
-  -target value
+  -target comma-separated-list-of-string
     	Comma-separated list of components to include in the instantiated process. The default value 'all' includes all components that are required to form a functional Grafana Mimir instance in single-binary mode. Use the '-modules' command line flag to get a list of available components, and to see which components are included with 'all'. (default all)
   -tenant-federation.enabled
     	If enabled on all services, queries can be federated across multiple tenants. The tenant IDs involved need to be specified separated by a '|' character in the 'X-Scope-OrgID' header.
