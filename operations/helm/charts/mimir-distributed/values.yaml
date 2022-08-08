@@ -1059,6 +1059,14 @@ memcachedExporter:
     requests: {}
     limits: {}
 
+  # -- The SecurityContext for memcached exporter containers
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+    allowPrivilegeEscalation: false
+
 chunks-cache:
   # -- Specifies whether memcached based chunks-cache should be enabled
   enabled: false
