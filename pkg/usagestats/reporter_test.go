@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
@@ -102,7 +103,7 @@ func TestSendReport(t *testing.T) {
 
 			err := reporter.sendReport(context.Background(), buildReport(newClusterSeed(), time.Now(), time.Hour))
 			require.Error(t, err)
-			require.Contains(t, err.Error(), "failed to send the report to the stats server")
+			require.Contains(t, err.Error(), "received status code: 503")
 			require.True(t, serverInvoked.Load())
 
 			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
@@ -122,7 +123,7 @@ func TestSendReport(t *testing.T) {
 
 			err := reporter.sendReport(context.Background(), buildReport(newClusterSeed(), time.Now(), time.Hour))
 			require.Error(t, err)
-			require.Contains(t, err.Error(), "failed to send the report to the stats server")
+			require.Contains(t, err.Error(), "connection refused")
 			require.False(t, serverInvoked.Load())
 
 			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
@@ -211,14 +212,15 @@ func TestReporter_SendReportPeriodically(t *testing.T) {
 				require.NoError(t, services.StopAndAwaitTerminated(ctx, r))
 			})
 
-			// Wait some time and check the received reports.
-			time.Sleep(6 * time.Second)
+			// We expect to have received a report per second.
+			test.Poll(t, 10*time.Second, true, func() interface{} {
+				reportsMx.Lock()
+				defer reportsMx.Unlock()
+				return len(reports) >= 4
+			})
 
 			reportsMx.Lock()
 			defer reportsMx.Unlock()
-
-			// We expect to have received at least 4 reports in 6 seconds (there's some overhead for the initial seed check).
-			require.GreaterOrEqual(t, len(reports), 4)
 
 			// We expect each report interval to be exactly at 1s apart from the previous one.
 			for i := 1; i < len(reports); i++ {
@@ -279,14 +281,15 @@ func TestReporter_SendReportShouldSkipToNextReportOnLongFailure(t *testing.T) {
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, r))
 	})
 
-	// Wait some time and check the received reports.
-	time.Sleep(6 * time.Second)
+	// Wait util we have received at least 2 reports.
+	test.Poll(t, 10*time.Second, true, func() interface{} {
+		reportsMx.Lock()
+		defer reportsMx.Unlock()
+		return len(reports) >= 2
+	})
 
 	reportsMx.Lock()
 	defer reportsMx.Unlock()
-
-	// We expect to have received at least 2 reports in 6 seconds (there's some overhead for the initial seed check).
-	require.GreaterOrEqual(t, len(reports), 2)
 
 	// We expect the report timestamp to have been updated during the long failure.
 	require.GreaterOrEqual(t, reports[1].Interval, reports[0].Interval.Add(2*time.Second))

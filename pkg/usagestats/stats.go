@@ -22,17 +22,17 @@ func init() {
 
 // SetTarget sets the target name.
 func SetTarget(target string) {
-	NewString(targetKey).Set(target)
+	getString(targetKey).Set(target)
 }
 
 // SetEdition sets the edition name.
 func SetEdition(edition string) {
-	NewString(editionKey).Set(edition)
+	getString(editionKey).Set(edition)
 }
 
-// NewString returns a new String stats object.
-// If a String stats object with the same name already exists it is returned.
-func NewString(name string) *expvar.String {
+// getString returns the String stats object for the given name.
+// It creates the stats object if doesn't exist yet.
+func getString(name string) *expvar.String {
 	existing := expvar.Get(statsPrefix + name)
 	if existing != nil {
 		if s, ok := existing.(*expvar.String); ok {

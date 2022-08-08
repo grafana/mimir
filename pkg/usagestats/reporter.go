@@ -160,17 +160,17 @@ func (r *Reporter) sendReport(ctx context.Context, report Report) (returnErr err
 
 	data, err := json.Marshal(report)
 	if err != nil {
-		return errors.Wrap(err, "failed to marshal the report")
+		return errors.Wrap(err, "marshal the report")
 	}
-	req, err := http.NewRequest(http.MethodPost, r.serverURL, bytes.NewBuffer(data))
+	req, err := http.NewRequest(http.MethodPost, r.serverURL, bytes.NewReader(data))
 	if err != nil {
-		return errors.Wrap(err, "failed to create the request")
+		return errors.Wrap(err, "create the request")
 	}
 
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := r.client.Do(req.WithContext(ctx))
 	if err != nil {
-		return errors.Wrap(err, "failed to send the report to the stats server")
+		return errors.Wrap(err, "send the report to the stats server")
 	}
 
 	// Ensure the body reader is always closed.
@@ -179,7 +179,7 @@ func (r *Reporter) sendReport(ctx context.Context, report Report) (returnErr err
 	// Consume all the response.
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return errors.Wrap(err, "failed to read the response from the stats server")
+		return errors.Wrap(err, "read the response from the stats server")
 	}
 
 	if resp.StatusCode/100 != 2 {
@@ -188,7 +188,7 @@ func (r *Reporter) sendReport(ctx context.Context, report Report) (returnErr err
 		if len(body) > maxBodyLength {
 			body = body[:maxBodyLength]
 		}
-		return fmt.Errorf("failed to send the report to the stats server, received status code: %s and body: %q", resp.Status, string(body))
+		return fmt.Errorf("received status code: %s and body: %q", resp.Status, string(body))
 	}
 
 	return nil
