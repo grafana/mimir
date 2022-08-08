@@ -409,6 +409,8 @@ spec:
         - -mem-ballast-size-bytes=1073741824
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
+        - -memberlist.leave-timeout=20s
+        - -memberlist.packet-dial-timeout=2s
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.max-connection-age=2m
         - -server.grpc.keepalive.max-connection-age-grace=5m
@@ -494,6 +496,8 @@ spec:
         - -mem-ballast-size-bytes=268435456
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
+        - -memberlist.leave-timeout=20s
+        - -memberlist.packet-dial-timeout=2s
         - -querier.frontend-client.grpc-max-send-msg-size=104857600
         - -querier.max-concurrent=8
         - -querier.scheduler-address=query-scheduler-discovery.default.svc.cluster.local:9095
@@ -721,6 +725,8 @@ spec:
         - -ingester.ring.store=memberlist
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
+        - -memberlist.leave-timeout=20s
+        - -memberlist.packet-dial-timeout=2s
         - -ruler-storage.backend=gcs
         - -ruler-storage.gcs.bucket-name=rules-bucket
         - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local/alertmanager
@@ -803,6 +809,8 @@ spec:
         - -alertmanager.web.external-url=http://test/alertmanager
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
+        - -memberlist.leave-timeout=20s
+        - -memberlist.packet-dial-timeout=2s
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
@@ -903,6 +911,8 @@ spec:
         - -compactor.symbols-flushers-concurrency=4
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
+        - -memberlist.leave-timeout=20s
+        - -memberlist.packet-dial-timeout=2s
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
@@ -994,7 +1004,7 @@ spec:
         - -distributor.health-check-ingesters=true
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
-        - -ingester.max-global-series-per-metric=20000
+        - -ingester.max-global-series-per-metric=0
         - -ingester.max-global-series-per-user=150000
         - -ingester.ring.heartbeat-period=15s
         - -ingester.ring.heartbeat-timeout=10m
@@ -1007,6 +1017,8 @@ spec:
         - -ingester.ring.unregister-on-shutdown=true
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
+        - -memberlist.leave-timeout=20s
+        - -memberlist.packet-dial-timeout=2s
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-concurrent-streams=10000
         - -server.grpc.keepalive.min-time-between-pings=10s
@@ -1331,6 +1343,8 @@ spec:
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
+        - -memberlist.leave-timeout=20s
+        - -memberlist.packet-dial-timeout=2s
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true

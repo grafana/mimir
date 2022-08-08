@@ -76,6 +76,8 @@
     - `query_frontend_topology_spread_max_skew`
     - `querier_topology_spread_max_skew`
     - `ruler_topology_spread_max_skew`
+* [CHANGE] Change `max_global_series_per_metric` to 0 in all plans, and as a default value.
+* [CHANGE] Memberlist: Increase the leave timeout to 10x the connection timeout, so that we can communicate the leave to at least 1 node, if the first 9 we try to contact times out.
 * [FEATURE] Memberlist: added support for experimental memberlist cluster label, through the jsonnet configuration options `memberlist_cluster_label` and `memberlist_cluster_label_verification_disabled`. #2349
 * [FEATURE] Added ruler-querier autoscaling support. It requires [KEDA](https://keda.sh) installed in the Kubernetes cluster. Ruler-querier autoscaler can be enabled and configure through the following options in the jsonnet config: #2545
   * `autoscaling_ruler_querier_enabled`: `true` to enable autoscaling.
