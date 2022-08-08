@@ -65,7 +65,7 @@ For information about how to create a Kubernetes secret, see
 
 #### Helm chart values
 
-Finally, merge the following YAML configuration into your Helm values file, abd replace the values for `url`, `username`, `passwordSecretName`
+Finally, merge the following YAML configuration into your Helm values file, and replace the values for `url`, `username`, `passwordSecretName`
 , and `passwordSecretKey` with the details of the Prometheus and Loki clusters, and the secret that you created. If your
 Prometheus and Loki servers are running without authentication, then remove the `auth` blocks from the YAML below.
 
