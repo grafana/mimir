@@ -24,6 +24,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Default to injecting the `no_auth_tenant` from the Mimir configuration as the value for `X-Scope-OrgID` in nginx. #2614
 * [BUGFIX] `nginx.extraArgs` are now actually passed to the nginx container. #2336
 * [BUGFIX] Add missing `containerSecurityContext` to alertmanager and tokengen job. #2416
+* [BUGFIX] Add missing `containerSecutiryContext` to memcached exporter containers. #2666
 
 ## 3.0.0
 
