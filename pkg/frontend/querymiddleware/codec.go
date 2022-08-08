@@ -48,6 +48,9 @@ const (
 	statusError = "error"
 
 	totalShardsControlHeader = "Sharding-Control"
+
+	// Instant query specific options
+	instantSplitControlHeader = "Instant-Split-Control"
 )
 
 // Codec is used to encode/decode query range requests and responses so they can be passed down to middlewares.
@@ -210,18 +213,30 @@ func decodeOptions(r *http.Request, opts *Options) {
 	for _, value := range r.Header.Values(cacheControlHeader) {
 		if strings.Contains(value, noStoreValue) {
 			opts.CacheDisabled = true
-			break
+			continue
 		}
 	}
 
 	for _, value := range r.Header.Values(totalShardsControlHeader) {
 		shards, err := strconv.ParseInt(value, 10, 32)
 		if err != nil {
-			break
+			continue
 		}
 		opts.TotalShards = int32(shards)
 		if opts.TotalShards < 1 {
 			opts.ShardingDisabled = true
+		}
+	}
+
+	for _, value := range r.Header.Values(instantSplitControlHeader) {
+		splitInterval, err := time.ParseDuration(value)
+		if err != nil {
+			continue
+		}
+		// Instant split by time interval unit stored in nanoseconds (time.Duration unit in int64)
+		opts.InstantSplitInterval = splitInterval.Nanoseconds()
+		if opts.InstantSplitInterval < 1 {
+			opts.InstantSplitDisabled = true
 		}
 	}
 }

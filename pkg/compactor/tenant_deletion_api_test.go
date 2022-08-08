@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package purger
+package compactor
 
 import (
 	"bytes"
@@ -13,7 +13,7 @@ import (
 	"path"
 	"testing"
 
-	"github.com/go-kit/log"
+	"github.com/grafana/dskit/services"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"github.com/weaveworks/common/user"
@@ -23,11 +23,14 @@ import (
 
 func TestDeleteTenant(t *testing.T) {
 	bkt := objstore.NewInMemBucket()
-	api := newTenantDeletionAPI(bkt, nil, log.NewNopLogger())
+	cfg := prepareConfig(t)
+	c, _, _, _, _ := prepare(t, cfg, bkt)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
+	t.Cleanup(stopServiceFn(t, c))
 
 	{
 		resp := httptest.NewRecorder()
-		api.DeleteTenant(resp, &http.Request{})
+		c.DeleteTenant(resp, &http.Request{})
 		require.Equal(t, http.StatusUnauthorized, resp.Code)
 	}
 
@@ -37,7 +40,7 @@ func TestDeleteTenant(t *testing.T) {
 
 		req := &http.Request{}
 		resp := httptest.NewRecorder()
-		api.DeleteTenant(resp, req.WithContext(ctx))
+		c.DeleteTenant(resp, req.WithContext(ctx))
 
 		require.Equal(t, http.StatusOK, resp.Code)
 		objs := bkt.Objects()
@@ -85,9 +88,12 @@ func TestDeleteTenantStatus(t *testing.T) {
 				require.NoError(t, bkt.Upload(context.Background(), objName, bytes.NewReader(data)))
 			}
 
-			api := newTenantDeletionAPI(bkt, nil, log.NewNopLogger())
+			cfg := prepareConfig(t)
+			c, _, _, _, _ := prepare(t, cfg, bkt)
+			require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
+			t.Cleanup(stopServiceFn(t, c))
 
-			res, err := api.isBlocksForUserDeleted(context.Background(), username)
+			res, err := c.isBlocksForUserDeleted(context.Background(), username)
 			require.NoError(t, err)
 			require.Equal(t, tc.expectedBlocksDeleted, res)
 		})

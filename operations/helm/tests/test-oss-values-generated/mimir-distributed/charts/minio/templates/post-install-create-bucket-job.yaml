@@ -4,9 +4,10 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: test-oss-values-minio-make-bucket-job
+  namespace: "citestns"
   labels:
     app: minio-make-bucket-job
-    chart: minio-8.0.10
+    chart: minio-4.0.3
     release: test-oss-values
     heritage: Helm
   annotations:
@@ -28,10 +29,9 @@ spec:
                 name: test-oss-values-minio
             - secret:
                 name: test-oss-values-minio
-      serviceAccountName: "test-oss-values-minio"
       containers:
       - name: minio-mc
-        image: "minio/mc:RELEASE.2021-02-14T04-28-06Z"
+        image: "quay.io/minio/mc:RELEASE.2022-05-09T04-08-26Z"
         imagePullPolicy: IfNotPresent
         command: ["/bin/sh", "/config/initialize"]
         env:

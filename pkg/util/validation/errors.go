@@ -33,7 +33,7 @@ func (e genericValidationError) Error() string {
 	return fmt.Sprintf(e.message, e.cause, formatLabelSet(e.series))
 }
 
-var labelNameTooLongMsgFormat = globalerror.SeriesLabelNameTooLong.MessageWithLimitConfig(
+var labelNameTooLongMsgFormat = globalerror.SeriesLabelNameTooLong.MessageWithPerTenantLimitConfig(
 	"received a series whose label name length exceeds the limit, label: '%.200s' series: '%.200s'",
 	maxLabelNameLengthFlag)
 
@@ -53,7 +53,7 @@ type labelValueTooLongError struct {
 }
 
 func (e labelValueTooLongError) Error() string {
-	return globalerror.SeriesLabelValueTooLong.MessageWithLimitConfig(
+	return globalerror.SeriesLabelValueTooLong.MessageWithPerTenantLimitConfig(
 		fmt.Sprintf("received a series whose label value length exceeds the limit, value: '%.200s' (truncated) series: '%.200s'", e.labelValue, formatLabelSet(e.series)),
 		maxLabelValueLengthFlag)
 }
@@ -111,7 +111,7 @@ func newTooManyLabelsError(series []mimirpb.LabelAdapter, limit int) ValidationE
 }
 
 func (e tooManyLabelsError) Error() string {
-	return globalerror.MaxLabelNamesPerSeries.MessageWithLimitConfig(
+	return globalerror.MaxLabelNamesPerSeries.MessageWithPerTenantLimitConfig(
 		fmt.Sprintf("received a series whose number of labels exceeds the limit (actual: %d, limit: %d) series: '%.200s'", len(e.series), e.limit, mimirpb.FromLabelAdaptersToMetric(e.series).String()),
 		maxLabelNamesPerSeriesFlag)
 }
@@ -151,7 +151,7 @@ func (e sampleValidationError) Error() string {
 	return fmt.Sprintf(e.message, e.timestamp, e.metricName)
 }
 
-var sampleTimestampTooNewMsgFormat = globalerror.SampleTooFarInFuture.MessageWithLimitConfig(
+var sampleTimestampTooNewMsgFormat = globalerror.SampleTooFarInFuture.MessageWithPerTenantLimitConfig(
 	"received a sample whose timestamp is too far in the future, timestamp: %d series: '%.200s'",
 	creationGracePeriodFlag)
 
@@ -232,7 +232,7 @@ func (e metadataValidationError) Error() string {
 	return fmt.Sprintf(e.message, e.cause, e.metricName)
 }
 
-var metadataMetricNameTooLongMsgFormat = globalerror.MetricMetadataMetricNameTooLong.MessageWithLimitConfig(
+var metadataMetricNameTooLongMsgFormat = globalerror.MetricMetadataMetricNameTooLong.MessageWithPerTenantLimitConfig(
 	// When formatting this error the "cause" will always be an empty string.
 	"received a metric metadata whose metric name length exceeds the limit, metric name: '%.200[2]s'",
 	maxMetadataLengthFlag)
@@ -245,7 +245,7 @@ func newMetadataMetricNameTooLongError(metadata *mimirpb.MetricMetadata) Validat
 	}
 }
 
-var metadataHelpTooLongMsgFormat = globalerror.MetricMetadataHelpTooLong.MessageWithLimitConfig(
+var metadataHelpTooLongMsgFormat = globalerror.MetricMetadataHelpTooLong.MessageWithPerTenantLimitConfig(
 	"received a metric metadata whose help description length exceeds the limit, help: '%.200s' metric name: '%.200s'",
 	maxMetadataLengthFlag)
 
@@ -257,7 +257,7 @@ func newMetadataHelpTooLongError(metadata *mimirpb.MetricMetadata) ValidationErr
 	}
 }
 
-var metadataUnitTooLongMsgFormat = globalerror.MetricMetadataUnitTooLong.MessageWithLimitConfig(
+var metadataUnitTooLongMsgFormat = globalerror.MetricMetadataUnitTooLong.MessageWithPerTenantLimitConfig(
 	"received a metric metadata whose unit name length exceeds the limit, unit: '%.200s' metric name: '%.200s'",
 	maxMetadataLengthFlag)
 
@@ -270,19 +270,19 @@ func newMetadataUnitTooLongError(metadata *mimirpb.MetricMetadata) ValidationErr
 }
 
 func NewMaxQueryLengthError(actualQueryLen, maxQueryLength time.Duration) LimitError {
-	return LimitError(globalerror.MaxQueryLength.MessageWithLimitConfig(
+	return LimitError(globalerror.MaxQueryLength.MessageWithPerTenantLimitConfig(
 		fmt.Sprintf("the query time range exceeds the limit (query length: %s, limit: %s)", actualQueryLen, maxQueryLength),
 		maxQueryLengthFlag))
 }
 
 func NewRequestRateLimitedError(limit float64, burst int) LimitError {
-	return LimitError(globalerror.RequestRateLimited.MessageWithLimitConfig(
+	return LimitError(globalerror.RequestRateLimited.MessageWithPerTenantLimitConfig(
 		fmt.Sprintf("the request has been rejected because the tenant exceeded the request rate limit, set to %v requests/s across all distributors with a maximum allowed burst of %d", limit, burst),
 		requestRateFlag, requestBurstSizeFlag))
 }
 
 func NewIngestionRateLimitedError(limit float64, burst int) LimitError {
-	return LimitError(globalerror.IngestionRateLimited.MessageWithLimitConfig(
+	return LimitError(globalerror.IngestionRateLimited.MessageWithPerTenantLimitConfig(
 		fmt.Sprintf("the request has been rejected because the tenant exceeded the ingestion rate limit, set to %v items/s with a maximum allowed burst of %d. This limit is applied on the total number of samples, exemplars and metadata received across all distributors", limit, burst),
 		ingestionRateFlag, ingestionBurstSizeFlag))
 }

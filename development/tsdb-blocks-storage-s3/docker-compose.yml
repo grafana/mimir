@@ -228,29 +228,6 @@
       - "9090:9090"
     "volumes":
       - "./config:/etc/prometheus"
-  "purger":
-    "build":
-      "context": "."
-      "dockerfile": "dev.dockerfile"
-    "command":
-      - "sh"
-      - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=purger -server.http-listen-port=8014 -server.grpc-listen-port=9014 -activity-tracker.filepath=/activity/purger-8014  -memberlist.nodename=purger -memberlist.bind-port=10014 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist"
-    "depends_on":
-      - "minio"
-      - "distributor-1"
-    "environment":
-      - "JAEGER_AGENT_HOST=jaeger"
-      - "JAEGER_AGENT_PORT=6831"
-      - "JAEGER_SAMPLER_PARAM=1"
-      - "JAEGER_SAMPLER_TYPE=const"
-      - "JAEGER_TAGS=app=purger"
-    "image": "mimir"
-    "ports":
-      - "8014:8014"
-    "volumes":
-      - "./config:/mimir/config"
-      - "./activity:/activity"
   "querier":
     "build":
       "context": "."

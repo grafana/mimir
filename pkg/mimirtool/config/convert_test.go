@@ -43,11 +43,11 @@ func testConvertCortexAndGEM(t *testing.T, tc conversionInput, test func(t *test
 }
 
 func testConvertGEM(t *testing.T, tc conversionInput, test func(t *testing.T, outYAML []byte, outFlags []string, notices ConversionNotices, err error)) {
-	t.Run("gem170->gem200", func(t *testing.T) {
+	t.Run("gem170->gem", func(t *testing.T) {
 		t.Parallel()
 
 		expectedCommonYAML, expectedCommonFlags := tc.loadCommonOpts(t, "testdata/gem/common-options-old.yaml", "testdata/gem/common-options-new.yaml", "testdata/gem/common-flags-old.txt", "testdata/gem/common-flags-new.txt")
-		outYAML, outFlags, notices, err := Convert(tc.yaml, tc.flags, GEM170ToGEM200Mapper(), DefaultGEM170Config, DefaultGEM200COnfig, tc.useNewDefaults, tc.outputDefaults)
+		outYAML, outFlags, notices, err := Convert(tc.yaml, tc.flags, GEM170ToGEMMapper(), DefaultGEM170Config, DefaultGEMConfig, tc.useNewDefaults, tc.outputDefaults)
 
 		if expectedCommonYAML != nil {
 			assert.YAMLEq(t, string(expectedCommonYAML), string(outYAML), "common config options did not map correctly")
@@ -570,6 +570,14 @@ var changedCortexDefaults = []ChangedDefault{
 	{Path: "store_gateway.sharding_ring.instance_interface_names", OldDefault: "eth0,en0", NewDefault: "<nil>"},
 	{Path: "store_gateway.sharding_ring.kvstore.store", OldDefault: "consul", NewDefault: "memberlist"},
 	{Path: "store_gateway.sharding_ring.wait_stability_min_duration", OldDefault: "1m0s", NewDefault: "0s"},
+
+	// Changed in 2.1, 2.2 and 2.3
+	{Path: "alertmanager.max_recv_msg_size", OldDefault: "16777216", NewDefault: "104857600"},
+	{Path: "limits.ha_max_clusters", OldDefault: "0", NewDefault: "100"},
+	{Path: "memberlist.abort_if_cluster_join_fails", OldDefault: "true", NewDefault: "false"},
+	{Path: "querier.query_store_after", OldDefault: "0s", NewDefault: "12h0m0s"},
+	{Path: "server.grpc_server_max_recv_msg_size", OldDefault: "4194304", NewDefault: "104857600"},
+	{Path: "server.grpc_server_max_send_msg_size", OldDefault: "4194304", NewDefault: "104857600"},
 }
 
 func TestChangedCortexDefaults(t *testing.T) {
@@ -616,6 +624,9 @@ func TestChangedGEMDefaults(t *testing.T) {
 		{Path: "instrumentation.enabled", OldDefault: "false", NewDefault: "true"},
 		{Path: "limits.compactor_split_groups", OldDefault: "4", NewDefault: "1"},
 		{Path: "limits.compactor_tenant_shard_size", OldDefault: "1", NewDefault: "0"},
+
+		// Changed in 2.1
+		{Path: "blocks_storage.bucket_store.chunks_cache.attributes_in_memory_max_items", OldDefault: "0", NewDefault: "50000"},
 	}
 
 	// These slipped through from Mimir into GEM 1.7.0
@@ -767,6 +778,65 @@ func TestConvert_PassingOnlyFlagsReturnsOnlyFlags(t *testing.T) {
 		assert.Empty(t, outYAML)
 		assert.ElementsMatch(t, expectedOutFlags, outFlags)
 	})
+}
+
+// TestRemovedParamsAndFlagsAreCorrect checks if what we have in removedCLIOptions and removedConfigPaths makes sense.
+// It cannot test for all flags that were present at some point but now don't exist because some of them could be renamed
+// or merged with other flags.
+func TestRemovedParamsAndFlagsAreCorrect(t *testing.T) {
+	t.Parallel()
+
+	allParameterPaths := func(p Parameters) map[string]bool {
+		paths := map[string]bool{}
+		assert.NoError(t, p.Walk(func(path string, _ Value) error {
+			paths[path] = true
+			return nil
+		}))
+		return paths
+	}
+
+	allCLIFlagsNames := func(p Parameters) map[string]bool {
+		flags := map[string]bool{}
+		assert.NoError(t, p.Walk(func(path string, v Value) error {
+			flagName, err := p.GetFlag(path)
+			assert.NoError(t, err)
+			flags[flagName] = true
+			return nil
+		}))
+		return flags
+	}
+
+	// Test that whatever we claim to be removed is actually not present now
+	gemPaths := allParameterPaths(DefaultGEMConfig())
+	mimirPaths := allParameterPaths(DefaultMimirConfig())
+	for _, path := range removedConfigPaths {
+		assert.NotContains(t, gemPaths, path)
+		assert.NotContains(t, mimirPaths, path)
+	}
+
+	gemFlags := allCLIFlagsNames(DefaultGEMConfig())
+	mimirFlags := allCLIFlagsNames(DefaultMimirConfig())
+	for _, path := range removedCLIOptions {
+		assert.NotContains(t, mimirFlags, path)
+		assert.NotContains(t, gemFlags, path)
+	}
+
+	// Test that whatever we claim to be removed was actually present in either GEM or cortex previously
+	oldGEMPaths := allParameterPaths(DefaultGEM170Config())
+	cortexPaths := allParameterPaths(DefaultCortexConfig())
+	for _, path := range removedConfigPaths {
+		cortexHas := cortexPaths[path]
+		gemHas := oldGEMPaths[path]
+		assert.Truef(t, cortexHas || gemHas, "path %s is expected to exist in either old GEM or old Cortex config, but was found in neither", path)
+	}
+
+	oldGEMFlags := allCLIFlagsNames(DefaultGEM170Config())
+	cortexFlags := allCLIFlagsNames(DefaultCortexConfig())
+	for _, flag := range removedCLIOptions {
+		cortexHas := oldGEMFlags[flag]
+		gemHas := cortexFlags[flag]
+		assert.Truef(t, cortexHas || gemHas, "CLI flag %s is expected to exist in either old GEM or old Cortex config, but was found in neither", flag)
+	}
 }
 
 func loadFile(t testing.TB, fileName string) []byte {

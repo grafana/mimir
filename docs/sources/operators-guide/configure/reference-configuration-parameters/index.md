@@ -218,6 +218,11 @@ runtime_config:
 # The query_scheduler block configures the query-scheduler.
 [query_scheduler: <query_scheduler>]
 
+usage_stats:
+  # (experimental) Enable anonymous usage reporting.
+  # CLI flag: -usage-stats.enabled
+  [enabled: <boolean> | default = false]
+
 # The common block holds configurations that configure multiple components at a
 # time.
 [common: <common>]
@@ -611,6 +616,11 @@ forwarding:
   # remote_write requests, depending on defined rules.
   # CLI flag: -distributor.forwarding.enabled
   [enabled: <boolean> | default = false]
+
+  # (experimental) Maximum concurrency at which forwarding requests get
+  # performed.
+  # CLI flag: -distributor.forwarding.request-concurrency
+  [request_concurrency: <int> | default = 10]
 
   # (experimental) Timeout for requests to ingestion endpoints to which we
   # forward metrics.
@@ -1046,11 +1056,6 @@ grpc_client_config:
 # it.
 # CLI flag: -query-frontend.split-queries-by-interval
 [split_queries_by_interval: <duration> | default = 24h]
-
-# (experimental) Split instant queries by an interval and execute in parallel. 0
-# to disable it.
-# CLI flag: -query-frontend.split-instant-queries-by-interval
-[split_instant_queries_by_interval: <duration> | default = 0s]
 
 # Mutate incoming queries to align their start and end with their step.
 # CLI flag: -query-frontend.align-querier-with-step
@@ -2481,6 +2486,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # 0 to disable limit.
 # CLI flag: -query-frontend.query-sharding-max-sharded-queries
 [query_sharding_max_sharded_queries: <int> | default = 128]
+
+# (experimental) Split instant queries by an interval and execute in parallel. 0
+# to disable it.
+# CLI flag: -query-frontend.split-instant-queries-by-interval
+[split_instant_queries_by_interval: <duration> | default = 0s]
 
 # Enables endpoints used for cardinality analysis.
 # CLI flag: -querier.cardinality-analysis-enabled

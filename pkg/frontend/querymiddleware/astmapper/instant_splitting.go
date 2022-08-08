@@ -20,6 +20,7 @@ type instantSplitter struct {
 	// by queriers, and therefore minimize the merging of results in the query-frontend.
 	outerAggregationExpr *parser.AggregateExpr
 	logger               log.Logger
+	stats                *InstantSplitterStats
 }
 
 // Supported vector aggregators
@@ -33,21 +34,34 @@ var splittableVectorAggregators = map[parser.ItemType]bool{
 // Supported range vector aggregators
 
 const (
-	avgOverTime   = "avg_over_time"
-	countOverTime = "count_over_time"
-	increase      = "increase"
-	maxOverTime   = "max_over_time"
-	minOverTime   = "min_over_time"
-	rate          = "rate"
-	sumOverTime   = "sum_over_time"
+	avgOverTime     = "avg_over_time"
+	countOverTime   = "count_over_time"
+	increase        = "increase"
+	maxOverTime     = "max_over_time"
+	minOverTime     = "min_over_time"
+	presentOverTime = "present_over_time"
+	rate            = "rate"
+	sumOverTime     = "sum_over_time"
 )
 
+// cannotDoubleCountBoundaries is the list of functions that cannot double count the boundaries points when being split by range.
+// Consider a timeline with samples at 1s,2s,3s,4s,5s...
+// Prometheus ranges are closed on both ends, so range [2s,4s] includes samples at 2s and 4s.
+// If we split that into [2s, 3s] and [3s, 4s], then we will include the sample at 3s in both ranges.
+// This cannot be done for some sample-aggregating functions like `count_over_time`: we would count 4 samples (2s,3s,3s,4s) after splitting.
+// However, for other functions, like `rate`, it is important to have both ends includes, as the rate is (start-end)/range.
+var cannotDoubleCountBoundaries = map[string]bool{
+	countOverTime: true,
+	sumOverTime:   true,
+}
+
 // NewInstantQuerySplitter creates a new query range mapper.
-func NewInstantQuerySplitter(interval time.Duration, logger log.Logger) ASTMapper {
+func NewInstantQuerySplitter(interval time.Duration, logger log.Logger, stats *InstantSplitterStats) ASTMapper {
 	instantQueryMapper := NewASTExprMapper(
 		&instantSplitter{
 			interval: interval,
 			logger:   logger,
+			stats:    stats,
 		},
 	)
 
@@ -58,7 +72,7 @@ func NewInstantQuerySplitter(interval time.Duration, logger log.Logger) ASTMappe
 }
 
 // MapExpr returns expr mapped as embedded queries
-func (i *instantSplitter) MapExpr(expr parser.Expr, stats *MapperStats) (mapped parser.Expr, finished bool, err error) {
+func (i *instantSplitter) MapExpr(expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
 	// Immediately clone the expr to avoid mutating the original
 	expr, err = cloneExpr(expr)
 	if err != nil {
@@ -67,20 +81,22 @@ func (i *instantSplitter) MapExpr(expr parser.Expr, stats *MapperStats) (mapped 
 
 	switch e := expr.(type) {
 	case *parser.AggregateExpr:
-		return i.mapAggregatorExpr(e, stats)
+		return i.mapAggregatorExpr(e)
 	case *parser.BinaryExpr:
-		return i.mapBinaryExpr(e, stats)
+		return i.mapBinaryExpr(e)
 	case *parser.Call:
 		if isSubqueryCall(e) {
 			// Subqueries are currently not supported by splitting, so we stop the mapping here.
+			i.stats.SetSkippedReason(SkippedReasonSubquery)
 			return e, true, nil
 		}
 
-		return i.mapCall(e, stats)
+		return i.mapCall(e)
 	case *parser.ParenExpr:
-		return i.mapParenExpr(e, stats)
+		return i.mapParenExpr(e)
 	case *parser.SubqueryExpr:
 		// Subqueries are currently not supported by splitting, so we stop the mapping here.
+		i.stats.SetSkippedReason(SkippedReasonSubquery)
 		return e, true, nil
 	default:
 		return e, false, nil
@@ -96,15 +112,15 @@ func (i *instantSplitter) copyWithEmbeddedExpr(embeddedExpr *parser.AggregateExp
 }
 
 // mapAggregatorExpr maps vector aggregator expression expr
-func (i *instantSplitter) mapAggregatorExpr(expr *parser.AggregateExpr, stats *MapperStats) (mapped parser.Expr, finished bool, err error) {
+func (i *instantSplitter) mapAggregatorExpr(expr *parser.AggregateExpr) (mapped parser.Expr, finished bool, err error) {
 	var mappedExpr parser.Expr
 
 	// If the outerAggregationExpr is not set, update it.
 	// Note: vector aggregators avg, count and topk are supported but not splittable, so cannot be sent downstream.
 	if i.outerAggregationExpr == nil && splittableVectorAggregators[expr.Op] {
-		mappedExpr, finished, err = NewASTExprMapper(i.copyWithEmbeddedExpr(expr)).MapExpr(expr.Expr, stats)
+		mappedExpr, finished, err = NewASTExprMapper(i.copyWithEmbeddedExpr(expr)).MapExpr(expr.Expr)
 	} else {
-		mappedExpr, finished, err = i.MapExpr(expr.Expr, stats)
+		mappedExpr, finished, err = i.MapExpr(expr.Expr)
 	}
 	if err != nil {
 		return nil, false, err
@@ -124,7 +140,7 @@ func (i *instantSplitter) mapAggregatorExpr(expr *parser.AggregateExpr, stats *M
 }
 
 // mapBinaryExpr maps binary expression expr
-func (i *instantSplitter) mapBinaryExpr(expr *parser.BinaryExpr, stats *MapperStats) (mapped parser.Expr, finished bool, err error) {
+func (i *instantSplitter) mapBinaryExpr(expr *parser.BinaryExpr) (mapped parser.Expr, finished bool, err error) {
 	// Binary expressions cannot be sent downstream, only their respective operands.
 	// Therefore, the embedded aggregator expression needs to be reset.
 	i.outerAggregationExpr = nil
@@ -136,17 +152,17 @@ func (i *instantSplitter) mapBinaryExpr(expr *parser.BinaryExpr, stats *MapperSt
 		return expr, true, nil
 	}
 
-	lhsMapped, lhsFinished, err := i.MapExpr(expr.LHS, stats)
+	lhsMapped, lhsFinished, err := i.MapExpr(expr.LHS)
 	if err != nil {
 		return nil, false, err
 	}
-	rhsMapped, rhsFinished, err := i.MapExpr(expr.RHS, stats)
+	rhsMapped, rhsFinished, err := i.MapExpr(expr.RHS)
 	if err != nil {
 		return nil, false, err
 	}
 	// if query was split and at least one operand successfully finished, the binary operations is mapped.
 	// The binary operands need to be wrapped in a parentheses' expression to ensure operator precedence.
-	if stats.GetShardedQueries() > 0 && (lhsFinished || rhsFinished) {
+	if i.stats.GetSplitQueries() > 0 && (lhsFinished || rhsFinished) {
 		expr.LHS = &parser.ParenExpr{
 			Expr: lhsMapped,
 		}
@@ -159,8 +175,8 @@ func (i *instantSplitter) mapBinaryExpr(expr *parser.BinaryExpr, stats *MapperSt
 }
 
 // mapParenExpr maps parenthesis expression expr
-func (i *instantSplitter) mapParenExpr(expr *parser.ParenExpr, stats *MapperStats) (mapped parser.Expr, finished bool, err error) {
-	parenExpr, finished, err := i.MapExpr(expr.Expr, stats)
+func (i *instantSplitter) mapParenExpr(expr *parser.ParenExpr) (mapped parser.Expr, finished bool, err error) {
+	parenExpr, finished, err := i.MapExpr(expr.Expr)
 	if err != nil {
 		return nil, false, err
 	}
@@ -175,20 +191,26 @@ func (i *instantSplitter) mapParenExpr(expr *parser.ParenExpr, stats *MapperStat
 }
 
 // mapCall maps a function call if it's a range vector aggregator.
-func (i *instantSplitter) mapCall(expr *parser.Call, stats *MapperStats) (mapped parser.Expr, finished bool, err error) {
+func (i *instantSplitter) mapCall(expr *parser.Call) (mapped parser.Expr, finished bool, err error) {
 	switch expr.Func.Name {
 	case avgOverTime:
-		return i.mapCallAvgOverTime(expr, stats)
+		return i.mapCallAvgOverTime(expr)
 	case countOverTime:
-		return i.mapCallVectorAggregation(expr, stats, parser.SUM)
+		return i.mapCallVectorAggregation(expr, parser.SUM)
+	case increase:
+		return i.mapCallVectorAggregation(expr, parser.SUM)
 	case maxOverTime:
-		return i.mapCallVectorAggregation(expr, stats, parser.MAX)
+		return i.mapCallVectorAggregation(expr, parser.MAX)
 	case minOverTime:
-		return i.mapCallVectorAggregation(expr, stats, parser.MIN)
+		return i.mapCallVectorAggregation(expr, parser.MIN)
+	case presentOverTime:
+		// present_over_time returns the value 1 for any series in the specified interval,
+		// therefore, using aggregator MAX enforces that all 1 values are returned.
+		return i.mapCallVectorAggregation(expr, parser.MAX)
 	case rate:
-		return i.mapCallRate(expr, stats)
+		return i.mapCallRate(expr)
 	case sumOverTime:
-		return i.mapCallVectorAggregation(expr, stats, parser.SUM)
+		return i.mapCallVectorAggregation(expr, parser.SUM)
 	default:
 		// Continue the mapping on child expressions.
 		return expr, false, nil
@@ -196,7 +218,7 @@ func (i *instantSplitter) mapCall(expr *parser.Call, stats *MapperStats) (mapped
 }
 
 // mapCallAvgOverTime maps an avg_over_time function to expression sum_over_time / count_over_time
-func (i *instantSplitter) mapCallAvgOverTime(expr *parser.Call, stats *MapperStats) (mapped parser.Expr, finished bool, err error) {
+func (i *instantSplitter) mapCallAvgOverTime(expr *parser.Call) (mapped parser.Expr, finished bool, err error) {
 	avgOverTimeExpr := &parser.BinaryExpr{
 		Op: parser.DIV,
 		LHS: &parser.Call{
@@ -217,18 +239,19 @@ func (i *instantSplitter) mapCallAvgOverTime(expr *parser.Call, stats *MapperSta
 		i.outerAggregationExpr = nil
 	}
 
-	return i.MapExpr(avgOverTimeExpr, stats)
+	return i.MapExpr(avgOverTimeExpr)
 }
 
 // mapCallRate maps a rate function to expression increase / rangeInterval
-func (i *instantSplitter) mapCallRate(expr *parser.Call, stats *MapperStats) (mapped parser.Expr, finished bool, err error) {
+func (i *instantSplitter) mapCallRate(expr *parser.Call) (mapped parser.Expr, finished bool, err error) {
 	// In case the range interval is smaller than the configured split interval,
 	// don't split it and don't map further nodes (finished=true).
 	rangeInterval, canSplit, err := i.assertSplittableRangeInterval(expr)
 	if err != nil {
-		return nil, true, err
+		return nil, false, err
 	}
 	if !canSplit {
+		i.stats.SetSkippedReason(SkippedReasonSmallInterval)
 		return expr, true, nil
 	}
 
@@ -247,7 +270,7 @@ func (i *instantSplitter) mapCallRate(expr *parser.Call, stats *MapperStats) (ma
 		}
 	}
 
-	mappedExpr, finished, err := i.mapCallByRangeInterval(increaseExpr, stats, rangeInterval, parser.SUM)
+	mappedExpr, finished, err := i.mapCallByRangeInterval(increaseExpr, rangeInterval, parser.SUM)
 	if err != nil {
 		return nil, false, err
 	}
@@ -262,7 +285,7 @@ func (i *instantSplitter) mapCallRate(expr *parser.Call, stats *MapperStats) (ma
 	}, true, nil
 }
 
-func (i *instantSplitter) mapCallVectorAggregation(expr *parser.Call, stats *MapperStats, op parser.ItemType) (mapped parser.Expr, finished bool, err error) {
+func (i *instantSplitter) mapCallVectorAggregation(expr *parser.Call, op parser.ItemType) (mapped parser.Expr, finished bool, err error) {
 	// In case the range interval is smaller than the configured split interval,
 	// don't split it and don't map further nodes (finished=true).
 	rangeInterval, canSplit, err := i.assertSplittableRangeInterval(expr)
@@ -270,13 +293,14 @@ func (i *instantSplitter) mapCallVectorAggregation(expr *parser.Call, stats *Map
 		return nil, false, err
 	}
 	if !canSplit {
+		i.stats.SetSkippedReason(SkippedReasonSmallInterval)
 		return expr, true, nil
 	}
 
-	return i.mapCallByRangeInterval(expr, stats, rangeInterval, op)
+	return i.mapCallByRangeInterval(expr, rangeInterval, op)
 }
 
-func (i *instantSplitter) mapCallByRangeInterval(expr *parser.Call, stats *MapperStats, rangeInterval time.Duration, op parser.ItemType) (mapped parser.Expr, finished bool, err error) {
+func (i *instantSplitter) mapCallByRangeInterval(expr *parser.Call, rangeInterval time.Duration, op parser.ItemType) (mapped parser.Expr, finished bool, err error) {
 	// Default grouping is 'without' for concatenating the embedded queries
 	var grouping []string
 	groupingWithout := true
@@ -285,7 +309,7 @@ func (i *instantSplitter) mapCallByRangeInterval(expr *parser.Call, stats *Mappe
 		groupingWithout = i.outerAggregationExpr.Without
 	}
 
-	embeddedExpr, finished, err := i.splitAndSquashCall(expr, stats, rangeInterval)
+	embeddedExpr, finished, err := i.splitAndSquashCall(expr, rangeInterval)
 	if err != nil {
 		return nil, false, err
 	}
@@ -307,7 +331,7 @@ func (i *instantSplitter) mapCallByRangeInterval(expr *parser.Call, stats *Mappe
 // If the outer expression is a vector aggregator, r.outerAggregationExpr will contain the expression
 // In this case, the vector aggregator should be downstream to the embedded queries in order to limit
 // the label cardinality of the parallel queries
-func (i *instantSplitter) splitAndSquashCall(expr *parser.Call, stats *MapperStats, rangeInterval time.Duration) (mapped parser.Expr, finished bool, err error) {
+func (i *instantSplitter) splitAndSquashCall(expr *parser.Call, rangeInterval time.Duration) (mapped parser.Expr, finished bool, err error) {
 	splitCount := int(math.Ceil(float64(rangeInterval) / float64(i.interval)))
 	if splitCount <= 1 {
 		return expr, false, nil
@@ -330,6 +354,9 @@ func (i *instantSplitter) splitAndSquashCall(expr *parser.Call, stats *MapperSta
 		splitOffset := time.Duration(split) * i.interval
 		// The range interval of the last embedded query can be smaller than i.interval
 		splitRangeInterval := i.interval
+		if lastSplit := split == splitCount-1; cannotDoubleCountBoundaries[expr.Func.Name] && !lastSplit {
+			splitRangeInterval -= time.Millisecond
+		}
 		if splitOffset+splitRangeInterval > rangeInterval {
 			splitRangeInterval = rangeInterval - splitOffset
 		}
@@ -350,7 +377,7 @@ func (i *instantSplitter) splitAndSquashCall(expr *parser.Call, stats *MapperSta
 	}
 
 	// Update stats
-	stats.AddShardedQueries(splitCount)
+	i.stats.AddSplitQueries(splitCount)
 
 	return squashExpr, true, nil
 }
@@ -382,15 +409,13 @@ func getRangeIntervals(expr parser.Expr) []time.Duration {
 	ranges := make([]time.Duration, 0, 1)
 
 	// Ignore the error since we never return it.
-	_, _ = anyNode(expr, func(entry parser.Node) (bool, error) {
+	visitNode(expr, func(entry parser.Node) {
 		switch e := entry.(type) {
 		case *parser.MatrixSelector:
 			ranges = append(ranges, e.Range)
 		case *parser.SubqueryExpr:
 			ranges = append(ranges, e.Range)
 		}
-
-		return false, nil
 	})
 
 	return ranges
@@ -417,15 +442,13 @@ func getOffsets(expr parser.Expr) []time.Duration {
 	offsets := make([]time.Duration, 0, 1)
 
 	// Ignore the error since we never return it.
-	_, _ = anyNode(expr, func(entry parser.Node) (bool, error) {
+	visitNode(expr, func(entry parser.Node) {
 		switch e := entry.(type) {
 		case *parser.VectorSelector:
 			offsets = append(offsets, e.OriginalOffset)
 		case *parser.SubqueryExpr:
 			offsets = append(offsets, e.OriginalOffset)
 		}
-
-		return false, nil
 	})
 
 	return offsets
@@ -473,12 +496,11 @@ func updateRangeInterval(expr parser.Expr, rangeInterval time.Duration) error {
 	updates := 0
 
 	// Ignore the error since we never return it.
-	_, _ = anyNode(expr, func(entry parser.Node) (bool, error) {
+	visitNode(expr, func(entry parser.Node) {
 		if matrix, ok := entry.(*parser.MatrixSelector); ok {
 			matrix.Range = rangeInterval
 			updates++
 		}
-		return false, nil
 	})
 
 	if updates == 0 {
@@ -496,12 +518,11 @@ func updateOffset(expr parser.Expr, offset time.Duration) error {
 	updates := 0
 
 	// Ignore the error since we never return it.
-	_, _ = anyNode(expr, func(entry parser.Node) (bool, error) {
+	visitNode(expr, func(entry parser.Node) {
 		if vector, ok := entry.(*parser.VectorSelector); ok {
 			vector.OriginalOffset = offset
 			updates++
 		}
-		return false, nil
 	})
 
 	if updates == 0 {

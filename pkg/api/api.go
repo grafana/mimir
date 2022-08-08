@@ -33,7 +33,6 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/purger"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/scheduler"
@@ -61,6 +60,8 @@ type Config struct {
 
 	// This allows downstream projects to wrap the distributor push function
 	// and access the deserialized write requests before/after they are pushed.
+	// This function will only receive samples that don't get forwarded to an
+	// alternative remote_write endpoint by the distributor's forwarding feature.
 	DistributorPushWrapper DistributorPushWrapper `yaml:"-"`
 
 	// The CustomConfigHandler allows for providing a different handler for the
@@ -239,7 +240,7 @@ func (a *API) RegisterRuntimeConfig(runtimeConfigHandler http.HandlerFunc) {
 func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distributor.Config) {
 	distributorpb.RegisterDistributorServer(a.server.GRPC, d)
 
-	wrappedDistributor := a.cfg.wrapDistributorPush(d)
+	wrappedDistributor := d.PrePushForwardingMiddleware(a.cfg.wrapDistributorPush(d))
 
 	a.RegisterRoute("/api/v1/push", push.Handler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, wrappedDistributor), true, false, "POST")
 	a.RegisterRoute("/otlp/v1/metrics", push.OTLPHandler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, wrappedDistributor), true, false, "POST")
@@ -276,11 +277,6 @@ func (a *API) RegisterIngester(i Ingester, pushConfig distributor.Config) {
 	a.RegisterRoute("/ingester/flush", http.HandlerFunc(i.FlushHandler), false, true, "GET", "POST")
 	a.RegisterRoute("/ingester/shutdown", http.HandlerFunc(i.ShutdownHandler), false, true, "GET", "POST")
 	a.RegisterRoute("/ingester/push", push.Handler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, i.PushWithCleanup), true, false, "POST") // For testing and debugging.
-}
-
-func (a *API) RegisterTenantDeletion(api *purger.TenantDeletionAPI) {
-	a.RegisterRoute("/purger/delete_tenant", http.HandlerFunc(api.DeleteTenant), true, true, "POST")
-	a.RegisterRoute("/purger/delete_tenant_status", http.HandlerFunc(api.DeleteTenantStatus), true, true, "GET")
 }
 
 // RegisterRuler registers routes associated with the Ruler service.
@@ -349,6 +345,8 @@ func (a *API) RegisterCompactor(c *compactor.MultitenantCompactor) {
 	a.RegisterRoute("/api/v1/upload/block/{block}/files", http.HandlerFunc(c.UploadBlockFile), true, false, http.MethodPost)
 	a.RegisterRoute("/api/v1/upload/block/{block}/finish", http.HandlerFunc(c.FinishBlockUpload), true, false, http.MethodPost)
 	a.RegisterRoute("/api/v1/upload/block/{block}/check", http.HandlerFunc(c.GetBlockUploadStateHandler), true, false, http.MethodGet)
+	a.RegisterRoute("/compactor/delete_tenant", http.HandlerFunc(c.DeleteTenant), true, true, "POST")
+	a.RegisterRoute("/compactor/delete_tenant_status", http.HandlerFunc(c.DeleteTenantStatus), true, true, "GET")
 }
 
 type Distributor interface {

@@ -21,7 +21,7 @@ func newSubtreeFolder() ASTMapper {
 }
 
 // MapExpr implements ExprMapper.
-func (f *subtreeFolder) MapExpr(expr parser.Expr, _ *MapperStats) (mapped parser.Expr, finished bool, err error) {
+func (f *subtreeFolder) MapExpr(expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
 	hasEmbeddedQueries, err := anyNode(expr, hasEmbeddedQueries)
 	if err != nil {
 		return nil, true, err
@@ -73,6 +73,14 @@ func anyNode(node parser.Node, fn predicate) (bool, error) {
 		return false, err
 	}
 	return v.result, nil
+}
+
+// visitNode recursively traverse the node's subtree and call fn for each node encountered.
+func visitNode(node parser.Node, fn func(node parser.Node)) {
+	_ = parser.Walk(&visitor{fn: func(node parser.Node) (bool, error) {
+		fn(node)
+		return false, nil
+	}}, node, nil)
 }
 
 type predicate = func(parser.Node) (bool, error)

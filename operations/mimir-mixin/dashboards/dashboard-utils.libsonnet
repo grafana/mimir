@@ -86,7 +86,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           if $._config.singleBinary
           then d.addTemplate('job', 'cortex_build_info', 'job')
           else d
-               .addTemplate('cluster', 'cortex_build_info', '%s' % $._config.per_cluster_label)
+               .addTemplate('cluster', 'cortex_build_info', '%s' % $._config.per_cluster_label, allValue='.*', includeAll=true)
                .addTemplate('namespace', 'cortex_build_info{%s=~"$cluster"}' % $._config.per_cluster_label, 'namespace'),
 
       addActiveUserSelectorTemplates()::

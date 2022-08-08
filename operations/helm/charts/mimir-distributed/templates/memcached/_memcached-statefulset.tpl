@@ -118,6 +118,8 @@ spec:
             - "--web.listen-address=0.0.0.0:9150"
           resources:
             {{- toYaml $.ctx.Values.memcachedExporter.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml $.ctx.Values.memcachedExporter.containerSecurityContext | nindent 12 }}
       {{- end }}
 {{- end -}}
 {{- end -}}

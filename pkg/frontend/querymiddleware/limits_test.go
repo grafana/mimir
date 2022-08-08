@@ -196,13 +196,14 @@ func TestLimitsMiddleware_MaxQueryLength(t *testing.T) {
 }
 
 type mockLimits struct {
-	maxQueryLookback    time.Duration
-	maxQueryLength      time.Duration
-	maxCacheFreshness   time.Duration
-	maxQueryParallelism int
-	maxShardedQueries   int
-	totalShards         int
-	compactorShards     int
+	maxQueryLookback            time.Duration
+	maxQueryLength              time.Duration
+	maxCacheFreshness           time.Duration
+	maxQueryParallelism         int
+	maxShardedQueries           int
+	splitInstantQueriesInterval time.Duration
+	totalShards                 int
+	compactorShards             int
 }
 
 func (m mockLimits) MaxQueryLookback(string) time.Duration {
@@ -230,6 +231,10 @@ func (m mockLimits) QueryShardingTotalShards(string) int {
 
 func (m mockLimits) QueryShardingMaxShardedQueries(string) int {
 	return m.maxShardedQueries
+}
+
+func (m mockLimits) SplitInstantQueriesByInterval(string) time.Duration {
+	return m.splitInstantQueriesInterval
 }
 
 func (m mockLimits) CompactorSplitAndMergeShards(userID string) int {

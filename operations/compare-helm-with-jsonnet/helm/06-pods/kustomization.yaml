@@ -39,6 +39,14 @@ patches:
       - op: remove
         path: /spec/template/spec/volumes/1
 
+  # Helm sets a security context on memcached containers
+  - target:
+      kind: 'StatefulSet'
+      name: 'mimir-.+-cache'
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/containers/1/securityContext
+
   # Minor Difference: Helm names the overrides volume slightly differently
   - target:
       name: mimir-(distributor|query-frontend|overrides-exporter|ruler|querier|alertmanager|ingester|store-gateway|compactor)

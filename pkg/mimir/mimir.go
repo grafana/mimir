@@ -57,6 +57,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway"
+	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -115,6 +116,7 @@ type Config struct {
 	RuntimeConfig       runtimeconfig.Config                       `yaml:"runtime_config"`
 	MemberlistKV        memberlist.KVConfig                        `yaml:"memberlist"`
 	QueryScheduler      scheduler.Config                           `yaml:"query_scheduler"`
+	UsageStats          usagestats.Config                          `yaml:"usage_stats"`
 
 	Common CommonConfig `yaml:"common"`
 }
@@ -160,6 +162,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.MemberlistKV.RegisterFlags(f)
 	c.ActivityTracker.RegisterFlags(f)
 	c.QueryScheduler.RegisterFlags(f)
+	c.UsageStats.RegisterFlags(f)
 
 	c.Common.RegisterFlags(f)
 }
@@ -477,6 +480,7 @@ type Mimir struct {
 	StoreGateway             *storegateway.StoreGateway
 	MemberlistKV             *memberlist.KVInitService
 	ActivityTracker          *activitytracker.ActivityTracker
+	UsageStatsReporter       *usagestats.Reporter
 	BuildInfoHandler         http.Handler
 
 	// Queryables that the querier should use to query the long term storage.
@@ -540,6 +544,9 @@ func (t *Mimir) Run() error {
 	} else {
 		level.Warn(util_log.Logger).Log("msg", "skipped registration of custom process metrics collector", "err", err)
 	}
+
+	// Update the usage stats before we initialize modules.
+	usagestats.SetTarget(t.Cfg.Target.String())
 
 	for _, module := range t.Cfg.Target {
 		if !t.ModuleManager.IsUserVisibleModule(module) {

@@ -1368,6 +1368,17 @@
             },
             {
               "kind": "field",
+              "name": "request_concurrency",
+              "required": false,
+              "desc": "Maximum concurrency at which forwarding requests get performed.",
+              "fieldValue": null,
+              "fieldDefaultValue": 10,
+              "fieldFlag": "distributor.forwarding.request-concurrency",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "request_timeout",
               "required": false,
               "desc": "Timeout for requests to ingestion endpoints to which we forward metrics.",
@@ -2817,6 +2828,17 @@
         },
         {
           "kind": "field",
+          "name": "split_instant_queries_by_interval",
+          "required": false,
+          "desc": "Split instant queries by an interval and execute in parallel. 0 to disable it.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "query-frontend.split-instant-queries-by-interval",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "cardinality_analysis_enabled",
           "required": false,
           "desc": "Enables endpoints used for cardinality analysis.",
@@ -3652,17 +3674,6 @@
           "fieldFlag": "query-frontend.split-queries-by-interval",
           "fieldType": "duration",
           "fieldCategory": "advanced"
-        },
-        {
-          "kind": "field",
-          "name": "split_instant_queries_by_interval",
-          "required": false,
-          "desc": "Split instant queries by an interval and execute in parallel. 0 to disable it.",
-          "fieldValue": null,
-          "fieldDefaultValue": 0,
-          "fieldFlag": "query-frontend.split-instant-queries-by-interval",
-          "fieldType": "duration",
-          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
@@ -10228,6 +10239,27 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        }
+      ],
+      "fieldValue": null,
+      "fieldDefaultValue": null
+    },
+    {
+      "kind": "block",
+      "name": "usage_stats",
+      "required": false,
+      "desc": "",
+      "blockEntries": [
+        {
+          "kind": "field",
+          "name": "enabled",
+          "required": false,
+          "desc": "Enable anonymous usage reporting.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "usage-stats.enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,

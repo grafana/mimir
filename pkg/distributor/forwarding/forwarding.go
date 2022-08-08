@@ -4,7 +4,6 @@ package forwarding
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"io"
 	"io/ioutil"
@@ -13,8 +12,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -25,61 +27,39 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-var errBadEndpointConfiguration = errors.New("bad endpoint configuration")
-
 type Forwarder interface {
-	NewRequest(ctx context.Context, tenant string, rules validation.ForwardingRules) Request
-}
-
-type Request interface {
-	// Add adds a timeseries to the forwarding request.
-	// Samples which don't match any forwarding rule won't be added to the request.
-	// It returns a bool which indicates whether this timeseries should be sent to the Ingesters.
-	// A timeseries should be sent to the Ingester if any of the following conditions are true:
-	// - It has a labelset without a metric name, hence it can't match a forwarding rule.
-	// - There is no matching forwarding rule for the metric name of the timeseries.
-	// - There is a forwarding rule which defines that this metric should be forwarded and also pushed to the Ingesters.
-	Add(sample mimirpb.PreallocTimeseries) bool
-
-	// Send sends the timeseries which have been added to this forwarding request to the according endpoints.
-	// All errors returned via the returned error chan are http grpc errors.
-	// Send should only be called once, after it has been called this forwardingRequest must not be used anymore.
-	Send(ctx context.Context) <-chan error
-}
-
-// pools is the collection of pools which the forwarding uses when building remote_write requests.
-// Even though protobuf and snappy are both pools of []byte we keep them separate because the slices
-// which they contain are likely to have very different sizes.
-type pools struct {
-	timeseries sync.Pool
-	protobuf   sync.Pool
-	snappy     sync.Pool
+	services.Service
+	Forward(ctx context.Context, forwardingRules validation.ForwardingRules, ts []mimirpb.PreallocTimeseries) (TimeseriesCounts, []mimirpb.PreallocTimeseries, chan error)
 }
 
 type forwarder struct {
-	cfg    Config
-	pools  pools
-	client http.Client
+	services.Service
+
+	cfg      Config
+	pools    *pools
+	client   http.Client
+	log      log.Logger
+	workerWg sync.WaitGroup
+	reqCh    chan *request
 
 	requestsTotal           prometheus.Counter
 	errorsTotal             *prometheus.CounterVec
 	samplesTotal            prometheus.Counter
+	exemplarsTotal          prometheus.Counter
 	requestLatencyHistogram prometheus.Histogram
 }
 
 // NewForwarder returns a new forwarder, if forwarding is disabled it returns nil.
-func NewForwarder(reg prometheus.Registerer, cfg Config) Forwarder {
+func NewForwarder(cfg Config, reg prometheus.Registerer, log log.Logger) Forwarder {
 	if !cfg.Enabled {
 		return nil
 	}
 
-	return &forwarder{
-		cfg: cfg,
-		pools: pools{
-			timeseries: sync.Pool{New: func() interface{} { return &[]mimirpb.PreallocTimeseries{} }},
-			protobuf:   sync.Pool{New: func() interface{} { return &[]byte{} }},
-			snappy:     sync.Pool{New: func() interface{} { return &[]byte{} }},
-		},
+	f := &forwarder{
+		cfg:   cfg,
+		pools: newPools(),
+		log:   log,
+		reqCh: make(chan *request, cfg.RequestConcurrency),
 
 		requestsTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Namespace: "cortex",
@@ -96,6 +76,11 @@ func NewForwarder(reg prometheus.Registerer, cfg Config) Forwarder {
 			Name:      "distributor_forward_samples_total",
 			Help:      "The total number of samples the Distributor forwarded.",
 		}),
+		exemplarsTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Namespace: "cortex",
+			Name:      "distributor_forward_exemplars_total",
+			Help:      "The total number of exemplars the Distributor forwarded.",
+		}),
 		requestLatencyHistogram: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Namespace: "cortex",
 			Name:      "distributor_forward_requests_latency_seconds",
@@ -103,178 +88,275 @@ func NewForwarder(reg prometheus.Registerer, cfg Config) Forwarder {
 			Buckets:   []float64{.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10, 20, 30},
 		}),
 	}
+
+	f.Service = services.NewIdleService(f.start, f.stop)
+
+	return f
 }
 
-func (r *forwarder) NewRequest(ctx context.Context, tenant string, rules validation.ForwardingRules) Request {
-	return &request{
-		ctx:    ctx,
-		client: &r.client, // http client should be re-used so open connections get re-used.
-		pools:  &r.pools,
+func (f *forwarder) start(ctx context.Context) error {
+	f.workerWg.Add(f.cfg.RequestConcurrency)
 
-		tsByEndpoint: make(map[string]*[]mimirpb.PreallocTimeseries),
+	for i := 0; i < f.cfg.RequestConcurrency; i++ {
+		go f.worker()
+	}
 
-		rules:           rules,
-		timeout:         r.cfg.RequestTimeout,
-		propagateErrors: r.cfg.PropagateErrors,
+	return nil
+}
 
-		requests: r.requestsTotal,
-		errors:   r.errorsTotal,
-		samples:  r.samplesTotal,
-		latency:  r.requestLatencyHistogram,
+func (f *forwarder) stop(_ error) error {
+	close(f.reqCh)
+	f.workerWg.Wait()
+	return nil
+}
+
+// worker is a worker go routine which performs the forwarding requests that it receives through a channel.
+func (f *forwarder) worker() {
+	defer f.workerWg.Done()
+
+	for req := range f.reqCh {
+		req.do()
 	}
 }
 
-type request struct {
-	ctx    context.Context
-	client *http.Client
-	pools  *pools
-
-	tsByEndpoint map[string]*[]mimirpb.PreallocTimeseries
-
-	// The rules which define:
-	// - which metrics get forwarded
-	// - where the metrics get forwarded to
-	// - whether the forwarded metrics should also be ingested (sent to ingesters)
-	rules           validation.ForwardingRules
-	timeout         time.Duration
-	propagateErrors bool
-
-	requests prometheus.Counter
-	errors   *prometheus.CounterVec
-	samples  prometheus.Counter
-	latency  prometheus.Histogram
-}
-
-func (r *request) Add(sample mimirpb.PreallocTimeseries) bool {
-	metric, err := extract.UnsafeMetricNameFromLabelAdapters(sample.Labels)
-	if err != nil {
-		// The only possible error is due to no metric name being defined, in which case we won't forward the sample
-		// to anywhere but we should still send it to the Ingesters.
-		return true
-	}
-
-	rule, ok := r.rules[metric]
-	if !ok {
-		// There is no forwarding rule for this metric, send it to the Ingesters.
-		return true
-	}
-	r.samples.Add(float64(len(sample.Samples)))
-
-	ts, ok := r.tsByEndpoint[rule.Endpoint]
-	if !ok {
-		ts = r.pools.timeseries.Get().(*[]mimirpb.PreallocTimeseries)
-		r.requests.Inc()
-	}
-
-	*ts = append(*ts, sample)
-	r.tsByEndpoint[rule.Endpoint] = ts
-
-	return rule.Ingest
-}
-
-type recoverableError struct {
-	error
-}
-
-func (r *request) Send(ctx context.Context) <-chan error {
-	errCh := make(chan error, 1)
-
-	// Early return if there's no data to send.
-	if len(r.tsByEndpoint) == 0 {
+// Forward takes a set of forwarding rules and a slice of time series, it forwards the time series according to the rules.
+// This function may return before the forwarding requests have completed, the caller can use the returned chan of errors
+// to determine whether all forwarding requests have completed by checking if it is closed.
+// The forwarding requests get executed with a limited concurrency which is configurable, in a situation where the
+// concurrency limit is exhausted this function will block until a go routine is available to execute the requests.
+// The slice of time series which gets passed into this function must not be returned to the pool by the caller, the
+// returned slice of time series must be returned to the pool by the caller once it is done using it.
+//
+// The return values are:
+// - A TimeSeriesCounts object containing the sample / exemplar counts that were removed from the
+//   given time series slice relative to the returned slice.
+// - A slice of time series which should be sent to the ingesters, based on the given rule set.
+//   The Forward() method does not send the time series to the ingesters itself, it expects the caller to do that.
+// - A chan of errors which resulted from forwarding the time series, the chan gets closed when all forwarding requests have completed.
+func (f *forwarder) Forward(ctx context.Context, rules validation.ForwardingRules, in []mimirpb.PreallocTimeseries) (TimeseriesCounts, []mimirpb.PreallocTimeseries, chan error) {
+	if !f.cfg.Enabled {
+		errCh := make(chan error)
 		close(errCh)
-		return errCh
+		return TimeseriesCounts{}, in, errCh
 	}
 
-	returnErr := func(err error) {
-		if !r.propagateErrors {
-			return
-		}
-		errCh <- err
-	}
+	notIngestedCounts, toIngest, tsByTargets := f.splitByTargets(in, rules)
+	defer f.pools.putTsByTargets(tsByTargets)
 
-	var wg sync.WaitGroup
-	wg.Add(len(r.tsByEndpoint))
-
-	// Can't use concurrency.ForEachJob because we don't want to cancel the other jobs if one errors.
-	errorsByEndpoint := make(map[string]error, len(r.tsByEndpoint))
-	var errorsMtx sync.Mutex
-	for endpoint, ts := range r.tsByEndpoint {
-		go func(endpoint string, ts []mimirpb.PreallocTimeseries) {
-			defer wg.Done()
-
-			errorsMtx.Lock()
-			defer errorsMtx.Unlock()
-			errorsByEndpoint[endpoint] = r.sendToEndpoint(ctx, endpoint, ts)
-		}(endpoint, *ts)
+	var requestWg sync.WaitGroup
+	requestWg.Add(len(tsByTargets))
+	errCh := make(chan error, len(tsByTargets))
+	for endpoint, ts := range tsByTargets {
+		f.submitForwardingRequest(ctx, endpoint, ts, &requestWg, errCh)
 	}
 
 	go func() {
-		defer r.cleanup()
-		defer close(errCh)
-
-		wg.Wait()
-
-		var nonRecoverable error
-		// No need to get errorsMtx because we already waited for all routines which might modify it to end.
-		for endpoint, err := range errorsByEndpoint {
-			if err == nil {
-				continue
-			}
-
-			if errors.As(err, &recoverableError{}) {
-				// If there is at least one recoverable error we want to return the recoverable error.
-				returnErr(httpgrpc.Errorf(http.StatusInternalServerError, "endpoint %s: %s", endpoint, err.Error()))
-				return
-			}
-
-			nonRecoverable = httpgrpc.Errorf(http.StatusBadRequest, "endpoint %s: %s", endpoint, err.Error())
-		}
-
-		if nonRecoverable != nil {
-			returnErr(nonRecoverable)
-		}
+		// Waiting for the requestWg in a go routine allows Forward() to return early, that way the call site can
+		// continue doing whatever it needs to do and read the returned errCh later to wait for the forwarding requests
+		// to complete and handle potential errors yielded by the forwarding requests.
+		requestWg.Wait()
+		close(errCh)
 	}()
 
-	return errCh
+	return notIngestedCounts, toIngest, errCh
 }
 
-// sendToEndpoint sends the given timeseries to the given endpoint.
-// All returned errors which are recoverable are of the type recoverableError.
-func (r *request) sendToEndpoint(ctx context.Context, endpoint string, ts []mimirpb.PreallocTimeseries) error {
-	protoBufBytes := (*r.pools.protobuf.Get().(*[]byte))[:0]
-	protoBuf := proto.NewBuffer(protoBufBytes)
-	err := protoBuf.Marshal(&mimirpb.WriteRequest{Timeseries: ts})
-	if err != nil {
-		return err
+type tsWithSampleCount struct {
+	ts     []mimirpb.PreallocTimeseries
+	counts TimeseriesCounts
+}
+
+type tsByTargets map[string]tsWithSampleCount
+
+// copyToTarget copies the given time series into the given target and does the necessary accounting.
+// The time series is deep-copied, so the passed in time series can be returned to the pool without affecting the copy.
+func (t tsByTargets) copyToTarget(target string, ts mimirpb.PreallocTimeseries, pool *pools) {
+	tsByTarget, ok := t[target]
+	if !ok {
+		tsByTarget.ts = pool.getTsSlice()
 	}
+
+	tsIdx := len(tsByTarget.ts)
+	tsByTarget.ts = append(tsByTarget.ts, mimirpb.PreallocTimeseries{TimeSeries: pool.getTs()})
+
+	tsByTarget.ts[tsIdx] = mimirpb.DeepCopyTimeseries(tsByTarget.ts[tsIdx], ts)
+	tsByTarget.counts.count(tsByTarget.ts[tsIdx])
+
+	t[target] = tsByTarget
+}
+
+type TimeseriesCounts struct {
+	SampleCount   int
+	ExemplarCount int
+}
+
+func (t *TimeseriesCounts) count(ts mimirpb.PreallocTimeseries) {
+	t.SampleCount += len(ts.TimeSeries.Samples)
+	t.ExemplarCount += len(ts.TimeSeries.Exemplars)
+}
+
+// splitByTargets takes a slice of time series and a set of forwarding rules, then it divides the given time series by
+// the target to which each of them should be forwarded according to the forwarding rules.
+// It returns the following values:
+//
+// - The counts of samples and exemplars that will not be ingested by the ingesters.
+// - A slice of time series to ingest into the ingesters.
+// - A map of slices of time series which is keyed by the target to which they should be forwarded.
+func (f *forwarder) splitByTargets(tsSliceIn []mimirpb.PreallocTimeseries, rules validation.ForwardingRules) (TimeseriesCounts, []mimirpb.PreallocTimeseries, tsByTargets) {
+	// This functions copies all the entries of tsSliceIn into new slices so tsSliceIn can be recycled,
+	// we adjust the length of the slice to 0 to prevent that the contained *mimirpb.TimeSeries objects that have been
+	// reassigned (not deep copied) get returned while they are still referred to by another slice.
+	defer f.pools.putTsSlice(tsSliceIn[:0])
+
+	// notIngestedCounts keeps track of the number of samples and exemplars that we don't send to the ingesters,
+	// we need to count these in order to later update some of the distributor's metrics correctly.
+	var notIngestedCounts TimeseriesCounts
+
+	tsToIngest := f.pools.getTsSlice()
+	tsByTargets := f.pools.getTsByTargets()
+	for _, ts := range tsSliceIn {
+		forwardingTarget, ingest := findTargetForLabels(ts.Labels, rules)
+		if forwardingTarget != "" {
+			tsByTargets.copyToTarget(forwardingTarget, ts, f.pools)
+		}
+
+		if ingest {
+			// Only when reassigning time series to tsToIngest we don't deep copy them,
+			// the distributor will return them to the pool when it is done sending them to the ingesters.
+			tsToIngest = append(tsToIngest, ts)
+		} else {
+			notIngestedCounts.count(ts)
+
+			// This ts won't be returned to the distributor because it should not be ingested according to the rules,
+			// so we have to return it to the pool now to prevent that its reference gets lost.
+			f.pools.putTs(ts.TimeSeries)
+		}
+	}
+
+	return notIngestedCounts, tsToIngest, tsByTargets
+}
+
+func findTargetForLabels(labels []mimirpb.LabelAdapter, rules validation.ForwardingRules) (string, bool) {
+	metric, err := extract.UnsafeMetricNameFromLabelAdapters(labels)
+	if err != nil {
+		// Can't check whether a timeseries should be forwarded if it has no metric name.
+		// Ingest it and don't forward it.
+		return "", true
+	}
+
+	rule, ok := rules[metric]
+	if !ok {
+		// There is no forwarding rule for this metric, ingest it and don't forward it.
+		return "", true
+	}
+
+	return rule.Endpoint, rule.Ingest
+}
+
+type request struct {
+	pools  *pools
+	client *http.Client
+	log    log.Logger
+
+	ctx             context.Context
+	timeout         time.Duration
+	propagateErrors bool
+	errCh           chan error
+	requestWg       *sync.WaitGroup
+
+	endpoint string
+	ts       tsWithSampleCount
+
+	requests  prometheus.Counter
+	errors    *prometheus.CounterVec
+	samples   prometheus.Counter
+	exemplars prometheus.Counter
+	latency   prometheus.Histogram
+}
+
+// submitForwardingRequest launches a new forwarding request and sends it to a worker via a channel.
+// It might block if all the workers are busy.
+func (f *forwarder) submitForwardingRequest(ctx context.Context, endpoint string, ts tsWithSampleCount, requestWg *sync.WaitGroup, errCh chan error) {
+	req := f.pools.getReq()
+
+	req.pools = f.pools
+	req.client = &f.client // http client should be re-used so open connections get re-used.
+	req.log = f.log
+	req.ctx = ctx
+	req.timeout = f.cfg.RequestTimeout
+	req.propagateErrors = f.cfg.PropagateErrors
+	req.errCh = errCh
+	req.requestWg = requestWg
+
+	// Target endpoint and TimeSeries to forward.
+	req.endpoint = endpoint
+	req.ts = ts
+
+	// Metrics.
+	req.requests = f.requestsTotal
+	req.errors = f.errorsTotal
+	req.samples = f.samplesTotal
+	req.exemplars = f.exemplarsTotal
+	req.latency = f.requestLatencyHistogram
+
+	select {
+	case <-ctx.Done():
+	case f.reqCh <- req:
+	}
+}
+
+// do performs a forwarding request.
+func (r *request) do() {
+	defer r.cleanup()
+
+	protoBufBytesRef := r.pools.getProtobuf()
+	protoBufBytes := (*protoBufBytesRef)[:0]
+	defer func() {
+		*protoBufBytesRef = protoBufBytes // just in case we increased its capacity
+		r.pools.putProtobuf(protoBufBytesRef)
+	}()
+
+	protoBuf := proto.NewBuffer(protoBufBytes)
+	err := protoBuf.Marshal(&mimirpb.WriteRequest{Timeseries: r.ts.ts})
+	if err != nil {
+		r.handleError(http.StatusBadRequest, errors.Wrap(err, "failed to marshal write request for forwarding"))
+		return
+	}
+
+	snappyBuf := *r.pools.getSnappy()
+	defer r.pools.putSnappy(&snappyBuf)
+
 	protoBufBytes = protoBuf.Bytes()
-	defer r.pools.protobuf.Put(&protoBufBytes)
-
-	snappyBuf := *r.pools.snappy.Get().(*[]byte)
 	snappyBuf = snappy.Encode(snappyBuf[:cap(snappyBuf)], protoBufBytes)
-	defer r.pools.snappy.Put(&snappyBuf)
 
-	ctx, cancel := context.WithTimeout(ctx, r.timeout)
+	ctx, cancel := context.WithTimeout(r.ctx, r.timeout)
 	defer cancel()
 
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(snappyBuf))
+	bytesReader := r.pools.getBytesReader()
+	defer r.pools.putBytesReader(bytesReader)
+
+	bytesReader.Reset(snappyBuf)
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", r.endpoint, bytesReader)
 	if err != nil {
-		// Errors from NewRequest are from unparsable URLs being configured.
-		// Usually configuration errors should lead to recoverable errors (5xx), but this is an exception because we
-		// don't want that a misconfigured forwarding rule can stop ingestion completely, so we return a non-recoverable
-		// to make the client move on and not retry the request.
-		return errBadEndpointConfiguration
+		// Errors from NewRequest are from unparsable URLs being configured, so this is an internal server error.
+		r.handleError(http.StatusInternalServerError, errors.Wrap(err, "failed to create HTTP request for forwarding"))
+		return
 	}
 
 	httpReq.Header.Add("Content-Encoding", "snappy")
 	httpReq.Header.Set("Content-Type", "application/x-protobuf")
 
+	r.requests.Inc()
+	r.samples.Add(float64(r.ts.counts.SampleCount))
+	r.exemplars.Add(float64(r.ts.counts.ExemplarCount))
+
 	beforeTs := time.Now()
 	httpResp, err := r.client.Do(httpReq)
 	r.latency.Observe(time.Since(beforeTs).Seconds())
 	if err != nil {
-		// Errors from Client.Do are from (for example) network errors, so are recoverable.
-		return recoverableError{err}
+		// Errors from Client.Do are from (for example) network errors, so we want the client to retry.
+		r.handleError(http.StatusInternalServerError, errors.Wrap(err, "failed to send HTTP request for forwarding"))
+		return
 	}
 	defer func() {
 		io.Copy(ioutil.Discard, httpResp.Body)
@@ -290,20 +372,33 @@ func (r *request) sendToEndpoint(ctx context.Context, endpoint string, ts []mimi
 		r.errors.WithLabelValues(strconv.Itoa(httpResp.StatusCode)).Inc()
 		err := errors.Errorf("server returned HTTP status %s: %s", httpResp.Status, line)
 		if httpResp.StatusCode/100 == 5 || httpResp.StatusCode == http.StatusTooManyRequests {
-			return recoverableError{err}
+			// The forwarding endpoint has returned a retriable error, so we want the client to retry.
+			r.handleError(http.StatusInternalServerError, err)
+			return
 		}
-		return err
+		r.handleError(http.StatusBadRequest, err)
 	}
-
-	return nil
 }
 
-// cleanup must be called to return the used buffers to their pools after a request has completed.
-func (r *request) cleanup() {
-	for _, ts := range r.tsByEndpoint {
-		*ts = (*ts)[:0]
-		r.pools.timeseries.Put(ts)
+func (r *request) handleError(status int, err error) {
+	errMsg := err.Error()
+	level.Warn(r.log).Log("msg", "error in forwarding request", "err", errMsg)
+	if r.propagateErrors {
+		r.errCh <- httpgrpc.Errorf(status, errMsg)
 	}
+}
 
-	r.tsByEndpoint = nil
+func (r *request) cleanup() {
+	ts := r.ts.ts
+	r.pools.putTsSlice(ts)
+
+	// Ensure that we don't modify a request property after returning it to the pool by calling .Done() on the wg.
+	wg := r.requestWg
+	r.requestWg = nil
+
+	// Return request to the pool before calling wg.Done() because otherwise the tests can't wait for the request to
+	// be completely done in order to validate the pool usage.
+	r.pools.putReq(r)
+
+	wg.Done()
 }

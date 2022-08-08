@@ -16,6 +16,8 @@
 * [CHANGE] Compactor: changed `-compactor.max-compaction-time` default from `0s` (disabled) to `1h`. When compacting blocks for a tenant, the compactor will move to compact blocks of another tenant or re-plan blocks to compact at least every 1h. #2514
 * [CHANGE] Distributor: removed previously deprecated `extend_writes` (see #1856) YAML key and `-distributor.extend-writes` CLI flag from the distributor config. #2551
 * [CHANGE] Ingester: removed previously deprecated `active_series_custom_trackers` (see #1188) YAML key from the ingester config. #2552
+* [CHANGE] The tenant ID `__mimir_cluster` is reserved by Mimir and not allowed to store metrics. #2643
+* [CHANGE] Purger: removed the purger component and moved its API endpoints `/purger/delete_tenant` and `/purger/delete_tenant_status` to the compactor at `/compactor/delete_tenant` and `/compactor/delete_tenant_status`. #2644
 * [FEATURE] Compactor: Adds the ability to delete partial blocks after a configurable delay. This option can be configured per tenant. #2285
   - `-compactor.partial-block-deletion-delay`, as a duration string, allows you to set the delay since a partial block has been modified before marking it for deletion. A value of `0`, the default, disables this feature.
   - The metric `cortex_compactor_blocks_marked_for_deletion_total` has a new value for the `reason` label `reason="partial"`, when a block deletion marker is triggered by the partial block deletion delay.
@@ -45,6 +47,7 @@
 * [BUGFIX] Memberlist: Fix problem with ring being empty right after startup. Memberlist KV store now tries to "fast-join" the cluster to avoid serving empty KV store. #2505
 * [BUGFIX] Compactor: Fix bug when using `-compactor.partial-block-deletion-delay`: compactor didn't correctly check for modification time of all block files. #2559
 * [BUGFIX] Query-frontend: fix wrong query sharding results for queries with boolean result like `1 < bool 0`. #2558
+* [BUGFIX] Fixed error messages related to per-instance limits incorrectly reporting they can be set on a per-tenant basis. #2610
 
 ### Mixin
 
@@ -53,6 +56,7 @@
 * [ENHANCEMENT] Dashboards: added missed rule evaluations to the "Evaluations per second" panel in the "Mimir / Ruler" dashboard. #2314
 * [ENHANCEMENT] Dashboards: add k8s resource requests to CPU and memory panels. #2346
 * [ENHANCEMENT] Dashboards: add RSS memory utilization panel for ingesters, store-gateways and compactors. #2479
+* [ENHANCEMENT] Alerts: MimirFrontendQueriesStuck and MimirSchedulerQueriesStuck alerts are more reliable now as they consider all the intermediate samples in the minute prior to the evaluation. #2630
 * [BUGFIX] Dashboards: fixed unit of latency panels in the "Mimir / Ruler" dashboard. #2312
 * [BUGFIX] Dashboards: fixed "Intervals per query" panel in the "Mimir / Queries" dashboard. #2308
 * [BUGFIX] Dashboards: Make "Slow Queries" dashboard works with Grafana 9.0. #2223
@@ -84,6 +88,7 @@
 
 * [ENHANCEMENT] Added `mimirtool backfill` command to upload Prometheus blocks using API available in the compactor. #1822
 * [ENHANCEMENT] mimirtool bucket-validation: Verify existing objects can be overwritten by subsequent uploads. #2491
+* [ENHANCEMENT] mimirtool config convert: Now supports migrating to the current version of Mimir. #2629
 * [BUGFIX] mimirtool analyze: Fix dashboard JSON unmarshalling errors by using custom parsing. #2386
 
 ### Mimir Continuous Test

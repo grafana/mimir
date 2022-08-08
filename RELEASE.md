@@ -218,7 +218,6 @@ Either:
 
 1. To make a release you have to merge a version bump to the Helm chart to a branch that allows Helm release (e.g. main, release-x.y), see current list in [helm-release.yaml](https://github.com/grafana/mimir/blob/main/.github/workflows/helm-release.yaml) github action.
 
-   1. Open a PR
    1. Set the image versions in [values.yaml](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/values.yaml) as needed. See values:
       - `image.tag` (Mimir)
       - `enterprise.image.tag` (GEM)
@@ -226,6 +225,7 @@ Either:
    1. For final versions, update the [Helm changelog](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/CHANGELOG.md)
    1. Set the version in the Helm [Chart.yaml](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/Chart.yaml)
    1. Run `make doc`, to update [README.md](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/README.md) from its template
+   1. Open a PR
    1. Merge the PR after review
 
    The release process checks and creates a git tag formatted as mimir-distributed-_version_ (e.g. mimir-distributed-3.1.0-weekly.196) on the merge commit. The release process fails if the tag already exists to prevent releasing the same version with different content. The release is published in the [Grafana helm-charts](https://grafana.github.io/helm-charts/) Helm repository.

@@ -260,20 +260,6 @@ func NewRuler(name string, consulAddress string, flags map[string]string, option
 	)
 }
 
-func NewPurger(name string, flags map[string]string, options ...Option) *MimirService {
-	return newMimirServiceFromOptions(
-		name,
-		map[string]string{
-			"-target":                   "purger",
-			"-log.level":                "warn",
-			"-purger.object-store-type": "filesystem",
-			"-local.chunk-directory":    e2e.ContainerSharedDir,
-		},
-		flags,
-		options...,
-	)
-}
-
 // Options holds a set of options for running services, they can be altered passing Option funcs.
 type Options struct {
 	Image      string

@@ -34,6 +34,7 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/cache"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -112,7 +113,8 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 	// Execute a query range request.
 	req, err := http.NewRequest("GET", queryURL, http.NoBody)
 	require.NoError(t, err)
-	req = req.WithContext(user.InjectOrgID(context.Background(), "user-1"))
+	_, ctx := stats.ContextWithEmptyStats(context.Background())
+	req = req.WithContext(user.InjectOrgID(ctx, "user-1"))
 
 	resp, err := roundtripper.RoundTrip(req)
 	require.NoError(t, err)
@@ -123,11 +125,16 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 	require.Equal(t, expectedResponse, string(actualBody))
 	require.Equal(t, int32(2), actualCount.Load())
 
+	// Assert metrics
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_frontend_split_queries_total Total number of underlying query requests after the split by interval is applied
 		# TYPE cortex_frontend_split_queries_total counter
 		cortex_frontend_split_queries_total 2
 	`)))
+
+	// Assert query stats from context
+	queryStats := stats.FromContext(ctx)
+	assert.Equal(t, uint32(2), queryStats.LoadSplitQueries())
 }
 
 func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
@@ -181,12 +188,17 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 		Query: `{__name__=~".+"}`,
 	})
 
-	ctx := user.InjectOrgID(context.Background(), "1")
+	_, ctx := stats.ContextWithEmptyStats(context.Background())
+	ctx = user.InjectOrgID(ctx, "1")
 	resp, err := rc.Do(ctx, req)
 	require.NoError(t, err)
+
 	require.Equal(t, 1, downstreamReqs)
 	require.Equal(t, expectedResponse, resp)
 	assert.Equal(t, 1, cacheBackend.CountStoreCalls())
+	// Assert query stats from context
+	queryStats := stats.FromContext(ctx)
+	assert.Equal(t, uint32(1), queryStats.LoadSplitQueries())
 
 	// Doing same request again shouldn't change anything.
 	resp, err = rc.Do(ctx, req)
@@ -194,6 +206,9 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 	require.Equal(t, 1, downstreamReqs)
 	require.Equal(t, expectedResponse, resp)
 	assert.Equal(t, 1, cacheBackend.CountStoreCalls())
+	// Assert query stats from context
+	queryStats = stats.FromContext(ctx)
+	assert.Equal(t, uint32(1), queryStats.LoadSplitQueries())
 
 	// Doing request with new end time should do one more query.
 	req = req.WithStartEnd(req.GetStart(), req.GetEnd()+step)
@@ -201,6 +216,9 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 2, downstreamReqs)
 	assert.Equal(t, 2, cacheBackend.CountStoreCalls())
+	// Assert query stats from context
+	queryStats = stats.FromContext(ctx)
+	assert.Equal(t, uint32(2), queryStats.LoadSplitQueries())
 }
 
 func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAligned(t *testing.T) {
@@ -253,15 +271,20 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 		Query: `{__name__=~".+"}`,
 	})
 
-	ctx := user.InjectOrgID(context.Background(), "1")
+	_, ctx := stats.ContextWithEmptyStats(context.Background())
+	ctx = user.InjectOrgID(ctx, "1")
 	resp, err := rc.Do(ctx, req)
 	require.NoError(t, err)
+
 	require.Equal(t, 1, downstreamReqs)
 	require.Equal(t, expectedResponse, resp)
 
 	// Should not touch the cache at all.
 	assert.Equal(t, 0, cacheBackend.CountFetchCalls())
 	assert.Equal(t, 0, cacheBackend.CountStoreCalls())
+	// Assert query stats from context
+	queryStats := stats.FromContext(ctx)
+	assert.Equal(t, uint32(1), queryStats.LoadSplitQueries())
 }
 
 func TestSplitAndCacheMiddleware_ResultsCache_EnabledCachingOfStepUnalignedRequest(t *testing.T) {
@@ -314,15 +337,20 @@ func TestSplitAndCacheMiddleware_ResultsCache_EnabledCachingOfStepUnalignedReque
 		Query: `{__name__=~".+"}`,
 	})
 
-	ctx := user.InjectOrgID(context.Background(), "1")
+	_, ctx := stats.ContextWithEmptyStats(context.Background())
+	ctx = user.InjectOrgID(ctx, "1")
 	resp, err := rc.Do(ctx, req)
 	require.NoError(t, err)
+
 	require.Equal(t, 1, downstreamReqs)
 	require.Equal(t, expectedResponse, resp)
 
 	// Since we're caching unaligned requests, we should see that.
 	assert.Equal(t, 1, cacheBackend.CountFetchCalls())
 	assert.Equal(t, 1, cacheBackend.CountStoreCalls())
+	// Assert query stats from context
+	queryStats := stats.FromContext(ctx)
+	assert.Equal(t, uint32(1), queryStats.LoadSplitQueries())
 
 	// Doing the same request reuses cached result.
 	resp, err = rc.Do(ctx, req)
@@ -331,6 +359,9 @@ func TestSplitAndCacheMiddleware_ResultsCache_EnabledCachingOfStepUnalignedReque
 	require.Equal(t, expectedResponse, resp)
 	assert.Equal(t, 2, cacheBackend.CountFetchCalls())
 	assert.Equal(t, 1, cacheBackend.CountStoreCalls())
+	// Assert query stats from context
+	queryStats = stats.FromContext(ctx)
+	assert.Equal(t, uint32(1), queryStats.LoadSplitQueries())
 
 	// New request with slightly different Start time will not reuse the cached result.
 	req = req.WithStartEnd(parseTimeRFC3339(t, "2021-10-15T10:00:05Z").Unix()*1000, parseTimeRFC3339(t, "2021-10-15T12:00:05Z").Unix()*1000)
@@ -341,6 +372,9 @@ func TestSplitAndCacheMiddleware_ResultsCache_EnabledCachingOfStepUnalignedReque
 
 	assert.Equal(t, 3, cacheBackend.CountFetchCalls())
 	assert.Equal(t, 2, cacheBackend.CountStoreCalls())
+	// Assert query stats from context
+	queryStats = stats.FromContext(ctx)
+	assert.Equal(t, uint32(2), queryStats.LoadSplitQueries())
 }
 
 func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMaxCacheFreshness(t *testing.T) {

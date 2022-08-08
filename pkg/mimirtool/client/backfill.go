@@ -66,7 +66,7 @@ func (c *MimirClient) backfillBlock(blockDir string, logctx *logrus.Entry, sleep
 	blockID := blockMeta.ULID.String()
 	logctx = logctx.WithFields(logrus.Fields{"block": blockID})
 
-	logctx.WithField("file", "meta.json").Info("making request to start block upload")
+	logctx.WithField("file", block.MetaFilename).Info("making request to start block upload")
 
 	const (
 		endpointPrefix    = "/api/v1/upload/block"
@@ -187,7 +187,8 @@ func getBlockMeta(blockDir string) (metadata.Meta, error) {
 	}
 
 	if blockMeta.Version != 1 {
-		return blockMeta, errors.Errorf("only version 1 of meta.json is supported, found: %d", blockMeta.Version)
+		return blockMeta, errors.Errorf("only version 1 of %s is supported, found: %d",
+			block.MetaFilename, blockMeta.Version)
 	}
 
 	blockMeta.Thanos.Files = []metadata.File{

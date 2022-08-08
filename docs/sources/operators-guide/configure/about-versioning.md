@@ -54,7 +54,6 @@ The following features are currently experimental:
     - `-distributor.request-rate-limit`
     - `-distributor.request-burst-limit`
   - OTLP ingestion path
-- Purger: Tenant deletion API
 - Exemplar storage
   - `-ingester.max-global-exemplars-per-user`
   - `-ingester.exemplars-update-period`
@@ -96,6 +95,7 @@ The following features are currently experimental:
   - `-ruler-storage.storage-prefix`
 - Compactor
   - HTTP API for uploading TSDB blocks
+  - Tenant deletion API
 
 ## Deprecated features
 
