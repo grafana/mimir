@@ -87,6 +87,7 @@ func (i *instantSplitter) MapExpr(expr parser.Expr) (mapped parser.Expr, finishe
 	case *parser.Call:
 		if isSubqueryCall(e) {
 			// Subqueries are currently not supported by splitting, so we stop the mapping here.
+			i.stats.SetSkippedReason(SkippedReasonSubquery)
 			return e, true, nil
 		}
 
@@ -95,6 +96,7 @@ func (i *instantSplitter) MapExpr(expr parser.Expr) (mapped parser.Expr, finishe
 		return i.mapParenExpr(e)
 	case *parser.SubqueryExpr:
 		// Subqueries are currently not supported by splitting, so we stop the mapping here.
+		i.stats.SetSkippedReason(SkippedReasonSubquery)
 		return e, true, nil
 	default:
 		return e, false, nil
@@ -246,9 +248,10 @@ func (i *instantSplitter) mapCallRate(expr *parser.Call) (mapped parser.Expr, fi
 	// don't split it and don't map further nodes (finished=true).
 	rangeInterval, canSplit, err := i.assertSplittableRangeInterval(expr)
 	if err != nil {
-		return nil, true, err
+		return nil, false, err
 	}
 	if !canSplit {
+		i.stats.SetSkippedReason(SkippedReasonSmallInterval)
 		return expr, true, nil
 	}
 
@@ -290,6 +293,7 @@ func (i *instantSplitter) mapCallVectorAggregation(expr *parser.Call, op parser.
 		return nil, false, err
 	}
 	if !canSplit {
+		i.stats.SetSkippedReason(SkippedReasonSmallInterval)
 		return expr, true, nil
 	}
 

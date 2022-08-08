@@ -25,7 +25,6 @@ import (
 const (
 	skippedReasonParsingFailed = "parsing-failed"
 	skippedReasonMappingFailed = "mapping-failed"
-	skippedReasonNoop          = "noop"
 )
 
 // splitInstantQueryByIntervalMiddleware is a Middleware that can (optionally) split the instant query by splitInterval
@@ -73,7 +72,8 @@ func newInstantQuerySplittingMetrics(registerer prometheus.Registerer) instantQu
 	}
 
 	// Initialize known label values.
-	for _, reason := range []string{skippedReasonParsingFailed, skippedReasonMappingFailed, skippedReasonNoop} {
+	for _, reason := range []string{skippedReasonParsingFailed, skippedReasonMappingFailed,
+		string(astmapper.SkippedReasonSmallInterval), string(astmapper.SkippedReasonSubquery), string(astmapper.SkippedReasonNonSplittable)} {
 		m.splittingSkipped.WithLabelValues(reason)
 	}
 
@@ -140,7 +140,15 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 	if mapperStats.GetSplitQueries() == 0 {
 		// the query cannot be split, so continue
 		level.Debug(spanLog).Log("msg", "input query resulted in a no operation, falling back to try executing without splitting")
-		s.metrics.splittingSkipped.WithLabelValues(skippedReasonNoop).Inc()
+		switch mapperStats.GetSkippedReason() {
+		case astmapper.SkippedReasonSmallInterval:
+			s.metrics.splittingSkipped.WithLabelValues(string(astmapper.SkippedReasonSmallInterval)).Inc()
+		case astmapper.SkippedReasonSubquery:
+			s.metrics.splittingSkipped.WithLabelValues(string(astmapper.SkippedReasonSubquery)).Inc()
+		default:
+			// If there are no split queries, the default skipped reason case is a non-splittable query
+			s.metrics.splittingSkipped.WithLabelValues(string(astmapper.SkippedReasonNonSplittable)).Inc()
+		}
 		return s.next.Do(ctx, req)
 	}
 

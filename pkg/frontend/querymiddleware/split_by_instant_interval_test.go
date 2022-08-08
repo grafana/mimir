@@ -44,8 +44,11 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 			)
 
 			tests := map[string]struct {
-				query                string
-				expectedSplitQueries int
+				query                        string
+				expectedSplitQueries         int
+				expectedSkippedSmallInterval int
+				expectedSkippedSubquery      int
+				expectedSkippedNonSplittable int
 			}{
 				// Splittable range vector aggregators
 				"avg_over_time": {
@@ -320,84 +323,103 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 				},
 				// Subqueries
 				"subquery sum_over_time": {
-					query:                `sum_over_time(metric_counter[1h:5m])`,
-					expectedSplitQueries: 0,
+					query:                   `sum_over_time(metric_counter[1h:5m])`,
+					expectedSplitQueries:    0,
+					expectedSkippedSubquery: 1,
 				},
 				"subquery sum(rate)": {
-					query:                `sum(rate(metric_counter[30m:5s]))`,
-					expectedSplitQueries: 0,
+					query:                   `sum(rate(metric_counter[30m:5s]))`,
+					expectedSplitQueries:    0,
+					expectedSkippedSubquery: 1,
 				},
 				"subquery sum grouping 'by'": {
-					query:                `sum(sum_over_time(metric_counter[1h:5m]) * 60) by (group_1)`,
-					expectedSplitQueries: 0,
+					query:                   `sum(sum_over_time(metric_counter[1h:5m]) * 60) by (group_1)`,
+					expectedSplitQueries:    0,
+					expectedSkippedSubquery: 1,
 				},
 				// should not be mapped if both operands are not splittable
 				//   - first operand `rate(metric_counter[1m])` has a smaller range interval than the configured splitting
 				//   - second operand `rate(metric_counter[5h:5m])` is a subquery
 				"rate(1m) / rate(subquery) > 0.5": {
-					query:                `rate(metric_counter[1m]) / rate(metric_counter[5h:5m]) > 0.5`,
-					expectedSplitQueries: 0,
+					query:                        `rate(metric_counter[1m]) / rate(metric_counter[5h:5m]) > 0.5`,
+					expectedSplitQueries:         0,
+					expectedSkippedSmallInterval: 1,
 				},
 				// should not be mapped if range vector aggregator is not splittable
 				"absent_over_time": {
-					query:                `absent_over_time(nonexistent[1m])`,
-					expectedSplitQueries: 0,
+					query:                        `absent_over_time(nonexistent[1m])`,
+					expectedSplitQueries:         0,
+					expectedSkippedNonSplittable: 1,
 				},
 				"changes": {
-					query:                `changes(metric_counter[1m])`,
-					expectedSplitQueries: 0,
+					query:                        `changes(metric_counter[1m])`,
+					expectedSplitQueries:         0,
+					expectedSkippedNonSplittable: 1,
 				},
 				"delta": {
-					query:                `delta(metric_counter[1m])`,
-					expectedSplitQueries: 0,
+					query:                        `delta(metric_counter[1m])`,
+					expectedSplitQueries:         0,
+					expectedSkippedNonSplittable: 1,
 				},
 				"deriv": {
-					query:                `deriv(metric_counter[1m])`,
-					expectedSplitQueries: 0,
+					query:                        `deriv(metric_counter[1m])`,
+					expectedSplitQueries:         0,
+					expectedSkippedNonSplittable: 1,
 				},
 				"holt_winters": {
-					query:                `holt_winters(metric_counter[1m], 0.5, 0.9)`,
-					expectedSplitQueries: 0,
+					query:                        `holt_winters(metric_counter[1m], 0.5, 0.9)`,
+					expectedSplitQueries:         0,
+					expectedSkippedNonSplittable: 1,
 				},
 				"idelta": {
-					query:                `idelta(metric_counter[1m])`,
-					expectedSplitQueries: 0,
+					query:                        `idelta(metric_counter[1m])`,
+					expectedSplitQueries:         0,
+					expectedSkippedNonSplittable: 1,
 				},
 				"irate": {
-					query:                `irate(metric_counter[3m])`,
-					expectedSplitQueries: 0,
+					query:                        `irate(metric_counter[3m])`,
+					expectedSplitQueries:         0,
+					expectedSkippedNonSplittable: 1,
 				},
 				"last_over_time": {
-					query:                `last_over_time(metric_counter[1m])`,
-					expectedSplitQueries: 0,
+					query:                        `last_over_time(metric_counter[1m])`,
+					expectedSplitQueries:         0,
+					expectedSkippedNonSplittable: 1,
 				},
 				"predict_linear": {
-					query:                `last_over_time(metric_counter[1m])`,
-					expectedSplitQueries: 0,
+					query:                        `last_over_time(metric_counter[1m])`,
+					expectedSplitQueries:         0,
+					expectedSkippedNonSplittable: 1,
 				},
 				"quantile_over_time": {
-					query:                `quantile_over_time(0.95, metric_counter[1m])`,
-					expectedSplitQueries: 0,
+					query:                        `quantile_over_time(0.95, metric_counter[1m])`,
+					expectedSplitQueries:         0,
+					expectedSkippedNonSplittable: 1,
 				},
 				"resets": {
-					query:                `resets(metric_counter[3m])`,
-					expectedSplitQueries: 0,
+					query:                        `resets(metric_counter[3m])`,
+					expectedSplitQueries:         0,
+					expectedSkippedNonSplittable: 1,
 				},
 				"stddev_over_time": {
-					query:                `stddev_over_time(metric_counter[1m])`,
-					expectedSplitQueries: 0,
+					query:                        `stddev_over_time(metric_counter[1m])`,
+					expectedSplitQueries:         0,
+					expectedSkippedNonSplittable: 1,
 				},
 				"stdvar_over_time": {
-					query:                `stdvar_over_time(metric_counter[1m])`,
-					expectedSplitQueries: 0,
+					query:                        `stdvar_over_time(metric_counter[1m])`,
+					expectedSplitQueries:         0,
+					expectedSkippedNonSplittable: 1,
 				},
 				"time()": {
-					query:                `time()`,
-					expectedSplitQueries: 0,
+					query:                        `time()`,
+					expectedSplitQueries:         0,
+					expectedSkippedNonSplittable: 1,
 				},
 				"vector(10)": {
-					query:                `vector(10)`,
-					expectedSplitQueries: 0,
+					query:                        `vector(10)`,
+					expectedSplitQueries:         0,
+					expectedSkippedNonSplittable: 1,
 				},
 			}
 
@@ -502,10 +524,8 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 
 							// Assert metrics
 							expectedSucceeded := 1
-							expectedNoop := 0
 							if testData.expectedSplitQueries == 0 {
 								expectedSucceeded = 0
-								expectedNoop = 1
 							}
 
 							assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
@@ -523,10 +543,13 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 
 						# HELP cortex_frontend_instant_query_splitting_rewrites_skipped_total Total number of instant queries the query-frontend skipped or failed to split by interval.
 						# TYPE cortex_frontend_instant_query_splitting_rewrites_skipped_total counter
-						cortex_frontend_instant_query_splitting_rewrites_skipped_total{reason="parsing-failed"} 0
 						cortex_frontend_instant_query_splitting_rewrites_skipped_total{reason="mapping-failed"} 0
-						cortex_frontend_instant_query_splitting_rewrites_skipped_total{reason="noop"} %d
-					`, testData.expectedSplitQueries, expectedSucceeded, expectedNoop)),
+						cortex_frontend_instant_query_splitting_rewrites_skipped_total{reason="non-splittable"} %d
+						cortex_frontend_instant_query_splitting_rewrites_skipped_total{reason="small-interval"} %d
+						cortex_frontend_instant_query_splitting_rewrites_skipped_total{reason="subquery"} %d
+						cortex_frontend_instant_query_splitting_rewrites_skipped_total{reason="parsing-failed"} 0
+					`, testData.expectedSplitQueries, expectedSucceeded, testData.expectedSkippedNonSplittable,
+								testData.expectedSkippedSmallInterval, testData.expectedSkippedSubquery)),
 								"cortex_frontend_instant_query_splitting_rewrites_attempted_total",
 								"cortex_frontend_instant_query_split_queries_total",
 								"cortex_frontend_instant_query_splitting_rewrites_succeeded_total",
