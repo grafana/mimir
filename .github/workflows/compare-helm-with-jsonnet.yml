@@ -56,9 +56,12 @@ jobs:
         make operations/helm/charts/mimir-distributed/charts
         make build-jsonnet-tests
 
+        set +e
         OUTPUT="$(./operations/compare-helm-with-jsonnet/compare-helm-with-jsonnet.sh 2>&1)"
+        RC=$?
+        set -e
 
-        if [ $? -eq 0 ]; then
+        if [ "${RC}" -eq 0 ]; then
           echo "::set-output name=changed::false"
         else
           echo "$OUTPUT"
