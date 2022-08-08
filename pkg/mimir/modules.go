@@ -42,7 +42,6 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/transport"
 	"github.com/grafana/mimir/pkg/ingester"
-	"github.com/grafana/mimir/pkg/purger"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/engine"
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
@@ -85,8 +84,6 @@ const (
 	Compactor                string = "compactor"
 	StoreGateway             string = "store-gateway"
 	MemberlistKV             string = "memberlist-kv"
-	TenantDeletion           string = "tenant-deletion"
-	Purger                   string = "purger"
 	QueryScheduler           string = "query-scheduler"
 	TenantFederation         string = "tenant-federation"
 	UsageStats               string = "usage-stats"
@@ -737,17 +734,6 @@ func (t *Mimir) initMemberlistKV() (services.Service, error) {
 	return t.MemberlistKV, nil
 }
 
-func (t *Mimir) initTenantDeletionAPI() (services.Service, error) {
-	// t.RulerStorage can be nil when running in single-binary mode, and rule storage is not configured.
-	tenantDeletionAPI, err := purger.NewTenantDeletionAPI(t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, prometheus.DefaultRegisterer)
-	if err != nil {
-		return nil, err
-	}
-
-	t.API.RegisterTenantDeletion(tenantDeletionAPI)
-	return nil, nil
-}
-
 func (t *Mimir) initQueryScheduler() (services.Service, error) {
 	s, err := scheduler.NewScheduler(t.Cfg.QueryScheduler, t.Overrides, util_log.Logger, prometheus.DefaultRegisterer)
 	if err != nil {
@@ -807,8 +793,6 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(AlertManager, t.initAlertManager)
 	mm.RegisterModule(Compactor, t.initCompactor)
 	mm.RegisterModule(StoreGateway, t.initStoreGateway)
-	mm.RegisterModule(TenantDeletion, t.initTenantDeletionAPI, modules.UserInvisibleModule)
-	mm.RegisterModule(Purger, nil)
 	mm.RegisterModule(QueryScheduler, t.initQueryScheduler)
 	mm.RegisterModule(TenantFederation, t.initTenantFederation, modules.UserInvisibleModule)
 	mm.RegisterModule(UsageStats, t.initUsageStats, modules.UserInvisibleModule)
@@ -839,10 +823,8 @@ func (t *Mimir) setupModuleManager() error {
 		AlertManager:             {API, MemberlistKV, Overrides},
 		Compactor:                {API, MemberlistKV, Overrides},
 		StoreGateway:             {API, Overrides, MemberlistKV},
-		TenantDeletion:           {API, Overrides},
-		Purger:                   {TenantDeletion},
 		TenantFederation:         {Queryable},
-		All:                      {QueryFrontend, Querier, Ingester, Distributor, Purger, StoreGateway, Ruler, Compactor},
+		All:                      {QueryFrontend, Querier, Ingester, Distributor, StoreGateway, Ruler, Compactor},
 	}
 	for mod, targets := range deps {
 		if err := mm.AddDependency(mod, targets...); err != nil {

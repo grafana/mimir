@@ -71,8 +71,6 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Get Alertmanager configuration](#get-alertmanager-configuration)                     | Alertmanager            | `GET /api/v1/alerts`                                                      |
 | [Set Alertmanager configuration](#set-alertmanager-configuration)                     | Alertmanager            | `POST /api/v1/alerts`                                                     |
 | [Delete Alertmanager configuration](#delete-alertmanager-configuration)               | Alertmanager            | `DELETE /api/v1/alerts`                                                   |
-| [Tenant delete request](#tenant-delete-request)                                       | Purger                  | `POST /purger/delete_tenant`                                              |
-| [Tenant delete status](#tenant-delete-status)                                         | Purger                  | `GET /purger/delete_tenant_status`                                        |
 | [Store-gateway ring status](#store-gateway-ring-status)                               | Store-gateway           | `GET /store-gateway/ring`                                                 |
 | [Store-gateway tenants](#store-gateway-tenants)                                       | Store-gateway           | `GET /store-gateway/tenants`                                              |
 | [Store-gateway tenant blocks](#store-gateway-tenant-blocks)                           | Store-gateway           | `GET /store-gateway/tenant/{tenant}/blocks`                               |
@@ -81,6 +79,8 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Upload block file](#upload-block-file)                                               | Compactor               | `POST /api/v1/upload/block/{block}/files?path={path}`                     |
 | [Complete block upload](#complete-block-upload)                                       | Compactor               | `POST /api/v1/upload/block/{block}/finish`                                |
 | [Check block upload](#check-block-upload)                                             | Compactor               | `GET /api/v1/upload/block/{block}/check`                                  |
+| [Tenant delete request](#tenant-delete-request)                                       | Compactor               | `POST /compactor/delete_tenant`                                           |
+| [Tenant delete status](#tenant-delete-status)                                         | Compactor               | `GET /compactor/delete_tenant_status`                                     |
 
 ### Path prefixes
 
@@ -862,30 +862,6 @@ Requires [authentication](#authentication).
 
 > **Note:** To delete a tenant's Alertmanager configuration from Mimir, use [`mimirtool alertmanager delete` command]({{< relref "../tools/mimirtool.md#delete-alertmanager-configuration" >}}).
 
-## Purger
-
-The Purger service provides APIs for requesting tenant deletion.
-
-### Tenant Delete Request
-
-```
-POST /purger/delete_tenant
-```
-
-Request deletion of ALL tenant data. Experimental.
-
-Requires [authentication](#authentication).
-
-### Tenant Delete Status
-
-```
-GET /purger/delete_tenant_status
-```
-
-Returns status of tenant deletion. Output format to be defined. Experimental.
-
-Requires [authentication](#authentication).
-
 ## Store-gateway
 
 ### Store-gateway ring status
@@ -1014,3 +990,23 @@ Returns state of the block upload. State is returned as JSON object with field `
 Requires [authentication](#authentication).
 
 This API endpoint is experimental and subject to change.
+
+### Tenant Delete Request
+
+```
+POST /compactor/delete_tenant
+```
+
+Request deletion of ALL tenant data. Experimental.
+
+Requires [authentication](#authentication).
+
+### Tenant Delete Status
+
+```
+GET /compactor/delete_tenant_status
+```
+
+Returns status of tenant deletion. Output format to be defined. Experimental.
+
+Requires [authentication](#authentication).
