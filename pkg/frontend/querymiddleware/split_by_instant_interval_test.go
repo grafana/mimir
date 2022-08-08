@@ -542,9 +542,9 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 						# HELP cortex_frontend_instant_query_splitting_rewrites_skipped_total Total number of instant queries the query-frontend skipped or failed to split by interval.
 						# TYPE cortex_frontend_instant_query_splitting_rewrites_skipped_total counter
 						cortex_frontend_instant_query_splitting_rewrites_skipped_total{reason="mapping-failed"} 0
-						cortex_frontend_instant_query_splitting_rewrites_skipped_total{reason="noop-non-splittable"} %d
-						cortex_frontend_instant_query_splitting_rewrites_skipped_total{reason="noop-small-interval"} %d
-						cortex_frontend_instant_query_splitting_rewrites_skipped_total{reason="noop-subquery"} %d
+						cortex_frontend_instant_query_splitting_rewrites_skipped_total{reason="non-splittable"} %d
+						cortex_frontend_instant_query_splitting_rewrites_skipped_total{reason="small-interval"} %d
+						cortex_frontend_instant_query_splitting_rewrites_skipped_total{reason="subquery"} %d
 						cortex_frontend_instant_query_splitting_rewrites_skipped_total{reason="parsing-failed"} 0
 					`, testData.expectedSplitQueries, expectedSucceeded, testData.expectedNoOpNonSplittable,
 								testData.expectedNoOpSmallInterval, testData.expectedNoOpSubquery)),
