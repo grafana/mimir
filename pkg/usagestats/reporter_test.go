@@ -194,7 +194,7 @@ func TestReporter_SendReportPeriodically(t *testing.T) {
 
 				writer.WriteHeader(http.StatusOK)
 			}))
-			defer server.Close()
+			t.Cleanup(server.Close)
 
 			r := NewReporter(bucketClient, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 			r.serverURL = server.URL
