@@ -244,13 +244,11 @@ func TestInitSeedFile(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
-			bucketClient, err := filesystem.NewBucketClient(filesystem.Config{Directory: t.TempDir()})
-			require.NoError(t, err)
-
+			bucketClient := prepareLocalBucketClient(t)
 			testData := testSetup(t, bucketClient)
 
 			startTime := time.Now()
-			actualSeed, err := initSeedFile(context.Background(), objstore.BucketWithMetrics("", bucketClient, nil), minStability, log.NewNopLogger())
+			actualSeed, err := initSeedFile(context.Background(), bucketClient, minStability, log.NewNopLogger())
 			if testData.expectedErr != nil {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), testData.expectedErr.Error())
@@ -258,7 +256,7 @@ func TestInitSeedFile(t *testing.T) {
 				require.NoError(t, err)
 
 				// We expect the seed stored in the bucket.
-				expectedSeed, err := readSeedFile(context.Background(), objstore.BucketWithMetrics("", bucketClient, nil), log.NewNopLogger())
+				expectedSeed, err := readSeedFile(context.Background(), bucketClient, log.NewNopLogger())
 				require.NoError(t, err)
 				require.Equal(t, expectedSeed.UID, actualSeed.UID)
 				require.Equal(t, expectedSeed.CreatedAt.Unix(), actualSeed.CreatedAt.Unix())

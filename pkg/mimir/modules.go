@@ -760,7 +760,7 @@ func (t *Mimir) initUsageStats() (services.Service, error) {
 		return nil, err
 	}
 
-	t.UsageStatsReporter = usagestats.NewReporter(bucketClient, util_log.Logger)
+	t.UsageStatsReporter = usagestats.NewReporter(bucketClient, util_log.Logger, prometheus.DefaultRegisterer)
 	return t.UsageStatsReporter, nil
 }
 

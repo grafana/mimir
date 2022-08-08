@@ -545,6 +545,9 @@ func (t *Mimir) Run() error {
 		level.Warn(util_log.Logger).Log("msg", "skipped registration of custom process metrics collector", "err", err)
 	}
 
+	// Update the usage stats before we initialize modules.
+	usagestats.SetTarget(t.Cfg.Target.String())
+
 	for _, module := range t.Cfg.Target {
 		if !t.ModuleManager.IsUserVisibleModule(module) {
 			level.Warn(util_log.Logger).Log("msg", "selected target is an internal module, is this intended?", "target", module)
