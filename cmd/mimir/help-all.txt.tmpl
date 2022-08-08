@@ -1641,10 +1641,10 @@ Usage of ./cmd/mimir/mimir:
     	Enable running rule groups against multiple tenants. The tenant IDs involved need to be in the rule group's 'source_tenants' field. If this flag is set to 'false' when there are already created federated rule groups, then these rules groups will be skipped during evaluations.
   -ruler.tenant-shard-size int
     	The tenant's shard size when sharding is used by ruler. Value of 0 disables shuffle sharding for the tenant, and tenant rules will be sharded across all ruler replicas.
-  -runtime-config.file string
-    	File with the configuration that can be updated in runtime.
+  -runtime-config.file comma-separated-list-of-string
+    	Comma separated list of yaml files with the configuration that can be updated at runtime. Runtime config files will be merged from left to right.
   -runtime-config.reload-period duration
-    	How often to check runtime config file. (default 10s)
+    	How often to check runtime config files. (default 10s)
   -server.graceful-shutdown-timeout duration
     	Timeout for graceful shutdowns (default 30s)
   -server.grpc-conn-limit int
