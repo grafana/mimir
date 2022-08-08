@@ -580,7 +580,7 @@ ring:
   # List of network interface names to look up when finding the instance IP
   # address.
   # CLI flag: -distributor.ring.instance-interface-names
-  [instance_interface_names: <list of string> | default = [<private network interfaces>]]
+  [instance_interface_names: <list of strings> | default = [<private network interfaces>]]
 
   # (advanced) Port to advertise in the ring (defaults to
   # -server.grpc-listen-port).
@@ -723,7 +723,7 @@ ring:
   # (advanced) List of network interface names to look up when finding the
   # instance IP address.
   # CLI flag: -ingester.ring.instance-interface-names
-  [instance_interface_names: <list of string> | default = [<private network interfaces>]]
+  [instance_interface_names: <list of strings> | default = [<private network interfaces>]]
 
   # (advanced) Port to advertise in the ring (defaults to
   # -server.grpc-listen-port).
@@ -1039,7 +1039,7 @@ grpc_client_config:
 # instance IP address. This address is sent to query-scheduler and querier,
 # which uses it to send the query response back to query-frontend.
 # CLI flag: -query-frontend.instance-interface-names
-[instance_interface_names: <list of string> | default = [<private network interfaces>]]
+[instance_interface_names: <list of strings> | default = [<private network interfaces>]]
 
 # (advanced) IP address to advertise to the querier (via scheduler) (default is
 # auto-detected from network interfaces).
@@ -1400,7 +1400,7 @@ ring:
   # List of network interface names to look up when finding the instance IP
   # address.
   # CLI flag: -ruler.ring.instance-interface-names
-  [instance_interface_names: <list of string> | default = [<private network interfaces>]]
+  [instance_interface_names: <list of strings> | default = [<private network interfaces>]]
 
   # (advanced) Port to advertise in the ring (defaults to
   # -server.grpc-listen-port).
@@ -1665,7 +1665,7 @@ sharding_ring:
   # (advanced) List of network interface names to look up when finding the
   # instance IP address.
   # CLI flag: -alertmanager.sharding-ring.instance-interface-names
-  [instance_interface_names: <list of string> | default = [<private network interfaces>]]
+  [instance_interface_names: <list of strings> | default = [<private network interfaces>]]
 
   # (advanced) Port to advertise in the ring (defaults to
   # -server.grpc-listen-port).
@@ -2026,7 +2026,7 @@ The `etcd` block configures the etcd client. The supported CLI flags `<prefix>` 
 ```yaml
 # The etcd endpoints to connect to.
 # CLI flag: -<prefix>.etcd.endpoints
-[endpoints: <list of string> | default = []]
+[endpoints: <list of strings> | default = []]
 
 # (advanced) The dial timeout for the etcd connection.
 # CLI flag: -<prefix>.etcd.dial-timeout
@@ -2195,7 +2195,7 @@ The `memberlist` block configures the Gossip memberlist.
 # Other cluster members to join. Can be specified multiple times. It can be an
 # IP, hostname or an entry specified in the DNS Service Discovery format.
 # CLI flag: -memberlist.join
-[join_members: <list of string> | default = []]
+[join_members: <list of strings> | default = []]
 
 # (advanced) Min backoff duration to join other cluster members.
 # CLI flag: -memberlist.min-join-backoff
@@ -2238,7 +2238,7 @@ The `memberlist` block configures the Gossip memberlist.
 # IP address to listen on for gossip messages. Multiple addresses may be
 # specified. Defaults to 0.0.0.0
 # CLI flag: -memberlist.bind-addr
-[bind_addr: <list of string> | default = []]
+[bind_addr: <list of strings> | default = []]
 
 # Port to listen on for gossip messages.
 # CLI flag: -memberlist.bind-port
@@ -2324,7 +2324,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # sample ingestion within the distributor and can be repeated in order to drop
 # multiple labels.
 # CLI flag: -distributor.drop-label
-[drop_labels: <list of string> | default = []]
+[drop_labels: <list of strings> | default = []]
 
 # Maximum length accepted for label names
 # CLI flag: -validation.max-length-label-name
@@ -2933,7 +2933,7 @@ tsdb:
 
   # (advanced) TSDB blocks range period.
   # CLI flag: -blocks-storage.tsdb.block-ranges-period
-  [block_ranges_period: <list of duration> | default = 2h0m0s]
+  [block_ranges_period: <list of durations> | default = 2h0m0s]
 
   # TSDB blocks retention in the ingester before a block is removed, relative to
   # the newest block written for the tenant. This should be larger than the
@@ -3061,7 +3061,7 @@ The `compactor` block configures the compactor component.
 ```yaml
 # (advanced) List of compaction time ranges.
 # CLI flag: -compactor.block-ranges
-[block_ranges: <list of duration> | default = 2h0m0s,12h0m0s,24h0m0s]
+[block_ranges: <list of durations> | default = 2h0m0s,12h0m0s,24h0m0s]
 
 # (advanced) Number of Go routines to use when downloading blocks for compaction
 # and uploading resulting blocks.
@@ -3216,7 +3216,7 @@ sharding_ring:
   # List of network interface names to look up when finding the instance IP
   # address.
   # CLI flag: -compactor.ring.instance-interface-names
-  [instance_interface_names: <list of string> | default = [<private network interfaces>]]
+  [instance_interface_names: <list of strings> | default = [<private network interfaces>]]
 
   # (advanced) Port to advertise in the ring (defaults to
   # -server.grpc-listen-port).
@@ -3331,7 +3331,7 @@ sharding_ring:
   # List of network interface names to look up when finding the instance IP
   # address.
   # CLI flag: -store-gateway.sharding-ring.instance-interface-names
-  [instance_interface_names: <list of string> | default = [<private network interfaces>]]
+  [instance_interface_names: <list of strings> | default = [<private network interfaces>]]
 
   # (advanced) Port to advertise in the ring (defaults to
   # -server.grpc-listen-port).
