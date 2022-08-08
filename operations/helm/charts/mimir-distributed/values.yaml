@@ -1059,7 +1059,7 @@ memcachedExporter:
     requests: {}
     limits: {}
 
-  # -- The SecurityContext for memcached containers
+  # -- The SecurityContext for memcached exporter containers
   containerSecurityContext:
     readOnlyRootFilesystem: true
     capabilities:
