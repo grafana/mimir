@@ -25,7 +25,7 @@ std.manifestYamlDoc({
     self.store_gateways +
     self.compactor +
     self.rulers(2) +
-    self.alertmanagers(3) + 
+    self.alertmanagers(3) +
     self.minio +
     self.prometheus +
     self.grafana_agent +
