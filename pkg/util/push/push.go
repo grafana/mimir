@@ -74,14 +74,12 @@ func handler(maxRecvMsgSize int,
 			level.Error(logger).Log("err", err.Error())
 
 			// Check for httpgrpc error.
-			resp, ok := httpgrpc.HTTPResponseFromError(err)
-			if !ok {
+			if resp, ok := httpgrpc.HTTPResponseFromError(err); ok {
+				http.Error(w, string(resp.Body), int(resp.Code))
+			} else {
 				http.Error(w, err.Error(), http.StatusBadRequest)
-				bufferPool.Put(bufHolder)
-				return
 			}
 
-			http.Error(w, string(resp.Body), int(resp.Code))
 			bufferPool.Put(bufHolder)
 			return
 		}
