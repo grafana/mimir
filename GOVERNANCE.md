@@ -56,10 +56,10 @@ The current team members are:
 - Mauro Stettler — [@replay](https://github.com/replay) ([Grafana Labs](https://grafana.com/))
 - Nick Pillitteri — [@56quarters](https://github.com/56quarters) ([Grafana Labs](https://grafana.com/))
 - Oleg Zaytsev — [@colega](https://github.com/colega) ([Grafana Labs](https://grafana.com/))
+- Patrick Oyarzun - [@Logiraptor](https://github.com/Logiraptor) ([Grafana Labs](https://grafana.com/))
 - Peter Štibraný — [@pstibrany](https://github.com/pstibrany) ([Grafana Labs](https://grafana.com/))
 - Steve Simpson - [@stevesg](https://github.com/stevesg) ([Grafana Labs](https://grafana.com/))
 - Tyler Reid — [@treid314](https://github.com/treid314) ([Grafana Labs](https://grafana.com/))
-- Patrick Oyarzun - [@Logiraptor](https://github.com/Logiraptor) ([Grafana Labs](https://grafana.com/))
 
 Previous team members:
 
