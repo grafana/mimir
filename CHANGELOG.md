@@ -100,7 +100,7 @@
 
 ### Tools
 
-* [ENHANCEMENT] `markblocks` now processes multiple blocks concurrently. #
+* [ENHANCEMENT] `markblocks` now processes multiple blocks concurrently. #2677
 
 ## 2.2.0
 
