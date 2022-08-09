@@ -21,8 +21,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"go.uber.org/atomic"
 
+	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/thanos/pkg/block"
-	"github.com/thanos-io/thanos/pkg/objstore"
 )
 
 var (

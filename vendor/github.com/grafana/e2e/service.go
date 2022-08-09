@@ -16,9 +16,9 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/backoff"
+	"github.com/grafana/dskit/runutil"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/expfmt"
-	"github.com/thanos-io/thanos/pkg/runutil"
 )
 
 var (
