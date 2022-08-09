@@ -45,11 +45,6 @@
     memberlistConfig:: {
       'memberlist.bind-port': gossipRingPort,
       'memberlist.join': 'dns+gossip-ring.%s.svc.cluster.local:%d' % [$._config.namespace, gossipRingPort],
-
-      // Increase the leave timeout to being 10x the connection timeout, so that we can communicate
-      // the leave to at least 1 node, if the first 9 we try to contact times out.
-      'memberlist.leave-timeout': '20s',
-      'memberlist.packet-dial-timeout': '2s',
     } + (
       if $._config.memberlist_cluster_label == '' then {} else {
         'memberlist.cluster-label': $._config.memberlist_cluster_label,
