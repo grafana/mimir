@@ -980,7 +980,10 @@ func (db *DB) ApplyConfig(conf *config.Config) error {
 	// Create WBL if it was not present and if OOO is enabled with WAL enabled.
 	var wblog *wal.WAL
 	var err error
-	if !db.oooWasEnabled.Load() && oooTimeWindow > 0 && db.opts.WALSegmentSize >= 0 {
+	if db.head.wbl != nil {
+		// The existing WBL from the disk might have been replayed while OOO was disabled.
+		wblog = db.head.wbl
+	} else if !db.oooWasEnabled.Load() && oooTimeWindow > 0 && db.opts.WALSegmentSize >= 0 {
 		segmentSize := wal.DefaultSegmentSize
 		// Wal is set to a custom size.
 		if db.opts.WALSegmentSize > 0 {
@@ -1341,7 +1344,7 @@ func (db *DB) reloadBlocks() (err error) {
 		blockMetas = append(blockMetas, b.Meta())
 	}
 	if overlaps := OverlappingBlocks(blockMetas); len(overlaps) > 0 {
-		level.Warn(db.logger).Log("msg", "Overlapping blocks found during reloadBlocks", "detail", overlaps.String())
+		level.Debug(db.logger).Log("msg", "Overlapping blocks found during reloadBlocks", "detail", overlaps.String())
 	}
 
 	// Append blocks to old, deletable blocks, so we can close them.
