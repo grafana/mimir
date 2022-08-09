@@ -633,50 +633,52 @@ func (d *Distributor) PrePushHaDedupeMiddleware(next push.Func) push.Func {
 			return nil, err
 		}
 
-		if d.limits.AcceptHASamples(userID) && len(req.Timeseries) > 0 {
-			haReplicaLabel := d.limits.HAReplicaLabel(userID)
-			cluster, replica := findHALabels(haReplicaLabel, d.limits.HAClusterLabel(userID), req.Timeseries[0].Labels)
-			// Make a copy of these, since they may be retained as labels on our metrics, e.g. dedupedSamples.
-			cluster, replica = copyString(cluster), copyString(replica)
+		if len(req.Timeseries) == 0 || !d.limits.AcceptHASamples(userID) {
+			return next(ctx, req, cleanup)
+		}
 
-			span := opentracing.SpanFromContext(ctx)
-			if span != nil {
-				span.SetTag("cluster", cluster)
-				span.SetTag("replica", replica)
+		haReplicaLabel := d.limits.HAReplicaLabel(userID)
+		cluster, replica := findHALabels(haReplicaLabel, d.limits.HAClusterLabel(userID), req.Timeseries[0].Labels)
+		// Make a copy of these, since they may be retained as labels on our metrics, e.g. dedupedSamples.
+		cluster, replica = copyString(cluster), copyString(replica)
+
+		span := opentracing.SpanFromContext(ctx)
+		if span != nil {
+			span.SetTag("cluster", cluster)
+			span.SetTag("replica", replica)
+		}
+
+		numSamples := 0
+		for _, ts := range req.Timeseries {
+			numSamples += len(ts.Samples)
+		}
+		removeReplica := false
+		removeReplica, err = d.checkSample(ctx, userID, cluster, replica)
+		if err != nil {
+			if errors.Is(err, replicasNotMatchError{}) {
+				// These samples have been deduped.
+				d.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(numSamples))
+				return nil, httpgrpc.Errorf(http.StatusAccepted, err.Error())
 			}
 
-			numSamples := 0
+			if errors.Is(err, tooManyClustersError{}) {
+				validation.DiscardedSamples.WithLabelValues(validation.ReasonTooManyHAClusters, userID).Add(float64(numSamples))
+				return nil, httpgrpc.Errorf(http.StatusBadRequest, err.Error())
+			}
+
+			return nil, err
+		}
+
+		if removeReplica {
+			// If we found both the cluster and replica labels, we only want to include the cluster label when
+			// storing series in Mimir. If we kept the replica label we would end up with another series for the same
+			// series we're trying to dedupe when HA tracking moves over to a different replica.
 			for _, ts := range req.Timeseries {
-				numSamples += len(ts.Samples)
+				removeLabel(haReplicaLabel, &ts.Labels)
 			}
-			removeReplica := false
-			removeReplica, err = d.checkSample(ctx, userID, cluster, replica)
-			if err != nil {
-				if errors.Is(err, replicasNotMatchError{}) {
-					// These samples have been deduped.
-					d.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(numSamples))
-					return nil, httpgrpc.Errorf(http.StatusAccepted, err.Error())
-				}
-
-				if errors.Is(err, tooManyClustersError{}) {
-					validation.DiscardedSamples.WithLabelValues(validation.ReasonTooManyHAClusters, userID).Add(float64(numSamples))
-					return nil, httpgrpc.Errorf(http.StatusBadRequest, err.Error())
-				}
-
-				return nil, err
-			}
-
-			if removeReplica {
-				// If we found both the cluster and replica labels, we only want to include the cluster label when
-				// storing series in Mimir. If we kept the replica label we would end up with another series for the same
-				// series we're trying to dedupe when HA tracking moves over to a different replica.
-				for _, ts := range req.Timeseries {
-					removeLabel(haReplicaLabel, &ts.Labels)
-				}
-			} else {
-				// If there wasn't an error but removeReplica is false that means we didn't find both HA labels.
-				d.nonHASamples.WithLabelValues(userID).Add(float64(numSamples))
-			}
+		} else {
+			// If there wasn't an error but removeReplica is false that means we didn't find both HA labels.
+			d.nonHASamples.WithLabelValues(userID).Add(float64(numSamples))
 		}
 
 		return next(ctx, req, cleanup)
