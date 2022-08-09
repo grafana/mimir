@@ -615,8 +615,8 @@ func (d *Distributor) pushWithMiddlewares() push.Func {
 
 	// The middlewares will be applied in the order of the slice "middlewares",
 	// requests will traverse them in the reverse order.
-	middlewares = append(middlewares, d.PrePushForwardingMiddleware)
-	middlewares = append(middlewares, d.PrePushHaDedupeMiddleware)
+	middlewares = append(middlewares, d.prePushForwardingMiddleware)
+	middlewares = append(middlewares, d.prePushHaDedupeMiddleware)
 
 	push := d.PushWithCleanup
 	for _, middleware := range middlewares {
@@ -626,7 +626,7 @@ func (d *Distributor) pushWithMiddlewares() push.Func {
 	return push
 }
 
-func (d *Distributor) PrePushHaDedupeMiddleware(next push.Func) push.Func {
+func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 	return func(ctx context.Context, req *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error) {
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
@@ -685,9 +685,9 @@ func (d *Distributor) PrePushHaDedupeMiddleware(next push.Func) push.Func {
 	}
 }
 
-// PrePushForwardingMiddleware is used as push.Func middleware in front of PushWithCleanup method.
+// prePushForwardingMiddleware is used as push.Func middleware in front of PushWithCleanup method.
 // It forwards time series to configured remote_write endpoints if the forwarding rules say so.
-func (d *Distributor) PrePushForwardingMiddleware(next push.Func) push.Func {
+func (d *Distributor) prePushForwardingMiddleware(next push.Func) push.Func {
 	if d.forwarder == nil {
 		// Forwarding is disabled, no need to wrap "next".
 		return next
