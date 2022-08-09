@@ -652,8 +652,8 @@ func (d *Distributor) PrePushHaDedupeMiddleware(next push.Func) push.Func {
 		for _, ts := range req.Timeseries {
 			numSamples += len(ts.Samples)
 		}
-		removeReplica := false
-		removeReplica, err = d.checkSample(ctx, userID, cluster, replica)
+
+		removeReplica, err := d.checkSample(ctx, userID, cluster, replica)
 		if err != nil {
 			if errors.Is(err, replicasNotMatchError{}) {
 				// These samples have been deduped.
