@@ -383,7 +383,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		subservices = append(subservices, d.forwarder)
 	}
 
-	d.PushWithMiddlewares = d.pushWithMiddlewares()
+	d.PushWithMiddlewares = d.wrapPushWithMiddlewares(d.PushWithCleanup)
 
 	subservices = append(subservices, d.ingesterPool, d.activeUsers)
 	d.subservices, err = services.NewManager(subservices...)
@@ -610,7 +610,7 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 	return nil
 }
 
-func (d *Distributor) pushWithMiddlewares() push.Func {
+func (d *Distributor) wrapPushWithMiddlewares(next push.Func) push.Func {
 	var middlewares []func(push.Func) push.Func
 
 	// The middlewares will be applied in the order of the slice "middlewares",
@@ -618,12 +618,11 @@ func (d *Distributor) pushWithMiddlewares() push.Func {
 	middlewares = append(middlewares, d.prePushForwardingMiddleware)
 	middlewares = append(middlewares, d.prePushHaDedupeMiddleware)
 
-	push := d.PushWithCleanup
 	for _, middleware := range middlewares {
-		push = middleware(push)
+		next = middleware(next)
 	}
 
-	return push
+	return next
 }
 
 func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {

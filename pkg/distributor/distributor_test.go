@@ -851,7 +851,7 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 			err = d.HATracker.checkReplica(ctx, userID, tc.cluster, tc.acceptedReplica, time.Now())
 			assert.NoError(t, err)
 
-			request := makeWriteRequestHA(tc.samples, tc.testReplica, tc.cluster)
+			request := makeWriteRequestForLabelSetGen(tc.samples, labelSetGenWithReplicaAndCluster(tc.testReplica, tc.cluster))
 			response, err := d.Push(ctx, request)
 			assert.Equal(t, tc.expectedResponse, response)
 
@@ -2473,7 +2473,7 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			limits.MaxGlobalExemplarsPerUser = 10
 
 			var forwardReqCnt atomic.Uint32
-			forwardReqCallback := func() { forwardReqCnt.Inc() }
+			forwardReqCallback := func(_ []mimirpb.PreallocTimeseries) { forwardReqCnt.Inc() }
 			getForwarder := func() forwarding.Forwarder {
 				return newMockForwarder(tc.ingestSample, forwardReqCallback)
 			}
@@ -2779,31 +2779,6 @@ func TestHaDedupeMiddleware(t *testing.T) {
 	const cluster1 = "clusterA"
 	const cluster2 = "clusterB"
 
-	// Get generator for label set with given replica and cluster.
-	labelSetGenWithReplicaAndCluster := func(replica, cluster string) func(int) []mimirpb.LabelAdapter {
-		return func(id int) []mimirpb.LabelAdapter {
-			return []mimirpb.LabelAdapter{
-				{Name: "__name__", Value: "foo"},
-				{Name: "__replica__", Value: replica},
-				{Name: "bar", Value: "baz"},
-				{Name: "cluster", Value: cluster},
-				{Name: "sample", Value: fmt.Sprintf("%d", id)},
-			}
-		}
-	}
-
-	// Get generator for label set with given cluster but no replica.
-	labelSetGenWithCluster := func(cluster string) func(int) []mimirpb.LabelAdapter {
-		return func(id int) []mimirpb.LabelAdapter {
-			return []mimirpb.LabelAdapter{
-				{Name: "__name__", Value: "foo"},
-				{Name: "bar", Value: "baz"},
-				{Name: "cluster", Value: cluster},
-				{Name: "sample", Value: fmt.Sprintf("%d", id)},
-			}
-		}
-	}
-
 	type testCase struct {
 		name              string
 		ctx               context.Context
@@ -2937,6 +2912,70 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			assert.Equal(t, tc.expectedNextCalls, nextCallCount)
 		})
 	}
+}
+
+func TestHaDedupeBeforeForwarding(t *testing.T) {
+	ctx := user.InjectOrgID(context.Background(), "user")
+	const replica1 = "replicaA"
+	const replica2 = "replicaB"
+	const cluster1 = "clusterA"
+	writeReqReplica1 := makeWriteRequestForLabelSetGen(5, labelSetGenWithReplicaAndCluster(replica1, cluster1))
+	writeReqReplica2 := makeWriteRequestForLabelSetGen(5, labelSetGenWithReplicaAndCluster(replica2, cluster1))
+	expectedWriteReq := makeWriteRequestForLabelSetGen(5, labelSetGenWithCluster(cluster1))
+
+	// Capture the submitted write request which the middlewares pass into the mock push function.
+	var submittedWriteReqs []*mimirpb.WriteRequest
+	mockPush := func(_ context.Context, writeReq *mimirpb.WriteRequest, _ func()) (*mimirpb.WriteResponse, error) {
+		submittedWriteReqs = append(submittedWriteReqs, writeReq)
+		return nil, nil
+	}
+
+	// Setup limits with HA enabled and forwarding rules for the metric "foo".
+	var limits validation.Limits
+	flagext.DefaultValues(&limits)
+	limits.AcceptHASamples = true
+	limits.MaxLabelValueLength = 15
+	limits.ForwardingRules = validation.ForwardingRules{
+		"foo": validation.ForwardingRule{},
+	}
+
+	// Setup a callback in the mock forwarder to capture the time series which gets passed into it by the middleware.
+	var forwardedTs [][]mimirpb.PreallocTimeseries
+	forwardReqCallback := func(ts []mimirpb.PreallocTimeseries) {
+		forwardedTs = append(forwardedTs, ts)
+	}
+	getForwarder := func() forwarding.Forwarder {
+		return newMockForwarder(true, forwardReqCallback)
+	}
+
+	// Prepare distributor and wrap the mock push function with its middlewares.
+	ds, _, _ := prepare(t, prepConfig{
+		numDistributors: 1,
+		limits:          &limits,
+		enableTracker:   true,
+		forwarding:      true,
+		getForwarder:    getForwarder,
+	})
+	wrappedMockPush := ds[0].wrapPushWithMiddlewares(mockPush)
+
+	// Submit the two write requests into the wrapped mock push function, it should:
+	// 1) Perform HA-deduplication
+	// 2) Forward the result of the deduplication via the mock forwarder
+	// 3) Submit the result of the deduplication to the mock push function
+	_, err := wrappedMockPush(ctx, writeReqReplica1, func() {})
+	assert.NoError(t, err)
+	_, err = wrappedMockPush(ctx, writeReqReplica2, func() {})
+	resp, ok := httpgrpc.HTTPResponseFromError(err)
+	assert.True(t, ok)
+	assert.Equal(t, int32(202), resp.Code) // 202 due to HA-dedupe.
+
+	// Check that the write requests which have been submitted to the push function look as expected,
+	// there should only be one and it shouldn't have the replica label.
+	assert.Equal(t, []*mimirpb.WriteRequest{expectedWriteReq}, submittedWriteReqs)
+
+	// Check that the time series which have been forwarded via the mock forwarded look as expected,
+	// there should only be one slice of timeseries and they shouldn't have the replica label.
+	assert.Equal(t, [][]mimirpb.PreallocTimeseries{expectedWriteReq.Timeseries}, forwardedTs)
 }
 
 func mustNewMatcher(t labels.MatchType, n, v string) *labels.Matcher {
@@ -3212,8 +3251,10 @@ func makeWriteRequestExamplars(labels []mimirpb.LabelAdapter, ts int64, value fl
 	}}
 }
 
-func makeWriteRequestHA(samples int, replica, cluster string) *mimirpb.WriteRequest {
-	labelSetGen := func(id int) []mimirpb.LabelAdapter {
+// labelSetGenWithReplicaAndCluster returns generator for a label set with the given replica and cluster,
+// it can be used with the helper makeWriteRequestForLabelSetGen().
+func labelSetGenWithReplicaAndCluster(replica, cluster string) func(int) []mimirpb.LabelAdapter {
+	return func(id int) []mimirpb.LabelAdapter {
 		return []mimirpb.LabelAdapter{
 			{Name: "__name__", Value: "foo"},
 			{Name: "__replica__", Value: replica},
@@ -3222,7 +3263,19 @@ func makeWriteRequestHA(samples int, replica, cluster string) *mimirpb.WriteRequ
 			{Name: "sample", Value: fmt.Sprintf("%d", id)},
 		}
 	}
-	return makeWriteRequestForLabelSetGen(samples, labelSetGen)
+}
+
+// labelSetGenWithCluster returns generator for a label set with given cluster but no replica,
+// it can be used with the helper makeWriteRequestForLabelSetGen().
+func labelSetGenWithCluster(cluster string) func(int) []mimirpb.LabelAdapter {
+	return func(id int) []mimirpb.LabelAdapter {
+		return []mimirpb.LabelAdapter{
+			{Name: "__name__", Value: "foo"},
+			{Name: "bar", Value: "baz"},
+			{Name: "cluster", Value: cluster},
+			{Name: "sample", Value: fmt.Sprintf("%d", id)},
+		}
+	}
 }
 
 func makeWriteRequestForLabelSetGen(samples int, labelSetGen func(int) []mimirpb.LabelAdapter) *mimirpb.WriteRequest {
@@ -3735,10 +3788,10 @@ type mockForwarder struct {
 	ingest bool
 
 	// Optional callback to run in place of the actual forwarding request.
-	forwardReqCallback func()
+	forwardReqCallback func([]mimirpb.PreallocTimeseries)
 }
 
-func newMockForwarder(ingest bool, forwardReqCallback func()) forwarding.Forwarder {
+func newMockForwarder(ingest bool, forwardReqCallback func([]mimirpb.PreallocTimeseries)) forwarding.Forwarder {
 	return &mockForwarder{
 		ingest:             ingest,
 		forwardReqCallback: forwardReqCallback,
@@ -3752,7 +3805,7 @@ func (m *mockForwarder) Forward(ctx context.Context, forwardingRules validation.
 		defer close(errCh)
 
 		if m.forwardReqCallback != nil {
-			m.forwardReqCallback()
+			m.forwardReqCallback(ts)
 		}
 	}()
 
