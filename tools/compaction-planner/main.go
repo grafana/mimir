@@ -38,8 +38,10 @@ func main() {
 		sorting     string
 	}{}
 
+	logger := gokitlog.NewNopLogger()
+
 	// Loads bucket index, and plans compaction for all loaded meta files.
-	cfg.bucket.RegisterFlags(flag.CommandLine)
+	cfg.bucket.RegisterFlags(flag.CommandLine, logger)
 	cfg.blockRanges = mimir_tsdb.DurationList{2 * time.Hour, 12 * time.Hour, 24 * time.Hour}
 	flag.Var(&cfg.blockRanges, "block-ranges", "List of compaction time ranges.")
 	flag.StringVar(&cfg.userID, "user", "", "User (tenant)")
@@ -51,8 +53,6 @@ func main() {
 	if cfg.userID == "" {
 		log.Fatalln("no user specified")
 	}
-
-	logger := gokitlog.NewNopLogger()
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT)
 	defer cancel()

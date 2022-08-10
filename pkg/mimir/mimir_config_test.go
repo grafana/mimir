@@ -61,7 +61,7 @@ type customExtendedConfig struct {
 
 func (c *customExtendedConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.MimirConfig.RegisterFlags(f, logger)
-	c.CustomStorage.RegisterFlagsWithPrefix("custom-storage", f)
+	c.CustomStorage.RegisterFlagsWithPrefix("custom-storage", f, logger)
 }
 
 func (c *customExtendedConfig) CommonConfigInheritance() mimir.CommonConfigInheritance {

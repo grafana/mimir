@@ -13,8 +13,6 @@ Usage of ./cmd/mimir/mimir:
     	Azure storage endpoint suffix without schema. The account name will be prefixed to this value to create the FQDN. If set to empty string, default endpoint suffix is used.
   -alertmanager-storage.azure.max-retries int
     	Number of retries for recoverable errors (default 20)
-  -alertmanager-storage.azure.msi-resource string
-    	If set, this URL is used instead of https://<storage-account-name>.<endpoint-suffix> for obtaining ServicePrincipalToken from MSI.
   -alertmanager-storage.azure.user-assigned-id string
     	User assigned identity. If empty, then System assigned identity is used.
   -alertmanager-storage.backend string
@@ -263,8 +261,6 @@ Usage of ./cmd/mimir/mimir:
     	Azure storage endpoint suffix without schema. The account name will be prefixed to this value to create the FQDN. If set to empty string, default endpoint suffix is used.
   -blocks-storage.azure.max-retries int
     	Number of retries for recoverable errors (default 20)
-  -blocks-storage.azure.msi-resource string
-    	If set, this URL is used instead of https://<storage-account-name>.<endpoint-suffix> for obtaining ServicePrincipalToken from MSI.
   -blocks-storage.azure.user-assigned-id string
     	User assigned identity. If empty, then System assigned identity is used.
   -blocks-storage.backend string
@@ -535,8 +531,6 @@ Usage of ./cmd/mimir/mimir:
     	Azure storage endpoint suffix without schema. The account name will be prefixed to this value to create the FQDN. If set to empty string, default endpoint suffix is used.
   -common.storage.azure.max-retries int
     	Number of retries for recoverable errors (default 20)
-  -common.storage.azure.msi-resource string
-    	If set, this URL is used instead of https://<storage-account-name>.<endpoint-suffix> for obtaining ServicePrincipalToken from MSI.
   -common.storage.azure.user-assigned-id string
     	User assigned identity. If empty, then System assigned identity is used.
   -common.storage.backend string
@@ -1515,8 +1509,6 @@ Usage of ./cmd/mimir/mimir:
     	Azure storage endpoint suffix without schema. The account name will be prefixed to this value to create the FQDN. If set to empty string, default endpoint suffix is used.
   -ruler-storage.azure.max-retries int
     	Number of retries for recoverable errors (default 20)
-  -ruler-storage.azure.msi-resource string
-    	If set, this URL is used instead of https://<storage-account-name>.<endpoint-suffix> for obtaining ServicePrincipalToken from MSI.
   -ruler-storage.azure.user-assigned-id string
     	User assigned identity. If empty, then System assigned identity is used.
   -ruler-storage.backend string

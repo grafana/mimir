@@ -21,7 +21,6 @@ func NewBucketClient(cfg Config, name string, logger log.Logger) (objstore.Bucke
 	bucketConfig.ContainerName = cfg.ContainerName
 	bucketConfig.Endpoint = cfg.Endpoint
 	bucketConfig.MaxRetries = cfg.MaxRetries
-	bucketConfig.MSIResource = cfg.MSIResource
 	bucketConfig.UserAssignedID = cfg.UserAssignedID
 
 	// Thanos currently doesn't support passing the config as is, but expects a YAML,

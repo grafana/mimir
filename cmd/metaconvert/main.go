@@ -42,8 +42,9 @@ func main() {
 	cfg := config{}
 
 	cfg.LogLevel.RegisterFlags(flag.CommandLine)
+	initLogger := log.NewDefaultLogger(cfg.LogLevel, cfg.LogFormat)
 	cfg.LogFormat.RegisterFlags(flag.CommandLine)
-	cfg.BucketConfig.RegisterFlags(flag.CommandLine)
+	cfg.BucketConfig.RegisterFlags(flag.CommandLine, initLogger)
 
 	flag.BoolVar(&cfg.DryRun, "dry-run", false, "Don't make changes; only report what needs to be done")
 	flag.StringVar(&cfg.Tenant, "tenant", "", "Tenant to process")

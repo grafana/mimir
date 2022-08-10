@@ -40,7 +40,8 @@ func main() {
 		showCreationTime bool
 	}{}
 
-	cfg.bucket.RegisterFlags(flag.CommandLine)
+	logger := gokitlog.NewNopLogger()
+	cfg.bucket.RegisterFlags(flag.CommandLine, logger)
 	flag.StringVar(&cfg.userID, "user", "", "User (tenant)")
 	flag.Parse()
 
@@ -51,7 +52,6 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT)
 	defer cancel()
 
-	logger := gokitlog.NewNopLogger()
 	bkt, err := bucket.NewClient(ctx, cfg.bucket, "bucket", logger, nil)
 	if err != nil {
 		log.Fatalln("failed to create bucket:", err)

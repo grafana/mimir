@@ -42,13 +42,13 @@ func main() {
 	ctx := context.Background()
 	logger := log.WithPrefix(log.NewLogfmtLogger(os.Stderr), "time", log.DefaultTimestampUTC)
 
-	cfg := parseFlags()
+	cfg := parseFlags(logger)
 	marker, filename := createMarker(cfg.mark, logger, cfg.details)
 	ulids := validateTenantAndBlocks(logger, cfg.tenantID, cfg.blocks)
 	uploadMarks(ctx, logger, ulids, marker, filename, cfg.dryRun, cfg.bucket, cfg.tenantID, cfg.allowPartialBlocks, cfg.concurrency)
 }
 
-func parseFlags() config {
+func parseFlags(logger log.Logger) config {
 	var cfg config
 
 	// We define two flag sets, one on basic straightforward flags of this cli, and the other one with all flags,
@@ -91,7 +91,7 @@ func parseFlags() config {
 	// We set only the `-backend` flag on the basicFlagSet, to make sure that user sees that there are more backends supported.
 	// Then we register all bucket flags on the full flag set, which is the flag set we're parsing.
 	basicFlagSet.StringVar(&cfg.bucket.Backend, "backend", bucket.Filesystem, fmt.Sprintf("Backend storage to use. Supported backends are: %s. Use -help-all to see help on backends configuration.", strings.Join(bucket.SupportedBackends, ", ")))
-	cfg.bucket.RegisterFlags(fullFlagSet)
+	cfg.bucket.RegisterFlags(fullFlagSet, logger)
 
 	fullFlagSet.IntVar(&cfg.concurrency, "concurrency", 16, "How many markers to upload concurrently.")
 
