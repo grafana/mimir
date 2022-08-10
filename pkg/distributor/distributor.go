@@ -129,6 +129,8 @@ type Distributor struct {
 	sampleDelayHistogram             prometheus.Histogram
 	replicationFactor                prometheus.Gauge
 	latestSeenSampleTimestampPerUser *prometheus.GaugeVec
+
+	PushWithMiddlewares push.Func
 }
 
 // Config contains the configuration required to
@@ -381,6 +383,8 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		subservices = append(subservices, d.forwarder)
 	}
 
+	d.PushWithMiddlewares = d.wrapPushWithMiddlewares(d.PushWithCleanup)
+
 	subservices = append(subservices, d.ingesterPool, d.activeUsers)
 	d.subservices, err = services.NewManager(subservices...)
 	if err != nil {
@@ -606,9 +610,92 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 	return nil
 }
 
-// PrePushForwardingMiddleware is used as push.Func middleware in front of PushWithCleanup method.
+func (d *Distributor) wrapPushWithMiddlewares(next push.Func) push.Func {
+	var middlewares []func(push.Func) push.Func
+
+	// The middlewares will be applied in the order of the slice "middlewares",
+	// requests will traverse them in the reverse order and the first middleware will wrap the second one, etc.
+	middlewares = append(middlewares, d.prePushForwardingMiddleware)
+	middlewares = append(middlewares, d.prePushHaDedupeMiddleware)
+
+	for _, middleware := range middlewares {
+		next = middleware(next)
+	}
+
+	return next
+}
+
+func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
+	return func(ctx context.Context, req *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error) {
+		cleanupInDefer := true
+		defer func() {
+			if cleanupInDefer {
+				cleanup()
+			}
+		}()
+
+		userID, err := tenant.TenantID(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		if len(req.Timeseries) == 0 || !d.limits.AcceptHASamples(userID) {
+			cleanupInDefer = false
+			return next(ctx, req, cleanup)
+		}
+
+		haReplicaLabel := d.limits.HAReplicaLabel(userID)
+		cluster, replica := findHALabels(haReplicaLabel, d.limits.HAClusterLabel(userID), req.Timeseries[0].Labels)
+		// Make a copy of these, since they may be retained as labels on our metrics, e.g. dedupedSamples.
+		cluster, replica = copyString(cluster), copyString(replica)
+
+		span := opentracing.SpanFromContext(ctx)
+		if span != nil {
+			span.SetTag("cluster", cluster)
+			span.SetTag("replica", replica)
+		}
+
+		numSamples := 0
+		for _, ts := range req.Timeseries {
+			numSamples += len(ts.Samples)
+		}
+
+		removeReplica, err := d.checkSample(ctx, userID, cluster, replica)
+		if err != nil {
+			if errors.Is(err, replicasNotMatchError{}) {
+				// These samples have been deduped.
+				d.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(numSamples))
+				return nil, httpgrpc.Errorf(http.StatusAccepted, err.Error())
+			}
+
+			if errors.Is(err, tooManyClustersError{}) {
+				validation.DiscardedSamples.WithLabelValues(validation.ReasonTooManyHAClusters, userID).Add(float64(numSamples))
+				return nil, httpgrpc.Errorf(http.StatusBadRequest, err.Error())
+			}
+
+			return nil, err
+		}
+
+		if removeReplica {
+			// If we found both the cluster and replica labels, we only want to include the cluster label when
+			// storing series in Mimir. If we kept the replica label we would end up with another series for the same
+			// series we're trying to dedupe when HA tracking moves over to a different replica.
+			for _, ts := range req.Timeseries {
+				removeLabel(haReplicaLabel, &ts.Labels)
+			}
+		} else {
+			// If there wasn't an error but removeReplica is false that means we didn't find both HA labels.
+			d.nonHASamples.WithLabelValues(userID).Add(float64(numSamples))
+		}
+
+		cleanupInDefer = false
+		return next(ctx, req, cleanup)
+	}
+}
+
+// prePushForwardingMiddleware is used as push.Func middleware in front of PushWithCleanup method.
 // It forwards time series to configured remote_write endpoints if the forwarding rules say so.
-func (d *Distributor) PrePushForwardingMiddleware(next push.Func) push.Func {
+func (d *Distributor) prePushForwardingMiddleware(next push.Func) push.Func {
 	if d.forwarder == nil {
 		// Forwarding is disabled, no need to wrap "next".
 		return next
@@ -668,7 +755,7 @@ func (d *Distributor) forwardSamples(ctx context.Context, userID string, ts []mi
 
 // Push implements client.IngesterServer
 func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
-	return d.PrePushForwardingMiddleware(d.PushWithCleanup)(ctx, req, func() { mimirpb.ReuseSlice(req.Timeseries) })
+	return d.PushWithMiddlewares(ctx, req, func() { mimirpb.ReuseSlice(req.Timeseries) })
 }
 
 // PushWithCleanup takes a WriteRequest and distributes it to ingesters using the ring.
@@ -731,7 +818,6 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	source := util.GetSourceIPsFromOutgoingCtx(ctx)
 
 	var firstPartialErr error
-	removeReplica := false
 
 	numSamples := 0
 	numExemplars := 0
@@ -754,35 +840,6 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	seriesKeys := make([]uint32, 0, len(req.Timeseries))
 	validatedSamples := 0
 	validatedExemplars := 0
-
-	if d.limits.AcceptHASamples(userID) && len(req.Timeseries) > 0 {
-		cluster, replica := findHALabels(d.limits.HAReplicaLabel(userID), d.limits.HAClusterLabel(userID), req.Timeseries[0].Labels)
-		// Make a copy of these, since they may be retained as labels on our metrics, e.g. dedupedSamples.
-		cluster, replica = copyString(cluster), copyString(replica)
-		if span != nil {
-			span.SetTag("cluster", cluster)
-			span.SetTag("replica", replica)
-		}
-		removeReplica, err = d.checkSample(ctx, userID, cluster, replica)
-		if err != nil {
-			if errors.Is(err, replicasNotMatchError{}) {
-				// These samples have been deduped.
-				d.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(numSamples))
-				return nil, httpgrpc.Errorf(http.StatusAccepted, err.Error())
-			}
-
-			if errors.Is(err, tooManyClustersError{}) {
-				validation.DiscardedSamples.WithLabelValues(validation.ReasonTooManyHAClusters, userID).Add(float64(numSamples))
-				return nil, httpgrpc.Errorf(http.StatusBadRequest, err.Error())
-			}
-
-			return nil, err
-		}
-		// If there wasn't an error but removeReplica is false that means we didn't find both HA labels.
-		if !removeReplica {
-			d.nonHASamples.WithLabelValues(userID).Add(float64(numSamples))
-		}
-	}
 
 	// Find the earliest and latest samples in the batch.
 	earliestSampleTimestampMs, latestSampleTimestampMs := int64(math.MaxInt64), int64(0)
@@ -810,13 +867,6 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		if mrc := d.limits.MetricRelabelConfigs(userID); len(mrc) > 0 {
 			l := relabel.Process(mimirpb.FromLabelAdaptersToLabels(ts.Labels), mrc...)
 			ts.Labels = mimirpb.FromLabelsToLabelAdapters(l)
-		}
-
-		// If we found both the cluster and replica labels, we only want to include the cluster label when
-		// storing series in Mimir. If we kept the replica label we would end up with another series for the same
-		// series we're trying to dedupe when HA tracking moves over to a different replica.
-		if removeReplica {
-			removeLabel(d.limits.HAReplicaLabel(userID), &ts.Labels)
 		}
 
 		for _, labelName := range d.limits.DropLabels(userID) {
