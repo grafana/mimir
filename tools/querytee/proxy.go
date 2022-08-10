@@ -40,7 +40,7 @@ type ProxyConfig struct {
 
 func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.ServerServicePort, "server.service-port", 80, "The HTTP port where the query-tee service listens to.")
-	f.IntVar(&cfg.ServerGRPCServicePort, "server.grpc-service-port", 90, "The GRPC port where the query-tee service listens to HTTP over gRPC messages.")
+	f.IntVar(&cfg.ServerGRPCServicePort, "server.grpc-service-port", 9095, "The GRPC port where the query-tee service listens to HTTP over gRPC messages.")
 	f.StringVar(&cfg.BackendEndpoints, "backend.endpoints", "", "Comma separated list of backend endpoints to query.")
 	f.StringVar(&cfg.PreferredBackend, "backend.preferred", "", "The hostname of the preferred backend when selecting the response to send back to the client. If no preferred backend is configured then the query-tee will send back to the client the first successful response received without waiting for other backends.")
 	f.DurationVar(&cfg.BackendReadTimeout, "backend.read-timeout", 90*time.Second, "The timeout when reading the response from a backend.")
