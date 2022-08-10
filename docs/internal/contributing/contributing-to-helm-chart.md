@@ -118,4 +118,4 @@ cd operations/compare-helm-with-jsonnet
 
 Use the make targets `conftest-fmt`, `conftest-verify` and `conftest-test` to lint, verify and execute [conftest](https://www.conftest.dev/) static analysis tests.
 
-The tests are verifying that the policies defined in `operations/helm/policies` are met for all Kubernetes manifests generated from configurations defined under `operations/helm/charts/mimir-distributed/ci` and `operations/helm/charts/mimir-distributed/ci/conftest` directories.
+The tests are verifying that the policies defined in `operations/helm/policies` are met for all Kubernetes manifests generated from configurations defined under `operations/helm/charts/mimir-distributed/ci`.
