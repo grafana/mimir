@@ -452,7 +452,7 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 	metadataPurgeTicker := time.NewTicker(metadataPurgePeriod)
 	defer metadataPurgeTicker.Stop()
 
-	usageStatsUpdateTicker := time.NewTicker(util.DurationWithJitter(usageStatsUpdateInterval, 0.2))
+	usageStatsUpdateTicker := time.NewTicker(usageStatsUpdateInterval)
 	defer usageStatsUpdateTicker.Stop()
 
 	for {
