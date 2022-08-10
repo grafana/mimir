@@ -59,11 +59,12 @@ type Route struct {
 }
 
 type Proxy struct {
-	cfg      ProxyConfig
-	backends []*ProxyBackend
-	logger   log.Logger
-	metrics  *ProxyMetrics
-	routes   []Route
+	cfg        ProxyConfig
+	backends   []*ProxyBackend
+	logger     log.Logger
+	registerer prometheus.Registerer
+	metrics    *ProxyMetrics
+	routes     []Route
 
 	// The HTTP and gRPC servers used to run the proxy service.
 	server *server.Server
@@ -82,10 +83,11 @@ func NewProxy(cfg ProxyConfig, logger log.Logger, routes []Route, registerer pro
 	}
 
 	p := &Proxy{
-		cfg:     cfg,
-		logger:  logger,
-		metrics: NewProxyMetrics(registerer),
-		routes:  routes,
+		cfg:        cfg,
+		logger:     logger,
+		registerer: registerer,
+		metrics:    NewProxyMetrics(registerer),
+		routes:     routes,
 	}
 
 	// Parse the backend endpoints (comma separated).
@@ -162,6 +164,9 @@ func (p *Proxy) Start() error {
 		// Same size configurations as in Mimir default gRPC configuration values
 		GPRCServerMaxRecvMsgSize: 100 * 1024 * 1024,
 		GRPCServerMaxSendMsgSize: 100 * 1024 * 1024,
+
+		// Use Proxy's prometheus registry
+		Registerer: p.registerer,
 	})
 	if err != nil {
 		return err

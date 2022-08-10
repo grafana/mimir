@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -170,7 +171,7 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 				cfg.CompareResponses = true
 			}
 
-			p, err := NewProxy(cfg, log.NewNopLogger(), testRoutes, nil)
+			p, err := NewProxy(cfg, log.NewNopLogger(), testRoutes, prometheus.NewRegistry())
 			require.NoError(t, err)
 			require.NotNil(t, p)
 			defer p.Stop() //nolint:errcheck
@@ -314,12 +315,13 @@ func TestProxy_Passthrough(t *testing.T) {
 			cfg := ProxyConfig{
 				BackendEndpoints:               strings.Join(backendURLs, ","),
 				PreferredBackend:               strconv.Itoa(testData.preferredBackendIdx),
-				ServerServicePort:              0,
+				ServerServicePort:              80,
+				ServerGRPCServicePort:          90,
 				BackendReadTimeout:             time.Second,
 				PassThroughNonRegisteredRoutes: true,
 			}
 
-			p, err := NewProxy(cfg, log.NewNopLogger(), testRoutes, nil)
+			p, err := NewProxy(cfg, log.NewNopLogger(), testRoutes, prometheus.NewRegistry())
 			require.NoError(t, err)
 			require.NotNil(t, p)
 			defer p.Stop() //nolint:errcheck
