@@ -68,10 +68,9 @@ func GetAndResetInt(name string) *expvar.Int {
 }
 
 type Counter struct {
-	total *atomic.Int64
-	rate  *atomic.Float64
-
-	resetTime time.Time
+	total     *atomic.Int64
+	rate      *atomic.Float64
+	resetTime *atomic.Time
 }
 
 // GetCounter returns a new Counter stats object for the given name.
@@ -80,7 +79,7 @@ func GetCounter(name string) *Counter {
 	c := &Counter{
 		total:     atomic.NewInt64(0),
 		rate:      atomic.NewFloat64(0),
-		resetTime: time.Now(),
+		resetTime: atomic.NewTime(time.Now()),
 	}
 	existing := expvar.Get(statsPrefix + name)
 	if existing != nil {
@@ -102,13 +101,13 @@ func GetAndResetCounter(name string) *Counter {
 
 func (c *Counter) updateRate() {
 	total := c.total.Load()
-	c.rate.Store(float64(total) / time.Since(c.resetTime).Seconds())
+	c.rate.Store(float64(total) / time.Since(c.resetTime.Load()).Seconds())
 }
 
 func (c *Counter) reset() {
 	c.total.Store(0)
 	c.rate.Store(0)
-	c.resetTime = time.Now()
+	c.resetTime.Store(time.Now())
 }
 
 func (c *Counter) Inc(i int64) {
