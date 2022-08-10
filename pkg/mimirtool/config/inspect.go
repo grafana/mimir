@@ -257,7 +257,7 @@ func (i *InspectedEntry) zeroValuePtr() Value {
 	case "duration":
 		d := duration(0)
 		typ = reflect.TypeOf(&d)
-	case "list of string":
+	case "list of strings":
 		typ = reflect.TypeOf(stringSlice{})
 	default:
 		typ = parse.ReflectType(i.FieldType)
@@ -282,7 +282,7 @@ func (i *InspectedEntry) decodeValue(decoder decoder) (Value, error) {
 	case "duration":
 		value := decoded.AsInterface().(**duration)
 		return DurationValue(time.Duration(**value)), err
-	case "list of string":
+	case "list of strings":
 		return InterfaceValue(*decoded.AsInterface().(*stringSlice)), nil
 	default:
 		// return a dereferenced typed value

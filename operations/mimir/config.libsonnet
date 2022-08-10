@@ -251,7 +251,8 @@
       extra_small_user:: {
         // Our limit should be 100k, but we need some room of about ~50% to take rollouts into account
         max_global_series_per_user: 150000,
-        max_global_series_per_metric: 20000,
+        // Disabled in favor of using max_global_series_per_user only.
+        max_global_series_per_metric: 0,
         max_global_metadata_per_user: std.ceil(self.max_global_series_per_user * 0.2),
         max_global_metadata_per_metric: 10,
 
@@ -268,7 +269,6 @@
 
       medium_small_user:: {
         max_global_series_per_user: 300000,
-        max_global_series_per_metric: 30000,
         max_global_metadata_per_user: std.ceil(self.max_global_series_per_user * 0.2),
         max_global_metadata_per_metric: 10,
 
@@ -282,7 +282,6 @@
 
       small_user:: {
         max_global_series_per_user: 1000000,
-        max_global_series_per_metric: 100000,
         max_global_metadata_per_user: std.ceil(self.max_global_series_per_user * 0.2),
         max_global_metadata_per_metric: 10,
 
@@ -296,7 +295,6 @@
 
       medium_user:: {
         max_global_series_per_user: 3000000,  // 3M
-        max_global_series_per_metric: 300000,  // 300K
         max_global_metadata_per_user: std.ceil(self.max_global_series_per_user * 0.2),
         max_global_metadata_per_metric: 10,
 
@@ -310,7 +308,6 @@
 
       big_user:: {
         max_global_series_per_user: 6000000,  // 6M
-        max_global_series_per_metric: 600000,  // 600K
         max_global_metadata_per_user: std.ceil(self.max_global_series_per_user * 0.2),
         max_global_metadata_per_metric: 10,
 
@@ -324,7 +321,6 @@
 
       super_user:: {
         max_global_series_per_user: 12000000,  // 12M
-        max_global_series_per_metric: 1200000,  // 1.2M
         max_global_metadata_per_user: std.ceil(self.max_global_series_per_user * 0.2),
         max_global_metadata_per_metric: 10,
 
@@ -343,7 +339,6 @@
       // This user class has limits increased by +50% compared to the previous one.
       mega_user+:: {
         max_global_series_per_user: 16000000,  // 16M
-        max_global_series_per_metric: 1600000,  // 1.6M
         max_global_metadata_per_user: std.ceil(self.max_global_series_per_user * 0.2),
         max_global_metadata_per_metric: 10,
 

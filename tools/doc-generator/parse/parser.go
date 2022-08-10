@@ -399,7 +399,7 @@ func getFieldType(t reflect.Type) (string, error) {
 			return "", err
 		}
 
-		return "list of " + elemType, nil
+		return "list of " + elemType + "s", nil
 	case reflect.Map:
 		return fmt.Sprintf("map of %s to %s", t.Key(), t.Elem().String()), nil
 
@@ -449,7 +449,7 @@ func ReflectType(typ string) reflect.Type {
 		return reflect.TypeOf(0)
 	case "float":
 		return reflect.TypeOf(0.0)
-	case "list of string":
+	case "list of strings":
 		return reflect.TypeOf(flagext.StringSliceCSV{})
 	case "map of string to string":
 		fallthrough
@@ -459,7 +459,7 @@ func ReflectType(typ string) reflect.Type {
 		return reflect.TypeOf([]*relabel.Config{})
 	case "map of string to float64":
 		return reflect.TypeOf(map[string]float64{})
-	case "list of duration":
+	case "list of durations":
 		return reflect.TypeOf(tsdb.DurationList{})
 	case "map of string to validation.ForwardingRule":
 		return reflect.TypeOf(map[string]validation.ForwardingRule{})

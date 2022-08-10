@@ -194,7 +194,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= update-build-image-2966639ba
+LATEST_BUILD_IMAGE_TAG ?= helm-static-checks-01d4d4aa2
 
 # TTY is parameterized to allow Google Cloud Builder to run builds,
 # as it currently disallows TTY devices. This value needs to be overridden
@@ -217,7 +217,7 @@ GOVOLUMES=	-v $(shell pwd)/.cache:/go/cache:delegated,z \
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
 SSHVOLUME=  -v ~/.ssh/:/root/.ssh:delegated,z
 
-exes $(EXES) protos $(PROTO_GOS) lint test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license: fetch-build-image
+exes $(EXES) protos $(PROTO_GOS) lint test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt conftest-test conftest-verify: fetch-build-image
 	@mkdir -p $(shell pwd)/.pkg
 	@mkdir -p $(shell pwd)/.cache
 	@echo
@@ -418,6 +418,20 @@ check-mixin-tests: ## Test the mixin files.
 
 format-mixin: ## Format the mixin files.
 	@find $(MIXIN_PATH) -type f -name '*.libsonnet' | xargs jsonnetfmt -i
+
+HELM_REGO_POLICIES_PATH=operations/helm/policies
+
+conftest-fmt:
+	@conftest fmt $(HELM_REGO_POLICIES_PATH)
+
+check-conftest-fmt: conftest-fmt
+	@./tools/find-diff-or-untracked.sh $(HELM_REGO_POLICIES_PATH) || (echo "Please format rego policies with 'make conftest-fmt'" && false)
+
+conftest-verify:
+	@conftest verify -p $(HELM_REGO_POLICIES_PATH) --report notes
+
+conftest-test:
+	@tools/run-conftest.sh --do-dependency-update --policies-path $(HELM_REGO_POLICIES_PATH)
 
 endif
 

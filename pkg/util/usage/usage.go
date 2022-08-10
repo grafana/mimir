@@ -201,9 +201,9 @@ func getFlagName(fl *flag.Flag) string {
 		case "*flagext.StringSlice":
 			return "string"
 		case "*flagext.StringSliceCSV":
-			return "comma-separated list of string"
+			return "comma-separated list of strings"
 		case "*flagext.CIDRSliceCSV":
-			return "comma-separated list of string"
+			return "comma-separated list of strings"
 		case "*flagext.URLValue":
 			return "string"
 		case "*url.URL":
@@ -211,7 +211,7 @@ func getFlagName(fl *flag.Flag) string {
 		case "*model.Duration":
 			return "duration"
 		case "*tsdb.DurationList":
-			return "comma-separated list of duration"
+			return "comma-separated list of durations"
 		}
 	}
 

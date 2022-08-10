@@ -1271,7 +1271,7 @@ spec:
         - -distributor.health-check-ingesters=true
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
-        - -ingester.max-global-series-per-metric=20000
+        - -ingester.max-global-series-per-metric=0
         - -ingester.max-global-series-per-user=150000
         - -ingester.ring.heartbeat-period=15s
         - -ingester.ring.heartbeat-timeout=10m
@@ -1387,7 +1387,7 @@ spec:
         - -distributor.health-check-ingesters=true
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
-        - -ingester.max-global-series-per-metric=20000
+        - -ingester.max-global-series-per-metric=0
         - -ingester.max-global-series-per-user=150000
         - -ingester.ring.heartbeat-period=15s
         - -ingester.ring.heartbeat-timeout=10m
@@ -1505,7 +1505,7 @@ spec:
         - -distributor.health-check-ingesters=true
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
-        - -ingester.max-global-series-per-metric=20000
+        - -ingester.max-global-series-per-metric=0
         - -ingester.max-global-series-per-user=150000
         - -ingester.ring.heartbeat-period=15s
         - -ingester.ring.heartbeat-timeout=10m
@@ -1623,7 +1623,7 @@ spec:
         - -distributor.health-check-ingesters=true
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
-        - -ingester.max-global-series-per-metric=20000
+        - -ingester.max-global-series-per-metric=0
         - -ingester.max-global-series-per-user=150000
         - -ingester.ring.heartbeat-period=15s
         - -ingester.ring.heartbeat-timeout=10m
