@@ -2,6 +2,7 @@ The following are the main/default maintainers:
 
 - Arve Knudsen — [@aknuds1](https://github.com/aknuds1) ([Grafana Labs](https://grafana.com/))
 - Bryan Boreham — [@bboreham](https://github.com/bboreham) ([Grafana Labs](https://grafana.com/))
+- Dimitar Dimitrov - [@dimitarvdimitrov](https://github.com/dimitarvdimitrov) ([Grafana Labs](https://grafana.com/))
 - George Krajcsovits - [@krajorama](https://github.com/krajorama) ([Grafana Labs](https://grafana.com/))
 - Johanna Ratliff — [@johannaratliff](https://github.com/johannaratliff) ([Grafana Labs](https://grafana.com/))
 - Marco Pracucci — [@pracucci](https://github.com/pracucci) ([Grafana Labs](https://grafana.com/))
