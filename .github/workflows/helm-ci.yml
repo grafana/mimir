@@ -23,10 +23,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v2
 
-      - name: Conftest
-        env:
-          TEMP_DIR: ${{ runner.temp }}/conftest
-        run: make BUILD_IN_CONTAINER=false conftest-verify conftest-fmt
-
       - name: Lint Rego Policies
         run: make BUILD_IN_CONTAINER=false check-conftest-fmt
+
+      - name: Conftest Verify
+        env:
+          TEMP_DIR: ${{ runner.temp }}/conftest
+        run: make BUILD_IN_CONTAINER=false conftest-verify
+
+      - name: Conftest Run Tests
+        env:
+          TEMP_DIR: ${{ runner.temp }}/conftest
+        run: make BUILD_IN_CONTAINER=false conftest-test

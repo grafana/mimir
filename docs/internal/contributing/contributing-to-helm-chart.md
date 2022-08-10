@@ -113,3 +113,9 @@ This is useful to limit otherwise noisy output to only show objects of a certain
 cd operations/compare-helm-with-jsonnet
 ./compare-kustomize-outputs.sh ./helm/09-* ./jsonnet/09-* 'select(.kind == "StatefulSet")'
 ```
+
+### Static checks
+
+Use the make targets `conftest-fmt`, `conftest-verify` and `conftest-test` to lint, verify and execute [conftest](https://www.conftest.dev/) static analysis tests.
+
+The tests are verifying that the policies defined in `operations/helm/policies` are met for all Kubernetes manifests generated from configurations defined under `operations/helm/charts/mimir-distributed/ci`.
