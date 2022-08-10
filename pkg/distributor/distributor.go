@@ -628,13 +628,20 @@ func (d *Distributor) pushWithMiddlewares() push.Func {
 
 func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 	return func(ctx context.Context, req *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error) {
+		cleanupInDefer := true
+		defer func() {
+			if cleanupInDefer {
+				cleanup()
+			}
+		}()
+
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
-			cleanup()
 			return nil, err
 		}
 
 		if len(req.Timeseries) == 0 || !d.limits.AcceptHASamples(userID) {
+			cleanupInDefer = false
 			return next(ctx, req, cleanup)
 		}
 
@@ -656,8 +663,6 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 
 		removeReplica, err := d.checkSample(ctx, userID, cluster, replica)
 		if err != nil {
-			cleanup()
-
 			if errors.Is(err, replicasNotMatchError{}) {
 				// These samples have been deduped.
 				d.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(numSamples))
@@ -684,6 +689,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 			d.nonHASamples.WithLabelValues(userID).Add(float64(numSamples))
 		}
 
+		cleanupInDefer = false
 		return next(ctx, req, cleanup)
 	}
 }
