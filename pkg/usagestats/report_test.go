@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/util/version"
 )
@@ -25,6 +26,10 @@ func TestBuildReport(t *testing.T) {
 	version.Branch = "dev-branch"
 	version.Revision = "dev-revision"
 
+	GetString("custom_string").Set("my_value")
+	GetInt("custom_int").Set(111)
+	GetCounter("custom_counter").Inc(222)
+
 	report := buildReport(seed, reportAt, reportInterval)
 	assert.Equal(t, "test", report.ClusterID)
 	assert.Equal(t, clusterCreatedAt, report.CreatedAt)
@@ -39,4 +44,9 @@ func TestBuildReport(t *testing.T) {
 	assert.Equal(t, "dev-branch", report.Version.Branch)
 	assert.Equal(t, "dev-revision", report.Version.Revision)
 	assert.Equal(t, runtime.Version(), report.Version.GoVersion)
+	assert.Equal(t, "my_value", report.Metrics["custom_string"])
+	assert.Equal(t, int64(111), report.Metrics["custom_int"])
+
+	require.IsType(t, map[string]interface{}{}, report.Metrics["custom_counter"])
+	assert.Equal(t, int64(222), report.Metrics["custom_counter"].(map[string]interface{})["total"])
 }

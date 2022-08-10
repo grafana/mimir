@@ -26,8 +26,10 @@ import (
 )
 
 const (
+	// DefaultReportSendInterval is the interval at which anonymous usage statistics are reported.
+	DefaultReportSendInterval = 4 * time.Hour
+
 	defaultReportCheckInterval = time.Minute
-	defaultReportSendInterval  = 4 * time.Hour
 	defaultStatsServerURL      = "https://stats.grafana.org/mimir-usage-report"
 )
 
@@ -74,7 +76,7 @@ func NewReporter(bucketClient objstore.InstrumentedBucket, logger log.Logger, re
 		client:               http.Client{Timeout: 5 * time.Second},
 		serverURL:            defaultStatsServerURL,
 		reportCheckInterval:  defaultReportCheckInterval,
-		reportSendInterval:   defaultReportSendInterval,
+		reportSendInterval:   DefaultReportSendInterval,
 		seedFileMinStability: clusterSeedFileMinStability,
 
 		requestsTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{

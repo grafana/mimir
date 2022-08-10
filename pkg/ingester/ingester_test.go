@@ -58,6 +58,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -801,6 +802,27 @@ func TestIngester_Push(t *testing.T) {
 			// Check tracked Prometheus metrics
 			err = testutil.GatherAndCompare(registry, strings.NewReader(testData.expectedMetrics), mn...)
 			assert.NoError(t, err)
+
+			// Check anonymous usage stats.
+			expectedTenantsCount := 0
+			expectedSamplesCount := 0
+			expectedExemplarsCount := 0
+			if len(testData.expectedIngested) > 0 {
+				expectedTenantsCount = 1
+			}
+			for _, stream := range testData.expectedIngested {
+				expectedSamplesCount += len(stream.Values)
+			}
+			for _, series := range testData.expectedExemplarsIngested {
+				expectedExemplarsCount += len(series.Exemplars)
+			}
+
+			i.updateUsageStats()
+
+			assert.Equal(t, int64(len(testData.expectedIngested)), usagestats.GetInt(memorySeriesStatsName).Value())
+			assert.Equal(t, int64(expectedTenantsCount), usagestats.GetInt(memoryTenantsStatsName).Value())
+			assert.Equal(t, int64(expectedSamplesCount), usagestats.GetCounter(appendedSamplesStatsName).Total())
+			assert.Equal(t, int64(expectedExemplarsCount), usagestats.GetCounter(appendedExemplarsStatsName).Total())
 		})
 	}
 }
