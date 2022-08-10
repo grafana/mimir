@@ -2488,8 +2488,7 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 				getForwarder:      getForwarder,
 			})
 
-			wrappedPush := distributors[0].prePushForwardingMiddleware(distributors[0].PushWithCleanup)
-			response, err := wrappedPush(ctx, tc.request, func() {})
+			response, err := distributors[0].Push(ctx, tc.request)
 			assert.NoError(t, err)
 			assert.Equal(t, emptyResponse, response)
 			assert.Equal(t, 1, int(forwardReqCnt.Load()))
