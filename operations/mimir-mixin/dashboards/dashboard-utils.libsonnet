@@ -27,6 +27,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       datasource=$._config.dashboard_datasource,
       datasource_regex=$._config.datasource_regex
     ) + {
+      graphTooltip: $._config.graph_tooltip,
       __requires: [
         {
           id: 'grafana',
