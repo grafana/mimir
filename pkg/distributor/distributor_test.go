@@ -2773,6 +2773,173 @@ func TestDistributor_LabelValuesCardinality_Concurrency(t *testing.T) {
 	})
 }
 
+func TestHaDedupeMiddleware(t *testing.T) {
+	ctxWithUser := user.InjectOrgID(context.Background(), "user")
+	const replica1 = "replicaA"
+	const replica2 = "replicaB"
+	const cluster1 = "clusterA"
+	const cluster2 = "clusterB"
+
+	// Get generator for label set with given replica and cluster.
+	labelSetGenWithReplicaAndCluster := func(replica, cluster string) func(int) []mimirpb.LabelAdapter {
+		return func(id int) []mimirpb.LabelAdapter {
+			return []mimirpb.LabelAdapter{
+				{Name: "__name__", Value: "foo"},
+				{Name: "__replica__", Value: replica},
+				{Name: "bar", Value: "baz"},
+				{Name: "cluster", Value: cluster},
+				{Name: "sample", Value: fmt.Sprintf("%d", id)},
+			}
+		}
+	}
+
+	// Get generator for label set with given cluster but no replica.
+	labelSetGenWithCluster := func(cluster string) func(int) []mimirpb.LabelAdapter {
+		return func(id int) []mimirpb.LabelAdapter {
+			return []mimirpb.LabelAdapter{
+				{Name: "__name__", Value: "foo"},
+				{Name: "bar", Value: "baz"},
+				{Name: "cluster", Value: cluster},
+				{Name: "sample", Value: fmt.Sprintf("%d", id)},
+			}
+		}
+	}
+
+	type testCase struct {
+		name              string
+		ctx               context.Context
+		enableHaTracker   bool
+		acceptHaSamples   bool
+		reqs              []*mimirpb.WriteRequest
+		expectedReqs      []*mimirpb.WriteRequest
+		expectedNextCalls int
+		expectErrs        []int
+	}
+	testCases := []testCase{
+		{
+			name:              "no changes on empty request",
+			ctx:               ctxWithUser,
+			enableHaTracker:   true,
+			acceptHaSamples:   true,
+			reqs:              []*mimirpb.WriteRequest{{}},
+			expectedReqs:      []*mimirpb.WriteRequest{{}},
+			expectedNextCalls: 1,
+			expectErrs:        []int{0},
+		}, {
+			name:              "no changes if accept HA samples is false",
+			ctx:               ctxWithUser,
+			enableHaTracker:   true,
+			acceptHaSamples:   false,
+			reqs:              []*mimirpb.WriteRequest{makeWriteRequestForLabelSetGen(5, labelSetGenWithReplicaAndCluster(replica1, cluster1))},
+			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForLabelSetGen(5, labelSetGenWithReplicaAndCluster(replica1, cluster1))},
+			expectedNextCalls: 1,
+			expectErrs:        []int{0},
+		}, {
+			name:              "remove replica label with HA tracker disabled",
+			ctx:               ctxWithUser,
+			enableHaTracker:   false,
+			acceptHaSamples:   true,
+			reqs:              []*mimirpb.WriteRequest{makeWriteRequestForLabelSetGen(5, labelSetGenWithReplicaAndCluster(replica1, cluster1))},
+			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForLabelSetGen(5, labelSetGenWithCluster(cluster1))},
+			expectedNextCalls: 1,
+			expectErrs:        []int{0},
+		}, {
+			name:              "do nothing without user in context, don't even call next",
+			ctx:               context.Background(),
+			enableHaTracker:   true,
+			acceptHaSamples:   true,
+			reqs:              []*mimirpb.WriteRequest{makeWriteRequestForLabelSetGen(5, labelSetGenWithReplicaAndCluster(replica1, cluster1))},
+			expectedReqs:      nil,
+			expectedNextCalls: 0,
+			expectErrs:        []int{-1}, // Special value because this is not an httpgrpc error.
+		}, {
+			name:            "perform HA deduplication",
+			ctx:             ctxWithUser,
+			enableHaTracker: true,
+			acceptHaSamples: true,
+			reqs: []*mimirpb.WriteRequest{
+				makeWriteRequestForLabelSetGen(5, labelSetGenWithReplicaAndCluster(replica1, cluster1)),
+				makeWriteRequestForLabelSetGen(5, labelSetGenWithReplicaAndCluster(replica2, cluster1)),
+			},
+			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForLabelSetGen(5, labelSetGenWithCluster(cluster1))},
+			expectedNextCalls: 1,
+			expectErrs:        []int{0, 202},
+		}, {
+			name:            "exceed max ha clusters limit",
+			ctx:             ctxWithUser,
+			enableHaTracker: true,
+			acceptHaSamples: true,
+			reqs: []*mimirpb.WriteRequest{
+				makeWriteRequestForLabelSetGen(5, labelSetGenWithReplicaAndCluster(replica1, cluster1)),
+				makeWriteRequestForLabelSetGen(5, labelSetGenWithReplicaAndCluster(replica2, cluster1)),
+				makeWriteRequestForLabelSetGen(5, labelSetGenWithReplicaAndCluster(replica1, cluster2)), // HaMaxClusters is set to 1.
+				makeWriteRequestForLabelSetGen(5, labelSetGenWithReplicaAndCluster(replica2, cluster2)),
+			},
+			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForLabelSetGen(5, labelSetGenWithCluster(cluster1))},
+			expectedNextCalls: 1,
+			expectErrs:        []int{0, 202, 400, 400},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			cleanupCallCount := 0
+			cleanup := func() {
+				cleanupCallCount++
+			}
+
+			nextCallCount := 0
+			var gotReqs []*mimirpb.WriteRequest
+			next := func(ctx context.Context, req *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error) {
+				nextCallCount++
+				gotReqs = append(gotReqs, req)
+				cleanup()
+				return nil, nil
+			}
+
+			var limits validation.Limits
+			flagext.DefaultValues(&limits)
+			limits.AcceptHASamples = tc.acceptHaSamples
+			limits.MaxLabelValueLength = 15
+			limits.HAMaxClusters = 1
+
+			ds, _, _ := prepare(t, prepConfig{
+				numDistributors: 1,
+				limits:          &limits,
+				enableTracker:   tc.enableHaTracker,
+			})
+			middleware := ds[0].prePushHaDedupeMiddleware(next)
+
+			var gotErrs []error
+			for _, req := range tc.reqs {
+				_, err := middleware(tc.ctx, req, cleanup)
+				gotErrs = append(gotErrs, err)
+			}
+
+			assert.Equal(t, tc.expectedReqs, gotReqs)
+			assert.Len(t, gotErrs, len(tc.expectErrs))
+			for errIdx, expectErr := range tc.expectErrs {
+				if expectErr > 0 {
+					// Expect an httpgrpc error with specific status code.
+					resp, ok := httpgrpc.HTTPResponseFromError(gotErrs[errIdx])
+					assert.True(t, ok)
+					assert.Equal(t, expectErr, int(resp.Code))
+				} else if expectErr == 0 {
+					// Expect no error.
+					assert.Nil(t, gotErrs[errIdx])
+				} else {
+					// Expect an error which is not an httpgrpc error.
+					assert.NotNil(t, gotErrs[errIdx])
+				}
+			}
+
+			// Cleanup must have been called once per request.
+			assert.Equal(t, len(tc.reqs), cleanupCallCount)
+			assert.Equal(t, tc.expectedNextCalls, nextCallCount)
+		})
+	}
+}
+
 func mustNewMatcher(t labels.MatchType, n, v string) *labels.Matcher {
 	m, err := labels.NewMatcher(t, n, v)
 	if err != nil {
@@ -2933,7 +3100,9 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 				UpdateTimeout:   100 * time.Millisecond,
 				FailoverTimeout: time.Second,
 			}
-			cfg.limits.HAMaxClusters = 100
+			if cfg.limits.HAMaxClusters == 0 {
+				cfg.limits.HAMaxClusters = 100
+			}
 		}
 
 		overrides, err := validation.NewOverrides(*cfg.limits, nil)
@@ -3045,17 +3214,24 @@ func makeWriteRequestExamplars(labels []mimirpb.LabelAdapter, ts int64, value fl
 }
 
 func makeWriteRequestHA(samples int, replica, cluster string) *mimirpb.WriteRequest {
+	labelSetGen := func(id int) []mimirpb.LabelAdapter {
+		return []mimirpb.LabelAdapter{
+			{Name: "__name__", Value: "foo"},
+			{Name: "__replica__", Value: replica},
+			{Name: "bar", Value: "baz"},
+			{Name: "cluster", Value: cluster},
+			{Name: "sample", Value: fmt.Sprintf("%d", id)},
+		}
+	}
+	return makeWriteRequestForLabelSetGen(samples, labelSetGen)
+}
+
+func makeWriteRequestForLabelSetGen(samples int, labelSetGen func(int) []mimirpb.LabelAdapter) *mimirpb.WriteRequest {
 	request := &mimirpb.WriteRequest{}
 	for i := 0; i < samples; i++ {
 		ts := mimirpb.PreallocTimeseries{
 			TimeSeries: &mimirpb.TimeSeries{
-				Labels: []mimirpb.LabelAdapter{
-					{Name: "__name__", Value: "foo"},
-					{Name: "__replica__", Value: replica},
-					{Name: "bar", Value: "baz"},
-					{Name: "cluster", Value: cluster},
-					{Name: "sample", Value: fmt.Sprintf("%d", i)},
-				},
+				Labels: labelSetGen(i),
 			},
 		}
 		ts.Samples = []mimirpb.Sample{
