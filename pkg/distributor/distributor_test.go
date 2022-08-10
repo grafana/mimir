@@ -2923,11 +2923,20 @@ func TestHaDedupeBeforeForwarding(t *testing.T) {
 	writeReqReplica2 := makeWriteRequestForLabelSetGen(5, labelSetGenWithReplicaAndCluster(replica2, cluster1))
 	expectedWriteReq := makeWriteRequestForLabelSetGen(5, labelSetGenWithCluster(cluster1))
 
-	// Capture the submitted write request which the middlewares pass into the mock push function.
+	// Capture the submitted write requests which the middlewares pass into the mock push function.
 	var submittedWriteReqs []*mimirpb.WriteRequest
 	mockPush := func(_ context.Context, writeReq *mimirpb.WriteRequest, _ func()) (*mimirpb.WriteResponse, error) {
 		submittedWriteReqs = append(submittedWriteReqs, writeReq)
 		return nil, nil
+	}
+
+	// Setup a callback in the mock forwarder to capture the time series which get passed into it by the middleware.
+	var forwardedTs [][]mimirpb.PreallocTimeseries
+	forwardReqCallback := func(ts []mimirpb.PreallocTimeseries) {
+		forwardedTs = append(forwardedTs, ts)
+	}
+	getForwarder := func() forwarding.Forwarder {
+		return newMockForwarder(true, forwardReqCallback)
 	}
 
 	// Setup limits with HA enabled and forwarding rules for the metric "foo".
@@ -2937,15 +2946,6 @@ func TestHaDedupeBeforeForwarding(t *testing.T) {
 	limits.MaxLabelValueLength = 15
 	limits.ForwardingRules = validation.ForwardingRules{
 		"foo": validation.ForwardingRule{},
-	}
-
-	// Setup a callback in the mock forwarder to capture the time series which gets passed into it by the middleware.
-	var forwardedTs [][]mimirpb.PreallocTimeseries
-	forwardReqCallback := func(ts []mimirpb.PreallocTimeseries) {
-		forwardedTs = append(forwardedTs, ts)
-	}
-	getForwarder := func() forwarding.Forwarder {
-		return newMockForwarder(true, forwardReqCallback)
 	}
 
 	// Prepare distributor and wrap the mock push function with its middlewares.
