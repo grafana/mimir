@@ -1099,7 +1099,7 @@ Usage of ./cmd/mimir/mimir:
   -memberlist.join string
     	Other cluster members to join. Can be specified multiple times. It can be an IP, hostname or an entry specified in the DNS Service Discovery format.
   -memberlist.leave-timeout duration
-    	Timeout for leaving memberlist cluster. (default 5s)
+    	Timeout for leaving memberlist cluster. (default 20s)
   -memberlist.left-ingesters-timeout duration
     	How long to keep LEFT ingesters in the ring. (default 5m0s)
   -memberlist.max-join-backoff duration
@@ -1113,7 +1113,7 @@ Usage of ./cmd/mimir/mimir:
   -memberlist.nodename string
     	Name of the node in memberlist cluster. Defaults to hostname.
   -memberlist.packet-dial-timeout duration
-    	Timeout used when connecting to other nodes to send packet. (default 5s)
+    	Timeout used when connecting to other nodes to send packet. (default 2s)
   -memberlist.packet-write-timeout duration
     	Timeout for writing 'packet' data. (default 5s)
   -memberlist.pullpush-interval duration

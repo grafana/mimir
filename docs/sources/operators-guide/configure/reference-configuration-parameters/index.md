@@ -2228,7 +2228,7 @@ The `memberlist` block configures the Gossip memberlist.
 
 # (advanced) Timeout for leaving memberlist cluster.
 # CLI flag: -memberlist.leave-timeout
-[leave_timeout: <duration> | default = 5s]
+[leave_timeout: <duration> | default = 20s]
 
 # (advanced) How much space to use for keeping received and sent messages in
 # memory for troubleshooting (two buffers). 0 to disable.
@@ -2246,7 +2246,7 @@ The `memberlist` block configures the Gossip memberlist.
 
 # (advanced) Timeout used when connecting to other nodes to send packet.
 # CLI flag: -memberlist.packet-dial-timeout
-[packet_dial_timeout: <duration> | default = 5s]
+[packet_dial_timeout: <duration> | default = 2s]
 
 # (advanced) Timeout for writing 'packet' data.
 # CLI flag: -memberlist.packet-write-timeout

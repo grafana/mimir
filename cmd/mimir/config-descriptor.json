@@ -9900,7 +9900,7 @@
           "required": false,
           "desc": "Timeout for leaving memberlist cluster.",
           "fieldValue": null,
-          "fieldDefaultValue": 5000000000,
+          "fieldDefaultValue": 20000000000,
           "fieldFlag": "memberlist.leave-timeout",
           "fieldType": "duration",
           "fieldCategory": "advanced"
@@ -9942,7 +9942,7 @@
           "required": false,
           "desc": "Timeout used when connecting to other nodes to send packet.",
           "fieldValue": null,
-          "fieldDefaultValue": 5000000000,
+          "fieldDefaultValue": 2000000000,
           "fieldFlag": "memberlist.packet-dial-timeout",
           "fieldType": "duration",
           "fieldCategory": "advanced"
