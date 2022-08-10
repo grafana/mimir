@@ -760,6 +760,9 @@ func (t *Mimir) initUsageStats() (services.Service, error) {
 		return nil, err
 	}
 
+	// Track anonymous usage statistics.
+	usagestats.GetString("blocks_storage_backend").Set(t.Cfg.BlocksStorage.Bucket.Backend)
+
 	t.UsageStatsReporter = usagestats.NewReporter(bucketClient, util_log.Logger, prometheus.DefaultRegisterer)
 	return t.UsageStatsReporter, nil
 }
