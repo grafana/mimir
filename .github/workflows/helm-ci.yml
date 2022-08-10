@@ -7,9 +7,31 @@ jobs:
     uses: grafana/helm-charts/.github/workflows/linter.yml@main
     with:
       filter_regex_include: .*operations/helm/.*
+
   call-lint-test:
     uses: grafana/helm-charts/.github/workflows/lint-test.yaml@main
     with:
       ct_configfile: operations/helm/ct.yaml
       ct_check_version_increment: false
       helm_version: v3.8.2
+
+  conftest:
+    runs-on: ubuntu-latest
+    container:
+      image: grafana/mimir-build-image:helm-static-checks-01d4d4aa2
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Lint Rego Policies
+        run: make BUILD_IN_CONTAINER=false check-conftest-fmt
+
+      - name: Conftest Verify
+        env:
+          TEMP_DIR: ${{ runner.temp }}/conftest
+        run: make BUILD_IN_CONTAINER=false conftest-verify
+
+      - name: Conftest Run Tests
+        env:
+          TEMP_DIR: ${{ runner.temp }}/conftest
+        run: make BUILD_IN_CONTAINER=false conftest-test
