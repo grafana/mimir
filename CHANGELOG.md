@@ -49,6 +49,7 @@
 * [BUGFIX] Compactor: Fix bug when using `-compactor.partial-block-deletion-delay`: compactor didn't correctly check for modification time of all block files. #2559
 * [BUGFIX] Query-frontend: fix wrong query sharding results for queries with boolean result like `1 < bool 0`. #2558
 * [BUGFIX] Fixed error messages related to per-instance limits incorrectly reporting they can be set on a per-tenant basis. #2610
+* [BUGFIX] Perform HA-deduplication before forwarding samples according to forwarding rules in the distributor. #2603
 
 ### Mixin
 
