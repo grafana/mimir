@@ -159,10 +159,11 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 
 			// Start the proxy.
 			cfg := ProxyConfig{
-				BackendEndpoints:   strings.Join(backendURLs, ","),
-				PreferredBackend:   strconv.Itoa(testData.preferredBackendIdx),
-				ServerServicePort:  0,
-				BackendReadTimeout: time.Second,
+				BackendEndpoints:      strings.Join(backendURLs, ","),
+				PreferredBackend:      strconv.Itoa(testData.preferredBackendIdx),
+				ServerServicePort:     80,
+				ServerGRPCServicePort: 90,
+				BackendReadTimeout:    time.Second,
 			}
 
 			if len(backendURLs) == 2 {
@@ -177,7 +178,7 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 			require.NoError(t, p.Start())
 
 			// Send a query request to the proxy.
-			res, err := http.Get(fmt.Sprintf("http://%s/api/v1/query", p.Endpoint()))
+			res, err := http.Get("http://localhost/api/v1/query")
 			require.NoError(t, err)
 
 			defer res.Body.Close()
@@ -328,7 +329,7 @@ func TestProxy_Passthrough(t *testing.T) {
 			for _, query := range testData.queries {
 
 				// Send a query request to the proxy.
-				res, err := http.Get(fmt.Sprintf("http://%s%s", p.Endpoint(), query.path))
+				res, err := http.Get(fmt.Sprintf("http://localhost%s", query.path))
 				require.NoError(t, err)
 
 				defer res.Body.Close()

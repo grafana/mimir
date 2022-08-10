@@ -189,7 +189,7 @@ func (p *ProxyEndpoint) waitBackendResponseForDownstream(resCh chan *backendResp
 			return res
 		}
 
-		// If we received a non successful response from the preferred backend, then we can
+		// If we received a non-successful response from the preferred backend, then we can
 		// return the first successful response received so far (if any).
 		if res.backend.preferred && !res.succeeded() {
 			preferredResponseReceived = true
