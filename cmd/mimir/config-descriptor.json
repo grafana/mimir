@@ -734,7 +734,7 @@
                       "fieldValue": null,
                       "fieldDefaultValue": [],
                       "fieldFlag": "distributor.ha-tracker.etcd.endpoints",
-                      "fieldType": "list of string"
+                      "fieldType": "list of strings"
                     },
                     {
                       "kind": "field",
@@ -1065,7 +1065,7 @@
                       "fieldValue": null,
                       "fieldDefaultValue": [],
                       "fieldFlag": "distributor.ring.etcd.endpoints",
-                      "fieldType": "list of string"
+                      "fieldType": "list of strings"
                     },
                     {
                       "kind": "field",
@@ -1278,7 +1278,7 @@
               "fieldValue": null,
               "fieldDefaultValue": [],
               "fieldFlag": "distributor.ring.instance-interface-names",
-              "fieldType": "list of string"
+              "fieldType": "list of strings"
             },
             {
               "kind": "field",
@@ -1945,7 +1945,7 @@
                       "fieldValue": null,
                       "fieldDefaultValue": [],
                       "fieldFlag": "ingester.ring.etcd.endpoints",
-                      "fieldType": "list of string"
+                      "fieldType": "list of strings"
                     },
                     {
                       "kind": "field",
@@ -2210,7 +2210,7 @@
               "fieldValue": null,
               "fieldDefaultValue": [],
               "fieldFlag": "ingester.ring.instance-interface-names",
-              "fieldType": "list of string",
+              "fieldType": "list of strings",
               "fieldCategory": "advanced"
             },
             {
@@ -2557,7 +2557,7 @@
           "fieldValue": null,
           "fieldDefaultValue": [],
           "fieldFlag": "distributor.drop-label",
-          "fieldType": "list of string",
+          "fieldType": "list of strings",
           "fieldCategory": "advanced"
         },
         {
@@ -3639,7 +3639,7 @@
           "fieldValue": null,
           "fieldDefaultValue": [],
           "fieldFlag": "query-frontend.instance-interface-names",
-          "fieldType": "list of string",
+          "fieldType": "list of strings",
           "fieldCategory": "advanced"
         },
         {
@@ -5279,7 +5279,7 @@
               "fieldValue": null,
               "fieldDefaultValue": [],
               "fieldFlag": "blocks-storage.tsdb.block-ranges-period",
-              "fieldType": "list of duration",
+              "fieldType": "list of durations",
               "fieldCategory": "advanced"
             },
             {
@@ -5534,7 +5534,7 @@
           "fieldValue": null,
           "fieldDefaultValue": [],
           "fieldFlag": "compactor.block-ranges",
-          "fieldType": "list of duration",
+          "fieldType": "list of durations",
           "fieldCategory": "advanced"
         },
         {
@@ -5856,7 +5856,7 @@
                       "fieldValue": null,
                       "fieldDefaultValue": [],
                       "fieldFlag": "compactor.ring.etcd.endpoints",
-                      "fieldType": "list of string"
+                      "fieldType": "list of strings"
                     },
                     {
                       "kind": "field",
@@ -6091,7 +6091,7 @@
               "fieldValue": null,
               "fieldDefaultValue": [],
               "fieldFlag": "compactor.ring.instance-interface-names",
-              "fieldType": "list of string"
+              "fieldType": "list of strings"
             },
             {
               "kind": "field",
@@ -6284,7 +6284,7 @@
                       "fieldValue": null,
                       "fieldDefaultValue": [],
                       "fieldFlag": "store-gateway.sharding-ring.etcd.endpoints",
-                      "fieldType": "list of string"
+                      "fieldType": "list of strings"
                     },
                     {
                       "kind": "field",
@@ -6550,7 +6550,7 @@
               "fieldValue": null,
               "fieldDefaultValue": [],
               "fieldFlag": "store-gateway.sharding-ring.instance-interface-names",
-              "fieldType": "list of string"
+              "fieldType": "list of strings"
             },
             {
               "kind": "field",
@@ -7180,7 +7180,7 @@
                       "fieldValue": null,
                       "fieldDefaultValue": [],
                       "fieldFlag": "ruler.ring.etcd.endpoints",
-                      "fieldType": "list of string"
+                      "fieldType": "list of strings"
                     },
                     {
                       "kind": "field",
@@ -7393,7 +7393,7 @@
               "fieldValue": null,
               "fieldDefaultValue": [],
               "fieldFlag": "ruler.ring.instance-interface-names",
-              "fieldType": "list of string"
+              "fieldType": "list of strings"
             },
             {
               "kind": "field",
@@ -8504,7 +8504,7 @@
                       "fieldValue": null,
                       "fieldDefaultValue": [],
                       "fieldFlag": "alertmanager.sharding-ring.etcd.endpoints",
-                      "fieldType": "list of string"
+                      "fieldType": "list of strings"
                     },
                     {
                       "kind": "field",
@@ -8739,7 +8739,7 @@
               "fieldValue": null,
               "fieldDefaultValue": [],
               "fieldFlag": "alertmanager.sharding-ring.instance-interface-names",
-              "fieldType": "list of string",
+              "fieldType": "list of strings",
               "fieldCategory": "advanced"
             },
             {
@@ -9827,7 +9827,7 @@
           "fieldValue": null,
           "fieldDefaultValue": [],
           "fieldFlag": "memberlist.join",
-          "fieldType": "list of string"
+          "fieldType": "list of strings"
         },
         {
           "kind": "field",
@@ -9924,7 +9924,7 @@
           "fieldValue": null,
           "fieldDefaultValue": [],
           "fieldFlag": "memberlist.bind-addr",
-          "fieldType": "list of string"
+          "fieldType": "list of strings"
         },
         {
           "kind": "field",
