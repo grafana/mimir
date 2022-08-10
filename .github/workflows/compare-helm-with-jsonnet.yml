@@ -66,14 +66,14 @@ jobs:
           echo "::set-output name=diff::$OUTPUT"
         fi
 
-    - uses: int128/hide-comment-action@v1
+    - uses: int128/hide-comment-action@24848bfab99f16e129632e27397da999b9d1b2c0
       with:
         authors: 'github-actions[bot]'
         starts-with: '**Helm <> Jsonnet Diff**'
 
     - name: Create or update comment
       continue-on-error: true
-      uses: peter-evans/create-or-update-comment@v2
+      uses: peter-evans/create-or-update-comment@c9fcb64660bc90ec1cc535646af190c992007c32
       if: ${{ steps.compare-manifests.outputs.changed == 'true' }}
       with:
         issue-number: ${{ github.event.pull_request.number }}
