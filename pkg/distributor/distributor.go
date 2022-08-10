@@ -614,7 +614,7 @@ func (d *Distributor) pushWithMiddlewares() push.Func {
 	var middlewares []func(push.Func) push.Func
 
 	// The middlewares will be applied in the order of the slice "middlewares",
-	// requests will traverse them in the reverse order.
+	// requests will traverse them in the reverse order and the first middleware will wrap the second one, etc.
 	middlewares = append(middlewares, d.prePushForwardingMiddleware)
 	middlewares = append(middlewares, d.prePushHaDedupeMiddleware)
 
