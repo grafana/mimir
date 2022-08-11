@@ -702,7 +702,10 @@ func (d *Distributor) prePushRelabelMiddleware(next push.Func) push.Func {
 			return nil, err
 		}
 
-		for _, ts := range req.Timeseries {
+		var removeTsIndexes []int
+		for tsIdx := 0; tsIdx < len(req.Timeseries); tsIdx++ {
+			ts := req.Timeseries[tsIdx]
+
 			if mrc := d.limits.MetricRelabelConfigs(userID); len(mrc) > 0 {
 				l := relabel.Process(mimirpb.FromLabelAdaptersToLabels(ts.Labels), mrc...)
 				ts.Labels = mimirpb.FromLabelsToLabelAdapters(l)
@@ -713,6 +716,11 @@ func (d *Distributor) prePushRelabelMiddleware(next push.Func) push.Func {
 			}
 
 			if len(ts.Labels) == 0 {
+				if len(removeTsIndexes) == 0 {
+					// If we have to add one index into this slice then there is a good chance that we'll have to add more.
+					removeTsIndexes = make([]int, 0, len(req.Timeseries))
+				}
+				removeTsIndexes = append(removeTsIndexes, tsIdx)
 				continue
 			}
 
@@ -724,6 +732,8 @@ func (d *Distributor) prePushRelabelMiddleware(next push.Func) push.Func {
 			// 3) Ingesters expect labels to be sorted in the Push request.
 			sortLabelsIfNeeded(ts.Labels)
 		}
+
+		req.Timeseries, _, _ = util.RemoveSliceIndexes(req.Timeseries, removeTsIndexes)
 
 		dontCleanup()
 		return next(ctx, req, cleanup)
@@ -912,6 +922,10 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	// For each timeseries, compute a hash to distribute across ingesters;
 	// check each sample and discard if outside limits.
 	for _, ts := range req.Timeseries {
+		if len(ts.Labels) == 0 {
+			continue
+		}
+
 		// Generate the sharding token based on the series labels without the HA replica
 		// label and dropped labels (if any)
 		key, err := d.tokenForLabels(userID, ts.Labels)
