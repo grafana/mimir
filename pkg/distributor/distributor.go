@@ -1023,6 +1023,8 @@ func copyString(s string) string {
 	return string([]byte(s))
 }
 
+// getConditionalCleanup returns two functions, the first one wraps the given cleanup function, the second one is a
+// function which makes the first one not call the given cleanup function if it has been called at least once.
 func getConditionalCleanup(cleanup func()) (func(), func()) {
 	doCleanup := true
 	return func() {
