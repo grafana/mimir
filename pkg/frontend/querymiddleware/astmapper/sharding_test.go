@@ -62,9 +62,11 @@ func TestShardSummer(t *testing.T) {
 			3,
 		},
 		{
-			"sum(rate(bar1[1m])) or rate(bar2[1m])",
-			`sum(` + concatShards(3, `sum(rate(bar1{__query_shard__="x_of_y"}[1m]))`) + `) or ` + concat(`rate(bar2[1m])`),
-			3,
+			// This query is not parallelized because the leg "rate(bar2[1m])" is not aggregated and
+			// could result in high cardinality results.
+			`sum(rate(bar1[1m])) or rate(bar2[1m])`,
+			concat(`sum(rate(bar1[1m])) or rate(bar2[1m])`),
+			0,
 		},
 		{
 			"sum(rate(bar1[1m])) or sum(rate(bar2[1m]))",
@@ -390,10 +392,10 @@ func TestShardSummer(t *testing.T) {
 			0,
 		},
 		{
+			// This query is not parallelized because the leg "year(foo)" could result in high cardinality results.
 			`sum(rate(metric_counter[1m])) / vector(3) ^ year(foo)`,
-			`sum(` + concatShards(3, `sum(rate(metric_counter{__query_shard__="x_of_y"}[1m]))`) + `)` +
-				`/ ` + concat(`vector(3) ^ year(foo)`),
-			3,
+			concat(`sum(rate(metric_counter[1m])) / vector(3) ^ year(foo)`),
+			0,
 		},
 		{
 			// can't shard foo > bar,
@@ -439,14 +441,18 @@ func TestShardSummer(t *testing.T) {
 			3,
 		},
 		{
+			// This query is not parallelized because the leg "foo" is not aggregated and
+			// could result in high cardinality results.
 			`foo > sum(bar)`,
-			concat(`foo`) + ` > sum(` + concatShards(3, `sum(bar{__query_shard__="x_of_y"})`) + `)`,
-			3,
+			concat(`foo > sum(bar)`),
+			0,
 		},
 		{
+			// This query is not parallelized because the leg "foo" is not aggregated and
+			// could result in high cardinality results.
 			`foo > scalar(sum(bar))`,
-			concat(`foo`) + `> scalar(sum(` + concatShards(3, `sum(bar{__query_shard__="x_of_y"})`) + `))`,
-			3,
+			concat(`foo > scalar(sum(bar))`),
+			0,
 		},
 		{
 			`scalar(min(foo)) > bool scalar(sum(bar))`,
@@ -455,14 +461,11 @@ func TestShardSummer(t *testing.T) {
 			6,
 		},
 		{
-			in: `foo * on(a, b) group_left(c) avg by(a, b, c) (bar)`,
-			out: concat(`foo`) + ` * on(a, b) group_left(c) ` +
-				`(` +
-				`sum by(a, b, c) (` + concatShards(3, `sum by(a, b, c) (bar{__query_shard__="x_of_y"})`) + `)` +
-				` / ` +
-				`sum by(a, b, c) (` + concatShards(3, `count by(a, b, c) (bar{__query_shard__="x_of_y"})`) + `)` +
-				`)`,
-			expectedShardedQueries: 6,
+			// This query is not parallelized because the leg "foo" is not aggregated and
+			// could result in high cardinality results.
+			in:                     `foo * on(a, b) group_left(c) avg by(a, b, c) (bar)`,
+			out:                    concat(`foo * on(a, b) group_left(c) avg by(a, b, c) (bar)`),
+			expectedShardedQueries: 0,
 		},
 		{
 			in:                     `vector(1) > 0 and vector(1)`,
@@ -473,6 +476,31 @@ func TestShardSummer(t *testing.T) {
 			in:                     `sum(foo) > 0 and vector(1)`,
 			out:                    `sum(` + concatShards(3, `sum(foo{__query_shard__="x_of_y"})`) + `) > 0 and vector(1)`,
 			expectedShardedQueries: 3,
+		},
+		{
+			// This query is not parallelized because the leg "pod:container_cpu_usage:sum" is not aggregated and
+			// could result in high cardinality results.
+			in: `max by(pod) (
+                    max without(prometheus_replica, instance, node) (kube_pod_labels{namespace="test"})
+                    *
+                    on(cluster, pod, namespace) group_right() pod:container_cpu_usage:sum
+            )`,
+			out: concat(`max by(pod) (
+                    max without(prometheus_replica, instance, node) (kube_pod_labels{namespace="test"})
+                    *
+                    on(cluster, pod, namespace) group_right() pod:container_cpu_usage:sum
+            )`),
+			expectedShardedQueries: 0,
+		},
+		{
+			in:                     `sum(rate(metric[1m])) and max(metric) > 0`,
+			out:                    `sum(` + concatShards(3, `sum(rate(metric{__query_shard__="x_of_y"}[1m]))`) + `) and max(` + concatShards(3, `max(metric{__query_shard__="x_of_y"})`) + `) > 0`,
+			expectedShardedQueries: 6,
+		},
+		{
+			in:                     `sum(rate(metric[1m])) > avg(rate(metric[1m]))`,
+			out:                    `sum(` + concatShards(3, `sum(rate(metric{__query_shard__="x_of_y"}[1m]))`) + `) > (sum(` + concatShards(3, `sum(rate(metric{__query_shard__="x_of_y"}[1m]))`) + `) / sum(` + concatShards(3, `count(rate(metric{__query_shard__="x_of_y"}[1m]))`) + `))`,
+			expectedShardedQueries: 9,
 		},
 	} {
 		tt := tt
