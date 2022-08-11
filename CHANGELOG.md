@@ -103,6 +103,10 @@
 * [ENHANCEMENT] Referenced `mimirtool` commands in the HTTP API documentation. #2516
 * [ENHANCEMENT] Improved DNS service discovery documentation. #2513
 
+### Tools
+
+* [ENHANCEMENT] `markblocks` now processes multiple blocks concurrently. #2677
+
 ## 2.2.0
 
 ### Grafana Mimir

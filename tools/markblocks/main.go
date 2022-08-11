@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	dskit_concurrency "github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/oklog/ulid"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
@@ -28,6 +29,7 @@ type config struct {
 	tenantID           string
 	dryRun             bool
 	allowPartialBlocks bool
+	concurrency        int
 
 	mark    string
 	details string
@@ -43,7 +45,7 @@ func main() {
 	cfg := parseFlags()
 	marker, filename := createMarker(cfg.mark, logger, cfg.details)
 	ulids := validateTenantAndBlocks(logger, cfg.tenantID, cfg.blocks)
-	uploadMarks(ctx, logger, ulids, marker, filename, cfg.dryRun, cfg.bucket, cfg.tenantID, cfg.allowPartialBlocks)
+	uploadMarks(ctx, logger, ulids, marker, filename, cfg.dryRun, cfg.bucket, cfg.tenantID, cfg.allowPartialBlocks, cfg.concurrency)
 }
 
 func parseFlags() config {
@@ -90,6 +92,8 @@ func parseFlags() config {
 	// Then we register all bucket flags on the full flag set, which is the flag set we're parsing.
 	basicFlagSet.StringVar(&cfg.bucket.Backend, "backend", bucket.Filesystem, fmt.Sprintf("Backend storage to use. Supported backends are: %s. Use -help-all to see help on backends configuration.", strings.Join(bucket.SupportedBackends, ", ")))
 	cfg.bucket.RegisterFlags(fullFlagSet)
+
+	fullFlagSet.IntVar(&cfg.concurrency, "concurrency", 16, "How many markers to upload concurrently.")
 
 	if err := fullFlagSet.Parse(os.Args[1:]); err != nil {
 		fmt.Println(err)
@@ -168,10 +172,13 @@ func uploadMarks(
 	cfg bucket.Config,
 	tenantID string,
 	allowPartialBlocks bool,
+	concurrency int,
 ) {
 	userBucketWithGlobalMarkers := createUserBucketWithGlobalMarkers(ctx, logger, cfg, tenantID)
 
-	for _, b := range ulids {
+	err := dskit_concurrency.ForEachJob(ctx, len(ulids), concurrency, func(ctx context.Context, idx int) error {
+		b := ulids[idx]
+
 		blockFiles := map[string]bool{}
 		// List all files in the blocks directory. We don't need recursive listing: if any segment
 		// files (chunks/0000xxx) are present, we will find "chunks" during iter.
@@ -189,46 +196,51 @@ func uploadMarks(
 		if err != nil {
 			if userBucketWithGlobalMarkers.IsObjNotFoundErr(err) {
 				level.Warn(logger).Log("msg", "Block does not exist", "block", b, "err", err)
-				continue
+				return nil
 			}
 
 			level.Error(logger).Log("msg", "Failed to list files for block.", "block", b, "err", err)
-			os.Exit(1)
+			return err
 		}
 
 		if len(blockFiles) == 0 {
 			level.Warn(logger).Log("msg", "Block does not exist, skipping.", "block", b)
-			continue
+			return nil
 		}
 
 		if !blockFiles[metadata.MetaFilename] && !allowPartialBlocks {
 			level.Warn(logger).Log("msg", "Block's meta.json file does not exist, skipping.", "block", b)
-			continue
+			return nil
 		}
 
 		if blockFiles[markFilename] {
 			level.Warn(logger).Log("msg", "Mark already exists, skipping.", "block", b)
-			continue
+			return nil
 		}
 
 		data, err := mark(b)
 		if err != nil {
 			level.Error(logger).Log("msg", "Can't create mark.", "block", b, "err", err)
-			os.Exit(1)
+			return err
 		}
 
 		blockMarkPath := fmt.Sprintf("%s/%s", b, markFilename)
 		if dryRun {
 			level.Info(logger).Log("msg", "Dry-run, not uploading marker.", "block", b, "marker", blockMarkPath, "data", string(data))
-			continue
+			return nil
 		}
 
 		if err := userBucketWithGlobalMarkers.Upload(ctx, blockMarkPath, bytes.NewReader(data)); err != nil {
 			level.Error(logger).Log("msg", "Can't upload mark.", "block", b, "err", err)
-			os.Exit(1)
+			return err
 		}
 
 		level.Info(logger).Log("msg", "Successfully uploaded mark.", "block", b)
+		return nil
+	})
+
+	if err != nil {
+		os.Exit(1)
 	}
 }
 
