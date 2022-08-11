@@ -2,23 +2,32 @@
 
 package util
 
-import "sort"
+import (
+	"sync"
+)
 
 type idxRange struct {
 	from int
 	to   int
 }
 
-// RemoveSliceIndexes takes a slice of elements of any type and a slice of indexes referring to elements in the former slice.
+var idxRangesPool = sync.Pool{
+	New: func() interface{} {
+		return &[]idxRange{}
+	},
+}
+
+// RemoveSliceIndexes takes a slice of elements of any type and a sorted slice of indexes of elements in the former slice.
 // It removes the elements at the given indexes from the given slice, while minimizing the number of copy operations
-// that are required to do so by grouping consecutive indexes into ranges and removing them in single operations.
+// that are required to do so by grouping consecutive indexes into ranges and removing the ranges in single operations.
+// The given number of indexes must be sorted in ascending order.
+// Indexes which are duplicate or out of the range of the given slice are ignored.
 // The returned values are:
 // - The resulting slice of elements after the elements at the given indexes have been removed.
 // - The number of elements that have been removed.
 // - The number of ranges of consecutive elements that have been removed.
 func RemoveSliceIndexes[T any](data []T, indexes []int) ([]T, int, int) {
-	sort.Ints(indexes)
-	ranges := make([]idxRange, 0, len(data))
+	ranges := idxRangesPool.Get().(*[]idxRange)
 	none := idxRange{-1, -1}
 	currentRange := none
 
@@ -50,7 +59,7 @@ func RemoveSliceIndexes[T any](data []T, indexes []int) ([]T, int, int) {
 		}
 
 		// The current range is finished, add it to the ranges list.
-		ranges = append(ranges, currentRange)
+		*ranges = append(*ranges, currentRange)
 
 		// Initialize the next range.
 		currentRange.from = index
@@ -59,11 +68,11 @@ func RemoveSliceIndexes[T any](data []T, indexes []int) ([]T, int, int) {
 
 	if currentRange != none {
 		// Add the last range.
-		ranges = append(ranges, currentRange)
+		*ranges = append(*ranges, currentRange)
 	}
 
 	removed := 0
-	for _, r := range ranges {
+	for _, r := range *ranges {
 		// Remove range while offsetting by the number of already removed elements.
 		data = append(data[:r.from-removed], data[r.to+1-removed:]...)
 
@@ -71,5 +80,9 @@ func RemoveSliceIndexes[T any](data []T, indexes []int) ([]T, int, int) {
 		removed += r.to - r.from + 1
 	}
 
-	return data, removed, len(ranges)
+	rangeCount := len(*ranges)
+	*ranges = (*ranges)[:0]
+	idxRangesPool.Put(ranges)
+
+	return data, removed, rangeCount
 }
