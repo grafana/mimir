@@ -868,7 +868,7 @@ func TestMultitenantAlertmanager_ServeHTTP(t *testing.T) {
 
 		resp := w.Result()
 		body, _ := ioutil.ReadAll(resp.Body)
-		require.Equal(t, 404, w.Code)
+		require.Equal(t, 412, w.Code)
 		require.Equal(t, "the Alertmanager is not configured\n", string(body))
 	}
 
@@ -927,7 +927,7 @@ func TestMultitenantAlertmanager_ServeHTTP(t *testing.T) {
 
 		resp := w.Result()
 		body, _ := ioutil.ReadAll(resp.Body)
-		require.Equal(t, 404, w.Code)
+		require.Equal(t, 412, w.Code)
 		require.Equal(t, "the Alertmanager is not configured\n", string(body))
 	}
 }
