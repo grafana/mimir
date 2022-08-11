@@ -36,9 +36,10 @@ chmod +x query-tee
 
 The query-tee requires the endpoints of the backend Grafana Mimir clusters.
 You can configure the backend endpoints by setting the `-backend.endpoints` flag to a comma-separated list endpoints:
-* HTTP endpoints: via HTTP or HTTPS URLs. Example: `http://query-frontend:80`.
-* gRPC endpoints: via gRPC URI scheme. Example: `dns:///query-frontend:9095`.
-For each incoming request, the query-tee clones the request and sends it to each configured backend.
+
+- HTTP endpoints: via HTTP or HTTPS URLs. Example: `http://query-frontend:80`.
+- gRPC endpoints: via gRPC URI scheme. Example: `dns:///query-frontend:9095`.
+  For each incoming request, the query-tee clones the request and sends it to each configured backend.
 
 > **Note:** You can configure the query-tee proxy listening ports via the `-server.service-port` flag for the HTTP port and `server.grpc-service-port` flag for the gRPC port.
 
@@ -49,6 +50,7 @@ This section describes how the query-tee tool works.
 ### API endpoints
 
 Query-tee accepts two types of requests:
+
 1. HTTP requests on the configured `-server.service-port` flag (default port 80)
 1. [HTTP over gRPC](https://github.com/weaveworks/common/tree/master/httpgrpc) requests on the configured `server.grpc-service-port` flag (default port: 9095)
 
