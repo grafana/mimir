@@ -35,16 +35,22 @@ chmod +x query-tee
 ## Configure the query-tee
 
 The query-tee requires the endpoints of the backend Grafana Mimir clusters.
-You can configure the backend endpoints by setting the `-backend.endpoints` flag to a comma-separated list of HTTP or HTTPS URLs.
+You can configure the backend endpoints by setting the `-backend.endpoints` flag to a comma-separated list endpoints:
+* HTTP endpoints: via HTTP or HTTPS URLs. Example: `http://query-frontend:80`.
+* gRPC endpoints: via gRPC URI scheme. Example: `dns:///query-frontend:9095`.
 For each incoming request, the query-tee clones the request and sends it to each configured backend.
 
-> **Note:** You can configure the query-tee proxy listening port via the `-server.service-port` flag.
+> **Note:** You can configure the query-tee proxy listening ports via the `-server.service-port` flag for the HTTP port and `server.grpc-service-port` flag for the gRPC port.
 
 ## How the query-tee works
 
 This section describes how the query-tee tool works.
 
 ### API endpoints
+
+Query-tee accepts two types of requests:
+1. HTTP requests on the configured `-server.service-port` flag (default port 80)
+1. [HTTP over gRPC](https://github.com/weaveworks/common/tree/master/httpgrpc) requests on the configured `server.grpc-service-port` flag (default port: 9095)
 
 The following Prometheus API endpoints are supported by `query-tee`:
 
@@ -113,7 +119,7 @@ When the query results comparison is enabled, the query-tee compares the respons
 The query-tee exposes the following Prometheus metrics at the `/metrics` endpoint listening on the port configured via the flag `-server.metrics-port`:
 
 ```bash
-# HELP cortex_querytee_request_duration_seconds Time (in seconds) spent serving HTTP requests.
+# HELP cortex_querytee_request_duration_seconds Time (in seconds) spent serving requests.
 # TYPE cortex_querytee_request_duration_seconds histogram
 cortex_querytee_request_duration_seconds_bucket{backend="<hostname>",method="<method>",route="<route>",status_code="<status>",le="<bucket>"}
 cortex_querytee_request_duration_seconds_sum{backend="<hostname>",method="<method>",route="<route>",status_code="<status>"}

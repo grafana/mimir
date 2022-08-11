@@ -95,6 +95,10 @@
 
 ### Mimir Continuous Test
 
+### Query-tee
+
+* [ENHANCEMENT] Added HTTP over gRPC support to `query-tee` to allow testing gRPC requests to Mimir instances. #1822
+
 ### Documentation
 
 * [ENHANCEMENT] Referenced `mimirtool` commands in the HTTP API documentation. #2516

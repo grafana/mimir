@@ -162,8 +162,8 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 			cfg := ProxyConfig{
 				BackendEndpoints:      strings.Join(backendURLs, ","),
 				PreferredBackend:      strconv.Itoa(testData.preferredBackendIdx),
-				ServerServicePort:     80,
-				ServerGRPCServicePort: 90,
+				ServerServicePort:     0,
+				ServerGRPCServicePort: 0,
 				BackendReadTimeout:    time.Second,
 			}
 
@@ -179,7 +179,8 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 			require.NoError(t, p.Start())
 
 			// Send a query request to the proxy.
-			res, err := http.Get("http://localhost/api/v1/query")
+			endpoint := fmt.Sprintf("http://%s/api/v1/query", p.server.HTTPListenAddr())
+			res, err := http.Get(endpoint)
 			require.NoError(t, err)
 
 			defer res.Body.Close()
@@ -315,8 +316,8 @@ func TestProxy_Passthrough(t *testing.T) {
 			cfg := ProxyConfig{
 				BackendEndpoints:               strings.Join(backendURLs, ","),
 				PreferredBackend:               strconv.Itoa(testData.preferredBackendIdx),
-				ServerServicePort:              80,
-				ServerGRPCServicePort:          90,
+				ServerServicePort:              0,
+				ServerGRPCServicePort:          0,
 				BackendReadTimeout:             time.Second,
 				PassThroughNonRegisteredRoutes: true,
 			}
@@ -331,7 +332,8 @@ func TestProxy_Passthrough(t *testing.T) {
 			for _, query := range testData.queries {
 
 				// Send a query request to the proxy.
-				res, err := http.Get(fmt.Sprintf("http://localhost%s", query.path))
+				endpoint := fmt.Sprintf("http://%s%s", p.server.HTTPListenAddr(), query.path)
+				res, err := http.Get(endpoint)
 				require.NoError(t, err)
 
 				defer res.Body.Close()

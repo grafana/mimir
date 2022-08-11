@@ -155,18 +155,22 @@ func (p *Proxy) Start() error {
 	// Setup server first, so we can fail early if the ports are in use.
 	serv, err := server.New(server.Config{
 		// HTTP configs
-		HTTPListenPort:         p.cfg.ServerServicePort,
-		HTTPServerReadTimeout:  1 * time.Minute,
-		HTTPServerWriteTimeout: 2 * time.Minute,
+		HTTPListenPort:                p.cfg.ServerServicePort,
+		HTTPServerReadTimeout:         1 * time.Minute,
+		HTTPServerWriteTimeout:        2 * time.Minute,
+		ServerGracefulShutdownTimeout: 0,
 
 		// gRPC configs
 		GRPCListenPort: p.cfg.ServerGRPCServicePort,
 		// Same size configurations as in Mimir default gRPC configuration values
-		GPRCServerMaxRecvMsgSize: 100 * 1024 * 1024,
-		GRPCServerMaxSendMsgSize: 100 * 1024 * 1024,
+		GPRCServerMaxRecvMsgSize:       100 * 1024 * 1024,
+		GRPCServerMaxSendMsgSize:       100 * 1024 * 1024,
+		GPRCServerMaxConcurrentStreams: 10000,
 
 		// Use Proxy's prometheus registry
-		Registerer: p.registerer,
+		MetricsNamespace:        queryTeeMetricsNamespace,
+		Registerer:              p.registerer,
+		RegisterInstrumentation: false,
 	})
 	if err != nil {
 		return err
