@@ -187,7 +187,7 @@ func TestAlertmanagerStoreAPI(t *testing.T) {
 
 	_, err = c.GetAlertmanagerConfig(context.Background())
 	require.Error(t, err)
-	require.EqualError(t, err, e2emimir.ErrNotFound.Error())
+	require.EqualError(t, err, "getting config failed with status 412 and error the Alertmanager is not configured\n")
 
 	err = c.SetAlertmanagerConfig(context.Background(), mimirAlertmanagerUserConfigYaml, map[string]string{})
 	require.NoError(t, err)
@@ -230,7 +230,7 @@ func TestAlertmanagerStoreAPI(t *testing.T) {
 	cfg, err = c.GetAlertmanagerConfig(context.Background())
 	require.Error(t, err)
 	require.Nil(t, cfg)
-	require.EqualError(t, err, "not found")
+	require.EqualError(t, err, "getting config failed with status 412 and error the Alertmanager is not configured\n")
 }
 
 func TestAlertmanagerSharding(t *testing.T) {
