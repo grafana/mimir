@@ -418,7 +418,9 @@
             severity: 'critical',
           },
           annotations: {
-            message: 'Rollout operator in {{ $labels.cluster }}/{{ $labels.namespace }} is not reconciling the rollout group {{ $labels.rollout_group }}.',
+            message: |||
+              Rollout operator is not reconciling the rollout group {{ $labels.rollout_group }} in %(alert_aggregation_variables)s.
+            ||| % $._config,
           },
         },
       ],
