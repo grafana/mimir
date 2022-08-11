@@ -4,6 +4,21 @@
 
 ### Grafana Mimir
 
+### Mixin
+
+### Jsonnet
+
+### Mimirtool
+
+### Mimir Continuous Test
+
+### Documentation
+
+
+## 2.3.0-rc.0
+
+### Grafana Mimir
+
 * [CHANGE] Ingester: Added user label to ingester metric `cortex_ingester_tsdb_out_of_order_samples_appended_total`. On multitenant clusters this helps us find the rate of appended out-of-order samples for a specific tenant. #2493
 * [CHANGE] Compactor: delete source and output blocks from local disk on compaction failed, to reduce likelihood that subsequent compactions fail because of no space left on disk. #2261
 * [CHANGE] Ruler: Remove unused CLI flags `-ruler.search-pending-for` and `-ruler.flush-period` (and their respective YAML config options). #2288
