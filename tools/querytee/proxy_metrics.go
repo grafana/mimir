@@ -26,7 +26,7 @@ func NewProxyMetrics(registerer prometheus.Registerer) *ProxyMetrics {
 	m := &ProxyMetrics{
 		requestDuration: promauto.With(registerer).NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: queryTeeMetricsNamespace,
-			Name:      "request_duration_seconds",
+			Name:      "backend_request_duration_seconds",
 			Help:      "Time (in seconds) spent serving HTTP requests.",
 			Buckets:   []float64{.005, .01, .025, .05, .1, .25, .5, 0.75, 1, 1.5, 2, 3, 4, 5, 10, 25, 50, 100},
 		}, []string{"backend", "method", "route", "status_code"}),
