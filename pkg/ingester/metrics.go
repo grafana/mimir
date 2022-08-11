@@ -6,6 +6,8 @@
 package ingester
 
 import (
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/atomic"
@@ -15,6 +17,8 @@ import (
 )
 
 type ingesterMetrics struct {
+	logger log.Logger
+
 	ingestedSamples         *prometheus.CounterVec
 	ingestedExemplars       prometheus.Counter
 	ingestedMetadata        prometheus.Counter
@@ -53,6 +57,7 @@ type ingesterMetrics struct {
 
 func newIngesterMetrics(
 	r prometheus.Registerer,
+	logger log.Logger,
 	activeSeriesEnabled bool,
 	instanceLimitsFn func() *InstanceLimits,
 	ingestionRate *util_math.EwmaRate,
@@ -81,10 +86,11 @@ func newIngesterMetrics(
 	idleTsdbChecks.WithLabelValues(string(tsdbIdleClosed))
 
 	m := &ingesterMetrics{
+		logger: logger,
 		ingestedSamples: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingester_ingested_samples_total",
 			Help: "The total number of samples ingested per user.",
-		}, []string{"user"}),
+		}, []string{"user", "group"}),
 		ingestedExemplars: promauto.With(r).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingester_ingested_exemplars_total",
 			Help: "The total number of exemplars ingested.",
@@ -96,7 +102,7 @@ func newIngesterMetrics(
 		ingestedSamplesFail: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingester_ingested_samples_failures_total",
 			Help: "The total number of samples that errored on ingestion per user.",
-		}, []string{"user"}),
+		}, []string{"user", "group"}),
 		ingestedExemplarsFail: promauto.With(r).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingester_ingested_exemplars_failures_total",
 			Help: "The total number of exemplars that errored on ingestion.",
@@ -218,7 +224,7 @@ func newIngesterMetrics(
 		activeSeriesPerUser: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_ingester_active_series",
 			Help: "Number of currently active series per user.",
-		}, []string{"user"}),
+		}, []string{"user", "group"}),
 
 		// Not registered automatically, but only if activeSeriesEnabled is true.
 		activeSeriesCustomTrackersPerUser: prometheus.NewGaugeVec(prometheus.GaugeOpts{
@@ -264,15 +270,24 @@ func newIngesterMetrics(
 }
 
 func (m *ingesterMetrics) deletePerUserMetrics(userID string) {
-	m.ingestedSamples.DeleteLabelValues(userID)
-	m.ingestedSamplesFail.DeleteLabelValues(userID)
+	filter := map[string]string{"user": userID}
+
+	if err := util.DeleteMatchingLabels(m.ingestedSamples, filter); err != nil {
+		level.Warn(m.logger).Log("msg", "failed to remove cortex_ingester_ingested_samples_total metric for user", "user", userID, "err", err)
+	}
+	if err := util.DeleteMatchingLabels(m.ingestedSamplesFail, filter); err != nil {
+		level.Warn(m.logger).Log("msg", "failed to remove cortex_ingester_ingested_samples_failures_total metric for user", "user", userID, "err", err)
+	}
+
 	m.memMetadataCreatedTotal.DeleteLabelValues(userID)
 	m.memMetadataRemovedTotal.DeleteLabelValues(userID)
 }
 
 func (m *ingesterMetrics) deletePerUserCustomTrackerMetrics(userID string, customTrackerMetrics []string) {
 	m.activeSeriesLoading.DeleteLabelValues(userID)
-	m.activeSeriesPerUser.DeleteLabelValues(userID)
+	if err := util.DeleteMatchingLabels(m.activeSeriesPerUser, map[string]string{"user": userID}); err != nil {
+		level.Warn(m.logger).Log("msg", "failed to remove cortex_ingester_active_series metric for user", "user", userID, "err", err)
+	}
 	for _, name := range customTrackerMetrics {
 		m.activeSeriesCustomTrackersPerUser.DeleteLabelValues(userID, name)
 	}

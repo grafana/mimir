@@ -80,7 +80,7 @@ var DiscardedSamples = prometheus.NewCounterVec(
 		Name: "cortex_discarded_samples_total",
 		Help: "The total number of samples that were discarded.",
 	},
-	[]string{discardReasonLabel, "user"},
+	[]string{discardReasonLabel, "user", "group"},
 )
 
 // DiscardedExemplars is a metric of the number of discarded exemplars, by reason.
@@ -89,7 +89,7 @@ var DiscardedExemplars = prometheus.NewCounterVec(
 		Name: "cortex_discarded_exemplars_total",
 		Help: "The total number of exemplars that were discarded.",
 	},
-	[]string{discardReasonLabel, "user"},
+	[]string{discardReasonLabel, "user", "group"},
 )
 
 // DiscardedMetadata is a metric of the number of discarded metadata, by reason.
@@ -98,7 +98,7 @@ var DiscardedMetadata = prometheus.NewCounterVec(
 		Name: "cortex_discarded_metadata_total",
 		Help: "The total number of metadata that were discarded.",
 	},
-	[]string{discardReasonLabel, "user"},
+	[]string{discardReasonLabel, "user", "group"},
 )
 
 func init() {
@@ -115,11 +115,11 @@ type SampleValidationConfig interface {
 // ValidateSample returns an err if the sample is invalid.
 // The returned error may retain the provided series labels.
 // It uses the passed 'now' time to measure the relative time of the sample.
-func ValidateSample(now model.Time, cfg SampleValidationConfig, userID string, ls []mimirpb.LabelAdapter, s mimirpb.Sample) ValidationError {
+func ValidateSample(now model.Time, cfg SampleValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, s mimirpb.Sample) ValidationError {
 	unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
 
 	if model.Time(s.TimestampMs) > now.Add(cfg.CreationGracePeriod(userID)) {
-		DiscardedSamples.WithLabelValues(reasonTooFarInFuture, userID).Inc()
+		DiscardedSamples.WithLabelValues(reasonTooFarInFuture, userID, group).Inc()
 		return newSampleTimestampTooNewError(unsafeMetricName, s.TimestampMs)
 	}
 
@@ -128,14 +128,14 @@ func ValidateSample(now model.Time, cfg SampleValidationConfig, userID string, l
 
 // ValidateExemplar returns an error if the exemplar is invalid.
 // The returned error may retain the provided series labels.
-func ValidateExemplar(userID string, ls []mimirpb.LabelAdapter, e mimirpb.Exemplar) ValidationError {
+func ValidateExemplar(userID, group string, ls []mimirpb.LabelAdapter, e mimirpb.Exemplar) ValidationError {
 	if len(e.Labels) <= 0 {
-		DiscardedExemplars.WithLabelValues(reasonExemplarLabelsMissing, userID).Inc()
+		DiscardedExemplars.WithLabelValues(reasonExemplarLabelsMissing, userID, group).Inc()
 		return newExemplarEmptyLabelsError(ls, []mimirpb.LabelAdapter{}, e.TimestampMs)
 	}
 
 	if e.TimestampMs == 0 {
-		DiscardedExemplars.WithLabelValues(reasonExemplarTimestampInvalid, userID).Inc()
+		DiscardedExemplars.WithLabelValues(reasonExemplarTimestampInvalid, userID, group).Inc()
 		return newExemplarMissingTimestampError(
 			ls,
 			e.Labels,
@@ -161,7 +161,7 @@ func ValidateExemplar(userID string, ls []mimirpb.LabelAdapter, e mimirpb.Exempl
 	}
 
 	if labelSetLen > ExemplarMaxLabelSetLength {
-		DiscardedExemplars.WithLabelValues(reasonExemplarLabelsTooLong, userID).Inc()
+		DiscardedExemplars.WithLabelValues(reasonExemplarLabelsTooLong, userID, group).Inc()
 		return newExemplarMaxLabelLengthError(
 			ls,
 			e.Labels,
@@ -170,7 +170,7 @@ func ValidateExemplar(userID string, ls []mimirpb.LabelAdapter, e mimirpb.Exempl
 	}
 
 	if !foundValidLabel {
-		DiscardedExemplars.WithLabelValues(reasonExemplarLabelsBlank, userID).Inc()
+		DiscardedExemplars.WithLabelValues(reasonExemplarLabelsBlank, userID, group).Inc()
 		return newExemplarEmptyLabelsError(ls, e.Labels, e.TimestampMs)
 	}
 
@@ -179,9 +179,9 @@ func ValidateExemplar(userID string, ls []mimirpb.LabelAdapter, e mimirpb.Exempl
 
 // ExemplarTimestampOK returns true if the timestamp is newer than minTS.
 // This is separate from ValidateExemplar() so we can silently drop old ones, not log an error.
-func ExemplarTimestampOK(userID string, minTS int64, e mimirpb.Exemplar) bool {
+func ExemplarTimestampOK(userID, group string, minTS int64, e mimirpb.Exemplar) bool {
 	if e.TimestampMs < minTS {
-		DiscardedExemplars.WithLabelValues(reasonExemplarTooOld, userID).Inc()
+		DiscardedExemplars.WithLabelValues(reasonExemplarTooOld, userID, group).Inc()
 		return false
 	}
 	return true
@@ -196,21 +196,21 @@ type LabelValidationConfig interface {
 
 // ValidateLabels returns an err if the labels are invalid.
 // The returned error may retain the provided series labels.
-func ValidateLabels(cfg LabelValidationConfig, userID string, ls []mimirpb.LabelAdapter, skipLabelNameValidation bool) ValidationError {
+func ValidateLabels(cfg LabelValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, skipLabelNameValidation bool) ValidationError {
 	unsafeMetricName, err := extract.UnsafeMetricNameFromLabelAdapters(ls)
 	if err != nil {
-		DiscardedSamples.WithLabelValues(reasonMissingMetricName, userID).Inc()
+		DiscardedSamples.WithLabelValues(reasonMissingMetricName, userID, group).Inc()
 		return newNoMetricNameError()
 	}
 
 	if !model.IsValidMetricName(model.LabelValue(unsafeMetricName)) {
-		DiscardedSamples.WithLabelValues(reasonInvalidMetricName, userID).Inc()
+		DiscardedSamples.WithLabelValues(reasonInvalidMetricName, userID, group).Inc()
 		return newInvalidMetricNameError(unsafeMetricName)
 	}
 
 	numLabelNames := len(ls)
 	if numLabelNames > cfg.MaxLabelNamesPerSeries(userID) {
-		DiscardedSamples.WithLabelValues(reasonMaxLabelNamesPerSeries, userID).Inc()
+		DiscardedSamples.WithLabelValues(reasonMaxLabelNamesPerSeries, userID, group).Inc()
 		return newTooManyLabelsError(ls, cfg.MaxLabelNamesPerSeries(userID))
 	}
 
@@ -219,19 +219,19 @@ func ValidateLabels(cfg LabelValidationConfig, userID string, ls []mimirpb.Label
 	lastLabelName := ""
 	for _, l := range ls {
 		if !skipLabelNameValidation && !model.LabelName(l.Name).IsValid() {
-			DiscardedSamples.WithLabelValues(reasonInvalidLabel, userID).Inc()
+			DiscardedSamples.WithLabelValues(reasonInvalidLabel, userID, group).Inc()
 			return newInvalidLabelError(ls, l.Name)
 		} else if len(l.Name) > maxLabelNameLength {
-			DiscardedSamples.WithLabelValues(reasonLabelNameTooLong, userID).Inc()
+			DiscardedSamples.WithLabelValues(reasonLabelNameTooLong, userID, group).Inc()
 			return newLabelNameTooLongError(ls, l.Name)
 		} else if len(l.Value) > maxLabelValueLength {
-			DiscardedSamples.WithLabelValues(reasonLabelValueTooLong, userID).Inc()
+			DiscardedSamples.WithLabelValues(reasonLabelValueTooLong, userID, group).Inc()
 			return newLabelValueTooLongError(ls, l.Value)
 		} else if lastLabelName == l.Name {
-			DiscardedSamples.WithLabelValues(reasonDuplicateLabelNames, userID).Inc()
+			DiscardedSamples.WithLabelValues(reasonDuplicateLabelNames, userID, group).Inc()
 			return newDuplicatedLabelError(ls, l.Name)
 		} else if lastLabelName > l.Name {
-			DiscardedSamples.WithLabelValues(reasonLabelsNotSorted, userID).Inc()
+			DiscardedSamples.WithLabelValues(reasonLabelsNotSorted, userID, group).Inc()
 			return newLabelsNotSortedError(ls, l.Name)
 		}
 
@@ -247,9 +247,9 @@ type MetadataValidationConfig interface {
 }
 
 // ValidateMetadata returns an err if a metric metadata is invalid.
-func ValidateMetadata(cfg MetadataValidationConfig, userID string, metadata *mimirpb.MetricMetadata) error {
+func ValidateMetadata(cfg MetadataValidationConfig, userID, group string, metadata *mimirpb.MetricMetadata) error {
 	if cfg.EnforceMetadataMetricName(userID) && metadata.GetMetricFamilyName() == "" {
-		DiscardedMetadata.WithLabelValues(reasonMissingMetricName, userID).Inc()
+		DiscardedMetadata.WithLabelValues(reasonMissingMetricName, userID, group).Inc()
 		return newMetadataMetricNameMissingError()
 	}
 
@@ -268,7 +268,7 @@ func ValidateMetadata(cfg MetadataValidationConfig, userID string, metadata *mim
 	}
 
 	if err != nil {
-		DiscardedMetadata.WithLabelValues(reason, userID).Inc()
+		DiscardedMetadata.WithLabelValues(reason, userID, group).Inc()
 		return err
 	}
 

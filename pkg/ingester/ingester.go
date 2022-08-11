@@ -61,6 +61,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	util_math "github.com/grafana/mimir/pkg/util/math"
+	"github.com/grafana/mimir/pkg/util/separatemetrics"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -290,7 +291,7 @@ func New(cfg Config, limits *validation.Overrides, registerer prometheus.Registe
 		return nil, err
 	}
 	i.ingestionRate = util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval)
-	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetricsEnabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests)
+	i.metrics = newIngesterMetrics(registerer, logger, cfg.ActiveSeriesMetricsEnabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests)
 
 	// Replace specific metrics which we can't directly track but we need to read
 	// them from the underlying system (ie. TSDB).
@@ -338,7 +339,7 @@ func NewForFlusher(cfg Config, limits *validation.Overrides, registerer promethe
 	if err != nil {
 		return nil, err
 	}
-	i.metrics = newIngesterMetrics(registerer, false, i.getInstanceLimits, nil, &i.inflightPushRequests)
+	i.metrics = newIngesterMetrics(registerer, logger, false, i.getInstanceLimits, nil, &i.inflightPushRequests)
 
 	i.shipperIngesterID = "flusher"
 
@@ -508,8 +509,10 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 			i.metrics.activeSeriesLoading.WithLabelValues(userID).Set(1)
 		} else {
 			i.metrics.activeSeriesLoading.DeleteLabelValues(userID)
-			if allActive > 0 {
-				i.metrics.activeSeriesPerUser.WithLabelValues(userID).Set(float64(allActive))
+			if len(allActive) > 0 {
+				for group, active := range allActive {
+					i.metrics.activeSeriesPerUser.WithLabelValues(userID, group).Set(float64(active))
+				}
 			} else {
 				i.metrics.activeSeriesPerUser.DeleteLabelValues(userID)
 			}
@@ -678,6 +681,8 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 		}
 	)
 
+	group := separatemetrics.FindGroupLabel(i.limits, userID, req.Timeseries[0].Labels)
+
 	// Walk the samples, appending them to the users database
 	app := db.Appender(ctx).(extendedAppender)
 
@@ -785,7 +790,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 		}
 
 		if i.cfg.ActiveSeriesMetricsEnabled && succeededSamplesCount > oldSucceededSamplesCount {
-			db.activeSeries.UpdateSeries(mimirpb.FromLabelAdaptersToLabels(ts.Labels), startAppend, func(l labels.Labels) labels.Labels {
+			db.activeSeries.UpdateSeries(mimirpb.FromLabelAdaptersToLabels(ts.Labels), startAppend, group, func(l labels.Labels) labels.Labels {
 				// we must already have copied the labels if succeededSamplesCount has been incremented.
 				return copiedLabels
 			})
@@ -848,8 +853,8 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	// Increment metrics only if the samples have been successfully committed.
 	// If the code didn't reach this point, it means that we returned an error
 	// which will be converted into an HTTP 5xx and the client should/will retry.
-	i.metrics.ingestedSamples.WithLabelValues(userID).Add(float64(succeededSamplesCount))
-	i.metrics.ingestedSamplesFail.WithLabelValues(userID).Add(float64(failedSamplesCount))
+	i.metrics.ingestedSamples.WithLabelValues(userID, group).Add(float64(succeededSamplesCount))
+	i.metrics.ingestedSamplesFail.WithLabelValues(userID, group).Add(float64(failedSamplesCount))
 	i.metrics.ingestedExemplars.Add(float64(succeededExemplarsCount))
 	i.metrics.ingestedExemplarsFail.Add(float64(failedExemplarsCount))
 	i.appendedSamplesStats.Inc(int64(succeededSamplesCount))

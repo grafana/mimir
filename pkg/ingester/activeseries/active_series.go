@@ -41,13 +41,14 @@ type seriesStripe struct {
 
 	mu             sync.RWMutex
 	refs           map[uint64][]seriesEntry
-	active         int   // Number of active entries in this stripe. Only decreased during purge or clear.
-	activeMatching []int // Number of active entries in this stripe matching each matcher of the configured Matchers.
+	active         map[string]int // Number of active entries in this stripe per group. Only decreased during purge or clear.
+	activeMatching []int          // Number of active entries in this stripe matching each matcher of the configured Matchers.
 }
 
 // seriesEntry holds a timestamp for single series.
 type seriesEntry struct {
 	lbs     labels.Labels
+	group   string
 	nanos   *atomic.Int64 // Unix timestamp in nanoseconds. Needs to be a pointer because we don't store pointers to entries in the stripe.
 	matches []bool        // Which matchers of Matchers does this series match
 }
@@ -87,11 +88,11 @@ func (c *ActiveSeries) CurrentConfig() CustomTrackersConfig {
 }
 
 // UpdateSeries updates series timestamp to 'now'. Function is called to make a copy of labels if entry doesn't exist yet.
-func (c *ActiveSeries) UpdateSeries(series labels.Labels, now time.Time, labelsCopy func(labels.Labels) labels.Labels) {
+func (c *ActiveSeries) UpdateSeries(series labels.Labels, now time.Time, group string, labelsCopy func(labels.Labels) labels.Labels) {
 	fp := series.Hash()
 	stripeID := fp % numStripes
 
-	c.stripes[stripeID].updateSeriesTimestamp(now, series, fp, labelsCopy)
+	c.stripes[stripeID].updateSeriesTimestamp(now, series, group, fp, labelsCopy)
 }
 
 // purge removes expired entries from the cache.
@@ -101,32 +102,32 @@ func (c *ActiveSeries) purge(keepUntil time.Time) {
 	}
 }
 
-// Active returns the total number of active series, as well as a slice of active series matching each one of the
+// Active returns the total number of active series per group, as well as a slice of active series matching each one of the
 // custom trackers provided (in the same order as custom trackers are defined).
 // The result is correct only if the third return value is true, which shows if enough time has passed since last reload.
 // This should be called periodically to avoid unbounded memory growth.
-func (c *ActiveSeries) Active(now time.Time) (int, []int, bool) {
+func (c *ActiveSeries) Active(now time.Time) (map[string]int, []int, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	purgeTime := now.Add(-c.timeout)
 	c.purge(purgeTime)
 
 	if c.lastMatchersUpdate.After(purgeTime) {
-		return 0, nil, false
+		return nil, nil, false
 	}
 
-	total := 0
+	totalGroups := map[string]int{}
 	totalMatching := resizeAndClear(len(c.matchers.MatcherNames()), nil)
 	for s := 0; s < numStripes; s++ {
-		total += c.stripes[s].getTotalAndUpdateMatching(totalMatching)
+		c.stripes[s].updateGroupsAndMatching(totalGroups, totalMatching)
 	}
 
-	return total, totalMatching, true
+	return totalGroups, totalMatching, true
 }
 
 // getTotalAndUpdateMatching will return the total active series in the stripe and also update the slice provided
 // with each matcher's total.
-func (s *seriesStripe) getTotalAndUpdateMatching(matching []int) int {
+func (s *seriesStripe) updateGroupsAndMatching(groups map[string]int, matching []int) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -135,16 +136,18 @@ func (s *seriesStripe) getTotalAndUpdateMatching(matching []int) int {
 		matching[i] += a
 	}
 
-	return s.active
+	for g, a := range s.active {
+		groups[g] += a
+	}
 }
 
-func (s *seriesStripe) updateSeriesTimestamp(now time.Time, series labels.Labels, fingerprint uint64, labelsCopy func(labels.Labels) labels.Labels) {
+func (s *seriesStripe) updateSeriesTimestamp(now time.Time, series labels.Labels, group string, fingerprint uint64, labelsCopy func(labels.Labels) labels.Labels) {
 	nowNanos := now.UnixNano()
 
 	e := s.findEntryForSeries(fingerprint, series)
 	entryTimeSet := false
 	if e == nil {
-		e, entryTimeSet = s.findOrCreateEntryForSeries(fingerprint, series, nowNanos, labelsCopy)
+		e, entryTimeSet = s.findOrCreateEntryForSeries(fingerprint, series, group, nowNanos, labelsCopy)
 	}
 
 	if !entryTimeSet {
@@ -178,7 +181,7 @@ func (s *seriesStripe) findEntryForSeries(fingerprint uint64, series labels.Labe
 	return nil
 }
 
-func (s *seriesStripe) findOrCreateEntryForSeries(fingerprint uint64, series labels.Labels, nowNanos int64, labelsCopy func(labels.Labels) labels.Labels) (*atomic.Int64, bool) {
+func (s *seriesStripe) findOrCreateEntryForSeries(fingerprint uint64, series labels.Labels, group string, nowNanos int64, labelsCopy func(labels.Labels) labels.Labels) (*atomic.Int64, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -192,7 +195,7 @@ func (s *seriesStripe) findOrCreateEntryForSeries(fingerprint uint64, series lab
 
 	matches := s.matchers.Matches(series)
 
-	s.active++
+	s.active[group]++
 	for i, ok := range matches {
 		if ok {
 			s.activeMatching[i]++
@@ -201,6 +204,7 @@ func (s *seriesStripe) findOrCreateEntryForSeries(fingerprint uint64, series lab
 
 	e := seriesEntry{
 		lbs:     labelsCopy(series),
+		group:   group,
 		nanos:   atomic.NewInt64(nowNanos),
 		matches: matches,
 	}
@@ -217,7 +221,7 @@ func (s *seriesStripe) clear() {
 
 	s.oldestEntryTs.Store(0)
 	s.refs = map[uint64][]seriesEntry{}
-	s.active = 0
+	s.active = map[string]int{}
 	for i := range s.activeMatching {
 		s.activeMatching[i] = 0
 	}
@@ -230,7 +234,7 @@ func (s *seriesStripe) reinitialize(asm *Matchers) {
 
 	s.oldestEntryTs.Store(0)
 	s.refs = map[uint64][]seriesEntry{}
-	s.active = 0
+	s.active = map[string]int{}
 	s.matchers = asm
 	s.activeMatching = resizeAndClear(len(asm.MatcherNames()), s.activeMatching)
 }
@@ -245,7 +249,7 @@ func (s *seriesStripe) purge(keepUntil time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.active = 0
+	s.active = map[string]int{}
 	s.activeMatching = resizeAndClear(len(s.activeMatching), s.activeMatching)
 
 	oldest := int64(math.MaxInt64)
@@ -259,7 +263,7 @@ func (s *seriesStripe) purge(keepUntil time.Time) {
 				continue
 			}
 
-			s.active++
+			s.active[entries[0].group]++
 			for i, ok := range entries[0].matches {
 				if ok {
 					s.activeMatching[i]++
@@ -290,8 +294,8 @@ func (s *seriesStripe) purge(keepUntil time.Time) {
 		if cnt := len(entries); cnt == 0 {
 			delete(s.refs, fp)
 		} else {
-			s.active += cnt
 			for i := range entries {
+				s.active[entries[i].group]++
 				for i, ok := range entries[i].matches {
 					if ok {
 						s.activeMatching[i]++

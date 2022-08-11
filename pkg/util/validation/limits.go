@@ -101,6 +101,10 @@ type Limits struct {
 	// Max allowed time window for out-of-order samples.
 	OutOfOrderTimeWindow model.Duration `yaml:"out_of_order_time_window" json:"out_of_order_time_window" category:"experimental"`
 
+	// For both of the above:
+	EnableSeparatingMetrics bool   `yaml:"enable_seperating_metrics" json:"enable_seperating_metrics"`
+	SeparateMetricsLabel    string `yaml:"separate_label" json:"separate_metrics_label"`
+
 	// Querier enforced limits.
 	MaxChunksPerQuery              int            `yaml:"max_fetched_chunks_per_query" json:"max_fetched_chunks_per_query"`
 	MaxFetchedSeriesPerQuery       int            `yaml:"max_fetched_series_per_query" json:"max_fetched_series_per_query"`
@@ -187,6 +191,9 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxGlobalExemplarsPerUser, "ingester.max-global-exemplars-per-user", 0, "The maximum number of exemplars in memory, across the cluster. 0 to disable exemplars ingestion.")
 	f.Var(&l.ActiveSeriesCustomTrackersConfig, "ingester.active-series-custom-trackers", "Additional active series metrics, matching the provided matchers. Matchers should be in form <name>:<matcher>, like 'foobar:{foo=\"bar\"}'. Multiple matchers can be provided either providing the flag multiple times or providing multiple semicolon-separated values to a single flag.")
 	f.Var(&l.OutOfOrderTimeWindow, "ingester.out-of-order-time-window", "Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the following two conditions: (1) The newest sample for that time series, if it exists. For example, within [series.maxTime-timeWindow, series.maxTime]). (2) The TSDB's maximum time, if the series does not exist. For example, within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples.")
+
+	f.BoolVar(&l.EnableSeparatingMetrics, "enable-separating-metrics", false, "Flag to enable, for all tenants, separating select distributor and ingester metrics by a specified label.")
+	f.StringVar(&l.SeparateMetricsLabel, "separate-metrics-label", "team", "The Prometheus label used to separate the ingester and distributor metrics.")
 
 	f.IntVar(&l.MaxChunksPerQuery, MaxChunksPerQueryFlag, 2e6, "Maximum number of chunks that can be fetched in a single query from ingesters and long-term storage. This limit is enforced in the querier, ruler and store-gateway. 0 to disable.")
 	f.IntVar(&l.MaxFetchedSeriesPerQuery, MaxSeriesPerQueryFlag, 0, "The maximum number of unique series for which a query can fetch samples from each ingesters and storage. This limit is enforced in the querier and ruler. 0 to disable")
@@ -515,6 +522,18 @@ func (o *Overrides) MaxGlobalExemplarsPerUser(userID string) int {
 
 func (o *Overrides) ActiveSeriesCustomTrackersConfig(userID string) activeseries.CustomTrackersConfig {
 	return o.getOverridesForUser(userID).ActiveSeriesCustomTrackersConfig
+}
+
+// EnableSeparatingMetrics returns whether the distributor/ingester should separate
+// selected metrics by a specified label.
+func (o *Overrides) EnableSeparatingMetrics(userID string) bool {
+	return o.getOverridesForUser(userID).EnableSeparatingMetrics
+}
+
+// SeparateMetricsLabel returns the label that the distributor/ingester should use
+// to separate selected metrics
+func (o *Overrides) SeparateMetricsLabel(userID string) string {
+	return o.getOverridesForUser(userID).SeparateMetricsLabel
 }
 
 // OutOfOrderTimeWindow returns the out-of-order time window for the user.

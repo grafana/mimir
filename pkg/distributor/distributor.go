@@ -48,6 +48,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/push"
+	"github.com/grafana/mimir/pkg/util/separatemetrics"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -241,32 +242,32 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Namespace: "cortex",
 			Name:      "distributor_received_samples_total",
 			Help:      "The total number of received samples, excluding rejected, forwarded and deduped samples.",
-		}, []string{"user"}),
+		}, []string{"user", "group"}),
 		receivedExemplars: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_received_exemplars_total",
 			Help:      "The total number of received exemplars, excluding rejected, forwarded and deduped exemplars.",
-		}, []string{"user"}),
+		}, []string{"user", "group"}),
 		receivedMetadata: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_received_metadata_total",
 			Help:      "The total number of received metadata, excluding rejected.",
-		}, []string{"user"}),
+		}, []string{"user", "group"}),
 		incomingSamples: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_samples_in_total",
 			Help:      "The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.",
-		}, []string{"user"}),
+		}, []string{"user", "group"}),
 		incomingExemplars: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_exemplars_in_total",
 			Help:      "The total number of exemplars that have come in to the distributor, including rejected, forwarded or deduped exemplars.",
-		}, []string{"user"}),
+		}, []string{"user", "group"}),
 		incomingMetadata: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_metadata_in_total",
 			Help:      "The total number of metadata the have come in to the distributor, including rejected.",
-		}, []string{"user"}),
+		}, []string{"user", "group"}),
 		nonHASamples: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_non_ha_samples_received_total",
@@ -469,16 +470,30 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 
 	d.HATracker.cleanupHATrackerMetricsForUser(userID)
 
-	d.receivedSamples.DeleteLabelValues(userID)
-	d.receivedExemplars.DeleteLabelValues(userID)
-	d.receivedMetadata.DeleteLabelValues(userID)
-	d.incomingSamples.DeleteLabelValues(userID)
-	d.incomingExemplars.DeleteLabelValues(userID)
-	d.incomingMetadata.DeleteLabelValues(userID)
 	d.nonHASamples.DeleteLabelValues(userID)
 	d.latestSeenSampleTimestampPerUser.DeleteLabelValues(userID)
 
-	if err := util.DeleteMatchingLabels(d.dedupedSamples, map[string]string{"user": userID}); err != nil {
+	filter := map[string]string{"user": userID}
+
+	if err := util.DeleteMatchingLabels(d.receivedSamples, filter); err != nil {
+		level.Warn(d.log).Log("msg", "failed to remove cortex_distributor_received_samples_total metric for user", "user", userID, "err", err)
+	}
+	if err := util.DeleteMatchingLabels(d.receivedExemplars, filter); err != nil {
+		level.Warn(d.log).Log("msg", "failed to remove cortex_distributor_received_exemplars_total metric for user", "user", userID, "err", err)
+	}
+	if err := util.DeleteMatchingLabels(d.receivedMetadata, filter); err != nil {
+		level.Warn(d.log).Log("msg", "failed to remove cortex_distributor_received_metadata_total metric for user", "user", userID, "err", err)
+	}
+	if err := util.DeleteMatchingLabels(d.incomingSamples, filter); err != nil {
+		level.Warn(d.log).Log("msg", "failed to remove cortex_distributor_samples_in_total metric for user", "user", userID, "err", err)
+	}
+	if err := util.DeleteMatchingLabels(d.incomingExemplars, filter); err != nil {
+		level.Warn(d.log).Log("msg", "failed to remove cortex_distributor_exemplars_in_total metric for user", "user", userID, "err", err)
+	}
+	if err := util.DeleteMatchingLabels(d.incomingMetadata, filter); err != nil {
+		level.Warn(d.log).Log("msg", "failed to remove cortex_distributor_metadata_in_total metric for user", "user", userID, "err", err)
+	}
+	if err := util.DeleteMatchingLabels(d.dedupedSamples, filter); err != nil {
 		level.Warn(d.log).Log("msg", "failed to remove cortex_distributor_deduped_samples_total metric for user", "user", userID, "err", err)
 	}
 
@@ -563,8 +578,8 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 // May alter timeseries data in-place.
 // The returned error may retain the series labels.
 // It uses the passed nowt time to observe the delay of sample timestamps.
-func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseries, userID string, skipLabelNameValidation bool, minExemplarTS int64) error {
-	if err := validation.ValidateLabels(d.limits, userID, ts.Labels, skipLabelNameValidation); err != nil {
+func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseries, userID, group string, skipLabelNameValidation bool, minExemplarTS int64) error {
+	if err := validation.ValidateLabels(d.limits, userID, group, ts.Labels, skipLabelNameValidation); err != nil {
 		return err
 	}
 
@@ -577,7 +592,7 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 			d.sampleDelayHistogram.Observe(float64(delta) / 1000)
 		}
 
-		if err := validation.ValidateSample(now, d.limits, userID, ts.Labels, s); err != nil {
+		if err := validation.ValidateSample(now, d.limits, userID, group, ts.Labels, s); err != nil {
 			return err
 		}
 	}
@@ -589,14 +604,14 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 
 	for i := 0; i < len(ts.Exemplars); {
 		e := ts.Exemplars[i]
-		if err := validation.ValidateExemplar(userID, ts.Labels, e); err != nil {
+		if err := validation.ValidateExemplar(userID, group, ts.Labels, e); err != nil {
 			// An exemplar validation error prevents ingesting samples
 			// in the same series object. However because the current Prometheus
 			// remote write implementation only populates one or the other,
 			// there never will be any.
 			return err
 		}
-		if !validation.ExemplarTimestampOK(userID, minExemplarTS, e) {
+		if !validation.ExemplarTimestampOK(userID, group, minExemplarTS, e) {
 			// Delete this exemplar by moving the last one on top and shortening the slice
 			last := len(ts.Exemplars) - 1
 			if i < last {
@@ -747,8 +762,12 @@ func (d *Distributor) forwardSamples(ctx context.Context, userID string, ts []mi
 	notIngestedCounts, ts, forwardingErrCh = d.forwarder.Forward(ctx, forwardingRules, ts)
 
 	// Some samples have been forwarded and won't be ingested but we still need to account for them in some of the metrics.
-	d.incomingSamples.WithLabelValues(userID).Add(float64(notIngestedCounts.SampleCount))
-	d.incomingExemplars.WithLabelValues(userID).Add(float64(notIngestedCounts.ExemplarCount))
+	group := ""
+	if len(ts) > 0 {
+		separatemetrics.FindGroupLabel(d.limits, userID, ts[0].Labels)
+	}
+	d.incomingSamples.WithLabelValues(userID, group).Add(float64(notIngestedCounts.SampleCount))
+	d.incomingExemplars.WithLabelValues(userID, group).Add(float64(notIngestedCounts.ExemplarCount))
 
 	return ts, forwardingErrCh
 }
@@ -826,10 +845,14 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		numExemplars += len(ts.Exemplars)
 	}
 	// Count the total samples in, prior to validation or deduplication, for comparison with other metrics.
-	d.incomingSamples.WithLabelValues(userID).Add(float64(numSamples))
-	d.incomingExemplars.WithLabelValues(userID).Add(float64(numExemplars))
+	group := ""
+	if len(req.Timeseries) > 0 {
+		group = separatemetrics.FindGroupLabel(d.limits, userID, req.Timeseries[0].Labels)
+	}
+	d.incomingSamples.WithLabelValues(userID, group).Add(float64(numSamples))
+	d.incomingExemplars.WithLabelValues(userID, group).Add(float64(numExemplars))
 	// Count the total number of metadata in.
-	d.incomingMetadata.WithLabelValues(userID).Add(float64(len(req.Metadata)))
+	d.incomingMetadata.WithLabelValues(userID, group).Add(float64(len(req.Metadata)))
 
 	// A WriteRequest can only contain series or metadata but not both. This might change in the future.
 	// For each timeseries or samples, we compute a hash to distribute across ingesters;
@@ -896,7 +919,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 
 		skipLabelNameValidation := d.cfg.SkipLabelNameValidation || req.GetSkipLabelNameValidation()
 		// Note that validateSeries may drop some data in ts.
-		validationErr := d.validateSeries(now, ts, userID, skipLabelNameValidation, minExemplarTS)
+		validationErr := d.validateSeries(now, ts, userID, group, skipLabelNameValidation, minExemplarTS)
 
 		// Errors in validation are considered non-fatal, as one series in a request may contain
 		// invalid data but all the remaining series could be perfectly valid.
@@ -916,7 +939,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	}
 
 	for _, m := range req.Metadata {
-		if validationErr := validation.ValidateMetadata(d.limits, userID, m); validationErr != nil {
+		if validationErr := validation.ValidateMetadata(d.limits, userID, group, m); validationErr != nil {
 			if firstPartialErr == nil {
 				// The metadata info may be retained by validationErr but that's not a problem for this
 				// use case because we format it calling Error() and then we discard it.
@@ -930,9 +953,9 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		validatedMetadata = append(validatedMetadata, m)
 	}
 
-	d.receivedSamples.WithLabelValues(userID).Add(float64(validatedSamples))
-	d.receivedExemplars.WithLabelValues(userID).Add(float64(validatedExemplars))
-	d.receivedMetadata.WithLabelValues(userID).Add(float64(len(validatedMetadata)))
+	d.receivedSamples.WithLabelValues(userID, group).Add(float64(validatedSamples))
+	d.receivedExemplars.WithLabelValues(userID, group).Add(float64(validatedExemplars))
+	d.receivedMetadata.WithLabelValues(userID, group).Add(float64(len(validatedMetadata)))
 
 	if len(seriesKeys) == 0 && len(metadataKeys) == 0 {
 		return &mimirpb.WriteResponse{}, firstPartialErr
