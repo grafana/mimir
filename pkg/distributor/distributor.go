@@ -733,7 +733,9 @@ func (d *Distributor) prePushRelabelMiddleware(next push.Func) push.Func {
 			sortLabelsIfNeeded(ts.Labels)
 		}
 
-		req.Timeseries, _, _ = util.RemoveSliceIndexes(req.Timeseries, removeTsIndexes)
+		if len(removeTsIndexes) > 0 {
+			req.Timeseries, _, _ = util.RemoveSliceIndexes(req.Timeseries, removeTsIndexes)
+		}
 
 		dontCleanup()
 		return next(ctx, req, cleanup)

@@ -2973,24 +2973,6 @@ func TestInstanceLimitsBeforeHaDedupe(t *testing.T) {
 func TestRelabelMiddleware(t *testing.T) {
 	ctxWithUser := user.InjectOrgID(context.Background(), "user")
 
-	labelsForPairs := func(namesValues ...string) func(id int) []mimirpb.LabelAdapter {
-		return func(id int) []mimirpb.LabelAdapter {
-			if len(namesValues)%2 != 0 {
-				t.Fatalf("number of names and values must be even: %q", namesValues)
-			}
-
-			labels := make([]mimirpb.LabelAdapter, 0, len(namesValues)/2)
-			for idx := 0; idx < len(namesValues)/2; idx++ {
-				labels = append(labels, mimirpb.LabelAdapter{
-					Name:  namesValues[2*idx],
-					Value: namesValues[2*idx+1] + strconv.Itoa(id),
-				})
-			}
-
-			return labels
-		}
-	}
-
 	type testCase struct {
 		name           string
 		ctx            context.Context
@@ -3006,15 +2988,15 @@ func TestRelabelMiddleware(t *testing.T) {
 			ctx:            ctxWithUser,
 			relabelConfigs: nil,
 			dropLabels:     nil,
-			reqs:           []*mimirpb.WriteRequest{makeWriteRequestForLabelSetGen(5, labelsForPairs("__name__", "metric1", "label", "value_%d"))},
-			expectedReqs:   []*mimirpb.WriteRequest{makeWriteRequestForLabelSetGen(5, labelsForPairs("__name__", "metric1", "label", "value_%d"))},
+			reqs:           []*mimirpb.WriteRequest{makeWriteRequestForLabelSetGen(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label", "value_%d"))},
+			expectedReqs:   []*mimirpb.WriteRequest{makeWriteRequestForLabelSetGen(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label", "value_%d"))},
 			expectErrs:     []bool{false},
 		}, {
 			name:           "no user in context",
 			ctx:            context.Background(),
 			relabelConfigs: nil,
 			dropLabels:     nil,
-			reqs:           []*mimirpb.WriteRequest{makeWriteRequestForLabelSetGen(5, labelsForPairs("__name__", "metric1", "label", "value_%d"))},
+			reqs:           []*mimirpb.WriteRequest{makeWriteRequestForLabelSetGen(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label", "value_%d"))},
 			expectedReqs:   nil,
 			expectErrs:     []bool{true},
 		}, {
@@ -3023,10 +3005,10 @@ func TestRelabelMiddleware(t *testing.T) {
 			relabelConfigs: nil,
 			dropLabels:     []string{"label1", "label3"},
 			reqs: []*mimirpb.WriteRequest{makeWriteRequestForLabelSetGen(5,
-				labelsForPairs("__name__", "metric1", "label1", "value1", "label2", "value2", "label3", "value3"),
+				labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1", "label2", "value2", "label3", "value3"),
 			)},
 			expectedReqs: []*mimirpb.WriteRequest{makeWriteRequestForLabelSetGen(5,
-				labelsForPairs("__name__", "metric1", "label2", "value2"),
+				labelSetGenForStringPairs(t, "__name__", "metric1", "label2", "value2"),
 			)},
 			expectErrs: []bool{false},
 		}, {
@@ -3042,10 +3024,10 @@ func TestRelabelMiddleware(t *testing.T) {
 				},
 			},
 			reqs: []*mimirpb.WriteRequest{makeWriteRequestForLabelSetGen(5,
-				labelsForPairs("__name__", "metric1", "label1", "value1"),
+				labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1"),
 			)},
 			expectedReqs: []*mimirpb.WriteRequest{makeWriteRequestForLabelSetGen(5,
-				labelsForPairs("__name__", "metric1", "label1", "value1", "target", "prefix_value1"),
+				labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1", "target", "prefix_value1"),
 			)},
 			expectErrs: []bool{false},
 		}, {
@@ -3053,16 +3035,16 @@ func TestRelabelMiddleware(t *testing.T) {
 			ctx:        ctxWithUser,
 			dropLabels: []string{"__name__", "label2", "label3"},
 			reqs: []*mimirpb.WriteRequest{
-				makeWriteRequestForLabelSetGen(5, labelsForPairs("__name__", "metric1", "label1", "value1")),
-				makeWriteRequestForLabelSetGen(5, labelsForPairs("__name__", "metric2", "label2", "value2")),
-				makeWriteRequestForLabelSetGen(5, labelsForPairs("__name__", "metric3", "label3", "value3")),
-				makeWriteRequestForLabelSetGen(5, labelsForPairs("__name__", "metric4", "label4", "value4")),
+				makeWriteRequestForLabelSetGen(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1")),
+				makeWriteRequestForLabelSetGen(5, labelSetGenForStringPairs(t, "__name__", "metric2", "label2", "value2")),
+				makeWriteRequestForLabelSetGen(5, labelSetGenForStringPairs(t, "__name__", "metric3", "label3", "value3")),
+				makeWriteRequestForLabelSetGen(5, labelSetGenForStringPairs(t, "__name__", "metric4", "label4", "value4")),
 			},
 			expectedReqs: []*mimirpb.WriteRequest{
-				makeWriteRequestForLabelSetGen(5, labelsForPairs("label1", "value1")),
+				makeWriteRequestForLabelSetGen(5, labelSetGenForStringPairs(t, "label1", "value1")),
 				{Timeseries: []mimirpb.PreallocTimeseries{}},
 				{Timeseries: []mimirpb.PreallocTimeseries{}},
-				makeWriteRequestForLabelSetGen(5, labelsForPairs("label4", "value4")),
+				makeWriteRequestForLabelSetGen(5, labelSetGenForStringPairs(t, "label4", "value4")),
 			},
 			expectErrs: []bool{false, false, false, false},
 		},
@@ -3107,14 +3089,31 @@ func TestRelabelMiddleware(t *testing.T) {
 	}
 }
 
-func TestHaDedupeBeforeForwarding(t *testing.T) {
+func TestHaDedupeAndRelabelBeforeForwarding(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "user")
 	const replica1 = "replicaA"
 	const replica2 = "replicaB"
 	const cluster1 = "clusterA"
-	writeReqReplica1 := makeWriteRequestForLabelSetGen(5, labelSetGenWithReplicaAndCluster(replica1, cluster1))
-	writeReqReplica2 := makeWriteRequestForLabelSetGen(5, labelSetGenWithReplicaAndCluster(replica2, cluster1))
-	expectedWriteReq := makeWriteRequestForLabelSetGen(5, labelSetGenWithCluster(cluster1))
+	writeReqReplica1 := makeWriteRequestForLabelSetGen(5, labelSetGenForStringPairs(t,
+		"__name__", "foo",
+		"__replica__", replica1, // Will be dropped by ha-dedupe.
+		"bar", "baz", // Will be dropped by drop_label rule.
+		"cluster", cluster1,
+		"sample", "value", // Will be targeted by relabel rule.
+	))
+	writeReqReplica2 := makeWriteRequestForLabelSetGen(5, labelSetGenForStringPairs(t,
+		"__name__", "foo",
+		"__replica__", replica2, // Will be dropped by ha-dedupe.
+		"bar", "baz", // Will be dropped by drop_label rule.
+		"cluster", cluster1,
+		"sample", "value", // Will be targeted by relabel rule.
+	))
+	expectedWriteReq := makeWriteRequestForLabelSetGen(5, labelSetGenForStringPairs(t,
+		"__name__", "foo",
+		"cluster", cluster1,
+		"sample", "value",
+		"target", "prefix_value", // Result of relabel rule.
+	))
 
 	// Capture the submitted write requests which the middlewares pass into the mock push function.
 	var submittedWriteReqs []*mimirpb.WriteRequest
@@ -3140,6 +3139,16 @@ func TestHaDedupeBeforeForwarding(t *testing.T) {
 	limits.ForwardingRules = validation.ForwardingRules{
 		"foo": validation.ForwardingRule{},
 	}
+	limits.MetricRelabelConfigs = []*relabel.Config{
+		{
+			SourceLabels: []model.LabelName{"sample"},
+			Action:       relabel.DefaultRelabelConfig.Action,
+			Regex:        relabel.DefaultRelabelConfig.Regex,
+			TargetLabel:  "target",
+			Replacement:  "prefix_$1",
+		},
+	}
+	limits.DropLabels = []string{"bar"}
 
 	// Prepare distributor and wrap the mock push function with its middlewares.
 	ds, _, _ := prepare(t, prepConfig{
@@ -3153,8 +3162,10 @@ func TestHaDedupeBeforeForwarding(t *testing.T) {
 
 	// Submit the two write requests into the wrapped mock push function, it should:
 	// 1) Perform HA-deduplication
-	// 2) Forward the result of the deduplication via the mock forwarder
-	// 3) Submit the result of the deduplication to the mock push function
+	// 2) Apply relabel rules
+	// 3) Apply drop_label rules
+	// 4) Forward the result via the mock forwarder
+	// 5) Submit the result to the mock push function
 	_, err := wrappedMockPush(ctx, writeReqReplica1, func() {})
 	assert.NoError(t, err)
 	_, err = wrappedMockPush(ctx, writeReqReplica2, func() {})
@@ -3163,11 +3174,11 @@ func TestHaDedupeBeforeForwarding(t *testing.T) {
 	assert.Equal(t, int32(202), resp.Code) // 202 due to HA-dedupe.
 
 	// Check that the write requests which have been submitted to the push function look as expected,
-	// there should only be one and it shouldn't have the replica label.
+	// there should only be one and it should have all of the expected modifications.
 	assert.Equal(t, []*mimirpb.WriteRequest{expectedWriteReq}, submittedWriteReqs)
 
-	// Check that the time series which have been forwarded via the mock forwarded look as expected,
-	// there should only be one slice of timeseries and they shouldn't have the replica label.
+	// Check that the time series which have been forwarded via the mock forwarder look as expected,
+	// there should only be one slice of timeseries and it should have all of the expected modifications.
 	assert.Equal(t, [][]mimirpb.PreallocTimeseries{expectedWriteReq.Timeseries}, forwardedTs)
 }
 
@@ -3468,6 +3479,26 @@ func labelSetGenWithCluster(cluster string) func(int) []mimirpb.LabelAdapter {
 			{Name: "cluster", Value: cluster},
 			{Name: "sample", Value: fmt.Sprintf("%d", id)},
 		}
+	}
+}
+
+// labelSetGenForStringPairs takes a slice of strings which are interpreted as pairs of label names and values,
+// it then returns a label set generator which generates labelsets of the given label names and values.
+func labelSetGenForStringPairs(tb testing.TB, namesValues ...string) func(id int) []mimirpb.LabelAdapter {
+	return func(id int) []mimirpb.LabelAdapter {
+		if len(namesValues)%2 != 0 {
+			tb.Fatalf("number of names and values must be even: %q", namesValues)
+		}
+
+		labels := make([]mimirpb.LabelAdapter, 0, len(namesValues)/2)
+		for idx := 0; idx < len(namesValues)/2; idx++ {
+			labels = append(labels, mimirpb.LabelAdapter{
+				Name:  namesValues[2*idx],
+				Value: namesValues[2*idx+1] + strconv.Itoa(id),
+			})
+		}
+
+		return labels
 	}
 }
 
