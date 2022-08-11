@@ -618,6 +618,7 @@ func (d *Distributor) wrapPushWithMiddlewares(next push.Func) push.Func {
 	// result from previous call.
 	middlewares = append(middlewares, d.instanceLimitsMiddleware) // should run first
 	middlewares = append(middlewares, d.prePushHaDedupeMiddleware)
+	middlewares = append(middlewares, d.prePushRelabelMiddleware)
 	middlewares = append(middlewares, d.prePushForwardingMiddleware)
 
 	for ix := len(middlewares) - 1; ix >= 0; ix-- {
@@ -629,12 +630,8 @@ func (d *Distributor) wrapPushWithMiddlewares(next push.Func) push.Func {
 
 func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 	return func(ctx context.Context, req *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error) {
-		cleanupInDefer := true
-		defer func() {
-			if cleanupInDefer {
-				cleanup()
-			}
-		}()
+		conditionalCleanup, dontCleanup := getConditionalCleanup(cleanup)
+		defer conditionalCleanup()
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
@@ -642,7 +639,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 		}
 
 		if len(req.Timeseries) == 0 || !d.limits.AcceptHASamples(userID) {
-			cleanupInDefer = false
+			dontCleanup()
 			return next(ctx, req, cleanup)
 		}
 
@@ -690,7 +687,45 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 			d.nonHASamples.WithLabelValues(userID).Add(float64(numSamples))
 		}
 
-		cleanupInDefer = false
+		dontCleanup()
+		return next(ctx, req, cleanup)
+	}
+}
+
+func (d *Distributor) prePushRelabelMiddleware(next push.Func) push.Func {
+	return func(ctx context.Context, req *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error) {
+		conditionalCleanup, dontCleanup := getConditionalCleanup(cleanup)
+		defer conditionalCleanup()
+
+		userID, err := tenant.TenantID(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, ts := range req.Timeseries {
+			if mrc := d.limits.MetricRelabelConfigs(userID); len(mrc) > 0 {
+				l := relabel.Process(mimirpb.FromLabelAdaptersToLabels(ts.Labels), mrc...)
+				ts.Labels = mimirpb.FromLabelsToLabelAdapters(l)
+			}
+
+			for _, labelName := range d.limits.DropLabels(userID) {
+				removeLabel(labelName, &ts.Labels)
+			}
+
+			if len(ts.Labels) == 0 {
+				continue
+			}
+
+			// We rely on sorted labels in different places:
+			// 1) When computing token for labels, and sharding by all labels. Here different order of labels returns
+			// different tokens, which is bad.
+			// 2) In validation code, when checking for duplicate label names. As duplicate label names are rejected
+			// later in the validation phase, we ignore them here.
+			// 3) Ingesters expect labels to be sorted in the Push request.
+			sortLabelsIfNeeded(ts.Labels)
+		}
+
+		dontCleanup()
 		return next(ctx, req, cleanup)
 	}
 }
@@ -803,12 +838,8 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 // PushWithCleanup takes a WriteRequest and distributes it to ingesters using the ring.
 // Strings in `req` may be pointers into the gRPC buffer which will be reused, so must be copied if retained.
 func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error) {
-	cleanupInDefer := true
-	defer func() {
-		if cleanupInDefer {
-			cleanup()
-		}
-	}()
+	conditionalCleanup, dontCleanup := getConditionalCleanup(cleanup)
+	defer conditionalCleanup()
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
@@ -881,27 +912,6 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	// For each timeseries, compute a hash to distribute across ingesters;
 	// check each sample and discard if outside limits.
 	for _, ts := range req.Timeseries {
-		if mrc := d.limits.MetricRelabelConfigs(userID); len(mrc) > 0 {
-			l := relabel.Process(mimirpb.FromLabelAdaptersToLabels(ts.Labels), mrc...)
-			ts.Labels = mimirpb.FromLabelsToLabelAdapters(l)
-		}
-
-		for _, labelName := range d.limits.DropLabels(userID) {
-			removeLabel(labelName, &ts.Labels)
-		}
-
-		if len(ts.Labels) == 0 {
-			continue
-		}
-
-		// We rely on sorted labels in different places:
-		// 1) When computing token for labels, and sharding by all labels. Here different order of labels returns
-		// different tokens, which is bad.
-		// 2) In validation code, when checking for duplicate label names. As duplicate label names are rejected
-		// later in the validation phase, we ignore them here.
-		// 3) Ingesters expect labels to be sorted in the Push request.
-		sortLabelsIfNeeded(ts.Labels)
-
 		// Generate the sharding token based on the series labels without the HA replica
 		// label and dropped labels (if any)
 		key, err := d.tokenForLabels(userID, ts.Labels)
@@ -985,8 +995,8 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	initialMetadataIndex := len(seriesKeys)
 
 	// we must not re-use buffers now until all DoBatch goroutines have finished,
-	// so set this flag false and pass cleanup() to DoBatch.
-	cleanupInDefer = false
+	// so dont cleanup in this function and pass cleanup() to DoBatch instead.
+	dontCleanup()
 
 	err = ring.DoBatch(ctx, ring.WriteNoExtend, subRing, keys, func(ingester ring.InstanceDesc, indexes []int) error {
 		timeseries := make([]mimirpb.PreallocTimeseries, 0, len(indexes))
@@ -1011,6 +1021,17 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 
 func copyString(s string) string {
 	return string([]byte(s))
+}
+
+func getConditionalCleanup(cleanup func()) (func(), func()) {
+	doCleanup := true
+	return func() {
+			if doCleanup {
+				cleanup()
+			}
+		}, func() {
+			doCleanup = false
+		}
 }
 
 func sortLabelsIfNeeded(labels []mimirpb.LabelAdapter) {
