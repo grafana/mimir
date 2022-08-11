@@ -54,6 +54,14 @@ func newShardSummer(shards int, squasher squasher, logger log.Logger, stats *Map
 	}), nil
 }
 
+// Clone returns a clone of shardSummer with stats and current shard index reset to default.
+func (summer *shardSummer) Clone() *shardSummer {
+	s := *summer
+	s.stats = NewMapperStats()
+	s.currentShard = nil
+	return &s
+}
+
 // CopyWithCurShard clones a shardSummer with a new current shard.
 func (summer *shardSummer) CopyWithCurShard(curshard int) *shardSummer {
 	s := *summer
@@ -108,14 +116,45 @@ func (summer *shardSummer) MapExpr(expr parser.Expr) (mapped parser.Expr, finish
 		return e, false, nil
 
 	case *parser.BinaryExpr:
-		if summer.currentShard == nil {
-			if !CanParallelize(e, summer.logger) {
-				return e, false, nil
-			}
+		if summer.currentShard != nil {
+			return e, false, nil
+		}
 
+		// If we can parallelize the whole binary operation then just do it.
+		if CanParallelize(e, summer.logger) {
 			return summer.shardBinOp(e)
 		}
-		return e, false, nil
+
+		// We can't parallelize the whole binary operation but we could still parallelize
+		// at least one of the two legs. However, if we parallelize only one of the two legs
+		// then fetching results from the other (non parallelized) leg could be very expensive
+		// because it could result in very high cardinality results to fetch from querier and
+		// process in the query-frontend. Since we can't estimate the cardinality, we prefer
+		// to be pessimistic and not parallelize at all the two legs unless we're able to
+		// parallelize all vector selectors in the legs.
+		canShardAllVectorSelectors := func(expr parser.Expr) bool {
+			c := summer.Clone()
+			c.shards = 1
+			m := NewASTExprMapper(c)
+
+			// Clone the expression cause the mapper can modify it in-place.
+			clonedExpr, err := cloneExpr(expr)
+			if err != nil {
+				return false
+			}
+
+			mappedExpr, err := m.Map(clonedExpr)
+			if err != nil {
+				return false
+			}
+
+			// The mapped expression could have been rewritten and the number of vector selectors
+			// be changed compared to the original expression, so we should compare with that.
+			return c.stats.GetShardedQueries() == countVectorSelectors(mappedExpr)
+		}
+
+		finished = !canShardAllVectorSelectors(e.LHS) || !canShardAllVectorSelectors(e.RHS)
+		return e, finished, nil
 
 	case *parser.SubqueryExpr:
 		// If the mapped expr is part of the sharded query, then it means we already checked whether it was

@@ -126,6 +126,19 @@ func containsAggregateExpr(e parser.Expr) bool {
 	return containsAggregate
 }
 
+// countVectorSelectors returns the number of vector selectors in the input expression.
+func countVectorSelectors(e parser.Expr) int {
+	count := 0
+
+	visitNode(e, func(node parser.Node) {
+		if ok, _ := isVectorSelector(node); ok {
+			count++
+		}
+	})
+
+	return count
+}
+
 func isAggregateExpr(n parser.Node) (bool, error) {
 	_, ok := n.(*parser.AggregateExpr)
 	return ok, nil
