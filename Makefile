@@ -136,7 +136,7 @@ push-multiarch-build-image: ## Push the docker build image.
 
 # We don't want find to scan inside a bunch of directories, to accelerate the
 # 'make: Entering directory '/go/src/github.com/grafana/mimir' phase.
-DONT_FIND := -name vendor -prune -o -name .git -prune -o -name .cache -prune -o -name .pkg -prune -o -name mimir-mixin-tools -prune -o -name trafficdump -prune -o
+DONT_FIND := -name vendor -prune -o -name .git -prune -o -name .cache -prune -o -name .pkg -prune -o -name packaging -prune -o -name mimir-mixin-tools -prune -o -name trafficdump -prune -o
 
 # MAKE_FILES is a list of make files to lint.
 # We purposefully avoid MAKEFILES as a variable name as it influences
@@ -188,7 +188,7 @@ all: $(UPTODATE_FILES)
 test: protos
 test-with-race: protos
 mod-check: protos
-lint: protos
+lint: lint-packaging-scripts protos
 mimir-build-image/$(UPTODATE): mimir-build-image/*
 
 # All the boiler plate for building golang follows:
@@ -217,7 +217,7 @@ GOVOLUMES=	-v $(shell pwd)/.cache:/go/cache:delegated,z \
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
 SSHVOLUME=  -v ~/.ssh/:/root/.ssh:delegated,z
 
-exes $(EXES) protos $(PROTO_GOS) lint test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt conftest-test conftest-verify: fetch-build-image
+exes $(EXES) protos $(PROTO_GOS) lint lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt conftest-test conftest-verify: fetch-build-image
 	@mkdir -p $(shell pwd)/.pkg
 	@mkdir -p $(shell pwd)/.cache
 	@echo
@@ -238,6 +238,9 @@ protos: $(PROTO_GOS)
 	@# The store-gateway RPC is based on Thanos which uses relative references to other protos, so we need
 	@# to configure all such relative paths.
 	protoc -I $(GOPATH)/src:./vendor/github.com/thanos-io/thanos/pkg:./vendor/github.com/gogo/protobuf:./vendor:./$(@D) --gogoslick_out=plugins=grpc,Mgoogle/protobuf/any.proto=github.com/gogo/protobuf/types,:./$(@D) ./$(patsubst %.pb.go,%.proto,$@)
+
+lint-packaging-scripts: packaging/deb/control/postinst packaging/deb/control/prerm packaging/rpm/control/post packaging/rpm/control/preun
+	shellcheck $?
 
 lint: ## Run lints to check for style issues.
 lint: check-makefiles
@@ -360,15 +363,16 @@ doc: clean-doc $(DOC_TEMPLATES:.template=.md) $(DOC_EMBED:.md=.md.embedmd)
 	# Make operations/helm/charts/*/README.md
 	helm-docs
 
-
 license: ## Add license header to files.
-	go run ./tools/add-license ./cmd ./integration ./pkg ./tools ./development ./mimir-build-image ./operations ./.github
+	go run ./tools/add-license ./cmd ./integration ./pkg ./tools ./packaging ./development ./mimir-build-image ./operations ./.github
 
 check-license: ## Check license header of files.
 check-license: license
 	@git diff --exit-code || (echo "Please add the license header running 'make BUILD_IN_CONTAINER=false license'" && false)
 
-dist: ## Generates binaries for a Mimir release.
+dist: dist/$(UPTODATE) ## Generates binaries for a Mimir release.
+
+dist/$(UPTODATE):
 	rm -fr ./dist
 	mkdir -p ./dist
 	# Build binaries for various architectures and operating systems. Only
@@ -561,6 +565,117 @@ check-tsdb-blocks-storage-s3-docker-compose-yaml: ## Check the josnnet and docke
 integration-tests: ## Run all integration tests.
 integration-tests: cmd/mimir/$(UPTODATE)
 	go test -tags=requires_docker ./integration/...
+
+web-serve:
+	cd website && hugo --config config.toml --minify -v server
+
+# Generate binaries for a Mimir release
+dist: dist/$(UPTODATE)
+
+dist/$(UPTODATE):
+	rm -fr ./dist
+	mkdir -p ./dist
+	# Build binaries for various architectures and operating systems. Only
+	# mimirtool supports Windows for now. Also darwin/386 is not a valid
+	# architecture.
+	for os in linux darwin windows; do \
+		for arch in 386 amd64 arm64; do \
+			suffix="" ; \
+			if [ "$$os" = "windows" ]; then \
+				suffix=".exe" ; \
+			fi; \
+			if [ "$$os" = "darwin" ] && [ "$$arch" = "386" ]; then \
+				continue; \
+			fi; \
+			echo "Building mimirtool for $$os/$$arch"; \
+			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mimirtool-$$os-$$arch$$suffix ./cmd/mimirtool; \
+			sha256sum ./dist/mimirtool-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/mimirtool-$$os-$$arch$$suffix-sha-256; \
+			if [ "$$os" = "windows" ]; then \
+				continue; \
+			fi; \
+			echo "Building Mimir for $$os/$$arch"; \
+			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mimir-$$os-$$arch$$suffix ./cmd/mimir; \
+			sha256sum ./dist/mimir-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/mimir-$$os-$$arch$$suffix-sha-256; \
+			echo "Building query-tee for $$os/$$arch"; \
+			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/query-tee-$$os-$$arch$$suffix ./cmd/query-tee; \
+			sha256sum ./dist/query-tee-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/query-tee-$$os-$$arch$$suffix-sha-256; \
+			done; \
+		done; \
+		touch $@
+
+# Generate packages for a Mimir release.
+FPM_OPTS := fpm -s dir -v $(VERSION) -n mimir -f \
+	--license "AGPL 3.0" \
+	--url "https://grafana.com/oss/mimir/" \
+	--description "Grafana Mimir provides horizontally scalable, highly available, multi-tenant, long-term storage for Prometheus." \
+	--maintainer "contact@grafana.com" \
+	--vendor "Grafana Labs"
+
+PACKAGE_IN_CONTAINER := true
+PACKAGE_IMAGE ?= $(IMAGE_PREFIX)fpm
+ifeq ($(PACKAGE_IN_CONTAINER), true)
+
+.PHONY: packages
+packages: dist packaging/fpm/$(UPTODATE)
+	@mkdir -p $(shell pwd)/.pkg
+	@mkdir -p $(shell pwd)/.cache
+	@echo ">>>> Entering build container: $@"
+	$(SUDO) time docker run --rm $(TTY) \
+		-v  $(shell pwd):/go/src/github.com/grafana/mimir:delegated,z \
+		-i $(PACKAGE_IMAGE) $@;
+
+else
+
+packages: dist/$(UPTODATE)-packages
+
+dist/$(UPTODATE)-packages: $(wildcard packaging/deb/**) $(wildcard packaging/rpm/**)
+	for arch in amd64 arm64; do \
+		rpm_arch=x86_64; \
+		deb_arch=x86_64; \
+		if [ "$$arch" = "arm64" ]; then \
+			rpm_arch=aarch64; \
+			deb_arch=arm64; \
+		fi; \
+		$(FPM_OPTS) -t deb \
+			--architecture $$deb_arch \
+			--after-install packaging/deb/control/postinst \
+			--before-remove packaging/deb/control/prerm \
+			--package dist/mimir-$(VERSION)_$$arch.deb \
+			--deb-default packaging/deb/default/mimir \
+			--deb-systemd packaging/deb/systemd/mimir.service \
+			dist/mimir-linux-$$arch=/usr/local/bin/mimir \
+			docs/configurations/single-process-config-blocks.yaml=/etc/mimir/config.example.yaml; \
+		$(FPM_OPTS) -t rpm  \
+			--architecture $$rpm_arch \
+			--after-install packaging/rpm/control/post \
+			--before-remove packaging/rpm/control/preun \
+			--package dist/mimir-$(VERSION)_$$arch.rpm \
+			dist/mimir-linux-$$arch=/usr/local/bin/mimir \
+			docs/configurations/single-process-config-blocks.yaml=/etc/mimir/config.example.yaml \
+			packaging/rpm/sysconfig/mimir=/etc/sysconfig/mimir \
+			packaging/rpm/systemd/mimir.service=/etc/systemd/system/mimir.service; \
+	done
+	for pkg in dist/*.deb dist/*.rpm; do \
+		sha256sum $$pkg | cut -d ' ' -f 1 > $${pkg}-sha-256; \
+	done; \
+	touch $@
+
+endif
+
+# Build both arm64 and amd64 images, so that we can test deb/rpm packages for both architectures.
+packaging/rpm/centos-systemd/$(UPTODATE): packaging/rpm/centos-systemd/Dockerfile
+	$(SUDO) docker build --platform linux/amd64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) -t $(IMAGE_PREFIX)$(shell basename $(@D)):amd64 $(@D)/
+	$(SUDO) docker build --platform linux/arm64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) -t $(IMAGE_PREFIX)$(shell basename $(@D)):arm64 $(@D)/
+	touch $@
+
+packaging/deb/debian-systemd/$(UPTODATE): packaging/deb/debian-systemd/Dockerfile
+	$(SUDO) docker build --platform linux/amd64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) -t $(IMAGE_PREFIX)$(shell basename $(@D)):amd64 $(@D)/
+	$(SUDO) docker build --platform linux/arm64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) -t $(IMAGE_PREFIX)$(shell basename $(@D)):arm64 $(@D)/
+	touch $@
+
+.PHONY: test-packages
+test-packages: packages packaging/rpm/centos-systemd/$(UPTODATE) packaging/deb/debian-systemd/$(UPTODATE)
+	./tools/packaging/test-packages $(IMAGE_PREFIX) $(VERSION)
 
 include docs/docs.mk
 DOCS_DIR = docs/sources
