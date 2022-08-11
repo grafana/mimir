@@ -2970,6 +2970,143 @@ func TestInstanceLimitsBeforeHaDedupe(t *testing.T) {
 	assert.Equal(t, []*mimirpb.WriteRequest{expectedWriteReq}, submittedWriteReqs)
 }
 
+func TestRelabelMiddleware(t *testing.T) {
+	ctxWithUser := user.InjectOrgID(context.Background(), "user")
+
+	labelsForPairs := func(namesValues ...string) func(id int) []mimirpb.LabelAdapter {
+		return func(id int) []mimirpb.LabelAdapter {
+			if len(namesValues)%2 != 0 {
+				t.Fatalf("number of names and values must be even: %q", namesValues)
+			}
+
+			labels := make([]mimirpb.LabelAdapter, 0, len(namesValues)/2)
+			for idx := 0; idx < len(namesValues)/2; idx++ {
+				labels = append(labels, mimirpb.LabelAdapter{
+					Name:  namesValues[2*idx],
+					Value: namesValues[2*idx+1] + strconv.Itoa(id),
+				})
+			}
+
+			return labels
+		}
+	}
+
+	type testCase struct {
+		name           string
+		ctx            context.Context
+		relabelConfigs []*relabel.Config
+		dropLabels     []string
+		reqs           []*mimirpb.WriteRequest
+		expectedReqs   []*mimirpb.WriteRequest
+		expectErrs     []bool
+	}
+	testCases := []testCase{
+		{
+			name:           "do nothing",
+			ctx:            ctxWithUser,
+			relabelConfigs: nil,
+			dropLabels:     nil,
+			reqs:           []*mimirpb.WriteRequest{makeWriteRequestForLabelSetGen(5, labelsForPairs("__name__", "metric1", "label", "value_%d"))},
+			expectedReqs:   []*mimirpb.WriteRequest{makeWriteRequestForLabelSetGen(5, labelsForPairs("__name__", "metric1", "label", "value_%d"))},
+			expectErrs:     []bool{false},
+		}, {
+			name:           "no user in context",
+			ctx:            context.Background(),
+			relabelConfigs: nil,
+			dropLabels:     nil,
+			reqs:           []*mimirpb.WriteRequest{makeWriteRequestForLabelSetGen(5, labelsForPairs("__name__", "metric1", "label", "value_%d"))},
+			expectedReqs:   nil,
+			expectErrs:     []bool{true},
+		}, {
+			name:           "apply a relabel rule",
+			ctx:            ctxWithUser,
+			relabelConfigs: nil,
+			dropLabels:     []string{"label1", "label3"},
+			reqs: []*mimirpb.WriteRequest{makeWriteRequestForLabelSetGen(5,
+				labelsForPairs("__name__", "metric1", "label1", "value1", "label2", "value2", "label3", "value3"),
+			)},
+			expectedReqs: []*mimirpb.WriteRequest{makeWriteRequestForLabelSetGen(5,
+				labelsForPairs("__name__", "metric1", "label2", "value2"),
+			)},
+			expectErrs: []bool{false},
+		}, {
+			name: "drop two out of three labels",
+			ctx:  ctxWithUser,
+			relabelConfigs: []*relabel.Config{
+				{
+					SourceLabels: []model.LabelName{"label1"},
+					Action:       relabel.DefaultRelabelConfig.Action,
+					Regex:        relabel.DefaultRelabelConfig.Regex,
+					TargetLabel:  "target",
+					Replacement:  "prefix_$1",
+				},
+			},
+			reqs: []*mimirpb.WriteRequest{makeWriteRequestForLabelSetGen(5,
+				labelsForPairs("__name__", "metric1", "label1", "value1"),
+			)},
+			expectedReqs: []*mimirpb.WriteRequest{makeWriteRequestForLabelSetGen(5,
+				labelsForPairs("__name__", "metric1", "label1", "value1", "target", "prefix_value1"),
+			)},
+			expectErrs: []bool{false},
+		}, {
+			name:       "drop entire series if they have no labels",
+			ctx:        ctxWithUser,
+			dropLabels: []string{"__name__", "label2", "label3"},
+			reqs: []*mimirpb.WriteRequest{
+				makeWriteRequestForLabelSetGen(5, labelsForPairs("__name__", "metric1", "label1", "value1")),
+				makeWriteRequestForLabelSetGen(5, labelsForPairs("__name__", "metric2", "label2", "value2")),
+				makeWriteRequestForLabelSetGen(5, labelsForPairs("__name__", "metric3", "label3", "value3")),
+				makeWriteRequestForLabelSetGen(5, labelsForPairs("__name__", "metric4", "label4", "value4")),
+			},
+			expectedReqs: []*mimirpb.WriteRequest{
+				makeWriteRequestForLabelSetGen(5, labelsForPairs("label1", "value1")),
+				{Timeseries: []mimirpb.PreallocTimeseries{}},
+				{Timeseries: []mimirpb.PreallocTimeseries{}},
+				makeWriteRequestForLabelSetGen(5, labelsForPairs("label4", "value4")),
+			},
+			expectErrs: []bool{false, false, false, false},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			cleanupCallCount := 0
+			cleanup := func() {
+				cleanupCallCount++
+			}
+
+			var gotReqs []*mimirpb.WriteRequest
+			next := func(ctx context.Context, req *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error) {
+				gotReqs = append(gotReqs, req)
+				cleanup()
+				return nil, nil
+			}
+
+			var limits validation.Limits
+			flagext.DefaultValues(&limits)
+			limits.MetricRelabelConfigs = tc.relabelConfigs
+			limits.DropLabels = tc.dropLabels
+			ds, _, _ := prepare(t, prepConfig{
+				numDistributors: 1,
+				limits:          &limits,
+			})
+			middleware := ds[0].prePushRelabelMiddleware(next)
+
+			var gotErrs []bool
+			for _, req := range tc.reqs {
+				_, err := middleware(tc.ctx, req, cleanup)
+				gotErrs = append(gotErrs, err != nil)
+			}
+
+			assert.Equal(t, tc.expectedReqs, gotReqs)
+			assert.Equal(t, tc.expectErrs, gotErrs)
+
+			// Cleanup must have been called once per request.
+			assert.Equal(t, len(tc.reqs), cleanupCallCount)
+		})
+	}
+}
+
 func TestHaDedupeBeforeForwarding(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "user")
 	const replica1 = "replicaA"
