@@ -135,3 +135,18 @@ cortex_querytee_responses_total{backend="<hostname>",method="<method>",route="<r
 # TYPE cortex_querytee_responses_compared_total counter
 cortex_querytee_responses_compared_total{route="<route>",result="<success|fail>"}
 ```
+
+### Ruler remote operational mode test
+
+To test ruler evaluations with query-tee, set the `-ruler.query-frontend.address` CLI flag or its respective YAML configuration parameter for the ruler with query-tee's gRPC address:
+```
+ruler:
+  query_frontend:
+    address: "dns://query-tee:9095"
+```
+
+When the ruler evaluates a rule, the test flow is the following:
+
+1. ruler sends gRPC request to query-tee
+1. query-tee forwards the request to the configured ruler-query-frontends of the Mimir instances: `-backend.endpoints` flag
+1. query-tee receives the responses from the Mimir instances and forwards the result (based on the preferred backend) to the ruler
