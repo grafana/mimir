@@ -4,6 +4,7 @@
 
 ### Grafana Mimir
 
+* [BUGFIX] Fix reporting of tracing spans from PromQL engine. #2707
 * [BUGFIX] Distributor: Apply distributor instance limits before running HA deduplication. #2709
 
 ### Mixin
