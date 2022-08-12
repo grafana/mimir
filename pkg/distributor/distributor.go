@@ -618,6 +618,7 @@ func (d *Distributor) wrapPushWithMiddlewares(next push.Func) push.Func {
 	// result from previous call.
 	middlewares = append(middlewares, d.instanceLimitsMiddleware) // should run first
 	middlewares = append(middlewares, d.prePushHaDedupeMiddleware)
+	middlewares = append(middlewares, d.prePushRelabelMiddleware)
 	middlewares = append(middlewares, d.prePushForwardingMiddleware)
 
 	for ix := len(middlewares) - 1; ix >= 0; ix-- {
@@ -688,6 +689,56 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 		} else {
 			// If there wasn't an error but removeReplica is false that means we didn't find both HA labels.
 			d.nonHASamples.WithLabelValues(userID).Add(float64(numSamples))
+		}
+
+		cleanupInDefer = false
+		return next(ctx, req, cleanup)
+	}
+}
+
+func (d *Distributor) prePushRelabelMiddleware(next push.Func) push.Func {
+	return func(ctx context.Context, req *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error) {
+		cleanupInDefer := true
+		defer func() {
+			if cleanupInDefer {
+				cleanup()
+			}
+		}()
+
+		userID, err := tenant.TenantID(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		var removeTsIndexes []int
+		for tsIdx := 0; tsIdx < len(req.Timeseries); tsIdx++ {
+			ts := req.Timeseries[tsIdx]
+
+			if mrc := d.limits.MetricRelabelConfigs(userID); len(mrc) > 0 {
+				l := relabel.Process(mimirpb.FromLabelAdaptersToLabels(ts.Labels), mrc...)
+				ts.Labels = mimirpb.FromLabelsToLabelAdapters(l)
+			}
+
+			for _, labelName := range d.limits.DropLabels(userID) {
+				removeLabel(labelName, &ts.Labels)
+			}
+
+			if len(ts.Labels) == 0 {
+				removeTsIndexes = append(removeTsIndexes, tsIdx)
+				continue
+			}
+
+			// We rely on sorted labels in different places:
+			// 1) When computing token for labels, and sharding by all labels. Here different order of labels returns
+			// different tokens, which is bad.
+			// 2) In validation code, when checking for duplicate label names. As duplicate label names are rejected
+			// later in the validation phase, we ignore them here.
+			// 3) Ingesters expect labels to be sorted in the Push request.
+			sortLabelsIfNeeded(ts.Labels)
+		}
+
+		if len(removeTsIndexes) > 0 {
+			req.Timeseries = util.RemoveSliceIndexes(req.Timeseries, removeTsIndexes)
 		}
 
 		cleanupInDefer = false
@@ -881,26 +932,9 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	// For each timeseries, compute a hash to distribute across ingesters;
 	// check each sample and discard if outside limits.
 	for _, ts := range req.Timeseries {
-		if mrc := d.limits.MetricRelabelConfigs(userID); len(mrc) > 0 {
-			l := relabel.Process(mimirpb.FromLabelAdaptersToLabels(ts.Labels), mrc...)
-			ts.Labels = mimirpb.FromLabelsToLabelAdapters(l)
-		}
-
-		for _, labelName := range d.limits.DropLabels(userID) {
-			removeLabel(labelName, &ts.Labels)
-		}
-
 		if len(ts.Labels) == 0 {
 			continue
 		}
-
-		// We rely on sorted labels in different places:
-		// 1) When computing token for labels, and sharding by all labels. Here different order of labels returns
-		// different tokens, which is bad.
-		// 2) In validation code, when checking for duplicate label names. As duplicate label names are rejected
-		// later in the validation phase, we ignore them here.
-		// 3) Ingesters expect labels to be sorted in the Push request.
-		sortLabelsIfNeeded(ts.Labels)
 
 		// Generate the sharding token based on the series labels without the HA replica
 		// label and dropped labels (if any)

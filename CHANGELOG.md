@@ -7,6 +7,7 @@
 * [CHANGE] Distributor: if forwarding rules are used to forward samples, exemplars are now removed from the request. #2710
 * [BUGFIX] Fix reporting of tracing spans from PromQL engine. #2707
 * [BUGFIX] Distributor: Apply distributor instance limits before running HA deduplication. #2709
+* [BUGFIX] Apply relabel and drop_label rules before forwarding rules in the distributor. #2703
 
 ### Mixin
 
