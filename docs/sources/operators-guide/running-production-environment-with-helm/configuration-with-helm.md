@@ -165,6 +165,10 @@ This example show how to set up the configuration to use an S3 bucket for blocks
      podAnnotations:
        bucketSecretVersion: "0"
 
+   # This turns of the built in MinIO support
+   minio:
+     enabled: false
+
    mimir:
      structuredConfig:
        # Uncomment in case of Grafana Enterprise Metrics
