@@ -630,8 +630,12 @@ func (d *Distributor) wrapPushWithMiddlewares(next push.Func) push.Func {
 
 func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 	return func(ctx context.Context, req *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error) {
-		conditionalCleanup, dontCleanup := getConditionalCleanup(cleanup)
-		defer conditionalCleanup()
+		cleanupInDefer := true
+		defer func() {
+			if cleanupInDefer {
+				cleanup()
+			}
+		}()
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
@@ -639,7 +643,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 		}
 
 		if len(req.Timeseries) == 0 || !d.limits.AcceptHASamples(userID) {
-			dontCleanup()
+			cleanupInDefer = false
 			return next(ctx, req, cleanup)
 		}
 
@@ -687,15 +691,19 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 			d.nonHASamples.WithLabelValues(userID).Add(float64(numSamples))
 		}
 
-		dontCleanup()
+		cleanupInDefer = false
 		return next(ctx, req, cleanup)
 	}
 }
 
 func (d *Distributor) prePushRelabelMiddleware(next push.Func) push.Func {
 	return func(ctx context.Context, req *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error) {
-		conditionalCleanup, dontCleanup := getConditionalCleanup(cleanup)
-		defer conditionalCleanup()
+		cleanupInDefer := true
+		defer func() {
+			if cleanupInDefer {
+				cleanup()
+			}
+		}()
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
@@ -737,7 +745,7 @@ func (d *Distributor) prePushRelabelMiddleware(next push.Func) push.Func {
 			req.Timeseries, _, _ = util.RemoveSliceIndexes(req.Timeseries, removeTsIndexes)
 		}
 
-		dontCleanup()
+		cleanupInDefer = false
 		return next(ctx, req, cleanup)
 	}
 }
@@ -850,8 +858,12 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 // PushWithCleanup takes a WriteRequest and distributes it to ingesters using the ring.
 // Strings in `req` may be pointers into the gRPC buffer which will be reused, so must be copied if retained.
 func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error) {
-	conditionalCleanup, dontCleanup := getConditionalCleanup(cleanup)
-	defer conditionalCleanup()
+	cleanupInDefer := true
+	defer func() {
+		if cleanupInDefer {
+			cleanup()
+		}
+	}()
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
@@ -1012,7 +1024,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 
 	// we must not re-use buffers now until all DoBatch goroutines have finished,
 	// so dont cleanup in this function and pass cleanup() to DoBatch instead.
-	dontCleanup()
+	cleanupInDefer = false
 
 	err = ring.DoBatch(ctx, ring.WriteNoExtend, subRing, keys, func(ingester ring.InstanceDesc, indexes []int) error {
 		timeseries := make([]mimirpb.PreallocTimeseries, 0, len(indexes))
@@ -1037,19 +1049,6 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 
 func copyString(s string) string {
 	return string([]byte(s))
-}
-
-// getConditionalCleanup returns two functions, the first one wraps the given cleanup function, the second one is a
-// function which makes the first one not call the given cleanup function if it has been called at least once.
-func getConditionalCleanup(cleanup func()) (func(), func()) {
-	doCleanup := true
-	return func() {
-			if doCleanup {
-				cleanup()
-			}
-		}, func() {
-			doCleanup = false
-		}
 }
 
 func sortLabelsIfNeeded(labels []mimirpb.LabelAdapter) {
