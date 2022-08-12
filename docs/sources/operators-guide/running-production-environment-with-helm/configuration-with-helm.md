@@ -43,7 +43,7 @@ Grafana Mimir components are run with a configuration calculcated by the followi
 
 > **Note:**: CLI flags are component specific, thus they will not show up in the generated `ConfigMap` (or `Secret`), making it less obvious what configuration is running. Use only when absolutely necessary.
 
-### Ispect changes to the configuration before upgrade
+### Inspect changes to the configuration before upgrade
 
 Follow these steps to inspect what change will be applied to the configuration.
 
