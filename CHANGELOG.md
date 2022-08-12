@@ -4,6 +4,8 @@
 
 ### Grafana Mimir
 
+* [CHANGE] Distributor: if forwarding rules are used to forward samples, exemplars are now removed from the request. #2710
+
 ### Mixin
 
 ### Jsonnet
