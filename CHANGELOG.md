@@ -4,6 +4,8 @@
 
 ### Grafana Mimir
 
+* [BUGFIX] Fix reporting of tracing spans from PromQL engine. #2707
+
 ### Mixin
 
 ### Jsonnet
