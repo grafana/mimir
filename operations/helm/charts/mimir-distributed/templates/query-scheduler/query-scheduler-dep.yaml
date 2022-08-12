@@ -26,9 +26,9 @@ spec:
         {{- include "mimir.podAnnotations" (dict "ctx" . "component" "query-scheduler") | nindent 8 }}
     spec:
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
-    {{- if .Values.query_scheduler.priorityClassName }}
+      {{- if .Values.query_scheduler.priorityClassName }}
       priorityClassName: {{ .Values.query_scheduler.priorityClassName }}
-    {{- end }}
+      {{- end }}
       securityContext:
         {{- toYaml .Values.query_scheduler.securityContext | nindent 8 }}
       initContainers:
