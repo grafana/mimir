@@ -724,10 +724,6 @@ func (d *Distributor) prePushRelabelMiddleware(next push.Func) push.Func {
 			}
 
 			if len(ts.Labels) == 0 {
-				if len(removeTsIndexes) == 0 {
-					// If we have to add one index into this slice then there is a good chance that we'll have to add more.
-					removeTsIndexes = make([]int, 0, len(req.Timeseries))
-				}
 				removeTsIndexes = append(removeTsIndexes, tsIdx)
 				continue
 			}
