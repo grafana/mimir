@@ -2914,6 +2914,62 @@ func TestHaDedupeMiddleware(t *testing.T) {
 	}
 }
 
+func TestInstanceLimitsBeforeHaDedupe(t *testing.T) {
+	ctx := user.InjectOrgID(context.Background(), "user")
+
+	const replica1 = "replicaA"
+	const replica2 = "replicaB"
+	const cluster1 = "clusterA"
+
+	writeReqReplica1 := makeWriteRequestForLabelSetGen(5, labelSetGenWithReplicaAndCluster(replica1, cluster1))
+	writeReqReplica2 := makeWriteRequestForLabelSetGen(5, labelSetGenWithReplicaAndCluster(replica2, cluster1))
+	expectedWriteReq := makeWriteRequestForLabelSetGen(5, labelSetGenWithCluster(cluster1))
+
+	// Capture the submitted write requests which the middlewares pass into the mock push function.
+	var submittedWriteReqs []*mimirpb.WriteRequest
+	mockPush := func(_ context.Context, writeReq *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error) {
+		defer cleanup()
+		submittedWriteReqs = append(submittedWriteReqs, writeReq)
+		return nil, nil
+	}
+
+	// Setup limits with HA enabled and forwarding rules for the metric "foo".
+	var limits validation.Limits
+	flagext.DefaultValues(&limits)
+	limits.AcceptHASamples = true
+	limits.MaxLabelValueLength = 15
+
+	// Prepare distributor and wrap the mock push function with its middlewares.
+	ds, _, _ := prepare(t, prepConfig{
+		numDistributors:     1,
+		limits:              &limits,
+		enableTracker:       true,
+		maxInflightRequests: 1,
+	})
+	wrappedMockPush := ds[0].wrapPushWithMiddlewares(mockPush)
+
+	// Make sure first request hits the limit.
+	ds[0].inflightPushRequests.Inc()
+
+	// If we HA deduplication runs before instance limits check,
+	// then this would set replica for the cluster.
+	_, err := wrappedMockPush(ctx, writeReqReplica1, func() {})
+	require.Equal(t, errMaxInflightRequestsReached, err)
+
+	// Simulate no other inflight request.
+	ds[0].inflightPushRequests.Dec()
+
+	// We now send request from second replica.
+	// If HA deduplication middleware ran before instance limits check, then replica would be already set,
+	// and HA deduplication would return 202 status code for this request instead.
+	_, err = wrappedMockPush(ctx, writeReqReplica2, func() {})
+	require.NoError(t, err)
+
+	// Check that the write requests which have been submitted to the push function look as expected,
+	// there should only be one, and it shouldn't have the replica label.
+	assert.Equal(t, []*mimirpb.WriteRequest{expectedWriteReq}, submittedWriteReqs)
+}
+
 func TestHaDedupeBeforeForwarding(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "user")
 	const replica1 = "replicaA"
