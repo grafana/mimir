@@ -82,7 +82,7 @@ data:
     <configuration>
 ```
 
-Replace `\<configuration\>` with the configuration as text, be mindful of indentation. The name `my-mimir-config` is just an example.
+Replace `<configuration>` with the configuration as multiline text, be mindful of indentation. The name `my-mimir-config` is just an example.
 
 Set the following value for the Helm chart:
 
@@ -105,7 +105,7 @@ data:
   mimir.yaml: <configuration-base64>
 ```
 
-Replace `\<configuration\>` with the configuration encoded base64 format text. The name `my-mimir-config` is just an example.
+Replace `<configuration-base64>` with the configuration encoded as base64 format string. The name `my-mimir-config` is just an example.
 
 Set the following value for the Helm chart:
 
