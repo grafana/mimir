@@ -203,10 +203,8 @@ func (s *OpenTelemetrySpanBridge) SpanContext() trace.SpanContext {
 // description, overriding previous values set. The description is only
 // included in a status when the code is for an error.
 func (s *OpenTelemetrySpanBridge) SetStatus(code codes.Code, description string) {
-	s.span.SetTag("code", code)
-	if description != "" {
-		s.span.SetTag("description", description)
-	}
+	// We use a log instead of setting tags to have it more prominent in the tracing UI.
+	s.span.LogFields(log.Uint32("code", uint32(code)), log.String("description", description))
 }
 
 // SetName sets the Span name.
