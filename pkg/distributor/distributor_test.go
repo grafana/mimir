@@ -2948,21 +2948,22 @@ func TestInstanceLimitsBeforeHaDedupe(t *testing.T) {
 	})
 	wrappedMockPush := ds[0].wrapPushWithMiddlewares(mockPush)
 
-	// Send first request. This will set HA tracker to track first replica.
-	_, err := wrappedMockPush(ctx, writeReqReplica1, func() {})
-	require.NoError(t, err)
-
-	// Simulate one inflight request. Sending a request should hit instance limit.
+	// Make sure first request hits the limit.
 	ds[0].inflightPushRequests.Inc()
-	_, err = wrappedMockPush(ctx, writeReqReplica1, func() {})
+
+	// If we HA deduplication runs before instance limits check,
+	// then this would set replica for the cluster.
+	_, err := wrappedMockPush(ctx, writeReqReplica1, func() {})
 	require.Equal(t, errMaxInflightRequestsReached, err)
 
-	// Simulate no other inflight request. Sending request should now work, but will be deduplicated.
+	// Simulate no other inflight request.
 	ds[0].inflightPushRequests.Dec()
+
+	// We now send request from second replica.
+	// If HA deduplication middleware ran before instance limits check, then replica would be already set,
+	// and HA deduplication would return 202 status code for this request instead.
 	_, err = wrappedMockPush(ctx, writeReqReplica2, func() {})
-	resp, ok := httpgrpc.HTTPResponseFromError(err)
-	assert.True(t, ok)
-	assert.Equal(t, int32(202), resp.Code) // 202 due to HA-dedupe.
+	require.NoError(t, err)
 
 	// Check that the write requests which have been submitted to the push function look as expected,
 	// there should only be one, and it shouldn't have the replica label.
