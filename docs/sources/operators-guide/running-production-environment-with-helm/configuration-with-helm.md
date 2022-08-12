@@ -39,7 +39,7 @@ Grafana Mimir components are run with a configuration that is calculated from al
 
 See the [Example](#example-of-configuration-managed-with-helm) for a practical application.
 
-> **Note:**: CLI flags are component specific, thus they will not show up in the generated `ConfigMap` (or `Secret`), making it less obvious what configuration is running. Use only when absolutly necessary.
+> **Note:**: CLI flags are component specific, thus they will not show up in the generated `ConfigMap` (or `Secret`), making it less obvious what configuration is running. Use only when absolutely necessary.
 
 
 ### Upgrade and apply changes to the configuration
@@ -145,6 +145,8 @@ This example show how to set up the configuration to use an S3 bucket for blocks
      AWS_ACCESS_KEY_ID: FAKEACCESSKEY
      AWS_SECRET_ACCESS_KEY: FAKESECRETKEY
    ```
+
+   Do replace FAKEACCESSKEY and FAKESECRETKEY with the actual value encoded with base64.
 
 1. Apply the secret to your cluster with the `kubectl` command:
 
