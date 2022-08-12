@@ -139,6 +139,7 @@ cortex_querytee_responses_compared_total{route="<route>",result="<success|fail>"
 ### Ruler remote operational mode test
 
 To test ruler evaluations with query-tee, set the `-ruler.query-frontend.address` CLI flag or its respective YAML configuration parameter for the ruler with query-tee's gRPC address:
+
 ```
 ruler:
   query_frontend:
