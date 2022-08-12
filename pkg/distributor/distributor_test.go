@@ -3033,6 +3033,62 @@ func TestRelabelMiddleware(t *testing.T) {
 	}
 }
 
+func TestInstanceLimitsBeforeHaDedupe(t *testing.T) {
+	ctx := user.InjectOrgID(context.Background(), "user")
+
+	const replica1 = "replicaA"
+	const replica2 = "replicaB"
+	const cluster1 = "clusterA"
+
+	writeReqReplica1 := makeWriteRequestForLabelSetGen(5, labelSetGenWithReplicaAndCluster(replica1, cluster1))
+	writeReqReplica2 := makeWriteRequestForLabelSetGen(5, labelSetGenWithReplicaAndCluster(replica2, cluster1))
+	expectedWriteReq := makeWriteRequestForLabelSetGen(5, labelSetGenWithCluster(cluster1))
+
+	// Capture the submitted write requests which the middlewares pass into the mock push function.
+	var submittedWriteReqs []*mimirpb.WriteRequest
+	mockPush := func(_ context.Context, writeReq *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error) {
+		defer cleanup()
+		submittedWriteReqs = append(submittedWriteReqs, writeReq)
+		return nil, nil
+	}
+
+	// Setup limits with HA enabled and forwarding rules for the metric "foo".
+	var limits validation.Limits
+	flagext.DefaultValues(&limits)
+	limits.AcceptHASamples = true
+	limits.MaxLabelValueLength = 15
+
+	// Prepare distributor and wrap the mock push function with its middlewares.
+	ds, _, _ := prepare(t, prepConfig{
+		numDistributors:     1,
+		limits:              &limits,
+		enableTracker:       true,
+		forwarding:          false,
+		maxInflightRequests: 1,
+	})
+	wrappedMockPush := ds[0].wrapPushWithMiddlewares(mockPush)
+
+	// Send first request. This will set HA tracker to track first replica.
+	_, err := wrappedMockPush(ctx, writeReqReplica1, func() {})
+	require.NoError(t, err)
+
+	// Simulate one inflight request. Sending a request should hit instance limit.
+	ds[0].inflightPushRequests.Inc()
+	_, err = wrappedMockPush(ctx, writeReqReplica1, func() {})
+	require.Equal(t, errMaxInflightRequestsReached, err)
+
+	// Simulate no other inflight request. Sending request should now work, but will be deduplicated.
+	ds[0].inflightPushRequests.Dec()
+	_, err = wrappedMockPush(ctx, writeReqReplica2, func() {})
+	resp, ok := httpgrpc.HTTPResponseFromError(err)
+	assert.True(t, ok)
+	assert.Equal(t, int32(202), resp.Code) // 202 due to HA-dedupe.
+
+	// Check that the write requests which have been submitted to the push function look as expected,
+	// there should only be one, and it shouldn't have the replica label.
+	assert.Equal(t, []*mimirpb.WriteRequest{expectedWriteReq}, submittedWriteReqs)
+}
+
 func TestHaDedupeAndRelabelBeforeForwarding(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "user")
 	const replica1 = "replicaA"

@@ -612,14 +612,16 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 func (d *Distributor) wrapPushWithMiddlewares(next push.Func) push.Func {
 	var middlewares []func(push.Func) push.Func
 
-	// The middlewares will be applied in the order of the slice "middlewares",
-	// requests will traverse them in the reverse order and the first middleware will wrap the second one, etc.
-	middlewares = append(middlewares, d.prePushForwardingMiddleware)
-	middlewares = append(middlewares, d.prePushRelabelMiddleware)
+	// The middlewares will be applied to the request (!) in the specified order, from first to last.
+	// To guarantee that, middleware functions will be called in reversed order, wrapping the
+	// result from previous call.
+	middlewares = append(middlewares, d.instanceLimitsMiddleware) // should run first
 	middlewares = append(middlewares, d.prePushHaDedupeMiddleware)
+	middlewares = append(middlewares, d.prePushRelabelMiddleware)
+	middlewares = append(middlewares, d.prePushForwardingMiddleware)
 
-	for _, middleware := range middlewares {
-		next = middleware(next)
+	for ix := len(middlewares) - 1; ix >= 0; ix-- {
+		next = middlewares[ix](next)
 	}
 
 	return next
@@ -778,6 +780,56 @@ func (d *Distributor) prePushForwardingMiddleware(next push.Func) push.Func {
 	}
 }
 
+// instanceLimitsMiddleware checks for instance limits and rejects request if this instance cannot process it at the moment.
+func (d *Distributor) instanceLimitsMiddleware(next push.Func) push.Func {
+	return func(ctx context.Context, req *mimirpb.WriteRequest, callerCleanup func()) (*mimirpb.WriteResponse, error) {
+		// We will report *this* request in the error too.
+		inflight := d.inflightPushRequests.Inc()
+		reqSize := int64(req.Size())
+		inflightBytes := d.inflightPushRequestsBytes.Add(reqSize)
+
+		// Decrement counter after all ingester calls have finished or been cancelled.
+		cleanup := func() {
+			callerCleanup()
+			d.inflightPushRequests.Dec()
+			d.inflightPushRequestsBytes.Sub(reqSize)
+		}
+		cleanupInDefer := true
+		defer func() {
+			if cleanupInDefer {
+				cleanup()
+			}
+		}()
+
+		userID, err := tenant.TenantID(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		span := opentracing.SpanFromContext(ctx)
+		if span != nil {
+			span.SetTag("organization", userID)
+		}
+
+		if d.cfg.InstanceLimits.MaxInflightPushRequests > 0 && inflight > int64(d.cfg.InstanceLimits.MaxInflightPushRequests) {
+			return nil, errMaxInflightRequestsReached
+		}
+
+		if d.cfg.InstanceLimits.MaxIngestionRate > 0 {
+			if rate := d.ingestionRate.Rate(); rate >= d.cfg.InstanceLimits.MaxIngestionRate {
+				return nil, errMaxIngestionRateReached
+			}
+		}
+
+		if d.cfg.InstanceLimits.MaxInflightPushRequestsBytes > 0 && inflightBytes > int64(d.cfg.InstanceLimits.MaxInflightPushRequestsBytes) {
+			return nil, errMaxInflightRequestsBytesReached
+		}
+
+		cleanupInDefer = false
+		return next(ctx, req, cleanup)
+	}
+}
+
 func (d *Distributor) forwardSamples(ctx context.Context, userID string, ts []mimirpb.PreallocTimeseries) ([]mimirpb.PreallocTimeseries, <-chan error) {
 	forwardingErrCh := make(chan error)
 	forwardingRules := d.limits.ForwardingRules(userID)
@@ -806,43 +858,13 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 
 // PushWithCleanup takes a WriteRequest and distributes it to ingesters using the ring.
 // Strings in `req` may be pointers into the gRPC buffer which will be reused, so must be copied if retained.
-func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteRequest, callerCleanup func()) (*mimirpb.WriteResponse, error) {
-	// We will report *this* request in the error too.
-	inflight := d.inflightPushRequests.Inc()
-	reqSize := int64(req.Size())
-	inflightBytes := d.inflightPushRequestsBytes.Add(reqSize)
-
-	// Decrement counter after all ingester calls have finished or been cancelled.
-	cleanup := func() {
-		callerCleanup()
-		d.inflightPushRequests.Dec()
-		d.inflightPushRequestsBytes.Sub(reqSize)
-	}
+func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error) {
 	conditionalCleanup, dontCleanup := getConditionalCleanup(cleanup)
 	defer conditionalCleanup()
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
 		return nil, err
-	}
-
-	span := opentracing.SpanFromContext(ctx)
-	if span != nil {
-		span.SetTag("organization", userID)
-	}
-
-	if d.cfg.InstanceLimits.MaxInflightPushRequests > 0 && inflight > int64(d.cfg.InstanceLimits.MaxInflightPushRequests) {
-		return nil, errMaxInflightRequestsReached
-	}
-
-	if d.cfg.InstanceLimits.MaxIngestionRate > 0 {
-		if rate := d.ingestionRate.Rate(); rate >= d.cfg.InstanceLimits.MaxIngestionRate {
-			return nil, errMaxIngestionRateReached
-		}
-	}
-
-	if d.cfg.InstanceLimits.MaxInflightPushRequestsBytes > 0 && inflightBytes > int64(d.cfg.InstanceLimits.MaxInflightPushRequestsBytes) {
-		return nil, errMaxInflightRequestsBytesReached
 	}
 
 	now := mtime.Now()
@@ -1229,8 +1251,8 @@ func (m *labelNamesAndValuesResponseMerger) putItemsToMap(message *ingester_clie
 }
 
 // LabelValuesCardinality performs the following two operations in parallel:
-//  * queries ingesters for label values cardinality of a set of labelNames
-//  * queries ingesters for user stats to get the ingester's series head count
+//   - queries ingesters for label values cardinality of a set of labelNames
+//   - queries ingesters for user stats to get the ingester's series head count
 func (d *Distributor) LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher) (uint64, *ingester_client.LabelValuesCardinalityResponse, error) {
 	var totalSeries uint64
 	var labelValuesCardinalityResponse *ingester_client.LabelValuesCardinalityResponse
