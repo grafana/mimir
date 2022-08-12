@@ -34,6 +34,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Build information](#build-information)                                               | _All services_          | `GET /api/v1/status/buildinfo`                                            |
 | [Memberlist cluster](#memberlist-cluster)                                             | _All services_          | `GET /memberlist`                                                         |
 | [Remote write](#remote-write)                                                         | Distributor             | `POST /api/v1/push`                                                       |
+| [OTLP](#otlp)                                                                         | Distributor             | `POST /otlp/v1/metrics`                                                   |
 | [Tenants stats](#tenants-stats)                                                       | Distributor             | `GET /distributor/all_user_stats`                                         |
 | [HA tracker status](#ha-tracker-status)                                               | Distributor             | `GET /distributor/ha_tracker`                                             |
 | [Flush chunks / blocks](#flush-chunks--blocks)                                        | Ingester                | `GET,POST /ingester/flush`                                                |
@@ -249,6 +250,19 @@ To skip the label name validation, perform the following actions:
 This feature supports the writes from non-standard downstream clients that have metric name not Prometheus compliant.
 
 For more information, refer to Prometheus [Remote storage integrations](https://prometheus.io/docs/prometheus/latest/storage/#remote-storage-integrations).
+
+Requires [authentication](#authentication).
+
+### OTLP
+
+```
+POST /otlp/v1/metrics
+```
+
+Entrypoint for the [OTLP HTTP](https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/protocol/otlp.md#otlphttp). Experimental.
+
+This endpoint accepts an HTTP POST request with a body that contains a request encoded with [Protocol Buffers](https://developers.google.com/protocol-buffers) and optionally compressed with [GZIP](https://www.gnu.org/software/gzip/).
+You can find the definition of the protobuf message in [metrics.proto](https://github.com/open-telemetry/opentelemetry-proto/blob/main/opentelemetry/proto/metrics/v1/metrics.proto).
 
 Requires [authentication](#authentication).
 
