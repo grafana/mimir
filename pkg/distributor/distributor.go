@@ -737,7 +737,7 @@ func (d *Distributor) prePushForwardingMiddleware(next push.Func) push.Func {
 // instanceLimitsMiddleware checks for instance limits and rejects request if this instance cannot process it at the moment.
 func (d *Distributor) instanceLimitsMiddleware(next push.Func) push.Func {
 	return func(ctx context.Context, req *mimirpb.WriteRequest, callerCleanup func()) (*mimirpb.WriteResponse, error) {
-		// We will report *this* request in the error too.
+		// Increment number of requests and bytes before doing the checks, so that we hit error if this request crosses the limits.
 		inflight := d.inflightPushRequests.Inc()
 		reqSize := int64(req.Size())
 		inflightBytes := d.inflightPushRequestsBytes.Add(reqSize)
@@ -755,28 +755,18 @@ func (d *Distributor) instanceLimitsMiddleware(next push.Func) push.Func {
 			}
 		}()
 
-		userID, err := tenant.TenantID(ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		span := opentracing.SpanFromContext(ctx)
-		if span != nil {
-			span.SetTag("organization", userID)
-		}
-
 		if d.cfg.InstanceLimits.MaxInflightPushRequests > 0 && inflight > int64(d.cfg.InstanceLimits.MaxInflightPushRequests) {
 			return nil, errMaxInflightRequestsReached
+		}
+
+		if d.cfg.InstanceLimits.MaxInflightPushRequestsBytes > 0 && inflightBytes > int64(d.cfg.InstanceLimits.MaxInflightPushRequestsBytes) {
+			return nil, errMaxInflightRequestsBytesReached
 		}
 
 		if d.cfg.InstanceLimits.MaxIngestionRate > 0 {
 			if rate := d.ingestionRate.Rate(); rate >= d.cfg.InstanceLimits.MaxIngestionRate {
 				return nil, errMaxIngestionRateReached
 			}
-		}
-
-		if d.cfg.InstanceLimits.MaxInflightPushRequestsBytes > 0 && inflightBytes > int64(d.cfg.InstanceLimits.MaxInflightPushRequestsBytes) {
-			return nil, errMaxInflightRequestsBytesReached
 		}
 
 		cleanupInDefer = false
@@ -823,6 +813,11 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
 		return nil, err
+	}
+
+	span := opentracing.SpanFromContext(ctx)
+	if span != nil {
+		span.SetTag("organization", userID)
 	}
 
 	now := mtime.Now()
