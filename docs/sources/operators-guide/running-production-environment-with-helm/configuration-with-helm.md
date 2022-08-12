@@ -176,23 +176,28 @@ This example show how to set up the configuration to use an S3 bucket for blocks
        #   storage:
        #     s3:
        #       bucket_name: my-admin-bucket
+       #       access_key_id: ${AWS_ACCESS_KEY_ID}
+       #       endpoint: s3.amazonaws.com
+       #       secret_access_key: ${AWS_SECRET_ACCESS_KEY}
        alertmanager_storage:
          s3:
            bucket_name: my-ruler-bucket
+           access_key_id: ${AWS_ACCESS_KEY_ID}
+           endpoint: s3.amazonaws.com
+           secret_access_key: ${AWS_SECRET_ACCESS_KEY}
        blocks_storage:
          backend: s3
          s3:
            bucket_name: my-blocks-bucket
+           access_key_id: ${AWS_ACCESS_KEY_ID}
+           endpoint: s3.amazonaws.com
+           secret_access_key: ${AWS_SECRET_ACCESS_KEY}
        ruler_storage:
          s3:
            bucket_name: my-ruler-bucket
-       common:
-         storage:
-           backend: s3
-           s3:
-             access_key_id: ${AWS_ACCESS_KEY_ID}
-             endpoint: s3.amazonaws.com
-             secret_access_key: ${AWS_SECRET_ACCESS_KEY}
+           access_key_id: ${AWS_ACCESS_KEY_ID}
+           endpoint: s3.amazonaws.com
+           secret_access_key: ${AWS_SECRET_ACCESS_KEY}
    ```
 
 1. Check the resulting configuration with the `helm` command before installing:
@@ -223,29 +228,28 @@ This example show how to set up the configuration to use an S3 bucket for blocks
       external_url: /alertmanager
     alertmanager_storage:
       s3:
+        access_key_id: ${AWS_ACCESS_KEY_ID}
         bucket_name: my-ruler-bucket
+        endpoint: s3.amazonaws.com
+        secret_access_key: ${AWS_SECRET_ACCESS_KEY}
     blocks_storage:
       backend: s3
       bucket_store:
         sync_dir: /data/tsdb-sync
       s3:
+        access_key_id: ${AWS_ACCESS_KEY_ID}
         bucket_name: my-blocks-bucket
+        endpoint: s3.amazonaws.com
+        secret_access_key: ${AWS_SECRET_ACCESS_KEY}
       tsdb:
         dir: /data/tsdb
-    common:
-      storage:
-        backend: s3
-        s3:
-          access_key_id: ${AWS_ACCESS_KEY_ID}
-          endpoint: s3.amazonaws.com
-          secret_access_key: ${AWS_SECRET_ACCESS_KEY}
     compactor:
       data_dir: /data
     frontend:
       align_queries_with_step: true
       log_queries_longer_than: 10s
     frontend_worker:
-      frontend_address: mimir-query-frontend-headless.mimir-test.svc:9095
+      frontend_address: mimir-query-frontend-headless.test.svc:9095
     ingester:
       ring:
         final_sleep: 0s
@@ -260,14 +264,17 @@ This example show how to set up the configuration to use an S3 bucket for blocks
       abort_if_cluster_join_fails: false
       compression_enabled: false
       join_members:
-      - dns+mimir-gossip-ring.mimir-test.svc.cluster.local:7946
+      - dns+mimir-gossip-ring.test.svc.cluster.local:7946
     ruler:
-      alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.mimir-alertmanager-headless.mimir-test.svc.cluster.local/alertmanager
+      alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.mimir-alertmanager-headless.test.svc.cluster.local/alertmanager
       enable_api: true
       rule_path: /data
     ruler_storage:
       s3:
+        access_key_id: ${AWS_ACCESS_KEY_ID}
         bucket_name: my-ruler-bucket
+        endpoint: s3.amazonaws.com
+        secret_access_key: ${AWS_SECRET_ACCESS_KEY}
     runtime_config:
       file: /var/mimir/runtime.yaml
     server:
