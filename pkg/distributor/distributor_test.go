@@ -2944,7 +2944,6 @@ func TestInstanceLimitsBeforeHaDedupe(t *testing.T) {
 		numDistributors:     1,
 		limits:              &limits,
 		enableTracker:       true,
-		forwarding:          false,
 		maxInflightRequests: 1,
 	})
 	wrappedMockPush := ds[0].wrapPushWithMiddlewares(mockPush)
