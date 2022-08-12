@@ -1023,7 +1023,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	initialMetadataIndex := len(seriesKeys)
 
 	// we must not re-use buffers now until all DoBatch goroutines have finished,
-	// so dont cleanup in this function and pass cleanup() to DoBatch instead.
+	// so set this flag false and pass cleanup() to DoBatch.
 	cleanupInDefer = false
 
 	err = ring.DoBatch(ctx, ring.WriteNoExtend, subRing, keys, func(ingester ring.InstanceDesc, indexes []int) error {
