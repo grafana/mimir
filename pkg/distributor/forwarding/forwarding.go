@@ -128,11 +128,11 @@ func (f *forwarder) worker() {
 // returned slice of time series must be returned to the pool by the caller once it is done using it.
 //
 // The return values are:
-// - A TimeSeriesCounts object containing the sample / exemplar counts that were removed from the
-//   given time series slice relative to the returned slice.
-// - A slice of time series which should be sent to the ingesters, based on the given rule set.
-//   The Forward() method does not send the time series to the ingesters itself, it expects the caller to do that.
-// - A chan of errors which resulted from forwarding the time series, the chan gets closed when all forwarding requests have completed.
+//   - A TimeSeriesCounts object containing the sample / exemplar counts that were removed from the
+//     given time series slice relative to the returned slice.
+//   - A slice of time series which should be sent to the ingesters, based on the given rule set.
+//     The Forward() method does not send the time series to the ingesters itself, it expects the caller to do that.
+//   - A chan of errors which resulted from forwarding the time series, the chan gets closed when all forwarding requests have completed.
 func (f *forwarder) Forward(ctx context.Context, rules validation.ForwardingRules, in []mimirpb.PreallocTimeseries) (TimeseriesCounts, []mimirpb.PreallocTimeseries, chan error) {
 	if !f.cfg.Enabled {
 		errCh := make(chan error)
@@ -179,7 +179,8 @@ func (t tsByTargets) copyToTarget(target string, ts mimirpb.PreallocTimeseries, 
 	tsIdx := len(tsByTarget.ts)
 	tsByTarget.ts = append(tsByTarget.ts, mimirpb.PreallocTimeseries{TimeSeries: pool.getTs()})
 
-	tsByTarget.ts[tsIdx] = mimirpb.DeepCopyTimeseries(tsByTarget.ts[tsIdx], ts)
+	// We don't keep exemplars when forwarding.
+	tsByTarget.ts[tsIdx] = mimirpb.DeepCopyTimeseries(tsByTarget.ts[tsIdx], ts, false)
 	tsByTarget.counts.count(tsByTarget.ts[tsIdx])
 
 	t[target] = tsByTarget

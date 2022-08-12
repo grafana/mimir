@@ -339,7 +339,7 @@ func reuseYoloSlice(val *[]byte) {
 // It copies all the properties, sub-properties and strings by value to ensure that the two timeseries are not sharing
 // anything after the deep copying.
 // The returned PreallocTimeseries has a yoloSlice property which should be returned to the yoloSlicePool on cleanup.
-func DeepCopyTimeseries(dst, src PreallocTimeseries) PreallocTimeseries {
+func DeepCopyTimeseries(dst, src PreallocTimeseries, keepExemplars bool) PreallocTimeseries {
 	if dst.TimeSeries == nil {
 		dst.TimeSeries = TimeseriesFromPool()
 	}
@@ -364,19 +364,23 @@ func DeepCopyTimeseries(dst, src PreallocTimeseries) PreallocTimeseries {
 	copy(dstTs.Samples, srcTs.Samples)
 
 	// Prepare the slice of exemplars.
-	if cap(dstTs.Exemplars) < len(srcTs.Exemplars) {
-		dstTs.Exemplars = make([]Exemplar, len(srcTs.Exemplars))
+	if keepExemplars {
+		if cap(dstTs.Exemplars) < len(srcTs.Exemplars) {
+			dstTs.Exemplars = make([]Exemplar, len(srcTs.Exemplars))
+		} else {
+			dstTs.Exemplars = dstTs.Exemplars[:len(srcTs.Exemplars)]
+		}
+
+		for exemplarIdx := range src.Exemplars {
+			// Copy the exemplar labels by using the prepared buffer.
+			dstTs.Exemplars[exemplarIdx].Labels, buf = copyToYoloLabels(buf, dstTs.Exemplars[exemplarIdx].Labels, src.Exemplars[exemplarIdx].Labels)
+
+			// Copy the other exemplar properties.
+			dstTs.Exemplars[exemplarIdx].Value = src.Exemplars[exemplarIdx].Value
+			dstTs.Exemplars[exemplarIdx].TimestampMs = src.Exemplars[exemplarIdx].TimestampMs
+		}
 	} else {
-		dstTs.Exemplars = dstTs.Exemplars[:len(srcTs.Exemplars)]
-	}
-
-	for exemplarIdx := range src.Exemplars {
-		// Copy the exemplar labels by using the prepared buffer.
-		dstTs.Exemplars[exemplarIdx].Labels, buf = copyToYoloLabels(buf, dstTs.Exemplars[exemplarIdx].Labels, src.Exemplars[exemplarIdx].Labels)
-
-		// Copy the other exemplar properties.
-		dstTs.Exemplars[exemplarIdx].Value = src.Exemplars[exemplarIdx].Value
-		dstTs.Exemplars[exemplarIdx].TimestampMs = src.Exemplars[exemplarIdx].TimestampMs
+		dstTs.Exemplars = nil
 	}
 
 	return dst
