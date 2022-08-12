@@ -7,8 +7,10 @@ package push
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -33,12 +35,65 @@ func TestHandler_remoteWrite(t *testing.T) {
 	assert.Equal(t, 200, resp.Code)
 }
 
-func TestHandler_otlpWrite(t *testing.T) {
-	req := createOTLPRequest(t, createOTLPMetricRequest(t))
+func TestHandler_otlpWriteNoCompression(t *testing.T) {
+	req := createOTLPRequest(t, createOTLPMetricRequest(t), false)
 	resp := httptest.NewRecorder()
 	handler := OTLPHandler(100000, nil, false, verifyWriteRequestHandler(t, mimirpb.API))
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
+}
+
+func TestHandler_otlpWriteWithCompression(t *testing.T) {
+	req := createOTLPRequest(t, createOTLPMetricRequest(t), true)
+	resp := httptest.NewRecorder()
+	handler := OTLPHandler(100000, nil, false, verifyWriteRequestHandler(t, mimirpb.API))
+	handler.ServeHTTP(resp, req)
+	assert.Equal(t, 200, resp.Code)
+}
+
+func TestHandler_otlpWriteRequestTooBigNoCompression(t *testing.T) {
+	req := createOTLPRequest(t, createOTLPMetricRequest(t), false)
+	resp := httptest.NewRecorder()
+
+	// This one is caught in the r.ContentLength check.
+	handler := OTLPHandler(30, nil, false, verifyWriteRequestHandler(t, mimirpb.API))
+	handler.ServeHTTP(resp, req)
+	assert.Equal(t, http.StatusRequestEntityTooLarge, resp.Code)
+}
+
+func TestHandler_otlpWriteRequestTooBigWithCompression(t *testing.T) {
+
+	// createOTLPRequest will create a request which is BIGGER with compression (37 vs 58 bytes).
+	// Hence creating a dummy request.
+	var b bytes.Buffer
+	gz := gzip.NewWriter(&b)
+	_, err := gz.Write(make([]byte, 100000))
+	require.NoError(t, err)
+	require.NoError(t, gz.Close())
+
+	req, err := http.NewRequest("POST", "http://localhost/", bytes.NewReader(b.Bytes()))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/x-protobuf")
+	req.Header.Set("Content-Encoding", "gzip")
+
+	resp := httptest.NewRecorder()
+
+	handler := OTLPHandler(140, nil, false, verifyWriteRequestHandler(t, mimirpb.API))
+	handler.ServeHTTP(resp, req)
+	assert.Equal(t, http.StatusRequestEntityTooLarge, resp.Code)
+	body, err := ioutil.ReadAll(resp.Body)
+	assert.NoError(t, err)
+	assert.Contains(t, string(body), "http: request body too large")
+}
+
+func TestHandler_otlpWriteRequestWithUnSupportedCompression(t *testing.T) {
+	req := createOTLPRequest(t, createOTLPMetricRequest(t), true)
+	req.Header.Set("Content-Encoding", "snappy")
+
+	resp := httptest.NewRecorder()
+	handler := OTLPHandler(100000, nil, false, verifyWriteRequestHandler(t, mimirpb.API))
+	handler.ServeHTTP(resp, req)
+	assert.Equal(t, http.StatusUnsupportedMediaType, resp.Code)
 }
 
 func TestHandler_mimirWriteRequest(t *testing.T) {
@@ -187,15 +242,31 @@ func createRequest(t testing.TB, protobuf []byte) *http.Request {
 	return req
 }
 
-func createOTLPRequest(t testing.TB, metricRequest pmetricotlp.Request) *http.Request {
+func createOTLPRequest(t testing.TB, metricRequest pmetricotlp.Request, compress bool) *http.Request {
 	t.Helper()
 
 	rawBytes, err := metricRequest.MarshalProto()
 	require.NoError(t, err)
 
-	req, err := http.NewRequest("POST", "http://localhost/", bytes.NewReader(rawBytes))
+	body := rawBytes
+
+	if compress {
+		var b bytes.Buffer
+		gz := gzip.NewWriter(&b)
+		_, err := gz.Write(rawBytes)
+		require.NoError(t, err)
+		require.NoError(t, gz.Close())
+
+		body = b.Bytes()
+	}
+
+	req, err := http.NewRequest("POST", "http://localhost/", bytes.NewReader(body))
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/x-protobuf")
+
+	if compress {
+		req.Header.Set("Content-Encoding", "gzip")
+	}
 	return req
 }
 

@@ -3,9 +3,9 @@
 package push
 
 import (
+	"compress/gzip"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"time"
@@ -15,12 +15,14 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite"
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/middleware"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -61,17 +63,41 @@ func OTLPHandler(
 			}
 
 		default:
-			return nil, fmt.Errorf("unsupported content type: %s, supported: [%s, %s]", contentType, jsonContentType, pbContentType)
+			return nil, httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported content type: %s, supported: [%s, %s]", contentType, jsonContentType, pbContentType)
 		}
 
 		if r.ContentLength > int64(maxRecvMsgSize) {
-			return nil, fmt.Errorf(messageSizeLargerErrFmt, r.ContentLength, maxRecvMsgSize)
+			return nil, httpgrpc.Errorf(http.StatusRequestEntityTooLarge, messageSizeLargerErrFmt, r.ContentLength, maxRecvMsgSize)
 		}
 
-		reader := http.MaxBytesReader(nil, r.Body, int64(maxRecvMsgSize))
+		reader := r.Body
+		// Handle compression.
+		switch r.Header.Get("Content-Encoding") {
+		case "gzip":
+			gr, err := gzip.NewReader(reader)
+			if err != nil {
+				return nil, err
+			}
+			reader = gr
+
+		case "":
+			// No compression.
+
+		default:
+			return nil, httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported compression: %s. Only \"gzip\" or no compression supported", r.Header.Get("Content-Encoding"))
+		}
+
+		// Protect against a large input.
+		reader = http.MaxBytesReader(nil, reader, int64(maxRecvMsgSize))
+
 		body, err := io.ReadAll(reader)
 		if err != nil {
 			r.Body.Close()
+
+			if util.IsRequestBodyTooLarge(err) {
+				return body, httpgrpc.Errorf(http.StatusRequestEntityTooLarge, err.Error())
+			}
+
 			return body, err
 		}
 
