@@ -179,7 +179,7 @@ func (s *OpenTelemetrySpanBridge) SpanContext() trace.SpanContext {
 	}
 
 	var flags trace.TraceFlags
-	flags.WithSampled(sctx.IsSampled())
+	flags = flags.WithSampled(sctx.IsSampled())
 
 	return trace.NewSpanContext(trace.SpanContextConfig{
 		TraceID:    jaegerToOpenTelemetryTraceID(sctx.TraceID()),
