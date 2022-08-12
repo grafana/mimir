@@ -7,6 +7,7 @@
 * [CHANGE] Distributor: if forwarding rules are used to forward samples, exemplars are now removed from the request. #2710
 * [BUGFIX] Fix reporting of tracing spans from PromQL engine. #2707
 * [BUGFIX] Distributor: Apply distributor instance limits before running HA deduplication. #2709
+* [BUGFIX] Apply relabel and drop_label rules before forwarding rules in the distributor. #2703
 
 ### Mixin
 
@@ -72,7 +73,6 @@
 * [BUGFIX] Query-frontend: fix wrong query sharding results for queries with boolean result like `1 < bool 0`. #2558
 * [BUGFIX] Fixed error messages related to per-instance limits incorrectly reporting they can be set on a per-tenant basis. #2610
 * [BUGFIX] Perform HA-deduplication before forwarding samples according to forwarding rules in the distributor. #2603
-* [BUGFIX] Apply relabel and drop_label rules before forwarding rules in the distributor. #2703
 
 ### Mixin
 
