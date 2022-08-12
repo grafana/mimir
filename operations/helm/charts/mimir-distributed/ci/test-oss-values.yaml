@@ -42,9 +42,6 @@ ingester:
   persistentVolume:
     enabled: false
 
-query_scheduler:
-  enabled: true
-
 store_gateway:
   resources:
     <<: *ci_resources
