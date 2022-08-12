@@ -1560,7 +1560,6 @@ spec:
         - -distributor.health-check-ingesters=true
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
-        - -ingester.max-global-series-per-metric=0
         - -ingester.max-global-series-per-user=150000
         - -ingester.ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -ingester.ring.heartbeat-period=15s
@@ -1674,7 +1673,6 @@ spec:
         - -distributor.health-check-ingesters=true
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
-        - -ingester.max-global-series-per-metric=0
         - -ingester.max-global-series-per-user=150000
         - -ingester.ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -ingester.ring.heartbeat-period=15s
@@ -1788,7 +1786,6 @@ spec:
         - -distributor.health-check-ingesters=true
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
-        - -ingester.max-global-series-per-metric=0
         - -ingester.max-global-series-per-user=150000
         - -ingester.ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -ingester.ring.heartbeat-period=15s

@@ -2372,7 +2372,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # The maximum number of in-memory series per metric name, across the cluster
 # before replication. 0 to disable.
 # CLI flag: -ingester.max-global-series-per-metric
-[max_global_series_per_metric: <int> | default = 20000]
+[max_global_series_per_metric: <int> | default = 0]
 
 # The maximum number of in-memory metrics with metadata per tenant, across the
 # cluster. 0 to disable.
