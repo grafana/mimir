@@ -123,7 +123,7 @@ func TestDeepCopyTimeseries(t *testing.T) {
 		},
 	}
 	dst := PreallocTimeseries{}
-	dst = DeepCopyTimeseries(dst, src)
+	dst = DeepCopyTimeseries(dst, src, true)
 
 	// Check that the values in src and dst are the same.
 	assert.Equal(t, src.TimeSeries, dst.TimeSeries)
@@ -151,4 +151,8 @@ func TestDeepCopyTimeseries(t *testing.T) {
 			(*reflect.SliceHeader)(unsafe.Pointer(&dst.Exemplars[exemplarIdx].Labels)).Data,
 		)
 	}
+
+	dst = PreallocTimeseries{}
+	dst = DeepCopyTimeseries(dst, src, false)
+	assert.Nil(t, dst.Exemplars)
 }
