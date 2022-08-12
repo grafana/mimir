@@ -4,6 +4,8 @@
 
 ### Grafana Mimir
 
+* [BUGFIX] Distributor: Apply distributor instance limits before running HA deduplication. #2709
+
 ### Mixin
 
 ### Jsonnet
