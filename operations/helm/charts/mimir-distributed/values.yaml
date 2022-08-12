@@ -300,6 +300,9 @@ alertmanager:
   # Pod Disruption Budget
   podDisruptionBudget: {}
 
+  # -- The name of the PriorityClass for alertmanager pods
+  priorityClassName: null
+
   nodeSelector: {}
   affinity: {}
   annotations: {}
@@ -426,6 +429,9 @@ distributor:
   # Pod Disruption Budget
   podDisruptionBudget: {}
 
+  # -- The name of the PriorityClass for distributor pods
+  priorityClassName: null
+
   nodeSelector: {}
   affinity:
     podAntiAffinity:
@@ -492,6 +498,9 @@ ingester:
 
   # Pod Annotations
   podAnnotations: {}
+
+  # -- The name of the PriorityClass for ingester pods
+  priorityClassName: null
 
   # Pod Disruption Budget
   podDisruptionBudget:
@@ -589,6 +598,9 @@ overrides_exporter:
   podAnnotations: {}
   # Pod Disruption Budget
   podDisruptionBudget: {}
+
+  # -- The name of the PriorityClass for overrides-exporter pods
+  priorityClassName: null
 
   nodeSelector: {}
   affinity: {}
@@ -713,6 +725,9 @@ querier:
   # Pod Disruption Budget
   podDisruptionBudget: {}
 
+  # -- The name of the PriorityClass for querier pods
+  priorityClassName: null
+
   nodeSelector: {}
   affinity:
     podAntiAffinity:
@@ -782,6 +797,9 @@ query_frontend:
 
   # Pod Disruption Budget
   podDisruptionBudget: {}
+
+  # -- The name of the PriorityClass for query-frontend pods
+  priorityClassName: null
 
   nodeSelector: {}
   affinity:
@@ -854,6 +872,9 @@ query_scheduler:
   # Pod Disruption Budget
   podDisruptionBudget: {}
 
+  # -- The name of the PriorityClass for query-scheduler pods
+  priorityClassName: null
+
   nodeSelector: {}
   affinity:
     podAntiAffinity:
@@ -923,6 +944,9 @@ store_gateway:
   # Pod Disruption Budget
   podDisruptionBudget:
     maxUnavailable: 1
+
+  # -- The name of the PriorityClass for store-gateway pods
+  priorityClassName: null
 
   nodeSelector: {}
   affinity:
@@ -1023,6 +1047,9 @@ compactor:
   # Pod Disruption Budget
   podDisruptionBudget: {}
 
+  # -- The name of the PriorityClass for compactor pods
+  priorityClassName: null
+
   nodeSelector: {}
   affinity:
     podAntiAffinity:
@@ -1114,6 +1141,9 @@ memcached:
     runAsGroup: 11211
     runAsNonRoot: true
     runAsUser: 11211
+
+  # -- The name of the PriorityClass for memcached pods
+  priorityClassName: null
 
   # -- The SecurityContext for memcached containers
   containerSecurityContext:
@@ -1854,6 +1884,8 @@ tokengenJob:
   # -- The SecurityContext for tokenjobgen containers
   containerSecurityContext:
     readOnlyRootFilesystem: true
+  # -- The name of the PriorityClass for tokenjobgen pods
+  priorityClassName: null
 
 # Settings for the admin_api service providing authentication and authorization service.
 # Can only be enabled if enterprise.enabled is true - requires license.
@@ -1881,6 +1913,9 @@ admin_api:
 
   # Pod Disruption Budget
   podDisruptionBudget: {}
+
+  # -- The name of the PriorityClass for admin-api pods
+  priorityClassName: null
 
   securityContext: {}
 
@@ -1938,6 +1973,9 @@ gateway:
 
   # Pod Disruption Budget
   podDisruptionBudget: {}
+
+  # -- The name of the PriorityClass for gateway pods
+  priorityClassName: null
 
   nodeSelector: {}
   affinity: {}
@@ -2008,3 +2046,5 @@ smoke_test:
   extraEnvFrom: []
   annotations: {}
   initContainers: []
+  # -- The name of the PriorityClass for smoke-test pods
+  priorityClassName: null
