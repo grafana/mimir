@@ -7,11 +7,13 @@ package util
 // that are required to do so by grouping consecutive indexes into ranges and removing the ranges in single operations.
 // The given number of indexes must be sorted in ascending order.
 // Indexes which are duplicate or out of the range of the given slice are ignored.
-// The returned values are:
-// - The resulting slice of elements after the elements at the given indexes have been removed.
-// - The number of elements that have been removed.
-// - The number of ranges of consecutive elements that have been removed.
-func RemoveSliceIndexes[T any](data []T, indexes []int) ([]T, int, int) {
+// It returns the updated slice.
+func RemoveSliceIndexes[T any](data []T, indexes []int) []T {
+	data, _, _ = removeSliceIndexes(data, indexes)
+	return data
+}
+
+func removeSliceIndexes[T any](data []T, indexes []int) ([]T, int, int) {
 	rangeStart := -1
 	rangeEnd := -1
 	rangeCount := 0

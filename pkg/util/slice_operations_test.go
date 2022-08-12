@@ -92,7 +92,7 @@ var removeSliceIndexesTestCases = []removeSliceIndexesTestCase{
 }
 
 func runTestCase(tb testing.TB, input, removeIndexes, expectedOutput []int, expectedRemovedElements, expectedRemovedRanges int) {
-	output, removedElements, removedRanges := RemoveSliceIndexes(input, removeIndexes)
+	output, removedElements, removedRanges := removeSliceIndexes(input, removeIndexes)
 	assert.Equal(tb, expectedOutput, output)
 	assert.Equal(tb, expectedRemovedElements, removedElements)
 	assert.Equal(tb, expectedRemovedRanges, removedRanges)

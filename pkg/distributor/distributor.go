@@ -738,7 +738,7 @@ func (d *Distributor) prePushRelabelMiddleware(next push.Func) push.Func {
 		}
 
 		if len(removeTsIndexes) > 0 {
-			req.Timeseries, _, _ = util.RemoveSliceIndexes(req.Timeseries, removeTsIndexes)
+			req.Timeseries = util.RemoveSliceIndexes(req.Timeseries, removeTsIndexes)
 		}
 
 		cleanupInDefer = false
