@@ -26,9 +26,9 @@ spec:
       namespace: {{ .Release.Namespace | quote }}
     spec:
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
-    {{- if .Values.query_frontend.priorityClassName }}
+      {{- if .Values.query_frontend.priorityClassName }}
       priorityClassName: {{ .Values.query_frontend.priorityClassName }}
-    {{- end }}
+      {{- end }}
       securityContext:
         {{- toYaml .Values.query_frontend.securityContext | nindent 8 }}
       initContainers:

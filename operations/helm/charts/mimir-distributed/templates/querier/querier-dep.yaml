@@ -25,9 +25,9 @@ spec:
         {{- include "mimir.podAnnotations" (dict "ctx" . "component" "querier") | nindent 8 }}
     spec:
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
-    {{- if .Values.querier.priorityClassName }}
+      {{- if .Values.querier.priorityClassName }}
       priorityClassName: {{ .Values.querier.priorityClassName }}
-    {{- end }}
+      {{- end }}
       securityContext:
         {{- toYaml .Values.querier.securityContext | nindent 8 }}
       initContainers:
