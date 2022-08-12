@@ -62,16 +62,16 @@ func NewOpenTelemetryProviderBridge(tracer opentracing.Tracer) *OpenTelemetryPro
 //
 // This method must be concurrency safe.
 func (p *OpenTelemetryProviderBridge) Tracer(instrumentationName string, opts ...trace.TracerOption) trace.Tracer {
-	return NewOpenTelemetricTracerBridge(p.tracer, p)
+	return NewOpenTelemetryTracerBridge(p.tracer, p)
 }
 
-type OpenTelemetricTracerBridge struct {
+type OpenTelemetryTracerBridge struct {
 	tracer   opentracing.Tracer
 	provider trace.TracerProvider
 }
 
-func NewOpenTelemetricTracerBridge(tracer opentracing.Tracer, provider trace.TracerProvider) *OpenTelemetricTracerBridge {
-	return &OpenTelemetricTracerBridge{
+func NewOpenTelemetryTracerBridge(tracer opentracing.Tracer, provider trace.TracerProvider) *OpenTelemetryTracerBridge {
+	return &OpenTelemetryTracerBridge{
 		tracer:   tracer,
 		provider: provider,
 	}
@@ -90,7 +90,7 @@ func NewOpenTelemetricTracerBridge(tracer opentracing.Tracer, provider trace.Tra
 //
 // Any Span that is created MUST also be ended. This is the responsibility of the user.
 // Implementations of this API may leak memory or other resources if Spans are not ended.
-func (t *OpenTelemetricTracerBridge) Start(ctx context.Context, spanName string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
+func (t *OpenTelemetryTracerBridge) Start(ctx context.Context, spanName string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
 	var mappedOptions []opentracing.StartSpanOption
 
 	// Map supported options.
@@ -109,7 +109,7 @@ func (t *OpenTelemetricTracerBridge) Start(ctx context.Context, spanName string,
 					continue
 				}
 
-				tags[string(attr.Key)] = attr.Value.AsString()
+				tags[string(attr.Key)] = attr.Value.AsInterface()
 			}
 
 			mappedOptions = append(mappedOptions, opentracing.Tags(tags))
@@ -150,8 +150,12 @@ func (s *OpenTelemetrySpanBridge) End(options ...trace.SpanEndOption) {
 
 // AddEvent adds an event with the provided name and options.
 func (s *OpenTelemetrySpanBridge) AddEvent(name string, options ...trace.EventOption) {
-	// Options are not supported.
-	s.span.LogFields(log.Event(name))
+	cfg := trace.NewEventConfig(options...)
+	s.addEvent(name, cfg.Attributes())
+}
+
+func (s *OpenTelemetrySpanBridge) addEvent(name string, attributes []attribute.KeyValue) {
+	s.logFieldWithAttributes(log.Event(name), attributes)
 }
 
 // IsRecording returns the recording state of the Span. It will return
@@ -165,8 +169,12 @@ func (s *OpenTelemetrySpanBridge) IsRecording() bool {
 // be set to Error, as this method does not change the Span status. If this
 // span is not being recorded or err is nil then this method does nothing.
 func (s *OpenTelemetrySpanBridge) RecordError(err error, options ...trace.EventOption) {
-	// Options are not supported.
-	s.span.LogFields(log.Error(err))
+	cfg := trace.NewEventConfig(options...)
+	s.recordError(err, cfg.Attributes())
+}
+
+func (s *OpenTelemetrySpanBridge) recordError(err error, attributes []attribute.KeyValue) {
+	s.logFieldWithAttributes(log.Error(err), attributes)
 }
 
 // SpanContext returns the SpanContext of the Span. The returned SpanContext
@@ -195,7 +203,10 @@ func (s *OpenTelemetrySpanBridge) SpanContext() trace.SpanContext {
 // description, overriding previous values set. The description is only
 // included in a status when the code is for an error.
 func (s *OpenTelemetrySpanBridge) SetStatus(code codes.Code, description string) {
-	// Not supported.
+	s.span.SetTag("code", code)
+	if description != "" {
+		s.span.SetTag("description", description)
+	}
 }
 
 // SetName sets the Span name.
@@ -212,7 +223,7 @@ func (s *OpenTelemetrySpanBridge) SetAttributes(kv ...attribute.KeyValue) {
 			continue
 		}
 
-		s.span.SetTag(string(attr.Key), attr.Value.AsString())
+		s.span.SetTag(string(attr.Key), attr.Value.AsInterface())
 	}
 }
 
@@ -220,6 +231,24 @@ func (s *OpenTelemetrySpanBridge) SetAttributes(kv ...attribute.KeyValue) {
 // additional Spans on the same telemetry pipeline as the current Span.
 func (s *OpenTelemetrySpanBridge) TracerProvider() trace.TracerProvider {
 	return s.provider
+}
+
+func (s *OpenTelemetrySpanBridge) logFieldWithAttributes(field log.Field, attributes []attribute.KeyValue) {
+	if len(attributes) == 0 {
+		s.span.LogFields(field)
+		return
+	}
+
+	fields := make([]log.Field, 0, 1+len(attributes))
+	fields = append(fields, field)
+
+	for _, attr := range attributes {
+		if attr.Valid() {
+			fields = append(fields, log.Object(string(attr.Key), attr.Value.AsInterface()))
+		}
+	}
+
+	s.span.LogFields(fields...)
 }
 
 func jaegerToOpenTelemetryTraceID(input jaeger.TraceID) trace.TraceID {
