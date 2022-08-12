@@ -24,12 +24,14 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/runtimeconfig"
 	"github.com/grafana/dskit/services"
+	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/promql"
 	prom_storage "github.com/prometheus/prometheus/storage"
 	"github.com/weaveworks/common/server"
 	"github.com/weaveworks/common/signals"
+	"go.opentelemetry.io/otel"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"gopkg.in/yaml.v3"
 
@@ -521,6 +523,7 @@ func New(cfg Config) (*Mimir, error) {
 	}
 
 	mimir.setupThanosTracing()
+	otel.SetTracerProvider(NewOpenTelemetryProviderBridge(opentracing.GlobalTracer()))
 
 	if err := mimir.setupModuleManager(); err != nil {
 		return nil, err
