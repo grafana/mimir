@@ -9,10 +9,11 @@ import (
 )
 
 type Config struct {
-	Enabled            bool          `yaml:"enabled" category:"experimental"`
-	RequestConcurrency int           `yaml:"request_concurrency" category:"experimental"`
-	RequestTimeout     time.Duration `yaml:"request_timeout" category:"experimental"`
-	PropagateErrors    bool          `yaml:"propagate_errors" category:"experimental"`
+	Enabled                    bool          `yaml:"enabled" category:"experimental"`
+	RequestConcurrency         int           `yaml:"request_concurrency" category:"experimental"`
+	RequestTimeout             time.Duration `yaml:"request_timeout" category:"experimental"`
+	PropagateErrors            bool          `yaml:"propagate_errors" category:"experimental"`
+	DisableConnectionKeepalive bool          `yaml:"disable_connection_keepalive" category:"experimental"`
 }
 
 func (c *Config) RegisterFlags(f *flag.FlagSet) {
@@ -20,6 +21,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&c.RequestConcurrency, "distributor.forwarding.request-concurrency", 10, "Maximum concurrency at which forwarding requests get performed.")
 	f.DurationVar(&c.RequestTimeout, "distributor.forwarding.request-timeout", 10*time.Second, "Timeout for requests to ingestion endpoints to which we forward metrics.")
 	f.BoolVar(&c.PropagateErrors, "distributor.forwarding.propagate-errors", true, "If disabled then forwarding requests are always considered to be successful, errors are ignored.")
+	f.BoolVar(&c.DisableConnectionKeepalive, "distributor.forwarding.disable-connection-keepalive", false, "If enabled then the keepalive feature of the underlying http client is disabled.")
 }
 
 func (c *Config) Validate() error {

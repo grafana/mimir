@@ -58,6 +58,11 @@ func NewForwarder(cfg Config, reg prometheus.Registerer, log log.Logger) Forward
 	f := &forwarder{
 		cfg:   cfg,
 		pools: newPools(),
+		client: http.Client{
+			Transport: &http.Transport{
+				DisableKeepAlives: cfg.DisableConnectionKeepalive,
+			},
+		},
 		log:   log,
 		reqCh: make(chan *request, cfg.RequestConcurrency),
 

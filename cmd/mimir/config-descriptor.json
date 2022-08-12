@@ -1398,6 +1398,17 @@
               "fieldFlag": "distributor.forwarding.propagate-errors",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "disable_connection_keepalive",
+              "required": false,
+              "desc": "If enabled then the keepalive feature of the underlying http client is disabled.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "distributor.forwarding.disable-connection-keepalive",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,

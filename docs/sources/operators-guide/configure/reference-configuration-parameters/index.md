@@ -631,6 +631,11 @@ forwarding:
   # be successful, errors are ignored.
   # CLI flag: -distributor.forwarding.propagate-errors
   [propagate_errors: <boolean> | default = true]
+
+  # (experimental) If enabled then the keepalive feature of the underlying http
+  # client is disabled.
+  # CLI flag: -distributor.forwarding.disable-connection-keepalive
+  [disable_connection_keepalive: <boolean> | default = false]
 ```
 
 ### ingester
