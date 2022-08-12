@@ -27,9 +27,13 @@ There are three ways configuration parameters can be modified:
 1. Setting parameters via the `mimir.structuredConfig` value (recommended)
 1. Setting extra CLI flags for components individually
 
+See the [Example](#example-of-configuration-managed-with-helm) for a practical application.
+
 > **Limitation:**: it is not possible to delete configuration parameter settings via `mimir.structuredConfig` that were set in `mimir.config`. Set the configuration parameter to its default or to some other value instead.
 
-Grafana Mimir components are run with a configuration that is calculated from all three:
+### How the configuration is applied
+
+Grafana Mimir components are run with a configuration calculcated by the following process:
 
 1. The configuration YAML in `mimir.config` is evaulated for Helm templates. This step is intended to ensure that the configuration applies to the Kubernetes cluster where it will be installed. For example setting up cluster specific addresses.
 1. The values from `mimir.structuredConfig` are merged on top and the result is again evaulated for Helm templates. This steps is intended to apply user specific customizations. For example S3 storage details.
@@ -37,12 +41,9 @@ Grafana Mimir components are run with a configuration that is calculated from al
 1. When Grafana Mimir components are run in pods, the configuration file as well as any extra CLI flags are provided to the component.
 1. Each component evaulates the configuration, substituting environment variables as required. Note that extra CLI flags take precedence over the configuration file.
 
-See the [Example](#example-of-configuration-managed-with-helm) for a practical application.
-
 > **Note:**: CLI flags are component specific, thus they will not show up in the generated `ConfigMap` (or `Secret`), making it less obvious what configuration is running. Use only when absolutely necessary.
 
-
-### Upgrade and apply changes to the configuration
+### Ispect changes to the configuration before upgrade
 
 Follow these steps to inspect what change will be applied to the configuration.
 
@@ -88,7 +89,7 @@ Set the following value for the Helm chart:
 ```yaml
 useExternalConfig: true
 externalConfigSecretName: my-mimir-config
-externalConfigVersion: '0'
+externalConfigVersion: "0"
 ```
 
 ### Use external Secret
@@ -112,15 +113,15 @@ Set the following value for the Helm chart:
 useExternalConfig: true
 externalConfigSecretName: my-mimir-config
 configStorageType: Secret
-externalConfigVersion: '0'
+externalConfigVersion: "0"
 ```
 
 ### Update the configuration
 
 In order to make components aware of configuration changes, either:
 
- * Update the value in `externalConfigVersion` and run `helm update`
- * or restart components affected by the configuration change manually
+- Update the value in `externalConfigVersion` and run `helm update`
+- or restart components affected by the configuration change manually
 
 ## Injecting credentials
 
@@ -146,7 +147,7 @@ This example show how to set up the configuration to use an S3 bucket for blocks
      AWS_SECRET_ACCESS_KEY: FAKESECRETKEY
    ```
 
-   Do replace FAKEACCESSKEY and FAKESECRETKEY with the actual value encoded with base64.
+   Replace FAKEACCESSKEY and FAKESECRETKEY with the actual value encoded with base64.
 
 1. Apply the secret to your cluster with the `kubectl` command:
 
@@ -166,7 +167,7 @@ This example show how to set up the configuration to use an S3 bucket for blocks
 
    mimir:
      structuredConfig:
-       # Uncomment in case of Grafana Enterprise Metrics 
+       # Uncomment in case of Grafana Enterprise Metrics
        # admin_client:
        #   storage:
        #     s3:
