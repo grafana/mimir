@@ -15,7 +15,7 @@ The Grafana Mimir configuration can be managed through the Helm chart or supplie
 
 If you want to manage the configuration via the Helm chart, see [Manage the configuration with Helm](#manage-the-configuration-with-helm).
 
-If you want to manage the configuration directly, see [Manage the configuration directly](#manage-the-configration-directly).
+If you want to manage the configuration directly, see [Manage the configuration directly](#manage-the-configuration-directly).
 
 Handling sensitive information, such as credentials is common between the two methods, see [Injecting credentials](#injecting-credentials).
 
