@@ -627,7 +627,7 @@ forwarding:
   # (experimental) Timeout for requests to ingestion endpoints to which we
   # forward metrics.
   # CLI flag: -distributor.forwarding.request-timeout
-  [request_timeout: <duration> | default = 10s]
+  [request_timeout: <duration> | default = 2s]
 
   # (experimental) If disabled then forwarding requests are always considered to
   # be successful, errors are ignored.

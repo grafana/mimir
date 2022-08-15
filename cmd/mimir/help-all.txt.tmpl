@@ -753,7 +753,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.forwarding.request-concurrency int
     	[experimental] Maximum concurrency at which forwarding requests get performed. (default 10)
   -distributor.forwarding.request-timeout duration
-    	[experimental] Timeout for requests to ingestion endpoints to which we forward metrics. (default 10s)
+    	[experimental] Timeout for requests to ingestion endpoints to which we forward metrics. (default 2s)
   -distributor.ha-tracker.cluster string
     	Prometheus label to look for in samples to identify a Prometheus HA cluster. (default "cluster")
   -distributor.ha-tracker.consul.acl-token string

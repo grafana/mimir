@@ -18,7 +18,7 @@ type Config struct {
 func (c *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&c.Enabled, "distributor.forwarding.enabled", false, "Enables the feature to forward certain metrics in remote_write requests, depending on defined rules.")
 	f.IntVar(&c.RequestConcurrency, "distributor.forwarding.request-concurrency", 10, "Maximum concurrency at which forwarding requests get performed.")
-	f.DurationVar(&c.RequestTimeout, "distributor.forwarding.request-timeout", 10*time.Second, "Timeout for requests to ingestion endpoints to which we forward metrics.")
+	f.DurationVar(&c.RequestTimeout, "distributor.forwarding.request-timeout", 2*time.Second, "Timeout for requests to ingestion endpoints to which we forward metrics.")
 	f.BoolVar(&c.PropagateErrors, "distributor.forwarding.propagate-errors", true, "If disabled then forwarding requests are always considered to be successful, errors are ignored.")
 }
 
