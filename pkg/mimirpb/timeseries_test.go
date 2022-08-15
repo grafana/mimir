@@ -154,5 +154,41 @@ func TestDeepCopyTimeseries(t *testing.T) {
 
 	dst = PreallocTimeseries{}
 	dst = DeepCopyTimeseries(dst, src, false)
-	assert.Nil(t, dst.Exemplars)
+	assert.NotNil(t, dst.Exemplars)
+	assert.Len(t, dst.Exemplars, 0)
+}
+
+func TestDeepCopyTimeseriesExemplars(t *testing.T) {
+	src := PreallocTimeseries{
+		TimeSeries: &TimeSeries{
+			Labels: []LabelAdapter{
+				{Name: "sampleLabel1", Value: "sampleValue1"},
+				{Name: "sampleLabel2", Value: "sampleValue2"},
+			},
+			Samples: []Sample{
+				{Value: 1, TimestampMs: 2},
+				{Value: 3, TimestampMs: 4},
+			},
+		},
+	}
+
+	for i := 0; i < 100; i++ {
+		src.Exemplars = append(src.Exemplars, Exemplar{
+			Value:       1,
+			TimestampMs: 2,
+			Labels: []LabelAdapter{
+				{Name: "exemplarLabel1", Value: "exemplarValue1"},
+				{Name: "exemplarLabel2", Value: "exemplarValue2"},
+			},
+		})
+	}
+
+	dst1 := PreallocTimeseries{}
+	dst1 = DeepCopyTimeseries(dst1, src, false)
+
+	dst2 := PreallocTimeseries{}
+	dst2 = DeepCopyTimeseries(dst2, src, true)
+
+	// dst1 should use much smaller buffer than dst2.
+	assert.Less(t, cap(*dst1.yoloSlice), cap(*dst2.yoloSlice))
 }
