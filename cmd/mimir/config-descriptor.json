@@ -927,7 +927,7 @@
           "required": false,
           "desc": "Timeout for downstream ingesters.",
           "fieldValue": null,
-          "fieldDefaultValue": 20000000000,
+          "fieldDefaultValue": 2000000000,
           "fieldFlag": "distributor.remote-timeout",
           "fieldType": "duration",
           "fieldCategory": "advanced"

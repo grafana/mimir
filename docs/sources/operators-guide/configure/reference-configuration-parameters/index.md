@@ -528,7 +528,7 @@ ha_tracker:
 
 # (advanced) Timeout for downstream ingesters.
 # CLI flag: -distributor.remote-timeout
-[remote_timeout: <duration> | default = 20s]
+[remote_timeout: <duration> | default = 2s]
 
 ring:
   kvstore:
