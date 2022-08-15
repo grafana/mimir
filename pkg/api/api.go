@@ -279,7 +279,7 @@ func (a *API) RegisterIngester(i Ingester, pushConfig distributor.Config) {
 }
 
 // RegisterRuler registers routes associated with the Ruler service.
-func (a *API) RegisterRuler(r *ruler.Ruler) {
+func (a *API) RegisterRuler(r *ruler.Ruler, buildInfoHandler http.Handler) {
 	a.indexPage.AddLinks(defaultWeight, "Ruler", []IndexPageLink{
 		{Desc: "Ring status", Path: "/ruler/ring"},
 	})
@@ -290,6 +290,7 @@ func (a *API) RegisterRuler(r *ruler.Ruler) {
 
 	// List all user rule groups
 	a.RegisterRoute("/ruler/rule_groups", http.HandlerFunc(r.ListAllRules), false, true, "GET")
+	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/status/buildinfo"), buildInfoHandler, false, true, "GET")
 
 	ruler.RegisterRulerServer(a.server.GRPC, r)
 }
