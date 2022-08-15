@@ -348,7 +348,7 @@ func DeepCopyTimeseries(dst, src PreallocTimeseries, keepExemplars bool) Preallo
 	dstTs := dst.TimeSeries
 
 	// Prepare a buffer which is large enough to hold all the label names and values of src.
-	requiredYoloSliceCap := countTotalLabelLen(src.TimeSeries)
+	requiredYoloSliceCap := countTotalLabelLen(src.TimeSeries, keepExemplars)
 	dst.yoloSlice = yoloSliceFromPool()
 	buf := ensureCap(dst.yoloSlice, requiredYoloSliceCap)
 
@@ -380,7 +380,7 @@ func DeepCopyTimeseries(dst, src PreallocTimeseries, keepExemplars bool) Preallo
 			dstTs.Exemplars[exemplarIdx].TimestampMs = src.Exemplars[exemplarIdx].TimestampMs
 		}
 	} else {
-		dstTs.Exemplars = nil
+		dstTs.Exemplars = dstTs.Exemplars[:0]
 	}
 
 	return dst
@@ -401,15 +401,17 @@ func ensureCap(bufRef *[]byte, requiredCap int) []byte {
 }
 
 // countTotalLabelLen takes a time series and calculates the sum of the lengths of all label names and values.
-func countTotalLabelLen(ts *TimeSeries) int {
+func countTotalLabelLen(ts *TimeSeries, includeExemplars bool) int {
 	var labelLen int
 	for _, label := range ts.Labels {
 		labelLen += len(label.Name) + len(label.Value)
 	}
 
-	for _, exemplar := range ts.Exemplars {
-		for _, label := range exemplar.Labels {
-			labelLen += len(label.Name) + len(label.Value)
+	if includeExemplars {
+		for _, exemplar := range ts.Exemplars {
+			for _, label := range exemplar.Labels {
+				labelLen += len(label.Name) + len(label.Value)
+			}
 		}
 	}
 
