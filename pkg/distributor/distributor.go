@@ -117,6 +117,8 @@ type Distributor struct {
 
 	// Metrics
 	queryDuration                    *instrument.HistogramCollector
+	ingesterChunksDeduplicated       prometheus.Counter
+	ingesterChunksTotal              prometheus.Counter
 	receivedSamples                  *prometheus.CounterVec
 	receivedExemplars                *prometheus.CounterVec
 	receivedMetadata                 *prometheus.CounterVec
@@ -237,6 +239,16 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Help:      "Time spent executing expression and exemplar queries.",
 			Buckets:   []float64{.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10, 20, 30},
 		}, []string{"method", "status_code"})),
+		ingesterChunksDeduplicated: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Namespace: "cortex",
+			Name:      "distributor_query_ingester_chunks_deduped_total",
+			Help:      "Number of chunks deduplicated at query time from ingesters.",
+		}),
+		ingesterChunksTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Namespace: "cortex",
+			Name:      "distributor_query_ingester_chunks_total",
+			Help:      "Number of chunks transferred at query time from ingesters.",
+		}),
 		receivedSamples: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_received_samples_total",
