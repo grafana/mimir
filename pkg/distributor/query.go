@@ -194,7 +194,19 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 	// Start reading and accumulating responses. stopReading chan will
 	// be closed when all calls to ingesters have finished.
 	go func() {
-		defer close(doneReading)
+		// We keep track of the number of chunks that were able to be deduplicated entirely
+		// via the accumulateChunks function (fast) instead of needing to merge samples one
+		// by one (slow). Useful to verify the performance impact of things that potentially
+		// result in different samples being written to each ingester.
+		var numDeduplicatedChunks int
+		var numTotalChunks int
+
+		defer func() {
+			close(doneReading)
+			d.ingesterChunksDeduplicated.Add(float64(numDeduplicatedChunks))
+			d.ingesterChunksTotal.Add(float64(numTotalChunks))
+		}()
+
 		for {
 			select {
 			case <-stop:
@@ -205,7 +217,12 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 					key := ingester_client.LabelsToKeyString(mimirpb.FromLabelAdaptersToLabels(series.Labels))
 					existing := hashToChunkseries[key]
 					existing.Labels = series.Labels
+
+					numPotentialChunks := len(existing.Chunks) + len(series.Chunks)
 					existing.Chunks = accumulateChunks(existing.Chunks, series.Chunks)
+
+					numDeduplicatedChunks += numPotentialChunks - len(existing.Chunks)
+					numTotalChunks += len(series.Chunks)
 					hashToChunkseries[key] = existing
 				}
 

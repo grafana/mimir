@@ -6,6 +6,7 @@
 
 * [CHANGE] Distributor: if forwarding rules are used to forward samples, exemplars are now removed from the request. #2710 #2725
 * [CHANGE] Limits: change the default value of `max_global_series_per_metric` limit to `0` (disabled). Setting this limit by default does not provide much benefit because series are sharded by all labels. #2714
+* [ENHANCEMENT] Distributor: Add `cortex_distributor_query_ingester_chunks_deduped_total` and `cortex_distributor_query_ingester_chunks_total` metrics for determining how effective ingester chunk deduplication at query time is. #2713
 * [BUGFIX] Fix reporting of tracing spans from PromQL engine. #2707
 * [BUGFIX] Distributor: Apply distributor instance limits before running HA deduplication. #2709
 * [BUGFIX] Apply relabel and drop_label rules before forwarding rules in the distributor. #2703
