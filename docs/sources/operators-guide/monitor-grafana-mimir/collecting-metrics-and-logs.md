@@ -26,7 +26,7 @@ deployed:
 
 - For a stable release:
   - \>= 3.x.x:
-    See [Collect metrics and logs via Helm chart built-in metamonitoring](#collect-metrics-and-logs-via-the-helm-chart)
+    See [Collect metrics and logs via the Helm chart](#collect-metrics-and-logs-via-the-helm-chart)
   - \< 3.x.x: See [Collect metrics and logs via Grafana Agent](#collect-metrics-and-logs-via-grafana-agent)
 - For non-Helm installations or installations of the deprecated enterprise-metrics Helm chart, see [Collect metrics and logs without the helm chart](#collect-metrics-and-logs-without-the-helm-chart).
 
@@ -41,6 +41,9 @@ The Helm chart uses the Grafana Agent operator. Due to how Helm works, before it
 manually install
 the [Custom Resource Definitions (CRDs)](https://github.com/grafana/agent/tree/main/production/operator/crds) for the
 Agent operator.
+
+If you prefer not to use the agent operator, then deploy a standalone Grafana Agent with the configuration 
+provided in [Collect metrics and logs via Grafana Agent](#collect-metrics-and-logs-via-grafana-agent).
 
 #### Credentials
 
