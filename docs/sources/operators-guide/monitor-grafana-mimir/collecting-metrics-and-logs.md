@@ -42,7 +42,7 @@ manually install
 the [Custom Resource Definitions (CRDs)](https://github.com/grafana/agent/tree/main/production/operator/crds) for the
 Agent operator.
 
-If you prefer not to use the agent operator, then deploy a standalone Grafana Agent with the configuration 
+If you prefer not to use the agent operator, then deploy a standalone Grafana Agent with the configuration
 provided in [Collect metrics and logs via Grafana Agent](#collect-metrics-and-logs-via-grafana-agent).
 
 #### Credentials
