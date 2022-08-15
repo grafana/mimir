@@ -242,12 +242,12 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		ingesterChunksDeduplicated: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_query_ingester_chunks_deduped_total",
-			Help:      "Number of chunks deduplicated at query time from ingesters",
+			Help:      "Number of chunks deduplicated at query time from ingesters.",
 		}),
 		ingesterChunksTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_query_ingester_chunks_total",
-			Help:      "Number of chunks transferred at query time from ingesters",
+			Help:      "Number of chunks transferred at query time from ingesters.",
 		}),
 		receivedSamples: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
