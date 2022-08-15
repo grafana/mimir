@@ -9,6 +9,7 @@
 * [FEATURE] Introduced an experimental anonymous usage statistics tracking (disabled by default), to help Mimir maintainers driving better decisions to support the opensource community. The tracking system anonymously collects non-sensitive and non-personal identifiable information about the running Mimir cluster, and is disabled by default. #2643 #2662 #2685 #2732
 * [ENHANCEMENT] Distributor: Add `cortex_distributor_query_ingester_chunks_deduped_total` and `cortex_distributor_query_ingester_chunks_total` metrics for determining how effective ingester chunk deduplication at query time is. #2713
 * [ENHANCEMENT] Upgrade Docker base images to `alpine:3.16.2`. #2729
+* [ENHANCEMENT] Ruler: Add `<prometheus-http-prefix>/api/v1/status/buildinfo` endpoint. #2724
 * [BUGFIX] Fix reporting of tracing spans from PromQL engine. #2707
 * [BUGFIX] Distributor: Apply distributor instance limits before running HA deduplication. #2709
 * [BUGFIX] Apply relabel and drop_label rules before forwarding rules in the distributor. #2703
