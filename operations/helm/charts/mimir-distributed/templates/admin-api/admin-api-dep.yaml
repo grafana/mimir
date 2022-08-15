@@ -102,6 +102,8 @@ spec:
         {{- toYaml .Values.admin_api.nodeSelector | nindent 8 }}
       affinity:
         {{- toYaml .Values.admin_api.affinity | nindent 8 }}
+      topologySpreadConstraints:
+        {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "admin-api") | nindent 8 }}
       tolerations:
         {{- toYaml .Values.admin_api.tolerations | nindent 8 }}
       terminationGracePeriodSeconds: {{ .Values.admin_api.terminationGracePeriodSeconds }}

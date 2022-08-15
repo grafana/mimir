@@ -100,6 +100,8 @@ spec:
       affinity:
         {{- tpl . $ | nindent 8 }}
       {{- end }}
+      topologySpreadConstraints:
+        {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "nginx") | nindent 8 }}
       {{- with .Values.nginx.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

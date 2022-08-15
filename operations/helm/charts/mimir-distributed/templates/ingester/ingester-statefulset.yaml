@@ -64,6 +64,8 @@ spec:
         {{- toYaml .Values.ingester.nodeSelector | nindent 8 }}
       affinity:
         {{- toYaml .Values.ingester.affinity | nindent 8 }}
+      topologySpreadConstraints:
+        {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "ingester") | nindent 8 }}
       tolerations:
         {{- toYaml .Values.ingester.tolerations | nindent 8 }}
       terminationGracePeriodSeconds: {{ .Values.ingester.terminationGracePeriodSeconds }}

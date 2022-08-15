@@ -13,6 +13,8 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [FEATURE] Add support for `topologySpreadConstraints` and replace `podAntiAffinity` in the default values. #2722
+
 ## 3.1.0
 
 * [CHANGE] **breaking change** Update minio deprecated helm chart (<https://helm.min.io/>) to the supported chart's version (<https://charts.min.io/>). #2427
