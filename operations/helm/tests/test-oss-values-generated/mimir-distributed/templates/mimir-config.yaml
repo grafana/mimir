@@ -67,7 +67,7 @@ data:
           max_item_size: 1048576
       scheduler_address: test-oss-values-mimir-query-scheduler-headless.citestns.svc:9095
     frontend_worker:
-      frontend_address: test-oss-values-mimir-query-frontend-headless.citestns.svc:9095
+      scheduler_address: test-oss-values-mimir-query-scheduler-headless.citestns.svc:9095
     ingester:
       ring:
         final_sleep: 0s
