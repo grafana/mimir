@@ -408,6 +408,21 @@
             ||| % $._config,
           },
         },
+        {
+          alert: 'RolloutOperatorNotReconciling',
+          expr: |||
+            max by(%s, rollout_group) (time() - rollout_operator_last_successful_group_reconcile_timestamp_seconds) > 600
+          ||| % $._config.alert_aggregation_labels,
+          'for': '5m',
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: |||
+              Rollout operator is not reconciling the rollout group {{ $labels.rollout_group }} in %(alert_aggregation_variables)s.
+            ||| % $._config,
+          },
+        },
       ],
     },
     {

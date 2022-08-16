@@ -1038,6 +1038,23 @@ How to **investigate**:
   1. The alert fired because of a bug in Mimir: fix it.
   1. The alert fired because of a bug or edge case in the continuous test tool, causing a false positive: fix it.
 
+### RolloutOperatorNotReconciling
+
+This alert fires if the [`rollout-operator`](https://github.com/grafana/rollout-operator) is not successfully reconciling in a namespace.
+
+How it **works**:
+
+- The rollout-operator coordinates the rollout of pods between different StatefulSets within a specific namespace and is used to manage multi-zone deployments
+- The rollout-operator is deployed in namespaces where some Mimir components (e.g. ingesters) are deployed in multi-zone
+- The rollout-operator reconciles as soon as there's any change in observed Kubernetes resources or every 5m at most
+
+How to **investigate**:
+
+- Check rollout-operator logs to find more details about the error, e.g. with the following Grafana Loki query:
+  ```
+  {name="rollout-operator",namespace="<namespace>"}
+  ```
+
 ## Errors catalog
 
 Mimir has some codified error IDs that you might see in HTTP responses or logs.
