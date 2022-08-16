@@ -118,14 +118,14 @@ see [Set up Grafana Agent](https://grafana.com/docs/agent/latest/set-up/).
 
 Using a static Agent configuration comes with some caveats:
 
-* You will have to keep the Agent configuration up to date manually as you update the Mimir Helm chart. While we will
+- You will have to keep the Agent configuration up to date manually as you update the Mimir Helm chart. While we will
   try to keep this article up to date, we cannot guarantee that
   the [example Agent configuration](#example-agent-configuration) will always work.
-* The static configuration makes some assumptions about the naming of the chart, such as that you have not overridden
+- The static configuration makes some assumptions about the naming of the chart, such as that you have not overridden
   the `fullnameOverride` in the Helm chart.
-* The static configuration cannot be selective in the PersistentVolumes metrics it collects from Kubelet, so it will
+- The static configuration cannot be selective in the PersistentVolumes metrics it collects from Kubelet, so it will
   scrape metrics for all PersistentVolumes.
-* The static configuration hardcodes the value of the `cluster` label on all metrics and logs. This means that the
+- The static configuration hardcodes the value of the `cluster` label on all metrics and logs. This means that the
   configuration cannot account for multiple installations of the Helm chart.
 
 If possible, upgrade the Mimir Helm chart to version 3.0 or higher and use
