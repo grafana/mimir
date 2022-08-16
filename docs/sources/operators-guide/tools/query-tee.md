@@ -39,7 +39,8 @@ You can configure the backend endpoints by setting the `-backend.endpoints` flag
 
 - HTTP endpoints: via HTTP or HTTPS URLs. Example: `http://query-frontend:80`.
 - gRPC endpoints: via gRPC URI scheme. Example: `dns:///query-frontend:9095`.
-  For each incoming request, the query-tee clones the request and sends it to each configured backend.
+
+For each incoming request, the query-tee clones the request and sends it to each configured backend.
 
 > **Note:** You can configure the query-tee proxy listening ports via the `-server.service-port` flag for the HTTP port and `server.grpc-service-port` flag for the gRPC port.
 
