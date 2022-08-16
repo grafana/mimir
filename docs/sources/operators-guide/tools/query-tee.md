@@ -151,5 +151,5 @@ ruler:
 When the ruler evaluates a rule, the test flow is the following:
 
 1. ruler sends gRPC request to query-tee
-1. query-tee forwards the request to the configured ruler-query-frontends of the Mimir instances: `-backend.endpoints` flag
+1. query-tee forwards the request to the query-frontend backends configured setting the `-backend.endpoints` CLI flag
 1. query-tee receives the responses from the Mimir instances and forwards the result (based on the preferred backend) to the ruler
