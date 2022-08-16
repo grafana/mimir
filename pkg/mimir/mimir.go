@@ -553,7 +553,7 @@ func (t *Mimir) Run() error {
 
 	for _, module := range t.Cfg.Target {
 		if !t.ModuleManager.IsUserVisibleModule(module) {
-			level.Warn(util_log.Logger).Log("msg", "selected target is an internal module, is this intended?", "target", module)
+			return fmt.Errorf("selected target (%s) is an internal module, which is not allowed", module)
 		}
 	}
 

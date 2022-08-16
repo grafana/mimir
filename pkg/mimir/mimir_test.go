@@ -186,7 +186,7 @@ func TestMimirServerShutdownWithActivityTrackerEnabled(t *testing.T) {
 	tmpDir := t.TempDir()
 	cfg.ActivityTracker.Filepath = filepath.Join(tmpDir, "activity.log") // Enable activity tracker
 
-	cfg.Target = []string{API}
+	cfg.Target = []string{Querier}
 	cfg.Server = getServerConfig(t)
 	require.NoError(t, cfg.Server.LogFormat.Set("logfmt"))
 	require.NoError(t, cfg.Server.LogLevel.Set("debug"))
