@@ -295,12 +295,13 @@ func (a *API) RegisterRuler(r *ruler.Ruler) {
 }
 
 // RegisterRulerAPI registers routes associated with the Ruler API
-func (a *API) RegisterRulerAPI(r *ruler.API, configAPIEnabled bool) {
+func (a *API) RegisterRulerAPI(r *ruler.API, configAPIEnabled bool, buildInfoHandler http.Handler) {
 	// Prometheus Rule API Routes
 	// We want to always enable these. They are read-only. Also if using local storage as rule storage,
 	// you would like the API to be disabled and still be able to understand in what state rule evaluations are.
 	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/rules"), http.HandlerFunc(r.PrometheusRules), true, true, "GET")
 	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/alerts"), http.HandlerFunc(r.PrometheusAlerts), true, true, "GET")
+	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/status/buildinfo"), buildInfoHandler, false, true, "GET")
 
 	if configAPIEnabled {
 		// Long-term maintained configuration API routes
