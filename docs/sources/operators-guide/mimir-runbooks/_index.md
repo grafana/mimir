@@ -1044,9 +1044,9 @@ This alert fires if the [`rollout-operator`](https://github.com/grafana/rollout-
 
 How it **works**:
 
-- The operator coordinates the rollout of pods between different StatefulSets within a specific namespace and is used to manage multi-zone deployments
-- The operator is deployed in Mimir cells where some services (e.g. ingesters) are deployed in multi-zone
-- The operator reconciles as soon as there's any change in observed Kubernetes resources or every 5m at most
+- The rollout-operator coordinates the rollout of pods between different StatefulSets within a specific namespace and is used to manage multi-zone deployments
+- The rollout-operator is deployed in namespaces where some Mimir components (e.g. ingesters) are deployed in multi-zone
+- The rollout-operator reconciles as soon as there's any change in observed Kubernetes resources or every 5m at most
 
 How to **investigate**:
 
