@@ -35,11 +35,14 @@ chmod +x mimir-continuous-test
 
 ## Configure mimir-continuous-test
 
-Mimir-continuous-test requires the endpoints of the backend Grafana Mimir clusters and the tenant ID for writing and querying testing metrics:
+Mimir-continuous-test requires the endpoints of the backend Grafana Mimir clusters and the authentication for writing and querying testing metrics:
 
 - Set `-tests.write-endpoint` to the base endpoint on the write path. Remove any trailing slash from the URL. The tool appends the specific API path to the URL, for example `/api/v1/push` for the remote-write API.
 - Set `-tests.read-endpoint` to the base endpoint on the read path. Remove any trailing slash from the URL. The tool appends the specific API path to the URL, for example `/api/v1/query_range` for the range-query API.
-- Set `-tests.tenant-id` to the tenant ID to use to write and read metrics in tests.
+- Set the authentication means to use to write and read metrics in tests. By priority order:
+  - `-tests.bearer-token` for bearer token authentication.
+  - `-tests.basic-auth-user` and `-tests.basic-auth-password` for a basic authentication.
+  - `-tests.tenant-id` to the tenant ID, default to `anonymous`.
 - Set `-tests.smoke-test` to run the test once and immediately exit. In this mode, the process exit code is non-zero when the test fails.
 
 > **Note:** You can run `mimir-continuous-test -help` to list all available configuration options.

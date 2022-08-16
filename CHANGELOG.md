@@ -25,6 +25,8 @@
 
 ### Mimir Continuous Test
 
+* [ENHANCEMENT] Added basic authentication and bearer token support for when Mimir is behind a gateway authenticating the calls. #2717
+
 ### Documentation
 
 
