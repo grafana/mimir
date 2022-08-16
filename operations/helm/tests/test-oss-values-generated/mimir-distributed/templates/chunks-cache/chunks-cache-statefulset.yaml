@@ -55,8 +55,8 @@ spec:
           image: memcached:1.6.9-alpine
           imagePullPolicy: IfNotPresent
           resources:
-            requests:
-              cpu: 10m
+            limits: null
+            requests: null
           ports:
             - containerPort: 11211
               name: client
