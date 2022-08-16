@@ -42,7 +42,7 @@ You can configure the backend endpoints by setting the `-backend.endpoints` flag
 
 For each incoming request, the query-tee clones the request and sends it to each configured backend.
 
-> **Note:** You can configure the query-tee proxy listening ports via the `-server.service-port` flag for the HTTP port and `server.grpc-service-port` flag for the gRPC port.
+> **Note:** You can configure the query-tee proxy listening ports via the `-server.http-service-port` flag for the HTTP port and `server.grpc-service-port` flag for the gRPC port.
 
 ## How the query-tee works
 
@@ -52,7 +52,7 @@ This section describes how the query-tee tool works.
 
 Query-tee accepts two types of requests:
 
-1. HTTP requests on the configured `-server.service-port` flag (default port 80)
+1. HTTP requests on the configured `-server.http-service-port` flag (default port 80)
 1. [HTTP over gRPC](https://github.com/weaveworks/common/tree/master/httpgrpc) requests on the configured `-server.grpc-service-port` flag (default port: 9095)
 
 The following Prometheus API endpoints are supported by `query-tee`:
@@ -122,11 +122,11 @@ When the query results comparison is enabled, the query-tee compares the respons
 The query-tee exposes the following Prometheus metrics at the `/metrics` endpoint listening on the port configured via the flag `-server.metrics-port`:
 
 ```bash
-# HELP cortex_querytee_request_duration_seconds Time (in seconds) spent serving requests.
-# TYPE cortex_querytee_request_duration_seconds histogram
-cortex_querytee_request_duration_seconds_bucket{backend="<hostname>",method="<method>",route="<route>",status_code="<status>",le="<bucket>"}
-cortex_querytee_request_duration_seconds_sum{backend="<hostname>",method="<method>",route="<route>",status_code="<status>"}
-cortex_querytee_request_duration_seconds_count{backend="<hostname>",method="<method>",route="<route>",status_code="<status>"}
+# HELP cortex_querytee_backend_request_duration_seconds Time (in seconds) spent serving requests.
+# TYPE cortex_querytee_backend_request_duration_seconds histogram
+cortex_querytee_backend_request_duration_seconds_bucket{backend="<hostname>",method="<method>",route="<route>",status_code="<status>",le="<bucket>"}
+cortex_querytee_backend_request_duration_seconds_sum{backend="<hostname>",method="<method>",route="<route>",status_code="<status>"}
+cortex_querytee_backend_request_duration_seconds_count{backend="<hostname>",method="<method>",route="<route>",status_code="<status>"}
 
 # HELP cortex_querytee_responses_total Total number of responses sent back to the client by the selected backend.
 # TYPE cortex_querytee_responses_total counter

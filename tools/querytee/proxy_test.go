@@ -167,7 +167,7 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 			cfg := ProxyConfig{
 				BackendEndpoints:      strings.Join(backendURLs, ","),
 				PreferredBackend:      strconv.Itoa(testData.preferredBackendIdx),
-				ServerServicePort:     0,
+				ServerHTTPServicePort: 0,
 				ServerGRPCServicePort: 0,
 				BackendReadTimeout:    time.Second,
 			}
@@ -321,7 +321,7 @@ func TestProxy_Passthrough(t *testing.T) {
 			cfg := ProxyConfig{
 				BackendEndpoints:               strings.Join(backendURLs, ","),
 				PreferredBackend:               strconv.Itoa(testData.preferredBackendIdx),
-				ServerServicePort:              0,
+				ServerHTTPServicePort:          0,
 				ServerGRPCServicePort:          0,
 				BackendReadTimeout:             time.Second,
 				PassThroughNonRegisteredRoutes: true,
@@ -393,7 +393,7 @@ func TestProxyHTTPGRPC(t *testing.T) {
 		cfg := ProxyConfig{
 			BackendEndpoints:      strings.Join(backendURLs, ","),
 			PreferredBackend:      strconv.Itoa(0), // First backend server is preferred response
-			ServerServicePort:     0,
+			ServerHTTPServicePort: 0,
 			ServerGRPCServicePort: 0,
 			BackendReadTimeout:    time.Second,
 		}
@@ -443,7 +443,7 @@ func TestProxyHTTPGRPC(t *testing.T) {
 		cfg := ProxyConfig{
 			BackendEndpoints:      strings.Join(backendURLs, ","),
 			PreferredBackend:      strconv.Itoa(0), // First backend server is preferred response
-			ServerServicePort:     0,
+			ServerHTTPServicePort: 0,
 			ServerGRPCServicePort: 0,
 			BackendReadTimeout:    time.Second,
 		}
