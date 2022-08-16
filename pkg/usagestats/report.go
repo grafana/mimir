@@ -47,7 +47,7 @@ type Report struct {
 }
 
 // buildReport builds the report to be sent to the stats server.
-func buildReport(seed ClusterSeed, reportAt time.Time, reportInterval time.Duration) Report {
+func buildReport(seed ClusterSeed, reportAt time.Time, reportInterval time.Duration) *Report {
 	var (
 		targetName  string
 		editionName string
@@ -63,7 +63,7 @@ func buildReport(seed ClusterSeed, reportAt time.Time, reportInterval time.Durat
 		}
 	}
 
-	return Report{
+	return &Report{
 		ClusterID:      seed.UID,
 		CreatedAt:      seed.CreatedAt,
 		Version:        buildVersion(),
