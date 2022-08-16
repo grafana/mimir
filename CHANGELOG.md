@@ -6,6 +6,7 @@
 
 * [CHANGE] Distributor: if forwarding rules are used to forward samples, exemplars are now removed from the request. #2710 #2725
 * [CHANGE] Limits: change the default value of `max_global_series_per_metric` limit to `0` (disabled). Setting this limit by default does not provide much benefit because series are sharded by all labels. #2714
+* [FEATURE] Introduced an experimental anonymous usage statistics tracking (disabled by default), to help Mimir maintainers driving better decisions to support the opensource community. The tracking system anonymously collects non-sensitive and non-personal identifiable information about the running Mimir cluster, and is disabled by default. #2643 #2662 #2685 #2732
 * [ENHANCEMENT] Distributor: Add `cortex_distributor_query_ingester_chunks_deduped_total` and `cortex_distributor_query_ingester_chunks_total` metrics for determining how effective ingester chunk deduplication at query time is. #2713
 * [ENHANCEMENT] Upgrade Docker base images to `alpine:3.16.2`. #2729
 * [BUGFIX] Fix reporting of tracing spans from PromQL engine. #2707
