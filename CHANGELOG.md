@@ -19,6 +19,8 @@
 
 ### Mimirtool
 
+* [BUGFIX] Version checking no longer prompts for updating when already on latest version. #2723
+
 ### Mimir Continuous Test
 
 ### Documentation

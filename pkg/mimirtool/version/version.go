@@ -15,6 +15,10 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+const (
+	githubReleasePrefix = "mimir-"
+)
+
 var (
 	errUnableToRetrieveLatestVersion = errors.New("unable to fetch the latest version from GitHub")
 )
@@ -22,33 +26,34 @@ var (
 // CheckLatest asks GitHub
 func CheckLatest(version string) {
 	if version != "" {
-		latest, err := getLatestFromGitHub()
+		latest, latestURL, err := getLatestFromGitHub()
 		if err != nil {
 			fmt.Println(err)
 			return
 		}
 
-		if latest != "" && (strings.TrimPrefix(latest, "v") != strings.TrimPrefix(version, "v")) {
-			fmt.Printf("A newer version of mimirtool is available, please update to %s\n", latest)
+		latest = strings.TrimPrefix(latest, githubReleasePrefix)
+		if latest != "" && (latest != strings.TrimPrefix(version, githubReleasePrefix)) {
+			fmt.Printf("A newer version of mimirtool is available, please update to %s %s\n", latest, latestURL)
 		} else {
 			fmt.Println("You are on the latest version")
 		}
 	}
 }
 
-func getLatestFromGitHub() (string, error) {
+func getLatestFromGitHub() (string, string, error) {
 	fmt.Print("checking latest version... ")
 	c := github.NewClient(nil)
 	repoRelease, resp, err := c.Repositories.GetLatestRelease(context.Background(), "grafana", "mimir")
 	if err != nil {
 		log.WithFields(log.Fields{"err": err}).Debugln("error while retrieving the latest version")
-		return "", errUnableToRetrieveLatestVersion
+		return "", "", errUnableToRetrieveLatestVersion
 	}
 
 	if resp.StatusCode/100 != 2 {
 		log.WithFields(log.Fields{"status": resp.StatusCode}).Debugln("non-2xx status code while contacting the GitHub API")
-		return "", errUnableToRetrieveLatestVersion
+		return "", "", errUnableToRetrieveLatestVersion
 	}
 
-	return *repoRelease.TagName, nil
+	return repoRelease.GetTagName(), repoRelease.GetHTMLURL(), nil
 }
