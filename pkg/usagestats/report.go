@@ -5,6 +5,7 @@ package usagestats
 import (
 	"expvar"
 	"runtime"
+	"strings"
 	"time"
 
 	prom "github.com/prometheus/prometheus/web/api/v1"
@@ -78,11 +79,36 @@ func buildReport(seed ClusterSeed, reportAt time.Time, reportInterval time.Durat
 
 // buildMetrics builds the metrics part of the report to be sent to the stats server.
 func buildMetrics() map[string]interface{} {
-	return map[string]interface{}{
+	result := map[string]interface{}{
 		"memstats":      buildMemstats(),
 		"num_cpu":       runtime.NumCPU(),
 		"num_goroutine": runtime.NumGoroutine(),
 	}
+
+	expvar.Do(func(kv expvar.KeyValue) {
+		if !strings.HasPrefix(kv.Key, statsPrefix) || kv.Key == statsPrefix+targetKey || kv.Key == statsPrefix+editionKey {
+			return
+		}
+
+		var value interface{}
+		switch v := kv.Value.(type) {
+		case *expvar.Int:
+			value = v.Value()
+		case *expvar.String:
+			value = v.Value()
+		case *Counter:
+			v.updateRate()
+			value = v.Value()
+			v.reset()
+		default:
+			// Unsupported.
+			return
+		}
+
+		result[strings.TrimPrefix(kv.Key, statsPrefix)] = value
+	})
+
+	return result
 }
 
 func buildMemstats() interface{} {

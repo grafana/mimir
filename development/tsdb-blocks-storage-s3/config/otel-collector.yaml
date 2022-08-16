@@ -2,7 +2,6 @@ exporters:
   prometheus:
     endpoint: :8083
   otlphttp:
-    compression: none
     endpoint: http://distributor-1:8000/otlp
 
 

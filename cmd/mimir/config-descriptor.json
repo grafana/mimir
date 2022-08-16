@@ -2658,7 +2658,7 @@
           "required": false,
           "desc": "The maximum number of in-memory series per metric name, across the cluster before replication. 0 to disable.",
           "fieldValue": null,
-          "fieldDefaultValue": 20000,
+          "fieldDefaultValue": 0,
           "fieldFlag": "ingester.max-global-series-per-metric",
           "fieldType": "int"
         },

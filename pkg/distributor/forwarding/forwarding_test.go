@@ -53,16 +53,16 @@ func TestForwardingSamplesSuccessfullyToCorrectTarget(t *testing.T) {
 	}
 
 	ts := []mimirpb.PreallocTimeseries{
-		newSample(t, now, 1, "__name__", "metric1", "some_label", "foo"),
-		newSample(t, now, 2, "__name__", "metric1", "some_label", "bar"),
-		newSample(t, now, 3, "__name__", "metric2", "some_label", "foo"),
-		newSample(t, now, 4, "__name__", "metric2", "some_label", "bar"),
+		newSample(t, now, 1, 100, "__name__", "metric1", "some_label", "foo"),
+		newSample(t, now, 2, 200, "__name__", "metric1", "some_label", "bar"),
+		newSample(t, now, 3, 300, "__name__", "metric2", "some_label", "foo"),
+		newSample(t, now, 4, 400, "__name__", "metric2", "some_label", "bar"),
 	}
 	notIngestedCounts, tsToIngest, errCh := forwarder.Forward(ctx, rules, ts)
 	require.Equal(t,
 		TimeseriesCounts{
 			SampleCount:   2,
-			ExemplarCount: 0,
+			ExemplarCount: 2,
 		},
 		notIngestedCounts,
 	)
@@ -71,8 +71,10 @@ func TestForwardingSamplesSuccessfullyToCorrectTarget(t *testing.T) {
 	require.Len(t, tsToIngest, 2)
 	requireLabelsEqual(t, tsToIngest[0].Labels, "__name__", "metric2", "some_label", "foo")
 	requireSamplesEqual(t, tsToIngest[0].Samples, now, 3)
+	requireExemplarsEqual(t, tsToIngest[0].Exemplars, now, 300)
 	requireLabelsEqual(t, tsToIngest[1].Labels, "__name__", "metric2", "some_label", "bar")
 	requireSamplesEqual(t, tsToIngest[1].Samples, now, 4)
+	requireExemplarsEqual(t, tsToIngest[1].Exemplars, now, 400)
 
 	// Loop until errCh gets closed, errCh getting closed indicates that all forwarding requests have completed.
 	for err := range errCh {
@@ -90,8 +92,10 @@ func TestForwardingSamplesSuccessfullyToCorrectTarget(t *testing.T) {
 	require.Len(t, receivedReq1.Timeseries, 2)
 	requireLabelsEqual(t, receivedReq1.Timeseries[0].Labels, "__name__", "metric1", "some_label", "foo")
 	requireSamplesEqual(t, receivedReq1.Timeseries[0].Samples, now, 1)
+	require.Empty(t, receivedReq1.Timeseries[0].Exemplars)
 	requireLabelsEqual(t, receivedReq1.Timeseries[1].Labels, "__name__", "metric1", "some_label", "bar")
 	requireSamplesEqual(t, receivedReq1.Timeseries[1].Samples, now, 2)
+	require.Empty(t, receivedReq1.Timeseries[1].Exemplars)
 
 	bodies = bodies2()
 	require.Len(t, bodies, 1)
@@ -99,8 +103,10 @@ func TestForwardingSamplesSuccessfullyToCorrectTarget(t *testing.T) {
 	require.Len(t, receivedReq2.Timeseries, 2)
 	requireLabelsEqual(t, receivedReq2.Timeseries[0].Labels, "__name__", "metric2", "some_label", "foo")
 	requireSamplesEqual(t, receivedReq2.Timeseries[0].Samples, now, 3)
+	require.Empty(t, receivedReq2.Timeseries[0].Exemplars)
 	requireLabelsEqual(t, receivedReq2.Timeseries[1].Labels, "__name__", "metric2", "some_label", "bar")
 	requireSamplesEqual(t, receivedReq2.Timeseries[1].Samples, now, 4)
+	require.Empty(t, receivedReq2.Timeseries[1].Exemplars)
 
 	expectedMetrics := `
 	# HELP cortex_distributor_forward_requests_total The total number of requests the Distributor made to forward samples.
@@ -210,11 +216,11 @@ func TestForwardingSamplesWithDifferentErrorsWithPropagation(t *testing.T) {
 			now := time.Now().UnixMilli()
 			var ts []mimirpb.PreallocTimeseries
 			for _, metric := range metrics {
-				ts = append(ts, newSample(t, now, 1, "__name__", metric))
+				ts = append(ts, newSample(t, now, 1, 100, "__name__", metric))
 			}
 			notIngestedCounts, _, errCh := forwarder.Forward(context.Background(), rules, ts)
 			require.Equal(t,
-				TimeseriesCounts{SampleCount: len(metrics)},
+				TimeseriesCounts{SampleCount: len(metrics), ExemplarCount: len(metrics)},
 				notIngestedCounts,
 			)
 
@@ -506,12 +512,15 @@ func newForwarder(tb testing.TB, cfg Config, start bool) (Forwarder, *prometheus
 	return forwarder, reg
 }
 
-func newSample(tb testing.TB, time int64, value float64, labelValuePairs ...string) mimirpb.PreallocTimeseries {
+func newSample(tb testing.TB, time int64, value float64, exemplarValue float64, labelValuePairs ...string) mimirpb.PreallocTimeseries {
 	tb.Helper()
 
 	ts := &mimirpb.TimeSeries{
 		Samples: []mimirpb.Sample{
 			{TimestampMs: time, Value: value},
+		},
+		Exemplars: []mimirpb.Exemplar{
+			{TimestampMs: time, Value: exemplarValue},
 		},
 	}
 
@@ -566,6 +575,18 @@ func requireSamplesEqual(t *testing.T, gotSamples []mimirpb.Sample, wantTimeValu
 	for i := range gotSamples {
 		require.Equal(t, wantTimeValuePairs[i*2], gotSamples[i].TimestampMs)
 		require.Equal(t, float64(wantTimeValuePairs[i*2+1]), gotSamples[i].Value)
+	}
+}
+
+func requireExemplarsEqual(t *testing.T, gotExemplars []mimirpb.Exemplar, wantTimeValuePairs ...int64) {
+	t.Helper()
+
+	require.Zero(t, len(wantTimeValuePairs)%2)
+	require.Equal(t, len(wantTimeValuePairs)/2, len(gotExemplars))
+
+	for i := range gotExemplars {
+		require.Equal(t, wantTimeValuePairs[i*2], gotExemplars[i].TimestampMs)
+		require.Equal(t, float64(wantTimeValuePairs[i*2+1]), gotExemplars[i].Value)
 	}
 }
 

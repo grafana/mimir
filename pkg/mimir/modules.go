@@ -656,7 +656,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 	t.API.RegisterRuler(t.Ruler)
 
 	// Expose HTTP configuration and prometheus-compatible Ruler APIs
-	t.API.RegisterRulerAPI(ruler.NewAPI(t.Ruler, t.RulerStorage, util_log.Logger), t.Cfg.Ruler.EnableAPI)
+	t.API.RegisterRulerAPI(ruler.NewAPI(t.Ruler, t.RulerStorage, util_log.Logger), t.Cfg.Ruler.EnableAPI, t.BuildInfoHandler)
 
 	return t.Ruler, nil
 }
@@ -759,6 +759,9 @@ func (t *Mimir) initUsageStats() (services.Service, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Track anonymous usage statistics.
+	usagestats.GetString("blocks_storage_backend").Set(t.Cfg.BlocksStorage.Bucket.Backend)
 
 	t.UsageStatsReporter = usagestats.NewReporter(bucketClient, util_log.Logger, prometheus.DefaultRegisterer)
 	return t.UsageStatsReporter, nil

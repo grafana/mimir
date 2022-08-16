@@ -10,6 +10,7 @@ package ingester
 
 import (
 	"context"
+	"expvar"
 	"flag"
 	"fmt"
 	"io"
@@ -55,6 +56,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -74,6 +76,9 @@ const (
 	// Period at which to attempt purging metadata from memory.
 	metadataPurgePeriod = 5 * time.Minute
 
+	// How frequently update the usage statistics.
+	usageStatsUpdateInterval = usagestats.DefaultReportSendInterval / 10
+
 	// IngesterRingKey is the key under which we store the ingesters ring in the KVStore.
 	IngesterRingKey = "ring"
 
@@ -88,6 +93,12 @@ const (
 	sampleTooOld         = "sample-too-old"
 	newValueForTimestamp = "new-value-for-timestamp"
 	sampleOutOfBounds    = "sample-out-of-bounds"
+
+	replicationFactorStatsName = "ingester_replication_factor"
+	memorySeriesStatsName      = "ingester_inmemory_series"
+	memoryTenantsStatsName     = "ingester_inmemory_tenants"
+	appendedSamplesStatsName   = "ingester_appended_samples"
+	appendedExemplarsStatsName = "ingester_appended_exemplars"
 )
 
 // BlocksUploader interface is used to have an easy way to mock it in tests.
@@ -225,6 +236,12 @@ type Ingester struct {
 	// Rate of pushed samples. Used to limit global samples push rate.
 	ingestionRate        *util_math.EwmaRate
 	inflightPushRequests atomic.Int64
+
+	// Anonymous usage statistics tracked by ingester.
+	memorySeriesStats      *expvar.Int
+	memoryTenantsStats     *expvar.Int
+	appendedSamplesStats   *usagestats.Counter
+	appendedExemplarsStats *usagestats.Counter
 }
 
 func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
@@ -236,6 +253,9 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create the bucket client")
 	}
+
+	// Track constant usage stats.
+	usagestats.GetInt(replicationFactorStatsName).Set(int64(cfg.IngesterRing.ReplicationFactor))
 
 	return &Ingester{
 		cfg:    cfg,
@@ -249,6 +269,11 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 		forceCompactTrigger: make(chan requestWithUsersAndCallback),
 		shipTrigger:         make(chan requestWithUsersAndCallback),
 		seriesHashCache:     hashcache.NewSeriesHashCache(cfg.BlocksStorageConfig.TSDB.SeriesHashCacheMaxBytes),
+
+		memorySeriesStats:      usagestats.GetAndResetInt(memorySeriesStatsName),
+		memoryTenantsStats:     usagestats.GetAndResetInt(memoryTenantsStatsName),
+		appendedSamplesStats:   usagestats.GetAndResetCounter(appendedSamplesStatsName),
+		appendedExemplarsStats: usagestats.GetAndResetCounter(appendedExemplarsStatsName),
 	}, nil
 }
 
@@ -427,6 +452,9 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 	metadataPurgeTicker := time.NewTicker(metadataPurgePeriod)
 	defer metadataPurgeTicker.Stop()
 
+	usageStatsUpdateTicker := time.NewTicker(usageStatsUpdateInterval)
+	defer usageStatsUpdateTicker.Stop()
+
 	for {
 		select {
 		case <-metadataPurgeTicker.C:
@@ -446,6 +474,9 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 
 		case <-activeSeriesTickerChan:
 			i.updateActiveSeries(time.Now())
+
+		case <-usageStatsUpdateTicker.C:
+			i.updateUsageStats()
 
 		case <-ctx.Done():
 			return nil
@@ -493,6 +524,30 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 			}
 		}
 	}
+}
+
+// updateUsageStats updated some anonymous usage statistics tracked by the ingester.
+// This function is expected to be called periodically.
+func (i *Ingester) updateUsageStats() {
+	memoryUsersCount := int64(0)
+	memorySeriesCount := int64(0)
+
+	for _, userID := range i.getTSDBUsers() {
+		userDB := i.getTSDB(userID)
+		if userDB == nil {
+			continue
+		}
+
+		// Count only tenants with at least 1 series.
+		if numSeries := userDB.Head().NumSeries(); numSeries > 0 {
+			memoryUsersCount++
+			memorySeriesCount += int64(numSeries)
+		}
+	}
+
+	// Track anonymous usage stats.
+	i.memorySeriesStats.Set(memorySeriesCount)
+	i.memoryTenantsStats.Set(memoryUsersCount)
 }
 
 // applyTSDBSettings goes through all tenants and applies
@@ -797,6 +852,8 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	i.metrics.ingestedSamplesFail.WithLabelValues(userID).Add(float64(failedSamplesCount))
 	i.metrics.ingestedExemplars.Add(float64(succeededExemplarsCount))
 	i.metrics.ingestedExemplarsFail.Add(float64(failedExemplarsCount))
+	i.appendedSamplesStats.Inc(int64(succeededSamplesCount))
+	i.appendedExemplarsStats.Inc(int64(succeededExemplarsCount))
 
 	if sampleOutOfBoundsCount > 0 {
 		validation.DiscardedSamples.WithLabelValues(sampleOutOfBounds, userID).Add(float64(sampleOutOfBoundsCount))
@@ -1692,6 +1749,9 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 		level.Error(i.logger).Log("msg", "error while opening existing TSDBs", "err", err)
 		return err
 	}
+
+	// Update the usage statistics once all TSDBs have been opened.
+	i.updateUsageStats()
 
 	level.Info(i.logger).Log("msg", "successfully opened existing TSDBs")
 	return nil

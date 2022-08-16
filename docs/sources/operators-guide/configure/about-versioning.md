@@ -96,6 +96,7 @@ The following features are currently experimental:
 - Compactor
   - HTTP API for uploading TSDB blocks
   - Tenant deletion API
+- Anonymous usage statistics tracking
 
 ## Deprecated features
 

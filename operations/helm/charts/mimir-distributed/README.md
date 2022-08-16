@@ -6,7 +6,7 @@ See the [Grafana Mimir version 2.2 release notes](https://grafana.com/docs/mimir
 
 # mimir-distributed
 
-![Version: 3.1.0-weekly.198](https://img.shields.io/badge/Version-3.1.0--weekly.198-informational?style=flat-square) ![AppVersion: r198](https://img.shields.io/badge/AppVersion-r198-informational?style=flat-square)
+![Version: 3.1.0-weekly.199](https://img.shields.io/badge/Version-3.1.0--weekly.199-informational?style=flat-square) ![AppVersion: r199](https://img.shields.io/badge/AppVersion-r199-informational?style=flat-square)
 
 Grafana Mimir
 

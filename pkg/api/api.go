@@ -84,12 +84,12 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 }
 
 // Push either wraps the distributor push function as configured or returns the distributor push directly.
-func (cfg *Config) wrapDistributorPush(d *distributor.Distributor) push.Func {
+func (cfg *Config) wrapDistributorPush(next push.Func) push.Func {
 	if cfg.DistributorPushWrapper != nil {
-		return cfg.DistributorPushWrapper(d.PushWithCleanup)
+		return cfg.DistributorPushWrapper(next)
 	}
 
-	return d.PushWithCleanup
+	return next
 }
 
 type API struct {
@@ -240,10 +240,9 @@ func (a *API) RegisterRuntimeConfig(runtimeConfigHandler http.HandlerFunc) {
 func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distributor.Config) {
 	distributorpb.RegisterDistributorServer(a.server.GRPC, d)
 
-	wrappedDistributor := d.PrePushForwardingMiddleware(a.cfg.wrapDistributorPush(d))
-
-	a.RegisterRoute("/api/v1/push", push.Handler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, wrappedDistributor), true, false, "POST")
-	a.RegisterRoute("/otlp/v1/metrics", push.OTLPHandler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, wrappedDistributor), true, false, "POST")
+	wrappedPush := a.cfg.wrapDistributorPush(d.PushWithMiddlewares)
+	a.RegisterRoute("/api/v1/push", push.Handler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, wrappedPush), true, false, "POST")
+	a.RegisterRoute("/otlp/v1/metrics", push.OTLPHandler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, wrappedPush), true, false, "POST")
 
 	a.indexPage.AddLinks(defaultWeight, "Distributor", []IndexPageLink{
 		{Desc: "Ring status", Path: "/distributor/ring"},
@@ -296,12 +295,13 @@ func (a *API) RegisterRuler(r *ruler.Ruler) {
 }
 
 // RegisterRulerAPI registers routes associated with the Ruler API
-func (a *API) RegisterRulerAPI(r *ruler.API, configAPIEnabled bool) {
+func (a *API) RegisterRulerAPI(r *ruler.API, configAPIEnabled bool, buildInfoHandler http.Handler) {
 	// Prometheus Rule API Routes
 	// We want to always enable these. They are read-only. Also if using local storage as rule storage,
 	// you would like the API to be disabled and still be able to understand in what state rule evaluations are.
 	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/rules"), http.HandlerFunc(r.PrometheusRules), true, true, "GET")
 	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/alerts"), http.HandlerFunc(r.PrometheusAlerts), true, true, "GET")
+	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/status/buildinfo"), buildInfoHandler, false, true, "GET")
 
 	if configAPIEnabled {
 		// Long-term maintained configuration API routes

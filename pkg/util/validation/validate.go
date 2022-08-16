@@ -102,6 +102,7 @@ var DiscardedMetadata = prometheus.NewCounterVec(
 )
 
 func init() {
+	prometheus.MustRegister(DiscardedRequests)
 	prometheus.MustRegister(DiscardedSamples)
 	prometheus.MustRegister(DiscardedExemplars)
 	prometheus.MustRegister(DiscardedMetadata)

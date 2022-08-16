@@ -117,6 +117,8 @@ type Distributor struct {
 
 	// Metrics
 	queryDuration                    *instrument.HistogramCollector
+	ingesterChunksDeduplicated       prometheus.Counter
+	ingesterChunksTotal              prometheus.Counter
 	receivedSamples                  *prometheus.CounterVec
 	receivedExemplars                *prometheus.CounterVec
 	receivedMetadata                 *prometheus.CounterVec
@@ -129,6 +131,8 @@ type Distributor struct {
 	sampleDelayHistogram             prometheus.Histogram
 	replicationFactor                prometheus.Gauge
 	latestSeenSampleTimestampPerUser *prometheus.GaugeVec
+
+	PushWithMiddlewares push.Func
 }
 
 // Config contains the configuration required to
@@ -235,6 +239,16 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Help:      "Time spent executing expression and exemplar queries.",
 			Buckets:   []float64{.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10, 20, 30},
 		}, []string{"method", "status_code"})),
+		ingesterChunksDeduplicated: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Namespace: "cortex",
+			Name:      "distributor_query_ingester_chunks_deduped_total",
+			Help:      "Number of chunks deduplicated at query time from ingesters.",
+		}),
+		ingesterChunksTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Namespace: "cortex",
+			Name:      "distributor_query_ingester_chunks_total",
+			Help:      "Number of chunks transferred at query time from ingesters.",
+		}),
 		receivedSamples: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_received_samples_total",
@@ -380,6 +394,8 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	if d.forwarder != nil {
 		subservices = append(subservices, d.forwarder)
 	}
+
+	d.PushWithMiddlewares = d.wrapPushWithMiddlewares(d.PushWithCleanup)
 
 	subservices = append(subservices, d.ingesterPool, d.activeUsers)
 	d.subservices, err = services.NewManager(subservices...)
@@ -606,9 +622,145 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 	return nil
 }
 
-// PrePushForwardingMiddleware is used as push.Func middleware in front of PushWithCleanup method.
+func (d *Distributor) wrapPushWithMiddlewares(next push.Func) push.Func {
+	var middlewares []func(push.Func) push.Func
+
+	// The middlewares will be applied to the request (!) in the specified order, from first to last.
+	// To guarantee that, middleware functions will be called in reversed order, wrapping the
+	// result from previous call.
+	middlewares = append(middlewares, d.instanceLimitsMiddleware) // should run first
+	middlewares = append(middlewares, d.prePushHaDedupeMiddleware)
+	middlewares = append(middlewares, d.prePushRelabelMiddleware)
+	middlewares = append(middlewares, d.prePushForwardingMiddleware)
+
+	for ix := len(middlewares) - 1; ix >= 0; ix-- {
+		next = middlewares[ix](next)
+	}
+
+	return next
+}
+
+func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
+	return func(ctx context.Context, req *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error) {
+		cleanupInDefer := true
+		defer func() {
+			if cleanupInDefer {
+				cleanup()
+			}
+		}()
+
+		userID, err := tenant.TenantID(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		if len(req.Timeseries) == 0 || !d.limits.AcceptHASamples(userID) {
+			cleanupInDefer = false
+			return next(ctx, req, cleanup)
+		}
+
+		haReplicaLabel := d.limits.HAReplicaLabel(userID)
+		cluster, replica := findHALabels(haReplicaLabel, d.limits.HAClusterLabel(userID), req.Timeseries[0].Labels)
+		// Make a copy of these, since they may be retained as labels on our metrics, e.g. dedupedSamples.
+		cluster, replica = copyString(cluster), copyString(replica)
+
+		span := opentracing.SpanFromContext(ctx)
+		if span != nil {
+			span.SetTag("cluster", cluster)
+			span.SetTag("replica", replica)
+		}
+
+		numSamples := 0
+		for _, ts := range req.Timeseries {
+			numSamples += len(ts.Samples)
+		}
+
+		removeReplica, err := d.checkSample(ctx, userID, cluster, replica)
+		if err != nil {
+			if errors.Is(err, replicasNotMatchError{}) {
+				// These samples have been deduped.
+				d.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(numSamples))
+				return nil, httpgrpc.Errorf(http.StatusAccepted, err.Error())
+			}
+
+			if errors.Is(err, tooManyClustersError{}) {
+				validation.DiscardedSamples.WithLabelValues(validation.ReasonTooManyHAClusters, userID).Add(float64(numSamples))
+				return nil, httpgrpc.Errorf(http.StatusBadRequest, err.Error())
+			}
+
+			return nil, err
+		}
+
+		if removeReplica {
+			// If we found both the cluster and replica labels, we only want to include the cluster label when
+			// storing series in Mimir. If we kept the replica label we would end up with another series for the same
+			// series we're trying to dedupe when HA tracking moves over to a different replica.
+			for _, ts := range req.Timeseries {
+				removeLabel(haReplicaLabel, &ts.Labels)
+			}
+		} else {
+			// If there wasn't an error but removeReplica is false that means we didn't find both HA labels.
+			d.nonHASamples.WithLabelValues(userID).Add(float64(numSamples))
+		}
+
+		cleanupInDefer = false
+		return next(ctx, req, cleanup)
+	}
+}
+
+func (d *Distributor) prePushRelabelMiddleware(next push.Func) push.Func {
+	return func(ctx context.Context, req *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error) {
+		cleanupInDefer := true
+		defer func() {
+			if cleanupInDefer {
+				cleanup()
+			}
+		}()
+
+		userID, err := tenant.TenantID(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		var removeTsIndexes []int
+		for tsIdx := 0; tsIdx < len(req.Timeseries); tsIdx++ {
+			ts := req.Timeseries[tsIdx]
+
+			if mrc := d.limits.MetricRelabelConfigs(userID); len(mrc) > 0 {
+				l := relabel.Process(mimirpb.FromLabelAdaptersToLabels(ts.Labels), mrc...)
+				ts.Labels = mimirpb.FromLabelsToLabelAdapters(l)
+			}
+
+			for _, labelName := range d.limits.DropLabels(userID) {
+				removeLabel(labelName, &ts.Labels)
+			}
+
+			if len(ts.Labels) == 0 {
+				removeTsIndexes = append(removeTsIndexes, tsIdx)
+				continue
+			}
+
+			// We rely on sorted labels in different places:
+			// 1) When computing token for labels, and sharding by all labels. Here different order of labels returns
+			// different tokens, which is bad.
+			// 2) In validation code, when checking for duplicate label names. As duplicate label names are rejected
+			// later in the validation phase, we ignore them here.
+			// 3) Ingesters expect labels to be sorted in the Push request.
+			sortLabelsIfNeeded(ts.Labels)
+		}
+
+		if len(removeTsIndexes) > 0 {
+			req.Timeseries = util.RemoveSliceIndexes(req.Timeseries, removeTsIndexes)
+		}
+
+		cleanupInDefer = false
+		return next(ctx, req, cleanup)
+	}
+}
+
+// prePushForwardingMiddleware is used as push.Func middleware in front of PushWithCleanup method.
 // It forwards time series to configured remote_write endpoints if the forwarding rules say so.
-func (d *Distributor) PrePushForwardingMiddleware(next push.Func) push.Func {
+func (d *Distributor) prePushForwardingMiddleware(next push.Func) push.Func {
 	if d.forwarder == nil {
 		// Forwarding is disabled, no need to wrap "next".
 		return next
@@ -645,6 +797,46 @@ func (d *Distributor) PrePushForwardingMiddleware(next push.Func) push.Func {
 	}
 }
 
+// instanceLimitsMiddleware checks for instance limits and rejects request if this instance cannot process it at the moment.
+func (d *Distributor) instanceLimitsMiddleware(next push.Func) push.Func {
+	return func(ctx context.Context, req *mimirpb.WriteRequest, callerCleanup func()) (*mimirpb.WriteResponse, error) {
+		// Increment number of requests and bytes before doing the checks, so that we hit error if this request crosses the limits.
+		inflight := d.inflightPushRequests.Inc()
+		reqSize := int64(req.Size())
+		inflightBytes := d.inflightPushRequestsBytes.Add(reqSize)
+
+		// Decrement counter after all ingester calls have finished or been cancelled.
+		cleanup := func() {
+			callerCleanup()
+			d.inflightPushRequests.Dec()
+			d.inflightPushRequestsBytes.Sub(reqSize)
+		}
+		cleanupInDefer := true
+		defer func() {
+			if cleanupInDefer {
+				cleanup()
+			}
+		}()
+
+		if d.cfg.InstanceLimits.MaxInflightPushRequests > 0 && inflight > int64(d.cfg.InstanceLimits.MaxInflightPushRequests) {
+			return nil, errMaxInflightRequestsReached
+		}
+
+		if d.cfg.InstanceLimits.MaxInflightPushRequestsBytes > 0 && inflightBytes > int64(d.cfg.InstanceLimits.MaxInflightPushRequestsBytes) {
+			return nil, errMaxInflightRequestsBytesReached
+		}
+
+		if d.cfg.InstanceLimits.MaxIngestionRate > 0 {
+			if rate := d.ingestionRate.Rate(); rate >= d.cfg.InstanceLimits.MaxIngestionRate {
+				return nil, errMaxIngestionRateReached
+			}
+		}
+
+		cleanupInDefer = false
+		return next(ctx, req, cleanup)
+	}
+}
+
 func (d *Distributor) forwardSamples(ctx context.Context, userID string, ts []mimirpb.PreallocTimeseries) ([]mimirpb.PreallocTimeseries, <-chan error) {
 	forwardingErrCh := make(chan error)
 	forwardingRules := d.limits.ForwardingRules(userID)
@@ -668,23 +860,12 @@ func (d *Distributor) forwardSamples(ctx context.Context, userID string, ts []mi
 
 // Push implements client.IngesterServer
 func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
-	return d.PrePushForwardingMiddleware(d.PushWithCleanup)(ctx, req, func() { mimirpb.ReuseSlice(req.Timeseries) })
+	return d.PushWithMiddlewares(ctx, req, func() { mimirpb.ReuseSlice(req.Timeseries) })
 }
 
 // PushWithCleanup takes a WriteRequest and distributes it to ingesters using the ring.
 // Strings in `req` may be pointers into the gRPC buffer which will be reused, so must be copied if retained.
-func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteRequest, callerCleanup func()) (*mimirpb.WriteResponse, error) {
-	// We will report *this* request in the error too.
-	inflight := d.inflightPushRequests.Inc()
-	reqSize := int64(req.Size())
-	inflightBytes := d.inflightPushRequestsBytes.Add(reqSize)
-
-	// Decrement counter after all ingester calls have finished or been cancelled.
-	cleanup := func() {
-		callerCleanup()
-		d.inflightPushRequests.Dec()
-		d.inflightPushRequestsBytes.Sub(reqSize)
-	}
+func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error) {
 	cleanupInDefer := true
 	defer func() {
 		if cleanupInDefer {
@@ -702,20 +883,6 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		span.SetTag("organization", userID)
 	}
 
-	if d.cfg.InstanceLimits.MaxInflightPushRequests > 0 && inflight > int64(d.cfg.InstanceLimits.MaxInflightPushRequests) {
-		return nil, errMaxInflightRequestsReached
-	}
-
-	if d.cfg.InstanceLimits.MaxIngestionRate > 0 {
-		if rate := d.ingestionRate.Rate(); rate >= d.cfg.InstanceLimits.MaxIngestionRate {
-			return nil, errMaxIngestionRateReached
-		}
-	}
-
-	if d.cfg.InstanceLimits.MaxInflightPushRequestsBytes > 0 && inflightBytes > int64(d.cfg.InstanceLimits.MaxInflightPushRequestsBytes) {
-		return nil, errMaxInflightRequestsBytesReached
-	}
-
 	now := mtime.Now()
 	if !d.requestRateLimiter.AllowN(now, userID, 1) {
 		validation.DiscardedRequests.WithLabelValues(validation.ReasonRateLimited, userID).Add(1)
@@ -731,7 +898,6 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	source := util.GetSourceIPsFromOutgoingCtx(ctx)
 
 	var firstPartialErr error
-	removeReplica := false
 
 	numSamples := 0
 	numExemplars := 0
@@ -754,35 +920,6 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	seriesKeys := make([]uint32, 0, len(req.Timeseries))
 	validatedSamples := 0
 	validatedExemplars := 0
-
-	if d.limits.AcceptHASamples(userID) && len(req.Timeseries) > 0 {
-		cluster, replica := findHALabels(d.limits.HAReplicaLabel(userID), d.limits.HAClusterLabel(userID), req.Timeseries[0].Labels)
-		// Make a copy of these, since they may be retained as labels on our metrics, e.g. dedupedSamples.
-		cluster, replica = copyString(cluster), copyString(replica)
-		if span != nil {
-			span.SetTag("cluster", cluster)
-			span.SetTag("replica", replica)
-		}
-		removeReplica, err = d.checkSample(ctx, userID, cluster, replica)
-		if err != nil {
-			if errors.Is(err, replicasNotMatchError{}) {
-				// These samples have been deduped.
-				d.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(numSamples))
-				return nil, httpgrpc.Errorf(http.StatusAccepted, err.Error())
-			}
-
-			if errors.Is(err, tooManyClustersError{}) {
-				validation.DiscardedSamples.WithLabelValues(validation.ReasonTooManyHAClusters, userID).Add(float64(numSamples))
-				return nil, httpgrpc.Errorf(http.StatusBadRequest, err.Error())
-			}
-
-			return nil, err
-		}
-		// If there wasn't an error but removeReplica is false that means we didn't find both HA labels.
-		if !removeReplica {
-			d.nonHASamples.WithLabelValues(userID).Add(float64(numSamples))
-		}
-	}
 
 	// Find the earliest and latest samples in the batch.
 	earliestSampleTimestampMs, latestSampleTimestampMs := int64(math.MaxInt64), int64(0)
@@ -807,33 +944,9 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	// For each timeseries, compute a hash to distribute across ingesters;
 	// check each sample and discard if outside limits.
 	for _, ts := range req.Timeseries {
-		if mrc := d.limits.MetricRelabelConfigs(userID); len(mrc) > 0 {
-			l := relabel.Process(mimirpb.FromLabelAdaptersToLabels(ts.Labels), mrc...)
-			ts.Labels = mimirpb.FromLabelsToLabelAdapters(l)
-		}
-
-		// If we found both the cluster and replica labels, we only want to include the cluster label when
-		// storing series in Mimir. If we kept the replica label we would end up with another series for the same
-		// series we're trying to dedupe when HA tracking moves over to a different replica.
-		if removeReplica {
-			removeLabel(d.limits.HAReplicaLabel(userID), &ts.Labels)
-		}
-
-		for _, labelName := range d.limits.DropLabels(userID) {
-			removeLabel(labelName, &ts.Labels)
-		}
-
 		if len(ts.Labels) == 0 {
 			continue
 		}
-
-		// We rely on sorted labels in different places:
-		// 1) When computing token for labels, and sharding by all labels. Here different order of labels returns
-		// different tokens, which is bad.
-		// 2) In validation code, when checking for duplicate label names. As duplicate label names are rejected
-		// later in the validation phase, we ignore them here.
-		// 3) Ingesters expect labels to be sorted in the Push request.
-		sortLabelsIfNeeded(ts.Labels)
 
 		// Generate the sharding token based on the series labels without the HA replica
 		// label and dropped labels (if any)
@@ -1141,8 +1254,8 @@ func (m *labelNamesAndValuesResponseMerger) putItemsToMap(message *ingester_clie
 }
 
 // LabelValuesCardinality performs the following two operations in parallel:
-//  * queries ingesters for label values cardinality of a set of labelNames
-//  * queries ingesters for user stats to get the ingester's series head count
+//   - queries ingesters for label values cardinality of a set of labelNames
+//   - queries ingesters for user stats to get the ingester's series head count
 func (d *Distributor) LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher) (uint64, *ingester_client.LabelValuesCardinalityResponse, error) {
 	var totalSeries uint64
 	var labelValuesCardinalityResponse *ingester_client.LabelValuesCardinalityResponse

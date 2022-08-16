@@ -60,6 +60,8 @@ require (
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
 	github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite v0.54.0
 	go.opentelemetry.io/collector/pdata v0.54.0
+	go.opentelemetry.io/otel v1.7.0
+	go.opentelemetry.io/otel/trace v1.7.0
 	golang.org/x/sys v0.0.0-20220627191245-f75cf1eec38b
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	sigs.k8s.io/kustomize/kyaml v0.13.7
@@ -209,11 +211,9 @@ require (
 	go.opentelemetry.io/collector/semconv v0.54.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.32.0 // indirect
 	go.opentelemetry.io/contrib/propagators/ot v1.4.0 // indirect
-	go.opentelemetry.io/otel v1.7.0 // indirect
 	go.opentelemetry.io/otel/bridge/opentracing v1.5.0 // indirect
 	go.opentelemetry.io/otel/metric v0.30.0 // indirect
 	go.opentelemetry.io/otel/sdk v1.7.0 // indirect
-	go.opentelemetry.io/otel/trace v1.7.0 // indirect
 	go.uber.org/multierr v1.8.0 // indirect
 	go.uber.org/zap v1.21.0 // indirect
 	golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4 // indirect
@@ -239,7 +239,7 @@ replace git.apache.org/thrift.git => github.com/apache/thrift v0.0.0-20180902110
 replace github.com/bradfitz/gomemcache => github.com/themihai/gomemcache v0.0.0-20180902122335-24332e2d58ab
 
 // Using a fork of Prometheus while we work on querysharding to avoid a dependency on the upstream.
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20220809135517-01b03b7f85b7
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20220811142328-e9456018fa6b
 
 // Out of order Support forces us to fork thanos because we've changed the ChunkReader interface.
 // Once the out of order support is upstreamed and Thanos has vendored it, we can remove this override.

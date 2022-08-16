@@ -4,6 +4,34 @@
 
 ### Grafana Mimir
 
+* [CHANGE] Distributor: if forwarding rules are used to forward samples, exemplars are now removed from the request. #2710 #2725
+* [CHANGE] Limits: change the default value of `max_global_series_per_metric` limit to `0` (disabled). Setting this limit by default does not provide much benefit because series are sharded by all labels. #2714
+* [FEATURE] Introduced an experimental anonymous usage statistics tracking (disabled by default), to help Mimir maintainers driving better decisions to support the opensource community. The tracking system anonymously collects non-sensitive and non-personal identifiable information about the running Mimir cluster, and is disabled by default. #2643 #2662 #2685 #2732
+* [ENHANCEMENT] Distributor: Add `cortex_distributor_query_ingester_chunks_deduped_total` and `cortex_distributor_query_ingester_chunks_total` metrics for determining how effective ingester chunk deduplication at query time is. #2713
+* [ENHANCEMENT] Upgrade Docker base images to `alpine:3.16.2`. #2729
+* [ENHANCEMENT] Ruler: Add `<prometheus-http-prefix>/api/v1/status/buildinfo` endpoint. #2724
+* [BUGFIX] Fix reporting of tracing spans from PromQL engine. #2707
+* [BUGFIX] Distributor: Apply distributor instance limits before running HA deduplication. #2709
+* [BUGFIX] Apply relabel and drop_label rules before forwarding rules in the distributor. #2703
+* [BUGFIX] Distributor: Register `cortex_discarded_requests_total` metric, which previously was not registered and therefore not exported. #2712
+
+### Mixin
+
+### Jsonnet
+
+### Mimirtool
+
+* [BUGFIX] Version checking no longer prompts for updating when already on latest version. #2723
+
+### Mimir Continuous Test
+
+### Documentation
+
+
+## 2.3.0-rc.0
+
+### Grafana Mimir
+
 * [CHANGE] Ingester: Added user label to ingester metric `cortex_ingester_tsdb_out_of_order_samples_appended_total`. On multitenant clusters this helps us find the rate of appended out-of-order samples for a specific tenant. #2493
 * [CHANGE] Compactor: delete source and output blocks from local disk on compaction failed, to reduce likelihood that subsequent compactions fail because of no space left on disk. #2261
 * [CHANGE] Ruler: Remove unused CLI flags `-ruler.search-pending-for` and `-ruler.flush-period` (and their respective YAML config options). #2288
@@ -19,11 +47,12 @@
 * [CHANGE] The tenant ID `__mimir_cluster` is reserved by Mimir and not allowed to store metrics. #2643
 * [CHANGE] Purger: removed the purger component and moved its API endpoints `/purger/delete_tenant` and `/purger/delete_tenant_status` to the compactor at `/compactor/delete_tenant` and `/compactor/delete_tenant_status`. #2644
 * [CHANGE] Memberlist: Change the leave timeout duration (`-memberlist.leave-timeout duration`) from 5s to 20s and connection timeout (`-memberlist.packet-dial-timeout`) from 5s to 2s. This makes leave timeout 10x the connection timeout, so that we can communicate the leave to at least 1 node, if the first 9 we try to contact times out. #2669
+* [CHANGE] Alertmanager: return status code `412 Precondition Failed` and log info message when alertmanager isn't configured for a tenant. #2635
 * [FEATURE] Compactor: Adds the ability to delete partial blocks after a configurable delay. This option can be configured per tenant. #2285
   - `-compactor.partial-block-deletion-delay`, as a duration string, allows you to set the delay since a partial block has been modified before marking it for deletion. A value of `0`, the default, disables this feature.
   - The metric `cortex_compactor_blocks_marked_for_deletion_total` has a new value for the `reason` label `reason="partial"`, when a block deletion marker is triggered by the partial block deletion delay.
 * [FEATURE] Querier: enabled support for queries with negative offsets, which are not cached in the query results cache. #2429
-* [FEATURE] EXPERIMENTAL: OpenTelemetry Metrics ingestion path on `/otlp/v1/metrics`. #695 #2436
+* [FEATURE] EXPERIMENTAL: OpenTelemetry Metrics ingestion path on `/otlp/v1/metrics`. #695 #2436 #2461
 * [FEATURE] Querier: Added support for tenant federation to metric metadata endpoint. #2467
 * [ENHANCEMENT] Distributor: Decreased distributor tests execution time. #2562
 * [ENHANCEMENT] Alertmanager: Allow the HTTP `proxy_url` configuration option in the receiver's configuration. #2317
@@ -37,6 +66,8 @@
 * [ENHANCEMENT] Distributor: Add `-distributor.instance-limits.max-inflight-push-requests-bytes`. This limit protects the distributor against multiple large requests that together may cause an OOM, but are only a few, so do not trigger the `max-inflight-push-requests` limit. #2413
 * [ENHANCEMENT] Distributor: Drop exemplars in distributor for tenants where exemplars are disabled. #2504
 * [ENHANCEMENT] Runtime Config: Allow operator to specify multiple comma-separated yaml files in `-runtime-config.file` that will be merged in left to right order. #2583
+* [ENHANCEMENT] Query sharding: shard binary operations only if it doesn't lead to non-shardable vector selectors in one of the operands. #2696
+* [BUGFIX] TSDB: Fixed a bug on the experimental out-of-order implementation that led to wrong query results. #2701
 * [BUGFIX] Compactor: log the actual error on compaction failed. #2261
 * [BUGFIX] Alertmanager: restore state from storage even when running a single replica. #2293
 * [BUGFIX] Ruler: do not block "List Prometheus rules" API endpoint while syncing rules. #2289
@@ -49,6 +80,7 @@
 * [BUGFIX] Compactor: Fix bug when using `-compactor.partial-block-deletion-delay`: compactor didn't correctly check for modification time of all block files. #2559
 * [BUGFIX] Query-frontend: fix wrong query sharding results for queries with boolean result like `1 < bool 0`. #2558
 * [BUGFIX] Fixed error messages related to per-instance limits incorrectly reporting they can be set on a per-tenant basis. #2610
+* [BUGFIX] Perform HA-deduplication before forwarding samples according to forwarding rules in the distributor. #2603
 
 ### Mixin
 
@@ -57,7 +89,9 @@
 * [ENHANCEMENT] Dashboards: added missed rule evaluations to the "Evaluations per second" panel in the "Mimir / Ruler" dashboard. #2314
 * [ENHANCEMENT] Dashboards: add k8s resource requests to CPU and memory panels. #2346
 * [ENHANCEMENT] Dashboards: add RSS memory utilization panel for ingesters, store-gateways and compactors. #2479
+* [ENHANCEMENT] Dashboards: allow to configure graph tooltip. #2647
 * [ENHANCEMENT] Alerts: MimirFrontendQueriesStuck and MimirSchedulerQueriesStuck alerts are more reliable now as they consider all the intermediate samples in the minute prior to the evaluation. #2630
+* [ENHANCEMENT] Alerts: added `RolloutOperatorNotReconciling` alert, firing if the optional rollout-operator is not successfully reconciling. #2700
 * [BUGFIX] Dashboards: fixed unit of latency panels in the "Mimir / Ruler" dashboard. #2312
 * [BUGFIX] Dashboards: fixed "Intervals per query" panel in the "Mimir / Queries" dashboard. #2308
 * [BUGFIX] Dashboards: Make "Slow Queries" dashboard works with Grafana 9.0. #2223
@@ -105,6 +139,10 @@
 
 * [ENHANCEMENT] Referenced `mimirtool` commands in the HTTP API documentation. #2516
 * [ENHANCEMENT] Improved DNS service discovery documentation. #2513
+
+### Tools
+
+* [ENHANCEMENT] `markblocks` now processes multiple blocks concurrently. #2677
 
 ## 2.2.0
 

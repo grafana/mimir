@@ -230,7 +230,6 @@
     },
     ingesterLimitsConfig: {
       'ingester.max-global-series-per-user': $._config.limits.max_global_series_per_user,
-      'ingester.max-global-series-per-metric': $._config.limits.max_global_series_per_metric,
       'ingester.max-global-metadata-per-user': $._config.limits.max_global_metadata_per_user,
       'ingester.max-global-metadata-per-metric': $._config.limits.max_global_metadata_per_metric,
     },
@@ -251,8 +250,6 @@
       extra_small_user:: {
         // Our limit should be 100k, but we need some room of about ~50% to take rollouts into account
         max_global_series_per_user: 150000,
-        // Disabled in favor of using max_global_series_per_user only.
-        max_global_series_per_metric: 0,
         max_global_metadata_per_user: std.ceil(self.max_global_series_per_user * 0.2),
         max_global_metadata_per_metric: 10,
 

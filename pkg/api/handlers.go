@@ -33,6 +33,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -248,18 +249,28 @@ func NewQuerierHandler(
 	promRouter := route.New().WithPrefix(path.Join(prefix, "/api/v1"))
 	api.Register(promRouter)
 
+	// Track the requests count in the anonymous usage stats.
+	remoteReadStats := usagestats.NewRequestsMiddleware("querier_remote_read_requests")
+	instantQueryStats := usagestats.NewRequestsMiddleware("querier_instant_query_requests")
+	rangeQueryStats := usagestats.NewRequestsMiddleware("querier_range_query_requests")
+	exemplarsQueryStats := usagestats.NewRequestsMiddleware("querier_exemplars_query_requests")
+	labelsQueryStats := usagestats.NewRequestsMiddleware("querier_labels_query_requests")
+	seriesQueryStats := usagestats.NewRequestsMiddleware("querier_series_query_requests")
+	metadataQueryStats := usagestats.NewRequestsMiddleware("querier_metadata_query_requests")
+	cardinalityQueryStats := usagestats.NewRequestsMiddleware("querier_cardinality_query_requests")
+
 	// TODO(gotjosh): This custom handler is temporary until we're able to vendor the changes in:
 	// https://github.com/prometheus/prometheus/pull/7125/files
-	router.Path(path.Join(prefix, "/api/v1/read")).Methods("POST").Handler(querier.RemoteReadHandler(queryable, logger))
-	router.Path(path.Join(prefix, "/api/v1/query")).Methods("GET", "POST").Handler(promRouter)
-	router.Path(path.Join(prefix, "/api/v1/query_range")).Methods("GET", "POST").Handler(promRouter)
-	router.Path(path.Join(prefix, "/api/v1/query_exemplars")).Methods("GET", "POST").Handler(promRouter)
-	router.Path(path.Join(prefix, "/api/v1/labels")).Methods("GET", "POST").Handler(promRouter)
-	router.Path(path.Join(prefix, "/api/v1/label/{name}/values")).Methods("GET").Handler(promRouter)
-	router.Path(path.Join(prefix, "/api/v1/series")).Methods("GET", "POST", "DELETE").Handler(promRouter)
-	router.Path(path.Join(prefix, "/api/v1/metadata")).Methods("GET").Handler(querier.NewMetadataHandler(metadataSupplier))
-	router.Path(path.Join(prefix, "/api/v1/cardinality/label_names")).Methods("GET", "POST").Handler(querier.LabelNamesCardinalityHandler(distributor, limits))
-	router.Path(path.Join(prefix, "/api/v1/cardinality/label_values")).Methods("GET", "POST").Handler(querier.LabelValuesCardinalityHandler(distributor, limits))
+	router.Path(path.Join(prefix, "/api/v1/read")).Methods("POST").Handler(remoteReadStats.Wrap(querier.RemoteReadHandler(queryable, logger)))
+	router.Path(path.Join(prefix, "/api/v1/query")).Methods("GET", "POST").Handler(instantQueryStats.Wrap(promRouter))
+	router.Path(path.Join(prefix, "/api/v1/query_range")).Methods("GET", "POST").Handler(rangeQueryStats.Wrap(promRouter))
+	router.Path(path.Join(prefix, "/api/v1/query_exemplars")).Methods("GET", "POST").Handler(exemplarsQueryStats.Wrap(promRouter))
+	router.Path(path.Join(prefix, "/api/v1/labels")).Methods("GET", "POST").Handler(labelsQueryStats.Wrap(promRouter))
+	router.Path(path.Join(prefix, "/api/v1/label/{name}/values")).Methods("GET").Handler(labelsQueryStats.Wrap(promRouter))
+	router.Path(path.Join(prefix, "/api/v1/series")).Methods("GET", "POST", "DELETE").Handler(seriesQueryStats.Wrap(promRouter))
+	router.Path(path.Join(prefix, "/api/v1/metadata")).Methods("GET").Handler(metadataQueryStats.Wrap(querier.NewMetadataHandler(metadataSupplier)))
+	router.Path(path.Join(prefix, "/api/v1/cardinality/label_names")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.LabelNamesCardinalityHandler(distributor, limits)))
+	router.Path(path.Join(prefix, "/api/v1/cardinality/label_values")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.LabelValuesCardinalityHandler(distributor, limits)))
 
 	// Track execution time.
 	return stats.NewWallTimeMiddleware().Wrap(router)

@@ -265,14 +265,14 @@ func TestQueryShardingCorrectness(t *testing.T) {
 				avg(rate(metric_counter[1m]))`,
 			expectedShardedQueries: 3, // avg() is parallelized as sum()/count().
 		},
-		"sum by(unique) on (unique) group_left (group_1) * avg by (unique, group_1)": {
+		"sum by(unique) * on (unique) group_left (group_1) avg by (unique, group_1)": {
 			// ensure that avg transformation into sum/count does not break label matching in previous binop.
 			query: `
-				metric_counter
+				sum by(unique) (metric_counter)
 				*
 				on (unique) group_left (group_1) 
 				avg by (unique, group_1) (metric_counter)`,
-			expectedShardedQueries: 2,
+			expectedShardedQueries: 3,
 		},
 		"sum by (rate()) / 2 ^ 2": {
 			query: `
@@ -392,8 +392,8 @@ func TestQueryShardingCorrectness(t *testing.T) {
 			expectedShardedQueries: 1,
 		},
 		`filtering binary operation with non constant`: {
-			query:                  `max_over_time(metric_counter[5m]) > scalar(min(metric_counter))`,
-			expectedShardedQueries: 1, // scalar on the right should be sharded, but not the binary op itself, hence 1
+			query:                  `max by(unique) (max_over_time(metric_counter[5m])) > scalar(min(metric_counter))`,
+			expectedShardedQueries: 2,
 		},
 		//
 		// The following queries are not expected to be shardable.
