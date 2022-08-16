@@ -43,7 +43,6 @@
 * [FEATURE] Querier: enabled support for queries with negative offsets, which are not cached in the query results cache. #2429
 * [FEATURE] EXPERIMENTAL: OpenTelemetry Metrics ingestion path on `/otlp/v1/metrics`. #695 #2436 #2461
 * [FEATURE] Querier: Added support for tenant federation to metric metadata endpoint. #2467
-* [FEATURE] Usage Stats: Periodically send anonymous usage stats report to grafana.com #2662
 * [ENHANCEMENT] Distributor: Decreased distributor tests execution time. #2562
 * [ENHANCEMENT] Alertmanager: Allow the HTTP `proxy_url` configuration option in the receiver's configuration. #2317
 * [ENHANCEMENT] ring: optimize shuffle-shard computation when lookback is used, and all instances have registered timestamp within the lookback window. In that case we can immediately return origial ring, because we would select all instances anyway. #2309
@@ -57,8 +56,7 @@
 * [ENHANCEMENT] Distributor: Drop exemplars in distributor for tenants where exemplars are disabled. #2504
 * [ENHANCEMENT] Runtime Config: Allow operator to specify multiple comma-separated yaml files in `-runtime-config.file` that will be merged in left to right order. #2583
 * [ENHANCEMENT] Query sharding: shard binary operations only if it doesn't lead to non-shardable vector selectors in one of the operands. #2696
-* [ENHANCEMENT] Reintroducing packaging for both debian based deb file and redhat based rpm file using FPM. #1803
-* [ENHANCEMENT] Usage Stats: Track custom anonymous usage statistics from ingester and querier #2685
+* [ENHANCEMENT] Add packaging for both debian based deb file and redhat based rpm file using FPM. #1803
 * [BUGFIX] TSDB: Fixed a bug on the experimental out-of-order implementation that led to wrong query results. #2701
 * [BUGFIX] Compactor: log the actual error on compaction failed. #2261
 * [BUGFIX] Alertmanager: restore state from storage even when running a single replica. #2293
@@ -72,9 +70,8 @@
 * [BUGFIX] Compactor: Fix bug when using `-compactor.partial-block-deletion-delay`: compactor didn't correctly check for modification time of all block files. #2559
 * [BUGFIX] Query-frontend: fix wrong query sharding results for queries with boolean result like `1 < bool 0`. #2558
 * [BUGFIX] Fixed error messages related to per-instance limits incorrectly reporting they can be set on a per-tenant basis. #2610
-* [BUGFIX] Perform HA-deduplication before forwarding samples according to forwarding rules in the distributor. #2603
+* [BUGFIX] Perform HA-deduplication before forwarding samples according to forwarding rules in the distributor. #2603 #2709
 * [BUGFIX] Fix reporting of tracing spans from PromQL engine. #2707
-* [BUGFIX] Distributor: Apply distributor instance limits before running HA deduplication. #2709
 * [BUGFIX] Apply relabel and drop_label rules before forwarding rules in the distributor. #2703
 * [BUGFIX] Distributor: Register `cortex_discarded_requests_total` metric, which previously was not registered and therefore not exported. #2712
 
