@@ -52,7 +52,7 @@ This section describes how the query-tee tool works.
 Query-tee accepts two types of requests:
 
 1. HTTP requests on the configured `-server.service-port` flag (default port 80)
-1. [HTTP over gRPC](https://github.com/weaveworks/common/tree/master/httpgrpc) requests on the configured `server.grpc-service-port` flag (default port: 9095)
+1. [HTTP over gRPC](https://github.com/weaveworks/common/tree/master/httpgrpc) requests on the configured `-server.grpc-service-port` flag (default port: 9095)
 
 The following Prometheus API endpoints are supported by `query-tee`:
 
