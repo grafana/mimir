@@ -69,9 +69,7 @@
     if $._config.alertmanager_enabled then
       $.newMimirStatefulSet('alertmanager', $._config.alertmanager.replicas, $.alertmanager_container, $.alertmanager_pvc, podManagementPolicy=null) +
       statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(900) +
-      $.util.volumeMounts(
-        [$.util.volumeMountItem(name, $._config.configmaps[name]) for name in std.objectFieldsAll($._config.configmaps)]
-      ) +
+      $.mimirVolumeMounts() +
       statefulSet.mixin.spec.template.spec.withVolumesMixin(
         if hasFallbackConfig then
           [volume.fromConfigMap('alertmanager-fallback-config', 'alertmanager-fallback-config')]
