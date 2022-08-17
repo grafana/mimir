@@ -68,3 +68,17 @@ patches:
     patch: |-
       - op: remove
         path: /config/memberlist
+
+  - target:
+      kind: MimirConfig
+      name: 'distributor|querier|ruler'
+    patch: |-
+      - op: remove
+        path: /config/ingester/ring/tokens_file_path
+
+  - target:
+      kind: MimirConfig
+      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|querier|query-frontend|ruler'
+    patch: |-
+      - op: remove
+        path: /config/store_gateway/sharding_ring/tokens_file_path

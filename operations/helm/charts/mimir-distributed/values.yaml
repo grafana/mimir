@@ -214,6 +214,7 @@ mimir:
       ring:
         final_sleep: 0s
         num_tokens: 512
+        tokens_file_path: /data/tokens
         unregister_on_shutdown: false
 
     ingester_client:
@@ -260,6 +261,10 @@ mimir:
 
     server:
       grpc_server_max_concurrent_streams: 1000
+
+    store_gateway:
+      sharding_ring:
+        tokens_file_path: /data/tokens
 
   # -- Additional structured values on top of the text based 'mimir.config'. Applied after the text based config is evaulated for templates. Enables adding and modifying YAML elements in the evaulated 'mimir.config'.
   structuredConfig: {}

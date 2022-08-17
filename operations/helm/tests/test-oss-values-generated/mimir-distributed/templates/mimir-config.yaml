@@ -72,6 +72,7 @@ data:
       ring:
         final_sleep: 0s
         num_tokens: 512
+        tokens_file_path: /data/tokens
         unregister_on_shutdown: false
     ingester_client:
       grpc_client_config:
@@ -99,3 +100,6 @@ data:
       file: /var/mimir/runtime.yaml
     server:
       grpc_server_max_concurrent_streams: 1000
+    store_gateway:
+      sharding_ring:
+        tokens_file_path: /data/tokens
