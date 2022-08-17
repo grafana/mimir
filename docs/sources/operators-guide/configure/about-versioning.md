@@ -97,6 +97,7 @@ The following features are currently experimental:
   - HTTP API for uploading TSDB blocks
   - Tenant deletion API
 - Anonymous usage statistics tracking
+- Read-write deployment mode
 
 ## Deprecated features
 
