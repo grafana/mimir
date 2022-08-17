@@ -14,6 +14,10 @@ Entries should include a reference to the Pull Request that introduced the chang
 ## main / unreleased
 
 * [FEATURE] Add query-scheduler, which is now enabled by default. If you have copied the `mimir.config`, then update it to correctly configure the query-frontend and the querier. #2087
+* [ENHANCEMENT] Upgrade nginx image tag to `nginxinc/nginx-unprivileged:1.22-alpine`. #2742
+
+## 3.1.0
+
 * [CHANGE] **breaking change** Update minio deprecated helm chart (<https://helm.min.io/>) to the supported chart's version (<https://charts.min.io/>). #2427
   - Renamed helm config values `minio.accessKey` to `minio.rootUser`.
   - Renamed helm config values `minio.secretKey` to `minio.rootPassword`.
@@ -23,7 +27,6 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Memberlist now uses DNS service-discovery by default. #2549 #2561
 * [ENHANCEMENT] The Mimir configuration parameters `server.http_listen_port` and `server.grpc_listen_port` are now configurable in `mimir.structuredConfig`. #2561
 * [ENHANCEMENT] Default to injecting the `no_auth_tenant` from the Mimir configuration as the value for `X-Scope-OrgID` in nginx. #2614
-* [ENHANCEMENT] Upgrade nginx image tag to `nginxinc/nginx-unprivileged:1.22-alpine`. #2742
 * [BUGFIX] `nginx.extraArgs` are now actually passed to the nginx container. #2336
 * [BUGFIX] Add missing `containerSecurityContext` to alertmanager and tokengen job. #2416
 * [BUGFIX] Add missing `containerSecutiryContext` to memcached exporter containers. #2666
