@@ -111,7 +111,7 @@ metaMonitoring:
 
 Older versions of the Helm chart need to be manually instrumented. This means that you need to set up a Grafana Agent
 that collects logs and metrics from Mimir or GEM. To set up Grafana Agent,
-see [Set up Grafana Agent](https://grafana.com/docs/agent/latest/set-up/). Once your Agent is deployed, use the [example Agent configuration](#example-agent-configuration) in the section [Collect metrics and logs via the Helm chart](#collect-metrics-and-logs-via-the-helm-chart) to configure the Agent to scrape Mimir or GEM.
+see [Set up Grafana Agent](https://grafana.com/docs/agent/latest/set-up/). Once your Agent is deployed, use the [example Agent configuration](#example-agent-configuration) to configure the Agent to scrape Mimir or GEM.
 
 #### Caveats
 
