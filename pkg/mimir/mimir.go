@@ -264,7 +264,7 @@ func (c *Config) validateBucketConfigs() error {
 	}
 
 	// Validate ruler bucket config.
-	if c.isAnyModuleEnabled(All, Ruler) && c.RulerStorage.Backend != rulestorelocal.Name {
+	if c.isAnyModuleEnabled(All, Ruler, Backend) && c.RulerStorage.Backend != rulestorelocal.Name {
 		errs.Add(errors.Wrap(validateBucketConfig(c.RulerStorage.Config, c.BlocksStorage.Bucket), "ruler storage"))
 	}
 
