@@ -13,6 +13,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/flagext"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/server"
@@ -26,7 +27,7 @@ func TestAPIConfig(t *testing.T) {
 	actualCfg := newDefaultConfig()
 
 	mimir := &Mimir{
-		Server: &server.Server{},
+		Server: &server.Server{Registerer: prometheus.NewPedanticRegistry()},
 	}
 
 	for _, tc := range []struct {
@@ -145,7 +146,7 @@ func TestMimir_InitRulerStorage(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			mimir := &Mimir{
-				Server: &server.Server{},
+				Server: &server.Server{Registerer: prometheus.NewPedanticRegistry()},
 				Cfg:    *testData.config,
 			}
 
@@ -216,7 +217,7 @@ func TestMultiKVSetup(t *testing.T) {
 			// Must be set, otherwise MultiKV config provider will not be set.
 			cfg.RuntimeConfig.LoadPath = []string{filepath.Join(dir, "config.yaml")}
 
-			c, err := New(cfg, nil)
+			c, err := New(cfg, prometheus.NewPedanticRegistry())
 			require.NoError(t, err)
 
 			_, err = c.ModuleManager.InitModuleServices(cfg.Target...)
