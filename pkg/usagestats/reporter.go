@@ -109,8 +109,19 @@ func (r *Reporter) running(ctx context.Context) error {
 
 	level.Info(r.logger).Log("msg", "usage stats reporter initialized", "cluster_id", seed.UID)
 
-	// Find when to send the next report. We want all instances of the same Mimir cluster computing the same value.
-	nextReportAt := nextReport(r.reportSendInterval, seed.CreatedAt, time.Now())
+	// Keep track of the next report to send, so that we reuse the same on retries after send failures.
+	var nextReport *Report
+	var nextReportAt time.Time
+
+	// We define a function to update the timestamp of the next report to make sure
+	// we also reset the next report when doing it.
+	scheduleNextReport := func() {
+		nextReportAt = getNextReportAt(r.reportSendInterval, seed.CreatedAt, time.Now())
+		nextReport = nil
+	}
+
+	// Find when to send the next report.
+	scheduleNextReport()
 
 	ticker := time.NewTicker(r.reportCheckInterval)
 	defer ticker.Stop()
@@ -125,20 +136,26 @@ func (r *Reporter) running(ctx context.Context) error {
 			// If the send is failing since a long time and the report is falling behind,
 			// we'll skip this one and try to send the next one.
 			if time.Since(nextReportAt) >= r.reportSendInterval {
-				nextReportAt = nextReport(r.reportSendInterval, seed.CreatedAt, time.Now())
+				scheduleNextReport()
 				level.Info(r.logger).Log("msg", "failed to send anonymous usage stats report for too long, skipping to next report", "next_report_at", nextReportAt.String())
 				continue
 			}
 
+			// We're going to send the report. If we already have it, then it means it's a retry after a failure,
+			// otherwise we have to generate a new one.
+			if nextReport == nil {
+				nextReport = buildReport(seed, nextReportAt, r.reportSendInterval)
+			}
+
 			level.Debug(r.logger).Log("msg", "sending anonymous usage stats report")
-			if err := r.sendReport(ctx, buildReport(seed, nextReportAt, r.reportSendInterval)); err != nil {
+			if err := r.sendReport(ctx, nextReport); err != nil {
 				level.Info(r.logger).Log("msg", "failed to send anonymous usage stats report", "err", err)
 
 				// We'll try at the next check interval.
 				continue
 			}
 
-			nextReportAt = nextReport(r.reportSendInterval, seed.CreatedAt, time.Now())
+			scheduleNextReport()
 		case <-ctx.Done():
 			if err := ctx.Err(); !errors.Is(err, context.Canceled) {
 				return err
@@ -149,7 +166,11 @@ func (r *Reporter) running(ctx context.Context) error {
 }
 
 // sendReport sends the report to the stats server.
-func (r *Reporter) sendReport(ctx context.Context, report Report) (returnErr error) {
+func (r *Reporter) sendReport(ctx context.Context, report *Report) (returnErr error) {
+	if report == nil {
+		return errors.New("no report provided")
+	}
+
 	startTime := time.Now()
 	r.requestsTotal.Inc()
 
@@ -196,9 +217,10 @@ func (r *Reporter) sendReport(ctx context.Context, report Report) (returnErr err
 	return nil
 }
 
-// nextReport compute the next report time based on the interval.
+// getNextReportAt compute the next report time based on the interval.
 // The interval is based off the creation of the cluster seed to avoid all cluster reporting at the same time.
-func nextReport(interval time.Duration, createdAt, now time.Time) time.Time {
+// The returned value is guaranteed to be computed the same for all instances of the same Mimir cluster.
+func getNextReportAt(interval time.Duration, createdAt, now time.Time) time.Time {
 	// createdAt * (x * interval ) >= now
 	return createdAt.Add(time.Duration(math.Ceil(float64(now.Sub(createdAt))/float64(interval))) * interval)
 }

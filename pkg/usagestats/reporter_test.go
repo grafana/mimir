@@ -18,6 +18,7 @@ import (
 	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"go.uber.org/atomic"
@@ -25,7 +26,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 )
 
-func TestNextReport(t *testing.T) {
+func TestGetNextReportAt(t *testing.T) {
 	fixtures := map[string]struct {
 		interval  time.Duration
 		createdAt time.Time
@@ -54,7 +55,7 @@ func TestNextReport(t *testing.T) {
 	}
 	for name, f := range fixtures {
 		t.Run(name, func(t *testing.T) {
-			next := nextReport(f.interval, f.createdAt, f.now)
+			next := getNextReportAt(f.interval, f.createdAt, f.now)
 			require.Equal(t, f.next, next)
 		})
 	}
@@ -160,6 +161,11 @@ func TestReporter_SendReportPeriodically(t *testing.T) {
 		},
 	}
 
+	type receivedReport struct {
+		report Report
+		failed bool
+	}
+
 	for testName, testData := range tests {
 		testData := testData
 
@@ -167,20 +173,17 @@ func TestReporter_SendReportPeriodically(t *testing.T) {
 			t.Parallel()
 
 			var (
-				ctx           = context.Background()
-				bucketClient  = prepareLocalBucketClient(t)
-				reportsMx     sync.Mutex
-				reports       []Report
-				requestsCount = atomic.NewInt32(0)
+				ctx             = context.Background()
+				bucketClient    = prepareLocalBucketClient(t)
+				reportsMx       sync.Mutex
+				reportsReceived []receivedReport
+				reportsAccepted []Report
+				requestsCount   = atomic.NewInt32(0)
 			)
 
 			// Mock the stats server.
 			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 				requestsCount.Inc()
-				if testData.failOneRequestEvery > 0 && requestsCount.Load()%int32(testData.failOneRequestEvery) == 0 {
-					writer.WriteHeader(http.StatusServiceUnavailable)
-					return
-				}
 
 				data, err := io.ReadAll(request.Body)
 				require.NoError(t, err)
@@ -188,8 +191,19 @@ func TestReporter_SendReportPeriodically(t *testing.T) {
 				report := Report{}
 				require.NoError(t, json.Unmarshal(data, &report))
 
+				shouldFail := testData.failOneRequestEvery > 0 && requestsCount.Load()%int32(testData.failOneRequestEvery) == 0
+
 				reportsMx.Lock()
-				reports = append(reports, report)
+				reportsReceived = append(reportsReceived, receivedReport{report: report, failed: shouldFail})
+				reportsMx.Unlock()
+
+				if shouldFail {
+					writer.WriteHeader(http.StatusServiceUnavailable)
+					return
+				}
+
+				reportsMx.Lock()
+				reportsAccepted = append(reportsAccepted, report)
 				reportsMx.Unlock()
 
 				writer.WriteHeader(http.StatusOK)
@@ -212,19 +226,31 @@ func TestReporter_SendReportPeriodically(t *testing.T) {
 				require.NoError(t, services.StopAndAwaitTerminated(ctx, r))
 			})
 
-			// We expect to have received a report per second.
+			// We expect to have received and accepted a report per second.
 			test.Poll(t, 10*time.Second, true, func() interface{} {
 				reportsMx.Lock()
 				defer reportsMx.Unlock()
-				return len(reports) >= 4
+				return len(reportsAccepted) >= 4
 			})
 
 			reportsMx.Lock()
 			defer reportsMx.Unlock()
 
 			// We expect each report interval to be exactly at 1s apart from the previous one.
-			for i := 1; i < len(reports); i++ {
-				require.Equal(t, reports[i-1].Interval.Add(time.Second), reports[i].Interval)
+			for i := 1; i < len(reportsAccepted); i++ {
+				require.Equal(t, reportsAccepted[i-1].Interval.Add(time.Second), reportsAccepted[i].Interval)
+			}
+
+			// We expect that a report doesn't change when its delivery is retried.
+			if testData.failOneRequestEvery > 0 {
+				for i, report := range reportsReceived {
+					// If the request has failed, then we expect the next one to succeed and have the same exact report.
+					if report.failed {
+						require.GreaterOrEqual(t, len(reportsReceived), i)
+						assert.False(t, reportsReceived[i+1].failed)
+						assert.Equal(t, reportsReceived[i].report, reportsReceived[i+1].report)
+					}
+				}
 			}
 		})
 	}
