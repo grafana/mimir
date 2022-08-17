@@ -80,7 +80,7 @@
       ),
 
       // Limits config.
-      'runtime-config.file': '%s/overrides.yaml' % $._config.overrides_configmap_mountpoint,
+      'runtime-config.file': std.join(',', $._config.runtime_config_files),
     },
 
   local compactor_data_pvc =
@@ -106,7 +106,9 @@
   newCompactorStatefulSet(name, container)::
     $.newMimirStatefulSet(name, 1, container, compactor_data_pvc) +
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(900) +
-    $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint),
+    $.util.volumeMounts(
+      [$.util.volumeMountItem(name, $._config.configmaps[name]) for name in std.objectFieldsAll($._config.configmaps)]
+    ),
 
   compactor_statefulset:
     $.newCompactorStatefulSet('compactor', $.compactor_container),

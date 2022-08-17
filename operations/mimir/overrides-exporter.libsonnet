@@ -26,7 +26,7 @@
 
     'server.http-listen-port': $._config.server_http_port,
 
-    'runtime-config.file': '%s/overrides.yaml' % $._config.overrides_configmap_mountpoint,
+    'runtime-config.file': std.join(',', $._config.runtime_config_files),
   } + $._config.limitsConfig,
 
   local container = $.core.v1.container,
@@ -43,7 +43,9 @@
   local deployment = $.apps.v1.deployment,
   overrides_exporter_deployment:
     deployment.new(name, 1, [$.overrides_exporter_container], { name: name }) +
-    $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint) +
+    $.util.volumeMounts(
+      [$.util.volumeMountItem(name, $._config.configmaps[name]) for name in std.objectFieldsAll($._config.configmaps)]
+    ) +
     deployment.mixin.metadata.withLabels({ name: name }),
 
   overrides_exporter_service:

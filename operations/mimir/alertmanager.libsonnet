@@ -14,7 +14,7 @@
     $._config.alertmanagerStorageClientConfig +
     {
       target: 'alertmanager',
-      'runtime-config.file': '%s/overrides.yaml' % $._config.overrides_configmap_mountpoint,
+      'runtime-config.file': std.join(',', $._config.runtime_config_files),
       'alertmanager.storage.path': '/data',
       'alertmanager.web.external-url': '%s/alertmanager' % $._config.external_url,
       'server.http-listen-port': $._config.server_http_port,
@@ -69,7 +69,9 @@
     if $._config.alertmanager_enabled then
       $.newMimirStatefulSet('alertmanager', $._config.alertmanager.replicas, $.alertmanager_container, $.alertmanager_pvc, podManagementPolicy=null) +
       statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(900) +
-      $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint) +
+      $.util.volumeMounts(
+        [$.util.volumeMountItem(name, $._config.configmaps[name]) for name in std.objectFieldsAll($._config.configmaps)]
+      ) +
       statefulSet.mixin.spec.template.spec.withVolumesMixin(
         if hasFallbackConfig then
           [volume.fromConfigMap('alertmanager-fallback-config', 'alertmanager-fallback-config')]

@@ -26,7 +26,7 @@
       'ingester.ring.readiness-check-ring-health': false,
 
       // Limits config.
-      'runtime-config.file': '%s/overrides.yaml' % $._config.overrides_configmap_mountpoint,
+      'runtime-config.file': std.join(',', $._config.runtime_config_files),
       'server.grpc-max-concurrent-streams': 10000,
 
       // Blocks storage.
@@ -70,7 +70,9 @@
     // When the ingester needs to flush blocks to the storage, it may take quite a lot of time.
     // For this reason, we grant an high termination period (80 minutes).
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(1200) +
-    $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint) +
+    $.util.volumeMounts(
+      [$.util.volumeMountItem(name, $._config.configmaps[name]) for name in std.objectFieldsAll($._config.configmaps)]
+    ) +
     $.util.podPriority('high') +
     (if with_anti_affinity then $.util.antiAffinity else {}),
 

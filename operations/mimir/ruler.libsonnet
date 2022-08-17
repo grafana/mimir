@@ -52,7 +52,9 @@
       deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1) +
       deployment.mixin.spec.template.spec.withTerminationGracePeriodSeconds(600) +
       $.newMimirSpreadTopology(name, $._config.querier_topology_spread_max_skew) +
-      $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint)
+      $.util.volumeMounts(
+        [$.util.volumeMountItem(name, $._config.configmaps[name]) for name in std.objectFieldsAll($._config.configmaps)]
+      )
     else {},
 
   local service = $.core.v1.service,

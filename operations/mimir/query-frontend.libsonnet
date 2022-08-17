@@ -24,7 +24,7 @@
 
       // Limit queries to 500 days, allow this to be override per-user.
       'store.max-query-length': '12000h',  // 500 Days
-      'runtime-config.file': '%s/overrides.yaml' % $._config.overrides_configmap_mountpoint,
+      'runtime-config.file': std.join(',', $._config.runtime_config_files),
     },
 
   newQueryFrontendContainer(name, args)::
@@ -43,7 +43,9 @@
 
   newQueryFrontendDeployment(name, container)::
     deployment.new(name, $._config.queryFrontend.replicas, [container]) +
-    $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint) +
+    $.util.volumeMounts(
+      [$.util.volumeMountItem(name, $._config.configmaps[name]) for name in std.objectFieldsAll($._config.configmaps)]
+    ) +
     $.newMimirSpreadTopology(name, $._config.query_frontend_topology_spread_max_skew) +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(1) +
