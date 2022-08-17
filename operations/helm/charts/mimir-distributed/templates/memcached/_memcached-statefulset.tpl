@@ -73,11 +73,14 @@ spec:
           {{- if .resources }}
             {{- toYaml .resources | nindent 12 }}
           {{- else }}
+          {{- /* Calculate requested memory as round(allocatedMemory * 1.2). But with integer builting operators. */}}
+          {{- $requestMemoryTimes12 := mul .allocatedMemory 12 }}
+          {{- $requestMemory := add (div $requestMemoryTimes12 10) (div (mod $requestMemoryTimes12 10) 5) }}
             limits:
-              memory: {{ round (mulf .allocatedMemory 1.2) 0 }}Mi
+              memory: {{ $requestMemory }}Mi
             requests:
               cpu: 500m
-              memory: {{ round (mulf .allocatedMemory 1.2) 0 }}Mi
+              memory: {{ $requestMemory }}Mi
           {{- end }}
           ports:
             - containerPort: {{ .port }}
