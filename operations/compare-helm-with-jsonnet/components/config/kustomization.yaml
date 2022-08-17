@@ -34,7 +34,7 @@ patches:
 
   - target:
       kind: MimirConfig
-      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|querier|ruler|query-frontend'
+      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|querier|ruler|query-frontend|query-scheduler'
     patch: |-
       - op: remove
         path: /config/blocks_storage/bucket_store/index_cache
@@ -43,14 +43,14 @@ patches:
 
   - target:
       kind: MimirConfig
-      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|query-frontend'
+      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|query-frontend|query-scheduler'
     patch: |-
       - op: remove
         path: /config/blocks_storage/bucket_store/metadata_cache
 
   - target:
       kind: MimirConfig
-      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|querier|ruler|store-gateway'
+      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|querier|ruler|store-gateway|query-scheduler'
     patch: |-
       - op: remove
         path: /config/frontend
