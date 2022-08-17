@@ -74,8 +74,7 @@ spec:
             {{- toYaml .resources | nindent 12 }}
           {{- else }}
           {{- /* Calculate requested memory as round(allocatedMemory * 1.2). But with integer built-in operators. */}}
-          {{- $requestMemoryTimes12 := mul .allocatedMemory 12 }}
-          {{- $requestMemory := add (div $requestMemoryTimes12 10) (div (mod $requestMemoryTimes12 10) 5) }}
+          {{- $requestMemory := div (add (mul .allocatedMemory 12) 5) 10 }}
             limits:
               memory: {{ $requestMemory }}Mi
             requests:
