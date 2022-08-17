@@ -115,14 +115,13 @@ func (r *Reporter) running(ctx context.Context) error {
 
 	// We define a function to update the timestamp of the next report to make sure
 	// we also reset the next report when doing it.
-	updateNextReportAt := func() {
-		// We want all instances of the same Mimir cluster computing the same value.
+	scheduleNextReport := func() {
 		nextReportAt = getNextReportAt(r.reportSendInterval, seed.CreatedAt, time.Now())
 		nextReport = nil
 	}
 
 	// Find when to send the next report.
-	updateNextReportAt()
+	scheduleNextReport()
 
 	ticker := time.NewTicker(r.reportCheckInterval)
 	defer ticker.Stop()
@@ -137,7 +136,7 @@ func (r *Reporter) running(ctx context.Context) error {
 			// If the send is failing since a long time and the report is falling behind,
 			// we'll skip this one and try to send the next one.
 			if time.Since(nextReportAt) >= r.reportSendInterval {
-				updateNextReportAt()
+				scheduleNextReport()
 				level.Info(r.logger).Log("msg", "failed to send anonymous usage stats report for too long, skipping to next report", "next_report_at", nextReportAt.String())
 				continue
 			}
@@ -156,7 +155,7 @@ func (r *Reporter) running(ctx context.Context) error {
 				continue
 			}
 
-			updateNextReportAt()
+			scheduleNextReport()
 		case <-ctx.Done():
 			if err := ctx.Err(); !errors.Is(err, context.Canceled) {
 				return err
@@ -220,6 +219,7 @@ func (r *Reporter) sendReport(ctx context.Context, report *Report) (returnErr er
 
 // getNextReportAt compute the next report time based on the interval.
 // The interval is based off the creation of the cluster seed to avoid all cluster reporting at the same time.
+// The returned value is guaranteed to be computed the same for all instances of the same Mimir cluster.
 func getNextReportAt(interval time.Duration, createdAt, now time.Time) time.Time {
 	// createdAt * (x * interval ) >= now
 	return createdAt.Add(time.Duration(math.Ceil(float64(now.Sub(createdAt))/float64(interval))) * interval)
