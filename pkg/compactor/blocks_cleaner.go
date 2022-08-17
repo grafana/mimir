@@ -53,7 +53,7 @@ type BlocksCleaner struct {
 	bucketClient objstore.Bucket
 	usersScanner *mimir_tsdb.UsersScanner
 	ownUser      func(userID string) (bool, error)
-	workers      *workerPool
+	workers      *concurrency.WorkerPool
 
 	// Keep track of the last owned users.
 	lastOwnedUsers []string
@@ -80,7 +80,7 @@ func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, own
 		usersScanner: mimir_tsdb.NewUsersScanner(bucketClient, ownUser, logger),
 		ownUser:      ownUser,
 		cfgProvider:  cfgProvider,
-		workers:      newWorkerPool(cfg.CleanupConcurrency),
+		workers:      concurrency.NewWorkerPool(cfg.CleanupConcurrency),
 		logger:       log.With(logger, "component", "cleaner"),
 		runsStarted: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_compactor_block_cleanup_started_total",
@@ -144,7 +144,7 @@ func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, own
 }
 
 func (c *BlocksCleaner) stopping(error) error {
-	c.workers.wait()
+	c.workers.Wait()
 	return nil
 }
 
@@ -202,7 +202,7 @@ func (c *BlocksCleaner) cleanUsers(ctx context.Context) error {
 	}
 	c.lastOwnedUsers = allUsers
 
-	return c.workers.doForUsers(ctx, allUsers, func(ctx context.Context, userID string) error {
+	return c.workers.ForEachNotInFlight(ctx, allUsers, func(ctx context.Context, userID string) error {
 		own, err := c.ownUser(userID)
 		if err != nil || !own {
 			// This returns error only if err != nil. ForEachUser keeps working for other users.
