@@ -147,31 +147,64 @@ func TestMimir(t *testing.T) {
 			ReplicationFactor:      1,
 			InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
 		}},
-
-		Target: []string{All, AlertManager},
 	}
 
-	c, err := New(cfg, prometheus.NewPedanticRegistry())
-	require.NoError(t, err)
+	tests := map[string]struct {
+		target                  []string
+		expectedEnabledModules  []string
+		expectedDisabledModules []string
+	}{
+		"-target=all,alertmanager": {
+			target: []string{All, AlertManager},
+			expectedEnabledModules: []string{
+				// Check random modules that we expect to be configured when using Target=All.
+				Server, IngesterService, Ring, DistributorService, Compactor,
 
-	serviceMap, err := c.ModuleManager.InitModuleServices(cfg.Target...)
-	require.NoError(t, err)
-	require.NotNil(t, serviceMap)
-
-	for m, s := range serviceMap {
-		// make sure each service is still New
-		require.Equal(t, services.New, s.State(), "module: %s", m)
+				// Check that Alertmanager is configured which is not part of Target=All.
+				AlertManager,
+			},
+		},
+		"-target=write": {
+			target:                  []string{Write},
+			expectedEnabledModules:  []string{DistributorService, IngesterService},
+			expectedDisabledModules: []string{Querier, Ruler, StoreGateway, Compactor},
+		},
+		"-target=read": {
+			target:                  []string{Read},
+			expectedEnabledModules:  []string{QueryFrontend, Querier},
+			expectedDisabledModules: []string{IngesterService, Ruler, StoreGateway, Compactor},
+		},
+		"-target=backend": {
+			target:                  []string{Backend},
+			expectedEnabledModules:  []string{QueryScheduler, Ruler, StoreGateway, Compactor},
+			expectedDisabledModules: []string{IngesterService, QueryFrontend, Querier},
+		},
 	}
 
-	// check random modules that we expect to be configured when using Target=All
-	require.NotNil(t, serviceMap[Server])
-	require.NotNil(t, serviceMap[IngesterService])
-	require.NotNil(t, serviceMap[Ring])
-	require.NotNil(t, serviceMap[DistributorService])
-	require.NotNil(t, serviceMap[Compactor])
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			cfg.Target = testData.target
+			c, err := New(cfg, prometheus.NewPedanticRegistry())
+			require.NoError(t, err)
 
-	// check that alertmanager is configured which is not part of Target=All
-	require.NotNil(t, serviceMap[AlertManager])
+			serviceMap, err := c.ModuleManager.InitModuleServices(cfg.Target...)
+			require.NoError(t, err)
+			require.NotNil(t, serviceMap)
+
+			for m, s := range serviceMap {
+				// make sure each service is still New
+				require.Equal(t, services.New, s.State(), "module: %s", m)
+			}
+
+			for _, module := range testData.expectedEnabledModules {
+				require.NotNilf(t, serviceMap[module], "module=%s", module)
+			}
+
+			for _, module := range testData.expectedDisabledModules {
+				require.Nilf(t, serviceMap[module], "module=%s", module)
+			}
+		})
+	}
 }
 
 func TestMimirServerShutdownWithActivityTrackerEnabled(t *testing.T) {
