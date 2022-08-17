@@ -57,7 +57,7 @@ patches:
 
   - target:
       kind: MimirConfig
-      name: 'alertmanager|compactor|store-gateway|query-frontend|overrides-exporter'
+      name: 'alertmanager|compactor|store-gateway|query-frontend|query-scheduler|overrides-exporter'
     patch: |-
       - op: remove
         path: /config/ingester
@@ -78,7 +78,7 @@ patches:
 
   - target:
       kind: MimirConfig
-      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|querier|query-frontend|ruler'
+      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|querier|query-frontend|query-scheduler|ruler'
     patch: |-
       - op: remove
         path: /config/store_gateway/sharding_ring/tokens_file_path
