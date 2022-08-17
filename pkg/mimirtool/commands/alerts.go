@@ -21,21 +21,13 @@ import (
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/grafana/mimir/pkg/mimirtool/client"
 	"github.com/grafana/mimir/pkg/mimirtool/printer"
-)
-
-var (
-	nonDuplicateAlerts = prometheus.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "mimirtool_alerts_single_source",
-			Help: "Alerts found by the alerts verify command that are coming from a single source rather than multiple sources..",
-		},
-	)
 )
 
 // AlertmanagerCommand configures and executes rule related mimir api operations
@@ -60,6 +52,9 @@ type AlertCommand struct {
 	CheckFrequency int
 	ClientConfig   client.Config
 	cli            *client.MimirClient
+
+	// Metrics.
+	nonDuplicateAlerts prometheus.Gauge
 }
 
 // Register rule related commands and flags with the kingpin application
@@ -141,8 +136,8 @@ func (a *AlertmanagerCommand) deleteConfig(k *kingpin.ParseContext) error {
 	return nil
 }
 
-func (a *AlertCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
-	alertCmd := app.Command("alerts", "View active alerts in alertmanager.").PreAction(a.setup)
+func (a *AlertCommand) Register(app *kingpin.Application, envVars EnvVarNames, reg prometheus.Registerer) {
+	alertCmd := app.Command("alerts", "View active alerts in alertmanager.").PreAction(func(k *kingpin.ParseContext) error { return a.setup(k, reg) })
 	alertCmd.Flag("address", "Address of the Grafana Mimir cluster, alternatively set "+envVars.Address+".").Envar(envVars.Address).Required().StringVar(&a.ClientConfig.Address)
 	alertCmd.Flag("id", "Mimir tenant id, alternatively set "+envVars.TenantID+".").Envar(envVars.TenantID).Required().StringVar(&a.ClientConfig.ID)
 	alertCmd.Flag("user", fmt.Sprintf("API user to use when contacting Grafana Mimir, alternatively set %s. If empty, %s will be used instead.", envVars.APIUser, envVars.TenantID)).Default("").Envar(envVars.APIUser).StringVar(&a.ClientConfig.User)
@@ -156,7 +151,14 @@ func (a *AlertCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
 	verifyAlertsCmd.Flag("frequency", "Setting this value will turn mimirtool into a long-running process, running the alerts verify check every # of minutes specified").IntVar(&a.CheckFrequency)
 }
 
-func (a *AlertCommand) setup(k *kingpin.ParseContext) error {
+func (a *AlertCommand) setup(_ *kingpin.ParseContext, reg prometheus.Registerer) error {
+	a.nonDuplicateAlerts = promauto.With(reg).NewGauge(
+		prometheus.GaugeOpts{
+			Name: "mimirtool_alerts_single_source",
+			Help: "Alerts found by the alerts verify command that are coming from a single source rather than multiple sources..",
+		},
+	)
+
 	cli, err := client.New(a.ClientConfig)
 	if err != nil {
 		return err
@@ -209,7 +211,7 @@ func (a *AlertCommand) verifyConfig(k *kingpin.ParseContext) error {
 	// Use a different registerer than default so we don't get all the Mimir metrics, but include Go runtime metrics.
 	goStats := collectors.NewGoCollector()
 	reg := prometheus.NewRegistry()
-	reg.MustRegister(nonDuplicateAlerts)
+	reg.MustRegister(a.nonDuplicateAlerts)
 	reg.MustRegister(goStats)
 
 	http.Handle("/metrics", promhttp.HandlerFor(
@@ -237,7 +239,7 @@ func (a *AlertCommand) verifyConfig(k *kingpin.ParseContext) error {
 		ticker := time.NewTicker(time.Duration(a.CheckFrequency) * time.Minute)
 		for {
 			n, lastErr = a.runVerifyQuery(ctx, query)
-			nonDuplicateAlerts.Set(float64(n))
+			a.nonDuplicateAlerts.Set(float64(n))
 			select {
 			case <-c:
 				cancel()

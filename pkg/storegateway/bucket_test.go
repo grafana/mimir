@@ -34,6 +34,7 @@ import (
 	"github.com/leanovate/gopter/prop"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -507,7 +508,7 @@ func TestBlockLabelNames(t *testing.T) {
 	sort.Strings(jFooLabelNames)
 	sort.Strings(jNotFooLabelNames)
 
-	sl := NewLimiter(math.MaxUint64, prometheus.NewCounter(prometheus.CounterOpts{Name: "test"}))
+	sl := NewLimiter(math.MaxUint64, promauto.With(nil).NewCounter(prometheus.CounterOpts{Name: "test"}))
 	newTestBucketBlock := prepareTestBlock(test.NewTB(t), series)
 
 	t.Run("happy case with no matchers", func(t *testing.T) {
@@ -2332,7 +2333,7 @@ func TestBlockSeries_skipChunks_ignoresMintMaxt(t *testing.T) {
 	mint, maxt := int64(0), int64(0)
 	skipChunks := true
 
-	sl := NewLimiter(math.MaxUint64, prometheus.NewCounter(prometheus.CounterOpts{Name: "test"}))
+	sl := NewLimiter(math.MaxUint64, promauto.With(nil).NewCounter(prometheus.CounterOpts{Name: "test"}))
 	matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "i", "")}
 	ss, _, err := blockSeries(context.Background(), b.indexReader(), nil, matchers, nil, nil, nil, sl, skipChunks, mint, maxt, nil, log.NewNopLogger())
 	require.NoError(t, err)
@@ -2350,7 +2351,7 @@ func TestBlockSeries_Cache(t *testing.T) {
 		}
 		b.indexCache = cacheNotExpectingToStoreSeries{t: t}
 
-		sl := NewLimiter(math.MaxUint64, prometheus.NewCounter(prometheus.CounterOpts{Name: "test"}))
+		sl := NewLimiter(math.MaxUint64, promauto.With(nil).NewCounter(prometheus.CounterOpts{Name: "test"}))
 
 		// This test relies on the fact that p~=foo.* has to call LabelValues(p) when doing ExpandedPostings().
 		// We make that call fail in order to make the entire LabelValues(p~=foo.*) call fail.
@@ -2363,7 +2364,7 @@ func TestBlockSeries_Cache(t *testing.T) {
 		b := newTestBucketBlock()
 		b.indexCache = newInMemoryIndexCache(t)
 
-		sl := NewLimiter(math.MaxUint64, prometheus.NewCounter(prometheus.CounterOpts{Name: "test"}))
+		sl := NewLimiter(math.MaxUint64, promauto.With(nil).NewCounter(prometheus.CounterOpts{Name: "test"}))
 		shc := hashcache.NewSeriesHashCache(1 << 20).GetBlockCache(b.meta.ULID.String())
 
 		testCases := []struct {

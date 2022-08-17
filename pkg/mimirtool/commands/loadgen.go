@@ -37,18 +37,6 @@ var (
 	defBuckets = append(prometheus.DefBuckets, 15)
 )
 
-var writeRequestDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
-	Namespace: "loadgen",
-	Name:      "write_request_duration_seconds",
-	Buckets:   defBuckets,
-}, []string{"success"})
-
-var queryRequestDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
-	Namespace: "loadgen",
-	Name:      "query_request_duration_seconds",
-	Buckets:   defBuckets,
-}, []string{"success"})
-
 type LoadgenCommand struct {
 	writeURL       string
 	activeSeries   int
@@ -70,11 +58,15 @@ type LoadgenCommand struct {
 	wg          sync.WaitGroup
 	writeClient remote.WriteClient
 	queryClient v1.API
+
+	// Metrics.
+	writeRequestDuration *prometheus.HistogramVec
+	queryRequestDuration *prometheus.HistogramVec
 }
 
-func (c *LoadgenCommand) Register(app *kingpin.Application, _ EnvVarNames) {
+func (c *LoadgenCommand) Register(app *kingpin.Application, _ EnvVarNames, reg prometheus.Registerer) {
 	loadgenCommand := &LoadgenCommand{}
-	cmd := app.Command("loadgen", "Simple load generator for Grafana Mimir.").Action(loadgenCommand.run)
+	cmd := app.Command("loadgen", "Simple load generator for Grafana Mimir.").PreAction(func(k *kingpin.ParseContext) error { return c.setup(k, reg) }).Action(loadgenCommand.run)
 	cmd.Flag("write-url", "").
 		Default("").StringVar(&loadgenCommand.writeURL)
 	cmd.Flag("series-name", "name of the metric that will be generated").
@@ -103,6 +95,22 @@ func (c *LoadgenCommand) Register(app *kingpin.Application, _ EnvVarNames) {
 
 	cmd.Flag("metrics-listen-address", "address to serve metrics on").
 		Default(":8080").StringVar(&loadgenCommand.metricsListenAddress)
+}
+
+func (c *LoadgenCommand) setup(_ *kingpin.ParseContext, reg prometheus.Registerer) error {
+	c.writeRequestDuration = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "loadgen",
+		Name:      "write_request_duration_seconds",
+		Buckets:   defBuckets,
+	}, []string{"success"})
+
+	c.queryRequestDuration = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "loadgen",
+		Name:      "query_request_duration_seconds",
+		Buckets:   defBuckets,
+	}, []string{"success"})
+
+	return nil
 }
 
 func (c *LoadgenCommand) run(k *kingpin.ParseContext) error {
@@ -219,10 +227,10 @@ func (c *LoadgenCommand) runBatch(from, to int) error {
 
 	start := time.Now()
 	if err := c.writeClient.Store(context.Background(), compressed); err != nil {
-		writeRequestDuration.WithLabelValues("error").Observe(time.Since(start).Seconds())
+		c.writeRequestDuration.WithLabelValues("error").Observe(time.Since(start).Seconds())
 		return err
 	}
-	writeRequestDuration.WithLabelValues("success").Observe(time.Since(start).Seconds())
+	c.writeRequestDuration.WithLabelValues("success").Observe(time.Since(start).Seconds())
 
 	return nil
 }
@@ -245,9 +253,9 @@ func (c *LoadgenCommand) runQuery() {
 	start := time.Now()
 	_, _, err := c.queryClient.QueryRange(ctx, c.query, r)
 	if err != nil {
-		queryRequestDuration.WithLabelValues("error").Observe(time.Since(start).Seconds())
+		c.queryRequestDuration.WithLabelValues("error").Observe(time.Since(start).Seconds())
 		log.Printf("error doing query: %v", err)
 		return
 	}
-	queryRequestDuration.WithLabelValues("success").Observe(time.Since(start).Seconds())
+	c.queryRequestDuration.WithLabelValues("success").Observe(time.Since(start).Seconds())
 }
