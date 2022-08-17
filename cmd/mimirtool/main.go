@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/grafana/mimir/pkg/mimirtool/commands"
@@ -45,7 +46,7 @@ func main() {
 	logConfig.Register(app, envVars)
 	pushGateway.Register(app, envVars)
 	remoteReadCommand.Register(app, envVars)
-	ruleCommand.Register(app, envVars)
+	ruleCommand.Register(app, envVars, prometheus.DefaultRegisterer)
 	backfillCommand.Register(app, envVars)
 
 	app.Command("version", "Get the version of the mimirtool CLI").Action(func(k *kingpin.ParseContext) error {
