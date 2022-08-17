@@ -1363,7 +1363,7 @@ nginx:
     # -- The nginx image repository
     repository: nginxinc/nginx-unprivileged
     # -- The nginx image tag
-    tag: 1.19-alpine
+    tag: 1.22-alpine
     # -- The nginx image pull policy
     pullPolicy: IfNotPresent
   # -- The name of the PriorityClass for nginx pods

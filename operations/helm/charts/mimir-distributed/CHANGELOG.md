@@ -22,6 +22,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Memberlist now uses DNS service-discovery by default. #2549 #2561
 * [ENHANCEMENT] The Mimir configuration parameters `server.http_listen_port` and `server.grpc_listen_port` are now configurable in `mimir.structuredConfig`. #2561
 * [ENHANCEMENT] Default to injecting the `no_auth_tenant` from the Mimir configuration as the value for `X-Scope-OrgID` in nginx. #2614
+* [ENHANCEMENT] Upgrade nginx image tag to `nginxinc/nginx-unprivileged:1.22-alpine`. #2742
 * [BUGFIX] `nginx.extraArgs` are now actually passed to the nginx container. #2336
 * [BUGFIX] Add missing `containerSecurityContext` to alertmanager and tokengen job. #2416
 * [BUGFIX] Add missing `containerSecutiryContext` to memcached exporter containers. #2666
