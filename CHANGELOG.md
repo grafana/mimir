@@ -19,6 +19,8 @@
 
 ### Jsonnet
 
+* [ENHANCEMENT] Upgrade memcached image tag to `memcached:1.6.16-alpine`. #2740
+
 ### Mimirtool
 
 * [BUGFIX] Version checking no longer prompts for updating when already on latest version. #2723

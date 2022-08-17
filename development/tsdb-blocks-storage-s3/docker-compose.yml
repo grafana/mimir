@@ -198,7 +198,7 @@
       - "16686:16686"
       - "14268"
   "memcached":
-    "image": "memcached:1.6"
+    "image": "memcached:1.6.16-alpine"
   "minio":
     "command":
       - "server"
