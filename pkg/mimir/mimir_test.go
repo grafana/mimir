@@ -151,7 +151,7 @@ func TestMimir(t *testing.T) {
 		Target: []string{All, AlertManager},
 	}
 
-	c, err := New(cfg)
+	c, err := New(cfg, prometheus.NewPedanticRegistry())
 	require.NoError(t, err)
 
 	serviceMap, err := c.ModuleManager.InitModuleServices(cfg.Target...)
@@ -176,7 +176,6 @@ func TestMimir(t *testing.T) {
 
 func TestMimirServerShutdownWithActivityTrackerEnabled(t *testing.T) {
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
-	prepareGlobalMetricsRegistry(t)
 
 	cfg := Config{}
 
@@ -193,7 +192,7 @@ func TestMimirServerShutdownWithActivityTrackerEnabled(t *testing.T) {
 
 	util_log.InitLogger(&cfg.Server)
 
-	c, err := New(cfg)
+	c, err := New(cfg, prometheus.NewPedanticRegistry())
 	require.NoError(t, err)
 
 	errCh := make(chan error)
@@ -379,8 +378,6 @@ func TestConfigValidation(t *testing.T) {
 }
 
 func TestGrpcAuthMiddleware(t *testing.T) {
-	prepareGlobalMetricsRegistry(t)
-
 	cfg := Config{
 		MultitenancyEnabled: true, // We must enable this to enable Auth middleware for gRPC server.
 		Server:              getServerConfig(t),
@@ -392,7 +389,7 @@ func TestGrpcAuthMiddleware(t *testing.T) {
 
 	// Setup server, using Mimir config. This includes authentication middleware.
 	{
-		c, err := New(cfg)
+		c, err := New(cfg, prometheus.NewPedanticRegistry())
 		require.NoError(t, err)
 
 		serv, err := c.initServer()
@@ -528,15 +525,4 @@ func (m *mockGrpcServiceHandler) Process(_ frontendv1pb.Frontend_ProcessServer) 
 
 func (m *mockGrpcServiceHandler) QuerierLoop(_ schedulerpb.SchedulerForQuerier_QuerierLoopServer) error {
 	panic("implement me")
-}
-
-func prepareGlobalMetricsRegistry(t *testing.T) {
-	oldReg, oldGat := prometheus.DefaultRegisterer, prometheus.DefaultGatherer
-
-	reg := prometheus.NewRegistry()
-	prometheus.DefaultRegisterer, prometheus.DefaultGatherer = reg, reg
-
-	t.Cleanup(func() {
-		prometheus.DefaultRegisterer, prometheus.DefaultGatherer = oldReg, oldGat
-	})
 }

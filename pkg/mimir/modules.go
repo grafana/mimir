@@ -138,7 +138,7 @@ func (t *Mimir) initActivityTracker() (services.Service, error) {
 		level.Warn(l).Log("start", e.Timestamp.UTC().Format(time.RFC3339Nano), "activity", e.Activity)
 	}
 
-	at, err := activitytracker.NewActivityTracker(t.Cfg.ActivityTracker, prometheus.DefaultRegisterer)
+	at, err := activitytracker.NewActivityTracker(t.Cfg.ActivityTracker, t.Registerer)
 	if err != nil {
 		return nil, err
 	}
@@ -202,7 +202,7 @@ func (t *Mimir) initServer() (services.Service, error) {
 }
 
 func (t *Mimir) initRing() (serv services.Service, err error) {
-	t.Ring, err = ring.New(t.Cfg.Ingester.IngesterRing.ToRingConfig(), "ingester", ingester.IngesterRingKey, util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", prometheus.DefaultRegisterer))
+	t.Ring, err = ring.New(t.Cfg.Ingester.IngesterRing.ToRingConfig(), "ingester", ingester.IngesterRingKey, util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer))
 	if err != nil {
 		return nil, err
 	}
@@ -219,7 +219,7 @@ func (t *Mimir) initRuntimeConfig() (services.Service, error) {
 	// make sure to set default limits before we start loading configuration into memory
 	validation.SetDefaultLimitsForYAMLUnmarshalling(t.Cfg.LimitsConfig)
 
-	serv, err := runtimeconfig.New(t.Cfg.RuntimeConfig, prometheus.WrapRegistererWithPrefix("cortex_", prometheus.DefaultRegisterer), util_log.Logger)
+	serv, err := runtimeconfig.New(t.Cfg.RuntimeConfig, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer), util_log.Logger)
 	if err == nil {
 		// TenantLimits just delegates to RuntimeConfig and doesn't have any state or need to do
 		// anything in the start/stopping phase. Thus we can create it as part of runtime config
@@ -254,7 +254,9 @@ func (t *Mimir) initOverrides() (serv services.Service, err error) {
 
 func (t *Mimir) initOverridesExporter() (services.Service, error) {
 	exporter := validation.NewOverridesExporter(&t.Cfg.LimitsConfig, t.TenantLimits)
-	prometheus.MustRegister(exporter)
+	if t.Registerer != nil {
+		t.Registerer.MustRegister(exporter)
+	}
 
 	// the overrides exporter has no state and reads overrides for runtime configuration each time it
 	// is collected so there is no need to return any service
@@ -277,7 +279,7 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	// ruler's dependency)
 	canJoinDistributorsRing := t.Cfg.isModuleEnabled(Distributor) || t.Cfg.isModuleEnabled(All)
 
-	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides, t.Ring, canJoinDistributorsRing, prometheus.DefaultRegisterer, util_log.Logger)
+	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides, t.Ring, canJoinDistributorsRing, t.Registerer, util_log.Logger)
 	if err != nil {
 		return
 	}
@@ -294,7 +296,7 @@ func (t *Mimir) initDistributor() (serv services.Service, err error) {
 // initQueryable instantiates the queryable and promQL engine used to service queries to
 // Mimir. It also registers the API endpoints associated with those two services.
 func (t *Mimir) initQueryable() (serv services.Service, err error) {
-	querierRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "querier"}, prometheus.DefaultRegisterer)
+	querierRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "querier"}, t.Registerer)
 
 	// Create a querier queryable and PromQL engine
 	t.QuerierQueryable, t.ExemplarQueryable, t.QuerierEngine = querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryables, querierRegisterer, util_log.Logger, t.ActivityTracker)
@@ -382,7 +384,7 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		t.MetadataSupplier,
 		t.QuerierEngine,
 		t.Distributor,
-		prometheus.DefaultRegisterer,
+		t.Registerer,
 		util_log.Logger,
 		t.Overrides,
 	)
@@ -424,14 +426,14 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 	}
 
 	t.Cfg.Worker.MaxConcurrentRequests = t.Cfg.Querier.EngineConfig.MaxConcurrent
-	return querier_worker.NewQuerierWorker(t.Cfg.Worker, httpgrpc_server.NewServer(internalQuerierRouter), util_log.Logger, prometheus.DefaultRegisterer)
+	return querier_worker.NewQuerierWorker(t.Cfg.Worker, httpgrpc_server.NewServer(internalQuerierRouter), util_log.Logger, t.Registerer)
 }
 
 func (t *Mimir) initStoreQueryables() (services.Service, error) {
 	var servs []services.Service
 
 	//nolint:golint // I prefer this form over removing 'else', because it allows q to have smaller scope.
-	if q, err := querier.NewBlocksStoreQueryableFromConfig(t.Cfg.Querier, t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, prometheus.DefaultRegisterer); err != nil {
+	if q, err := querier.NewBlocksStoreQueryableFromConfig(t.Cfg.Querier, t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, t.Registerer); err != nil {
 		return nil, fmt.Errorf("failed to initialize querier: %v", err)
 	} else {
 		t.StoreQueryables = append(t.StoreQueryables, querier.UseAlwaysQueryable(q))
@@ -462,7 +464,7 @@ func (t *Mimir) initIngesterService() (serv services.Service, err error) {
 	t.Cfg.Ingester.InstanceLimitsFn = ingesterInstanceLimits(t.RuntimeConfig)
 	t.tsdbIngesterConfig()
 
-	t.Ingester, err = ingester.New(t.Cfg.Ingester, t.Overrides, prometheus.DefaultRegisterer, util_log.Logger)
+	t.Ingester, err = ingester.New(t.Cfg.Ingester, t.Overrides, t.Registerer, util_log.Logger)
 	if err != nil {
 		return
 	}
@@ -488,7 +490,7 @@ func (t *Mimir) initFlusher() (serv services.Service, err error) {
 		t.Cfg.Flusher,
 		t.Cfg.Ingester,
 		t.Overrides,
-		prometheus.DefaultRegisterer,
+		t.Registerer,
 		util_log.Logger,
 	)
 	if err != nil {
@@ -501,7 +503,7 @@ func (t *Mimir) initFlusher() (serv services.Service, err error) {
 // initQueryFrontendTripperware instantiates the tripperware used by the query frontend
 // to optimize Prometheus query requests.
 func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error) {
-	promqlEngineRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "query-frontend"}, prometheus.DefaultRegisterer)
+	promqlEngineRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "query-frontend"}, t.Registerer)
 
 	tripperware, err := querymiddleware.NewTripperware(
 		t.Cfg.Frontend.QueryMiddleware,
@@ -510,7 +512,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		querymiddleware.PrometheusCodec,
 		querymiddleware.PrometheusResponseExtractor{},
 		engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, promqlEngineRegisterer),
-		prometheus.DefaultRegisterer,
+		t.Registerer,
 	)
 	if err != nil {
 		return nil, err
@@ -521,7 +523,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 }
 
 func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
-	roundTripper, frontendV1, frontendV2, err := frontend.InitFrontend(t.Cfg.Frontend, t.Overrides, t.Cfg.Server.GRPCListenPort, util_log.Logger, prometheus.DefaultRegisterer)
+	roundTripper, frontendV1, frontendV2, err := frontend.InitFrontend(t.Cfg.Frontend, t.Overrides, t.Cfg.Server.GRPCListenPort, util_log.Logger, t.Registerer)
 	if err != nil {
 		return nil, err
 	}
@@ -529,7 +531,7 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	// Wrap roundtripper into Tripperware.
 	roundTripper = t.QueryFrontendTripperware(roundTripper)
 
-	handler := transport.NewHandler(t.Cfg.Frontend.Handler, roundTripper, util_log.Logger, prometheus.DefaultRegisterer)
+	handler := transport.NewHandler(t.Cfg.Frontend.Handler, roundTripper, util_log.Logger, t.Registerer)
 	t.API.RegisterQueryFrontendHandler(handler, t.BuildInfoHandler)
 
 	if frontendV1 != nil {
@@ -553,7 +555,7 @@ func (t *Mimir) initRulerStorage() (serv services.Service, err error) {
 		return
 	}
 
-	t.RulerStorage, err = ruler.NewRuleStore(context.Background(), t.Cfg.RulerStorage, t.Overrides, rules.FileLoader{}, util_log.Logger, prometheus.DefaultRegisterer)
+	t.RulerStorage, err = ruler.NewRuleStore(context.Background(), t.Cfg.RulerStorage, t.Overrides, rules.FileLoader{}, util_log.Logger, t.Registerer)
 	return
 }
 
@@ -588,7 +590,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		var queryable, federatedQueryable prom_storage.Queryable
 
 		// TODO: Consider wrapping logger to differentiate from querier module logger
-		rulerRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "ruler"}, prometheus.DefaultRegisterer)
+		rulerRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "ruler"}, t.Registerer)
 
 		queryable, _, eng := querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryables, rulerRegisterer, util_log.Logger, t.ActivityTracker)
 		queryable = querier.NewErrorTranslateQueryableWithFn(queryable, ruler.WrapQueryableErrors)
@@ -621,7 +623,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		embeddedQueryable,
 		queryFunc,
 		t.Overrides,
-		prometheus.DefaultRegisterer,
+		t.Registerer,
 	)
 
 	// We need to prefix and add a label to the metrics for the DNS resolver because, unlike other mimir components,
@@ -630,12 +632,12 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		"cortex_",
 		prometheus.WrapRegistererWith(
 			prometheus.Labels{"component": "ruler"},
-			prometheus.DefaultRegisterer,
+			t.Registerer,
 		),
 	)
 
 	dnsResolver := dns.NewProvider(util_log.Logger, dnsProviderReg, dns.GolangResolverType)
-	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, prometheus.DefaultRegisterer, util_log.Logger, dnsResolver)
+	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, t.Registerer, util_log.Logger, dnsResolver)
 	if err != nil {
 		return nil, err
 	}
@@ -643,7 +645,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 	t.Ruler, err = ruler.NewRuler(
 		t.Cfg.Ruler,
 		manager,
-		prometheus.DefaultRegisterer,
+		t.Registerer,
 		util_log.Logger,
 		t.RulerStorage,
 		t.Overrides,
@@ -665,12 +667,12 @@ func (t *Mimir) initAlertManager() (serv services.Service, err error) {
 	t.Cfg.Alertmanager.ShardingRing.ListenPort = t.Cfg.Server.GRPCListenPort
 	t.Cfg.Alertmanager.CheckExternalURL(t.Cfg.API.AlertmanagerHTTPPrefix, util_log.Logger)
 
-	store, err := alertstore.NewAlertStore(context.Background(), t.Cfg.AlertmanagerStorage, t.Overrides, util_log.Logger, prometheus.DefaultRegisterer)
+	store, err := alertstore.NewAlertStore(context.Background(), t.Cfg.AlertmanagerStorage, t.Overrides, util_log.Logger, t.Registerer)
 	if err != nil {
 		return
 	}
 
-	t.Alertmanager, err = alertmanager.NewMultitenantAlertmanager(&t.Cfg.Alertmanager, store, t.Overrides, util_log.Logger, prometheus.DefaultRegisterer)
+	t.Alertmanager, err = alertmanager.NewMultitenantAlertmanager(&t.Cfg.Alertmanager, store, t.Overrides, util_log.Logger, t.Registerer)
 	if err != nil {
 		return
 	}
@@ -682,7 +684,7 @@ func (t *Mimir) initAlertManager() (serv services.Service, err error) {
 func (t *Mimir) initCompactor() (serv services.Service, err error) {
 	t.Cfg.Compactor.ShardingRing.ListenPort = t.Cfg.Server.GRPCListenPort
 
-	t.Compactor, err = compactor.NewMultitenantCompactor(t.Cfg.Compactor, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, prometheus.DefaultRegisterer)
+	t.Compactor, err = compactor.NewMultitenantCompactor(t.Cfg.Compactor, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, t.Registerer)
 	if err != nil {
 		return
 	}
@@ -695,7 +697,7 @@ func (t *Mimir) initCompactor() (serv services.Service, err error) {
 func (t *Mimir) initStoreGateway() (serv services.Service, err error) {
 	t.Cfg.StoreGateway.ShardingRing.ListenPort = t.Cfg.Server.GRPCListenPort
 
-	t.StoreGateway, err = storegateway.NewStoreGateway(t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, t.Cfg.Server.LogLevel, util_log.Logger, prometheus.DefaultRegisterer, t.ActivityTracker)
+	t.StoreGateway, err = storegateway.NewStoreGateway(t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, t.Cfg.Server.LogLevel, util_log.Logger, t.Registerer, t.ActivityTracker)
 	if err != nil {
 		return nil, err
 	}
@@ -707,7 +709,7 @@ func (t *Mimir) initStoreGateway() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initMemberlistKV() (services.Service, error) {
-	reg := prometheus.DefaultRegisterer
+	reg := t.Registerer
 	t.Cfg.MemberlistKV.MetricsRegisterer = reg
 	t.Cfg.MemberlistKV.Codecs = []codec.Codec{
 		ring.GetCodec(),
@@ -735,7 +737,7 @@ func (t *Mimir) initMemberlistKV() (services.Service, error) {
 }
 
 func (t *Mimir) initQueryScheduler() (services.Service, error) {
-	s, err := scheduler.NewScheduler(t.Cfg.QueryScheduler, t.Overrides, util_log.Logger, prometheus.DefaultRegisterer)
+	s, err := scheduler.NewScheduler(t.Cfg.QueryScheduler, t.Overrides, util_log.Logger, t.Registerer)
 	if err != nil {
 		return nil, errors.Wrap(err, "query-scheduler init")
 	}
@@ -755,7 +757,7 @@ func (t *Mimir) initUsageStats() (services.Service, error) {
 		return nil, nil
 	}
 
-	bucketClient, err := bucket.NewClient(context.Background(), t.Cfg.BlocksStorage.Bucket, "usage-stats", util_log.Logger, prometheus.DefaultRegisterer)
+	bucketClient, err := bucket.NewClient(context.Background(), t.Cfg.BlocksStorage.Bucket, "usage-stats", util_log.Logger, t.Registerer)
 	if err != nil {
 		return nil, err
 	}
@@ -763,7 +765,7 @@ func (t *Mimir) initUsageStats() (services.Service, error) {
 	// Track anonymous usage statistics.
 	usagestats.GetString("blocks_storage_backend").Set(t.Cfg.BlocksStorage.Bucket.Backend)
 
-	t.UsageStatsReporter = usagestats.NewReporter(bucketClient, util_log.Logger, prometheus.DefaultRegisterer)
+	t.UsageStatsReporter = usagestats.NewReporter(bucketClient, util_log.Logger, t.Registerer)
 	return t.UsageStatsReporter, nil
 }
 
