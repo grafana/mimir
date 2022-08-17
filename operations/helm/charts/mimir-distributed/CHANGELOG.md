@@ -14,6 +14,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 ## main / unreleased
 
 * [FEATURE] Add query-scheduler, which is now enabled by default. If you have copied the `mimir.config`, then update it to correctly configure the query-frontend and the querier. #2087
+* [ENHANCEMENT] Default `ingester.ring.tokens-file-path` and `store-gateway.sharding-ring.tokens-file-path` to `/data/tokens` to prevent resharding on restarts. #2726
 * [ENHANCEMENT] Upgrade memcached image tag to `memcached:1.6.16-alpine`. #2740
 * [ENHANCEMENT] Upgrade nginx image tag to `nginxinc/nginx-unprivileged:1.22-alpine`. #2742
 
