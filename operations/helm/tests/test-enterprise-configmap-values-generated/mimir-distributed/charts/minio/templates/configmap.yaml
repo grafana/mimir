@@ -7,7 +7,7 @@ metadata:
   namespace: "citestns"
   labels:
     app: minio
-    chart: minio-4.0.3
+    chart: minio-4.0.12
     release: test-enterprise-configmap-values
     heritage: Helm
 data:
@@ -59,6 +59,7 @@ data:
       POLICY=$2
       PURGE=$3
       VERSIONING=$4
+      OBJECTLOCKING=$5
     
       # Purge the bucket, if set & exists
       # Since PURGE is user input, check explicitly for `true`
@@ -73,16 +74,27 @@ data:
         fi
       fi
     
-      # Create the bucket if it does not exist
-      if ! checkBucketExists $BUCKET ; then
-        echo "Creating bucket '$BUCKET'"
-        ${MC} mb myminio/$BUCKET
+    # Create the bucket if it does not exist and set objectlocking if enabled (NOTE: versioning will be not changed if OBJECTLOCKING is set because it enables versioning to the Buckets created)
+    if ! checkBucketExists $BUCKET ; then
+        if [ ! -z $OBJECTLOCKING ] ; then
+          if [ $OBJECTLOCKING = true ] ; then
+              echo "Creating bucket with OBJECTLOCKING '$BUCKET'"
+              ${MC} mb --with-lock myminio/$BUCKET
+          elif [ $OBJECTLOCKING = false ] ; then
+                echo "Creating bucket '$BUCKET'"
+                ${MC} mb myminio/$BUCKET
+          fi
+      elif [ -z $OBJECTLOCKING ] ; then
+            echo "Creating bucket '$BUCKET'"
+            ${MC} mb myminio/$BUCKET
       else
-        echo "Bucket '$BUCKET' already exists."
+        echo "Bucket '$BUCKET' already exists."  
+      fi
       fi
     
     
-      # set versioning for bucket
+      # set versioning for bucket if objectlocking is disabled or not set
+      if [ -z $OBJECTLOCKING ] ; then
       if [ ! -z $VERSIONING ] ; then
         if [ $VERSIONING = true ] ; then
             echo "Enabling versioning for '$BUCKET'"
@@ -91,9 +103,11 @@ data:
             echo "Suspending versioning for '$BUCKET'"
             ${MC} version suspend myminio/$BUCKET
         fi
+        fi
       else
           echo "Bucket '$BUCKET' versioning unchanged."
       fi
+    
     
       # At this point, the bucket should exist, skip checking for existence
       # Set policy on the bucket
@@ -108,17 +122,20 @@ data:
     
     
     # Create the buckets
-    createBucket mimir-tsdb none false 
-    createBucket mimir-ruler none false 
-    createBucket enterprise-metrics-tsdb none false 
-    createBucket enterprise-metrics-admin none false 
-    createBucket enterprise-metrics-ruler none false 
-    
+    createBucket mimir-tsdb none false  
+    createBucket mimir-ruler none false  
+    createBucket enterprise-metrics-tsdb none false  
+    createBucket enterprise-metrics-admin none false  
+    createBucket enterprise-metrics-ruler none false  
   add-user: |-
     #!/bin/sh
     set -e ; # Have script exit in the event of a failed command.
     MC_CONFIG_DIR="/tmp/minio/mc/"
     MC="/usr/bin/mc --insecure --config-dir ${MC_CONFIG_DIR}"
+    
+    # AccessKey and secretkey credentials file are added to prevent shell execution errors caused by special characters.
+    # Special characters for example : ',",<,>,{,}
+    MINIO_ACCESSKEY_SECRETKEY_TMP="/tmp/accessKey_and_secretKey_tmp"
     
     # connectToMinio
     # Use a check-sleep-check loop to wait for MinIO service to be available
@@ -147,28 +164,36 @@ data:
       return 0
     }
     
-    # checkUserExists ($username)
+    # checkUserExists ()
     # Check if the user exists, by using the exit code of `mc admin user info`
     checkUserExists() {
-      USER=$1
-      CMD=$(${MC} admin user info myminio $USER > /dev/null 2>&1)
+      CMD=$(${MC} admin user info myminio $(head -1 $MINIO_ACCESSKEY_SECRETKEY_TMP) > /dev/null 2>&1)
       return $?
     }
     
-    # createUser ($username, $password, $policy)
+    # createUser ($policy)
     createUser() {
-      USER=$1
-      PASS=$2
-      POLICY=$3
-    
+      POLICY=$1
+      #check accessKey_and_secretKey_tmp file
+      if [[ ! -f $MINIO_ACCESSKEY_SECRETKEY_TMP ]];then
+        echo "credentials file does not exist"
+        return 1
+      fi
+      if [[ $(cat $MINIO_ACCESSKEY_SECRETKEY_TMP|wc -l) -ne 2 ]];then
+        echo "credentials file is invalid"
+        rm -f $MINIO_ACCESSKEY_SECRETKEY_TMP
+        return 1
+      fi
+      USER=$(head -1 $MINIO_ACCESSKEY_SECRETKEY_TMP)
       # Create the user if it does not exist
-      if ! checkUserExists $USER ; then
+      if ! checkUserExists ; then
         echo "Creating user '$USER'"
-        ${MC} admin user add myminio $USER $PASS
+        cat $MINIO_ACCESSKEY_SECRETKEY_TMP | ${MC} admin user add myminio
       else
         echo "User '$USER' already exists."
       fi
-    
+      #clean up credentials files.
+      rm -f $MINIO_ACCESSKEY_SECRETKEY_TMP
     
       # set policy for user
       if [ ! -z $POLICY -a $POLICY != " " ] ; then
@@ -186,7 +211,9 @@ data:
     
     
     # Create the users
-    createUser console console123 consoleAdmin
+    echo console > $MINIO_ACCESSKEY_SECRETKEY_TMP
+    echo console123 >> $MINIO_ACCESSKEY_SECRETKEY_TMP
+    createUser consoleAdmin
     
   add-policy: |-
     #!/bin/sh
