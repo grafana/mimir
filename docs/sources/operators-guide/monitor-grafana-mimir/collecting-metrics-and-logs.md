@@ -43,9 +43,8 @@ the Grafana Agent operator. Due to how Helm works, before the chart can use the 
 the [Custom Resource Definitions (CRDs)](https://github.com/grafana/agent/tree/main/production/operator/crds) for the
 Agent operator.
 
-If you prefer not to use the Agent operator, then follow the instructions
-for [collecting metrics and logs via Grafana Agent](#collect-metrics-and-logs-via-grafana-agent) instead. Manually
-deploying a Grafana Agent has some caveats you should be aware of. See [Caveats](#caveats) for more details.
+Using the Agent operator for metrics and logs collection is our recommended approach. However, if you prefer not to use the Agent operator or already have an existing Grafana Agent you'd like to use for metrics and logs collection, follow the instructions
+for [collecting metrics and logs via Grafana Agent](#collect-metrics-and-logs-via-grafana-agent) instead.
 
 #### Credentials
 
@@ -112,11 +111,11 @@ metaMonitoring:
 
 Older versions of the Helm chart need to be manually instrumented. This means that you need to set up a Grafana Agent
 that collects logs and metrics from Mimir or GEM. To set up Grafana Agent,
-see [Set up Grafana Agent](https://grafana.com/docs/agent/latest/set-up/).
+see [Set up Grafana Agent](https://grafana.com/docs/agent/latest/set-up/). Once your Agent is deployed, use the [example Agent configuration](#example-agent-configuration) in the section [Collect metrics and logs via the Helm chart](#collect-metrics-and-logs-via-the-helm-chart) to configure the Agent to scrape Mimir or GEM.
 
 #### Caveats
 
-Using a static Agent configuration comes with some caveats:
+Managing your own Agent comes with some caveats:
 
 - You will have to keep the Agent configuration up to date manually as you update the Mimir Helm chart. While we will
   try to keep this article up to date, we cannot guarantee that
@@ -130,7 +129,7 @@ Using a static Agent configuration comes with some caveats:
 
 If possible, upgrade the Mimir Helm chart to version 3.0 or higher and use
 the [built-in Grafana Agent operator](#collect-metrics-and-logs-via-the-helm-chart). Using the Agent operator allows the
-chart to automatically configure the Agent and removes the mentioned caveats.
+chart to automatically configure the Agent, eliminating the aforementioned caveats.
 
 #### Example Agent configuration
 
