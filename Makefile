@@ -318,6 +318,9 @@ lint: check-makefiles
 		github.com/thanos-io/thanos/pkg/store/cache" \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
+	# Ensure we never use the default registerer and we allow to use a custom one (improves testability).
+	faillint -paths="github.com/prometheus/client_golang/prometheus.{MustRegister,Register,DefaultRegisterer}" ./pkg/...
+
 format: ## Run gofmt and goimports.
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec gofmt -w -s {} \;
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec goimports -w -local github.com/grafana/mimir {} \;

@@ -13,6 +13,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -66,7 +67,7 @@ func metricReasonFromErrorID(id globalerror.ID) string {
 }
 
 // DiscardedRequests is a metric of the number of discarded requests.
-var DiscardedRequests = prometheus.NewCounterVec(
+var DiscardedRequests = promauto.NewCounterVec(
 	prometheus.CounterOpts{
 		Name: "cortex_discarded_requests_total",
 		Help: "The total number of requests that were discarded due to rate limiting.",
@@ -75,7 +76,7 @@ var DiscardedRequests = prometheus.NewCounterVec(
 )
 
 // DiscardedSamples is a metric of the number of discarded samples, by reason.
-var DiscardedSamples = prometheus.NewCounterVec(
+var DiscardedSamples = promauto.NewCounterVec(
 	prometheus.CounterOpts{
 		Name: "cortex_discarded_samples_total",
 		Help: "The total number of samples that were discarded.",
@@ -84,7 +85,7 @@ var DiscardedSamples = prometheus.NewCounterVec(
 )
 
 // DiscardedExemplars is a metric of the number of discarded exemplars, by reason.
-var DiscardedExemplars = prometheus.NewCounterVec(
+var DiscardedExemplars = promauto.NewCounterVec(
 	prometheus.CounterOpts{
 		Name: "cortex_discarded_exemplars_total",
 		Help: "The total number of exemplars that were discarded.",
@@ -93,20 +94,13 @@ var DiscardedExemplars = prometheus.NewCounterVec(
 )
 
 // DiscardedMetadata is a metric of the number of discarded metadata, by reason.
-var DiscardedMetadata = prometheus.NewCounterVec(
+var DiscardedMetadata = promauto.NewCounterVec(
 	prometheus.CounterOpts{
 		Name: "cortex_discarded_metadata_total",
 		Help: "The total number of metadata that were discarded.",
 	},
 	[]string{discardReasonLabel, "user"},
 )
-
-func init() {
-	prometheus.MustRegister(DiscardedRequests)
-	prometheus.MustRegister(DiscardedSamples)
-	prometheus.MustRegister(DiscardedExemplars)
-	prometheus.MustRegister(DiscardedMetadata)
-}
 
 // SampleValidationConfig helps with getting required config to validate sample.
 type SampleValidationConfig interface {

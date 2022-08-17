@@ -92,8 +92,8 @@ type RuleCommand struct {
 }
 
 // Register rule related commands and flags with the kingpin application
-func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
-	rulesCmd := app.Command("rules", "View and edit rules stored in Grafan Mimir.").PreAction(r.setup)
+func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames, reg prometheus.Registerer) {
+	rulesCmd := app.Command("rules", "View and edit rules stored in Grafan Mimir.").PreAction(func(k *kingpin.ParseContext) error { return r.setup(k, reg) })
 	rulesCmd.Flag("user", fmt.Sprintf("API user to use when contacting Grafana Mimir; alternatively, set %s. If empty, %s is used instead.", envVars.APIUser, envVars.TenantID)).Default("").Envar(envVars.APIUser).StringVar(&r.ClientConfig.User)
 	rulesCmd.Flag("key", "API key to use when contacting Grafana Mimir; alternatively, set "+envVars.APIKey+".").Default("").Envar(envVars.APIKey).StringVar(&r.ClientConfig.Key)
 	rulesCmd.Flag("backend", "Backend type to interact with (deprecated)").Default(rules.MimirBackend).EnumVar(&r.Backend, backends...)
@@ -239,8 +239,8 @@ func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
 	listCmd.Flag("disable-color", "disable colored output").BoolVar(&r.DisableColor)
 }
 
-func (r *RuleCommand) setup(k *kingpin.ParseContext) error {
-	prometheus.MustRegister(
+func (r *RuleCommand) setup(_ *kingpin.ParseContext, reg prometheus.Registerer) error {
+	reg.MustRegister(
 		ruleLoadTimestamp,
 		ruleLoadSuccessTimestamp,
 	)
