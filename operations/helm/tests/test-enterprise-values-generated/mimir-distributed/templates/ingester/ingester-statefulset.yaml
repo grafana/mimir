@@ -94,9 +94,7 @@ spec:
               port: http-metrics
             initialDelaySeconds: 60
           resources:
-            requests:
-              cpu: 10m
-              memory: 512Mi
+            limits: null
           securityContext:
             readOnlyRootFilesystem: true
           env:
