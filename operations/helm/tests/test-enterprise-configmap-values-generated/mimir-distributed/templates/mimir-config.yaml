@@ -61,6 +61,7 @@ data:
     frontend:
       align_queries_with_step: true
       log_queries_longer_than: 10s
+      parallelize_shardable_queries: true
       scheduler_address: test-enterprise-configmap-values-mimir-query-scheduler-headless.citestns.svc:9095
     frontend_worker:
       scheduler_address: test-enterprise-configmap-values-mimir-query-scheduler-headless.citestns.svc:9095
@@ -100,12 +101,17 @@ data:
       enabled: true
     license:
       path: /license/license.jwt
-    limits: {}
+    limits:
+      max_query_parallelism: 224
     memberlist:
       abort_if_cluster_join_fails: false
       compression_enabled: false
       join_members:
       - dns+test-enterprise-configmap-values-mimir-gossip-ring.citestns.svc.cluster.local:7946
+    querier:
+      max_concurrent: 16
+    query_scheduler:
+      max_outstanding_requests_per_tenant: 1600
     ruler:
       alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.test-enterprise-configmap-values-mimir-alertmanager-headless.citestns.svc.cluster.local/alertmanager
       enable_api: true
