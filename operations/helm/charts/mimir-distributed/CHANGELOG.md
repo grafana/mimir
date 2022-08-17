@@ -13,6 +13,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [FEATURE] Add query-scheduler, which is now enabled by default. If you have copied the `mimir.config`, then update it to correctly configure the query-frontend and the querier. #2087
 * [CHANGE] **breaking change** Update minio deprecated helm chart (<https://helm.min.io/>) to the supported chart's version (<https://charts.min.io/>). #2427
   - Renamed helm config values `minio.accessKey` to `minio.rootUser`.
   - Renamed helm config values `minio.secretKey` to `minio.rootPassword`.

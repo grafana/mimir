@@ -61,8 +61,9 @@ data:
     frontend:
       align_queries_with_step: true
       log_queries_longer_than: 10s
+      scheduler_address: test-enterprise-configmap-values-mimir-query-scheduler-headless.citestns.svc:9095
     frontend_worker:
-      frontend_address: test-enterprise-configmap-values-mimir-query-frontend-headless.citestns.svc:9095
+      scheduler_address: test-enterprise-configmap-values-mimir-query-scheduler-headless.citestns.svc:9095
     gateway:
       proxy:
         admin_api:
