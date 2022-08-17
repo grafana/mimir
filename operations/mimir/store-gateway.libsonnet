@@ -68,9 +68,7 @@
   newStoreGatewayStatefulSet(name, container, with_anti_affinity=false)::
     $.newMimirStatefulSet(name, 3, container, store_gateway_data_pvc) +
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(120) +
-    $.util.volumeMounts(
-      [$.util.volumeMountItem(name, $._config.configmaps[name]) for name in std.objectFieldsAll($._config.configmaps)]
-    ) +
+    $.mimirVolumeMounts() +
     (if with_anti_affinity then $.util.antiAffinity else {}),
 
   store_gateway_statefulset: self.newStoreGatewayStatefulSet('store-gateway', $.store_gateway_container, !$._config.store_gateway_allow_multiple_replicas_on_same_node),

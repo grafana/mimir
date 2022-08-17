@@ -70,9 +70,7 @@
     // When the ingester needs to flush blocks to the storage, it may take quite a lot of time.
     // For this reason, we grant an high termination period (80 minutes).
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(1200) +
-    $.util.volumeMounts(
-      [$.util.volumeMountItem(name, $._config.configmaps[name]) for name in std.objectFieldsAll($._config.configmaps)]
-    ) +
+    $.mimirVolumeMounts() +
     $.util.podPriority('high') +
     (if with_anti_affinity then $.util.antiAffinity else {}),
 

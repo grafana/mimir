@@ -55,9 +55,7 @@
   newQuerierDeployment(name, container)::
     deployment.new(name, $._config.querier.replicas, [container]) +
     $.newMimirSpreadTopology(name, $._config.querier_topology_spread_max_skew) +
-    $.util.volumeMounts(
-      [$.util.volumeMountItem(name, $._config.configmaps[name]) for name in std.objectFieldsAll($._config.configmaps)]
-    ) +
+    $.mimirVolumeMounts() +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(5) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1),

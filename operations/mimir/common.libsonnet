@@ -71,4 +71,9 @@
       topologySpreadConstraints.withWhenUnsatisfiable('ScheduleAnyway') +
       topologySpreadConstraints.withMaxSkew(maxSkew),
     ),
+
+  mimirVolumeMounts()::
+    $.util.volumeMounts(
+      [$.util.volumeMountItem(name, $._config.configmaps[name]) for name in std.objectFieldsAll($._config.configmaps)]
+    ),
 }

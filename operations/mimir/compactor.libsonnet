@@ -106,9 +106,7 @@
   newCompactorStatefulSet(name, container)::
     $.newMimirStatefulSet(name, 1, container, compactor_data_pvc) +
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(900) +
-    $.util.volumeMounts(
-      [$.util.volumeMountItem(name, $._config.configmaps[name]) for name in std.objectFieldsAll($._config.configmaps)]
-    ),
+    $.mimirVolumeMounts(),
 
   compactor_statefulset:
     $.newCompactorStatefulSet('compactor', $.compactor_container),

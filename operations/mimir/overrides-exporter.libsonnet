@@ -43,9 +43,7 @@
   local deployment = $.apps.v1.deployment,
   overrides_exporter_deployment:
     deployment.new(name, 1, [$.overrides_exporter_container], { name: name }) +
-    $.util.volumeMounts(
-      [$.util.volumeMountItem(name, $._config.configmaps[name]) for name in std.objectFieldsAll($._config.configmaps)]
-    ) +
+    $.mimirVolumeMounts() +
     deployment.mixin.metadata.withLabels({ name: name }),
 
   overrides_exporter_service:
