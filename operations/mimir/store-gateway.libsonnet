@@ -22,8 +22,6 @@
 
       'server.http-listen-port': $._config.server_http_port,
 
-      'runtime-config.file': '%s/overrides.yaml' % $._config.overrides_configmap_mountpoint,
-
       // Persist ring tokens so that when the store-gateway will be restarted
       // it will pick the same tokens
       'store-gateway.sharding-ring.tokens-file-path': '/data/tokens',
@@ -51,7 +49,8 @@
     } +
     $.blocks_chunks_caching_config +
     $.blocks_metadata_caching_config +
-    $.bucket_index_config,
+    $.bucket_index_config +
+    $.mimirRuntimeConfigFile,
 
   store_gateway_ports:: $.util.defaultPorts,
 
@@ -68,7 +67,7 @@
   newStoreGatewayStatefulSet(name, container, with_anti_affinity=false)::
     $.newMimirStatefulSet(name, 3, container, store_gateway_data_pvc) +
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(120) +
-    $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint) +
+    $.mimirVolumeMounts +
     (if with_anti_affinity then $.util.antiAffinity else {}),
 
   store_gateway_statefulset: self.newStoreGatewayStatefulSet('store-gateway', $.store_gateway_container, !$._config.store_gateway_allow_multiple_replicas_on_same_node),
