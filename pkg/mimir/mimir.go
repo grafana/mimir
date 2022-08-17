@@ -548,7 +548,9 @@ func (t *Mimir) setupThanosTracing() {
 func (t *Mimir) Run() error {
 	// Register custom process metrics.
 	if c, err := process.NewProcessCollector(); err == nil {
-		t.Registerer.MustRegister(c)
+		if t.Registerer != nil {
+			t.Registerer.MustRegister(c)
+		}
 	} else {
 		level.Warn(util_log.Logger).Log("msg", "skipped registration of custom process metrics collector", "err", err)
 	}
