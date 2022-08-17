@@ -72,8 +72,12 @@
       topologySpreadConstraints.withMaxSkew(maxSkew),
     ),
 
-  mimirVolumeMounts()::
+  mimirVolumeMounts::
     $.util.volumeMounts(
       [$.util.volumeMountItem(name, $._config.configmaps[name]) for name in std.objectFieldsAll($._config.configmaps)]
     ),
+
+  mimirRuntimeConfigFile:: {
+    'runtime-config.file': std.join(',', $._config.runtime_config_files),
+  },
 }

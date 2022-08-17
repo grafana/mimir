@@ -78,10 +78,7 @@
              '15m'  // Default config.
          ) * 3)
       ),
-
-      // Limits config.
-      'runtime-config.file': std.join(',', $._config.runtime_config_files),
-    },
+    } + $.mimirRuntimeConfigFile,
 
   local compactor_data_pvc =
     pvc.new() +
@@ -106,7 +103,7 @@
   newCompactorStatefulSet(name, container)::
     $.newMimirStatefulSet(name, 1, container, compactor_data_pvc) +
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(900) +
-    $.mimirVolumeMounts(),
+    $.mimirVolumeMounts,
 
   compactor_statefulset:
     $.newCompactorStatefulSet('compactor', $.compactor_container),

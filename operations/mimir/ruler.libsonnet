@@ -52,7 +52,7 @@
       deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1) +
       deployment.mixin.spec.template.spec.withTerminationGracePeriodSeconds(600) +
       $.newMimirSpreadTopology(name, $._config.querier_topology_spread_max_skew) +
-      $.mimirVolumeMounts()
+      $.mimirVolumeMounts
     else {},
 
   local service = $.core.v1.service,

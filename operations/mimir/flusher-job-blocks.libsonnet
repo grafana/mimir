@@ -45,6 +45,6 @@
     job.mixin.spec.template.spec.securityContext.withRunAsUser(0) +
     job.mixin.spec.template.spec.withTerminationGracePeriodSeconds(300) +
     (if !std.isObject($._config.node_selector) then {} else job.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
-    $.mimirVolumeMounts() +
+    $.mimirVolumeMounts +
     $.util.podPriority('high'),
 }

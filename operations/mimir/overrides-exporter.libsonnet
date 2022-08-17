@@ -25,9 +25,7 @@
     target: 'overrides-exporter',
 
     'server.http-listen-port': $._config.server_http_port,
-
-    'runtime-config.file': std.join(',', $._config.runtime_config_files),
-  } + $._config.limitsConfig,
+  } + $._config.limitsConfig + $.mimirRuntimeConfigFile,
 
   local container = $.core.v1.container,
   overrides_exporter_container::
@@ -43,7 +41,7 @@
   local deployment = $.apps.v1.deployment,
   overrides_exporter_deployment:
     deployment.new(name, 1, [$.overrides_exporter_container], { name: name }) +
-    $.mimirVolumeMounts() +
+    $.mimirVolumeMounts +
     deployment.mixin.metadata.withLabels({ name: name }),
 
   overrides_exporter_service:
