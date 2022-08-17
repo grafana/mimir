@@ -35,10 +35,7 @@ chmod +x query-tee
 ## Configure the query-tee
 
 The query-tee requires the endpoints of the backend Grafana Mimir clusters.
-You can configure the backend endpoints by setting the `-backend.endpoints` flag to a comma-separated list endpoints:
-
-- HTTP endpoints: via HTTP or HTTPS URLs. Example: `http://query-frontend:80`.
-- gRPC endpoints: via gRPC URI scheme. Example: `dns:///query-frontend:9095`.
+You can configure the backend endpoints by setting the `-backend.endpoints` flag to a comma-separated list of HTTP or HTTPS URLs.
 
 For each incoming request, the query-tee clones the request and sends it to each configured backend.
 
