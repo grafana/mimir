@@ -254,7 +254,9 @@ func (t *Mimir) initOverrides() (serv services.Service, err error) {
 
 func (t *Mimir) initOverridesExporter() (services.Service, error) {
 	exporter := validation.NewOverridesExporter(&t.Cfg.LimitsConfig, t.TenantLimits)
-	t.Registerer.MustRegister(exporter)
+	if t.Registerer != nil {
+		t.Registerer.MustRegister(exporter)
+	}
 
 	// the overrides exporter has no state and reads overrides for runtime configuration each time it
 	// is collected so there is no need to return any service

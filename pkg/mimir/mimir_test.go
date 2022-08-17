@@ -26,7 +26,6 @@ import (
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/server"
@@ -151,7 +150,7 @@ func TestMimir(t *testing.T) {
 		Target: []string{All, AlertManager},
 	}
 
-	c, err := New(cfg, prometheus.NewPedanticRegistry())
+	c, err := New(cfg, nil)
 	require.NoError(t, err)
 
 	serviceMap, err := c.ModuleManager.InitModuleServices(cfg.Target...)
@@ -192,7 +191,7 @@ func TestMimirServerShutdownWithActivityTrackerEnabled(t *testing.T) {
 
 	util_log.InitLogger(&cfg.Server)
 
-	c, err := New(cfg, prometheus.NewPedanticRegistry())
+	c, err := New(cfg, nil)
 	require.NoError(t, err)
 
 	errCh := make(chan error)
@@ -389,7 +388,7 @@ func TestGrpcAuthMiddleware(t *testing.T) {
 
 	// Setup server, using Mimir config. This includes authentication middleware.
 	{
-		c, err := New(cfg, prometheus.NewPedanticRegistry())
+		c, err := New(cfg, nil)
 		require.NoError(t, err)
 
 		serv, err := c.initServer()

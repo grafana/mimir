@@ -492,10 +492,6 @@ type Mimir struct {
 
 // New makes a new Mimir.
 func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
-	if reg == nil {
-		return nil, errors.New("no Prometheus registerer provided")
-	}
-
 	if cfg.PrintConfig {
 		if err := yaml.NewEncoder(os.Stdout).Encode(&cfg); err != nil {
 			fmt.Println("Error encoding config:", err)
