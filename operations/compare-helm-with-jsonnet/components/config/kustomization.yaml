@@ -69,7 +69,6 @@ patches:
       - op: remove
         path: /config/memberlist
 
-  # Ignore tokens_file_path, except in ingester and store gateway
   - target:
       kind: MimirConfig
       name: 'distributor|querier|ruler'
