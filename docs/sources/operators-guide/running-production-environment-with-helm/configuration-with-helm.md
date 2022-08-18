@@ -29,7 +29,7 @@ There are three ways configuration parameters can be modified:
 
 See the [Example](#example-of-configuration-managed-with-helm) for a practical application.
 
-> **Limitation:**: it is not possible to delete configuration parameter settings via `mimir.structuredConfig` that were set in `mimir.config`. Set the configuration parameter to its default or to some other value instead.
+> **Limitation:** it is not possible to delete configuration parameters via `mimir.structuredConfig` that were set in `mimir.config`. Set the configuration parameter to its default or to some other value instead.
 
 ### How the configuration is applied
 
