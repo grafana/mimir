@@ -16,8 +16,8 @@ spec:
   ports:
     - port: {{ include "mimir.serverHttpListenPort" . }}
       protocol: TCP
-      name: graphite-http
-      targetPort: 80
+      name: http-metrics
+      targetPort: http-metrics
   selector:
     {{- include "mimir.selectorLabels" (dict "ctx" . "component" "graphite-web") | nindent 4 }}
 {{- end -}}

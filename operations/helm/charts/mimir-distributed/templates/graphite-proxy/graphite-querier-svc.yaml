@@ -9,7 +9,7 @@ metadata:
     {{- toYaml . | nindent 4 }}
     {{- end }}
   annotations:
-    {{- toYaml .Values.graphite_querier.annotations | nindent 4 }}
+    {{- toYaml .Values.graphite_querier.service.annotations | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
   type: ClusterIP

@@ -51,8 +51,8 @@ spec:
               value: "{{ $value }}"
             {{- end }}
           ports:
-            - name: http
-              containerPort: 80
+            - name: http-metrics
+              containerPort: {{ include "mimir.serverHttpListenPort" . }}
               protocol: TCP
           resources:
             {{- toYaml .Values.graphite_web.resources | nindent 12 }}

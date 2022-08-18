@@ -33,7 +33,7 @@ spec:
       securityContext:
         {{- toYaml .Values.graphite_write_proxy.securityContext | nindent 8 }}
       initContainers:
-        {{- with .Values.graphite_querier.initContainers }}
+        {{- with .Values.graphite_write_proxy.initContainers }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
       {{- if .Values.image.pullSecrets }}
@@ -50,7 +50,6 @@ spec:
             - -target=graphite-write-proxy
             - -config.file=/etc/mimir/mimir.yaml
             - -license.path=/license/license.jwt
-            - -server.http-listen-port={{ include "mimir.serverHttpListenPort" . }}
             - -graphite.enabled=true
             - -graphite.write-proxy.distributor-client.address=dns:///{{ template "mimir.fullname" . }}-distributor.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" .  }}
           {{- range $key, $value := .Values.graphite_write_proxy.extraArgs }}
@@ -88,14 +87,14 @@ spec:
             {{- with .Values.global.extraEnv }}
               {{ toYaml . | nindent 12 }}
             {{- end }}
-            {{- with .Values.graphite_querier.env }}
+            {{- with .Values.graphite_write_proxy.env }}
               {{ toYaml . | nindent 12 }}
             {{- end }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
-            {{- with .Values.admin_api.extraEnvFrom }}
+            {{- with .Values.graphite_write_proxy.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
       nodeSelector:

@@ -19,7 +19,7 @@ spec:
     metadata:
       labels:
         {{- include "mimir.podLabels" (dict "ctx" . "component" "graphite-querier") | nindent 8 }}
-        {{- with .Values.graphite_write_proxy.podLabels }}
+        {{- with .Values.graphite_querier.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
       annotations:
@@ -44,7 +44,7 @@ spec:
       {{- end }}
       containers:
         - name: graphite-querier
-          image: "{{ include "mimir.imageReference" . }}"
+          image: {{ include "mimir.imageReference" . | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - -target=graphite-querier
