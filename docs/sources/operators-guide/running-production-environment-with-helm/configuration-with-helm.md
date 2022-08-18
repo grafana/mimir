@@ -15,7 +15,7 @@ The Grafana Mimir configuration can be managed through the Helm chart or supplie
 
 If you want to manage the configuration via the Helm chart, see [Manage the configuration with Helm](#manage-the-configuration-with-helm).
 
-If you want to manage the configuration directly, see [Manage the configuration directly](#manage-the-configuration-directly).
+If you want to manage the configuration externally yourself, see [Manage the configuration externally](#manage-the-configuration-externally).
 
 Handling sensitive information, such as credentials is common between the two methods, see [Injecting credentials](#injecting-credentials).
 
@@ -23,9 +23,9 @@ Handling sensitive information, such as credentials is common between the two me
 
 There are three ways configuration parameters can be modified:
 
-1. Copying the whole `mimir.config` value and modifying the configuration as text
 1. Setting parameters via the `mimir.structuredConfig` value (recommended)
-1. Setting extra CLI flags for components individually
+1. Copying the whole `mimir.config` value and modifying the configuration as text (discouraged, unless you want to stop upgrades of the chart to automatically update the configuration)
+1. Setting extra CLI flags for components individually (discouraged, except for setting availabiliy zone)
 
 See the [Example](#example-of-configuration-managed-with-helm) for a practical application.
 
@@ -50,7 +50,7 @@ Follow these steps to inspect what change will be applied to the configuration.
 Preparation:
 
 1. Install the [helm diff](https://github.com/databus23/helm-diff) plugin.
-1. Make sure to use `configStorageType` is set to `ConfigMap`
+1. Set `configStorageType` value to `ConfigMap`.
 
 Inspecting changes with the `helm diff` sub command:
 
@@ -58,11 +58,11 @@ Inspecting changes with the `helm diff` sub command:
 helm -n mimir-test diff upgrade grafana/mimir-distributed -f custom.yaml
 ```
 
-This command shows the differences between the running deployment and the deployment that would result from executing the `helm upgrade` command. Search for `name: mimir-config` in the output to see the difference in configuration settings.
+This command shows the differences between the running installation and the installation that would result from executing the `helm upgrade` command. Search for `name: mimir-config` in the output to see the difference in configuration settings. See [Example output of helm diff command](#example-output-of-helm-diff-command) for a concrete example.
 
 > **Note:** CLI flags and their difference are found in the `Deployment` and `StatefulSet` objects.
 
-## Manage the configuration directly
+## Manage the configuration externally
 
 Prepare the configuration as text. It cannot include Helm template functions or value evaluations. The configuration may include references to environment variables as explained in [Injecting credentials](#injecting-credentials).
 
@@ -84,7 +84,7 @@ data:
 
 Replace `<configuration>` with the configuration as multiline text, be mindful of indentation. The name `my-mimir-config` is just an example.
 
-Set the following value for the Helm chart:
+Set the following values in your custom values file (or on the Helm command line):
 
 ```yaml
 useExternalConfig: true
@@ -107,7 +107,7 @@ data:
 
 Replace `<configuration-base64>` with the configuration encoded as base64 format string. The name `my-mimir-config` is just an example.
 
-Set the following value for the Helm chart:
+Set the following values in your custom values file (or on the Helm command line):
 
 ```yaml
 useExternalConfig: true
@@ -127,7 +127,7 @@ In order to make components aware of configuration changes, either:
 
 Credentials should be kept in `Secret` objects or in a credential vault. The Helm chart value `global.extraEnvFrom` can be used to inject the credentials into the runtime environment variables of the Grafana Mimir components. The data keys will become environment variables and usable in the Grafana Mimir configuration. For example `AWS_SECRET_ACCESS_KEY` can be referenced as `${AWS_SECRET_ACCESS_KEY}` in the configuration. See the [Example](#example-of-configuration-managed-with-helm) for a practical application.
 
-Grafana Mimir will not keep track of changes to the credentials. If the credentials change, Grafana Mimir services should be restarted to use the new value. An easy way to trigger such restart is to provide a `global.podAnnotation` which will be applied to all Grafana Mimir components. Changing the value of the global annotation will instruct Kubernetes to restart the components. For example changing `global.podAnnotations.bucketSecretVersion` from `'0'` to `'1'` triggers a restart - note that [pod annotations](https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/) can only be strings.
+Grafana Mimir does not keep track of changes to the credentials. If the credentials change, Grafana Mimir pods should be restarted to use the new value. An easy way to trigger such restart is to provide a global [pod annotation](https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/) in `global.podAnnotation` which will be applied to all Grafana Mimir pods. Changing the value of the global annotation will make Kubernetes recreate all pods. For example changing `global.podAnnotations.bucketSecretVersion` from `"0"` to `"1"` triggers a restart - note that pod annotations can only be strings.
 
 ## Example of configuration managed with Helm
 
@@ -204,8 +204,10 @@ This example shows how to set up the configuration to use an S3 bucket for block
 
    ```bash
    helm -n mimir-test template mimir grafana/mimir-distributed -f custom.yaml -s templates/mimir-config.yaml
-    ```
+   ```
+
    You should see the following output:
+
    ```yaml
    ---
    # Source: mimir-distributed/templates/mimir-config.yaml
@@ -214,72 +216,318 @@ This example shows how to set up the configuration to use an S3 bucket for block
    metadata:
    name: mimir-config
    labels:
-       helm.sh/chart: mimir-distributed-3.0.0
-       app.kubernetes.io/name: mimir
-       app.kubernetes.io/instance: mimir
-       app.kubernetes.io/version: "2.2.0"
-       app.kubernetes.io/managed-by: Helm
+     helm.sh/chart: mimir-distributed-3.0.0
+     app.kubernetes.io/name: mimir
+     app.kubernetes.io/instance: mimir
+     app.kubernetes.io/version: "2.2.0"
+     app.kubernetes.io/managed-by: Helm
    namespace: "mimir-test"
    data:
    mimir.yaml: |
 
-    activity_tracker:
-      filepath: /data/metrics-activity.log
-    alertmanager:
-      data_dir: /data
-      enable_api: true
-      external_url: /alertmanager
-    alertmanager_storage:
-      s3:
-        access_key_id: ${AWS_ACCESS_KEY_ID}
-        bucket_name: my-ruler-bucket
-        endpoint: s3.amazonaws.com
-        secret_access_key: ${AWS_SECRET_ACCESS_KEY}
-    blocks_storage:
-      backend: s3
-      bucket_store:
-        sync_dir: /data/tsdb-sync
-      s3:
-        access_key_id: ${AWS_ACCESS_KEY_ID}
-        bucket_name: my-blocks-bucket
-        endpoint: s3.amazonaws.com
-        secret_access_key: ${AWS_SECRET_ACCESS_KEY}
-      tsdb:
-        dir: /data/tsdb
-    compactor:
-      data_dir: /data
-    frontend:
-      align_queries_with_step: true
-      log_queries_longer_than: 10s
-    frontend_worker:
-      frontend_address: mimir-query-frontend-headless.test.svc:9095
-    ingester:
-      ring:
-        final_sleep: 0s
-        num_tokens: 512
-        unregister_on_shutdown: false
-    ingester_client:
-      grpc_client_config:
-        max_recv_msg_size: 104857600
-        max_send_msg_size: 104857600
-    limits: {}
-    memberlist:
-      abort_if_cluster_join_fails: false
-      compression_enabled: false
-      join_members:
-      - dns+mimir-gossip-ring.test.svc.cluster.local:7946
-    ruler:
-      alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.mimir-alertmanager-headless.test.svc.cluster.local/alertmanager
-      enable_api: true
-      rule_path: /data
-    ruler_storage:
-      s3:
-        access_key_id: ${AWS_ACCESS_KEY_ID}
-        bucket_name: my-ruler-bucket
-        endpoint: s3.amazonaws.com
-        secret_access_key: ${AWS_SECRET_ACCESS_KEY}
-    runtime_config:
-      file: /var/mimir/runtime.yaml
-    server:
-      grpc_server_max_concurrent_streams: 1000
+     activity_tracker:
+       filepath: /data/metrics-activity.log
+     alertmanager:
+       data_dir: /data
+       enable_api: true
+       external_url: /alertmanager
+     alertmanager_storage:
+       s3:
+         access_key_id: ${AWS_ACCESS_KEY_ID}
+         bucket_name: my-ruler-bucket
+         endpoint: s3.amazonaws.com
+         secret_access_key: ${AWS_SECRET_ACCESS_KEY}
+     blocks_storage:
+       backend: s3
+       bucket_store:
+         sync_dir: /data/tsdb-sync
+       s3:
+         access_key_id: ${AWS_ACCESS_KEY_ID}
+         bucket_name: my-blocks-bucket
+         endpoint: s3.amazonaws.com
+         secret_access_key: ${AWS_SECRET_ACCESS_KEY}
+       tsdb:
+         dir: /data/tsdb
+     compactor:
+       data_dir: /data
+     frontend:
+       align_queries_with_step: true
+       log_queries_longer_than: 10s
+     frontend_worker:
+       frontend_address: mimir-query-frontend-headless.test.svc:9095
+     ingester:
+       ring:
+         final_sleep: 0s
+         num_tokens: 512
+         unregister_on_shutdown: false
+     ingester_client:
+       grpc_client_config:
+         max_recv_msg_size: 104857600
+         max_send_msg_size: 104857600
+     limits: {}
+     memberlist:
+       abort_if_cluster_join_fails: false
+       compression_enabled: false
+       join_members:
+       - dns+mimir-gossip-ring.test.svc.cluster.local:7946
+     ruler:
+       alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.mimir-alertmanager-headless.test.svc.cluster.local/alertmanager
+       enable_api: true
+       rule_path: /data
+     ruler_storage:
+       s3:
+         access_key_id: ${AWS_ACCESS_KEY_ID}
+         bucket_name: my-ruler-bucket
+         endpoint: s3.amazonaws.com
+         secret_access_key: ${AWS_SECRET_ACCESS_KEY}
+     runtime_config:
+       file: /var/mimir/runtime.yaml
+     server:
+       grpc_server_max_concurrent_streams: 1000
    ```
+
+1. Install the chart with the `helm` command
+
+   ```bash
+   helm -n mimir-test install mimir grafana/mimir-distributed -f custom.yaml
+   ```
+
+## Example output of helm diff command
+
+This is an excerpt of what helm diff shows when you alter the configuration via `mimir.structuredConfig`.
+
+```
+#... cut for size ...
+
+test, mimir-config, ConfigMap (v1) has changed:
+  # Source: mimir-distributed/templates/mimir-config.yaml
+  apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    name: mimir-config
+    labels:
+      helm.sh/chart: mimir-distributed-3.0.0
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/version: "2.2.0"
+      app.kubernetes.io/managed-by: Helm
+    namespace: "test"
+  data:
+    mimir.yaml: |
+
+      activity_tracker:
+        filepath: /data/metrics-activity.log
+      alertmanager:
+        data_dir: /data
+        enable_api: true
+-       external_url: /alertmanager
++       external_url: https://example.com/alerts
+      alertmanager_storage:
+        backend: s3
+        s3:
+          access_key_id: grafana-mimir
+          bucket_name: mimir-ruler
+          endpoint: mimir-minio.test.svc:9000
+          insecure: true
+          secret_access_key: supersecret
+      blocks_storage:
+        backend: s3
+        bucket_store:
+          sync_dir: /data/tsdb-sync
+        s3:
+          access_key_id: grafana-mimir
+          bucket_name: mimir-tsdb
+          endpoint: mimir-minio.test.svc:9000
+          insecure: true
+          secret_access_key: supersecret
+        tsdb:
+          dir: /data/tsdb
+      compactor:
+        data_dir: /data
+      frontend:
+        align_queries_with_step: true
+        log_queries_longer_than: 10s
+      frontend_worker:
+        frontend_address: mimir-query-frontend-headless.test.svc:9095
+      ingester:
+        ring:
+          final_sleep: 0s
+          num_tokens: 512
+          unregister_on_shutdown: false
+      ingester_client:
+        grpc_client_config:
+          max_recv_msg_size: 104857600
+          max_send_msg_size: 104857600
+      limits: {}
+      memberlist:
+        abort_if_cluster_join_fails: false
+        compression_enabled: false
+        join_members:
+        - mimir-gossip-ring
+      ruler:
+        alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.mimir-alertmanager-headless.test.svc.cluster.local/alertmanager
+        enable_api: true
+        rule_path: /data
+      ruler_storage:
+        backend: s3
+        s3:
+          access_key_id: grafana-mimir
+          bucket_name: mimir-ruler
+          endpoint: mimir-minio.test.svc:9000
+          insecure: true
+          secret_access_key: supersecret
+      runtime_config:
+        file: /var/mimir/runtime.yaml
+      server:
+        grpc_server_max_concurrent_streams: 1000
++       log_level: debug
+
+#... cut for size ...
+
+test, mimir-distributor, Deployment (apps) has changed:
+  # Source: mimir-distributed/templates/distributor/distributor-dep.yaml
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: mimir-distributor
+    labels:
+      helm.sh/chart: mimir-distributed-3.0.0
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: mimir
+      app.kubernetes.io/component: distributor
+      app.kubernetes.io/part-of: memberlist
+      app.kubernetes.io/version: "2.2.0"
+      app.kubernetes.io/managed-by: Helm
+    annotations:
+      {}
+    namespace: "test"
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        app.kubernetes.io/name: mimir
+        app.kubernetes.io/instance: mimir
+        app.kubernetes.io/component: distributor
+    strategy:
+      rollingUpdate:
+        maxSurge: 0
+        maxUnavailable: 1
+      type: RollingUpdate
+    template:
+      metadata:
+        labels:
+          helm.sh/chart: mimir-distributed-3.0.0
+          app.kubernetes.io/name: mimir
+          app.kubernetes.io/instance: mimir
+          app.kubernetes.io/version: "2.2.0"
+          app.kubernetes.io/managed-by: Helm
+          app.kubernetes.io/component: distributor
+          app.kubernetes.io/part-of: memberlist
+        annotations:
+-         checksum/config: bad33a421a56693ebad68b64ecf407b5e897c3679b1a33b65672dbc4e98e918f
++         checksum/config: 02f080c347a1fcd6c9e49a38280330378d3afe12efc7151cd679935c96b35b83
+        namespace: "test"
+      spec:
+        serviceAccountName: mimir
+        securityContext:
+          {}
+        initContainers:
+          []
+        containers:
+          - name: distributor
+            image: "grafana/mimir:2.2.0"
+            imagePullPolicy: IfNotPresent
+            args:
+              - "-target=distributor"
+              - "-config.expand-env=true"
+              - "-config.file=/etc/mimir/mimir.yaml"
+            volumeMounts:
+              - name: config
+                mountPath: /etc/mimir
+              - name: runtime-config
+                mountPath: /var/mimir
+              - name: storage
+                mountPath: "/data"
+                subPath:
+            ports:
+              - name: http-metrics
+                containerPort: 8080
+                protocol: TCP
+              - name: grpc
+                containerPort: 9095
+                protocol: TCP
+              - name: memberlist
+                containerPort: 7946
+                protocol: TCP
+            livenessProbe:
+              null
+            readinessProbe:
+              httpGet:
+                path: /ready
+                port: http-metrics
+              initialDelaySeconds: 45
+            resources:
+              requests:
+                cpu: 100m
+                memory: 512Mi
+            securityContext:
+              readOnlyRootFilesystem: true
+            env:
+            envFrom:
+        nodeSelector:
+          {}
+        affinity:
+          podAntiAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                - key: target
+                  operator: In
+                  values:
+                  - distributor
+              topologyKey: kubernetes.io/hostname
+        tolerations:
+          []
+        terminationGracePeriodSeconds: 60
+        volumes:
+          - name: config
+            configMap:
+              name: mimir-config
+              items:
+                - key: "mimir.yaml"
+                  path: "mimir.yaml"
+          - name: runtime-config
+            configMap:
+              name: mimir-runtime
+          - name: storage
+            emptyDir: {}
+
+#... cut for size ...
+```
+
+Lines starting with "`-`" were removed and lines starting with "`+`" were added. The change to the annotation `checksum/config` means the pods will be restarted when this change is applied.
+
+To reproduce the above output, follow these steps:
+
+1. Install Grafana Mimir with the `helm` command
+
+```bash
+helm -n test install mimir grafana/mimir-distributed --version 3.0.0
+```
+
+1. Create a `custom.yaml` file with the following content
+
+```yaml
+mimir:
+structuredConfig:
+  alertmanager:
+    external_url: https://example.com/alerts
+  server:
+    log_level: debug
+```
+
+1. Produce the diff with the `helm` command
+
+```bash
+helm -n test diff upgrade mimir grafana/mimir-distributed --version 3.0.0  -f custom.yaml
+```
