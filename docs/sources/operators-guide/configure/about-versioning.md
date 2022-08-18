@@ -85,6 +85,7 @@ The following features are currently experimental:
   - Out-of-order samples ingestion (`-ingester.out-of-order-allowance`)
 - Query-frontend
   - `-query-frontend.querier-forget-delay`
+  - Instant query splitting (`-query-frontend.split-instant-queries-by-interval`)
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway
