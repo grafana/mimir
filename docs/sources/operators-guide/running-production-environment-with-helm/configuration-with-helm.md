@@ -39,7 +39,7 @@ Grafana Mimir components are run with a configuration calculcated by the followi
 1. The values from `mimir.structuredConfig` are recursively merged with `mimir.config`. The values from `mimir.structuredConfig` take precedence over the values in `mimir.config`. The result is again evaluated as a Helm template. This step is intended to apply user specific customizations. For example S3 storage details.
 1. The resulting YAML configuration is then sorted alphabetically and stored in a `ConfigMap` (or `Secret` depending on the value of `configStorageType`) and provided to all Grafana Mimir components.
 1. The configuration file as well as any extra CLI flags are provided to the Mimir pods.
-1. Each component evaulates the configuration, substituting environment variables as required. Note that extra CLI flags take precedence over the configuration file.
+1. Each component evaluates the configuration, substituting environment variables as required. Note that extra CLI flags take precedence over the configuration file.
 
 > **Note:**: CLI flags are component specific, thus they will not show up in the generated `ConfigMap` (or `Secret`), making it less obvious what configuration is running. Use only when absolutely necessary.
 
