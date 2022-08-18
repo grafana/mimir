@@ -567,8 +567,11 @@ check-jsonnet-tests: ## Check the jsonnet tests output.
 check-jsonnet-tests: build-jsonnet-tests
 	@./tools/find-diff-or-untracked.sh operations/mimir-tests || (echo "Please rebuild jsonnet tests output 'make build-jsonnet-tests'" && false)
 
-check-tsdb-blocks-storage-s3-docker-compose-yaml: ## Check the josnnet and docker-compose diff.
-	cd development/tsdb-blocks-storage-s3 && make check
+check-mimir-microservices-mode-docker-compose-yaml: ## Check the jsonnet and docker-compose diff for development/mimir-microservices-mode.
+	cd development/mimir-microservices-mode && make check
+
+check-mimir-read-write-mode-docker-compose-yaml: ## Check the jsonnet and docker-compose diff for development/mimir-read-write-mode.
+	cd development/mimir-read-write-mode && make check
 
 integration-tests: ## Run all integration tests.
 integration-tests: cmd/mimir/$(UPTODATE)

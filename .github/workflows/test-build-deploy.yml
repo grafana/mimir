@@ -43,7 +43,7 @@ jobs:
       - name: Check License Header
         run: make BUILD_IN_CONTAINER=false check-license
       - name: Check Docker-Compose YAML
-        run: make BUILD_IN_CONTAINER=false check-tsdb-blocks-storage-s3-docker-compose-yaml
+        run: make BUILD_IN_CONTAINER=false check-mimir-microservices-mode-docker-compose-yaml check-mimir-read-write-mode-docker-compose-yaml
 
   doc-validator:
     runs-on: ubuntu-latest
