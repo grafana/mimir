@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
@@ -44,7 +45,7 @@ func (p *fakePusher) Push(ctx context.Context, r *mimirpb.WriteRequest) (*mimirp
 
 func TestPusherAppendable(t *testing.T) {
 	pusher := &fakePusher{}
-	pa := NewPusherAppendable(pusher, "user-1", nil, prometheus.NewCounter(prometheus.CounterOpts{}), prometheus.NewCounter(prometheus.CounterOpts{}))
+	pa := NewPusherAppendable(pusher, "user-1", nil, promauto.With(nil).NewCounter(prometheus.CounterOpts{}), promauto.With(nil).NewCounter(prometheus.CounterOpts{}))
 
 	for _, tc := range []struct {
 		name       string
@@ -130,8 +131,8 @@ func TestPusherErrors(t *testing.T) {
 
 			pusher := &fakePusher{err: tc.returnedError, response: &mimirpb.WriteResponse{}}
 
-			writes := prometheus.NewCounter(prometheus.CounterOpts{})
-			failures := prometheus.NewCounter(prometheus.CounterOpts{})
+			writes := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
+			failures := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
 
 			pa := NewPusherAppendable(pusher, "user-1", ruleLimits{evalDelay: 10 * time.Second}, writes, failures)
 
@@ -219,8 +220,8 @@ func TestMetricsQueryFuncErrors(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			queries := prometheus.NewCounter(prometheus.CounterOpts{})
-			failures := prometheus.NewCounter(prometheus.CounterOpts{})
+			queries := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
+			failures := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
 
 			mockFunc := func(ctx context.Context, q string, t time.Time) (promql.Vector, error) {
 				return promql.Vector{}, tc.returnedError
@@ -237,7 +238,7 @@ func TestMetricsQueryFuncErrors(t *testing.T) {
 }
 
 func TestRecordAndReportRuleQueryMetrics(t *testing.T) {
-	queryTime := prometheus.NewCounterVec(prometheus.CounterOpts{}, []string{"user"})
+	queryTime := promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"})
 
 	mockFunc := func(ctx context.Context, q string, t time.Time) (promql.Vector, error) {
 		time.Sleep(1 * time.Second)

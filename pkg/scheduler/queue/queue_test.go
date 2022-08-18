@@ -15,6 +15,7 @@ import (
 
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -28,8 +29,8 @@ func BenchmarkGetNextRequest(b *testing.B) {
 
 	for n := 0; n < b.N; n++ {
 		queue := NewRequestQueue(maxOutstandingPerTenant, 0,
-			prometheus.NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
-			prometheus.NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
+			promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+			promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		)
 		queues = append(queues, queue)
 
@@ -85,8 +86,8 @@ func BenchmarkQueueRequest(b *testing.B) {
 
 	for n := 0; n < b.N; n++ {
 		q := NewRequestQueue(maxOutstandingPerTenant, 0,
-			prometheus.NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
-			prometheus.NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
+			promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+			promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		)
 
 		for ix := 0; ix < queriers; ix++ {
@@ -118,8 +119,8 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 	const forgetDelay = 3 * time.Second
 
 	queue := NewRequestQueue(1, forgetDelay,
-		prometheus.NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
-		prometheus.NewCounterVec(prometheus.CounterOpts{}, []string{"user"}))
+		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}))
 
 	// Start the queue service.
 	ctx := context.Background()

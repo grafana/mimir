@@ -23,6 +23,7 @@ import (
 	"github.com/opentracing-contrib/go-stdlib/nethttp"
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -132,8 +133,8 @@ func TestFrontendCheckReady(t *testing.T) {
 			f := &Frontend{
 				log: log.NewNopLogger(),
 				requestQueue: queue.NewRequestQueue(5, 0,
-					prometheus.NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
-					prometheus.NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
+					promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+					promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 				),
 			}
 			for i := 0; i < tt.connectedClients; i++ {
