@@ -119,9 +119,11 @@ type Distributor struct {
 	queryDuration                    *instrument.HistogramCollector
 	ingesterChunksDeduplicated       prometheus.Counter
 	ingesterChunksTotal              prometheus.Counter
+	receivedRequests                 *prometheus.CounterVec
 	receivedSamples                  *prometheus.CounterVec
 	receivedExemplars                *prometheus.CounterVec
 	receivedMetadata                 *prometheus.CounterVec
+	incomingRequests                 *prometheus.CounterVec
 	incomingSamples                  *prometheus.CounterVec
 	incomingExemplars                *prometheus.CounterVec
 	incomingMetadata                 *prometheus.CounterVec
@@ -249,6 +251,11 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Name:      "distributor_query_ingester_chunks_total",
 			Help:      "Number of chunks transferred at query time from ingesters.",
 		}),
+		receivedRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Namespace: "cortex",
+			Name:      "distributor_received_requests_total",
+			Help:      "The total number of received requests, excluding rejected, forwarded and deduped requests.",
+		}, []string{"user"}),
 		receivedSamples: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_received_samples_total",
@@ -263,6 +270,11 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Namespace: "cortex",
 			Name:      "distributor_received_metadata_total",
 			Help:      "The total number of received metadata, excluding rejected.",
+		}, []string{"user"}),
+		incomingRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Namespace: "cortex",
+			Name:      "distributor_requests_in_total",
+			Help:      "The total number of requests that have come in to the distributor, including rejected, forwarded or deduped requests.",
 		}, []string{"user"}),
 		incomingSamples: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
@@ -481,9 +493,11 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 
 	d.HATracker.cleanupHATrackerMetricsForUser(userID)
 
+	d.receivedRequests.DeleteLabelValues(userID)
 	d.receivedSamples.DeleteLabelValues(userID)
 	d.receivedExemplars.DeleteLabelValues(userID)
 	d.receivedMetadata.DeleteLabelValues(userID)
+	d.incomingRequests.DeleteLabelValues(userID)
 	d.incomingSamples.DeleteLabelValues(userID)
 	d.incomingExemplars.DeleteLabelValues(userID)
 	d.incomingMetadata.DeleteLabelValues(userID)
@@ -629,6 +643,7 @@ func (d *Distributor) wrapPushWithMiddlewares(next push.Func) push.Func {
 	// To guarantee that, middleware functions will be called in reversed order, wrapping the
 	// result from previous call.
 	middlewares = append(middlewares, d.instanceLimitsMiddleware) // should run first
+	middlewares = append(middlewares, d.prePushUserRequestMiddleware)
 	middlewares = append(middlewares, d.prePushHaDedupeMiddleware)
 	middlewares = append(middlewares, d.prePushRelabelMiddleware)
 	middlewares = append(middlewares, d.prePushForwardingMiddleware)
@@ -638,6 +653,28 @@ func (d *Distributor) wrapPushWithMiddlewares(next push.Func) push.Func {
 	}
 
 	return next
+}
+
+// prePushUserRequestMiddleware increments a per-tenant request counter before other middlewares run
+// (HA deduplication, forwarding) so that we can get an accurate idea of number of requests per user.
+func (d *Distributor) prePushUserRequestMiddleware(next push.Func) push.Func {
+	return func(ctx context.Context, req *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error) {
+		cleanupInDefer := true
+		defer func() {
+			if cleanupInDefer {
+				cleanup()
+			}
+		}()
+
+		userID, err := tenant.TenantID(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		cleanupInDefer = false
+		d.incomingRequests.WithLabelValues(userID).Add(1)
+		return next(ctx, req, cleanup)
+	}
 }
 
 func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
@@ -893,6 +930,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		return nil, httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewRequestRateLimitedError(d.limits.RequestRate(userID), d.limits.RequestBurstSize(userID)).Error())
 	}
 
+	d.receivedRequests.WithLabelValues(userID).Add(1)
 	d.activeUsers.UpdateUserTimestamp(userID, now)
 
 	source := util.GetSourceIPsFromOutgoingCtx(ctx)
