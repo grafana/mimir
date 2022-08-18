@@ -2,6 +2,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
 local filename = 'mimir-remote-ruler-reads.json';
 
 (import 'dashboard-utils.libsonnet') {
+  // Both support gRPC and HTTP requests. HTTP request is used when rule evaluation query requests go through the query-tee.
+  local rulerRoutesRegex = '/httpgrpc.HTTP/Handle|.*api_v1_query',
+
   [filename]:
     ($.dashboard('Remote ruler reads') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
@@ -32,12 +35,13 @@ local filename = 'mimir-remote-ruler-reads.json';
             rate(
               cortex_request_duration_seconds_count{
                 %(queryFrontend)s,
-                route=~"/httpgrpc.HTTP/Handle"
+                route=~"%(rulerRoutesRegex)s"
               }[$__rate_interval]
             )
           )
         ||| % {
           queryFrontend: $.jobMatcher($._config.job_names.ruler_query_frontend),
+          rulerRoutesRegex: rulerRoutesRegex,
         }, format='reqps') +
         $.panelDescription(
           'Evaluations per second',
@@ -51,16 +55,16 @@ local filename = 'mimir-remote-ruler-reads.json';
       $.row('Query-frontend (dedicated to ruler)')
       .addPanel(
         $.panel('Requests / sec') +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s, route="/httpgrpc.HTTP/Handle"}' % $.jobMatcher($._config.job_names.ruler_query_frontend))
+        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher($._config.job_names.ruler_query_frontend), rulerRoutesRegex])
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.ruler_query_frontend) + [utils.selector.re('route', '/httpgrpc.HTTP/Handle')])
+        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.ruler_query_frontend) + [utils.selector.re('route', rulerRoutesRegex)])
       )
       .addPanel(
         $.panel('Per %s p99 latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route="/httpgrpc.HTTP/Handle"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ruler_query_frontend)], ''
+          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ruler_query_frontend), rulerRoutesRegex], ''
         ) +
         { yaxes: $.yaxes('s') }
       )
