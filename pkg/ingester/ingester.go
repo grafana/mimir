@@ -1562,7 +1562,6 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		EnableMemorySnapshotOnShutdown: i.cfg.BlocksStorageConfig.TSDB.MemorySnapshotOnShutdown,
 		IsolationDisabled:              !i.cfg.BlocksStorageConfig.TSDB.IsolationEnabled,
 		HeadChunksWriteQueueSize:       i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteQueueSize,
-		NewChunkDiskMapper:             i.cfg.BlocksStorageConfig.TSDB.NewChunkDiskMapper,
 		AllowOverlappingQueries:        true,                 // We can have overlapping blocks from past or out-of-order enabled during runtime.
 		AllowOverlappingCompaction:     false,                // always false since Mimir only uploads lvl 1 compacted blocks
 		OutOfOrderTimeWindow:           oooTW.Milliseconds(), // The unit must be same as our timestamps.
@@ -2227,8 +2226,8 @@ func (i *Ingester) getInstanceLimits() *InstanceLimits {
 }
 
 // ShutdownHandler triggers the following set of operations in order:
-//     * Change the state of ring to stop accepting writes.
-//     * Flush all the chunks.
+//   - Change the state of ring to stop accepting writes.
+//   - Flush all the chunks.
 func (i *Ingester) ShutdownHandler(w http.ResponseWriter, r *http.Request) {
 	originalFlush := i.lifecycler.FlushOnShutdown()
 	// We want to flush the chunks if transfer fails irrespective of original flag.
