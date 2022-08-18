@@ -26,6 +26,12 @@
 
 * [BUGFIX] Version checking no longer prompts for updating when already on latest version. #2723
 
+### Query-tee
+
+* [CHANGE] Renamed CLI flag `-server.service-port` to `-server.http-service-port`. #2683
+* [CHANGE] Renamed metric `cortex_querytee_request_duration_seconds` to `cortex_querytee_backend_request_duration_seconds`. Metric `cortex_querytee_request_duration_seconds` is now reported without label `backend`. #2683
+* [ENHANCEMENT] Added HTTP over gRPC support to `query-tee` to allow testing gRPC requests to Mimir instances. #2683
+
 ### Mimir Continuous Test
 
 * [ENHANCEMENT] Added basic authentication and bearer token support for when Mimir is behind a gateway authenticating the calls. #2717
