@@ -1,4 +1,4 @@
-{{- if .Values.graphite.enabled -}}
+{{- if and .Values.enterprise.enabled .Values.graphite.enabled -}}
 apiVersion: v1
 kind: Service
 metadata:
@@ -24,4 +24,4 @@ spec:
       targetPort: grpc
   selector:
     {{- include "mimir.selectorLabels" (dict "ctx" . "component" "graphite-write-proxy") | nindent 4 }}
-  {{- end -}}
+{{- end -}}

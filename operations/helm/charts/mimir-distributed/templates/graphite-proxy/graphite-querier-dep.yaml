@@ -1,4 +1,4 @@
-{{- if .Values.graphite.enabled -}}
+{{- if and .Values.enterprise.enabled .Values.graphite.enabled -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -43,6 +43,9 @@ spec:
       {{- end }}
       {{- end }}
       containers:
+        {{- if .Values.graphite_write_proxy.extraContainers }}
+        {{ toYaml .Values.graphite_write_proxy.extraContainers | nindent 8 }}
+        {{- end }}
         - name: graphite-querier
           image: {{ include "mimir.imageReference" . | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
@@ -50,7 +53,7 @@ spec:
             - -target=graphite-querier
             - -config.file=/etc/mimir/mimir.yaml
             - -graphite.enabled=true
-            - -graphite.querier.query-address=http://{{ template "mimir.fullname" . }}-query-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" .  }}/api/prom
+            - -graphite.querier.query-address=http://{{ template "mimir.fullname" . }}-query-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" .  }}/prometheus
             - -graphite.querier.graphite-fallback=http://{{ template "mimir.fullname" . }}-graphite-web.{{ .Release.Namespace}}.svc:{{ include "mimir.serverHttpListenPort" .  }}
             - -graphite.querier.schemas.default-storage-schemas-file=/etc/graphite-proxy/storage-schemas.conf
             - -graphite.querier.schemas.default-storage-aggregations-file=/etc/graphite-proxy/storage-aggregations.conf
@@ -58,14 +61,6 @@ spec:
             - -graphite.querier.aggregation-cache.memcached.timeout=1s
             - -graphite.querier.metric-name-cache.memcached.addresses=dnssrvnoa+{{ template "mimir.fullname" . }}-graphite-metric-name-cache.{{ .Release.Namespace}}.svc:11211
             - -graphite.querier.metric-name-cache.memcached.timeout=1s
-            {{- if .Values.minio.enabled }}
-            - -admin.client.backend-type=s3
-            - -admin.client.s3.endpoint={{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
-            - -admin.client.s3.bucket-name=enterprise-metrics-admin
-            - -admin.client.s3.access-key-id=enterprise-metrics
-            - -admin.client.s3.secret-access-key=supersecret
-            - -admin.client.s3.insecure=true
-            {{- end }}
           {{- range $key, $value := .Values.graphite_querier.extraArgs }}
             - "-{{ $key }}={{ $value }}"
           {{- end }}

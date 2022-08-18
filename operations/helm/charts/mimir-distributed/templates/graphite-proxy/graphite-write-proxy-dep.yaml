@@ -1,4 +1,4 @@
-{{- if .Values.graphite.enabled -}}
+{{- if and .Values.enterprise.enabled .Values.graphite.enabled -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -43,6 +43,9 @@ spec:
       {{- end}}
       {{- end }}
       containers:
+        {{- if .Values.graphite_write_proxy.extraContainers }}
+        {{ toYaml .Values.graphite_write_proxy.extraContainers | nindent 8 }}
+        {{- end }}
         - name: graphite-write-proxy
           image: "{{ include "mimir.imageReference" . }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}

@@ -1,4 +1,4 @@
-{{- if .Values.graphite.enabled -}}
+{{- if and .Values.enterprise.enabled .Values.graphite.enabled -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -6,7 +6,7 @@ metadata:
   labels:
     {{- include "mimir.labels" (dict "ctx" . "component" "graphite-web") | nindent 4 }}
   annotations:
-    {{- toYaml .Values.graphite_web.deployment.annotations | nindent 4 }}
+    {{- toYaml .Values.graphite_web.annotations | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
   replicas: {{ .Values.graphite_web.replicas }}
@@ -27,6 +27,9 @@ spec:
       namespace: {{ .Release.Namespace | quote }}
     spec:
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
+      {{- if .Values.graphite_web.priorityClassName }}
+      priorityClassName: {{ .Values.graphite_web.priorityClassName }}
+      {{- end }}
       containers:
         - name: graphite-web
           image: "{{ .Values.graphite_web.image.repository }}:{{ .Values.graphite_web.image.tag }}"
@@ -46,10 +49,6 @@ spec:
               value: "16"
             - name: GRAPHITE_USE_WORKER_POOL
               value: "false"
-            {{- range $key, $value := .Values.graphite_web.extraEnvVars }}
-            - name: {{ $key }}
-              value: "{{ $value }}"
-            {{- end }}
           ports:
             - name: http-metrics
               containerPort: {{ include "mimir.serverHttpListenPort" . }}

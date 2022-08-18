@@ -2054,7 +2054,7 @@ gateway:
           - gateway.gem.example.com
 
 graphite:
-  # If true, enables graphite querier and graphite write proxy functionality.
+  # -- If true, enables graphite querier and graphite write proxy functionality.
   # Read more in https://grafana.com/docs/metrics-enterprise/latest/graphite/
   enabled: true
 
@@ -2077,18 +2077,19 @@ graphite_querier:
     annotations: {}
     labels: {}
 
+  # -- Resources for graphite-querier pods
   resources:
     requests:
       cpu: 100m
       memory: 128Mi
 
-  # Additional Grafana Enterprise Metrics container arguments, e.g. log level (debug, info, warn, error)
+  # -- Additional graphite-querier container arguments, e.g. log level (debug, info, warn, error)
   extraArgs: {}
-
-  # Pod Labels
+  # -- The name of the PriorityClass for graphite-querier pods
+  priorityClassName: null
+  # -- Labels for graphite-querier pods
   podLabels: {}
-
-  # Pod Annotations
+  # -- Annotations for graphite-querier pods
   podAnnotations: {}
 
   nodeSelector: {}
@@ -2104,6 +2105,17 @@ graphite_querier:
                   values:
                     - graphite-querier
             topologyKey: 'kubernetes.io/hostname'
+
+  livenessProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    initialDelaySeconds: 45
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    initialDelaySeconds: 45
 
   annotations: {}
   persistence:
@@ -2141,21 +2153,23 @@ graphite_write_proxy:
     annotations: {}
     labels: {}
 
+  # -- Resources for graphite-write-proxy pods
   resources:
     requests:
       cpu: 100m
       memory: 128Mi
 
-  # Additional Grafana Enterprise Metrics container arguments, e.g. log level (debug, info, warn, error)
+  # -- Additional graphite-write-proxy container arguments, e.g. log level (debug, info, warn, error)
   extraArgs: {}
-
-  # Pod Labels
+  # -- The name of the PriorityClass for graphite-write-proxy pods
+  priorityClassName: null
+  # -- Labels for graphite-write-proxy pods
   podLabels: {}
-
-  # Pod Annotations
+  # -- Annotations for graphite-write-proxy pods
   podAnnotations: {}
-
+  # -- Node selector for graphite-write-proxy pods
   nodeSelector: {}
+  # -- Affinity for graphite-write-proxy pods
   affinity:
     podAntiAffinity:
       preferredDuringSchedulingIgnoredDuringExecution:
@@ -2169,26 +2183,33 @@ graphite_write_proxy:
                     - graphite-write-proxy
             topologyKey: 'kubernetes.io/hostname'
 
-  annotations: {}
-  persistence:
-    subPath:
-
+  livenessProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    initialDelaySeconds: 45
   readinessProbe:
     httpGet:
       path: /ready
       port: http-metrics
     initialDelaySeconds: 45
 
+  annotations: {}
+  persistence:
+    subPath:
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: http-metrics
+    initialDelaySeconds: 45
   securityContext: {}
-
   strategy:
     type: RollingUpdate
     rollingUpdate:
       maxSurge: 0
       maxUnavailable: 1
-
+  # -- Grace period to allow the graphite-write-proxy to shutdown before it is killed
   terminationGracePeriodSeconds: 180
-
   env: []
   extraEnvFrom: []
   tolerations: []
@@ -2211,24 +2232,20 @@ graphite_web:
     annotations: {}
     labels: {}
 
-  deployment:
-    annotations: {}
-    labels: {}
-
+  # -- Resources for graphite-web pods
   resources:
     requests:
       cpu: 100m
       memory: 512Mi
-
-  extraEnvVars: {}
-
-  # Pod Labels
+  # -- The name of the PriorityClass for graphite-web pods
+  priorityClassName: null
+  # -- Labels for graphite-web pods
   podLabels: {}
-
-  # Pod Annotations
+  # -- Annotations for graphite-web pods
   podAnnotations: {}
-
+  # -- Node selector for graphite-web pods
   nodeSelector: {}
+  # -- Affinity for graphite-web pods
   affinity:
     podAntiAffinity:
       requiredDuringSchedulingIgnoredDuringExecution:
@@ -2242,10 +2259,11 @@ graphite_web:
 
   strategy:
     type: RollingUpdate
-
+  # -- Grace period to allow the graphite-web to shutdown before it is killed
   terminationGracePeriodSeconds: 30
-
+  # -- Tolerations for graphite-web pods
   tolerations: []
+  # -- Pod Disruption Budget
   podDisruptionBudget: {}
 
 

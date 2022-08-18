@@ -1,4 +1,4 @@
-{{- if .Values.graphite.enabled -}}
+{{- if and .Values.enterprise.enabled .Values.graphite.enabled -}}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -7,13 +7,8 @@ metadata:
     {{- include "mimir.labels" (dict "ctx" . "component" "graphite-schemas") | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 data:
-{{- range  $storageSchemas := toStrings .Values.graphite_querier.schemasConfiguration.storageSchemas }}
   storage-schemas.conf: |
-{{ $storageSchemas | indent 4}}
-{{- end }}
-
-{{- range  $storageAggregations := toStrings .Values.graphite_querier.schemasConfiguration.storageAggregations }}
+{{ .Values.graphite_querier.schemasConfiguration.storageSchemas | indent 4 }}
   storage-aggregations.conf: |
-{{ $storageAggregations | indent 4}}
-{{- end }}
+{{ .Values.graphite_querier.schemasConfiguration.storageAggregations | indent 4 }}
 {{- end -}}
