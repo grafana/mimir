@@ -17,6 +17,8 @@
 
 ### Mixin
 
+* [ENHANCEMENT] Dashboards: added support to query-tee in front of ruler-query-frontend in the "Remote ruler reads" dashboard. #2761
+
 ### Jsonnet
 
 * [ENHANCEMENT] Upgrade memcached image tag to `memcached:1.6.16-alpine`. #2740

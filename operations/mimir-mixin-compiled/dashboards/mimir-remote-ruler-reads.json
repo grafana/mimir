@@ -91,7 +91,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(\n  rate(\n    cortex_request_duration_seconds_count{\n      cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\",\n      route=~\"/httpgrpc.HTTP/Handle\"\n    }[$__rate_interval]\n  )\n)\n",
+                        "expr": "sum(\n  rate(\n    cortex_request_duration_seconds_count{\n      cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\",\n      route=~\"/httpgrpc.HTTP/Handle|.*api_v1_query\"\n    }[$__rate_interval]\n  )\n)\n",
                         "format": "time_series",
                         "instant": true,
                         "intervalFactor": 2,
@@ -186,7 +186,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", route=\"/httpgrpc.HTTP/Handle\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-z]+)\"))\n",
+                        "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", route=~\"/httpgrpc.HTTP/Handle|.*api_v1_query\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-z]+)\"))\n",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -263,7 +263,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", route=~\"/httpgrpc.HTTP/Handle\"})) * 1e3",
+                        "expr": "histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", route=~\"/httpgrpc.HTTP/Handle|.*api_v1_query\"})) * 1e3",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "99th Percentile",
@@ -271,7 +271,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "histogram_quantile(0.50, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", route=~\"/httpgrpc.HTTP/Handle\"})) * 1e3",
+                        "expr": "histogram_quantile(0.50, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", route=~\"/httpgrpc.HTTP/Handle|.*api_v1_query\"})) * 1e3",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "50th Percentile",
@@ -279,7 +279,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "1e3 * sum(cluster_job_route:cortex_request_duration_seconds_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", route=~\"/httpgrpc.HTTP/Handle\"}) / sum(cluster_job_route:cortex_request_duration_seconds_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", route=~\"/httpgrpc.HTTP/Handle\"})",
+                        "expr": "1e3 * sum(cluster_job_route:cortex_request_duration_seconds_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", route=~\"/httpgrpc.HTTP/Handle|.*api_v1_query\"}) / sum(cluster_job_route:cortex_request_duration_seconds_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", route=~\"/httpgrpc.HTTP/Handle|.*api_v1_query\"})",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "Average",
@@ -349,7 +349,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "histogram_quantile(0.99, sum by(le, pod) (rate(cortex_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", route=\"/httpgrpc.HTTP/Handle\"}[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.99, sum by(le, pod) (rate(cortex_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", route=~\"/httpgrpc.HTTP/Handle|.*api_v1_query\"}[$__rate_interval])))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
