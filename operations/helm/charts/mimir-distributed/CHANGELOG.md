@@ -17,6 +17,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Default `ingester.ring.tokens-file-path` and `store-gateway.sharding-ring.tokens-file-path` to `/data/tokens` to prevent resharding on restarts. #2726
 * [ENHANCEMENT] Upgrade memcached image tag to `memcached:1.6.16-alpine`. #2740
 * [ENHANCEMENT] Upgrade nginx image tag to `nginxinc/nginx-unprivileged:1.22-alpine`. #2742
+* [ENHANCEMENT] Upgrade minio subchart to `4.0.12`. #2759
 * [BUGFIX] Do not use undocumented `mulf` function in templates. #2752
 
 ## 3.1.0
