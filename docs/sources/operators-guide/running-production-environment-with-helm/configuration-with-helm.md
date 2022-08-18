@@ -94,7 +94,7 @@ externalConfigVersion: "0"
 
 ### Use external Secret
 
-Prepare a `Secret` object where the configuration is base64 encoded and placed under the `mimir.yaml` data key.
+Prepare a `Secret` object where the configuration is base64-encoded and placed under the `mimir.yaml` data key.
 
 ```yaml
 apiVersion: v1
@@ -131,7 +131,7 @@ Grafana Mimir will not keep track of changes to the credentials. If the credenti
 
 ## Example of configuration managed with Helm
 
-This example show how to set up the configuration to use an S3 bucket for blocks storage. We assume that the namespace in use is called `mimir-test`.
+This example shows how to set up the configuration to use an S3 bucket for blocks storage. We assume that the namespace in use is called `mimir-test`.
 
 1. Set up the external blocks storage, in this case S3 with buckets named for example `my-blocks-bucket`, `my-ruler-bucket` and in case of Grafana Enterprise Metrics `my-admin-bucket`.
 
@@ -147,12 +147,12 @@ This example show how to set up the configuration to use an S3 bucket for blocks
      AWS_SECRET_ACCESS_KEY: FAKESECRETKEY
    ```
 
-   Replace FAKEACCESSKEY and FAKESECRETKEY with the actual value encoded with base64.
+   Replace FAKEACCESSKEY and FAKESECRETKEY with the actual value encoded in base64.
 
 1. Apply the secret to your cluster with the `kubectl` command:
 
    ```bash
-   kubectl -n mimir-test apply -f `mysecret.yaml`
+   kubectl -n mimir-test apply -f mysecret.yaml
    ```
 
 1. Prepare your custom values file called `custom.yaml`:
@@ -165,13 +165,13 @@ This example show how to set up the configuration to use an S3 bucket for blocks
      podAnnotations:
        bucketSecretVersion: "0"
 
-   # This turns of the built in MinIO support
+   # This turns of the built-in MinIO support
    minio:
      enabled: false
 
    mimir:
      structuredConfig:
-       # Uncomment in case of Grafana Enterprise Metrics
+       # Uncomment when using Grafana Enterprise Metrics
        # admin_client:
        #   storage:
        #     s3:
@@ -204,6 +204,9 @@ This example show how to set up the configuration to use an S3 bucket for blocks
 
    ```bash
    helm -n mimir-test template mimir grafana/mimir-distributed -f custom.yaml -s templates/mimir-config.yaml
+    ```
+   You should see the following output:
+   ```yaml
    ---
    # Source: mimir-distributed/templates/mimir-config.yaml
    apiVersion: v1
