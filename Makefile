@@ -319,7 +319,12 @@ lint: check-makefiles
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
 	# Ensure we never use the default registerer and we allow to use a custom one (improves testability).
-	faillint -paths="github.com/prometheus/client_golang/prometheus.{MustRegister,Register,DefaultRegisterer}" ./pkg/...
+	# Also, ensure we use promauto.With() to reduce the chances we forget to register metrics.
+	faillint -paths \
+		"github.com/prometheus/client_golang/prometheus/promauto.{NewCounter,NewCounterVec,NewCounterFunc,NewGauge,NewGaugeVec,NewGaugeFunc,NewSummary,NewSummaryVec,NewHistogram,NewHistogramVec}=github.com/prometheus/client_golang/prometheus/promauto.With,\
+		github.com/prometheus/client_golang/prometheus.{MustRegister,Register,DefaultRegisterer}=github.com/prometheus/client_golang/prometheus/promauto.With,\
+		github.com/prometheus/client_golang/prometheus.{NewCounter,NewCounterVec,NewCounterFunc,NewGauge,NewGaugeVec,NewGaugeFunc,NewSummary,NewSummaryVec,NewHistogram,NewHistogramVec}=github.com/prometheus/client_golang/prometheus/promauto.With" \
+		./pkg/...
 
 format: ## Run gofmt and goimports.
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec gofmt -w -s {} \;

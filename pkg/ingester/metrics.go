@@ -80,6 +80,12 @@ func newIngesterMetrics(
 	idleTsdbChecks.WithLabelValues(string(tsdbTenantMarkedForDeletion))
 	idleTsdbChecks.WithLabelValues(string(tsdbIdleClosed))
 
+	// Active series metrics are registered only if enabled.
+	var activeSeriesReg prometheus.Registerer
+	if activeSeriesEnabled {
+		activeSeriesReg = r
+	}
+
 	m := &ingesterMetrics{
 		ingestedSamples: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingester_ingested_samples_total",
@@ -209,19 +215,19 @@ func newIngesterMetrics(
 		}),
 
 		// Not registered automatically, but only if activeSeriesEnabled is true.
-		activeSeriesLoading: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		activeSeriesLoading: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_ingester_active_series_loading",
 			Help: "Indicates that active series configuration is being reloaded, and waiting to become stable. While this metric is non zero, values from active series metrics shouldn't be considered.",
 		}, []string{"user"}),
 
 		// Not registered automatically, but only if activeSeriesEnabled is true.
-		activeSeriesPerUser: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		activeSeriesPerUser: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_ingester_active_series",
 			Help: "Number of currently active series per user.",
 		}, []string{"user"}),
 
 		// Not registered automatically, but only if activeSeriesEnabled is true.
-		activeSeriesCustomTrackersPerUser: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		activeSeriesCustomTrackersPerUser: promauto.With(activeSeriesReg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_ingester_active_series_custom_tracker",
 			Help: "Number of currently active series matching a pre-configured label matchers per user.",
 		}, []string{"user", "name"}),
@@ -252,12 +258,6 @@ func newIngesterMetrics(
 		}),
 
 		idleTsdbChecks: idleTsdbChecks,
-	}
-
-	if activeSeriesEnabled && r != nil {
-		r.MustRegister(m.activeSeriesLoading)
-		r.MustRegister(m.activeSeriesPerUser)
-		r.MustRegister(m.activeSeriesCustomTrackersPerUser)
 	}
 
 	return m
