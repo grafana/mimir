@@ -36,7 +36,7 @@ See the [Example](#example-of-configuration-managed-with-helm) for a practical a
 Grafana Mimir components are run with a configuration calculcated by the following process:
 
 1. The configuration YAML in `mimir.config` is evaluated as a Helm template. This step is intended to ensure that the configuration applies to the Kubernetes cluster where it will be installed. For example setting up cluster-specific addresses.
-1. The values from `mimir.structuredConfig` are merged on top and the result is again evaulated for Helm templates. This steps is intended to apply user specific customizations. For example S3 storage details.
+1. The values from `mimir.structuredConfig` are recursively merged with `mimir.config`. The values from `mimir.structuredConfig` take precedence over the values in `mimir.config`. The result is again evaluated as a Helm template. This step is intended to apply user specific customizations. For example S3 storage details.
 1. The resulting YAML configuration is then sorted alphabetically and stored in a `ConfigMap` (or `Secret` depending on the value of `configStorageType`) and provided to all Grafana Mimir components.
 1. When Grafana Mimir components are run in pods, the configuration file as well as any extra CLI flags are provided to the component.
 1. Each component evaulates the configuration, substituting environment variables as required. Note that extra CLI flags take precedence over the configuration file.
