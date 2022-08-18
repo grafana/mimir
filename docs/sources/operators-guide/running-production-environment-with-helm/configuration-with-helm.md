@@ -64,7 +64,7 @@ This command shows the differences between the running deployment and the deploy
 
 ## Manage the configuration directly
 
-Prepare the configuration as text. It can not include Helm template functions, value evaulations. The configuration may include references to environment variables as explained in [Injecting credentials](#injecting-credentials).
+Prepare the configuration as text. It cannot include Helm template functions or value evaluations. The configuration may include references to environment variables as explained in [Injecting credentials](#injecting-credentials).
 
 Decide whether you want to use a `ConfigMap` or `Secret` to store the configuration. Handling `ConfigMap` is a little bit simpler, but be ware of sensitive information.
 
