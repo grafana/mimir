@@ -4387,7 +4387,17 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		ds, _, regs := prepare(t, config)
 		return ds[0], regs[0]
 	}
-	getExpectedMetrics := func(requestsIn, samplesIn, exemplarsIn, metadataIn, receivedRequests, receivedSamples, receivedExemplars, receivedMetadata int) (string, []string) {
+	type expectedMetricsCfg struct {
+		requestsIn        int
+		samplesIn         int
+		exemplarsIn       int
+		metadataIn        int
+		receivedRequests  int
+		receivedSamples   int
+		receivedExemplars int
+		receivedMetadata  int
+	}
+	getExpectedMetrics := func(cfg expectedMetricsCfg) (string, []string) {
 		return fmt.Sprintf(`
 				# HELP cortex_distributor_requests_in_total The total number of requests that have come in to the distributor, including rejected, forwarded or deduped requests.
 				# TYPE cortex_distributor_requests_in_total counter
@@ -4413,7 +4423,7 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 				# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
 				# TYPE cortex_distributor_received_metadata_total counter
 				cortex_distributor_received_metadata_total{user="%s"} %d
-	`, tenant, requestsIn, tenant, samplesIn, tenant, exemplarsIn, tenant, metadataIn, tenant, receivedRequests, tenant, receivedSamples, tenant, receivedExemplars, tenant, receivedMetadata), []string{
+	`, tenant, cfg.requestsIn, tenant, cfg.samplesIn, tenant, cfg.exemplarsIn, tenant, cfg.metadataIn, tenant, cfg.receivedRequests, tenant, cfg.receivedSamples, tenant, cfg.receivedExemplars, tenant, cfg.receivedMetadata), []string{
 				"cortex_distributor_requests_in_total",
 				"cortex_distributor_samples_in_total",
 				"cortex_distributor_exemplars_in_total",
@@ -4446,7 +4456,15 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		_, err := dist.Push(getCtx(), req)
 		require.NoError(t, err)
 
-		expectedMetrics, metricNames := getExpectedMetrics(1, 10, 10, 10, 1, 10, 10, 10)
+		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
+			requestsIn:        1,
+			samplesIn:         10,
+			exemplarsIn:       10,
+			metadataIn:        10,
+			receivedRequests:  1,
+			receivedSamples:   10,
+			receivedExemplars: 10,
+			receivedMetadata:  10})
 
 		require.NoError(t, testutil.GatherAndCompare(
 			reg,
@@ -4468,7 +4486,15 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		_, err := dist.Push(getCtx(), req)
 		require.NoError(t, err)
 
-		expectedMetrics, metricNames := getExpectedMetrics(1, 10, 10, 10, 1, 5, 5, 10)
+		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
+			requestsIn:        1,
+			samplesIn:         10,
+			exemplarsIn:       10,
+			metadataIn:        10,
+			receivedRequests:  1,
+			receivedSamples:   5,
+			receivedExemplars: 5,
+			receivedMetadata:  10})
 
 		require.NoError(t, testutil.GatherAndCompare(
 			reg,
@@ -4485,7 +4511,15 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 
 		dist.Push(getCtx(), req) //nolint:errcheck
 
-		expectedMetrics, metricNames := getExpectedMetrics(1, 10, 10, 10, 1, 0, 0, 10)
+		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
+			requestsIn:        1,
+			samplesIn:         10,
+			exemplarsIn:       10,
+			metadataIn:        10,
+			receivedRequests:  1,
+			receivedSamples:   0,
+			receivedExemplars: 0,
+			receivedMetadata:  10})
 
 		require.NoError(t, testutil.GatherAndCompare(
 			reg,
@@ -4520,7 +4554,15 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		require.NoError(t, err)
 		dist.Push(ctx, makeWriteRequestForGenerators(10, uniqueMetricsGenWithReplica("replica2"), exemplarLabelGen, metaDataGen)) //nolint:errcheck
 
-		expectedMetrics, metricNames := getExpectedMetrics(4, 40, 40, 40, 2, 20, 20, 20)
+		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
+			requestsIn:        4,
+			samplesIn:         40,
+			exemplarsIn:       40,
+			metadataIn:        40,
+			receivedRequests:  2,
+			receivedSamples:   20,
+			receivedExemplars: 20,
+			receivedMetadata:  20})
 
 		require.NoError(t, testutil.GatherAndCompare(
 			reg,
@@ -4547,7 +4589,15 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		_, err := dist.Push(getCtx(), req)
 		require.NoError(t, err)
 
-		expectedMetrics, metricNames := getExpectedMetrics(1, 10, 10, 10, 1, 5, 5, 10)
+		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
+			requestsIn:        1,
+			samplesIn:         10,
+			exemplarsIn:       10,
+			metadataIn:        10,
+			receivedRequests:  1,
+			receivedSamples:   5,
+			receivedExemplars: 5,
+			receivedMetadata:  10})
 
 		require.NoError(t, testutil.GatherAndCompare(
 			reg,
@@ -4565,7 +4615,15 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		_, err := dist.Push(getCtx(), req)
 		require.NoError(t, err)
 
-		expectedMetrics, metricNames := getExpectedMetrics(1, 10, 10, 10, 1, 10, 0, 10)
+		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
+			requestsIn:        1,
+			samplesIn:         10,
+			exemplarsIn:       10,
+			metadataIn:        10,
+			receivedRequests:  1,
+			receivedSamples:   10,
+			receivedExemplars: 0,
+			receivedMetadata:  10})
 
 		require.NoError(t, testutil.GatherAndCompare(
 			reg,
@@ -4594,7 +4652,15 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 
 		dist.Push(getCtx(), req) //nolint:errcheck
 
-		expectedMetrics, metricNames := getExpectedMetrics(1, 10, 10, 10, 1, 5, 5, 10)
+		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
+			requestsIn:        1,
+			samplesIn:         10,
+			exemplarsIn:       10,
+			metadataIn:        10,
+			receivedRequests:  1,
+			receivedSamples:   5,
+			receivedExemplars: 5,
+			receivedMetadata:  10})
 
 		require.NoError(t, testutil.GatherAndCompare(
 			reg,
@@ -4630,7 +4696,15 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 
 		dist.Push(getCtx(), req) //nolint:errcheck
 
-		expectedMetrics, metricNames := getExpectedMetrics(1, 10, 10, 10, 1, 10, 10, 5)
+		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
+			requestsIn:        1,
+			samplesIn:         10,
+			exemplarsIn:       10,
+			metadataIn:        10,
+			receivedRequests:  1,
+			receivedSamples:   10,
+			receivedExemplars: 10,
+			receivedMetadata:  5})
 
 		require.NoError(t, testutil.GatherAndCompare(
 			reg,
