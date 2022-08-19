@@ -112,6 +112,7 @@ var (
 	resultTouched   = []byte("TOUCHED\r\n")
 
 	resultClientErrorPrefix = []byte("CLIENT_ERROR ")
+	versionPrefix           = []byte("VERSION")
 )
 
 // New returns a memcache client using the provided server(s)
@@ -131,7 +132,7 @@ func NewFromSelector(ss ServerSelector) *Client {
 // Client is a memcache client.
 // It is safe for unlocked use by multiple concurrent goroutines.
 type Client struct {
-	// Dialer specifies a custom dialer used to dial new connections to a server.
+	// DialTimeout specifies a custom dialer used to dial new connections to a server.
 	DialTimeout func(network, address string, timeout time.Duration) (net.Conn, error)
 	// Timeout specifies the socket read/write timeout.
 	// If zero, DefaultTimeout is used.
@@ -256,14 +257,11 @@ func (cte *ConnectTimeoutError) Error() string {
 }
 
 func (c *Client) dial(addr net.Addr) (net.Conn, error) {
-	type connError struct {
-		cn  net.Conn
-		err error
+	dialTimeout := c.DialTimeout
+	if dialTimeout == nil {
+		dialTimeout = net.DialTimeout
 	}
-	if c.DialTimeout == nil {
-		c.DialTimeout = net.DialTimeout
-	}
-	nc, err := c.DialTimeout(addr.Network(), addr.String(), c.netTimeout())
+	nc, err := dialTimeout(addr.Network(), addr.String(), c.netTimeout())
 	if err == nil {
 		return nc, nil
 	}
@@ -402,6 +400,30 @@ func (c *Client) flushAllFromAddr(addr net.Addr) error {
 	})
 }
 
+// ping sends the version command to the given addr
+func (c *Client) ping(addr net.Addr) error {
+	return c.withAddrRw(addr, func(rw *bufio.ReadWriter) error {
+		if _, err := fmt.Fprintf(rw, "version\r\n"); err != nil {
+			return err
+		}
+		if err := rw.Flush(); err != nil {
+			return err
+		}
+		line, err := rw.ReadSlice('\n')
+		if err != nil {
+			return err
+		}
+
+		switch {
+		case bytes.HasPrefix(line, versionPrefix):
+			break
+		default:
+			return fmt.Errorf("memcache: unexpected response line from ping: %q", string(line))
+		}
+		return nil
+	})
+}
+
 func (c *Client) touchFromAddr(addr net.Addr, keys []string, expiration int32) error {
 	return c.withAddrRw(addr, func(rw *bufio.ReadWriter) error {
 		for _, key := range keys {
@@ -503,17 +525,49 @@ func parseGetResponse(r *bufio.Reader, cb func(*Item)) error {
 // scanGetResponseLine populates it and returns the declared size of the item.
 // It does not read the bytes of the item.
 func scanGetResponseLine(line []byte, it *Item) (size int, err error) {
-	pattern := "VALUE %s %d %d %d\r\n"
-	dest := []interface{}{&it.Key, &it.Flags, &size, &it.casid}
-	if bytes.Count(line, space) == 3 {
-		pattern = "VALUE %s %d %d\r\n"
-		dest = dest[:3]
-	}
-	n, err := fmt.Sscanf(string(line), pattern, dest...)
-	if err != nil || n != len(dest) {
+	errf := func(line []byte) (int, error) {
 		return -1, fmt.Errorf("memcache: unexpected line in get response: %q", line)
 	}
-	return size, nil
+	if !bytes.HasPrefix(line, []byte("VALUE ")) || !bytes.HasSuffix(line, []byte("\r\n")) {
+		return errf(line)
+	}
+	s := string(line[6 : len(line)-2])
+	var rest string
+	var found bool
+	it.Key, rest, found = cut(s, ' ')
+	if !found {
+		return errf(line)
+	}
+	val, rest, found := cut(rest, ' ')
+	if !found {
+		return errf(line)
+	}
+	flags64, err := strconv.ParseUint(val, 10, 32)
+	if err != nil {
+		return errf(line)
+	}
+	it.Flags = uint32(flags64)
+	val, rest, found = cut(rest, ' ')
+	size64, err := strconv.ParseUint(val, 10, 32)
+	if err != nil {
+		return errf(line)
+	}
+	if !found { // final CAS ID is optional.
+		return int(size64), nil
+	}
+	it.casid, err = strconv.ParseUint(rest, 10, 64)
+	if err != nil {
+		return errf(line)
+	}
+	return int(size64), nil
+}
+
+// Similar to strings.Cut in Go 1.18, but sep can only be 1 byte.
+func cut(s string, sep byte) (before, after string, found bool) {
+	if i := strings.IndexByte(s, sep); i >= 0 {
+		return s[:i], s[i+1:], true
+	}
+	return s, "", false
 }
 
 // Set writes the given item, unconditionally.
@@ -646,6 +700,12 @@ func (c *Client) DeleteAll() error {
 	return c.withKeyRw("", func(rw *bufio.ReadWriter) error {
 		return writeExpectf(rw, resultDeleted, "flush_all\r\n")
 	})
+}
+
+// Ping checks all instances if they are alive. Returns error if any
+// of them is down.
+func (c *Client) Ping() error {
+	return c.selector.Each(c.ping)
 }
 
 // Increment atomically increments key by delta. The return value is
