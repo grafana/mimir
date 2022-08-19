@@ -29,7 +29,7 @@ func newQueryTracker(tracker *activitytracker.ActivityTracker) *queryTracker {
 
 func (q *queryTracker) GetMaxConcurrent() int {
 	// No limit.
-	return math.MaxInt
+	return -1
 }
 
 func (q *queryTracker) Insert(ctx context.Context, query string) (int, error) {

@@ -16,7 +16,7 @@ import (
 
 func TestQueryTrackerUnlimitedMaxConcurrency(t *testing.T) {
 	qt := newQueryTracker(nil)
-	require.Equal(t, math.MaxInt, qt.GetMaxConcurrent())
+	require.Equal(t, -1, qt.GetMaxConcurrent())
 }
 
 func TestQueryTrackerWithNilActivityTrackerInsertDoesntAllocate(t *testing.T) {
