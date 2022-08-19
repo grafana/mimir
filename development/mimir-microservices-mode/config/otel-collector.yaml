@@ -16,54 +16,54 @@ receivers:
           scraped_by: otel-collector 
 
       scrape_configs:
-        - job_name: tsdb-blocks-storage-s3/distributor
+        - job_name: mimir-microservices-mode/distributor
           static_configs:
             - targets: ['distributor-1:8000', 'distributor-2:8001']
               labels:
                 cluster: 'docker-compose'
-                namespace: 'tsdb-blocks-storage-s3'
-        - job_name: tsdb-blocks-storage-s3/ingester
+                namespace: 'mimir-microservices-mode'
+        - job_name: mimir-microservices-mode/ingester
           static_configs:
             - targets: ['ingester-1:8002', 'ingester-2:8003']
               labels:
                 cluster: 'docker-compose'
-                namespace: 'tsdb-blocks-storage-s3'
-        - job_name: tsdb-blocks-storage-s3/querier
+                namespace: 'mimir-microservices-mode'
+        - job_name: mimir-microservices-mode/querier
           static_configs:
             - targets: ['querier:8004']
               labels:
                 cluster: 'docker-compose'
-                namespace: 'tsdb-blocks-storage-s3'
-        - job_name: tsdb-blocks-storage-s3/ruler
+                namespace: 'mimir-microservices-mode'
+        - job_name: mimir-microservices-mode/ruler
           static_configs:
             - targets: ['ruler-1:8021', 'ruler-2:8022']
               labels:
                 cluster: 'docker-compose'
-                namespace: 'tsdb-blocks-storage-s3'
-        - job_name: tsdb-blocks-storage-s3/compactor
+                namespace: 'mimir-microservices-mode'
+        - job_name: mimir-microservices-mode/compactor
           static_configs:
             - targets: ['compactor:8006']
               labels:
                 cluster: 'docker-compose'
-                namespace: 'tsdb-blocks-storage-s3'
-        - job_name: tsdb-blocks-storage-s3/query-frontend
+                namespace: 'mimir-microservices-mode'
+        - job_name: mimir-microservices-mode/query-frontend
           static_configs:
             - targets: ['query-frontend:8007']
               labels:
                 cluster: 'docker-compose'
-                namespace: 'tsdb-blocks-storage-s3'
-        - job_name: tsdb-blocks-storage-s3/store-gateway
+                namespace: 'mimir-microservices-mode'
+        - job_name: mimir-microservices-mode/store-gateway
           static_configs:
             - targets: ['store-gateway-1:8008', 'store-gateway-2:8009']
               labels:
                 cluster: 'docker-compose'
-                namespace: 'tsdb-blocks-storage-s3'
-        - job_name: tsdb-blocks-storage-s3/query-scheduler
+                namespace: 'mimir-microservices-mode'
+        - job_name: mimir-microservices-mode/query-scheduler
           static_configs:
             - targets: ['query-scheduler:8011']
               labels:
                 cluster: 'docker-compose'
-                namespace: 'tsdb-blocks-storage-s3'
+                namespace: 'mimir-microservices-mode'
       
 
 service:
