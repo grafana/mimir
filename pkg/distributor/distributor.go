@@ -643,7 +643,6 @@ func (d *Distributor) wrapPushWithMiddlewares(next push.Func) push.Func {
 	// To guarantee that, middleware functions will be called in reversed order, wrapping the
 	// result from previous call.
 	middlewares = append(middlewares, d.instanceLimitsMiddleware) // should run first
-	middlewares = append(middlewares, d.prePushUserRequestMiddleware)
 	middlewares = append(middlewares, d.prePushHaDedupeMiddleware)
 	middlewares = append(middlewares, d.prePushRelabelMiddleware)
 	middlewares = append(middlewares, d.prePushForwardingMiddleware)
@@ -653,28 +652,6 @@ func (d *Distributor) wrapPushWithMiddlewares(next push.Func) push.Func {
 	}
 
 	return next
-}
-
-// prePushUserRequestMiddleware increments a per-tenant request counter before other middlewares run
-// (HA deduplication, forwarding) so that we can get an accurate idea of number of requests per user.
-func (d *Distributor) prePushUserRequestMiddleware(next push.Func) push.Func {
-	return func(ctx context.Context, req *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error) {
-		cleanupInDefer := true
-		defer func() {
-			if cleanupInDefer {
-				cleanup()
-			}
-		}()
-
-		userID, err := tenant.TenantID(ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		cleanupInDefer = false
-		d.incomingRequests.WithLabelValues(userID).Add(1)
-		return next(ctx, req, cleanup)
-	}
 }
 
 func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
@@ -855,6 +832,11 @@ func (d *Distributor) instanceLimitsMiddleware(next push.Func) push.Func {
 			}
 		}()
 
+		userID, err := tenant.TenantID(ctx)
+		if err != nil {
+			return nil, err
+		}
+
 		if d.cfg.InstanceLimits.MaxInflightPushRequests > 0 && inflight > int64(d.cfg.InstanceLimits.MaxInflightPushRequests) {
 			return nil, errMaxInflightRequestsReached
 		}
@@ -869,6 +851,9 @@ func (d *Distributor) instanceLimitsMiddleware(next push.Func) push.Func {
 			}
 		}
 
+		// Increment counter for per-tenant requests here before potentially discarding them due to HA
+		// dedupe or forwarding rules.
+		d.incomingRequests.WithLabelValues(userID).Add(1)
 		cleanupInDefer = false
 		return next(ctx, req, cleanup)
 	}
