@@ -10,7 +10,7 @@ weight: 120
 Grafana Mimir supports uploading of historic TSDB blocks, sourced from Prometheus, Cortex, or even other
 Grafana Mimir installations. Upload from Thanos is currently not supported; for more information, see [Known limitations of TSDB block upload]({{< relref "#known-limitations-of-tsdb-block-upload" >}}).
 
-To make performing block upload simple, we've built support for it into Mimir's CLI tool, [mimirtool]({{< relref "../tools/mimirtool.md" >}})). See the [mimirtool backfill]({{< relref "../tools/mimirtool.md#backfill" >}}) documentation to learn more. 
+To make performing block upload simple, we've built support for it into Mimir's CLI tool, [mimirtool]({{< relref "../tools/mimirtool.md" >}})). See the [mimirtool backfill]({{< relref "../tools/mimirtool.md#backfill" >}}) documentation to learn more.
 
 Block upload is still considered experimental and is therefore disabled by default. You can enable it via the `-compactor.block-upload-enabled`
 CLI flag, or via the corresponding `limits.compactor_block_upload_enabled` configuration parameter:
@@ -47,9 +47,9 @@ For information about limitations that relate to importing blocks from Thanos as
 
 ### No validation on imported blocks
 
-Grafana Mimir does not validate that the uploaded blocks are well-formed. This means that users could upload malformed blocks to Grafana Mimir. These malformed blocks could potentially cause problems on the Mimir query path or for the operation of Mimir's compactor component.  
+Grafana Mimir does not validate that the uploaded blocks are well-formed. This means that users could upload malformed blocks to Grafana Mimir. These malformed blocks could potentially cause problems on the Mimir query path or for the operation of Mimir's compactor component.
 
-We intend to add validation of uploaded blocks in a future release, which would allow us to identify and reject malformed blocks at upload time and prevent any downstream impact to Grafana Mimir. 
+We intend to add validation of uploaded blocks in a future release, which would allow us to identify and reject malformed blocks at upload time and prevent any downstream impact to Grafana Mimir.
 
 ### The results-cache needs flushing
 
