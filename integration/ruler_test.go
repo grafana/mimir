@@ -24,6 +24,7 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
+	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
@@ -616,7 +617,7 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 		"too_many_chunks_group": `sum(metric)`,
 	} {
 		t.Run(groupName, func(t *testing.T) {
-			require.NoError(t, c.SetRuleGroup(ruleGroupWithRule(groupName, "rule", expression), namespace))
+			require.NoError(t, c.SetRuleGroup(ruleGroupWithRecordingRule(groupName, "rule", expression), namespace))
 			m := ruleGroupMatcher(user, namespace, groupName)
 
 			// Wait until ruler has loaded the group.
@@ -654,7 +655,7 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 		const groupName = "good_rule"
 		const expression = `sum(metric{foo=~"1|2"})`
 
-		require.NoError(t, c.SetRuleGroup(ruleGroupWithRule(groupName, "rule", expression), namespace))
+		require.NoError(t, c.SetRuleGroup(ruleGroupWithRecordingRule(groupName, "rule", expression), namespace))
 		m := ruleGroupMatcher(user, namespace, groupName)
 
 		// Wait until ruler has loaded the group.
@@ -801,7 +802,7 @@ func TestRulerFederatedRules(t *testing.T) {
 			// Create federated rule group
 			namespace := "test_namespace"
 			ruleName := "federated_rule_name"
-			g := ruleGroupWithRule("x", ruleName, tc.ruleExpression)
+			g := ruleGroupWithRecordingRule("x", ruleName, tc.ruleExpression)
 			g.Interval = model.Duration(time.Second / 4)
 			g.SourceTenants = tc.groupSourceTenants
 			require.NoError(t, c.SetRuleGroup(g, namespace))
@@ -929,7 +930,7 @@ func TestRulerRemoteEvaluation(t *testing.T) {
 			// Create rule group
 			namespace := "test_namespace"
 			ruleName := "rule_name"
-			g := ruleGroupWithRule("x", ruleName, tc.ruleExpression)
+			g := ruleGroupWithRecordingRule("x", ruleName, tc.ruleExpression)
 			g.Interval = model.Duration(time.Second / 4)
 			g.SourceTenants = tc.groupSourceTenants
 			require.NoError(t, c.SetRuleGroup(g, namespace))
@@ -959,6 +960,93 @@ func TestRulerRemoteEvaluation(t *testing.T) {
 			tc.assertEvalResult(result.(model.Vector))
 		})
 	}
+}
+
+func TestRuler_RestoreWithLongForPeriod(t *testing.T) {
+	const (
+		forGracePeriod    = 5 * time.Second
+		groupEvalInterval = time.Second
+		groupForPeriod    = 10 * groupEvalInterval
+
+		// This is internal prometheus logic. It waits for two evaluations in order to have
+		// enough data to evaluate the alert. Prometheus doesn't expose state which says
+		// that the alert is restored, we wait for the third iteration after the restoration
+		// as a witness that restoration was attempted.
+		evalsToRestoredAlertState = 3
+	)
+	var (
+		evalsForAlertToFire = math.Ceil(float64(groupForPeriod) / float64(groupEvalInterval))
+	)
+	require.Greater(t, evalsForAlertToFire, float64(evalsToRestoredAlertState), "in order to have a meaningful test, the alert should fire in more evaluations than is necessary to restore its state")
+	require.Greater(t, groupForPeriod, forGracePeriod, "the \"for\" duration should be longer than the for grace period. The prometheus ruler only tries to restore the alert from storage if its \"for\" period is longer than the for_grace_period config parameter.")
+
+	s, err := e2e.NewScenario(networkName)
+	assert.NoError(t, err)
+	t.Cleanup(s.Close)
+	// Start dependencies.
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, mimirBucketName)
+	assert.NoError(t, s.StartAndWaitReady(minio, consul))
+
+	flags := mergeFlags(
+		CommonStorageBackendFlags(),
+		RulerFlags(),
+		BlocksStorageFlags(),
+		map[string]string{
+			"-ruler.for-grace-period":           forGracePeriod.String(),
+			"-auth.multitenancy-enabled":        "true",
+			"-ingester.ring.replication-factor": "1",
+			"-log.level":                        "debug",
+		},
+	)
+
+	// Start up services
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
+	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), flags)
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
+	assert.NoError(t, s.StartAndWaitReady(distributor, ingester, ruler, querier))
+
+	// Wait until both the distributor and ruler are ready
+	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring
+	assert.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
+	// Ruler will see 512 tokens from ingester, and 128 tokens from itself.
+	assert.NoError(t, ruler.WaitSumMetrics(e2e.Equals(512+128), "cortex_ring_tokens_total"))
+
+	// Create a client to upload and query rule groups
+	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", ruler.HTTPEndpoint(), "tenant-1")
+	assert.NoError(t, err)
+
+	// Create an alert rule which always fires
+	g := ruleGroupWithAlertingRule("group_name", "rule_name", "1")
+	g.Interval = model.Duration(groupEvalInterval)
+	g.Rules[0].For = model.Duration(groupForPeriod)
+	assert.NoError(t, c.SetRuleGroup(g, "test_namespace"))
+
+	// Wait until the alert has had time to start firing
+	assert.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Greater(evalsForAlertToFire), []string{"cortex_prometheus_rule_evaluations_total"}, e2e.WaitMissingMetrics))
+
+	// Assert that the alert is firing
+	rules, err := c.GetPrometheusRules()
+	assert.NoError(t, err)
+	assert.Equal(t, "firing", rules[0].Rules[0].(v1.AlertingRule).State)
+
+	// Restart ruler to trigger an alert state restoration
+	assert.NoError(t, s.Stop(ruler))
+	assert.NoError(t, s.StartAndWaitReady(ruler))
+	assert.NoError(t, ruler.WaitSumMetrics(e2e.Equals(512+128), "cortex_ring_tokens_total"))
+
+	// Recreate client because ports may have changed
+	c, err = e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", ruler.HTTPEndpoint(), "tenant-1")
+	assert.NoError(t, err)
+
+	// Wait for actual restoration to happen
+	assert.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(evalsToRestoredAlertState), []string{"cortex_prometheus_rule_evaluations_total"}, e2e.WaitMissingMetrics))
+
+	// Assert the alert is already firing
+	rules, err = c.GetPrometheusRules()
+	assert.NoError(t, err)
+	assert.Equal(t, "firing", rules[0].Rules[0].(v1.AlertingRule).State)
 }
 
 func TestRulerEnableAPIs(t *testing.T) {
@@ -1083,8 +1171,7 @@ func ruleGroupMatcher(user, namespace, groupName string) *labels.Matcher {
 	return labels.MustNewMatcher(labels.MatchEqual, "rule_group", fmt.Sprintf("data-ruler/%s/%s;%s", user, namespace, groupName))
 }
 
-func ruleGroupWithRule(groupName string, ruleName string, expression string) rulefmt.RuleGroup {
-	// Prepare rule group with invalid rule.
+func ruleGroupWithRecordingRule(groupName string, ruleName string, expression string) rulefmt.RuleGroup {
 	var recordNode = yaml.Node{}
 	var exprNode = yaml.Node{}
 
@@ -1097,6 +1184,24 @@ func ruleGroupWithRule(groupName string, ruleName string, expression string) rul
 		Rules: []rulefmt.RuleNode{{
 			Record: recordNode,
 			Expr:   exprNode,
+		}},
+	}
+}
+
+func ruleGroupWithAlertingRule(groupName string, ruleName string, expression string) rulefmt.RuleGroup {
+	var recordNode = yaml.Node{}
+	var exprNode = yaml.Node{}
+
+	recordNode.SetString(ruleName)
+	exprNode.SetString(expression)
+
+	return rulefmt.RuleGroup{
+		Name:     groupName,
+		Interval: 10,
+		Rules: []rulefmt.RuleNode{{
+			Alert: recordNode,
+			Expr:  exprNode,
+			For:   30,
 		}},
 	}
 }
