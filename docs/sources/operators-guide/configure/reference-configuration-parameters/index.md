@@ -3020,7 +3020,7 @@ tsdb:
   # latency. Value of 0 switches chunks mapper to implementation without a
   # queue.
   # CLI flag: -blocks-storage.tsdb.head-chunks-write-queue-size
-  [head_chunks_write_queue_size: <int> | default = 0]
+  [head_chunks_write_queue_size: <int> | default = 1000000]
 
   # (advanced) [Deprecated] Enables TSDB isolation feature. Disabling may
   # improve performance.

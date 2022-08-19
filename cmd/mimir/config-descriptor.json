@@ -5441,7 +5441,7 @@
               "required": false,
               "desc": "The size of the write queue used by the head chunks mapper. Lower values reduce memory utilisation at the cost of potentially higher ingest latency. Value of 0 switches chunks mapper to implementation without a queue.",
               "fieldValue": null,
-              "fieldDefaultValue": 0,
+              "fieldDefaultValue": 1000000,
               "fieldFlag": "blocks-storage.tsdb.head-chunks-write-queue-size",
               "fieldType": "int",
               "fieldCategory": "advanced"
