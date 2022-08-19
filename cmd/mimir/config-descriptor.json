@@ -5439,23 +5439,12 @@
               "kind": "field",
               "name": "head_chunks_write_queue_size",
               "required": false,
-              "desc": "The size of the write queue used by the head chunks mapper. Lower values reduce memory utilisation at the cost of potentially higher ingest latency. Value of 0 switches chunks mapper to implementation without a queue. This flag is only used if the new chunk disk mapper is enabled with -blocks-storage.tsdb.new-chunk-disk-mapper.",
+              "desc": "The size of the write queue used by the head chunks mapper. Lower values reduce memory utilisation at the cost of potentially higher ingest latency. Value of 0 switches chunks mapper to implementation without a queue.",
               "fieldValue": null,
-              "fieldDefaultValue": 0,
+              "fieldDefaultValue": 1000000,
               "fieldFlag": "blocks-storage.tsdb.head-chunks-write-queue-size",
               "fieldType": "int",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "new_chunk_disk_mapper",
-              "required": false,
-              "desc": "Temporary flag to select whether to use the new (used in upstream Prometheus) or the old (legacy) chunk disk mapper.",
-              "fieldValue": null,
-              "fieldDefaultValue": false,
-              "fieldFlag": "blocks-storage.tsdb.new-chunk-disk-mapper",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",

@@ -492,7 +492,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.head-chunks-write-buffer-size-bytes int
     	The write buffer size used by the head chunks mapper. Lower values reduce memory utilisation on clusters with a large number of tenants at the cost of increased disk I/O operations. (default 4194304)
   -blocks-storage.tsdb.head-chunks-write-queue-size int
-    	[experimental] The size of the write queue used by the head chunks mapper. Lower values reduce memory utilisation at the cost of potentially higher ingest latency. Value of 0 switches chunks mapper to implementation without a queue. This flag is only used if the new chunk disk mapper is enabled with -blocks-storage.tsdb.new-chunk-disk-mapper.
+    	The size of the write queue used by the head chunks mapper. Lower values reduce memory utilisation at the cost of potentially higher ingest latency. Value of 0 switches chunks mapper to implementation without a queue. (default 1000000)
   -blocks-storage.tsdb.head-compaction-concurrency int
     	Maximum number of tenants concurrently compacting TSDB head into a new block (default 5)
   -blocks-storage.tsdb.head-compaction-idle-timeout duration
@@ -505,8 +505,6 @@ Usage of ./cmd/mimir/mimir:
     	limit the number of concurrently opening TSDB's on startup (default 10)
   -blocks-storage.tsdb.memory-snapshot-on-shutdown
     	[experimental] True to enable snapshotting of in-memory TSDB data on disk when shutting down.
-  -blocks-storage.tsdb.new-chunk-disk-mapper
-    	[experimental] Temporary flag to select whether to use the new (used in upstream Prometheus) or the old (legacy) chunk disk mapper.
   -blocks-storage.tsdb.out-of-order-capacity-max int
     	[experimental] Maximum capacity for out of order chunks, in samples between 1 and 255. (default 32)
   -blocks-storage.tsdb.out-of-order-capacity-min int
