@@ -24,7 +24,7 @@ Handling sensitive information, such as credentials is common between the two me
 There are three ways configuration parameters can be modified:
 
 1. Setting parameters via the `mimir.structuredConfig` value (recommended)
-1. Copying the whole `mimir.config` value and modifying the configuration as text (discouraged, unless you want to stop upgrades of the chart to automatically update the configuration)
+1. Copying the whole `mimir.config` value and modifying the configuration as text (discouraged, unless you want to prevent upgrades of the chart from automatically updating the configuration)
 1. Setting extra CLI flags for components individually (discouraged, except for setting availability zone)
 
 See the [Example](#example-of-configuration-managed-with-helm) for a practical application.
