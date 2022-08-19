@@ -36,6 +36,12 @@ Install [ct](https://github.com/helm/chart-testing) and run
 ct lint --config operations/helm/ct.yaml --charts operations/helm/charts/mimir-distributed
 ```
 
+Or use Docker without installing dependencies and run
+
+```bash
+docker run --rm -it --volume $(pwd):/data quay.io/helmpack/chart-testing:latest sh -c "ct lint --all --debug --chart-dirs /data/operations/helm/charts --check-version-increment false --config /data/operations/helm/ct.yaml"
+```
+
 ## Automated comparison with Jsonnet
 
 In order to prevent configuration drift between the Mimir jsonnet library and the Mimir helm chart, an automated diff is performed against every pull request.
