@@ -26,6 +26,7 @@ Entries should include a reference to the Pull Request that introduced the chang
   - Renamed helm config values `minio.accessKey` to `minio.rootUser`.
   - Renamed helm config values `minio.secretKey` to `minio.rootPassword`.
   - Minio container images are now loaded from quay.io instead of Docker Hub. Set `minio.image.repository` value to override the default behavior.
+* [CHANGE] Enable [query sharding](https://grafana.com/docs/mimir/latest/operators-guide/architecture/query-sharding/) by default. If you override the value of `mimir.config`, then take a look at `mimir.config` in the `values.yaml` from this version of the chart and incorporate the differences. If you override `mimir.config`, then consider switching to `mimir.structuredConfig`. To disable query sharding set `mimir.structuredConfig.frontend.parallelize_shardable_queries` to `false`. #2655
 * [ENHANCEMENT] Add backfill endpoints to Nginx configuration. #2478
 * [ENHANCEMENT] Add `namespace` to smoke-test helm template to allow the job to be deployed within the same namespace as the rest of the deployment. #2515
 * [ENHANCEMENT] Memberlist now uses DNS service-discovery by default. #2549 #2561

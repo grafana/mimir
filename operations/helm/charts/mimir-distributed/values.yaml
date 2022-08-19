@@ -168,6 +168,7 @@ mimir:
     frontend:
       align_queries_with_step: true
       log_queries_longer_than: 10s
+      parallelize_shardable_queries: true
       {{- if index .Values "results-cache" "enabled" }}
       results_cache:
         backend: memcached
@@ -232,13 +233,26 @@ mimir:
       path: "/license/license.jwt"
     {{- end }}
 
-    limits: {}
+    limits:
+      # Adjust max query parallelism to 16x sharding, without sharding we can run 14d queries fully in parallel.
+      # With sharding we can further shard each day another 16 times. 14 days * 16 shards = 224 subqueries.
+      max_query_parallelism: 224
 
     memberlist:
       abort_if_cluster_join_fails: false
       compression_enabled: false
       join_members:
       - dns+{{ include "mimir.fullname" . }}-gossip-ring.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.memberlistBindPort" . }}
+
+    querier:
+      # With query sharding we run more but smaller queries. We must strike a balance
+      # which allows us to process more sharded queries in parallel when requested, but not overload
+      # queriers during non-sharded queries.
+      max_concurrent: 16
+
+    query_scheduler:
+      # Increase from default of 100 to account for queries created by query sharding
+      max_outstanding_requests_per_tenant: 1600
 
     ruler:
       alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.{{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}/alertmanager
