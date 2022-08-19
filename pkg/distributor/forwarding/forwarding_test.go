@@ -58,14 +58,7 @@ func TestForwardingSamplesSuccessfullyToCorrectTarget(t *testing.T) {
 		newSample(t, now, 3, 300, "__name__", "metric2", "some_label", "foo"),
 		newSample(t, now, 4, 400, "__name__", "metric2", "some_label", "bar"),
 	}
-	notIngestedCounts, tsToIngest, errCh := forwarder.Forward(ctx, rules, ts)
-	require.Equal(t,
-		TimeseriesCounts{
-			SampleCount:   2,
-			ExemplarCount: 2,
-		},
-		notIngestedCounts,
-	)
+	tsToIngest, errCh := forwarder.Forward(ctx, rules, ts)
 
 	// The metric2 should be returned by the forwarding because the matching rule has ingest set to "true".
 	require.Len(t, tsToIngest, 2)
@@ -218,11 +211,7 @@ func TestForwardingSamplesWithDifferentErrorsWithPropagation(t *testing.T) {
 			for _, metric := range metrics {
 				ts = append(ts, newSample(t, now, 1, 100, "__name__", metric))
 			}
-			notIngestedCounts, _, errCh := forwarder.Forward(context.Background(), rules, ts)
-			require.Equal(t,
-				TimeseriesCounts{SampleCount: len(metrics), ExemplarCount: len(metrics)},
-				notIngestedCounts,
-			)
+			_, errCh := forwarder.Forward(context.Background(), rules, ts)
 
 			gotStatusCodes := []status{}
 			for err := range errCh {
@@ -431,13 +420,7 @@ func TestForwardingEnsureThatPooledObjectsGetReturned(t *testing.T) {
 			}
 
 			// Perform the forwarding operation.
-			notIngestedCounts, toIngest, errCh := forwarder.Forward(context.Background(), tc.rules, ts)
-			require.Equal(t,
-				TimeseriesCounts{
-					SampleCount: sampleCount - tc.expectSamples[ingested],
-				},
-				notIngestedCounts,
-			)
+			toIngest, errCh := forwarder.Forward(context.Background(), tc.rules, ts)
 			require.NoError(t, <-errCh)
 
 			// receivedSamples counts the number of samples that each forwarding target has received.
@@ -699,7 +682,7 @@ func BenchmarkRemoteWriteForwarding(b *testing.B) {
 					require.NoError(b, <-errChs[errChIdx])
 				}
 
-				_, samples, errChs[errChIdx] = f.Forward(ctx, tc.rules, samples)
+				samples, errChs[errChIdx] = f.Forward(ctx, tc.rules, samples)
 				errChIdx = (errChIdx + 1) % len(errChs)
 
 				mimirpb.ReuseSlice(samples)

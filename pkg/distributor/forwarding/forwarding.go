@@ -29,7 +29,7 @@ import (
 
 type Forwarder interface {
 	services.Service
-	Forward(ctx context.Context, forwardingRules validation.ForwardingRules, ts []mimirpb.PreallocTimeseries) (TimeseriesCounts, []mimirpb.PreallocTimeseries, chan error)
+	Forward(ctx context.Context, forwardingRules validation.ForwardingRules, ts []mimirpb.PreallocTimeseries) ([]mimirpb.PreallocTimeseries, chan error)
 }
 
 type forwarder struct {
@@ -128,19 +128,17 @@ func (f *forwarder) worker() {
 // returned slice of time series must be returned to the pool by the caller once it is done using it.
 //
 // The return values are:
-//   - A TimeSeriesCounts object containing the sample / exemplar counts that were removed from the
-//     given time series slice relative to the returned slice.
 //   - A slice of time series which should be sent to the ingesters, based on the given rule set.
 //     The Forward() method does not send the time series to the ingesters itself, it expects the caller to do that.
 //   - A chan of errors which resulted from forwarding the time series, the chan gets closed when all forwarding requests have completed.
-func (f *forwarder) Forward(ctx context.Context, rules validation.ForwardingRules, in []mimirpb.PreallocTimeseries) (TimeseriesCounts, []mimirpb.PreallocTimeseries, chan error) {
+func (f *forwarder) Forward(ctx context.Context, rules validation.ForwardingRules, in []mimirpb.PreallocTimeseries) ([]mimirpb.PreallocTimeseries, chan error) {
 	if !f.cfg.Enabled {
 		errCh := make(chan error)
 		close(errCh)
-		return TimeseriesCounts{}, in, errCh
+		return in, errCh
 	}
 
-	notIngestedCounts, toIngest, tsByTargets := f.splitByTargets(in, rules)
+	toIngest, tsByTargets := f.splitByTargets(in, rules)
 	defer f.pools.putTsByTargets(tsByTargets)
 
 	var requestWg sync.WaitGroup
@@ -158,7 +156,7 @@ func (f *forwarder) Forward(ctx context.Context, rules validation.ForwardingRule
 		close(errCh)
 	}()
 
-	return notIngestedCounts, toIngest, errCh
+	return toIngest, errCh
 }
 
 type tsWithSampleCount struct {
@@ -200,18 +198,13 @@ func (t *TimeseriesCounts) count(ts mimirpb.PreallocTimeseries) {
 // the target to which each of them should be forwarded according to the forwarding rules.
 // It returns the following values:
 //
-// - The counts of samples and exemplars that will not be ingested by the ingesters.
 // - A slice of time series to ingest into the ingesters.
 // - A map of slices of time series which is keyed by the target to which they should be forwarded.
-func (f *forwarder) splitByTargets(tsSliceIn []mimirpb.PreallocTimeseries, rules validation.ForwardingRules) (TimeseriesCounts, []mimirpb.PreallocTimeseries, tsByTargets) {
+func (f *forwarder) splitByTargets(tsSliceIn []mimirpb.PreallocTimeseries, rules validation.ForwardingRules) ([]mimirpb.PreallocTimeseries, tsByTargets) {
 	// This functions copies all the entries of tsSliceIn into new slices so tsSliceIn can be recycled,
 	// we adjust the length of the slice to 0 to prevent that the contained *mimirpb.TimeSeries objects that have been
 	// reassigned (not deep copied) get returned while they are still referred to by another slice.
 	defer f.pools.putTsSlice(tsSliceIn[:0])
-
-	// notIngestedCounts keeps track of the number of samples and exemplars that we don't send to the ingesters,
-	// we need to count these in order to later update some of the distributor's metrics correctly.
-	var notIngestedCounts TimeseriesCounts
 
 	tsToIngest := f.pools.getTsSlice()
 	tsByTargets := f.pools.getTsByTargets()
@@ -226,7 +219,6 @@ func (f *forwarder) splitByTargets(tsSliceIn []mimirpb.PreallocTimeseries, rules
 			// the distributor will return them to the pool when it is done sending them to the ingesters.
 			tsToIngest = append(tsToIngest, ts)
 		} else {
-			notIngestedCounts.count(ts)
 
 			// This ts won't be returned to the distributor because it should not be ingested according to the rules,
 			// so we have to return it to the pool now to prevent that its reference gets lost.
@@ -234,7 +226,7 @@ func (f *forwarder) splitByTargets(tsSliceIn []mimirpb.PreallocTimeseries, rules
 		}
 	}
 
-	return notIngestedCounts, tsToIngest, tsByTargets
+	return tsToIngest, tsByTargets
 }
 
 func findTargetForLabels(labels []mimirpb.LabelAdapter, rules validation.ForwardingRules) (string, bool) {
