@@ -119,9 +119,11 @@ type Distributor struct {
 	queryDuration                    *instrument.HistogramCollector
 	ingesterChunksDeduplicated       prometheus.Counter
 	ingesterChunksTotal              prometheus.Counter
+	receivedRequests                 *prometheus.CounterVec
 	receivedSamples                  *prometheus.CounterVec
 	receivedExemplars                *prometheus.CounterVec
 	receivedMetadata                 *prometheus.CounterVec
+	incomingRequests                 *prometheus.CounterVec
 	incomingSamples                  *prometheus.CounterVec
 	incomingExemplars                *prometheus.CounterVec
 	incomingMetadata                 *prometheus.CounterVec
@@ -249,6 +251,11 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Name:      "distributor_query_ingester_chunks_total",
 			Help:      "Number of chunks transferred at query time from ingesters.",
 		}),
+		receivedRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Namespace: "cortex",
+			Name:      "distributor_received_requests_total",
+			Help:      "The total number of received requests, excluding rejected, forwarded and deduped requests.",
+		}, []string{"user"}),
 		receivedSamples: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_received_samples_total",
@@ -263,6 +270,11 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Namespace: "cortex",
 			Name:      "distributor_received_metadata_total",
 			Help:      "The total number of received metadata, excluding rejected.",
+		}, []string{"user"}),
+		incomingRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Namespace: "cortex",
+			Name:      "distributor_requests_in_total",
+			Help:      "The total number of requests that have come in to the distributor, including rejected, forwarded or deduped requests.",
 		}, []string{"user"}),
 		incomingSamples: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
@@ -481,9 +493,11 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 
 	d.HATracker.cleanupHATrackerMetricsForUser(userID)
 
+	d.receivedRequests.DeleteLabelValues(userID)
 	d.receivedSamples.DeleteLabelValues(userID)
 	d.receivedExemplars.DeleteLabelValues(userID)
 	d.receivedMetadata.DeleteLabelValues(userID)
+	d.incomingRequests.DeleteLabelValues(userID)
 	d.incomingSamples.DeleteLabelValues(userID)
 	d.incomingExemplars.DeleteLabelValues(userID)
 	d.incomingMetadata.DeleteLabelValues(userID)
@@ -818,6 +832,11 @@ func (d *Distributor) instanceLimitsMiddleware(next push.Func) push.Func {
 			}
 		}()
 
+		userID, err := tenant.TenantID(ctx)
+		if err != nil {
+			return nil, err
+		}
+
 		if d.cfg.InstanceLimits.MaxInflightPushRequests > 0 && inflight > int64(d.cfg.InstanceLimits.MaxInflightPushRequests) {
 			return nil, errMaxInflightRequestsReached
 		}
@@ -832,6 +851,9 @@ func (d *Distributor) instanceLimitsMiddleware(next push.Func) push.Func {
 			}
 		}
 
+		// Increment counter for per-tenant requests here before potentially discarding them due to HA
+		// dedupe or forwarding rules.
+		d.incomingRequests.WithLabelValues(userID).Add(1)
 		cleanupInDefer = false
 		return next(ctx, req, cleanup)
 	}
@@ -893,6 +915,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		return nil, httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewRequestRateLimitedError(d.limits.RequestRate(userID), d.limits.RequestBurstSize(userID)).Error())
 	}
 
+	d.receivedRequests.WithLabelValues(userID).Add(1)
 	d.activeUsers.UpdateUserTimestamp(userID, now)
 
 	source := util.GetSourceIPsFromOutgoingCtx(ctx)
