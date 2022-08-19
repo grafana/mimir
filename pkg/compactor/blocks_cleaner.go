@@ -29,6 +29,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const (
@@ -357,10 +358,13 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string) (returnErr
 	// error if the cleanup of partial blocks fail.
 	if len(partials) > 0 {
 		var partialDeletionCutoffTime time.Time // zero value, disabled.
-		if delay := c.cfgProvider.CompactorPartialBlockDeletionDelay(userID); delay > 0 {
+		if delay, valid := c.cfgProvider.CompactorPartialBlockDeletionDelay(userID); delay > 0 {
 			// enable cleanup of partial blocks without deletion marker
 			partialDeletionCutoffTime = time.Now().Add(-delay)
+		} else if !valid {
+			level.Warn(userLogger).Log("msg", "partial blocks deletion has been disabled for tenant because the delay has been set lower than the minimum value allowed", "minimum", validation.MinCompactorPartialBlockDeletionDelay)
 		}
+
 		c.cleanUserPartialBlocks(ctx, partials, idx, partialDeletionCutoffTime, userBucket, userLogger)
 	}
 
