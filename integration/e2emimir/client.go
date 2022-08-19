@@ -30,7 +30,6 @@ import (
 	"github.com/prometheus/prometheus/prompb" // OTLP protos are not compatible with gogo
 	yaml "gopkg.in/yaml.v3"
 
-	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/util/push"
 )
 
@@ -298,7 +297,7 @@ type ServerStatus struct {
 }
 
 // GetPrometheusRules fetches the rules from the Prometheus endpoint /api/v1/rules.
-func (c *Client) GetPrometheusRules() ([]*ruler.RuleGroup, error) {
+func (c *Client) GetPrometheusRules() ([]*promv1.RuleGroup, error) {
 	// Create HTTP request
 	req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/prometheus/api/v1/rules", c.rulerAddress), nil)
 	if err != nil {
@@ -323,8 +322,10 @@ func (c *Client) GetPrometheusRules() ([]*ruler.RuleGroup, error) {
 
 	// Decode the response.
 	type response struct {
-		Status string              `json:"status"`
-		Data   ruler.RuleDiscovery `json:"data"`
+		Status string `json:"status"`
+		Data   struct {
+			RuleGroups []*promv1.RuleGroup `json:"groups"`
+		} `json:"data"`
 	}
 
 	decoded := &response{}
