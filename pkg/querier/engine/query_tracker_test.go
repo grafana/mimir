@@ -4,7 +4,6 @@ package engine
 
 import (
 	"context"
-	"math"
 	"testing"
 
 	"github.com/opentracing/opentracing-go"

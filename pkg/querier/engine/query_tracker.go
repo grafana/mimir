@@ -5,7 +5,6 @@ package engine
 import (
 	"bytes"
 	"context"
-	"math"
 
 	"github.com/weaveworks/common/tracing"
 
