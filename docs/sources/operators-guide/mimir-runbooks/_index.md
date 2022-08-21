@@ -277,7 +277,7 @@ How to **investigate**:
 
 ### MimirIngesterUnhealthy
 
-This alert goes off when an ingester is marked as unhealthy. Check the ring web page to see which is marked as unhealthy. You could then check the logs to see if there are any related to that ingester ex: `kubectl logs -f ingester-01 --namespace=prod`. A simple way to resolve this may be to click the "Forgot" button on the ring page, especially if the pod doesn't exist anymore. It might not exist anymore because it was on a node that got shut down, so you could check to see if there are any logs related to the node that pod is/was on, ex: `kubectl get events --namespace=prod | grep cloud-provider-node`.
+This alert goes off when one or more ingesters are marked as unhealthy. Check the ring web page to see which ones are marked as unhealthy. You could then check the logs to see if there are any related to involved ingesters, f.ex: `kubectl logs -f ingester-01 --namespace=prod`. A simple way to resolve this may be to click the "Forget" button on the ring page, especially if the pod doesn't exist anymore. It might not exist anymore because it was on a node that got shut down, so you could check to see if there are any logs related to the node that pod is/was on, f.ex.: `kubectl get events --namespace=prod | grep cloud-provider-node`.
 
 ### MimirMemoryMapAreasTooHigh
 
