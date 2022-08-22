@@ -86,7 +86,10 @@ func (q *distributorQuerier) Select(_ bool, sp *storage.SelectHints, matchers ..
 	spanlog, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "distributorQuerier.Select")
 	defer spanlog.Finish()
 
-	minT, maxT := sp.Start, sp.End
+	minT, maxT := q.mint, q.maxt
+	if sp != nil {
+		minT, maxT = sp.Start, sp.End
+	}
 
 	// If queryIngestersWithin is enabled, we do manipulate the query mint to query samples up until
 	// now - queryIngestersWithin, because older time ranges are covered by the storage. This
@@ -99,7 +102,7 @@ func (q *distributorQuerier) Select(_ bool, sp *storage.SelectHints, matchers ..
 		return storage.EmptySeriesSet()
 	}
 
-	if sp.Func == "series" {
+	if sp != nil && sp.Func == "series" {
 		ms, err := q.distributor.MetricsForLabelMatchers(ctx, model.Time(minT), model.Time(maxT), matchers...)
 		if err != nil {
 			return storage.ErrSeriesSet(err)

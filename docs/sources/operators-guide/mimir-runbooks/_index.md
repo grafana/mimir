@@ -609,6 +609,7 @@ How to **investigate**:
 1. Investigate if it was a partial upload or partial delete
    1. If it was a partial delete or an upload failed by a compactor you can safely mark the block for deletion, and compactor will delete the block. You can use `markblocks` command from Mimir tools directory: `markblocks -mark deletion -allow-partial -tenant <tenant> <blockID>` with correct backend (eg. GCS: `-backend gcs -gcs.bucket-name <bucket-name>`) configuration.
    1. If it was a failed upload by an ingester, but not later retried (ingesters are expected to retry uploads until succeed), further investigate
+1. Prevent the issue from reoccurring by enabling automatic partial block cleanup. This can be enabled with the `-compactor.partial-block-deletion-delay` flag. It takes a duration as an argument. If a partial block persists past the specified duration, the compactor will automatically delete it. One can monitor automatic cleanup of partial blocks via the `cortex_compactor_blocks_marked_for_deletion_total{reason="partial"}` counter.
 
 ### MimirQueriesIncorrect
 
