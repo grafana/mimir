@@ -24,6 +24,7 @@
 
 ### Mixin
 
+* [FEATURE] Dashboards: added support to experimental read-write deployment mode. #2780
 * [ENHANCEMENT] Dashboards: added support to query-tee in front of ruler-query-frontend in the "Remote ruler reads" dashboard. #2761
 
 ### Jsonnet
