@@ -1023,4 +1023,14 @@ GET /compactor/delete_tenant_status
 
 Returns status of tenant deletion.
 
+#### Response schema
+
+```json
+{
+  "tenant_id": "<id>",
+  "blocks_deleted": true
+}
+```
+The `blocks_deleted` field will be set to `true` if all the tenant's blocks have been deleted.
+
 Requires [authentication](#authentication).
