@@ -2554,7 +2554,9 @@ The `limits` block configures default and per-tenant limits imposed by component
 [compactor_tenant_shard_size: <int> | default = 0]
 
 # If a partial block (unfinished block without meta.json file) hasn't been
-# modified for this time, it will be marked for deletion. 0 to disable.
+# modified for this time, it will be marked for deletion. The minimum accepted
+# value is 4h0m0s: a lower value will be ignored and the feature disabled. 0 to
+# disable.
 # CLI flag: -compactor.partial-block-deletion-delay
 [compactor_partial_block_deletion_delay: <duration> | default = 0s]
 

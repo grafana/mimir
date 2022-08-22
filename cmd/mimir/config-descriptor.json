@@ -2961,7 +2961,7 @@
           "kind": "field",
           "name": "compactor_partial_block_deletion_delay",
           "required": false,
-          "desc": "If a partial block (unfinished block without meta.json file) hasn't been modified for this time, it will be marked for deletion. 0 to disable.",
+          "desc": "If a partial block (unfinished block without meta.json file) hasn't been modified for this time, it will be marked for deletion. The minimum accepted value is 4h0m0s: a lower value will be ignored and the feature disabled. 0 to disable.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "compactor.partial-block-deletion-delay",
