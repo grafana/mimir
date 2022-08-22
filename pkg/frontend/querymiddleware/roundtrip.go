@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -273,10 +272,7 @@ func newActiveUsersTripperware(logger log.Logger, registerer prometheus.Register
 	}, []string{"op", "user"})
 
 	activeUsers := util.NewActiveUsersCleanupWithDefaultValues(func(user string) {
-		err := util.DeleteMatchingLabels(queriesPerTenant, map[string]string{"user": user})
-		if err != nil {
-			level.Warn(logger).Log("msg", "failed to remove cortex_query_frontend_queries_total metric for user", "user", user)
-		}
+		queriesPerTenant.DeletePartialMatch(prometheus.Labels{"user": user})
 	})
 
 	// Start cleanup. If cleaner stops or fail, we will simply not clean the metrics for inactive users.
