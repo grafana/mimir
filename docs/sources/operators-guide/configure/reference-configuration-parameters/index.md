@@ -3022,11 +3022,6 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.head-chunks-write-queue-size
   [head_chunks_write_queue_size: <int> | default = 1000000]
 
-  # (advanced) [Deprecated] Enables TSDB isolation feature. Disabling may
-  # improve performance.
-  # CLI flag: -blocks-storage.tsdb.isolation-enabled
-  [isolation_enabled: <boolean> | default = false]
-
   # (advanced) Max size - in bytes - of the in-memory series hash cache. The
   # cache is shared across all tenants and it's used only when query sharding is
   # enabled.

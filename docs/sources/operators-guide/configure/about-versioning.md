@@ -104,5 +104,4 @@ The following features are currently experimental:
 The following features are currently deprecated:
 
 - Ingester:
-  - `-blocks-storage.tsdb.isolation-enabled` CLI flag and `isolation_enabled` YAML config parameter. This will be removed in version 2.3.0.
-  - `active_series_custom_trackers` YAML config parameter in the ingester block. The configuration has been moved to limit config, the ingester config will be removed in version 2.3.0.
+  - `active_series_custom_trackers` YAML config parameter in the ingester block. The configuration has been moved to limit config, the ingester config will be removed in version 2.4.0.

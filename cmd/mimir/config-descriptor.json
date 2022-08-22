@@ -5448,17 +5448,6 @@
             },
             {
               "kind": "field",
-              "name": "isolation_enabled",
-              "required": false,
-              "desc": "[Deprecated] Enables TSDB isolation feature. Disabling may improve performance.",
-              "fieldValue": null,
-              "fieldDefaultValue": false,
-              "fieldFlag": "blocks-storage.tsdb.isolation-enabled",
-              "fieldType": "boolean",
-              "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
               "name": "series_hash_cache_max_size_bytes",
               "required": false,
               "desc": "Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled.",
