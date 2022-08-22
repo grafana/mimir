@@ -555,7 +555,9 @@ func (o *Overrides) CompactorSplitGroups(userID string) int {
 	return o.getOverridesForUser(userID).CompactorSplitGroups
 }
 
-// CompactorPartialBlockDeletionDelay returns the partial block deletion delay time period for a given user.
+// CompactorPartialBlockDeletionDelay returns the partial block deletion delay time period for a given user,
+// and whether the configured value was valid. If the value wasn't valid, the returned delay is the default one
+// and the caller is responsible to warn the Mimir operator about it.
 func (o *Overrides) CompactorPartialBlockDeletionDelay(userID string) (delay time.Duration, valid bool) {
 	delay = time.Duration(o.getOverridesForUser(userID).CompactorPartialBlockDeletionDelay)
 
