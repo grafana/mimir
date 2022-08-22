@@ -29,7 +29,7 @@ import (
 
 type Forwarder interface {
 	services.Service
-	Forward(ctx context.Context, forwardingRules validation.ForwardingRules, ts []mimirpb.PreallocTimeseries) ([]mimirpb.PreallocTimeseries, chan error)
+	Forward(ctx context.Context, targetEndpoint string, forwardingRules validation.ForwardingRules, ts []mimirpb.PreallocTimeseries) ([]mimirpb.PreallocTimeseries, chan error)
 }
 
 type forwarder struct {
@@ -122,23 +122,26 @@ func (f *forwarder) worker() {
 // Forward takes a set of forwarding rules and a slice of time series, it forwards the time series according to the rules.
 // This function may return before the forwarding requests have completed, the caller can use the returned chan of errors
 // to determine whether all forwarding requests have completed by checking if it is closed.
+//
 // The forwarding requests get executed with a limited concurrency which is configurable, in a situation where the
 // concurrency limit is exhausted this function will block until a go routine is available to execute the requests.
 // The slice of time series which gets passed into this function must not be returned to the pool by the caller, the
 // returned slice of time series must be returned to the pool by the caller once it is done using it.
 //
+// If endpoint is not empty, it is used instead of any rule-specific endpoints.
+//
 // The return values are:
 //   - A slice of time series which should be sent to the ingesters, based on the given rule set.
 //     The Forward() method does not send the time series to the ingesters itself, it expects the caller to do that.
 //   - A chan of errors which resulted from forwarding the time series, the chan gets closed when all forwarding requests have completed.
-func (f *forwarder) Forward(ctx context.Context, rules validation.ForwardingRules, in []mimirpb.PreallocTimeseries) ([]mimirpb.PreallocTimeseries, chan error) {
+func (f *forwarder) Forward(ctx context.Context, endpoint string, rules validation.ForwardingRules, in []mimirpb.PreallocTimeseries) ([]mimirpb.PreallocTimeseries, chan error) {
 	if !f.cfg.Enabled {
 		errCh := make(chan error)
 		close(errCh)
 		return in, errCh
 	}
 
-	toIngest, tsByTargets := f.splitByTargets(in, rules)
+	toIngest, tsByTargets := f.splitByTargets(endpoint, in, rules)
 	defer f.pools.putTsByTargets(tsByTargets)
 
 	var requestWg sync.WaitGroup
@@ -200,7 +203,7 @@ func (t *TimeseriesCounts) count(ts mimirpb.PreallocTimeseries) {
 //
 // - A slice of time series to ingest into the ingesters.
 // - A map of slices of time series which is keyed by the target to which they should be forwarded.
-func (f *forwarder) splitByTargets(tsSliceIn []mimirpb.PreallocTimeseries, rules validation.ForwardingRules) ([]mimirpb.PreallocTimeseries, tsByTargets) {
+func (f *forwarder) splitByTargets(targetEndpoint string, tsSliceIn []mimirpb.PreallocTimeseries, rules validation.ForwardingRules) ([]mimirpb.PreallocTimeseries, tsByTargets) {
 	// This functions copies all the entries of tsSliceIn into new slices so tsSliceIn can be recycled,
 	// we adjust the length of the slice to 0 to prevent that the contained *mimirpb.TimeSeries objects that have been
 	// reassigned (not deep copied) get returned while they are still referred to by another slice.
@@ -209,7 +212,7 @@ func (f *forwarder) splitByTargets(tsSliceIn []mimirpb.PreallocTimeseries, rules
 	tsToIngest := f.pools.getTsSlice()
 	tsByTargets := f.pools.getTsByTargets()
 	for _, ts := range tsSliceIn {
-		forwardingTarget, ingest := findTargetForLabels(ts.Labels, rules)
+		forwardingTarget, ingest := findTargetForLabels(targetEndpoint, ts.Labels, rules)
 		if forwardingTarget != "" {
 			tsByTargets.copyToTarget(forwardingTarget, ts, f.pools)
 		}
@@ -229,7 +232,7 @@ func (f *forwarder) splitByTargets(tsSliceIn []mimirpb.PreallocTimeseries, rules
 	return tsToIngest, tsByTargets
 }
 
-func findTargetForLabels(labels []mimirpb.LabelAdapter, rules validation.ForwardingRules) (string, bool) {
+func findTargetForLabels(targetEndpoint string, labels []mimirpb.LabelAdapter, rules validation.ForwardingRules) (string, bool) {
 	metric, err := extract.UnsafeMetricNameFromLabelAdapters(labels)
 	if err != nil {
 		// Can't check whether a timeseries should be forwarded if it has no metric name.
@@ -243,6 +246,10 @@ func findTargetForLabels(labels []mimirpb.LabelAdapter, rules validation.Forward
 		return "", true
 	}
 
+	// Target endpoint is set, use it.
+	if targetEndpoint != "" {
+		return targetEndpoint, rule.Ingest
+	}
 	return rule.Endpoint, rule.Ingest
 }
 
