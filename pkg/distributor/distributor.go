@@ -641,6 +641,7 @@ func (d *Distributor) wrapPushWithMiddlewares(next push.Func) push.Func {
 	// To guarantee that, middleware functions will be called in reversed order, wrapping the
 	// result from previous call.
 	middlewares = append(middlewares, d.instanceLimitsMiddleware) // should run first
+	middlewares = append(middlewares, d.metricsMiddleware)
 	middlewares = append(middlewares, d.prePushHaDedupeMiddleware)
 	middlewares = append(middlewares, d.prePushRelabelMiddleware)
 	middlewares = append(middlewares, d.prePushForwardingMiddleware)
@@ -809,6 +810,39 @@ func (d *Distributor) prePushForwardingMiddleware(next push.Func) push.Func {
 	}
 }
 
+// metricsMiddleware updates metrics which are expected to account for all received data,
+// including data that later gets modified or dropped.
+func (d *Distributor) metricsMiddleware(next push.Func) push.Func {
+	return func(ctx context.Context, req *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error) {
+		cleanupInDefer := true
+		defer func() {
+			if cleanupInDefer {
+				cleanup()
+			}
+		}()
+
+		userID, err := tenant.TenantID(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		numSamples := 0
+		numExemplars := 0
+		for _, ts := range req.Timeseries {
+			numSamples += len(ts.Samples)
+			numExemplars += len(ts.Exemplars)
+		}
+
+		d.incomingRequests.WithLabelValues(userID).Inc()
+		d.incomingSamples.WithLabelValues(userID).Add(float64(numSamples))
+		d.incomingExemplars.WithLabelValues(userID).Add(float64(numExemplars))
+		d.incomingMetadata.WithLabelValues(userID).Add(float64(len(req.Metadata)))
+
+		cleanupInDefer = false
+		return next(ctx, req, cleanup)
+	}
+}
+
 // instanceLimitsMiddleware checks for instance limits and rejects request if this instance cannot process it at the moment.
 func (d *Distributor) instanceLimitsMiddleware(next push.Func) push.Func {
 	return func(ctx context.Context, req *mimirpb.WriteRequest, callerCleanup func()) (*mimirpb.WriteResponse, error) {
@@ -830,11 +864,6 @@ func (d *Distributor) instanceLimitsMiddleware(next push.Func) push.Func {
 			}
 		}()
 
-		userID, err := tenant.TenantID(ctx)
-		if err != nil {
-			return nil, err
-		}
-
 		if d.cfg.InstanceLimits.MaxInflightPushRequests > 0 && inflight > int64(d.cfg.InstanceLimits.MaxInflightPushRequests) {
 			return nil, errMaxInflightRequestsReached
 		}
@@ -849,9 +878,6 @@ func (d *Distributor) instanceLimitsMiddleware(next push.Func) push.Func {
 			}
 		}
 
-		// Increment counter for per-tenant requests here before potentially discarding them due to HA
-		// dedupe or forwarding rules.
-		d.incomingRequests.WithLabelValues(userID).Add(1)
 		cleanupInDefer = false
 		return next(ctx, req, cleanup)
 	}
@@ -865,15 +891,9 @@ func (d *Distributor) forwardSamples(ctx context.Context, userID string, ts []mi
 		return ts, forwardingErrCh
 	}
 
-	var notIngestedCounts forwarding.TimeseriesCounts
-
 	// Reassign req.Timeseries because the forwarder creates a new slice which has been filtered down.
 	// The cleanup func will cleanup the new slice, it's the forwarders responsibility to return the old one to the pool.
-	notIngestedCounts, ts, forwardingErrCh = d.forwarder.Forward(ctx, forwardingRules, ts)
-
-	// Some samples have been forwarded and won't be ingested but we still need to account for them in some of the metrics.
-	d.incomingSamples.WithLabelValues(userID).Add(float64(notIngestedCounts.SampleCount))
-	d.incomingExemplars.WithLabelValues(userID).Add(float64(notIngestedCounts.ExemplarCount))
+	ts, forwardingErrCh = d.forwarder.Forward(ctx, forwardingRules, ts)
 
 	return ts, forwardingErrCh
 }
@@ -919,18 +939,6 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	source := util.GetSourceIPsFromOutgoingCtx(ctx)
 
 	var firstPartialErr error
-
-	numSamples := 0
-	numExemplars := 0
-	for _, ts := range req.Timeseries {
-		numSamples += len(ts.Samples)
-		numExemplars += len(ts.Exemplars)
-	}
-	// Count the total samples in, prior to validation or deduplication, for comparison with other metrics.
-	d.incomingSamples.WithLabelValues(userID).Add(float64(numSamples))
-	d.incomingExemplars.WithLabelValues(userID).Add(float64(numExemplars))
-	// Count the total number of metadata in.
-	d.incomingMetadata.WithLabelValues(userID).Add(float64(len(req.Metadata)))
 
 	// A WriteRequest can only contain series or metadata but not both. This might change in the future.
 	// For each timeseries or samples, we compute a hash to distribute across ingesters;
