@@ -2639,6 +2639,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -alertmanager.max-alerts-size-bytes
 [alertmanager_max_alerts_size_bytes: <int> | default = 0]
 
+# Remote-write endpoint where metrics specified in forwarding_rules are
+# forwarded to. If set, takes precedence over endpoints specified in forwarding
+# rules.
+[forwarding_endpoint: <string> | default = ""]
+
 # Rules based on which the Distributor decides whether a metric should be
 # forwarded to an alternative remote_write API endpoint.
 [forwarding_rules: <map of string to validation.ForwardingRule> | default = ]
