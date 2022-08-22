@@ -1011,7 +1011,7 @@ This API endpoint is experimental and subject to change.
 POST /compactor/delete_tenant
 ```
 
-Request deletion of ALL tenant data. Experimental.
+Request deletion of ALL tenant data.
 
 Requires [authentication](#authentication).
 
@@ -1021,6 +1021,17 @@ Requires [authentication](#authentication).
 GET /compactor/delete_tenant_status
 ```
 
-Returns status of tenant deletion. Output format to be defined. Experimental.
+Returns status of tenant deletion.
+
+#### Response schema
+
+```json
+{
+  "tenant_id": "<id>",
+  "blocks_deleted": true
+}
+```
+
+The `blocks_deleted` field will be set to `true` if all the tenant's blocks have been deleted.
 
 Requires [authentication](#authentication).

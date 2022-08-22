@@ -68,7 +68,7 @@
 * [CHANGE] Distributor: removed previously deprecated `extend_writes` (see #1856) YAML key and `-distributor.extend-writes` CLI flag from the distributor config. #2551
 * [CHANGE] Ingester: removed previously deprecated `active_series_custom_trackers` (see #1188) YAML key from the ingester config. #2552
 * [CHANGE] The tenant ID `__mimir_cluster` is reserved by Mimir and not allowed to store metrics. #2643
-* [CHANGE] Purger: removed the purger component and moved its API endpoints `/purger/delete_tenant` and `/purger/delete_tenant_status` to the compactor at `/compactor/delete_tenant` and `/compactor/delete_tenant_status`. #2644
+* [CHANGE] Purger: removed the purger component and moved its API endpoints `/purger/delete_tenant` and `/purger/delete_tenant_status` to the compactor at `/compactor/delete_tenant` and `/compactor/delete_tenant_status`. The new endpoints on the compactor are stable. #2644
 * [CHANGE] Memberlist: Change the leave timeout duration (`-memberlist.leave-timeout duration`) from 5s to 20s and connection timeout (`-memberlist.packet-dial-timeout`) from 5s to 2s. This makes leave timeout 10x the connection timeout, so that we can communicate the leave to at least 1 node, if the first 9 we try to contact times out. #2669
 * [CHANGE] Alertmanager: return status code `412 Precondition Failed` and log info message when alertmanager isn't configured for a tenant. #2635
 * [FEATURE] Compactor: Adds the ability to delete partial blocks after a configurable delay. This option can be configured per tenant. #2285

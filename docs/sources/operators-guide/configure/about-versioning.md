@@ -95,7 +95,6 @@ The following features are currently experimental:
   - `-ruler-storage.storage-prefix`
 - Compactor
   - HTTP API for uploading TSDB blocks
-  - Tenant deletion API
 - Anonymous usage statistics tracking
 - Read-write deployment mode
 
