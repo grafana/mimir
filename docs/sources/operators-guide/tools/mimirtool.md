@@ -878,7 +878,7 @@ The only parameter of the script is a file containing the flags, with each flag 
 
 ### Backfill
 
-The `backfill` command uploads Prometheus TSDB blocks into Grafana Mimir, by using the block-upload API that is exposed by the compactor component.
+The `backfill` command uploads Prometheus TSDB blocks into Grafana Mimir, by using the [block-upload API that is exposed by the compactor component]({{< relref "../reference-http-api/index.md#compactor" >}}).
 
 If the command is interrupted, you can restart it. Mimirtool detects which blocks are already uploaded, and will only upload unfinished or new blocks.
 
