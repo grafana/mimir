@@ -68,7 +68,6 @@
                      {
                         "expr": "count(cortex_config_hash{cluster=~\"$cluster\", namespace=~\"$namespace\"}) by (sha256)",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "sha256:{{sha256}}",
                         "legendLink": null,
@@ -157,7 +156,6 @@
                      {
                         "expr": "count(cortex_runtime_config_hash{cluster=~\"$cluster\", namespace=~\"$namespace\"}) by (sha256)",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "sha256:{{sha256}}",
                         "legendLink": null,

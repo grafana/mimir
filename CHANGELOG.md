@@ -27,6 +27,7 @@
 
 * [FEATURE] Dashboards: added support to experimental read-write deployment mode. #2780
 * [ENHANCEMENT] Dashboards: added support to query-tee in front of ruler-query-frontend in the "Remote ruler reads" dashboard. #2761
+* [BUGFIX] Dashboards: stop setting 'interval' in dashboards; it should be set on your datasource. #2802
 
 ### Jsonnet
 
