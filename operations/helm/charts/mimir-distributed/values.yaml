@@ -209,6 +209,12 @@ mimir:
           url: http://{{ template "mimir.fullname" . }}-ruler.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
         store_gateway:
           url: http://{{ template "mimir.fullname" . }}-store-gateway.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
+        {{- if and .Values.enterprise.enabled .Values.graphite.enabled }}
+        graphite_write_proxy:
+          url: http://{{ template "mimir.fullname" . }}-graphite-write-proxy.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
+        graphite_querier:
+          url: http://{{ template "mimir.fullname" . }}-graphite-querier.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
+        {{- end}}
     {{- end }}
 
     ingester:
