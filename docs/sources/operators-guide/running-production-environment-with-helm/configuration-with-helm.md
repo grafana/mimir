@@ -7,17 +7,17 @@ weight: 80
 
 # Manage the configuration of Grafana Mimir with Helm
 
-The `mimir-distributed` Helm chart provides interfaces to set Grafana Mimir [configuration parameters]({{< relref "../configure/reference-configuration-parameters/" >}}) and customize how Grafana Mimir is deployed on a Kubernetes cluster. This document is about the configuration parameters.
+The `mimir-distributed` Helm chart provides interfaces to set Grafana Mimir [configuration parameters]({{< relref "../configure/reference-configuration-parameters/" >}}) and customize how Grafana Mimir is deployed on a Kubernetes cluster. This document describes the configuration parameters.
 
 ## Overview
 
-The Grafana Mimir configuration can be managed through the Helm chart or supplied via a user managed object.
+The Grafana Mimir configuration can be managed through the Helm chart or supplied via a user-managed object.
 
 If you want to manage the configuration via the Helm chart, see [Manage the configuration with Helm](#manage-the-configuration-with-helm).
 
 If you want to manage the configuration externally yourself, see [Manage the configuration externally](#manage-the-configuration-externally).
 
-Handling sensitive information, such as credentials is common between the two methods, see [Injecting credentials](#injecting-credentials).
+Handling sensitive information, such as credentials, is common between the two methods, see [Injecting credentials](#injecting-credentials).
 
 ## Manage the configuration with Helm
 
@@ -35,8 +35,8 @@ See the [Example](#example-of-configuration-managed-with-helm) for a practical a
 
 Grafana Mimir components are run with a configuration calculcated by the following process:
 
-1. The configuration YAML in `mimir.config` is evaluated as a Helm template. This step is intended to ensure that the configuration applies to the Kubernetes cluster where it will be installed. For example setting up cluster-specific addresses.
-1. The values from `mimir.structuredConfig` are recursively merged with `mimir.config`. The values from `mimir.structuredConfig` take precedence over the values in `mimir.config`. The result is again evaluated as a Helm template. This step is intended to apply user specific customizations. For example S3 storage details.
+1. The configuration YAML in `mimir.config` is evaluated as a Helm template. This step ensures that the configuration applies to the Kubernetes cluster where it will be installed. For example, setting up cluster-specific addresses.
+1. The values from `mimir.structuredConfig` are recursively merged with `mimir.config`. The values from `mimir.structuredConfig` take precedence over the values in `mimir.config`. The result is again evaluated as a Helm template. This step applies user-specific customizations. For example, S3 storage details.
 1. The resulting YAML configuration is then sorted alphabetically and stored in a `ConfigMap` (or `Secret` depending on the value of `configStorageType`) and provided to all Grafana Mimir components.
 1. The configuration file as well as any extra CLI flags are provided to the Mimir pods.
 1. Each component evaluates the configuration, substituting environment variables as required. Note that extra CLI flags take precedence over the configuration file.
@@ -118,16 +118,16 @@ externalConfigVersion: "0"
 
 ### Update the configuration
 
-In order to make components aware of configuration changes, either:
+To make components aware of configuration changes, either:
 
 - Update the value in `externalConfigVersion` and run `helm update`
-- or restart components affected by the configuration change manually
+- or restart components affected by the configuration change manually.
 
 ## Injecting credentials
 
-You can use the Helm chart value `global.extraEnvFrom` to inject credentials into the runtime environment variables of the Grafana Mimir components. The data keys will become environment variables and usable in the Grafana Mimir configuration. For example `AWS_SECRET_ACCESS_KEY` can be referenced as `${AWS_SECRET_ACCESS_KEY}` in the configuration. See the [Example](#example-of-configuration-managed-with-helm) for a practical application.
+You can use the Helm chart value `global.extraEnvFrom` to inject credentials into the runtime environment variables of the Grafana Mimir components. The data keys will become environment variables and usable in the Grafana Mimir configuration. For example, `AWS_SECRET_ACCESS_KEY` can be referenced as `${AWS_SECRET_ACCESS_KEY}` in the configuration. See the [Example](#example-of-configuration-managed-with-helm) for a practical application.
 
-Grafana Mimir does not keep track of changes to the credentials. If the credentials change, Grafana Mimir pods should be restarted to use the new value. An easy way to trigger such restart is to provide a global [pod annotation](https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/) in `global.podAnnotation` which will be applied to all Grafana Mimir pods. Changing the value of the global annotation will make Kubernetes recreate all pods. For example changing `global.podAnnotations.bucketSecretVersion` from `"0"` to `"1"` triggers a restart - note that pod annotations can only be strings.
+Grafana Mimir does not track changes to the credentials. If the credentials change, Grafana Mimir pods should be restarted to use the new value. To trigger a restart, provide a global [pod annotation](https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/) in `global.podAnnotation` which will be applied to all Grafana Mimir pods. Changing the value of the global annotation will make Kubernetes recreate all pods. For example, changing `global.podAnnotations.bucketSecretVersion` from `"0"` to `"1"` triggers a restart. Note that pod annotations can only be strings.
 
 ## Example of configuration managed with Helm
 
@@ -147,7 +147,7 @@ This example shows how to set up the configuration to use an S3 bucket for block
      AWS_SECRET_ACCESS_KEY: FAKESECRETKEY
    ```
 
-   Replace FAKEACCESSKEY and FAKESECRETKEY with the actual value encoded in base64.
+   Replace `FAKEACCESSKEY` and `FAKESECRETKEY` with the actual value encoded in base64.
 
 1. Apply the secret to your cluster with the `kubectl` command:
 
@@ -286,7 +286,7 @@ This example shows how to set up the configuration to use an S3 bucket for block
        grpc_server_max_concurrent_streams: 1000
    ```
 
-1. Install the chart with the `helm` command
+1. Install the chart with the `helm` command:
 
    ```bash
    helm -n mimir-test install mimir grafana/mimir-distributed -f custom.yaml
@@ -296,13 +296,13 @@ This example shows how to set up the configuration to use an S3 bucket for block
 
 The example is generated with the following steps:
 
-1. Install Grafana Mimir with the `helm` command
+1. Install Grafana Mimir with the `helm` command:
 
    ```bash
    helm -n test install mimir grafana/mimir-distributed --version 3.0.0
    ```
 
-1. Create a `custom.yaml` file with the following content
+1. Create a `custom.yaml` file with the following content:
 
    ```yaml
    mimir:
@@ -313,7 +313,7 @@ The example is generated with the following steps:
        log_level: debug
    ```
 
-1. Produce the diff with the `helm` command
+1. Produce the diff with the `helm` command:
 
    ```bash
    helm -n test diff upgrade mimir grafana/mimir-distributed --version 3.0.0  -f custom.yaml
