@@ -27,9 +27,6 @@ spec:
     metadata:
       labels:
         {{- include "mimir.podLabels" (dict "ctx" $.ctx "component" $.component) | nindent 8 }}
-        {{- with .podLabels }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
       annotations:
         {{- with $.ctx.Values.global.podAnnotations }}
         {{- toYaml . | nindent 8 }}
