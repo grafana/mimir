@@ -11,6 +11,7 @@ keywords:
 
 To learn more about Grafana Mimir, see the following resources:
 
+- July 2022 blog post: "[How Grafana Mimir helped Pipedrive overcome Prometheus scalability limits](https://grafana.com/blog/2022/07/28/how-grafana-mimir-helped-pipedrive-overcome-prometheus-scalability-limits/)"
 - July 2022 blog post: "[New in Grafana Mimir: Ingest Graphite, Datadog, Influx, and Prometheus metrics into a single storage backend](https://grafana.com/blog/2022/07/25/new-in-grafana-mimir-ingest-graphite-datadog-influx-and-prometheus-metrics-into-a-single-storage-backend/)"
 - July 2022 blog post: "[How we improved Grafana Mimir query performance by up to 10x](https://grafana.com/blog/2022/07/20/how-we-improved-grafana-mimir-query-performance-by-up-to-10x/)"
 - June 2022 GrafanaCon 2022 talk: "[For billion-series scale or home IoT projects, get started in minutes with Grafana Mimir (using Helm)](https://grafana.com/go/grafanaconline/2022/grafana-mimir-migrate-your-metrics-in-minutes/)"
