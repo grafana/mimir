@@ -77,6 +77,10 @@ data:
           url: http://test-enterprise-configmap-values-mimir-admin-api.citestns.svc:8080
         distributor:
           url: dns:///test-enterprise-configmap-values-mimir-distributor-headless.citestns.svc.cluster.local:9095
+        graphite_querier:
+          url: http://test-enterprise-configmap-values-mimir-graphite-querier.citestns.svc:8080
+        graphite_write_proxy:
+          url: http://test-enterprise-configmap-values-mimir-graphite-write-proxy.citestns.svc:8080
         ingester:
           url: http://test-enterprise-configmap-values-mimir-ingester.citestns.svc:8080
         query_frontend:
