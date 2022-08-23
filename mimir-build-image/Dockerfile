@@ -3,6 +3,7 @@
 # Provenance-includes-license: Apache-2.0
 # Provenance-includes-copyright: The Cortex Authors.
 
+FROM k8s.gcr.io/kustomize/kustomize:v4.5.5 as kustomize
 FROM alpine/helm:3.8.2 as helm
 FROM golang:1.18.4-bullseye
 ARG goproxyValue
@@ -51,6 +52,7 @@ RUN GO111MODULE=on \
 	rm -rf /go/pkg /go/src /root/.cache
 
 COPY --from=helm /usr/bin/helm /usr/bin/helm
+COPY --from=kustomize /app/kustomize /usr/bin/kustomize
 ENV NODE_PATH=/usr/lib/node_modules
 COPY build.sh /
 ENV GOCACHE=/go/cache
