@@ -220,18 +220,18 @@ type memcachedGetMultiResult struct {
 	err   error
 }
 
-// NewMemcachedClient makes a new RemoteCacheClient.
-func NewMemcachedClient(logger log.Logger, name string, conf []byte, reg prometheus.Registerer) (*memcachedClient, error) {
+// NewMemcachedClient makes a new RemoteCacheClient with an optional pool for cache value buffers.
+func NewMemcachedClient(logger log.Logger, name string, conf []byte, pool memcache.BytesPool, reg prometheus.Registerer) (*memcachedClient, error) {
 	config, err := parseMemcachedClientConfig(conf)
 	if err != nil {
 		return nil, err
 	}
 
-	return NewMemcachedClientWithConfig(logger, name, config, reg)
+	return NewMemcachedClientWithConfig(logger, name, config, pool, reg)
 }
 
-// NewMemcachedClientWithConfig makes a new RemoteCacheClient.
-func NewMemcachedClientWithConfig(logger log.Logger, name string, config MemcachedClientConfig, reg prometheus.Registerer) (*memcachedClient, error) {
+// NewMemcachedClientWithConfig makes a new RemoteCacheClient with an optional pool for cache value buffers.
+func NewMemcachedClientWithConfig(logger log.Logger, name string, config MemcachedClientConfig, pool memcache.BytesPool, reg prometheus.Registerer) (*memcachedClient, error) {
 	if err := config.validate(); err != nil {
 		return nil, err
 	}
@@ -243,6 +243,7 @@ func NewMemcachedClientWithConfig(logger log.Logger, name string, config Memcach
 	client := memcache.NewFromSelector(selector)
 	client.Timeout = config.Timeout
 	client.MaxIdleConns = config.MaxIdleConnections
+	client.Pool = pool
 
 	if reg != nil {
 		reg = prometheus.WrapRegistererWith(prometheus.Labels{"name": name}, reg)

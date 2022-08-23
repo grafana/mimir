@@ -493,16 +493,14 @@ github.com/grafana/dskit v0.0.0-20220817135401-71aee950db17 h1:Xcn9zsIzA+8Ui8PGK
 github.com/grafana/dskit v0.0.0-20220817135401-71aee950db17/go.mod h1:/5aJR4AjaYbxhowVIdjeDDEem0EYSJh26HLD1U4Mc44=
 github.com/grafana/e2e v0.1.1-0.20220519104354-1db01e4751fe h1:mxrRWDjKtob43xF9nEhJthdtCzX35/800Sk7nE//YHQ=
 github.com/grafana/e2e v0.1.1-0.20220519104354-1db01e4751fe/go.mod h1:+26VJWpczg2OU3D0537acnHSHzhJORpxOs6F+M27tZo=
-github.com/grafana/gomemcache v0.0.0-20220812141943-44b6cde200bb h1:CqfZjjd8iK3G1TV8Wf0u7WTY+0RxIEbmcgxftt9qVtw=
-github.com/grafana/gomemcache v0.0.0-20220812141943-44b6cde200bb/go.mod h1:H0wQNHz2YrLsuXOZozoeDmnHXkNCRmMW0gwFWDfEZDA=
+github.com/grafana/gomemcache v0.0.0-20220823145208-74a1c5bd8fd5 h1:63vc/yUOChJQVot1mCkASWTVY3v7OWHWw2PEjCEqMTU=
+github.com/grafana/gomemcache v0.0.0-20220823145208-74a1c5bd8fd5/go.mod h1:H0wQNHz2YrLsuXOZozoeDmnHXkNCRmMW0gwFWDfEZDA=
 github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe h1:yIXAAbLswn7VNWBIvM71O2QsgfgW9fRXZNR0DXe6pDU=
 github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe/go.mod h1:MS2lj3INKhZjWNqd3N0m3J+Jxf3DAOnAH9VT3Sh9MUE=
 github.com/grafana/mimir-prometheus v0.0.0-20220822125643-4aa6d561a134 h1:dS8d6jRiMci9dIXENCktYdPcRXee8VRBqK+omnquQf8=
 github.com/grafana/mimir-prometheus v0.0.0-20220822125643-4aa6d561a134/go.mod h1:y+uCk/SdO73g9bMtjCZbejjmcjY4X+xLuKN7cBor5UE=
 github.com/grafana/regexp v0.0.0-20220304095617-2e8d9baf4ac2 h1:uirlL/j72L93RhV4+mkWhjv0cov2I0MIgPOG9rMDr1k=
 github.com/grafana/regexp v0.0.0-20220304095617-2e8d9baf4ac2/go.mod h1:M5qHK+eWfAv8VR/265dIuEpL3fNfeC21tXXp9itM24A=
-github.com/grafana/thanos v0.19.1-0.20220713162227-7bde03e4afa9 h1:K8dScpAih2+GKowaVQ8RIqPRetesNenu2TK71iLDiXM=
-github.com/grafana/thanos v0.19.1-0.20220713162227-7bde03e4afa9/go.mod h1:sklyj/ttQrL8iY3g/pQEAdIhayKW4HvOpbA7TEYK0Xs=
 github.com/grpc-ecosystem/go-grpc-middleware v1.1.0/go.mod h1:f5nM7jw/oeRSadq3xCzHAvxcr8HZnzsqU6ILg/0NiiE=
 github.com/grpc-ecosystem/go-grpc-middleware v1.3.0 h1:+9834+KizmvFV7pXQGSXQTsaWhq2GjuNUt0aUU0YBYw=
 github.com/grpc-ecosystem/go-grpc-middleware v1.3.0/go.mod h1:z0ButlSOZa5vEBq9m2m2hlwIgKw+rp3sdCBRoJY+30Y=
@@ -628,6 +626,8 @@ github.com/kylelemons/godebug v1.1.0/go.mod h1:9/0rRGxNHcop5bhtWyNeEfOS8JIWk580+
 github.com/leanovate/gopter v0.2.4 h1:U4YLBggDFhJdqQsG4Na2zX7joVTky9vHaj/AGEwSuXU=
 github.com/leanovate/gopter v0.2.4/go.mod h1:gNcbPWNEWRe4lm+bycKqxUYoH5uoVje5SkOJ3uoLer8=
 github.com/leodido/go-urn v1.2.0/go.mod h1:+8+nEpDfqqsY+g338gtMEUOtuK+4dEMhiQEgxpxOKII=
+github.com/leviharrison/thanos v0.19.0-rc.1.0.20220823180551-01612be507dd h1:8Cfdd6RZaXprOvYr00e4nw30kbccWn3CFxyeIfim+3A=
+github.com/leviharrison/thanos v0.19.0-rc.1.0.20220823180551-01612be507dd/go.mod h1:suTkoqmcEd7zZFD10J9WwGAFuqlAis9l24QL/dyC+Aw=
 github.com/linode/linodego v1.8.0 h1:7B2UaWu6C48tZZZrtINWRElAcwzk4TLnL9USjKf3xm0=
 github.com/magiconair/properties v1.8.5/go.mod h1:y3VJvCyxH9uVvJTWEGAELF3aiYNyPKd5NZ3oSwXrF60=
 github.com/mailru/easyjson v0.0.0-20190614124828-94de47d64c63/go.mod h1:C1wdFJiN94OJF2b5HbByQZoLdCWB1Yqtg26g4irojpc=

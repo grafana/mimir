@@ -49,7 +49,7 @@ func CreateClient(cacheName string, cfg BackendConfig, logger log.Logger, reg pr
 		return nil, nil
 
 	case BackendMemcached:
-		client, err := cacheutil.NewMemcachedClientWithConfig(logger, cacheName, cfg.Memcached.ToMemcachedClientConfig(), reg)
+		client, err := cacheutil.NewMemcachedClientWithConfig(logger, cacheName, cfg.Memcached.ToMemcachedClientConfig(), nil, reg)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to create memcached client")
 		}

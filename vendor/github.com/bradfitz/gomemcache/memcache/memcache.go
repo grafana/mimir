@@ -146,6 +146,8 @@ type Client struct {
 	// be set to a number higher than your peak parallel requests.
 	MaxIdleConns int
 
+	Pool BytesPool
+
 	selector ServerSelector
 
 	lk       sync.Mutex
@@ -179,6 +181,15 @@ type conn struct {
 	rw   *bufio.ReadWriter
 	addr net.Addr
 	c    *Client
+}
+
+// BytesPool is a pool of bytes that can be reused.
+type BytesPool interface {
+	// Get returns a new byte slice that has a capacity at least the same as the
+	// requested size.
+	Get(sz int) (*[]byte, error)
+	// Put returns a byte slice to the pool.
+	Put(b *[]byte)
 }
 
 // release returns this connection back to the client's free pool
@@ -370,7 +381,7 @@ func (c *Client) getFromAddr(addr net.Addr, keys []string, cb func(*Item)) error
 		if err := rw.Flush(); err != nil {
 			return err
 		}
-		if err := parseGetResponse(rw.Reader, cb); err != nil {
+		if err := c.parseGetResponse(rw.Reader, cb); err != nil {
 			return err
 		}
 		return nil
@@ -493,7 +504,7 @@ func (c *Client) GetMulti(keys []string) (map[string]*Item, error) {
 
 // parseGetResponse reads a GET response from r and calls cb for each
 // read and allocated Item
-func parseGetResponse(r *bufio.Reader, cb func(*Item)) error {
+func (c *Client) parseGetResponse(r *bufio.Reader, cb func(*Item)) error {
 	for {
 		line, err := r.ReadSlice('\n')
 		if err != nil {
@@ -507,14 +518,27 @@ func parseGetResponse(r *bufio.Reader, cb func(*Item)) error {
 		if err != nil {
 			return err
 		}
-		it.Value = make([]byte, size+2)
+		buffSize := size + 2
+		if c.Pool != nil {
+			v, err := c.Pool.Get(buffSize)
+			if err != nil {
+				return err
+			}
+			it.Value = (*v)[:buffSize]
+		} else {
+			it.Value = make([]byte, buffSize)
+		}
 		_, err = io.ReadFull(r, it.Value)
 		if err != nil {
-			it.Value = nil
+			if c.Pool != nil {
+				c.Pool.Put(&it.Value)
+			}
 			return err
 		}
 		if !bytes.HasSuffix(it.Value, crlf) {
-			it.Value = nil
+			if c.Pool != nil {
+				c.Pool.Put(&it.Value)
+			}
 			return fmt.Errorf("memcache: corrupt get result read")
 		}
 		it.Value = it.Value[:size]

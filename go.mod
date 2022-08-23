@@ -236,14 +236,14 @@ require (
 replace git.apache.org/thrift.git => github.com/apache/thrift v0.0.0-20180902110319-2566ecd5d999
 
 // Using our own fork to add custom dialer and improve perf.
-replace github.com/bradfitz/gomemcache => github.com/grafana/gomemcache v0.0.0-20220812141943-44b6cde200bb
+replace github.com/bradfitz/gomemcache => github.com/grafana/gomemcache v0.0.0-20220823145208-74a1c5bd8fd5
 
 // Using a fork of Prometheus while we work on querysharding to avoid a dependency on the upstream.
 replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20220822125643-4aa6d561a134
 
 // Out of order Support forces us to fork thanos because we've changed the ChunkReader interface.
 // Once the out of order support is upstreamed and Thanos has vendored it, we can remove this override.
-replace github.com/thanos-io/thanos => github.com/grafana/thanos v0.19.1-0.20220713162227-7bde03e4afa9
+replace github.com/thanos-io/thanos => github.com/leviharrison/thanos v0.19.0-rc.1.0.20220823180551-01612be507dd
 
 // Pin hashicorp depencencies since the Prometheus fork, go mod tries to update them.
 replace github.com/hashicorp/go-immutable-radix => github.com/hashicorp/go-immutable-radix v1.2.0

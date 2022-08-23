@@ -220,7 +220,7 @@ github.com/aws/smithy-go/transport/http/internal/io
 # github.com/beorn7/perks v1.0.1
 ## explicit; go 1.11
 github.com/beorn7/perks/quantile
-# github.com/bradfitz/gomemcache v0.0.0-20190913173617-a41fca850d0b => github.com/grafana/gomemcache v0.0.0-20220812141943-44b6cde200bb
+# github.com/bradfitz/gomemcache v0.0.0-20190913173617-a41fca850d0b => github.com/grafana/gomemcache v0.0.0-20220823145208-74a1c5bd8fd5
 ## explicit; go 1.12
 github.com/bradfitz/gomemcache/memcache
 # github.com/cenkalti/backoff/v4 v4.1.3
@@ -831,7 +831,7 @@ github.com/stretchr/objx
 github.com/stretchr/testify/assert
 github.com/stretchr/testify/mock
 github.com/stretchr/testify/require
-# github.com/thanos-io/thanos v0.26.1-0.20220602051129-a6f6ce060ed4 => github.com/grafana/thanos v0.19.1-0.20220713162227-7bde03e4afa9
+# github.com/thanos-io/thanos v0.26.1-0.20220602051129-a6f6ce060ed4 => github.com/leviharrison/thanos v0.19.0-rc.1.0.20220823180551-01612be507dd
 ## explicit; go 1.17
 github.com/thanos-io/thanos/pkg/block
 github.com/thanos-io/thanos/pkg/block/metadata
@@ -1352,9 +1352,9 @@ sigs.k8s.io/kustomize/kyaml/yaml/walk
 ## explicit; go 1.12
 sigs.k8s.io/yaml
 # git.apache.org/thrift.git => github.com/apache/thrift v0.0.0-20180902110319-2566ecd5d999
-# github.com/bradfitz/gomemcache => github.com/grafana/gomemcache v0.0.0-20220812141943-44b6cde200bb
+# github.com/bradfitz/gomemcache => github.com/grafana/gomemcache v0.0.0-20220823145208-74a1c5bd8fd5
 # github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20220822125643-4aa6d561a134
-# github.com/thanos-io/thanos => github.com/grafana/thanos v0.19.1-0.20220713162227-7bde03e4afa9
+# github.com/thanos-io/thanos => github.com/leviharrison/thanos v0.19.0-rc.1.0.20220823180551-01612be507dd
 # github.com/hashicorp/go-immutable-radix => github.com/hashicorp/go-immutable-radix v1.2.0
 # github.com/hashicorp/go-hclog => github.com/hashicorp/go-hclog v0.12.2
 # github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe
