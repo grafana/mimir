@@ -342,6 +342,79 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	assertServiceMetricsPrefixes(t, QueryScheduler, queryScheduler)
 }
 
+func TestQueryFrontendTooLargeEntryRequest(t *testing.T) {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	cfg := &queryFrontendTestConfig{
+		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
+			flags = mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags())
+
+			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+			require.NoError(t, s.StartAndWaitReady(minio))
+
+			return "", flags
+		},
+	}
+
+	memcached := e2ecache.NewMemcached()
+	consul := e2edb.NewConsul()
+	require.NoError(t, s.StartAndWaitReady(consul, memcached))
+
+	configFile, flags := cfg.setup(t, s)
+
+	flags = mergeFlags(flags, map[string]string{
+		"-query-frontend.cache-results":                     "true",
+		"-query-frontend.results-cache.backend":             "memcached",
+		"-query-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
+		"-query-frontend.query-stats-enabled":               strconv.FormatBool(cfg.queryStatsEnabled),
+		"-query-frontend.parallelize-shardable-queries":     "true", // Allow queries to be parallized (query-sharding)
+		// Set the maximum entry size to 50 byte.
+		// The query size is 64 bytes, so it will be a too large entry request.
+		"-querier.frontend-client.grpc-max-send-msg-size": "50",
+	})
+
+	// Start the query-frontend.
+	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags, e2emimir.WithConfigFile(configFile))
+	require.NoError(t, s.Start(queryFrontend))
+	flags["-querier.frontend-address"] = queryFrontend.NetworkGRPCEndpoint()
+
+	// Start all other services.
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
+
+	require.NoError(t, s.StartAndWaitReady(querier, ingester, distributor))
+	require.NoError(t, s.WaitReady(queryFrontend))
+
+	// Check if we're discovering memcache or not.
+	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(1), "thanos_memcached_dns_provider_results"))
+	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Greater(0), "thanos_memcached_dns_lookups_total"))
+
+	// Wait until both the distributor and querier have updated the ring.
+	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring
+	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
+	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
+
+	// Push series for the test user to Mimir.
+	now := time.Now()
+	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), queryFrontend.HTTPEndpoint(), "", "", userID)
+	require.NoError(t, err)
+	var series []prompb.TimeSeries
+	series, _ = generateSeries("series_1", now)
+
+	res, err := c.Push(series)
+	require.NoError(t, err)
+	require.Equal(t, 200, res.StatusCode)
+
+	resp, _, err := c.QueryRaw("sum(series_1)")
+	require.NoError(t, err)
+	require.Equal(t, http.StatusRequestEntityTooLarge, resp.StatusCode)
+	// Check that query was actually sharded.
+	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Greater(0), "cortex_frontend_sharded_queries_total"))
+}
+
 // This spins up a minimal query-frontend setup and compares if errors returned
 // by QueryRanges are returned in the same way as they are with PromQL
 func TestQueryFrontendErrorMessageParity(t *testing.T) {

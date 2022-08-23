@@ -286,6 +286,8 @@ func (prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _ R
 		})
 	} else if r.StatusCode == http.StatusTooManyRequests {
 		return nil, apierror.New(apierror.TypeTooManyRequests, string(mustReadAllBody(r)))
+	} else if r.StatusCode == http.StatusRequestEntityTooLarge {
+		return nil, apierror.New(apierror.TypeTooLargeEntry, string(mustReadAllBody(r)))
 	}
 
 	log, ctx := spanlogger.NewWithLogger(ctx, logger, "ParseQueryRangeResponse") //nolint:ineffassign,staticcheck
