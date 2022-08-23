@@ -2127,12 +2127,6 @@ graphite:
     persistence:
       subPath:
 
-    readinessProbe:
-      httpGet:
-        path: /ready
-        port: http-metrics
-      initialDelaySeconds: 45
-
     securityContext: {}
 
     strategy:
@@ -2203,11 +2197,6 @@ graphite:
     annotations: {}
     persistence:
       subPath:
-    readinessProbe:
-      httpGet:
-        path: /ready
-        port: http-metrics
-      initialDelaySeconds: 45
     securityContext: {}
     strategy:
       type: RollingUpdate
