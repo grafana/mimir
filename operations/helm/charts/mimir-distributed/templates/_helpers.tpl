@@ -322,28 +322,44 @@ Cluster name that shows up in dashboard metrics
 
 {{/*
 mimir.componentSectionFromName returns the sections from the user .Values in YAML
-that corresponds to the requested component. mimir.componentSectionFromName takes three arguments
+that corresponds to the requested component. mimir.componentSectionFromName takes two arguments
   .ctx = the root context of the chart
-  .component = the name of the component. If provided, dashes (-) are replaced with underscores (_)
-                and the section with that name is returned from .ctxValues
-  .componentSection = when provided instead of using .component to infer the component section name in the
-                      user values, mimir.componentSectionFromName uses .componentSection as the YAML path
-                      to the component section. Nested sections should be split by dots (.)
+  .component = the name of the component. mimir.componentSectionFromName uses an internal mapping to know
+                which component lives where in the values.yaml
 Examples:
   $componentSection := include "mimir.componentSectionFromName" (dict "ctx" . "component" "store-gateway") | fromYaml
-  $componentSection := include "mimir.componentSectionFromName" (dict "ctx" . "componentSection" "graphite.querier") | fromYaml
+  $componentSection.podLabels ...
 */}}
 {{- define "mimir.componentSectionFromName" -}}
-{{ if .componentSection }}
-  {{ $section := .ctx.Values }}
-  {{- range regexSplit "\\." .componentSection -1 }}
-    {{ $section = index $section . }}
-    {{- if not $section }}{{- printf "Component %s not found in values; values: %s" $.componentSection ($.ctx.Values | toJson | abbrev 100) | fail }}{{ end }}
-  {{- end }}
-  {{- $section | toYaml }}
-{{- else }}
-  {{- index .ctx.Values (.component | replace "-" "_") | toYaml }}
-{{- end }}
+{{- $componentsMap := dict
+  "admin-api" "admin_api"
+  "alertmanager" "alertmanager"
+  "chunks-cache" "chunks-cache"
+  "compactor" "compactor"
+  "distributor" "distributor"
+  "gateway" "gateway"
+  "index-cache" "index-cache"
+  "ingester" "ingester"
+  "metadata-cache" "metadata-cache"
+  "nginx" "nginx"
+  "overrides-exporter" "overrides_exporter"
+  "querier" "querier"
+  "query-frontend" "query_frontend"
+  "query-scheduler" "query_scheduler"
+  "results-cache" "results-cache"
+  "ruler" "ruler"
+  "smoke-test" "smoke_test"
+  "store-gateway" "store_gateway"
+  "tokengen" "tokengenJob"
+-}}
+{{- $componentSection := index $componentsMap .component -}}
+{{- if not $componentSection -}}{{- printf "No component section mapping for %s not found in values; submit a bug report if you are a user, edit mimir.componentSectionFromName if you are a contributor" .component | fail -}}{{- end -}}
+{{- $section := .ctx.Values -}}
+{{- range regexSplit "\\." $componentSection -1 -}}
+  {{- $section = index $section . -}}
+  {{- if not $section -}}{{- printf "Component section %s not found in values; values: %s" . ($.ctx.Values | toJson | abbrev 100) | fail -}}{{- end -}}
+{{- end -}}
+{{- $section | toYaml -}}
 {{- end -}}
 
 {{/*
