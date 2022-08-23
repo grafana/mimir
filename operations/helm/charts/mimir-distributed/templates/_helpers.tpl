@@ -251,11 +251,8 @@ checksum/config: {{ include (print .ctx.Template.BasePath "/mimir-config.yaml") 
 {{ toYaml . }}
 {{- end }}
 {{- if .component }}
-{{- $componentSection := include "mimir.componentSectionFromName" . }}
-{{- if not (hasKey .ctx.Values $componentSection) }}
-{{- print "Component section " $componentSection " does not exist" | fail }}
-{{- end }}
-{{- with (index .ctx.Values $componentSection).podAnnotations }}
+{{- $componentSection := include "mimir.componentSectionFromName" . | fromYaml }}
+{{- with ($componentSection).podAnnotations }}
 {{ toYaml . }}
 {{- end }}
 {{- end }}
@@ -324,11 +321,29 @@ Cluster name that shows up in dashboard metrics
 {{- end -}}
 
 {{/*
-Calculate values.yaml section name from component name
-Expects the component name in .component on the passed context
+mimir.componentSectionFromName returns the sections from the user .Values in YAML
+that corresponds to the requested component. mimir.componentSectionFromName takes three arguments
+  .ctx = the root context of the chart
+  .component = the name of the component. If provided, dashes (-) are replaced with underscores (_)
+                and the section with that name is returned from .ctxValues
+  .componentSection = when provided instead of using .component to infer the component section name in the
+                      user values, mimir.componentSectionFromName uses .componentSection as the YAML path
+                      to the component section. Nested sections should be split by dots (.)
+Examples:
+  $componentSection := include "mimir.componentSectionFromName" (dict "ctx" . "component" "store-gateway") | fromYaml
+  $componentSection := include "mimir.componentSectionFromName" (dict "ctx" . "componentSection" "graphite.querier") | fromYaml
 */}}
 {{- define "mimir.componentSectionFromName" -}}
-{{- .component | replace "-" "_" -}}
+{{ if .componentSection }}
+  {{ $section := .ctx.Values }}
+  {{- range regexSplit "\\." .componentSection -1 }}
+    {{ $section = index $section . }}
+    {{- if not $section }}{{- printf "Component %s not found in values; values: %s" $.componentSection ($.ctx.Values | toJson | abbrev 100) | fail }}{{ end }}
+  {{- end }}
+  {{- $section | toYaml }}
+{{- else }}
+  {{- index .ctx.Values (.component | replace "-" "_") | toYaml }}
+{{- end }}
 {{- end -}}
 
 {{/*
