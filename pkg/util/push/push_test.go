@@ -366,3 +366,10 @@ type bufCloser struct {
 
 func (bufCloser) Close() error                 { return nil }
 func (n bufCloser) BytesBuffer() *bytes.Buffer { return n.Buffer }
+
+func TestNewDistributorMaxWriteMessageSizeErr(t *testing.T) {
+	err := newDistributorMaxWriteMessageSizeErr(100, 50)
+	msg := `the incoming push request has been rejected because its message size of 100 bytes is larger than the allowed limit of 50 bytes (err-mimir-distributor-max-write-message-size). To adjust the related limit, configure -distributor.max-recv-msg-size, or contact your service administrator.`
+
+	assert.Equal(t, msg, err.Error())
+}

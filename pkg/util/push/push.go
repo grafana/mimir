@@ -8,6 +8,7 @@ package push
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"sync"
 
@@ -17,6 +18,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -46,8 +48,16 @@ func Handler(
 	push Func,
 ) http.Handler {
 	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, push, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, dst []byte, req *mimirpb.PreallocWriteRequest) ([]byte, error) {
-		return util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, dst, req, util.RawSnappy)
+		res, err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, dst, req, util.RawSnappy)
+		if errors.Is(err, util.MsgSizeTooLargeErr{}) {
+			err = newDistributorMaxWriteMessageSizeErr(int(r.ContentLength), maxRecvMsgSize)
+		}
+		return res, err
 	})
+}
+
+func newDistributorMaxWriteMessageSizeErr(actual, limit int) error {
+	return errors.New(globalerror.DistributorMaxWriteMessageSize.MessageWithPerInstanceLimitConfig(fmt.Sprintf("the incoming push request has been rejected because its message size of %d bytes is larger than the allowed limit of %d bytes", actual, limit), "distributor.max-recv-msg-size"))
 }
 
 // handler requires an additional parser argument.
