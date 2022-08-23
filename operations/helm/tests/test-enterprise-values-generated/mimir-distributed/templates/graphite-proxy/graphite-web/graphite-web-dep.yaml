@@ -1,5 +1,5 @@
 ---
-# Source: mimir-distributed/templates/graphite-proxy/graphite-web-dep.yaml
+# Source: mimir-distributed/templates/graphite-proxy/graphite-web/graphite-web-dep.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:

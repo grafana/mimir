@@ -1,12 +1,12 @@
 ---
-# Source: mimir-distributed/templates/graphite-proxy/graphite-metric-name-cache-svc-headless.yaml
+# Source: mimir-distributed/templates/graphite-proxy/graphite-metric-name-cache/graphite-metric-name-cache-svc-headless.yaml
 apiVersion: v1
 kind: Service
 metadata:
-  name: test-enterprise-values-mimir-graphite-metric-name-cache
+  name: test-enterprise-configmap-values-mimir-graphite-metric-name-cache
   labels:
     app.kubernetes.io/name: mimir
-    app.kubernetes.io/instance: test-enterprise-values
+    app.kubernetes.io/instance: test-enterprise-configmap-values
     app.kubernetes.io/component: graphite-metric-name-cache
     app.kubernetes.io/managed-by: Helm
   annotations:
@@ -26,5 +26,5 @@ spec:
     
   selector:
     app.kubernetes.io/name: mimir
-    app.kubernetes.io/instance: test-enterprise-values
+    app.kubernetes.io/instance: test-enterprise-configmap-values
     app.kubernetes.io/component: graphite-metric-name-cache

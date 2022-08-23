@@ -1,13 +1,13 @@
 ---
-# Source: mimir-distributed/templates/graphite-proxy/graphite-querier-svc.yaml
+# Source: mimir-distributed/templates/graphite-proxy/graphite-write-proxy/graphite-write-proxy-svc.yaml
 apiVersion: v1
 kind: Service
 metadata:
-  name: test-enterprise-configmap-values-mimir-graphite-querier
+  name: test-enterprise-configmap-values-mimir-graphite-write-proxy
   labels:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-enterprise-configmap-values
-    app.kubernetes.io/component: graphite-querier
+    app.kubernetes.io/component: graphite-write-proxy
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -26,4 +26,4 @@ spec:
   selector:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-enterprise-configmap-values
-    app.kubernetes.io/component: graphite-querier
+    app.kubernetes.io/component: graphite-write-proxy

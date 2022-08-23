@@ -1,5 +1,5 @@
 ---
-# Source: mimir-distributed/templates/graphite-proxy/graphite-metric-name-cache-statefulset.yaml
+# Source: mimir-distributed/templates/graphite-proxy/graphite-metric-name-cache/graphite-metric-name-cache-statefulset.yaml
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:

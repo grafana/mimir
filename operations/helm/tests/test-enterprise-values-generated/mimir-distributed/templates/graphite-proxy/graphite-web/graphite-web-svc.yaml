@@ -1,13 +1,13 @@
 ---
-# Source: mimir-distributed/templates/graphite-proxy/graphite-querier-svc.yaml
+# Source: mimir-distributed/templates/graphite-proxy/graphite-web/graphite-web-svc.yaml
 apiVersion: v1
 kind: Service
 metadata:
-  name: test-enterprise-values-mimir-graphite-querier
+  name: test-enterprise-values-mimir-graphite-web
   labels:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-enterprise-values
-    app.kubernetes.io/component: graphite-querier
+    app.kubernetes.io/component: graphite-web
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -19,11 +19,7 @@ spec:
       protocol: TCP
       name: http-metrics
       targetPort: http-metrics
-    - port: 9095
-      protocol: TCP
-      name: grpc
-      targetPort: grpc
   selector:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-enterprise-values
-    app.kubernetes.io/component: graphite-querier
+    app.kubernetes.io/component: graphite-web

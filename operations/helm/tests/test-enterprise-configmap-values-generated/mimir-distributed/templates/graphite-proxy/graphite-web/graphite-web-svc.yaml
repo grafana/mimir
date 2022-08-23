@@ -1,5 +1,5 @@
 ---
-# Source: mimir-distributed/templates/graphite-proxy/graphite-web-svc.yaml
+# Source: mimir-distributed/templates/graphite-proxy/graphite-web/graphite-web-svc.yaml
 apiVersion: v1
 kind: Service
 metadata:

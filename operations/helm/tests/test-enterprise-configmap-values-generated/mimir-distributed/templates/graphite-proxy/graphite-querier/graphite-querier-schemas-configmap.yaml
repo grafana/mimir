@@ -1,5 +1,5 @@
 ---
-# Source: mimir-distributed/templates/graphite-proxy/graphite-querier-schemas-configmap.yaml
+# Source: mimir-distributed/templates/graphite-proxy/graphite-querier/graphite-querier-schemas-configmap.yaml
 apiVersion: v1
 kind: ConfigMap
 metadata:

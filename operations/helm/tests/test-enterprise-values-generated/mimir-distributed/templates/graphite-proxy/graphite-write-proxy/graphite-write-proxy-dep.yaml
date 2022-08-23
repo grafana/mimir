@@ -1,13 +1,13 @@
 ---
-# Source: mimir-distributed/templates/graphite-proxy/graphite-querier-dep.yaml
+# Source: mimir-distributed/templates/graphite-proxy/graphite-write-proxy/graphite-write-proxy-dep.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: test-enterprise-configmap-values-mimir-graphite-querier
+  name: test-enterprise-values-mimir-graphite-write-proxy
   labels:
     app.kubernetes.io/name: mimir
-    app.kubernetes.io/instance: test-enterprise-configmap-values
-    app.kubernetes.io/component: graphite-querier
+    app.kubernetes.io/instance: test-enterprise-values
+    app.kubernetes.io/component: graphite-write-proxy
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -17,8 +17,8 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: mimir
-      app.kubernetes.io/instance: test-enterprise-configmap-values
-      app.kubernetes.io/component: graphite-querier
+      app.kubernetes.io/instance: test-enterprise-values
+      app.kubernetes.io/component: graphite-write-proxy
   strategy:
     rollingUpdate:
       maxSurge: 0
@@ -28,39 +28,30 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: mimir
-        app.kubernetes.io/instance: test-enterprise-configmap-values
+        app.kubernetes.io/instance: test-enterprise-values
         app.kubernetes.io/managed-by: Helm
-        app.kubernetes.io/component: graphite-querier
+        app.kubernetes.io/component: graphite-write-proxy
       annotations:
-        minio-secret-version: "42"
       namespace: "citestns"
     spec:
-      serviceAccountName: test-enterprise-configmap-values-mimir
+      serviceAccountName: test-enterprise-values-mimir
       securityContext:
         {}
       initContainers:
       containers:
-        - name: graphite-querier
+        - name: graphite-write-proxy
           imagePullPolicy: IfNotPresent
           args:
-            - -target=graphite-querier
+            - -target=graphite-write-proxy
             - -config.file=/etc/mimir/mimir.yaml
+            - -license.path=/license/license.jwt
             - -graphite.enabled=true
-            - -graphite.querier.query-address=http://test-enterprise-configmap-values-mimir-query-frontend.citestns.svc:8080/prometheus
-            - -graphite.querier.graphite-fallback=http://test-enterprise-configmap-values-mimir-graphite-web.citestns.svc:8080
-            - -graphite.querier.schemas.default-storage-schemas-file=/etc/graphite-proxy/storage-schemas.conf
-            - -graphite.querier.schemas.default-storage-aggregations-file=/etc/graphite-proxy/storage-aggregations.conf
-            - -graphite.querier.aggregation-cache.memcached.addresses=dnssrvnoa+test-enterprise-configmap-values-mimir-graphite-aggregation-cache.citestns.svc:11211
-            - -graphite.querier.aggregation-cache.memcached.timeout=1s
-            - -graphite.querier.metric-name-cache.memcached.addresses=dnssrvnoa+test-enterprise-configmap-values-mimir-graphite-metric-name-cache.citestns.svc:11211
-            - -graphite.querier.metric-name-cache.memcached.timeout=1s
+            - -graphite.write-proxy.distributor-client.address=dns:///test-enterprise-values-mimir-distributor.citestns.svc:9095
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
             - name: runtime-config
               mountPath: /var/mimir
-            - name: graphite-schemas
-              mountPath: /etc/graphite-proxy
             - name: license
               mountPath: /license
             - name: storage
@@ -91,8 +82,6 @@ spec:
             readOnlyRootFilesystem: true
           env:
           envFrom:
-            - secretRef:
-                name: mimir-minio-secret
       nodeSelector:
         {}
       affinity:
@@ -104,7 +93,7 @@ spec:
                 - key: target
                   operator: In
                   values:
-                  - graphite-querier
+                  - graphite-write-proxy
               topologyKey: kubernetes.io/hostname
             weight: 100
       tolerations:
@@ -112,19 +101,16 @@ spec:
       terminationGracePeriodSeconds: 180
       volumes:
         - name: config
-          configMap:
-            name: test-enterprise-configmap-values-mimir-config
-            items:
-              - key: "mimir.yaml"
-                path: "mimir.yaml"
+          secret:
+            secretName: test-enterprise-values-mimir-config
         - name: runtime-config
           configMap:
-            name: test-enterprise-configmap-values-mimir-runtime
+            name: test-enterprise-values-mimir-runtime
         - name: graphite-schemas
           configMap:
-            name: test-enterprise-configmap-values-mimir-graphite-schemas
+            name: test-enterprise-values-mimir-graphite-schemas
         - name: license
           secret:
-            secretName: test-enterprise-configmap-values-mimir-license
+            secretName: test-enterprise-values-mimir-license
         - name: storage
           emptyDir: {}

@@ -1,12 +1,12 @@
 ---
-# Source: mimir-distributed/templates/graphite-proxy/graphite-aggregation-cache-svc-headless.yaml
+# Source: mimir-distributed/templates/graphite-proxy/graphite-aggregation-cache/graphite-aggregation-cache-svc-headless.yaml
 apiVersion: v1
 kind: Service
 metadata:
-  name: test-enterprise-configmap-values-mimir-graphite-aggregation-cache
+  name: test-enterprise-values-mimir-graphite-aggregation-cache
   labels:
     app.kubernetes.io/name: mimir
-    app.kubernetes.io/instance: test-enterprise-configmap-values
+    app.kubernetes.io/instance: test-enterprise-values
     app.kubernetes.io/component: graphite-aggregation-cache
     app.kubernetes.io/managed-by: Helm
   annotations:
@@ -26,5 +26,5 @@ spec:
     
   selector:
     app.kubernetes.io/name: mimir
-    app.kubernetes.io/instance: test-enterprise-configmap-values
+    app.kubernetes.io/instance: test-enterprise-values
     app.kubernetes.io/component: graphite-aggregation-cache
