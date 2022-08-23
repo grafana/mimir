@@ -2064,213 +2064,213 @@ graphite:
   # Read more in https://grafana.com/docs/metrics-enterprise/latest/graphite/
   enabled: true
 
-graphite_querier:
-  replicas: 2
+  querier:
+    replicas: 2
 
-  schemasConfiguration:
-    storageSchemas: |-
-      [default]
-      pattern = .*
-      intervals = 0:1s
-      retentions = 10s:8d,10min:1y
-    storageAggregations: |-
-      [default]
-      aggregationMethod = avg
-      pattern = .*
-      xFilesFactor = 0.1
+    schemasConfiguration:
+      storageSchemas: |-
+        [default]
+        pattern = .*
+        intervals = 0:1s
+        retentions = 10s:8d,10min:1y
+      storageAggregations: |-
+        [default]
+        aggregationMethod = avg
+        pattern = .*
+        xFilesFactor = 0.1
 
-  service:
+    service:
+      annotations: {}
+      labels: {}
+
+    # -- Resources for graphite-querier pods
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+
+    # -- Additional graphite-querier container arguments, e.g. log level (debug, info, warn, error)
+    extraArgs: {}
+    # -- The name of the PriorityClass for graphite-querier pods
+    priorityClassName: null
+    # -- Labels for graphite-querier pods
+    podLabels: {}
+    # -- Annotations for graphite-querier pods
+    podAnnotations: {}
+
+    nodeSelector: {}
+    affinity:
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                  - key: target
+                    operator: In
+                    values:
+                      - graphite-querier
+              topologyKey: 'kubernetes.io/hostname'
+
+    livenessProbe:
+      httpGet:
+        path: /ready
+        port: http-metrics
+      initialDelaySeconds: 45
+    readinessProbe:
+      httpGet:
+        path: /ready
+        port: http-metrics
+      initialDelaySeconds: 45
+
     annotations: {}
-    labels: {}
+    persistence:
+      subPath:
 
-  # -- Resources for graphite-querier pods
-  resources:
-    requests:
-      cpu: 100m
-      memory: 128Mi
+    readinessProbe:
+      httpGet:
+        path: /ready
+        port: http-metrics
+      initialDelaySeconds: 45
 
-  # -- Additional graphite-querier container arguments, e.g. log level (debug, info, warn, error)
-  extraArgs: {}
-  # -- The name of the PriorityClass for graphite-querier pods
-  priorityClassName: null
-  # -- Labels for graphite-querier pods
-  podLabels: {}
-  # -- Annotations for graphite-querier pods
-  podAnnotations: {}
+    securityContext: {}
 
-  nodeSelector: {}
-  affinity:
-    podAntiAffinity:
-      preferredDuringSchedulingIgnoredDuringExecution:
-        - weight: 100
-          podAffinityTerm:
-            labelSelector:
+    strategy:
+      type: RollingUpdate
+      rollingUpdate:
+        maxSurge: 0
+        maxUnavailable: 1
+
+    terminationGracePeriodSeconds: 180
+
+    env: []
+    extraEnvFrom: []
+    tolerations: []
+    podDisruptionBudget: {}
+    initContainers: []
+    extraContainers: []
+    extraVolumes: []
+    extraVolumeMounts: []
+
+  write_proxy:
+    replicas: 2
+
+    service:
+      annotations: {}
+      labels: {}
+
+    # -- Resources for graphite-write-proxy pods
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+
+    # -- Additional graphite-write-proxy container arguments, e.g. log level (debug, info, warn, error)
+    extraArgs: {}
+    # -- The name of the PriorityClass for graphite-write-proxy pods
+    priorityClassName: null
+    # -- Labels for graphite-write-proxy pods
+    podLabels: {}
+    # -- Annotations for graphite-write-proxy pods
+    podAnnotations: {}
+    # -- Node selector for graphite-write-proxy pods
+    nodeSelector: {}
+    # -- Affinity for graphite-write-proxy pods
+    affinity:
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                  - key: target
+                    operator: In
+                    values:
+                      - graphite-write-proxy
+              topologyKey: 'kubernetes.io/hostname'
+
+    livenessProbe:
+      httpGet:
+        path: /ready
+        port: http-metrics
+      initialDelaySeconds: 45
+    readinessProbe:
+      httpGet:
+        path: /ready
+        port: http-metrics
+      initialDelaySeconds: 45
+
+    annotations: {}
+    persistence:
+      subPath:
+    readinessProbe:
+      httpGet:
+        path: /ready
+        port: http-metrics
+      initialDelaySeconds: 45
+    securityContext: {}
+    strategy:
+      type: RollingUpdate
+      rollingUpdate:
+        maxSurge: 0
+        maxUnavailable: 1
+    # -- Grace period to allow the graphite-write-proxy to shutdown before it is killed
+    terminationGracePeriodSeconds: 180
+    env: []
+    extraEnvFrom: []
+    tolerations: []
+    podDisruptionBudget: {}
+    initContainers: []
+    extraContainers: []
+    extraVolumes: []
+    extraVolumeMounts: []
+    extraPorts: []
+
+  graphite_web:
+    replicas: 1
+
+    image:
+      repository: docker.io/raintank/graphite-mt
+      tag: 8-7ebde4c60-v2
+      pullPolicy: IfNotPresent
+
+    service:
+      annotations: {}
+      labels: {}
+
+    # -- Resources for graphite-web pods
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512Mi
+    # -- The name of the PriorityClass for graphite-web pods
+    priorityClassName: null
+    # -- Labels for graphite-web pods
+    podLabels: {}
+    # -- Annotations for graphite-web pods
+    podAnnotations: {}
+    # -- Node selector for graphite-web pods
+    nodeSelector: {}
+    # -- Affinity for graphite-web pods
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
               matchExpressions:
                 - key: target
                   operator: In
                   values:
-                    - graphite-querier
+                    - graphite-web
             topologyKey: 'kubernetes.io/hostname'
 
-  livenessProbe:
-    httpGet:
-      path: /ready
-      port: http-metrics
-    initialDelaySeconds: 45
-  readinessProbe:
-    httpGet:
-      path: /ready
-      port: http-metrics
-    initialDelaySeconds: 45
-
-  annotations: {}
-  persistence:
-    subPath:
-
-  readinessProbe:
-    httpGet:
-      path: /ready
-      port: http-metrics
-    initialDelaySeconds: 45
-
-  securityContext: {}
-
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 1
-
-  terminationGracePeriodSeconds: 180
-
-  env: []
-  extraEnvFrom: []
-  tolerations: []
-  podDisruptionBudget: {}
-  initContainers: []
-  extraContainers: []
-  extraVolumes: []
-  extraVolumeMounts: []
-
-graphite_write_proxy:
-  replicas: 2
-
-  service:
-    annotations: {}
-    labels: {}
-
-  # -- Resources for graphite-write-proxy pods
-  resources:
-    requests:
-      cpu: 100m
-      memory: 128Mi
-
-  # -- Additional graphite-write-proxy container arguments, e.g. log level (debug, info, warn, error)
-  extraArgs: {}
-  # -- The name of the PriorityClass for graphite-write-proxy pods
-  priorityClassName: null
-  # -- Labels for graphite-write-proxy pods
-  podLabels: {}
-  # -- Annotations for graphite-write-proxy pods
-  podAnnotations: {}
-  # -- Node selector for graphite-write-proxy pods
-  nodeSelector: {}
-  # -- Affinity for graphite-write-proxy pods
-  affinity:
-    podAntiAffinity:
-      preferredDuringSchedulingIgnoredDuringExecution:
-        - weight: 100
-          podAffinityTerm:
-            labelSelector:
-              matchExpressions:
-                - key: target
-                  operator: In
-                  values:
-                    - graphite-write-proxy
-            topologyKey: 'kubernetes.io/hostname'
-
-  livenessProbe:
-    httpGet:
-      path: /ready
-      port: http-metrics
-    initialDelaySeconds: 45
-  readinessProbe:
-    httpGet:
-      path: /ready
-      port: http-metrics
-    initialDelaySeconds: 45
-
-  annotations: {}
-  persistence:
-    subPath:
-  readinessProbe:
-    httpGet:
-      path: /ready
-      port: http-metrics
-    initialDelaySeconds: 45
-  securityContext: {}
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 1
-  # -- Grace period to allow the graphite-write-proxy to shutdown before it is killed
-  terminationGracePeriodSeconds: 180
-  env: []
-  extraEnvFrom: []
-  tolerations: []
-  podDisruptionBudget: {}
-  initContainers: []
-  extraContainers: []
-  extraVolumes: []
-  extraVolumeMounts: []
-  extraPorts: []
-
-graphite_web:
-  replicas: 1
-
-  image:
-    repository: docker.io/raintank/graphite-mt
-    tag: 8-7ebde4c60-v2
-    pullPolicy: IfNotPresent
-
-  service:
-    annotations: {}
-    labels: {}
-
-  # -- Resources for graphite-web pods
-  resources:
-    requests:
-      cpu: 100m
-      memory: 512Mi
-  # -- The name of the PriorityClass for graphite-web pods
-  priorityClassName: null
-  # -- Labels for graphite-web pods
-  podLabels: {}
-  # -- Annotations for graphite-web pods
-  podAnnotations: {}
-  # -- Node selector for graphite-web pods
-  nodeSelector: {}
-  # -- Affinity for graphite-web pods
-  affinity:
-    podAntiAffinity:
-      requiredDuringSchedulingIgnoredDuringExecution:
-        - labelSelector:
-            matchExpressions:
-              - key: target
-                operator: In
-                values:
-                  - graphite-web
-          topologyKey: 'kubernetes.io/hostname'
-
-  strategy:
-    type: RollingUpdate
-  # -- Grace period to allow the graphite-web to shutdown before it is killed
-  terminationGracePeriodSeconds: 30
-  # -- Tolerations for graphite-web pods
-  tolerations: []
-  # -- Pod Disruption Budget
-  podDisruptionBudget: {}
+    strategy:
+      type: RollingUpdate
+    # -- Grace period to allow the graphite-web to shutdown before it is killed
+    terminationGracePeriodSeconds: 30
+    # -- Tolerations for graphite-web pods
+    tolerations: []
+    # -- Pod Disruption Budget
+    podDisruptionBudget: {}
 
 
 graphite-aggregation-cache:

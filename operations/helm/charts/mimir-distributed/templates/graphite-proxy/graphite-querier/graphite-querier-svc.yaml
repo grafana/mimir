@@ -5,11 +5,11 @@ metadata:
   name: {{ include "mimir.resourceName" (dict "ctx" . "component" "graphite-querier") }}
   labels:
     {{- include "mimir.labels" (dict "ctx" . "component" "graphite-querier") | nindent 4 }}
-    {{- with .Values.graphite_querier.service.labels }}
+    {{- with .Values.graphite.querier.service.labels }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
   annotations:
-    {{- toYaml .Values.graphite_querier.service.annotations | nindent 4 }}
+    {{- toYaml .Values.graphite.querier.service.annotations | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
   type: ClusterIP

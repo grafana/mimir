@@ -8,7 +8,7 @@ metadata:
   namespace: {{ .Release.Namespace | quote }}
 data:
   storage-schemas.conf: |
-{{ .Values.graphite_querier.schemasConfiguration.storageSchemas | indent 4 }}
+{{ .Values.graphite.querier.schemasConfiguration.storageSchemas | indent 4 }}
   storage-aggregations.conf: |
-{{ .Values.graphite_querier.schemasConfiguration.storageAggregations | indent 4 }}
+{{ .Values.graphite.querier.schemasConfiguration.storageAggregations | indent 4 }}
 {{- end -}}

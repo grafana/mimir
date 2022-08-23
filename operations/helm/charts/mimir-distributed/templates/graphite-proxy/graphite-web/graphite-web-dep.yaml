@@ -6,20 +6,20 @@ metadata:
   labels:
     {{- include "mimir.labels" (dict "ctx" . "component" "graphite-web") | nindent 4 }}
   annotations:
-    {{- toYaml .Values.graphite_web.annotations | nindent 4 }}
+    {{- toYaml .Values.graphite.graphite_web.annotations | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
-  replicas: {{ .Values.graphite_web.replicas }}
+  replicas: {{ .Values.graphite.graphite_web.replicas }}
   selector:
     matchLabels:
       {{- include "mimir.selectorLabels" (dict "ctx" . "component" "graphite-web") | nindent 6 }}
   strategy:
-    {{- toYaml .Values.graphite_web.strategy | nindent 4 }}
+    {{- toYaml .Values.graphite.graphite_web.strategy | nindent 4 }}
   template:
     metadata:
       labels:
         {{- include "mimir.podLabels" (dict "ctx" . "component" "graphite-web") | nindent 8 }}
-        {{- with .Values.graphite_web.podLabels }}
+        {{- with .Values.graphite.graphite_web.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
       annotations:
@@ -27,13 +27,13 @@ spec:
       namespace: {{ .Release.Namespace | quote }}
     spec:
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
-      {{- if .Values.graphite_web.priorityClassName }}
-      priorityClassName: {{ .Values.graphite_web.priorityClassName }}
+      {{- if .Values.graphite.graphite_web.priorityClassName }}
+      priorityClassName: {{ .Values.graphite.graphite_web.priorityClassName }}
       {{- end }}
       containers:
         - name: graphite-web
-          image: "{{ .Values.graphite_web.image.repository }}:{{ .Values.graphite_web.image.tag }}"
-          imagePullPolicy: {{ .Values.graphite_web.image.pullPolicy }}
+          image: "{{ .Values.graphite.graphite_web.image.repository }}:{{ .Values.graphite.graphite_web.image.tag }}"
+          imagePullPolicy: {{ .Values.graphite.graphite_web.image.pullPolicy }}
           env:
             - name: GRAPHITE_CLUSTER_SERVERS
               {{- if .Values.gateway.useDefaultProxyURLs }}
@@ -54,12 +54,12 @@ spec:
               containerPort: {{ include "mimir.serverHttpListenPort" . }}
               protocol: TCP
           resources:
-            {{- toYaml .Values.graphite_web.resources | nindent 12 }}
+            {{- toYaml .Values.graphite.graphite_web.resources | nindent 12 }}
       nodeSelector:
-        {{- toYaml .Values.graphite_web.nodeSelector | nindent 8 }}
+        {{- toYaml .Values.graphite.graphite_web.nodeSelector | nindent 8 }}
       affinity:
-        {{- toYaml .Values.graphite_web.affinity | nindent 8 }}
+        {{- toYaml .Values.graphite.graphite_web.affinity | nindent 8 }}
       tolerations:
-        {{- toYaml .Values.graphite_web.tolerations | nindent 8 }}
-      terminationGracePeriodSeconds: {{ .Values.graphite_web.terminationGracePeriodSeconds }}
+        {{- toYaml .Values.graphite.graphite_web.tolerations | nindent 8 }}
+      terminationGracePeriodSeconds: {{ .Values.graphite.graphite_web.terminationGracePeriodSeconds }}
 {{- end -}}
