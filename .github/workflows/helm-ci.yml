@@ -18,7 +18,7 @@ jobs:
   conftest:
     runs-on: ubuntu-latest
     container:
-      image: grafana/mimir-build-image:helm-static-checks-01d4d4aa2
+      image: grafana/mimir-build-image:build-image-with-kustomize-767c8956e
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
