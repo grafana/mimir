@@ -127,8 +127,8 @@ func TestForwardingSamplesSuccessfullyToSingleTarget(t *testing.T) {
 	defer closeFn()
 
 	rules := validation.ForwardingRules{
-		"metric1": validation.ForwardingRule{Ingest: false},
-		"metric2": validation.ForwardingRule{Ingest: true},
+		"metric1": validation.ForwardingRule{Ingest: false, Endpoint: "not used"},
+		"metric2": validation.ForwardingRule{Ingest: true, Endpoint: ""},
 	}
 
 	ts := []mimirpb.PreallocTimeseries{
