@@ -45,9 +45,6 @@ spec:
             - -target=graphite-write-proxy
             - -config.file=/etc/mimir/mimir.yaml
             - -license.path=/license/license.jwt
-            - -instrumentation.enabled=false
-            - -graphite.enabled=true
-            - -graphite.write-proxy.distributor-client.address=dns:///test-enterprise-values-mimir-distributor.citestns.svc:9095
           volumeMounts:
             - name: config
               mountPath: /etc/mimir

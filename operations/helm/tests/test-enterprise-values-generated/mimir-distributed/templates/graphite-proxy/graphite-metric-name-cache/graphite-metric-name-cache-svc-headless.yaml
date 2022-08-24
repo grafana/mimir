@@ -3,11 +3,11 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: test-enterprise-values-mimir-graphite-metric-name-cache
+  name: test-enterprise-values-mimir-gr-metricname-cache
   labels:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-enterprise-values
-    app.kubernetes.io/component: graphite-metric-name-cache
+    app.kubernetes.io/component: gr-metricname-cache
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -27,4 +27,4 @@ spec:
   selector:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-enterprise-values
-    app.kubernetes.io/component: graphite-metric-name-cache
+    app.kubernetes.io/component: gr-metricname-cache

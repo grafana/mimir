@@ -3,7 +3,7 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: test-enterprise-configmap-values-mimir-graphite-metric-name-cache
+  name: test-enterprise-configmap-values-mimir-gr-metricname-cache
   labels:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-enterprise-configmap-values
@@ -19,10 +19,10 @@ spec:
     matchLabels:
       app.kubernetes.io/name: mimir
       app.kubernetes.io/instance: test-enterprise-configmap-values
-      app.kubernetes.io/component: graphite-metric-name-cache
+      app.kubernetes.io/component: gr-metricname-cache
   updateStrategy:
     type: RollingUpdate
-  serviceName: test-enterprise-configmap-values-mimir-graphite-metric-name-cache
+  serviceName: test-enterprise-configmap-values-mimir-gr-metricname-cache
 
   template:
     metadata:
@@ -30,7 +30,7 @@ spec:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-enterprise-configmap-values
         app.kubernetes.io/managed-by: Helm
-        app.kubernetes.io/component: graphite-metric-name-cache
+        app.kubernetes.io/component: gr-metricname-cache
       annotations:
         minio-secret-version: "42"
 
