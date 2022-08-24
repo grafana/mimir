@@ -179,13 +179,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
     },
 
   resourcesPanelLegend(first_legend)::
-    if $._config.deployment_type == 'container'
+    if $._config.deployment_type == 'kubernetes'
     then [first_legend, 'limit', 'request']
     // limit and request does not makes sense when running on baremetal
     else [first_legend],
 
   resourcesPanelQueries(metric, instanceName)::
-    if $._config.deployment_type == 'container'
+    if $._config.deployment_type == 'kubernetes'
     then [
       $._config.resources_panel_queries[$._config.deployment_type]['%s_usage' % metric] % {
         instance: $._config.per_instance_label,

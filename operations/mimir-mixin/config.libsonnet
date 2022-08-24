@@ -78,12 +78,12 @@
       gateway: helmCompatibleName('(gateway|cortex-gw|cortex-gw).*'),
     },
 
-    deployment_type: 'container',
+    deployment_type: 'kubernetes',
     // System mount point where mimir stores its data, used for baremetal
     // deployment only.
     instance_data_mountpoint: '/',
     resources_panel_series: {
-      container: {
+      kubernetes: {
         network_receive_bytes_metrics: 'container_network_receive_bytes_total',
         network_transmit_bytes_metrics: 'container_network_transmit_bytes_total',
       },
@@ -93,7 +93,7 @@
       },
     },
     resources_panel_queries: {
-      container: {
+      kubernetes: {
         cpu_usage: 'sum by(%(instance)s) (rate(container_cpu_usage_seconds_total{%(namespace)s,container=~"%(instanceName)s"}[$__rate_interval]))',
         cpu_limit: 'min(container_spec_cpu_quota{%(namespace)s,container=~"%(instanceName)s"} / container_spec_cpu_period{%(namespace)s,container=~"%(instanceName)s"})',
         cpu_request: 'min(kube_pod_container_resource_requests{%(namespace)s,container=~"%(instanceName)s",resource="cpu"})',
