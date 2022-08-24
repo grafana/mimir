@@ -77,10 +77,6 @@ data:
           url: http://test-enterprise-configmap-values-mimir-admin-api.citestns.svc:8080
         distributor:
           url: dns:///test-enterprise-configmap-values-mimir-distributor-headless.citestns.svc.cluster.local:9095
-        graphite_querier:
-          url: http://test-enterprise-configmap-values-mimir-graphite-querier.citestns.svc:8080
-        graphite_write_proxy:
-          url: http://test-enterprise-configmap-values-mimir-graphite-write-proxy.citestns.svc:8080
         ingester:
           url: http://test-enterprise-configmap-values-mimir-ingester.citestns.svc:8080
         query_frontend:
@@ -89,26 +85,6 @@ data:
           url: http://test-enterprise-configmap-values-mimir-ruler.citestns.svc:8080
         store_gateway:
           url: http://test-enterprise-configmap-values-mimir-store-gateway.citestns.svc:8080
-    graphite:
-      enabled: true
-      querier:
-        aggregation_cache:
-          memcached:
-            addresses: dnssrvnoa+test-enterprise-configmap-values-mimir-gr-aggr-cache.citestns.svc:11211
-            timeout: 1s
-        graphite_fallback: http://test-enterprise-configmap-values-mimir-graphite-web.citestns.svc:8080
-        metric_name_cache:
-          memcached:
-            addresses: dnssrvnoa+test-enterprise-configmap-values-mimir-gr-metricname-cache.citestns.svc:11211
-            timeout: 1s
-        remote_read:
-          query_address: http://test-enterprise-configmap-values-mimir-query-frontend.citestns.svc:8080/prometheus
-        schemas:
-          default_storage_aggregations_file: /etc/graphite-proxy/storage-aggregations.conf
-          default_storage_schemas_file: /etc/graphite-proxy/storage-schemas.conf
-      write_proxy:
-        distributor_client:
-          address: dns:///test-enterprise-configmap-values-mimir-distributor.citestns.svc:9095
     ingester:
       ring:
         final_sleep: 0s

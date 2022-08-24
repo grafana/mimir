@@ -2089,7 +2089,7 @@ gateway:
 graphite:
   # -- If true, enables graphite querier and graphite write proxy functionality.
   # Read more in https://grafana.com/docs/metrics-enterprise/latest/graphite/
-  enabled: true
+  enabled: false
 
   querier:
     replicas: 2
