@@ -695,7 +695,7 @@ func runQueryFrontendWithQueryShardingHTTPTest(t *testing.T, cfg queryFrontendTe
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
 
-	resp, _, err := c.QueryRaw("sum(series_1) + sum(series_1)")
+	resp, _, err := c.QueryRaw("sum(series_1)")
 	require.NoError(t, err)
 	require.Equal(t, exceptHTTPSStatus, resp.StatusCode)
 
