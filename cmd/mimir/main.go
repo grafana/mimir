@@ -22,6 +22,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/weaveworks/common/tracing"
 	"gopkg.in/yaml.v3"
 
@@ -44,6 +45,13 @@ func init() {
 	prometheus.MustRegister(version.NewCollector("mimir"))
 	prometheus.MustRegister(version.NewCollector("cortex"))
 	prometheus.MustRegister(configHash)
+
+	// Unregister default Go collector
+	prometheus.Unregister(collectors.NewGoCollector())
+	// Register collector with additional metrics
+	prometheus.MustRegister(collectors.NewGoCollector(
+		collectors.WithGoCollectorRuntimeMetrics(collectors.MetricsAll),
+	))
 }
 
 const (
