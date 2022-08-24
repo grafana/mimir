@@ -19,9 +19,6 @@ spec:
     metadata:
       labels:
         {{- include "mimir.podLabels" (dict "ctx" . "component" "admin-api" "memberlist" true) | nindent 8 }}
-        {{- with .Values.admin_api.podLabels }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
       annotations:
         {{- include "mimir.podAnnotations" (dict "ctx" . "component" "admin-api") | nindent 8 }}
       namespace: {{ .Release.Namespace | quote }}

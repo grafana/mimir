@@ -209,6 +209,10 @@ app.kubernetes.io/managed-by: {{ .ctx.Release.Service }}
 
 {{/*
 POD labels
+Params:
+  ctx = . context
+  component = name of the component
+  memberlist = true if part of memberlist gossip ring
 */}}
 {{- define "mimir.podLabels" -}}
 {{- if .ctx.Values.enterprise.legacyLabels }}
@@ -236,10 +240,17 @@ app.kubernetes.io/component: {{ .component }}
 app.kubernetes.io/part-of: memberlist
 {{- end }}
 {{- end }}
+{{- $componentSection := include "mimir.componentSectionFromName" . | fromYaml }}
+{{- with ($componentSection).podLabels }}
+{{ toYaml . }}
+{{- end }}
 {{- end -}}
 
 {{/*
 POD annotations
+Params:
+  ctx = . context
+  component = name of the component
 */}}
 {{- define "mimir.podAnnotations" -}}
 {{- if .ctx.Values.useExternalConfig }}
