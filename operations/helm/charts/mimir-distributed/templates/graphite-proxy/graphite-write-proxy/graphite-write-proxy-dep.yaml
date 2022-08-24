@@ -49,7 +49,6 @@ spec:
           args:
             - -target=graphite-write-proxy
             - -config.file=/etc/mimir/mimir.yaml
-            - -license.path=/license/license.jwt
           {{- range $key, $value := .Values.graphite.write_proxy.extraArgs }}
             - "-{{ $key }}={{ $value }}"
           {{- end }}

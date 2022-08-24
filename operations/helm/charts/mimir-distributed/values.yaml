@@ -2288,6 +2288,8 @@ graphite:
     podDisruptionBudget: {}
 
 
+# Graphite's aggregation cache. If you want to know more about it please check
+# https://grafana.com/docs/enterprise-metrics/latest/graphite/graphite_querier/#aggregation-cache
 gr-aggr-cache:
   # -- Specifies whether memcached based graphite-aggregation-cache should be enabled. Note that the cache will only appear if graphite is also enabled.
   enabled: true
@@ -2347,6 +2349,8 @@ gr-aggr-cache:
     annotations: {}
     labels: {}
 
+# Graphite's metric name cache. If you want to know more about it please check
+# https://grafana.com/docs/enterprise-metrics/latest/graphite/graphite_querier/#metric-name-cache
 gr-metricname-cache:
   # -- Specifies whether memcached based graphite-metric-name-cache should be enabled. Note that the cache will only appear if graphite is also enabled.
   enabled: true
