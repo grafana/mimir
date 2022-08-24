@@ -2133,7 +2133,7 @@ graphite:
             podAffinityTerm:
               labelSelector:
                 matchExpressions:
-                  - key: target
+                  - key: app.kubernetes.io/component
                     operator: In
                     values:
                       - graphite-querier
@@ -2204,7 +2204,7 @@ graphite:
             podAffinityTerm:
               labelSelector:
                 matchExpressions:
-                  - key: target
+                  - key: app.kubernetes.io/component
                     operator: In
                     values:
                       - graphite-write-proxy
@@ -2272,7 +2272,7 @@ graphite:
         requiredDuringSchedulingIgnoredDuringExecution:
           - labelSelector:
               matchExpressions:
-                - key: target
+                - key: app.kubernetes.io/component
                   operator: In
                   values:
                     - graphite-web
