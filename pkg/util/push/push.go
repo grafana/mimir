@@ -50,14 +50,22 @@ func Handler(
 	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, push, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, dst []byte, req *mimirpb.PreallocWriteRequest) ([]byte, error) {
 		res, err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, dst, req, util.RawSnappy)
 		if errors.Is(err, util.MsgSizeTooLargeErr{}) {
-			err = newDistributorMaxWriteMessageSizeErr(int(r.ContentLength), maxRecvMsgSize)
+			err = distributorMaxWriteMessageSizeErr{actual: int(r.ContentLength), limit: maxRecvMsgSize}
 		}
 		return res, err
 	})
 }
 
-func newDistributorMaxWriteMessageSizeErr(actual, limit int) error {
-	return errors.New(globalerror.DistributorMaxWriteMessageSize.MessageWithPerInstanceLimitConfig(fmt.Sprintf("the incoming push request has been rejected because its message size of %d bytes is larger than the allowed limit of %d bytes", actual, limit), "distributor.max-recv-msg-size"))
+type distributorMaxWriteMessageSizeErr struct {
+	actual, limit int
+}
+
+func (e distributorMaxWriteMessageSizeErr) Error() string {
+	msgSizeDesc := fmt.Sprintf(" of %d bytes", e.actual)
+	if e.actual < 0 {
+		msgSizeDesc = ""
+	}
+	return globalerror.DistributorMaxWriteMessageSize.MessageWithPerInstanceLimitConfig(fmt.Sprintf("the incoming push request has been rejected because its message size%s is larger than the allowed limit of %d bytes", msgSizeDesc, e.limit), "distributor.max-recv-msg-size")
 }
 
 // handler requires an additional parser argument.

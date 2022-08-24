@@ -65,7 +65,7 @@ func OTLPHandler(
 		}
 
 		if r.ContentLength > int64(maxRecvMsgSize) {
-			return nil, httpgrpc.Errorf(http.StatusRequestEntityTooLarge, "received message larger than max (%d > %d)", r.ContentLength, maxRecvMsgSize)
+			return nil, httpgrpc.Errorf(http.StatusRequestEntityTooLarge, distributorMaxWriteMessageSizeErr{actual: int(r.ContentLength), limit: maxRecvMsgSize}.Error())
 		}
 
 		reader := r.Body
@@ -93,7 +93,7 @@ func OTLPHandler(
 			r.Body.Close()
 
 			if util.IsRequestBodyTooLarge(err) {
-				return body, httpgrpc.Errorf(http.StatusRequestEntityTooLarge, err.Error())
+				return body, httpgrpc.Errorf(http.StatusRequestEntityTooLarge, distributorMaxWriteMessageSizeErr{actual: -1, limit: maxRecvMsgSize}.Error())
 			}
 
 			return body, err
