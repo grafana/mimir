@@ -102,7 +102,7 @@ func TestMemcachedIndexCache_FetchMultiPostings(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			memcached := newMockedMemcachedClient(testData.mockedErr)
-			c, err := NewMemcachedIndexCache(log.NewNopLogger(), memcached, nil)
+			c, err := NewMemcachedIndexCache(log.NewNopLogger(), memcached, nil, nil)
 			assert.NoError(t, err)
 
 			// Store the postings expected before running the test.
@@ -202,7 +202,7 @@ func TestMemcachedIndexCache_FetchMultiSeriesForRef(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			memcached := newMockedMemcachedClient(testData.mockedErr)
-			c, err := NewMemcachedIndexCache(log.NewNopLogger(), memcached, nil)
+			c, err := NewMemcachedIndexCache(log.NewNopLogger(), memcached, nil, nil)
 			assert.NoError(t, err)
 
 			// Store the series expected before running the test.
@@ -289,7 +289,7 @@ func TestMemcachedIndexCache_FetchExpandedPostings(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			memcached := newMockedMemcachedClient(testData.mockedErr)
-			c, err := NewMemcachedIndexCache(log.NewNopLogger(), memcached, nil)
+			c, err := NewMemcachedIndexCache(log.NewNopLogger(), memcached, nil, nil)
 			assert.NoError(t, err)
 
 			// Store the postings expected before running the test.
@@ -387,7 +387,7 @@ func TestMemcachedIndexCache_FetchSeries(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			memcached := newMockedMemcachedClient(testData.mockedErr)
-			c, err := NewMemcachedIndexCache(log.NewNopLogger(), memcached, nil)
+			c, err := NewMemcachedIndexCache(log.NewNopLogger(), memcached, nil, nil)
 			assert.NoError(t, err)
 
 			// Store the postings expected before running the test.
@@ -478,7 +478,7 @@ func TestMemcachedIndexCache_FetchLabelNames(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			memcached := newMockedMemcachedClient(testData.mockedErr)
-			c, err := NewMemcachedIndexCache(log.NewNopLogger(), memcached, nil)
+			c, err := NewMemcachedIndexCache(log.NewNopLogger(), memcached, nil, nil)
 			assert.NoError(t, err)
 
 			// Store the postings expected before running the test.
@@ -577,7 +577,7 @@ func TestMemcachedIndexCache_FetchLabelValues(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			memcached := newMockedMemcachedClient(testData.mockedErr)
-			c, err := NewMemcachedIndexCache(log.NewNopLogger(), memcached, nil)
+			c, err := NewMemcachedIndexCache(log.NewNopLogger(), memcached, nil, nil)
 			assert.NoError(t, err)
 
 			// Store the postings expected before running the test.
