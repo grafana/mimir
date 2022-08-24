@@ -227,7 +227,7 @@ func TestIsRequestBodyTooLargeRegression(t *testing.T) {
 
 func TestNewMsgSizeTooLargeErr(t *testing.T) {
 	err := util.MsgSizeTooLargeErr{Actual: 100, Limit: 50}
-	msg := `the request has been rejected because its message size of 100 bytes exceeds the limit of 50 bytes`
+	msg := `the request has been rejected because its size of 100 bytes exceeds the limit of 50 bytes`
 
 	assert.Equal(t, msg, err.Error())
 }
