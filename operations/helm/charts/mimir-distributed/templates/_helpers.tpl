@@ -251,7 +251,6 @@ POD annotations
 Params:
   ctx = . context
   component = name of the component
-  memberlist = true if part of memberlist gossip ring
 */}}
 {{- define "mimir.podAnnotations" -}}
 {{- if .ctx.Values.useExternalConfig }}
