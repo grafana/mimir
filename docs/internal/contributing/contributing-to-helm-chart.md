@@ -30,16 +30,10 @@ In order to search, template, install, upgrade, etc beta versions of charts, Hel
 
 ## Linting
 
-Install [ct](https://github.com/helm/chart-testing) and run
+Run [ct](https://github.com/helm/chart-testing) with the `docker` command:
 
 ```bash
-ct lint --config operations/helm/ct.yaml --charts operations/helm/charts/mimir-distributed
-```
-
-Or use Docker without installing dependencies and run
-
-```bash
-docker run --rm -it --volume $(pwd):/data quay.io/helmpack/chart-testing:latest sh -c "ct lint --all --debug --chart-dirs /data/operations/helm/charts --check-version-increment false --config /data/operations/helm/ct.yaml"
+docker run --rm -u $(id -g):$(id -u) -e HOME=/tmp -v $(pwd):/data quay.io/helmpack/chart-testing:latest sh -c "ct lint --all --debug --chart-dirs /data/operations/helm/charts --check-version-increment false --config /data/operations/helm/ct.yaml"
 ```
 
 ## Automated comparison with Jsonnet
