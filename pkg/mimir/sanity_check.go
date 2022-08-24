@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -29,6 +30,12 @@ type dirExistsFunc func(string) (bool, error)
 type isDirReadWritableFunc func(dir string) error
 
 func runSanityCheck(ctx context.Context, cfg Config, logger log.Logger) error {
+	level.Info(logger).Log("msg", "Checking configured filesystem paths")
+	if err := checkFilesystemPathsOvelapping(cfg, logger); err != nil {
+		level.Error(logger).Log("msg", err.Error())
+		return err
+	}
+	level.Info(logger).Log("msg", "Configured filesystem paths successfully checked")
 
 	level.Info(logger).Log("msg", "Checking directories read/write access")
 	if err := checkDirectoriesReadWriteAccess(cfg, fs.DirExists, fs.IsDirReadWritable); err != nil {
@@ -172,4 +179,108 @@ func checkObjectStoreConfig(ctx context.Context, cfg bucket.Config, logger log.L
 
 	runutil.ExhaustCloseWithErrCapture(&err, reader, "error while reading from object store")
 	return err
+}
+
+// checkFilesystemPathsOvelapping checks all configured filesystem paths and return error if it finds two of them
+// overlapping (Mimir expects all filesystem paths to not overlap).
+func checkFilesystemPathsOvelapping(cfg Config, logger log.Logger) error {
+	type pathConfig struct {
+		name     string
+		value    string
+		absValue string
+	}
+
+	var paths []pathConfig
+
+	if cfg.BlocksStorage.Bucket.Backend == bucket.Filesystem {
+		paths = append(paths, pathConfig{name: "blocks storage filesystem directory", value: cfg.BlocksStorage.Bucket.Filesystem.Directory})
+	}
+
+	// Ingester.
+	if cfg.isAnyModuleEnabled(All, Ingester, Write) {
+		paths = append(paths, pathConfig{name: "tsdb directory", value: cfg.BlocksStorage.TSDB.Dir})
+	}
+
+	// Store-gateway.
+	if cfg.isAnyModuleEnabled(All, StoreGateway, Backend) {
+		paths = append(paths, pathConfig{name: "bucket store sync directory", value: cfg.BlocksStorage.BucketStore.SyncDir})
+	}
+
+	// Compactor.
+	if cfg.isAnyModuleEnabled(All, Compactor, Backend) {
+		paths = append(paths, pathConfig{name: "compactor data directory", value: cfg.Compactor.DataDir})
+	}
+
+	// Ruler.
+	if cfg.isAnyModuleEnabled(All, Ruler, Backend) {
+		paths = append(paths, pathConfig{name: "ruler data directory", value: cfg.Ruler.RulePath})
+
+		if cfg.RulerStorage.Backend == bucket.Filesystem {
+			paths = append(paths, pathConfig{name: "ruler storage filesystem directory", value: cfg.RulerStorage.Filesystem.Directory})
+		}
+		if cfg.RulerStorage.Backend == rulestorelocal.Name {
+			paths = append(paths, pathConfig{name: "ruler storage local directory", value: cfg.RulerStorage.Local.Directory})
+		}
+	}
+
+	// Alertmanager.
+	if cfg.isAnyModuleEnabled(AlertManager) {
+		paths = append(paths, pathConfig{name: "alertmanager data directory", value: cfg.Alertmanager.DataDir})
+
+		if cfg.AlertmanagerStorage.Backend == bucket.Filesystem {
+			paths = append(paths, pathConfig{name: "alertmanager storage filesystem directory", value: cfg.AlertmanagerStorage.Filesystem.Directory})
+		}
+
+		if cfg.AlertmanagerStorage.Backend == alertstorelocal.Name {
+			paths = append(paths, pathConfig{name: "alertmanager storage local directory", value: cfg.AlertmanagerStorage.Local.Path})
+		}
+	}
+
+	// Convert all configured paths to absolute clean paths.
+	for idx, path := range paths {
+		abs, err := filepath.Abs(path.value)
+		if err != nil {
+			// We prefer to log a warning instead of returning an error to ensure that if we're unable to
+			// run the sanity check Mimir could start anyway.
+			level.Warn(logger).Log("msg", "the configuration sanity check for the filesystem directory has been skipped because can't get the absolute path", "path", path, "err", err)
+			continue
+		}
+
+		paths[idx].absValue = abs
+	}
+
+	for _, firstPath := range paths {
+		for _, secondPath := range paths {
+			// Skip the same config field.
+			if firstPath.name == secondPath.name {
+				continue
+			}
+
+			// Skip if we've been unable to get the absolute path of one of the two paths.
+			if firstPath.absValue == "" || secondPath.absValue == "" {
+				continue
+			}
+
+			if isAbsPathOverlapping(firstPath.absValue, secondPath.absValue) {
+				return fmt.Errorf("the configured %s %q cannot overlap with the configured %s %q; please set different paths, also ensuring one is not a subdirectory of the other one", firstPath.name, firstPath.value, secondPath.name, secondPath.value)
+			}
+		}
+	}
+
+	return nil
+}
+
+// isAbsPathOverlapping returns whether the two input absolute paths overlap.
+func isAbsPathOverlapping(firstAbsPath, secondAbsPath string) bool {
+	firstBase, firstName := filepath.Split(firstAbsPath)
+	secondBase, secondName := filepath.Split(secondAbsPath)
+
+	if firstBase == secondBase {
+		// The base directories are the same, so they overlap if the last segment of the path (name)
+		// is the same or it's missing (happens when the input path is the root "/").
+		return firstName == secondName || firstName == "" || secondName == ""
+	}
+
+	// The base directories are different, but they could still overlap if one is the child of the other one.
+	return strings.HasPrefix(firstAbsPath, secondAbsPath) || strings.HasPrefix(secondAbsPath, firstAbsPath)
 }
