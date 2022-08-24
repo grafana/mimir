@@ -175,7 +175,7 @@ type MsgSizeTooLargeErr struct {
 }
 
 func (e MsgSizeTooLargeErr) Error() string {
-	return fmt.Sprintf("the request has been rejected because its message size of %d bytes exceeds the limit of %d bytes", e.Actual, e.Limit)
+	return fmt.Sprintf("the request has been rejected because its size of %d bytes exceeds the limit of %d bytes", e.Actual, e.Limit)
 }
 
 // Needed for errors.Is to work properly.
