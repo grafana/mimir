@@ -49,9 +49,9 @@ spec:
             - -graphite.querier.graphite-fallback=http://test-enterprise-values-mimir-graphite-web.citestns.svc:8080
             - -graphite.querier.schemas.default-storage-schemas-file=/etc/graphite-proxy/storage-schemas.conf
             - -graphite.querier.schemas.default-storage-aggregations-file=/etc/graphite-proxy/storage-aggregations.conf
-            - -graphite.querier.aggregation-cache.memcached.addresses=dnssrvnoa+test-enterprise-values-mimir-graphite-aggregation-cache.citestns.svc:11211
+            - -graphite.querier.aggregation-cache.memcached.addresses=dnssrvnoa+test-enterprise-values-mimir-gr-aggr-cache.citestns.svc:11211
             - -graphite.querier.aggregation-cache.memcached.timeout=1s
-            - -graphite.querier.metric-name-cache.memcached.addresses=dnssrvnoa+test-enterprise-values-mimir-graphite-metric-name-cache.citestns.svc:11211
+            - -graphite.querier.metric-name-cache.memcached.addresses=dnssrvnoa+test-enterprise-values-mimir-gr-metricname-cache.citestns.svc:11211
             - -graphite.querier.metric-name-cache.memcached.timeout=1s
           volumeMounts:
             - name: config
