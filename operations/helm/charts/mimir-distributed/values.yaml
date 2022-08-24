@@ -286,6 +286,33 @@ mimir:
       sharding_ring:
         tokens_file_path: /data/tokens
 
+    {{- if and .Values.enterprise.enabled .Values.graphite.enabled }}
+    graphite:
+      enabled: true
+
+      write_proxy:
+        distributor_client:
+          address: dns:///{{ template "mimir.fullname" . }}-distributor.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" .  }}
+
+      querier:
+        remote_read:
+          query_address: http://{{ template "mimir.fullname" . }}-query-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" .  }}/prometheus
+
+        graphite_fallback: http://{{ template "mimir.fullname" . }}-graphite-web.{{ .Release.Namespace}}.svc:{{ include "mimir.serverHttpListenPort" .  }}
+
+        schemas:
+          default_storage_schemas_file: /etc/graphite-proxy/storage-schemas.conf
+          default_storage_aggregations_file: /etc/graphite-proxy/storage-aggregations.conf
+        aggregation_cache:
+          memcached:
+            addresses: dnssrvnoa+{{ template "mimir.fullname" . }}-gr-aggr-cache.{{ .Release.Namespace}}.svc:11211
+            timeout: 1s
+        metric_name_cache:
+          memcached:
+            addresses: dnssrvnoa+{{ template "mimir.fullname" . }}-gr-metricname-cache.{{ .Release.Namespace}}.svc:11211
+            timeout: 1s
+    {{- end}}
+
   # -- Additional structured values on top of the text based 'mimir.config'. Applied after the text based config is evaulated for templates. Enables adding and modifying YAML elements in the evaulated 'mimir.config'.
   structuredConfig: {}
 

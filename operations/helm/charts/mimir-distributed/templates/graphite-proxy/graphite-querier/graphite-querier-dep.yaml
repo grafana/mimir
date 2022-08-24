@@ -49,15 +49,6 @@ spec:
           args:
             - -target=graphite-querier
             - -config.file=/etc/mimir/mimir.yaml
-            - -graphite.enabled=true
-            - -graphite.querier.query-address=http://{{ template "mimir.fullname" . }}-query-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" .  }}/prometheus
-            - -graphite.querier.graphite-fallback=http://{{ template "mimir.fullname" . }}-graphite-web.{{ .Release.Namespace}}.svc:{{ include "mimir.serverHttpListenPort" .  }}
-            - -graphite.querier.schemas.default-storage-schemas-file=/etc/graphite-proxy/storage-schemas.conf
-            - -graphite.querier.schemas.default-storage-aggregations-file=/etc/graphite-proxy/storage-aggregations.conf
-            - -graphite.querier.aggregation-cache.memcached.addresses=dnssrvnoa+{{ template "mimir.fullname" . }}-gr-aggr-cache.{{ .Release.Namespace}}.svc:11211
-            - -graphite.querier.aggregation-cache.memcached.timeout=1s
-            - -graphite.querier.metric-name-cache.memcached.addresses=dnssrvnoa+{{ template "mimir.fullname" . }}-gr-metricname-cache.{{ .Release.Namespace}}.svc:11211
-            - -graphite.querier.metric-name-cache.memcached.timeout=1s
           {{- range $key, $value := .Values.graphite.querier.extraArgs }}
             - "-{{ $key }}={{ $value }}"
           {{- end }}

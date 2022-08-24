@@ -50,8 +50,6 @@ spec:
             - -target=graphite-write-proxy
             - -config.file=/etc/mimir/mimir.yaml
             - -license.path=/license/license.jwt
-            - -graphite.enabled=true
-            - -graphite.write-proxy.distributor-client.address=dns:///{{ template "mimir.fullname" . }}-distributor.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" .  }}
           {{- range $key, $value := .Values.graphite.write_proxy.extraArgs }}
             - "-{{ $key }}={{ $value }}"
           {{- end }}
