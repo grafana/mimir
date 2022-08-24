@@ -1,3 +1,0 @@
-{{- if not .Values.ingester.statefulSet.enabled -}}
-{{- fail "Ingesters are stateful, kubernetes Deployment workloads are no longer supported. Please refer to the documentation for more details." }}
-{{- end -}}
