@@ -104,3 +104,7 @@ func (t *TracingIndexCache) FetchLabelValues(ctx context.Context, userID string,
 
 	return data, found
 }
+
+func (t *TracingIndexCache) PutValue(b []byte) {
+	t.c.PutValue(b)
+}

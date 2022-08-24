@@ -171,6 +171,8 @@ func (noopCache) FetchLabelValues(_ context.Context, _ string, _ ulid.ULID, _ st
 	return nil, false
 }
 
+func (noopCache) PutValue(_ []byte) {}
+
 // BucketStoreOption are functions that configure BucketStore.
 type BucketStoreOption func(s *BucketStore)
 
@@ -725,6 +727,7 @@ func fetchCachedSeries(ctx context.Context, userID string, indexCache indexcache
 	if !ok {
 		return nil, false
 	}
+	defer indexCache.PutValue(data)
 	var entry seriesCacheEntry
 	if err := decodeSnappyGob(data, &entry); err != nil {
 		level.Warn(spanlogger.FromContext(ctx, logger)).Log("msg", "can't decode series cache", "err", err)
@@ -1258,6 +1261,7 @@ func fetchCachedLabelNames(ctx context.Context, indexCache indexcache.IndexCache
 	if !ok {
 		return nil, false
 	}
+	defer indexCache.PutValue(data)
 	var entry labelNamesCacheEntry
 	if err := decodeSnappyGob(data, &entry); err != nil {
 		level.Warn(spanlogger.FromContext(ctx, logger)).Log("msg", "can't decode label name cache", "err", err)
@@ -1431,6 +1435,7 @@ func fetchCachedLabelValues(ctx context.Context, indexCache indexcache.IndexCach
 	if !ok {
 		return nil, false
 	}
+	defer indexCache.PutValue(data)
 	var entry labelValuesCacheEntry
 	if err := decodeSnappyGob(data, &entry); err != nil {
 		level.Warn(spanlogger.FromContext(ctx, logger)).Log("msg", "can't decode label values cache", "err", err)
@@ -1866,7 +1871,7 @@ func (r *bucketIndexReader) fetchCachedExpandedPostings(ctx context.Context, use
 		return nil, false
 	}
 
-	p, err := r.decodePostings(data)
+	p, err := r.decodePostingsWithCleanup(data, func() { r.block.indexCache.PutValue(data) })
 	if err != nil {
 		level.Warn(r.block.logger).Log("msg", "can't decode expanded postings cache", "err", err, "matchers_key", key, "block", r.block.meta.ULID)
 		return nil, false
@@ -2122,7 +2127,7 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 			r.stats.postingsTouched++
 			r.stats.postingsTouchedSizeSum += len(b)
 
-			l, err := r.decodePostings(b)
+			l, err := r.decodePostingsWithCleanup(b, func() { r.block.indexCache.PutValue(b) })
 			if err == nil {
 				output[ix] = l
 				continue
@@ -2241,7 +2246,8 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 	return output, g.Wait()
 }
 
-func (r *bucketIndexReader) decodePostings(b []byte) (index.Postings, error) {
+// decodePostingsWithCleanup decodes the postings and calls cleanup only if b will no longer be accessed.
+func (r *bucketIndexReader) decodePostingsWithCleanup(b []byte, cleanup func()) (index.Postings, error) {
 	// Even if this instance is not using compression, there may be compressed
 	// entries in the cache written by other stores.
 	var (
@@ -2256,6 +2262,7 @@ func (r *bucketIndexReader) decodePostings(b []byte) (index.Postings, error) {
 		if err != nil {
 			r.stats.cachedPostingsDecompressionErrors++
 		}
+		cleanup()
 	} else {
 		_, l, err = r.dec.Postings(b)
 	}
@@ -2442,6 +2449,12 @@ func (r *bucketIndexReader) LoadSeriesForTime(ref storage.SeriesRef, lset *[]sym
 // Close released the underlying resources of the reader.
 func (r *bucketIndexReader) Close() error {
 	r.block.pendingReaders.Done()
+
+	// Return cache value buffers to pool.
+	for _, b := range r.loadedSeries {
+		r.block.indexCache.PutValue(b)
+	}
+
 	return nil
 }
 

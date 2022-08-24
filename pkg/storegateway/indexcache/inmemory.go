@@ -375,6 +375,8 @@ func (c *InMemoryIndexCache) FetchLabelValues(_ context.Context, userID string, 
 	return c.get(cacheKeyLabelValues{userID, blockID, labelName, matchersKey})
 }
 
+func (*InMemoryIndexCache) PutValue(_ []byte) {}
+
 // cacheKey is used by in-memory representation to store cached data.
 // The implementations of cacheKey should be hashable, as they will be used as keys for *lru.LRU cache
 type cacheKey interface {

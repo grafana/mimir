@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/oklog/ulid"
@@ -32,6 +33,7 @@ const (
 type MemcachedIndexCache struct {
 	logger    log.Logger
 	memcached cacheutil.MemcachedClient
+	pool      memcache.BytesPool
 
 	// Metrics.
 	requests *prometheus.CounterVec
@@ -39,10 +41,11 @@ type MemcachedIndexCache struct {
 }
 
 // NewMemcachedIndexCache makes a new MemcachedIndexCache.
-func NewMemcachedIndexCache(logger log.Logger, memcached cacheutil.MemcachedClient, reg prometheus.Registerer) (*MemcachedIndexCache, error) {
+func NewMemcachedIndexCache(logger log.Logger, memcached cacheutil.MemcachedClient, pool memcache.BytesPool, reg prometheus.Registerer) (*MemcachedIndexCache, error) {
 	c := &MemcachedIndexCache{
 		logger:    logger,
 		memcached: memcached,
+		pool:      pool,
 	}
 
 	c.requests = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
@@ -262,4 +265,9 @@ func (c *MemcachedIndexCache) FetchLabelValues(ctx context.Context, userID strin
 func labelValuesCacheKey(userID string, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey) string {
 	hash := blake2b.Sum256([]byte(matchersKey))
 	return "LV:" + userID + ":" + blockID.String() + ":" + labelName + ":" + base64.RawURLEncoding.EncodeToString(hash[0:])
+}
+
+// PutValue returns the buffer holding a cache value to the pool if one exists.
+func (c *MemcachedIndexCache) PutValue(b []byte) {
+	c.pool.Put(&b)
 }

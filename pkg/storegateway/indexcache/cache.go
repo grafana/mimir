@@ -74,6 +74,9 @@ type IndexCache interface {
 	StoreLabelValues(ctx context.Context, userID string, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey, v []byte)
 	// FetchLabelValues fetches the result of a LabelValues() call.
 	FetchLabelValues(ctx context.Context, userID string, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey) ([]byte, bool)
+
+	// PutValue returns the buffer holding a cache value to the pool if one exists.
+	PutValue([]byte)
 }
 
 // LabelMatchersKey represents a canonical key for a []*matchers.Matchers slice
