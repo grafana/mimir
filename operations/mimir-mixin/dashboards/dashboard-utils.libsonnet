@@ -146,8 +146,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
     },
 
-  // hiddenLegendQueryPanel is a standard query panel designed to handle a large number of series.  it hides the legend, doesn't fill the series and
-  // shows all values on tooltip, descending.  Also turns on exemplars, unless 4th parameter is false.
+  // hiddenLegendQueryPanel adds on to 'timeseriesPanel', not the deprecated 'panel'.
+  // It is a standard query panel designed to handle a large number of series.  it hides the legend, doesn't fill the series and
+  // shows all values on tooltip, descending. Also turns on exemplars, unless 4th parameter is false.
   hiddenLegendQueryPanel(queries, legends, legendLink=null, exemplars=true)::
     $.queryPanel(queries, legends, legendLink) +
     {
