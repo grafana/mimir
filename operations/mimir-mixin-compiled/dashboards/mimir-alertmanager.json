@@ -316,7 +316,6 @@
                      {
                         "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/(alertmanager|cortex|mimir|mimir-backend)\", route=~\"/alertmanagerpb.Alertmanager/HandleRequest\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-z]+)\"))\n",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "{{status}}",
                         "refId": "A",
@@ -497,7 +496,6 @@
                      {
                         "expr": "sum(cluster_job:cortex_alertmanager_alerts_received_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/(alertmanager|cortex|mimir|mimir-backend)\"})\n-\nsum(cluster_job:cortex_alertmanager_alerts_invalid_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/(alertmanager|cortex|mimir|mimir-backend)\"})\n",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "success",
                         "legendLink": null,
@@ -506,7 +504,6 @@
                      {
                         "expr": "sum(cluster_job:cortex_alertmanager_alerts_invalid_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/(alertmanager|cortex|mimir|mimir-backend)\"})",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "failed",
                         "legendLink": null,
@@ -595,7 +592,6 @@
                      {
                         "expr": "sum(cluster_job_integration:cortex_alertmanager_notifications_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/(alertmanager|cortex|mimir|mimir-backend)\"})\n-\nsum(cluster_job_integration:cortex_alertmanager_notifications_failed_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/(alertmanager|cortex|mimir|mimir-backend)\"})\n",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "success",
                         "legendLink": null,
@@ -604,7 +600,6 @@
                      {
                         "expr": "sum(cluster_job_integration:cortex_alertmanager_notifications_failed_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/(alertmanager|cortex|mimir|mimir-backend)\"})",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "failed",
                         "legendLink": null,
@@ -681,7 +676,6 @@
                      {
                         "expr": "(\nsum(cluster_job_integration:cortex_alertmanager_notifications_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/(alertmanager|cortex|mimir|mimir-backend)\"}) by(integration)\n-\nsum(cluster_job_integration:cortex_alertmanager_notifications_failed_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/(alertmanager|cortex|mimir|mimir-backend)\"}) by(integration)\n) > 0\nor on () vector(0)\n",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "success - {{ integration }}",
                         "legendLink": null,
@@ -690,7 +684,6 @@
                      {
                         "expr": "sum(cluster_job_integration:cortex_alertmanager_notifications_failed_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/(alertmanager|cortex|mimir|mimir-backend)\"}) by(integration)",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "failed - {{ integration }}",
                         "legendLink": null,
@@ -767,7 +760,6 @@
                      {
                         "expr": "histogram_quantile(0.99, sum(rate(cortex_alertmanager_notification_latency_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/(alertmanager|cortex|mimir|mimir-backend)\"}[$__rate_interval])) by (le)) * 1e3",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "99th Percentile",
                         "refId": "A",
@@ -776,7 +768,6 @@
                      {
                         "expr": "histogram_quantile(0.50, sum(rate(cortex_alertmanager_notification_latency_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/(alertmanager|cortex|mimir|mimir-backend)\"}[$__rate_interval])) by (le)) * 1e3",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "50th Percentile",
                         "refId": "B",
@@ -785,7 +776,6 @@
                      {
                         "expr": "sum(rate(cortex_alertmanager_notification_latency_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/(alertmanager|cortex|mimir|mimir-backend)\"}[$__rate_interval])) * 1e3 / sum(rate(cortex_alertmanager_notification_latency_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/(alertmanager|cortex|mimir|mimir-backend)\"}[$__rate_interval]))",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "Average",
                         "refId": "C",
@@ -874,7 +864,6 @@
                      {
                         "expr": "sum by(operation) (rate(thanos_objstore_bucket_operations_total{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\"}[$__rate_interval]))",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "{{operation}}",
                         "legendLink": null,
@@ -951,7 +940,6 @@
                      {
                         "expr": "sum by(operation) (rate(thanos_objstore_bucket_operation_failures_total{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\"}[$__rate_interval])) / sum by(operation) (rate(thanos_objstore_bucket_operations_total{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\"}[$__rate_interval]))",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "{{operation}}",
                         "legendLink": null,
@@ -1028,7 +1016,6 @@
                      {
                         "expr": "histogram_quantile(0.99, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\",operation=\"attributes\"}[$__rate_interval])) by (le)) * 1e3",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "99th Percentile",
                         "refId": "A",
@@ -1037,7 +1024,6 @@
                      {
                         "expr": "histogram_quantile(0.50, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\",operation=\"attributes\"}[$__rate_interval])) by (le)) * 1e3",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "50th Percentile",
                         "refId": "B",
@@ -1046,7 +1032,6 @@
                      {
                         "expr": "sum(rate(thanos_objstore_bucket_operation_duration_seconds_sum{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\",operation=\"attributes\"}[$__rate_interval])) * 1e3 / sum(rate(thanos_objstore_bucket_operation_duration_seconds_count{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\",operation=\"attributes\"}[$__rate_interval]))",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "Average",
                         "refId": "C",
@@ -1123,7 +1108,6 @@
                      {
                         "expr": "histogram_quantile(0.99, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\",operation=\"exists\"}[$__rate_interval])) by (le)) * 1e3",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "99th Percentile",
                         "refId": "A",
@@ -1132,7 +1116,6 @@
                      {
                         "expr": "histogram_quantile(0.50, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\",operation=\"exists\"}[$__rate_interval])) by (le)) * 1e3",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "50th Percentile",
                         "refId": "B",
@@ -1141,7 +1124,6 @@
                      {
                         "expr": "sum(rate(thanos_objstore_bucket_operation_duration_seconds_sum{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\",operation=\"exists\"}[$__rate_interval])) * 1e3 / sum(rate(thanos_objstore_bucket_operation_duration_seconds_count{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\",operation=\"exists\"}[$__rate_interval]))",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "Average",
                         "refId": "C",
@@ -1230,7 +1212,6 @@
                      {
                         "expr": "histogram_quantile(0.99, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\",operation=\"get\"}[$__rate_interval])) by (le)) * 1e3",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "99th Percentile",
                         "refId": "A",
@@ -1239,7 +1220,6 @@
                      {
                         "expr": "histogram_quantile(0.50, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\",operation=\"get\"}[$__rate_interval])) by (le)) * 1e3",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "50th Percentile",
                         "refId": "B",
@@ -1248,7 +1228,6 @@
                      {
                         "expr": "sum(rate(thanos_objstore_bucket_operation_duration_seconds_sum{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\",operation=\"get\"}[$__rate_interval])) * 1e3 / sum(rate(thanos_objstore_bucket_operation_duration_seconds_count{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\",operation=\"get\"}[$__rate_interval]))",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "Average",
                         "refId": "C",
@@ -1325,7 +1304,6 @@
                      {
                         "expr": "histogram_quantile(0.99, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\",operation=\"get_range\"}[$__rate_interval])) by (le)) * 1e3",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "99th Percentile",
                         "refId": "A",
@@ -1334,7 +1312,6 @@
                      {
                         "expr": "histogram_quantile(0.50, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\",operation=\"get_range\"}[$__rate_interval])) by (le)) * 1e3",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "50th Percentile",
                         "refId": "B",
@@ -1343,7 +1320,6 @@
                      {
                         "expr": "sum(rate(thanos_objstore_bucket_operation_duration_seconds_sum{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\",operation=\"get_range\"}[$__rate_interval])) * 1e3 / sum(rate(thanos_objstore_bucket_operation_duration_seconds_count{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\",operation=\"get_range\"}[$__rate_interval]))",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "Average",
                         "refId": "C",
@@ -1420,7 +1396,6 @@
                      {
                         "expr": "histogram_quantile(0.99, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\",operation=\"upload\"}[$__rate_interval])) by (le)) * 1e3",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "99th Percentile",
                         "refId": "A",
@@ -1429,7 +1404,6 @@
                      {
                         "expr": "histogram_quantile(0.50, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\",operation=\"upload\"}[$__rate_interval])) by (le)) * 1e3",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "50th Percentile",
                         "refId": "B",
@@ -1438,7 +1412,6 @@
                      {
                         "expr": "sum(rate(thanos_objstore_bucket_operation_duration_seconds_sum{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\",operation=\"upload\"}[$__rate_interval])) * 1e3 / sum(rate(thanos_objstore_bucket_operation_duration_seconds_count{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\",operation=\"upload\"}[$__rate_interval]))",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "Average",
                         "refId": "C",
@@ -1515,7 +1488,6 @@
                      {
                         "expr": "histogram_quantile(0.99, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\",operation=\"delete\"}[$__rate_interval])) by (le)) * 1e3",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "99th Percentile",
                         "refId": "A",
@@ -1524,7 +1496,6 @@
                      {
                         "expr": "histogram_quantile(0.50, sum(rate(thanos_objstore_bucket_operation_duration_seconds_bucket{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\",operation=\"delete\"}[$__rate_interval])) by (le)) * 1e3",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "50th Percentile",
                         "refId": "B",
@@ -1533,7 +1504,6 @@
                      {
                         "expr": "sum(rate(thanos_objstore_bucket_operation_duration_seconds_sum{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\",operation=\"delete\"}[$__rate_interval])) * 1e3 / sum(rate(thanos_objstore_bucket_operation_duration_seconds_count{cluster=~\"$cluster\", namespace=~\"$namespace\",component=\"alertmanager-storage\",operation=\"delete\"}[$__rate_interval]))",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "Average",
                         "refId": "C",
@@ -1622,7 +1592,6 @@
                      {
                         "expr": "max by(pod) (cortex_alertmanager_tenants_owned{cluster=~\"$cluster\", job=~\"($namespace)/(alertmanager|cortex|mimir|mimir-backend)\"})",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "{{pod}}",
                         "legendLink": null,
@@ -1699,7 +1668,6 @@
                      {
                         "expr": "sum by(pod) (cluster_job_pod:cortex_alertmanager_alerts:sum{cluster=~\"$cluster\", job=~\"($namespace)/(alertmanager|cortex|mimir|mimir-backend)\"})",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "{{pod}}",
                         "legendLink": null,
@@ -1776,7 +1744,6 @@
                      {
                         "expr": "sum by(pod) (cluster_job_pod:cortex_alertmanager_silences:sum{cluster=~\"$cluster\", job=~\"($namespace)/(alertmanager|cortex|mimir|mimir-backend)\"})",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "{{pod}}",
                         "legendLink": null,
@@ -1865,7 +1832,6 @@
                      {
                         "expr": "sum(rate(cortex_alertmanager_sync_configs_total{cluster=~\"$cluster\", job=~\"($namespace)/(alertmanager|cortex|mimir|mimir-backend)\"}[$__rate_interval]))\n-\nsum(rate(cortex_alertmanager_sync_configs_failed_total{cluster=~\"$cluster\", job=~\"($namespace)/(alertmanager|cortex|mimir|mimir-backend)\"}[$__rate_interval]))\n",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "success",
                         "legendLink": null,
@@ -1874,7 +1840,6 @@
                      {
                         "expr": "sum(rate(cortex_alertmanager_sync_configs_failed_total{cluster=~\"$cluster\", job=~\"($namespace)/(alertmanager|cortex|mimir|mimir-backend)\"}[$__rate_interval]))",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "failed",
                         "legendLink": null,
@@ -1951,7 +1916,6 @@
                      {
                         "expr": "sum by(reason) (rate(cortex_alertmanager_sync_configs_total{cluster=~\"$cluster\", job=~\"($namespace)/(alertmanager|cortex|mimir|mimir-backend)\"}[$__rate_interval]))",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "{{reason}}",
                         "legendLink": null,
@@ -2028,7 +1992,6 @@
                      {
                         "expr": "sum (rate(cortex_alertmanager_ring_check_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/(alertmanager|cortex|mimir|mimir-backend)\"}[$__rate_interval]))",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "errors",
                         "legendLink": null,
@@ -2387,7 +2350,6 @@
                      {
                         "expr": "sum(cluster_job:cortex_alertmanager_state_replication_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/(alertmanager|cortex|mimir|mimir-backend)\"})\n-\nsum(cluster_job:cortex_alertmanager_state_replication_failed_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/(alertmanager|cortex|mimir|mimir-backend)\"})\n",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "success",
                         "legendLink": null,
@@ -2396,7 +2358,6 @@
                      {
                         "expr": "sum(cluster_job:cortex_alertmanager_state_replication_failed_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/(alertmanager|cortex|mimir|mimir-backend)\"})",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "failed",
                         "legendLink": null,
@@ -2473,7 +2434,6 @@
                      {
                         "expr": "sum(cluster_job:cortex_alertmanager_partial_state_merges_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/(alertmanager|cortex|mimir|mimir-backend)\"})\n-\nsum(cluster_job:cortex_alertmanager_partial_state_merges_failed_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/(alertmanager|cortex|mimir|mimir-backend)\"})\n",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "success",
                         "legendLink": null,
@@ -2482,7 +2442,6 @@
                      {
                         "expr": "sum(cluster_job:cortex_alertmanager_partial_state_merges_failed_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/(alertmanager|cortex|mimir|mimir-backend)\"})",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "failed",
                         "legendLink": null,
@@ -2559,7 +2518,6 @@
                      {
                         "expr": "sum(rate(cortex_alertmanager_state_persist_total{cluster=~\"$cluster\", job=~\"($namespace)/(alertmanager|cortex|mimir|mimir-backend)\"}[$__rate_interval]))\n-\nsum(rate(cortex_alertmanager_state_persist_failed_total{cluster=~\"$cluster\", job=~\"($namespace)/(alertmanager|cortex|mimir|mimir-backend)\"}[$__rate_interval]))\n",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "success",
                         "legendLink": null,
@@ -2568,7 +2526,6 @@
                      {
                         "expr": "sum(rate(cortex_alertmanager_state_persist_failed_total{cluster=~\"$cluster\", job=~\"($namespace)/(alertmanager|cortex|mimir|mimir-backend)\"}[$__rate_interval]))",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "failed",
                         "legendLink": null,

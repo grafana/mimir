@@ -146,16 +146,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
     },
 
-  queryPanel(queries, legends, legendLink=null)::
-    super.queryPanel(queries, legends, legendLink) + {
-      targets: [
-        target {
-          interval: '15s',
-        }
-        for target in super.targets
-      ],
-    },
-
   // hiddenLegendQueryPanel is a standard query panel designed to handle a large number of series.  it hides the legend, doesn't fill the series and
   //  sorts the tooltip descending
   hiddenLegendQueryPanel(queries, legends, legendLink=null)::
@@ -164,26 +154,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
       legend: { show: false },
       fill: 0,
       tooltip: { sort: 2 },
-    },
-
-  qpsPanel(selector)::
-    super.qpsPanel(selector) + {
-      targets: [
-        target {
-          interval: '15s',
-        }
-        for target in super.targets
-      ],
-    },
-
-  latencyPanel(metricName, selector, multiplier='1e3')::
-    super.latencyPanel(metricName, selector, multiplier) + {
-      targets: [
-        target {
-          interval: '15s',
-        }
-        for target in super.targets
-      ],
     },
 
   successFailurePanel(title, successMetric, failureMetric)::
