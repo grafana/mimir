@@ -19,9 +19,6 @@ spec:
     metadata:
       labels:
         {{- include "mimir.podLabels" (dict "ctx" . "component" "graphite-querier") | nindent 8 }}
-        {{- with .Values.graphite.querier.podLabels }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
       annotations:
         {{- include "mimir.podAnnotations" (dict "ctx" . "component" "graphite-querier") | nindent 8 }}
       namespace: {{ .Release.Namespace | quote }}
@@ -43,8 +40,8 @@ spec:
       {{- end }}
       {{- end }}
       containers:
-        {{- if .Values.graphite.write_proxy.extraContainers }}
-        {{ toYaml .Values.graphite.write_proxy.extraContainers | nindent 8 }}
+        {{- if .Values.graphite.querier.extraContainers }}
+        {{ toYaml .Values.graphite.querier.extraContainers | nindent 8 }}
         {{- end }}
         - name: graphite-querier
           image: {{ include "mimir.imageReference" . | quote }}

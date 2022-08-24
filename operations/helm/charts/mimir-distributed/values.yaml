@@ -2213,9 +2213,8 @@ graphite:
     extraContainers: []
     extraVolumes: []
     extraVolumeMounts: []
-    extraPorts: []
 
-  graphite_web:
+  web:
     replicas: 1
 
     image:
