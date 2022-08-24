@@ -3106,6 +3106,15 @@
         },
         {
           "kind": "field",
+          "name": "forwarding_endpoint",
+          "required": false,
+          "desc": "Remote-write endpoint where metrics specified in forwarding_rules are forwarded to. If set, takes precedence over endpoints specified in forwarding rules.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldType": "string"
+        },
+        {
+          "kind": "field",
           "name": "forwarding_rules",
           "required": false,
           "desc": "Rules based on which the Distributor decides whether a metric should be forwarded to an alternative remote_write API endpoint.",

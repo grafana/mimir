@@ -60,6 +60,7 @@ type ForwardingRule struct {
 	Ingest bool `yaml:"ingest" json:"ingest"`
 
 	// Endpoint is the URL of the remote_write endpoint to which a metric should be forwarded.
+	// Deprecated in favor of ForwardingEndpoint.
 	Endpoint string `yaml:"endpoint" json:"endpoint"`
 }
 
@@ -159,7 +160,8 @@ type Limits struct {
 	AlertmanagerMaxAlertsCount                 int `yaml:"alertmanager_max_alerts_count" json:"alertmanager_max_alerts_count"`
 	AlertmanagerMaxAlertsSizeBytes             int `yaml:"alertmanager_max_alerts_size_bytes" json:"alertmanager_max_alerts_size_bytes"`
 
-	ForwardingRules ForwardingRules `yaml:"forwarding_rules" json:"forwarding_rules" doc:"nocli|description=Rules based on which the Distributor decides whether a metric should be forwarded to an alternative remote_write API endpoint."`
+	ForwardingEndpoint string          `yaml:"forwarding_endpoint" json:"forwarding_endpoint" doc:"nocli|description=Remote-write endpoint where metrics specified in forwarding_rules are forwarded to. If set, takes precedence over endpoints specified in forwarding rules."`
+	ForwardingRules    ForwardingRules `yaml:"forwarding_rules" json:"forwarding_rules" doc:"nocli|description=Rules based on which the Distributor decides whether a metric should be forwarded to an alternative remote_write API endpoint."`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -705,6 +707,10 @@ func (o *Overrides) AlertmanagerMaxAlertsSizeBytes(userID string) int {
 
 func (o *Overrides) ForwardingRules(user string) ForwardingRules {
 	return o.getOverridesForUser(user).ForwardingRules
+}
+
+func (o *Overrides) ForwardingEndpoint(user string) string {
+	return o.getOverridesForUser(user).ForwardingEndpoint
 }
 
 func (o *Overrides) getOverridesForUser(userID string) *Limits {

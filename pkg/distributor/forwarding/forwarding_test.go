@@ -58,7 +58,7 @@ func TestForwardingSamplesSuccessfullyToCorrectTarget(t *testing.T) {
 		newSample(t, now, 3, 300, "__name__", "metric2", "some_label", "foo"),
 		newSample(t, now, 4, 400, "__name__", "metric2", "some_label", "bar"),
 	}
-	tsToIngest, errCh := forwarder.Forward(ctx, rules, ts)
+	tsToIngest, errCh := forwarder.Forward(ctx, "", rules, ts)
 
 	// The metric2 should be returned by the forwarding because the matching rule has ingest set to "true".
 	require.Len(t, tsToIngest, 2)
@@ -105,6 +105,85 @@ func TestForwardingSamplesSuccessfullyToCorrectTarget(t *testing.T) {
 	# HELP cortex_distributor_forward_requests_total The total number of requests the Distributor made to forward samples.
 	# TYPE cortex_distributor_forward_requests_total counter
 	cortex_distributor_forward_requests_total{} 2
+	# HELP cortex_distributor_forward_samples_total The total number of samples the Distributor forwarded.
+	# TYPE cortex_distributor_forward_samples_total counter
+	cortex_distributor_forward_samples_total{} 4
+`
+
+	require.NoError(t, testutil.GatherAndCompare(
+		reg,
+		strings.NewReader(expectedMetrics),
+		"cortex_distributor_forward_requests_total",
+		"cortex_distributor_forward_samples_total",
+	))
+}
+
+func TestForwardingSamplesSuccessfullyToSingleTarget(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().UnixMilli()
+	forwarder, reg := newForwarder(t, testConfig, true)
+
+	url, reqs, bodiesFn, closeFn := newTestServer(t, 200, true)
+	defer closeFn()
+
+	rules := validation.ForwardingRules{
+		"metric1": validation.ForwardingRule{Ingest: false, Endpoint: "not used"},
+		"metric2": validation.ForwardingRule{Ingest: true, Endpoint: ""},
+	}
+
+	ts := []mimirpb.PreallocTimeseries{
+		newSample(t, now, 1, 100, "__name__", "metric1", "some_label", "foo"),
+		newSample(t, now, 2, 200, "__name__", "metric1", "some_label", "bar"),
+		newSample(t, now, 3, 300, "__name__", "metric2", "some_label", "foo"),
+		newSample(t, now, 4, 400, "__name__", "metric2", "some_label", "bar"),
+	}
+	tsToIngest, errCh := forwarder.Forward(ctx, url, rules, ts)
+
+	// The metric2 should be returned by the forwarding because the matching rule has ingest set to "true".
+	require.Len(t, tsToIngest, 2)
+	requireLabelsEqual(t, tsToIngest[0].Labels, "__name__", "metric2", "some_label", "foo")
+	requireSamplesEqual(t, tsToIngest[0].Samples, now, 3)
+	requireExemplarsEqual(t, tsToIngest[0].Exemplars, now, 300)
+	requireLabelsEqual(t, tsToIngest[1].Labels, "__name__", "metric2", "some_label", "bar")
+	requireSamplesEqual(t, tsToIngest[1].Samples, now, 4)
+	requireExemplarsEqual(t, tsToIngest[1].Exemplars, now, 400)
+
+	// Loop until errCh gets closed, errCh getting closed indicates that all forwarding requests have completed.
+	for err := range errCh {
+		require.NoError(t, err)
+	}
+
+	for _, req := range reqs() {
+		require.Equal(t, "snappy", req.Header.Get("Content-Encoding"))
+		require.Equal(t, "application/x-protobuf", req.Header.Get("Content-Type"))
+	}
+
+	bodies := bodiesFn()
+	// Single request, with all the metrics.
+	require.Len(t, bodies, 1)
+
+	receivedReq1 := decodeBody(t, bodies[0])
+	require.Len(t, receivedReq1.Timeseries, 4)
+	requireLabelsEqual(t, receivedReq1.Timeseries[0].Labels, "__name__", "metric1", "some_label", "foo")
+	requireSamplesEqual(t, receivedReq1.Timeseries[0].Samples, now, 1)
+	require.Empty(t, receivedReq1.Timeseries[0].Exemplars)
+
+	requireLabelsEqual(t, receivedReq1.Timeseries[1].Labels, "__name__", "metric1", "some_label", "bar")
+	requireSamplesEqual(t, receivedReq1.Timeseries[1].Samples, now, 2)
+	require.Empty(t, receivedReq1.Timeseries[1].Exemplars)
+
+	requireLabelsEqual(t, receivedReq1.Timeseries[2].Labels, "__name__", "metric2", "some_label", "foo")
+	requireSamplesEqual(t, receivedReq1.Timeseries[2].Samples, now, 3)
+	require.Empty(t, receivedReq1.Timeseries[2].Exemplars)
+
+	requireLabelsEqual(t, receivedReq1.Timeseries[3].Labels, "__name__", "metric2", "some_label", "bar")
+	requireSamplesEqual(t, receivedReq1.Timeseries[3].Samples, now, 4)
+	require.Empty(t, receivedReq1.Timeseries[3].Exemplars)
+
+	expectedMetrics := `
+	# HELP cortex_distributor_forward_requests_total The total number of requests the Distributor made to forward samples.
+	# TYPE cortex_distributor_forward_requests_total counter
+	cortex_distributor_forward_requests_total{} 1
 	# HELP cortex_distributor_forward_samples_total The total number of samples the Distributor forwarded.
 	# TYPE cortex_distributor_forward_samples_total counter
 	cortex_distributor_forward_samples_total{} 4
@@ -211,7 +290,7 @@ func TestForwardingSamplesWithDifferentErrorsWithPropagation(t *testing.T) {
 			for _, metric := range metrics {
 				ts = append(ts, newSample(t, now, 1, 100, "__name__", metric))
 			}
-			_, errCh := forwarder.Forward(context.Background(), rules, ts)
+			_, errCh := forwarder.Forward(context.Background(), "", rules, ts)
 
 			gotStatusCodes := []status{}
 			for err := range errCh {
@@ -420,7 +499,7 @@ func TestForwardingEnsureThatPooledObjectsGetReturned(t *testing.T) {
 			}
 
 			// Perform the forwarding operation.
-			toIngest, errCh := forwarder.Forward(context.Background(), tc.rules, ts)
+			toIngest, errCh := forwarder.Forward(context.Background(), "", tc.rules, ts)
 			require.NoError(t, <-errCh)
 
 			// receivedSamples counts the number of samples that each forwarding target has received.
@@ -682,7 +761,7 @@ func BenchmarkRemoteWriteForwarding(b *testing.B) {
 					require.NoError(b, <-errChs[errChIdx])
 				}
 
-				samples, errChs[errChIdx] = f.Forward(ctx, tc.rules, samples)
+				samples, errChs[errChIdx] = f.Forward(ctx, "", tc.rules, samples)
 				errChIdx = (errChIdx + 1) % len(errChs)
 
 				mimirpb.ReuseSlice(samples)
