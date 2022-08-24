@@ -15,6 +15,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 * [CHANGE] Enable [query sharding](https://grafana.com/docs/mimir/latest/operators-guide/architecture/query-sharding/) by default. If you override the value of `mimir.config`, then take a look at `mimir.config` in the `values.yaml` from this version of the chart and incorporate the differences. If you override `mimir.config`, then consider switching to `mimir.structuredConfig`. To disable query sharding set `mimir.structuredConfig.frontend.parallelize_shardable_queries` to `false`. #2655
 * [FEATURE] Add query-scheduler, which is now enabled by default. If you have copied the `mimir.config`, then update it to correctly configure the query-frontend and the querier. #2087
+* [FEATURE] Added support to run graphite-proxy alongside GEM. It is disabled by default. Set `graphite.enabled=true` in your values config to get it running. #2711
 * [ENHANCEMENT] Default `ingester.ring.tokens-file-path` and `store-gateway.sharding-ring.tokens-file-path` to `/data/tokens` to prevent resharding on restarts. #2726
 * [ENHANCEMENT] Upgrade memcached image tag to `memcached:1.6.16-alpine`. #2740
 * [ENHANCEMENT] Upgrade nginx image tag to `nginxinc/nginx-unprivileged:1.22-alpine`. #2742

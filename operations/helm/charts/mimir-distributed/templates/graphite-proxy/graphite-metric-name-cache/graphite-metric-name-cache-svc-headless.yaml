@@ -1,0 +1,3 @@
+{{- if and .Values.enterprise.enabled .Values.graphite.enabled -}}
+{{- include "mimir.memcached.service" (dict "ctx" $ "component" "gr-metricname-cache" ) }}
+{{- end -}}

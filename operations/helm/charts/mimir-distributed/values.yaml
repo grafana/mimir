@@ -209,6 +209,12 @@ mimir:
           url: http://{{ template "mimir.fullname" . }}-ruler.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
         store_gateway:
           url: http://{{ template "mimir.fullname" . }}-store-gateway.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
+        {{- if and .Values.enterprise.enabled .Values.graphite.enabled }}
+        graphite_write_proxy:
+          url: http://{{ template "mimir.fullname" . }}-graphite-write-proxy.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
+        graphite_querier:
+          url: http://{{ template "mimir.fullname" . }}-graphite-querier.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
+        {{- end}}
     {{- end }}
 
     ingester:
@@ -279,6 +285,33 @@ mimir:
     store_gateway:
       sharding_ring:
         tokens_file_path: /data/tokens
+
+    {{- if and .Values.enterprise.enabled .Values.graphite.enabled }}
+    graphite:
+      enabled: true
+
+      write_proxy:
+        distributor_client:
+          address: dns:///{{ template "mimir.fullname" . }}-distributor.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" .  }}
+
+      querier:
+        remote_read:
+          query_address: http://{{ template "mimir.fullname" . }}-query-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" .  }}/prometheus
+
+        graphite_fallback: http://{{ template "mimir.fullname" . }}-graphite-web.{{ .Release.Namespace}}.svc:{{ include "mimir.serverHttpListenPort" .  }}
+
+        schemas:
+          default_storage_schemas_file: /etc/graphite-proxy/storage-schemas.conf
+          default_storage_aggregations_file: /etc/graphite-proxy/storage-aggregations.conf
+        aggregation_cache:
+          memcached:
+            addresses: dnssrvnoa+{{ template "mimir.fullname" . }}-gr-aggr-cache.{{ .Release.Namespace}}.svc:11211
+            timeout: 1s
+        metric_name_cache:
+          memcached:
+            addresses: dnssrvnoa+{{ template "mimir.fullname" . }}-gr-metricname-cache.{{ .Release.Namespace}}.svc:11211
+            timeout: 1s
+    {{- end}}
 
   # -- Additional structured values on top of the text based 'mimir.config'. Applied after the text based config is evaulated for templates. Enables adding and modifying YAML elements in the evaulated 'mimir.config'.
   structuredConfig: {}
@@ -2052,6 +2085,330 @@ gateway:
       - secretName: gem-gateway-tls
         hosts:
           - gateway.gem.example.com
+
+graphite:
+  # -- If true, enables graphite querier and graphite write proxy functionality.
+  # Read more in https://grafana.com/docs/metrics-enterprise/latest/graphite/
+  enabled: false
+
+  querier:
+    replicas: 2
+
+    schemasConfiguration:
+      storageSchemas: |-
+        [default]
+        pattern = .*
+        intervals = 0:1s
+        retentions = 10s:8d,10min:1y
+      storageAggregations: |-
+        [default]
+        aggregationMethod = avg
+        pattern = .*
+        xFilesFactor = 0.1
+
+    service:
+      annotations: {}
+      labels: {}
+
+    # -- Resources for graphite-querier pods
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+
+    # -- Additional graphite-querier container arguments, e.g. log level (debug, info, warn, error)
+    extraArgs: {}
+    # -- The name of the PriorityClass for graphite-querier pods
+    priorityClassName: null
+    # -- Labels for graphite-querier pods
+    podLabels: {}
+    # -- Annotations for graphite-querier pods
+    podAnnotations: {}
+
+    nodeSelector: {}
+    affinity:
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                  - key: app.kubernetes.io/component
+                    operator: In
+                    values:
+                      - graphite-querier
+              topologyKey: 'kubernetes.io/hostname'
+
+    livenessProbe:
+      httpGet:
+        path: /ready
+        port: http-metrics
+      initialDelaySeconds: 45
+    readinessProbe:
+      httpGet:
+        path: /ready
+        port: http-metrics
+      initialDelaySeconds: 45
+
+    annotations: {}
+    persistence:
+      subPath:
+
+    securityContext: {}
+
+    strategy:
+      type: RollingUpdate
+      rollingUpdate:
+        maxSurge: 0
+        maxUnavailable: 1
+
+    terminationGracePeriodSeconds: 180
+
+    env: []
+    extraEnvFrom: []
+    tolerations: []
+    podDisruptionBudget: {}
+    initContainers: []
+    extraContainers: []
+    extraVolumes: []
+    extraVolumeMounts: []
+
+  write_proxy:
+    replicas: 2
+
+    service:
+      annotations: {}
+      labels: {}
+
+    # -- Resources for graphite-write-proxy pods
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+
+    # -- Additional graphite-write-proxy container arguments, e.g. log level (debug, info, warn, error)
+    extraArgs: {}
+    # -- The name of the PriorityClass for graphite-write-proxy pods
+    priorityClassName: null
+    # -- Labels for graphite-write-proxy pods
+    podLabels: {}
+    # -- Annotations for graphite-write-proxy pods
+    podAnnotations: {}
+    # -- Node selector for graphite-write-proxy pods
+    nodeSelector: {}
+    # -- Affinity for graphite-write-proxy pods
+    affinity:
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                  - key: app.kubernetes.io/component
+                    operator: In
+                    values:
+                      - graphite-write-proxy
+              topologyKey: 'kubernetes.io/hostname'
+
+    livenessProbe:
+      httpGet:
+        path: /ready
+        port: http-metrics
+      initialDelaySeconds: 45
+    readinessProbe:
+      httpGet:
+        path: /ready
+        port: http-metrics
+      initialDelaySeconds: 45
+
+    annotations: {}
+    persistence:
+      subPath:
+    securityContext: {}
+    strategy:
+      type: RollingUpdate
+      rollingUpdate:
+        maxSurge: 0
+        maxUnavailable: 1
+    # -- Grace period to allow the graphite-write-proxy to shutdown before it is killed
+    terminationGracePeriodSeconds: 180
+    env: []
+    extraEnvFrom: []
+    tolerations: []
+    podDisruptionBudget: {}
+    initContainers: []
+    extraContainers: []
+    extraVolumes: []
+    extraVolumeMounts: []
+
+  web:
+    replicas: 1
+
+    image:
+      repository: docker.io/raintank/graphite-mt
+      tag: 8-7ebde4c60-v2
+      pullPolicy: IfNotPresent
+
+    service:
+      annotations: {}
+      labels: {}
+
+    # -- Resources for graphite-web pods
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512Mi
+    # -- The name of the PriorityClass for graphite-web pods
+    priorityClassName: null
+    # -- Labels for graphite-web pods
+    podLabels: {}
+    # -- Annotations for graphite-web pods
+    podAnnotations: {}
+    # -- Node selector for graphite-web pods
+    nodeSelector: {}
+    # -- Affinity for graphite-web pods
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+                - key: app.kubernetes.io/component
+                  operator: In
+                  values:
+                    - graphite-web
+            topologyKey: 'kubernetes.io/hostname'
+
+    strategy:
+      type: RollingUpdate
+    # -- Grace period to allow the graphite-web to shutdown before it is killed
+    terminationGracePeriodSeconds: 30
+    # -- Tolerations for graphite-web pods
+    tolerations: []
+    # -- Pod Disruption Budget
+    podDisruptionBudget: {}
+
+
+# Graphite's aggregation cache. If you want to know more about it please check
+# https://grafana.com/docs/enterprise-metrics/latest/graphite/graphite_querier/#aggregation-cache
+gr-aggr-cache:
+  # -- Specifies whether memcached based graphite-aggregation-cache should be enabled. Note that the cache will only appear if graphite is also enabled.
+  enabled: true
+
+  # -- Total number of graphite-aggregation-cache replicas
+  replicas: 1
+
+  # -- Port of the graphite-aggregation-cache service
+  port: 11211
+
+  # -- Amount of memory allocated to graphite-aggregation-cache for object storage (in MB).
+  allocatedMemory: 8192
+
+  # -- Maximum item memory for graphite-aggregation-cache (in MB).
+  maxItemMemory: 1
+
+  # -- Extra init containers for graphite-aggregation-cache pods
+  initContainers: []
+
+  # -- Annotations for the graphite-aggregation-cache pods
+  annotations: {}
+  # -- Node selector for graphite-aggregation-cache pods
+  nodeSelector: {}
+  # -- Affinity for graphite-aggregation-cache pods
+  affinity: {}
+  # -- Tolerations for graphite-aggregation-cache pods
+  tolerations: []
+  # -- Pod Disruption Budget
+  podDisruptionBudget: {}
+  # -- The name of the PriorityClass for graphite-aggregation-cache pods
+  priorityClassName: null
+  # -- Labels for graphite-aggregation-cache pods
+  podLabels: {}
+  # -- Annotations for graphite-aggregation-cache pods
+  podAnnotations: {}
+  # -- Management policy for graphite-aggregation-cache pods
+  podManagementPolicy: Parallel
+  # -- Grace period to allow the graphite-aggregation-cache to shutdown before it is killed
+  terminationGracePeriodSeconds: 60
+
+  # -- Stateful graphite-aggregation-cache strategy
+  statefulStrategy:
+    type: RollingUpdate
+
+  # -- Additional CLI args for graphite-aggregation-cache
+  extraArgs: {}
+
+  # -- Additional containers to be added to the graphite-aggregation-cache pod.
+  extraContainers: []
+
+  # -- Resource requests and limits for the graphite-aggregation-cache
+  # By default a safe memory limit will be requested based on allocatedMemory value (floor (* 1.2 allocatedMemory)).
+  resources: null
+
+  # -- Service annotations and labels
+  service:
+    annotations: {}
+    labels: {}
+
+# Graphite's metric name cache. If you want to know more about it please check
+# https://grafana.com/docs/enterprise-metrics/latest/graphite/graphite_querier/#metric-name-cache
+gr-metricname-cache:
+  # -- Specifies whether memcached based graphite-metric-name-cache should be enabled. Note that the cache will only appear if graphite is also enabled.
+  enabled: true
+
+  # -- Total number of graphite-metric-name-cache replicas
+  replicas: 1
+
+  # -- Port of the graphite-metric-name-cache service
+  port: 11211
+
+  # -- Amount of memory allocated to graphite-metric-name-cache for object storage (in MB).
+  allocatedMemory: 8192
+
+  # -- Maximum item memory for graphite-metric-name-cache (in MB).
+  maxItemMemory: 1
+
+  # -- Extra init containers for graphite-metric-name-cache pods
+  initContainers: []
+
+  # -- Annotations for the graphite-metric-name-cache pods
+  annotations: {}
+  # -- Node selector for graphite-metric-name-cache pods
+  nodeSelector: {}
+  # -- Affinity for graphite-metric-name-cache pods
+  affinity: {}
+  # -- Tolerations for graphite-metric-name-cache pods
+  tolerations: []
+  # -- Pod Disruption Budget
+  podDisruptionBudget: {}
+  # -- The name of the PriorityClass for graphite-metric-name-cache pods
+  priorityClassName: null
+  # -- Labels for graphite-metric-name-cache pods
+  podLabels: {}
+  # -- Annotations for graphite-metric-name-cache pods
+  podAnnotations: {}
+  # -- Management policy for graphite-metric-name-cache pods
+  podManagementPolicy: Parallel
+  # -- Grace period to allow the graphite-metric-name-cache to shutdown before it is killed
+  terminationGracePeriodSeconds: 60
+
+  # -- Stateful graphite-metric-name-cache strategy
+  statefulStrategy:
+    type: RollingUpdate
+
+  # -- Additional CLI args for graphite-metric-name-cache
+  extraArgs: {}
+
+  # -- Additional containers to be added to the graphite-metric-name-cache pod.
+  extraContainers: []
+
+  # -- Resource requests and limits for the graphite-metric-name-cache
+  # By default a safe memory limit will be requested based on allocatedMemory value (floor (* 1.2 allocatedMemory)).
+  resources: null
+
+  # -- Service annotations and labels
+  service:
+    annotations: {}
+    labels: {}
 
 # Settings for the smoke-test job.
 smoke_test:
