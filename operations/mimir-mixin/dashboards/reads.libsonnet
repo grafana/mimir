@@ -171,11 +171,7 @@ local filename = 'mimir-reads.json';
         { yaxes: $.yaxes('ops') },
       )
       .addPanel(
-        $.panel('Latency (old)') +
-        utils.latencyRecordingRulePanel('cortex_cache_request_duration_seconds', $.jobSelector($._config.job_names.query_frontend) + [utils.selector.re('method', 'frontend.+')])
-      )
-      .addPanel(
-        $.panel('Latency (new)') +
+        $.panel('Latency') +
         $.latencyPanel(
           'thanos_memcached_operation_duration_seconds',
           '{%s, name="frontend-cache"}' % $.jobMatcher($._config.job_names.query_frontend)

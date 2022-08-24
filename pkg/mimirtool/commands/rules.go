@@ -15,6 +15,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/alecthomas/kingpin.v2"
@@ -31,17 +32,6 @@ const (
 )
 
 var (
-	ruleLoadTimestamp = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: "cortex",
-		Name:      "last_rule_load_timestamp_seconds",
-		Help:      "The timestamp of the last rule load.",
-	})
-	ruleLoadSuccessTimestamp = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: "cortex",
-		Name:      "last_rule_load_success_timestamp_seconds",
-		Help:      "The timestamp of the last successful rule load.",
-	})
-
 	backends = []string{rules.MimirBackend}      // list of supported backend types
 	formats  = []string{"json", "yaml", "table"} // list of supported formats for the list command
 )
@@ -89,11 +79,15 @@ type RuleCommand struct {
 
 	// Diff Rules Config
 	Verbose bool
+
+	// Metrics.
+	ruleLoadTimestamp        prometheus.Gauge
+	ruleLoadSuccessTimestamp prometheus.Gauge
 }
 
 // Register rule related commands and flags with the kingpin application
-func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
-	rulesCmd := app.Command("rules", "View and edit rules stored in Grafan Mimir.").PreAction(r.setup)
+func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames, reg prometheus.Registerer) {
+	rulesCmd := app.Command("rules", "View and edit rules stored in Grafan Mimir.").PreAction(func(k *kingpin.ParseContext) error { return r.setup(k, reg) })
 	rulesCmd.Flag("user", fmt.Sprintf("API user to use when contacting Grafana Mimir; alternatively, set %s. If empty, %s is used instead.", envVars.APIUser, envVars.TenantID)).Default("").Envar(envVars.APIUser).StringVar(&r.ClientConfig.User)
 	rulesCmd.Flag("key", "API key to use when contacting Grafana Mimir; alternatively, set "+envVars.APIKey+".").Default("").Envar(envVars.APIKey).StringVar(&r.ClientConfig.Key)
 	rulesCmd.Flag("backend", "Backend type to interact with (deprecated)").Default(rules.MimirBackend).EnumVar(&r.Backend, backends...)
@@ -239,11 +233,17 @@ func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
 	listCmd.Flag("disable-color", "disable colored output").BoolVar(&r.DisableColor)
 }
 
-func (r *RuleCommand) setup(k *kingpin.ParseContext) error {
-	prometheus.MustRegister(
-		ruleLoadTimestamp,
-		ruleLoadSuccessTimestamp,
-	)
+func (r *RuleCommand) setup(_ *kingpin.ParseContext, reg prometheus.Registerer) error {
+	r.ruleLoadTimestamp = promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+		Namespace: "cortex",
+		Name:      "last_rule_load_timestamp_seconds",
+		Help:      "The timestamp of the last rule load.",
+	})
+	r.ruleLoadSuccessTimestamp = promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+		Namespace: "cortex",
+		Name:      "last_rule_load_success_timestamp_seconds",
+		Help:      "The timestamp of the last successful rule load.",
+	})
 
 	cli, err := client.New(r.ClientConfig)
 	if err != nil {
@@ -381,7 +381,7 @@ func (r *RuleCommand) loadRules(k *kingpin.ParseContext) error {
 	if err != nil {
 		return errors.Wrap(err, "load operation unsuccessful, unable to parse rules files")
 	}
-	ruleLoadTimestamp.SetToCurrentTime()
+	r.ruleLoadTimestamp.SetToCurrentTime()
 
 	for _, ns := range nss {
 		for _, group := range ns.Groups {
@@ -417,7 +417,7 @@ func (r *RuleCommand) loadRules(k *kingpin.ParseContext) error {
 		}
 	}
 
-	ruleLoadSuccessTimestamp.SetToCurrentTime()
+	r.ruleLoadSuccessTimestamp.SetToCurrentTime()
 	return nil
 }
 

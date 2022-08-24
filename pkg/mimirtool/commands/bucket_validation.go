@@ -16,7 +16,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"gopkg.in/alecthomas/kingpin.v2"
 
@@ -121,7 +120,7 @@ func (b *BucketValidationCommand) validate(k *kingpin.ParseContext) error {
 	b.logger = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 	ctx := context.Background()
 
-	bucketClient, err := bucket.NewClient(ctx, b.cfg, "testClient", b.logger, prometheus.DefaultRegisterer)
+	bucketClient, err := bucket.NewClient(ctx, b.cfg, "testClient", b.logger, nil)
 	if err != nil {
 		return errors.Wrap(err, "failed to create the bucket client")
 	}

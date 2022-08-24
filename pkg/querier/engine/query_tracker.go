@@ -5,10 +5,8 @@ package engine
 import (
 	"bytes"
 	"context"
-	"math"
 
 	"github.com/weaveworks/common/tracing"
-	"golang.org/x/sync/semaphore"
 
 	"github.com/grafana/dskit/tenant" //lint:ignore faillint queryTracker needs tenant package
 
@@ -17,35 +15,23 @@ import (
 
 // queryTracker implements promql.QueryTracker interface and can be used by PromQL engine for tracking queries.
 type queryTracker struct {
-	maxConcurrent int
-	sema          *semaphore.Weighted
-	tracker       *activitytracker.ActivityTracker
+	tracker *activitytracker.ActivityTracker
 }
 
 // newQueryTracker creates new queryTracker for use by PromQL engine. Activity tracker may be nil.
-func newQueryTracker(maxConcurrent int, tracker *activitytracker.ActivityTracker) *queryTracker {
-	semaIniValue := maxConcurrent
-	if semaIniValue <= 0 {
-		semaIniValue = math.MaxInt
-	}
+func newQueryTracker(tracker *activitytracker.ActivityTracker) *queryTracker {
 
 	return &queryTracker{
-		maxConcurrent: maxConcurrent,
-		sema:          semaphore.NewWeighted(int64(semaIniValue)),
-		tracker:       tracker,
+		tracker: tracker,
 	}
 }
 
 func (q *queryTracker) GetMaxConcurrent() int {
-	return q.maxConcurrent
+	// No limit.
+	return -1
 }
 
 func (q *queryTracker) Insert(ctx context.Context, query string) (int, error) {
-	err := q.sema.Acquire(ctx, 1)
-	if err != nil {
-		return -1, err
-	}
-
 	id := q.tracker.Insert(func() string {
 		return generateActivityDescription(ctx, query)
 	})
@@ -80,6 +66,5 @@ func generateActivityDescription(ctx context.Context, query string) string {
 }
 
 func (q queryTracker) Delete(insertIndex int) {
-	q.sema.Release(1)
 	q.tracker.Delete(insertIndex)
 }

@@ -32,7 +32,6 @@ config:
       dir:
   ingester:
     ring:
-      tokens_file_path:
       kvstore:
         prefix:
   ruler:
@@ -42,7 +41,6 @@ config:
     file:
   store_gateway:
     sharding_ring:
-      tokens_file_path:
       kvstore:
         prefix:
   frontend:

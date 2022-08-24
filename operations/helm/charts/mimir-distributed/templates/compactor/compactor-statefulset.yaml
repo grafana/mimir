@@ -41,9 +41,6 @@ spec:
     metadata:
       labels:
         {{- include "mimir.podLabels" (dict "ctx" . "component" "compactor" "memberlist" true) | nindent 8 }}
-        {{- with .Values.compactor.podLabels }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
       annotations:
         {{- include "mimir.podAnnotations" (dict "ctx" . "component" "compactor") | nindent 8 }}
       namespace: {{ .Release.Namespace | quote }}

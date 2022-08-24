@@ -51,7 +51,7 @@ func NewPromQLEngineOptions(cfg Config, activityTracker *activitytracker.Activit
 	return promql.EngineOpts{
 		Logger:               logger,
 		Reg:                  reg,
-		ActiveQueryTracker:   newQueryTracker(cfg.MaxConcurrent, activityTracker),
+		ActiveQueryTracker:   newQueryTracker(activityTracker),
 		MaxSamples:           cfg.MaxSamples,
 		Timeout:              cfg.Timeout,
 		LookbackDelta:        cfg.LookbackDelta,

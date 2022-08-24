@@ -2961,7 +2961,7 @@
           "kind": "field",
           "name": "compactor_partial_block_deletion_delay",
           "required": false,
-          "desc": "If a partial block (unfinished block without meta.json file) hasn't been modified for this time, it will be marked for deletion. 0 to disable.",
+          "desc": "If a partial block (unfinished block without meta.json file) hasn't been modified for this time, it will be marked for deletion. The minimum accepted value is 4h0m0s: a lower value will be ignored and the feature disabled. 0 to disable.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "compactor.partial-block-deletion-delay",
@@ -3103,6 +3103,15 @@
           "fieldDefaultValue": 0,
           "fieldFlag": "alertmanager.max-alerts-size-bytes",
           "fieldType": "int"
+        },
+        {
+          "kind": "field",
+          "name": "forwarding_endpoint",
+          "required": false,
+          "desc": "Remote-write endpoint where metrics specified in forwarding_rules are forwarded to. If set, takes precedence over endpoints specified in forwarding rules.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldType": "string"
         },
         {
           "kind": "field",
@@ -5439,33 +5448,11 @@
               "kind": "field",
               "name": "head_chunks_write_queue_size",
               "required": false,
-              "desc": "The size of the write queue used by the head chunks mapper. Lower values reduce memory utilisation at the cost of potentially higher ingest latency. Value of 0 switches chunks mapper to implementation without a queue. This flag is only used if the new chunk disk mapper is enabled with -blocks-storage.tsdb.new-chunk-disk-mapper.",
+              "desc": "The size of the write queue used by the head chunks mapper. Lower values reduce memory utilisation at the cost of potentially higher ingest latency. Value of 0 switches chunks mapper to implementation without a queue.",
               "fieldValue": null,
-              "fieldDefaultValue": 0,
+              "fieldDefaultValue": 1000000,
               "fieldFlag": "blocks-storage.tsdb.head-chunks-write-queue-size",
               "fieldType": "int",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "new_chunk_disk_mapper",
-              "required": false,
-              "desc": "Temporary flag to select whether to use the new (used in upstream Prometheus) or the old (legacy) chunk disk mapper.",
-              "fieldValue": null,
-              "fieldDefaultValue": false,
-              "fieldFlag": "blocks-storage.tsdb.new-chunk-disk-mapper",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "isolation_enabled",
-              "required": false,
-              "desc": "[Deprecated] Enables TSDB isolation feature. Disabling may improve performance.",
-              "fieldValue": null,
-              "fieldDefaultValue": false,
-              "fieldFlag": "blocks-storage.tsdb.isolation-enabled",
-              "fieldType": "boolean",
               "fieldCategory": "advanced"
             },
             {

@@ -80,7 +80,6 @@ The following features are currently experimental:
     - `-memberlist.cluster-label-verification-disabled`
 - Ingester
   - Add variance to chunks end time to spread writing across time (`-blocks-storage.tsdb.head-chunks-end-time-variance`)
-  - Using queue and asynchronous chunks disk mapper (`-blocks-storage.tsdb.head-chunks-write-queue-size`)
   - Snapshotting of in-memory TSDB data on disk when shutting down (`-blocks-storage.tsdb.memory-snapshot-on-shutdown`)
   - Out-of-order samples ingestion (`-ingester.out-of-order-allowance`)
 - Query-frontend
@@ -96,12 +95,12 @@ The following features are currently experimental:
   - `-ruler-storage.storage-prefix`
 - Compactor
   - HTTP API for uploading TSDB blocks
-  - Tenant deletion API
+- Anonymous usage statistics tracking
+- Read-write deployment mode
 
 ## Deprecated features
 
 The following features are currently deprecated:
 
 - Ingester:
-  - `-blocks-storage.tsdb.isolation-enabled` CLI flag and `isolation_enabled` YAML config parameter. This will be removed in version 2.3.0.
-  - `active_series_custom_trackers` YAML config parameter in the ingester block. The configuration has been moved to limit config, the ingester config will be removed in version 2.3.0.
+  - `active_series_custom_trackers` YAML config parameter in the ingester block. The configuration has been moved to limit config, the ingester config will be removed in version 2.4.0.

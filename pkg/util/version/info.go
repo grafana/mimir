@@ -27,6 +27,7 @@ var (
 // NewCollector returns a collector that exports metrics about current version
 // information.
 func NewCollector(program string) prometheus.Collector {
+	//lint:ignore faillint In this case we want to just want to create the metric.
 	return prometheus.NewGaugeFunc(
 		prometheus.GaugeOpts{
 			Namespace: program,

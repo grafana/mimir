@@ -5,9 +5,8 @@ Params:
   component = name of the component
 */}}
 {{- define "mimir.lib.podDisruptionBudget" -}}
-{{- $componentSection := include "mimir.componentSectionFromName" . }}
-{{ with (index $.ctx.Values $componentSection) }}
-{{- if .podDisruptionBudget -}}
+{{- $componentSection := include "mimir.componentSectionFromName" . | fromYaml }}
+{{ with ($componentSection).podDisruptionBudget }}
 apiVersion: {{ include "mimir.podDisruptionBudget.apiVersion" $.ctx }}
 kind: PodDisruptionBudget
 metadata:
@@ -19,7 +18,6 @@ spec:
   selector:
     matchLabels:
       {{- include "mimir.selectorLabels" (dict "ctx" $.ctx "component" $.component) | nindent 6 }}
-{{ toYaml .podDisruptionBudget | indent 2 }}
-{{- end -}}
+{{ toYaml . | indent 2 }}
 {{- end -}}
 {{- end -}}

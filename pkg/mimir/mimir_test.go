@@ -147,36 +147,68 @@ func TestMimir(t *testing.T) {
 			ReplicationFactor:      1,
 			InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
 		}},
-
-		Target: []string{All, AlertManager},
 	}
 
-	c, err := New(cfg)
-	require.NoError(t, err)
+	tests := map[string]struct {
+		target                  []string
+		expectedEnabledModules  []string
+		expectedDisabledModules []string
+	}{
+		"-target=all,alertmanager": {
+			target: []string{All, AlertManager},
+			expectedEnabledModules: []string{
+				// Check random modules that we expect to be configured when using Target=All.
+				Server, IngesterService, Ring, DistributorService, Compactor,
 
-	serviceMap, err := c.ModuleManager.InitModuleServices(cfg.Target...)
-	require.NoError(t, err)
-	require.NotNil(t, serviceMap)
-
-	for m, s := range serviceMap {
-		// make sure each service is still New
-		require.Equal(t, services.New, s.State(), "module: %s", m)
+				// Check that Alertmanager is configured which is not part of Target=All.
+				AlertManager,
+			},
+		},
+		"-target=write": {
+			target:                  []string{Write},
+			expectedEnabledModules:  []string{DistributorService, IngesterService},
+			expectedDisabledModules: []string{Querier, Ruler, StoreGateway, Compactor},
+		},
+		"-target=read": {
+			target:                  []string{Read},
+			expectedEnabledModules:  []string{QueryFrontend, Querier},
+			expectedDisabledModules: []string{IngesterService, Ruler, StoreGateway, Compactor},
+		},
+		"-target=backend": {
+			target:                  []string{Backend},
+			expectedEnabledModules:  []string{QueryScheduler, Ruler, StoreGateway, Compactor},
+			expectedDisabledModules: []string{IngesterService, QueryFrontend, Querier},
+		},
 	}
 
-	// check random modules that we expect to be configured when using Target=All
-	require.NotNil(t, serviceMap[Server])
-	require.NotNil(t, serviceMap[IngesterService])
-	require.NotNil(t, serviceMap[Ring])
-	require.NotNil(t, serviceMap[DistributorService])
-	require.NotNil(t, serviceMap[Compactor])
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			cfg.Target = testData.target
+			c, err := New(cfg, prometheus.NewPedanticRegistry())
+			require.NoError(t, err)
 
-	// check that alertmanager is configured which is not part of Target=All
-	require.NotNil(t, serviceMap[AlertManager])
+			serviceMap, err := c.ModuleManager.InitModuleServices(cfg.Target...)
+			require.NoError(t, err)
+			require.NotNil(t, serviceMap)
+
+			for m, s := range serviceMap {
+				// make sure each service is still New
+				require.Equal(t, services.New, s.State(), "module: %s", m)
+			}
+
+			for _, module := range testData.expectedEnabledModules {
+				require.NotNilf(t, serviceMap[module], "module=%s", module)
+			}
+
+			for _, module := range testData.expectedDisabledModules {
+				require.Nilf(t, serviceMap[module], "module=%s", module)
+			}
+		})
+	}
 }
 
 func TestMimirServerShutdownWithActivityTrackerEnabled(t *testing.T) {
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
-	prepareGlobalMetricsRegistry(t)
 
 	cfg := Config{}
 
@@ -186,14 +218,14 @@ func TestMimirServerShutdownWithActivityTrackerEnabled(t *testing.T) {
 	tmpDir := t.TempDir()
 	cfg.ActivityTracker.Filepath = filepath.Join(tmpDir, "activity.log") // Enable activity tracker
 
-	cfg.Target = []string{API}
+	cfg.Target = []string{Querier}
 	cfg.Server = getServerConfig(t)
 	require.NoError(t, cfg.Server.LogFormat.Set("logfmt"))
 	require.NoError(t, cfg.Server.LogLevel.Set("debug"))
 
 	util_log.InitLogger(&cfg.Server)
 
-	c, err := New(cfg)
+	c, err := New(cfg, prometheus.NewPedanticRegistry())
 	require.NoError(t, err)
 
 	errCh := make(chan error)
@@ -379,8 +411,6 @@ func TestConfigValidation(t *testing.T) {
 }
 
 func TestGrpcAuthMiddleware(t *testing.T) {
-	prepareGlobalMetricsRegistry(t)
-
 	cfg := Config{
 		MultitenancyEnabled: true, // We must enable this to enable Auth middleware for gRPC server.
 		Server:              getServerConfig(t),
@@ -392,7 +422,7 @@ func TestGrpcAuthMiddleware(t *testing.T) {
 
 	// Setup server, using Mimir config. This includes authentication middleware.
 	{
-		c, err := New(cfg)
+		c, err := New(cfg, prometheus.NewPedanticRegistry())
 		require.NoError(t, err)
 
 		serv, err := c.initServer()
@@ -528,15 +558,4 @@ func (m *mockGrpcServiceHandler) Process(_ frontendv1pb.Frontend_ProcessServer) 
 
 func (m *mockGrpcServiceHandler) QuerierLoop(_ schedulerpb.SchedulerForQuerier_QuerierLoopServer) error {
 	panic("implement me")
-}
-
-func prepareGlobalMetricsRegistry(t *testing.T) {
-	oldReg, oldGat := prometheus.DefaultRegisterer, prometheus.DefaultGatherer
-
-	reg := prometheus.NewRegistry()
-	prometheus.DefaultRegisterer, prometheus.DefaultGatherer = reg, reg
-
-	t.Cleanup(func() {
-		prometheus.DefaultRegisterer, prometheus.DefaultGatherer = oldReg, oldGat
-	})
 }

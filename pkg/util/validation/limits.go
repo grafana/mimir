@@ -43,6 +43,9 @@ const (
 	ingestionRateFlag          = "distributor.ingestion-rate-limit"
 	ingestionBurstSizeFlag     = "distributor.ingestion-burst-size"
 	HATrackerMaxClustersFlag   = "distributor.ha-tracker.max-clusters"
+
+	// MinCompactorPartialBlockDeletionDelay is the minimum partial blocks deletion delay that can be configured in Mimir.
+	MinCompactorPartialBlockDeletionDelay = 4 * time.Hour
 )
 
 // LimitError are errors that do not comply with the limits specified.
@@ -57,6 +60,7 @@ type ForwardingRule struct {
 	Ingest bool `yaml:"ingest" json:"ingest"`
 
 	// Endpoint is the URL of the remote_write endpoint to which a metric should be forwarded.
+	// Deprecated in favor of ForwardingEndpoint.
 	Endpoint string `yaml:"endpoint" json:"endpoint"`
 }
 
@@ -156,7 +160,8 @@ type Limits struct {
 	AlertmanagerMaxAlertsCount                 int `yaml:"alertmanager_max_alerts_count" json:"alertmanager_max_alerts_count"`
 	AlertmanagerMaxAlertsSizeBytes             int `yaml:"alertmanager_max_alerts_size_bytes" json:"alertmanager_max_alerts_size_bytes"`
 
-	ForwardingRules ForwardingRules `yaml:"forwarding_rules" json:"forwarding_rules" doc:"nocli|description=Rules based on which the Distributor decides whether a metric should be forwarded to an alternative remote_write API endpoint."`
+	ForwardingEndpoint string          `yaml:"forwarding_endpoint" json:"forwarding_endpoint" doc:"nocli|description=Remote-write endpoint where metrics specified in forwarding_rules are forwarded to. If set, takes precedence over endpoints specified in forwarding rules."`
+	ForwardingRules    ForwardingRules `yaml:"forwarding_rules" json:"forwarding_rules" doc:"nocli|description=Rules based on which the Distributor decides whether a metric should be forwarded to an alternative remote_write API endpoint."`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -214,7 +219,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.CompactorSplitAndMergeShards, "compactor.split-and-merge-shards", 0, "The number of shards to use when splitting blocks. 0 to disable splitting.")
 	f.IntVar(&l.CompactorSplitGroups, "compactor.split-groups", 1, "Number of groups that blocks for splitting should be grouped into. Each group of blocks is then split separately. Number of output split shards is controlled by -compactor.split-and-merge-shards.")
 	f.IntVar(&l.CompactorTenantShardSize, "compactor.compactor-tenant-shard-size", 0, "Max number of compactors that can compact blocks for single tenant. 0 to disable the limit and use all compactors.")
-	f.Var(&l.CompactorPartialBlockDeletionDelay, "compactor.partial-block-deletion-delay", fmt.Sprintf("If a partial block (unfinished block without %s file) hasn't been modified for this time, it will be marked for deletion. 0 to disable.", block.MetaFilename))
+	f.Var(&l.CompactorPartialBlockDeletionDelay, "compactor.partial-block-deletion-delay", fmt.Sprintf("If a partial block (unfinished block without %s file) hasn't been modified for this time, it will be marked for deletion. The minimum accepted value is %s: a lower value will be ignored and the feature disabled. 0 to disable.", block.MetaFilename, MinCompactorPartialBlockDeletionDelay.String()))
 	f.BoolVar(&l.CompactorBlockUploadEnabled, "compactor.block-upload-enabled", false, "Enable block upload API for the tenant.")
 
 	// Store-gateway.
@@ -552,9 +557,18 @@ func (o *Overrides) CompactorSplitGroups(userID string) int {
 	return o.getOverridesForUser(userID).CompactorSplitGroups
 }
 
-// CompactorPartialBlockDeletionDelay returns the partial block deletion delay time period for a given user.
-func (o *Overrides) CompactorPartialBlockDeletionDelay(userID string) time.Duration {
-	return time.Duration(o.getOverridesForUser(userID).CompactorPartialBlockDeletionDelay)
+// CompactorPartialBlockDeletionDelay returns the partial block deletion delay time period for a given user,
+// and whether the configured value was valid. If the value wasn't valid, the returned delay is the default one
+// and the caller is responsible to warn the Mimir operator about it.
+func (o *Overrides) CompactorPartialBlockDeletionDelay(userID string) (delay time.Duration, valid bool) {
+	delay = time.Duration(o.getOverridesForUser(userID).CompactorPartialBlockDeletionDelay)
+
+	// Forcefully disable partial blocks deletion if the configured delay is too low.
+	if delay > 0 && delay < MinCompactorPartialBlockDeletionDelay {
+		return 0, false
+	}
+
+	return delay, true
 }
 
 // CompactorBlockUploadEnabled returns whether block upload is enabled for a certain tenant.
@@ -693,6 +707,10 @@ func (o *Overrides) AlertmanagerMaxAlertsSizeBytes(userID string) int {
 
 func (o *Overrides) ForwardingRules(user string) ForwardingRules {
 	return o.getOverridesForUser(user).ForwardingRules
+}
+
+func (o *Overrides) ForwardingEndpoint(user string) string {
+	return o.getOverridesForUser(user).ForwardingEndpoint
 }
 
 func (o *Overrides) getOverridesForUser(userID string) *Limits {

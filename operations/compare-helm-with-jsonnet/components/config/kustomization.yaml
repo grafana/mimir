@@ -26,6 +26,26 @@ patches:
       kind: MimirConfig
     path: ./write-path-config.yaml
 
+  # TODO query-sharding is disabled by default in jsonnet
+  - target:
+      kind: MimirConfig
+      name: query-frontend
+    patch: |-
+      - op: remove
+        path: /config/limits/max_query_parallelism
+      - op: remove
+        path: /config/frontend/parallelize_shardable_queries
+      - op: remove
+        path: /config/query_scheduler/max_outstanding_requests_per_tenant
+
+  # TODO query-sharding is disabled by default in jsonnet
+  - target:
+      kind: MimirConfig
+      name: query-scheduler
+    patch: |-
+      - op: remove
+        path: /config/query_scheduler/max_outstanding_requests_per_tenant
+
   # Remove fields on components where they are not relevant. For example, the
   # ingester ring configuration is not relevant to the compactor Since jsonnet
   # tends to set only the relevant CLI flags while Helm sets every property for
@@ -34,7 +54,7 @@ patches:
 
   - target:
       kind: MimirConfig
-      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|querier|ruler|query-frontend'
+      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|querier|ruler|query-frontend|query-scheduler'
     patch: |-
       - op: remove
         path: /config/blocks_storage/bucket_store/index_cache
@@ -43,21 +63,21 @@ patches:
 
   - target:
       kind: MimirConfig
-      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|query-frontend'
+      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|query-frontend|query-scheduler'
     patch: |-
       - op: remove
         path: /config/blocks_storage/bucket_store/metadata_cache
 
   - target:
       kind: MimirConfig
-      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|querier|ruler|store-gateway'
+      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|querier|ruler|store-gateway|query-scheduler'
     patch: |-
       - op: remove
         path: /config/frontend
 
   - target:
       kind: MimirConfig
-      name: 'alertmanager|compactor|store-gateway|query-frontend|overrides-exporter'
+      name: 'alertmanager|compactor|store-gateway|query-frontend|query-scheduler|overrides-exporter'
     patch: |-
       - op: remove
         path: /config/ingester
@@ -68,3 +88,32 @@ patches:
     patch: |-
       - op: remove
         path: /config/memberlist
+
+  - target:
+      kind: MimirConfig
+      name: 'distributor|querier|ruler'
+    patch: |-
+      - op: remove
+        path: /config/ingester/ring/tokens_file_path
+
+  - target:
+      kind: MimirConfig
+      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|querier|query-frontend|query-scheduler|ruler'
+    patch: |-
+      - op: remove
+        path: /config/store_gateway/sharding_ring/tokens_file_path
+
+  - target:
+      kind: MimirConfig
+      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|querier|query-frontend|ruler|store-gateway'
+    patch: |-
+      - op: remove
+        path: /config/query_scheduler
+
+  - target:
+      kind: MimirConfig
+      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|querier|query-scheduler|ruler|store-gateway'
+    patch: |-
+      # This limit applies only to query frontend
+      - op: remove
+        path: /config/limits/max_query_parallelism

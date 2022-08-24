@@ -2554,7 +2554,9 @@ The `limits` block configures default and per-tenant limits imposed by component
 [compactor_tenant_shard_size: <int> | default = 0]
 
 # If a partial block (unfinished block without meta.json file) hasn't been
-# modified for this time, it will be marked for deletion. 0 to disable.
+# modified for this time, it will be marked for deletion. The minimum accepted
+# value is 4h0m0s: a lower value will be ignored and the feature disabled. 0 to
+# disable.
 # CLI flag: -compactor.partial-block-deletion-delay
 [compactor_partial_block_deletion_delay: <duration> | default = 0s]
 
@@ -2636,6 +2638,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # alerts will fail with a log message and metric increment. 0 = no limit.
 # CLI flag: -alertmanager.max-alerts-size-bytes
 [alertmanager_max_alerts_size_bytes: <int> | default = 0]
+
+# Remote-write endpoint where metrics specified in forwarding_rules are
+# forwarded to. If set, takes precedence over endpoints specified in forwarding
+# rules.
+[forwarding_endpoint: <string> | default = ""]
 
 # Rules based on which the Distributor decides whether a metric should be
 # forwarded to an alternative remote_write API endpoint.
@@ -3015,23 +3022,12 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.memory-snapshot-on-shutdown
   [memory_snapshot_on_shutdown: <boolean> | default = false]
 
-  # (experimental) The size of the write queue used by the head chunks mapper.
-  # Lower values reduce memory utilisation at the cost of potentially higher
-  # ingest latency. Value of 0 switches chunks mapper to implementation without
-  # a queue. This flag is only used if the new chunk disk mapper is enabled with
-  # -blocks-storage.tsdb.new-chunk-disk-mapper.
+  # (advanced) The size of the write queue used by the head chunks mapper. Lower
+  # values reduce memory utilisation at the cost of potentially higher ingest
+  # latency. Value of 0 switches chunks mapper to implementation without a
+  # queue.
   # CLI flag: -blocks-storage.tsdb.head-chunks-write-queue-size
-  [head_chunks_write_queue_size: <int> | default = 0]
-
-  # (experimental) Temporary flag to select whether to use the new (used in
-  # upstream Prometheus) or the old (legacy) chunk disk mapper.
-  # CLI flag: -blocks-storage.tsdb.new-chunk-disk-mapper
-  [new_chunk_disk_mapper: <boolean> | default = false]
-
-  # (advanced) [Deprecated] Enables TSDB isolation feature. Disabling may
-  # improve performance.
-  # CLI flag: -blocks-storage.tsdb.isolation-enabled
-  [isolation_enabled: <boolean> | default = false]
+  [head_chunks_write_queue_size: <int> | default = 1000000]
 
   # (advanced) Max size - in bytes - of the in-memory series hash cache. The
   # cache is shared across all tenants and it's used only when query sharding is

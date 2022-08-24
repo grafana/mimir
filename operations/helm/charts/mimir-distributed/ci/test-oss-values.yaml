@@ -1,6 +1,11 @@
 # Test values to limit the load during CI
 kubeVersionOverride: "1.20"
 
+# Remove resource requests and limits because in CI we only have limited memory and CPU
+ci_resources: &ci_resources
+  requests:
+  limits:
+
 global:
   extraEnvFrom:
     - secretRef:
@@ -32,13 +37,14 @@ compactor:
     enabled: false
 
 ingester:
+  resources:
+    <<: *ci_resources
   persistentVolume:
     enabled: false
-  resources:
-    requests:
-      cpu: 10m
 
 store_gateway:
+  resources:
+    <<: *ci_resources
   persistentVolume:
     enabled: false
 
@@ -51,26 +57,34 @@ chunks-cache:
   enabled: true
   allocatedMemory: 10
   resources:
-    requests:
-      cpu: 10m
+    <<: *ci_resources
 
 index-cache:
   enabled: true
   allocatedMemory: 30
   resources:
-    requests:
-      cpu: 10m
+    <<: *ci_resources
 
 metadata-cache:
   enabled: true
   allocatedMemory: 10
   resources:
-    requests:
-      cpu: 10m
+    <<: *ci_resources
 
 results-cache:
   enabled: true
   allocatedMemory: 10
   resources:
-    requests:
-      cpu: 10m
+    <<: *ci_resources
+
+querier:
+  resources:
+    <<: *ci_resources
+
+query_frontend:
+  resources:
+    <<: *ci_resources
+
+query_scheduler:
+  resources:
+    <<: *ci_resources

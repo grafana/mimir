@@ -1261,7 +1261,6 @@
                {
                   "expr": "1 - (\n  avg_over_time(histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw|cortex-gw-internal))\", route=~\"api_(v1|prom)_push\"} offset 24h))[1h:])\n  /\n  avg_over_time(histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw|cortex-gw-internal))\", route=~\"api_(v1|prom)_push\"}))[1h:])\n)\n",
                   "format": "time_series",
-                  "interval": "15s",
                   "intervalFactor": 2,
                   "legendFormat": "writes",
                   "legendLink": null,
@@ -1270,7 +1269,6 @@
                {
                   "expr": "1 - (\n  avg_over_time(histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw|cortex-gw-internal))\", route=~\"(prometheus|api_prom)_api_v1_.+\"} offset 24h))[1h:])\n  /\n  avg_over_time(histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw|cortex-gw-internal))\", route=~\"(prometheus|api_prom)_api_v1_.+\"}))[1h:])\n)\n",
                   "format": "time_series",
-                  "interval": "15s",
                   "intervalFactor": 2,
                   "legendFormat": "reads",
                   "legendLink": null,

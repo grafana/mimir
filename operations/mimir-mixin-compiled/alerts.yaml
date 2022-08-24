@@ -248,6 +248,15 @@ groups:
     for: 30m
     labels:
       severity: warning
+  - alert: RolloutOperatorNotReconciling
+    annotations:
+      message: |
+        Rollout operator is not reconciling the rollout group {{ $labels.rollout_group }} in {{ $labels.cluster }}/{{ $labels.namespace }}.
+    expr: |
+      max by(cluster, namespace, rollout_group) (time() - rollout_operator_last_successful_group_reconcile_timestamp_seconds) > 600
+    for: 5m
+    labels:
+      severity: critical
 - name: mimir-provisioning
   rules:
   - alert: MimirProvisioningTooManyActiveSeries

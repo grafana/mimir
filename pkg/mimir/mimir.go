@@ -264,7 +264,7 @@ func (c *Config) validateBucketConfigs() error {
 	}
 
 	// Validate ruler bucket config.
-	if c.isAnyModuleEnabled(All, Ruler) && c.RulerStorage.Backend != rulestorelocal.Name {
+	if c.isAnyModuleEnabled(All, Ruler, Backend) && c.RulerStorage.Backend != rulestorelocal.Name {
 		errs.Add(errors.Wrap(validateBucketConfig(c.RulerStorage.Config, c.BlocksStorage.Bucket), "ruler storage"))
 	}
 
@@ -454,7 +454,8 @@ func (m specificLocationsUnmarshaler) UnmarshalYAML(value *yaml.Node) error {
 
 // Mimir is the root datastructure for Mimir.
 type Mimir struct {
-	Cfg Config
+	Cfg        Config
+	Registerer prometheus.Registerer
 
 	// set during initialization
 	ServiceMap    map[string]services.Service
@@ -490,7 +491,7 @@ type Mimir struct {
 }
 
 // New makes a new Mimir.
-func New(cfg Config) (*Mimir, error) {
+func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 	if cfg.PrintConfig {
 		if err := yaml.NewEncoder(os.Stdout).Encode(&cfg); err != nil {
 			fmt.Println("Error encoding config:", err)
@@ -518,8 +519,12 @@ func New(cfg Config) (*Mimir, error) {
 			"/schedulerpb.SchedulerForQuerier/NotifyQuerierShutdown",
 		}, cfg.NoAuthTenant)
 
+	// Inject the registerer in the Server config too.
+	cfg.Server.Registerer = reg
+
 	mimir := &Mimir{
-		Cfg: cfg,
+		Cfg:        cfg,
+		Registerer: reg,
 	}
 
 	mimir.setupThanosTracing()
@@ -543,7 +548,9 @@ func (t *Mimir) setupThanosTracing() {
 func (t *Mimir) Run() error {
 	// Register custom process metrics.
 	if c, err := process.NewProcessCollector(); err == nil {
-		prometheus.MustRegister(c)
+		if t.Registerer != nil {
+			t.Registerer.MustRegister(c)
+		}
 	} else {
 		level.Warn(util_log.Logger).Log("msg", "skipped registration of custom process metrics collector", "err", err)
 	}
@@ -553,7 +560,7 @@ func (t *Mimir) Run() error {
 
 	for _, module := range t.Cfg.Target {
 		if !t.ModuleManager.IsUserVisibleModule(module) {
-			level.Warn(util_log.Logger).Log("msg", "selected target is an internal module, is this intended?", "target", module)
+			return fmt.Errorf("selected target (%s) is an internal module, which is not allowed", module)
 		}
 	}
 

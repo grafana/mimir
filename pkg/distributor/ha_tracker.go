@@ -559,15 +559,9 @@ func findHALabels(replicaLabel, clusterLabel string, labels []mimirpb.LabelAdapt
 }
 
 func (h *haTracker) cleanupHATrackerMetricsForUser(userID string) {
-	filter := map[string]string{"user": userID}
+	filter := prometheus.Labels{"user": userID}
 
-	if err := util.DeleteMatchingLabels(h.electedReplicaChanges, filter); err != nil {
-		level.Warn(h.logger).Log("msg", "failed to remove cortex_ha_tracker_elected_replica_changes_total metric for user", "user", userID, "err", err)
-	}
-	if err := util.DeleteMatchingLabels(h.electedReplicaTimestamp, filter); err != nil {
-		level.Warn(h.logger).Log("msg", "failed to remove cortex_ha_tracker_elected_replica_timestamp_seconds metric for user", "user", userID, "err", err)
-	}
-	if err := util.DeleteMatchingLabels(h.kvCASCalls, filter); err != nil {
-		level.Warn(h.logger).Log("msg", "failed to remove cortex_ha_tracker_kv_store_cas_total metric for user", "user", userID, "err", err)
-	}
+	h.electedReplicaChanges.DeletePartialMatch(filter)
+	h.electedReplicaTimestamp.DeletePartialMatch(filter)
+	h.kvCASCalls.DeletePartialMatch(filter)
 }

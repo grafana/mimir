@@ -13,6 +13,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
@@ -116,7 +117,7 @@ func TestFilterOwnJobs(t *testing.T) {
 		},
 	}
 
-	m := NewBucketCompactorMetrics(prometheus.NewCounter(prometheus.CounterOpts{}), nil)
+	m := NewBucketCompactorMetrics(promauto.With(nil).NewCounter(prometheus.CounterOpts{}), nil)
 	for testName, testCase := range tests {
 		t.Run(testName, func(t *testing.T) {
 			bc, err := NewBucketCompactor(log.NewNopLogger(), nil, nil, nil, nil, "", nil, 2, false, testCase.ownJob, nil, 4, m)
@@ -228,7 +229,7 @@ func TestNoCompactionMarkFilter(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			// Block 2 is marked for no-compaction.
-			require.NoError(t, block.MarkForNoCompact(ctx, log.NewNopLogger(), bkt, block2, metadata.OutOfOrderChunksNoCompactReason, "details...", prometheus.NewCounter(prometheus.CounterOpts{})))
+			require.NoError(t, block.MarkForNoCompact(ctx, log.NewNopLogger(), bkt, block2, metadata.OutOfOrderChunksNoCompactReason, "details...", promauto.With(nil).NewCounter(prometheus.CounterOpts{})))
 			// Block 3 has marker with invalid version
 			require.NoError(t, bkt.Upload(ctx, block3.String()+"/no-compact-mark.json", strings.NewReader(`{"id":"`+block3.String()+`","version":100,"details":"details","no_compact_time":1637757932,"reason":"reason"}`)))
 			// Block 4 has marker with invalid JSON syntax

@@ -10,7 +10,7 @@ patches:
 
   - target:
       kind: 'Service'
-      name: 'mimir-(alertmanager-headless|ruler|query-frontend(-headless)?|distributor(-headless)?|querier|(chunks|results|index|metadata)-cache)'
+      name: 'mimir-(alertmanager-headless|ruler|query-frontend(-headless)?|query-scheduler(-headless)?|distributor(-headless)?|querier|(chunks|results|index|metadata)-cache)'
     patch: |-
       - op: remove
         path: /metadata/labels

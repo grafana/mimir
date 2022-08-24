@@ -1,0 +1,175 @@
+"services":
+  "grafana-agent":
+    "command":
+      - "-config.file=/etc/agent-config/grafana-agent.yaml"
+      - "-prometheus.wal-directory=/tmp"
+    "image": "grafana/agent:v0.21.2"
+    "ports":
+      - "9091:9091"
+    "volumes":
+      - "./config:/etc/agent-config"
+  "memcached":
+    "image": "memcached:1.6"
+  "mimir-backend-1":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "./mimir"
+      - "-config.file=./config/mimir.yaml"
+      - "-target=backend"
+      - "-server.http-listen-port=8006"
+      - "-server.grpc-listen-port=9006"
+      - "-activity-tracker.filepath=/activity/backend-8006"
+    "depends_on":
+      - "minio"
+    "environment": []
+    "hostname": "mimir-backend-1"
+    "image": "mimir"
+    "ports":
+      - "8006:8006"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+  "mimir-backend-2":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "./mimir"
+      - "-config.file=./config/mimir.yaml"
+      - "-target=backend"
+      - "-server.http-listen-port=8007"
+      - "-server.grpc-listen-port=9007"
+      - "-activity-tracker.filepath=/activity/backend-8007"
+    "depends_on":
+      - "minio"
+    "environment": []
+    "hostname": "mimir-backend-2"
+    "image": "mimir"
+    "ports":
+      - "8007:8007"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+  "mimir-read-1":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "./mimir"
+      - "-config.file=./config/mimir.yaml"
+      - "-target=read"
+      - "-server.http-listen-port=8004"
+      - "-server.grpc-listen-port=9004"
+      - "-activity-tracker.filepath=/activity/read-8004"
+    "depends_on":
+      - "minio"
+    "environment": []
+    "hostname": "mimir-read-1"
+    "image": "mimir"
+    "ports":
+      - "8004:8004"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+  "mimir-read-2":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "./mimir"
+      - "-config.file=./config/mimir.yaml"
+      - "-target=read"
+      - "-server.http-listen-port=8005"
+      - "-server.grpc-listen-port=9005"
+      - "-activity-tracker.filepath=/activity/read-8005"
+    "depends_on":
+      - "minio"
+    "environment": []
+    "hostname": "mimir-read-2"
+    "image": "mimir"
+    "ports":
+      - "8005:8005"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+  "mimir-write-1":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "./mimir"
+      - "-config.file=./config/mimir.yaml"
+      - "-target=write"
+      - "-server.http-listen-port=8001"
+      - "-server.grpc-listen-port=9001"
+      - "-activity-tracker.filepath=/activity/write-8001"
+    "depends_on":
+      - "minio"
+    "environment": []
+    "hostname": "mimir-write-1"
+    "image": "mimir"
+    "ports":
+      - "8001:8001"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+      - ".data-mimir-write-1:/data:delegated"
+  "mimir-write-2":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "./mimir"
+      - "-config.file=./config/mimir.yaml"
+      - "-target=write"
+      - "-server.http-listen-port=8002"
+      - "-server.grpc-listen-port=9002"
+      - "-activity-tracker.filepath=/activity/write-8002"
+    "depends_on":
+      - "minio"
+    "environment": []
+    "hostname": "mimir-write-2"
+    "image": "mimir"
+    "ports":
+      - "8002:8002"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+      - ".data-mimir-write-2:/data:delegated"
+  "mimir-write-3":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "./mimir"
+      - "-config.file=./config/mimir.yaml"
+      - "-target=write"
+      - "-server.http-listen-port=8003"
+      - "-server.grpc-listen-port=9003"
+      - "-activity-tracker.filepath=/activity/write-8003"
+    "depends_on":
+      - "minio"
+    "environment": []
+    "hostname": "mimir-write-3"
+    "image": "mimir"
+    "ports":
+      - "8003:8003"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+      - ".data-mimir-write-3:/data:delegated"
+  "minio":
+    "command":
+      - "server"
+      - "/data"
+    "environment":
+      - "MINIO_ACCESS_KEY=mimir"
+      - "MINIO_SECRET_KEY=supersecret"
+    "image": "minio/minio"
+    "ports":
+      - "9000:9000"
+    "volumes":
+      - ".data-minio:/data:delegated"
+"version": "3.4"

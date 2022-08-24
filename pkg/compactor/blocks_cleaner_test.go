@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
@@ -849,6 +850,65 @@ func TestBlocksCleaner_ShouldNotRemovePartialBlocksInsideDelayPeriod(t *testing.
 	))
 }
 
+func TestBlocksCleaner_ShouldNotRemovePartialBlocksIfConfiguredDelayIsInvalid(t *testing.T) {
+	ctx := context.Background()
+	reg := prometheus.NewPedanticRegistry()
+	logs := &concurrency.SyncBuffer{}
+	logger := log.NewLogfmtLogger(logs)
+
+	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
+	bucketClient = bucketindex.BucketWithGlobalMarkers(bucketClient)
+
+	ts := func(hours int) int64 {
+		return time.Now().Add(time.Duration(hours)*time.Hour).Unix() * 1000
+	}
+
+	// Create a partial block.
+	block1 := createTSDBBlock(t, bucketClient, "user-1", ts(-10), ts(-8), 2, nil)
+	err := bucketClient.Delete(ctx, path.Join("user-1", block1.String(), metadata.MetaFilename))
+	require.NoError(t, err)
+
+	cfg := BlocksCleanerConfig{
+		DeletionDelay:           time.Hour,
+		CleanupInterval:         time.Minute,
+		CleanupConcurrency:      1,
+		DeleteBlocksConcurrency: 1,
+	}
+
+	// Configure an invalid delay.
+	cfgProvider := newMockConfigProvider()
+	cfgProvider.userPartialBlockDelay["user-1"] = 0
+	cfgProvider.userPartialBlockDelayInvalid["user-1"] = true
+
+	// Pre-condition check: block should be partial and not being marked for deletion.
+	checkBlock(t, "user-1", bucketClient, block1, false, false)
+
+	// Run the cleanup.
+	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
+	require.NoError(t, cleaner.cleanUser(ctx, "user-1"))
+
+	// Ensure the block has NOT been marked for deletion.
+	checkBlock(t, "user-1", bucketClient, block1, false, false)
+	assert.Contains(t, logs.String(), "partial blocks deletion has been disabled for tenant because the delay has been set lower than the minimum value allowed")
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_bucket_blocks_count Total number of blocks in the bucket. Includes blocks marked for deletion, but not partial blocks.
+			# TYPE cortex_bucket_blocks_count gauge
+			cortex_bucket_blocks_count{user="user-1"} 0
+			# HELP cortex_bucket_blocks_marked_for_deletion_count Total number of blocks marked for deletion in the bucket.
+			# TYPE cortex_bucket_blocks_marked_for_deletion_count gauge
+			cortex_bucket_blocks_marked_for_deletion_count{user="user-1"} 0
+			# HELP cortex_compactor_blocks_marked_for_deletion_total Total number of blocks marked for deletion in compactor.
+			# TYPE cortex_compactor_blocks_marked_for_deletion_total counter
+			cortex_compactor_blocks_marked_for_deletion_total{reason="partial"} 0
+			cortex_compactor_blocks_marked_for_deletion_total{reason="retention"} 0
+			`),
+		"cortex_bucket_blocks_count",
+		"cortex_bucket_blocks_marked_for_deletion_count",
+		"cortex_compactor_blocks_marked_for_deletion_total",
+	))
+}
+
 func TestFindMostRecentModifiedTimeForBlock(t *testing.T) {
 	b, dir := mimir_testutil.PrepareFilesystemBucket(t)
 
@@ -890,21 +950,23 @@ func (m *mockBucketFailure) Delete(ctx context.Context, name string) error {
 }
 
 type mockConfigProvider struct {
-	userRetentionPeriods  map[string]time.Duration
-	splitAndMergeShards   map[string]int
-	instancesShardSize    map[string]int
-	splitGroups           map[string]int
-	blockUploadEnabled    map[string]bool
-	userPartialBlockDelay map[string]time.Duration
+	userRetentionPeriods         map[string]time.Duration
+	splitAndMergeShards          map[string]int
+	instancesShardSize           map[string]int
+	splitGroups                  map[string]int
+	blockUploadEnabled           map[string]bool
+	userPartialBlockDelay        map[string]time.Duration
+	userPartialBlockDelayInvalid map[string]bool
 }
 
 func newMockConfigProvider() *mockConfigProvider {
 	return &mockConfigProvider{
-		userRetentionPeriods:  make(map[string]time.Duration),
-		splitAndMergeShards:   make(map[string]int),
-		splitGroups:           make(map[string]int),
-		blockUploadEnabled:    make(map[string]bool),
-		userPartialBlockDelay: make(map[string]time.Duration),
+		userRetentionPeriods:         make(map[string]time.Duration),
+		splitAndMergeShards:          make(map[string]int),
+		splitGroups:                  make(map[string]int),
+		blockUploadEnabled:           make(map[string]bool),
+		userPartialBlockDelay:        make(map[string]time.Duration),
+		userPartialBlockDelayInvalid: make(map[string]bool),
 	}
 }
 
@@ -940,8 +1002,8 @@ func (m *mockConfigProvider) CompactorBlockUploadEnabled(tenantID string) bool {
 	return m.blockUploadEnabled[tenantID]
 }
 
-func (m *mockConfigProvider) CompactorPartialBlockDeletionDelay(user string) time.Duration {
-	return m.userPartialBlockDelay[user]
+func (m *mockConfigProvider) CompactorPartialBlockDeletionDelay(user string) (time.Duration, bool) {
+	return m.userPartialBlockDelay[user], !m.userPartialBlockDelayInvalid[user]
 }
 
 func (m *mockConfigProvider) S3SSEType(user string) string {

@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 )
 
+//lint:ignore faillint It's non-trivial to remove this global variable.
 var ingesterClientRequestDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
 	Name:    "cortex_ingester_client_request_duration_seconds",
 	Help:    "Time spent doing Ingester requests.",
