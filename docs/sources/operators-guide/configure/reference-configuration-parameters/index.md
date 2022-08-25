@@ -1060,7 +1060,7 @@ grpc_client_config:
 [split_queries_by_interval: <duration> | default = 24h]
 
 # Mutate incoming queries to align their start and end with their step.
-# CLI flag: -query-frontend.align-querier-with-step
+# CLI flag: -query-frontend.align-queries-with-step
 [align_queries_with_step: <boolean> | default = false]
 
 results_cache:

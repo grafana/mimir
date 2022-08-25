@@ -409,6 +409,8 @@ Usage of ./cmd/mimir/mimir:
   -querier.timeout duration
     	The timeout for a query. This config option should be set on query-frontend too when query sharding is enabled. This also applies to queries evaluated by the ruler (internally or remotely). (default 2m0s)
   -query-frontend.align-querier-with-step
+    	Mutate incoming queries to align their start and end with their step. It has been deprecated. Please use -query-frontend.align-queries-with-step instead.
+  -query-frontend.align-queries-with-step
     	Mutate incoming queries to align their start and end with their step.
   -query-frontend.cache-results
     	Cache query results.
