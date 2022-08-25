@@ -310,23 +310,31 @@ func TestCheckFilesystemPathsOvelapping(t *testing.T) {
 			},
 			expectedErr: `the configured alertmanager data directory "/path/to/alertmanager" cannot overlap with the configured alertmanager storage filesystem directory "/path/to/alertmanager/subdir"`,
 		},
-		"should fail if alertmanager data directory is a subdirectory of alertmanager filesystem backend directory": {
+		"should fail if alertmanager data directory is a subdirectory of alertmanager filesystem backend directory, and matches with the prefix used to store alerts": {
 			setup: func(cfg *Config) {
 				cfg.Target = flagext.StringSliceCSV{AlertManager}
-				cfg.Alertmanager.DataDir = "/path/to/alertmanager/subdir"
+				cfg.Alertmanager.DataDir = "/path/to/alertmanager/alerts"
 				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Backend = bucket.Filesystem
 				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Filesystem.Directory = "/path/to/alertmanager"
 			},
-			expectedErr: `the configured alertmanager data directory "/path/to/alertmanager/subdir" cannot overlap with the configured alertmanager storage filesystem directory "/path/to/alertmanager"`,
+			expectedErr: `the configured alertmanager data directory "/path/to/alertmanager/alerts" cannot overlap with the configured alertmanager storage filesystem directory "/path/to/alertmanager"`,
 		},
-		"should fail if alertmanager data directory (relative) is a subdirectory of alertmanager filesystem backend directory (absolute)": {
+		"should succeed if alertmanager data directory is a subdirectory of alertmanager filesystem backend directory, but doesn't match with the prefix used to store alerts": {
 			setup: func(cfg *Config) {
 				cfg.Target = flagext.StringSliceCSV{AlertManager}
-				cfg.Alertmanager.DataDir = "./data/subdir"
+				cfg.Alertmanager.DataDir = "/path/to/alertmanager/data"
+				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Backend = bucket.Filesystem
+				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Filesystem.Directory = "/path/to/alertmanager"
+			},
+		},
+		"should fail if alertmanager data directory (relative) is a subdirectory of alertmanager filesystem backend directory (absolute), and matches with the prefix used to store alertmanager config": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{AlertManager}
+				cfg.Alertmanager.DataDir = "./data/alertmanager"
 				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Backend = bucket.Filesystem
 				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Filesystem.Directory = filepath.Join(cwd, "data")
 			},
-			expectedErr: fmt.Sprintf(`the configured alertmanager data directory "./data/subdir" cannot overlap with the configured alertmanager storage filesystem directory "%s"`, filepath.Join(cwd, "data")),
+			expectedErr: fmt.Sprintf(`the configured alertmanager data directory "./data/alertmanager" cannot overlap with the configured alertmanager storage filesystem directory "%s"`, filepath.Join(cwd, "data")),
 		},
 		"should fail if ruler filesystem backend directory is equal to ruler data directory": {
 			setup: func(cfg *Config) {
@@ -360,6 +368,18 @@ func TestCheckFilesystemPathsOvelapping(t *testing.T) {
 				cfg.BlocksStorage.Bucket.Filesystem.Directory = "/path/to/data/blocks"
 			},
 			expectedErr: `the configured blocks storage filesystem directory "/path/to/data/blocks" cannot overlap with the configured tsdb directory "/path/to/data"`,
+		},
+		"should succeed if tsdb directory and blocks storage filesystem directory overlap, but blocks storage has prefix configured": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{Ingester}
+				cfg.BlocksStorage.TSDB.Dir = "/path/to/data/tsdb"
+				cfg.BlocksStorage.Bucket.Backend = bucket.Filesystem
+
+				// The storage directory itself overlaps with TSDB data directory,
+				// but it doesn't if you also apply the prefix.
+				cfg.BlocksStorage.Bucket.Filesystem.Directory = "/path/to/data"
+				cfg.BlocksStorage.Bucket.StoragePrefix = "blocks"
+			},
 		},
 		"should succeed if tsdb directory and blocks storage filesystem directory don't overlap": {
 			setup: func(cfg *Config) {
