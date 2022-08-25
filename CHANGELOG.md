@@ -24,6 +24,7 @@
 * [BUGFIX] Distributor: Register `cortex_discarded_requests_total` metric, which previously was not registered and therefore not exported. #2712
 * [BUGFIX] Ruler: fix not restoring alerts' state at startup. #2648
 * [BUGFIX] Ingester: Fix disk filling up after restarting ingesters with out-of-order support disabled while it was enabled before. #2799
+* [BUGFIX] Memberlist: retry joining memberlist cluster on startup when no nodes are resolved. #2837
 
 ### Mixin
 
