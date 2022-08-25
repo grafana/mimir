@@ -92,7 +92,7 @@ func (a *AlertmanagerCommand) setup(k *kingpin.ParseContext) error {
 func (a *AlertmanagerCommand) getConfig(k *kingpin.ParseContext) error {
 	cfg, templates, err := a.cli.GetAlertmanagerConfig(context.Background())
 	if err != nil {
-		if err == client.ErrResourceNotFound {
+		if errors.Is(err, client.ErrResourceNotFound) {
 			log.Infof("no Alertmanager config currently exists for this user")
 			return nil
 		}
@@ -130,7 +130,7 @@ func (a *AlertmanagerCommand) loadConfig(k *kingpin.ParseContext) error {
 
 func (a *AlertmanagerCommand) deleteConfig(k *kingpin.ParseContext) error {
 	err := a.cli.DeleteAlermanagerConfig(context.Background())
-	if err != nil && err != client.ErrResourceNotFound {
+	if err != nil && !errors.Is(err, client.ErrResourceNotFound) {
 		return err
 	}
 	return nil
