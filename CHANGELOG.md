@@ -4,14 +4,12 @@
 
 ### Grafana Mimir
 
-* [CHANGE] Distributor: if forwarding rules are used to forward samples, exemplars are now removed from the request. #2710 #2725
-* [CHANGE] Limits: change the default value of `max_global_series_per_metric` limit to `0` (disabled). Setting this limit by default does not provide much benefit because series are sharded by all labels. #2714
+* [CHANGE] Distributor: if forwarding rules are used to forward samples, exemplars are now removed from the request #2725
 * [CHANGE] Ingester: experimental `-blocks-storage.tsdb.new-chunk-disk-mapper` has been removed, new chunk disk mapper is now always used, and is no longer marked experimental. Default value of `-blocks-storage.tsdb.head-chunks-write-queue-size` has changed to 1000000, this enables async chunk queue by default, which leads to improved latency on the write path when new chunks are created in ingesters. #2762
 * [CHANGE] Ingester: removed deprecated `-blocks-storage.tsdb.isolation-enabled` option. TSDB-level isolation is now always disabled in Mimir. #2782
 * [CHANGE] Compactor: `-compactor.partial-block-deletion-delay` must either be set to 0 (to disable partial blocks deletion) or a value higher than `4h`. #2787
 * [FEATURE] Introduced an experimental anonymous usage statistics tracking (disabled by default), to help Mimir maintainers driving better decisions to support the opensource community. The tracking system anonymously collects non-sensitive and non-personal identifiable information about the running Mimir cluster, and is disabled by default. #2643 #2662 #2685 #2732 #2735
 * [FEATURE] Introduced an experimental deployment mode called read-write and running a fully featured Mimir cluster with three components: write, read and backend. The read-write deployment mode is a trade-off between the monolithic mode (only one component, no isolation) and the microservices mode (many components, high isolation). #2754
-* [FEATURE] Query-frontend: introduced experimental support to split instant queries by time. The instant query splitting can be enabled setting `-query-frontend.split-instant-queries-by-interval`. #2469 #2564 #2565 #2570 #2571 #2572 #2573 #2574 #2575 #2576 #2581 #2582 #2601 #2632 #2633 #2634 #2641 #2642 #2766
 * [ENHANCEMENT] Distributor: Add `cortex_distributor_query_ingester_chunks_deduped_total` and `cortex_distributor_query_ingester_chunks_total` metrics for determining how effective ingester chunk deduplication at query time is. #2713
 * [ENHANCEMENT] Upgrade Docker base images to `alpine:3.16.2`. #2729
 * [ENHANCEMENT] Ruler: Add `<prometheus-http-prefix>/api/v1/status/buildinfo` endpoint. #2724
@@ -19,10 +17,6 @@
 * [ENHANCEMENT] Distributor: Add `cortex_distributor_received_requests_total` and `cortex_distributor_requests_in_total` metrics to provide visiblity into appropriate per-tenant request limits. #2770
 * [ENHANCEMENT] Distributor: Add single forwarding remote-write endpoint for a tenant (`forwarding_endpoint`), instead of using per-rule endpoints. This takes precendence over per-rule endpoints. #2801
 * [ENHANCEMENT] Added `err-mimir-distributor-max-write-message-size` to the errors catalog. #2470
-* [BUGFIX] Fix reporting of tracing spans from PromQL engine. #2707
-* [BUGFIX] Distributor: Apply distributor instance limits before running HA deduplication. #2709
-* [BUGFIX] Apply relabel and drop_label rules before forwarding rules in the distributor. #2703
-* [BUGFIX] Distributor: Register `cortex_discarded_requests_total` metric, which previously was not registered and therefore not exported. #2712
 * [BUGFIX] Ruler: fix not restoring alerts' state at startup. #2648
 * [BUGFIX] Ingester: Fix disk filling up after restarting ingesters with out-of-order support disabled while it was enabled before. #2799
 
@@ -76,17 +70,20 @@
 * [CHANGE] Purger: removed the purger component and moved its API endpoints `/purger/delete_tenant` and `/purger/delete_tenant_status` to the compactor at `/compactor/delete_tenant` and `/compactor/delete_tenant_status`. The new endpoints on the compactor are stable. #2644
 * [CHANGE] Memberlist: Change the leave timeout duration (`-memberlist.leave-timeout duration`) from 5s to 20s and connection timeout (`-memberlist.packet-dial-timeout`) from 5s to 2s. This makes leave timeout 10x the connection timeout, so that we can communicate the leave to at least 1 node, if the first 9 we try to contact times out. #2669
 * [CHANGE] Alertmanager: return status code `412 Precondition Failed` and log info message when alertmanager isn't configured for a tenant. #2635
+* [CHANGE] Distributor: if forwarding rules are used to forward samples, exemplars are now removed from the request. #2710
+* [CHANGE] Limits: change the default value of `max_global_series_per_metric` limit to `0` (disabled). Setting this limit by default does not provide much benefit because series are sharded by all labels. #2714
 * [FEATURE] Compactor: Adds the ability to delete partial blocks after a configurable delay. This option can be configured per tenant. #2285
   - `-compactor.partial-block-deletion-delay`, as a duration string, allows you to set the delay since a partial block has been modified before marking it for deletion. A value of `0`, the default, disables this feature.
   - The metric `cortex_compactor_blocks_marked_for_deletion_total` has a new value for the `reason` label `reason="partial"`, when a block deletion marker is triggered by the partial block deletion delay.
 * [FEATURE] Querier: enabled support for queries with negative offsets, which are not cached in the query results cache. #2429
 * [FEATURE] EXPERIMENTAL: OpenTelemetry Metrics ingestion path on `/otlp/v1/metrics`. #695 #2436 #2461
 * [FEATURE] Querier: Added support for tenant federation to metric metadata endpoint. #2467
+* [FEATURE] Query-frontend: introduced experimental support to split instant queries by time. The instant query splitting can be enabled setting `-query-frontend.split-instant-queries-by-interval`. #2469 #2564 #2565 #2570 #2571 #2572 #2573 #2574 #2575 #2576 #2581 #2582 #2601 #2632 #2633 #2634 #2641 #2642 #2766
 * [ENHANCEMENT] Distributor: Decreased distributor tests execution time. #2562
 * [ENHANCEMENT] Alertmanager: Allow the HTTP `proxy_url` configuration option in the receiver's configuration. #2317
 * [ENHANCEMENT] ring: optimize shuffle-shard computation when lookback is used, and all instances have registered timestamp within the lookback window. In that case we can immediately return origial ring, because we would select all instances anyway. #2309
 * [ENHANCEMENT] Memberlist: added experimental memberlist cluster label support via `-memberlist.cluster-label` and `-memberlist.cluster-label-verification-disabled` CLI flags (and their respective YAML config options). #2354
-* [ENHANCEMENT] Object storage can now be configured for all components using the `common` YAML config option key (or `-common.storage.*` CLI flags). #2330
+* [ENHANCEMENT] Object storage can now be configured for all components using the `common` YAML config option key (or `-common.storage.*` CLI flags). #2330 #2347
 * [ENHANCEMENT] Go: updated to go 1.18.4. #2400
 * [ENHANCEMENT] Store-gateway, listblocks: list of blocks now includes stats from `meta.json` file: number of series, samples and chunks. #2425
 * [ENHANCEMENT] Added more buckets to `cortex_ingester_client_request_duration_seconds` histogram metric, to correctly track requests taking longer than 1s (up until 16s). #2445
@@ -95,6 +92,7 @@
 * [ENHANCEMENT] Distributor: Drop exemplars in distributor for tenants where exemplars are disabled. #2504
 * [ENHANCEMENT] Runtime Config: Allow operator to specify multiple comma-separated yaml files in `-runtime-config.file` that will be merged in left to right order. #2583
 * [ENHANCEMENT] Query sharding: shard binary operations only if it doesn't lead to non-shardable vector selectors in one of the operands. #2696
+* [ENHANCEMENT] Add packaging for both debian based deb file and redhat based rpm file using FPM. #1803
 * [BUGFIX] TSDB: Fixed a bug on the experimental out-of-order implementation that led to wrong query results. #2701
 * [BUGFIX] Compactor: log the actual error on compaction failed. #2261
 * [BUGFIX] Alertmanager: restore state from storage even when running a single replica. #2293
@@ -108,7 +106,10 @@
 * [BUGFIX] Compactor: Fix bug when using `-compactor.partial-block-deletion-delay`: compactor didn't correctly check for modification time of all block files. #2559
 * [BUGFIX] Query-frontend: fix wrong query sharding results for queries with boolean result like `1 < bool 0`. #2558
 * [BUGFIX] Fixed error messages related to per-instance limits incorrectly reporting they can be set on a per-tenant basis. #2610
-* [BUGFIX] Perform HA-deduplication before forwarding samples according to forwarding rules in the distributor. #2603
+* [BUGFIX] Perform HA-deduplication before forwarding samples according to forwarding rules in the distributor. #2603 #2709
+* [BUGFIX] Fix reporting of tracing spans from PromQL engine. #2707
+* [BUGFIX] Apply relabel and drop_label rules before forwarding rules in the distributor. #2703
+* [BUGFIX] Distributor: Register `cortex_discarded_requests_total` metric, which previously was not registered and therefore not exported. #2712
 
 ### Mixin
 
@@ -128,7 +129,7 @@
 ### Jsonnet
 
 * [CHANGE] query-scheduler is enabled by default. We advise to deploy the query-scheduler to improve the scalability of the query-frontend. #2431
-* [CHANGE] Replaced anti-affinity rules with pod topology spread constraints for distributor, query-frontend, querier and ruler.
+* [CHANGE] Replaced anti-affinity rules with pod topology spread constraints for distributor, query-frontend, querier and ruler. #2517
   - The following configuration options have been removed:
     - `distributor_allow_multiple_replicas_on_same_node`
     - `query_frontend_allow_multiple_replicas_on_same_node`
