@@ -18,6 +18,7 @@
 * [ENHANCEMENT] Distributor: Add single forwarding remote-write endpoint for a tenant (`forwarding_endpoint`), instead of using per-rule endpoints. This takes precendence over per-rule endpoints. #2801
 * [ENHANCEMENT] Added `err-mimir-distributor-max-write-message-size` to the errors catalog. #2470
 * [ENHANCEMENT] Add sanity check at startup to ensure the configured filesystem directories don't overlap for different components. #2828
+* [ENHANCEMENT] Query-frontend: CLI flag `-query-frontend.align-querier-with-step` renamed to `query-frontend.align-queries-with-step`. #2840
 * [BUGFIX] Ruler: fix not restoring alerts' state at startup. #2648
 * [BUGFIX] Ingester: Fix disk filling up after restarting ingesters with out-of-order support disabled while it was enabled before. #2799
 * [BUGFIX] Memberlist: retry joining memberlist cluster on startup when no nodes are resolved. #2837
