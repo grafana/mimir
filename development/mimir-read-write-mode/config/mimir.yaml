@@ -39,7 +39,7 @@ memberlist:
 ruler:
   rule_path: /data/ruler
   # Each ruler is configured to route alerts to the Alertmanager running within the same component.
-  alertmanager_url: http://mimir-backend-1:8006/alertmanager
+  alertmanager_url: http://localhost:8080/alertmanager
 
 ruler_storage:
   s3:
@@ -48,12 +48,12 @@ ruler_storage:
 frontend:
   # Currently we can't specify multiple addresses, so we're just using a single replica for the query-scheduler.
   # See: https://github.com/grafana/mimir/issues/2012
-  scheduler_address: "mimir-backend-1:9006"
+  scheduler_address: "mimir-backend-1:9095"
 
 frontend_worker:
   # Currently we can't specify multiple addresses, so we're just using a single replica for the query-scheduler.
   # See: https://github.com/grafana/mimir/issues/2012
-  scheduler_address: "mimir-backend-1:9006"
+  scheduler_address: "mimir-backend-1:9095"
 
 alertmanager:
   data_dir: /data/alertmanager

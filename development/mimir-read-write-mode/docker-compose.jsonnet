@@ -13,19 +13,19 @@ std.manifestYamlDoc({
     'mimir-write-1': mimirService({
       name: 'mimir-write-1',
       target: 'write',
-      httpPort: 8001,
+      publishedHttpPort: 8001,
       extraVolumes: ['.data-mimir-write-1:/data:delegated'],
     }),
     'mimir-write-2': mimirService({
       name: 'mimir-write-2',
       target: 'write',
-      httpPort: 8002,
+      publishedHttpPort: 8002,
       extraVolumes: ['.data-mimir-write-2:/data:delegated'],
     }),
     'mimir-write-3': mimirService({
       name: 'mimir-write-3',
       target: 'write',
-      httpPort: 8003,
+      publishedHttpPort: 8003,
       extraVolumes: ['.data-mimir-write-3:/data:delegated'],
     }),
   },
@@ -34,12 +34,12 @@ std.manifestYamlDoc({
     'mimir-read-1': mimirService({
       name: 'mimir-read-1',
       target: 'read',
-      httpPort: 8004,
+      publishedHttpPort: 8004,
     }),
     'mimir-read-2': mimirService({
       name: 'mimir-read-2',
       target: 'read',
-      httpPort: 8005,
+      publishedHttpPort: 8005,
     }),
   },
 
@@ -47,12 +47,12 @@ std.manifestYamlDoc({
     'mimir-backend-1': mimirService({
       name: 'mimir-backend-1',
       target: 'backend',
-      httpPort: 8006,
+      publishedHttpPort: 8006,
     }),
     'mimir-backend-2': mimirService({
       name: 'mimir-backend-2',
       target: 'backend',
-      httpPort: 8007,
+      publishedHttpPort: 8007,
     }),
   },
 
@@ -84,18 +84,16 @@ std.manifestYamlDoc({
   },
 
   // This function builds docker-compose declaration for Mimir service.
-  // Default grpcPort is (httpPort + 1000).
   local mimirService(serviceOptions) = {
     local defaultOptions = {
       local s = self,
       name: error 'missing name',
       target: error 'missing target',
-      httpPort: error 'missing httpPort',
-      grpcPort: self.httpPort + 1000,
+      publishedHttpPort: error 'missing publishedHttpPort',
       dependsOn: ['minio'],
       env: {},
       extraVolumes: [],
-      memberlistBindPort: self.httpPort + 2000,
+      memberlistBindPort: self.publishedHttpPort + 2000,
     },
 
     local options = defaultOptions + serviceOptions,
@@ -109,9 +107,7 @@ std.manifestYamlDoc({
       './mimir',
       '-config.file=./config/mimir.yaml' % options,
       '-target=%(target)s' % options,
-      '-server.http-listen-port=%(httpPort)d' % options,
-      '-server.grpc-listen-port=%(grpcPort)d' % options,
-      '-activity-tracker.filepath=/activity/%(target)s-%(httpPort)d' % options,
+      '-activity-tracker.filepath=/activity/%(name)s' % options,
     ],
     environment: [
       '%s=%s' % [key, options.env[key]]
@@ -120,7 +116,7 @@ std.manifestYamlDoc({
     ],
     hostname: options.name,
     // Only publish HTTP port, but not gRPC one.
-    ports: ['%d:%d' % [options.httpPort, options.httpPort]],
+    ports: ['%d:8080' % options.publishedHttpPort],
     depends_on: options.dependsOn,
     volumes: ['./config:/mimir/config', './activity:/activity'] + options.extraVolumes,
   },
