@@ -167,16 +167,16 @@ func TestMimir(t *testing.T) {
 		"-target=write": {
 			target:                  []string{Write},
 			expectedEnabledModules:  []string{DistributorService, IngesterService},
-			expectedDisabledModules: []string{Querier, Ruler, StoreGateway, Compactor},
+			expectedDisabledModules: []string{Querier, Ruler, StoreGateway, Compactor, AlertManager},
 		},
 		"-target=read": {
 			target:                  []string{Read},
 			expectedEnabledModules:  []string{QueryFrontend, Querier},
-			expectedDisabledModules: []string{IngesterService, Ruler, StoreGateway, Compactor},
+			expectedDisabledModules: []string{IngesterService, Ruler, StoreGateway, Compactor, AlertManager},
 		},
 		"-target=backend": {
 			target:                  []string{Backend},
-			expectedEnabledModules:  []string{QueryScheduler, Ruler, StoreGateway, Compactor},
+			expectedEnabledModules:  []string{QueryScheduler, Ruler, StoreGateway, Compactor, AlertManager},
 			expectedDisabledModules: []string{IngesterService, QueryFrontend, Querier},
 		},
 	}

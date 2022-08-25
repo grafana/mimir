@@ -1,13 +1,17 @@
 multitenancy_enabled: false
 
+common:
+  storage:
+    backend: s3
+    s3:
+      endpoint:          minio:9000
+      access_key_id:     mimir
+      secret_access_key: supersecret
+      insecure:          true
+
 blocks_storage:
-  backend: s3
   s3:
-    endpoint:          minio:9000
     bucket_name:       mimir-blocks
-    access_key_id:     mimir
-    secret_access_key: supersecret
-    insecure:          true
   tsdb:
     dir: /data/ingester
 
@@ -34,15 +38,12 @@ memberlist:
 
 ruler:
   rule_path: /data/ruler
+  # Each ruler is configured to route alerts to the Alertmanager running within the same component.
+  alertmanager_url: http://mimir-backend-1:8006/alertmanager
 
 ruler_storage:
-  backend: s3
   s3:
     bucket_name:       mimir-ruler
-    endpoint:          minio:9000
-    access_key_id:     mimir
-    secret_access_key: supersecret
-    insecure:          true
 
 frontend:
   # Currently we can't specify multiple addresses, so we're just using a single replica for the query-scheduler.
@@ -53,6 +54,15 @@ frontend_worker:
   # Currently we can't specify multiple addresses, so we're just using a single replica for the query-scheduler.
   # See: https://github.com/grafana/mimir/issues/2012
   scheduler_address: "mimir-backend-1:9006"
+
+alertmanager:
+  data_dir: /data/alertmanager
+  fallback_config_file: ./config/alertmanager-fallback-config.yaml
+  external_url: http://localhost:8006/alertmanager
+
+alertmanager_storage:
+  s3:
+    bucket_name: mimir-alertmanager
 
 runtime_config:
   file: ./config/runtime.yaml
