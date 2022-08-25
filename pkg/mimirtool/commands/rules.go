@@ -343,7 +343,7 @@ func (r *RuleCommand) listRules(k *kingpin.ParseContext) error {
 func (r *RuleCommand) printRules(k *kingpin.ParseContext) error {
 	rules, err := r.cli.ListRules(context.Background(), "")
 	if err != nil {
-		if err == client.ErrResourceNotFound {
+		if errors.Is(err, client.ErrResourceNotFound) {
 			log.Infof("no rule groups currently exist for this user")
 			return nil
 		}
@@ -357,7 +357,7 @@ func (r *RuleCommand) printRules(k *kingpin.ParseContext) error {
 func (r *RuleCommand) getRuleGroup(k *kingpin.ParseContext) error {
 	group, err := r.cli.GetRuleGroup(context.Background(), r.Namespace, r.RuleGroup)
 	if err != nil {
-		if err == client.ErrResourceNotFound {
+		if errors.Is(err, client.ErrResourceNotFound) {
 			log.Infof("this rule group does not currently exist")
 			return nil
 		}
@@ -370,7 +370,7 @@ func (r *RuleCommand) getRuleGroup(k *kingpin.ParseContext) error {
 
 func (r *RuleCommand) deleteRuleGroup(k *kingpin.ParseContext) error {
 	err := r.cli.DeleteRuleGroup(context.Background(), r.Namespace, r.RuleGroup)
-	if err != nil && err != client.ErrResourceNotFound {
+	if err != nil && !errors.Is(err, client.ErrResourceNotFound) {
 		log.Fatalf("Unable to delete rule group from Grafana Mimir, %v", err)
 	}
 	return nil
@@ -387,7 +387,7 @@ func (r *RuleCommand) loadRules(k *kingpin.ParseContext) error {
 		for _, group := range ns.Groups {
 			fmt.Printf("group: '%v', ns: '%v'\n", group.Name, ns.Namespace)
 			curGroup, err := r.cli.GetRuleGroup(context.Background(), ns.Namespace, group.Name)
-			if err != nil && err != client.ErrResourceNotFound {
+			if err != nil && !errors.Is(err, client.ErrResourceNotFound) {
 				return errors.Wrap(err, "load operation unsuccessful, unable to contact Grafana Mimir API")
 			}
 			if curGroup != nil {
@@ -511,7 +511,7 @@ func (r *RuleCommand) syncRules(k *kingpin.ParseContext) error {
 	//TODO: Skipping the 404s here might end up in an unsual scenario.
 	// If we're unable to reach the Mimir API due to a bad URL, we'll assume no rules are
 	// part of the namespace and provide a diff of the whole ruleset.
-	if err != nil && err != client.ErrResourceNotFound {
+	if err != nil && !errors.Is(err, client.ErrResourceNotFound) {
 		return errors.Wrap(err, "sync operation unsuccessful, unable to contact the Grafana Mimir API")
 	}
 
@@ -606,7 +606,7 @@ func (r *RuleCommand) executeChanges(ctx context.Context, changes []rules.Namesp
 				"namespace": ch.Namespace,
 			}).Infof("deleting group")
 			err = r.cli.DeleteRuleGroup(ctx, ch.Namespace, g.Name)
-			if err != nil && err != client.ErrResourceNotFound {
+			if err != nil && !errors.Is(err, client.ErrResourceNotFound) {
 				return err
 			}
 		}
