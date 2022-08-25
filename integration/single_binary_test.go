@@ -87,6 +87,7 @@ func TestMimirCanParseIntZeroAsZeroDuration(t *testing.T) {
 	flags := map[string]string{
 		"-common.storage.backend":        "filesystem",
 		"-common.storage.filesystem.dir": "./bucket",
+		"-blocks-storage.storage-prefix": "blocks",
 	}
 
 	mimir := e2emimir.NewSingleBinary("mimir-1", flags, e2emimir.WithPorts(9009, 9095), e2emimir.WithConfigFile(mimirConfigFile))

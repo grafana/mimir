@@ -180,7 +180,9 @@ overrides:
 				"-runtime-config.reload-period":                     "100ms",
 				"-blocks-storage.backend":                           "filesystem",
 				"-blocks-storage.filesystem.dir":                    "/tmp",
+				"-blocks-storage.storage-prefix":                    "blocks",
 				"-blocks-storage.bucket-store.bucket-index.enabled": "false",
+				"-ruler-storage.backend":                            "filesystem",
 				"-ruler-storage.local.directory":                    "/tmp", // Avoid warning "unable to list rules".
 				"-runtime-config.file":                              filepath.Join(e2e.ContainerSharedDir, overridesFile),
 			}
