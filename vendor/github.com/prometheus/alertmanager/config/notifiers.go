@@ -20,9 +20,10 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-
 	commoncfg "github.com/prometheus/common/config"
 	"github.com/prometheus/common/sigv4"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 var (
@@ -144,8 +145,10 @@ var (
 		},
 		DisableNotifications: false,
 		Message:              `{{ template "telegram.default.message" . }}`,
-		ParseMode:            "MarkdownV2",
+		ParseMode:            "HTML",
 	}
+
+	normalizeTitle = cases.Title(language.AmericanEnglish)
 )
 
 // NotifierConfig contains base options common across all notifier configurations.
@@ -190,7 +193,7 @@ func (c *EmailConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	// Header names are case-insensitive, check for collisions.
 	normalizedHeaders := map[string]string{}
 	for h, v := range c.Headers {
-		normalized := strings.Title(h)
+		normalized := normalizeTitle.String(h)
 		if _, ok := normalizedHeaders[normalized]; ok {
 			return fmt.Errorf("duplicate header %q in email config", normalized)
 		}
@@ -452,7 +455,7 @@ func (c *WechatConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 
 	if !wechatTypeMatcher.MatchString(c.MessageType) {
-		return errors.Errorf("WeChat message type %q does not match valid options %s", c.MessageType, wechatValidTypesRe)
+		return errors.Errorf("weChat message type %q does not match valid options %s", c.MessageType, wechatValidTypesRe)
 	}
 
 	return nil
@@ -492,18 +495,18 @@ func (c *OpsGenieConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 		return err
 	}
 
-	if c.APIURL != nil && len(c.APIKeyFile) > 0 {
+	if c.APIKey != "" && len(c.APIKeyFile) > 0 {
 		return fmt.Errorf("at most one of api_key & api_key_file must be configured")
 	}
 
 	for _, r := range c.Responders {
 		if r.ID == "" && r.Username == "" && r.Name == "" {
-			return errors.Errorf("OpsGenieConfig responder %v has to have at least one of id, username or name specified", r)
+			return errors.Errorf("opsGenieConfig responder %v has to have at least one of id, username or name specified", r)
 		}
 
 		r.Type = strings.ToLower(r.Type)
 		if !opsgenieTypeMatcher.MatchString(r.Type) {
-			return errors.Errorf("OpsGenieConfig responder %v type does not match valid options %s", r, opsgenieValidTypesRe)
+			return errors.Errorf("opsGenieConfig responder %v type does not match valid options %s", r, opsgenieValidTypesRe)
 		}
 	}
 
@@ -552,7 +555,7 @@ func (c *VictorOpsConfig) UnmarshalYAML(unmarshal func(interface{}) error) error
 
 	for _, v := range reservedFields {
 		if _, ok := c.CustomFields[v]; ok {
-			return fmt.Errorf("VictorOps config contains custom field %s which cannot be used as it conflicts with the fixed/static fields", v)
+			return fmt.Errorf("victorOps config contains custom field %s which cannot be used as it conflicts with the fixed/static fields", v)
 		}
 	}
 
@@ -661,9 +664,6 @@ func (c *TelegramConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 	}
 	if c.ChatID == 0 {
 		return fmt.Errorf("missing chat_id on telegram_config")
-	}
-	if c.APIUrl == nil {
-		return fmt.Errorf("missing api_url on telegram_config")
 	}
 	if c.ParseMode != "" &&
 		c.ParseMode != "Markdown" &&
