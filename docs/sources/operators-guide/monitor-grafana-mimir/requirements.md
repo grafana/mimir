@@ -24,6 +24,11 @@ The following table shows the required label names and whether they can be custo
 
 For rules and alerts to function properly, you must configure your Prometheus or Grafana Agent to scrape metrics from Grafana Mimir at an interval of `15s` or shorter.
 
+## Deployment type
+
+By default, Grafana Mimir dashboards assume Mimir is deployed in containers orchestrated by Kubernetes.
+If you're running Mimir on baremental, you should set the configuration field `deployment_type: 'baremetal'` and [re-compile the dashboards]({{< relref "installing-dashboards-and-alerts.md" >}}).
+
 ## Job selection
 
 A metric could be exposed by multiple Grafana Mimir components, or even different applications running in the same namespace.

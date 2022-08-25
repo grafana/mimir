@@ -178,13 +178,40 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
     },
 
-  containerCPUUsagePanel(title, containerName)::
+  resourcesPanelLegend(first_legend)::
+    if $._config.deployment_type == 'kubernetes'
+    then [first_legend, 'limit', 'request']
+    // limit and request does not makes sense when running on baremetal
+    else [first_legend],
+
+  resourcesPanelQueries(metric, instanceName)::
+    if $._config.deployment_type == 'kubernetes'
+    then [
+      $._config.resources_panel_queries[$._config.deployment_type]['%s_usage' % metric] % {
+        instance: $._config.per_instance_label,
+        namespace: $.namespaceMatcher(),
+        instanceName: instanceName,
+      },
+      $._config.resources_panel_queries[$._config.deployment_type]['%s_limit' % metric] % {
+        namespace: $.namespaceMatcher(),
+        instanceName: instanceName,
+      },
+      $._config.resources_panel_queries[$._config.deployment_type]['%s_request' % metric] % {
+        namespace: $.namespaceMatcher(),
+        instanceName: instanceName,
+      },
+    ]
+    else [
+      $._config.resources_panel_queries[$._config.deployment_type]['%s_usage' % metric] % {
+        instance: $._config.per_instance_label,
+        namespace: $.namespaceMatcher(),
+        instanceName: instanceName,
+      },
+    ],
+
+  containerCPUUsagePanel(title, instanceName)::
     $.panel(title) +
-    $.queryPanel([
-      'sum by(%s) (rate(container_cpu_usage_seconds_total{%s,container=~"%s"}[$__rate_interval]))' % [$._config.per_instance_label, $.namespaceMatcher(), containerName],
-      'min(container_spec_cpu_quota{%s,container=~"%s"} / container_spec_cpu_period{%s,container=~"%s"})' % [$.namespaceMatcher(), containerName, $.namespaceMatcher(), containerName],
-      'min(kube_pod_container_resource_requests{%s,container=~"%s",resource="cpu"})' % [$.namespaceMatcher(), containerName],
-    ], ['{{%s}}' % $._config.per_instance_label, 'limit', 'request']) +
+    $.queryPanel($.resourcesPanelQueries('cpu', instanceName), $.resourcesPanelLegend('{{%s}}' % $._config.per_instance_label)) +
     {
       seriesOverrides: [
         resourceRequestStyle,
@@ -194,15 +221,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
       fill: 0,
     },
 
-  containerMemoryWorkingSetPanel(title, containerName)::
+  containerMemoryWorkingSetPanel(title, instanceName)::
     $.panel(title) +
-    $.queryPanel([
-      // We use "max" instead of "sum" otherwise during a rolling update of a statefulset we will end up
-      // summing the memory of the old instance/pod (whose metric will be stale for 5m) to the new instance/pod.
-      'max by(%s) (container_memory_working_set_bytes{%s,container=~"%s"})' % [$._config.per_instance_label, $.namespaceMatcher(), containerName],
-      'min(container_spec_memory_limit_bytes{%s,container=~"%s"} > 0)' % [$.namespaceMatcher(), containerName],
-      'min(kube_pod_container_resource_requests{%s,container=~"%s",resource="memory"})' % [$.namespaceMatcher(), containerName],
-    ], ['{{%s}}' % $._config.per_instance_label, 'limit', 'request']) +
+    $.queryPanel($.resourcesPanelQueries('memory_working', instanceName), $.resourcesPanelLegend('{{%s}}' % $._config.per_instance_label)) +
     {
       seriesOverrides: [
         resourceRequestStyle,
@@ -213,15 +234,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
       fill: 0,
     },
 
-  containerMemoryRSSPanel(title, containerName)::
+  containerMemoryRSSPanel(title, instanceName)::
     $.panel(title) +
-    $.queryPanel([
-      // We use "max" instead of "sum" otherwise during a rolling update of a statefulset we will end up
-      // summing the memory of the old instance/pod (whose metric will be stale for 5m) to the new instance/pod.
-      'max by(%s) (container_memory_rss{%s,container=~"%s"})' % [$._config.per_instance_label, $.namespaceMatcher(), containerName],
-      'min(container_spec_memory_limit_bytes{%s,container=~"%s"} > 0)' % [$.namespaceMatcher(), containerName],
-      'min(kube_pod_container_resource_requests{%s,container=~"%s",resource="memory"})' % [$.namespaceMatcher(), containerName],
-    ], ['{{%s}}' % $._config.per_instance_label, 'limit', 'request']) +
+    $.queryPanel($.resourcesPanelQueries('memory_rss', instanceName), $.resourcesPanelLegend('{{%s}}' % $._config.per_instance_label)) +
     {
       seriesOverrides: [
         resourceRequestStyle,
@@ -235,7 +250,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   containerNetworkPanel(title, metric, instanceName)::
     $.panel(title) +
     $.queryPanel(
-      'sum by(%(instance)s) (rate(%(metric)s{%(namespace)s,%(instance)s=~"%(instanceName)s"}[$__rate_interval]))' % {
+      $._config.resources_panel_queries[$._config.deployment_type].network % {
         namespace: $.namespaceMatcher(),
         metric: metric,
         instance: $._config.per_instance_label,
@@ -246,69 +261,50 @@ local utils = import 'mixin-utils/utils.libsonnet';
     { yaxes: $.yaxes('Bps') },
 
   containerNetworkReceiveBytesPanel(instanceName)::
-    $.containerNetworkPanel('Receive bandwidth', 'container_network_receive_bytes_total', instanceName),
+    $.containerNetworkPanel('Receive bandwidth', $._config.resources_panel_series[$._config.deployment_type].network_receive_bytes_metrics, instanceName),
 
   containerNetworkTransmitBytesPanel(instanceName)::
-    $.containerNetworkPanel('Transmit bandwidth', 'container_network_transmit_bytes_total', instanceName),
+    $.containerNetworkPanel('Transmit bandwidth', $._config.resources_panel_series[$._config.deployment_type].network_transmit_bytes_metrics, instanceName),
 
-  containerDiskWritesPanel(title, containerName)::
+  containerDiskWritesPanel(title, instanceName)::
     $.panel(title) +
     $.queryPanel(
-      |||
-        sum by(%s, %s, device) (
-          rate(
-            node_disk_written_bytes_total[$__rate_interval]
-          )
-        )
-        +
-        %s
-      ||| % [
-        $._config.per_node_label,
-        $._config.per_instance_label,
-        $.filterNodeDiskContainer(containerName),
-      ],
-      '{{%s}} - {{device}}' % $._config.per_instance_label
-    ) +
-    $.stack +
-    { yaxes: $.yaxes('Bps') },
-
-  containerDiskReadsPanel(title, containerName)::
-    $.panel(title) +
-    $.queryPanel(
-      |||
-        sum by(%s, %s, device) (
-          rate(
-            node_disk_read_bytes_total[$__rate_interval]
-          )
-        ) + %s
-      ||| % [
-        $._config.per_node_label,
-        $._config.per_instance_label,
-        $.filterNodeDiskContainer(containerName),
-      ],
-      '{{%s}} - {{device}}' % $._config.per_instance_label
-    ) +
-    $.stack +
-    { yaxes: $.yaxes('Bps') },
-
-  containerDiskSpaceUtilization(title, containerName)::
-    $.panel(title) +
-    $.queryPanel(
-      |||
-        max by(persistentvolumeclaim) (
-          kubelet_volume_stats_used_bytes{%(namespace)s} /
-          kubelet_volume_stats_capacity_bytes{%(namespace)s}
-        )
-        and
-        count by(persistentvolumeclaim) (
-          kube_persistentvolumeclaim_labels{
-            %(namespace)s,
-            %(label)s
-          }
-        )
-      ||| % {
+      $._config.resources_panel_queries[$._config.deployment_type].disk_writes % {
         namespace: $.namespaceMatcher(),
-        label: $.containerLabelMatcher(containerName),
+        instanceLabel: $._config.per_node_label,
+        instance: $._config.per_instance_label,
+        filterNodeDiskContainer: $.filterNodeDiskContainer(instanceName),
+        instanceName: instanceName,
+      },
+      '{{%s}} - {{device}}' % $._config.per_instance_label
+    ) +
+    $.stack +
+    { yaxes: $.yaxes('Bps') },
+
+  containerDiskReadsPanel(title, instanceName)::
+    $.panel(title) +
+    $.queryPanel(
+      $._config.resources_panel_queries[$._config.deployment_type].disk_reads % {
+        namespace: $.namespaceMatcher(),
+        instanceLabel: $._config.per_node_label,
+        instance: $._config.per_instance_label,
+        filterNodeDiskContainer: $.filterNodeDiskContainer(instanceName),
+        instanceName: instanceName,
+      },
+      '{{%s}} - {{device}}' % $._config.per_instance_label
+    ) +
+    $.stack +
+    { yaxes: $.yaxes('Bps') },
+
+  containerDiskSpaceUtilization(title, instanceName)::
+    $.panel(title) +
+    $.queryPanel(
+      $._config.resources_panel_queries[$._config.deployment_type].disk_utilization % {
+        namespace: $.namespaceMatcher(),
+        label: $.containerLabelMatcher(instanceName),
+        instance: $._config.per_instance_label,
+        instanceName: instanceName,
+        instanceDataDir: $._config.instance_data_mountpoint,
       }, '{{persistentvolumeclaim}}'
     ) +
     {
@@ -316,10 +312,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
       fill: 0,
     },
 
-  containerLabelMatcher(containerName)::
-    if containerName == 'ingester' then 'label_name=~"ingester.*"'
-    else if containerName == 'store-gateway' then 'label_name=~"store-gateway.*"'
-    else 'label_name="%s"' % containerName,
+  containerLabelMatcher(instanceName)::
+    if instanceName == 'ingester' then 'label_name=~"ingester.*"'
+    else if instanceName == 'store-gateway' then 'label_name=~"store-gateway.*"'
+    else 'label_name="%s"' % instanceName,
 
   jobNetworkingRow(title, name)::
     local vars = $._config {
@@ -561,7 +557,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       { yaxes: $.yaxes('percentunit') }
     ),
 
-  filterNodeDiskContainer(containerName)::
+  filterNodeDiskContainer(instanceName)::
     |||
       ignoring(%s) group_right() (
         label_replace(
@@ -588,7 +584,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $._config.per_node_label,
       $._config.per_instance_label,
       $.namespaceMatcher(),
-      containerName,
+      instanceName,
     ],
 
   filterKedaMetricByHPA(query, hpa_name)::
