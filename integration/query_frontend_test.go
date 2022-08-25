@@ -626,7 +626,7 @@ func TestQueryFrontendWithQueryShardingAndTooManyRequests(t *testing.T) {
 		)
 	})
 }
-func runQueryFrontendWithQueryShardingHTTPTest(t *testing.T, cfg queryFrontendTestConfig, exceptHTTPStatus int, checkDiscardedMetrics bool) {
+func runQueryFrontendWithQueryShardingHTTPTest(t *testing.T, cfg queryFrontendTestConfig, expectHTTPSStatus int, checkDiscardedMetrics bool) {
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
 	defer s.Close()
@@ -696,7 +696,7 @@ func runQueryFrontendWithQueryShardingHTTPTest(t *testing.T, cfg queryFrontendTe
 
 	resp, _, err := c.QueryRaw("sum(series_1)")
 	require.NoError(t, err)
-	require.Equal(t, exceptHTTPStatus, resp.StatusCode)
+	require.Equal(t, expectHTTPSStatus, resp.StatusCode)
 
 	// Check that query was actually sharded.
 	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Greater(0), "cortex_frontend_sharded_queries_total"))
