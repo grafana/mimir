@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"strconv"
 	"sync"
 	"time"
@@ -137,6 +136,7 @@ func (cb *CachingBucket) Iter(ctx context.Context, dir string, f func(string) er
 	data := cfg.cache.Fetch(ctx, []string{key})
 	if data[key] != nil {
 		list, err := cfg.codec.Decode(data[key])
+		cfg.cache.PutValue(data[key])
 		if err == nil {
 			cb.operationHits.WithLabelValues(objstore.OpIter, cfgName).Inc()
 			for _, n := range list {
@@ -183,6 +183,7 @@ func (cb *CachingBucket) Exists(ctx context.Context, name string) (bool, error) 
 
 	if ex := hits[key]; ex != nil {
 		exists, err := strconv.ParseBool(string(ex))
+		cfg.cache.PutValue(hits[key])
 		if err == nil {
 			cb.operationHits.WithLabelValues(objstore.OpExists, cfgName).Inc()
 			return exists, nil
@@ -226,12 +227,15 @@ func (cb *CachingBucket) Get(ctx context.Context, name string) (io.ReadCloser, e
 	hits := cfg.cache.Fetch(ctx, []string{contentKey, existsKey})
 	if hits[contentKey] != nil {
 		cb.operationHits.WithLabelValues(objstore.OpGet, cfgName).Inc()
+		// TODO(LeviHarrison): implement something like this but calls PutValue() on close.
 		return objstore.NopCloserWithSize(bytes.NewBuffer(hits[contentKey])), nil
 	}
 
 	// If we know that file doesn't exist, we can return that. Useful for deletion marks.
 	if ex := hits[existsKey]; ex != nil {
-		if exists, err := strconv.ParseBool(string(ex)); err == nil && !exists {
+		exists, err := strconv.ParseBool(string(ex))
+		cfg.cache.PutValue(hits[existsKey])
+		if err == nil && !exists {
 			cb.operationHits.WithLabelValues(objstore.OpGet, cfgName).Inc()
 			return nil, errObjNotFound
 		}
@@ -296,6 +300,7 @@ func (cb *CachingBucket) cachedAttributes(ctx context.Context, name, cfgName str
 	if raw, ok := hits[key]; ok {
 		var attrs objstore.ObjectAttributes
 		err := json.Unmarshal(raw, &attrs)
+		cache.PutValue(hits[key])
 		if err == nil {
 			cb.operationHits.WithLabelValues(objstore.OpAttributes, cfgName).Inc()
 			return attrs, nil
@@ -385,7 +390,7 @@ func (cb *CachingBucket) cachedGetRange(ctx context.Context, name string, offset
 		}
 	}
 
-	return ioutil.NopCloser(newSubrangesReader(cfg.subrangeSize, offsetKeys, hits, offset, length)), nil
+	return newSubrangesReader(cfg.subrangeSize, offsetKeys, hits, offset, length, cfg.cache), nil
 }
 
 type rng struct {
@@ -517,9 +522,11 @@ type subrangesReader struct {
 
 	// Remaining data to return from this reader. Once zero, this reader reports EOF.
 	remaining int64
+
+	cache cache.Cache
 }
 
-func newSubrangesReader(subrangeSize int64, offsetsKeys map[int64]string, subranges map[string][]byte, readOffset, remaining int64) *subrangesReader {
+func newSubrangesReader(subrangeSize int64, offsetsKeys map[int64]string, subranges map[string][]byte, readOffset, remaining int64, cache cache.Cache) *subrangesReader {
 	return &subrangesReader{
 		subrangeSize: subrangeSize,
 		offsetsKeys:  offsetsKeys,
@@ -527,6 +534,8 @@ func newSubrangesReader(subrangeSize int64, offsetsKeys map[int64]string, subran
 
 		readOffset: readOffset,
 		remaining:  remaining,
+
+		cache: cache,
 	}
 }
 
@@ -568,6 +577,14 @@ func (c *subrangesReader) subrangeAt(offset int64) ([]byte, error) {
 		return nil, errors.Errorf("subrange for offset %d not found", offset)
 	}
 	return b, nil
+}
+
+func (c *subrangesReader) Close() error {
+	// Return cache values to pool.
+	for _, b := range c.subranges {
+		c.cache.PutValue(b)
+	}
+	return nil
 }
 
 type getReader struct {

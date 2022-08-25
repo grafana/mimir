@@ -55,6 +55,8 @@ func (m *MockCache) Name() string {
 	return "mock"
 }
 
+func (m *MockCache) PutValue(_ []byte) {}
+
 func (m *MockCache) Flush() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -96,6 +98,10 @@ func (m *InstrumentedMockCache) Fetch(ctx context.Context, keys []string) map[st
 
 func (m *InstrumentedMockCache) Name() string {
 	return m.cache.Name()
+}
+
+func (m *InstrumentedMockCache) PutValue(b []byte) {
+	m.cache.PutValue(b)
 }
 
 func (m *InstrumentedMockCache) CountStoreCalls() int {

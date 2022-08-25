@@ -1743,6 +1743,7 @@ func (b *bucketBlock) overlapsClosedInterval(mint, maxt int64) bool {
 // Close waits for all pending readers to finish and then closes all underlying resources.
 func (b *bucketBlock) Close() error {
 	b.pendingReaders.Wait()
+
 	return b.indexHeaderReader.Close()
 }
 

@@ -831,7 +831,7 @@ github.com/stretchr/objx
 github.com/stretchr/testify/assert
 github.com/stretchr/testify/mock
 github.com/stretchr/testify/require
-# github.com/thanos-io/thanos v0.26.1-0.20220602051129-a6f6ce060ed4 => github.com/leviharrison/thanos v0.19.0-rc.1.0.20220823180551-01612be507dd
+# github.com/thanos-io/thanos v0.26.1-0.20220602051129-a6f6ce060ed4 => github.com/LeviHarrison/thanos v0.19.0-rc.1.0.20220825160321-eabf0fe30e63
 ## explicit; go 1.17
 github.com/thanos-io/thanos/pkg/block
 github.com/thanos-io/thanos/pkg/block/metadata
@@ -1354,7 +1354,7 @@ sigs.k8s.io/yaml
 # git.apache.org/thrift.git => github.com/apache/thrift v0.0.0-20180902110319-2566ecd5d999
 # github.com/bradfitz/gomemcache => github.com/grafana/gomemcache v0.0.0-20220823145208-74a1c5bd8fd5
 # github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20220822125643-4aa6d561a134
-# github.com/thanos-io/thanos => github.com/leviharrison/thanos v0.19.0-rc.1.0.20220823180551-01612be507dd
+# github.com/thanos-io/thanos => github.com/LeviHarrison/thanos v0.19.0-rc.1.0.20220825160321-eabf0fe30e63
 # github.com/hashicorp/go-immutable-radix => github.com/hashicorp/go-immutable-radix v1.2.0
 # github.com/hashicorp/go-hclog => github.com/hashicorp/go-hclog v0.12.2
 # github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe

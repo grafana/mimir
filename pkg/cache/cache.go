@@ -6,17 +6,34 @@
 package cache
 
 import (
+	"context"
 	"fmt"
+	"time"
 
+	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/thanos/pkg/cache"
 	"github.com/thanos-io/thanos/pkg/cacheutil"
+	"github.com/thanos-io/thanos/pkg/pool"
 )
 
-// Cache is a generic interface. Re-mapping Thanos one for convenience (same packages name make it annoying to use).
-type Cache = cache.Cache
+type Cache interface {
+	// Store data into the cache.
+	//
+	// Note that individual byte buffers may be retained by the cache!
+	Store(ctx context.Context, data map[string][]byte, ttl time.Duration)
+
+	// Fetch multiple keys from cache. Returns map of input keys to data.
+	// If key isn't in the map, data for given key was not found.
+	Fetch(ctx context.Context, keys []string) map[string][]byte
+
+	Name() string
+
+	// PutValue returns the buffer holding a cache value to the pool if one exists.
+	PutValue(b []byte)
+}
 
 const (
 	BackendMemcached = "memcached"
@@ -42,20 +59,28 @@ func (cfg *BackendConfig) Validate() error {
 	return nil
 }
 
-func CreateClient(cacheName string, cfg BackendConfig, logger log.Logger, reg prometheus.Registerer) (cache.Cache, error) {
+func CreateClient(cacheName string, cfg BackendConfig, logger log.Logger, reg prometheus.Registerer) (Cache, error) {
 	switch cfg.Backend {
 	case "":
 		// No caching.
 		return nil, nil
 
 	case BackendMemcached:
-		client, err := cacheutil.NewMemcachedClientWithConfig(logger, cacheName, cfg.Memcached.ToMemcachedClientConfig(), nil, reg)
+		pool, err := NewMemcachedBufferPool()
+		if err != nil {
+			return nil, err
+		}
+		client, err := cacheutil.NewMemcachedClientWithConfig(logger, cacheName, cfg.Memcached.ToMemcachedClientConfig(), pool, reg)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to create memcached client")
 		}
-		return cache.NewMemcachedCache(cacheName, logger, client, reg), nil
+		return cache.NewMemcachedCache(cacheName, logger, client, pool, reg), nil
 
 	default:
 		return nil, errors.Errorf("unsupported cache type for cache %s: %s", cacheName, cfg.Backend)
 	}
+}
+
+func NewMemcachedBufferPool() (memcache.BytesPool, error) {
+	return pool.NewBucketedBytes(3, 1e4, 2, 0)
 }

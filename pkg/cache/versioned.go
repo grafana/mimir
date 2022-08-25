@@ -49,6 +49,10 @@ func (c Versioned) Name() string {
 	return c.cache.Name()
 }
 
+func (c Versioned) PutValue(b []byte) {
+	c.cache.PutValue(b)
+}
+
 func (c Versioned) addVersion(k string) string {
 	return c.versionPrefix + k
 }

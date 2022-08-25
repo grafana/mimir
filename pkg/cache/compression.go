@@ -101,3 +101,7 @@ func (s *snappyCache) Fetch(ctx context.Context, keys []string) map[string][]byt
 func (s *snappyCache) Name() string {
 	return s.next.Name()
 }
+
+func (s *snappyCache) PutValue(b []byte) {
+	s.next.PutValue(b)
+}

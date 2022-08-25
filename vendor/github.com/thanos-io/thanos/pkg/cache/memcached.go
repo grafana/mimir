@@ -7,6 +7,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
@@ -20,6 +21,7 @@ type MemcachedCache struct {
 	logger    log.Logger
 	memcached cacheutil.RemoteCacheClient
 	name      string
+	pool      memcache.BytesPool
 
 	// Metrics.
 	requests prometheus.Counter
@@ -27,11 +29,12 @@ type MemcachedCache struct {
 }
 
 // NewMemcachedCache makes a new MemcachedCache.
-func NewMemcachedCache(name string, logger log.Logger, memcached cacheutil.RemoteCacheClient, reg prometheus.Registerer) *MemcachedCache {
+func NewMemcachedCache(name string, logger log.Logger, memcached cacheutil.RemoteCacheClient, pool memcache.BytesPool, reg prometheus.Registerer) *MemcachedCache {
 	c := &MemcachedCache{
 		logger:    logger,
 		memcached: memcached,
 		name:      name,
+		pool:      pool,
 	}
 
 	c.requests = promauto.With(reg).NewCounter(prometheus.CounterOpts{
@@ -86,4 +89,8 @@ func (c *MemcachedCache) Fetch(ctx context.Context, keys []string) map[string][]
 
 func (c *MemcachedCache) Name() string {
 	return c.name
+}
+
+func (c *MemcachedCache) PutValue(b []byte) {
+	c.pool.Put(&b)
 }

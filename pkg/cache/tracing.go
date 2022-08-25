@@ -46,3 +46,7 @@ func (t SpanlessTracingCache) Fetch(ctx context.Context, keys []string) (result 
 func (t SpanlessTracingCache) Name() string {
 	return t.c.Name()
 }
+
+func (t SpanlessTracingCache) PutValue(b []byte) {
+	t.c.PutValue(b)
+}

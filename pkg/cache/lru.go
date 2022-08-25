@@ -134,3 +134,7 @@ func (l *LRUCache) Fetch(ctx context.Context, keys []string) (result map[string]
 func (l *LRUCache) Name() string {
 	return "in-memory-" + l.name
 }
+
+func (l *LRUCache) PutValue(b []byte) {
+	l.c.PutValue(b)
+}

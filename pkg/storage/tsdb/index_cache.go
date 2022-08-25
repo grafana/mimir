@@ -17,7 +17,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/thanos/pkg/cacheutil"
 	"github.com/thanos-io/thanos/pkg/model"
-	"github.com/thanos-io/thanos/pkg/pool"
 
 	"github.com/grafana/mimir/pkg/cache"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
@@ -88,7 +87,7 @@ func NewIndexCache(cfg IndexCacheConfig, logger log.Logger, registerer prometheu
 	case IndexCacheBackendInMemory:
 		return newInMemoryIndexCache(cfg.InMemory, logger, registerer)
 	case IndexCacheBackendMemcached:
-		pool, err := pool.NewBucketedBytes(3, 1e4, 2, 0)
+		pool, err := cache.NewMemcachedBufferPool()
 		if err != nil {
 			return nil, err
 		}
