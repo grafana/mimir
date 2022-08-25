@@ -33,8 +33,6 @@ const (
 
 	otelParseError = "otlp_parse_error"
 	maxErrMsgLen   = 1024
-
-	messageSizeLargerErrFmt = "received message larger than max (%d > %d)"
 )
 
 func OTLPHandler(
@@ -67,7 +65,7 @@ func OTLPHandler(
 		}
 
 		if r.ContentLength > int64(maxRecvMsgSize) {
-			return nil, httpgrpc.Errorf(http.StatusRequestEntityTooLarge, messageSizeLargerErrFmt, r.ContentLength, maxRecvMsgSize)
+			return nil, httpgrpc.Errorf(http.StatusRequestEntityTooLarge, distributorMaxWriteMessageSizeErr{actual: int(r.ContentLength), limit: maxRecvMsgSize}.Error())
 		}
 
 		reader := r.Body
@@ -95,7 +93,7 @@ func OTLPHandler(
 			r.Body.Close()
 
 			if util.IsRequestBodyTooLarge(err) {
-				return body, httpgrpc.Errorf(http.StatusRequestEntityTooLarge, err.Error())
+				return body, httpgrpc.Errorf(http.StatusRequestEntityTooLarge, distributorMaxWriteMessageSizeErr{actual: -1, limit: maxRecvMsgSize}.Error())
 			}
 
 			return body, err

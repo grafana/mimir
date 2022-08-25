@@ -1507,6 +1507,19 @@ How to **fix** it:
 - Ensure each compactor replica has successfully updated bucket index of each owned tenant within the double of `-compactor.cleanup-interval` (query below assumes the cleanup interval is set to 15 minutes):
   `time() - cortex_compactor_block_cleanup_last_successful_run_timestamp_seconds > 2 * (15 * 60)`
 
+### err-mimir-distributor-max-write-message-size
+
+This error occurs when a distributor rejects a write request because its message size is larger than the allowed limit.
+
+How it **works**:
+
+- The distributor implements an upper limit on the message size of incoming write requests.
+- To configure the limit, set the `-distributor.max-recv-msg-size` option.
+
+How to **fix** it:
+
+- Increase the allowed limit by using the `-distributor.max-recv-msg-size` option.
+
 ## Mimir routes by path
 
 **Write path**:

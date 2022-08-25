@@ -520,7 +520,9 @@ ha_tracker:
       # CLI flag: -distributor.ha-tracker.multi.mirror-timeout
       [mirror_timeout: <duration> | default = 2s]
 
-# (advanced) remote_write API max receive message size (bytes).
+# (advanced) Max message size in bytes that the distributors will accept for
+# incoming push requests to the remote write API. If exceeded, the request will
+# be rejected.
 # CLI flag: -distributor.max-recv-msg-size
 [max_recv_msg_size: <int> | default = 104857600]
 

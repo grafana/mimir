@@ -18,6 +18,7 @@
 * [ENHANCEMENT] Querier: Ensure all queries pulled from query-frontend or query-scheduler are immediately executed. The maximum workers concurrency in each querier is configured by `-querier.max-concurrent`. #2598
 * [ENHANCEMENT] Distributor: Add `cortex_distributor_received_requests_total` and `cortex_distributor_requests_in_total` metrics to provide visiblity into appropriate per-tenant request limits. #2770
 * [ENHANCEMENT] Distributor: Add single forwarding remote-write endpoint for a tenant (`forwarding_endpoint`), instead of using per-rule endpoints. This takes precendence over per-rule endpoints. #2801
+* [ENHANCEMENT] Added `err-mimir-distributor-max-write-message-size` to the errors catalog. #2470
 * [BUGFIX] Fix reporting of tracing spans from PromQL engine. #2707
 * [BUGFIX] Distributor: Apply distributor instance limits before running HA deduplication. #2709
 * [BUGFIX] Apply relabel and drop_label rules before forwarding rules in the distributor. #2703
