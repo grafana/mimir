@@ -59,6 +59,7 @@ func TestHandler_otlpWriteRequestTooBigNoCompression(t *testing.T) {
 	handler := OTLPHandler(30, nil, false, verifyWriteRequestHandler(t, mimirpb.API))
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, http.StatusRequestEntityTooLarge, resp.Code)
+	assert.Contains(t, resp.Body.String(), "the incoming push request has been rejected because its message size of 37 bytes is larger than the allowed limit of 30 bytes (err-mimir-distributor-max-write-message-size). To adjust the related limit, configure -distributor.max-recv-msg-size, or contact your service administrator.")
 }
 
 func TestHandler_otlpWriteRequestTooBigWithCompression(t *testing.T) {
@@ -83,7 +84,7 @@ func TestHandler_otlpWriteRequestTooBigWithCompression(t *testing.T) {
 	assert.Equal(t, http.StatusRequestEntityTooLarge, resp.Code)
 	body, err := ioutil.ReadAll(resp.Body)
 	assert.NoError(t, err)
-	assert.Contains(t, string(body), "http: request body too large")
+	assert.Contains(t, string(body), "the incoming push request has been rejected because its message size is larger than the allowed limit of 140 bytes (err-mimir-distributor-max-write-message-size). To adjust the related limit, configure -distributor.max-recv-msg-size, or contact your service administrator.")
 }
 
 func TestHandler_otlpWriteRequestWithUnSupportedCompression(t *testing.T) {
@@ -366,3 +367,10 @@ type bufCloser struct {
 
 func (bufCloser) Close() error                 { return nil }
 func (n bufCloser) BytesBuffer() *bytes.Buffer { return n.Buffer }
+
+func TestNewDistributorMaxWriteMessageSizeErr(t *testing.T) {
+	err := distributorMaxWriteMessageSizeErr{actual: 100, limit: 50}
+	msg := `the incoming push request has been rejected because its message size of 100 bytes is larger than the allowed limit of 50 bytes (err-mimir-distributor-max-write-message-size). To adjust the related limit, configure -distributor.max-recv-msg-size, or contact your service administrator.`
+
+	assert.Equal(t, msg, err.Error())
+}

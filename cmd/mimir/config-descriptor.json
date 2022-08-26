@@ -914,7 +914,7 @@
           "kind": "field",
           "name": "max_recv_msg_size",
           "required": false,
-          "desc": "remote_write API max receive message size (bytes).",
+          "desc": "Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected.",
           "fieldValue": null,
           "fieldDefaultValue": 104857600,
           "fieldFlag": "distributor.max-recv-msg-size",
