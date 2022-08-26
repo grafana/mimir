@@ -269,7 +269,7 @@ func checkFilesystemPathsOvelapping(cfg Config, logger log.Logger) error {
 				cfgValue = cfg.AlertmanagerStorage.Filesystem.Directory
 			)
 
-			// All ruler configuration is stored under an hardcoded prefix that we're taking in account here.
+			// All ruler configuration is stored under an hardcoded prefix that we're taking into account here.
 			paths = append(paths, pathConfig{name: name, cfgValue: cfgValue, checkValue: filepath.Join(cfg.AlertmanagerStorage.Filesystem.Directory, alertbucketclient.AlertsPrefix)})
 			paths = append(paths, pathConfig{name: name, cfgValue: cfgValue, checkValue: filepath.Join(cfg.AlertmanagerStorage.Filesystem.Directory, alertbucketclient.AlertmanagerPrefix)})
 		}
