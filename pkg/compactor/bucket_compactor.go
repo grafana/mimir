@@ -497,10 +497,10 @@ func (e Issue347Error) Error() string {
 
 // IsIssue347Error returns true if the base error is a Issue347Error.
 func IsIssue347Error(err error) bool {
-	return errors.As(errors.Cause(err), Issue347Error{})
+	return errors.As(errors.Cause(err), &Issue347Error{})
 }
 
-// OutOfOrderChunkError is a type wrapper for OOO chunk error from validating block index.
+// OutOfOrderChunksError is a type wrapper for OOO chunk error from validating block index.
 type OutOfOrderChunksError struct {
 	err error
 	id  ulid.ULID
