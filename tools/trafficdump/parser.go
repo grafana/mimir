@@ -164,7 +164,7 @@ func (rp *parser) decodePushRequest(req *http.Request, body []byte, matchers []*
 	buf, err := util.ParseProtoReader(context.Background(), bytes.NewReader(body), int(req.ContentLength), 100<<20, bufHolder.buf, &wr, util.RawSnappy)
 	if err != nil {
 		cleanup()
-		res.Error = fmt.Sprintf("failed to decode decodePush request: %s", err.Error())
+		res.Error = fmt.Sprintf("failed to decode decodePush request: %s", err)
 		return nil, true
 	}
 
