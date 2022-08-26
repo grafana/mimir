@@ -7,11 +7,11 @@ weight: 30
 
 # About Grafana Mimir anonymous usage statistics reporting
 
-Grafana Mimir includes a system to anonymously report non-sensitive and non-personal identifiable information about the running Mimir cluster to a remote statistics server.
-Mimir maintainers use these anonymous information to learn more about how the opensource community runs Mimir and what the Mimir team should focus on when working on the next features and documentation improvements.
+Grafana Mimir includes a system that optionally and anonymously reports non-sensitive, non-personally identifiable information about the running Mimir cluster to a remote statistics server.
+Mimir maintainers use this anonymous information to learn more about how the open source community runs Mimir and what the Mimir team should focus on when working on the next features and documentation improvements.
 
 The anonymous usage statistics reporting is **disabled by default**.
-If possible, we ask you to enable the usage statistics.
+If you agree to anonymous collection of usage statistics, you can enable this feature.
 
 ## The statistics server
 
@@ -26,21 +26,22 @@ When the usage statistics reporting is enabled, Grafana Mimir collects the follo
   - Timestamp when the anonymous usage statistics reporting was enabled the first time and the cluster identifier was created.
   - The Mimir version (e.g. `2.3.0`).
   - The Mimir branch, revision and golang version used to build the binary.
-- Information about the **environment** where Mimir is running
-  - The operating system (e.g. `linux`) and architecture (e.g. `amd64`) where Mimir is running.
+- Information about the **environment** where Mimir is running:
+  - The operating system, such as `linux`.
+  - The architecture, such as `amd64`.
   - The Mimir memory utilization and number of goroutines.
   - The number of logical CPU cores available to the Mimir process.
-- Information about the Mimir **configuration**
-  - The `-target` parameter value (e.g. `all` when running Mimir in monolithic mode).
-  - The `-blocks-storage.backend` value (e.g. `s3`).
-  - The `-ingester.ring.replication-factor` value (e.g. `3`).
-- Information about the Mimir **cluster scale**
+- Information about the Mimir **configuration**:
+  - The `-target` parameter value, such as `all` when running Mimir in monolithic mode.
+  - The `-blocks-storage.backend` value, such as `s3`.
+  - The `-ingester.ring.replication-factor` value, such as `3`.
+- Information about the Mimir **cluster scale**:
   - Ingester:
-    - The number of inmemory series.
-    - The number of tenants having inmemory series.
+    - The number of in-memory series.
+    - The number of tenants that have in-memory series.
     - The number of samples and exemplars ingested.
-  - Querier:
-    - The number of requests to queriers, split by API endpoint type (no information is tracked about the actual request or query). The following endpoints are tracked:
+  - Querier, *where no information is tracked about the actual request or query*:
+    - The number of requests to queriers that are split by API endpoint type:
       - Remote read.
       - Instant query.
       - Range query.
@@ -50,11 +51,11 @@ When the usage statistics reporting is enabled, Grafana Mimir collects the follo
       - Metadata query.
       - Cardinality analysis query.
 
-> **Note**: Mimir maintainers commit to keep the list of tracked information updated over time and report any change both in the CHANGELOG and release notes.
+> **Note**: Mimir maintainers commit to keeping the list of tracked information updated over time, and reporting any change both via the CHANGELOG and the release notes.
 
-## How to enable the anonymous usage statistics reporting
+## Enable the anonymous usage statistics reporting
 
-If you would like to participate in usage statistics reporting, the feature can be enabled setting the CLI flag `-usage-stats.enabled=true` or the following YAML configuration:
+If you would like to participate in usage statistics reporting, set the CLI flag `-usage-stats.enabled=true` or change the following YAML configuration:
 
 ```yaml
 usage_stats:
