@@ -66,7 +66,7 @@ func checkDirectoriesReadWriteAccess(
 	if cfg.isAnyModuleEnabled(All, Ruler, Backend) {
 		errs.Add(errors.Wrap(checkDirReadWriteAccess(cfg.Ruler.RulePath, dirExistFn, isDirReadWritableFn), "ruler"))
 	}
-	if cfg.isAnyModuleEnabled(AlertManager) {
+	if cfg.isAnyModuleEnabled(AlertManager, Backend) {
 		errs.Add(errors.Wrap(checkDirReadWriteAccess(cfg.Alertmanager.DataDir, dirExistFn, isDirReadWritableFn), "alertmanager"))
 	}
 
@@ -133,7 +133,7 @@ func checkObjectStoresConfig(ctx context.Context, cfg Config, logger log.Logger)
 	}
 
 	// Check alertmanager storage config.
-	if cfg.isAnyModuleEnabled(AlertManager) && cfg.AlertmanagerStorage.Backend != alertstorelocal.Name {
+	if cfg.isAnyModuleEnabled(AlertManager, Backend) && cfg.AlertmanagerStorage.Backend != alertstorelocal.Name {
 		errs.Add(errors.Wrap(checkObjectStoreConfig(ctx, cfg.AlertmanagerStorage.Config, logger), "alertmanager storage"))
 	}
 

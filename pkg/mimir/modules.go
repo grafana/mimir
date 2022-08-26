@@ -839,7 +839,7 @@ func (t *Mimir) setupModuleManager() error {
 		TenantFederation:         {Queryable},
 		Write:                    {Distributor, Ingester},
 		Read:                     {QueryFrontend, Querier},
-		Backend:                  {QueryScheduler, Ruler, StoreGateway, Compactor, OverridesExporter},
+		Backend:                  {QueryScheduler, Ruler, StoreGateway, Compactor, AlertManager, OverridesExporter},
 		All:                      {QueryFrontend, Querier, Ingester, Distributor, StoreGateway, Ruler, Compactor},
 	}
 	for mod, targets := range deps {
