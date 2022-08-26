@@ -24,15 +24,15 @@ import (
 )
 
 const (
-	// The bucket prefix under which all tenants alertmanager configs are stored.
+	// AlertsPrefix is the bucket prefix under which all tenants alertmanager configs are stored.
 	// Note that objects stored under this prefix follow the pattern:
 	//     alerts/<user-id>
-	alertsPrefix = "alerts"
+	AlertsPrefix = "alerts"
 
-	// The bucket prefix under which other alertmanager state is stored.
+	// AlertmanagerPrefix is the bucket prefix under which other alertmanager state is stored.
 	// Note that objects stored under this prefix follow the pattern:
 	//     alertmanager/<user-id>/<object>
-	alertmanagerPrefix = "alertmanager"
+	AlertmanagerPrefix = "alertmanager"
 
 	// The name of alertmanager full state objects (notification log + silences).
 	fullStateName = "fullstate"
@@ -52,8 +52,8 @@ type BucketAlertStore struct {
 
 func NewBucketAlertStore(bkt objstore.Bucket, cfgProvider bucket.TenantConfigProvider, logger log.Logger) *BucketAlertStore {
 	return &BucketAlertStore{
-		alertsBucket: bucket.NewPrefixedBucketClient(bkt, alertsPrefix),
-		amBucket:     bucket.NewPrefixedBucketClient(bkt, alertmanagerPrefix),
+		alertsBucket: bucket.NewPrefixedBucketClient(bkt, AlertsPrefix),
+		amBucket:     bucket.NewPrefixedBucketClient(bkt, AlertmanagerPrefix),
 		cfgProvider:  cfgProvider,
 		logger:       logger,
 	}

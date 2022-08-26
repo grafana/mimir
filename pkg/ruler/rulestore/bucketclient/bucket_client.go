@@ -26,8 +26,8 @@ import (
 )
 
 const (
-	// The bucket prefix under which all tenants rule groups are stored.
-	rulesPrefix = "rules"
+	// RulesPrefix is the bucket prefix under which all tenants rule groups are stored.
+	RulesPrefix = "rules"
 
 	loadConcurrency = 10
 )
@@ -49,7 +49,7 @@ type BucketRuleStore struct {
 
 func NewBucketRuleStore(bkt objstore.Bucket, cfgProvider bucket.TenantConfigProvider, logger log.Logger) *BucketRuleStore {
 	return &BucketRuleStore{
-		bucket:      bucket.NewPrefixedBucketClient(bkt, rulesPrefix),
+		bucket:      bucket.NewPrefixedBucketClient(bkt, RulesPrefix),
 		cfgProvider: cfgProvider,
 		logger:      logger,
 	}

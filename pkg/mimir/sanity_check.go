@@ -29,7 +29,6 @@ type dirExistsFunc func(string) (bool, error)
 type isDirReadWritableFunc func(dir string) error
 
 func runSanityCheck(ctx context.Context, cfg Config, logger log.Logger) error {
-
 	level.Info(logger).Log("msg", "Checking directories read/write access")
 	if err := checkDirectoriesReadWriteAccess(cfg, fs.DirExists, fs.IsDirReadWritable); err != nil {
 		level.Error(logger).Log("msg", "Unable to access directory", "err", err)

@@ -38,6 +38,8 @@ func TestCheckObjectStoresConfig(t *testing.T) {
 					bucketCfg.Backend = bucket.Filesystem
 					bucketCfg.Filesystem.Directory = "/does/not/exists"
 				}
+
+				cfg.BlocksStorage.Bucket.StoragePrefix = "blocks"
 			},
 			expected: "",
 		},
