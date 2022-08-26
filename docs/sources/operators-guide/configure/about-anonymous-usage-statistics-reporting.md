@@ -15,17 +15,17 @@ If you agree to anonymous collection of usage statistics, you can enable this fe
 
 ## The statistics server
 
-When the usage statistics reporting is enabled, the information is collected by a server run by Grafana Labs and exposed at `https://stats.grafana.org`.
+When usage statistics reporting is enabled, information is collected by a server that Grafana Labs runs. Statistics are collected at `https://stats.grafana.org`.
 
 ## Which information is collected
 
 When the usage statistics reporting is enabled, Grafana Mimir collects the following information:
 
-- Information about the **Mimir cluster and version**
-  - Unique randomly-generated Mimir cluster identifier (e.g. `3749b5e2-b727-4107-95ae-172abac27496`).
-  - Timestamp when the anonymous usage statistics reporting was enabled the first time and the cluster identifier was created.
-  - The Mimir version (e.g. `2.3.0`).
-  - The Mimir branch, revision and golang version used to build the binary.
+- Information about the **Mimir cluster and version**:
+  - A unique, randomly-generated Mimir cluster identifier, such as `3749b5e2-b727-4107-95ae-172abac27496`.
+  - The timestamp when the anonymous usage statistics reporting was enabled for the first time, and the cluster identifier was created.
+  - The Mimir version, such as `2.3.0`.
+  - The Mimir branch, revision, and Golang version that was used to build the binary.
 - Information about the **environment** where Mimir is running:
   - The operating system, such as `linux`.
   - The architecture, such as `amd64`.
