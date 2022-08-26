@@ -410,6 +410,213 @@ func TestConfigValidation(t *testing.T) {
 	}
 }
 
+func TestConfig_validateFilesystemPaths(t *testing.T) {
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+
+	tests := map[string]struct {
+		setup       func(cfg *Config)
+		expectedErr string
+	}{
+		"should succeed with the default configuration": {
+			setup: func(cfg *Config) {},
+		},
+		"should fail if alertmanager filesystem backend directory is equal to alertmanager data directory": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{AlertManager}
+				cfg.Alertmanager.DataDir = "/path/to/alertmanager"
+				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Backend = bucket.Filesystem
+				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Filesystem.Directory = "/path/to/alertmanager/"
+			},
+			expectedErr: `the configured alertmanager data directory "/path/to/alertmanager" cannot overlap with the configured alertmanager storage filesystem directory "/path/to/alertmanager/"`,
+		},
+		"should fail if alertmanager filesystem backend directory is a subdirectory of alertmanager data directory": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{AlertManager}
+				cfg.Alertmanager.DataDir = "/path/to/alertmanager"
+				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Backend = bucket.Filesystem
+				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Filesystem.Directory = "/path/to/alertmanager/subdir"
+			},
+			expectedErr: `the configured alertmanager data directory "/path/to/alertmanager" cannot overlap with the configured alertmanager storage filesystem directory "/path/to/alertmanager/subdir"`,
+		},
+		"should fail if alertmanager data directory is a subdirectory of alertmanager filesystem backend directory, and matches with the prefix used to store alerts": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{AlertManager}
+				cfg.Alertmanager.DataDir = "/path/to/alertmanager/alerts"
+				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Backend = bucket.Filesystem
+				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Filesystem.Directory = "/path/to/alertmanager"
+			},
+			expectedErr: `the configured alertmanager data directory "/path/to/alertmanager/alerts" cannot overlap with the configured alertmanager storage filesystem directory "/path/to/alertmanager"`,
+		},
+		"should succeed if alertmanager data directory is a subdirectory of alertmanager filesystem backend directory, but doesn't match with the prefix used to store alerts": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{AlertManager}
+				cfg.Alertmanager.DataDir = "/path/to/alertmanager/data"
+				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Backend = bucket.Filesystem
+				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Filesystem.Directory = "/path/to/alertmanager"
+			},
+		},
+		"should fail if alertmanager data directory (relative) is a subdirectory of alertmanager filesystem backend directory (absolute), and matches with the prefix used to store alertmanager config": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{AlertManager}
+				cfg.Alertmanager.DataDir = "./data/alertmanager"
+				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Backend = bucket.Filesystem
+				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Filesystem.Directory = filepath.Join(cwd, "data")
+			},
+			expectedErr: fmt.Sprintf(`the configured alertmanager data directory "./data/alertmanager" cannot overlap with the configured alertmanager storage filesystem directory "%s"`, filepath.Join(cwd, "data")),
+		},
+		"should fail if ruler filesystem backend directory is equal to ruler data directory": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{Ruler}
+				cfg.Ruler.RulePath = "/path/to/ruler"
+				cfg.RulerStorage.Config.StorageBackendConfig.Backend = bucket.Filesystem
+				cfg.RulerStorage.Config.StorageBackendConfig.Filesystem.Directory = "/path/to/ruler/"
+			},
+			expectedErr: `the configured ruler data directory "/path/to/ruler" cannot overlap with the configured ruler storage filesystem directory "/path/to/ruler/"`,
+		},
+		"should fail if store-gateway and compactor data directory overlap": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{StoreGateway, Compactor}
+				cfg.BlocksStorage.BucketStore.SyncDir = "/path/to/data"
+				cfg.Compactor.DataDir = "/path/to/data/compactor"
+			},
+			expectedErr: `the configured bucket store sync directory "/path/to/data" cannot overlap with the configured compactor data directory "/path/to/data/compactor"`,
+		},
+		"should succeed if store-gateway and compactor data directory overlap, but it's running only the store-gateway": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{StoreGateway}
+				cfg.BlocksStorage.BucketStore.SyncDir = "/path/to/data"
+				cfg.Compactor.DataDir = "/path/to/data/compactor"
+			},
+		},
+		"should fail if tsdb directory and blocks storage filesystem directory overlap": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{Ingester}
+				cfg.BlocksStorage.TSDB.Dir = "/path/to/data"
+				cfg.BlocksStorage.Bucket.Backend = bucket.Filesystem
+				cfg.BlocksStorage.Bucket.Filesystem.Directory = "/path/to/data/blocks"
+			},
+			expectedErr: `the configured blocks storage filesystem directory "/path/to/data/blocks" cannot overlap with the configured tsdb directory "/path/to/data"`,
+		},
+		"should succeed if tsdb directory and blocks storage filesystem directory overlap, but blocks storage has prefix configured": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{Ingester}
+				cfg.BlocksStorage.TSDB.Dir = "/path/to/data/tsdb"
+				cfg.BlocksStorage.Bucket.Backend = bucket.Filesystem
+
+				// The storage directory itself overlaps with TSDB data directory,
+				// but it doesn't if you also apply the prefix.
+				cfg.BlocksStorage.Bucket.Filesystem.Directory = "/path/to/data"
+				cfg.BlocksStorage.Bucket.StoragePrefix = "blocks"
+			},
+		},
+		"should succeed if tsdb directory and blocks storage filesystem directory don't overlap": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{Ingester}
+				cfg.BlocksStorage.TSDB.Dir = "/path/to/data/tsdb"
+				cfg.BlocksStorage.Bucket.Backend = bucket.Filesystem
+				cfg.BlocksStorage.Bucket.Filesystem.Directory = "/path/to/data/blocks"
+			},
+		},
+		"should succeed if tsdb directory and blocks storage filesystem directory don't overlap and one has the same prefix of the other one": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{Ingester}
+				cfg.BlocksStorage.TSDB.Dir = "/path/to/data"
+				cfg.BlocksStorage.Bucket.Backend = bucket.Filesystem
+				cfg.BlocksStorage.Bucket.Filesystem.Directory = "/path/to/data-blocks"
+			},
+		},
+		"should succeed if tsdb directory and blocks storage filesystem directory don't overlap and they're both root directories": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{Ingester}
+				cfg.BlocksStorage.TSDB.Dir = "/data"
+				cfg.BlocksStorage.Bucket.Backend = bucket.Filesystem
+				cfg.BlocksStorage.Bucket.Filesystem.Directory = "/data-blocks"
+			},
+		},
+		"should succeed if tsdb directory and blocks storage filesystem directory don't overlap and they're both child of the same directory": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{Ingester}
+				cfg.BlocksStorage.TSDB.Dir = "./data"
+				cfg.BlocksStorage.Bucket.Backend = bucket.Filesystem
+				cfg.BlocksStorage.Bucket.Filesystem.Directory = "./data-blocks"
+			},
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			cfg := Config{}
+			flagext.DefaultValues(&cfg)
+			testData.setup(&cfg)
+
+			actualErr := cfg.validateFilesystemPaths(log.NewNopLogger())
+
+			if testData.expectedErr != "" {
+				require.Error(t, actualErr)
+				require.Contains(t, actualErr.Error(), testData.expectedErr)
+			} else {
+				require.NoError(t, actualErr)
+			}
+		})
+	}
+}
+
+func TestIsAbsPathOverlapping(t *testing.T) {
+	tests := []struct {
+		first    string
+		second   string
+		expected bool
+	}{
+		{
+			first:    "/",
+			second:   "/",
+			expected: true,
+		},
+		{
+			first:    "/data",
+			second:   "/",
+			expected: true,
+		},
+		{
+			first:    "/",
+			second:   "/data",
+			expected: true,
+		},
+		{
+			first:    "/data",
+			second:   "/data-more",
+			expected: false,
+		},
+		{
+			first:    "/path/to/data",
+			second:   "/path/to/data",
+			expected: true,
+		},
+		{
+			first:    "/path/to/data",
+			second:   "/path/to/data/more",
+			expected: true,
+		},
+		{
+			first:    "/path/to/data",
+			second:   "/path/to/data-more",
+			expected: false,
+		},
+		{
+			first:    "/path/to/data",
+			second:   "/path/to/more/data",
+			expected: false,
+		},
+	}
+
+	for _, testData := range tests {
+		t.Run(fmt.Sprintf("check if %q overlaps %q", testData.first, testData.second), func(t *testing.T) {
+			assert.Equal(t, testData.expected, isAbsPathOverlapping(testData.first, testData.second))
+		})
+	}
+}
+
 func TestGrpcAuthMiddleware(t *testing.T) {
 	cfg := Config{
 		MultitenancyEnabled: true, // We must enable this to enable Auth middleware for gRPC server.

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -39,6 +40,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
+	alertbucketclient "github.com/grafana/mimir/pkg/alertmanager/alertstore/bucketclient"
 	alertstorelocal "github.com/grafana/mimir/pkg/alertmanager/alertstore/local"
 	"github.com/grafana/mimir/pkg/api"
 	"github.com/grafana/mimir/pkg/compactor"
@@ -54,6 +56,7 @@ import (
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
+	rulebucketclient "github.com/grafana/mimir/pkg/ruler/rulestore/bucketclient"
 	rulestorelocal "github.com/grafana/mimir/pkg/ruler/rulestore/local"
 	"github.com/grafana/mimir/pkg/scheduler"
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -200,6 +203,9 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.validateBucketConfigs(); err != nil {
 		return fmt.Errorf("%w: %s", errInvalidBucketConfig, err)
 	}
+	if err := c.validateFilesystemPaths(log); err != nil {
+		return err
+	}
 	if err := c.RulerStorage.Validate(); err != nil {
 		return errors.Wrap(err, "invalid rulestore config")
 	}
@@ -306,6 +312,157 @@ func validateBucketConfig(cfg bucket.Config, blockStorageBucketCfg bucket.Config
 		}
 	}
 	return nil
+}
+
+// validateFilesystemPaths checks all configured filesystem paths and return error if it finds two of them
+// overlapping (Mimir expects all filesystem paths to not overlap).
+func (c *Config) validateFilesystemPaths(logger log.Logger) error {
+	type pathConfig struct {
+		name       string
+		cfgValue   string
+		checkValue string
+	}
+
+	var paths []pathConfig
+
+	if c.BlocksStorage.Bucket.Backend == bucket.Filesystem {
+		// Add the optional prefix to the path, because that's the actual location where blocks will be stored.
+		paths = append(paths, pathConfig{
+			name:       "blocks storage filesystem directory",
+			cfgValue:   c.BlocksStorage.Bucket.Filesystem.Directory,
+			checkValue: filepath.Join(c.BlocksStorage.Bucket.Filesystem.Directory, c.BlocksStorage.Bucket.StoragePrefix),
+		})
+	}
+
+	// Ingester.
+	if c.isAnyModuleEnabled(All, Ingester, Write) {
+		paths = append(paths, pathConfig{
+			name:       "tsdb directory",
+			cfgValue:   c.BlocksStorage.TSDB.Dir,
+			checkValue: c.BlocksStorage.TSDB.Dir,
+		})
+	}
+
+	// Store-gateway.
+	if c.isAnyModuleEnabled(All, StoreGateway, Backend) {
+		paths = append(paths, pathConfig{
+			name:       "bucket store sync directory",
+			cfgValue:   c.BlocksStorage.BucketStore.SyncDir,
+			checkValue: c.BlocksStorage.BucketStore.SyncDir,
+		})
+	}
+
+	// Compactor.
+	if c.isAnyModuleEnabled(All, Compactor, Backend) {
+		paths = append(paths, pathConfig{
+			name:       "compactor data directory",
+			cfgValue:   c.Compactor.DataDir,
+			checkValue: c.Compactor.DataDir,
+		})
+	}
+
+	// Ruler.
+	if c.isAnyModuleEnabled(All, Ruler, Backend) {
+		paths = append(paths, pathConfig{
+			name:       "ruler data directory",
+			cfgValue:   c.Ruler.RulePath,
+			checkValue: c.Ruler.RulePath,
+		})
+
+		if c.RulerStorage.Backend == bucket.Filesystem {
+			// All ruler configuration is stored under an hardcoded prefix that we're taking in account here.
+			paths = append(paths, pathConfig{
+				name:       "ruler storage filesystem directory",
+				cfgValue:   c.RulerStorage.Filesystem.Directory,
+				checkValue: filepath.Join(c.RulerStorage.Filesystem.Directory, rulebucketclient.RulesPrefix),
+			})
+		}
+		if c.RulerStorage.Backend == rulestorelocal.Name {
+			paths = append(paths, pathConfig{
+				name:       "ruler storage local directory",
+				cfgValue:   c.RulerStorage.Local.Directory,
+				checkValue: c.RulerStorage.Local.Directory,
+			})
+		}
+	}
+
+	// Alertmanager.
+	if c.isAnyModuleEnabled(AlertManager) {
+		paths = append(paths, pathConfig{
+			name:       "alertmanager data directory",
+			cfgValue:   c.Alertmanager.DataDir,
+			checkValue: c.Alertmanager.DataDir,
+		})
+
+		if c.AlertmanagerStorage.Backend == bucket.Filesystem {
+			var (
+				name     = "alertmanager storage filesystem directory"
+				cfgValue = c.AlertmanagerStorage.Filesystem.Directory
+			)
+
+			// All ruler configuration is stored under an hardcoded prefix that we're taking into account here.
+			paths = append(paths, pathConfig{name: name, cfgValue: cfgValue, checkValue: filepath.Join(c.AlertmanagerStorage.Filesystem.Directory, alertbucketclient.AlertsPrefix)})
+			paths = append(paths, pathConfig{name: name, cfgValue: cfgValue, checkValue: filepath.Join(c.AlertmanagerStorage.Filesystem.Directory, alertbucketclient.AlertmanagerPrefix)})
+		}
+
+		if c.AlertmanagerStorage.Backend == alertstorelocal.Name {
+			paths = append(paths, pathConfig{
+				name:       "alertmanager storage local directory",
+				cfgValue:   c.AlertmanagerStorage.Local.Path,
+				checkValue: c.AlertmanagerStorage.Local.Path,
+			})
+		}
+	}
+
+	// Convert all check paths to absolute clean paths.
+	for idx, path := range paths {
+		abs, err := filepath.Abs(path.checkValue)
+		if err != nil {
+			// We prefer to log a warning instead of returning an error to ensure that if we're unable to
+			// run the sanity check Mimir could start anyway.
+			level.Warn(logger).Log("msg", "the configuration sanity check for the filesystem directory has been skipped because can't get the absolute path", "path", path, "err", err)
+			paths[idx].checkValue = ""
+			continue
+		}
+
+		paths[idx].checkValue = abs
+	}
+
+	for _, firstPath := range paths {
+		for _, secondPath := range paths {
+			// Skip the same config field.
+			if firstPath.name == secondPath.name {
+				continue
+			}
+
+			// Skip if we've been unable to get the absolute path of one of the two paths.
+			if firstPath.checkValue == "" || secondPath.checkValue == "" {
+				continue
+			}
+
+			if isAbsPathOverlapping(firstPath.checkValue, secondPath.checkValue) {
+				// Report the configured path in the error message, otherwise it's harder for the user to spot it.
+				return fmt.Errorf("the configured %s %q cannot overlap with the configured %s %q; please set different paths, also ensuring one is not a subdirectory of the other one", firstPath.name, firstPath.cfgValue, secondPath.name, secondPath.cfgValue)
+			}
+		}
+	}
+
+	return nil
+}
+
+// isAbsPathOverlapping returns whether the two input absolute paths overlap.
+func isAbsPathOverlapping(firstAbsPath, secondAbsPath string) bool {
+	firstBase, firstName := filepath.Split(firstAbsPath)
+	secondBase, secondName := filepath.Split(secondAbsPath)
+
+	if firstBase == secondBase {
+		// The base directories are the same, so they overlap if the last segment of the path (name)
+		// is the same or it's missing (happens when the input path is the root "/").
+		return firstName == secondName || firstName == "" || secondName == ""
+	}
+
+	// The base directories are different, but they could still overlap if one is the child of the other one.
+	return strings.HasPrefix(firstAbsPath, secondAbsPath) || strings.HasPrefix(secondAbsPath, firstAbsPath)
 }
 
 func (c *Config) registerServerFlagsWithChangedDefaultValues(fs *flag.FlagSet) {
