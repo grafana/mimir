@@ -13,7 +13,7 @@
       'server.http-write-timeout': '1m',
 
       // Cache query results.
-      'query-frontend.align-querier-with-step': false,
+      'query-frontend.align-queries-with-step': false,
       'query-frontend.cache-results': true,
       'query-frontend.results-cache.backend': 'memcached',
       'query-frontend.results-cache.memcached.addresses': 'dnssrvnoa+memcached-frontend.%(namespace)s.svc.cluster.local:11211' % $._config,

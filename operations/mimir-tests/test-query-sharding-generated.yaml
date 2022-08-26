@@ -568,7 +568,7 @@ spec:
       containers:
       - args:
         - -querier.max-query-parallelism=240
-        - -query-frontend.align-querier-with-step=false
+        - -query-frontend.align-queries-with-step=false
         - -query-frontend.cache-results=true
         - -query-frontend.max-cache-freshness=10m
         - -query-frontend.parallelize-shardable-queries=true

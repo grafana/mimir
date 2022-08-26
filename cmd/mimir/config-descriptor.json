@@ -3691,7 +3691,7 @@
           "desc": "Mutate incoming queries to align their start and end with their step.",
           "fieldValue": null,
           "fieldDefaultValue": false,
-          "fieldFlag": "query-frontend.align-querier-with-step",
+          "fieldFlag": "query-frontend.align-queries-with-step",
           "fieldType": "boolean"
         },
         {
