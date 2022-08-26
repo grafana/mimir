@@ -9,8 +9,6 @@
     {
       target: 'distributor',
 
-      'runtime-config.file': '%s/overrides.yaml' % $._config.overrides_configmap_mountpoint,
-
       'distributor.ha-tracker.enable': true,
       'distributor.ha-tracker.enable-for-all-users': true,
       'distributor.ha-tracker.store': 'etcd',
@@ -31,7 +29,7 @@
       'distributor.ring.store': 'consul',
       'distributor.ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
       'distributor.ring.prefix': '',
-    },
+    } + $.mimirRuntimeConfigFile,
 
   distributor_ports:: $.util.defaultPorts,
 
@@ -49,7 +47,7 @@
   distributor_deployment:
     deployment.new('distributor', 3, [$.distributor_container]) +
     $.newMimirSpreadTopology('distributor', $._config.distributor_topology_spread_max_skew) +
-    $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint) +
+    $.mimirVolumeMounts +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(5) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1),

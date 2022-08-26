@@ -6,7 +6,7 @@ See the [Grafana Mimir version 2.2 release notes](https://grafana.com/docs/mimir
 
 # mimir-distributed
 
-![Version: 3.1.0-weekly.199](https://img.shields.io/badge/Version-3.1.0--weekly.199-informational?style=flat-square) ![AppVersion: r199](https://img.shields.io/badge/AppVersion-r199-informational?style=flat-square)
+![Version: 3.1.0-weekly.200](https://img.shields.io/badge/Version-3.1.0--weekly.200-informational?style=flat-square) ![AppVersion: r200](https://img.shields.io/badge/AppVersion-r200-informational?style=flat-square)
 
 Grafana Mimir
 
@@ -16,7 +16,7 @@ Kubernetes: `^1.20.0-0`
 
 | Repository | Name | Version |
 |------------|------|---------|
-| https://charts.min.io/ | minio(minio) | 4.0.3 |
+| https://charts.min.io/ | minio(minio) | 4.0.12 |
 | https://grafana.github.io/helm-charts | grafana-agent-operator(grafana-agent-operator) | 0.1.12 |
 
 ## Dependencies

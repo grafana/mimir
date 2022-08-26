@@ -36,15 +36,21 @@ chmod +x query-tee
 
 The query-tee requires the endpoints of the backend Grafana Mimir clusters.
 You can configure the backend endpoints by setting the `-backend.endpoints` flag to a comma-separated list of HTTP or HTTPS URLs.
+
 For each incoming request, the query-tee clones the request and sends it to each configured backend.
 
-> **Note:** You can configure the query-tee proxy listening port via the `-server.service-port` flag.
+> **Note:** You can configure the query-tee proxy listening ports via the `-server.http-service-port` flag for the HTTP port and `server.grpc-service-port` flag for the gRPC port.
 
 ## How the query-tee works
 
 This section describes how the query-tee tool works.
 
 ### API endpoints
+
+Query-tee accepts two types of requests:
+
+1. HTTP requests on the configured `-server.http-service-port` flag (default port 80)
+1. [HTTP over gRPC](https://github.com/weaveworks/common/tree/master/httpgrpc) requests on the configured `-server.grpc-service-port` flag (default port: 9095)
 
 The following Prometheus API endpoints are supported by `query-tee`:
 
@@ -113,11 +119,11 @@ When the query results comparison is enabled, the query-tee compares the respons
 The query-tee exposes the following Prometheus metrics at the `/metrics` endpoint listening on the port configured via the flag `-server.metrics-port`:
 
 ```bash
-# HELP cortex_querytee_request_duration_seconds Time (in seconds) spent serving HTTP requests.
-# TYPE cortex_querytee_request_duration_seconds histogram
-cortex_querytee_request_duration_seconds_bucket{backend="<hostname>",method="<method>",route="<route>",status_code="<status>",le="<bucket>"}
-cortex_querytee_request_duration_seconds_sum{backend="<hostname>",method="<method>",route="<route>",status_code="<status>"}
-cortex_querytee_request_duration_seconds_count{backend="<hostname>",method="<method>",route="<route>",status_code="<status>"}
+# HELP cortex_querytee_backend_request_duration_seconds Time (in seconds) spent serving requests.
+# TYPE cortex_querytee_backend_request_duration_seconds histogram
+cortex_querytee_backend_request_duration_seconds_bucket{backend="<hostname>",method="<method>",route="<route>",status_code="<status>",le="<bucket>"}
+cortex_querytee_backend_request_duration_seconds_sum{backend="<hostname>",method="<method>",route="<route>",status_code="<status>"}
+cortex_querytee_backend_request_duration_seconds_count{backend="<hostname>",method="<method>",route="<route>",status_code="<status>"}
 
 # HELP cortex_querytee_responses_total Total number of responses sent back to the client by the selected backend.
 # TYPE cortex_querytee_responses_total counter
@@ -127,3 +133,20 @@ cortex_querytee_responses_total{backend="<hostname>",method="<method>",route="<r
 # TYPE cortex_querytee_responses_compared_total counter
 cortex_querytee_responses_compared_total{route="<route>",result="<success|fail>"}
 ```
+
+### Ruler remote operational mode test
+
+When the ruler is configured with the [remote evaluation mode]({{< relref "../architecture/components/ruler/index.md" >}}) you can use the query-tee to compare rule evaluations too.
+To test ruler evaluations with query-tee, set the `-ruler.query-frontend.address` CLI flag or its respective YAML configuration parameter for the ruler with query-tee's gRPC address:
+
+```
+ruler:
+  query_frontend:
+    address: "dns://query-tee:9095"
+```
+
+When the ruler evaluates a rule, the test flow is the following:
+
+1. ruler sends gRPC request to query-tee
+1. query-tee forwards the request to the query-frontend backends configured setting the `-backend.endpoints` CLI flag
+1. query-tee receives the response from the query-frontend and forwards the result (based on the preferred backend) to the ruler

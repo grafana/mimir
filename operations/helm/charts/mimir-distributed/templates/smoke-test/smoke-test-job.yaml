@@ -20,9 +20,6 @@ spec:
     metadata:
       labels:
         {{- include "mimir.podLabels" (dict "ctx" . "component" "smoke-test") | nindent 8 }}
-        {{- with .Values.smoke_test.podLabels }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
     spec:
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
       {{- if .Values.smoke_test.priorityClassName }}

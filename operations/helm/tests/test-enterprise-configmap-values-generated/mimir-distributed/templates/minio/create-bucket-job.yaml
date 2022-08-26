@@ -31,7 +31,7 @@ spec:
                 name: test-enterprise-configmap-values-minio
       containers:
       - name: minio-mc
-        image: "quay.io/minio/mc:RELEASE.2022-05-09T04-08-26Z"
+        image: "quay.io/minio/mc:RELEASE.2022-08-11T00-30-48Z"
         imagePullPolicy: IfNotPresent
         command: ["/bin/sh", "/config/initialize"]
         env:

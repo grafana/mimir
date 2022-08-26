@@ -17,14 +17,7 @@ import (
 )
 
 func TestServerStopViaContext(t *testing.T) {
-	// server registers some metrics to default registry
-	savedRegistry := prometheus.DefaultRegisterer
-	prometheus.DefaultRegisterer = prometheus.NewRegistry()
-	defer func() {
-		prometheus.DefaultRegisterer = savedRegistry
-	}()
-
-	serv, err := server.New(server.Config{})
+	serv, err := server.New(server.Config{Registerer: prometheus.NewPedanticRegistry()})
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
@@ -38,14 +31,7 @@ func TestServerStopViaContext(t *testing.T) {
 }
 
 func TestServerStopViaShutdown(t *testing.T) {
-	// server registers some metrics to default registry
-	savedRegistry := prometheus.DefaultRegisterer
-	prometheus.DefaultRegisterer = prometheus.NewRegistry()
-	defer func() {
-		prometheus.DefaultRegisterer = savedRegistry
-	}()
-
-	serv, err := server.New(server.Config{})
+	serv, err := server.New(server.Config{Registerer: prometheus.NewPedanticRegistry()})
 	require.NoError(t, err)
 
 	s := NewServerService(serv, func() []services.Service { return nil })
@@ -59,14 +45,7 @@ func TestServerStopViaShutdown(t *testing.T) {
 }
 
 func TestServerStopViaStop(t *testing.T) {
-	// server registers some metrics to default registry
-	savedRegistry := prometheus.DefaultRegisterer
-	prometheus.DefaultRegisterer = prometheus.NewRegistry()
-	defer func() {
-		prometheus.DefaultRegisterer = savedRegistry
-	}()
-
-	serv, err := server.New(server.Config{})
+	serv, err := server.New(server.Config{Registerer: prometheus.NewPedanticRegistry()})
 	require.NoError(t, err)
 
 	s := NewServerService(serv, func() []services.Service { return nil })

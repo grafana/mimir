@@ -43,7 +43,10 @@ type MimirClient interface {
 }
 
 type ClientConfig struct {
-	TenantID string
+	TenantID          string
+	BasicAuthUser     string
+	BasicAuthPassword string
+	BearerToken       string
 
 	WriteBaseEndpoint flagext.URLValue
 	WriteBatchSize    int
@@ -54,7 +57,10 @@ type ClientConfig struct {
 }
 
 func (cfg *ClientConfig) RegisterFlags(f *flag.FlagSet) {
-	f.StringVar(&cfg.TenantID, "tests.tenant-id", "anonymous", "The tenant ID to use to write and read metrics in tests.")
+	f.StringVar(&cfg.TenantID, "tests.tenant-id", "anonymous", "The tenant ID to use to write and read metrics in tests. (mutually exclusive with basic-auth or bearer-token flags)")
+	f.StringVar(&cfg.BasicAuthUser, "tests.basic-auth-user", "", "The username to use for HTTP bearer authentication. (mutually exclusive with tenant-id or bearer-token flags)")
+	f.StringVar(&cfg.BasicAuthPassword, "tests.basic-auth-password", "", "The password to use for HTTP bearer authentication. (mutually exclusive with tenant-id or bearer-token flags)")
+	f.StringVar(&cfg.BearerToken, "tests.bearer-token", "", "The bearer token to use for HTTP bearer authentication. (mutually exclusive with tenant-id flag or basic-auth flags)")
 
 	f.Var(&cfg.WriteBaseEndpoint, "tests.write-endpoint", "The base endpoint on the write path. The URL should have no trailing slash. The specific API path is appended by the tool to the URL, for example /api/v1/push for the remote write API endpoint, so the configured URL must not include it.")
 	f.IntVar(&cfg.WriteBatchSize, "tests.write-batch-size", 1000, "The maximum number of series to write in a single request.")
@@ -73,8 +79,11 @@ type Client struct {
 
 func NewClient(cfg ClientConfig, logger log.Logger) (*Client, error) {
 	rt := &clientRoundTripper{
-		tenantID: cfg.TenantID,
-		rt:       instrumentation.TracerTransport{},
+		tenantID:          cfg.TenantID,
+		basicAuthUser:     cfg.BasicAuthUser,
+		basicAuthPassword: cfg.BasicAuthPassword,
+		bearerToken:       cfg.BearerToken,
+		rt:                instrumentation.TracerTransport{},
 	}
 
 	// Ensure the required config has been set.
@@ -83,6 +92,14 @@ func NewClient(cfg ClientConfig, logger log.Logger) (*Client, error) {
 	}
 	if cfg.ReadBaseEndpoint.URL == nil {
 		return nil, errors.New("the read endpoint has not been set")
+	}
+	// Ensure not both tenant-id and basic-auth are used at the same time
+	// anonymous is the default value for TenantID.
+	if (cfg.TenantID != "anonymous" && cfg.BasicAuthUser != "" && cfg.BasicAuthPassword != "" && cfg.BearerToken != "") || // all authentication at once
+		(cfg.TenantID != "anonymous" && cfg.BasicAuthUser != "" && cfg.BasicAuthPassword != "") || // tenant-id and basic auth
+		(cfg.TenantID != "anonymous" && cfg.BearerToken != "") || // tenant-id and bearer token
+		(cfg.BasicAuthUser != "" && cfg.BasicAuthPassword != "" && cfg.BearerToken != "") { // basic auth and bearer token
+		return nil, errors.New("either set tests.tenant-id or tests.basic-auth-user/tests.basic-auth-password or tests.bearer-token")
 	}
 
 	apiCfg := api.Config{
@@ -242,8 +259,11 @@ type key int
 var requestOptionsKey key
 
 type clientRoundTripper struct {
-	tenantID string
-	rt       http.RoundTripper
+	tenantID          string
+	basicAuthUser     string
+	basicAuthPassword string
+	bearerToken       string
+	rt                http.RoundTripper
 }
 
 // RoundTrip add the tenant ID header required by Mimir.
@@ -254,6 +274,12 @@ func (rt *clientRoundTripper) RoundTrip(req *http.Request) (*http.Response, erro
 		req.Header.Set("Cache-Control", "no-store")
 	}
 
-	req.Header.Set("X-Scope-OrgID", rt.tenantID)
+	if rt.bearerToken != "" {
+		req.Header.Set("Authorization", "Bearer "+rt.bearerToken)
+	} else if rt.basicAuthUser != "" && rt.basicAuthPassword != "" {
+		req.SetBasicAuth(rt.basicAuthUser, rt.basicAuthPassword)
+	} else {
+		req.Header.Set("X-Scope-OrgID", rt.tenantID)
+	}
 	return rt.rt.RoundTrip(req)
 }

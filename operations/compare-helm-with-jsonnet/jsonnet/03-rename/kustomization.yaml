@@ -42,6 +42,14 @@ patches:
         value: 'mimir-query-frontend-headless'
 
   - target:
+      kind: 'Service'
+      name: 'mimir-query-scheduler-discovery'
+    patch: |-
+      - op: replace
+        path: /metadata/name
+        value: 'mimir-query-scheduler-headless'  
+
+  - target:
       kind: 'Service|StatefulSet'
       name: 'mimir-memcached-frontend'
     patch: |-

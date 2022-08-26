@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 )
@@ -121,48 +122,37 @@ type testSyncerMetrics struct {
 func newTestSyncerMetrics(reg prometheus.Registerer) *testSyncerMetrics {
 	var m testSyncerMetrics
 
-	m.metaSync = prometheus.NewCounter(prometheus.CounterOpts{
+	m.metaSync = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "blocks_meta_syncs_total",
 		Help: "Total blocks metadata synchronization attempts.",
 	})
-	m.metaSyncFailures = prometheus.NewCounter(prometheus.CounterOpts{
+	m.metaSyncFailures = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "blocks_meta_sync_failures_total",
 		Help: "Total blocks metadata synchronization failures.",
 	})
-	m.metaSyncDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
+	m.metaSyncDuration = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 		Name:    "blocks_meta_sync_duration_seconds",
 		Help:    "Duration of the blocks metadata synchronization in seconds.",
 		Buckets: []float64{0.01, 0.1, 0.3, 0.6, 1, 3, 6, 9, 20, 30, 60, 90, 120, 240, 360, 720},
 	})
-	m.metaSyncConsistencyDelay = prometheus.NewGauge(prometheus.GaugeOpts{
+	m.metaSyncConsistencyDelay = promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 		Name: "consistency_delay_seconds",
 		Help: "Configured consistency delay in seconds.",
 	})
 
-	m.garbageCollections = prometheus.NewCounter(prometheus.CounterOpts{
+	m.garbageCollections = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "thanos_compact_garbage_collection_total",
 		Help: "Total number of garbage collection operations.",
 	})
-	m.garbageCollectionFailures = prometheus.NewCounter(prometheus.CounterOpts{
+	m.garbageCollectionFailures = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "thanos_compact_garbage_collection_failures_total",
 		Help: "Total number of failed garbage collection operations.",
 	})
-	m.garbageCollectionDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
+	m.garbageCollectionDuration = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 		Name:    "thanos_compact_garbage_collection_duration_seconds",
 		Help:    "Time it took to perform garbage collection iteration.",
 		Buckets: []float64{0.01, 0.1, 0.3, 0.6, 1, 3, 6, 9, 20, 30, 60, 90, 120, 240, 360, 720},
 	})
 
-	if reg != nil {
-		reg.MustRegister(
-			m.metaSync,
-			m.metaSyncFailures,
-			m.metaSyncDuration,
-			m.metaSyncConsistencyDelay,
-			m.garbageCollections,
-			m.garbageCollectionFailures,
-			m.garbageCollectionDuration,
-		)
-	}
 	return &m
 }

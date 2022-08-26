@@ -21,9 +21,6 @@ spec:
     metadata:
       labels:
         {{- include "mimir.podLabels" (dict "ctx" . "component" "tokengen") | nindent 8 }}
-        {{- with .Values.tokengenJob.podLabels }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
       namespace: {{ .Release.Namespace | quote }}
     spec:
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}

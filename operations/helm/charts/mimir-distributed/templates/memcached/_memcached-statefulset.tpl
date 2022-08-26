@@ -27,9 +27,6 @@ spec:
     metadata:
       labels:
         {{- include "mimir.podLabels" (dict "ctx" $.ctx "component" $.component) | nindent 8 }}
-        {{- with .podLabels }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
       annotations:
         {{- with $.ctx.Values.global.podAnnotations }}
         {{- toYaml . | nindent 8 }}
@@ -73,11 +70,13 @@ spec:
           {{- if .resources }}
             {{- toYaml .resources | nindent 12 }}
           {{- else }}
+          {{- /* Calculate requested memory as round(allocatedMemory * 1.2). But with integer built-in operators. */}}
+          {{- $requestMemory := div (add (mul .allocatedMemory 12) 5) 10 }}
             limits:
-              memory: {{ round (mulf .allocatedMemory 1.2) 0 }}Mi
+              memory: {{ $requestMemory }}Mi
             requests:
               cpu: 500m
-              memory: {{ round (mulf .allocatedMemory 1.2) 0 }}Mi
+              memory: {{ $requestMemory }}Mi
           {{- end }}
           ports:
             - containerPort: {{ .port }}

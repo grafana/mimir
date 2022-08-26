@@ -511,6 +511,18 @@ func TestQueryShardingCorrectness(t *testing.T) {
 			query:                  `scalar(sum(metric_counter)) < bool 1`,
 			expectedShardedQueries: 1,
 		},
+		`sum({__name__!=""})`: {
+			query:                  `sum({__name__!=""})`,
+			expectedShardedQueries: 1,
+		},
+		`sum by (group_1) ({__name__!=""})`: {
+			query:                  `sum by (group_1) ({__name__!=""})`,
+			expectedShardedQueries: 1,
+		},
+		`sum by (group_1) (count_over_time({__name__!=""}[1m]))`: {
+			query:                  `sum by (group_1) (count_over_time({__name__!=""}[1m]))`,
+			expectedShardedQueries: 1,
+		},
 	}
 
 	series := make([]*promql.StorageSeries, 0, numSeries+(numHistograms*len(histogramBuckets)))

@@ -26,7 +26,7 @@
 
   newQuerySchedulerDeployment(name, container)::
     deployment.new(name, 2, [container]) +
-    $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint) +
+    $.mimirVolumeMounts +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     $.util.antiAffinity +
     // Do not run more query-schedulers than expected.

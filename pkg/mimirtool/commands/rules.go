@@ -15,6 +15,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/alecthomas/kingpin.v2"
@@ -31,17 +32,6 @@ const (
 )
 
 var (
-	ruleLoadTimestamp = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: "cortex",
-		Name:      "last_rule_load_timestamp_seconds",
-		Help:      "The timestamp of the last rule load.",
-	})
-	ruleLoadSuccessTimestamp = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: "cortex",
-		Name:      "last_rule_load_success_timestamp_seconds",
-		Help:      "The timestamp of the last successful rule load.",
-	})
-
 	backends = []string{rules.MimirBackend}      // list of supported backend types
 	formats  = []string{"json", "yaml", "table"} // list of supported formats for the list command
 )
@@ -89,11 +79,15 @@ type RuleCommand struct {
 
 	// Diff Rules Config
 	Verbose bool
+
+	// Metrics.
+	ruleLoadTimestamp        prometheus.Gauge
+	ruleLoadSuccessTimestamp prometheus.Gauge
 }
 
 // Register rule related commands and flags with the kingpin application
-func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
-	rulesCmd := app.Command("rules", "View and edit rules stored in Grafan Mimir.").PreAction(r.setup)
+func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames, reg prometheus.Registerer) {
+	rulesCmd := app.Command("rules", "View and edit rules stored in Grafan Mimir.").PreAction(func(k *kingpin.ParseContext) error { return r.setup(k, reg) })
 	rulesCmd.Flag("user", fmt.Sprintf("API user to use when contacting Grafana Mimir; alternatively, set %s. If empty, %s is used instead.", envVars.APIUser, envVars.TenantID)).Default("").Envar(envVars.APIUser).StringVar(&r.ClientConfig.User)
 	rulesCmd.Flag("key", "API key to use when contacting Grafana Mimir; alternatively, set "+envVars.APIKey+".").Default("").Envar(envVars.APIKey).StringVar(&r.ClientConfig.Key)
 	rulesCmd.Flag("backend", "Backend type to interact with (deprecated)").Default(rules.MimirBackend).EnumVar(&r.Backend, backends...)
@@ -239,11 +233,17 @@ func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
 	listCmd.Flag("disable-color", "disable colored output").BoolVar(&r.DisableColor)
 }
 
-func (r *RuleCommand) setup(k *kingpin.ParseContext) error {
-	prometheus.MustRegister(
-		ruleLoadTimestamp,
-		ruleLoadSuccessTimestamp,
-	)
+func (r *RuleCommand) setup(_ *kingpin.ParseContext, reg prometheus.Registerer) error {
+	r.ruleLoadTimestamp = promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+		Namespace: "cortex",
+		Name:      "last_rule_load_timestamp_seconds",
+		Help:      "The timestamp of the last rule load.",
+	})
+	r.ruleLoadSuccessTimestamp = promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+		Namespace: "cortex",
+		Name:      "last_rule_load_success_timestamp_seconds",
+		Help:      "The timestamp of the last successful rule load.",
+	})
 
 	cli, err := client.New(r.ClientConfig)
 	if err != nil {
@@ -343,7 +343,7 @@ func (r *RuleCommand) listRules(k *kingpin.ParseContext) error {
 func (r *RuleCommand) printRules(k *kingpin.ParseContext) error {
 	rules, err := r.cli.ListRules(context.Background(), "")
 	if err != nil {
-		if err == client.ErrResourceNotFound {
+		if errors.Is(err, client.ErrResourceNotFound) {
 			log.Infof("no rule groups currently exist for this user")
 			return nil
 		}
@@ -357,7 +357,7 @@ func (r *RuleCommand) printRules(k *kingpin.ParseContext) error {
 func (r *RuleCommand) getRuleGroup(k *kingpin.ParseContext) error {
 	group, err := r.cli.GetRuleGroup(context.Background(), r.Namespace, r.RuleGroup)
 	if err != nil {
-		if err == client.ErrResourceNotFound {
+		if errors.Is(err, client.ErrResourceNotFound) {
 			log.Infof("this rule group does not currently exist")
 			return nil
 		}
@@ -370,7 +370,7 @@ func (r *RuleCommand) getRuleGroup(k *kingpin.ParseContext) error {
 
 func (r *RuleCommand) deleteRuleGroup(k *kingpin.ParseContext) error {
 	err := r.cli.DeleteRuleGroup(context.Background(), r.Namespace, r.RuleGroup)
-	if err != nil && err != client.ErrResourceNotFound {
+	if err != nil && !errors.Is(err, client.ErrResourceNotFound) {
 		log.Fatalf("Unable to delete rule group from Grafana Mimir, %v", err)
 	}
 	return nil
@@ -381,13 +381,13 @@ func (r *RuleCommand) loadRules(k *kingpin.ParseContext) error {
 	if err != nil {
 		return errors.Wrap(err, "load operation unsuccessful, unable to parse rules files")
 	}
-	ruleLoadTimestamp.SetToCurrentTime()
+	r.ruleLoadTimestamp.SetToCurrentTime()
 
 	for _, ns := range nss {
 		for _, group := range ns.Groups {
 			fmt.Printf("group: '%v', ns: '%v'\n", group.Name, ns.Namespace)
 			curGroup, err := r.cli.GetRuleGroup(context.Background(), ns.Namespace, group.Name)
-			if err != nil && err != client.ErrResourceNotFound {
+			if err != nil && !errors.Is(err, client.ErrResourceNotFound) {
 				return errors.Wrap(err, "load operation unsuccessful, unable to contact Grafana Mimir API")
 			}
 			if curGroup != nil {
@@ -417,7 +417,7 @@ func (r *RuleCommand) loadRules(k *kingpin.ParseContext) error {
 		}
 	}
 
-	ruleLoadSuccessTimestamp.SetToCurrentTime()
+	r.ruleLoadSuccessTimestamp.SetToCurrentTime()
 	return nil
 }
 
@@ -511,7 +511,7 @@ func (r *RuleCommand) syncRules(k *kingpin.ParseContext) error {
 	//TODO: Skipping the 404s here might end up in an unsual scenario.
 	// If we're unable to reach the Mimir API due to a bad URL, we'll assume no rules are
 	// part of the namespace and provide a diff of the whole ruleset.
-	if err != nil && err != client.ErrResourceNotFound {
+	if err != nil && !errors.Is(err, client.ErrResourceNotFound) {
 		return errors.Wrap(err, "sync operation unsuccessful, unable to contact the Grafana Mimir API")
 	}
 
@@ -606,7 +606,7 @@ func (r *RuleCommand) executeChanges(ctx context.Context, changes []rules.Namesp
 				"namespace": ch.Namespace,
 			}).Infof("deleting group")
 			err = r.cli.DeleteRuleGroup(ctx, ch.Namespace, g.Name)
-			if err != nil && err != client.ErrResourceNotFound {
+			if err != nil && !errors.Is(err, client.ErrResourceNotFound) {
 				return err
 			}
 		}

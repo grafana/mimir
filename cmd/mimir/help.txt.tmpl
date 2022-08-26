@@ -273,7 +273,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor.data-dir string
     	Directory to temporarily store blocks during compaction. This directory is not required to be persisted between restarts. (default "./data-compactor/")
   -compactor.partial-block-deletion-delay duration
-    	If a partial block (unfinished block without meta.json file) hasn't been modified for this time, it will be marked for deletion. 0 to disable.
+    	If a partial block (unfinished block without meta.json file) hasn't been modified for this time, it will be marked for deletion. The minimum accepted value is 4h0m0s: a lower value will be ignored and the feature disabled. 0 to disable.
   -compactor.ring.consul.hostname string
     	Hostname and port of Consul. (default "localhost:8500")
   -compactor.ring.etcd.endpoints string

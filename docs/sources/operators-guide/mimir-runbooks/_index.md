@@ -277,7 +277,7 @@ How to **investigate**:
 
 ### MimirIngesterUnhealthy
 
-This alert goes off when an ingester is marked as unhealthy. Check the ring web page to see which is marked as unhealthy. You could then check the logs to see if there are any related to that ingester ex: `kubectl logs -f ingester-01 --namespace=prod`. A simple way to resolve this may be to click the "Forgot" button on the ring page, especially if the pod doesn't exist anymore. It might not exist anymore because it was on a node that got shut down, so you could check to see if there are any logs related to the node that pod is/was on, ex: `kubectl get events --namespace=prod | grep cloud-provider-node`.
+This alert goes off when one or more ingesters are marked as unhealthy. Check the ring web page to see which ones are marked as unhealthy. You could then check the logs to see if there are any related to involved ingesters, f.ex: `kubectl logs -f ingester-01 --namespace=prod`. A simple way to resolve this may be to click the "Forget" button on the ring page, especially if the pod doesn't exist anymore. It might not exist anymore because it was on a node that got shut down, so you could check to see if there are any logs related to the node that pod is/was on, f.ex.: `kubectl get events --namespace=prod | grep cloud-provider-node`.
 
 ### MimirMemoryMapAreasTooHigh
 
@@ -609,6 +609,7 @@ How to **investigate**:
 1. Investigate if it was a partial upload or partial delete
    1. If it was a partial delete or an upload failed by a compactor you can safely mark the block for deletion, and compactor will delete the block. You can use `markblocks` command from Mimir tools directory: `markblocks -mark deletion -allow-partial -tenant <tenant> <blockID>` with correct backend (eg. GCS: `-backend gcs -gcs.bucket-name <bucket-name>`) configuration.
    1. If it was a failed upload by an ingester, but not later retried (ingesters are expected to retry uploads until succeed), further investigate
+1. Prevent the issue from reoccurring by enabling automatic partial block cleanup. This can be enabled with the `-compactor.partial-block-deletion-delay` flag. It takes a duration as an argument. If a partial block persists past the specified duration, the compactor will automatically delete it. One can monitor automatic cleanup of partial blocks via the `cortex_compactor_blocks_marked_for_deletion_total{reason="partial"}` counter.
 
 ### MimirQueriesIncorrect
 
@@ -1505,6 +1506,19 @@ How to **fix** it:
 - Ensure the compactor is running successfully (e.g. not crashing, not going out of memory).
 - Ensure each compactor replica has successfully updated bucket index of each owned tenant within the double of `-compactor.cleanup-interval` (query below assumes the cleanup interval is set to 15 minutes):
   `time() - cortex_compactor_block_cleanup_last_successful_run_timestamp_seconds > 2 * (15 * 60)`
+
+### err-mimir-distributor-max-write-message-size
+
+This error occurs when a distributor rejects a write request because its message size is larger than the allowed limit.
+
+How it **works**:
+
+- The distributor implements an upper limit on the message size of incoming write requests.
+- To configure the limit, set the `-distributor.max-recv-msg-size` option.
+
+How to **fix** it:
+
+- Increase the allowed limit by using the `-distributor.max-recv-msg-size` option.
 
 ## Mimir routes by path
 

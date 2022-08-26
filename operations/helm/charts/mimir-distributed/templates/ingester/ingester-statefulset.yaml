@@ -1,4 +1,3 @@
-{{- if .Values.ingester.statefulSet.enabled -}}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -43,9 +42,6 @@ spec:
     metadata:
       labels:
         {{- include "mimir.podLabels" (dict "ctx" . "component" "ingester" "memberlist" true) | nindent 8 }}
-        {{- with .Values.ingester.podLabels }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
       annotations:
         {{- include "mimir.podAnnotations" (dict "ctx" . "component" "ingester") | nindent 8 }}
       namespace: {{ .Release.Namespace | quote }}
@@ -154,4 +150,3 @@ spec:
             {{- with .Values.ingester.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
-{{- end -}}

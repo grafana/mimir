@@ -26,7 +26,7 @@ deployed:
 
 - For a stable release:
   - \>= 3.x.x:
-    See [Collect metrics and logs via Helm chart built-in metamonitoring](#collect-metrics-and-logs-via-the-helm-chart)
+    See [Collect metrics and logs via the Helm chart](#collect-metrics-and-logs-via-the-helm-chart)
   - \< 3.x.x: See [Collect metrics and logs via Grafana Agent](#collect-metrics-and-logs-via-grafana-agent)
 - For non-Helm installations or installations of the deprecated enterprise-metrics Helm chart, see [Collect metrics and logs without the helm chart](#collect-metrics-and-logs-without-the-helm-chart).
 
@@ -37,10 +37,14 @@ cluster. The chart can also scrape additional metrics from kube-state-metrics, k
 The Helm chart does not collect node_exporter metrics. For more information
 about node_exporter, see [Additional resources metrics]({{< relref "requirements.md#additional-resources-metrics" >}}).
 
-The Helm chart uses the Grafana Agent operator. Due to how Helm works, before it can use the operator, you need to
-manually install
+This section guides you through the process for setting up metrics and logs collection via
+the [Grafana Agent operator](https://grafana.com/docs/agent/latest/operator/). The Mimir Helm chart can install and use
+the Grafana Agent operator. Due to how Helm works, before the chart can use the operator, you need to manually install
 the [Custom Resource Definitions (CRDs)](https://github.com/grafana/agent/tree/main/production/operator/crds) for the
 Agent operator.
+
+Using the Agent operator for metrics and logs collection is our recommended approach. However, if you prefer not to use the Agent operator or already have an existing Grafana Agent you'd like to use for metrics and logs collection, follow the instructions
+for [collecting metrics and logs via Grafana Agent](#collect-metrics-and-logs-via-grafana-agent) instead.
 
 #### Credentials
 
@@ -68,6 +72,8 @@ For information about how to create a Kubernetes secret, see
 Finally, merge the following YAML configuration into your Helm values file, and replace the values for `url`, `username`, `passwordSecretName`
 , and `passwordSecretKey` with the details of the Prometheus and Loki clusters, and the secret that you created. If your
 Prometheus and Loki servers are running without authentication, then remove the `auth` blocks from the YAML below.
+
+If you already have the Agent operator installed in your Kubernetes cluster, then set `installOperator: false`.
 
 ```yaml
 metaMonitoring:
@@ -105,7 +111,27 @@ metaMonitoring:
 
 Older versions of the Helm chart need to be manually instrumented. This means that you need to set up a Grafana Agent
 that collects logs and metrics from Mimir or GEM. To set up Grafana Agent,
-see [Set up Grafana Agent](https://grafana.com/docs/agent/latest/set-up/).
+see [Set up Grafana Agent](https://grafana.com/docs/agent/latest/set-up/). Once your Agent is deployed, use the [example Agent configuration](#example-agent-configuration) to configure the Agent to scrape Mimir or GEM.
+
+#### Caveats
+
+Managing your own Agent comes with some caveats:
+
+- You will have to keep the Agent configuration up to date manually as you update the Mimir Helm chart. While we will
+  try to keep this article up to date, we cannot guarantee that
+  the [example Agent configuration](#example-agent-configuration) will always work.
+- The static configuration makes some assumptions about the naming of the chart, such as that you have not overridden
+  the `fullnameOverride` in the Helm chart.
+- The static configuration cannot be selective in the PersistentVolumes metrics it collects from Kubelet, so it will
+  scrape metrics for all PersistentVolumes.
+- The static configuration hardcodes the value of the `cluster` label on all metrics and logs. This means that the
+  configuration cannot account for multiple installations of the Helm chart.
+
+If possible, upgrade the Mimir Helm chart to version 3.0 or higher and use
+the [built-in Grafana Agent operator](#collect-metrics-and-logs-via-the-helm-chart). Using the Agent operator allows the
+chart to automatically configure the Agent, eliminating the aforementioned caveats.
+
+#### Example Agent configuration
 
 In the following example Grafana Agent configuration file for collecting logs and metrics, replace `url`, `password`, and `username` in
 the `logs` and `metrics` blocks with the details of your Prometheus and Loki clusters.

@@ -33,7 +33,7 @@ patches:
 
   # TODO(logiraptor): Helm adds an emptyDir volume to several components. This is due to the fact that readOnlyRootFilesystem=true and some ephemeral data is written
   - target:
-      name: mimir-(distributor|query-frontend|querier|ruler|querier|overrides-exporter|alertmanager)
+      name: mimir-(distributor|query-frontend|query-scheduler|querier|ruler|querier|overrides-exporter|alertmanager)
       kind: Deployment|StatefulSet
     patch: |-
       - op: remove
@@ -49,7 +49,7 @@ patches:
 
   # Minor Difference: Helm names the overrides volume slightly differently
   - target:
-      name: mimir-(distributor|query-frontend|overrides-exporter|ruler|querier|alertmanager|ingester|store-gateway|compactor)
+      name: mimir-(distributor|query-frontend|query-scheduler|overrides-exporter|ruler|querier|alertmanager|ingester|store-gateway|compactor)
       kind: Deployment|StatefulSet
     patch: |-
       - op: replace

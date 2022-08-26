@@ -1,0 +1,4 @@
+enterprise:
+  enabled: true
+graphite:
+  enabled: true

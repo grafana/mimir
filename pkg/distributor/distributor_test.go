@@ -851,7 +851,7 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 			err = d.HATracker.checkReplica(ctx, userID, tc.cluster, tc.acceptedReplica, time.Now())
 			assert.NoError(t, err)
 
-			request := makeWriteRequestForLabelSetGen(tc.samples, labelSetGenWithReplicaAndCluster(tc.testReplica, tc.cluster))
+			request := makeWriteRequestForGenerators(tc.samples, labelSetGenWithReplicaAndCluster(tc.testReplica, tc.cluster), nil, nil)
 			response, err := d.Push(ctx, request)
 			assert.Equal(t, tc.expectedResponse, response)
 
@@ -2314,6 +2314,9 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			ingestSample:          true,
 			expectIngestedMetrics: []string{metric},
 			expectedMetrics: `
+			# HELP cortex_distributor_received_requests_total The total number of received requests, excluding rejected, forwarded and deduped requests.
+			# TYPE cortex_distributor_received_requests_total counter
+			cortex_distributor_received_requests_total{user="user"} 1
 			# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected, forwarded and deduped samples.
 			# TYPE cortex_distributor_received_samples_total counter
 			cortex_distributor_received_samples_total{user="user"} 5
@@ -2323,6 +2326,9 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
 			# TYPE cortex_distributor_received_metadata_total counter
 			cortex_distributor_received_metadata_total{user="user"} 0
+			# HELP cortex_distributor_requests_in_total The total number of requests that have come in to the distributor, including rejected, forwarded or deduped requests.
+			# TYPE cortex_distributor_requests_in_total counter
+			cortex_distributor_requests_in_total{user="user"} 1
 			# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.
 			# TYPE cortex_distributor_samples_in_total counter
 			cortex_distributor_samples_in_total{user="user"} 5
@@ -2339,6 +2345,9 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			ingestSample:          false,
 			expectIngestedMetrics: []string{},
 			expectedMetrics: `
+			# HELP cortex_distributor_received_requests_total The total number of received requests, excluding rejected, forwarded and deduped requests.
+			# TYPE cortex_distributor_received_requests_total counter
+			cortex_distributor_received_requests_total{user="user"} 1
 			# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected, forwarded and deduped samples.
 			# TYPE cortex_distributor_received_samples_total counter
 			cortex_distributor_received_samples_total{user="user"} 0
@@ -2348,6 +2357,9 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
 			# TYPE cortex_distributor_received_metadata_total counter
 			cortex_distributor_received_metadata_total{user="user"} 0
+			# HELP cortex_distributor_requests_in_total The total number of requests that have come in to the distributor, including rejected, forwarded or deduped requests.
+			# TYPE cortex_distributor_requests_in_total counter
+			cortex_distributor_requests_in_total{user="user"} 1
 			# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.
 			# TYPE cortex_distributor_samples_in_total counter
 			cortex_distributor_samples_in_total{user="user"} 5
@@ -2364,6 +2376,9 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			ingestSample:          true,
 			expectIngestedMetrics: []string{metric},
 			expectedMetrics: `
+			# HELP cortex_distributor_received_requests_total The total number of received requests, excluding rejected, forwarded and deduped requests.
+			# TYPE cortex_distributor_received_requests_total counter
+			cortex_distributor_received_requests_total{user="user"} 1
 			# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected, forwarded and deduped samples.
 			# TYPE cortex_distributor_received_samples_total counter
 			cortex_distributor_received_samples_total{user="user"} 5
@@ -2373,6 +2388,9 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
 			# TYPE cortex_distributor_received_metadata_total counter
 			cortex_distributor_received_metadata_total{user="user"} 5
+			# HELP cortex_distributor_requests_in_total The total number of requests that have come in to the distributor, including rejected, forwarded or deduped requests.
+			# TYPE cortex_distributor_requests_in_total counter
+			cortex_distributor_requests_in_total{user="user"} 1
 			# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.
 			# TYPE cortex_distributor_samples_in_total counter
 			cortex_distributor_samples_in_total{user="user"} 5
@@ -2389,6 +2407,9 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			ingestSample:          false,
 			expectIngestedMetrics: []string{},
 			expectedMetrics: `
+			# HELP cortex_distributor_received_requests_total The total number of received requests, excluding rejected, forwarded and deduped requests.
+			# TYPE cortex_distributor_received_requests_total counter
+			cortex_distributor_received_requests_total{user="user"} 1
 			# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected, forwarded and deduped samples.
 			# TYPE cortex_distributor_received_samples_total counter
 			cortex_distributor_received_samples_total{user="user"} 0
@@ -2398,6 +2419,9 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
 			# TYPE cortex_distributor_received_metadata_total counter
 			cortex_distributor_received_metadata_total{user="user"} 5
+			# HELP cortex_distributor_requests_in_total The total number of requests that have come in to the distributor, including rejected, forwarded or deduped requests.
+			# TYPE cortex_distributor_requests_in_total counter
+			cortex_distributor_requests_in_total{user="user"} 1
 			# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.
 			# TYPE cortex_distributor_samples_in_total counter
 			cortex_distributor_samples_in_total{user="user"} 5
@@ -2414,6 +2438,9 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			ingestSample:          true,
 			expectIngestedMetrics: []string{metric},
 			expectedMetrics: `
+			# HELP cortex_distributor_received_requests_total The total number of received requests, excluding rejected, forwarded and deduped requests.
+			# TYPE cortex_distributor_received_requests_total counter
+			cortex_distributor_received_requests_total{user="user"} 1
 			# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected, forwarded and deduped samples.
 			# TYPE cortex_distributor_received_samples_total counter
 			cortex_distributor_received_samples_total{user="user"} 5
@@ -2423,6 +2450,9 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
 			# TYPE cortex_distributor_received_metadata_total counter
 			cortex_distributor_received_metadata_total{user="user"} 0
+			# HELP cortex_distributor_requests_in_total The total number of requests that have come in to the distributor, including rejected, forwarded or deduped requests.
+			# TYPE cortex_distributor_requests_in_total counter
+			cortex_distributor_requests_in_total{user="user"} 1
 			# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.
 			# TYPE cortex_distributor_samples_in_total counter
 			cortex_distributor_samples_in_total{user="user"} 5
@@ -2439,6 +2469,9 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			ingestSample:          false,
 			expectIngestedMetrics: []string{},
 			expectedMetrics: `
+			# HELP cortex_distributor_received_requests_total The total number of received requests, excluding rejected, forwarded and deduped requests.
+			# TYPE cortex_distributor_received_requests_total counter
+			cortex_distributor_received_requests_total{user="user"} 1
 			# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected, forwarded and deduped samples.
 			# TYPE cortex_distributor_received_samples_total counter
 			cortex_distributor_received_samples_total{user="user"} 0
@@ -2448,6 +2481,9 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
 			# TYPE cortex_distributor_received_metadata_total counter
 			cortex_distributor_received_metadata_total{user="user"} 0
+			# HELP cortex_distributor_requests_in_total The total number of requests that have come in to the distributor, including rejected, forwarded or deduped requests.
+			# TYPE cortex_distributor_requests_in_total counter
+			cortex_distributor_requests_in_total{user="user"} 1
 			# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.
 			# TYPE cortex_distributor_samples_in_total counter
 			cortex_distributor_samples_in_total{user="user"} 5
@@ -2475,7 +2511,11 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			var forwardReqCnt atomic.Uint32
 			forwardReqCallback := func(_ []mimirpb.PreallocTimeseries) { forwardReqCnt.Inc() }
 			getForwarder := func() forwarding.Forwarder {
-				return newMockForwarder(tc.ingestSample, forwardReqCallback)
+				var mutator func([]mimirpb.PreallocTimeseries) []mimirpb.PreallocTimeseries
+				if tc.ingestSample {
+					mutator = ingestAllTimeseriesMutator
+				}
+				return newMockForwarder(mutator, forwardReqCallback)
 			}
 
 			distributors, ingesters, regs := prepare(t, prepConfig{
@@ -2499,9 +2539,11 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			require.NoError(t, testutil.GatherAndCompare(
 				regs[0],
 				strings.NewReader(tc.expectedMetrics),
+				"cortex_distributor_received_requests_total",
 				"cortex_distributor_received_samples_total",
 				"cortex_distributor_received_exemplars_total",
 				"cortex_distributor_received_metadata_total",
+				"cortex_distributor_requests_in_total",
 				"cortex_distributor_samples_in_total",
 				"cortex_distributor_exemplars_in_total",
 				"cortex_distributor_metadata_in_total",
@@ -2804,8 +2846,8 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			ctx:               ctxWithUser,
 			enableHaTracker:   true,
 			acceptHaSamples:   false,
-			reqs:              []*mimirpb.WriteRequest{makeWriteRequestForLabelSetGen(5, labelSetGenWithReplicaAndCluster(replica1, cluster1))},
-			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForLabelSetGen(5, labelSetGenWithReplicaAndCluster(replica1, cluster1))},
+			reqs:              []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenWithReplicaAndCluster(replica1, cluster1), nil, nil)},
+			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenWithReplicaAndCluster(replica1, cluster1), nil, nil)},
 			expectedNextCalls: 1,
 			expectErrs:        []int{0},
 		}, {
@@ -2813,8 +2855,8 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			ctx:               ctxWithUser,
 			enableHaTracker:   false,
 			acceptHaSamples:   true,
-			reqs:              []*mimirpb.WriteRequest{makeWriteRequestForLabelSetGen(5, labelSetGenWithReplicaAndCluster(replica1, cluster1))},
-			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForLabelSetGen(5, labelSetGenWithCluster(cluster1))},
+			reqs:              []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenWithReplicaAndCluster(replica1, cluster1), nil, nil)},
+			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenWithCluster(cluster1), nil, nil)},
 			expectedNextCalls: 1,
 			expectErrs:        []int{0},
 		}, {
@@ -2822,7 +2864,7 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			ctx:               context.Background(),
 			enableHaTracker:   true,
 			acceptHaSamples:   true,
-			reqs:              []*mimirpb.WriteRequest{makeWriteRequestForLabelSetGen(5, labelSetGenWithReplicaAndCluster(replica1, cluster1))},
+			reqs:              []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenWithReplicaAndCluster(replica1, cluster1), nil, nil)},
 			expectedReqs:      nil,
 			expectedNextCalls: 0,
 			expectErrs:        []int{-1}, // Special value because this is not an httpgrpc error.
@@ -2832,10 +2874,10 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			enableHaTracker: true,
 			acceptHaSamples: true,
 			reqs: []*mimirpb.WriteRequest{
-				makeWriteRequestForLabelSetGen(5, labelSetGenWithReplicaAndCluster(replica1, cluster1)),
-				makeWriteRequestForLabelSetGen(5, labelSetGenWithReplicaAndCluster(replica2, cluster1)),
+				makeWriteRequestForGenerators(5, labelSetGenWithReplicaAndCluster(replica1, cluster1), nil, nil),
+				makeWriteRequestForGenerators(5, labelSetGenWithReplicaAndCluster(replica2, cluster1), nil, nil),
 			},
-			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForLabelSetGen(5, labelSetGenWithCluster(cluster1))},
+			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenWithCluster(cluster1), nil, nil)},
 			expectedNextCalls: 1,
 			expectErrs:        []int{0, 202},
 		}, {
@@ -2844,12 +2886,12 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			enableHaTracker: true,
 			acceptHaSamples: true,
 			reqs: []*mimirpb.WriteRequest{
-				makeWriteRequestForLabelSetGen(5, labelSetGenWithReplicaAndCluster(replica1, cluster1)),
-				makeWriteRequestForLabelSetGen(5, labelSetGenWithReplicaAndCluster(replica2, cluster1)),
-				makeWriteRequestForLabelSetGen(5, labelSetGenWithReplicaAndCluster(replica1, cluster2)), // HaMaxClusters is set to 1.
-				makeWriteRequestForLabelSetGen(5, labelSetGenWithReplicaAndCluster(replica2, cluster2)),
+				makeWriteRequestForGenerators(5, labelSetGenWithReplicaAndCluster(replica1, cluster1), nil, nil),
+				makeWriteRequestForGenerators(5, labelSetGenWithReplicaAndCluster(replica2, cluster1), nil, nil),
+				makeWriteRequestForGenerators(5, labelSetGenWithReplicaAndCluster(replica1, cluster2), nil, nil), // HaMaxClusters is set to 1.
+				makeWriteRequestForGenerators(5, labelSetGenWithReplicaAndCluster(replica2, cluster2), nil, nil),
 			},
-			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForLabelSetGen(5, labelSetGenWithCluster(cluster1))},
+			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenWithCluster(cluster1), nil, nil)},
 			expectedNextCalls: 1,
 			expectErrs:        []int{0, 202, 400, 400},
 		},
@@ -2921,9 +2963,9 @@ func TestInstanceLimitsBeforeHaDedupe(t *testing.T) {
 	const replica2 = "replicaB"
 	const cluster1 = "clusterA"
 
-	writeReqReplica1 := makeWriteRequestForLabelSetGen(5, labelSetGenWithReplicaAndCluster(replica1, cluster1))
-	writeReqReplica2 := makeWriteRequestForLabelSetGen(5, labelSetGenWithReplicaAndCluster(replica2, cluster1))
-	expectedWriteReq := makeWriteRequestForLabelSetGen(5, labelSetGenWithCluster(cluster1))
+	writeReqReplica1 := makeWriteRequestForGenerators(5, labelSetGenWithReplicaAndCluster(replica1, cluster1), nil, nil)
+	writeReqReplica2 := makeWriteRequestForGenerators(5, labelSetGenWithReplicaAndCluster(replica2, cluster1), nil, nil)
+	expectedWriteReq := makeWriteRequestForGenerators(5, labelSetGenWithCluster(cluster1), nil, nil)
 
 	// Capture the submitted write requests which the middlewares pass into the mock push function.
 	var submittedWriteReqs []*mimirpb.WriteRequest
@@ -2988,15 +3030,15 @@ func TestRelabelMiddleware(t *testing.T) {
 			ctx:            ctxWithUser,
 			relabelConfigs: nil,
 			dropLabels:     nil,
-			reqs:           []*mimirpb.WriteRequest{makeWriteRequestForLabelSetGen(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label", "value_%d"))},
-			expectedReqs:   []*mimirpb.WriteRequest{makeWriteRequestForLabelSetGen(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label", "value_%d"))},
+			reqs:           []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label", "value_%d"), nil, nil)},
+			expectedReqs:   []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label", "value_%d"), nil, nil)},
 			expectErrs:     []bool{false},
 		}, {
 			name:           "no user in context",
 			ctx:            context.Background(),
 			relabelConfigs: nil,
 			dropLabels:     nil,
-			reqs:           []*mimirpb.WriteRequest{makeWriteRequestForLabelSetGen(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label", "value_%d"))},
+			reqs:           []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label", "value_%d"), nil, nil)},
 			expectedReqs:   nil,
 			expectErrs:     []bool{true},
 		}, {
@@ -3004,13 +3046,9 @@ func TestRelabelMiddleware(t *testing.T) {
 			ctx:            ctxWithUser,
 			relabelConfigs: nil,
 			dropLabels:     []string{"label1", "label3"},
-			reqs: []*mimirpb.WriteRequest{makeWriteRequestForLabelSetGen(5,
-				labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1", "label2", "value2", "label3", "value3"),
-			)},
-			expectedReqs: []*mimirpb.WriteRequest{makeWriteRequestForLabelSetGen(5,
-				labelSetGenForStringPairs(t, "__name__", "metric1", "label2", "value2"),
-			)},
-			expectErrs: []bool{false},
+			reqs:           []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1", "label2", "value2", "label3", "value3"), nil, nil)},
+			expectedReqs:   []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label2", "value2"), nil, nil)},
+			expectErrs:     []bool{false},
 		}, {
 			name: "drop two out of three labels",
 			ctx:  ctxWithUser,
@@ -3023,28 +3061,24 @@ func TestRelabelMiddleware(t *testing.T) {
 					Replacement:  "prefix_$1",
 				},
 			},
-			reqs: []*mimirpb.WriteRequest{makeWriteRequestForLabelSetGen(5,
-				labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1"),
-			)},
-			expectedReqs: []*mimirpb.WriteRequest{makeWriteRequestForLabelSetGen(5,
-				labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1", "target", "prefix_value1"),
-			)},
-			expectErrs: []bool{false},
+			reqs:         []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1"), nil, nil)},
+			expectedReqs: []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1", "target", "prefix_value1"), nil, nil)},
+			expectErrs:   []bool{false},
 		}, {
 			name:       "drop entire series if they have no labels",
 			ctx:        ctxWithUser,
 			dropLabels: []string{"__name__", "label2", "label3"},
 			reqs: []*mimirpb.WriteRequest{
-				makeWriteRequestForLabelSetGen(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1")),
-				makeWriteRequestForLabelSetGen(5, labelSetGenForStringPairs(t, "__name__", "metric2", "label2", "value2")),
-				makeWriteRequestForLabelSetGen(5, labelSetGenForStringPairs(t, "__name__", "metric3", "label3", "value3")),
-				makeWriteRequestForLabelSetGen(5, labelSetGenForStringPairs(t, "__name__", "metric4", "label4", "value4")),
+				makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric1", "label1", "value1"), nil, nil),
+				makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric2", "label2", "value2"), nil, nil),
+				makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric3", "label3", "value3"), nil, nil),
+				makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "__name__", "metric4", "label4", "value4"), nil, nil),
 			},
 			expectedReqs: []*mimirpb.WriteRequest{
-				makeWriteRequestForLabelSetGen(5, labelSetGenForStringPairs(t, "label1", "value1")),
+				makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "label1", "value1"), nil, nil),
 				{Timeseries: []mimirpb.PreallocTimeseries{}},
 				{Timeseries: []mimirpb.PreallocTimeseries{}},
-				makeWriteRequestForLabelSetGen(5, labelSetGenForStringPairs(t, "label4", "value4")),
+				makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t, "label4", "value4"), nil, nil),
 			},
 			expectErrs: []bool{false, false, false, false},
 		},
@@ -3094,26 +3128,26 @@ func TestHaDedupeAndRelabelBeforeForwarding(t *testing.T) {
 	const replica1 = "replicaA"
 	const replica2 = "replicaB"
 	const cluster1 = "clusterA"
-	writeReqReplica1 := makeWriteRequestForLabelSetGen(5, labelSetGenForStringPairs(t,
+	writeReqReplica1 := makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t,
 		"__name__", "foo",
 		"__replica__", replica1, // Will be dropped by ha-dedupe.
 		"bar", "baz", // Will be dropped by drop_label rule.
 		"cluster", cluster1,
 		"sample", "value", // Will be targeted by relabel rule.
-	))
-	writeReqReplica2 := makeWriteRequestForLabelSetGen(5, labelSetGenForStringPairs(t,
+	), nil, nil)
+	writeReqReplica2 := makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t,
 		"__name__", "foo",
 		"__replica__", replica2, // Will be dropped by ha-dedupe.
 		"bar", "baz", // Will be dropped by drop_label rule.
 		"cluster", cluster1,
 		"sample", "value", // Will be targeted by relabel rule.
-	))
-	expectedWriteReq := makeWriteRequestForLabelSetGen(5, labelSetGenForStringPairs(t,
+	), nil, nil)
+	expectedWriteReq := makeWriteRequestForGenerators(5, labelSetGenForStringPairs(t,
 		"__name__", "foo",
 		"cluster", cluster1,
 		"sample", "value",
 		"target", "prefix_value", // Result of relabel rule.
-	))
+	), nil, nil)
 
 	// Capture the submitted write requests which the middlewares pass into the mock push function.
 	var submittedWriteReqs []*mimirpb.WriteRequest
@@ -3128,7 +3162,7 @@ func TestHaDedupeAndRelabelBeforeForwarding(t *testing.T) {
 		forwardedTs = append(forwardedTs, ts)
 	}
 	getForwarder := func() forwarding.Forwarder {
-		return newMockForwarder(true, forwardReqCallback)
+		return newMockForwarder(ingestAllTimeseriesMutator, forwardReqCallback)
 	}
 
 	// Setup limits with HA enabled and forwarding rules for the metric "foo".
@@ -3502,22 +3536,55 @@ func labelSetGenForStringPairs(tb testing.TB, namesValues ...string) func(id int
 	}
 }
 
-func makeWriteRequestForLabelSetGen(samples int, labelSetGen func(int) []mimirpb.LabelAdapter) *mimirpb.WriteRequest {
+type labelSetGen func(int) []mimirpb.LabelAdapter
+type metaDataGen func(int, string) *mimirpb.MetricMetadata
+
+// makeWriteRequestForGenerators generates a write request based on the given generator functions.
+// The label set generator gets called once for each sample, the returned label set gets added to the request with the sample.
+// The exemplar label set generator also gets called once for each sample, if it isn't nil.
+// The metadata generator gets called once for each unique metric name that has been returned by the label generator, if it isn't nil.
+func makeWriteRequestForGenerators(samples int, lsg labelSetGen, elsg labelSetGen, mdg metaDataGen) *mimirpb.WriteRequest {
+	metricNames := make(map[string]struct{})
+
 	request := &mimirpb.WriteRequest{}
 	for i := 0; i < samples; i++ {
+		labelSet := lsg(i)
+		metricName := mimirpb.FromLabelAdaptersToLabels(labelSet).Get(model.MetricNameLabel)
+		if metricName != "" {
+			metricNames[metricName] = struct{}{}
+		}
+
 		ts := mimirpb.PreallocTimeseries{
 			TimeSeries: &mimirpb.TimeSeries{
-				Labels: labelSetGen(i),
+				Labels: labelSet,
 			},
 		}
-		ts.Samples = []mimirpb.Sample{
-			{
-				Value:       float64(i),
-				TimestampMs: int64(i),
-			},
+
+		ts.Samples = []mimirpb.Sample{{
+			Value:       float64(100 + i),
+			TimestampMs: int64(100 + i),
+		}}
+
+		if elsg != nil {
+			ts.Exemplars = []mimirpb.Exemplar{{
+				Labels:      elsg(100 + i),
+				Value:       float64(100 + i),
+				TimestampMs: int64(100 + i),
+			}}
 		}
+
 		request.Timeseries = append(request.Timeseries, ts)
+
 	}
+
+	if mdg != nil {
+		metricIdx := 0
+		for metricName := range metricNames {
+			request.Metadata = append(request.Metadata, mdg(metricIdx, metricName))
+			metricIdx++
+		}
+	}
+
 	return request
 }
 
@@ -4009,20 +4076,22 @@ outer:
 type mockForwarder struct {
 	services.Service
 
-	ingest bool
+	// Optional callback which takes the given timeseries and returns a modified version of it,
+	// the modified version gets returned by Forward().
+	timeseriesMutator func([]mimirpb.PreallocTimeseries) []mimirpb.PreallocTimeseries
 
 	// Optional callback to run in place of the actual forwarding request.
 	forwardReqCallback func([]mimirpb.PreallocTimeseries)
 }
 
-func newMockForwarder(ingest bool, forwardReqCallback func([]mimirpb.PreallocTimeseries)) forwarding.Forwarder {
+func newMockForwarder(timeseriesMutator func([]mimirpb.PreallocTimeseries) []mimirpb.PreallocTimeseries, forwardReqCallback func([]mimirpb.PreallocTimeseries)) forwarding.Forwarder {
 	return &mockForwarder{
-		ingest:             ingest,
+		timeseriesMutator:  timeseriesMutator,
 		forwardReqCallback: forwardReqCallback,
 	}
 }
 
-func (m *mockForwarder) Forward(ctx context.Context, forwardingRules validation.ForwardingRules, ts []mimirpb.PreallocTimeseries) (forwarding.TimeseriesCounts, []mimirpb.PreallocTimeseries, chan error) {
+func (m *mockForwarder) Forward(ctx context.Context, endpoint string, forwardingRules validation.ForwardingRules, ts []mimirpb.PreallocTimeseries) ([]mimirpb.PreallocTimeseries, chan error) {
 	errCh := make(chan error)
 
 	go func() {
@@ -4033,18 +4102,15 @@ func (m *mockForwarder) Forward(ctx context.Context, forwardingRules validation.
 		}
 	}()
 
-	var notIngestedCounts forwarding.TimeseriesCounts
-
-	if m.ingest {
-		return notIngestedCounts, ts, errCh
+	if m.timeseriesMutator != nil {
+		return m.timeseriesMutator(ts), errCh
 	}
 
-	for _, t := range ts {
-		notIngestedCounts.SampleCount += len(t.Samples)
-		notIngestedCounts.ExemplarCount += len(t.Exemplars)
-	}
+	return nil, errCh
+}
 
-	return notIngestedCounts, nil, errCh
+func ingestAllTimeseriesMutator(ts []mimirpb.PreallocTimeseries) []mimirpb.PreallocTimeseries {
+	return ts
 }
 
 func TestDistributorValidation(t *testing.T) {
@@ -4333,4 +4399,355 @@ func countMockIngestersCalls(ingesters []mockIngester, name string) int {
 		}
 	}
 	return count
+}
+
+// TestDistributor_MetricsWithRequestModifications tests that the distributor metrics are properly updated when
+// requests get modified by the mechanisms that can modify them: relabel rules, drop labels, ha-dedupe, forwarding, limits.
+func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
+	tenant := "tenant1"
+	getCtx := func() context.Context {
+		return user.InjectOrgID(context.Background(), tenant)
+	}
+	getDefaultConfig := func() prepConfig {
+		var limits validation.Limits
+		flagext.DefaultValues(&limits)
+		limits.MaxGlobalExemplarsPerUser = 1000
+
+		return prepConfig{
+			limits:            &limits,
+			numIngesters:      1,
+			happyIngesters:    1,
+			replicationFactor: 1,
+			numDistributors:   1,
+		}
+	}
+	getDistributor := func(config prepConfig) (*Distributor, *prometheus.Registry) {
+		ds, _, regs := prepare(t, config)
+		return ds[0], regs[0]
+	}
+	type expectedMetricsCfg struct {
+		requestsIn        int
+		samplesIn         int
+		exemplarsIn       int
+		metadataIn        int
+		receivedRequests  int
+		receivedSamples   int
+		receivedExemplars int
+		receivedMetadata  int
+	}
+	getExpectedMetrics := func(cfg expectedMetricsCfg) (string, []string) {
+		return fmt.Sprintf(`
+				# HELP cortex_distributor_requests_in_total The total number of requests that have come in to the distributor, including rejected, forwarded or deduped requests.
+				# TYPE cortex_distributor_requests_in_total counter
+				cortex_distributor_requests_in_total{user="%s"} %d
+				# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.
+				# TYPE cortex_distributor_samples_in_total counter
+				cortex_distributor_samples_in_total{user="%s"} %d
+				# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected, forwarded or deduped exemplars.
+				# TYPE cortex_distributor_exemplars_in_total counter
+				cortex_distributor_exemplars_in_total{user="%s"} %d
+				# HELP cortex_distributor_metadata_in_total The total number of metadata the have come in to the distributor, including rejected.
+				# TYPE cortex_distributor_metadata_in_total counter
+				cortex_distributor_metadata_in_total{user="%s"} %d
+				# HELP cortex_distributor_received_requests_total The total number of received requests, excluding rejected, forwarded and deduped requests.
+				# TYPE cortex_distributor_received_requests_total counter
+				cortex_distributor_received_requests_total{user="%s"} %d
+				# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected, forwarded and deduped samples.
+				# TYPE cortex_distributor_received_samples_total counter
+				cortex_distributor_received_samples_total{user="%s"} %d
+				# HELP cortex_distributor_received_exemplars_total The total number of received exemplars, excluding rejected, forwarded and deduped exemplars.
+				# TYPE cortex_distributor_received_exemplars_total counter
+				cortex_distributor_received_exemplars_total{user="%s"} %d
+				# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
+				# TYPE cortex_distributor_received_metadata_total counter
+				cortex_distributor_received_metadata_total{user="%s"} %d
+	`, tenant, cfg.requestsIn, tenant, cfg.samplesIn, tenant, cfg.exemplarsIn, tenant, cfg.metadataIn, tenant, cfg.receivedRequests, tenant, cfg.receivedSamples, tenant, cfg.receivedExemplars, tenant, cfg.receivedMetadata), []string{
+				"cortex_distributor_requests_in_total",
+				"cortex_distributor_samples_in_total",
+				"cortex_distributor_exemplars_in_total",
+				"cortex_distributor_metadata_in_total",
+				"cortex_distributor_received_requests_total",
+				"cortex_distributor_received_samples_total",
+				"cortex_distributor_received_exemplars_total",
+				"cortex_distributor_received_metadata_total",
+			}
+	}
+	uniqueMetricsGen := func(sampleIdx int) []mimirpb.LabelAdapter {
+		return []mimirpb.LabelAdapter{{Name: "__name__", Value: fmt.Sprintf("metric_%d", sampleIdx)}}
+	}
+	exemplarLabelGen := func(sampleIdx int) []mimirpb.LabelAdapter {
+		return []mimirpb.LabelAdapter{{Name: "exemplarLabel", Value: fmt.Sprintf("value_%d", sampleIdx)}}
+	}
+	metaDataGen := func(metricIdx int, metricName string) *mimirpb.MetricMetadata {
+		return &mimirpb.MetricMetadata{
+			Type:             mimirpb.COUNTER,
+			MetricFamilyName: metricName,
+			Help:             "test metric",
+			Unit:             "unknown",
+		}
+	}
+
+	t.Run("No modifications", func(t *testing.T) {
+		dist, reg := getDistributor(getDefaultConfig())
+		req := makeWriteRequestForGenerators(10, uniqueMetricsGen, exemplarLabelGen, metaDataGen)
+
+		_, err := dist.Push(getCtx(), req)
+		require.NoError(t, err)
+
+		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
+			requestsIn:        1,
+			samplesIn:         10,
+			exemplarsIn:       10,
+			metadataIn:        10,
+			receivedRequests:  1,
+			receivedSamples:   10,
+			receivedExemplars: 10,
+			receivedMetadata:  10})
+
+		require.NoError(t, testutil.GatherAndCompare(
+			reg,
+			strings.NewReader(expectedMetrics),
+			metricNames...,
+		))
+	})
+
+	t.Run("Drop samples via relabel rules", func(t *testing.T) {
+		cfg := getDefaultConfig()
+		cfg.limits.MetricRelabelConfigs = []*relabel.Config{{
+			SourceLabels: []model.LabelName{"__name__"},
+			Regex:        relabel.MustNewRegexp("^metric_[5-9]$"),
+			Action:       relabel.Drop,
+		}}
+		dist, reg := getDistributor(cfg)
+		req := makeWriteRequestForGenerators(10, uniqueMetricsGen, exemplarLabelGen, metaDataGen)
+
+		_, err := dist.Push(getCtx(), req)
+		require.NoError(t, err)
+
+		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
+			requestsIn:        1,
+			samplesIn:         10,
+			exemplarsIn:       10,
+			metadataIn:        10,
+			receivedRequests:  1,
+			receivedSamples:   5,
+			receivedExemplars: 5,
+			receivedMetadata:  10})
+
+		require.NoError(t, testutil.GatherAndCompare(
+			reg,
+			strings.NewReader(expectedMetrics),
+			metricNames...,
+		))
+	})
+
+	t.Run("Drop samples via drop_label rule", func(t *testing.T) {
+		cfg := getDefaultConfig()
+		cfg.limits.DropLabels = []string{"__name__"}
+		dist, reg := getDistributor(cfg)
+		req := makeWriteRequestForGenerators(10, uniqueMetricsGen, exemplarLabelGen, metaDataGen)
+
+		dist.Push(getCtx(), req) //nolint:errcheck
+
+		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
+			requestsIn:        1,
+			samplesIn:         10,
+			exemplarsIn:       10,
+			metadataIn:        10,
+			receivedRequests:  1,
+			receivedSamples:   0,
+			receivedExemplars: 0,
+			receivedMetadata:  10})
+
+		require.NoError(t, testutil.GatherAndCompare(
+			reg,
+			strings.NewReader(expectedMetrics),
+			metricNames...,
+		))
+	})
+
+	t.Run("Drop requests via ha-dedupe", func(t *testing.T) {
+		cfg := getDefaultConfig()
+		cfg.limits.AcceptHASamples = true
+		cfg.limits.MaxLabelValueLength = 15
+		cfg.limits.HAMaxClusters = 1
+		cfg.enableTracker = true
+		dist, reg := getDistributor(cfg)
+
+		uniqueMetricsGenWithReplica := func(replica string) func(sampleIdx int) []mimirpb.LabelAdapter {
+			return func(sampleIdx int) []mimirpb.LabelAdapter {
+				labels := uniqueMetricsGen(sampleIdx)
+				labels = append(labels, mimirpb.LabelAdapter{Name: "__replica__", Value: replica})
+				labels = append(labels, mimirpb.LabelAdapter{Name: "cluster", Value: "test_cluster"})
+				return labels
+			}
+		}
+
+		ctx := getCtx()
+		_, err := dist.Push(ctx, makeWriteRequestForGenerators(10, uniqueMetricsGenWithReplica("replica1"), exemplarLabelGen, metaDataGen))
+		require.NoError(t, err)
+		dist.Push(ctx, makeWriteRequestForGenerators(10, uniqueMetricsGenWithReplica("replica2"), exemplarLabelGen, metaDataGen)) //nolint:errcheck
+
+		_, err = dist.Push(ctx, makeWriteRequestForGenerators(10, uniqueMetricsGenWithReplica("replica1"), exemplarLabelGen, metaDataGen))
+		require.NoError(t, err)
+		dist.Push(ctx, makeWriteRequestForGenerators(10, uniqueMetricsGenWithReplica("replica2"), exemplarLabelGen, metaDataGen)) //nolint:errcheck
+
+		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
+			requestsIn:        4,
+			samplesIn:         40,
+			exemplarsIn:       40,
+			metadataIn:        40,
+			receivedRequests:  2,
+			receivedSamples:   20,
+			receivedExemplars: 20,
+			receivedMetadata:  20})
+
+		require.NoError(t, testutil.GatherAndCompare(
+			reg,
+			strings.NewReader(expectedMetrics),
+			metricNames...,
+		))
+	})
+
+	t.Run("Some samples get forwarded", func(t *testing.T) {
+		cfg := getDefaultConfig()
+		cfg.limits.ForwardingRules = validation.ForwardingRules{"any_metric": {}} // Needs to be len()>0 to enable forwarding.
+		cfg.forwarding = true
+		cfg.getForwarder = func() forwarding.Forwarder {
+			// This mock forwarder will return half of all samples for ingestion.
+			return newMockForwarder(
+				func(ts []mimirpb.PreallocTimeseries) []mimirpb.PreallocTimeseries {
+					return ts[:len(ts)/2]
+				}, nil,
+			)
+		}
+		dist, reg := getDistributor(cfg)
+		req := makeWriteRequestForGenerators(10, uniqueMetricsGen, exemplarLabelGen, metaDataGen)
+
+		_, err := dist.Push(getCtx(), req)
+		require.NoError(t, err)
+
+		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
+			requestsIn:        1,
+			samplesIn:         10,
+			exemplarsIn:       10,
+			metadataIn:        10,
+			receivedRequests:  1,
+			receivedSamples:   5,
+			receivedExemplars: 5,
+			receivedMetadata:  10})
+
+		require.NoError(t, testutil.GatherAndCompare(
+			reg,
+			strings.NewReader(expectedMetrics),
+			metricNames...,
+		))
+	})
+
+	t.Run("Drop examplars via limit", func(t *testing.T) {
+		cfg := getDefaultConfig()
+		cfg.limits.MaxGlobalExemplarsPerUser = 0
+		dist, reg := getDistributor(cfg)
+		req := makeWriteRequestForGenerators(10, uniqueMetricsGen, exemplarLabelGen, metaDataGen)
+
+		_, err := dist.Push(getCtx(), req)
+		require.NoError(t, err)
+
+		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
+			requestsIn:        1,
+			samplesIn:         10,
+			exemplarsIn:       10,
+			metadataIn:        10,
+			receivedRequests:  1,
+			receivedSamples:   10,
+			receivedExemplars: 0,
+			receivedMetadata:  10})
+
+		require.NoError(t, testutil.GatherAndCompare(
+			reg,
+			strings.NewReader(expectedMetrics),
+			metricNames...,
+		))
+	})
+
+	t.Run("Drop half of samples via label value length limit", func(t *testing.T) {
+		labelValueLimit := 10
+		cfg := getDefaultConfig()
+		cfg.limits.MaxLabelValueLength = labelValueLimit
+		dist, reg := getDistributor(cfg)
+
+		halfLabelValuesAboveLimit := func(sampleIdx int) []mimirpb.LabelAdapter {
+			labels := uniqueMetricsGen(sampleIdx)
+			if sampleIdx%2 == 0 {
+				labels = append(labels, mimirpb.LabelAdapter{
+					Name: "long_label", Value: strings.Repeat("a", labelValueLimit+1),
+				})
+			}
+			return labels
+		}
+
+		req := makeWriteRequestForGenerators(10, halfLabelValuesAboveLimit, exemplarLabelGen, metaDataGen)
+
+		dist.Push(getCtx(), req) //nolint:errcheck
+
+		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
+			requestsIn:        1,
+			samplesIn:         10,
+			exemplarsIn:       10,
+			metadataIn:        10,
+			receivedRequests:  1,
+			receivedSamples:   5,
+			receivedExemplars: 5,
+			receivedMetadata:  10})
+
+		require.NoError(t, testutil.GatherAndCompare(
+			reg,
+			strings.NewReader(expectedMetrics),
+			metricNames...,
+		))
+	})
+
+	t.Run("Drop half of metadata via label value length limit", func(t *testing.T) {
+		metadataLengthLimit := 20
+		cfg := getDefaultConfig()
+		cfg.limits.MaxMetadataLength = metadataLengthLimit
+		dist, reg := getDistributor(cfg)
+
+		metaDataGen := func(metricIdx int, metricName string) *mimirpb.MetricMetadata {
+			if metricIdx%2 == 0 {
+				return &mimirpb.MetricMetadata{
+					Type:             mimirpb.COUNTER,
+					MetricFamilyName: metricName,
+					Help:             strings.Repeat("a", metadataLengthLimit+1),
+					Unit:             "unknown",
+				}
+			}
+			return &mimirpb.MetricMetadata{
+				Type:             mimirpb.COUNTER,
+				MetricFamilyName: metricName,
+				Help:             strings.Repeat("a", metadataLengthLimit-1),
+				Unit:             "unknown",
+			}
+		}
+
+		req := makeWriteRequestForGenerators(10, uniqueMetricsGen, exemplarLabelGen, metaDataGen)
+
+		dist.Push(getCtx(), req) //nolint:errcheck
+
+		expectedMetrics, metricNames := getExpectedMetrics(expectedMetricsCfg{
+			requestsIn:        1,
+			samplesIn:         10,
+			exemplarsIn:       10,
+			metadataIn:        10,
+			receivedRequests:  1,
+			receivedSamples:   10,
+			receivedExemplars: 10,
+			receivedMetadata:  5})
+
+		require.NoError(t, testutil.GatherAndCompare(
+			reg,
+			strings.NewReader(expectedMetrics),
+			metricNames...,
+		))
+	})
 }

@@ -32,9 +32,6 @@ spec:
         {{- end }}
       labels:
         {{- include "mimir.podLabels" (dict "ctx" . "component" "nginx") | nindent 8 }}
-        {{- with .Values.nginx.podLabels }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
       namespace: {{ .Release.Namespace | quote }}
     spec:
       serviceAccountName: {{ include "mimir.serviceAccountName" . }}
