@@ -560,29 +560,16 @@ overrides:
 	}
 }
 
-func TestQueryFrontendWithQueryShardingAndTooManyRequests(t *testing.T) {
-	t.Run("with query-scheduler", func(t *testing.T) {
-		runQueryFrontendWithQueryShardingAndTooManyRequestsTest(t, queryFrontendTestConfig{
-			querySchedulerEnabled: true,
-			setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
-				flags = mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
-					"-query-scheduler.max-outstanding-requests-per-tenant": "1",
-				})
-
-				minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
-				require.NoError(t, s.StartAndWaitReady(minio))
-
-				return "", flags
-			},
-		})
-	})
-
-	t.Run("without query-scheduler", func(t *testing.T) {
-		runQueryFrontendWithQueryShardingAndTooManyRequestsTest(t, queryFrontendTestConfig{
+func TestQueryFrontendWithQueryShardingAndTooLargeEntryRequest(t *testing.T) {
+	runQueryFrontendWithQueryShardingHTTPTest(
+		t,
+		queryFrontendTestConfig{
 			querySchedulerEnabled: false,
 			setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
 				flags = mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
-					"-querier.max-outstanding-requests-per-tenant": "1", // Limit
+					// Set the maximum entry size to 50 byte.
+					// The query size is 64 bytes, so it will be a too large entry request.
+					"-querier.frontend-client.grpc-max-send-msg-size": "50",
 				})
 
 				minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
@@ -590,10 +577,56 @@ func TestQueryFrontendWithQueryShardingAndTooManyRequests(t *testing.T) {
 
 				return "", flags
 			},
-		})
+		},
+		http.StatusRequestEntityTooLarge,
+		false,
+	)
+}
+
+func TestQueryFrontendWithQueryShardingAndTooManyRequests(t *testing.T) {
+	t.Run("with query-scheduler", func(t *testing.T) {
+		runQueryFrontendWithQueryShardingHTTPTest(
+			t,
+			queryFrontendTestConfig{
+				querySchedulerEnabled: true,
+				setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
+					flags = mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
+						"-query-scheduler.max-outstanding-requests-per-tenant": "1",
+					})
+
+					minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+					require.NoError(t, s.StartAndWaitReady(minio))
+
+					return "", flags
+				},
+			},
+			http.StatusTooManyRequests,
+			true,
+		)
+	})
+
+	t.Run("without query-scheduler", func(t *testing.T) {
+		runQueryFrontendWithQueryShardingHTTPTest(
+			t,
+			queryFrontendTestConfig{
+				querySchedulerEnabled: false,
+				setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
+					flags = mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
+						"-querier.max-outstanding-requests-per-tenant": "1", // Limit
+					})
+
+					minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+					require.NoError(t, s.StartAndWaitReady(minio))
+
+					return "", flags
+				},
+			},
+			http.StatusTooManyRequests,
+			true,
+		)
 	})
 }
-func runQueryFrontendWithQueryShardingAndTooManyRequestsTest(t *testing.T, cfg queryFrontendTestConfig) {
+func runQueryFrontendWithQueryShardingHTTPTest(t *testing.T, cfg queryFrontendTestConfig, expectHTTPSStatus int, checkDiscardedMetrics bool) {
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
 	defer s.Close()
@@ -663,15 +696,17 @@ func runQueryFrontendWithQueryShardingAndTooManyRequestsTest(t *testing.T, cfg q
 
 	resp, _, err := c.QueryRaw("sum(series_1)")
 	require.NoError(t, err)
-	require.Equal(t, http.StatusTooManyRequests, resp.StatusCode)
+	require.Equal(t, expectHTTPSStatus, resp.StatusCode)
 
 	// Check that query was actually sharded.
 	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Greater(0), "cortex_frontend_sharded_queries_total"))
-	// Check that we actually discarded the request.
 
-	if cfg.querySchedulerEnabled {
-		require.NoError(t, queryScheduler.WaitSumMetrics(e2e.Greater(0), "cortex_query_scheduler_discarded_requests_total"))
-	} else {
-		require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Greater(0), "cortex_query_frontend_discarded_requests_total"))
+	// Check that we actually discarded the request.
+	if checkDiscardedMetrics {
+		if cfg.querySchedulerEnabled {
+			require.NoError(t, queryScheduler.WaitSumMetrics(e2e.Greater(0), "cortex_query_scheduler_discarded_requests_total"))
+		} else {
+			require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Greater(0), "cortex_query_frontend_discarded_requests_total"))
+		}
 	}
 }

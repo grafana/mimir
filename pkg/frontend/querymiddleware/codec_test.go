@@ -142,6 +142,19 @@ func TestDecodeFailedResponse(t *testing.T) {
 		require.True(t, ok, "Error should have an HTTPResponse encoded")
 		require.Equal(t, int32(http.StatusTooManyRequests), resp.Code)
 	})
+
+	t.Run("too large entry", func(t *testing.T) {
+		_, err := PrometheusCodec.DecodeResponse(context.Background(), &http.Response{
+			StatusCode: http.StatusRequestEntityTooLarge,
+			Body:       ioutil.NopCloser(strings.NewReader("something failed")),
+		}, nil, log.NewNopLogger())
+		require.Error(t, err)
+
+		require.True(t, apierror.IsAPIError(err))
+		resp, ok := apierror.HTTPResponseFromError(err)
+		require.True(t, ok, "Error should have an HTTPResponse encoded")
+		require.Equal(t, int32(http.StatusRequestEntityTooLarge), resp.Code)
+	})
 }
 
 func TestResponseRoundtrip(t *testing.T) {
