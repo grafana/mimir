@@ -40,7 +40,7 @@ When the usage statistics reporting is enabled, Grafana Mimir collects the follo
     - The number of in-memory series.
     - The number of tenants that have in-memory series.
     - The number of samples and exemplars ingested.
-  - Querier, *where no information is tracked about the actual request or query*:
+  - Querier, _where no information is tracked about the actual request or query_:
     - The number of requests to queriers that are split by API endpoint type:
       - Remote read.
       - Instant query.
