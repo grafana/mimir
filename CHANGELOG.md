@@ -28,6 +28,7 @@
 * [FEATURE] Dashboards: added support to experimental read-write deployment mode. #2780
 * [ENHANCEMENT] Dashboards: added support to query-tee in front of ruler-query-frontend in the "Remote ruler reads" dashboard. #2761
 * [ENHANCEMENT] Dashboards: Introduce support for baremetal deployment, setting `deployment_type: 'baremetal'` in the mixin `_config`. #2657
+* [ENHANCEMENT] Dashboards: use timeseries panel to show exemplars. #2800
 * [BUGFIX] Dashboards: stop setting 'interval' in dashboards; it should be set on your datasource. #2802
 
 ### Jsonnet

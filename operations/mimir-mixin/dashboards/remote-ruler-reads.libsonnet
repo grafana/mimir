@@ -62,11 +62,10 @@ local filename = 'mimir-remote-ruler-reads.json';
         utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.ruler_query_frontend) + [utils.selector.re('route', rulerRoutesRegex)])
       )
       .addPanel(
-        $.panel('Per %s p99 latency' % $._config.per_instance_label) +
+        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
           'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ruler_query_frontend), rulerRoutesRegex], ''
-        ) +
-        { yaxes: $.yaxes('s') }
+        )
       )
     )
     .addRow(
@@ -91,11 +90,10 @@ local filename = 'mimir-remote-ruler-reads.json';
         utils.latencyRecordingRulePanel('cortex_querier_request_duration_seconds', $.jobSelector($._config.job_names.ruler_querier) + [utils.selector.re('route', '(prometheus|api_prom)_api_v1_.+')])
       )
       .addPanel(
-        $.panel('Per %s p99 latency' % $._config.per_instance_label) +
+        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
           'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_querier_request_duration_seconds_bucket{%s, route=~"(prometheus|api_prom)_api_v1_.+"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ruler_querier)], ''
-        ) +
-        { yaxes: $.yaxes('s') }
+        )
       )
     )
     .addRowIf(

@@ -101,11 +101,10 @@ local filename = 'mimir-reads.json';
         utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', '(prometheus|api_prom)_api_v1_.+')])
       )
       .addPanel(
-        $.panel('Per %s p99 latency' % $._config.per_instance_label) +
+        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
           'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"(prometheus|api_prom)_api_v1_.+"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.gateway)], ''
-        ) +
-        { yaxes: $.yaxes('s') }
+        )
       )
     )
     .addRow(
@@ -119,11 +118,10 @@ local filename = 'mimir-reads.json';
         utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.query_frontend) + [utils.selector.re('route', '(prometheus|api_prom)_api_v1_.+')])
       )
       .addPanel(
-        $.panel('Per %s p99 latency' % $._config.per_instance_label) +
+        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
           'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"(prometheus|api_prom)_api_v1_.+"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.query_frontend)], ''
-        ) +
-        { yaxes: $.yaxes('s') }
+        )
       )
     )
     .addRow(
@@ -189,11 +187,10 @@ local filename = 'mimir-reads.json';
         utils.latencyRecordingRulePanel('cortex_querier_request_duration_seconds', $.jobSelector($._config.job_names.querier) + [utils.selector.re('route', '(prometheus|api_prom)_api_v1_.+')])
       )
       .addPanel(
-        $.panel('Per %s p99 latency' % $._config.per_instance_label) +
+        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
           'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_querier_request_duration_seconds_bucket{%s, route=~"(prometheus|api_prom)_api_v1_.+"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.querier)], ''
-        ) +
-        { yaxes: $.yaxes('s') }
+        )
       )
     )
     .addRowIf(
@@ -269,11 +266,10 @@ local filename = 'mimir-reads.json';
         utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.ingester) + [utils.selector.re('route', '/cortex.Ingester/Query(Stream)?|/cortex.Ingester/MetricsForLabelMatchers|/cortex.Ingester/LabelValues|/cortex.Ingester/MetricsMetadata')])
       )
       .addPanel(
-        $.panel('Per %s p99 latency' % $._config.per_instance_label) +
+        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
           'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"/cortex.Ingester/Query(Stream)?|/cortex.Ingester/MetricsForLabelMatchers|/cortex.Ingester/LabelValues|/cortex.Ingester/MetricsMetadata"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)], ''
-        ) +
-        { yaxes: $.yaxes('s') }
+        )
       )
     )
     .addRow(
@@ -287,11 +283,10 @@ local filename = 'mimir-reads.json';
         utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.store_gateway) + [utils.selector.re('route', '/gatewaypb.StoreGateway/.*')])
       )
       .addPanel(
-        $.panel('Per %s p99 latency' % $._config.per_instance_label) +
+        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
           'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"/gatewaypb.StoreGateway/.*"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.store_gateway)], ''
-        ) +
-        { yaxes: $.yaxes('s') }
+        )
       )
     )
     .addRow(
