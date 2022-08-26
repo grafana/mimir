@@ -18,16 +18,14 @@
       - "./mimir"
       - "-config.file=./config/mimir.yaml"
       - "-target=backend"
-      - "-server.http-listen-port=8006"
-      - "-server.grpc-listen-port=9006"
-      - "-activity-tracker.filepath=/activity/backend-8006"
+      - "-activity-tracker.filepath=/activity/mimir-backend-1"
     "depends_on":
       - "minio"
     "environment": []
     "hostname": "mimir-backend-1"
     "image": "mimir"
     "ports":
-      - "8006:8006"
+      - "8006:8080"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
@@ -39,16 +37,14 @@
       - "./mimir"
       - "-config.file=./config/mimir.yaml"
       - "-target=backend"
-      - "-server.http-listen-port=8007"
-      - "-server.grpc-listen-port=9007"
-      - "-activity-tracker.filepath=/activity/backend-8007"
+      - "-activity-tracker.filepath=/activity/mimir-backend-2"
     "depends_on":
       - "minio"
     "environment": []
     "hostname": "mimir-backend-2"
     "image": "mimir"
     "ports":
-      - "8007:8007"
+      - "8007:8080"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
@@ -60,16 +56,14 @@
       - "./mimir"
       - "-config.file=./config/mimir.yaml"
       - "-target=read"
-      - "-server.http-listen-port=8004"
-      - "-server.grpc-listen-port=9004"
-      - "-activity-tracker.filepath=/activity/read-8004"
+      - "-activity-tracker.filepath=/activity/mimir-read-1"
     "depends_on":
       - "minio"
     "environment": []
     "hostname": "mimir-read-1"
     "image": "mimir"
     "ports":
-      - "8004:8004"
+      - "8004:8080"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
@@ -81,16 +75,14 @@
       - "./mimir"
       - "-config.file=./config/mimir.yaml"
       - "-target=read"
-      - "-server.http-listen-port=8005"
-      - "-server.grpc-listen-port=9005"
-      - "-activity-tracker.filepath=/activity/read-8005"
+      - "-activity-tracker.filepath=/activity/mimir-read-2"
     "depends_on":
       - "minio"
     "environment": []
     "hostname": "mimir-read-2"
     "image": "mimir"
     "ports":
-      - "8005:8005"
+      - "8005:8080"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
@@ -102,16 +94,14 @@
       - "./mimir"
       - "-config.file=./config/mimir.yaml"
       - "-target=write"
-      - "-server.http-listen-port=8001"
-      - "-server.grpc-listen-port=9001"
-      - "-activity-tracker.filepath=/activity/write-8001"
+      - "-activity-tracker.filepath=/activity/mimir-write-1"
     "depends_on":
       - "minio"
     "environment": []
     "hostname": "mimir-write-1"
     "image": "mimir"
     "ports":
-      - "8001:8001"
+      - "8001:8080"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
@@ -124,16 +114,14 @@
       - "./mimir"
       - "-config.file=./config/mimir.yaml"
       - "-target=write"
-      - "-server.http-listen-port=8002"
-      - "-server.grpc-listen-port=9002"
-      - "-activity-tracker.filepath=/activity/write-8002"
+      - "-activity-tracker.filepath=/activity/mimir-write-2"
     "depends_on":
       - "minio"
     "environment": []
     "hostname": "mimir-write-2"
     "image": "mimir"
     "ports":
-      - "8002:8002"
+      - "8002:8080"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
@@ -146,16 +134,14 @@
       - "./mimir"
       - "-config.file=./config/mimir.yaml"
       - "-target=write"
-      - "-server.http-listen-port=8003"
-      - "-server.grpc-listen-port=9003"
-      - "-activity-tracker.filepath=/activity/write-8003"
+      - "-activity-tracker.filepath=/activity/mimir-write-3"
     "depends_on":
       - "minio"
     "environment": []
     "hostname": "mimir-write-3"
     "image": "mimir"
     "ports":
-      - "8003:8003"
+      - "8003:8080"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
