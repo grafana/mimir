@@ -81,13 +81,13 @@ func main() {
 func analyseSymbols(blockDir string, uniqueSymbols map[string]struct{}, uniqueSymbolsPerShard []map[string]struct{}) error {
 	block, err := tsdb.OpenBlock(gokitlog.NewLogfmtLogger(os.Stderr), blockDir, nil)
 	if err != nil {
-		return fmt.Errorf("failed to open block: %v", err)
+		return fmt.Errorf("failed to open block: %w", err)
 	}
 	defer block.Close()
 
 	idx, err := block.Index()
 	if err != nil {
-		return fmt.Errorf("failed to open block index: %v", err)
+		return fmt.Errorf("failed to open block index: %w", err)
 	}
 	defer idx.Close()
 
@@ -116,7 +116,7 @@ func analyseSymbols(blockDir string, uniqueSymbols map[string]struct{}, uniqueSy
 			length += len(si.At())
 		}
 		if si.Err() != nil {
-			return fmt.Errorf("error iterating symbols: %v", err)
+			return fmt.Errorf("error iterating symbols: %w", err)
 		}
 
 		fmt.Printf("%s: symbols iteration: total length of symbols: %d bytes, symbols: %d\n", block.Meta().ULID.String(), length, count)
@@ -129,7 +129,7 @@ func analyseSymbols(blockDir string, uniqueSymbols map[string]struct{}, uniqueSy
 	p, err := idx.Postings(k, v)
 
 	if err != nil {
-		return fmt.Errorf("failed to get postings: %v", err)
+		return fmt.Errorf("failed to get postings: %w", err)
 	}
 
 	shards := len(uniqueSymbolsPerShard)
@@ -139,7 +139,7 @@ func analyseSymbols(blockDir string, uniqueSymbols map[string]struct{}, uniqueSy
 		lbls := labels.Labels(nil)
 		err := idx.Series(p.At(), &lbls, nil)
 		if err != nil {
-			return fmt.Errorf("error getting series seriesID=%d: %v", p.At(), err)
+			return fmt.Errorf("error getting series seriesID=%d: %w", p.At(), err)
 		}
 
 		shardID := uint64(0)
@@ -162,7 +162,7 @@ func analyseSymbols(blockDir string, uniqueSymbols map[string]struct{}, uniqueSy
 	}
 
 	if p.Err() != nil {
-		return fmt.Errorf("error iterating postings: %v", err)
+		return fmt.Errorf("error iterating postings: %w", err)
 	}
 
 	fmt.Printf("%s: found %d unique symbols from series in the block\n", block.Meta().ULID.String(), len(uniqueSymbolsPerBlock))

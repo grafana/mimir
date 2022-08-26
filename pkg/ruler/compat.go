@@ -142,7 +142,7 @@ func MetricsQueryFunc(qf rules.QueryFunc, queries, failedQueries prometheus.Coun
 			//
 			// All errors will still be counted towards "evaluation failures" metrics and logged by Prometheus Ruler,
 			// but we only want internal errors here.
-			if _, ok := querier.TranslateToPromqlAPIError(origErr).(promql.ErrStorage); ok {
+			if errors.As(querier.TranslateToPromqlAPIError(origErr), &promql.ErrStorage{}) {
 				failedQueries.Inc()
 			}
 

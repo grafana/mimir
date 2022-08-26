@@ -37,6 +37,7 @@ func TranslateToPromqlAPIError(err error) error {
 		return err
 	}
 
+	//nolint:errorlint // We don't expect the cause error to be wrapped.
 	switch errors.Cause(err).(type) {
 	case promql.ErrStorage, promql.ErrTooManySamples, promql.ErrQueryCanceled, promql.ErrQueryTimeout:
 		// Don't translate those, just in case we use them internally.

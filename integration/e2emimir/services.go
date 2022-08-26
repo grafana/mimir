@@ -46,7 +46,7 @@ func getExtraFlags() map[string]string {
 	}
 	extraArgs := map[string]string{}
 	if err := json.Unmarshal([]byte(str), &extraArgs); err != nil {
-		panic(fmt.Errorf("can't unmarshal MIMIR_EXTRA_FLAGS as JSON, it should be a map of arg name to arg value: %s", err))
+		panic(fmt.Errorf("can't unmarshal MIMIR_EXTRA_FLAGS as JSON, it should be a map of arg name to arg value: %w", err))
 	}
 	return extraArgs
 }

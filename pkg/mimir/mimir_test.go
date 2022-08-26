@@ -26,6 +26,7 @@ import (
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -687,7 +688,7 @@ func TestFlagDefaults(t *testing.T) {
 	pingWithoutStreamChecked := false
 	for {
 		line, err := buf.ReadString(delim)
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 

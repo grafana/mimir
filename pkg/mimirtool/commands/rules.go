@@ -321,7 +321,7 @@ func (r *RuleCommand) setupFiles() error {
 				return nil
 			})
 			if err != nil {
-				return fmt.Errorf("error walking the path %q: %v", dir, err)
+				return fmt.Errorf("error walking the path %q: %w", dir, err)
 			}
 		}
 	}
@@ -448,7 +448,7 @@ func (r *RuleCommand) diffRules(k *kingpin.ParseContext) error {
 	//TODO: Skipping the 404s here might end up in an unsual scenario.
 	// If we're unable to reach the Mimir API due to a bad URL, we'll assume no rules are
 	// part of the namespace and provide a diff of the whole ruleset.
-	if err != nil && err != client.ErrResourceNotFound {
+	if err != nil && !errors.Is(err, client.ErrResourceNotFound) {
 		return errors.Wrap(err, "diff operation unsuccessful, unable to contact Grafana Mimir API")
 	}
 

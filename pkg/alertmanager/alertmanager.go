@@ -196,7 +196,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 		nflog.WithLogger(log.With(am.logger, "component", "nflog")),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create notification log: %v", err)
+		return nil, fmt.Errorf("failed to create notification log: %w", err)
 	}
 
 	c := am.state.AddState("nfl:"+cfg.UserID, am.nflog, am.registry)
@@ -212,7 +212,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 		Metrics:      am.registry,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create silences: %v", err)
+		return nil, fmt.Errorf("failed to create silences: %w", err)
 	}
 
 	c = am.state.AddState("sil:"+cfg.UserID, am.silences, am.registry)
@@ -242,7 +242,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 
 	am.alerts, err = mem.NewAlerts(context.Background(), am.marker, 30*time.Minute, callback, am.logger, reg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create alerts: %v", err)
+		return nil, fmt.Errorf("failed to create alerts: %w", err)
 	}
 
 	am.api, err = api.New(api.Options{
@@ -259,7 +259,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 		},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create api: %v", err)
+		return nil, fmt.Errorf("failed to create api: %w", err)
 	}
 
 	router := route.New().WithPrefix(am.cfg.ExternalURL.Path)

@@ -513,7 +513,8 @@ func (e replicasNotMatchError) Error() string {
 	return fmt.Sprintf("replicas did not mach, rejecting sample: replica=%s, elected=%s", e.replica, e.elected)
 }
 
-// Needed for errors.Is to work properly.
+// Is implements the interface expected by errors.Is.
+//nolint:errorlint
 func (e replicasNotMatchError) Is(err error) bool {
 	_, ok1 := err.(replicasNotMatchError)
 	_, ok2 := err.(*replicasNotMatchError)
@@ -535,7 +536,8 @@ func (e tooManyClustersError) Error() string {
 		validation.HATrackerMaxClustersFlag)
 }
 
-// Needed for errors.Is to work properly.
+// Is implements the interface expected by errors.Is.
+//nolint:errorlint
 func (e tooManyClustersError) Is(err error) bool {
 	_, ok1 := err.(tooManyClustersError)
 	_, ok2 := err.(*tooManyClustersError)

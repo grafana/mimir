@@ -2406,7 +2406,7 @@ func TestIngester_QueryStream(t *testing.T) {
 
 				for {
 					resp, err := s.Recv()
-					if err == io.EOF {
+					if errors.Is(err, io.EOF) {
 						break
 					}
 					if err != nil {
@@ -2583,7 +2583,7 @@ func TestIngester_QueryStreamManySamples(t *testing.T) {
 
 	for {
 		resp, err := s.Recv()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		require.NoError(t, err)
@@ -2680,7 +2680,7 @@ func TestIngester_QueryStreamManySamplesChunks(t *testing.T) {
 
 	for {
 		resp, err := s.Recv()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		require.NoError(t, err)

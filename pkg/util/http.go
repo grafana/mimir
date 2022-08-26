@@ -178,7 +178,8 @@ func (e MsgSizeTooLargeErr) Error() string {
 	return fmt.Sprintf("the request has been rejected because its size of %d bytes exceeds the limit of %d bytes", e.Actual, e.Limit)
 }
 
-// Needed for errors.Is to work properly.
+// Is implements the interface expected by errors.Is.
+//nolint:errorlint
 func (e MsgSizeTooLargeErr) Is(err error) bool {
 	_, ok1 := err.(MsgSizeTooLargeErr)
 	_, ok2 := err.(*MsgSizeTooLargeErr)
@@ -273,7 +274,7 @@ func SerializeProtoResponse(w http.ResponseWriter, resp proto.Message, compressi
 	data, err := proto.Marshal(resp)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return fmt.Errorf("error marshaling proto response: %v", err)
+		return fmt.Errorf("error marshaling proto response: %w", err)
 	}
 
 	switch compression {
@@ -284,7 +285,7 @@ func SerializeProtoResponse(w http.ResponseWriter, resp proto.Message, compressi
 
 	if _, err := w.Write(data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return fmt.Errorf("error sending proto response: %v", err)
+		return fmt.Errorf("error sending proto response: %w", err)
 	}
 	return nil
 }

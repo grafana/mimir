@@ -281,18 +281,18 @@ type MultitenantAlertmanager struct {
 func NewMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, store alertstore.AlertStore, limits Limits, logger log.Logger, registerer prometheus.Registerer) (*MultitenantAlertmanager, error) {
 	err := os.MkdirAll(cfg.DataDir, 0777)
 	if err != nil {
-		return nil, fmt.Errorf("unable to create Alertmanager data directory %q: %s", cfg.DataDir, err)
+		return nil, fmt.Errorf("unable to create Alertmanager data directory %q: %w", cfg.DataDir, err)
 	}
 
 	var fallbackConfig []byte
 	if cfg.FallbackConfigFile != "" {
 		fallbackConfig, err = ioutil.ReadFile(cfg.FallbackConfigFile)
 		if err != nil {
-			return nil, fmt.Errorf("unable to read fallback config %q: %s", cfg.FallbackConfigFile, err)
+			return nil, fmt.Errorf("unable to read fallback config %q: %w", cfg.FallbackConfigFile, err)
 		}
 		_, err = amconfig.LoadFile(cfg.FallbackConfigFile)
 		if err != nil {
-			return nil, fmt.Errorf("unable to load fallback config %q: %s", cfg.FallbackConfigFile, err)
+			return nil, fmt.Errorf("unable to load fallback config %q: %w", cfg.FallbackConfigFile, err)
 		}
 	}
 
@@ -680,7 +680,7 @@ func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error
 		level.Debug(am.logger).Log("msg", "blank Alertmanager configuration; using fallback", "user", cfg.User)
 		userAmConfig, err = amconfig.Load(am.fallbackConfig)
 		if err != nil {
-			return fmt.Errorf("unable to load fallback configuration for %v: %v", cfg.User, err)
+			return fmt.Errorf("unable to load fallback configuration for %v: %w", cfg.User, err)
 		}
 		rawCfg = am.fallbackConfig
 	} else {
@@ -689,7 +689,7 @@ func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error
 			// This means that if a user has a working config and
 			// they submit a broken one, the Manager will keep running the last known
 			// working configuration.
-			return fmt.Errorf("invalid Alertmanager configuration for %v: %v", cfg.User, err)
+			return fmt.Errorf("invalid Alertmanager configuration for %v: %w", cfg.User, err)
 		}
 	}
 
@@ -714,7 +714,7 @@ func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error
 		// If the config changed, apply the new one.
 		err := existing.ApplyConfig(cfg.User, userAmConfig, rawCfg)
 		if err != nil {
-			return fmt.Errorf("unable to apply Alertmanager config for user %v: %v", cfg.User, err)
+			return fmt.Errorf("unable to apply Alertmanager config for user %v: %w", cfg.User, err)
 		}
 	}
 
@@ -750,11 +750,11 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *amco
 		Limits:                            am.limits,
 	}, reg)
 	if err != nil {
-		return nil, fmt.Errorf("unable to start Alertmanager for user %v: %v", userID, err)
+		return nil, fmt.Errorf("unable to start Alertmanager for user %v: %w", userID, err)
 	}
 
 	if err := newAM.ApplyConfig(userID, amConfig, rawCfg); err != nil {
-		return nil, fmt.Errorf("unable to apply initial config for user %v: %v", userID, err)
+		return nil, fmt.Errorf("unable to apply initial config for user %v: %w", userID, err)
 	}
 
 	am.alertmanagerMetrics.addUserRegistry(userID, reg)
@@ -1179,7 +1179,7 @@ func storeTemplateFile(templateFilepath, content string) (bool, error) {
 	dir := filepath.Dir(templateFilepath)
 	err := os.MkdirAll(dir, 0755)
 	if err != nil {
-		return false, fmt.Errorf("unable to create Alertmanager templates directory %q: %s", dir, err)
+		return false, fmt.Errorf("unable to create Alertmanager templates directory %q: %w", dir, err)
 	}
 
 	// Check if the template file already exists and if it has changed
@@ -1190,7 +1190,7 @@ func storeTemplateFile(templateFilepath, content string) (bool, error) {
 	}
 
 	if err := ioutil.WriteFile(templateFilepath, []byte(content), 0644); err != nil {
-		return false, fmt.Errorf("unable to create Alertmanager template file %q: %s", templateFilepath, err)
+		return false, fmt.Errorf("unable to create Alertmanager template file %q: %w", templateFilepath, err)
 	}
 
 	return true, nil

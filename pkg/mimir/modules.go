@@ -439,7 +439,7 @@ func (t *Mimir) initStoreQueryables() (services.Service, error) {
 
 	//nolint:golint // I prefer this form over removing 'else', because it allows q to have smaller scope.
 	if q, err := querier.NewBlocksStoreQueryableFromConfig(t.Cfg.Querier, t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, t.Registerer); err != nil {
-		return nil, fmt.Errorf("failed to initialize querier: %v", err)
+		return nil, fmt.Errorf("failed to initialize querier: %w", err)
 	} else {
 		t.StoreQueryables = append(t.StoreQueryables, querier.UseAlwaysQueryable(q))
 		servs = append(servs, q)

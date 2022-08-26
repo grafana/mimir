@@ -2140,7 +2140,7 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 
 		// Cache miss; save pointer for actual posting in index stored in object store.
 		ptr, err := r.block.indexHeaderReader.PostingsOffset(key.Name, key.Value)
-		if err == indexheader.NotFoundRangeErr {
+		if errors.Is(err, indexheader.NotFoundRangeErr) {
 			// This block does not have any posting for given key.
 			output[ix] = index.EmptyPostings()
 			continue

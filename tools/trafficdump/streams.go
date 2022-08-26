@@ -4,6 +4,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"io"
 	"io/ioutil"
 	"log"
@@ -35,7 +36,7 @@ func (rs *requestStream) parseRequests() {
 	buf := bufio.NewReader(rs.r)
 	for {
 		req, err := http.ReadRequest(buf)
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			// We must read until we see an EOF... very important!
 			return
 		}
@@ -87,7 +88,7 @@ func (rs *responseStream) parseResponses() {
 	buf := bufio.NewReader(rs.r)
 	for {
 		req, err := http.ReadResponse(buf, nil)
-		if err == io.ErrUnexpectedEOF {
+		if errors.Is(err, io.ErrUnexpectedEOF) {
 			return
 		}
 

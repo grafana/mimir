@@ -8,6 +8,7 @@ package transport
 import (
 	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -247,15 +248,12 @@ func formatQueryString(queryString url.Values) (fields []interface{}) {
 }
 
 func writeError(w http.ResponseWriter, err error) {
-	switch err {
-	case context.Canceled:
+	if errors.Is(err, context.Canceled) {
 		err = errCanceled
-	case context.DeadlineExceeded:
+	} else if errors.Is(err, context.DeadlineExceeded) {
 		err = errDeadlineExceeded
-	default:
-		if util.IsRequestBodyTooLarge(err) {
-			err = errRequestEntityTooLarge
-		}
+	} else if util.IsRequestBodyTooLarge(err) {
+		err = errRequestEntityTooLarge
 	}
 
 	// if the error error is an APIError, ensure it gets written as a JSON response

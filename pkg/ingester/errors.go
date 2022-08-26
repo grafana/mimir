@@ -48,5 +48,5 @@ func (e *validationError) Error() string {
 
 // wrapWithUser prepends the user to the error. It does not retain a reference to err.
 func wrapWithUser(err error, userID string) error {
-	return fmt.Errorf("user=%s: %s", userID, err)
+	return fmt.Errorf("user=%s: %w", userID, err)
 }

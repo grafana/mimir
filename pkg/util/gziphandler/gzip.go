@@ -252,7 +252,7 @@ func (w *GzipResponseWriter) Close() error {
 		err := w.startPlain()
 		// Returns the error if any at write.
 		if err != nil {
-			err = fmt.Errorf("gziphandler: write to regular responseWriter at close gets error: %q", err.Error())
+			err = fmt.Errorf("gziphandler: write to regular responseWriter at close gets error: %w", err)
 		}
 		return err
 	}

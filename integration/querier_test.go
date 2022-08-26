@@ -8,6 +8,7 @@
 package integration
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"testing"
@@ -814,7 +815,13 @@ func TestQuerierWithBlocksStorageOnMissingBlocksFromStorage(t *testing.T) {
 	_, err = c.Query("series_1", series1Timestamp)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "500")
-	assert.Contains(t, err.(*promv1.Error).Detail, "consistency check failed because some blocks were not queried")
+
+	var promErr *promv1.Error
+	if errors.As(err, &promErr) {
+		assert.Contains(t, promErr.Detail, "consistency check failed because some blocks were not queried")
+	} else {
+		t.Fatal("unexpected error type")
+	}
 }
 
 func TestQueryLimitsWithBlocksStorageRunningInMicroServices(t *testing.T) {

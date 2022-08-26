@@ -497,8 +497,7 @@ func (e Issue347Error) Error() string {
 
 // IsIssue347Error returns true if the base error is a Issue347Error.
 func IsIssue347Error(err error) bool {
-	_, ok := errors.Cause(err).(Issue347Error)
-	return ok
+	return errors.As(errors.Cause(err), Issue347Error{})
 }
 
 // OutOfOrderChunkError is a type wrapper for OOO chunk error from validating block index.
@@ -515,16 +514,18 @@ func outOfOrderChunkError(err error, brokenBlock ulid.ULID) OutOfOrderChunksErro
 	return OutOfOrderChunksError{err: err, id: brokenBlock}
 }
 
-// IsOutOfOrderChunk returns true if the base error is a OutOfOrderChunkError.
-func IsOutOfOrderChunkError(err error) bool {
-	_, ok := errors.Cause(err).(OutOfOrderChunksError)
-	return ok
+// AsOutOfOrderChunkError checks whether the cause of the input error is a OutOfOrderChunkError.
+// If so, it returns the OutOfOrderChunksError and true.
+func AsOutOfOrderChunkError(err error) (OutOfOrderChunksError, bool) {
+	var oooErr OutOfOrderChunksError
+	ok := errors.As(errors.Cause(err), &oooErr)
+	return oooErr, ok
 }
 
 // RepairIssue347 repairs the https://github.com/prometheus/tsdb/issues/347 issue when having issue347Error.
 func RepairIssue347(ctx context.Context, logger log.Logger, bkt objstore.Bucket, blocksMarkedForDeletion prometheus.Counter, issue347Err error) error {
-	ie, ok := errors.Cause(issue347Err).(Issue347Error)
-	if !ok {
+	var ie Issue347Error
+	if !errors.As(issue347Err, &ie) {
 		return errors.Errorf("Given error is not an issue347 error: %v", issue347Err)
 	}
 
@@ -773,12 +774,12 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 					// If block has out of order chunk and it has been configured to skip it,
 					// then we can mark the block for no compaction so that the next compaction run
 					// will skip it.
-					if IsOutOfOrderChunkError(err) && c.skipBlocksWithOutOfOrderChunks {
+					if oooErr, ok := AsOutOfOrderChunkError(err); ok && c.skipBlocksWithOutOfOrderChunks {
 						if err := block.MarkForNoCompact(
 							ctx,
 							c.logger,
 							c.bkt,
-							err.(OutOfOrderChunksError).id,
+							oooErr.id,
 							metadata.OutOfOrderChunksNoCompactReason,
 							"OutofOrderChunk: marking block with out-of-order series/chunks to as no compact to unblock compaction", c.metrics.blocksMarkedForNoCompact); err == nil {
 							mtx.Lock()

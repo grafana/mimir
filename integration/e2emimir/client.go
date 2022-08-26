@@ -521,7 +521,7 @@ func (c *Client) doAlertmanagerRequest(ctx context.Context, method string, path 
 
 	req, err := http.NewRequest(method, u.String(), nil)
 	if err != nil {
-		return "", fmt.Errorf("error creating request: %v", err)
+		return "", fmt.Errorf("error creating request: %w", err)
 	}
 
 	resp, body, err := c.alertmanagerClient.Do(ctx, req)
@@ -545,7 +545,7 @@ func (c *Client) GetAlertmanagerConfig(ctx context.Context) (*alertConfig.Config
 
 	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
 	if err != nil {
-		return nil, fmt.Errorf("error creating request: %v", err)
+		return nil, fmt.Errorf("error creating request: %w", err)
 	}
 
 	resp, body, err := c.alertmanagerClient.Do(ctx, req)
@@ -587,7 +587,7 @@ func (c *Client) SetAlertmanagerConfig(ctx context.Context, amConfig string, tem
 
 	req, err := http.NewRequest(http.MethodPost, u.String(), bytes.NewReader(data))
 	if err != nil {
-		return fmt.Errorf("error creating request: %v", err)
+		return fmt.Errorf("error creating request: %w", err)
 	}
 
 	resp, body, err := c.alertmanagerClient.Do(ctx, req)
@@ -611,7 +611,7 @@ func (c *Client) DeleteAlertmanagerConfig(ctx context.Context) error {
 	u := c.alertmanagerClient.URL("/api/v1/alerts", nil)
 	req, err := http.NewRequest(http.MethodDelete, u.String(), nil)
 	if err != nil {
-		return fmt.Errorf("error creating request: %v", err)
+		return fmt.Errorf("error creating request: %w", err)
 	}
 
 	resp, body, err := c.alertmanagerClient.Do(ctx, req)
@@ -636,12 +636,12 @@ func (c *Client) SendAlertToAlermanager(ctx context.Context, alert *model.Alert)
 
 	data, err := json.Marshal([]types.Alert{{Alert: *alert}})
 	if err != nil {
-		return fmt.Errorf("error marshaling the alert: %v", err)
+		return fmt.Errorf("error marshaling the alert: %w", err)
 	}
 
 	req, err := http.NewRequest(http.MethodPost, u.String(), bytes.NewReader(data))
 	if err != nil {
-		return fmt.Errorf("error creating request: %v", err)
+		return fmt.Errorf("error creating request: %w", err)
 	}
 
 	resp, body, err := c.alertmanagerClient.Do(ctx, req)
@@ -661,7 +661,7 @@ func (c *Client) GetAlertsV1(ctx context.Context) ([]model.Alert, error) {
 
 	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
 	if err != nil {
-		return nil, fmt.Errorf("error creating request: %v", err)
+		return nil, fmt.Errorf("error creating request: %w", err)
 	}
 
 	resp, body, err := c.alertmanagerClient.Do(ctx, req)
@@ -699,7 +699,7 @@ func (c *Client) GetAlertsV2(ctx context.Context) ([]model.Alert, error) {
 
 	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
 	if err != nil {
-		return nil, fmt.Errorf("error creating request: %v", err)
+		return nil, fmt.Errorf("error creating request: %w", err)
 	}
 
 	resp, body, err := c.alertmanagerClient.Do(ctx, req)
@@ -733,7 +733,7 @@ func (c *Client) GetAlertGroups(ctx context.Context) ([]AlertGroup, error) {
 
 	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
 	if err != nil {
-		return nil, fmt.Errorf("error creating request: %v", err)
+		return nil, fmt.Errorf("error creating request: %w", err)
 	}
 
 	resp, body, err := c.alertmanagerClient.Do(ctx, req)
@@ -762,12 +762,12 @@ func (c *Client) CreateSilence(ctx context.Context, silence types.Silence) (stri
 
 	data, err := json.Marshal(silence)
 	if err != nil {
-		return "", fmt.Errorf("error marshaling the silence: %s", err)
+		return "", fmt.Errorf("error marshaling the silence: %w", err)
 	}
 
 	req, err := http.NewRequest(http.MethodPost, u.String(), bytes.NewReader(data))
 	if err != nil {
-		return "", fmt.Errorf("error creating request: %v", err)
+		return "", fmt.Errorf("error creating request: %w", err)
 	}
 
 	resp, body, err := c.alertmanagerClient.Do(ctx, req)
@@ -803,7 +803,7 @@ func (c *Client) GetSilencesV1(ctx context.Context) ([]types.Silence, error) {
 
 	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
 	if err != nil {
-		return nil, fmt.Errorf("error creating request: %v", err)
+		return nil, fmt.Errorf("error creating request: %w", err)
 	}
 
 	resp, body, err := c.alertmanagerClient.Do(ctx, req)
@@ -841,7 +841,7 @@ func (c *Client) GetSilencesV2(ctx context.Context) ([]types.Silence, error) {
 
 	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
 	if err != nil {
-		return nil, fmt.Errorf("error creating request: %v", err)
+		return nil, fmt.Errorf("error creating request: %w", err)
 	}
 
 	resp, body, err := c.alertmanagerClient.Do(ctx, req)
@@ -870,7 +870,7 @@ func (c *Client) GetSilenceV1(ctx context.Context, id string) (types.Silence, er
 
 	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
 	if err != nil {
-		return types.Silence{}, fmt.Errorf("error creating request: %v", err)
+		return types.Silence{}, fmt.Errorf("error creating request: %w", err)
 	}
 
 	resp, body, err := c.alertmanagerClient.Do(ctx, req)
@@ -908,7 +908,7 @@ func (c *Client) GetSilenceV2(ctx context.Context, id string) (types.Silence, er
 
 	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
 	if err != nil {
-		return types.Silence{}, fmt.Errorf("error creating request: %v", err)
+		return types.Silence{}, fmt.Errorf("error creating request: %w", err)
 	}
 
 	resp, body, err := c.alertmanagerClient.Do(ctx, req)
@@ -937,7 +937,7 @@ func (c *Client) DeleteSilence(ctx context.Context, id string) error {
 
 	req, err := http.NewRequest(http.MethodDelete, u.String(), nil)
 	if err != nil {
-		return fmt.Errorf("error creating request: %v", err)
+		return fmt.Errorf("error creating request: %w", err)
 	}
 
 	resp, body, err := c.alertmanagerClient.Do(ctx, req)
@@ -961,7 +961,7 @@ func (c *Client) GetReceivers(ctx context.Context) ([]string, error) {
 
 	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
 	if err != nil {
-		return nil, fmt.Errorf("error creating request: %v", err)
+		return nil, fmt.Errorf("error creating request: %w", err)
 	}
 
 	resp, body, err := c.alertmanagerClient.Do(ctx, req)

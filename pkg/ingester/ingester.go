@@ -738,6 +738,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 			// of it, so that we can return it back to the distributor, which will return a
 			// 400 error to the client. The client (Prometheus) will not retry on 400, and
 			// we actually ingested all samples which haven't failed.
+			//nolint:errorlint // We don't expect the cause error to be wrapped.
 			switch cause := errors.Cause(err); cause {
 			case storage.ErrOutOfBounds:
 				sampleOutOfBoundsCount++
@@ -1718,7 +1719,7 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 
 			// If the dir is empty skip it
 			if _, err := f.Readdirnames(1); err != nil {
-				if err == io.EOF {
+				if errors.Is(err, io.EOF) {
 					return filepath.SkipDir
 				}
 
@@ -2201,7 +2202,7 @@ func wrappedTSDBIngestExemplarOtherErr(ingestErr error, timestamp model.Time, se
 		return nil
 	}
 
-	return fmt.Errorf("err: %v. timestamp=%s, series=%s, exemplar=%s", ingestErr, timestamp.Time().UTC().Format(time.RFC3339Nano),
+	return fmt.Errorf("err: %w. timestamp=%s, series=%s, exemplar=%s", ingestErr, timestamp.Time().UTC().Format(time.RFC3339Nano),
 		mimirpb.FromLabelAdaptersToLabels(seriesLabels).String(),
 		mimirpb.FromLabelAdaptersToLabels(exemplarLabels).String(),
 	)
@@ -2383,7 +2384,7 @@ func (i *Ingester) MetricsMetadata(ctx context.Context, req *client.MetricsMetad
 // are ready for the addition or removal of another ingester.
 func (i *Ingester) CheckReady(ctx context.Context) error {
 	if err := i.checkRunning(); err != nil {
-		return fmt.Errorf("ingester not ready: %v", err)
+		return fmt.Errorf("ingester not ready: %w", err)
 	}
 	return i.lifecycler.CheckReady(ctx)
 }

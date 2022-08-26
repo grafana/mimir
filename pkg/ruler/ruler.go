@@ -619,7 +619,7 @@ func (r *Ruler) GetRules(ctx context.Context) ([]*GroupStateDesc, error) {
 
 	ctx, err = user.InjectIntoGRPCRequest(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("unable to inject user ID into grpc request, %v", err)
+		return nil, fmt.Errorf("unable to inject user ID into grpc request, %w", err)
 	}
 
 	var (
