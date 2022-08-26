@@ -233,7 +233,7 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.AlertmanagerStorage.Validate(); err != nil {
 		return errors.Wrap(err, "invalid alertmanager storage config")
 	}
-	if c.isModuleEnabled(AlertManager) {
+	if c.isAnyModuleEnabled(AlertManager, Backend) {
 		if err := c.Alertmanager.Validate(); err != nil {
 			return errors.Wrap(err, "invalid alertmanager config")
 		}
@@ -259,7 +259,7 @@ func (c *Config) validateBucketConfigs() error {
 	errs := multierror.New()
 
 	// Validate alertmanager bucket config.
-	if c.isAnyModuleEnabled(AlertManager) && c.AlertmanagerStorage.Backend != alertstorelocal.Name {
+	if c.isAnyModuleEnabled(AlertManager, Backend) && c.AlertmanagerStorage.Backend != alertstorelocal.Name {
 		errs.Add(errors.Wrap(validateBucketConfig(c.AlertmanagerStorage.Config, c.BlocksStorage.Bucket), "alertmanager storage"))
 	}
 
