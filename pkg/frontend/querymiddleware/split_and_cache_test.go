@@ -127,7 +127,12 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 
 	// Assert metrics
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-		# HELP cortex_frontend_split_queries_total Total number of underlying query requests after the split by interval is applied
+		# HELP cortex_frontend_not_cachable_reason_total Total number of times a query was not cacheable because of a reason.
+		# TYPE cortex_frontend_not_cachable_reason_total counter
+		cortex_frontend_not_cachable_reason_total{reason="modifiers-not-cacheable"} 0
+		cortex_frontend_not_cachable_reason_total{reason="too-new"} 0
+		cortex_frontend_not_cachable_reason_total{reason="unaligned-request"} 0
+		# HELP cortex_frontend_split_queries_total Total number of underlying query requests after the split by interval is applied.
 		# TYPE cortex_frontend_split_queries_total counter
 		cortex_frontend_split_queries_total 2
 	`)))
@@ -223,6 +228,7 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 
 func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAligned(t *testing.T) {
 	cacheBackend := cache.NewInstrumentedMockCache()
+	reg := prometheus.NewPedanticRegistry()
 
 	mw := newSplitAndCacheMiddleware(
 		true,
@@ -236,7 +242,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 		PrometheusResponseExtractor{},
 		resultsCacheAlwaysEnabled,
 		log.NewNopLogger(),
-		prometheus.NewPedanticRegistry(),
+		reg,
 	)
 
 	expectedResponse := &PrometheusResponse{
@@ -285,6 +291,17 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 	// Assert query stats from context
 	queryStats := stats.FromContext(ctx)
 	assert.Equal(t, uint32(1), queryStats.LoadSplitQueries())
+	// Assert metrics
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_frontend_not_cachable_reason_total Total number of times a query was not cacheable because of a reason.
+		# TYPE cortex_frontend_not_cachable_reason_total counter
+		cortex_frontend_not_cachable_reason_total{reason="modifiers-not-cacheable"} 0
+		cortex_frontend_not_cachable_reason_total{reason="too-new"} 0
+		cortex_frontend_not_cachable_reason_total{reason="unaligned-request"} 2
+		# HELP cortex_frontend_split_queries_total Total number of underlying query requests after the split by interval is applied.
+		# TYPE cortex_frontend_split_queries_total counter
+		cortex_frontend_split_queries_total 1
+	`)))
 }
 
 func TestSplitAndCacheMiddleware_ResultsCache_EnabledCachingOfStepUnalignedRequest(t *testing.T) {
@@ -396,6 +413,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 		expectedDownstreamStartTime time.Time
 		expectedDownstreamEndTime   time.Time
 		expectedCachedResponses     []Response
+		expectedMetrics             string
 	}{
 		"should not cache a response if query time range is earlier than max cache freshness": {
 			queryStartTime: fiveMinutesAgo,
@@ -407,6 +425,16 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 			expectedDownstreamStartTime: fiveMinutesAgo,
 			expectedDownstreamEndTime:   now,
 			expectedCachedResponses:     nil,
+			expectedMetrics: `
+				# HELP cortex_frontend_not_cachable_reason_total Total number of times a query was not cacheable because of a reason.
+				# TYPE cortex_frontend_not_cachable_reason_total counter
+				cortex_frontend_not_cachable_reason_total{reason="modifiers-not-cacheable"} 0
+				cortex_frontend_not_cachable_reason_total{reason="too-new"} 4
+				cortex_frontend_not_cachable_reason_total{reason="unaligned-request"} 0
+				# HELP cortex_frontend_split_queries_total Total number of underlying query requests after the split by interval is applied.
+				# TYPE cortex_frontend_split_queries_total counter
+				cortex_frontend_split_queries_total 0
+			`,
 		},
 		"should cache a response up until max cache freshness time ago": {
 			queryStartTime: twentyMinutesAgo,
@@ -430,6 +458,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 		t.Run(testName, func(t *testing.T) {
 			cacheBackend := cache.NewMockCache()
 			cacheSplitter := ConstSplitter(day)
+			reg := prometheus.NewPedanticRegistry()
 
 			mw := newSplitAndCacheMiddleware(
 				false, // No interval splitting.
@@ -443,7 +472,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 				PrometheusResponseExtractor{},
 				resultsCacheAlwaysEnabled,
 				log.NewNopLogger(),
-				prometheus.NewPedanticRegistry(),
+				reg,
 			)
 
 			calls := 0
@@ -501,6 +530,10 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 				}
 
 				assert.Equal(t, testData.expectedCachedResponses, actualCachedResponses)
+			}
+
+			if testData.expectedMetrics != "" {
+				assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(testData.expectedMetrics)))
 			}
 		})
 	}

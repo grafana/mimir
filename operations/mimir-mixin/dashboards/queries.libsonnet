@@ -109,6 +109,11 @@ local filename = 'mimir-queries.json';
           'Missed query results per second'
         ),
       )
+      .addPanel(
+        $.panel('Query results missing reasons') +
+        $.queryPanel('sum(rate(cortex_frontend_not_cachable_reason_total{%s}[$__rate_interval])) by (reason)' % $.jobMatcher($._config.job_names.query_frontend),
+                     '{{reason}}')
+      )
     )
     .addRow(
       $.row('Query-frontend - query sharding')

@@ -35,7 +35,10 @@ import (
 
 const (
 	// Cache entries for 7 days. We're not disabling TTL because the backend client currently doesn't support it.
-	resultsCacheTTL = 7 * 24 * time.Hour
+	resultsCacheTTL                       = 7 * 24 * time.Hour
+	notCachableReasonUnalignedRequest     = "unaligned-request"
+	notCachableReasonTooNew               = "too-new"
+	notCachableReasonModifiersNotCachable = "modifiers-not-cacheable"
 )
 
 var (
@@ -46,15 +49,27 @@ var (
 
 type splitAndCacheMiddlewareMetrics struct {
 	splitQueriesCount prometheus.Counter
+	notCachableReason *prometheus.CounterVec
 }
 
 func newSplitAndCacheMiddlewareMetrics(reg prometheus.Registerer) *splitAndCacheMiddlewareMetrics {
-	return &splitAndCacheMiddlewareMetrics{
+	m := &splitAndCacheMiddlewareMetrics{
 		splitQueriesCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_frontend_split_queries_total",
-			Help: "Total number of underlying query requests after the split by interval is applied",
+			Help: "Total number of underlying query requests after the split by interval is applied.",
 		}),
+		notCachableReason: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_frontend_not_cachable_reason_total",
+			Help: "Total number of times a query was not cacheable because of a reason.",
+		}, []string{"reason"}),
 	}
+
+	// Initialize known label values.
+	for _, reason := range []string{notCachableReasonUnalignedRequest, notCachableReasonTooNew,
+		notCachableReasonModifiersNotCachable} {
+		m.notCachableReason.WithLabelValues(reason)
+	}
+	return m
 }
 
 // splitAndCacheMiddleware is a Middleware that can (optionally) split the query by interval
@@ -139,7 +154,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 
 		for _, splitReq := range splitReqs {
 			// Do not try to pick response from cache at all if the request is not cachable.
-			if !isRequestCachable(splitReq.orig, maxCacheTime, s.cacheUnalignedRequests, s.logger) {
+			if !isRequestCachable(splitReq.orig, maxCacheTime, s.cacheUnalignedRequests, s.logger, s.metrics.notCachableReason) {
 				splitReq.downstreamRequests = []Request{splitReq.orig}
 				continue
 			}
@@ -218,7 +233,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 			}
 
 			// Skip caching if the request is not cachable.
-			if !isRequestCachable(splitReq.orig, maxCacheTime, s.cacheUnalignedRequests, s.logger) {
+			if !isRequestCachable(splitReq.orig, maxCacheTime, s.cacheUnalignedRequests, s.logger, s.metrics.notCachableReason) {
 				continue
 			}
 
