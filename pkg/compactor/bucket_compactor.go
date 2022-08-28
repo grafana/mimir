@@ -30,7 +30,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
-	mimit_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
@@ -393,7 +393,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		// When splitting is enabled, we need to inject the shard ID as external label.
 		newLabels := job.Labels().Map()
 		if job.UseSplitting() {
-			newLabels[mimit_tsdb.CompactorShardIDExternalLabel] = sharding.FormatShardIDLabelValue(uint64(blockToUpload.shardIndex), uint64(job.SplittingShards()))
+			newLabels[mimir_tsdb.CompactorShardIDExternalLabel] = sharding.FormatShardIDLabelValue(uint64(blockToUpload.shardIndex), uint64(job.SplittingShards()))
 		}
 
 		newMeta, err := metadata.InjectThanos(jobLogger, bdir, metadata.Thanos{
@@ -416,7 +416,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		}
 
 		begin := time.Now()
-		if err := mimit_tsdb.UploadBlock(ctx, jobLogger, c.bkt, bdir, nil); err != nil {
+		if err := mimir_tsdb.UploadBlock(ctx, jobLogger, c.bkt, bdir, nil); err != nil {
 			return errors.Wrapf(err, "upload of %s failed", blockToUpload.ulid)
 		}
 
@@ -551,7 +551,7 @@ func RepairIssue347(ctx context.Context, logger log.Logger, bkt objstore.Bucket,
 	}
 
 	level.Info(logger).Log("msg", "uploading repaired block", "newID", resid)
-	if err = mimit_tsdb.UploadBlock(ctx, logger, bkt, filepath.Join(tmpdir, resid.String()), nil); err != nil {
+	if err = mimir_tsdb.UploadBlock(ctx, logger, bkt, filepath.Join(tmpdir, resid.String()), nil); err != nil {
 		return errors.Wrapf(err, "upload of %s failed", resid)
 	}
 
