@@ -19,8 +19,9 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
-	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
 // CreateBlock writes a block with the given series and numSamples samples each.

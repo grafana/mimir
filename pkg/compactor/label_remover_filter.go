@@ -10,7 +10,8 @@ import (
 
 	"github.com/oklog/ulid"
 	"github.com/thanos-io/thanos/pkg/block"
-	"github.com/thanos-io/thanos/pkg/block/metadata"
+
+	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
 type LabelRemoverFilter struct {

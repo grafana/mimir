@@ -20,8 +20,9 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/thanos/pkg/block"
-	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/runutil"
+
+	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
 var logger = log.NewLogfmtLogger(os.Stderr)

@@ -11,9 +11,9 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
-	"github.com/thanos-io/thanos/pkg/block/metadata"
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
 func TestIndex_RemoveBlock(t *testing.T) {

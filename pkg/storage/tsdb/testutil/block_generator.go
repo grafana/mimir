@@ -17,7 +17,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
-	thanos_metadata "github.com/thanos-io/thanos/pkg/block/metadata"
+
+	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
 type BlockSeriesSpec struct {
@@ -157,7 +158,7 @@ func GenerateBlockFromSpec(userID string, storageDir string, specs BlockSeriesSp
 	}
 
 	// Generate the meta.json file.
-	meta := &thanos_metadata.Meta{
+	meta := &metadata.Meta{
 		BlockMeta: tsdb.BlockMeta{
 			ULID:    blockID,
 			MinTime: specs.MinTime(),
@@ -168,8 +169,8 @@ func GenerateBlockFromSpec(userID string, storageDir string, specs BlockSeriesSp
 			},
 			Version: 1,
 		},
-		Thanos: thanos_metadata.Thanos{
-			Version: thanos_metadata.ThanosVersion1,
+		Thanos: metadata.Thanos{
+			Version: metadata.ThanosVersion1,
 		},
 	}
 
