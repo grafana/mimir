@@ -33,8 +33,11 @@ import (
 type SourceType string
 
 const (
+	ReceiveSource         SourceType = "receive"
 	CompactorSource       SourceType = "compactor"
 	CompactorRepairSource SourceType = "compactor.repair"
+	BucketRepairSource    SourceType = "bucket.repair"
+	TestSource            SourceType = "test"
 )
 
 const (
