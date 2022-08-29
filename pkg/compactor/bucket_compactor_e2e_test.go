@@ -39,9 +39,9 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/thanos-io/objstore"
-	"github.com/thanos-io/thanos/pkg/block"
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )

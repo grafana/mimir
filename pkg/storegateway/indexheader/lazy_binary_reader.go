@@ -22,7 +22,8 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/thanos-io/objstore"
-	"github.com/thanos-io/thanos/pkg/block"
+
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
 var (

@@ -30,9 +30,9 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 
 	"github.com/thanos-io/objstore"
-	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/runutil"
 
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	mmap "github.com/grafana/mimir/pkg/storegateway/indexheader/fileutil"
 )
 

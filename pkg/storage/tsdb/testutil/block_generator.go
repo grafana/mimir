@@ -58,7 +58,7 @@ func (s BlockSeriesSpecs) MaxTime() int64 {
 
 // GenerateBlockFromSpec generates a TSDB block with series and chunks provided by the input specs.
 // This utility is intended just to be used for testing. Do not use it for any production code.
-func GenerateBlockFromSpec(userID string, storageDir string, specs BlockSeriesSpecs) (_ *thanos_metadata.Meta, returnErr error) {
+func GenerateBlockFromSpec(userID string, storageDir string, specs BlockSeriesSpecs) (_ *metadata.Meta, returnErr error) {
 	blockID := ulid.MustNew(ulid.Now(), rand.Reader)
 	blockDir := filepath.Join(storageDir, blockID.String())
 
