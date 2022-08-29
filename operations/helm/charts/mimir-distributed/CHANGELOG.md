@@ -21,6 +21,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Upgrade nginx image tag to `nginxinc/nginx-unprivileged:1.22-alpine`. #2742
 * [ENHANCEMENT] Upgrade minio subchart to `4.0.12`. #2759
 * [BUGFIX] Do not use undocumented `mulf` function in templates. #2752
+* [BUGFIX] Open port 80 for the Enterprise `gateway` so that the read and write address reported by NOTEX.txt is correct. Also deprecate the current default of 8080.
 
 ## 3.1.0
 
