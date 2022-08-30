@@ -2011,8 +2011,10 @@ gateway:
   service:
     annotations: {}
     labels: {}
-    # -- If the port is left undefined, the service will listen on the same port as the pod
-    port: null
+    # -- Port the gateway service listens on
+    port: 80
+    # -- DEPRECATED Legacy compatibility port the gateway service listens on, set to 'null' to disable
+    legacyPort: 8080
 
   strategy:
     type: RollingUpdate
