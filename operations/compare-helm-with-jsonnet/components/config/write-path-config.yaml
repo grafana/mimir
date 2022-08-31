@@ -21,7 +21,3 @@ config:
     max_global_metadata_per_metric:
     ruler_max_rule_groups_per_tenant:
     accept_ha_samples:
-  server:
-    grpc_server_max_connection_age:
-    grpc_server_max_connection_age_grace:
-    grpc_server_max_connection_idle:
