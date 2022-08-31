@@ -32,6 +32,7 @@ type DefaultMultiTenantManager struct {
 	cfg            Config
 	notifierCfg    *config.Config
 	managerFactory ManagerFactory
+	limits         RulesLimits
 
 	mapper *mapper
 
@@ -54,7 +55,7 @@ type DefaultMultiTenantManager struct {
 	logger                        log.Logger
 }
 
-func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg prometheus.Registerer, logger log.Logger, dnsResolver cacheutil.AddressProvider) (*DefaultMultiTenantManager, error) {
+func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg prometheus.Registerer, logger log.Logger, dnsResolver cacheutil.AddressProvider, limits RulesLimits) (*DefaultMultiTenantManager, error) {
 	ncfg, err := buildNotifierConfig(&cfg, dnsResolver)
 	if err != nil {
 		return nil, err
@@ -69,6 +70,7 @@ func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg
 		cfg:                cfg,
 		notifierCfg:        ncfg,
 		managerFactory:     managerFactory,
+		limits:             limits,
 		notifiers:          map[string]*rulerNotifier{},
 		mapper:             newMapper(cfg.RulePath, logger),
 		userManagers:       map[string]RulesManager{},
@@ -136,7 +138,7 @@ func (r *DefaultMultiTenantManager) SyncRuleGroups(ctx context.Context, ruleGrou
 func (r *DefaultMultiTenantManager) syncRulesToManager(ctx context.Context, user string, groups rulespb.RuleGroupList) {
 	// Map the files to disk and return the file names to be passed to the users manager if they
 	// have been updated
-	update, files, err := r.mapper.MapRules(user, groups.Formatted())
+	update, files, err := r.mapper.MapRules(user, groups.Formatted(), r.limits.RulerMaxResultsPerRule(user))
 	if err != nil {
 		r.lastReloadSuccessful.WithLabelValues(user).Set(0)
 		level.Error(r.logger).Log("msg", "unable to map rule files", "user", user, "err", err)

@@ -3290,6 +3290,17 @@
         },
         {
           "kind": "field",
+          "name": "ruler_max_results_per_rule",
+          "required": false,
+          "desc": "Maximum number of alerts/series each rule can generate. 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 10000,
+          "fieldFlag": "ruler.max-results-per-rule",
+          "fieldType": "int",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "store_gateway_tenant_shard_size",
           "required": false,
           "desc": "The tenant's shard size, used when store-gateway sharding is enabled. Value of 0 disables shuffle sharding for the tenant, that is all tenant blocks are sharded across all store-gateway replicas.",

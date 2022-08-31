@@ -81,7 +81,7 @@ func (m *mapper) users() ([]string, error) {
 	return result, err
 }
 
-func (m *mapper) MapRules(user string, ruleConfigs map[string][]rulefmt.RuleGroup) (bool, []string, error) {
+func (m *mapper) MapRules(user string, ruleConfigs map[string][]rulefmt.RuleGroup, limit int) (bool, []string, error) {
 	anyUpdated := false
 	filenames := []string{}
 
@@ -98,7 +98,7 @@ func (m *mapper) MapRules(user string, ruleConfigs map[string][]rulefmt.RuleGrou
 		encodedFileName := url.PathEscape(filename)
 		fullFileName := filepath.Join(path, encodedFileName)
 
-		fileUpdated, err := m.writeRuleGroupsIfNewer(groups, fullFileName)
+		fileUpdated, err := m.writeRuleGroupsIfNewer(groups, fullFileName, limit)
 		if err != nil {
 			return false, nil, err
 		}
@@ -136,10 +136,15 @@ func (m *mapper) MapRules(user string, ruleConfigs map[string][]rulefmt.RuleGrou
 	return anyUpdated, filenames, nil
 }
 
-func (m *mapper) writeRuleGroupsIfNewer(groups []rulefmt.RuleGroup, filename string) (bool, error) {
+func (m *mapper) writeRuleGroupsIfNewer(groups []rulefmt.RuleGroup, filename string, limit int) (bool, error) {
 	sort.Slice(groups, func(i, j int) bool {
 		return groups[i].Name > groups[j].Name
 	})
+
+	for i := range groups {
+		// Configure limit for how many alerts/series rules can generate
+		groups[i].Limit = limit
+	}
 
 	rgs := rulefmt.RuleGroups{Groups: groups}
 

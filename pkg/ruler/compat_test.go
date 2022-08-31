@@ -349,7 +349,7 @@ func TestManagerFactory_CorrectQueryableUsed(t *testing.T) {
 func writeRuleGroupToFiles(t *testing.T, path string, logger log.Logger, userID string, ruleGroup rulespb.RuleGroupDesc) []string {
 	_, files, err := newMapper(path, logger).MapRules(userID, map[string][]rulefmt.RuleGroup{
 		"namespace": {rulespb.FromProto(&ruleGroup)},
-	})
+	}, 0)
 	require.NoError(t, err)
 	require.Len(t, files, 1, "writing a single namespace, expecting a single file")
 

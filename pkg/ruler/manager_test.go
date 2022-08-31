@@ -26,7 +26,8 @@ import (
 func TestSyncRuleGroups(t *testing.T) {
 	dir := t.TempDir()
 
-	m, err := NewDefaultMultiTenantManager(Config{RulePath: dir}, factory, nil, log.NewNopLogger(), nil)
+	limits := ruleLimits{maxRuleGroups: 1, maxRulesPerRuleGroup: 1}
+	m, err := NewDefaultMultiTenantManager(Config{RulePath: dir}, factory, nil, log.NewNopLogger(), nil, limits)
 	require.NoError(t, err)
 
 	const user = "testUser"

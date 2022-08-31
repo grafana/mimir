@@ -780,6 +780,7 @@ func (r *Ruler) getLocalRules(userID string) ([]*GroupStateDesc, error) {
 				Interval:      interval,
 				User:          userID,
 				SourceTenants: group.SourceTenants(),
+				Limit:         int32(group.Limit()),
 			},
 
 			EvaluationTimestamp: group.GetLastEvaluation(),

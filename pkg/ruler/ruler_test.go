@@ -78,6 +78,63 @@ func defaultRulerConfig(t testing.TB) Config {
 	return cfg
 }
 
+type ruleLimits struct {
+	evalDelay            time.Duration
+	tenantShard          int
+	maxRulesPerRuleGroup int
+	maxRuleGroups        int
+	maxResultsPerRule    int
+}
+
+func (r ruleLimits) EvaluationDelay(_ string) time.Duration {
+	return r.evalDelay
+}
+
+func (r ruleLimits) RulerTenantShardSize(_ string) int {
+	return r.tenantShard
+}
+
+func (r ruleLimits) RulerMaxRuleGroupsPerTenant(_ string) int {
+	return r.maxRuleGroups
+}
+
+func (r ruleLimits) RulerMaxRulesPerRuleGroup(_ string) int {
+	return r.maxRulesPerRuleGroup
+}
+
+func (r ruleLimits) RulerMaxResultsPerRule(_ string) int {
+	return r.maxResultsPerRule
+}
+
+func testSetup() (storage.QueryableFunc, promRules.QueryFunc, Pusher, log.Logger, RulesLimits) {
+	noopQueryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+		return storage.NoopQuerier(), nil
+	})
+	noopQueryFunc := func(ctx context.Context, q string, t time.Time) (promql.Vector, error) {
+		return nil, nil
+	}
+
+	// Mock the pusher
+	pusher := newPusherMock()
+	pusher.MockPush(&mimirpb.WriteResponse{}, nil)
+
+	l := log.NewLogfmtLogger(os.Stdout)
+	l = level.NewFilter(l, level.AllowInfo())
+
+	return noopQueryable, noopQueryFunc, pusher, l, ruleLimits{evalDelay: 0, maxRuleGroups: 20, maxRulesPerRuleGroup: 15}
+}
+
+func newManager(t *testing.T, cfg Config) *DefaultMultiTenantManager {
+	noopQueryable, noopQueryFunc, pusher, logger, overrides := testSetup()
+
+	mngFactory := DefaultTenantManagerFactory(cfg, pusher, noopQueryable, noopQueryFunc, overrides, nil)
+	limits := ruleLimits{maxRuleGroups: 1, maxRulesPerRuleGroup: 1}
+	manager, err := NewDefaultMultiTenantManager(cfg, mngFactory, prometheus.NewRegistry(), logger, nil, limits)
+	require.NoError(t, err)
+
+	return manager
+}
+
 type mockRulerClientsPool struct {
 	ClientsPool
 	cfg           Config
@@ -257,6 +314,7 @@ func TestRuler_Rules(t *testing.T) {
 	testCases := map[string]struct {
 		mockRules map[string]rulespb.RuleGroupList
 		userID    string
+		limits    RulesLimits
 	}{
 		"rules - user1": {
 			userID:    "user1",
@@ -277,6 +335,30 @@ func TestRuler_Rules(t *testing.T) {
 						SourceTenants: []string{"tenant-1"},
 						Rules:         []*rulespb.RuleDesc{mockRecordingRuleDesc("UP_RULE", "up"), mockAlertingRuleDesc("UP_ALERT", "up < 1")},
 						Interval:      interval,
+					},
+				},
+			},
+		},
+		"limited rule group results": {
+			userID: "user1",
+			limits: ruleLimits{maxRuleGroups: 1, maxRulesPerRuleGroup: 1, maxResultsPerRule: 1},
+			mockRules: map[string]rulespb.RuleGroupList{
+				"user1": {
+					&rulespb.RuleGroupDesc{
+						Name:      "group1",
+						Namespace: "namespace1",
+						User:      "user1",
+						Rules: []*rulespb.RuleDesc{
+							{
+								Record: "UP_RULE",
+								Expr:   "up",
+							},
+							{
+								Alert: "UP_ALERT",
+								Expr:  "up < 1",
+							},
+						},
+						Interval: interval,
 					},
 				},
 			},
@@ -304,6 +386,9 @@ func TestRuler_Rules(t *testing.T) {
 
 			for i, rg := range rls.Groups {
 				expectedRg := tc.mockRules[tc.userID][i]
+				if tc.limits != nil {
+					expectedRg.Limit = int32(tc.limits.RulerMaxResultsPerRule(tc.userID))
+				}
 				compareRuleGroupDescToStateDesc(t, expectedRg, rg)
 			}
 		})
@@ -317,6 +402,7 @@ func compareRuleGroupDescToStateDesc(t *testing.T, expected *rulespb.RuleGroupDe
 	require.Equal(t, expected.Namespace, got.Group.Namespace)
 	require.Len(t, expected.Rules, len(got.ActiveRules))
 	require.ElementsMatch(t, expected.SourceTenants, got.Group.SourceTenants)
+	require.Equal(t, expected.Limit, got.Group.Limit)
 	for i := range got.ActiveRules {
 		require.Equal(t, expected.Rules[i].Record, got.ActiveRules[i].Rule.Record)
 		require.Equal(t, expected.Rules[i].Alert, got.ActiveRules[i].Rule.Alert)
@@ -838,6 +924,7 @@ func TestSharding(t *testing.T) {
 					defaults.RulerEvaluationDelay = 0
 					defaults.RulerTenantShardSize = tc.shuffleShardSize
 				})))
+				r.limits = ruleLimits{evalDelay: 0, tenantShard: tc.shuffleShardSize}
 
 				if forceRing != nil {
 					r.ring = forceRing

@@ -1667,6 +1667,8 @@ Usage of ./cmd/mimir/mimir:
     	Minimum duration between alert and restored "for" state. This is maintained only for alerts with configured "for" time greater than grace period. (default 10m0s)
   -ruler.for-outage-tolerance duration
     	Max time to tolerate outage for restoring "for" state of alert. (default 1h0m0s)
+  -ruler.max-results-per-rule int
+    	Maximum number of alerts/series each rule can generate. 0 to disable. (default 10000)
   -ruler.max-rule-groups-per-tenant int
     	Maximum number of rule groups per-tenant. 0 to disable. (default 70)
   -ruler.max-rules-per-rule-group int

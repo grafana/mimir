@@ -238,7 +238,7 @@ func Test_mapper_MapRules(t *testing.T) {
 	}
 
 	t.Run("basic rulegroup", func(t *testing.T) {
-		updated, files, err := m.MapRules(testUser, initialRuleSet)
+		updated, files, err := m.MapRules(testUser, initialRuleSet, 0)
 		require.True(t, updated)
 		require.Len(t, files, 1)
 		require.Equal(t, fileOnePath, files[0])
@@ -250,7 +250,7 @@ func Test_mapper_MapRules(t *testing.T) {
 	})
 
 	t.Run("identical rulegroup", func(t *testing.T) {
-		updated, files, err := m.MapRules(testUser, initialRuleSet)
+		updated, files, err := m.MapRules(testUser, initialRuleSet, 0)
 		require.False(t, updated)
 		require.Len(t, files, 1)
 		require.NoError(t, err)
@@ -261,7 +261,7 @@ func Test_mapper_MapRules(t *testing.T) {
 	})
 
 	t.Run("out of order identical rulegroup", func(t *testing.T) {
-		updated, files, err := m.MapRules(testUser, outOfOrderRuleSet)
+		updated, files, err := m.MapRules(testUser, outOfOrderRuleSet, 0)
 		require.False(t, updated)
 		require.Len(t, files, 1)
 		require.NoError(t, err)
@@ -272,7 +272,7 @@ func Test_mapper_MapRules(t *testing.T) {
 	})
 
 	t.Run("updated rulegroup", func(t *testing.T) {
-		updated, files, err := m.MapRules(testUser, updatedRuleSet)
+		updated, files, err := m.MapRules(testUser, updatedRuleSet, 0)
 		require.True(t, updated)
 		require.Len(t, files, 1)
 		require.Equal(t, fileOnePath, files[0])
@@ -295,7 +295,7 @@ func Test_mapper_MapRulesMultipleFiles(t *testing.T) {
 	}
 
 	t.Run("basic rulegroup", func(t *testing.T) {
-		updated, files, err := m.MapRules(testUser, initialRuleSet)
+		updated, files, err := m.MapRules(testUser, initialRuleSet, 0)
 		require.True(t, updated)
 		require.Len(t, files, 1)
 		require.Equal(t, fileOnePath, files[0])
@@ -307,7 +307,7 @@ func Test_mapper_MapRulesMultipleFiles(t *testing.T) {
 	})
 
 	t.Run("add a file", func(t *testing.T) {
-		updated, files, err := m.MapRules(testUser, twoFilesRuleSet)
+		updated, files, err := m.MapRules(testUser, twoFilesRuleSet, 0)
 		require.True(t, updated)
 		require.Len(t, files, 2)
 		require.True(t, sliceContains(t, fileOnePath, files))
@@ -323,7 +323,7 @@ func Test_mapper_MapRulesMultipleFiles(t *testing.T) {
 	})
 
 	t.Run("update one file", func(t *testing.T) {
-		updated, files, err := m.MapRules(testUser, twoFilesUpdatedRuleSet)
+		updated, files, err := m.MapRules(testUser, twoFilesUpdatedRuleSet, 0)
 		require.True(t, updated)
 		require.Len(t, files, 2)
 		require.True(t, sliceContains(t, fileOnePath, files))
@@ -339,7 +339,7 @@ func Test_mapper_MapRulesMultipleFiles(t *testing.T) {
 	})
 
 	t.Run("delete one file", func(t *testing.T) {
-		updated, files, err := m.MapRules(testUser, twoFilesDeletedRuleSet)
+		updated, files, err := m.MapRules(testUser, twoFilesDeletedRuleSet, 0)
 		require.True(t, updated)
 		require.Len(t, files, 1)
 		require.Equal(t, fileOnePath, files[0])
@@ -366,7 +366,7 @@ func Test_mapper_MapRulesSpecialCharNamespace(t *testing.T) {
 	}
 
 	t.Run("create special characters rulegroup", func(t *testing.T) {
-		updated, files, err := m.MapRules(testUser, specialCharactersRuleSet)
+		updated, files, err := m.MapRules(testUser, specialCharactersRuleSet, 0)
 		require.NoError(t, err)
 		require.True(t, updated)
 		require.Len(t, files, 1)
@@ -378,7 +378,7 @@ func Test_mapper_MapRulesSpecialCharNamespace(t *testing.T) {
 	})
 
 	t.Run("delete special characters rulegroup", func(t *testing.T) {
-		updated, files, err := m.MapRules(testUser, map[string][]rulefmt.RuleGroup{})
+		updated, files, err := m.MapRules(testUser, map[string][]rulefmt.RuleGroup{}, 0)
 		require.NoError(t, err)
 		require.True(t, updated)
 		require.Len(t, files, 0)
