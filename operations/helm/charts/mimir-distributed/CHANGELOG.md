@@ -23,6 +23,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Do not use undocumented `mulf` function in templates. #2752
 * [BUGFIX] Open port 80 for the Enterprise `gateway` service so that the read and write address reported by NOTES.txt is correct. Also deprecate the current default of 8080. #2860
 * [BUGFIX] Periodically rebalance gRPC connection between GEM gateway and distributors after scale out of the distributors. #2862
+* [BUGFIX] Remove PodSecurityPolicy when running against Kubernetes >= 1.25. #2870
 
 ## 3.1.0
 
