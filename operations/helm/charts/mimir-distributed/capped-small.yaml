@@ -1,6 +1,6 @@
 # These values configure the Grafana Mimir or Grafana Enterprise Metrics cluster to
-# handle production ingestion of ~1M active series using the blocks
-# storage engine scraped with a 15s interval.
+# handle production ingestion of ~1M series using the blocks storage engine scraped
+# with a 15s interval.
 # Query requirements can vary dramatically depending on query rate and query
 # ranges. The values here satisfy a "usual" query load as seen from our
 # production clusters at this scale.
@@ -11,7 +11,7 @@
 # for more information.
 # Minio is no longer enabled and you are encouraged to use your cloud providers
 # object storage service for production deployments.
-# Ingesters are configured with a replication factor of 3 to ensure that a single ingester failur does not
+# Ingesters are configured with a replication factor of 3 to ensure that a single ingester failure does not
 # result in data loss.
 
 alertmanager:

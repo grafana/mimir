@@ -124,7 +124,7 @@ Alternative values files are included to provide a more realistic configuration 
 ### Small
 
 The `small.yaml` values file configures the Grafana Mimir cluster to
-handle production ingestion of ~1M active series using the blocks storage engine.
+handle production ingestion of ~1M series using the blocks storage engine.
 Query requirements can vary dramatically depending on query rate and query
 ranges. The values here satisfy a "usual" query load as seen from our
 production clusters at this scale.
@@ -145,8 +145,7 @@ helm install <cluster name> grafana/mimir-distributed -f small.yaml
 ### Large
 
 The `large.yaml` values file configures the Grafana Mimir cluster to
-handle production ingestion of ~10M active series using the blocks
-storage engine.
+handle production ingestion of ~10M series using the blocks storage engine.
 Query requirements can vary dramatically depending on query rate and query
 ranges. The values here satisfy a "usual" query load as seen from our
 production clusters at this scale.
