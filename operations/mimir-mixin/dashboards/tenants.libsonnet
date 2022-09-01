@@ -160,6 +160,67 @@ local filename = 'mimir-tenants.json';
     )
 
     .addRow(
+      $.row('Distributor ingestion requests')
+      .addPanel(
+        local title = 'Distributor requests incoming rate';
+        $.panel(title) +
+        $.queryPanel(
+          'sum(rate(cortex_distributor_requests_in_total{%(job)s, user="$user"}[$__rate_interval]))'
+          % { job: $.jobMatcher($._config.job_names.distributor) },
+          'rate',
+        ) +
+        { legend: { show: false } } +
+        $.panelDescription(
+          title,
+          |||
+            The rate of requests that have come in to the distributor, including rejected requests.
+          |||
+        ),
+      )
+      .addPanel(
+        local title = 'Distributor requests received (accepted) rate';
+        $.panel(title) +
+        $.queryPanel(
+          [
+            'sum(rate(cortex_distributor_received_requests_total{%(job)s, user="$user"}[$__rate_interval]))'
+            % { job: $.jobMatcher($._config.job_names.distributor) },
+            user_limits_overrides_query('request_rate'),
+          ],
+          [
+            'rate',
+            'limit',
+          ],
+        ) +
+        { seriesOverrides: [limit_style] } +
+        $.panelDescription(
+          title,
+          |||
+            The rate of received requests, excluding rejected requests.
+          |||
+        ),
+      )
+      .addPanel(
+        local title = 'Distributor discarded requests rate';
+        $.panel(title) +
+        $.queryPanel(
+          [
+            'sum by (reason) (rate(cortex_discarded_requests_total{%(job)s, user="$user"}[$__rate_interval]))'
+            % { job: $.jobMatcher($._config.job_names.distributor) },
+          ],
+          [
+            '{{ reason }}',
+          ]
+        ) +
+        $.panelDescription(
+          title,
+          |||
+            The rate of each request's discarding reason.
+          |||
+        ),
+      ),
+    )
+
+    .addRow(
       $.row('Samples ingestion funnel')
       .addPanel(
         local title = 'Distributor samples incoming rate';
