@@ -2429,7 +2429,7 @@ type symbolizedLabel struct {
 //
 // Error is returned on decoding error or if the reference does not resolve to a known series.
 func (r *bucketIndexReader) LoadSeriesForTime(ctx context.Context, ref storage.SeriesRef, lset *[]symbolizedLabel, chks *[]chunks.Meta, skipChunks bool, mint, maxt int64) (ok bool, err error) {
-	span, ctx := tracing.StartSpan(ctx, "LoadSeriesForTime()")
+	span, _ := tracing.StartSpan(ctx, "LoadSeriesForTime()")
 	defer span.Finish()
 
 	b, ok := r.loadedSeries[ref]
@@ -2450,7 +2450,7 @@ func (r *bucketIndexReader) Close() error {
 
 // LookupLabelsSymbols populates label set strings from symbolized label set.
 func (r *bucketIndexReader) LookupLabelsSymbols(ctx context.Context, symbolized []symbolizedLabel) (labels.Labels, error) {
-	span, ctx := tracing.StartSpan(ctx, "LookupLabelsSymbols()")
+	span, _ := tracing.StartSpan(ctx, "LookupLabelsSymbols()")
 	defer span.Finish()
 
 	lbls := make(labels.Labels, len(symbolized))
