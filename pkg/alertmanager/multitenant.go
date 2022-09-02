@@ -9,7 +9,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -286,7 +285,7 @@ func NewMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, store alerts
 
 	var fallbackConfig []byte
 	if cfg.FallbackConfigFile != "" {
-		fallbackConfig, err = ioutil.ReadFile(cfg.FallbackConfigFile)
+		fallbackConfig, err = os.ReadFile(cfg.FallbackConfigFile)
 		if err != nil {
 			return nil, fmt.Errorf("unable to read fallback config %q: %s", cfg.FallbackConfigFile, err)
 		}
@@ -634,7 +633,7 @@ func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error
 	var pathsToRemove = make(map[string]struct{})
 
 	// List existing files to keep track the ones to be removed
-	if oldTemplateFiles, err := ioutil.ReadDir(userTemplateDir); err == nil {
+	if oldTemplateFiles, err := os.ReadDir(userTemplateDir); err == nil {
 		for _, file := range oldTemplateFiles {
 			pathsToRemove[filepath.Join(userTemplateDir, file.Name())] = struct{}{}
 		}
@@ -1066,7 +1065,7 @@ func (am *MultitenantAlertmanager) deleteUnusedLocalUserState() {
 // getPerUserDirectories returns map of users to their directories (full path). Only users with local
 // directory are returned.
 func (am *MultitenantAlertmanager) getPerUserDirectories() map[string]string {
-	files, err := ioutil.ReadDir(am.cfg.DataDir)
+	files, err := os.ReadDir(am.cfg.DataDir)
 	if err != nil {
 		level.Warn(am.logger).Log("msg", "failed to list local dir", "dir", am.cfg.DataDir, "err", err)
 		return nil
@@ -1183,13 +1182,13 @@ func storeTemplateFile(templateFilepath, content string) (bool, error) {
 	}
 
 	// Check if the template file already exists and if it has changed
-	if tmpl, err := ioutil.ReadFile(templateFilepath); err == nil && string(tmpl) == content {
+	if tmpl, err := os.ReadFile(templateFilepath); err == nil && string(tmpl) == content {
 		return false, nil
 	} else if err != nil && !os.IsNotExist(err) {
 		return false, err
 	}
 
-	if err := ioutil.WriteFile(templateFilepath, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(templateFilepath, []byte(content), 0644); err != nil {
 		return false, fmt.Errorf("unable to create Alertmanager template file %q: %s", templateFilepath, err)
 	}
 

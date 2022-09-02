@@ -6,7 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -45,7 +45,7 @@ func TestLabelNamesCardinalityHandler(t *testing.T) {
 	body := recorder.Result().Body
 	defer body.Close()
 	responseBody := LabelNamesCardinalityResponse{}
-	bodyContent, err := ioutil.ReadAll(body)
+	bodyContent, err := io.ReadAll(body)
 	require.NoError(t, err)
 	err = json.Unmarshal(bodyContent, &responseBody)
 	require.NoError(t, err)
@@ -110,7 +110,7 @@ func TestLabelNamesCardinalityHandler_MatchersTest(t *testing.T) {
 			handler.ServeHTTP(recorder, request)
 			body := recorder.Result().Body
 			defer body.Close()
-			bodyContent, err := ioutil.ReadAll(body)
+			bodyContent, err := io.ReadAll(body)
 			require.NoError(t, err)
 			require.Equal(t, http.StatusOK, recorder.Result().StatusCode, "unexpected error %v", string(bodyContent))
 			distributor.AssertCalled(t, "LabelNamesAndValues", mock.Anything, data.expectedMatchers)
@@ -167,7 +167,7 @@ func TestLabelNamesCardinalityHandler_LimitTest(t *testing.T) {
 			body := recorder.Result().Body
 			defer body.Close()
 			responseBody := LabelNamesCardinalityResponse{}
-			bodyContent, err := ioutil.ReadAll(body)
+			bodyContent, err := io.ReadAll(body)
 			require.NoError(t, err)
 			err = json.Unmarshal(bodyContent, &responseBody)
 			require.NoError(t, err)
@@ -222,7 +222,7 @@ func TestLabelNamesCardinalityHandler_DistributorError(t *testing.T) {
 			body := recorder.Result().Body
 			defer func() { _ = body.Close() }()
 
-			bodyContent, err := ioutil.ReadAll(body)
+			bodyContent, err := io.ReadAll(body)
 			require.NoError(t, err)
 			bodyErrMessage := string(bodyContent)
 
@@ -283,7 +283,7 @@ func TestLabelNamesCardinalityHandler_NegativeTests(t *testing.T) {
 			require.Equal(t, http.StatusBadRequest, recorder.Result().StatusCode)
 			body := recorder.Result().Body
 			defer body.Close()
-			bytes, err := ioutil.ReadAll(body)
+			bytes, err := io.ReadAll(body)
 			require.NoError(t, err)
 			require.Contains(t, string(bytes), data.expectedErrorMessage)
 		})
@@ -567,7 +567,7 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			defer func() { _ = body.Close() }()
 
 			responseBody := labelValuesCardinalityResponse{}
-			bodyContent, err := ioutil.ReadAll(body)
+			bodyContent, err := io.ReadAll(body)
 			require.NoError(t, err)
 			err = json.Unmarshal(bodyContent, &responseBody)
 			require.NoError(t, err)
@@ -587,7 +587,7 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			defer func() { _ = body.Close() }()
 
 			responseBody := labelValuesCardinalityResponse{}
-			bodyContent, err := ioutil.ReadAll(body)
+			bodyContent, err := io.ReadAll(body)
 			require.NoError(t, err)
 			err = json.Unmarshal(bodyContent, &responseBody)
 			require.NoError(t, err)
@@ -642,7 +642,7 @@ func TestLabelValuesCardinalityHandler_FeatureFlag(t *testing.T) {
 				body := recorder.Result().Body
 				defer func() { _ = body.Close() }()
 
-				bodyContent, err := ioutil.ReadAll(body)
+				bodyContent, err := io.ReadAll(body)
 				require.NoError(t, err)
 				require.Equal(t, string(bodyContent), testData.expectedErrorMessage)
 			}
@@ -710,7 +710,7 @@ func TestLabelValuesCardinalityHandler_ParseError(t *testing.T) {
 				body := recorder.Result().Body
 				defer func() { _ = body.Close() }()
 
-				bytes, err := ioutil.ReadAll(body)
+				bytes, err := io.ReadAll(body)
 				require.NoError(t, err)
 				require.Contains(t, string(bytes), testData.expectedErrorMessage)
 			})
@@ -763,7 +763,7 @@ func TestLabelValuesCardinalityHandler_DistributorError(t *testing.T) {
 			body := recorder.Result().Body
 			defer func() { _ = body.Close() }()
 
-			bodyContent, err := ioutil.ReadAll(body)
+			bodyContent, err := io.ReadAll(body)
 			require.NoError(t, err)
 			bodyErrMessage := string(bodyContent)
 

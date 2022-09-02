@@ -8,7 +8,7 @@ package v1
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -61,7 +61,7 @@ func TestFrontend(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, 200, resp.StatusCode)
 
-		body, err := ioutil.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
 		require.NoError(t, err)
 
 		assert.Equal(t, "Hello World", string(body))
@@ -110,7 +110,7 @@ func TestFrontendPropagateTrace(t *testing.T) {
 		require.Equal(t, 200, resp.StatusCode)
 
 		defer resp.Body.Close()
-		_, err = ioutil.ReadAll(resp.Body)
+		_, err = io.ReadAll(resp.Body)
 		require.NoError(t, err)
 
 		// Query should do one call.
@@ -202,7 +202,7 @@ func TestFrontendMetricsCleanup(t *testing.T) {
 		require.Equal(t, 200, resp.StatusCode)
 		defer resp.Body.Close()
 
-		body, err := ioutil.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
 		require.NoError(t, err)
 
 		assert.Equal(t, "Hello World", string(body))

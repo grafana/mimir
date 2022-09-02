@@ -8,7 +8,6 @@ package indexheader
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"math"
 	"os"
 	"path/filepath"
@@ -36,7 +35,7 @@ import (
 func TestReaders(t *testing.T) {
 	ctx := context.Background()
 
-	tmpDir, err := ioutil.TempDir("", "test-indexheader")
+	tmpDir, err := os.MkdirTemp("", "test-indexheader")
 	require.NoError(t, err)
 	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
 
@@ -345,7 +344,7 @@ func prepareIndexV2Block(t testing.TB, tmpDir string, bkt objstore.Bucket) *meta
 func BenchmarkBinaryWrite(t *testing.B) {
 	ctx := context.Background()
 
-	tmpDir, err := ioutil.TempDir("", "bench-indexheader")
+	tmpDir, err := os.MkdirTemp("", "bench-indexheader")
 	require.NoError(t, err)
 	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
 
@@ -364,7 +363,7 @@ func BenchmarkBinaryWrite(t *testing.B) {
 
 func BenchmarkBinaryReader(t *testing.B) {
 	ctx := context.Background()
-	tmpDir, err := ioutil.TempDir("", "bench-indexheader")
+	tmpDir, err := os.MkdirTemp("", "bench-indexheader")
 	require.NoError(t, err)
 	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
 
@@ -397,7 +396,7 @@ func benchmarkBinaryReaderLookupSymbol(b *testing.B, numSeries int) {
 	ctx := context.Background()
 	logger := log.NewNopLogger()
 
-	tmpDir, err := ioutil.TempDir("", "benchmark-lookupsymbol")
+	tmpDir, err := os.MkdirTemp("", "benchmark-lookupsymbol")
 	require.NoError(b, err)
 	defer func() { require.NoError(b, os.RemoveAll(tmpDir)) }()
 

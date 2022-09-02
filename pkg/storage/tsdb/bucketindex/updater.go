@@ -8,7 +8,7 @@ package bucketindex
 import (
 	"context"
 	"encoding/json"
-	"io/ioutil"
+	"io"
 	"path"
 	"time"
 
@@ -137,7 +137,7 @@ func (w *Updater) updateBlockIndexEntry(ctx context.Context, id ulid.ULID) (*Blo
 	}
 	defer runutil.CloseWithLogOnErr(w.logger, r, "close get block meta file")
 
-	metaContent, err := ioutil.ReadAll(r)
+	metaContent, err := io.ReadAll(r)
 	if err != nil {
 		return nil, errors.Wrapf(err, "read block meta file: %v", metaFile)
 	}

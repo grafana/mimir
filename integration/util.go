@@ -9,7 +9,6 @@ package integration
 
 import (
 	"bytes"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -49,14 +48,14 @@ func writeFileToSharedDir(s *e2e.Scenario, dst string, content []byte) error {
 		return err
 	}
 
-	return ioutil.WriteFile(
+	return os.WriteFile(
 		dst,
 		content,
 		os.ModePerm)
 }
 
 func copyFileToSharedDir(s *e2e.Scenario, src, dst string) error {
-	content, err := ioutil.ReadFile(filepath.Join(getMimirProjectDir(), src))
+	content, err := os.ReadFile(filepath.Join(getMimirProjectDir(), src))
 	if err != nil {
 		return errors.Wrapf(err, "unable to read local file %s", src)
 	}

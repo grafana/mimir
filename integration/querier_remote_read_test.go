@@ -11,7 +11,6 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"io/ioutil"
 	"math/rand"
 	"net/http"
 	"testing"
@@ -111,7 +110,7 @@ func TestQuerierRemoteRead(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, httpResp.StatusCode)
 
-	compressed, err = ioutil.ReadAll(httpResp.Body)
+	compressed, err = io.ReadAll(httpResp.Body)
 	require.NoError(t, err)
 
 	uncompressed, err := snappy.Decode(nil, compressed)

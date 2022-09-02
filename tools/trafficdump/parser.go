@@ -8,7 +8,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"mime"
 	"net/http"
@@ -238,7 +238,7 @@ func (rp *parser) processHTTPResponse(resp *http.Response, body []byte) *respons
 		r, err = gzip.NewReader(bytes.NewReader(body))
 		if err == nil {
 			var newBody []byte
-			newBody, err = ioutil.ReadAll(r)
+			newBody, err = io.ReadAll(r)
 			if err == nil {
 				body = newBody
 			}

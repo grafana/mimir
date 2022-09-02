@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -70,7 +69,7 @@ func addLicense(dir string) error {
 			return nil
 		}
 
-		b, err := ioutil.ReadFile(filepath.Clean(path))
+		b, err := os.ReadFile(filepath.Clean(path))
 		if err != nil {
 			return err
 		}
@@ -111,7 +110,7 @@ func addLicense(dir string) error {
 		// Add the rest of the file.
 		_, _ = bb.Write(b)
 
-		return ioutil.WriteFile(path, bb.Bytes(), 0600)
+		return os.WriteFile(path, bb.Bytes(), 0600)
 	})
 }
 

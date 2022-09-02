@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -102,7 +101,7 @@ func TestSampledRemoteRead(t *testing.T) {
 
 	require.Equal(t, 200, recorder.Result().StatusCode)
 	require.Equal(t, []string([]string{"application/x-protobuf"}), recorder.Result().Header["Content-Type"])
-	responseBody, err := ioutil.ReadAll(recorder.Result().Body)
+	responseBody, err := io.ReadAll(recorder.Result().Body)
 	require.NoError(t, err)
 	responseBody, err = snappy.Decode(nil, responseBody)
 	require.NoError(t, err)

@@ -5,7 +5,7 @@ package forwarding
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"sort"
@@ -662,7 +662,7 @@ func newTestServer(tb testing.TB, status int, record bool) (string, func() []*ht
 	srv := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			if record {
-				reqBody, err := ioutil.ReadAll(req.Body)
+				reqBody, err := io.ReadAll(req.Body)
 				require.NoError(tb, err)
 
 				mtx.Lock()

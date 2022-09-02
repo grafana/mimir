@@ -10,7 +10,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"path"
@@ -197,7 +196,7 @@ func TestGroupCompactE2E(t *testing.T) {
 		// in which case error is logger and test is failed. (We cannot use Fatal or FailNow from a goroutine).
 		go func() {
 			for ctx.Err() == nil {
-				fs, err := ioutil.ReadDir(dir)
+				fs, err := os.ReadDir(dir)
 				if err != nil && !os.IsNotExist(err) {
 					t.Log("error while listing directory", dir)
 					t.Fail()
@@ -645,7 +644,7 @@ func createEmptyBlock(dir string, mint, maxt int64, extLset labels.Labels, resol
 		return ulid.ULID{}, err
 	}
 
-	if err := ioutil.WriteFile(path.Join(dir, uid.String(), "meta.json"), b, os.ModePerm); err != nil {
+	if err := os.WriteFile(path.Join(dir, uid.String(), "meta.json"), b, os.ModePerm); err != nil {
 		return ulid.ULID{}, errors.Wrap(err, "saving meta.json")
 	}
 
