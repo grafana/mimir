@@ -1,6 +1,4 @@
-{{- if not .Values.enterprise.enabled -}}
-{{- if .Values.nginx.enabled -}}
-{{- if .Values.nginx.ingress.enabled -}}
+{{- if and (not .Values.enterprise.enabled) .Values.nginx.enabled .Values.nginx.ingress.enabled }}
 {{- $ingressApiIsStable := eq (include "mimir.ingress.isStable" .) "true" -}}
 {{- $ingressSupportsIngressClassName := eq (include "mimir.ingress.supportsIngressClassName" .) "true" -}}
 {{- $ingressSupportsPathType := eq (include "mimir.ingress.supportsPathType" .) "true" -}}
@@ -53,6 +51,4 @@ spec:
               {{- end }}
           {{- end }}
     {{- end }}
-{{- end -}}
-{{- end -}}
 {{- end -}}

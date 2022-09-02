@@ -1,5 +1,4 @@
-{{- if .Values.enterprise.enabled -}}
-{{- if .Values.gateway.ingress.enabled -}}
+{{- if and .Values.enterprise.enabled .Values.gateway.enabled .Values.gateway.ingress.enabled }}
 {{- $ingressApiIsStable := eq (include "mimir.ingress.isStable" .) "true" -}}
 {{- $ingressSupportsIngressClassName := eq (include "mimir.ingress.supportsIngressClassName" .) "true" -}}
 {{- $ingressSupportsPathType := eq (include "mimir.ingress.supportsPathType" .) "true" -}}
@@ -52,5 +51,4 @@ spec:
               {{- end }}
           {{- end }}
     {{- end }}
-{{- end -}}
 {{- end -}}

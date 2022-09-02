@@ -1,5 +1,4 @@
-{{- if not .Values.enterprise.enabled -}}
-{{- if .Values.nginx.enabled }}
+{{- if and (not .Values.enterprise.enabled) .Values.nginx.enabled }}
 apiVersion: v1
 kind: Service
 metadata:
@@ -30,5 +29,4 @@ spec:
       protocol: TCP
   selector:
     {{- include "mimir.selectorLabels" (dict "ctx" . "component" "nginx") | nindent 4 }}
-{{- end -}}
 {{- end -}}

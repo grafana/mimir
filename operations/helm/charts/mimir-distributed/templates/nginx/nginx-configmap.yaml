@@ -1,5 +1,4 @@
-{{- if not .Values.enterprise.enabled -}}
-{{- if .Values.nginx.enabled }}
+{{- if and (not .Values.enterprise.enabled) .Values.nginx.enabled }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -10,5 +9,4 @@ metadata:
 data:
   nginx.conf: |
     {{- tpl .Values.nginx.nginxConfig.file . | nindent 4 }}
-{{- end -}}
 {{- end -}}

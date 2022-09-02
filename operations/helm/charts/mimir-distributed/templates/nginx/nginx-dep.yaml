@@ -1,5 +1,4 @@
-{{- if not .Values.enterprise.enabled -}}
-{{- if .Values.nginx.enabled }}
+{{- if and (not .Values.enterprise.enabled) .Values.nginx.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -124,5 +123,4 @@ spec:
         {{- if .Values.nginx.extraVolumes }}
         {{- toYaml .Values.nginx.extraVolumes | nindent 8 }}
         {{- end }}
-{{- end -}}
 {{- end -}}

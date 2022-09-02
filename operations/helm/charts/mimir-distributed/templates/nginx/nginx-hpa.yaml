@@ -1,5 +1,4 @@
-{{- if not .Values.enterprise.enabled -}}
-{{- if .Values.nginx.autoscaling.enabled }}
+{{- if and (not .Values.enterprise.enabled) .Values.nginx.enabled .Values.nginx.autoscaling.enabled }}
 apiVersion: autoscaling/v2beta1
 kind: HorizontalPodAutoscaler
 metadata:
@@ -27,5 +26,4 @@ spec:
         name: cpu
         targetAverageUtilization: {{ . }}
   {{- end }}
-{{- end -}}
 {{- end -}}

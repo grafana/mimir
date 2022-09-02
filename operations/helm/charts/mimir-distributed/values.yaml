@@ -2003,9 +2003,12 @@ admin_api:
   env: []
   extraEnvFrom: []
 
-# Settings for the gateway service providing authentication and authorization via the admin_api.
+# Settings for the enterprise gateway service providing authentication and authorization via the admin_api.
 # Can only be enabled if enterprise.enabled is true - requires license.
 gateway:
+  # -- Specifies wether to enable the enterprise gateway
+  enabled: true
+
   # If you want to use your own proxy URLs, set this to false.
   useDefaultProxyURLs: true
   replicas: 1
