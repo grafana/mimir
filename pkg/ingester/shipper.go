@@ -7,7 +7,6 @@ package ingester
 
 import (
 	"context"
-	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
@@ -197,7 +196,7 @@ func (s *Shipper) upload(ctx context.Context, meta *metadata.Meta) error {
 // blockMetasFromOldest returns the block meta of each block found in dir
 // sorted by minTime asc.
 func (s *Shipper) blockMetasFromOldest() (metas []*metadata.Meta, _ error) {
-	fis, err := ioutil.ReadDir(s.dir)
+	fis, err := os.ReadDir(s.dir)
 	if err != nil {
 		return nil, errors.Wrap(err, "read dir")
 	}

@@ -13,7 +13,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math"
 	"net"
 	"net/http"
@@ -3069,8 +3068,8 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 				// it's the last one and opening TSDB should fail).
 				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user0", "wal", ""), 0700))
 				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user0", "chunks_head", ""), 0700))
-				require.NoError(t, ioutil.WriteFile(filepath.Join(dir, "user0", "chunks_head", "00000001"), nil, 0700))
-				require.NoError(t, ioutil.WriteFile(filepath.Join(dir, "user0", "chunks_head", "00000002"), nil, 0700))
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "user0", "chunks_head", "00000001"), nil, 0700))
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "user0", "chunks_head", "00000002"), nil, 0700))
 
 				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user1", "dummy"), 0700))
 			},
@@ -3093,8 +3092,8 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 				// it's the last one and opening TSDB should fail).
 				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user2", "wal", ""), 0700))
 				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user2", "chunks_head", ""), 0700))
-				require.NoError(t, ioutil.WriteFile(filepath.Join(dir, "user2", "chunks_head", "00000001"), nil, 0700))
-				require.NoError(t, ioutil.WriteFile(filepath.Join(dir, "user2", "chunks_head", "00000002"), nil, 0700))
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "user2", "chunks_head", "00000001"), nil, 0700))
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "user2", "chunks_head", "00000002"), nil, 0700))
 			},
 			check: func(t *testing.T, i *Ingester) {
 				require.Equal(t, 0, len(i.tsdbs))

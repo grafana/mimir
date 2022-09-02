@@ -10,7 +10,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"io/ioutil"
 	"time"
 
 	"github.com/stretchr/testify/mock"
@@ -104,7 +103,7 @@ func (m *ClientMock) MockGet(name, content string, err error) {
 		// each time the mocked Get() is called we do create a new one, so
 		// that getting the same mocked object twice works as expected.
 		m.On("Get", mock.Anything, name).Return(func(_ context.Context, _ string) (io.ReadCloser, error) {
-			return ioutil.NopCloser(bytes.NewReader([]byte(content))), err
+			return io.NopCloser(bytes.NewReader([]byte(content))), err
 		})
 	} else {
 		m.On("Exists", mock.Anything, name).Return(false, err)

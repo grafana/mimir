@@ -7,7 +7,6 @@ package local
 
 import (
 	"context"
-	"io/ioutil"
 	"os"
 	"path"
 	"testing"
@@ -27,7 +26,7 @@ func TestClient_LoadAllRuleGroups(t *testing.T) {
 	user2 := "second-user"
 
 	namespace1 := "ns"
-	namespace2 := "z-another" // This test relies on the fact that ioutil.ReadDir() returns files sorted by name.
+	namespace2 := "z-another" // This test relies on the fact that os.ReadDir() returns files sorted by name.
 
 	dir := t.TempDir()
 
@@ -56,7 +55,7 @@ func TestClient_LoadAllRuleGroups(t *testing.T) {
 	err = os.Symlink(user1, path.Join(dir, user2))
 	require.NoError(t, err)
 
-	err = ioutil.WriteFile(path.Join(dir, user1, namespace1), b, 0777)
+	err = os.WriteFile(path.Join(dir, user1, namespace1), b, 0777)
 	require.NoError(t, err)
 
 	const ignoredDir = "ignored-dir"

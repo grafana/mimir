@@ -6,7 +6,6 @@ import (
 	"bufio"
 	"context"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"strconv"
 	"sync"
@@ -359,7 +358,7 @@ func (r *request) do() {
 		return
 	}
 	defer func() {
-		io.Copy(ioutil.Discard, httpResp.Body)
+		io.Copy(io.Discard, httpResp.Body)
 		httpResp.Body.Close()
 	}()
 

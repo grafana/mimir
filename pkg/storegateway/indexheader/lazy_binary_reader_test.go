@@ -7,7 +7,6 @@ package indexheader
 
 import (
 	"context"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sync"
@@ -30,7 +29,7 @@ import (
 func TestNewLazyBinaryReader_ShouldFailIfUnableToBuildIndexHeader(t *testing.T) {
 	ctx := context.Background()
 
-	tmpDir, err := ioutil.TempDir("", "test-indexheader")
+	tmpDir, err := os.MkdirTemp("", "test-indexheader")
 	require.NoError(t, err)
 	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
 
@@ -45,7 +44,7 @@ func TestNewLazyBinaryReader_ShouldFailIfUnableToBuildIndexHeader(t *testing.T) 
 func TestNewLazyBinaryReader_ShouldBuildIndexHeaderFromBucket(t *testing.T) {
 	ctx := context.Background()
 
-	tmpDir, err := ioutil.TempDir("", "test-indexheader")
+	tmpDir, err := os.MkdirTemp("", "test-indexheader")
 	require.NoError(t, err)
 	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
 
@@ -86,7 +85,7 @@ func TestNewLazyBinaryReader_ShouldBuildIndexHeaderFromBucket(t *testing.T) {
 func TestNewLazyBinaryReader_ShouldRebuildCorruptedIndexHeader(t *testing.T) {
 	ctx := context.Background()
 
-	tmpDir, err := ioutil.TempDir("", "test-indexheader")
+	tmpDir, err := os.MkdirTemp("", "test-indexheader")
 	require.NoError(t, err)
 	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
 
@@ -104,7 +103,7 @@ func TestNewLazyBinaryReader_ShouldRebuildCorruptedIndexHeader(t *testing.T) {
 
 	// Write a corrupted index-header for the block.
 	headerFilename := filepath.Join(tmpDir, blockID.String(), block.IndexHeaderFilename)
-	require.NoError(t, ioutil.WriteFile(headerFilename, []byte("xxx"), os.ModePerm))
+	require.NoError(t, os.WriteFile(headerFilename, []byte("xxx"), os.ModePerm))
 
 	m := NewLazyBinaryReaderMetrics(nil)
 	r, err := NewLazyBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, BinaryReaderConfig{}, m, nil)
@@ -126,7 +125,7 @@ func TestNewLazyBinaryReader_ShouldRebuildCorruptedIndexHeader(t *testing.T) {
 func TestLazyBinaryReader_ShouldReopenOnUsageAfterClose(t *testing.T) {
 	ctx := context.Background()
 
-	tmpDir, err := ioutil.TempDir("", "test-indexheader")
+	tmpDir, err := os.MkdirTemp("", "test-indexheader")
 	require.NoError(t, err)
 	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
 
@@ -178,7 +177,7 @@ func TestLazyBinaryReader_ShouldReopenOnUsageAfterClose(t *testing.T) {
 func TestLazyBinaryReader_unload_ShouldReturnErrorIfNotIdle(t *testing.T) {
 	ctx := context.Background()
 
-	tmpDir, err := ioutil.TempDir("", "test-indexheader")
+	tmpDir, err := os.MkdirTemp("", "test-indexheader")
 	require.NoError(t, err)
 	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
 
@@ -229,7 +228,7 @@ func TestLazyBinaryReader_LoadUnloadRaceCondition(t *testing.T) {
 
 	ctx := context.Background()
 
-	tmpDir, err := ioutil.TempDir("", "test-indexheader")
+	tmpDir, err := os.MkdirTemp("", "test-indexheader")
 	require.NoError(t, err)
 	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
 

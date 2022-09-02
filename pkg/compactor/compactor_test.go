@@ -12,7 +12,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
@@ -1345,7 +1344,7 @@ func createTSDBBlock(t *testing.T, bkt objstore.Bucket, userID string, minT, max
 	require.NoError(t, db.Snapshot(snapshotDir, true))
 
 	// Look for the created block (we expect one).
-	entries, err := ioutil.ReadDir(snapshotDir)
+	entries, err := os.ReadDir(snapshotDir)
 	require.NoError(t, err)
 	require.Len(t, entries, 1)
 	require.True(t, entries[0].IsDir())
@@ -1372,7 +1371,7 @@ func createTSDBBlock(t *testing.T, bkt objstore.Bucket, userID string, minT, max
 		}
 
 		// Read the file content in memory.
-		content, err := ioutil.ReadFile(file)
+		content, err := os.ReadFile(file)
 		if err != nil {
 			return err
 		}

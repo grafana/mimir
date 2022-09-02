@@ -5,7 +5,7 @@ package querymiddleware
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
@@ -120,7 +120,7 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 200, resp.StatusCode)
 
-	actualBody, err := ioutil.ReadAll(resp.Body)
+	actualBody, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 	require.Equal(t, expectedResponse, string(actualBody))
 	require.Equal(t, int32(2), actualCount.Load())
