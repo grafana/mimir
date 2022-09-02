@@ -33,6 +33,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Fgprof](#fgprof)                                                                     | _All services_                 | `GET /debug/fgprof`                                                       |
 | [Build information](#build-information)                                               | _All services_                 | `GET /api/v1/status/buildinfo`                                            |
 | [Memberlist cluster](#memberlist-cluster)                                             | _All services_                 | `GET /memberlist`                                                         |
+| [Get tenant limits](#get-tenant-limits)                                               | _All services_                 | `GET /api/v1/user_limits`                                                 |
 | [Remote write](#remote-write)                                                         | Distributor                    | `POST /api/v1/push`                                                       |
 | [OTLP](#otlp)                                                                         | Distributor                    | `POST /otlp/v1/metrics`                                                   |
 | [Tenants stats](#tenants-stats)                                                       | Distributor                    | `GET /distributor/all_user_stats`                                         |
@@ -226,6 +227,18 @@ This admin page shows information about Memberlist cluster (list of nodes and th
 If memberlist message history is enabled, this page also shows all received and sent messages stored in the buffers.
 This can be useful for troubleshooting memberlist cluster.
 To enable message history buffers use `-memberlist.message-history-buffer-bytes` CLI flag or the corresponding YAML configuration parameter.
+
+### Get tenant limits
+
+```
+GET /api/v1/user_limits
+```
+
+Returns realtime limits for the authenticated tenant, in `JSON` format.
+
+Requires [authentication](#authentication).
+
+The endpoint is only available if Grafana Mimir is configured with the `-runtime-config.file` option.
 
 ## Distributor
 
