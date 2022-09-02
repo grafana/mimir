@@ -370,7 +370,7 @@ type sender interface {
 // It filters any non-firing alerts from the input.
 //
 // Copied from Prometheus's main.go.
-func SendAlerts(n sender, externalURL string) promRules.NotifyFunc {
+func SendAlerts(n sender, externalURL string, logger log.Logger) promRules.NotifyFunc {
 	return func(ctx context.Context, expr string, alerts ...*promRules.Alert) {
 		var res []*notifier.Alert
 
@@ -386,6 +386,7 @@ func SendAlerts(n sender, externalURL string) promRules.NotifyFunc {
 			} else {
 				a.EndsAt = alert.ValidUntil
 			}
+			level.Info(logger).Log("msg", "sending alert", "string", a.String(), "printed", fmt.Sprintf("%#v", a))
 			res = append(res, a)
 		}
 

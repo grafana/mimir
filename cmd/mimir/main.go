@@ -8,26 +8,19 @@ package main
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"math/rand"
 	"os"
-	"runtime"
-	"sort"
 	"strings"
-	"time"
 
-	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
+	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/weaveworks/common/tracing"
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/mimir"
-	util_log "github.com/grafana/mimir/pkg/util/log"
-	"github.com/grafana/mimir/pkg/util/usage"
 	"github.com/grafana/mimir/pkg/util/version"
 )
 
@@ -75,145 +68,177 @@ func (mf *mainFlags) registerFlags(fs *flag.FlagSet) {
 }
 
 func main() {
-	var (
-		cfg       mimir.Config
-		mainFlags mainFlags
-	)
+	file := os.Args[1]
+	contents, err := os.ReadFile(file)
+	if err != nil {
+		panic(err)
+	}
+	response := &struct {
+		Status string `json:"status"`
+		Data   struct {
+			RuleGroups []*promv1.RuleGroup `json:"groups"`
+		} `json:"data"`
+	}{}
 
-	configFile, expandEnv := parseConfigFileParameter(os.Args[1:])
-
-	// This sets default values from flags to the config.
-	// It needs to be called before parsing the config file!
-	cfg.RegisterFlags(flag.CommandLine, util_log.Logger)
-
-	if configFile != "" {
-		if err := LoadConfig(configFile, expandEnv, &cfg); err != nil {
-			fmt.Fprintf(os.Stderr, "error loading config from %s: %v\n", configFile, err)
-			if testMode {
-				return
+	err = json.Unmarshal(contents, response)
+	if err != nil {
+		panic(err)
+	}
+	for _, group := range response.Data.RuleGroups {
+		interval := group.Interval
+		for _, rule := range group.Rules {
+			v, ok := rule.(promv1.AlertingRule)
+			if !ok {
+				continue
 			}
-			os.Exit(1)
-		}
-	}
-
-	// Ignore -config.file and -config.expand-env here, since they are parsed separately, but are still present on the command line.
-	flagext.IgnoredFlag(flag.CommandLine, configFileOption, "Configuration file to load.")
-	_ = flag.CommandLine.Bool(configExpandEnv, false, "Expands ${var} or $var in config according to the values of the environment variables.")
-
-	mainFlags.registerFlags(flag.CommandLine)
-
-	flag.CommandLine.Usage = func() { /* don't do anything by default, we will print usage ourselves, but only when requested. */ }
-	flag.CommandLine.Init(flag.CommandLine.Name(), flag.ContinueOnError)
-
-	if err := flag.CommandLine.Parse(os.Args[1:]); err != nil {
-		fmt.Fprintln(flag.CommandLine.Output(), "Run with -help to get a list of available parameters")
-		if !testMode {
-			os.Exit(2)
-		}
-	}
-
-	if mainFlags.printHelp || mainFlags.printHelpAll {
-		// Print available parameters to stdout, so that users can grep/less them easily.
-		flag.CommandLine.SetOutput(os.Stdout)
-		if err := usage.Usage(mainFlags.printHelpAll, &mainFlags, &cfg); err != nil {
-			fmt.Fprintf(os.Stderr, "error printing usage: %s\n", err)
-			os.Exit(1)
-		}
-
-		if !testMode {
-			os.Exit(2)
-		}
-		return
-	}
-
-	if mainFlags.printVersion {
-		fmt.Fprintln(os.Stdout, version.Print("Mimir"))
-		return
-	}
-
-	if err := mimir.InheritCommonFlagValues(util_log.Logger, flag.CommandLine, cfg.Common, &cfg); err != nil {
-		fmt.Fprintf(os.Stderr, "error inheriting common flag values: %v\n", err)
-		if !testMode {
-			os.Exit(1)
-		}
-	}
-
-	// Validate the config once both the config file has been loaded
-	// and CLI flags parsed.
-	if err := cfg.Validate(util_log.Logger); err != nil {
-		fmt.Fprintf(os.Stderr, "error validating config: %v\n", err)
-		if !testMode {
-			os.Exit(1)
-		}
-	}
-
-	// Continue on if -modules flag is given. Code handling the
-	// -modules flag will not start mimir.
-	if testMode && !mainFlags.printModules {
-		DumpYaml(&cfg)
-		return
-	}
-
-	if mainFlags.mutexProfileFraction > 0 {
-		runtime.SetMutexProfileFraction(mainFlags.mutexProfileFraction)
-	}
-	if mainFlags.blockProfileRate > 0 {
-		runtime.SetBlockProfileRate(mainFlags.blockProfileRate)
-	}
-
-	util_log.InitLogger(&cfg.Server)
-
-	// Allocate a block of memory to alter GC behaviour. See https://github.com/golang/go/issues/23044
-	ballast := make([]byte, mainFlags.ballastBytes)
-
-	// In testing mode skip JAEGER setup to avoid panic due to
-	// "duplicate metrics collector registration attempted"
-	if !testMode {
-		name := "mimir"
-		if len(cfg.Target) == 1 {
-			name += "-" + cfg.Target[0]
-		}
-
-		// Setting the environment variable JAEGER_AGENT_HOST enables tracing.
-		if trace, err := tracing.NewFromEnv(name); err != nil {
-			level.Error(util_log.Logger).Log("msg", "Failed to setup tracing", "err", err.Error())
-		} else {
-			defer trace.Close()
-		}
-	}
-
-	// Initialise seed for randomness usage.
-	rand.Seed(time.Now().UnixNano())
-
-	t, err := mimir.New(cfg, prometheus.DefaultRegisterer)
-	util_log.CheckFatal("initializing application", err)
-
-	if mainFlags.printModules {
-		allDeps := t.ModuleManager.DependenciesForModule(mimir.All)
-
-		for _, m := range t.ModuleManager.UserVisibleModuleNames() {
-			ix := sort.SearchStrings(allDeps, m)
-			included := ix < len(allDeps) && allDeps[ix] == m
-
-			if included {
-				fmt.Fprintln(os.Stdout, m, "*")
-			} else {
-				fmt.Fprintln(os.Stdout, m)
+			name := v.Name + strings.Repeat(" ", 60-len(v.Name))
+			for _, activeAlert := range v.Alerts {
+				fmt.Printf("%s%d / %d\t= %d\t%s\n", name, int(interval), int(v.Duration), int(v.Duration/interval), activeAlert.State)
 			}
 		}
-
-		fmt.Fprintln(os.Stdout)
-		fmt.Fprintln(os.Stdout, "Modules marked with * are included in target All.")
-		return
 	}
-
-	level.Info(util_log.Logger).Log("msg", "Starting application", "version", version.Info())
-
-	err = t.Run()
-
-	runtime.KeepAlive(ballast)
-	util_log.CheckFatal("running application", err)
 }
+
+//func main() {
+//	var (
+//		cfg       mimir.Config
+//		mainFlags mainFlags
+//	)
+//
+//	configFile, expandEnv := parseConfigFileParameter(os.Args[1:])
+//
+//	// This sets default values from flags to the config.
+//	// It needs to be called before parsing the config file!
+//	cfg.RegisterFlags(flag.CommandLine, util_log.Logger)
+//
+//	if configFile != "" {
+//		if err := LoadConfig(configFile, expandEnv, &cfg); err != nil {
+//			fmt.Fprintf(os.Stderr, "error loading config from %s: %v\n", configFile, err)
+//			if testMode {
+//				return
+//			}
+//			os.Exit(1)
+//		}
+//	}
+//
+//	// Ignore -config.file and -config.expand-env here, since they are parsed separately, but are still present on the command line.
+//	flagext.IgnoredFlag(flag.CommandLine, configFileOption, "Configuration file to load.")
+//	_ = flag.CommandLine.Bool(configExpandEnv, false, "Expands ${var} or $var in config according to the values of the environment variables.")
+//
+//	mainFlags.registerFlags(flag.CommandLine)
+//
+//	flag.CommandLine.Usage = func() { /* don't do anything by default, we will print usage ourselves, but only when requested. */ }
+//	flag.CommandLine.Init(flag.CommandLine.Name(), flag.ContinueOnError)
+//
+//	if err := flag.CommandLine.Parse(os.Args[1:]); err != nil {
+//		fmt.Fprintln(flag.CommandLine.Output(), "Run with -help to get a list of available parameters")
+//		if !testMode {
+//			os.Exit(2)
+//		}
+//	}
+//
+//	if mainFlags.printHelp || mainFlags.printHelpAll {
+//		// Print available parameters to stdout, so that users can grep/less them easily.
+//		flag.CommandLine.SetOutput(os.Stdout)
+//		if err := usage.Usage(mainFlags.printHelpAll, &mainFlags, &cfg); err != nil {
+//			fmt.Fprintf(os.Stderr, "error printing usage: %s\n", err)
+//			os.Exit(1)
+//		}
+//
+//		if !testMode {
+//			os.Exit(2)
+//		}
+//		return
+//	}
+//
+//	if mainFlags.printVersion {
+//		fmt.Fprintln(os.Stdout, version.Print("Mimir"))
+//		return
+//	}
+//
+//	if err := mimir.InheritCommonFlagValues(util_log.Logger, flag.CommandLine, cfg.Common, &cfg); err != nil {
+//		fmt.Fprintf(os.Stderr, "error inheriting common flag values: %v\n", err)
+//		if !testMode {
+//			os.Exit(1)
+//		}
+//	}
+//
+//	// Validate the config once both the config file has been loaded
+//	// and CLI flags parsed.
+//	if err := cfg.Validate(util_log.Logger); err != nil {
+//		fmt.Fprintf(os.Stderr, "error validating config: %v\n", err)
+//		if !testMode {
+//			os.Exit(1)
+//		}
+//	}
+//
+//	// Continue on if -modules flag is given. Code handling the
+//	// -modules flag will not start mimir.
+//	if testMode && !mainFlags.printModules {
+//		DumpYaml(&cfg)
+//		return
+//	}
+//
+//	if mainFlags.mutexProfileFraction > 0 {
+//		runtime.SetMutexProfileFraction(mainFlags.mutexProfileFraction)
+//	}
+//	if mainFlags.blockProfileRate > 0 {
+//		runtime.SetBlockProfileRate(mainFlags.blockProfileRate)
+//	}
+//
+//	util_log.InitLogger(&cfg.Server)
+//
+//	// Allocate a block of memory to alter GC behaviour. See https://github.com/golang/go/issues/23044
+//	ballast := make([]byte, mainFlags.ballastBytes)
+//
+//	// In testing mode skip JAEGER setup to avoid panic due to
+//	// "duplicate metrics collector registration attempted"
+//	if !testMode {
+//		name := "mimir"
+//		if len(cfg.Target) == 1 {
+//			name += "-" + cfg.Target[0]
+//		}
+//
+//		// Setting the environment variable JAEGER_AGENT_HOST enables tracing.
+//		if trace, err := tracing.NewFromEnv(name); err != nil {
+//			level.Error(util_log.Logger).Log("msg", "Failed to setup tracing", "err", err.Error())
+//		} else {
+//			defer trace.Close()
+//		}
+//	}
+//
+//	// Initialise seed for randomness usage.
+//	rand.Seed(time.Now().UnixNano())
+//
+//	t, err := mimir.New(cfg, prometheus.DefaultRegisterer)
+//	util_log.CheckFatal("initializing application", err)
+//
+//	if mainFlags.printModules {
+//		allDeps := t.ModuleManager.DependenciesForModule(mimir.All)
+//
+//		for _, m := range t.ModuleManager.UserVisibleModuleNames() {
+//			ix := sort.SearchStrings(allDeps, m)
+//			included := ix < len(allDeps) && allDeps[ix] == m
+//
+//			if included {
+//				fmt.Fprintln(os.Stdout, m, "*")
+//			} else {
+//				fmt.Fprintln(os.Stdout, m)
+//			}
+//		}
+//
+//		fmt.Fprintln(os.Stdout)
+//		fmt.Fprintln(os.Stdout, "Modules marked with * are included in target All.")
+//		return
+//	}
+//
+//	level.Info(util_log.Logger).Log("msg", "Starting application", "version", version.Info())
+//
+//	err = t.Run()
+//
+//	runtime.KeepAlive(ballast)
+//	util_log.CheckFatal("running application", err)
+//}
 
 // Parse -config.file and -config.expand-env option via separate flag set, to avoid polluting default one and calling flag.Parse on it twice.
 func parseConfigFileParameter(args []string) (configFile string, expandEnv bool) {
