@@ -10,10 +10,14 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log/level"
+	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/kv/codec"
 	"github.com/grafana/dskit/kv/memberlist"
 	"github.com/grafana/dskit/modules"
@@ -174,12 +178,39 @@ func (t *Mimir) initSanityCheck() (services.Service, error) {
 func (t *Mimir) initServer() (services.Service, error) {
 	// Mimir handles signals on its own.
 	DisableSignalHandling(&t.Cfg.Server)
-	serv, err := server.New(t.Cfg.Server)
-	if err != nil {
-		return nil, err
-	}
 
-	t.Server = serv
+	{
+		serv, err := server.New(t.Cfg.Server)
+		if err != nil {
+			return nil, err
+		}
+
+		var message []byte
+		var once sync.Once
+		serv.HTTP.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			once.Do(func() {
+				var paths []string
+				err = serv.HTTP.Walk(func(route *mux.Route, router *mux.Router, ancestors []*mux.Route) (err error) {
+					// TODO also add methods from route.GetMethods()
+					s, err := route.GetPathTemplate()
+					if err != nil {
+						level.Error(util_log.Logger).Log("handler", "list_endpoints_handler", "err", err)
+						return err
+					}
+					paths = append(paths, s)
+					return nil
+				})
+				sort.Strings(paths)
+				message = []byte("Available endpoints:\n" + strings.Join(paths, "\n") + "\n")
+			})
+			w.WriteHeader(http.StatusNotFound)
+			_, err = w.Write(message)
+			if err != nil {
+				level.Error(util_log.Logger).Log("err", err)
+			}
+		})
+		t.Server = serv
+	}
 
 	servicesToWaitFor := func() []services.Service {
 		svs := []services.Service(nil)
