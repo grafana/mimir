@@ -79,13 +79,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
         if multi then
           if $._config.singleBinary
-          then d.addMultiTemplate('job', 'cortex_build_info', 'job')
+          then d.addMultiTemplate('job', $._config.dropdown_job_query, 'job')
           else d
                .addMultiTemplate('cluster', $._config.dropdown_cluster_query, '%s' % $._config.per_cluster_label)
                .addMultiTemplate('namespace', $._config.dropdown_namespace_query, 'namespace')
         else
           if $._config.singleBinary
-          then d.addTemplate('job', 'cortex_build_info', 'job')
+          then d.addTemplate('job', $._config.dropdown_job_query, 'job')
           else d
                .addTemplate('cluster', $._config.dropdown_cluster_query, '%s' % $._config.per_cluster_label, allValue='.*', includeAll=true)
                .addTemplate('namespace', $._config.dropdown_namespace_query, 'namespace'),
