@@ -226,7 +226,7 @@
           alert: $.alertName('RingMembersMismatch'),
           expr: |||
             (
-              avg by(%(alert_aggregation_labels)s) (sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ring_members{name="%(component)s",job=~"%(job)s"}))
+              avg by(%(alert_aggregation_labels)s) (sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ring_members{name=~"%(component)s",job=~"%(job)s"}))
               != sum by(%(alert_aggregation_labels)s) (up{job=~"%(job)s"})
             )
             and
