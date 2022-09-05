@@ -236,8 +236,8 @@
           ||| % {
             alert_aggregation_labels: $._config.alert_aggregation_labels,
             per_instance_label: $._config.per_instance_label,
-            component: component_job[0],
-            job: component_job[1],
+            component: component_job[1],
+            job: component_job[2],
           },
           'for': '15m',
           labels: {
@@ -251,11 +251,11 @@
           },
         }
         for component_job in [
-          ['compactor', '.*/compactor'],
-          ['distributor', '.*/distributor'],
-          ['ingester', '.*/ingester.*'],
-          ['ruler', '.*/ruler'],
-          ['store-gateway', '.*/store-gateway.*'],
+          ['compactor', $._config.job_names['compactor'], '.*/compactor'],
+          ['distributor', $._config.job_names['distributor'], '.*/distributor'],
+          ['ingester', $._config.job_names['ingester'], '.*/ingester.*'],
+          ['ruler', $._config.job_names['ruler'], '.*/ruler'],
+          ['store-gateway', $._config.job_names['store_gateway'], '.*/store-gateway.*'],
         ]
       ],
     },
