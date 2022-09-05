@@ -1,6 +1,6 @@
 {{- define "mimir.lib.topologySpreadConstraints" }}
-{{- $componentSection := include "mimir.componentSectionFromName" . }}
-{{- $topologySpreadConstraintsSection := (index (.ctx.Values) $componentSection).topologySpreadConstraints }}
+{{- $componentSection := include "mimir.componentSectionFromName" . | fromYaml }}
+{{- $topologySpreadConstraintsSection := $componentSection.topologySpreadConstraints }}
 {{- if $topologySpreadConstraintsSection }}
 - maxSkew: {{ $topologySpreadConstraintsSection.maxSkew }}
   topologyKey: {{ $topologySpreadConstraintsSection.topologyKey }}
