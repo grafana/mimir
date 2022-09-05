@@ -94,3 +94,6 @@ encoded_token=$(echo -n "${TENANT}:${token}" | base64 -w0)
 
 echo "# Use the following Authorization header in your calls"
 echo "Authorization: Basic ${encoded_token}"
+echo "# Exporting environment variable MIMIR_BASIC_AUTH with the token contents"
+export MIMIR_BASIC_AUTH="${encoded_token}"
+echo "Done"

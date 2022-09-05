@@ -25,6 +25,11 @@ helm upgrade --install mimir-demo \
   --kube-context kind-mimir-demo
 
 # Enterprise and graphite enabled
+# if ! test -f "license.jwt"; then
+#     echo "Please place a license.jwt file in this directory"
+#     exit 1
+# fi
+#
 # helm upgrade --install mimir-demo \
 #   "${chart_path}" \
 #   --values "${chart_path}/values.yaml" \
