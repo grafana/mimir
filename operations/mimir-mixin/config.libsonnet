@@ -51,6 +51,10 @@
     job_labels: [$._config.per_cluster_label, 'namespace', 'job'],
     cluster_labels: [$._config.per_cluster_label, 'namespace'],
 
+    // PromQL queries used to find clusters and namespaces with Mimir.
+    dropdown_cluster_query: 'cortex_build_info',
+    dropdown_namespace_query: 'cortex_build_info{%s=~"$cluster"}' % $._config.per_cluster_label,
+
     cortex_p99_latency_threshold_seconds: 2.5,
 
     // Whether resources dashboards are enabled (based on cAdvisor metrics).
