@@ -5,6 +5,7 @@
 ### Grafana Mimir
 
 ### Mixin
+* [ENHANCEMENT] Alerts: Add MimirRingMembersMismatch firing when a component does not have the expected number of running jobs. #2404
 
 ### Jsonnet
 
