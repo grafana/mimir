@@ -251,11 +251,11 @@
           },
         }
         for component_job in [
-          ['compactor', $._config.job_names['compactor'], '.*/compactor'],
-          ['distributor', $._config.job_names['distributor'], '.*/distributor'],
-          ['ingester', $._config.job_names['ingester'], '.*/ingester.*'],
-          ['ruler', $._config.job_names['ruler'], '.*/ruler'],
-          ['store-gateway', $._config.job_names['store_gateway'], '.*/store-gateway.*'],
+          ['compactor', $._config.job_names.compactor, '.*/compactor'],
+          ['distributor', $._config.job_names.distributor, '.*/distributor'],
+          ['ingester', $._config.job_names.ingester, '.*/ingester.*'],
+          ['ruler', $._config.job_names.ruler, '.*/ruler'],
+          ['store-gateway', $._config.job_names.store_gateway, '.*/store-gateway.*'],
         ]
       ],
     },
