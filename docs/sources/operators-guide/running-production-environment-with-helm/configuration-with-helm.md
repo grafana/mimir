@@ -161,7 +161,7 @@ This example shows how to set up the configuration to use an S3 bucket for block
    global:
      extraEnvFrom:
        - secretRef:
-         name: mimir-bucket-secret
+           name: mimir-bucket-secret
      podAnnotations:
        bucketSecretVersion: "0"
 
