@@ -384,3 +384,17 @@ Get the no_auth_tenant from the configuration
 {{- define "mimir.noAuthTenant" -}}
 {{- (include "mimir.calculatedConfig" . | fromYaml).no_auth_tenant | default "anonymous" -}}
 {{- end -}}
+
+{{/*
+Return if we should create a PodSecurityPoliPodSecurityPolicycy. Takes into account user values and supported kubernetes versions.
+*/}}
+{{- define "mimir.rbac.usePodSecurityPolicy" -}}
+{{- and (semverCompare "< 1.25-0" (include "mimir.kubeVersion" .)) (and .Values.rbac.create (eq .Values.rbac.type "psp")) -}}
+{{- end -}}
+
+{{/*
+Return if we should create a SecurityContextConstraints. Takes into account user values and supported openshift versions.
+*/}}
+{{- define "mimir.rbac.useSecurityContextConstraints" -}}
+{{- and .Values.rbac.create (eq .Values.rbac.type "scc") -}}
+{{- end -}}
