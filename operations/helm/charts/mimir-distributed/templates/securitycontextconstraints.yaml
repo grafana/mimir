@@ -1,4 +1,4 @@
-{{- if eq (include "mimir.ingress.useSecurityContextConstraints" .) "true" }}
+{{- if eq (include "mimir.rbac.useSecurityContextConstraints" .) "true" }}
 apiVersion: security.openshift.io/v1
 kind: SecurityContextConstraints
 metadata:

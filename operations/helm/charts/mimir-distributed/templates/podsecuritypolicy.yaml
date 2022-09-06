@@ -1,4 +1,4 @@
-{{- if eq (include "mimir.ingress.usePodSecurityPolicy" .) "true" }}
+{{- if eq (include "mimir.rbac.usePodSecurityPolicy" .) "true" }}
 apiVersion: policy/v1beta1
 kind: PodSecurityPolicy
 metadata:
