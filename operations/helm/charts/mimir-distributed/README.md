@@ -6,6 +6,8 @@ See the [Grafana Mimir version 2.3 release notes](https://grafana.com/docs/mimir
 
 When upgrading from Helm chart version 2.1, please see [Upgrade the Grafana Mimir Helm chart from version 2.1 to 3.0](https://grafana.com/docs/mimir/latest/operators-guide/deploying-grafana-mimir/upgrade-helm-chart-2.1-to-3.0/) as well.
 
+**IMPORTANT**: Always consult the [CHANGELOG.md](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/CHANGELOG.md) file to learn about breaking changes that require action during upgrade.
+
 # mimir-distributed
 
 ![Version: 3.1.0-rc.0](https://img.shields.io/badge/Version-3.1.0--rc.0-informational?style=flat-square) ![AppVersion: 2.3.0](https://img.shields.io/badge/AppVersion-2.3.0-informational?style=flat-square)
