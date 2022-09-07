@@ -753,7 +753,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.forwarding.request-concurrency int
     	[experimental] Maximum concurrency at which forwarding requests get performed. (default 10)
   -distributor.forwarding.request-timeout duration
-    	[experimental] Timeout for requests to ingestion endpoints to which we forward metrics. (default 10s)
+    	[experimental] Timeout for requests to ingestion endpoints to which we forward metrics. (default 2s)
   -distributor.ha-tracker.cluster string
     	Prometheus label to look for in samples to identify a Prometheus HA cluster. (default "cluster")
   -distributor.ha-tracker.consul.acl-token string
@@ -835,7 +835,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.max-recv-msg-size int
     	Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected. (default 104857600)
   -distributor.remote-timeout duration
-    	Timeout for downstream ingesters. (default 20s)
+    	Timeout for downstream ingesters. (default 2s)
   -distributor.request-burst-size int
     	[experimental] Per-tenant allowed request burst size. 0 to disable.
   -distributor.request-rate-limit float
