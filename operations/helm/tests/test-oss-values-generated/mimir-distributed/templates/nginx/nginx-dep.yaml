@@ -73,7 +73,6 @@ spec:
           resources:
             {}
       topologySpreadConstraints:
-        
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
           whenUnsatisfiable: ScheduleAnyway
