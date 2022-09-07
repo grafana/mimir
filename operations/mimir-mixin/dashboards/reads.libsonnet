@@ -288,10 +288,6 @@ local filename = 'mimir-reads.json';
           'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"/gatewaypb.StoreGateway/.*"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.store_gateway)], ''
         )
       )
-      .addPanel(
-        $.panel('Inflight object store requests') +
-        $.queryPanel('sum(cortex_bucket_stores_gate_queries_in_flight{%s})' % $.jobMatcher($._config.job_names.store_gateway), 'Total')
-      )
     )
     .addRow(
       $.kvStoreRow('Store-gateway – key-value store for store-gateways ring', 'store_gateway', 'store-gateway')
