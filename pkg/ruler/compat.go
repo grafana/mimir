@@ -8,6 +8,7 @@ package ruler
 import (
 	"context"
 	"errors"
+	"net/url"
 	"time"
 
 	"github.com/go-kit/log"
@@ -263,14 +264,20 @@ func DefaultTenantManagerFactory(
 		wrappedQueryFunc = MetricsQueryFunc(queryFunc, totalQueries, failedQueries)
 		wrappedQueryFunc = RecordAndReportRuleQueryMetrics(wrappedQueryFunc, queryTime, logger)
 
+		externalURL := cfg.ExternalURL.URL
+		if externalURL == nil {
+			// We need a non-nil URL. dskit sets a nil URL when the yaml is `url: ""`.
+			// If we were to url.Parse(""), that will give a pointer to a zero-valued url.Url.
+			externalURL = &url.URL{}
+		}
 		return rules.NewManager(&rules.ManagerOptions{
 			Appendable:                 NewPusherAppendable(p, userID, overrides, totalWrites, failedWrites),
 			Queryable:                  embeddedQueryable,
 			QueryFunc:                  wrappedQueryFunc,
 			Context:                    user.InjectOrgID(ctx, userID),
 			GroupEvaluationContextFunc: FederatedGroupContextFunc,
-			ExternalURL:                cfg.ExternalURL.URL,
-			NotifyFunc:                 SendAlerts(notifier, cfg.ExternalURL.URL.String()),
+			ExternalURL:                externalURL,
+			NotifyFunc:                 SendAlerts(notifier, externalURL.String()),
 			Logger:                     log.With(logger, "user", userID),
 			Registerer:                 reg,
 			OutageTolerance:            cfg.OutageTolerance,
