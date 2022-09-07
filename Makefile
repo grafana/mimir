@@ -520,7 +520,7 @@ check-mixin-mixtool: check-mixin-jb
 check-mixin-runbooks: build-mixin
 	@tools/lint-runbooks.sh
 
-mixin-serve: ## Runs Grafana (listening on port 3000) loading the mixin dashboards compiled at operations/mimir-mixin-compiled.
+mixin-serve: ## Runs Grafana loading the mixin dashboards compiled at operations/mimir-mixin-compiled.
 	@./operations/mimir-mixin-tools/serve/run.sh
 
 mixin-screenshots: ## Generates mixin dashboards screenshots.
