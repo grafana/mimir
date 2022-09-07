@@ -13,31 +13,30 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
-* [CHANGE] Enable [query sharding](https://grafana.com/docs/mimir/latest/operators-guide/architecture/query-sharding/) by default. If you override the value of `mimir.config`, then take a look at `mimir.config` in the `values.yaml` from this version of the chart and incorporate the differences. If you override `mimir.config`, then consider switching to `mimir.structuredConfig`. To disable query sharding set `mimir.structuredConfig.frontend.parallelize_shardable_queries` to `false`. #2655
-* [FEATURE] Add query-scheduler, which is now enabled by default. If you have copied the `mimir.config`, then update it to correctly configure the query-frontend and the querier. #2087
-* [FEATURE] Added support to run graphite-proxy alongside GEM. It is disabled by default. Set `graphite.enabled=true` in your values config to get it running. #2711
-* [ENHANCEMENT] Default `ingester.ring.tokens-file-path` and `store-gateway.sharding-ring.tokens-file-path` to `/data/tokens` to prevent resharding on restarts. #2726
-* [ENHANCEMENT] Upgrade memcached image tag to `memcached:1.6.16-alpine`. #2740
-* [ENHANCEMENT] Upgrade nginx image tag to `nginxinc/nginx-unprivileged:1.22-alpine`. #2742
-* [ENHANCEMENT] Upgrade minio subchart to `4.0.12`. #2759
-* [BUGFIX] Do not use undocumented `mulf` function in templates. #2752
-* [BUGFIX] Open port 80 for the Enterprise `gateway` service so that the read and write address reported by NOTES.txt is correct. Also deprecate the current default of 8080. #2860
-* [BUGFIX] Periodically rebalance gRPC connection between GEM gateway and distributors after scale out of the distributors. #2862
-
 ## 3.1.0
 
 * [CHANGE] **breaking change** Update minio deprecated helm chart (<https://helm.min.io/>) to the supported chart's version (<https://charts.min.io/>). #2427
   - Renamed helm config values `minio.accessKey` to `minio.rootUser`.
   - Renamed helm config values `minio.secretKey` to `minio.rootPassword`.
   - Minio container images are now loaded from quay.io instead of Docker Hub. Set `minio.image.repository` value to override the default behavior.
+* [CHANGE] Enable [query sharding](https://grafana.com/docs/mimir/latest/operators-guide/architecture/query-sharding/) by default. If you override the value of `mimir.config`, then take a look at `mimir.config` in the `values.yaml` from this version of the chart and incorporate the differences. If you override `mimir.config`, then consider switching to `mimir.structuredConfig`. To disable query sharding set `mimir.structuredConfig.frontend.parallelize_shardable_queries` to `false`. #2655
+* [FEATURE] Add query-scheduler, which is now enabled by default. If you have copied the `mimir.config`, then update it to correctly configure the query-frontend and the querier. #2087
+* [FEATURE] Added support to run graphite-proxy alongside GEM. It is disabled by default. Set `graphite.enabled=true` in your values config to get it running. #2711
 * [ENHANCEMENT] Add backfill endpoints to Nginx configuration. #2478
 * [ENHANCEMENT] Add `namespace` to smoke-test helm template to allow the job to be deployed within the same namespace as the rest of the deployment. #2515
 * [ENHANCEMENT] Memberlist now uses DNS service-discovery by default. #2549 #2561
 * [ENHANCEMENT] The Mimir configuration parameters `server.http_listen_port` and `server.grpc_listen_port` are now configurable in `mimir.structuredConfig`. #2561
 * [ENHANCEMENT] Default to injecting the `no_auth_tenant` from the Mimir configuration as the value for `X-Scope-OrgID` in nginx. #2614
+* [ENHANCEMENT] Default `ingester.ring.tokens-file-path` and `store-gateway.sharding-ring.tokens-file-path` to `/data/tokens` to prevent resharding on restarts. #2726
+* [ENHANCEMENT] Upgrade memcached image tag to `memcached:1.6.16-alpine`. #2740
+* [ENHANCEMENT] Upgrade nginx image tag to `nginxinc/nginx-unprivileged:1.22-alpine`. #2742
+* [ENHANCEMENT] Upgrade minio subchart to `4.0.12`. #2759
 * [BUGFIX] `nginx.extraArgs` are now actually passed to the nginx container. #2336
 * [BUGFIX] Add missing `containerSecurityContext` to alertmanager and tokengen job. #2416
 * [BUGFIX] Add missing `containerSecutiryContext` to memcached exporter containers. #2666
+* [BUGFIX] Do not use undocumented `mulf` function in templates. #2752
+* [BUGFIX] Open port 80 for the Enterprise `gateway` service so that the read and write address reported by NOTES.txt is correct. Also deprecate the current default of 8080. #2860
+* [BUGFIX] Periodically rebalance gRPC connection between GEM gateway and distributors after scale out of the distributors. #2862
 * [BUGFIX] Remove PodSecurityPolicy when running against Kubernetes >= 1.25. #2870
 
 ## 3.0.0
