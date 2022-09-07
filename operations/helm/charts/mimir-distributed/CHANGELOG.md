@@ -38,6 +38,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] `nginx.extraArgs` are now actually passed to the nginx container. #2336
 * [BUGFIX] Add missing `containerSecurityContext` to alertmanager and tokengen job. #2416
 * [BUGFIX] Add missing `containerSecutiryContext` to memcached exporter containers. #2666
+* [BUGFIX] Remove PodSecurityPolicy when running against Kubernetes >= 1.25. #2870
 
 ## 3.0.0
 
