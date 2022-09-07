@@ -14,10 +14,16 @@ metadata:
 spec:
   type: ClusterIP
   ports:
-    - port: {{ .Values.gateway.service.port | default (include "mimir.serverHttpListenPort" . ) }}
+    - port: {{ .Values.gateway.service.port }}
       protocol: TCP
       name: http-metrics
       targetPort: http-metrics
+    {{- with .Values.gateway.service.legacyPort }}
+    - port: {{ . }}
+      protocol: TCP
+      name: legacy-http-metrics
+      targetPort: http-metrics
+    {{- end }}
   selector:
     {{- include "mimir.selectorLabels" (dict "ctx" . "component" "gateway") | nindent 4 }}
 {{- end -}}
