@@ -1,8 +1,10 @@
 # Grafana Mimir Helm chart
 
-Helm chart for deploying [Grafana Mimir]({{ template "chart.homepage" . }}) or optionally [Grafana Enterprise Metrics](https://grafana.com/docs/enterprise-metrics/v2.2.x/) to Kubernetes. Derived from [Grafana Enterprise Metrics Helm Chart](https://github.com/grafana/helm-charts/blob/main/charts/enterprise-metrics/README.md)
+Helm chart for deploying [Grafana Mimir]({{ template "chart.homepage" . }}) or optionally [Grafana Enterprise Metrics](https://grafana.com/docs/enterprise-metrics/v2.3.x/) to Kubernetes. Derived from [Grafana Enterprise Metrics Helm Chart](https://github.com/grafana/helm-charts/blob/main/charts/enterprise-metrics/README.md)
 
-See the [Grafana Mimir version 2.2 release notes](https://grafana.com/docs/mimir/v2.2.x/release-notes/v2.2/) and [Upgrade the Grafana Mimir Helm chart from version 2.1 to 3.0](https://grafana.com/docs/mimir/latest/operators-guide/deploying-grafana-mimir/upgrade-helm-chart-2.1-to-3.0/).
+See the [Grafana Mimir version 2.3 release notes](https://grafana.com/docs/mimir/v2.3.x/release-notes/v2.3/).
+
+When upgrading from Helm chart version 2.1, please see [Upgrade the Grafana Mimir Helm chart from version 2.1 to 3.0](https://grafana.com/docs/mimir/latest/operators-guide/deploying-grafana-mimir/upgrade-helm-chart-2.1-to-3.0/) as well.
 
 {{ template "chart.header" . }}
 
@@ -26,7 +28,7 @@ See [Grafana Mimir documentation]({{ template "chart.homepage" . }}) for details
 ### Grafana Enterprise Metrics license
 
 In order to use the enterprise features of this chart, you need to provide the contents of a Grafana Enterprise Metrics license file as the value for the `license.contents` variable.
-To obtain a Grafana Enterprise Metrics license, refer to [Get a license](https://grafana.com/docs/enterprise-metrics/v2.2.x/setup/#get-a-gem-license).
+To obtain a Grafana Enterprise Metrics license, refer to [Get a license](https://grafana.com/docs/enterprise-metrics/v2.3.x/setup/#get-a-gem-license).
 
 ### Helm3
 
