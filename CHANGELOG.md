@@ -4,6 +4,22 @@
 
 ### Grafana Mimir
 
+### Mixin
+
+### Jsonnet
+
+### Mimirtool
+
+### Query-tee
+
+### Mimir Continuous Test
+
+### Documentation
+
+## 2.3.0-rc.1
+
+### Grafana Mimir
+
 * [CHANGE] Distributor: if forwarding rules are used to forward samples, exemplars are now removed from the request #2725
 * [CHANGE] Ingester: experimental `-blocks-storage.tsdb.new-chunk-disk-mapper` has been removed, new chunk disk mapper is now always used, and is no longer marked experimental. Default value of `-blocks-storage.tsdb.head-chunks-write-queue-size` has changed to 1000000, this enables async chunk queue by default, which leads to improved latency on the write path when new chunks are created in ingesters. #2762
 * [CHANGE] Ingester: removed deprecated `-blocks-storage.tsdb.isolation-enabled` option. TSDB-level isolation is now always disabled in Mimir. #2782
