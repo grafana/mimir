@@ -32,8 +32,9 @@ func WithTraceID(traceID string, l log.Logger) log.Logger {
 // its details.
 //
 // e.g.
-//   log := util.WithContext(ctx)
-//   log.Errorf("Could not chunk chunks: %v", err)
+//
+//	log := util.WithContext(ctx)
+//	log.Errorf("Could not chunk chunks: %v", err)
 func WithContext(ctx context.Context, l log.Logger) log.Logger {
 	// Weaveworks uses "orgs" and "orgID" to represent Cortex users,
 	// even though the code-base generally uses `userID` to refer to the same thing.

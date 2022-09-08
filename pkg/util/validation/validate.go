@@ -65,6 +65,7 @@ func metricReasonFromErrorID(id globalerror.ID) string {
 }
 
 // DiscardedRequests is a metric of the number of discarded requests.
+//
 //lint:ignore faillint It's non-trivial to remove this global variable.
 var DiscardedRequests = promauto.NewCounterVec(
 	prometheus.CounterOpts{
@@ -75,6 +76,7 @@ var DiscardedRequests = promauto.NewCounterVec(
 )
 
 // DiscardedSamples is a metric of the number of discarded samples, by reason.
+//
 //lint:ignore faillint It's non-trivial to remove this global variable.
 var DiscardedSamples = promauto.NewCounterVec(
 	prometheus.CounterOpts{
@@ -85,6 +87,7 @@ var DiscardedSamples = promauto.NewCounterVec(
 )
 
 // DiscardedExemplars is a metric of the number of discarded exemplars, by reason.
+//
 //lint:ignore faillint It's non-trivial to remove this global variable.
 var DiscardedExemplars = promauto.NewCounterVec(
 	prometheus.CounterOpts{
@@ -95,6 +98,7 @@ var DiscardedExemplars = promauto.NewCounterVec(
 )
 
 // DiscardedMetadata is a metric of the number of discarded metadata, by reason.
+//
 //lint:ignore faillint It's non-trivial to remove this global variable.
 var DiscardedMetadata = promauto.NewCounterVec(
 	prometheus.CounterOpts{
