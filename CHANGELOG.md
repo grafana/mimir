@@ -35,6 +35,7 @@
 * [ENHANCEMENT] Dashboards: Introduce support for baremetal deployment, setting `deployment_type: 'baremetal'` in the mixin `_config`. #2657
 * [ENHANCEMENT] Dashboards: use timeseries panel to show exemplars. #2800
 * [ENHANCEMENT] Dashboards: Include per-tenant request rate in "Tenants" dashboard. #2874
+* [ENHANCEMENT] Dashboards: Include inflight object store requests in "Reads" dashboard. #2914
 * [BUGFIX] Dashboards: stop setting 'interval' in dashboards; it should be set on your datasource. #2802
 
 ### Jsonnet
