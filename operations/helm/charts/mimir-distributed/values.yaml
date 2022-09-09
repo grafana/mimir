@@ -1620,7 +1620,7 @@ nginx:
       - secretName: loki-nginx-tls
         hosts:
           - nginx.loki.example.com
-  # Route configuration (for OpenShift only)
+  # -- Route configuration (for OpenShift only)
   route:
     # -- Specifies whether an OpenShift route for the nginx should be created
     enabled: false
