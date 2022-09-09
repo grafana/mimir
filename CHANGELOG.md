@@ -9,6 +9,7 @@
 * [CHANGE] Ingester: removed deprecated `-blocks-storage.tsdb.isolation-enabled` option. TSDB-level isolation is now always disabled in Mimir. #2782
 * [CHANGE] Compactor: `-compactor.partial-block-deletion-delay` must either be set to 0 (to disable partial blocks deletion) or a value higher than `4h`. #2787
 * [CHANGE] Query-frontend: CLI flag `-query-frontend.align-querier-with-step` has been deprecated. Please use `-query-frontend.align-queries-with-step` instead. #2840
+* [CHANGE] Distributor: change the default value of `-distributor.remote-timeout` to `2s` from `20s` and `-distributor.forwarding.request-timeout` to `2s` from `10s` to improve distributor resource usage when ingesters crash. #2728
 * [FEATURE] Introduced an experimental anonymous usage statistics tracking (disabled by default), to help Mimir maintainers make better decisions to support the open source community. The tracking system anonymously collects non-sensitive, non-personally identifiable information about the running Mimir cluster, and is disabled by default. #2643 #2662 #2685 #2732 #2733 #2735
 * [FEATURE] Introduced an experimental deployment mode called read-write and running a fully featured Mimir cluster with three components: write, read and backend. The read-write deployment mode is a trade-off between the monolithic mode (only one component, no isolation) and the microservices mode (many components, high isolation). #2754 #2838
 * [ENHANCEMENT] Distributor: Add `cortex_distributor_query_ingester_chunks_deduped_total` and `cortex_distributor_query_ingester_chunks_total` metrics for determining how effective ingester chunk deduplication at query time is. #2713
@@ -19,19 +20,23 @@
 * [ENHANCEMENT] Distributor: Add single forwarding remote-write endpoint for a tenant (`forwarding_endpoint`), instead of using per-rule endpoints. This takes precendence over per-rule endpoints. #2801
 * [ENHANCEMENT] Added `err-mimir-distributor-max-write-message-size` to the errors catalog. #2470
 * [ENHANCEMENT] Add sanity check at startup to ensure the configured filesystem directories don't overlap for different components. #2828
+* [ENHANCEMENT] Go: updated to go 1.19.1. #2637
 * [BUGFIX] Ruler: fix not restoring alerts' state at startup. #2648
 * [BUGFIX] Ingester: Fix disk filling up after restarting ingesters with out-of-order support disabled while it was enabled before. #2799
 * [BUGFIX] Memberlist: retry joining memberlist cluster on startup when no nodes are resolved. #2837
 * [BUGFIX] Query-frontend: fix incorrect mapping of http status codes 413 to 500 when request is too large. #2819
+* [BUGFIX] Ruler: fix panic when `ruler.external_url` is explicitly set to an empty string (`""`) in YAML. #2915
 
 ### Mixin
 
 * [CHANGE] Dashboards: remove the "Cache - Latency (old)" panel from the "Mimir / Queries" dashboard. #2796
 * [FEATURE] Dashboards: added support to experimental read-write deployment mode. #2780
+* [ENHANCEMENT] Dashboards: Updated the `Writes` dashboard to account for samples ingested via the new OTLP ingestion endpoint. #2919
 * [ENHANCEMENT] Dashboards: added support to query-tee in front of ruler-query-frontend in the "Remote ruler reads" dashboard. #2761
 * [ENHANCEMENT] Dashboards: Introduce support for baremetal deployment, setting `deployment_type: 'baremetal'` in the mixin `_config`. #2657
 * [ENHANCEMENT] Dashboards: use timeseries panel to show exemplars. #2800
 * [ENHANCEMENT] Dashboards: Include per-tenant request rate in "Tenants" dashboard. #2874
+* [ENHANCEMENT] Dashboards: Include inflight object store requests in "Reads" dashboard. #2914
 * [BUGFIX] Dashboards: stop setting 'interval' in dashboards; it should be set on your datasource. #2802
 
 ### Jsonnet

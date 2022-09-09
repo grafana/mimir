@@ -1365,6 +1365,7 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 // optionally restricting the search to the series that match the matchers provided.
 // - First we fetch all possible values for this label from the index.
 //   - If no matchers were provided, we just return those values.
+//
 // - Next we load the postings (references to series) for supplied matchers.
 // - Then we load the postings for each label-value fetched in the first step.
 // - Finally, we check if postings from each label-value intersect postings from matchers.
