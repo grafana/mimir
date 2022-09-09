@@ -66,6 +66,7 @@ func (conn *tlsConn) Write(b []byte) (int, error) {
 	conn.mtx.Lock()
 	defer conn.mtx.Unlock()
 	n, err := conn.connection.Write(b)
+
 	if err != nil {
 		conn.live = false
 	}
