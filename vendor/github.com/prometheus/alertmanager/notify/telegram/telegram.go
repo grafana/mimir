@@ -18,14 +18,15 @@ import (
 	"net/http"
 
 	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
-	commoncfg "github.com/prometheus/common/config"
 	"gopkg.in/telebot.v3"
 
+	"github.com/prometheus/alertmanager/template"
+
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/notify"
-	"github.com/prometheus/alertmanager/template"
 	"github.com/prometheus/alertmanager/types"
+	commoncfg "github.com/prometheus/common/config"
 )
 
 // Notifier implements a Notifier for telegram notifications.
@@ -83,15 +84,16 @@ func (n *Notifier) Notify(ctx context.Context, alert ...*types.Alert) (bool, err
 	return false, nil
 }
 
-func createTelegramClient(token config.Secret, apiURL, parseMode string, httpClient *http.Client) (*telebot.Bot, error) {
+func createTelegramClient(token config.Secret, apiUrl, parseMode string, httpClient *http.Client) (*telebot.Bot, error) {
 	secret := string(token)
 	bot, err := telebot.NewBot(telebot.Settings{
 		Token:     secret,
-		URL:       apiURL,
+		URL:       apiUrl,
 		ParseMode: parseMode,
 		Client:    httpClient,
 		Offline:   true,
 	})
+
 	if err != nil {
 		return nil, err
 	}
