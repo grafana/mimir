@@ -21,8 +21,10 @@ import (
 	"github.com/prometheus/alertmanager/types"
 )
 
-// ErrNotFound is returned if a provider cannot find a requested item.
-var ErrNotFound = fmt.Errorf("item not found")
+var (
+	// ErrNotFound is returned if a provider cannot find a requested item.
+	ErrNotFound = fmt.Errorf("item not found")
+)
 
 // Iterator provides the functions common to all iterators. To be useful, a
 // specific iterator interface (e.g. AlertIterator) has to be implemented that
