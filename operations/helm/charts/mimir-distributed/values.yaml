@@ -1630,7 +1630,7 @@ nginx:
     host: nginx.mimir.example.com
     # -- TLS configuration for OpenShift Route
     tls:
-      # More details about TLS configuration and termination types: https://docs.openshift.com/container-platform/3.11/architecture/networking/routes.html#secured-routes
+      # -- More details about TLS configuration and termination types: https://docs.openshift.com/container-platform/3.11/architecture/networking/routes.html#secured-routes
       # For OpenShift 4: https://docs.openshift.com/container-platform/4.11/networking/routes/secured-routes.html
       termination: edge
   # Basic auth configuration
