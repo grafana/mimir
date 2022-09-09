@@ -14,7 +14,7 @@
 package cluster
 
 import (
-	"os"
+	"io/ioutil"
 	"path/filepath"
 
 	"github.com/prometheus/common/config"
@@ -31,7 +31,7 @@ func GetTLSTransportConfig(configPath string) (*TLSTransportConfig, error) {
 	if configPath == "" {
 		return nil, nil
 	}
-	bytes, err := os.ReadFile(configPath)
+	bytes, err := ioutil.ReadFile(configPath)
 	if err != nil {
 		return nil, err
 	}
