@@ -16,7 +16,7 @@ package template
 import (
 	"bytes"
 	tmplhtml "html/template"
-	"io"
+	"io/ioutil"
 	"net/url"
 	"path"
 	"path/filepath"
@@ -27,8 +27,6 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
-	"golang.org/x/text/cases"
-	"golang.org/x/text/language"
 
 	"github.com/prometheus/alertmanager/asset"
 	"github.com/prometheus/alertmanager/types"
@@ -61,7 +59,7 @@ func FromGlobs(paths ...string) (*Template, error) {
 			return nil, err
 		}
 		defer f.Close()
-		b, err := io.ReadAll(f)
+		b, err := ioutil.ReadAll(f)
 		if err != nil {
 			return nil, err
 		}
@@ -134,7 +132,7 @@ type FuncMap map[string]interface{}
 var DefaultFuncs = FuncMap{
 	"toUpper": strings.ToUpper,
 	"toLower": strings.ToLower,
-	"title":   cases.Title(language.AmericanEnglish).String,
+	"title":   strings.Title,
 	// join is equal to strings.Join but inverts the argument order
 	// for easier pipelining in templates.
 	"join": func(sep string, s []string) string {
