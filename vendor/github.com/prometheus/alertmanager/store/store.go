@@ -19,13 +19,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/prometheus/common/model"
-
 	"github.com/prometheus/alertmanager/types"
+	"github.com/prometheus/common/model"
 )
 
-// ErrNotFound is returned if a Store cannot find the Alert.
-var ErrNotFound = errors.New("alert not found")
+var (
+	// ErrNotFound is returned if a Store cannot find the Alert.
+	ErrNotFound = errors.New("alert not found")
+)
 
 // Alerts provides lock-coordinated to an in-memory map of alerts, keyed by
 // their fingerprint. Resolved alerts are removed from the map based on
