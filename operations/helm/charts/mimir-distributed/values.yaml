@@ -1627,7 +1627,7 @@ nginx:
     # -- Annotations for the nginx route
     annotations: {}
     # -- Hostname conifguration
-    host: nginx.loki.example.com
+    host: nginx.mimir.example.com
     # -- TLS configuration for OpenShift Route
     tls:
       # More details about TLS configuration and termination types: https://docs.openshift.com/container-platform/3.11/architecture/networking/routes.html#secured-routes
