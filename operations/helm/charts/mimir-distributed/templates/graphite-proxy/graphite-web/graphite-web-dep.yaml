@@ -31,6 +31,8 @@ spec:
         - name: graphite-web
           image: "{{ .Values.graphite.web.image.repository }}:{{ .Values.graphite.web.image.tag }}"
           imagePullPolicy: {{ .Values.graphite.web.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.graphite.web.securityContext | nindent 12 }}
           env:
             - name: GRAPHITE_CLUSTER_SERVERS
               {{- if .Values.gateway.useDefaultProxyURLs }}
@@ -56,6 +58,8 @@ spec:
         {{- toYaml .Values.graphite.web.nodeSelector | nindent 8 }}
       affinity:
         {{- toYaml .Values.graphite.web.affinity | nindent 8 }}
+      securityContext:
+        {{- toYaml .Values.graphite.web.containerSecurityContext | nindent 8 }}
       tolerations:
         {{- toYaml .Values.graphite.web.tolerations | nindent 8 }}
       terminationGracePeriodSeconds: {{ .Values.graphite.web.terminationGracePeriodSeconds }}

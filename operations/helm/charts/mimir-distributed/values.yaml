@@ -440,10 +440,20 @@ alertmanager:
       port: http-metrics
     initialDelaySeconds: 45
 
-  securityContext: {}
+  securityContext:
+    fsGroup: 10001
+    runAsGroup: 10001
+    runAsNonRoot: true
+    runAsUser: 10001
+    seccompProfile:
+      type: RuntimeDefault
+
   # -- The SecurityContext for alertmanager containers
   containerSecurityContext:
+    allowPrivilegeEscalation: false
     readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
 
   # Tolerations for pod assignment
   # ref: https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/
@@ -602,11 +612,20 @@ distributor:
       port: http-metrics
     initialDelaySeconds: 45
 
-  securityContext: {}
+  securityContext:
+    fsGroup: 10001
+    runAsGroup: 10001
+    runAsNonRoot: true
+    runAsUser: 10001
+    seccompProfile:
+      type: RuntimeDefault
 
   # -- The SecurityContext for distributor containers
   containerSecurityContext:
+    allowPrivilegeEscalation: false
     readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
 
   strategy:
     type: RollingUpdate
@@ -713,11 +732,20 @@ ingester:
       port: http-metrics
     initialDelaySeconds: 60
 
-  securityContext: {}
+  securityContext:
+    fsGroup: 10001
+    runAsGroup: 10001
+    runAsNonRoot: true
+    runAsUser: 10001
+    seccompProfile:
+      type: RuntimeDefault
 
   # -- The SecurityContext for ingester containers
   containerSecurityContext:
+    allowPrivilegeEscalation: false
     readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
 
   # -- updateStrategy of the ingester statefulset. This is ignored when ingester.zoneAwareReplication.enabled=true.
   statefulStrategy:
@@ -834,11 +862,20 @@ overrides_exporter:
     #  topologyKey: kubernetes.io/hostname
     #  whenUnsatisfiable: ScheduleAnyway
 
-  securityContext: {}
+  securityContext:
+    fsGroup: 10001
+    runAsGroup: 10001
+    runAsNonRoot: true
+    runAsUser: 10001
+    seccompProfile:
+      type: RuntimeDefault
 
    # -- The SecurityContext for overrides_exporter containers
   containerSecurityContext:
+    allowPrivilegeEscalation: false
     readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
 
   extraArgs: {}
 
@@ -916,11 +953,20 @@ ruler:
       port: http-metrics
     initialDelaySeconds: 45
 
-  securityContext: {}
+  securityContext:
+    fsGroup: 10001
+    runAsGroup: 10001
+    runAsNonRoot: true
+    runAsUser: 10001
+    seccompProfile:
+      type: RuntimeDefault
 
   # -- The SecurityContext for ruler containers
   containerSecurityContext:
+    allowPrivilegeEscalation: false
     readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
 
   strategy:
     type: RollingUpdate
@@ -985,11 +1031,20 @@ querier:
       port: http-metrics
     initialDelaySeconds: 45
 
-  securityContext: {}
+  securityContext:
+    fsGroup: 10001
+    runAsGroup: 10001
+    runAsNonRoot: true
+    runAsUser: 10001
+    seccompProfile:
+      type: RuntimeDefault
 
   # -- The SecurityContext for querier containers
   containerSecurityContext:
+    allowPrivilegeEscalation: false
     readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
 
   strategy:
     type: RollingUpdate
@@ -1051,11 +1106,20 @@ query_frontend:
       port: http-metrics
     initialDelaySeconds: 45
 
-  securityContext: {}
+  securityContext:
+    fsGroup: 10001
+    runAsGroup: 10001
+    runAsNonRoot: true
+    runAsUser: 10001
+    seccompProfile:
+      type: RuntimeDefault
 
   # -- The SecurityContext for query_frontend containers
   containerSecurityContext:
+    allowPrivilegeEscalation: false
     readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
 
   strategy:
     type: RollingUpdate
@@ -1118,10 +1182,20 @@ query_scheduler:
       port: http-metrics
     initialDelaySeconds: 45
 
-  securityContext: {}
+  securityContext:
+    fsGroup: 10001
+    runAsGroup: 10001
+    runAsNonRoot: true
+    runAsUser: 10001
+    seccompProfile:
+      type: RuntimeDefault
+
   # -- The SecurityContext for query_scheduler containers
   containerSecurityContext:
+    allowPrivilegeEscalation: false
     readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
 
   strategy:
     type: RollingUpdate
@@ -1229,11 +1303,20 @@ store_gateway:
       port: http-metrics
     initialDelaySeconds: 60
 
-  securityContext: {}
+  securityContext:
+    fsGroup: 10001
+    runAsGroup: 10001
+    runAsNonRoot: true
+    runAsUser: 10001
+    seccompProfile:
+      type: RuntimeDefault
 
    # -- The SecurityContext for store_gateway containers
   containerSecurityContext:
+    allowPrivilegeEscalation: false
     readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
 
   # -- updateStrategy of the store-gateway statefulset. This is ignored when store_gateway.zoneAwareReplication.enabled=true.
   strategy:
@@ -1389,11 +1472,20 @@ compactor:
       port: http-metrics
     initialDelaySeconds: 60
 
-  securityContext: {}
+  securityContext:
+    fsGroup: 10001
+    runAsGroup: 10001
+    runAsNonRoot: true
+    runAsUser: 10001
+    seccompProfile:
+      type: RuntimeDefault
 
   # -- The SecurityContext for compactor containers
   containerSecurityContext:
+    allowPrivilegeEscalation: false
     readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
 
   strategy:
     type: RollingUpdate
@@ -1423,6 +1515,8 @@ memcached:
     runAsGroup: 11211
     runAsNonRoot: true
     runAsUser: 11211
+    seccompProfile:
+      type: RuntimeDefault
 
   # -- The name of the PriorityClass for memcached pods
   priorityClassName: null
@@ -1431,8 +1525,7 @@ memcached:
   containerSecurityContext:
     readOnlyRootFilesystem: true
     capabilities:
-      drop:
-        - ALL
+      drop: [ALL]
     allowPrivilegeEscalation: false
 
 memcachedExporter:
@@ -1452,8 +1545,7 @@ memcachedExporter:
   containerSecurityContext:
     readOnlyRootFilesystem: true
     capabilities:
-      drop:
-        - ALL
+      drop: [ALL]
     allowPrivilegeEscalation: false
 
 chunks-cache:
@@ -1811,16 +1903,17 @@ nginx:
   extraVolumeMounts: []
   # -- The SecurityContext for nginx containers
   podSecurityContext:
-    fsGroup: 101
-    runAsGroup: 101
+    fsGroup: 10001
+    runAsGroup: 10001
     runAsNonRoot: true
-    runAsUser: 101
+    runAsUser: 10001
+    seccompProfile:
+      type: RuntimeDefault
   # -- The SecurityContext for nginx containers
   containerSecurityContext:
     readOnlyRootFilesystem: true
     capabilities:
-      drop:
-        - ALL
+      drop: [ALL]
     allowPrivilegeEscalation: false
   # -- Resource requests and limits for the nginx
   resources: {}
@@ -2243,9 +2336,22 @@ tokengenJob:
   extraEnvFrom: []
   annotations: {}
   initContainers: []
+
+  securityContext:
+    fsGroup: 10001
+    runAsGroup: 10001
+    runAsNonRoot: true
+    runAsUser: 10001
+    seccompProfile:
+      type: RuntimeDefault
+
   # -- The SecurityContext for tokenjobgen containers
   containerSecurityContext:
+    allowPrivilegeEscalation: false
     readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
+
   # -- The name of the PriorityClass for tokenjobgen pods
   priorityClassName: null
 
@@ -2283,11 +2389,20 @@ admin_api:
   # -- The name of the PriorityClass for admin-api pods
   priorityClassName: null
 
-  securityContext: {}
+  securityContext:
+    fsGroup: 10001
+    runAsGroup: 10001
+    runAsNonRoot: true
+    runAsUser: 10001
+    seccompProfile:
+      type: RuntimeDefault
 
   # -- The SecurityContext for admin_api containers
   containerSecurityContext:
+    allowPrivilegeEscalation: false
     readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
 
   extraArgs: {}
 
@@ -2352,11 +2467,20 @@ gateway:
   #  topologyKey: kubernetes.io/hostname
   #  whenUnsatisfiable: ScheduleAnyway
 
-  securityContext: {}
+  securityContext:
+    fsGroup: 10001
+    runAsGroup: 10001
+    runAsNonRoot: true
+    runAsUser: 10001
+    seccompProfile:
+      type: RuntimeDefault
 
    # -- The SecurityContext for gateway containers
   containerSecurityContext:
+    allowPrivilegeEscalation: false
     readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
 
   initContainers: []
 
@@ -2474,7 +2598,19 @@ graphite:
     persistence:
       subPath:
 
-    securityContext: {}
+    securityContext:
+      fsGroup: 10001
+      runAsGroup: 10001
+      runAsNonRoot: true
+      runAsUser: 10001
+      seccompProfile:
+        type: RuntimeDefault
+
+    containerSecurityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop: [ALL]
 
     strategy:
       type: RollingUpdate
@@ -2541,7 +2677,20 @@ graphite:
     annotations: {}
     persistence:
       subPath:
-    securityContext: {}
+    securityContext:
+      fsGroup: 10001
+      runAsGroup: 10001
+      runAsNonRoot: true
+      runAsUser: 10001
+      seccompProfile:
+        type: RuntimeDefault
+
+    containerSecurityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop: [ALL]
+
     strategy:
       type: RollingUpdate
 
@@ -2601,6 +2750,20 @@ graphite:
     tolerations: []
     # -- Pod Disruption Budget
     podDisruptionBudget: {}
+
+    securityContext:
+      fsGroup: 10001
+      runAsGroup: 10001
+      runAsNonRoot: true
+      runAsUser: 10001
+      seccompProfile:
+        type: RuntimeDefault
+
+    containerSecurityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop: [ALL]
 
 
 # Graphite's aggregation cache. If you want to know more about it please check
