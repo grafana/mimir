@@ -3,7 +3,7 @@
 ## Deprecated features
 
 This section contains deprecated features and interfaces that the chart exposes. The deprecation policy of the chart is to
-remove a deprecated item on the third major release after it has been deprecated it.
+remove a deprecated item from the third major release after it has been deprecated it.
 
 ### List
 
