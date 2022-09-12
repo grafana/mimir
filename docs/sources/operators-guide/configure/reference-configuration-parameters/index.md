@@ -221,7 +221,7 @@ runtime_config:
 usage_stats:
   # (experimental) Enable anonymous usage reporting.
   # CLI flag: -usage-stats.enabled
-  [enabled: <boolean> | default = false]
+  [enabled: <boolean> | default = true]
 
 # The common block holds configurations that configure multiple components at a
 # time.

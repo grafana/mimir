@@ -8328,7 +8328,6 @@
             "Host": "localhost:8080",
             "Path": "/alertmanager",
             "RawPath": "",
-            "OmitHost": false,
             "ForceQuery": false,
             "RawQuery": "",
             "Fragment": "",
@@ -10244,7 +10243,7 @@
           "required": false,
           "desc": "Enable anonymous usage reporting.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "usage-stats.enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
