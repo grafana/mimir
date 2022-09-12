@@ -1078,6 +1078,11 @@ results_cache:
   # CLI flag: -query-frontend.results-cache.compression
   [compression: <string> | default = ""]
 
+  # The query result is set to use a low TTL for the cache entry if the query is
+  # within this period from current time.
+  # CLI flag: -query-frontend.results-cache.lower-ttl-within-time-period
+  [lower_ttl_within_time_period: <duration> | default = 0s]
+
 # Cache query results.
 # CLI flag: -query-frontend.cache-results
 [cache_results: <boolean> | default = false]

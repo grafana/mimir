@@ -94,6 +94,7 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 		nil,
 		nil,
 		nil,
+		0,
 		log.NewNopLogger(),
 		reg,
 	)
@@ -151,6 +152,7 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 		ConstSplitter(day),
 		PrometheusResponseExtractor{},
 		resultsCacheAlwaysEnabled,
+		0,
 		log.NewNopLogger(),
 		prometheus.NewPedanticRegistry(),
 	)
@@ -235,6 +237,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 		ConstSplitter(day),
 		PrometheusResponseExtractor{},
 		resultsCacheAlwaysEnabled,
+		0,
 		log.NewNopLogger(),
 		prometheus.NewPedanticRegistry(),
 	)
@@ -301,6 +304,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_EnabledCachingOfStepUnalignedReque
 		ConstSplitter(day),
 		PrometheusResponseExtractor{},
 		resultsCacheAlwaysEnabled,
+		0,
 		log.NewNopLogger(),
 		prometheus.NewPedanticRegistry(),
 	)
@@ -442,6 +446,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 				cacheSplitter,
 				PrometheusResponseExtractor{},
 				resultsCacheAlwaysEnabled,
+				0,
 				log.NewNopLogger(),
 				prometheus.NewPedanticRegistry(),
 			)
@@ -650,6 +655,7 @@ func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
 					ConstSplitter(day),
 					PrometheusResponseExtractor{},
 					resultsCacheAlwaysEnabled,
+					0,
 					log.NewNopLogger(),
 					prometheus.NewPedanticRegistry(),
 				).Wrap(downstream)
@@ -886,6 +892,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 				cacheSplitter,
 				PrometheusResponseExtractor{},
 				resultsCacheAlwaysEnabled,
+				0,
 				log.NewNopLogger(),
 				prometheus.NewPedanticRegistry(),
 			).Wrap(HandlerFunc(func(_ context.Context, req Request) (Response, error) {
@@ -931,6 +938,7 @@ func TestSplitAndCacheMiddleware_StoreAndFetchCacheExtents(t *testing.T) {
 		ConstSplitter(day),
 		PrometheusResponseExtractor{},
 		resultsCacheAlwaysEnabled,
+		0,
 		log.NewNopLogger(),
 		prometheus.NewPedanticRegistry(),
 	).Wrap(nil).(*splitAndCacheMiddleware)
@@ -978,6 +986,7 @@ func TestSplitAndCacheMiddleware_WrapMultipleTimes(t *testing.T) {
 		ConstSplitter(day),
 		PrometheusResponseExtractor{},
 		resultsCacheAlwaysEnabled,
+		0,
 		log.NewNopLogger(),
 		prometheus.NewPedanticRegistry(),
 	)
