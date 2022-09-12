@@ -16,6 +16,23 @@
 
 ### Documentation
 
+## 2.3.0-rc.2
+
+### Grafana Mimir
+* [BUGFIX] Alertmanager: revert upstream alertmananger to v0.24.0 to fix panic when unmarshalling email headers #2924 #2925
+
+### Mixin
+
+### Jsonnet
+
+### Mimirtool
+
+### Query-tee
+
+### Mimir Continuous Test
+
+### Documentation
+
 ## 2.3.0-rc.1
 
 ### Grafana Mimir
