@@ -48,13 +48,15 @@ var (
 
 // ResultsCacheConfig is the config for the results cache.
 type ResultsCacheConfig struct {
-	cache.BackendConfig `yaml:",inline"`
-	Compression         cache.CompressionConfig `yaml:",inline"`
+	cache.BackendConfig      `yaml:",inline"`
+	Compression              cache.CompressionConfig `yaml:",inline"`
+	LowerTTLWithinTimePeriod time.Duration           `yaml:"lower_ttl_within_time_period,omitempty"`
 }
 
 // RegisterFlags registers flags.
 func (cfg *ResultsCacheConfig) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.Backend, "query-frontend.results-cache.backend", "", fmt.Sprintf("Backend for query-frontend results cache, if not empty. Supported values: %s.", supportedResultsCacheBackends))
+	f.DurationVar(&cfg.LowerTTLWithinTimePeriod, "query-frontend.results-cache.lower-ttl-within-time-period", 0, "The query result is set to use a low TTL for the cache entry if the query is within this period from current time.")
 	cfg.Memcached.RegisterFlagsWithPrefix(f, "query-frontend.results-cache.memcached.")
 	cfg.Compression.RegisterFlagsWithPrefix(f, "query-frontend.results-cache.")
 }
@@ -315,7 +317,6 @@ func mergeCacheExtentsForRequest(ctx context.Context, r Request, merger Merger, 
 		if accumulator.End >= extents[i].End {
 			continue
 		}
-
 		accumulator.TraceId = jaegerTraceID(ctx)
 		accumulator.End = extents[i].End
 		currentRes, err := extents[i].toResponse()

@@ -210,6 +210,7 @@ func newQueryTripperware(
 			splitter,
 			cacheExtractor,
 			shouldCache,
+			cfg.ResultsCacheConfig.LowerTTLWithinTimePeriod,
 			log,
 			registerer,
 		))

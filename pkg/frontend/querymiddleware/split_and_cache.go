@@ -36,6 +36,8 @@ import (
 const (
 	// Cache entries for 7 days. We're not disabling TTL because the backend client currently doesn't support it.
 	resultsCacheTTL = 7 * 24 * time.Hour
+	// resultsCacheLowerTTL is the smaller TTL used in specific cases. For example OOO queries.
+	resultsCacheLowerTTL = 10 * time.Minute
 )
 
 var (
@@ -60,11 +62,12 @@ func newSplitAndCacheMiddlewareMetrics(reg prometheus.Registerer) *splitAndCache
 // splitAndCacheMiddleware is a Middleware that can (optionally) split the query by interval
 // and run split queries through the results cache.
 type splitAndCacheMiddleware struct {
-	next    Handler
-	limits  Limits
-	merger  Merger
-	logger  log.Logger
-	metrics *splitAndCacheMiddlewareMetrics
+	next                     Handler
+	limits                   Limits
+	merger                   Merger
+	logger                   log.Logger
+	metrics                  *splitAndCacheMiddlewareMetrics
+	lowerTTLWithinTimePeriod time.Duration
 
 	// Split by interval.
 	splitEnabled  bool
@@ -91,25 +94,27 @@ func newSplitAndCacheMiddleware(
 	splitter CacheSplitter,
 	extractor Extractor,
 	shouldCacheReq shouldCacheFn,
+	lowerTTLWithinTimePeriod time.Duration,
 	logger log.Logger,
 	reg prometheus.Registerer) Middleware {
 	metrics := newSplitAndCacheMiddlewareMetrics(reg)
 
 	return MiddlewareFunc(func(next Handler) Handler {
 		return &splitAndCacheMiddleware{
-			splitEnabled:           splitEnabled,
-			cacheEnabled:           cacheEnabled,
-			cacheUnalignedRequests: cacheUnalignedRequests,
-			next:                   next,
-			limits:                 limits,
-			merger:                 merger,
-			splitInterval:          splitInterval,
-			metrics:                metrics,
-			cache:                  cache,
-			splitter:               splitter,
-			extractor:              extractor,
-			shouldCacheReq:         shouldCacheReq,
-			logger:                 logger,
+			splitEnabled:             splitEnabled,
+			cacheEnabled:             cacheEnabled,
+			cacheUnalignedRequests:   cacheUnalignedRequests,
+			next:                     next,
+			limits:                   limits,
+			merger:                   merger,
+			splitInterval:            splitInterval,
+			metrics:                  metrics,
+			cache:                    cache,
+			splitter:                 splitter,
+			extractor:                extractor,
+			shouldCacheReq:           shouldCacheReq,
+			logger:                   logger,
+			lowerTTLWithinTimePeriod: lowerTTLWithinTimePeriod,
 		}
 	})
 }
@@ -250,6 +255,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 			}
 
 			// Filter out recent extents from merged ones.
+			// TODO(codesome): make filterRecentCacheExtents break it into 2 sets, one to cache with lower TTL and one with the usual TTL.
 			filteredExtents, err := filterRecentCacheExtents(splitReq.orig, maxCacheFreshness, s.extractor, mergedExtents)
 			if err != nil {
 				return nil, err
@@ -357,6 +363,11 @@ func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, keys []
 
 // storeCacheExtents stores the extents for given key in the cache.
 func (s *splitAndCacheMiddleware) storeCacheExtents(ctx context.Context, key string, extents []Extent) {
+	lowerTTL := false
+	if s.lowerTTLWithinTimePeriod != 0 {
+		lowerTTL = extents[len(extents)-1].End >= time.Now().Add(-s.lowerTTLWithinTimePeriod).UnixMilli()
+	}
+
 	buf, err := proto.Marshal(&CachedResponse{
 		Key:     key,
 		Extents: extents,
@@ -366,7 +377,11 @@ func (s *splitAndCacheMiddleware) storeCacheExtents(ctx context.Context, key str
 		return
 	}
 
-	s.cache.Store(ctx, map[string][]byte{cacheHashKey(key): buf}, resultsCacheTTL)
+	if lowerTTL {
+		s.cache.Store(ctx, map[string][]byte{cacheHashKey(key): buf}, resultsCacheLowerTTL)
+	} else {
+		s.cache.Store(ctx, map[string][]byte{cacheHashKey(key): buf}, resultsCacheTTL)
+	}
 }
 
 // splitRequest holds information about a split request.
