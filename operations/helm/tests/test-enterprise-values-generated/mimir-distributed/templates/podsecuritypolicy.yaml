@@ -9,6 +9,8 @@ metadata:
     app.kubernetes.io/instance: test-enterprise-values
     app.kubernetes.io/managed-by: Helm
   namespace: "citestns"
+  annotations:
+    "seccomp.security.alpha.kubernetes.io/allowedProfileNames": runtime/default
 spec:
   privileged: false
   allowPrivilegeEscalation: false

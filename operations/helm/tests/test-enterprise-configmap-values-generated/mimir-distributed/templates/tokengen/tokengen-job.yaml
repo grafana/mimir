@@ -28,7 +28,12 @@ spec:
     spec:
       serviceAccountName: test-enterprise-configmap-values-mimir
       securityContext:
-        null
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
       initContainers:
         []
       containers:
@@ -50,6 +55,10 @@ spec:
             - secretRef:
                 name: mimir-minio-secret
           securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
             readOnlyRootFilesystem: true
       restartPolicy: OnFailure
       volumes:

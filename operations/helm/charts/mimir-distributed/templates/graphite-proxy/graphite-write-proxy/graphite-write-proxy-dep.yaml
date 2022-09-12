@@ -81,7 +81,7 @@ spec:
           resources:
             {{- toYaml .Values.graphite.write_proxy.resources | nindent 12 }}
           securityContext:
-            readOnlyRootFilesystem: true
+            {{- toYaml .Values.graphite.write_proxy.containerSecurityContext | nindent 12 }}
           env:
             {{- with .Values.global.extraEnv }}
               {{ toYaml . | nindent 12 }}
