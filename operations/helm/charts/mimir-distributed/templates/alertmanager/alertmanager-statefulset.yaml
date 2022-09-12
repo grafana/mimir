@@ -65,6 +65,8 @@ spec:
         {{- toYaml .Values.alertmanager.nodeSelector | nindent 8 }}
       affinity:
         {{- toYaml .Values.alertmanager.affinity | nindent 8 }}
+      topologySpreadConstraints:
+        {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "alertmanager") | nindent 8 }}
       tolerations:
         {{- toYaml .Values.alertmanager.tolerations | nindent 8 }}
       terminationGracePeriodSeconds: {{ .Values.alertmanager.terminationGracePeriodSeconds }}

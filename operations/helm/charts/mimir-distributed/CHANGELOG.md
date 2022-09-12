@@ -13,6 +13,10 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [CHANGE] Nginx: replace topology key previously used in `podAntiAffinity` (`failure-domain.beta.kubernetes.io/zone`) with a different one `topologySpreadConstraints` (`kubernetes.io/hostname`). #2722
+* [CHANGE] Use `topologySpreadConstraints` instead of `podAntiAffinity` by default. #2722
+* [FEATURE] Add support for `topologySpreadConstraints` to all components; add `topologySpreadConstraints` to GEM gateway, admin-api, and alertmanager, which did not have `podAntiAffinity` previously. #2722
+
 ## 3.1.0
 
 * [CHANGE] **breaking change** Update minio deprecated helm chart (<https://helm.min.io/>) to the supported chart's version (<https://charts.min.io/>). #2427
