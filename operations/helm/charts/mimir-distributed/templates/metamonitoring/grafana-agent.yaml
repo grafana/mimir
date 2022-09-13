@@ -22,6 +22,7 @@ spec:
         {{- include "mimir.selectorLabels" (dict "ctx" $ "component" "meta-monitoring") | nindent 8 }}
     # cluster label for logs is added in the LogsInstance
   metrics:
+    scrapeInterval: {{ .metrics.scrapeInterval }}
     instanceSelector:
       matchLabels:
         {{- include "mimir.selectorLabels" (dict "ctx" $ "component" "meta-monitoring") | nindent 8 }}
