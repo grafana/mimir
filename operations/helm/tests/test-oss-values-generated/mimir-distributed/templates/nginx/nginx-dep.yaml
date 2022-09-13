@@ -72,19 +72,15 @@ spec:
               mountPath: /docker-entrypoint.d
           resources:
             {}
-      affinity:
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-            - weight: 100
-              podAffinityTerm:
-                labelSelector:
-                  matchExpressions:
-                    - key: component
-                      operator: In
-                      values:
-                        - nginx
-                topologyKey: failure-domain.beta.kubernetes.io/zone
-        
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: mimir
+              app.kubernetes.io/instance: test-oss-values
+              app.kubernetes.io/component: nginx
       volumes:
         - name: config
           configMap:

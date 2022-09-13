@@ -100,6 +100,8 @@ spec:
         {{- toYaml .Values.querier.nodeSelector | nindent 8 }}
       affinity:
         {{- toYaml .Values.querier.affinity | nindent 8 }}
+      topologySpreadConstraints:
+        {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "querier") | nindent 8 }}
       tolerations:
         {{- toYaml .Values.querier.tolerations | nindent 8 }}
       terminationGracePeriodSeconds: {{ .Values.querier.terminationGracePeriodSeconds }}

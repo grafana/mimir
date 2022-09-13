@@ -53,6 +53,7 @@ require (
 
 require (
 	github.com/alecthomas/chroma v0.10.0
+	github.com/google/go-cmp v0.5.8
 	github.com/google/go-github/v32 v32.1.0
 	github.com/google/uuid v1.3.0
 	github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9
@@ -135,7 +136,6 @@ require (
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/google/btree v1.0.1 // indirect
 	github.com/google/gnostic v0.5.7-v3refs // indirect
-	github.com/google/go-cmp v0.5.8 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/pprof v0.0.0-20220608213341-c488b8fa1db3 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.1.0 // indirect

@@ -86,6 +86,15 @@ spec:
         {}
       affinity:
         {}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: mimir
+              app.kubernetes.io/instance: test-enterprise-values
+              app.kubernetes.io/component: admin-api
       tolerations:
         []
       terminationGracePeriodSeconds: 60
