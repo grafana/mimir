@@ -2,7 +2,7 @@ apiVersion: v2
 version: 3.1.0-weekly.203
 appVersion: r203
 description: "Grafana Mimir"
-home: https://grafana.com/docs/mimir/v2.2.x/
+home: https://grafana.com/docs/mimir/v2.3.x/
 icon: https://grafana.com/static/img/logos/logo-mimir.svg
 kubeVersion: ^1.20.0-0
 name: mimir-distributed
