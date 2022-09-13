@@ -32,4 +32,4 @@ Ingress is not enabled, see the {{ if $.Values.enterprise.enabled }}gateway{{ el
 From inside the cluster:
   http://{{ include "mimir.fullname" $ }}-{{ if .Values.enterprise.enabled }}gateway{{ else }}nginx{{ end }}.{{ .Release.Namespace }}.svc:{{ $gateway.service.port }}{{ template "mimir.prometheusHttpPrefix" $ }}
 
-**IMPORTANT**: Always consult the CHANGELOG.md at https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/CHANGELOG.md file to learn about breaking changes that require action during upgrade.
+**IMPORTANT**: Always consult CHANGELOG.md file at https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/CHANGELOG.md and the deprecation list there to learn about breaking changes that require action during upgrade.
