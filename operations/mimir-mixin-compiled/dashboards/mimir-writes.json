@@ -656,6 +656,7 @@
                   "links": [ ],
                   "options": {
                      "legend": {
+                        "displayMode": "hidden",
                         "showLegend": false
                      },
                      "tooltip": {
@@ -894,6 +895,7 @@
                   "links": [ ],
                   "options": {
                      "legend": {
+                        "displayMode": "hidden",
                         "showLegend": false
                      },
                      "tooltip": {

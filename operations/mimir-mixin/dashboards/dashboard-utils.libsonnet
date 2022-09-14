@@ -155,6 +155,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
       options: {
         legend+: {
           showLegend: false,
+          // Work round Grafana turning showLegend back on when we have
+          // schemaVersion<37. https://github.com/grafana/grafana/issues/54472
+          displayMode: 'hidden',
         },
         tooltip+: {
           mode: 'multi',
