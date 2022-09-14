@@ -5,8 +5,10 @@ kind: ConfigMap
 metadata:
   name: test-oss-values-mimir-config
   labels:
+    helm.sh/chart: mimir-distributed-3.1.0-weekly.202
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-values
+    app.kubernetes.io/version: "r202"
     app.kubernetes.io/managed-by: Helm
   namespace: "citestns"
 data:
@@ -18,6 +20,7 @@ data:
       data_dir: /data
       enable_api: true
       external_url: /alertmanager
+      fallback_config_file: /etc/alertmanager/fallback.yaml
     alertmanager_storage:
       backend: s3
       s3:

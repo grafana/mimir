@@ -11,6 +11,7 @@ metadata:
   namespace: "citestns"
   labels:
     app: mimir-distributed-make-bucket-job
+    chart: mimir-distributed-3.1.0-weekly.202
     release: test-oss-values
     heritage: Helm
 spec:

@@ -5,9 +5,11 @@ kind: StatefulSet
 metadata:
   name: test-oss-values-mimir-index-cache
   labels:
+    helm.sh/chart: mimir-distributed-3.1.0-weekly.202
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-values
     app.kubernetes.io/component: memcached
+    app.kubernetes.io/version: "r202"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -27,8 +29,10 @@ spec:
   template:
     metadata:
       labels:
+        helm.sh/chart: mimir-distributed-3.1.0-weekly.202
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-values
+        app.kubernetes.io/version: "r202"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: index-cache
       annotations:

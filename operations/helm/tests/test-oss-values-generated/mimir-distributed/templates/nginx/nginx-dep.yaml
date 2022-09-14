@@ -5,9 +5,11 @@ kind: Deployment
 metadata:
   name: test-oss-values-mimir-nginx
   labels:
+    helm.sh/chart: mimir-distributed-3.1.0-weekly.202
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-values
     app.kubernetes.io/component: nginx
+    app.kubernetes.io/version: "r202"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -24,10 +26,13 @@ spec:
   template:
     metadata:
       annotations:
+        checksum/config: fbcadb1fd1607f73ed540f194030b8f22406152c2a25206b87c33bb46d7f51f0
         minio-secret-version: "42"
       labels:
+        helm.sh/chart: mimir-distributed-3.1.0-weekly.202
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-values
+        app.kubernetes.io/version: "r202"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: nginx
       namespace: "citestns"

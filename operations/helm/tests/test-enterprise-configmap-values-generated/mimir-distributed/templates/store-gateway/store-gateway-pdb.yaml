@@ -5,9 +5,11 @@ kind: PodDisruptionBudget
 metadata:
   name: test-enterprise-configmap-values-mimir-store-gateway
   labels:
+    helm.sh/chart: mimir-distributed-3.1.0-weekly.202
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-enterprise-configmap-values
     app.kubernetes.io/component: store-gateway
+    app.kubernetes.io/version: "r202"
     app.kubernetes.io/managed-by: Helm
   namespace: "citestns"
 spec:

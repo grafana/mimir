@@ -5,10 +5,12 @@ kind: StatefulSet
 metadata:
   name: test-enterprise-values-mimir-alertmanager
   labels:
+    helm.sh/chart: mimir-distributed-3.1.0-weekly.202
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-enterprise-values
     app.kubernetes.io/component: alertmanager
     app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "r202"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -36,12 +38,15 @@ spec:
   template:
     metadata:
       labels:
+        helm.sh/chart: mimir-distributed-3.1.0-weekly.202
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-enterprise-values
+        app.kubernetes.io/version: "r202"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: alertmanager
         app.kubernetes.io/part-of: memberlist
       annotations:
+        checksum/config: bfbe2dbf8df65b1194e3e112ce3d00ced624daa159701e50b587f484653cbc77
       namespace: "citestns"
     spec:
       serviceAccountName: test-enterprise-values-mimir
@@ -75,10 +80,16 @@ spec:
         - name: runtime-config
           configMap:
             name: test-enterprise-values-mimir-runtime
+        - name: storage
+          emptyDir: {}
+        - name: fallback-config
+          configMap:
+            name: test-enterprise-values-mimir-alertmanager-fallback-config
         - name: tmp
           emptyDir: {}
       containers:
         - name: alertmanager
+          image: "grafana/enterprise-metrics:r202-d5752b25"
           imagePullPolicy: IfNotPresent
           args:
             - "-target=alertmanager"
@@ -93,6 +104,9 @@ spec:
               mountPath: /var/mimir
             - name: storage
               mountPath: "/data"
+            - name: fallback-config
+              mountPath: /etc/alertmanager/fallback-config.yaml
+              subPath: fallback-config.yaml
             - name: tmp
               mountPath: /tmp
           ports:

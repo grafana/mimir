@@ -5,10 +5,12 @@ kind: StatefulSet
 metadata:
   name: test-enterprise-values-mimir-ingester
   labels:
+    helm.sh/chart: mimir-distributed-3.1.0-weekly.202
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-enterprise-values
     app.kubernetes.io/component: ingester
     app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/version: "r202"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -37,12 +39,15 @@ spec:
   template:
     metadata:
       labels:
+        helm.sh/chart: mimir-distributed-3.1.0-weekly.202
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-enterprise-values
+        app.kubernetes.io/version: "r202"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: ingester
         app.kubernetes.io/part-of: memberlist
       annotations:
+        checksum/config: bfbe2dbf8df65b1194e3e112ce3d00ced624daa159701e50b587f484653cbc77
       namespace: "citestns"
     spec:
       serviceAccountName: test-enterprise-values-mimir
@@ -78,6 +83,7 @@ spec:
             name: test-enterprise-values-mimir-runtime
       containers:
         - name: ingester
+          image: "grafana/enterprise-metrics:r202-d5752b25"
           imagePullPolicy: IfNotPresent
           args:
             - "-target=ingester"

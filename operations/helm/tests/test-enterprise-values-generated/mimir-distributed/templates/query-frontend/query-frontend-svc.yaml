@@ -5,9 +5,11 @@ kind: Service
 metadata:
   name: test-enterprise-values-mimir-query-frontend
   labels:
+    helm.sh/chart: mimir-distributed-3.1.0-weekly.202
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-enterprise-values
     app.kubernetes.io/component: query-frontend
+    app.kubernetes.io/version: "r202"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
