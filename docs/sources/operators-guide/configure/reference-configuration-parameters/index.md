@@ -769,7 +769,7 @@ ring:
   # multiple instances can be rolled out simultaneously, otherwise rolling
   # updates may be slowed down.
   # CLI flag: -ingester.ring.readiness-check-ring-health
-  [readiness_check_ring_health: <boolean> | default = true]
+  [readiness_check_ring_health: <boolean> | default = false]
 
 # (advanced) Period at which metadata we have not seen will remain in memory
 # before being deleted.
