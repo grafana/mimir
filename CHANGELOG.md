@@ -4,6 +4,8 @@
 
 ### Grafana Mimir
 
+* [BUGFIX] Fix sanity check done on configured filesystem directories when running Alertmanager in microservices mode. #2947
+
 ### Mixin
 
 ### Jsonnet

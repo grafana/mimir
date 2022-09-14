@@ -542,6 +542,25 @@ func TestConfig_validateFilesystemPaths(t *testing.T) {
 				cfg.BlocksStorage.Bucket.Filesystem.Directory = "./data-blocks"
 			},
 		},
+		"should succeed if blocks storage filesystem directory overlaps with alertmanager data directory, but we're running alertmanager in microservices mode": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{AlertManager}
+				cfg.BlocksStorage.Bucket.Backend = bucket.Filesystem
+				cfg.BlocksStorage.Bucket.Filesystem.Directory = "blocks"
+				cfg.AlertmanagerStorage.Backend = bucket.Filesystem
+				cfg.AlertmanagerStorage.Filesystem.Directory = "/data/alertmanager"
+				cfg.Alertmanager.DataDir = cwd
+			},
+		},
+		"should fail if blocks storage filesystem directory overlaps with alertmanager data directory, and alertmanager is running along with other components": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{All, AlertManager}
+				cfg.Common.Storage.Backend = bucket.Filesystem
+				cfg.Common.Storage.Filesystem.Directory = "blocks"
+				cfg.Alertmanager.DataDir = cwd
+			},
+			expectedErr: fmt.Sprintf(`the configured blocks storage filesystem directory "blocks" cannot overlap with the configured alertmanager data directory "%s"`, cwd),
+		},
 	}
 
 	for testName, testData := range tests {

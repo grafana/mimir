@@ -325,7 +325,8 @@ func (c *Config) validateFilesystemPaths(logger log.Logger) error {
 
 	var paths []pathConfig
 
-	if c.BlocksStorage.Bucket.Backend == bucket.Filesystem {
+	// Blocks storage (check only for components using it).
+	if c.isAnyModuleEnabled(All, Write, Read, Backend, Ingester, Querier, StoreGateway, Compactor, Ruler) && c.BlocksStorage.Bucket.Backend == bucket.Filesystem {
 		// Add the optional prefix to the path, because that's the actual location where blocks will be stored.
 		paths = append(paths, pathConfig{
 			name:       "blocks storage filesystem directory",
