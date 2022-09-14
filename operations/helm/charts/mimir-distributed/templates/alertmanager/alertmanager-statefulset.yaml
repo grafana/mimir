@@ -109,9 +109,6 @@ spec:
             {{- range $key, $value := .Values.alertmanager.extraArgs }}
             - "-{{ $key }}={{ $value }}"
             {{- end }}
-            {{ if .Values.alertmanager.fallbackConfig }}
-            - "--alertmanager.configs.fallback=/etc/alertmanager/fallback-config.yaml"
-            {{ end }}
           volumeMounts:
             {{- if .Values.alertmanager.extraVolumeMounts }}
             {{ toYaml .Values.alertmanager.extraVolumeMounts | nindent 12}}
