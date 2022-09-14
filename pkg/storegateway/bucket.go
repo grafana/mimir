@@ -626,7 +626,7 @@ func blockSeries(
 			chks           []chunks.Meta
 		)
 		for _, id := range ps {
-			ok, err := indexr.LoadSeriesForTime(ctx, id, &symbolizedLset, &chks, skipChunks, minTime, maxTime)
+			ok, err := indexr.LoadSeriesForTime(id, &symbolizedLset, &chks, skipChunks, minTime, maxTime)
 			if err != nil {
 				lookupErr = errors.Wrap(err, "read series")
 				return
@@ -636,7 +636,7 @@ func blockSeries(
 				continue
 			}
 
-			lset, err := indexr.LookupLabelsSymbols(ctx, symbolizedLset)
+			lset, err := indexr.LookupLabelsSymbols(symbolizedLset)
 			if err != nil {
 				lookupErr = errors.Wrap(err, "lookup labels symbols")
 				return
@@ -2428,10 +2428,7 @@ type symbolizedLabel struct {
 // LoadSeriesForTime returns false, when there are no series data for given time range.
 //
 // Error is returned on decoding error or if the reference does not resolve to a known series.
-func (r *bucketIndexReader) LoadSeriesForTime(ctx context.Context, ref storage.SeriesRef, lset *[]symbolizedLabel, chks *[]chunks.Meta, skipChunks bool, mint, maxt int64) (ok bool, err error) {
-	span, _ := tracing.StartSpan(ctx, "LoadSeriesForTime()")
-	defer span.Finish()
-
+func (r *bucketIndexReader) LoadSeriesForTime(ref storage.SeriesRef, lset *[]symbolizedLabel, chks *[]chunks.Meta, skipChunks bool, mint, maxt int64) (ok bool, err error) {
 	b, ok := r.loadedSeries[ref]
 	if !ok {
 		return false, errors.Errorf("series %d not found", ref)
@@ -2449,10 +2446,7 @@ func (r *bucketIndexReader) Close() error {
 }
 
 // LookupLabelsSymbols populates label set strings from symbolized label set.
-func (r *bucketIndexReader) LookupLabelsSymbols(ctx context.Context, symbolized []symbolizedLabel) (labels.Labels, error) {
-	span, _ := tracing.StartSpan(ctx, "LookupLabelsSymbols()")
-	defer span.Finish()
-
+func (r *bucketIndexReader) LookupLabelsSymbols(symbolized []symbolizedLabel) (labels.Labels, error) {
 	lbls := make(labels.Labels, len(symbolized))
 	for ix, s := range symbolized {
 		ln, err := r.dec.LookupSymbol(s.name)
