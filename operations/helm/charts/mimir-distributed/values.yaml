@@ -372,7 +372,6 @@ alertmanager:
           email_configs:
           - to: 'alerts@example.org'
 
-  
   extraArgs: {}
 
   # Pod Labels
