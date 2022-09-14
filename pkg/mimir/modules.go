@@ -246,6 +246,7 @@ func (t *Mimir) initRuntimeConfig() (services.Service, error) {
 	t.Cfg.Ingester.IngesterRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Ruler.Ring.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.StoreGateway.ShardingRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
+	t.Cfg.QueryScheduler.SchedulerRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 
 	return serv, err
 }
@@ -736,11 +737,14 @@ func (t *Mimir) initMemberlistKV() (services.Service, error) {
 	t.Cfg.Compactor.ShardingRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.Ruler.Ring.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.Alertmanager.ShardingRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
+	t.Cfg.QueryScheduler.SchedulerRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 
 	return t.MemberlistKV, nil
 }
 
 func (t *Mimir) initQueryScheduler() (services.Service, error) {
+	t.Cfg.QueryScheduler.SchedulerRing.ListenPort = t.Cfg.Server.GRPCListenPort
+
 	s, err := scheduler.NewScheduler(t.Cfg.QueryScheduler, t.Overrides, util_log.Logger, t.Registerer)
 	if err != nil {
 		return nil, errors.Wrap(err, "query-scheduler init")
@@ -829,7 +833,7 @@ func (t *Mimir) setupModuleManager() error {
 		StoreQueryable:           {Overrides, MemberlistKV},
 		QueryFrontendTripperware: {API, Overrides},
 		QueryFrontend:            {QueryFrontendTripperware},
-		QueryScheduler:           {API, Overrides},
+		QueryScheduler:           {API, Overrides, MemberlistKV},
 		Ruler:                    {DistributorService, StoreQueryable, RulerStorage},
 		RulerStorage:             {Overrides},
 		AlertManager:             {API, MemberlistKV, Overrides},

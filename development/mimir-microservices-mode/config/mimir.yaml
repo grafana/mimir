@@ -138,6 +138,9 @@ frontend:
   align_queries_with_step: true
   cache_results: true
 
+  # Remove if you want to skip the query-scheduler.
+  scheduler_address: "query-scheduler:9011"
+
   results_cache:
     backend: "memcached"
     memcached:
@@ -145,10 +148,10 @@ frontend:
     compression: snappy
 
 frontend_worker:
-  frontend_address: "query-frontend:9007"
+  scheduler_address: "query-scheduler:9011"
 
-  # By setting scheduler_address, querier worker would use scheduler instead of frontend.
-  # scheduler_address: "query-scheduler:9012"
+  # By setting frontend_address instead of scheduler_address, Mimir will skip using query-scheduler.
+  # frontend_address: "query-frontend:9007"
 
 limits:
   # Limit max query time range to 31d

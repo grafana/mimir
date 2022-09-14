@@ -436,6 +436,18 @@ Usage of ./cmd/mimir/mimir:
     	DNS hostname used for finding query-schedulers.
   -query-scheduler.max-outstanding-requests-per-tenant int
     	Maximum number of outstanding requests per tenant per query-scheduler. In-flight requests above this limit will fail with HTTP response status code 429. (default 100)
+  -query-scheduler.ring.consul.hostname string
+    	Hostname and port of Consul. (default "localhost:8500")
+  -query-scheduler.ring.etcd.endpoints string
+    	The etcd endpoints to connect to.
+  -query-scheduler.ring.etcd.password string
+    	Etcd password.
+  -query-scheduler.ring.etcd.username string
+    	Etcd username.
+  -query-scheduler.ring.instance-interface-names string
+    	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
+  -query-scheduler.ring.store string
+    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -ruler-storage.azure.account-key string
     	Azure storage account key
   -ruler-storage.azure.account-name string

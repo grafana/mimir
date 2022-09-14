@@ -1187,6 +1187,76 @@ grpc_client_config:
   # (advanced) Skip validating server certificate.
   # CLI flag: -query-scheduler.grpc-client-config.tls-insecure-skip-verify
   [tls_insecure_skip_verify: <boolean> | default = false]
+
+# The hash ring configuration. The query-schedulers hash ring is used for
+# service discovery.
+ring:
+  # The key-value store used to share the hash ring across multiple instances.
+  # When query-scheduler ring-based service discovery is enabled, this option
+  # needs be set on query-schedulers, query-frontends and queriers.
+  kvstore:
+    # Backend storage to use for the ring. Supported values are: consul, etcd,
+    # inmemory, memberlist, multi.
+    # CLI flag: -query-scheduler.ring.store
+    [store: <string> | default = "memberlist"]
+
+    # (advanced) The prefix for the keys in the store. Should end with a /.
+    # CLI flag: -query-scheduler.ring.prefix
+    [prefix: <string> | default = "collectors/"]
+
+    # The consul block configures the consul client.
+    # The CLI flags prefix for this block configuration is: query-scheduler.ring
+    [consul: <consul>]
+
+    # The etcd block configures the etcd client.
+    # The CLI flags prefix for this block configuration is: query-scheduler.ring
+    [etcd: <etcd>]
+
+    multi:
+      # (advanced) Primary backend storage used by multi-client.
+      # CLI flag: -query-scheduler.ring.multi.primary
+      [primary: <string> | default = ""]
+
+      # (advanced) Secondary backend storage used by multi-client.
+      # CLI flag: -query-scheduler.ring.multi.secondary
+      [secondary: <string> | default = ""]
+
+      # (advanced) Mirror writes to secondary store.
+      # CLI flag: -query-scheduler.ring.multi.mirror-enabled
+      [mirror_enabled: <boolean> | default = false]
+
+      # (advanced) Timeout for storing value to secondary store.
+      # CLI flag: -query-scheduler.ring.multi.mirror-timeout
+      [mirror_timeout: <duration> | default = 2s]
+
+  # (advanced) Period at which to heartbeat to the ring. 0 = disabled.
+  # CLI flag: -query-scheduler.ring.heartbeat-period
+  [heartbeat_period: <duration> | default = 15s]
+
+  # (advanced) The heartbeat timeout after which query-schedulers are considered
+  # unhealthy within the ring. When query-scheduler ring-based service discovery
+  # is enabled, this option needs be set on query-schedulers, query-frontends
+  # and queriers.
+  # CLI flag: -query-scheduler.ring.heartbeat-timeout
+  [heartbeat_timeout: <duration> | default = 1m]
+
+  # (advanced) Instance ID to register in the ring.
+  # CLI flag: -query-scheduler.ring.instance-id
+  [instance_id: <string> | default = "<hostname>"]
+
+  # List of network interface names to look up when finding the instance IP
+  # address.
+  # CLI flag: -query-scheduler.ring.instance-interface-names
+  [instance_interface_names: <list of strings> | default = [<private network interfaces>]]
+
+  # (advanced) Port to advertise in the ring (defaults to
+  # -server.grpc-listen-port).
+  # CLI flag: -query-scheduler.ring.instance-port
+  [instance_port: <int> | default = 0]
+
+  # (advanced) IP address to advertise in the ring. Default is auto-detected.
+  # CLI flag: -query-scheduler.ring.instance-addr
+  [instance_addr: <string> | default = ""]
 ```
 
 ### ruler
@@ -2020,6 +2090,7 @@ The `etcd` block configures the etcd client. The supported CLI flags `<prefix>` 
 - `distributor.ha-tracker`
 - `distributor.ring`
 - `ingester.ring`
+- `query-scheduler.ring`
 - `ruler.ring`
 - `store-gateway.sharding-ring`
 
@@ -2083,6 +2154,7 @@ The `consul` block configures the consul client. The supported CLI flags `<prefi
 - `distributor.ha-tracker`
 - `distributor.ring`
 - `ingester.ring`
+- `query-scheduler.ring`
 - `ruler.ring`
 - `store-gateway.sharding-ring`
 
