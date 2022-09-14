@@ -350,7 +350,7 @@ alertmanager:
       cpu: 10m
       memory: 32Mi
 
-  # -- fallback config for alertmanager 
+  # -- Fallback config for alertmanager 
   fallbackConfig: |
     route:
       receiver: 'default-receiver'
