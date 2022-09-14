@@ -110,9 +110,20 @@ local filename = 'mimir-queries.json';
         ),
       )
       .addPanel(
-        $.panel('Query results missing reasons') +
-        $.queryPanel('sum(rate(cortex_frontend_not_cachable_reason_total{%s}[$__rate_interval])) by (reason)' % $.jobMatcher($._config.job_names.query_frontend),
-                     '{{reason}}')
+        $.panel('Query results cache skipped') +
+        $.queryPanel(|||
+          sum(rate(cortex_frontend_query_result_cache_skipped_total{%s}[$__rate_interval])) by (reason) /
+          ignoring (reason) group_left sum(rate(cortex_frontend_split_queries_total{%s}[$__rate_interval]))
+        ||| % [$.jobMatcher($._config.job_names.query_frontend), $.jobMatcher($._config.job_names.query_frontend)],'{{reason}}') +
+        { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) } +
+        $.stack +
+        $.panelDescription(
+          'Query results cache skipped',
+          |||
+            The % of queries that could not be cached.
+            It is tracked for each split query when the splitting by interval is enabled.
+          |||
+        ),
       )
     )
     .addRow(

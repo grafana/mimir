@@ -174,26 +174,23 @@ type shouldCacheFn func(r Request) bool
 var resultsCacheAlwaysEnabled = func(_ Request) bool { return true }
 
 // isRequestCachable says whether the request is eligible for caching.
-func isRequestCachable(req Request, maxCacheTime int64, cacheUnalignedRequests bool, logger log.Logger, notCachableReasonCount *prometheus.CounterVec) bool {
+func isRequestCachable(req Request, maxCacheTime int64, cacheUnalignedRequests bool, logger log.Logger) (cachable bool, reason string) {
 	// We can run with step alignment disabled because Grafana does it already. Mimir automatically aligning start and end is not
 	// PromQL compatible. But this means we cannot cache queries that do not have their start and end aligned.
 	if !cacheUnalignedRequests && !isRequestStepAligned(req) {
-		notCachableReasonCount.WithLabelValues(notCachableReasonUnalignedRequest).Inc()
-		return false
+		return false, notCachableReasonUnalignedRequest
 	}
 
 	// Do not cache it at all if the query time range is more recent than the configured max cache freshness.
 	if req.GetStart() > maxCacheTime {
-		notCachableReasonCount.WithLabelValues(notCachableReasonTooNew).Inc()
-		return false
+		return false, notCachableReasonTooNew
 	}
 
 	if !areEvaluationTimeModifiersCachable(req, maxCacheTime, logger) {
-		notCachableReasonCount.WithLabelValues(notCachableReasonModifiersNotCachable).Inc()
-		return false
+		return false, notCachableReasonModifiersNotCachable
 	}
 
-	return true
+	return true, ""
 }
 
 // isResponseCachable says whether the response should be cached or not.

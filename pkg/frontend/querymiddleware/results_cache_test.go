@@ -15,7 +15,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/flagext"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -266,10 +265,8 @@ func TestIsRequestCachable(t *testing.T) {
 	} {
 		{
 			t.Run(tc.name, func(t *testing.T) {
-				reg := prometheus.NewPedanticRegistry()
-				metrics := newSplitAndCacheMiddlewareMetrics(reg)
-				ret := isRequestCachable(tc.request, maxCacheTime, tc.cacheStepUnaligned, log.NewNopLogger(), metrics.notCachableReason)
-				require.Equal(t, tc.expected, ret)
+				cachable, _ := isRequestCachable(tc.request, maxCacheTime, tc.cacheStepUnaligned, log.NewNopLogger())
+				require.Equal(t, tc.expected, cachable)
 			})
 		}
 	}
