@@ -353,7 +353,8 @@ alertmanager:
       cpu: 10m
       memory: 32Mi
 
-  # -- Fallback config for alertmanager 
+  # Fallback config for alertmanager 
+  # When a tenant doesn’t have a Alertmanager configuration, the Grafana Mimir Alertmanager uses the fallback configuration.
   fallbackConfig: |
     global:
         smtp_smarthost: 'localhost:25'
