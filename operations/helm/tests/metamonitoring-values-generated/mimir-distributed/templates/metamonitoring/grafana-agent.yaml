@@ -1,0 +1,29 @@
+---
+# Source: mimir-distributed/templates/metamonitoring/grafana-agent.yaml
+apiVersion: monitoring.grafana.com/v1alpha1
+kind: GrafanaAgent
+metadata:
+  name: metamonitoring-values-mimir-meta-monitoring
+  namespace: "citestns"
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: metamonitoring-values
+    app.kubernetes.io/component: meta-monitoring
+    app.kubernetes.io/managed-by: Helm
+spec:
+  serviceAccountName: metamonitoring-values-mimir-grafana-agent
+  logs:
+    instanceSelector:
+      matchLabels:
+        app.kubernetes.io/name: mimir
+        app.kubernetes.io/instance: metamonitoring-values
+        app.kubernetes.io/component: meta-monitoring
+    # cluster label for logs is added in the LogsInstance
+  metrics:
+    instanceSelector:
+      matchLabels:
+        app.kubernetes.io/name: mimir
+        app.kubernetes.io/instance: metamonitoring-values
+        app.kubernetes.io/component: meta-monitoring
+    externalLabels:
+      cluster: metamonitoring-values
