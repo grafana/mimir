@@ -85,6 +85,11 @@ spec:
         - name: storage
           emptyDir: {}
         {{- end }}
+        {{- if .Values.alertmanager.fallbackConfig }}
+        - name: fallback-config
+          configMap:
+            name: {{ include "mimir.resourceName" (dict "ctx" . "component" "alertmanager") }}-fallback-config
+        {{- end }}
         - name: tmp
           emptyDir: {}
         {{- if .Values.alertmanager.extraVolumes }}
@@ -104,6 +109,9 @@ spec:
             {{- range $key, $value := .Values.alertmanager.extraArgs }}
             - "-{{ $key }}={{ $value }}"
             {{- end }}
+            {{ if .Values.alertmanager.fallbackConfig }}
+            - "--alertmanager.configs.fallback=/etc/alertmanager/fallback-config.yaml"
+            {{ end }}
           volumeMounts:
             {{- if .Values.alertmanager.extraVolumeMounts }}
             {{ toYaml .Values.alertmanager.extraVolumeMounts | nindent 12}}
@@ -122,6 +130,11 @@ spec:
               subPath: {{ .Values.alertmanager.persistentVolume.subPath }}
               {{- else }}
               {{- end }}
+            {{- if .Values.alertmanager.fallbackConfig }}
+            - name: fallback-config
+              mountPath: /etc/alertmanager/fallback-config.yaml
+              subPath: fallback-config.yaml
+            {{- end }}
             - name: tmp
               mountPath: /tmp
           ports:

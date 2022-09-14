@@ -46,6 +46,9 @@ spec:
             - "-target=alertmanager"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+          {{ if .Values.alertmanager.fallbackConfig }}
+            - "--alertmanager.configs.fallback=/etc/alertmanager/fallback-config.yaml"
+          {{ end }}
           {{- range $key, $value := .Values.alertmanager.extraArgs }}
             - "-{{ $key }}={{ $value }}"
           {{- end }}
@@ -64,6 +67,11 @@ spec:
             - name: storage
               mountPath: "/data"
               subPath: {{ .Values.alertmanager.persistence.subPath }}
+            {{- if .Values.alertmanager.fallbackConfig }}
+            - name: fallback-config
+              mountPath: /etc/alertmanager/fallback-config.yaml
+              subPath: fallback-config.yaml
+            {{- end }}
             - name: tmp
               mountPath: /tmp
           ports:
@@ -126,6 +134,11 @@ spec:
 {{- end }}
         - name: storage
           emptyDir: {}
+        {{- if .Values.alertmanager.fallbackConfig }}
+        - name: fallback-config
+          configMap:
+            name: {{ include "mimir.resourceName" (dict "ctx" . "component" "alertmanager") }}-fallback-config
+        {{- end }}
         - name: tmp
           emptyDir: {}
 {{- end -}}

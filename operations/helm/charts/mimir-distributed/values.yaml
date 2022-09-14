@@ -350,6 +350,16 @@ alertmanager:
       cpu: 10m
       memory: 32Mi
 
+  # -- fallback config for alertmanager 
+  fallbackConfig: |
+    route:
+      receiver: 'default-receiver'
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+      group_by: [cluster, alertname]
+
+  
   extraArgs: {}
 
   # Pod Labels
