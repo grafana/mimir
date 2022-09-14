@@ -1,0 +1,24 @@
+---
+# Source: mimir-distributed/templates/metamonitoring/metrics-instance.yaml
+apiVersion: monitoring.grafana.com/v1alpha1
+kind: MetricsInstance
+metadata:
+  name: metamonitoring-values-mimir-meta-monitoring
+  namespace: "citestns"
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: metamonitoring-values
+    app.kubernetes.io/component: meta-monitoring
+    app.kubernetes.io/managed-by: Helm
+spec:
+  remoteWrite:
+
+  # Supply an empty namespace selector to look in all namespaces. Remove
+  # this to only look in the same namespace as the MetricsInstance CR
+  serviceMonitorNamespaceSelector: {}
+
+  serviceMonitorSelector:
+    # Scrape ServiceMonitors from all components
+    matchLabels:
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: metamonitoring-values

@@ -15,7 +15,7 @@ rm -rf operations/helm/tests/*-generated
 helm dependency update "$CHART_PATH"
 
 # Locally render the chart for every test file
-TESTS=$(ls -1 ${CHART_PATH}/ci/*values.yaml)
+TESTS=$(find ${CHART_PATH}/ci -name '*values.yaml')
 
 for FILEPATH in $TESTS; do
   # Extract the filename (without extension).
