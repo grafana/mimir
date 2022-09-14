@@ -6,11 +6,9 @@ metadata:
   annotations:
     {}
   labels:
-    helm.sh/chart: mimir-distributed-3.1.0-weekly.202
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-enterprise-configmap-values
     app.kubernetes.io/component: overrides-exporter
-    app.kubernetes.io/version: "r202"
     app.kubernetes.io/managed-by: Helm
   name: test-enterprise-configmap-values-mimir-overrides-exporter
   namespace: "citestns"
@@ -29,14 +27,11 @@ spec:
   template:
     metadata:
       labels:
-        helm.sh/chart: mimir-distributed-3.1.0-weekly.202
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-enterprise-configmap-values
-        app.kubernetes.io/version: "r202"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: overrides-exporter
       annotations:
-        checksum/config: 4870d505735272286b7d6245081a0cb3e2eef59b5fed4d1ee4ea8c58db0ae486
         minio-secret-version: "42"
       namespace: "citestns"
     spec:
@@ -47,7 +42,6 @@ spec:
         []
       containers:
         - name: overrides-exporter
-          image: "grafana/enterprise-metrics:r202-d5752b25"
           imagePullPolicy: IfNotPresent
           args:
             - "-target=overrides-exporter"

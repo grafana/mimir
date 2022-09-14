@@ -5,12 +5,10 @@ kind: StatefulSet
 metadata:
   name: test-oss-values-mimir-alertmanager
   labels:
-    helm.sh/chart: mimir-distributed-3.1.0-weekly.202
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-values
     app.kubernetes.io/component: alertmanager
     app.kubernetes.io/part-of: memberlist
-    app.kubernetes.io/version: "r202"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -28,15 +26,12 @@ spec:
   template:
     metadata:
       labels:
-        helm.sh/chart: mimir-distributed-3.1.0-weekly.202
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-values
-        app.kubernetes.io/version: "r202"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: alertmanager
         app.kubernetes.io/part-of: memberlist
       annotations:
-        checksum/config: afd34721984a1731d01c1f560b38b6cdcac7484d565abede2ce17fa1293ba574
         minio-secret-version: "42"
       namespace: "citestns"
     spec:
@@ -80,7 +75,6 @@ spec:
           emptyDir: {}
       containers:
         - name: alertmanager
-          image: "grafana/mimir:r202-d1db3dc"
           imagePullPolicy: IfNotPresent
           args:
             - "-target=alertmanager"

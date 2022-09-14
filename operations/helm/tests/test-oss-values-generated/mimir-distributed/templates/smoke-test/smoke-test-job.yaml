@@ -5,11 +5,9 @@ kind: Job
 metadata:
   name: test-oss-values-mimir-smoke-test
   labels:
-    helm.sh/chart: mimir-distributed-3.1.0-weekly.202
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-values
     app.kubernetes.io/component: smoke-test
-    app.kubernetes.io/version: "r202"
     app.kubernetes.io/managed-by: Helm
   annotations:
     "helm.sh/hook": test
@@ -22,10 +20,8 @@ spec:
   template:
     metadata:
       labels:
-        helm.sh/chart: mimir-distributed-3.1.0-weekly.202
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-values
-        app.kubernetes.io/version: "r202"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: smoke-test
     spec:
@@ -36,7 +32,6 @@ spec:
         []
       containers:
         - name: smoke-test
-          image: "grafana/mimir-continuous-test:r202-d1db3dc"
           imagePullPolicy: 
           args:
             - "-tests.smoke-test"

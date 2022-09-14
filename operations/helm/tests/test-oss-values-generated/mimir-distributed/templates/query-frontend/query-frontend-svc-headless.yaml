@@ -5,11 +5,9 @@ kind: Service
 metadata:
   name: test-oss-values-mimir-query-frontend-headless
   labels:
-    helm.sh/chart: mimir-distributed-3.1.0-weekly.202
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-values
     app.kubernetes.io/component: query-frontend
-    app.kubernetes.io/version: "r202"
     app.kubernetes.io/managed-by: Helm
     prometheus.io/service-monitor: "false"
   annotations:
