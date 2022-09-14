@@ -873,7 +873,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "description": "### Query results cache skipped\nThe % of queries that could not be cached.\nIt is tracked for each split query when the splitting by interval is enabled.\n\n",
+                  "description": "### Query results cache skipped\nThe % of split queries that could not be cached.\nIt is tracked for each split query when the splitting by interval is enabled.\n\n",
                   "fill": 10,
                   "id": 11,
                   "legend": {
