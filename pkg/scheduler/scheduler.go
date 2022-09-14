@@ -31,6 +31,7 @@ import (
 	"github.com/grafana/dskit/tenant"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
+	"github.com/grafana/mimir/pkg/scheduler/discovery"
 	"github.com/grafana/mimir/pkg/scheduler/queue"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/util"
@@ -96,14 +97,18 @@ type Config struct {
 	MaxOutstandingPerTenant int               `yaml:"max_outstanding_requests_per_tenant"`
 	QuerierForgetDelay      time.Duration     `yaml:"querier_forget_delay" category:"experimental"`
 	GRPCClientConfig        grpcclient.Config `yaml:"grpc_client_config" doc:"description=This configures the gRPC client used to report errors back to the query-frontend."`
-	SchedulerRing           RingConfig        `yaml:"ring" doc:"description=The hash ring configuration. The query-schedulers hash ring is used for service discovery."`
+	ServiceDiscovery        discovery.Config  `yaml:",inline"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.MaxOutstandingPerTenant, "query-scheduler.max-outstanding-requests-per-tenant", 100, "Maximum number of outstanding requests per tenant per query-scheduler. In-flight requests above this limit will fail with HTTP response status code 429.")
 	f.DurationVar(&cfg.QuerierForgetDelay, "query-scheduler.querier-forget-delay", 0, "If a querier disconnects without sending notification about graceful shutdown, the query-scheduler will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.")
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("query-scheduler.grpc-client-config", f)
-	cfg.SchedulerRing.RegisterFlags(f, logger)
+	cfg.ServiceDiscovery.RegisterFlags(f, logger)
+}
+
+func (cfg *Config) Validate() error {
+	return cfg.ServiceDiscovery.Validate()
 }
 
 // NewScheduler creates a new Scheduler.
@@ -155,12 +160,14 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 	s.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(s.cleanupMetricsForInactiveUser)
 	subservices := []services.Service{s.requestQueue, s.activeUsers}
 
-	// TODO "if" condition whether we should init the ring
-	s.schedulerRing, s.schedulerLifecycler, err = newRingAndLifecycler(cfg.SchedulerRing, log, registerer)
-	if err != nil {
-		return nil, err
+	// Init the ring only if the ring-based service discovery mode is used.
+	if cfg.ServiceDiscovery.Mode == discovery.ServiceDiscoveryModeRing {
+		s.schedulerRing, s.schedulerLifecycler, err = discovery.NewRingClientAndLifecycler(cfg.ServiceDiscovery.SchedulerRing, log, registerer)
+		if err != nil {
+			return nil, err
+		}
+		subservices = append(subservices, s.schedulerRing, s.schedulerLifecycler)
 	}
-	subservices = append(subservices, s.schedulerRing, s.schedulerLifecycler)
 
 	s.subservices, err = services.NewManager(subservices...)
 	if err != nil {

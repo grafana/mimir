@@ -246,7 +246,7 @@ func (t *Mimir) initRuntimeConfig() (services.Service, error) {
 	t.Cfg.Ingester.IngesterRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Ruler.Ring.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.StoreGateway.ShardingRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
-	t.Cfg.QueryScheduler.SchedulerRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
+	t.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 
 	return serv, err
 }
@@ -528,6 +528,8 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 }
 
 func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
+	t.Cfg.Frontend.FrontendV2.QuerySchedulerDiscovery = t.Cfg.QueryScheduler.ServiceDiscovery
+
 	roundTripper, frontendV1, frontendV2, err := frontend.InitFrontend(t.Cfg.Frontend, t.Overrides, t.Cfg.Server.GRPCListenPort, util_log.Logger, t.Registerer)
 	if err != nil {
 		return nil, err
@@ -737,13 +739,13 @@ func (t *Mimir) initMemberlistKV() (services.Service, error) {
 	t.Cfg.Compactor.ShardingRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.Ruler.Ring.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.Alertmanager.ShardingRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
-	t.Cfg.QueryScheduler.SchedulerRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
+	t.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 
 	return t.MemberlistKV, nil
 }
 
 func (t *Mimir) initQueryScheduler() (services.Service, error) {
-	t.Cfg.QueryScheduler.SchedulerRing.ListenPort = t.Cfg.Server.GRPCListenPort
+	t.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.ListenPort = t.Cfg.Server.GRPCListenPort
 
 	s, err := scheduler.NewScheduler(t.Cfg.QueryScheduler, t.Overrides, util_log.Logger, t.Registerer)
 	if err != nil {
@@ -832,7 +834,7 @@ func (t *Mimir) setupModuleManager() error {
 		Querier:                  {TenantFederation},
 		StoreQueryable:           {Overrides, MemberlistKV},
 		QueryFrontendTripperware: {API, Overrides},
-		QueryFrontend:            {QueryFrontendTripperware},
+		QueryFrontend:            {QueryFrontendTripperware, MemberlistKV},
 		QueryScheduler:           {API, Overrides, MemberlistKV},
 		Ruler:                    {DistributorService, StoreQueryable, RulerStorage},
 		RulerStorage:             {Overrides},

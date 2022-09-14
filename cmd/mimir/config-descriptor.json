@@ -10229,6 +10229,17 @@
           "fieldDefaultValue": null
         },
         {
+          "kind": "field",
+          "name": "service_discovery_mode",
+          "required": false,
+          "desc": "Which service discovery mode query-frontends and queriers should use to discover query-scheduler instances. When query-scheduler ring-based service discovery is enabled, this option needs be set on query-schedulers, query-frontends and queriers. Supported values are: dns, ring.",
+          "fieldValue": null,
+          "fieldDefaultValue": "dns",
+          "fieldFlag": "query-scheduler.service-discovery-mode",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
           "kind": "block",
           "name": "ring",
           "required": false,

@@ -35,6 +35,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/transport"
 	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
+	"github.com/grafana/mimir/pkg/scheduler/discovery"
 )
 
 const (
@@ -279,6 +280,12 @@ func defaultFrontendConfig() CombinedFrontendConfig {
 	flagext.DefaultValues(&config.Handler)
 	flagext.DefaultValues(&config.FrontendV1)
 	flagext.DefaultValues(&config.FrontendV2)
+
+	querySchedulerDiscoveryConfig := discovery.Config{}
+	flagext.DefaultValues(&querySchedulerDiscoveryConfig)
+
+	config.QuerySchedulerDiscovery = querySchedulerDiscoveryConfig
+
 	return config
 }
 

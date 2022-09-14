@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package scheduler
+package discovery
 
 import (
 	"flag"
@@ -56,7 +56,8 @@ type RingConfig struct {
 	InstanceAddr           string   `yaml:"instance_addr" category:"advanced"`
 
 	// Injected internally
-	ListenPort int `yaml:"-"`
+	ListenPort      int           `yaml:"-"`
+	RingCheckPeriod time.Duration `yaml:"-"`
 }
 
 // RegisterFlags adds the flags required to config this to the given flag.FlagSet.
@@ -79,6 +80,9 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.StringVar(&cfg.InstanceAddr, "query-scheduler.ring.instance-addr", "", "IP address to advertise in the ring. Default is auto-detected.")
 	f.IntVar(&cfg.InstancePort, "query-scheduler.ring.instance-port", 0, "Port to advertise in the ring (defaults to -server.grpc-listen-port).")
 	f.StringVar(&cfg.InstanceID, "query-scheduler.ring.instance-id", hostname, "Instance ID to register in the ring.")
+
+	// Defaults for internal settings.
+	cfg.RingCheckPeriod = 5 * time.Second
 }
 
 // ToBasicLifecyclerConfig returns a ring.BasicLifecyclerConfig based on the query-scheduler ring config.
@@ -114,8 +118,8 @@ func (cfg *RingConfig) ToRingConfig() ring.Config {
 	return rc
 }
 
-// newRingAndLifecycler creates a new query-scheduler ring lifecycler with all required lifecycler delegates.
-func newRingAndLifecycler(cfg RingConfig, logger log.Logger, reg prometheus.Registerer) (*ring.Ring, *ring.BasicLifecycler, error) {
+// NewRingClientAndLifecycler creates a new query-scheduler ring lifecycler with all required lifecycler delegates.
+func NewRingClientAndLifecycler(cfg RingConfig, logger log.Logger, reg prometheus.Registerer) (*ring.Ring, *ring.BasicLifecycler, error) {
 	kvStore, err := kv.NewClient(cfg.KVStore, ring.GetCodec(), kv.RegistererWithKVName(reg, "query-scheduler-lifecycler"), logger)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "failed to initialize query-schedulers' KV store")
@@ -136,10 +140,19 @@ func newRingAndLifecycler(cfg RingConfig, logger log.Logger, reg prometheus.Regi
 		return nil, nil, errors.Wrap(err, "failed to initialize query-schedulers' lifecycler")
 	}
 
-	client, err := ring.New(cfg.ToRingConfig(), ringName, ringKey, logger, prometheus.WrapRegistererWithPrefix("cortex_", reg))
+	client, err := NewRingClient(cfg, logger, reg)
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "failed to initialize query-schedulers' ring client")
+		return nil, nil, err
 	}
 
 	return client, lifecycler, nil
+}
+
+func NewRingClient(cfg RingConfig, logger log.Logger, reg prometheus.Registerer) (*ring.Ring, error) {
+	client, err := ring.New(cfg.ToRingConfig(), ringName, ringKey, logger, prometheus.WrapRegistererWithPrefix("cortex_", reg))
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to initialize query-schedulers' ring client")
+	}
+
+	return client, err
 }

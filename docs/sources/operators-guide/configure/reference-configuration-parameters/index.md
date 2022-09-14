@@ -1188,6 +1188,14 @@ grpc_client_config:
   # CLI flag: -query-scheduler.grpc-client-config.tls-insecure-skip-verify
   [tls_insecure_skip_verify: <boolean> | default = false]
 
+# (experimental) Which service discovery mode query-frontends and queriers
+# should use to discover query-scheduler instances. When query-scheduler
+# ring-based service discovery is enabled, this option needs be set on
+# query-schedulers, query-frontends and queriers. Supported values are: dns,
+# ring.
+# CLI flag: -query-scheduler.service-discovery-mode
+[service_discovery_mode: <string> | default = "dns"]
+
 # The hash ring configuration. The query-schedulers hash ring is used for
 # service discovery.
 ring:

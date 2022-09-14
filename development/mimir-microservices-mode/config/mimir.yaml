@@ -153,6 +153,9 @@ frontend_worker:
   # By setting frontend_address instead of scheduler_address, Mimir will skip using query-scheduler.
   # frontend_address: "query-frontend:9007"
 
+query_scheduler:
+  service_discovery_mode: "ring"
+
 limits:
   # Limit max query time range to 31d
   max_query_length: 744h

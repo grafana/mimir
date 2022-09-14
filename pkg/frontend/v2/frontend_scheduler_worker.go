@@ -22,8 +22,8 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
+	"github.com/grafana/mimir/pkg/scheduler/discovery"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
@@ -43,7 +43,7 @@ type frontendSchedulerWorkers struct {
 	// Channel with requests that should be forwarded to the scheduler.
 	requestsCh <-chan *frontendRequest
 
-	watcher services.Service
+	schedulerDiscovery services.Service
 
 	mu sync.Mutex
 	// Set to nil when stop is called... no more workers are created afterwards.
@@ -65,22 +65,22 @@ func newFrontendSchedulerWorkers(cfg Config, frontendAddress string, requestsCh 
 		}, []string{schedulerAddressLabel}),
 	}
 
-	w, err := util.NewDNSWatcher(cfg.SchedulerAddress, cfg.DNSLookupPeriod, f)
+	var err error
+	f.schedulerDiscovery, err = discovery.NewServiceDiscovery(cfg.QuerySchedulerDiscovery, cfg.SchedulerAddress, cfg.DNSLookupPeriod, f, log, reg)
 	if err != nil {
 		return nil, err
 	}
 
-	f.watcher = w
 	f.Service = services.NewIdleService(f.starting, f.stopping)
 	return f, nil
 }
 
 func (f *frontendSchedulerWorkers) starting(ctx context.Context) error {
-	return services.StartAndAwaitRunning(ctx, f.watcher)
+	return services.StartAndAwaitRunning(ctx, f.schedulerDiscovery)
 }
 
 func (f *frontendSchedulerWorkers) stopping(_ error) error {
-	err := services.StopAndAwaitTerminated(context.Background(), f.watcher)
+	err := services.StopAndAwaitTerminated(context.Background(), f.schedulerDiscovery)
 
 	f.mu.Lock()
 	defer f.mu.Unlock()

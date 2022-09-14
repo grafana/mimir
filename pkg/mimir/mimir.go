@@ -239,6 +239,9 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.AlertmanagerStorage.Validate(); err != nil {
 		return errors.Wrap(err, "invalid alertmanager storage config")
 	}
+	if err := c.QueryScheduler.Validate(); err != nil {
+		return errors.Wrap(err, "invalid query-scheduler config")
+	}
 	if c.isAnyModuleEnabled(AlertManager, Backend) {
 		if err := c.Alertmanager.Validate(); err != nil {
 			return errors.Wrap(err, "invalid alertmanager config")

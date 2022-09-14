@@ -31,6 +31,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/scheduler/discovery"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 )
 
@@ -47,6 +48,9 @@ type Config struct {
 	// If set, address is not computed from interfaces.
 	Addr string `yaml:"address" category:"advanced"`
 	Port int    `category:"advanced"`
+
+	// This configuration is injected internally.
+	QuerySchedulerDiscovery discovery.Config `yaml:"-"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
