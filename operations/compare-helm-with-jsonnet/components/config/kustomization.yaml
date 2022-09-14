@@ -144,3 +144,10 @@ patches:
       # This makes it simpler to just scale up the compactor and improve compaction time
       - op: remove
         path: /config/limits/compactor_tenant_shard_size
+
+  - target:
+      kind: MimirConfig
+      name: 'compactor|distributor|ingester|overrides-exporter|querier|query-frontend|query-scheduler|ruler|store-gateway'
+    patch: |-
+      - op: remove
+        path: /config/alertmanager/fallback_config_file

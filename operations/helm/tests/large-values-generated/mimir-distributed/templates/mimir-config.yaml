@@ -18,6 +18,7 @@ data:
       data_dir: /data
       enable_api: true
       external_url: /alertmanager
+      fallback_config_file: /configs/alertmanager_fallback_config.yaml
     blocks_storage:
       backend: s3
       bucket_store:

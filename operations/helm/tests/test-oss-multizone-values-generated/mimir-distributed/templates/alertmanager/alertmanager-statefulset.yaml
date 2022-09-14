@@ -49,6 +49,7 @@ spec:
         rollout-group: alertmanager
         zone: zone-a
       annotations:
+        checksum/alertmanager-fallback-config: 742db8815bb0f79250de279b7a361b5058be7525b17afa289115adc49f38200d
       namespace: "citestns"
     spec:
       serviceAccountName: test-oss-multizone-values-mimir
@@ -103,6 +104,9 @@ spec:
           emptyDir: {}
         - name: active-queries
           emptyDir: {}
+        - name: alertmanager-fallback-config
+          configMap:
+            name: test-oss-multizone-values-mimir-alertmanager-fallback-config
       containers:
         - name: alertmanager
           imagePullPolicy: IfNotPresent
@@ -118,6 +122,9 @@ spec:
               mountPath: /var/mimir
             - name: storage
               mountPath: "/data"
+            - name: alertmanager-fallback-config
+              mountPath: /configs/alertmanager_fallback_config.yaml
+              subPath: fallback-config.yaml
             - name: tmp
               mountPath: /tmp
             - name: active-queries
@@ -202,6 +209,7 @@ spec:
         rollout-group: alertmanager
         zone: zone-b
       annotations:
+        checksum/alertmanager-fallback-config: 742db8815bb0f79250de279b7a361b5058be7525b17afa289115adc49f38200d
       namespace: "citestns"
     spec:
       serviceAccountName: test-oss-multizone-values-mimir
@@ -256,6 +264,9 @@ spec:
           emptyDir: {}
         - name: active-queries
           emptyDir: {}
+        - name: alertmanager-fallback-config
+          configMap:
+            name: test-oss-multizone-values-mimir-alertmanager-fallback-config
       containers:
         - name: alertmanager
           imagePullPolicy: IfNotPresent
@@ -271,6 +282,9 @@ spec:
               mountPath: /var/mimir
             - name: storage
               mountPath: "/data"
+            - name: alertmanager-fallback-config
+              mountPath: /configs/alertmanager_fallback_config.yaml
+              subPath: fallback-config.yaml
             - name: tmp
               mountPath: /tmp
             - name: active-queries
@@ -355,6 +369,7 @@ spec:
         rollout-group: alertmanager
         zone: zone-c
       annotations:
+        checksum/alertmanager-fallback-config: 742db8815bb0f79250de279b7a361b5058be7525b17afa289115adc49f38200d
       namespace: "citestns"
     spec:
       serviceAccountName: test-oss-multizone-values-mimir
@@ -409,6 +424,9 @@ spec:
           emptyDir: {}
         - name: active-queries
           emptyDir: {}
+        - name: alertmanager-fallback-config
+          configMap:
+            name: test-oss-multizone-values-mimir-alertmanager-fallback-config
       containers:
         - name: alertmanager
           imagePullPolicy: IfNotPresent
@@ -424,6 +442,9 @@ spec:
               mountPath: /var/mimir
             - name: storage
               mountPath: "/data"
+            - name: alertmanager-fallback-config
+              mountPath: /configs/alertmanager_fallback_config.yaml
+              subPath: fallback-config.yaml
             - name: tmp
               mountPath: /tmp
             - name: active-queries
