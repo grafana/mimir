@@ -46,9 +46,6 @@ spec:
             - "-target=alertmanager"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
-          {{ if .Values.alertmanager.fallbackConfig }}
-            - "--alertmanager.configs.fallback=/etc/alertmanager/fallback-config.yaml"
-          {{ end }}
           {{- range $key, $value := .Values.alertmanager.extraArgs }}
             - "-{{ $key }}={{ $value }}"
           {{- end }}
