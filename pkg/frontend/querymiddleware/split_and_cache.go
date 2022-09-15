@@ -38,7 +38,7 @@ const (
 	resultsCacheTTL                       = 7 * 24 * time.Hour
 	notCachableReasonUnalignedTimeRange     = "unaligned-time-range"
 	notCachableReasonTooNew               = "too-new"
-	notCachableReasonModifiersNotCachable = "modifiers-not-cacheable"
+	notCachableReasonModifiersNotCachable = "has-modifiers"
 )
 
 var (
