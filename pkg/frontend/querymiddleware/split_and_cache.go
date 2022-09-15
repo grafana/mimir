@@ -60,7 +60,7 @@ func newSplitAndCacheMiddlewareMetrics(reg prometheus.Registerer) *splitAndCache
 		}),
 		queryResultCacheSkippedCount: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_frontend_query_result_cache_skipped_total",
-			Help: "Total number of times a query was not cacheable because of a reason.",
+			Help: "Total number of times a query was not cacheable because of a reason. This metric is tracked for each partial query when time-splitting is enabled.",
 		}, []string{"reason"}),
 	}
 
