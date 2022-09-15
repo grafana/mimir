@@ -2,7 +2,6 @@ package schedulerdiscovery
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/go-kit/log"
@@ -58,9 +57,6 @@ type ringServiceDiscovery struct {
 
 // TODO test me
 func NewRingServiceDiscovery(cfg Config, component string, receiver Notifications, logger log.Logger, reg prometheus.Registerer) (services.Service, error) {
-	// TODO DEBUG
-	fmt.Println("DEBUG - init ring-based service discovery")
-
 	client, err := NewRingClient(cfg.SchedulerRing, component, logger, reg)
 	if err != nil {
 		return nil, err
@@ -121,9 +117,6 @@ func (r *ringServiceDiscovery) notifyChanges(discovered ring.ReplicationSet) {
 	// Notify new addresses.
 	for addr := range discoveredAddresses {
 		if _, ok := r.notifiedAddresses[addr]; !ok {
-			// TODO DEBUG
-			fmt.Println("DEBUG - notify address added:", addr)
-
 			r.receiver.AddressAdded(addr)
 		}
 	}
@@ -131,9 +124,6 @@ func (r *ringServiceDiscovery) notifyChanges(discovered ring.ReplicationSet) {
 	// Notify removed addresses.
 	for addr := range r.notifiedAddresses {
 		if _, ok := discoveredAddresses[addr]; !ok {
-			// TODO DEBUG
-			fmt.Println("DEBUG - notify address removed:", addr)
-
 			r.receiver.AddressRemoved(addr)
 		}
 	}
