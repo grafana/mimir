@@ -54,7 +54,7 @@ type Config struct {
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
-	f.StringVar(&cfg.SchedulerAddress, "query-frontend.scheduler-address", "", "DNS hostname used for finding query-schedulers.")
+	f.StringVar(&cfg.SchedulerAddress, "query-frontend.scheduler-address", "", fmt.Sprintf("Address of the query-scheduler component, in host:port format. If multiple query-schedulers are running, the host should be a DNS resolving to all query-scheduler instances. This option should be set only when query-scheduler component is in use and -%s is set to '%s'.", schedulerdiscovery.ModeFlagName, schedulerdiscovery.ModeDNS))
 	f.DurationVar(&cfg.DNSLookupPeriod, "query-frontend.scheduler-dns-lookup-period", 10*time.Second, "How often to resolve the scheduler-address, in order to look for new query-scheduler instances.")
 	f.IntVar(&cfg.WorkerConcurrency, "query-frontend.scheduler-worker-concurrency", 5, "Number of concurrent workers forwarding queries to single query-scheduler.")
 

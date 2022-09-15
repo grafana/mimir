@@ -955,7 +955,11 @@ The `frontend` block configures the query-frontend.
 # CLI flag: -query-frontend.querier-forget-delay
 [querier_forget_delay: <duration> | default = 0s]
 
-# DNS hostname used for finding query-schedulers.
+# Address of the query-scheduler component, in host:port format. If multiple
+# query-schedulers are running, the host should be a DNS resolving to all
+# query-scheduler instances. This option should be set only when query-scheduler
+# component is in use and -query-scheduler.service-discovery-mode is set to
+# 'dns'.
 # CLI flag: -query-frontend.scheduler-address
 [scheduler_address: <string> | default = ""]
 
@@ -1998,15 +2002,18 @@ grpc_client_config:
 The `frontend_worker` block configures the worker running within the querier, picking up and executing queries enqueued by the query-frontend or the query-scheduler.
 
 ```yaml
-# Address of the query-frontend component, in host:port format. Only one of
-# -querier.frontend-address or -querier.scheduler-address can be set. If neither
-# is set, queries are only received via HTTP endpoint.
+# Address of the query-frontend component, in host:port format. If multiple
+# query-frontends are running, the host should a DNS resolving to all
+# query-frontend instances. This option should be set only when query-scheduler
+# component is not in use.
 # CLI flag: -querier.frontend-address
 [frontend_address: <string> | default = ""]
 
-# Address of the query-scheduler component, in host:port format. Only one of
-# -querier.frontend-address or -querier.scheduler-address can be set. If neither
-# is set, queries are only received via HTTP endpoint.
+# Address of the query-scheduler component, in host:port format. If multiple
+# query-schedulers are running, the host should be a DNS resolving to all
+# query-scheduler instances. This option should be set only when query-scheduler
+# component is in use and -query-scheduler.service-discovery-mode is set to
+# 'dns'.
 # CLI flag: -querier.scheduler-address
 [scheduler_address: <string> | default = ""]
 

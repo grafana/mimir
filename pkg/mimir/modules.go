@@ -380,6 +380,9 @@ func (t *Mimir) initTenantFederation() (serv services.Service, err error) {
 //	                                          │                  │
 //	                                          └──────────────────┘
 func (t *Mimir) initQuerier() (serv services.Service, err error) {
+	t.Cfg.Worker.MaxConcurrentRequests = t.Cfg.Querier.EngineConfig.MaxConcurrent
+	t.Cfg.Worker.QuerySchedulerDiscovery = t.Cfg.QueryScheduler.ServiceDiscovery
+
 	// Create a internal HTTP handler that is configured with the Prometheus API routes and points
 	// to a Prometheus API struct instantiated with the Mimir Queryable.
 	internalQuerierRouter := api.NewQuerierHandler(
@@ -408,7 +411,7 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 	} else {
 		// Monolithic mode requires a query-frontend endpoint for the worker. If no frontend and scheduler endpoint
 		// is configured, Mimir will default to using frontend on localhost on it's own GRPC listening port.
-		if t.Cfg.Worker.FrontendAddress == "" && t.Cfg.Worker.SchedulerAddress == "" {
+		if !t.Cfg.Worker.IsFrontendOrSchedulerConfigured() {
 			address := fmt.Sprintf("127.0.0.1:%d", t.Cfg.Server.GRPCListenPort)
 			level.Info(util_log.Logger).Log("msg", "The querier worker has not been configured with either the query-frontend or query-scheduler address. Because Mimir is running in monolithic mode, it's attempting an automatic worker configuration. If queries are unresponsive, consider explicitly configuring the query-frontend or query-scheduler address for querier worker.", "address", address)
 			t.Cfg.Worker.FrontendAddress = address
@@ -425,13 +428,10 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		internalQuerierRouter = t.API.AuthMiddleware.Wrap(internalQuerierRouter)
 	}
 
-	// If neither frontend address or scheduler address is configured, no worker is needed.
-	if t.Cfg.Worker.FrontendAddress == "" && t.Cfg.Worker.SchedulerAddress == "" {
+	// If neither query-frontend or query-scheduler is in use, then no worker is needed.
+	if !t.Cfg.Worker.IsFrontendOrSchedulerConfigured() {
 		return nil, nil
 	}
-
-	t.Cfg.Worker.MaxConcurrentRequests = t.Cfg.Querier.EngineConfig.MaxConcurrent
-	t.Cfg.Worker.QuerySchedulerDiscovery = t.Cfg.QueryScheduler.ServiceDiscovery
 
 	return querier_worker.NewQuerierWorker(t.Cfg.Worker, httpgrpc_server.NewServer(internalQuerierRouter), util_log.Logger, t.Registerer)
 }

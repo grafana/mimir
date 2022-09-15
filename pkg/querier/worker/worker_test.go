@@ -85,6 +85,36 @@ func TestConfig_Validate(t *testing.T) {
 	}
 }
 
+func TestConfig_IsFrontendOrSchedulerConfigured(t *testing.T) {
+	tests := []struct {
+		cfg      Config
+		expected bool
+	}{
+		{
+			cfg:      Config{},
+			expected: false,
+		}, {
+			cfg:      Config{FrontendAddress: "localhost:9095"},
+			expected: true,
+		}, {
+			cfg:      Config{SchedulerAddress: "localhost:9095"},
+			expected: true,
+		}, {
+			cfg:      Config{QuerySchedulerDiscovery: schedulerdiscovery.Config{Mode: schedulerdiscovery.ModeDNS}},
+			expected: false,
+		}, {
+			cfg:      Config{QuerySchedulerDiscovery: schedulerdiscovery.Config{Mode: schedulerdiscovery.ModeRing}},
+			expected: true,
+		},
+	}
+
+	for idx, tc := range tests {
+		t.Run(fmt.Sprintf("Test: %d", idx), func(t *testing.T) {
+			assert.Equal(t, tc.expected, tc.cfg.IsFrontendOrSchedulerConfigured())
+		})
+	}
+}
+
 func TestResetConcurrency(t *testing.T) {
 	tests := []struct {
 		name                string

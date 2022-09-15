@@ -39,8 +39,8 @@ type Config struct {
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
-	f.StringVar(&cfg.SchedulerAddress, "querier.scheduler-address", "", "Address of the query-scheduler component, in host:port format. Only one of -querier.frontend-address or -querier.scheduler-address can be set. If neither is set, queries are only received via HTTP endpoint.")
-	f.StringVar(&cfg.FrontendAddress, "querier.frontend-address", "", "Address of the query-frontend component, in host:port format. Only one of -querier.frontend-address or -querier.scheduler-address can be set. If neither is set, queries are only received via HTTP endpoint.")
+	f.StringVar(&cfg.SchedulerAddress, "querier.scheduler-address", "", fmt.Sprintf("Address of the query-scheduler component, in host:port format. If multiple query-schedulers are running, the host should be a DNS resolving to all query-scheduler instances. This option should be set only when query-scheduler component is in use and -%s is set to '%s'.", schedulerdiscovery.ModeFlagName, schedulerdiscovery.ModeDNS))
+	f.StringVar(&cfg.FrontendAddress, "querier.frontend-address", "", "Address of the query-frontend component, in host:port format. If multiple query-frontends are running, the host should a DNS resolving to all query-frontend instances. This option should be set only when query-scheduler component is not in use.")
 	f.DurationVar(&cfg.DNSLookupPeriod, "querier.dns-lookup-period", 10*time.Second, "How often to query DNS for query-frontend or query-scheduler address.")
 	f.StringVar(&cfg.QuerierID, "querier.id", "", "Querier ID, sent to the query-frontend to identify requests from the same querier. Defaults to hostname.")
 
@@ -56,6 +56,10 @@ func (cfg *Config) Validate(log log.Logger) error {
 	}
 
 	return cfg.GRPCClientConfig.Validate(log)
+}
+
+func (cfg *Config) IsFrontendOrSchedulerConfigured() bool {
+	return cfg.FrontendAddress != "" || cfg.SchedulerAddress != "" || cfg.QuerySchedulerDiscovery.Mode == schedulerdiscovery.ModeRing
 }
 
 // RequestHandler for HTTP requests wrapped in protobuf messages.

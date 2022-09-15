@@ -13,6 +13,8 @@ import (
 )
 
 const (
+	ModeFlagName = "query-scheduler.service-discovery-mode"
+
 	ModeDNS  = "dns"
 	ModeRing = "ring"
 )
@@ -27,7 +29,7 @@ type Config struct {
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
-	f.StringVar(&cfg.Mode, "query-scheduler.service-discovery-mode", ModeDNS, fmt.Sprintf("Which service discovery mode query-frontends and queriers should use to discover query-scheduler instances.%s Supported values are: %s.", sharedOptionWithRingClient, strings.Join(modes, ", ")))
+	f.StringVar(&cfg.Mode, ModeFlagName, ModeDNS, fmt.Sprintf("Which service discovery mode query-frontends and queriers should use to discover query-scheduler instances.%s Supported values are: %s.", sharedOptionWithRingClient, strings.Join(modes, ", ")))
 	cfg.SchedulerRing.RegisterFlags(f, logger)
 }
 
