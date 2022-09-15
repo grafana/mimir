@@ -57,7 +57,6 @@ type ringServiceDiscovery struct {
 	notifiedAddresses map[string]struct{}
 }
 
-// TODO test me
 func NewRingServiceDiscovery(cfg Config, component string, receiver Notifications, logger log.Logger, reg prometheus.Registerer) (services.Service, error) {
 	client, err := NewRingClient(cfg.SchedulerRing, component, logger, reg)
 	if err != nil {
@@ -108,7 +107,6 @@ func (r *ringServiceDiscovery) running(ctx context.Context) error {
 }
 
 // notifyChanges is not concurrency safe.
-// TODO test me
 func (r *ringServiceDiscovery) notifyChanges(discovered ring.ReplicationSet) {
 	// Build a map with the discovered addresses.
 	discoveredAddresses := make(map[string]struct{}, len(discovered.Instances))
