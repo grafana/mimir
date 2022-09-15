@@ -125,7 +125,7 @@ func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames, re
 		Command("check", "Run various best practice checks against rules.").
 		Action(r.checkRecordingRuleNames)
 
-	// Require Mimir cluster address and tentant ID on all these commands
+	// Require Mimir cluster address and tenant ID on all these commands
 	for _, c := range []*kingpin.CmdClause{listCmd, printRulesCmd, getRuleGroupCmd, deleteRuleGroupCmd, loadRulesCmd, diffRulesCmd, syncRulesCmd} {
 		c.Flag("address", "Address of the Grafana Mimir cluster; alternatively, set "+envVars.Address+".").
 			Envar(envVars.Address).
