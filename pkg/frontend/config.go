@@ -41,6 +41,16 @@ func (cfg *CombinedFrontendConfig) RegisterFlags(f *flag.FlagSet, logger log.Log
 	f.StringVar(&cfg.DownstreamURL, "query-frontend.downstream-url", "", "URL of downstream Prometheus.")
 }
 
+func (cfg *CombinedFrontendConfig) Validate(log log.Logger) error {
+	if err := cfg.FrontendV2.Validate(log); err != nil {
+		return err
+	}
+	if err := cfg.QueryMiddleware.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
 // InitFrontend initializes frontend (either V1 -- without scheduler, or V2 -- with scheduler) or no frontend at
 // all if downstream Prometheus URL is used instead.
 //

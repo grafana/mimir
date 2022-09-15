@@ -227,8 +227,8 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.Worker.Validate(log); err != nil {
 		return errors.Wrap(err, "invalid frontend_worker config")
 	}
-	if err := c.Frontend.QueryMiddleware.Validate(); err != nil {
-		return errors.Wrap(err, "invalid query-frontend middleware config")
+	if err := c.Frontend.Validate(log); err != nil {
+		return errors.Wrap(err, "invalid query-frontend config")
 	}
 	if err := c.StoreGateway.Validate(c.LimitsConfig); err != nil {
 		return errors.Wrap(err, "invalid store-gateway config")

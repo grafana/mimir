@@ -8,6 +8,7 @@ package worker
 import (
 	"context"
 	"flag"
+	"fmt"
 	"os"
 	"sync"
 	"time"
@@ -50,8 +51,9 @@ func (cfg *Config) Validate(log log.Logger) error {
 	if cfg.FrontendAddress != "" && cfg.SchedulerAddress != "" {
 		return errors.New("frontend address and scheduler address are mutually exclusive, please use only one")
 	}
-
-	// TODO more validation
+	if cfg.QuerySchedulerDiscovery.Mode == schedulerdiscovery.ModeRing && (cfg.FrontendAddress != "" || cfg.SchedulerAddress != "") {
+		return fmt.Errorf("frontend address and scheduler address cannot be specified when query-scheduler service discovery mode is set to '%s'", cfg.QuerySchedulerDiscovery.Mode)
+	}
 
 	return cfg.GRPCClientConfig.Validate(log)
 }

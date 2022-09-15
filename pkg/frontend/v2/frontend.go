@@ -66,6 +66,14 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("query-frontend.grpc-client-config", f)
 }
 
+func (cfg *Config) Validate(log log.Logger) error {
+	if cfg.QuerySchedulerDiscovery.Mode == schedulerdiscovery.ModeRing && cfg.SchedulerAddress != "" {
+		return fmt.Errorf("scheduler address cannot be specified when query-scheduler service discovery mode is set to '%s'", cfg.QuerySchedulerDiscovery.Mode)
+	}
+
+	return cfg.GRPCClientConfig.Validate(log)
+}
+
 // Frontend implements GrpcRoundTripper. It queues HTTP requests,
 // dispatches them to backends via gRPC, and handles retries for requests which failed.
 type Frontend struct {

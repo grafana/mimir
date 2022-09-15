@@ -12,12 +12,78 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+
+	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 )
+
+func TestConfig_Validate(t *testing.T) {
+	tests := map[string]struct {
+		setup       func(cfg *Config)
+		expectedErr string
+	}{
+		"should pass with default config": {
+			setup: func(cfg *Config) {},
+		},
+		"should pass if frontend address is configured, but not scheduler address": {
+			setup: func(cfg *Config) {
+				cfg.FrontendAddress = "localhost:9095"
+			},
+		},
+		"should pass if scheduler address is configured, but not frontend address": {
+			setup: func(cfg *Config) {
+				cfg.SchedulerAddress = "localhost:9095"
+			},
+		},
+		"should fail if both scheduler and frontend address are configured": {
+			setup: func(cfg *Config) {
+				cfg.FrontendAddress = "localhost:9095"
+				cfg.SchedulerAddress = "localhost:9095"
+			},
+			expectedErr: "frontend address and scheduler address are mutually exclusive",
+		},
+		"should pass if query-scheduler service discovery is set to ring, and no frontend and scheduler address is configured": {
+			setup: func(cfg *Config) {
+				cfg.QuerySchedulerDiscovery.Mode = schedulerdiscovery.ModeRing
+			},
+		},
+		"should fail if query-scheduler service discovery is set to ring, and frontend address is configured": {
+			setup: func(cfg *Config) {
+				cfg.QuerySchedulerDiscovery.Mode = schedulerdiscovery.ModeRing
+				cfg.FrontendAddress = "localhost:9095"
+			},
+			expectedErr: `frontend address and scheduler address cannot be specified when query-scheduler service discovery mode is set to 'ring'`,
+		},
+		"should fail if query-scheduler service discovery is set to ring, and scheduler address is configured": {
+			setup: func(cfg *Config) {
+				cfg.QuerySchedulerDiscovery.Mode = schedulerdiscovery.ModeRing
+				cfg.SchedulerAddress = "localhost:9095"
+			},
+			expectedErr: `frontend address and scheduler address cannot be specified when query-scheduler service discovery mode is set to 'ring'`,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			cfg := Config{}
+			flagext.DefaultValues(&cfg)
+			testData.setup(&cfg)
+
+			actualErr := cfg.Validate(log.NewNopLogger())
+			if testData.expectedErr == "" {
+				require.NoError(t, actualErr)
+			} else {
+				require.Error(t, actualErr)
+				assert.ErrorContains(t, actualErr, testData.expectedErr)
+			}
+		})
+	}
+}
 
 func TestResetConcurrency(t *testing.T) {
 	tests := []struct {
