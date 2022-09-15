@@ -822,6 +822,9 @@ func TestIngester_Push(t *testing.T) {
 			assert.Equal(t, int64(expectedTenantsCount), usagestats.GetInt(memoryTenantsStatsName).Value())
 			assert.Equal(t, int64(expectedSamplesCount), usagestats.GetCounter(appendedSamplesStatsName).Total())
 			assert.Equal(t, int64(expectedExemplarsCount), usagestats.GetCounter(appendedExemplarsStatsName).Total())
+			assert.Equal(t, int64(0), usagestats.GetInt(tenantsWithOutOfOrderEnabledStatName).Value())
+			assert.Equal(t, int64(0), usagestats.GetInt(minOutOfOrderTimeWindowSecondsStatName).Value())
+			assert.Equal(t, int64(0), usagestats.GetInt(maxOutOfOrderTimeWindowSecondsStatName).Value())
 		})
 	}
 }
@@ -5879,8 +5882,14 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 	pushSamples(90, 99, true)
 	verifySamples(100, 100)
 
+	i.updateUsageStats()
+	assert.Equal(t, int64(0), usagestats.GetInt(tenantsWithOutOfOrderEnabledStatName).Value())
+	assert.Equal(t, int64(0), usagestats.GetInt(minOutOfOrderTimeWindowSecondsStatName).Value())
+	assert.Equal(t, int64(0), usagestats.GetInt(maxOutOfOrderTimeWindowSecondsStatName).Value())
+
 	// Increasing the OOO time window.
 	setOOOTimeWindow(model.Duration(30 * time.Minute))
+
 	// Now it works.
 	pushSamples(90, 99, false)
 	verifySamples(90, 100)
@@ -5893,15 +5902,30 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 	pushSamples(50, 69, true)
 	verifySamples(70, 100)
 
+	i.updateUsageStats()
+	assert.Equal(t, int64(1), usagestats.GetInt(tenantsWithOutOfOrderEnabledStatName).Value())
+	assert.Equal(t, int64(30*60), usagestats.GetInt(minOutOfOrderTimeWindowSecondsStatName).Value())
+	assert.Equal(t, int64(30*60), usagestats.GetInt(maxOutOfOrderTimeWindowSecondsStatName).Value())
+
 	// Increase the time window again. It works.
 	setOOOTimeWindow(model.Duration(60 * time.Minute))
 	pushSamples(50, 69, false)
 	verifySamples(50, 100)
 
+	i.updateUsageStats()
+	assert.Equal(t, int64(1), usagestats.GetInt(tenantsWithOutOfOrderEnabledStatName).Value())
+	assert.Equal(t, int64(60*60), usagestats.GetInt(minOutOfOrderTimeWindowSecondsStatName).Value())
+	assert.Equal(t, int64(60*60), usagestats.GetInt(maxOutOfOrderTimeWindowSecondsStatName).Value())
+
 	// Decrease the time window again. Same push should fail.
 	setOOOTimeWindow(model.Duration(30 * time.Minute))
 	pushSamples(50, 69, true)
 	verifySamples(50, 100)
+
+	i.updateUsageStats()
+	assert.Equal(t, int64(1), usagestats.GetInt(tenantsWithOutOfOrderEnabledStatName).Value())
+	assert.Equal(t, int64(30*60), usagestats.GetInt(minOutOfOrderTimeWindowSecondsStatName).Value())
+	assert.Equal(t, int64(30*60), usagestats.GetInt(maxOutOfOrderTimeWindowSecondsStatName).Value())
 }
 
 func TestNewIngestErrMsgs(t *testing.T) {
