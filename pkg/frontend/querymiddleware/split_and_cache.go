@@ -36,7 +36,7 @@ import (
 const (
 	// Cache entries for 7 days. We're not disabling TTL because the backend client currently doesn't support it.
 	resultsCacheTTL                       = 7 * 24 * time.Hour
-	notCachableReasonUnalignedRequest     = "unaligned-request"
+	notCachableReasonUnalignedTimeRange     = "unaligned-time-range"
 	notCachableReasonTooNew               = "too-new"
 	notCachableReasonModifiersNotCachable = "modifiers-not-cacheable"
 )
