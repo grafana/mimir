@@ -2296,7 +2296,7 @@
               "required": false,
               "desc": "When enabled the readiness probe succeeds only after all instances are ACTIVE and healthy in the ring, otherwise only the instance itself is checked. This option should be disabled if in your cluster multiple instances can be rolled out simultaneously, otherwise rolling updates may be slowed down.",
               "fieldValue": null,
-              "fieldDefaultValue": true,
+              "fieldDefaultValue": false,
               "fieldFlag": "ingester.ring.readiness-check-ring-health",
               "fieldType": "boolean",
               "fieldCategory": "advanced"
