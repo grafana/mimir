@@ -47,6 +47,7 @@
 
 * [ENHANCEMENT] Upgrade memcached image tag to `memcached:1.6.16-alpine`. #2740
 * [ENHANCEMENT] Added `$._config.configmaps` and `$._config.runtime_config_files` to make it easy to add new configmaps or runtime config file to all components. #2748
+* [ENHANCEMENT] Querier autoscaling is now slower on scale downs: scale down 10% every 1m instead of 100%. #2962
 
 ### Mimirtool
 
