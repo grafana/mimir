@@ -10244,7 +10244,7 @@
           "required": false,
           "desc": "Enable anonymous usage reporting.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "usage-stats.enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"

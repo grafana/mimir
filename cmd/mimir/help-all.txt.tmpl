@@ -1800,7 +1800,7 @@ Usage of ./cmd/mimir/mimir:
   -tenant-federation.enabled
     	If enabled on all services, queries can be federated across multiple tenants. The tenant IDs involved need to be specified separated by a '|' character in the 'X-Scope-OrgID' header.
   -usage-stats.enabled
-    	[experimental] Enable anonymous usage reporting.
+    	[experimental] Enable anonymous usage reporting. (default true)
   -validation.create-grace-period duration
     	Controls how far into the future incoming samples are accepted compared to the wall clock. Any sample with timestamp `t` will be rejected if `t > (now + validation.create-grace-period)`. (default 10m)
   -validation.enforce-metadata-metric-name
