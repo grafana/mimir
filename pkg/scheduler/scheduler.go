@@ -162,10 +162,16 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 
 	// Init the ring only if the ring-based service discovery mode is used.
 	if cfg.ServiceDiscovery.Mode == schedulerdiscovery.ModeRing {
-		s.schedulerRing, s.schedulerLifecycler, err = schedulerdiscovery.NewRingClientAndLifecycler(cfg.ServiceDiscovery.SchedulerRing, log, registerer)
+		s.schedulerLifecycler, err = schedulerdiscovery.NewRingLifecycler(cfg.ServiceDiscovery.SchedulerRing, log, registerer)
 		if err != nil {
 			return nil, err
 		}
+
+		s.schedulerRing, err = schedulerdiscovery.NewRingClient(cfg.ServiceDiscovery.SchedulerRing, "query-scheduler", log, registerer)
+		if err != nil {
+			return nil, err
+		}
+
 		subservices = append(subservices, s.schedulerRing, s.schedulerLifecycler)
 	}
 

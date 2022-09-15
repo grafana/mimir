@@ -66,7 +66,7 @@ func newFrontendSchedulerWorkers(cfg Config, frontendAddress string, requestsCh 
 	}
 
 	var err error
-	f.schedulerDiscovery, err = schedulerdiscovery.NewServiceDiscovery(cfg.QuerySchedulerDiscovery, cfg.SchedulerAddress, cfg.DNSLookupPeriod, f, log, reg)
+	f.schedulerDiscovery, err = schedulerdiscovery.NewServiceDiscovery(cfg.QuerySchedulerDiscovery, cfg.SchedulerAddress, cfg.DNSLookupPeriod, "query-frontend", f, log, reg)
 	if err != nil {
 		return nil, err
 	}
