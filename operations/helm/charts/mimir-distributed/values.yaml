@@ -1675,7 +1675,7 @@ nginx:
     enabled: false
     # -- Annotations for the nginx route
     annotations: {}
-    # -- Hostname conifguration
+    # -- Hostname configuration
     host: nginx.mimir.example.com
     # -- TLS configuration for OpenShift Route
     tls:
