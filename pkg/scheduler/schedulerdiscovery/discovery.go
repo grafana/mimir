@@ -24,8 +24,8 @@ type Notifications interface {
 }
 
 func NewServiceDiscovery(cfg Config, schedulerAddress string, lookupPeriod time.Duration, component string, receiver Notifications, logger log.Logger, reg prometheus.Registerer) (services.Service, error) {
-	// Since this is a client for the query-schedulers ring, we append "query-scheduler" to the component to clearly differentiate it.
-	component = component + "-query-scheduler"
+	// Since this is a client for the query-schedulers ring, we append "query-scheduler-client" to the component to clearly differentiate it.
+	component = component + "-query-scheduler-client"
 
 	switch cfg.Mode {
 	case ModeRing:
