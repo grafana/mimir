@@ -178,7 +178,7 @@ func isRequestCachable(req Request, maxCacheTime int64, cacheUnalignedRequests b
 	// We can run with step alignment disabled because Grafana does it already. Mimir automatically aligning start and end is not
 	// PromQL compatible. But this means we cannot cache queries that do not have their start and end aligned.
 	if !cacheUnalignedRequests && !isRequestStepAligned(req) {
-		return false, notCachableReasonUnalignedRequest
+		return false, notCachableReasonUnalignedTimeRange
 	}
 
 	// Do not cache it at all if the query time range is more recent than the configured max cache freshness.

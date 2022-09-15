@@ -127,11 +127,11 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 
 	// Assert metrics
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-		# HELP cortex_frontend_query_result_cache_skipped_total Total number of times a query was not cacheable because of a reason.
+		# HELP cortex_frontend_query_result_cache_skipped_total Total number of times a query was not cacheable because of a reason. This metric is tracked for each partial query when time-splitting is enabled.
 		# TYPE cortex_frontend_query_result_cache_skipped_total counter
-		cortex_frontend_query_result_cache_skipped_total{reason="modifiers-not-cacheable"} 0
+		cortex_frontend_query_result_cache_skipped_total{reason="has-modifiers"} 0
 		cortex_frontend_query_result_cache_skipped_total{reason="too-new"} 0
-		cortex_frontend_query_result_cache_skipped_total{reason="unaligned-request"} 0
+		cortex_frontend_query_result_cache_skipped_total{reason="unaligned-time-range"} 0
 		# HELP cortex_frontend_split_queries_total Total number of underlying query requests after the split by interval is applied.
 		# TYPE cortex_frontend_split_queries_total counter
 		cortex_frontend_split_queries_total 2
@@ -293,11 +293,11 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 	assert.Equal(t, uint32(1), queryStats.LoadSplitQueries())
 	// Assert metrics
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-		# HELP cortex_frontend_query_result_cache_skipped_total Total number of times a query was not cacheable because of a reason.
+		# HELP cortex_frontend_query_result_cache_skipped_total Total number of times a query was not cacheable because of a reason. This metric is tracked for each partial query when time-splitting is enabled.
 		# TYPE cortex_frontend_query_result_cache_skipped_total counter
-		cortex_frontend_query_result_cache_skipped_total{reason="modifiers-not-cacheable"} 0
+		cortex_frontend_query_result_cache_skipped_total{reason="has-modifiers"} 0
 		cortex_frontend_query_result_cache_skipped_total{reason="too-new"} 0
-		cortex_frontend_query_result_cache_skipped_total{reason="unaligned-request"} 1
+		cortex_frontend_query_result_cache_skipped_total{reason="unaligned-time-range"} 1
 		# HELP cortex_frontend_split_queries_total Total number of underlying query requests after the split by interval is applied.
 		# TYPE cortex_frontend_split_queries_total counter
 		cortex_frontend_split_queries_total 1
@@ -426,11 +426,11 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 			expectedDownstreamEndTime:   now,
 			expectedCachedResponses:     nil,
 			expectedMetrics: `
-				# HELP cortex_frontend_query_result_cache_skipped_total Total number of times a query was not cacheable because of a reason.
+				# HELP cortex_frontend_query_result_cache_skipped_total Total number of times a query was not cacheable because of a reason. This metric is tracked for each partial query when time-splitting is enabled.
 				# TYPE cortex_frontend_query_result_cache_skipped_total counter
-				cortex_frontend_query_result_cache_skipped_total{reason="modifiers-not-cacheable"} 0
+				cortex_frontend_query_result_cache_skipped_total{reason="has-modifiers"} 0
 				cortex_frontend_query_result_cache_skipped_total{reason="too-new"} 2
-				cortex_frontend_query_result_cache_skipped_total{reason="unaligned-request"} 0
+				cortex_frontend_query_result_cache_skipped_total{reason="unaligned-time-range"} 0
 				# HELP cortex_frontend_split_queries_total Total number of underlying query requests after the split by interval is applied.
 				# TYPE cortex_frontend_split_queries_total counter
 				cortex_frontend_split_queries_total 0

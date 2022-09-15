@@ -36,7 +36,7 @@ import (
 const (
 	// Cache entries for 7 days. We're not disabling TTL because the backend client currently doesn't support it.
 	resultsCacheTTL                       = 7 * 24 * time.Hour
-	notCachableReasonUnalignedTimeRange     = "unaligned-time-range"
+	notCachableReasonUnalignedTimeRange   = "unaligned-time-range"
 	notCachableReasonTooNew               = "too-new"
 	notCachableReasonModifiersNotCachable = "has-modifiers"
 )
@@ -65,7 +65,7 @@ func newSplitAndCacheMiddlewareMetrics(reg prometheus.Registerer) *splitAndCache
 	}
 
 	// Initialize known label values.
-	for _, reason := range []string{notCachableReasonUnalignedRequest, notCachableReasonTooNew,
+	for _, reason := range []string{notCachableReasonUnalignedTimeRange, notCachableReasonTooNew,
 		notCachableReasonModifiersNotCachable} {
 		m.queryResultCacheSkippedCount.WithLabelValues(reason)
 	}
