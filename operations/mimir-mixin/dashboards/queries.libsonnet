@@ -113,7 +113,7 @@ local filename = 'mimir-queries.json';
         $.panel('Query results cache skipped') +
         $.queryPanel(|||
           sum(rate(cortex_frontend_query_result_cache_skipped_total{%s}[$__rate_interval])) by (reason) /
-          ignoring (reason) group_left sum(rate(cortex_frontend_split_queries_total{%s}[$__rate_interval]))
+          ignoring (reason) group_left sum(rate(cortex_frontend_query_result_cache_attempted_total{%s}[$__rate_interval]))
         ||| % [$.jobMatcher($._config.job_names.query_frontend), $.jobMatcher($._config.job_names.query_frontend)], '{{reason}}') +
         { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) } +
         $.stack +

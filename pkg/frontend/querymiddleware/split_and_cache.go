@@ -48,8 +48,9 @@ var (
 )
 
 type splitAndCacheMiddlewareMetrics struct {
-	splitQueriesCount            prometheus.Counter
-	queryResultCacheSkippedCount *prometheus.CounterVec
+	splitQueriesCount              prometheus.Counter
+	queryResultCacheAttemptedCount prometheus.Counter
+	queryResultCacheSkippedCount   *prometheus.CounterVec
 }
 
 func newSplitAndCacheMiddlewareMetrics(reg prometheus.Registerer) *splitAndCacheMiddlewareMetrics {
@@ -57,6 +58,10 @@ func newSplitAndCacheMiddlewareMetrics(reg prometheus.Registerer) *splitAndCache
 		splitQueriesCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_frontend_split_queries_total",
 			Help: "Total number of underlying query requests after the split by interval is applied.",
+		}),
+		queryResultCacheAttemptedCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_frontend_query_result_cache_attempted_total",
+			Help: "Total number of queries that were attempted to be fetched from cache.",
 		}),
 		queryResultCacheSkippedCount: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_frontend_query_result_cache_skipped_total",
@@ -142,6 +147,8 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 	if err != nil {
 		return nil, err
 	}
+
+	s.metrics.queryResultCacheAttemptedCount.Add(float64(len(splitReqs)))
 
 	isCacheEnabled := s.cacheEnabled && (s.shouldCacheReq == nil || s.shouldCacheReq(req))
 	maxCacheFreshness := validation.MaxDurationPerTenant(tenantIDs, s.limits.MaxCacheFreshness)
