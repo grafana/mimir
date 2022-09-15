@@ -7,7 +7,7 @@ weight: 30
 
 # About Grafana Mimir anonymous usage statistics reporting
 
-Grafana Mimir includes a system that anonymously reports non-sensitive, non-personally identifiable information about the running Mimir cluster to a remote statistics server.
+Grafana Mimir includes a system that optionally and anonymously reports non-sensitive, non-personally identifiable information about the running Mimir cluster to a remote statistics server.
 Mimir maintainers use this anonymous information to learn more about how the open source community runs Mimir and what the Mimir team should focus on when working on the next features and documentation improvements.
 
 The anonymous usage statistics reporting is **enabled by default**.
