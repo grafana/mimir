@@ -120,7 +120,7 @@ local filename = 'mimir-queries.json';
         $.panelDescription(
           'Query results cache skipped',
           |||
-            The % of split queries that could not be cached.
+            The % of queries whose results could not be cached.
             It is tracked for each split query when the splitting by interval is enabled.
           |||
         ),
