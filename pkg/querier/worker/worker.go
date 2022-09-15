@@ -21,17 +21,20 @@ import (
 	"github.com/weaveworks/common/httpgrpc"
 	"google.golang.org/grpc"
 
+	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/util"
 )
 
 type Config struct {
-	FrontendAddress       string        `yaml:"frontend_address"`
-	SchedulerAddress      string        `yaml:"scheduler_address"`
-	DNSLookupPeriod       time.Duration `yaml:"dns_lookup_duration" category:"advanced"`
-	MaxConcurrentRequests int           `yaml:"-"` // Must be same as passed to PromQL Engine.
-	QuerierID             string        `yaml:"id" category:"advanced"`
-
+	FrontendAddress  string            `yaml:"frontend_address"`
+	SchedulerAddress string            `yaml:"scheduler_address"`
+	DNSLookupPeriod  time.Duration     `yaml:"dns_lookup_duration" category:"advanced"`
+	QuerierID        string            `yaml:"id" category:"advanced"`
 	GRPCClientConfig grpcclient.Config `yaml:"grpc_client_config"`
+
+	// This configuration is injected internally.
+	MaxConcurrentRequests   int                       `yaml:"-"` // Must be same as passed to PromQL Engine.
+	QuerySchedulerDiscovery schedulerdiscovery.Config `yaml:"-"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
@@ -47,10 +50,13 @@ func (cfg *Config) Validate(log log.Logger) error {
 	if cfg.FrontendAddress != "" && cfg.SchedulerAddress != "" {
 		return errors.New("frontend address and scheduler address are mutually exclusive, please use only one")
 	}
+
+	// TODO more validation
+
 	return cfg.GRPCClientConfig.Validate(log)
 }
 
-// Handler for HTTP requests wrapped in protobuf messages.
+// RequestHandler for HTTP requests wrapped in protobuf messages.
 type RequestHandler interface {
 	Handle(context.Context, *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error)
 }
@@ -70,6 +76,15 @@ type processor interface {
 	// shutting down.
 	notifyShutdown(ctx context.Context, conn *grpc.ClientConn, address string)
 }
+
+// serviceDiscoveryNotifications is the interface implemented by the component receiving service discovery notifications.
+type serviceDiscoveryNotifications interface {
+	AddressAdded(address string)
+	AddressRemoved(address string)
+}
+
+// serviceDiscoveryFactory makes a new service discovery instance.
+type serviceDiscoveryFactory func(receiver serviceDiscoveryNotifications) (services.Service, error)
 
 type querierWorker struct {
 	*services.BasicService
@@ -97,29 +112,36 @@ func NewQuerierWorker(cfg Config, handler RequestHandler, log log.Logger, reg pr
 
 	var processor processor
 	var servs []services.Service
-	var address string
+	var factory serviceDiscoveryFactory
 
 	switch {
-	case cfg.SchedulerAddress != "":
+	// TODO test
+	case cfg.SchedulerAddress != "" || cfg.QuerySchedulerDiscovery.Mode == schedulerdiscovery.ModeRing:
 		level.Info(log).Log("msg", "Starting querier worker connected to query-scheduler", "scheduler", cfg.SchedulerAddress)
 
-		address = cfg.SchedulerAddress
+		factory = func(receiver serviceDiscoveryNotifications) (services.Service, error) {
+			return schedulerdiscovery.NewServiceDiscovery(cfg.QuerySchedulerDiscovery, cfg.SchedulerAddress, cfg.DNSLookupPeriod, receiver, log, reg)
+		}
+
 		processor, servs = newSchedulerProcessor(cfg, handler, log, reg)
 
 	case cfg.FrontendAddress != "":
 		level.Info(log).Log("msg", "Starting querier worker connected to query-frontend", "frontend", cfg.FrontendAddress)
 
-		address = cfg.FrontendAddress
+		factory = func(receiver serviceDiscoveryNotifications) (services.Service, error) {
+			return util.NewDNSWatcher(cfg.FrontendAddress, cfg.DNSLookupPeriod, receiver)
+		}
+
 		processor = newFrontendProcessor(cfg, handler, log)
 
 	default:
 		return nil, errors.New("no query-scheduler or query-frontend address")
 	}
 
-	return newQuerierWorkerWithProcessor(cfg, log, processor, address, servs)
+	return newQuerierWorkerWithProcessor(cfg, log, processor, factory, servs)
 }
 
-func newQuerierWorkerWithProcessor(cfg Config, log log.Logger, processor processor, address string, servs []services.Service) (*querierWorker, error) {
+func newQuerierWorkerWithProcessor(cfg Config, log log.Logger, processor processor, newServiceDiscovery serviceDiscoveryFactory, servs []services.Service) (*querierWorker, error) {
 	f := &querierWorker{
 		cfg:       cfg,
 		log:       log,
@@ -127,9 +149,9 @@ func newQuerierWorkerWithProcessor(cfg Config, log log.Logger, processor process
 		processor: processor,
 	}
 
-	// Empty address is only used in tests, where individual targets are added manually.
-	if address != "" {
-		w, err := util.NewDNSWatcher(address, cfg.DNSLookupPeriod, f)
+	// There's no service discovery in some tests.
+	if newServiceDiscovery != nil {
+		w, err := newServiceDiscovery(f)
 		if err != nil {
 			return nil, err
 		}

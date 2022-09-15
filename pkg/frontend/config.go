@@ -17,7 +17,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/transport"
 	v1 "github.com/grafana/mimir/pkg/frontend/v1"
 	v2 "github.com/grafana/mimir/pkg/frontend/v2"
-	"github.com/grafana/mimir/pkg/scheduler/discovery"
+	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -54,7 +54,7 @@ func InitFrontend(cfg CombinedFrontendConfig, limits v1.Limits, grpcListenPort i
 		rt, err := NewDownstreamRoundTripper(cfg.DownstreamURL)
 		return rt, nil, nil, err
 
-	case cfg.FrontendV2.SchedulerAddress != "" || cfg.FrontendV2.QuerySchedulerDiscovery.Mode == discovery.ServiceDiscoveryModeRing:
+	case cfg.FrontendV2.SchedulerAddress != "" || cfg.FrontendV2.QuerySchedulerDiscovery.Mode == schedulerdiscovery.ModeRing:
 		// Query-scheduler is enabled when its addressed is configured or is configured to use ring-based service discovery.
 		if cfg.FrontendV2.Addr == "" {
 			addr, err := util.GetFirstAddressOf(cfg.FrontendV2.InfNames)

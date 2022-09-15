@@ -22,7 +22,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
-	"github.com/grafana/mimir/pkg/scheduler/discovery"
+	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 )
 
@@ -66,7 +66,7 @@ func newFrontendSchedulerWorkers(cfg Config, frontendAddress string, requestsCh 
 	}
 
 	var err error
-	f.schedulerDiscovery, err = discovery.NewServiceDiscovery(cfg.QuerySchedulerDiscovery, cfg.SchedulerAddress, cfg.DNSLookupPeriod, f, log, reg)
+	f.schedulerDiscovery, err = schedulerdiscovery.NewServiceDiscovery(cfg.QuerySchedulerDiscovery, cfg.SchedulerAddress, cfg.DNSLookupPeriod, f, log, reg)
 	if err != nil {
 		return nil, err
 	}

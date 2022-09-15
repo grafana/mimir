@@ -431,6 +431,8 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 	}
 
 	t.Cfg.Worker.MaxConcurrentRequests = t.Cfg.Querier.EngineConfig.MaxConcurrent
+	t.Cfg.Worker.QuerySchedulerDiscovery = t.Cfg.QueryScheduler.ServiceDiscovery
+
 	return querier_worker.NewQuerierWorker(t.Cfg.Worker, httpgrpc_server.NewServer(internalQuerierRouter), util_log.Logger, t.Registerer)
 }
 

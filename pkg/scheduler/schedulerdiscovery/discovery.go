@@ -1,4 +1,4 @@
-package discovery
+package schedulerdiscovery
 
 import (
 	"context"
@@ -24,17 +24,17 @@ type Notifications interface {
 	AddressRemoved(address string)
 }
 
-func NewServiceDiscovery(cfg Config, schedulerAddress string, lookupPeriod time.Duration, fn Notifications, logger log.Logger, reg prometheus.Registerer) (services.Service, error) {
+func NewServiceDiscovery(cfg Config, schedulerAddress string, lookupPeriod time.Duration, receiver Notifications, logger log.Logger, reg prometheus.Registerer) (services.Service, error) {
 	switch cfg.Mode {
-	case ServiceDiscoveryModeRing:
-		return NewRingServiceDiscovery(cfg, fn, logger, reg)
+	case ModeRing:
+		return NewRingServiceDiscovery(cfg, receiver, logger, reg)
 	default:
-		return NewDNSServiceDiscovery(schedulerAddress, lookupPeriod, fn)
+		return NewDNSServiceDiscovery(schedulerAddress, lookupPeriod, receiver)
 	}
 }
 
-func NewDNSServiceDiscovery(schedulerAddress string, lookupPeriod time.Duration, fn Notifications) (services.Service, error) {
-	return util.NewDNSWatcher(schedulerAddress, lookupPeriod, fn)
+func NewDNSServiceDiscovery(schedulerAddress string, lookupPeriod time.Duration, receiver Notifications) (services.Service, error) {
+	return util.NewDNSWatcher(schedulerAddress, lookupPeriod, receiver)
 }
 
 var (
@@ -47,14 +47,14 @@ type ringServiceDiscovery struct {
 	ring               *ring.Ring
 	subservicesWatcher *services.FailureWatcher
 	checkPeriod        time.Duration
-	notifications      Notifications
+	receiver           Notifications
 
 	// Keep track of the addresses that have been discovered and notified so far.
 	notifiedAddresses map[string]struct{}
 }
 
 // TODO test me
-func NewRingServiceDiscovery(cfg Config, fn Notifications, logger log.Logger, reg prometheus.Registerer) (services.Service, error) {
+func NewRingServiceDiscovery(cfg Config, receiver Notifications, logger log.Logger, reg prometheus.Registerer) (services.Service, error) {
 	// TODO DEBUG
 	fmt.Println("DEBUG - init ring-based service discovery")
 
@@ -68,7 +68,7 @@ func NewRingServiceDiscovery(cfg Config, fn Notifications, logger log.Logger, re
 		subservicesWatcher: services.NewFailureWatcher(),
 		checkPeriod:        cfg.SchedulerRing.RingCheckPeriod,
 		notifiedAddresses:  make(map[string]struct{}),
-		notifications:      fn,
+		receiver:           receiver,
 	}
 
 	r.subservicesWatcher.WatchService(r.ring)
@@ -121,7 +121,7 @@ func (r *ringServiceDiscovery) notifyChanges(discovered ring.ReplicationSet) {
 			// TODO DEBUG
 			fmt.Println("DEBUG - notify address added:", addr)
 
-			r.notifications.AddressAdded(addr)
+			r.receiver.AddressAdded(addr)
 		}
 	}
 
@@ -131,7 +131,7 @@ func (r *ringServiceDiscovery) notifyChanges(discovered ring.ReplicationSet) {
 			// TODO DEBUG
 			fmt.Println("DEBUG - notify address removed:", addr)
 
-			r.notifications.AddressRemoved(addr)
+			r.receiver.AddressRemoved(addr)
 		}
 	}
 

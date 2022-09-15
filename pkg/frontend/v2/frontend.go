@@ -31,7 +31,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/querier/stats"
-	"github.com/grafana/mimir/pkg/scheduler/discovery"
+	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 )
 
@@ -50,7 +50,7 @@ type Config struct {
 	Port int    `category:"advanced"`
 
 	// This configuration is injected internally.
-	QuerySchedulerDiscovery discovery.Config `yaml:"-"`
+	QuerySchedulerDiscovery schedulerdiscovery.Config `yaml:"-"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {

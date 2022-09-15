@@ -31,8 +31,8 @@ import (
 	"github.com/grafana/dskit/tenant"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
-	"github.com/grafana/mimir/pkg/scheduler/discovery"
 	"github.com/grafana/mimir/pkg/scheduler/queue"
+	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
@@ -94,10 +94,10 @@ type connectedFrontend struct {
 }
 
 type Config struct {
-	MaxOutstandingPerTenant int               `yaml:"max_outstanding_requests_per_tenant"`
-	QuerierForgetDelay      time.Duration     `yaml:"querier_forget_delay" category:"experimental"`
-	GRPCClientConfig        grpcclient.Config `yaml:"grpc_client_config" doc:"description=This configures the gRPC client used to report errors back to the query-frontend."`
-	ServiceDiscovery        discovery.Config  `yaml:",inline"`
+	MaxOutstandingPerTenant int                       `yaml:"max_outstanding_requests_per_tenant"`
+	QuerierForgetDelay      time.Duration             `yaml:"querier_forget_delay" category:"experimental"`
+	GRPCClientConfig        grpcclient.Config         `yaml:"grpc_client_config" doc:"description=This configures the gRPC client used to report errors back to the query-frontend."`
+	ServiceDiscovery        schedulerdiscovery.Config `yaml:",inline"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
@@ -161,8 +161,8 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 	subservices := []services.Service{s.requestQueue, s.activeUsers}
 
 	// Init the ring only if the ring-based service discovery mode is used.
-	if cfg.ServiceDiscovery.Mode == discovery.ServiceDiscoveryModeRing {
-		s.schedulerRing, s.schedulerLifecycler, err = discovery.NewRingClientAndLifecycler(cfg.ServiceDiscovery.SchedulerRing, log, registerer)
+	if cfg.ServiceDiscovery.Mode == schedulerdiscovery.ModeRing {
+		s.schedulerRing, s.schedulerLifecycler, err = schedulerdiscovery.NewRingClientAndLifecycler(cfg.ServiceDiscovery.SchedulerRing, log, registerer)
 		if err != nil {
 			return nil, err
 		}
