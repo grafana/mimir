@@ -283,8 +283,7 @@ func defaultFrontendConfig() CombinedFrontendConfig {
 
 	querySchedulerDiscoveryConfig := schedulerdiscovery.Config{}
 	flagext.DefaultValues(&querySchedulerDiscoveryConfig)
-
-	config.QuerySchedulerDiscovery = querySchedulerDiscoveryConfig
+	config.FrontendV2.QuerySchedulerDiscovery = querySchedulerDiscoveryConfig
 
 	return config
 }
