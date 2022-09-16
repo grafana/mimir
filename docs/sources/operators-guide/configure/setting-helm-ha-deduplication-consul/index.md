@@ -20,11 +20,9 @@ describe the cluster requirement.
 Refer to [Configuring High Availability]({{< relref "./configuring-high-availability-deduplication.md" >}}) documents 
 for high level description on the concept. You also should read 
 [Getting Started with Helm]({{< relref "../deploy-grafana-mimir/getting-started-helm-charts/_index.md" >}}) on how
-to install Grafana Mimir using helm. There should be some additional configuration that you need to add. We will
-show the configuration in the following section.
+to install Grafana Mimir using helm.
 
-You will need Prometheus HA setup and Consul. If you haven't had the setup, some next section below will 
-walk you through the installation.
+You will need Prometheus in HA setup and Consul. You will be guided on the setup if you haven't had one.
 
 ## Install Prometheus HA using Helm
 
@@ -110,7 +108,7 @@ mimir:
 Make sure to install or upgrade the Mimir's helm release using the above configuration.
 
 ```bash
- helm -n mimir-test upgarde --install mimir grafana/mimir-distributed -f custom.yaml
+ helm -n mimir-test upgrade --install mimir grafana/mimir-distributed -f custom.yaml
 ```
 
 ### HA Deduplication per tenant
