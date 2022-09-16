@@ -128,7 +128,7 @@ Make sure to install or upgrade the Mimir's helm release using the above configu
 
 ## Verifying deduplication
 
-After Consul, Prometheus and Mimir running. Port foward Mimir distributor service.
+After Consul, Prometheus and Mimir running. Port forward Mimir distributor service.
 
 ```bash
 kubectl port-forward service/mymimir-distributor 8080:8080
