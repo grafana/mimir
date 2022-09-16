@@ -8,17 +8,18 @@ weight: 70
 ---
 
 # Configuring Grafana Mimir Helm Chart for high-availability deduplication with Consul
+
 Grafana Mimir can deduplicate data from high-availability (HA) Prometheus setup. In this guide, you will see how to configure
 the deduplication for Grafana Mimir helm deployment using external Consul.
 
 ## Before you begin
 
-You need a Kubernetes cluster. 
+You need a Kubernetes cluster.
 [Getting Started with Helm]({{< relref "../../deploy-grafana-mimir/getting-started-helm-charts/_index.md" >}}) documentation
 describe the cluster requirement.
 
-Refer to [Configuring High Availability]({{< relref "../configuring-high-availability-deduplication.md" >}}) documents 
-for high level description on the concept. You also should read 
+Refer to [Configuring High Availability]({{< relref "../configuring-high-availability-deduplication.md" >}}) documents
+for high level description on the concept. You also should read
 [Getting Started with Helm]({{< relref "../../deploy-grafana-mimir/getting-started-helm-charts/_index.md" >}}) on how
 to install Grafana Mimir using helm.
 
@@ -26,9 +27,9 @@ You will need Prometheus in HA setup and Consul. You will be guided on the setup
 
 ## Install Prometheus HA using Helm
 
-You can install Prometheus HA in Kubernetes using 
-[kube-prometheus-stack helm chart](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack). 
-You can follow the step on installing the chart from that documentation. Once the chart is installed, use the 
+You can install Prometheus HA in Kubernetes using
+[kube-prometheus-stack helm chart](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack).
+You can follow the step on installing the chart from that documentation. Once the chart is installed, use the
 following yaml file named `values.yaml` for the Prometheus HA setup. You also can have Grafana datasource
 to be provisioned so that you can verify the Mimir HA deduplication later.
 
@@ -46,7 +47,7 @@ grafana:
   # Provision Mimir's datasource
   additionalDataSources:
     - name: Mimir
-      url:  http://<mimir-endpoint>/prometheus
+      url: http://<mimir-endpoint>/prometheus
       type: prometheus
       editable: true
 ```
@@ -72,13 +73,13 @@ helm upgrade --install -n <namespace> --create-namespace my-prometheus prometheu
 ## Install Consul using Helm
 
 You can install Consul in Kubernetes using
-[Consul helm chart](https://github.com/hashicorp/consul-k8s/tree/main/charts/consul). Follow the documentation to get 
-the chart and installing a Consul release. Put a note on the Consul endpoint, because you will need it for Mimir 
+[Consul helm chart](https://github.com/hashicorp/consul-k8s/tree/main/charts/consul). Follow the documentation to get
+the chart and installing a Consul release. Put a note on the Consul endpoint, because you will need it for Mimir
 configuration.
 
 ## Install/Upgrade Mimir config
 
-Follow [Getting Started with Helm]({{< relref "../../deploy-grafana-mimir/getting-started-helm-charts/_index.md" >}}) 
+Follow [Getting Started with Helm]({{< relref "../../deploy-grafana-mimir/getting-started-helm-charts/_index.md" >}})
 documentation but add some configuration changes below.
 
 You can set Mimir HA deduplication configuration in global level or tenant level.
@@ -92,11 +93,11 @@ To configure HA deduplication globally, add the following configuration below th
 mimir:
   structuredConfig:
     limits:
-      accept_ha_samples: true 
+      accept_ha_samples: true
       # The following two configs must match with external_labels config in Prometheus
       ha_cluster_label: cluster
       ha_replica_label: __replica__
-    distributor:   
+    distributor:
       ha_tracker:
         enable_ha_tracker: true
         kvstore:
@@ -112,6 +113,7 @@ Make sure to install or upgrade the Mimir's helm release using the above configu
 ```
 
 ### HA Deduplication per tenant
+
 TODO: Test this
 
 To configure HA deduplication per-tenant, add the following configuration below the `custom.yaml` file.
@@ -119,9 +121,9 @@ To configure HA deduplication per-tenant, add the following configuration below 
 ```yaml
 runtimeConfig:
   <tenant-id>:
-      accept_ha_samples: true
-      ha_cluster_label: cluster
-      ha_replica_label: __replica__
+    accept_ha_samples: true
+    ha_cluster_label: cluster
+    ha_replica_label: __replica__
 ```
 
 Make sure to install or upgrade the Mimir's helm release using the above configuration.
@@ -139,21 +141,21 @@ If the table is empty, it means there is something wrong with the configuration.
 
 ![HA Tracker Status](ha-tracker-status.png)
 
-Next, port forward Grafana that comes with kube-prometheus-stack. 
+Next, port forward Grafana that comes with kube-prometheus-stack.
 
 ```bash
 kubectl port-forward service/my-prometheus-grafana 3000:3000
 ```
 
-If you use the kube-prometheus-stack `values.yaml` above, helm will make Grafana to automatically provision Mimir 
-datasource. 
+If you use the kube-prometheus-stack `values.yaml` above, helm will make Grafana to automatically provision Mimir
+datasource.
 
 ![Mimir Datasource](mimir-datasource.png)
 
 Go to Grafana explore page and select Mimir datasource. Then execute the following query: `up`. In the Options drop down,
-select Format = Table. In the result you can see the several time series with different labels. 
+select Format = Table. In the result you can see the several time series with different labels.
 
 ![Verify Deduplication](verify-deduplication.png)
 
-The most important thing is you will not find `__replica__` label (or any label that you set in `ha_replica_label` 
-config) anymore. This means you have configured the deduplication successfully. 
+The most important thing is you will not find `__replica__` label (or any label that you set in `ha_replica_label`
+config) anymore. This means you have configured the deduplication successfully.
