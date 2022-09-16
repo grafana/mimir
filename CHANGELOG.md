@@ -71,6 +71,7 @@
 
 ### Documentation
 
+* [ENHANCEMENT] Added documentation on how to configure storage retention. #2970
 
 ## 2.3.0-rc.0
 
