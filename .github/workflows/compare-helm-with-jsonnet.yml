@@ -40,71 +40,12 @@ jobs:
         chmod +x $PWD/bin/jb
         echo $PWD/bin >> $GITHUB_PATH
         set +e
-
+    - name: Make dependencies
+      run: |
+        # Make dependencies first to have their output in another step
+        make operations/helm/charts/mimir-distributed/charts
+        make build-jsonnet-tests
     - name: Compare manifests
       id: compare-manifests
       run: |
-        # Make dependencies first so their output doesn't appear in the PR comment
-        make operations/helm/charts/mimir-distributed/charts
-        make build-jsonnet-tests
-
-        set +e
-        OUTPUT="$(./operations/compare-helm-with-jsonnet/compare-helm-with-jsonnet.sh 2>&1)"
-        RC=$?
-        set -e
-
-        if [ "${RC}" -eq 0 ]; then
-          echo "::set-output name=changed::false"
-        else
-          echo "$OUTPUT"
-          # This makes a multiline output work
-          # https://trstringer.com/github-actions-multiline-strings/
-          OUTPUT="${OUTPUT//'%'/'%25'}"
-          OUTPUT="${OUTPUT//$'\n'/'%0A'}"
-          OUTPUT="${OUTPUT//$'\r'/'%0D'}"
-          echo "::set-output name=changed::true"
-          echo "::set-output name=diff::$OUTPUT"
-        fi
-
-    - uses: int128/hide-comment-action@24848bfab99f16e129632e27397da999b9d1b2c0
-      with:
-        authors: 'github-actions[bot]'
-        starts-with: '**Helm <> Jsonnet Diff**'
-
-    - name: Create or update comment
-      continue-on-error: true
-      uses: peter-evans/create-or-update-comment@c9fcb64660bc90ec1cc535646af190c992007c32
-      if: ${{ steps.compare-manifests.outputs.changed == 'true' }}
-      with:
-        issue-number: ${{ github.event.pull_request.number }}
-        body: |
-          **Helm <> Jsonnet Diff**
-
-          :heavy_exclamation_mark: A difference was detected between the Helm chart and the Jsonnet library.
-
-          Please take a look and update one or both of the Helm chart and Jsonnet library to ensure feature parity.
-          You can use `make check-helm-jsonnet-diff` to reproduce the issue locally.
-          **If you get stuck on this step, please ask the Mimir maintainers for help.**
-
-          [Please see the contribution docs here for more info.](https://github.com/grafana/mimir/blob/main/docs/internal/contributing/contributing-to-helm-chart.md)
-
-          <details>
-
-          <summary>
-          Expand to see the full diff
-          </summary>
-
-          Output of https://github.com/${{github.repository}}/actions/runs/${{github.run_id}}
-
-          ```diff
-          ${{ steps.compare-manifests.outputs.diff }}
-          ```
-
-          </details>
-
-    - name: Check diff output
-      if: ${{ steps.compare-manifests.outputs.changed == 'true' }}
-      uses: actions/github-script@v3
-      with:
-        script: |
-            core.setFailed('Differences detected between Helm and Jsonnet, see comment on PR')
+        ./operations/compare-helm-with-jsonnet/compare-helm-with-jsonnet.sh || (echo "Please fix the errors above and run 'make check-helm-jsonnet-diff' to validate" && false)
