@@ -29,6 +29,7 @@
 * [BUGFIX] Query-frontend: fix incorrect mapping of http status codes 413 to 500 when request is too large. #2819
 * [BUGFIX] Ruler: fix panic when `ruler.external_url` is explicitly set to an empty string (`""`) in YAML. #2915
 * [BUGFIX] Fix sanity check done on configured filesystem directories when running Alertmanager in microservices mode. #2947
+* [BUGFIX] Querier: Fix 400 response while handling streaming remote read. #2963
 
 ### Mixin
 

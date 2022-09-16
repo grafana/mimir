@@ -216,6 +216,7 @@ func TestQuerierStreamingRemoteRead(t *testing.T) {
 
 	httpReq, err := http.NewRequestWithContext(httpReqCtx, "POST", "http://"+querier.HTTPEndpoint()+"/prometheus/api/v1/read", bytes.NewReader(compressed))
 	require.NoError(t, err)
+	httpReq.Header.Add("Accept-Encoding", "snappy")
 	httpReq.Header.Set("X-Scope-OrgID", "user-1")
 	httpReq.Header.Set("User-Agent", "Prometheus/1.8.2")
 	httpReq.Header.Set("X-Prometheus-Remote-Read-Version", "0.1.0")
