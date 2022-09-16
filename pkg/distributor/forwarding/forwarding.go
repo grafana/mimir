@@ -59,6 +59,11 @@ func NewForwarder(cfg Config, reg prometheus.Registerer, log log.Logger) Forward
 		pools: newPools(),
 		log:   log,
 		reqCh: make(chan *request, cfg.RequestConcurrency),
+		client: http.Client{
+			Transport: &http.Transport{
+				DisableKeepAlives: true,
+			},
+		},
 
 		requestsTotal: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Namespace: "cortex",
@@ -344,6 +349,8 @@ func (r *request) do() {
 
 	httpReq.Header.Add("Content-Encoding", "snappy")
 	httpReq.Header.Set("Content-Type", "application/x-protobuf")
+	// Mark request as idempotent, so that http client can retry them on (some) errors.
+	httpReq.Header.Set("Idempotency-Key", "true")
 
 	r.requests.Inc()
 	r.samples.Add(float64(r.ts.counts.SampleCount))
@@ -353,6 +360,8 @@ func (r *request) do() {
 	httpResp, err := r.client.Do(httpReq)
 	r.latency.Observe(time.Since(beforeTs).Seconds())
 	if err != nil {
+		r.errors.WithLabelValues("failed").Inc()
+
 		// Errors from Client.Do are from (for example) network errors, so we want the client to retry.
 		r.handleError(http.StatusInternalServerError, errors.Wrap(err, "failed to send HTTP request for forwarding"))
 		return
