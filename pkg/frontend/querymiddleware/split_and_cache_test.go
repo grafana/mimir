@@ -129,7 +129,7 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_frontend_query_result_cache_attempted_total Total number of queries that were attempted to be fetched from cache.
 		# TYPE cortex_frontend_query_result_cache_attempted_total counter
-		cortex_frontend_query_result_cache_attempted_total 2
+		cortex_frontend_query_result_cache_attempted_total 0
 		# HELP cortex_frontend_query_result_cache_skipped_total Total number of times a query was not cacheable because of a reason. This metric is tracked for each partial query when time-splitting is enabled.
 		# TYPE cortex_frontend_query_result_cache_skipped_total counter
 		cortex_frontend_query_result_cache_skipped_total{reason="has-modifiers"} 0

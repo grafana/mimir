@@ -148,14 +148,14 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 		return nil, err
 	}
 
-	s.metrics.queryResultCacheAttemptedCount.Add(float64(len(splitReqs)))
-
 	isCacheEnabled := s.cacheEnabled && (s.shouldCacheReq == nil || s.shouldCacheReq(req))
 	maxCacheFreshness := validation.MaxDurationPerTenant(tenantIDs, s.limits.MaxCacheFreshness)
 	maxCacheTime := int64(model.Now().Add(-maxCacheFreshness))
 
 	// Lookup the results cache.
 	if isCacheEnabled {
+		s.metrics.queryResultCacheAttemptedCount.Add(float64(len(splitReqs)))
+
 		// Build the cache keys for all requests to try to fetch from cache.
 		lookupReqs := make([]*splitRequest, 0, len(splitReqs))
 		lookupKeys := make([]string, 0, len(splitReqs))
