@@ -121,7 +121,6 @@ func NewQuerierWorker(cfg Config, handler RequestHandler, log log.Logger, reg pr
 	var factory serviceDiscoveryFactory
 
 	switch {
-	// TODO test
 	case cfg.SchedulerAddress != "" || cfg.QuerySchedulerDiscovery.Mode == schedulerdiscovery.ModeRing:
 		level.Info(log).Log("msg", "Starting querier worker connected to query-scheduler", "scheduler", cfg.SchedulerAddress)
 
