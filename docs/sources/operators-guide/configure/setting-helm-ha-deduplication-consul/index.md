@@ -8,7 +8,7 @@ aliases:
 ---
 
 # Configuring Grafana Mimir Helm Chart for high-availability deduplication with Consul
-Grafana Mimir can deduplicate data from high-availability Prometheus setup. In this guide, you will see how to configure
+Grafana Mimir can deduplicate data from high-availability (HA) Prometheus setup. In this guide, you will see how to configure
 the deduplication for Grafana Mimir helm deployment using external Consul.
 
 ## Before you begin
@@ -23,21 +23,21 @@ for high level description on the concept. You also should read
 to install Grafana Mimir using helm. There should be some additional configuration that you need to add. We will
 show the configuration in the following section.
 
-You will need Prometheus high-availability setup and Consul. If you haven't had the setup, some next section below will 
+You will need Prometheus HA setup and Consul. If you haven't had the setup, some next section below will 
 walk you through the installation.
 
-## Install Prometheus high-availability using Helm
+## Install Prometheus HA using Helm
 
-You can install Prometheus high-availability in Kubernetes using 
+You can install Prometheus HA in Kubernetes using 
 [kube-prometheus-stack helm chart](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack). 
 You can follow the step on installing the chart from that documentation. Once the chart is installed, use the 
-following yaml file named `values.yaml` for the Prometheus high-availability setup. You also can have Grafana datasource
-to be provisioned so that you can verify the Mimir high-availability deduplication later.
+following yaml file named `values.yaml` for the Prometheus HA setup. You also can have Grafana datasource
+to be provisioned so that you can verify the Mimir HA deduplication later.
 
 ```yaml
 prometheus:
   prometheusSpec:
-    replicas: 2 # to enable high-availability, 2 is the minimum number of replica
+    replicas: 2 # to enable HA, 2 is the minimum number of replica
     replicaExternalLabelName: "__replica__" # this config must match with ha_replica_label config in Mimir
     externalLabels:
       cluster: "my-prometheus" # this config must match with ha_cluster_label config in Mimir
@@ -81,7 +81,13 @@ configuration.
 ## Install/Upgrade Mimir config
 
 Follow [Getting Started with Helm]({{< relref "../deploy-grafana-mimir/getting-started-helm-charts/_index.md" >}}) 
-documentation but add the following configuration bellow the `custom.yaml` file.
+documentation but add some configuration changes below.
+
+You can set Mimir HA deduplication configuration in global level or tenant level.
+
+### HA Deduplication Global
+
+To configure HA deduplication globally, add the following configuration below the `custom.yaml` file.
 
 ```yaml
 # other configurations above
@@ -101,11 +107,26 @@ mimir:
             host: <consul_endpoint>
 ```
 
-Make sure to install or upgrade the Mimir helm release using the above configuration.
+Make sure to install or upgrade the Mimir's helm release using the above configuration.
 
 ```bash
  helm -n mimir-test upgarde --install mimir grafana/mimir-distributed -f custom.yaml
 ```
+
+### HA Deduplication per tenant
+TODO: Test this
+
+To configure HA deduplication per-tenant, add the following configuration below the `custom.yaml` file.
+
+```yaml
+runtimeConfig:
+  <tenant-id>:
+      accept_ha_samples: true
+      ha_cluster_label: cluster
+      ha_replica_label: __replica__
+```
+
+Make sure to install or upgrade the Mimir's helm release using the above configuration.
 
 ## Verifying deduplication
 
