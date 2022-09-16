@@ -1882,7 +1882,7 @@ metaMonitoring:
     installOperator: false
 
     logs:
-      # Controls wherther to create resources related to PodLogs and LogsInstance
+      # -- Controls whether to create resources PodLogs and LogsInstance resources
       enabled: true
 
       # -- Default destination for logs. The config here is translated to Promtail client
@@ -1907,7 +1907,7 @@ metaMonitoring:
       additionalClientConfigs: []
 
     metrics:
-      # Controls wherther to create resources related to MetricsInstance and ServiceMonitor
+      # -- Controls whether to create MetricsInstance resources and ServiceMonitor resources for scraping Kubernetes (when .scrapeK8s.enabled=true).
       enabled: true
 
       # -- Default destination for metrics. The config here is translated to remote_write
