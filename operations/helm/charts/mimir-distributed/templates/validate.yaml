@@ -147,3 +147,12 @@
 {{- if not .Values.ingester.statefulSet.enabled -}}
 {{- fail "You have set ingester.statefulSet.enabled: false. Ingesters are stateful, kubernetes Deployment workloads are no longer supported. Please refer to the documentation for more details." }}
 {{- end -}}
+
+{{- with .Values.nginx -}}
+{{- if and .autoscaling.enabled .autoscaling.targetCPUUtilizationPercentage (not ((.resources).requests).cpu) -}}
+{{- fail "You have enabled nginx.autoscaling.targetCPUUtilizationPercentage, you must also set nginx.resources.requests.cpu." -}}
+{{- end -}}
+{{- if and .autoscaling.enabled .autoscaling.targetMemoryUtilizationPercentage (not ((.resources).requests).memory) -}}
+{{- fail "You have enabled nginx.autoscaling.targetMemoryUtilizationPercentage, you must also set nginx.resources.requests.memory." -}}
+{{- end -}}
+{{- end -}}
