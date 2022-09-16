@@ -20,6 +20,7 @@ spec:
         app.kubernetes.io/component: meta-monitoring
     # cluster label for logs is added in the LogsInstance
   metrics:
+    scrapeInterval: 60s
     instanceSelector:
       matchLabels:
         app.kubernetes.io/name: mimir
