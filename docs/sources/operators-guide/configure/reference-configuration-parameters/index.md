@@ -2003,7 +2003,7 @@ The `frontend_worker` block configures the worker running within the querier, pi
 
 ```yaml
 # Address of the query-frontend component, in host:port format. If multiple
-# query-frontends are running, the host should a DNS resolving to all
+# query-frontends are running, the host should be a DNS resolving to all
 # query-frontend instances. This option should be set only when query-scheduler
 # component is not in use.
 # CLI flag: -querier.frontend-address
