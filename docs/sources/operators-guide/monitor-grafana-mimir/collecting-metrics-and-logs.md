@@ -107,7 +107,6 @@ metaMonitoring:
             app.kubernetes.io/name: kube-state-metrics
 ```
 
-
 #### Sending metrics back into Mimir/GEM
 
 You can also send the collected metamonitoring metrics to the installation of Mimir or GEM.
@@ -126,7 +125,7 @@ metaMonitoring:
 
   metrics:
     remote:
-      url: 'http://<HELM_RELEASE_NAME>-mimir-nginx.mimir.svc/api/v1/push'
+      url: "http://<HELM_RELEASE_NAME>-mimir-nginx.mimir.svc/api/v1/push"
       headers:
         X-Scope-OrgID: metamonitoring
 ```
@@ -148,7 +147,7 @@ metaMonitoring:
 
   metrics:
     remote:
-      url: 'http://<HELM_RELEASE_NAME>-mimir-gateway.mimir.svc/api/v1/push'
+      url: "http://<HELM_RELEASE_NAME>-mimir-gateway.mimir.svc/api/v1/push"
       auth:
         username: metamonitoring
         passwordSecretName: gem-tokens
