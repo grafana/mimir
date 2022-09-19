@@ -19,15 +19,15 @@ You need to have a Grafana Mimir installed.
 Refer to [Configuring High Availability]({{< relref "../configuring-high-availability-deduplication.md" >}}) documents
 for high level description on the concept how Mimir deduplicate incoming HA samples.
 
-You also have to configure HA for Prometheus or Grafana Agent. Last, you need a KV store. In this guide you will 
+You also have to configure HA for Prometheus or Grafana Agent. Last, you need a KV store. In this guide you will
 use Consul. You will be guided on the setup if you haven't had one.
 
 ## Configure Prometheus or Grafana Agent to send HA external labels
 
-Configure Prometheus or Grafana Agent HA setup by setting label called `cluster` and `__replica__`. These two labels 
-name are default labels for HA setup in Grafana Mimir. If you want to change the labels, make sure to change it in Mimir 
-too to make Grafana Mimir and Prometheus/Grafana Agent config matches with each other, otherwise HA deduplication 
-wouldn't work. `cluster` label value must be same across replica belong to the same cluster. `__replica__` must be 
+Configure Prometheus or Grafana Agent HA setup by setting label called `cluster` and `__replica__`. These two labels
+name are default labels for HA setup in Grafana Mimir. If you want to change the labels, make sure to change it in Mimir
+too to make Grafana Mimir and Prometheus/Grafana Agent config matches with each other, otherwise HA deduplication
+wouldn't work. `cluster` label value must be same across replica belong to the same cluster. `__replica__` must be
 unique across different replica in the cluster.
 
 ```yaml
@@ -55,7 +55,7 @@ You can set Mimir HA deduplication configuration in global level or tenant level
 
 ### HA Deduplication Global
 
-You need a Mimir setup installed by Helm. Add the following configuration to your `values.yaml` to configure HA 
+You need a Mimir setup installed by Helm. Add the following configuration to your `values.yaml` to configure HA
 deduplication globally.
 
 ```yaml
@@ -90,10 +90,10 @@ Add the following configuration below the `values.yaml` file to configure HA ded
 ```yaml
 runtimeConfig:
   overrides:
-      <tenant-id>: # put real tenant ID here
-        accept_ha_samples: true
-        ha_cluster_label: cluster
-        ha_replica_label: __replica__
+    <tenant-id>: # put real tenant ID here
+      accept_ha_samples: true
+      ha_cluster_label: cluster
+      ha_replica_label: __replica__
 ```
 
 Upgrade the Mimir's helm release using the above configuration.
@@ -104,7 +104,7 @@ Upgrade the Mimir's helm release using the above configuration.
 
 ## Verifying deduplication
 
-After Consul, Prometheus and Mimir running. Port forward Mimir distributor service. The argument after port-forward must 
+After Consul, Prometheus and Mimir running. Port forward Mimir distributor service. The argument after port-forward must
 match your Mimir's distributor name.
 
 ```bash
