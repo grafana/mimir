@@ -226,8 +226,8 @@
           alert: $.alertName('RingMembersMismatch'),
           expr: |||
             (
-              avg by(%(alert_aggregation_labels)s) (sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ring_members{name=~"%(component)s",job=~"%(job)s"}))
-              != sum by(%(alert_aggregation_labels)s) (up{job=~"%(job)s"})
+              avg by(%(alert_aggregation_labels)s) (sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ring_members{name=~"%(job)s",job=~"(.*/)?%(job)s"}))
+              != sum by(%(alert_aggregation_labels)s) (up{job=~"(.*/)?%(job)s"})
             )
             and
             (
@@ -236,8 +236,7 @@
           ||| % {
             alert_aggregation_labels: $._config.alert_aggregation_labels,
             per_instance_label: $._config.per_instance_label,
-            component: component_job[1],
-            job: component_job[2],
+            job: component_job[1],
           },
           'for': '15m',
           labels: {
@@ -251,11 +250,11 @@
           },
         }
         for component_job in [
-          ['compactor', $._config.job_names.compactor, '.*/compactor'],
-          ['distributor', $._config.job_names.distributor, '.*/distributor'],
-          ['ingester', $._config.job_names.ingester, '.*/ingester.*'],
-          ['ruler', $._config.job_names.ruler, '.*/ruler'],
-          ['store-gateway', $._config.job_names.store_gateway, '.*/store-gateway.*'],
+          ['compactor', $._config.job_names.compactor],
+          ['distributor', $._config.job_names.distributor],
+          ['ingester', $._config.job_names.ingester],
+          ['ruler', $._config.job_names.ruler],
+          ['store-gateway', $._config.job_names.store_gateway],
         ]
       ],
     },
