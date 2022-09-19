@@ -23,7 +23,7 @@ for high level description on the concept. You also should read
 [Getting Started with Helm]({{< relref "../../deploy-grafana-mimir/getting-started-helm-charts/_index.md" >}}) on how
 to install Grafana Mimir using helm.
 
-You will need Prometheus in HA setup and Consul. You will be guided on the setup if you haven't had one.
+You will need Prometheus or Grafana Agent in HA setup and Consul. You will be guided on the setup if you haven't had one.
 
 ## Install Prometheus HA using Helm
 
