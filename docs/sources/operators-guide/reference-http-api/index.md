@@ -52,6 +52,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Label values cardinality](#label-values-cardinality)                                 | Querier, Query-frontend        | `GET, POST <prometheus-http-prefix>/api/v1/cardinality/label_values`      |
 | [Build information](#build-information)                                               | Querier, Query-frontend, Ruler | `GET <prometheus-http-prefix>/api/v1/status/buildinfo`                    |
 | [Get tenant ingestion stats](#get-tenant-ingestion-stats)                             | Querier                        | `GET /api/v1/user_stats`                                                  |
+| [Query-scheduler ring status](#query-scheduler-ring-status)                           | Query-scheduler                | `GET /query-scheduler/ring`                                               |
 | [Ruler ring status](#ruler-ring-status)                                               | Ruler                          | `GET /ruler/ring`                                                         |
 | [Ruler rules ](#ruler-rules)                                                          | Ruler                          | `GET /ruler/rule_groups`                                                  |
 | [List Prometheus rules](#list-prometheus-rules)                                       | Ruler                          | `GET <prometheus-http-prefix>/api/v1/rules`                               |
@@ -534,6 +535,17 @@ GET /api/v1/user_stats
 Returns realtime ingestion rate, for the authenticated tenant, in `JSON` format.
 
 Requires [authentication](#authentication).
+
+## Query-scheduler
+
+### Query-scheduler ring status
+
+```
+GET /query-scheduler/ring
+```
+
+Displays a web page with the query-scheduler hash ring status, including the state, healthy and last heartbeat time of each query-scheduler.
+The query-scheduler ring is available only when `-query-scheduler.service-discovery-mode` is set to `ring`.
 
 ## Ruler
 

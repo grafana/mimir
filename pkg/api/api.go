@@ -395,6 +395,11 @@ func (a *API) RegisterQueryFrontend2(f *frontendv2.Frontend) {
 }
 
 func (a *API) RegisterQueryScheduler(f *scheduler.Scheduler) {
+	a.indexPage.AddLinks(defaultWeight, "Query-scheduler", []IndexPageLink{
+		{Desc: "Ring status", Path: "/query-scheduler/ring"},
+	})
+	a.RegisterRoute("/query-scheduler/ring", http.HandlerFunc(f.RingHandler), false, true, "GET", "POST")
+
 	schedulerpb.RegisterSchedulerForFrontendServer(a.server.GRPC, f)
 	schedulerpb.RegisterSchedulerForQuerierServer(a.server.GRPC, f)
 }

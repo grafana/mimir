@@ -955,7 +955,10 @@ The `frontend` block configures the query-frontend.
 # CLI flag: -query-frontend.querier-forget-delay
 [querier_forget_delay: <duration> | default = 0s]
 
-# DNS hostname used for finding query-schedulers.
+# Address of the query-scheduler component, in host:port format. The host should
+# resolve to all query-scheduler instances. This option should be set only when
+# query-scheduler component is in use and
+# -query-scheduler.service-discovery-mode is set to 'dns'.
 # CLI flag: -query-frontend.scheduler-address
 [scheduler_address: <string> | default = ""]
 
@@ -1187,6 +1190,83 @@ grpc_client_config:
   # (advanced) Skip validating server certificate.
   # CLI flag: -query-scheduler.grpc-client-config.tls-insecure-skip-verify
   [tls_insecure_skip_verify: <boolean> | default = false]
+
+# (experimental) Service discovery mode that query-frontends and queriers use to
+# find query-scheduler instances. When query-scheduler ring-based service
+# discovery is enabled, this option needs be set on query-schedulers,
+# query-frontends and queriers. Supported values are: dns, ring.
+# CLI flag: -query-scheduler.service-discovery-mode
+[service_discovery_mode: <string> | default = "dns"]
+
+# The hash ring configuration. The query-schedulers hash ring is used for
+# service discovery.
+ring:
+  # The key-value store used to share the hash ring across multiple instances.
+  # When query-scheduler ring-based service discovery is enabled, this option
+  # needs be set on query-schedulers, query-frontends and queriers.
+  kvstore:
+    # Backend storage to use for the ring. Supported values are: consul, etcd,
+    # inmemory, memberlist, multi.
+    # CLI flag: -query-scheduler.ring.store
+    [store: <string> | default = "memberlist"]
+
+    # (advanced) The prefix for the keys in the store. Should end with a /.
+    # CLI flag: -query-scheduler.ring.prefix
+    [prefix: <string> | default = "collectors/"]
+
+    # The consul block configures the consul client.
+    # The CLI flags prefix for this block configuration is: query-scheduler.ring
+    [consul: <consul>]
+
+    # The etcd block configures the etcd client.
+    # The CLI flags prefix for this block configuration is: query-scheduler.ring
+    [etcd: <etcd>]
+
+    multi:
+      # (advanced) Primary backend storage used by multi-client.
+      # CLI flag: -query-scheduler.ring.multi.primary
+      [primary: <string> | default = ""]
+
+      # (advanced) Secondary backend storage used by multi-client.
+      # CLI flag: -query-scheduler.ring.multi.secondary
+      [secondary: <string> | default = ""]
+
+      # (advanced) Mirror writes to secondary store.
+      # CLI flag: -query-scheduler.ring.multi.mirror-enabled
+      [mirror_enabled: <boolean> | default = false]
+
+      # (advanced) Timeout for storing value to secondary store.
+      # CLI flag: -query-scheduler.ring.multi.mirror-timeout
+      [mirror_timeout: <duration> | default = 2s]
+
+  # (advanced) Period at which to heartbeat to the ring. 0 = disabled.
+  # CLI flag: -query-scheduler.ring.heartbeat-period
+  [heartbeat_period: <duration> | default = 15s]
+
+  # (advanced) The heartbeat timeout after which query-schedulers are considered
+  # unhealthy within the ring. When query-scheduler ring-based service discovery
+  # is enabled, this option needs be set on query-schedulers, query-frontends
+  # and queriers.
+  # CLI flag: -query-scheduler.ring.heartbeat-timeout
+  [heartbeat_timeout: <duration> | default = 1m]
+
+  # (advanced) Instance ID to register in the ring.
+  # CLI flag: -query-scheduler.ring.instance-id
+  [instance_id: <string> | default = "<hostname>"]
+
+  # List of network interface names to look up when finding the instance IP
+  # address.
+  # CLI flag: -query-scheduler.ring.instance-interface-names
+  [instance_interface_names: <list of strings> | default = [<private network interfaces>]]
+
+  # (advanced) Port to advertise in the ring (defaults to
+  # -server.grpc-listen-port).
+  # CLI flag: -query-scheduler.ring.instance-port
+  [instance_port: <int> | default = 0]
+
+  # (advanced) IP address to advertise in the ring. Default is auto-detected.
+  # CLI flag: -query-scheduler.ring.instance-addr
+  [instance_addr: <string> | default = ""]
 ```
 
 ### ruler
@@ -1920,15 +2000,17 @@ grpc_client_config:
 The `frontend_worker` block configures the worker running within the querier, picking up and executing queries enqueued by the query-frontend or the query-scheduler.
 
 ```yaml
-# Address of the query-frontend component, in host:port format. Only one of
-# -querier.frontend-address or -querier.scheduler-address can be set. If neither
-# is set, queries are only received via HTTP endpoint.
+# Address of the query-frontend component, in host:port format. If multiple
+# query-frontends are running, the host should be a DNS resolving to all
+# query-frontend instances. This option should be set only when query-scheduler
+# component is not in use.
 # CLI flag: -querier.frontend-address
 [frontend_address: <string> | default = ""]
 
-# Address of the query-scheduler component, in host:port format. Only one of
-# -querier.frontend-address or -querier.scheduler-address can be set. If neither
-# is set, queries are only received via HTTP endpoint.
+# Address of the query-scheduler component, in host:port format. The host should
+# resolve to all query-scheduler instances. This option should be set only when
+# query-scheduler component is in use and
+# -query-scheduler.service-discovery-mode is set to 'dns'.
 # CLI flag: -querier.scheduler-address
 [scheduler_address: <string> | default = ""]
 
@@ -2020,6 +2102,7 @@ The `etcd` block configures the etcd client. The supported CLI flags `<prefix>` 
 - `distributor.ha-tracker`
 - `distributor.ring`
 - `ingester.ring`
+- `query-scheduler.ring`
 - `ruler.ring`
 - `store-gateway.sharding-ring`
 
@@ -2083,6 +2166,7 @@ The `consul` block configures the consul client. The supported CLI flags `<prefi
 - `distributor.ha-tracker`
 - `distributor.ring`
 - `ingester.ring`
+- `query-scheduler.ring`
 - `ruler.ring`
 - `store-gateway.sharding-ring`
 
