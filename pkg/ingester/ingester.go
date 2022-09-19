@@ -95,6 +95,7 @@ const (
 	sampleOutOfBounds    = "sample-out-of-bounds"
 
 	replicationFactorStatsName             = "ingester_replication_factor"
+	ringKVStoreStatsName                   = "ingester_ring_kvstore"
 	memorySeriesStatsName                  = "ingester_inmemory_series"
 	memoryTenantsStatsName                 = "ingester_inmemory_tenants"
 	appendedSamplesStatsName               = "ingester_appended_samples"
@@ -262,6 +263,7 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 
 	// Track constant usage stats.
 	usagestats.GetInt(replicationFactorStatsName).Set(int64(cfg.IngesterRing.ReplicationFactor))
+	usagestats.GetString(ringKVStoreStatsName).Set(cfg.IngesterRing.KVStore.Store)
 
 	return &Ingester{
 		cfg:    cfg,
