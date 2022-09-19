@@ -11,7 +11,6 @@ import (
 	"context"
 	jsonstd "encoding/json"
 	"io"
-	"io/ioutil"
 	"math/rand"
 	"net/http"
 	"strconv"
@@ -658,7 +657,7 @@ func TestPrometheusResponse_JSONEncode(t *testing.T) {
 	resp, err := PrometheusCodec.EncodeResponse(context.Background(), res)
 	require.NoError(t, err)
 
-	out, err := ioutil.ReadAll(resp.Body)
+	out, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 
 	stdOut, err := jsonstd.Marshal(res)
