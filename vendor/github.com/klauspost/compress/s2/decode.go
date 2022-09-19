@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math"
 	"runtime"
 	"sync"
 )
@@ -719,7 +720,11 @@ func (r *Reader) Skip(n int64) error {
 			// decoded[i:j] contains decoded bytes that have not yet been passed on.
 			left := int64(r.j - r.i)
 			if left >= n {
-				r.i += int(n)
+				tmp := int64(r.i) + n
+				if tmp > math.MaxInt32 {
+					return errors.New("s2: internal overflow in skip")
+				}
+				r.i = int(tmp)
 				return nil
 			}
 			n -= int64(r.j - r.i)
@@ -791,6 +796,7 @@ func (r *Reader) Skip(n int64) error {
 			} else {
 				// Skip block completely
 				n -= int64(dLen)
+				r.blockStart += int64(dLen)
 				dLen = 0
 			}
 			r.i, r.j = 0, dLen
@@ -921,6 +927,15 @@ func (r *Reader) ReadSeeker(random bool, index []byte) (*ReadSeeker, error) {
 	err = r.index.LoadStream(rs)
 	if err != nil {
 		if err == ErrUnsupported {
+			// If we don't require random seeking, reset input and return.
+			if !random {
+				_, err = rs.Seek(pos, io.SeekStart)
+				if err != nil {
+					return nil, ErrCantSeek{Reason: "resetting stream returned: " + err.Error()}
+				}
+				r.index = nil
+				return &ReadSeeker{Reader: r}, nil
+			}
 			return nil, ErrCantSeek{Reason: "input stream does not contain an index"}
 		}
 		return nil, ErrCantSeek{Reason: "reading index returned: " + err.Error()}
