@@ -16,7 +16,7 @@ require (
 	github.com/golang/snappy v0.0.4
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.0
-	github.com/grafana/dskit v0.0.0-20220914132351-2835b538fb18
+	github.com/grafana/dskit v0.0.0-20220919132630-c9f79ec48cc3
 	github.com/grafana/e2e v0.1.1-0.20220519104354-1db01e4751fe
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/json-iterator/go v1.1.12
