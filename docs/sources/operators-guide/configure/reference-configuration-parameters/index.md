@@ -955,11 +955,10 @@ The `frontend` block configures the query-frontend.
 # CLI flag: -query-frontend.querier-forget-delay
 [querier_forget_delay: <duration> | default = 0s]
 
-# Address of the query-scheduler component, in host:port format. If multiple
-# query-schedulers are running, the host should be a DNS resolving to all
-# query-scheduler instances. This option should be set only when query-scheduler
-# component is in use and -query-scheduler.service-discovery-mode is set to
-# 'dns'.
+# Address of the query-scheduler component, in host:port format. The host should
+# resolve to all query-scheduler instances. This option should be set only when
+# query-scheduler component is in use and
+# -query-scheduler.service-discovery-mode is set to 'dns'.
 # CLI flag: -query-frontend.scheduler-address
 [scheduler_address: <string> | default = ""]
 
@@ -1192,11 +1191,10 @@ grpc_client_config:
   # CLI flag: -query-scheduler.grpc-client-config.tls-insecure-skip-verify
   [tls_insecure_skip_verify: <boolean> | default = false]
 
-# (experimental) Which service discovery mode query-frontends and queriers
-# should use to discover query-scheduler instances. When query-scheduler
-# ring-based service discovery is enabled, this option needs be set on
-# query-schedulers, query-frontends and queriers. Supported values are: dns,
-# ring.
+# (experimental) Service discovery mode that query-frontends and queriers use to
+# find query-scheduler instances. When query-scheduler ring-based service
+# discovery is enabled, this option needs be set on query-schedulers,
+# query-frontends and queriers. Supported values are: dns, ring.
 # CLI flag: -query-scheduler.service-discovery-mode
 [service_discovery_mode: <string> | default = "dns"]
 
@@ -2009,11 +2007,10 @@ The `frontend_worker` block configures the worker running within the querier, pi
 # CLI flag: -querier.frontend-address
 [frontend_address: <string> | default = ""]
 
-# Address of the query-scheduler component, in host:port format. If multiple
-# query-schedulers are running, the host should be a DNS resolving to all
-# query-scheduler instances. This option should be set only when query-scheduler
-# component is in use and -query-scheduler.service-discovery-mode is set to
-# 'dns'.
+# Address of the query-scheduler component, in host:port format. The host should
+# resolve to all query-scheduler instances. This option should be set only when
+# query-scheduler component is in use and
+# -query-scheduler.service-discovery-mode is set to 'dns'.
 # CLI flag: -querier.scheduler-address
 [scheduler_address: <string> | default = ""]
 

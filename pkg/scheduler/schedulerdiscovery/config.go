@@ -29,7 +29,7 @@ type Config struct {
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
-	f.StringVar(&cfg.Mode, ModeFlagName, ModeDNS, fmt.Sprintf("Which service discovery mode query-frontends and queriers should use to discover query-scheduler instances.%s Supported values are: %s.", sharedOptionWithRingClient, strings.Join(modes, ", ")))
+	f.StringVar(&cfg.Mode, ModeFlagName, ModeDNS, fmt.Sprintf("Service discovery mode that query-frontends and queriers use to find query-scheduler instances.%s Supported values are: %s.", sharedOptionWithRingClient, strings.Join(modes, ", ")))
 	cfg.SchedulerRing.RegisterFlags(f, logger)
 }
 

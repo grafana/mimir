@@ -610,22 +610,24 @@ func TestQueryFrontendWithQueryShardingAndTooLargeEntryRequest(t *testing.T) {
 }
 
 func TestQueryFrontendWithQueryShardingAndTooManyRequests(t *testing.T) {
+	setupTestWithQueryScheduler := func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
+		flags = mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
+			"-query-scheduler.max-outstanding-requests-per-tenant": "1",
+		})
+
+		minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+		require.NoError(t, s.StartAndWaitReady(minio))
+
+		return "", flags
+	}
+
 	t.Run("with query-scheduler (DNS-based service discovery)", func(t *testing.T) {
 		runQueryFrontendWithQueryShardingHTTPTest(
 			t,
 			queryFrontendTestConfig{
 				querySchedulerEnabled:       true,
 				querySchedulerDiscoveryMode: "dns",
-				setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
-					flags = mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
-						"-query-scheduler.max-outstanding-requests-per-tenant": "1",
-					})
-
-					minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
-					require.NoError(t, s.StartAndWaitReady(minio))
-
-					return "", flags
-				},
+				setup:                       setupTestWithQueryScheduler,
 			},
 			http.StatusTooManyRequests,
 			true,
@@ -638,16 +640,7 @@ func TestQueryFrontendWithQueryShardingAndTooManyRequests(t *testing.T) {
 			queryFrontendTestConfig{
 				querySchedulerEnabled:       true,
 				querySchedulerDiscoveryMode: "ring",
-				setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
-					flags = mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
-						"-query-scheduler.max-outstanding-requests-per-tenant": "1",
-					})
-
-					minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
-					require.NoError(t, s.StartAndWaitReady(minio))
-
-					return "", flags
-				},
+				setup:                       setupTestWithQueryScheduler,
 			},
 			http.StatusTooManyRequests,
 			true,

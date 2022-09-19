@@ -138,7 +138,7 @@ frontend:
   align_queries_with_step: true
   cache_results: true
 
-  # Uncomment to use query-scheduler DNS-based service discovery.
+  # Uncomment when using "dns" service discovery mode for query-scheduler.
   # scheduler_address: "query-scheduler:9011"
 
   results_cache:
@@ -148,7 +148,7 @@ frontend:
     compression: snappy
 
 frontend_worker:
-  # Uncomment to use query-scheduler DNS-based service discovery.
+  # Uncomment when using "dns" service discovery mode for query-scheduler.
   # scheduler_address: "query-scheduler:9011"
 
   # Uncomment to skip query-scheduler and enqueue queries directly in the query-frontend.
