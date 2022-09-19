@@ -2736,6 +2736,12 @@ bucket_store:
     # CLI flag: -blocks-storage.bucket-store.index-header.map-populate-enabled
     [map_populate_enabled: <boolean> | default = false]
 
+  # (experimental) True to reject queries above the max number of concurrent
+  # queries to execute against long-term storage. If false, queries will block
+  # until they are able to run.
+  # CLI flag: -blocks-storage.bucket-store.max-concurrent-reject-over-limit
+  [max_concurrent_reject_over_limit: <boolean> | default = false]
+
 tsdb:
   # Directory to store TSDBs (including WAL) in the ingesters. This directory is
   # required to be persisted between restarts.

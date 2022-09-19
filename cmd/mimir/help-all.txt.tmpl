@@ -342,6 +342,8 @@ Usage of ./cmd/mimir/mimir:
     	Max size - in bytes - of a chunks pool, used to reduce memory allocations. The pool is shared across all tenants. 0 to disable the limit. (default 2147483648)
   -blocks-storage.bucket-store.max-concurrent int
     	Max number of concurrent queries to execute against the long-term storage. The limit is shared across all tenants. (default 100)
+  -blocks-storage.bucket-store.max-concurrent-reject-over-limit
+    	[experimental] True to reject queries above the max number of concurrent queries to execute against long-term storage. If false, queries will block until they are able to run.
   -blocks-storage.bucket-store.meta-sync-concurrency int
     	Number of Go routines to use when syncing block meta files from object storage per tenant. (default 20)
   -blocks-storage.bucket-store.metadata-cache.backend string
