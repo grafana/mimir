@@ -131,8 +131,8 @@ groups:
         Number of members in Mimir compactor hash ring does not match the expected number in {{ $labels.cluster }}/{{ $labels.namespace }}.
     expr: |
       (
-        avg by(cluster, namespace) (sum by(cluster, namespace, pod) (cortex_ring_members{name=~"compactor.*|cortex|mimir|mimir-backend",job=~"(.*/)?compactor.*|cortex|mimir|mimir-backend"}))
-        != sum by(cluster, namespace) (up{job=~"(.*/)?compactor.*|cortex|mimir|mimir-backend"})
+        avg by(cluster, namespace) (sum by(cluster, namespace, pod) (cortex_ring_members{name="compactor",job=~"(.*/)?(compactor.*|cortex|mimir|mimir-backend)"}))
+        != sum by(cluster, namespace) (up{job=~"(.*/)?(compactor.*|cortex|mimir|mimir-backend)"})
       )
       and
       (
@@ -148,7 +148,7 @@ groups:
         Number of members in Mimir distributor hash ring does not match the expected number in {{ $labels.cluster }}/{{ $labels.namespace }}.
     expr: |
       (
-        avg by(cluster, namespace) (sum by(cluster, namespace, pod) (cortex_ring_members{name=~"(distributor|cortex|mimir|mimir-write)",job=~"(.*/)?(distributor|cortex|mimir|mimir-write)"}))
+        avg by(cluster, namespace) (sum by(cluster, namespace, pod) (cortex_ring_members{name="distributor",job=~"(.*/)?(distributor|cortex|mimir|mimir-write)"}))
         != sum by(cluster, namespace) (up{job=~"(.*/)?(distributor|cortex|mimir|mimir-write)"})
       )
       and
@@ -165,7 +165,7 @@ groups:
         Number of members in Mimir ingester hash ring does not match the expected number in {{ $labels.cluster }}/{{ $labels.namespace }}.
     expr: |
       (
-        avg by(cluster, namespace) (sum by(cluster, namespace, pod) (cortex_ring_members{name=~"(ingester.*|cortex|mimir|mimir-write)",job=~"(.*/)?(ingester.*|cortex|mimir|mimir-write)"}))
+        avg by(cluster, namespace) (sum by(cluster, namespace, pod) (cortex_ring_members{name="ingester",job=~"(.*/)?(ingester.*|cortex|mimir|mimir-write)"}))
         != sum by(cluster, namespace) (up{job=~"(.*/)?(ingester.*|cortex|mimir|mimir-write)"})
       )
       and
@@ -182,7 +182,7 @@ groups:
         Number of members in Mimir ruler hash ring does not match the expected number in {{ $labels.cluster }}/{{ $labels.namespace }}.
     expr: |
       (
-        avg by(cluster, namespace) (sum by(cluster, namespace, pod) (cortex_ring_members{name=~"(ruler|cortex|mimir|mimir-backend)",job=~"(.*/)?(ruler|cortex|mimir|mimir-backend)"}))
+        avg by(cluster, namespace) (sum by(cluster, namespace, pod) (cortex_ring_members{name="ruler",job=~"(.*/)?(ruler|cortex|mimir|mimir-backend)"}))
         != sum by(cluster, namespace) (up{job=~"(.*/)?(ruler|cortex|mimir|mimir-backend)"})
       )
       and
@@ -199,7 +199,7 @@ groups:
         Number of members in Mimir store-gateway hash ring does not match the expected number in {{ $labels.cluster }}/{{ $labels.namespace }}.
     expr: |
       (
-        avg by(cluster, namespace) (sum by(cluster, namespace, pod) (cortex_ring_members{name=~"(store-gateway.*|cortex|mimir|mimir-backend)",job=~"(.*/)?(store-gateway.*|cortex|mimir|mimir-backend)"}))
+        avg by(cluster, namespace) (sum by(cluster, namespace, pod) (cortex_ring_members{name="store-gateway",job=~"(.*/)?(store-gateway.*|cortex|mimir|mimir-backend)"}))
         != sum by(cluster, namespace) (up{job=~"(.*/)?(store-gateway.*|cortex|mimir|mimir-backend)"})
       )
       and
