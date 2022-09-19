@@ -6,7 +6,7 @@ local filename = 'mimir-rollout-progress.json';
     namespace_matcher: $.namespaceMatcher(),
     per_cluster_label: $._config.per_cluster_label,
     gateway_job_matcher: $.jobMatcher($._config.job_names.gateway),
-    gateway_write_routes_regex: 'api_(v1|prom)_push',
+    gateway_write_routes_regex: 'api_(v1|prom)_push|otlp_v1_metrics',
     gateway_read_routes_regex: '(prometheus|api_prom)_api_v1_.+',
     all_services_regex: '.*(%s).*' % std.join('|', ['cortex-gw', 'distributor', 'ingester', 'query-frontend', 'query-scheduler', 'querier', 'compactor', 'store-gateway', 'ruler', 'alertmanager', 'overrides-exporter', 'cortex', 'mimir']),
   },

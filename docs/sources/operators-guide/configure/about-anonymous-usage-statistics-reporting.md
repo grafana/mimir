@@ -10,8 +10,8 @@ weight: 30
 Grafana Mimir includes a system that optionally and anonymously reports non-sensitive, non-personally identifiable information about the running Mimir cluster to a remote statistics server.
 Mimir maintainers use this anonymous information to learn more about how the open source community runs Mimir and what the Mimir team should focus on when working on the next features and documentation improvements.
 
-The anonymous usage statistics reporting is **disabled by default**.
-If you agree to anonymous collection of usage statistics, you can enable this feature.
+The anonymous usage statistics reporting is **enabled by default**.
+You can opt-out setting the CLI flag `-usage-stats.enabled=false` or its respective YAML configuration option.
 
 ## The statistics server
 
@@ -35,10 +35,12 @@ When the usage statistics reporting is enabled, Grafana Mimir collects the follo
   - The `-target` parameter value, such as `all` when running Mimir in monolithic mode.
   - The `-blocks-storage.backend` value, such as `s3`.
   - The `-ingester.ring.replication-factor` value, such as `3`.
+  - The minimum and maximum value of `-ingester.out-of-order-time-window`, which can be overridden on a per-tenant basis (the tenant ID is not shared).
 - Information about the Mimir **cluster scale**:
   - Ingester:
     - The number of in-memory series.
     - The number of tenants that have in-memory series.
+    - The number of tenants that have out-of-order ingestion enabled.
     - The number of samples and exemplars ingested.
   - Querier, _where no information is tracked about the actual request or query_:
     - The number of requests to queriers that are split by API endpoint type:
@@ -53,11 +55,12 @@ When the usage statistics reporting is enabled, Grafana Mimir collects the follo
 
 > **Note**: Mimir maintainers commit to keeping the list of tracked information updated over time, and reporting any change both via the CHANGELOG and the release notes.
 
-## Enable the anonymous usage statistics reporting
+## Disable the anonymous usage statistics reporting
 
-If you would like to participate in usage statistics reporting, set the CLI flag `-usage-stats.enabled=true` or change the following YAML configuration:
+If possible, we ask you to keep the usage reporting feature enabled and help us understand more about how the open source community runs Mimir.
+In case you want to opt-out from anonymous usage statistics reporting, set the CLI flag `-usage-stats.enabled=false` or change the following YAML configuration:
 
 ```yaml
 usage_stats:
-  enabled: true
+  enabled: false
 ```

@@ -22,8 +22,8 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
+	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
@@ -43,7 +43,8 @@ type frontendSchedulerWorkers struct {
 	// Channel with requests that should be forwarded to the scheduler.
 	requestsCh <-chan *frontendRequest
 
-	watcher services.Service
+	schedulerDiscovery        services.Service
+	schedulerDiscoveryWatcher *services.FailureWatcher
 
 	mu sync.Mutex
 	// Set to nil when stop is called... no more workers are created afterwards.
@@ -54,33 +55,45 @@ type frontendSchedulerWorkers struct {
 
 func newFrontendSchedulerWorkers(cfg Config, frontendAddress string, requestsCh <-chan *frontendRequest, log log.Logger, reg prometheus.Registerer) (*frontendSchedulerWorkers, error) {
 	f := &frontendSchedulerWorkers{
-		cfg:             cfg,
-		log:             log,
-		frontendAddress: frontendAddress,
-		requestsCh:      requestsCh,
-		workers:         map[string]*frontendSchedulerWorker{},
+		cfg:                       cfg,
+		log:                       log,
+		frontendAddress:           frontendAddress,
+		requestsCh:                requestsCh,
+		workers:                   map[string]*frontendSchedulerWorker{},
+		schedulerDiscoveryWatcher: services.NewFailureWatcher(),
 		enqueuedRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_query_frontend_workers_enqueued_requests_total",
 			Help: "Total number of requests enqueued by each query frontend worker (regardless of the result), labeled by scheduler address.",
 		}, []string{schedulerAddressLabel}),
 	}
 
-	w, err := util.NewDNSWatcher(cfg.SchedulerAddress, cfg.DNSLookupPeriod, f)
+	var err error
+	f.schedulerDiscovery, err = schedulerdiscovery.NewServiceDiscovery(cfg.QuerySchedulerDiscovery, cfg.SchedulerAddress, cfg.DNSLookupPeriod, "query-frontend", f, log, reg)
 	if err != nil {
 		return nil, err
 	}
 
-	f.watcher = w
-	f.Service = services.NewIdleService(f.starting, f.stopping)
+	f.Service = services.NewBasicService(f.starting, f.running, f.stopping)
 	return f, nil
 }
 
 func (f *frontendSchedulerWorkers) starting(ctx context.Context) error {
-	return services.StartAndAwaitRunning(ctx, f.watcher)
+	f.schedulerDiscoveryWatcher.WatchService(f.schedulerDiscovery)
+
+	return services.StartAndAwaitRunning(ctx, f.schedulerDiscovery)
+}
+
+func (f *frontendSchedulerWorkers) running(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return nil
+	case err := <-f.schedulerDiscoveryWatcher.Chan():
+		return errors.Wrap(err, "query-frontend workers subservice failed")
+	}
 }
 
 func (f *frontendSchedulerWorkers) stopping(_ error) error {
-	err := services.StopAndAwaitTerminated(context.Background(), f.watcher)
+	err := services.StopAndAwaitTerminated(context.Background(), f.schedulerDiscovery)
 
 	f.mu.Lock()
 	defer f.mu.Unlock()

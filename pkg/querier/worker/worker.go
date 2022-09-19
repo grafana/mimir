@@ -8,6 +8,7 @@ package worker
 import (
 	"context"
 	"flag"
+	"fmt"
 	"os"
 	"sync"
 	"time"
@@ -21,22 +22,25 @@ import (
 	"github.com/weaveworks/common/httpgrpc"
 	"google.golang.org/grpc"
 
+	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/util"
 )
 
 type Config struct {
-	FrontendAddress       string        `yaml:"frontend_address"`
-	SchedulerAddress      string        `yaml:"scheduler_address"`
-	DNSLookupPeriod       time.Duration `yaml:"dns_lookup_duration" category:"advanced"`
-	MaxConcurrentRequests int           `yaml:"-"` // Must be same as passed to PromQL Engine.
-	QuerierID             string        `yaml:"id" category:"advanced"`
-
+	FrontendAddress  string            `yaml:"frontend_address"`
+	SchedulerAddress string            `yaml:"scheduler_address"`
+	DNSLookupPeriod  time.Duration     `yaml:"dns_lookup_duration" category:"advanced"`
+	QuerierID        string            `yaml:"id" category:"advanced"`
 	GRPCClientConfig grpcclient.Config `yaml:"grpc_client_config"`
+
+	// This configuration is injected internally.
+	MaxConcurrentRequests   int                       `yaml:"-"` // Must be same as passed to PromQL Engine.
+	QuerySchedulerDiscovery schedulerdiscovery.Config `yaml:"-"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
-	f.StringVar(&cfg.SchedulerAddress, "querier.scheduler-address", "", "Address of the query-scheduler component, in host:port format. Only one of -querier.frontend-address or -querier.scheduler-address can be set. If neither is set, queries are only received via HTTP endpoint.")
-	f.StringVar(&cfg.FrontendAddress, "querier.frontend-address", "", "Address of the query-frontend component, in host:port format. Only one of -querier.frontend-address or -querier.scheduler-address can be set. If neither is set, queries are only received via HTTP endpoint.")
+	f.StringVar(&cfg.SchedulerAddress, "querier.scheduler-address", "", fmt.Sprintf("Address of the query-scheduler component, in host:port format. The host should resolve to all query-scheduler instances. This option should be set only when query-scheduler component is in use and -%s is set to '%s'.", schedulerdiscovery.ModeFlagName, schedulerdiscovery.ModeDNS))
+	f.StringVar(&cfg.FrontendAddress, "querier.frontend-address", "", "Address of the query-frontend component, in host:port format. If multiple query-frontends are running, the host should be a DNS resolving to all query-frontend instances. This option should be set only when query-scheduler component is not in use.")
 	f.DurationVar(&cfg.DNSLookupPeriod, "querier.dns-lookup-period", 10*time.Second, "How often to query DNS for query-frontend or query-scheduler address.")
 	f.StringVar(&cfg.QuerierID, "querier.id", "", "Querier ID, sent to the query-frontend to identify requests from the same querier. Defaults to hostname.")
 
@@ -47,10 +51,18 @@ func (cfg *Config) Validate(log log.Logger) error {
 	if cfg.FrontendAddress != "" && cfg.SchedulerAddress != "" {
 		return errors.New("frontend address and scheduler address are mutually exclusive, please use only one")
 	}
+	if cfg.QuerySchedulerDiscovery.Mode == schedulerdiscovery.ModeRing && (cfg.FrontendAddress != "" || cfg.SchedulerAddress != "") {
+		return fmt.Errorf("frontend address and scheduler address cannot be specified when query-scheduler service discovery mode is set to '%s'", cfg.QuerySchedulerDiscovery.Mode)
+	}
+
 	return cfg.GRPCClientConfig.Validate(log)
 }
 
-// Handler for HTTP requests wrapped in protobuf messages.
+func (cfg *Config) IsFrontendOrSchedulerConfigured() bool {
+	return cfg.FrontendAddress != "" || cfg.SchedulerAddress != "" || cfg.QuerySchedulerDiscovery.Mode == schedulerdiscovery.ModeRing
+}
+
+// RequestHandler for HTTP requests wrapped in protobuf messages.
 type RequestHandler interface {
 	Handle(context.Context, *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error)
 }
@@ -71,6 +83,15 @@ type processor interface {
 	notifyShutdown(ctx context.Context, conn *grpc.ClientConn, address string)
 }
 
+// serviceDiscoveryNotifications is the interface implemented by the component receiving service discovery notifications.
+type serviceDiscoveryNotifications interface {
+	AddressAdded(address string)
+	AddressRemoved(address string)
+}
+
+// serviceDiscoveryFactory makes a new service discovery instance.
+type serviceDiscoveryFactory func(receiver serviceDiscoveryNotifications) (services.Service, error)
+
 type querierWorker struct {
 	*services.BasicService
 
@@ -79,7 +100,9 @@ type querierWorker struct {
 
 	processor processor
 
-	subservices *services.Manager
+	// Subservices manager.
+	subservices        *services.Manager
+	subservicesWatcher *services.FailureWatcher
 
 	mu sync.Mutex
 	// Set to nil when stop is called... no more managers are created afterwards.
@@ -97,29 +120,35 @@ func NewQuerierWorker(cfg Config, handler RequestHandler, log log.Logger, reg pr
 
 	var processor processor
 	var servs []services.Service
-	var address string
+	var factory serviceDiscoveryFactory
 
 	switch {
-	case cfg.SchedulerAddress != "":
+	case cfg.SchedulerAddress != "" || cfg.QuerySchedulerDiscovery.Mode == schedulerdiscovery.ModeRing:
 		level.Info(log).Log("msg", "Starting querier worker connected to query-scheduler", "scheduler", cfg.SchedulerAddress)
 
-		address = cfg.SchedulerAddress
+		factory = func(receiver serviceDiscoveryNotifications) (services.Service, error) {
+			return schedulerdiscovery.NewServiceDiscovery(cfg.QuerySchedulerDiscovery, cfg.SchedulerAddress, cfg.DNSLookupPeriod, "querier", receiver, log, reg)
+		}
+
 		processor, servs = newSchedulerProcessor(cfg, handler, log, reg)
 
 	case cfg.FrontendAddress != "":
 		level.Info(log).Log("msg", "Starting querier worker connected to query-frontend", "frontend", cfg.FrontendAddress)
 
-		address = cfg.FrontendAddress
+		factory = func(receiver serviceDiscoveryNotifications) (services.Service, error) {
+			return util.NewDNSWatcher(cfg.FrontendAddress, cfg.DNSLookupPeriod, receiver)
+		}
+
 		processor = newFrontendProcessor(cfg, handler, log)
 
 	default:
 		return nil, errors.New("no query-scheduler or query-frontend address")
 	}
 
-	return newQuerierWorkerWithProcessor(cfg, log, processor, address, servs)
+	return newQuerierWorkerWithProcessor(cfg, log, processor, factory, servs)
 }
 
-func newQuerierWorkerWithProcessor(cfg Config, log log.Logger, processor processor, address string, servs []services.Service) (*querierWorker, error) {
+func newQuerierWorkerWithProcessor(cfg Config, log log.Logger, processor processor, newServiceDiscovery serviceDiscoveryFactory, servs []services.Service) (*querierWorker, error) {
 	f := &querierWorker{
 		cfg:       cfg,
 		log:       log,
@@ -127,9 +156,9 @@ func newQuerierWorkerWithProcessor(cfg Config, log log.Logger, processor process
 		processor: processor,
 	}
 
-	// Empty address is only used in tests, where individual targets are added manually.
-	if address != "" {
-		w, err := util.NewDNSWatcher(address, cfg.DNSLookupPeriod, f)
+	// There's no service discovery in some tests.
+	if newServiceDiscovery != nil {
+		w, err := newServiceDiscovery(f)
 		if err != nil {
 			return nil, err
 		}
@@ -144,9 +173,10 @@ func newQuerierWorkerWithProcessor(cfg Config, log log.Logger, processor process
 		}
 
 		f.subservices = subservices
+		f.subservicesWatcher = services.NewFailureWatcher()
 	}
 
-	f.BasicService = services.NewIdleService(f.starting, f.stopping)
+	f.BasicService = services.NewBasicService(f.starting, f.running, f.stopping)
 	return f, nil
 }
 
@@ -154,7 +184,18 @@ func (w *querierWorker) starting(ctx context.Context) error {
 	if w.subservices == nil {
 		return nil
 	}
+
+	w.subservicesWatcher.WatchManager(w.subservices)
 	return services.StartManagerAndAwaitHealthy(ctx, w.subservices)
+}
+
+func (w *querierWorker) running(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return nil
+	case err := <-w.subservicesWatcher.Chan(): // The channel will be nil if w.subservicesWatcher is not set.
+		return errors.Wrap(err, "querier worker subservice failed")
+	}
 }
 
 func (w *querierWorker) stopping(_ error) error {
@@ -170,7 +211,7 @@ func (w *querierWorker) stopping(_ error) error {
 		return nil
 	}
 
-	// Stop DNS watcher and services used by processor.
+	// Stop service discovery and services used by processor.
 	return services.StopManagerAndAwaitStopped(context.Background(), w.subservices)
 }
 

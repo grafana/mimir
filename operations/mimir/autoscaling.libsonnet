@@ -40,6 +40,22 @@
       // by KEDA, while scaling from 1+->N is managed by HPA (and this setting doesn't apply to HPA).
       pollingInterval: 10,
 
+      advanced: {
+        horizontalPodAutoscalerConfig: {
+          behavior: {
+            scaleDown: {
+              policies: [{
+                // Allow to scale down up to 10% of pods every 1m. This prevents from suddenly scaling to minRepliacs
+                // when Prometheus comes back up after a long outage (longer than stabilizationWindowSeconds=300s)
+                type: 'Percent',
+                value: 10,
+                periodSeconds: 60,
+              }],
+            },
+          },
+        },
+      },
+
       triggers: [
         {
           type: 'prometheus',

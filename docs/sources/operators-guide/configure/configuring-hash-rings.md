@@ -18,6 +18,7 @@ The CLI flags used to configure the hash ring of each component have the followi
 - Distributors: `-distributor.ring.*`
 - Compactors: `-compactor.ring.*`
 - Store-gateways: `-store-gateway.sharding-ring.*`
+- (Optional) Query-schedulers: `-query-scheduler.ring.*`
 - (Optional) Rulers: `-ruler.ring.*`
 - (Optional) Alertmanagers: `-alertmanager.sharding-ring.*`
 

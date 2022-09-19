@@ -1,5 +1,6 @@
 {{- if not .Values.enterprise.enabled -}}
 {{- if .Values.nginx.autoscaling.enabled }}
+{{- if eq (include "mimir.hpa.version" .) "autoscaling/v2beta1" }}
 apiVersion: autoscaling/v2beta1
 kind: HorizontalPodAutoscaler
 metadata:
@@ -27,5 +28,6 @@ spec:
         name: cpu
         targetAverageUtilization: {{ . }}
   {{- end }}
+{{- end -}}
 {{- end -}}
 {{- end -}}

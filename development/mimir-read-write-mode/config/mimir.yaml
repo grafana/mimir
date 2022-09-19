@@ -45,15 +45,8 @@ ruler_storage:
   s3:
     bucket_name:       mimir-ruler
 
-frontend:
-  # Currently we can't specify multiple addresses, so we're just using a single replica for the query-scheduler.
-  # See: https://github.com/grafana/mimir/issues/2012
-  scheduler_address: "mimir-backend-1:9095"
-
-frontend_worker:
-  # Currently we can't specify multiple addresses, so we're just using a single replica for the query-scheduler.
-  # See: https://github.com/grafana/mimir/issues/2012
-  scheduler_address: "mimir-backend-1:9095"
+query_scheduler:
+  service_discovery_mode: "ring"
 
 alertmanager:
   data_dir: /data/alertmanager

@@ -71,5 +71,14 @@ ruler_storage:
     secret_access_key: supersecret
     insecure: true
 
+query_scheduler:
+  # Comment to not use the query-scheduler and enqueue queries directly in the query-frontend.
+  service_discovery_mode: "ring"
+  ring:
+    kvstore:
+      store: consul
+      consul:
+        host: consul:8500
+
 runtime_config:
   file: ./config/runtime.yaml

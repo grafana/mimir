@@ -22,6 +22,7 @@ import (
 	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/user"
@@ -30,6 +31,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 )
 
@@ -381,5 +383,44 @@ func (m *mockScheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_F
 		if err := frontend.Send(reply); err != nil {
 			return err
 		}
+	}
+}
+
+func TestConfig_Validate(t *testing.T) {
+	tests := map[string]struct {
+		setup       func(cfg *Config)
+		expectedErr string
+	}{
+		"should pass with default config": {
+			setup: func(cfg *Config) {},
+		},
+		"should pass if scheduler address is configured, and query-scheduler discovery mode is the default one": {
+			setup: func(cfg *Config) {
+				cfg.SchedulerAddress = "localhost:9095"
+			},
+		},
+		"should fail if query-scheduler service discovery is set to ring, and scheduler address is configured": {
+			setup: func(cfg *Config) {
+				cfg.QuerySchedulerDiscovery.Mode = schedulerdiscovery.ModeRing
+				cfg.SchedulerAddress = "localhost:9095"
+			},
+			expectedErr: `scheduler address cannot be specified when query-scheduler service discovery mode is set to 'ring'`,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			cfg := Config{}
+			flagext.DefaultValues(&cfg)
+			testData.setup(&cfg)
+
+			actualErr := cfg.Validate(log.NewNopLogger())
+			if testData.expectedErr == "" {
+				require.NoError(t, actualErr)
+			} else {
+				require.Error(t, actualErr)
+				assert.ErrorContains(t, actualErr, testData.expectedErr)
+			}
+		})
 	}
 }

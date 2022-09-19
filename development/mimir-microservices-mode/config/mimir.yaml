@@ -138,6 +138,9 @@ frontend:
   align_queries_with_step: true
   cache_results: true
 
+  # Uncomment when using "dns" service discovery mode for query-scheduler.
+  # scheduler_address: "query-scheduler:9011"
+
   results_cache:
     backend: "memcached"
     memcached:
@@ -145,10 +148,15 @@ frontend:
     compression: snappy
 
 frontend_worker:
-  frontend_address: "query-frontend:9007"
+  # Uncomment when using "dns" service discovery mode for query-scheduler.
+  # scheduler_address: "query-scheduler:9011"
 
-  # By setting scheduler_address, querier worker would use scheduler instead of frontend.
-  # scheduler_address: "query-scheduler:9012"
+  # Uncomment to skip query-scheduler and enqueue queries directly in the query-frontend.
+  # frontend_address: "query-frontend:9007"
+
+query_scheduler:
+  # Change to "dns" to switch to query-scheduler DNS-based service discovery.
+  service_discovery_mode: "ring"
 
 limits:
   # Limit max query time range to 31d

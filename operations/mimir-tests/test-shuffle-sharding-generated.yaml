@@ -1005,7 +1005,6 @@ spec:
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.num-tokens=512
         - -ingester.ring.prefix=
-        - -ingester.ring.readiness-check-ring-health=false
         - -ingester.ring.replication-factor=3
         - -ingester.ring.store=memberlist
         - -ingester.ring.tokens-file-path=/data/tokens
