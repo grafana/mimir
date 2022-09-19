@@ -62,7 +62,7 @@ func NewForwarder(cfg Config, reg prometheus.Registerer, log log.Logger) Forward
 		client: http.Client{
 			Transport: &http.Transport{
 				MaxIdleConns:        0,                      // no limit
-				MaxIdleConnsPerHost: cfg.RequestConcurrency, // if not set, it defaults to 2
+				MaxIdleConnsPerHost: cfg.RequestConcurrency, // if MaxIdleConnsPerHost is left as 0, default value of 2 is used.
 				MaxConnsPerHost:     0,                      // no limit
 				IdleConnTimeout:     10 * time.Second,       // don't keep unused connections for too long
 			},
