@@ -927,7 +927,7 @@
           "required": false,
           "desc": "Timeout for downstream ingesters.",
           "fieldValue": null,
-          "fieldDefaultValue": 20000000000,
+          "fieldDefaultValue": 2000000000,
           "fieldFlag": "distributor.remote-timeout",
           "fieldType": "duration",
           "fieldCategory": "advanced"
@@ -1383,7 +1383,7 @@
               "required": false,
               "desc": "Timeout for requests to ingestion endpoints to which we forward metrics.",
               "fieldValue": null,
-              "fieldDefaultValue": 10000000000,
+              "fieldDefaultValue": 2000000000,
               "fieldFlag": "distributor.forwarding.request-timeout",
               "fieldType": "duration",
               "fieldCategory": "experimental"
@@ -2296,7 +2296,7 @@
               "required": false,
               "desc": "When enabled the readiness probe succeeds only after all instances are ACTIVE and healthy in the ring, otherwise only the instance itself is checked. This option should be disabled if in your cluster multiple instances can be rolled out simultaneously, otherwise rolling updates may be slowed down.",
               "fieldValue": null,
-              "fieldDefaultValue": true,
+              "fieldDefaultValue": false,
               "fieldFlag": "ingester.ring.readiness-check-ring-health",
               "fieldType": "boolean",
               "fieldCategory": "advanced"
@@ -8328,6 +8328,7 @@
             "Host": "localhost:8080",
             "Path": "/alertmanager",
             "RawPath": "",
+            "OmitHost": false,
             "ForceQuery": false,
             "RawQuery": "",
             "Fragment": "",
@@ -10243,7 +10244,7 @@
           "required": false,
           "desc": "Enable anonymous usage reporting.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "usage-stats.enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"

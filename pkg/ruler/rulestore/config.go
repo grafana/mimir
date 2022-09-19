@@ -9,6 +9,7 @@ import (
 	"flag"
 	"reflect"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/grafana/dskit/flagext"
 
 	"github.com/grafana/mimir/pkg/ruler/rulestore/local"
@@ -35,5 +36,28 @@ func (cfg *Config) IsDefaults() bool {
 	defaults := Config{}
 	flagext.DefaultValues(&defaults)
 
-	return reflect.DeepEqual(*cfg, defaults)
+	// Note: cmp.Equal will panic if it encounters anything it cannot handle.
+	return cmp.Equal(*cfg, defaults, cmp.FilterPath(filterNonYaml, cmp.Ignore()), cmp.Comparer(equalSecrets))
+}
+
+// Return true if the path contains a struct field with tag `yaml:"-"`.
+func filterNonYaml(path cmp.Path) bool {
+	for i, step := range path {
+		// If we're not looking at a struct, or next step not available, skip.
+		if step.Type().Kind() != reflect.Struct || i >= len(path)-1 {
+			continue
+		}
+		field := step.Type().Field((path[i+1].(cmp.StructField)).Index())
+		if tag, ok := field.Tag.Lookup("yaml"); ok {
+			if tag == "-" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// Helper for cmp.Equal to compare Secret values for equality, since it has unexported fields.
+func equalSecrets(a, b flagext.Secret) bool {
+	return a == b
 }

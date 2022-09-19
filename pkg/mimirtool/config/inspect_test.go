@@ -246,7 +246,7 @@ func TestInspectConfig_HasDefaultValues(t *testing.T) {
 	d, err := InspectConfig(&mimir.Config{})
 	require.NoError(t, err)
 	val := d.MustGetDefaultValue("distributor.remote_timeout")
-	assert.Equal(t, time.Second*20, val.AsDuration())
+	assert.Equal(t, time.Second*2, val.AsDuration())
 }
 
 func TestInspectConfig_LoadingAConfigHasCorrectTypes(t *testing.T) {

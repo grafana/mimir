@@ -63,6 +63,8 @@ spec:
         {{- toYaml .Values.compactor.nodeSelector | nindent 8 }}
       affinity:
         {{- toYaml .Values.compactor.affinity | nindent 8 }}
+      topologySpreadConstraints:
+        {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "compactor") | nindent 8 }}
       tolerations:
         {{- toYaml .Values.compactor.tolerations | nindent 8 }}
       terminationGracePeriodSeconds: {{ .Values.compactor.terminationGracePeriodSeconds }}

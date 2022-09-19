@@ -16,30 +16,30 @@ require (
 	github.com/golang/snappy v0.0.4
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.0
-	github.com/grafana/dskit v0.0.0-20220824072129-9956e2453a9f
+	github.com/grafana/dskit v0.0.0-20220914132351-2835b538fb18
 	github.com/grafana/e2e v0.1.1-0.20220519104354-1db01e4751fe
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/json-iterator/go v1.1.12
 	github.com/leanovate/gopter v0.2.4
-	github.com/minio/minio-go/v7 v7.0.30
+	github.com/minio/minio-go/v7 v7.0.36
 	github.com/mitchellh/go-wordwrap v1.0.0
 	github.com/oklog/ulid v1.3.1
 	github.com/opentracing-contrib/go-grpc v0.0.0-20210225150812-73cb765af46e
 	github.com/opentracing-contrib/go-stdlib v1.0.0
 	github.com/opentracing/opentracing-go v1.2.0
 	github.com/pkg/errors v0.9.1
-	github.com/prometheus/alertmanager v0.24.1-0.20220805150254-c732372d7d3b
+	github.com/prometheus/alertmanager v0.24.0
 	github.com/prometheus/client_golang v1.13.0
 	github.com/prometheus/client_model v0.2.0
 	github.com/prometheus/common v0.37.0
 	github.com/prometheus/prometheus v1.8.2-0.20220308163432-03831554a519
 	github.com/segmentio/fasthash v0.0.0-20180216231524-a72b379d632e
-	github.com/sirupsen/logrus v1.8.1
+	github.com/sirupsen/logrus v1.9.0
 	github.com/spf13/afero v1.6.0
 	github.com/stretchr/testify v1.8.0
 	github.com/thanos-io/thanos v0.26.1-0.20220602051129-a6f6ce060ed4
 	github.com/uber/jaeger-client-go v2.30.0+incompatible
-	github.com/weaveworks/common v0.0.0-20220810113439-c65105d60b18
+	github.com/weaveworks/common v0.0.0-20220915171148-7b5f6f3e74bc
 	go.uber.org/atomic v1.9.0
 	go.uber.org/goleak v1.1.12
 	golang.org/x/crypto v0.0.0-20220722155217-630584e8d5aa
@@ -53,6 +53,7 @@ require (
 
 require (
 	github.com/alecthomas/chroma v0.10.0
+	github.com/google/go-cmp v0.5.8
 	github.com/google/go-github/v32 v32.1.0
 	github.com/google/uuid v1.3.0
 	github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9
@@ -99,7 +100,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sso v1.9.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.14.0 // indirect
 	github.com/aws/smithy-go v1.10.0 // indirect
-	github.com/benbjohnson/clock v1.3.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bradfitz/gomemcache v0.0.0-20190913173617-a41fca850d0b // indirect
 	github.com/cenkalti/backoff/v4 v4.1.3 // indirect
@@ -136,7 +136,6 @@ require (
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/google/btree v1.0.1 // indirect
 	github.com/google/gnostic v0.5.7-v3refs // indirect
-	github.com/google/go-cmp v0.5.8 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/pprof v0.0.0-20220608213341-c488b8fa1db3 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.1.0 // indirect
@@ -163,8 +162,8 @@ require (
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/jpillora/backoff v1.0.0 // indirect
 	github.com/julienschmidt/httprouter v1.3.0 // indirect
-	github.com/klauspost/compress v1.15.6 // indirect
-	github.com/klauspost/cpuid/v2 v2.0.14 // indirect
+	github.com/klauspost/compress v1.15.9 // indirect
+	github.com/klauspost/cpuid/v2 v2.1.1 // indirect
 	github.com/kr/pretty v0.3.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-colorable v0.1.12 // indirect
@@ -225,12 +224,16 @@ require (
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto v0.0.0-20220628213854-d9e0b6570c03 // indirect
 	google.golang.org/protobuf v1.28.1 // indirect
-	gopkg.in/ini.v1 v1.66.4 // indirect
+	gopkg.in/ini.v1 v1.66.6 // indirect
 	gopkg.in/telebot.v3 v3.0.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20220401212409-b28bf2818661 // indirect
 	k8s.io/utils v0.0.0-20220210201930-3a6ce19ff2f9 // indirect
 	sigs.k8s.io/yaml v1.3.0 // indirect
 )
+
+// Version after v0.24.0 have a change in the email notifier that can panic on certain inputs. See:
+// https://github.com/prometheus/alertmanager/issues/3064
+replace github.com/prometheus/alertmanager => github.com/prometheus/alertmanager v0.24.0
 
 // Override since git.apache.org is down.  The docs say to fetch from github.
 replace git.apache.org/thrift.git => github.com/apache/thrift v0.0.0-20180902110319-2566ecd5d999

@@ -1,0 +1,36 @@
+---
+# Source: mimir-distributed/templates/querier/querier-servmon.yaml
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: metamonitoring-values-mimir-querier
+  namespace: "citestns"
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: metamonitoring-values
+    app.kubernetes.io/component: querier
+    app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/managed-by: Helm
+spec:
+  namespaceSelector:
+    matchNames:
+    - citestns
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: metamonitoring-values
+      app.kubernetes.io/component: querier
+    matchExpressions:
+      - key: prometheus.io/service-monitor
+        operator: NotIn
+        values:
+          - "false"
+  endpoints:
+    - port: http-metrics
+      relabelings:
+        - sourceLabels: [job]
+          replacement: "citestns/querier"
+          targetLabel: job
+        - replacement: "metamonitoring-values"
+          targetLabel: cluster
+      scheme: http

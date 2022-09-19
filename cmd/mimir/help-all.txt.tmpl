@@ -753,7 +753,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.forwarding.request-concurrency int
     	[experimental] Maximum concurrency at which forwarding requests get performed. (default 10)
   -distributor.forwarding.request-timeout duration
-    	[experimental] Timeout for requests to ingestion endpoints to which we forward metrics. (default 10s)
+    	[experimental] Timeout for requests to ingestion endpoints to which we forward metrics. (default 2s)
   -distributor.ha-tracker.cluster string
     	Prometheus label to look for in samples to identify a Prometheus HA cluster. (default "cluster")
   -distributor.ha-tracker.consul.acl-token string
@@ -835,7 +835,7 @@ Usage of ./cmd/mimir/mimir:
   -distributor.max-recv-msg-size int
     	Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected. (default 104857600)
   -distributor.remote-timeout duration
-    	Timeout for downstream ingesters. (default 20s)
+    	Timeout for downstream ingesters. (default 2s)
   -distributor.request-burst-size int
     	[experimental] Per-tenant allowed request burst size. 0 to disable.
   -distributor.request-rate-limit float
@@ -1047,7 +1047,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.ring.prefix string
     	The prefix for the keys in the store. Should end with a /. (default "collectors/")
   -ingester.ring.readiness-check-ring-health
-    	When enabled the readiness probe succeeds only after all instances are ACTIVE and healthy in the ring, otherwise only the instance itself is checked. This option should be disabled if in your cluster multiple instances can be rolled out simultaneously, otherwise rolling updates may be slowed down. (default true)
+    	When enabled the readiness probe succeeds only after all instances are ACTIVE and healthy in the ring, otherwise only the instance itself is checked. This option should be disabled if in your cluster multiple instances can be rolled out simultaneously, otherwise rolling updates may be slowed down.
   -ingester.ring.replication-factor int
     	Number of ingesters that each time series is replicated to. This option needs be set on ingesters, distributors, queriers and rulers when running in microservices mode. (default 3)
   -ingester.ring.store string
@@ -1800,7 +1800,7 @@ Usage of ./cmd/mimir/mimir:
   -tenant-federation.enabled
     	If enabled on all services, queries can be federated across multiple tenants. The tenant IDs involved need to be specified separated by a '|' character in the 'X-Scope-OrgID' header.
   -usage-stats.enabled
-    	[experimental] Enable anonymous usage reporting.
+    	[experimental] Enable anonymous usage reporting. (default true)
   -validation.create-grace-period duration
     	Controls how far into the future incoming samples are accepted compared to the wall clock. Any sample with timestamp `t` will be rejected if `t > (now + validation.create-grace-period)`. (default 10m)
   -validation.enforce-metadata-metric-name

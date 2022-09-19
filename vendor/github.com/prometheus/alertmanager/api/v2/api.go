@@ -73,11 +73,9 @@ type API struct {
 	Handler http.Handler
 }
 
-type (
-	groupsFn         func(func(*dispatch.Route) bool, func(*types.Alert, time.Time) bool) (dispatch.AlertGroups, map[prometheus_model.Fingerprint][]string)
-	getAlertStatusFn func(prometheus_model.Fingerprint) types.AlertStatus
-	setAlertStatusFn func(prometheus_model.LabelSet)
-)
+type groupsFn func(func(*dispatch.Route) bool, func(*types.Alert, time.Time) bool) (dispatch.AlertGroups, map[prometheus_model.Fingerprint][]string)
+type getAlertStatusFn func(prometheus_model.Fingerprint) types.AlertStatus
+type setAlertStatusFn func(prometheus_model.LabelSet)
 
 // NewAPI returns a new Alertmanager API v2
 func NewAPI(
@@ -227,14 +225,14 @@ func (api *API) getAlertsHandler(params alert_ops.GetAlertsParams) middleware.Re
 
 	matchers, err := parseFilter(params.Filter)
 	if err != nil {
-		level.Debug(logger).Log("msg", "Failed to parse matchers", "err", err)
+		level.Error(logger).Log("msg", "Failed to parse matchers", "err", err)
 		return alertgroup_ops.NewGetAlertGroupsBadRequest().WithPayload(err.Error())
 	}
 
 	if params.Receiver != nil {
 		receiverFilter, err = regexp.Compile("^(?:" + *params.Receiver + ")$")
 		if err != nil {
-			level.Debug(logger).Log("msg", "Failed to compile receiver regex", "err", err)
+			level.Error(logger).Log("msg", "Failed to compile receiver regex", "err", err)
 			return alert_ops.
 				NewGetAlertsBadRequest().
 				WithPayload(
@@ -356,7 +354,7 @@ func (api *API) getAlertGroupsHandler(params alertgroup_ops.GetAlertGroupsParams
 
 	matchers, err := parseFilter(params.Filter)
 	if err != nil {
-		level.Debug(logger).Log("msg", "Failed to parse matchers", "err", err)
+		level.Error(logger).Log("msg", "Failed to parse matchers", "err", err)
 		return alertgroup_ops.NewGetAlertGroupsBadRequest().WithPayload(err.Error())
 	}
 
@@ -494,7 +492,7 @@ func (api *API) getSilencesHandler(params silence_ops.GetSilencesParams) middlew
 		for _, matcherString := range params.Filter {
 			matcher, err := labels.ParseMatcher(matcherString)
 			if err != nil {
-				level.Debug(logger).Log("msg", "Failed to parse matchers", "err", err)
+				level.Error(logger).Log("msg", "Failed to parse matchers", "err", err)
 				return alert_ops.NewGetAlertsBadRequest().WithPayload(err.Error())
 			}
 
@@ -526,11 +524,13 @@ func (api *API) getSilencesHandler(params silence_ops.GetSilencesParams) middlew
 	return silence_ops.NewGetSilencesOK().WithPayload(sils)
 }
 
-var silenceStateOrder = map[types.SilenceState]int{
-	types.SilenceStateActive:  1,
-	types.SilenceStatePending: 2,
-	types.SilenceStateExpired: 3,
-}
+var (
+	silenceStateOrder = map[types.SilenceState]int{
+		types.SilenceStateActive:  1,
+		types.SilenceStatePending: 2,
+		types.SilenceStateExpired: 3,
+	}
+)
 
 // SortSilences sorts first according to the state "active, pending, expired"
 // then by end time or start time depending on the state.

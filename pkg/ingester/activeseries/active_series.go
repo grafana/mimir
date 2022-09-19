@@ -210,7 +210,7 @@ func (s *seriesStripe) findOrCreateEntryForSeries(fingerprint uint64, series lab
 	return e.nanos, true
 }
 
-//nolint // Linter reports that this method is unused, but it is.
+// nolint // Linter reports that this method is unused, but it is.
 func (s *seriesStripe) clear() {
 	s.mu.Lock()
 	defer s.mu.Unlock()

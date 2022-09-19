@@ -1567,7 +1567,6 @@ spec:
         - -ingester.ring.instance-availability-zone=zone-a
         - -ingester.ring.num-tokens=512
         - -ingester.ring.prefix=
-        - -ingester.ring.readiness-check-ring-health=false
         - -ingester.ring.replication-factor=3
         - -ingester.ring.store=consul
         - -ingester.ring.tokens-file-path=/data/tokens
@@ -1680,7 +1679,6 @@ spec:
         - -ingester.ring.instance-availability-zone=zone-b
         - -ingester.ring.num-tokens=512
         - -ingester.ring.prefix=
-        - -ingester.ring.readiness-check-ring-health=false
         - -ingester.ring.replication-factor=3
         - -ingester.ring.store=consul
         - -ingester.ring.tokens-file-path=/data/tokens
@@ -1793,7 +1791,6 @@ spec:
         - -ingester.ring.instance-availability-zone=zone-c
         - -ingester.ring.num-tokens=512
         - -ingester.ring.prefix=
-        - -ingester.ring.readiness-check-ring-health=false
         - -ingester.ring.replication-factor=3
         - -ingester.ring.store=consul
         - -ingester.ring.tokens-file-path=/data/tokens

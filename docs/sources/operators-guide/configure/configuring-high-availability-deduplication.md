@@ -120,7 +120,7 @@ Configure the default cluster and replica label names using the following CLI fl
 
 #### Example configuration
 
-The following configuration example snippet enables the HA tracker for all tentants via a YAML configuration file:
+The following configuration example snippet enables the HA tracker for all tenants via a YAML configuration file:
 
 ```yaml
 limits:

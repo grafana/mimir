@@ -1,1 +1,5 @@
-/docs/ @osg-grafana
+# Default owners for everything in the repo, unless a later match takes precedence.
+* @grafana/mimir-maintainers
+
+# Documentation.
+/docs/ @osg-grafana @grafana/mimir-maintainers

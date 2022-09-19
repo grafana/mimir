@@ -332,53 +332,52 @@ func (t *Mimir) initTenantFederation() (serv services.Service, err error) {
 // initQuerier registers an internal HTTP router with a Prometheus API backed by the
 // Mimir Queryable. Then it does one of the following:
 //
-// 1. Query-Frontend Enabled: If Mimir has an All or QueryFrontend target, the internal
-//    HTTP router is wrapped with Tenant ID parsing middleware and passed to the frontend
-//    worker.
+//  1. Query-Frontend Enabled: If Mimir has an All or QueryFrontend target, the internal
+//     HTTP router is wrapped with Tenant ID parsing middleware and passed to the frontend
+//     worker.
 //
-// 2. Querier Standalone: The querier will register the internal HTTP router with the external
-//    HTTP router for the Prometheus API routes. Then the external HTTP server will be passed
-//    as a http.Handler to the frontend worker.
+//  2. Querier Standalone: The querier will register the internal HTTP router with the external
+//     HTTP router for the Prometheus API routes. Then the external HTTP server will be passed
+//     as a http.Handler to the frontend worker.
 //
 // Route Diagram:
 //
-//                        │  query
-//                        │ request
-//                        │
-//                        ▼
-//              ┌──────────────────┐    QF to      ┌──────────────────┐
-//              │  external HTTP   │    Worker     │                  │
-//              │      router      │──────────────▶│ frontend worker  │
-//              │                  │               │                  │
-//              └──────────────────┘               └──────────────────┘
-//                        │                                  │
-//                                                           │
-//               only in  │                                  │
-//            microservice         ┌──────────────────┐      │
-//              querier   │        │ internal Querier │      │
-//                         ─ ─ ─ ─▶│      router      │◀─────┘
-//                                 │                  │
-//                                 └──────────────────┘
-//                                           │
-//                                           │
-//  /metadata & /chunk ┌─────────────────────┼─────────────────────┐
-//        requests     │                     │                     │
-//                     │                     │                     │
-//                     ▼                     ▼                     ▼
-//           ┌──────────────────┐  ┌──────────────────┐  ┌────────────────────┐
-//           │                  │  │                  │  │                    │
-//           │Querier Queryable │  │  /api/v1 router  │  │ /prometheus router │
-//           │                  │  │                  │  │                    │
-//           └──────────────────┘  └──────────────────┘  └────────────────────┘
-//                     ▲                     │                     │
-//                     │                     └──────────┬──────────┘
-//                     │                                ▼
-//                     │                      ┌──────────────────┐
-//                     │                      │                  │
-//                     └──────────────────────│  Prometheus API  │
-//                                            │                  │
-//                                            └──────────────────┘
-//
+//	                      │  query
+//	                      │ request
+//	                      │
+//	                      ▼
+//	            ┌──────────────────┐    QF to      ┌──────────────────┐
+//	            │  external HTTP   │    Worker     │                  │
+//	            │      router      │──────────────▶│ frontend worker  │
+//	            │                  │               │                  │
+//	            └──────────────────┘               └──────────────────┘
+//	                      │                                  │
+//	                                                         │
+//	             only in  │                                  │
+//	          microservice         ┌──────────────────┐      │
+//	            querier   │        │ internal Querier │      │
+//	                       ─ ─ ─ ─▶│      router      │◀─────┘
+//	                               │                  │
+//	                               └──────────────────┘
+//	                                         │
+//	                                         │
+//	/metadata & /chunk ┌─────────────────────┼─────────────────────┐
+//	      requests     │                     │                     │
+//	                   │                     │                     │
+//	                   ▼                     ▼                     ▼
+//	         ┌──────────────────┐  ┌──────────────────┐  ┌────────────────────┐
+//	         │                  │  │                  │  │                    │
+//	         │Querier Queryable │  │  /api/v1 router  │  │ /prometheus router │
+//	         │                  │  │                  │  │                    │
+//	         └──────────────────┘  └──────────────────┘  └────────────────────┘
+//	                   ▲                     │                     │
+//	                   │                     └──────────┬──────────┘
+//	                   │                                ▼
+//	                   │                      ┌──────────────────┐
+//	                   │                      │                  │
+//	                   └──────────────────────│  Prometheus API  │
+//	                                          │                  │
+//	                                          └──────────────────┘
 func (t *Mimir) initQuerier() (serv services.Service, err error) {
 	// Create a internal HTTP handler that is configured with the Prometheus API routes and points
 	// to a Prometheus API struct instantiated with the Mimir Queryable.

@@ -1,9 +1,6 @@
 {{- if .Values.enterprise.enabled -}}
 {{- if .Values.gateway.ingress.enabled -}}
-{{- $ingressApiIsStable := eq (include "mimir.ingress.isStable" .) "true" -}}
-{{- $ingressSupportsIngressClassName := eq (include "mimir.ingress.supportsIngressClassName" .) "true" -}}
-{{- $ingressSupportsPathType := eq (include "mimir.ingress.supportsPathType" .) "true" -}}
-apiVersion: {{ include "mimir.ingress.apiVersion" . }}
+apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: {{ include "mimir.resourceName" (dict "ctx" . "component" "gateway") }}
@@ -15,7 +12,7 @@ metadata:
   {{- end }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
-  {{- if and $ingressSupportsIngressClassName .Values.gateway.ingress.ingressClassName }}
+  {{- if .Values.gateway.ingress.ingressClassName }}
   ingressClassName: {{ .Values.gateway.ingress.ingressClassName }}
   {{- end -}}
   {{- if .Values.gateway.ingress.tls }}
@@ -37,19 +34,12 @@ spec:
         paths:
           {{- range .paths }}
           - path: {{ .path }}
-            {{- if $ingressSupportsPathType }}
             pathType: {{ .pathType }}
-            {{- end }}
             backend:
-              {{- if $ingressApiIsStable }}
               service:
                 name: {{ include "mimir.resourceName" (dict "ctx" $ "component" "gateway") }}
                 port:
                   number: {{ $.Values.gateway.service.port | default (include "mimir.serverHttpListenPort" $ ) }}
-              {{- else }}
-              serviceName: {{ include "mimir.resourceName" (dict "ctx" $ "component" "gateway") }}
-              servicePort: {{ $.Values.gateway.service.port | default (include "mimir.serverHttpListenPort" $ ) }}
-              {{- end }}
           {{- end }}
     {{- end }}
 {{- end -}}

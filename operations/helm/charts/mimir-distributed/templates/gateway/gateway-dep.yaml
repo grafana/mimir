@@ -94,6 +94,8 @@ spec:
         {{- toYaml .Values.gateway.nodeSelector | nindent 8 }}
       affinity:
         {{- toYaml .Values.gateway.affinity | nindent 8 }}
+      topologySpreadConstraints:
+        {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "gateway") | nindent 8 }}
       tolerations:
         {{- toYaml .Values.gateway.tolerations | nindent 8 }}
       terminationGracePeriodSeconds: {{ .Values.gateway.terminationGracePeriodSeconds }}

@@ -206,7 +206,7 @@ std.manifestYamlDoc({
     minio: {
       image: 'minio/minio',
       command: ['server', '/data'],
-      environment: ['MINIO_ACCESS_KEY=mimir', 'MINIO_SECRET_KEY=supersecret'],
+      environment: ['MINIO_ROOT_USER=mimir', 'MINIO_ROOT_PASSWORD=supersecret'],
       ports: ['9000:9000'],
       volumes: ['.data-minio:/data:delegated'],
     },

@@ -221,7 +221,7 @@ runtime_config:
 usage_stats:
   # (experimental) Enable anonymous usage reporting.
   # CLI flag: -usage-stats.enabled
-  [enabled: <boolean> | default = false]
+  [enabled: <boolean> | default = true]
 
 # The common block holds configurations that configure multiple components at a
 # time.
@@ -528,7 +528,7 @@ ha_tracker:
 
 # (advanced) Timeout for downstream ingesters.
 # CLI flag: -distributor.remote-timeout
-[remote_timeout: <duration> | default = 20s]
+[remote_timeout: <duration> | default = 2s]
 
 ring:
   kvstore:
@@ -627,7 +627,7 @@ forwarding:
   # (experimental) Timeout for requests to ingestion endpoints to which we
   # forward metrics.
   # CLI flag: -distributor.forwarding.request-timeout
-  [request_timeout: <duration> | default = 10s]
+  [request_timeout: <duration> | default = 2s]
 
   # (experimental) If disabled then forwarding requests are always considered to
   # be successful, errors are ignored.
@@ -769,7 +769,7 @@ ring:
   # multiple instances can be rolled out simultaneously, otherwise rolling
   # updates may be slowed down.
   # CLI flag: -ingester.ring.readiness-check-ring-health
-  [readiness_check_ring_health: <boolean> | default = true]
+  [readiness_check_ring_health: <boolean> | default = false]
 
 # (advanced) Period at which metadata we have not seen will remain in memory
 # before being deleted.

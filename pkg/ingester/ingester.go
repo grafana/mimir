@@ -94,11 +94,14 @@ const (
 	newValueForTimestamp = "new-value-for-timestamp"
 	sampleOutOfBounds    = "sample-out-of-bounds"
 
-	replicationFactorStatsName = "ingester_replication_factor"
-	memorySeriesStatsName      = "ingester_inmemory_series"
-	memoryTenantsStatsName     = "ingester_inmemory_tenants"
-	appendedSamplesStatsName   = "ingester_appended_samples"
-	appendedExemplarsStatsName = "ingester_appended_exemplars"
+	replicationFactorStatsName             = "ingester_replication_factor"
+	memorySeriesStatsName                  = "ingester_inmemory_series"
+	memoryTenantsStatsName                 = "ingester_inmemory_tenants"
+	appendedSamplesStatsName               = "ingester_appended_samples"
+	appendedExemplarsStatsName             = "ingester_appended_exemplars"
+	tenantsWithOutOfOrderEnabledStatName   = "ingester_ooo_enabled_tenants"
+	minOutOfOrderTimeWindowSecondsStatName = "ingester_ooo_min_window"
+	maxOutOfOrderTimeWindowSecondsStatName = "ingester_ooo_max_window"
 )
 
 // BlocksUploader interface is used to have an easy way to mock it in tests.
@@ -238,10 +241,13 @@ type Ingester struct {
 	inflightPushRequests atomic.Int64
 
 	// Anonymous usage statistics tracked by ingester.
-	memorySeriesStats      *expvar.Int
-	memoryTenantsStats     *expvar.Int
-	appendedSamplesStats   *usagestats.Counter
-	appendedExemplarsStats *usagestats.Counter
+	memorySeriesStats                  *expvar.Int
+	memoryTenantsStats                 *expvar.Int
+	appendedSamplesStats               *usagestats.Counter
+	appendedExemplarsStats             *usagestats.Counter
+	tenantsWithOutOfOrderEnabledStat   *expvar.Int
+	minOutOfOrderTimeWindowSecondsStat *expvar.Int
+	maxOutOfOrderTimeWindowSecondsStat *expvar.Int
 }
 
 func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
@@ -270,10 +276,13 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 		shipTrigger:         make(chan requestWithUsersAndCallback),
 		seriesHashCache:     hashcache.NewSeriesHashCache(cfg.BlocksStorageConfig.TSDB.SeriesHashCacheMaxBytes),
 
-		memorySeriesStats:      usagestats.GetAndResetInt(memorySeriesStatsName),
-		memoryTenantsStats:     usagestats.GetAndResetInt(memoryTenantsStatsName),
-		appendedSamplesStats:   usagestats.GetAndResetCounter(appendedSamplesStatsName),
-		appendedExemplarsStats: usagestats.GetAndResetCounter(appendedExemplarsStatsName),
+		memorySeriesStats:                  usagestats.GetAndResetInt(memorySeriesStatsName),
+		memoryTenantsStats:                 usagestats.GetAndResetInt(memoryTenantsStatsName),
+		appendedSamplesStats:               usagestats.GetAndResetCounter(appendedSamplesStatsName),
+		appendedExemplarsStats:             usagestats.GetAndResetCounter(appendedExemplarsStatsName),
+		tenantsWithOutOfOrderEnabledStat:   usagestats.GetAndResetInt(tenantsWithOutOfOrderEnabledStatName),
+		minOutOfOrderTimeWindowSecondsStat: usagestats.GetAndResetInt(minOutOfOrderTimeWindowSecondsStatName),
+		maxOutOfOrderTimeWindowSecondsStat: usagestats.GetAndResetInt(maxOutOfOrderTimeWindowSecondsStatName),
 	}, nil
 }
 
@@ -531,6 +540,9 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 func (i *Ingester) updateUsageStats() {
 	memoryUsersCount := int64(0)
 	memorySeriesCount := int64(0)
+	tenantsWithOutOfOrderEnabledCount := int64(0)
+	minOutOfOrderTimeWindow := time.Duration(0)
+	maxOutOfOrderTimeWindow := time.Duration(0)
 
 	for _, userID := range i.getTSDBUsers() {
 		userDB := i.getTSDB(userID)
@@ -538,16 +550,34 @@ func (i *Ingester) updateUsageStats() {
 			continue
 		}
 
-		// Count only tenants with at least 1 series.
-		if numSeries := userDB.Head().NumSeries(); numSeries > 0 {
-			memoryUsersCount++
-			memorySeriesCount += int64(numSeries)
+		// Track only tenants with at least 1 series.
+		numSeries := userDB.Head().NumSeries()
+		if numSeries == 0 {
+			continue
+		}
+
+		memoryUsersCount++
+		memorySeriesCount += int64(numSeries)
+
+		oooWindow := time.Duration(i.limits.OutOfOrderTimeWindow(userID))
+		if oooWindow > 0 {
+			tenantsWithOutOfOrderEnabledCount++
+
+			if minOutOfOrderTimeWindow == 0 || oooWindow < minOutOfOrderTimeWindow {
+				minOutOfOrderTimeWindow = oooWindow
+			}
+			if oooWindow > maxOutOfOrderTimeWindow {
+				maxOutOfOrderTimeWindow = oooWindow
+			}
 		}
 	}
 
 	// Track anonymous usage stats.
 	i.memorySeriesStats.Set(memorySeriesCount)
 	i.memoryTenantsStats.Set(memoryUsersCount)
+	i.tenantsWithOutOfOrderEnabledStat.Set(tenantsWithOutOfOrderEnabledCount)
+	i.minOutOfOrderTimeWindowSecondsStat.Set(int64(minOutOfOrderTimeWindow.Seconds()))
+	i.maxOutOfOrderTimeWindowSecondsStat.Set(int64(maxOutOfOrderTimeWindow.Seconds()))
 }
 
 // applyTSDBSettings goes through all tenants and applies

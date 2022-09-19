@@ -18,10 +18,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/alertmanager/pkg/labels"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
-
-	"github.com/prometheus/alertmanager/pkg/labels"
 )
 
 // AlertState is used as part of AlertStatus.
@@ -53,18 +52,18 @@ type AlertStatus struct {
 // Marker helps to mark alerts as silenced and/or inhibited.
 // All methods are goroutine-safe.
 type Marker interface {
-	// SetActiveOrSilenced replaces the previous SilencedBy by the provided IDs of
+	// SetSilenced replaces the previous SilencedBy by the provided IDs of
 	// active and pending silences, including the version number of the
 	// silences state. The set of provided IDs is supposed to represent the
 	// complete set of relevant silences. If no active silence IDs are provided and
 	// InhibitedBy is already empty, it sets the provided alert to AlertStateActive.
 	// Otherwise, it sets the provided alert to AlertStateSuppressed.
-	SetActiveOrSilenced(alert model.Fingerprint, version int, activeSilenceIDs, pendingSilenceIDs []string)
+	SetSilenced(alert model.Fingerprint, version int, activeSilenceIDs []string, pendingSilenceIDs []string)
 	// SetInhibited replaces the previous InhibitedBy by the provided IDs of
-	// alerts. In contrast to SetActiveOrSilenced, the set of provided IDs is not
+	// alerts. In contrast to SetSilenced, the set of provided IDs is not
 	// expected to represent the complete set of inhibiting alerts. (In
 	// practice, this method is only called with one or zero IDs. However,
-	// this expectation might change in the future. If no IDs are provided
+	// this expectation might change in the future.) If no IDs are provided
 	// and InhibitedBy is already empty, it sets the provided alert to
 	// AlertStateActive. Otherwise, it sets the provided alert to
 	// AlertStateSuppressed.
@@ -86,7 +85,7 @@ type Marker interface {
 	// result is based on.
 	Unprocessed(model.Fingerprint) bool
 	Active(model.Fingerprint) bool
-	Silenced(model.Fingerprint) (activeIDs, pendingIDs []string, version int, silenced bool)
+	Silenced(model.Fingerprint) (activeIDs []string, pendingIDs []string, version int, silenced bool)
 	Inhibited(model.Fingerprint) ([]string, bool)
 }
 
@@ -108,11 +107,11 @@ type memMarker struct {
 }
 
 func (m *memMarker) registerMetrics(r prometheus.Registerer) {
-	newMarkedAlertMetricByState := func(st AlertState) prometheus.GaugeFunc {
+	newAlertMetricByState := func(st AlertState) prometheus.GaugeFunc {
 		return prometheus.NewGaugeFunc(
 			prometheus.GaugeOpts{
-				Name:        "alertmanager_marked_alerts",
-				Help:        "How many alerts by state are currently marked in the Alertmanager regardless of their expiry.",
+				Name:        "alertmanager_alerts",
+				Help:        "How many alerts by state.",
 				ConstLabels: prometheus.Labels{"state": string(st)},
 			},
 			func() float64 {
@@ -121,13 +120,11 @@ func (m *memMarker) registerMetrics(r prometheus.Registerer) {
 		)
 	}
 
-	alertsActive := newMarkedAlertMetricByState(AlertStateActive)
-	alertsSuppressed := newMarkedAlertMetricByState(AlertStateSuppressed)
-	alertStateUnprocessed := newMarkedAlertMetricByState(AlertStateUnprocessed)
+	alertsActive := newAlertMetricByState(AlertStateActive)
+	alertsSuppressed := newAlertMetricByState(AlertStateSuppressed)
 
 	r.MustRegister(alertsActive)
 	r.MustRegister(alertsSuppressed)
-	r.MustRegister(alertStateUnprocessed)
 }
 
 // Count implements Marker.
@@ -150,8 +147,8 @@ func (m *memMarker) Count(states ...AlertState) int {
 	return count
 }
 
-// SetActiveOrSilenced implements Marker.
-func (m *memMarker) SetActiveOrSilenced(alert model.Fingerprint, version int, activeIDs, pendingIDs []string) {
+// SetSilenced implements Marker.
+func (m *memMarker) SetSilenced(alert model.Fingerprint, version int, activeIDs []string, pendingIDs []string) {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
@@ -241,7 +238,7 @@ func (m *memMarker) Inhibited(alert model.Fingerprint) ([]string, bool) {
 // Silenced returns whether the alert for the given Fingerprint is in the
 // Silenced state, any associated silence IDs, and the silences state version
 // the result is based on.
-func (m *memMarker) Silenced(alert model.Fingerprint) (activeIDs, pendingIDs []string, version int, silenced bool) {
+func (m *memMarker) Silenced(alert model.Fingerprint) (activeIDs []string, pendingIDs []string, version int, silenced bool) {
 	s := m.Status(alert)
 	return s.SilencedBy, s.pendingSilences, s.silencesVersion,
 		s.State == AlertStateSuppressed && len(s.SilencedBy) > 0

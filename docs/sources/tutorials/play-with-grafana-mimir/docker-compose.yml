@@ -5,8 +5,8 @@ services:
     entrypoint: [""]
     command: ["sh", "-c", "mkdir -p /data/mimir-blocks /data/mimir-ruler /data/mimir-alertmanager && minio server --quiet /data"]
     environment:
-      - MINIO_ACCESS_KEY=mimir
-      - MINIO_SECRET_KEY=supersecret
+      - MINIO_ROOT_USER=mimir
+      - MINIO_ROOT_PASSWORD=supersecret
     volumes:
       - minio-data:/data
 

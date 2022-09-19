@@ -9,7 +9,6 @@ config:
       num_tokens:
       heartbeat_period:
       heartbeat_timeout:
-      readiness_check_ring_health:
       unregister_on_shutdown:
   distributor:
     ha_tracker:
