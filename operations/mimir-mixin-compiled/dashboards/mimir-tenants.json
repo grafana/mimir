@@ -104,7 +104,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "max(cortex_limits_overrides{cluster=~\"$cluster\", job=~\"($namespace)/(overrides-exporter|mimir-backend)\", limit_name=\"max_global_series_per_user\", user=\"$user\"})\nor\nmax(cortex_limits_defaults{cluster=~\"$cluster\", job=~\"($namespace)/(overrides-exporter|mimir-backend)\", limit_name=\"max_global_series_per_user\"})\n",
+                        "expr": "max(cortex_limits_overrides{cluster=~\"$cluster\", job=~\"($namespace)/((overrides-exporter|mimir-backend))\", limit_name=\"max_global_series_per_user\", user=\"$user\"})\nor\nmax(cortex_limits_defaults{cluster=~\"$cluster\", job=~\"($namespace)/((overrides-exporter|mimir-backend))\", limit_name=\"max_global_series_per_user\"})\n",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "limit",
@@ -507,7 +507,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "max(cortex_limits_overrides{cluster=~\"$cluster\", job=~\"($namespace)/(overrides-exporter|mimir-backend)\", limit_name=\"request_rate\", user=\"$user\"})\nor\nmax(cortex_limits_defaults{cluster=~\"$cluster\", job=~\"($namespace)/(overrides-exporter|mimir-backend)\", limit_name=\"request_rate\"})\n",
+                        "expr": "max(cortex_limits_overrides{cluster=~\"$cluster\", job=~\"($namespace)/((overrides-exporter|mimir-backend))\", limit_name=\"request_rate\", user=\"$user\"})\nor\nmax(cortex_limits_defaults{cluster=~\"$cluster\", job=~\"($namespace)/((overrides-exporter|mimir-backend))\", limit_name=\"request_rate\"})\n",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "limit",
@@ -758,7 +758,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "max(cortex_limits_overrides{cluster=~\"$cluster\", job=~\"($namespace)/(overrides-exporter|mimir-backend)\", limit_name=\"ingestion_rate\", user=\"$user\"})\nor\nmax(cortex_limits_defaults{cluster=~\"$cluster\", job=~\"($namespace)/(overrides-exporter|mimir-backend)\", limit_name=\"ingestion_rate\"})\n",
+                        "expr": "max(cortex_limits_overrides{cluster=~\"$cluster\", job=~\"($namespace)/((overrides-exporter|mimir-backend))\", limit_name=\"ingestion_rate\", user=\"$user\"})\nor\nmax(cortex_limits_defaults{cluster=~\"$cluster\", job=~\"($namespace)/((overrides-exporter|mimir-backend))\", limit_name=\"ingestion_rate\"})\n",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "limit",
@@ -1499,7 +1499,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "max(cortex_limits_overrides{cluster=~\"$cluster\", job=~\"($namespace)/(overrides-exporter|mimir-backend)\", limit_name=\"ruler_max_rule_groups_per_tenant\", user=\"$user\"})\nor\nmax(cortex_limits_defaults{cluster=~\"$cluster\", job=~\"($namespace)/(overrides-exporter|mimir-backend)\", limit_name=\"ruler_max_rule_groups_per_tenant\"})\n",
+                        "expr": "max(cortex_limits_overrides{cluster=~\"$cluster\", job=~\"($namespace)/((overrides-exporter|mimir-backend))\", limit_name=\"ruler_max_rule_groups_per_tenant\", user=\"$user\"})\nor\nmax(cortex_limits_defaults{cluster=~\"$cluster\", job=~\"($namespace)/((overrides-exporter|mimir-backend))\", limit_name=\"ruler_max_rule_groups_per_tenant\"})\n",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "limit",
