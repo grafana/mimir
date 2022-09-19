@@ -19,7 +19,7 @@ Each tenant has an isolated alert routing configuration and Alertmanager UI.
 ### Tenant configurations
 
 Each tenant has an Alertmanager configuration that defines notifications receivers and alerting routes.
-The Mimir Alertmanager uses the same configuration file used by the Prometheus Alertmanager.
+The Mimir Alertmanager uses the same [configuration file used by the Prometheus Alertmanager](https://prometheus.io/docs/alerting/latest/configuration/#configuration-file).
 
 > **Note:** The Mimir Alertmanager exposes the configuration API according to the path set by the `-server.path-prefix` flag. It does not use the path set by the `-http.alertmanager-http-prefix` flag.
 > With the default configuration of `-server.path-prefix`, the Alertmanager URL used as the `mimirtool` `--address` flag has no path portion.
