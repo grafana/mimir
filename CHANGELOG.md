@@ -23,6 +23,7 @@
 * [ENHANCEMENT] Add sanity check at startup to ensure the configured filesystem directories don't overlap for different components. #2828
 * [ENHANCEMENT] Go: updated to go 1.19.1. #2637
 * [ENHANCEMENT] Runtime config: don't unmarshal runtime configuration files if they haven't changed. This can save a bit of CPU and memory on every component using runtime config. #2954
+* [ENHANCEMENT] Query-frontend: Add `cortex_frontend_query_result_cache_skipped_total` and `cortex_frontend_query_result_cache_attempted_total` metrics to track the reason why query results are not cached. #2855
 * [ENHANCEMENT] Distributor: pool more connections per host when forwarding request. Mark requests as idempotent so they can be retried under some conditions. #2968
 * [ENHANCEMENT] Distributor: failure to send request to forwarding target now also increments `cortex_distributor_forward_errors_total`, with `status_code="failed"`. #2968
 * [BUGFIX] Ruler: fix not restoring alerts' state at startup. #2648
