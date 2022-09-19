@@ -107,6 +107,54 @@ metaMonitoring:
             app.kubernetes.io/name: kube-state-metrics
 ```
 
+
+#### Sending metrics back into Mimir/GEM
+
+You can also send the collected metamonitoring metrics to the installation of Mimir or GEM.
+The configuration varies slightly for GEM and Mimir.
+
+If you have deployed Mimir, then the Helm chart values should look like the following.
+Replace `HELM_RELEASE_NAME` with the name of your Helm release:
+
+```yaml
+metaMonitoring:
+  serviceMonitor:
+    enabled: true
+  grafanaAgent:
+    enabled: true
+    installOperator: true
+
+  metrics:
+    remote:
+      url: 'http://<HELM_RELEASE_NAME>-mimir-nginx.mimir.svc/api/v1/push'
+      headers:
+        X-Scope-OrgID: metamonitoring
+```
+
+If you have deployed GEM, then the URL will point to the GEM gateway instead of the nginx Deployment.
+If you are using the GEM authentication model, then you also need to provide a Secret with the
+authentication token for a tenant. Refer to [Credentials](#credentials) for setting up the Secret.
+
+Assuming you are using the GEM authentication model, the Helm chart values should look like the following.
+Replace `HELM_RELEASE_NAME` with the name of your Helm release:
+
+```yaml
+metaMonitoring:
+  serviceMonitor:
+    enabled: true
+  grafanaAgent:
+    enabled: true
+    installOperator: true
+
+  metrics:
+    remote:
+      url: 'http://<HELM_RELEASE_NAME>-mimir-gateway.mimir.svc/api/v1/push'
+      auth:
+        username: metamonitoring
+        passwordSecretName: gem-tokens
+        passwordSecretKey: metamonitoring
+```
+
 ### Collect metrics and logs via Grafana Agent
 
 Older versions of the Helm chart need to be manually instrumented. This means that you need to set up a Grafana Agent
