@@ -9,13 +9,13 @@ weight: 70
 
 Grafana Mimir stores the metrics in a object storage.
 
-By default, metrics stored in the object storage are never deleted, and the storage utilization will increase over time.
-You can configure the object storage retention to automatically delete all the metrics data older than the configured period.
+By default, metrics that are stored in the object storage are never deleted, and the storage utilization will increase over time.
+You can configure the object storage retention to automatically delete all of the metrics data older than the configured period.
 
-## How to configure the storage retention
+## Configure the storage retention
 
-The [compactor]({{< relref "../architecture/components/compactor/index.md" >}}) is the Mimir component responsible to enforce the storage retention.
-To configure the storage retention you can set the CLI flag `-compactor.blocks-retention-period` or change the following YAML configuration:
+The [compactor]({{< relref "../architecture/components/compactor/index.md" >}}) is the Mimir component that is responsible for enforcing the storage retention.
+To configure the storage retention, set the CLI flag `-compactor.blocks-retention-period` or change the following YAML configuration:
 
 ```yaml
 limits:
@@ -23,7 +23,7 @@ limits:
   compactor_blocks_retention_period: 1y
 ```
 
-You can configure the storage retention on a per-tenant basis settings overrides in the [runtime configuration]({{< relref "about-runtime-configuration.md" >}}):
+To configure the storage retention on a per-tenant basis, set overrides in the [runtime configuration]({{< relref "about-runtime-configuration.md" >}}):
 
 ```yaml
 overrides:
@@ -40,5 +40,4 @@ overrides:
 
 ## Per-series retention
 
-Grafana Mimir doesn't support per-series deletion and retention.
-Prometheus' [Delete series API](https://prometheus.io/docs/prometheus/latest/querying/api/#delete-series) is not supported by Mimir.
+Grafana Mimir doesn’t support per-series deletion and retention, nor does it support Prometheus' [Delete series API](https://prometheus.io/docs/prometheus/latest/querying/api/#delete-series).

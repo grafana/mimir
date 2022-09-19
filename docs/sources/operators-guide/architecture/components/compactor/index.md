@@ -117,10 +117,10 @@ The soft delete mechanism gives time to queriers, rulers, and store-gateways to 
 
 ## Blocks retention
 
-The compactor is responsible to enforce the storage retention, deleting from the long-term storage the blocks containing samples older than the configured retention period.
+The compactor is responsible for enforcing the storage retention, deleting the blocks that contain samples that are older than the configured retention period from the long-term storage.
 The storage retention is disabled by default, and no data will be deleted from the long-term storage unless you explicitly configure the retention period.
 
-Refer to [configure metrics storage retention]({{< relref "../../../configure/configure-metrics-storage-retention.md" >}}) for more information.
+For more information, refer to [Configure metrics storage retention]({{< relref "../../../configure/configure-metrics-storage-retention.md" >}}).
 
 ## Compactor disk utilization
 
