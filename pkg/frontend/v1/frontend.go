@@ -88,9 +88,10 @@ type request struct {
 // New creates a new frontend. Frontend implements service, and must be started and stopped.
 func New(cfg Config, limits Limits, log log.Logger, registerer prometheus.Registerer) (*Frontend, error) {
 	f := &Frontend{
-		cfg:    cfg,
-		log:    log,
-		limits: limits,
+		cfg:                cfg,
+		log:                log,
+		limits:             limits,
+		subservicesWatcher: services.NewFailureWatcher(),
 		queueLength: promauto.With(registerer).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_query_frontend_queue_length",
 			Help: "Number of queries in the queue.",
