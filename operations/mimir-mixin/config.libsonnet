@@ -52,7 +52,7 @@
     cluster_labels: [$._config.per_cluster_label, 'namespace'],
 
     // PromQL queries used to find clusters and namespaces with Mimir.
-    dropdown_queries: {
+    dashboard_variables: {
       job_query: 'cortex_build_info',  // Only used if singleBinary is true.
       cluster_query: 'cortex_build_info',
       namespace_query: 'cortex_build_info{%s=~"$cluster"}' % $._config.per_cluster_label,
