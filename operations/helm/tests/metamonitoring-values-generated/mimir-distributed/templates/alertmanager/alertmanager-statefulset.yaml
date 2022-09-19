@@ -75,6 +75,9 @@ spec:
         - name: runtime-config
           configMap:
             name: metamonitoring-values-mimir-runtime
+        - name: fallback-config
+          configMap:
+            name: metamonitoring-values-mimir-alertmanager-fallback-config
         - name: tmp
           emptyDir: {}
       containers:
@@ -91,6 +94,9 @@ spec:
               mountPath: /var/mimir
             - name: storage
               mountPath: "/data"
+            - name: fallback-config
+              mountPath: /etc/alertmanager/fallback-config.yaml
+              subPath: fallback-config.yaml
             - name: tmp
               mountPath: /tmp
           ports:
