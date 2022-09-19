@@ -1078,11 +1078,6 @@ results_cache:
   # CLI flag: -query-frontend.results-cache.compression
   [compression: <string> | default = ""]
 
-  # The query result is set to use a low TTL for the cache entry if the query is
-  # within this period from current time.
-  # CLI flag: -query-frontend.results-cache.lower-ttl-within-time-period
-  [lower_ttl_within_time_period: <duration> | default = 0s]
-
 # Cache query results.
 # CLI flag: -query-frontend.cache-results
 [cache_results: <boolean> | default = false]
@@ -2410,13 +2405,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 [active_series_custom_trackers: <map of tracker name (string) to matcher (string)> | default = ]
 
 # (experimental) Non-zero value enables out-of-order support for most recent
-# samples that are within the time window in relation to the following two
-# conditions: (1) The newest sample for that time series, if it exists. For
-# example, within [series.maxTime-timeWindow, series.maxTime]). (2) The TSDB's
-# maximum time, if the series does not exist. For example, within
-# [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a
-# factor of rate of out-of-order samples being ingested and the number of series
-# that are getting out-of-order samples.
+# samples that are within the time window in relation to the TSDB's maximum
+# time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will
+# need more memory as a factor of rate of out-of-order samples being ingested
+# and the number of series that are getting out-of-order samples. A lower TTL of
+# 10 minutes will be set for the query cache entries that overlap with this
+# window.
 # CLI flag: -ingester.out-of-order-time-window
 [out_of_order_time_window: <duration> | default = 0s]
 

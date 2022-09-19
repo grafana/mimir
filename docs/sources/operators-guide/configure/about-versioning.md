@@ -85,6 +85,7 @@ The following features are currently experimental:
 - Query-frontend
   - `-query-frontend.querier-forget-delay`
   - Instant query splitting (`-query-frontend.split-instant-queries-by-interval`)
+  - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-allowance` from ingesters)
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway

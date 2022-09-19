@@ -62,12 +62,11 @@ func newSplitAndCacheMiddlewareMetrics(reg prometheus.Registerer) *splitAndCache
 // splitAndCacheMiddleware is a Middleware that can (optionally) split the query by interval
 // and run split queries through the results cache.
 type splitAndCacheMiddleware struct {
-	next                     Handler
-	limits                   Limits
-	merger                   Merger
-	logger                   log.Logger
-	metrics                  *splitAndCacheMiddlewareMetrics
-	lowerTTLWithinTimePeriod time.Duration
+	next    Handler
+	limits  Limits
+	merger  Merger
+	logger  log.Logger
+	metrics *splitAndCacheMiddlewareMetrics
 
 	// Split by interval.
 	splitEnabled  bool
@@ -94,27 +93,25 @@ func newSplitAndCacheMiddleware(
 	splitter CacheSplitter,
 	extractor Extractor,
 	shouldCacheReq shouldCacheFn,
-	lowerTTLWithinTimePeriod time.Duration,
 	logger log.Logger,
 	reg prometheus.Registerer) Middleware {
 	metrics := newSplitAndCacheMiddlewareMetrics(reg)
 
 	return MiddlewareFunc(func(next Handler) Handler {
 		return &splitAndCacheMiddleware{
-			splitEnabled:             splitEnabled,
-			cacheEnabled:             cacheEnabled,
-			cacheUnalignedRequests:   cacheUnalignedRequests,
-			next:                     next,
-			limits:                   limits,
-			merger:                   merger,
-			splitInterval:            splitInterval,
-			metrics:                  metrics,
-			cache:                    cache,
-			splitter:                 splitter,
-			extractor:                extractor,
-			shouldCacheReq:           shouldCacheReq,
-			logger:                   logger,
-			lowerTTLWithinTimePeriod: lowerTTLWithinTimePeriod,
+			splitEnabled:           splitEnabled,
+			cacheEnabled:           cacheEnabled,
+			cacheUnalignedRequests: cacheUnalignedRequests,
+			next:                   next,
+			limits:                 limits,
+			merger:                 merger,
+			splitInterval:          splitInterval,
+			metrics:                metrics,
+			cache:                  cache,
+			splitter:               splitter,
+			extractor:              extractor,
+			shouldCacheReq:         shouldCacheReq,
+			logger:                 logger,
 		}
 	})
 }
@@ -262,7 +259,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 			}
 
 			// Put back into the cache the filtered ones.
-			s.storeCacheExtents(ctx, splitReq.cacheKey, filteredExtents)
+			s.storeCacheExtents(ctx, splitReq.cacheKey, tenantIDs, filteredExtents)
 		}
 	}
 
@@ -362,10 +359,13 @@ func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, keys []
 }
 
 // storeCacheExtents stores the extents for given key in the cache.
-func (s *splitAndCacheMiddleware) storeCacheExtents(ctx context.Context, key string, extents []Extent) {
+func (s *splitAndCacheMiddleware) storeCacheExtents(ctx context.Context, key string, tenantIDs []string, extents []Extent) {
 	lowerTTL := false
-	if s.lowerTTLWithinTimePeriod != 0 {
-		lowerTTL = extents[len(extents)-1].End >= time.Now().Add(-s.lowerTTLWithinTimePeriod).UnixMilli()
+	lowerTTLWithinTimePeriod := validation.MaxDurationPerTenant(tenantIDs, func(tenantID string) time.Duration {
+		return time.Duration(s.limits.OutOfOrderTimeWindow(tenantID))
+	})
+	if lowerTTLWithinTimePeriod > 0 && len(extents) > 0 {
+		lowerTTL = extents[len(extents)-1].End >= time.Now().Add(-lowerTTLWithinTimePeriod).UnixMilli()
 	}
 
 	buf, err := proto.Marshal(&CachedResponse{

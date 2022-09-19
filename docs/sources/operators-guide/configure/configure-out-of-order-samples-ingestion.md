@@ -43,7 +43,10 @@ Setting `out_of_order_time_window` to `0s` disables the out-of-order ingestion w
 
 Once a query has been cached, out-of-order samples that get ingested later can potentially change those query results.
 
-To avoid caching queries that can get outdated, you can set `-query-frontend.max-cache-freshness` to match the `out_of_order_time_window` so that you don't cache queries
+To help with that, we recommended you to pass the same limits config to the query-frontend component.
+It will set a lower TTL (Time-To-Live) of 10 minutes for any query cache entry that falls within the ingestion window for out-of-order samples (i.e. timestamps after `now` minus `out_of_order_time_window`).
+
+If you do not want to cache any query for this window at all, you can set `-query-frontend.max-cache-freshness` to match the `out_of_order_time_window` so that you don't cache queries
 for the time window where you still expect samples to arrive. Doing so can increase the load on your Mimir cluster depending on query characteristics.
 
 ## Recording rules when out-of-order ingestion is enabled

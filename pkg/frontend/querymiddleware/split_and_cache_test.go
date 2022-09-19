@@ -94,7 +94,6 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 		nil,
 		nil,
 		nil,
-		0,
 		log.NewNopLogger(),
 		reg,
 	)
@@ -152,7 +151,6 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 		ConstSplitter(day),
 		PrometheusResponseExtractor{},
 		resultsCacheAlwaysEnabled,
-		0,
 		log.NewNopLogger(),
 		prometheus.NewPedanticRegistry(),
 	)
@@ -237,7 +235,6 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 		ConstSplitter(day),
 		PrometheusResponseExtractor{},
 		resultsCacheAlwaysEnabled,
-		0,
 		log.NewNopLogger(),
 		prometheus.NewPedanticRegistry(),
 	)
@@ -304,7 +301,6 @@ func TestSplitAndCacheMiddleware_ResultsCache_EnabledCachingOfStepUnalignedReque
 		ConstSplitter(day),
 		PrometheusResponseExtractor{},
 		resultsCacheAlwaysEnabled,
-		0,
 		log.NewNopLogger(),
 		prometheus.NewPedanticRegistry(),
 	)
@@ -446,7 +442,6 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 				cacheSplitter,
 				PrometheusResponseExtractor{},
 				resultsCacheAlwaysEnabled,
-				0,
 				log.NewNopLogger(),
 				prometheus.NewPedanticRegistry(),
 			)
@@ -655,7 +650,6 @@ func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
 					ConstSplitter(day),
 					PrometheusResponseExtractor{},
 					resultsCacheAlwaysEnabled,
-					0,
 					log.NewNopLogger(),
 					prometheus.NewPedanticRegistry(),
 				).Wrap(downstream)
@@ -892,7 +886,6 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 				cacheSplitter,
 				PrometheusResponseExtractor{},
 				resultsCacheAlwaysEnabled,
-				0,
 				log.NewNopLogger(),
 				prometheus.NewPedanticRegistry(),
 			).Wrap(HandlerFunc(func(_ context.Context, req Request) (Response, error) {
@@ -901,7 +894,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 
 			// Store all extents fixtures in the cache.
 			cacheKey := cacheSplitter.GenerateCacheKey(ctx, userID, testData.req)
-			mw.storeCacheExtents(ctx, cacheKey, testData.cachedExtents)
+			mw.storeCacheExtents(ctx, cacheKey, []string{userID}, testData.cachedExtents)
 
 			// Run the request.
 			actualRes, err := mw.Do(ctx, testData.req)
@@ -938,7 +931,6 @@ func TestSplitAndCacheMiddleware_StoreAndFetchCacheExtents(t *testing.T) {
 		ConstSplitter(day),
 		PrometheusResponseExtractor{},
 		resultsCacheAlwaysEnabled,
-		0,
 		log.NewNopLogger(),
 		prometheus.NewPedanticRegistry(),
 	).Wrap(nil).(*splitAndCacheMiddleware)
@@ -952,8 +944,8 @@ func TestSplitAndCacheMiddleware_StoreAndFetchCacheExtents(t *testing.T) {
 	})
 
 	t.Run("fetchCacheExtents() should return a slice with the same number of input keys and some extends filled up on partial cache hit", func(t *testing.T) {
-		mw.storeCacheExtents(ctx, "key-1", []Extent{mkExtent(10, 20)})
-		mw.storeCacheExtents(ctx, "key-3", []Extent{mkExtent(20, 30), mkExtent(40, 50)})
+		mw.storeCacheExtents(ctx, "key-1", nil, []Extent{mkExtent(10, 20)})
+		mw.storeCacheExtents(ctx, "key-3", nil, []Extent{mkExtent(20, 30), mkExtent(40, 50)})
 
 		actual := mw.fetchCacheExtents(ctx, []string{"key-1", "key-2", "key-3"})
 		expected := [][]Extent{{mkExtent(10, 20)}, nil, {mkExtent(20, 30), mkExtent(40, 50)}}
@@ -966,7 +958,7 @@ func TestSplitAndCacheMiddleware_StoreAndFetchCacheExtents(t *testing.T) {
 		require.NoError(t, err)
 		cacheBackend.Store(ctx, map[string][]byte{cacheHashKey("key-1"): buf}, 0)
 
-		mw.storeCacheExtents(ctx, "key-3", []Extent{mkExtent(20, 30), mkExtent(40, 50)})
+		mw.storeCacheExtents(ctx, "key-3", nil, []Extent{mkExtent(20, 30), mkExtent(40, 50)})
 
 		actual := mw.fetchCacheExtents(ctx, []string{"key-1", "key-2", "key-3"})
 		expected := [][]Extent{nil, nil, {mkExtent(20, 30), mkExtent(40, 50)}}
@@ -986,7 +978,6 @@ func TestSplitAndCacheMiddleware_WrapMultipleTimes(t *testing.T) {
 		ConstSplitter(day),
 		PrometheusResponseExtractor{},
 		resultsCacheAlwaysEnabled,
-		0,
 		log.NewNopLogger(),
 		prometheus.NewPedanticRegistry(),
 	)

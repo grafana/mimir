@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -239,6 +240,10 @@ func (m mockLimits) SplitInstantQueriesByInterval(string) time.Duration {
 
 func (m mockLimits) CompactorSplitAndMergeShards(userID string) int {
 	return m.compactorShards
+}
+
+func (m mockLimits) OutOfOrderTimeWindow(userID string) model.Duration {
+	return 0
 }
 
 type mockHandler struct {
