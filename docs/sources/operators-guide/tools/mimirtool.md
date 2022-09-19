@@ -134,6 +134,9 @@ The commands in this section enable you to perform the following actions:
 - Interact with individual rule groups in the Mimir ruler
 - Manipulate local rule files
 
+Some of the functionality that `mimirtool rules` offers is also available as a GitHub Action.
+For more information, refer to the [documentation of the action](https://github.com/grafana/mimir/blob/main/operations/mimir-rules-action/README.md).
+
 #### List rules
 
 The following command retrieves the names of all rule groups in the Grafana Mimir instance and prints them to the terminal.

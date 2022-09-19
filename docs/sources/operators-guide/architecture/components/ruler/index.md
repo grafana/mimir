@@ -101,7 +101,19 @@ Ruler replicas form their own [hash ring]({{< relref "../../hash-ring/index.md" 
 
 To configure the rulers' hash ring, refer to [configuring hash rings]({{< relref "../../../configure/configuring-hash-rings.md" >}}).
 
-## HTTP configuration API
+## Managing alerting and recording rules
+
+### Via the `mimirtool` CLI tool
+
+The `mimirtool rules` command offers utility subcommands for linting, formatting and uploading rules to Grafana Mimir.
+Refer to the [documentation of `mimirtool rules`]({{< relref "../../../tools/mimirtool.md#rules" >}}) for more information.
+
+### Via the `grafana/mimir/operations/mimir-rules-action` GitHub Action
+
+`mimir-rules-action` wraps some of the functionality of `mimirtool rules` in a GitHub action.
+For more information, refer to the [documentation of the action](https://github.com/grafana/mimir/blob/main/operations/mimir-rules-action/README.md).
+
+### Via the HTTP configuration API
 
 The ruler HTTP configuration API enables tenants to create, update, and delete rule groups.
 For a complete list of endpoints and example requests, refer to [ruler]({{< relref "../../../reference-http-api/index.md#ruler" >}}).
