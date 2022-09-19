@@ -17,12 +17,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unsafe"
 
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/status"
-	jsoniter "github.com/json-iterator/go"
 	"github.com/opentracing/opentracing-go"
 	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/prometheus/common/model"
@@ -54,10 +52,6 @@ const (
 	// Instant query specific options
 	instantSplitControlHeader = "Instant-Split-Control"
 )
-
-func init() {
-	jsoniter.RegisterTypeEncoderFunc("mimirpb.Sample", marshalSampleJSON, marshalSampleJSONIsEmpty)
-}
 
 // Codec is used to encode/decode query range requests and responses so they can be passed down to middlewares.
 type Codec interface {
@@ -467,58 +461,4 @@ func decorateWithParamName(err error, field string) error {
 func mustReadAllBody(r *http.Response) []byte {
 	body, _ := bodyBuffer(r)
 	return body
-}
-
-// marshalSampleJSON writes `[ts, "val"]`.
-// See: https://github.com/prometheus/prometheus/blob/5bd761fbfce6bf2ebc660b705f9a55477057b0c5/web/api/v1/api.go#L1640-L1652
-func marshalSampleJSON(ptr unsafe.Pointer, stm *jsoniter.Stream) {
-	smp := *((*mimirpb.Sample)(ptr))
-	stm.WriteArrayStart()
-	marshalTimestamp(smp.TimestampMs, stm)
-	stm.WriteMore()
-	marshalValue(smp.Value, stm)
-	stm.WriteArrayEnd()
-}
-
-func marshalSampleJSONIsEmpty(ptr unsafe.Pointer) bool {
-	return false
-}
-
-func marshalTimestamp(t int64, stm *jsoniter.Stream) {
-	// Write out the timestamp as a float divided by 1000.
-	// This is ~3x faster than converting to a float.
-	if t < 0 {
-		stm.WriteRaw(`-`)
-		t = -t
-	}
-	stm.WriteInt64(t / 1000)
-	fraction := t % 1000
-	if fraction != 0 {
-		stm.WriteRaw(`.`)
-		if fraction < 100 {
-			stm.WriteRaw(`0`)
-		}
-		if fraction < 10 {
-			stm.WriteRaw(`0`)
-		}
-		stm.WriteInt64(fraction)
-	}
-}
-
-func marshalValue(v float64, stm *jsoniter.Stream) {
-	stm.WriteRaw(`"`)
-	// Taken from https://github.com/json-iterator/go/blob/master/stream_float.go#L71 as a workaround
-	// to https://github.com/json-iterator/go/issues/365 (jsoniter, to follow json standard, doesn't allow inf/nan).
-	buf := stm.Buffer()
-	abs := math.Abs(v)
-	format := byte('f')
-	// Note: Must use float32 comparisons for underlying float32 value to get precise cutoffs right.
-	if abs != 0 {
-		if abs < 1e-6 || abs >= 1e21 {
-			format = 'e'
-		}
-	}
-	buf = strconv.AppendFloat(buf, v, format, -1, 64)
-	stm.SetBuffer(buf)
-	stm.WriteRaw(`"`)
 }
