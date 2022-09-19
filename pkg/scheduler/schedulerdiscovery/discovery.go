@@ -71,13 +71,14 @@ func NewRingServiceDiscovery(cfg Config, component string, receiver Notification
 		receiver:           receiver,
 	}
 
-	r.subservicesWatcher.WatchService(r.ring)
 	r.Service = services.NewBasicService(r.starting, r.running, r.stopping)
 
 	return r, nil
 }
 
 func (r *ringServiceDiscovery) starting(ctx context.Context) error {
+	r.subservicesWatcher.WatchService(r.ring)
+
 	return errors.Wrap(services.StartAndAwaitRunning(ctx, r.ring), "failed to start query-schedulers ring client")
 }
 

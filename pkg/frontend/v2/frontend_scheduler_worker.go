@@ -43,7 +43,8 @@ type frontendSchedulerWorkers struct {
 	// Channel with requests that should be forwarded to the scheduler.
 	requestsCh <-chan *frontendRequest
 
-	schedulerDiscovery services.Service
+	schedulerDiscovery        services.Service
+	schedulerDiscoveryWatcher *services.FailureWatcher
 
 	mu sync.Mutex
 	// Set to nil when stop is called... no more workers are created afterwards.
@@ -54,11 +55,12 @@ type frontendSchedulerWorkers struct {
 
 func newFrontendSchedulerWorkers(cfg Config, frontendAddress string, requestsCh <-chan *frontendRequest, log log.Logger, reg prometheus.Registerer) (*frontendSchedulerWorkers, error) {
 	f := &frontendSchedulerWorkers{
-		cfg:             cfg,
-		log:             log,
-		frontendAddress: frontendAddress,
-		requestsCh:      requestsCh,
-		workers:         map[string]*frontendSchedulerWorker{},
+		cfg:                       cfg,
+		log:                       log,
+		frontendAddress:           frontendAddress,
+		requestsCh:                requestsCh,
+		workers:                   map[string]*frontendSchedulerWorker{},
+		schedulerDiscoveryWatcher: services.NewFailureWatcher(),
 		enqueuedRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_query_frontend_workers_enqueued_requests_total",
 			Help: "Total number of requests enqueued by each query frontend worker (regardless of the result), labeled by scheduler address.",
@@ -71,12 +73,23 @@ func newFrontendSchedulerWorkers(cfg Config, frontendAddress string, requestsCh 
 		return nil, err
 	}
 
-	f.Service = services.NewIdleService(f.starting, f.stopping)
+	f.Service = services.NewBasicService(f.starting, f.running, f.stopping)
 	return f, nil
 }
 
 func (f *frontendSchedulerWorkers) starting(ctx context.Context) error {
+	f.schedulerDiscoveryWatcher.WatchService(f.schedulerDiscovery)
+
 	return services.StartAndAwaitRunning(ctx, f.schedulerDiscovery)
+}
+
+func (f *frontendSchedulerWorkers) running(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return nil
+	case err := <-f.schedulerDiscoveryWatcher.Chan():
+		return errors.Wrap(err, "query-frontend workers subservice failed")
+	}
 }
 
 func (f *frontendSchedulerWorkers) stopping(_ error) error {

@@ -100,7 +100,9 @@ type querierWorker struct {
 
 	processor processor
 
-	subservices *services.Manager
+	// Subservices manager.
+	subservices        *services.Manager
+	subservicesWatcher *services.FailureWatcher
 
 	mu sync.Mutex
 	// Set to nil when stop is called... no more managers are created afterwards.
@@ -171,9 +173,10 @@ func newQuerierWorkerWithProcessor(cfg Config, log log.Logger, processor process
 		}
 
 		f.subservices = subservices
+		f.subservicesWatcher = services.NewFailureWatcher()
 	}
 
-	f.BasicService = services.NewIdleService(f.starting, f.stopping)
+	f.BasicService = services.NewBasicService(f.starting, f.running, f.stopping)
 	return f, nil
 }
 
@@ -181,7 +184,18 @@ func (w *querierWorker) starting(ctx context.Context) error {
 	if w.subservices == nil {
 		return nil
 	}
+
+	w.subservicesWatcher.WatchManager(w.subservices)
 	return services.StartManagerAndAwaitHealthy(ctx, w.subservices)
+}
+
+func (w *querierWorker) running(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return nil
+	case err := <-w.subservicesWatcher.Chan(): // The channel will be nil if w.subservicesWatcher is not set.
+		return errors.Wrap(err, "querier worker subservice failed")
+	}
 }
 
 func (w *querierWorker) stopping(_ error) error {
@@ -197,7 +211,7 @@ func (w *querierWorker) stopping(_ error) error {
 		return nil
 	}
 
-	// Stop DNS watcher and services used by processor.
+	// Stop service discovery and services used by processor.
 	return services.StopManagerAndAwaitStopped(context.Background(), w.subservices)
 }
 

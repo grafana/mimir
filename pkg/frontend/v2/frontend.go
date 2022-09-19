@@ -87,8 +87,9 @@ type Frontend struct {
 	// frontend workers will read from this channel, and send request to scheduler.
 	requestsCh chan *frontendRequest
 
-	schedulerWorkers *frontendSchedulerWorkers
-	requests         *requestsInProgress
+	schedulerWorkers        *frontendSchedulerWorkers
+	schedulerWorkersWatcher *services.FailureWatcher
+	requests                *requestsInProgress
 }
 
 type frontendRequest struct {
@@ -129,11 +130,12 @@ func NewFrontend(cfg Config, log log.Logger, reg prometheus.Registerer) (*Fronte
 	}
 
 	f := &Frontend{
-		cfg:              cfg,
-		log:              log,
-		requestsCh:       requestsCh,
-		schedulerWorkers: schedulerWorkers,
-		requests:         newRequestsInProgress(),
+		cfg:                     cfg,
+		log:                     log,
+		requestsCh:              requestsCh,
+		schedulerWorkers:        schedulerWorkers,
+		schedulerWorkersWatcher: services.NewFailureWatcher(),
+		requests:                newRequestsInProgress(),
 	}
 	// Randomize to avoid getting responses from queries sent before restart, which could lead to mixing results
 	// between different queries. Note that frontend verifies the user, so it cannot leak results between tenants.
@@ -154,12 +156,23 @@ func NewFrontend(cfg Config, log log.Logger, reg prometheus.Registerer) (*Fronte
 		return float64(f.schedulerWorkers.getWorkersCount())
 	})
 
-	f.Service = services.NewIdleService(f.starting, f.stopping)
+	f.Service = services.NewBasicService(f.starting, f.running, f.stopping)
 	return f, nil
 }
 
 func (f *Frontend) starting(ctx context.Context) error {
+	f.schedulerWorkersWatcher.WatchService(f.schedulerWorkers)
+
 	return errors.Wrap(services.StartAndAwaitRunning(ctx, f.schedulerWorkers), "failed to start frontend scheduler workers")
+}
+
+func (f *Frontend) running(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return nil
+	case err := <-f.schedulerWorkersWatcher.Chan():
+		return errors.Wrap(err, "query-frontend subservice failed")
+	}
 }
 
 func (f *Frontend) stopping(_ error) error {
