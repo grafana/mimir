@@ -167,12 +167,7 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 			return nil, err
 		}
 
-		s.schedulerRing, err = schedulerdiscovery.NewRingClient(cfg.ServiceDiscovery.SchedulerRing, "query-scheduler", log, registerer)
-		if err != nil {
-			return nil, err
-		}
-
-		subservices = append(subservices, s.schedulerRing, s.schedulerLifecycler)
+		subservices = append(subservices, s.schedulerLifecycler)
 	}
 
 	s.subservices, err = services.NewManager(subservices...)
@@ -579,8 +574,8 @@ func (s *Scheduler) getConnectedFrontendClientsMetric() float64 {
 }
 
 func (s *Scheduler) RingHandler(w http.ResponseWriter, req *http.Request) {
-	if s.schedulerRing != nil {
-		s.schedulerRing.ServeHTTP(w, req)
+	if s.schedulerLifecycler != nil {
+		s.schedulerLifecycler.ServeHTTP(w, req)
 		return
 	}
 
