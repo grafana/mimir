@@ -20,11 +20,6 @@
       'ingester.ring.heartbeat-period': '15s',
       'ingester.ring.unregister-on-shutdown': $._config.unregister_ingesters_on_shutdown,
 
-      // Disable the ring health check in the readiness endpoint so that we can quickly rollout
-      // multiple ingesters in multi-zone deployments. It's also safe to disable it everywhere,
-      // given we deploy all ingesters with StatefulSets.
-      'ingester.ring.readiness-check-ring-health': false,
-
       // Limits config.
       'server.grpc-max-concurrent-streams': 10000,
 

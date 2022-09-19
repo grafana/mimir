@@ -26,6 +26,7 @@ func TestRingConfig_DefaultConfigToLifecyclerConfig(t *testing.T) {
 	expected.NumTokens = cfg.NumTokens
 	expected.MinReadyDuration = cfg.MinReadyDuration
 	expected.FinalSleep = cfg.FinalSleep
+	expected.ReadinessCheckRingHealth = false
 
 	assert.Equal(t, expected, cfg.ToLifecyclerConfig())
 }
