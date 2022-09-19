@@ -72,7 +72,7 @@ helm upgrade --install -n <namespace> --create-namespace my-prometheus prometheu
 
 ## Install Consul using Helm
 
-You can install Consul in Kubernetes using
+Install Consul in Kubernetes using
 [Consul helm chart](https://github.com/hashicorp/consul-k8s/tree/main/charts/consul). Follow the documentation to get
 the chart and installing a Consul release. Put a note on the Consul endpoint, because you will need it for Mimir
 configuration.
