@@ -34,6 +34,7 @@
 * [BUGFIX] Ruler: fix panic when `ruler.external_url` is explicitly set to an empty string (`""`) in YAML. #2915
 * [BUGFIX] Fix sanity check done on configured filesystem directories when running Alertmanager in microservices mode. #2947
 * [BUGFIX] Querier: Fix 400 response while handling streaming remote read. #2963
+* [BUGFIX] Fix a bug causing query-frontend, query-scheduler, and querier not failing if one of their internal components fail. #2978
 
 ### Mixin
 
