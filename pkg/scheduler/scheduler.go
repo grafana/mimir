@@ -64,7 +64,6 @@ type Scheduler struct {
 	// The ring is used to let other components discover query-scheduler replicas.
 	// The ring is optional.
 	schedulerLifecycler *ring.BasicLifecycler
-	schedulerRing       *ring.Ring
 
 	// Subservices manager.
 	subservices        *services.Manager
