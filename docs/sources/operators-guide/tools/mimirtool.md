@@ -135,7 +135,7 @@ The commands in this section enable you to perform the following actions:
 - Manipulate local rule files
 
 Some of the functionality that `mimirtool rules` offers is also available as a GitHub Action.
-For more information, refer to the [documentation of the action](https://github.com/grafana/mimir/blob/main/operations/mimir-rules-action/README.md).
+For more information, refer to the [documentation of Mimirtool Github Action](https://github.com/grafana/mimir/blob/main/operations/mimir-rules-action/README.md).
 
 #### List rules
 
