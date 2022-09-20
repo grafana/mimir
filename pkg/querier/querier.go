@@ -178,7 +178,7 @@ func NewQueryable(distributor QueryableWithFilter, stores []QueryableWithFilter,
 		ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(limits.MaxFetchedSeriesPerQuery(userID), limits.MaxFetchedChunkBytesPerQuery(userID), limits.MaxChunksPerQuery(userID)))
 
 		mint, maxt, err = validateQueryTimeRange(ctx, userID, mint, maxt, limits, cfg.MaxQueryIntoFuture, logger)
-		if err == errEmptyTimeRange {
+		if errors.Is(err, errEmptyTimeRange) {
 			return storage.NoopQuerier(), nil
 		} else if err != nil {
 			return nil, err
@@ -257,7 +257,7 @@ func (q querier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Mat
 	// the querier, we need to check it again here because the time range specified in hints may be
 	// different.
 	startMs, endMs, err := validateQueryTimeRange(ctx, userID, sp.Start, sp.End, q.limits, q.maxQueryIntoFuture, q.logger)
-	if err == errEmptyTimeRange {
+	if errors.Is(err, errEmptyTimeRange) {
 		return storage.NoopSeriesSet()
 	} else if err != nil {
 		return storage.ErrSeriesSet(err)

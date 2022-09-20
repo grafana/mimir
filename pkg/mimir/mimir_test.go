@@ -8,6 +8,7 @@ package mimir
 import (
 	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -706,7 +707,7 @@ func TestFlagDefaults(t *testing.T) {
 	pingWithoutStreamChecked := false
 	for {
 		line, err := buf.ReadString(delim)
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 

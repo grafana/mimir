@@ -1248,7 +1248,7 @@ func (m *labelNamesAndValuesResponseMerger) toLabelNamesAndValuesResponses() *in
 func (m *labelNamesAndValuesResponseMerger) collectResponses(stream ingester_client.Ingester_LabelNamesAndValuesClient) error {
 	for {
 		message, err := stream.Recv()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		} else if err != nil {
 			return err
@@ -1380,7 +1380,7 @@ func (cm *labelValuesCardinalityConcurrentMap) processLabelValuesCardinalityMess
 	stream ingester_client.Ingester_LabelValuesCardinalityClient) error {
 	for {
 		message, err := stream.Recv()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		} else if err != nil {
 			return err

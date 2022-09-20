@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/tenant"
 	"github.com/opentracing/opentracing-go"
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/weaveworks/common/instrument"
@@ -257,7 +258,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 
 		for {
 			resp, err := stream.Recv()
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			} else if err != nil {
 				return nil, err

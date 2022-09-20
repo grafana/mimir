@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
+	"github.com/pkg/errors"
 	promtestutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
@@ -281,7 +282,7 @@ func TestLazyBinaryReader_LoadUnloadRaceCondition(t *testing.T) {
 				return
 			default:
 				_, err := r.PostingsOffset("a", "1")
-				require.True(t, err == nil || err == errUnloadedWhileLoading)
+				require.True(t, err == nil || errors.Is(err, errUnloadedWhileLoading))
 			}
 		}
 	}()
