@@ -235,9 +235,6 @@ require (
 // https://github.com/prometheus/alertmanager/issues/3064
 replace github.com/prometheus/alertmanager => github.com/prometheus/alertmanager v0.24.0
 
-// Override since git.apache.org is down.  The docs say to fetch from github.
-replace git.apache.org/thrift.git => github.com/apache/thrift v0.0.0-20180902110319-2566ecd5d999
-
 // Using our own fork to add custom dialer and improve perf.
 replace github.com/bradfitz/gomemcache => github.com/grafana/gomemcache v0.0.0-20220812141943-44b6cde200bb
 
