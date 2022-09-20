@@ -104,8 +104,7 @@ type querierWorker struct {
 	subservices        *services.Manager
 	subservicesWatcher *services.FailureWatcher
 
-	mu sync.Mutex
-	// Set to nil when stop is called... no more managers are created afterwards.
+	mu       sync.Mutex
 	managers map[string]*processorManager
 }
 
@@ -255,7 +254,6 @@ func (w *querierWorker) AddressRemoved(address string) {
 
 // Must be called with lock.
 func (w *querierWorker) resetConcurrency() {
-	totalConcurrency := 0
 	index := 0
 
 	for _, m := range w.managers {
@@ -277,13 +275,8 @@ func (w *querierWorker) resetConcurrency() {
 			concurrency = 1
 		}
 
-		totalConcurrency += concurrency
 		m.concurrency(concurrency)
 		index++
-	}
-
-	if totalConcurrency > w.cfg.MaxConcurrentRequests {
-		level.Warn(w.log).Log("msg", "total worker concurrency is greater than promql max concurrency. Queries may be queued in the querier which reduces QOS")
 	}
 }
 
