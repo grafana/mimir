@@ -26,7 +26,7 @@ func NewServiceDiscovery(cfg Config, schedulerAddress string, lookupPeriod time.
 }
 
 func NewDNSServiceDiscovery(schedulerAddress string, lookupPeriod time.Duration, receiver servicediscovery.Notifications) (services.Service, error) {
-	return servicediscovery.NewDNSServiceDiscovery(schedulerAddress, lookupPeriod, receiver)
+	return servicediscovery.NewDNS(schedulerAddress, lookupPeriod, receiver)
 }
 
 var (
@@ -39,5 +39,5 @@ func NewRingServiceDiscovery(cfg Config, component string, receiver servicedisco
 		return nil, err
 	}
 
-	return servicediscovery.NewRingServiceDiscovery(client, activeSchedulersOp, cfg.SchedulerRing.RingCheckPeriod, receiver), nil
+	return servicediscovery.NewRing(client, activeSchedulersOp, cfg.SchedulerRing.RingCheckPeriod, receiver), nil
 }

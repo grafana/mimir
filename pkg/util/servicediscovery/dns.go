@@ -32,8 +32,8 @@ type dnsServiceDiscovery struct {
 	receiver Notifications
 }
 
-// NewDNSServiceDiscovery creates a new DNS-based service discovery.
-func NewDNSServiceDiscovery(address string, dnsLookupPeriod time.Duration, notifications Notifications) (services.Service, error) {
+// NewDNS creates a new DNS-based service discovery.
+func NewDNS(address string, dnsLookupPeriod time.Duration, notifications Notifications) (services.Service, error) {
 	resolver, err := grpcutil.NewDNSResolverWithFreq(dnsLookupPeriod, util_log.Logger)
 	if err != nil {
 		return nil, err

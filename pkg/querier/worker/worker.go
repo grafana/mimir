@@ -130,7 +130,7 @@ func NewQuerierWorker(cfg Config, handler RequestHandler, log log.Logger, reg pr
 		level.Info(log).Log("msg", "Starting querier worker connected to query-frontend", "frontend", cfg.FrontendAddress)
 
 		factory = func(receiver servicediscovery.Notifications) (services.Service, error) {
-			return servicediscovery.NewDNSServiceDiscovery(cfg.FrontendAddress, cfg.DNSLookupPeriod, receiver)
+			return servicediscovery.NewDNS(cfg.FrontendAddress, cfg.DNSLookupPeriod, receiver)
 		}
 
 		processor = newFrontendProcessor(cfg, handler, log)

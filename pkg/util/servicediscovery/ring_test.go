@@ -49,7 +49,7 @@ func TestRingServiceDiscovery(t *testing.T) {
 	// Mock a receiver to keep track of all notified addresses.
 	receiver := newNotificationsReceiverMock()
 
-	sd := NewRingServiceDiscovery(ringClient, ringOp, ringCheckPeriod, receiver)
+	sd := NewRing(ringClient, ringOp, ringCheckPeriod, receiver)
 
 	// Start the service discovery.
 	require.NoError(t, services.StartAndAwaitRunning(ctx, sd))

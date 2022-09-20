@@ -24,7 +24,7 @@ type ringServiceDiscovery struct {
 	notifiedAddresses map[string]struct{}
 }
 
-func NewRingServiceDiscovery(ringClient *ring.Ring, ringOp ring.Operation, ringCheckPeriod time.Duration, receiver Notifications) services.Service {
+func NewRing(ringClient *ring.Ring, ringOp ring.Operation, ringCheckPeriod time.Duration, receiver Notifications) services.Service {
 	r := &ringServiceDiscovery{
 		ringClient:         ringClient,
 		ringOp:             ringOp,
