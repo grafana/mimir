@@ -168,6 +168,10 @@ func (f *forwarder) createHttpGrpcClient(addr string) (client.PoolClient, error)
 }
 
 func (f *forwarder) start(ctx context.Context) error {
+	if err := services.StartAndAwaitRunning(ctx, f.httpGrpcClientPool); err != nil {
+		return errors.Wrap(err, "failed to start client pool")
+	}
+
 	f.workerWg.Add(f.cfg.RequestConcurrency)
 
 	for i := 0; i < f.cfg.RequestConcurrency; i++ {
@@ -180,6 +184,10 @@ func (f *forwarder) start(ctx context.Context) error {
 func (f *forwarder) stop(_ error) error {
 	close(f.reqCh)
 	f.workerWg.Wait()
+
+	if err := services.StopAndAwaitTerminated(context.Background(), f.httpGrpcClientPool); err != nil {
+		return errors.Wrap(err, "failed to stop client pool")
+	}
 	return nil
 }
 
@@ -464,7 +472,7 @@ func (r *request) doHttp(ctx context.Context, body []byte) error {
 func (r *request) processHttpResponse(code int, message string) {
 	r.errors.WithLabelValues(strconv.Itoa(code)).Inc()
 
-	err := errors.Errorf("server returned HTTP status %s: %s", code, message)
+	err := errors.Errorf("server returned HTTP status %d: %s", code, message)
 	if code/100 == 5 || code == http.StatusTooManyRequests {
 		// The forwarding endpoint has returned a retriable error, so we want the client to retry.
 		r.handleError(http.StatusInternalServerError, err)
