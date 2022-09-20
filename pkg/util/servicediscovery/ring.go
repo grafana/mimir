@@ -4,6 +4,7 @@ package servicediscovery
 
 import (
 	"context"
+	"sort"
 	"time"
 
 	"github.com/grafana/dskit/ring"
@@ -11,26 +12,36 @@ import (
 	"github.com/pkg/errors"
 )
 
+const (
+	// The token looked up in the ring to find the instances to use.
+	inUseRingToken = uint32(0)
+)
+
+var (
+	// Ring operation used to get healthy active instances in the ring.
+	activeRingOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
+)
+
 type ringServiceDiscovery struct {
 	services.Service
 
 	ringClient         *ring.Ring
-	ringOp             ring.Operation
-	subservicesWatcher *services.FailureWatcher
 	ringCheckPeriod    time.Duration
+	maxUsedInstances   int
+	subservicesWatcher *services.FailureWatcher
 	receiver           Notifications
 
-	// Keep track of the addresses that have been discovered and notified so far.
-	notifiedAddresses map[string]struct{}
+	// Keep track of the instances that have been discovered and notified so far.
+	notified map[string]Instance
 }
 
-func NewRing(ringClient *ring.Ring, ringOp ring.Operation, ringCheckPeriod time.Duration, receiver Notifications) services.Service {
+func NewRing(ringClient *ring.Ring, ringCheckPeriod time.Duration, maxUsedInstances int, receiver Notifications) services.Service {
 	r := &ringServiceDiscovery{
 		ringClient:         ringClient,
-		ringOp:             ringOp,
-		subservicesWatcher: services.NewFailureWatcher(),
 		ringCheckPeriod:    ringCheckPeriod,
-		notifiedAddresses:  make(map[string]struct{}),
+		maxUsedInstances:   maxUsedInstances,
+		subservicesWatcher: services.NewFailureWatcher(),
+		notified:           make(map[string]Instance),
 		receiver:           receiver,
 	}
 
@@ -53,43 +64,65 @@ func (r *ringServiceDiscovery) running(ctx context.Context) error {
 	defer ringTicker.Stop()
 
 	// Notifies the initial state.
-	ringState, _ := r.ringClient.GetAllHealthy(r.ringOp) // nolint:errcheck
-	r.notifyChanges(ringState)
+	all, _ := r.ringClient.GetAllHealthy(activeRingOp) // nolint:errcheck
+	r.notifyChanges(all)
 
 	for {
 		select {
 		case <-ringTicker.C:
-			ringState, _ := r.ringClient.GetAllHealthy(r.ringOp) // nolint:errcheck
-			r.notifyChanges(ringState)
+			all, _ := r.ringClient.GetAllHealthy(activeRingOp) // nolint:errcheck
+			r.notifyChanges(all)
 		case <-ctx.Done():
 			return nil
 		case err := <-r.subservicesWatcher.Chan():
-			return errors.Wrap(err, "a subservice of ring-based service discovery has failed")
+			return errors.Wrap(err, "a subservice of query-schedulers ring-based service discovery has failed")
 		}
 	}
 }
 
-// notifyChanges is not concurrency safe.
-func (r *ringServiceDiscovery) notifyChanges(discovered ring.ReplicationSet) {
-	// Build a map with the discovered addresses.
-	discoveredAddresses := make(map[string]struct{}, len(discovered.Instances))
-	for _, instance := range discovered.Instances {
-		discoveredAddresses[instance.GetAddr()] = struct{}{}
+// notifyChanges is not concurrency safe. The input all and inUse ring.ReplicationSet may be the same object.
+func (r *ringServiceDiscovery) notifyChanges(all ring.ReplicationSet) {
+	// Build a map with the discovered instances.
+	discovered := make(map[string]Instance, len(all.Instances))
+	for _, instance := range selectInUseInstances(all.Instances, r.maxUsedInstances) {
+		discovered[instance.Addr] = Instance{Address: instance.Addr, InUse: true}
 	}
-
-	// Notify new addresses.
-	for addr := range discoveredAddresses {
-		if _, ok := r.notifiedAddresses[addr]; !ok {
-			r.receiver.AddressAdded(addr)
+	for _, instance := range all.Instances {
+		if _, ok := discovered[instance.Addr]; !ok {
+			discovered[instance.Addr] = Instance{Address: instance.Addr, InUse: false}
 		}
 	}
 
-	// Notify removed addresses.
-	for addr := range r.notifiedAddresses {
-		if _, ok := discoveredAddresses[addr]; !ok {
-			r.receiver.AddressRemoved(addr)
+	// Notify new instances.
+	for addr, instance := range discovered {
+		if _, ok := r.notified[addr]; !ok {
+			r.receiver.InstanceAdded(instance)
 		}
 	}
 
-	r.notifiedAddresses = discoveredAddresses
+	// Notify changed instances.
+	for addr, instance := range discovered {
+		if n, ok := r.notified[addr]; ok && !n.Equal(instance) {
+			r.receiver.InstanceChanged(instance)
+		}
+	}
+
+	// Notify removed instances.
+	for addr, instance := range r.notified {
+		if _, ok := discovered[addr]; !ok {
+			r.receiver.InstanceRemoved(instance)
+		}
+	}
+
+	r.notified = discovered
+}
+
+func selectInUseInstances(instances []ring.InstanceDesc, maxInstances int) []ring.InstanceDesc {
+	if maxInstances <= 0 || len(instances) <= maxInstances {
+		return instances
+	}
+
+	// Select the first N instances (sorted by address) to be used.
+	sort.Sort(ring.ByAddr(instances))
+	return instances[:maxInstances]
 }

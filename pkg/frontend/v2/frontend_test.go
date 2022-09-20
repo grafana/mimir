@@ -33,6 +33,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
+	"github.com/grafana/mimir/pkg/util/servicediscovery"
 )
 
 const testFrontendWorkerConcurrency = 5
@@ -165,7 +166,7 @@ func TestFrontendRequestsPerWorkerMetric(t *testing.T) {
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_query_frontend_workers_enqueued_requests_total"))
 
 	// Manually remove the address, check that label is removed.
-	f.schedulerWorkers.AddressRemoved(f.cfg.SchedulerAddress)
+	f.schedulerWorkers.InstanceRemoved(servicediscovery.Instance{Address: f.cfg.SchedulerAddress, InUse: true})
 	expectedMetrics = ``
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_query_frontend_workers_enqueued_requests_total"))
 }
@@ -308,7 +309,7 @@ func TestFrontendFailedCancellation(t *testing.T) {
 		}
 		f.schedulerWorkers.mu.Unlock()
 
-		f.schedulerWorkers.AddressRemoved(addr)
+		f.schedulerWorkers.InstanceRemoved(servicediscovery.Instance{Address: addr, InUse: true})
 
 		// Wait for worker goroutines to stop.
 		time.Sleep(100 * time.Millisecond)

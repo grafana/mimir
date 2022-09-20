@@ -1388,6 +1388,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -query-scheduler.max-outstanding-requests-per-tenant int
     	Maximum number of outstanding requests per tenant per query-scheduler. In-flight requests above this limit will fail with HTTP response status code 429. (default 100)
+  -query-scheduler.max-used-instances int
+    	[experimental] The maximum number of query-scheduler instances to use, regardless how many replicas are running. This option can be set only when -query-scheduler.service-discovery-mode is set to 'ring'. 0 to use all available query-scheduler instances.
   -query-scheduler.querier-forget-delay duration
     	[experimental] If a querier disconnects without sending notification about graceful shutdown, the query-scheduler will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.
   -query-scheduler.ring.consul.acl-token string

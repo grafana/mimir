@@ -24,6 +24,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
+	"github.com/grafana/mimir/pkg/util/servicediscovery"
 )
 
 const (
@@ -68,7 +69,7 @@ func newFrontendSchedulerWorkers(cfg Config, frontendAddress string, requestsCh 
 	}
 
 	var err error
-	f.schedulerDiscovery, err = schedulerdiscovery.NewServiceDiscovery(cfg.QuerySchedulerDiscovery, cfg.SchedulerAddress, cfg.DNSLookupPeriod, "query-frontend", f, log, reg)
+	f.schedulerDiscovery, err = schedulerdiscovery.New(cfg.QuerySchedulerDiscovery, cfg.SchedulerAddress, cfg.DNSLookupPeriod, "query-frontend", f, log, reg)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +107,14 @@ func (f *frontendSchedulerWorkers) stopping(_ error) error {
 	return err
 }
 
-func (f *frontendSchedulerWorkers) AddressAdded(address string) {
+func (f *frontendSchedulerWorkers) InstanceAdded(instance servicediscovery.Instance) {
+	// Connect only to in-use query-scheduler instances.
+	if instance.InUse {
+		f.addScheduler(instance.Address)
+	}
+}
+
+func (f *frontendSchedulerWorkers) addScheduler(address string) {
 	f.mu.Lock()
 	ws := f.workers
 	w := f.workers[address]
@@ -118,10 +126,10 @@ func (f *frontendSchedulerWorkers) AddressAdded(address string) {
 	}
 	f.mu.Unlock()
 
-	level.Info(f.log).Log("msg", "adding connection to scheduler", "addr", address)
+	level.Info(f.log).Log("msg", "adding connection to query-scheduler", "addr", address)
 	conn, err := f.connectToScheduler(context.Background(), address)
 	if err != nil {
-		level.Error(f.log).Log("msg", "error connecting to scheduler", "addr", address, "err", err)
+		level.Error(f.log).Log("msg", "error connecting to query-scheduler", "addr", address, "err", err)
 		return
 	}
 
@@ -144,19 +152,34 @@ func (f *frontendSchedulerWorkers) AddressAdded(address string) {
 	w.start()
 }
 
-func (f *frontendSchedulerWorkers) AddressRemoved(address string) {
-	level.Info(f.log).Log("msg", "removing connection to scheduler", "addr", address)
+func (f *frontendSchedulerWorkers) InstanceRemoved(instance servicediscovery.Instance) {
+	f.removeScheduler(instance.Address)
+}
 
+func (f *frontendSchedulerWorkers) removeScheduler(address string) {
 	f.mu.Lock()
-	// This works fine if f.workers is nil already.
+	// This works fine if f.workers is nil already or the worker is missing
+	// because the query-scheduler instance was not in use.
 	w := f.workers[address]
 	delete(f.workers, address)
 	f.mu.Unlock()
 
 	if w != nil {
+		level.Info(f.log).Log("msg", "removing connection to query-scheduler", "addr", address)
 		w.stop()
 	}
 	f.enqueuedRequests.Delete(prometheus.Labels{schedulerAddressLabel: address})
+}
+
+func (f *frontendSchedulerWorkers) InstanceChanged(instance servicediscovery.Instance) {
+	// Ensure the query-frontend connects to in-use query-scheduler instances and disconnect from ones no more in use.
+	// The called methods correctly handle the case the query-frontend is already connected/disconnected
+	// to/from the given query-scheduler instance.
+	if instance.InUse {
+		f.addScheduler(instance.Address)
+	} else {
+		f.removeScheduler(instance.Address)
+	}
 }
 
 // Get number of workers.
