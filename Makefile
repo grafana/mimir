@@ -524,7 +524,7 @@ mixin-serve: ## Runs Grafana loading the mixin dashboards compiled at operations
 	@./operations/mimir-mixin-tools/serve/run.sh
 
 mixin-screenshots: ## Generates mixin dashboards screenshots.
-	@find docs/sources/operators-guide/monitoring-grafana-mimir/dashboards -name '*.png' -delete
+	@find docs/sources/operators-guide/monitor-grafana-mimir/dashboards -name '*.png' -delete
 	@./operations/mimir-mixin-tools/screenshots/run.sh
 
 check-jsonnet-manifests: ## Check the jsonnet manifests.
@@ -579,40 +579,6 @@ integration-tests: cmd/mimir/$(UPTODATE)
 
 web-serve:
 	cd website && hugo --config config.toml --minify -v server
-
-# Generate binaries for a Mimir release
-dist: dist/$(UPTODATE)
-
-dist/$(UPTODATE):
-	rm -fr ./dist
-	mkdir -p ./dist
-	# Build binaries for various architectures and operating systems. Only
-	# mimirtool supports Windows for now. Also darwin/386 is not a valid
-	# architecture.
-	for os in linux darwin windows; do \
-		for arch in 386 amd64 arm64; do \
-			suffix="" ; \
-			if [ "$$os" = "windows" ]; then \
-				suffix=".exe" ; \
-			fi; \
-			if [ "$$os" = "darwin" ] && [ "$$arch" = "386" ]; then \
-				continue; \
-			fi; \
-			echo "Building mimirtool for $$os/$$arch"; \
-			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mimirtool-$$os-$$arch$$suffix ./cmd/mimirtool; \
-			sha256sum ./dist/mimirtool-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/mimirtool-$$os-$$arch$$suffix-sha-256; \
-			if [ "$$os" = "windows" ]; then \
-				continue; \
-			fi; \
-			echo "Building Mimir for $$os/$$arch"; \
-			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mimir-$$os-$$arch$$suffix ./cmd/mimir; \
-			sha256sum ./dist/mimir-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/mimir-$$os-$$arch$$suffix-sha-256; \
-			echo "Building query-tee for $$os/$$arch"; \
-			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/query-tee-$$os-$$arch$$suffix ./cmd/query-tee; \
-			sha256sum ./dist/query-tee-$$os-$$arch$$suffix | cut -d ' ' -f 1 > ./dist/query-tee-$$os-$$arch$$suffix-sha-256; \
-			done; \
-		done; \
-		touch $@
 
 # Generate packages for a Mimir release.
 FPM_OPTS := fpm -s dir -v $(VERSION) -n mimir -f \
