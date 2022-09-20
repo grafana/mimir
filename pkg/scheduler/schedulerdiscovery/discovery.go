@@ -38,7 +38,7 @@ func NewServiceDiscovery(cfg Config, schedulerAddress string, lookupPeriod time.
 }
 
 func NewDNSServiceDiscovery(schedulerAddress string, lookupPeriod time.Duration, receiver Notifications) (services.Service, error) {
-	return servicediscovery.NewDNSWatcher(schedulerAddress, lookupPeriod, receiver)
+	return servicediscovery.NewDNSServiceDiscovery(schedulerAddress, lookupPeriod, receiver)
 }
 
 var (
