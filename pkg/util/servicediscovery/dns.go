@@ -52,7 +52,7 @@ func NewDNS(address string, dnsLookupPeriod time.Duration, notifications Notific
 	return services.NewBasicService(nil, w.watchDNSLoop, nil), nil
 }
 
-// watchDNSLoop watches for changes in DNS and sends receiver.
+// watchDNSLoop watches for changes in DNS and sends notifications.
 func (w *dnsServiceDiscovery) watchDNSLoop(servCtx context.Context) error {
 	go func() {
 		// Close the watcher, when this service is asked to stop.
