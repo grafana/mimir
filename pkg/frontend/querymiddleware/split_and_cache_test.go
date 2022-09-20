@@ -1595,7 +1595,7 @@ func TestSplitAndCacheMiddlewareLowerTTL(t *testing.T) {
 		// Check.
 		key = cacheHashKey(key)
 		ci := mcache.GetItems()[key]
-		actualTTL := ci.ExpiresAt.Sub(time.Now())
+		actualTTL := time.Until(ci.ExpiresAt)
 		// We use a tolerance of 50ms to avoid flaky tests.
 		require.Greater(t, actualTTL, c.expTTL-(50*time.Millisecond))
 		require.Less(t, actualTTL, c.expTTL+(50*time.Millisecond))

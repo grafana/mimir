@@ -25,7 +25,7 @@ type LRUCache struct {
 	items    prometheus.GaugeFunc
 }
 
-type CacheItem struct {
+type Item struct {
 	Data      []byte
 	ExpiresAt time.Time
 }
@@ -82,7 +82,7 @@ func (l *LRUCache) Store(ctx context.Context, data map[string][]byte, ttl time.D
 	defer l.mtx.Unlock()
 
 	for k, v := range data {
-		l.lru.Add(k, &CacheItem{
+		l.lru.Add(k, &Item{
 			Data:      v,
 			ExpiresAt: time.Now().Add(ttl),
 		})
@@ -105,7 +105,7 @@ func (l *LRUCache) Fetch(ctx context.Context, keys []string) (result map[string]
 			miss = append(miss, k)
 			continue
 		}
-		item := val.(*CacheItem)
+		item := val.(*Item)
 		if item.ExpiresAt.After(now) {
 			found[k] = item.Data
 			continue
@@ -120,7 +120,7 @@ func (l *LRUCache) Fetch(ctx context.Context, keys []string) (result map[string]
 		result = l.c.Fetch(ctx, miss)
 		for k, v := range result {
 			// we don't know the ttl of the result, so we use the default one.
-			l.lru.Add(k, &CacheItem{
+			l.lru.Add(k, &Item{
 				Data:      v,
 				ExpiresAt: now.Add(l.defaultTTL),
 			})

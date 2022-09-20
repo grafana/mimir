@@ -15,7 +15,7 @@ import (
 
 type MockCache struct {
 	mu    sync.Mutex
-	cache map[string]CacheItem
+	cache map[string]Item
 }
 
 func NewMockCache() *MockCache {
@@ -30,7 +30,7 @@ func (m *MockCache) Store(_ context.Context, data map[string][]byte, ttl time.Du
 
 	exp := time.Now().Add(ttl)
 	for key, val := range data {
-		m.cache[key] = CacheItem{Data: val, ExpiresAt: exp}
+		m.cache[key] = Item{Data: val, ExpiresAt: exp}
 	}
 }
 
@@ -51,11 +51,11 @@ func (m *MockCache) Fetch(_ context.Context, keys []string) map[string][]byte {
 	return found
 }
 
-func (m *MockCache) GetItems() map[string]CacheItem {
+func (m *MockCache) GetItems() map[string]Item {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	res := make(map[string]CacheItem, len(m.cache))
+	res := make(map[string]Item, len(m.cache))
 	for k, v := range m.cache {
 		res[k] = v
 	}
@@ -71,7 +71,7 @@ func (m *MockCache) Flush() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	m.cache = map[string]CacheItem{}
+	m.cache = map[string]Item{}
 }
 
 func (m *MockCache) Delete(key string) {
