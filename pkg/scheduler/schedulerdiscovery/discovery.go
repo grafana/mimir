@@ -12,7 +12,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/servicediscovery"
 )
 
 // Notifications about address resolution. All notifications are sent on the same goroutine.
@@ -38,7 +38,7 @@ func NewServiceDiscovery(cfg Config, schedulerAddress string, lookupPeriod time.
 }
 
 func NewDNSServiceDiscovery(schedulerAddress string, lookupPeriod time.Duration, receiver Notifications) (services.Service, error) {
-	return util.NewDNSWatcher(schedulerAddress, lookupPeriod, receiver)
+	return servicediscovery.NewDNSWatcher(schedulerAddress, lookupPeriod, receiver)
 }
 
 var (

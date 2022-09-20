@@ -23,7 +23,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
-	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/servicediscovery"
 )
 
 type Config struct {
@@ -136,7 +136,7 @@ func NewQuerierWorker(cfg Config, handler RequestHandler, log log.Logger, reg pr
 		level.Info(log).Log("msg", "Starting querier worker connected to query-frontend", "frontend", cfg.FrontendAddress)
 
 		factory = func(receiver serviceDiscoveryNotifications) (services.Service, error) {
-			return util.NewDNSWatcher(cfg.FrontendAddress, cfg.DNSLookupPeriod, receiver)
+			return servicediscovery.NewDNSWatcher(cfg.FrontendAddress, cfg.DNSLookupPeriod, receiver)
 		}
 
 		processor = newFrontendProcessor(cfg, handler, log)
