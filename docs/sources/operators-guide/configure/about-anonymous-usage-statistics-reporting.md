@@ -35,6 +35,7 @@ When the usage statistics reporting is enabled, Grafana Mimir collects the follo
   - The `-target` parameter value, such as `all` when running Mimir in monolithic mode.
   - The `-blocks-storage.backend` value, such as `s3`.
   - The `-ingester.ring.replication-factor` value, such as `3`.
+  - The `-ingester.ring.store` value, such as `memberlist`.
   - The minimum and maximum value of `-ingester.out-of-order-time-window`, which can be overridden on a per-tenant basis (the tenant ID is not shared).
 - Information about the Mimir **cluster scale**:
   - Ingester:
