@@ -49,7 +49,6 @@ var (
 
 	// Discarded metadata reasons.
 	reasonMetadataMetricNameTooLong = metricReasonFromErrorID(globalerror.MetricMetadataMetricNameTooLong)
-	reasonMetadataHelpTooLong       = metricReasonFromErrorID(globalerror.MetricMetadataHelpTooLong)
 	reasonMetadataUnitTooLong       = metricReasonFromErrorID(globalerror.MetricMetadataUnitTooLong)
 
 	// ReasonRateLimited is one of the values for the reason to discard samples.
@@ -247,22 +246,24 @@ type MetadataValidationConfig interface {
 	MaxMetadataLength(userID string) int
 }
 
-// ValidateMetadata returns an err if a metric metadata is invalid.
-func ValidateMetadata(cfg MetadataValidationConfig, userID string, metadata *mimirpb.MetricMetadata) error {
+// CleanAndValidateMetadata returns an err if a metric metadata is invalid.
+func CleanAndValidateMetadata(cfg MetadataValidationConfig, userID string, metadata *mimirpb.MetricMetadata) error {
 	if cfg.EnforceMetadataMetricName(userID) && metadata.GetMetricFamilyName() == "" {
 		DiscardedMetadata.WithLabelValues(reasonMissingMetricName, userID).Inc()
 		return newMetadataMetricNameMissingError()
 	}
 
 	maxMetadataValueLength := cfg.MaxMetadataLength(userID)
+
+	if len(metadata.Help) > maxMetadataValueLength {
+		metadata.Help = metadata.Help[:maxMetadataValueLength]
+	}
+
 	var reason string
 	var err error
 	if len(metadata.GetMetricFamilyName()) > maxMetadataValueLength {
 		reason = reasonMetadataMetricNameTooLong
 		err = newMetadataMetricNameTooLongError(metadata)
-	} else if len(metadata.Help) > maxMetadataValueLength {
-		reason = reasonMetadataHelpTooLong
-		err = newMetadataHelpTooLongError(metadata)
 	} else if len(metadata.Unit) > maxMetadataValueLength {
 		reason = reasonMetadataUnitTooLong
 		err = newMetadataUnitTooLongError(metadata)
