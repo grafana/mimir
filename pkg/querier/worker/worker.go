@@ -83,14 +83,8 @@ type processor interface {
 	notifyShutdown(ctx context.Context, conn *grpc.ClientConn, address string)
 }
 
-// serviceDiscoveryNotifications is the interface implemented by the component receiving service discovery notifications.
-type serviceDiscoveryNotifications interface {
-	AddressAdded(address string)
-	AddressRemoved(address string)
-}
-
 // serviceDiscoveryFactory makes a new service discovery instance.
-type serviceDiscoveryFactory func(receiver serviceDiscoveryNotifications) (services.Service, error)
+type serviceDiscoveryFactory func(receiver servicediscovery.Notifications) (services.Service, error)
 
 type querierWorker struct {
 	*services.BasicService
@@ -126,7 +120,7 @@ func NewQuerierWorker(cfg Config, handler RequestHandler, log log.Logger, reg pr
 	case cfg.SchedulerAddress != "" || cfg.QuerySchedulerDiscovery.Mode == schedulerdiscovery.ModeRing:
 		level.Info(log).Log("msg", "Starting querier worker connected to query-scheduler", "scheduler", cfg.SchedulerAddress)
 
-		factory = func(receiver serviceDiscoveryNotifications) (services.Service, error) {
+		factory = func(receiver servicediscovery.Notifications) (services.Service, error) {
 			return schedulerdiscovery.NewServiceDiscovery(cfg.QuerySchedulerDiscovery, cfg.SchedulerAddress, cfg.DNSLookupPeriod, "querier", receiver, log, reg)
 		}
 
@@ -135,7 +129,7 @@ func NewQuerierWorker(cfg Config, handler RequestHandler, log log.Logger, reg pr
 	case cfg.FrontendAddress != "":
 		level.Info(log).Log("msg", "Starting querier worker connected to query-frontend", "frontend", cfg.FrontendAddress)
 
-		factory = func(receiver serviceDiscoveryNotifications) (services.Service, error) {
+		factory = func(receiver servicediscovery.Notifications) (services.Service, error) {
 			return servicediscovery.NewDNSServiceDiscovery(cfg.FrontendAddress, cfg.DNSLookupPeriod, receiver)
 		}
 
