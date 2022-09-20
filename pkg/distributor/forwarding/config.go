@@ -6,6 +6,8 @@ import (
 	"errors"
 	"flag"
 	"time"
+
+	"github.com/grafana/dskit/grpcclient"
 )
 
 type Config struct {
@@ -13,6 +15,8 @@ type Config struct {
 	RequestConcurrency int           `yaml:"request_concurrency" category:"experimental"`
 	RequestTimeout     time.Duration `yaml:"request_timeout" category:"experimental"`
 	PropagateErrors    bool          `yaml:"propagate_errors" category:"experimental"`
+
+	GRPCClientConfig grpcclient.Config `yaml:"grpc_client"`
 }
 
 func (c *Config) RegisterFlags(f *flag.FlagSet) {
@@ -20,6 +24,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&c.RequestConcurrency, "distributor.forwarding.request-concurrency", 10, "Maximum concurrency at which forwarding requests get performed.")
 	f.DurationVar(&c.RequestTimeout, "distributor.forwarding.request-timeout", 2*time.Second, "Timeout for requests to ingestion endpoints to which we forward metrics.")
 	f.BoolVar(&c.PropagateErrors, "distributor.forwarding.propagate-errors", true, "If disabled then forwarding requests are always considered to be successful, errors are ignored.")
+	c.GRPCClientConfig.RegisterFlagsWithPrefix("distributor.forwarding.grpc-client", f)
 }
 
 func (c *Config) Validate() error {
