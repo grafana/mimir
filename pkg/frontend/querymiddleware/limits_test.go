@@ -205,6 +205,7 @@ type mockLimits struct {
 	splitInstantQueriesInterval time.Duration
 	totalShards                 int
 	compactorShards             int
+	outOfOrderTimeWindow        model.Duration
 }
 
 func (m mockLimits) MaxQueryLookback(string) time.Duration {
@@ -243,7 +244,7 @@ func (m mockLimits) CompactorSplitAndMergeShards(userID string) int {
 }
 
 func (m mockLimits) OutOfOrderTimeWindow(userID string) model.Duration {
-	return 0
+	return m.outOfOrderTimeWindow
 }
 
 type mockHandler struct {

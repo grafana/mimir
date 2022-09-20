@@ -1544,3 +1544,60 @@ func Test_evaluateAtModifier(t *testing.T) {
 		})
 	}
 }
+
+func TestSplitAndCacheMiddlewareLowerTTL(t *testing.T) {
+	mcache := cache.NewMockCache()
+	m := splitAndCacheMiddleware{
+		limits: mockLimits{
+			outOfOrderTimeWindow: model.Duration(time.Hour),
+		},
+		cache: mcache,
+	}
+
+	cases := []struct {
+		endTime time.Time
+		expTTL  time.Duration
+	}{
+		{
+			endTime: time.Now(),
+			expTTL:  resultsCacheLowerTTL,
+		},
+		{
+			endTime: time.Now().Add(-30 * time.Minute),
+			expTTL:  resultsCacheLowerTTL,
+		},
+		{
+			endTime: time.Now().Add(-59 * time.Minute),
+			expTTL:  resultsCacheLowerTTL,
+		},
+		{
+			endTime: time.Now().Add(-61 * time.Minute),
+			expTTL:  resultsCacheTTL,
+		},
+		{
+			endTime: time.Now().Add(-2 * time.Hour),
+			expTTL:  resultsCacheTTL,
+		},
+		{
+			endTime: time.Now().Add(-12 * time.Hour),
+			expTTL:  resultsCacheTTL,
+		},
+	}
+
+	ctx := context.Background()
+	for i, c := range cases {
+		// Store.
+		key := fmt.Sprintf("k%d", i)
+		m.storeCacheExtents(ctx, key, []string{"ten1"}, []Extent{
+			{Start: 0, End: c.endTime.UnixMilli()},
+		})
+
+		// Check.
+		key = cacheHashKey(key)
+		ci := mcache.GetItems()[key]
+		actualTTL := ci.ExpiresAt.Sub(time.Now())
+		// We use a tolerance of 50ms to avoid flaky tests.
+		require.Greater(t, actualTTL, c.expTTL-(50*time.Millisecond))
+		require.Less(t, actualTTL, c.expTTL+(50*time.Millisecond))
+	}
+}
