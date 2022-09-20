@@ -16,11 +16,6 @@ patches:
       kind: MimirConfig
     path: ./compactor-config.yaml
 
-  # TODO: Read path differences
-  - target:
-      kind: MimirConfig
-    path: ./read-path-config.yaml
-
   # TODO: Write path differences
   - target:
       kind: MimirConfig
