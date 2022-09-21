@@ -12,11 +12,6 @@ import (
 	"github.com/pkg/errors"
 )
 
-const (
-	// The token looked up in the ring to find the instances to use.
-	inUseRingToken = uint32(0)
-)
-
 var (
 	// Ring operation used to get healthy active instances in the ring.
 	activeRingOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
