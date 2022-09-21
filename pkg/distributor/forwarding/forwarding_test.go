@@ -779,8 +779,7 @@ func TestForwardingToHTTPGrpcTarget(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UnixMilli()
 
-	var cfg Config
-	cfg = testConfig // Using "var cfg Config", to make sure we make a copy of testConfig.
+	cfg := testConfig
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("ignored", flag.NewFlagSet("ignored", flag.ContinueOnError))
 
 	forwarder, reg := newForwarder(t, cfg, true)
