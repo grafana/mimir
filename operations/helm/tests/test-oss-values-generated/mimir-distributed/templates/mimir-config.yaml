@@ -39,7 +39,7 @@ data:
           backend: memcached
           memcached:
             addresses: dns+test-oss-values-mimir-index-cache.citestns.svc:11211
-            max_item_size: 15728640
+            max_item_size: 5242880
         metadata_cache:
           backend: memcached
           memcached:
