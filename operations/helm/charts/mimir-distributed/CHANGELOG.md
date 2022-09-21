@@ -33,6 +33,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Support autoscaling/v2 HorizontalPodAutoscaler for nginx autoscaling. This is used when deploying on Kubernetes >= 1.25. #2848
 * [ENHANCEMENT] Add podAntiAffinity to sizing plans (small.yaml, large.yaml, capped-small.yaml, capped-large.yaml). #2906
 
+
 ## 3.1.0
 
 * [CHANGE] **breaking change** Update minio deprecated helm chart (<https://helm.min.io/>) to the supported chart's version (<https://charts.min.io/>). #2427

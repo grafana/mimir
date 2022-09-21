@@ -4,78 +4,44 @@
 
 ### Grafana Mimir
 
-* [CHANGE] Distributor: if forwarding rules are used to forward samples, exemplars are now removed from the request #2725
-* [CHANGE] Ingester: experimental `-blocks-storage.tsdb.new-chunk-disk-mapper` has been removed, new chunk disk mapper is now always used, and is no longer marked experimental. Default value of `-blocks-storage.tsdb.head-chunks-write-queue-size` has changed to 1000000, this enables async chunk queue by default, which leads to improved latency on the write path when new chunks are created in ingesters. #2762
-* [CHANGE] Ingester: removed deprecated `-blocks-storage.tsdb.isolation-enabled` option. TSDB-level isolation is now always disabled in Mimir. #2782
-* [CHANGE] Compactor: `-compactor.partial-block-deletion-delay` must either be set to 0 (to disable partial blocks deletion) or a value higher than `4h`. #2787
-* [CHANGE] Query-frontend: CLI flag `-query-frontend.align-querier-with-step` has been deprecated. Please use `-query-frontend.align-queries-with-step` instead. #2840
 * [CHANGE] Distributor: change the default value of `-distributor.remote-timeout` to `2s` from `20s` and `-distributor.forwarding.request-timeout` to `2s` from `10s` to improve distributor resource usage when ingesters crash. #2728
-* [CHANGE] Ingester: changed default setting for `-ingester.ring.readiness-check-ring-health` from `true` to `false`. #2953
 * [CHANGE] Anonymous usage statistics tracking: added the `-ingester.ring.store` value. #2981
-* [FEATURE] Introduced an anonymous usage statistics tracking (enabled by default), to help Mimir maintainers make better decisions to support the open source community. The tracking system anonymously collects non-sensitive, non-personally identifiable information about the running Mimir cluster. #2643 #2662 #2685 #2732 #2733 #2735 #2939 #2940
-* [FEATURE] Introduced an experimental deployment mode called read-write and running a fully featured Mimir cluster with three components: write, read and backend. The read-write deployment mode is a trade-off between the monolithic mode (only one component, no isolation) and the microservices mode (many components, high isolation). #2754 #2838
+* [CHANGE] Ingester: changed default setting for `-ingester.ring.readiness-check-ring-health` from `true` to `false`. #2953
+* [CHANGE] Anonymous usage statistics tracking has been enabled by default, to help Mimir maintainers make better decisions to support the open source community. #2939
+* [CHANGE] Anonymous usage statistics tracking: added the minimum and maximum value of `-ingester.out-of-order-time-window`. #2940
 * [FEATURE] Query-scheduler: added an experimental ring-based service discovery support for the query-scheduler. Refer to [query-scheduler configuration](https://grafana.com/docs/mimir/next/operators-guide/architecture/components/query-scheduler/#configuration) for more information. #2957
 * [ENHANCEMENT] Distributor: Add `cortex_distributor_query_ingester_chunks_deduped_total` and `cortex_distributor_query_ingester_chunks_total` metrics for determining how effective ingester chunk deduplication at query time is. #2713
-* [ENHANCEMENT] Upgrade Docker base images to `alpine:3.16.2`. #2729
-* [ENHANCEMENT] Ruler: Add `<prometheus-http-prefix>/api/v1/status/buildinfo` endpoint. #2724
-* [ENHANCEMENT] Querier: Ensure all queries pulled from query-frontend or query-scheduler are immediately executed. The maximum workers concurrency in each querier is configured by `-querier.max-concurrent`. #2598
-* [ENHANCEMENT] Distributor: Add `cortex_distributor_received_requests_total` and `cortex_distributor_requests_in_total` metrics to provide visiblity into appropriate per-tenant request limits. #2770
-* [ENHANCEMENT] Distributor: Add single forwarding remote-write endpoint for a tenant (`forwarding_endpoint`), instead of using per-rule endpoints. This takes precendence over per-rule endpoints. #2801
-* [ENHANCEMENT] Added `err-mimir-distributor-max-write-message-size` to the errors catalog. #2470
-* [ENHANCEMENT] Add sanity check at startup to ensure the configured filesystem directories don't overlap for different components. #2828
 * [ENHANCEMENT] Go: updated to go 1.19.1. #2637
 * [ENHANCEMENT] Runtime config: don't unmarshal runtime configuration files if they haven't changed. This can save a bit of CPU and memory on every component using runtime config. #2954
 * [ENHANCEMENT] Query-frontend: Add `cortex_frontend_query_result_cache_skipped_total` and `cortex_frontend_query_result_cache_attempted_total` metrics to track the reason why query results are not cached. #2855
 * [ENHANCEMENT] Distributor: pool more connections per host when forwarding request. Mark requests as idempotent so they can be retried under some conditions. #2968
 * [ENHANCEMENT] Distributor: failure to send request to forwarding target now also increments `cortex_distributor_forward_errors_total`, with `status_code="failed"`. #2968
-* [BUGFIX] Ruler: fix not restoring alerts' state at startup. #2648
-* [BUGFIX] Ingester: Fix disk filling up after restarting ingesters with out-of-order support disabled while it was enabled before. #2799
-* [BUGFIX] Memberlist: retry joining memberlist cluster on startup when no nodes are resolved. #2837
-* [BUGFIX] Query-frontend: fix incorrect mapping of http status codes 413 to 500 when request is too large. #2819
-* [BUGFIX] Ruler: fix panic when `ruler.external_url` is explicitly set to an empty string (`""`) in YAML. #2915
-* [BUGFIX] Fix sanity check done on configured filesystem directories when running Alertmanager in microservices mode. #2947
 * [BUGFIX] Querier: Fix 400 response while handling streaming remote read. #2963
 * [BUGFIX] Fix a bug causing query-frontend, query-scheduler, and querier not failing if one of their internal components fail. #2978
 
 ### Mixin
 
-* [CHANGE] Dashboards: remove the "Cache - Latency (old)" panel from the "Mimir / Queries" dashboard. #2796
 * [CHANGE] Alerts: MimirQuerierAutoscalerNotActive is now critical and fires after 1h instead of 15m. #2958
-* [FEATURE] Dashboards: added support to experimental read-write deployment mode. #2780
 * [ENHANCEMENT] Dashboards: Updated the "Writes" and "Rollout progress" dashboards to account for samples ingested via the new OTLP ingestion endpoint. #2919 #2938
-* [ENHANCEMENT] Dashboards: added support to query-tee in front of ruler-query-frontend in the "Remote ruler reads" dashboard. #2761
-* [ENHANCEMENT] Dashboards: Introduce support for baremetal deployment, setting `deployment_type: 'baremetal'` in the mixin `_config`. #2657
-* [ENHANCEMENT] Dashboards: use timeseries panel to show exemplars. #2800
 * [ENHANCEMENT] Dashboards: Include per-tenant request rate in "Tenants" dashboard. #2874
 * [ENHANCEMENT] Dashboards: Include inflight object store requests in "Reads" dashboard. #2914
 * [ENHANCEMENT] Dashboards: Make queries used to find job, cluster and namespace for dropdown menus configurable. #2893
-* [BUGFIX] Dashboards: stop setting 'interval' in dashboards; it should be set on your datasource. #2802
 
 ### Jsonnet
 
-* [ENHANCEMENT] Upgrade memcached image tag to `memcached:1.6.16-alpine`. #2740
-* [ENHANCEMENT] Added `$._config.configmaps` and `$._config.runtime_config_files` to make it easy to add new configmaps or runtime config file to all components. #2748
 * [ENHANCEMENT] Querier autoscaling is now slower on scale downs: scale down 10% every 1m instead of 100%. #2962
 
 ### Mimirtool
 
-* [BUGFIX] Version checking no longer prompts for updating when already on latest version. #2723
-
 ### Query-tee
 
-* [CHANGE] Renamed CLI flag `-server.service-port` to `-server.http-service-port`. #2683
-* [CHANGE] Renamed metric `cortex_querytee_request_duration_seconds` to `cortex_querytee_backend_request_duration_seconds`. Metric `cortex_querytee_request_duration_seconds` is now reported without label `backend`. #2683
-* [ENHANCEMENT] Added HTTP over gRPC support to `query-tee` to allow testing gRPC requests to Mimir instances. #2683
-
 ### Mimir Continuous Test
-
-* [ENHANCEMENT] Added basic authentication and bearer token support for when Mimir is behind a gateway authenticating the calls. #2717
 
 ### Documentation
 
 * [ENHANCEMENT] Added documentation on how to configure storage retention. #2970
 
-## 2.3.0-rc.0
+## 2.3.0
 
 ### Grafana Mimir
 
@@ -95,8 +61,12 @@
 * [CHANGE] Purger: removed the purger component and moved its API endpoints `/purger/delete_tenant` and `/purger/delete_tenant_status` to the compactor at `/compactor/delete_tenant` and `/compactor/delete_tenant_status`. The new endpoints on the compactor are stable. #2644
 * [CHANGE] Memberlist: Change the leave timeout duration (`-memberlist.leave-timeout duration`) from 5s to 20s and connection timeout (`-memberlist.packet-dial-timeout`) from 5s to 2s. This makes leave timeout 10x the connection timeout, so that we can communicate the leave to at least 1 node, if the first 9 we try to contact times out. #2669
 * [CHANGE] Alertmanager: return status code `412 Precondition Failed` and log info message when alertmanager isn't configured for a tenant. #2635
-* [CHANGE] Distributor: if forwarding rules are used to forward samples, exemplars are now removed from the request. #2710
+* [CHANGE] Distributor: if forwarding rules are used to forward samples, exemplars are now removed from the request. #2710 #2725
 * [CHANGE] Limits: change the default value of `max_global_series_per_metric` limit to `0` (disabled). Setting this limit by default does not provide much benefit because series are sharded by all labels. #2714
+* [CHANGE] Ingester: experimental `-blocks-storage.tsdb.new-chunk-disk-mapper` has been removed, new chunk disk mapper is now always used, and is no longer marked experimental. Default value of `-blocks-storage.tsdb.head-chunks-write-queue-size` has changed to 1000000, this enables async chunk queue by default, which leads to improved latency on the write path when new chunks are created in ingesters. #2762
+* [CHANGE] Ingester: removed deprecated `-blocks-storage.tsdb.isolation-enabled` option. TSDB-level isolation is now always disabled in Mimir. #2782
+* [CHANGE] Compactor: `-compactor.partial-block-deletion-delay` must either be set to 0 (to disable partial blocks deletion) or a value higher than `4h`. #2787
+* [CHANGE] Query-frontend: CLI flag `-query-frontend.align-querier-with-step` has been deprecated. Please use `-query-frontend.align-queries-with-step` instead. #2840
 * [FEATURE] Compactor: Adds the ability to delete partial blocks after a configurable delay. This option can be configured per tenant. #2285
   - `-compactor.partial-block-deletion-delay`, as a duration string, allows you to set the delay since a partial block has been modified before marking it for deletion. A value of `0`, the default, disables this feature.
   - The metric `cortex_compactor_blocks_marked_for_deletion_total` has a new value for the `reason` label `reason="partial"`, when a block deletion marker is triggered by the partial block deletion delay.
@@ -104,6 +74,8 @@
 * [FEATURE] EXPERIMENTAL: OpenTelemetry Metrics ingestion path on `/otlp/v1/metrics`. #695 #2436 #2461
 * [FEATURE] Querier: Added support for tenant federation to metric metadata endpoint. #2467
 * [FEATURE] Query-frontend: introduced experimental support to split instant queries by time. The instant query splitting can be enabled setting `-query-frontend.split-instant-queries-by-interval`. #2469 #2564 #2565 #2570 #2571 #2572 #2573 #2574 #2575 #2576 #2581 #2582 #2601 #2632 #2633 #2634 #2641 #2642 #2766
+* [FEATURE] Introduced an experimental anonymous usage statistics tracking (disabled by default), to help Mimir maintainers make better decisions to support the open source community. The tracking system anonymously collects non-sensitive, non-personally identifiable information about the running Mimir cluster, and is disabled by default. #2643 #2662 #2685 #2732 #2733 #2735
+* [FEATURE] Introduced an experimental deployment mode called read-write and running a fully featured Mimir cluster with three components: write, read and backend. The read-write deployment mode is a trade-off between the monolithic mode (only one component, no isolation) and the microservices mode (many components, high isolation). #2754 #2838
 * [ENHANCEMENT] Distributor: Decreased distributor tests execution time. #2562
 * [ENHANCEMENT] Alertmanager: Allow the HTTP `proxy_url` configuration option in the receiver's configuration. #2317
 * [ENHANCEMENT] ring: optimize shuffle-shard computation when lookback is used, and all instances have registered timestamp within the lookback window. In that case we can immediately return origial ring, because we would select all instances anyway. #2309
@@ -118,6 +90,14 @@
 * [ENHANCEMENT] Runtime Config: Allow operator to specify multiple comma-separated yaml files in `-runtime-config.file` that will be merged in left to right order. #2583
 * [ENHANCEMENT] Query sharding: shard binary operations only if it doesn't lead to non-shardable vector selectors in one of the operands. #2696
 * [ENHANCEMENT] Add packaging for both debian based deb file and redhat based rpm file using FPM. #1803
+* [ENHANCEMENT] Distributor: Add `cortex_distributor_query_ingester_chunks_deduped_total` and `cortex_distributor_query_ingester_chunks_total` metrics for determining how effective ingester chunk deduplication at query time is. #2713
+* [ENHANCEMENT] Upgrade Docker base images to `alpine:3.16.2`. #2729
+* [ENHANCEMENT] Ruler: Add `<prometheus-http-prefix>/api/v1/status/buildinfo` endpoint. #2724
+* [ENHANCEMENT] Querier: Ensure all queries pulled from query-frontend or query-scheduler are immediately executed. The maximum workers concurrency in each querier is configured by `-querier.max-concurrent`. #2598
+* [ENHANCEMENT] Distributor: Add `cortex_distributor_received_requests_total` and `cortex_distributor_requests_in_total` metrics to provide visiblity into appropriate per-tenant request limits. #2770
+* [ENHANCEMENT] Distributor: Add single forwarding remote-write endpoint for a tenant (`forwarding_endpoint`), instead of using per-rule endpoints. This takes precendence over per-rule endpoints. #2801
+* [ENHANCEMENT] Added `err-mimir-distributor-max-write-message-size` to the errors catalog. #2470
+* [ENHANCEMENT] Add sanity check at startup to ensure the configured filesystem directories don't overlap for different components. #2828 #2947
 * [BUGFIX] TSDB: Fixed a bug on the experimental out-of-order implementation that led to wrong query results. #2701
 * [BUGFIX] Compactor: log the actual error on compaction failed. #2261
 * [BUGFIX] Alertmanager: restore state from storage even when running a single replica. #2293
@@ -135,21 +115,32 @@
 * [BUGFIX] Fix reporting of tracing spans from PromQL engine. #2707
 * [BUGFIX] Apply relabel and drop_label rules before forwarding rules in the distributor. #2703
 * [BUGFIX] Distributor: Register `cortex_discarded_requests_total` metric, which previously was not registered and therefore not exported. #2712
+* [BUGFIX] Ruler: fix not restoring alerts' state at startup. #2648
+* [BUGFIX] Ingester: Fix disk filling up after restarting ingesters with out-of-order support disabled while it was enabled before. #2799
+* [BUGFIX] Memberlist: retry joining memberlist cluster on startup when no nodes are resolved. #2837
+* [BUGFIX] Query-frontend: fix incorrect mapping of http status codes 413 to 500 when request is too large. #2819
+* [BUGFIX] Alertmanager: revert upstream alertmananger to v0.24.0 to fix panic when unmarshalling email headers #2924 #2925
 
 ### Mixin
 
 * [CHANGE] Dashboards: "Slow Queries" dashboard no longer works with versions older than Grafana 9.0. #2223
 * [CHANGE] Alerts: use RSS memory instead of working set memory in the `MimirAllocatingTooMuchMemory` alert for ingesters. #2480
+* [CHANGE] Dashboards: remove the "Cache - Latency (old)" panel from the "Mimir / Queries" dashboard. #2796
+* [FEATURE] Dashboards: added support to experimental read-write deployment mode. #2780
 * [ENHANCEMENT] Dashboards: added missed rule evaluations to the "Evaluations per second" panel in the "Mimir / Ruler" dashboard. #2314
 * [ENHANCEMENT] Dashboards: add k8s resource requests to CPU and memory panels. #2346
 * [ENHANCEMENT] Dashboards: add RSS memory utilization panel for ingesters, store-gateways and compactors. #2479
 * [ENHANCEMENT] Dashboards: allow to configure graph tooltip. #2647
 * [ENHANCEMENT] Alerts: MimirFrontendQueriesStuck and MimirSchedulerQueriesStuck alerts are more reliable now as they consider all the intermediate samples in the minute prior to the evaluation. #2630
 * [ENHANCEMENT] Alerts: added `RolloutOperatorNotReconciling` alert, firing if the optional rollout-operator is not successfully reconciling. #2700
+* [ENHANCEMENT] Dashboards: added support to query-tee in front of ruler-query-frontend in the "Remote ruler reads" dashboard. #2761
+* [ENHANCEMENT] Dashboards: Introduce support for baremetal deployment, setting `deployment_type: 'baremetal'` in the mixin `_config`. #2657
+* [ENHANCEMENT] Dashboards: use timeseries panel to show exemplars. #2800
 * [BUGFIX] Dashboards: fixed unit of latency panels in the "Mimir / Ruler" dashboard. #2312
 * [BUGFIX] Dashboards: fixed "Intervals per query" panel in the "Mimir / Queries" dashboard. #2308
 * [BUGFIX] Dashboards: Make "Slow Queries" dashboard works with Grafana 9.0. #2223
 * [BUGFIX] Dashboards: add missing API routes to Ruler dashboard. #2412
+* [BUGFIX] Dashboards: stop setting 'interval' in dashboards; it should be set on your datasource. #2802
 
 ### Jsonnet
 
@@ -173,6 +164,8 @@
   * `autoscaling_ruler_querier_max_replicas`: maximum number of ruler-querier replicas.
   * `autoscaling_prometheus_url`: Prometheus base URL from which to scrape Mimir metrics (e.g. `http://prometheus.default:9090/prometheus`).
 * [ENHANCEMENT] Memberlist now uses DNS service-discovery by default. #2549
+* [ENHANCEMENT] Upgrade memcached image tag to `memcached:1.6.16-alpine`. #2740
+* [ENHANCEMENT] Added `$._config.configmaps` and `$._config.runtime_config_files` to make it easy to add new configmaps or runtime config file to all components. #2748
 
 ### Mimirtool
 
@@ -180,8 +173,17 @@
 * [ENHANCEMENT] mimirtool bucket-validation: Verify existing objects can be overwritten by subsequent uploads. #2491
 * [ENHANCEMENT] mimirtool config convert: Now supports migrating to the current version of Mimir. #2629
 * [BUGFIX] mimirtool analyze: Fix dashboard JSON unmarshalling errors by using custom parsing. #2386
+* [BUGFIX] Version checking no longer prompts for updating when already on latest version. #2723
 
 ### Mimir Continuous Test
+
+* [ENHANCEMENT] Added basic authentication and bearer token support for when Mimir is behind a gateway authenticating the calls. #2717
+
+### Query-tee
+
+* [CHANGE] Renamed CLI flag `-server.service-port` to `-server.http-service-port`. #2683
+* [CHANGE] Renamed metric `cortex_querytee_request_duration_seconds` to `cortex_querytee_backend_request_duration_seconds`. Metric `cortex_querytee_request_duration_seconds` is now reported without label `backend`. #2683
+* [ENHANCEMENT] Added HTTP over gRPC support to `query-tee` to allow testing gRPC requests to Mimir instances. #2683
 
 ### Documentation
 
