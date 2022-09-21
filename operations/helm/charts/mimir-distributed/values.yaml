@@ -2651,6 +2651,45 @@ metaMonitoring:
     # Does not affect the ServiceMonitors for kubernetes metrics; use serviceMonitor.annotations for that.
     annotations: {}
 
+    # -- Service account name that the agent pods will run with. This is different from the service account that the operator pod runs with.
+    # This is useful when deploying the mimir-distributed chart with PodSecurityPolicy because the service
+    # The operator pod service account is configured in the grafana-agent-operator.serviceAccount value.
+    serviceAccountName: ''
+
+    # -- SecurityContext of Grafana Agent pods. This is different from the SecurityContext that the operator pod runs with.
+    # The operator pod SecurityContext is configured in the grafana-agent-operator.podSecurityContext value.
+    podSecurityContext:
+    #  fsGroup: 10001
+    #  runAsGroup: 10001
+    #  runAsNonRoot: true
+    #  runAsUser: 10001
+    #  seccompProfile:
+    #    type: RuntimeDefault
+
+    # -- SecurityContext of Grafana Agent containers. This is different from the SecurityContext that the operator container runs with.
+    # The operator container SecurityContext is still not configurable.
+    containerSecurityContext:
+    #  allowPrivilegeEscalation: false
+    #  readOnlyRootFilesystem: true
+    #  capabilities:
+    #    drop: [ALL]
+
+# -- Values exposed by the [Grafana agent-operator chart](https://github.com/grafana/helm-charts/blob/main/charts/agent-operator/values.yaml)
+grafana-agent-operator:
+  podSecurityContext:
+    fsGroup: 10001
+    runAsGroup: 10001
+    runAsNonRoot: true
+    runAsUser: 10001
+    seccompProfile:
+      type: RuntimeDefault
+
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
+
 ##############################################################################
 # The values in and after the `enterprise:` key configure the enterprise features
 enterprise:
