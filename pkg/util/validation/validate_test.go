@@ -260,6 +260,12 @@ func TestValidateMetadata(t *testing.T) {
 			&mimirpb.MetricMetadata{MetricFamilyName: "go_goroutines", Type: mimirpb.COUNTER, Help: "This help has wchar:", Unit: ""},
 		},
 		{
+			"with invalid long UTF-8 help",
+			&mimirpb.MetricMetadata{MetricFamilyName: "go_goroutines", Type: mimirpb.COUNTER, Help: "This help has \xe6char:日日日", Unit: ""},
+			nil,
+			&mimirpb.MetricMetadata{MetricFamilyName: "go_goroutines", Type: mimirpb.COUNTER, Help: "This help has \xe6char:", Unit: ""},
+		},
+		{
 			"with a long unit",
 			&mimirpb.MetricMetadata{MetricFamilyName: "go_goroutines", Type: mimirpb.COUNTER, Help: "Number of goroutines.", Unit: "a_made_up_unit_that_is_really_long"},
 			newMetadataUnitTooLongError(&mimirpb.MetricMetadata{MetricFamilyName: "go_goroutines", Unit: "a_made_up_unit_that_is_really_long"}),
