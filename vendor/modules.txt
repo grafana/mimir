@@ -1350,7 +1350,6 @@ sigs.k8s.io/kustomize/kyaml/yaml/walk
 ## explicit; go 1.12
 sigs.k8s.io/yaml
 # github.com/prometheus/alertmanager => github.com/prometheus/alertmanager v0.24.0
-# git.apache.org/thrift.git => github.com/apache/thrift v0.0.0-20180902110319-2566ecd5d999
 # github.com/bradfitz/gomemcache => github.com/grafana/gomemcache v0.0.0-20220812141943-44b6cde200bb
 # github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20220822125643-4aa6d561a134
 # github.com/thanos-io/thanos => github.com/grafana/thanos v0.19.1-0.20220713162227-7bde03e4afa9
