@@ -134,7 +134,7 @@ func (m *ClientMock) Exists(ctx context.Context, name string) (bool, error) {
 
 // IsObjNotFoundErr mocks objstore.Bucket.IsObjNotFoundErr()
 func (m *ClientMock) IsObjNotFoundErr(err error) bool {
-	return err == ErrObjectDoesNotExist
+	return errors.Is(err, ErrObjectDoesNotExist)
 }
 
 // ObjectSize mocks objstore.Bucket.Attributes()
