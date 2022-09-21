@@ -256,7 +256,14 @@ func CleanAndValidateMetadata(cfg MetadataValidationConfig, userID string, metad
 	maxMetadataValueLength := cfg.MaxMetadataLength(userID)
 
 	if len(metadata.Help) > maxMetadataValueLength {
-		metadata.Help = metadata.Help[:maxMetadataValueLength]
+		newlen := 0
+		for idx := range metadata.Help {
+			if idx > maxMetadataValueLength {
+				break
+			}
+			newlen = idx // idx is the index of the next character, making it the length of what comes before
+		}
+		metadata.Help = metadata.Help[:newlen]
 	}
 
 	var reason string
