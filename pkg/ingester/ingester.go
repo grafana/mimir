@@ -95,6 +95,7 @@ const (
 	sampleOutOfBounds    = "sample-out-of-bounds"
 
 	replicationFactorStatsName             = "ingester_replication_factor"
+	ringStoreStatsName                     = "ingester_ring_store"
 	memorySeriesStatsName                  = "ingester_inmemory_series"
 	memoryTenantsStatsName                 = "ingester_inmemory_tenants"
 	appendedSamplesStatsName               = "ingester_appended_samples"
@@ -262,6 +263,7 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 
 	// Track constant usage stats.
 	usagestats.GetInt(replicationFactorStatsName).Set(int64(cfg.IngesterRing.ReplicationFactor))
+	usagestats.GetString(ringStoreStatsName).Set(cfg.IngesterRing.KVStore.Store)
 
 	return &Ingester{
 		cfg:    cfg,
@@ -768,6 +770,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 			// of it, so that we can return it back to the distributor, which will return a
 			// 400 error to the client. The client (Prometheus) will not retry on 400, and
 			// we actually ingested all samples which haven't failed.
+			//nolint:errorlint // We don't expect the cause error to be wrapped.
 			switch cause := errors.Cause(err); cause {
 			case storage.ErrOutOfBounds:
 				sampleOutOfBoundsCount++
@@ -1748,7 +1751,7 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 
 			// If the dir is empty skip it
 			if _, err := f.Readdirnames(1); err != nil {
-				if err == io.EOF {
+				if errors.Is(err, io.EOF) {
 					return filepath.SkipDir
 				}
 

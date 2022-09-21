@@ -3136,7 +3136,7 @@
           "kind": "field",
           "name": "frontend_address",
           "required": false,
-          "desc": "Address of the query-frontend component, in host:port format. Only one of -querier.frontend-address or -querier.scheduler-address can be set. If neither is set, queries are only received via HTTP endpoint.",
+          "desc": "Address of the query-frontend component, in host:port format. If multiple query-frontends are running, the host should be a DNS resolving to all query-frontend instances. This option should be set only when query-scheduler component is not in use.",
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "querier.frontend-address",
@@ -3146,7 +3146,7 @@
           "kind": "field",
           "name": "scheduler_address",
           "required": false,
-          "desc": "Address of the query-scheduler component, in host:port format. Only one of -querier.frontend-address or -querier.scheduler-address can be set. If neither is set, queries are only received via HTTP endpoint.",
+          "desc": "Address of the query-scheduler component, in host:port format. The host should resolve to all query-scheduler instances. This option should be set only when query-scheduler component is in use and -query-scheduler.service-discovery-mode is set to 'dns'.",
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "querier.scheduler-address",
@@ -3427,7 +3427,7 @@
           "kind": "field",
           "name": "scheduler_address",
           "required": false,
-          "desc": "DNS hostname used for finding query-schedulers.",
+          "desc": "Address of the query-scheduler component, in host:port format. The host should resolve to all query-scheduler instances. This option should be set only when query-scheduler component is in use and -query-scheduler.service-discovery-mode is set to 'dns'.",
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "query-frontend.scheduler-address",
@@ -10222,6 +10222,391 @@
               "fieldDefaultValue": false,
               "fieldFlag": "query-scheduler.grpc-client-config.tls-insecure-skip-verify",
               "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "service_discovery_mode",
+          "required": false,
+          "desc": "Service discovery mode that query-frontends and queriers use to find query-scheduler instances. When query-scheduler ring-based service discovery is enabled, this option needs be set on query-schedulers, query-frontends and queriers. Supported values are: dns, ring.",
+          "fieldValue": null,
+          "fieldDefaultValue": "dns",
+          "fieldFlag": "query-scheduler.service-discovery-mode",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "block",
+          "name": "ring",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "block",
+              "name": "kvstore",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "store",
+                  "required": false,
+                  "desc": "Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "memberlist",
+                  "fieldFlag": "query-scheduler.ring.store",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "prefix",
+                  "required": false,
+                  "desc": "The prefix for the keys in the store. Should end with a /.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "collectors/",
+                  "fieldFlag": "query-scheduler.ring.prefix",
+                  "fieldType": "string",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "block",
+                  "name": "consul",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "host",
+                      "required": false,
+                      "desc": "Hostname and port of Consul.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "localhost:8500",
+                      "fieldFlag": "query-scheduler.ring.consul.hostname",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "acl_token",
+                      "required": false,
+                      "desc": "ACL Token used to interact with Consul.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "query-scheduler.ring.consul.acl-token",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "http_client_timeout",
+                      "required": false,
+                      "desc": "HTTP timeout when talking to Consul",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 20000000000,
+                      "fieldFlag": "query-scheduler.ring.consul.client-timeout",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "consistent_reads",
+                      "required": false,
+                      "desc": "Enable consistent reads to Consul.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "query-scheduler.ring.consul.consistent-reads",
+                      "fieldType": "boolean",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "watch_rate_limit",
+                      "required": false,
+                      "desc": "Rate limit when watching key or prefix in Consul, in requests per second. 0 disables the rate limit.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1,
+                      "fieldFlag": "query-scheduler.ring.consul.watch-rate-limit",
+                      "fieldType": "float",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "watch_burst_size",
+                      "required": false,
+                      "desc": "Burst size used in rate limit. Values less than 1 are treated as 1.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1,
+                      "fieldFlag": "query-scheduler.ring.consul.watch-burst-size",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "cas_retry_delay",
+                      "required": false,
+                      "desc": "Maximum duration to wait before retrying a Compare And Swap (CAS) operation.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 1000000000,
+                      "fieldFlag": "query-scheduler.ring.consul.cas-retry-delay",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
+                },
+                {
+                  "kind": "block",
+                  "name": "etcd",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "endpoints",
+                      "required": false,
+                      "desc": "The etcd endpoints to connect to.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": [],
+                      "fieldFlag": "query-scheduler.ring.etcd.endpoints",
+                      "fieldType": "list of strings"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "dial_timeout",
+                      "required": false,
+                      "desc": "The dial timeout for the etcd connection.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 10000000000,
+                      "fieldFlag": "query-scheduler.ring.etcd.dial-timeout",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "max_retries",
+                      "required": false,
+                      "desc": "The maximum number of retries to do for failed ops.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 10,
+                      "fieldFlag": "query-scheduler.ring.etcd.max-retries",
+                      "fieldType": "int",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_enabled",
+                      "required": false,
+                      "desc": "Enable TLS.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "query-scheduler.ring.etcd.tls-enabled",
+                      "fieldType": "boolean",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_cert_path",
+                      "required": false,
+                      "desc": "Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "query-scheduler.ring.etcd.tls-cert-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_key_path",
+                      "required": false,
+                      "desc": "Path to the key file for the client certificate. Also requires the client certificate to be configured.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "query-scheduler.ring.etcd.tls-key-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_ca_path",
+                      "required": false,
+                      "desc": "Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "query-scheduler.ring.etcd.tls-ca-path",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_server_name",
+                      "required": false,
+                      "desc": "Override the expected name on the server certificate.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "query-scheduler.ring.etcd.tls-server-name",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "tls_insecure_skip_verify",
+                      "required": false,
+                      "desc": "Skip validating server certificate.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "query-scheduler.ring.etcd.tls-insecure-skip-verify",
+                      "fieldType": "boolean",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "username",
+                      "required": false,
+                      "desc": "Etcd username.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "query-scheduler.ring.etcd.username",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "password",
+                      "required": false,
+                      "desc": "Etcd password.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "query-scheduler.ring.etcd.password",
+                      "fieldType": "string"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
+                },
+                {
+                  "kind": "block",
+                  "name": "multi",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "primary",
+                      "required": false,
+                      "desc": "Primary backend storage used by multi-client.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "query-scheduler.ring.multi.primary",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "secondary",
+                      "required": false,
+                      "desc": "Secondary backend storage used by multi-client.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "query-scheduler.ring.multi.secondary",
+                      "fieldType": "string",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "mirror_enabled",
+                      "required": false,
+                      "desc": "Mirror writes to secondary store.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "query-scheduler.ring.multi.mirror-enabled",
+                      "fieldType": "boolean",
+                      "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "mirror_timeout",
+                      "required": false,
+                      "desc": "Timeout for storing value to secondary store.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": 2000000000,
+                      "fieldFlag": "query-scheduler.ring.multi.mirror-timeout",
+                      "fieldType": "duration",
+                      "fieldCategory": "advanced"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            },
+            {
+              "kind": "field",
+              "name": "heartbeat_period",
+              "required": false,
+              "desc": "Period at which to heartbeat to the ring. 0 = disabled.",
+              "fieldValue": null,
+              "fieldDefaultValue": 15000000000,
+              "fieldFlag": "query-scheduler.ring.heartbeat-period",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "heartbeat_timeout",
+              "required": false,
+              "desc": "The heartbeat timeout after which query-schedulers are considered unhealthy within the ring. When query-scheduler ring-based service discovery is enabled, this option needs be set on query-schedulers, query-frontends and queriers.",
+              "fieldValue": null,
+              "fieldDefaultValue": 60000000000,
+              "fieldFlag": "query-scheduler.ring.heartbeat-timeout",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "instance_id",
+              "required": false,
+              "desc": "Instance ID to register in the ring.",
+              "fieldValue": null,
+              "fieldDefaultValue": "\u003chostname\u003e",
+              "fieldFlag": "query-scheduler.ring.instance-id",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "instance_interface_names",
+              "required": false,
+              "desc": "List of network interface names to look up when finding the instance IP address.",
+              "fieldValue": null,
+              "fieldDefaultValue": [],
+              "fieldFlag": "query-scheduler.ring.instance-interface-names",
+              "fieldType": "list of strings"
+            },
+            {
+              "kind": "field",
+              "name": "instance_port",
+              "required": false,
+              "desc": "Port to advertise in the ring (defaults to -server.grpc-listen-port).",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "query-scheduler.ring.instance-port",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "instance_addr",
+              "required": false,
+              "desc": "IP address to advertise in the ring. Default is auto-detected.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "query-scheduler.ring.instance-addr",
+              "fieldType": "string",
               "fieldCategory": "advanced"
             }
           ],

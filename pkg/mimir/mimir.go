@@ -166,7 +166,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.RuntimeConfig.RegisterFlags(f)
 	c.MemberlistKV.RegisterFlags(f)
 	c.ActivityTracker.RegisterFlags(f)
-	c.QueryScheduler.RegisterFlags(f)
+	c.QueryScheduler.RegisterFlags(f, logger)
 	c.UsageStats.RegisterFlags(f)
 
 	c.Common.RegisterFlags(f)
@@ -227,8 +227,8 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.Worker.Validate(log); err != nil {
 		return errors.Wrap(err, "invalid frontend_worker config")
 	}
-	if err := c.Frontend.QueryMiddleware.Validate(); err != nil {
-		return errors.Wrap(err, "invalid query-frontend middleware config")
+	if err := c.Frontend.Validate(log); err != nil {
+		return errors.Wrap(err, "invalid query-frontend config")
 	}
 	if err := c.StoreGateway.Validate(c.LimitsConfig); err != nil {
 		return errors.Wrap(err, "invalid store-gateway config")
@@ -238,6 +238,9 @@ func (c *Config) Validate(log log.Logger) error {
 	}
 	if err := c.AlertmanagerStorage.Validate(); err != nil {
 		return errors.Wrap(err, "invalid alertmanager storage config")
+	}
+	if err := c.QueryScheduler.Validate(); err != nil {
+		return errors.Wrap(err, "invalid query-scheduler config")
 	}
 	if c.isAnyModuleEnabled(AlertManager, Backend) {
 		if err := c.Alertmanager.Validate(); err != nil {
@@ -765,7 +768,7 @@ func (t *Mimir) Run() error {
 		// let's find out which module failed
 		for m, s := range t.ServiceMap {
 			if s == service {
-				if service.FailureCase() == modules.ErrStopProcess {
+				if errors.Is(service.FailureCase(), modules.ErrStopProcess) {
 					level.Info(util_log.Logger).Log("msg", "received stop signal via return error", "module", m, "err", service.FailureCase())
 				} else {
 					level.Error(util_log.Logger).Log("msg", "module failed", "module", m, "err", service.FailureCase())
@@ -801,7 +804,7 @@ func (t *Mimir) Run() error {
 	if err == nil {
 		if failed := sm.ServicesByState()[services.Failed]; len(failed) > 0 {
 			for _, f := range failed {
-				if f.FailureCase() != modules.ErrStopProcess {
+				if !errors.Is(f.FailureCase(), modules.ErrStopProcess) {
 					// Details were reported via failure listener before
 					err = errors.New("failed services")
 					break

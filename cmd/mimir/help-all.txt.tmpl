@@ -1149,7 +1149,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.dns-lookup-period duration
     	How often to query DNS for query-frontend or query-scheduler address. (default 10s)
   -querier.frontend-address string
-    	Address of the query-frontend component, in host:port format. Only one of -querier.frontend-address or -querier.scheduler-address can be set. If neither is set, queries are only received via HTTP endpoint.
+    	Address of the query-frontend component, in host:port format. If multiple query-frontends are running, the host should be a DNS resolving to all query-frontend instances. This option should be set only when query-scheduler component is not in use.
   -querier.frontend-client.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -querier.frontend-client.backoff-min-period duration
@@ -1213,7 +1213,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.query-store-after duration
     	The time after which a metric should be queried from storage and not just ingesters. 0 means all queries are sent to store. If this option is enabled, the time range of the query sent to the store-gateway will be manipulated to ensure the query end is not more recent than 'now - query-store-after'. (default 12h0m0s)
   -querier.scheduler-address string
-    	Address of the query-scheduler component, in host:port format. Only one of -querier.frontend-address or -querier.scheduler-address can be set. If neither is set, queries are only received via HTTP endpoint.
+    	Address of the query-scheduler component, in host:port format. The host should resolve to all query-scheduler instances. This option should be set only when query-scheduler component is in use and -query-scheduler.service-discovery-mode is set to 'dns'.
   -querier.shuffle-sharding-ingesters-enabled
     	Fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since -querier.query-ingesters-within. If this setting is false or -querier.query-ingesters-within is '0', queriers always query all ingesters (ingesters shuffle sharding on read path is disabled). (default true)
   -querier.store-gateway-client.tls-ca-path string
@@ -1317,7 +1317,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.results-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
   -query-frontend.scheduler-address string
-    	DNS hostname used for finding query-schedulers.
+    	Address of the query-scheduler component, in host:port format. The host should resolve to all query-scheduler instances. This option should be set only when query-scheduler component is in use and -query-scheduler.service-discovery-mode is set to 'dns'.
   -query-frontend.scheduler-dns-lookup-period duration
     	How often to resolve the scheduler-address, in order to look for new query-scheduler instances. (default 10s)
   -query-frontend.scheduler-worker-concurrency int
@@ -1360,6 +1360,68 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of outstanding requests per tenant per query-scheduler. In-flight requests above this limit will fail with HTTP response status code 429. (default 100)
   -query-scheduler.querier-forget-delay duration
     	[experimental] If a querier disconnects without sending notification about graceful shutdown, the query-scheduler will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.
+  -query-scheduler.ring.consul.acl-token string
+    	ACL Token used to interact with Consul.
+  -query-scheduler.ring.consul.cas-retry-delay duration
+    	Maximum duration to wait before retrying a Compare And Swap (CAS) operation. (default 1s)
+  -query-scheduler.ring.consul.client-timeout duration
+    	HTTP timeout when talking to Consul (default 20s)
+  -query-scheduler.ring.consul.consistent-reads
+    	Enable consistent reads to Consul.
+  -query-scheduler.ring.consul.hostname string
+    	Hostname and port of Consul. (default "localhost:8500")
+  -query-scheduler.ring.consul.watch-burst-size int
+    	Burst size used in rate limit. Values less than 1 are treated as 1. (default 1)
+  -query-scheduler.ring.consul.watch-rate-limit float
+    	Rate limit when watching key or prefix in Consul, in requests per second. 0 disables the rate limit. (default 1)
+  -query-scheduler.ring.etcd.dial-timeout duration
+    	The dial timeout for the etcd connection. (default 10s)
+  -query-scheduler.ring.etcd.endpoints string
+    	The etcd endpoints to connect to.
+  -query-scheduler.ring.etcd.max-retries int
+    	The maximum number of retries to do for failed ops. (default 10)
+  -query-scheduler.ring.etcd.password string
+    	Etcd password.
+  -query-scheduler.ring.etcd.tls-ca-path string
+    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+  -query-scheduler.ring.etcd.tls-cert-path string
+    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -query-scheduler.ring.etcd.tls-enabled
+    	Enable TLS.
+  -query-scheduler.ring.etcd.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -query-scheduler.ring.etcd.tls-key-path string
+    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -query-scheduler.ring.etcd.tls-server-name string
+    	Override the expected name on the server certificate.
+  -query-scheduler.ring.etcd.username string
+    	Etcd username.
+  -query-scheduler.ring.heartbeat-period duration
+    	Period at which to heartbeat to the ring. 0 = disabled. (default 15s)
+  -query-scheduler.ring.heartbeat-timeout duration
+    	The heartbeat timeout after which query-schedulers are considered unhealthy within the ring. When query-scheduler ring-based service discovery is enabled, this option needs be set on query-schedulers, query-frontends and queriers. (default 1m0s)
+  -query-scheduler.ring.instance-addr string
+    	IP address to advertise in the ring. Default is auto-detected.
+  -query-scheduler.ring.instance-id string
+    	Instance ID to register in the ring. (default "<hostname>")
+  -query-scheduler.ring.instance-interface-names string
+    	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
+  -query-scheduler.ring.instance-port int
+    	Port to advertise in the ring (defaults to -server.grpc-listen-port).
+  -query-scheduler.ring.multi.mirror-enabled
+    	Mirror writes to secondary store.
+  -query-scheduler.ring.multi.mirror-timeout duration
+    	Timeout for storing value to secondary store. (default 2s)
+  -query-scheduler.ring.multi.primary string
+    	Primary backend storage used by multi-client.
+  -query-scheduler.ring.multi.secondary string
+    	Secondary backend storage used by multi-client.
+  -query-scheduler.ring.prefix string
+    	The prefix for the keys in the store. Should end with a /. (default "collectors/")
+  -query-scheduler.ring.store string
+    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
+  -query-scheduler.service-discovery-mode string
+    	[experimental] Service discovery mode that query-frontends and queriers use to find query-scheduler instances. When query-scheduler ring-based service discovery is enabled, this option needs be set on query-schedulers, query-frontends and queriers. Supported values are: dns, ring. (default "dns")
   -ruler-storage.azure.account-key string
     	Azure storage account key
   -ruler-storage.azure.account-name string

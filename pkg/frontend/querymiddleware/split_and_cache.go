@@ -35,7 +35,10 @@ import (
 
 const (
 	// Cache entries for 7 days. We're not disabling TTL because the backend client currently doesn't support it.
-	resultsCacheTTL = 7 * 24 * time.Hour
+	resultsCacheTTL                       = 7 * 24 * time.Hour
+	notCachableReasonUnalignedTimeRange   = "unaligned-time-range"
+	notCachableReasonTooNew               = "too-new"
+	notCachableReasonModifiersNotCachable = "has-modifiers"
 )
 
 var (
@@ -45,16 +48,34 @@ var (
 )
 
 type splitAndCacheMiddlewareMetrics struct {
-	splitQueriesCount prometheus.Counter
+	splitQueriesCount              prometheus.Counter
+	queryResultCacheAttemptedCount prometheus.Counter
+	queryResultCacheSkippedCount   *prometheus.CounterVec
 }
 
 func newSplitAndCacheMiddlewareMetrics(reg prometheus.Registerer) *splitAndCacheMiddlewareMetrics {
-	return &splitAndCacheMiddlewareMetrics{
+	m := &splitAndCacheMiddlewareMetrics{
 		splitQueriesCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_frontend_split_queries_total",
-			Help: "Total number of underlying query requests after the split by interval is applied",
+			Help: "Total number of underlying query requests after the split by interval is applied.",
 		}),
+		queryResultCacheAttemptedCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_frontend_query_result_cache_attempted_total",
+			Help: "Total number of queries that were attempted to be fetched from cache.",
+		}),
+		queryResultCacheSkippedCount: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_frontend_query_result_cache_skipped_total",
+			Help: "Total number of times a query was not cacheable because of a reason. This metric is tracked for each partial query when time-splitting is enabled.",
+		}, []string{"reason"}),
 	}
+
+	// Initialize known label values.
+	for _, reason := range []string{notCachableReasonUnalignedTimeRange, notCachableReasonTooNew,
+		notCachableReasonModifiersNotCachable} {
+		m.queryResultCacheSkippedCount.WithLabelValues(reason)
+	}
+
+	return m
 }
 
 // splitAndCacheMiddleware is a Middleware that can (optionally) split the query by interval
@@ -133,14 +154,17 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 
 	// Lookup the results cache.
 	if isCacheEnabled {
+		s.metrics.queryResultCacheAttemptedCount.Add(float64(len(splitReqs)))
+
 		// Build the cache keys for all requests to try to fetch from cache.
 		lookupReqs := make([]*splitRequest, 0, len(splitReqs))
 		lookupKeys := make([]string, 0, len(splitReqs))
 
 		for _, splitReq := range splitReqs {
 			// Do not try to pick response from cache at all if the request is not cachable.
-			if !isRequestCachable(splitReq.orig, maxCacheTime, s.cacheUnalignedRequests, s.logger) {
+			if cachable, reason := isRequestCachable(splitReq.orig, maxCacheTime, s.cacheUnalignedRequests, s.logger); !cachable {
 				splitReq.downstreamRequests = []Request{splitReq.orig}
+				s.metrics.queryResultCacheSkippedCount.WithLabelValues(reason).Inc()
 				continue
 			}
 
@@ -218,7 +242,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 			}
 
 			// Skip caching if the request is not cachable.
-			if !isRequestCachable(splitReq.orig, maxCacheTime, s.cacheUnalignedRequests, s.logger) {
+			if cachable, _ := isRequestCachable(splitReq.orig, maxCacheTime, s.cacheUnalignedRequests, s.logger); !cachable {
 				continue
 			}
 

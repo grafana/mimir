@@ -103,7 +103,7 @@ The compactor allows configuring of the compaction jobs order via the `-compacto
 
   For example, with compaction ranges `2h, 12h, 24h`, the compactor compacts the most recent blocks first (up to the 24h range), and then moves to older blocks. This policy favours the most recent blocks, assuming they are queried the most frequently.
 
-## Block deletion
+## Blocks deletion
 
 Following a successful compaction, the original blocks are deleted from the storage. Block deletion is not immediate; it follows a two step process:
 
@@ -114,6 +114,13 @@ The compactor is responsible for both marking blocks and for hard deletion.
 Soft deletion is based on a small `deletion-mark.json` file stored within the block location in the bucket.
 
 The soft delete mechanism gives time to queriers, rulers, and store-gateways to discover the new compacted blocks before the original blocks are deleted. If those original blocks were immediately hard deleted, some queries involving the compacted blocks could temporarily fail or return partial results.
+
+## Blocks retention
+
+The compactor is responsible for enforcing the storage retention, deleting the blocks that contain samples that are older than the configured retention period from the long-term storage.
+The storage retention is disabled by default, and no data will be deleted from the long-term storage unless you explicitly configure the retention period.
+
+For more information, refer to [Configure metrics storage retention]({{< relref "../../../configure/configure-metrics-storage-retention.md" >}}).
 
 ## Compactor disk utilization
 

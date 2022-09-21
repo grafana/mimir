@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -55,7 +56,7 @@ func runNotifications(t *testing.T, rateLimitedNotifier *rateLimitedNotifier, co
 
 		if err == nil {
 			success++
-		} else if err == errRateLimited {
+		} else if errors.Is(err, errRateLimited) {
 			rateLimited++
 			assert.False(t, retry)
 		} else {

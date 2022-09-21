@@ -14,7 +14,7 @@ We keep a compiled version of the helm chart for each values file in the `ci` di
 This makes it easy to see how a given PR impacts the final output.
 A PR check will fail if you forget to update the compiled manifests, and you can use `make build-helm-tests` to update them.
 
-If using macOS, make sure you have `gnu-sed` installed; otherwise, some make targets may not work properly.
+If using macOS, make sure you have `gnu-sed` installed; otherwise, some make targets will not work properly.
 
 ## Versioning
 
