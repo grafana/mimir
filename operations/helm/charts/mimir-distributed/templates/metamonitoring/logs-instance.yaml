@@ -1,5 +1,5 @@
 {{- with (.Values.metaMonitoring).grafanaAgent }}
-{{- if and (.enabled) (.logs.enabled) }}
+{{- if and .enabled .logs.enabled }}
 apiVersion: monitoring.grafana.com/v1alpha1
 kind: LogsInstance
 metadata:
