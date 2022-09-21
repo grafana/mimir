@@ -40,8 +40,8 @@ type Forwarder interface {
 }
 
 // httpGrpcPrefix is URL prefix used by forwarder to check if it should use httpgrpc for sending request over to the target.
-// Full URL is in the form: httpgrpc://hostname:port/some/path, where "dns://hostname:port" will be used to establish gRPC connection
-// ("dns://" prefix is added to enable client-side load balancing), and "/some/path" will be included in the "url"
+// Full URL is in the form: httpgrpc://hostname:port/some/path, where "hostname:port" will be used to establish gRPC connection
+// (by adding "dns:///" prefix before passing it to grpc client, to enable client-side load balancing), and "/some/path" will be included in the "url"
 // part of the message for "httpgrpc.HTTP/Handle" method.
 const httpGrpcPrefix = "httpgrpc://"
 
@@ -506,8 +506,10 @@ func (r *request) doHTTPGrpc(ctx context.Context, body []byte) error {
 		Headers: headers,
 	}
 
-	// Use dns:// prefix to enable client-side load balancing inside gRPC client.
-	c, err := r.httpGrpcClientPool.GetClientFor(fmt.Sprintf("dns://%s", u.Host))
+	// Use dns:/// prefix to enable client-side load balancing inside gRPC client.
+	// gRPC client interprets the address as "[scheme]://[authority]/endpoint, so technically we pass the host:port part to the endpoint.
+	// Authority for "dns" would be DNS server.
+	c, err := r.httpGrpcClientPool.GetClientFor(fmt.Sprintf("dns:///%s", u.Host))
 	if err != nil {
 		return errors.Wrap(err, "failed to get client for HTTP GRPC request forwarding")
 	}
