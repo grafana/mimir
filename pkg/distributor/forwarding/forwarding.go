@@ -25,7 +25,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/weaveworks/common/httpgrpc"
-	"github.com/weaveworks/common/middleware"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/keepalive"
@@ -57,13 +56,12 @@ type forwarder struct {
 	reqCh              chan *request
 	httpGrpcClientPool *client.Pool
 
-	requestsTotal            prometheus.Counter
-	errorsTotal              *prometheus.CounterVec
-	samplesTotal             prometheus.Counter
-	exemplarsTotal           prometheus.Counter
-	requestLatencyHistogram  prometheus.Histogram
-	grpcClientsGauge         prometheus.Gauge
-	grpcClientRequestLatency *prometheus.HistogramVec
+	requestsTotal           prometheus.Counter
+	errorsTotal             *prometheus.CounterVec
+	samplesTotal            prometheus.Counter
+	exemplarsTotal          prometheus.Counter
+	requestLatencyHistogram prometheus.Histogram
+	grpcClientsGauge        prometheus.Gauge
 }
 
 // NewForwarder returns a new forwarder, if forwarding is disabled it returns nil.
@@ -117,11 +115,6 @@ func NewForwarder(cfg Config, reg prometheus.Registerer, log log.Logger) Forward
 			Name: "cortex_distributor_forward_grpc_clients",
 			Help: "Number of gRPC clients used by Distributor forwarder.",
 		}),
-		grpcClientRequestLatency: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-			Name:    "cortex_distributor_forward_grpc_client_requests_latency_seconds",
-			Help:    "Time spend doing requests to forwarding target via gRPC.",
-			Buckets: prometheus.ExponentialBuckets(0.001, 4, 6),
-		}, []string{"operation", "status_code"}),
 	}
 
 	f.httpGrpcClientPool = f.newHTTPGrpcClientsPool()
@@ -143,11 +136,7 @@ func (f *forwarder) newHTTPGrpcClientsPool() *client.Pool {
 }
 
 func (f *forwarder) createHTTPGrpcClient(addr string) (client.PoolClient, error) {
-	opts, err := f.cfg.GRPCClientConfig.DialOption(
-		[]grpc.UnaryClientInterceptor{
-			middleware.UnaryClientInstrumentInterceptor(f.grpcClientRequestLatency),
-		},
-		nil)
+	opts, err := f.cfg.GRPCClientConfig.DialOption(nil, nil)
 
 	if err != nil {
 		return nil, err
