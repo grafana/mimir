@@ -1387,4 +1387,4 @@ _Changes since Cortex `1.10.0`._
 
 * [CHANGE] Removed `query-audit`. You can use `query-tee` to compare query results and performances of two Grafana Mimir backends. #1380
 
-## [Cortex 1.10.0 CHANGELOG](https://github.com/cortexproject/cortex/blob/master/CHANGELOG.md#1100--2021-08-03)
+## [Cortex 1.10.0 CHANGELOG](https://github.com/grafana/mimir/blob/a13959db5d38ff65c2b7ef52c56331d2f4dbc00c/CHANGELOG.md#cortex-1100--2021-08-03)
