@@ -53,8 +53,7 @@ type RingConfig struct {
 	InstanceAddr           string   `yaml:"instance_addr" category:"advanced"`
 
 	// Injected internally
-	ListenPort      int           `yaml:"-"`
-	RingCheckPeriod time.Duration `yaml:"-"`
+	ListenPort int `yaml:"-"`
 }
 
 // RegisterFlags adds the flags required to config this to the given flag.FlagSet.
@@ -77,9 +76,6 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.StringVar(&cfg.InstanceAddr, "query-scheduler.ring.instance-addr", "", "IP address to advertise in the ring. Default is auto-detected.")
 	f.IntVar(&cfg.InstancePort, "query-scheduler.ring.instance-port", 0, "Port to advertise in the ring (defaults to -server.grpc-listen-port).")
 	f.StringVar(&cfg.InstanceID, "query-scheduler.ring.instance-id", hostname, "Instance ID to register in the ring.")
-
-	// Defaults for internal settings.
-	cfg.RingCheckPeriod = 5 * time.Second
 }
 
 // ToBasicLifecyclerConfig returns a ring.BasicLifecyclerConfig based on the query-scheduler ring config.

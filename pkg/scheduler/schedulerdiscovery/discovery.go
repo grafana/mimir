@@ -30,5 +30,6 @@ func newRing(cfg Config, component string, receiver servicediscovery.Notificatio
 		return nil, err
 	}
 
-	return servicediscovery.NewRing(client, cfg.SchedulerRing.RingCheckPeriod, cfg.MaxUsedInstances, receiver), nil
+	const ringCheckPeriod = 5 * time.Second
+	return servicediscovery.NewRing(client, ringCheckPeriod, cfg.MaxUsedInstances, receiver), nil
 }
