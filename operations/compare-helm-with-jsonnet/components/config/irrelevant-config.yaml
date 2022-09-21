@@ -44,6 +44,7 @@ config:
       kvstore:
         prefix:
   frontend:
+    scheduler_address:
     results_cache:
       memcached:
         addresses:
@@ -58,6 +59,7 @@ config:
         prefix:
   frontend_worker:
     frontend_address:
+    scheduler_address:
   memberlist:
     join_members:
   alertmanager_storage:

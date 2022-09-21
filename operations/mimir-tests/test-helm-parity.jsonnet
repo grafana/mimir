@@ -15,5 +15,7 @@ mimir + overridesExporter {
     ruler_enabled: true,
     memberlist_ring_enabled: true,
     unregister_ingesters_on_shutdown: false,
+    query_scheduler_enabled: true,
+    query_sharding_enabled: true,
   },
 }
