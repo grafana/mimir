@@ -54,13 +54,13 @@ type forwarder struct {
 	reqCh              chan *request
 	httpGrpcClientPool *client.Pool
 
-	requestsTotal             prometheus.Counter
-	errorsTotal               *prometheus.CounterVec
-	samplesTotal              prometheus.Counter
-	exemplarsTotal            prometheus.Counter
-	requestLatencyHistogram   prometheus.Histogram
-	grpcClientsGauge          prometheus.Gauge
-	grpcClientRequestDuration *prometheus.HistogramVec
+	requestsTotal            prometheus.Counter
+	errorsTotal              *prometheus.CounterVec
+	samplesTotal             prometheus.Counter
+	exemplarsTotal           prometheus.Counter
+	requestLatencyHistogram  prometheus.Histogram
+	grpcClientsGauge         prometheus.Gauge
+	grpcClientRequestLatency *prometheus.HistogramVec
 }
 
 // NewForwarder returns a new forwarder, if forwarding is disabled it returns nil.
@@ -114,33 +114,33 @@ func NewForwarder(cfg Config, reg prometheus.Registerer, log log.Logger) Forward
 			Name: "cortex_distributor_forward_grpc_clients",
 			Help: "Number of gRPC clients used by Distributor forwarder.",
 		}),
-		grpcClientRequestDuration: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-			Name:    "cortex_distributor_forward_grpc_client_request_duration_seconds",
+		grpcClientRequestLatency: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "cortex_distributor_forward_grpc_client_requests_latency_seconds",
 			Help:    "Time spend doing requests to forwarding target via gRPC.",
 			Buckets: prometheus.ExponentialBuckets(0.001, 4, 6),
 		}, []string{"operation", "status_code"}),
 	}
 
-	f.httpGrpcClientPool = f.newHttpGrpcClientsPool()
+	f.httpGrpcClientPool = f.newHTTPGrpcClientsPool()
 	f.Service = services.NewIdleService(f.start, f.stop)
 
 	return f
 }
 
-func (f *forwarder) newHttpGrpcClientsPool() *client.Pool {
+func (f *forwarder) newHTTPGrpcClientsPool() *client.Pool {
 	poolConfig := client.PoolConfig{
 		CheckInterval:      5 * time.Second,
 		HealthCheckEnabled: true,
 		HealthCheckTimeout: 1 * time.Second,
 	}
 
-	return client.NewPool("frontend", poolConfig, nil, f.createHttpGrpcClient, f.grpcClientsGauge, f.log)
+	return client.NewPool("forwarding-httpgrpc", poolConfig, nil, f.createHTTPGrpcClient, f.grpcClientsGauge, f.log)
 }
 
-func (f *forwarder) createHttpGrpcClient(addr string) (client.PoolClient, error) {
+func (f *forwarder) createHTTPGrpcClient(addr string) (client.PoolClient, error) {
 	opts, err := f.cfg.GRPCClientConfig.DialOption(
 		[]grpc.UnaryClientInterceptor{
-			middleware.UnaryClientInstrumentInterceptor(f.grpcClientRequestDuration),
+			middleware.UnaryClientInstrumentInterceptor(f.grpcClientRequestLatency),
 		},
 		nil)
 
@@ -160,7 +160,7 @@ func (f *forwarder) createHttpGrpcClient(addr string) (client.PoolClient, error)
 		return nil, err
 	}
 
-	return &grpcHttpClient{
+	return &grpcHTTPClient{
 		HTTPClient:   httpgrpc.NewHTTPClient(conn),
 		HealthClient: grpc_health_v1.NewHealthClient(conn),
 		conn:         conn,
@@ -186,7 +186,7 @@ func (f *forwarder) stop(_ error) error {
 	f.workerWg.Wait()
 
 	if err := services.StopAndAwaitTerminated(context.Background(), f.httpGrpcClientPool); err != nil {
-		return errors.Wrap(err, "failed to stop client pool")
+		return errors.Wrap(err, "failed to stop grpc client pool")
 	}
 	return nil
 }
@@ -416,9 +416,9 @@ func (r *request) do() {
 	defer cancel()
 
 	if strings.HasPrefix(r.endpoint, httpGrpcPrefix) {
-		err = r.doHttpGrpc(ctx, snappyBuf)
+		err = r.doHTTPGrpc(ctx, snappyBuf)
 	} else {
-		err = r.doHttp(ctx, snappyBuf)
+		err = r.doHTTP(ctx, snappyBuf)
 	}
 
 	if err != nil {
@@ -429,7 +429,7 @@ func (r *request) do() {
 	}
 }
 
-func (r *request) doHttp(ctx context.Context, body []byte) error {
+func (r *request) doHTTP(ctx context.Context, body []byte) error {
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", r.endpoint, bytes.NewReader(body))
 	if err != nil {
 		// Errors from NewRequest are from unparsable URLs being configured, so this is an internal server error.
@@ -464,12 +464,12 @@ func (r *request) doHttp(ctx context.Context, body []byte) error {
 			line = scanner.Text()
 		}
 
-		r.processHttpResponse(httpResp.StatusCode, line)
+		r.processHTTPResponse(httpResp.StatusCode, line)
 	}
 	return nil
 }
 
-func (r *request) processHttpResponse(code int, message string) {
+func (r *request) processHTTPResponse(code int, message string) {
 	r.errors.WithLabelValues(strconv.Itoa(code)).Inc()
 
 	err := errors.Errorf("server returned HTTP status %d: %s", code, message)
@@ -492,10 +492,10 @@ var headers = []*httpgrpc.Header{
 	},
 }
 
-func (r *request) doHttpGrpc(ctx context.Context, body []byte) error {
+func (r *request) doHTTPGrpc(ctx context.Context, body []byte) error {
 	u, err := url.Parse(r.endpoint)
 	if err != nil {
-		return errors.Wrap(err, "failed to send HTTP request for forwarding")
+		return errors.Wrapf(err, "failed to parse URL for HTTP GRPC request forwarding: %s", r.endpoint)
 	}
 
 	req := &httpgrpc.HTTPRequest{
@@ -507,7 +507,7 @@ func (r *request) doHttpGrpc(ctx context.Context, body []byte) error {
 
 	c, err := r.httpGrpcClientPool.GetClientFor(u.Host)
 	if err != nil {
-		return errors.Wrap(err, "failed to send HTTP request for forwarding")
+		return errors.Wrap(err, "failed to get client for HTTP GRPC request forwarding")
 	}
 
 	h := c.(httpgrpc.HTTPClient)
@@ -524,7 +524,7 @@ func (r *request) doHttpGrpc(ctx context.Context, body []byte) error {
 		if r, ok := httpgrpc.HTTPResponseFromError(err); ok {
 			resp = r
 		} else {
-			return errors.Wrap(err, "failed to send HTTP request for forwarding")
+			return errors.Wrap(err, "failed to send HTTP GRPC request for forwarding")
 		}
 	}
 
@@ -535,7 +535,7 @@ func (r *request) doHttpGrpc(ctx context.Context, body []byte) error {
 			line = scanner.Text()
 		}
 
-		r.processHttpResponse(int(resp.Code), line)
+		r.processHTTPResponse(int(resp.Code), line)
 	}
 	return nil
 }
@@ -563,12 +563,12 @@ func (r *request) cleanup() {
 	wg.Done()
 }
 
-type grpcHttpClient struct {
+type grpcHTTPClient struct {
 	httpgrpc.HTTPClient
 	grpc_health_v1.HealthClient
 	conn *grpc.ClientConn
 }
 
-func (fc *grpcHttpClient) Close() error {
+func (fc *grpcHTTPClient) Close() error {
 	return fc.conn.Close()
 }

@@ -775,12 +775,12 @@ func BenchmarkRemoteWriteForwarding(b *testing.B) {
 	}
 }
 
-func TestForwardingToHttpgrpcTarget(t *testing.T) {
+func TestForwardingToHTTPGrpcTarget(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UnixMilli()
 
-	cfg := Config{}
-	cfg = testConfig
+	var cfg Config
+	cfg = testConfig // Using "var cfg Config", to make sure we make a copy of testConfig.
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("ignored", flag.NewFlagSet("ignored", flag.ContinueOnError))
 
 	forwarder, reg := newForwarder(t, cfg, true)
@@ -894,6 +894,7 @@ func newTestHttpgrpcServer(tb testing.TB, status int) (string, func() []*httpgrp
 	}()
 	tb.Cleanup(func() {
 		_ = l.Close()
+		server.Stop()
 	})
 
 	return l.Addr().String(), hs.getRequests
