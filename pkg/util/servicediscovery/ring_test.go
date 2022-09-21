@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package schedulerdiscovery
+package servicediscovery
 
 import (
 	"context"
@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
@@ -19,17 +18,28 @@ import (
 )
 
 func TestRingServiceDiscovery(t *testing.T) {
-	ctx := context.Background()
-	cfg := Config{}
-	flagext.DefaultValues(&cfg)
+	const (
+		ringKey         = "test"
+		ringCheckPeriod = 100 * time.Millisecond // Check very frequently to speed up the test.
+	)
 
-	// Check very frequently to speed up the test.
-	cfg.SchedulerRing.RingCheckPeriod = 100 * time.Millisecond
+	var (
+		ctx    = context.Background()
+		ringOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
+	)
 
-	// Inject in-memory KV store.
+	// Use an in-memory KV store.
 	inmem, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { _ = closer.Close() })
-	cfg.SchedulerRing.KVStore.Mock = inmem
+
+	// Create a ring client.
+	ringCfg := ring.Config{
+		HeartbeatTimeout:  time.Minute,
+		ReplicationFactor: 1,
+	}
+
+	ringClient, err := ring.NewWithStoreClientAndStrategy(ringCfg, "test", ringKey, inmem, ring.NewDefaultReplicationStrategy(), nil, log.NewNopLogger())
+	require.NoError(t, err)
 
 	// Create an empty ring.
 	require.NoError(t, inmem.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
@@ -39,8 +49,7 @@ func TestRingServiceDiscovery(t *testing.T) {
 	// Mock a receiver to keep track of all notified addresses.
 	receiver := newNotificationsReceiverMock()
 
-	sd, err := NewRingServiceDiscovery(cfg, "test", receiver, log.NewNopLogger(), nil)
-	require.NoError(t, err)
+	sd := NewRing(ringClient, ringOp, ringCheckPeriod, receiver)
 
 	// Start the service discovery.
 	require.NoError(t, services.StartAndAwaitRunning(ctx, sd))
@@ -107,7 +116,7 @@ func TestRingServiceDiscovery(t *testing.T) {
 	require.NoError(t, inmem.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		desc := in.(*ring.Desc)
 		instance := desc.Ingesters["instance-2"]
-		instance.Timestamp = time.Now().Add(-2 * cfg.SchedulerRing.HeartbeatTimeout).Unix()
+		instance.Timestamp = time.Now().Add(-2 * ringCfg.HeartbeatTimeout).Unix()
 		desc.Ingesters["instance-2"] = instance
 		return desc, true, nil
 	}))

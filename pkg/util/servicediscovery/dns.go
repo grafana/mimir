@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package util
+package servicediscovery
 
 import (
 	"context"
@@ -18,21 +18,22 @@ import (
 )
 
 // Notifications about address resolution. All notifications are sent on the same goroutine.
-type DNSNotifications interface {
-	// New address has been discovered by DNS watcher for supplied hostname.
+type Notifications interface {
+	// AddressAdded is called each time a new address has been discovered.
 	AddressAdded(address string)
 
-	// Previously-discovered address is no longer resolved for the hostname.
+	// AddressRemoved is called each time an address that was previously notified by AddressAdded()
+	// is no longer available.
 	AddressRemoved(address string)
 }
 
-type dnsWatcher struct {
-	watcher       grpcutil.Watcher
-	notifications DNSNotifications
+type dnsServiceDiscovery struct {
+	watcher  grpcutil.Watcher
+	receiver Notifications
 }
 
-// NewDNSWatcher creates a new DNS watcher and returns a service that is wrapping it.
-func NewDNSWatcher(address string, dnsLookupPeriod time.Duration, notifications DNSNotifications) (services.Service, error) {
+// NewDNS creates a new DNS-based service discovery.
+func NewDNS(address string, dnsLookupPeriod time.Duration, notifications Notifications) (services.Service, error) {
 	resolver, err := grpcutil.NewDNSResolverWithFreq(dnsLookupPeriod, util_log.Logger)
 	if err != nil {
 		return nil, err
@@ -44,15 +45,15 @@ func NewDNSWatcher(address string, dnsLookupPeriod time.Duration, notifications 
 		return nil, err
 	}
 
-	w := &dnsWatcher{
-		watcher:       watcher,
-		notifications: notifications,
+	w := &dnsServiceDiscovery{
+		watcher:  watcher,
+		receiver: notifications,
 	}
 	return services.NewBasicService(nil, w.watchDNSLoop, nil), nil
 }
 
 // watchDNSLoop watches for changes in DNS and sends notifications.
-func (w *dnsWatcher) watchDNSLoop(servCtx context.Context) error {
+func (w *dnsServiceDiscovery) watchDNSLoop(servCtx context.Context) error {
 	go func() {
 		// Close the watcher, when this service is asked to stop.
 		// Closing the watcher makes watchDNSLoop exit, since it only iterates on watcher updates, and has no other
@@ -70,16 +71,16 @@ func (w *dnsWatcher) watchDNSLoop(servCtx context.Context) error {
 			if servCtx.Err() != nil {
 				return nil
 			}
-			return errors.Wrapf(err, "error from DNS watcher")
+			return errors.Wrapf(err, "error from DNS service discovery")
 		}
 
 		for _, update := range updates {
 			switch update.Op {
 			case grpcutil.Add:
-				w.notifications.AddressAdded(update.Addr)
+				w.receiver.AddressAdded(update.Addr)
 
 			case grpcutil.Delete:
-				w.notifications.AddressRemoved(update.Addr)
+				w.receiver.AddressRemoved(update.Addr)
 
 			default:
 				return fmt.Errorf("unknown op: %v", update.Op)
