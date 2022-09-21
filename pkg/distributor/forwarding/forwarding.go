@@ -28,6 +28,7 @@ import (
 	"github.com/weaveworks/common/middleware"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/keepalive"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/extract"
@@ -131,9 +132,11 @@ func NewForwarder(cfg Config, reg prometheus.Registerer, log log.Logger) Forward
 
 func (f *forwarder) newHTTPGrpcClientsPool() *client.Pool {
 	poolConfig := client.PoolConfig{
-		CheckInterval:      5 * time.Second,
-		HealthCheckEnabled: true,
-		HealthCheckTimeout: 1 * time.Second,
+		CheckInterval: 5 * time.Second,
+
+		// There may be multiple hosts behind single PoolClient, we don't want to close entire client if one of hosts
+		// is unhealthy.
+		HealthCheckEnabled: false,
 	}
 
 	return client.NewPool("forwarding-httpgrpc", poolConfig, nil, f.createHTTPGrpcClient, f.grpcClientsGauge, f.log)
@@ -155,6 +158,13 @@ func (f *forwarder) createHTTPGrpcClient(addr string) (client.PoolClient, error)
 	opts = append(opts,
 		grpc.WithBlock(),
 		grpc.WithDefaultServiceConfig(grpcServiceConfig),
+
+		// These settings are quite low, and require server to be tolerant to them.
+		grpc.WithKeepaliveParams(keepalive.ClientParameters{
+			Time:                time.Second * 10,
+			Timeout:             time.Second * 5,
+			PermitWithoutStream: true,
+		}),
 	)
 
 	conn, err := grpc.Dial(addr, opts...)
