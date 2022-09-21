@@ -1168,13 +1168,6 @@ The limit protects the system’s stability from potential abuse or mistakes. To
 
 > **Note**: Invalid metrics metadata are skipped during the ingestion, and valid metadata within the same request are ingested.
 
-### err-mimir-help-too-long
-
-This non-critical error occurs when Mimir receives a write request that contains a metric metadata with an help description whose length exceeds the configured limit.
-The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-metadata-length` option.
-
-> **Note**: Invalid metrics metadata are skipped during the ingestion, and valid metadata within the same request are ingested.
-
 ### err-mimir-unit-too-long
 
 This non-critical error occurs when Mimir receives a write request that contains a metric metadata with unit name whose length exceeds the configured limit.
