@@ -170,7 +170,7 @@ func (f *forwarder) createHTTPGrpcClient(addr string) (client.PoolClient, error)
 
 func (f *forwarder) start(ctx context.Context) error {
 	if err := services.StartAndAwaitRunning(ctx, f.httpGrpcClientPool); err != nil {
-		return errors.Wrap(err, "failed to start client pool")
+		return errors.Wrap(err, "failed to start grpc client pool")
 	}
 
 	f.workerWg.Add(f.cfg.RequestConcurrency)
