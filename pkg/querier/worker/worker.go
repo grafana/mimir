@@ -256,6 +256,11 @@ func (w *querierWorker) InstanceRemoved(instance servicediscovery.Instance) {
 	if p != nil {
 		p.stop()
 	}
+
+	// Re-balance the connections between the available query-frontends / query-schedulers.
+	w.mu.Lock()
+	w.resetConcurrency()
+	w.mu.Unlock()
 }
 
 func (w *querierWorker) InstanceChanged(instance servicediscovery.Instance) {
