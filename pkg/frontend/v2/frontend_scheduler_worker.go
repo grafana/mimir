@@ -267,8 +267,8 @@ func (w *frontendSchedulerWorker) stop() {
 
 func (w *frontendSchedulerWorker) runOne(ctx context.Context, client schedulerpb.SchedulerForFrontendClient) {
 	backoffConfig := backoff.Config{
-		MinBackoff: 50 * time.Millisecond,
-		MaxBackoff: 1 * time.Second,
+		MinBackoff: 250 * time.Millisecond,
+		MaxBackoff: 2 * time.Second,
 	}
 
 	backoff := backoff.New(ctx, backoffConfig)
