@@ -91,7 +91,7 @@ The following features are currently experimental:
   - Ring-based service discovery (`-query-scheduler.service-discovery-mode` and `-query-scheduler.ring.*`)
   - Max number of used instances (`-query-scheduler.max-used-instances`)
 - Store-gateway
-  - `-blocks-storage.bucket-store.index-header-thread-pool-size`
+  - `-blocks-storage.bucket-store.index-header.map-populate-enabled`
 - Blocks Storage, Alertmanager, and Ruler support for partitioning access to the same storage bucket
   - `-alertmanager-storage.storage-prefix`
   - `-blocks-storage.storage-prefix`
