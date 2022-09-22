@@ -100,6 +100,7 @@ The following features are currently experimental:
   - HTTP API for uploading TSDB blocks
 - Anonymous usage statistics tracking
 - Read-write deployment mode
+- `/api/v1/user_limits` API endpoint
 
 ## Deprecated features
 
