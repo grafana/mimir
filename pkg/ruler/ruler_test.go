@@ -27,6 +27,7 @@ import (
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
@@ -177,12 +178,14 @@ func buildRuler(t *testing.T, cfg Config, storage rulestore.RuleStore, rulerAddr
 	return ruler
 }
 
-func newTestRuler(t *testing.T, cfg Config, storage rulestore.RuleStore) *Ruler {
+func buildAndStartRuler(t *testing.T, cfg Config, storage rulestore.RuleStore) *Ruler {
 	ruler := buildRuler(t, cfg, storage, nil)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ruler))
 
-	// Ensure all rules are loaded before usage
-	ruler.syncRules(context.Background(), rulerSyncReasonInitial)
+	// Ensure the service is stopped at the end of the test.
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), ruler))
+	})
 
 	return ruler
 }
@@ -274,10 +277,16 @@ func TestRuler_Rules(t *testing.T) {
 			cfg := defaultRulerConfig(t)
 			cfg.TenantFederation.Enabled = true
 
-			r := newTestRuler(t, cfg, newMockRuleStore(tc.mockRules))
-			defer services.StopAndAwaitTerminated(context.Background(), r) //nolint:errcheck
+			r := buildAndStartRuler(t, cfg, newMockRuleStore(tc.mockRules))
 
+			// Rules will be synchronized asynchronously, so we wait until the expected number of rule groups
+			// has been synched.
 			ctx := user.InjectOrgID(context.Background(), tc.userID)
+			test.Poll(t, 5*time.Second, len(mockRules[tc.userID]), func() interface{} {
+				rls, _ := r.Rules(ctx, &RulesRequest{})
+				return len(rls.Groups)
+			})
+
 			rls, err := r.Rules(ctx, &RulesRequest{})
 			require.NoError(t, err)
 			require.Len(t, rls.Groups, len(mockRules[tc.userID]))
@@ -1003,8 +1012,7 @@ type ruleGroupKey struct {
 func TestRuler_ListAllRules(t *testing.T) {
 	cfg := defaultRulerConfig(t)
 
-	r := newTestRuler(t, cfg, newMockRuleStore(mockRules))
-	defer services.StopAndAwaitTerminated(context.Background(), r) //nolint:errcheck
+	r := buildAndStartRuler(t, cfg, newMockRuleStore(mockRules))
 
 	router := mux.NewRouter()
 	router.Path("/ruler/rule_groups").Methods(http.MethodGet).HandlerFunc(r.ListAllRules)

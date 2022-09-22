@@ -98,6 +98,8 @@ func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg
 	}, nil
 }
 
+// SyncRuleGroups sync the input rulesGroups.
+// It's not safe to call this function concurrently.
 func (r *DefaultMultiTenantManager) SyncRuleGroups(ctx context.Context, ruleGroups map[string]rulespb.RuleGroupList) {
 	if !r.cfg.TenantFederation.Enabled {
 		RemoveFederatedRuleGroups(ruleGroups)
