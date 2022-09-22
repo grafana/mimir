@@ -41,7 +41,7 @@ type Notifications interface {
 	InstanceRemoved(instance Instance)
 
 	// InstanceChanged is called each time an instance that was previously notified by AddressAdded()
-	// has changed one of its properties.
+	// has changed its InUse value.
 	InstanceChanged(instance Instance)
 }
 

@@ -27,7 +27,7 @@ type ringServiceDiscovery struct {
 	receiver           Notifications
 
 	// Keep track of the instances that have been discovered and notified so far.
-	notified map[string]Instance
+	notifiedByAddress map[string]Instance
 }
 
 func NewRing(ringClient *ring.Ring, ringCheckPeriod time.Duration, maxUsedInstances int, receiver Notifications) services.Service {
@@ -36,7 +36,7 @@ func NewRing(ringClient *ring.Ring, ringCheckPeriod time.Duration, maxUsedInstan
 		ringCheckPeriod:    ringCheckPeriod,
 		maxUsedInstances:   maxUsedInstances,
 		subservicesWatcher: services.NewFailureWatcher(),
-		notified:           make(map[string]Instance),
+		notifiedByAddress:  make(map[string]Instance),
 		receiver:           receiver,
 	}
 
@@ -70,7 +70,7 @@ func (r *ringServiceDiscovery) running(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		case err := <-r.subservicesWatcher.Chan():
-			return errors.Wrap(err, "a subservice of query-schedulers ring-based service discovery has failed")
+			return errors.Wrap(err, "a subservice of ring-based service discovery has failed")
 		}
 	}
 }
@@ -78,38 +78,38 @@ func (r *ringServiceDiscovery) running(ctx context.Context) error {
 // notifyChanges is not concurrency safe. The input all and inUse ring.ReplicationSet may be the same object.
 func (r *ringServiceDiscovery) notifyChanges(all ring.ReplicationSet) {
 	// Build a map with the discovered instances.
-	discovered := make(map[string]Instance, len(all.Instances))
+	instancesByAddress := make(map[string]Instance, len(all.Instances))
 	for _, instance := range selectInUseInstances(all.Instances, r.maxUsedInstances) {
-		discovered[instance.Addr] = Instance{Address: instance.Addr, InUse: true}
+		instancesByAddress[instance.Addr] = Instance{Address: instance.Addr, InUse: true}
 	}
 	for _, instance := range all.Instances {
-		if _, ok := discovered[instance.Addr]; !ok {
-			discovered[instance.Addr] = Instance{Address: instance.Addr, InUse: false}
+		if _, ok := instancesByAddress[instance.Addr]; !ok {
+			instancesByAddress[instance.Addr] = Instance{Address: instance.Addr, InUse: false}
 		}
 	}
 
 	// Notify new instances.
-	for addr, instance := range discovered {
-		if _, ok := r.notified[addr]; !ok {
+	for addr, instance := range instancesByAddress {
+		if _, ok := r.notifiedByAddress[addr]; !ok {
 			r.receiver.InstanceAdded(instance)
 		}
 	}
 
 	// Notify changed instances.
-	for addr, instance := range discovered {
-		if n, ok := r.notified[addr]; ok && !n.Equal(instance) {
+	for addr, instance := range instancesByAddress {
+		if n, ok := r.notifiedByAddress[addr]; ok && !n.Equal(instance) {
 			r.receiver.InstanceChanged(instance)
 		}
 	}
 
 	// Notify removed instances.
-	for addr, instance := range r.notified {
-		if _, ok := discovered[addr]; !ok {
+	for addr, instance := range r.notifiedByAddress {
+		if _, ok := instancesByAddress[addr]; !ok {
 			r.receiver.InstanceRemoved(instance)
 		}
 	}
 
-	r.notified = discovered
+	r.notifiedByAddress = instancesByAddress
 }
 
 func selectInUseInstances(instances []ring.InstanceDesc, maxInstances int) []ring.InstanceDesc {

@@ -264,6 +264,12 @@ func (w *querierWorker) InstanceRemoved(instance servicediscovery.Instance) {
 }
 
 func (w *querierWorker) InstanceChanged(instance servicediscovery.Instance) {
+	// Ensure the querier worker hasn't been stopped (or is stopping).
+	ctx := w.ServiceContext()
+	if ctx == nil || ctx.Err() != nil {
+		return
+	}
+
 	level.Info(w.log).Log("msg", "updating connection", "addr", instance.Address, "in-use", instance.InUse)
 
 	w.mu.Lock()

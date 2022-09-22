@@ -57,26 +57,26 @@ func TestRingServiceDiscovery_WithoutMaxUsedInstances(t *testing.T) {
 	// Register some instances.
 	require.NoError(t, inmem.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		desc := in.(*ring.Desc)
-		desc.AddIngester("instance-1", "instance-1", "", nil, ring.ACTIVE, time.Now())
-		desc.AddIngester("instance-2", "instance-2", "", nil, ring.PENDING, time.Now())
-		desc.AddIngester("instance-3", "instance-3", "", nil, ring.JOINING, time.Now())
-		desc.AddIngester("instance-4", "instance-4", "", nil, ring.LEAVING, time.Now())
+		desc.AddIngester("instance-1", "127.0.0.1", "", nil, ring.ACTIVE, time.Now())
+		desc.AddIngester("instance-2", "127.0.0.2", "", nil, ring.PENDING, time.Now())
+		desc.AddIngester("instance-3", "127.0.0.3", "", nil, ring.JOINING, time.Now())
+		desc.AddIngester("instance-4", "127.0.0.4", "", nil, ring.LEAVING, time.Now())
 		return desc, true, nil
 	}))
 
-	test.Poll(t, time.Second, []Instance{{"instance-1", true}}, func() interface{} {
+	test.Poll(t, time.Second, []Instance{{"127.0.0.1", true}}, func() interface{} {
 		return receiver.getDiscoveredInstances()
 	})
 
 	// Register more instances.
 	require.NoError(t, inmem.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		desc := in.(*ring.Desc)
-		desc.AddIngester("instance-5", "instance-5", "", nil, ring.ACTIVE, time.Now())
-		desc.AddIngester("instance-6", "instance-6", "", nil, ring.ACTIVE, time.Now())
+		desc.AddIngester("instance-5", "127.0.0.5", "", nil, ring.ACTIVE, time.Now())
+		desc.AddIngester("instance-6", "127.0.0.6", "", nil, ring.ACTIVE, time.Now())
 		return desc, true, nil
 	}))
 
-	test.Poll(t, time.Second, []Instance{{"instance-1", true}, {"instance-5", true}, {"instance-6", true}}, func() interface{} {
+	test.Poll(t, time.Second, []Instance{{"127.0.0.1", true}, {"127.0.0.5", true}, {"127.0.0.6", true}}, func() interface{} {
 		return receiver.getDiscoveredInstances()
 	})
 
@@ -88,7 +88,7 @@ func TestRingServiceDiscovery_WithoutMaxUsedInstances(t *testing.T) {
 		return desc, true, nil
 	}))
 
-	test.Poll(t, time.Second, []Instance{{"instance-5", true}}, func() interface{} {
+	test.Poll(t, time.Second, []Instance{{"127.0.0.5", true}}, func() interface{} {
 		return receiver.getDiscoveredInstances()
 	})
 
@@ -101,7 +101,7 @@ func TestRingServiceDiscovery_WithoutMaxUsedInstances(t *testing.T) {
 		return desc, true, nil
 	}))
 
-	test.Poll(t, time.Second, []Instance{{"instance-2", true}, {"instance-5", true}}, func() interface{} {
+	test.Poll(t, time.Second, []Instance{{"127.0.0.2", true}, {"127.0.0.5", true}}, func() interface{} {
 		return receiver.getDiscoveredInstances()
 	})
 
@@ -114,7 +114,7 @@ func TestRingServiceDiscovery_WithoutMaxUsedInstances(t *testing.T) {
 		return desc, true, nil
 	}))
 
-	test.Poll(t, time.Second, []Instance{{"instance-5", true}}, func() interface{} {
+	test.Poll(t, time.Second, []Instance{{"127.0.0.5", true}}, func() interface{} {
 		return receiver.getDiscoveredInstances()
 	})
 }
@@ -159,26 +159,26 @@ func TestRingServiceDiscovery_WithMaxUsedInstances(t *testing.T) {
 	// Register some instances.
 	require.NoError(t, inmem.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		desc := in.(*ring.Desc)
-		desc.AddIngester("instance-1", "instance-1", "", nil, ring.ACTIVE, time.Now())
-		desc.AddIngester("instance-2", "instance-2", "", nil, ring.PENDING, time.Now())
-		desc.AddIngester("instance-3", "instance-3", "", nil, ring.JOINING, time.Now())
-		desc.AddIngester("instance-4", "instance-4", "", nil, ring.LEAVING, time.Now())
+		desc.AddIngester("instance-1", "127.0.0.1", "", nil, ring.ACTIVE, time.Now())
+		desc.AddIngester("instance-2", "127.0.0.2", "", nil, ring.PENDING, time.Now())
+		desc.AddIngester("instance-3", "127.0.0.3", "", nil, ring.JOINING, time.Now())
+		desc.AddIngester("instance-4", "127.0.0.4", "", nil, ring.LEAVING, time.Now())
 		return desc, true, nil
 	}))
 
-	test.Poll(t, time.Second, []Instance{{"instance-1", true}}, func() interface{} {
+	test.Poll(t, time.Second, []Instance{{"127.0.0.1", true}}, func() interface{} {
 		return receiver.getDiscoveredInstances()
 	})
 
 	// Register more instances.
 	require.NoError(t, inmem.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		desc := in.(*ring.Desc)
-		desc.AddIngester("instance-5", "instance-5", "", nil, ring.ACTIVE, time.Now())
-		desc.AddIngester("instance-6", "instance-6", "", nil, ring.ACTIVE, time.Now())
+		desc.AddIngester("instance-5", "127.0.0.5", "", nil, ring.ACTIVE, time.Now())
+		desc.AddIngester("instance-6", "127.0.0.6", "", nil, ring.ACTIVE, time.Now())
 		return desc, true, nil
 	}))
 
-	test.Poll(t, time.Second, []Instance{{"instance-1", true}, {"instance-5", true}, {"instance-6", false}}, func() interface{} {
+	test.Poll(t, time.Second, []Instance{{"127.0.0.1", true}, {"127.0.0.5", true}, {"127.0.0.6", false}}, func() interface{} {
 		return receiver.getDiscoveredInstances()
 	})
 
@@ -190,7 +190,7 @@ func TestRingServiceDiscovery_WithMaxUsedInstances(t *testing.T) {
 		return desc, true, nil
 	}))
 
-	test.Poll(t, time.Second, []Instance{{"instance-5", true}}, func() interface{} {
+	test.Poll(t, time.Second, []Instance{{"127.0.0.5", true}}, func() interface{} {
 		return receiver.getDiscoveredInstances()
 	})
 
@@ -208,7 +208,7 @@ func TestRingServiceDiscovery_WithMaxUsedInstances(t *testing.T) {
 		return desc, true, nil
 	}))
 
-	test.Poll(t, time.Second, []Instance{{"instance-2", true}, {"instance-3", true}, {"instance-5", false}}, func() interface{} {
+	test.Poll(t, time.Second, []Instance{{"127.0.0.2", true}, {"127.0.0.3", true}, {"127.0.0.5", false}}, func() interface{} {
 		return receiver.getDiscoveredInstances()
 	})
 
@@ -221,7 +221,7 @@ func TestRingServiceDiscovery_WithMaxUsedInstances(t *testing.T) {
 		return desc, true, nil
 	}))
 
-	test.Poll(t, time.Second, []Instance{{"instance-3", true}, {"instance-5", true}}, func() interface{} {
+	test.Poll(t, time.Second, []Instance{{"127.0.0.3", true}, {"127.0.0.5", true}}, func() interface{} {
 		return receiver.getDiscoveredInstances()
 	})
 }
