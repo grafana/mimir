@@ -1336,6 +1336,13 @@ ring:
   # (advanced) IP address to advertise in the ring. Default is auto-detected.
   # CLI flag: -query-scheduler.ring.instance-addr
   [instance_addr: <string> | default = ""]
+
+# (experimental) The maximum number of query-scheduler instances to use,
+# regardless how many replicas are running. This option can be set only when
+# -query-scheduler.service-discovery-mode is set to 'ring'. 0 to use all
+# available query-scheduler instances.
+# CLI flag: -query-scheduler.max-used-instances
+[max_used_instances: <int> | default = 0]
 ```
 
 ### ruler

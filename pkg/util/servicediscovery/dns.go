@@ -17,14 +17,32 @@ import (
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
+// Instance notified by the service discovery.
+type Instance struct {
+	Address string
+
+	// InUse is true if this instance should be actively used. For example, if a service discovery
+	// implementation enforced a max number of instances to be used, this flag will be set to true
+	// only on a number of instances up to the configured max.
+	InUse bool
+}
+
+func (i Instance) Equal(other Instance) bool {
+	return i.Address == other.Address && i.InUse == other.InUse
+}
+
 // Notifications about address resolution. All notifications are sent on the same goroutine.
 type Notifications interface {
-	// AddressAdded is called each time a new address has been discovered.
-	AddressAdded(address string)
+	// InstanceAdded is called each time a new instance has been discovered.
+	InstanceAdded(instance Instance)
 
-	// AddressRemoved is called each time an address that was previously notified by AddressAdded()
+	// InstanceRemoved is called each time an instance that was previously notified by AddressAdded()
 	// is no longer available.
-	AddressRemoved(address string)
+	InstanceRemoved(instance Instance)
+
+	// InstanceChanged is called each time an instance that was previously notified by AddressAdded()
+	// has changed its InUse value.
+	InstanceChanged(instance Instance)
 }
 
 type dnsServiceDiscovery struct {
@@ -77,10 +95,10 @@ func (w *dnsServiceDiscovery) watchDNSLoop(servCtx context.Context) error {
 		for _, update := range updates {
 			switch update.Op {
 			case grpcutil.Add:
-				w.receiver.AddressAdded(update.Addr)
+				w.receiver.InstanceAdded(Instance{Address: update.Addr, InUse: true})
 
 			case grpcutil.Delete:
-				w.receiver.AddressRemoved(update.Addr)
+				w.receiver.InstanceRemoved(Instance{Address: update.Addr, InUse: true})
 
 			default:
 				return fmt.Errorf("unknown op: %v", update.Op)
