@@ -633,6 +633,75 @@ forwarding:
   # be successful, errors are ignored.
   # CLI flag: -distributor.forwarding.propagate-errors
   [propagate_errors: <boolean> | default = true]
+
+  grpc_client:
+    # (advanced) gRPC client max receive message size (bytes).
+    # CLI flag: -distributor.forwarding.grpc-client.grpc-max-recv-msg-size
+    [max_recv_msg_size: <int> | default = 104857600]
+
+    # (advanced) gRPC client max send message size (bytes).
+    # CLI flag: -distributor.forwarding.grpc-client.grpc-max-send-msg-size
+    [max_send_msg_size: <int> | default = 104857600]
+
+    # (advanced) Use compression when sending messages. Supported values are:
+    # 'gzip', 'snappy' and '' (disable compression)
+    # CLI flag: -distributor.forwarding.grpc-client.grpc-compression
+    [grpc_compression: <string> | default = ""]
+
+    # (advanced) Rate limit for gRPC client; 0 means disabled.
+    # CLI flag: -distributor.forwarding.grpc-client.grpc-client-rate-limit
+    [rate_limit: <float> | default = 0]
+
+    # (advanced) Rate limit burst for gRPC client.
+    # CLI flag: -distributor.forwarding.grpc-client.grpc-client-rate-limit-burst
+    [rate_limit_burst: <int> | default = 0]
+
+    # (advanced) Enable backoff and retry when we hit ratelimits.
+    # CLI flag: -distributor.forwarding.grpc-client.backoff-on-ratelimits
+    [backoff_on_ratelimits: <boolean> | default = false]
+
+    backoff_config:
+      # (advanced) Minimum delay when backing off.
+      # CLI flag: -distributor.forwarding.grpc-client.backoff-min-period
+      [min_period: <duration> | default = 100ms]
+
+      # (advanced) Maximum delay when backing off.
+      # CLI flag: -distributor.forwarding.grpc-client.backoff-max-period
+      [max_period: <duration> | default = 10s]
+
+      # (advanced) Number of times to backoff and retry before failing.
+      # CLI flag: -distributor.forwarding.grpc-client.backoff-retries
+      [max_retries: <int> | default = 10]
+
+    # (advanced) Enable TLS in the GRPC client. This flag needs to be enabled
+    # when any other TLS flag is set. If set to false, insecure connection to
+    # gRPC server will be used.
+    # CLI flag: -distributor.forwarding.grpc-client.tls-enabled
+    [tls_enabled: <boolean> | default = false]
+
+    # (advanced) Path to the client certificate file, which will be used for
+    # authenticating with the server. Also requires the key path to be
+    # configured.
+    # CLI flag: -distributor.forwarding.grpc-client.tls-cert-path
+    [tls_cert_path: <string> | default = ""]
+
+    # (advanced) Path to the key file for the client certificate. Also requires
+    # the client certificate to be configured.
+    # CLI flag: -distributor.forwarding.grpc-client.tls-key-path
+    [tls_key_path: <string> | default = ""]
+
+    # (advanced) Path to the CA certificates file to validate server certificate
+    # against. If not set, the host's root CA certificates are used.
+    # CLI flag: -distributor.forwarding.grpc-client.tls-ca-path
+    [tls_ca_path: <string> | default = ""]
+
+    # (advanced) Override the expected name on the server certificate.
+    # CLI flag: -distributor.forwarding.grpc-client.tls-server-name
+    [tls_server_name: <string> | default = ""]
+
+    # (advanced) Skip validating server certificate.
+    # CLI flag: -distributor.forwarding.grpc-client.tls-insecure-skip-verify
+    [tls_insecure_skip_verify: <boolean> | default = false]
 ```
 
 ### ingester
