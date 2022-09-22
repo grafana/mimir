@@ -214,14 +214,15 @@ func (w *querierWorker) stopping(_ error) error {
 }
 
 func (w *querierWorker) InstanceAdded(instance servicediscovery.Instance) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
 	// Ensure the querier worker hasn't been stopped (or is stopping).
+	// This check is done inside the lock, to avoid any race condition with the stopping() function.
 	ctx := w.ServiceContext()
 	if ctx == nil || ctx.Err() != nil {
 		return
 	}
-
-	w.mu.Lock()
-	defer w.mu.Unlock()
 
 	address := instance.Address
 	if m := w.managers[address]; m != nil {
@@ -264,21 +265,23 @@ func (w *querierWorker) InstanceRemoved(instance servicediscovery.Instance) {
 }
 
 func (w *querierWorker) InstanceChanged(instance servicediscovery.Instance) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
 	// Ensure the querier worker hasn't been stopped (or is stopping).
+	// This check is done inside the lock, to avoid any race condition with the stopping() function.
 	ctx := w.ServiceContext()
 	if ctx == nil || ctx.Err() != nil {
 		return
 	}
 
-	level.Info(w.log).Log("msg", "updating connection", "addr", instance.Address, "in-use", instance.InUse)
-
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	// Skip if there's no manager for it.
+	// Ensure there's a manager for the instance. If there's no, then it's a bug.
 	if m := w.managers[instance.Address]; m == nil {
+		level.Error(w.log).Log("msg", "received a notification about an unknown backend instance", "addr", instance.Address, "in-use", instance.InUse)
 		return
 	}
+
+	level.Info(w.log).Log("msg", "updating connection", "addr", instance.Address, "in-use", instance.InUse)
 
 	// Update instance and adjust concurrency.
 	w.instances[instance.Address] = instance
