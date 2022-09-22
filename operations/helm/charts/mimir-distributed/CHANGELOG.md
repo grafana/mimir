@@ -29,7 +29,9 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [CHANGE] Use `topologySpreadConstraints` instead of `podAntiAffinity` by default. #2722
 * [CHANGE] Ingresses for the GEM gateway and nginx will no longer render on Kubernetes versions <1.19. #2872
 * [FEATURE] Add support for `topologySpreadConstraints` to all components; add `topologySpreadConstraints` to GEM gateway, admin-api, and alertmanager, which did not have `podAntiAffinity` previously. #2722
-* [ENHANCEMENT] Update the index-cache max item size to 5MB (down from 15MB)
+* [ENHANCEMENT] Update the index-cache max item size to 5MB (down from 15MB) #2998
+  * This now matches the default in Jsonnet and the production configuration for Grafana Cloud
+* [ENHANCEMENT] Update `limits.max_query_parallelism` to 240 (from 224) and `query_scheduler.max_outstanding_requests_per_tenant` to 800 (from 1600). #2998
   * This now matches the default in Jsonnet and the production configuration for Grafana Cloud
 * [ENHANCEMENT] Document `kubeVersionOverride`. If you rely on `helm template`, use this in your values to set the Kubernetes version. If unset helm will use the kubectl client version as the Kubernetes version with `helm template`, which may cause the chart to render incompatible manifests for the actual server version. #2872
 * [ENHANCEMENT] Support autoscaling/v2 HorizontalPodAutoscaler for nginx autoscaling. This is used when deploying on Kubernetes >= 1.25. #2848
