@@ -1166,8 +1166,7 @@ The `ruler` block configures the ruler.
 # CLI flag: -ruler.external.url
 [external_url: <url> | default = ]
 
-# The grpc_client block configures the gRPC client used to communicate between
-# two Mimir components.
+# Configures the gRPC client used to communicate between ruler instances.
 # The CLI flags prefix for this block configuration is: ruler.client
 [ruler_client: <grpc_client>]
 
