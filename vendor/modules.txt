@@ -557,11 +557,6 @@ github.com/klauspost/compress/s2
 github.com/klauspost/cpuid/v2
 # github.com/kr/pretty v0.3.0
 ## explicit; go 1.12
-# github.com/leanovate/gopter v0.2.4
-## explicit
-github.com/leanovate/gopter
-github.com/leanovate/gopter/gen
-github.com/leanovate/gopter/prop
 # github.com/mailru/easyjson v0.7.7
 ## explicit; go 1.12
 github.com/mailru/easyjson/buffer
@@ -834,7 +829,6 @@ github.com/thanos-io/thanos/pkg/block
 github.com/thanos-io/thanos/pkg/block/metadata
 github.com/thanos-io/thanos/pkg/cache
 github.com/thanos-io/thanos/pkg/cacheutil
-github.com/thanos-io/thanos/pkg/compact/downsample
 github.com/thanos-io/thanos/pkg/discovery/dns
 github.com/thanos-io/thanos/pkg/discovery/dns/godns
 github.com/thanos-io/thanos/pkg/discovery/dns/miekgdns
