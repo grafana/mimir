@@ -92,6 +92,8 @@ func TestQuerySchedulerWithMaxUsedInstances(t *testing.T) {
 	series, expectedVector := generateSeries("series_1", now, prompb.Label{Name: "foo", Value: "bar"})
 
 	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", userID)
+	require.NoError(t, err)
+
 	res, err := c.Push(series)
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
