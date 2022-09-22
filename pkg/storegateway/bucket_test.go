@@ -29,9 +29,6 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/protobuf/types"
 	"github.com/grafana/regexp"
-	"github.com/leanovate/gopter"
-	"github.com/leanovate/gopter/gen"
-	"github.com/leanovate/gopter/prop"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -48,7 +45,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
-	"github.com/thanos-io/thanos/pkg/compact/downsample"
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"github.com/thanos-io/thanos/pkg/objstore/filesystem"
 	"github.com/thanos-io/thanos/pkg/pool"
@@ -57,7 +53,6 @@ import (
 	"github.com/thanos-io/thanos/pkg/store/storepb"
 	"go.uber.org/atomic"
 
-	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
@@ -70,136 +65,6 @@ const (
 	// labelLongSuffix is a label with ~50B in size, to emulate real-world high cardinality.
 	labelLongSuffix = "aaaaaaaaaabbbbbbbbbbccccccccccdddddddddd"
 )
-
-func TestBucketBlock_Property(t *testing.T) {
-	parameters := gopter.DefaultTestParameters()
-	parameters.Rng.Seed(2000)
-	parameters.MinSuccessfulTests = 20000
-	properties := gopter.NewProperties(parameters)
-
-	set := newBucketBlockSet()
-
-	type resBlock struct {
-		mint, maxt int64
-		window     int64
-	}
-	// This input resembles a typical production-level block layout
-	// in remote object storage.
-	input := []resBlock{
-		{window: downsample.ResLevel0, mint: 0, maxt: 100},
-		{window: downsample.ResLevel0, mint: 100, maxt: 200},
-		// Compaction level 2 begins but not downsampling (8 hour block length).
-		{window: downsample.ResLevel0, mint: 200, maxt: 600},
-		{window: downsample.ResLevel0, mint: 600, maxt: 1000},
-		// Compaction level 3 begins, Some of it is downsampled but still retained (48 hour block length).
-		{window: downsample.ResLevel0, mint: 1000, maxt: 1750},
-		{window: downsample.ResLevel1, mint: 1000, maxt: 1750},
-		// Compaction level 4 begins, different downsampling levels cover the same (336 hour block length).
-		{window: downsample.ResLevel0, mint: 1750, maxt: 7000},
-		{window: downsample.ResLevel1, mint: 1750, maxt: 7000},
-		{window: downsample.ResLevel2, mint: 1750, maxt: 7000},
-		// Compaction level 4 already happened, raw samples have been deleted.
-		{window: downsample.ResLevel0, mint: 7000, maxt: 14000},
-		{window: downsample.ResLevel1, mint: 7000, maxt: 14000},
-		// Compaction level 4 already happened, raw and downsample res level 1 samples have been deleted.
-		{window: downsample.ResLevel2, mint: 14000, maxt: 21000},
-	}
-
-	for _, in := range input {
-		var m metadata.Meta
-		m.Thanos.Downsample.Resolution = in.window
-		m.MinTime = in.mint
-		m.MaxTime = in.maxt
-
-		assert.NoError(t, set.add(&bucketBlock{meta: &m}))
-	}
-
-	properties.Property("getFor always gets at least some data in range", prop.ForAllNoShrink(
-		func(low, high, maxResolution int64) bool {
-			// Bogus case.
-			if low >= high {
-				return true
-			}
-
-			res := set.getFor(low, high, maxResolution, nil)
-
-			// The data that we get must all encompass our requested range.
-			if len(res) == 1 && (res[0].meta.Thanos.Downsample.Resolution > maxResolution ||
-				res[0].meta.MinTime > low) {
-				return false
-			} else if len(res) > 1 {
-				mint := int64(21001)
-				for i := 0; i < len(res)-1; i++ {
-					if res[i].meta.Thanos.Downsample.Resolution > maxResolution {
-						return false
-					}
-					if res[i+1].meta.MinTime != res[i].meta.MaxTime {
-						return false
-					}
-					if res[i].meta.MinTime < mint {
-						mint = res[i].meta.MinTime
-					}
-				}
-				if res[len(res)-1].meta.MinTime < mint {
-					mint = res[len(res)-1].meta.MinTime
-				}
-				if low < mint {
-					return false
-				}
-
-			}
-			return true
-		}, gen.Int64Range(0, 21000), gen.Int64Range(0, 21000), gen.Int64Range(0, 60*60*1000)),
-	)
-
-	properties.Property("getFor always gets all data in range", prop.ForAllNoShrink(
-		func(low, high int64) bool {
-			// Bogus case.
-			if low >= high {
-				return true
-			}
-
-			maxResolution := downsample.ResLevel2
-			res := set.getFor(low, high, maxResolution, nil)
-
-			// The data that we get must all encompass our requested range.
-			if len(res) == 1 && (res[0].meta.Thanos.Downsample.Resolution > maxResolution ||
-				res[0].meta.MinTime > low || res[0].meta.MaxTime < high) {
-				return false
-			} else if len(res) > 1 {
-				mint := int64(21001)
-				maxt := int64(0)
-				for i := 0; i < len(res)-1; i++ {
-					if res[i+1].meta.MinTime != res[i].meta.MaxTime {
-						return false
-					}
-					if res[i].meta.MinTime < mint {
-						mint = res[i].meta.MinTime
-					}
-					if res[i].meta.MaxTime > maxt {
-						maxt = res[i].meta.MaxTime
-					}
-				}
-				if res[len(res)-1].meta.MinTime < mint {
-					mint = res[len(res)-1].meta.MinTime
-				}
-				if res[len(res)-1].meta.MaxTime > maxt {
-					maxt = res[len(res)-1].meta.MaxTime
-				}
-				if low < mint {
-					return false
-				}
-				if high > maxt {
-					return false
-				}
-
-			}
-			return true
-		}, gen.Int64Range(0, 21000), gen.Int64Range(0, 21000)),
-	)
-
-	properties.TestingRun(t)
-}
 
 func TestBucketBlock_matchLabels(t *testing.T) {
 	dir := t.TempDir()
@@ -287,115 +152,6 @@ func TestBucketBlock_matchLabels(t *testing.T) {
 
 	// Ensure block's labels in the meta have not been manipulated.
 	assert.Equal(t, map[string]string{}, meta.Thanos.Labels)
-}
-
-func TestBucketBlockSet_addGet(t *testing.T) {
-	set := newBucketBlockSet()
-
-	type resBlock struct {
-		mint, maxt int64
-		window     int64
-	}
-	// Input is expected to be sorted. It is sorted in addBlock.
-	input := []resBlock{
-		// Blocks from 0 to 100 with raw resolution.
-		{window: downsample.ResLevel0, mint: 0, maxt: 100},
-		{window: downsample.ResLevel0, mint: 100, maxt: 200},
-		{window: downsample.ResLevel0, mint: 100, maxt: 200}, // Same overlap.
-		{window: downsample.ResLevel0, mint: 200, maxt: 299}, // Short overlap.
-		{window: downsample.ResLevel0, mint: 200, maxt: 300},
-		{window: downsample.ResLevel0, mint: 300, maxt: 400},
-		{window: downsample.ResLevel0, mint: 300, maxt: 600}, // Long overlap.
-		{window: downsample.ResLevel0, mint: 400, maxt: 500},
-		// Lower resolution data not covering last block.
-		{window: downsample.ResLevel1, mint: 0, maxt: 100},
-		{window: downsample.ResLevel1, mint: 100, maxt: 200},
-		{window: downsample.ResLevel1, mint: 200, maxt: 300},
-		{window: downsample.ResLevel1, mint: 300, maxt: 400},
-		// Lower resolution data only covering middle blocks.
-		{window: downsample.ResLevel2, mint: 100, maxt: 200},
-		{window: downsample.ResLevel2, mint: 200, maxt: 300},
-	}
-
-	for _, in := range input {
-		var m metadata.Meta
-		m.Thanos.Downsample.Resolution = in.window
-		m.MinTime = in.mint
-		m.MaxTime = in.maxt
-
-		assert.NoError(t, set.add(&bucketBlock{meta: &m}))
-	}
-
-	for _, c := range []struct {
-		mint, maxt    int64
-		maxResolution int64
-		res           []resBlock
-	}{
-		{
-			mint:          -100,
-			maxt:          1000,
-			maxResolution: 0,
-			res: []resBlock{
-				{window: downsample.ResLevel0, mint: 0, maxt: 100},
-				{window: downsample.ResLevel0, mint: 100, maxt: 200},
-				{window: downsample.ResLevel0, mint: 100, maxt: 200},
-				{window: downsample.ResLevel0, mint: 200, maxt: 299},
-				{window: downsample.ResLevel0, mint: 200, maxt: 300},
-				{window: downsample.ResLevel0, mint: 300, maxt: 400},
-				{window: downsample.ResLevel0, mint: 300, maxt: 600},
-				{window: downsample.ResLevel0, mint: 400, maxt: 500},
-			},
-		}, {
-			mint:          100,
-			maxt:          400,
-			maxResolution: downsample.ResLevel1 - 1,
-			res: []resBlock{
-				{window: downsample.ResLevel0, mint: 100, maxt: 200},
-				{window: downsample.ResLevel0, mint: 100, maxt: 200},
-				{window: downsample.ResLevel0, mint: 200, maxt: 299},
-				{window: downsample.ResLevel0, mint: 200, maxt: 300},
-				{window: downsample.ResLevel0, mint: 300, maxt: 400},
-				{window: downsample.ResLevel0, mint: 300, maxt: 600},
-				// Block intervals are half-open: [b.MinTime, b.MaxTime), so 400-500 contains single sample.
-				{window: downsample.ResLevel0, mint: 400, maxt: 500},
-			},
-		}, {
-			mint:          100,
-			maxt:          500,
-			maxResolution: downsample.ResLevel1,
-			res: []resBlock{
-				{window: downsample.ResLevel1, mint: 100, maxt: 200},
-				{window: downsample.ResLevel1, mint: 200, maxt: 300},
-				{window: downsample.ResLevel1, mint: 300, maxt: 400},
-				{window: downsample.ResLevel0, mint: 300, maxt: 600},
-				{window: downsample.ResLevel0, mint: 400, maxt: 500},
-			},
-		}, {
-			mint:          0,
-			maxt:          500,
-			maxResolution: downsample.ResLevel2,
-			res: []resBlock{
-				{window: downsample.ResLevel1, mint: 0, maxt: 100},
-				{window: downsample.ResLevel2, mint: 100, maxt: 200},
-				{window: downsample.ResLevel2, mint: 200, maxt: 300},
-				{window: downsample.ResLevel1, mint: 300, maxt: 400},
-				{window: downsample.ResLevel0, mint: 300, maxt: 600},
-				{window: downsample.ResLevel0, mint: 400, maxt: 500},
-			},
-		},
-	} {
-		t.Run("", func(t *testing.T) {
-			var exp []*bucketBlock
-			for _, b := range c.res {
-				var m metadata.Meta
-				m.Thanos.Downsample.Resolution = b.window
-				m.MinTime = b.mint
-				m.MaxTime = b.maxt
-				exp = append(exp, &bucketBlock{meta: &m})
-			}
-			assert.Equal(t, exp, set.getFor(c.mint, c.maxt, c.maxResolution, nil))
-		})
-	}
 }
 
 func TestBucketBlockSet_remove(t *testing.T) {
@@ -2158,7 +1914,7 @@ func BenchmarkBucketBlock_readChunkRange(b *testing.B) {
 }
 
 func BenchmarkBlockSeries(b *testing.B) {
-	blk, blockMeta := prepareBucket(b, compactor.ResolutionLevelRaw)
+	blk, blockMeta := prepareBucket(b)
 
 	aggrs := []storepb.Aggr{storepb.Aggr_RAW}
 	for _, concurrency := range []int{1, 2, 4, 8, 16, 32} {
@@ -2170,7 +1926,7 @@ func BenchmarkBlockSeries(b *testing.B) {
 	}
 }
 
-func prepareBucket(b *testing.B, resolutionLevel compactor.ResolutionLevel) (*bucketBlock, *metadata.Meta) {
+func prepareBucket(b *testing.B) (*bucketBlock, *metadata.Meta) {
 	var (
 		ctx    = context.Background()
 		logger = log.NewNopLogger()
@@ -2207,16 +1963,6 @@ func prepareBucket(b *testing.B, resolutionLevel compactor.ResolutionLevel) (*bu
 	assert.NoError(b, err)
 
 	assert.NoError(b, block.Upload(context.Background(), logger, bkt, filepath.Join(tmpDir, blockID.String()), metadata.NoneFunc))
-
-	if resolutionLevel > 0 {
-		// Downsample newly-created block.
-		blockID, err = downsample.Downsample(logger, blockMeta, head, tmpDir, int64(resolutionLevel))
-		assert.NoError(b, err)
-		blockMeta, err = metadata.ReadFromDir(filepath.Join(tmpDir, blockID.String()))
-		assert.NoError(b, err)
-
-		assert.NoError(b, block.Upload(context.Background(), logger, bkt, filepath.Join(tmpDir, blockID.String()), metadata.NoneFunc))
-	}
 	assert.NoError(b, head.Close())
 
 	// Create chunk pool and partitioner using the same production settings.
@@ -2310,19 +2056,6 @@ func benchmarkBlockSeriesWithConcurrency(b *testing.B, concurrency int, blockMet
 	}
 
 	wg.Wait()
-}
-
-func BenchmarkDownsampledBlockSeries(b *testing.B) {
-	blk, blockMeta := prepareBucket(b, compactor.ResolutionLevel5m)
-	aggrs := []storepb.Aggr{}
-	for i := 1; i < int(storepb.Aggr_COUNTER); i++ {
-		aggrs = append(aggrs, storepb.Aggr(i))
-		for _, concurrency := range []int{1, 2, 4, 8, 16, 32} {
-			b.Run(fmt.Sprintf("aggregates: %v, concurrency: %d", aggrs, concurrency), func(b *testing.B) {
-				benchmarkBlockSeriesWithConcurrency(b, concurrency, blockMeta, blk, aggrs, false)
-			})
-		}
-	}
 }
 
 func TestBlockSeries_skipChunks_ignoresMintMaxt(t *testing.T) {

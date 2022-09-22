@@ -9,7 +9,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
-	"github.com/thanos-io/thanos/pkg/compact/downsample"
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
@@ -502,40 +501,6 @@ func TestPlanCompaction(t *testing.T) {
 					rangeEnd:   20,
 					blocks: []*metadata.Meta{
 						{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 10, MaxTime: 20}, Thanos: metadata.Thanos{Labels: map[string]string{"another_group": "b"}}},
-					},
-				}},
-			},
-		},
-		"should not merge blocks within the same time range and with same external labels but different resolution": {
-			ranges:     []int64{10, 20},
-			shardCount: 1,
-			blocks: []*metadata.Meta{
-				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 10, MaxTime: 20}, Thanos: metadata.Thanos{Downsample: metadata.ThanosDownsample{Resolution: downsample.ResLevel0}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 10, MaxTime: 20}, Thanos: metadata.Thanos{Downsample: metadata.ThanosDownsample{Resolution: downsample.ResLevel1}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 10, MaxTime: 20}, Thanos: metadata.Thanos{Downsample: metadata.ThanosDownsample{Resolution: downsample.ResLevel1}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 10, MaxTime: 20}, Thanos: metadata.Thanos{Downsample: metadata.ThanosDownsample{Resolution: downsample.ResLevel2}}},
-			},
-			expected: []*job{
-				{userID: userID, stage: stageSplit, shardID: "1_of_1", blocksGroup: blocksGroup{
-					rangeStart: 10,
-					rangeEnd:   20,
-					blocks: []*metadata.Meta{
-						{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 10, MaxTime: 20}},
-					},
-				}},
-				{userID: userID, stage: stageSplit, shardID: "1_of_1", blocksGroup: blocksGroup{
-					rangeStart: 10,
-					rangeEnd:   20,
-					blocks: []*metadata.Meta{
-						{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 10, MaxTime: 20}, Thanos: metadata.Thanos{Downsample: metadata.ThanosDownsample{Resolution: downsample.ResLevel1}}},
-						{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 10, MaxTime: 20}, Thanos: metadata.Thanos{Downsample: metadata.ThanosDownsample{Resolution: downsample.ResLevel1}}},
-					},
-				}},
-				{userID: userID, stage: stageSplit, shardID: "1_of_1", blocksGroup: blocksGroup{
-					rangeStart: 10,
-					rangeEnd:   20,
-					blocks: []*metadata.Meta{
-						{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 10, MaxTime: 20}, Thanos: metadata.Thanos{Downsample: metadata.ThanosDownsample{Resolution: downsample.ResLevel2}}},
 					},
 				}},
 			},
