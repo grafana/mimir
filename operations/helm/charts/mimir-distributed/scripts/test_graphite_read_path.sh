@@ -23,4 +23,5 @@ curl \
   -X GET \
   -H "Authorization: Basic ${MIMIR_BASIC_AUTH}" \
   -H "Content-Type: application/json" \
+  --fail-with-body \
   "${MIMIR_GATEWAY_HOST}:8080/graphite/tags"
