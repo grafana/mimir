@@ -39,10 +39,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-var (
-	errSchedulerIsNotRunning = errors.New("scheduler is not running")
-)
-
 // Scheduler is responsible for queueing and dispatching queries to Queriers.
 type Scheduler struct {
 	services.Service
@@ -388,6 +384,11 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 	for s.isRunningOrStopping() {
 		req, idx, err := s.requestQueue.GetNextRequestForQuerier(querier.Context(), lastUserIndex, querierID)
 		if err != nil {
+			// Return a more clear error if the queue is stopped because the query-scheduler is not running.
+			if errors.Is(err, queue.ErrStopped) && !s.isRunning() {
+				return schedulerpb.ErrSchedulerIsNotRunning
+			}
+
 			return err
 		}
 		lastUserIndex = idx
@@ -422,7 +423,7 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 		}
 	}
 
-	return errSchedulerIsNotRunning
+	return schedulerpb.ErrSchedulerIsNotRunning
 }
 
 func (s *Scheduler) NotifyQuerierShutdown(_ context.Context, req *schedulerpb.NotifyQuerierShutdownRequest) (*schedulerpb.NotifyQuerierShutdownResponse, error) {
@@ -509,6 +510,11 @@ func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *schedulerRe
 		level.Warn(s.log).Log("msg", "failed to forward error to frontend", "frontend", req.frontendAddress, "err", err, "requestErr", requestErr)
 		return
 	}
+}
+
+func (s *Scheduler) isRunning() bool {
+	st := s.State()
+	return st == services.Running
 }
 
 func (s *Scheduler) isRunningOrStopping() bool {
