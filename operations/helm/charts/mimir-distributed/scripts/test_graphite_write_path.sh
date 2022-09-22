@@ -26,19 +26,19 @@ data='[{
 "name": "uplink.speed_test.ping_ms",
 "interval": 3600,
 "value": 58080231,
-"tags": ["sponsor=Deutsche_Telekom", "server=Hamburg", "test=foo"]
+"tags": ["service=foo", "server=bar", "test=foo"]
 }, {
 "time": REPLACE_DATE,
 "name": "uplink.speed_test.down_bits",
 "interval": 3600,
 "value": 23,
-"tags": ["sponsor=Deutsche_Telekom", "server=Hamburg"]
+"tags": ["service=foo", "server=bar"]
 }, {
 "time": REPLACE_DATE,
 "name": "uplink.speed_test.up_bits",
 "interval": 3600,
 "value": 52058673,
-"tags": ["sponsor=Deutsche_Telekom", "server=Hamburg"]
+"tags": ["service=foo", "server=bar"]
 }]'
 
 data=${data//REPLACE_DATE/${timestamp}}
