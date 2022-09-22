@@ -238,6 +238,21 @@ func TestQuerierWorker_getDesiredConcurrency(t *testing.T) {
 				"4.4.4.4": 1,
 			},
 		},
+		"should create 1 connection for each instance if max concurrency is > 0 but less than the number of in-use instances": {
+			instances: []servicediscovery.Instance{
+				{Address: "1.1.1.1", InUse: true},
+				{Address: "2.2.2.2", InUse: false},
+				{Address: "3.3.3.3", InUse: true},
+				{Address: "4.4.4.4", InUse: false},
+			},
+			maxConcurrent: 1,
+			expected: map[string]int{
+				"1.1.1.1": 1,
+				"2.2.2.2": 1,
+				"3.3.3.3": 1,
+				"4.4.4.4": 1,
+			},
+		},
 	}
 
 	for testName, testData := range tests {
