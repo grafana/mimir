@@ -634,8 +634,9 @@ forwarding:
   # CLI flag: -distributor.forwarding.propagate-errors
   [propagate_errors: <boolean> | default = true]
 
-  # The grpc_client block configures the gRPC client used to communicate between
-  # two Mimir components.
+  # Configures the gRPC client used to communicate between the distributors and
+  # the configured remote write endpoints used by the metrics forwarding
+  # feature.
   # The CLI flags prefix for this block configuration is:
   # distributor.forwarding.grpc-client
   [grpc_client: <grpc_client>]
@@ -978,8 +979,8 @@ The `frontend` block configures the query-frontend.
 # CLI flag: -query-frontend.scheduler-worker-concurrency
 [scheduler_worker_concurrency: <int> | default = 5]
 
-# The grpc_client block configures the gRPC client used to communicate between
-# two Mimir components.
+# Configures the gRPC client used to communicate between the query-frontends and
+# the query-schedulers.
 # The CLI flags prefix for this block configuration is:
 # query-frontend.grpc-client-config
 [grpc_client_config: <grpc_client>]
@@ -1065,8 +1066,8 @@ The `query_scheduler` block configures the query-scheduler.
 # CLI flag: -query-scheduler.querier-forget-delay
 [querier_forget_delay: <duration> | default = 0s]
 
-# The grpc_client block configures the gRPC client used to communicate between
-# two Mimir components.
+# This configures the gRPC client used to report errors back to the
+# query-frontend.
 # The CLI flags prefix for this block configuration is:
 # query-scheduler.grpc-client-config
 [grpc_client_config: <grpc_client>]
@@ -1348,8 +1349,8 @@ query_frontend:
   # CLI flag: -ruler.query-frontend.address
   [address: <string> | default = ""]
 
-  # The grpc_client block configures the gRPC client used to communicate between
-  # two Mimir components.
+  # Configures the gRPC client used to communicate between the rulers and
+  # query-frontends.
   # The CLI flags prefix for this block configuration is:
   # ruler.query-frontend.grpc-client-config
   [grpc_client_config: <grpc_client>]
@@ -1687,8 +1688,8 @@ The `flusher` block configures the WAL flusher target, used to manually run one-
 The `ingester_client` block configures how the distributors connect to the ingesters.
 
 ```yaml
-# The grpc_client block configures the gRPC client used to communicate between
-# two Mimir components.
+# Configures the gRPC client used to communicate between distributors and
+# ingesters.
 # The CLI flags prefix for this block configuration is: ingester.client
 [grpc_client_config: <grpc_client>]
 ```
@@ -1805,8 +1806,8 @@ The `frontend_worker` block configures the worker running within the querier, pi
 # CLI flag: -querier.id
 [id: <string> | default = ""]
 
-# The grpc_client block configures the gRPC client used to communicate between
-# two Mimir components.
+# Configures the gRPC client used to communicate between the queriers and the
+# query-frontends / query-schedulers.
 # The CLI flags prefix for this block configuration is: querier.frontend-client
 [grpc_client_config: <grpc_client>]
 ```
