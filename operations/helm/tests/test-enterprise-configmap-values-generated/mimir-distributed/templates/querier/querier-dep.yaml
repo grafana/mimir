@@ -21,9 +21,6 @@ spec:
       app.kubernetes.io/instance: test-enterprise-configmap-values
       app.kubernetes.io/component: querier
   strategy:
-    rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 1
     type: RollingUpdate
   template:
     metadata:
