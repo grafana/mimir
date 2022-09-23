@@ -17,7 +17,6 @@
 
       // Ring config.
       'ingester.ring.num-tokens': 512,
-      'ingester.ring.heartbeat-period': '15s',
       'ingester.ring.unregister-on-shutdown': $._config.unregister_ingesters_on_shutdown,
 
       // Limits config.

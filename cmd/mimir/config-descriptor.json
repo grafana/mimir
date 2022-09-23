@@ -1243,7 +1243,7 @@
               "required": false,
               "desc": "Period at which to heartbeat to the ring. 0 = disabled.",
               "fieldValue": null,
-              "fieldDefaultValue": 5000000000,
+              "fieldDefaultValue": 15000000000,
               "fieldFlag": "distributor.ring.heartbeat-period",
               "fieldType": "duration",
               "fieldCategory": "advanced"
@@ -2308,7 +2308,7 @@
               "required": false,
               "desc": "Period at which to heartbeat to the ring. 0 = disabled.",
               "fieldValue": null,
-              "fieldDefaultValue": 5000000000,
+              "fieldDefaultValue": 15000000000,
               "fieldFlag": "ingester.ring.heartbeat-period",
               "fieldType": "duration",
               "fieldCategory": "advanced"
@@ -6206,7 +6206,7 @@
               "required": false,
               "desc": "Period at which to heartbeat to the ring. 0 = disabled.",
               "fieldValue": null,
-              "fieldDefaultValue": 5000000000,
+              "fieldDefaultValue": 15000000000,
               "fieldFlag": "compactor.ring.heartbeat-period",
               "fieldType": "duration",
               "fieldCategory": "advanced"
@@ -7530,7 +7530,7 @@
               "required": false,
               "desc": "Period at which to heartbeat to the ring. 0 = disabled.",
               "fieldValue": null,
-              "fieldDefaultValue": 5000000000,
+              "fieldDefaultValue": 15000000000,
               "fieldFlag": "ruler.ring.heartbeat-period",
               "fieldType": "duration",
               "fieldCategory": "advanced"
