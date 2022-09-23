@@ -3,6 +3,7 @@
 package astmapper
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -373,7 +374,7 @@ func TestInstantSplitter(t *testing.T) {
 
 		t.Run(tt.in, func(t *testing.T) {
 			stats := NewInstantSplitterStats()
-			mapper := NewInstantQuerySplitter(splitInterval, log.NewNopLogger(), stats)
+			mapper := NewInstantQuerySplitter(context.Background(), splitInterval, log.NewNopLogger(), stats)
 
 			expr, err := parser.ParseExpr(tt.in)
 			require.NoError(t, err)
@@ -424,7 +425,7 @@ func TestInstantSplitterUnevenRangeInterval(t *testing.T) {
 
 		t.Run(tt.in, func(t *testing.T) {
 			stats := NewInstantSplitterStats()
-			mapper := NewInstantQuerySplitter(splitInterval, log.NewNopLogger(), stats)
+			mapper := NewInstantQuerySplitter(context.Background(), splitInterval, log.NewNopLogger(), stats)
 
 			expr, err := parser.ParseExpr(tt.in)
 			require.NoError(t, err)
@@ -609,7 +610,7 @@ func TestInstantSplitterSkippedQueryReason(t *testing.T) {
 
 		t.Run(tt.query, func(t *testing.T) {
 			stats := NewInstantSplitterStats()
-			mapper := NewInstantQuerySplitter(splitInterval, log.NewNopLogger(), stats)
+			mapper := NewInstantQuerySplitter(context.Background(), splitInterval, log.NewNopLogger(), stats)
 
 			expr, err := parser.ParseExpr(tt.query)
 			require.NoError(t, err)

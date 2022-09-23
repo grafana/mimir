@@ -6,6 +6,7 @@
 package astmapper
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -119,6 +120,7 @@ func mustLabelMatcher(mt labels.MatchType, name, val string) *labels.Matcher {
 func TestSharding_BinaryExpressionsDontTakeExponentialTime(t *testing.T) {
 	const expressions = 30
 	const timeout = 10 * time.Second
+
 	query := `vector(1)`
 	// On 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz:
 	// This was taking 3s for 20 expressions, and doubled the time for each extra one.
@@ -129,20 +131,11 @@ func TestSharding_BinaryExpressionsDontTakeExponentialTime(t *testing.T) {
 	expr, err := parser.ParseExpr(query)
 	require.NoError(t, err)
 
-	mapper, err := NewSharding(2, log.NewNopLogger(), NewMapperStats())
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	mapper, err := NewSharding(ctx, 2, log.NewNopLogger(), NewMapperStats())
 	require.NoError(t, err)
 
-	res := make(chan error)
-	go func() {
-		_, err := mapper.Map(expr)
-		res <- err
-		close(res)
-	}()
-
-	select {
-	case <-time.After(timeout):
-		t.Fatalf("Query sharding process is taking too long, a timeout of %d was exceeded", timeout)
-	case err := <-res:
-		require.NoError(t, err)
-	}
+	_, err = mapper.Map(expr)
+	require.NoError(t, err)
 }

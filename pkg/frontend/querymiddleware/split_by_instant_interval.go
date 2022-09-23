@@ -9,6 +9,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
@@ -121,7 +122,9 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 	s.metrics.splittingAttempts.Inc()
 
 	mapperStats := astmapper.NewInstantSplitterStats()
-	mapper := astmapper.NewInstantQuerySplitter(splitInterval, s.logger, mapperStats)
+	mapperCtx, cancel := context.WithTimeout(ctx, shardingTimeout)
+	defer cancel()
+	mapper := astmapper.NewInstantQuerySplitter(mapperCtx, splitInterval, s.logger, mapperStats)
 
 	expr, err := parser.ParseExpr(req.GetQuery())
 	if err != nil {
@@ -132,7 +135,11 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Requ
 
 	instantSplitQuery, err := mapper.Map(expr)
 	if err != nil {
-		level.Error(spanLog).Log("msg", "failed to map the input query, falling back to try executing without splitting", "err", err)
+		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+			level.Error(spanLog).Log("msg", "timeout while splitting query by instant interval, please fill in a bug report with this query, falling back to try executing without splitting", "err", err)
+		} else {
+			level.Error(spanLog).Log("msg", "failed to map the input query, falling back to try executing without splitting", "err", err)
+		}
 		s.metrics.splittingSkipped.WithLabelValues(skippedReasonMappingFailed).Inc()
 		return s.next.Do(ctx, req)
 	}
