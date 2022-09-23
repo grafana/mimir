@@ -58,7 +58,7 @@ data:
         max_recv_msg_size: 104857600
         max_send_msg_size: 104857600
     limits:
-      max_query_parallelism: 224
+      max_query_parallelism: 240
     memberlist:
       abort_if_cluster_join_fails: false
       compression_enabled: false
@@ -67,7 +67,7 @@ data:
     querier:
       max_concurrent: 16
     query_scheduler:
-      max_outstanding_requests_per_tenant: 1600
+      max_outstanding_requests_per_tenant: 800
     ruler:
       alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.metamonitoring-values-mimir-alertmanager-headless.citestns.svc.cluster.local/alertmanager
       enable_api: true
