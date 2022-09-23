@@ -1,0 +1,92 @@
+---
+# Source: mimir-distributed/templates/mimir-config.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: large-values-mimir-config
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: large-values
+    app.kubernetes.io/managed-by: Helm
+  namespace: "citestns"
+data:
+  mimir.yaml: |
+    
+    activity_tracker:
+      filepath: /data/metrics-activity.log
+    alertmanager:
+      data_dir: /data
+      enable_api: true
+      external_url: /alertmanager
+    blocks_storage:
+      backend: s3
+      bucket_store:
+        chunks_cache:
+          backend: memcached
+          memcached:
+            addresses: dns+large-values-mimir-chunks-cache.citestns.svc:11211
+            max_item_size: 1048576
+            timeout: 450ms
+        index_cache:
+          backend: memcached
+          memcached:
+            addresses: dns+large-values-mimir-index-cache.citestns.svc:11211
+            max_item_size: 15728640
+        metadata_cache:
+          backend: memcached
+          memcached:
+            addresses: dns+large-values-mimir-metadata-cache.citestns.svc:11211
+            max_item_size: 1048576
+        sync_dir: /data/tsdb-sync
+      tsdb:
+        dir: /data/tsdb
+    compactor:
+      data_dir: /data
+    frontend:
+      align_queries_with_step: true
+      cache_results: true
+      log_queries_longer_than: 10s
+      parallelize_shardable_queries: true
+      results_cache:
+        backend: memcached
+        memcached:
+          addresses: dns+large-values-mimir-results-cache.citestns.svc:11211
+          max_item_size: 1048576
+      scheduler_address: large-values-mimir-query-scheduler-headless.citestns.svc:9095
+    frontend_worker:
+      scheduler_address: large-values-mimir-query-scheduler-headless.citestns.svc:9095
+    ingester:
+      ring:
+        final_sleep: 0s
+        num_tokens: 512
+        tokens_file_path: /data/tokens
+        unregister_on_shutdown: false
+    ingester_client:
+      grpc_client_config:
+        max_recv_msg_size: 104857600
+        max_send_msg_size: 104857600
+    limits:
+      max_query_parallelism: 224
+    memberlist:
+      abort_if_cluster_join_fails: false
+      compression_enabled: false
+      join_members:
+      - dns+large-values-mimir-gossip-ring.citestns.svc.cluster.local:7946
+    querier:
+      max_concurrent: 16
+    query_scheduler:
+      max_outstanding_requests_per_tenant: 1600
+    ruler:
+      alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.large-values-mimir-alertmanager-headless.citestns.svc.cluster.local/alertmanager
+      enable_api: true
+      rule_path: /data
+    runtime_config:
+      file: /var/mimir/runtime.yaml
+    server:
+      grpc_server_max_concurrent_streams: 1000
+      grpc_server_max_connection_age: 2m
+      grpc_server_max_connection_age_grace: 5m
+      grpc_server_max_connection_idle: 1m
+    store_gateway:
+      sharding_ring:
+        tokens_file_path: /data/tokens

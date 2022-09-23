@@ -41,12 +41,14 @@ Entries should include a reference to the Pull Request that introduced the chang
     - After the upgrade you can migrate to the new zone-aware replication setup, see [Migrate from single zone to zone-aware replication with Helm](https://grafana.com/docs/mimir/latest/migration-guide/migrating-from-single-zone-with-helm/) guide.
   - If you are **installing** the chart:
     - Ingesters and store-gateways are installed with 3 logical zones, which means both ingesters and store-gateways start 3 replicas each.
+* [CHANGE] **breaking change** Reduce the number of ingesters in small.yaml form 4 to 3. This should be more accurate size for the scale of 1M AS. Before upgrading refer to [Scaling down ingesters](https://grafana.com/docs/mimir/latest/operators-guide/run-production-environment/scaling-out/#scaling-down-ingesters) to scale down `ingester-3`. Alternatively override the number of ingesters to 4. #3035
 * [CHANGE] Nginx: uses the headless service of alertmanager, ingester and store-gateway as backends, because there are 3 separate services for each zone. #2778
 * [CHANGE] Gateway: uses the headless service of alertmanager as backend, because there are 3 separate services for each zone. #2778
 * [ENHANCEMENT] Metamonitoring: If enabled and no URL is configured, then metamonitoring metrics will be sent to
   Mimir under the `metamonitoring` tenant; this enhancement does not apply to GEM. #3176
 * [ENHANCEMENT] Improve default rollout strategies. Now distributor, overrides_exporter, querier, query_frontend, admin_api, gateway, and graphite components can be upgraded more quickly and also can be rolled out with a single replica without downtime. #3029
 * [ENHANCEMENT] Metamonitoring: make scrape interval configurable. #2945
+* [ENHANCEMENT] Update sizing plans (small.yaml, large.yaml, capped-small.yaml, capped-large.yaml). These reflect better how we recommend running Mimir and GEM in production. #3035
 * [BUGFIX] Fix an issue that caused metamonitoring secrets to be created incorrectly #3170
 * [BUGFIX] Nginx: fixed `imagePullSecret` value reference inconsistency. #3208
 * [BUGFIX] Move the activity tracker log from /data to /active-query-tracker to remove ignore log messages. #3169
@@ -96,6 +98,7 @@ Entries should include a reference to the Pull Request that introduced the chang
                 topologyKey: 'kubernetes.io/hostname'
      ```
 * [CHANGE] Ingresses for the GEM gateway and nginx will no longer render on Kubernetes versions <1.19. #2872
+* [CHANGE] **breaking change** Reduce the number of ingesters in small.yaml and capped-small.yaml from 4 to 3. This should be a more accurate size for the scale of 1M AS. Before upgrading refer to [Scaling down ingesters](https://grafana.com/docs/mimir/latest/operators-guide/run-production-environment/scaling-out/#scaling-down-ingesters) to scale down `ingester-3`. Alternatively override the number of ingesters to 4. #3035
 * [FEATURE] Add support for OpenShift Routes for Nginx #2908
 * [FEATURE] Add support for `topologySpreadConstraints` to all components; add `topologySpreadConstraints` to GEM gateway, admin-api, and alertmanager, which did not have `podAntiAffinity` previously. #2722
 * [ENHANCEMENT] Document `kubeVersionOverride`. If you rely on `helm template`, use this in your values to set the Kubernetes version. If unset helm will use the kubectl client version as the Kubernetes version with `helm template`, which may cause the chart to render incompatible manifests for the actual server version. #2872
