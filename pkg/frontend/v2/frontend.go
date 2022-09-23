@@ -40,7 +40,7 @@ type Config struct {
 	SchedulerAddress  string            `yaml:"scheduler_address"`
 	DNSLookupPeriod   time.Duration     `yaml:"scheduler_dns_lookup_period" category:"advanced"`
 	WorkerConcurrency int               `yaml:"scheduler_worker_concurrency" category:"advanced"`
-	GRPCClientConfig  grpcclient.Config `yaml:"grpc_client_config"`
+	GRPCClientConfig  grpcclient.Config `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate between the query-frontends and the query-schedulers."`
 
 	// Used to find local IP address, that is sent to scheduler and querier-worker.
 	InfNames []string `yaml:"instance_interface_names" category:"advanced" doc:"default=[<private network interfaces>]"`

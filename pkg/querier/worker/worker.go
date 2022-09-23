@@ -31,7 +31,7 @@ type Config struct {
 	SchedulerAddress string            `yaml:"scheduler_address"`
 	DNSLookupPeriod  time.Duration     `yaml:"dns_lookup_duration" category:"advanced"`
 	QuerierID        string            `yaml:"id" category:"advanced"`
-	GRPCClientConfig grpcclient.Config `yaml:"grpc_client_config"`
+	GRPCClientConfig grpcclient.Config `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate between the queriers and the query-frontends / query-schedulers."`
 
 	// This configuration is injected internally.
 	MaxConcurrentRequests   int                       `yaml:"-"` // Must be same as passed to PromQL Engine.

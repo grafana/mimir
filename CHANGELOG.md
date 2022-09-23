@@ -45,6 +45,7 @@
 ### Documentation
 
 * [ENHANCEMENT] Added documentation on how to configure storage retention. #2970
+* [ENHANCEMENT] Improved gRPC clients config documentation. #3020
 
 ## 2.3.0
 
