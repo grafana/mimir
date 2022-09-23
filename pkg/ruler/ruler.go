@@ -458,6 +458,8 @@ func (r *Ruler) run(ctx context.Context) error {
 	}
 }
 
+// It's not safe to call this function concurrently.
+// We expect this function is only called from Ruler.run().
 func (r *Ruler) syncRules(ctx context.Context, reason string) {
 	level.Debug(r.logger).Log("msg", "syncing rules", "reason", reason)
 	r.metrics.rulerSync.WithLabelValues(reason).Inc()
