@@ -20,7 +20,7 @@ The details about the first invalid data are typically logged by the sender, be 
 
 The distributor data cleanup includes the following transformation:
 
-- The metric metadata `help` is truncated to fit in the length defined in `-validation.max-metadata-length` flag.
+- The metric metadata `help` is truncated to fit in the length defined via the `-validation.max-metadata-length` flag.
 
 The distributor validation includes the following checks:
 
