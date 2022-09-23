@@ -16,7 +16,7 @@ type Config struct {
 	RequestTimeout     time.Duration `yaml:"request_timeout" category:"experimental"`
 	PropagateErrors    bool          `yaml:"propagate_errors" category:"experimental"`
 
-	GRPCClientConfig grpcclient.Config `yaml:"grpc_client"`
+	GRPCClientConfig grpcclient.Config `yaml:"grpc_client" doc:"description=Configures the gRPC client used to communicate between the distributors and the configured remote write endpoints used by the metrics forwarding feature."`
 }
 
 func (c *Config) RegisterFlags(f *flag.FlagSet) {

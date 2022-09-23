@@ -75,7 +75,7 @@ type Config struct {
 	// This is used for template expansion in alerts; must be a valid URL.
 	ExternalURL flagext.URLValue `yaml:"external_url"`
 	// GRPC Client configuration.
-	ClientTLSConfig grpcclient.Config `yaml:"ruler_client"`
+	ClientTLSConfig grpcclient.Config `yaml:"ruler_client" doc:"description=Configures the gRPC client used to communicate between ruler instances."`
 	// How frequently to evaluate rules by default.
 	EvaluationInterval time.Duration `yaml:"evaluation_interval" category:"advanced"`
 	// How frequently to poll for updated rules.

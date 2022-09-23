@@ -235,6 +235,7 @@ GET /api/v1/user_limits
 ```
 
 Returns realtime limits for the authenticated tenant, in `JSON` format.
+This API is experimental.
 
 Requires [authentication](#authentication).
 
