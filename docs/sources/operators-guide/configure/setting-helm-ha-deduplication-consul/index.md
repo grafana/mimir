@@ -7,10 +7,12 @@ title: Configuring Grafana Mimir Helm Chart for high-availability deduplication 
 weight: 70
 ---
 
-# Configuring Grafana Mimir Helm Chart for high-availability deduplication with Consul
+# Configuring mimir-distributed Helm Chart for high-availability deduplication with Consul
 
 Grafana Mimir can deduplicate data from high-availability (HA) Prometheus setup. In this guide, you will see how to configure
-the deduplication for Grafana Mimir helm deployment using external Consul.
+the deduplication for Grafana Mimir helm deployment using external Consul. You also can review 
+[Configuring High Availability]({{< relref "../configuring-high-availability-deduplication.md" >}}) document for some 
+conceptual background.
 
 ## Before you begin
 
@@ -55,7 +57,7 @@ You can set Mimir HA deduplication configuration in global level or tenant level
 
 ### HA Deduplication Global
 
-You need a Mimir setup installed by Helm. Add the following configuration to your `values.yaml` to configure HA
+You need a Mimir setup installed by Helm. Add the following configuration to your `custom.yaml` to configure HA
 deduplication globally.
 
 ```yaml
@@ -80,12 +82,12 @@ mimir:
 Upgrade the Mimir's helm release using the above configuration.
 
 ```bash
- helm -n <mimir-namespace> upgrade --install mimir grafana/mimir-distributed -f values.yaml
+ helm -n <mimir-namespace> upgrade --install mimir grafana/mimir-distributed -f custom.yaml
 ```
 
 ### HA Deduplication per tenant
 
-Add the following configuration below the `values.yaml` file to configure HA deduplication per-tenant
+Add the following configuration below the `custom.yaml` file to configure HA deduplication per-tenant
 
 ```yaml
 runtimeConfig:
@@ -99,12 +101,21 @@ runtimeConfig:
 Upgrade the Mimir's helm release using the above configuration.
 
 ```bash
- helm -n <mimir-namespace> upgrade --install mimir grafana/mimir-distributed -f values.yaml
+ helm -n <mimir-namespace> upgrade --install mimir grafana/mimir-distributed -f custom.yaml
 ```
 
 ## Verifying deduplication
 
-After Consul, Prometheus and Mimir running. Port forward Mimir distributor service. The argument after port-forward must
+After Consul, Prometheus and Mimir running we can verify deduplication in several way. 
+
+### Distributor metrics
+
+Mimir [distributor]{{< relref "../../architecture/components/distribuotr.md" >}} exposes some metrics related 
+to HA deduplication. The relevant metrics are those with `cortex_ha_tracker_` prefix. 
+
+### ha_tracker's page
+
+Port forward Mimir distributor service. The argument after port-forward must
 match your Mimir's distributor name.
 
 ```bash
@@ -115,6 +126,8 @@ Open `http://localhost:8080/distributor/ha_tracker` in a browser. You should see
 If the table is empty, it means there is something wrong with the configuration.
 
 ![HA Tracker Status](ha-tracker-status.png)
+
+### Ensure HA metrics are deduplicated
 
 Go to Grafana explore page and select Mimir datasource. Then execute the following query: `up`. In the Options drop down,
 select Format = Table. In the result you can see the several time series with different labels.
