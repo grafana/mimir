@@ -37,6 +37,8 @@ type shardSummer struct {
 	squash       squasher
 	logger       log.Logger
 	stats        *MapperStats
+
+	canShardAllVectorSelectorsCache map[string]bool
 }
 
 // newShardSummer instantiates an ASTMapper which will fan out sum queries by shard
@@ -51,6 +53,8 @@ func newShardSummer(shards int, squasher squasher, logger log.Logger, stats *Map
 		currentShard: nil,
 		logger:       logger,
 		stats:        stats,
+
+		canShardAllVectorSelectorsCache: make(map[string]bool),
 	}), nil
 }
 
@@ -132,16 +136,24 @@ func (summer *shardSummer) MapExpr(expr parser.Expr) (mapped parser.Expr, finish
 		// process in the query-frontend. Since we can't estimate the cardinality, we prefer
 		// to be pessimistic and not parallelize at all the two legs unless we're able to
 		// parallelize all vector selectors in the legs.
-		canShardAllVectorSelectors := func(expr parser.Expr) bool {
-			c := summer.Clone()
-			c.shards = 1
-			m := NewASTExprMapper(c)
+		canShardAllVectorSelectors := func(expr parser.Expr) (can bool) {
+			query := expr.String()
+			// We need to cache the results of this function to avoid processing it again and again
+			// in queries like `a or b or c or d`, which would lead to exponential processing time.
+			if can, ok := summer.canShardAllVectorSelectorsCache[query]; ok {
+				return can
+			}
+			defer func() { summer.canShardAllVectorSelectorsCache[query] = can }()
 
 			// Clone the expression cause the mapper can modify it in-place.
-			clonedExpr, err := cloneExpr(expr)
+			clonedExpr, err := parser.ParseExpr(query)
 			if err != nil {
 				return false
 			}
+
+			c := summer.Clone()
+			c.shards = 1
+			m := NewASTExprMapper(c)
 
 			mappedExpr, err := m.Map(clonedExpr)
 			if err != nil {
