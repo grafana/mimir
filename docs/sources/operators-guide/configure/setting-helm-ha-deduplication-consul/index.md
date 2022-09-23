@@ -74,7 +74,7 @@ mimir:
         kvstore:
           store: consul
           consul:
-            host: <consul-endpoint> # example: http://mimir-host:8500
+            host: <consul-endpoint> # example: http://consul.consul.svc.cluster.local:8500
 ```
 
 Upgrade the Mimir's helm release using the above configuration.
