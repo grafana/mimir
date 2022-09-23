@@ -61,7 +61,7 @@ type ForwardingRule struct {
 
 	// Endpoint is the URL of the remote_write endpoint to which a metric should be forwarded.
 	// Deprecated in favor of ForwardingEndpoint.
-	Endpoint string `yaml:"endpoint" json:"endpoint"`
+	Endpoint string `yaml:"endpoint,omitempty" json:"endpoint,omitempty"`
 }
 
 // ForwardingRules are keyed by metric names, excluding labels.
