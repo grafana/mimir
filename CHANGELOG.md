@@ -46,6 +46,7 @@
 
 * [ENHANCEMENT] Added documentation on how to configure storage retention. #2970
 * [ENHANCEMENT] Improved gRPC clients config documentation. #3020
+* [BUGFIX] Fixed configuration option names in "Enabling zone-awareness via the Grafana Mimir Jsonnet". #3018
 
 ## 2.3.0
 
