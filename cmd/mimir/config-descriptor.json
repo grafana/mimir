@@ -2779,7 +2779,7 @@
           "kind": "field",
           "name": "max_metadata_length",
           "required": false,
-          "desc": "Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT.",
+          "desc": "Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT. Longer metadata is dropped except for HELP which is truncated.",
           "fieldValue": null,
           "fieldDefaultValue": 1024,
           "fieldFlag": "validation.max-metadata-length",

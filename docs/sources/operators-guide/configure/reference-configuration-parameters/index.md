@@ -2144,7 +2144,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 [max_label_names_per_series: <int> | default = 30]
 
 # Maximum length accepted for metric metadata. Metadata refers to Metric Name,
-# HELP and UNIT.
+# HELP and UNIT. Longer metadata is dropped except for HELP which is truncated.
 # CLI flag: -validation.max-metadata-length
 [max_metadata_length: <int> | default = 1024]
 

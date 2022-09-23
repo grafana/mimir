@@ -224,39 +224,60 @@ func TestValidateMetadata(t *testing.T) {
 	cfg.maxMetadataLength = 22
 
 	for _, c := range []struct {
-		desc     string
-		metadata *mimirpb.MetricMetadata
-		err      error
+		desc        string
+		metadata    *mimirpb.MetricMetadata
+		err         error
+		metadataOut *mimirpb.MetricMetadata
 	}{
 		{
 			"with a valid config",
 			&mimirpb.MetricMetadata{MetricFamilyName: "go_goroutines", Type: mimirpb.COUNTER, Help: "Number of goroutines.", Unit: ""},
 			nil,
+			&mimirpb.MetricMetadata{MetricFamilyName: "go_goroutines", Type: mimirpb.COUNTER, Help: "Number of goroutines.", Unit: ""},
 		},
 		{
 			"with no metric name",
 			&mimirpb.MetricMetadata{MetricFamilyName: "", Type: mimirpb.COUNTER, Help: "Number of goroutines.", Unit: ""},
 			newMetadataMetricNameMissingError(),
+			nil,
 		},
 		{
 			"with a long metric name",
 			&mimirpb.MetricMetadata{MetricFamilyName: "go_goroutines_and_routines_and_routines", Type: mimirpb.COUNTER, Help: "Number of goroutines.", Unit: ""},
 			newMetadataMetricNameTooLongError(&mimirpb.MetricMetadata{MetricFamilyName: "go_goroutines_and_routines_and_routines"}),
+			nil,
 		},
 		{
 			"with a long help",
 			&mimirpb.MetricMetadata{MetricFamilyName: "go_goroutines", Type: mimirpb.COUNTER, Help: "Number of goroutines that currently exist.", Unit: ""},
-			newMetadataHelpTooLongError(&mimirpb.MetricMetadata{MetricFamilyName: "go_goroutines", Help: "Number of goroutines that currently exist."}),
+			nil,
+			&mimirpb.MetricMetadata{MetricFamilyName: "go_goroutines", Type: mimirpb.COUNTER, Help: "Number of goroutines t", Unit: ""},
+		},
+		{
+			"with a long UTF-8 help",
+			&mimirpb.MetricMetadata{MetricFamilyName: "go_goroutines", Type: mimirpb.COUNTER, Help: "This help has wchar:日日日", Unit: ""},
+			nil,
+			&mimirpb.MetricMetadata{MetricFamilyName: "go_goroutines", Type: mimirpb.COUNTER, Help: "This help has wchar:", Unit: ""},
+		},
+		{
+			"with invalid long UTF-8 help",
+			&mimirpb.MetricMetadata{MetricFamilyName: "go_goroutines", Type: mimirpb.COUNTER, Help: "This help has \xe6char:日日日", Unit: ""},
+			nil,
+			&mimirpb.MetricMetadata{MetricFamilyName: "go_goroutines", Type: mimirpb.COUNTER, Help: "This help has \xe6char:", Unit: ""},
 		},
 		{
 			"with a long unit",
 			&mimirpb.MetricMetadata{MetricFamilyName: "go_goroutines", Type: mimirpb.COUNTER, Help: "Number of goroutines.", Unit: "a_made_up_unit_that_is_really_long"},
 			newMetadataUnitTooLongError(&mimirpb.MetricMetadata{MetricFamilyName: "go_goroutines", Unit: "a_made_up_unit_that_is_really_long"}),
+			nil,
 		},
 	} {
 		t.Run(c.desc, func(t *testing.T) {
-			err := ValidateMetadata(cfg, userID, c.metadata)
+			err := CleanAndValidateMetadata(cfg, userID, c.metadata)
 			assert.Equal(t, c.err, err, "wrong error")
+			if err == nil {
+				assert.Equal(t, c.metadataOut, c.metadata)
+			}
 		})
 	}
 
@@ -265,7 +286,6 @@ func TestValidateMetadata(t *testing.T) {
 	require.NoError(t, testutil.GatherAndCompare(prometheus.DefaultGatherer, strings.NewReader(`
 			# HELP cortex_discarded_metadata_total The total number of metadata that were discarded.
 			# TYPE cortex_discarded_metadata_total counter
-			cortex_discarded_metadata_total{reason="help_too_long",user="testUser"} 1
 			cortex_discarded_metadata_total{reason="metric_name_too_long",user="testUser"} 1
 			cortex_discarded_metadata_total{reason="missing_metric_name",user="testUser"} 1
 			cortex_discarded_metadata_total{reason="unit_too_long",user="testUser"} 1

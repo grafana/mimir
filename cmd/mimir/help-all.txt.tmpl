@@ -1906,6 +1906,6 @@ Usage of ./cmd/mimir/mimir:
   -validation.max-length-label-value int
     	Maximum length accepted for label value. This setting also applies to the metric name (default 2048)
   -validation.max-metadata-length int
-    	Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT. (default 1024)
+    	Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT. Longer metadata is dropped except for HELP which is truncated. (default 1024)
   -version
     	Print application version and exit.
