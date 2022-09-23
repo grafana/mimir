@@ -36,7 +36,7 @@ import (
 
 type Forwarder interface {
 	services.Service
-	Forward(ctx context.Context, targetEndpoint string, forwardingRules validation.ForwardingRules, ts []mimirpb.PreallocTimeseries) ([]mimirpb.PreallocTimeseries, chan error)
+	Forward(ctx context.Context, targetEndpoint string, dontForwardOlderThan time.Duration, forwardingRules validation.ForwardingRules, ts []mimirpb.PreallocTimeseries) ([]mimirpb.PreallocTimeseries, chan error)
 }
 
 // httpGrpcPrefix is URL prefix used by forwarder to check if it should use httpgrpc for sending request over to the target.
@@ -44,6 +44,8 @@ type Forwarder interface {
 // (by adding "dns:///" prefix before passing it to grpc client, to enable client-side load balancing), and "/some/path" will be included in the "url"
 // part of the message for "httpgrpc.HTTP/Handle" method.
 const httpGrpcPrefix = "httpgrpc://"
+
+var errSamplesTooOld = httpgrpc.Errorf(400, "dropped sample(s) because too old to forward")
 
 type forwarder struct {
 	services.Service
@@ -62,6 +64,8 @@ type forwarder struct {
 	exemplarsTotal          prometheus.Counter
 	requestLatencyHistogram prometheus.Histogram
 	grpcClientsGauge        prometheus.Gauge
+
+	timeNow func() time.Time
 }
 
 // NewForwarder returns a new forwarder, if forwarding is disabled it returns nil.
@@ -115,6 +119,8 @@ func NewForwarder(cfg Config, reg prometheus.Registerer, log log.Logger) Forward
 			Name: "cortex_distributor_forward_grpc_clients",
 			Help: "Number of gRPC clients used by Distributor forwarder.",
 		}),
+
+		timeNow: time.Now,
 	}
 
 	f.httpGrpcClientPool = f.newHTTPGrpcClientsPool()
@@ -216,21 +222,25 @@ func (f *forwarder) worker() {
 //   - A slice of time series which should be sent to the ingesters, based on the given rule set.
 //     The Forward() method does not send the time series to the ingesters itself, it expects the caller to do that.
 //   - A chan of errors which resulted from forwarding the time series, the chan gets closed when all forwarding requests have completed.
-func (f *forwarder) Forward(ctx context.Context, endpoint string, rules validation.ForwardingRules, in []mimirpb.PreallocTimeseries) ([]mimirpb.PreallocTimeseries, chan error) {
+func (f *forwarder) Forward(ctx context.Context, endpoint string, dontForwardOlderThan time.Duration, rules validation.ForwardingRules, in []mimirpb.PreallocTimeseries) ([]mimirpb.PreallocTimeseries, chan error) {
 	if !f.cfg.Enabled {
 		errCh := make(chan error)
 		close(errCh)
 		return in, errCh
 	}
 
-	toIngest, tsByTargets := f.splitByTargets(endpoint, in, rules)
+	toIngest, tsByTargets, samplesTooOld := f.splitByTargets(endpoint, dontForwardOlderThan.Milliseconds(), in, rules)
 	defer f.pools.putTsByTargets(tsByTargets)
 
 	var requestWg sync.WaitGroup
 	requestWg.Add(len(tsByTargets))
-	errCh := make(chan error, len(tsByTargets))
+	errCh := make(chan error, len(tsByTargets)+1)
 	for endpoint, ts := range tsByTargets {
 		f.submitForwardingRequest(ctx, endpoint, ts, &requestWg, errCh)
+	}
+
+	if samplesTooOld {
+		errCh <- errSamplesTooOld
 	}
 
 	go func() {
@@ -285,18 +295,31 @@ func (t *TimeseriesCounts) count(ts mimirpb.PreallocTimeseries) {
 //
 // - A slice of time series to ingest into the ingesters.
 // - A map of slices of time series which is keyed by the target to which they should be forwarded.
-func (f *forwarder) splitByTargets(targetEndpoint string, tsSliceIn []mimirpb.PreallocTimeseries, rules validation.ForwardingRules) ([]mimirpb.PreallocTimeseries, tsByTargets) {
+func (f *forwarder) splitByTargets(targetEndpoint string, dontForwardOlderThan int64, tsSliceIn []mimirpb.PreallocTimeseries, rules validation.ForwardingRules) ([]mimirpb.PreallocTimeseries, tsByTargets, bool) {
 	// This functions copies all the entries of tsSliceIn into new slices so tsSliceIn can be recycled,
 	// we adjust the length of the slice to 0 to prevent that the contained *mimirpb.TimeSeries objects that have been
 	// reassigned (not deep copied) get returned while they are still referred to by another slice.
 	defer f.pools.putTsSlice(tsSliceIn[:0])
 
+	var dontForwardBeforeTs int64
+	if dontForwardOlderThan > 0 {
+		dontForwardBeforeTs = f.timeNow().UnixMilli() - dontForwardOlderThan
+	}
+
+	var samplesTooOld bool
 	tsToIngest := f.pools.getTsSlice()
 	tsByTargets := f.pools.getTsByTargets()
 	for _, ts := range tsSliceIn {
 		forwardingTarget, ingest := findTargetForLabels(targetEndpoint, ts.Labels, rules)
 		if forwardingTarget != "" {
-			tsByTargets.copyToTarget(forwardingTarget, ts, f.pools)
+			tsFiltered := ts.TimeSeries
+			tsFiltered.Samples = filterSamplesBefore(ts.Samples, dontForwardBeforeTs)
+			if len(tsFiltered.Samples) < len(ts.Samples) {
+				samplesTooOld = true
+			}
+			if len(tsFiltered.Samples) > 0 {
+				tsByTargets.copyToTarget(forwardingTarget, tsFiltered, f.pools)
+			}
 		}
 
 		if ingest {
@@ -311,7 +334,26 @@ func (f *forwarder) splitByTargets(targetEndpoint string, tsSliceIn []mimirpb.Pr
 		}
 	}
 
-	return tsToIngest, tsByTargets
+	return tsToIngest, tsByTargets, samplesTooOld
+}
+
+// filterSamplesBefore filters a given slice of samples to only contain samples that have timestamps newer or equal to
+// the given timestamp. It relies on the samples being sorted by timestamp.
+// If the given dropBeyond time is 0, the original slice is returned.
+// If some samples have been filtered the second return value is true, otherwise it is false.
+func filterSamplesBefore(samples []mimirpb.Sample, dontForwardBefore int64) []mimirpb.Sample {
+	if dontForwardBefore == 0 {
+		return samples
+	}
+
+	for sampleIdx, sample := range samples {
+		if sample.TimestampMs >= dontForwardBefore {
+			// In most cases the first sample should already meet this condition and we can return quickly.
+			return samples[sampleIdx:]
+		}
+	}
+
+	return samples[:0]
 }
 
 func findTargetForLabels(targetEndpoint string, labels []mimirpb.LabelAdapter, rules validation.ForwardingRules) (string, bool) {

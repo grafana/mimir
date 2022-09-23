@@ -892,10 +892,11 @@ func (d *Distributor) forwardSamples(ctx context.Context, userID string, ts []mi
 	}
 
 	endpoint := d.limits.ForwardingEndpoint(userID)
+	forwardingDropBefore := d.limits.ForwardingDropBefore(userID)
 
 	// Reassign req.Timeseries because the forwarder creates a new slice which has been filtered down.
 	// The cleanup func will cleanup the new slice, it's the forwarders responsibility to return the old one to the pool.
-	ts, forwardingErrCh = d.forwarder.Forward(ctx, endpoint, forwardingRules, ts)
+	ts, forwardingErrCh = d.forwarder.Forward(ctx, endpoint, forwardingDropBefore, forwardingRules, ts)
 
 	return ts, forwardingErrCh
 }
