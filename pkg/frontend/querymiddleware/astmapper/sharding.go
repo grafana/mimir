@@ -6,6 +6,7 @@
 package astmapper
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/go-kit/log"
@@ -17,8 +18,8 @@ import (
 )
 
 // NewSharding creates a new query sharding mapper.
-func NewSharding(shards int, logger log.Logger, stats *MapperStats) (ASTMapper, error) {
-	shardSummer, err := newShardSummer(shards, vectorSquasher, logger, stats)
+func NewSharding(ctx context.Context, shards int, logger log.Logger, stats *MapperStats) (ASTMapper, error) {
+	shardSummer, err := newShardSummer(ctx, shards, vectorSquasher, logger, stats)
 	if err != nil {
 		return nil, err
 	}
@@ -32,6 +33,8 @@ func NewSharding(shards int, logger log.Logger, stats *MapperStats) (ASTMapper, 
 type squasher = func(...parser.Expr) (parser.Expr, error)
 
 type shardSummer struct {
+	ctx context.Context
+
 	shards       int
 	currentShard *int
 	squash       squasher
@@ -42,12 +45,14 @@ type shardSummer struct {
 }
 
 // newShardSummer instantiates an ASTMapper which will fan out sum queries by shard
-func newShardSummer(shards int, squasher squasher, logger log.Logger, stats *MapperStats) (ASTMapper, error) {
+func newShardSummer(ctx context.Context, shards int, squasher squasher, logger log.Logger, stats *MapperStats) (ASTMapper, error) {
 	if squasher == nil {
 		return nil, errors.Errorf("squasher required and not passed")
 	}
 
 	return NewASTExprMapper(&shardSummer{
+		ctx: ctx,
+
 		shards:       shards,
 		squash:       squasher,
 		currentShard: nil,
@@ -77,6 +82,10 @@ func (summer *shardSummer) CopyWithCurShard(curshard int) *shardSummer {
 // a new expr which is expected to provide the same output when executed but splitting
 // the execution into multiple shards.
 func (summer *shardSummer) MapExpr(expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
+	if err := summer.ctx.Err(); err != nil {
+		return nil, false, err
+	}
+
 	switch e := expr.(type) {
 	case *parser.AggregateExpr:
 		if summer.currentShard != nil {
@@ -136,19 +145,23 @@ func (summer *shardSummer) MapExpr(expr parser.Expr) (mapped parser.Expr, finish
 		// process in the query-frontend. Since we can't estimate the cardinality, we prefer
 		// to be pessimistic and not parallelize at all the two legs unless we're able to
 		// parallelize all vector selectors in the legs.
-		canShardAllVectorSelectors := func(expr parser.Expr) (can bool) {
+		canShardAllVectorSelectors := func(expr parser.Expr) (can bool, err error) {
 			query := expr.String()
 			// We need to cache the results of this function to avoid processing it again and again
 			// in queries like `a or b or c or d`, which would lead to exponential processing time.
 			if can, ok := summer.canShardAllVectorSelectorsCache[query]; ok {
-				return can
+				return can, nil
 			}
-			defer func() { summer.canShardAllVectorSelectorsCache[query] = can }()
+			defer func() {
+				if err == nil {
+					summer.canShardAllVectorSelectorsCache[query] = can
+				}
+			}()
 
 			// Clone the expression cause the mapper can modify it in-place.
 			clonedExpr, err := parser.ParseExpr(query)
 			if err != nil {
-				return false
+				return false, err
 			}
 
 			c := summer.Clone()
@@ -157,16 +170,23 @@ func (summer *shardSummer) MapExpr(expr parser.Expr) (mapped parser.Expr, finish
 
 			mappedExpr, err := m.Map(clonedExpr)
 			if err != nil {
-				return false
+				return false, err
 			}
 
 			// The mapped expression could have been rewritten and the number of vector selectors
 			// be changed compared to the original expression, so we should compare with that.
-			return c.stats.GetShardedQueries() == countVectorSelectors(mappedExpr)
+			return c.stats.GetShardedQueries() == countVectorSelectors(mappedExpr), nil
 		}
 
-		finished = !canShardAllVectorSelectors(e.LHS) || !canShardAllVectorSelectors(e.RHS)
-		return e, finished, nil
+		canLHS, err := canShardAllVectorSelectors(e.LHS)
+		if err != nil {
+			return e, true, err
+		}
+		if !canLHS {
+			return e, true, nil
+		}
+		canRHS, err := canShardAllVectorSelectors(e.RHS)
+		return e, !canRHS, err
 
 	case *parser.SubqueryExpr:
 		// If the mapped expr is part of the sharded query, then it means we already checked whether it was

@@ -3,6 +3,7 @@
 package astmapper
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"time"
@@ -13,6 +14,8 @@ import (
 )
 
 type instantSplitter struct {
+	ctx context.Context
+
 	interval time.Duration
 	// In case of outer vector aggregator expressions, this contains the expression that will be used on the
 	// downstream queries, i.e. the query that will be executed in parallel in each partial query.
@@ -56,9 +59,10 @@ var cannotDoubleCountBoundaries = map[string]bool{
 }
 
 // NewInstantQuerySplitter creates a new query range mapper.
-func NewInstantQuerySplitter(interval time.Duration, logger log.Logger, stats *InstantSplitterStats) ASTMapper {
+func NewInstantQuerySplitter(ctx context.Context, interval time.Duration, logger log.Logger, stats *InstantSplitterStats) ASTMapper {
 	instantQueryMapper := NewASTExprMapper(
 		&instantSplitter{
+			ctx:      ctx,
 			interval: interval,
 			logger:   logger,
 			stats:    stats,
@@ -73,6 +77,10 @@ func NewInstantQuerySplitter(interval time.Duration, logger log.Logger, stats *I
 
 // MapExpr returns expr mapped as embedded queries
 func (i *instantSplitter) MapExpr(expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
+	if err := i.ctx.Err(); err != nil {
+		return nil, false, err
+	}
+
 	// Immediately clone the expr to avoid mutating the original
 	expr, err = cloneExpr(expr)
 	if err != nil {
