@@ -117,7 +117,7 @@ func mustLabelMatcher(mt labels.MatchType, name, val string) *labels.Matcher {
 }
 
 func TestSharding_BinaryExpressionsDontTakeExponentialTime(t *testing.T) {
-	const expressions = 25
+	const expressions = 30
 	const timeout = 10 * time.Second
 	query := `vector(1)`
 	// On 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz:
