@@ -4,7 +4,6 @@
 
 ### Grafana Mimir
 
-
 ### Mixin
 
 ### Jsonnet
