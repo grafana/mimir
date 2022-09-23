@@ -8,12 +8,15 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/gogo/status"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
@@ -44,7 +47,6 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 		// We expect Send() has been called only once, to send the querier ID to scheduler.
 		loopClient.AssertNumberOfCalls(t, "Send", 1)
 		loopClient.AssertCalled(t, "Send", &schedulerpb.QuerierToScheduler{QuerierID: "test-querier-id"})
-
 	})
 
 	t.Run("should wait until inflight query execution is completed before returning when worker context is canceled", func(t *testing.T) {
@@ -92,6 +94,32 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 		// and then to send the query result.
 		loopClient.AssertNumberOfCalls(t, "Send", 2)
 		loopClient.AssertCalled(t, "Send", &schedulerpb.QuerierToScheduler{QuerierID: "test-querier-id"})
+	})
+
+	t.Run("should not log an error when the query-scheduler is terminates while waiting for the next query to run", func(t *testing.T) {
+		sp, loopClient, requestHandler := prepareSchedulerProcessor()
+
+		// Override the logger to capture the logs.
+		logs := &concurrency.SyncBuffer{}
+		sp.log = log.NewLogfmtLogger(logs)
+
+		workerCtx, workerCancel := context.WithCancel(context.Background())
+
+		// As soon as the Recv() is called for the first time, we cancel the worker context and
+		// return the "scheduler not running" error. The reason why we cancel the worker context
+		// is to let processQueriesOnSingleStream() terminate.
+		loopClient.On("Recv").Return(func() (*schedulerpb.SchedulerToQuerier, error) {
+			workerCancel()
+			return nil, status.Error(codes.Unknown, schedulerpb.ErrSchedulerIsNotRunning.Error())
+		})
+
+		requestHandler.On("Handle", mock.Anything, mock.Anything).Return(&httpgrpc.HTTPResponse{}, nil)
+
+		sp.processQueriesOnSingleStream(workerCtx, nil, "127.0.0.1")
+
+		// We expect no error in the log.
+		assert.NotContains(t, logs.String(), "error")
+		assert.NotContains(t, logs.String(), schedulerpb.ErrSchedulerIsNotRunning)
 	})
 }
 

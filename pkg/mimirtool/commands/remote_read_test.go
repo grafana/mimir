@@ -9,6 +9,7 @@ import (
 	"io"
 	"testing"
 
+	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
 )
@@ -129,7 +130,7 @@ func TestTimeSeriesIterator(t *testing.T) {
 
 			for {
 				err := iter.Next()
-				if err == io.EOF {
+				if errors.Is(err, io.EOF) {
 					break
 				} else if err != nil {
 					assert.NoError(t, err, "unexpected error")

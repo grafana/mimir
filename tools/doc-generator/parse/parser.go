@@ -202,7 +202,9 @@ func config(block *ConfigBlock, cfg interface{}, flags map[uintptr]*flag.Flag, r
 
 				if isRoot {
 					blockName = rootName
-					blockDesc = rootDesc
+
+					// Honor the custom description if available.
+					blockDesc = getFieldDescription(field, rootDesc)
 				} else {
 					blockName = fieldName
 					blockDesc = getFieldDescription(field, "")

@@ -10,6 +10,7 @@ package integration
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"math/rand"
 	"net/http"
@@ -232,7 +233,7 @@ func TestQuerierStreamingRemoteRead(t *testing.T) {
 	for {
 		var res prompb.ChunkedReadResponse
 		err := stream.NextProto(&res)
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		require.NoError(t, err)

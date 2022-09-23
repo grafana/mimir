@@ -16,7 +16,7 @@ require (
 	github.com/golang/snappy v0.0.4
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.0
-	github.com/grafana/dskit v0.0.0-20220914132351-2835b538fb18
+	github.com/grafana/dskit v0.0.0-20220919132630-c9f79ec48cc3
 	github.com/grafana/e2e v0.1.1-0.20220519104354-1db01e4751fe
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/json-iterator/go v1.1.12
@@ -234,9 +234,6 @@ require (
 // Version after v0.24.0 have a change in the email notifier that can panic on certain inputs. See:
 // https://github.com/prometheus/alertmanager/issues/3064
 replace github.com/prometheus/alertmanager => github.com/prometheus/alertmanager v0.24.0
-
-// Override since git.apache.org is down.  The docs say to fetch from github.
-replace git.apache.org/thrift.git => github.com/apache/thrift v0.0.0-20180902110319-2566ecd5d999
 
 // Using our own fork to add custom dialer and improve perf.
 replace github.com/bradfitz/gomemcache => github.com/grafana/gomemcache v0.0.0-20220812141943-44b6cde200bb

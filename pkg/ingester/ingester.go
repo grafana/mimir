@@ -770,6 +770,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 			// of it, so that we can return it back to the distributor, which will return a
 			// 400 error to the client. The client (Prometheus) will not retry on 400, and
 			// we actually ingested all samples which haven't failed.
+			//nolint:errorlint // We don't expect the cause error to be wrapped.
 			switch cause := errors.Cause(err); cause {
 			case storage.ErrOutOfBounds:
 				sampleOutOfBoundsCount++
@@ -1750,7 +1751,7 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 
 			// If the dir is empty skip it
 			if _, err := f.Readdirnames(1); err != nil {
-				if err == io.EOF {
+				if errors.Is(err, io.EOF) {
 					return filepath.SkipDir
 				}
 

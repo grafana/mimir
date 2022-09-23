@@ -20,6 +20,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/pkg/errors"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -282,7 +283,7 @@ func (c *RemoteReadCommand) dump(k *kingpin.ParseContext) error {
 	for {
 		err := iterator.Next()
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			return err
@@ -328,7 +329,7 @@ func (c *RemoteReadCommand) stats(k *kingpin.ParseContext) error {
 	for {
 		err := iterator.Next()
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			return err
