@@ -12,7 +12,6 @@ import (
 
 	kitlog "github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/tenant"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/weaveworks/common/httpgrpc"
@@ -24,7 +23,6 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/log"
-	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const (
@@ -122,13 +120,13 @@ func otelMetricsToTimeseries(ctx context.Context, logger kitlog.Logger, md pmetr
 	tsMap, errs := prometheusremotewrite.FromMetrics(md, prometheusremotewrite.Settings{})
 
 	if errs != nil {
-		userID, err := tenant.TenantID(ctx)
+		/*userID, err := tenant.TenantID(ctx)
 		if err != nil {
 			return nil, err
 		}
 
 		dropped := md.MetricCount() - len(tsMap)
-		validation.DiscardedSamples.WithLabelValues(otelParseError, userID).Add(float64(dropped))
+		validation.DiscardedSamples.WithLabelValues(otelParseError, userID).Add(float64(dropped))*/
 
 		parseErrs := errs.Error()
 		if len(parseErrs) > maxErrMsgLen {
