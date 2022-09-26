@@ -14,9 +14,10 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
-	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/netutil"
 	"github.com/grafana/dskit/ring"
+
+	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
@@ -31,7 +32,7 @@ const (
 // is used to strip down the config to the minimum, and avoid confusion
 // to the user.
 type RingConfig struct {
-	KVStore          kv.Config     `yaml:"kvstore"`
+	KVStore          util.KVConfig `yaml:"kvstore"`
 	HeartbeatPeriod  time.Duration `yaml:"heartbeat_period" category:"advanced"`
 	HeartbeatTimeout time.Duration `yaml:"heartbeat_timeout" category:"advanced"`
 
@@ -90,7 +91,7 @@ func (cfg *RingConfig) ToRingConfig() ring.Config {
 	rc := ring.Config{}
 	flagext.DefaultValues(&rc)
 
-	rc.KVStore = cfg.KVStore
+	rc.KVStore = cfg.KVStore.Config
 	rc.HeartbeatTimeout = cfg.HeartbeatTimeout
 	rc.ReplicationFactor = 1
 

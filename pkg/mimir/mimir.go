@@ -179,6 +179,14 @@ func (c *Config) CommonConfigInheritance() CommonConfigInheritance {
 			"ruler_storage":        &c.RulerStorage.StorageBackendConfig,
 			"alertmanager_storage": &c.AlertmanagerStorage.StorageBackendConfig,
 		},
+		Ring: map[string]*util.KVConfig{
+			"ingester":      &c.Ingester.IngesterRing.KVStore,
+			"distributor":   &c.Distributor.DistributorRing.KVStore,
+			"compactor":     &c.Compactor.ShardingRing.KVStore,
+			"store_gateway": &c.StoreGateway.ShardingRing.KVStore,
+			"ruler":         &c.Ruler.Ring.KVStore,
+			"alertmanager":  &c.Alertmanager.ShardingRing.KVStore,
+		},
 	}
 }
 
@@ -535,6 +543,11 @@ func InheritCommonFlagValues(log log.Logger, fs *flag.FlagSet, common CommonConf
 				return fmt.Errorf("can't inherit common flags for %q: %w", desc, err)
 			}
 		}
+		for desc, loc := range inheritance.Ring {
+			if err := inheritFlags(log, common.Ring.RegisteredFlags, loc.RegisteredFlags, setFlags); err != nil {
+				return fmt.Errorf("can't inherit common flags for %q: %w", desc, err)
+			}
+		}
 	}
 
 	return nil
@@ -573,15 +586,18 @@ func inheritFlags(log log.Logger, orig util.RegisteredFlags, dest util.Registere
 
 type CommonConfig struct {
 	Storage bucket.StorageBackendConfig `yaml:"storage"`
+	Ring    util.KVConfig               `yaml:"ring"`
 }
 
 type CommonConfigInheritance struct {
 	Storage map[string]*bucket.StorageBackendConfig
+	Ring    map[string]*util.KVConfig
 }
 
 // RegisterFlags registers flag.
 func (c *CommonConfig) RegisterFlags(f *flag.FlagSet) {
 	c.Storage.RegisterFlagsWithPrefix("common.storage.", f)
+	c.Ring.RegisterFlagsWithPrefix("common.ring.", "", f)
 }
 
 // configWithCustomCommonUnmarshaler unmarshals config with custom unmarshaler for the `common` field.

@@ -10,9 +10,10 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
-	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/netutil"
 	"github.com/grafana/dskit/ring"
+
+	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
@@ -22,7 +23,7 @@ const (
 )
 
 type RingConfig struct {
-	KVStore              kv.Config              `yaml:"kvstore" doc:"description=The key-value store used to share the hash ring across multiple instances. This option needs be set on ingesters, distributors, queriers and rulers when running in microservices mode."`
+	KVStore              util.KVConfig          `yaml:"kvstore" doc:"description=The key-value store used to share the hash ring across multiple instances. This option needs be set on ingesters, distributors, queriers and rulers when running in microservices mode."`
 	HeartbeatPeriod      time.Duration          `yaml:"heartbeat_period" category:"advanced"`
 	HeartbeatTimeout     time.Duration          `yaml:"heartbeat_timeout" category:"advanced"`
 	ReplicationFactor    int                    `yaml:"replication_factor"`
@@ -108,7 +109,7 @@ func (cfg *RingConfig) ToRingConfig() ring.Config {
 	flagext.DefaultValues(&rc)
 
 	// Configure ring
-	rc.KVStore = cfg.KVStore
+	rc.KVStore = cfg.KVStore.Config
 	rc.HeartbeatTimeout = cfg.HeartbeatTimeout
 	rc.ReplicationFactor = cfg.ReplicationFactor
 	rc.ZoneAwarenessEnabled = cfg.ZoneAwarenessEnabled

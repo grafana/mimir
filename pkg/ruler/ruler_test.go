@@ -373,9 +373,9 @@ func TestGetRules(t *testing.T) {
 				cfg.Ring = RingConfig{
 					InstanceID:   id,
 					InstanceAddr: id,
-					KVStore: kv.Config{
+					KVStore: util.KVConfig{Config: kv.Config{
 						Mock: kvStore,
-					},
+					}},
 				}
 
 				r := buildRuler(t, cfg, storage, rulerAddrMap)
@@ -809,9 +809,9 @@ func TestSharding(t *testing.T) {
 						InstanceID:   id,
 						InstanceAddr: host,
 						InstancePort: port,
-						KVStore: kv.Config{
+						KVStore: util.KVConfig{Config: kv.Config{
 							Mock: kvStore,
-						},
+						}},
 						HeartbeatTimeout: 1 * time.Minute,
 					},
 					EnabledTenants:  tc.enabledUsers,

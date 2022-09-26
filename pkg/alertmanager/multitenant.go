@@ -296,7 +296,7 @@ func NewMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, store alerts
 	}
 
 	ringStore, err := kv.NewClient(
-		cfg.ShardingRing.KVStore,
+		cfg.ShardingRing.KVStore.Config,
 		ring.GetCodec(),
 		kv.RegistererWithKVName(prometheus.WrapRegistererWithPrefix("cortex_", registerer), "alertmanager"),
 		logger,

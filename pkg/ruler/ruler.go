@@ -282,7 +282,7 @@ func newRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer,
 	}
 
 	ringStore, err := kv.NewClient(
-		cfg.Ring.KVStore,
+		cfg.Ring.KVStore.Config,
 		ring.GetCodec(),
 		kv.RegistererWithKVName(prometheus.WrapRegistererWithPrefix("cortex_", reg), "ruler"),
 		logger,

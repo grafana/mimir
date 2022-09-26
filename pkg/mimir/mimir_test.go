@@ -50,6 +50,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket/s3"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway"
+	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -67,9 +68,9 @@ func TestMimir(t *testing.T) {
 				},
 			},
 			IngesterRing: ingester.RingConfig{
-				KVStore: kv.Config{
+				KVStore: util.KVConfig{Config: kv.Config{
 					Store: "inmemory",
-				},
+				}},
 				ReplicationFactor:      3,
 				InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
 			},
@@ -95,9 +96,9 @@ func TestMimir(t *testing.T) {
 		},
 		Ruler: ruler.Config{
 			Ring: ruler.RingConfig{
-				KVStore: kv.Config{
+				KVStore: util.KVConfig{Config: kv.Config{
 					Store: "memberlist",
-				},
+				}},
 				InstanceAddr: "test:8080",
 			},
 		},
@@ -120,7 +121,7 @@ func TestMimir(t *testing.T) {
 				return v
 			}(),
 			ShardingRing: alertmanager.RingConfig{
-				KVStore:                kv.Config{Store: "memberlist"},
+				KVStore:                util.KVConfig{Config: kv.Config{Store: "memberlist"}},
 				ReplicationFactor:      1,
 				InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
 			},
@@ -137,14 +138,14 @@ func TestMimir(t *testing.T) {
 		},
 		Distributor: distributor.Config{
 			DistributorRing: distributor.RingConfig{
-				KVStore: kv.Config{
+				KVStore: util.KVConfig{Config: kv.Config{
 					Store: "inmemory",
-				},
+				}},
 				InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
 			},
 		},
 		StoreGateway: storegateway.Config{ShardingRing: storegateway.RingConfig{
-			KVStore:                kv.Config{Store: "memberlist"},
+			KVStore:                util.KVConfig{Config: kv.Config{Store: "memberlist"}},
 			ReplicationFactor:      1,
 			InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
 		}},

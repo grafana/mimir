@@ -99,7 +99,7 @@ func NewStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 	}
 
 	ringStore, err = kv.NewClient(
-		gatewayCfg.ShardingRing.KVStore,
+		gatewayCfg.ShardingRing.KVStore.Config,
 		ring.GetCodec(),
 		kv.RegistererWithKVName(prometheus.WrapRegistererWithPrefix("cortex_", reg), "store-gateway"),
 		logger,
