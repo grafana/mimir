@@ -221,7 +221,58 @@ func TestForwardingOmitOldSamples(t *testing.T) {
 
 	testCases := []testCase{
 		{
-			name: "drop half of the samples",
+			name: "drop nothing",
+			inputSamples: [][]mimirpb.Sample{
+				{
+					{TimestampMs: cutOffTs, Value: 1},      // ok
+					{TimestampMs: cutOffTs + 50, Value: 1}, // ok
+				}, {
+					{TimestampMs: cutOffTs + 100, Value: 1}, // ok
+					{TimestampMs: cutOffTs + 150, Value: 1}, // ok
+				}, {
+					{TimestampMs: cutOffTs + 200, Value: 1}, // ok
+					{TimestampMs: cutOffTs + 250, Value: 1}, // ok
+				},
+			},
+			expectedSamples: [][]mimirpb.Sample{
+				{
+					{TimestampMs: cutOffTs, Value: 1},
+					{TimestampMs: cutOffTs + 50, Value: 1},
+				}, {
+					{TimestampMs: cutOffTs + 100, Value: 1},
+					{TimestampMs: cutOffTs + 150, Value: 1},
+				}, {
+					{TimestampMs: cutOffTs + 200, Value: 1},
+					{TimestampMs: cutOffTs + 250, Value: 1},
+				},
+			},
+			expectError: nil, // Expecting no error because nothing was dropped.
+		}, {
+			name: "drop some of the samples",
+			inputSamples: [][]mimirpb.Sample{
+				{
+					{TimestampMs: cutOffTs - 100, Value: 1}, // too old
+					{TimestampMs: cutOffTs - 50, Value: 1},  // too old
+				}, {
+					{TimestampMs: cutOffTs, Value: 1},      // ok
+					{TimestampMs: cutOffTs + 50, Value: 1}, // ok
+				}, {
+					{TimestampMs: cutOffTs + 100, Value: 1}, // ok
+					{TimestampMs: cutOffTs + 150, Value: 1}, // ok
+				},
+			},
+			expectedSamples: [][]mimirpb.Sample{
+				{
+					{TimestampMs: cutOffTs, Value: 1},
+					{TimestampMs: cutOffTs + 50, Value: 1},
+				}, {
+					{TimestampMs: cutOffTs + 100, Value: 1},
+					{TimestampMs: cutOffTs + 150, Value: 1},
+				},
+			},
+			expectError: errSamplesTooOld,
+		}, {
+			name: "split one sample slice in the middle",
 			inputSamples: [][]mimirpb.Sample{
 				{
 					{TimestampMs: cutOffTs - 150, Value: 1}, // too old
@@ -246,6 +297,21 @@ func TestForwardingOmitOldSamples(t *testing.T) {
 				},
 			},
 			expectError: errSamplesTooOld,
+		}, {
+			name: "drop all of the samples",
+			inputSamples: [][]mimirpb.Sample{
+				{
+					{TimestampMs: cutOffTs - 200, Value: 1}, // too old
+					{TimestampMs: cutOffTs - 150, Value: 1}, // too old
+
+				}, {
+					{TimestampMs: cutOffTs - 100, Value: 1}, // too old
+					{TimestampMs: cutOffTs - 50, Value: 1},  // too old
+
+				},
+			},
+			expectedSamples: [][]mimirpb.Sample{},
+			expectError:     errSamplesTooOld,
 		},
 	}
 	for _, tc := range testCases {
@@ -294,14 +360,20 @@ func TestForwardingOmitOldSamples(t *testing.T) {
 			}
 
 			bodies := bodiesFn()
-			// Expecting single request, with all the metrics.
-			require.Len(t, bodies, 1)
 
-			receivedReq := decodeBody(t, bodies[0])
+			if len(tc.expectedSamples) > 0 {
+				// Expecting single request, with all the metrics.
+				require.Len(t, bodies, 1)
 
-			require.Equal(t, len(tc.expectedSamples), len(receivedReq.Timeseries))
-			for tsIdx := range tc.expectedSamples {
-				require.Equal(t, tc.expectedSamples[tsIdx], receivedReq.Timeseries[tsIdx].Samples)
+				receivedReq := decodeBody(t, bodies[0])
+
+				require.Equal(t, len(tc.expectedSamples), len(receivedReq.Timeseries))
+				for tsIdx := range tc.expectedSamples {
+					require.Equal(t, tc.expectedSamples[tsIdx], receivedReq.Timeseries[tsIdx].Samples)
+				}
+			} else {
+				// Expecting no requests if there were no samples to forward.
+				require.Len(t, bodies, 0)
 			}
 		})
 	}
