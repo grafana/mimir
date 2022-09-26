@@ -263,6 +263,11 @@ storage:
   # system as object storage backend.
   # The CLI flags prefix for this block configuration is: common.storage
   [filesystem: <filesystem_storage_backend>]
+
+# The ring_kv_store block configures the key-value storage backend for the ring
+# implementations.
+# The CLI flags prefix for this block configuration is: common.ring
+[ring: <ring_kv_store>]
 ```
 
 ### server
@@ -531,40 +536,10 @@ ha_tracker:
 [remote_timeout: <duration> | default = 2s]
 
 ring:
-  kvstore:
-    # Backend storage to use for the ring. Supported values are: consul, etcd,
-    # inmemory, memberlist, multi.
-    # CLI flag: -distributor.ring.store
-    [store: <string> | default = "memberlist"]
-
-    # (advanced) The prefix for the keys in the store. Should end with a /.
-    # CLI flag: -distributor.ring.prefix
-    [prefix: <string> | default = "collectors/"]
-
-    # The consul block configures the consul client.
-    # The CLI flags prefix for this block configuration is: distributor.ring
-    [consul: <consul>]
-
-    # The etcd block configures the etcd client.
-    # The CLI flags prefix for this block configuration is: distributor.ring
-    [etcd: <etcd>]
-
-    multi:
-      # (advanced) Primary backend storage used by multi-client.
-      # CLI flag: -distributor.ring.multi.primary
-      [primary: <string> | default = ""]
-
-      # (advanced) Secondary backend storage used by multi-client.
-      # CLI flag: -distributor.ring.multi.secondary
-      [secondary: <string> | default = ""]
-
-      # (advanced) Mirror writes to secondary store.
-      # CLI flag: -distributor.ring.multi.mirror-enabled
-      [mirror_enabled: <boolean> | default = false]
-
-      # (advanced) Timeout for storing value to secondary store.
-      # CLI flag: -distributor.ring.multi.mirror-timeout
-      [mirror_timeout: <duration> | default = 2s]
+  # The ring_kv_store block configures the key-value storage backend for the
+  # ring implementations.
+  # The CLI flags prefix for this block configuration is: distributor.ring
+  [kvstore: <ring_kv_store>]
 
   # (advanced) Period at which to heartbeat to the ring. 0 = disabled.
   # CLI flag: -distributor.ring.heartbeat-period
@@ -651,40 +626,8 @@ ring:
   # The key-value store used to share the hash ring across multiple instances.
   # This option needs be set on ingesters, distributors, queriers and rulers
   # when running in microservices mode.
-  kvstore:
-    # Backend storage to use for the ring. Supported values are: consul, etcd,
-    # inmemory, memberlist, multi.
-    # CLI flag: -ingester.ring.store
-    [store: <string> | default = "memberlist"]
-
-    # (advanced) The prefix for the keys in the store. Should end with a /.
-    # CLI flag: -ingester.ring.prefix
-    [prefix: <string> | default = "collectors/"]
-
-    # The consul block configures the consul client.
-    # The CLI flags prefix for this block configuration is: ingester.ring
-    [consul: <consul>]
-
-    # The etcd block configures the etcd client.
-    # The CLI flags prefix for this block configuration is: ingester.ring
-    [etcd: <etcd>]
-
-    multi:
-      # (advanced) Primary backend storage used by multi-client.
-      # CLI flag: -ingester.ring.multi.primary
-      [primary: <string> | default = ""]
-
-      # (advanced) Secondary backend storage used by multi-client.
-      # CLI flag: -ingester.ring.multi.secondary
-      [secondary: <string> | default = ""]
-
-      # (advanced) Mirror writes to secondary store.
-      # CLI flag: -ingester.ring.multi.mirror-enabled
-      [mirror_enabled: <boolean> | default = false]
-
-      # (advanced) Timeout for storing value to secondary store.
-      # CLI flag: -ingester.ring.multi.mirror-timeout
-      [mirror_timeout: <duration> | default = 2s]
+  # The CLI flags prefix for this block configuration is: ingester.ring
+  [kvstore: <ring_kv_store>]
 
   # (advanced) Period at which to heartbeat to the ring. 0 = disabled.
   # CLI flag: -ingester.ring.heartbeat-period
@@ -1255,40 +1198,10 @@ alertmanager_client:
 [resend_delay: <duration> | default = 1m]
 
 ring:
-  kvstore:
-    # Backend storage to use for the ring. Supported values are: consul, etcd,
-    # inmemory, memberlist, multi.
-    # CLI flag: -ruler.ring.store
-    [store: <string> | default = "memberlist"]
-
-    # (advanced) The prefix for the keys in the store. Should end with a /.
-    # CLI flag: -ruler.ring.prefix
-    [prefix: <string> | default = "rulers/"]
-
-    # The consul block configures the consul client.
-    # The CLI flags prefix for this block configuration is: ruler.ring
-    [consul: <consul>]
-
-    # The etcd block configures the etcd client.
-    # The CLI flags prefix for this block configuration is: ruler.ring
-    [etcd: <etcd>]
-
-    multi:
-      # (advanced) Primary backend storage used by multi-client.
-      # CLI flag: -ruler.ring.multi.primary
-      [primary: <string> | default = ""]
-
-      # (advanced) Secondary backend storage used by multi-client.
-      # CLI flag: -ruler.ring.multi.secondary
-      [secondary: <string> | default = ""]
-
-      # (advanced) Mirror writes to secondary store.
-      # CLI flag: -ruler.ring.multi.mirror-enabled
-      [mirror_enabled: <boolean> | default = false]
-
-      # (advanced) Timeout for storing value to secondary store.
-      # CLI flag: -ruler.ring.multi.mirror-timeout
-      [mirror_timeout: <duration> | default = 2s]
+  # The ring_kv_store block configures the key-value storage backend for the
+  # ring implementations.
+  # The CLI flags prefix for this block configuration is: ruler.ring
+  [kvstore: <ring_kv_store>]
 
   # (advanced) Period at which to heartbeat to the ring. 0 = disabled.
   # CLI flag: -ruler.ring.heartbeat-period
@@ -1446,42 +1359,9 @@ The `alertmanager` block configures the alertmanager.
 
 sharding_ring:
   # The key-value store used to share the hash ring across multiple instances.
-  kvstore:
-    # Backend storage to use for the ring. Supported values are: consul, etcd,
-    # inmemory, memberlist, multi.
-    # CLI flag: -alertmanager.sharding-ring.store
-    [store: <string> | default = "memberlist"]
-
-    # (advanced) The prefix for the keys in the store. Should end with a /.
-    # CLI flag: -alertmanager.sharding-ring.prefix
-    [prefix: <string> | default = "alertmanagers/"]
-
-    # The consul block configures the consul client.
-    # The CLI flags prefix for this block configuration is:
-    # alertmanager.sharding-ring
-    [consul: <consul>]
-
-    # The etcd block configures the etcd client.
-    # The CLI flags prefix for this block configuration is:
-    # alertmanager.sharding-ring
-    [etcd: <etcd>]
-
-    multi:
-      # (advanced) Primary backend storage used by multi-client.
-      # CLI flag: -alertmanager.sharding-ring.multi.primary
-      [primary: <string> | default = ""]
-
-      # (advanced) Secondary backend storage used by multi-client.
-      # CLI flag: -alertmanager.sharding-ring.multi.secondary
-      [secondary: <string> | default = ""]
-
-      # (advanced) Mirror writes to secondary store.
-      # CLI flag: -alertmanager.sharding-ring.multi.mirror-enabled
-      [mirror_enabled: <boolean> | default = false]
-
-      # (advanced) Timeout for storing value to secondary store.
-      # CLI flag: -alertmanager.sharding-ring.multi.mirror-timeout
-      [mirror_timeout: <duration> | default = 2s]
+  # The CLI flags prefix for this block configuration is:
+  # alertmanager.sharding-ring
+  [kvstore: <ring_kv_store>]
 
   # (advanced) Period at which to heartbeat to the ring. 0 = disabled.
   # CLI flag: -alertmanager.sharding-ring.heartbeat-period
@@ -1816,6 +1696,7 @@ The `frontend_worker` block configures the worker running within the querier, pi
 The `etcd` block configures the etcd client. The supported CLI flags `<prefix>` used to reference this configuration block are:
 
 - `alertmanager.sharding-ring`
+- `common.ring`
 - `compactor.ring`
 - `distributor.ha-tracker`
 - `distributor.ring`
@@ -1880,6 +1761,7 @@ The `etcd` block configures the etcd client. The supported CLI flags `<prefix>` 
 The `consul` block configures the consul client. The supported CLI flags `<prefix>` used to reference this configuration block are:
 
 - `alertmanager.sharding-ring`
+- `common.ring`
 - `compactor.ring`
 - `distributor.ha-tracker`
 - `distributor.ring`
@@ -2955,40 +2837,10 @@ The `compactor` block configures the compactor component.
 [disabled_tenants: <string> | default = ""]
 
 sharding_ring:
-  kvstore:
-    # Backend storage to use for the ring. Supported values are: consul, etcd,
-    # inmemory, memberlist, multi.
-    # CLI flag: -compactor.ring.store
-    [store: <string> | default = "memberlist"]
-
-    # (advanced) The prefix for the keys in the store. Should end with a /.
-    # CLI flag: -compactor.ring.prefix
-    [prefix: <string> | default = "collectors/"]
-
-    # The consul block configures the consul client.
-    # The CLI flags prefix for this block configuration is: compactor.ring
-    [consul: <consul>]
-
-    # The etcd block configures the etcd client.
-    # The CLI flags prefix for this block configuration is: compactor.ring
-    [etcd: <etcd>]
-
-    multi:
-      # (advanced) Primary backend storage used by multi-client.
-      # CLI flag: -compactor.ring.multi.primary
-      [primary: <string> | default = ""]
-
-      # (advanced) Secondary backend storage used by multi-client.
-      # CLI flag: -compactor.ring.multi.secondary
-      [secondary: <string> | default = ""]
-
-      # (advanced) Mirror writes to secondary store.
-      # CLI flag: -compactor.ring.multi.mirror-enabled
-      [mirror_enabled: <boolean> | default = false]
-
-      # (advanced) Timeout for storing value to secondary store.
-      # CLI flag: -compactor.ring.multi.mirror-timeout
-      [mirror_timeout: <duration> | default = 2s]
+  # The ring_kv_store block configures the key-value storage backend for the
+  # ring implementations.
+  # The CLI flags prefix for this block configuration is: compactor.ring
+  [kvstore: <ring_kv_store>]
 
   # (advanced) Period at which to heartbeat to the ring. 0 = disabled.
   # CLI flag: -compactor.ring.heartbeat-period
@@ -3048,42 +2900,9 @@ sharding_ring:
   # The key-value store used to share the hash ring across multiple instances.
   # This option needs be set both on the store-gateway, querier and ruler when
   # running in microservices mode.
-  kvstore:
-    # Backend storage to use for the ring. Supported values are: consul, etcd,
-    # inmemory, memberlist, multi.
-    # CLI flag: -store-gateway.sharding-ring.store
-    [store: <string> | default = "memberlist"]
-
-    # (advanced) The prefix for the keys in the store. Should end with a /.
-    # CLI flag: -store-gateway.sharding-ring.prefix
-    [prefix: <string> | default = "collectors/"]
-
-    # The consul block configures the consul client.
-    # The CLI flags prefix for this block configuration is:
-    # store-gateway.sharding-ring
-    [consul: <consul>]
-
-    # The etcd block configures the etcd client.
-    # The CLI flags prefix for this block configuration is:
-    # store-gateway.sharding-ring
-    [etcd: <etcd>]
-
-    multi:
-      # (advanced) Primary backend storage used by multi-client.
-      # CLI flag: -store-gateway.sharding-ring.multi.primary
-      [primary: <string> | default = ""]
-
-      # (advanced) Secondary backend storage used by multi-client.
-      # CLI flag: -store-gateway.sharding-ring.multi.secondary
-      [secondary: <string> | default = ""]
-
-      # (advanced) Mirror writes to secondary store.
-      # CLI flag: -store-gateway.sharding-ring.multi.mirror-enabled
-      [mirror_enabled: <boolean> | default = false]
-
-      # (advanced) Timeout for storing value to secondary store.
-      # CLI flag: -store-gateway.sharding-ring.multi.mirror-timeout
-      [mirror_timeout: <duration> | default = 2s]
+  # The CLI flags prefix for this block configuration is:
+  # store-gateway.sharding-ring
+  [kvstore: <ring_kv_store>]
 
   # (advanced) Period at which to heartbeat to the ring. 0 = disabled.
   # CLI flag: -store-gateway.sharding-ring.heartbeat-period
@@ -3485,4 +3304,54 @@ The `filesystem_storage_backend` block configures the usage of local file system
 # Local filesystem storage directory.
 # CLI flag: -<prefix>.filesystem.dir
 [dir: <string> | default = ""]
+```
+
+### ring_kv_store
+
+The `ring_kv_store` block configures the key-value storage backend for the ring implementations. The supported CLI flags `<prefix>` used to reference this configuration block are:
+
+- `alertmanager.sharding-ring`
+- `common.ring`
+- `compactor.ring`
+- `distributor.ring`
+- `ingester.ring`
+- `ruler.ring`
+- `store-gateway.sharding-ring`
+
+&nbsp;
+
+```yaml
+# Backend storage to use for the ring. Supported values are: consul, etcd,
+# inmemory, memberlist, multi.
+# CLI flag: -<prefix>.store
+[store: <string> | default = "consul"]
+
+# (advanced) The prefix for the keys in the store. Should end with a /.
+# CLI flag: -<prefix>.prefix
+[prefix: <string> | default = ""]
+
+# The consul block configures the consul client.
+# The CLI flags prefix for this block configuration is: common.ring
+[consul: <consul>]
+
+# The etcd block configures the etcd client.
+# The CLI flags prefix for this block configuration is: common.ring
+[etcd: <etcd>]
+
+multi:
+  # (advanced) Primary backend storage used by multi-client.
+  # CLI flag: -<prefix>.multi.primary
+  [primary: <string> | default = ""]
+
+  # (advanced) Secondary backend storage used by multi-client.
+  # CLI flag: -<prefix>.multi.secondary
+  [secondary: <string> | default = ""]
+
+  # (advanced) Mirror writes to secondary store.
+  # CLI flag: -<prefix>.multi.mirror-enabled
+  [mirror_enabled: <boolean> | default = false]
+
+  # (advanced) Timeout for storing value to secondary store.
+  # CLI flag: -<prefix>.multi.mirror-timeout
+  [mirror_timeout: <duration> | default = 2s]
 ```

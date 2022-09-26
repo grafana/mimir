@@ -33,6 +33,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket/swift"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -179,6 +180,11 @@ var (
 			Name:       "filesystem_storage_backend",
 			StructType: reflect.TypeOf(filesystem.Config{}),
 			Desc:       "The filesystem_storage_backend block configures the usage of local file system as object storage backend.",
+		},
+		{
+			Name:       "ring_kv_store",
+			StructType: reflect.TypeOf(util.KVConfig{}),
+			Desc:       "The ring_kv_store block configures the key-value storage backend for the ring implementations.",
 		},
 	}
 )
