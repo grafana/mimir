@@ -263,7 +263,27 @@ type tsByTargets map[string]tsWithSampleCount
 
 // copyToTarget copies the given time series into the given target and does the necessary accounting.
 // The time series is deep-copied, so the passed in time series can be returned to the pool without affecting the copy.
-func (t tsByTargets) copyToTarget(target string, ts mimirpb.PreallocTimeseries, pool *pools) {
+func (t tsByTargets) copyToTarget(target string, ts mimirpb.PreallocTimeseries, dontForwardBeforeTs int64, pool *pools) bool {
+	samplesTooOld := false
+
+	if dontForwardBeforeTs > 0 && samplesNeedFiltering(ts.TimeSeries.Samples, dontForwardBeforeTs) {
+		samplesUnfiltered := ts.TimeSeries.Samples
+		defer func() {
+			ts.TimeSeries.Samples = samplesUnfiltered
+		}()
+
+		samplesFiltered := filterSamplesBefore(samplesUnfiltered, dontForwardBeforeTs)
+		if len(samplesFiltered) < len(samplesUnfiltered) {
+			samplesTooOld = true
+		}
+
+		if len(samplesFiltered) == 0 {
+			return samplesTooOld
+		}
+
+		ts.TimeSeries.Samples = samplesFiltered
+	}
+
 	tsByTarget, ok := t[target]
 	if !ok {
 		tsByTarget.ts = pool.getTsSlice()
@@ -277,6 +297,8 @@ func (t tsByTargets) copyToTarget(target string, ts mimirpb.PreallocTimeseries, 
 	tsByTarget.counts.count(tsByTarget.ts[tsIdx])
 
 	t[target] = tsByTarget
+
+	return samplesTooOld
 }
 
 type TimeseriesCounts struct {
@@ -312,13 +334,8 @@ func (f *forwarder) splitByTargets(targetEndpoint string, dontForwardOlderThan i
 	for _, ts := range tsSliceIn {
 		forwardingTarget, ingest := findTargetForLabels(targetEndpoint, ts.Labels, rules)
 		if forwardingTarget != "" {
-			tsFiltered := ts.TimeSeries
-			tsFiltered.Samples = filterSamplesBefore(ts.Samples, dontForwardBeforeTs)
-			if len(tsFiltered.Samples) < len(ts.Samples) {
+			if tsByTargets.copyToTarget(forwardingTarget, ts, dontForwardBeforeTs, f.pools) {
 				samplesTooOld = true
-			}
-			if len(tsFiltered.Samples) > 0 {
-				tsByTargets.copyToTarget(forwardingTarget, tsFiltered, f.pools)
 			}
 		}
 
@@ -337,9 +354,19 @@ func (f *forwarder) splitByTargets(targetEndpoint string, dontForwardOlderThan i
 	return tsToIngest, tsByTargets, samplesTooOld
 }
 
+// samplesNeedFiltering takes a slice of samples and a timestamp before which samples should be filtered out,
+// it returns true if some samples are older than the given timestamp or false otherwise.
+// It assumes that the samples are sorted by timestamp.
+func samplesNeedFiltering(samples []mimirpb.Sample, dontForwardBefore int64) bool {
+	if len(samples) == 0 {
+		return false
+	}
+
+	return samples[0].TimestampMs < dontForwardBefore
+}
+
 // filterSamplesBefore filters a given slice of samples to only contain samples that have timestamps newer or equal to
 // the given timestamp. It relies on the samples being sorted by timestamp.
-// If the given dropBeyond time is 0, the original slice is returned.
 // If some samples have been filtered the second return value is true, otherwise it is false.
 func filterSamplesBefore(samples []mimirpb.Sample, dontForwardBefore int64) []mimirpb.Sample {
 	if dontForwardBefore == 0 {
