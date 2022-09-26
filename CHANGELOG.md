@@ -20,6 +20,7 @@
 
 ### Grafana Mimir
 * [BUGFIX] Query-frontend: query sharding took exponential time to map binary expressions. #3027
+* [BUGFIX] Distributor: Stop panics on OTLP endpoint when a single metric has multiple timeseries. #3040
 
 ## 2.3.0
 
