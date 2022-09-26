@@ -229,18 +229,17 @@ func (f *forwarder) Forward(ctx context.Context, endpoint string, dontForwardOld
 		return in, errCh
 	}
 
-	toIngest, tsByTargets, samplesTooOld := f.splitByTargets(endpoint, dontForwardOlderThan.Milliseconds(), in, rules)
+	toIngest, tsByTargets, err := f.splitByTargets(endpoint, dontForwardOlderThan.Milliseconds(), in, rules)
 	defer f.pools.putTsByTargets(tsByTargets)
+	errCh := make(chan error, len(tsByTargets)+1)
+	if err != nil {
+		errCh <- err
+	}
 
 	var requestWg sync.WaitGroup
 	requestWg.Add(len(tsByTargets))
-	errCh := make(chan error, len(tsByTargets)+1)
 	for endpoint, ts := range tsByTargets {
 		f.submitForwardingRequest(ctx, endpoint, ts, &requestWg, errCh)
-	}
-
-	if samplesTooOld {
-		errCh <- errSamplesTooOld
 	}
 
 	go func() {
@@ -317,7 +316,8 @@ func (t *TimeseriesCounts) count(ts mimirpb.PreallocTimeseries) {
 //
 // - A slice of time series to ingest into the ingesters.
 // - A map of slices of time series which is keyed by the target to which they should be forwarded.
-func (f *forwarder) splitByTargets(targetEndpoint string, dontForwardOlderThan int64, tsSliceIn []mimirpb.PreallocTimeseries, rules validation.ForwardingRules) ([]mimirpb.PreallocTimeseries, tsByTargets, bool) {
+// - An error if any occurred.
+func (f *forwarder) splitByTargets(targetEndpoint string, dontForwardOlderThan int64, tsSliceIn []mimirpb.PreallocTimeseries, rules validation.ForwardingRules) ([]mimirpb.PreallocTimeseries, tsByTargets, error) {
 	// This functions copies all the entries of tsSliceIn into new slices so tsSliceIn can be recycled,
 	// we adjust the length of the slice to 0 to prevent that the contained *mimirpb.TimeSeries objects that have been
 	// reassigned (not deep copied) get returned while they are still referred to by another slice.
@@ -328,14 +328,14 @@ func (f *forwarder) splitByTargets(targetEndpoint string, dontForwardOlderThan i
 		dontForwardBeforeTs = f.timeNow().UnixMilli() - dontForwardOlderThan
 	}
 
-	var samplesTooOld bool
+	var err error
 	tsToIngest := f.pools.getTsSlice()
 	tsByTargets := f.pools.getTsByTargets()
 	for _, ts := range tsSliceIn {
 		forwardingTarget, ingest := findTargetForLabels(targetEndpoint, ts.Labels, rules)
 		if forwardingTarget != "" {
 			if tsByTargets.copyToTarget(forwardingTarget, ts, dontForwardBeforeTs, f.pools) {
-				samplesTooOld = true
+				err = errSamplesTooOld
 			}
 		}
 
@@ -351,7 +351,7 @@ func (f *forwarder) splitByTargets(targetEndpoint string, dontForwardOlderThan i
 		}
 	}
 
-	return tsToIngest, tsByTargets, samplesTooOld
+	return tsToIngest, tsByTargets, err
 }
 
 // samplesNeedFiltering takes a slice of samples and a timestamp before which samples should be filtered out,
