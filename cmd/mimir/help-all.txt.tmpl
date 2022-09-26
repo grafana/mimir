@@ -521,6 +521,54 @@ Usage of ./cmd/mimir/mimir:
     	True to enable TSDB WAL compression.
   -blocks-storage.tsdb.wal-segment-size-bytes int
     	TSDB WAL segments files max size (bytes). (default 134217728)
+  -common.ring.consul.acl-token string
+    	ACL Token used to interact with Consul.
+  -common.ring.consul.cas-retry-delay duration
+    	Maximum duration to wait before retrying a Compare And Swap (CAS) operation. (default 1s)
+  -common.ring.consul.client-timeout duration
+    	HTTP timeout when talking to Consul (default 20s)
+  -common.ring.consul.consistent-reads
+    	Enable consistent reads to Consul.
+  -common.ring.consul.hostname string
+    	Hostname and port of Consul. (default "localhost:8500")
+  -common.ring.consul.watch-burst-size int
+    	Burst size used in rate limit. Values less than 1 are treated as 1. (default 1)
+  -common.ring.consul.watch-rate-limit float
+    	Rate limit when watching key or prefix in Consul, in requests per second. 0 disables the rate limit. (default 1)
+  -common.ring.etcd.dial-timeout duration
+    	The dial timeout for the etcd connection. (default 10s)
+  -common.ring.etcd.endpoints string
+    	The etcd endpoints to connect to.
+  -common.ring.etcd.max-retries int
+    	The maximum number of retries to do for failed ops. (default 10)
+  -common.ring.etcd.password string
+    	Etcd password.
+  -common.ring.etcd.tls-ca-path string
+    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+  -common.ring.etcd.tls-cert-path string
+    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -common.ring.etcd.tls-enabled
+    	Enable TLS.
+  -common.ring.etcd.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -common.ring.etcd.tls-key-path string
+    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -common.ring.etcd.tls-server-name string
+    	Override the expected name on the server certificate.
+  -common.ring.etcd.username string
+    	Etcd username.
+  -common.ring.multi.mirror-enabled
+    	Mirror writes to secondary store.
+  -common.ring.multi.mirror-timeout duration
+    	Timeout for storing value to secondary store. (default 2s)
+  -common.ring.multi.primary string
+    	Primary backend storage used by multi-client.
+  -common.ring.multi.secondary string
+    	Secondary backend storage used by multi-client.
+  -common.ring.prefix string
+    	The prefix for the keys in the store. Should end with a /.
+  -common.ring.store string
+    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "consul")
   -common.storage.azure.account-key string
     	Azure storage account key
   -common.storage.azure.account-name string

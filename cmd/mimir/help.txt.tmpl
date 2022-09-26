@@ -199,6 +199,16 @@ Usage of ./cmd/mimir/mimir:
     	Directory to store TSDBs (including WAL) in the ingesters. This directory is required to be persisted between restarts. (default "./tsdb/")
   -blocks-storage.tsdb.retention-period duration
     	TSDB blocks retention in the ingester before a block is removed, relative to the newest block written for the tenant. This should be larger than the -blocks-storage.tsdb.block-ranges-period, -querier.query-store-after and large enough to give store-gateways and queriers enough time to discover newly uploaded blocks. (default 24h0m0s)
+  -common.ring.consul.hostname string
+    	Hostname and port of Consul. (default "localhost:8500")
+  -common.ring.etcd.endpoints string
+    	The etcd endpoints to connect to.
+  -common.ring.etcd.password string
+    	Etcd password.
+  -common.ring.etcd.username string
+    	Etcd username.
+  -common.ring.store string
+    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "consul")
   -common.storage.azure.account-key string
     	Azure storage account key
   -common.storage.azure.account-name string
