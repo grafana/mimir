@@ -55,7 +55,7 @@ func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
 	// samples from one metric (len = 3), and one invalid metric (metric count = 2).
 
 	md := pmetric.NewMetrics()
-	name := "foo"
+	const name = "foo"
 	attributes := pcommon.NewMap()
 	attributes.InsertString(model.MetricNameLabel, name)
 
