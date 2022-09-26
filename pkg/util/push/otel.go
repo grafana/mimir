@@ -127,7 +127,7 @@ func otelMetricsToTimeseries(ctx context.Context, logger kitlog.Logger, md pmetr
 			return nil, err
 		}
 
-		dropped := md.MetricCount() - len(tsMap)
+		dropped := md.DataPointCount() - sampleCountInMap(tsMap)
 		validation.DiscardedSamples.WithLabelValues(otelParseError, userID).Add(float64(dropped))
 
 		parseErrs := errs.Error()
@@ -222,4 +222,13 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries) pmetricotlp.Request
 	}
 
 	return pmetricotlp.NewRequestFromMetrics(d)
+}
+
+func sampleCountInMap(tsMap map[string]*prompb.TimeSeries) int {
+	count := 0
+	for _, ts := range tsMap {
+		count += len(ts.Samples)
+	}
+
+	return count
 }
