@@ -1896,6 +1896,9 @@ metaMonitoring:
     installOperator: false
 
     logs:
+      # -- Controls whether to create resources PodLogs and LogsInstance resources
+      enabled: true
+
       # -- Default destination for logs. The config here is translated to Promtail client
       # configuration to write logs to this Loki-compatible remote. Optional.
       remote:
@@ -1918,6 +1921,9 @@ metaMonitoring:
       additionalClientConfigs: []
 
     metrics:
+      # -- Controls whether to create MetricsInstance resources and ServiceMonitor resources for scraping Kubernetes (when .scrapeK8s.enabled=true).
+      enabled: true
+
       # -- Default destination for metrics. The config here is translated to remote_write
       # configuration to push metrics to this Prometheus-compatible remote. Optional.
       # Note that you need to configure serviceMonitor in order to have some metrics available.
