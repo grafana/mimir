@@ -161,7 +161,7 @@ type Limits struct {
 	AlertmanagerMaxAlertsSizeBytes             int `yaml:"alertmanager_max_alerts_size_bytes" json:"alertmanager_max_alerts_size_bytes"`
 
 	ForwardingEndpoint   string          `yaml:"forwarding_endpoint" json:"forwarding_endpoint" doc:"nocli|description=Remote-write endpoint where metrics specified in forwarding_rules are forwarded to. If set, takes precedence over endpoints specified in forwarding rules."`
-	ForwardingDropBefore time.Duration   `yaml:"forwarding_drop_before" json:"forwarding_drop_before" doc:"nocli|description=If set, forwarding drops samples that are older than this duration. If unset or 0, no samples get dropped."`
+	ForwardingDropBefore model.Duration  `yaml:"forwarding_drop_before" json:"forwarding_drop_before" doc:"nocli|description=If set, forwarding drops samples that are older than this duration. If unset or 0, no samples get dropped."`
 	ForwardingRules      ForwardingRules `yaml:"forwarding_rules" json:"forwarding_rules" doc:"nocli|description=Rules based on which the Distributor decides whether a metric should be forwarded to an alternative remote_write API endpoint."`
 }
 
@@ -715,7 +715,7 @@ func (o *Overrides) ForwardingEndpoint(user string) string {
 }
 
 func (o *Overrides) ForwardingDropBefore(user string) time.Duration {
-	return o.getOverridesForUser(user).ForwardingDropBefore
+	return time.Duration(o.getOverridesForUser(user).ForwardingDropBefore)
 }
 
 func (o *Overrides) getOverridesForUser(userID string) *Limits {
