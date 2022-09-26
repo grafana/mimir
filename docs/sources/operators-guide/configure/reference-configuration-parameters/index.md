@@ -568,7 +568,7 @@ ring:
 
   # (advanced) Period at which to heartbeat to the ring. 0 = disabled.
   # CLI flag: -distributor.ring.heartbeat-period
-  [heartbeat_period: <duration> | default = 5s]
+  [heartbeat_period: <duration> | default = 15s]
 
   # (advanced) The heartbeat timeout after which distributors are considered
   # unhealthy within the ring. 0 = never (timeout disabled).
@@ -688,7 +688,7 @@ ring:
 
   # (advanced) Period at which to heartbeat to the ring. 0 = disabled.
   # CLI flag: -ingester.ring.heartbeat-period
-  [heartbeat_period: <duration> | default = 5s]
+  [heartbeat_period: <duration> | default = 15s]
 
   # (advanced) The heartbeat timeout after which ingesters are skipped for
   # reads/writes. 0 = never (timeout disabled). This option needs be set on
@@ -1292,7 +1292,7 @@ ring:
 
   # (advanced) Period at which to heartbeat to the ring. 0 = disabled.
   # CLI flag: -ruler.ring.heartbeat-period
-  [heartbeat_period: <duration> | default = 5s]
+  [heartbeat_period: <duration> | default = 15s]
 
   # (advanced) The heartbeat timeout after which rulers are considered unhealthy
   # within the ring. 0 = never (timeout disabled).
@@ -2992,7 +2992,7 @@ sharding_ring:
 
   # (advanced) Period at which to heartbeat to the ring. 0 = disabled.
   # CLI flag: -compactor.ring.heartbeat-period
-  [heartbeat_period: <duration> | default = 5s]
+  [heartbeat_period: <duration> | default = 15s]
 
   # (advanced) The heartbeat timeout after which compactors are considered
   # unhealthy within the ring. 0 = never (timeout disabled).

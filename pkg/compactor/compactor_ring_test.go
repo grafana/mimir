@@ -30,6 +30,7 @@ func TestRingConfig_DefaultConfigToLifecyclerConfig(t *testing.T) {
 	expected.MinReadyDuration = 0
 	expected.FinalSleep = 0
 	expected.InfNames = cfg.InstanceInterfaceNames
+	expected.HeartbeatPeriod = 15 * time.Second
 
 	assert.Equal(t, expected, cfg.ToLifecyclerConfig())
 }

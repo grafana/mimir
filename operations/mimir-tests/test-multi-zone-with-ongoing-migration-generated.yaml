@@ -1272,7 +1272,6 @@ spec:
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
         - -ingester.max-global-series-per-user=150000
-        - -ingester.ring.heartbeat-period=15s
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.num-tokens=512
         - -ingester.ring.prefix=
@@ -1386,7 +1385,6 @@ spec:
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
         - -ingester.max-global-series-per-user=150000
-        - -ingester.ring.heartbeat-period=15s
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.instance-availability-zone=zone-a
         - -ingester.ring.num-tokens=512
@@ -1502,7 +1500,6 @@ spec:
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
         - -ingester.max-global-series-per-user=150000
-        - -ingester.ring.heartbeat-period=15s
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.instance-availability-zone=zone-b
         - -ingester.ring.num-tokens=512
@@ -1618,7 +1615,6 @@ spec:
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
         - -ingester.max-global-series-per-user=150000
-        - -ingester.ring.heartbeat-period=15s
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.instance-availability-zone=zone-c
         - -ingester.ring.num-tokens=512
