@@ -20,9 +20,6 @@ spec:
       app.kubernetes.io/instance: graphite-enabled-values
       app.kubernetes.io/component: graphite-querier
   strategy:
-    rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 1
     type: RollingUpdate
   template:
     metadata:
