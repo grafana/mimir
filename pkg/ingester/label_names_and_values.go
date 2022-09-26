@@ -104,26 +104,48 @@ func labelValuesCardinality(
 	resp := client.LabelValuesCardinalityResponse{}
 	respSize := 0
 
-	// We will use original matchers + one extra matcher for label value.
-	lblValMatchers := make([]*labels.Matcher, len(matchers)+1)
-	copy(lblValMatchers, matchers)
+	var mpc *index.PostingsCloner
+	if len(matchers) > 0 {
+		matchedPostings, err := postingsForMatchersFn(idxReader, matchers...)
+		if err != nil {
+			return err
+		}
+		mpc = index.NewPostingsCloner(matchedPostings)
+	}
 
 	for _, lbName := range lbNames {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		// Obtain all values for current label name.
-		lbValues, err := idxReader.LabelValues(lbName, matchers...)
+		allLblValues, err := idxReader.LabelValues(lbName)
 		if err != nil {
 			return err
 		}
 		// For each value count total number of series storing the result into cardinality response item.
 		var respItem *client.LabelValueSeriesCount
-
-		for _, lbValue := range lbValues {
+		for _, lbValue := range allLblValues {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
+
+			lbPostings, err := idxReader.Postings(lbName, lbValue)
+			if err != nil {
+				return err
+			}
+
+			if len(matchers) > 0 {
+				lbPostings = index.Intersect(lbPostings, mpc.Clone())
+			}
+
+			seriesCount, err := postingsLength(ctx, lbPostings)
+			if err != nil {
+				return err
+			}
+
+			if seriesCount == 0 {
+				continue
+			}
+
 			// Create label name response item entry.
 			if respItem == nil {
 				respItem = &client.LabelValueSeriesCount{
@@ -132,13 +154,7 @@ func labelValuesCardinality(
 				}
 				resp.Items = append(resp.Items, respItem)
 			}
-			// Get total series count applying label matchers.
-			lblValMatchers[len(lblValMatchers)-1] = labels.MustNewMatcher(labels.MatchEqual, lbName, lbValue)
 
-			seriesCount, err := countLabelValueSeries(ctx, idxReader, postingsForMatchersFn, lblValMatchers)
-			if err != nil {
-				return err
-			}
 			respItem.LabelValueSeries[lbValue] = seriesCount
 
 			respSize += len(lbValue)
@@ -161,21 +177,11 @@ func labelValuesCardinality(
 	return nil
 }
 
-func countLabelValueSeries(
-	ctx context.Context,
-	idxReader tsdb.IndexReader,
-	postingsForMatchersFn func(tsdb.IndexPostingsReader, ...*labels.Matcher) (index.Postings, error),
-	lblValMatchers []*labels.Matcher,
-) (uint64, error) {
-	var count uint64
-
-	p, err := postingsForMatchersFn(idxReader, lblValMatchers...)
-	if err != nil {
-		return 0, err
-	}
+func postingsLength(ctx context.Context, p index.Postings) (uint64, error) {
+	var l uint64
 	for p.Next() {
-		count++
-		if count%checkContextErrorSeriesCount == 0 {
+		l++
+		if l%checkContextErrorSeriesCount == 0 {
 			if err := ctx.Err(); err != nil {
 				return 0, err
 			}
@@ -184,5 +190,5 @@ func countLabelValueSeries(
 	if p.Err() != nil {
 		return 0, p.Err()
 	}
-	return count, nil
+	return l, nil
 }
