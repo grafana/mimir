@@ -262,9 +262,7 @@ type tsByTargets map[string]tsWithSampleCount
 
 // copyToTarget copies the given time series into the given target and does the necessary accounting.
 // The time series is deep-copied, so the passed in time series can be returned to the pool without affecting the copy.
-func (t tsByTargets) copyToTarget(target string, dontForwardBeforeTs int64, ts mimirpb.PreallocTimeseries, pool *pools) bool {
-	samplesTooOld := false
-
+func (t tsByTargets) copyToTarget(target string, dontForwardBeforeTs int64, ts mimirpb.PreallocTimeseries, pool *pools) (err error) {
 	if dontForwardBeforeTs > 0 && samplesNeedFiltering(ts.TimeSeries.Samples, dontForwardBeforeTs) {
 		samplesUnfiltered := ts.TimeSeries.Samples
 		defer func() {
@@ -273,11 +271,11 @@ func (t tsByTargets) copyToTarget(target string, dontForwardBeforeTs int64, ts m
 
 		samplesFiltered := filterSamplesBefore(samplesUnfiltered, dontForwardBeforeTs)
 		if len(samplesFiltered) < len(samplesUnfiltered) {
-			samplesTooOld = true
+			err = errSamplesTooOld
 		}
 
 		if len(samplesFiltered) == 0 {
-			return samplesTooOld
+			return
 		}
 
 		ts.TimeSeries.Samples = samplesFiltered
@@ -297,7 +295,7 @@ func (t tsByTargets) copyToTarget(target string, dontForwardBeforeTs int64, ts m
 
 	t[target] = tsByTarget
 
-	return samplesTooOld
+	return
 }
 
 type TimeseriesCounts struct {
@@ -334,8 +332,8 @@ func (f *forwarder) splitByTargets(targetEndpoint string, dontForwardOlderThan i
 	for _, ts := range tsSliceIn {
 		forwardingTarget, ingest := findTargetForLabels(targetEndpoint, ts.Labels, rules)
 		if forwardingTarget != "" {
-			if tsByTargets.copyToTarget(forwardingTarget, dontForwardBeforeTs, ts, f.pools) {
-				err = errSamplesTooOld
+			if errCopy := tsByTargets.copyToTarget(forwardingTarget, dontForwardBeforeTs, ts, f.pools); errCopy != nil {
+				err = errCopy
 			}
 		}
 
