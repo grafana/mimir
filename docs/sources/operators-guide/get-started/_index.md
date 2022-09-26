@@ -98,7 +98,7 @@ store_gateway:
 ```
 <!-- prettier-ignore-end -->
 
-> **Note**: Grafana Mimir includes a system that optionally and anonymously reports non-sensitive, non-personally identifiable information about the running Mimir cluster to a remote statistics server. If possible, we ask you to keep the usage reporting feature enabled and help us understand more about how the open source community runs Mimir. In case you want to opt-out, refer to [Disable the anonymous usage statistics reporting]({{< relref "../../configure/about-anonymous-usage-statistics-reporting.md#disable-the-anonymous-usage-statistics-reporting" >}}).
+> **Note**: Grafana Mimir includes a system that optionally and anonymously reports non-sensitive, non-personally identifiable information about the running Mimir cluster to a remote statistics server. If possible, we ask you to keep the usage reporting feature enabled and help us understand more about how the open source community runs Mimir. In case you want to opt-out, refer to [Disable the anonymous usage statistics reporting]({{< relref "../configure/about-anonymous-usage-statistics-reporting.md#disable-the-anonymous-usage-statistics-reporting" >}}).
 
 ## Run Grafana Mimir
 
