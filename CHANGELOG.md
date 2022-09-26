@@ -4,7 +4,6 @@
 
 ### Grafana Mimir
 
-
 ### Mixin
 
 ### Jsonnet
@@ -16,6 +15,11 @@
 ### Mimir Continuous Test
 
 ### Documentation
+
+## 2.3.1
+
+### Grafana Mimir
+* [BUGFIX] Query-frontend: query sharding took exponential time to map binary expressions. #3027
 
 ## 2.3.0
 
