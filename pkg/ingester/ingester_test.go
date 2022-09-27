@@ -1753,36 +1753,6 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 	}
 }
 
-func BenchmarkIngester_LabelValuesCardinality(b *testing.B) {
-	var (
-		userID              = "test"
-		numSeries           = 10000
-		numSamplesPerSeries = 60 * 6 // 6h on 1 sample per minute
-		startTimestamp      = util.TimeToMillis(time.Now())
-		step                = int64(60000) // 1 sample per minute
-	)
-
-	// Create ingester
-	ing := createIngesterWithSeries(b, userID, numSeries, numSamplesPerSeries, startTimestamp, step)
-
-	ctx := user.InjectOrgID(context.Background(), userID)
-	s := &mockLabelValuesCardinalityServer{context: ctx}
-
-	req := &client.LabelValuesCardinalityRequest{
-		LabelNames: []string{labels.MetricName},
-		Matchers: []*client.LabelMatcher{
-			{Type: client.EQUAL, Name: "label_8", Value: "8"},
-		},
-	}
-	b.Run("label values cardinality", func(b *testing.B) {
-		// Run benchmarks
-		for i := 0; i < b.N; i++ {
-			err := ing.LabelValuesCardinality(req, s)
-			require.NoError(b, err)
-		}
-	})
-}
-
 type series struct {
 	lbls      labels.Labels
 	value     float64
@@ -2964,6 +2934,27 @@ func mockWriteRequest(t testing.TB, lbls labels.Labels, value float64, timestamp
 	}
 
 	return req, expectedQueryRes, expectedQueryStreamResSamples, expectedQueryStreamResChunks
+}
+
+func prepareHealthyIngester(b testing.TB) *Ingester {
+	cfg := defaultIngesterTestConfig(b)
+	limits := defaultLimitsTestConfig()
+	limits.MaxGlobalSeriesPerMetric = 0
+	limits.MaxGlobalSeriesPerUser = 0
+
+	// Create ingester.
+	i, err := prepareIngesterWithBlocksStorageAndLimits(b, cfg, limits, "", nil)
+	require.NoError(b, err)
+	require.NoError(b, services.StartAndAwaitRunning(context.Background(), i))
+	b.Cleanup(func() {
+		require.NoError(b, services.StopAndAwaitTerminated(context.Background(), i))
+	})
+
+	// Wait until it's healthy.
+	test.Poll(b, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
+	})
+	return i
 }
 
 func prepareIngesterWithBlocksStorage(t testing.TB, ingesterCfg Config, registerer prometheus.Registerer) (*Ingester, error) {
