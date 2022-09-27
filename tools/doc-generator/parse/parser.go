@@ -493,90 +493,90 @@ func getFieldExample(fieldKey string, fieldType reflect.Type) *FieldExample {
 	}
 }
 
-func getCustomFieldEntry(cfg interface{}, fieldRef reflect.StructField, fieldValue reflect.Value, flags map[uintptr]*flag.Flag) (*ConfigEntry, error) {
-	if fieldRef.Type == reflect.TypeOf(logging.Level{}) || fieldRef.Type == reflect.TypeOf(logging.Format{}) {
-		fieldFlag, err := getFieldFlag(fieldRef, fieldValue, flags)
+func getCustomFieldEntry(cfg interface{}, field reflect.StructField, fieldValue reflect.Value, flags map[uintptr]*flag.Flag) (*ConfigEntry, error) {
+	if field.Type == reflect.TypeOf(logging.Level{}) || field.Type == reflect.TypeOf(logging.Format{}) {
+		fieldFlag, err := getFieldFlag(field, fieldValue, flags)
 		if err != nil {
 			return nil, err
 		}
 
 		return &ConfigEntry{
 			Kind:          KindField,
-			Name:          getFieldName(fieldRef),
-			Required:      isFieldRequired(fieldRef),
+			Name:          getFieldName(field),
+			Required:      isFieldRequired(field),
 			FieldFlag:     fieldFlag.Name,
-			FieldDesc:     getFieldDescription(cfg, fieldRef, fieldFlag.Usage),
+			FieldDesc:     getFieldDescription(cfg, field, fieldFlag.Usage),
 			FieldType:     "string",
-			FieldDefault:  getFieldDefault(fieldRef, fieldFlag.DefValue),
-			FieldCategory: getFieldCategory(fieldRef, fieldFlag.Name),
+			FieldDefault:  getFieldDefault(field, fieldFlag.DefValue),
+			FieldCategory: getFieldCategory(field, fieldFlag.Name),
 		}, nil
 	}
-	if fieldRef.Type == reflect.TypeOf(flagext.URLValue{}) {
-		fieldFlag, err := getFieldFlag(fieldRef, fieldValue, flags)
+	if field.Type == reflect.TypeOf(flagext.URLValue{}) {
+		fieldFlag, err := getFieldFlag(field, fieldValue, flags)
 		if err != nil {
 			return nil, err
 		}
 
 		return &ConfigEntry{
 			Kind:          KindField,
-			Name:          getFieldName(fieldRef),
-			Required:      isFieldRequired(fieldRef),
+			Name:          getFieldName(field),
+			Required:      isFieldRequired(field),
 			FieldFlag:     fieldFlag.Name,
-			FieldDesc:     getFieldDescription(cfg, fieldRef, fieldFlag.Usage),
+			FieldDesc:     getFieldDescription(cfg, field, fieldFlag.Usage),
 			FieldType:     "url",
-			FieldDefault:  getFieldDefault(fieldRef, fieldFlag.DefValue),
-			FieldCategory: getFieldCategory(fieldRef, fieldFlag.Name),
+			FieldDefault:  getFieldDefault(field, fieldFlag.DefValue),
+			FieldCategory: getFieldCategory(field, fieldFlag.Name),
 		}, nil
 	}
-	if fieldRef.Type == reflect.TypeOf(flagext.Secret{}) {
-		fieldFlag, err := getFieldFlag(fieldRef, fieldValue, flags)
+	if field.Type == reflect.TypeOf(flagext.Secret{}) {
+		fieldFlag, err := getFieldFlag(field, fieldValue, flags)
 		if err != nil {
 			return nil, err
 		}
 
 		return &ConfigEntry{
 			Kind:          KindField,
-			Name:          getFieldName(fieldRef),
-			Required:      isFieldRequired(fieldRef),
+			Name:          getFieldName(field),
+			Required:      isFieldRequired(field),
 			FieldFlag:     fieldFlag.Name,
-			FieldDesc:     getFieldDescription(cfg, fieldRef, fieldFlag.Usage),
+			FieldDesc:     getFieldDescription(cfg, field, fieldFlag.Usage),
 			FieldType:     "string",
-			FieldDefault:  getFieldDefault(fieldRef, fieldFlag.DefValue),
-			FieldCategory: getFieldCategory(fieldRef, fieldFlag.Name),
+			FieldDefault:  getFieldDefault(field, fieldFlag.DefValue),
+			FieldCategory: getFieldCategory(field, fieldFlag.Name),
 		}, nil
 	}
-	if fieldRef.Type == reflect.TypeOf(model.Duration(0)) {
-		fieldFlag, err := getFieldFlag(fieldRef, fieldValue, flags)
+	if field.Type == reflect.TypeOf(model.Duration(0)) {
+		fieldFlag, err := getFieldFlag(field, fieldValue, flags)
 		if err != nil {
 			return nil, err
 		}
 
 		return &ConfigEntry{
 			Kind:          KindField,
-			Name:          getFieldName(fieldRef),
-			Required:      isFieldRequired(fieldRef),
+			Name:          getFieldName(field),
+			Required:      isFieldRequired(field),
 			FieldFlag:     fieldFlag.Name,
-			FieldDesc:     getFieldDescription(cfg, fieldRef, fieldFlag.Usage),
+			FieldDesc:     getFieldDescription(cfg, field, fieldFlag.Usage),
 			FieldType:     "duration",
-			FieldDefault:  getFieldDefault(fieldRef, fieldFlag.DefValue),
-			FieldCategory: getFieldCategory(fieldRef, fieldFlag.Name),
+			FieldDefault:  getFieldDefault(field, fieldFlag.DefValue),
+			FieldCategory: getFieldCategory(field, fieldFlag.Name),
 		}, nil
 	}
-	if fieldRef.Type == reflect.TypeOf(flagext.Time{}) {
-		fieldFlag, err := getFieldFlag(fieldRef, fieldValue, flags)
+	if field.Type == reflect.TypeOf(flagext.Time{}) {
+		fieldFlag, err := getFieldFlag(field, fieldValue, flags)
 		if err != nil {
 			return nil, err
 		}
 
 		return &ConfigEntry{
 			Kind:          KindField,
-			Name:          getFieldName(fieldRef),
-			Required:      isFieldRequired(fieldRef),
+			Name:          getFieldName(field),
+			Required:      isFieldRequired(field),
 			FieldFlag:     fieldFlag.Name,
-			FieldDesc:     getFieldDescription(cfg, fieldRef, fieldFlag.Usage),
+			FieldDesc:     getFieldDescription(cfg, field, fieldFlag.Usage),
 			FieldType:     "time",
-			FieldDefault:  getFieldDefault(fieldRef, fieldFlag.DefValue),
-			FieldCategory: getFieldCategory(fieldRef, fieldFlag.Name),
+			FieldDefault:  getFieldDefault(field, fieldFlag.DefValue),
+			FieldCategory: getFieldCategory(field, fieldFlag.Name),
 		}, nil
 	}
 
@@ -614,12 +614,12 @@ func isFieldInline(f reflect.StructField) bool {
 	return yamlFieldInlineParser.MatchString(f.Tag.Get("yaml"))
 }
 
-func getFieldDescription(cfg interface{}, fieldRef reflect.StructField, fallback string) string {
-	if desc := getDocTagValue(fieldRef, "description"); desc != "" {
+func getFieldDescription(cfg interface{}, field reflect.StructField, fallback string) string {
+	if desc := getDocTagValue(field, "description"); desc != "" {
 		return desc
 	}
 
-	if funcName := getDocTagValue(fieldRef, "description_func"); funcName != "" {
+	if funcName := getDocTagValue(field, "description_func"); funcName != "" {
 		structRef := reflect.ValueOf(cfg)
 
 		if method, ok := structRef.Type().MethodByName(funcName); ok {
