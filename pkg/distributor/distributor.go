@@ -1125,8 +1125,12 @@ func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, time
 		Source:     source,
 	}
 	_, err = c.Push(ctx, &req)
+	if errors.Is(err, context.DeadlineExceeded) {
+		return errors.Wrapf(err, "timed out pushing to ingester (configured timeout: %s)",
+			d.cfg.RemoteTimeout.String())
+	}
 
-	return err
+	return errors.Wrap(err, "failed to push to ingester")
 }
 
 // forReplicationSet runs f, in parallel, for all ingesters in the input replication set.
