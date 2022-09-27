@@ -127,16 +127,7 @@ func labelValuesCardinality(
 				return err
 			}
 
-			lbPostings, err := idxReader.Postings(lbName, lbValue)
-			if err != nil {
-				return err
-			}
-
-			if len(matchers) > 0 {
-				lbPostings = index.Intersect(lbPostings, mpc.Clone())
-			}
-
-			seriesCount, err := postingsLength(ctx, lbPostings)
+			seriesCount, err := countLabelValueSeries(ctx, lbName, lbValue, idxReader, mpc)
 			if err != nil {
 				return err
 			}
@@ -174,6 +165,23 @@ func labelValuesCardinality(
 		return client.SendLabelValuesCardinalityResponse(srv, &resp)
 	}
 	return nil
+}
+
+func countLabelValueSeries(ctx context.Context, lbName string, lbValue string, idxReader tsdb.IndexReader, matchedPostingsCloner *index.PostingsCloner) (uint64, error) {
+	lbPostings, err := idxReader.Postings(lbName, lbValue)
+	if err != nil {
+		return 0, err
+	}
+
+	if matchedPostingsCloner != nil {
+		lbPostings = index.Intersect(lbPostings, matchedPostingsCloner.Clone())
+	}
+
+	seriesCount, err := postingsLength(ctx, lbPostings)
+	if err != nil {
+		return 0, err
+	}
+	return seriesCount, nil
 }
 
 func postingsLength(ctx context.Context, p index.Postings) (uint64, error) {
