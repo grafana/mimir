@@ -145,9 +145,7 @@ func config(block *ConfigBlock, cfg interface{}, flags map[uintptr]*flag.Flag, r
 	v := reflect.ValueOf(cfg).Elem()
 	t := v.Type()
 
-	switch v.Kind() {
-	case reflect.Struct, reflect.Slice:
-	default:
+	if v.Kind() != reflect.Struct {
 		return nil, fmt.Errorf("%s is a %s while a %s is expected", v, v.Kind(), reflect.Struct)
 	}
 
@@ -178,7 +176,7 @@ func config(block *ConfigBlock, cfg interface{}, flags map[uintptr]*flag.Flag, r
 		}
 
 		// Handle custom fields in vendored libs upon which we have no control.
-		fieldEntry, err := getCustomFieldEntry(field, fieldValue, flags)
+		fieldEntry, err := getCustomFieldEntry(cfg, field, fieldValue, flags)
 		if err != nil {
 			return nil, err
 		}
@@ -204,10 +202,10 @@ func config(block *ConfigBlock, cfg interface{}, flags map[uintptr]*flag.Flag, r
 					blockName = rootName
 
 					// Honor the custom description if available.
-					blockDesc = getFieldDescription(field, rootDesc)
+					blockDesc = getFieldDescription(cfg, field, rootDesc)
 				} else {
 					blockName = fieldName
-					blockDesc = getFieldDescription(field, "")
+					blockDesc = getFieldDescription(cfg, field, "")
 				}
 
 				subBlock = &ConfigBlock{
@@ -260,7 +258,7 @@ func config(block *ConfigBlock, cfg interface{}, flags map[uintptr]*flag.Flag, r
 			if !isCustomType && isSliceOfStructs {
 				element = &ConfigBlock{
 					Name: fieldName,
-					Desc: getFieldDescription(field, ""),
+					Desc: getFieldDescription(cfg, field, ""),
 				}
 				kind = KindSlice
 
@@ -285,7 +283,7 @@ func config(block *ConfigBlock, cfg interface{}, flags map[uintptr]*flag.Flag, r
 				Kind:          kind,
 				Name:          fieldName,
 				Required:      isFieldRequired(field),
-				FieldDesc:     getFieldDescription(field, ""),
+				FieldDesc:     getFieldDescription(cfg, field, ""),
 				FieldType:     fieldType,
 				FieldExample:  getFieldExample(fieldName, field.Type),
 				FieldCategory: getFieldCategory(field, ""),
@@ -299,7 +297,7 @@ func config(block *ConfigBlock, cfg interface{}, flags map[uintptr]*flag.Flag, r
 			Name:          fieldName,
 			Required:      isFieldRequired(field),
 			FieldFlag:     fieldFlag.Name,
-			FieldDesc:     getFieldDescription(field, fieldFlag.Usage),
+			FieldDesc:     getFieldDescription(cfg, field, fieldFlag.Usage),
 			FieldType:     fieldType,
 			FieldDefault:  getFieldDefault(field, fieldFlag.DefValue),
 			FieldExample:  getFieldExample(fieldName, field.Type),
@@ -495,90 +493,90 @@ func getFieldExample(fieldKey string, fieldType reflect.Type) *FieldExample {
 	}
 }
 
-func getCustomFieldEntry(field reflect.StructField, fieldValue reflect.Value, flags map[uintptr]*flag.Flag) (*ConfigEntry, error) {
-	if field.Type == reflect.TypeOf(logging.Level{}) || field.Type == reflect.TypeOf(logging.Format{}) {
-		fieldFlag, err := getFieldFlag(field, fieldValue, flags)
+func getCustomFieldEntry(cfg interface{}, fieldRef reflect.StructField, fieldValue reflect.Value, flags map[uintptr]*flag.Flag) (*ConfigEntry, error) {
+	if fieldRef.Type == reflect.TypeOf(logging.Level{}) || fieldRef.Type == reflect.TypeOf(logging.Format{}) {
+		fieldFlag, err := getFieldFlag(fieldRef, fieldValue, flags)
 		if err != nil {
 			return nil, err
 		}
 
 		return &ConfigEntry{
 			Kind:          KindField,
-			Name:          getFieldName(field),
-			Required:      isFieldRequired(field),
+			Name:          getFieldName(fieldRef),
+			Required:      isFieldRequired(fieldRef),
 			FieldFlag:     fieldFlag.Name,
-			FieldDesc:     fieldFlag.Usage,
+			FieldDesc:     getFieldDescription(cfg, fieldRef, fieldFlag.Usage),
 			FieldType:     "string",
-			FieldDefault:  getFieldDefault(field, fieldFlag.DefValue),
-			FieldCategory: getFieldCategory(field, fieldFlag.Name),
+			FieldDefault:  getFieldDefault(fieldRef, fieldFlag.DefValue),
+			FieldCategory: getFieldCategory(fieldRef, fieldFlag.Name),
 		}, nil
 	}
-	if field.Type == reflect.TypeOf(flagext.URLValue{}) {
-		fieldFlag, err := getFieldFlag(field, fieldValue, flags)
+	if fieldRef.Type == reflect.TypeOf(flagext.URLValue{}) {
+		fieldFlag, err := getFieldFlag(fieldRef, fieldValue, flags)
 		if err != nil {
 			return nil, err
 		}
 
 		return &ConfigEntry{
 			Kind:          KindField,
-			Name:          getFieldName(field),
-			Required:      isFieldRequired(field),
+			Name:          getFieldName(fieldRef),
+			Required:      isFieldRequired(fieldRef),
 			FieldFlag:     fieldFlag.Name,
-			FieldDesc:     fieldFlag.Usage,
+			FieldDesc:     getFieldDescription(cfg, fieldRef, fieldFlag.Usage),
 			FieldType:     "url",
-			FieldDefault:  getFieldDefault(field, fieldFlag.DefValue),
-			FieldCategory: getFieldCategory(field, fieldFlag.Name),
+			FieldDefault:  getFieldDefault(fieldRef, fieldFlag.DefValue),
+			FieldCategory: getFieldCategory(fieldRef, fieldFlag.Name),
 		}, nil
 	}
-	if field.Type == reflect.TypeOf(flagext.Secret{}) {
-		fieldFlag, err := getFieldFlag(field, fieldValue, flags)
+	if fieldRef.Type == reflect.TypeOf(flagext.Secret{}) {
+		fieldFlag, err := getFieldFlag(fieldRef, fieldValue, flags)
 		if err != nil {
 			return nil, err
 		}
 
 		return &ConfigEntry{
 			Kind:          KindField,
-			Name:          getFieldName(field),
-			Required:      isFieldRequired(field),
+			Name:          getFieldName(fieldRef),
+			Required:      isFieldRequired(fieldRef),
 			FieldFlag:     fieldFlag.Name,
-			FieldDesc:     fieldFlag.Usage,
+			FieldDesc:     getFieldDescription(cfg, fieldRef, fieldFlag.Usage),
 			FieldType:     "string",
-			FieldDefault:  getFieldDefault(field, fieldFlag.DefValue),
-			FieldCategory: getFieldCategory(field, fieldFlag.Name),
+			FieldDefault:  getFieldDefault(fieldRef, fieldFlag.DefValue),
+			FieldCategory: getFieldCategory(fieldRef, fieldFlag.Name),
 		}, nil
 	}
-	if field.Type == reflect.TypeOf(model.Duration(0)) {
-		fieldFlag, err := getFieldFlag(field, fieldValue, flags)
+	if fieldRef.Type == reflect.TypeOf(model.Duration(0)) {
+		fieldFlag, err := getFieldFlag(fieldRef, fieldValue, flags)
 		if err != nil {
 			return nil, err
 		}
 
 		return &ConfigEntry{
 			Kind:          KindField,
-			Name:          getFieldName(field),
-			Required:      isFieldRequired(field),
+			Name:          getFieldName(fieldRef),
+			Required:      isFieldRequired(fieldRef),
 			FieldFlag:     fieldFlag.Name,
-			FieldDesc:     fieldFlag.Usage,
+			FieldDesc:     getFieldDescription(cfg, fieldRef, fieldFlag.Usage),
 			FieldType:     "duration",
-			FieldDefault:  getFieldDefault(field, fieldFlag.DefValue),
-			FieldCategory: getFieldCategory(field, fieldFlag.Name),
+			FieldDefault:  getFieldDefault(fieldRef, fieldFlag.DefValue),
+			FieldCategory: getFieldCategory(fieldRef, fieldFlag.Name),
 		}, nil
 	}
-	if field.Type == reflect.TypeOf(flagext.Time{}) {
-		fieldFlag, err := getFieldFlag(field, fieldValue, flags)
+	if fieldRef.Type == reflect.TypeOf(flagext.Time{}) {
+		fieldFlag, err := getFieldFlag(fieldRef, fieldValue, flags)
 		if err != nil {
 			return nil, err
 		}
 
 		return &ConfigEntry{
 			Kind:          KindField,
-			Name:          getFieldName(field),
-			Required:      isFieldRequired(field),
+			Name:          getFieldName(fieldRef),
+			Required:      isFieldRequired(fieldRef),
 			FieldFlag:     fieldFlag.Name,
-			FieldDesc:     fieldFlag.Usage,
+			FieldDesc:     getFieldDescription(cfg, fieldRef, fieldFlag.Usage),
 			FieldType:     "time",
-			FieldDefault:  getFieldDefault(field, fieldFlag.DefValue),
-			FieldCategory: getFieldCategory(field, fieldFlag.Name),
+			FieldDefault:  getFieldDefault(fieldRef, fieldFlag.DefValue),
+			FieldCategory: getFieldCategory(fieldRef, fieldFlag.Name),
 		}, nil
 	}
 
@@ -616,9 +614,19 @@ func isFieldInline(f reflect.StructField) bool {
 	return yamlFieldInlineParser.MatchString(f.Tag.Get("yaml"))
 }
 
-func getFieldDescription(f reflect.StructField, fallback string) string {
-	if desc := getDocTagValue(f, "description"); desc != "" {
+func getFieldDescription(cfg interface{}, fieldRef reflect.StructField, fallback string) string {
+	if desc := getDocTagValue(fieldRef, "description"); desc != "" {
 		return desc
+	}
+
+	if funcName := getDocTagValue(fieldRef, "description_func"); funcName != "" {
+		structRef := reflect.ValueOf(cfg)
+
+		if method, ok := structRef.Type().MethodByName(funcName); ok {
+			if out := method.Func.Call([]reflect.Value{structRef}); len(out) == 1 {
+				return out[0].String()
+			}
+		}
 	}
 
 	return fallback
