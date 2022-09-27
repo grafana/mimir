@@ -45,6 +45,7 @@
 
 ### Mimirtool
 
+* [ENHANCEMENT] mimirtool analyze: Store the query errors instead of exit during the analysis. #3052
 * [BUGFIX] mimir-tool remote-read: fix returns where some conditions [return nil error even if there is error](https://github.com/grafana/cortex-tools/issues/260). #3053
 
 ### Query-tee
