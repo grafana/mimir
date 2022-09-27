@@ -8,6 +8,7 @@ linters:
     - gofmt
     - misspell
     - errorlint
+    - errcheck
 
 linters-settings:
   errcheck:
