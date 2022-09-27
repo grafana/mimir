@@ -95,7 +95,6 @@ func labelValuesCardinality(
 	lbNames []string,
 	matchers []*labels.Matcher,
 	idxReader tsdb.IndexReader,
-	postingsForMatchersFn func(tsdb.IndexPostingsReader, ...*labels.Matcher) (index.Postings, error),
 	msgSizeThreshold int,
 	srv client.Ingester_LabelValuesCardinalityServer,
 ) error {
@@ -106,7 +105,7 @@ func labelValuesCardinality(
 
 	var mpc *index.PostingsCloner
 	if len(matchers) > 0 {
-		matchedPostings, err := postingsForMatchersFn(idxReader, matchers...)
+		matchedPostings, err := idxReader.PostingsForMatchers(false, matchers...)
 		if err != nil {
 			return err
 		}
