@@ -14,7 +14,7 @@ import (
 // Config holds the config options for GCS backend
 type Config struct {
 	BucketName     string         `yaml:"bucket_name"`
-	ServiceAccount flagext.Secret `yaml:"service_account" doc:"description_func=GCSServiceAccountLongDescription"`
+	ServiceAccount flagext.Secret `yaml:"service_account" doc:"description_method=GCSServiceAccountLongDescription"`
 }
 
 // RegisterFlags registers the flags for GCS storage

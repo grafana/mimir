@@ -619,10 +619,10 @@ func getFieldDescription(cfg interface{}, field reflect.StructField, fallback st
 		return desc
 	}
 
-	if funcName := getDocTagValue(field, "description_func"); funcName != "" {
+	if methodName := getDocTagValue(field, "description_method"); methodName != "" {
 		structRef := reflect.ValueOf(cfg)
 
-		if method, ok := structRef.Type().MethodByName(funcName); ok {
+		if method, ok := structRef.Type().MethodByName(methodName); ok {
 			if out := method.Func.Call([]reflect.Value{structRef}); len(out) == 1 {
 				return out[0].String()
 			}
