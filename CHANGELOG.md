@@ -77,6 +77,7 @@
 * [ENHANCEMENT] Dashboards: Include per-tenant request rate in "Tenants" dashboard. #2874
 * [ENHANCEMENT] Dashboards: Include inflight object store requests in "Reads" dashboard. #2914
 * [ENHANCEMENT] Dashboards: Make queries used to find job, cluster and namespace for dropdown menus configurable. #2893
+* [ENHANCEMENT] Dashboards: Include rate of label queries in "Reads" dashboard. #3065
 
 ### Jsonnet
 
