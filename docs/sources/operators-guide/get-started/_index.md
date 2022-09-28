@@ -98,6 +98,8 @@ store_gateway:
 ```
 <!-- prettier-ignore-end -->
 
+> **Note**: Grafana Mimir includes a system that optionally and anonymously reports non-sensitive, non-personally identifiable information about the running Mimir cluster to a remote statistics server. If possible, we kindly ask that you to keep the usage reporting feature enabled, to help us understand more about how the open source community runs Mimir. To opt out, refer to [Disable the anonymous usage statistics reporting]({{< relref "../configure/about-anonymous-usage-statistics-reporting.md#disable-the-anonymous-usage-statistics-reporting" >}}).
+
 ## Run Grafana Mimir
 
 In a terminal, run one of the following commands:
