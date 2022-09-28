@@ -1126,8 +1126,7 @@ func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, time
 	}
 	_, err = c.Push(ctx, &req)
 	if errors.Is(err, context.DeadlineExceeded) {
-		return errors.Wrapf(err, "timed out pushing to ingester (configured timeout: %s)",
-			d.cfg.RemoteTimeout.String())
+		return errors.Wrap(err, "timed out pushing to ingester")
 	}
 
 	return errors.Wrap(err, "failed to push to ingester")
