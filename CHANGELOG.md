@@ -30,8 +30,6 @@
 * [BUGFIX] Fix a bug causing query-frontend, query-scheduler, and querier not failing if one of their internal components fail. #2978
 * [BUGFIX] Querier: re-balance the querier worker connections when a query-frontend or query-scheduler is terminated. #3005
 * [BUGFIX] Distributor: Now returns the quorum error from ingesters. For example, with replication_factor=3, two HTTP 400 errors and one HTTP 500 error, now the distributor will always return HTTP 400. Previously the behaviour was to return the error which the distributor first received. #2979
-* [BUGFIX] Query-frontend: query sharding took exponential time to map binary expressions. #3027
-* [BUGFIX] Distributor: Stop panics on OTLP endpoint when a single metric has multiple timeseries. #3040
 
 ### Mixin
 
@@ -59,6 +57,12 @@
 * [ENHANCEMENT] Added documentation on how to configure storage retention. #2970
 * [ENHANCEMENT] Improved gRPC clients config documentation. #3020
 * [BUGFIX] Fixed configuration option names in "Enabling zone-awareness via the Grafana Mimir Jsonnet". #3018
+
+## 2.3.1
+
+### Grafana Mimir
+* [BUGFIX] Query-frontend: query sharding took exponential time to map binary expressions. #3027
+* [BUGFIX] Distributor: Stop panics on OTLP endpoint when a single metric has multiple timeseries. #3040
 
 ## 2.3.0
 
