@@ -36,7 +36,7 @@ import (
 
 type Forwarder interface {
 	services.Service
-	Forward(ctx context.Context, targetEndpoint string, dontForwardOlderThan time.Duration, forwardingRules validation.ForwardingRules, ts []mimirpb.PreallocTimeseries) ([]mimirpb.PreallocTimeseries, chan error)
+	Forward(ctx context.Context, targetEndpoint string, dontForwardBefore int64, forwardingRules validation.ForwardingRules, ts []mimirpb.PreallocTimeseries) ([]mimirpb.PreallocTimeseries, chan error)
 }
 
 // httpGrpcPrefix is URL prefix used by forwarder to check if it should use httpgrpc for sending request over to the target.
@@ -222,14 +222,14 @@ func (f *forwarder) worker() {
 //   - A slice of time series which should be sent to the ingesters, based on the given rule set.
 //     The Forward() method does not send the time series to the ingesters itself, it expects the caller to do that.
 //   - A chan of errors which resulted from forwarding the time series, the chan gets closed when all forwarding requests have completed.
-func (f *forwarder) Forward(ctx context.Context, endpoint string, dontForwardOlderThan time.Duration, rules validation.ForwardingRules, in []mimirpb.PreallocTimeseries) ([]mimirpb.PreallocTimeseries, chan error) {
+func (f *forwarder) Forward(ctx context.Context, endpoint string, dontForwardBefore int64, rules validation.ForwardingRules, in []mimirpb.PreallocTimeseries) ([]mimirpb.PreallocTimeseries, chan error) {
 	if !f.cfg.Enabled {
 		errCh := make(chan error)
 		close(errCh)
 		return in, errCh
 	}
 
-	toIngest, tsByTargets, err := f.splitByTargets(endpoint, dontForwardOlderThan.Milliseconds(), in, rules)
+	toIngest, tsByTargets, err := f.splitByTargets(endpoint, dontForwardBefore, in, rules)
 	defer f.pools.putTsByTargets(tsByTargets)
 	errCh := make(chan error, len(tsByTargets)+1)
 	if err != nil {
@@ -315,16 +315,11 @@ func (t *TimeseriesCounts) count(ts mimirpb.PreallocTimeseries) {
 // - A slice of time series to ingest into the ingesters.
 // - A map of slices of time series which is keyed by the target to which they should be forwarded.
 // - An error if any occurred.
-func (f *forwarder) splitByTargets(targetEndpoint string, dontForwardOlderThan int64, tsSliceIn []mimirpb.PreallocTimeseries, rules validation.ForwardingRules) ([]mimirpb.PreallocTimeseries, tsByTargets, error) {
+func (f *forwarder) splitByTargets(targetEndpoint string, dontForwardBefore int64, tsSliceIn []mimirpb.PreallocTimeseries, rules validation.ForwardingRules) ([]mimirpb.PreallocTimeseries, tsByTargets, error) {
 	// This functions copies all the entries of tsSliceIn into new slices so tsSliceIn can be recycled,
 	// we adjust the length of the slice to 0 to prevent that the contained *mimirpb.TimeSeries objects that have been
 	// reassigned (not deep copied) get returned while they are still referred to by another slice.
 	defer f.pools.putTsSlice(tsSliceIn[:0])
-
-	var dontForwardBeforeTs int64
-	if dontForwardOlderThan > 0 {
-		dontForwardBeforeTs = f.timeNow().UnixMilli() - dontForwardOlderThan
-	}
 
 	var err error
 	tsToIngest := f.pools.getTsSlice()
@@ -332,7 +327,7 @@ func (f *forwarder) splitByTargets(targetEndpoint string, dontForwardOlderThan i
 	for _, ts := range tsSliceIn {
 		forwardingTarget, ingest := findTargetForLabels(targetEndpoint, ts.Labels, rules)
 		if forwardingTarget != "" {
-			if errCopy := tsByTargets.copyToTarget(forwardingTarget, dontForwardBeforeTs, ts, f.pools); errCopy != nil {
+			if errCopy := tsByTargets.copyToTarget(forwardingTarget, dontForwardBefore, ts, f.pools); errCopy != nil {
 				err = errCopy
 			}
 		}

@@ -2684,7 +2684,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 
 # If set, forwarding drops samples that are older than this duration. If unset
 # or 0, no samples get dropped.
-[forwarding_drop_before: <int> | default = ]
+[forwarding_drop_older_than: <int> | default = ]
 
 # Rules based on which the Distributor decides whether a metric should be
 # forwarded to an alternative remote_write API endpoint.
