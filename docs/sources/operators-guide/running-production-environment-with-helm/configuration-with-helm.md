@@ -214,76 +214,75 @@ This example shows how to set up the configuration to use an S3 bucket for block
    apiVersion: v1
    kind: ConfigMap
    metadata:
-   name: mimir-config
-   labels:
-     helm.sh/chart: mimir-distributed-3.0.0
-     app.kubernetes.io/name: mimir
-     app.kubernetes.io/instance: mimir
-     app.kubernetes.io/version: "2.2.0"
-     app.kubernetes.io/managed-by: Helm
-   namespace: "mimir-test"
+     name: mimir-config
+     labels:
+       helm.sh/chart: mimir-distributed-3.0.0
+       app.kubernetes.io/name: mimir
+       app.kubernetes.io/instance: mimir
+       app.kubernetes.io/version: "2.2.0"
+       app.kubernetes.io/managed-by: Helm
+     namespace: "mimir-test"
    data:
-   mimir.yaml: |
-
-     activity_tracker:
-       filepath: /data/metrics-activity.log
-     alertmanager:
-       data_dir: /data
-       enable_api: true
-       external_url: /alertmanager
-     alertmanager_storage:
-       s3:
-         access_key_id: ${AWS_ACCESS_KEY_ID}
-         bucket_name: my-ruler-bucket
-         endpoint: s3.amazonaws.com
-         secret_access_key: ${AWS_SECRET_ACCESS_KEY}
-     blocks_storage:
-       backend: s3
-       bucket_store:
-         sync_dir: /data/tsdb-sync
-       s3:
-         access_key_id: ${AWS_ACCESS_KEY_ID}
-         bucket_name: my-blocks-bucket
-         endpoint: s3.amazonaws.com
-         secret_access_key: ${AWS_SECRET_ACCESS_KEY}
-       tsdb:
-         dir: /data/tsdb
-     compactor:
-       data_dir: /data
-     frontend:
-       align_queries_with_step: true
-       log_queries_longer_than: 10s
-     frontend_worker:
-       frontend_address: mimir-query-frontend-headless.test.svc:9095
-     ingester:
-       ring:
-         final_sleep: 0s
-         num_tokens: 512
-         unregister_on_shutdown: false
-     ingester_client:
-       grpc_client_config:
-         max_recv_msg_size: 104857600
-         max_send_msg_size: 104857600
-     limits: {}
-     memberlist:
-       abort_if_cluster_join_fails: false
-       compression_enabled: false
-       join_members:
-       - dns+mimir-gossip-ring.test.svc.cluster.local:7946
-     ruler:
-       alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.mimir-alertmanager-headless.test.svc.cluster.local/alertmanager
-       enable_api: true
-       rule_path: /data
-     ruler_storage:
-       s3:
-         access_key_id: ${AWS_ACCESS_KEY_ID}
-         bucket_name: my-ruler-bucket
-         endpoint: s3.amazonaws.com
-         secret_access_key: ${AWS_SECRET_ACCESS_KEY}
-     runtime_config:
-       file: /var/mimir/runtime.yaml
-     server:
-       grpc_server_max_concurrent_streams: 1000
+     mimir.yaml: |
+       activity_tracker:
+         filepath: /data/metrics-activity.log
+       alertmanager:
+         data_dir: /data
+         enable_api: true
+         external_url: /alertmanager
+       alertmanager_storage:
+         s3:
+           access_key_id: ${AWS_ACCESS_KEY_ID}
+           bucket_name: my-ruler-bucket
+           endpoint: s3.amazonaws.com
+           secret_access_key: ${AWS_SECRET_ACCESS_KEY}
+       blocks_storage:
+         backend: s3
+         bucket_store:
+           sync_dir: /data/tsdb-sync
+         s3:
+           access_key_id: ${AWS_ACCESS_KEY_ID}
+           bucket_name: my-blocks-bucket
+           endpoint: s3.amazonaws.com
+           secret_access_key: ${AWS_SECRET_ACCESS_KEY}
+         tsdb:
+           dir: /data/tsdb
+       compactor:
+         data_dir: /data
+       frontend:
+         align_queries_with_step: true
+         log_queries_longer_than: 10s
+       frontend_worker:
+         frontend_address: mimir-query-frontend-headless.test.svc:9095
+       ingester:
+         ring:
+           final_sleep: 0s
+           num_tokens: 512
+           unregister_on_shutdown: false
+       ingester_client:
+         grpc_client_config:
+           max_recv_msg_size: 104857600
+           max_send_msg_size: 104857600
+       limits: {}
+       memberlist:
+         abort_if_cluster_join_fails: false
+         compression_enabled: false
+         join_members:
+         - dns+mimir-gossip-ring.test.svc.cluster.local:7946
+       ruler:
+         alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.mimir-alertmanager-headless.test.svc.cluster.local/alertmanager
+         enable_api: true
+         rule_path: /data
+       ruler_storage:
+         s3:
+           access_key_id: ${AWS_ACCESS_KEY_ID}
+           bucket_name: my-ruler-bucket
+           endpoint: s3.amazonaws.com
+           secret_access_key: ${AWS_SECRET_ACCESS_KEY}
+       runtime_config:
+         file: /var/mimir/runtime.yaml
+       server:
+         grpc_server_max_concurrent_streams: 1000
    ```
 
 1. Install the chart with the `helm` command:
@@ -306,11 +305,11 @@ The example is generated with the following steps:
 
    ```yaml
    mimir:
-   structuredConfig:
-     alertmanager:
-       external_url: https://example.com/alerts
-     server:
-       log_level: debug
+     structuredConfig:
+       alertmanager:
+         external_url: https://example.com/alerts
+       server:
+         log_level: debug
    ```
 
 1. Produce the diff with the `helm` command:
