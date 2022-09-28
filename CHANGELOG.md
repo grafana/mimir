@@ -63,6 +63,7 @@
   * `-ruler.ring.etcd.tls-min-version`
   * `-store-gateway.sharding-ring.etcd.tls-cipher-suites`
   * `-store-gateway.sharding-ring.etcd.tls-min-version`
+* [ENHANCEMENT] Ingester: improved the performance of label value cardinality endpoint. #3048
 * [BUGFIX] Querier: Fix 400 response while handling streaming remote read. #2963
 * [BUGFIX] Fix a bug causing query-frontend, query-scheduler, and querier not failing if one of their internal components fail. #2978
 * [BUGFIX] Querier: re-balance the querier worker connections when a query-frontend or query-scheduler is terminated. #3005
