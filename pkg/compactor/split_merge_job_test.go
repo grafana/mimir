@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
-	"github.com/thanos-io/thanos/pkg/compact/downsample"
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
@@ -35,12 +34,6 @@ func TestJob_conflicts(t *testing.T) {
 	withShardIDLabel := func(meta *metadata.Meta, shardID string) *metadata.Meta {
 		meta = copyMeta(meta)
 		meta.Thanos.Labels = map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: shardID}
-		return meta
-	}
-
-	withResolution := func(meta *metadata.Meta, res int64) *metadata.Meta {
-		meta = copyMeta(meta)
-		meta.Thanos.Downsample.Resolution = res
 		return meta
 	}
 
@@ -132,33 +125,6 @@ func TestJob_conflicts(t *testing.T) {
 				},
 			},
 			expected: true,
-		},
-		"should NOT conflict if jobs compact different blocks with overlapping time ranges but different resolution": {
-			first: &job{
-				stage:   stageMerge,
-				shardID: "1_of_2",
-				blocksGroup: blocksGroup{
-					rangeStart: 10,
-					rangeEnd:   20,
-					blocks: []*metadata.Meta{
-						withShardIDLabel(withResolution(block1, downsample.ResLevel0), "1_of_2"),
-						withShardIDLabel(withResolution(block2, downsample.ResLevel0), "1_of_2"),
-					},
-				},
-			},
-			second: &job{
-				stage:   stageMerge,
-				shardID: "1_of_2",
-				blocksGroup: blocksGroup{
-					rangeStart: 10,
-					rangeEnd:   20,
-					blocks: []*metadata.Meta{
-						withShardIDLabel(withResolution(block3, downsample.ResLevel1), "1_of_2"),
-						withShardIDLabel(withResolution(block4, downsample.ResLevel1), "1_of_2"),
-					},
-				},
-			},
-			expected: false,
 		},
 		"should conflict between split and merge jobs with overlapping time ranges": {
 			first: &job{
