@@ -110,6 +110,28 @@ local filename = 'mimir-reads.json';
           ||| % $._config
         ),
       )
+      .addPanel(
+        $.panel('Series queries / sec') +
+        $.statPanel(|||
+          sum(
+            rate(
+              cortex_request_duration_seconds_count{
+                %(queryFrontend)s,
+                route=~"(prometheus|api_prom)_api_v1_series"
+              }[$__rate_interval]
+            )
+          )
+        ||| % {
+          queryFrontend: $.jobMatcher($._config.job_names.query_frontend),
+        }, format='reqps') +
+        $.panelDescription(
+          'Series queries per second',
+          |||
+            Rate of series queries per second being made to
+            %(product)s via the <tt>/prometheus</tt> API.
+          ||| % $._config
+        ),
+      )
     )
     .addRowIf(
       $._config.gateway_enabled,
