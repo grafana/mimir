@@ -26,7 +26,6 @@ import (
 	"github.com/thanos-io/thanos/pkg/extprom"
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"github.com/thanos-io/thanos/pkg/pool"
-	"github.com/thanos-io/thanos/pkg/store/storepb"
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/logging"
 	"google.golang.org/grpc/metadata"
@@ -34,6 +33,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
+	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/util/gate"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -295,7 +295,7 @@ func (u *BucketStores) syncUsersBlocks(ctx context.Context, f func(context.Conte
 }
 
 // Series makes a series request to the underlying user bucket store.
-func (u *BucketStores) Series(req *storepb.SeriesRequest, srv storepb.Store_SeriesServer) error {
+func (u *BucketStores) Series(req *storegatewaypb.SeriesRequest, srv storegatewaypb.Store_SeriesServer) error {
 	spanLog, spanCtx := spanlogger.NewWithLogger(srv.Context(), u.logger, "BucketStores.Series")
 	defer spanLog.Span.Finish()
 
@@ -316,7 +316,7 @@ func (u *BucketStores) Series(req *storepb.SeriesRequest, srv storepb.Store_Seri
 }
 
 // LabelNames implements the Storegateway proto service.
-func (u *BucketStores) LabelNames(ctx context.Context, req *storepb.LabelNamesRequest) (*storepb.LabelNamesResponse, error) {
+func (u *BucketStores) LabelNames(ctx context.Context, req *storegatewaypb.LabelNamesRequest) (*storegatewaypb.LabelNamesResponse, error) {
 	spanLog, spanCtx := spanlogger.NewWithLogger(ctx, u.logger, "BucketStores.LabelNames")
 	defer spanLog.Span.Finish()
 
@@ -327,14 +327,14 @@ func (u *BucketStores) LabelNames(ctx context.Context, req *storepb.LabelNamesRe
 
 	store := u.getStore(userID)
 	if store == nil {
-		return &storepb.LabelNamesResponse{}, nil
+		return &storegatewaypb.LabelNamesResponse{}, nil
 	}
 
 	return store.LabelNames(ctx, req)
 }
 
 // LabelValues implements the Storegateway proto service.
-func (u *BucketStores) LabelValues(ctx context.Context, req *storepb.LabelValuesRequest) (*storepb.LabelValuesResponse, error) {
+func (u *BucketStores) LabelValues(ctx context.Context, req *storegatewaypb.LabelValuesRequest) (*storegatewaypb.LabelValuesResponse, error) {
 	spanLog, spanCtx := spanlogger.NewWithLogger(ctx, u.logger, "BucketStores.LabelValues")
 	defer spanLog.Span.Finish()
 
@@ -345,7 +345,7 @@ func (u *BucketStores) LabelValues(ctx context.Context, req *storepb.LabelValues
 
 	store := u.getStore(userID)
 	if store == nil {
-		return &storepb.LabelValuesResponse{}, nil
+		return &storegatewaypb.LabelValuesResponse{}, nil
 	}
 
 	return store.LabelValues(ctx, req)
@@ -564,7 +564,7 @@ func getUserIDFromGRPCContext(ctx context.Context) string {
 }
 
 type spanSeriesServer struct {
-	storepb.Store_SeriesServer
+	storegatewaypb.Store_SeriesServer
 
 	ctx context.Context
 }

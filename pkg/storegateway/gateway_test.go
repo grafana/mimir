@@ -52,6 +52,7 @@ import (
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
+	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -512,7 +513,7 @@ func TestStoreGateway_BlocksSyncWithDefaultSharding_RingTopologyChangedAfterScal
 			queried := false
 
 			for _, g := range initialGateways {
-				req := &storepb.SeriesRequest{MinTime: math.MinInt64, MaxTime: math.MaxInt64}
+				req := &storegatewaypb.SeriesRequest{MinTime: math.MinInt64, MaxTime: math.MaxInt64}
 				srv := newBucketStoreSeriesServer(setUserIDToGRPCContext(ctx, userID))
 				require.NoError(t, g.Series(req, srv))
 
@@ -796,7 +797,7 @@ func TestStoreGateway_SyncShouldKeepPreviousBlocksIfInstanceIsUnhealthyInTheRing
 		g.syncStores(ctx, syncReasonPeriodic)
 
 		// Run query and ensure the block is queried.
-		req := &storepb.SeriesRequest{MinTime: math.MinInt64, MaxTime: math.MaxInt64}
+		req := &storegatewaypb.SeriesRequest{MinTime: math.MinInt64, MaxTime: math.MaxInt64}
 		srv := newBucketStoreSeriesServer(setUserIDToGRPCContext(ctx, userID))
 		require.NoError(t, g.Series(req, srv))
 		assert.Len(t, srv.Hints.QueriedBlocks, 1)
@@ -840,7 +841,7 @@ func TestStoreGateway_SyncShouldKeepPreviousBlocksIfInstanceIsUnhealthyInTheRing
 		g.syncStores(ctx, syncReasonPeriodic)
 
 		// Run query and ensure the block is queried.
-		req := &storepb.SeriesRequest{MinTime: math.MinInt64, MaxTime: math.MaxInt64}
+		req := &storegatewaypb.SeriesRequest{MinTime: math.MinInt64, MaxTime: math.MaxInt64}
 		srv := newBucketStoreSeriesServer(setUserIDToGRPCContext(ctx, userID))
 		require.NoError(t, g.Series(req, srv))
 		assert.Len(t, srv.Hints.QueriedBlocks, 1)
@@ -877,7 +878,7 @@ func TestStoreGateway_SyncShouldKeepPreviousBlocksIfInstanceIsUnhealthyInTheRing
 		g.syncStores(ctx, syncReasonPeriodic)
 
 		// Run query and ensure the block is queried.
-		req := &storepb.SeriesRequest{MinTime: math.MinInt64, MaxTime: math.MaxInt64}
+		req := &storegatewaypb.SeriesRequest{MinTime: math.MinInt64, MaxTime: math.MaxInt64}
 		srv := newBucketStoreSeriesServer(setUserIDToGRPCContext(ctx, userID))
 		require.NoError(t, g.Series(req, srv))
 		assert.Len(t, srv.Hints.QueriedBlocks, 1)
@@ -913,7 +914,7 @@ func TestStoreGateway_SyncShouldKeepPreviousBlocksIfInstanceIsUnhealthyInTheRing
 		g.syncStores(ctx, syncReasonPeriodic)
 
 		// Run query and ensure the block is queried.
-		req := &storepb.SeriesRequest{MinTime: math.MinInt64, MaxTime: math.MaxInt64}
+		req := &storegatewaypb.SeriesRequest{MinTime: math.MinInt64, MaxTime: math.MaxInt64}
 		srv := newBucketStoreSeriesServer(setUserIDToGRPCContext(ctx, userID))
 		require.NoError(t, g.Series(req, srv))
 		assert.Len(t, srv.Hints.QueriedBlocks, 1)
@@ -1045,7 +1046,7 @@ func TestStoreGateway_SeriesQueryingShouldRemoveExternalLabels(t *testing.T) {
 			t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(ctx, g)) })
 
 			// Query back all series.
-			req := &storepb.SeriesRequest{
+			req := &storegatewaypb.SeriesRequest{
 				MinTime: minT,
 				MaxTime: maxT,
 				Matchers: []storepb.LabelMatcher{
@@ -1153,7 +1154,7 @@ func TestStoreGateway_Series_QuerySharding(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			req := &storepb.SeriesRequest{
+			req := &storegatewaypb.SeriesRequest{
 				MinTime:  math.MinInt64,
 				MaxTime:  math.MaxInt64,
 				Matchers: testData.matchers,
@@ -1229,7 +1230,7 @@ func TestStoreGateway_Series_QueryShardingConcurrency(t *testing.T) {
 		go func(shardIndex int) {
 			defer wg.Done()
 
-			req := &storepb.SeriesRequest{
+			req := &storegatewaypb.SeriesRequest{
 				MinTime: math.MinInt64,
 				MaxTime: math.MaxInt64,
 				Matchers: []storepb.LabelMatcher{
@@ -1318,7 +1319,7 @@ func TestStoreGateway_SeriesQueryingShouldEnforceMaxChunksPerQueryLimit(t *testi
 	require.NoError(t, err)
 
 	// Prepare the request to query back all series (1 chunk per series in this test).
-	req := &storepb.SeriesRequest{
+	req := &storegatewaypb.SeriesRequest{
 		MinTime: minT,
 		MaxTime: maxT,
 		Matchers: []storepb.LabelMatcher{

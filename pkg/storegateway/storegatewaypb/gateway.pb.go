@@ -7,7 +7,6 @@ import (
 	context "context"
 	fmt "fmt"
 	proto "github.com/gogo/protobuf/proto"
-	storepb "github.com/thanos-io/thanos/pkg/store/storepb"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -28,24 +27,21 @@ const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 func init() { proto.RegisterFile("gateway.proto", fileDescriptor_f1a937782ebbded5) }
 
 var fileDescriptor_f1a937782ebbded5 = []byte{
-	// 257 bytes of a gzipped FileDescriptorProto
+	// 223 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xe2, 0xe2, 0x4d, 0x4f, 0x2c, 0x49,
 	0x2d, 0x4f, 0xac, 0xd4, 0x2b, 0x28, 0xca, 0x2f, 0xc9, 0x17, 0xe2, 0x84, 0x72, 0x0b, 0x92, 0xa4,
-	0xcc, 0xd3, 0x33, 0x4b, 0x32, 0x4a, 0x93, 0xf4, 0x92, 0xf3, 0x73, 0xf5, 0x4b, 0x32, 0x12, 0xf3,
-	0xf2, 0x8b, 0x75, 0x33, 0xf3, 0xa1, 0x2c, 0xfd, 0x82, 0xec, 0x74, 0xfd, 0xe2, 0x92, 0xfc, 0xa2,
-	0x54, 0x08, 0x59, 0x90, 0xa4, 0x5f, 0x54, 0x90, 0x0c, 0x31, 0xc3, 0xe8, 0x1a, 0x23, 0x17, 0x4f,
-	0x30, 0x48, 0xd4, 0x1d, 0x62, 0x96, 0x90, 0x25, 0x17, 0x5b, 0x70, 0x6a, 0x51, 0x66, 0x6a, 0xb1,
-	0x90, 0xa8, 0x1e, 0x44, 0xbf, 0x1e, 0x84, 0x1f, 0x94, 0x5a, 0x58, 0x9a, 0x5a, 0x5c, 0x22, 0x25,
-	0x86, 0x2e, 0x5c, 0x5c, 0x90, 0x9f, 0x57, 0x9c, 0x6a, 0xc0, 0x28, 0xe4, 0xcc, 0xc5, 0xe5, 0x93,
-	0x98, 0x94, 0x9a, 0xe3, 0x97, 0x98, 0x9b, 0x5a, 0x2c, 0x24, 0x09, 0x53, 0x87, 0x10, 0x83, 0x19,
-	0x21, 0x85, 0x4d, 0x0a, 0x62, 0x8c, 0x90, 0x1b, 0x17, 0x37, 0x58, 0x34, 0x2c, 0x31, 0xa7, 0x34,
-	0xb5, 0x58, 0x08, 0x55, 0x29, 0x44, 0x10, 0x66, 0x8c, 0x34, 0x56, 0x39, 0x88, 0x39, 0x4e, 0x2e,
-	0x17, 0x1e, 0xca, 0x31, 0xdc, 0x78, 0x28, 0xc7, 0xf0, 0xe1, 0xa1, 0x1c, 0x63, 0xc3, 0x23, 0x39,
-	0xc6, 0x15, 0x8f, 0xe4, 0x18, 0x4f, 0x3c, 0x92, 0x63, 0xbc, 0xf0, 0x48, 0x8e, 0xf1, 0xc1, 0x23,
-	0x39, 0xc6, 0x17, 0x8f, 0xe4, 0x18, 0x3e, 0x3c, 0x92, 0x63, 0x9c, 0xf0, 0x58, 0x8e, 0xe1, 0xc2,
-	0x63, 0x39, 0x86, 0x1b, 0x8f, 0xe5, 0x18, 0xa2, 0xf8, 0xc0, 0x21, 0x04, 0x0f, 0xd7, 0x24, 0x36,
-	0x70, 0x28, 0x19, 0x03, 0x02, 0x00, 0x00, 0xff, 0xff, 0x1b, 0xec, 0xe6, 0x0a, 0x7a, 0x01, 0x00,
-	0x00,
+	0x38, 0x8b, 0x0a, 0x92, 0x21, 0xa2, 0x46, 0x2f, 0x18, 0xb9, 0x78, 0x82, 0x4b, 0xf2, 0x8b, 0x52,
+	0xdd, 0x21, 0xb2, 0x42, 0xf6, 0x5c, 0x6c, 0xc1, 0xa9, 0x45, 0x99, 0xa9, 0xc5, 0x42, 0x12, 0x7a,
+	0x70, 0x1d, 0x7a, 0x10, 0xa1, 0xa0, 0xd4, 0xc2, 0xd2, 0xd4, 0xe2, 0x12, 0x29, 0x49, 0x2c, 0x32,
+	0xc5, 0x05, 0xf9, 0x79, 0xc5, 0xa9, 0x06, 0x8c, 0x42, 0x9e, 0x5c, 0x5c, 0x3e, 0x89, 0x49, 0xa9,
+	0x39, 0x7e, 0x89, 0xb9, 0xa9, 0xc5, 0x42, 0x32, 0x48, 0x4a, 0x11, 0xc2, 0x30, 0x83, 0x64, 0x71,
+	0xc8, 0x42, 0x0c, 0x13, 0xf2, 0xe1, 0xe2, 0x06, 0x8b, 0x86, 0x25, 0xe6, 0x94, 0xa6, 0x16, 0x0b,
+	0x61, 0xa8, 0x86, 0x88, 0xc3, 0x0c, 0x93, 0xc3, 0x25, 0x0d, 0x31, 0xcd, 0xc9, 0xe5, 0xc2, 0x43,
+	0x39, 0x86, 0x1b, 0x0f, 0xe5, 0x18, 0x3e, 0x3c, 0x94, 0x63, 0x6c, 0x78, 0x24, 0xc7, 0xb8, 0xe2,
+	0x91, 0x1c, 0xe3, 0x89, 0x47, 0x72, 0x8c, 0x17, 0x1e, 0xc9, 0x31, 0x3e, 0x78, 0x24, 0xc7, 0xf8,
+	0xe2, 0x91, 0x1c, 0xc3, 0x87, 0x47, 0x72, 0x8c, 0x13, 0x1e, 0xcb, 0x31, 0x5c, 0x78, 0x2c, 0xc7,
+	0x70, 0xe3, 0xb1, 0x1c, 0x43, 0x14, 0x5f, 0x31, 0x28, 0x74, 0xe0, 0x26, 0x27, 0xb1, 0x81, 0xc3,
+	0xcd, 0x18, 0x10, 0x00, 0x00, 0xff, 0xff, 0x87, 0x6c, 0xcc, 0x3b, 0x5e, 0x01, 0x00, 0x00,
 }
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -67,11 +63,11 @@ type StoreGatewayClient interface {
 	// be sent for previous one.
 	//
 	// Series are sorted.
-	Series(ctx context.Context, in *storepb.SeriesRequest, opts ...grpc.CallOption) (StoreGateway_SeriesClient, error)
+	Series(ctx context.Context, in *SeriesRequest, opts ...grpc.CallOption) (StoreGateway_SeriesClient, error)
 	// LabelNames returns all label names that is available.
-	LabelNames(ctx context.Context, in *storepb.LabelNamesRequest, opts ...grpc.CallOption) (*storepb.LabelNamesResponse, error)
+	LabelNames(ctx context.Context, in *LabelNamesRequest, opts ...grpc.CallOption) (*LabelNamesResponse, error)
 	// LabelValues returns all label values for given label name.
-	LabelValues(ctx context.Context, in *storepb.LabelValuesRequest, opts ...grpc.CallOption) (*storepb.LabelValuesResponse, error)
+	LabelValues(ctx context.Context, in *LabelValuesRequest, opts ...grpc.CallOption) (*LabelValuesResponse, error)
 }
 
 type storeGatewayClient struct {
@@ -82,7 +78,7 @@ func NewStoreGatewayClient(cc *grpc.ClientConn) StoreGatewayClient {
 	return &storeGatewayClient{cc}
 }
 
-func (c *storeGatewayClient) Series(ctx context.Context, in *storepb.SeriesRequest, opts ...grpc.CallOption) (StoreGateway_SeriesClient, error) {
+func (c *storeGatewayClient) Series(ctx context.Context, in *SeriesRequest, opts ...grpc.CallOption) (StoreGateway_SeriesClient, error) {
 	stream, err := c.cc.NewStream(ctx, &_StoreGateway_serviceDesc.Streams[0], "/gatewaypb.StoreGateway/Series", opts...)
 	if err != nil {
 		return nil, err
@@ -98,7 +94,7 @@ func (c *storeGatewayClient) Series(ctx context.Context, in *storepb.SeriesReque
 }
 
 type StoreGateway_SeriesClient interface {
-	Recv() (*storepb.SeriesResponse, error)
+	Recv() (*SeriesResponse, error)
 	grpc.ClientStream
 }
 
@@ -106,16 +102,16 @@ type storeGatewaySeriesClient struct {
 	grpc.ClientStream
 }
 
-func (x *storeGatewaySeriesClient) Recv() (*storepb.SeriesResponse, error) {
-	m := new(storepb.SeriesResponse)
+func (x *storeGatewaySeriesClient) Recv() (*SeriesResponse, error) {
+	m := new(SeriesResponse)
 	if err := x.ClientStream.RecvMsg(m); err != nil {
 		return nil, err
 	}
 	return m, nil
 }
 
-func (c *storeGatewayClient) LabelNames(ctx context.Context, in *storepb.LabelNamesRequest, opts ...grpc.CallOption) (*storepb.LabelNamesResponse, error) {
-	out := new(storepb.LabelNamesResponse)
+func (c *storeGatewayClient) LabelNames(ctx context.Context, in *LabelNamesRequest, opts ...grpc.CallOption) (*LabelNamesResponse, error) {
+	out := new(LabelNamesResponse)
 	err := c.cc.Invoke(ctx, "/gatewaypb.StoreGateway/LabelNames", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -123,8 +119,8 @@ func (c *storeGatewayClient) LabelNames(ctx context.Context, in *storepb.LabelNa
 	return out, nil
 }
 
-func (c *storeGatewayClient) LabelValues(ctx context.Context, in *storepb.LabelValuesRequest, opts ...grpc.CallOption) (*storepb.LabelValuesResponse, error) {
-	out := new(storepb.LabelValuesResponse)
+func (c *storeGatewayClient) LabelValues(ctx context.Context, in *LabelValuesRequest, opts ...grpc.CallOption) (*LabelValuesResponse, error) {
+	out := new(LabelValuesResponse)
 	err := c.cc.Invoke(ctx, "/gatewaypb.StoreGateway/LabelValues", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -141,24 +137,24 @@ type StoreGatewayServer interface {
 	// be sent for previous one.
 	//
 	// Series are sorted.
-	Series(*storepb.SeriesRequest, StoreGateway_SeriesServer) error
+	Series(*SeriesRequest, StoreGateway_SeriesServer) error
 	// LabelNames returns all label names that is available.
-	LabelNames(context.Context, *storepb.LabelNamesRequest) (*storepb.LabelNamesResponse, error)
+	LabelNames(context.Context, *LabelNamesRequest) (*LabelNamesResponse, error)
 	// LabelValues returns all label values for given label name.
-	LabelValues(context.Context, *storepb.LabelValuesRequest) (*storepb.LabelValuesResponse, error)
+	LabelValues(context.Context, *LabelValuesRequest) (*LabelValuesResponse, error)
 }
 
 // UnimplementedStoreGatewayServer can be embedded to have forward compatible implementations.
 type UnimplementedStoreGatewayServer struct {
 }
 
-func (*UnimplementedStoreGatewayServer) Series(req *storepb.SeriesRequest, srv StoreGateway_SeriesServer) error {
+func (*UnimplementedStoreGatewayServer) Series(req *SeriesRequest, srv StoreGateway_SeriesServer) error {
 	return status.Errorf(codes.Unimplemented, "method Series not implemented")
 }
-func (*UnimplementedStoreGatewayServer) LabelNames(ctx context.Context, req *storepb.LabelNamesRequest) (*storepb.LabelNamesResponse, error) {
+func (*UnimplementedStoreGatewayServer) LabelNames(ctx context.Context, req *LabelNamesRequest) (*LabelNamesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method LabelNames not implemented")
 }
-func (*UnimplementedStoreGatewayServer) LabelValues(ctx context.Context, req *storepb.LabelValuesRequest) (*storepb.LabelValuesResponse, error) {
+func (*UnimplementedStoreGatewayServer) LabelValues(ctx context.Context, req *LabelValuesRequest) (*LabelValuesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method LabelValues not implemented")
 }
 
@@ -167,7 +163,7 @@ func RegisterStoreGatewayServer(s *grpc.Server, srv StoreGatewayServer) {
 }
 
 func _StoreGateway_Series_Handler(srv interface{}, stream grpc.ServerStream) error {
-	m := new(storepb.SeriesRequest)
+	m := new(SeriesRequest)
 	if err := stream.RecvMsg(m); err != nil {
 		return err
 	}
@@ -175,7 +171,7 @@ func _StoreGateway_Series_Handler(srv interface{}, stream grpc.ServerStream) err
 }
 
 type StoreGateway_SeriesServer interface {
-	Send(*storepb.SeriesResponse) error
+	Send(*SeriesResponse) error
 	grpc.ServerStream
 }
 
@@ -183,12 +179,12 @@ type storeGatewaySeriesServer struct {
 	grpc.ServerStream
 }
 
-func (x *storeGatewaySeriesServer) Send(m *storepb.SeriesResponse) error {
+func (x *storeGatewaySeriesServer) Send(m *SeriesResponse) error {
 	return x.ServerStream.SendMsg(m)
 }
 
 func _StoreGateway_LabelNames_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(storepb.LabelNamesRequest)
+	in := new(LabelNamesRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -200,13 +196,13 @@ func _StoreGateway_LabelNames_Handler(srv interface{}, ctx context.Context, dec 
 		FullMethod: "/gatewaypb.StoreGateway/LabelNames",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(StoreGatewayServer).LabelNames(ctx, req.(*storepb.LabelNamesRequest))
+		return srv.(StoreGatewayServer).LabelNames(ctx, req.(*LabelNamesRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
 func _StoreGateway_LabelValues_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(storepb.LabelValuesRequest)
+	in := new(LabelValuesRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -218,7 +214,7 @@ func _StoreGateway_LabelValues_Handler(srv interface{}, ctx context.Context, dec
 		FullMethod: "/gatewaypb.StoreGateway/LabelValues",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(StoreGatewayServer).LabelValues(ctx, req.(*storepb.LabelValuesRequest))
+		return srv.(StoreGatewayServer).LabelValues(ctx, req.(*LabelValuesRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }

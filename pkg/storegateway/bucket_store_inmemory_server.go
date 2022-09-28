@@ -13,6 +13,8 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/thanos-io/thanos/pkg/store/hintspb"
 	"github.com/thanos-io/thanos/pkg/store/storepb"
+
+	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 )
 
 // bucketStoreSeriesServer is an fake in-memory gRPC server used to
@@ -20,7 +22,7 @@ import (
 // gRPC networking stack.
 type bucketStoreSeriesServer struct {
 	// This field just exist to pseudo-implement the unused methods of the interface.
-	storepb.Store_SeriesServer
+	storegatewaypb.Store_SeriesServer
 
 	ctx context.Context
 
@@ -33,7 +35,7 @@ func newBucketStoreSeriesServer(ctx context.Context) *bucketStoreSeriesServer {
 	return &bucketStoreSeriesServer{ctx: ctx}
 }
 
-func (s *bucketStoreSeriesServer) Send(r *storepb.SeriesResponse) error {
+func (s *bucketStoreSeriesServer) Send(r *storegatewaypb.SeriesResponse) error {
 	if r.GetWarning() != "" {
 		s.Warnings = append(s.Warnings, errors.New(r.GetWarning()))
 	}

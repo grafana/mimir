@@ -57,6 +57,7 @@ import (
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
+	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/util/gate"
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -1075,7 +1076,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 
 		bCases = append(bCases, &seriesCase{
 			Name: fmt.Sprintf("%dof%d", expectedSamples, totalSeries*samplesPerSeries),
-			Req: &storepb.SeriesRequest{
+			Req: &storegatewaypb.SeriesRequest{
 				MinTime: 0,
 				MaxTime: int64(expectedSamples) - 1,
 				Matchers: []storepb.LabelMatcher{
@@ -1267,7 +1268,7 @@ func TestBucketSeries_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 
 	t.Run("invoke series for one block. Fill the cache on the way.", func(t *testing.T) {
 		srv := newBucketStoreSeriesServer(context.Background())
-		assert.NoError(t, store.Series(&storepb.SeriesRequest{
+		assert.NoError(t, store.Series(&storegatewaypb.SeriesRequest{
 			MinTime: 0,
 			MaxTime: int64(numSeries) - 1,
 			Matchers: []storepb.LabelMatcher{
@@ -1282,7 +1283,7 @@ func TestBucketSeries_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 	})
 	t.Run("invoke series for second block. This should revoke previous cache.", func(t *testing.T) {
 		srv := newBucketStoreSeriesServer(context.Background())
-		assert.NoError(t, store.Series(&storepb.SeriesRequest{
+		assert.NoError(t, store.Series(&storegatewaypb.SeriesRequest{
 			MinTime: 0,
 			MaxTime: int64(numSeries) - 1,
 			Matchers: []storepb.LabelMatcher{
@@ -1299,7 +1300,7 @@ func TestBucketSeries_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 		assert.NoError(t, store.removeBlock(b2.meta.ULID))
 
 		srv := newBucketStoreSeriesServer(context.Background())
-		assert.NoError(t, store.Series(&storepb.SeriesRequest{
+		assert.NoError(t, store.Series(&storegatewaypb.SeriesRequest{
 			MinTime: 0,
 			MaxTime: int64(numSeries) - 1,
 			Matchers: []storepb.LabelMatcher{
@@ -1321,7 +1322,7 @@ func TestSeries_RequestAndResponseHints(t *testing.T) {
 	testCases := []*seriesCase{
 		{
 			Name: "querying a range containing 1 block should return 1 block in the response hints",
-			Req: &storepb.SeriesRequest{
+			Req: &storegatewaypb.SeriesRequest{
 				MinTime: 0,
 				MaxTime: 1,
 				Matchers: []storepb.LabelMatcher{
@@ -1336,7 +1337,7 @@ func TestSeries_RequestAndResponseHints(t *testing.T) {
 			},
 		}, {
 			Name: "querying a range containing multiple blocks should return multiple blocks in the response hints",
-			Req: &storepb.SeriesRequest{
+			Req: &storegatewaypb.SeriesRequest{
 				MinTime: 0,
 				MaxTime: 3,
 				Matchers: []storepb.LabelMatcher{
@@ -1352,7 +1353,7 @@ func TestSeries_RequestAndResponseHints(t *testing.T) {
 			},
 		}, {
 			Name: "querying a range containing multiple blocks but filtering a specific block should query only the requested block",
-			Req: &storepb.SeriesRequest{
+			Req: &storegatewaypb.SeriesRequest{
 				MinTime: 0,
 				MaxTime: 3,
 				Matchers: []storepb.LabelMatcher{
@@ -1421,7 +1422,7 @@ func TestSeries_ErrorUnmarshallingRequestHints(t *testing.T) {
 	assert.NoError(t, store.SyncBlocks(context.Background()))
 
 	// Create a request with invalid hints (uses response hints instead of request hints).
-	req := &storepb.SeriesRequest{
+	req := &storegatewaypb.SeriesRequest{
 		MinTime: 0,
 		MaxTime: 3,
 		Matchers: []storepb.LabelMatcher{
@@ -1538,7 +1539,7 @@ func TestSeries_BlockWithMultipleChunks(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			req := &storepb.SeriesRequest{
+			req := &storegatewaypb.SeriesRequest{
 				MinTime: testData.reqMinTime,
 				MaxTime: testData.reqMaxTime,
 				Matchers: []storepb.LabelMatcher{
@@ -1709,11 +1710,11 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 	type labelNamesValuesCase struct {
 		name string
 
-		labelNamesReq      *storepb.LabelNamesRequest
+		labelNamesReq      *storegatewaypb.LabelNamesRequest
 		expectedNames      []string
 		expectedNamesHints hintspb.LabelNamesResponseHints
 
-		labelValuesReq      *storepb.LabelValuesRequest
+		labelValuesReq      *storegatewaypb.LabelValuesRequest
 		expectedValues      []string
 		expectedValuesHints hintspb.LabelValuesResponseHints
 	}
@@ -1722,7 +1723,7 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 		{
 			name: "querying a range containing 1 block should return 1 block in the labels hints",
 
-			labelNamesReq: &storepb.LabelNamesRequest{
+			labelNamesReq: &storegatewaypb.LabelNamesRequest{
 				Start: 0,
 				End:   1,
 			},
@@ -1733,7 +1734,7 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 				},
 			},
 
-			labelValuesReq: &storepb.LabelValuesRequest{
+			labelValuesReq: &storegatewaypb.LabelValuesRequest{
 				Label: "ext1",
 				Start: 0,
 				End:   1,
@@ -1748,7 +1749,7 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 		{
 			name: "querying a range containing multiple blocks should return multiple blocks in the response hints",
 
-			labelNamesReq: &storepb.LabelNamesRequest{
+			labelNamesReq: &storegatewaypb.LabelNamesRequest{
 				Start: 0,
 				End:   3,
 			},
@@ -1762,7 +1763,7 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 				},
 			},
 
-			labelValuesReq: &storepb.LabelValuesRequest{
+			labelValuesReq: &storegatewaypb.LabelValuesRequest{
 				Label: "ext1",
 				Start: 0,
 				End:   3,
@@ -1778,7 +1779,7 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 		{
 			name: "querying a range containing multiple blocks but filtering a specific block should query only the requested block",
 
-			labelNamesReq: &storepb.LabelNamesRequest{
+			labelNamesReq: &storegatewaypb.LabelNamesRequest{
 				Start: 0,
 				End:   3,
 				Hints: mustMarshalAny(&hintspb.LabelNamesRequestHints{
@@ -1794,7 +1795,7 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 				},
 			},
 
-			labelValuesReq: &storepb.LabelValuesRequest{
+			labelValuesReq: &storegatewaypb.LabelValuesRequest{
 				Label: "ext1",
 				Start: 0,
 				End:   3,
@@ -1916,7 +1917,7 @@ func BenchmarkBucketBlock_readChunkRange(b *testing.B) {
 func BenchmarkBlockSeries(b *testing.B) {
 	blk, blockMeta := prepareBucket(b)
 
-	aggrs := []storepb.Aggr{storepb.Aggr_RAW}
+	aggrs := []storegatewaypb.Aggr{storegatewaypb.RAW}
 	for _, concurrency := range []int{1, 2, 4, 8, 16, 32} {
 		for _, queryShardingEnabled := range []bool{false, true} {
 			b.Run(fmt.Sprintf("concurrency: %d, query sharding enabled: %v", concurrency, queryShardingEnabled), func(b *testing.B) {
@@ -1983,7 +1984,7 @@ func prepareBucket(b *testing.B) (*bucketBlock, *metadata.Meta) {
 	return blk, blockMeta
 }
 
-func benchmarkBlockSeriesWithConcurrency(b *testing.B, concurrency int, blockMeta *metadata.Meta, blk *bucketBlock, aggrs []storepb.Aggr, queryShardingEnabled bool) {
+func benchmarkBlockSeriesWithConcurrency(b *testing.B, concurrency int, blockMeta *metadata.Meta, blk *bucketBlock, aggrs []storegatewaypb.Aggr, queryShardingEnabled bool) {
 	ctx := context.Background()
 
 	// Run the same number of queries per goroutine.
@@ -2027,7 +2028,7 @@ func benchmarkBlockSeriesWithConcurrency(b *testing.B, concurrency int, blockMet
 					}
 				}
 
-				req := &storepb.SeriesRequest{
+				req := &storegatewaypb.SeriesRequest{
 					MinTime:    blockMeta.MinTime,
 					MaxTime:    blockMeta.MaxTime,
 					Matchers:   reqMatchers,
@@ -2324,7 +2325,7 @@ func runSeriesInterestingCases(t test.TB, maxSamples, maxSeries int, f func(t te
 // seriesCase represents single test/benchmark case for testing storepb series.
 type seriesCase struct {
 	Name string
-	Req  *storepb.SeriesRequest
+	Req  *storegatewaypb.SeriesRequest
 
 	// Exact expectations are checked only for tests. For benchmarks only length is assured.
 	ExpectedSeries   []*storepb.Series

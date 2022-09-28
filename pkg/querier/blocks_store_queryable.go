@@ -729,6 +729,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 			mySeries := []*storepb.Series(nil)
 			myWarnings := storage.Warnings(nil)
 			myQueriedBlocks := []ulid.ULID(nil)
+			indexBytesFetched := int64(0)
 
 			for {
 				// Ensure the context hasn't been canceled in the meanwhile (eg. an error occurred
@@ -790,6 +791,10 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 
 					myQueriedBlocks = append(myQueriedBlocks, ids...)
 				}
+
+				if s := resp.GetStats(); s!= nil{
+					indexBytesFetched += s.IndexBytesFetched
+				}
 			}
 
 			numSeries := len(mySeries)
@@ -798,12 +803,14 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 			reqStats.AddFetchedSeries(uint64(numSeries))
 			reqStats.AddFetchedChunkBytes(uint64(chunkBytes))
 			reqStats.AddFetchedChunks(uint64(chunksFetched))
+			reqStats.AddFetchedIndexBytes(uint64(indexBytesFetched))
 
 			level.Debug(spanLog).Log("msg", "received series from store-gateway",
 				"instance", c.RemoteAddress(),
 				"fetched series", numSeries,
 				"fetched chunk bytes", chunkBytes,
 				"fetched chunks", chunksFetched,
+				"fetched index bytes", indexBytesFetched,
 				"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "),
 				"queried blocks", strings.Join(convertULIDsToString(myQueriedBlocks), " "))
 
@@ -984,7 +991,7 @@ func (q *blocksStoreQuerier) fetchLabelValuesFromStore(
 	return valueSets, warnings, queriedBlocks, nil
 }
 
-func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skipChunks bool, blockIDs []ulid.ULID) (*storepb.SeriesRequest, error) {
+func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skipChunks bool, blockIDs []ulid.ULID) (*storegatewaypb.SeriesRequest, error) {
 	// Selectively query only specific blocks.
 	hints := &hintspb.SeriesRequestHints{
 		BlockMatchers: []storepb.LabelMatcher{
@@ -1001,7 +1008,7 @@ func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skip
 		return nil, errors.Wrapf(err, "failed to marshal series request hints")
 	}
 
-	return &storepb.SeriesRequest{
+	return &storegatewaypb.SeriesRequest{
 		MinTime:                 minT,
 		MaxTime:                 maxT,
 		Matchers:                matchers,
@@ -1011,8 +1018,8 @@ func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skip
 	}, nil
 }
 
-func createLabelNamesRequest(minT, maxT int64, blockIDs []ulid.ULID, matchers []storepb.LabelMatcher) (*storepb.LabelNamesRequest, error) {
-	req := &storepb.LabelNamesRequest{
+func createLabelNamesRequest(minT, maxT int64, blockIDs []ulid.ULID, matchers []storepb.LabelMatcher) (*storegatewaypb.LabelNamesRequest, error) {
+	req := &storegatewaypb.LabelNamesRequest{
 		Start:    minT,
 		End:      maxT,
 		Matchers: matchers,
@@ -1039,8 +1046,8 @@ func createLabelNamesRequest(minT, maxT int64, blockIDs []ulid.ULID, matchers []
 	return req, nil
 }
 
-func createLabelValuesRequest(minT, maxT int64, label string, blockIDs []ulid.ULID, matchers ...*labels.Matcher) (*storepb.LabelValuesRequest, error) {
-	req := &storepb.LabelValuesRequest{
+func createLabelValuesRequest(minT, maxT int64, label string, blockIDs []ulid.ULID, matchers ...*labels.Matcher) (*storegatewaypb.LabelValuesRequest, error) {
+	req := &storegatewaypb.LabelValuesRequest{
 		Start:    minT,
 		End:      maxT,
 		Label:    label,

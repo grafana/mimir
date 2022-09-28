@@ -28,6 +28,7 @@ import (
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
+	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/testhelper"
 
 	"github.com/thanos-io/thanos/pkg/block"
@@ -209,7 +210,7 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 	assert.Equal(t, s.minTime, mint)
 	assert.Equal(t, s.maxTime, maxt)
 
-	vals, err := s.store.LabelValues(ctx, &storepb.LabelValuesRequest{
+	vals, err := s.store.LabelValues(ctx, &storegatewaypb.LabelValuesRequest{
 		Label: "a",
 		Start: timestamp.FromTime(minTime),
 		End:   timestamp.FromTime(maxTime),
@@ -219,12 +220,12 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 
 	// TODO(bwplotka): Add those test cases to TSDB querier_test.go as well, there are no tests for matching.
 	for i, tcase := range []struct {
-		req              *storepb.SeriesRequest
+		req              *storegatewaypb.SeriesRequest
 		expected         [][]labelpb.ZLabel
 		expectedChunkLen int
 	}{
 		{
-			req: &storepb.SeriesRequest{
+			req: &storegatewaypb.SeriesRequest{
 				Matchers: []storepb.LabelMatcher{
 					{Type: storepb.LabelMatcher_RE, Name: "a", Value: "1|2"},
 				},
@@ -244,7 +245,7 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 			},
 		},
 		{
-			req: &storepb.SeriesRequest{
+			req: &storegatewaypb.SeriesRequest{
 				Matchers: []storepb.LabelMatcher{
 					{Type: storepb.LabelMatcher_RE, Name: "a", Value: "1"},
 				},
@@ -260,7 +261,7 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 			},
 		},
 		{
-			req: &storepb.SeriesRequest{
+			req: &storegatewaypb.SeriesRequest{
 				Matchers: []storepb.LabelMatcher{
 					{Type: storepb.LabelMatcher_NRE, Name: "a", Value: "2"},
 				},
@@ -276,7 +277,7 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 			},
 		},
 		{
-			req: &storepb.SeriesRequest{
+			req: &storegatewaypb.SeriesRequest{
 				Matchers: []storepb.LabelMatcher{
 					{Type: storepb.LabelMatcher_NRE, Name: "a", Value: "not_existing"},
 				},
@@ -296,7 +297,7 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 			},
 		},
 		{
-			req: &storepb.SeriesRequest{
+			req: &storegatewaypb.SeriesRequest{
 				Matchers: []storepb.LabelMatcher{
 					{Type: storepb.LabelMatcher_NRE, Name: "not_existing", Value: "1"},
 				},
@@ -316,7 +317,7 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 			},
 		},
 		{
-			req: &storepb.SeriesRequest{
+			req: &storegatewaypb.SeriesRequest{
 				Matchers: []storepb.LabelMatcher{
 					{Type: storepb.LabelMatcher_EQ, Name: "b", Value: "2"},
 				},
@@ -330,7 +331,7 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 			},
 		},
 		{
-			req: &storepb.SeriesRequest{
+			req: &storegatewaypb.SeriesRequest{
 				Matchers: []storepb.LabelMatcher{
 					{Type: storepb.LabelMatcher_NEQ, Name: "a", Value: "2"},
 				},
@@ -346,7 +347,7 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 			},
 		},
 		{
-			req: &storepb.SeriesRequest{
+			req: &storegatewaypb.SeriesRequest{
 				Matchers: []storepb.LabelMatcher{
 					{Type: storepb.LabelMatcher_NEQ, Name: "a", Value: "not_existing"},
 				},
@@ -368,7 +369,7 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 		// Regression https://github.com/thanos-io/thanos/issues/833.
 		// Problem: Matcher that was selecting NO series, was ignored instead of passed as emptyPosting to Intersect.
 		{
-			req: &storepb.SeriesRequest{
+			req: &storegatewaypb.SeriesRequest{
 				Matchers: []storepb.LabelMatcher{
 					{Type: storepb.LabelMatcher_EQ, Name: "a", Value: "1"},
 					{Type: storepb.LabelMatcher_RE, Name: "non_existing", Value: "something"},
@@ -379,7 +380,7 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 		},
 		// Test skip-chunk option.
 		{
-			req: &storepb.SeriesRequest{
+			req: &storegatewaypb.SeriesRequest{
 				Matchers: []storepb.LabelMatcher{
 					{Type: storepb.LabelMatcher_EQ, Name: "a", Value: "1"},
 				},
@@ -527,7 +528,7 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 			s := prepareStoreWithTestBlocks(t, dir, bkt, false, newCustomChunksLimiterFactory(testData.maxChunksLimit, testData.code), newCustomSeriesLimiterFactory(testData.maxSeriesLimit, testData.code))
 			assert.NoError(t, s.store.SyncBlocks(ctx))
 
-			req := &storepb.SeriesRequest{
+			req := &storegatewaypb.SeriesRequest{
 				Matchers: []storepb.LabelMatcher{
 					{Type: storepb.LabelMatcher_EQ, Name: "a", Value: "1"},
 				},
@@ -567,25 +568,25 @@ func TestBucketStore_LabelNames_e2e(t *testing.T) {
 		assert.Equal(t, s.maxTime, maxt)
 
 		for name, tc := range map[string]struct {
-			req      *storepb.LabelNamesRequest
+			req      *storegatewaypb.LabelNamesRequest
 			expected []string
 		}{
 			"basic labelNames": {
-				req: &storepb.LabelNamesRequest{
+				req: &storegatewaypb.LabelNamesRequest{
 					Start: timestamp.FromTime(minTime),
 					End:   timestamp.FromTime(maxTime),
 				},
 				expected: []string{"a", "b", "c"},
 			},
 			"outside the time range": {
-				req: &storepb.LabelNamesRequest{
+				req: &storegatewaypb.LabelNamesRequest{
 					Start: timestamp.FromTime(time.Now().Add(-24 * time.Hour)),
 					End:   timestamp.FromTime(time.Now().Add(-23 * time.Hour)),
 				},
 				expected: nil,
 			},
 			"matcher matching everything": {
-				req: &storepb.LabelNamesRequest{
+				req: &storegatewaypb.LabelNamesRequest{
 					Start: timestamp.FromTime(minTime),
 					End:   timestamp.FromTime(maxTime),
 					Matchers: []storepb.LabelMatcher{
@@ -599,7 +600,7 @@ func TestBucketStore_LabelNames_e2e(t *testing.T) {
 				expected: []string{"a", "b", "c"},
 			},
 			"b=1 matcher": {
-				req: &storepb.LabelNamesRequest{
+				req: &storegatewaypb.LabelNamesRequest{
 					Start: timestamp.FromTime(minTime),
 					End:   timestamp.FromTime(maxTime),
 					Matchers: []storepb.LabelMatcher{
@@ -614,7 +615,7 @@ func TestBucketStore_LabelNames_e2e(t *testing.T) {
 			},
 
 			"b='' matcher": {
-				req: &storepb.LabelNamesRequest{
+				req: &storegatewaypb.LabelNamesRequest{
 					Start: timestamp.FromTime(minTime),
 					End:   timestamp.FromTime(maxTime),
 					Matchers: []storepb.LabelMatcher{
@@ -628,7 +629,7 @@ func TestBucketStore_LabelNames_e2e(t *testing.T) {
 				expected: []string{"a", "c"},
 			},
 			"outside the time range, with matcher": {
-				req: &storepb.LabelNamesRequest{
+				req: &storegatewaypb.LabelNamesRequest{
 					Start: timestamp.FromTime(time.Now().Add(-24 * time.Hour)),
 					End:   timestamp.FromTime(time.Now().Add(-23 * time.Hour)),
 					Matchers: []storepb.LabelMatcher{
@@ -667,11 +668,11 @@ func TestBucketStore_LabelValues_e2e(t *testing.T) {
 		assert.Equal(t, s.maxTime, maxt)
 
 		for name, tc := range map[string]struct {
-			req      *storepb.LabelValuesRequest
+			req      *storegatewaypb.LabelValuesRequest
 			expected []string
 		}{
 			"label a": {
-				req: &storepb.LabelValuesRequest{
+				req: &storegatewaypb.LabelValuesRequest{
 					Label: "a",
 					Start: timestamp.FromTime(minTime),
 					End:   timestamp.FromTime(maxTime),
@@ -679,7 +680,7 @@ func TestBucketStore_LabelValues_e2e(t *testing.T) {
 				expected: []string{"1", "2"},
 			},
 			"label a, outside time range": {
-				req: &storepb.LabelValuesRequest{
+				req: &storegatewaypb.LabelValuesRequest{
 					Label: "a",
 					Start: timestamp.FromTime(time.Now().Add(-24 * time.Hour)),
 					End:   timestamp.FromTime(time.Now().Add(-23 * time.Hour)),
@@ -687,7 +688,7 @@ func TestBucketStore_LabelValues_e2e(t *testing.T) {
 				expected: nil,
 			},
 			"label a, a=1": {
-				req: &storepb.LabelValuesRequest{
+				req: &storegatewaypb.LabelValuesRequest{
 					Label: "a",
 					Start: timestamp.FromTime(minTime),
 					End:   timestamp.FromTime(maxTime),
@@ -702,7 +703,7 @@ func TestBucketStore_LabelValues_e2e(t *testing.T) {
 				expected: []string{"1"},
 			},
 			"label a, a=2, c=2": {
-				req: &storepb.LabelValuesRequest{
+				req: &storegatewaypb.LabelValuesRequest{
 					Label: "a",
 					Start: timestamp.FromTime(minTime),
 					End:   timestamp.FromTime(maxTime),
@@ -722,7 +723,7 @@ func TestBucketStore_LabelValues_e2e(t *testing.T) {
 				expected: []string{"2"},
 			},
 			"label ext1": {
-				req: &storepb.LabelValuesRequest{
+				req: &storegatewaypb.LabelValuesRequest{
 					Label: "ext1",
 					Start: timestamp.FromTime(minTime),
 					End:   timestamp.FromTime(maxTime),

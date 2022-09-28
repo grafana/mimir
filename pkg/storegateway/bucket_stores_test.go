@@ -48,6 +48,7 @@ import (
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
+	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -541,7 +542,7 @@ func generateStorageBlock(t *testing.T, storageDir, userID string, metricName st
 }
 
 func querySeries(stores *BucketStores, userID, metricName string, minT, maxT int64) ([]*storepb.Series, storage.Warnings, error) {
-	req := &storepb.SeriesRequest{
+	req := &storegatewaypb.SeriesRequest{
 		MinTime: minT,
 		MaxTime: maxT,
 		Matchers: []storepb.LabelMatcher{{
@@ -758,7 +759,7 @@ func BenchmarkBucketStoreLabelValues(tb *testing.B) {
 			)
 			require.NoError(tb, err)
 
-			req := &storepb.LabelValuesRequest{
+			req := &storegatewaypb.LabelValuesRequest{
 				Label:    "label_1",
 				Start:    timestamp.FromTime(minTime),
 				End:      timestamp.FromTime(maxTime),
@@ -784,7 +785,7 @@ func BenchmarkBucketStoreLabelValues(tb *testing.B) {
 			)
 			require.NoError(tb, err)
 
-			req := &storepb.LabelValuesRequest{
+			req := &storegatewaypb.LabelValuesRequest{
 				Label:    "label_3",
 				Start:    timestamp.FromTime(minTime),
 				End:      timestamp.FromTime(maxTime),
@@ -810,7 +811,7 @@ func BenchmarkBucketStoreLabelValues(tb *testing.B) {
 			)
 			require.NoError(tb, err)
 
-			req := &storepb.LabelValuesRequest{
+			req := &storegatewaypb.LabelValuesRequest{
 				Label:    "label_1",
 				Start:    timestamp.FromTime(minTime),
 				End:      timestamp.FromTime(maxTime),

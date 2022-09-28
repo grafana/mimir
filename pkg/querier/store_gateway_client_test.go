@@ -16,7 +16,6 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/thanos-io/thanos/pkg/store/storepb"
 	"github.com/weaveworks/common/user"
 	"google.golang.org/grpc"
 
@@ -52,7 +51,7 @@ func Test_newStoreGatewayClientFactory(t *testing.T) {
 		defer client.Close() //nolint:errcheck
 
 		ctx := user.InjectOrgID(context.Background(), "test")
-		stream, err := client.(*storeGatewayClient).Series(ctx, &storepb.SeriesRequest{})
+		stream, err := client.(*storeGatewayClient).Series(ctx, &storegatewaypb.SeriesRequest{})
 		assert.NoError(t, err)
 
 		// Read the entire response from the stream.
@@ -74,14 +73,14 @@ func Test_newStoreGatewayClientFactory(t *testing.T) {
 
 type mockStoreGatewayServer struct{}
 
-func (m *mockStoreGatewayServer) Series(_ *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer) error {
+func (m *mockStoreGatewayServer) Series(_ *storegatewaypb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer) error {
 	return nil
 }
 
-func (m *mockStoreGatewayServer) LabelNames(context.Context, *storepb.LabelNamesRequest) (*storepb.LabelNamesResponse, error) {
+func (m *mockStoreGatewayServer) LabelNames(context.Context, *storegatewaypb.LabelNamesRequest) (*storegatewaypb.LabelNamesResponse, error) {
 	return nil, nil
 }
 
-func (m *mockStoreGatewayServer) LabelValues(context.Context, *storepb.LabelValuesRequest) (*storepb.LabelValuesResponse, error) {
+func (m *mockStoreGatewayServer) LabelValues(context.Context, *storegatewaypb.LabelValuesRequest) (*storegatewaypb.LabelValuesResponse, error) {
 	return nil, nil
 }

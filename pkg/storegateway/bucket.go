@@ -56,6 +56,7 @@ import (
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
+	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/util/gate"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -570,7 +571,7 @@ func blockSeries(
 	seriesLimiter SeriesLimiter, // Rate limiter for loading series.
 	skipChunks bool, // If true, chunks are not loaded and minTime/maxTime are ignored.
 	minTime, maxTime int64, // Series must have data in this time range to be returned (ignored if skipChunks=true).
-	loadAggregates []storepb.Aggr, // List of aggregates to load when loading chunks.
+	loadAggregates []storegatewaypb.Aggr, // List of aggregates to load when loading chunks.
 	logger log.Logger,
 ) (storepb.SeriesSet, *queryStats, error) {
 	span, ctx := tracing.StartSpan(ctx, "blockSeries()")
@@ -796,7 +797,7 @@ func filterPostingsByCachedShardHash(ps []storage.SeriesRef, shard *sharding.Sha
 	return ps, stats
 }
 
-func populateChunk(out *storepb.AggrChunk, in chunkenc.Chunk, aggrs []storepb.Aggr, save func([]byte) ([]byte, error)) error {
+func populateChunk(out *storepb.AggrChunk, in chunkenc.Chunk, aggrs []storegatewaypb.Aggr, save func([]byte) ([]byte, error)) error {
 	if in.Encoding() == chunkenc.EncXOR {
 		b, err := save(in.Bytes())
 		if err != nil {
@@ -843,8 +844,32 @@ func debugFoundBlockSetOverview(logger log.Logger, mint, maxt, maxResolutionMill
 	level.Debug(logger).Log("msg", "Blocks source resolutions", "blocks", len(bs), "Maximum Resolution", maxResolutionMillis, "mint", mint, "maxt", maxt, "spans", strings.Join(parts, "\n"))
 }
 
+func NewStatsResponse(indexBytesFetched int) *storegatewaypb.SeriesResponse {
+	return &storegatewaypb.SeriesResponse{
+		Result: &storegatewaypb.SeriesResponse_Stats{
+			Stats: &storegatewaypb.Stats{IndexBytesFetched: int64(indexBytesFetched)},
+		},
+	}
+}
+
+func NewSeriesResponse(series *storepb.Series) *storegatewaypb.SeriesResponse {
+	return &storegatewaypb.SeriesResponse{
+		Result: &storegatewaypb.SeriesResponse_Series{
+			Series: series,
+		},
+	}
+}
+
+func NewHintsSeriesResponse(hints *types.Any) *storegatewaypb.SeriesResponse {
+	return &storegatewaypb.SeriesResponse{
+		Result: &storegatewaypb.SeriesResponse_Hints{
+			Hints: hints,
+		},
+	}
+}
+
 // Series implements the storepb.StoreServer interface.
-func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_SeriesServer) (err error) {
+func (s *BucketStore) Series(req *storegatewaypb.SeriesRequest, srv storegatewaypb.Store_SeriesServer) (err error) {
 	if s.queryGate != nil {
 		tracing.DoInSpan(srv.Context(), "store_query_gate_ismyturn", func(ctx context.Context) {
 			err = s.queryGate.Start(srv.Context())
@@ -1034,7 +1059,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 				s.metrics.chunkSizeBytes.Observe(float64(chunksSize(series.Chunks)))
 			}
 			series.Labels = labelpb.ZLabelsFromPromLabels(lset)
-			if err = srv.Send(storepb.NewSeriesResponse(&series)); err != nil {
+			if err = srv.Send(NewSeriesResponse(&series)); err != nil {
 				err = status.Error(codes.Unknown, errors.Wrap(err, "send series response").Error())
 				return
 			}
@@ -1057,10 +1082,15 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 			return
 		}
 
-		if err = srv.Send(storepb.NewHintsSeriesResponse(anyHints)); err != nil {
+		if err = srv.Send(NewHintsSeriesResponse(anyHints)); err != nil {
 			err = status.Error(codes.Unknown, errors.Wrap(err, "send series response hints").Error())
 			return
 		}
+	}
+
+	if err = srv.Send(NewStatsResponse(stats.postingsFetchedSizeSum)); err != nil {
+		err = status.Error(codes.Unknown, errors.Wrap(err, "sends series response stats").Error())
+		return
 	}
 
 	return err
@@ -1074,7 +1104,7 @@ func chunksSize(chks []storepb.AggrChunk) (size int) {
 }
 
 // LabelNames implements the storepb.StoreServer interface.
-func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesRequest) (*storepb.LabelNamesResponse, error) {
+func (s *BucketStore) LabelNames(ctx context.Context, req *storegatewaypb.LabelNamesRequest) (*storegatewaypb.LabelNamesResponse, error) {
 	reqSeriesMatchers, err := storepb.MatchersToPromMatchers(req.Matchers...)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request labels matchers").Error())
@@ -1146,7 +1176,7 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 		return nil, status.Error(codes.Unknown, errors.Wrap(err, "marshal label names response hints").Error())
 	}
 
-	return &storepb.LabelNamesResponse{
+	return &storegatewaypb.LabelNamesResponse{
 		Names: strutil.MergeSlices(sets...),
 		Hints: anyHints,
 	}, nil
@@ -1236,7 +1266,7 @@ func storeCachedLabelNames(ctx context.Context, indexCache indexcache.IndexCache
 }
 
 // LabelValues implements the storepb.StoreServer interface.
-func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesRequest) (*storepb.LabelValuesResponse, error) {
+func (s *BucketStore) LabelValues(ctx context.Context, req *storegatewaypb.LabelValuesRequest) (*storegatewaypb.LabelValuesResponse, error) {
 	reqSeriesMatchers, err := storepb.MatchersToPromMatchers(req.Matchers...)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request labels matchers").Error())
@@ -1307,7 +1337,7 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 		return nil, status.Error(codes.Unknown, errors.Wrap(err, "marshal label values response hints").Error())
 	}
 
-	return &storepb.LabelValuesResponse{
+	return &storegatewaypb.LabelValuesResponse{
 		Values: strutil.MergeSlices(sets...),
 		Hints:  anyHints,
 	}, nil
@@ -2526,7 +2556,7 @@ func (r *bucketChunkReader) addLoad(id chunks.ChunkRef, seriesEntry, chunk int) 
 }
 
 // load loads all added chunks and saves resulting aggrs to res.
-func (r *bucketChunkReader) load(res []seriesEntry, aggrs []storepb.Aggr) error {
+func (r *bucketChunkReader) load(res []seriesEntry, aggrs []storegatewaypb.Aggr) error {
 	g, ctx := errgroup.WithContext(r.ctx)
 
 	for seq, pIdxs := range r.toLoad {
@@ -2551,7 +2581,7 @@ func (r *bucketChunkReader) load(res []seriesEntry, aggrs []storepb.Aggr) error 
 
 // loadChunks will read range [start, end] from the segment file with sequence number seq.
 // This data range covers chunks starting at supplied offsets.
-func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, aggrs []storepb.Aggr, seq int, part Part, pIdxs []loadIdx) error {
+func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, aggrs []storegatewaypb.Aggr, seq int, part Part, pIdxs []loadIdx) error {
 	fetchBegin := time.Now()
 
 	// Get a reader for the required range.

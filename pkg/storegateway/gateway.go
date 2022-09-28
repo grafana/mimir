@@ -21,7 +21,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/thanos-io/thanos/pkg/extprom"
 	"github.com/thanos-io/thanos/pkg/objstore"
-	"github.com/thanos-io/thanos/pkg/store/storepb"
 	"github.com/weaveworks/common/logging"
 	"github.com/weaveworks/common/tracing"
 
@@ -295,7 +294,7 @@ func (g *StoreGateway) syncStores(ctx context.Context, reason string) {
 	}
 }
 
-func (g *StoreGateway) Series(req *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer) error {
+func (g *StoreGateway) Series(req *storegatewaypb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer) error {
 	ix := g.tracker.Insert(func() string {
 		return requestActivity(srv.Context(), "StoreGateway/Series", req)
 	})
@@ -305,7 +304,7 @@ func (g *StoreGateway) Series(req *storepb.SeriesRequest, srv storegatewaypb.Sto
 }
 
 // LabelNames implements the Storegateway proto service.
-func (g *StoreGateway) LabelNames(ctx context.Context, req *storepb.LabelNamesRequest) (*storepb.LabelNamesResponse, error) {
+func (g *StoreGateway) LabelNames(ctx context.Context, req *storegatewaypb.LabelNamesRequest) (*storegatewaypb.LabelNamesResponse, error) {
 	ix := g.tracker.Insert(func() string {
 		return requestActivity(ctx, "StoreGateway/LabelNames", req)
 	})
@@ -315,7 +314,7 @@ func (g *StoreGateway) LabelNames(ctx context.Context, req *storepb.LabelNamesRe
 }
 
 // LabelValues implements the Storegateway proto service.
-func (g *StoreGateway) LabelValues(ctx context.Context, req *storepb.LabelValuesRequest) (*storepb.LabelValuesResponse, error) {
+func (g *StoreGateway) LabelValues(ctx context.Context, req *storegatewaypb.LabelValuesRequest) (*storegatewaypb.LabelValuesResponse, error) {
 	ix := g.tracker.Insert(func() string {
 		return requestActivity(ctx, "StoreGateway/LabelValues", req)
 	})
