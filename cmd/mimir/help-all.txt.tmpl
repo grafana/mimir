@@ -125,12 +125,16 @@ Usage of ./cmd/mimir/mimir:
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -alertmanager.alertmanager-client.tls-cert-path string
     	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -alertmanager.alertmanager-client.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
   -alertmanager.alertmanager-client.tls-enabled
     	Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
   -alertmanager.alertmanager-client.tls-insecure-skip-verify
     	Skip validating server certificate.
   -alertmanager.alertmanager-client.tls-key-path string
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -alertmanager.alertmanager-client.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -alertmanager.alertmanager-client.tls-server-name string
     	Override the expected name on the server certificate.
   -alertmanager.configs.fallback string
@@ -193,12 +197,16 @@ Usage of ./cmd/mimir/mimir:
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -alertmanager.sharding-ring.etcd.tls-cert-path string
     	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -alertmanager.sharding-ring.etcd.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
   -alertmanager.sharding-ring.etcd.tls-enabled
     	Enable TLS.
   -alertmanager.sharding-ring.etcd.tls-insecure-skip-verify
     	Skip validating server certificate.
   -alertmanager.sharding-ring.etcd.tls-key-path string
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -alertmanager.sharding-ring.etcd.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -alertmanager.sharding-ring.etcd.tls-server-name string
     	Override the expected name on the server certificate.
   -alertmanager.sharding-ring.etcd.username string
@@ -679,12 +687,16 @@ Usage of ./cmd/mimir/mimir:
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -compactor.ring.etcd.tls-cert-path string
     	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -compactor.ring.etcd.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
   -compactor.ring.etcd.tls-enabled
     	Enable TLS.
   -compactor.ring.etcd.tls-insecure-skip-verify
     	Skip validating server certificate.
   -compactor.ring.etcd.tls-key-path string
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -compactor.ring.etcd.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -compactor.ring.etcd.tls-server-name string
     	Override the expected name on the server certificate.
   -compactor.ring.etcd.username string
@@ -763,12 +775,16 @@ Usage of ./cmd/mimir/mimir:
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -distributor.forwarding.grpc-client.tls-cert-path string
     	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -distributor.forwarding.grpc-client.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
   -distributor.forwarding.grpc-client.tls-enabled
     	Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
   -distributor.forwarding.grpc-client.tls-insecure-skip-verify
     	Skip validating server certificate.
   -distributor.forwarding.grpc-client.tls-key-path string
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -distributor.forwarding.grpc-client.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -distributor.forwarding.grpc-client.tls-server-name string
     	Override the expected name on the server certificate.
   -distributor.forwarding.propagate-errors
@@ -809,12 +825,16 @@ Usage of ./cmd/mimir/mimir:
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -distributor.ha-tracker.etcd.tls-cert-path string
     	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -distributor.ha-tracker.etcd.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
   -distributor.ha-tracker.etcd.tls-enabled
     	Enable TLS.
   -distributor.ha-tracker.etcd.tls-insecure-skip-verify
     	Skip validating server certificate.
   -distributor.ha-tracker.etcd.tls-key-path string
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -distributor.ha-tracker.etcd.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -distributor.ha-tracker.etcd.tls-server-name string
     	Override the expected name on the server certificate.
   -distributor.ha-tracker.etcd.username string
@@ -889,12 +909,16 @@ Usage of ./cmd/mimir/mimir:
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -distributor.ring.etcd.tls-cert-path string
     	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -distributor.ring.etcd.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
   -distributor.ring.etcd.tls-enabled
     	Enable TLS.
   -distributor.ring.etcd.tls-insecure-skip-verify
     	Skip validating server certificate.
   -distributor.ring.etcd.tls-key-path string
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -distributor.ring.etcd.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -distributor.ring.etcd.tls-server-name string
     	Override the expected name on the server certificate.
   -distributor.ring.etcd.username string
@@ -965,12 +989,16 @@ Usage of ./cmd/mimir/mimir:
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -ingester.client.tls-cert-path string
     	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -ingester.client.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
   -ingester.client.tls-enabled
     	Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
   -ingester.client.tls-insecure-skip-verify
     	Skip validating server certificate.
   -ingester.client.tls-key-path string
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -ingester.client.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ingester.client.tls-server-name string
     	Override the expected name on the server certificate.
   -ingester.ignore-series-limit-for-metric-names string
@@ -1025,12 +1053,16 @@ Usage of ./cmd/mimir/mimir:
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -ingester.ring.etcd.tls-cert-path string
     	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -ingester.ring.etcd.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
   -ingester.ring.etcd.tls-enabled
     	Enable TLS.
   -ingester.ring.etcd.tls-insecure-skip-verify
     	Skip validating server certificate.
   -ingester.ring.etcd.tls-key-path string
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -ingester.ring.etcd.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ingester.ring.etcd.tls-server-name string
     	Override the expected name on the server certificate.
   -ingester.ring.etcd.username string
@@ -1149,12 +1181,16 @@ Usage of ./cmd/mimir/mimir:
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -memberlist.tls-cert-path string
     	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -memberlist.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
   -memberlist.tls-enabled
     	Enable TLS on the memberlist transport layer.
   -memberlist.tls-insecure-skip-verify
     	Skip validating server certificate.
   -memberlist.tls-key-path string
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -memberlist.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -memberlist.tls-server-name string
     	Override the expected name on the server certificate.
   -memberlist.transport-debug
@@ -1195,12 +1231,16 @@ Usage of ./cmd/mimir/mimir:
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -querier.frontend-client.tls-cert-path string
     	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -querier.frontend-client.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
   -querier.frontend-client.tls-enabled
     	Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
   -querier.frontend-client.tls-insecure-skip-verify
     	Skip validating server certificate.
   -querier.frontend-client.tls-key-path string
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -querier.frontend-client.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -querier.frontend-client.tls-server-name string
     	Override the expected name on the server certificate.
   -querier.id string
@@ -1243,12 +1283,16 @@ Usage of ./cmd/mimir/mimir:
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -querier.store-gateway-client.tls-cert-path string
     	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -querier.store-gateway-client.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
   -querier.store-gateway-client.tls-enabled
     	Enable TLS for gRPC client connecting to store-gateway.
   -querier.store-gateway-client.tls-insecure-skip-verify
     	Skip validating server certificate.
   -querier.store-gateway-client.tls-key-path string
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -querier.store-gateway-client.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -querier.store-gateway-client.tls-server-name string
     	Override the expected name on the server certificate.
   -querier.timeout duration
@@ -1285,12 +1329,16 @@ Usage of ./cmd/mimir/mimir:
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -query-frontend.grpc-client-config.tls-cert-path string
     	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -query-frontend.grpc-client-config.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
   -query-frontend.grpc-client-config.tls-enabled
     	Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
   -query-frontend.grpc-client-config.tls-insecure-skip-verify
     	Skip validating server certificate.
   -query-frontend.grpc-client-config.tls-key-path string
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -query-frontend.grpc-client-config.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -query-frontend.grpc-client-config.tls-server-name string
     	Override the expected name on the server certificate.
   -query-frontend.instance-addr string
@@ -1371,12 +1419,16 @@ Usage of ./cmd/mimir/mimir:
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -query-scheduler.grpc-client-config.tls-cert-path string
     	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -query-scheduler.grpc-client-config.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
   -query-scheduler.grpc-client-config.tls-enabled
     	Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
   -query-scheduler.grpc-client-config.tls-insecure-skip-verify
     	Skip validating server certificate.
   -query-scheduler.grpc-client-config.tls-key-path string
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -query-scheduler.grpc-client-config.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -query-scheduler.grpc-client-config.tls-server-name string
     	Override the expected name on the server certificate.
   -query-scheduler.max-outstanding-requests-per-tenant int
@@ -1411,12 +1463,16 @@ Usage of ./cmd/mimir/mimir:
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -query-scheduler.ring.etcd.tls-cert-path string
     	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -query-scheduler.ring.etcd.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
   -query-scheduler.ring.etcd.tls-enabled
     	Enable TLS.
   -query-scheduler.ring.etcd.tls-insecure-skip-verify
     	Skip validating server certificate.
   -query-scheduler.ring.etcd.tls-key-path string
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -query-scheduler.ring.etcd.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -query-scheduler.ring.etcd.tls-server-name string
     	Override the expected name on the server certificate.
   -query-scheduler.ring.etcd.username string
@@ -1553,10 +1609,14 @@ Usage of ./cmd/mimir/mimir:
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -ruler.alertmanager-client.tls-cert-path string
     	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -ruler.alertmanager-client.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
   -ruler.alertmanager-client.tls-insecure-skip-verify
     	Skip validating server certificate.
   -ruler.alertmanager-client.tls-key-path string
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -ruler.alertmanager-client.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ruler.alertmanager-client.tls-server-name string
     	Override the expected name on the server certificate.
   -ruler.alertmanager-refresh-interval duration
@@ -1585,12 +1645,16 @@ Usage of ./cmd/mimir/mimir:
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -ruler.client.tls-cert-path string
     	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -ruler.client.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
   -ruler.client.tls-enabled
     	Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
   -ruler.client.tls-insecure-skip-verify
     	Skip validating server certificate.
   -ruler.client.tls-key-path string
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -ruler.client.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ruler.client.tls-server-name string
     	Override the expected name on the server certificate.
   -ruler.disabled-tenants comma-separated-list-of-strings
@@ -1643,12 +1707,16 @@ Usage of ./cmd/mimir/mimir:
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -ruler.query-frontend.grpc-client-config.tls-cert-path string
     	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -ruler.query-frontend.grpc-client-config.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
   -ruler.query-frontend.grpc-client-config.tls-enabled
     	Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
   -ruler.query-frontend.grpc-client-config.tls-insecure-skip-verify
     	Skip validating server certificate.
   -ruler.query-frontend.grpc-client-config.tls-key-path string
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -ruler.query-frontend.grpc-client-config.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ruler.query-frontend.grpc-client-config.tls-server-name string
     	Override the expected name on the server certificate.
   -ruler.query-stats-enabled
@@ -1681,12 +1749,16 @@ Usage of ./cmd/mimir/mimir:
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -ruler.ring.etcd.tls-cert-path string
     	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -ruler.ring.etcd.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
   -ruler.ring.etcd.tls-enabled
     	Enable TLS.
   -ruler.ring.etcd.tls-insecure-skip-verify
     	Skip validating server certificate.
   -ruler.ring.etcd.tls-key-path string
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -ruler.ring.etcd.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ruler.ring.etcd.tls-server-name string
     	Override the expected name on the server certificate.
   -ruler.ring.etcd.username string
@@ -1825,12 +1897,16 @@ Usage of ./cmd/mimir/mimir:
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -store-gateway.sharding-ring.etcd.tls-cert-path string
     	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -store-gateway.sharding-ring.etcd.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
   -store-gateway.sharding-ring.etcd.tls-enabled
     	Enable TLS.
   -store-gateway.sharding-ring.etcd.tls-insecure-skip-verify
     	Skip validating server certificate.
   -store-gateway.sharding-ring.etcd.tls-key-path string
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -store-gateway.sharding-ring.etcd.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -store-gateway.sharding-ring.etcd.tls-server-name string
     	Override the expected name on the server certificate.
   -store-gateway.sharding-ring.etcd.username string

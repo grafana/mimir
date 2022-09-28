@@ -24,6 +24,45 @@
 * [ENHANCEMENT] Query-frontend / Querier: increase internal backoff period used to retry connections to query-frontend / query-scheduler. #3011
 * [ENHANCEMENT] Querier: do not log "error processing requests from scheduler" when the query-scheduler is shutting down. #3012
 * [ENHANCEMENT] Query-frontend: query sharding process is now time-bounded and it is cancelled if the request is aborted. #3028
+* [ENHANCEMENT] TLS: added configuration parameters to configure the client's TLS cipher suites and minimum version. The following new CLI flags have been added: #3070
+  * `-alertmanager.alertmanager-client.tls-cipher-suites`
+  * `-alertmanager.alertmanager-client.tls-min-version`
+  * `-alertmanager.sharding-ring.etcd.tls-cipher-suites`
+  * `-alertmanager.sharding-ring.etcd.tls-min-version`
+  * `-compactor.ring.etcd.tls-cipher-suites`
+  * `-compactor.ring.etcd.tls-min-version`
+  * `-distributor.forwarding.grpc-client.tls-cipher-suites`
+  * `-distributor.forwarding.grpc-client.tls-min-version`
+  * `-distributor.ha-tracker.etcd.tls-cipher-suites`
+  * `-distributor.ha-tracker.etcd.tls-min-version`
+  * `-distributor.ring.etcd.tls-cipher-suites`
+  * `-distributor.ring.etcd.tls-min-version`
+  * `-ingester.client.tls-cipher-suites`
+  * `-ingester.client.tls-min-version`
+  * `-ingester.ring.etcd.tls-cipher-suites`
+  * `-ingester.ring.etcd.tls-min-version`
+  * `-memberlist.tls-cipher-suites`
+  * `-memberlist.tls-min-version`
+  * `-querier.frontend-client.tls-cipher-suites`
+  * `-querier.frontend-client.tls-min-version`
+  * `-querier.store-gateway-client.tls-cipher-suites`
+  * `-querier.store-gateway-client.tls-min-version`
+  * `-query-frontend.grpc-client-config.tls-cipher-suites`
+  * `-query-frontend.grpc-client-config.tls-min-version`
+  * `-query-scheduler.grpc-client-config.tls-cipher-suites`
+  * `-query-scheduler.grpc-client-config.tls-min-version`
+  * `-query-scheduler.ring.etcd.tls-cipher-suites`
+  * `-query-scheduler.ring.etcd.tls-min-version`
+  * `-ruler.alertmanager-client.tls-cipher-suites`
+  * `-ruler.alertmanager-client.tls-min-version`
+  * `-ruler.client.tls-cipher-suites`
+  * `-ruler.client.tls-min-version`
+  * `-ruler.query-frontend.grpc-client-config.tls-cipher-suites`
+  * `-ruler.query-frontend.grpc-client-config.tls-min-version`
+  * `-ruler.ring.etcd.tls-cipher-suites`
+  * `-ruler.ring.etcd.tls-min-version`
+  * `-store-gateway.sharding-ring.etcd.tls-cipher-suites`
+  * `-store-gateway.sharding-ring.etcd.tls-min-version`
 * [ENHANCEMENT] Store-gateway: Add `-blocks-storage.bucket-store.max-concurrent-reject-over-limit` option to allow requests that exceed the max number of inflight object storage requests to be rejected. #2999
 * [ENHANCEMENT] Ingester: improved the performance of label value cardinality endpoint. #3048
 * [BUGFIX] Querier: Fix 400 response while handling streaming remote read. #2963
