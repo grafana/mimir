@@ -32,21 +32,118 @@ To avoid repetition, you can use the [common configuration]({{< relref "about-co
 
 Grafana Mimir will fail to start if you configure blocks storage to use the same bucket and storage prefix that the alertmanager or ruler store uses.
 
-A valid configuration for the object storage (taken from the ["Play with Grafana Mimir" tutorial](https://grafana.com/tutorials/play-with-grafana-mimir/)) looks as follows:
+Find examples of setting up the different object stores below:
+
+> **Note**: If you're using a mixture of YAML files and CLI flags, pay attention to their [precedence logic]({{< relref "about-configurations.md#common-configurations" >}}).
+
+### S3
 
 ```yaml
 common:
   storage:
     backend: s3
     s3:
-      endpoint: minio:9000
-      access_key_id: mimir
-      secret_access_key: supersecret
-      insecure: true
-      bucket_name: mimir
+      endpoint: s3.us-east-2.amazonaws.com
+      region: us-east
+      secret_access_key: "${AWS_SECRET_ACCESS_KEY}" # This is a secret injected via an environment variable
+      access_key_id: "${AWS_ACCESS_KEY_ID}" # This is a secret injected via an environment variable
 
 blocks_storage:
-  storage_prefix: blocks
+  s3:
+    bucket_name: mimir-blocks
+
+alertmanager_storage:
+  s3:
+    bucket_name: mimir-alertmanager
+
+ruler_storage:
+  s3:
+    bucket_name: mimir-ruler
 ```
 
-> **Note**: If you're using a mixture of YAML files and CLI flags, pay attention to their [precedence logic]({{< relref "about-configurations.md#common-configurations" >}}).
+### GCS
+
+```yaml
+common:
+  storage:
+    backend: gcs
+    gcs:
+      # This is an example to illustrate what the service account content should look like.
+      # We recommend injecting the service_account via an environment variable instead.
+      service_account: |
+        {
+          "type": "service_account",
+          "project_id": "my-project",
+          "private_key_id": "1234abc",
+          "private_key": "-----BEGIN PRIVATE KEY-----\n\n-----END PRIVATE KEY-----\n",
+          "client_email": "test@my-project.iam.gserviceaccount.com",
+          "client_id": "5678",
+          "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+          "token_uri": "https://oauth2.googleapis.com/token",
+          "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+          "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/test%40my-project.iam.gserviceaccount.com"
+        }
+
+blocks_storage:
+  gcs:
+    bucket_name: mimir-blocks
+
+alertmanager_storage:
+  gcs:
+    bucket_name: mimir-alertmanager
+
+ruler_storage:
+  gcs:
+    bucket_name: mimir-ruler
+```
+
+### Azure Blob Storage
+
+```yaml
+common:
+  storage:
+    backend: azure
+  azure:
+    account_key: "${SWIFT_ACCOUNT_KEY}" # This is a secret injected via an environment variable
+    account_name: mimir-prod
+    endpoint_suffix: "blob.core.windows.net"
+
+blocks_storage:
+  azure:
+    container_name: mimir-blocks
+
+alertmanager_storage:
+  azure:
+    container_name: mimir-alertmanager
+
+ruler_storage:
+  azure:
+    container_name: mimir-ruler
+```
+
+### OpenStack SWIFT
+
+```yaml
+common:
+  storage:
+    backend: swift
+  swift:
+    auth_url: http://10.121.xx.xx:5000/v3
+    username: mimir
+    user_domain_name: Default
+    password: "${OPENSTACK_API_KEY}" # This is a secret injected via an environment variable
+    project_name: mimir-prod
+    domain_name: Default
+
+blocks_storage:
+  swift:
+    container_name: mimir-blocks
+
+alertmanager_storage:
+  swift:
+    container_name: mimir-alertmanager
+
+ruler_storage:
+  swift:
+    container_name: mimir-ruler
+```
