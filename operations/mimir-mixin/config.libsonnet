@@ -46,10 +46,11 @@
 
     // The label used to differentiate between different Kubernetes clusters.
     per_cluster_label: 'cluster',
+    per_namespace_label: 'namespace',
 
     // Grouping labels, to uniquely identify and group by {jobs, clusters}
-    job_labels: [$._config.per_cluster_label, 'namespace', 'job'],
-    cluster_labels: [$._config.per_cluster_label, 'namespace'],
+    job_labels: [$._config.per_cluster_label, $._config.per_namespace_label, 'job'],
+    cluster_labels: [$._config.per_cluster_label, $._config.per_namespace_label],
 
     // PromQL queries used to find clusters and namespaces with Mimir.
     dashboard_variables: {
