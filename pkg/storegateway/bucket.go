@@ -1406,7 +1406,7 @@ func blockLabelValues(ctx context.Context, indexr *bucketIndexReader, labelName 
 
 	matched := make([]string, 0, len(allValues))
 	for i, value := range allValues {
-		intersection := index.Intersect(index.NewListPostings(p), fetchedPostings[i])
+		intersection := mimir_tsdb.IntersectTwoPostings(index.NewListPostings(p), fetchedPostings[i])
 		if intersection.Next() {
 			matched = append(matched, value)
 		}
@@ -1959,7 +1959,7 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 		}
 	}
 
-	result := index.Without(index.Intersect(groupAdds...), index.Merge(groupRemovals...))
+	result := index.Without(intersectPostings(groupAdds...), index.Merge(groupRemovals...))
 
 	ps, err := index.ExpandPostings(result)
 	if err != nil {
@@ -1979,6 +1979,14 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 	}
 
 	return ps, nil
+}
+
+// intersectPostings will use a slightly more efficient IntersectTwoPostings when there are only 2 postings provided.
+func intersectPostings(p ...index.Postings) index.Postings {
+	if len(p) == 2 {
+		return mimir_tsdb.IntersectTwoPostings(p[0], p[1])
+	}
+	return index.Intersect(p...)
 }
 
 // postingGroup keeps posting keys for single matcher. Logical result of the group is:

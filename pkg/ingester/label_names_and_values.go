@@ -10,6 +10,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
 const checkContextErrorSeriesCount = 1000 // series count interval in which context cancellation must be checked.
@@ -174,7 +175,7 @@ func countLabelValueSeries(ctx context.Context, lbName string, lbValue string, i
 	}
 
 	if matchedPostingsCloner != nil {
-		lbPostings = index.Intersect(lbPostings, matchedPostingsCloner.Clone())
+		lbPostings = mimir_tsdb.IntersectTwoPostings(lbPostings, matchedPostingsCloner.Clone())
 	}
 
 	seriesCount, err := postingsLength(ctx, lbPostings)
