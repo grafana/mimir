@@ -24,6 +24,7 @@
 * [ENHANCEMENT] Query-frontend / Querier: increase internal backoff period used to retry connections to query-frontend / query-scheduler. #3011
 * [ENHANCEMENT] Querier: do not log "error processing requests from scheduler" when the query-scheduler is shutting down. #3012
 * [ENHANCEMENT] Query-frontend: query sharding process is now time-bounded and it is cancelled if the request is aborted. #3028
+* [ENHANCEMENT] Ingester: improved the performance of label value cardinality endpoint. #3048
 * [BUGFIX] Querier: Fix 400 response while handling streaming remote read. #2963
 * [BUGFIX] Fix a bug causing query-frontend, query-scheduler, and querier not failing if one of their internal components fail. #2978
 * [BUGFIX] Querier: re-balance the querier worker connections when a query-frontend or query-scheduler is terminated. #3005
