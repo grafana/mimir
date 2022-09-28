@@ -16,7 +16,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
-	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/user"
 
@@ -289,13 +288,11 @@ func (ip infinitePostings) Seek(v storage.SeriesRef) bool { return true }
 func (ip infinitePostings) At() storage.SeriesRef         { return 0 }
 func (ip infinitePostings) Err() error                    { return nil }
 
-func TestCountLabelValueSeries_ContextCancellation(t *testing.T) {
+func TestPostingsLength_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := countLabelValueSeries(ctx, nil, func(reader tsdb.IndexPostingsReader, matcher ...*labels.Matcher) (index.Postings, error) {
-		return infinitePostings{}, nil
-	}, nil)
+	_, err := postingsLength(ctx, infinitePostings{})
 
 	require.Error(t, err)
 	require.ErrorIs(t, err, context.Canceled)
