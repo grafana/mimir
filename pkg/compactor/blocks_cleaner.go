@@ -157,7 +157,7 @@ func (c *BlocksCleaner) starting(ctx context.Context) error {
 }
 
 func (c *BlocksCleaner) ticker(ctx context.Context) error {
-	go c.runCleanup(ctx)
+	c.runCleanup(ctx)
 
 	return nil
 }
@@ -202,18 +202,26 @@ func (c *BlocksCleaner) cleanUsers(ctx context.Context) error {
 	}
 	c.lastOwnedUsers = allUsers
 
-	return c.singleFlight.ForEachNotInFlight(ctx, allUsers, func(ctx context.Context, userID string) error {
-		own, err := c.ownUser(userID)
-		if err != nil || !own {
-			// This returns error only if err != nil. ForEachUser keeps working for other users.
-			return errors.Wrap(err, "check own user")
-		}
+	for _, u := range allUsers {
+		// The channel blocking means that the singleflight is running at its concurrency limit.
+		// The send succeeding means that the job has started.
+		c.singleFlight.Jobs <- concurrency.Job{
+			Token: u,
+			Func: func(ctx context.Context, userID string) error {
+				own, err := c.ownUser(userID)
+				if err != nil || !own {
+					// This returns error only if err != nil. ForEachUser keeps working for other users.
+					return errors.Wrap(err, "check own user")
+				}
 
-		if isDeleted[userID] {
-			return errors.Wrapf(c.deleteUserMarkedForDeletion(ctx, userID), "failed to delete user marked for deletion: %s", userID)
+				if isDeleted[userID] {
+					return errors.Wrapf(c.deleteUserMarkedForDeletion(ctx, userID), "failed to delete user marked for deletion: %s", userID)
+				}
+				return errors.Wrapf(c.cleanUser(ctx, userID), "failed to delete blocks for user: %s", userID)
+			},
 		}
-		return errors.Wrapf(c.cleanUser(ctx, userID), "failed to delete blocks for user: %s", userID)
-	})
+	}
+	return nil
 }
 
 // Remove blocks and remaining data for tenant marked for deletion.
