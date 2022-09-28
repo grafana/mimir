@@ -114,8 +114,8 @@ Each of the components listed above support the following TLS configuration opti
 - `*.tls-enabled=<boolean>`: Enable TLS in the client.
 - `*.tls-server-name=<string>`: Override the expected name on the server certificate.
 - `*.tls-insecure-skip-verify=<boolean>`: Skip validating the server certificate.
-- `*.tls-cipher-suites=<string>`: Comma-separated list of accepted cipher suites. Refer to [Available cipher suites](#available-cipher-suites) for more information.
-- `*.tls-min-version=<string>`: Minimum TLS version required. Supported values are: `VersionTLS10`, `VersionTLS11`, `VersionTLS12`, `VersionTLS13`.
+- `*.tls-cipher-suites=<string>`: Comma-separated list of accepted cipher suites. Refer to [Grafana Mimir configuration parameters](../configure/reference-configuration-parameters/index.md) for the list of supported cipher suites.
+- `*.tls-min-version=<string>`: Minimum TLS version required. Refer to [Grafana Mimir configuration parameters](../configure/reference-configuration-parameters/index.md) for the list of supported versions.
 
 The following example shows how to configure the gRPC client flags in the querier used to connect to the query-frontend:
 
@@ -129,35 +129,3 @@ The following example shows how to configure the gRPC client flags in the querie
     # Path to the TLS CA for the gRPC Client
     -querier.frontend-client.tls-ca-path=/path/to/root.crt
 ```
-
-##### Available cipher suites
-
-The `*.tls-cipher-suites` configuration options allow to override the default list of accepted TLS cipher suites.
-The configuration option value should be a comma-separated list of accepted suites.
-The TLS cipher suites supported by Mimir are:
-
-- `TLS_RSA_WITH_AES_128_CBC_SHA`
-- `TLS_RSA_WITH_AES_256_CBC_SHA`
-- `TLS_RSA_WITH_AES_128_GCM_SHA256`
-- `TLS_RSA_WITH_AES_256_GCM_SHA384`
-- `TLS_AES_128_GCM_SHA256`
-- `TLS_AES_256_GCM_SHA384`
-- `TLS_CHACHA20_POLY1305_SHA256`
-- `TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA`
-- `TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA`
-- `TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA`
-- `TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA`
-- `TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256`
-- `TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384`
-- `TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256`
-- `TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384`
-- `TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256`
-- `TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256`
-- `TLS_RSA_WITH_RC4_128_SHA` (insecure)
-- `TLS_RSA_WITH_3DES_EDE_CBC_SHA` (insecure)
-- `TLS_RSA_WITH_AES_128_CBC_SHA256` (insecure)
-- `TLS_ECDHE_ECDSA_WITH_RC4_128_SHA` (insecure)
-- `TLS_ECDHE_RSA_WITH_RC4_128_SHA` (insecure)
-- `TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA` (insecure)
-- `TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256` (insecure)
-- `TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256` (insecure)
