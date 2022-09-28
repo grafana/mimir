@@ -5444,6 +5444,17 @@
               ],
               "fieldValue": null,
               "fieldDefaultValue": null
+            },
+            {
+              "kind": "field",
+              "name": "max_concurrent_reject_over_limit",
+              "required": false,
+              "desc": "True to reject queries above the max number of concurrent queries to execute against long-term storage. If false, queries will block until they are able to run.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.bucket-store.max-concurrent-reject-over-limit",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
