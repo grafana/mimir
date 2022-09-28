@@ -16,7 +16,7 @@ require (
 	github.com/golang/snappy v0.0.4
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.0
-	github.com/grafana/dskit v0.0.0-20220919132630-c9f79ec48cc3
+	github.com/grafana/dskit v0.0.0-20220928083349-b1b307db4f30
 	github.com/grafana/e2e v0.1.1-0.20220519104354-1db01e4751fe
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/json-iterator/go v1.1.12
@@ -41,7 +41,7 @@ require (
 	github.com/uber/jaeger-client-go v2.30.0+incompatible
 	github.com/weaveworks/common v0.0.0-20220915171148-7b5f6f3e74bc
 	go.uber.org/atomic v1.9.0
-	go.uber.org/goleak v1.1.12
+	go.uber.org/goleak v1.2.0
 	golang.org/x/crypto v0.0.0-20220722155217-630584e8d5aa
 	golang.org/x/net v0.0.0-20220812174116-3211cb980234
 	golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4
