@@ -261,7 +261,7 @@ func (cb *CachingBucket) Get(ctx context.Context, name string) (io.ReadCloser, e
 }
 
 func (cb *CachingBucket) IsObjNotFoundErr(err error) bool {
-	return err == errObjNotFound || cb.Bucket.IsObjNotFoundErr(err)
+	return errors.Is(err, errObjNotFound) || cb.Bucket.IsObjNotFoundErr(err)
 }
 
 func (cb *CachingBucket) GetRange(ctx context.Context, name string, off, length int64) (io.ReadCloser, error) {
@@ -597,7 +597,7 @@ func (g *getReader) Read(p []byte) (n int, err error) {
 		}
 	}
 
-	if err == io.EOF && g.buf != nil {
+	if errors.Is(err, io.EOF) && g.buf != nil {
 		remainingTTL := g.ttl - time.Since(g.startTime)
 		if remainingTTL > 0 {
 			g.c.Store(g.ctx, map[string][]byte{g.cacheKey: g.buf.Bytes()}, remainingTTL)

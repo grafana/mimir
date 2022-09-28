@@ -32,6 +32,8 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
+const shardingTimeout = 10 * time.Second
+
 type querySharding struct {
 	limit Limits
 
@@ -100,19 +102,21 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	totalShards := s.getShardsForQuery(tenantIDs, r, log)
+	totalShards := s.getShardsForQuery(ctx, tenantIDs, r, log)
 	if totalShards <= 1 {
 		level.Debug(log).Log("msg", "query sharding is disabled for this query or tenant")
 		return s.next.Do(ctx, r)
 	}
 
 	s.shardingAttempts.Inc()
-	shardedQuery, shardingStats, err := s.shardQuery(r.GetQuery(), totalShards)
+	shardedQuery, shardingStats, err := s.shardQuery(ctx, r.GetQuery(), totalShards)
 
 	// If an error occurred while trying to rewrite the query or the query has not been sharded,
 	// then we should fallback to execute it via queriers.
 	if err != nil || shardingStats.GetShardedQueries() == 0 {
-		if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+			level.Error(log).Log("msg", "timeout while rewriting the input query into a shardable query, please fill in a bug report with this query, falling back to try executing without sharding", "query", r.GetQuery(), "err", err)
+		} else if err != nil {
 			level.Warn(log).Log("msg", "failed to rewrite the input query into a shardable query, falling back to try executing without sharding", "query", r.GetQuery(), "err", err)
 		} else {
 			level.Debug(log).Log("msg", "query is not supported for being rewritten into a shardable query", "query", r.GetQuery())
@@ -222,9 +226,12 @@ func mapEngineError(err error) error {
 // shardQuery attempts to rewrite the input query in a shardable way. Returns the rewritten query
 // to be executed by PromQL engine with shardedQueryable or an empty string if the input query
 // can't be sharded.
-func (s *querySharding) shardQuery(query string, totalShards int) (string, *astmapper.MapperStats, error) {
+func (s *querySharding) shardQuery(ctx context.Context, query string, totalShards int) (string, *astmapper.MapperStats, error) {
 	stats := astmapper.NewMapperStats()
-	mapper, err := astmapper.NewSharding(totalShards, s.logger, stats)
+	ctx, cancel := context.WithTimeout(ctx, shardingTimeout)
+	defer cancel()
+
+	mapper, err := astmapper.NewSharding(ctx, totalShards, s.logger, stats)
 	if err != nil {
 		return "", nil, err
 	}
@@ -243,7 +250,7 @@ func (s *querySharding) shardQuery(query string, totalShards int) (string, *astm
 }
 
 // getShardsForQuery calculates and return the number of shards that should be used to run the query.
-func (s *querySharding) getShardsForQuery(tenantIDs []string, r Request, spanLog log.Logger) int {
+func (s *querySharding) getShardsForQuery(ctx context.Context, tenantIDs []string, r Request, spanLog log.Logger) int {
 	// Check if sharding is disabled for the given request.
 	if r.GetOptions().ShardingDisabled {
 		return 1
@@ -279,7 +286,7 @@ func (s *querySharding) getShardsForQuery(tenantIDs []string, r Request, spanLog
 		// - count(metric)
 		//
 		// Calling s.shardQuery() with 1 total shards we can see how many shardable legs the query has.
-		_, shardingStats, err := s.shardQuery(r.GetQuery(), 1)
+		_, shardingStats, err := s.shardQuery(ctx, r.GetQuery(), 1)
 		numShardableLegs := 1
 		if err == nil && shardingStats.GetShardedQueries() > 0 {
 			numShardableLegs = shardingStats.GetShardedQueries()

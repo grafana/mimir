@@ -55,7 +55,7 @@ type QueryFrontendConfig struct {
 	Address string `yaml:"address"`
 
 	// GRPCClientConfig contains gRPC specific config options.
-	GRPCClientConfig grpcclient.Config `yaml:"grpc_client_config"`
+	GRPCClientConfig grpcclient.Config `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate between the rulers and query-frontends."`
 }
 
 func (c *QueryFrontendConfig) RegisterFlags(f *flag.FlagSet) {

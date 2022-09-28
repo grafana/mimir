@@ -568,7 +568,7 @@ ring:
 
   # (advanced) Period at which to heartbeat to the ring. 0 = disabled.
   # CLI flag: -distributor.ring.heartbeat-period
-  [heartbeat_period: <duration> | default = 5s]
+  [heartbeat_period: <duration> | default = 15s]
 
   # (advanced) The heartbeat timeout after which distributors are considered
   # unhealthy within the ring. 0 = never (timeout disabled).
@@ -633,6 +633,13 @@ forwarding:
   # be successful, errors are ignored.
   # CLI flag: -distributor.forwarding.propagate-errors
   [propagate_errors: <boolean> | default = true]
+
+  # Configures the gRPC client used to communicate between the distributors and
+  # the configured remote write endpoints used by the metrics forwarding
+  # feature.
+  # The CLI flags prefix for this block configuration is:
+  # distributor.forwarding.grpc-client
+  [grpc_client: <grpc_client>]
 ```
 
 ### ingester
@@ -681,7 +688,7 @@ ring:
 
   # (advanced) Period at which to heartbeat to the ring. 0 = disabled.
   # CLI flag: -ingester.ring.heartbeat-period
-  [heartbeat_period: <duration> | default = 5s]
+  [heartbeat_period: <duration> | default = 15s]
 
   # (advanced) The heartbeat timeout after which ingesters are skipped for
   # reads/writes. 0 = never (timeout disabled). This option needs be set on
@@ -955,7 +962,10 @@ The `frontend` block configures the query-frontend.
 # CLI flag: -query-frontend.querier-forget-delay
 [querier_forget_delay: <duration> | default = 0s]
 
-# DNS hostname used for finding query-schedulers.
+# Address of the query-scheduler component, in host:port format. The host should
+# resolve to all query-scheduler instances. This option should be set only when
+# query-scheduler component is in use and
+# -query-scheduler.service-discovery-mode is set to 'dns'.
 # CLI flag: -query-frontend.scheduler-address
 [scheduler_address: <string> | default = ""]
 
@@ -969,73 +979,11 @@ The `frontend` block configures the query-frontend.
 # CLI flag: -query-frontend.scheduler-worker-concurrency
 [scheduler_worker_concurrency: <int> | default = 5]
 
-grpc_client_config:
-  # (advanced) gRPC client max receive message size (bytes).
-  # CLI flag: -query-frontend.grpc-client-config.grpc-max-recv-msg-size
-  [max_recv_msg_size: <int> | default = 104857600]
-
-  # (advanced) gRPC client max send message size (bytes).
-  # CLI flag: -query-frontend.grpc-client-config.grpc-max-send-msg-size
-  [max_send_msg_size: <int> | default = 104857600]
-
-  # (advanced) Use compression when sending messages. Supported values are:
-  # 'gzip', 'snappy' and '' (disable compression)
-  # CLI flag: -query-frontend.grpc-client-config.grpc-compression
-  [grpc_compression: <string> | default = ""]
-
-  # (advanced) Rate limit for gRPC client; 0 means disabled.
-  # CLI flag: -query-frontend.grpc-client-config.grpc-client-rate-limit
-  [rate_limit: <float> | default = 0]
-
-  # (advanced) Rate limit burst for gRPC client.
-  # CLI flag: -query-frontend.grpc-client-config.grpc-client-rate-limit-burst
-  [rate_limit_burst: <int> | default = 0]
-
-  # (advanced) Enable backoff and retry when we hit ratelimits.
-  # CLI flag: -query-frontend.grpc-client-config.backoff-on-ratelimits
-  [backoff_on_ratelimits: <boolean> | default = false]
-
-  backoff_config:
-    # (advanced) Minimum delay when backing off.
-    # CLI flag: -query-frontend.grpc-client-config.backoff-min-period
-    [min_period: <duration> | default = 100ms]
-
-    # (advanced) Maximum delay when backing off.
-    # CLI flag: -query-frontend.grpc-client-config.backoff-max-period
-    [max_period: <duration> | default = 10s]
-
-    # (advanced) Number of times to backoff and retry before failing.
-    # CLI flag: -query-frontend.grpc-client-config.backoff-retries
-    [max_retries: <int> | default = 10]
-
-  # (advanced) Enable TLS in the GRPC client. This flag needs to be enabled when
-  # any other TLS flag is set. If set to false, insecure connection to gRPC
-  # server will be used.
-  # CLI flag: -query-frontend.grpc-client-config.tls-enabled
-  [tls_enabled: <boolean> | default = false]
-
-  # (advanced) Path to the client certificate file, which will be used for
-  # authenticating with the server. Also requires the key path to be configured.
-  # CLI flag: -query-frontend.grpc-client-config.tls-cert-path
-  [tls_cert_path: <string> | default = ""]
-
-  # (advanced) Path to the key file for the client certificate. Also requires
-  # the client certificate to be configured.
-  # CLI flag: -query-frontend.grpc-client-config.tls-key-path
-  [tls_key_path: <string> | default = ""]
-
-  # (advanced) Path to the CA certificates file to validate server certificate
-  # against. If not set, the host's root CA certificates are used.
-  # CLI flag: -query-frontend.grpc-client-config.tls-ca-path
-  [tls_ca_path: <string> | default = ""]
-
-  # (advanced) Override the expected name on the server certificate.
-  # CLI flag: -query-frontend.grpc-client-config.tls-server-name
-  [tls_server_name: <string> | default = ""]
-
-  # (advanced) Skip validating server certificate.
-  # CLI flag: -query-frontend.grpc-client-config.tls-insecure-skip-verify
-  [tls_insecure_skip_verify: <boolean> | default = false]
+# Configures the gRPC client used to communicate between the query-frontends and
+# the query-schedulers.
+# The CLI flags prefix for this block configuration is:
+# query-frontend.grpc-client-config
+[grpc_client_config: <grpc_client>]
 
 # (advanced) List of network interface names to look up when finding the
 # instance IP address. This address is sent to query-scheduler and querier,
@@ -1120,73 +1068,93 @@ The `query_scheduler` block configures the query-scheduler.
 
 # This configures the gRPC client used to report errors back to the
 # query-frontend.
-grpc_client_config:
-  # (advanced) gRPC client max receive message size (bytes).
-  # CLI flag: -query-scheduler.grpc-client-config.grpc-max-recv-msg-size
-  [max_recv_msg_size: <int> | default = 104857600]
+# The CLI flags prefix for this block configuration is:
+# query-scheduler.grpc-client-config
+[grpc_client_config: <grpc_client>]
 
-  # (advanced) gRPC client max send message size (bytes).
-  # CLI flag: -query-scheduler.grpc-client-config.grpc-max-send-msg-size
-  [max_send_msg_size: <int> | default = 104857600]
+# (experimental) Service discovery mode that query-frontends and queriers use to
+# find query-scheduler instances. When query-scheduler ring-based service
+# discovery is enabled, this option needs be set on query-schedulers,
+# query-frontends and queriers. Supported values are: dns, ring.
+# CLI flag: -query-scheduler.service-discovery-mode
+[service_discovery_mode: <string> | default = "dns"]
 
-  # (advanced) Use compression when sending messages. Supported values are:
-  # 'gzip', 'snappy' and '' (disable compression)
-  # CLI flag: -query-scheduler.grpc-client-config.grpc-compression
-  [grpc_compression: <string> | default = ""]
+# The hash ring configuration. The query-schedulers hash ring is used for
+# service discovery.
+ring:
+  # The key-value store used to share the hash ring across multiple instances.
+  # When query-scheduler ring-based service discovery is enabled, this option
+  # needs be set on query-schedulers, query-frontends and queriers.
+  kvstore:
+    # Backend storage to use for the ring. Supported values are: consul, etcd,
+    # inmemory, memberlist, multi.
+    # CLI flag: -query-scheduler.ring.store
+    [store: <string> | default = "memberlist"]
 
-  # (advanced) Rate limit for gRPC client; 0 means disabled.
-  # CLI flag: -query-scheduler.grpc-client-config.grpc-client-rate-limit
-  [rate_limit: <float> | default = 0]
+    # (advanced) The prefix for the keys in the store. Should end with a /.
+    # CLI flag: -query-scheduler.ring.prefix
+    [prefix: <string> | default = "collectors/"]
 
-  # (advanced) Rate limit burst for gRPC client.
-  # CLI flag: -query-scheduler.grpc-client-config.grpc-client-rate-limit-burst
-  [rate_limit_burst: <int> | default = 0]
+    # The consul block configures the consul client.
+    # The CLI flags prefix for this block configuration is: query-scheduler.ring
+    [consul: <consul>]
 
-  # (advanced) Enable backoff and retry when we hit ratelimits.
-  # CLI flag: -query-scheduler.grpc-client-config.backoff-on-ratelimits
-  [backoff_on_ratelimits: <boolean> | default = false]
+    # The etcd block configures the etcd client.
+    # The CLI flags prefix for this block configuration is: query-scheduler.ring
+    [etcd: <etcd>]
 
-  backoff_config:
-    # (advanced) Minimum delay when backing off.
-    # CLI flag: -query-scheduler.grpc-client-config.backoff-min-period
-    [min_period: <duration> | default = 100ms]
+    multi:
+      # (advanced) Primary backend storage used by multi-client.
+      # CLI flag: -query-scheduler.ring.multi.primary
+      [primary: <string> | default = ""]
 
-    # (advanced) Maximum delay when backing off.
-    # CLI flag: -query-scheduler.grpc-client-config.backoff-max-period
-    [max_period: <duration> | default = 10s]
+      # (advanced) Secondary backend storage used by multi-client.
+      # CLI flag: -query-scheduler.ring.multi.secondary
+      [secondary: <string> | default = ""]
 
-    # (advanced) Number of times to backoff and retry before failing.
-    # CLI flag: -query-scheduler.grpc-client-config.backoff-retries
-    [max_retries: <int> | default = 10]
+      # (advanced) Mirror writes to secondary store.
+      # CLI flag: -query-scheduler.ring.multi.mirror-enabled
+      [mirror_enabled: <boolean> | default = false]
 
-  # (advanced) Enable TLS in the GRPC client. This flag needs to be enabled when
-  # any other TLS flag is set. If set to false, insecure connection to gRPC
-  # server will be used.
-  # CLI flag: -query-scheduler.grpc-client-config.tls-enabled
-  [tls_enabled: <boolean> | default = false]
+      # (advanced) Timeout for storing value to secondary store.
+      # CLI flag: -query-scheduler.ring.multi.mirror-timeout
+      [mirror_timeout: <duration> | default = 2s]
 
-  # (advanced) Path to the client certificate file, which will be used for
-  # authenticating with the server. Also requires the key path to be configured.
-  # CLI flag: -query-scheduler.grpc-client-config.tls-cert-path
-  [tls_cert_path: <string> | default = ""]
+  # (advanced) Period at which to heartbeat to the ring. 0 = disabled.
+  # CLI flag: -query-scheduler.ring.heartbeat-period
+  [heartbeat_period: <duration> | default = 15s]
 
-  # (advanced) Path to the key file for the client certificate. Also requires
-  # the client certificate to be configured.
-  # CLI flag: -query-scheduler.grpc-client-config.tls-key-path
-  [tls_key_path: <string> | default = ""]
+  # (advanced) The heartbeat timeout after which query-schedulers are considered
+  # unhealthy within the ring. When query-scheduler ring-based service discovery
+  # is enabled, this option needs be set on query-schedulers, query-frontends
+  # and queriers.
+  # CLI flag: -query-scheduler.ring.heartbeat-timeout
+  [heartbeat_timeout: <duration> | default = 1m]
 
-  # (advanced) Path to the CA certificates file to validate server certificate
-  # against. If not set, the host's root CA certificates are used.
-  # CLI flag: -query-scheduler.grpc-client-config.tls-ca-path
-  [tls_ca_path: <string> | default = ""]
+  # (advanced) Instance ID to register in the ring.
+  # CLI flag: -query-scheduler.ring.instance-id
+  [instance_id: <string> | default = "<hostname>"]
 
-  # (advanced) Override the expected name on the server certificate.
-  # CLI flag: -query-scheduler.grpc-client-config.tls-server-name
-  [tls_server_name: <string> | default = ""]
+  # List of network interface names to look up when finding the instance IP
+  # address.
+  # CLI flag: -query-scheduler.ring.instance-interface-names
+  [instance_interface_names: <list of strings> | default = [<private network interfaces>]]
 
-  # (advanced) Skip validating server certificate.
-  # CLI flag: -query-scheduler.grpc-client-config.tls-insecure-skip-verify
-  [tls_insecure_skip_verify: <boolean> | default = false]
+  # (advanced) Port to advertise in the ring (defaults to
+  # -server.grpc-listen-port).
+  # CLI flag: -query-scheduler.ring.instance-port
+  [instance_port: <int> | default = 0]
+
+  # (advanced) IP address to advertise in the ring. Default is auto-detected.
+  # CLI flag: -query-scheduler.ring.instance-addr
+  [instance_addr: <string> | default = ""]
+
+# (experimental) The maximum number of query-scheduler instances to use,
+# regardless how many replicas are running. This option can be set only when
+# -query-scheduler.service-discovery-mode is set to 'ring'. 0 to use all
+# available query-scheduler instances.
+# CLI flag: -query-scheduler.max-used-instances
+[max_used_instances: <int> | default = 0]
 ```
 
 ### ruler
@@ -1198,73 +1166,9 @@ The `ruler` block configures the ruler.
 # CLI flag: -ruler.external.url
 [external_url: <url> | default = ]
 
-ruler_client:
-  # (advanced) gRPC client max receive message size (bytes).
-  # CLI flag: -ruler.client.grpc-max-recv-msg-size
-  [max_recv_msg_size: <int> | default = 104857600]
-
-  # (advanced) gRPC client max send message size (bytes).
-  # CLI flag: -ruler.client.grpc-max-send-msg-size
-  [max_send_msg_size: <int> | default = 104857600]
-
-  # (advanced) Use compression when sending messages. Supported values are:
-  # 'gzip', 'snappy' and '' (disable compression)
-  # CLI flag: -ruler.client.grpc-compression
-  [grpc_compression: <string> | default = ""]
-
-  # (advanced) Rate limit for gRPC client; 0 means disabled.
-  # CLI flag: -ruler.client.grpc-client-rate-limit
-  [rate_limit: <float> | default = 0]
-
-  # (advanced) Rate limit burst for gRPC client.
-  # CLI flag: -ruler.client.grpc-client-rate-limit-burst
-  [rate_limit_burst: <int> | default = 0]
-
-  # (advanced) Enable backoff and retry when we hit ratelimits.
-  # CLI flag: -ruler.client.backoff-on-ratelimits
-  [backoff_on_ratelimits: <boolean> | default = false]
-
-  backoff_config:
-    # (advanced) Minimum delay when backing off.
-    # CLI flag: -ruler.client.backoff-min-period
-    [min_period: <duration> | default = 100ms]
-
-    # (advanced) Maximum delay when backing off.
-    # CLI flag: -ruler.client.backoff-max-period
-    [max_period: <duration> | default = 10s]
-
-    # (advanced) Number of times to backoff and retry before failing.
-    # CLI flag: -ruler.client.backoff-retries
-    [max_retries: <int> | default = 10]
-
-  # (advanced) Enable TLS in the GRPC client. This flag needs to be enabled when
-  # any other TLS flag is set. If set to false, insecure connection to gRPC
-  # server will be used.
-  # CLI flag: -ruler.client.tls-enabled
-  [tls_enabled: <boolean> | default = false]
-
-  # (advanced) Path to the client certificate file, which will be used for
-  # authenticating with the server. Also requires the key path to be configured.
-  # CLI flag: -ruler.client.tls-cert-path
-  [tls_cert_path: <string> | default = ""]
-
-  # (advanced) Path to the key file for the client certificate. Also requires
-  # the client certificate to be configured.
-  # CLI flag: -ruler.client.tls-key-path
-  [tls_key_path: <string> | default = ""]
-
-  # (advanced) Path to the CA certificates file to validate server certificate
-  # against. If not set, the host's root CA certificates are used.
-  # CLI flag: -ruler.client.tls-ca-path
-  [tls_ca_path: <string> | default = ""]
-
-  # (advanced) Override the expected name on the server certificate.
-  # CLI flag: -ruler.client.tls-server-name
-  [tls_server_name: <string> | default = ""]
-
-  # (advanced) Skip validating server certificate.
-  # CLI flag: -ruler.client.tls-insecure-skip-verify
-  [tls_insecure_skip_verify: <boolean> | default = false]
+# Configures the gRPC client used to communicate between ruler instances.
+# The CLI flags prefix for this block configuration is: ruler.client
+[ruler_client: <grpc_client>]
 
 # (advanced) How frequently to evaluate rules
 # CLI flag: -ruler.evaluation-interval
@@ -1388,7 +1292,7 @@ ring:
 
   # (advanced) Period at which to heartbeat to the ring. 0 = disabled.
   # CLI flag: -ruler.ring.heartbeat-period
-  [heartbeat_period: <duration> | default = 5s]
+  [heartbeat_period: <duration> | default = 15s]
 
   # (advanced) The heartbeat timeout after which rulers are considered unhealthy
   # within the ring. 0 = never (timeout disabled).
@@ -1444,74 +1348,11 @@ query_frontend:
   # CLI flag: -ruler.query-frontend.address
   [address: <string> | default = ""]
 
-  grpc_client_config:
-    # (advanced) gRPC client max receive message size (bytes).
-    # CLI flag: -ruler.query-frontend.grpc-client-config.grpc-max-recv-msg-size
-    [max_recv_msg_size: <int> | default = 104857600]
-
-    # (advanced) gRPC client max send message size (bytes).
-    # CLI flag: -ruler.query-frontend.grpc-client-config.grpc-max-send-msg-size
-    [max_send_msg_size: <int> | default = 104857600]
-
-    # (advanced) Use compression when sending messages. Supported values are:
-    # 'gzip', 'snappy' and '' (disable compression)
-    # CLI flag: -ruler.query-frontend.grpc-client-config.grpc-compression
-    [grpc_compression: <string> | default = ""]
-
-    # (advanced) Rate limit for gRPC client; 0 means disabled.
-    # CLI flag: -ruler.query-frontend.grpc-client-config.grpc-client-rate-limit
-    [rate_limit: <float> | default = 0]
-
-    # (advanced) Rate limit burst for gRPC client.
-    # CLI flag: -ruler.query-frontend.grpc-client-config.grpc-client-rate-limit-burst
-    [rate_limit_burst: <int> | default = 0]
-
-    # (advanced) Enable backoff and retry when we hit ratelimits.
-    # CLI flag: -ruler.query-frontend.grpc-client-config.backoff-on-ratelimits
-    [backoff_on_ratelimits: <boolean> | default = false]
-
-    backoff_config:
-      # (advanced) Minimum delay when backing off.
-      # CLI flag: -ruler.query-frontend.grpc-client-config.backoff-min-period
-      [min_period: <duration> | default = 100ms]
-
-      # (advanced) Maximum delay when backing off.
-      # CLI flag: -ruler.query-frontend.grpc-client-config.backoff-max-period
-      [max_period: <duration> | default = 10s]
-
-      # (advanced) Number of times to backoff and retry before failing.
-      # CLI flag: -ruler.query-frontend.grpc-client-config.backoff-retries
-      [max_retries: <int> | default = 10]
-
-    # (advanced) Enable TLS in the GRPC client. This flag needs to be enabled
-    # when any other TLS flag is set. If set to false, insecure connection to
-    # gRPC server will be used.
-    # CLI flag: -ruler.query-frontend.grpc-client-config.tls-enabled
-    [tls_enabled: <boolean> | default = false]
-
-    # (advanced) Path to the client certificate file, which will be used for
-    # authenticating with the server. Also requires the key path to be
-    # configured.
-    # CLI flag: -ruler.query-frontend.grpc-client-config.tls-cert-path
-    [tls_cert_path: <string> | default = ""]
-
-    # (advanced) Path to the key file for the client certificate. Also requires
-    # the client certificate to be configured.
-    # CLI flag: -ruler.query-frontend.grpc-client-config.tls-key-path
-    [tls_key_path: <string> | default = ""]
-
-    # (advanced) Path to the CA certificates file to validate server certificate
-    # against. If not set, the host's root CA certificates are used.
-    # CLI flag: -ruler.query-frontend.grpc-client-config.tls-ca-path
-    [tls_ca_path: <string> | default = ""]
-
-    # (advanced) Override the expected name on the server certificate.
-    # CLI flag: -ruler.query-frontend.grpc-client-config.tls-server-name
-    [tls_server_name: <string> | default = ""]
-
-    # (advanced) Skip validating server certificate.
-    # CLI flag: -ruler.query-frontend.grpc-client-config.tls-insecure-skip-verify
-    [tls_insecure_skip_verify: <boolean> | default = false]
+  # Configures the gRPC client used to communicate between the rulers and
+  # query-frontends.
+  # The CLI flags prefix for this block configuration is:
+  # ruler.query-frontend.grpc-client-config
+  [grpc_client_config: <grpc_client>]
 
 tenant_federation:
   # Enable running rule groups against multiple tenants. The tenant IDs involved
@@ -1846,73 +1687,93 @@ The `flusher` block configures the WAL flusher target, used to manually run one-
 The `ingester_client` block configures how the distributors connect to the ingesters.
 
 ```yaml
-grpc_client_config:
-  # (advanced) gRPC client max receive message size (bytes).
-  # CLI flag: -ingester.client.grpc-max-recv-msg-size
-  [max_recv_msg_size: <int> | default = 104857600]
+# Configures the gRPC client used to communicate between distributors and
+# ingesters.
+# The CLI flags prefix for this block configuration is: ingester.client
+[grpc_client_config: <grpc_client>]
+```
 
-  # (advanced) gRPC client max send message size (bytes).
-  # CLI flag: -ingester.client.grpc-max-send-msg-size
-  [max_send_msg_size: <int> | default = 104857600]
+### grpc_client
 
-  # (advanced) Use compression when sending messages. Supported values are:
-  # 'gzip', 'snappy' and '' (disable compression)
-  # CLI flag: -ingester.client.grpc-compression
-  [grpc_compression: <string> | default = ""]
+The `grpc_client` block configures the gRPC client used to communicate between two Mimir components. The supported CLI flags `<prefix>` used to reference this configuration block are:
 
-  # (advanced) Rate limit for gRPC client; 0 means disabled.
-  # CLI flag: -ingester.client.grpc-client-rate-limit
-  [rate_limit: <float> | default = 0]
+- `distributor.forwarding.grpc-client`
+- `ingester.client`
+- `querier.frontend-client`
+- `query-frontend.grpc-client-config`
+- `query-scheduler.grpc-client-config`
+- `ruler.client`
+- `ruler.query-frontend.grpc-client-config`
 
-  # (advanced) Rate limit burst for gRPC client.
-  # CLI flag: -ingester.client.grpc-client-rate-limit-burst
-  [rate_limit_burst: <int> | default = 0]
+&nbsp;
 
-  # (advanced) Enable backoff and retry when we hit ratelimits.
-  # CLI flag: -ingester.client.backoff-on-ratelimits
-  [backoff_on_ratelimits: <boolean> | default = false]
+```yaml
+# (advanced) gRPC client max receive message size (bytes).
+# CLI flag: -<prefix>.grpc-max-recv-msg-size
+[max_recv_msg_size: <int> | default = 104857600]
 
-  backoff_config:
-    # (advanced) Minimum delay when backing off.
-    # CLI flag: -ingester.client.backoff-min-period
-    [min_period: <duration> | default = 100ms]
+# (advanced) gRPC client max send message size (bytes).
+# CLI flag: -<prefix>.grpc-max-send-msg-size
+[max_send_msg_size: <int> | default = 104857600]
 
-    # (advanced) Maximum delay when backing off.
-    # CLI flag: -ingester.client.backoff-max-period
-    [max_period: <duration> | default = 10s]
+# (advanced) Use compression when sending messages. Supported values are:
+# 'gzip', 'snappy' and '' (disable compression)
+# CLI flag: -<prefix>.grpc-compression
+[grpc_compression: <string> | default = ""]
 
-    # (advanced) Number of times to backoff and retry before failing.
-    # CLI flag: -ingester.client.backoff-retries
-    [max_retries: <int> | default = 10]
+# (advanced) Rate limit for gRPC client; 0 means disabled.
+# CLI flag: -<prefix>.grpc-client-rate-limit
+[rate_limit: <float> | default = 0]
 
-  # (advanced) Enable TLS in the GRPC client. This flag needs to be enabled when
-  # any other TLS flag is set. If set to false, insecure connection to gRPC
-  # server will be used.
-  # CLI flag: -ingester.client.tls-enabled
-  [tls_enabled: <boolean> | default = false]
+# (advanced) Rate limit burst for gRPC client.
+# CLI flag: -<prefix>.grpc-client-rate-limit-burst
+[rate_limit_burst: <int> | default = 0]
 
-  # (advanced) Path to the client certificate file, which will be used for
-  # authenticating with the server. Also requires the key path to be configured.
-  # CLI flag: -ingester.client.tls-cert-path
-  [tls_cert_path: <string> | default = ""]
+# (advanced) Enable backoff and retry when we hit ratelimits.
+# CLI flag: -<prefix>.backoff-on-ratelimits
+[backoff_on_ratelimits: <boolean> | default = false]
 
-  # (advanced) Path to the key file for the client certificate. Also requires
-  # the client certificate to be configured.
-  # CLI flag: -ingester.client.tls-key-path
-  [tls_key_path: <string> | default = ""]
+backoff_config:
+  # (advanced) Minimum delay when backing off.
+  # CLI flag: -<prefix>.backoff-min-period
+  [min_period: <duration> | default = 100ms]
 
-  # (advanced) Path to the CA certificates file to validate server certificate
-  # against. If not set, the host's root CA certificates are used.
-  # CLI flag: -ingester.client.tls-ca-path
-  [tls_ca_path: <string> | default = ""]
+  # (advanced) Maximum delay when backing off.
+  # CLI flag: -<prefix>.backoff-max-period
+  [max_period: <duration> | default = 10s]
 
-  # (advanced) Override the expected name on the server certificate.
-  # CLI flag: -ingester.client.tls-server-name
-  [tls_server_name: <string> | default = ""]
+  # (advanced) Number of times to backoff and retry before failing.
+  # CLI flag: -<prefix>.backoff-retries
+  [max_retries: <int> | default = 10]
 
-  # (advanced) Skip validating server certificate.
-  # CLI flag: -ingester.client.tls-insecure-skip-verify
-  [tls_insecure_skip_verify: <boolean> | default = false]
+# (advanced) Enable TLS in the GRPC client. This flag needs to be enabled when
+# any other TLS flag is set. If set to false, insecure connection to gRPC server
+# will be used.
+# CLI flag: -<prefix>.tls-enabled
+[tls_enabled: <boolean> | default = false]
+
+# (advanced) Path to the client certificate file, which will be used for
+# authenticating with the server. Also requires the key path to be configured.
+# CLI flag: -<prefix>.tls-cert-path
+[tls_cert_path: <string> | default = ""]
+
+# (advanced) Path to the key file for the client certificate. Also requires the
+# client certificate to be configured.
+# CLI flag: -<prefix>.tls-key-path
+[tls_key_path: <string> | default = ""]
+
+# (advanced) Path to the CA certificates file to validate server certificate
+# against. If not set, the host's root CA certificates are used.
+# CLI flag: -<prefix>.tls-ca-path
+[tls_ca_path: <string> | default = ""]
+
+# (advanced) Override the expected name on the server certificate.
+# CLI flag: -<prefix>.tls-server-name
+[tls_server_name: <string> | default = ""]
+
+# (advanced) Skip validating server certificate.
+# CLI flag: -<prefix>.tls-insecure-skip-verify
+[tls_insecure_skip_verify: <boolean> | default = false]
 ```
 
 ### frontend_worker
@@ -1920,15 +1781,17 @@ grpc_client_config:
 The `frontend_worker` block configures the worker running within the querier, picking up and executing queries enqueued by the query-frontend or the query-scheduler.
 
 ```yaml
-# Address of the query-frontend component, in host:port format. Only one of
-# -querier.frontend-address or -querier.scheduler-address can be set. If neither
-# is set, queries are only received via HTTP endpoint.
+# Address of the query-frontend component, in host:port format. If multiple
+# query-frontends are running, the host should be a DNS resolving to all
+# query-frontend instances. This option should be set only when query-scheduler
+# component is not in use.
 # CLI flag: -querier.frontend-address
 [frontend_address: <string> | default = ""]
 
-# Address of the query-scheduler component, in host:port format. Only one of
-# -querier.frontend-address or -querier.scheduler-address can be set. If neither
-# is set, queries are only received via HTTP endpoint.
+# Address of the query-scheduler component, in host:port format. The host should
+# resolve to all query-scheduler instances. This option should be set only when
+# query-scheduler component is in use and
+# -query-scheduler.service-discovery-mode is set to 'dns'.
 # CLI flag: -querier.scheduler-address
 [scheduler_address: <string> | default = ""]
 
@@ -1942,73 +1805,10 @@ The `frontend_worker` block configures the worker running within the querier, pi
 # CLI flag: -querier.id
 [id: <string> | default = ""]
 
-grpc_client_config:
-  # (advanced) gRPC client max receive message size (bytes).
-  # CLI flag: -querier.frontend-client.grpc-max-recv-msg-size
-  [max_recv_msg_size: <int> | default = 104857600]
-
-  # (advanced) gRPC client max send message size (bytes).
-  # CLI flag: -querier.frontend-client.grpc-max-send-msg-size
-  [max_send_msg_size: <int> | default = 104857600]
-
-  # (advanced) Use compression when sending messages. Supported values are:
-  # 'gzip', 'snappy' and '' (disable compression)
-  # CLI flag: -querier.frontend-client.grpc-compression
-  [grpc_compression: <string> | default = ""]
-
-  # (advanced) Rate limit for gRPC client; 0 means disabled.
-  # CLI flag: -querier.frontend-client.grpc-client-rate-limit
-  [rate_limit: <float> | default = 0]
-
-  # (advanced) Rate limit burst for gRPC client.
-  # CLI flag: -querier.frontend-client.grpc-client-rate-limit-burst
-  [rate_limit_burst: <int> | default = 0]
-
-  # (advanced) Enable backoff and retry when we hit ratelimits.
-  # CLI flag: -querier.frontend-client.backoff-on-ratelimits
-  [backoff_on_ratelimits: <boolean> | default = false]
-
-  backoff_config:
-    # (advanced) Minimum delay when backing off.
-    # CLI flag: -querier.frontend-client.backoff-min-period
-    [min_period: <duration> | default = 100ms]
-
-    # (advanced) Maximum delay when backing off.
-    # CLI flag: -querier.frontend-client.backoff-max-period
-    [max_period: <duration> | default = 10s]
-
-    # (advanced) Number of times to backoff and retry before failing.
-    # CLI flag: -querier.frontend-client.backoff-retries
-    [max_retries: <int> | default = 10]
-
-  # (advanced) Enable TLS in the GRPC client. This flag needs to be enabled when
-  # any other TLS flag is set. If set to false, insecure connection to gRPC
-  # server will be used.
-  # CLI flag: -querier.frontend-client.tls-enabled
-  [tls_enabled: <boolean> | default = false]
-
-  # (advanced) Path to the client certificate file, which will be used for
-  # authenticating with the server. Also requires the key path to be configured.
-  # CLI flag: -querier.frontend-client.tls-cert-path
-  [tls_cert_path: <string> | default = ""]
-
-  # (advanced) Path to the key file for the client certificate. Also requires
-  # the client certificate to be configured.
-  # CLI flag: -querier.frontend-client.tls-key-path
-  [tls_key_path: <string> | default = ""]
-
-  # (advanced) Path to the CA certificates file to validate server certificate
-  # against. If not set, the host's root CA certificates are used.
-  # CLI flag: -querier.frontend-client.tls-ca-path
-  [tls_ca_path: <string> | default = ""]
-
-  # (advanced) Override the expected name on the server certificate.
-  # CLI flag: -querier.frontend-client.tls-server-name
-  [tls_server_name: <string> | default = ""]
-
-  # (advanced) Skip validating server certificate.
-  # CLI flag: -querier.frontend-client.tls-insecure-skip-verify
-  [tls_insecure_skip_verify: <boolean> | default = false]
+# Configures the gRPC client used to communicate between the queriers and the
+# query-frontends / query-schedulers.
+# The CLI flags prefix for this block configuration is: querier.frontend-client
+[grpc_client_config: <grpc_client>]
 ```
 
 ### etcd
@@ -2020,6 +1820,7 @@ The `etcd` block configures the etcd client. The supported CLI flags `<prefix>` 
 - `distributor.ha-tracker`
 - `distributor.ring`
 - `ingester.ring`
+- `query-scheduler.ring`
 - `ruler.ring`
 - `store-gateway.sharding-ring`
 
@@ -2083,6 +1884,7 @@ The `consul` block configures the consul client. The supported CLI flags `<prefi
 - `distributor.ha-tracker`
 - `distributor.ring`
 - `ingester.ring`
+- `query-scheduler.ring`
 - `ruler.ring`
 - `store-gateway.sharding-ring`
 
@@ -2342,7 +2144,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 [max_label_names_per_series: <int> | default = 30]
 
 # Maximum length accepted for metric metadata. Metadata refers to Metric Name,
-# HELP and UNIT.
+# HELP and UNIT. Longer metadata is dropped except for HELP which is truncated.
 # CLI flag: -validation.max-metadata-length
 [max_metadata_length: <int> | default = 1024]
 
@@ -3190,7 +2992,7 @@ sharding_ring:
 
   # (advanced) Period at which to heartbeat to the ring. 0 = disabled.
   # CLI flag: -compactor.ring.heartbeat-period
-  [heartbeat_period: <duration> | default = 5s]
+  [heartbeat_period: <duration> | default = 15s]
 
   # (advanced) The heartbeat timeout after which compactors are considered
   # unhealthy within the ring. 0 = never (timeout disabled).

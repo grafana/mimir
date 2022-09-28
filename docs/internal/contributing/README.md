@@ -47,7 +47,7 @@ go test ./...
 
 To run the integration tests suite please see "[How integration tests work](./how-integration-tests-work.md)".
 
-If using macOS, make sure you have `gnu-sed` installed; otherwise, some make targets may not work properly.
+If using macOS, make sure you have `gnu-sed` installed; otherwise, some make targets will not work properly.
 
 ### Dependency management
 

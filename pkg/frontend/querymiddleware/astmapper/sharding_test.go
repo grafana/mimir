@@ -6,6 +6,7 @@
 package astmapper
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -507,7 +508,7 @@ func TestShardSummer(t *testing.T) {
 
 		t.Run(tt.in, func(t *testing.T) {
 			stats := NewMapperStats()
-			mapper, err := NewSharding(3, log.NewNopLogger(), stats)
+			mapper, err := NewSharding(context.Background(), 3, log.NewNopLogger(), stats)
 			require.NoError(t, err)
 			expr, err := parser.ParseExpr(tt.in)
 			require.NoError(t, err)
@@ -561,7 +562,7 @@ func TestShardSummerWithEncoding(t *testing.T) {
 	} {
 		t.Run(fmt.Sprintf("[%d]", i), func(t *testing.T) {
 			stats := NewMapperStats()
-			summer, err := newShardSummer(c.shards, vectorSquasher, log.NewNopLogger(), stats)
+			summer, err := newShardSummer(context.Background(), c.shards, vectorSquasher, log.NewNopLogger(), stats)
 			require.Nil(t, err)
 			expr, err := parser.ParseExpr(c.input)
 			require.Nil(t, err)

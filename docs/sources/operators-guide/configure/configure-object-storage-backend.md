@@ -2,7 +2,7 @@
 title: "Configure Grafana Mimir object storage backend"
 menuTitle: "Configure object storage"
 description: "Learn how to configure Grafana Mimir to use different object storage backend implementations."
-weight: 70
+weight: 65
 ---
 
 # Configure Grafana Mimir object storage backend

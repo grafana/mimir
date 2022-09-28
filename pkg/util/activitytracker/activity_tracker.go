@@ -238,7 +238,7 @@ func LoadUnfinishedEntries(file string) ([]Entry, error) {
 	}
 
 	// io.ReadFull returns io.EOF if it reads no more bytes. This is good.
-	if err == io.EOF {
+	if errors.Is(err, io.EOF) {
 		err = nil
 	}
 

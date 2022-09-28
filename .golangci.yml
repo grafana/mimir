@@ -7,6 +7,7 @@ linters:
     - golint
     - gofmt
     - misspell
+    - errorlint
 
 linters-settings:
   errcheck:
@@ -16,6 +17,16 @@ linters-settings:
 
   goimports:
     local-prefixes: "github.com/grafana/mimir"
+
+  errorlint:
+    # Check for plain error comparisons.
+    comparison: true
+
+    # Do not check for plain type assertions and type switches.
+    asserts: false
+
+    # Do not check whether fmt.Errorf uses the %w verb for formatting errors.
+    errorf: false
 
 run:
   timeout: 5m

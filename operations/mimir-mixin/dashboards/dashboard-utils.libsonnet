@@ -79,16 +79,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
         if multi then
           if $._config.singleBinary
-          then d.addMultiTemplate('job', 'cortex_build_info', 'job')
+          then d.addMultiTemplate('job', $._config.dashboard_variables.job_query, 'job')
           else d
-               .addMultiTemplate('cluster', 'cortex_build_info', '%s' % $._config.per_cluster_label)
-               .addMultiTemplate('namespace', 'cortex_build_info{%s=~"$cluster"}' % $._config.per_cluster_label, 'namespace')
+               .addMultiTemplate('cluster', $._config.dashboard_variables.cluster_query, '%s' % $._config.per_cluster_label)
+               .addMultiTemplate('namespace', $._config.dashboard_variables.namespace_query, 'namespace')
         else
           if $._config.singleBinary
-          then d.addTemplate('job', 'cortex_build_info', 'job')
+          then d.addTemplate('job', $._config.dashboard_variables.job_query, 'job')
           else d
-               .addTemplate('cluster', 'cortex_build_info', '%s' % $._config.per_cluster_label, allValue='.*', includeAll=true)
-               .addTemplate('namespace', 'cortex_build_info{%s=~"$cluster"}' % $._config.per_cluster_label, 'namespace'),
+               .addTemplate('cluster', $._config.dashboard_variables.cluster_query, '%s' % $._config.per_cluster_label, allValue='.*', includeAll=true)
+               .addTemplate('namespace', $._config.dashboard_variables.namespace_query, 'namespace'),
 
       addActiveUserSelectorTemplates()::
         self.addTemplate('user', 'cortex_ingester_active_series{%s=~"$cluster", namespace=~"$namespace"}' % $._config.per_cluster_label, 'user'),

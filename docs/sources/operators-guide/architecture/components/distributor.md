@@ -13,15 +13,19 @@ The distributor then divides the data into batches and sends it to multiple [ing
 
 ## Validation
 
-The distributor validates data that it receives before writing the data to the ingesters.
+The distributor cleans and validates data that it receives before writing the data to the ingesters.
 Because a single request can contain valid and invalid metrics, samples, metadata, and exemplars, the distributor only passes valid data to the ingesters. The distributor does not include invalid data in its requests to the ingesters.
 If the request contains invalid data, the distributor returns a 400 HTTP status code and the details appear in the response body.
 The details about the first invalid data are typically logged by the sender, be it Prometheus or Grafana Agent.
 
+The distributor data cleanup includes the following transformation:
+
+- The metric metadata `help` is truncated to fit in the length defined via the `-validation.max-metadata-length` flag.
+
 The distributor validation includes the following checks:
 
 - The metric metadata and labels conform to the [Prometheus exposition format](https://prometheus.io/docs/concepts/data_model/).
-- The metric metadata (`name`, `help`, and `unit`) are not longer than what is defined via the `-validation.max-metadata-length` flag.
+- The metric metadata (`name` and `unit`) are not longer than what is defined via the `-validation.max-metadata-length` flag.
 - The number of labels of each metric is not higher than `-validation.max-label-names-per-series`.
 - Each metric label name is not longer than `-validation.max-length-label-name`.
 - Each metric label value is not longer than `-validation.max-length-label-value`.

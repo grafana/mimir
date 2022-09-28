@@ -25,12 +25,16 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [FEATURE] Add support for OpenShift Routes for Nginx #2908
 * [CHANGE] Nginx: replace topology key previously used in `podAntiAffinity` (`failure-domain.beta.kubernetes.io/zone`) with a different one `topologySpreadConstraints` (`kubernetes.io/hostname`). #2722
 * [CHANGE] Use `topologySpreadConstraints` instead of `podAntiAffinity` by default. #2722
 * [CHANGE] Ingresses for the GEM gateway and nginx will no longer render on Kubernetes versions <1.19. #2872
 * [FEATURE] Add support for `topologySpreadConstraints` to all components; add `topologySpreadConstraints` to GEM gateway, admin-api, and alertmanager, which did not have `podAntiAffinity` previously. #2722
 * [ENHANCEMENT] Document `kubeVersionOverride`. If you rely on `helm template`, use this in your values to set the Kubernetes version. If unset helm will use the kubectl client version as the Kubernetes version with `helm template`, which may cause the chart to render incompatible manifests for the actual server version. #2872
 * [ENHANCEMENT] Support autoscaling/v2 HorizontalPodAutoscaler for nginx autoscaling. This is used when deploying on Kubernetes >= 1.25. #2848
+* [ENHANCEMENT] Monitoring: Add additional flags to conditionally enable log / metric scraping. #2936
+* [ENHANCEMENT] Add podAntiAffinity to sizing plans (small.yaml, large.yaml, capped-small.yaml, capped-large.yaml). #2906
+
 
 ## 3.1.0
 

@@ -4707,17 +4707,24 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 		))
 	})
 
-	t.Run("Drop half of metadata via label value length limit", func(t *testing.T) {
+	t.Run("Drop metadata via label value length limit, except help", func(t *testing.T) {
 		metadataLengthLimit := 20
 		cfg := getDefaultConfig()
 		cfg.limits.MaxMetadataLength = metadataLengthLimit
 		dist, reg := getDistributor(cfg)
 
 		metaDataGen := func(metricIdx int, metricName string) *mimirpb.MetricMetadata {
-			if metricIdx%2 == 0 {
+			if metricIdx%3 == 0 {
 				return &mimirpb.MetricMetadata{
 					Type:             mimirpb.COUNTER,
 					MetricFamilyName: metricName,
+					Help:             strings.Repeat("a", metadataLengthLimit+1),
+					Unit:             "unknown",
+				}
+			} else if metricIdx%3 == 1 {
+				return &mimirpb.MetricMetadata{
+					Type:             mimirpb.COUNTER,
+					MetricFamilyName: strings.Repeat("a", metadataLengthLimit+1),
 					Help:             strings.Repeat("a", metadataLengthLimit+1),
 					Unit:             "unknown",
 				}
@@ -4725,8 +4732,8 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 			return &mimirpb.MetricMetadata{
 				Type:             mimirpb.COUNTER,
 				MetricFamilyName: metricName,
-				Help:             strings.Repeat("a", metadataLengthLimit-1),
-				Unit:             "unknown",
+				Help:             strings.Repeat("a", metadataLengthLimit+1),
+				Unit:             strings.Repeat("a", metadataLengthLimit+1),
 			}
 		}
 
@@ -4742,7 +4749,7 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 			receivedRequests:  1,
 			receivedSamples:   10,
 			receivedExemplars: 10,
-			receivedMetadata:  5})
+			receivedMetadata:  4})
 
 		require.NoError(t, testutil.GatherAndCompare(
 			reg,

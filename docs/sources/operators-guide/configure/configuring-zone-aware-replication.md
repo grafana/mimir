@@ -84,4 +84,4 @@ The [Kubernetes Rollout Operator](https://github.com/grafana/rollout-operator) i
 ## Enabling zone-awareness via the Grafana Mimir Jsonnet
 
 Instead of configuring Grafana Mimir directly, you can use the [Grafana Mimir Jsonnet](https://github.com/grafana/mimir/tree/main/operations/mimir) to enable ingester and store-gateway zone awareness.
-To enable ingester and store-gateway zone awareness, set the top level `cortex_multi_zone_store_gateway_enabled` or `cortex_multi_zone_ingester_enabled` Jsonnet fields to `true`. These flags set the required Grafana Mimir configuration parameters that support ingester and store-gateway zone awareness.
+To enable ingester and store-gateway zone awareness, set the top level `multi_zone_store_gateway_enabled` or `multi_zone_ingester_enabled` Jsonnet fields to `true`. These flags set the required Grafana Mimir configuration parameters that support ingester and store-gateway zone awareness.

@@ -227,13 +227,14 @@ func (a *API) RegisterAPI(httpPathPrefix string, actualCfg interface{}, defaultC
 }
 
 // RegisterRuntimeConfig registers the endpoints associates with the runtime configuration
-func (a *API) RegisterRuntimeConfig(runtimeConfigHandler http.HandlerFunc) {
+func (a *API) RegisterRuntimeConfig(runtimeConfigHandler http.HandlerFunc, userLimitsHandler http.HandlerFunc) {
 	a.indexPage.AddLinks(runtimeConfigWeight, "Current runtime config", []IndexPageLink{
 		{Desc: "Entire runtime config (including overrides)", Path: "/runtime_config"},
 		{Desc: "Only values that differ from the defaults", Path: "/runtime_config?mode=diff"},
 	})
 
 	a.RegisterRoute("/runtime_config", runtimeConfigHandler, false, true, "GET")
+	a.RegisterRoute("/api/v1/user_limits", userLimitsHandler, true, true, "GET")
 }
 
 // RegisterDistributor registers the endpoints associated with the distributor.
@@ -395,6 +396,11 @@ func (a *API) RegisterQueryFrontend2(f *frontendv2.Frontend) {
 }
 
 func (a *API) RegisterQueryScheduler(f *scheduler.Scheduler) {
+	a.indexPage.AddLinks(defaultWeight, "Query-scheduler", []IndexPageLink{
+		{Desc: "Ring status", Path: "/query-scheduler/ring"},
+	})
+	a.RegisterRoute("/query-scheduler/ring", http.HandlerFunc(f.RingHandler), false, true, "GET", "POST")
+
 	schedulerpb.RegisterSchedulerForFrontendServer(a.server.GRPC, f)
 	schedulerpb.RegisterSchedulerForQuerierServer(a.server.GRPC, f)
 }

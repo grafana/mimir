@@ -33,6 +33,7 @@ We consider any deviation from this 100% API compatibility to be a bug, except f
 - Additional API endpoints for creating, removing, modifying alerts, and recording rules.
 - Additional APIs that push metrics (under `/prometheus/api/push`).
 - Additional API endpoints for management of Grafana Mimir, such as the ring. These APIs are not included in any compatibility guarantees.
+- [Delete series API](https://prometheus.io/docs/prometheus/latest/querying/api/#delete-series).
 
 ## Experimental features
 
@@ -87,8 +88,10 @@ The following features are currently experimental:
   - Instant query splitting (`-query-frontend.split-instant-queries-by-interval`)
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
+  - Ring-based service discovery (`-query-scheduler.service-discovery-mode` and `-query-scheduler.ring.*`)
+  - Max number of used instances (`-query-scheduler.max-used-instances`)
 - Store-gateway
-  - `-blocks-storage.bucket-store.index-header-thread-pool-size`
+  - `-blocks-storage.bucket-store.index-header.map-populate-enabled`
 - Blocks Storage, Alertmanager, and Ruler support for partitioning access to the same storage bucket
   - `-alertmanager-storage.storage-prefix`
   - `-blocks-storage.storage-prefix`
@@ -97,6 +100,7 @@ The following features are currently experimental:
   - HTTP API for uploading TSDB blocks
 - Anonymous usage statistics tracking
 - Read-write deployment mode
+- `/api/v1/user_limits` API endpoint
 
 ## Deprecated features
 

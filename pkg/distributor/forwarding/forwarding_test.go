@@ -4,8 +4,10 @@ package forwarding
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"sort"
@@ -17,13 +19,16 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/golang/snappy"
+	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
-
-	"github.com/grafana/dskit/services"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -768,6 +773,161 @@ func BenchmarkRemoteWriteForwarding(b *testing.B) {
 			}
 		})
 	}
+}
+
+func TestForwardingToHTTPGrpcTarget(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().UnixMilli()
+
+	cfg := testConfig
+	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("ignored", flag.NewFlagSet("ignored", flag.ContinueOnError))
+
+	forwarder, reg := newForwarder(t, cfg, true)
+
+	url1, reqs1 := newTestHttpgrpcServer(t, 200)
+	url2, reqs2 := newTestHttpgrpcServer(t, 200)
+
+	rules := validation.ForwardingRules{
+		"metric1": validation.ForwardingRule{Endpoint: httpGrpcPrefix + url1, Ingest: false},
+		"metric2": validation.ForwardingRule{Endpoint: httpGrpcPrefix + url2, Ingest: true},
+	}
+
+	ts := []mimirpb.PreallocTimeseries{
+		newSample(t, now, 1, 100, "__name__", "metric1", "some_label", "foo"),
+		newSample(t, now, 2, 200, "__name__", "metric1", "some_label", "bar"),
+		newSample(t, now, 3, 300, "__name__", "metric2", "some_label", "foo"),
+		newSample(t, now, 4, 400, "__name__", "metric2", "some_label", "bar"),
+	}
+	tsToIngest, errCh := forwarder.Forward(ctx, "", rules, ts)
+
+	// The metric2 should be returned by the forwarding because the matching rule has ingest set to "true".
+	require.Len(t, tsToIngest, 2)
+	requireLabelsEqual(t, tsToIngest[0].Labels, "__name__", "metric2", "some_label", "foo")
+	requireSamplesEqual(t, tsToIngest[0].Samples, now, 3)
+	requireExemplarsEqual(t, tsToIngest[0].Exemplars, now, 300)
+	requireLabelsEqual(t, tsToIngest[1].Labels, "__name__", "metric2", "some_label", "bar")
+	requireSamplesEqual(t, tsToIngest[1].Samples, now, 4)
+	requireExemplarsEqual(t, tsToIngest[1].Exemplars, now, 400)
+
+	// Loop until errCh gets closed, errCh getting closed indicates that all forwarding requests have completed.
+	for err := range errCh {
+		require.NoError(t, err)
+	}
+
+	for _, req := range append(reqs1(), reqs2()...) {
+		ce := ""
+		ct := ""
+
+		for _, h := range req.Headers {
+			if h.Key == "Content-Encoding" {
+				ce = h.Values[0]
+			}
+			if h.Key == "Content-Type" {
+				ct = h.Values[0]
+			}
+		}
+		require.Equal(t, "snappy", ce)
+		require.Equal(t, "application/x-protobuf", ct)
+	}
+
+	bodies := reqs1()
+	require.Len(t, bodies, 1)
+	receivedReq1 := decodeBody(t, bodies[0].Body)
+	require.Len(t, receivedReq1.Timeseries, 2)
+	requireLabelsEqual(t, receivedReq1.Timeseries[0].Labels, "__name__", "metric1", "some_label", "foo")
+	requireSamplesEqual(t, receivedReq1.Timeseries[0].Samples, now, 1)
+	require.Empty(t, receivedReq1.Timeseries[0].Exemplars)
+	requireLabelsEqual(t, receivedReq1.Timeseries[1].Labels, "__name__", "metric1", "some_label", "bar")
+	requireSamplesEqual(t, receivedReq1.Timeseries[1].Samples, now, 2)
+	require.Empty(t, receivedReq1.Timeseries[1].Exemplars)
+
+	bodies = reqs2()
+	require.Len(t, bodies, 1)
+	receivedReq2 := decodeBody(t, bodies[0].Body)
+	require.Len(t, receivedReq2.Timeseries, 2)
+	requireLabelsEqual(t, receivedReq2.Timeseries[0].Labels, "__name__", "metric2", "some_label", "foo")
+	requireSamplesEqual(t, receivedReq2.Timeseries[0].Samples, now, 3)
+	require.Empty(t, receivedReq2.Timeseries[0].Exemplars)
+	requireLabelsEqual(t, receivedReq2.Timeseries[1].Labels, "__name__", "metric2", "some_label", "bar")
+	requireSamplesEqual(t, receivedReq2.Timeseries[1].Samples, now, 4)
+	require.Empty(t, receivedReq2.Timeseries[1].Exemplars)
+
+	expectedMetrics := `
+	# HELP cortex_distributor_forward_requests_total The total number of requests the Distributor made to forward samples.
+	# TYPE cortex_distributor_forward_requests_total counter
+	cortex_distributor_forward_requests_total{} 2
+	# HELP cortex_distributor_forward_samples_total The total number of samples the Distributor forwarded.
+	# TYPE cortex_distributor_forward_samples_total counter
+	cortex_distributor_forward_samples_total{} 4
+	# TYPE cortex_distributor_forward_grpc_clients gauge
+	# HELP cortex_distributor_forward_grpc_clients Number of gRPC clients used by Distributor forwarder.
+	cortex_distributor_forward_grpc_clients 2
+`
+
+	require.NoError(t, testutil.GatherAndCompare(
+		reg,
+		strings.NewReader(expectedMetrics),
+		"cortex_distributor_forward_requests_total",
+		"cortex_distributor_forward_samples_total",
+		"cortex_distributor_forward_grpc_clients",
+	))
+}
+
+func newTestHttpgrpcServer(tb testing.TB, status int) (string, func() []*httpgrpc.HTTPRequest) {
+	tb.Helper()
+
+	server := grpc.NewServer()
+
+	// Register handler for httpgrpc
+	hs := &httpgrpcServer{status: int32(status)}
+	httpgrpc.RegisterHTTPServer(server, hs)
+
+	// Register health server (pool requires health checks to pass).
+	grpc_health_v1.RegisterHealthServer(server, healthServer{})
+
+	l, err := net.Listen("tcp", "")
+	require.NoError(tb, err)
+
+	go func() {
+		_ = server.Serve(l)
+	}()
+	tb.Cleanup(func() {
+		_ = l.Close()
+		server.Stop()
+	})
+
+	return l.Addr().String(), hs.getRequests
+}
+
+type httpgrpcServer struct {
+	mu       sync.Mutex
+	requests []*httpgrpc.HTTPRequest
+	status   int32
+}
+
+func (h *httpgrpcServer) Handle(_ context.Context, httpRequest *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error) {
+	h.mu.Lock()
+	h.requests = append(h.requests, httpRequest)
+	h.mu.Unlock()
+
+	return &httpgrpc.HTTPResponse{
+		Code: h.status,
+	}, nil
+}
+
+func (h *httpgrpcServer) getRequests() []*httpgrpc.HTTPRequest {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]*httpgrpc.HTTPRequest(nil), h.requests...)
+}
+
+type healthServer struct{}
+
+func (healthServer) Check(context.Context, *grpc_health_v1.HealthCheckRequest) (*grpc_health_v1.HealthCheckResponse, error) {
+	return &grpc_health_v1.HealthCheckResponse{Status: grpc_health_v1.HealthCheckResponse_SERVING}, nil
+}
+func (healthServer) Watch(*grpc_health_v1.HealthCheckRequest, grpc_health_v1.Health_WatchServer) error {
+	return status.Errorf(codes.Unimplemented, "method Watch not implemented")
 }
 
 type noopRoundTripper struct{}

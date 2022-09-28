@@ -16,10 +16,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager-storage.gcs.bucket-name string
     	GCS bucket name
   -alertmanager-storage.gcs.service-account string
-    	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path. If empty, fallback to Google default logic: 
-    	1. A JSON file whose path is specified by the GOOGLE_APPLICATION_CREDENTIALS environment variable. For workload identity federation, refer to https://cloud.google.com/iam/docs/how-to#using-workload-identity-federation on how to generate the JSON configuration file for on-prem/non-Google cloud platforms.
-    	2. A JSON file in a location known to the gcloud command-line tool: $HOME/.config/gcloud/application_default_credentials.json.
-    	3. On Google Compute Engine it fetches credentials from the metadata server.
+    	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path.
   -alertmanager-storage.local.path string
     	Path at which alertmanager configurations are stored.
   -alertmanager-storage.s3.access-key-id string
@@ -145,10 +142,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.gcs.bucket-name string
     	GCS bucket name
   -blocks-storage.gcs.service-account string
-    	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path. If empty, fallback to Google default logic: 
-    	1. A JSON file whose path is specified by the GOOGLE_APPLICATION_CREDENTIALS environment variable. For workload identity federation, refer to https://cloud.google.com/iam/docs/how-to#using-workload-identity-federation on how to generate the JSON configuration file for on-prem/non-Google cloud platforms.
-    	2. A JSON file in a location known to the gcloud command-line tool: $HOME/.config/gcloud/application_default_credentials.json.
-    	3. On Google Compute Engine it fetches credentials from the metadata server.
+    	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path.
   -blocks-storage.s3.access-key-id string
     	S3 access key ID
   -blocks-storage.s3.bucket-name string
@@ -214,10 +208,7 @@ Usage of ./cmd/mimir/mimir:
   -common.storage.gcs.bucket-name string
     	GCS bucket name
   -common.storage.gcs.service-account string
-    	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path. If empty, fallback to Google default logic: 
-    	1. A JSON file whose path is specified by the GOOGLE_APPLICATION_CREDENTIALS environment variable. For workload identity federation, refer to https://cloud.google.com/iam/docs/how-to#using-workload-identity-federation on how to generate the JSON configuration file for on-prem/non-Google cloud platforms.
-    	2. A JSON file in a location known to the gcloud command-line tool: $HOME/.config/gcloud/application_default_credentials.json.
-    	3. On Google Compute Engine it fetches credentials from the metadata server.
+    	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path.
   -common.storage.s3.access-key-id string
     	S3 access key ID
   -common.storage.s3.bucket-name string
@@ -385,7 +376,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.cardinality-analysis-enabled
     	Enables endpoints used for cardinality analysis.
   -querier.frontend-address string
-    	Address of the query-frontend component, in host:port format. Only one of -querier.frontend-address or -querier.scheduler-address can be set. If neither is set, queries are only received via HTTP endpoint.
+    	Address of the query-frontend component, in host:port format. If multiple query-frontends are running, the host should be a DNS resolving to all query-frontend instances. This option should be set only when query-scheduler component is not in use.
   -querier.label-names-and-values-results-max-size-bytes int
     	Maximum size in bytes of distinct label names and values. When querier receives response from ingester, it merges the response with responses from other ingesters. This maximum size limit is applied to the merged(distinct) results. If the limit is reached, an error is returned. (default 419430400)
   -querier.label-values-max-cardinality-label-names-per-request int
@@ -405,7 +396,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.max-samples int
     	Maximum number of samples a single query can load into memory. This config option should be set on query-frontend too when query sharding is enabled. (default 50000000)
   -querier.scheduler-address string
-    	Address of the query-scheduler component, in host:port format. Only one of -querier.frontend-address or -querier.scheduler-address can be set. If neither is set, queries are only received via HTTP endpoint.
+    	Address of the query-scheduler component, in host:port format. The host should resolve to all query-scheduler instances. This option should be set only when query-scheduler component is in use and -query-scheduler.service-discovery-mode is set to 'dns'.
   -querier.timeout duration
     	The timeout for a query. This config option should be set on query-frontend too when query sharding is enabled. This also applies to queries evaluated by the ruler (internally or remotely). (default 2m0s)
   -query-frontend.align-querier-with-step
@@ -433,9 +424,21 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.results-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
   -query-frontend.scheduler-address string
-    	DNS hostname used for finding query-schedulers.
+    	Address of the query-scheduler component, in host:port format. The host should resolve to all query-scheduler instances. This option should be set only when query-scheduler component is in use and -query-scheduler.service-discovery-mode is set to 'dns'.
   -query-scheduler.max-outstanding-requests-per-tenant int
     	Maximum number of outstanding requests per tenant per query-scheduler. In-flight requests above this limit will fail with HTTP response status code 429. (default 100)
+  -query-scheduler.ring.consul.hostname string
+    	Hostname and port of Consul. (default "localhost:8500")
+  -query-scheduler.ring.etcd.endpoints string
+    	The etcd endpoints to connect to.
+  -query-scheduler.ring.etcd.password string
+    	Etcd password.
+  -query-scheduler.ring.etcd.username string
+    	Etcd username.
+  -query-scheduler.ring.instance-interface-names string
+    	List of network interface names to look up when finding the instance IP address. (default [<private network interfaces>])
+  -query-scheduler.ring.store string
+    	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
   -ruler-storage.azure.account-key string
     	Azure storage account key
   -ruler-storage.azure.account-name string
@@ -451,10 +454,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler-storage.gcs.bucket-name string
     	GCS bucket name
   -ruler-storage.gcs.service-account string
-    	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path. If empty, fallback to Google default logic: 
-    	1. A JSON file whose path is specified by the GOOGLE_APPLICATION_CREDENTIALS environment variable. For workload identity federation, refer to https://cloud.google.com/iam/docs/how-to#using-workload-identity-federation on how to generate the JSON configuration file for on-prem/non-Google cloud platforms.
-    	2. A JSON file in a location known to the gcloud command-line tool: $HOME/.config/gcloud/application_default_credentials.json.
-    	3. On Google Compute Engine it fetches credentials from the metadata server.
+    	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path.
   -ruler-storage.local.directory string
     	Directory to scan for rules
   -ruler-storage.s3.access-key-id string
@@ -586,7 +586,7 @@ Usage of ./cmd/mimir/mimir:
   -validation.max-length-label-value int
     	Maximum length accepted for label value. This setting also applies to the metric name (default 2048)
   -validation.max-metadata-length int
-    	Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT. (default 1024)
+    	Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT. Longer metadata is dropped except for HELP which is truncated. (default 1024)
   -version
     	Print application version and exit.
 

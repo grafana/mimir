@@ -18,10 +18,14 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	"github.com/grafana/dskit/tenant"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/middleware"
+	"go.opentelemetry.io/collector/pdata/pcommon"
+	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -39,6 +43,56 @@ func TestHandler_otlpWriteNoCompression(t *testing.T) {
 	req := createOTLPRequest(t, createOTLPMetricRequest(t), false)
 	resp := httptest.NewRecorder()
 	handler := OTLPHandler(100000, nil, false, verifyWriteRequestHandler(t, mimirpb.API))
+	handler.ServeHTTP(resp, req)
+	assert.Equal(t, 200, resp.Code)
+}
+
+func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
+	// https://github.com/grafana/mimir/issues/3037 is triggered by a single metric
+	// having two different datapoints that correspond to different Prometheus metrics.
+
+	// For the error to be triggered, md.MetricCount() < len(tsMap), hence we're inserting 3 valid
+	// samples from one metric (len = 3), and one invalid metric (metric count = 2).
+
+	md := pmetric.NewMetrics()
+	const name = "foo"
+	attributes := pcommon.NewMap()
+	attributes.InsertString(model.MetricNameLabel, name)
+
+	metric1 := md.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+	metric1.SetName(name)
+	metric1.SetDataType(pmetric.MetricDataTypeGauge)
+
+	datapoint1 := metric1.Gauge().DataPoints().AppendEmpty()
+	datapoint1.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+	datapoint1.SetDoubleVal(0)
+	attributes.CopyTo(datapoint1.Attributes())
+	datapoint1.Attributes().InsertString("diff_label", "bar")
+
+	datapoint2 := metric1.Gauge().DataPoints().AppendEmpty()
+	datapoint2.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+	datapoint2.SetDoubleVal(0)
+	attributes.CopyTo(datapoint2.Attributes())
+	datapoint2.Attributes().InsertString("diff_label", "baz")
+
+	datapoint3 := metric1.Gauge().DataPoints().AppendEmpty()
+	datapoint3.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+	datapoint3.SetDoubleVal(0)
+	attributes.CopyTo(datapoint3.Attributes())
+	datapoint3.Attributes().InsertString("diff_label", "food")
+
+	metric2 := md.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+	metric2.SetName(name)
+	metric2.SetDataType(pmetric.MetricDataTypeGauge)
+
+	req := createOTLPRequest(t, pmetricotlp.NewRequestFromMetrics(md), false)
+	resp := httptest.NewRecorder()
+	handler := OTLPHandler(100000, nil, false, func(ctx context.Context, request *mimirpb.WriteRequest, cleanup func()) (response *mimirpb.WriteResponse, err error) {
+		assert.Len(t, request.Timeseries, 3)
+		assert.False(t, request.SkipLabelNameValidation)
+		cleanup()
+		return &mimirpb.WriteResponse{}, nil
+	})
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
 }
@@ -264,6 +318,13 @@ func createOTLPRequest(t testing.TB, metricRequest pmetricotlp.Request, compress
 	req, err := http.NewRequest("POST", "http://localhost/", bytes.NewReader(body))
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/x-protobuf")
+	req.Header.Set("X-Scope-OrgID", "test")
+
+	// We need this for testing dropped metrics codepath which requires
+	// tenantID to be present.
+	_, ctx, err := tenant.ExtractTenantIDFromHTTPRequest(req)
+	require.NoError(t, err)
+	req = req.WithContext(ctx)
 
 	if compress {
 		req.Header.Set("Content-Encoding", "gzip")

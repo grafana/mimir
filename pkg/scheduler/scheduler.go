@@ -16,6 +16,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/grpcclient"
+	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	otgrpc "github.com/opentracing-contrib/go-grpc"
 	"github.com/opentracing/opentracing-go"
@@ -31,14 +32,11 @@ import (
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/scheduler/queue"
+	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	"github.com/grafana/mimir/pkg/util/validation"
-)
-
-var (
-	errSchedulerIsNotRunning = errors.New("scheduler is not running")
 )
 
 // Scheduler is responsible for queueing and dispatching queries to Queriers.
@@ -58,6 +56,10 @@ type Scheduler struct {
 
 	pendingRequestsMu sync.Mutex
 	pendingRequests   map[requestKey]*schedulerRequest // Request is kept in this map even after being dispatched to querier. It can still be canceled at that time.
+
+	// The ring is used to let other components discover query-scheduler replicas.
+	// The ring is optional.
+	schedulerLifecycler *ring.BasicLifecycler
 
 	// Subservices manager.
 	subservices        *services.Manager
@@ -87,19 +89,27 @@ type connectedFrontend struct {
 }
 
 type Config struct {
-	MaxOutstandingPerTenant int               `yaml:"max_outstanding_requests_per_tenant"`
-	QuerierForgetDelay      time.Duration     `yaml:"querier_forget_delay" category:"experimental"`
-	GRPCClientConfig        grpcclient.Config `yaml:"grpc_client_config" doc:"description=This configures the gRPC client used to report errors back to the query-frontend."`
+	MaxOutstandingPerTenant int                       `yaml:"max_outstanding_requests_per_tenant"`
+	QuerierForgetDelay      time.Duration             `yaml:"querier_forget_delay" category:"experimental"`
+	GRPCClientConfig        grpcclient.Config         `yaml:"grpc_client_config" doc:"description=This configures the gRPC client used to report errors back to the query-frontend."`
+	ServiceDiscovery        schedulerdiscovery.Config `yaml:",inline"`
 }
 
-func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
+func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.MaxOutstandingPerTenant, "query-scheduler.max-outstanding-requests-per-tenant", 100, "Maximum number of outstanding requests per tenant per query-scheduler. In-flight requests above this limit will fail with HTTP response status code 429.")
 	f.DurationVar(&cfg.QuerierForgetDelay, "query-scheduler.querier-forget-delay", 0, "If a querier disconnects without sending notification about graceful shutdown, the query-scheduler will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.")
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("query-scheduler.grpc-client-config", f)
+	cfg.ServiceDiscovery.RegisterFlags(f, logger)
+}
+
+func (cfg *Config) Validate() error {
+	return cfg.ServiceDiscovery.Validate()
 }
 
 // NewScheduler creates a new Scheduler.
 func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer prometheus.Registerer) (*Scheduler, error) {
+	var err error
+
 	s := &Scheduler{
 		cfg:    cfg,
 		log:    log,
@@ -107,6 +117,7 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 
 		pendingRequests:    map[requestKey]*schedulerRequest{},
 		connectedFrontends: map[string]*connectedFrontend{},
+		subservicesWatcher: services.NewFailureWatcher(),
 	}
 
 	s.queueLength = promauto.With(registerer).NewGaugeVec(prometheus.GaugeOpts{
@@ -143,9 +154,19 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 	})
 
 	s.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(s.cleanupMetricsForInactiveUser)
+	subservices := []services.Service{s.requestQueue, s.activeUsers}
 
-	var err error
-	s.subservices, err = services.NewManager(s.requestQueue, s.activeUsers)
+	// Init the ring only if the ring-based service discovery mode is used.
+	if cfg.ServiceDiscovery.Mode == schedulerdiscovery.ModeRing {
+		s.schedulerLifecycler, err = schedulerdiscovery.NewRingLifecycler(cfg.ServiceDiscovery.SchedulerRing, log, registerer)
+		if err != nil {
+			return nil, err
+		}
+
+		subservices = append(subservices, s.schedulerLifecycler)
+	}
+
+	s.subservices, err = services.NewManager(subservices...)
 	if err != nil {
 		return nil, err
 	}
@@ -198,7 +219,7 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 		msg, err := frontend.Recv()
 		if err != nil {
 			// No need to report this as error, it is expected when query-frontend performs SendClose() (as frontendSchedulerWorker does).
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				return nil
 			}
 			return err
@@ -216,7 +237,7 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 			switch {
 			case err == nil:
 				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
-			case err == queue.ErrTooManyRequests:
+			case errors.Is(err, queue.ErrTooManyRequests):
 				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
 			default:
 				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: err.Error()}
@@ -363,6 +384,11 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 	for s.isRunningOrStopping() {
 		req, idx, err := s.requestQueue.GetNextRequestForQuerier(querier.Context(), lastUserIndex, querierID)
 		if err != nil {
+			// Return a more clear error if the queue is stopped because the query-scheduler is not running.
+			if errors.Is(err, queue.ErrStopped) && !s.isRunning() {
+				return schedulerpb.ErrSchedulerIsNotRunning
+			}
+
 			return err
 		}
 		lastUserIndex = idx
@@ -397,7 +423,7 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 		}
 	}
 
-	return errSchedulerIsNotRunning
+	return schedulerpb.ErrSchedulerIsNotRunning
 }
 
 func (s *Scheduler) NotifyQuerierShutdown(_ context.Context, req *schedulerpb.NotifyQuerierShutdownRequest) (*schedulerpb.NotifyQuerierShutdownResponse, error) {
@@ -486,6 +512,11 @@ func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *schedulerRe
 	}
 }
 
+func (s *Scheduler) isRunning() bool {
+	st := s.State()
+	return st == services.Running
+}
+
 func (s *Scheduler) isRunningOrStopping() bool {
 	st := s.State()
 	return st == services.Running || st == services.Stopping
@@ -546,4 +577,25 @@ func (s *Scheduler) getConnectedFrontendClientsMetric() float64 {
 	}
 
 	return float64(count)
+}
+
+func (s *Scheduler) RingHandler(w http.ResponseWriter, req *http.Request) {
+	if s.schedulerLifecycler != nil {
+		s.schedulerLifecycler.ServeHTTP(w, req)
+		return
+	}
+
+	ringDisabledPage := `
+		<!DOCTYPE html>
+		<html>
+			<head>
+				<meta charset="UTF-8">
+				<title>Query-scheduler Status</title>
+			</head>
+			<body>
+				<h1>Query-scheduler Status</h1>
+				<p>Query-scheduler hash ring is disabled.</p>
+			</body>
+		</html>`
+	util.WriteHTMLResponse(w, ringDisabledPage)
 }

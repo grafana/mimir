@@ -46,7 +46,7 @@ const (
 
 	MetricMetadataMissingMetricName ID = "metadata-missing-metric-name"
 	MetricMetadataMetricNameTooLong ID = "metric-name-too-long"
-	MetricMetadataHelpTooLong       ID = "help-too-long"
+	MetricMetadataHelpTooLong       ID = "help-too-long" // unused, left here to prevent reuse for different purpose
 	MetricMetadataUnitTooLong       ID = "unit-too-long"
 
 	MaxQueryLength       ID = "max-query-length"

@@ -6,6 +6,8 @@
 package httpgrpcutil
 
 import (
+	"errors"
+
 	"github.com/opentracing/opentracing-go"
 	"github.com/weaveworks/common/httpgrpc"
 )
@@ -38,7 +40,7 @@ func GetParentSpanForRequest(tracer opentracing.Tracer, req *httpgrpc.HTTPReques
 
 	carrier := (*HttpgrpcHeadersCarrier)(req)
 	extracted, err := tracer.Extract(opentracing.HTTPHeaders, carrier)
-	if err == opentracing.ErrSpanContextNotFound {
+	if errors.Is(err, opentracing.ErrSpanContextNotFound) {
 		err = nil
 	}
 	return extracted, err

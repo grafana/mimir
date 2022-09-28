@@ -26,6 +26,7 @@ image:
   repository: grafana/mimir
   # -- Grafana Mimir container image tag. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.tag'
   tag: r203-68b6197
+
   # -- Container pull policy - shared between Grafana Mimir and Grafana Enterprise Metrics
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets - shared between Grafana Mimir and Grafana Enterprise Metrics
@@ -1669,6 +1670,19 @@ nginx:
       - secretName: loki-nginx-tls
         hosts:
           - nginx.loki.example.com
+  # -- Route configuration (for OpenShift only)
+  route:
+    # -- Specifies whether an OpenShift route for the nginx should be created
+    enabled: false
+    # -- Annotations for the nginx route
+    annotations: {}
+    # -- Hostname configuration
+    host: nginx.mimir.example.com
+    # -- TLS configuration for OpenShift Route
+    tls:
+      # -- More details about TLS configuration and termination types: https://docs.openshift.com/container-platform/3.11/architecture/networking/routes.html#secured-routes
+      # For OpenShift 4: https://docs.openshift.com/container-platform/4.11/networking/routes/secured-routes.html
+      termination: edge
   # Basic auth configuration
   basicAuth:
     # -- Enables basic authentication for nginx
@@ -1882,6 +1896,9 @@ metaMonitoring:
     installOperator: false
 
     logs:
+      # -- Controls whether to create resources PodLogs and LogsInstance resources
+      enabled: true
+
       # -- Default destination for logs. The config here is translated to Promtail client
       # configuration to write logs to this Loki-compatible remote. Optional.
       remote:
@@ -1904,6 +1921,9 @@ metaMonitoring:
       additionalClientConfigs: []
 
     metrics:
+      # -- Controls whether to create MetricsInstance resources and ServiceMonitor resources for scraping Kubernetes (when .scrapeK8s.enabled=true).
+      enabled: true
+
       # -- Default destination for metrics. The config here is translated to remote_write
       # configuration to push metrics to this Prometheus-compatible remote. Optional.
       # Note that you need to configure serviceMonitor in order to have some metrics available.
