@@ -200,6 +200,7 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 	numSeries := stats.LoadFetchedSeries()
 	numBytes := stats.LoadFetchedChunkBytes()
 	numChunks := stats.LoadFetchedChunks()
+	numIndexBytes := stats.LoadFetchedIndexBytes()
 	sharded := strconv.FormatBool(stats.GetShardedQueries() > 0)
 
 	if stats != nil {
@@ -222,6 +223,7 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 		"fetched_series_count", numSeries,
 		"fetched_chunk_bytes", numBytes,
 		"fetched_chunks_count", numChunks,
+		"fetched_index_bytes", numIndexBytes,
 		"sharded_queries", stats.LoadShardedQueries(),
 		"split_queries", stats.LoadSplitQueries(),
 	}, formatQueryString(queryString)...)
