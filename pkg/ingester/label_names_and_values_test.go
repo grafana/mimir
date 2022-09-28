@@ -301,7 +301,7 @@ func TestPostingsLength_ContextCancellation(t *testing.T) {
 func BenchmarkIngester_LabelValuesCardinality(b *testing.B) {
 	const (
 		userID     = "test"
-		numSeries  = 10000
+		numSeries  = 10e6
 		metricName = "metric_name"
 	)
 
@@ -309,16 +309,23 @@ func BenchmarkIngester_LabelValuesCardinality(b *testing.B) {
 	ctx := user.InjectOrgID(context.Background(), userID)
 
 	samples := []mimirpb.Sample{{TimestampMs: 1_000, Value: 1}}
+	writeReq := &mimirpb.WriteRequest{Source: mimirpb.API}
 	for s := 0; s < numSeries; s++ {
-		_, err := in.Push(ctx, writeRequestSingleSeries(labels.Labels{
-			{Name: labels.MetricName, Value: metricName},
-			{Name: "l", Value: strconv.Itoa(s)},
-			{Name: "mod_10", Value: strconv.Itoa(s % 10)},
-			{Name: "mod_100", Value: strconv.Itoa(s % 10)},
-		}, samples))
-		require.NoError(b, err)
+		writeReq.Timeseries = append(writeReq.Timeseries, mimirpb.PreallocTimeseries{
+			TimeSeries: &mimirpb.TimeSeries{
+				Labels: mimirpb.FromLabelsToLabelAdapters(labels.Labels{
+					{Name: labels.MetricName, Value: metricName},
+					// Take prime modulus on the labels, to ensure that each one is a new series.
+					{Name: "mod_10", Value: strconv.Itoa(s % (2 * 5))},
+					{Name: "mod_77", Value: strconv.Itoa(s % (7 * 11))},
+					{Name: "mod_4199", Value: strconv.Itoa(s % (13 * 17 * 19))},
+				}),
+				Samples: samples,
+			},
+		})
 	}
-	in.Flush()
+	_, err := in.Push(ctx, writeReq)
+	require.NoError(b, err)
 
 	for _, bc := range []struct {
 		name       string
@@ -331,41 +338,41 @@ func BenchmarkIngester_LabelValuesCardinality(b *testing.B) {
 			matchers:   nil,
 		},
 		{
-			name:       "no matchers, l label with 10k values, 1 series each",
-			labelNames: []string{"l"},
-			matchers:   nil,
-		},
-		{
-			name:       "no matchers, mod_10 label with 1k values, 10 series each",
+			name:       "no matchers, mod_10 label, 1M series each",
 			labelNames: []string{"mod_10"},
 			matchers:   nil,
 		},
 		{
-			name:       "no matchers, mod_100 label with 100 values, 100 series each",
-			labelNames: []string{"mod_100"},
+			name:       "no matchers, mod_77 label, 130K series each",
+			labelNames: []string{"mod_77"},
 			matchers:   nil,
 		},
 		{
-			name:       "__name__ matcher, l label with 10k values, 1 series each",
-			labelNames: []string{"l"},
-			matchers:   []*client.LabelMatcher{{Type: client.EQUAL, Name: labels.MetricName, Value: metricName}},
+			name:       "no matchers, mod_4199, 2400 series each",
+			labelNames: []string{"mod_4199"},
+			matchers:   nil,
 		},
 		{
-			name:       "__name__ matcher, mod_10 label with 1k values, 10 series each",
+			name:       "__name__ matcher, mod_10 label, 1M series each",
 			labelNames: []string{"mod_10"},
 			matchers:   []*client.LabelMatcher{{Type: client.EQUAL, Name: labels.MetricName, Value: metricName}},
 		},
 		{
-			name:       "__name__ matcher, mod_100 label with 100 values, 100 series each",
-			labelNames: []string{"mod_100"},
+			name:       "__name__ matcher, mod_77 label, 130K series each",
+			labelNames: []string{"mod_77"},
 			matchers:   []*client.LabelMatcher{{Type: client.EQUAL, Name: labels.MetricName, Value: metricName}},
 		},
 		{
-			name:       "__name__ and mod_10 matchers, mod_100 label with 100 values, 100 series each",
+			name:       "__name__ matcher, mod_4199 label, 2400 series each",
+			labelNames: []string{"mod_77"},
+			matchers:   []*client.LabelMatcher{{Type: client.EQUAL, Name: labels.MetricName, Value: metricName}},
+		},
+		{
+			name:       "__name__ and mod_10 matchers, mod_4199 label, 240 series each",
 			labelNames: []string{labels.MetricName, "mod_100"},
 			matchers: []*client.LabelMatcher{
 				{Type: client.EQUAL, Name: labels.MetricName, Value: metricName},
-				{Type: client.EQUAL, Name: "mod_100", Value: "0"},
+				{Type: client.EQUAL, Name: "mod_10", Value: "0"},
 			},
 		},
 	} {
