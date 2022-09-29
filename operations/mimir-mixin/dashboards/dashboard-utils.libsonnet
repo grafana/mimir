@@ -145,7 +145,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   jobMatcher(job)::
     if $._config.singleBinary
     then 'job=~"$job"'
-    else '%s=~"$cluster", job=~"($namespace)/(%s)"' % [$._config.per_cluster_label, job],
+    else '%s=~"$cluster", job=~"%s(%s)"' % [$._config.per_cluster_label, $._config.job_prefix, job],
 
   namespaceMatcher()::
     if $._config.singleBinary

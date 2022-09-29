@@ -50,6 +50,7 @@
 
     // Grouping labels, to uniquely identify and group by {jobs, clusters}
     job_labels: [$._config.per_cluster_label, $._config.per_namespace_label, 'job'],
+    job_prefix: '($namespace)/',
     cluster_labels: [$._config.per_cluster_label, $._config.per_namespace_label],
 
     // PromQL queries used to find clusters and namespaces with Mimir.
