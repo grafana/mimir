@@ -5,12 +5,12 @@ kind: ClusterRole
 metadata:
   name: metamonitoring-values-grafana-agent-operator
   labels:
-    app.kubernetes.io/component: operator
     app.kubernetes.io/name: grafana-agent-operator
     app.kubernetes.io/instance: metamonitoring-values
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: grafana-agent-operator-0.1.12
-    app.kubernetes.io/version: "0.24.2"
+    app.kubernetes.io/component: operator
+    helm.sh/chart: grafana-agent-operator-0.2.5
+    app.kubernetes.io/version: "0.27.1"
 rules:
 - apiGroups: [monitoring.grafana.com]
   resources:
@@ -18,6 +18,7 @@ rules:
   - metricsinstances
   - logsinstances
   - podlogs
+  - integrations
   verbs: [get, list, watch]
 - apiGroups: [monitoring.grafana.com]
   resources:
@@ -25,6 +26,7 @@ rules:
   - metricsinstances/finalizers
   - logsinstances/finalizers
   - podlogs/finalizers
+  - integrations/finalizers
   verbs: [get, list, watch, update]
 - apiGroups: [monitoring.coreos.com]
   resources:
@@ -54,4 +56,5 @@ rules:
   resources:
   - statefulsets
   - daemonsets
+  - deployments
   verbs: [get, list, watch, create, update, patch, delete]

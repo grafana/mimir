@@ -14,6 +14,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/middleware"
@@ -127,7 +128,7 @@ func otelMetricsToTimeseries(ctx context.Context, logger kitlog.Logger, md pmetr
 			return nil, err
 		}
 
-		dropped := md.MetricCount() - len(tsMap)
+		dropped := md.DataPointCount() - sampleCountInMap(tsMap)
 		validation.DiscardedSamples.WithLabelValues(otelParseError, userID).Add(float64(dropped))
 
 		parseErrs := errs.Error()
@@ -201,7 +202,7 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries) pmetricotlp.Request
 		attributes := pcommon.NewMap()
 
 		for _, l := range ts.Labels {
-			if l.Name == "__name__" {
+			if l.Name == model.MetricNameLabel {
 				name = l.Value
 				continue
 			}
@@ -222,4 +223,13 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries) pmetricotlp.Request
 	}
 
 	return pmetricotlp.NewRequestFromMetrics(d)
+}
+
+func sampleCountInMap(tsMap map[string]*prompb.TimeSeries) int {
+	count := 0
+	for _, ts := range tsMap {
+		count += len(ts.Samples)
+	}
+
+	return count
 }

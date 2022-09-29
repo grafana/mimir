@@ -16,11 +16,10 @@ require (
 	github.com/golang/snappy v0.0.4
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.0
-	github.com/grafana/dskit v0.0.0-20220914132351-2835b538fb18
+	github.com/grafana/dskit v0.0.0-20220928083349-b1b307db4f30
 	github.com/grafana/e2e v0.1.1-0.20220519104354-1db01e4751fe
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/json-iterator/go v1.1.12
-	github.com/leanovate/gopter v0.2.4
 	github.com/minio/minio-go/v7 v7.0.36
 	github.com/mitchellh/go-wordwrap v1.0.0
 	github.com/oklog/ulid v1.3.1
@@ -41,7 +40,7 @@ require (
 	github.com/uber/jaeger-client-go v2.30.0+incompatible
 	github.com/weaveworks/common v0.0.0-20220915171148-7b5f6f3e74bc
 	go.uber.org/atomic v1.9.0
-	go.uber.org/goleak v1.1.12
+	go.uber.org/goleak v1.2.0
 	golang.org/x/crypto v0.0.0-20220722155217-630584e8d5aa
 	golang.org/x/net v0.0.0-20220812174116-3211cb980234
 	golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4
@@ -234,9 +233,6 @@ require (
 // Version after v0.24.0 have a change in the email notifier that can panic on certain inputs. See:
 // https://github.com/prometheus/alertmanager/issues/3064
 replace github.com/prometheus/alertmanager => github.com/prometheus/alertmanager v0.24.0
-
-// Override since git.apache.org is down.  The docs say to fetch from github.
-replace git.apache.org/thrift.git => github.com/apache/thrift v0.0.0-20180902110319-2566ecd5d999
 
 // Using our own fork to add custom dialer and improve perf.
 replace github.com/bradfitz/gomemcache => github.com/grafana/gomemcache v0.0.0-20220812141943-44b6cde200bb

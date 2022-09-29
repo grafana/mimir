@@ -12,6 +12,8 @@ type MetricsInPrometheus struct {
 
 	InUseMetricCounts      []MetricCount `json:"in_use_metric_counts"`
 	AdditionalMetricCounts []MetricCount `json:"additional_metric_counts"`
+
+	Errors []string `json:"errors"`
 }
 
 type MetricCount struct {

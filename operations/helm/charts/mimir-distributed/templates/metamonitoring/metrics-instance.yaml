@@ -1,5 +1,5 @@
 {{- with .Values.metaMonitoring.grafanaAgent }}
-{{- if .enabled }}
+{{- if and .enabled .metrics.enabled }}
 apiVersion: monitoring.grafana.com/v1alpha1
 kind: MetricsInstance
 metadata:

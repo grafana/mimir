@@ -46,10 +46,11 @@ const (
 
 	MetricMetadataMissingMetricName ID = "metadata-missing-metric-name"
 	MetricMetadataMetricNameTooLong ID = "metric-name-too-long"
-	MetricMetadataHelpTooLong       ID = "help-too-long"
+	MetricMetadataHelpTooLong       ID = "help-too-long" // unused, left here to prevent reuse for different purpose
 	MetricMetadataUnitTooLong       ID = "unit-too-long"
 
 	MaxQueryLength       ID = "max-query-length"
+	MaxTotalQueryLength  ID = "max-total-query-length"
 	RequestRateLimited   ID = "tenant-max-request-rate"
 	IngestionRateLimited ID = "tenant-max-ingestion-rate"
 	TooManyHAClusters    ID = "tenant-too-many-ha-clusters"

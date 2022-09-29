@@ -1010,7 +1010,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	}
 
 	for _, m := range req.Metadata {
-		if validationErr := validation.ValidateMetadata(d.limits, userID, m); validationErr != nil {
+		if validationErr := validation.CleanAndValidateMetadata(d.limits, userID, m); validationErr != nil {
 			if firstPartialErr == nil {
 				// The metadata info may be retained by validationErr but that's not a problem for this
 				// use case because we format it calling Error() and then we discard it.
@@ -1248,7 +1248,7 @@ func (m *labelNamesAndValuesResponseMerger) toLabelNamesAndValuesResponses() *in
 func (m *labelNamesAndValuesResponseMerger) collectResponses(stream ingester_client.Ingester_LabelNamesAndValuesClient) error {
 	for {
 		message, err := stream.Recv()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		} else if err != nil {
 			return err
@@ -1380,7 +1380,7 @@ func (cm *labelValuesCardinalityConcurrentMap) processLabelValuesCardinalityMess
 	stream ingester_client.Ingester_LabelValuesCardinalityClient) error {
 	for {
 		message, err := stream.Recv()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		} else if err != nil {
 			return err

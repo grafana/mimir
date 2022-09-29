@@ -682,6 +682,7 @@ How to **investigate**:
   - Temporarily scale up queriers to try to stop the bleed
   - Check if a specific tenant is running heavy queries
     - Run `sum by (user) (cortex_query_scheduler_queue_length{namespace="<namespace>"}) > 0` to find tenants with enqueued queries
+    - If remote ruler evaluation is enabled, make sure you understand which one of the read paths (user or ruler queries?) is being affected - check the alert message.
     - Check the `Mimir / Slow Queries` dashboard to find slow queries
   - On multi-tenant Mimir cluster with **shuffle-sharing for queriers disabled**, you may consider to enable it for that specific tenant to reduce its blast radius. To enable queriers shuffle-sharding for a single tenant you need to set the `max_queriers_per_tenant` limit override for the specific tenant (the value should be set to the number of queriers assigned to the tenant).
   - On multi-tenant Mimir cluster with **shuffle-sharding for queriers enabled**, you may consider to temporarily increase the shard size for affected tenants: be aware that this could affect other tenants too, reducing resources available to run other tenant queries. Alternatively, you may choose to do nothing and let Mimir return errors for that given user once the per-tenant queue is full.
@@ -1168,13 +1169,6 @@ The limit protects the system’s stability from potential abuse or mistakes. To
 
 > **Note**: Invalid metrics metadata are skipped during the ingestion, and valid metadata within the same request are ingested.
 
-### err-mimir-help-too-long
-
-This non-critical error occurs when Mimir receives a write request that contains a metric metadata with an help description whose length exceeds the configured limit.
-The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-metadata-length` option.
-
-> **Note**: Invalid metrics metadata are skipped during the ingestion, and valid metadata within the same request are ingested.
-
 ### err-mimir-unit-too-long
 
 This non-critical error occurs when Mimir receives a write request that contains a metric metadata with unit name whose length exceeds the configured limit.
@@ -1382,7 +1376,7 @@ How to **fix** it:
 
 ### err-mimir-max-query-length
 
-This error occurs when the time range of a query exceeds the configured maximum length.
+This error occurs when the time range of a partial (after possible splitting, sharding by the query-frontend) query exceeds the configured maximum length. For a limit on the total query length, see [err-mimir-max-total-query-length](#err-mimir-max-total-query-length).
 
 Both PromQL instant and range queries can fetch metrics data over a period of time.
 A [range query](https://prometheus.io/docs/prometheus/latest/querying/api/#range-queries) requires a `start` and `end` timestamp, so the difference of `end` minus `start` is the time range length of the query.
@@ -1394,6 +1388,18 @@ This time period is what Grafana Mimir calls the _query time range length_ (or _
 Mimir has a limit on the query length.
 This limit is applied to partial queries, after they've split (according to time) by the query-frontend. This limit protects the system’s stability from potential abuse or mistakes.
 To configure the limit on a per-tenant basis, use the `-store.max-query-length` option (or `max_query_length` in the runtime configuration).
+
+### err-mimir-max-total-query-length
+
+This error occurs when the time range of a query exceeds the configured maximum length. For a limit on the partial query length (after query splitting by interval and/or sharding), see [err-mimir-max-query-length](#err-mimir-max-query-length).
+
+PromQL range queries can fetch metrics data over a period of time.
+A [range query](https://prometheus.io/docs/prometheus/latest/querying/api/#range-queries) requires a `start` and `end` timestamp, so the difference of `end` minus `start` is the time range length of the query.
+
+Mimir has a limit on the query length.
+This limit is applied to range queries before they are split (according to time) or sharded by the query-frontend. This limit protects the system’s stability from potential abuse or mistakes.
+To configure the limit on a per-tenant basis, use the `-query-frontend.max-total-query-length` option (or `max_total_query_length` in the runtime configuration).
+If this limit is set to 0, it takes its value from `-store.max-query-length`.
 
 ### err-mimir-tenant-max-request-rate
 

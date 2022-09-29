@@ -14,10 +14,12 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/test"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/user"
 
@@ -26,9 +28,8 @@ import (
 
 func TestRuler(t *testing.T) {
 	testCases := map[string]struct {
-		mockRules map[string]rulespb.RuleGroupList
-		userID    string
-
+		mockRules        map[string]rulespb.RuleGroupList
+		userID           string
 		expectedResponse response
 	}{
 		"rules": {
@@ -159,13 +160,20 @@ func TestRuler(t *testing.T) {
 
 			r := buildRuler(t, cfg, newMockRuleStore(tc.mockRules), rulerAddrMap)
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), r))
-			defer services.StopAndAwaitTerminated(context.Background(), r) //nolint:errcheck
+			t.Cleanup(func() {
+				require.NoError(t, services.StopAndAwaitTerminated(context.Background(), r))
+			})
 
 			// Make sure mock grpc client can find this instance, based on instance address registered in the ring.
 			rulerAddrMap[r.lifecycler.GetInstanceAddr()] = r
 
-			// Ensure all rules are loaded before usage
-			r.syncRules(context.Background(), rulerSyncReasonInitial)
+			// Rules will be synchronized asynchronously, so we wait until the expected number of rule groups
+			// has been synched.
+			test.Poll(t, 5*time.Second, len(tc.mockRules[tc.userID]), func() interface{} {
+				ctx := user.InjectOrgID(context.Background(), tc.userID)
+				rls, _ := r.Rules(ctx, &RulesRequest{})
+				return len(rls.Groups)
+			})
 
 			a := NewAPI(r, r.store, log.NewNopLogger())
 
@@ -199,13 +207,20 @@ func TestRuler_alerts(t *testing.T) {
 
 	r := buildRuler(t, cfg, newMockRuleStore(mockRules), rulerAddrMap)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), r))
-	defer services.StopAndAwaitTerminated(context.Background(), r) //nolint:errcheck
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), r))
+	})
 
 	// Make sure mock grpc client can find this instance, based on instance address registered in the ring.
 	rulerAddrMap[r.lifecycler.GetInstanceAddr()] = r
 
-	// Ensure all rules are loaded before usage
-	r.syncRules(context.Background(), rulerSyncReasonInitial)
+	// Rules will be synchronized asynchronously, so we wait until the expected number of rule groups
+	// has been synched.
+	test.Poll(t, 5*time.Second, len(mockRules["user1"]), func() interface{} {
+		ctx := user.InjectOrgID(context.Background(), "user1")
+		rls, _ := r.Rules(ctx, &RulesRequest{})
+		return len(rls.Groups)
+	})
 
 	a := NewAPI(r, r.store, log.NewNopLogger())
 
@@ -238,9 +253,7 @@ func TestRuler_alerts(t *testing.T) {
 func TestRuler_Create(t *testing.T) {
 	cfg := defaultRulerConfig(t)
 
-	r := newTestRuler(t, cfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)))
-	defer services.StopAndAwaitTerminated(context.Background(), r) //nolint:errcheck
-
+	r := buildAndStartRuler(t, cfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)))
 	a := NewAPI(r, r.store, log.NewNopLogger())
 
 	tc := []struct {
@@ -366,9 +379,7 @@ func TestRuler_DeleteNamespace(t *testing.T) {
 		},
 	}
 
-	r := newTestRuler(t, cfg, newMockRuleStore(mockRulesNamespaces))
-	defer services.StopAndAwaitTerminated(context.Background(), r) //nolint:errcheck
-
+	r := buildAndStartRuler(t, cfg, newMockRuleStore(mockRulesNamespaces))
 	a := NewAPI(r, r.store, log.NewNopLogger())
 
 	router := mux.NewRouter()
@@ -403,9 +414,7 @@ func TestRuler_DeleteNamespace(t *testing.T) {
 func TestRuler_LimitsPerGroup(t *testing.T) {
 	cfg := defaultRulerConfig(t)
 
-	r := newTestRuler(t, cfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)))
-	defer services.StopAndAwaitTerminated(context.Background(), r) //nolint:errcheck
-
+	r := buildAndStartRuler(t, cfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)))
 	r.limits = &ruleLimits{maxRuleGroups: 1, maxRulesPerRuleGroup: 1}
 
 	a := NewAPI(r, r.store, log.NewNopLogger())
@@ -456,9 +465,7 @@ rules:
 func TestRuler_RulerGroupLimits(t *testing.T) {
 	cfg := defaultRulerConfig(t)
 
-	r := newTestRuler(t, cfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)))
-	defer services.StopAndAwaitTerminated(context.Background(), r) //nolint:errcheck
-
+	r := buildAndStartRuler(t, cfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)))
 	r.limits = &ruleLimits{maxRuleGroups: 1, maxRulesPerRuleGroup: 1}
 
 	a := NewAPI(r, r.store, log.NewNopLogger())

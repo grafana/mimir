@@ -1,0 +1,160 @@
+---
+# Source: mimir-distributed/templates/mimir-config.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: graphite-enabled-values-mimir-config
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: graphite-enabled-values
+    app.kubernetes.io/managed-by: Helm
+  namespace: "citestns"
+data:
+  mimir.yaml: |
+    
+    activity_tracker:
+      filepath: /data/metrics-activity.log
+    admin_api:
+      leader_election:
+        enabled: true
+        ring:
+          kvstore:
+            store: memberlist
+    admin_client:
+      storage:
+        s3:
+          access_key_id: grafana-mimir
+          bucket_name: enterprise-metrics-admin
+          endpoint: graphite-enabled-values-minio.citestns.svc:9000
+          insecure: true
+          secret_access_key: supersecret
+        type: s3
+    alertmanager:
+      data_dir: /data
+      enable_api: true
+      external_url: /alertmanager
+    alertmanager_storage:
+      backend: s3
+      s3:
+        access_key_id: grafana-mimir
+        bucket_name: mimir-ruler
+        endpoint: graphite-enabled-values-minio.citestns.svc:9000
+        insecure: true
+        secret_access_key: supersecret
+    auth:
+      type: enterprise
+    blocks_storage:
+      backend: s3
+      bucket_store:
+        sync_dir: /data/tsdb-sync
+      s3:
+        access_key_id: grafana-mimir
+        bucket_name: mimir-tsdb
+        endpoint: graphite-enabled-values-minio.citestns.svc:9000
+        insecure: true
+        secret_access_key: supersecret
+      tsdb:
+        dir: /data/tsdb
+    cluster_name: graphite-enabled-values
+    compactor:
+      data_dir: /data
+    frontend:
+      align_queries_with_step: true
+      log_queries_longer_than: 10s
+      parallelize_shardable_queries: true
+      scheduler_address: graphite-enabled-values-mimir-query-scheduler-headless.citestns.svc:9095
+    frontend_worker:
+      scheduler_address: graphite-enabled-values-mimir-query-scheduler-headless.citestns.svc:9095
+    gateway:
+      proxy:
+        admin_api:
+          url: http://graphite-enabled-values-mimir-admin-api.citestns.svc:8080
+        alertmanager:
+          url: http://graphite-enabled-values-mimir-alertmanager.citestns.svc:8080
+        compactor:
+          url: http://graphite-enabled-values-mimir-compactor.citestns.svc:8080
+        default:
+          url: http://graphite-enabled-values-mimir-admin-api.citestns.svc:8080
+        distributor:
+          url: dns:///graphite-enabled-values-mimir-distributor-headless.citestns.svc.cluster.local:9095
+        graphite_querier:
+          url: http://graphite-enabled-values-mimir-graphite-querier.citestns.svc:8080
+        graphite_write_proxy:
+          url: http://graphite-enabled-values-mimir-graphite-write-proxy.citestns.svc:8080
+        ingester:
+          url: http://graphite-enabled-values-mimir-ingester.citestns.svc:8080
+        query_frontend:
+          url: http://graphite-enabled-values-mimir-query-frontend.citestns.svc:8080
+        ruler:
+          url: http://graphite-enabled-values-mimir-ruler.citestns.svc:8080
+        store_gateway:
+          url: http://graphite-enabled-values-mimir-store-gateway.citestns.svc:8080
+    graphite:
+      enabled: true
+      querier:
+        aggregation_cache:
+          memcached:
+            addresses: dnssrvnoa+graphite-enabled-values-mimir-gr-aggr-cache.citestns.svc:11211
+            timeout: 1s
+        graphite_fallback: http://graphite-enabled-values-mimir-graphite-web.citestns.svc:8080
+        metric_name_cache:
+          memcached:
+            addresses: dnssrvnoa+graphite-enabled-values-mimir-gr-metricname-cache.citestns.svc:11211
+            timeout: 1s
+        remote_read:
+          query_address: http://graphite-enabled-values-mimir-query-frontend.citestns.svc:8080/prometheus
+        schemas:
+          default_storage_aggregations_file: /etc/graphite-proxy/storage-aggregations.conf
+          default_storage_schemas_file: /etc/graphite-proxy/storage-schemas.conf
+      write_proxy:
+        distributor_client:
+          address: dns:///graphite-enabled-values-mimir-distributor.citestns.svc:9095
+    ingester:
+      ring:
+        final_sleep: 0s
+        num_tokens: 512
+        tokens_file_path: /data/tokens
+        unregister_on_shutdown: false
+    ingester_client:
+      grpc_client_config:
+        max_recv_msg_size: 104857600
+        max_send_msg_size: 104857600
+    instrumentation:
+      distributor_client:
+        address: dns:///graphite-enabled-values-mimir-distributor-headless.citestns.svc.cluster.local:9095
+      enabled: true
+    license:
+      path: /license/license.jwt
+    limits:
+      max_query_parallelism: 224
+    memberlist:
+      abort_if_cluster_join_fails: false
+      compression_enabled: false
+      join_members:
+      - dns+graphite-enabled-values-mimir-gossip-ring.citestns.svc.cluster.local:7946
+    querier:
+      max_concurrent: 16
+    query_scheduler:
+      max_outstanding_requests_per_tenant: 1600
+    ruler:
+      alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.graphite-enabled-values-mimir-alertmanager-headless.citestns.svc.cluster.local/alertmanager
+      enable_api: true
+      rule_path: /data
+    ruler_storage:
+      backend: s3
+      s3:
+        access_key_id: grafana-mimir
+        bucket_name: mimir-ruler
+        endpoint: graphite-enabled-values-minio.citestns.svc:9000
+        insecure: true
+        secret_access_key: supersecret
+    runtime_config:
+      file: /var/mimir/runtime.yaml
+    server:
+      grpc_server_max_concurrent_streams: 1000
+      grpc_server_max_connection_age: 2m
+      grpc_server_max_connection_age_grace: 5m
+      grpc_server_max_connection_idle: 1m
+    store_gateway:
+      sharding_ring:
+        tokens_file_path: /data/tokens

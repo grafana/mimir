@@ -5,6 +5,7 @@ package parse
 import (
 	"reflect"
 
+	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/kv/etcd"
 	"github.com/grafana/dskit/kv/memberlist"
@@ -103,6 +104,11 @@ var (
 			Name:       "ingester_client",
 			StructType: reflect.TypeOf(client.Config{}),
 			Desc:       "The ingester_client block configures how the distributors connect to the ingesters.",
+		},
+		{
+			Name:       "grpc_client",
+			StructType: reflect.TypeOf(grpcclient.Config{}),
+			Desc:       "The grpc_client block configures the gRPC client used to communicate between two Mimir components.",
 		},
 		{
 			Name:       "frontend_worker",

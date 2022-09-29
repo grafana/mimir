@@ -71,7 +71,7 @@ func readByteRanges(src io.Reader, dst []byte, byteRanges byteRanges) ([]byte, e
 		// We get an ErrUnexpectedEOF if EOF is reached before we fill allocated dst slice.
 		// Due to how the reading logic works in the bucket store, we may try to overread at
 		// the end of an object, so we consider it legit.
-		if _, err := io.ReadFull(src, dst); err != nil && err != io.ErrUnexpectedEOF {
+		if _, err := io.ReadFull(src, dst); err != nil && !errors.Is(err, io.ErrUnexpectedEOF) {
 			return nil, err
 		}
 		return dst, nil
@@ -95,7 +95,7 @@ func readByteRanges(src io.Reader, dst []byte, byteRanges byteRanges) ([]byte, e
 		}
 
 		if _, err := reader.Discard(discard); err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				err = io.ErrUnexpectedEOF
 			}
 			return nil, errors.Wrap(err, "discard bytes")
@@ -112,11 +112,11 @@ func readByteRanges(src io.Reader, dst []byte, byteRanges byteRanges) ([]byte, e
 			// We get an ErrUnexpectedEOF if EOF is reached before we fill the slice.
 			// Due to how the reading logic works in the bucket store, we may try to overread
 			// the last byte range so, if the error occurrs on the last one, we consider it legit.
-			if err == io.ErrUnexpectedEOF && idx == len(byteRanges)-1 {
+			if errors.Is(err, io.ErrUnexpectedEOF) && idx == len(byteRanges)-1 {
 				return dst, nil
 			}
 
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				err = io.ErrUnexpectedEOF
 			}
 			return nil, errors.Wrap(err, "read byte range")

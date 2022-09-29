@@ -6,9 +6,12 @@
 package astmapper
 
 import (
+	"context"
 	"fmt"
 	"testing"
+	"time"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -112,4 +115,27 @@ func mustLabelMatcher(mt labels.MatchType, name, val string) *labels.Matcher {
 		panic(err)
 	}
 	return m
+}
+
+func TestSharding_BinaryExpressionsDontTakeExponentialTime(t *testing.T) {
+	const expressions = 30
+	const timeout = 10 * time.Second
+
+	query := `vector(1)`
+	// On 11th Gen Intel(R) Core(TM) i7-11700K @ 3.60GHz:
+	// This was taking 3s for 20 expressions, and doubled the time for each extra one.
+	// So checking for 30 expressions would take an hour if processing time is exponential.
+	for i := 2; i <= expressions; i++ {
+		query += fmt.Sprintf("or vector(%d)", i)
+	}
+	expr, err := parser.ParseExpr(query)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	mapper, err := NewSharding(ctx, 2, log.NewNopLogger(), NewMapperStats())
+	require.NoError(t, err)
+
+	_, err = mapper.Map(expr)
+	require.NoError(t, err)
 }

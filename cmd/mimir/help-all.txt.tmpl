@@ -24,10 +24,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager-storage.gcs.bucket-name string
     	GCS bucket name
   -alertmanager-storage.gcs.service-account string
-    	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path. If empty, fallback to Google default logic: 
-    	1. A JSON file whose path is specified by the GOOGLE_APPLICATION_CREDENTIALS environment variable. For workload identity federation, refer to https://cloud.google.com/iam/docs/how-to#using-workload-identity-federation on how to generate the JSON configuration file for on-prem/non-Google cloud platforms.
-    	2. A JSON file in a location known to the gcloud command-line tool: $HOME/.config/gcloud/application_default_credentials.json.
-    	3. On Google Compute Engine it fetches credentials from the metadata server.
+    	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path.
   -alertmanager-storage.local.path string
     	Path at which alertmanager configurations are stored.
   -alertmanager-storage.s3.access-key-id string
@@ -128,12 +125,16 @@ Usage of ./cmd/mimir/mimir:
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -alertmanager.alertmanager-client.tls-cert-path string
     	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -alertmanager.alertmanager-client.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
   -alertmanager.alertmanager-client.tls-enabled
     	Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
   -alertmanager.alertmanager-client.tls-insecure-skip-verify
     	Skip validating server certificate.
   -alertmanager.alertmanager-client.tls-key-path string
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -alertmanager.alertmanager-client.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -alertmanager.alertmanager-client.tls-server-name string
     	Override the expected name on the server certificate.
   -alertmanager.configs.fallback string
@@ -196,12 +197,16 @@ Usage of ./cmd/mimir/mimir:
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -alertmanager.sharding-ring.etcd.tls-cert-path string
     	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -alertmanager.sharding-ring.etcd.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
   -alertmanager.sharding-ring.etcd.tls-enabled
     	Enable TLS.
   -alertmanager.sharding-ring.etcd.tls-insecure-skip-verify
     	Skip validating server certificate.
   -alertmanager.sharding-ring.etcd.tls-key-path string
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -alertmanager.sharding-ring.etcd.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -alertmanager.sharding-ring.etcd.tls-server-name string
     	Override the expected name on the server certificate.
   -alertmanager.sharding-ring.etcd.username string
@@ -342,6 +347,8 @@ Usage of ./cmd/mimir/mimir:
     	Max size - in bytes - of a chunks pool, used to reduce memory allocations. The pool is shared across all tenants. 0 to disable the limit. (default 2147483648)
   -blocks-storage.bucket-store.max-concurrent int
     	Max number of concurrent queries to execute against the long-term storage. The limit is shared across all tenants. (default 100)
+  -blocks-storage.bucket-store.max-concurrent-reject-over-limit
+    	[experimental] True to reject queries above the max number of concurrent queries to execute against long-term storage. If false, queries will block until they are able to run.
   -blocks-storage.bucket-store.meta-sync-concurrency int
     	Number of Go routines to use when syncing block meta files from object storage per tenant. (default 20)
   -blocks-storage.bucket-store.metadata-cache.backend string
@@ -401,10 +408,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.gcs.bucket-name string
     	GCS bucket name
   -blocks-storage.gcs.service-account string
-    	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path. If empty, fallback to Google default logic: 
-    	1. A JSON file whose path is specified by the GOOGLE_APPLICATION_CREDENTIALS environment variable. For workload identity federation, refer to https://cloud.google.com/iam/docs/how-to#using-workload-identity-federation on how to generate the JSON configuration file for on-prem/non-Google cloud platforms.
-    	2. A JSON file in a location known to the gcloud command-line tool: $HOME/.config/gcloud/application_default_credentials.json.
-    	3. On Google Compute Engine it fetches credentials from the metadata server.
+    	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path.
   -blocks-storage.s3.access-key-id string
     	S3 access key ID
   -blocks-storage.s3.bucket-name string
@@ -542,10 +546,7 @@ Usage of ./cmd/mimir/mimir:
   -common.storage.gcs.bucket-name string
     	GCS bucket name
   -common.storage.gcs.service-account string
-    	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path. If empty, fallback to Google default logic: 
-    	1. A JSON file whose path is specified by the GOOGLE_APPLICATION_CREDENTIALS environment variable. For workload identity federation, refer to https://cloud.google.com/iam/docs/how-to#using-workload-identity-federation on how to generate the JSON configuration file for on-prem/non-Google cloud platforms.
-    	2. A JSON file in a location known to the gcloud command-line tool: $HOME/.config/gcloud/application_default_credentials.json.
-    	3. On Google Compute Engine it fetches credentials from the metadata server.
+    	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path.
   -common.storage.s3.access-key-id string
     	S3 access key ID
   -common.storage.s3.bucket-name string
@@ -686,18 +687,22 @@ Usage of ./cmd/mimir/mimir:
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -compactor.ring.etcd.tls-cert-path string
     	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -compactor.ring.etcd.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
   -compactor.ring.etcd.tls-enabled
     	Enable TLS.
   -compactor.ring.etcd.tls-insecure-skip-verify
     	Skip validating server certificate.
   -compactor.ring.etcd.tls-key-path string
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -compactor.ring.etcd.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -compactor.ring.etcd.tls-server-name string
     	Override the expected name on the server certificate.
   -compactor.ring.etcd.username string
     	Etcd username.
   -compactor.ring.heartbeat-period duration
-    	Period at which to heartbeat to the ring. 0 = disabled. (default 5s)
+    	Period at which to heartbeat to the ring. 0 = disabled. (default 15s)
   -compactor.ring.heartbeat-timeout duration
     	The heartbeat timeout after which compactors are considered unhealthy within the ring. 0 = never (timeout disabled). (default 1m0s)
   -compactor.ring.instance-addr string
@@ -748,6 +753,40 @@ Usage of ./cmd/mimir/mimir:
     	This flag can be used to specify label names that to drop during sample ingestion within the distributor and can be repeated in order to drop multiple labels.
   -distributor.forwarding.enabled
     	[experimental] Enables the feature to forward certain metrics in remote_write requests, depending on defined rules.
+  -distributor.forwarding.grpc-client.backoff-max-period duration
+    	Maximum delay when backing off. (default 10s)
+  -distributor.forwarding.grpc-client.backoff-min-period duration
+    	Minimum delay when backing off. (default 100ms)
+  -distributor.forwarding.grpc-client.backoff-on-ratelimits
+    	Enable backoff and retry when we hit ratelimits.
+  -distributor.forwarding.grpc-client.backoff-retries int
+    	Number of times to backoff and retry before failing. (default 10)
+  -distributor.forwarding.grpc-client.grpc-client-rate-limit float
+    	Rate limit for gRPC client; 0 means disabled.
+  -distributor.forwarding.grpc-client.grpc-client-rate-limit-burst int
+    	Rate limit burst for gRPC client.
+  -distributor.forwarding.grpc-client.grpc-compression string
+    	Use compression when sending messages. Supported values are: 'gzip', 'snappy' and '' (disable compression)
+  -distributor.forwarding.grpc-client.grpc-max-recv-msg-size int
+    	gRPC client max receive message size (bytes). (default 104857600)
+  -distributor.forwarding.grpc-client.grpc-max-send-msg-size int
+    	gRPC client max send message size (bytes). (default 104857600)
+  -distributor.forwarding.grpc-client.tls-ca-path string
+    	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
+  -distributor.forwarding.grpc-client.tls-cert-path string
+    	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -distributor.forwarding.grpc-client.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
+  -distributor.forwarding.grpc-client.tls-enabled
+    	Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
+  -distributor.forwarding.grpc-client.tls-insecure-skip-verify
+    	Skip validating server certificate.
+  -distributor.forwarding.grpc-client.tls-key-path string
+    	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -distributor.forwarding.grpc-client.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  -distributor.forwarding.grpc-client.tls-server-name string
+    	Override the expected name on the server certificate.
   -distributor.forwarding.propagate-errors
     	[experimental] If disabled then forwarding requests are always considered to be successful, errors are ignored. (default true)
   -distributor.forwarding.request-concurrency int
@@ -786,12 +825,16 @@ Usage of ./cmd/mimir/mimir:
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -distributor.ha-tracker.etcd.tls-cert-path string
     	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -distributor.ha-tracker.etcd.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
   -distributor.ha-tracker.etcd.tls-enabled
     	Enable TLS.
   -distributor.ha-tracker.etcd.tls-insecure-skip-verify
     	Skip validating server certificate.
   -distributor.ha-tracker.etcd.tls-key-path string
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -distributor.ha-tracker.etcd.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -distributor.ha-tracker.etcd.tls-server-name string
     	Override the expected name on the server certificate.
   -distributor.ha-tracker.etcd.username string
@@ -866,18 +909,22 @@ Usage of ./cmd/mimir/mimir:
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -distributor.ring.etcd.tls-cert-path string
     	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -distributor.ring.etcd.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
   -distributor.ring.etcd.tls-enabled
     	Enable TLS.
   -distributor.ring.etcd.tls-insecure-skip-verify
     	Skip validating server certificate.
   -distributor.ring.etcd.tls-key-path string
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -distributor.ring.etcd.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -distributor.ring.etcd.tls-server-name string
     	Override the expected name on the server certificate.
   -distributor.ring.etcd.username string
     	Etcd username.
   -distributor.ring.heartbeat-period duration
-    	Period at which to heartbeat to the ring. 0 = disabled. (default 5s)
+    	Period at which to heartbeat to the ring. 0 = disabled. (default 15s)
   -distributor.ring.heartbeat-timeout duration
     	The heartbeat timeout after which distributors are considered unhealthy within the ring. 0 = never (timeout disabled). (default 1m0s)
   -distributor.ring.instance-addr string
@@ -942,12 +989,16 @@ Usage of ./cmd/mimir/mimir:
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -ingester.client.tls-cert-path string
     	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -ingester.client.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
   -ingester.client.tls-enabled
     	Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
   -ingester.client.tls-insecure-skip-verify
     	Skip validating server certificate.
   -ingester.client.tls-key-path string
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -ingester.client.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ingester.client.tls-server-name string
     	Override the expected name on the server certificate.
   -ingester.ignore-series-limit-for-metric-names string
@@ -1002,12 +1053,16 @@ Usage of ./cmd/mimir/mimir:
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -ingester.ring.etcd.tls-cert-path string
     	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -ingester.ring.etcd.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
   -ingester.ring.etcd.tls-enabled
     	Enable TLS.
   -ingester.ring.etcd.tls-insecure-skip-verify
     	Skip validating server certificate.
   -ingester.ring.etcd.tls-key-path string
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -ingester.ring.etcd.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ingester.ring.etcd.tls-server-name string
     	Override the expected name on the server certificate.
   -ingester.ring.etcd.username string
@@ -1017,7 +1072,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.ring.final-sleep duration
     	Duration to sleep for before exiting, to ensure metrics are scraped.
   -ingester.ring.heartbeat-period duration
-    	Period at which to heartbeat to the ring. 0 = disabled. (default 5s)
+    	Period at which to heartbeat to the ring. 0 = disabled. (default 15s)
   -ingester.ring.heartbeat-timeout duration
     	The heartbeat timeout after which ingesters are skipped for reads/writes. 0 = never (timeout disabled). This option needs be set on ingesters, distributors, queriers and rulers when running in microservices mode. (default 1m0s)
   -ingester.ring.instance-addr string
@@ -1126,12 +1181,16 @@ Usage of ./cmd/mimir/mimir:
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -memberlist.tls-cert-path string
     	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -memberlist.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
   -memberlist.tls-enabled
     	Enable TLS on the memberlist transport layer.
   -memberlist.tls-insecure-skip-verify
     	Skip validating server certificate.
   -memberlist.tls-key-path string
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -memberlist.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -memberlist.tls-server-name string
     	Override the expected name on the server certificate.
   -memberlist.transport-debug
@@ -1172,12 +1231,16 @@ Usage of ./cmd/mimir/mimir:
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -querier.frontend-client.tls-cert-path string
     	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -querier.frontend-client.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
   -querier.frontend-client.tls-enabled
     	Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
   -querier.frontend-client.tls-insecure-skip-verify
     	Skip validating server certificate.
   -querier.frontend-client.tls-key-path string
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -querier.frontend-client.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -querier.frontend-client.tls-server-name string
     	Override the expected name on the server certificate.
   -querier.id string
@@ -1220,12 +1283,16 @@ Usage of ./cmd/mimir/mimir:
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -querier.store-gateway-client.tls-cert-path string
     	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -querier.store-gateway-client.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
   -querier.store-gateway-client.tls-enabled
     	Enable TLS for gRPC client connecting to store-gateway.
   -querier.store-gateway-client.tls-insecure-skip-verify
     	Skip validating server certificate.
   -querier.store-gateway-client.tls-key-path string
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -querier.store-gateway-client.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -querier.store-gateway-client.tls-server-name string
     	Override the expected name on the server certificate.
   -querier.timeout duration
@@ -1262,12 +1329,16 @@ Usage of ./cmd/mimir/mimir:
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -query-frontend.grpc-client-config.tls-cert-path string
     	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -query-frontend.grpc-client-config.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
   -query-frontend.grpc-client-config.tls-enabled
     	Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
   -query-frontend.grpc-client-config.tls-insecure-skip-verify
     	Skip validating server certificate.
   -query-frontend.grpc-client-config.tls-key-path string
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -query-frontend.grpc-client-config.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -query-frontend.grpc-client-config.tls-server-name string
     	Override the expected name on the server certificate.
   -query-frontend.instance-addr string
@@ -1286,6 +1357,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of queriers that can handle requests for a single tenant. If set to 0 or value higher than number of available queriers, *all* queriers will handle requests for the tenant. Each frontend (or query-scheduler, if used) will select the same set of queriers for the same tenant (given that all queriers are connected to all frontends / query-schedulers). This option only works with queriers connecting to the query-frontend / query-scheduler, not when using downstream URL.
   -query-frontend.max-retries-per-request int
     	Maximum number of retries for a single request; beyond this, the downstream error is returned. (default 5)
+  -query-frontend.max-total-query-length duration
+    	[experimental] Limit the total query time range (end - start time). This limit is enforced in the query-frontend on the received query. Defaults to the value of -store.max-query-length if set to 0.
   -query-frontend.parallelize-shardable-queries
     	True to enable query sharding.
   -query-frontend.querier-forget-delay duration
@@ -1348,16 +1421,22 @@ Usage of ./cmd/mimir/mimir:
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -query-scheduler.grpc-client-config.tls-cert-path string
     	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -query-scheduler.grpc-client-config.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
   -query-scheduler.grpc-client-config.tls-enabled
     	Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
   -query-scheduler.grpc-client-config.tls-insecure-skip-verify
     	Skip validating server certificate.
   -query-scheduler.grpc-client-config.tls-key-path string
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -query-scheduler.grpc-client-config.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -query-scheduler.grpc-client-config.tls-server-name string
     	Override the expected name on the server certificate.
   -query-scheduler.max-outstanding-requests-per-tenant int
     	Maximum number of outstanding requests per tenant per query-scheduler. In-flight requests above this limit will fail with HTTP response status code 429. (default 100)
+  -query-scheduler.max-used-instances int
+    	[experimental] The maximum number of query-scheduler instances to use, regardless how many replicas are running. This option can be set only when -query-scheduler.service-discovery-mode is set to 'ring'. 0 to use all available query-scheduler instances.
   -query-scheduler.querier-forget-delay duration
     	[experimental] If a querier disconnects without sending notification about graceful shutdown, the query-scheduler will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.
   -query-scheduler.ring.consul.acl-token string
@@ -1386,12 +1465,16 @@ Usage of ./cmd/mimir/mimir:
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -query-scheduler.ring.etcd.tls-cert-path string
     	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -query-scheduler.ring.etcd.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
   -query-scheduler.ring.etcd.tls-enabled
     	Enable TLS.
   -query-scheduler.ring.etcd.tls-insecure-skip-verify
     	Skip validating server certificate.
   -query-scheduler.ring.etcd.tls-key-path string
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -query-scheduler.ring.etcd.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -query-scheduler.ring.etcd.tls-server-name string
     	Override the expected name on the server certificate.
   -query-scheduler.ring.etcd.username string
@@ -1443,10 +1526,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler-storage.gcs.bucket-name string
     	GCS bucket name
   -ruler-storage.gcs.service-account string
-    	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path. If empty, fallback to Google default logic: 
-    	1. A JSON file whose path is specified by the GOOGLE_APPLICATION_CREDENTIALS environment variable. For workload identity federation, refer to https://cloud.google.com/iam/docs/how-to#using-workload-identity-federation on how to generate the JSON configuration file for on-prem/non-Google cloud platforms.
-    	2. A JSON file in a location known to the gcloud command-line tool: $HOME/.config/gcloud/application_default_credentials.json.
-    	3. On Google Compute Engine it fetches credentials from the metadata server.
+    	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path.
   -ruler-storage.local.directory string
     	Directory to scan for rules
   -ruler-storage.s3.access-key-id string
@@ -1531,10 +1611,14 @@ Usage of ./cmd/mimir/mimir:
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -ruler.alertmanager-client.tls-cert-path string
     	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -ruler.alertmanager-client.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
   -ruler.alertmanager-client.tls-insecure-skip-verify
     	Skip validating server certificate.
   -ruler.alertmanager-client.tls-key-path string
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -ruler.alertmanager-client.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ruler.alertmanager-client.tls-server-name string
     	Override the expected name on the server certificate.
   -ruler.alertmanager-refresh-interval duration
@@ -1563,12 +1647,16 @@ Usage of ./cmd/mimir/mimir:
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -ruler.client.tls-cert-path string
     	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -ruler.client.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
   -ruler.client.tls-enabled
     	Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
   -ruler.client.tls-insecure-skip-verify
     	Skip validating server certificate.
   -ruler.client.tls-key-path string
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -ruler.client.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ruler.client.tls-server-name string
     	Override the expected name on the server certificate.
   -ruler.disabled-tenants comma-separated-list-of-strings
@@ -1621,12 +1709,16 @@ Usage of ./cmd/mimir/mimir:
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -ruler.query-frontend.grpc-client-config.tls-cert-path string
     	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -ruler.query-frontend.grpc-client-config.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
   -ruler.query-frontend.grpc-client-config.tls-enabled
     	Enable TLS in the GRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
   -ruler.query-frontend.grpc-client-config.tls-insecure-skip-verify
     	Skip validating server certificate.
   -ruler.query-frontend.grpc-client-config.tls-key-path string
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -ruler.query-frontend.grpc-client-config.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ruler.query-frontend.grpc-client-config.tls-server-name string
     	Override the expected name on the server certificate.
   -ruler.query-stats-enabled
@@ -1659,18 +1751,22 @@ Usage of ./cmd/mimir/mimir:
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -ruler.ring.etcd.tls-cert-path string
     	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -ruler.ring.etcd.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
   -ruler.ring.etcd.tls-enabled
     	Enable TLS.
   -ruler.ring.etcd.tls-insecure-skip-verify
     	Skip validating server certificate.
   -ruler.ring.etcd.tls-key-path string
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -ruler.ring.etcd.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ruler.ring.etcd.tls-server-name string
     	Override the expected name on the server certificate.
   -ruler.ring.etcd.username string
     	Etcd username.
   -ruler.ring.heartbeat-period duration
-    	Period at which to heartbeat to the ring. 0 = disabled. (default 5s)
+    	Period at which to heartbeat to the ring. 0 = disabled. (default 15s)
   -ruler.ring.heartbeat-timeout duration
     	The heartbeat timeout after which rulers are considered unhealthy within the ring. 0 = never (timeout disabled). (default 1m0s)
   -ruler.ring.instance-addr string
@@ -1803,12 +1899,16 @@ Usage of ./cmd/mimir/mimir:
     	Path to the CA certificates file to validate server certificate against. If not set, the host's root CA certificates are used.
   -store-gateway.sharding-ring.etcd.tls-cert-path string
     	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
+  -store-gateway.sharding-ring.etcd.tls-cipher-suites string
+    	Override the default cipher suite list (separated by commas).
   -store-gateway.sharding-ring.etcd.tls-enabled
     	Enable TLS.
   -store-gateway.sharding-ring.etcd.tls-insecure-skip-verify
     	Skip validating server certificate.
   -store-gateway.sharding-ring.etcd.tls-key-path string
     	Path to the key file for the client certificate. Also requires the client certificate to be configured.
+  -store-gateway.sharding-ring.etcd.tls-min-version string
+    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -store-gateway.sharding-ring.etcd.tls-server-name string
     	Override the expected name on the server certificate.
   -store-gateway.sharding-ring.etcd.username string
@@ -1856,7 +1956,7 @@ Usage of ./cmd/mimir/mimir:
   -store.max-labels-query-length duration
     	Limit the time range (end - start time) of series, label names and values queries. This limit is enforced in the querier. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.
   -store.max-query-length duration
-    	Limit the query time range (end - start time). This limit is enforced in the query-frontend (on the received query), in the querier (on the query possibly split by the query-frontend) and ruler. 0 to disable.
+    	Limit the query time range (end - start time). This limit is enforced in the querier (on the query possibly split by the query-frontend) and ruler. 0 to disable.
   -target comma-separated-list-of-strings
     	Comma-separated list of components to include in the instantiated process. The default value 'all' includes all components that are required to form a functional Grafana Mimir instance in single-binary mode. Use the '-modules' command line flag to get a list of available components, and to see which components are included with 'all'. (default all)
   -tenant-federation.enabled
@@ -1874,6 +1974,6 @@ Usage of ./cmd/mimir/mimir:
   -validation.max-length-label-value int
     	Maximum length accepted for label value. This setting also applies to the metric name (default 2048)
   -validation.max-metadata-length int
-    	Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT. (default 1024)
+    	Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT. Longer metadata is dropped except for HELP which is truncated. (default 1024)
   -version
     	Print application version and exit.

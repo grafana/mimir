@@ -222,7 +222,7 @@ func (s *state) starting(ctx context.Context) error {
 		// expected when this is the first replica to come up for a user. Note that it is important
 		// to continue and try to read from the state from remote storage, as the replicas may have
 		// lost state due to an all-replica restart.
-		if err != errAllReplicasUserNotFound {
+		if !errors.Is(err, errAllReplicasUserNotFound) {
 			s.fetchReplicaStateFailed.Inc()
 		}
 

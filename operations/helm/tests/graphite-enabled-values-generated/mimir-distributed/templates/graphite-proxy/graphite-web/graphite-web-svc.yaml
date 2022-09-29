@@ -1,0 +1,25 @@
+---
+# Source: mimir-distributed/templates/graphite-proxy/graphite-web/graphite-web-svc.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: graphite-enabled-values-mimir-graphite-web
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: graphite-enabled-values
+    app.kubernetes.io/component: graphite-web
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    {}
+  namespace: "citestns"
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      protocol: TCP
+      name: http-metrics
+      targetPort: http-metrics
+  selector:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: graphite-enabled-values
+    app.kubernetes.io/component: graphite-web

@@ -5,12 +5,12 @@ kind: ClusterRoleBinding
 metadata:
   name: metamonitoring-values-grafana-agent-operator
   labels:
-    app.kubernetes.io/component: operator
     app.kubernetes.io/name: grafana-agent-operator
     app.kubernetes.io/instance: metamonitoring-values
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: grafana-agent-operator-0.1.12
-    app.kubernetes.io/version: "0.24.2"
+    app.kubernetes.io/component: operator
+    helm.sh/chart: grafana-agent-operator-0.2.5
+    app.kubernetes.io/version: "0.27.1"
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole

@@ -245,18 +245,6 @@ func newMetadataMetricNameTooLongError(metadata *mimirpb.MetricMetadata) Validat
 	}
 }
 
-var metadataHelpTooLongMsgFormat = globalerror.MetricMetadataHelpTooLong.MessageWithPerTenantLimitConfig(
-	"received a metric metadata whose help description length exceeds the limit, help: '%.200s' metric name: '%.200s'",
-	maxMetadataLengthFlag)
-
-func newMetadataHelpTooLongError(metadata *mimirpb.MetricMetadata) ValidationError {
-	return metadataValidationError{
-		message:    metadataHelpTooLongMsgFormat,
-		cause:      metadata.GetHelp(),
-		metricName: metadata.GetMetricFamilyName(),
-	}
-}
-
 var metadataUnitTooLongMsgFormat = globalerror.MetricMetadataUnitTooLong.MessageWithPerTenantLimitConfig(
 	"received a metric metadata whose unit name length exceeds the limit, unit: '%.200s' metric name: '%.200s'",
 	maxMetadataLengthFlag)
@@ -273,6 +261,12 @@ func NewMaxQueryLengthError(actualQueryLen, maxQueryLength time.Duration) LimitE
 	return LimitError(globalerror.MaxQueryLength.MessageWithPerTenantLimitConfig(
 		fmt.Sprintf("the query time range exceeds the limit (query length: %s, limit: %s)", actualQueryLen, maxQueryLength),
 		maxQueryLengthFlag))
+}
+
+func NewMaxTotalQueryLengthError(actualQueryLen, maxTotalQueryLength time.Duration) LimitError {
+	return LimitError(globalerror.MaxTotalQueryLength.MessageWithPerTenantLimitConfig(
+		fmt.Sprintf("the total query time range exceeds the limit (query length: %s, limit: %s)", actualQueryLen, maxTotalQueryLength),
+		maxTotalQueryLengthFlag))
 }
 
 func NewRequestRateLimitedError(limit float64, burst int) LimitError {
