@@ -159,7 +159,7 @@ func TestRuler(t *testing.T) {
 
 			rulerAddrMap := map[string]*Ruler{}
 
-			r := buildRuler(t, cfg, newMockRuleStore(tc.mockRules), rulerAddrMap)
+			r := prepareRuler(t, cfg, newMockRuleStore(tc.mockRules), rulerAddrMap)
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), r))
 			t.Cleanup(func() {
 				require.NoError(t, services.StopAndAwaitTerminated(context.Background(), r))
@@ -206,7 +206,7 @@ func TestRuler_alerts(t *testing.T) {
 
 	rulerAddrMap := map[string]*Ruler{}
 
-	r := buildRuler(t, cfg, newMockRuleStore(mockRules), rulerAddrMap)
+	r := prepareRuler(t, cfg, newMockRuleStore(mockRules), rulerAddrMap)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), r))
 	t.Cleanup(func() {
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), r))
@@ -254,7 +254,7 @@ func TestRuler_alerts(t *testing.T) {
 func TestRuler_Create(t *testing.T) {
 	cfg := defaultRulerConfig(t)
 
-	r := buildRuler(t, cfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)), nil, withStart())
+	r := prepareRuler(t, cfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)), nil, withStart())
 	a := NewAPI(r, r.store, log.NewNopLogger())
 
 	tc := []struct {
@@ -380,7 +380,7 @@ func TestRuler_DeleteNamespace(t *testing.T) {
 		},
 	}
 
-	r := buildRuler(t, cfg, newMockRuleStore(mockRulesNamespaces), nil, withStart())
+	r := prepareRuler(t, cfg, newMockRuleStore(mockRulesNamespaces), nil, withStart())
 	a := NewAPI(r, r.store, log.NewNopLogger())
 
 	router := mux.NewRouter()
@@ -415,7 +415,7 @@ func TestRuler_DeleteNamespace(t *testing.T) {
 func TestRuler_LimitsPerGroup(t *testing.T) {
 	cfg := defaultRulerConfig(t)
 
-	r := buildRuler(t, cfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)), nil, withStart())
+	r := prepareRuler(t, cfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)), nil, withStart())
 	r.limits = validation.MockOverrides(func(defaults *validation.Limits) {
 		defaults.RulerMaxRuleGroupsPerTenant = 1
 		defaults.RulerMaxRulesPerRuleGroup = 1
@@ -469,7 +469,7 @@ rules:
 func TestRuler_RulerGroupLimits(t *testing.T) {
 	cfg := defaultRulerConfig(t)
 
-	r := buildRuler(t, cfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)), nil, withStart())
+	r := prepareRuler(t, cfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)), nil, withStart())
 	r.limits = validation.MockOverrides(func(defaults *validation.Limits) {
 		defaults.RulerMaxRuleGroupsPerTenant = 1
 		defaults.RulerMaxRulesPerRuleGroup = 1

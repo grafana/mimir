@@ -172,7 +172,7 @@ func withStart() prepareOption {
 	}
 }
 
-func buildRuler(t *testing.T, cfg Config, storage rulestore.RuleStore, rulerAddrMap map[string]*Ruler, opts ...prepareOption) *Ruler {
+func prepareRuler(t *testing.T, cfg Config, storage rulestore.RuleStore, rulerAddrMap map[string]*Ruler, opts ...prepareOption) *Ruler {
 	options := applyPrepareOptions(opts...)
 
 	noopQueryable, noopQueryFunc, pusher, logger, overrides := testSetup()
@@ -285,7 +285,7 @@ func TestRuler_Rules(t *testing.T) {
 			cfg := defaultRulerConfig(t)
 			cfg.TenantFederation.Enabled = true
 
-			r := buildRuler(t, cfg, newMockRuleStore(tc.mockRules), nil, withStart())
+			r := prepareRuler(t, cfg, newMockRuleStore(tc.mockRules), nil, withStart())
 
 			// Rules will be synchronized asynchronously, so we wait until the expected number of rule groups
 			// has been synched.
@@ -386,7 +386,7 @@ func TestGetRules(t *testing.T) {
 					},
 				}
 
-				r := buildRuler(t, cfg, storage, rulerAddrMap)
+				r := prepareRuler(t, cfg, storage, rulerAddrMap)
 				r.limits = validation.MockOverrides(func(defaults *validation.Limits) {
 					defaults.RulerEvaluationDelay = 0
 					defaults.RulerTenantShardSize = tc.shuffleShardSize
@@ -830,7 +830,7 @@ func TestSharding(t *testing.T) {
 					DisabledTenants: tc.disabledUsers,
 				}
 
-				r := buildRuler(t, cfg, newMockRuleStore(allRules), nil)
+				r := prepareRuler(t, cfg, newMockRuleStore(allRules), nil)
 				r.limits = validation.MockOverrides(func(defaults *validation.Limits) {
 					defaults.RulerEvaluationDelay = 0
 					defaults.RulerTenantShardSize = tc.shuffleShardSize
@@ -1027,7 +1027,7 @@ type ruleGroupKey struct {
 func TestRuler_ListAllRules(t *testing.T) {
 	cfg := defaultRulerConfig(t)
 
-	r := buildRuler(t, cfg, newMockRuleStore(mockRules), nil, withStart())
+	r := prepareRuler(t, cfg, newMockRuleStore(mockRules), nil, withStart())
 
 	router := mux.NewRouter()
 	router.Path("/ruler/rule_groups").Methods(http.MethodGet).HandlerFunc(r.ListAllRules)
