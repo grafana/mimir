@@ -38,7 +38,7 @@ const (
 	maxMetadataLengthFlag      = "validation.max-metadata-length"
 	creationGracePeriodFlag    = "validation.create-grace-period"
 	maxQueryLengthFlag         = "store.max-query-length"
-	maxTotalQueryLengthFlag    = "store.max-total-query-length"
+	maxTotalQueryLengthFlag    = "query-frontend.max-total-query-length"
 	requestRateFlag            = "distributor.request-rate-limit"
 	requestBurstSizeFlag       = "distributor.request-burst-size"
 	ingestionRateFlag          = "distributor.ingestion-rate-limit"

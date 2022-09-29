@@ -2533,7 +2533,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # Limit the total query time range (end - start time). This limit is enforced in
 # the query-frontend on the received query. Defaults to the value of
 # -store.max-query-length if set to 0.
-# CLI flag: -store.max-total-query-length
+# CLI flag: -query-frontend.max-total-query-length
 [max_total_query_length: <duration> | default = 0s]
 
 # Enables endpoints used for cardinality analysis.

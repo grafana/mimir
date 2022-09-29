@@ -33,7 +33,7 @@ func TestNewMaxQueryLengthError(t *testing.T) {
 
 func TestNewTotalMaxQueryLengthError(t *testing.T) {
 	err := NewMaxTotalQueryLengthError(time.Hour, time.Minute)
-	assert.Equal(t, "the total unsharded query time range exceeds the limit (query length: 1h0m0s, limit: 1m0s) (err-mimir-max-total-query-length). To adjust the related per-tenant limit, configure -store.max-total-query-length, or contact your service administrator.", err.Error())
+	assert.Equal(t, "the total unsharded query time range exceeds the limit (query length: 1h0m0s, limit: 1m0s) (err-mimir-max-total-query-length). To adjust the related per-tenant limit, configure -query-frontend.max-total-query-length, or contact your service administrator.", err.Error())
 }
 
 func TestNewRequestRateLimitedError(t *testing.T) {
