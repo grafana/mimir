@@ -10,7 +10,9 @@ weight: 20
 
 # Perform a rolling update to Grafana Mimir
 
-You can use a rolling update strategy to apply configuration changes to Grafana Mimir and to upgrade Grafana Mimir to a newer version. A rolling update results in no downtime to Grafana Mimir.
+You can use a rolling update strategy to apply configuration changes to
+Grafana Mimir, and to upgrade Grafana Mimir to a newer version. A
+rolling update results in no downtime to Grafana Mimir.
 
 ## Monolithic mode
 

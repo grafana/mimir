@@ -70,7 +70,7 @@ For details about setting up Grafana Mimir, refer to [Get started with Grafana M
 
 ### Migrate from Cortex to Grafana Mimir
 
-Please consult the [Migration from Cortex to Grafana](https://grafana.com/docs/mimir/latest/migration-guide/migrating-from-cortex/) guide on how to update the configuration.
+To update the configuration, see [Migrating from Cortex to Grafana Mimir](https://grafana.com/docs/mimir/latest/migration-guide/migrating-from-cortex/).
 
 ## Installation of Grafana Enterprise Metrics
 
@@ -117,8 +117,7 @@ enterprise:
 The default Helm chart values in the `values.yaml` file are configured to allow you to quickly test out Grafana Mimir.
 Alternative values files are included to provide a more realistic configuration that should facilitate a certain level of ingest load.
 
-See [Capacity planning and Pod scheduling](https://grafana.com/docs/mimir/latest/operators-guide/running-production-environment-with-helm/guide/#capacity-planning-and-pod-scheduling)
-for more details about the sizing plans.
+For details about the sizing plans, see [Capacity planning and Pod scheduling](https://grafana.com/docs/mimir/latest/operators-guide/run-production-environment-with-helm/#plan-capacity).
 
 # Contributing and releasing
 
