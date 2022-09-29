@@ -64,7 +64,7 @@ func TestUserLimitsHandler(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 
-			handler := UserLimitsHandler(defaults, newMockTenantLimits(tenantLimits))
+			handler := UserLimitsHandler(defaults, NewMockTenantLimits(tenantLimits))
 			request := httptest.NewRequest("GET", "/api/v1/user_limits", nil)
 			if tc.orgID != "" {
 				ctx := user.InjectOrgID(context.Background(), tc.orgID)

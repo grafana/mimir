@@ -24,6 +24,7 @@ import (
 	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestRuler(t *testing.T) {
@@ -415,7 +416,10 @@ func TestRuler_LimitsPerGroup(t *testing.T) {
 	cfg := defaultRulerConfig(t)
 
 	r := buildAndStartRuler(t, cfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)))
-	r.limits = &ruleLimits{maxRuleGroups: 1, maxRulesPerRuleGroup: 1}
+	r.limits = validation.MockOverrides(func(defaults *validation.Limits) {
+		defaults.RulerMaxRuleGroupsPerTenant = 1
+		defaults.RulerMaxRulesPerRuleGroup = 1
+	})
 
 	a := NewAPI(r, r.store, log.NewNopLogger())
 
@@ -466,7 +470,10 @@ func TestRuler_RulerGroupLimits(t *testing.T) {
 	cfg := defaultRulerConfig(t)
 
 	r := buildAndStartRuler(t, cfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)))
-	r.limits = &ruleLimits{maxRuleGroups: 1, maxRulesPerRuleGroup: 1}
+	r.limits = validation.MockOverrides(func(defaults *validation.Limits) {
+		defaults.RulerMaxRuleGroupsPerTenant = 1
+		defaults.RulerMaxRulesPerRuleGroup = 1
+	})
 
 	a := NewAPI(r, r.store, log.NewNopLogger())
 

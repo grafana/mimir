@@ -50,6 +50,7 @@ import (
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
 	"github.com/grafana/mimir/pkg/ruler/rulestore/bucketclient"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func defaultRulerConfig(t testing.TB) Config {
@@ -76,29 +77,6 @@ func defaultRulerConfig(t testing.TB) Config {
 	return cfg
 }
 
-type ruleLimits struct {
-	evalDelay            time.Duration
-	tenantShard          int
-	maxRulesPerRuleGroup int
-	maxRuleGroups        int
-}
-
-func (r ruleLimits) EvaluationDelay(_ string) time.Duration {
-	return r.evalDelay
-}
-
-func (r ruleLimits) RulerTenantShardSize(_ string) int {
-	return r.tenantShard
-}
-
-func (r ruleLimits) RulerMaxRuleGroupsPerTenant(_ string) int {
-	return r.maxRuleGroups
-}
-
-func (r ruleLimits) RulerMaxRulesPerRuleGroup(_ string) int {
-	return r.maxRulesPerRuleGroup
-}
-
 func testSetup() (storage.QueryableFunc, promRules.QueryFunc, Pusher, log.Logger, RulesLimits) {
 	noopQueryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 		return storage.NoopQuerier(), nil
@@ -114,7 +92,13 @@ func testSetup() (storage.QueryableFunc, promRules.QueryFunc, Pusher, log.Logger
 	l := log.NewLogfmtLogger(os.Stdout)
 	l = level.NewFilter(l, level.AllowInfo())
 
-	return noopQueryable, noopQueryFunc, pusher, l, ruleLimits{evalDelay: 0, maxRuleGroups: 20, maxRulesPerRuleGroup: 15}
+	limits := validation.MockOverrides(func(defaults *validation.Limits) {
+		defaults.RulerEvaluationDelay = 0
+		defaults.RulerMaxRuleGroupsPerTenant = 20
+		defaults.RulerMaxRulesPerRuleGroup = 15
+	})
+
+	return noopQueryable, noopQueryFunc, pusher, l, limits
 }
 
 func newManager(t *testing.T, cfg Config) *DefaultMultiTenantManager {
@@ -379,7 +363,11 @@ func TestGetRules(t *testing.T) {
 				}
 
 				r := buildRuler(t, cfg, storage, rulerAddrMap)
-				r.limits = ruleLimits{evalDelay: 0, tenantShard: tc.shuffleShardSize}
+				r.limits = validation.MockOverrides(func(defaults *validation.Limits) {
+					defaults.RulerEvaluationDelay = 0
+					defaults.RulerTenantShardSize = tc.shuffleShardSize
+				})
+
 				rulerAddrMap[id] = r
 				if r.ring != nil {
 					require.NoError(t, services.StartAndAwaitRunning(context.Background(), r.ring))
@@ -819,7 +807,10 @@ func TestSharding(t *testing.T) {
 				}
 
 				r := buildRuler(t, cfg, newMockRuleStore(allRules), nil)
-				r.limits = ruleLimits{evalDelay: 0, tenantShard: tc.shuffleShardSize}
+				r.limits = validation.MockOverrides(func(defaults *validation.Limits) {
+					defaults.RulerEvaluationDelay = 0
+					defaults.RulerTenantShardSize = tc.shuffleShardSize
+				})
 
 				if forceRing != nil {
 					r.ring = forceRing

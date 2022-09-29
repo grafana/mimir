@@ -30,6 +30,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 type fakePusher struct {
@@ -134,7 +135,11 @@ func TestPusherErrors(t *testing.T) {
 			writes := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
 			failures := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
 
-			pa := NewPusherAppendable(pusher, "user-1", ruleLimits{evalDelay: 10 * time.Second}, writes, failures)
+			limits := validation.MockOverrides(func(defaults *validation.Limits) {
+				defaults.RulerEvaluationDelay = 0
+			})
+
+			pa := NewPusherAppendable(pusher, "user-1", limits, writes, failures)
 
 			lbls, err := parser.ParseMetric("foo_bar")
 			require.NoError(t, err)
