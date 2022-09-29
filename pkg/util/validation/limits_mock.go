@@ -14,7 +14,7 @@ type mockTenantLimits struct {
 
 // NewMockTenantLimits creates a new mockTenantLimits that returns per-tenant limits based on
 // the given map
-func NewMockTenantLimits(limits map[string]*Limits) *mockTenantLimits {
+func NewMockTenantLimits(limits map[string]*Limits) TenantLimits {
 	return &mockTenantLimits{
 		limits: limits,
 	}
