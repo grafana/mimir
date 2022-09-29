@@ -238,11 +238,10 @@ func SampleJsoniterEncode(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 		return
 	}
 
-	smp := *((*Sample)(ptr))
 	stream.WriteArrayStart()
-	marshalTimestamp(smp.TimestampMs, stream)
+	marshalTimestamp(sample.TimestampMs, stream)
 	stream.WriteMore()
-	marshalValue(smp.Value, stream)
+	marshalValue(sample.Value, stream)
 	stream.WriteArrayEnd()
 }
 
