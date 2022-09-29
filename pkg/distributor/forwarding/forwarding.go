@@ -262,6 +262,8 @@ func (t tsByTargets) copyToTarget(target string, dontForwardBefore int64, ts mim
 	if dontForwardBefore > 0 && samplesNeedFiltering(ts.TimeSeries.Samples, dontForwardBefore) {
 		samplesUnfiltered := ts.TimeSeries.Samples
 		defer func() {
+			// After this function returns we need to restore the original sample slice because
+			// we might still want to ingest it into the ingesters.
 			ts.TimeSeries.Samples = samplesUnfiltered
 		}()
 
