@@ -73,7 +73,7 @@ The following sections outline the commands that you can run against Grafana Mim
 The following commands interact with Grafana Mimir Alertmanager configuration and alert template files.
 
 > **Note:** The Mimir Alertmanager exposes the configuration API based on the path that you set via the `-server.path-prefix` flag; it does not use the path of the `-http.alertmanager-http-prefix` flag.
-> With the default configuration of `-server.path-prefix`, the Alertmanager URL used as the `mimirtool` `--address` flag has no path portion.
+> If you run Mimir with the default configuration (`-server.path-prefix`, where the default value is `/`), then only set the hostname for the `--address` flag of the `mimirtool` command; do not set a path-specific address. For example, `/` is correct, and `/alertmanager` is incorrect.
 
 #### Get Alertmanager configuration
 
