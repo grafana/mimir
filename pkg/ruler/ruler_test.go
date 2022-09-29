@@ -149,7 +149,32 @@ func newMockClientsPool(cfg Config, logger log.Logger, reg prometheus.Registerer
 	}
 }
 
-func buildRuler(t *testing.T, cfg Config, storage rulestore.RuleStore, rulerAddrMap map[string]*Ruler) *Ruler {
+type prepareOption func(opts *prepareOptions)
+
+type prepareOptions struct {
+	start bool
+}
+
+func applyPrepareOptions(opts ...prepareOption) prepareOptions {
+	applied := prepareOptions{}
+
+	for _, opt := range opts {
+		opt(&applied)
+	}
+
+	return applied
+}
+
+// withLimits is a prepareOption that automatically starts the ruler.
+func withStart() prepareOption {
+	return func(opts *prepareOptions) {
+		opts.start = true
+	}
+}
+
+func buildRuler(t *testing.T, cfg Config, storage rulestore.RuleStore, rulerAddrMap map[string]*Ruler, opts ...prepareOption) *Ruler {
+	options := applyPrepareOptions(opts...)
+
 	noopQueryable, noopQueryFunc, pusher, logger, overrides := testSetup()
 
 	reg := prometheus.NewRegistry()
@@ -159,17 +184,16 @@ func buildRuler(t *testing.T, cfg Config, storage rulestore.RuleStore, rulerAddr
 
 	ruler, err := newRuler(cfg, manager, reg, logger, storage, overrides, newMockClientsPool(cfg, logger, reg, rulerAddrMap))
 	require.NoError(t, err)
-	return ruler
-}
 
-func buildAndStartRuler(t *testing.T, cfg Config, storage rulestore.RuleStore) *Ruler {
-	ruler := buildRuler(t, cfg, storage, nil)
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ruler))
+	// Start the ruler if requested to do so.
+	if options.start {
+		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ruler))
 
-	// Ensure the service is stopped at the end of the test.
-	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), ruler))
-	})
+		// Ensure the service is stopped at the end of the test.
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), ruler))
+		})
+	}
 
 	return ruler
 }
@@ -261,7 +285,7 @@ func TestRuler_Rules(t *testing.T) {
 			cfg := defaultRulerConfig(t)
 			cfg.TenantFederation.Enabled = true
 
-			r := buildAndStartRuler(t, cfg, newMockRuleStore(tc.mockRules))
+			r := buildRuler(t, cfg, newMockRuleStore(tc.mockRules), nil, withStart())
 
 			// Rules will be synchronized asynchronously, so we wait until the expected number of rule groups
 			// has been synched.
@@ -1003,7 +1027,7 @@ type ruleGroupKey struct {
 func TestRuler_ListAllRules(t *testing.T) {
 	cfg := defaultRulerConfig(t)
 
-	r := buildAndStartRuler(t, cfg, newMockRuleStore(mockRules))
+	r := buildRuler(t, cfg, newMockRuleStore(mockRules), nil, withStart())
 
 	router := mux.NewRouter()
 	router.Path("/ruler/rule_groups").Methods(http.MethodGet).HandlerFunc(r.ListAllRules)
