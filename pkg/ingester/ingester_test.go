@@ -712,8 +712,6 @@ func TestIngester_Push(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			registry := prometheus.NewRegistry()
 
-			registry.MustRegister(validation.DiscardedSamples)
-			validation.DiscardedSamples.Reset()
 			registry.MustRegister(validation.DiscardedMetadata)
 			validation.DiscardedMetadata.Reset()
 

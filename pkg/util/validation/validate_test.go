@@ -51,6 +51,9 @@ func (vm validateMetadataCfg) MaxMetadataLength(userID string) int {
 }
 
 func TestValidateLabels(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	s := NewSampleValidationMetrics(reg)
+
 	var cfg validateLabelsCfg
 	userID := "testUser"
 
@@ -117,13 +120,14 @@ func TestValidateLabels(t *testing.T) {
 			nil,
 		},
 	} {
-		err := ValidateLabels(cfg, userID, mimirpb.FromMetricsToLabelAdapters(c.metric), c.skipLabelNameValidation)
+		err := ValidateLabels(s, cfg, userID, mimirpb.FromMetricsToLabelAdapters(c.metric), c.skipLabelNameValidation)
 		assert.Equal(t, c.err, err, "wrong error")
 	}
 
-	DiscardedSamples.WithLabelValues("random reason", "different user").Inc()
+	randomReason := DiscardedSamplesCounter(reg, "random reason")
+	randomReason.WithLabelValues("different user").Inc()
 
-	require.NoError(t, testutil.GatherAndCompare(prometheus.DefaultGatherer, strings.NewReader(`
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 			# TYPE cortex_discarded_samples_total counter
 			cortex_discarded_samples_total{reason="label_invalid",user="testUser"} 1
@@ -136,9 +140,9 @@ func TestValidateLabels(t *testing.T) {
 			cortex_discarded_samples_total{reason="random reason",user="different user"} 1
 	`), "cortex_discarded_samples_total"))
 
-	DeletePerUserValidationMetrics(userID, util_log.Logger)
+	s.DeleteUserMetrics(userID)
 
-	require.NoError(t, testutil.GatherAndCompare(prometheus.DefaultGatherer, strings.NewReader(`
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 			# TYPE cortex_discarded_samples_total counter
 			cortex_discarded_samples_total{reason="random reason",user="different user"} 1
@@ -310,7 +314,7 @@ func TestValidateLabelOrder(t *testing.T) {
 
 	userID := "testUser"
 
-	actual := ValidateLabels(cfg, userID, []mimirpb.LabelAdapter{
+	actual := ValidateLabels(NewSampleValidationMetrics(nil), cfg, userID, []mimirpb.LabelAdapter{
 		{Name: model.MetricNameLabel, Value: "m"},
 		{Name: "b", Value: "b"},
 		{Name: "a", Value: "a"},
@@ -331,7 +335,7 @@ func TestValidateLabelDuplication(t *testing.T) {
 
 	userID := "testUser"
 
-	actual := ValidateLabels(cfg, userID, []mimirpb.LabelAdapter{
+	actual := ValidateLabels(NewSampleValidationMetrics(nil), cfg, userID, []mimirpb.LabelAdapter{
 		{Name: model.MetricNameLabel, Value: "a"},
 		{Name: model.MetricNameLabel, Value: "b"},
 	}, false)
@@ -341,7 +345,7 @@ func TestValidateLabelDuplication(t *testing.T) {
 	}, model.MetricNameLabel)
 	assert.Equal(t, expected, actual)
 
-	actual = ValidateLabels(cfg, userID, []mimirpb.LabelAdapter{
+	actual = ValidateLabels(NewSampleValidationMetrics(nil), cfg, userID, []mimirpb.LabelAdapter{
 		{Name: model.MetricNameLabel, Value: "a"},
 		{Name: "a", Value: "a"},
 		{Name: "a", Value: "a"},

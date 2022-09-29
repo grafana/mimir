@@ -14,6 +14,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/weaveworks/common/httpgrpc"
@@ -40,8 +41,11 @@ func OTLPHandler(
 	maxRecvMsgSize int,
 	sourceIPs *middleware.SourceIPExtractor,
 	allowSkipLabelNameValidation bool,
+	reg prometheus.Registerer,
 	push Func,
 ) http.Handler {
+	discardedDueToOtelParseError := validation.DiscardedSamplesCounter(reg, otelParseError)
+
 	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, push, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, dst []byte, req *mimirpb.PreallocWriteRequest) ([]byte, error) {
 		var decoderFunc func(buf []byte) (pmetricotlp.Request, error)
 
@@ -109,7 +113,7 @@ func OTLPHandler(
 			return body, err
 		}
 
-		metrics, err := otelMetricsToTimeseries(ctx, logger, otlpReq.Metrics())
+		metrics, err := otelMetricsToTimeseries(ctx, discardedDueToOtelParseError, logger, otlpReq.Metrics())
 		if err != nil {
 			return body, err
 		}
@@ -119,7 +123,7 @@ func OTLPHandler(
 	})
 }
 
-func otelMetricsToTimeseries(ctx context.Context, logger kitlog.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
+func otelMetricsToTimeseries(ctx context.Context, discardedDueToOtelParseError *prometheus.CounterVec, logger kitlog.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
 	tsMap, errs := prometheusremotewrite.FromMetrics(md, prometheusremotewrite.Settings{})
 
 	if errs != nil {
@@ -129,7 +133,7 @@ func otelMetricsToTimeseries(ctx context.Context, logger kitlog.Logger, md pmetr
 		}
 
 		dropped := md.DataPointCount() - sampleCountInMap(tsMap)
-		validation.DiscardedSamples.WithLabelValues(otelParseError, userID).Add(float64(dropped))
+		discardedDueToOtelParseError.WithLabelValues(userID).Add(float64(dropped))
 
 		parseErrs := errs.Error()
 		if len(parseErrs) > maxErrMsgLen {
