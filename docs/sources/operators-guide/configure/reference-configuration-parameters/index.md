@@ -2530,9 +2530,9 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.split-instant-queries-by-interval
 [split_instant_queries_by_interval: <duration> | default = 0s]
 
-# Limit the total query time range (end - start time). This limit is enforced in
-# the query-frontend on the received query. Defaults to the value of
-# -store.max-query-length if set to 0.
+# (experimental) Limit the total query time range (end - start time). This limit
+# is enforced in the query-frontend on the received query. Defaults to the value
+# of -store.max-query-length if set to 0.
 # CLI flag: -query-frontend.max-total-query-length
 [max_total_query_length: <duration> | default = 0s]
 
