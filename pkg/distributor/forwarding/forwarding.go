@@ -265,7 +265,7 @@ func (t tsByTargets) copyToTarget(target string, dontForwardBeforeTs int64, ts m
 			ts.TimeSeries.Samples = samplesUnfiltered
 		}()
 
-		samplesFiltered := filterSamplesBefore(samplesUnfiltered, dontForwardBeforeTs)
+		samplesFiltered := dropSamplesBefore(samplesUnfiltered, dontForwardBeforeTs)
 		if len(samplesFiltered) < len(samplesUnfiltered) {
 			err = errSamplesTooOld
 		}
@@ -354,10 +354,10 @@ func samplesNeedFiltering(samples []mimirpb.Sample, dontForwardBefore int64) boo
 	return samples[0].TimestampMs < dontForwardBefore
 }
 
-// filterSamplesBefore filters a given slice of samples to only contain samples that have timestamps newer or equal to
+// dropSamplesBefore filters a given slice of samples to only contain samples that have timestamps newer or equal to
 // the given timestamp. It relies on the samples being sorted by timestamp.
 // If some samples have been filtered the second return value is true, otherwise it is false.
-func filterSamplesBefore(samples []mimirpb.Sample, dontForwardBefore int64) []mimirpb.Sample {
+func dropSamplesBefore(samples []mimirpb.Sample, dontForwardBefore int64) []mimirpb.Sample {
 	if dontForwardBefore == 0 {
 		return samples
 	}
