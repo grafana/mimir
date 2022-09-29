@@ -365,7 +365,7 @@ func dropSamplesBefore(samples []mimirpb.Sample, dontForwardBefore int64) []mimi
 		}
 	}
 
-	return samples[:0]
+	return nil
 }
 
 func findTargetForLabels(targetEndpoint string, labels []mimirpb.LabelAdapter, rules validation.ForwardingRules) (string, bool) {
