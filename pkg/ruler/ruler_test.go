@@ -118,10 +118,11 @@ func newMockClientsPool(cfg Config, logger log.Logger, reg prometheus.Registerer
 type prepareOption func(opts *prepareOptions)
 
 type prepareOptions struct {
-	limits     RulesLimits
-	logger     log.Logger
-	registerer prometheus.Registerer
-	start      bool
+	limits       RulesLimits
+	logger       log.Logger
+	registerer   prometheus.Registerer
+	rulerAddrMap map[string]*Ruler
+	start        bool
 }
 
 func applyPrepareOptions(opts ...prepareOption) prepareOptions {
@@ -146,18 +147,25 @@ func applyPrepareOptions(opts ...prepareOption) prepareOptions {
 	return applied
 }
 
-// withLimits is a prepareOption that automatically starts the ruler.
+// withStart is a prepareOption that automatically starts the ruler.
 func withStart() prepareOption {
 	return func(opts *prepareOptions) {
 		opts.start = true
 	}
 }
 
-func prepareRuler(t *testing.T, cfg Config, storage rulestore.RuleStore, rulerAddrMap map[string]*Ruler, opts ...prepareOption) *Ruler {
+// withRulerAddrMap is a prepareOption that configures the mapping between rulers and their network addresses.
+func withRulerAddrMap(addrs map[string]*Ruler) prepareOption {
+	return func(opts *prepareOptions) {
+		opts.rulerAddrMap = addrs
+	}
+}
+
+func prepareRuler(t *testing.T, cfg Config, storage rulestore.RuleStore, opts ...prepareOption) *Ruler {
 	options := applyPrepareOptions(opts...)
 	manager := prepareRulerManager(t, cfg, opts...)
 
-	ruler, err := newRuler(cfg, manager, options.registerer, options.logger, storage, options.limits, newMockClientsPool(cfg, options.logger, options.registerer, rulerAddrMap))
+	ruler, err := newRuler(cfg, manager, options.registerer, options.logger, storage, options.limits, newMockClientsPool(cfg, options.logger, options.registerer, options.rulerAddrMap))
 	require.NoError(t, err)
 
 	// Start the ruler if requested to do so.
@@ -281,7 +289,7 @@ func TestRuler_Rules(t *testing.T) {
 			cfg := defaultRulerConfig(t)
 			cfg.TenantFederation.Enabled = true
 
-			r := prepareRuler(t, cfg, newMockRuleStore(tc.mockRules), nil, withStart())
+			r := prepareRuler(t, cfg, newMockRuleStore(tc.mockRules), withStart())
 
 			// Rules will be synchronized asynchronously, so we wait until the expected number of rule groups
 			// has been synched.
@@ -382,7 +390,7 @@ func TestGetRules(t *testing.T) {
 					},
 				}
 
-				r := prepareRuler(t, cfg, storage, rulerAddrMap)
+				r := prepareRuler(t, cfg, storage, withRulerAddrMap(rulerAddrMap))
 				r.limits = validation.MockOverrides(func(defaults *validation.Limits) {
 					defaults.RulerEvaluationDelay = 0
 					defaults.RulerTenantShardSize = tc.shuffleShardSize
@@ -826,7 +834,7 @@ func TestSharding(t *testing.T) {
 					DisabledTenants: tc.disabledUsers,
 				}
 
-				r := prepareRuler(t, cfg, newMockRuleStore(allRules), nil)
+				r := prepareRuler(t, cfg, newMockRuleStore(allRules))
 				r.limits = validation.MockOverrides(func(defaults *validation.Limits) {
 					defaults.RulerEvaluationDelay = 0
 					defaults.RulerTenantShardSize = tc.shuffleShardSize
@@ -1023,7 +1031,7 @@ type ruleGroupKey struct {
 func TestRuler_ListAllRules(t *testing.T) {
 	cfg := defaultRulerConfig(t)
 
-	r := prepareRuler(t, cfg, newMockRuleStore(mockRules), nil, withStart())
+	r := prepareRuler(t, cfg, newMockRuleStore(mockRules), withStart())
 
 	router := mux.NewRouter()
 	router.Path("/ruler/rule_groups").Methods(http.MethodGet).HandlerFunc(r.ListAllRules)
