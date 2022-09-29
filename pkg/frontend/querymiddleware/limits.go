@@ -32,7 +32,7 @@ type Limits interface {
 	MaxQueryLookback(userID string) time.Duration
 
 	// MaxQueryLength returns the limit of the length (in time) of a query.
-	MaxQueryLength(userID string) time.Duration
+	MaxTotalQueryLength(userID string) time.Duration
 
 	// MaxQueryParallelism returns the limit to the number of split queries the
 	// frontend will process in parallel.
@@ -112,10 +112,10 @@ func (l limitsMiddleware) Do(ctx context.Context, r Request) (Response, error) {
 	}
 
 	// Enforce the max query length.
-	if maxQueryLength := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, l.MaxQueryLength); maxQueryLength > 0 {
+	if maxQueryLength := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, l.MaxTotalQueryLength); maxQueryLength > 0 {
 		queryLen := timestamp.Time(r.GetEnd()).Sub(timestamp.Time(r.GetStart()))
 		if queryLen > maxQueryLength {
-			return nil, apierror.New(apierror.TypeBadData, validation.NewMaxQueryLengthError(queryLen, maxQueryLength).Error())
+			return nil, apierror.New(apierror.TypeBadData, validation.NewMaxTotalQueryLengthError(queryLen, maxQueryLength).Error())
 		}
 	}
 

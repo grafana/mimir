@@ -259,8 +259,14 @@ func newMetadataUnitTooLongError(metadata *mimirpb.MetricMetadata) ValidationErr
 
 func NewMaxQueryLengthError(actualQueryLen, maxQueryLength time.Duration) LimitError {
 	return LimitError(globalerror.MaxQueryLength.MessageWithPerTenantLimitConfig(
-		fmt.Sprintf("the query time range exceeds the limit (query length: %s, limit: %s)", actualQueryLen, maxQueryLength),
+		fmt.Sprintf("the (sharded) query time range exceeds the limit (query length: %s, limit: %s)", actualQueryLen, maxQueryLength),
 		maxQueryLengthFlag))
+}
+
+func NewMaxTotalQueryLengthError(actualQueryLen, maxTotalQueryLength time.Duration) LimitError {
+	return LimitError(globalerror.MaxTotalQueryLength.MessageWithPerTenantLimitConfig(
+		fmt.Sprintf("the total unsharded query time range exceeds the limit (query length: %s, limit: %s)", actualQueryLen, maxTotalQueryLength),
+		maxTotalQueryLengthFlag))
 }
 
 func NewRequestRateLimitedError(limit float64, burst int) LimitError {
