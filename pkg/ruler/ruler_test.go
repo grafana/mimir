@@ -154,6 +154,13 @@ func withStart() prepareOption {
 	}
 }
 
+// withLimits is a prepareOption that overrides the limits used in the test.
+func withLimits(limits RulesLimits) prepareOption {
+	return func(opts *prepareOptions) {
+		opts.limits = limits
+	}
+}
+
 // withRulerAddrMap is a prepareOption that configures the mapping between rulers and their network addresses.
 func withRulerAddrMap(addrs map[string]*Ruler) prepareOption {
 	return func(opts *prepareOptions) {
@@ -390,11 +397,10 @@ func TestGetRules(t *testing.T) {
 					},
 				}
 
-				r := prepareRuler(t, cfg, storage, withRulerAddrMap(rulerAddrMap))
-				r.limits = validation.MockOverrides(func(defaults *validation.Limits) {
+				r := prepareRuler(t, cfg, storage, withRulerAddrMap(rulerAddrMap), withLimits(validation.MockOverrides(func(defaults *validation.Limits) {
 					defaults.RulerEvaluationDelay = 0
 					defaults.RulerTenantShardSize = tc.shuffleShardSize
-				})
+				})))
 
 				rulerAddrMap[id] = r
 				if r.ring != nil {
@@ -834,11 +840,10 @@ func TestSharding(t *testing.T) {
 					DisabledTenants: tc.disabledUsers,
 				}
 
-				r := prepareRuler(t, cfg, newMockRuleStore(allRules))
-				r.limits = validation.MockOverrides(func(defaults *validation.Limits) {
+				r := prepareRuler(t, cfg, newMockRuleStore(allRules), withLimits(validation.MockOverrides(func(defaults *validation.Limits) {
 					defaults.RulerEvaluationDelay = 0
 					defaults.RulerTenantShardSize = tc.shuffleShardSize
-				})
+				})))
 
 				if forceRing != nil {
 					r.ring = forceRing

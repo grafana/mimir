@@ -415,11 +415,10 @@ func TestRuler_DeleteNamespace(t *testing.T) {
 func TestRuler_LimitsPerGroup(t *testing.T) {
 	cfg := defaultRulerConfig(t)
 
-	r := prepareRuler(t, cfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)), withStart())
-	r.limits = validation.MockOverrides(func(defaults *validation.Limits) {
+	r := prepareRuler(t, cfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)), withStart(), withLimits(validation.MockOverrides(func(defaults *validation.Limits) {
 		defaults.RulerMaxRuleGroupsPerTenant = 1
 		defaults.RulerMaxRulesPerRuleGroup = 1
-	})
+	})))
 
 	a := NewAPI(r, r.store, log.NewNopLogger())
 
@@ -469,11 +468,10 @@ rules:
 func TestRuler_RulerGroupLimits(t *testing.T) {
 	cfg := defaultRulerConfig(t)
 
-	r := prepareRuler(t, cfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)), withStart())
-	r.limits = validation.MockOverrides(func(defaults *validation.Limits) {
+	r := prepareRuler(t, cfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)), withStart(), withLimits(validation.MockOverrides(func(defaults *validation.Limits) {
 		defaults.RulerMaxRuleGroupsPerTenant = 1
 		defaults.RulerMaxRulesPerRuleGroup = 1
-	})
+	})))
 
 	a := NewAPI(r, r.store, log.NewNopLogger())
 
