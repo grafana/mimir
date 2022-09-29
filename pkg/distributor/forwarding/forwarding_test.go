@@ -714,6 +714,83 @@ func TestForwardingEnsureThatPooledObjectsGetReturned(t *testing.T) {
 	}
 }
 
+func TestDropSamplesBefore(t *testing.T) {
+	type testCase struct {
+		name     string
+		cutoff   int64
+		input    []mimirpb.Sample
+		expected []mimirpb.Sample
+	}
+
+	testCases := []testCase{
+		{
+			name:     "no samples",
+			cutoff:   100,
+			input:    []mimirpb.Sample{},
+			expected: []mimirpb.Sample{},
+		}, {
+			name:   "all samples before cutoff",
+			cutoff: 100,
+			input: []mimirpb.Sample{
+				{TimestampMs: 97},
+				{TimestampMs: 98},
+				{TimestampMs: 99},
+			},
+			expected: []mimirpb.Sample{},
+		}, {
+			name:   "all samples after cutoff",
+			cutoff: 100,
+			input: []mimirpb.Sample{
+				{TimestampMs: 100},
+				{TimestampMs: 101},
+				{TimestampMs: 102},
+			},
+			expected: []mimirpb.Sample{
+				{TimestampMs: 100},
+				{TimestampMs: 101},
+				{TimestampMs: 102},
+			},
+		}, {
+			name:   "cut some samples off",
+			cutoff: 100,
+			input: []mimirpb.Sample{
+				{TimestampMs: 97},
+				{TimestampMs: 98},
+				{TimestampMs: 99},
+				{TimestampMs: 100},
+				{TimestampMs: 101},
+				{TimestampMs: 102},
+			},
+			expected: []mimirpb.Sample{
+				{TimestampMs: 100},
+				{TimestampMs: 101},
+				{TimestampMs: 102},
+			},
+		}, {
+			name:   "unsorted sample slice",
+			cutoff: 100,
+			input: []mimirpb.Sample{
+				{TimestampMs: 98},
+				{TimestampMs: 101},
+				{TimestampMs: 99},
+				{TimestampMs: 100},
+				{TimestampMs: 97},
+				{TimestampMs: 102},
+			},
+			expected: []mimirpb.Sample{
+				{TimestampMs: 102},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			actual := dropSamplesBefore(tc.input, tc.cutoff)
+			require.Equal(t, tc.expected, actual)
+		})
+	}
+}
+
 // getForwarderWithValidatingPools returns a forwarder with validating pools, so the pool usage can be validated to be correct.
 // The specified caps must be large enough to hold all the data that will be stored in the respective slices because
 // otherwise any "append()" will replace the slice which will result in a test failure because the original slice

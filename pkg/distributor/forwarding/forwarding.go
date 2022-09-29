@@ -358,14 +358,13 @@ func samplesNeedFiltering(samples []mimirpb.Sample, dontForwardBefore int64) boo
 // the given timestamp. It relies on the samples being sorted by timestamp.
 // If some samples have been filtered the second return value is true, otherwise it is false.
 func dropSamplesBefore(samples []mimirpb.Sample, dontForwardBefore int64) []mimirpb.Sample {
-	for sampleIdx, sample := range samples {
-		if sample.TimestampMs >= dontForwardBefore {
-			// In most cases the first sample should already meet this condition and we can return quickly.
-			return samples[sampleIdx:]
+	for sampleIdx := len(samples) - 1; sampleIdx >= 0; sampleIdx-- {
+		if samples[sampleIdx].TimestampMs < dontForwardBefore {
+			return samples[sampleIdx+1:]
 		}
 	}
 
-	return nil
+	return samples
 }
 
 func findTargetForLabels(targetEndpoint string, labels []mimirpb.LabelAdapter, rules validation.ForwardingRules) (string, bool) {
