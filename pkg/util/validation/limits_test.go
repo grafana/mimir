@@ -286,6 +286,67 @@ func TestSmallestPositiveNonZeroDurationPerTenant(t *testing.T) {
 	}
 }
 
+func TestMaxTotalQueryLengthWithoutDefault(t *testing.T) {
+	tenantLimits := map[string]*Limits{
+		"tenant-a": {
+			MaxQueryLength: model.Duration(time.Hour),
+		},
+		"tenant-b": {
+			MaxQueryLength:      model.Duration(time.Hour),
+			MaxTotalQueryLength: model.Duration(4 * time.Hour),
+		},
+	}
+	defaults := Limits{
+		MaxQueryLength: model.Duration(2 * time.Hour),
+	}
+
+	ov, err := NewOverrides(defaults, newMockTenantLimits(tenantLimits))
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		tenantIDs []string
+		expLimit  time.Duration
+	}{
+		{tenantIDs: []string{}, expLimit: time.Duration(0)},
+		{tenantIDs: []string{"tenant-a"}, expLimit: time.Hour},
+		{tenantIDs: []string{"tenant-b"}, expLimit: 4 * time.Hour},
+		{tenantIDs: []string{"tenant-c"}, expLimit: 2 * time.Hour},
+	} {
+		assert.Equal(t, tc.expLimit, SmallestPositiveNonZeroDurationPerTenant(tc.tenantIDs, ov.MaxTotalQueryLength))
+	}
+}
+
+func TestMaxTotalQueryLengthWithDefault(t *testing.T) {
+	tenantLimits := map[string]*Limits{
+		"tenant-a": {
+			MaxQueryLength: model.Duration(time.Hour),
+		},
+		"tenant-b": {
+			MaxQueryLength:      model.Duration(time.Hour),
+			MaxTotalQueryLength: model.Duration(4 * time.Hour),
+		},
+	}
+	defaults := Limits{
+		MaxQueryLength:      model.Duration(2 * time.Hour),
+		MaxTotalQueryLength: model.Duration(3 * time.Hour),
+	}
+
+	ov, err := NewOverrides(defaults, newMockTenantLimits(tenantLimits))
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		tenantIDs []string
+		expLimit  time.Duration
+	}{
+		{tenantIDs: []string{}, expLimit: time.Duration(0)},
+		{tenantIDs: []string{"tenant-a"}, expLimit: time.Hour},
+		{tenantIDs: []string{"tenant-b"}, expLimit: 4 * time.Hour},
+		{tenantIDs: []string{"tenant-c"}, expLimit: 3 * time.Hour},
+	} {
+		assert.Equal(t, tc.expLimit, SmallestPositiveNonZeroDurationPerTenant(tc.tenantIDs, ov.MaxTotalQueryLength))
+	}
+}
+
 func TestAlertmanagerNotificationLimits(t *testing.T) {
 	for name, tc := range map[string]struct {
 		inputYAML         string

@@ -31,6 +31,11 @@ func TestNewMaxQueryLengthError(t *testing.T) {
 	assert.Equal(t, "the query time range exceeds the limit (query length: 1h0m0s, limit: 1m0s) (err-mimir-max-query-length). To adjust the related per-tenant limit, configure -store.max-query-length, or contact your service administrator.", err.Error())
 }
 
+func TestNewTotalMaxQueryLengthError(t *testing.T) {
+	err := NewMaxTotalQueryLengthError(time.Hour, time.Minute)
+	assert.Equal(t, "the total query time range exceeds the limit (query length: 1h0m0s, limit: 1m0s) (err-mimir-max-total-query-length). To adjust the related per-tenant limit, configure -query-frontend.max-total-query-length, or contact your service administrator.", err.Error())
+}
+
 func TestNewRequestRateLimitedError(t *testing.T) {
 	err := NewRequestRateLimitedError(10, 5)
 	assert.Equal(t, "the request has been rejected because the tenant exceeded the request rate limit, set to 10 requests/s across all distributors with a maximum allowed burst of 5 (err-mimir-tenant-max-request-rate). To adjust the related per-tenant limits, configure -distributor.request-rate-limit and -distributor.request-burst-size, or contact your service administrator.", err.Error())

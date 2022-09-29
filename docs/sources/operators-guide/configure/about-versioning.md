@@ -84,6 +84,7 @@ The following features are currently experimental:
   - Snapshotting of in-memory TSDB data on disk when shutting down (`-blocks-storage.tsdb.memory-snapshot-on-shutdown`)
   - Out-of-order samples ingestion (`-ingester.out-of-order-allowance`)
 - Query-frontend
+  - `-query-frontend.max-total-query-length`
   - `-query-frontend.querier-forget-delay`
   - Instant query splitting (`-query-frontend.split-instant-queries-by-interval`)
 - Query-scheduler

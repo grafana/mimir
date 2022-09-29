@@ -38,6 +38,7 @@ const (
 	maxMetadataLengthFlag      = "validation.max-metadata-length"
 	creationGracePeriodFlag    = "validation.create-grace-period"
 	maxQueryLengthFlag         = "store.max-query-length"
+	maxTotalQueryLengthFlag    = "query-frontend.max-total-query-length"
 	requestRateFlag            = "distributor.request-rate-limit"
 	requestBurstSizeFlag       = "distributor.request-burst-size"
 	ingestionRateFlag          = "distributor.ingestion-rate-limit"
@@ -118,6 +119,10 @@ type Limits struct {
 	QueryShardingTotalShards       int            `yaml:"query_sharding_total_shards" json:"query_sharding_total_shards"`
 	QueryShardingMaxShardedQueries int            `yaml:"query_sharding_max_sharded_queries" json:"query_sharding_max_sharded_queries"`
 	SplitInstantQueriesByInterval  model.Duration `yaml:"split_instant_queries_by_interval" json:"split_instant_queries_by_interval" category:"experimental"`
+
+	// Query-frontend limits.
+	MaxTotalQueryLength model.Duration `yaml:"max_total_query_length,omitempty" json:"max_total_query_length,omitempty" category:"experimental"`
+
 	// Cardinality
 	CardinalityAnalysisEnabled                    bool `yaml:"cardinality_analysis_enabled" json:"cardinality_analysis_enabled"`
 	LabelNamesAndValuesResultsMaxSizeBytes        int  `yaml:"label_names_and_values_results_max_size_bytes" json:"label_names_and_values_results_max_size_bytes"`
@@ -196,7 +201,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxChunksPerQuery, MaxChunksPerQueryFlag, 2e6, "Maximum number of chunks that can be fetched in a single query from ingesters and long-term storage. This limit is enforced in the querier, ruler and store-gateway. 0 to disable.")
 	f.IntVar(&l.MaxFetchedSeriesPerQuery, MaxSeriesPerQueryFlag, 0, "The maximum number of unique series for which a query can fetch samples from each ingesters and storage. This limit is enforced in the querier and ruler. 0 to disable")
 	f.IntVar(&l.MaxFetchedChunkBytesPerQuery, MaxChunkBytesPerQueryFlag, 0, "The maximum size of all chunks in bytes that a query can fetch from each ingester and storage. This limit is enforced in the querier and ruler. 0 to disable.")
-	f.Var(&l.MaxQueryLength, maxQueryLengthFlag, "Limit the query time range (end - start time). This limit is enforced in the query-frontend (on the received query), in the querier (on the query possibly split by the query-frontend) and ruler. 0 to disable.")
+	f.Var(&l.MaxQueryLength, maxQueryLengthFlag, "Limit the query time range (end - start time). This limit is enforced in the querier (on the query possibly split by the query-frontend) and ruler. 0 to disable.")
 	f.Var(&l.MaxQueryLookback, "querier.max-query-lookback", "Limit how long back data (series and metadata) can be queried, up until <lookback> duration ago. This limit is enforced in the query-frontend, querier and ruler. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.")
 	f.IntVar(&l.MaxQueryParallelism, "querier.max-query-parallelism", 14, "Maximum number of split (by time) or partial (by shard) queries that will be scheduled in parallel by the query-frontend for a single input query. This limit is introduced to have a fairer query scheduling and avoid a single query over a large time range saturating all available queriers.")
 	f.Var(&l.MaxLabelsQueryLength, "store.max-labels-query-length", "Limit the time range (end - start time) of series, label names and values queries. This limit is enforced in the querier. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.")
@@ -221,6 +226,9 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.CompactorTenantShardSize, "compactor.compactor-tenant-shard-size", 0, "Max number of compactors that can compact blocks for single tenant. 0 to disable the limit and use all compactors.")
 	f.Var(&l.CompactorPartialBlockDeletionDelay, "compactor.partial-block-deletion-delay", fmt.Sprintf("If a partial block (unfinished block without %s file) hasn't been modified for this time, it will be marked for deletion. The minimum accepted value is %s: a lower value will be ignored and the feature disabled. 0 to disable.", block.MetaFilename, MinCompactorPartialBlockDeletionDelay.String()))
 	f.BoolVar(&l.CompactorBlockUploadEnabled, "compactor.block-upload-enabled", false, "Enable block upload API for the tenant.")
+
+	// Query-frontend.
+	f.Var(&l.MaxTotalQueryLength, maxTotalQueryLengthFlag, fmt.Sprintf("Limit the total query time range (end - start time). This limit is enforced in the query-frontend on the received query. Defaults to the value of -%s if set to 0.", maxQueryLengthFlag))
 
 	// Store-gateway.
 	f.IntVar(&l.StoreGatewayTenantShardSize, "store-gateway.tenant-shard-size", 0, "The tenant's shard size, used when store-gateway sharding is enabled. Value of 0 disables shuffle sharding for the tenant, that is all tenant blocks are sharded across all store-gateway replicas.")
@@ -456,6 +464,15 @@ func (o *Overrides) MaxQueryLookback(userID string) time.Duration {
 // MaxQueryLength returns the limit of the length (in time) of a query.
 func (o *Overrides) MaxQueryLength(userID string) time.Duration {
 	return time.Duration(o.getOverridesForUser(userID).MaxQueryLength)
+}
+
+// MaxTotalQueryLength returns the limit of the total length (in time) of a query.
+func (o *Overrides) MaxTotalQueryLength(userID string) time.Duration {
+	t := time.Duration(o.getOverridesForUser(userID).MaxTotalQueryLength)
+	if t == time.Duration(0) {
+		return o.MaxQueryLength(userID)
+	}
+	return t
 }
 
 // MaxLabelsQueryLength returns the limit of the length (in time) of a label names or values request.

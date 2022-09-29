@@ -3076,7 +3076,7 @@
           "kind": "field",
           "name": "max_query_length",
           "required": false,
-          "desc": "Limit the query time range (end - start time). This limit is enforced in the query-frontend (on the received query), in the querier (on the query possibly split by the query-frontend) and ruler. 0 to disable.",
+          "desc": "Limit the query time range (end - start time). This limit is enforced in the querier (on the query possibly split by the query-frontend) and ruler. 0 to disable.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "store.max-query-length",
@@ -3151,6 +3151,17 @@
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "query-frontend.split-instant-queries-by-interval",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "max_total_query_length",
+          "required": false,
+          "desc": "Limit the total query time range (end - start time). This limit is enforced in the query-frontend on the received query. Defaults to the value of -store.max-query-length if set to 0.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "query-frontend.max-total-query-length",
           "fieldType": "duration",
           "fieldCategory": "experimental"
         },

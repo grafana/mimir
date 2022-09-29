@@ -1376,7 +1376,7 @@ How to **fix** it:
 
 ### err-mimir-max-query-length
 
-This error occurs when the time range of a query exceeds the configured maximum length.
+This error occurs when the time range of a partial (after possible splitting, sharding by the query-frontend) query exceeds the configured maximum length. For a limit on the total query length, see [err-mimir-max-total-query-length](#err-mimir-max-total-query-length).
 
 Both PromQL instant and range queries can fetch metrics data over a period of time.
 A [range query](https://prometheus.io/docs/prometheus/latest/querying/api/#range-queries) requires a `start` and `end` timestamp, so the difference of `end` minus `start` is the time range length of the query.
@@ -1388,6 +1388,18 @@ This time period is what Grafana Mimir calls the _query time range length_ (or _
 Mimir has a limit on the query length.
 This limit is applied to partial queries, after they've split (according to time) by the query-frontend. This limit protects the system’s stability from potential abuse or mistakes.
 To configure the limit on a per-tenant basis, use the `-store.max-query-length` option (or `max_query_length` in the runtime configuration).
+
+### err-mimir-max-total-query-length
+
+This error occurs when the time range of a query exceeds the configured maximum length. For a limit on the partial query length (after query splitting by interval and/or sharding), see [err-mimir-max-query-length](#err-mimir-max-query-length).
+
+PromQL range queries can fetch metrics data over a period of time.
+A [range query](https://prometheus.io/docs/prometheus/latest/querying/api/#range-queries) requires a `start` and `end` timestamp, so the difference of `end` minus `start` is the time range length of the query.
+
+Mimir has a limit on the query length.
+This limit is applied to range queries before they are split (according to time) or sharded by the query-frontend. This limit protects the system’s stability from potential abuse or mistakes.
+To configure the limit on a per-tenant basis, use the `-query-frontend.max-total-query-length` option (or `max_total_query_length` in the runtime configuration).
+If this limit is set to 0, it takes its value from `-store.max-query-length`.
 
 ### err-mimir-tenant-max-request-rate
 
