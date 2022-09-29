@@ -100,6 +100,28 @@ func TestRemoteQuerier_QueryReqTimeout(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestRemoteQuerier_BackoffRetry(t *testing.T) {
+	const failedRequestCount = 3
+
+	retries := 0
+	mockClientFn := func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
+		retries++
+		if retries <= failedRequestCount {
+			return nil, status.Error(codes.Internal, "something went wrong")
+		}
+		return &httpgrpc.HTTPResponse{Code: http.StatusOK, Body: []byte(`{
+							"status": "success","data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[1,"773054.5916666666"]}]}
+						}`)}, nil
+	}
+	q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, "/prometheus", log.NewNopLogger())
+
+	resp, err := q.Query(context.Background(), "qs", time.Now())
+	require.NoError(t, err)
+
+	require.NotNil(t, resp)
+	require.Len(t, resp, 1)
+}
+
 func TestRemoteQuerier_StatusErrorResponses(t *testing.T) {
 	mockClientFn := func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
 		return &httpgrpc.HTTPResponse{Code: http.StatusUnprocessableEntity, Body: []byte(`{
