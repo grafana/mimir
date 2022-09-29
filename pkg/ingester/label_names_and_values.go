@@ -173,7 +173,10 @@ func computeLabelValuesSeriesCount(
 	idxReader tsdb.IndexReader,
 	postingsForMatchersFn func(tsdb.IndexPostingsReader, ...*labels.Matcher) (index.Postings, error),
 ) <-chan labelValueCountResult {
-	const maxConcurrency = 16
+	maxConcurrency := 16
+	if len(lblValues) < maxConcurrency {
+		maxConcurrency = len(lblValues)
+	}
 
 	wg := sync.WaitGroup{}
 	wg.Add(len(lblValues))
