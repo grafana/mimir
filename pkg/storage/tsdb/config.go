@@ -300,6 +300,9 @@ type BucketStoreConfig struct {
 
 	// Controls experimental options for index-header file reading.
 	IndexHeader indexheader.BinaryReaderConfig `yaml:"index_header" category:"experimental"`
+
+	// Controls what to do when MaxConcurrent is exceeded: fail immediately or wait for a slot to run.
+	MaxConcurrentRejectOverLimit bool `yaml:"max_concurrent_reject_over_limit" category:"experimental"`
 }
 
 // RegisterFlags registers the BucketStore flags
@@ -317,6 +320,7 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.ChunkPoolMaxBucketSizeBytes, "blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes", ChunkPoolDefaultMaxBucketSize, "Size - in bytes - of the largest chunks pool bucket.")
 	f.Uint64Var(&cfg.SeriesHashCacheMaxBytes, "blocks-storage.bucket-store.series-hash-cache-max-size-bytes", uint64(1*units.Gibibyte), "Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled.")
 	f.IntVar(&cfg.MaxConcurrent, "blocks-storage.bucket-store.max-concurrent", 100, "Max number of concurrent queries to execute against the long-term storage. The limit is shared across all tenants.")
+	f.BoolVar(&cfg.MaxConcurrentRejectOverLimit, "blocks-storage.bucket-store.max-concurrent-reject-over-limit", false, "True to reject queries above the max number of concurrent queries to execute against long-term storage. If false, queries will block until they are able to run.")
 	f.IntVar(&cfg.TenantSyncConcurrency, "blocks-storage.bucket-store.tenant-sync-concurrency", 10, "Maximum number of concurrent tenants synching blocks.")
 	f.IntVar(&cfg.BlockSyncConcurrency, "blocks-storage.bucket-store.block-sync-concurrency", 20, "Maximum number of concurrent blocks synching per tenant.")
 	f.IntVar(&cfg.MetaSyncConcurrency, "blocks-storage.bucket-store.meta-sync-concurrency", 20, "Number of Go routines to use when syncing block meta files from object storage per tenant.")

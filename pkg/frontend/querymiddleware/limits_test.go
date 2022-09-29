@@ -119,10 +119,11 @@ func TestLimitsMiddleware_MaxQueryLength(t *testing.T) {
 	now := time.Now()
 
 	tests := map[string]struct {
-		maxQueryLength time.Duration
-		reqStartTime   time.Time
-		reqEndTime     time.Time
-		expectedErr    string
+		maxQueryLength      time.Duration
+		maxTotalQueryLength time.Duration
+		reqStartTime        time.Time
+		reqEndTime          time.Time
+		expectedErr         string
 	}{
 		"should skip validation if max length is disabled": {
 			maxQueryLength: 0,
@@ -148,13 +149,19 @@ func TestLimitsMiddleware_MaxQueryLength(t *testing.T) {
 			maxQueryLength: thirtyDays,
 			reqStartTime:   now.Add(-thirtyDays).Add(-100 * time.Hour),
 			reqEndTime:     now,
-			expectedErr:    "the query time range exceeds the limit",
+			expectedErr:    "the total query time range exceeds the limit",
 		},
 		"should fail on a query on large time range over the limit, ending in the past": {
 			maxQueryLength: thirtyDays,
 			reqStartTime:   now.Add(-4 * thirtyDays),
 			reqEndTime:     now.Add(-2 * thirtyDays),
-			expectedErr:    "the query time range exceeds the limit",
+			expectedErr:    "the total query time range exceeds the limit",
+		},
+		"should succeed if total query length is higher than query length limit": {
+			maxQueryLength:      thirtyDays,
+			maxTotalQueryLength: 8 * thirtyDays,
+			reqStartTime:        now.Add(-4 * thirtyDays),
+			reqEndTime:          now.Add(-2 * thirtyDays),
 		},
 	}
 
@@ -165,7 +172,7 @@ func TestLimitsMiddleware_MaxQueryLength(t *testing.T) {
 				End:   util.TimeToMillis(testData.reqEndTime),
 			}
 
-			limits := mockLimits{maxQueryLength: testData.maxQueryLength}
+			limits := mockLimits{maxQueryLength: testData.maxQueryLength, maxTotalQueryLength: testData.maxTotalQueryLength}
 			middleware := newLimitsMiddleware(limits, log.NewNopLogger())
 
 			innerRes := newEmptyPrometheusResponse()
@@ -198,6 +205,7 @@ func TestLimitsMiddleware_MaxQueryLength(t *testing.T) {
 type mockLimits struct {
 	maxQueryLookback            time.Duration
 	maxQueryLength              time.Duration
+	maxTotalQueryLength         time.Duration
 	maxCacheFreshness           time.Duration
 	maxQueryParallelism         int
 	maxShardedQueries           int
@@ -212,6 +220,13 @@ func (m mockLimits) MaxQueryLookback(string) time.Duration {
 
 func (m mockLimits) MaxQueryLength(string) time.Duration {
 	return m.maxQueryLength
+}
+
+func (m mockLimits) MaxTotalQueryLength(string) time.Duration {
+	if m.maxTotalQueryLength == time.Duration(0) {
+		return m.maxQueryLength
+	}
+	return m.maxTotalQueryLength
 }
 
 func (m mockLimits) MaxQueryParallelism(string) int {

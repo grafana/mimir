@@ -97,12 +97,13 @@ To enable TLS for a component, use the client flag that contains the suffix `*.t
 
 The following Grafana Mimir components support TLS for inter-communication, which are shown with their corresponding configuration flag prefixes:
 
-- Query scheduler gRPC client used to connect to query-frontends: `-query-scheduler.grpc-client-config.*`
+- Query-scheduler gRPC client used to connect to query-frontends: `-query-scheduler.grpc-client-config.*`
 - Querier gRPC client used to connect to store-gateways: `-querier.store-gateway-client.*`
-- Query-frontend gRPC client used to connect to query-schedulers: `-query-frontend.grpc-client-config.*`
 - Querier gRPC client used to connect to query-frontends and query-schedulers: `-querier.frontend-client.*`
+- Query-frontend gRPC client used to connect to query-schedulers: `-query-frontend.grpc-client-config.*`
 - Ruler gRPC client used to connect to other ruler instances: `-ruler.client.*`
 - Ruler gRPC client used to connect to query-frontend: `-ruler.query-frontend.grpc-client-config.*`
+- Distributor gRPC client used to forward series matching a configured set to a dedicated remote endpoint: `-distributor.forwarding.grpc-client.*`
 - Alertmanager gRPC client used to connect to other Alertmanager instances: `-alertmanager.alertmanager-client.*`
 - gRPC client used by distributors, queriers, and rulers to connect to ingesters: `-ingester.client.*`
 - etcd client used by all Mimir components to connect to etcd, which is required only if you're running the hash ring or HA tracker on the etcd backend: `-<prefix>.etcd.*`
@@ -113,6 +114,8 @@ Each of the components listed above support the following TLS configuration opti
 - `*.tls-enabled=<boolean>`: Enable TLS in the client.
 - `*.tls-server-name=<string>`: Override the expected name on the server certificate.
 - `*.tls-insecure-skip-verify=<boolean>`: Skip validating the server certificate.
+- `*.tls-cipher-suites=<string>`: Comma-separated list of accepted cipher suites. For the list of supported cipher suites, refer to [Grafana Mimir configuration parameters]({{< relref "../configure/reference-configuration-parameters/index.md" >}}).
+- `*.tls-min-version=<string>`: Minimum TLS version required. For the list of supported versions, refer to [Grafana Mimir configuration parameters]({{< relref "../configure/reference-configuration-parameters/index.md" >}}).
 
 The following example shows how to configure the gRPC client flags in the querier used to connect to the query-frontend:
 

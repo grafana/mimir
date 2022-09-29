@@ -94,10 +94,22 @@ metadata:
     "helm.sh/hook": test
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded,hook-failed
 spec:
-  image: "docker.io/grafana/agent:v0.24.2"
+  image: "docker.io/grafana/agent:v0.27.1"
   logLevel: info
   serviceAccountName: grafana-agent-test-sa
   metrics:
     instanceSelector:
       matchLabels:
         agent: grafana-agent-test
+---
+# Source: mimir-distributed/charts/grafana-agent-operator/templates/tests/test-grafanaagent.yaml
+apiVersion: monitoring.grafana.com/v1alpha1
+kind: MetricsInstance
+metadata:
+  name: primary-test
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded,hook-failed
+  labels:
+    agent: grafana-agent-test
+spec: {}

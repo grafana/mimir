@@ -14,7 +14,6 @@
 * [FEATURE] Query-scheduler: added an experimental ring-based service discovery support for the query-scheduler. Refer to [query-scheduler configuration](https://grafana.com/docs/mimir/next/operators-guide/architecture/components/query-scheduler/#configuration) for more information. #2957
 * [FEATURE] Introduced the experimental endpoint `/api/v1/user_limits` exposed by all components that load runtime configuration. This endpoint exposes realtime limits for the authenticated tenant, in JSON format. #2864 #3017
 * [FEATURE] Query-scheduler: added the experimental configuration option `-query-scheduler.max-used-instances` to restrict the number of query-schedulers effectively used regardless how many replicas are running. This feature can be useful when using the experimental read-write deployment mode. #3005
-* [ENHANCEMENT] Distributor: Add `cortex_distributor_query_ingester_chunks_deduped_total` and `cortex_distributor_query_ingester_chunks_total` metrics for determining how effective ingester chunk deduplication at query time is. #2713
 * [ENHANCEMENT] Go: updated to go 1.19.1. #2637
 * [ENHANCEMENT] Runtime config: don't unmarshal runtime configuration files if they haven't changed. This can save a bit of CPU and memory on every component using runtime config. #2954
 * [ENHANCEMENT] Query-frontend: Add `cortex_frontend_query_result_cache_skipped_total` and `cortex_frontend_query_result_cache_attempted_total` metrics to track the reason why query results are not cached. #2855
@@ -25,12 +24,51 @@
 * [ENHANCEMENT] Querier: do not log "error processing requests from scheduler" when the query-scheduler is shutting down. #3012
 * [ENHANCEMENT] Query-frontend: query sharding process is now time-bounded and it is cancelled if the request is aborted. #3028
 * [ENHANCEMENT] Query-frontend: improved Prometheus reponse JSON encoding performance. #2450 
+* [ENHANCEMENT] TLS: added configuration parameters to configure the client's TLS cipher suites and minimum version. The following new CLI flags have been added: #3070
+  * `-alertmanager.alertmanager-client.tls-cipher-suites`
+  * `-alertmanager.alertmanager-client.tls-min-version`
+  * `-alertmanager.sharding-ring.etcd.tls-cipher-suites`
+  * `-alertmanager.sharding-ring.etcd.tls-min-version`
+  * `-compactor.ring.etcd.tls-cipher-suites`
+  * `-compactor.ring.etcd.tls-min-version`
+  * `-distributor.forwarding.grpc-client.tls-cipher-suites`
+  * `-distributor.forwarding.grpc-client.tls-min-version`
+  * `-distributor.ha-tracker.etcd.tls-cipher-suites`
+  * `-distributor.ha-tracker.etcd.tls-min-version`
+  * `-distributor.ring.etcd.tls-cipher-suites`
+  * `-distributor.ring.etcd.tls-min-version`
+  * `-ingester.client.tls-cipher-suites`
+  * `-ingester.client.tls-min-version`
+  * `-ingester.ring.etcd.tls-cipher-suites`
+  * `-ingester.ring.etcd.tls-min-version`
+  * `-memberlist.tls-cipher-suites`
+  * `-memberlist.tls-min-version`
+  * `-querier.frontend-client.tls-cipher-suites`
+  * `-querier.frontend-client.tls-min-version`
+  * `-querier.store-gateway-client.tls-cipher-suites`
+  * `-querier.store-gateway-client.tls-min-version`
+  * `-query-frontend.grpc-client-config.tls-cipher-suites`
+  * `-query-frontend.grpc-client-config.tls-min-version`
+  * `-query-scheduler.grpc-client-config.tls-cipher-suites`
+  * `-query-scheduler.grpc-client-config.tls-min-version`
+  * `-query-scheduler.ring.etcd.tls-cipher-suites`
+  * `-query-scheduler.ring.etcd.tls-min-version`
+  * `-ruler.alertmanager-client.tls-cipher-suites`
+  * `-ruler.alertmanager-client.tls-min-version`
+  * `-ruler.client.tls-cipher-suites`
+  * `-ruler.client.tls-min-version`
+  * `-ruler.query-frontend.grpc-client-config.tls-cipher-suites`
+  * `-ruler.query-frontend.grpc-client-config.tls-min-version`
+  * `-ruler.ring.etcd.tls-cipher-suites`
+  * `-ruler.ring.etcd.tls-min-version`
+  * `-store-gateway.sharding-ring.etcd.tls-cipher-suites`
+  * `-store-gateway.sharding-ring.etcd.tls-min-version`
+* [ENHANCEMENT] Store-gateway: Add `-blocks-storage.bucket-store.max-concurrent-reject-over-limit` option to allow requests that exceed the max number of inflight object storage requests to be rejected. #2999
+* [ENHANCEMENT] Query-frontend: allow setting a separate limit on the total (before splitting/sharding) query length of range queries with the new experimental `-query-frontend.max-total-query-length` flag, which defaults to `-store.max-query-length` if unset or set to 0. #3058
 * [BUGFIX] Querier: Fix 400 response while handling streaming remote read. #2963
 * [BUGFIX] Fix a bug causing query-frontend, query-scheduler, and querier not failing if one of their internal components fail. #2978
 * [BUGFIX] Querier: re-balance the querier worker connections when a query-frontend or query-scheduler is terminated. #3005
 * [BUGFIX] Distributor: Now returns the quorum error from ingesters. For example, with replication_factor=3, two HTTP 400 errors and one HTTP 500 error, now the distributor will always return HTTP 400. Previously the behaviour was to return the error which the distributor first received. #2979
-* [BUGFIX] Query-frontend: query sharding took exponential time to map binary expressions. #3027
-* [BUGFIX] Distributor: Stop panics on OTLP endpoint when a single metric has multiple timeseries. #3040
 
 ### Mixin
 
@@ -39,6 +77,7 @@
 * [ENHANCEMENT] Dashboards: Include per-tenant request rate in "Tenants" dashboard. #2874
 * [ENHANCEMENT] Dashboards: Include inflight object store requests in "Reads" dashboard. #2914
 * [ENHANCEMENT] Dashboards: Make queries used to find job, cluster and namespace for dropdown menus configurable. #2893
+* [ENHANCEMENT] Dashboards: Include rate of label and series queries in "Reads" dashboard. #3065 #3074
 
 ### Jsonnet
 
@@ -58,6 +97,12 @@
 * [ENHANCEMENT] Added documentation on how to configure storage retention. #2970
 * [ENHANCEMENT] Improved gRPC clients config documentation. #3020
 * [BUGFIX] Fixed configuration option names in "Enabling zone-awareness via the Grafana Mimir Jsonnet". #3018
+
+## 2.3.1
+
+### Grafana Mimir
+* [BUGFIX] Query-frontend: query sharding took exponential time to map binary expressions. #3027
+* [BUGFIX] Distributor: Stop panics on OTLP endpoint when a single metric has multiple timeseries. #3040
 
 ## 2.3.0
 

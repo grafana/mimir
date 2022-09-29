@@ -84,6 +84,7 @@ The following features are currently experimental:
   - Snapshotting of in-memory TSDB data on disk when shutting down (`-blocks-storage.tsdb.memory-snapshot-on-shutdown`)
   - Out-of-order samples ingestion (`-ingester.out-of-order-allowance`)
 - Query-frontend
+  - `-query-frontend.max-total-query-length`
   - `-query-frontend.querier-forget-delay`
   - Instant query splitting (`-query-frontend.split-instant-queries-by-interval`)
 - Query-scheduler
@@ -92,6 +93,7 @@ The following features are currently experimental:
   - Max number of used instances (`-query-scheduler.max-used-instances`)
 - Store-gateway
   - `-blocks-storage.bucket-store.index-header.map-populate-enabled`
+  - `-blocks-storage.bucket-store.max-concurrent-reject-over-limit`
 - Blocks Storage, Alertmanager, and Ruler support for partitioning access to the same storage bucket
   - `-alertmanager-storage.storage-prefix`
   - `-blocks-storage.storage-prefix`
