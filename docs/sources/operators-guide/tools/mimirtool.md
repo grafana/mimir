@@ -72,6 +72,9 @@ The following sections outline the commands that you can run against Grafana Mim
 
 The following commands interact with Grafana Mimir Alertmanager configuration and alert template files.
 
+> **Note:** The Mimir Alertmanager exposes the configuration API based on the path that you set via the `-server.path-prefix` flag; it does not use the path of the `-http.alertmanager-http-prefix` flag.
+> If you run Mimir with the default configuration (`-server.path-prefix`, where the default value is `/`), then only set the hostname for the `--address` flag of the `mimirtool` command; do not set a path-specific address. For example, `/` is correct, and `/alertmanager` is incorrect.
+
 #### Get Alertmanager configuration
 
 The following command shows the current Alertmanager configuration.
@@ -130,6 +133,9 @@ The commands in this section enable you to perform the following actions:
 - Load and show Prometheus rule files
 - Interact with individual rule groups in the Mimir ruler
 - Manipulate local rule files
+
+Some of the functionality that `mimirtool rules` offers is also available as a GitHub Action.
+For more information, refer to the [documentation of Mimirtool Github Action](https://github.com/grafana/mimir/blob/main/operations/mimir-rules-action/README.md).
 
 #### List rules
 
