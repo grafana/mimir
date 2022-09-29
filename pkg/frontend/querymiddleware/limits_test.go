@@ -149,13 +149,13 @@ func TestLimitsMiddleware_MaxQueryLength(t *testing.T) {
 			maxQueryLength: thirtyDays,
 			reqStartTime:   now.Add(-thirtyDays).Add(-100 * time.Hour),
 			reqEndTime:     now,
-			expectedErr:    "the total unsharded query time range exceeds the limit",
+			expectedErr:    "the total query time range exceeds the limit",
 		},
 		"should fail on a query on large time range over the limit, ending in the past": {
 			maxQueryLength: thirtyDays,
 			reqStartTime:   now.Add(-4 * thirtyDays),
 			reqEndTime:     now.Add(-2 * thirtyDays),
-			expectedErr:    "the total unsharded query time range exceeds the limit",
+			expectedErr:    "the total query time range exceeds the limit",
 		},
 		"should succeed if total query length is higher than query length limit": {
 			maxQueryLength:      thirtyDays,
