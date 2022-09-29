@@ -259,7 +259,7 @@ type tsByTargets map[string]tsWithSampleCount
 // copyToTarget copies the given time series into the given target and does the necessary accounting.
 // The time series is deep-copied, so the passed in time series can be returned to the pool without affecting the copy.
 func (t tsByTargets) copyToTarget(target string, dontForwardBefore int64, ts mimirpb.PreallocTimeseries, pool *pools) (err error) {
-	if dontForwardBefore > 0 && samplesNeedFiltering(ts.TimeSeries.Samples, dontForwardBefore) {
+	if dontForwardBefore > 0 {
 		samplesUnfiltered := ts.TimeSeries.Samples
 		defer func() {
 			// After this function returns we need to restore the original sample slice because
@@ -343,17 +343,6 @@ func (f *forwarder) splitByTargets(targetEndpoint string, dontForwardBefore int6
 	}
 
 	return tsToIngest, tsByTargets, err
-}
-
-// samplesNeedFiltering takes a slice of samples and a timestamp before which samples should be filtered out,
-// it returns true if some samples are older than the given timestamp or false otherwise.
-// It assumes that the samples are sorted by timestamp.
-func samplesNeedFiltering(samples []mimirpb.Sample, dontForwardBefore int64) bool {
-	if len(samples) == 0 {
-		return false
-	}
-
-	return samples[0].TimestampMs < dontForwardBefore
 }
 
 // dropSamplesBefore filters a given slice of samples to only contain samples that have timestamps newer or equal to
