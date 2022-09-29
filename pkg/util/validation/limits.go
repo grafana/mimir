@@ -466,7 +466,7 @@ func (o *Overrides) MaxQueryLength(userID string) time.Duration {
 	return time.Duration(o.getOverridesForUser(userID).MaxQueryLength)
 }
 
-// MaxTotalQueryLength returns the limit of the total length (in time) or a query.
+// MaxTotalQueryLength returns the limit of the total length (in time) of a query.
 func (o *Overrides) MaxTotalQueryLength(userID string) time.Duration {
 	t := time.Duration(o.getOverridesForUser(userID).MaxTotalQueryLength)
 	if t == time.Duration(0) {
