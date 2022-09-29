@@ -1223,6 +1223,7 @@ func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequ
 		req.GetLabelNames(),
 		matchers,
 		idx,
+		tsdb.PostingsForMatchers,
 		labelValuesCardinalityTargetSizeBytes,
 		srv,
 	)
