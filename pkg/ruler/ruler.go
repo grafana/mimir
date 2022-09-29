@@ -476,6 +476,10 @@ func (r *Ruler) syncRules(ctx context.Context, reason string) {
 		return
 	}
 
+	// Filter out all rules for which their evaluation has been disabled for the given tenant.
+	// The configs map is modified in place.
+	filterRuleGroupsByEnabled(configs, r.limits, r.logger)
+
 	// This will also delete local group files for users that are no longer in 'configs' map.
 	r.manager.SyncRuleGroups(ctx, configs)
 }
@@ -558,7 +562,7 @@ func (r *Ruler) listRulesSharded(ctx context.Context) (map[string]rulespb.RuleGr
 					return errors.Wrapf(err, "failed to fetch rule groups for user %s", userID)
 				}
 
-				filtered := filterRuleGroups(userID, groups, userRings[userID], r.lifecycler.GetInstanceAddr(), r.logger, r.metrics.ringCheckErrors)
+				filtered := filterRuleGroupsByOwnership(userID, groups, userRings[userID], r.lifecycler.GetInstanceAddr(), r.logger, r.metrics.ringCheckErrors)
 				if len(filtered) == 0 {
 					continue
 				}
@@ -575,12 +579,12 @@ func (r *Ruler) listRulesSharded(ctx context.Context) (map[string]rulespb.RuleGr
 	return result, err
 }
 
-// filterRuleGroups returns map of rule groups that given instance "owns" based on supplied ring.
+// filterRuleGroupsByOwnership returns map of rule groups that given instance "owns" based on supplied ring.
 // This function only uses User, Namespace, and Name fields of individual RuleGroups.
 //
 // Reason why this function is not a method on Ruler is to make sure we don't accidentally use r.ring,
 // but only ring passed as parameter.
-func filterRuleGroups(userID string, ruleGroups []*rulespb.RuleGroupDesc, ring ring.ReadRing, instanceAddr string, log log.Logger, ringCheckErrors prometheus.Counter) []*rulespb.RuleGroupDesc {
+func filterRuleGroupsByOwnership(userID string, ruleGroups []*rulespb.RuleGroupDesc, ring ring.ReadRing, instanceAddr string, log log.Logger, ringCheckErrors prometheus.Counter) []*rulespb.RuleGroupDesc {
 	// Prune the rule group to only contain rules that this ruler is responsible for, based on ring.
 	var result []*rulespb.RuleGroupDesc
 	for _, g := range ruleGroups {
@@ -600,6 +604,93 @@ func filterRuleGroups(userID string, ruleGroups []*rulespb.RuleGroupDesc, ring r
 	}
 
 	return result
+}
+
+// filterRuleGroupsByEnabled filters out from the input configs all the recording and/or alerting rules whose evaluation
+// has been disabled for the given tenant. This function modifies the input configs in place.
+func filterRuleGroupsByEnabled(configs map[string]rulespb.RuleGroupList, limits RulesLimits, logger log.Logger) {
+	for userID, groups := range configs {
+		// Nothing to do if both recording and alerting rules are enabled.
+		recordingEnabled := limits.RulerRecordingRulesEvaluationEnabled(userID)
+		alertingEnabled := limits.RulerAlertingRulesEvaluationEnabled(userID)
+		if recordingEnabled && alertingEnabled {
+			continue
+		}
+
+		// Optimization in case both recording and alerting rules are disabled.
+		if !recordingEnabled && !alertingEnabled {
+			delete(configs, userID)
+			continue
+		}
+
+		var (
+			removedGroups     = 0
+			removedRulesTotal = 0
+		)
+
+		for groupIdx, group := range groups {
+			removedRules := 0
+
+			// Set to nil all rules that should be removed.
+			for ruleIdx, rule := range group.Rules {
+				if !alertingEnabled && rule.Alert != "" {
+					group.Rules[ruleIdx] = nil
+					removedRules++
+				}
+
+				if !recordingEnabled && rule.Record != "" {
+					group.Rules[ruleIdx] = nil
+					removedRules++
+				}
+			}
+
+			// If all rules were removed then we should remove the whole group,
+			// otherwise we'll just remove the rules set to nil.
+			if removedRules == len(group.Rules) {
+				groups[groupIdx] = nil
+				removedGroups++
+			} else if removedRules > 0 {
+				src, dst := 0, 0
+				for ; src < len(group.Rules); src++ {
+					if group.Rules[src] != nil {
+						group.Rules[dst] = group.Rules[src]
+						dst++
+					}
+				}
+
+				group.Rules = group.Rules[:dst]
+			}
+
+			removedRulesTotal += removedRules
+		}
+
+		// If all groups were removed then we should delete the user config,
+		// otherwise we'll just remove the groups set to nil.
+		if removedGroups == len(groups) {
+			delete(configs, userID)
+		} else if removedGroups > 0 {
+			src, dst := 0, 0
+			for ; src < len(groups); src++ {
+				if groups[src] != nil {
+					groups[dst] = groups[src]
+					dst++
+				}
+			}
+
+			configs[userID] = groups[:dst]
+		}
+
+		if removedRulesTotal > 0 {
+			// We don't expect rules evaluation to be disabled for the normal use case. For this reason,
+			// when it's disabled we prefer to log it with "info" instead of "debug" to make it more visible.
+			level.Info(logger).Log(
+				"msg", "filtered out rules because evaluation is disabled for the tenant",
+				"user", userID,
+				"removed_rules", removedRulesTotal,
+				"recording_rules_enabled", recordingEnabled,
+				"alerting_rules_enabled", alertingEnabled)
+		}
+	}
 }
 
 // GetRules retrieves the running rules from this ruler and all running rulers in the ring.

@@ -134,8 +134,7 @@ func TestPusherErrors(t *testing.T) {
 
 			writes := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
 			failures := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
-
-			limits := validation.MockOverrides(func(defaults *validation.Limits) {
+			limits := validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
 				defaults.RulerEvaluationDelay = 0
 			})
 
@@ -261,10 +260,7 @@ func TestRecordAndReportRuleQueryMetrics(t *testing.T) {
 func TestManagerFactory_CorrectQueryableUsed(t *testing.T) {
 	const userID = "tenant-1"
 
-	dummyRules := []*rulespb.RuleDesc{{
-		Expr:   "sum(up)",
-		Record: "sum:up",
-	}}
+	dummyRules := []*rulespb.RuleDesc{mockRecordingRuleDesc("sum:up", "sum(up)")}
 
 	testCases := map[string]struct {
 		ruleGroup rulespb.RuleGroupDesc

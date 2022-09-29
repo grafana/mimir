@@ -30,17 +30,8 @@ var (
 				Name:      "group1",
 				Namespace: "namespace1",
 				User:      "user1",
-				Rules: []*rulespb.RuleDesc{
-					{
-						Record: "UP_RULE",
-						Expr:   "up",
-					},
-					{
-						Alert: "UP_ALERT",
-						Expr:  "up < 1",
-					},
-				},
-				Interval: interval,
+				Rules:     []*rulespb.RuleDesc{mockRecordingRuleDesc("UP_RULE", "up"), mockAlertingRuleDesc("UP_ALERT", "up < 1")},
+				Interval:  interval,
 			},
 		},
 		"user2": {
@@ -48,34 +39,8 @@ var (
 				Name:      "group1",
 				Namespace: "namespace1",
 				User:      "user2",
-				Rules: []*rulespb.RuleDesc{
-					{
-						Record: "UP_RULE",
-						Expr:   "up",
-					},
-				},
-				Interval: interval,
-			},
-		},
-	}
-
-	mockSpecialCharRules = map[string]rulespb.RuleGroupList{
-		"user1": {
-			&rulespb.RuleGroupDesc{
-				Name:      ")(_+?/|group1+/?",
-				Namespace: ")(_+?/|namespace1+/?",
-				User:      "user1",
-				Rules: []*rulespb.RuleDesc{
-					{
-						Record: "UP_RULE",
-						Expr:   "up",
-					},
-					{
-						Alert: "UP_ALERT",
-						Expr:  "up < 1",
-					},
-				},
-				Interval: interval,
+				Rules:     []*rulespb.RuleDesc{mockRecordingRuleDesc("UP_RULE", "up")},
+				Interval:  interval,
 			},
 		},
 	}

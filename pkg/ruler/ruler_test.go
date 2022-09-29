@@ -131,7 +131,7 @@ func applyPrepareOptions(opts ...prepareOption) prepareOptions {
 
 	applied := prepareOptions{
 		// Default limits in the ruler tests.
-		limits: validation.MockOverrides(func(defaults *validation.Limits) {
+		limits: validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
 			defaults.RulerEvaluationDelay = 0
 			defaults.RulerMaxRuleGroupsPerTenant = 20
 			defaults.RulerMaxRulesPerRuleGroup = 15
@@ -274,17 +274,8 @@ func TestRuler_Rules(t *testing.T) {
 						Namespace:     "namespace1",
 						User:          "user1",
 						SourceTenants: []string{"tenant-1"},
-						Rules: []*rulespb.RuleDesc{
-							{
-								Record: "UP_RULE",
-								Expr:   "up",
-							},
-							{
-								Alert: "UP_ALERT",
-								Expr:  "up < 1",
-							},
-						},
-						Interval: interval,
+						Rules:         []*rulespb.RuleDesc{mockRecordingRuleDesc("UP_RULE", "up"), mockAlertingRuleDesc("UP_ALERT", "up < 1")},
+						Interval:      interval,
 					},
 				},
 			},
@@ -397,7 +388,7 @@ func TestGetRules(t *testing.T) {
 					},
 				}
 
-				r := prepareRuler(t, cfg, storage, withRulerAddrMap(rulerAddrMap), withLimits(validation.MockOverrides(func(defaults *validation.Limits) {
+				r := prepareRuler(t, cfg, storage, withRulerAddrMap(rulerAddrMap), withLimits(validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
 					defaults.RulerEvaluationDelay = 0
 					defaults.RulerTenantShardSize = tc.shuffleShardSize
 				})))
@@ -840,7 +831,7 @@ func TestSharding(t *testing.T) {
 					DisabledTenants: tc.disabledUsers,
 				}
 
-				r := prepareRuler(t, cfg, newMockRuleStore(allRules), withLimits(validation.MockOverrides(func(defaults *validation.Limits) {
+				r := prepareRuler(t, cfg, newMockRuleStore(allRules), withLimits(validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
 					defaults.RulerEvaluationDelay = 0
 					defaults.RulerTenantShardSize = tc.shuffleShardSize
 				})))
@@ -1139,5 +1130,151 @@ func TestSendAlerts(t *testing.T) {
 			})
 			SendAlerts(senderFunc, "http://localhost:9090")(context.TODO(), "up", tc.in...)
 		})
+	}
+}
+
+func TestFilterRuleGroupsByEnabled(t *testing.T) {
+	tests := map[string]struct {
+		configs  map[string]rulespb.RuleGroupList
+		limits   RulesLimits
+		expected map[string]rulespb.RuleGroupList
+	}{
+		"should return an empty map on empty input": {
+			configs:  nil,
+			limits:   validation.MockDefaultOverrides(),
+			expected: nil,
+		},
+		"should remove alerting rules if disabled for a given tenant": {
+			configs: map[string]rulespb.RuleGroupList{
+				"user-1": {
+					{Name: "group-1", Rules: []*rulespb.RuleDesc{mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")}},
+					{Name: "group-2", Rules: []*rulespb.RuleDesc{mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")}},
+					{Name: "group-3", Rules: []*rulespb.RuleDesc{mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")}},
+				},
+				"user-2": {
+					{Name: "group-1", Rules: []*rulespb.RuleDesc{mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")}},
+					{Name: "group-2", Rules: []*rulespb.RuleDesc{mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")}},
+					{Name: "group-3", Rules: []*rulespb.RuleDesc{mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")}},
+				},
+			},
+			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+				tenantLimits["user-1"] = validation.MockDefaultLimits()
+				tenantLimits["user-1"].RulerRecordingRulesEvaluationEnabled = true
+				tenantLimits["user-1"].RulerAlertingRulesEvaluationEnabled = false
+			}),
+			expected: map[string]rulespb.RuleGroupList{
+				"user-1": {
+					{Name: "group-1", Rules: []*rulespb.RuleDesc{mockRecordingRuleDesc("record:1", "1"), mockRecordingRuleDesc("record:3", "3")}},
+					{Name: "group-2", Rules: []*rulespb.RuleDesc{mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")}},
+				},
+				"user-2": {
+					{Name: "group-1", Rules: []*rulespb.RuleDesc{mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")}},
+					{Name: "group-2", Rules: []*rulespb.RuleDesc{mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")}},
+					{Name: "group-3", Rules: []*rulespb.RuleDesc{mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")}},
+				},
+			},
+		},
+		"should remove recording rules if disabled for a given tenant": {
+			configs: map[string]rulespb.RuleGroupList{
+				"user-1": {
+					{Name: "group-1", Rules: []*rulespb.RuleDesc{mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")}},
+					{Name: "group-2", Rules: []*rulespb.RuleDesc{mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")}},
+					{Name: "group-3", Rules: []*rulespb.RuleDesc{mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")}},
+				},
+				"user-2": {
+					{Name: "group-1", Rules: []*rulespb.RuleDesc{mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")}},
+					{Name: "group-2", Rules: []*rulespb.RuleDesc{mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")}},
+					{Name: "group-3", Rules: []*rulespb.RuleDesc{mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")}},
+				},
+			},
+			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+				tenantLimits["user-1"] = validation.MockDefaultLimits()
+				tenantLimits["user-1"].RulerRecordingRulesEvaluationEnabled = false
+				tenantLimits["user-1"].RulerAlertingRulesEvaluationEnabled = true
+			}),
+			expected: map[string]rulespb.RuleGroupList{
+				"user-1": {
+					{Name: "group-1", Rules: []*rulespb.RuleDesc{mockAlertingRuleDesc("alert-2", "2")}},
+					{Name: "group-3", Rules: []*rulespb.RuleDesc{mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")}},
+				},
+				"user-2": {
+					{Name: "group-1", Rules: []*rulespb.RuleDesc{mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")}},
+					{Name: "group-2", Rules: []*rulespb.RuleDesc{mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")}},
+					{Name: "group-3", Rules: []*rulespb.RuleDesc{mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")}},
+				},
+			},
+		},
+		"should remove all config for a user if both recording and alerting rules are disabled": {
+			configs: map[string]rulespb.RuleGroupList{
+				"user-1": {
+					{Name: "group-1", Rules: []*rulespb.RuleDesc{mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")}},
+					{Name: "group-2", Rules: []*rulespb.RuleDesc{mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")}},
+					{Name: "group-3", Rules: []*rulespb.RuleDesc{mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")}},
+				},
+				"user-2": {
+					{Name: "group-1", Rules: []*rulespb.RuleDesc{mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")}},
+					{Name: "group-2", Rules: []*rulespb.RuleDesc{mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")}},
+					{Name: "group-3", Rules: []*rulespb.RuleDesc{mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")}},
+				},
+			},
+			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+				tenantLimits["user-1"] = validation.MockDefaultLimits()
+				tenantLimits["user-1"].RulerRecordingRulesEvaluationEnabled = false
+				tenantLimits["user-1"].RulerAlertingRulesEvaluationEnabled = false
+			}),
+			expected: map[string]rulespb.RuleGroupList{
+				"user-2": {
+					{Name: "group-1", Rules: []*rulespb.RuleDesc{mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")}},
+					{Name: "group-2", Rules: []*rulespb.RuleDesc{mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")}},
+					{Name: "group-3", Rules: []*rulespb.RuleDesc{mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")}},
+				},
+			},
+		},
+		"should remove configs for all users if both recording and alerting rules are disabled for every user": {
+			configs: map[string]rulespb.RuleGroupList{
+				"user-1": {
+					{Name: "group-1", Rules: []*rulespb.RuleDesc{mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")}},
+					{Name: "group-2", Rules: []*rulespb.RuleDesc{mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")}},
+					{Name: "group-3", Rules: []*rulespb.RuleDesc{mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")}},
+				},
+				"user-2": {
+					{Name: "group-1", Rules: []*rulespb.RuleDesc{mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")}},
+					{Name: "group-2", Rules: []*rulespb.RuleDesc{mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")}},
+					{Name: "group-3", Rules: []*rulespb.RuleDesc{mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")}},
+				},
+			},
+			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+				defaults.RulerRecordingRulesEvaluationEnabled = false
+				defaults.RulerAlertingRulesEvaluationEnabled = false
+			}),
+			expected: map[string]rulespb.RuleGroupList{},
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			logger := log.NewNopLogger()
+
+			allocs := testing.AllocsPerRun(1, func() {
+				filterRuleGroupsByEnabled(testData.configs, testData.limits, logger)
+			})
+
+			assert.Equal(t, testData.expected, testData.configs)
+			assert.Equal(t, 0., allocs)
+		})
+	}
+}
+
+func mockRecordingRuleDesc(record, expr string) *rulespb.RuleDesc {
+	return &rulespb.RuleDesc{
+		Record: record,
+		Expr:   expr,
+	}
+}
+
+func mockAlertingRuleDesc(alert, expr string) *rulespb.RuleDesc {
+	return &rulespb.RuleDesc{
+		Alert: alert,
+		Expr:  expr,
 	}
 }

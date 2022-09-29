@@ -65,6 +65,9 @@
   * `-store-gateway.sharding-ring.etcd.tls-min-version`
 * [ENHANCEMENT] Store-gateway: Add `-blocks-storage.bucket-store.max-concurrent-reject-over-limit` option to allow requests that exceed the max number of inflight object storage requests to be rejected. #2999
 * [ENHANCEMENT] Query-frontend: allow setting a separate limit on the total (before splitting/sharding) query length of range queries with the new experimental `-query-frontend.max-total-query-length` flag, which defaults to `-store.max-query-length` if unset or set to 0. #3058
+* [ENHANCEMENT] Ruler: added support to forcefully disable recording and/or alerting rules evaluation. The following new configuration options have been introduced, which can be overridden on a per-tenant basis in the runtime configuration: #3088
+  * `-ruler.recording-rules-evaluation-enabled`
+  * `-ruler.alerting-rules-evaluation-enabled`
 * [BUGFIX] Querier: Fix 400 response while handling streaming remote read. #2963
 * [BUGFIX] Fix a bug causing query-frontend, query-scheduler, and querier not failing if one of their internal components fail. #2978
 * [BUGFIX] Querier: re-balance the querier worker connections when a query-frontend or query-scheduler is terminated. #3005
