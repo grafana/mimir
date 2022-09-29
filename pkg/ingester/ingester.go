@@ -867,7 +867,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 
 	commitDuration := time.Since(startCommit)
 	i.metrics.appenderCommitDuration.Observe(commitDuration.Seconds())
-	level.Debug(spanlog).Log("event", "complete commit", "commitDurationSeconds", commitDuration.Seconds())
+	level.Debug(spanlog).Log("event", "complete commit", "commitDuration", commitDuration.String())
 
 	// If only invalid samples are pushed, don't change "last update", as TSDB was not modified.
 	if succeededSamplesCount > 0 {
