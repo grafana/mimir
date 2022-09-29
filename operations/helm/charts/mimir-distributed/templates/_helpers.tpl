@@ -292,7 +292,7 @@ Alertmanager http prefix
 */}}
 {{- define "mimir.alertmanagerHttpPrefix" -}}
 {{- if (include "mimir.calculatedConfig" . | fromYaml).api }}
-{{ (include "mimir.calculatedConfig" . | fromYaml).api.alertmanager_http_prefix | default "/alertmanager" }}
+{{- (include "mimir.calculatedConfig" . | fromYaml).api.alertmanager_http_prefix | default "/alertmanager" -}}
 {{- else -}}
 {{- print "/alertmanager" -}}
 {{- end -}}
@@ -304,7 +304,7 @@ Prometheus http prefix
 */}}
 {{- define "mimir.prometheusHttpPrefix" -}}
 {{- if (include "mimir.calculatedConfig" . | fromYaml).api }}
-{{ (include "mimir.calculatedConfig" . | fromYaml).api.prometheus_http_prefix | default "/prometheus" }}
+{{- (include "mimir.calculatedConfig" . | fromYaml).api.prometheus_http_prefix | default "/prometheus" -}}
 {{- else -}}
 {{- print "/prometheus" -}}
 {{- end -}}
