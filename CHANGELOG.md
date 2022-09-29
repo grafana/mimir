@@ -23,6 +23,7 @@
 * [ENHANCEMENT] Query-frontend / Querier: increase internal backoff period used to retry connections to query-frontend / query-scheduler. #3011
 * [ENHANCEMENT] Querier: do not log "error processing requests from scheduler" when the query-scheduler is shutting down. #3012
 * [ENHANCEMENT] Query-frontend: query sharding process is now time-bounded and it is cancelled if the request is aborted. #3028
+* [ENHANCEMENT] Query-frontend: improved Prometheus reponse JSON encoding performance. #2450
 * [ENHANCEMENT] TLS: added configuration parameters to configure the client's TLS cipher suites and minimum version. The following new CLI flags have been added: #3070
   * `-alertmanager.alertmanager-client.tls-cipher-suites`
   * `-alertmanager.alertmanager-client.tls-min-version`
