@@ -206,9 +206,6 @@ func TestForwardingOmitOldSamples(t *testing.T) {
 	ctx := context.Background()
 
 	now := time.Now()
-	mockTime := func() time.Time {
-		return now
-	}
 	dontForwardOlderThan := 10 * time.Minute
 	cutOffTs := now.UnixMilli() - dontForwardOlderThan.Milliseconds()
 
@@ -317,7 +314,6 @@ func TestForwardingOmitOldSamples(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			f, _ := newForwarder(t, testConfig, true)
-			f.(*forwarder).timeNow = mockTime
 
 			url, _, bodiesFn, closeFn := newTestServer(t, 200, true)
 			defer closeFn()
@@ -340,7 +336,7 @@ func TestForwardingOmitOldSamples(t *testing.T) {
 				})
 			}
 
-			toIngest, errCh := f.Forward(ctx, url, dontForwardOlderThan, rules, inputTs)
+			toIngest, errCh := f.Forward(ctx, url, cutOffTs, rules, inputTs)
 
 			// All samples should be ingested, including the ones that were dropped by the forwarding.
 			require.Equal(t, len(tc.inputSamples), len(toIngest))

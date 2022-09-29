@@ -64,8 +64,6 @@ type forwarder struct {
 	exemplarsTotal          prometheus.Counter
 	requestLatencyHistogram prometheus.Histogram
 	grpcClientsGauge        prometheus.Gauge
-
-	timeNow func() time.Time
 }
 
 // NewForwarder returns a new forwarder, if forwarding is disabled it returns nil.
@@ -119,8 +117,6 @@ func NewForwarder(cfg Config, reg prometheus.Registerer, log log.Logger) Forward
 			Name: "cortex_distributor_forward_grpc_clients",
 			Help: "Number of gRPC clients used by Distributor forwarder.",
 		}),
-
-		timeNow: time.Now,
 	}
 
 	f.httpGrpcClientPool = f.newHTTPGrpcClientsPool()
