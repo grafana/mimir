@@ -31,6 +31,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Upgrade memcached image tag to `memcached:1.6.16-alpine`. #2740
 * [ENHANCEMENT] Upgrade nginx image tag to `nginxinc/nginx-unprivileged:1.22-alpine`. #2742
 * [ENHANCEMENT] Upgrade minio subchart to `4.0.12`. #2759
+* [ENHANCEMENT] Update agent-operator subchart to `0.2.5`. #3009
 * [BUGFIX] `nginx.extraArgs` are now actually passed to the nginx container. #2336
 * [BUGFIX] Add missing `containerSecurityContext` to alertmanager and tokengen job. #2416
 * [BUGFIX] Add missing `containerSecutiryContext` to memcached exporter containers. #2666
