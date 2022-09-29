@@ -258,14 +258,14 @@ type tsByTargets map[string]tsWithSampleCount
 
 // copyToTarget copies the given time series into the given target and does the necessary accounting.
 // The time series is deep-copied, so the passed in time series can be returned to the pool without affecting the copy.
-func (t tsByTargets) copyToTarget(target string, dontForwardBeforeTs int64, ts mimirpb.PreallocTimeseries, pool *pools) (err error) {
-	if dontForwardBeforeTs > 0 && samplesNeedFiltering(ts.TimeSeries.Samples, dontForwardBeforeTs) {
+func (t tsByTargets) copyToTarget(target string, dontForwardBefore int64, ts mimirpb.PreallocTimeseries, pool *pools) (err error) {
+	if dontForwardBefore > 0 && samplesNeedFiltering(ts.TimeSeries.Samples, dontForwardBefore) {
 		samplesUnfiltered := ts.TimeSeries.Samples
 		defer func() {
 			ts.TimeSeries.Samples = samplesUnfiltered
 		}()
 
-		samplesFiltered := dropSamplesBefore(samplesUnfiltered, dontForwardBeforeTs)
+		samplesFiltered := dropSamplesBefore(samplesUnfiltered, dontForwardBefore)
 		if len(samplesFiltered) < len(samplesUnfiltered) {
 			err = errSamplesTooOld
 		}
