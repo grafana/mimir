@@ -310,7 +310,8 @@ func TestManagerFactory_CorrectQueryableUsed(t *testing.T) {
 
 			// setup
 			cfg := defaultRulerConfig(t)
-			_, _, pusher, logger, overrides := testSetup()
+			_, _, pusher, logger := testSetup()
+			options := applyPrepareOptions()
 			notifierManager := notifier.NewManager(&notifier.Options{Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil }}, logger)
 			ruleFiles := writeRuleGroupToFiles(t, cfg.RulePath, logger, userID, tc.ruleGroup)
 			regularQueryable, federatedQueryable := newMockQueryable(), newMockQueryable()
@@ -327,7 +328,7 @@ func TestManagerFactory_CorrectQueryableUsed(t *testing.T) {
 			queryFunc := TenantFederationQueryFunc(regularQueryFunc, federatedQueryFunc)
 
 			// create and use manager factory
-			managerFactory := DefaultTenantManagerFactory(cfg, pusher, federatedQueryable, queryFunc, overrides, nil)
+			managerFactory := DefaultTenantManagerFactory(cfg, pusher, federatedQueryable, queryFunc, options.limits, nil)
 
 			manager := managerFactory(context.Background(), userID, notifierManager, logger, nil)
 

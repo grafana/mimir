@@ -77,7 +77,7 @@ func defaultRulerConfig(t testing.TB) Config {
 	return cfg
 }
 
-func testSetup() (storage.QueryableFunc, promRules.QueryFunc, Pusher, log.Logger, RulesLimits) {
+func testSetup() (storage.QueryableFunc, promRules.QueryFunc, Pusher, log.Logger) {
 	noopQueryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 		return storage.NoopQuerier(), nil
 	})
@@ -92,19 +92,14 @@ func testSetup() (storage.QueryableFunc, promRules.QueryFunc, Pusher, log.Logger
 	l := log.NewLogfmtLogger(os.Stdout)
 	l = level.NewFilter(l, level.AllowInfo())
 
-	limits := validation.MockOverrides(func(defaults *validation.Limits) {
-		defaults.RulerEvaluationDelay = 0
-		defaults.RulerMaxRuleGroupsPerTenant = 20
-		defaults.RulerMaxRulesPerRuleGroup = 15
-	})
-
-	return noopQueryable, noopQueryFunc, pusher, l, limits
+	return noopQueryable, noopQueryFunc, pusher, l
 }
 
 func newManager(t *testing.T, cfg Config) *DefaultMultiTenantManager {
-	noopQueryable, noopQueryFunc, pusher, logger, overrides := testSetup()
+	noopQueryable, noopQueryFunc, pusher, logger := testSetup()
+	options := applyPrepareOptions()
 
-	mngFactory := DefaultTenantManagerFactory(cfg, pusher, noopQueryable, noopQueryFunc, overrides, nil)
+	mngFactory := DefaultTenantManagerFactory(cfg, pusher, noopQueryable, noopQueryFunc, options.limits, nil)
 	manager, err := NewDefaultMultiTenantManager(cfg, mngFactory, prometheus.NewRegistry(), logger, nil)
 	require.NoError(t, err)
 
@@ -152,11 +147,19 @@ func newMockClientsPool(cfg Config, logger log.Logger, reg prometheus.Registerer
 type prepareOption func(opts *prepareOptions)
 
 type prepareOptions struct {
-	start bool
+	limits RulesLimits
+	start  bool
 }
 
 func applyPrepareOptions(opts ...prepareOption) prepareOptions {
-	applied := prepareOptions{}
+	applied := prepareOptions{
+		// Default limits in the ruler tests.
+		limits: validation.MockOverrides(func(defaults *validation.Limits) {
+			defaults.RulerEvaluationDelay = 0
+			defaults.RulerMaxRuleGroupsPerTenant = 20
+			defaults.RulerMaxRulesPerRuleGroup = 15
+		}),
+	}
 
 	for _, opt := range opts {
 		opt(&applied)
@@ -175,14 +178,14 @@ func withStart() prepareOption {
 func prepareRuler(t *testing.T, cfg Config, storage rulestore.RuleStore, rulerAddrMap map[string]*Ruler, opts ...prepareOption) *Ruler {
 	options := applyPrepareOptions(opts...)
 
-	noopQueryable, noopQueryFunc, pusher, logger, overrides := testSetup()
+	noopQueryable, noopQueryFunc, pusher, logger := testSetup()
 
 	reg := prometheus.NewRegistry()
-	managerFactory := DefaultTenantManagerFactory(cfg, pusher, noopQueryable, noopQueryFunc, overrides, reg)
+	managerFactory := DefaultTenantManagerFactory(cfg, pusher, noopQueryable, noopQueryFunc, options.limits, reg)
 	manager, err := NewDefaultMultiTenantManager(cfg, managerFactory, reg, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 
-	ruler, err := newRuler(cfg, manager, reg, logger, storage, overrides, newMockClientsPool(cfg, logger, reg, rulerAddrMap))
+	ruler, err := newRuler(cfg, manager, reg, logger, storage, options.limits, newMockClientsPool(cfg, logger, reg, rulerAddrMap))
 	require.NoError(t, err)
 
 	// Start the ruler if requested to do so.
