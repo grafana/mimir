@@ -310,10 +310,9 @@ func TestManagerFactory_CorrectQueryableUsed(t *testing.T) {
 
 			// setup
 			cfg := defaultRulerConfig(t)
-			_, _, pusher, logger := testSetup()
 			options := applyPrepareOptions()
-			notifierManager := notifier.NewManager(&notifier.Options{Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil }}, logger)
-			ruleFiles := writeRuleGroupToFiles(t, cfg.RulePath, logger, userID, tc.ruleGroup)
+			notifierManager := notifier.NewManager(&notifier.Options{Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil }}, options.logger)
+			ruleFiles := writeRuleGroupToFiles(t, cfg.RulePath, options.logger, userID, tc.ruleGroup)
 			regularQueryable, federatedQueryable := newMockQueryable(), newMockQueryable()
 
 			tracker := promql.NewActiveQueryTracker(t.TempDir(), 20, log.NewNopLogger())
@@ -328,9 +327,11 @@ func TestManagerFactory_CorrectQueryableUsed(t *testing.T) {
 			queryFunc := TenantFederationQueryFunc(regularQueryFunc, federatedQueryFunc)
 
 			// create and use manager factory
+			pusher := newPusherMock()
+			pusher.MockPush(&mimirpb.WriteResponse{}, nil)
 			managerFactory := DefaultTenantManagerFactory(cfg, pusher, federatedQueryable, queryFunc, options.limits, nil)
 
-			manager := managerFactory(context.Background(), userID, notifierManager, logger, nil)
+			manager := managerFactory(context.Background(), userID, notifierManager, options.logger, nil)
 
 			// load rules into manager and start
 			require.NoError(t, manager.Update(time.Millisecond, ruleFiles, nil, "", nil))

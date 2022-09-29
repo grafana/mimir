@@ -77,35 +77,6 @@ func defaultRulerConfig(t testing.TB) Config {
 	return cfg
 }
 
-func testSetup() (storage.QueryableFunc, promRules.QueryFunc, Pusher, log.Logger) {
-	noopQueryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-		return storage.NoopQuerier(), nil
-	})
-	noopQueryFunc := func(ctx context.Context, q string, t time.Time) (promql.Vector, error) {
-		return nil, nil
-	}
-
-	// Mock the pusher
-	pusher := newPusherMock()
-	pusher.MockPush(&mimirpb.WriteResponse{}, nil)
-
-	l := log.NewLogfmtLogger(os.Stdout)
-	l = level.NewFilter(l, level.AllowInfo())
-
-	return noopQueryable, noopQueryFunc, pusher, l
-}
-
-func newManager(t *testing.T, cfg Config) *DefaultMultiTenantManager {
-	noopQueryable, noopQueryFunc, pusher, logger := testSetup()
-	options := applyPrepareOptions()
-
-	mngFactory := DefaultTenantManagerFactory(cfg, pusher, noopQueryable, noopQueryFunc, options.limits, nil)
-	manager, err := NewDefaultMultiTenantManager(cfg, mngFactory, prometheus.NewRegistry(), logger, nil)
-	require.NoError(t, err)
-
-	return manager
-}
-
 type mockRulerClientsPool struct {
 	ClientsPool
 	cfg           Config
@@ -147,11 +118,16 @@ func newMockClientsPool(cfg Config, logger log.Logger, reg prometheus.Registerer
 type prepareOption func(opts *prepareOptions)
 
 type prepareOptions struct {
-	limits RulesLimits
-	start  bool
+	limits     RulesLimits
+	logger     log.Logger
+	registerer prometheus.Registerer
+	start      bool
 }
 
 func applyPrepareOptions(opts ...prepareOption) prepareOptions {
+	defaultLogger := log.NewLogfmtLogger(os.Stdout)
+	defaultLogger = level.NewFilter(defaultLogger, level.AllowInfo())
+
 	applied := prepareOptions{
 		// Default limits in the ruler tests.
 		limits: validation.MockOverrides(func(defaults *validation.Limits) {
@@ -159,6 +135,8 @@ func applyPrepareOptions(opts ...prepareOption) prepareOptions {
 			defaults.RulerMaxRuleGroupsPerTenant = 20
 			defaults.RulerMaxRulesPerRuleGroup = 15
 		}),
+		logger:     defaultLogger,
+		registerer: prometheus.NewPedanticRegistry(),
 	}
 
 	for _, opt := range opts {
@@ -177,15 +155,9 @@ func withStart() prepareOption {
 
 func prepareRuler(t *testing.T, cfg Config, storage rulestore.RuleStore, rulerAddrMap map[string]*Ruler, opts ...prepareOption) *Ruler {
 	options := applyPrepareOptions(opts...)
+	manager := prepareRulerManager(t, cfg, opts...)
 
-	noopQueryable, noopQueryFunc, pusher, logger := testSetup()
-
-	reg := prometheus.NewRegistry()
-	managerFactory := DefaultTenantManagerFactory(cfg, pusher, noopQueryable, noopQueryFunc, options.limits, reg)
-	manager, err := NewDefaultMultiTenantManager(cfg, managerFactory, reg, log.NewNopLogger(), nil)
-	require.NoError(t, err)
-
-	ruler, err := newRuler(cfg, manager, reg, logger, storage, options.limits, newMockClientsPool(cfg, logger, reg, rulerAddrMap))
+	ruler, err := newRuler(cfg, manager, options.registerer, options.logger, storage, options.limits, newMockClientsPool(cfg, options.logger, options.registerer, rulerAddrMap))
 	require.NoError(t, err)
 
 	// Start the ruler if requested to do so.
@@ -199,6 +171,27 @@ func prepareRuler(t *testing.T, cfg Config, storage rulestore.RuleStore, rulerAd
 	}
 
 	return ruler
+}
+
+func prepareRulerManager(t *testing.T, cfg Config, opts ...prepareOption) *DefaultMultiTenantManager {
+	options := applyPrepareOptions(opts...)
+
+	noopQueryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+		return storage.NoopQuerier(), nil
+	})
+	noopQueryFunc := func(ctx context.Context, q string, t time.Time) (promql.Vector, error) {
+		return nil, nil
+	}
+
+	// Mock the pusher
+	pusher := newPusherMock()
+	pusher.MockPush(&mimirpb.WriteResponse{}, nil)
+
+	managerFactory := DefaultTenantManagerFactory(cfg, pusher, noopQueryable, noopQueryFunc, options.limits, options.registerer)
+	manager, err := NewDefaultMultiTenantManager(cfg, managerFactory, prometheus.NewRegistry(), options.logger, nil)
+	require.NoError(t, err)
+
+	return manager
 }
 
 var _ MultiTenantManager = &DefaultMultiTenantManager{}
@@ -220,7 +213,7 @@ func TestNotifierSendsUserIDHeader(t *testing.T) {
 	cfg := defaultRulerConfig(t)
 	cfg.AlertmanagerURL = ts.URL
 
-	manager := newManager(t, cfg)
+	manager := prepareRulerManager(t, cfg)
 	defer manager.Stop()
 
 	n, err := manager.getOrCreateNotifier("1")
