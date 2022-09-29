@@ -1391,7 +1391,7 @@ To configure the limit on a per-tenant basis, use the `-store.max-query-length` 
 
 ### err-mimir-max-total-query-length
 
-This error occurs when the time range of a query exceeds the configured maximum length. For a limit on the partial (after sharding) query length, see [err-mimir-max-query-length](#err-mimir-max-query-length).
+This error occurs when the time range of a query exceeds the configured maximum length. For a limit on the partial query length (after query splitting by interval and/or sharding), see [err-mimir-max-query-length](#err-mimir-max-query-length).
 
 Both PromQL instant and range queries can fetch metrics data over a period of time.
 A [range query](https://prometheus.io/docs/prometheus/latest/querying/api/#range-queries) requires a `start` and `end` timestamp, so the difference of `end` minus `start` is the time range length of the query.
