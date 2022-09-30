@@ -499,7 +499,7 @@ mimirtool analyze ruler --address=<url> --id=<tenant_id>
 | Environment variable | Flag        | Description                                                                                     |
 | -------------------- | ----------- | ----------------------------------------------------------------------------------------------- |
 | `MIMIR_ADDRESS`      | `--address` | Sets the address of the Prometheus instance.                                                    |
-| `MIMIR_TENANT_ID`    | `--user`    | Sets the basic auth username. If you're using Grafana Cloud, this variable is your instance ID. |
+| `MIMIR_TENANT_ID`    | `--id`      | Sets the basic auth username. If you're using Grafana Cloud, this variable is your instance ID. |
 | `MIMIR_API_KEY`      | `--key`     | Sets the basic auth password. If you're using Grafana Cloud, this variable is your API key.     |
 | -                    | `--output`  | Sets the output file path, which by default is `metrics-in-ruler.json`.                         |
 
@@ -577,7 +577,7 @@ mimirtool analyze prometheus --address=<url> --id=<tenant_id>
 | Environment variable | Flag                     | Description                                                                                                              |
 | -------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
 | `MIMIR_ADDRESS`      | `--address`              | Sets the address of the Prometheus instance.                                                                             |
-| `MIMIR_TENANT_ID`    | `--user`                 | Sets the basic auth username. If you're using Grafana Cloud this variable is your instance ID.                           |
+| `MIMIR_TENANT_ID`    | `--id`                   | Sets the basic auth username. If you're using Grafana Cloud this variable is your instance ID.                           |
 | `MIMIR_API_KEY`      | `--key`                  | Sets the basic auth password. If you're using Grafana Cloud, this variable is your API key.                              |
 | -                    | `--grafana-metrics-file` | `mimirtool analyse grafana` or `mimirtool analyse dashboard` output file, which by default is `metrics-in-grafana.json`. |
 | -                    | `--ruler-metrics-file`   | `mimirtool analyse ruler` or `mimirtool analyse rule-file` output file, which by default is `metrics-in-ruler.json`.     |
