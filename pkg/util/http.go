@@ -246,7 +246,7 @@ func decompressFromBuffer(dst []byte, buffer *bytes.Buffer, maxSize int, compres
 		return buffer.Bytes(), nil
 	case RawSnappy:
 		if sp != nil {
-			sp.LogFields(otlog.String("event", "util.ParseProtoRequest[decompress]"),
+			sp.LogFields(otlog.Event("util.ParseProtoRequest[decompress]"),
 				otlog.Int("size", len(buffer.Bytes())))
 		}
 		size, err := snappy.DecodedLen(buffer.Bytes())
