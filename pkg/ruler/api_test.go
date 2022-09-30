@@ -36,7 +36,7 @@ func TestRuler(t *testing.T) {
 
 	testCases := map[string]struct {
 		configuredRules rulespb.RuleGroupList
-		limits          *validation.Overrides
+		limits          RulesLimits
 		expectedRules   []*RuleGroup
 	}{
 		"should load and evaluate the configured rules": {
