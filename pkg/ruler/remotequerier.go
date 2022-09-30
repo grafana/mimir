@@ -46,6 +46,8 @@ const (
 	mimeTypeFormPost = "application/x-www-form-urlencoded"
 
 	statusError = "error"
+
+	maxRequestRetries = 3
 )
 
 var userAgent = fmt.Sprintf("mimir/%s", version.Version)
@@ -260,6 +262,7 @@ func (q *RemoteQuerier) sendRequest(ctx context.Context, req *httpgrpc.HTTPReque
 	retryConfig := backoff.Config{
 		MinBackoff: 100 * time.Millisecond,
 		MaxBackoff: 2 * time.Second,
+		MaxRetries: maxRequestRetries,
 	}
 	retry := backoff.New(ctx, retryConfig)
 

@@ -101,7 +101,7 @@ func TestRemoteQuerier_QueryReqTimeout(t *testing.T) {
 }
 
 func TestRemoteQuerier_BackoffRetry(t *testing.T) {
-	const failedRequestCount = 3
+	const failedRequestCount = 2
 
 	retries := 0
 	mockClientFn := func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
