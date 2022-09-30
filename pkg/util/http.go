@@ -164,7 +164,15 @@ func ParseProtoReader(ctx context.Context, reader io.Reader, expectedSize, maxSi
 		err = proto.NewBuffer(body).Unmarshal(req)
 	}
 	if err != nil {
+		if sp != nil {
+			sp.LogFields(otlog.String("event", "util.ParseProtoRequest[unmarshal done]"), otlog.Error(err))
+		}
+
 		return nil, err
+	}
+
+	if sp != nil {
+		sp.LogFields(otlog.String("event", "util.ParseProtoRequest[unmarshal done]"))
 	}
 
 	return body, nil
