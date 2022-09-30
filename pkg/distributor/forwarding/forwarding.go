@@ -257,6 +257,7 @@ func (f *forwarder) Forward(ctx context.Context, endpoint string, dontForwardBef
 			spanlog.Finish()
 		}()
 	} else {
+		f.pools.putTsSlice(toForward)
 		close(errCh)
 	}
 

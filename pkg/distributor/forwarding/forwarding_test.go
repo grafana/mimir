@@ -411,12 +411,7 @@ func TestForwardingEnsureThatPooledObjectsGetReturned(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			url1, _, bodies1 := newTestServer(t, 200, true)
-
-			// bodiesByForwardingTarget maps the forwarding targets to the methods to obtain the bodies that they received.
-			bodiesByForwardingTarget := map[string]func() [][]byte{
-				forwardingTarget: bodies1,
-			}
+			url, _, bodies := newTestServer(t, 200, true)
 
 			// Instantiate the forwarding with validating pools.
 			forwarder, validatePoolUsage := getForwarderWithValidatingPools(t, sampleCount, 1000, 1000)
@@ -443,19 +438,17 @@ func TestForwardingEnsureThatPooledObjectsGetReturned(t *testing.T) {
 			}
 
 			// Perform the forwarding operation.
-			toIngest, errCh := forwarder.Forward(context.Background(), url1, 0, tc.rules, ts)
+			toIngest, errCh := forwarder.Forward(context.Background(), url, 0, tc.rules, ts)
 			require.NoError(t, <-errCh)
 
 			// receivedSamples counts the number of samples that each forwarding target has received.
 			receivedSamples := make(map[string]int)
-			for forwardingTarget, bodies := range bodiesByForwardingTarget {
-				for _, body := range bodies() {
-					writeReq := decodeBody(t, body)
-					for _, ts := range writeReq.Timeseries {
-						receivedForTarget := receivedSamples[forwardingTarget]
-						receivedForTarget += len(ts.Samples)
-						receivedSamples[forwardingTarget] = receivedForTarget
-					}
+			for _, body := range bodies() {
+				writeReq := decodeBody(t, body)
+				for _, ts := range writeReq.Timeseries {
+					receivedForTarget := receivedSamples[forwardingTarget]
+					receivedForTarget += len(ts.Samples)
+					receivedSamples[forwardingTarget] = receivedForTarget
 				}
 			}
 
