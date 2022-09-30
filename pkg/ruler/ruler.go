@@ -477,8 +477,7 @@ func (r *Ruler) syncRules(ctx context.Context, reason string) {
 	}
 
 	// Filter out all rules for which their evaluation has been disabled for the given tenant.
-	// The configs map is modified in place.
-	filterRuleGroupsByEnabled(configs, r.limits, r.logger)
+	configs = filterRuleGroupsByEnabled(configs, r.limits, r.logger)
 
 	// This will also delete local group files for users that are no longer in 'configs' map.
 	r.manager.SyncRuleGroups(ctx, configs)
@@ -607,77 +606,55 @@ func filterRuleGroupsByOwnership(userID string, ruleGroups []*rulespb.RuleGroupD
 }
 
 // filterRuleGroupsByEnabled filters out from the input configs all the recording and/or alerting rules whose evaluation
-// has been disabled for the given tenant. This function modifies the input configs in place.
-func filterRuleGroupsByEnabled(configs map[string]rulespb.RuleGroupList, limits RulesLimits, logger log.Logger) {
-	for userID, groups := range configs {
-		// Nothing to do if both recording and alerting rules are enabled.
+// has been disabled for the given tenant.
+//
+// This function doesn't modify the input configs in place (even if it could) in order to reduce the likelihood of introducing
+// future bugs, in case the rule groups will be cached in memory.
+func filterRuleGroupsByEnabled(configs map[string]rulespb.RuleGroupList, limits RulesLimits, logger log.Logger) (filtered map[string]rulespb.RuleGroupList) {
+	// Quick case: nothing if do if no user has rules disabled.
+	shouldFilter := false
+	for userID := range configs {
 		recordingEnabled := limits.RulerRecordingRulesEvaluationEnabled(userID)
 		alertingEnabled := limits.RulerAlertingRulesEvaluationEnabled(userID)
+
+		if !recordingEnabled || !alertingEnabled {
+			shouldFilter = true
+			break
+		}
+	}
+
+	if !shouldFilter {
+		return configs
+	}
+
+	// Filter out disabled rules.
+	filtered = make(map[string]rulespb.RuleGroupList, len(configs))
+
+	for userID, groups := range configs {
+		recordingEnabled := limits.RulerRecordingRulesEvaluationEnabled(userID)
+		alertingEnabled := limits.RulerAlertingRulesEvaluationEnabled(userID)
+
+		// Quick case: nothing to do if all rules are enabled.
 		if recordingEnabled && alertingEnabled {
+			filtered[userID] = groups
 			continue
 		}
 
-		// Optimization in case both recording and alerting rules are disabled.
+		// Quick case: remove the user at all if all rules are disabled.
 		if !recordingEnabled && !alertingEnabled {
-			delete(configs, userID)
 			continue
 		}
 
-		var (
-			removedGroups     = 0
-			removedRulesTotal = 0
-		)
+		filtered[userID] = make(rulespb.RuleGroupList, 0, len(groups))
+		removedRulesTotal := 0
 
-		for groupIdx, group := range groups {
-			removedRules := 0
-
-			// Set to nil all rules that should be removed.
-			for ruleIdx, rule := range group.Rules {
-				if !alertingEnabled && rule.Alert != "" {
-					group.Rules[ruleIdx] = nil
-					removedRules++
-				}
-
-				if !recordingEnabled && rule.Record != "" {
-					group.Rules[ruleIdx] = nil
-					removedRules++
-				}
-			}
-
-			// If all rules were removed then we should remove the whole group,
-			// otherwise we'll just remove the rules set to nil.
-			if removedRules == len(group.Rules) {
-				groups[groupIdx] = nil
-				removedGroups++
-			} else if removedRules > 0 {
-				src, dst := 0, 0
-				for ; src < len(group.Rules); src++ {
-					if group.Rules[src] != nil {
-						group.Rules[dst] = group.Rules[src]
-						dst++
-					}
-				}
-
-				group.Rules = group.Rules[:dst]
+		for _, group := range groups {
+			filteredGroup, removedRules := filterRuleGroupByEnabled(group, recordingEnabled, alertingEnabled)
+			if filteredGroup != nil {
+				filtered[userID] = append(filtered[userID], filteredGroup)
 			}
 
 			removedRulesTotal += removedRules
-		}
-
-		// If all groups were removed then we should delete the user config,
-		// otherwise we'll just remove the groups set to nil.
-		if removedGroups == len(groups) {
-			delete(configs, userID)
-		} else if removedGroups > 0 {
-			src, dst := 0, 0
-			for ; src < len(groups); src++ {
-				if groups[src] != nil {
-					groups[dst] = groups[src]
-					dst++
-				}
-			}
-
-			configs[userID] = groups[:dst]
 		}
 
 		if removedRulesTotal > 0 {
@@ -691,6 +668,53 @@ func filterRuleGroupsByEnabled(configs map[string]rulespb.RuleGroupList, limits 
 				"alerting_rules_enabled", alertingEnabled)
 		}
 	}
+
+	return filtered
+}
+
+func filterRuleGroupByEnabled(group *rulespb.RuleGroupDesc, recordingEnabled, alertingEnabled bool) (filtered *rulespb.RuleGroupDesc, removedRules int) {
+	// Check if there are actually rules to be removed.
+	for _, rule := range group.Rules {
+		if rule.Record != "" && !recordingEnabled {
+			removedRules++
+		} else if rule.Alert != "" && !alertingEnabled {
+			removedRules++
+		}
+	}
+
+	// Quick case: no rules to remove.
+	if removedRules == 0 {
+		return group, 0
+	}
+
+	// Quick case: all rules to remove.
+	if removedRules == len(group.Rules) {
+		return nil, removedRules
+	}
+
+	// Create a copy of the group and remove some rules.
+	filtered = &rulespb.RuleGroupDesc{
+		Name:          group.Name,
+		Namespace:     group.Namespace,
+		Interval:      group.Interval,
+		Rules:         make([]*rulespb.RuleDesc, 0, len(group.Rules)-removedRules),
+		User:          group.User,
+		Options:       group.Options,
+		SourceTenants: group.SourceTenants,
+	}
+
+	for _, rule := range group.Rules {
+		if rule.Record != "" && !recordingEnabled {
+			continue
+		}
+		if rule.Alert != "" && !alertingEnabled {
+			continue
+		}
+
+		filtered.Rules = append(filtered.Rules, rule)
+	}
+
+	return filtered, removedRules
 }
 
 // GetRules retrieves the running rules from this ruler and all running rulers in the ring.
