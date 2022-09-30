@@ -3035,7 +3035,7 @@ tsdb:
   # (advanced) Maximum number of tenants concurrently compacting TSDB head into
   # a new block
   # CLI flag: -blocks-storage.tsdb.head-compaction-concurrency
-  [head_compaction_concurrency: <int> | default = 5]
+  [head_compaction_concurrency: <int> | default = 1]
 
   # (advanced) If TSDB head is idle for this duration, it is compacted. Note
   # that up to 25% jitter is added to the value to avoid ingesters compacting

@@ -5754,7 +5754,7 @@
               "required": false,
               "desc": "Maximum number of tenants concurrently compacting TSDB head into a new block",
               "fieldValue": null,
-              "fieldDefaultValue": 5,
+              "fieldDefaultValue": 1,
               "fieldFlag": "blocks-storage.tsdb.head-compaction-concurrency",
               "fieldType": "int",
               "fieldCategory": "advanced"
