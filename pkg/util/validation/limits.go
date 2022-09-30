@@ -59,10 +59,6 @@ func (e LimitError) Error() string {
 type ForwardingRule struct {
 	// Ingest defines whether a metric should still be pushed to the Ingesters despite it being forwarded.
 	Ingest bool `yaml:"ingest" json:"ingest"`
-
-	// Endpoint is the URL of the remote_write endpoint to which a metric should be forwarded.
-	// Deprecated in favor of ForwardingEndpoint.
-	Endpoint string `yaml:"endpoint,omitempty" json:"endpoint,omitempty"`
 }
 
 // ForwardingRules are keyed by metric names, excluding labels.
