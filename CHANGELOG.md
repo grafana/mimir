@@ -68,6 +68,7 @@
 * [ENHANCEMENT] Ruler: added support to forcefully disable recording and/or alerting rules evaluation. The following new configuration options have been introduced, which can be overridden on a per-tenant basis in the runtime configuration: #3088
   * `-ruler.recording-rules-evaluation-enabled`
   * `-ruler.alerting-rules-evaluation-enabled`
+* [ENHANCEMENT] Distributor: Add age filter to forwarding functionality, to not forward samples which are older than defined duration. #3049
 * [BUGFIX] Querier: Fix 400 response while handling streaming remote read. #2963
 * [BUGFIX] Fix a bug causing query-frontend, query-scheduler, and querier not failing if one of their internal components fail. #2978
 * [BUGFIX] Querier: re-balance the querier worker connections when a query-frontend or query-scheduler is terminated. #3005
