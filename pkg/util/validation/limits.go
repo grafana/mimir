@@ -165,8 +165,9 @@ type Limits struct {
 	AlertmanagerMaxAlertsCount                 int `yaml:"alertmanager_max_alerts_count" json:"alertmanager_max_alerts_count"`
 	AlertmanagerMaxAlertsSizeBytes             int `yaml:"alertmanager_max_alerts_size_bytes" json:"alertmanager_max_alerts_size_bytes"`
 
-	ForwardingEndpoint string          `yaml:"forwarding_endpoint" json:"forwarding_endpoint" doc:"nocli|description=Remote-write endpoint where metrics specified in forwarding_rules are forwarded to. If set, takes precedence over endpoints specified in forwarding rules."`
-	ForwardingRules    ForwardingRules `yaml:"forwarding_rules" json:"forwarding_rules" doc:"nocli|description=Rules based on which the Distributor decides whether a metric should be forwarded to an alternative remote_write API endpoint."`
+	ForwardingEndpoint      string          `yaml:"forwarding_endpoint" json:"forwarding_endpoint" doc:"nocli|description=Remote-write endpoint where metrics specified in forwarding_rules are forwarded to. If set, takes precedence over endpoints specified in forwarding rules."`
+	ForwardingDropOlderThan model.Duration  `yaml:"forwarding_drop_older_than" json:"forwarding_drop_older_than" doc:"nocli|description=If set, forwarding drops samples that are older than this duration. If unset or 0, no samples get dropped."`
+	ForwardingRules         ForwardingRules `yaml:"forwarding_rules" json:"forwarding_rules" doc:"nocli|description=Rules based on which the Distributor decides whether a metric should be forwarded to an alternative remote_write API endpoint."`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -728,6 +729,10 @@ func (o *Overrides) ForwardingRules(user string) ForwardingRules {
 
 func (o *Overrides) ForwardingEndpoint(user string) string {
 	return o.getOverridesForUser(user).ForwardingEndpoint
+}
+
+func (o *Overrides) ForwardingDropOlderThan(user string) time.Duration {
+	return time.Duration(o.getOverridesForUser(user).ForwardingDropOlderThan)
 }
 
 func (o *Overrides) getOverridesForUser(userID string) *Limits {

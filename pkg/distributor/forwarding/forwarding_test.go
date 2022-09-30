@@ -63,7 +63,7 @@ func TestForwardingSamplesSuccessfullyToCorrectTarget(t *testing.T) {
 		newSample(t, now, 3, 300, "__name__", "metric2", "some_label", "foo"),
 		newSample(t, now, 4, 400, "__name__", "metric2", "some_label", "bar"),
 	}
-	tsToIngest, errCh := forwarder.Forward(ctx, "", rules, ts)
+	tsToIngest, errCh := forwarder.Forward(ctx, "", 0, rules, ts)
 
 	// The metric2 should be returned by the forwarding because the matching rule has ingest set to "true".
 	require.Len(t, tsToIngest, 2)
@@ -142,7 +142,7 @@ func TestForwardingSamplesSuccessfullyToSingleTarget(t *testing.T) {
 		newSample(t, now, 3, 300, "__name__", "metric2", "some_label", "foo"),
 		newSample(t, now, 4, 400, "__name__", "metric2", "some_label", "bar"),
 	}
-	tsToIngest, errCh := forwarder.Forward(ctx, url, rules, ts)
+	tsToIngest, errCh := forwarder.Forward(ctx, url, 0, rules, ts)
 
 	// The metric2 should be returned by the forwarding because the matching rule has ingest set to "true".
 	require.Len(t, tsToIngest, 2)
@@ -200,6 +200,179 @@ func TestForwardingSamplesSuccessfullyToSingleTarget(t *testing.T) {
 		"cortex_distributor_forward_requests_total",
 		"cortex_distributor_forward_samples_total",
 	))
+}
+
+func TestForwardingOmitOldSamples(t *testing.T) {
+	ctx := context.Background()
+
+	now := time.Now()
+	dontForwardOlderThan := 10 * time.Minute
+	cutOffTs := now.UnixMilli() - dontForwardOlderThan.Milliseconds()
+
+	type testCase struct {
+		name            string
+		inputSamples    [][]mimirpb.Sample
+		expectedSamples [][]mimirpb.Sample
+		expectError     error
+	}
+
+	testCases := []testCase{
+		{
+			name: "drop nothing",
+			inputSamples: [][]mimirpb.Sample{
+				{
+					{TimestampMs: cutOffTs, Value: 1},      // ok
+					{TimestampMs: cutOffTs + 50, Value: 1}, // ok
+				}, {
+					{TimestampMs: cutOffTs + 100, Value: 1}, // ok
+					{TimestampMs: cutOffTs + 150, Value: 1}, // ok
+				}, {
+					{TimestampMs: cutOffTs + 200, Value: 1}, // ok
+					{TimestampMs: cutOffTs + 250, Value: 1}, // ok
+				},
+			},
+			expectedSamples: [][]mimirpb.Sample{
+				{
+					{TimestampMs: cutOffTs, Value: 1},
+					{TimestampMs: cutOffTs + 50, Value: 1},
+				}, {
+					{TimestampMs: cutOffTs + 100, Value: 1},
+					{TimestampMs: cutOffTs + 150, Value: 1},
+				}, {
+					{TimestampMs: cutOffTs + 200, Value: 1},
+					{TimestampMs: cutOffTs + 250, Value: 1},
+				},
+			},
+			expectError: nil, // Expecting no error because nothing was dropped.
+		}, {
+			name: "drop some of the samples",
+			inputSamples: [][]mimirpb.Sample{
+				{
+					{TimestampMs: cutOffTs - 100, Value: 1}, // too old
+					{TimestampMs: cutOffTs - 50, Value: 1},  // too old
+				}, {
+					{TimestampMs: cutOffTs, Value: 1},      // ok
+					{TimestampMs: cutOffTs + 50, Value: 1}, // ok
+				}, {
+					{TimestampMs: cutOffTs + 100, Value: 1}, // ok
+					{TimestampMs: cutOffTs + 150, Value: 1}, // ok
+				},
+			},
+			expectedSamples: [][]mimirpb.Sample{
+				{
+					{TimestampMs: cutOffTs, Value: 1},
+					{TimestampMs: cutOffTs + 50, Value: 1},
+				}, {
+					{TimestampMs: cutOffTs + 100, Value: 1},
+					{TimestampMs: cutOffTs + 150, Value: 1},
+				},
+			},
+			expectError: errSamplesTooOld,
+		}, {
+			name: "split one sample slice in the middle",
+			inputSamples: [][]mimirpb.Sample{
+				{
+					{TimestampMs: cutOffTs - 150, Value: 1}, // too old
+					{TimestampMs: cutOffTs - 100, Value: 1}, // too old
+
+				}, {
+					{TimestampMs: cutOffTs - 50, Value: 1}, // too old
+					{TimestampMs: cutOffTs, Value: 1},      // ok
+
+				}, {
+					{TimestampMs: cutOffTs + 50, Value: 1},  // ok
+					{TimestampMs: cutOffTs + 100, Value: 1}, // ok
+
+				},
+			},
+			expectedSamples: [][]mimirpb.Sample{
+				{
+					{TimestampMs: cutOffTs, Value: 1},
+				}, {
+					{TimestampMs: cutOffTs + 50, Value: 1},
+					{TimestampMs: cutOffTs + 100, Value: 1},
+				},
+			},
+			expectError: errSamplesTooOld,
+		}, {
+			name: "drop all of the samples",
+			inputSamples: [][]mimirpb.Sample{
+				{
+					{TimestampMs: cutOffTs - 200, Value: 1}, // too old
+					{TimestampMs: cutOffTs - 150, Value: 1}, // too old
+
+				}, {
+					{TimestampMs: cutOffTs - 100, Value: 1}, // too old
+					{TimestampMs: cutOffTs - 50, Value: 1},  // too old
+
+				},
+			},
+			expectedSamples: [][]mimirpb.Sample{},
+			expectError:     errSamplesTooOld,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			f, _ := newForwarder(t, testConfig, true)
+
+			url, _, bodiesFn, closeFn := newTestServer(t, 200, true)
+			defer closeFn()
+
+			testMetric := "metric1"
+			rules := validation.ForwardingRules{
+				testMetric: validation.ForwardingRule{Ingest: true, Endpoint: "not used"},
+			}
+
+			inputTs := make([]mimirpb.PreallocTimeseries, 0, len(tc.inputSamples))
+			for tsIdx := range tc.inputSamples {
+				inputTs = append(inputTs, mimirpb.PreallocTimeseries{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: []mimirpb.LabelAdapter{
+							{Name: "__name__", Value: testMetric},
+							{Name: "unique_series_label", Value: strconv.Itoa(tsIdx)},
+						},
+						Samples: tc.inputSamples[tsIdx],
+					},
+				})
+			}
+
+			toIngest, errCh := f.Forward(ctx, url, cutOffTs, rules, inputTs)
+
+			// All samples should be ingested, including the ones that were dropped by the forwarding.
+			require.Equal(t, len(tc.inputSamples), len(toIngest))
+			for tsIdx := range tc.inputSamples {
+				require.Equal(t, tc.inputSamples[tsIdx], toIngest[tsIdx].Samples)
+			}
+
+			if tc.expectError == nil {
+				require.NoError(t, <-errCh)
+			} else {
+				err := <-errCh
+				require.Equal(t, tc.expectError, err)
+			}
+
+			// Wait for forwarding requests to complete.
+			for range errCh {
+			}
+
+			bodies := bodiesFn()
+
+			if len(tc.expectedSamples) > 0 {
+				// Expecting single request, with all the metrics.
+				require.Len(t, bodies, 1)
+
+				receivedReq := decodeBody(t, bodies[0])
+
+				require.Equal(t, len(tc.expectedSamples), len(receivedReq.Timeseries))
+				for tsIdx := range tc.expectedSamples {
+					require.Equal(t, tc.expectedSamples[tsIdx], receivedReq.Timeseries[tsIdx].Samples)
+				}
+			} else {
+				// Expecting no requests if there were no samples to forward.
+				require.Len(t, bodies, 0)
+			}
+		})
+	}
 }
 
 func TestForwardingSamplesWithDifferentErrorsWithPropagation(t *testing.T) {
@@ -295,7 +468,7 @@ func TestForwardingSamplesWithDifferentErrorsWithPropagation(t *testing.T) {
 			for _, metric := range metrics {
 				ts = append(ts, newSample(t, now, 1, 100, "__name__", metric))
 			}
-			_, errCh := forwarder.Forward(context.Background(), "", rules, ts)
+			_, errCh := forwarder.Forward(context.Background(), "", 0, rules, ts)
 
 			gotStatusCodes := []status{}
 			for err := range errCh {
@@ -504,7 +677,7 @@ func TestForwardingEnsureThatPooledObjectsGetReturned(t *testing.T) {
 			}
 
 			// Perform the forwarding operation.
-			toIngest, errCh := forwarder.Forward(context.Background(), "", tc.rules, ts)
+			toIngest, errCh := forwarder.Forward(context.Background(), "", 0, tc.rules, ts)
 			require.NoError(t, <-errCh)
 
 			// receivedSamples counts the number of samples that each forwarding target has received.
@@ -537,6 +710,83 @@ func TestForwardingEnsureThatPooledObjectsGetReturned(t *testing.T) {
 
 			// Validate pool usage.
 			validatePoolUsage()
+		})
+	}
+}
+
+func TestDropSamplesBefore(t *testing.T) {
+	type testCase struct {
+		name     string
+		cutoff   int64
+		input    []mimirpb.Sample
+		expected []mimirpb.Sample
+	}
+
+	testCases := []testCase{
+		{
+			name:     "no samples",
+			cutoff:   100,
+			input:    []mimirpb.Sample{},
+			expected: []mimirpb.Sample{},
+		}, {
+			name:   "all samples before cutoff",
+			cutoff: 100,
+			input: []mimirpb.Sample{
+				{TimestampMs: 97},
+				{TimestampMs: 98},
+				{TimestampMs: 99},
+			},
+			expected: []mimirpb.Sample{},
+		}, {
+			name:   "all samples after cutoff",
+			cutoff: 100,
+			input: []mimirpb.Sample{
+				{TimestampMs: 100},
+				{TimestampMs: 101},
+				{TimestampMs: 102},
+			},
+			expected: []mimirpb.Sample{
+				{TimestampMs: 100},
+				{TimestampMs: 101},
+				{TimestampMs: 102},
+			},
+		}, {
+			name:   "cut some samples off",
+			cutoff: 100,
+			input: []mimirpb.Sample{
+				{TimestampMs: 97},
+				{TimestampMs: 98},
+				{TimestampMs: 99},
+				{TimestampMs: 100},
+				{TimestampMs: 101},
+				{TimestampMs: 102},
+			},
+			expected: []mimirpb.Sample{
+				{TimestampMs: 100},
+				{TimestampMs: 101},
+				{TimestampMs: 102},
+			},
+		}, {
+			name:   "unsorted sample slice",
+			cutoff: 100,
+			input: []mimirpb.Sample{
+				{TimestampMs: 98},
+				{TimestampMs: 101},
+				{TimestampMs: 99},
+				{TimestampMs: 100},
+				{TimestampMs: 97},
+				{TimestampMs: 102},
+			},
+			expected: []mimirpb.Sample{
+				{TimestampMs: 102},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			actual := dropSamplesBefore(tc.input, tc.cutoff)
+			require.Equal(t, tc.expected, actual)
 		})
 	}
 }
@@ -766,7 +1016,7 @@ func BenchmarkRemoteWriteForwarding(b *testing.B) {
 					require.NoError(b, <-errChs[errChIdx])
 				}
 
-				samples, errChs[errChIdx] = f.Forward(ctx, "", tc.rules, samples)
+				samples, errChs[errChIdx] = f.Forward(ctx, "", 0, tc.rules, samples)
 				errChIdx = (errChIdx + 1) % len(errChs)
 
 				mimirpb.ReuseSlice(samples)
@@ -798,7 +1048,7 @@ func TestForwardingToHTTPGrpcTarget(t *testing.T) {
 		newSample(t, now, 3, 300, "__name__", "metric2", "some_label", "foo"),
 		newSample(t, now, 4, 400, "__name__", "metric2", "some_label", "bar"),
 	}
-	tsToIngest, errCh := forwarder.Forward(ctx, "", rules, ts)
+	tsToIngest, errCh := forwarder.Forward(ctx, "", 0, rules, ts)
 
 	// The metric2 should be returned by the forwarding because the matching rule has ingest set to "true".
 	require.Len(t, tsToIngest, 2)

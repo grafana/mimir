@@ -3443,6 +3443,15 @@
         },
         {
           "kind": "field",
+          "name": "forwarding_drop_older_than",
+          "required": false,
+          "desc": "If set, forwarding drops samples that are older than this duration. If unset or 0, no samples get dropped.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldType": "int"
+        },
+        {
+          "kind": "field",
           "name": "forwarding_rules",
           "required": false,
           "desc": "Rules based on which the Distributor decides whether a metric should be forwarded to an alternative remote_write API endpoint.",
