@@ -227,6 +227,7 @@ func (f *forwarder) Forward(ctx context.Context, endpoint string, dontForwardBef
 	}
 
 	spanlog, ctx := spanlogger.NewWithLogger(ctx, f.log, "forwarder.Forward")
+	// spanlog is finished from inside goroutine spawned later in this function.
 
 	toIngest, tsByTargets, err := f.splitByTargets(endpoint, dontForwardBefore, in, rules)
 	defer f.pools.putTsByTargets(tsByTargets)
