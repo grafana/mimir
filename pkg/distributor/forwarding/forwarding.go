@@ -31,6 +31,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/extract"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -225,6 +226,9 @@ func (f *forwarder) Forward(ctx context.Context, endpoint string, dontForwardBef
 		return in, errCh
 	}
 
+	spanlog, ctx := spanlogger.NewWithLogger(ctx, f.log, "forwarder.Forward")
+	// spanlog is finished from inside goroutine spawned later in this function.
+
 	toIngest, tsByTargets, err := f.splitByTargets(endpoint, dontForwardBefore, in, rules)
 	defer f.pools.putTsByTargets(tsByTargets)
 	errCh := make(chan error, len(tsByTargets)+1)
@@ -244,6 +248,7 @@ func (f *forwarder) Forward(ctx context.Context, endpoint string, dontForwardBef
 		// to complete and handle potential errors yielded by the forwarding requests.
 		requestWg.Wait()
 		close(errCh)
+		spanlog.Finish()
 	}()
 
 	return toIngest, errCh
@@ -435,6 +440,9 @@ func (f *forwarder) submitForwardingRequest(ctx context.Context, endpoint string
 
 // do performs a forwarding request.
 func (r *request) do() {
+	spanlog, ctx := spanlogger.NewWithLogger(r.ctx, r.log, "request.do")
+	defer spanlog.Finish()
+
 	defer r.cleanup()
 
 	protoBufBytesRef := r.pools.getProtobuf()
@@ -447,7 +455,7 @@ func (r *request) do() {
 	protoBuf := proto.NewBuffer(protoBufBytes)
 	err := protoBuf.Marshal(&mimirpb.WriteRequest{Timeseries: r.ts.ts})
 	if err != nil {
-		r.handleError(http.StatusBadRequest, errors.Wrap(err, "failed to marshal write request for forwarding"))
+		r.handleError(ctx, http.StatusBadRequest, errors.Wrap(err, "failed to marshal write request for forwarding"))
 		return
 	}
 
@@ -469,7 +477,7 @@ func (r *request) do() {
 	if err != nil {
 		r.errors.WithLabelValues("failed").Inc()
 
-		r.handleError(http.StatusInternalServerError, err)
+		r.handleError(ctx, http.StatusInternalServerError, err)
 	}
 }
 
@@ -508,21 +516,21 @@ func (r *request) doHTTP(ctx context.Context, body []byte) error {
 			line = scanner.Text()
 		}
 
-		r.processHTTPResponse(httpResp.StatusCode, line)
+		r.processHTTPResponse(ctx, httpResp.StatusCode, line)
 	}
 	return nil
 }
 
-func (r *request) processHTTPResponse(code int, message string) {
+func (r *request) processHTTPResponse(ctx context.Context, code int, message string) {
 	r.errors.WithLabelValues(strconv.Itoa(code)).Inc()
 
 	err := errors.Errorf("server returned HTTP status %d: %s", code, message)
 	if code/100 == 5 || code == http.StatusTooManyRequests {
 		// The forwarding endpoint has returned a retriable error, so we want the client to retry.
-		r.handleError(http.StatusInternalServerError, err)
+		r.handleError(ctx, http.StatusInternalServerError, err)
 		return
 	}
-	r.handleError(http.StatusBadRequest, err)
+	r.handleError(ctx, http.StatusBadRequest, err)
 }
 
 var headers = []*httpgrpc.Header{
@@ -582,16 +590,16 @@ func (r *request) doHTTPGrpc(ctx context.Context, body []byte) error {
 			line = scanner.Text()
 		}
 
-		r.processHTTPResponse(int(resp.Code), line)
+		r.processHTTPResponse(ctx, int(resp.Code), line)
 	}
 	return nil
 }
 
-func (r *request) handleError(status int, err error) {
-	errMsg := err.Error()
-	level.Warn(r.log).Log("msg", "error in forwarding request", "err", errMsg)
+func (r *request) handleError(ctx context.Context, status int, err error) {
+	logger := spanlogger.FromContext(ctx, r.log)
+	level.Warn(logger).Log("msg", "error in forwarding request", "statusCode", status, "err", err)
 	if r.propagateErrors {
-		r.errCh <- httpgrpc.Errorf(status, errMsg)
+		r.errCh <- httpgrpc.Errorf(status, err.Error())
 	}
 }
 
