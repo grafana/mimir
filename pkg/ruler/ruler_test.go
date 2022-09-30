@@ -50,6 +50,7 @@ import (
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
 	"github.com/grafana/mimir/pkg/ruler/rulestore/bucketclient"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func defaultRulerConfig(t testing.TB) Config {
@@ -74,57 +75,6 @@ func defaultRulerConfig(t testing.TB) Config {
 	cfg.EnableQueryStats = false
 
 	return cfg
-}
-
-type ruleLimits struct {
-	evalDelay            time.Duration
-	tenantShard          int
-	maxRulesPerRuleGroup int
-	maxRuleGroups        int
-}
-
-func (r ruleLimits) EvaluationDelay(_ string) time.Duration {
-	return r.evalDelay
-}
-
-func (r ruleLimits) RulerTenantShardSize(_ string) int {
-	return r.tenantShard
-}
-
-func (r ruleLimits) RulerMaxRuleGroupsPerTenant(_ string) int {
-	return r.maxRuleGroups
-}
-
-func (r ruleLimits) RulerMaxRulesPerRuleGroup(_ string) int {
-	return r.maxRulesPerRuleGroup
-}
-
-func testSetup() (storage.QueryableFunc, promRules.QueryFunc, Pusher, log.Logger, RulesLimits) {
-	noopQueryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-		return storage.NoopQuerier(), nil
-	})
-	noopQueryFunc := func(ctx context.Context, q string, t time.Time) (promql.Vector, error) {
-		return nil, nil
-	}
-
-	// Mock the pusher
-	pusher := newPusherMock()
-	pusher.MockPush(&mimirpb.WriteResponse{}, nil)
-
-	l := log.NewLogfmtLogger(os.Stdout)
-	l = level.NewFilter(l, level.AllowInfo())
-
-	return noopQueryable, noopQueryFunc, pusher, l, ruleLimits{evalDelay: 0, maxRuleGroups: 20, maxRulesPerRuleGroup: 15}
-}
-
-func newManager(t *testing.T, cfg Config) *DefaultMultiTenantManager {
-	noopQueryable, noopQueryFunc, pusher, logger, overrides := testSetup()
-
-	mngFactory := DefaultTenantManagerFactory(cfg, pusher, noopQueryable, noopQueryFunc, overrides, nil)
-	manager, err := NewDefaultMultiTenantManager(cfg, mngFactory, prometheus.NewRegistry(), logger, nil)
-	require.NoError(t, err)
-
-	return manager
 }
 
 type mockRulerClientsPool struct {
@@ -165,29 +115,98 @@ func newMockClientsPool(cfg Config, logger log.Logger, reg prometheus.Registerer
 	}
 }
 
-func buildRuler(t *testing.T, cfg Config, storage rulestore.RuleStore, rulerAddrMap map[string]*Ruler) *Ruler {
-	noopQueryable, noopQueryFunc, pusher, logger, overrides := testSetup()
+type prepareOption func(opts *prepareOptions)
 
-	reg := prometheus.NewRegistry()
-	managerFactory := DefaultTenantManagerFactory(cfg, pusher, noopQueryable, noopQueryFunc, overrides, reg)
-	manager, err := NewDefaultMultiTenantManager(cfg, managerFactory, reg, log.NewNopLogger(), nil)
+type prepareOptions struct {
+	limits       RulesLimits
+	logger       log.Logger
+	registerer   prometheus.Registerer
+	rulerAddrMap map[string]*Ruler
+	start        bool
+}
+
+func applyPrepareOptions(opts ...prepareOption) prepareOptions {
+	defaultLogger := log.NewLogfmtLogger(os.Stdout)
+	defaultLogger = level.NewFilter(defaultLogger, level.AllowInfo())
+
+	applied := prepareOptions{
+		// Default limits in the ruler tests.
+		limits: validation.MockOverrides(func(defaults *validation.Limits) {
+			defaults.RulerEvaluationDelay = 0
+			defaults.RulerMaxRuleGroupsPerTenant = 20
+			defaults.RulerMaxRulesPerRuleGroup = 15
+		}),
+		logger:     defaultLogger,
+		registerer: prometheus.NewPedanticRegistry(),
+	}
+
+	for _, opt := range opts {
+		opt(&applied)
+	}
+
+	return applied
+}
+
+// withStart is a prepareOption that automatically starts the ruler.
+func withStart() prepareOption {
+	return func(opts *prepareOptions) {
+		opts.start = true
+	}
+}
+
+// withLimits is a prepareOption that overrides the limits used in the test.
+func withLimits(limits RulesLimits) prepareOption {
+	return func(opts *prepareOptions) {
+		opts.limits = limits
+	}
+}
+
+// withRulerAddrMap is a prepareOption that configures the mapping between rulers and their network addresses.
+func withRulerAddrMap(addrs map[string]*Ruler) prepareOption {
+	return func(opts *prepareOptions) {
+		opts.rulerAddrMap = addrs
+	}
+}
+
+func prepareRuler(t *testing.T, cfg Config, storage rulestore.RuleStore, opts ...prepareOption) *Ruler {
+	options := applyPrepareOptions(opts...)
+	manager := prepareRulerManager(t, cfg, opts...)
+
+	ruler, err := newRuler(cfg, manager, options.registerer, options.logger, storage, options.limits, newMockClientsPool(cfg, options.logger, options.registerer, options.rulerAddrMap))
 	require.NoError(t, err)
 
-	ruler, err := newRuler(cfg, manager, reg, logger, storage, overrides, newMockClientsPool(cfg, logger, reg, rulerAddrMap))
-	require.NoError(t, err)
+	// Start the ruler if requested to do so.
+	if options.start {
+		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ruler))
+
+		// Ensure the service is stopped at the end of the test.
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), ruler))
+		})
+	}
+
 	return ruler
 }
 
-func buildAndStartRuler(t *testing.T, cfg Config, storage rulestore.RuleStore) *Ruler {
-	ruler := buildRuler(t, cfg, storage, nil)
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ruler))
+func prepareRulerManager(t *testing.T, cfg Config, opts ...prepareOption) *DefaultMultiTenantManager {
+	options := applyPrepareOptions(opts...)
 
-	// Ensure the service is stopped at the end of the test.
-	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), ruler))
+	noopQueryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+		return storage.NoopQuerier(), nil
 	})
+	noopQueryFunc := func(ctx context.Context, q string, t time.Time) (promql.Vector, error) {
+		return nil, nil
+	}
 
-	return ruler
+	// Mock the pusher
+	pusher := newPusherMock()
+	pusher.MockPush(&mimirpb.WriteResponse{}, nil)
+
+	managerFactory := DefaultTenantManagerFactory(cfg, pusher, noopQueryable, noopQueryFunc, options.limits, options.registerer)
+	manager, err := NewDefaultMultiTenantManager(cfg, managerFactory, prometheus.NewRegistry(), options.logger, nil)
+	require.NoError(t, err)
+
+	return manager
 }
 
 var _ MultiTenantManager = &DefaultMultiTenantManager{}
@@ -209,7 +228,7 @@ func TestNotifierSendsUserIDHeader(t *testing.T) {
 	cfg := defaultRulerConfig(t)
 	cfg.AlertmanagerURL = ts.URL
 
-	manager := newManager(t, cfg)
+	manager := prepareRulerManager(t, cfg)
 	defer manager.Stop()
 
 	n, err := manager.getOrCreateNotifier("1")
@@ -277,7 +296,7 @@ func TestRuler_Rules(t *testing.T) {
 			cfg := defaultRulerConfig(t)
 			cfg.TenantFederation.Enabled = true
 
-			r := buildAndStartRuler(t, cfg, newMockRuleStore(tc.mockRules))
+			r := prepareRuler(t, cfg, newMockRuleStore(tc.mockRules), withStart())
 
 			// Rules will be synchronized asynchronously, so we wait until the expected number of rule groups
 			// has been synched.
@@ -378,8 +397,11 @@ func TestGetRules(t *testing.T) {
 					},
 				}
 
-				r := buildRuler(t, cfg, storage, rulerAddrMap)
-				r.limits = ruleLimits{evalDelay: 0, tenantShard: tc.shuffleShardSize}
+				r := prepareRuler(t, cfg, storage, withRulerAddrMap(rulerAddrMap), withLimits(validation.MockOverrides(func(defaults *validation.Limits) {
+					defaults.RulerEvaluationDelay = 0
+					defaults.RulerTenantShardSize = tc.shuffleShardSize
+				})))
+
 				rulerAddrMap[id] = r
 				if r.ring != nil {
 					require.NoError(t, services.StartAndAwaitRunning(context.Background(), r.ring))
@@ -818,8 +840,10 @@ func TestSharding(t *testing.T) {
 					DisabledTenants: tc.disabledUsers,
 				}
 
-				r := buildRuler(t, cfg, newMockRuleStore(allRules), nil)
-				r.limits = ruleLimits{evalDelay: 0, tenantShard: tc.shuffleShardSize}
+				r := prepareRuler(t, cfg, newMockRuleStore(allRules), withLimits(validation.MockOverrides(func(defaults *validation.Limits) {
+					defaults.RulerEvaluationDelay = 0
+					defaults.RulerTenantShardSize = tc.shuffleShardSize
+				})))
 
 				if forceRing != nil {
 					r.ring = forceRing
@@ -1012,7 +1036,7 @@ type ruleGroupKey struct {
 func TestRuler_ListAllRules(t *testing.T) {
 	cfg := defaultRulerConfig(t)
 
-	r := buildAndStartRuler(t, cfg, newMockRuleStore(mockRules))
+	r := prepareRuler(t, cfg, newMockRuleStore(mockRules), withStart())
 
 	router := mux.NewRouter()
 	router.Path("/ruler/rule_groups").Methods(http.MethodGet).HandlerFunc(r.ListAllRules)

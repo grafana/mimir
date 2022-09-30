@@ -101,7 +101,21 @@ Ruler replicas form their own [hash ring]({{< relref "../../hash-ring/index.md" 
 
 To configure the rulers' hash ring, refer to [configuring hash rings]({{< relref "../../../configure/configuring-hash-rings.md" >}}).
 
-## HTTP configuration API
+## Manage alerting and recording rules
+
+There is more than one way to manage alerting and recording rules.
+
+### Via the `mimirtool` CLI tool
+
+The `mimirtool rules` command offers utility subcommands for linting, formatting, and uploading rules to Grafana Mimir.
+For more information, refer to the [`mimirtool rules`]({{< relref "../../../tools/mimirtool.md#rules" >}}).
+
+### Via the `grafana/mimir/operations/mimir-rules-action` GitHub Action
+
+The GitHub Action `mimir-rules-action` wraps some of the functionality of `mimirtool rules`.
+For more information, refer to the [documentation of the action](https://github.com/grafana/mimir/blob/main/operations/mimir-rules-action/README.md).
+
+### Via the HTTP configuration API
 
 The ruler HTTP configuration API enables tenants to create, update, and delete rule groups.
 For a complete list of endpoints and example requests, refer to [ruler]({{< relref "../../../reference-http-api/index.md#ruler" >}}).
@@ -121,7 +135,7 @@ The ruler supports the following backends:
 
 The `local` storage backend reads [Prometheus recording rules](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/) from the local filesystem.
 
-> **Note:** Local storage is a read-only backend that does not support the creation and deletion of rules through the [Configuration API]({{< relref "#http-configuration-api" >}}).
+> **Note:** Local storage is a read-only backend that does not support the creation and deletion of rules through the [Configuration API]({{< relref "#via-the-http-configuration-api" >}}).
 
 When all rulers have the same rule files, local storage supports ruler sharding.
 To facilitate sharding in Kubernetes, mount a [Kubernetes ConfigMap](https://kubernetes.io/docs/concepts/configuration/configmap/) into every ruler pod.

@@ -23,6 +23,7 @@
 * [ENHANCEMENT] Query-frontend / Querier: increase internal backoff period used to retry connections to query-frontend / query-scheduler. #3011
 * [ENHANCEMENT] Querier: do not log "error processing requests from scheduler" when the query-scheduler is shutting down. #3012
 * [ENHANCEMENT] Query-frontend: query sharding process is now time-bounded and it is cancelled if the request is aborted. #3028
+* [ENHANCEMENT] Query-frontend: improved Prometheus reponse JSON encoding performance. #2450
 * [ENHANCEMENT] TLS: added configuration parameters to configure the client's TLS cipher suites and minimum version. The following new CLI flags have been added: #3070
   * `-alertmanager.alertmanager-client.tls-cipher-suites`
   * `-alertmanager.alertmanager-client.tls-min-version`
@@ -64,6 +65,7 @@
   * `-store-gateway.sharding-ring.etcd.tls-min-version`
 * [ENHANCEMENT] Store-gateway: Add `-blocks-storage.bucket-store.max-concurrent-reject-over-limit` option to allow requests that exceed the max number of inflight object storage requests to be rejected. #2999
 * [ENHANCEMENT] Ingester: improved the performance of label value cardinality endpoint. #3048
+* [ENHANCEMENT] Query-frontend: allow setting a separate limit on the total (before splitting/sharding) query length of range queries with the new experimental `-query-frontend.max-total-query-length` flag, which defaults to `-store.max-query-length` if unset or set to 0. #3058
 * [ENHANCEMENT] Add age filter to Distributor's forwarding functionality, to not forward samples which are older than defined duration. #3049
 * [BUGFIX] Querier: Fix 400 response while handling streaming remote read. #2963
 * [BUGFIX] Fix a bug causing query-frontend, query-scheduler, and querier not failing if one of their internal components fail. #2978

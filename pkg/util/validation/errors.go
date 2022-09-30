@@ -263,6 +263,12 @@ func NewMaxQueryLengthError(actualQueryLen, maxQueryLength time.Duration) LimitE
 		maxQueryLengthFlag))
 }
 
+func NewMaxTotalQueryLengthError(actualQueryLen, maxTotalQueryLength time.Duration) LimitError {
+	return LimitError(globalerror.MaxTotalQueryLength.MessageWithPerTenantLimitConfig(
+		fmt.Sprintf("the total query time range exceeds the limit (query length: %s, limit: %s)", actualQueryLen, maxTotalQueryLength),
+		maxTotalQueryLengthFlag))
+}
+
 func NewRequestRateLimitedError(limit float64, burst int) LimitError {
 	return LimitError(globalerror.RequestRateLimited.MessageWithPerTenantLimitConfig(
 		fmt.Sprintf("the request has been rejected because the tenant exceeded the request rate limit, set to %v requests/s across all distributors with a maximum allowed burst of %d", limit, burst),

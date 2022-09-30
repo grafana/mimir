@@ -677,7 +677,7 @@ func mockPrometheusResponse(numSeries, numSamplesPerSeries int) *PrometheusRespo
 	return &PrometheusResponse{
 		Status: "success",
 		Data: &PrometheusData{
-			ResultType: "vector",
+			ResultType: "matrix",
 			Result:     stream,
 		},
 	}

@@ -24,6 +24,7 @@ import (
 	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestRuler(t *testing.T) {
@@ -158,7 +159,7 @@ func TestRuler(t *testing.T) {
 
 			rulerAddrMap := map[string]*Ruler{}
 
-			r := buildRuler(t, cfg, newMockRuleStore(tc.mockRules), rulerAddrMap)
+			r := prepareRuler(t, cfg, newMockRuleStore(tc.mockRules), withRulerAddrMap(rulerAddrMap))
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), r))
 			t.Cleanup(func() {
 				require.NoError(t, services.StopAndAwaitTerminated(context.Background(), r))
@@ -205,7 +206,7 @@ func TestRuler_alerts(t *testing.T) {
 
 	rulerAddrMap := map[string]*Ruler{}
 
-	r := buildRuler(t, cfg, newMockRuleStore(mockRules), rulerAddrMap)
+	r := prepareRuler(t, cfg, newMockRuleStore(mockRules), withRulerAddrMap(rulerAddrMap))
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), r))
 	t.Cleanup(func() {
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), r))
@@ -253,7 +254,7 @@ func TestRuler_alerts(t *testing.T) {
 func TestRuler_Create(t *testing.T) {
 	cfg := defaultRulerConfig(t)
 
-	r := buildAndStartRuler(t, cfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)))
+	r := prepareRuler(t, cfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)), withStart())
 	a := NewAPI(r, r.store, log.NewNopLogger())
 
 	tc := []struct {
@@ -379,7 +380,7 @@ func TestRuler_DeleteNamespace(t *testing.T) {
 		},
 	}
 
-	r := buildAndStartRuler(t, cfg, newMockRuleStore(mockRulesNamespaces))
+	r := prepareRuler(t, cfg, newMockRuleStore(mockRulesNamespaces), withStart())
 	a := NewAPI(r, r.store, log.NewNopLogger())
 
 	router := mux.NewRouter()
@@ -414,8 +415,10 @@ func TestRuler_DeleteNamespace(t *testing.T) {
 func TestRuler_LimitsPerGroup(t *testing.T) {
 	cfg := defaultRulerConfig(t)
 
-	r := buildAndStartRuler(t, cfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)))
-	r.limits = &ruleLimits{maxRuleGroups: 1, maxRulesPerRuleGroup: 1}
+	r := prepareRuler(t, cfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)), withStart(), withLimits(validation.MockOverrides(func(defaults *validation.Limits) {
+		defaults.RulerMaxRuleGroupsPerTenant = 1
+		defaults.RulerMaxRulesPerRuleGroup = 1
+	})))
 
 	a := NewAPI(r, r.store, log.NewNopLogger())
 
@@ -465,8 +468,10 @@ rules:
 func TestRuler_RulerGroupLimits(t *testing.T) {
 	cfg := defaultRulerConfig(t)
 
-	r := buildAndStartRuler(t, cfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)))
-	r.limits = &ruleLimits{maxRuleGroups: 1, maxRulesPerRuleGroup: 1}
+	r := prepareRuler(t, cfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)), withStart(), withLimits(validation.MockOverrides(func(defaults *validation.Limits) {
+		defaults.RulerMaxRuleGroupsPerTenant = 1
+		defaults.RulerMaxRulesPerRuleGroup = 1
+	})))
 
 	a := NewAPI(r, r.store, log.NewNopLogger())
 

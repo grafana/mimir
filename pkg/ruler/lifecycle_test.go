@@ -23,7 +23,7 @@ func TestRulerShutdown(t *testing.T) {
 	ctx := context.Background()
 
 	config := defaultRulerConfig(t)
-	r := buildRuler(t, config, newMockRuleStore(mockRules), nil)
+	r := prepareRuler(t, config, newMockRuleStore(mockRules))
 
 	kvStore := config.Ring.KVStore.Mock
 
@@ -54,7 +54,7 @@ func TestRuler_RingLifecyclerShouldAutoForgetUnhealthyInstances(t *testing.T) {
 	cfg.Ring.HeartbeatPeriod = 100 * time.Millisecond
 	cfg.Ring.HeartbeatTimeout = heartbeatTimeout
 
-	r := buildRuler(t, cfg, newMockRuleStore(mockRules), nil)
+	r := prepareRuler(t, cfg, newMockRuleStore(mockRules))
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, r))
 	defer services.StopAndAwaitTerminated(ctx, r) //nolint:errcheck
