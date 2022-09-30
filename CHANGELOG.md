@@ -72,6 +72,7 @@
   * `-ruler.alerting-rules-evaluation-enabled`
 * [ENHANCEMENT] Distributor: Add age filter to forwarding functionality, to not forward samples which are older than defined duration. #3049
 * [ENHANCEMENT] Ingester: improved the performance of label value cardinality endpoint. #3044
+* [ENHANCEMENT] Ruler: use backoff retry on remote evaluation #3098
 * [BUGFIX] Querier: Fix 400 response while handling streaming remote read. #2963
 * [BUGFIX] Fix a bug causing query-frontend, query-scheduler, and querier not failing if one of their internal components fail. #2978
 * [BUGFIX] Querier: re-balance the querier worker connections when a query-frontend or query-scheduler is terminated. #3005
