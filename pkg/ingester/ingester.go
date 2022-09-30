@@ -27,8 +27,6 @@ import (
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
-	"github.com/opentracing/opentracing-go"
-	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -681,10 +679,9 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	}
 	defer db.releaseAppendLock()
 
-	span := opentracing.SpanFromContext(ctx)
-	if span != nil {
-		span.LogFields(otlog.String("event", "acquired append lock"))
-	}
+	// Note that we don't .Finish() the span in this method on purpose
+	spanlog := spanlogger.FromContext(ctx, i.logger)
+	level.Debug(spanlog).Log("event", "acquired append lock")
 
 	// Keep track of some stats which are tracked only if the samples will be
 	// successfully committed
@@ -712,11 +709,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 
 	// Walk the samples, appending them to the users database
 	app := db.Appender(ctx).(extendedAppender)
-
-	if span != nil {
-		span.LogFields(otlog.String("event", "got appender"),
-			otlog.Int("numseries", len(req.Timeseries)))
-	}
+	level.Debug(spanlog).Log("event", "got appender", "numSeries", len(req.Timeseries))
 
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)
 	for _, ts := range req.Timeseries {
@@ -859,19 +852,22 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	// At this point all samples have been added to the appender, so we can track the time it took.
 	i.metrics.appenderAddDuration.Observe(time.Since(startAppend).Seconds())
 
-	if span != nil {
-		span.LogFields(otlog.String("event", "start commit"),
-			otlog.Int("succeededSamplesCount", succeededSamplesCount),
-			otlog.Int("failedSamplesCount", failedSamplesCount),
-			otlog.Int("succeededExemplarsCount", succeededExemplarsCount),
-			otlog.Int("failedExemplarsCount", failedExemplarsCount))
-	}
+	level.Debug(spanlog).Log(
+		"event", "start commit",
+		"succeededSamplesCount", succeededSamplesCount,
+		"failedSamplesCount", failedSamplesCount,
+		"succeededExemplarsCount", succeededExemplarsCount,
+		"failedExemplarsCount", failedExemplarsCount,
+	)
 
 	startCommit := time.Now()
 	if err := app.Commit(); err != nil {
 		return nil, wrapWithUser(err, userID)
 	}
-	i.metrics.appenderCommitDuration.Observe(time.Since(startCommit).Seconds())
+
+	commitDuration := time.Since(startCommit)
+	i.metrics.appenderCommitDuration.Observe(commitDuration.Seconds())
+	level.Debug(spanlog).Log("event", "complete commit", "commitDuration", commitDuration.String())
 
 	// If only invalid samples are pushed, don't change "last update", as TSDB was not modified.
 	if succeededSamplesCount > 0 {

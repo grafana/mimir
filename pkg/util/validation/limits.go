@@ -129,10 +129,12 @@ type Limits struct {
 	LabelValuesMaxCardinalityLabelNamesPerRequest int  `yaml:"label_values_max_cardinality_label_names_per_request" json:"label_values_max_cardinality_label_names_per_request"`
 
 	// Ruler defaults and limits.
-	RulerEvaluationDelay        model.Duration `yaml:"ruler_evaluation_delay_duration" json:"ruler_evaluation_delay_duration"`
-	RulerTenantShardSize        int            `yaml:"ruler_tenant_shard_size" json:"ruler_tenant_shard_size"`
-	RulerMaxRulesPerRuleGroup   int            `yaml:"ruler_max_rules_per_rule_group" json:"ruler_max_rules_per_rule_group"`
-	RulerMaxRuleGroupsPerTenant int            `yaml:"ruler_max_rule_groups_per_tenant" json:"ruler_max_rule_groups_per_tenant"`
+	RulerEvaluationDelay                 model.Duration `yaml:"ruler_evaluation_delay_duration" json:"ruler_evaluation_delay_duration"`
+	RulerTenantShardSize                 int            `yaml:"ruler_tenant_shard_size" json:"ruler_tenant_shard_size"`
+	RulerMaxRulesPerRuleGroup            int            `yaml:"ruler_max_rules_per_rule_group" json:"ruler_max_rules_per_rule_group"`
+	RulerMaxRuleGroupsPerTenant          int            `yaml:"ruler_max_rule_groups_per_tenant" json:"ruler_max_rule_groups_per_tenant"`
+	RulerRecordingRulesEvaluationEnabled bool           `yaml:"ruler_recording_rules_evaluation_enabled" json:"ruler_recording_rules_evaluation_enabled" category:"experimental"`
+	RulerAlertingRulesEvaluationEnabled  bool           `yaml:"ruler_alerting_rules_evaluation_enabled" json:"ruler_alerting_rules_evaluation_enabled" category:"experimental"`
 
 	// Store-gateway.
 	StoreGatewayTenantShardSize int `yaml:"store_gateway_tenant_shard_size" json:"store_gateway_tenant_shard_size"`
@@ -165,8 +167,9 @@ type Limits struct {
 	AlertmanagerMaxAlertsCount                 int `yaml:"alertmanager_max_alerts_count" json:"alertmanager_max_alerts_count"`
 	AlertmanagerMaxAlertsSizeBytes             int `yaml:"alertmanager_max_alerts_size_bytes" json:"alertmanager_max_alerts_size_bytes"`
 
-	ForwardingEndpoint string          `yaml:"forwarding_endpoint" json:"forwarding_endpoint" doc:"nocli|description=Remote-write endpoint where metrics specified in forwarding_rules are forwarded to. If set, takes precedence over endpoints specified in forwarding rules."`
-	ForwardingRules    ForwardingRules `yaml:"forwarding_rules" json:"forwarding_rules" doc:"nocli|description=Rules based on which the Distributor decides whether a metric should be forwarded to an alternative remote_write API endpoint."`
+	ForwardingEndpoint      string          `yaml:"forwarding_endpoint" json:"forwarding_endpoint" doc:"nocli|description=Remote-write endpoint where metrics specified in forwarding_rules are forwarded to. If set, takes precedence over endpoints specified in forwarding rules."`
+	ForwardingDropOlderThan model.Duration  `yaml:"forwarding_drop_older_than" json:"forwarding_drop_older_than" doc:"nocli|description=If set, forwarding drops samples that are older than this duration. If unset or 0, no samples get dropped."`
+	ForwardingRules         ForwardingRules `yaml:"forwarding_rules" json:"forwarding_rules" doc:"nocli|description=Rules based on which the Distributor decides whether a metric should be forwarded to an alternative remote_write API endpoint."`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -219,6 +222,8 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.RulerTenantShardSize, "ruler.tenant-shard-size", 0, "The tenant's shard size when sharding is used by ruler. Value of 0 disables shuffle sharding for the tenant, and tenant rules will be sharded across all ruler replicas.")
 	f.IntVar(&l.RulerMaxRulesPerRuleGroup, "ruler.max-rules-per-rule-group", 20, "Maximum number of rules per rule group per-tenant. 0 to disable.")
 	f.IntVar(&l.RulerMaxRuleGroupsPerTenant, "ruler.max-rule-groups-per-tenant", 70, "Maximum number of rule groups per-tenant. 0 to disable.")
+	f.BoolVar(&l.RulerRecordingRulesEvaluationEnabled, "ruler.recording-rules-evaluation-enabled", true, "Controls whether recording rules evaluation is enabled. This configuration option can be used to forcefully disable recording rules evaluation on a per-tenant basis.")
+	f.BoolVar(&l.RulerAlertingRulesEvaluationEnabled, "ruler.alerting-rules-evaluation-enabled", true, "Controls whether alerting rules evaluation is enabled. This configuration option can be used to forcefully disable alerting rules evaluation on a per-tenant basis.")
 
 	f.Var(&l.CompactorBlocksRetentionPeriod, "compactor.blocks-retention-period", "Delete blocks containing samples older than the specified retention period. 0 to disable.")
 	f.IntVar(&l.CompactorSplitAndMergeShards, "compactor.split-and-merge-shards", 0, "The number of shards to use when splitting blocks. 0 to disable splitting.")
@@ -613,6 +618,16 @@ func (o *Overrides) RulerMaxRuleGroupsPerTenant(userID string) int {
 	return o.getOverridesForUser(userID).RulerMaxRuleGroupsPerTenant
 }
 
+// RulerRecordingRulesEvaluationEnabled returns whether the recording rules evaluation is enabled for a given user.
+func (o *Overrides) RulerRecordingRulesEvaluationEnabled(userID string) bool {
+	return o.getOverridesForUser(userID).RulerRecordingRulesEvaluationEnabled
+}
+
+// RulerAlertingRulesEvaluationEnabled returns whether the alerting rules evaluation is enabled for a given user.
+func (o *Overrides) RulerAlertingRulesEvaluationEnabled(userID string) bool {
+	return o.getOverridesForUser(userID).RulerAlertingRulesEvaluationEnabled
+}
+
 // StoreGatewayTenantShardSize returns the store-gateway shard size for a given user.
 func (o *Overrides) StoreGatewayTenantShardSize(userID string) int {
 	return o.getOverridesForUser(userID).StoreGatewayTenantShardSize
@@ -728,6 +743,10 @@ func (o *Overrides) ForwardingRules(user string) ForwardingRules {
 
 func (o *Overrides) ForwardingEndpoint(user string) string {
 	return o.getOverridesForUser(user).ForwardingEndpoint
+}
+
+func (o *Overrides) ForwardingDropOlderThan(user string) time.Duration {
+	return time.Duration(o.getOverridesForUser(user).ForwardingDropOlderThan)
 }
 
 func (o *Overrides) getOverridesForUser(userID string) *Limits {

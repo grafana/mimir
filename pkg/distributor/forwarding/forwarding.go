@@ -36,7 +36,7 @@ import (
 
 type Forwarder interface {
 	services.Service
-	Forward(ctx context.Context, targetEndpoint string, forwardingRules validation.ForwardingRules, ts []mimirpb.PreallocTimeseries) ([]mimirpb.PreallocTimeseries, chan error)
+	Forward(ctx context.Context, targetEndpoint string, dontForwardBefore int64, forwardingRules validation.ForwardingRules, ts []mimirpb.PreallocTimeseries) ([]mimirpb.PreallocTimeseries, chan error)
 }
 
 // httpGrpcPrefix is URL prefix used by forwarder to check if it should use httpgrpc for sending request over to the target.
@@ -44,6 +44,8 @@ type Forwarder interface {
 // (by adding "dns:///" prefix before passing it to grpc client, to enable client-side load balancing), and "/some/path" will be included in the "url"
 // part of the message for "httpgrpc.HTTP/Handle" method.
 const httpGrpcPrefix = "httpgrpc://"
+
+var errSamplesTooOld = httpgrpc.Errorf(http.StatusBadRequest, "dropped sample(s) because too old to forward")
 
 type forwarder struct {
 	services.Service
@@ -216,19 +218,22 @@ func (f *forwarder) worker() {
 //   - A slice of time series which should be sent to the ingesters, based on the given rule set.
 //     The Forward() method does not send the time series to the ingesters itself, it expects the caller to do that.
 //   - A chan of errors which resulted from forwarding the time series, the chan gets closed when all forwarding requests have completed.
-func (f *forwarder) Forward(ctx context.Context, endpoint string, rules validation.ForwardingRules, in []mimirpb.PreallocTimeseries) ([]mimirpb.PreallocTimeseries, chan error) {
+func (f *forwarder) Forward(ctx context.Context, endpoint string, dontForwardBefore int64, rules validation.ForwardingRules, in []mimirpb.PreallocTimeseries) ([]mimirpb.PreallocTimeseries, chan error) {
 	if !f.cfg.Enabled {
 		errCh := make(chan error)
 		close(errCh)
 		return in, errCh
 	}
 
-	toIngest, tsByTargets := f.splitByTargets(endpoint, in, rules)
+	toIngest, tsByTargets, err := f.splitByTargets(endpoint, dontForwardBefore, in, rules)
 	defer f.pools.putTsByTargets(tsByTargets)
+	errCh := make(chan error, len(tsByTargets)+1)
+	if err != nil {
+		errCh <- err
+	}
 
 	var requestWg sync.WaitGroup
 	requestWg.Add(len(tsByTargets))
-	errCh := make(chan error, len(tsByTargets))
 	for endpoint, ts := range tsByTargets {
 		f.submitForwardingRequest(ctx, endpoint, ts, &requestWg, errCh)
 	}
@@ -253,7 +258,28 @@ type tsByTargets map[string]tsWithSampleCount
 
 // copyToTarget copies the given time series into the given target and does the necessary accounting.
 // The time series is deep-copied, so the passed in time series can be returned to the pool without affecting the copy.
-func (t tsByTargets) copyToTarget(target string, ts mimirpb.PreallocTimeseries, pool *pools) {
+func (t tsByTargets) copyToTarget(target string, dontForwardBefore int64, ts mimirpb.PreallocTimeseries, pool *pools) (err error) {
+	if dontForwardBefore > 0 {
+		samplesUnfiltered := ts.TimeSeries.Samples
+		defer func() {
+			// Before this function returns we need to restore the original sample slice because
+			// we might still want to ingest it into the ingesters.
+			ts.TimeSeries.Samples = samplesUnfiltered
+		}()
+
+		samplesFiltered := dropSamplesBefore(samplesUnfiltered, dontForwardBefore)
+		if len(samplesFiltered) < len(samplesUnfiltered) {
+			err = errSamplesTooOld
+		}
+
+		if len(samplesFiltered) == 0 {
+			return
+		}
+
+		// Prepare ts for deep copy. Original samples will be set back via defer function.
+		ts.TimeSeries.Samples = samplesFiltered
+	}
+
 	tsByTarget, ok := t[target]
 	if !ok {
 		tsByTarget.ts = pool.getTsSlice()
@@ -267,6 +293,8 @@ func (t tsByTargets) copyToTarget(target string, ts mimirpb.PreallocTimeseries, 
 	tsByTarget.counts.count(tsByTarget.ts[tsIdx])
 
 	t[target] = tsByTarget
+
+	return
 }
 
 type TimeseriesCounts struct {
@@ -285,18 +313,22 @@ func (t *TimeseriesCounts) count(ts mimirpb.PreallocTimeseries) {
 //
 // - A slice of time series to ingest into the ingesters.
 // - A map of slices of time series which is keyed by the target to which they should be forwarded.
-func (f *forwarder) splitByTargets(targetEndpoint string, tsSliceIn []mimirpb.PreallocTimeseries, rules validation.ForwardingRules) ([]mimirpb.PreallocTimeseries, tsByTargets) {
+// - An error if any occurred.
+func (f *forwarder) splitByTargets(targetEndpoint string, dontForwardBefore int64, tsSliceIn []mimirpb.PreallocTimeseries, rules validation.ForwardingRules) ([]mimirpb.PreallocTimeseries, tsByTargets, error) {
 	// This functions copies all the entries of tsSliceIn into new slices so tsSliceIn can be recycled,
 	// we adjust the length of the slice to 0 to prevent that the contained *mimirpb.TimeSeries objects that have been
 	// reassigned (not deep copied) get returned while they are still referred to by another slice.
 	defer f.pools.putTsSlice(tsSliceIn[:0])
 
+	var err error
 	tsToIngest := f.pools.getTsSlice()
 	tsByTargets := f.pools.getTsByTargets()
 	for _, ts := range tsSliceIn {
 		forwardingTarget, ingest := findTargetForLabels(targetEndpoint, ts.Labels, rules)
 		if forwardingTarget != "" {
-			tsByTargets.copyToTarget(forwardingTarget, ts, f.pools)
+			if errCopy := tsByTargets.copyToTarget(forwardingTarget, dontForwardBefore, ts, f.pools); errCopy != nil {
+				err = errCopy
+			}
 		}
 
 		if ingest {
@@ -311,7 +343,19 @@ func (f *forwarder) splitByTargets(targetEndpoint string, tsSliceIn []mimirpb.Pr
 		}
 	}
 
-	return tsToIngest, tsByTargets
+	return tsToIngest, tsByTargets, err
+}
+
+// dropSamplesBefore filters a given slice of samples to only contain samples that have timestamps newer or equal to
+// the given timestamp. It relies on the samples being sorted by timestamp.
+func dropSamplesBefore(samples []mimirpb.Sample, ts int64) []mimirpb.Sample {
+	for sampleIdx := len(samples) - 1; sampleIdx >= 0; sampleIdx-- {
+		if samples[sampleIdx].TimestampMs < ts {
+			return samples[sampleIdx+1:]
+		}
+	}
+
+	return samples
 }
 
 func findTargetForLabels(targetEndpoint string, labels []mimirpb.LabelAdapter, rules validation.ForwardingRules) (string, bool) {

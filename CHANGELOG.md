@@ -11,6 +11,7 @@
 * [CHANGE] Anonymous usage statistics tracking has been enabled by default, to help Mimir maintainers make better decisions to support the open source community. #2939 #3034
 * [CHANGE] Anonymous usage statistics tracking: added the minimum and maximum value of `-ingester.out-of-order-time-window`. #2940
 * [CHANGE] The default hash ring heartbeat period for distributors, ingesters, rulers and compactors has been increased from `5s` to `15s`. Now the default heartbeat period for all Mimir hash rings is `15s`. #3033
+* [CHANGE] Reduce the default TSDB head compaction concurrency (`-blocks-storage.tsdb.head-compaction-concurrency`) from 5 to 1, in order to reduce CPU spikes. #3093
 * [FEATURE] Query-scheduler: added an experimental ring-based service discovery support for the query-scheduler. Refer to [query-scheduler configuration](https://grafana.com/docs/mimir/next/operators-guide/architecture/components/query-scheduler/#configuration) for more information. #2957
 * [FEATURE] Introduced the experimental endpoint `/api/v1/user_limits` exposed by all components that load runtime configuration. This endpoint exposes realtime limits for the authenticated tenant, in JSON format. #2864 #3017
 * [FEATURE] Query-scheduler: added the experimental configuration option `-query-scheduler.max-used-instances` to restrict the number of query-schedulers effectively used regardless how many replicas are running. This feature can be useful when using the experimental read-write deployment mode. #3005
@@ -23,6 +24,7 @@
 * [ENHANCEMENT] Query-frontend / Querier: increase internal backoff period used to retry connections to query-frontend / query-scheduler. #3011
 * [ENHANCEMENT] Querier: do not log "error processing requests from scheduler" when the query-scheduler is shutting down. #3012
 * [ENHANCEMENT] Query-frontend: query sharding process is now time-bounded and it is cancelled if the request is aborted. #3028
+* [ENHANCEMENT] Query-frontend: improved Prometheus reponse JSON encoding performance. #2450
 * [ENHANCEMENT] TLS: added configuration parameters to configure the client's TLS cipher suites and minimum version. The following new CLI flags have been added: #3070
   * `-alertmanager.alertmanager-client.tls-cipher-suites`
   * `-alertmanager.alertmanager-client.tls-min-version`
@@ -65,6 +67,10 @@
 * [ENHANCEMENT] Store-gateway: Add `-blocks-storage.bucket-store.max-concurrent-reject-over-limit` option to allow requests that exceed the max number of inflight object storage requests to be rejected. #2999
 * [ENHANCEMENT] Query-frontend: allow setting a separate limit on the total (before splitting/sharding) query length of range queries with the new experimental `-query-frontend.max-total-query-length` flag, which defaults to `-store.max-query-length` if unset or set to 0. #3058
 * [ENHANCEMENT] Query-frontend: Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-allowance` from ingesters). #2935
+* [ENHANCEMENT] Ruler: added support to forcefully disable recording and/or alerting rules evaluation. The following new configuration options have been introduced, which can be overridden on a per-tenant basis in the runtime configuration: #3088
+  * `-ruler.recording-rules-evaluation-enabled`
+  * `-ruler.alerting-rules-evaluation-enabled`
+* [ENHANCEMENT] Distributor: Add age filter to forwarding functionality, to not forward samples which are older than defined duration. #3049
 * [BUGFIX] Querier: Fix 400 response while handling streaming remote read. #2963
 * [BUGFIX] Fix a bug causing query-frontend, query-scheduler, and querier not failing if one of their internal components fail. #2978
 * [BUGFIX] Querier: re-balance the querier worker connections when a query-frontend or query-scheduler is terminated. #3005

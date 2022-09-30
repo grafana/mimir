@@ -120,6 +120,8 @@ type RulesLimits interface {
 	RulerTenantShardSize(userID string) int
 	RulerMaxRuleGroupsPerTenant(userID string) int
 	RulerMaxRulesPerRuleGroup(userID string) int
+	RulerRecordingRulesEvaluationEnabled(userID string) bool
+	RulerAlertingRulesEvaluationEnabled(userID string) bool
 }
 
 func MetricsQueryFunc(qf rules.QueryFunc, queries, failedQueries prometheus.Counter) rules.QueryFunc {

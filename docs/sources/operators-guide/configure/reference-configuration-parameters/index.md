@@ -2570,6 +2570,18 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ruler.max-rule-groups-per-tenant
 [ruler_max_rule_groups_per_tenant: <int> | default = 70]
 
+# (experimental) Controls whether recording rules evaluation is enabled. This
+# configuration option can be used to forcefully disable recording rules
+# evaluation on a per-tenant basis.
+# CLI flag: -ruler.recording-rules-evaluation-enabled
+[ruler_recording_rules_evaluation_enabled: <boolean> | default = true]
+
+# (experimental) Controls whether alerting rules evaluation is enabled. This
+# configuration option can be used to forcefully disable alerting rules
+# evaluation on a per-tenant basis.
+# CLI flag: -ruler.alerting-rules-evaluation-enabled
+[ruler_alerting_rules_evaluation_enabled: <boolean> | default = true]
+
 # The tenant's shard size, used when store-gateway sharding is enabled. Value of
 # 0 disables shuffle sharding for the tenant, that is all tenant blocks are
 # sharded across all store-gateway replicas.
@@ -2686,6 +2698,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 # forwarded to. If set, takes precedence over endpoints specified in forwarding
 # rules.
 [forwarding_endpoint: <string> | default = ""]
+
+# If set, forwarding drops samples that are older than this duration. If unset
+# or 0, no samples get dropped.
+[forwarding_drop_older_than: <int> | default = ]
 
 # Rules based on which the Distributor decides whether a metric should be
 # forwarded to an alternative remote_write API endpoint.
@@ -3018,7 +3034,7 @@ tsdb:
   # (advanced) Maximum number of tenants concurrently compacting TSDB head into
   # a new block
   # CLI flag: -blocks-storage.tsdb.head-compaction-concurrency
-  [head_compaction_concurrency: <int> | default = 5]
+  [head_compaction_concurrency: <int> | default = 1]
 
   # (advanced) If TSDB head is idle for this duration, it is compacted. Note
   # that up to 25% jitter is added to the value to avoid ingesters compacting
