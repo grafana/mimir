@@ -144,7 +144,7 @@ const (
 func ParseProtoReader(ctx context.Context, reader io.Reader, expectedSize, maxSize int, dst []byte, req proto.Message, compression CompressionType) ([]byte, error) {
 	sp := opentracing.SpanFromContext(ctx)
 	if sp != nil {
-		sp.LogFields(otlog.String("event", "util.ParseProtoRequest[start reading]"))
+		sp.LogFields(otlog.Event("util.ParseProtoRequest[start reading]"))
 	}
 	body, err := decompressRequest(dst, reader, expectedSize, maxSize, compression, sp)
 	if err != nil {
@@ -152,7 +152,7 @@ func ParseProtoReader(ctx context.Context, reader io.Reader, expectedSize, maxSi
 	}
 
 	if sp != nil {
-		sp.LogFields(otlog.String("event", "util.ParseProtoRequest[unmarshal]"), otlog.Int("size", len(body)))
+		sp.LogFields(otlog.Event("util.ParseProtoRequest[unmarshal]"), otlog.Int("size", len(body)))
 	}
 
 	// We re-implement proto.Unmarshal here as it calls XXX_Unmarshal first,
@@ -165,14 +165,14 @@ func ParseProtoReader(ctx context.Context, reader io.Reader, expectedSize, maxSi
 	}
 	if err != nil {
 		if sp != nil {
-			sp.LogFields(otlog.String("event", "util.ParseProtoRequest[unmarshal done]"), otlog.Error(err))
+			sp.LogFields(otlog.Event("util.ParseProtoRequest[unmarshal done]"), otlog.Error(err))
 		}
 
 		return nil, err
 	}
 
 	if sp != nil {
-		sp.LogFields(otlog.String("event", "util.ParseProtoRequest[unmarshal done]"))
+		sp.LogFields(otlog.Event("util.ParseProtoRequest[unmarshal done]"))
 	}
 
 	return body, nil
