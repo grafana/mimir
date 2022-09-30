@@ -235,15 +235,15 @@ func (f *forwarder) Forward(ctx context.Context, endpoint string, dontForwardBef
 	}()
 
 	toIngest, toForward, counts, err := f.splitToIngestedAndForwardedTimeseries(in, rules, dontForwardBefore)
-
-	var requestWg sync.WaitGroup
-	requestWg.Add(1)
 	errCh := make(chan error, 2) // 1 for result of forwarding, 1 for possible error
 	if err != nil {
 		errCh <- err
 	}
 
 	if len(toForward) > 0 {
+		var requestWg sync.WaitGroup
+		requestWg.Add(1)
+
 		f.submitForwardingRequest(ctx, endpoint, toForward, counts, &requestWg, errCh)
 
 		// keep span running until goroutine finishes.
