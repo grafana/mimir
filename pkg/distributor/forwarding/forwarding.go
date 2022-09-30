@@ -45,7 +45,7 @@ type Forwarder interface {
 // part of the message for "httpgrpc.HTTP/Handle" method.
 const httpGrpcPrefix = "httpgrpc://"
 
-var errSamplesTooOld = httpgrpc.Errorf(400, "dropped sample(s) because too old to forward")
+var errSamplesTooOld = httpgrpc.Errorf(http.StatusBadRequest, "dropped sample(s) because too old to forward")
 
 type forwarder struct {
 	services.Service
@@ -262,7 +262,7 @@ func (t tsByTargets) copyToTarget(target string, dontForwardBefore int64, ts mim
 	if dontForwardBefore > 0 {
 		samplesUnfiltered := ts.TimeSeries.Samples
 		defer func() {
-			// After this function returns we need to restore the original sample slice because
+			// Before this function returns we need to restore the original sample slice because
 			// we might still want to ingest it into the ingesters.
 			ts.TimeSeries.Samples = samplesUnfiltered
 		}()
@@ -276,6 +276,7 @@ func (t tsByTargets) copyToTarget(target string, dontForwardBefore int64, ts mim
 			return
 		}
 
+		// Prepare ts for deep copy. Original samples will be set back via defer function.
 		ts.TimeSeries.Samples = samplesFiltered
 	}
 
@@ -347,10 +348,9 @@ func (f *forwarder) splitByTargets(targetEndpoint string, dontForwardBefore int6
 
 // dropSamplesBefore filters a given slice of samples to only contain samples that have timestamps newer or equal to
 // the given timestamp. It relies on the samples being sorted by timestamp.
-// If some samples have been filtered the second return value is true, otherwise it is false.
-func dropSamplesBefore(samples []mimirpb.Sample, dontForwardBefore int64) []mimirpb.Sample {
+func dropSamplesBefore(samples []mimirpb.Sample, ts int64) []mimirpb.Sample {
 	for sampleIdx := len(samples) - 1; sampleIdx >= 0; sampleIdx-- {
-		if samples[sampleIdx].TimestampMs < dontForwardBefore {
+		if samples[sampleIdx].TimestampMs < ts {
 			return samples[sampleIdx+1:]
 		}
 	}
