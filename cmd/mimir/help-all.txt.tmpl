@@ -498,7 +498,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.head-chunks-write-queue-size int
     	The size of the write queue used by the head chunks mapper. Lower values reduce memory utilisation at the cost of potentially higher ingest latency. Value of 0 switches chunks mapper to implementation without a queue. (default 1000000)
   -blocks-storage.tsdb.head-compaction-concurrency int
-    	Maximum number of tenants concurrently compacting TSDB head into a new block (default 5)
+    	Maximum number of tenants concurrently compacting TSDB head into a new block (default 1)
   -blocks-storage.tsdb.head-compaction-idle-timeout duration
     	If TSDB head is idle for this duration, it is compacted. Note that up to 25% jitter is added to the value to avoid ingesters compacting concurrently. 0 means disabled. (default 1h0m0s)
   -blocks-storage.tsdb.head-compaction-interval duration
