@@ -642,6 +642,13 @@ func filterRuleGroupsByEnabled(configs map[string]rulespb.RuleGroupList, limits 
 
 		// Quick case: remove the user at all if all rules are disabled.
 		if !recordingEnabled && !alertingEnabled {
+			// We don't expect rules evaluation to be disabled for the normal use case. For this reason,
+			// when it's disabled we prefer to log it with "info" instead of "debug" to make it more visible.
+			level.Info(logger).Log(
+				"msg", "filtered out all rules because evaluation is disabled for the tenant",
+				"user", userID,
+				"recording_rules_enabled", recordingEnabled,
+				"alerting_rules_enabled", alertingEnabled)
 			continue
 		}
 
