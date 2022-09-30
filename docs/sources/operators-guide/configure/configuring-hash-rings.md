@@ -77,6 +77,19 @@ If you run multiple Mimir processes on the same node or the port `7946` is not a
 - `-memberlist.advertise-addr`: IP address to advertise to other Mimir replicas. The other replicas will connect to this IP to talk to the instance.
 - `-memberlist.advertise-port`: Port to advertise to other Mimir replicas. The other replicas will connect to this port to talk to the instance.
 
+#### Cluster label verification
+
+By default, Grafana Mimir memberlist will try to connect to every visible replica in a network.
+
+However, when running multiple clusters in a same network this may cause that different replicas from different clusters end up connecting to each other, leading to unexpected behavior.
+
+To avoid this type of undesired situation, you can enable cluster label verification with the following settings:
+
+- `-memberlist.cluster-label`: Label value to identify replicas belonging to the same cluster.
+- `-memberlist.cluster-label-verification-disabled`: Flag to disable the cluster label verification.
+
+When this verification is in place, all memberlist internal traffic will be prefixed with the configured cluster label, discarding any other traffic that doesn't match that prefix and ensuring that only replicas having the same configured label can connect to each other.
+
 ### Fine tuning memberlist changes propagation latency
 
 The `cortex_ring_oldest_member_timestamp` metric can be used to measure the propagation of hash ring changes.
