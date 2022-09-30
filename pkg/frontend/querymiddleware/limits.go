@@ -14,6 +14,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/opentracing/opentracing-go"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/weaveworks/common/user"
 
@@ -55,6 +56,9 @@ type Limits interface {
 	// CompactorSplitAndMergeShards returns the number of shards to use when splitting blocks
 	// This method is copied from compactor.ConfigProvider.
 	CompactorSplitAndMergeShards(userID string) int
+
+	// OutOfOrderTimeWindow returns the out-of-order time window for the user.
+	OutOfOrderTimeWindow(userID string) model.Duration
 }
 
 type limitsMiddleware struct {

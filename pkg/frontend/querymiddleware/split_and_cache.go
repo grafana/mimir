@@ -35,7 +35,9 @@ import (
 
 const (
 	// Cache entries for 7 days. We're not disabling TTL because the backend client currently doesn't support it.
-	resultsCacheTTL                       = 7 * 24 * time.Hour
+	resultsCacheTTL = 7 * 24 * time.Hour
+	// resultsCacheLowerTTL is the smaller TTL used in specific cases. For example OOO queries.
+	resultsCacheLowerTTL                  = 10 * time.Minute
 	notCachableReasonUnalignedTimeRange   = "unaligned-time-range"
 	notCachableReasonTooNew               = "too-new"
 	notCachableReasonModifiersNotCachable = "has-modifiers"
@@ -274,13 +276,14 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 			}
 
 			// Filter out recent extents from merged ones.
+			// TODO(codesome): make filterRecentCacheExtents break it into 2 sets, one to cache with lower TTL and one with the usual TTL.
 			filteredExtents, err := filterRecentCacheExtents(splitReq.orig, maxCacheFreshness, s.extractor, mergedExtents)
 			if err != nil {
 				return nil, err
 			}
 
 			// Put back into the cache the filtered ones.
-			s.storeCacheExtents(ctx, splitReq.cacheKey, filteredExtents)
+			s.storeCacheExtents(ctx, splitReq.cacheKey, tenantIDs, filteredExtents)
 		}
 	}
 
@@ -380,7 +383,16 @@ func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, keys []
 }
 
 // storeCacheExtents stores the extents for given key in the cache.
-func (s *splitAndCacheMiddleware) storeCacheExtents(ctx context.Context, key string, extents []Extent) {
+func (s *splitAndCacheMiddleware) storeCacheExtents(ctx context.Context, key string, tenantIDs []string, extents []Extent) {
+	ttl := resultsCacheTTL
+	lowerTTLWithinTimePeriod := validation.MaxDurationPerTenant(tenantIDs, func(tenantID string) time.Duration {
+		return time.Duration(s.limits.OutOfOrderTimeWindow(tenantID))
+	})
+	if lowerTTLWithinTimePeriod > 0 && len(extents) > 0 &&
+		extents[len(extents)-1].End >= time.Now().Add(-lowerTTLWithinTimePeriod).UnixMilli() {
+		ttl = resultsCacheLowerTTL
+	}
+
 	buf, err := proto.Marshal(&CachedResponse{
 		Key:     key,
 		Extents: extents,
@@ -390,7 +402,7 @@ func (s *splitAndCacheMiddleware) storeCacheExtents(ctx context.Context, key str
 		return
 	}
 
-	s.cache.Store(ctx, map[string][]byte{cacheHashKey(key): buf}, resultsCacheTTL)
+	s.cache.Store(ctx, map[string][]byte{cacheHashKey(key): buf}, ttl)
 }
 
 // splitRequest holds information about a split request.

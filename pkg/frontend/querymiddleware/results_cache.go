@@ -315,7 +315,6 @@ func mergeCacheExtentsForRequest(ctx context.Context, r Request, merger Merger, 
 		if accumulator.End >= extents[i].End {
 			continue
 		}
-
 		accumulator.TraceId = jaegerTraceID(ctx)
 		accumulator.End = extents[i].End
 		currentRes, err := extents[i].toResponse()
