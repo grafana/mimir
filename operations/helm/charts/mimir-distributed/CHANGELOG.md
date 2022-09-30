@@ -86,8 +86,12 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Add podAntiAffinity to sizing plans (small.yaml, large.yaml, capped-small.yaml, capped-large.yaml). #2906
 * [ENHANCEMENT] Update agent-operator subchart to `0.2.5`. #3009
 * [ENHANCEMENT] Add ability to configure and run mimir-continuous-test. #3117
+<<<<<<< HEAD
 * [BUGFIX] Fix wrong label selector in ingester anti affinity rules in the sizing plans. #2906
 - [BUGFIX] Fix Invalid ingress nginx config due to newline in prometheusHttpPrefix Helm named templates. #3087
+=======
+* [BUGFIX] Fix Invalid ingress nginx config due to newline in prometheusHttpPrefix Helm named templates. #3087
+>>>>>>> 3b2d20f31 (Update operations/helm/charts/mimir-distributed/CHANGELOG.md)
 
 
 ## 3.1.0
