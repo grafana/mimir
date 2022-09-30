@@ -28,12 +28,29 @@ func (l *mockTenantLimits) AllByUserID() map[string]*Limits {
 	return l.limits
 }
 
-func MockOverrides(customize func(defaults *Limits)) *Overrides {
+func MockOverrides(customize func(defaults *Limits, tenantLimits map[string]*Limits)) *Overrides {
+	defaults := MockDefaultLimits()
+	tenantLimits := map[string]*Limits{}
+	customize(defaults, tenantLimits)
+
+	overrides, err := NewOverrides(*defaults, NewMockTenantLimits(tenantLimits))
+	if err != nil {
+		// This function is expected to be used only in tests, so we're not afraid of panicking.
+		panic(err)
+	}
+
+	return overrides
+}
+
+func MockDefaultLimits() *Limits {
 	defaults := Limits{}
 	flagext.DefaultValues(&defaults)
-	customize(&defaults)
+	return &defaults
+}
 
-	overrides, err := NewOverrides(defaults, nil)
+func MockDefaultOverrides() *Overrides {
+	defaults := MockDefaultLimits()
+	overrides, err := NewOverrides(*defaults, nil)
 	if err != nil {
 		// This function is expected to be used only in tests, so we're not afraid of panicking.
 		panic(err)

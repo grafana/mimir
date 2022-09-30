@@ -20,6 +20,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/user"
 
@@ -28,125 +29,201 @@ import (
 )
 
 func TestRuler(t *testing.T) {
+	const (
+		userID   = "user1"
+		interval = time.Minute
+	)
+
 	testCases := map[string]struct {
-		mockRules        map[string]rulespb.RuleGroupList
-		userID           string
-		expectedResponse response
+		configuredRules rulespb.RuleGroupList
+		limits          RulesLimits
+		expectedRules   []*RuleGroup
 	}{
-		"rules": {
-			mockRules: mockRules,
-			userID:    "user1",
-			expectedResponse: response{
-				Status: "success",
-				Data: &RuleDiscovery{
-					RuleGroups: []*RuleGroup{
-						{
-							Name: "group1",
-							File: "namespace1",
-							Rules: []rule{
-								&recordingRule{
-									Name:   "UP_RULE",
-									Query:  "up",
-									Health: "unknown",
-									Type:   "recording",
-								},
-								&alertingRule{
-									Name:   "UP_ALERT",
-									Query:  "up < 1",
-									State:  "inactive",
-									Health: "unknown",
-									Type:   "alerting",
-									Alerts: []*Alert{},
-								},
-							},
-							Interval: 60,
+		"should load and evaluate the configured rules": {
+			configuredRules: rulespb.RuleGroupList{
+				&rulespb.RuleGroupDesc{
+					Name:      "group1",
+					Namespace: "namespace1",
+					User:      userID,
+					Rules:     []*rulespb.RuleDesc{mockRecordingRuleDesc("UP_RULE", "up"), mockAlertingRuleDesc("UP_ALERT", "up < 1")},
+					Interval:  interval,
+				},
+			},
+			limits: validation.MockDefaultOverrides(),
+			expectedRules: []*RuleGroup{
+				{
+					Name: "group1",
+					File: "namespace1",
+					Rules: []rule{
+						&recordingRule{
+							Name:   "UP_RULE",
+							Query:  "up",
+							Health: "unknown",
+							Type:   "recording",
+						},
+						&alertingRule{
+							Name:   "UP_ALERT",
+							Query:  "up < 1",
+							State:  "inactive",
+							Health: "unknown",
+							Type:   "alerting",
+							Alerts: []*Alert{},
 						},
 					},
+					Interval: 60,
 				},
 			},
 		},
-		"rules special characters": {
-			mockRules: mockSpecialCharRules,
-			userID:    "user1",
-			expectedResponse: response{
-				Status: "success",
-				Data: &RuleDiscovery{
-					RuleGroups: []*RuleGroup{
-						{
-							Name: ")(_+?/|group1+/?",
-							File: ")(_+?/|namespace1+/?",
-							Rules: []rule{
-								&recordingRule{
-									Name:   "UP_RULE",
-									Query:  "up",
-									Health: "unknown",
-									Type:   "recording",
-								},
-								&alertingRule{
-									Name:   "UP_ALERT",
-									Query:  "up < 1",
-									State:  "inactive",
-									Health: "unknown",
-									Type:   "alerting",
-									Alerts: []*Alert{},
-								},
-							},
-							Interval: 60,
+		"should load and evaluate only recording rules if alerting rules evaluation is disabled for the tenant": {
+			configuredRules: rulespb.RuleGroupList{
+				&rulespb.RuleGroupDesc{
+					Name:      "group1",
+					Namespace: "namespace1",
+					User:      userID,
+					Rules:     []*rulespb.RuleDesc{mockRecordingRuleDesc("UP_RULE", "up"), mockAlertingRuleDesc("UP_ALERT", "up < 1")},
+					Interval:  interval,
+				},
+			},
+			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+				tenantLimits[userID] = validation.MockDefaultLimits()
+				tenantLimits[userID].RulerRecordingRulesEvaluationEnabled = true
+				tenantLimits[userID].RulerAlertingRulesEvaluationEnabled = false
+			}),
+			expectedRules: []*RuleGroup{
+				{
+					Name: "group1",
+					File: "namespace1",
+					Rules: []rule{
+						&recordingRule{
+							Name:   "UP_RULE",
+							Query:  "up",
+							Health: "unknown",
+							Type:   "recording",
 						},
 					},
+					Interval: 60,
 				},
 			},
 		},
-		"federated rules": {
-			userID: "user1",
-			mockRules: map[string]rulespb.RuleGroupList{
-				"user1": {
-					&rulespb.RuleGroupDesc{
-						Name:          "group1",
-						Namespace:     "namespace1",
-						User:          "user1",
-						SourceTenants: []string{"tenant-1"},
-						Rules: []*rulespb.RuleDesc{
-							{
-								Record: "UP_RULE",
-								Expr:   "up",
-							},
-							{
-								Alert: "UP_ALERT",
-								Expr:  "up < 1",
-							},
-						},
-						Interval: interval,
-					},
+		"should load and evaluate only alerting rules if recording rules evaluation is disabled for the tenant": {
+			configuredRules: rulespb.RuleGroupList{
+				&rulespb.RuleGroupDesc{
+					Name:      "group1",
+					Namespace: "namespace1",
+					User:      userID,
+					Rules:     []*rulespb.RuleDesc{mockRecordingRuleDesc("UP_RULE", "up"), mockAlertingRuleDesc("UP_ALERT", "up < 1")},
+					Interval:  interval,
 				},
 			},
-			expectedResponse: response{
-				Status: "success",
-				Data: &RuleDiscovery{
-					RuleGroups: []*RuleGroup{
-						{
-							Name:          "group1",
-							File:          "namespace1",
-							SourceTenants: []string{"tenant-1"},
-							Rules: []rule{
-								&recordingRule{
-									Name:   "UP_RULE",
-									Query:  "up",
-									Health: "unknown",
-									Type:   "recording",
-								},
-								&alertingRule{
-									Name:   "UP_ALERT",
-									Query:  "up < 1",
-									State:  "inactive",
-									Health: "unknown",
-									Type:   "alerting",
-									Alerts: []*Alert{},
-								},
-							},
-							Interval: 60,
+			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+				tenantLimits[userID] = validation.MockDefaultLimits()
+				tenantLimits[userID].RulerRecordingRulesEvaluationEnabled = false
+				tenantLimits[userID].RulerAlertingRulesEvaluationEnabled = true
+			}),
+			expectedRules: []*RuleGroup{
+				{
+					Name: "group1",
+					File: "namespace1",
+					Rules: []rule{
+						&alertingRule{
+							Name:   "UP_ALERT",
+							Query:  "up < 1",
+							State:  "inactive",
+							Health: "unknown",
+							Type:   "alerting",
+							Alerts: []*Alert{},
 						},
 					},
+					Interval: 60,
+				},
+			},
+		},
+		"should load and evaluate no rules if rules evaluation is disabled for the tenant": {
+			configuredRules: rulespb.RuleGroupList{
+				&rulespb.RuleGroupDesc{
+					Name:      "group1",
+					Namespace: "namespace1",
+					User:      userID,
+					Rules:     []*rulespb.RuleDesc{mockRecordingRuleDesc("UP_RULE", "up"), mockAlertingRuleDesc("UP_ALERT", "up < 1")},
+					Interval:  interval,
+				},
+			},
+			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+				tenantLimits[userID] = validation.MockDefaultLimits()
+				tenantLimits[userID].RulerRecordingRulesEvaluationEnabled = false
+				tenantLimits[userID].RulerAlertingRulesEvaluationEnabled = false
+			}),
+			expectedRules: []*RuleGroup{},
+		},
+		"should load and evaluate the configured rules with special characters": {
+			configuredRules: rulespb.RuleGroupList{
+				&rulespb.RuleGroupDesc{
+					Name:      ")(_+?/|group1+/?",
+					Namespace: ")(_+?/|namespace1+/?",
+					User:      userID,
+					Rules:     []*rulespb.RuleDesc{mockRecordingRuleDesc("UP_RULE", "up"), mockAlertingRuleDesc("UP_ALERT", "up < 1")},
+					Interval:  interval,
+				},
+			},
+			limits: validation.MockDefaultOverrides(),
+			expectedRules: []*RuleGroup{
+				{
+					Name: ")(_+?/|group1+/?",
+					File: ")(_+?/|namespace1+/?",
+					Rules: []rule{
+						&recordingRule{
+							Name:   "UP_RULE",
+							Query:  "up",
+							Health: "unknown",
+							Type:   "recording",
+						},
+						&alertingRule{
+							Name:   "UP_ALERT",
+							Query:  "up < 1",
+							State:  "inactive",
+							Health: "unknown",
+							Type:   "alerting",
+							Alerts: []*Alert{},
+						},
+					},
+					Interval: 60,
+				},
+			},
+		},
+		"should support federated rules": {
+			configuredRules: rulespb.RuleGroupList{
+				&rulespb.RuleGroupDesc{
+					Name:          "group1",
+					Namespace:     "namespace1",
+					User:          userID,
+					SourceTenants: []string{"tenant-1"},
+					Rules:         []*rulespb.RuleDesc{mockRecordingRuleDesc("UP_RULE", "up"), mockAlertingRuleDesc("UP_ALERT", "up < 1")},
+					Interval:      interval,
+				},
+			},
+			limits: validation.MockDefaultOverrides(),
+			expectedRules: []*RuleGroup{
+				{
+					Name:          "group1",
+					File:          "namespace1",
+					SourceTenants: []string{"tenant-1"},
+					Rules: []rule{
+						&recordingRule{
+							Name:   "UP_RULE",
+							Query:  "up",
+							Health: "unknown",
+							Type:   "recording",
+						},
+						&alertingRule{
+							Name:   "UP_ALERT",
+							Query:  "up < 1",
+							State:  "inactive",
+							Health: "unknown",
+							Type:   "alerting",
+							Alerts: []*Alert{},
+						},
+					},
+					Interval: 60,
 				},
 			},
 		},
@@ -154,31 +231,36 @@ func TestRuler(t *testing.T) {
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
+			// Pre-condition check: ensure all rules have the user set.
+			for _, rule := range tc.configuredRules {
+				assert.Equal(t, userID, rule.User)
+			}
+
 			cfg := defaultRulerConfig(t)
 			cfg.TenantFederation.Enabled = true
 
 			rulerAddrMap := map[string]*Ruler{}
 
-			r := prepareRuler(t, cfg, newMockRuleStore(tc.mockRules), withRulerAddrMap(rulerAddrMap))
-			require.NoError(t, services.StartAndAwaitRunning(context.Background(), r))
-			t.Cleanup(func() {
-				require.NoError(t, services.StopAndAwaitTerminated(context.Background(), r))
-			})
+			storageRules := map[string]rulespb.RuleGroupList{
+				userID: tc.configuredRules,
+			}
+
+			r := prepareRuler(t, cfg, newMockRuleStore(storageRules), withRulerAddrMap(rulerAddrMap), withLimits(tc.limits), withStart())
 
 			// Make sure mock grpc client can find this instance, based on instance address registered in the ring.
 			rulerAddrMap[r.lifecycler.GetInstanceAddr()] = r
 
 			// Rules will be synchronized asynchronously, so we wait until the expected number of rule groups
 			// has been synched.
-			test.Poll(t, 5*time.Second, len(tc.mockRules[tc.userID]), func() interface{} {
-				ctx := user.InjectOrgID(context.Background(), tc.userID)
+			test.Poll(t, 5*time.Second, len(tc.expectedRules), func() interface{} {
+				ctx := user.InjectOrgID(context.Background(), userID)
 				rls, _ := r.Rules(ctx, &RulesRequest{})
 				return len(rls.Groups)
 			})
 
 			a := NewAPI(r, r.store, log.NewNopLogger())
 
-			req := requestFor(t, http.MethodGet, "https://localhost:8080/prometheus/api/v1/rules", nil, tc.userID)
+			req := requestFor(t, http.MethodGet, "https://localhost:8080/prometheus/api/v1/rules", nil, userID)
 			w := httptest.NewRecorder()
 			a.PrometheusRules(w, req)
 
@@ -193,7 +275,13 @@ func TestRuler(t *testing.T) {
 			require.Equal(t, responseJSON.Status, "success")
 
 			// Testing the running rules
-			expectedResponse, err := json.Marshal(tc.expectedResponse)
+			expectedResponse, err := json.Marshal(response{
+				Status: "success",
+				Data: &RuleDiscovery{
+					RuleGroups: tc.expectedRules,
+				},
+			})
+
 			require.NoError(t, err)
 			require.Equal(t, string(expectedResponse), string(body))
 		})
@@ -349,33 +437,15 @@ func TestRuler_DeleteNamespace(t *testing.T) {
 				Name:      "group1",
 				Namespace: "namespace1",
 				User:      "user1",
-				Rules: []*rulespb.RuleDesc{
-					{
-						Record: "UP_RULE",
-						Expr:   "up",
-					},
-					{
-						Alert: "UP_ALERT",
-						Expr:  "up < 1",
-					},
-				},
-				Interval: interval,
+				Rules:     []*rulespb.RuleDesc{mockRecordingRuleDesc("UP_RULE", "up"), mockAlertingRuleDesc("UP_ALERT", "up < 1")},
+				Interval:  interval,
 			},
 			&rulespb.RuleGroupDesc{
 				Name:      "fail",
 				Namespace: "namespace2",
 				User:      "user1",
-				Rules: []*rulespb.RuleDesc{
-					{
-						Record: "UP2_RULE",
-						Expr:   "up",
-					},
-					{
-						Alert: "UP2_ALERT",
-						Expr:  "up < 1",
-					},
-				},
-				Interval: interval,
+				Rules:     []*rulespb.RuleDesc{mockRecordingRuleDesc("UP2_RULE", "up"), mockAlertingRuleDesc("UP2_ALERT", "up < 1")},
+				Interval:  interval,
 			},
 		},
 	}
@@ -415,7 +485,7 @@ func TestRuler_DeleteNamespace(t *testing.T) {
 func TestRuler_LimitsPerGroup(t *testing.T) {
 	cfg := defaultRulerConfig(t)
 
-	r := prepareRuler(t, cfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)), withStart(), withLimits(validation.MockOverrides(func(defaults *validation.Limits) {
+	r := prepareRuler(t, cfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)), withStart(), withLimits(validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
 		defaults.RulerMaxRuleGroupsPerTenant = 1
 		defaults.RulerMaxRulesPerRuleGroup = 1
 	})))
@@ -468,7 +538,7 @@ rules:
 func TestRuler_RulerGroupLimits(t *testing.T) {
 	cfg := defaultRulerConfig(t)
 
-	r := prepareRuler(t, cfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)), withStart(), withLimits(validation.MockOverrides(func(defaults *validation.Limits) {
+	r := prepareRuler(t, cfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)), withStart(), withLimits(validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
 		defaults.RulerMaxRuleGroupsPerTenant = 1
 		defaults.RulerMaxRulesPerRuleGroup = 1
 	})))
