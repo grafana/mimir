@@ -9,7 +9,7 @@ require (
 	github.com/felixge/fgprof v0.9.2
 	github.com/go-kit/log v0.2.1
 	github.com/go-openapi/strfmt v0.21.3
-	github.com/go-openapi/swag v0.21.1
+	github.com/go-openapi/swag v0.22.3
 	github.com/gogo/protobuf v1.3.2
 	github.com/gogo/status v1.1.0
 	github.com/golang/protobuf v1.5.2
@@ -27,7 +27,7 @@ require (
 	github.com/opentracing-contrib/go-stdlib v1.0.0
 	github.com/opentracing/opentracing-go v1.2.0
 	github.com/pkg/errors v0.9.1
-	github.com/prometheus/alertmanager v0.24.0
+	github.com/prometheus/alertmanager v0.24.1-0.20220930115155-545529639209
 	github.com/prometheus/client_golang v1.13.0
 	github.com/prometheus/client_model v0.2.0
 	github.com/prometheus/common v0.37.0
@@ -87,7 +87,7 @@ require (
 	github.com/alecthomas/template v0.0.0-20190718012654-fb15b899a751 // indirect
 	github.com/armon/go-metrics v0.3.10 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20210307081110-f21760c49a8d // indirect
-	github.com/aws/aws-sdk-go v1.44.66 // indirect
+	github.com/aws/aws-sdk-go v1.44.94 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.13.0 // indirect
 	github.com/aws/aws-sdk-go-v2/config v1.13.1 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.8.0 // indirect
@@ -99,6 +99,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sso v1.9.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.14.0 // indirect
 	github.com/aws/smithy-go v1.10.0 // indirect
+	github.com/benbjohnson/clock v1.3.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bradfitz/gomemcache v0.0.0-20190913173617-a41fca850d0b // indirect
 	github.com/cenkalti/backoff/v4 v4.1.3 // indirect
@@ -120,13 +121,13 @@ require (
 	github.com/go-logfmt/logfmt v0.5.1 // indirect
 	github.com/go-logr/logr v1.2.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/go-openapi/analysis v0.21.2 // indirect
-	github.com/go-openapi/errors v0.20.2 // indirect
+	github.com/go-openapi/analysis v0.21.4 // indirect
+	github.com/go-openapi/errors v0.20.3 // indirect
 	github.com/go-openapi/jsonpointer v0.19.5 // indirect
 	github.com/go-openapi/jsonreference v0.20.0 // indirect
-	github.com/go-openapi/loads v0.21.1 // indirect
+	github.com/go-openapi/loads v0.21.2 // indirect
 	github.com/go-openapi/runtime v0.24.1 // indirect
-	github.com/go-openapi/spec v0.20.6 // indirect
+	github.com/go-openapi/spec v0.20.7 // indirect
 	github.com/go-openapi/validate v0.22.0 // indirect
 	github.com/go-redis/redis/v8 v8.11.4 // indirect
 	github.com/gofrs/uuid v4.2.0+incompatible // indirect
@@ -153,7 +154,7 @@ require (
 	github.com/hashicorp/go-rootcerts v1.0.2 // indirect
 	github.com/hashicorp/go-sockaddr v1.0.2 // indirect
 	github.com/hashicorp/go-uuid v1.0.2 // indirect
-	github.com/hashicorp/memberlist v0.3.2 // indirect
+	github.com/hashicorp/memberlist v0.4.0 // indirect
 	github.com/hashicorp/serf v0.9.6 // indirect
 	github.com/inconshreveable/mousetrap v1.0.0 // indirect
 	github.com/jessevdk/go-flags v1.5.0 // indirect
@@ -229,10 +230,6 @@ require (
 	k8s.io/utils v0.0.0-20220210201930-3a6ce19ff2f9 // indirect
 	sigs.k8s.io/yaml v1.3.0 // indirect
 )
-
-// Version after v0.24.0 have a change in the email notifier that can panic on certain inputs. See:
-// https://github.com/prometheus/alertmanager/issues/3064
-replace github.com/prometheus/alertmanager => github.com/prometheus/alertmanager v0.24.0
 
 // Using our own fork to add custom dialer and improve perf.
 replace github.com/bradfitz/gomemcache => github.com/grafana/gomemcache v0.0.0-20220812141943-44b6cde200bb

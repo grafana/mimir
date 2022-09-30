@@ -46,13 +46,13 @@ const (
 )
 
 var (
-	errPasswordFileNotAllowed           = errors.New("setting password_file, bearer_token_file and credentials_file is not allowed")
+	errPasswordFileNotAllowed           = errors.New("setting smtp_auth_password_file, password_file, bearer_token_file, auth_password_file or credentials_file is not allowed")
 	errOAuth2SecretFileNotAllowed       = errors.New("setting OAuth2 client_secret_file is not allowed")
 	errProxyURLNotAllowed               = errors.New("setting proxy_url is not allowed")
-	errTLSFileNotAllowed                = errors.New("setting TLS ca_file, cert_file and key_file is not allowed")
-	errSlackAPIURLFileNotAllowed        = errors.New("setting Slack api_url_file and global slack_api_url_file is not allowed")
+	errTLSFileNotAllowed                = errors.New("setting TLS ca_file, cert_file or key_file is not allowed")
+	errSlackAPIURLFileNotAllowed        = errors.New("setting Slack api_url_file or global slack_api_url_file is not allowed")
 	errVictorOpsAPIKeyFileNotAllowed    = errors.New("setting VictorOps api_key_file is not allowed")
-	errOpsGenieAPIKeyFileFileNotAllowed = errors.New("setting OpsGenie api_key_file and global opsgenie_api_key_file is not allowed")
+	errOpsGenieAPIKeyFileFileNotAllowed = errors.New("setting OpsGenie api_key_file or global opsgenie_api_key_file is not allowed")
 )
 
 // UserConfig is used to communicate a users alertmanager configs
@@ -339,6 +339,11 @@ func validateAlertmanagerConfig(cfg interface{}) error {
 			return err
 		}
 
+	case reflect.TypeOf(config.EmailConfig{}):
+		if err := validateEmailConfig(v.Interface().(config.EmailConfig)); err != nil {
+			return err
+		}
+
 	case reflect.TypeOf(commoncfg.HTTPClientConfig{}):
 		if err := validateReceiverHTTPConfig(v.Interface().(commoncfg.HTTPClientConfig)); err != nil {
 			return err
@@ -440,7 +445,7 @@ func validateReceiverTLSConfig(cfg commoncfg.TLSConfig) error {
 }
 
 // validateGlobalConfig validates the Global config and returns an error if it contains
-// settings now allowed by Mimir.
+// settings not allowed by Mimir.
 func validateGlobalConfig(cfg config.GlobalConfig) error {
 	if cfg.SlackAPIURLFile != "" {
 		return errSlackAPIURLFileNotAllowed
@@ -448,11 +453,23 @@ func validateGlobalConfig(cfg config.GlobalConfig) error {
 	if cfg.OpsGenieAPIKeyFile != "" {
 		return errOpsGenieAPIKeyFileFileNotAllowed
 	}
+	if cfg.SMTPAuthPasswordFile != "" {
+		return errPasswordFileNotAllowed
+	}
+	return nil
+}
+
+// validateEmailConfig validates the Email config and returns an error if it contains settings not allowed by Mimir.
+func validateEmailConfig(cfg config.EmailConfig) error {
+	if cfg.AuthPasswordFile != "" {
+		return errPasswordFileNotAllowed
+	}
+
 	return nil
 }
 
 // validateSlackConfig validates the Slack config and returns an error if it contains
-// settings now allowed by Mimir.
+// settings not allowed by Mimir.
 func validateSlackConfig(cfg config.SlackConfig) error {
 	if cfg.APIURLFile != "" {
 		return errSlackAPIURLFileNotAllowed
@@ -461,7 +478,7 @@ func validateSlackConfig(cfg config.SlackConfig) error {
 }
 
 // validateVictorOpsConfig validates the VictorOps config and returns an error if it contains
-// settings now allowed by Mimir.
+// settings not allowed by Mimir.
 func validateVictorOpsConfig(cfg config.VictorOpsConfig) error {
 	if cfg.APIKeyFile != "" {
 		return errVictorOpsAPIKeyFileNotAllowed
@@ -470,7 +487,7 @@ func validateVictorOpsConfig(cfg config.VictorOpsConfig) error {
 }
 
 // validateOpsGenieConfig validates the OpsGenie config and returns an error if it contains
-// settings now allowed by Mimir.
+// settings not allowed by Mimir.
 func validateOpsGenieConfig(cfg config.OpsGenieConfig) error {
 	if cfg.APIKeyFile != "" {
 		return errOpsGenieAPIKeyFileFileNotAllowed

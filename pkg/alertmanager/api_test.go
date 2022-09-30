@@ -852,6 +852,30 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 			},
 			expected: errTLSFileNotAllowed,
 		},
+		"*GlobalConfig.SMTPAuthPasswordFile": {
+			input: &config.GlobalConfig{
+				SMTPAuthPasswordFile: "/file",
+			},
+			expected: errPasswordFileNotAllowed,
+		},
+		"GlobalConfig.SMTPAuthPasswordFile": {
+			input: config.GlobalConfig{
+				SMTPAuthPasswordFile: "/file",
+			},
+			expected: errPasswordFileNotAllowed,
+		},
+		"*EmailConfig.AuthPasswordFile": {
+			input: &config.EmailConfig{
+				AuthPasswordFile: "/file",
+			},
+			expected: errPasswordFileNotAllowed,
+		},
+		"EmailConfig.AuthPasswordFile": {
+			input: config.EmailConfig{
+				AuthPasswordFile: "/file",
+			},
+			expected: errPasswordFileNotAllowed,
+		},
 		"struct containing *HTTPClientConfig as direct child": {
 			input: config.GlobalConfig{
 				HTTPConfig: &commoncfg.HTTPClientConfig{

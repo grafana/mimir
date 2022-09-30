@@ -15,12 +15,12 @@ package config
 
 import (
 	"fmt"
+	"net/textproto"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/pkg/errors"
-
 	commoncfg "github.com/prometheus/common/config"
 	"github.com/prometheus/common/sigv4"
 )
@@ -144,7 +144,7 @@ var (
 		},
 		DisableNotifications: false,
 		Message:              `{{ template "telegram.default.message" . }}`,
-		ParseMode:            "MarkdownV2",
+		ParseMode:            "HTML",
 	}
 )
 
@@ -162,19 +162,20 @@ type EmailConfig struct {
 	NotifierConfig `yaml:",inline" json:",inline"`
 
 	// Email address to notify.
-	To           string              `yaml:"to,omitempty" json:"to,omitempty"`
-	From         string              `yaml:"from,omitempty" json:"from,omitempty"`
-	Hello        string              `yaml:"hello,omitempty" json:"hello,omitempty"`
-	Smarthost    HostPort            `yaml:"smarthost,omitempty" json:"smarthost,omitempty"`
-	AuthUsername string              `yaml:"auth_username,omitempty" json:"auth_username,omitempty"`
-	AuthPassword Secret              `yaml:"auth_password,omitempty" json:"auth_password,omitempty"`
-	AuthSecret   Secret              `yaml:"auth_secret,omitempty" json:"auth_secret,omitempty"`
-	AuthIdentity string              `yaml:"auth_identity,omitempty" json:"auth_identity,omitempty"`
-	Headers      map[string]string   `yaml:"headers,omitempty" json:"headers,omitempty"`
-	HTML         string              `yaml:"html,omitempty" json:"html,omitempty"`
-	Text         string              `yaml:"text,omitempty" json:"text,omitempty"`
-	RequireTLS   *bool               `yaml:"require_tls,omitempty" json:"require_tls,omitempty"`
-	TLSConfig    commoncfg.TLSConfig `yaml:"tls_config,omitempty" json:"tls_config,omitempty"`
+	To               string              `yaml:"to,omitempty" json:"to,omitempty"`
+	From             string              `yaml:"from,omitempty" json:"from,omitempty"`
+	Hello            string              `yaml:"hello,omitempty" json:"hello,omitempty"`
+	Smarthost        HostPort            `yaml:"smarthost,omitempty" json:"smarthost,omitempty"`
+	AuthUsername     string              `yaml:"auth_username,omitempty" json:"auth_username,omitempty"`
+	AuthPassword     Secret              `yaml:"auth_password,omitempty" json:"auth_password,omitempty"`
+	AuthPasswordFile string              `yaml:"auth_password_file,omitempty" json:"auth_password_file,omitempty"`
+	AuthSecret       Secret              `yaml:"auth_secret,omitempty" json:"auth_secret,omitempty"`
+	AuthIdentity     string              `yaml:"auth_identity,omitempty" json:"auth_identity,omitempty"`
+	Headers          map[string]string   `yaml:"headers,omitempty" json:"headers,omitempty"`
+	HTML             string              `yaml:"html,omitempty" json:"html,omitempty"`
+	Text             string              `yaml:"text,omitempty" json:"text,omitempty"`
+	RequireTLS       *bool               `yaml:"require_tls,omitempty" json:"require_tls,omitempty"`
+	TLSConfig        commoncfg.TLSConfig `yaml:"tls_config,omitempty" json:"tls_config,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -190,7 +191,7 @@ func (c *EmailConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	// Header names are case-insensitive, check for collisions.
 	normalizedHeaders := map[string]string{}
 	for h, v := range c.Headers {
-		normalized := strings.Title(h)
+		normalized := textproto.CanonicalMIMEHeaderKey(h)
 		if _, ok := normalizedHeaders[normalized]; ok {
 			return fmt.Errorf("duplicate header %q in email config", normalized)
 		}
@@ -452,7 +453,7 @@ func (c *WechatConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 
 	if !wechatTypeMatcher.MatchString(c.MessageType) {
-		return errors.Errorf("WeChat message type %q does not match valid options %s", c.MessageType, wechatValidTypesRe)
+		return errors.Errorf("weChat message type %q does not match valid options %s", c.MessageType, wechatValidTypesRe)
 	}
 
 	return nil
@@ -492,18 +493,18 @@ func (c *OpsGenieConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 		return err
 	}
 
-	if c.APIURL != nil && len(c.APIKeyFile) > 0 {
+	if c.APIKey != "" && len(c.APIKeyFile) > 0 {
 		return fmt.Errorf("at most one of api_key & api_key_file must be configured")
 	}
 
 	for _, r := range c.Responders {
 		if r.ID == "" && r.Username == "" && r.Name == "" {
-			return errors.Errorf("OpsGenieConfig responder %v has to have at least one of id, username or name specified", r)
+			return errors.Errorf("opsGenieConfig responder %v has to have at least one of id, username or name specified", r)
 		}
 
 		r.Type = strings.ToLower(r.Type)
 		if !opsgenieTypeMatcher.MatchString(r.Type) {
-			return errors.Errorf("OpsGenieConfig responder %v type does not match valid options %s", r, opsgenieValidTypesRe)
+			return errors.Errorf("opsGenieConfig responder %v type does not match valid options %s", r, opsgenieValidTypesRe)
 		}
 	}
 
@@ -552,7 +553,7 @@ func (c *VictorOpsConfig) UnmarshalYAML(unmarshal func(interface{}) error) error
 
 	for _, v := range reservedFields {
 		if _, ok := c.CustomFields[v]; ok {
-			return fmt.Errorf("VictorOps config contains custom field %s which cannot be used as it conflicts with the fixed/static fields", v)
+			return fmt.Errorf("victorOps config contains custom field %s which cannot be used as it conflicts with the fixed/static fields", v)
 		}
 	}
 
@@ -661,9 +662,6 @@ func (c *TelegramConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 	}
 	if c.ChatID == 0 {
 		return fmt.Errorf("missing chat_id on telegram_config")
-	}
-	if c.APIUrl == nil {
-		return fmt.Errorf("missing api_url on telegram_config")
 	}
 	if c.ParseMode != "" &&
 		c.ParseMode != "Markdown" &&
