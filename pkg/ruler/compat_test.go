@@ -30,6 +30,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 type fakePusher struct {
@@ -134,7 +135,11 @@ func TestPusherErrors(t *testing.T) {
 			writes := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
 			failures := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
 
-			pa := NewPusherAppendable(pusher, "user-1", ruleLimits{evalDelay: 10 * time.Second}, writes, failures)
+			limits := validation.MockOverrides(func(defaults *validation.Limits) {
+				defaults.RulerEvaluationDelay = 0
+			})
+
+			pa := NewPusherAppendable(pusher, "user-1", limits, writes, failures)
 
 			lbls, err := parser.ParseMetric("foo_bar")
 			require.NoError(t, err)
@@ -305,9 +310,9 @@ func TestManagerFactory_CorrectQueryableUsed(t *testing.T) {
 
 			// setup
 			cfg := defaultRulerConfig(t)
-			_, _, pusher, logger, overrides := testSetup()
-			notifierManager := notifier.NewManager(&notifier.Options{Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil }}, logger)
-			ruleFiles := writeRuleGroupToFiles(t, cfg.RulePath, logger, userID, tc.ruleGroup)
+			options := applyPrepareOptions()
+			notifierManager := notifier.NewManager(&notifier.Options{Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil }}, options.logger)
+			ruleFiles := writeRuleGroupToFiles(t, cfg.RulePath, options.logger, userID, tc.ruleGroup)
 			regularQueryable, federatedQueryable := newMockQueryable(), newMockQueryable()
 
 			tracker := promql.NewActiveQueryTracker(t.TempDir(), 20, log.NewNopLogger())
@@ -322,9 +327,11 @@ func TestManagerFactory_CorrectQueryableUsed(t *testing.T) {
 			queryFunc := TenantFederationQueryFunc(regularQueryFunc, federatedQueryFunc)
 
 			// create and use manager factory
-			managerFactory := DefaultTenantManagerFactory(cfg, pusher, federatedQueryable, queryFunc, overrides, nil)
+			pusher := newPusherMock()
+			pusher.MockPush(&mimirpb.WriteResponse{}, nil)
+			managerFactory := DefaultTenantManagerFactory(cfg, pusher, federatedQueryable, queryFunc, options.limits, nil)
 
-			manager := managerFactory(context.Background(), userID, notifierManager, logger, nil)
+			manager := managerFactory(context.Background(), userID, notifierManager, options.logger, nil)
 
 			// load rules into manager and start
 			require.NoError(t, manager.Update(time.Millisecond, ruleFiles, nil, "", nil))

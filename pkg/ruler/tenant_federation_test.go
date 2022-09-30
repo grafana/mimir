@@ -76,7 +76,7 @@ func TestRuler_TenantFederationFlag(t *testing.T) {
 			cfg.TenantFederation.Enabled = tc.tenantFederationEnabled
 			existingRules := map[string]rulespb.RuleGroupList{userID: tc.existingRules}
 
-			r := newManager(t, cfg)
+			r := prepareRulerManager(t, cfg)
 			t.Cleanup(r.Stop)
 
 			r.SyncRuleGroups(context.Background(), existingRules)
