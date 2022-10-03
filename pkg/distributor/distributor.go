@@ -134,6 +134,11 @@ type Distributor struct {
 	replicationFactor                prometheus.Gauge
 	latestSeenSampleTimestampPerUser *prometheus.GaugeVec
 
+	discardedSamplesTooManyHaClusters *prometheus.CounterVec
+	discardedSamplesRateLimited       *prometheus.CounterVec
+
+	sampleValidationMetrics *validation.SampleValidationMetrics
+
 	PushWithMiddlewares push.Func
 }
 
@@ -335,6 +340,11 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Name: "cortex_distributor_latest_seen_sample_timestamp_seconds",
 			Help: "Unix timestamp of latest received sample per user.",
 		}, []string{"user"}),
+
+		discardedSamplesTooManyHaClusters: validation.DiscardedSamplesCounter(reg, validation.ReasonTooManyHAClusters),
+		discardedSamplesRateLimited:       validation.DiscardedSamplesCounter(reg, validation.ReasonRateLimited),
+
+		sampleValidationMetrics: validation.NewSampleValidationMetrics(reg),
 	}
 
 	promauto.With(reg).NewGauge(prometheus.GaugeOpts{
@@ -506,6 +516,10 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 
 	d.dedupedSamples.DeletePartialMatch(prometheus.Labels{"user": userID})
 
+	d.discardedSamplesTooManyHaClusters.DeleteLabelValues(userID)
+	d.discardedSamplesRateLimited.DeleteLabelValues(userID)
+	d.sampleValidationMetrics.DeleteUserMetrics(userID)
+
 	validation.DeletePerUserValidationMetrics(userID, d.log)
 }
 
@@ -588,7 +602,7 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 // The returned error may retain the series labels.
 // It uses the passed nowt time to observe the delay of sample timestamps.
 func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseries, userID string, skipLabelNameValidation bool, minExemplarTS int64) error {
-	if err := validation.ValidateLabels(d.limits, userID, ts.Labels, skipLabelNameValidation); err != nil {
+	if err := validation.ValidateLabels(d.sampleValidationMetrics, d.limits, userID, ts.Labels, skipLabelNameValidation); err != nil {
 		return err
 	}
 
@@ -601,7 +615,7 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 			d.sampleDelayHistogram.Observe(float64(delta) / 1000)
 		}
 
-		if err := validation.ValidateSample(now, d.limits, userID, ts.Labels, s); err != nil {
+		if err := validation.ValidateSample(d.sampleValidationMetrics, now, d.limits, userID, ts.Labels, s); err != nil {
 			return err
 		}
 	}
@@ -697,7 +711,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 			}
 
 			if errors.Is(err, tooManyClustersError{}) {
-				validation.DiscardedSamples.WithLabelValues(validation.ReasonTooManyHAClusters, userID).Add(float64(numSamples))
+				d.discardedSamplesTooManyHaClusters.WithLabelValues(userID).Add(float64(numSamples))
 				return nil, httpgrpc.Errorf(http.StatusBadRequest, err.Error())
 			}
 
@@ -1040,7 +1054,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 
 	totalN := validatedSamples + validatedExemplars + len(validatedMetadata)
 	if !d.ingestionRateLimiter.AllowN(now, userID, totalN) {
-		validation.DiscardedSamples.WithLabelValues(validation.ReasonRateLimited, userID).Add(float64(validatedSamples))
+		d.discardedSamplesRateLimited.WithLabelValues(userID).Add(float64(validatedSamples))
 		validation.DiscardedExemplars.WithLabelValues(validation.ReasonRateLimited, userID).Add(float64(validatedExemplars))
 		validation.DiscardedMetadata.WithLabelValues(validation.ReasonRateLimited, userID).Add(float64(len(validatedMetadata)))
 		// Return a 429 here to tell the client it is going too fast.

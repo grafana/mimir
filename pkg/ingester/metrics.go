@@ -12,6 +12,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/util"
 	util_math "github.com/grafana/mimir/pkg/util/math"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 type ingesterMetrics struct {
@@ -49,6 +50,14 @@ type ingesterMetrics struct {
 	appenderAddDuration    prometheus.Histogram
 	appenderCommitDuration prometheus.Histogram
 	idleTsdbChecks         *prometheus.CounterVec
+
+	// Discarded samples
+	discardedSamplesSampleOutOfBounds    *prometheus.CounterVec
+	discardedSamplesSampleOutOfOrder     *prometheus.CounterVec
+	discardedSamplesSampleTooOld         *prometheus.CounterVec
+	discardedSamplesNewValueForTimestamp *prometheus.CounterVec
+	discardedSamplesPerUserSeriesLimit   *prometheus.CounterVec
+	discardedSamplesPerMetricSeriesLimit *prometheus.CounterVec
 }
 
 func newIngesterMetrics(
@@ -258,6 +267,13 @@ func newIngesterMetrics(
 		}),
 
 		idleTsdbChecks: idleTsdbChecks,
+
+		discardedSamplesSampleOutOfBounds:    validation.DiscardedSamplesCounter(r, sampleOutOfBounds),
+		discardedSamplesSampleOutOfOrder:     validation.DiscardedSamplesCounter(r, sampleOutOfOrder),
+		discardedSamplesSampleTooOld:         validation.DiscardedSamplesCounter(r, sampleTooOld),
+		discardedSamplesNewValueForTimestamp: validation.DiscardedSamplesCounter(r, newValueForTimestamp),
+		discardedSamplesPerUserSeriesLimit:   validation.DiscardedSamplesCounter(r, perUserSeriesLimit),
+		discardedSamplesPerMetricSeriesLimit: validation.DiscardedSamplesCounter(r, perMetricSeriesLimit),
 	}
 
 	return m
@@ -268,6 +284,13 @@ func (m *ingesterMetrics) deletePerUserMetrics(userID string) {
 	m.ingestedSamplesFail.DeleteLabelValues(userID)
 	m.memMetadataCreatedTotal.DeleteLabelValues(userID)
 	m.memMetadataRemovedTotal.DeleteLabelValues(userID)
+
+	m.discardedSamplesSampleOutOfBounds.DeleteLabelValues(userID)
+	m.discardedSamplesSampleOutOfOrder.DeleteLabelValues(userID)
+	m.discardedSamplesSampleTooOld.DeleteLabelValues(userID)
+	m.discardedSamplesNewValueForTimestamp.DeleteLabelValues(userID)
+	m.discardedSamplesPerUserSeriesLimit.DeleteLabelValues(userID)
+	m.discardedSamplesPerMetricSeriesLimit.DeleteLabelValues(userID)
 }
 
 func (m *ingesterMetrics) deletePerUserCustomTrackerMetrics(userID string, customTrackerMetrics []string) {

@@ -74,16 +74,16 @@ var DiscardedRequests = promauto.NewCounterVec(
 	[]string{discardReasonLabel, "user"},
 )
 
-// DiscardedSamples is a metric of the number of discarded samples, by reason.
-//
-//lint:ignore faillint It's non-trivial to remove this global variable.
-var DiscardedSamples = promauto.NewCounterVec(
-	prometheus.CounterOpts{
+// DiscardedSamplesCounter creates discarded samples counter vector (per-user) for given reason.
+func DiscardedSamplesCounter(reg prometheus.Registerer, reason string) *prometheus.CounterVec {
+	return promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_discarded_samples_total",
 		Help: "The total number of samples that were discarded.",
-	},
-	[]string{discardReasonLabel, "user"},
-)
+		ConstLabels: map[string]string{
+			discardReasonLabel: reason,
+		},
+	}, []string{"user"})
+}
 
 // DiscardedExemplars is a metric of the number of discarded exemplars, by reason.
 //
@@ -112,14 +112,53 @@ type SampleValidationConfig interface {
 	CreationGracePeriod(userID string) time.Duration
 }
 
+// SampleValidationMetrics is a collection of metrics used during sample validation.
+type SampleValidationMetrics struct {
+	MissingMetricName      *prometheus.CounterVec
+	InvalidMetricName      *prometheus.CounterVec
+	MaxLabelNamesPerSeries *prometheus.CounterVec
+	InvalidLabel           *prometheus.CounterVec
+	LabelNameTooLong       *prometheus.CounterVec
+	LabelValueTooLong      *prometheus.CounterVec
+	DuplicateLabelNames    *prometheus.CounterVec
+	LabelsNotSorted        *prometheus.CounterVec
+	TooFarInFuture         *prometheus.CounterVec
+}
+
+func (m *SampleValidationMetrics) DeleteUserMetrics(userID string) {
+	m.MissingMetricName.DeleteLabelValues(userID)
+	m.InvalidMetricName.DeleteLabelValues(userID)
+	m.MaxLabelNamesPerSeries.DeleteLabelValues(userID)
+	m.InvalidLabel.DeleteLabelValues(userID)
+	m.LabelNameTooLong.DeleteLabelValues(userID)
+	m.LabelValueTooLong.DeleteLabelValues(userID)
+	m.DuplicateLabelNames.DeleteLabelValues(userID)
+	m.LabelsNotSorted.DeleteLabelValues(userID)
+	m.TooFarInFuture.DeleteLabelValues(userID)
+}
+
+func NewSampleValidationMetrics(r prometheus.Registerer) *SampleValidationMetrics {
+	return &SampleValidationMetrics{
+		MissingMetricName:      DiscardedSamplesCounter(r, reasonMissingMetricName),
+		InvalidMetricName:      DiscardedSamplesCounter(r, reasonInvalidMetricName),
+		MaxLabelNamesPerSeries: DiscardedSamplesCounter(r, reasonMaxLabelNamesPerSeries),
+		InvalidLabel:           DiscardedSamplesCounter(r, reasonInvalidLabel),
+		LabelNameTooLong:       DiscardedSamplesCounter(r, reasonLabelNameTooLong),
+		LabelValueTooLong:      DiscardedSamplesCounter(r, reasonLabelValueTooLong),
+		DuplicateLabelNames:    DiscardedSamplesCounter(r, reasonDuplicateLabelNames),
+		LabelsNotSorted:        DiscardedSamplesCounter(r, reasonLabelsNotSorted),
+		TooFarInFuture:         DiscardedSamplesCounter(r, reasonTooFarInFuture),
+	}
+}
+
 // ValidateSample returns an err if the sample is invalid.
 // The returned error may retain the provided series labels.
 // It uses the passed 'now' time to measure the relative time of the sample.
-func ValidateSample(now model.Time, cfg SampleValidationConfig, userID string, ls []mimirpb.LabelAdapter, s mimirpb.Sample) ValidationError {
+func ValidateSample(m *SampleValidationMetrics, now model.Time, cfg SampleValidationConfig, userID string, ls []mimirpb.LabelAdapter, s mimirpb.Sample) ValidationError {
 	unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
 
 	if model.Time(s.TimestampMs) > now.Add(cfg.CreationGracePeriod(userID)) {
-		DiscardedSamples.WithLabelValues(reasonTooFarInFuture, userID).Inc()
+		m.TooFarInFuture.WithLabelValues(userID).Inc()
 		return newSampleTimestampTooNewError(unsafeMetricName, s.TimestampMs)
 	}
 
@@ -196,21 +235,21 @@ type LabelValidationConfig interface {
 
 // ValidateLabels returns an err if the labels are invalid.
 // The returned error may retain the provided series labels.
-func ValidateLabels(cfg LabelValidationConfig, userID string, ls []mimirpb.LabelAdapter, skipLabelNameValidation bool) ValidationError {
+func ValidateLabels(m *SampleValidationMetrics, cfg LabelValidationConfig, userID string, ls []mimirpb.LabelAdapter, skipLabelNameValidation bool) ValidationError {
 	unsafeMetricName, err := extract.UnsafeMetricNameFromLabelAdapters(ls)
 	if err != nil {
-		DiscardedSamples.WithLabelValues(reasonMissingMetricName, userID).Inc()
+		m.MissingMetricName.WithLabelValues(userID).Inc()
 		return newNoMetricNameError()
 	}
 
 	if !model.IsValidMetricName(model.LabelValue(unsafeMetricName)) {
-		DiscardedSamples.WithLabelValues(reasonInvalidMetricName, userID).Inc()
+		m.InvalidMetricName.WithLabelValues(userID).Inc()
 		return newInvalidMetricNameError(unsafeMetricName)
 	}
 
 	numLabelNames := len(ls)
 	if numLabelNames > cfg.MaxLabelNamesPerSeries(userID) {
-		DiscardedSamples.WithLabelValues(reasonMaxLabelNamesPerSeries, userID).Inc()
+		m.MaxLabelNamesPerSeries.WithLabelValues(userID).Inc()
 		return newTooManyLabelsError(ls, cfg.MaxLabelNamesPerSeries(userID))
 	}
 
@@ -219,19 +258,19 @@ func ValidateLabels(cfg LabelValidationConfig, userID string, ls []mimirpb.Label
 	lastLabelName := ""
 	for _, l := range ls {
 		if !skipLabelNameValidation && !model.LabelName(l.Name).IsValid() {
-			DiscardedSamples.WithLabelValues(reasonInvalidLabel, userID).Inc()
+			m.InvalidLabel.WithLabelValues(userID).Inc()
 			return newInvalidLabelError(ls, l.Name)
 		} else if len(l.Name) > maxLabelNameLength {
-			DiscardedSamples.WithLabelValues(reasonLabelNameTooLong, userID).Inc()
+			m.LabelNameTooLong.WithLabelValues(userID).Inc()
 			return newLabelNameTooLongError(ls, l.Name)
 		} else if len(l.Value) > maxLabelValueLength {
-			DiscardedSamples.WithLabelValues(reasonLabelValueTooLong, userID).Inc()
+			m.LabelValueTooLong.WithLabelValues(userID).Inc()
 			return newLabelValueTooLongError(ls, l.Value)
 		} else if lastLabelName == l.Name {
-			DiscardedSamples.WithLabelValues(reasonDuplicateLabelNames, userID).Inc()
+			m.DuplicateLabelNames.WithLabelValues(userID).Inc()
 			return newDuplicatedLabelError(ls, l.Name)
 		} else if lastLabelName > l.Name {
-			DiscardedSamples.WithLabelValues(reasonLabelsNotSorted, userID).Inc()
+			m.LabelsNotSorted.WithLabelValues(userID).Inc()
 			return newLabelsNotSortedError(ls, l.Name)
 		}
 
@@ -288,7 +327,6 @@ func DeletePerUserValidationMetrics(userID string, log log.Logger) {
 	filter := prometheus.Labels{"user": userID}
 
 	DiscardedRequests.DeletePartialMatch(filter)
-	DiscardedSamples.DeletePartialMatch(filter)
 	DiscardedExemplars.DeletePartialMatch(filter)
 	DiscardedMetadata.DeletePartialMatch(filter)
 }

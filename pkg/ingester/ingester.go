@@ -885,22 +885,22 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	i.appendedExemplarsStats.Inc(int64(succeededExemplarsCount))
 
 	if sampleOutOfBoundsCount > 0 {
-		validation.DiscardedSamples.WithLabelValues(sampleOutOfBounds, userID).Add(float64(sampleOutOfBoundsCount))
+		i.metrics.discardedSamplesSampleOutOfBounds.WithLabelValues(userID).Add(float64(sampleOutOfBoundsCount))
 	}
 	if sampleOutOfOrderCount > 0 {
-		validation.DiscardedSamples.WithLabelValues(sampleOutOfOrder, userID).Add(float64(sampleOutOfOrderCount))
+		i.metrics.discardedSamplesSampleOutOfOrder.WithLabelValues(userID).Add(float64(sampleOutOfOrderCount))
 	}
 	if sampleTooOldCount > 0 {
-		validation.DiscardedSamples.WithLabelValues(sampleTooOld, userID).Add(float64(sampleTooOldCount))
+		i.metrics.discardedSamplesSampleTooOld.WithLabelValues(userID).Add(float64(sampleTooOldCount))
 	}
 	if newValueForTimestampCount > 0 {
-		validation.DiscardedSamples.WithLabelValues(newValueForTimestamp, userID).Add(float64(newValueForTimestampCount))
+		i.metrics.discardedSamplesNewValueForTimestamp.WithLabelValues(userID).Add(float64(newValueForTimestampCount))
 	}
 	if perUserSeriesLimitCount > 0 {
-		validation.DiscardedSamples.WithLabelValues(perUserSeriesLimit, userID).Add(float64(perUserSeriesLimitCount))
+		i.metrics.discardedSamplesPerUserSeriesLimit.WithLabelValues(userID).Add(float64(perUserSeriesLimitCount))
 	}
 	if perMetricSeriesLimitCount > 0 {
-		validation.DiscardedSamples.WithLabelValues(perMetricSeriesLimit, userID).Add(float64(perMetricSeriesLimitCount))
+		i.metrics.discardedSamplesPerMetricSeriesLimit.WithLabelValues(userID).Add(float64(perMetricSeriesLimitCount))
 	}
 	if succeededSamplesCount > 0 {
 		i.ingestionRate.Add(int64(succeededSamplesCount))

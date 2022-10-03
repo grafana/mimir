@@ -18,6 +18,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/kv/memberlist"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/weaveworks/common/middleware"
 	"github.com/weaveworks/common/server"
@@ -238,12 +239,12 @@ func (a *API) RegisterRuntimeConfig(runtimeConfigHandler http.HandlerFunc, userL
 }
 
 // RegisterDistributor registers the endpoints associated with the distributor.
-func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distributor.Config) {
+func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distributor.Config, reg prometheus.Registerer) {
 	distributorpb.RegisterDistributorServer(a.server.GRPC, d)
 
 	wrappedPush := a.cfg.wrapDistributorPush(d.PushWithMiddlewares)
 	a.RegisterRoute("/api/v1/push", push.Handler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, wrappedPush), true, false, "POST")
-	a.RegisterRoute("/otlp/v1/metrics", push.OTLPHandler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, wrappedPush), true, false, "POST")
+	a.RegisterRoute("/otlp/v1/metrics", push.OTLPHandler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, reg, wrappedPush), true, false, "POST")
 
 	a.indexPage.AddLinks(defaultWeight, "Distributor", []IndexPageLink{
 		{Desc: "Ring status", Path: "/distributor/ring"},
