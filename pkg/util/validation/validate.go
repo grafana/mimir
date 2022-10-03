@@ -10,7 +10,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
@@ -97,16 +96,16 @@ func DiscardedExemplarsCounter(reg prometheus.Registerer, reason string) *promet
 	}, []string{"user"})
 }
 
-// DiscardedMetadata is a metric of the number of discarded metadata, by reason.
-//
-//lint:ignore faillint It's non-trivial to remove this global variable.
-var DiscardedMetadata = promauto.NewCounterVec(
-	prometheus.CounterOpts{
+// DiscardedMetadataCounter creates per-user counter vector for metadata discarded for a given reason.
+func DiscardedMetadataCounter(reg prometheus.Registerer, reason string) *prometheus.CounterVec {
+	return promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_discarded_metadata_total",
 		Help: "The total number of metadata that were discarded.",
-	},
-	[]string{discardReasonLabel, "user"},
-)
+		ConstLabels: map[string]string{
+			discardReasonLabel: reason,
+		},
+	}, []string{"user"})
+}
 
 // SampleValidationConfig helps with getting required config to validate sample.
 type SampleValidationConfig interface {
@@ -306,6 +305,27 @@ func ValidateLabels(m *SampleValidationMetrics, cfg LabelValidationConfig, userI
 	return nil
 }
 
+// MetadataValidationMetrics is a collection of metrics used by metadata validation.
+type MetadataValidationMetrics struct {
+	MissingMetricName *prometheus.CounterVec
+	MetricNameTooLong *prometheus.CounterVec
+	UnitTooLong       *prometheus.CounterVec
+}
+
+func (m *MetadataValidationMetrics) DeleteUserMetrics(userID string) {
+	m.MissingMetricName.DeleteLabelValues(userID)
+	m.MetricNameTooLong.DeleteLabelValues(userID)
+	m.UnitTooLong.DeleteLabelValues(userID)
+}
+
+func NewMetadataValidationMetrics(r prometheus.Registerer) *MetadataValidationMetrics {
+	return &MetadataValidationMetrics{
+		MissingMetricName: DiscardedMetadataCounter(r, reasonMissingMetricName),
+		MetricNameTooLong: DiscardedMetadataCounter(r, reasonMetadataMetricNameTooLong),
+		UnitTooLong:       DiscardedMetadataCounter(r, reasonMetadataUnitTooLong),
+	}
+}
+
 // MetadataValidationConfig helps with getting required config to validate metadata.
 type MetadataValidationConfig interface {
 	EnforceMetadataMetricName(userID string) bool
@@ -313,9 +333,9 @@ type MetadataValidationConfig interface {
 }
 
 // CleanAndValidateMetadata returns an err if a metric metadata is invalid.
-func CleanAndValidateMetadata(cfg MetadataValidationConfig, userID string, metadata *mimirpb.MetricMetadata) error {
+func CleanAndValidateMetadata(m *MetadataValidationMetrics, cfg MetadataValidationConfig, userID string, metadata *mimirpb.MetricMetadata) error {
 	if cfg.EnforceMetadataMetricName(userID) && metadata.GetMetricFamilyName() == "" {
-		DiscardedMetadata.WithLabelValues(reasonMissingMetricName, userID).Inc()
+		m.MissingMetricName.WithLabelValues(userID).Inc()
 		return newMetadataMetricNameMissingError()
 	}
 
@@ -332,26 +352,14 @@ func CleanAndValidateMetadata(cfg MetadataValidationConfig, userID string, metad
 		metadata.Help = metadata.Help[:newlen]
 	}
 
-	var reason string
 	var err error
 	if len(metadata.GetMetricFamilyName()) > maxMetadataValueLength {
-		reason = reasonMetadataMetricNameTooLong
+		m.MetricNameTooLong.WithLabelValues(userID).Inc()
 		err = newMetadataMetricNameTooLongError(metadata)
 	} else if len(metadata.Unit) > maxMetadataValueLength {
-		reason = reasonMetadataUnitTooLong
+		m.UnitTooLong.WithLabelValues(userID).Inc()
 		err = newMetadataUnitTooLongError(metadata)
 	}
 
-	if err != nil {
-		DiscardedMetadata.WithLabelValues(reason, userID).Inc()
-		return err
-	}
-
-	return nil
-}
-
-func DeletePerUserValidationMetrics(userID string, log log.Logger) {
-	filter := prometheus.Labels{"user": userID}
-
-	DiscardedMetadata.DeletePartialMatch(filter)
+	return err
 }

@@ -16,7 +16,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
-	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 type validateLabelsCfg struct {
@@ -51,7 +50,7 @@ func (vm validateMetadataCfg) MaxMetadataLength(userID string) int {
 }
 
 func TestValidateLabels(t *testing.T) {
-	reg := prometheus.NewRegistry()
+	reg := prometheus.NewPedanticRegistry()
 	s := NewSampleValidationMetrics(reg)
 
 	var cfg validateLabelsCfg
@@ -150,7 +149,7 @@ func TestValidateLabels(t *testing.T) {
 }
 
 func TestValidateExemplars(t *testing.T) {
-	reg := prometheus.NewRegistry()
+	reg := prometheus.NewPedanticRegistry()
 	m := NewExemplarValidationMetrics(reg)
 
 	userID := "testUser"
@@ -225,6 +224,9 @@ func TestValidateExemplars(t *testing.T) {
 }
 
 func TestValidateMetadata(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	m := NewMetadataValidationMetrics(reg)
+
 	userID := "testUser"
 	var cfg validateMetadataCfg
 	cfg.enforceMetadataMetricName = true
@@ -280,7 +282,7 @@ func TestValidateMetadata(t *testing.T) {
 		},
 	} {
 		t.Run(c.desc, func(t *testing.T) {
-			err := CleanAndValidateMetadata(cfg, userID, c.metadata)
+			err := CleanAndValidateMetadata(m, cfg, userID, c.metadata)
 			assert.Equal(t, c.err, err, "wrong error")
 			if err == nil {
 				assert.Equal(t, c.metadataOut, c.metadata)
@@ -288,9 +290,9 @@ func TestValidateMetadata(t *testing.T) {
 		})
 	}
 
-	DiscardedMetadata.WithLabelValues("random reason", "different user").Inc()
+	DiscardedMetadataCounter(reg, "random reason").WithLabelValues("different user").Inc()
 
-	require.NoError(t, testutil.GatherAndCompare(prometheus.DefaultGatherer, strings.NewReader(`
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_discarded_metadata_total The total number of metadata that were discarded.
 			# TYPE cortex_discarded_metadata_total counter
 			cortex_discarded_metadata_total{reason="metric_name_too_long",user="testUser"} 1
@@ -300,9 +302,9 @@ func TestValidateMetadata(t *testing.T) {
 			cortex_discarded_metadata_total{reason="random reason",user="different user"} 1
 	`), "cortex_discarded_metadata_total"))
 
-	DeletePerUserValidationMetrics(userID, util_log.Logger)
+	m.DeleteUserMetrics(userID)
 
-	require.NoError(t, testutil.GatherAndCompare(prometheus.DefaultGatherer, strings.NewReader(`
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_discarded_metadata_total The total number of metadata that were discarded.
 			# TYPE cortex_discarded_metadata_total counter
 			cortex_discarded_metadata_total{reason="random reason",user="different user"} 1

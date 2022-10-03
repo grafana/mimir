@@ -138,9 +138,11 @@ type Distributor struct {
 	discardedSamplesRateLimited       *prometheus.CounterVec
 	discardedRequestsRateLimited      *prometheus.CounterVec
 	discardedExemplarsRateLimited     *prometheus.CounterVec
+	discardedMetadataRateLimited      *prometheus.CounterVec
 
 	sampleValidationMetrics   *validation.SampleValidationMetrics
 	exemplarValidationMetrics *validation.ExemplarValidationMetrics
+	metadataValidationMetrics *validation.MetadataValidationMetrics
 
 	PushWithMiddlewares push.Func
 }
@@ -348,9 +350,11 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		discardedSamplesRateLimited:       validation.DiscardedSamplesCounter(reg, validation.ReasonRateLimited),
 		discardedRequestsRateLimited:      validation.DiscardedRequestsCounter(reg, validation.ReasonRateLimited),
 		discardedExemplarsRateLimited:     validation.DiscardedExemplarsCounter(reg, validation.ReasonRateLimited),
+		discardedMetadataRateLimited:      validation.DiscardedMetadataCounter(reg, validation.ReasonRateLimited),
 
 		sampleValidationMetrics:   validation.NewSampleValidationMetrics(reg),
 		exemplarValidationMetrics: validation.NewExemplarValidationMetrics(reg),
+		metadataValidationMetrics: validation.NewMetadataValidationMetrics(reg),
 	}
 
 	promauto.With(reg).NewGauge(prometheus.GaugeOpts{
@@ -525,12 +529,12 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.discardedSamplesTooManyHaClusters.DeleteLabelValues(userID)
 	d.discardedSamplesRateLimited.DeleteLabelValues(userID)
 	d.discardedRequestsRateLimited.DeleteLabelValues(userID)
-	d.discardedRequestsRateLimited.DeleteLabelValues(userID)
+	d.discardedExemplarsRateLimited.DeleteLabelValues(userID)
+	d.discardedMetadataRateLimited.DeleteLabelValues(userID)
 
 	d.sampleValidationMetrics.DeleteUserMetrics(userID)
 	d.exemplarValidationMetrics.DeleteUserMetrics(userID)
-
-	validation.DeletePerUserValidationMetrics(userID, d.log)
+	d.metadataValidationMetrics.DeleteUserMetrics(userID)
 }
 
 // Called after distributor is asked to stop via StopAsync.
@@ -1040,7 +1044,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	}
 
 	for _, m := range req.Metadata {
-		if validationErr := validation.CleanAndValidateMetadata(d.limits, userID, m); validationErr != nil {
+		if validationErr := validation.CleanAndValidateMetadata(d.metadataValidationMetrics, d.limits, userID, m); validationErr != nil {
 			if firstPartialErr == nil {
 				// The metadata info may be retained by validationErr but that's not a problem for this
 				// use case because we format it calling Error() and then we discard it.
@@ -1066,7 +1070,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	if !d.ingestionRateLimiter.AllowN(now, userID, totalN) {
 		d.discardedSamplesRateLimited.WithLabelValues(userID).Add(float64(validatedSamples))
 		d.discardedExemplarsRateLimited.WithLabelValues(userID).Add(float64(validatedExemplars))
-		validation.DiscardedMetadata.WithLabelValues(validation.ReasonRateLimited, userID).Add(float64(len(validatedMetadata)))
+		d.discardedMetadataRateLimited.WithLabelValues(userID).Add(float64(len(validatedMetadata)))
 		// Return a 429 here to tell the client it is going too fast.
 		// Client may discard the data or slow down and re-send.
 		// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
