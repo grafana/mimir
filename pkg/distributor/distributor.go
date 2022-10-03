@@ -1097,7 +1097,11 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 			}
 		}
 
-		return d.send(localCtx, ingester, timeseries, metadata, req.Source)
+		err := d.send(localCtx, ingester, timeseries, metadata, req.Source)
+		if errors.Is(err, context.DeadlineExceeded) {
+			return errors.Wrap(err, "exceeded configured distributor remote timeout")
+		}
+		return err
 	}, func() { cleanup(); cancel() })
 
 	if err != nil {
@@ -1145,8 +1149,7 @@ func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, time
 		Source:     source,
 	}
 	_, err = c.Push(ctx, &req)
-
-	return err
+	return errors.Wrap(err, "failed to push to ingester")
 }
 
 // forReplicationSet runs f, in parallel, for all ingesters in the input replication set.
