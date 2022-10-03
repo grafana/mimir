@@ -534,46 +534,17 @@ testuser:
 }
 
 func TestCustomTrackerConfigDeserialize(t *testing.T) {
-	oldYaml := `
-    user:
-        active_series_custom_trackers_config:
-            baz: '{foo="bar"}'
-    `
 	expectedConfig, err := activeseries.NewCustomTrackersConfig(map[string]string{"baz": `{foo="bar"}`})
 	require.NoError(t, err, "creating expected config")
-	newYaml := `
+	cfg := `
     user:
         active_series_custom_trackers:
             baz: '{foo="bar"}'
     `
-	bothYaml := `
-    user:
-        active_series_custom_trackers:
-            baznew: '{foonew="barnew"}'
-        active_series_custom_trackers_config:
-            baz: '{foo="bar"}'
-    `
-	for name, tc := range map[string]struct {
-		yaml string
-	}{
-		"testOldVersionCopiedToNewField": {
-			yaml: oldYaml,
-		},
-		"testNewVersion": {
-			yaml: newYaml,
-		},
-		"testBothVersionsOldTakesPrecedenceInNewField": {
-			yaml: bothYaml,
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			overrides := map[string]*Limits{}
-			err := yaml.Unmarshal([]byte(tc.yaml), &overrides)
-			require.NoError(t, err, "parsing overrides")
 
-			assert.True(t, overrides["user"].ActiveSeriesCustomTrackersConfigOld.Empty())
-			assert.False(t, overrides["user"].ActiveSeriesCustomTrackersConfig.Empty())
-			assert.Equal(t, expectedConfig.String(), overrides["user"].ActiveSeriesCustomTrackersConfig.String())
-		})
-	}
+	overrides := map[string]*Limits{}
+	require.NoError(t, yaml.Unmarshal([]byte(cfg), &overrides), "parsing overrides")
+
+	assert.False(t, overrides["user"].ActiveSeriesCustomTrackersConfig.Empty())
+	assert.Equal(t, expectedConfig.String(), overrides["user"].ActiveSeriesCustomTrackersConfig.String())
 }
