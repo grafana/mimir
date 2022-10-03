@@ -48,7 +48,6 @@ The following features are currently experimental:
 
 - Ruler
   - Tenant federation
-  - Use query-frontend for rule evaluation
   - Disable alerting and recording rules evaluation on a per-tenant basis
     - `-ruler.recording-rules-evaluation-enabled`
     - `-ruler.alerting-rules-evaluation-enabled`
