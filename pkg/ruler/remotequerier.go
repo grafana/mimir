@@ -271,14 +271,16 @@ func (q *RemoteQuerier) sendRequest(ctx context.Context, req *httpgrpc.HTTPReque
 		if err == nil {
 			return resp, nil
 		}
+		if !retry.Ongoing() {
+			return nil, err
+		}
+		level.Warn(q.logger).Log("msg", "failed to remotely evaluate query expression, will retry", "err", err)
 		retry.Wait()
 
-		if retry.Ongoing() {
-			level.Warn(q.logger).Log("msg", "failed to remotely evaluate query expression, will retry", "err", err)
-			continue
+		// Avoid masking last known error if context was cancelled while waiting.
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("%s while retrying request, last err was: %w", ctx.Err(), err)
 		}
-		// Return last known error to the caller.
-		return nil, err
 	}
 }
 
