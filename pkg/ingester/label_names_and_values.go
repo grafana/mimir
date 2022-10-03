@@ -4,15 +4,25 @@ package ingester
 
 import (
 	"context"
+	"sync"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 )
 
-const checkContextErrorSeriesCount = 1000 // series count interval in which context cancellation must be checked.
+const (
+	checkContextErrorSeriesCount = 1000 // series count interval in which context cancellation must be checked.
+)
+
+type labelValueCountResult struct {
+	val   string
+	count uint64
+	err   error
+}
 
 // labelNamesAndValues streams the messages with the labels and values of the labels matching the `matchers` param.
 // Messages are immediately sent as soon they reach message size threshold defined in `messageSizeThreshold` param.
@@ -104,44 +114,38 @@ func labelValuesCardinality(
 	resp := client.LabelValuesCardinalityResponse{}
 	respSize := 0
 
-	// We will use original matchers + one extra matcher for label value.
-	lblValMatchers := make([]*labels.Matcher, len(matchers)+1)
-	copy(lblValMatchers, matchers)
-
-	for _, lbName := range lbNames {
+	for _, lblName := range lbNames {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		// Obtain all values for current label name.
-		lbValues, err := idxReader.LabelValues(lbName, matchers...)
+		lblValues, err := idxReader.LabelValues(lblName, matchers...)
 		if err != nil {
 			return err
 		}
 		// For each value count total number of series storing the result into cardinality response item.
 		var respItem *client.LabelValueSeriesCount
 
-		for _, lbValue := range lbValues {
-			if err := ctx.Err(); err != nil {
-				return err
+		resultCh := computeLabelValuesSeriesCount(ctx, lblName, lblValues, matchers, idxReader, postingsForMatchersFn)
+
+		for countRes := range resultCh {
+			if countRes.err != nil {
+				return countRes.err
 			}
-			// Create label name response item entry.
+			if countRes.count == 0 {
+				continue
+			}
 			if respItem == nil {
 				respItem = &client.LabelValueSeriesCount{
-					LabelName:        lbName,
+					LabelName:        lblName,
 					LabelValueSeries: make(map[string]uint64),
 				}
 				resp.Items = append(resp.Items, respItem)
 			}
-			// Get total series count applying label matchers.
-			lblValMatchers[len(lblValMatchers)-1] = labels.MustNewMatcher(labels.MatchEqual, lbName, lbValue)
 
-			seriesCount, err := countLabelValueSeries(ctx, idxReader, postingsForMatchersFn, lblValMatchers)
-			if err != nil {
-				return err
-			}
-			respItem.LabelValueSeries[lbValue] = seriesCount
+			respItem.LabelValueSeries[countRes.val] = countRes.count
 
-			respSize += len(lbValue)
+			respSize += len(countRes.val)
 			if respSize < msgSizeThreshold {
 				continue
 			}
@@ -161,13 +165,68 @@ func labelValuesCardinality(
 	return nil
 }
 
-func countLabelValueSeries(
+func computeLabelValuesSeriesCount(
 	ctx context.Context,
+	lblName string,
+	lblValues []string,
+	matchers []*labels.Matcher,
 	idxReader tsdb.IndexReader,
 	postingsForMatchersFn func(tsdb.IndexPostingsReader, ...*labels.Matcher) (index.Postings, error),
-	lblValMatchers []*labels.Matcher,
+) <-chan labelValueCountResult {
+	maxConcurrency := 16
+	if len(lblValues) < maxConcurrency {
+		maxConcurrency = len(lblValues)
+	}
+
+	wg := sync.WaitGroup{}
+	wg.Add(len(lblValues))
+
+	countCh := make(chan labelValueCountResult, len(lblValues))
+
+	indexes := atomic.NewInt64(-1)
+	for ix := 0; ix < maxConcurrency; ix++ {
+		go func() {
+			for {
+				idx := int(indexes.Inc())
+				if idx >= len(lblValues) {
+					return
+				}
+				seriesCount, err := countLabelValueSeries(ctx, lblName, lblValues[idx], matchers, idxReader, postingsForMatchersFn)
+				countCh <- labelValueCountResult{
+					val:   lblValues[idx],
+					count: seriesCount,
+					err:   err,
+				}
+				wg.Done()
+			}
+		}()
+	}
+	go func() {
+		wg.Wait()
+		close(countCh)
+	}()
+
+	return countCh
+}
+
+func countLabelValueSeries(
+	ctx context.Context,
+	lblName string,
+	lblValue string,
+	matchers []*labels.Matcher,
+	idxReader tsdb.IndexReader,
+	postingsForMatchersFn func(tsdb.IndexPostingsReader, ...*labels.Matcher) (index.Postings, error),
 ) (uint64, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
 	var count uint64
+
+	// We will use original matchers + one extra matcher for label value.
+	lblValMatchers := make([]*labels.Matcher, len(matchers)+1)
+	copy(lblValMatchers, matchers)
+
+	lblValMatchers[len(lblValMatchers)-1] = labels.MustNewMatcher(labels.MatchEqual, lblName, lblValue)
 
 	p, err := postingsForMatchersFn(idxReader, lblValMatchers...)
 	if err != nil {
