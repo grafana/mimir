@@ -54,6 +54,11 @@ Zone-aware replication in the ingester ensures that Grafana Mimir replicates eac
 2. Roll out ingesters so that each ingester replica runs with a configured zone.
 3. Set the `-ingester.ring.zone-awareness-enabled=true` CLI flag or its respective YAML configuration parameter for distributors, ingesters, and queriers.
 
+> **Note:** 
+> The requests that the distributors receive are usually compressed, while the requests that the distributors send to the ingesters are uncompressed by default. 
+> This can result in high cross-zone bandwidth costs (as at least two ingesters will be in different availability zones).
+> If this cost is a concern, those requests can be compressed by setting the `-ingester.client.grpc-compression` CLI flag, or it's respective YAML configuration parameter, to `snappy` or `gzip` in the distributors.
+
 ## Configuring store-gateway blocks replication
 
 To enable zone-aware replication for the store-gateways, refer to [Zone awareness]({{< relref "../architecture/components/store-gateway.md#zone-awareness" >}}).
