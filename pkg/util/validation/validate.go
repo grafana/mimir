@@ -63,7 +63,7 @@ func metricReasonFromErrorID(id globalerror.ID) string {
 	return strings.ReplaceAll(string(id), "-", "_")
 }
 
-// DiscardedRequestsCounter creates counter vector (per-user) for discarded requests for a given reason.
+// DiscardedRequestsCounter creates per-user counter vector for requests discarded for a given reason.
 func DiscardedRequestsCounter(reg prometheus.Registerer, reason string) *prometheus.CounterVec {
 	return promauto.With(reg).NewCounterVec(
 		prometheus.CounterOpts{
@@ -75,7 +75,7 @@ func DiscardedRequestsCounter(reg prometheus.Registerer, reason string) *prometh
 		}, []string{"user"})
 }
 
-// DiscardedSamplesCounter creates discarded samples counter vector (per-user) for given reason.
+// DiscardedSamplesCounter creates per-user counter vector for samples discarded for a given reason.
 func DiscardedSamplesCounter(reg prometheus.Registerer, reason string) *prometheus.CounterVec {
 	return promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_discarded_samples_total",
@@ -86,16 +86,16 @@ func DiscardedSamplesCounter(reg prometheus.Registerer, reason string) *promethe
 	}, []string{"user"})
 }
 
-// DiscardedExemplars is a metric of the number of discarded exemplars, by reason.
-//
-//lint:ignore faillint It's non-trivial to remove this global variable.
-var DiscardedExemplars = promauto.NewCounterVec(
-	prometheus.CounterOpts{
+// DiscardedExemplarsCounter creates per-user counter vector for exemplars discarded for a given reason.
+func DiscardedExemplarsCounter(reg prometheus.Registerer, reason string) *prometheus.CounterVec {
+	return promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_discarded_exemplars_total",
 		Help: "The total number of exemplars that were discarded.",
-	},
-	[]string{discardReasonLabel, "user"},
-)
+		ConstLabels: map[string]string{
+			discardReasonLabel: reason,
+		},
+	}, []string{"user"})
+}
 
 // DiscardedMetadata is a metric of the number of discarded metadata, by reason.
 //
@@ -152,6 +152,32 @@ func NewSampleValidationMetrics(r prometheus.Registerer) *SampleValidationMetric
 	}
 }
 
+type ExemplarValidationMetrics struct {
+	LabelsMissing    *prometheus.CounterVec
+	TimestampInvalid *prometheus.CounterVec
+	LabelsTooLong    *prometheus.CounterVec
+	LabelsBlank      *prometheus.CounterVec
+	TooOld           *prometheus.CounterVec
+}
+
+func (m *ExemplarValidationMetrics) DeleteUserMetrics(userID string) {
+	m.LabelsMissing.DeleteLabelValues(userID)
+	m.TimestampInvalid.DeleteLabelValues(userID)
+	m.LabelsTooLong.DeleteLabelValues(userID)
+	m.LabelsBlank.DeleteLabelValues(userID)
+	m.TooOld.DeleteLabelValues(userID)
+}
+
+func NewExemplarValidationMetrics(r prometheus.Registerer) *ExemplarValidationMetrics {
+	return &ExemplarValidationMetrics{
+		LabelsMissing:    DiscardedExemplarsCounter(r, reasonExemplarLabelsMissing),
+		TimestampInvalid: DiscardedExemplarsCounter(r, reasonExemplarTimestampInvalid),
+		LabelsTooLong:    DiscardedExemplarsCounter(r, reasonExemplarLabelsTooLong),
+		LabelsBlank:      DiscardedExemplarsCounter(r, reasonExemplarLabelsBlank),
+		TooOld:           DiscardedExemplarsCounter(r, reasonExemplarTooOld),
+	}
+}
+
 // ValidateSample returns an err if the sample is invalid.
 // The returned error may retain the provided series labels.
 // It uses the passed 'now' time to measure the relative time of the sample.
@@ -168,14 +194,14 @@ func ValidateSample(m *SampleValidationMetrics, now model.Time, cfg SampleValida
 
 // ValidateExemplar returns an error if the exemplar is invalid.
 // The returned error may retain the provided series labels.
-func ValidateExemplar(userID string, ls []mimirpb.LabelAdapter, e mimirpb.Exemplar) ValidationError {
+func ValidateExemplar(m *ExemplarValidationMetrics, userID string, ls []mimirpb.LabelAdapter, e mimirpb.Exemplar) ValidationError {
 	if len(e.Labels) <= 0 {
-		DiscardedExemplars.WithLabelValues(reasonExemplarLabelsMissing, userID).Inc()
+		m.LabelsMissing.WithLabelValues(userID).Inc()
 		return newExemplarEmptyLabelsError(ls, []mimirpb.LabelAdapter{}, e.TimestampMs)
 	}
 
 	if e.TimestampMs == 0 {
-		DiscardedExemplars.WithLabelValues(reasonExemplarTimestampInvalid, userID).Inc()
+		m.TimestampInvalid.WithLabelValues(userID).Inc()
 		return newExemplarMissingTimestampError(
 			ls,
 			e.Labels,
@@ -201,7 +227,7 @@ func ValidateExemplar(userID string, ls []mimirpb.LabelAdapter, e mimirpb.Exempl
 	}
 
 	if labelSetLen > ExemplarMaxLabelSetLength {
-		DiscardedExemplars.WithLabelValues(reasonExemplarLabelsTooLong, userID).Inc()
+		m.LabelsTooLong.WithLabelValues(userID).Inc()
 		return newExemplarMaxLabelLengthError(
 			ls,
 			e.Labels,
@@ -210,7 +236,7 @@ func ValidateExemplar(userID string, ls []mimirpb.LabelAdapter, e mimirpb.Exempl
 	}
 
 	if !foundValidLabel {
-		DiscardedExemplars.WithLabelValues(reasonExemplarLabelsBlank, userID).Inc()
+		m.LabelsBlank.WithLabelValues(userID).Inc()
 		return newExemplarEmptyLabelsError(ls, e.Labels, e.TimestampMs)
 	}
 
@@ -219,9 +245,9 @@ func ValidateExemplar(userID string, ls []mimirpb.LabelAdapter, e mimirpb.Exempl
 
 // ExemplarTimestampOK returns true if the timestamp is newer than minTS.
 // This is separate from ValidateExemplar() so we can silently drop old ones, not log an error.
-func ExemplarTimestampOK(userID string, minTS int64, e mimirpb.Exemplar) bool {
+func ExemplarTimestampOK(m *ExemplarValidationMetrics, userID string, minTS int64, e mimirpb.Exemplar) bool {
 	if e.TimestampMs < minTS {
-		DiscardedExemplars.WithLabelValues(reasonExemplarTooOld, userID).Inc()
+		m.TooOld.WithLabelValues(userID).Inc()
 		return false
 	}
 	return true
@@ -327,6 +353,5 @@ func CleanAndValidateMetadata(cfg MetadataValidationConfig, userID string, metad
 func DeletePerUserValidationMetrics(userID string, log log.Logger) {
 	filter := prometheus.Labels{"user": userID}
 
-	DiscardedExemplars.DeletePartialMatch(filter)
 	DiscardedMetadata.DeletePartialMatch(filter)
 }

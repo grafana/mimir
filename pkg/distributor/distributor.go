@@ -137,8 +137,10 @@ type Distributor struct {
 	discardedSamplesTooManyHaClusters *prometheus.CounterVec
 	discardedSamplesRateLimited       *prometheus.CounterVec
 	discardedRequestsRateLimited      *prometheus.CounterVec
+	discardedExemplarsRateLimited     *prometheus.CounterVec
 
-	sampleValidationMetrics *validation.SampleValidationMetrics
+	sampleValidationMetrics   *validation.SampleValidationMetrics
+	exemplarValidationMetrics *validation.ExemplarValidationMetrics
 
 	PushWithMiddlewares push.Func
 }
@@ -345,8 +347,10 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		discardedSamplesTooManyHaClusters: validation.DiscardedSamplesCounter(reg, validation.ReasonTooManyHAClusters),
 		discardedSamplesRateLimited:       validation.DiscardedSamplesCounter(reg, validation.ReasonRateLimited),
 		discardedRequestsRateLimited:      validation.DiscardedRequestsCounter(reg, validation.ReasonRateLimited),
+		discardedExemplarsRateLimited:     validation.DiscardedExemplarsCounter(reg, validation.ReasonRateLimited),
 
-		sampleValidationMetrics: validation.NewSampleValidationMetrics(reg),
+		sampleValidationMetrics:   validation.NewSampleValidationMetrics(reg),
+		exemplarValidationMetrics: validation.NewExemplarValidationMetrics(reg),
 	}
 
 	promauto.With(reg).NewGauge(prometheus.GaugeOpts{
@@ -521,7 +525,10 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.discardedSamplesTooManyHaClusters.DeleteLabelValues(userID)
 	d.discardedSamplesRateLimited.DeleteLabelValues(userID)
 	d.discardedRequestsRateLimited.DeleteLabelValues(userID)
+	d.discardedRequestsRateLimited.DeleteLabelValues(userID)
+
 	d.sampleValidationMetrics.DeleteUserMetrics(userID)
+	d.exemplarValidationMetrics.DeleteUserMetrics(userID)
 
 	validation.DeletePerUserValidationMetrics(userID, d.log)
 }
@@ -630,14 +637,14 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 
 	for i := 0; i < len(ts.Exemplars); {
 		e := ts.Exemplars[i]
-		if err := validation.ValidateExemplar(userID, ts.Labels, e); err != nil {
+		if err := validation.ValidateExemplar(d.exemplarValidationMetrics, userID, ts.Labels, e); err != nil {
 			// An exemplar validation error prevents ingesting samples
 			// in the same series object. However because the current Prometheus
 			// remote write implementation only populates one or the other,
 			// there never will be any.
 			return err
 		}
-		if !validation.ExemplarTimestampOK(userID, minExemplarTS, e) {
+		if !validation.ExemplarTimestampOK(d.exemplarValidationMetrics, userID, minExemplarTS, e) {
 			// Delete this exemplar by moving the last one on top and shortening the slice
 			last := len(ts.Exemplars) - 1
 			if i < last {
@@ -1058,7 +1065,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	totalN := validatedSamples + validatedExemplars + len(validatedMetadata)
 	if !d.ingestionRateLimiter.AllowN(now, userID, totalN) {
 		d.discardedSamplesRateLimited.WithLabelValues(userID).Add(float64(validatedSamples))
-		validation.DiscardedExemplars.WithLabelValues(validation.ReasonRateLimited, userID).Add(float64(validatedExemplars))
+		d.discardedExemplarsRateLimited.WithLabelValues(userID).Add(float64(validatedExemplars))
 		validation.DiscardedMetadata.WithLabelValues(validation.ReasonRateLimited, userID).Add(float64(len(validatedMetadata)))
 		// Return a 429 here to tell the client it is going too fast.
 		// Client may discard the data or slow down and re-send.
