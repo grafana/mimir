@@ -122,7 +122,7 @@ func NewForwarder(cfg Config, reg prometheus.Registerer, log log.Logger) Forward
 			Help: "Number of gRPC clients used by Distributor forwarder.",
 		}),
 
-		discardedSamplesTooOld: validation.DiscardedSamplesCounter(reg, "forwarding-sample-too-old"),
+		discardedSamplesTooOld: validation.DiscardedSamplesCounter(reg, "forwarded-sample-too-old"),
 	}
 
 	f.httpGrpcClientPool = f.newHTTPGrpcClientsPool()
