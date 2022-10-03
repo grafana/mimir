@@ -44,7 +44,6 @@ type RingConfig struct {
 
 	// Config for the ingester lifecycle control
 	ObservePeriod            time.Duration `yaml:"observe_period" category:"advanced"`
-	DeprecatedJoinAfter      time.Duration `yaml:"join_after" category:"advanced" doc:"hidden"` // TODO Deprecated: remove in Mimir 2.4.0.
 	MinReadyDuration         time.Duration `yaml:"min_ready_duration" category:"advanced"`
 	FinalSleep               time.Duration `yaml:"final_sleep" category:"advanced"`
 	ReadinessCheckRingHealth bool          `yaml:"readiness_check_ring_health" category:"advanced"`

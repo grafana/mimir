@@ -1068,10 +1068,12 @@ var removedConfigPaths = append(gemRemovedConfigPath, []string{
 
 	// Removed in 2.1, 2.2 and 2.3
 	"distributor.extend_writes",                          // -distributor.extend-writes
-	"ingester.lifecycler.join_after",                     // -ingester.join-after; is deprecated and will be removed in 2.4, but we can remove it now
 	"querier.shuffle_sharding_ingesters_lookback_period", // -querier.shuffle-sharding-ingesters-lookback-period
 	"ruler.flush_period",                                 // -ruler.flush-period
 	"ruler.search_pending_for",                           // -ruler.search-pending-for
+
+	// Removed in 2.4
+	"ingester.lifecycler.join_after", // -ingester.join-after
 }...)
 
 // CLI options removed since Cortex 1.10.0. These flags only existed as CLI Flags, and were not included in YAML Config.
