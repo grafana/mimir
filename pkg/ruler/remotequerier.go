@@ -266,16 +266,20 @@ func (q *RemoteQuerier) sendRequest(ctx context.Context, req *httpgrpc.HTTPReque
 	}
 	retry := backoff.New(ctx, retryConfig)
 
-	for retry.Ongoing() {
+	for {
 		resp, err := q.client.Handle(ctx, req)
-		if err != nil {
+		if err == nil {
+			return resp, nil
+		}
+		retry.Wait()
+
+		if retry.Ongoing() {
 			level.Warn(q.logger).Log("msg", "failed to remotely evaluate query expression, will retry", "err", err)
-			retry.Wait()
 			continue
 		}
-		return resp, nil
+		// Return last known error to the caller.
+		return nil, err
 	}
-	return nil, retry.Err()
 }
 
 func decodeQueryResponse(valTyp model.ValueType, result json.RawMessage) (promql.Vector, error) {
