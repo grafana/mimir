@@ -136,6 +136,7 @@ type Distributor struct {
 
 	discardedSamplesTooManyHaClusters *prometheus.CounterVec
 	discardedSamplesRateLimited       *prometheus.CounterVec
+	discardedRequestsRateLimited      *prometheus.CounterVec
 
 	sampleValidationMetrics *validation.SampleValidationMetrics
 
@@ -343,6 +344,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 
 		discardedSamplesTooManyHaClusters: validation.DiscardedSamplesCounter(reg, validation.ReasonTooManyHAClusters),
 		discardedSamplesRateLimited:       validation.DiscardedSamplesCounter(reg, validation.ReasonRateLimited),
+		discardedRequestsRateLimited:      validation.DiscardedRequestsCounter(reg, validation.ReasonRateLimited),
 
 		sampleValidationMetrics: validation.NewSampleValidationMetrics(reg),
 	}
@@ -518,6 +520,7 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 
 	d.discardedSamplesTooManyHaClusters.DeleteLabelValues(userID)
 	d.discardedSamplesRateLimited.DeleteLabelValues(userID)
+	d.discardedRequestsRateLimited.DeleteLabelValues(userID)
 	d.sampleValidationMetrics.DeleteUserMetrics(userID)
 
 	validation.DeletePerUserValidationMetrics(userID, d.log)
@@ -947,7 +950,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 
 	now := mtime.Now()
 	if !d.requestRateLimiter.AllowN(now, userID, 1) {
-		validation.DiscardedRequests.WithLabelValues(validation.ReasonRateLimited, userID).Add(1)
+		d.discardedRequestsRateLimited.WithLabelValues(userID).Add(1)
 
 		// Return a 429 here to tell the client it is going too fast.
 		// Client may discard the data or slow down and re-send.

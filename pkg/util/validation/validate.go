@@ -63,16 +63,17 @@ func metricReasonFromErrorID(id globalerror.ID) string {
 	return strings.ReplaceAll(string(id), "-", "_")
 }
 
-// DiscardedRequests is a metric of the number of discarded requests.
-//
-//lint:ignore faillint It's non-trivial to remove this global variable.
-var DiscardedRequests = promauto.NewCounterVec(
-	prometheus.CounterOpts{
-		Name: "cortex_discarded_requests_total",
-		Help: "The total number of requests that were discarded due to rate limiting.",
-	},
-	[]string{discardReasonLabel, "user"},
-)
+// DiscardedRequestsCounter creates counter vector (per-user) for discarded requests for a given reason.
+func DiscardedRequestsCounter(reg prometheus.Registerer, reason string) *prometheus.CounterVec {
+	return promauto.With(reg).NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "cortex_discarded_requests_total",
+			Help: "The total number of requests that were discarded due to rate limiting.",
+			ConstLabels: map[string]string{
+				discardReasonLabel: reason,
+			},
+		}, []string{"user"})
+}
 
 // DiscardedSamplesCounter creates discarded samples counter vector (per-user) for given reason.
 func DiscardedSamplesCounter(reg prometheus.Registerer, reason string) *prometheus.CounterVec {
@@ -326,7 +327,6 @@ func CleanAndValidateMetadata(cfg MetadataValidationConfig, userID string, metad
 func DeletePerUserValidationMetrics(userID string, log log.Logger) {
 	filter := prometheus.Labels{"user": userID}
 
-	DiscardedRequests.DeletePartialMatch(filter)
 	DiscardedExemplars.DeletePartialMatch(filter)
 	DiscardedMetadata.DeletePartialMatch(filter)
 }
