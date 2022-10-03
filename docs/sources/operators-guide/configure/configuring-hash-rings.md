@@ -82,12 +82,19 @@ If you run multiple Mimir processes on the same node or the port `7946` is not a
 By default, Grafana Mimir memberlist will join a cluster with any instance discovered when resolving the hosts configured via the `-memberlist.join` CLI flag (or its respective YAML configuration option).
 If, for any reason, the discovered addresses include instances of other Grafana Mimir clusters, or instances of other distributed systems using memberlist, Grafana Mimir will join these unrelated clusters together.
 
-To avoid this type of undesired situation, you can enable cluster label verification with the following settings:
+To avoid this type of undesired situation Grafana Mimir offers an additional type of validation known as cluster label verification.
 
-- `-memberlist.cluster-label`: Label value to identify replicas belonging to the same cluster.
-- `-memberlist.cluster-label-verification-disabled`: Flag to disable the cluster label verification.
+When enabled, all memberlist internal traffic will be prefixed with the configured cluster label, discarding any other traffic that doesn't match that prefix and ensuring that only replicas having the same configured label can connect to each other.
 
-When this verification is in place, all memberlist internal traffic will be prefixed with the configured cluster label, discarding any other traffic that doesn't match that prefix and ensuring that only replicas having the same configured label can connect to each other.
+#### Migrate to using cluster label verification
+
+To migrate a Grafana Mimir cluster to use cluster label verification, the following steps need to be performed:
+
+- Disable cluster label verification on all cluster instances via `-memberlist.cluster-label-verification-disabled` CLI flag (or its respective YAML configuration option).
+- Define a label on all cluster instances which is unique to the cluster via `-memberlist.cluster-label` CLI flag (or its respective YAML configuration option).
+  This label must be the same on all instances that are part of the same cluster.
+  For instance, some value like `<k8s cluster>.<k8s namespace>` would make sense.
+- Enable cluster label verification on all clusters instances.
 
 ### Fine tuning memberlist changes propagation latency
 
