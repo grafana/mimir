@@ -113,7 +113,7 @@ type Config struct {
 
 	EnableQueryStats bool `yaml:"query_stats_enabled" category:"advanced"`
 
-	QueryFrontend QueryFrontendConfig `yaml:"query_frontend" category:"experimental"`
+	QueryFrontend QueryFrontendConfig `yaml:"query_frontend"`
 
 	TenantFederation TenantFederationConfig `yaml:"tenant_federation"`
 }
