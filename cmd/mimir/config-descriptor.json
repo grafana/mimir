@@ -10383,8 +10383,7 @@
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "memberlist.cluster-label",
-          "fieldType": "string",
-          "fieldCategory": "experimental"
+          "fieldType": "string"
         },
         {
           "kind": "field",
@@ -10394,8 +10393,7 @@
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "memberlist.cluster-label-verification-disabled",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldType": "boolean"
         },
         {
           "kind": "field",
