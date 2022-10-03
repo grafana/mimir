@@ -38,11 +38,7 @@ local filename = 'mimir-writes.json';
       .addPanel(
         $.panel('Samples / sec') +
         $.statPanel(
-          'sum(%(group_prefix_jobs)s:cortex_distributor_received_samples:rate5m{%(job)s})' % (
-            $._config {
-              job: $.jobMatcher($._config.job_names.distributor),
-            }
-          ),
+          $.queries.distributor.samplesPerSecond,
           format='short'
         )
       )
@@ -50,11 +46,7 @@ local filename = 'mimir-writes.json';
         local title = 'Exemplars / sec';
         $.panel(title) +
         $.statPanel(
-          'sum(%(group_prefix_jobs)s:cortex_distributor_received_exemplars:rate5m{%(job)s})' % (
-            $._config {
-              job: $.jobMatcher($._config.job_names.distributor),
-            }
-          ),
+          $.queries.distributor.exemplarsPerSecond,
           format='short'
         ) +
         $.panelDescription(
@@ -115,7 +107,7 @@ local filename = 'mimir-writes.json';
       $.row('Gateway')
       .addPanel(
         $.panel('Requests / sec') +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher($._config.job_names.gateway), $.queries.write_http_routes_regex])
+        $.qpsPanel($.queries.gateway.writeRequestsPerSecond)
       )
       .addPanel(
         $.panel('Latency') +
@@ -132,7 +124,7 @@ local filename = 'mimir-writes.json';
       $.row('Distributor')
       .addPanel(
         $.panel('Requests / sec') +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"/distributor.Distributor/Push|/httpgrpc.*|%s"}' % [$.jobMatcher($._config.job_names.distributor), $.queries.write_http_routes_regex])
+        $.qpsPanel($.queries.distributor.writeRequestsPerSecond)
       )
       .addPanel(
         $.panel('Latency') +

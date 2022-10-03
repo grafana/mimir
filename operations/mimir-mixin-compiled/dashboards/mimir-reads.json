@@ -168,7 +168,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(\n  rate(\n    cortex_request_duration_seconds_count{\n      cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read))\",\n      route=~\"(prometheus|api_prom)_api_v1_query_range\"\n    }[$__rate_interval]\n  )\n)\n",
+                        "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read))\",route=~\"(prometheus|api_prom)_api_v1_query_range\"}[$__rate_interval]))",
                         "format": "time_series",
                         "instant": true,
                         "intervalFactor": 2,
@@ -245,7 +245,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(\n  rate(\n    cortex_request_duration_seconds_count{\n      cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read))\",\n      route=~\"(prometheus|api_prom)_api_v1_label.*\"\n    }[$__rate_interval]\n  )\n)\n",
+                        "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read))\",route=~\"(prometheus|api_prom)_api_v1_label.*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "instant": true,
                         "intervalFactor": 2,
@@ -322,7 +322,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(\n  rate(\n    cortex_request_duration_seconds_count{\n      cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read))\",\n      route=~\"(prometheus|api_prom)_api_v1_series\"\n    }[$__rate_interval]\n  )\n)\n",
+                        "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read))\",route=~\"(prometheus|api_prom)_api_v1_series\"}[$__rate_interval]))",
                         "format": "time_series",
                         "instant": true,
                         "intervalFactor": 2,

@@ -121,6 +121,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
     },
 
+  // Returns the URL of a given dashboard, keeping the current time range and variables.
+  dashboardURL(filename)::
+    '/d/%(uid)s/%(filename)s?${__url_time_range}&${__all_variables}' % {
+      uid: std.md5(filename),
+      filename: std.strReplace(filename, '.json', ''),
+    },
+
   // The mixin allow specialism of the job selector depending on if its a single binary
   // deployment or a namespaced one.
   jobMatcher(job)::

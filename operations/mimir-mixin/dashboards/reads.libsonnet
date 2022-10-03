@@ -68,18 +68,7 @@ local filename = 'mimir-reads.json';
       )
       .addPanel(
         $.panel('Range queries / sec') +
-        $.statPanel(|||
-          sum(
-            rate(
-              cortex_request_duration_seconds_count{
-                %(queryFrontend)s,
-                route=~"(prometheus|api_prom)_api_v1_query_range"
-              }[$__rate_interval]
-            )
-          )
-        ||| % {
-          queryFrontend: $.jobMatcher($._config.job_names.query_frontend),
-        }, format='reqps') +
+        $.statPanel($.queries.query_frontend.rangeQueriesPerSecond, format='reqps') +
         $.panelDescription(
           'Range queries per second',
           |||
@@ -90,18 +79,7 @@ local filename = 'mimir-reads.json';
       )
       .addPanel(
         $.panel('Label queries / sec') +
-        $.statPanel(|||
-          sum(
-            rate(
-              cortex_request_duration_seconds_count{
-                %(queryFrontend)s,
-                route=~"(prometheus|api_prom)_api_v1_label.*"
-              }[$__rate_interval]
-            )
-          )
-        ||| % {
-          queryFrontend: $.jobMatcher($._config.job_names.query_frontend),
-        }, format='reqps') +
+        $.statPanel($.queries.query_frontend.labelQueriesPerSecond, format='reqps') +
         $.panelDescription(
           'Label queries per second',
           |||
@@ -112,18 +90,7 @@ local filename = 'mimir-reads.json';
       )
       .addPanel(
         $.panel('Series queries / sec') +
-        $.statPanel(|||
-          sum(
-            rate(
-              cortex_request_duration_seconds_count{
-                %(queryFrontend)s,
-                route=~"(prometheus|api_prom)_api_v1_series"
-              }[$__rate_interval]
-            )
-          )
-        ||| % {
-          queryFrontend: $.jobMatcher($._config.job_names.query_frontend),
-        }, format='reqps') +
+        $.statPanel($.queries.query_frontend.seriesQueriesPerSecond, format='reqps') +
         $.panelDescription(
           'Series queries per second',
           |||
@@ -138,7 +105,7 @@ local filename = 'mimir-reads.json';
       $.row('Gateway')
       .addPanel(
         $.panel('Requests / sec') +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher($._config.job_names.gateway), $.queries.read_http_routes_regex])
+        $.qpsPanel($.queries.gateway.readRequestsPerSecond)
       )
       .addPanel(
         $.panel('Latency') +
@@ -155,7 +122,7 @@ local filename = 'mimir-reads.json';
       $.row('Query-frontend')
       .addPanel(
         $.panel('Requests / sec') +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher($._config.job_names.query_frontend), $.queries.read_http_routes_regex])
+        $.qpsPanel($.queries.query_frontend.readRequestsPerSecond)
       )
       .addPanel(
         $.panel('Latency') +
