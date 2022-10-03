@@ -4,7 +4,7 @@
 
 ### Grafana Mimir
 
-* [CHANGE] Distributor: change the default value of `-distributor.remote-timeout` to `2s` from `20s` and `-distributor.forwarding.request-timeout` to `2s` from `10s` to improve distributor resource usage when ingesters crash. #2728
+* [CHANGE] Distributor: change the default value of `-distributor.remote-timeout` to `2s` from `20s` and `-distributor.forwarding.request-timeout` to `2s` from `10s` to improve distributor resource usage when ingesters crash. #2728 #2912
 * [CHANGE] Anonymous usage statistics tracking: added the `-ingester.ring.store` value. #2981
 * [CHANGE] Series metadata `HELP` that is longer than `-validation.max-metadata-length` is now truncated silently, instead of being dropped with a 400 status code. #2993
 * [CHANGE] Ingester: changed default setting for `-ingester.ring.readiness-check-ring-health` from `true` to `false`. #2953
@@ -24,7 +24,7 @@
 * [ENHANCEMENT] Query-frontend / Querier: increase internal backoff period used to retry connections to query-frontend / query-scheduler. #3011
 * [ENHANCEMENT] Querier: do not log "error processing requests from scheduler" when the query-scheduler is shutting down. #3012
 * [ENHANCEMENT] Query-frontend: query sharding process is now time-bounded and it is cancelled if the request is aborted. #3028
-* [ENHANCEMENT] Query-frontend: improved Prometheus reponse JSON encoding performance. #2450
+* [ENHANCEMENT] Query-frontend: improved Prometheus response JSON encoding performance. #2450
 * [ENHANCEMENT] TLS: added configuration parameters to configure the client's TLS cipher suites and minimum version. The following new CLI flags have been added: #3070
   * `-alertmanager.alertmanager-client.tls-cipher-suites`
   * `-alertmanager.alertmanager-client.tls-min-version`
@@ -71,11 +71,16 @@
   * `-ruler.recording-rules-evaluation-enabled`
   * `-ruler.alerting-rules-evaluation-enabled`
 * [ENHANCEMENT] Distributor: Add age filter to forwarding functionality, to not forward samples which are older than defined duration. #3049
+* [ENHANCEMENT] Distributor: Improved error messages reported when the distributor fails to remote write to ingesters. #3055
+* [ENHANCEMENT] Improved tracing spans tracked by distributors, ingesters and store-gateways. #2879 #3099 #3089
 * [ENHANCEMENT] Ingester: improved the performance of label value cardinality endpoint. #3044
 * [BUGFIX] Querier: Fix 400 response while handling streaming remote read. #2963
 * [BUGFIX] Fix a bug causing query-frontend, query-scheduler, and querier not failing if one of their internal components fail. #2978
 * [BUGFIX] Querier: re-balance the querier worker connections when a query-frontend or query-scheduler is terminated. #3005
 * [BUGFIX] Distributor: Now returns the quorum error from ingesters. For example, with replication_factor=3, two HTTP 400 errors and one HTTP 500 error, now the distributor will always return HTTP 400. Previously the behaviour was to return the error which the distributor first received. #2979
+* [BUGFIX] Ruler: fix panic when ruler.external_url is explicitly set to an empty string ("") in YAML. #2915
+* [BUGFIX] Alertmanager: Fix support for the Telegram API URL in the global settings. #3097
+* [BUGFIX] Alertmanager: Fix parsing of label matchers without label value in the API used to retrieve alerts. #3097
 
 ### Mixin
 
@@ -85,6 +90,7 @@
 * [ENHANCEMENT] Dashboards: Include inflight object store requests in "Reads" dashboard. #2914
 * [ENHANCEMENT] Dashboards: Make queries used to find job, cluster and namespace for dropdown menus configurable. #2893
 * [ENHANCEMENT] Dashboards: Include rate of label and series queries in "Reads" dashboard. #3065 #3074
+* [ENHANCEMENT] Dashboards: Fix legend showing on per-pod panels. #2944
 
 ### Jsonnet
 
@@ -95,15 +101,19 @@
 * [ENHANCEMENT] mimirtool analyze: Store the query errors instead of exit during the analysis. #3052
 * [BUGFIX] mimir-tool remote-read: fix returns where some conditions [return nil error even if there is error](https://github.com/grafana/cortex-tools/issues/260). #3053
 
-### Query-tee
-
-### Mimir Continuous Test
-
 ### Documentation
 
 * [ENHANCEMENT] Added documentation on how to configure storage retention. #2970
 * [ENHANCEMENT] Improved gRPC clients config documentation. #3020
+* [ENHANCEMENT] Added documentation on how to manage alerting and recording rules. #2983
+* [ENHANCEMENT] Improved `MimirSchedulerQueriesStuck` runbook. #3006
 * [BUGFIX] Fixed configuration option names in "Enabling zone-awareness via the Grafana Mimir Jsonnet". #3018
+* [BUGFIX] Fixed `mimirtool analyze` parameters documentation. #3094
+* [BUGFIX] Fixed YAML configuraton in the "Manage the configuration of Grafana Mimir with Helm" guide. #3042
+
+### Tools
+
+- [BUGFIX] trafficdump: Fixed panic occurring when `-success-only=true` and the captured request failed. #2863
 
 ## 2.3.1
 
