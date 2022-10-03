@@ -258,7 +258,7 @@ func (q *RemoteQuerier) query(ctx context.Context, query string, ts time.Time, l
 
 func (q *RemoteQuerier) sendRequest(ctx context.Context, req *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error) {
 	// Ongoing request may be cancelled during evaluation due to some transient error or server shutdown,
-	// so we'll keep retrying until we get a successful response or context is eventually cancelled.
+	// so we'll keep retrying until we get a successful response or backoff is terminated.
 	retryConfig := backoff.Config{
 		MinBackoff: 100 * time.Millisecond,
 		MaxBackoff: 2 * time.Second,
@@ -269,7 +269,7 @@ func (q *RemoteQuerier) sendRequest(ctx context.Context, req *httpgrpc.HTTPReque
 	for retry.Ongoing() {
 		resp, err := q.client.Handle(ctx, req)
 		if err != nil {
-			level.Warn(q.logger).Log("msg", "failed to perform remote request", "err", err)
+			level.Warn(q.logger).Log("msg", "failed to remotely evaluate query expression, will retry", "err", err)
 			retry.Wait()
 			continue
 		}
