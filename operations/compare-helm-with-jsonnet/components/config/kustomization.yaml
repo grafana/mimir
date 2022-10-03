@@ -47,11 +47,11 @@ patches:
         path: /config/query_scheduler/max_outstanding_requests_per_tenant
 
   # TODO (dimitarvdimitrov) jsonnet doesn't set a fallback config
-   - target: 
-       kind: MimirConfig 
-     patch: |- 
-       - op: remove 
-         path: /config/alertmanager/fallback_config_file
+  - target: 
+      kind: MimirConfig 
+    patch: |- 
+      - op: remove 
+        path: /config/alertmanager/fallback_config_file
 
   # Remove fields on components where they are not relevant. For example, the
   # ingester ring configuration is not relevant to the compactor Since jsonnet
