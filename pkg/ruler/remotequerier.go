@@ -18,6 +18,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/grpcclient"
 	otgrpc "github.com/opentracing-contrib/go-grpc"
 	"github.com/opentracing/opentracing-go"
@@ -45,6 +46,8 @@ const (
 	mimeTypeFormPost = "application/x-www-form-urlencoded"
 
 	statusError = "error"
+
+	maxRequestRetries = 3
 )
 
 var userAgent = fmt.Sprintf("mimir/%s", version.Version)
@@ -220,7 +223,7 @@ func (q *RemoteQuerier) query(ctx context.Context, query string, ts time.Time, l
 	ctx, cancel := context.WithTimeout(ctx, q.timeout)
 	defer cancel()
 
-	resp, err := q.client.Handle(ctx, &req)
+	resp, err := q.sendRequest(ctx, &req)
 	if err != nil {
 		level.Warn(logger).Log("msg", "failed to remotely evaluate query expression", "err", err, "qs", query, "tm", ts)
 		return model.ValNone, nil, err
@@ -251,6 +254,34 @@ func (q *RemoteQuerier) query(ctx context.Context, query string, ts time.Time, l
 		return model.ValNone, nil, err
 	}
 	return v.Type, v.Result, nil
+}
+
+func (q *RemoteQuerier) sendRequest(ctx context.Context, req *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error) {
+	// Ongoing request may be cancelled during evaluation due to some transient error or server shutdown,
+	// so we'll keep retrying until we get a successful response or backoff is terminated.
+	retryConfig := backoff.Config{
+		MinBackoff: 100 * time.Millisecond,
+		MaxBackoff: 2 * time.Second,
+		MaxRetries: maxRequestRetries,
+	}
+	retry := backoff.New(ctx, retryConfig)
+
+	for {
+		resp, err := q.client.Handle(ctx, req)
+		if err == nil {
+			return resp, nil
+		}
+		if !retry.Ongoing() {
+			return nil, err
+		}
+		level.Warn(q.logger).Log("msg", "failed to remotely evaluate query expression, will retry", "err", err)
+		retry.Wait()
+
+		// Avoid masking last known error if context was cancelled while waiting.
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("%s while retrying request, last err was: %w", ctx.Err(), err)
+		}
+	}
 }
 
 func decodeQueryResponse(valTyp model.ValueType, result json.RawMessage) (promql.Vector, error) {
