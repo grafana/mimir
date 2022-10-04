@@ -1,0 +1,24 @@
+---
+# Source: mimir-distributed/templates/gossip-ring/gossip-ring-svc.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-enterprise-legacy-label-values-enterprise-metrics-gossip-ring
+  labels:
+    app: enterprise-metrics-gossip-ring
+    heritage: Helm
+    release: test-enterprise-legacy-label-values
+  namespace: "citestns"
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - name: gossip-ring
+      port: 7946
+      protocol: TCP
+      targetPort: 7946
+  publishNotReadyAddresses: true
+  selector:
+    
+    release: test-enterprise-legacy-label-values
+    gossip_ring_member: "true"

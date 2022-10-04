@@ -1,0 +1,27 @@
+---
+# Source: mimir-distributed/templates/overrides-exporter/overrides-exporter-svc.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-enterprise-legacy-label-values-enterprise-metrics-overrides-exporter
+  labels:
+    app: enterprise-metrics-overrides-exporter
+    heritage: Helm
+    release: test-enterprise-legacy-label-values
+  annotations:
+    {}
+  namespace: "citestns"
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      protocol: TCP
+      name: http-metrics
+      targetPort: http-metrics
+    - port: 9095
+      protocol: TCP
+      name: grpc
+      targetPort: grpc
+  selector:
+    app: enterprise-metrics-overrides-exporter
+    release: test-enterprise-legacy-label-values

@@ -1,0 +1,17 @@
+---
+# Source: mimir-distributed/templates/ingester/ingester-pdb.yaml
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  name: test-enterprise-legacy-label-values-enterprise-metrics-ingester
+  labels:
+    app: enterprise-metrics-ingester
+    heritage: Helm
+    release: test-enterprise-legacy-label-values
+  namespace: "citestns"
+spec:
+  selector:
+    matchLabels:
+      app: enterprise-metrics-ingester
+      release: test-enterprise-legacy-label-values
+  maxUnavailable: 1
