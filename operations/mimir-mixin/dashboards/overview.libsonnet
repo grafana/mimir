@@ -15,9 +15,9 @@ local filename = 'mimir-overview.json';
           Visit the following specific dashboards to drill down into the write path:
 
           <ul>
-            <li><a href="%(writesDashboardURL)s">Writes</a></li>
-            <li><a href="%(writesResourcesDashboardURL)s">Writes resources</a></li>
-            <li><a href="%(writesNetworkingDashboardURL)s">Writes networking</a></li>
+            <li><a target="_blank" href="%(writesDashboardURL)s">Writes</a></li>
+            <li><a target="_blank" href="%(writesResourcesDashboardURL)s">Writes resources</a></li>
+            <li><a target="_blank" href="%(writesNetworkingDashboardURL)s">Writes networking</a></li>
           </ul>
         ||| % {
           writesDashboardURL: $.dashboardURL('mimir-writes.json'),
@@ -61,11 +61,11 @@ local filename = 'mimir-overview.json';
           Visit the following specific dashboards to drill down into the read path:
 
           <ul>
-            <li><a href="%(readsDashboardURL)s">Reads</a></li>
-            <li><a href="%(readsResourcesDashboardURL)s">Reads resources</a></li>
-            <li><a href="%(readsNetworkingDashboardURL)s">Reads networking</a></li>
-            <li><a href="%(queriesDashboardURL)s">Queries</a></li>
-            <li><a href="%(compactorDashboardURL)s">Compactor</a></li>
+            <li><a target="_blank" href="%(readsDashboardURL)s">Reads</a></li>
+            <li><a target="_blank" href="%(readsResourcesDashboardURL)s">Reads resources</a></li>
+            <li><a target="_blank" href="%(readsNetworkingDashboardURL)s">Reads networking</a></li>
+            <li><a target="_blank" href="%(queriesDashboardURL)s">Queries</a></li>
+            <li><a target="_blank" href="%(compactorDashboardURL)s">Compactor</a></li>
           </ul>
         ||| % {
           readsDashboardURL: $.dashboardURL('mimir-reads.json'),
@@ -117,9 +117,9 @@ local filename = 'mimir-overview.json';
           Visit the following specific dashboards to drill down into the rules evaluation and alerts notifications:
 
           <ul>
-            <li><a href="%(rulerDashboardURL)s">Ruler</a></li>
-            <li><a href="%(alertmanagerDashboardURL)s">Alertmanager</a></li>
-            <li><a href="%(alertmanagerResourcesDashboardURL)s">Alertmanager resources</a></li>
+            <li><a target="_blank" href="%(rulerDashboardURL)s">Ruler</a></li>
+            <li><a target="_blank" href="%(alertmanagerDashboardURL)s">Alertmanager</a></li>
+            <li><a target="_blank" href="%(alertmanagerResourcesDashboardURL)s">Alertmanager resources</a></li>
           </ul>
         ||| % {
           rulerDashboardURL: $.dashboardURL('mimir-ruler.json'),
@@ -169,8 +169,8 @@ local filename = 'mimir-overview.json';
           Visit the following specific dashboards to drill down into the storage:
 
           <ul>
-            <li><a href="%(objectStoreDashboardURL)s">Object store</a></li>
-            <li><a href="%(compactorDashboardURL)s">Compactor</a></li>
+            <li><a target="_blank" href="%(objectStoreDashboardURL)s">Object store</a></li>
+            <li><a target="_blank" href="%(compactorDashboardURL)s">Compactor</a></li>
           </ul>
         ||| % {
           objectStoreDashboardURL: $.dashboardURL('mimir-object-store.json'),
