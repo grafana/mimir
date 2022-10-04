@@ -24,6 +24,16 @@ spec:
   updateStrategy:
     type: RollingUpdate
   serviceName: test-enterprise-values-mimir-ingester-headless
+  volumeClaimTemplates:
+    - metadata:
+        name: storage
+      spec:
+        accessModes:
+          
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: "2Gi"
   template:
     metadata:
       labels:
@@ -66,8 +76,6 @@ spec:
         - name: runtime-config
           configMap:
             name: test-enterprise-values-mimir-runtime
-        - name: storage
-          emptyDir: {}
       containers:
         - name: ingester
           imagePullPolicy: IfNotPresent
@@ -103,7 +111,9 @@ spec:
               port: http-metrics
             initialDelaySeconds: 60
           resources:
-            limits: null
+            requests:
+              cpu: 100m
+              memory: 512Mi
           securityContext:
             readOnlyRootFilesystem: true
           env:

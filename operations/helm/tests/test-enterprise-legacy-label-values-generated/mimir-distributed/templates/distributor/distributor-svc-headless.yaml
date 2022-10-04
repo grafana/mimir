@@ -1,0 +1,25 @@
+---
+# Source: mimir-distributed/templates/distributor/distributor-svc-headless.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-enterprise-legacy-label-values-enterprise-metrics-distributor-headless
+  labels:
+    app: enterprise-metrics-distributor
+    heritage: Helm
+    release: test-enterprise-legacy-label-values
+    prometheus.io/service-monitor: "false"
+  annotations:
+    {}
+  namespace: "citestns"
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - port: 9095
+      protocol: TCP
+      name: grpc
+      targetPort: grpc
+  selector:
+    app: enterprise-metrics-distributor
+    release: test-enterprise-legacy-label-values
