@@ -29,9 +29,27 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 * [CHANGE] Nginx: replace topology key previously used in `podAntiAffinity` (`failure-domain.beta.kubernetes.io/zone`) with a different one `topologySpreadConstraints` (`kubernetes.io/hostname`). #2722
 * [CHANGE] Use `topologySpreadConstraints` instead of `podAntiAffinity` by default. #2722
-  - **Important**: if you are not using the sizing plans (small.yaml, large.yaml, capped-small.yaml, capped-large.yaml) in production, you must reintroduce pod affinity rules for the store-gateway.
+  - **Important**: if you are not using the sizing plans (small.yaml, large.yaml, capped-small.yaml, capped-large.yaml) in production, you should reintroduce pod affinity rules for the ingester and store-gateway. This also fixes a missing label selector for the ingester.
      Merge the following to your custom values file:
      ```yaml
+     ingester:
+       affinity:
+         podAntiAffinity:
+           requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchExpressions:
+                    - key: target
+                      operator: In
+                      values:
+                        - ingester
+                topologyKey: 'kubernetes.io/hostname'
+              - labelSelector:
+                  matchExpressions:
+                    - key: app.kubernetes.io/component
+                      operator: In
+                      values:
+                        - ingester
+                topologyKey: 'kubernetes.io/hostname'
      store_gateway:
        affinity:
          podAntiAffinity:
@@ -58,6 +76,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Support autoscaling/v2 HorizontalPodAutoscaler for nginx autoscaling. This is used when deploying on Kubernetes >= 1.25. #2848
 * [ENHANCEMENT] Monitoring: Add additional flags to conditionally enable log / metric scraping. #2936
 * [ENHANCEMENT] Add podAntiAffinity to sizing plans (small.yaml, large.yaml, capped-small.yaml, capped-large.yaml). #2906
+* [BUGFIX] Fix wrong label selector in ingester anti affinity rules in the sizing plans. #2906
 
 ## 3.1.0
 
