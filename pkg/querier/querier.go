@@ -15,7 +15,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
@@ -57,9 +56,8 @@ type Config struct {
 }
 
 const (
-	queryIngestersWithinFlag                   = "querier.query-ingesters-within"
-	queryStoreAfterFlag                        = "querier.query-store-after"
-	shuffleShardingIngestersLookbackPeriodFlag = "querier.shuffle-sharding-ingesters-lookback-period"
+	queryIngestersWithinFlag = "querier.query-ingesters-within"
+	queryStoreAfterFlag      = "querier.query-store-after"
 )
 
 var (
@@ -68,15 +66,13 @@ var (
 )
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
-func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
+func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.StoreGatewayClient.RegisterFlagsWithPrefix("querier.store-gateway-client", f)
 	f.BoolVar(&cfg.Iterators, "querier.iterators", false, "Use iterators to execute query, as opposed to fully materialising the series in memory.")
 	f.BoolVar(&cfg.BatchIterators, "querier.batch-iterators", true, "Use batch iterators to execute query, as opposed to fully materialising the series in memory.  Takes precedent over the -querier.iterators flag.")
 	f.DurationVar(&cfg.QueryIngestersWithin, queryIngestersWithinFlag, 13*time.Hour, "Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester.")
 	f.DurationVar(&cfg.MaxQueryIntoFuture, "querier.max-query-into-future", 10*time.Minute, "Maximum duration into the future you can query. 0 to disable.")
 	f.DurationVar(&cfg.QueryStoreAfter, queryStoreAfterFlag, 12*time.Hour, "The time after which a metric should be queried from storage and not just ingesters. 0 means all queries are sent to store. If this option is enabled, the time range of the query sent to the store-gateway will be manipulated to ensure the query end is not more recent than 'now - query-store-after'.")
-	// TODO(56quarters): Deprecated in Mimir 2.2, remove in Mimir 2.4
-	flagext.DeprecatedFlag(f, shuffleShardingIngestersLookbackPeriodFlag, fmt.Sprintf("Deprecated: this setting should always be the same as -%s and will now behave as if it is", queryIngestersWithinFlag), logger)
 	f.BoolVar(&cfg.ShuffleShardingIngestersEnabled, "querier.shuffle-sharding-ingesters-enabled", true, fmt.Sprintf("Fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since -%s. If this setting is false or -%s is '0', queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).", queryIngestersWithinFlag, queryIngestersWithinFlag))
 
 	cfg.EngineConfig.RegisterFlags(f)
