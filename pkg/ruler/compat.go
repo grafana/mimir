@@ -283,6 +283,7 @@ func DefaultTenantManagerFactory(
 				// to metric that haven't been forwarded to Mimir yet.
 				return overrides.EvaluationDelay(userID)
 			},
+			AlwaysRestoreAlertState: true,
 		})
 	}
 }
