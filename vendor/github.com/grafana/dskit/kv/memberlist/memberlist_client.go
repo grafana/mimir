@@ -141,8 +141,8 @@ type KVConfig struct {
 	AdvertiseAddr string `yaml:"advertise_addr"`
 	AdvertisePort int    `yaml:"advertise_port"`
 
-	ClusterLabel                     string `yaml:"cluster_label"`
-	ClusterLabelVerificationDisabled bool   `yaml:"cluster_label_verification_disabled"`
+	ClusterLabel                     string `yaml:"cluster_label" category:"advanced"`
+	ClusterLabelVerificationDisabled bool   `yaml:"cluster_label_verification_disabled" category:"advanced"`
 
 	// List of members to join
 	JoinMembers      flagext.StringSlice `yaml:"join_members"`
