@@ -2,7 +2,8 @@
   local container = $.core.v1.container,
 
   query_frontend_args::
-    $._config.grpcConfig
+    $._config.grpcConfig +
+    $._config.querySchedulerRingClientConfig +
     {
       target: 'query-frontend',
 
@@ -26,9 +27,11 @@
       'store.max-query-length': '12000h',  // 500 Days
     } + $.mimirRuntimeConfigFile,
 
+  query_frontend_ports:: $.util.defaultPorts,
+
   newQueryFrontendContainer(name, args)::
     container.new(name, $._images.query_frontend) +
-    container.withPorts($.util.defaultPorts) +
+    container.withPorts($.query_frontend_ports) +
     container.withArgsMixin($.util.mapToFlags(args)) +
     $.jaeger_mixin +
     $.util.readinessProbe +
