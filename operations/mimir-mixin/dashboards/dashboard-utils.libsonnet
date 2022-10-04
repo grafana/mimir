@@ -123,7 +123,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
   // Returns the URL of a given dashboard, keeping the current time range and variables.
   dashboardURL(filename)::
-    '/d/%(uid)s/%(filename)s?${__url_time_range}&${__all_variables}' % {
+    // Grafana uses a <base> HTML set to the path defined in GF_SERVER_ROOT_URL.
+    // This means that if we create relative links (starting with ".") the browser
+    // will append the base to it, effectively honoring the GF_SERVER_ROOT_URL.
+    './d/%(uid)s/%(filename)s?${__url_time_range}&${__all_variables}' % {
       uid: std.md5(filename),
       filename: std.strReplace(filename, '.json', ''),
     },
