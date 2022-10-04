@@ -318,7 +318,7 @@
             "height": "250px",
             "panels": [
                {
-                  "content": "These panels show an overview on the read path.\nVisit the following specific dashboards to drill down into the read path:\n\n<ul>\n  <li><a href=\"/d/e327503188913dc38ad571c647eef643/mimir-reads?${__url_time_range}&${__all_variables}\">Reads</a></li>\n  <li><a href=\"/d/cc86fd5aa9301c6528986572ad974db9/mimir-reads-resources?${__url_time_range}&${__all_variables}\">Reads resources</a></li>\n  <li><a href=\"/d/54b2a0a4748b3bd1aefa92ce5559a1c2/mimir-reads-networking?${__url_time_range}&${__all_variables}\">Reads networking</a></li>\n  <li><a href=\"/d/b3abe8d5c040395cc36615cb4334c92d/mimir-queries?${__url_time_range}&${__all_variables}\">Queries</a></li>\n</ul>\n",
+                  "content": "These panels show an overview on the read path.\nVisit the following specific dashboards to drill down into the read path:\n\n<ul>\n  <li><a href=\"/d/e327503188913dc38ad571c647eef643/mimir-reads?${__url_time_range}&${__all_variables}\">Reads</a></li>\n  <li><a href=\"/d/cc86fd5aa9301c6528986572ad974db9/mimir-reads-resources?${__url_time_range}&${__all_variables}\">Reads resources</a></li>\n  <li><a href=\"/d/54b2a0a4748b3bd1aefa92ce5559a1c2/mimir-reads-networking?${__url_time_range}&${__all_variables}\">Reads networking</a></li>\n  <li><a href=\"/d/b3abe8d5c040395cc36615cb4334c92d/mimir-queries?${__url_time_range}&${__all_variables}\">Queries</a></li>\n  <li><a href=\"/d/1b3443aea86db629e6efdb7d05c53823/mimir-compactor?${__url_time_range}&${__all_variables}\">Compactor</a></li>\n</ul>\n",
                   "datasource": null,
                   "description": "",
                   "id": 5,
@@ -903,7 +903,7 @@
             "height": "250px",
             "panels": [
                {
-                  "content": "These panels show an overview on the long-term storage (object storage).\nVisit the following specific dashboards to drill down into the storage:\n\n<ul>\n  <li><a href=\"/d/e1324ee2a434f4158c00a9ee279d3292/mimir-object-store?${__url_time_range}&${__all_variables}\">Object store</a></li>\n</ul>\n",
+                  "content": "These panels show an overview on the long-term storage (object storage).\nVisit the following specific dashboards to drill down into the storage:\n\n<ul>\n  <li><a href=\"/d/e1324ee2a434f4158c00a9ee279d3292/mimir-object-store?${__url_time_range}&${__all_variables}\">Object store</a></li>\n  <li><a href=\"/d/1b3443aea86db629e6efdb7d05c53823/mimir-compactor?${__url_time_range}&${__all_variables}\">Compactor</a></li>\n</ul>\n",
                   "datasource": null,
                   "description": "",
                   "id": 13,

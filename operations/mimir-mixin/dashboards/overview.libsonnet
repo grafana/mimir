@@ -65,12 +65,14 @@ local filename = 'mimir-overview.json';
             <li><a href="%(readsResourcesDashboardURL)s">Reads resources</a></li>
             <li><a href="%(readsNetworkingDashboardURL)s">Reads networking</a></li>
             <li><a href="%(queriesDashboardURL)s">Queries</a></li>
+            <li><a href="%(compactorDashboardURL)s">Compactor</a></li>
           </ul>
         ||| % {
           readsDashboardURL: $.dashboardURL('mimir-reads.json'),
           readsResourcesDashboardURL: $.dashboardURL('mimir-reads-resources.json'),
           readsNetworkingDashboardURL: $.dashboardURL('mimir-reads-networking.json'),
           queriesDashboardURL: $.dashboardURL('mimir-queries.json'),
+          compactorDashboardURL: $.dashboardURL('mimir-compactor.json'),
         }),
       )
       .addPanel(
@@ -168,9 +170,11 @@ local filename = 'mimir-overview.json';
 
           <ul>
             <li><a href="%(objectStoreDashboardURL)s">Object store</a></li>
+            <li><a href="%(compactorDashboardURL)s">Compactor</a></li>
           </ul>
         ||| % {
           objectStoreDashboardURL: $.dashboardURL('mimir-object-store.json'),
+          compactorDashboardURL: $.dashboardURL('mimir-compactor.json'),
         }),
       )
       .addPanel(
