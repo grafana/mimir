@@ -146,6 +146,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
     },
 
+  qpsPanel(selector, statusLabelName='status_code')::
+    super.qpsPanel(selector, statusLabelName) +
+    { yaxes: $.yaxes('reqps') },
+
   // hiddenLegendQueryPanel adds on to 'timeseriesPanel', not the deprecated 'panel'.
   // It is a standard query panel designed to handle a large number of series.  it hides the legend, doesn't fill the series and
   // shows all values on tooltip, descending. Also turns on exemplars, unless 4th parameter is false.
@@ -478,7 +482,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.panel('Operations / sec') +
       $.queryPanel('sum by(operation) (rate(thanos_objstore_bucket_operations_total{%s,component="%s"}[$__rate_interval]))' % [$.namespaceMatcher(), component], '{{operation}}') +
       $.stack +
-      { yaxes: $.yaxes('rps') },
+      { yaxes: $.yaxes('reqps') },
     )
     .addPanel(
       $.panel('Error rate') +

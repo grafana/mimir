@@ -597,7 +597,7 @@
                   },
                   "yaxes": [
                      {
-                        "format": "short",
+                        "format": "reqps",
                         "label": null,
                         "logBase": 1,
                         "max": null,
@@ -785,7 +785,7 @@
                   },
                   "yaxes": [
                      {
-                        "format": "short",
+                        "format": "reqps",
                         "label": null,
                         "logBase": 1,
                         "max": null,
@@ -973,7 +973,7 @@
                   },
                   "yaxes": [
                      {
-                        "format": "short",
+                        "format": "reqps",
                         "label": null,
                         "logBase": 1,
                         "max": null,
@@ -1993,7 +1993,7 @@
                   },
                   "yaxes": [
                      {
-                        "format": "rps",
+                        "format": "reqps",
                         "label": null,
                         "logBase": 1,
                         "max": null,
