@@ -1,0 +1,58 @@
+---
+# Source: mimir-distributed/templates/tokengen/tokengen-job.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: test-enterprise-legacy-label-values-enterprise-metrics-tokengen
+  labels:
+    app: enterprise-metrics-tokengen
+    heritage: Helm
+    release: test-enterprise-legacy-label-values
+  annotations:
+    "helm.sh/hook": post-install
+  namespace: "citestns"
+spec:
+  backoffLimit: 6
+  completions: 1
+  parallelism: 1
+  selector:
+  template:
+    metadata:
+      labels:
+        app: enterprise-metrics-tokengen
+        name: tokengen
+        target: tokengen
+        release: test-enterprise-legacy-label-values
+      namespace: "citestns"
+    spec:
+      serviceAccountName: test-enterprise-legacy-label-values-enterprise-metrics
+      securityContext:
+        null
+      initContainers:
+        []
+      containers:
+        - name: tokengen
+          imagePullPolicy: IfNotPresent
+          args:
+            - "-target=tokengen"
+            - "-config.expand-env=true"
+            - "-config.file=/etc/mimir/mimir.yaml"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/mimir
+            - name: license
+              mountPath: /license
+          env:
+          envFrom:
+          securityContext:
+            readOnlyRootFilesystem: true
+      restartPolicy: OnFailure
+      volumes:
+        - name: config
+          secret:
+            secretName: test-enterprise-legacy-label-values-enterprise-metrics-config
+        - name: license
+          secret:
+            secretName: test-enterprise-legacy-label-values-enterprise-metrics-license
+        - name: storage
+          emptyDir: {}

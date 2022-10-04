@@ -23,6 +23,16 @@ spec:
   updateStrategy:
     type: RollingUpdate
   serviceName: test-enterprise-values-mimir-alertmanager
+  volumeClaimTemplates:
+    - metadata:
+        name: storage
+      spec:
+        accessModes:
+          
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: "1Gi"
   template:
     metadata:
       labels:
@@ -65,8 +75,6 @@ spec:
         - name: runtime-config
           configMap:
             name: test-enterprise-values-mimir-runtime
-        - name: storage
-          emptyDir: {}
         - name: tmp
           emptyDir: {}
       containers:
@@ -105,7 +113,9 @@ spec:
               port: http-metrics
             initialDelaySeconds: 45
           resources:
-            limits: null
+            requests:
+              cpu: 10m
+              memory: 32Mi
           securityContext:
             readOnlyRootFilesystem: true
           env:

@@ -1134,9 +1134,9 @@ Usage of ./cmd/mimir/mimir:
   -memberlist.bind-port int
     	Port to listen on for gossip messages. (default 7946)
   -memberlist.cluster-label string
-    	[experimental] The cluster label is an optional string to include in outbound packets and gossip streams. Other members in the memberlist cluster will discard any message whose label doesn't match the configured one, unless the 'cluster-label-verification-disabled' configuration option is set to true.
+    	The cluster label is an optional string to include in outbound packets and gossip streams. Other members in the memberlist cluster will discard any message whose label doesn't match the configured one, unless the 'cluster-label-verification-disabled' configuration option is set to true.
   -memberlist.cluster-label-verification-disabled
-    	[experimental] When true, memberlist doesn't verify that inbound packets and gossip streams have the cluster label matching the configured one. This verification should be disabled while rolling out the change to the configured cluster label in a live memberlist cluster.
+    	When true, memberlist doesn't verify that inbound packets and gossip streams have the cluster label matching the configured one. This verification should be disabled while rolling out the change to the configured cluster label in a live memberlist cluster.
   -memberlist.compression-enabled
     	Enable message compression. This can be used to reduce bandwidth usage at the cost of slightly more CPU utilization. (default true)
   -memberlist.dead-node-reclaim-time duration

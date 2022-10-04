@@ -1,0 +1,27 @@
+---
+# Source: mimir-distributed/templates/compactor/compactor-svc.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-enterprise-legacy-label-values-enterprise-metrics-compactor
+  labels:
+    app: enterprise-metrics-compactor
+    heritage: Helm
+    release: test-enterprise-legacy-label-values
+  annotations:
+    {}
+  namespace: "citestns"
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      protocol: TCP
+      name: http-metrics
+      targetPort: http-metrics
+    - port: 9095
+      protocol: TCP
+      name: grpc
+      targetPort: grpc
+  selector:
+    app: enterprise-metrics-compactor
+    release: test-enterprise-legacy-label-values
