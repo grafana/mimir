@@ -222,6 +222,7 @@ Either:
       - `image.tag` (Mimir)
       - `enterprise.image.tag` (GEM)
       - `smoke_test.image.tag` (Smoke test, usually same as Mimir)
+      - `continuous_test.image.tag` (Continuous test, usually same as Mimir)
    1. For stable versions, update the [Helm changelog](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/CHANGELOG.md)
       - If there are any deprecated features that should be removed in this release, then verify that they have been removed, and move their deprecation notices in the section for this release.
    1. Set the `version` to the desired chart version number in the Helm [Chart.yaml](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/Chart.yaml)

@@ -347,6 +347,7 @@ Examples:
   "alertmanager" "alertmanager"
   "chunks-cache" "chunks-cache"
   "compactor" "compactor"
+  "continuous-test" "continuous_test"
   "distributor" "distributor"
   "gateway" "gateway"
   "gr-aggr-cache" "gr-aggr-cache"
