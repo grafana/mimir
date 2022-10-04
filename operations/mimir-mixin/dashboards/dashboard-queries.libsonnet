@@ -8,11 +8,11 @@
 
     gateway: {
       writeRequestsPerSecond: 'cortex_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher($._config.job_names.gateway), $.queries.write_http_routes_regex],
+      readRequestsPerSecond: 'cortex_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher($._config.job_names.gateway), $.queries.read_http_routes_regex],
     },
 
     distributor: {
       writeRequestsPerSecond: 'cortex_request_duration_seconds_count{%s, route=~"/distributor.Distributor/Push|/httpgrpc.*|%s"}' % [$.jobMatcher($._config.job_names.distributor), $.queries.write_http_routes_regex],
-      readRequestsPerSecond: 'cortex_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher($._config.job_names.query_frontend), $.queries.read_http_routes_regex],
       samplesPerSecond: 'sum(%(group_prefix_jobs)s:cortex_distributor_received_samples:rate5m{%(job)s})' % (
         $._config {
           job: $.jobMatcher($._config.job_names.distributor),
