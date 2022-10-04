@@ -97,6 +97,7 @@
 * [ENHANCEMENT] Dashboards: Make queries used to find job, cluster and namespace for dropdown menus configurable. #2893
 * [ENHANCEMENT] Dashboards: Include rate of label and series queries in "Reads" dashboard. #3065 #3074
 * [ENHANCEMENT] Dashboards: Fix legend showing on per-pod panels. #2944
+* [ENHANCEMENT] Dashboards: Use the "req/s" unit on panels showing the requests rate. #3118
 
 ### Jsonnet
 
