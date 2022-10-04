@@ -111,7 +111,7 @@ push-multiarch-%/$(UPTODATE):
 		$(MAKE) GOOS=linux GOARCH=amd64 BINARY_SUFFIX=_linux_amd64 $(DIR)/$(shell basename $(DIR)); \
 		$(MAKE) GOOS=linux GOARCH=arm64 BINARY_SUFFIX=_linux_arm64 $(DIR)/$(shell basename $(DIR)); \
 	fi
-	$(SUDO) docker buildx build -o $(PUSH_MULTIARCH_TARGET) --platform linux/amd64,linux/arm64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) --build-arg=USE_BINARY_SUFFIX=true -t $(IMAGE_PREFIX)$(shell basename $(DIR)):$(IMAGE_TAG) $(DIR)/
+	$(SUDO) docker buildx build -o $(PUSH_MULTIARCH_TARGET) --platform linux/amd64,linux/arm64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) --build-arg=USE_BINARY_SUFFIX=true -t gcr.io/kubernetes-dev/$(shell basename $(DIR)):$(IMAGE_TAG) $(DIR)/
 
 push-multiarch-mimir: ## Push mimir docker image.
 push-multiarch-mimir: push-multiarch-cmd/mimir/.uptodate

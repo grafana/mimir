@@ -235,7 +235,7 @@ require (
 replace github.com/bradfitz/gomemcache => github.com/grafana/gomemcache v0.0.0-20220812141943-44b6cde200bb
 
 // Using a fork of Prometheus while we work on querysharding to avoid a dependency on the upstream.
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20220822125643-4aa6d561a134
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20220909203510-0fc083242789
 
 // Out of order Support forces us to fork thanos because we've changed the ChunkReader interface.
 // Once the out of order support is upstreamed and Thanos has vendored it, we can remove this override.
