@@ -2177,14 +2177,14 @@ The `memberlist` block configures the Gossip memberlist.
 # CLI flag: -memberlist.advertise-port
 [advertise_port: <int> | default = 7946]
 
-# (experimental) The cluster label is an optional string to include in outbound
+# (advanced) The cluster label is an optional string to include in outbound
 # packets and gossip streams. Other members in the memberlist cluster will
 # discard any message whose label doesn't match the configured one, unless the
 # 'cluster-label-verification-disabled' configuration option is set to true.
 # CLI flag: -memberlist.cluster-label
 [cluster_label: <string> | default = ""]
 
-# (experimental) When true, memberlist doesn't verify that inbound packets and
+# (advanced) When true, memberlist doesn't verify that inbound packets and
 # gossip streams have the cluster label matching the configured one. This
 # verification should be disabled while rolling out the change to the configured
 # cluster label in a live memberlist cluster.
