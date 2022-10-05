@@ -1,0 +1,5 @@
+{{- with .Values.metaMonitoring.prometheusRule.recording_rules }}
+{{- if .enabled }}
+  {{ .Files.Get "mimir-distributed/mixins/alerts.yaml" }}
+  {{- end }}
+{{- end }}
