@@ -98,7 +98,7 @@ To migrate a Grafana Mimir cluster to use cluster label verification, the follow
    For instance, if you run a Grafana Mimir cluster in a dedicated namespace, then setting the cluster label to the name of the namespace should be a safe choice.
 4. _Wait until the configuration change has been rolled out to all Grafana Mimir instances_.
 5. Remove the configuration option `-memberlist.cluster-label-verification-disabled=true` to enable cluster label verification on all clusters instances.
-6. _Wait until the configuration change has been rolled out to all Grafana Mimir instances_.
+6. **Wait** until the configuration change has been rolled out to all Grafana Mimir instances.
 
 ### Fine tuning memberlist changes propagation latency
 
