@@ -92,6 +92,8 @@ type Distributor struct {
 	limits        *validation.Overrides
 	forwarder     forwarding.Forwarder
 
+	queryStreamResponsePool ingester_client.QueryStreamPool
+
 	// The global rate limiter requires a distributors ring to count
 	// the number of healthy instances
 	distributorsLifecycler *ring.BasicLifecycler
@@ -231,14 +233,15 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	subservices = append(subservices, haTracker)
 
 	d := &Distributor{
-		cfg:                   cfg,
-		log:                   log,
-		ingestersRing:         ingestersRing,
-		ingesterPool:          NewPool(cfg.PoolConfig, ingestersRing, cfg.IngesterClientFactory, log),
-		healthyInstancesCount: atomic.NewUint32(0),
-		limits:                limits,
-		HATracker:             haTracker,
-		ingestionRate:         util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
+		cfg:                     cfg,
+		log:                     log,
+		ingestersRing:           ingestersRing,
+		ingesterPool:            NewPool(cfg.PoolConfig, ingestersRing, cfg.IngesterClientFactory, log),
+		queryStreamResponsePool: ingester_client.NewQueryStreamPool(),
+		healthyInstancesCount:   atomic.NewUint32(0),
+		limits:                  limits,
+		HATracker:               haTracker,
+		ingestionRate:           util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
 
 		queryDuration: instrument.NewHistogramCollector(promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: "cortex",

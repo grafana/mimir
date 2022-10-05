@@ -239,6 +239,9 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 					}
 					hashToTimeSeries[key] = existing
 				}
+
+				// Reuse stream response object
+				d.queryStreamResponsePool.Put(response)
 			}
 		}
 	}()
@@ -258,9 +261,9 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 
 		streamReceiver := stream.(ingester_client.Ingester_QueryStreamAtReceiver)
 		for {
-			var resp ingester_client.QueryStreamResponse
+			resp := d.queryStreamResponsePool.Get()
 
-			err := streamReceiver.RecvAt(&resp)
+			err := streamReceiver.RecvAt(resp)
 			if errors.Is(err, io.EOF) {
 				break
 			} else if err != nil {
