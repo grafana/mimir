@@ -120,6 +120,7 @@
 * [BUGFIX] Fixed configuration option names in "Enabling zone-awareness via the Grafana Mimir Jsonnet". #3018
 * [BUGFIX] Fixed `mimirtool analyze` parameters documentation. #3094
 * [BUGFIX] Fixed YAML configuraton in the "Manage the configuration of Grafana Mimir with Helm" guide. #3042
+* [BUGFIX] Fixed Alertmanager capacity planning documentation. #3132
 
 ### Tools
 
