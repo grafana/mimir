@@ -68,7 +68,14 @@
   //
 
   ruler_query_scheduler_args+::
-    $.query_scheduler_args,
+    $.query_scheduler_args +
+    (
+      // If the ruler-query-schedulers form a ring then they need to build a different
+      // ring than the standard query-schedulers.
+      if $._config.query_scheduler_service_discovery_mode != 'ring' then {} else {
+        'query-scheduler.ring.prefix': 'ruler-query-scheduler/',
+      }
+    ),
 
   ruler_query_scheduler_container::
     $.newQuerySchedulerContainer('ruler-query-scheduler', $.ruler_query_scheduler_args),
