@@ -7,6 +7,7 @@ package querymiddleware
 
 import (
 	"context"
+	util_math "github.com/grafana/mimir/pkg/util/math"
 	"net/http"
 	"sync"
 	"time"
@@ -57,6 +58,9 @@ type Limits interface {
 	// This method is copied from compactor.ConfigProvider.
 	CompactorSplitAndMergeShards(userID string) int
 
+	// CompactorBlocksRetentionPeriod returns the retention period for a given user.
+	CompactorBlocksRetentionPeriod(userID string) time.Duration
+
 	// OutOfOrderTimeWindow returns the out-of-order time window for the user.
 	OutOfOrderTimeWindow(userID string) model.Duration
 }
@@ -87,10 +91,12 @@ func (l limitsMiddleware) Do(ctx context.Context, r Request) (Response, error) {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	// Clamp the time range based on the max query lookback.
-
-	if maxQueryLookback := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, l.MaxQueryLookback); maxQueryLookback > 0 {
-		minStartTime := util.TimeToMillis(time.Now().Add(-maxQueryLookback))
+	// Clamp the time range based on the max query lookback and block retention period.
+	blockRetentionPeriod := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, l.CompactorBlocksRetentionPeriod)
+	maxQueryLookback := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, l.MaxQueryLookback)
+	maxLookback := util_math.MinDuration(blockRetentionPeriod, maxQueryLookback)
+	if maxLookback > 0 {
+		minStartTime := util.TimeToMillis(time.Now().Add(-maxLookback))
 
 		if r.GetEnd() < minStartTime {
 			// The request is fully outside the allowed range, so we can return an
@@ -99,7 +105,8 @@ func (l limitsMiddleware) Do(ctx context.Context, r Request) (Response, error) {
 				"msg", "skipping the execution of the query because its time range is before the 'max query lookback' setting",
 				"reqStart", util.FormatTimeMillis(r.GetStart()),
 				"redEnd", util.FormatTimeMillis(r.GetEnd()),
-				"maxQueryLookback", maxQueryLookback)
+				"maxQueryLookback", maxQueryLookback,
+				"minBlockRetentionPeriod", blockRetentionPeriod)
 
 			return newEmptyPrometheusResponse(), nil
 		}
