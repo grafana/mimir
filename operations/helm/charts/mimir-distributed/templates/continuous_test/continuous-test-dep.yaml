@@ -49,11 +49,11 @@ spec:
             - "-tests.read-endpoint={{ template "mimir.gatewayUrl" . }}/prometheus"
             - "-tests.run-interval={{ .Values.continuous_test.runInterval }}"
             {{- if eq .Values.continuous_test.auth.type "tenantId" }}
-            - "-tests.tenant-id={{ .Values.continuous_test.auth.tenantId }}"
+            - "-tests.tenant-id={{ .Values.continuous_test.auth.tenant }}"
             {{- end }}
             {{- if eq .Values.continuous_test.auth.type "basicAuth" }}
             - "-tests.basic-auth-password={{ .Values.continuous_test.auth.password }}"
-            - "-tests.basic-auth-user={{ .Values.continuous_test.auth.username }}"
+            - "-tests.basic-auth-user={{ .Values.continuous_test.auth.tenant }}"
             {{- end }}
             {{- if eq .Values.continuous_test.auth.type "bearerToken" }}
             - "-tests.bearer-token={{ .Values.continuous_test.auth.bearerToken }}"

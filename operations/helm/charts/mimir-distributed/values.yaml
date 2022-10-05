@@ -2497,7 +2497,10 @@ gr-metricname-cache:
     annotations: {}
     labels: {}
 
-# Settings for the smoke-test job.
+# -- Settings for the smoke-test job. This is meant to run as a Helm test hook
+# (`helm test RELEASE`) after installing the chart. It quickly verifies
+# that writing and reading metrics works. Currently not supported for
+# installations using GEM token-based authentication.
 smoke_test:
   image:
     repository: grafana/mimir-continuous-test
@@ -2512,26 +2515,31 @@ smoke_test:
   # -- The name of the PriorityClass for smoke-test pods
   priorityClassName: null
 
-# Settings for continous testing
+# -- Settings for mimir-continuous-test.
+# This continuously writes and reads metrics from Mimir.
+# https://grafana.com/docs/mimir/latest/operators-guide/tools/mimir-continuous-test/
 continuous_test:
   enabled: false
   # -- Number of replicas to start of continuous test
   replicas: 1
   image:
     repository: grafana/mimir-continuous-test
-    tag: r205-f2ad133
+    tag: r206-310ea58
     pullPolicy: IfNotPresent
+    # Note: optional pullSecrets are set in toplevel 'image' section, not here
+
   # -- Authentication settings of continuous test
   auth:
     # -- Type of authentication to use (tenantId, basicAuth, bearerToken)
     type: tenantId
-    # -- TenantId for tenantId auth
-    tenantId: 'mimir-continuous-test'
-    # -- Username for basicAuth auth
-    username: 'mimir-continuous-test'
-    # -- Password for basicAuth auth (note: can be environment variable from secret, e.g. $(PASSWORD))
+    # -- The tenant to use for tenantId or basicAuth authentication type
+    # In case of tenantId authentication, it is injected as the X-Scope-OrgID header on requests.
+    # In case of basicAuth, it is set as the username.
+    tenant: 'mimir-continuous-test'
+    # -- Password for basicAuth auth (note: can be environment variable from secret attached in extraEnvFrom, e.g. $(PASSWORD))
+    # It should contain an access token created for an access policy that allows metrics reads and writes for the tenant.
     password: null
-    # -- Bearer token for bearerToken auth (note: can be environment variable from secret, e.g. $(TOKEN))
+    # -- Bearer token for bearerToken auth (note: can be environment variable from secret attached in extraEnvFrom, e.g. $(TOKEN))
     bearerToken: null
   # -- The maximum number of series to write in a single request.
   numSeries: 1000
@@ -2540,23 +2548,29 @@ continuous_test:
   # -- Interval between test runs
   runInterval: "5m"
 
-  # -- Annotations for the continuous_test Deployment
+  # -- Pod affinity settings for the continuous test replicas
+  affinity: {}
+  # -- Annotations for the continuous test Deployment
   annotations: {}
   # -- The SecurityContext for continuous test containers
   containerSecurityContext:
     readOnlyRootFilesystem: true
-  # Extra environment variables for continuous test containers
+  # -- Extra environment variables for continuous test containers
   env: []
-  # Extra command line arguments for the continuous test container
+  # -- Extra command line arguments for the continuous test container
   extraArgs: {}
-  # Extra environment from secret/configmap for continuous test containers
+  # -- Extra environment from secret/configmap for continuous test containers
   extraEnvFrom: []
-  # Extra volumes for the continuous test container
+  # -- Extra volumes for the continuous test container
   extraVolumes: []
-  # Extra volume mounts for the continuous test container
+  # -- Extra volume mounts for the continuous test container
   extraVolumeMounts: []
-  # Extra initcontainers for the continuous test Deployment
+  # -- Extra containers for the continuous test Deployment
+  extraContainers: []
+  # -- Extra initContainers for the continuous test Deployment
   initContainers: []
+  # -- Nodeselector of continuous test replicas
+  nodeSelector: {}
   # -- The name of the PriorityClass for continuous test pods
   priorityClassName: null
   # -- Kubernetes resource requests and limits for continuous test
@@ -2566,15 +2580,18 @@ continuous_test:
     requests:
       cpu: "1"
       memory: 512Mi
-  # Security context for the continuous test Deployment
+  # -- Security context for the continuous test Deployment
   securityContext: {}
-  # Service for monitoring continuous test
+  # -- Service for monitoring continuous test
   service:
     annotations: {}
     labels: {}
-  # Upgrade strategy for the continuous test Deployment
+  # -- Upgrade strategy for the continuous test Deployment
   strategy:
     type: RollingUpdate
     rollingUpdate:
       maxSurge: 0
       maxUnavailable: 1
+
+  tolerations: []
+  terminationGracePeriodSeconds: 30
