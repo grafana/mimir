@@ -91,7 +91,7 @@ Any traffic that does not match that prefix is discarded, to ensure that only th
 
 To migrate a Grafana Mimir cluster to use cluster label verification, the following steps need to be performed:
 
-1. Disable cluster label verification on all cluster instances via `-memberlist.cluster-label-verification-disabled=true` CLI flag (or its respective YAML configuration option).
+1. Disable cluster label verification on all cluster instances via the `-memberlist.cluster-label-verification-disabled=true` CLI flag (or its respective YAML configuration option).
 2. **Wait** until the configuration change has been rolled out to all Grafana Mimir instances.
 3. On each cluster, define a label that is unique to that cluster and the same on all instances via the `-memberlist.cluster-label` CLI flag (or its respective YAML configuration option).
    This label must be the same on all instances that are part of the same cluster.
