@@ -121,6 +121,19 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
     },
 
+  // Returns the URL of a given dashboard, keeping the current time range and variables.
+  dashboardURL(filename)::
+    // Grafana uses a <base> HTML set to the path defined in GF_SERVER_ROOT_URL.
+    // This means that if we create relative links (starting with ".") the browser
+    // will append the base to it, effectively honoring the GF_SERVER_ROOT_URL.
+    //
+    // IMPORTANT: due to an issue with Grafana, this URL works only when opened in a
+    // new browser tab (e.g. link with target="_blank").
+    './d/%(uid)s/%(filename)s?${__url_time_range}&${__all_variables}' % {
+      uid: std.md5(filename),
+      filename: std.strReplace(filename, '.json', ''),
+    },
+
   // The mixin allow specialism of the job selector depending on if its a single binary
   // deployment or a namespaced one.
   jobMatcher(job)::
