@@ -4,6 +4,30 @@ local filename = 'mimir-overview.json';
 (import 'dashboard-utils.libsonnet') +
 (import 'dashboard-queries.libsonnet') {
   [filename]:
+    local helpers = {
+      // Adds a suffix to the title of panels whose metrics are gathered from the gateway.
+      gatewayEnabledPanelTitleSuffix: if !$._config.gateway_enabled then '' else
+        '(gateway)',
+
+      // Adds an extra description to rows containing panels whose metrics are gathered from the gateway.
+      gatewayEnabledRowDescription: if !$._config.gateway_enabled then '' else
+        'Requests rate and latency is measured on the gateway.',
+
+      // Dashboard URLs.
+      alertmanagerDashboardURL: $.dashboardURL('mimir-alertmanager.json'),
+      alertmanagerResourcesDashboardURL: $.dashboardURL('mimir-alertmanager-resources.json'),
+      compactorDashboardURL: $.dashboardURL('mimir-compactor.json'),
+      objectStoreDashboardURL: $.dashboardURL('mimir-object-store.json'),
+      queriesDashboardURL: $.dashboardURL('mimir-queries.json'),
+      readsDashboardURL: $.dashboardURL('mimir-reads.json'),
+      readsNetworkingDashboardURL: $.dashboardURL('mimir-reads-networking.json'),
+      readsResourcesDashboardURL: $.dashboardURL('mimir-reads-resources.json'),
+      rulerDashboardURL: $.dashboardURL('mimir-ruler.json'),
+      writesDashboardURL: $.dashboardURL('mimir-writes.json'),
+      writesNetworkingDashboardURL: $.dashboardURL('mimir-writes-networking.json'),
+      writesResourcesDashboardURL: $.dashboardURL('mimir-writes-resources.json'),
+    };
+
     ($.dashboard('Overview') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
 
@@ -11,22 +35,16 @@ local filename = 'mimir-overview.json';
       $.row('Writes')
       .addPanel(
         $.textPanel('', |||
-          These panels show an overview on the write path.
+          These panels show an overview on the write path. %(gatewayEnabledRowDescription)s
           Visit the following specific dashboards to drill down into the write path:
 
-          <ul>
-            <li><a target="_blank" href="%(writesDashboardURL)s">Writes</a></li>
-            <li><a target="_blank" href="%(writesResourcesDashboardURL)s">Writes resources</a></li>
-            <li><a target="_blank" href="%(writesNetworkingDashboardURL)s">Writes networking</a></li>
-          </ul>
-        ||| % {
-          writesDashboardURL: $.dashboardURL('mimir-writes.json'),
-          writesResourcesDashboardURL: $.dashboardURL('mimir-writes-resources.json'),
-          writesNetworkingDashboardURL: $.dashboardURL('mimir-writes-networking.json'),
-        }),
+          - <a target="_blank" href="%(writesDashboardURL)s">Writes</a>
+          - <a target="_blank" href="%(writesResourcesDashboardURL)s">Writes resources</a>
+          - <a target="_blank" href="%(writesNetworkingDashboardURL)s">Writes networking</a>
+        ||| % helpers),
       )
       .addPanel(
-        $.panel('Write requests / sec') +
+        $.panel(std.stripChars('Write requests / sec %(gatewayEnabledPanelTitleSuffix)s' % helpers, ' ')) +
         $.qpsPanel(
           if $._config.gateway_enabled then
             $.queries.gateway.writeRequestsPerSecond
@@ -35,7 +53,7 @@ local filename = 'mimir-overview.json';
         )
       )
       .addPanel(
-        $.panel('Write latency') + (
+        $.panel(std.stripChars('Write latency %(gatewayEnabledPanelTitleSuffix)s' % helpers, ' ')) + (
           if $._config.gateway_enabled then
             utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', $.queries.write_http_routes_regex)])
           else
@@ -57,26 +75,18 @@ local filename = 'mimir-overview.json';
       $.row('Reads')
       .addPanel(
         $.textPanel('', |||
-          These panels show an overview on the read path.
+          These panels show an overview on the read path. %(gatewayEnabledRowDescription)s
           Visit the following specific dashboards to drill down into the read path:
 
-          <ul>
-            <li><a target="_blank" href="%(readsDashboardURL)s">Reads</a></li>
-            <li><a target="_blank" href="%(readsResourcesDashboardURL)s">Reads resources</a></li>
-            <li><a target="_blank" href="%(readsNetworkingDashboardURL)s">Reads networking</a></li>
-            <li><a target="_blank" href="%(queriesDashboardURL)s">Queries</a></li>
-            <li><a target="_blank" href="%(compactorDashboardURL)s">Compactor</a></li>
-          </ul>
-        ||| % {
-          readsDashboardURL: $.dashboardURL('mimir-reads.json'),
-          readsResourcesDashboardURL: $.dashboardURL('mimir-reads-resources.json'),
-          readsNetworkingDashboardURL: $.dashboardURL('mimir-reads-networking.json'),
-          queriesDashboardURL: $.dashboardURL('mimir-queries.json'),
-          compactorDashboardURL: $.dashboardURL('mimir-compactor.json'),
-        }),
+          - <a target="_blank" href="%(readsDashboardURL)s">Reads</a>
+          - <a target="_blank" href="%(readsResourcesDashboardURL)s">Reads resources</a>
+          - <a target="_blank" href="%(readsNetworkingDashboardURL)s">Reads networking</a>
+          - <a target="_blank" href="%(queriesDashboardURL)s">Queries</a>
+          - <a target="_blank" href="%(compactorDashboardURL)s">Compactor</a>
+        ||| % helpers),
       )
       .addPanel(
-        $.panel('Read requests / sec') +
+        $.panel(std.stripChars('Read requests / sec %(gatewayEnabledPanelTitleSuffix)s' % helpers, ' ')) +
         $.qpsPanel(
           if $._config.gateway_enabled then
             $.queries.gateway.readRequestsPerSecond
@@ -85,7 +95,7 @@ local filename = 'mimir-overview.json';
         )
       )
       .addPanel(
-        $.panel('Read latency') + (
+        $.panel(std.stripChars('Read latency %(gatewayEnabledPanelTitleSuffix)s' % helpers, ' ')) + (
           if $._config.gateway_enabled then
             utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', $.queries.read_http_routes_regex)])
           else
@@ -116,16 +126,10 @@ local filename = 'mimir-overview.json';
           These panels show an overview on the recording and alerting rules evaluation.
           Visit the following specific dashboards to drill down into the rules evaluation and alerts notifications:
 
-          <ul>
-            <li><a target="_blank" href="%(rulerDashboardURL)s">Ruler</a></li>
-            <li><a target="_blank" href="%(alertmanagerDashboardURL)s">Alertmanager</a></li>
-            <li><a target="_blank" href="%(alertmanagerResourcesDashboardURL)s">Alertmanager resources</a></li>
-          </ul>
-        ||| % {
-          rulerDashboardURL: $.dashboardURL('mimir-ruler.json'),
-          alertmanagerDashboardURL: $.dashboardURL('mimir-alertmanager.json'),
-          alertmanagerResourcesDashboardURL: $.dashboardURL('mimir-alertmanager-resources.json'),
-        }),
+          - <a target="_blank" href="%(rulerDashboardURL)s">Ruler</a>
+          - <a target="_blank" href="%(alertmanagerDashboardURL)s">Alertmanager</a>
+          - <a target="_blank" href="%(alertmanagerResourcesDashboardURL)s">Alertmanager resources</a>
+        ||| % helpers),
       )
       .addPanel(
         $.panel('Rule evaluations / sec') +
@@ -168,14 +172,9 @@ local filename = 'mimir-overview.json';
           These panels show an overview on the long-term storage (object storage).
           Visit the following specific dashboards to drill down into the storage:
 
-          <ul>
-            <li><a target="_blank" href="%(objectStoreDashboardURL)s">Object store</a></li>
-            <li><a target="_blank" href="%(compactorDashboardURL)s">Compactor</a></li>
-          </ul>
-        ||| % {
-          objectStoreDashboardURL: $.dashboardURL('mimir-object-store.json'),
-          compactorDashboardURL: $.dashboardURL('mimir-compactor.json'),
-        }),
+          - <a target="_blank" href="%(objectStoreDashboardURL)s">Object store</a>
+          - <a target="_blank" href="%(compactorDashboardURL)s">Compactor</a>
+        ||| % helpers),
       )
       .addPanel(
         local failure = 'sum(rate(thanos_objstore_bucket_operation_failures_total{%s}[$__rate_interval]))' % $.namespaceMatcher();
