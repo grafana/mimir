@@ -84,7 +84,8 @@ If, for any reason, the discovered addresses include instances of other Grafana 
 
 To avoid this, Grafana Mimir provides an additional type of validation known as cluster label verification.
 
-When enabled, all memberlist internal traffic will be prefixed with the configured cluster label, discarding any other traffic that doesn't match that prefix and ensuring that only replicas having the same configured label can connect to each other.
+When cluster label verification is enabled, all memberlist internal traffic is prefixed with the configured cluster label.
+Any traffic that does not match that prefix is discarded, to ensure that only the replicas that have the same configured label can connect to each other.
 
 #### Migrate to using cluster label verification
 
