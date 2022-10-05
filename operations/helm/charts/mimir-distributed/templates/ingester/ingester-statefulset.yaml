@@ -12,7 +12,7 @@ metadata:
   annotations:
     {{- include "mimir.componentAnnotations" $args | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
-spec:  
+spec:
   podManagementPolicy: {{ .Values.ingester.podManagementPolicy }}
   replicas: {{ $rolloutZone.replicas }}
   selector:
