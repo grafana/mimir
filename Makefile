@@ -32,6 +32,7 @@ BINARY_SUFFIX ?= ""
 # All this must go at top of file I'm afraid.
 IMAGE_PREFIX ?= grafana/
 BUILD_IMAGE ?= $(IMAGE_PREFIX)mimir-build-image
+CONTAINER_MOUNT_OPTIONS ?= delegated,z
 
 # For a tag push, $GITHUB_REF will look like refs/tags/<tag_name>.
 # If finding refs/tags/ does not equal empty string, then use
@@ -210,12 +211,12 @@ GO_FLAGS := -ldflags "\
 
 ifeq ($(BUILD_IN_CONTAINER),true)
 
-GOVOLUMES=	-v $(shell pwd)/.cache:/go/cache:delegated,z \
-			-v $(shell pwd)/.pkg:/go/pkg:delegated,z \
-			-v $(shell pwd):/go/src/github.com/grafana/mimir:delegated,z
+GOVOLUMES=	-v $(shell pwd)/.cache:/go/cache:$(CONTAINER_MOUNT_OPTIONS) \
+			-v $(shell pwd)/.pkg:/go/pkg:$(CONTAINER_MOUNT_OPTIONS) \
+			-v $(shell pwd):/go/src/github.com/grafana/mimir:$(CONTAINER_MOUNT_OPTIONS)
 
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
-SSHVOLUME=  -v ~/.ssh/:/root/.ssh:delegated,z
+SSHVOLUME=  -v ~/.ssh/:/root/.ssh:$(CONTAINER_MOUNT_OPTIONS)
 
 exes $(EXES) protos $(PROTO_GOS) lint lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt conftest-test conftest-verify: fetch-build-image
 	@mkdir -p $(shell pwd)/.pkg
@@ -598,7 +599,7 @@ packages: dist packaging/fpm/$(UPTODATE)
 	@mkdir -p $(shell pwd)/.cache
 	@echo ">>>> Entering build container: $@"
 	$(SUDO) time docker run --rm $(TTY) \
-		-v  $(shell pwd):/go/src/github.com/grafana/mimir:delegated,z \
+		-v  $(shell pwd):/go/src/github.com/grafana/mimir:$(CONTAINER_MOUNT_OPTIONS) \
 		-i $(PACKAGE_IMAGE) $@;
 
 else
