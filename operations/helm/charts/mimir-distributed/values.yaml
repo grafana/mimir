@@ -78,7 +78,7 @@ externalConfigSecretName: '{{ include "mimir.resourceName" (dict "ctx" . "compon
 externalConfigVersion: '0'
 
 # -- Some storage providers work by utilising an alternate scheduler on Deployments and StatefulSets that require a PVC. Setting this value will set the scheduler name on all services that use a PVC.
-# schedulerName: 
+# schedulerName:
 
 mimir:
   # -- Base config file for Grafana Mimir and Grafana Enterprise Metrics. Contains Helm templates that are evaulated at install/upgrade.
