@@ -150,6 +150,27 @@
       'ingester.ring.prefix': '',
     },
 
+    local querySchedulerRingConfig = {
+      'query-scheduler.ring.store': 'consul',
+      'query-scheduler.ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
+      'query-scheduler.ring.prefix': '',
+    },
+
+    // The query-scheduler ring client config that should be shared across all Mimir services
+    // using or watching the query-scheduler ring.
+    querySchedulerRingClientConfig:
+      if $._config.query_scheduler_service_discovery_mode != 'ring' || !$._config.query_scheduler_service_discovery_ring_read_path_enabled then
+        {}
+      else
+        querySchedulerRingConfig,
+
+    // The query-scheduler ring lifecycler config (set only to the query-scheduler).
+    querySchedulerRingLifecyclerConfig:
+      if $._config.query_scheduler_service_discovery_mode != 'ring' then
+        {}
+      else
+        querySchedulerRingConfig,
+
     ruler_enabled: false,
     ruler_client_type: error 'you must specify a storage backend type for the ruler (azure, gcs, s3, local)',
     ruler_storage_bucket_name: error 'must specify the ruler storage bucket name',
@@ -367,6 +388,14 @@
 
     // Enables query-scheduler component, and reconfigures querier and query-frontend to use it.
     query_scheduler_enabled: true,
+    query_scheduler_service_discovery_mode: 'dns',  // Supported values: 'dns', 'ring'.
+
+    // Migrating a Mimir cluster from DNS to ring-based service discovery is a two steps process:
+    // 1. Set `query_scheduler_service_discovery_mode: 'ring' and `query_scheduler_service_discovery_ring_read_path_enabled: false`,
+    //    so that query-schedulers join a ring, but queriers and query-frontends will still discover the query-scheduler via DNS.
+    // 2. Remove the setting `query_scheduler_service_discovery_ring_read_path_enabled: false`, so that queriers and query-frontends
+    //    will discover the query-schedulers via ring.
+    query_scheduler_service_discovery_ring_read_path_enabled: true,
 
     // Enables streaming of chunks from ingesters using blocks.
     // Changing it will not cause new rollout of ingesters, as it gets passed to them via runtime-config.

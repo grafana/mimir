@@ -101,6 +101,7 @@
 
 ### Jsonnet
 
+* [FEATURE] Added support for query-scheduler ring-based service discovery. #3128
 * [ENHANCEMENT] Querier autoscaling is now slower on scale downs: scale down 10% every 1m instead of 100%. #2962
 
 ### Mimirtool
