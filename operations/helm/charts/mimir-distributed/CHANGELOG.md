@@ -34,6 +34,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Support autoscaling/v2 HorizontalPodAutoscaler for nginx autoscaling. This is used when deploying on Kubernetes >= 1.25. #2848
 * [ENHANCEMENT] Monitoring: Add additional flags to conditionally enable log / metric scraping. #2936
 * [ENHANCEMENT] Add podAntiAffinity to sizing plans (small.yaml, large.yaml, capped-small.yaml, capped-large.yaml). #2906
+* [ENHANCEMENT] Add ability to configure and run mimir-continuous-test. #3117
 
 
 ## 3.1.0
