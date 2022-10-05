@@ -388,7 +388,13 @@
 
     // Enables query-scheduler component, and reconfigures querier and query-frontend to use it.
     query_scheduler_enabled: true,
-    query_scheduler_service_discovery_mode: 'dns',
+    query_scheduler_service_discovery_mode: 'dns',  // Supported values: 'dns', 'ring'.
+
+    // Migrating a Mimir cluster from DNS to ring-based service discovery is a two steps process:
+    // 1. Set `query_scheduler_service_discovery_mode: 'ring' and `query_scheduler_service_discovery_ring_read_path_enabled: false`,
+    //    so that query-schedulers join a ring, but queriers and query-frontends will still discover the query-scheduler via DNS.
+    // 2. Remove the setting `query_scheduler_service_discovery_ring_read_path_enabled: false`, so that queriers and query-frontends
+    //    will discover the query-schedulers via ring.
     query_scheduler_service_discovery_ring_read_path_enabled: true,
 
     // Enables streaming of chunks from ingesters using blocks.
