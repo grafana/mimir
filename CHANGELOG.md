@@ -11,6 +11,7 @@
 ### Jsonnet
 
 ### Mimirtool
+* [ENHANCEMENT] Added `mimirtool rules delete-namespace` command to delete all of the rule groups in a namespace including the namespace itself. #3136
 
 ### Documentation
 

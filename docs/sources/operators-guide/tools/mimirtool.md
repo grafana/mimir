@@ -196,6 +196,14 @@ groups:
         expr: sum by (job) (http_inprogress_requests)
 ```
 
+#### Delete a namespace
+
+The following command deletes all of the rule groups in a namespace, including the namespace itself:
+
+```bash
+mimirtool rules delete-namespace <namespace>
+```
+
 #### Lint
 
 The `lint` command provides YAML and PromQL expression formatting within the rule file.
