@@ -59,6 +59,11 @@ spec:
         {{- end }}
       namespace: {{ .Release.Namespace | quote }}
     spec:
+      {{- if .Values.ingester.persistentVolume.enabled }}
+      {{- if .Values.schedulerName }}
+      schedulerName: "{{ .Values.schedulerName }}"
+      {{- end }}
+      {{- end }}
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
       {{- if .Values.alertmanager.priorityClassName }}
       priorityClassName: {{ .Values.alertmanager.priorityClassName }}

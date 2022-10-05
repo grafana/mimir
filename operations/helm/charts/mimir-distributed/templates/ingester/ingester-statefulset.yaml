@@ -12,7 +12,7 @@ metadata:
   annotations:
     {{- include "mimir.componentAnnotations" $args | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
-spec:
+spec:  
   podManagementPolicy: {{ .Values.ingester.podManagementPolicy }}
   replicas: {{ $rolloutZone.replicas }}
   selector:
@@ -55,6 +55,11 @@ spec:
         {{- include "mimir.podAnnotations" $args | nindent 8 }}
       namespace: {{ .Release.Namespace | quote }}
     spec:
+      {{- if .Values.ingester.persistentVolume.enabled }}
+      {{- if .Values.schedulerName }}
+      schedulerName: "{{ .Values.schedulerName }}"
+      {{- end }}
+      {{- end }}
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
       {{- if .Values.ingester.priorityClassName }}
       priorityClassName: {{ .Values.ingester.priorityClassName }}
