@@ -256,8 +256,11 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 		}
 		defer stream.CloseSend() //nolint:errcheck
 
+		streamReceiver := stream.(ingester_client.Ingester_QueryStreamAtReceiver)
 		for {
-			resp, err := stream.Recv()
+			var resp ingester_client.QueryStreamResponse
+
+			err := streamReceiver.RecvAt(&resp)
 			if errors.Is(err, io.EOF) {
 				break
 			} else if err != nil {

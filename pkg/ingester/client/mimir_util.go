@@ -52,3 +52,14 @@ func sendWithContextErrChecking(ctx context.Context, send func() error) error {
 
 	return nil
 }
+
+// Ingester_QueryStreamAtReceiver defines a client interface to support receiving stream responses
+// at a specific memory location.
+type Ingester_QueryStreamAtReceiver interface {
+	Ingester_QueryStreamClient
+	RecvAt(*QueryStreamResponse) error
+}
+
+func (x *ingesterQueryStreamClient) RecvAt(m *QueryStreamResponse) error {
+	return x.ClientStream.RecvMsg(m)
+}
