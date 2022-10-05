@@ -2537,7 +2537,7 @@ continuous_test:
     # In case of basicAuth, it is set as the username.
     tenant: 'mimir-continuous-test'
     # -- Password for basicAuth auth (note: can be environment variable from secret attached in extraEnvFrom, e.g. $(PASSWORD))
-    # It should contain an access token created for an access policy that allows metrics reads and writes for the tenant.
+    # For GEM, it should contain an access token created for an access policy that allows `metrics:read` and `metrics:write` for the tenant.
     password: null
     # -- Bearer token for bearerToken auth (note: can be environment variable from secret attached in extraEnvFrom, e.g. $(TOKEN))
     bearerToken: null
