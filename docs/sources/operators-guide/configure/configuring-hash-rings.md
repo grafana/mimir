@@ -82,7 +82,7 @@ If you run multiple Mimir processes on the same node or the port `7946` is not a
 By default, Grafana Mimir memberlist will join a cluster with any instance discovered when resolving the hosts configured via the `-memberlist.join` CLI flag (or its respective YAML configuration option).
 If, for any reason, the discovered addresses include instances of other Grafana Mimir clusters, or instances of other distributed systems using memberlist, Grafana Mimir will join these unrelated clusters together.
 
-To avoid this type of undesired situation Grafana Mimir offers an additional type of validation known as cluster label verification.
+To avoid this, Grafana Mimir provides an additional type of validation known as cluster label verification.
 
 When enabled, all memberlist internal traffic will be prefixed with the configured cluster label, discarding any other traffic that doesn't match that prefix and ensuring that only replicas having the same configured label can connect to each other.
 
