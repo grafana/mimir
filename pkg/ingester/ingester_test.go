@@ -712,9 +712,6 @@ func TestIngester_Push(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			registry := prometheus.NewRegistry()
 
-			registry.MustRegister(validation.DiscardedMetadata)
-			validation.DiscardedMetadata.Reset()
-
 			// Create a mocked ingester
 			cfg := defaultIngesterTestConfig(t)
 			cfg.IngesterRing.ReplicationFactor = 1

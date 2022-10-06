@@ -2075,8 +2075,6 @@ func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckRes
 	i.metrics.deletePerUserMetrics(userID)
 	i.metrics.deletePerUserCustomTrackerMetrics(userID, userDB.activeSeries.CurrentMatcherNames())
 
-	validation.DeletePerUserValidationMetrics(userID, i.logger)
-
 	// And delete local data.
 	if err := os.RemoveAll(dir); err != nil {
 		level.Error(i.logger).Log("msg", "failed to delete local TSDB", "user", userID, "err", err)
