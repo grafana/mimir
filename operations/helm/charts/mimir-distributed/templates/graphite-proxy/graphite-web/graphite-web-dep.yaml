@@ -35,11 +35,7 @@ spec:
             {{- toYaml .Values.graphite.web.securityContext | nindent 12 }}
           env:
             - name: GRAPHITE_CLUSTER_SERVERS
-              {{- if .Values.gateway.useDefaultProxyURLs }}
               value: {{ template "mimir.fullname" . }}-graphite.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" .  }}/graphite
-              {{- else }}
-              value: {{ template "mimir.fullname" . }}.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" .  }}/graphite
-              {{- end }}
             - name: GRAPHITE_ENFORCE_INPUT_VALIDATION
               value: "true"
             - name: GRAPHITE_POOL_WORKERS

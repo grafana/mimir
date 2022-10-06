@@ -1,0 +1,15 @@
+---
+# Source: mimir-distributed/templates/runtime-configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway-enterprise-values-mimir-runtime
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: gateway-enterprise-values
+    app.kubernetes.io/managed-by: Helm
+  namespace: "citestns"
+data:
+  runtime.yaml: |
+    
+    {}

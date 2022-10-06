@@ -235,3 +235,12 @@
 {{- fail "You have enabled nginx.autoscaling.targetMemoryUtilizationPercentage, you must also set nginx.resources.requests.memory." -}}
 {{- end -}}
 {{- end -}}
+
+{{- with .Values.gateway -}}
+{{- if and .autoscaling.enabled .autoscaling.targetCPUUtilizationPercentage (not ((.resources).requests).cpu) -}}
+{{- fail "You have enabled gateway.autoscaling.targetCPUUtilizationPercentage, you must also set gateway.resources.requests.cpu." -}}
+{{- end -}}
+{{- if and .autoscaling.enabled .autoscaling.targetMemoryUtilizationPercentage (not ((.resources).requests).memory) -}}
+{{- fail "You have enabled gateway.autoscaling.targetMemoryUtilizationPercentage, you must also set gateway.resources.requests.memory." -}}
+{{- end -}}
+{{- end -}}

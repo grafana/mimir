@@ -1,0 +1,30 @@
+---
+# Source: mimir-distributed/templates/store-gateway/store-gateway-svc.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway-nginx-values-mimir-store-gateway
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: gateway-nginx-values
+    app.kubernetes.io/component: store-gateway
+    app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    {}
+  namespace: "citestns"
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      protocol: TCP
+      name: http-metrics
+      targetPort: http-metrics
+    - port: 9095
+      protocol: TCP
+      name: grpc
+      targetPort: grpc
+  selector:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: gateway-nginx-values
+    app.kubernetes.io/component: store-gateway

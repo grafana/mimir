@@ -7,8 +7,11 @@ remove a deprecated item from the third major release after it has been deprecat
 
 ### List
 
-* GEM gateway: remove port 8080 on the Service resource. Deprecated in 3.1.0 and will be removed in 6.x.x.
+* GEM gateway: remove port 8080 on the Service resource. Deprecated in 3.1.0 and will be removed in 6.0.0.
   * __How to migrate__: replace usages of port 8080 with port 80; these usages can be in dashboards, Prometheus remote-write configurations, or automation for updating rules.
+* NGINX configuration via `nginx` top-level values sections is being merged with by the `gateway` section. The
+  `nginx` section is deprecated in 4.0.0 and will be removed in 7.0.0.
+  * __How to migrate__: refer to [Migrate to using the unified proxy deployment for NGINX and GEM gateway](https://grafana.com/docs/mimir/latest/operators-guide/deploying-grafana-mimir/migrate-to-unified-gateway-deployment/)
 
 ## Format of changelog
 
@@ -25,6 +28,8 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [FEATURE] Support deploying NGINX via the `gateway` section. The `nginx` section will be removed in 7.0.0. See
+  [Migrate to using the unified proxy deployment for NGINX and GEM gateway](https://grafana.com/docs/mimir/latest/operators-guide/deploying-grafana-mimir/migrate-to-unified-gateway-deployment/)
 * [CHANGE] **breaking change** **Data loss without action.** Enables [zone-aware replication](https://grafana.com/docs/mimir/latest/operators-guide/configure/configuring-zone-aware-replication/) for ingesters and store-gateways by default. #2778
   - If you are **upgrading** an existing installation:
     - Turn off zone-aware replication, by setting the following values:
@@ -71,6 +76,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Nginx: fixed `imagePullSecret` value reference inconsistency. #3208
 * [BUGFIX] Move the activity tracker log from /data to /active-query-tracker to remove ignore log messages. #3169
 * [BUGFIX] Fix Invalid ingress nginx config due to newline in prometheusHttpPrefix Helm named templates. #3088
+
 
 ## 3.2.0
 

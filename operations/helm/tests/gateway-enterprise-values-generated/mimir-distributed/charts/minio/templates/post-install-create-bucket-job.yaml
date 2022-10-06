@@ -1,0 +1,47 @@
+---
+# Source: mimir-distributed/charts/minio/templates/post-install-create-bucket-job.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: gateway-enterprise-values-minio-make-bucket-job
+  namespace: "citestns"
+  labels:
+    app: minio-make-bucket-job
+    chart: minio-4.0.12
+    release: gateway-enterprise-values
+    heritage: Helm
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-delete-policy": hook-succeeded,before-hook-creation
+spec:
+  template:
+    metadata:
+      labels:
+        app: minio-job
+        release: gateway-enterprise-values
+    spec:
+      restartPolicy: OnFailure      
+      volumes:
+        - name: minio-configuration
+          projected:
+            sources:
+            - configMap:
+                name: gateway-enterprise-values-minio
+            - secret:
+                name: gateway-enterprise-values-minio
+      containers:
+      - name: minio-mc
+        image: "quay.io/minio/mc:RELEASE.2022-08-11T00-30-48Z"
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/sh", "/config/initialize"]
+        env:
+          - name: MINIO_ENDPOINT
+            value: gateway-enterprise-values-minio
+          - name: MINIO_PORT
+            value: "9000"
+        volumeMounts:
+          - name: minio-configuration
+            mountPath: /config
+        resources:
+          requests:
+            memory: 128Mi

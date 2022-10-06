@@ -1,0 +1,23 @@
+---
+# Source: mimir-distributed/charts/minio/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway-enterprise-values-minio
+  namespace: "citestns"
+  labels:
+    app: minio
+    chart: minio-4.0.12
+    release: gateway-enterprise-values
+    heritage: Helm
+    monitoring: "true"
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 9000
+      protocol: TCP
+      targetPort: 9000
+  selector:
+    app: minio
+    release: gateway-enterprise-values
