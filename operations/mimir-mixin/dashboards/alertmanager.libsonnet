@@ -57,12 +57,8 @@ local filename = 'mimir-alertmanager.json';
         $.panel('NPS') +
         $.queryPanel(
           [
-            |||
-              sum(%s_job_integration:cortex_alertmanager_notifications_total:rate5m{%s})
-              -
-              sum(%s_job_integration:cortex_alertmanager_notifications_failed_total:rate5m{%s})
-            ||| % [$._config.per_cluster_label, $.jobMatcher($._config.job_names.alertmanager), $._config.per_cluster_label, $.jobMatcher($._config.job_names.alertmanager)],
-            'sum(%s_job_integration:cortex_alertmanager_notifications_failed_total:rate5m{%s})' % [$._config.per_cluster_label, $.jobMatcher($._config.job_names.alertmanager)],
+            $.queries.alertmanager.notifications.successPerSecond,
+            $.queries.alertmanager.notifications.failurePerSecond,
           ],
           ['success', 'failed']
         )

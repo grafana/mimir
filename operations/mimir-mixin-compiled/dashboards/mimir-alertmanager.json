@@ -598,7 +598,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "sum(cluster_job_integration:cortex_alertmanager_notifications_failed_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend))\"})",
+                        "expr": "sum(cluster_job_integration:cortex_alertmanager_notifications_failed_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend))\"})\n",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "failed",
