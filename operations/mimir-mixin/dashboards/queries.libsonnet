@@ -213,11 +213,12 @@ local filename = 'mimir-queries.json';
         { yaxes: $.yaxes('short') },
       )
       .addPanel(
+        $.panel('Bucket indexes load / sec') +
         $.successFailurePanel(
-          'Bucket indexes load / sec',
           'sum(rate(cortex_bucket_index_loads_total{%s}[$__rate_interval])) - sum(rate(cortex_bucket_index_load_failures_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.querier), $.jobMatcher($._config.job_names.querier)],
           'sum(rate(cortex_bucket_index_load_failures_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.querier),
-        )
+        ) +
+        $.stack
       )
       .addPanel(
         $.panel('Bucket indexes load latency') +
@@ -267,18 +268,20 @@ local filename = 'mimir-queries.json';
         { fill: 0 }
       )
       .addPanel(
+        $.panel('Blocks loaded / sec') +
         $.successFailurePanel(
-          'Blocks loaded / sec',
           'sum(rate(cortex_bucket_store_block_loads_total{component="store-gateway",%s}[$__rate_interval])) - sum(rate(cortex_bucket_store_block_load_failures_total{component="store-gateway",%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)],
           'sum(rate(cortex_bucket_store_block_load_failures_total{component="store-gateway",%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.store_gateway),
-        )
+        ) +
+        $.stack
       )
       .addPanel(
+        $.panel('Blocks dropped / sec') +
         $.successFailurePanel(
-          'Blocks dropped / sec',
           'sum(rate(cortex_bucket_store_block_drops_total{component="store-gateway",%s}[$__rate_interval])) - sum(rate(cortex_bucket_store_block_drop_failures_total{component="store-gateway",%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)],
           'sum(rate(cortex_bucket_store_block_drop_failures_total{component="store-gateway",%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.store_gateway),
-        )
+        ) +
+        $.stack
       )
     )
     .addRow(

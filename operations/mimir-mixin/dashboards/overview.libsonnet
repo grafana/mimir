@@ -204,7 +204,9 @@ local filename = 'mimir-overview.json';
         { yaxes: $.yaxes('s') },
       )
       .addPanel(
-        $.successFailurePanel('Alerting notifications sent to Alertmanager / sec', $.queries.ruler.notifications.successPerSecond, $.queries.ruler.notifications.failurePerSecond)
+        $.panel('Alerting notifications sent to Alertmanager / sec') +
+        $.successFailurePanel($.queries.ruler.notifications.successPerSecond, $.queries.ruler.notifications.failurePerSecond) +
+        $.stack
       )
     )
 
@@ -220,7 +222,9 @@ local filename = 'mimir-overview.json';
         ||| % helpers),
       )
       .addPanel(
-        $.successFailurePanel('Requests / sec', $.queries.storage.successPerSecond, $.queries.storage.failurePerSecond) +
+        $.panel('Requests / sec') +
+        $.successFailurePanel($.queries.storage.successPerSecond, $.queries.storage.failurePerSecond) +
+        $.stack +
         { yaxes: $.yaxes('reqps') },
       )
       .addPanel(
