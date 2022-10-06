@@ -2588,7 +2588,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -store-gateway.tenant-shard-size
 [store_gateway_tenant_shard_size: <int> | default = 0]
 
-# Delete blocks containing samples older than the specified retention period. 0
+# Delete blocks containing samples older than the specified retention period.
+# Also used by query-frontend to avoid querying beyond the retention period. 0
 # to disable.
 # CLI flag: -compactor.blocks-retention-period
 [compactor_blocks_retention_period: <duration> | default = 0s]

@@ -31,46 +31,60 @@ func TestLimitsMiddleware_MaxQueryLookback(t *testing.T) {
 	now := time.Now()
 
 	tests := map[string]struct {
-		maxQueryLookback  time.Duration
-		reqStartTime      time.Time
-		reqEndTime        time.Time
-		expectedSkipped   bool
-		expectedStartTime time.Time
-		expectedEndTime   time.Time
+		maxQueryLookback      time.Duration
+		blocksRetentionPeriod time.Duration
+		reqStartTime          time.Time
+		reqEndTime            time.Time
+		expectedSkipped       bool
+		expectedStartTime     time.Time
+		expectedEndTime       time.Time
 	}{
 		"should not manipulate time range if max lookback is disabled": {
-			maxQueryLookback:  0,
-			reqStartTime:      time.Unix(0, 0),
-			reqEndTime:        now,
-			expectedStartTime: time.Unix(0, 0),
-			expectedEndTime:   now,
+			maxQueryLookback:      0,
+			blocksRetentionPeriod: 0,
+			reqStartTime:          time.Unix(0, 0),
+			reqEndTime:            now,
+			expectedStartTime:     time.Unix(0, 0),
+			expectedEndTime:       now,
 		},
 		"should not manipulate time range for a query on short time range": {
-			maxQueryLookback:  thirtyDays,
-			reqStartTime:      now.Add(-time.Hour),
-			reqEndTime:        now,
-			expectedStartTime: now.Add(-time.Hour),
-			expectedEndTime:   now,
+			maxQueryLookback:      thirtyDays,
+			blocksRetentionPeriod: thirtyDays,
+			reqStartTime:          now.Add(-time.Hour),
+			reqEndTime:            now,
+			expectedStartTime:     now.Add(-time.Hour),
+			expectedEndTime:       now,
 		},
 		"should not manipulate a query on large time range close to the limit": {
-			maxQueryLookback:  thirtyDays,
-			reqStartTime:      now.Add(-thirtyDays).Add(time.Hour),
-			reqEndTime:        now,
-			expectedStartTime: now.Add(-thirtyDays).Add(time.Hour),
-			expectedEndTime:   now,
+			maxQueryLookback:      thirtyDays,
+			blocksRetentionPeriod: thirtyDays,
+			reqStartTime:          now.Add(-thirtyDays).Add(time.Hour),
+			reqEndTime:            now,
+			expectedStartTime:     now.Add(-thirtyDays).Add(time.Hour),
+			expectedEndTime:       now,
 		},
 		"should manipulate a query on large time range over the limit": {
-			maxQueryLookback:  thirtyDays,
-			reqStartTime:      now.Add(-thirtyDays).Add(-100 * time.Hour),
-			reqEndTime:        now,
-			expectedStartTime: now.Add(-thirtyDays),
-			expectedEndTime:   now,
+			maxQueryLookback:      thirtyDays,
+			blocksRetentionPeriod: thirtyDays,
+			reqStartTime:          now.Add(-thirtyDays).Add(-100 * time.Hour),
+			reqEndTime:            now,
+			expectedStartTime:     now.Add(-thirtyDays),
+			expectedEndTime:       now,
 		},
 		"should skip executing a query outside the allowed time range": {
-			maxQueryLookback: thirtyDays,
-			reqStartTime:     now.Add(-thirtyDays).Add(-100 * time.Hour),
-			reqEndTime:       now.Add(-thirtyDays).Add(-90 * time.Hour),
-			expectedSkipped:  true,
+			maxQueryLookback:      thirtyDays,
+			blocksRetentionPeriod: thirtyDays,
+			reqStartTime:          now.Add(-thirtyDays).Add(-100 * time.Hour),
+			reqEndTime:            now.Add(-thirtyDays).Add(-90 * time.Hour),
+			expectedSkipped:       true,
+		},
+		"should manipulate a query where maxQueryLookback is past the retention period": {
+			maxQueryLookback:      thirtyDays,
+			blocksRetentionPeriod: thirtyDays - (24 * time.Hour),
+			reqStartTime:          now.Add(-thirtyDays),
+			reqEndTime:            now,
+			expectedStartTime:     now.Add(-thirtyDays).Add(24 * time.Hour),
+			expectedEndTime:       now,
 		},
 	}
 
@@ -81,7 +95,7 @@ func TestLimitsMiddleware_MaxQueryLookback(t *testing.T) {
 				End:   util.TimeToMillis(testData.reqEndTime),
 			}
 
-			limits := mockLimits{maxQueryLookback: testData.maxQueryLookback}
+			limits := mockLimits{maxQueryLookback: testData.maxQueryLookback, compactorBlocksRetentionPeriod: testData.blocksRetentionPeriod}
 			middleware := newLimitsMiddleware(limits, log.NewNopLogger())
 
 			innerRes := newEmptyPrometheusResponse()
@@ -105,6 +119,7 @@ func TestLimitsMiddleware_MaxQueryLookback(t *testing.T) {
 				// Assert on the time range of the request passed to the inner handler (5s delta).
 				delta := float64(5000)
 				require.Len(t, inner.Calls, 1)
+
 				assert.InDelta(t, util.TimeToMillis(testData.expectedStartTime), inner.Calls[0].Arguments.Get(1).(Request).GetStart(), delta)
 				assert.InDelta(t, util.TimeToMillis(testData.expectedEndTime), inner.Calls[0].Arguments.Get(1).(Request).GetEnd(), delta)
 			}
@@ -204,16 +219,17 @@ func TestLimitsMiddleware_MaxQueryLength(t *testing.T) {
 }
 
 type mockLimits struct {
-	maxQueryLookback            time.Duration
-	maxQueryLength              time.Duration
-	maxTotalQueryLength         time.Duration
-	maxCacheFreshness           time.Duration
-	maxQueryParallelism         int
-	maxShardedQueries           int
-	splitInstantQueriesInterval time.Duration
-	totalShards                 int
-	compactorShards             int
-	outOfOrderTimeWindow        model.Duration
+	maxQueryLookback               time.Duration
+	maxQueryLength                 time.Duration
+	maxTotalQueryLength            time.Duration
+	maxCacheFreshness              time.Duration
+	maxQueryParallelism            int
+	maxShardedQueries              int
+	splitInstantQueriesInterval    time.Duration
+	totalShards                    int
+	compactorShards                int
+	compactorBlocksRetentionPeriod time.Duration
+	outOfOrderTimeWindow           model.Duration
 }
 
 func (m mockLimits) MaxQueryLookback(string) time.Duration {
@@ -256,6 +272,10 @@ func (m mockLimits) SplitInstantQueriesByInterval(string) time.Duration {
 
 func (m mockLimits) CompactorSplitAndMergeShards(userID string) int {
 	return m.compactorShards
+}
+
+func (m mockLimits) CompactorBlocksRetentionPeriod(userID string) time.Duration {
+	return m.compactorBlocksRetentionPeriod
 }
 
 func (m mockLimits) OutOfOrderTimeWindow(userID string) model.Duration {
