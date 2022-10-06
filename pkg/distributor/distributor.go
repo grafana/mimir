@@ -536,7 +536,9 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.exemplarValidationMetrics.DeleteUserMetrics(userID)
 	d.metadataValidationMetrics.DeleteUserMetrics(userID)
 
-	d.forwarder.DeleteMetricsForUser(userID)
+	if d.forwarder != nil {
+		d.forwarder.DeleteMetricsForUser(userID)
+	}
 }
 
 // Called after distributor is asked to stop via StopAsync.

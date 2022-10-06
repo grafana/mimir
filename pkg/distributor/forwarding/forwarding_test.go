@@ -290,7 +290,7 @@ func TestForwardingOmitOldSamples(t *testing.T) {
 
 			toIngest, errCh := f.Forward(ctx, url, cutOffTs, rules, inputTs, "user")
 
-			// All samples should be ingested, including the ones that were dropped by the forwarding.
+			// If ingestion is enabled, all samples should be ingested, including the ones that were dropped by the forwarding.
 			if !tc.disableIngest {
 				require.Equal(t, len(tc.inputSamples), len(toIngest))
 				for tsIdx := range tc.inputSamples {

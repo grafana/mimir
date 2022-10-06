@@ -304,7 +304,6 @@ func (f *forwarder) filterAndCopyTimeseries(ts mimirpb.PreallocTimeseries, dontF
 type TimeseriesCounts struct {
 	SampleCount   int
 	ExemplarCount int
-	SamplesTooOld int
 }
 
 func (t *TimeseriesCounts) count(ts mimirpb.PreallocTimeseries) {
