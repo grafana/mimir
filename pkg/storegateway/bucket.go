@@ -900,10 +900,10 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 	spanLogger := spanlogger.FromContext(srv.Context(), s.logger)
 	level.Debug(spanLogger).Log(
 		"msg", "BucketStore.Series",
-		"min time", time.UnixMilli(req.MinTime).UTC().Format(time.RFC3339Nano),
-		"max time", time.UnixMilli(req.MaxTime).UTC().Format(time.RFC3339Nano),
-		"matchers", storepb.PromMatchersToString(matchers...),
-		"shard selector", maybeNilShard(shardSelector).LabelValue(),
+		"request min time", time.UnixMilli(req.MinTime).UTC().Format(time.RFC3339Nano),
+		"request max time", time.UnixMilli(req.MaxTime).UTC().Format(time.RFC3339Nano),
+		"request matchers", storepb.PromMatchersToString(matchers...),
+		"request shard selector", maybeNilShard(shardSelector).LabelValue(),
 	)
 
 	if s.debugLogging {
