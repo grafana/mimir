@@ -3,7 +3,6 @@
 package forwarding
 
 import (
-	"bytes"
 	"reflect"
 	"sync"
 	"testing"
@@ -27,12 +26,6 @@ func TestUsingPools(t *testing.T) {
 
 	req := pools.getReq()
 	pools.putReq(req)
-
-	bytesReader := pools.getBytesReader()
-	pools.putBytesReader(bytesReader)
-
-	tsByTargets := pools.getTsByTargets()
-	pools.putTsByTargets(tsByTargets)
 
 	ts := pools.getTs()
 	pools.putTs(ts)
@@ -71,30 +64,6 @@ func validatingPools(t *testing.T, tsSliceCap, protobufCap, snappyCap int) (*poo
 	pools.getReq = validatingRequestPool.get
 	pools.putReq = validatingRequestPool.put
 
-	validatingBytesReaderPool := newValidatingPool(t,
-		func() *bytes.Reader {
-			return bytes.NewReader(nil)
-		}, func(obj *bytes.Reader) int {
-			// We uniquely identify objects of type *bytes.Reader by the address which the pointer is referring to.
-			return int(reflect.ValueOf(obj).Pointer())
-		}, nil,
-	)
-	pools.getBytesReader = validatingBytesReaderPool.get
-	pools.putBytesReader = validatingBytesReaderPool.put
-
-	validatingTsByTargetsPool := newValidatingPool(t,
-		func() tsByTargets {
-			return make(tsByTargets)
-		},
-		func(obj tsByTargets) int {
-			// We uniquely identify objects of type tsByTargets by the address which the pointer
-			// is referring to because map types are just pointers.
-			return int(reflect.ValueOf(obj).Pointer())
-		}, nil,
-	)
-	pools.getTsByTargets = validatingTsByTargetsPool.get
-	pools.putTsByTargets = validatingTsByTargetsPool.put
-
 	validatingTsPool := newValidatingPool(t,
 		func() *mimirpb.TimeSeries {
 			return &mimirpb.TimeSeries{}
@@ -131,8 +100,6 @@ func validatingPools(t *testing.T, tsSliceCap, protobufCap, snappyCap int) (*poo
 		validatingProtobufPool.validateUsage()
 		validatingSnappyPool.validateUsage()
 		validatingRequestPool.validateUsage()
-		validatingBytesReaderPool.validateUsage()
-		validatingTsByTargetsPool.validateUsage()
 		validatingTsPool.validateUsage()
 		validatingTsSlicePool.validateUsage()
 	}

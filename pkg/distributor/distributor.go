@@ -914,22 +914,22 @@ func (d *Distributor) instanceLimitsMiddleware(next push.Func) push.Func {
 func (d *Distributor) forwardSamples(ctx context.Context, userID string, ts []mimirpb.PreallocTimeseries) ([]mimirpb.PreallocTimeseries, <-chan error) {
 	forwardingErrCh := make(chan error)
 	forwardingRules := d.limits.ForwardingRules(userID)
-	if len(forwardingRules) == 0 {
+	endpoint := d.limits.ForwardingEndpoint(userID)
+	if endpoint == "" || len(forwardingRules) == 0 {
 		close(forwardingErrCh)
 		return ts, forwardingErrCh
 	}
 
-	endpoint := d.limits.ForwardingEndpoint(userID)
 	forwardingDropOlderThan := d.limits.ForwardingDropOlderThan(userID)
 
-	var forwardingDropBefore int64
+	var dropSamplesBeforeTimestamp int64
 	if forwardingDropOlderThan > 0 {
-		forwardingDropBefore = time.Now().Add(-forwardingDropOlderThan).UnixMilli()
+		dropSamplesBeforeTimestamp = time.Now().Add(-forwardingDropOlderThan).UnixMilli()
 	}
 
 	// Reassign req.Timeseries because the forwarder creates a new slice which has been filtered down.
 	// The cleanup func will cleanup the new slice, it's the forwarders responsibility to return the old one to the pool.
-	ts, forwardingErrCh = d.forwarder.Forward(ctx, endpoint, forwardingDropBefore, forwardingRules, ts)
+	ts, forwardingErrCh = d.forwarder.Forward(ctx, endpoint, dropSamplesBeforeTimestamp, forwardingRules, ts)
 
 	return ts, forwardingErrCh
 }
