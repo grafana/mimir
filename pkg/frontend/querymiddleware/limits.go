@@ -114,7 +114,7 @@ func (l limitsMiddleware) Do(ctx context.Context, r Request) (Response, error) {
 		if r.GetStart() < minStartTime {
 			// Replace the start time in the request.
 			level.Debug(log).Log(
-				"msg", "the start time of the query has been manipulated because of the 'max query lookback' or 'block retention period' setting",
+				"msg", "the start time of the query has been manipulated because of the 'max query lookback' or 'blocks retention period' setting",
 				"original", util.FormatTimeMillis(r.GetStart()),
 				"updated", util.FormatTimeMillis(minStartTime),
 				"maxQueryLookback", maxQueryLookback,
