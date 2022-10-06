@@ -3271,7 +3271,7 @@
           "kind": "field",
           "name": "compactor_blocks_retention_period",
           "required": false,
-          "desc": "Delete blocks containing samples older than the specified retention period. 0 to disable.",
+          "desc": "Delete blocks containing samples older than the specified retention period. Also used by query-frontend to avoid querying beyond the retention period. 0 to disable.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "compactor.blocks-retention-period",

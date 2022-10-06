@@ -7,7 +7,6 @@ package querymiddleware
 
 import (
 	"context"
-	util_math "github.com/grafana/mimir/pkg/util/math"
 	"net/http"
 	"sync"
 	"time"
@@ -23,6 +22,7 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/util"
+	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
