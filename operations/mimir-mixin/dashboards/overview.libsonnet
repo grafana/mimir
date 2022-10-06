@@ -186,7 +186,7 @@ local filename = 'mimir-overview.json';
       )
       .addPanel(
         $.panel('Rule evaluations / sec') +
-        $.queryPanel(
+        $.successFailureCustomPanel(
           [
             $.queries.ruler.evaluations.successPerSecond,
             $.queries.ruler.evaluations.failurePerSecond,

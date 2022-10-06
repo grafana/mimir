@@ -38,16 +38,13 @@ local filename = 'mimir-alertmanager.json';
       $.row('Alerts received')
       .addPanel(
         $.panel('APS') +
-        $.queryPanel(
-          [
-            |||
-              sum(%s_job:cortex_alertmanager_alerts_received_total:rate5m{%s})
-              -
-              sum(%s_job:cortex_alertmanager_alerts_invalid_total:rate5m{%s})
-            ||| % [$._config.per_cluster_label, $.jobMatcher($._config.job_names.alertmanager), $._config.per_cluster_label, $.jobMatcher($._config.job_names.alertmanager)],
-            'sum(%s_job:cortex_alertmanager_alerts_invalid_total:rate5m{%s})' % [$._config.per_cluster_label, $.jobMatcher($._config.job_names.alertmanager)],
-          ],
-          ['success', 'failed']
+        $.successFailurePanel(
+          |||
+            sum(%s_job:cortex_alertmanager_alerts_received_total:rate5m{%s})
+            -
+            sum(%s_job:cortex_alertmanager_alerts_invalid_total:rate5m{%s})
+          ||| % [$._config.per_cluster_label, $.jobMatcher($._config.job_names.alertmanager), $._config.per_cluster_label, $.jobMatcher($._config.job_names.alertmanager)],
+          'sum(%s_job:cortex_alertmanager_alerts_invalid_total:rate5m{%s})' % [$._config.per_cluster_label, $.jobMatcher($._config.job_names.alertmanager)],
         )
       )
     )
@@ -55,12 +52,9 @@ local filename = 'mimir-alertmanager.json';
       $.row('Alert notifications')
       .addPanel(
         $.panel('NPS') +
-        $.queryPanel(
-          [
-            $.queries.alertmanager.notifications.successPerSecond,
-            $.queries.alertmanager.notifications.failurePerSecond,
-          ],
-          ['success', 'failed']
+        $.successFailurePanel(
+          $.queries.alertmanager.notifications.successPerSecond,
+          $.queries.alertmanager.notifications.failurePerSecond,
         )
       )
       .addPanel(
@@ -131,16 +125,13 @@ local filename = 'mimir-alertmanager.json';
       $.row('Tenant configuration sync')
       .addPanel(
         $.panel('Syncs/sec') +
-        $.queryPanel(
-          [
-            |||
-              sum(rate(cortex_alertmanager_sync_configs_total{%s}[$__rate_interval]))
-              -
-              sum(rate(cortex_alertmanager_sync_configs_failed_total{%s}[$__rate_interval]))
-            ||| % [$.jobMatcher($._config.job_names.alertmanager), $.jobMatcher($._config.job_names.alertmanager)],
-            'sum(rate(cortex_alertmanager_sync_configs_failed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.alertmanager),
-          ],
-          ['success', 'failed']
+        $.successFailurePanel(
+          |||
+            sum(rate(cortex_alertmanager_sync_configs_total{%s}[$__rate_interval]))
+            -
+            sum(rate(cortex_alertmanager_sync_configs_failed_total{%s}[$__rate_interval]))
+          ||| % [$.jobMatcher($._config.job_names.alertmanager), $.jobMatcher($._config.job_names.alertmanager)],
+          'sum(rate(cortex_alertmanager_sync_configs_failed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.alertmanager),
         )
       )
       .addPanel(
@@ -187,16 +178,13 @@ local filename = 'mimir-alertmanager.json';
       )
       .addPanel(
         $.panel('Fetch state from other alertmanagers /sec') +
-        $.queryPanel(
-          [
-            |||
-              sum(rate(cortex_alertmanager_state_fetch_replica_state_total{%s}[$__rate_interval]))
-              -
-              sum(rate(cortex_alertmanager_state_fetch_replica_state_failed_total{%s}[$__rate_interval]))
-            ||| % [$.jobMatcher($._config.job_names.alertmanager), $.jobMatcher($._config.job_names.alertmanager)],
-            'sum(rate(cortex_alertmanager_state_fetch_replica_state_failed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.alertmanager),
-          ],
-          ['success', 'failed']
+        $.successFailurePanel(
+          |||
+            sum(rate(cortex_alertmanager_state_fetch_replica_state_total{%s}[$__rate_interval]))
+            -
+            sum(rate(cortex_alertmanager_state_fetch_replica_state_failed_total{%s}[$__rate_interval]))
+          ||| % [$.jobMatcher($._config.job_names.alertmanager), $.jobMatcher($._config.job_names.alertmanager)],
+          'sum(rate(cortex_alertmanager_state_fetch_replica_state_failed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.alertmanager),
         ) + {
           targets: [
             target {
@@ -211,44 +199,35 @@ local filename = 'mimir-alertmanager.json';
       $.row('Sharding runtime state sync')
       .addPanel(
         $.panel('Replicate state to other alertmanagers /sec') +
-        $.queryPanel(
-          [
-            |||
-              sum(%s_job:cortex_alertmanager_state_replication_total:rate5m{%s})
-              -
-              sum(%s_job:cortex_alertmanager_state_replication_failed_total:rate5m{%s})
-            ||| % [$._config.per_cluster_label, $.jobMatcher($._config.job_names.alertmanager), $._config.per_cluster_label, $.jobMatcher($._config.job_names.alertmanager)],
-            'sum(%s_job:cortex_alertmanager_state_replication_failed_total:rate5m{%s})' % [$._config.per_cluster_label, $.jobMatcher($._config.job_names.alertmanager)],
-          ],
-          ['success', 'failed']
+        $.successFailurePanel(
+          |||
+            sum(%s_job:cortex_alertmanager_state_replication_total:rate5m{%s})
+            -
+            sum(%s_job:cortex_alertmanager_state_replication_failed_total:rate5m{%s})
+          ||| % [$._config.per_cluster_label, $.jobMatcher($._config.job_names.alertmanager), $._config.per_cluster_label, $.jobMatcher($._config.job_names.alertmanager)],
+          'sum(%s_job:cortex_alertmanager_state_replication_failed_total:rate5m{%s})' % [$._config.per_cluster_label, $.jobMatcher($._config.job_names.alertmanager)],
         )
       )
       .addPanel(
         $.panel('Merge state from other alertmanagers /sec') +
-        $.queryPanel(
-          [
-            |||
-              sum(%s_job:cortex_alertmanager_partial_state_merges_total:rate5m{%s})
-              -
-              sum(%s_job:cortex_alertmanager_partial_state_merges_failed_total:rate5m{%s})
-            ||| % [$._config.per_cluster_label, $.jobMatcher($._config.job_names.alertmanager), $._config.per_cluster_label, $.jobMatcher($._config.job_names.alertmanager)],
-            'sum(%s_job:cortex_alertmanager_partial_state_merges_failed_total:rate5m{%s})' % [$._config.per_cluster_label, $.jobMatcher($._config.job_names.alertmanager)],
-          ],
-          ['success', 'failed']
+        $.successFailurePanel(
+          |||
+            sum(%s_job:cortex_alertmanager_partial_state_merges_total:rate5m{%s})
+            -
+            sum(%s_job:cortex_alertmanager_partial_state_merges_failed_total:rate5m{%s})
+          ||| % [$._config.per_cluster_label, $.jobMatcher($._config.job_names.alertmanager), $._config.per_cluster_label, $.jobMatcher($._config.job_names.alertmanager)],
+          'sum(%s_job:cortex_alertmanager_partial_state_merges_failed_total:rate5m{%s})' % [$._config.per_cluster_label, $.jobMatcher($._config.job_names.alertmanager)],
         )
       )
       .addPanel(
         $.panel('Persist state to remote storage /sec') +
-        $.queryPanel(
-          [
-            |||
-              sum(rate(cortex_alertmanager_state_persist_total{%s}[$__rate_interval]))
-              -
-              sum(rate(cortex_alertmanager_state_persist_failed_total{%s}[$__rate_interval]))
-            ||| % [$.jobMatcher($._config.job_names.alertmanager), $.jobMatcher($._config.job_names.alertmanager)],
-            'sum(rate(cortex_alertmanager_state_persist_failed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.alertmanager),
-          ],
-          ['success', 'failed']
+        $.successFailurePanel(
+          |||
+            sum(rate(cortex_alertmanager_state_persist_total{%s}[$__rate_interval]))
+            -
+            sum(rate(cortex_alertmanager_state_persist_failed_total{%s}[$__rate_interval]))
+          ||| % [$.jobMatcher($._config.job_names.alertmanager), $.jobMatcher($._config.job_names.alertmanager)],
+          'sum(rate(cortex_alertmanager_state_persist_failed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.alertmanager),
         )
       )
     ),

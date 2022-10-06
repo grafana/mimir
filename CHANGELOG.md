@@ -104,6 +104,7 @@
 * [ENHANCEMENT] Dashboards: Include rate of label and series queries in "Reads" dashboard. #3065 #3074
 * [ENHANCEMENT] Dashboards: Fix legend showing on per-pod panels. #2944
 * [ENHANCEMENT] Dashboards: Use the "req/s" unit on panels showing the requests rate. #3118
+* [ENHANCEMENT] Dashboards: Use a consistent color across dashboards for the error rate. #3154
 
 ### Jsonnet
 
