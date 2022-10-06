@@ -116,6 +116,8 @@
 
   querier_deployment+: if !$._config.memberlist_ring_enabled then {} else gossipLabel,
 
+  ruler_querier_deployment+: if !$._config.memberlist_ring_enabled || !$._config.ruler_remote_evaluation_enabled then {} else gossipLabel,
+
   ruler_deployment+: if !$._config.memberlist_ring_enabled || !$._config.ruler_enabled then {} else gossipLabel,
 
   query_scheduler_deployment+: if !querySchedulerMemberlistEnabled then {} else gossipLabel,

@@ -105,6 +105,7 @@
 
 * [FEATURE] Added support for query-scheduler ring-based service discovery. #3128
 * [ENHANCEMENT] Querier autoscaling is now slower on scale downs: scale down 10% every 1m instead of 100%. #2962
+* [BUGFIX] Memberlist: `gossip_member_label` is now set for ruler-queriers. #3141
 
 ### Mimirtool
 
