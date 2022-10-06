@@ -144,6 +144,9 @@ type Distributor struct {
 	exemplarValidationMetrics *validation.ExemplarValidationMetrics
 	metadataValidationMetrics *validation.MetadataValidationMetrics
 
+	// Temporary metric not intended to merge into main.
+	ingesterIngestLatency prometheus.Histogram
+
 	PushWithMiddlewares push.Func
 }
 
@@ -355,6 +358,14 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		sampleValidationMetrics:   validation.NewSampleValidationMetrics(reg),
 		exemplarValidationMetrics: validation.NewExemplarValidationMetrics(reg),
 		metadataValidationMetrics: validation.NewMetadataValidationMetrics(reg),
+
+		// Temporary metric not intended to merge into main.
+		ingesterIngestLatency: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Namespace: "cortex",
+			Name:      "distributor_ingest_latency_in_ingesters_seconds",
+			Help:      "Ingester ingest latency as observed by Distributor.",
+			Buckets:   []float64{.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10, 20, 30, 60},
+		}),
 	}
 
 	promauto.With(reg).NewGauge(prometheus.GaugeOpts{
@@ -1162,7 +1173,11 @@ func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, time
 		Metadata:   metadata,
 		Source:     source,
 	}
+
+	pushStart := time.Now()
 	_, err = c.Push(ctx, &req)
+	d.ingesterIngestLatency.Observe(float64(time.Since(pushStart)) / float64(time.Second))
+
 	return errors.Wrap(err, "failed to push to ingester")
 }
 
