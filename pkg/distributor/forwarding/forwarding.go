@@ -213,58 +213,62 @@ func (f *forwarder) worker() {
 // The slice of time series which gets passed into this function must not be returned to the pool by the caller, the
 // returned slice of time series must be returned to the pool by the caller once it is done using it.
 //
-// If endpoint is not empty, it is used instead of any rule-specific endpoints.
+// Endpoint must be non-empty.
 //
 // The return values are:
 //   - A slice of time series which should be sent to the ingesters, based on the given rule set.
 //     The Forward() method does not send the time series to the ingesters itself, it expects the caller to do that.
 //   - A chan of errors which resulted from forwarding the time series, the chan gets closed when all forwarding requests have completed.
 func (f *forwarder) Forward(ctx context.Context, endpoint string, dontForwardBefore int64, rules validation.ForwardingRules, in []mimirpb.PreallocTimeseries) ([]mimirpb.PreallocTimeseries, chan error) {
-	if !f.cfg.Enabled {
+	if !f.cfg.Enabled || endpoint == "" {
 		errCh := make(chan error)
 		close(errCh)
 		return in, errCh
 	}
 
 	spanlog, ctx := spanlogger.NewWithLogger(ctx, f.log, "forwarder.Forward")
-	// spanlog is finished from inside goroutine spawned later in this function.
+	finishSpanlogInDefer := true
+	defer func() {
+		if finishSpanlogInDefer {
+			spanlog.Finish()
+		}
+	}()
 
-	toIngest, tsByTargets, err := f.splitByTargets(endpoint, dontForwardBefore, in, rules)
-	defer f.pools.putTsByTargets(tsByTargets)
-	errCh := make(chan error, len(tsByTargets)+1)
+	toIngest, toForward, counts, err := f.splitToIngestedAndForwardedTimeseries(in, rules, dontForwardBefore)
+	errCh := make(chan error, 2) // 1 for result of forwarding, 1 for possible error
 	if err != nil {
 		errCh <- err
 	}
 
-	var requestWg sync.WaitGroup
-	requestWg.Add(len(tsByTargets))
-	for endpoint, ts := range tsByTargets {
-		f.submitForwardingRequest(ctx, endpoint, ts, &requestWg, errCh)
-	}
+	if len(toForward) > 0 {
+		var requestWg sync.WaitGroup
+		requestWg.Add(1)
 
-	go func() {
-		// Waiting for the requestWg in a go routine allows Forward() to return early, that way the call site can
-		// continue doing whatever it needs to do and read the returned errCh later to wait for the forwarding requests
-		// to complete and handle potential errors yielded by the forwarding requests.
-		requestWg.Wait()
+		f.submitForwardingRequest(ctx, endpoint, toForward, counts, &requestWg, errCh)
+
+		// keep span running until goroutine finishes.
+		finishSpanlogInDefer = false
+		go func() {
+			// Waiting for the requestWg in a go routine allows Forward() to return early, that way the call site can
+			// continue doing whatever it needs to do and read the returned errCh later to wait for the forwarding requests
+			// to complete and handle potential errors yielded by the forwarding requests.
+			requestWg.Wait()
+			close(errCh)
+			spanlog.Finish()
+		}()
+	} else {
+		f.pools.putTsSlice(toForward)
 		close(errCh)
-		spanlog.Finish()
-	}()
+	}
 
 	return toIngest, errCh
 }
 
-type tsWithSampleCount struct {
-	ts     []mimirpb.PreallocTimeseries
-	counts TimeseriesCounts
-}
-
-type tsByTargets map[string]tsWithSampleCount
-
-// copyToTarget copies the given time series into the given target and does the necessary accounting.
+// filterAndCopyTimeseries makes a copy of the timeseries with old samples filtered out. Original timeseries is unchanged.
 // The time series is deep-copied, so the passed in time series can be returned to the pool without affecting the copy.
-func (t tsByTargets) copyToTarget(target string, dontForwardBefore int64, ts mimirpb.PreallocTimeseries, pool *pools) (err error) {
-	if dontForwardBefore > 0 {
+func (f *forwarder) filterAndCopyTimeseries(ts mimirpb.PreallocTimeseries, dontForwardBeforeTimestamp int64) (mimirpb.PreallocTimeseries, error) {
+	var err error
+	if dontForwardBeforeTimestamp > 0 {
 		samplesUnfiltered := ts.TimeSeries.Samples
 		defer func() {
 			// Before this function returns we need to restore the original sample slice because
@@ -272,34 +276,21 @@ func (t tsByTargets) copyToTarget(target string, dontForwardBefore int64, ts mim
 			ts.TimeSeries.Samples = samplesUnfiltered
 		}()
 
-		samplesFiltered := dropSamplesBefore(samplesUnfiltered, dontForwardBefore)
+		samplesFiltered := dropSamplesBefore(samplesUnfiltered, dontForwardBeforeTimestamp)
 		if len(samplesFiltered) < len(samplesUnfiltered) {
 			err = errSamplesTooOld
-		}
-
-		if len(samplesFiltered) == 0 {
-			return
 		}
 
 		// Prepare ts for deep copy. Original samples will be set back via defer function.
 		ts.TimeSeries.Samples = samplesFiltered
 	}
 
-	tsByTarget, ok := t[target]
-	if !ok {
-		tsByTarget.ts = pool.getTsSlice()
+	result := mimirpb.PreallocTimeseries{TimeSeries: f.pools.getTs()}
+	if len(ts.TimeSeries.Samples) > 0 {
+		// We don't keep exemplars when forwarding.
+		result = mimirpb.DeepCopyTimeseries(result, ts, false)
 	}
-
-	tsIdx := len(tsByTarget.ts)
-	tsByTarget.ts = append(tsByTarget.ts, mimirpb.PreallocTimeseries{TimeSeries: pool.getTs()})
-
-	// We don't keep exemplars when forwarding.
-	tsByTarget.ts[tsIdx] = mimirpb.DeepCopyTimeseries(tsByTarget.ts[tsIdx], ts, false)
-	tsByTarget.counts.count(tsByTarget.ts[tsIdx])
-
-	t[target] = tsByTarget
-
-	return
+	return result, err
 }
 
 type TimeseriesCounts struct {
@@ -312,27 +303,39 @@ func (t *TimeseriesCounts) count(ts mimirpb.PreallocTimeseries) {
 	t.ExemplarCount += len(ts.TimeSeries.Exemplars)
 }
 
-// splitByTargets takes a slice of time series and a set of forwarding rules, then it divides the given time series by
-// the target to which each of them should be forwarded according to the forwarding rules.
-// It returns the following values:
+// splitToIngestedAndForwardedTimeseries takes a slice of time series and a set of forwarding rules, then it divides
+// the given time series into series that should be ingested and series that should be forwarded.
 //
-// - A slice of time series to ingest into the ingesters.
-// - A map of slices of time series which is keyed by the target to which they should be forwarded.
-// - An error if any occurred.
-func (f *forwarder) splitByTargets(targetEndpoint string, dontForwardBefore int64, tsSliceIn []mimirpb.PreallocTimeseries, rules validation.ForwardingRules) ([]mimirpb.PreallocTimeseries, tsByTargets, error) {
+// It returns the following values:
+//   - A slice of time series to ingest into the ingesters.
+//   - A slice of time series to forward
+//   - TimeseriesCounts
+//   - An error if any occurred.
+func (f *forwarder) splitToIngestedAndForwardedTimeseries(tsSliceIn []mimirpb.PreallocTimeseries, rules validation.ForwardingRules, dontForwardBefore int64) (tsToIngest, tsToForward []mimirpb.PreallocTimeseries, _ TimeseriesCounts, _ error) {
 	// This functions copies all the entries of tsSliceIn into new slices so tsSliceIn can be recycled,
 	// we adjust the length of the slice to 0 to prevent that the contained *mimirpb.TimeSeries objects that have been
 	// reassigned (not deep copied) get returned while they are still referred to by another slice.
 	defer f.pools.putTsSlice(tsSliceIn[:0])
 
+	tsToIngest = f.pools.getTsSlice()
+	tsToForward = f.pools.getTsSlice()
+	counts := TimeseriesCounts{}
 	var err error
-	tsToIngest := f.pools.getTsSlice()
-	tsByTargets := f.pools.getTsByTargets()
+
 	for _, ts := range tsSliceIn {
-		forwardingTarget, ingest := findTargetForLabels(targetEndpoint, ts.Labels, rules)
-		if forwardingTarget != "" {
-			if errCopy := tsByTargets.copyToTarget(forwardingTarget, dontForwardBefore, ts, f.pools); errCopy != nil {
-				err = errCopy
+		forward, ingest := shouldForwardAndIngest(ts.Labels, rules)
+		if forward {
+			tsCopy, filterErr := f.filterAndCopyTimeseries(ts, dontForwardBefore)
+			if filterErr != nil {
+				err = filterErr
+			}
+
+			if len(tsCopy.TimeSeries.Samples) > 0 {
+				tsToForward = append(tsToForward, tsCopy)
+				counts.count(tsCopy)
+			} else {
+				// We're not going to use this timeseries, put it back to pool.
+				f.pools.putTs(tsCopy.TimeSeries)
 			}
 		}
 
@@ -341,14 +344,13 @@ func (f *forwarder) splitByTargets(targetEndpoint string, dontForwardBefore int6
 			// the distributor will return them to the pool when it is done sending them to the ingesters.
 			tsToIngest = append(tsToIngest, ts)
 		} else {
-
 			// This ts won't be returned to the distributor because it should not be ingested according to the rules,
 			// so we have to return it to the pool now to prevent that its reference gets lost.
 			f.pools.putTs(ts.TimeSeries)
 		}
 	}
 
-	return tsToIngest, tsByTargets, err
+	return tsToIngest, tsToForward, counts, err
 }
 
 // dropSamplesBefore filters a given slice of samples to only contain samples that have timestamps newer or equal to
@@ -363,25 +365,21 @@ func dropSamplesBefore(samples []mimirpb.Sample, ts int64) []mimirpb.Sample {
 	return samples
 }
 
-func findTargetForLabels(targetEndpoint string, labels []mimirpb.LabelAdapter, rules validation.ForwardingRules) (string, bool) {
+func shouldForwardAndIngest(labels []mimirpb.LabelAdapter, rules validation.ForwardingRules) (forward, ingest bool) {
 	metric, err := extract.UnsafeMetricNameFromLabelAdapters(labels)
 	if err != nil {
 		// Can't check whether a timeseries should be forwarded if it has no metric name.
 		// Ingest it and don't forward it.
-		return "", true
+		return false, true
 	}
 
 	rule, ok := rules[metric]
 	if !ok {
 		// There is no forwarding rule for this metric, ingest it and don't forward it.
-		return "", true
+		return false, true
 	}
 
-	// Target endpoint is set, use it.
-	if targetEndpoint != "" {
-		return targetEndpoint, rule.Ingest
-	}
-	return rule.Endpoint, rule.Ingest
+	return true, rule.Ingest
 }
 
 type request struct {
@@ -397,7 +395,8 @@ type request struct {
 	requestWg       *sync.WaitGroup
 
 	endpoint string
-	ts       tsWithSampleCount
+	ts       []mimirpb.PreallocTimeseries
+	counts   TimeseriesCounts
 
 	requests  prometheus.Counter
 	errors    *prometheus.CounterVec
@@ -408,7 +407,7 @@ type request struct {
 
 // submitForwardingRequest launches a new forwarding request and sends it to a worker via a channel.
 // It might block if all the workers are busy.
-func (f *forwarder) submitForwardingRequest(ctx context.Context, endpoint string, ts tsWithSampleCount, requestWg *sync.WaitGroup, errCh chan error) {
+func (f *forwarder) submitForwardingRequest(ctx context.Context, endpoint string, ts []mimirpb.PreallocTimeseries, counts TimeseriesCounts, requestWg *sync.WaitGroup, errCh chan error) {
 	req := f.pools.getReq()
 
 	req.pools = f.pools
@@ -424,6 +423,7 @@ func (f *forwarder) submitForwardingRequest(ctx context.Context, endpoint string
 	// Target endpoint and TimeSeries to forward.
 	req.endpoint = endpoint
 	req.ts = ts
+	req.counts = counts
 
 	// Metrics.
 	req.requests = f.requestsTotal
@@ -453,7 +453,7 @@ func (r *request) do() {
 	}()
 
 	protoBuf := proto.NewBuffer(protoBufBytes)
-	err := protoBuf.Marshal(&mimirpb.WriteRequest{Timeseries: r.ts.ts})
+	err := protoBuf.Marshal(&mimirpb.WriteRequest{Timeseries: r.ts})
 	if err != nil {
 		r.handleError(ctx, http.StatusBadRequest, errors.Wrap(err, "failed to marshal write request for forwarding"))
 		return
@@ -494,8 +494,8 @@ func (r *request) doHTTP(ctx context.Context, body []byte) error {
 	httpReq.Header.Set("Idempotency-Key", "true")
 
 	r.requests.Inc()
-	r.samples.Add(float64(r.ts.counts.SampleCount))
-	r.exemplars.Add(float64(r.ts.counts.ExemplarCount))
+	r.samples.Add(float64(r.counts.SampleCount))
+	r.exemplars.Add(float64(r.counts.ExemplarCount))
 
 	beforeTs := time.Now()
 	httpResp, err := r.client.Do(httpReq)
@@ -568,8 +568,8 @@ func (r *request) doHTTPGrpc(ctx context.Context, body []byte) error {
 	h := c.(httpgrpc.HTTPClient)
 
 	r.requests.Inc()
-	r.samples.Add(float64(r.ts.counts.SampleCount))
-	r.exemplars.Add(float64(r.ts.counts.ExemplarCount))
+	r.samples.Add(float64(r.counts.SampleCount))
+	r.exemplars.Add(float64(r.counts.ExemplarCount))
 
 	beforeTs := time.Now()
 	resp, err := h.Handle(ctx, req)
@@ -604,8 +604,7 @@ func (r *request) handleError(ctx context.Context, status int, err error) {
 }
 
 func (r *request) cleanup() {
-	ts := r.ts.ts
-	r.pools.putTsSlice(ts)
+	r.pools.putTsSlice(r.ts)
 
 	// Ensure that we don't modify a request property after returning it to the pool by calling .Done() on the wg.
 	wg := r.requestWg

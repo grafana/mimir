@@ -58,6 +58,10 @@ type ingesterMetrics struct {
 	discardedSamplesNewValueForTimestamp *prometheus.CounterVec
 	discardedSamplesPerUserSeriesLimit   *prometheus.CounterVec
 	discardedSamplesPerMetricSeriesLimit *prometheus.CounterVec
+
+	// Discarded metadata
+	discardedMetadataPerUserMetadataLimit   *prometheus.CounterVec
+	discardedMetadataPerMetricMetadataLimit *prometheus.CounterVec
 }
 
 func newIngesterMetrics(
@@ -274,6 +278,9 @@ func newIngesterMetrics(
 		discardedSamplesNewValueForTimestamp: validation.DiscardedSamplesCounter(r, newValueForTimestamp),
 		discardedSamplesPerUserSeriesLimit:   validation.DiscardedSamplesCounter(r, perUserSeriesLimit),
 		discardedSamplesPerMetricSeriesLimit: validation.DiscardedSamplesCounter(r, perMetricSeriesLimit),
+
+		discardedMetadataPerUserMetadataLimit:   validation.DiscardedMetadataCounter(r, perUserMetadataLimit),
+		discardedMetadataPerMetricMetadataLimit: validation.DiscardedMetadataCounter(r, perMetricMetadataLimit),
 	}
 
 	return m
@@ -291,6 +298,9 @@ func (m *ingesterMetrics) deletePerUserMetrics(userID string) {
 	m.discardedSamplesNewValueForTimestamp.DeleteLabelValues(userID)
 	m.discardedSamplesPerUserSeriesLimit.DeleteLabelValues(userID)
 	m.discardedSamplesPerMetricSeriesLimit.DeleteLabelValues(userID)
+
+	m.discardedMetadataPerUserMetadataLimit.DeleteLabelValues(userID)
+	m.discardedMetadataPerMetricMetadataLimit.DeleteLabelValues(userID)
 }
 
 func (m *ingesterMetrics) deletePerUserCustomTrackerMetrics(userID string, customTrackerMetrics []string) {

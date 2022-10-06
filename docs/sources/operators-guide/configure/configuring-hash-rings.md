@@ -77,6 +77,29 @@ If you run multiple Mimir processes on the same node or the port `7946` is not a
 - `-memberlist.advertise-addr`: IP address to advertise to other Mimir replicas. The other replicas will connect to this IP to talk to the instance.
 - `-memberlist.advertise-port`: Port to advertise to other Mimir replicas. The other replicas will connect to this port to talk to the instance.
 
+#### Cluster label verification
+
+By default, a Grafana Mimir memberlist joins a cluster with any instance that is discovered when hosts are resolved, based on the `-memberlist.join` CLI flag setting or the memberlist’s YAML configuration option.
+If, for any reason, the discovered addresses include instances of other Grafana Mimir clusters, or instances of other distributed systems that use a memberlist, Grafana Mimir joins these unrelated clusters together.
+
+To avoid this, Grafana Mimir provides an additional type of validation known as cluster label verification.
+
+When cluster label verification is enabled, all memberlist internal traffic is prefixed with the configured cluster label.
+Any traffic that does not match that prefix is discarded, to ensure that only the replicas that have the same configured label can connect to each other.
+
+#### Migrate to using cluster label verification
+
+**Migrate a Grafana Mimir cluster to use cluster label verification:**
+
+1. Disable cluster label verification on all cluster instances via the `-memberlist.cluster-label-verification-disabled=true` CLI flag (or its respective YAML configuration option).
+2. **Wait** until the configuration change has been rolled out to all Grafana Mimir instances.
+3. On each cluster, define a label that is unique to that cluster and the same on all instances via the `-memberlist.cluster-label` CLI flag (or its respective YAML configuration option).
+   This label must be the same on all instances that are part of the same cluster.
+   For example, if you run a Grafana Mimir cluster in a dedicated namespace, then set the cluster label to the name of the namespace.
+4. **Wait** until the configuration change has been rolled out to all Grafana Mimir instances.
+5. Enable cluster label verification on all clusters instances by removing the configuration option `-memberlist.cluster-label-verification-disabled=true`.
+6. **Wait** until the configuration change has been rolled out to all Grafana Mimir instances.
+
 ### Fine tuning memberlist changes propagation latency
 
 The `cortex_ring_oldest_member_timestamp` metric can be used to measure the propagation of hash ring changes.

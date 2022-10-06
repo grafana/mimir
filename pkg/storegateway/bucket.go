@@ -574,7 +574,11 @@ func blockSeries(
 	logger log.Logger,
 ) (storepb.SeriesSet, *queryStats, error) {
 	span, ctx := tracing.StartSpan(ctx, "blockSeries()")
-	span.LogKV("block ID", indexr.block.meta.ULID.String())
+	span.LogKV(
+		"block ID", indexr.block.meta.ULID.String(),
+		"block min time", time.UnixMilli(indexr.block.meta.MinTime).UTC().Format(time.RFC3339Nano),
+		"block max time", time.UnixMilli(indexr.block.meta.MinTime).UTC().Format(time.RFC3339Nano),
+	)
 	defer span.Finish()
 
 	if skipChunks {
@@ -892,6 +896,15 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 	s.mtx.RLock()
 
 	blocks := s.blockSet.getFor(req.MinTime, req.MaxTime, req.MaxResolutionWindow, reqBlockMatchers)
+
+	spanLogger := spanlogger.FromContext(srv.Context(), s.logger)
+	level.Debug(spanLogger).Log(
+		"msg", "BucketStore.Series",
+		"request min time", time.UnixMilli(req.MinTime).UTC().Format(time.RFC3339Nano),
+		"request max time", time.UnixMilli(req.MaxTime).UTC().Format(time.RFC3339Nano),
+		"request matchers", storepb.PromMatchersToString(matchers...),
+		"request shard selector", maybeNilShard(shardSelector).LabelValue(),
+	)
 
 	if s.debugLogging {
 		debugFoundBlockSetOverview(s.logger, req.MinTime, req.MaxTime, req.MaxResolutionWindow, blocks)

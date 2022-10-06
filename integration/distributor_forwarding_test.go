@@ -45,64 +45,48 @@ func TestDistributorForwarding(t *testing.T) {
 	const metric1 = "metric1"
 	const metric2 = "metric2"
 	const metric3 = "metric3"
-	const target1 = "target1"
-	const target2 = "target2"
-	const target3 = "target3"
 
 	type testCase struct {
-		name                             string
-		forwardingRules                  validation.ForwardingRules
-		submitMetrics                    []string
-		expectedIngestedMetrics          []string
-		expectedForwardedMetricsByTarget map[string][]string
+		name                     string
+		forwardingRules          validation.ForwardingRules
+		submitMetrics            []string
+		expectedIngestedMetrics  []string
+		expectedForwardedMetrics []string
 	}
 
 	tests := []testCase{
 		{
-			name: "forward a metric to one forwarding target, do not ingest it",
+			name: "forward a metric, do not ingest it",
 			forwardingRules: validation.ForwardingRules{
-				metric1: validation.ForwardingRule{Endpoint: target1, Ingest: false},
+				metric1: validation.ForwardingRule{Ingest: false},
 			},
-			submitMetrics:           []string{metric1},
-			expectedIngestedMetrics: []string{},
-			expectedForwardedMetricsByTarget: map[string][]string{
-				target1: {metric1},
-			},
+			submitMetrics:            []string{metric1},
+			expectedIngestedMetrics:  []string{},
+			expectedForwardedMetrics: []string{metric1},
 		}, {
-			name: "forward samples to two forwarding targets and also ingest them",
+			name: "forward two metrics and also ingest them",
 			forwardingRules: validation.ForwardingRules{
-				metric1: validation.ForwardingRule{Endpoint: target1, Ingest: true},
-				metric2: validation.ForwardingRule{Endpoint: target2, Ingest: true},
+				metric1: validation.ForwardingRule{Ingest: true},
+				metric2: validation.ForwardingRule{Ingest: true},
 			},
-			submitMetrics:           []string{metric1, metric2},
-			expectedIngestedMetrics: []string{metric1, metric2},
-			expectedForwardedMetricsByTarget: map[string][]string{
-				target1: {metric1},
-				target2: {metric2},
-			},
+			submitMetrics:            []string{metric1, metric2},
+			expectedIngestedMetrics:  []string{metric1, metric2},
+			expectedForwardedMetrics: []string{metric1, metric2},
 		}, {
-			name: "submit three metrics, forward two of them to two targets, ingest two others",
+			name: "submit three metrics, forward two, ingest two",
 			forwardingRules: validation.ForwardingRules{
-				metric2: validation.ForwardingRule{Endpoint: target2, Ingest: true},
-				metric3: validation.ForwardingRule{Endpoint: target3, Ingest: false},
+				metric2: validation.ForwardingRule{Ingest: true},
+				metric3: validation.ForwardingRule{Ingest: false},
 			},
-			submitMetrics:           []string{metric1, metric2, metric3},
-			expectedIngestedMetrics: []string{metric1, metric2},
-			expectedForwardedMetricsByTarget: map[string][]string{
-				target1: {},
-				target2: {metric2},
-				target3: {metric3},
-			},
+			submitMetrics:            []string{metric1, metric2, metric3},
+			expectedIngestedMetrics:  []string{metric1, metric2},
+			expectedForwardedMetrics: []string{metric2, metric3},
 		}, {
-			name:                    "forward nothing and ingest everything",
-			forwardingRules:         validation.ForwardingRules{},
-			submitMetrics:           []string{metric1, metric2, metric3},
-			expectedIngestedMetrics: []string{metric1, metric2, metric3},
-			expectedForwardedMetricsByTarget: map[string][]string{
-				target1: {},
-				target2: {},
-				target3: {},
-			},
+			name:                     "forward nothing and ingest everything",
+			forwardingRules:          validation.ForwardingRules{},
+			submitMetrics:            []string{metric1, metric2, metric3},
+			expectedIngestedMetrics:  []string{metric1, metric2, metric3},
+			expectedForwardedMetrics: []string{},
 		},
 	}
 
@@ -113,34 +97,23 @@ func TestDistributorForwarding(t *testing.T) {
 			defer s.Close()
 
 			// Start one Prometheus for each unique forwarding target.
-			prometheusByTarget := make(map[string]*e2e.HTTPService)
-			promClientByTarget := make(map[string]promv1.API)
-			for target := range tc.expectedForwardedMetricsByTarget {
-				if _, ok := prometheusByTarget[target]; ok {
-					continue
-				}
+			prometheus := runPrometheusWithRemoteWrite("prometheus")
+			require.NoError(t, s.StartAndWaitReady(prometheus))
 
-				prometheus := runPrometheusWithRemoteWrite(target)
-				require.NoError(t, s.StartAndWaitReady(prometheus))
-				prometheusByTarget[target] = prometheus
+			// Create client to query Prometheus.
+			promAPIClient, err := promapi.NewClient(promapi.Config{Address: "http://" + prometheus.HTTPEndpoint()})
+			require.NoError(t, err)
 
-				// Create client to query Prometheus.
-				promAPIClient, err := promapi.NewClient(promapi.Config{Address: "http://" + prometheus.HTTPEndpoint()})
-				require.NoError(t, err)
-				promClientByTarget[target] = promv1.NewAPI(promAPIClient)
-			}
+			promClient := promv1.NewAPI(promAPIClient)
 
-			// Replace the targets in the forwarding rules with the URLs of the Prometheus servers we created.
-			for ruleIdx, rule := range tc.forwardingRules {
-				rule.Endpoint = "http://" + prometheusByTarget[rule.Endpoint].NetworkHTTPEndpoint() + "/api/v1/write"
-				tc.forwardingRules[ruleIdx] = rule
-			}
+			url := "http://" + prometheus.NetworkHTTPEndpoint() + "/api/v1/write"
 
 			// Marshal the forwarding rules into yaml and write them into the runtime config file.
 			rules, err := yaml.Marshal(map[string]interface{}{
 				"overrides": map[string]interface{}{
 					tenant: map[string]interface{}{
-						"forwarding_rules": tc.forwardingRules,
+						"forwarding_endpoint": url,
+						"forwarding_rules":    tc.forwardingRules,
 					},
 				},
 			})
@@ -190,40 +163,37 @@ func TestDistributorForwarding(t *testing.T) {
 			for _, checkMetric := range tc.submitMetrics {
 
 				// Check forwarding targets for the metric.
-				for target, expectedMetrics := range tc.expectedForwardedMetricsByTarget {
-					promClient := promClientByTarget[target]
-					expected := false
-					for _, expectedMetric := range expectedMetrics {
-						if checkMetric == expectedMetric {
-							expected = true
-							break
-						}
-					}
-
-					val, _, err := promClient.Query(context.Background(), checkMetric, now)
-					require.NoError(t, err)
-
-					if expected {
-						// The metric "checkMetric" should be present on this forwarding target.
-						require.Contains(t, val.String(), checkMetric)
-					} else {
-						// The metric "checkMetric" should not be present on this forwarding target.
-						require.NotContains(t, val.String(), checkMetric)
+				expectedInPrometheus := false
+				for _, expectedMetric := range tc.expectedForwardedMetrics {
+					if checkMetric == expectedMetric {
+						expectedInPrometheus = true
+						break
 					}
 				}
 
+				promVal, _, err := promClient.Query(context.Background(), checkMetric, now)
+				require.NoError(t, err)
+
+				if expectedInPrometheus {
+					// The metric "checkMetric" should be present on this forwarding target.
+					require.Contains(t, promVal.String(), checkMetric)
+				} else {
+					// The metric "checkMetric" should not be present on this forwarding target.
+					require.NotContains(t, promVal.String(), checkMetric)
+				}
+
 				// Check Mimir for the metric.
-				expected := false
+				expectedInMimir := false
 				for _, expectedMetric := range tc.expectedIngestedMetrics {
 					if checkMetric == expectedMetric {
-						expected = true
+						expectedInMimir = true
 						break
 					}
 				}
 
 				val, err := mimirClient.Query(checkMetric, now)
 				require.NoError(t, err)
-				if expected {
+				if expectedInMimir {
 					// The metric "checkMetric" is expected to have been ingested by Mimir.
 					require.Contains(t, val.String(), checkMetric)
 				} else {
