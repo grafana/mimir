@@ -92,9 +92,9 @@ func (l limitsMiddleware) Do(ctx context.Context, r Request) (Response, error) {
 	}
 
 	// Clamp the time range based on the max query lookback and block retention period.
-	blockRetentionPeriod := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, l.CompactorBlocksRetentionPeriod)
+	blocksRetentionPeriod := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, l.CompactorBlocksRetentionPeriod)
 	maxQueryLookback := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, l.MaxQueryLookback)
-	maxLookback := util_math.MinDuration(blockRetentionPeriod, maxQueryLookback)
+	maxLookback := util_math.MinDuration(blocksRetentionPeriod, maxQueryLookback)
 	if maxLookback > 0 {
 		minStartTime := util.TimeToMillis(time.Now().Add(-maxLookback))
 
@@ -102,11 +102,11 @@ func (l limitsMiddleware) Do(ctx context.Context, r Request) (Response, error) {
 			// The request is fully outside the allowed range, so we can return an
 			// empty response.
 			level.Debug(log).Log(
-				"msg", "skipping the execution of the query because its time range is before the 'max query lookback' setting",
+				"msg", "skipping the execution of the query because its time range is before the 'max query lookback' or 'blocks retention period' setting",
 				"reqStart", util.FormatTimeMillis(r.GetStart()),
 				"redEnd", util.FormatTimeMillis(r.GetEnd()),
 				"maxQueryLookback", maxQueryLookback,
-				"minBlockRetentionPeriod", blockRetentionPeriod)
+				"blocksRetentionPeriod", blocksRetentionPeriod)
 
 			return newEmptyPrometheusResponse(), nil
 		}
@@ -114,9 +114,11 @@ func (l limitsMiddleware) Do(ctx context.Context, r Request) (Response, error) {
 		if r.GetStart() < minStartTime {
 			// Replace the start time in the request.
 			level.Debug(log).Log(
-				"msg", "the start time of the query has been manipulated because of the 'max query lookback' setting",
+				"msg", "the start time of the query has been manipulated because of the 'max query lookback' or 'block retention period' setting",
 				"original", util.FormatTimeMillis(r.GetStart()),
-				"updated", util.FormatTimeMillis(minStartTime))
+				"updated", util.FormatTimeMillis(minStartTime),
+				"maxQueryLookback", maxQueryLookback,
+				"blocksRetentionPeriod", blocksRetentionPeriod)
 
 			r = r.WithStartEnd(minStartTime, r.GetEnd())
 		}
