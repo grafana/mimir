@@ -266,7 +266,7 @@ func (f *forwarder) Forward(ctx context.Context, endpoint string, dontForwardBef
 
 // filterAndCopyTimeseries makes a copy of the timeseries with old samples filtered out. Original timeseries is unchanged.
 // The time series is deep-copied, so the passed in time series can be returned to the pool without affecting the copy.
-func filterAndCopyTimeseries(ts mimirpb.PreallocTimeseries, dontForwardBeforeTimestamp int64, pool *pools) (mimirpb.PreallocTimeseries, error) {
+func (f *forwarder) filterAndCopyTimeseries(ts mimirpb.PreallocTimeseries, dontForwardBeforeTimestamp int64) (mimirpb.PreallocTimeseries, error) {
 	var err error
 	if dontForwardBeforeTimestamp > 0 {
 		samplesUnfiltered := ts.TimeSeries.Samples
@@ -285,7 +285,7 @@ func filterAndCopyTimeseries(ts mimirpb.PreallocTimeseries, dontForwardBeforeTim
 		ts.TimeSeries.Samples = samplesFiltered
 	}
 
-	result := mimirpb.PreallocTimeseries{TimeSeries: pool.getTs()}
+	result := mimirpb.PreallocTimeseries{TimeSeries: f.pools.getTs()}
 	if len(ts.TimeSeries.Samples) > 0 {
 		// We don't keep exemplars when forwarding.
 		result = mimirpb.DeepCopyTimeseries(result, ts, false)
@@ -325,7 +325,7 @@ func (f *forwarder) splitToIngestedAndForwardedTimeseries(tsSliceIn []mimirpb.Pr
 	for _, ts := range tsSliceIn {
 		forward, ingest := shouldForwardAndIngest(ts.Labels, rules)
 		if forward {
-			tsCopy, filterErr := filterAndCopyTimeseries(ts, dontForwardBefore, f.pools)
+			tsCopy, filterErr := f.filterAndCopyTimeseries(ts, dontForwardBefore)
 			if filterErr != nil {
 				err = filterErr
 			}
