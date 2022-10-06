@@ -4,6 +4,8 @@
 
 ### Grafana Mimir
 
+* [BUGFIX] Flusher: Add `Overrides` as a dependency to prevent panics when starting with `-target=flusher`. #3151
+
 ### Mixin
 
 ### Jsonnet
