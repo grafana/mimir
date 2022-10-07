@@ -3,11 +3,11 @@
 
 set -e
 
-# Ensure "gh" tool is installed.
-if ! command -v gh &> /dev/null; then
-    echo "The 'gh' command cannot be find. Please install it: https://cli.github.com"
-    exit
-fi
+# Load common lib.
+CURR_DIR="$(dirname "$0")"
+. "${CURR_DIR}/common.sh"
+
+check_required_tools
 
 # Config
 NOTIFICATION_LABEL="release/notified-changelog-cut"
