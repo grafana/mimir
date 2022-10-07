@@ -1053,12 +1053,12 @@ This alert fires when the number of ring members does not match the number of ru
 
 How it **works**:
 
-- The alert compares each component (currently just `ingester`) against the number of `up` instances for the component in that namespace/cluster.
+- The alert compares each component (currently just `ingester`) against the number of `up` instances for the component in that cluster.
 
 How to **investigate**:
 
 - Check the [hash ring web page]({{< relref "../reference-http-api/index.md#ingesters-ring-status" >}}) for the component for which the alert has fired, and look for unexpected instances in the list.
-- Consider manually forgetting unexpected instances in `Unhealthy` state.
+- Consider manually forgetting unexpected instances in an `Unhealthy` state.
 - Ensure all the registered instances in the ring belong to the Mimir cluster for which the alert fired.
 
 ### RolloutOperatorNotReconciling
