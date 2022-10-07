@@ -61,7 +61,7 @@ mimir:
   structuredConfig:
     limits:
       accept_ha_samples: true
-      # The following two configs must match with external_labels config in Prometheus
+      # The following two configurations must match those of external_labels in Prometheus
       # The config values below are the default and can be removed if you don't want to override to a new value
       ha_cluster_label: cluster
       ha_replica_label: __replica__
