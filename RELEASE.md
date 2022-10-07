@@ -103,7 +103,7 @@ To publish a release candidate:
 
 1. Do not change the release branch directly; make a PR to the release-X.Y branch with VERSION and any CHANGELOG changes.
    1. Ensure the `VERSION` file has the `-rc.X` suffix (`X` starting from `0`).
-1. After merging your PR to the release branch, `git tag` the new release (see [How to tag a release](#how-to-tag-a-release)) from the release branch.
+1. After merging your PR to the release branch, run `./tools/release/tag-release.sh` to tag the new release from the release branch (see [How to tag a release](#how-to-tag-a-release)).
 1. Wait until the CI pipeline succeeds (once a tag is created, the release process through GitHub Actions will be triggered for this tag).
 1. Merge the release branch `release-x.y` into `main` (see [Merging release branch into main](#merging-release-branch-into-main))
 1. Create a pre-release on GitHub. See [Creating release on GitHub](#creating-release-on-github).
@@ -141,7 +141,7 @@ To publish a stable release:
    1. Run `make mixin-screenshots`
    1. Review all updated screenshots and ensure no sensitive data is disclosed
    1. Open a PR
-1. After merging your PR to the release branch, `git tag` the new release (see [How to tag a release](#how-to-tag-a-release)) from the release branch.
+1. After merging your PR to the release branch, run `./tools/release/tag-release.sh` to tag the new release from the release branch (see [How to tag a release](#how-to-tag-a-release)).
 1. Wait until the CI pipeline succeeds (once a tag is created, the release process through GitHub Actions will be triggered for this tag)
 1. Create a release on GitHub.
    1. See [Creating release on GitHub](#creating-release-on-github) again.
@@ -160,19 +160,19 @@ To publish a stable release:
 
 ### How to tag a release
 
+**How to tag a release:**
+
+```bash
+git checkout release-<version>
+./tools/release/tag-release.sh
+```
+
+**How it works:**
+
 Every release is tagged with `mimir-<major>.<minor>.<patch>`, e.g. `mimir-2.0.0`.
 Note the `mimir-` prefix, which we use to specifically avoid the Go compiler recognizing them as version tags.
 We don't want compatibility with Go's module versioning scheme, since it would require us to keep each major version's
 code in its own directory beneath the repository root, f.ex. v2/.
-We also don't provide any API backwards compatibility guarantees within a single major version.
-
-You can do the tagging on the commandline:
-
-```bash
-$ version=$(< VERSION)
-$ git tag -s "mimir-${version}" -m "v${version}"
-$ git push origin "mimir-${version}"
-```
 
 ### Cherry-picking changes into release branch
 
