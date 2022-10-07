@@ -92,6 +92,7 @@
 * [BUGFIX] Ruler: fix panic when ruler.external_url is explicitly set to an empty string ("") in YAML. #2915
 * [BUGFIX] Alertmanager: Fix support for the Telegram API URL in the global settings. #3097
 * [BUGFIX] Alertmanager: Fix parsing of label matchers without label value in the API used to retrieve alerts. #3097
+* [BUGFIX] Ruler: Fix not restoring alert state for rule groups when other ruler replicas shut down. #3156
 
 ### Mixin
 
