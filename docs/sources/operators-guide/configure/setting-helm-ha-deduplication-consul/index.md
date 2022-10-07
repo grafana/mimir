@@ -46,7 +46,7 @@ Reload or restart Prometheus or Grafana Agent after updating the configuration.
 To get and install Consul on Kubernetes, use the [Consul helm chart](https://github.com/hashicorp/consul-k8s/tree/main/charts/consul).
 Make a note of the Consul endpoint, because you will need it later to configure Mimir.
 
-## Setup Mimir HA config
+## Configure Mimir high availability
 
 You can set Mimir HA deduplication configuration in global level or tenant level.
 
