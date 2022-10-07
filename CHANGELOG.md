@@ -1,19 +1,5 @@
 # Changelog
 
-## Grafana Mimir - main / unreleased
-
-### Grafana Mimir
-
-### Mixin
-
-### Jsonnet
-
-### Mimirtool
-
-### Documentation
-
-### Tools
-
 ## 2.4.0-rc.0
 
 ### Grafana Mimir
