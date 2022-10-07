@@ -501,8 +501,8 @@ github.com/grafana/gomemcache v0.0.0-20220812141943-44b6cde200bb h1:CqfZjjd8iK3G
 github.com/grafana/gomemcache v0.0.0-20220812141943-44b6cde200bb/go.mod h1:H0wQNHz2YrLsuXOZozoeDmnHXkNCRmMW0gwFWDfEZDA=
 github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe h1:yIXAAbLswn7VNWBIvM71O2QsgfgW9fRXZNR0DXe6pDU=
 github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe/go.mod h1:MS2lj3INKhZjWNqd3N0m3J+Jxf3DAOnAH9VT3Sh9MUE=
-github.com/grafana/mimir-prometheus v0.0.0-20220822125643-4aa6d561a134 h1:dS8d6jRiMci9dIXENCktYdPcRXee8VRBqK+omnquQf8=
-github.com/grafana/mimir-prometheus v0.0.0-20220822125643-4aa6d561a134/go.mod h1:y+uCk/SdO73g9bMtjCZbejjmcjY4X+xLuKN7cBor5UE=
+github.com/grafana/mimir-prometheus v0.0.0-20221007080257-ecc05616ec93 h1:T7yfdY+GBpfgluHUwAbykdDQ6AFJlznOHP9FZRyZy8g=
+github.com/grafana/mimir-prometheus v0.0.0-20221007080257-ecc05616ec93/go.mod h1:y+uCk/SdO73g9bMtjCZbejjmcjY4X+xLuKN7cBor5UE=
 github.com/grafana/regexp v0.0.0-20221005093135-b4c2bcb0a4b6 h1:A3dhViTeFDSQcGOXuUi6ukCQSMyDtDISBp2z6OOo2YM=
 github.com/grafana/regexp v0.0.0-20221005093135-b4c2bcb0a4b6/go.mod h1:M5qHK+eWfAv8VR/265dIuEpL3fNfeC21tXXp9itM24A=
 github.com/grafana/thanos v0.19.1-0.20220713162227-7bde03e4afa9 h1:K8dScpAih2+GKowaVQ8RIqPRetesNenu2TK71iLDiXM=
