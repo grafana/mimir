@@ -50,7 +50,7 @@ Make a note of the Consul endpoint, because you will need it later to configure 
 
 You can set Mimir HA deduplication configuration in global level or tenant level.
 
-### HA Deduplication Global
+### Globally configure HA deduplication
 
 You need a Mimir setup installed by Helm. Add the following configuration to your `custom.yaml` to configure HA
 deduplication globally.
