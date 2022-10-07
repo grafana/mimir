@@ -78,7 +78,8 @@
             // https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#algorithm-details
             threshold: trigger.threshold,
           },
-        } for trigger in config.triggers
+        }
+        for trigger in config.triggers
       ],
     },
   },
