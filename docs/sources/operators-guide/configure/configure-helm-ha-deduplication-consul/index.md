@@ -57,7 +57,6 @@ Before you begin, make sure that Mimir was installed using the Helm chart.
 1. Add the following configuration to your `custom.yaml` file:
 
 ```yaml
-# other configurations above
 mimir:
   structuredConfig:
     limits:
