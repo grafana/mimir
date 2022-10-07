@@ -1031,7 +1031,7 @@
                         "expr": "sum by(metric) (rate(keda_metrics_adapter_scaler_errors[$__rate_interval])) +\non(metric) group_left\nlabel_replace(\n    kube_horizontalpodautoscaler_spec_target_metric{cluster=~\"$cluster\", namespace=~\"$namespace\", horizontalpodautoscaler=\"keda-hpa-ruler-querier\"}\n    * 0, \"metric\", \"$1\", \"metric_name\", \"(.+)\"\n)\n",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "Failures per second",
+                        "legendFormat": "{{metric}} failures",
                         "legendLink": null,
                         "step": 10
                      }

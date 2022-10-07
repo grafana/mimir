@@ -351,7 +351,10 @@
             "height": "250px",
             "panels": [
                {
-                  "aliasColors": { },
+                  "aliasColors": {
+                     "failed": "#E24D42",
+                     "success": "#7EB26D"
+                  },
                   "bars": false,
                   "dashLength": 10,
                   "dashes": false,
@@ -1279,7 +1282,9 @@
                   ]
                },
                {
-                  "aliasColors": { },
+                  "aliasColors": {
+                     "Failures / sec": "#E24D42"
+                  },
                   "bars": false,
                   "dashLength": 10,
                   "dashes": false,
@@ -1313,7 +1318,7 @@
                         "expr": "sum(rate(cortex_querier_blocks_consistency_checks_failed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend))\"}[$__rate_interval])) / sum(rate(cortex_querier_blocks_consistency_checks_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend))\"}[$__rate_interval]))",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "Failure Rate",
+                        "legendFormat": "Failures / sec",
                         "legendLink": null,
                         "step": 10
                      }

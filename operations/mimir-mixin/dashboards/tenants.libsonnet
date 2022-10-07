@@ -523,7 +523,7 @@ local filename = 'mimir-tenants.json';
       .addPanel(
         local title = 'Failed notifications rate';
         $.panel(title) +
-        $.queryPanel(
+        $.failurePanel(
           'sum(rate(cortex_prometheus_notifications_errors_total{%(job)s, user="$user"}[$__rate_interval]))'
           % { job: $.jobMatcher($._config.job_names.ruler) },
           'rate',

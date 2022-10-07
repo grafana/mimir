@@ -463,7 +463,10 @@
             "height": "250px",
             "panels": [
                {
-                  "aliasColors": { },
+                  "aliasColors": {
+                     "failed": "#E24D42",
+                     "successful": "#7EB26D"
+                  },
                   "bars": false,
                   "dashLength": 10,
                   "dashes": false,
@@ -497,7 +500,7 @@
                         "expr": "sum(cluster_job:cortex_alertmanager_alerts_received_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend))\"})\n-\nsum(cluster_job:cortex_alertmanager_alerts_invalid_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend))\"})\n",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "success",
+                        "legendFormat": "successful",
                         "legendLink": null,
                         "step": 10
                      },
@@ -559,7 +562,10 @@
             "height": "250px",
             "panels": [
                {
-                  "aliasColors": { },
+                  "aliasColors": {
+                     "failed": "#E24D42",
+                     "successful": "#7EB26D"
+                  },
                   "bars": false,
                   "dashLength": 10,
                   "dashes": false,
@@ -593,7 +599,7 @@
                         "expr": "sum(cluster_job_integration:cortex_alertmanager_notifications_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend))\"})\n-\nsum(cluster_job_integration:cortex_alertmanager_notifications_failed_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend))\"})\n",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "success",
+                        "legendFormat": "successful",
                         "legendLink": null,
                         "step": 10
                      },
@@ -1887,7 +1893,10 @@
             "height": "250px",
             "panels": [
                {
-                  "aliasColors": { },
+                  "aliasColors": {
+                     "failed": "#E24D42",
+                     "successful": "#7EB26D"
+                  },
                   "bars": false,
                   "dashLength": 10,
                   "dashes": false,
@@ -1921,7 +1930,7 @@
                         "expr": "sum(rate(cortex_alertmanager_sync_configs_total{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend))\"}[$__rate_interval]))\n-\nsum(rate(cortex_alertmanager_sync_configs_failed_total{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend))\"}[$__rate_interval]))\n",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "success",
+                        "legendFormat": "successful",
                         "legendLink": null,
                         "step": 10
                      },
@@ -2307,7 +2316,10 @@
                   ]
                },
                {
-                  "aliasColors": { },
+                  "aliasColors": {
+                     "failed": "#E24D42",
+                     "successful": "#7EB26D"
+                  },
                   "bars": false,
                   "dashLength": 10,
                   "dashes": false,
@@ -2342,7 +2354,7 @@
                         "format": "time_series",
                         "interval": "1m",
                         "intervalFactor": 2,
-                        "legendFormat": "success",
+                        "legendFormat": "successful",
                         "legendLink": null,
                         "step": 10
                      },
@@ -2405,7 +2417,10 @@
             "height": "250px",
             "panels": [
                {
-                  "aliasColors": { },
+                  "aliasColors": {
+                     "failed": "#E24D42",
+                     "successful": "#7EB26D"
+                  },
                   "bars": false,
                   "dashLength": 10,
                   "dashes": false,
@@ -2439,7 +2454,7 @@
                         "expr": "sum(cluster_job:cortex_alertmanager_state_replication_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend))\"})\n-\nsum(cluster_job:cortex_alertmanager_state_replication_failed_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend))\"})\n",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "success",
+                        "legendFormat": "successful",
                         "legendLink": null,
                         "step": 10
                      },
@@ -2489,7 +2504,10 @@
                   ]
                },
                {
-                  "aliasColors": { },
+                  "aliasColors": {
+                     "failed": "#E24D42",
+                     "successful": "#7EB26D"
+                  },
                   "bars": false,
                   "dashLength": 10,
                   "dashes": false,
@@ -2523,7 +2541,7 @@
                         "expr": "sum(cluster_job:cortex_alertmanager_partial_state_merges_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend))\"})\n-\nsum(cluster_job:cortex_alertmanager_partial_state_merges_failed_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend))\"})\n",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "success",
+                        "legendFormat": "successful",
                         "legendLink": null,
                         "step": 10
                      },
@@ -2573,7 +2591,10 @@
                   ]
                },
                {
-                  "aliasColors": { },
+                  "aliasColors": {
+                     "failed": "#E24D42",
+                     "successful": "#7EB26D"
+                  },
                   "bars": false,
                   "dashLength": 10,
                   "dashes": false,
@@ -2607,7 +2628,7 @@
                         "expr": "sum(rate(cortex_alertmanager_state_persist_total{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend))\"}[$__rate_interval]))\n-\nsum(rate(cortex_alertmanager_state_persist_failed_total{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend))\"}[$__rate_interval]))\n",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "success",
+                        "legendFormat": "successful",
                         "legendLink": null,
                         "step": 10
                      },

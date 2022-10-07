@@ -764,7 +764,10 @@
                   "type": "text"
                },
                {
-                  "aliasColors": { },
+                  "aliasColors": {
+                     "failed": "#E24D42",
+                     "success": "#7EB26D"
+                  },
                   "bars": false,
                   "dashLength": 10,
                   "dashes": false,

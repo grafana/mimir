@@ -39,7 +39,7 @@ local filename = 'mimir-ruler.json';
       $.row('Rule evaluations global')
       .addPanel(
         $.panel('Evaluations per second') +
-        $.queryPanel(
+        $.successFailureCustomPanel(
           [
             $.queries.ruler.evaluations.successPerSecond,
             $.queries.ruler.evaluations.failurePerSecond,
@@ -116,7 +116,7 @@ local filename = 'mimir-ruler.json';
       )
       .addPanel(
         $.panel('Consistency checks failed') +
-        $.queryPanel('sum(rate(cortex_querier_blocks_consistency_checks_failed_total{%s}[$__rate_interval])) / sum(rate(cortex_querier_blocks_consistency_checks_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)], 'Failure Rate') +
+        $.failurePanel('sum(rate(cortex_querier_blocks_consistency_checks_failed_total{%s}[$__rate_interval])) / sum(rate(cortex_querier_blocks_consistency_checks_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)], 'Failures / sec') +
         { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) },
       )
     )

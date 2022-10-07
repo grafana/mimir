@@ -255,7 +255,7 @@ local filename = 'mimir-reads.json';
         $.panel(title) +
         $.queryPanel(
           $.filterKedaMetricByHPA('sum by(metric) (rate(keda_metrics_adapter_scaler_errors[$__rate_interval]))', $._config.autoscaling.querier_hpa_name),
-          'Failures per second'
+          '{{metric}} failures'
         ) +
         $.panelDescription(
           title,

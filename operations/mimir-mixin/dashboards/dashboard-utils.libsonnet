@@ -200,12 +200,33 @@ local utils = import 'mixin-utils/utils.libsonnet';
       ],
     },
 
+  // Creates a panel like queryPanel() but if the legend contains only 1 entry,
+  // than it configures the series alias color to the one used to display failures.
+  failurePanel(queries, legends, legendLink=null)::
+    $.queryPanel(queries, legends, legendLink) + {
+      // Set the failure color only if there's just 1 legend and it doesn't contain any placeholder.
+      aliasColors: if (std.type(legends) == 'string' && std.length(std.findSubstr('{', legends[0])) == 0) then {
+        [legends]: errorColor,
+      } else {},
+    },
+
   successFailurePanel(successMetric, failureMetric)::
     $.queryPanel([successMetric, failureMetric], ['successful', 'failed']) +
     {
       aliasColors: {
         successful: successColor,
         failed: errorColor,
+      },
+    },
+
+  // successFailureCustomPanel is like successFailurePanel() but allows to customize the legends
+  // and have additional queries. The success and failure queries MUST be the first and second
+  // queries respectively.
+  successFailureCustomPanel(queries, legends)::
+    $.queryPanel(queries, legends) + {
+      aliasColors: {
+        [legends[0]]: successColor,
+        [legends[1]]: errorColor,
       },
     },
 

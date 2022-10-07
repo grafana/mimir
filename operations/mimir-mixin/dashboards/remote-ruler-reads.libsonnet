@@ -148,7 +148,7 @@ local filename = 'mimir-remote-ruler-reads.json';
         $.panel(title) +
         $.queryPanel(
           $.filterKedaMetricByHPA('sum by(metric) (rate(keda_metrics_adapter_scaler_errors[$__rate_interval]))', $._config.autoscaling.ruler_querier_hpa_name),
-          'Failures per second'
+          '{{metric}} failures'
         ) +
         $.panelDescription(
           title,
