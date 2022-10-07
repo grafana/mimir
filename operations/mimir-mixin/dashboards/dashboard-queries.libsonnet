@@ -15,6 +15,7 @@
       writeGRPCRoutesRegex: $.queries.write_grpc_routes_regex,
       readHTTPRoutesRegex: $.queries.read_http_routes_regex,
       perClusterLabel: $._config.per_cluster_label,
+      groupPrefixJobs: $._config.group_prefix_jobs,
     },
 
     write_http_routes_regex: 'api_(v1|prom)_push|otlp_v1_metrics',
@@ -22,8 +23,8 @@
     read_http_routes_regex: '(prometheus|api_prom)_api_v1_.+',
 
     gateway: {
-      writeRequestsPerSecond: 'cortex_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher($._config.job_names.gateway), $.queries.write_http_routes_regex],
-      readRequestsPerSecond: 'cortex_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher($._config.job_names.gateway), $.queries.read_http_routes_regex],
+      writeRequestsPerSecond: 'cortex_request_duration_seconds_count{%(gatewayMatcher)s, route=~"%(writeHTTPRoutesRegex)s"}' % variables,
+      readRequestsPerSecond: 'cortex_request_duration_seconds_count{%(gatewayMatcher)s, route=~"%(readHTTPRoutesRegex)s"}' % variables,
 
       // Write failures rate as percentage of total requests.
       writeFailuresRate: |||
@@ -51,17 +52,9 @@
     },
 
     distributor: {
-      writeRequestsPerSecond: 'cortex_request_duration_seconds_count{%s, route=~"%s|%s"}' % [$.jobMatcher($._config.job_names.distributor), $.queries.write_grpc_routes_regex, $.queries.write_http_routes_regex],
-      samplesPerSecond: 'sum(%(group_prefix_jobs)s:cortex_distributor_received_samples:rate5m{%(job)s})' % (
-        $._config {
-          job: $.jobMatcher($._config.job_names.distributor),
-        }
-      ),
-      exemplarsPerSecond: 'sum(%(group_prefix_jobs)s:cortex_distributor_received_exemplars:rate5m{%(job)s})' % (
-        $._config {
-          job: $.jobMatcher($._config.job_names.distributor),
-        }
-      ),
+      writeRequestsPerSecond: 'cortex_request_duration_seconds_count{%(distributorMatcher)s, route=~"%(writeGRPCRoutesRegex)s|%(writeHTTPRoutesRegex)s"}' % variables,
+      samplesPerSecond: 'sum(%(groupPrefixJobs)s:cortex_distributor_received_samples:rate5m{%(distributorMatcher)s})' % variables,
+      exemplarsPerSecond: 'sum(%(groupPrefixJobs)s:cortex_distributor_received_exemplars:rate5m{%(distributorMatcher)s})' % variables,
 
       // Write failures rate as percentage of total requests.
       writeFailuresRate: |||
@@ -78,12 +71,12 @@
     },
 
     query_frontend: {
-      readRequestsPerSecond: 'cortex_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher($._config.job_names.query_frontend), $.queries.read_http_routes_regex],
-      instantQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%s,route=~"(prometheus|api_prom)_api_v1_query"}[$__rate_interval]))' % $.jobMatcher($._config.job_names.query_frontend),
-      rangeQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%s,route=~"(prometheus|api_prom)_api_v1_query_range"}[$__rate_interval]))' % $.jobMatcher($._config.job_names.query_frontend),
-      labelQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%s,route=~"(prometheus|api_prom)_api_v1_label.*"}[$__rate_interval]))' % $.jobMatcher($._config.job_names.query_frontend),
-      seriesQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%s,route=~"(prometheus|api_prom)_api_v1_series"}[$__rate_interval]))' % $.jobMatcher($._config.job_names.query_frontend),
-      otherQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%s,route=~"(prometheus|api_prom)_api_v1_.*",route!~".*(query|query_range|label.*|series)"}[$__rate_interval]))' % $.jobMatcher($._config.job_names.query_frontend),
+      readRequestsPerSecond: 'cortex_request_duration_seconds_count{%(queryFrontendMatcher)s, route=~"%(readHTTPRoutesRegex)s"}' % variables,
+      instantQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_query"}[$__rate_interval]))' % variables,
+      rangeQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_query_range"}[$__rate_interval]))' % variables,
+      labelQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_label.*"}[$__rate_interval]))' % variables,
+      seriesQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_series"}[$__rate_interval]))' % variables,
+      otherQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_.*",route!~".*(query|query_range|label.*|series)"}[$__rate_interval]))' % variables,
 
       // Read failures rate as percentage of total requests.
       readFailuresRate: |||
@@ -102,18 +95,18 @@
       evaluations: {
         successPerSecond:
           |||
-            sum(rate(cortex_prometheus_rule_evaluations_total{%s}[$__rate_interval]))
+            sum(rate(cortex_prometheus_rule_evaluations_total{%(rulerMatcher)s}[$__rate_interval]))
             -
-            sum(rate(cortex_prometheus_rule_evaluation_failures_total{%s}[$__rate_interval]))
-          ||| % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)],
-        failurePerSecond: 'sum(rate(cortex_prometheus_rule_evaluation_failures_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ruler),
-        missedIterationsPerSecond: 'sum(rate(cortex_prometheus_rule_group_iterations_missed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ruler),
+            sum(rate(cortex_prometheus_rule_evaluation_failures_total{%(rulerMatcher)s}[$__rate_interval]))
+          ||| % variables,
+        failurePerSecond: 'sum(rate(cortex_prometheus_rule_evaluation_failures_total{%(rulerMatcher)s}[$__rate_interval]))' % variables,
+        missedIterationsPerSecond: 'sum(rate(cortex_prometheus_rule_group_iterations_missed_total{%(rulerMatcher)s}[$__rate_interval]))' % variables,
         latency:
           |||
-            sum (rate(cortex_prometheus_rule_evaluation_duration_seconds_sum{%s}[$__rate_interval]))
+            sum (rate(cortex_prometheus_rule_evaluation_duration_seconds_sum{%(rulerMatcher)s}[$__rate_interval]))
               /
-            sum (rate(cortex_prometheus_rule_evaluation_duration_seconds_count{%s}[$__rate_interval]))
-          ||| % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)],
+            sum (rate(cortex_prometheus_rule_evaluation_duration_seconds_count{%(rulerMatcher)s}[$__rate_interval]))
+          ||| % variables,
 
         // Rule evaluation failures rate as percentage of total requests.
         failuresRate: |||
