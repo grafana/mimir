@@ -290,8 +290,8 @@ local fixTargetsForTransformations(panel, refIds) = panel {
         { yaxes: $.yaxes('ops') },
       )
       .addPanel(
+        $.panel('Blocks deletions / sec') +
         $.successFailurePanel(
-          'Blocks deletions / sec',
           // The cortex_compactor_blocks_cleaned_total tracks the number of successfully
           // deleted blocks.
           |||
@@ -304,14 +304,16 @@ local fixTargetsForTransformations(panel, refIds) = panel {
           ||| % {
             job: $.jobMatcher($._config.job_names.compactor),
           },
-        ) + { yaxes: $.yaxes('ops') }
+        ) +
+        $.stack +
+        { yaxes: $.yaxes('ops') }
       )
     )
     .addRow(
       $.row('Metadata sync')
       .addPanel(
+        $.panel('Metadata syncs / sec') +
         $.successFailurePanel(
-          'Metadata syncs / sec',
           // The cortex_compactor_meta_syncs_total metric is incremented each time a per-tenant
           // metadata sync is triggered.
           |||
@@ -326,7 +328,9 @@ local fixTargetsForTransformations(panel, refIds) = panel {
           ||| % {
             job: $.jobMatcher($._config.job_names.compactor),
           },
-        ) + { yaxes: $.yaxes('ops') }
+        ) +
+        $.stack +
+        { yaxes: $.yaxes('ops') }
       )
       .addPanel(
         $.panel('Metadata sync duration') +

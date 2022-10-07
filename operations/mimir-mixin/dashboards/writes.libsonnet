@@ -166,8 +166,8 @@ local filename = 'mimir-writes.json';
     .addRow(
       $.row('Ingester - shipper')
       .addPanel(
+        $.panel('Uploaded blocks / sec') +
         $.successFailurePanel(
-          'Uploaded blocks / sec',
           'sum(rate(cortex_ingester_shipper_uploads_total{%s}[$__rate_interval])) - sum(rate(cortex_ingester_shipper_upload_failures_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
           'sum(rate(cortex_ingester_shipper_upload_failures_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),
         ) +
@@ -177,7 +177,8 @@ local filename = 'mimir-writes.json';
             The rate of blocks being uploaded from the ingesters
             to object storage.
           |||
-        ),
+        ) +
+        $.stack,
       )
       .addPanel(
         $.panel('Upload latency') +
@@ -194,8 +195,8 @@ local filename = 'mimir-writes.json';
     .addRow(
       $.row('Ingester - TSDB head')
       .addPanel(
+        $.panel('Compactions / sec') +
         $.successFailurePanel(
-          'Compactions / sec',
           'sum(rate(cortex_ingester_tsdb_compactions_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
           'sum(rate(cortex_ingester_tsdb_compactions_failed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),
         ) +
@@ -206,7 +207,8 @@ local filename = 'mimir-writes.json';
             active time series; these blocks get periodically compacted (by default, every 2h).
             This panel shows the rate of compaction operations across all TSDBs on all ingesters.
           |||
-        ),
+        ) +
+        $.stack,
       )
       .addPanel(
         $.panel('Compactions latency') +
@@ -223,8 +225,8 @@ local filename = 'mimir-writes.json';
     .addRow(
       $.row('Ingester - TSDB write ahead log (WAL)')
       .addPanel(
+        $.panel('WAL truncations / sec') +
         $.successFailurePanel(
-          'WAL truncations / sec',
           'sum(rate(cortex_ingester_tsdb_wal_truncations_total{%s}[$__rate_interval])) - sum(rate(cortex_ingester_tsdb_wal_truncations_failed_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
           'sum(rate(cortex_ingester_tsdb_wal_truncations_failed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),
         ) +
@@ -234,11 +236,12 @@ local filename = 'mimir-writes.json';
             The WAL is truncated each time a new TSDB block is written. This panel measures the rate of
             truncations.
           |||
-        ),
+        ) +
+        $.stack,
       )
       .addPanel(
+        $.panel('Checkpoints created / sec') +
         $.successFailurePanel(
-          'Checkpoints created / sec',
           'sum(rate(cortex_ingester_tsdb_checkpoint_creations_total{%s}[$__rate_interval])) - sum(rate(cortex_ingester_tsdb_checkpoint_creations_failed_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
           'sum(rate(cortex_ingester_tsdb_checkpoint_creations_failed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),
         ) +
@@ -248,7 +251,8 @@ local filename = 'mimir-writes.json';
             Checkpoints are created as part of the WAL truncation process.
             This metric measures the rate of checkpoint creation.
           |||
-        ),
+        ) +
+        $.stack,
       )
       .addPanel(
         $.panel('WAL truncations latency (includes checkpointing)') +

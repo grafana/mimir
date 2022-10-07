@@ -200,10 +200,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
       ],
     },
 
-  successFailurePanel(title, successMetric, failureMetric)::
-    $.panel(title) +
+  successFailurePanel(successMetric, failureMetric)::
     $.queryPanel([successMetric, failureMetric], ['successful', 'failed']) +
-    $.stack + {
+    {
       aliasColors: {
         successful: successColor,
         failed: errorColor,
