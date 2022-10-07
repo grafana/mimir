@@ -1,6 +1,6 @@
 ---
 aliases:
-  - /docs/mimir/latest/operators-guide/configuring/setting-helm-ha-deduplication-consul/
+  - /docs/mimir/latest/operators-guide/configuring/configure-helm-ha-deduplication-consul/
 description: Learn how to configure Grafana Mimir Helm Chart to handle HA Prometheus server deduplication with Consul.
 menuTitle: Configure high-availability deduplication with Consul
 title: Configuring Grafana Mimir Helm Chart for high-availability deduplication with Consul
