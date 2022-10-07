@@ -16,8 +16,7 @@ the deduplication by using the Grafana Mimir helm chart deployment that uses ext
 
 You need to have a Grafana Mimir installed.
 
-Refer to [Configuring High Availability]({{< relref "../configuring-high-availability-deduplication.md" >}}) documents
-for high level description on the concept how Mimir deduplicate incoming HA samples.
+For conceptual information about how Mimir deduplicates incoming HA samples, refer to [Configure high availability]({{< relref "../configure-high-availability-deduplication.md" >}}).
 
 You also have to configure HA for Prometheus or Grafana Agent. Last, you need a KV store. In this guide you will
 use Consul. You will be guided on the setup if you haven't had one.
