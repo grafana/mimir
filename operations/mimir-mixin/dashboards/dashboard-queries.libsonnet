@@ -15,7 +15,7 @@
       writeGRPCRoutesRegex: $.queries.write_grpc_routes_regex,
       readHTTPRoutesRegex: $.queries.read_http_routes_regex,
       perClusterLabel: $._config.per_cluster_label,
-      recordingRulePrefix: $.recordingRulePrefix($.jobSelector('any')), // The job name does not matter here.
+      recordingRulePrefix: $.recordingRulePrefix($.jobSelector('any')),  // The job name does not matter here.
       groupPrefixJobs: $._config.group_prefix_jobs,
     },
 
