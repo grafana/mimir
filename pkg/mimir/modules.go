@@ -189,19 +189,34 @@ func (t *Mimir) initServer() (services.Service, error) {
 		var once sync.Once
 		serv.HTTP.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			once.Do(func() {
-				var paths []string
-				err = serv.HTTP.Walk(func(route *mux.Route, router *mux.Router, ancestors []*mux.Route) (err error) {
-					// TODO also add methods from route.GetMethods()
-					s, err := route.GetPathTemplate()
-					if err != nil {
-						level.Error(util_log.Logger).Log("handler", "list_endpoints_handler", "err", err)
-						return err
-					}
-					paths = append(paths, s)
+				var routes []*mux.Route
+				err = serv.HTTP.Walk(func(route *mux.Route, _ *mux.Router, _ []*mux.Route) error {
+					routes = append(routes, route)
 					return nil
 				})
-				sort.Strings(paths)
-				message = []byte("Available endpoints:\n" + strings.Join(paths, "\n") + "\n")
+				const routesDelim = "\n"
+				routesBuilder := strings.Builder{}
+				for _, route := range routes {
+					template, err := route.GetPathTemplate()
+					if err != nil {
+						level.Error(util_log.Logger).Log("handler", "list_endpoints_handler", "err", err)
+						continue
+					}
+					routesBuilder.WriteString(template)
+					routesBuilder.WriteString(" ")
+					routesBuilder.WriteString("[")
+					if methods, _ := route.GetMethods(); len(methods) == 0 {
+						routesBuilder.WriteString("*")
+					} else {
+						routesBuilder.WriteString(strings.Join(methods, " "))
+					}
+					routesBuilder.WriteString("]")
+					routesBuilder.WriteString(routesDelim)
+				}
+
+				routesSlice := strings.Split(routesBuilder.String(), routesDelim)
+				sort.Strings(routesSlice)
+				message = []byte(r.Method + " " + r.URL.Path + " (404) Not found\nAvailable endpoints:" + strings.Join(routesSlice, routesDelim))
 			})
 			w.WriteHeader(http.StatusNotFound)
 			_, err = w.Write(message)
