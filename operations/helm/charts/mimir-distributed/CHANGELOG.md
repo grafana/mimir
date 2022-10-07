@@ -25,8 +25,50 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+## 3.2.0
+
 * [CHANGE] Nginx: replace topology key previously used in `podAntiAffinity` (`failure-domain.beta.kubernetes.io/zone`) with a different one `topologySpreadConstraints` (`kubernetes.io/hostname`). #2722
 * [CHANGE] Use `topologySpreadConstraints` instead of `podAntiAffinity` by default. #2722
+  - **Important**: if you are not using the sizing plans (small.yaml, large.yaml, capped-small.yaml, capped-large.yaml) in production, you should reintroduce pod affinity rules for the ingester and store-gateway. This also fixes a missing label selector for the ingester.
+     Merge the following to your custom values file:
+     ```yaml
+     ingester:
+       affinity:
+         podAntiAffinity:
+           requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchExpressions:
+                    - key: target
+                      operator: In
+                      values:
+                        - ingester
+                topologyKey: 'kubernetes.io/hostname'
+              - labelSelector:
+                  matchExpressions:
+                    - key: app.kubernetes.io/component
+                      operator: In
+                      values:
+                        - ingester
+                topologyKey: 'kubernetes.io/hostname'
+     store_gateway:
+       affinity:
+         podAntiAffinity:
+           requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchExpressions:
+                    - key: target
+                      operator: In
+                      values:
+                        - store-gateway
+                topologyKey: 'kubernetes.io/hostname'
+              - labelSelector:
+                  matchExpressions:
+                    - key: app.kubernetes.io/component
+                      operator: In
+                      values:
+                        - store-gateway
+                topologyKey: 'kubernetes.io/hostname'
+     ```
 * [CHANGE] Ingresses for the GEM gateway and nginx will no longer render on Kubernetes versions <1.19. #2872
 * [FEATURE] Add support for OpenShift Routes for Nginx #2908
 * [FEATURE] Add support for `topologySpreadConstraints` to all components; add `topologySpreadConstraints` to GEM gateway, admin-api, and alertmanager, which did not have `podAntiAffinity` previously. #2722
@@ -35,7 +77,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Monitoring: Add additional flags to conditionally enable log / metric scraping. #2936
 * [ENHANCEMENT] Add podAntiAffinity to sizing plans (small.yaml, large.yaml, capped-small.yaml, capped-large.yaml). #2906
 * [ENHANCEMENT] Add ability to configure and run mimir-continuous-test. #3117
-
+* [BUGFIX] Fix wrong label selector in ingester anti affinity rules in the sizing plans. #2906
 
 ## 3.1.0
 
