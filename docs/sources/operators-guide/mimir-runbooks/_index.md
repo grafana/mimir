@@ -1078,18 +1078,6 @@ How to **investigate**:
   {name="rollout-operator",namespace="<namespace>"}
   ```
 
-### MimirRingMembersMismatch
-
-How it **works**:
-
-This alert fires when the number of ring members is not as expected. It compares each component (one of `compactor`, `distributor`, `ingester`, `ruler`, or `store-gateway`) against the number of `up` jobs for the component
-in that namespace/cluster.
-
-How to **investigate**:
-
-- Check the jsonnet for the environment matches the expected number of components. (TODO)
-- TODO
-
 ## Errors catalog
 
 Mimir has some codified error IDs that you might see in HTTP responses or logs.
