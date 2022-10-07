@@ -1,0 +1,1485 @@
+{
+      "__requires": [
+         {
+            "id": "grafana",
+            "name": "Grafana",
+            "type": "grafana",
+            "version": "8.0.0"
+         }
+      ],
+      "annotations": {
+         "list": [ ]
+      },
+      "editable": true,
+      "gnetId": null,
+      "graphTooltip": 0,
+      "hideControls": false,
+      "links": [
+         {
+            "asDropdown": true,
+            "icon": "external link",
+            "includeVars": true,
+            "keepTime": true,
+            "tags": [
+               "mimir"
+            ],
+            "targetBlank": false,
+            "title": "Mimir dashboards",
+            "type": "dashboards"
+         }
+      ],
+      "refresh": "10s",
+      "rows": [
+         {
+            "collapse": false,
+            "height": "250px",
+            "panels": [
+               {
+                  "content": "The 'Status' panel shows an overview on the cluster health over the time.\nVisit the following specific dashboards to investigate failures in a specific area:\n\n- <a target=\"_blank\" href=\"./d/8280707b8f16e7b87b840fc1cc92d4c5/mimir-writes?${__url_time_range}&${__all_variables}\">Writes</a>\n- <a target=\"_blank\" href=\"./d/e327503188913dc38ad571c647eef643/mimir-reads?${__url_time_range}&${__all_variables}\">Reads</a>\n- <a target=\"_blank\" href=\"./d/631e15d5d85afb2ca8e35d62984eeaa0/mimir-ruler?${__url_time_range}&${__all_variables}\">Rule evaluations</a>\n- <a target=\"_blank\" href=\"./d/b0d38d318bbddd80476246d4930f9e55/mimir-alertmanager?${__url_time_range}&${__all_variables}\">Alerting notifications</a>\n- <a target=\"_blank\" href=\"./d/e1324ee2a434f4158c00a9ee279d3292/mimir-object-store?${__url_time_range}&${__all_variables}\">Object storage</a>\n",
+                  "datasource": null,
+                  "description": "",
+                  "id": 1,
+                  "mode": "markdown",
+                  "span": 3,
+                  "title": "",
+                  "transparent": true,
+                  "type": "text"
+               },
+               {
+                  "fieldConfig": {
+                     "defaults": {
+                        "color": {
+                           "mode": "thresholds"
+                        },
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [
+                              {
+                                 "color": "#7EB26D",
+                                 "value": null
+                              },
+                              {
+                                 "color": "#EAB839",
+                                 "value": 0.01
+                              },
+                              {
+                                 "color": "#E24D42",
+                                 "value": 0.050000000000000003
+                              }
+                           ]
+                        }
+                     }
+                  },
+                  "id": 2,
+                  "options": {
+                     "showValue": "never"
+                  },
+                  "span": 6,
+                  "targets": [
+                     {
+                        "datasource": {
+                           "uid": "$datasource"
+                        },
+                        "exemplar": false,
+                        "expr": "(\n    # gRPC errors are not tracked as 5xx but \"error\".\n    sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\", route=~\"/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push|otlp_v1_metrics\",status_code=~\"5.*|error\"}[$__rate_interval]))\n    or\n    # Handle the case no failure has been tracked yet.\n    vector(0)\n)\n/\nsum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\", route=~\"/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push|otlp_v1_metrics\"}[$__rate_interval]))\n",
+                        "instant": false,
+                        "legendFormat": "Writes",
+                        "range": true
+                     },
+                     {
+                        "datasource": {
+                           "uid": "$datasource"
+                        },
+                        "exemplar": false,
+                        "expr": "(\n    sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\",status_code=~\"5.*\"}[$__rate_interval]))\n    or\n    # Handle the case no failure has been tracked yet.\n    vector(0)\n)\n/\nsum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"}[$__rate_interval]))\n",
+                        "instant": false,
+                        "legendFormat": "Reads",
+                        "range": true
+                     },
+                     {
+                        "datasource": {
+                           "uid": "$datasource"
+                        },
+                        "exemplar": false,
+                        "expr": "(\n  (\n      sum(rate(cortex_prometheus_rule_evaluation_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n      +\n      # Consider missed evaluations as failures.\n      sum(rate(cortex_prometheus_rule_group_iterations_missed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n  )\n  or\n  # Handle the case no failure has been tracked yet.\n  vector(0)\n)\n/\nsum(rate(cortex_prometheus_rule_evaluations_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n",
+                        "instant": false,
+                        "legendFormat": "Rule evaluations",
+                        "range": true
+                     },
+                     {
+                        "datasource": {
+                           "uid": "$datasource"
+                        },
+                        "exemplar": false,
+                        "expr": "(\n  # Failed notifications from ruler to Alertmanager (handling the case the ruler metrics are missing).\n  ((sum(rate(cortex_prometheus_notifications_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n) or vector(0))\n  +\n  # Failed notifications from Alertmanager to receivers (handling the case the alertmanager metrics are missing).\n  ((sum(cluster_job_integration:cortex_alertmanager_notifications_failed_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend.*))\"})\n) or vector(0))\n)\n/\n(\n  # Total notifications from ruler to Alertmanager (handling the case the ruler metrics are missing).\n  ((sum(rate(cortex_prometheus_notifications_sent_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n) or vector(0))\n  +\n  # Total notifications from Alertmanager to receivers (handling the case the alertmanager metrics are missing).\n  ((sum(cluster_job_integration:cortex_alertmanager_notifications_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend.*))\"})\n) or vector(0))\n)\n",
+                        "instant": false,
+                        "legendFormat": "Alerting notifications",
+                        "range": true
+                     },
+                     {
+                        "datasource": {
+                           "uid": "$datasource"
+                        },
+                        "exemplar": false,
+                        "expr": "sum(rate(thanos_objstore_bucket_operation_failures_total{cluster=~\"$cluster\", namespace=~\"$namespace\"}[$__rate_interval]))\n/\nsum(rate(thanos_objstore_bucket_operations_total{cluster=~\"$cluster\", namespace=~\"$namespace\"}[$__rate_interval]))\n",
+                        "instant": false,
+                        "legendFormat": "Object storage",
+                        "range": true
+                     }
+                  ],
+                  "title": "Status",
+                  "type": "state-timeline"
+               },
+               {
+                  "id": 3,
+                  "options": {
+                     "alertInstanceLabelFilter": "cluster=~\"$cluster\", namespace=~\"$namespace\"",
+                     "alertName": "Mimir",
+                     "dashboardAlerts": false,
+                     "maxItems": 100,
+                     "sortOrder": 3,
+                     "stateFilter": {
+                        "error": true,
+                        "firing": true,
+                        "noData": false,
+                        "normal": false,
+                        "pending": false
+                     }
+                  },
+                  "span": 3,
+                  "title": "Firing alerts",
+                  "type": "alertlist"
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "Mimir cluster health",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": false,
+            "height": "250px",
+            "panels": [
+               {
+                  "content": "These panels show an overview on the write path. \nVisit the following specific dashboards to drill down into the write path:\n\n- <a target=\"_blank\" href=\"./d/8280707b8f16e7b87b840fc1cc92d4c5/mimir-writes?${__url_time_range}&${__all_variables}\">Writes</a>\n- <a target=\"_blank\" href=\"./d/bc9160e50b52e89e0e49c840fea3d379/mimir-writes-resources?${__url_time_range}&${__all_variables}\">Writes resources</a>\n- <a target=\"_blank\" href=\"./d/978c1cb452585c96697a238eaac7fe2d/mimir-writes-networking?${__url_time_range}&${__all_variables}\">Writes networking</a>\n",
+                  "datasource": null,
+                  "description": "",
+                  "id": 4,
+                  "mode": "markdown",
+                  "span": 3,
+                  "title": "",
+                  "transparent": true,
+                  "type": "text"
+               },
+               {
+                  "aliasColors": {
+                     "1xx": "#EAB839",
+                     "2xx": "#7EB26D",
+                     "3xx": "#6ED0E0",
+                     "4xx": "#EF843C",
+                     "5xx": "#E24D42",
+                     "error": "#E24D42",
+                     "success": "#7EB26D"
+                  },
+                  "bars": false,
+                  "dashLength": 10,
+                  "dashes": false,
+                  "datasource": "$datasource",
+                  "fill": 10,
+                  "id": 5,
+                  "legend": {
+                     "avg": false,
+                     "current": false,
+                     "max": false,
+                     "min": false,
+                     "show": true,
+                     "total": false,
+                     "values": false
+                  },
+                  "lines": true,
+                  "linewidth": 0,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "percentage": false,
+                  "pointradius": 5,
+                  "points": false,
+                  "renderer": "flot",
+                  "seriesOverrides": [ ],
+                  "spaceLength": 10,
+                  "span": 3,
+                  "stack": true,
+                  "steppedLine": false,
+                  "targets": [
+                     {
+                        "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\", route=~\"/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push|otlp_v1_metrics\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-z]+)\"))\n",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "{{status}}",
+                        "refId": "A",
+                        "step": 10
+                     }
+                  ],
+                  "thresholds": [ ],
+                  "timeFrom": null,
+                  "timeShift": null,
+                  "title": "Write requests / sec",
+                  "tooltip": {
+                     "shared": false,
+                     "sort": 0,
+                     "value_type": "individual"
+                  },
+                  "type": "graph",
+                  "xaxis": {
+                     "buckets": null,
+                     "mode": "time",
+                     "name": null,
+                     "show": true,
+                     "values": [ ]
+                  },
+                  "yaxes": [
+                     {
+                        "format": "reqps",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               },
+               {
+                  "aliasColors": { },
+                  "bars": false,
+                  "dashLength": 10,
+                  "dashes": false,
+                  "datasource": "$datasource",
+                  "fill": 1,
+                  "id": 6,
+                  "legend": {
+                     "avg": false,
+                     "current": false,
+                     "max": false,
+                     "min": false,
+                     "show": true,
+                     "total": false,
+                     "values": false
+                  },
+                  "lines": true,
+                  "linewidth": 1,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "percentage": false,
+                  "pointradius": 5,
+                  "points": false,
+                  "renderer": "flot",
+                  "seriesOverrides": [ ],
+                  "spaceLength": 10,
+                  "span": 3,
+                  "stack": false,
+                  "steppedLine": false,
+                  "targets": [
+                     {
+                        "expr": "histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\", route=~\"/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push|otlp_v1_metrics\"})) * 1e3",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "99th Percentile",
+                        "refId": "A",
+                        "step": 10
+                     },
+                     {
+                        "expr": "histogram_quantile(0.50, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\", route=~\"/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push|otlp_v1_metrics\"})) * 1e3",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "50th Percentile",
+                        "refId": "B",
+                        "step": 10
+                     },
+                     {
+                        "expr": "1e3 * sum(cluster_job_route:cortex_request_duration_seconds_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\", route=~\"/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push|otlp_v1_metrics\"}) / sum(cluster_job_route:cortex_request_duration_seconds_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\", route=~\"/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push|otlp_v1_metrics\"})",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "Average",
+                        "refId": "C",
+                        "step": 10
+                     }
+                  ],
+                  "thresholds": [ ],
+                  "timeFrom": null,
+                  "timeShift": null,
+                  "title": "Write latency",
+                  "tooltip": {
+                     "shared": false,
+                     "sort": 0,
+                     "value_type": "individual"
+                  },
+                  "type": "graph",
+                  "xaxis": {
+                     "buckets": null,
+                     "mode": "time",
+                     "name": null,
+                     "show": true,
+                     "values": [ ]
+                  },
+                  "yaxes": [
+                     {
+                        "format": "ms",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               },
+               {
+                  "aliasColors": { },
+                  "bars": false,
+                  "dashLength": 10,
+                  "dashes": false,
+                  "datasource": "$datasource",
+                  "fill": 10,
+                  "id": 7,
+                  "legend": {
+                     "avg": false,
+                     "current": false,
+                     "max": false,
+                     "min": false,
+                     "show": true,
+                     "total": false,
+                     "values": false
+                  },
+                  "lines": true,
+                  "linewidth": 0,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "percentage": false,
+                  "pointradius": 5,
+                  "points": false,
+                  "renderer": "flot",
+                  "seriesOverrides": [ ],
+                  "spaceLength": 10,
+                  "span": 3,
+                  "stack": true,
+                  "steppedLine": false,
+                  "targets": [
+                     {
+                        "expr": "sum(cluster_namespace_job:cortex_distributor_received_samples:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\"})",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "samples / sec",
+                        "legendLink": null,
+                        "step": 10
+                     },
+                     {
+                        "expr": "sum(cluster_namespace_job:cortex_distributor_received_exemplars:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\"})",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "exemplars / sec",
+                        "legendLink": null,
+                        "step": 10
+                     }
+                  ],
+                  "thresholds": [ ],
+                  "timeFrom": null,
+                  "timeShift": null,
+                  "title": "Ingestion / sec",
+                  "tooltip": {
+                     "shared": false,
+                     "sort": 0,
+                     "value_type": "individual"
+                  },
+                  "type": "graph",
+                  "xaxis": {
+                     "buckets": null,
+                     "mode": "time",
+                     "name": null,
+                     "show": true,
+                     "values": [ ]
+                  },
+                  "yaxes": [
+                     {
+                        "format": "cps",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "Writes",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": false,
+            "height": "250px",
+            "panels": [
+               {
+                  "content": "These panels show an overview on the read path. \nVisit the following specific dashboards to drill down into the read path:\n\n- <a target=\"_blank\" href=\"./d/e327503188913dc38ad571c647eef643/mimir-reads?${__url_time_range}&${__all_variables}\">Reads</a>\n- <a target=\"_blank\" href=\"./d/cc86fd5aa9301c6528986572ad974db9/mimir-reads-resources?${__url_time_range}&${__all_variables}\">Reads resources</a>\n- <a target=\"_blank\" href=\"./d/54b2a0a4748b3bd1aefa92ce5559a1c2/mimir-reads-networking?${__url_time_range}&${__all_variables}\">Reads networking</a>\n- <a target=\"_blank\" href=\"./d/b3abe8d5c040395cc36615cb4334c92d/mimir-queries?${__url_time_range}&${__all_variables}\">Queries</a>\n- <a target=\"_blank\" href=\"./d/1b3443aea86db629e6efdb7d05c53823/mimir-compactor?${__url_time_range}&${__all_variables}\">Compactor</a>\n",
+                  "datasource": null,
+                  "description": "",
+                  "id": 8,
+                  "mode": "markdown",
+                  "span": 3,
+                  "title": "",
+                  "transparent": true,
+                  "type": "text"
+               },
+               {
+                  "aliasColors": {
+                     "1xx": "#EAB839",
+                     "2xx": "#7EB26D",
+                     "3xx": "#6ED0E0",
+                     "4xx": "#EF843C",
+                     "5xx": "#E24D42",
+                     "error": "#E24D42",
+                     "success": "#7EB26D"
+                  },
+                  "bars": false,
+                  "dashLength": 10,
+                  "dashes": false,
+                  "datasource": "$datasource",
+                  "fill": 10,
+                  "id": 9,
+                  "legend": {
+                     "avg": false,
+                     "current": false,
+                     "max": false,
+                     "min": false,
+                     "show": true,
+                     "total": false,
+                     "values": false
+                  },
+                  "lines": true,
+                  "linewidth": 0,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "percentage": false,
+                  "pointradius": 5,
+                  "points": false,
+                  "renderer": "flot",
+                  "seriesOverrides": [ ],
+                  "spaceLength": 10,
+                  "span": 3,
+                  "stack": true,
+                  "steppedLine": false,
+                  "targets": [
+                     {
+                        "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-z]+)\"))\n",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "{{status}}",
+                        "refId": "A",
+                        "step": 10
+                     }
+                  ],
+                  "thresholds": [ ],
+                  "timeFrom": null,
+                  "timeShift": null,
+                  "title": "Read requests / sec",
+                  "tooltip": {
+                     "shared": false,
+                     "sort": 0,
+                     "value_type": "individual"
+                  },
+                  "type": "graph",
+                  "xaxis": {
+                     "buckets": null,
+                     "mode": "time",
+                     "name": null,
+                     "show": true,
+                     "values": [ ]
+                  },
+                  "yaxes": [
+                     {
+                        "format": "reqps",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               },
+               {
+                  "aliasColors": { },
+                  "bars": false,
+                  "dashLength": 10,
+                  "dashes": false,
+                  "datasource": "$datasource",
+                  "fill": 1,
+                  "id": 10,
+                  "legend": {
+                     "avg": false,
+                     "current": false,
+                     "max": false,
+                     "min": false,
+                     "show": true,
+                     "total": false,
+                     "values": false
+                  },
+                  "lines": true,
+                  "linewidth": 1,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "percentage": false,
+                  "pointradius": 5,
+                  "points": false,
+                  "renderer": "flot",
+                  "seriesOverrides": [ ],
+                  "spaceLength": 10,
+                  "span": 3,
+                  "stack": false,
+                  "steppedLine": false,
+                  "targets": [
+                     {
+                        "expr": "histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"})) * 1e3",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "99th Percentile",
+                        "refId": "A",
+                        "step": 10
+                     },
+                     {
+                        "expr": "histogram_quantile(0.50, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"})) * 1e3",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "50th Percentile",
+                        "refId": "B",
+                        "step": 10
+                     },
+                     {
+                        "expr": "1e3 * sum(cluster_job_route:cortex_request_duration_seconds_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"}) / sum(cluster_job_route:cortex_request_duration_seconds_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"})",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "Average",
+                        "refId": "C",
+                        "step": 10
+                     }
+                  ],
+                  "thresholds": [ ],
+                  "timeFrom": null,
+                  "timeShift": null,
+                  "title": "Read latency",
+                  "tooltip": {
+                     "shared": false,
+                     "sort": 0,
+                     "value_type": "individual"
+                  },
+                  "type": "graph",
+                  "xaxis": {
+                     "buckets": null,
+                     "mode": "time",
+                     "name": null,
+                     "show": true,
+                     "values": [ ]
+                  },
+                  "yaxes": [
+                     {
+                        "format": "ms",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               },
+               {
+                  "aliasColors": { },
+                  "bars": false,
+                  "dashLength": 10,
+                  "dashes": false,
+                  "datasource": "$datasource",
+                  "fill": 10,
+                  "id": 11,
+                  "legend": {
+                     "avg": false,
+                     "current": false,
+                     "max": false,
+                     "min": false,
+                     "show": true,
+                     "total": false,
+                     "values": false
+                  },
+                  "lines": true,
+                  "linewidth": 0,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "percentage": false,
+                  "pointradius": 5,
+                  "points": false,
+                  "renderer": "flot",
+                  "seriesOverrides": [
+                     {
+                        "alias": "instant queries",
+                        "color": "#429D48"
+                     },
+                     {
+                        "alias": "range queries",
+                        "color": "#F1C731"
+                     },
+                     {
+                        "alias": "label queries",
+                        "color": "#2A66CF"
+                     },
+                     {
+                        "alias": "series queries",
+                        "color": "#9E44C1"
+                     },
+                     {
+                        "alias": "remote read queries",
+                        "color": "#FFAB57"
+                     },
+                     {
+                        "alias": "metadata queries",
+                        "color": "#C79424"
+                     },
+                     {
+                        "alias": "exemplar queries",
+                        "color": "#84D586"
+                     },
+                     {
+                        "alias": "other",
+                        "color": "#A1C4FC"
+                     }
+                  ],
+                  "spaceLength": 10,
+                  "span": 3,
+                  "stack": true,
+                  "steppedLine": false,
+                  "targets": [
+                     {
+                        "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)_api_v1_query\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "instant queries",
+                        "legendLink": null,
+                        "step": 10
+                     },
+                     {
+                        "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)_api_v1_query_range\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "range queries",
+                        "legendLink": null,
+                        "step": 10
+                     },
+                     {
+                        "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)_api_v1_label.*\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "label queries",
+                        "legendLink": null,
+                        "step": 10
+                     },
+                     {
+                        "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)_api_v1_series\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "series queries",
+                        "legendLink": null,
+                        "step": 10
+                     },
+                     {
+                        "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)_api_v1_read\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "remote read queries",
+                        "legendLink": null,
+                        "step": 10
+                     },
+                     {
+                        "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)_api_v1_metadata\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "metadata queries",
+                        "legendLink": null,
+                        "step": 10
+                     },
+                     {
+                        "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)_api_v1_query_exemplars\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "exemplar queries",
+                        "legendLink": null,
+                        "step": 10
+                     },
+                     {
+                        "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\",route=~\"(prometheus|api_prom)_api_v1_.*\",route!~\".*(query|query_range|label.*|series|read|metadata|query_exemplars)\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "other",
+                        "legendLink": null,
+                        "step": 10
+                     }
+                  ],
+                  "thresholds": [ ],
+                  "timeFrom": null,
+                  "timeShift": null,
+                  "title": "Queries / sec",
+                  "tooltip": {
+                     "shared": false,
+                     "sort": 0,
+                     "value_type": "individual"
+                  },
+                  "type": "graph",
+                  "xaxis": {
+                     "buckets": null,
+                     "mode": "time",
+                     "name": null,
+                     "show": true,
+                     "values": [ ]
+                  },
+                  "yaxes": [
+                     {
+                        "format": "reqps",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "Reads",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": false,
+            "height": "250px",
+            "panels": [
+               {
+                  "content": "These panels show an overview on the recording and alerting rules evaluation.\nVisit the following specific dashboards to drill down into the rules evaluation and alerts notifications:\n\n- <a target=\"_blank\" href=\"./d/631e15d5d85afb2ca8e35d62984eeaa0/mimir-ruler?${__url_time_range}&${__all_variables}\">Ruler</a>\n- <a target=\"_blank\" href=\"./d/b0d38d318bbddd80476246d4930f9e55/mimir-alertmanager?${__url_time_range}&${__all_variables}\">Alertmanager</a>\n- <a target=\"_blank\" href=\"./d/a6883fb22799ac74479c7db872451092/mimir-alertmanager-resources?${__url_time_range}&${__all_variables}\">Alertmanager resources</a>\n",
+                  "datasource": null,
+                  "description": "",
+                  "id": 12,
+                  "mode": "markdown",
+                  "span": 3,
+                  "title": "",
+                  "transparent": true,
+                  "type": "text"
+               },
+               {
+                  "aliasColors": {
+                     "failed": "#E24D42",
+                     "success": "#7EB26D"
+                  },
+                  "bars": false,
+                  "dashLength": 10,
+                  "dashes": false,
+                  "datasource": "$datasource",
+                  "fill": 1,
+                  "id": 13,
+                  "legend": {
+                     "avg": false,
+                     "current": false,
+                     "max": false,
+                     "min": false,
+                     "show": true,
+                     "total": false,
+                     "values": false
+                  },
+                  "lines": true,
+                  "linewidth": 1,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "percentage": false,
+                  "pointradius": 5,
+                  "points": false,
+                  "renderer": "flot",
+                  "seriesOverrides": [ ],
+                  "spaceLength": 10,
+                  "span": 3,
+                  "stack": false,
+                  "steppedLine": false,
+                  "targets": [
+                     {
+                        "expr": "sum(rate(cortex_prometheus_rule_evaluations_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n-\nsum(rate(cortex_prometheus_rule_evaluation_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "success",
+                        "legendLink": null,
+                        "step": 10
+                     },
+                     {
+                        "expr": "sum(rate(cortex_prometheus_rule_evaluation_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "failed",
+                        "legendLink": null,
+                        "step": 10
+                     },
+                     {
+                        "expr": "sum(rate(cortex_prometheus_rule_group_iterations_missed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "missed",
+                        "legendLink": null,
+                        "step": 10
+                     }
+                  ],
+                  "thresholds": [ ],
+                  "timeFrom": null,
+                  "timeShift": null,
+                  "title": "Rule evaluations / sec",
+                  "tooltip": {
+                     "shared": false,
+                     "sort": 0,
+                     "value_type": "individual"
+                  },
+                  "type": "graph",
+                  "xaxis": {
+                     "buckets": null,
+                     "mode": "time",
+                     "name": null,
+                     "show": true,
+                     "values": [ ]
+                  },
+                  "yaxes": [
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               },
+               {
+                  "aliasColors": { },
+                  "bars": false,
+                  "dashLength": 10,
+                  "dashes": false,
+                  "datasource": "$datasource",
+                  "fill": 1,
+                  "id": 14,
+                  "legend": {
+                     "avg": false,
+                     "current": false,
+                     "max": false,
+                     "min": false,
+                     "show": true,
+                     "total": false,
+                     "values": false
+                  },
+                  "lines": true,
+                  "linewidth": 1,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "percentage": false,
+                  "pointradius": 5,
+                  "points": false,
+                  "renderer": "flot",
+                  "seriesOverrides": [ ],
+                  "spaceLength": 10,
+                  "span": 3,
+                  "stack": false,
+                  "steppedLine": false,
+                  "targets": [
+                     {
+                        "expr": "sum (rate(cortex_prometheus_rule_evaluation_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n  /\nsum (rate(cortex_prometheus_rule_evaluation_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "average",
+                        "legendLink": null,
+                        "step": 10
+                     }
+                  ],
+                  "thresholds": [ ],
+                  "timeFrom": null,
+                  "timeShift": null,
+                  "title": "Rule evaluations latency",
+                  "tooltip": {
+                     "shared": false,
+                     "sort": 0,
+                     "value_type": "individual"
+                  },
+                  "type": "graph",
+                  "xaxis": {
+                     "buckets": null,
+                     "mode": "time",
+                     "name": null,
+                     "show": true,
+                     "values": [ ]
+                  },
+                  "yaxes": [
+                     {
+                        "format": "s",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               },
+               {
+                  "aliasColors": {
+                     "failed": "#E24D42",
+                     "successful": "#7EB26D"
+                  },
+                  "bars": false,
+                  "dashLength": 10,
+                  "dashes": false,
+                  "datasource": "$datasource",
+                  "fill": 10,
+                  "id": 15,
+                  "legend": {
+                     "avg": false,
+                     "current": false,
+                     "max": false,
+                     "min": false,
+                     "show": true,
+                     "total": false,
+                     "values": false
+                  },
+                  "lines": true,
+                  "linewidth": 0,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "percentage": false,
+                  "pointradius": 5,
+                  "points": false,
+                  "renderer": "flot",
+                  "seriesOverrides": [ ],
+                  "spaceLength": 10,
+                  "span": 3,
+                  "stack": true,
+                  "steppedLine": false,
+                  "targets": [
+                     {
+                        "expr": "sum(rate(cortex_prometheus_notifications_sent_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n  -\nsum(rate(cortex_prometheus_notifications_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "successful",
+                        "legendLink": null,
+                        "step": 10
+                     },
+                     {
+                        "expr": "sum(rate(cortex_prometheus_notifications_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "failed",
+                        "legendLink": null,
+                        "step": 10
+                     }
+                  ],
+                  "thresholds": [ ],
+                  "timeFrom": null,
+                  "timeShift": null,
+                  "title": "Alerting notifications sent to Alertmanager / sec",
+                  "tooltip": {
+                     "shared": false,
+                     "sort": 0,
+                     "value_type": "individual"
+                  },
+                  "type": "graph",
+                  "xaxis": {
+                     "buckets": null,
+                     "mode": "time",
+                     "name": null,
+                     "show": true,
+                     "values": [ ]
+                  },
+                  "yaxes": [
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "Recording and alerting rules",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": false,
+            "height": "250px",
+            "panels": [
+               {
+                  "content": "These panels show an overview on the long-term storage (object storage).\nVisit the following specific dashboards to drill down into the storage:\n\n- <a target=\"_blank\" href=\"./d/e1324ee2a434f4158c00a9ee279d3292/mimir-object-store?${__url_time_range}&${__all_variables}\">Object store</a>\n- <a target=\"_blank\" href=\"./d/1b3443aea86db629e6efdb7d05c53823/mimir-compactor?${__url_time_range}&${__all_variables}\">Compactor</a>\n",
+                  "datasource": null,
+                  "description": "",
+                  "id": 16,
+                  "mode": "markdown",
+                  "span": 3,
+                  "title": "",
+                  "transparent": true,
+                  "type": "text"
+               },
+               {
+                  "aliasColors": {
+                     "failed": "#E24D42",
+                     "successful": "#7EB26D"
+                  },
+                  "bars": false,
+                  "dashLength": 10,
+                  "dashes": false,
+                  "datasource": "$datasource",
+                  "fill": 10,
+                  "id": 17,
+                  "legend": {
+                     "avg": false,
+                     "current": false,
+                     "max": false,
+                     "min": false,
+                     "show": true,
+                     "total": false,
+                     "values": false
+                  },
+                  "lines": true,
+                  "linewidth": 0,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "percentage": false,
+                  "pointradius": 5,
+                  "points": false,
+                  "renderer": "flot",
+                  "seriesOverrides": [ ],
+                  "spaceLength": 10,
+                  "span": 3,
+                  "stack": true,
+                  "steppedLine": false,
+                  "targets": [
+                     {
+                        "expr": "sum(rate(thanos_objstore_bucket_operations_total{cluster=~\"$cluster\", namespace=~\"$namespace\"}[$__rate_interval]))\n-\nsum(rate(thanos_objstore_bucket_operation_failures_total{cluster=~\"$cluster\", namespace=~\"$namespace\"}[$__rate_interval]))\n",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "successful",
+                        "legendLink": null,
+                        "step": 10
+                     },
+                     {
+                        "expr": "sum(rate(thanos_objstore_bucket_operation_failures_total{cluster=~\"$cluster\", namespace=~\"$namespace\"}[$__rate_interval]))\n",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "failed",
+                        "legendLink": null,
+                        "step": 10
+                     }
+                  ],
+                  "thresholds": [ ],
+                  "timeFrom": null,
+                  "timeShift": null,
+                  "title": "Requests / sec",
+                  "tooltip": {
+                     "shared": false,
+                     "sort": 0,
+                     "value_type": "individual"
+                  },
+                  "type": "graph",
+                  "xaxis": {
+                     "buckets": null,
+                     "mode": "time",
+                     "name": null,
+                     "show": true,
+                     "values": [ ]
+                  },
+                  "yaxes": [
+                     {
+                        "format": "reqps",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               },
+               {
+                  "aliasColors": { },
+                  "bars": false,
+                  "dashLength": 10,
+                  "dashes": false,
+                  "datasource": "$datasource",
+                  "fill": 10,
+                  "id": 18,
+                  "legend": {
+                     "avg": false,
+                     "current": false,
+                     "max": false,
+                     "min": false,
+                     "show": true,
+                     "total": false,
+                     "values": false
+                  },
+                  "lines": true,
+                  "linewidth": 0,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "percentage": false,
+                  "pointradius": 5,
+                  "points": false,
+                  "renderer": "flot",
+                  "seriesOverrides": [
+                     {
+                        "alias": "attributes",
+                        "color": "#429D48"
+                     },
+                     {
+                        "alias": "delete",
+                        "color": "#F1C731"
+                     },
+                     {
+                        "alias": "exists",
+                        "color": "#2A66CF"
+                     },
+                     {
+                        "alias": "get",
+                        "color": "#9E44C1"
+                     },
+                     {
+                        "alias": "get_range",
+                        "color": "#FFAB57"
+                     },
+                     {
+                        "alias": "iter",
+                        "color": "#C79424"
+                     },
+                     {
+                        "alias": "upload",
+                        "color": "#84D586"
+                     }
+                  ],
+                  "spaceLength": 10,
+                  "span": 3,
+                  "stack": true,
+                  "steppedLine": false,
+                  "targets": [
+                     {
+                        "expr": "sum by(operation) (rate(thanos_objstore_bucket_operations_total{cluster=~\"$cluster\", namespace=~\"$namespace\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "{{operation}}",
+                        "legendLink": null,
+                        "step": 10
+                     }
+                  ],
+                  "thresholds": [ ],
+                  "timeFrom": null,
+                  "timeShift": null,
+                  "title": "Operations / sec",
+                  "tooltip": {
+                     "shared": false,
+                     "sort": 0,
+                     "value_type": "individual"
+                  },
+                  "type": "graph",
+                  "xaxis": {
+                     "buckets": null,
+                     "mode": "time",
+                     "name": null,
+                     "show": true,
+                     "values": [ ]
+                  },
+                  "yaxes": [
+                     {
+                        "format": "reqps",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               },
+               {
+                  "aliasColors": { },
+                  "bars": false,
+                  "dashLength": 10,
+                  "dashes": false,
+                  "datasource": "$datasource",
+                  "fill": 1,
+                  "id": 19,
+                  "legend": {
+                     "avg": false,
+                     "current": false,
+                     "max": false,
+                     "min": false,
+                     "show": true,
+                     "total": false,
+                     "values": false
+                  },
+                  "lines": true,
+                  "linewidth": 1,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "percentage": false,
+                  "pointradius": 5,
+                  "points": false,
+                  "renderer": "flot",
+                  "seriesOverrides": [ ],
+                  "spaceLength": 10,
+                  "span": 3,
+                  "stack": false,
+                  "steppedLine": false,
+                  "targets": [
+                     {
+                        "expr": "sum(max by(user) (max_over_time(cortex_bucket_blocks_count{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"}[15m])))",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "blocks",
+                        "legendLink": null,
+                        "step": 10
+                     }
+                  ],
+                  "thresholds": [ ],
+                  "timeFrom": null,
+                  "timeShift": null,
+                  "title": "Total number of blocks in the storage",
+                  "tooltip": {
+                     "shared": false,
+                     "sort": 0,
+                     "value_type": "individual"
+                  },
+                  "type": "graph",
+                  "xaxis": {
+                     "buckets": null,
+                     "mode": "time",
+                     "name": null,
+                     "show": true,
+                     "values": [ ]
+                  },
+                  "yaxes": [
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "Long-term storage (object storage)",
+            "titleSize": "h6"
+         }
+      ],
+      "schemaVersion": 14,
+      "style": "dark",
+      "tags": [
+         "mimir"
+      ],
+      "templating": {
+         "list": [
+            {
+               "current": {
+                  "text": "default",
+                  "value": "default"
+               },
+               "hide": 0,
+               "label": "Data Source",
+               "name": "datasource",
+               "options": [ ],
+               "query": "prometheus",
+               "refresh": 1,
+               "regex": "",
+               "type": "datasource"
+            },
+            {
+               "allValue": ".+",
+               "current": {
+                  "selected": true,
+                  "text": "All",
+                  "value": "$__all"
+               },
+               "datasource": "$datasource",
+               "hide": 0,
+               "includeAll": true,
+               "label": "cluster",
+               "multi": true,
+               "name": "cluster",
+               "options": [ ],
+               "query": "label_values(cortex_build_info, cluster)",
+               "refresh": 1,
+               "regex": "",
+               "sort": 2,
+               "tagValuesQuery": "",
+               "tags": [ ],
+               "tagsQuery": "",
+               "type": "query",
+               "useTags": false
+            },
+            {
+               "allValue": ".+",
+               "current": {
+                  "selected": true,
+                  "text": "All",
+                  "value": "$__all"
+               },
+               "datasource": "$datasource",
+               "hide": 0,
+               "includeAll": true,
+               "label": "namespace",
+               "multi": true,
+               "name": "namespace",
+               "options": [ ],
+               "query": "label_values(cortex_build_info{cluster=~\"$cluster\"}, namespace)",
+               "refresh": 1,
+               "regex": "",
+               "sort": 2,
+               "tagValuesQuery": "",
+               "tags": [ ],
+               "tagsQuery": "",
+               "type": "query",
+               "useTags": false
+            }
+         ]
+      },
+      "time": {
+         "from": "now-1h",
+         "to": "now"
+      },
+      "timepicker": {
+         "refresh_intervals": [
+            "5s",
+            "10s",
+            "30s",
+            "1m",
+            "5m",
+            "15m",
+            "30m",
+            "1h",
+            "2h",
+            "1d"
+         ],
+         "time_options": [
+            "5m",
+            "15m",
+            "1h",
+            "6h",
+            "12h",
+            "24h",
+            "2d",
+            "7d",
+            "30d"
+         ]
+      },
+      "timezone": "utc",
+      "title": "Mimir / Overview",
+      "uid": "ffcd83628d7d4b5a03d1cafd159e6c9c",
+      "version": 0
+   }
