@@ -6,7 +6,6 @@
 package client
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -174,36 +173,34 @@ func checkResponse(r *http.Response) error {
 		return nil
 	}
 
-	var msg, errMsg string
-	scanner := bufio.NewScanner(io.LimitReader(r.Body, 512))
-	if scanner.Scan() {
-		msg = scanner.Text()
+	bodyHead, err := io.ReadAll(io.LimitReader(r.Body, 1024))
+	if err != nil {
+		return errors.Wrapf(err, "reading body")
 	}
 
+	msg := string(bodyHead)
+	var errMsg string
 	if msg == "" {
-		errMsg = fmt.Sprintf("server returned HTTP status %s", r.Status)
+		errMsg = fmt.Sprintf("server returned HTTP status: %s", r.Status)
 	} else {
-		errMsg = fmt.Sprintf("server returned HTTP status %s: %s", r.Status, msg)
+		errMsg = fmt.Sprintf("server returned HTTP status: %s, body: %s", r.Status, msg)
 	}
 
 	if r.StatusCode == http.StatusNotFound {
 		log.WithFields(log.Fields{
 			"status": r.Status,
-			"msg":    msg,
 		}).Debugln(errMsg)
 		return ErrResourceNotFound
 	}
 	if r.StatusCode == http.StatusConflict {
 		log.WithFields(log.Fields{
 			"status": r.Status,
-			"msg":    msg,
 		}).Debugln(errMsg)
 		return errConflict
 	}
 
 	log.WithFields(log.Fields{
 		"status": r.Status,
-		"msg":    msg,
 	}).Errorln(errMsg)
 
 	return errors.New(errMsg)
