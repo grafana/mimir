@@ -124,9 +124,12 @@ func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames, re
 	checkCmd := rulesCmd.
 		Command("check", "Run various best practice checks against rules.").
 		Action(r.checkRecordingRuleNames)
+	deleteNamespaceCmd := rulesCmd.
+		Command("delete-namespace", "Delete a namespace from the ruler.").
+		Action(r.deleteNamespace)
 
 	// Require Mimir cluster address and tenant ID on all these commands
-	for _, c := range []*kingpin.CmdClause{listCmd, printRulesCmd, getRuleGroupCmd, deleteRuleGroupCmd, loadRulesCmd, diffRulesCmd, syncRulesCmd} {
+	for _, c := range []*kingpin.CmdClause{listCmd, printRulesCmd, getRuleGroupCmd, deleteRuleGroupCmd, loadRulesCmd, diffRulesCmd, syncRulesCmd, deleteNamespaceCmd} {
 		c.Flag("address", "Address of the Grafana Mimir cluster; alternatively, set "+envVars.Address+".").
 			Envar(envVars.Address).
 			Required().
@@ -231,6 +234,10 @@ func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames, re
 	// List Command
 	listCmd.Flag("format", "Backend type to interact with: <json|yaml|table>").Default("table").EnumVar(&r.Format, formats...)
 	listCmd.Flag("disable-color", "disable colored output").BoolVar(&r.DisableColor)
+
+	// Delete Namespace Command
+	deleteNamespaceCmd.Arg("namespace", "Namespace to delete.").Required().StringVar(&r.Namespace)
+
 }
 
 func (r *RuleCommand) setup(_ *kingpin.ParseContext, reg prometheus.Registerer) error {
@@ -779,5 +786,13 @@ func save(nss map[string]rules.RuleNamespace, i bool) error {
 		}
 	}
 
+	return nil
+}
+
+func (r *RuleCommand) deleteNamespace(k *kingpin.ParseContext) error {
+	err := r.cli.DeleteNamespace(context.Background(), r.Namespace)
+	if err != nil && !errors.Is(err, client.ErrResourceNotFound) {
+		log.Fatalf("Unable to delete namespace from Grafana Mimir, %v", err)
+	}
 	return nil
 }

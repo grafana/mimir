@@ -114,3 +114,18 @@ func (r *MimirClient) ListRules(ctx context.Context, namespace string) (map[stri
 
 	return ruleSet, nil
 }
+
+// DeleteNamespace delete all the rule groups in a namespace including the namespace itself
+func (r *MimirClient) DeleteNamespace(ctx context.Context, namespace string) error {
+	escapedNamespace := url.PathEscape(namespace)
+	path := r.apiPath + "/" + escapedNamespace
+
+	res, err := r.doRequest(path, "DELETE", nil, -1)
+	if err != nil {
+		return err
+	}
+
+	res.Body.Close()
+
+	return nil
+}
