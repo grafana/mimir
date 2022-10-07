@@ -19,7 +19,7 @@ cd "${CURR_DIR}"/../../ && make dist && cd -
 echo "Generating the draft release notes..."
 RELEASE_NOTES_FILE="./tmp-release-notes.md"
 trap 'rm -f "${RELEASE_NOTES_FILE}"' EXIT
-"${CURR_DIR}"/generate-release-notes.sh > "${RELEASE_NOTES_FILE}"
+"${CURR_DIR}"/create-draft-release-notes.sh > "${RELEASE_NOTES_FILE}"
 
 # Create the draft release.
 echo "Creating the draft release (uploading assets may take a while)..."
