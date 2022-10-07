@@ -4,6 +4,20 @@
 
 ### Grafana Mimir
 
+### Mixin
+
+### Jsonnet
+
+### Mimirtool
+
+### Documentation
+
+### Tools
+
+## 2.4.0-rc.0
+
+### Grafana Mimir
+
 * [CHANGE] Distributor: change the default value of `-distributor.remote-timeout` to `2s` from `20s` and `-distributor.forwarding.request-timeout` to `2s` from `10s` to improve distributor resource usage when ingesters crash. #2728 #2912
 * [CHANGE] Anonymous usage statistics tracking: added the `-ingester.ring.store` value. #2981
 * [CHANGE] Series metadata `HELP` that is longer than `-validation.max-metadata-length` is now truncated silently, instead of being dropped with a 400 status code. #2993
@@ -93,6 +107,7 @@
 * [BUGFIX] Alertmanager: Fix support for the Telegram API URL in the global settings. #3097
 * [BUGFIX] Alertmanager: Fix parsing of label matchers without label value in the API used to retrieve alerts. #3097
 * [BUGFIX] Ruler: Fix not restoring alert state for rule groups when other ruler replicas shut down. #3156
+* [BUGFIX] Updated `golang.org/x/net` dependency to fix CVE-2022-27664. #3124
 
 ### Mixin
 
@@ -124,6 +139,8 @@
 * [ENHANCEMENT] Improved gRPC clients config documentation. #3020
 * [ENHANCEMENT] Added documentation on how to manage alerting and recording rules. #2983
 * [ENHANCEMENT] Improved `MimirSchedulerQueriesStuck` runbook. #3006
+* [ENHANCEMENT] Added "Cluster label verification" section to memberlist documentation. #3096
+* [ENHANCEMENT] Mention compression in multi-zone replication documentation. #3107
 * [BUGFIX] Fixed configuration option names in "Enabling zone-awareness via the Grafana Mimir Jsonnet". #3018
 * [BUGFIX] Fixed `mimirtool analyze` parameters documentation. #3094
 * [BUGFIX] Fixed YAML configuraton in the "Manage the configuration of Grafana Mimir with Helm" guide. #3042
