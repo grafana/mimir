@@ -3,6 +3,9 @@ local filename = 'mimir-alertmanager.json';
 
 (import 'dashboard-utils.libsonnet') {
   [filename]:
+    local jobSelector = $.jobSelector($._config.job_names.alertmanager);
+    local jobInstanceSelector = jobSelector + [utils.selector.noop($._config.per_instance_label)];
+    local jobIntegrationSelector = jobSelector + [utils.selector.noop('integration')];
     ($.dashboard('Alertmanager') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
     .addRow(
@@ -12,11 +15,11 @@ local filename = 'mimir-alertmanager.json';
        })
       .addPanel(
         $.panel('Total alerts') +
-        $.statPanel('sum(%s_job_%s:cortex_alertmanager_alerts:sum{%s})' % [$._config.per_cluster_label, $._config.per_instance_label, $.jobMatcher($._config.job_names.alertmanager)], format='short')
+        $.statPanel('sum(%s:cortex_alertmanager_alerts:sum%s)' % [$.recordingRulePrefix(jobInstanceSelector), utils.toPrometheusSelector(jobInstanceSelector)], format='short')
       )
       .addPanel(
         $.panel('Total silences') +
-        $.statPanel('sum(%s_job_%s:cortex_alertmanager_silences:sum{%s})' % [$._config.per_cluster_label, $._config.per_instance_label, $.jobMatcher($._config.job_names.alertmanager)], format='short')
+        $.statPanel('sum(%s:cortex_alertmanager_silences:sum%s)' % [$.recordingRulePrefix(jobInstanceSelector), utils.toPrometheusSelector(jobInstanceSelector)], format='short')
       )
       .addPanel(
         $.panel('Tenants') +
@@ -40,11 +43,17 @@ local filename = 'mimir-alertmanager.json';
         $.panel('APS') +
         $.successFailurePanel(
           |||
-            sum(%s_job:cortex_alertmanager_alerts_received_total:rate5m{%s})
+            sum(%(prefix)s:cortex_alertmanager_alerts_received_total:rate5m%(selectors)s)
             -
-            sum(%s_job:cortex_alertmanager_alerts_invalid_total:rate5m{%s})
-          ||| % [$._config.per_cluster_label, $.jobMatcher($._config.job_names.alertmanager), $._config.per_cluster_label, $.jobMatcher($._config.job_names.alertmanager)],
-          'sum(%s_job:cortex_alertmanager_alerts_invalid_total:rate5m{%s})' % [$._config.per_cluster_label, $.jobMatcher($._config.job_names.alertmanager)],
+            sum(%(prefix)s:cortex_alertmanager_alerts_invalid_total:rate5m%(selectors)s)
+          ||| % {
+            prefix: $.recordingRulePrefix(jobSelector),
+            selectors: utils.toPrometheusSelector(jobSelector),
+          },
+          'sum(%(prefix)s:cortex_alertmanager_alerts_invalid_total:rate5m%(selectors)s)' % {
+            prefix: $.recordingRulePrefix(jobSelector),
+            selectors: utils.toPrometheusSelector(jobSelector),
+          },
         )
       )
     )
@@ -63,13 +72,19 @@ local filename = 'mimir-alertmanager.json';
           [
             |||
               (
-              sum(%s_job_integration:cortex_alertmanager_notifications_total:rate5m{%s}) by(integration)
+              sum(%(prefix)s:cortex_alertmanager_notifications_total:rate5m%(selectors)s) by(integration)
               -
-              sum(%s_job_integration:cortex_alertmanager_notifications_failed_total:rate5m{%s}) by(integration)
+              sum(%(prefix)s:cortex_alertmanager_notifications_failed_total:rate5m%(selectors)s) by(integration)
               ) > 0
               or on () vector(0)
-            ||| % [$._config.per_cluster_label, $.jobMatcher($._config.job_names.alertmanager), $._config.per_cluster_label, $.jobMatcher($._config.job_names.alertmanager)],
-            'sum(%s_job_integration:cortex_alertmanager_notifications_failed_total:rate5m{%s}) by(integration)' % [$._config.per_cluster_label, $.jobMatcher($._config.job_names.alertmanager)],
+            ||| % {
+              prefix: $.recordingRulePrefix(jobIntegrationSelector),
+              selectors: utils.toPrometheusSelector(jobIntegrationSelector),
+            },
+            'sum(%(prefix)s:cortex_alertmanager_notifications_failed_total:rate5m%(selectors)s) by(integration)' % {
+              prefix: $.recordingRulePrefix(jobIntegrationSelector),
+              selectors: utils.toPrometheusSelector(jobIntegrationSelector),
+            },
           ],
           ['success - {{ integration }}', 'failed - {{ integration }}']
         )
@@ -107,7 +122,7 @@ local filename = 'mimir-alertmanager.json';
       .addPanel(
         $.panel('Per %s alerts' % $._config.per_instance_label) +
         $.queryPanel(
-          'sum by(%s) (%s_job_%s:cortex_alertmanager_alerts:sum{%s})' % [$._config.per_instance_label, $._config.per_cluster_label, $._config.per_instance_label, $.jobMatcher($._config.job_names.alertmanager)],
+          'sum by(%s) (%s:cortex_alertmanager_alerts:sum%s)' % [$._config.per_instance_label, $.recordingRulePrefix(jobInstanceSelector), utils.toPrometheusSelector(jobInstanceSelector)],
           '{{%s}}' % $._config.per_instance_label
         ) +
         $.stack
@@ -115,7 +130,7 @@ local filename = 'mimir-alertmanager.json';
       .addPanel(
         $.panel('Per %s silences' % $._config.per_instance_label) +
         $.queryPanel(
-          'sum by(%s) (%s_job_%s:cortex_alertmanager_silences:sum{%s})' % [$._config.per_instance_label, $._config.per_cluster_label, $._config.per_instance_label, $.jobMatcher($._config.job_names.alertmanager)],
+          'sum by(%s) (%s:cortex_alertmanager_silences:sum%s)' % [$._config.per_instance_label, $.recordingRulePrefix(jobInstanceSelector), utils.toPrometheusSelector(jobInstanceSelector)],
           '{{%s}}' % $._config.per_instance_label
         ) +
         $.stack
@@ -201,22 +216,34 @@ local filename = 'mimir-alertmanager.json';
         $.panel('Replicate state to other alertmanagers /sec') +
         $.successFailurePanel(
           |||
-            sum(%s_job:cortex_alertmanager_state_replication_total:rate5m{%s})
+            sum(%(prefix)s:cortex_alertmanager_state_replication_total:rate5m%(selectors)s)
             -
-            sum(%s_job:cortex_alertmanager_state_replication_failed_total:rate5m{%s})
-          ||| % [$._config.per_cluster_label, $.jobMatcher($._config.job_names.alertmanager), $._config.per_cluster_label, $.jobMatcher($._config.job_names.alertmanager)],
-          'sum(%s_job:cortex_alertmanager_state_replication_failed_total:rate5m{%s})' % [$._config.per_cluster_label, $.jobMatcher($._config.job_names.alertmanager)],
+            sum(%(prefix)s:cortex_alertmanager_state_replication_failed_total:rate5m%(selectors)s)
+          ||| % {
+            prefix: $.recordingRulePrefix(jobSelector),
+            selectors: utils.toPrometheusSelector(jobSelector),
+          },
+          'sum(%(prefix)s:cortex_alertmanager_state_replication_failed_total:rate5m%(selectors)s)' % {
+            prefix: $.recordingRulePrefix(jobSelector),
+            selectors: utils.toPrometheusSelector(jobSelector),
+          },
         )
       )
       .addPanel(
         $.panel('Merge state from other alertmanagers /sec') +
         $.successFailurePanel(
           |||
-            sum(%s_job:cortex_alertmanager_partial_state_merges_total:rate5m{%s})
+            sum(%(prefix)s:cortex_alertmanager_partial_state_merges_total:rate5m%(selectors)s)
             -
-            sum(%s_job:cortex_alertmanager_partial_state_merges_failed_total:rate5m{%s})
-          ||| % [$._config.per_cluster_label, $.jobMatcher($._config.job_names.alertmanager), $._config.per_cluster_label, $.jobMatcher($._config.job_names.alertmanager)],
-          'sum(%s_job:cortex_alertmanager_partial_state_merges_failed_total:rate5m{%s})' % [$._config.per_cluster_label, $.jobMatcher($._config.job_names.alertmanager)],
+            sum(%(prefix)s:cortex_alertmanager_partial_state_merges_failed_total:rate5m%(selectors)s)
+          ||| % {
+            prefix: $.recordingRulePrefix(jobSelector),
+            selectors: utils.toPrometheusSelector(jobSelector),
+          },
+          'sum(%(prefix)s:cortex_alertmanager_partial_state_merges_failed_total:rate5m%(selectors)s)' % {
+            prefix: $.recordingRulePrefix(jobSelector),
+            selectors: utils.toPrometheusSelector(jobSelector),
+          },
         )
       )
       .addPanel(
