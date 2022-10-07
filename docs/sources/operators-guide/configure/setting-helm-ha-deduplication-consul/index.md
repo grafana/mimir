@@ -75,7 +75,7 @@ mimir:
             host: <consul-endpoint> # example: http://consul.consul.svc.cluster.local:8500
 ```
 
-Upgrade the Mimir's helm release using the above configuration.
+2. Upgrade the Mimir's helm release using the following command:
 
 ```bash
  helm -n <mimir-namespace> upgrade --install mimir grafana/mimir-distributed -f custom.yaml
@@ -94,7 +94,7 @@ runtimeConfig:
       ha_replica_label: __replica__
 ```
 
-Upgrade the Mimir's helm release using the above configuration.
+2. Upgrade the Mimir's helm release using the following command:
 
 ```bash
  helm -n <mimir-namespace> upgrade --install mimir grafana/mimir-distributed -f custom.yaml
