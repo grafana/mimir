@@ -127,7 +127,7 @@ If the table is empty, it means there is something wrong with the configuration.
 Go to Grafana explore page and select Mimir datasource. Then execute the following query: `up`. In the Options drop down,
 select Format = Table. In the result you can see the several time series with different labels.
 
-![Verify Deduplication](verify-deduplication.png)
+![Verify deduplication](verify-deduplication.png)
 
 The most important thing is you will not find `__replica__` label (or any label that you set in `ha_replica_label`
 config) anymore. This means you have configured the deduplication successfully.
