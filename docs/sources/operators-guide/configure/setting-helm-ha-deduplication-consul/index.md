@@ -120,7 +120,7 @@ kubectl port-forward service/mymimir-distributor 8080:8080
 Open `http://localhost:8080/distributor/ha_tracker` in a browser. You should see the output similar like the following.
 If the table is empty, it means there is something wrong with the configuration.
 
-![HA Tracker Status](ha-tracker-status.png)
+![HA Tracker status](ha-tracker-status.png)
 
 ### Ensure HA metrics are deduplicated
 
