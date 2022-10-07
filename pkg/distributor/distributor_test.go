@@ -2514,6 +2514,7 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 			limits.IngestionRate = 20
 			limits.IngestionBurstSize = 20
 			limits.MaxGlobalExemplarsPerUser = 10
+			limits.ForwardingEndpoint = "non-empty endpoint"
 
 			var forwardReqCnt atomic.Uint32
 			forwardReqCallback := func(_ []mimirpb.PreallocTimeseries) { forwardReqCnt.Inc() }
@@ -3177,6 +3178,7 @@ func TestHaDedupeAndRelabelBeforeForwarding(t *testing.T) {
 	flagext.DefaultValues(&limits)
 	limits.AcceptHASamples = true
 	limits.MaxLabelValueLength = 15
+	limits.ForwardingEndpoint = "non-empty forwarding endpoint"
 	limits.ForwardingRules = validation.ForwardingRules{
 		"foo": validation.ForwardingRule{},
 	}
@@ -4618,6 +4620,7 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 
 	t.Run("Some samples get forwarded", func(t *testing.T) {
 		cfg := getDefaultConfig()
+		cfg.limits.ForwardingEndpoint = "non-empty forwarding endpoint"
 		cfg.limits.ForwardingRules = validation.ForwardingRules{"any_metric": {}} // Needs to be len()>0 to enable forwarding.
 		cfg.forwarding = true
 		cfg.getForwarder = func() forwarding.Forwarder {

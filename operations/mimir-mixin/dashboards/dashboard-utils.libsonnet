@@ -6,6 +6,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
   local resourceRequestColor = '#FFC000',
   local resourceLimitColor = '#E02F44',
+  local successColor = '#7EB26D',
+  local warningColor = '#EAB839',
+  local errorColor = '#E24D42',
 
   _config:: error 'must provide _config',
 
@@ -121,6 +124,19 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
     },
 
+  // Returns the URL of a given dashboard, keeping the current time range and variables.
+  dashboardURL(filename)::
+    // Grafana uses a <base> HTML set to the path defined in GF_SERVER_ROOT_URL.
+    // This means that if we create relative links (starting with ".") the browser
+    // will append the base to it, effectively honoring the GF_SERVER_ROOT_URL.
+    //
+    // IMPORTANT: due to an issue with Grafana, this URL works only when opened in a
+    // new browser tab (e.g. link with target="_blank").
+    './d/%(uid)s/%(filename)s?${__url_time_range}&${__all_variables}' % {
+      uid: std.md5(filename),
+      filename: std.strReplace(filename, '.json', ''),
+    },
+
   // The mixin allow specialism of the job selector depending on if its a single binary
   // deployment or a namespaced one.
   jobMatcher(job)::
@@ -145,6 +161,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
         sort: 0,
       },
     },
+
+  qpsPanel(selector, statusLabelName='status_code')::
+    super.qpsPanel(selector, statusLabelName) +
+    { yaxes: $.yaxes('reqps') },
 
   // hiddenLegendQueryPanel adds on to 'timeseriesPanel', not the deprecated 'panel'.
   // It is a standard query panel designed to handle a large number of series.  it hides the legend, doesn't fill the series and
@@ -180,13 +200,33 @@ local utils = import 'mixin-utils/utils.libsonnet';
       ],
     },
 
-  successFailurePanel(title, successMetric, failureMetric)::
-    $.panel(title) +
+  // Creates a panel like queryPanel() but if the legend contains only 1 entry,
+  // than it configures the series alias color to the one used to display failures.
+  failurePanel(queries, legends, legendLink=null)::
+    $.queryPanel(queries, legends, legendLink) + {
+      // Set the failure color only if there's just 1 legend and it doesn't contain any placeholder.
+      aliasColors: if (std.type(legends) == 'string' && std.length(std.findSubstr('{', legends[0])) == 0) then {
+        [legends]: errorColor,
+      } else {},
+    },
+
+  successFailurePanel(successMetric, failureMetric)::
     $.queryPanel([successMetric, failureMetric], ['successful', 'failed']) +
-    $.stack + {
+    {
       aliasColors: {
-        successful: '#7EB26D',
-        failed: '#E24D42',
+        successful: successColor,
+        failed: errorColor,
+      },
+    },
+
+  // successFailureCustomPanel is like successFailurePanel() but allows to customize the legends
+  // and have additional queries. The success and failure queries MUST be the first and second
+  // queries respectively.
+  successFailureCustomPanel(queries, legends)::
+    $.queryPanel(queries, legends) + {
+      aliasColors: {
+        [legends[0]]: successColor,
+        [legends[1]]: errorColor,
       },
     },
 
@@ -197,8 +237,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.stack + {
       aliasColors: {
         started: '#34CCEB',
-        completed: '#7EB26D',
-        failed: '#E24D42',
+        completed: successColor,
+        failed: errorColor,
       },
     },
 
@@ -472,13 +512,76 @@ local utils = import 'mixin-utils/utils.libsonnet';
     type: 'text',
   } + options,
 
+  alertListPanel(title, nameFilter='', labelsFilter=''):: {
+    type: 'alertlist',
+    title: title,
+    options: {
+      maxItems: 100,
+      sortOrder: 3,  // Sort by importance.
+      dashboardAlerts: false,
+      alertName: nameFilter,
+      alertInstanceLabelFilter: labelsFilter,
+      stateFilter: {
+        firing: true,
+        pending: false,
+        noData: false,
+        normal: false,
+        'error': true,
+      },
+    },
+  },
+
+  stateTimelinePanel(title, queries, legends):: {
+    local queriesArray = if std.type(queries) == 'string' then [queries] else queries,
+    local legendsArray = if std.type(legends) == 'string' then [legends] else legends,
+
+    local queriesAndLegends =
+      if std.length(legendsArray) == std.length(queriesArray) then
+        std.makeArray(std.length(queriesArray), function(x) { query: queriesArray[x], legend: legendsArray[x] })
+      else
+        error 'length of queries is not equal to length of legends',
+
+    type: 'state-timeline',
+    title: title,
+    targets: [
+      {
+        datasource: { uid: '$datasource' },
+        expr: entry.query,
+        legendFormat: entry.legend,
+        range: true,
+        instant: false,
+        exemplar: false,
+      }
+      for entry in queriesAndLegends
+    ],
+    options: {
+      // Never show the value over the bar in order to have a clean UI.
+      showValue: 'never',
+    },
+    fieldConfig: {
+      defaults: {
+        color: {
+          mode: 'thresholds',
+        },
+        thresholds: {
+          mode: 'absolute',
+          steps: [
+            { color: successColor, value: null },
+            { color: warningColor, value: 0.01 },  // 1%
+            { color: errorColor, value: 0.05 },  // 5%
+          ],
+        },
+      },
+    },
+  },
+
   getObjectStoreRows(title, component):: [
     super.row(title)
     .addPanel(
       $.panel('Operations / sec') +
       $.queryPanel('sum by(operation) (rate(thanos_objstore_bucket_operations_total{%s,component="%s"}[$__rate_interval]))' % [$.namespaceMatcher(), component], '{{operation}}') +
       $.stack +
-      { yaxes: $.yaxes('rps') },
+      { yaxes: $.yaxes('reqps') },
     )
     .addPanel(
       $.panel('Error rate') +

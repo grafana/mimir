@@ -626,7 +626,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor.block-upload-enabled
     	Enable block upload API for the tenant.
   -compactor.blocks-retention-period duration
-    	Delete blocks containing samples older than the specified retention period. 0 to disable.
+    	Delete blocks containing samples older than the specified retention period. Also used by query-frontend to avoid querying beyond the retention period. 0 to disable.
   -compactor.cleanup-concurrency int
     	Max number of tenants for which blocks cleanup and maintenance should run concurrently. (default 20)
   -compactor.cleanup-interval duration

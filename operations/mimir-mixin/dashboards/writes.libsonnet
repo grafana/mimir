@@ -1,9 +1,8 @@
 local utils = import 'mixin-utils/utils.libsonnet';
 local filename = 'mimir-writes.json';
 
-(import 'dashboard-utils.libsonnet') {
-  local write_http_routes_regex = 'api_(v1|prom)_push|otlp_v1_metrics',
-
+(import 'dashboard-utils.libsonnet') +
+(import 'dashboard-queries.libsonnet') {
   [filename]:
     ($.dashboard('Writes') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
@@ -39,11 +38,7 @@ local filename = 'mimir-writes.json';
       .addPanel(
         $.panel('Samples / sec') +
         $.statPanel(
-          'sum(%(group_prefix_jobs)s:cortex_distributor_received_samples:rate5m{%(job)s})' % (
-            $._config {
-              job: $.jobMatcher($._config.job_names.distributor),
-            }
-          ),
+          $.queries.distributor.samplesPerSecond,
           format='short'
         )
       )
@@ -51,11 +46,7 @@ local filename = 'mimir-writes.json';
         local title = 'Exemplars / sec';
         $.panel(title) +
         $.statPanel(
-          'sum(%(group_prefix_jobs)s:cortex_distributor_received_exemplars:rate5m{%(job)s})' % (
-            $._config {
-              job: $.jobMatcher($._config.job_names.distributor),
-            }
-          ),
+          $.queries.distributor.exemplarsPerSecond,
           format='short'
         ) +
         $.panelDescription(
@@ -108,7 +99,7 @@ local filename = 'mimir-writes.json';
       .addPanelIf(
         $._config.gateway_enabled,
         $.panel('Requests / sec') +
-        $.statPanel('sum(rate(cortex_request_duration_seconds_count{%s, route=~"%s"}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.gateway), write_http_routes_regex], format='reqps')
+        $.statPanel('sum(rate(cortex_request_duration_seconds_count{%s, route=~"%s"}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.gateway), $.queries.write_http_routes_regex], format='reqps')
       )
     )
     .addRowIf(
@@ -116,16 +107,16 @@ local filename = 'mimir-writes.json';
       $.row('Gateway')
       .addPanel(
         $.panel('Requests / sec') +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher($._config.job_names.gateway), write_http_routes_regex])
+        $.qpsPanel($.queries.gateway.writeRequestsPerSecond)
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', write_http_routes_regex)])
+        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', $.queries.write_http_routes_regex)])
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.gateway), write_http_routes_regex], ''
+          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.gateway), $.queries.write_http_routes_regex], ''
         )
       )
     )
@@ -133,16 +124,16 @@ local filename = 'mimir-writes.json';
       $.row('Distributor')
       .addPanel(
         $.panel('Requests / sec') +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"/distributor.Distributor/Push|/httpgrpc.*|%s"}' % [$.jobMatcher($._config.job_names.distributor), write_http_routes_regex])
+        $.qpsPanel($.queries.distributor.writeRequestsPerSecond)
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.distributor) + [utils.selector.re('route', '/distributor.Distributor/Push|/httpgrpc.*|%s' % write_http_routes_regex)])
+        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.distributor) + [utils.selector.re('route', '/distributor.Distributor/Push|/httpgrpc.*|%s' % $.queries.write_http_routes_regex)])
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"/distributor.Distributor/Push|/httpgrpc.*|%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.distributor), write_http_routes_regex], ''
+          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"/distributor.Distributor/Push|/httpgrpc.*|%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.distributor), $.queries.write_http_routes_regex], ''
         )
       )
     )
@@ -175,8 +166,8 @@ local filename = 'mimir-writes.json';
     .addRow(
       $.row('Ingester - shipper')
       .addPanel(
+        $.panel('Uploaded blocks / sec') +
         $.successFailurePanel(
-          'Uploaded blocks / sec',
           'sum(rate(cortex_ingester_shipper_uploads_total{%s}[$__rate_interval])) - sum(rate(cortex_ingester_shipper_upload_failures_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
           'sum(rate(cortex_ingester_shipper_upload_failures_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),
         ) +
@@ -186,7 +177,8 @@ local filename = 'mimir-writes.json';
             The rate of blocks being uploaded from the ingesters
             to object storage.
           |||
-        ),
+        ) +
+        $.stack,
       )
       .addPanel(
         $.panel('Upload latency') +
@@ -203,8 +195,8 @@ local filename = 'mimir-writes.json';
     .addRow(
       $.row('Ingester - TSDB head')
       .addPanel(
+        $.panel('Compactions / sec') +
         $.successFailurePanel(
-          'Compactions / sec',
           'sum(rate(cortex_ingester_tsdb_compactions_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
           'sum(rate(cortex_ingester_tsdb_compactions_failed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),
         ) +
@@ -215,7 +207,8 @@ local filename = 'mimir-writes.json';
             active time series; these blocks get periodically compacted (by default, every 2h).
             This panel shows the rate of compaction operations across all TSDBs on all ingesters.
           |||
-        ),
+        ) +
+        $.stack,
       )
       .addPanel(
         $.panel('Compactions latency') +
@@ -232,8 +225,8 @@ local filename = 'mimir-writes.json';
     .addRow(
       $.row('Ingester - TSDB write ahead log (WAL)')
       .addPanel(
+        $.panel('WAL truncations / sec') +
         $.successFailurePanel(
-          'WAL truncations / sec',
           'sum(rate(cortex_ingester_tsdb_wal_truncations_total{%s}[$__rate_interval])) - sum(rate(cortex_ingester_tsdb_wal_truncations_failed_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
           'sum(rate(cortex_ingester_tsdb_wal_truncations_failed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),
         ) +
@@ -243,11 +236,12 @@ local filename = 'mimir-writes.json';
             The WAL is truncated each time a new TSDB block is written. This panel measures the rate of
             truncations.
           |||
-        ),
+        ) +
+        $.stack,
       )
       .addPanel(
+        $.panel('Checkpoints created / sec') +
         $.successFailurePanel(
-          'Checkpoints created / sec',
           'sum(rate(cortex_ingester_tsdb_checkpoint_creations_total{%s}[$__rate_interval])) - sum(rate(cortex_ingester_tsdb_checkpoint_creations_failed_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
           'sum(rate(cortex_ingester_tsdb_checkpoint_creations_failed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),
         ) +
@@ -257,7 +251,8 @@ local filename = 'mimir-writes.json';
             Checkpoints are created as part of the WAL truncation process.
             This metric measures the rate of checkpoint creation.
           |||
-        ),
+        ) +
+        $.stack,
       )
       .addPanel(
         $.panel('WAL truncations latency (includes checkpointing)') +

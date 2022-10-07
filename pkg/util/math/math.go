@@ -5,6 +5,8 @@
 
 package math
 
+import "time"
+
 // Max returns the maximum of two ints
 func Max(a, b int) int {
 	if a > b {
@@ -31,6 +33,14 @@ func Max64(a, b int64) int64 {
 
 // Min64 returns the minimum of two int64s
 func Min64(a, b int64) int64 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// MinDuration returns the minimum of two time.Durations
+func MinDuration(a, b time.Duration) time.Duration {
 	if a < b {
 		return a
 	}

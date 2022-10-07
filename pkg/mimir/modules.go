@@ -831,7 +831,7 @@ func (t *Mimir) setupModuleManager() error {
 		DistributorService:       {Ring, Overrides},
 		Ingester:                 {IngesterService, API},
 		IngesterService:          {Overrides, RuntimeConfig, MemberlistKV},
-		Flusher:                  {API},
+		Flusher:                  {Overrides, API},
 		Queryable:                {Overrides, DistributorService, Ring, API, StoreQueryable, MemberlistKV},
 		Querier:                  {TenantFederation},
 		StoreQueryable:           {Overrides, MemberlistKV},

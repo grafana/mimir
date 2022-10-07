@@ -1699,7 +1699,9 @@
                   ]
                },
                {
-                  "aliasColors": { },
+                  "aliasColors": {
+                     "Failure Rate": "#E24D42"
+                  },
                   "bars": false,
                   "dashLength": 10,
                   "dashes": false,

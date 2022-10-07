@@ -37,7 +37,8 @@ make
 You can use `make help` to see the available targets.
 (By default, the build runs in a Docker container, using an image built
 with all the tools required. The source code is mounted from where you
-run `make` into the build container as a Docker volume.)
+run `make` into the build container as a Docker volume.
+The mount options can be adjusted with `CONTAINER_MOUNT_OPTIONS`.)
 
 To run the unit tests suite:
 
@@ -48,6 +49,15 @@ go test ./...
 To run the integration tests suite please see "[How integration tests work](./how-integration-tests-work.md)".
 
 If using macOS, make sure you have `gnu-sed` installed; otherwise, some make targets will not work properly.
+
+Depending on how docker is installed, configured but also the hardening applied to your workstation using the docker mount options might not work properly.
+This is also true if you are using an alternative to docker like for example podman. In such case, you can use `CONTAINER_MOUNT_OPTIONS` to adjust the mount option.
+
+Example:
+
+```
+make CONTAINER_MOUNT_OPTIONS=delegated
+```
 
 ### Dependency management
 

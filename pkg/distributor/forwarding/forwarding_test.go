@@ -5,12 +5,10 @@ package forwarding
 import (
 	"context"
 	"flag"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -22,7 +20,6 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
 	"google.golang.org/grpc"
@@ -41,99 +38,16 @@ var testConfig = Config{
 	PropagateErrors:    true,
 }
 
-func TestForwardingSamplesSuccessfullyToCorrectTarget(t *testing.T) {
-	ctx := context.Background()
-	now := time.Now().UnixMilli()
-	forwarder, reg := newForwarder(t, testConfig, true)
-
-	url1, reqs1, bodies1, close1 := newTestServer(t, 200, true)
-	defer close1()
-
-	url2, reqs2, bodies2, close2 := newTestServer(t, 200, true)
-	defer close2()
-
-	rules := validation.ForwardingRules{
-		"metric1": validation.ForwardingRule{Endpoint: url1, Ingest: false},
-		"metric2": validation.ForwardingRule{Endpoint: url2, Ingest: true},
-	}
-
-	ts := []mimirpb.PreallocTimeseries{
-		newSample(t, now, 1, 100, "__name__", "metric1", "some_label", "foo"),
-		newSample(t, now, 2, 200, "__name__", "metric1", "some_label", "bar"),
-		newSample(t, now, 3, 300, "__name__", "metric2", "some_label", "foo"),
-		newSample(t, now, 4, 400, "__name__", "metric2", "some_label", "bar"),
-	}
-	tsToIngest, errCh := forwarder.Forward(ctx, "", 0, rules, ts)
-
-	// The metric2 should be returned by the forwarding because the matching rule has ingest set to "true".
-	require.Len(t, tsToIngest, 2)
-	requireLabelsEqual(t, tsToIngest[0].Labels, "__name__", "metric2", "some_label", "foo")
-	requireSamplesEqual(t, tsToIngest[0].Samples, now, 3)
-	requireExemplarsEqual(t, tsToIngest[0].Exemplars, now, 300)
-	requireLabelsEqual(t, tsToIngest[1].Labels, "__name__", "metric2", "some_label", "bar")
-	requireSamplesEqual(t, tsToIngest[1].Samples, now, 4)
-	requireExemplarsEqual(t, tsToIngest[1].Exemplars, now, 400)
-
-	// Loop until errCh gets closed, errCh getting closed indicates that all forwarding requests have completed.
-	for err := range errCh {
-		require.NoError(t, err)
-	}
-
-	for _, req := range append(reqs1(), reqs2()...) {
-		require.Equal(t, "snappy", req.Header.Get("Content-Encoding"))
-		require.Equal(t, "application/x-protobuf", req.Header.Get("Content-Type"))
-	}
-
-	bodies := bodies1()
-	require.Len(t, bodies, 1)
-	receivedReq1 := decodeBody(t, bodies[0])
-	require.Len(t, receivedReq1.Timeseries, 2)
-	requireLabelsEqual(t, receivedReq1.Timeseries[0].Labels, "__name__", "metric1", "some_label", "foo")
-	requireSamplesEqual(t, receivedReq1.Timeseries[0].Samples, now, 1)
-	require.Empty(t, receivedReq1.Timeseries[0].Exemplars)
-	requireLabelsEqual(t, receivedReq1.Timeseries[1].Labels, "__name__", "metric1", "some_label", "bar")
-	requireSamplesEqual(t, receivedReq1.Timeseries[1].Samples, now, 2)
-	require.Empty(t, receivedReq1.Timeseries[1].Exemplars)
-
-	bodies = bodies2()
-	require.Len(t, bodies, 1)
-	receivedReq2 := decodeBody(t, bodies[0])
-	require.Len(t, receivedReq2.Timeseries, 2)
-	requireLabelsEqual(t, receivedReq2.Timeseries[0].Labels, "__name__", "metric2", "some_label", "foo")
-	requireSamplesEqual(t, receivedReq2.Timeseries[0].Samples, now, 3)
-	require.Empty(t, receivedReq2.Timeseries[0].Exemplars)
-	requireLabelsEqual(t, receivedReq2.Timeseries[1].Labels, "__name__", "metric2", "some_label", "bar")
-	requireSamplesEqual(t, receivedReq2.Timeseries[1].Samples, now, 4)
-	require.Empty(t, receivedReq2.Timeseries[1].Exemplars)
-
-	expectedMetrics := `
-	# HELP cortex_distributor_forward_requests_total The total number of requests the Distributor made to forward samples.
-	# TYPE cortex_distributor_forward_requests_total counter
-	cortex_distributor_forward_requests_total{} 2
-	# HELP cortex_distributor_forward_samples_total The total number of samples the Distributor forwarded.
-	# TYPE cortex_distributor_forward_samples_total counter
-	cortex_distributor_forward_samples_total{} 4
-`
-
-	require.NoError(t, testutil.GatherAndCompare(
-		reg,
-		strings.NewReader(expectedMetrics),
-		"cortex_distributor_forward_requests_total",
-		"cortex_distributor_forward_samples_total",
-	))
-}
-
 func TestForwardingSamplesSuccessfullyToSingleTarget(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UnixMilli()
 	forwarder, reg := newForwarder(t, testConfig, true)
 
-	url, reqs, bodiesFn, closeFn := newTestServer(t, 200, true)
-	defer closeFn()
+	url, reqs, bodiesFn := newTestServer(t, 200, true)
 
 	rules := validation.ForwardingRules{
-		"metric1": validation.ForwardingRule{Ingest: false, Endpoint: "not used"},
-		"metric2": validation.ForwardingRule{Ingest: true, Endpoint: ""},
+		"metric1": validation.ForwardingRule{Ingest: false},
+		"metric2": validation.ForwardingRule{Ingest: true},
 	}
 
 	ts := []mimirpb.PreallocTimeseries{
@@ -315,12 +229,11 @@ func TestForwardingOmitOldSamples(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			f, _ := newForwarder(t, testConfig, true)
 
-			url, _, bodiesFn, closeFn := newTestServer(t, 200, true)
-			defer closeFn()
+			url, _, bodiesFn := newTestServer(t, 200, true)
 
 			testMetric := "metric1"
 			rules := validation.ForwardingRules{
-				testMetric: validation.ForwardingRule{Ingest: true, Endpoint: "not used"},
+				testMetric: validation.ForwardingRule{Ingest: true},
 			}
 
 			inputTs := make([]mimirpb.PreallocTimeseries, 0, len(tc.inputSamples))
@@ -375,139 +288,10 @@ func TestForwardingOmitOldSamples(t *testing.T) {
 	}
 }
 
-func TestForwardingSamplesWithDifferentErrorsWithPropagation(t *testing.T) {
-	type status uint16
-	const (
-		statusOk                status = 200
-		statusErrNonRecoverable status = 400
-		statusErrRecoverable    status = 500
-	)
-
-	type testCase struct {
-		name              string
-		config            Config
-		remoteStatusCodes []int
-		expectStatusCodes []status
-	}
-
-	tcs := []testCase{
-		{
-			name:              "one non-recoverable between two successful",
-			config:            testConfig,
-			remoteStatusCodes: []int{200, 400, 200},
-			expectStatusCodes: []status{statusErrNonRecoverable},
-		}, {
-			name:              "one of each (1)",
-			config:            testConfig,
-			remoteStatusCodes: []int{200, 400, 500},
-			expectStatusCodes: []status{statusErrNonRecoverable, statusErrRecoverable},
-		}, {
-			name:              "one of each (2)",
-			config:            testConfig,
-			remoteStatusCodes: []int{500, 400, 200},
-			expectStatusCodes: []status{statusErrNonRecoverable, statusErrRecoverable},
-		}, {
-			name:              "successful codes should result in no error",
-			config:            testConfig,
-			remoteStatusCodes: []int{200, 200},
-			expectStatusCodes: []status{},
-		}, {
-			name:              "codes which are not divisible by 100 (1)",
-			config:            testConfig,
-			remoteStatusCodes: []int{204, 401, 200},
-			expectStatusCodes: []status{statusErrNonRecoverable},
-		}, {
-			name:              "codes which are not divisible by 100 (2)",
-			config:            testConfig,
-			remoteStatusCodes: []int{202, 403, 502},
-			expectStatusCodes: []status{statusErrNonRecoverable, statusErrRecoverable},
-		}, {
-			name:              "codes which are not divisible by 100 (3)",
-			config:            testConfig,
-			remoteStatusCodes: []int{504, 404, 201},
-			expectStatusCodes: []status{statusErrNonRecoverable, statusErrRecoverable},
-		}, {
-			name: "errors dont get propagated",
-			config: Config{
-				Enabled:            testConfig.Enabled,
-				RequestTimeout:     testConfig.RequestTimeout,
-				RequestConcurrency: testConfig.RequestConcurrency,
-				PropagateErrors:    false,
-			},
-			remoteStatusCodes: []int{504, 404, 201},
-			expectStatusCodes: []status{},
-		},
-	}
-
-	for _, tc := range tcs {
-		t.Run(tc.name, func(t *testing.T) {
-			forwarder, reg := newForwarder(t, tc.config, true)
-			urls := make([]string, len(tc.remoteStatusCodes))
-			closers := make([]func(), len(tc.remoteStatusCodes))
-			expectedErrorsByStatusCode := make(map[int]int)
-			for i, code := range tc.remoteStatusCodes {
-				urls[i], _, _, closers[i] = newTestServer(t, code, false)
-				defer closers[i]()
-
-				if code/100 == 2 {
-					continue
-				}
-				expectedErrorsByStatusCode[code]++
-			}
-
-			rules := make(validation.ForwardingRules)
-			metrics := make([]string, 0, len(tc.remoteStatusCodes))
-			for i, url := range urls {
-				metric := fmt.Sprintf("metric%d", i)
-				metrics = append(metrics, metric)
-				rules[metric] = validation.ForwardingRule{Endpoint: url}
-			}
-
-			now := time.Now().UnixMilli()
-			var ts []mimirpb.PreallocTimeseries
-			for _, metric := range metrics {
-				ts = append(ts, newSample(t, now, 1, 100, "__name__", metric))
-			}
-			_, errCh := forwarder.Forward(context.Background(), "", 0, rules, ts)
-
-			gotStatusCodes := []status{}
-			for err := range errCh {
-				resp, ok := httpgrpc.HTTPResponseFromError(err)
-				require.True(t, ok)
-				gotStatusCodes = append(gotStatusCodes, status(resp.Code))
-			}
-
-			sortStatusCodes := func(statusCodes []status) {
-				sort.Slice(statusCodes, func(i, j int) bool { return statusCodes[i] < statusCodes[j] })
-			}
-			sortStatusCodes(gotStatusCodes)
-			sortStatusCodes(tc.expectStatusCodes)
-			require.Equal(t, tc.expectStatusCodes, gotStatusCodes)
-
-			var expectedMetrics strings.Builder
-			if len(expectedErrorsByStatusCode) > 0 {
-				expectedMetrics.WriteString(`
-				# TYPE cortex_distributor_forward_errors_total counter
-				# HELP cortex_distributor_forward_errors_total The total number of errors that the distributor received from forwarding targets when trying to send samples to them.`)
-			}
-			for statusCode, count := range expectedErrorsByStatusCode {
-				expectedMetrics.WriteString(fmt.Sprintf(`
-					cortex_distributor_forward_errors_total{status_code="%d"} %d
-	`, statusCode, count))
-			}
-
-			assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics.String()),
-				"cortex_distributor_forward_errors_total",
-			))
-		})
-	}
-}
-
 func TestForwardingEnsureThatPooledObjectsGetReturned(t *testing.T) {
 	sampleCount := 20
 
-	const forwardingTarget1 = "target1"
-	const forwardingTarget2 = "target2"
+	const forwardingTarget = "target1"
 	const ingested = "ingested"
 
 	type testCase struct {
@@ -519,30 +303,30 @@ func TestForwardingEnsureThatPooledObjectsGetReturned(t *testing.T) {
 
 	testCases := []testCase{
 		{
-			name: "forward samples of one metric to one target and don't ingest them",
+			name: "forward samples of one metric and don't ingest them",
 			sendSamples: map[string]int{
 				"metric1": sampleCount,
 			},
 			rules: validation.ForwardingRules{
-				"metric1": {Endpoint: forwardingTarget1, Ingest: false},
+				"metric1": {Ingest: false},
 			},
 			expectSamples: map[string]int{
-				forwardingTarget1: sampleCount,
+				forwardingTarget: sampleCount,
 			},
 		}, {
-			name: "forward samples of one metric to one target and ingest them",
+			name: "forward samples of one metric and ingest them",
 			sendSamples: map[string]int{
 				"metric1": sampleCount,
 			},
 			rules: validation.ForwardingRules{
-				"metric1": {Endpoint: forwardingTarget1, Ingest: true},
+				"metric1": {Ingest: true},
 			},
 			expectSamples: map[string]int{
-				forwardingTarget1: sampleCount,
-				ingested:          sampleCount,
+				forwardingTarget: sampleCount,
+				ingested:         sampleCount,
 			},
 		}, {
-			name: "forward samples of four metrics to two targets and don't ingest them",
+			name: "forward samples of four metrics and don't ingest them",
 			sendSamples: map[string]int{
 				"metric1": sampleCount / 4,
 				"metric2": sampleCount / 4,
@@ -550,17 +334,16 @@ func TestForwardingEnsureThatPooledObjectsGetReturned(t *testing.T) {
 				"metric4": sampleCount / 4,
 			},
 			rules: validation.ForwardingRules{
-				"metric1": {Endpoint: forwardingTarget1, Ingest: false},
-				"metric2": {Endpoint: forwardingTarget2, Ingest: false},
-				"metric3": {Endpoint: forwardingTarget1, Ingest: false},
-				"metric4": {Endpoint: forwardingTarget2, Ingest: false},
+				"metric1": {Ingest: false},
+				"metric2": {Ingest: false},
+				"metric3": {Ingest: false},
+				"metric4": {Ingest: false},
 			},
 			expectSamples: map[string]int{
-				forwardingTarget1: sampleCount / 2,
-				forwardingTarget2: sampleCount / 2,
+				forwardingTarget: sampleCount,
 			},
 		}, {
-			name: "forward samples of four metrics to two targets and ingest them",
+			name: "forward samples of four metrics to and ingest them",
 			sendSamples: map[string]int{
 				"metric1": sampleCount / 4,
 				"metric2": sampleCount / 4,
@@ -568,18 +351,17 @@ func TestForwardingEnsureThatPooledObjectsGetReturned(t *testing.T) {
 				"metric4": sampleCount / 4,
 			},
 			rules: validation.ForwardingRules{
-				"metric1": {Endpoint: forwardingTarget1, Ingest: true},
-				"metric2": {Endpoint: forwardingTarget1, Ingest: true},
-				"metric3": {Endpoint: forwardingTarget2, Ingest: true},
-				"metric4": {Endpoint: forwardingTarget2, Ingest: true},
+				"metric1": {Ingest: true},
+				"metric2": {Ingest: true},
+				"metric3": {Ingest: true},
+				"metric4": {Ingest: true},
 			},
 			expectSamples: map[string]int{
-				forwardingTarget1: sampleCount / 2,
-				forwardingTarget2: sampleCount / 2,
-				ingested:          sampleCount,
+				forwardingTarget: sampleCount,
+				ingested:         sampleCount,
 			},
 		}, {
-			name: "forward samples of four metrics to two targets and ingest half of them (1)",
+			name: "forward samples of four metrics to and ingest half of them (1)",
 			sendSamples: map[string]int{
 				"metric1": sampleCount / 4,
 				"metric2": sampleCount / 4,
@@ -587,18 +369,17 @@ func TestForwardingEnsureThatPooledObjectsGetReturned(t *testing.T) {
 				"metric4": sampleCount / 4,
 			},
 			rules: validation.ForwardingRules{
-				"metric1": {Endpoint: forwardingTarget1, Ingest: true},
-				"metric2": {Endpoint: forwardingTarget2, Ingest: true},
-				"metric3": {Endpoint: forwardingTarget1, Ingest: false},
-				"metric4": {Endpoint: forwardingTarget2, Ingest: false},
+				"metric1": {Ingest: true},
+				"metric2": {Ingest: true},
+				"metric3": {Ingest: false},
+				"metric4": {Ingest: false},
 			},
 			expectSamples: map[string]int{
-				forwardingTarget1: sampleCount / 2,
-				forwardingTarget2: sampleCount / 2,
-				ingested:          sampleCount / 2,
+				forwardingTarget: sampleCount,
+				ingested:         sampleCount / 2,
 			},
 		}, {
-			name: "forward samples of four metrics to two targets and ingest half of them (2)",
+			name: "forward samples of four metrics and ingest half of them (2)",
 			sendSamples: map[string]int{
 				"metric1": sampleCount / 4,
 				"metric2": sampleCount / 4,
@@ -606,15 +387,14 @@ func TestForwardingEnsureThatPooledObjectsGetReturned(t *testing.T) {
 				"metric4": sampleCount / 4,
 			},
 			rules: validation.ForwardingRules{
-				"metric1": {Endpoint: forwardingTarget1, Ingest: true},
-				"metric2": {Endpoint: forwardingTarget2, Ingest: false},
-				"metric3": {Endpoint: forwardingTarget1, Ingest: true},
-				"metric4": {Endpoint: forwardingTarget2, Ingest: false},
+				"metric1": {Ingest: true},
+				"metric2": {Ingest: false},
+				"metric3": {Ingest: true},
+				"metric4": {Ingest: false},
 			},
 			expectSamples: map[string]int{
-				forwardingTarget1: sampleCount / 2,
-				forwardingTarget2: sampleCount / 2,
-				ingested:          sampleCount / 2,
+				forwardingTarget: sampleCount,
+				ingested:         sampleCount / 2,
 			},
 		}, {
 			name: "don't forward samples, just ingest them",
@@ -631,26 +411,7 @@ func TestForwardingEnsureThatPooledObjectsGetReturned(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			url1, _, bodies1, closer1 := newTestServer(t, 200, true)
-			defer closer1()
-			url2, _, bodies2, closer2 := newTestServer(t, 200, true)
-			defer closer2()
-
-			// Replace forwarding target strings with URLs of test servers.
-			for metric, rule := range tc.rules {
-				if rule.Endpoint == forwardingTarget1 {
-					rule.Endpoint = url1
-				} else if rule.Endpoint == forwardingTarget2 {
-					rule.Endpoint = url2
-				}
-				tc.rules[metric] = rule
-			}
-
-			// bodiesByForwardingTarget maps the forwarding targets to the methods to obtain the bodies that they received.
-			bodiesByForwardingTarget := map[string]func() [][]byte{
-				forwardingTarget1: bodies1,
-				forwardingTarget2: bodies2,
-			}
+			url, _, bodies := newTestServer(t, 200, true)
 
 			// Instantiate the forwarding with validating pools.
 			forwarder, validatePoolUsage := getForwarderWithValidatingPools(t, sampleCount, 1000, 1000)
@@ -677,19 +438,17 @@ func TestForwardingEnsureThatPooledObjectsGetReturned(t *testing.T) {
 			}
 
 			// Perform the forwarding operation.
-			toIngest, errCh := forwarder.Forward(context.Background(), "", 0, tc.rules, ts)
+			toIngest, errCh := forwarder.Forward(context.Background(), url, 0, tc.rules, ts)
 			require.NoError(t, <-errCh)
 
 			// receivedSamples counts the number of samples that each forwarding target has received.
 			receivedSamples := make(map[string]int)
-			for forwardingTarget, bodies := range bodiesByForwardingTarget {
-				for _, body := range bodies() {
-					writeReq := decodeBody(t, body)
-					for _, ts := range writeReq.Timeseries {
-						receivedForTarget := receivedSamples[forwardingTarget]
-						receivedForTarget += len(ts.Samples)
-						receivedSamples[forwardingTarget] = receivedForTarget
-					}
+			for _, body := range bodies() {
+				writeReq := decodeBody(t, body)
+				for _, ts := range writeReq.Timeseries {
+					receivedForTarget := receivedSamples[forwardingTarget]
+					receivedForTarget += len(ts.Samples)
+					receivedSamples[forwardingTarget] = receivedForTarget
 				}
 			}
 
@@ -907,7 +666,7 @@ func requireExemplarsEqual(t *testing.T, gotExemplars []mimirpb.Exemplar, wantTi
 	}
 }
 
-func newTestServer(tb testing.TB, status int, record bool) (string, func() []*http.Request, func() [][]byte, func()) {
+func newTestServer(tb testing.TB, status int, record bool) (string, func() []*http.Request, func() [][]byte) {
 	tb.Helper()
 
 	var requests []*http.Request
@@ -944,7 +703,9 @@ func newTestServer(tb testing.TB, status int, record bool) (string, func() []*ht
 		return bodies
 	}
 
-	return srv.URL, getRequests, getBodies, srv.Close
+	tb.Cleanup(srv.Close)
+
+	return srv.URL, getRequests, getBodies
 }
 
 func decodeBody(t *testing.T, body []byte) mimirpb.WriteRequest {
@@ -975,10 +736,10 @@ func BenchmarkRemoteWriteForwarding(b *testing.B) {
 	rulesWithoutForwarding := make(validation.ForwardingRules)
 
 	for metricIdx := 0; metricIdx < samplesPerReq; metricIdx++ {
-		rulesWithIngest[metrics[metricIdx]] = validation.ForwardingRule{Endpoint: "http://localhost/", Ingest: true}
-		rulesWithoutIngest[metrics[metricIdx]] = validation.ForwardingRule{Endpoint: "http://localhost/", Ingest: false}
+		rulesWithIngest[metrics[metricIdx]] = validation.ForwardingRule{Ingest: true}
+		rulesWithoutIngest[metrics[metricIdx]] = validation.ForwardingRule{Ingest: false}
 	}
-	rulesWithoutForwarding["non-existent-metric"] = validation.ForwardingRule{Endpoint: "http://localhost/", Ingest: false}
+	rulesWithoutForwarding["non-existent-metric"] = validation.ForwardingRule{Ingest: false}
 
 	f, _ := newForwarder(b, testConfig, true)
 
@@ -1016,7 +777,7 @@ func BenchmarkRemoteWriteForwarding(b *testing.B) {
 					require.NoError(b, <-errChs[errChIdx])
 				}
 
-				samples, errChs[errChIdx] = f.Forward(ctx, "", 0, tc.rules, samples)
+				samples, errChs[errChIdx] = f.Forward(ctx, "http://localhost/", 0, tc.rules, samples)
 				errChIdx = (errChIdx + 1) % len(errChs)
 
 				mimirpb.ReuseSlice(samples)
@@ -1034,12 +795,11 @@ func TestForwardingToHTTPGrpcTarget(t *testing.T) {
 
 	forwarder, reg := newForwarder(t, cfg, true)
 
-	url1, reqs1 := newTestHttpgrpcServer(t, 200)
-	url2, reqs2 := newTestHttpgrpcServer(t, 200)
+	url, reqs1 := newTestHttpgrpcServer(t, 200)
 
 	rules := validation.ForwardingRules{
-		"metric1": validation.ForwardingRule{Endpoint: httpGrpcPrefix + url1, Ingest: false},
-		"metric2": validation.ForwardingRule{Endpoint: httpGrpcPrefix + url2, Ingest: true},
+		"metric1": validation.ForwardingRule{Ingest: false},
+		"metric2": validation.ForwardingRule{Ingest: true},
 	}
 
 	ts := []mimirpb.PreallocTimeseries{
@@ -1048,7 +808,8 @@ func TestForwardingToHTTPGrpcTarget(t *testing.T) {
 		newSample(t, now, 3, 300, "__name__", "metric2", "some_label", "foo"),
 		newSample(t, now, 4, 400, "__name__", "metric2", "some_label", "bar"),
 	}
-	tsToIngest, errCh := forwarder.Forward(ctx, "", 0, rules, ts)
+
+	tsToIngest, errCh := forwarder.Forward(ctx, httpGrpcPrefix+url, 0, rules, ts)
 
 	// The metric2 should be returned by the forwarding because the matching rule has ingest set to "true".
 	require.Len(t, tsToIngest, 2)
@@ -1064,7 +825,7 @@ func TestForwardingToHTTPGrpcTarget(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	for _, req := range append(reqs1(), reqs2()...) {
+	for _, req := range reqs1() {
 		ce := ""
 		ct := ""
 
@@ -1083,35 +844,34 @@ func TestForwardingToHTTPGrpcTarget(t *testing.T) {
 	bodies := reqs1()
 	require.Len(t, bodies, 1)
 	receivedReq1 := decodeBody(t, bodies[0].Body)
-	require.Len(t, receivedReq1.Timeseries, 2)
+	require.Len(t, receivedReq1.Timeseries, 4)
+
 	requireLabelsEqual(t, receivedReq1.Timeseries[0].Labels, "__name__", "metric1", "some_label", "foo")
 	requireSamplesEqual(t, receivedReq1.Timeseries[0].Samples, now, 1)
 	require.Empty(t, receivedReq1.Timeseries[0].Exemplars)
+
 	requireLabelsEqual(t, receivedReq1.Timeseries[1].Labels, "__name__", "metric1", "some_label", "bar")
 	requireSamplesEqual(t, receivedReq1.Timeseries[1].Samples, now, 2)
 	require.Empty(t, receivedReq1.Timeseries[1].Exemplars)
 
-	bodies = reqs2()
-	require.Len(t, bodies, 1)
-	receivedReq2 := decodeBody(t, bodies[0].Body)
-	require.Len(t, receivedReq2.Timeseries, 2)
-	requireLabelsEqual(t, receivedReq2.Timeseries[0].Labels, "__name__", "metric2", "some_label", "foo")
-	requireSamplesEqual(t, receivedReq2.Timeseries[0].Samples, now, 3)
-	require.Empty(t, receivedReq2.Timeseries[0].Exemplars)
-	requireLabelsEqual(t, receivedReq2.Timeseries[1].Labels, "__name__", "metric2", "some_label", "bar")
-	requireSamplesEqual(t, receivedReq2.Timeseries[1].Samples, now, 4)
-	require.Empty(t, receivedReq2.Timeseries[1].Exemplars)
+	requireLabelsEqual(t, receivedReq1.Timeseries[2].Labels, "__name__", "metric2", "some_label", "foo")
+	requireSamplesEqual(t, receivedReq1.Timeseries[2].Samples, now, 3)
+	require.Empty(t, receivedReq1.Timeseries[2].Exemplars)
+
+	requireLabelsEqual(t, receivedReq1.Timeseries[3].Labels, "__name__", "metric2", "some_label", "bar")
+	requireSamplesEqual(t, receivedReq1.Timeseries[3].Samples, now, 4)
+	require.Empty(t, receivedReq1.Timeseries[3].Exemplars)
 
 	expectedMetrics := `
 	# HELP cortex_distributor_forward_requests_total The total number of requests the Distributor made to forward samples.
 	# TYPE cortex_distributor_forward_requests_total counter
-	cortex_distributor_forward_requests_total{} 2
+	cortex_distributor_forward_requests_total{} 1
 	# HELP cortex_distributor_forward_samples_total The total number of samples the Distributor forwarded.
 	# TYPE cortex_distributor_forward_samples_total counter
 	cortex_distributor_forward_samples_total{} 4
 	# TYPE cortex_distributor_forward_grpc_clients gauge
 	# HELP cortex_distributor_forward_grpc_clients Number of gRPC clients used by Distributor forwarder.
-	cortex_distributor_forward_grpc_clients 2
+	cortex_distributor_forward_grpc_clients 1
 `
 
 	require.NoError(t, testutil.GatherAndCompare(

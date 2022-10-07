@@ -258,7 +258,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor.block-upload-enabled
     	Enable block upload API for the tenant.
   -compactor.blocks-retention-period duration
-    	Delete blocks containing samples older than the specified retention period. 0 to disable.
+    	Delete blocks containing samples older than the specified retention period. Also used by query-frontend to avoid querying beyond the retention period. 0 to disable.
   -compactor.compactor-tenant-shard-size int
     	Max number of compactors that can compact blocks for single tenant. 0 to disable the limit and use all compactors.
   -compactor.data-dir string

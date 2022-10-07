@@ -869,6 +869,7 @@ spec:
   template:
     metadata:
       labels:
+        gossip_ring_member: "true"
         name: ruler-querier
     spec:
       containers:

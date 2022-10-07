@@ -4,6 +4,22 @@
 
 ### Grafana Mimir
 
+* [BUGFIX] Flusher: Add `Overrides` as a dependency to prevent panics when starting with `-target=flusher`. #3151
+
+### Mixin
+
+### Jsonnet
+
+### Mimirtool
+
+### Documentation
+
+### Tools
+
+## 2.4.0-rc.0
+
+### Grafana Mimir
+
 * [CHANGE] Distributor: change the default value of `-distributor.remote-timeout` to `2s` from `20s` and `-distributor.forwarding.request-timeout` to `2s` from `10s` to improve distributor resource usage when ingesters crash. #2728 #2912
 * [CHANGE] Anonymous usage statistics tracking: added the `-ingester.ring.store` value. #2981
 * [CHANGE] Series metadata `HELP` that is longer than `-validation.max-metadata-length` is now truncated silently, instead of being dropped with a 400 status code. #2993
@@ -17,10 +33,12 @@
 * [CHANGE] Ingester: removed the deprecated configuration option `-ingester.ring.join-after`. #3111
 * [CHANGE] Querier: removed the deprecated configuration option `-querier.shuffle-sharding-ingesters-lookback-period`. The value of `-querier.query-ingesters-within` is now used internally for shuffle sharding lookback, while you can use `-querier.shuffle-sharding-ingesters-enabled` to enable or disable shuffle sharding on the read path. #3111
 * [CHANGE] Memberlist: cluster label verification feature (`-memberlist.cluster-label` and `-memberlist.cluster-label-verification-disabled`) is now marked as stable. #3108
+* [CHANGE] Distributor: only single per-tenant forwarding endpoint can be configured now. Support for per-rule endpoint has been removed. #3095
+* [CHANGE] Query-frontend: truncate queries based on the configured blocks retention period (`-compactor.blocks-retention-period`) to avoid querying past this period. #3134
 * [FEATURE] Query-scheduler: added an experimental ring-based service discovery support for the query-scheduler. Refer to [query-scheduler configuration](https://grafana.com/docs/mimir/next/operators-guide/architecture/components/query-scheduler/#configuration) for more information. #2957
 * [FEATURE] Introduced the experimental endpoint `/api/v1/user_limits` exposed by all components that load runtime configuration. This endpoint exposes realtime limits for the authenticated tenant, in JSON format. #2864 #3017
 * [FEATURE] Query-scheduler: added the experimental configuration option `-query-scheduler.max-used-instances` to restrict the number of query-schedulers effectively used regardless how many replicas are running. This feature can be useful when using the experimental read-write deployment mode. #3005
-* [ENHANCEMENT] Go: updated to go 1.19.1. #2637
+* [ENHANCEMENT] Go: updated to go 1.19.2. #2637 #3127 #3129
 * [ENHANCEMENT] Runtime config: don't unmarshal runtime configuration files if they haven't changed. This can save a bit of CPU and memory on every component using runtime config. #2954
 * [ENHANCEMENT] Query-frontend: Add `cortex_frontend_query_result_cache_skipped_total` and `cortex_frontend_query_result_cache_attempted_total` metrics to track the reason why query results are not cached. #2855
 * [ENHANCEMENT] Distributor: pool more connections per host when forwarding request. Mark requests as idempotent so they can be retried under some conditions. #2968
@@ -80,6 +98,9 @@
 * [ENHANCEMENT] Improved tracing spans tracked by distributors, ingesters and store-gateways. #2879 #3099 #3089
 * [ENHANCEMENT] Ingester: improved the performance of label value cardinality endpoint. #3044
 * [ENHANCEMENT] Ruler: use backoff retry on remote evaluation #3098
+* [ENHANCEMENT] Query-frontend: Include multiple tenant IDs in query logs when present instead of dropping them. #3125
+* [ENHANCEMENT] Alertmanager: reduced memory utilization in Mimir clusters with a large number of tenants. #3143
+* [ENHANCEMENT] Store-gateway: added extra span logging to improve observability. #3131
 * [BUGFIX] Querier: Fix 400 response while handling streaming remote read. #2963
 * [BUGFIX] Fix a bug causing query-frontend, query-scheduler, and querier not failing if one of their internal components fail. #2978
 * [BUGFIX] Querier: re-balance the querier worker connections when a query-frontend or query-scheduler is terminated. #3005
@@ -87,20 +108,27 @@
 * [BUGFIX] Ruler: fix panic when ruler.external_url is explicitly set to an empty string ("") in YAML. #2915
 * [BUGFIX] Alertmanager: Fix support for the Telegram API URL in the global settings. #3097
 * [BUGFIX] Alertmanager: Fix parsing of label matchers without label value in the API used to retrieve alerts. #3097
+* [BUGFIX] Ruler: Fix not restoring alert state for rule groups when other ruler replicas shut down. #3156
+* [BUGFIX] Updated `golang.org/x/net` dependency to fix CVE-2022-27664. #3124
 
 ### Mixin
 
 * [CHANGE] Alerts: MimirQuerierAutoscalerNotActive is now critical and fires after 1h instead of 15m. #2958
+* [FEATURE] Dashboards: Added "Mimir / Overview" dashboards, providing an high level view over a Mimir cluster. #3122 #3147 #3155
 * [ENHANCEMENT] Dashboards: Updated the "Writes" and "Rollout progress" dashboards to account for samples ingested via the new OTLP ingestion endpoint. #2919 #2938
 * [ENHANCEMENT] Dashboards: Include per-tenant request rate in "Tenants" dashboard. #2874
 * [ENHANCEMENT] Dashboards: Include inflight object store requests in "Reads" dashboard. #2914
 * [ENHANCEMENT] Dashboards: Make queries used to find job, cluster and namespace for dropdown menus configurable. #2893
 * [ENHANCEMENT] Dashboards: Include rate of label and series queries in "Reads" dashboard. #3065 #3074
 * [ENHANCEMENT] Dashboards: Fix legend showing on per-pod panels. #2944
+* [ENHANCEMENT] Dashboards: Use the "req/s" unit on panels showing the requests rate. #3118
+* [ENHANCEMENT] Dashboards: Use a consistent color across dashboards for the error rate. #3154
 
 ### Jsonnet
 
+* [FEATURE] Added support for query-scheduler ring-based service discovery. #3128
 * [ENHANCEMENT] Querier autoscaling is now slower on scale downs: scale down 10% every 1m instead of 100%. #2962
+* [BUGFIX] Memberlist: `gossip_member_label` is now set for ruler-queriers. #3141
 
 ### Mimirtool
 
@@ -113,9 +141,12 @@
 * [ENHANCEMENT] Improved gRPC clients config documentation. #3020
 * [ENHANCEMENT] Added documentation on how to manage alerting and recording rules. #2983
 * [ENHANCEMENT] Improved `MimirSchedulerQueriesStuck` runbook. #3006
+* [ENHANCEMENT] Added "Cluster label verification" section to memberlist documentation. #3096
+* [ENHANCEMENT] Mention compression in multi-zone replication documentation. #3107
 * [BUGFIX] Fixed configuration option names in "Enabling zone-awareness via the Grafana Mimir Jsonnet". #3018
 * [BUGFIX] Fixed `mimirtool analyze` parameters documentation. #3094
 * [BUGFIX] Fixed YAML configuraton in the "Manage the configuration of Grafana Mimir with Helm" guide. #3042
+* [BUGFIX] Fixed Alertmanager capacity planning documentation. #3132
 
 ### Tools
 

@@ -9,6 +9,7 @@
     $._config.queryEngineConfig +
     $._config.ingesterRingClientConfig +
     $._config.queryBlocksStorageConfig +
+    $._config.querySchedulerRingClientConfig +
     $.blocks_metadata_caching_config +
     $.bucket_index_config
     {
