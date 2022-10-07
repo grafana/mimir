@@ -154,6 +154,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
     then [utils.selector.noop('%s' % $._config.per_cluster_label), utils.selector.re('job', '$job')]
     else [utils.selector.re('%s' % $._config.per_cluster_label, '$cluster'), utils.selector.re('job', '($namespace)/(%s)' % job)],
 
+  recordingRulePrefix(selectors)::
+    std.join('_', [matcher.label for matcher in selectors]),
+
   panel(title)::
     super.panel(title) + {
       tooltip+: {
