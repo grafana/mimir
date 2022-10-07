@@ -379,14 +379,13 @@ check-license: ## Check license header of files.
 check-license: license
 	@git diff --exit-code || (echo "Please add the license header running 'make BUILD_IN_CONTAINER=false license'" && false)
 
-dist: dist/$(UPTODATE) ## Generates binaries for a Mimir release.
-
-dist/$(UPTODATE):
-	rm -fr ./dist
-	mkdir -p ./dist
-	# Build binaries for various architectures and operating systems. Only
-	# mimirtool supports Windows for now.
-	for os in linux darwin windows; do \
+dist: ## Generates binaries for a Mimir release.
+	echo "Cleaning up dist/"
+	@rm -fr ./dist
+	@mkdir -p ./dist
+	@# Build binaries for various architectures and operating systems. Only
+	@# mimirtool supports Windows for now.
+	@for os in linux darwin windows; do \
 		for arch in amd64 arm64; do \
 			suffix="" ; \
 			if [ "$$os" = "windows" ]; then \
