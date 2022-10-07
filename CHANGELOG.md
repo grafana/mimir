@@ -107,7 +107,7 @@
 * [BUGFIX] Alertmanager: Fix support for the Telegram API URL in the global settings. #3097
 * [BUGFIX] Alertmanager: Fix parsing of label matchers without label value in the API used to retrieve alerts. #3097
 * [BUGFIX] Ruler: Fix not restoring alert state for rule groups when other ruler replicas shut down. #3156
-* [BUGFIX] Updated dependency to fix CVE-2022-27664. #3124
+* [BUGFIX] Updated `golang.org/x/net` dependency to fix CVE-2022-27664. #3124
 
 ### Mixin
 
