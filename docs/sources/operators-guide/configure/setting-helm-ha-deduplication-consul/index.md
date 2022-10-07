@@ -80,7 +80,7 @@ Upgrade the Mimir's helm release using the above configuration.
  helm -n <mimir-namespace> upgrade --install mimir grafana/mimir-distributed -f custom.yaml
 ```
 
-### HA Deduplication per tenant
+### Configure HA deduplication per tenant
 
 Add the following configuration below the `custom.yaml` file to configure HA deduplication per-tenant
 
