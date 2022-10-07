@@ -59,7 +59,7 @@ This helps ongoing PRs to get their changes in the right place, and to consider 
    - Add a new section for the new release so that `## main / unreleased` is blank and at the top.
    - The new section should say `## x.y.0-rc.0`.
 1. Get this PR reviewed and merged.
-1. Comment on open PRs with a CHANGELOG entry to rebase on `main` and move the CHANGELOG entry to the top under `## main / unreleased`
+1. Run `./tools/release/notify-changelog-cut.sh` to comment on open PRs with a CHANGELOG entry to rebase on `main` and move the CHANGELOG entry to the top under `## main / unreleased`
 
 ### Prepare your release
 
