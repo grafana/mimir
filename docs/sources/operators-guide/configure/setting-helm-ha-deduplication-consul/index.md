@@ -83,7 +83,7 @@ Upgrade the Mimir's helm release using the above configuration.
 
 ### Configure HA deduplication per tenant
 
-Add the following configuration below the `custom.yaml` file to configure HA deduplication per-tenant
+1. Add the following configuration to the `custom.yaml` file:
 
 ```yaml
 runtimeConfig:
