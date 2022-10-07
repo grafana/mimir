@@ -32,6 +32,59 @@ local filename = 'mimir-overview.json';
     .addClusterSelectorTemplates()
 
     .addRow(
+      $.row('Mimir cluster health')
+      .addPanel(
+        $.textPanel('', |||
+          The 'Status' panel shows an overview on the cluster health over the time.
+          Visit the following specific dashboards to investigate failures in a specific area:
+
+          - <a target="_blank" href="%(writesDashboardURL)s">Writes</a>
+          - <a target="_blank" href="%(readsDashboardURL)s">Reads</a>
+          - <a target="_blank" href="%(rulerDashboardURL)s">Rule evaluations</a>
+          - <a target="_blank" href="%(alertmanagerDashboardURL)s">Alerting notifications</a>
+          - <a target="_blank" href="%(objectStoreDashboardURL)s">Object storage</a>
+        ||| % helpers),
+      )
+      .addPanel(
+        $.stateTimelinePanel(
+          'Status',
+          [
+            // Write failures.
+            if $._config.gateway_enabled then $.queries.gateway.writeFailuresRate else $.queries.distributor.writeFailuresRate,
+            // Read failures.
+            if $._config.gateway_enabled then $.queries.gateway.readFailuresRate else $.queries.query_frontend.readFailuresRate,
+            // Rule evaluation failures.
+            $.queries.ruler.evaluations.failuresRate,
+            // Alerting notifications.
+            |||
+              # Failed notifications from ruler to Alertmanager (handling the case the ruler metrics are missing).
+              ((%(rulerFailuresRate)s) or vector(0))
+              +
+              # Failed notifications from Alertmanager to receivers (handling the case the alertmanager metrics are missing).
+              ((%(alertmanagerFailuresRate)s) or vector(0))
+            ||| % {
+              rulerFailuresRate: $.queries.ruler.notifications.failuresRate,
+              alertmanagerFailuresRate: $.queries.alertmanager.notifications.failuresRate,
+            },
+            // Object storage failures.
+            $.queries.storage.failuresRate,
+          ],
+          ['Writes', 'Reads', 'Rule evaluations', 'Alerting notifications', 'Object storage']
+        )
+      )
+      .addPanel(
+        $.alertListPanel('Firing alerts', 'Mimir', $.namespaceMatcher())
+      ) + {
+        panels: [
+          // Custom width for panels, so that the text panel (description) has the same width of the description in the following rows,
+          // and the status takes more space than the others.
+          panel { span: if panel.type == 'state-timeline' then 6 else 3 }
+          for panel in super.panels
+        ],
+      }
+    )
+
+    .addRow(
       $.row('Writes')
       .addPanel(
         $.textPanel('', |||
@@ -151,17 +204,7 @@ local filename = 'mimir-overview.json';
         { yaxes: $.yaxes('s') },
       )
       .addPanel(
-        local success = |||
-          sum(rate(cortex_prometheus_notifications_sent_total{%s}[$__rate_interval]))
-            -
-          sum(rate(cortex_prometheus_notifications_errors_total{%s}[$__rate_interval]))
-        ||| % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)];
-
-        local failure = |||
-          sum(rate(cortex_prometheus_notifications_errors_total{%s}[$__rate_interval]))
-        ||| % $.jobMatcher($._config.job_names.ruler);
-
-        $.successFailurePanel('Alerting notifications sent to Alertmanager / sec', success, failure)
+        $.successFailurePanel('Alerting notifications sent to Alertmanager / sec', $.queries.ruler.notifications.successPerSecond, $.queries.ruler.notifications.failurePerSecond)
       )
     )
 
@@ -177,10 +220,7 @@ local filename = 'mimir-overview.json';
         ||| % helpers),
       )
       .addPanel(
-        local failure = 'sum(rate(thanos_objstore_bucket_operation_failures_total{%s}[$__rate_interval]))' % $.namespaceMatcher();
-        local success = 'sum(rate(thanos_objstore_bucket_operations_total{%s}[$__rate_interval])) - %s' % [$.namespaceMatcher(), failure];
-
-        $.successFailurePanel('Requests / sec', success, failure) +
+        $.successFailurePanel('Requests / sec', $.queries.storage.successPerSecond, $.queries.storage.failurePerSecond) +
         { yaxes: $.yaxes('reqps') },
       )
       .addPanel(

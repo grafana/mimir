@@ -6,6 +6,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
   local resourceRequestColor = '#FFC000',
   local resourceLimitColor = '#E02F44',
+  local successColor = '#7EB26D',
+  local warningColor = '#EAB839',
+  local errorColor = '#E24D42',
 
   _config:: error 'must provide _config',
 
@@ -202,8 +205,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.queryPanel([successMetric, failureMetric], ['successful', 'failed']) +
     $.stack + {
       aliasColors: {
-        successful: '#7EB26D',
-        failed: '#E24D42',
+        successful: successColor,
+        failed: errorColor,
       },
     },
 
@@ -214,8 +217,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.stack + {
       aliasColors: {
         started: '#34CCEB',
-        completed: '#7EB26D',
-        failed: '#E24D42',
+        completed: successColor,
+        failed: errorColor,
       },
     },
 
@@ -488,6 +491,69 @@ local utils = import 'mixin-utils/utils.libsonnet';
     transparent: true,
     type: 'text',
   } + options,
+
+  alertListPanel(title, nameFilter='', labelsFilter=''):: {
+    type: 'alertlist',
+    title: title,
+    options: {
+      maxItems: 100,
+      sortOrder: 3,  // Sort by importance.
+      dashboardAlerts: false,
+      alertName: nameFilter,
+      alertInstanceLabelFilter: labelsFilter,
+      stateFilter: {
+        firing: true,
+        pending: false,
+        noData: false,
+        normal: false,
+        'error': true,
+      },
+    },
+  },
+
+  stateTimelinePanel(title, queries, legends):: {
+    local queriesArray = if std.type(queries) == 'string' then [queries] else queries,
+    local legendsArray = if std.type(legends) == 'string' then [legends] else legends,
+
+    local queriesAndLegends =
+      if std.length(legendsArray) == std.length(queriesArray) then
+        std.makeArray(std.length(queriesArray), function(x) { query: queriesArray[x], legend: legendsArray[x] })
+      else
+        error 'length of queries is not equal to length of legends',
+
+    type: 'state-timeline',
+    title: title,
+    targets: [
+      {
+        datasource: { uid: '$datasource' },
+        expr: entry.query,
+        legendFormat: entry.legend,
+        range: true,
+        instant: false,
+        exemplar: false,
+      }
+      for entry in queriesAndLegends
+    ],
+    options: {
+      // Never show the value over the bar in order to have a clean UI.
+      showValue: 'never',
+    },
+    fieldConfig: {
+      defaults: {
+        color: {
+          mode: 'thresholds',
+        },
+        thresholds: {
+          mode: 'percentage',
+          steps: [
+            { color: successColor, value: null },
+            { color: warningColor, value: 1 },
+            { color: errorColor, value: 5 },
+          ],
+        },
+      },
+    },
+  },
 
   getObjectStoreRows(title, component):: [
     super.row(title)
