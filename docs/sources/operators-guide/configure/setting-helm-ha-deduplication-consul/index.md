@@ -7,7 +7,7 @@ title: Configuring Grafana Mimir Helm Chart for high-availability deduplication 
 weight: 70
 ---
 
-# Configuring mimir-distributed Helm Chart for high-availability deduplication with Consul
+# Configure high-availability deduplication with Consul
 
 Grafana Mimir can deduplicate data from high-availability (HA) Prometheus setup. In this guide, you will see how to configure
 the deduplication for Grafana Mimir helm deployment using external Consul. You also can review 
