@@ -1053,7 +1053,7 @@ This alert fires when the number of ring members does not match the number of ru
 
 How it **works**:
 
-- The alert compares each component (one of `compactor`, `distributor`, `ingester`, `ruler`, or `store-gateway`) against the number of `up` instances for the component in that namespace/cluster.
+- The alert compares each component (currently just `ingester`) against the number of `up` instances for the component in that namespace/cluster.
 
 How to **investigate**:
 

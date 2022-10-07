@@ -250,12 +250,14 @@
             ||| % { component: component_job[0], alert_aggregation_variables: $._config.alert_aggregation_variables },
           },
         }
+        // NOTE(jhesketh): It is expected that the stateless components may trigger this alert
+        //                 too often. Just alert on ingester for now.
         for component_job in [
-          ['compactor', $._config.job_names.compactor],
-          ['distributor', $._config.job_names.distributor],
+          // ['compactor', $._config.job_names.compactor],
+          // ['distributor', $._config.job_names.distributor],
           ['ingester', $._config.job_names.ingester],
-          ['ruler', $._config.job_names.ruler],
-          ['store-gateway', $._config.job_names.store_gateway],
+          // ['ruler', $._config.job_names.ruler],
+          // ['store-gateway', $._config.job_names.store_gateway],
         ]
       ],
     },
