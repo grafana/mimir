@@ -48,7 +48,7 @@ Make a note of the Consul endpoint, because you will need it later to configure 
 
 ## Configure Mimir high availability
 
-You can set Mimir HA deduplication configuration in global level or tenant level.
+You can configure Mimir HA deduplication globally or at the tenant level.
 
 ### Globally configure HA deduplication
 
