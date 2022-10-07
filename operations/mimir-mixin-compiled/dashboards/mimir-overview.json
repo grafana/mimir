@@ -52,7 +52,7 @@
                            "mode": "thresholds"
                         },
                         "thresholds": {
-                           "mode": "percentage",
+                           "mode": "absolute",
                            "steps": [
                               {
                                  "color": "#7EB26D",
@@ -60,11 +60,11 @@
                               },
                               {
                                  "color": "#EAB839",
-                                 "value": 1
+                                 "value": 0.01
                               },
                               {
                                  "color": "#E24D42",
-                                 "value": 5
+                                 "value": 0.050000000000000003
                               }
                            ]
                         }
@@ -111,7 +111,7 @@
                            "uid": "$datasource"
                         },
                         "exemplar": false,
-                        "expr": "# Failed notifications from ruler to Alertmanager (handling the case the ruler metrics are missing).\n((sum(rate(cortex_prometheus_notifications_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend))\"}[$__rate_interval]))\n/\nsum(rate(cortex_prometheus_notifications_sent_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend))\"}[$__rate_interval]))\n) or vector(0))\n+\n# Failed notifications from Alertmanager to receivers (handling the case the alertmanager metrics are missing).\n((sum(cluster_job_integration:cortex_alertmanager_notifications_failed_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend))\"})\n/\nsum(cluster_job_integration:cortex_alertmanager_notifications_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend))\"})\n) or vector(0))\n",
+                        "expr": "(\n  # Failed notifications from ruler to Alertmanager (handling the case the ruler metrics are missing).\n  ((sum(rate(cortex_prometheus_notifications_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend))\"}[$__rate_interval]))\n) or vector(0))\n  +\n  # Failed notifications from Alertmanager to receivers (handling the case the alertmanager metrics are missing).\n  ((sum(cluster_job_integration:cortex_alertmanager_notifications_failed_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend))\"})\n) or vector(0))\n)\n/\n(\n  # Total notifications from ruler to Alertmanager (handling the case the ruler metrics are missing).\n  ((sum(rate(cortex_prometheus_notifications_sent_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend))\"}[$__rate_interval]))\n) or vector(0))\n  +\n  # Total notifications from Alertmanager to receivers (handling the case the alertmanager metrics are missing).\n  ((sum(cluster_job_integration:cortex_alertmanager_notifications_total:rate5m{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir|mimir-backend))\"})\n) or vector(0))\n)\n",
                         "instant": false,
                         "legendFormat": "Alerting notifications",
                         "range": true

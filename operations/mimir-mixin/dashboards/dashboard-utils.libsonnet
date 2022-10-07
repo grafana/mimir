@@ -564,11 +564,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
           mode: 'thresholds',
         },
         thresholds: {
-          mode: 'percentage',
+          mode: 'absolute',
           steps: [
             { color: successColor, value: null },
-            { color: warningColor, value: 1 },
-            { color: errorColor, value: 5 },
+            { color: warningColor, value: 0.01 },  // 1%
+            { color: errorColor, value: 0.05 },  // 5%
           ],
         },
       },

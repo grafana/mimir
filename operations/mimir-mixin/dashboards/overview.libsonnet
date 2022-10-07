@@ -57,14 +57,26 @@ local filename = 'mimir-overview.json';
             $.queries.ruler.evaluations.failuresRate,
             // Alerting notifications.
             |||
-              # Failed notifications from ruler to Alertmanager (handling the case the ruler metrics are missing).
-              ((%(rulerFailuresRate)s) or vector(0))
-              +
-              # Failed notifications from Alertmanager to receivers (handling the case the alertmanager metrics are missing).
-              ((%(alertmanagerFailuresRate)s) or vector(0))
+              (
+                # Failed notifications from ruler to Alertmanager (handling the case the ruler metrics are missing).
+                ((%(rulerFailurePerSecond)s) or vector(0))
+                +
+                # Failed notifications from Alertmanager to receivers (handling the case the alertmanager metrics are missing).
+                ((%(alertmanagerFailurePerSecond)s) or vector(0))
+              )
+              /
+              (
+                # Total notifications from ruler to Alertmanager (handling the case the ruler metrics are missing).
+                ((%(rulerTotalPerSecond)s) or vector(0))
+                +
+                # Total notifications from Alertmanager to receivers (handling the case the alertmanager metrics are missing).
+                ((%(alertmanagerTotalPerSecond)s) or vector(0))
+              )
             ||| % {
-              rulerFailuresRate: $.queries.ruler.notifications.failuresRate,
-              alertmanagerFailuresRate: $.queries.alertmanager.notifications.failuresRate,
+              rulerFailurePerSecond: $.queries.ruler.notifications.failurePerSecond,
+              rulerTotalPerSecond: $.queries.ruler.notifications.totalPerSecond,
+              alertmanagerFailurePerSecond: $.queries.alertmanager.notifications.failurePerSecond,
+              alertmanagerTotalPerSecond: $.queries.alertmanager.notifications.totalPerSecond,
             },
             // Object storage failures.
             $.queries.storage.failuresRate,

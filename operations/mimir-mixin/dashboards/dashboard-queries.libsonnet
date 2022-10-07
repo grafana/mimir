@@ -133,6 +133,11 @@
         ||| % variables,
       },
       notifications: {
+        // Notifications / sec attempted to send to the Alertmanager.
+        totalPerSecond: |||
+          sum(rate(cortex_prometheus_notifications_sent_total{%(rulerMatcher)s}[$__rate_interval]))
+        ||| % variables,
+
         // Notifications / sec successfully sent to the Alertmanager.
         successPerSecond: |||
           sum(rate(cortex_prometheus_notifications_sent_total{%(rulerMatcher)s}[$__rate_interval]))
@@ -144,18 +149,16 @@
         failurePerSecond: |||
           sum(rate(cortex_prometheus_notifications_errors_total{%(rulerMatcher)s}[$__rate_interval]))
         ||| % variables,
-
-        // Notifications failed to be sent to the Alertmanager as percentage of total notifications attempted.
-        failuresRate: |||
-          sum(rate(cortex_prometheus_notifications_errors_total{%(rulerMatcher)s}[$__rate_interval]))
-          /
-          sum(rate(cortex_prometheus_notifications_sent_total{%(rulerMatcher)s}[$__rate_interval]))
-        ||| % variables,
       },
     },
 
     alertmanager: {
       notifications: {
+        // Notifications / sec attempted to deliver by the Alertmanager to the receivers.
+        totalPerSecond: |||
+          sum(%(perClusterLabel)s_job_integration:cortex_alertmanager_notifications_total:rate5m{%(alertmanagerMatcher)s})
+        ||| % variables,
+
         // Notifications / sec successfully delivered by the Alertmanager to the receivers.
         successPerSecond: |||
           sum(%(perClusterLabel)s_job_integration:cortex_alertmanager_notifications_total:rate5m{%(alertmanagerMatcher)s})
@@ -166,13 +169,6 @@
         // Notifications / sec failed to be delivered by the Alertmanager to the receivers.
         failurePerSecond: |||
           sum(%(perClusterLabel)s_job_integration:cortex_alertmanager_notifications_failed_total:rate5m{%(alertmanagerMatcher)s})
-        ||| % variables,
-
-        // Notifications failed to be sent by the Alertmanager to the receivers as percentage of total notifications attempted.
-        failuresRate: |||
-          sum(%(perClusterLabel)s_job_integration:cortex_alertmanager_notifications_failed_total:rate5m{%(alertmanagerMatcher)s})
-          /
-          sum(%(perClusterLabel)s_job_integration:cortex_alertmanager_notifications_total:rate5m{%(alertmanagerMatcher)s})
         ||| % variables,
       },
     },
