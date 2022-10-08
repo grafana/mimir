@@ -31,6 +31,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Metamonitoring: make scrape interval configurable. #2945
 * [BUGFIX] Fix an issue that caused metamonitoring secrets to be created incorrectly #3170
 * [BUGFIX] Nginx: fixed `imagePullSecret` value reference inconsistency. #3208
+* [BUGFIX] Move the activity tracker log from /data to /active-query-tracker to remove ignore log messages. #3169
 
 ## 3.2.0
 
