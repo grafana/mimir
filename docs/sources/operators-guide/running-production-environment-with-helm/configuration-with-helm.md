@@ -228,7 +228,7 @@ This example shows how to set up the configuration to use an S3 bucket for block
    data:
      mimir.yaml: |
        activity_tracker:
-         filepath: /data/metrics-activity.log
+         filepath: /active-query-tracker/activity.log
        alertmanager:
          data_dir: /data
          enable_api: true
@@ -342,7 +342,7 @@ The example is generated with the following steps:
      data:
        mimir.yaml: |
           activity_tracker:
-           filepath: /data/metrics-activity.log
+           filepath: /active-query-tracker/activity.log
          alertmanager:
            data_dir: /data
            enable_api: true

@@ -10,7 +10,7 @@
 {{- end }}
 
 {{- if not ($calculatedConfig.activity_tracker).filepath }}
-{{- fail "The 'activity_tracker.filepath' in 'mimir.config' should be set to a path that is on a writeable volume. For example: '/data/metrics-activity.log'." }}
+{{- fail "The 'activity_tracker.filepath' in 'mimir.config' should be set to a path that is on a writeable volume. For example: '/active-query-tracker/activity.log'." }}
 {{- end }}
 
 {{- if ($unstructuredConfig.server).http_listen_port }}

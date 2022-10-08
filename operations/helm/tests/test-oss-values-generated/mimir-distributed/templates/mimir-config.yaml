@@ -13,7 +13,7 @@ data:
   mimir.yaml: |
     
     activity_tracker:
-      filepath: /data/metrics-activity.log
+      filepath: /active-query-tracker/activity.log
     alertmanager:
       data_dir: /data
       enable_api: true
