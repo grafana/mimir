@@ -128,5 +128,7 @@ spec:
           emptyDir: {}
         - name: tmp
           emptyDir: {}
+        - name: active-queries
+          emptyDir: {}
 {{- end -}}
 {{- end -}}

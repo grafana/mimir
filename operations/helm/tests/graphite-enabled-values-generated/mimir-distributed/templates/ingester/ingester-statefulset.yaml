@@ -79,6 +79,8 @@ spec:
         - name: runtime-config
           configMap:
             name: graphite-enabled-values-mimir-runtime
+        - name: active-queries
+          emptyDir: {}
       containers:
         - name: ingester
           imagePullPolicy: IfNotPresent

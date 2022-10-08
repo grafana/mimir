@@ -113,3 +113,5 @@ spec:
             secretName: test-enterprise-configmap-values-mimir-license
         - name: storage
           emptyDir: {}
+        - name: active-queries
+          emptyDir: {}

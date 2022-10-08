@@ -87,6 +87,8 @@ spec:
         {{- if .Values.ingester.extraVolumes }}
         {{ toYaml .Values.ingester.extraVolumes | nindent 8 }}
         {{- end }}
+        - name: active-queries
+          emptyDir: {}
       containers:
         {{- if .Values.ingester.extraContainers }}
         {{ toYaml .Values.ingester.extraContainers | nindent 8 }}

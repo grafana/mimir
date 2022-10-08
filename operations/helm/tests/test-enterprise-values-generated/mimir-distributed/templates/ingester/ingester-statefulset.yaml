@@ -76,6 +76,8 @@ spec:
         - name: runtime-config
           configMap:
             name: test-enterprise-values-mimir-runtime
+        - name: active-queries
+          emptyDir: {}
       containers:
         - name: ingester
           imagePullPolicy: IfNotPresent

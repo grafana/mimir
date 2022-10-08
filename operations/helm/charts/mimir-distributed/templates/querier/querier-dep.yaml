@@ -61,6 +61,8 @@ spec:
             - name: storage
               mountPath: "/data"
               subPath: {{ .Values.querier.persistence.subPath }}
+            - name: active-queries
+              mountPath: /active-query-tracker
           ports:
             - name: http-metrics
               containerPort: {{ include "mimir.serverHttpListenPort" . }}

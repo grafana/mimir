@@ -121,4 +121,6 @@ spec:
             secretName: {{ tpl .Values.license.secretName . }}
         - name: storage
           emptyDir: {}
+        - name: active-queries
+          emptyDir: {}
 {{- end -}}

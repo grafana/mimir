@@ -103,3 +103,5 @@ spec:
             secretName: test-enterprise-legacy-label-values-enterprise-metrics-license
         - name: storage
           emptyDir: {}
+        - name: active-queries
+          emptyDir: {}

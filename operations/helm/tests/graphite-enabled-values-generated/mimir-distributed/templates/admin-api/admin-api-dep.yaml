@@ -110,3 +110,5 @@ spec:
             secretName: graphite-enabled-values-mimir-license
         - name: storage
           emptyDir: {}
+        - name: active-queries
+          emptyDir: {}

@@ -69,6 +69,8 @@ spec:
             name: test-oss-values-mimir-runtime
         - name: storage
           emptyDir: {}
+        - name: active-queries
+          emptyDir: {}
       containers:
         - name: ingester
           imagePullPolicy: IfNotPresent
