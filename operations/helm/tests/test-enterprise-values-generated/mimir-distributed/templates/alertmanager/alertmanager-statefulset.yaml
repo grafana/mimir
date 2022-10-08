@@ -75,8 +75,6 @@ spec:
         - name: runtime-config
           configMap:
             name: test-enterprise-values-mimir-runtime
-        - name: storage
-          emptyDir: {}
         - name: fallback-config
           configMap:
             name: test-enterprise-values-mimir-alertmanager-fallback-config
