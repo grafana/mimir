@@ -78,7 +78,6 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Add podAntiAffinity to sizing plans (small.yaml, large.yaml, capped-small.yaml, capped-large.yaml). #2906
 * [ENHANCEMENT] Add ability to configure and run mimir-continuous-test. #3117
 * [BUGFIX] Fix wrong label selector in ingester anti affinity rules in the sizing plans. #2906
-* [ENHANCEMENT] Update agent-operator subchart to `0.2.5`. #3009
 * [ENHANCEMENT] Add possibility to configure fallbackConfig for alertmanager and set it by default. Now tenants without an alertmanager config will not see errors accessing the alertmanager UI or when using the alertmanager API. #2942
 
 ## 3.1.0
