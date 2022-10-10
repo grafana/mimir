@@ -13,7 +13,9 @@
 ### Jsonnet
 
 ### Mimirtool
+
 * [ENHANCEMENT] Added `mimirtool rules delete-namespace` command to delete all of the rule groups in a namespace including the namespace itself. #3136
+* [BUGFIX] `--log.level=debug` not correctly prints the response from the remote endpoint when a request fails. #3180
 
 ### Documentation
 
