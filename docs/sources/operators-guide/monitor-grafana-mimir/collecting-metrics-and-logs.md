@@ -112,7 +112,7 @@ metaMonitoring:
 You can also send the collected metamonitoring metrics to the installation of Mimir or GEM.
 The configuration varies slightly for GEM and Mimir.
 
-If you have deployed Mimir, then the Helm chart values should look like the following.
+If you have deployed Mimir, then the Helm chart values should look like the following example.
 Replace `HELM_RELEASE_NAME` with the name of your Helm release:
 
 ```yaml
@@ -134,7 +134,7 @@ If you have deployed GEM, then the URL will point to the GEM gateway instead of 
 If you are using the GEM authentication model, then you also need to provide a Secret with the
 authentication token for a tenant. Refer to [Credentials](#credentials) for setting up the Secret.
 
-Assuming you are using the GEM authentication model, the Helm chart values should look like the following.
+Assuming you are using the GEM authentication model, the Helm chart values should look like the following example.
 Replace `HELM_RELEASE_NAME` with the name of your Helm release:
 
 ```yaml
