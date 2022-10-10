@@ -15,6 +15,7 @@
       writeGRPCRoutesRegex: $.queries.write_grpc_routes_regex,
       readHTTPRoutesRegex: $.queries.read_http_routes_regex,
       perClusterLabel: $._config.per_cluster_label,
+      recordingRulePrefix: $.recordingRulePrefix($.jobSelector('any')),  // The job name does not matter here.
       groupPrefixJobs: $._config.group_prefix_jobs,
     },
 
@@ -149,19 +150,19 @@
       notifications: {
         // Notifications / sec attempted to deliver by the Alertmanager to the receivers.
         totalPerSecond: |||
-          sum(%(perClusterLabel)s_job_integration:cortex_alertmanager_notifications_total:rate5m{%(alertmanagerMatcher)s})
+          sum(%(recordingRulePrefix)s_integration:cortex_alertmanager_notifications_total:rate5m{%(alertmanagerMatcher)s})
         ||| % variables,
 
         // Notifications / sec successfully delivered by the Alertmanager to the receivers.
         successPerSecond: |||
-          sum(%(perClusterLabel)s_job_integration:cortex_alertmanager_notifications_total:rate5m{%(alertmanagerMatcher)s})
+          sum(%(recordingRulePrefix)s_integration:cortex_alertmanager_notifications_total:rate5m{%(alertmanagerMatcher)s})
           -
-          sum(%(perClusterLabel)s_job_integration:cortex_alertmanager_notifications_failed_total:rate5m{%(alertmanagerMatcher)s})
+          sum(%(recordingRulePrefix)s_integration:cortex_alertmanager_notifications_failed_total:rate5m{%(alertmanagerMatcher)s})
         ||| % variables,
 
         // Notifications / sec failed to be delivered by the Alertmanager to the receivers.
         failurePerSecond: |||
-          sum(%(perClusterLabel)s_job_integration:cortex_alertmanager_notifications_failed_total:rate5m{%(alertmanagerMatcher)s})
+          sum(%(recordingRulePrefix)s_integration:cortex_alertmanager_notifications_failed_total:rate5m{%(alertmanagerMatcher)s})
         ||| % variables,
       },
     },
