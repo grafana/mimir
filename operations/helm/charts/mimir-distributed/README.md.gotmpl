@@ -60,7 +60,7 @@ As part of this chart many different pods and services are installed which all
 have varying resource requirements. Please make sure that you have sufficient
 resources (CPU/memory) available in your cluster before installing Grafana Mimir Helm Chart.
 
-### Migration from Cortex to Grafana Mimir
+### Migrate from Cortex to Grafana Mimir
 
 Please consult the [Migration from Cortex to Grafana]({{ template "chart.homepage" . }}migration-guide/migrating-from-cortex/) guide on how to update the configuration.
 Prepare a custom values file with the contents:
@@ -182,6 +182,6 @@ To install the chart with the values used in CI tests:
 helm install test ./ --values ./ci/test-values.yaml
 ```
 
-# Contributing/Releasing
+# Contributing and releasing
 
 Please see the dedicated "[Contributing to Grafana Mimir helm chart](https://github.com/grafana/mimir/tree/main/docs/internal/contributing/contributing-to-helm-chart.md)" page.
