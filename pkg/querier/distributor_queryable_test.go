@@ -327,17 +327,19 @@ func BenchmarkDistributorQueryable_Select(b *testing.B) {
 
 	ctx := user.InjectOrgID(context.Background(), "0")
 	queryable := newDistributorQueryable(d, mergeChunks, 0, log.NewNopLogger())
-	querier, err := queryable.Querier(ctx, math.MinInt64, math.MaxInt64)
-	require.NoError(b, err)
 
 	b.ReportAllocs()
 	b.ResetTimer()
 
 	for n := 0; n < b.N; n++ {
-		seriesSet := querier.Select(true, &storage.SelectHints{Start: math.MinInt64, End: math.MaxInt64})
+		q, err := queryable.Querier(ctx, math.MinInt64, math.MaxInt64)
+		require.NoError(b, err)
+
+		seriesSet := q.Select(true, &storage.SelectHints{Start: math.MinInt64, End: math.MaxInt64})
 		if seriesSet.Err() != nil {
 			b.Fatal(seriesSet.Err())
 		}
+		q.Close()
 	}
 }
 
