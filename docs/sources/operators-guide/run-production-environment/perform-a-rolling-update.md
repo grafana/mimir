@@ -1,13 +1,14 @@
 ---
 aliases:
   - /docs/mimir/latest/operators-guide/running-production-environment/performing-a-rolling-update/
+  - /docs/mimir/latest/operators-guide/running-production-environment/perform-a-rolling-update/
 description: Learn how to perform a rolling update to Grafana Mimir.
-menuTitle: Performing a rolling update
-title: Performing a rolling update to Grafana Mimir
+menuTitle: Perform a rolling update
+title: Perform a rolling update to Grafana Mimir
 weight: 20
 ---
 
-# Performing a rolling update to Grafana Mimir
+# Perform a rolling update to Grafana Mimir
 
 You can use a rolling update strategy to apply configuration changes to Grafana Mimir and to upgrade Grafana Mimir to a newer version. A rolling update results in no downtime to Grafana Mimir.
 
