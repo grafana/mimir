@@ -2,7 +2,7 @@
 {{- $writeBackToMimir := and (not .url) (not .ctx.Values.enterprise.enabled) -}}
 {{- $url := .url -}}
 {{- if $writeBackToMimir -}}
-{{- $url = include "mimir.remoteWriteEndpoint.inCluster" . }}
+{{- $url = include "mimir.remoteWriteUrl.inCluster" . }}
 {{- end -}}
 {{- if $url }}
 - url: {{ $url }}
