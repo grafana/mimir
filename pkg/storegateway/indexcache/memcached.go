@@ -200,7 +200,9 @@ func (c *MemcachedIndexCache) FetchMultiSeriesForRefs(ctx context.Context, userI
 }
 
 func seriesForRefCacheKey(userID string, blockID ulid.ULID, id storage.SeriesRef) string {
-	return "S:" + userID + ":" + blockID.String() + ":" + strconv.FormatUint(uint64(id), 10)
+	// Max uint64 string representation is no longer than 20 characters.
+	b := make([]byte, 0, 20)
+	return "S:" + userID + ":" + blockID.String() + ":" + string(strconv.AppendUint(b, uint64(id), 10))
 }
 
 // StoreExpandedPostings stores the encoded result of ExpandedPostings for specified matchers identified by the provided LabelMatchersKey.
