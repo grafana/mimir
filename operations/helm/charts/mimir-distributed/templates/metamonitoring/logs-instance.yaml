@@ -19,9 +19,7 @@ spec:
     {{- if or (.logs).additionalClientConfigs (.logs).remote }}
     {{- range $i, $cfg := prepend ((.logs).additionalClientConfigs | default list) (.logs).remote }}
     {{- with $cfg }}
-    {{- if $cfg.url }}
-    - {{- include "mimir.metaMonitoring.logs.client" (dict "ctx" $ "url" .url "auth" .auth "usernameKey" (printf "username-%d" $i)) | nindent 6 -}}
-    {{- end }}
+    {{- include "mimir.metaMonitoring.logs.client" (dict "ctx" $ "url" .url "auth" .auth "usernameKey" (printf "username-%d" $i)) | nindent 6 -}}
     {{- end }}
     {{- end }}
     {{- end }}

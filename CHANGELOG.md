@@ -4,9 +4,12 @@
 
 ### Grafana Mimir
 
+* [ENHANCEMENT] Distributor: Add age filter to forwarding functionality, to not forward samples which are older than defined duration. If such samples are not ingested, `cortex_discarded_samples_total{reason="forwarded-sample-too-old"}` is increased. #3049 #3133
+* [ENHANCEMENT] Store-gateway: Reduce memory allocation when generating ids in index cache. #3179
 * [BUGFIX] Flusher: Add `Overrides` as a dependency to prevent panics when starting with `-target=flusher`. #3151
 
 ### Mixin
+* [BUGIX] Dashboards: Fix legend showing `persistentvolumeclaim` when using `deployment_type=baremetal` for `Disk space utilization` panels. #3173
 
 ### Jsonnet
 
@@ -94,7 +97,6 @@
 * [ENHANCEMENT] Ruler: added support to forcefully disable recording and/or alerting rules evaluation. The following new configuration options have been introduced, which can be overridden on a per-tenant basis in the runtime configuration: #3088
   * `-ruler.recording-rules-evaluation-enabled`
   * `-ruler.alerting-rules-evaluation-enabled`
-* [ENHANCEMENT] Distributor: Add age filter to forwarding functionality, to not forward samples which are older than defined duration. #3049
 * [ENHANCEMENT] Distributor: Improved error messages reported when the distributor fails to remote write to ingesters. #3055
 * [ENHANCEMENT] Improved tracing spans tracked by distributors, ingesters and store-gateways. #2879 #3099 #3089
 * [ENHANCEMENT] Ingester: improved the performance of label value cardinality endpoint. #3044

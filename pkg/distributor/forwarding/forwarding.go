@@ -37,7 +37,8 @@ import (
 
 type Forwarder interface {
 	services.Service
-	Forward(ctx context.Context, targetEndpoint string, dontForwardBefore int64, forwardingRules validation.ForwardingRules, ts []mimirpb.PreallocTimeseries) ([]mimirpb.PreallocTimeseries, chan error)
+	Forward(ctx context.Context, targetEndpoint string, dontForwardBefore int64, forwardingRules validation.ForwardingRules, ts []mimirpb.PreallocTimeseries, user string) ([]mimirpb.PreallocTimeseries, chan error)
+	DeleteMetricsForUser(user string)
 }
 
 // httpGrpcPrefix is URL prefix used by forwarder to check if it should use httpgrpc for sending request over to the target.
@@ -65,6 +66,8 @@ type forwarder struct {
 	exemplarsTotal          prometheus.Counter
 	requestLatencyHistogram prometheus.Histogram
 	grpcClientsGauge        prometheus.Gauge
+
+	discardedSamplesTooOld *prometheus.CounterVec
 }
 
 // NewForwarder returns a new forwarder, if forwarding is disabled it returns nil.
@@ -118,12 +121,18 @@ func NewForwarder(cfg Config, reg prometheus.Registerer, log log.Logger) Forward
 			Name: "cortex_distributor_forward_grpc_clients",
 			Help: "Number of gRPC clients used by Distributor forwarder.",
 		}),
+
+		discardedSamplesTooOld: validation.DiscardedSamplesCounter(reg, "forwarded-sample-too-old"),
 	}
 
 	f.httpGrpcClientPool = f.newHTTPGrpcClientsPool()
 	f.Service = services.NewIdleService(f.start, f.stop)
 
 	return f
+}
+
+func (f *forwarder) DeleteMetricsForUser(user string) {
+	f.discardedSamplesTooOld.DeleteLabelValues(user)
 }
 
 func (f *forwarder) newHTTPGrpcClientsPool() *client.Pool {
@@ -219,7 +228,7 @@ func (f *forwarder) worker() {
 //   - A slice of time series which should be sent to the ingesters, based on the given rule set.
 //     The Forward() method does not send the time series to the ingesters itself, it expects the caller to do that.
 //   - A chan of errors which resulted from forwarding the time series, the chan gets closed when all forwarding requests have completed.
-func (f *forwarder) Forward(ctx context.Context, endpoint string, dontForwardBefore int64, rules validation.ForwardingRules, in []mimirpb.PreallocTimeseries) ([]mimirpb.PreallocTimeseries, chan error) {
+func (f *forwarder) Forward(ctx context.Context, endpoint string, dontForwardBefore int64, rules validation.ForwardingRules, in []mimirpb.PreallocTimeseries, user string) ([]mimirpb.PreallocTimeseries, chan error) {
 	if !f.cfg.Enabled || endpoint == "" {
 		errCh := make(chan error)
 		close(errCh)
@@ -234,7 +243,7 @@ func (f *forwarder) Forward(ctx context.Context, endpoint string, dontForwardBef
 		}
 	}()
 
-	toIngest, toForward, counts, err := f.splitToIngestedAndForwardedTimeseries(in, rules, dontForwardBefore)
+	toIngest, toForward, counts, err := f.splitToIngestedAndForwardedTimeseries(in, rules, dontForwardBefore, user)
 	errCh := make(chan error, 2) // 1 for result of forwarding, 1 for possible error
 	if err != nil {
 		errCh <- err
@@ -266,8 +275,7 @@ func (f *forwarder) Forward(ctx context.Context, endpoint string, dontForwardBef
 
 // filterAndCopyTimeseries makes a copy of the timeseries with old samples filtered out. Original timeseries is unchanged.
 // The time series is deep-copied, so the passed in time series can be returned to the pool without affecting the copy.
-func (f *forwarder) filterAndCopyTimeseries(ts mimirpb.PreallocTimeseries, dontForwardBeforeTimestamp int64) (mimirpb.PreallocTimeseries, error) {
-	var err error
+func (f *forwarder) filterAndCopyTimeseries(ts mimirpb.PreallocTimeseries, dontForwardBeforeTimestamp int64) (_ mimirpb.PreallocTimeseries, filteredSamplesCount int) {
 	if dontForwardBeforeTimestamp > 0 {
 		samplesUnfiltered := ts.TimeSeries.Samples
 		defer func() {
@@ -278,7 +286,7 @@ func (f *forwarder) filterAndCopyTimeseries(ts mimirpb.PreallocTimeseries, dontF
 
 		samplesFiltered := dropSamplesBefore(samplesUnfiltered, dontForwardBeforeTimestamp)
 		if len(samplesFiltered) < len(samplesUnfiltered) {
-			err = errSamplesTooOld
+			filteredSamplesCount = len(samplesUnfiltered) - len(samplesFiltered)
 		}
 
 		// Prepare ts for deep copy. Original samples will be set back via defer function.
@@ -290,7 +298,7 @@ func (f *forwarder) filterAndCopyTimeseries(ts mimirpb.PreallocTimeseries, dontF
 		// We don't keep exemplars when forwarding.
 		result = mimirpb.DeepCopyTimeseries(result, ts, false)
 	}
-	return result, err
+	return result, filteredSamplesCount
 }
 
 type TimeseriesCounts struct {
@@ -311,7 +319,7 @@ func (t *TimeseriesCounts) count(ts mimirpb.PreallocTimeseries) {
 //   - A slice of time series to forward
 //   - TimeseriesCounts
 //   - An error if any occurred.
-func (f *forwarder) splitToIngestedAndForwardedTimeseries(tsSliceIn []mimirpb.PreallocTimeseries, rules validation.ForwardingRules, dontForwardBefore int64) (tsToIngest, tsToForward []mimirpb.PreallocTimeseries, _ TimeseriesCounts, _ error) {
+func (f *forwarder) splitToIngestedAndForwardedTimeseries(tsSliceIn []mimirpb.PreallocTimeseries, rules validation.ForwardingRules, dontForwardBefore int64, user string) (tsToIngest, tsToForward []mimirpb.PreallocTimeseries, _ TimeseriesCounts, _ error) {
 	// This functions copies all the entries of tsSliceIn into new slices so tsSliceIn can be recycled,
 	// we adjust the length of the slice to 0 to prevent that the contained *mimirpb.TimeSeries objects that have been
 	// reassigned (not deep copied) get returned while they are still referred to by another slice.
@@ -325,9 +333,12 @@ func (f *forwarder) splitToIngestedAndForwardedTimeseries(tsSliceIn []mimirpb.Pr
 	for _, ts := range tsSliceIn {
 		forward, ingest := shouldForwardAndIngest(ts.Labels, rules)
 		if forward {
-			tsCopy, filterErr := f.filterAndCopyTimeseries(ts, dontForwardBefore)
-			if filterErr != nil {
-				err = filterErr
+			tsCopy, filteredSamples := f.filterAndCopyTimeseries(ts, dontForwardBefore)
+			if filteredSamples > 0 {
+				err = errSamplesTooOld
+				if !ingest {
+					f.discardedSamplesTooOld.WithLabelValues(user).Add(float64(filteredSamples))
+				}
 			}
 
 			if len(tsCopy.TimeSeries.Samples) > 0 {
