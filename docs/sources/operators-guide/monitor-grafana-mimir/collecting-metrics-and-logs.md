@@ -113,7 +113,7 @@ You can also send the collected metamonitoring metrics to the installation of Mi
 The configuration varies slightly for GEM and Mimir.
 
 If you have deployed Mimir, and the URL is not set, then metrics will be sent to the Mimir cluster.
-You can query these metrics using the `__metamonitoring__` tenant.
+You can query these metrics using the `metamonitoring` tenant.
 
 If you have deployed GEM, then you need to configure the remote endpoint. The URL should point to
 the GEM gateway Service. If you are using the GEM authentication model, then you also need to
