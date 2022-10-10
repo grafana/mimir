@@ -1927,26 +1927,20 @@ metaMonitoring:
       # configuration to push metrics to this Prometheus-compatible remote. Optional.
       # Note that you need to configure serviceMonitor in order to have some metrics available.
       #
-      # You can also send the collected metamonitoring metrics to the installation of Mimir or GEM.
-      # The configuration varies slightly for GEM and Mimir.
+      # If you have deployed Mimir, and metamonitoring.grafanaAgent.metrics.remove.url is not set,
+      # then the metamonitoring metrics are be sent to the Mimir cluster.
+      # You can query these metrics using X-Scope-OrgID: metamonitoring
       #
-      # If you have deployed Mimir, then the Helm chart values should look like the following example.
-      # Replace `HELM_RELEASE_NAME` with the name of your Helm release:
-      #
-      # remote:
-      #   url: 'http://<HELM_RELEASE_NAME>-mimir-nginx.mimir.svc/api/v1/push'
-      #   headers:
-      #     X-Scope-OrgID: metamonitoring
-      #
-      # If you have deployed GEM, then the URL will point to the GEM gateway instead of the nginx Deployment.
-      # If you are using the GEM authentication model, then you also need to provide a Secret with the
-      # authentication token for a tenant. Refer to https://grafana.com/docs/mimir/latest/operators-guide/monitor-grafana-mimir/collecting-metrics-and-logs/#collect-metrics-and-logs-via-the-helm-chart
-      # for setting up the Secret.
+      # If you have deployed GEM, then you need to configure the remote endpoint yourself. The URL should point to
+      # the GEM gateway Service. If you are using the GEM authentication model, then you also need to
+      # provide a Secret with the authentication token for the tenant.
+      # For setting up the Secret, refer to https://grafana.com/docs/mimir/latest/operators-guide/monitor-grafana-mimir/collecting-metrics-and-logs/#collect-metrics-and-logs-via-the-helm-chart
       # Assuming you are using the GEM authentication model, the Helm chart values should look like the following example.
-      # Replace `HELM_RELEASE_NAME` with the name of your Helm release:
+      # Replace `GATEWAY_URL` with the in-cluster address of the GEM gateway Service; that service is also displayed after
+      # `helm install` and `helm upgrade` commands.
       #
       # remote:
-      #   url: 'http://<HELM_RELEASE_NAME>-mimir-gateway.mimir.svc/api/v1/push'
+      #   url: 'GATEWAY_URL'
       #   auth:
       #     username: metamonitoring
       #     passwordSecretName: gem-tokens

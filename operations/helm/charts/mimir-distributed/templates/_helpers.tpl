@@ -399,3 +399,9 @@ Return if we should create a SecurityContextConstraints. Takes into account user
 {{- define "mimir.rbac.useSecurityContextConstraints" -}}
 {{- and .Values.rbac.create (eq .Values.rbac.type "scc") -}}
 {{- end -}}
+
+{{- define  "mimir.remoteWriteEndpoint.inCluster" -}}
+{{- $gateway := .ctx.Values.nginx }}
+{{- if .ctx.Values.enterprise.enabled -}}{{- $gateway = .ctx.Values.gateway -}}{{- end -}}
+http://{{ include "mimir.fullname" .ctx }}-{{ if .ctx.Values.enterprise.enabled }}gateway{{ else }}nginx{{ end }}.{{ .ctx.Release.Namespace }}.svc:{{ $gateway.service.port }}/api/v1/push
+{{- end -}}

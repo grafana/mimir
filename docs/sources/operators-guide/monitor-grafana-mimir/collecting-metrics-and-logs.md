@@ -112,30 +112,16 @@ metaMonitoring:
 You can also send the collected metamonitoring metrics to the installation of Mimir or GEM.
 The configuration varies slightly for GEM and Mimir.
 
-If you have deployed Mimir, then the Helm chart values should look like the following example.
-Replace `HELM_RELEASE_NAME` with the name of your Helm release:
+If you have deployed Mimir, and the URL is not set, then metrics will be sent to the Mimir cluster.
+You can query these metrics using the `__metamonitoring__` tenant.
 
-```yaml
-metaMonitoring:
-  serviceMonitor:
-    enabled: true
-  grafanaAgent:
-    enabled: true
-    installOperator: true
-
-  metrics:
-    remote:
-      url: "http://<HELM_RELEASE_NAME>-mimir-nginx.mimir.svc/api/v1/push"
-      headers:
-        X-Scope-OrgID: metamonitoring
-```
-
-If you have deployed GEM, then the URL will point to the GEM gateway instead of the nginx Deployment.
-If you are using the GEM authentication model, then you also need to provide a Secret with the
-authentication token for a tenant. Refer to [Credentials](#credentials) for setting up the Secret.
-
+If you have deployed GEM, then you need to configure the remote endpoint. The URL should point to
+the GEM gateway Service. If you are using the GEM authentication model, then you also need to
+provide a Secret with the authentication token for the tenant.
+For setting up the Secret, refer to [Credentials](#credentials).
 Assuming you are using the GEM authentication model, the Helm chart values should look like the following example.
-Replace `HELM_RELEASE_NAME` with the name of your Helm release:
+Replace `GATEWAY_URL` with the in-cluster address of the GEM gateway Service; that service is also displayed after
+`helm install` and `helm upgrade` commands.
 
 ```yaml
 metaMonitoring:
@@ -146,12 +132,12 @@ metaMonitoring:
     installOperator: true
 
   metrics:
-    remote:
-      url: "http://<HELM_RELEASE_NAME>-mimir-gateway.mimir.svc/api/v1/push"
-      auth:
-        username: metamonitoring
-        passwordSecretName: gem-tokens
-        passwordSecretKey: metamonitoring
+remote:
+  url: 'GATEWAY_URL'
+  auth:
+    username: metamonitoring
+    passwordSecretName: gem-tokens
+    passwordSecretKey: metamonitoring
 ```
 
 ### Collect metrics and logs via Grafana Agent

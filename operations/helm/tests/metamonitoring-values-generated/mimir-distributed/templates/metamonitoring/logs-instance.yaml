@@ -12,6 +12,7 @@ metadata:
     app.kubernetes.io/managed-by: Helm
 spec:
   clients:
+      
 
   # Supply an empty namespace selector to look in all namespaces. Remove
   # this to only look in the same namespace as the LogsInstance CR
