@@ -125,7 +125,7 @@ If you have deployed GEM, then there are two cases:
 
 - If you are using the enterprise authentication type (`mimir.structuredConfig.auth.type: enterprise`), which is 
   also the default,then you also need to provide a Secret with the authentication token for the tenant.
-  The token should be to an access policy with metrics:read scope.
+  The token should be to an access policy with metrics:write scope.
   To set up the Secret, refer to [Credentials](#credentials).
   Assuming you are using the GEM authentication model, the Helm chart values should look like the following example.
 
