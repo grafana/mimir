@@ -143,7 +143,20 @@ local filename = 'mimir-writes.json';
       .addPanel(
         $.panel('Requests / sec') +
         $.successFailurePanel(
-          'sum(rate(cortex_distributor_forward_requests_total{%(distributorMatcher)s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.distributor),
+          |||
+            sum(  
+              rate(
+                cortex_distributor_forward_requests_total{%(distributorMatcher)s}[$__rate_interval]
+              )
+              - on (namespace, pod)
+              rate(
+                cortex_distributor_forward_errors_total{%(distributorMatcher)s}[$__rate_interval]
+              )
+            )
+          ||| % [
+            $.jobMatcher($._config.job_names.distributor),
+            $.jobMatcher($._config.job_names.distributor),
+          ],
           'sum(rate(cortex_distributor_forward_errors_total{%(distributorMatcher)s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.distributor)
         )
       )
