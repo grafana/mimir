@@ -133,7 +133,7 @@ metaMonitoring:
 
   metrics:
 remote:
-  url: 'GATEWAY_URL'
+  url: "GATEWAY_URL"
   auth:
     username: metamonitoring
     passwordSecretName: gem-tokens

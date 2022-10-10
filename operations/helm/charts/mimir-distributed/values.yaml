@@ -1940,7 +1940,7 @@ metaMonitoring:
       # `helm install` and `helm upgrade` commands.
       #
       # remote:
-      #   url: 'GATEWAY_URL'
+      #   url: "GATEWAY_URL"
       #   auth:
       #     username: metamonitoring
       #     passwordSecretName: gem-tokens
