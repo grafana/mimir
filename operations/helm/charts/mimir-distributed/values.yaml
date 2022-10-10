@@ -1926,6 +1926,31 @@ metaMonitoring:
       # -- Default destination for metrics. The config here is translated to remote_write
       # configuration to push metrics to this Prometheus-compatible remote. Optional.
       # Note that you need to configure serviceMonitor in order to have some metrics available.
+      #
+      # You can also send the collected metamonitoring metrics to the installation of Mimir or GEM.
+      # The configuration varies slightly for GEM and Mimir.
+      #
+      # If you have deployed Mimir, then the Helm chart values should look like the following example.
+      # Replace `HELM_RELEASE_NAME` with the name of your Helm release:
+      #
+      # remote:
+      #   url: 'http://<HELM_RELEASE_NAME>-mimir-nginx.mimir.svc/api/v1/push'
+      #   headers:
+      #     X-Scope-OrgID: metamonitoring
+      #
+      # If you have deployed GEM, then the URL will point to the GEM gateway instead of the nginx Deployment.
+      # If you are using the GEM authentication model, then you also need to provide a Secret with the
+      # authentication token for a tenant. Refer to https://grafana.com/docs/mimir/latest/operators-guide/monitor-grafana-mimir/collecting-metrics-and-logs/#collect-metrics-and-logs-via-the-helm-chart
+      # for setting up the Secret.
+      # Assuming you are using the GEM authentication model, the Helm chart values should look like the following example.
+      # Replace `HELM_RELEASE_NAME` with the name of your Helm release:
+      #
+      # remote:
+      #   url: 'http://<HELM_RELEASE_NAME>-mimir-gateway.mimir.svc/api/v1/push'
+      #   auth:
+      #     username: metamonitoring
+      #     passwordSecretName: gem-tokens
+      #     passwordSecretKey: metamonitoring
       remote:
         # -- Full URL for Prometheus remote-write. Usually ends in /push
         url: ''
