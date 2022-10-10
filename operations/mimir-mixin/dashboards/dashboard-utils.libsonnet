@@ -361,6 +361,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     { yaxes: $.yaxes('Bps') },
 
   containerDiskSpaceUtilization(title, instanceName)::
+    local label = if $._config.deployment_type == 'kubernetes' then '{{persistentvolumeclaim}}' else '{{instance}}';
     $.panel(title) +
     $.queryPanel(
       $._config.resources_panel_queries[$._config.deployment_type].disk_utilization % {
@@ -369,7 +370,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         instance: $._config.per_instance_label,
         instanceName: instanceName,
         instanceDataDir: $._config.instance_data_mountpoint,
-      }, '{{persistentvolumeclaim}}'
+      }, label
     ) +
     {
       yaxes: $.yaxes('percentunit'),
