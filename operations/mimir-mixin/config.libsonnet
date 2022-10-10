@@ -68,7 +68,7 @@
 
     // Whether grafana cloud alertmanager instance-mapper is enabled
     alertmanager_im_enabled: false,
-    
+
     // Whether the Distributor's forwarding feature is enabled.
     forwarding_enabled: false,
 
