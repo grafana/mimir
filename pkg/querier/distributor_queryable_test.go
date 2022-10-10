@@ -295,6 +295,10 @@ func BenchmarkDistributorQueryable_Select(b *testing.B) {
 	promChunk, err := chunk.NewForEncoding(chunk.PrometheusXorChunk)
 	require.NoError(b, err)
 
+	// Ensure at least 1 sample is appended to the chunk otherwise it can't be marshalled.
+	_, err = promChunk.Add(model.SamplePair{Timestamp: 0, Value: 0})
+	require.NoError(b, err)
+
 	clientChunks, err := chunkcompat.ToChunks([]chunk.Chunk{
 		chunk.NewChunk(nil, promChunk, model.Earliest, model.Earliest),
 	})
