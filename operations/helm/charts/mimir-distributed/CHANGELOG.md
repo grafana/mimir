@@ -25,7 +25,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
-* [BUGFIX] Fix an issue causing metamonitoring secrets to be created incorrectly #3170
+* [BUGFIX] Fix an issue that caused metamonitoring secrets to be created incorrectly #3170
 
 ## 3.2.0
 
