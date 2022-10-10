@@ -399,3 +399,7 @@ Return if we should create a SecurityContextConstraints. Takes into account user
 {{- define "mimir.rbac.useSecurityContextConstraints" -}}
 {{- and .Values.rbac.create (eq .Values.rbac.type "scc") -}}
 {{- end -}}
+
+{{- define "mimir.remoteWriteUrl.inCluster" -}}
+{{ include "mimir.gatewayUrl" . }}/api/v1/push
+{{- end -}}

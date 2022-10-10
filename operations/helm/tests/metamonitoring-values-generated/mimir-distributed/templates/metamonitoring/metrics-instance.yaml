@@ -12,6 +12,10 @@ metadata:
     app.kubernetes.io/managed-by: Helm
 spec:
   remoteWrite:
+      - url: http://metamonitoring-values-mimir-nginx.citestns.svc:80/api/v1/push
+        basicAuth:
+        headers:
+          X-Scope-OrgID: metamonitoring
 
   # Supply an empty namespace selector to look in all namespaces. Remove
   # this to only look in the same namespace as the MetricsInstance CR
