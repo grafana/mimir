@@ -330,6 +330,7 @@ func BenchmarkDistributorQueryable_Select(b *testing.B) {
 	querier, err := queryable.Querier(ctx, math.MinInt64, math.MaxInt64)
 	require.NoError(b, err)
 
+	b.ReportAllocs()
 	b.ResetTimer()
 
 	for n := 0; n < b.N; n++ {
