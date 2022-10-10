@@ -72,7 +72,7 @@
 
       forwarding: {
         writeRequestsPerSecond: 'sum(rate(cortex_distributor_forward_requests_total{%(distributorMatcher)s}[$__rate_interval]))' % variables,
-        writeFailuresRate: 'sum(rate(distributor_forward_errors_total{%(distributorMatcher)s}[$__rate_interval]))' % variables,
+        writeFailuresRate: 'sum(rate(cortex_distributor_forward_errors_total{%(distributorMatcher)s}[$__rate_interval]))' % variables,
         samplesPerSecond: 'sum(rate(cortex_distributor_forward_samples_total{%(distributorMatcher)s}[$__rate_interval]))' % variables,
       },
     },
