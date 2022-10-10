@@ -1934,10 +1934,10 @@ metaMonitoring:
       # If you have deployed GEM, then you need to configure the remote endpoint yourself. The URL should point to
       # the GEM gateway Service. If you are using the GEM authentication model, then you also need to
       # provide a Secret with the authentication token for the tenant.
-      # For setting up the Secret, refer to https://grafana.com/docs/mimir/latest/operators-guide/monitor-grafana-mimir/collecting-metrics-and-logs/#collect-metrics-and-logs-via-the-helm-chart
+      # To set up the Secret, refer to https://grafana.com/docs/mimir/latest/operators-guide/monitor-grafana-mimir/collecting-metrics-and-logs/#collect-metrics-and-logs-via-the-helm-chart
       # Assuming you are using the GEM authentication model, the Helm chart values should look like the following example.
-      # Replace `GATEWAY_URL` with the in-cluster address of the GEM gateway Service; that service is also displayed after
-      # `helm install` and `helm upgrade` commands.
+      # Replace `GATEWAY_URL` with the in-cluster address of the GEM gateway Service;
+      # the `helm install` and `helm upgrade` commands output that address.
       #
       # remote:
       #   url: "GATEWAY_URL"

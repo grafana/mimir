@@ -118,10 +118,10 @@ You can query these metrics using the `__metamonitoring__` tenant.
 If you have deployed GEM, then you need to configure the remote endpoint. The URL should point to
 the GEM gateway Service. If you are using the GEM authentication model, then you also need to
 provide a Secret with the authentication token for the tenant.
-For setting up the Secret, refer to [Credentials](#credentials).
+To set up the Secret, refer to [Credentials](#credentials).
 Assuming you are using the GEM authentication model, the Helm chart values should look like the following example.
-Replace `GATEWAY_URL` with the in-cluster address of the GEM gateway Service; that service is also displayed after
-`helm install` and `helm upgrade` commands.
+Replace `GATEWAY_URL` with the in-cluster address of the GEM gateway Service; the
+`helm install` and `helm upgrade` commands output that address.
 
 ```yaml
 metaMonitoring:
