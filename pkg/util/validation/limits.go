@@ -560,7 +560,7 @@ func (o *Overrides) CompactorSplitAndMergeShards(userID string) int {
 	return o.getOverridesForUser(userID).CompactorSplitAndMergeShards
 }
 
-// CompactorSplitGroupsCount returns the number of groups that blocks for splitting should be grouped into.
+// CompactorSplitGroups returns the number of groups that blocks for splitting should be grouped into.
 func (o *Overrides) CompactorSplitGroups(userID string) int {
 	return o.getOverridesForUser(userID).CompactorSplitGroups
 }
