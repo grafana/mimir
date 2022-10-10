@@ -26,7 +26,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 ## main / unreleased
 
 * [ENHANCEMENT] Metamonitoring: If enabled and no URL is configured, then metamonitoring metrics will be sent to
-  Mimir under the `metamonitoring` tenant. Does not apply for GEM. #3176
+  Mimir under the `metamonitoring` tenant; this enhancement does not apply to GEM. #3176
 
 ## 3.2.0
 
