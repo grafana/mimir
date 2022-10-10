@@ -167,7 +167,10 @@ local filename = 'mimir-writes.json';
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_distributor_forward_requests_latency_seconds_bucket{%s}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.distributor)], ''
+          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_distributor_forward_requests_latency_seconds_bucket{%s}[$__rate_interval])))' % [
+            $._config.per_instance_label, $.jobMatcher($._config.job_names.distributor)
+          ],
+          '{{ %s }}' % $._config.per_instance_label
         )
       )
     )
