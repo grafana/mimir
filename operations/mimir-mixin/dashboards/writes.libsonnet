@@ -137,6 +137,27 @@ local filename = 'mimir-writes.json';
         )
       )
     )
+    .addRowIf(
+      $._config.forwarding_enabled,
+      $.row('Distributor Forwarding')
+      .addPanel(
+        $.panel('Requests / sec') +
+        $.successFailurePanel(
+          $.queries.distributor.forwarding.writeRequestsPerSecond,
+          $.queries.distributor.forwarding.writeFailuresRate,
+        )
+      )
+      .addPanel(
+        $.panel('Latency') +
+        $.latencyPanel('cortex_distributor_forward_requests_latency_seconds', '{%s}' % $.jobMatcher($._config.job_names.distributor))
+      )
+      .addPanel(
+        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
+        $.hiddenLegendQueryPanel(
+          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_distributor_forward_requests_latency_seconds{%s}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.distributor)], ''
+        )
+      )
+    )
     .addRow(
       $.row('Ingester')
       .addPanel(
