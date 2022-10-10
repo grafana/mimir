@@ -1,10 +1,9 @@
 {{- define "mimir.metaMonitoring.metrics.remoteWrite" -}}
-{{- $writeBackToMimir := and (not .url) (not .ctx.Values.enterprise.enabled) -}}
+{{- $writeBackToMimir := not .url -}}
 {{- $url := .url -}}
 {{- if $writeBackToMimir -}}
 {{- $url = include "mimir.remoteWriteUrl.inCluster" .ctx }}
 {{- end -}}
-{{- if $url }}
 - url: {{ $url }}
   {{- if .auth }}
   basicAuth:
@@ -28,7 +27,6 @@
   headers:
     {{- toYaml . | nindent 4 }}
   {{- end }}
-  {{- end -}}
 {{- end -}}
 
 {{- define "mimir.metaMonitoring.logs.client" -}}

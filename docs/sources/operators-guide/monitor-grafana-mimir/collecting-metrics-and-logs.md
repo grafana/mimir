@@ -107,21 +107,27 @@ metaMonitoring:
             app.kubernetes.io/name: kube-state-metrics
 ```
 
-#### Sending metrics back into Mimir/GEM
+#### Send metrics back into Mimir/GEM
 
 You can also send the collected metamonitoring metrics to the installation of Mimir or GEM.
-The configuration varies slightly for GEM and Mimir.
 
-If you have deployed Mimir, and the URL is not set, then metrics will be sent to the Mimir cluster.
-You can query these metrics using the `metamonitoring` tenant.
+When you leave the `metamonitoring.grafanaAgent.metrics.remote.url` field empty,
+then the chart automatically fills in the address of the GEM gateway Service
+or the Mimir NGINX Service.
 
-If you have deployed GEM, then you need to configure the remote endpoint. The URL should point to
-the GEM gateway Service. If you are using the GEM authentication model, then you also need to
-provide a Secret with the authentication token for the tenant.
-To set up the Secret, refer to [Credentials](#credentials).
-Assuming you are using the GEM authentication model, the Helm chart values should look like the following example.
-Replace `GATEWAY_URL` with the in-cluster address of the GEM gateway Service; the
-`helm install` and `helm upgrade` commands output that address.
+If you have deployed Mimir, and `metamonitoring.grafanaAgent.metrics.remote.url` is not set,
+then the metamonitoring metrics are be sent to the Mimir cluster.
+You can query these metrics using X-Scope-OrgID: metamonitoring
+
+If you have deployed GEM, then there are two cases:
+- If are using the `trust` authentication type (`mimir.structuredConfig.auth.type: trust`),
+  then the same instructions apply as for Mimir.
+
+- If you are using the enterprise authentication type (`mimir.structuredConfig.auth.type: enterprise`), which is 
+  also the default,then you also need to provide a Secret with the authentication token for the tenant.
+  The token should be to an access policy with metrics:read scope.
+  To set up the Secret, refer to [Credentials](#credentials).
+  Assuming you are using the GEM authentication model, the Helm chart values should look like the following example.
 
 ```yaml
 metaMonitoring:
@@ -131,13 +137,12 @@ metaMonitoring:
     enabled: true
     installOperator: true
 
-  metrics:
-remote:
-  url: "GATEWAY_URL"
-  auth:
-    username: metamonitoring
-    passwordSecretName: gem-tokens
-    passwordSecretKey: metamonitoring
+    metrics:
+      remote:
+        auth:
+          username: metamonitoring
+          passwordSecretName: gem-tokens
+          passwordSecretKey: metamonitoring
 ```
 
 ### Collect metrics and logs via Grafana Agent
