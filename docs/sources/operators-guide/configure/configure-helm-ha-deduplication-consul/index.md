@@ -82,6 +82,8 @@ mimir:
 
 ### Configure HA deduplication per tenant
 
+Before you begin, make sure that Mimir was installed using the Helm chart.
+
 1. Add the following configuration to the `custom.yaml` file:
 
 ```yaml
