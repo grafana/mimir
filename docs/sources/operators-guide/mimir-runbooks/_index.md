@@ -1007,7 +1007,7 @@ How to **investigate**:
   # Assuming KEDA is running in a dedicated namespace "keda":
   kubectl logs -n keda deployment/keda-operator
   ```
-- Check that Prometheus is running (since KEDA depends on it)
+- Check that Prometheus is running (since we configure KEDA to scrape custom metrics from it by default)
   ```
   # Assuming Prometheus is running in namespace "default":
   kubectl -n default get pod -lname=prometheus
