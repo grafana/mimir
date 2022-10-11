@@ -218,7 +218,7 @@ GOVOLUMES=	-v $(shell pwd)/.cache:/go/cache:$(CONTAINER_MOUNT_OPTIONS) \
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
 SSHVOLUME=  -v ~/.ssh/:/root/.ssh:$(CONTAINER_MOUNT_OPTIONS)
 
-exes $(EXES) protos $(PROTO_GOS) lint lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt conftest-test conftest-verify: fetch-build-image
+exes $(EXES) protos $(PROTO_GOS) lint lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt conftest-test conftest-verify check-helm-tests build-helm-tests: fetch-build-image
 	@mkdir -p $(shell pwd)/.pkg
 	@mkdir -p $(shell pwd)/.cache
 	@echo
@@ -379,14 +379,13 @@ check-license: ## Check license header of files.
 check-license: license
 	@git diff --exit-code || (echo "Please add the license header running 'make BUILD_IN_CONTAINER=false license'" && false)
 
-dist: dist/$(UPTODATE) ## Generates binaries for a Mimir release.
-
-dist/$(UPTODATE):
-	rm -fr ./dist
-	mkdir -p ./dist
-	# Build binaries for various architectures and operating systems. Only
-	# mimirtool supports Windows for now.
-	for os in linux darwin windows; do \
+dist: ## Generates binaries for a Mimir release.
+	echo "Cleaning up dist/"
+	@rm -fr ./dist
+	@mkdir -p ./dist
+	@# Build binaries for various architectures and operating systems. Only
+	@# mimirtool supports Windows for now.
+	@for os in linux darwin windows; do \
 		for arch in amd64 arm64; do \
 			suffix="" ; \
 			if [ "$$os" = "windows" ]; then \
@@ -445,6 +444,14 @@ conftest-verify:
 
 conftest-test:
 	@tools/run-conftest.sh --do-dependency-update --policies-path $(HELM_REGO_POLICIES_PATH)
+
+build-helm-tests: ## Build the helm golden records.
+build-helm-tests: operations/helm/charts/mimir-distributed/charts
+	@./operations/helm/tests/build.sh
+
+check-helm-tests: ## Check the helm golden records.
+check-helm-tests: build-helm-tests
+	@./tools/find-diff-or-untracked.sh operations/helm/tests || (echo "Please rebuild helm tests output 'make build-helm-tests'" && false)
 
 endif
 
@@ -552,14 +559,6 @@ operations/helm/charts/mimir-distributed/charts: operations/helm/charts/mimir-di
 check-helm-jsonnet-diff: ## Check the helm jsonnet diff.
 check-helm-jsonnet-diff: operations/helm/charts/mimir-distributed/charts build-jsonnet-tests
 	@./operations/compare-helm-with-jsonnet/compare-helm-with-jsonnet.sh
-
-build-helm-tests: ## Build the helm jsonnet tests.
-build-helm-tests: operations/helm/charts/mimir-distributed/charts
-	@./operations/helm/tests/build.sh
-
-check-helm-tests: ## Check the helm jsonnet tests output.
-check-helm-tests: build-helm-tests
-	@./tools/find-diff-or-untracked.sh operations/helm/tests || (echo "Please rebuild helm tests output 'make build-helm-tests'" && false)
 
 build-jsonnet-tests: ## Build the jsonnet tests.
 	@./operations/mimir-tests/build.sh

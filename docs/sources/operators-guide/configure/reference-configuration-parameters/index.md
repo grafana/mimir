@@ -2384,7 +2384,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 
 # (advanced) Controls how far into the future incoming samples are accepted
 # compared to the wall clock. Any sample with timestamp `t` will be rejected if
-# `t > (now + validation.create-grace-period)`.
+# `t > (now + validation.create-grace-period)`. Also used by query-frontend to
+# avoid querying too far into the future. 0 to disable.
 # CLI flag: -validation.create-grace-period
 [creation_grace_period: <duration> | default = 10m]
 

@@ -154,6 +154,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
     then [utils.selector.noop('%s' % $._config.per_cluster_label), utils.selector.re('job', '$job')]
     else [utils.selector.re('%s' % $._config.per_cluster_label, '$cluster'), utils.selector.re('job', '($namespace)/(%s)' % job)],
 
+  recordingRulePrefix(selectors)::
+    std.join('_', [matcher.label for matcher in selectors]),
+
   panel(title)::
     super.panel(title) + {
       tooltip+: {
@@ -361,6 +364,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     { yaxes: $.yaxes('Bps') },
 
   containerDiskSpaceUtilization(title, instanceName)::
+    local label = if $._config.deployment_type == 'kubernetes' then '{{persistentvolumeclaim}}' else '{{instance}}';
     $.panel(title) +
     $.queryPanel(
       $._config.resources_panel_queries[$._config.deployment_type].disk_utilization % {
@@ -369,7 +373,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         instance: $._config.per_instance_label,
         instanceName: instanceName,
         instanceDataDir: $._config.instance_data_mountpoint,
-      }, '{{persistentvolumeclaim}}'
+      }, label
     ) +
     {
       yaxes: $.yaxes('percentunit'),

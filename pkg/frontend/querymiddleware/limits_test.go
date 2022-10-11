@@ -218,6 +218,66 @@ func TestLimitsMiddleware_MaxQueryLength(t *testing.T) {
 	}
 }
 
+func TestLimitsMiddleware_CreationGracePeriod(t *testing.T) {
+	now := time.Now()
+
+	tests := map[string]struct {
+		reqStartTime        time.Time
+		reqEndTime          time.Time
+		creationGracePeriod time.Duration
+		expectedEndTime     time.Time
+	}{
+		"should not manipulate time range if creation grace period is disabled": {
+			reqStartTime:        now.Add(-time.Hour),
+			reqEndTime:          now.Add(2 * time.Hour),
+			creationGracePeriod: 0,
+			expectedEndTime:     now.Add(2 * time.Hour),
+		},
+		"should not manipulate time range for a query in now + creation_grace_period": {
+			reqStartTime:        now.Add(-time.Hour),
+			reqEndTime:          now.Add(30 * time.Minute),
+			creationGracePeriod: time.Hour,
+			expectedEndTime:     now.Add(30 * time.Minute),
+		},
+		"should manipulate time range for a query over now + creation_grace_period": {
+			reqStartTime:        now.Add(-time.Hour),
+			reqEndTime:          now.Add(2 * time.Hour),
+			creationGracePeriod: time.Hour,
+			expectedEndTime:     now.Add(time.Hour),
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			req := &PrometheusRangeQueryRequest{
+				Start: util.TimeToMillis(testData.reqStartTime),
+				End:   util.TimeToMillis(testData.reqEndTime),
+			}
+
+			limits := mockLimits{creationGracePeriod: testData.creationGracePeriod}
+			middleware := newLimitsMiddleware(limits, log.NewNopLogger())
+
+			innerRes := newEmptyPrometheusResponse()
+			inner := &mockHandler{}
+			inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
+
+			ctx := user.InjectOrgID(context.Background(), "test")
+			outer := middleware.Wrap(inner)
+			res, err := outer.Do(ctx, req)
+			require.NoError(t, err)
+
+			// We expect the response returned by the inner handler.
+			assert.Same(t, innerRes, res)
+
+			// Assert on the time range of the request passed to the inner handler (5s delta).
+			delta := float64(5000)
+			require.Len(t, inner.Calls, 1)
+
+			assert.InDelta(t, util.TimeToMillis(testData.expectedEndTime), inner.Calls[0].Arguments.Get(1).(Request).GetEnd(), delta)
+		})
+	}
+}
+
 type mockLimits struct {
 	maxQueryLookback               time.Duration
 	maxQueryLength                 time.Duration
@@ -230,6 +290,7 @@ type mockLimits struct {
 	compactorShards                int
 	compactorBlocksRetentionPeriod time.Duration
 	outOfOrderTimeWindow           model.Duration
+	creationGracePeriod            time.Duration
 }
 
 func (m mockLimits) MaxQueryLookback(string) time.Duration {
@@ -280,6 +341,10 @@ func (m mockLimits) CompactorBlocksRetentionPeriod(userID string) time.Duration 
 
 func (m mockLimits) OutOfOrderTimeWindow(userID string) model.Duration {
 	return m.outOfOrderTimeWindow
+}
+
+func (m mockLimits) CreationGracePeriod(userID string) time.Duration {
+	return m.creationGracePeriod
 }
 
 type mockHandler struct {

@@ -535,6 +535,10 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.sampleValidationMetrics.DeleteUserMetrics(userID)
 	d.exemplarValidationMetrics.DeleteUserMetrics(userID)
 	d.metadataValidationMetrics.DeleteUserMetrics(userID)
+
+	if d.forwarder != nil {
+		d.forwarder.DeleteMetricsForUser(userID)
+	}
 }
 
 // Called after distributor is asked to stop via StopAsync.
@@ -929,7 +933,7 @@ func (d *Distributor) forwardSamples(ctx context.Context, userID string, ts []mi
 
 	// Reassign req.Timeseries because the forwarder creates a new slice which has been filtered down.
 	// The cleanup func will cleanup the new slice, it's the forwarders responsibility to return the old one to the pool.
-	ts, forwardingErrCh = d.forwarder.Forward(ctx, endpoint, dropSamplesBeforeTimestamp, forwardingRules, ts)
+	ts, forwardingErrCh = d.forwarder.Forward(ctx, endpoint, dropSamplesBeforeTimestamp, forwardingRules, ts, userID)
 
 	return ts, forwardingErrCh
 }

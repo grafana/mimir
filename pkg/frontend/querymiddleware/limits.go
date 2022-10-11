@@ -33,7 +33,7 @@ type Limits interface {
 	// MaxQueryLookback returns the max lookback period of queries.
 	MaxQueryLookback(userID string) time.Duration
 
-	// MaxQueryLength returns the limit of the length (in time) of a query.
+	// MaxTotalQueryLength returns the limit of the length (in time) of a query.
 	MaxTotalQueryLength(userID string) time.Duration
 
 	// MaxQueryParallelism returns the limit to the number of split queries the
@@ -63,6 +63,10 @@ type Limits interface {
 
 	// OutOfOrderTimeWindow returns the out-of-order time window for the user.
 	OutOfOrderTimeWindow(userID string) model.Duration
+
+	// CreationGracePeriod returns the time interval to control how far into the future
+	// incoming samples are accepted compared to the wall clock.
+	CreationGracePeriod(userID string) time.Duration
 }
 
 type limitsMiddleware struct {
@@ -121,6 +125,22 @@ func (l limitsMiddleware) Do(ctx context.Context, r Request) (Response, error) {
 				"blocksRetentionPeriod", blocksRetentionPeriod)
 
 			r = r.WithStartEnd(minStartTime, r.GetEnd())
+		}
+	}
+
+	// Enforce the max end time.
+	creationGracePeriod := validation.LargestPositiveNonZeroDurationPerTenant(tenantIDs, l.CreationGracePeriod)
+	if creationGracePeriod > 0 {
+		maxEndTime := util.TimeToMillis(time.Now().Add(creationGracePeriod))
+		if r.GetEnd() > maxEndTime {
+			// Replace the end time in the request.
+			level.Debug(log).Log(
+				"msg", "the end time of the query has been manipulated because of the 'creation grace period' setting",
+				"original", util.FormatTimeMillis(r.GetEnd()),
+				"updated", util.FormatTimeMillis(maxEndTime),
+				"creationGracePeriod", creationGracePeriod)
+
+			r = r.WithStartEnd(r.GetStart(), maxEndTime)
 		}
 	}
 

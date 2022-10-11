@@ -7,3 +7,22 @@ metaMonitoring:
   grafanaAgent:
     enabled: true
     installOperator: true
+    metrics:
+      # Leave the remote empty to use the default to send it to Mimir directly
+      # remote: #
+      additionalRemoteWriteConfigs:
+        - url: https://mimir.example.com
+          headers:
+            X-Scope-OrgID: tenant-1
+          auth:
+            username: tenant-1
+            passwordSecretName: my-secret
+            passwordSecretKey: metrics
+
+    logs:
+      remote:
+        url: https://loki.example.com
+        auth:
+          username: tenant-1
+          passwordSecretName: my-secret
+          passwordSecretKey: logs

@@ -992,7 +992,7 @@ How to **investigate**:
   ```
   kubectl describe hpa -n <namespace> keda-hpa-querier
   ```
-- Ensure KEDA custom metrics API server is up and running
+- Ensure KEDA pods are up and running
   ```
   # Assuming KEDA is running in a dedicated namespace "keda":
   kubectl get pods -n keda
@@ -1001,6 +1001,16 @@ How to **investigate**:
   ```
   # Assuming KEDA is running in a dedicated namespace "keda":
   kubectl logs -n keda deployment/keda-operator-metrics-apiserver
+  ```
+- Check KEDA operator logs
+  ```
+  # Assuming KEDA is running in a dedicated namespace "keda":
+  kubectl logs -n keda deployment/keda-operator
+  ```
+- Check that Prometheus is running (since we configure KEDA to scrape custom metrics from it by default)
+  ```
+  # Assuming Prometheus is running in namespace "default":
+  kubectl -n default get pod -lname=prometheus
   ```
 
 ### MimirContinuousTestNotRunningOnWrites
