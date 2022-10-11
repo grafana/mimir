@@ -20,6 +20,8 @@
 
 ### Documentation
 
+* [ENHANCEMENT] Improve `MimirQuerierAutoscalerNotActive` runbook. #3186
+
 ### Tools
 
 ## 2.4.0-rc.0
