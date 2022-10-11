@@ -7,6 +7,9 @@ set -e
 CURR_DIR="$(dirname "$0")"
 . "${CURR_DIR}/common.sh"
 
+find_last_release
+find_prev_release
+
 CHANGELOG_PATH="${CURR_DIR}/../../CHANGELOG.md"
 
 #

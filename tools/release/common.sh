@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: AGPL-3.0-only
 #
-# This is library shared between scripts used to manage the release process.
+# This is a library shared between scripts for managing the release process.
 #
 
 set -e
@@ -9,7 +9,7 @@ set -e
 check_required_tools() {
   # Ensure "gh" tool is installed.
   if ! command -v gh &> /dev/null; then
-      echo "The 'gh' command cannot be find. Please install it: https://cli.github.com"
+      echo "The 'gh' command cannot be found. Please install it: https://cli.github.com"
       exit 1
   fi
 }

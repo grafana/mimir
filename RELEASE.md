@@ -116,7 +116,7 @@ To publish a release candidate:
 ```bash
 git checkout release-<version>
 
-# The run the following script and follow the instructions:
+# Then run the following script and follow the instructions:
 ./tools/release/create-draft-release.sh
 ```
 
