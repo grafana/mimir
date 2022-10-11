@@ -7,6 +7,7 @@ package transport
 
 import (
 	"context"
+	"github.com/grafana/dskit/concurrency"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -94,6 +95,51 @@ func TestHandler_ServeHTTP(t *testing.T) {
 
 			assert.NoError(t, err)
 			assert.Equal(t, tt.expectedMetrics, count)
+		})
+	}
+}
+
+func TestHandler_FailedRoundTrip(t *testing.T) {
+	for _, test := range []struct {
+		name            string
+		cfg             HandlerConfig
+		expectedMetrics int
+	}{
+		{
+			name:            "Failed round trip with context cancelled",
+			cfg:             HandlerConfig{QueryStatsEnabled: true},
+			expectedMetrics: 0,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			roundTripper := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+				return nil, context.Canceled
+			})
+
+			reg := prometheus.NewPedanticRegistry()
+			logs := &concurrency.SyncBuffer{}
+			logger := log.NewLogfmtLogger(logs)
+			handler := NewHandler(test.cfg, roundTripper, logger, reg)
+
+			ctx := user.InjectOrgID(context.Background(), "12345")
+			req := httptest.NewRequest("GET", "/api/v1/query?query=up&time=2015-07-01T20:10:51.781Z", nil)
+			req = req.WithContext(ctx)
+			resp := httptest.NewRecorder()
+
+			handler.ServeHTTP(resp, req)
+			_, _ = io.ReadAll(resp.Body)
+			require.Equal(t, StatusClientClosedRequest, resp.Code)
+
+			count, _ := promtest.GatherAndCount(
+				reg,
+				"cortex_query_seconds_total",
+				"cortex_query_fetched_series_total",
+				"cortex_query_fetched_chunk_bytes_total",
+				"cortex_query_fetched_chunks_total",
+			)
+
+			assert.Contains(t, strings.TrimSpace(logs.String()), "sharded_queries", "param_query")
+			assert.Equal(t, test.expectedMetrics, count)
 		})
 	}
 }
