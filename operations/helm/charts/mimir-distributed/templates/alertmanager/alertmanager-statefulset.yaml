@@ -59,7 +59,7 @@ spec:
         {{- end }}
       namespace: {{ .Release.Namespace | quote }}
     spec:
-      {{- if .Values.ingester.persistentVolume.enabled }}
+      {{- if .Values.alertmanager.persistentVolume.enabled }}
       {{- if .Values.schedulerName }}
       schedulerName: "{{ .Values.schedulerName }}"
       {{- end }}
