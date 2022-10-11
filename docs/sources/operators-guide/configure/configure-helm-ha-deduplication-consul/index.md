@@ -114,7 +114,7 @@ Port forward Mimir distributor service. The argument after port-forward must
 match your Mimir's distributor name.
 
 ```bash
-kubectl port-forward service/mymimir-distributor 8080:8080
+kubectl -n <mimir-namespace> port-forward service/mimir-distributor 8080:8080
 ```
 
 Open `http://localhost:8080/distributor/ha_tracker` in a browser. You should see the output similar like the following.
