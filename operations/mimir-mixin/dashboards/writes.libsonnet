@@ -159,7 +159,7 @@ local filename = 'mimir-writes.json';
             $.jobMatcher($._config.job_names.distributor),
             $.jobMatcher($._config.job_names.distributor),
           ],
-          'sum(rate(cortex_distributor_forward_errors_total{%(distributorMatcher)s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.distributor)
+          'sum by (status_code) (rate(cortex_distributor_forward_errors_total{%(distributorMatcher)s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.distributor)
         )
       )
       .addPanel(
