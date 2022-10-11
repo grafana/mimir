@@ -54,7 +54,7 @@ spec:
         {{- include "mimir.podAnnotations" $args | nindent 8 }}
       namespace: {{ .Release.Namespace | quote }}
     spec:
-      {{- if .Values.ingester.persistentVolume.enabled }}
+      {{- if .Values.store_gateway.persistentVolume.enabled }}
       {{- if .Values.schedulerName }}
       schedulerName: "{{ .Values.schedulerName }}"
       {{- end }}
