@@ -183,7 +183,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxLabelNamesPerSeries, maxLabelNamesPerSeriesFlag, 30, "Maximum number of label names per series.")
 	f.IntVar(&l.MaxMetadataLength, maxMetadataLengthFlag, 1024, "Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT. Longer metadata is dropped except for HELP which is truncated.")
 	_ = l.CreationGracePeriod.Set("10m")
-	f.Var(&l.CreationGracePeriod, creationGracePeriodFlag, "Controls how far into the future incoming samples are accepted compared to the wall clock. Any sample with timestamp `t` will be rejected if `t > (now + validation.create-grace-period)`.")
+	f.Var(&l.CreationGracePeriod, creationGracePeriodFlag, "Controls how far into the future incoming samples are accepted compared to the wall clock. Any sample with timestamp `t` will be rejected if `t > (now + validation.create-grace-period)`. Also used by query-frontend to avoid querying too far into the future. 0 to disable.")
 	f.BoolVar(&l.EnforceMetadataMetricName, "validation.enforce-metadata-metric-name", true, "Enforce every metadata has a metric name.")
 
 	f.IntVar(&l.MaxGlobalSeriesPerUser, MaxSeriesPerUserFlag, 150000, "The maximum number of in-memory series per tenant, across the cluster before replication. 0 to disable.")
@@ -560,7 +560,7 @@ func (o *Overrides) CompactorSplitAndMergeShards(userID string) int {
 	return o.getOverridesForUser(userID).CompactorSplitAndMergeShards
 }
 
-// CompactorSplitGroupsCount returns the number of groups that blocks for splitting should be grouped into.
+// CompactorSplitGroups returns the number of groups that blocks for splitting should be grouped into.
 func (o *Overrides) CompactorSplitGroups(userID string) int {
 	return o.getOverridesForUser(userID).CompactorSplitGroups
 }
@@ -763,7 +763,7 @@ func SmallestPositiveIntPerTenant(tenantIDs []string, f func(string) int) int {
 
 // SmallestPositiveNonZeroIntPerTenant is returning the minimal positive and
 // non-zero value of the supplied limit function for all given tenants. In many
-// limits a value of 0 means unlimted so the method will return 0 only if all
+// limits a value of 0 means unlimited so the method will return 0 only if all
 // inputs have a limit of 0 or an empty tenant list is given.
 func SmallestPositiveNonZeroIntPerTenant(tenantIDs []string, f func(string) int) int {
 	var result *int
@@ -781,13 +781,31 @@ func SmallestPositiveNonZeroIntPerTenant(tenantIDs []string, f func(string) int)
 
 // SmallestPositiveNonZeroDurationPerTenant is returning the minimal positive
 // and non-zero value of the supplied limit function for all given tenants. In
-// many limits a value of 0 means unlimted so the method will return 0 only if
+// many limits a value of 0 means unlimited so the method will return 0 only if
 // all inputs have a limit of 0 or an empty tenant list is given.
 func SmallestPositiveNonZeroDurationPerTenant(tenantIDs []string, f func(string) time.Duration) time.Duration {
 	var result *time.Duration
 	for _, tenantID := range tenantIDs {
 		v := f(tenantID)
 		if v > 0 && (result == nil || v < *result) {
+			result = &v
+		}
+	}
+	if result == nil {
+		return 0
+	}
+	return *result
+}
+
+// LargestPositiveNonZeroDurationPerTenant is returning the maximum positive
+// and non-zero value of the supplied limit function for all given tenants. In
+// many limits a value of 0 means unlimited so the method will return 0 only if
+// all inputs have a limit of 0 or an empty tenant list is given.
+func LargestPositiveNonZeroDurationPerTenant(tenantIDs []string, f func(string) time.Duration) time.Duration {
+	var result *time.Duration
+	for _, tenantID := range tenantIDs {
+		v := f(tenantID)
+		if v > 0 && (result == nil || v > *result) {
 			result = &v
 		}
 	}
