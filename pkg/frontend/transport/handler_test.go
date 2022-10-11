@@ -127,7 +127,6 @@ func TestHandler_FailedRoundTrip(t *testing.T) {
 			resp := httptest.NewRecorder()
 
 			handler.ServeHTTP(resp, req)
-			_, _ = io.ReadAll(resp.Body)
 			require.Equal(t, StatusClientClosedRequest, resp.Code)
 
 			count, _ := promtest.GatherAndCount(
