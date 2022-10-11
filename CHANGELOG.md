@@ -4,9 +4,9 @@
 
 ### Grafana Mimir
 
-* [CHANGE] Query-frontend: truncate queries based on the configured creation grace period (`--validation.create-grace-period`) to avoid querying too far into the future. #3172
 * [ENHANCEMENT] Distributor: Add age filter to forwarding functionality, to not forward samples which are older than defined duration. If such samples are not ingested, `cortex_discarded_samples_total{reason="forwarded-sample-too-old"}` is increased. #3049 #3133
 * [ENHANCEMENT] Store-gateway: Reduce memory allocation when generating ids in index cache. #3179
+* [ENHANCEMENT] Query-frontend: truncate queries based on the configured creation grace period (`--validation.create-grace-period`) to avoid querying too far into the future. #3172
 * [BUGFIX] Flusher: Add `Overrides` as a dependency to prevent panics when starting with `-target=flusher`. #3151
 
 ### Mixin
