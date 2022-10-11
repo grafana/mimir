@@ -4100,7 +4100,7 @@ func newMockForwarder(timeseriesMutator func([]mimirpb.PreallocTimeseries) []mim
 	}
 }
 
-func (m *mockForwarder) Forward(ctx context.Context, endpoint string, dontForwardBefore int64, forwardingRules validation.ForwardingRules, ts []mimirpb.PreallocTimeseries) ([]mimirpb.PreallocTimeseries, chan error) {
+func (m *mockForwarder) Forward(ctx context.Context, endpoint string, dontForwardBefore int64, forwardingRules validation.ForwardingRules, ts []mimirpb.PreallocTimeseries, user string) ([]mimirpb.PreallocTimeseries, chan error) {
 	errCh := make(chan error)
 
 	go func() {
@@ -4117,6 +4117,8 @@ func (m *mockForwarder) Forward(ctx context.Context, endpoint string, dontForwar
 
 	return nil, errCh
 }
+
+func (m *mockForwarder) DeleteMetricsForUser(user string) {}
 
 func ingestAllTimeseriesMutator(ts []mimirpb.PreallocTimeseries) []mimirpb.PreallocTimeseries {
 	return ts

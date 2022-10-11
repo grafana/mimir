@@ -127,6 +127,9 @@ To make components aware of configuration changes, either:
 
 You can use the Helm chart value `global.extraEnvFrom` to inject credentials into the runtime environment variables of the Grafana Mimir components. The data keys will become environment variables and usable in the Grafana Mimir configuration. For example, `AWS_SECRET_ACCESS_KEY` can be referenced as `${AWS_SECRET_ACCESS_KEY}` in the configuration. See the [Example](#example-of-configuration-managed-with-helm) for a practical application.
 
+To avoid complications, make sure that the key names in the secret contain only ASCII letters, numbers, and underscores.
+Prefer `AWS_SECRET_ACCESS_KEY` over `secret-access-key.aws`.
+
 Grafana Mimir does not track changes to the credentials. If the credentials change, Grafana Mimir pods should be restarted to use the new value. To trigger a restart, provide a global [pod annotation](https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/) in `global.podAnnotation` which will be applied to all Grafana Mimir pods. Changing the value of the global annotation will make Kubernetes recreate all pods. For example, changing `global.podAnnotations.bucketSecretVersion` from `"0"` to `"1"` triggers a restart. Note that pod annotations can only be strings.
 
 ## Example of configuration managed with Helm

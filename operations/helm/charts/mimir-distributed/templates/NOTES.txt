@@ -17,7 +17,7 @@ Ingress is not enabled, see the {{ if $.Values.enterprise.enabled }}gateway{{ el
 {{- end -}}
 {{- end }}
 From inside the cluster:
-  http://{{ include "mimir.fullname" $ }}-{{ if .Values.enterprise.enabled }}gateway{{ else }}nginx{{ end }}.{{ .Release.Namespace }}.svc:{{ $gateway.service.port }}/api/v1/push
+  {{ include "mimir.remoteWriteUrl.inCluster" $ }}
 
 Read address, Grafana data source (Prometheus) URL:
 {{ with $gateway.ingress -}}
@@ -30,6 +30,6 @@ Ingress is not enabled, see the {{ if $.Values.enterprise.enabled }}gateway{{ el
 {{- end -}}
 {{- end }}
 From inside the cluster:
-  http://{{ include "mimir.fullname" $ }}-{{ if .Values.enterprise.enabled }}gateway{{ else }}nginx{{ end }}.{{ .Release.Namespace }}.svc:{{ $gateway.service.port }}{{ template "mimir.prometheusHttpPrefix" $ }}
+  {{ include "mimir.gatewayUrl" $ }}{{ template "mimir.prometheusHttpPrefix" $ }}
 
 **IMPORTANT**: Always consult CHANGELOG.md file at https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/CHANGELOG.md and the deprecation list there to learn about breaking changes that require action during upgrade.

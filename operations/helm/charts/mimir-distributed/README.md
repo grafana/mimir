@@ -10,7 +10,7 @@ When upgrading from Helm chart version 2.1, please see [Upgrade the Grafana Mimi
 
 # mimir-distributed
 
-![Version: 4.0.0-weekly.206](https://img.shields.io/badge/Version-4.0.0--weekly.206-informational?style=flat-square) ![AppVersion: r206](https://img.shields.io/badge/AppVersion-r206-informational?style=flat-square)
+![Version: 4.0.0-weekly.207](https://img.shields.io/badge/Version-4.0.0--weekly.207-informational?style=flat-square) ![AppVersion: r207](https://img.shields.io/badge/AppVersion-r207-informational?style=flat-square)
 
 Grafana Mimir
 
@@ -65,7 +65,7 @@ As part of this chart many different pods and services are installed which all
 have varying resource requirements. Please make sure that you have sufficient
 resources (CPU/memory) available in your cluster before installing Grafana Mimir Helm Chart.
 
-### Migration from Cortex to Grafana Mimir
+### Migrate from Cortex to Grafana Mimir
 
 Please consult the [Migration from Cortex to Grafana](https://grafana.com/docs/mimir/v2.3.x/migration-guide/migrating-from-cortex/) guide on how to update the configuration.
 Prepare a custom values file with the contents:
@@ -186,6 +186,6 @@ To install the chart with the values used in CI tests:
 helm install test ./ --values ./ci/test-values.yaml
 ```
 
-# Contributing/Releasing
+# Contributing and releasing
 
 Please see the dedicated "[Contributing to Grafana Mimir helm chart](https://github.com/grafana/mimir/tree/main/docs/internal/contributing/contributing-to-helm-chart.md)" page.

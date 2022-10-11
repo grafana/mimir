@@ -66,6 +66,9 @@
     // Whether mimir gateway is enabled
     gateway_enabled: false,
 
+    // Whether grafana cloud alertmanager instance-mapper is enabled
+    alertmanager_im_enabled: false,
+
     // The label used to differentiate between different application instances (i.e. 'pod' in a kubernetes install).
     per_instance_label: 'pod',
 

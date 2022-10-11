@@ -336,304 +336,8 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "fill": 0,
-                  "id": 4,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
-                  },
-                  "lines": true,
-                  "linewidth": 1,
-                  "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [
-                     {
-                        "alias": "request",
-                        "color": "#FFC000",
-                        "dashLength": 5,
-                        "dashes": true,
-                        "fill": 0
-                     },
-                     {
-                        "alias": "limit",
-                        "color": "#E02F44",
-                        "dashLength": 5,
-                        "dashes": true,
-                        "fill": 0
-                     }
-                  ],
-                  "spaceLength": 10,
-                  "span": 4,
-                  "stack": false,
-                  "steppedLine": false,
-                  "targets": [
-                     {
-                        "expr": "sum by(pod) (rate(container_cpu_usage_seconds_total{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"alertmanager-im\"}[$__rate_interval]))",
-                        "format": "time_series",
-                        "intervalFactor": 2,
-                        "legendFormat": "{{pod}}",
-                        "legendLink": null,
-                        "step": 10
-                     },
-                     {
-                        "expr": "min(container_spec_cpu_quota{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"alertmanager-im\"} / container_spec_cpu_period{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"alertmanager-im\"})",
-                        "format": "time_series",
-                        "intervalFactor": 2,
-                        "legendFormat": "limit",
-                        "legendLink": null,
-                        "step": 10
-                     },
-                     {
-                        "expr": "min(kube_pod_container_resource_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"alertmanager-im\",resource=\"cpu\"})",
-                        "format": "time_series",
-                        "intervalFactor": 2,
-                        "legendFormat": "request",
-                        "legendLink": null,
-                        "step": 10
-                     }
-                  ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
-                  "title": "CPU",
-                  "tooltip": {
-                     "sort": 2
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
-               },
-               {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
-                  "datasource": "$datasource",
-                  "fill": 0,
-                  "id": 5,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
-                  },
-                  "lines": true,
-                  "linewidth": 1,
-                  "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [
-                     {
-                        "alias": "request",
-                        "color": "#FFC000",
-                        "dashLength": 5,
-                        "dashes": true,
-                        "fill": 0
-                     },
-                     {
-                        "alias": "limit",
-                        "color": "#E02F44",
-                        "dashLength": 5,
-                        "dashes": true,
-                        "fill": 0
-                     }
-                  ],
-                  "spaceLength": 10,
-                  "span": 4,
-                  "stack": false,
-                  "steppedLine": false,
-                  "targets": [
-                     {
-                        "expr": "max by(pod) (container_memory_working_set_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"alertmanager-im\"})",
-                        "format": "time_series",
-                        "intervalFactor": 2,
-                        "legendFormat": "{{pod}}",
-                        "legendLink": null,
-                        "step": 10
-                     },
-                     {
-                        "expr": "min(container_spec_memory_limit_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"alertmanager-im\"} > 0)",
-                        "format": "time_series",
-                        "intervalFactor": 2,
-                        "legendFormat": "limit",
-                        "legendLink": null,
-                        "step": 10
-                     },
-                     {
-                        "expr": "min(kube_pod_container_resource_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"alertmanager-im\",resource=\"memory\"})",
-                        "format": "time_series",
-                        "intervalFactor": 2,
-                        "legendFormat": "request",
-                        "legendLink": null,
-                        "step": 10
-                     }
-                  ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
-                  "title": "Memory (workingset)",
-                  "tooltip": {
-                     "sort": 2
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "bytes",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
-               },
-               {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
-                  "datasource": "$datasource",
-                  "fill": 0,
-                  "id": 6,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
-                  },
-                  "lines": true,
-                  "linewidth": 1,
-                  "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
-                  "span": 4,
-                  "stack": false,
-                  "steppedLine": false,
-                  "targets": [
-                     {
-                        "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", job=~\"($namespace)/(alertmanager-im)\"})",
-                        "format": "time_series",
-                        "intervalFactor": 2,
-                        "legendFormat": "{{pod}}",
-                        "legendLink": null,
-                        "step": 10
-                     }
-                  ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
-                  "title": "Memory (go heap inuse)",
-                  "tooltip": {
-                     "sort": 2
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "bytes",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
-               }
-            ],
-            "repeat": null,
-            "repeatIteration": null,
-            "repeatRowId": null,
-            "showTitle": true,
-            "title": "Instance mapper",
-            "titleSize": "h6"
-         },
-         {
-            "collapse": false,
-            "height": "250px",
-            "panels": [
-               {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
-                  "datasource": "$datasource",
                   "fill": 10,
-                  "id": 7,
+                  "id": 4,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -709,7 +413,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 10,
-                  "id": 8,
+                  "id": 5,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -797,7 +501,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 10,
-                  "id": 9,
+                  "id": 6,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -873,7 +577,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 10,
-                  "id": 10,
+                  "id": 7,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -961,7 +665,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 0,
-                  "id": 11,
+                  "id": 8,
                   "legend": {
                      "avg": false,
                      "current": false,

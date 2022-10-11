@@ -69,9 +69,11 @@ local filename = 'mimir-ruler.json';
         utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', ruler_config_api_routes_re)])
       )
       .addPanel(
+        local selectors = $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', ruler_config_api_routes_re)];
         $.panel('Per route p99 latency') +
         $.queryPanel(
-          'histogram_quantile(0.99, sum by (route, le) (%s_job_route:cortex_request_duration_seconds_bucket:sum_rate{%s, route=~"%s"}))' % [$._config.per_cluster_label, $.jobMatcher($._config.job_names.gateway), ruler_config_api_routes_re],
+          'histogram_quantile(0.99, sum by (route, le) (%s:cortex_request_duration_seconds_bucket:sum_rate%s))' %
+          [$.recordingRulePrefix(selectors), utils.toPrometheusSelector(selectors)],
           '{{ route }}'
         ) +
         { yaxes: $.yaxes('s') }
