@@ -148,7 +148,9 @@ local filename = 'mimir-writes.json';
               rate(
                 cortex_distributor_forward_requests_total{%(distributorMatcher)s}[$__rate_interval]
               )
-              - on (namespace, pod)
+            )
+            - 
+            sum(
               rate(
                 cortex_distributor_forward_errors_total{%(distributorMatcher)s}[$__rate_interval]
               )
