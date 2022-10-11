@@ -13,6 +13,16 @@ metadata:
 spec:
   clients:
       
+      - url: https://loki.example.com
+        basicAuth:
+          username:
+            name: metamonitoring-values-mimir-logs-instance-usernames
+            key: "username-0"
+          password:
+            name: "my-secret"
+            key: "logs"
+        externalLabels:
+          cluster: "metamonitoring-values"
 
   # Supply an empty namespace selector to look in all namespaces. Remove
   # this to only look in the same namespace as the LogsInstance CR
