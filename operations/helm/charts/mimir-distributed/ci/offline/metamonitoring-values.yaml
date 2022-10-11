@@ -8,7 +8,7 @@ metaMonitoring:
     enabled: true
     installOperator: true
     metrics:
-      # Leaving the remote empty should use the default to send it to Mimir directly
+      # Leave the remote empty to use the default to send it to Mimir directly
       # remote: #
       additionalRemoteWriteConfigs:
         - url: https://mimir.example.com
