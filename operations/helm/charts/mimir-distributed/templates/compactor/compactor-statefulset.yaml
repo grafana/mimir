@@ -45,7 +45,7 @@ spec:
         {{- include "mimir.podAnnotations" (dict "ctx" . "component" "compactor") | nindent 8 }}
       namespace: {{ .Release.Namespace | quote }}
     spec:
-      {{- if .Values.ingester.persistentVolume.enabled }}
+      {{- if .Values.compactor.persistentVolume.enabled }}
       {{- if .Values.schedulerName }}
       schedulerName: "{{ .Values.schedulerName }}"
       {{- end }}
