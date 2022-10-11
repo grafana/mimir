@@ -14,7 +14,7 @@ the deduplication by using the Grafana Mimir helm chart deployment that uses ext
 
 ## Before you begin
 
-You need to have a Grafana Mimir installed.
+You need to have a Grafana Mimir installed via the mimir-distributed Helm chart.
 
 For conceptual information about how Mimir deduplicates incoming HA samples, refer to [Configure high availability]({{< relref "../configure-high-availability-deduplication.md" >}}).
 
