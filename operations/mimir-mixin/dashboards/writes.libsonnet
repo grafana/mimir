@@ -142,26 +142,53 @@ local filename = 'mimir-writes.json';
       $.row('Distributor Forwarding')
       .addPanel(
         $.panel('Requests / sec') +
-        $.successFailurePanel(
-          |||
-            sum(  
-              rate(
-                cortex_distributor_forward_requests_total{%(distributorMatcher)s}[$__rate_interval]
+        $.queryPanel(
+          [
+            |||
+              sum(
+                rate(
+                  cortex_distributor_forward_requests_total{%(distributorMatcher)s}[$__rate_interval]
+                )
               )
-            )
-            - 
-            sum(
-              rate(
-                cortex_distributor_forward_errors_total{%(distributorMatcher)s}[$__rate_interval]
+              -
+              sum(
+                rate(
+                  cortex_distributor_forward_errors_total{%(distributorMatcher)s}[$__rate_interval]
+                )
               )
-            )
-          ||| % {
-            distributorMatcher: $.jobMatcher($._config.job_names.distributor),
+            ||| % {
+              distributorMatcher: $.jobMatcher($._config.job_names.distributor),
+            },
+            |||
+              label_replace(
+                sum by (status_code) (
+                  rate(
+                    cortex_distributor_forward_errors_total{%(distributorMatcher)s}[$__rate_interval]
+                  )
+                ),
+                "status_code",
+                "error",
+                "status_code",
+                "failed"
+              )
+            ||| % {
+              distributorMatcher: $.jobMatcher($._config.job_names.distributor),
+            },
+          ], [
+            'success',
+            '{{ status_code }}',
+          ],
+        ) + $.stack + {
+          aliasColors: {
+            '1xx': '#EAB839',
+            '2xx': '#7EB26D',
+            '3xx': '#6ED0E0',
+            '4xx': '#EF843C',
+            '5xx': '#E24D42',
+            success: '#7EB26D',
+            'error': '#E24D42',
           },
-          'sum by (status_code) (rate(cortex_distributor_forward_errors_total{%(distributorMatcher)s}[$__rate_interval]))' % {
-            distributorMatcher: $.jobMatcher($._config.job_names.distributor)
-          }
-        )
+        },
       )
       .addPanel(
         $.panel('Latency') +
