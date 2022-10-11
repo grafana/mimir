@@ -177,31 +177,34 @@ func checkResponse(r *http.Response) error {
 	if err != nil {
 		return errors.Wrapf(err, "reading body")
 	}
-
-	msg := string(bodyHead)
-	var errMsg string
-	if msg == "" {
-		errMsg = fmt.Sprintf("server returned HTTP status: %s", r.Status)
-	} else {
-		errMsg = fmt.Sprintf("server returned HTTP status: %s, body: %s", r.Status, msg)
-	}
-
+	bodyStr := string(bodyHead)
+	const msg = "response"
 	if r.StatusCode == http.StatusNotFound {
 		log.WithFields(log.Fields{
 			"status": r.Status,
-		}).Debugln(errMsg)
+			"body":   bodyStr,
+		}).Debugln(msg)
 		return ErrResourceNotFound
 	}
 	if r.StatusCode == http.StatusConflict {
 		log.WithFields(log.Fields{
 			"status": r.Status,
-		}).Debugln(errMsg)
+			"body":   bodyStr,
+		}).Debugln(msg)
 		return errConflict
 	}
 
 	log.WithFields(log.Fields{
 		"status": r.Status,
-	}).Errorln(errMsg)
+		"body":   bodyStr,
+	}).Errorln(msg)
+
+	var errMsg string
+	if bodyStr == "" {
+		errMsg = fmt.Sprintf("server returned HTTP status: %s", r.Status)
+	} else {
+		errMsg = fmt.Sprintf("server returned HTTP status: %s, body: %q", r.Status, bodyStr)
+	}
 
 	return errors.New(errMsg)
 }
