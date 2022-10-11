@@ -11,6 +11,7 @@
 ### Jsonnet
 
 ### Mimirtool
+* [CHANGE] Query-frontend: truncate queries based on the configured creation grace period (`--validation.create-grace-period`) to avoid querying too far into the future. #3172
 * [ENHANCEMENT] Added `mimirtool rules delete-namespace` command to delete all of the rule groups in a namespace including the namespace itself. #3136
 
 ### Documentation
@@ -36,7 +37,6 @@
 * [CHANGE] Memberlist: cluster label verification feature (`-memberlist.cluster-label` and `-memberlist.cluster-label-verification-disabled`) is now marked as stable. #3108
 * [CHANGE] Distributor: only single per-tenant forwarding endpoint can be configured now. Support for per-rule endpoint has been removed. #3095
 * [CHANGE] Query-frontend: truncate queries based on the configured blocks retention period (`-compactor.blocks-retention-period`) to avoid querying past this period. #3134
-* [CHANGE] Query-frontend: truncate queries based on the configured creation grace period (`--validation.create-grace-period`) to avoid querying too far into the future. #3172
 * [FEATURE] Query-scheduler: added an experimental ring-based service discovery support for the query-scheduler. Refer to [query-scheduler configuration](https://grafana.com/docs/mimir/next/operators-guide/architecture/components/query-scheduler/#configuration) for more information. #2957
 * [FEATURE] Introduced the experimental endpoint `/api/v1/user_limits` exposed by all components that load runtime configuration. This endpoint exposes realtime limits for the authenticated tenant, in JSON format. #2864 #3017
 * [FEATURE] Query-scheduler: added the experimental configuration option `-query-scheduler.max-used-instances` to restrict the number of query-schedulers effectively used regardless how many replicas are running. This feature can be useful when using the experimental read-write deployment mode. #3005

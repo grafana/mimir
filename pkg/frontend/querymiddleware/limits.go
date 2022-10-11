@@ -129,7 +129,7 @@ func (l limitsMiddleware) Do(ctx context.Context, r Request) (Response, error) {
 	}
 
 	// Enforce the max end time.
-	creationGracePeriod := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, l.CreationGracePeriod)
+	creationGracePeriod := validation.LargestPositiveNonZeroDurationPerTenant(tenantIDs, l.CreationGracePeriod)
 	if creationGracePeriod > 0 {
 		maxEndTime := util.TimeToMillis(time.Now().Add(creationGracePeriod))
 		if r.GetEnd() > maxEndTime {
