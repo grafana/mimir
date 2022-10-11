@@ -31,9 +31,6 @@ unique across different replica in the cluster.
 
 ```yaml
 global:
-  scrape_interval: 1m
-  scrape_timeout: 10s
-  evaluation_interval: 1m
   external_labels:
     __replica__: replica-1
     cluster: my-prometheus
