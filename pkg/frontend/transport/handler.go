@@ -146,7 +146,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, err)
 		queryString = f.parseRequestQueryString(r, buf)
-		f.reportFailedQueryStats(r, queryString, queryResponseTime, stats)
+		f.reportFailedQuery(r, queryString, queryResponseTime, stats, err)
 		return
 	}
 
@@ -190,13 +190,17 @@ func (f *Handler) reportSlowQuery(r *http.Request, queryString url.Values, query
 	level.Info(util_log.WithContext(r.Context(), f.log)).Log(logMessage...)
 }
 
-func (f *Handler) reportFailedQueryStats(r *http.Request, queryString url.Values, queryResponseTime time.Duration, stats *querier_stats.Stats) {
+func (f *Handler) reportFailedQuery(r *http.Request, queryString url.Values, queryResponseTime time.Duration, stats *querier_stats.Stats, err error) {
 	// Log failed query info
 	logMessage := append([]interface{}{
 		"msg", "failed query stats",
+		"method", r.Method,
+		"host", r.Host,
+		"path", r.URL.Path,
 		"component", "query-frontend",
 		"response_time", queryResponseTime,
 		"sharded_queries", stats.LoadShardedQueries(),
+		"err", err,
 	}, formatQueryString(queryString)...)
 
 	level.Error(util_log.WithContext(r.Context(), f.log)).Log(logMessage...)
