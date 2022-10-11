@@ -18,7 +18,13 @@ CHANGELOG_PATH="${CURR_DIR}/../../CHANGELOG.md"
 
 NUM_PRS=$(git log --pretty=format:"%s" "${LAST_RELEASE_TAG}...${PREV_RELEASE_TAG}" | grep -Eo '#[0-9]+' | wc -l | grep -Eo '[0-9]+')
 NUM_AUTHORS=$(git log --pretty=format:"%an" "${LAST_RELEASE_TAG}...${PREV_RELEASE_TAG}" | sort | uniq -i | wc -l | grep -Eo '[0-9]+')
-printf "This release contains %s PRs from %s authors. Thank you!\n\n" "${NUM_PRS}" "${NUM_AUTHORS}"
+NEW_AUTHORS=$(diff <(git log --pretty=format:"%an" "${PREV_RELEASE_TAG}" | sort | uniq -i) <(git log --pretty=format:"%an" "${LAST_RELEASE_TAG}" | sort | uniq -i) | grep -E '^>' | cut -c 3- | gsed -z 's/\n/, /g;s/, $//')
+
+if [ -z "${NEW_AUTHORS}" ]; then
+  printf "This release contains %s PRs from %s authors. Thank you!\n\n" "${NUM_PRS}" "${NUM_AUTHORS}"
+else
+  printf "This release contains %s PRs from %s authors, including new contributors %s. Thank you!\n\n" "${NUM_PRS}" "${NUM_AUTHORS}" "${NEW_AUTHORS}"
+fi
 
 #
 # Release notes
@@ -52,3 +58,7 @@ fi
 # Append the CHANGELOG section to the release notes.
 printf "# Changelog\n\n"
 tail -n +"${CHANGELOG_BEGIN_LINE}" "${CHANGELOG_PATH}" | head -$((CHANGELOG_END_LINE + 1))
+printf "\n"
+
+# Link to changes
+printf "**All commits merged in this release**: https://github.com/grafana/mimir/compare/%s...%s\n" "${PREV_RELEASE_TAG}" "${LAST_RELEASE_TAG}"
