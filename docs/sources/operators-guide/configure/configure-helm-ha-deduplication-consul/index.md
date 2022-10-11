@@ -117,6 +117,12 @@ match your Mimir's distributor name.
 kubectl -n <mimir-namespace> port-forward service/mimir-distributor 8080:8080
 ```
 
+You can use the following command to get the distributor name:
+
+```bash
+kubectl -n <mimir-namespace> get service | grep distributor
+```
+
 Open `http://localhost:8080/distributor/ha_tracker` in a browser. You should see the output similar like the following.
 If the table is empty, it means there is something wrong with the configuration.
 
