@@ -100,12 +100,7 @@ runtimeConfig:
 
 ## Verifying deduplication
 
-After Consul, Prometheus and Mimir running we can verify deduplication in several way. 
-
-### Distributor metrics
-
-Mimir [distributor]{{< relref "../../architecture/components/distribuotr.md" >}} exposes some metrics related 
-to HA deduplication. The relevant metrics are those with `cortex_ha_tracker_` prefix. 
+After Consul, Prometheus and Mimir running we can verify deduplication in several way.
 
 ### ha_tracker's page
 
@@ -126,6 +121,13 @@ Open `http://localhost:8080/distributor/ha_tracker` in a browser. You should see
 If the table is empty, it means there is something wrong with the configuration.
 
 ![HA Tracker status](ha-tracker-status.png)
+
+### Distributor metrics
+
+If you have set up [metamonitoring]{{<relref "../../monitor-grafana-mimir/collecting-metrics-and-logs.md">}} or if you
+run GEM with built-in system monitoring,
+Mimir [distributor]{{< relref "../../architecture/components/distributor.md" >}}
+exposes some metrics related to HA deduplication. The relevant metrics are those with `cortex_ha_tracker_` prefix.
 
 ### Ensure HA metrics are deduplicated
 
