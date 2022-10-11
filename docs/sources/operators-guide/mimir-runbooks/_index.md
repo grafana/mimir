@@ -1057,6 +1057,20 @@ How to **investigate**:
   1. The alert fired because of a bug in Mimir: fix it.
   1. The alert fired because of a bug or edge case in the continuous test tool, causing a false positive: fix it.
 
+### MimirRingMembersMismatch
+
+This alert fires when the number of ring members does not match the number of running replicas.
+
+How it **works**:
+
+- The alert compares each component (currently just `ingester`) against the number of `up` instances for the component in that cluster.
+
+How to **investigate**:
+
+- Check the [hash ring web page]({{< relref "../reference-http-api/index.md#ingesters-ring-status" >}}) for the component for which the alert has fired, and look for unexpected instances in the list.
+- Consider manually forgetting unexpected instances in an `Unhealthy` state.
+- Ensure all the registered instances in the ring belong to the Mimir cluster for which the alert fired.
+
 ### RolloutOperatorNotReconciling
 
 This alert fires if the [`rollout-operator`](https://github.com/grafana/rollout-operator) is not successfully reconciling in a namespace.

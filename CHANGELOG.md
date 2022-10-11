@@ -10,6 +10,8 @@
 * [BUGFIX] Flusher: Add `Overrides` as a dependency to prevent panics when starting with `-target=flusher`. #3151
 
 ### Mixin
+
+* [ENHANCEMENT] Alerts: Add MimirRingMembersMismatch firing when a component does not have the expected number of running jobs. #2404
 * [BUGFIX] Dashboards: Fix legend showing `persistentvolumeclaim` when using `deployment_type=baremetal` for `Disk space utilization` panels. #3173
 * [BUGFIX] Alerts: Include query-scheduler among ring members so alert MimirGossipMembersMismatch takes it into account. #3195
 

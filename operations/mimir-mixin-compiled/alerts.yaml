@@ -125,6 +125,23 @@ groups:
     for: 5m
     labels:
       severity: critical
+  - alert: MimirRingMembersMismatch
+    annotations:
+      message: |
+        Number of members in Mimir ingester hash ring does not match the expected number in {{ $labels.cluster }}/{{ $labels.namespace }}.
+    expr: |
+      (
+        avg by(cluster, namespace) (sum by(cluster, namespace, pod) (cortex_ring_members{name="ingester",job=~"(.*/)?(ingester.*|cortex|mimir|mimir-write)"}))
+        != sum by(cluster, namespace) (up{job=~"(.*/)?(ingester.*|cortex|mimir|mimir-write)"})
+      )
+      and
+      (
+        count by(cluster, namespace) (cortex_build_info) > 0
+      )
+    for: 15m
+    labels:
+      component: ingester
+      severity: warning
 - name: mimir_instance_limits_alerts
   rules:
   - alert: MimirIngesterReachingSeriesLimit
