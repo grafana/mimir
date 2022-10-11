@@ -11,9 +11,9 @@ check_required_tools
 find_last_release
 find_prev_release
 
-# Build dist binaries.
+# Build binaries and packages.
 echo "Building binaries (this may take a while)..."
-cd "${CURR_DIR}"/../../ && make dist && cd -
+cd "${CURR_DIR}"/../../ && make dist packages && cd -
 
 # Generate release notes draft.
 echo "Generating the draft release notes..."
