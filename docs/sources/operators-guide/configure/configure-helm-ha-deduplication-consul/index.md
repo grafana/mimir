@@ -96,7 +96,7 @@ runtimeConfig:
 2. Upgrade the Mimir's helm release using the following command:
 
 ```bash
- helm -n <mimir-namespace> upgrade --install mimir grafana/mimir-distributed -f custom.yaml
+ helm -n <mimir-namespace> upgrade mimir grafana/mimir-distributed -f custom.yaml
 ```
 
 ## Verifying deduplication
