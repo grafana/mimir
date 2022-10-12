@@ -92,6 +92,11 @@ Using a custom namespace solves problems later on because you do not have to ove
        tls:
          # empty, disabled.
    ```
+   
+   > **Note:** You can use `helm show values grafana/mimir-distributed` to see all configurable parameters for helm install. 
+   > However, refrain from copy and paste the whole thing because all parameters default value are already set and you should only
+   > override the parameter that you want to change. Likewise, `values.yaml` from `operations/helm/charts/mimir-distributed/values.yaml`
+   > must be used only for matching helm chart version because it is not guaranteed to be backward compatible.
 
    An ingress enables you to externally access a Kubernetes cluster.
    Replace _`<ingress-host>`_ with a suitable hostname that DNS can resolve
