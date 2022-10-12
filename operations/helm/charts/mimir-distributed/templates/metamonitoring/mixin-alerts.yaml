@@ -1,21 +1,20 @@
-{{- with .Values.metaMonitoring.prometheusRule }}
-{{- if .enabled }}
+{{- with .Values.metaMonitoring.serviceMonitor }}
+{{- if .mimirAlerts }}
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
-  name: {{ include "mimir.resourceName" (dict "ctx" $ "component" "prometheus-rule") }}
+  name: {{ include "mimir.resourceName" (dict "ctx" $ "component" "alerts") }}
   {{- with .annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
   labels:
-    {{- include "mimir.labels" (dict "ctx" $ "component" "prometheus-rule") | nindent 4 }}
+    {{- include "mimir.labels" (dict "ctx" $) | nindent 4 }}
     {{- with .labels }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
   namespace: {{ .namespace | default $.Release.Namespace | quote }}
 spec:
-  groups:
-    {{- toYaml .groups | nindent 4 }}
+    {{- $.Files.Get "mixins/alerts.yaml" | nindent 2 }}
 {{- end }}
 {{- end }}
