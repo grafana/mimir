@@ -136,7 +136,7 @@ components. This will reduce the required throughput at the cost of CPU usage. Y
 snappy. Gzip provides better compression than snappy at the cost of more CPU usage.
 
 You can use the [Squash Compression Benchmark](http://quixdb.github.io/squash-benchmark/#results-table) to choose between snappy and gzip.
-For protobuf data snappy achieves a compression ratio of 5 with compression speeds of 
+For protobuf data snappy achieves a compression ratio of 5 with compression speeds of
 around 400MiB/s. For the same data gzip achieves a ratio between 6 and 8 with speeds between 50MiB/s and 135 MiB/s.
 
 To configure gRPC compression use the following CLI flags or their YAML equivalents. The accepted values are  
