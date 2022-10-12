@@ -2571,6 +2571,8 @@ metaMonitoring:
     annotations: {}
     # -- Additional PrometheusRule labels
     labels: {}
+    # -- prometheusRule namespace
+    namespace: ""
     # -- Contents of Prometheus rules file
     groups: []
   #  - name: mimir_api_1
