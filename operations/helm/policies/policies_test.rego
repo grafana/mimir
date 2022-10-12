@@ -27,3 +27,17 @@ test_null_namespace_not_allowed if {
 test_namespace_allowed if {
 	no_violations with input as [{"contents": {"metadata": {"name": "resource", "namespace": "example"}}}]
 }
+
+test_namespace_forbidden_on_psp if {
+	some_violations with input as [{"contents": {
+		"kind": "PodSecurityPolicy",
+		"metadata": {"name": "resource", "namespace": "example"},
+	}}]
+}
+
+test_namespace_forbidden_on_psp if {
+	no_violations with input as [{"contents": {
+		"kind": "PodSecurityPolicy",
+		"metadata": {"name": "resource"},
+	}}]
+}

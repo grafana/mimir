@@ -6,14 +6,34 @@ has_key(x, k) {
 	_ = x[k]
 }
 
-deny["Resource doesn't have a namespace"] {
-	namespace := input[_].contents.metadata.namespace
-	not regex.match(".+", namespace)
+should_be_namespaced(contents) {
+	# if we don't know the kind, then it should have a namespace
+	not has_key(contents, "kind")
 }
 
-deny["Resource doesn't have a namespace"] {
-	metadata := input[_].contents.metadata
-	not has_key(metadata, "namespace")
+should_be_namespaced(contents) {
+	not contents.kind in ["PodSecurityPolicy"]
+}
+
+metadata_has_namespace(metadata) {
+	has_key(metadata, "namespace")
+	regex.match(".+", metadata.namespace)
+}
+
+deny[msg] {
+	obj := input[i].contents
+	msg := sprintf("Resource doesn't have a namespace %v", [obj])
+
+	should_be_namespaced(obj)
+	not metadata_has_namespace(obj.metadata)
+}
+
+deny[msg] {
+	obj := input[i].contents
+	msg := sprintf("Resource has a namespace, but shouldn't %v", [obj])
+
+	not should_be_namespaced(obj)
+	metadata_has_namespace(obj.metadata)
 }
 
 can_use_topology_spread_constraints(kind) {
