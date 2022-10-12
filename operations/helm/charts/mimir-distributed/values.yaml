@@ -2540,7 +2540,7 @@ metaMonitoring:
     # Enable Mimir prometheus alerts TODO specification
     mimirAlerts: true
     # Enable Mimir prometheus rules TODO
-    mimirRules: true 
+    mimirRules: true
     # -- To disable setting a 'cluster' label in metrics, set to 'null'.
     # To overwrite the 'cluster' label with your own value, set to a non-empty string.
     # Keep empty string "" to have the default value in the 'cluster' label, which is the helm release name for Mimir and the actual cluster name for Enterprise Metrics.
