@@ -130,7 +130,7 @@ func TestHandler_FailedRoundTrip(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
 			logs := &concurrency.SyncBuffer{}
 			logger := log.NewLogfmtLogger(logs)
-			handler := NewHandler(HandlerConfig{QueryStatsEnabled: true}, roundTripper, logger, reg)
+			handler := NewHandler(HandlerConfig{QueryStatsEnabled: false}, roundTripper, logger, reg)
 
 			ctx := user.InjectOrgID(context.Background(), "12345")
 			req := httptest.NewRequest("GET", test.path, nil)
