@@ -1,5 +1,5 @@
 {{- with .Values.metaMonitoring.serviceMonitor }}
-{{- if .mimirRules }}
+{{- if and .enabled .mimirRules }}
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
