@@ -1622,6 +1622,10 @@ metaMonitoring:
   serviceMonitor:
     # -- If enabled, ServiceMonitor resources for Prometheus Operator are created
     enabled: false
+    # Enable Mimir prometheus alerts TODO specification
+    mimirAlerts: true
+    # Enable Mimir prometheus rules TODO
+    mimirRules: true 
     # -- To disable setting a 'cluster' label in metrics, set to 'null'.
     # To overwrite the 'cluster' label with your own value, set to a non-empty string.
     # Keep empty string "" to have the default value in the 'cluster' label, which is the helm release name for Mimir and the actual cluster name for Enterprise Metrics.
@@ -1661,7 +1665,7 @@ metaMonitoring:
     # unless the Prometheus Operator is set up to look for rules outside its namespace
     namespace: null
     # -- Contents of Prometheus rules file
-    groups: ['{{ .Files.Get "mimir-distributed/mixins/alerts.yaml" }}']
+    groups: []
   #  - name: mimir_api_1
   #    rules:
   #    - expr: histogram_quantile(0.99, sum(rate(cortex_request_duration_seconds_bucket[1m]))
@@ -1679,10 +1683,6 @@ metaMonitoring:
   #      record: cluster_job:cortex_request_duration_seconds_sum:sum_rate
   #    - expr: sum(rate(cortex_request_duration_seconds_count[1m])) by (cluster, job)
   #      record: cluster_job:cortex_request_duration_seconds_count:sum_rate
-    alerting_rules:
-      # controls whether to create a PrometheusRulesList CRD with the alerting rules from the mixin
-      enabled: false
-      # if enabled true to we just append to groups? also learn how to append in this language
 
   # metaMonitoringAgent configures the built in Grafana Agent that can scrape metrics and logs and send them to a local or remote destination
   grafanaAgent:
