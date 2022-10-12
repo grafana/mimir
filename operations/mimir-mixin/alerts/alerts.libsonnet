@@ -221,15 +221,16 @@
             message: '{{ $labels.job }}/%(alert_instance_variable)s has a number of mmap-ed areas close to the limit.' % $._config,
           },
         },
-        if $._config.forwarding_enabled then {
+      ] + if $._config.forwarding_enabled then [
+        {
           alert: $.alertName('DistributorForwardingErrors'),
           expr: |||
-            cortex_distributor_forward_errors_total{%(distributorMatcher)s}
+            sum(rate(cortex_distributor_forward_errors_total{%(distributorMatcher)s}[1m]))
             / on (pod)
-            cortex_distributor_forward_requests_total{%(distributorMatcher)s}
+            sum(rate(cortex_distributor_forward_requests_total{%(distributorMatcher)s}[1m]))
             > 0.01
           ||| % {
-              distributorMatcher: $.jobMatcher($._config.job_names.distributor),
+            distributorMatcher: $.jobMatcher($._config.job_names.distributor),
           },
           'for': '5m',
           labels: {
@@ -238,8 +239,8 @@
           annotations: {
             message: '{{ $labels.job }}/%(alert_instance_variable)s has a high failure rate when forwarding samples.' % $._config,
           },
-        } else {},
-      ] + [
+        },
+      ] else [] + [
         {
           alert: $.alertName('RingMembersMismatch'),
           expr: |||
