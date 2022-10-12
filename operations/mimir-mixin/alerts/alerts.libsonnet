@@ -225,9 +225,9 @@
         {
           alert: $.alertName('DistributorForwardingErrors'),
           expr: |||
-            sum(rate(cortex_distributor_forward_errors_total{%(distributorMatcher)s}[1m]))
-            / on (pod)
-            sum(rate(cortex_distributor_forward_requests_total{%(distributorMatcher)s}[1m]))
+            rate(cortex_distributor_forward_errors_total{%(distributorMatcher)s}[1m])
+            / on (job, pod)
+            rate(cortex_distributor_forward_requests_total{%(distributorMatcher)s}[1m])
             > 0.01
           ||| % {
             distributorMatcher: $.jobMatcher($._config.job_names.distributor),
