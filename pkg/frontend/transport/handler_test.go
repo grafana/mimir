@@ -148,7 +148,7 @@ func TestHandler_FailedRoundTrip(t *testing.T) {
 				"cortex_query_fetched_chunks_total",
 			)
 
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			assert.Contains(t, strings.TrimSpace(logs.String()), "sharded_queries")
 			if test.expectQueryParamLog {
 				assert.Contains(t, strings.TrimSpace(logs.String()), "param_query")
