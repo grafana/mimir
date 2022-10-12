@@ -2537,9 +2537,9 @@ metaMonitoring:
   serviceMonitor:
     # -- If enabled, ServiceMonitor resources for Prometheus Operator are created
     enabled: false
-    # Enable Mimir prometheus alerts TODO specification
+    # -- Create standard Mimir alerts in Prometheus Operator via a PrometheusRule CRD
     mimirAlerts: true
-    # Enable Mimir prometheus rules TODO
+    # -- Create standard Mimir recording rules in Prometheus Operator via a PrometheusRule CRD
     mimirRules: true
     # -- To disable setting a 'cluster' label in metrics, set to 'null'.
     # To overwrite the 'cluster' label with your own value, set to a non-empty string.
