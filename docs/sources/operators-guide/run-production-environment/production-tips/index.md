@@ -124,3 +124,25 @@ Running a dedicated Memcached cluster for each cache type is not required, but r
 
 We recommend securing the Grafana Mimir cluster.
 For more information about securing a Mimir cluster, refer to [Secure Grafana Mimir]({{< relref "../../secure/_index.md" >}}).
+
+## Network
+
+Most of the communication between Mimir components occurs over gRPC. The gRPC
+connection does not use any compression by default. This can be most noticeable in the connection between a
+distributor and an ingester.
+
+If network throughput is a concern or a high cost, then you can enable compression on the gRPC connection between 
+components. This will reduce the required throughput at the cost of CPU usage. You can choose between gzip and 
+snappy. Gzip provides better compression than snappy at the cost of more CPU usage.
+
+To configure gRPC compression use the following CLI flags or their YAML equivalents. The accepted values are  
+`snappy` and `gzip`'.
+
+| CLI flag                                                    | YAML option                                                |
+| ----------------------------------------------------------- | ---------------------------------------------------------- |
+| `-query-frontend.grpc-client-config.grpc-compression`       | `alertmanager.alertmanager_client.grpc_compression`        |
+| `-query-scheduler.grpc-client-config.grpc-compression`      | `frontend.grpc_client_config.grpc_compression`             |
+| `-ruler.client.grpc-compression`                            | `frontend_worker.grpc_client_config.grpc_compression`      |
+| `-ruler.query-frontend.grpc-client-config.grpc-compression` | `ingester_client.grpc_client_config.grpc_compression`      |
+| `-alertmanager.alertmanager-client.grpc-compression`        | `query_scheduler.grpc_client_config.grpc_compression`      |
+| `-ingester.client.grpc-compression`                         | `ruler.query_frontend.grpc_client_config.grpc_compression` |
