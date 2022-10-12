@@ -223,7 +223,7 @@
         },
       ] + if $._config.forwarding_enabled then [
         {
-          alert: $.alertName('DistributorForwardingErrors'),
+          alert: $.alertName('DistributorForwardingErrorRate'),
           expr: |||
             rate(cortex_distributor_forward_errors_total{%(distributorMatcher)s}[1m])
             / on (job, pod)
