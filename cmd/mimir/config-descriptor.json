@@ -4605,16 +4605,6 @@
             },
             {
               "kind": "field",
-              "name": "msi_resource",
-              "required": false,
-              "desc": "",
-              "fieldValue": null,
-              "fieldDefaultValue": "",
-              "fieldType": "string",
-              "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
               "name": "user_assigned_id",
               "required": false,
               "desc": "User assigned identity. If empty, then System assigned identity is used.",
@@ -8561,16 +8551,6 @@
             },
             {
               "kind": "field",
-              "name": "msi_resource",
-              "required": false,
-              "desc": "",
-              "fieldValue": null,
-              "fieldDefaultValue": "",
-              "fieldType": "string",
-              "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
               "name": "user_assigned_id",
               "required": false,
               "desc": "User assigned identity. If empty, then System assigned identity is used.",
@@ -9930,16 +9910,6 @@
               "fieldDefaultValue": 20,
               "fieldFlag": "alertmanager-storage.azure.max-retries",
               "fieldType": "int",
-              "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
-              "name": "msi_resource",
-              "required": false,
-              "desc": "",
-              "fieldValue": null,
-              "fieldDefaultValue": "",
-              "fieldType": "string",
               "fieldCategory": "advanced"
             },
             {
@@ -11629,16 +11599,6 @@
                   "fieldDefaultValue": 20,
                   "fieldFlag": "common.storage.azure.max-retries",
                   "fieldType": "int",
-                  "fieldCategory": "advanced"
-                },
-                {
-                  "kind": "field",
-                  "name": "msi_resource",
-                  "required": false,
-                  "desc": "",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldType": "string",
                   "fieldCategory": "advanced"
                 },
                 {
