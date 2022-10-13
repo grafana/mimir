@@ -154,22 +154,22 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.LimitsConfig.RegisterFlags(f)
 	c.Worker.RegisterFlags(f)
 	c.Frontend.RegisterFlags(f, logger)
-	c.BlocksStorage.RegisterFlags(f)
+	c.BlocksStorage.RegisterFlags(f, logger)
 	c.Compactor.RegisterFlags(f, logger)
 	c.StoreGateway.RegisterFlags(f, logger)
 	c.TenantFederation.RegisterFlags(f)
 
 	c.Ruler.RegisterFlags(f, logger)
-	c.RulerStorage.RegisterFlags(f)
+	c.RulerStorage.RegisterFlags(f, logger)
 	c.Alertmanager.RegisterFlags(f, logger)
-	c.AlertmanagerStorage.RegisterFlags(f)
+	c.AlertmanagerStorage.RegisterFlags(f, logger)
 	c.RuntimeConfig.RegisterFlags(f)
 	c.MemberlistKV.RegisterFlags(f)
 	c.ActivityTracker.RegisterFlags(f)
 	c.QueryScheduler.RegisterFlags(f, logger)
 	c.UsageStats.RegisterFlags(f)
 
-	c.Common.RegisterFlags(f)
+	c.Common.RegisterFlags(f, logger)
 }
 
 func (c *Config) CommonConfigInheritance() CommonConfigInheritance {
@@ -580,8 +580,8 @@ type CommonConfigInheritance struct {
 }
 
 // RegisterFlags registers flag.
-func (c *CommonConfig) RegisterFlags(f *flag.FlagSet) {
-	c.Storage.RegisterFlagsWithPrefix("common.storage.", f)
+func (c *CommonConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
+	c.Storage.RegisterFlagsWithPrefix("common.storage.", f, logger)
 }
 
 // configWithCustomCommonUnmarshaler unmarshals config with custom unmarshaler for the `common` field.

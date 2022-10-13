@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/alecthomas/units"
+	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/wal"
@@ -124,8 +125,8 @@ func (d *DurationList) ToMilliseconds() []int64 {
 }
 
 // RegisterFlags registers the TSDB flags
-func (cfg *BlocksStorageConfig) RegisterFlags(f *flag.FlagSet) {
-	cfg.Bucket.RegisterFlagsWithPrefixAndDefaultDirectory("blocks-storage.", "blocks", f)
+func (cfg *BlocksStorageConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
+	cfg.Bucket.RegisterFlagsWithPrefixAndDefaultDirectory("blocks-storage.", "blocks", f, logger)
 	cfg.BucketStore.RegisterFlags(f)
 	cfg.TSDB.RegisterFlags(f)
 }

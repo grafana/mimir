@@ -3632,12 +3632,6 @@ The `azure_storage_backend` block configures the connection to Azure object stor
 # CLI flag: -<prefix>.azure.max-retries
 [max_retries: <int> | default = 20]
 
-# (advanced) If set, this URL is used instead of
-# https://<storage-account-name>.<endpoint-suffix> for obtaining
-# ServicePrincipalToken from MSI.
-# CLI flag: -<prefix>.azure.msi-resource
-[msi_resource: <string> | default = ""]
-
 # (advanced) User assigned identity. If empty, then System assigned identity is
 # used.
 # CLI flag: -<prefix>.azure.user-assigned-id

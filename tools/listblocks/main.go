@@ -44,8 +44,9 @@ type config struct {
 }
 
 func main() {
+	logger := gokitlog.NewNopLogger()
 	cfg := config{}
-	cfg.bucket.RegisterFlags(flag.CommandLine)
+	cfg.bucket.RegisterFlags(flag.CommandLine, logger)
 	flag.StringVar(&cfg.userID, "user", "", "User (tenant)")
 	flag.BoolVar(&cfg.showDeleted, "show-deleted", false, "Show deleted blocks")
 	flag.BoolVar(&cfg.showLabels, "show-labels", false, "Show block labels")
@@ -68,7 +69,6 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT)
 	defer cancel()
 
-	logger := gokitlog.NewNopLogger()
 	bkt, err := bucket.NewClient(ctx, cfg.bucket, "bucket", logger, nil)
 	if err != nil {
 		log.Fatalln("failed to create bucket:", err)

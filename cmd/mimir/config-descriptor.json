@@ -4605,17 +4605,6 @@
             },
             {
               "kind": "field",
-              "name": "msi_resource",
-              "required": false,
-              "desc": "If set, this URL is used instead of https://\u003cstorage-account-name\u003e.\u003cendpoint-suffix\u003e for obtaining ServicePrincipalToken from MSI.",
-              "fieldValue": null,
-              "fieldDefaultValue": "",
-              "fieldFlag": "blocks-storage.azure.msi-resource",
-              "fieldType": "string",
-              "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
               "name": "user_assigned_id",
               "required": false,
               "desc": "User assigned identity. If empty, then System assigned identity is used.",
@@ -8562,17 +8551,6 @@
             },
             {
               "kind": "field",
-              "name": "msi_resource",
-              "required": false,
-              "desc": "If set, this URL is used instead of https://\u003cstorage-account-name\u003e.\u003cendpoint-suffix\u003e for obtaining ServicePrincipalToken from MSI.",
-              "fieldValue": null,
-              "fieldDefaultValue": "",
-              "fieldFlag": "ruler-storage.azure.msi-resource",
-              "fieldType": "string",
-              "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
               "name": "user_assigned_id",
               "required": false,
               "desc": "User assigned identity. If empty, then System assigned identity is used.",
@@ -9932,17 +9910,6 @@
               "fieldDefaultValue": 20,
               "fieldFlag": "alertmanager-storage.azure.max-retries",
               "fieldType": "int",
-              "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
-              "name": "msi_resource",
-              "required": false,
-              "desc": "If set, this URL is used instead of https://\u003cstorage-account-name\u003e.\u003cendpoint-suffix\u003e for obtaining ServicePrincipalToken from MSI.",
-              "fieldValue": null,
-              "fieldDefaultValue": "",
-              "fieldFlag": "alertmanager-storage.azure.msi-resource",
-              "fieldType": "string",
               "fieldCategory": "advanced"
             },
             {
@@ -11632,17 +11599,6 @@
                   "fieldDefaultValue": 20,
                   "fieldFlag": "common.storage.azure.max-retries",
                   "fieldType": "int",
-                  "fieldCategory": "advanced"
-                },
-                {
-                  "kind": "field",
-                  "name": "msi_resource",
-                  "required": false,
-                  "desc": "If set, this URL is used instead of https://\u003cstorage-account-name\u003e.\u003cendpoint-suffix\u003e for obtaining ServicePrincipalToken from MSI.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "common.storage.azure.msi-resource",
-                  "fieldType": "string",
                   "fieldCategory": "advanced"
                 },
                 {
