@@ -128,11 +128,11 @@ For more information about securing a Mimir cluster, refer to [Secure Grafana Mi
 ## Network
 
 Most of the communication between Mimir components occurs over gRPC. The gRPC
-connection does not use any compression by default. This can be most noticeable in the connection between a
-distributor and an ingester.
+connection does not use any compression by default. This can be most noticeable is the connection between
+distributors and an ingesters.
 
 If network throughput is a concern or a high cost, then you can enable compression on the gRPC connection between
-components. This will reduce the required throughput at the cost of CPU usage. You can choose between gzip and
+components. This will reduce the network throughput at the cost of increased CPU usage. You can choose between gzip and
 snappy. Gzip provides better compression than snappy at the cost of more CPU usage.
 
 You can use the [Squash Compression Benchmark](http://quixdb.github.io/squash-benchmark/#results-table) to choose between snappy and gzip.
