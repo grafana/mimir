@@ -482,6 +482,8 @@ github.com/grafana/dskit v0.0.0-20221004074252-e8057f223e41 h1:jjKbMPJiQQ32c1hEz
 github.com/grafana/dskit v0.0.0-20221004074252-e8057f223e41/go.mod h1:NTfOwhBMmR7TyG4E3RB4F1qhvk+cawoXacyN30yipVY=
 github.com/grafana/e2e v0.1.1-0.20220809175039-067d99da62a9 h1:Yk0Dpb3nWz5oWl7S5J7JeSErcBF1aaNtbDPn3r9W6DU=
 github.com/grafana/e2e v0.1.1-0.20220809175039-067d99da62a9/go.mod h1:seXDwRTGVWF5m7Jx5TkJG6ZkGcu8iv+/0qH8nGKpwn8=
+github.com/grafana/e2e v0.1.1-0.20221013164451-2c8db587f293 h1:fRCjj1mKfKbJ67OgCJBAM5nGJeGIbCqnkDcKsxd0/QI=
+github.com/grafana/e2e v0.1.1-0.20221013164451-2c8db587f293/go.mod h1:seXDwRTGVWF5m7Jx5TkJG6ZkGcu8iv+/0qH8nGKpwn8=
 github.com/grafana/gomemcache v0.0.0-20220812141943-44b6cde200bb h1:CqfZjjd8iK3G1TV8Wf0u7WTY+0RxIEbmcgxftt9qVtw=
 github.com/grafana/gomemcache v0.0.0-20220812141943-44b6cde200bb/go.mod h1:H0wQNHz2YrLsuXOZozoeDmnHXkNCRmMW0gwFWDfEZDA=
 github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe h1:yIXAAbLswn7VNWBIvM71O2QsgfgW9fRXZNR0DXe6pDU=
