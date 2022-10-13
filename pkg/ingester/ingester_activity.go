@@ -193,18 +193,17 @@ func queryRequestToString(sb *bytes.Buffer, req *client.QueryRequest) {
 	sb.Write(strconv.AppendInt(b, req.StartTimestampMs, 10))
 	sb.WriteString(",")
 
+	b = b[:0]
 	sb.WriteString("EndTimestampMs:")
 	sb.Write(strconv.AppendInt(b, req.EndTimestampMs, 10))
 	sb.WriteString(",")
 
-	sb.WriteString("Matchers:")
-	sb.WriteString("[]*LabelMatcher{")
+	sb.WriteString("Matchers:[]*LabelMatcher{")
 	for _, m := range req.Matchers {
 		labelMatcherToString(sb, m)
 		sb.WriteString(",")
 	}
-	sb.WriteString("}")
-	sb.WriteString(",}")
+	sb.WriteString("},}")
 }
 
 func labelMatcherToString(sb *bytes.Buffer, m *client.LabelMatcher) {
@@ -221,6 +220,5 @@ func labelMatcherToString(sb *bytes.Buffer, m *client.LabelMatcher) {
 	sb.WriteString(",")
 	sb.WriteString("Value:")
 	sb.WriteString(m.Value)
-	sb.WriteString(",")
-	sb.WriteString("}")
+	sb.WriteString(",}")
 }
