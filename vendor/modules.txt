@@ -798,8 +798,8 @@ github.com/prometheus/prometheus/web/api/v1
 # github.com/rainycape/unidecode v0.0.0-20150907023854-cb7f23ec59be
 ## explicit
 github.com/rainycape/unidecode
-# github.com/rogpeppe/go-internal v1.6.1
-## explicit; go 1.11
+# github.com/rogpeppe/go-internal v1.9.0
+## explicit; go 1.17
 # github.com/rs/cors v1.8.2
 ## explicit; go 1.13
 github.com/rs/cors
