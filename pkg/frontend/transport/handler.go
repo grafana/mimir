@@ -201,7 +201,7 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 	numBytes := stats.LoadFetchedChunkBytes()
 	numChunks := stats.LoadFetchedChunks()
 	sharded := strconv.FormatBool(stats.GetShardedQueries() > 0)
-	
+
 	if stats != nil {
 		// Track stats.
 		f.querySeconds.WithLabelValues(userID, sharded).Add(wallTime.Seconds())
