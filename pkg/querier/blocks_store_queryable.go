@@ -791,7 +791,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 					myQueriedBlocks = append(myQueriedBlocks, ids...)
 				}
 
-				if s := resp.GetStats(); s!= nil{
+				if s := resp.GetStats(); s != nil {
 					indexBytesFetched += s.IndexBytesFetched
 				}
 			}

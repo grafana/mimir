@@ -42,7 +42,7 @@ type Stats struct {
 	ShardedQueries uint32 `protobuf:"varint,5,opt,name=sharded_queries,json=shardedQueries,proto3" json:"sharded_queries,omitempty"`
 	// The number of split partial queries executed. 0 if splitting is disabled or the query can't be split.
 	SplitQueries uint32 `protobuf:"varint,6,opt,name=split_queries,json=splitQueries,proto3" json:"split_queries,omitempty"`
-	// The number of index bytes fetched for the query
+	// The number of index bytes fetched on the store-gateway for the query
 	FetchedIndexBytes uint64 `protobuf:"varint,7,opt,name=fetched_index_bytes,json=fetchedIndexBytes,proto3" json:"fetched_index_bytes,omitempty"`
 }
 
