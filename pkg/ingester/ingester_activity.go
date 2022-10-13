@@ -6,10 +6,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/grafana/dskit/tenant"
-	"github.com/weaveworks/common/tracing"
 	"net/http"
 	"strconv"
+
+	"github.com/grafana/dskit/tenant"
+	"github.com/weaveworks/common/tracing"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
