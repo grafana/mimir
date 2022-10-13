@@ -28,7 +28,6 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/test"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
@@ -110,8 +109,6 @@ func TestDistributor_Push(t *testing.T) {
 		mtime.NowReset()
 	})
 
-	expErrFail := errors.Wrap(errFail, "failed to push to ingester")
-
 	type samplesIn struct {
 		num              int
 		startTimestampMs int64
@@ -161,7 +158,7 @@ func TestDistributor_Push(t *testing.T) {
 			numIngesters:   3,
 			happyIngesters: 1,
 			samples:        samplesIn{num: 10, startTimestampMs: 123456789000},
-			expectedError:  expErrFail,
+			expectedError:  errFail,
 			metricNames:    []string{lastSeenTimestamp},
 			expectedMetrics: `
 				# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
@@ -173,7 +170,7 @@ func TestDistributor_Push(t *testing.T) {
 			numIngesters:   3,
 			happyIngesters: 0,
 			samples:        samplesIn{num: 10, startTimestampMs: 123456789000},
-			expectedError:  expErrFail,
+			expectedError:  errFail,
 			metricNames:    []string{lastSeenTimestamp},
 			expectedMetrics: `
 				# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
@@ -291,12 +288,8 @@ func TestDistributor_Push(t *testing.T) {
 
 			request := makeWriteRequest(tc.samples.startTimestampMs, tc.samples.num, tc.metadata, false)
 			response, err := ds[0].Push(ctx, request)
-			require.Equal(t, tc.expectedResponse, response)
-			if tc.expectedError == nil {
-				require.NoError(t, err)
-			} else {
-				require.Error(t, err, tc.expectedError.Error())
-			}
+			assert.Equal(t, tc.expectedResponse, response)
+			assert.Equal(t, tc.expectedError, err)
 
 			// Check tracked Prometheus metrics. Since the Push() response is sent as soon as the quorum
 			// is reached, when we reach this point the 3rd ingester may not have received series/metadata
