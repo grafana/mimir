@@ -170,11 +170,9 @@ func queryRequestActivity(name, userID, traceID string, req *client.QueryRequest
 	sb.WriteString(name)
 	sb.WriteString(`: user="`)
 	sb.WriteString(userID)
-	sb.WriteString(`"`)
-	sb.WriteString(` trace="`)
+	sb.WriteString(`" trace="`)
 	sb.WriteString(traceID)
-	sb.WriteString(`"`)
-	sb.WriteString(" request=")
+	sb.WriteString(`" request="`)
 	queryRequestToString(sb, req)
 
 	return sb.String()
