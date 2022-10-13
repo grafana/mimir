@@ -224,17 +224,21 @@
         {
           alert: $.alertName('DistributorForwardingErrorRate'),
           expr: |||
-            rate(cortex_distributor_forward_errors_total{}[1m])
-            / on (job, pod)
-            rate(cortex_distributor_forward_requests_total{}[1m])
+            sum by (%(alert_aggregation_labels)s) (rate(cortex_distributor_forward_errors_total{}[1m]))
+            /
+            sum by (%(alert_aggregation_labels)s) (rate(cortex_distributor_forward_requests_total{}[1m]))
             > 0.01
-          |||,
+          ||| % {
+            alert_aggregation_labels: $._config.alert_aggregation_labels,
+          },
           'for': '5m',
           labels: {
             severity: 'critical',
           },
           annotations: {
-            message: '{{ $labels.job }}/%(alert_instance_variable)s has a high failure rate when forwarding samples.' % $._config,
+            message: |||
+              %(product)s %(alert_instance_variable)s in  %(alert_aggregation_variables)s  has a high failure rate when forwarding samples.
+            ||| % $._config,
           },
         },
       ] + [
