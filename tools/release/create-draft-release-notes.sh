@@ -16,8 +16,9 @@ CHANGELOG_PATH="${CURR_DIR}/../../CHANGELOG.md"
 # Contributors
 #
 
-NUM_PRS=$(git log --pretty=format:"%s" "${LAST_RELEASE_TAG}...${PREV_RELEASE_TAG}" | grep -Eo '#[0-9]+' | wc -l | grep -Eo '[0-9]+')
-NUM_AUTHORS=$(git log --pretty=format:"%an" "${LAST_RELEASE_TAG}...${PREV_RELEASE_TAG}" | sort | uniq -i | wc -l | grep -Eo '[0-9]+')
+# We use the 2-dots notation to diff because in this context we only want to get the new commits in the last release.
+NUM_PRS=$(git log --pretty=format:"%s" "${PREV_RELEASE_TAG}..${LAST_RELEASE_TAG}" | grep -Eo '#[0-9]+' | wc -l | grep -Eo '[0-9]+')
+NUM_AUTHORS=$(git log --pretty=format:"%an" "${PREV_RELEASE_TAG}..${LAST_RELEASE_TAG}" | sort | uniq -i | wc -l | grep -Eo '[0-9]+')
 NEW_AUTHORS=$(diff <(git log --pretty=format:"%an" "${PREV_RELEASE_TAG}" | sort | uniq -i) <(git log --pretty=format:"%an" "${LAST_RELEASE_TAG}" | sort | uniq -i) | grep -E '^>' | cut -c 3- | gsed -z 's/\n/, /g;s/, $//')
 
 if [ -z "${NEW_AUTHORS}" ]; then
