@@ -125,6 +125,18 @@ groups:
     for: 5m
     labels:
       severity: critical
+  - alert: MimirDistributorForwardingErrorRate
+    annotations:
+      message: '{{ $labels.job }}/{{ $labels.pod }} has a high failure rate when forwarding
+        samples.'
+    expr: |
+      rate(cortex_distributor_forward_errors_total{}[1m])
+      / on (job, pod)
+      rate(cortex_distributor_forward_requests_total{}[1m])
+      > 0.01
+    for: 5m
+    labels:
+      severity: critical
   - alert: MimirRingMembersMismatch
     annotations:
       message: |

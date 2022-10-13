@@ -221,8 +221,6 @@
             message: '{{ $labels.job }}/%(alert_instance_variable)s has a number of mmap-ed areas close to the limit.' % $._config,
           },
         },
-      ] + (
-        if $._config.forwarding_enabled then [
           {
             alert: $.alertName('DistributorForwardingErrorRate'),
             expr: |||
@@ -239,8 +237,7 @@
               message: '{{ $labels.job }}/%(alert_instance_variable)s has a high failure rate when forwarding samples.' % $._config,
             },
           },
-        ] else []
-      ) + [
+        ] + [
         {
           alert: $.alertName('RingMembersMismatch'),
           expr: |||
