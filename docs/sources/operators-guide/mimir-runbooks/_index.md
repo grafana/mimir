@@ -1069,8 +1069,8 @@ How it **works**:
 How to **investigate**:
 
 - Check the `Mimir / Writes` dashboard, it should have a row named `Distributor Forwarding` which also shows the type of error if an HTTP status code was returned.
-- Check what the forwarding targets are in use, this can be seen in the runtime config under the key `forwarding_endpoint`, then check the logs of the forwarding target(s).
 - Check the Distributor logs, depending on the type of errors which occur the Distributor might log information about the errors.
+- Check what the forwarding targets are in use, this can be seen in the runtime config under the key `forwarding_endpoint`, then check the logs of the forwarding target(s).
 
 ### MimirRingMembersMismatch
 
