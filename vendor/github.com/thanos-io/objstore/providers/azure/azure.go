@@ -143,6 +143,10 @@ func NewBucket(logger log.Logger, azureConfig []byte, component string) (*Bucket
 		return nil, err
 	}
 
+	if conf.MSIResource != "" {
+		level.Warn(logger).Log("msg", "The field msi_resource has been deprecated and should no longer be set")
+	}
+
 	return NewBucketWithConfig(logger, conf, component)
 }
 
