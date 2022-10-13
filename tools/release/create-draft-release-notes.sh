@@ -61,5 +61,5 @@ printf "# Changelog\n\n"
 tail -n +"${CHANGELOG_BEGIN_LINE}" "${CHANGELOG_PATH}" | head -$((CHANGELOG_END_LINE + 1))
 printf "\n"
 
-# Link to changes
-printf "**All commits merged in this release**: https://github.com/grafana/mimir/compare/%s...%s\n" "${PREV_RELEASE_TAG}" "${LAST_RELEASE_TAG}"
+# Link to changes.
+printf "**All changes in this release**: https://github.com/grafana/mimir/compare/%s...%s\n" "${PREV_RELEASE_TAG}" "${LAST_RELEASE_TAG}"
