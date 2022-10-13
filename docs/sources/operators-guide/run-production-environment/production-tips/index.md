@@ -139,8 +139,8 @@ You can use the [Squash Compression Benchmark](http://quixdb.github.io/squash-be
 For protobuf data snappy achieves a compression ratio of 5 with compression speeds of
 around 400MiB/s. For the same data gzip achieves a ratio between 6 and 8 with speeds between 50MiB/s and 135 MiB/s.
 
-To configure gRPC compression use the following CLI flags or their YAML equivalents. The accepted values are
-`snappy` and `gzip`. Setting the flag to an empty string (`''`) explicitly disables compression.
+To configure gRPC compression, use the following CLI flags or their YAML equivalents. The accepted values are
+`snappy` and `gzip`. If you set the flag to an empty string (`''`), it explicitly disables compression.
 
 | CLI flag                                                    | YAML option                                                |
 | ----------------------------------------------------------- | ---------------------------------------------------------- |
