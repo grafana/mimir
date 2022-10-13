@@ -211,14 +211,11 @@ func labelMatcherToString(sb *bytes.Buffer, m *client.LabelMatcher) {
 		sb.WriteString("nil")
 		return
 	}
-	sb.WriteString("&LabelMatcher{")
-	sb.WriteString("Type:")
+	sb.WriteString("&LabelMatcher{Type:")
 	sb.WriteString(m.Type.String())
-	sb.WriteString(",")
-	sb.WriteString("Name:")
+	sb.WriteString(",Name:")
 	sb.WriteString(m.Name)
-	sb.WriteString(",")
-	sb.WriteString("Value:")
+	sb.WriteString(",Value:")
 	sb.WriteString(m.Value)
 	sb.WriteString(",}")
 }
