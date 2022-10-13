@@ -201,9 +201,7 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 	numBytes := stats.LoadFetchedChunkBytes()
 	numChunks := stats.LoadFetchedChunks()
 	sharded := strconv.FormatBool(stats.GetShardedQueries() > 0)
-
-	// This function will be called in case of a queryErr regardless of
-	// whether the `QueryStatsEnabled` flag is true or not
+	
 	if stats != nil {
 		// Track stats.
 		f.querySeconds.WithLabelValues(userID, sharded).Add(wallTime.Seconds())
