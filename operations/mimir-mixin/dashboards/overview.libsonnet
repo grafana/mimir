@@ -32,7 +32,7 @@ local filename = 'mimir-overview.json';
     .addClusterSelectorTemplates()
 
     .addRow(
-      $.row('Mimir cluster health')
+      $.row('%(product)s cluster health' % $._config)
       .addPanel(
         $.textPanel('', |||
           The 'Status' panel shows an overview on the cluster health over the time.
@@ -85,7 +85,7 @@ local filename = 'mimir-overview.json';
         )
       )
       .addPanel(
-        $.alertListPanel('Firing alerts', 'Mimir', $.namespaceMatcher())
+        $.alertListPanel('Firing alerts', $._config.product, $.namespaceMatcher())
       ) + {
         panels: [
           // Custom width for panels, so that the text panel (description) has the same width of the description in the following rows,
