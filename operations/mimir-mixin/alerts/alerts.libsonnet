@@ -237,7 +237,7 @@
           },
           annotations: {
             message: |||
-              %(product)s in %(alert_aggregation_variables)s  has a high failure rate when forwarding samples.
+              %(product)s in %(alert_aggregation_variables)s has a high failure rate when forwarding samples.
             ||| % $._config,
           },
         },

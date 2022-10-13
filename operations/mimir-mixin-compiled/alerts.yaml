@@ -128,7 +128,7 @@ groups:
   - alert: MimirDistributorForwardingErrorRate
     annotations:
       message: |
-        Mimir in {{ $labels.cluster }}/{{ $labels.namespace }}  has a high failure rate when forwarding samples.
+        Mimir in {{ $labels.cluster }}/{{ $labels.namespace }} has a high failure rate when forwarding samples.
     expr: |
       sum by (cluster, namespace) (rate(cortex_distributor_forward_errors_total{}[1m]))
       /
