@@ -102,6 +102,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 func TestHandler_FailedRoundTrip(t *testing.T) {
 	for _, test := range []struct {
 		name                string
+		cfg                 HandlerConfig
 		expectedMetrics     int
 		path                string
 		expectQueryParamLog bool
@@ -109,6 +110,7 @@ func TestHandler_FailedRoundTrip(t *testing.T) {
 	}{
 		{
 			name:                "Failed round trip with context cancelled",
+			cfg:                 HandlerConfig{QueryStatsEnabled: false},
 			expectedMetrics:     0,
 			path:                "/api/v1/query?query=up&time=2015-07-01T20:10:51.781Z",
 			expectQueryParamLog: true,
@@ -116,7 +118,8 @@ func TestHandler_FailedRoundTrip(t *testing.T) {
 		},
 		{
 			name:                "Failed round trip with no query params",
-			expectedMetrics:     0,
+			cfg:                 HandlerConfig{QueryStatsEnabled: true},
+			expectedMetrics:     4,
 			path:                "/api/v1/query",
 			expectQueryParamLog: false,
 			queryErr:            context.Canceled,
@@ -130,7 +133,7 @@ func TestHandler_FailedRoundTrip(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
 			logs := &concurrency.SyncBuffer{}
 			logger := log.NewLogfmtLogger(logs)
-			handler := NewHandler(HandlerConfig{QueryStatsEnabled: false}, roundTripper, logger, reg)
+			handler := NewHandler(test.cfg, roundTripper, logger, reg)
 
 			ctx := user.InjectOrgID(context.Background(), "12345")
 			req := httptest.NewRequest("GET", test.path, nil)

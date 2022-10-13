@@ -204,7 +204,7 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 
 	// This function will be called in case of a queryErr regardless of
 	// whether the `QueryStatsEnabled` flag is true or not
-	if queryErr == nil {
+	if stats != nil {
 		// Track stats.
 		f.querySeconds.WithLabelValues(userID, sharded).Add(wallTime.Seconds())
 		f.querySeries.WithLabelValues(userID).Add(float64(numSeries))
