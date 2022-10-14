@@ -30,6 +30,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Improve default rollout strategies. Now distributor, overrides_exporter, querier, query_frontend, admin_api, gateway, and graphite components can be upgraded more quickly and also can be rolled out with a single replica without downtime. #3029
 * [ENHANCEMENT] Metamonitoring: make scrape interval configurable. #2945
 * [BUGFIX] Fix an issue that caused metamonitoring secrets to be created incorrectly #3170
+* [BUGFIX] Nginx: fixed `imagePullSecret` value reference inconsistency. #3208
 
 ## 3.2.0
 
