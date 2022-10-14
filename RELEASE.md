@@ -111,6 +111,17 @@ To publish a release candidate:
 
 ### Creating release on GitHub
 
+**How to create the release using the script:**
+
+```bash
+git checkout release-<version>
+
+# Then run the following script and follow the instructions:
+./tools/release/create-draft-release.sh
+```
+
+**How to create the release manually:**
+
 1. Go to https://github.com/grafana/mimir/releases/new to start a new release on GitHub (or click "Draft a new release" at https://github.com/grafana/mimir/releases page.)
 1. Select your new tag, use `Mimir <VERSION>` as Release Title. Check that "Previous tag" next to "Generate release notes" button shows previous Mimir release.
    Click "Generate release notes" button. This will pre-fill the changelog for the release.
