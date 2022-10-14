@@ -266,8 +266,8 @@
           },
           annotations: {
             message: |||
-              Number of members in Mimir %(component)s hash ring does not match the expected number in %(alert_aggregation_variables)s.
-            ||| % { component: component_job[0], alert_aggregation_variables: $._config.alert_aggregation_variables },
+              Number of members in %(product)s %(component)s hash ring does not match the expected number in %(alert_aggregation_variables)s.
+            ||| % { component: component_job[0], alert_aggregation_variables: $._config.alert_aggregation_variables, product: $._config.product },
           },
         }
         // NOTE(jhesketh): It is expected that the stateless components may trigger this alert
