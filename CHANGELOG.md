@@ -2,6 +2,8 @@
 
 ## Grafana Mimir - main / unreleased
 
+* [ENHANCEMENT] Store-Gateway: Reduce generated garbage when loading chunks from bucket block. #3215
+
 ## 2.5.0
 
 ### Grafana Mimir

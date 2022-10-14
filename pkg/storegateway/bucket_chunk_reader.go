@@ -25,6 +25,9 @@ import (
 	"github.com/grafana/mimir/pkg/util/pool"
 )
 
+// chunkSlicesPool is a pool of chunk slices.
+var chunkSlicesPool = newChunksSlicePool()
+
 type bucketChunkReader struct {
 	ctx   context.Context
 	block *bucketBlock
@@ -33,8 +36,9 @@ type bucketChunkReader struct {
 
 	// Mutex protects access to following fields, when updated from chunks-loading goroutines.
 	// After chunks are loaded, mutex is no longer used.
-	mtx        sync.Mutex
-	chunkBytes *pool.BatchBytes
+	mtx         sync.Mutex
+	chunkBytes  *pool.BatchBytes
+	chunkSlices []*chunkSlice
 }
 
 func newBucketChunkReader(ctx context.Context, block *bucketBlock, chunkBytes *pool.BatchBytes) *bucketChunkReader {
@@ -48,6 +52,10 @@ func newBucketChunkReader(ctx context.Context, block *bucketBlock, chunkBytes *p
 
 func (r *bucketChunkReader) Close() error {
 	r.block.pendingReaders.Done()
+
+	for _, sl := range r.chunkSlices {
+		chunkSlicesPool.put(sl)
+	}
 	return nil
 }
 
@@ -168,7 +176,7 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, a
 		// There is also crc32 after the chunk, but we ignore that.
 		chunkLen = n + 1 + int(chunkDataLen)
 		if chunkLen <= len(cb) {
-			err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunk]), rawChunk(cb[n:chunkLen]), aggrs, r.save)
+			err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunk]), cb[n:chunkLen], aggrs, r.getChunk, r.save)
 			if err != nil {
 				return errors.Wrap(err, "populate chunk")
 			}
@@ -199,7 +207,7 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, a
 		localStats.chunksFetchCount++
 		localStats.chunksFetchDurationSum += time.Since(fetchBegin)
 		localStats.chunksFetchedSizeSum += len(*nb)
-		err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunk]), rawChunk((*nb)[n:]), aggrs, r.save)
+		err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunk]), (*nb)[n:], aggrs, r.getChunk, r.save)
 		if err != nil {
 			r.block.chunkPool.Put(nb)
 			return errors.Wrap(err, "populate chunk")
@@ -210,6 +218,13 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, a
 		r.block.chunkPool.Put(nb)
 	}
 	return nil
+}
+
+func (r *bucketChunkReader) getChunk() *storepb.Chunk {
+	if len(r.chunkSlices) == 0 || r.chunkSlices[len(r.chunkSlices)-1].isExhausted() {
+		r.chunkSlices = append(r.chunkSlices, chunkSlicesPool.get())
+	}
+	return r.chunkSlices[len(r.chunkSlices)-1].next()
 }
 
 // save saves a copy of b's payload to a memory pool of its own and returns a new byte slice referencing said copy.

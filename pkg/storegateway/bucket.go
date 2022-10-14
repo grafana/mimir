@@ -767,13 +767,17 @@ func storeCachedSeries(ctx context.Context, indexCache indexcache.IndexCache, us
 	indexCache.StoreSeries(ctx, userID, blockID, entry.MatchersKey, shard, data)
 }
 
-func populateChunk(out *storepb.AggrChunk, in chunkenc.Chunk, aggrs []storepb.Aggr, save func([]byte) ([]byte, error)) error {
+func populateChunk(out *storepb.AggrChunk, chunkBytes []byte, aggrs []storepb.Aggr, getChunk func() *storepb.Chunk, save func([]byte) ([]byte, error)) error {
+	in := rawChunk(chunkBytes)
 	if in.Encoding() == chunkenc.EncXOR {
 		b, err := save(in.Bytes())
 		if err != nil {
 			return err
 		}
-		out.Raw = &storepb.Chunk{Type: storepb.Chunk_XOR, Data: b}
+		chk := getChunk()
+		chk.Type = storepb.Chunk_XOR
+		chk.Data = b
+		out.Raw = chk
 		return nil
 	}
 	return errors.Errorf("unsupported chunk encoding %d", in.Encoding())
