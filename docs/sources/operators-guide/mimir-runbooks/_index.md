@@ -690,6 +690,7 @@ How to **investigate**:
   - On multi-tenant Mimir clusters with **query-sharding enabled** and **only a single tenant** being affected:
     - Verify if the particular queries are hitting edge cases, where query-sharding is not benefical, by getting traces from the `Mimir / Slow Queries` dashboard and then look where time is spent. If time is spent in the query-frontend running PromQL engine, then it means query-sharding is not beneficial for this tenant. Consider disabling query-sharding or reduce the shard count using the `query_sharding_total_shards` override.
     - Otherwise and only if the queries by the tenant are within reason representing normal usage, consider scaling of queriers and potentially store-gateways.
+  - On a Mimir cluster with **querier auto-scaling enabled** after checking the health of the existing querier replicas, check to see if the auto-scaler has added additional querier replicas or if the maximum number of querier replicas has been reached and is not sufficient and should be increased.
 
 ### MimirMemcachedRequestErrors
 
