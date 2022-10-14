@@ -1965,6 +1965,9 @@ metaMonitoring:
           labelSelectors:
             app.kubernetes.io/name: kube-state-metrics
 
+      # -- The scrape interval for all ServiceMonitors.
+      scrapeInterval: 60s
+
     # -- Sets the namespace of the resources. Leave empty or unset to use the same namespace as the Helm release.
     namespace: ''
 
