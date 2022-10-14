@@ -1,7 +1,7 @@
 ---
 # Source: mimir-distributed/templates/mimir-config.yaml
 apiVersion: v1
-kind: Secret
+kind: ConfigMap
 metadata:
   name: test-enterprise-k8s-1.25-values-mimir-config
   labels:
@@ -10,4 +10,127 @@ metadata:
     app.kubernetes.io/managed-by: Helm
   namespace: "citestns"
 data:
-  mimir.yaml: YWN0aXZpdHlfdHJhY2tlcjoKICBmaWxlcGF0aDogL2RhdGEvbWV0cmljcy1hY3Rpdml0eS5sb2cKYWRtaW5fYXBpOgogIGxlYWRlcl9lbGVjdGlvbjoKICAgIGVuYWJsZWQ6IHRydWUKICAgIHJpbmc6CiAgICAgIGt2c3RvcmU6CiAgICAgICAgc3RvcmU6IG1lbWJlcmxpc3QKYWRtaW5fY2xpZW50OgogIHN0b3JhZ2U6CiAgICBzMzoKICAgICAgYWNjZXNzX2tleV9pZDogZ3JhZmFuYS1taW1pcgogICAgICBidWNrZXRfbmFtZTogZW50ZXJwcmlzZS1tZXRyaWNzLWFkbWluCiAgICAgIGVuZHBvaW50OiB0ZXN0LWVudGVycHJpc2UtazhzLTEuMjUtdmFsdWVzLW1pbmlvLmNpdGVzdG5zLnN2Yzo5MDAwCiAgICAgIGluc2VjdXJlOiB0cnVlCiAgICAgIHNlY3JldF9hY2Nlc3Nfa2V5OiBzdXBlcnNlY3JldAogICAgdHlwZTogczMKYWxlcnRtYW5hZ2VyOgogIGRhdGFfZGlyOiAvZGF0YQogIGVuYWJsZV9hcGk6IHRydWUKICBleHRlcm5hbF91cmw6IC9hbGVydG1hbmFnZXIKYWxlcnRtYW5hZ2VyX3N0b3JhZ2U6CiAgYmFja2VuZDogczMKICBzMzoKICAgIGFjY2Vzc19rZXlfaWQ6IGdyYWZhbmEtbWltaXIKICAgIGJ1Y2tldF9uYW1lOiBtaW1pci1ydWxlcgogICAgZW5kcG9pbnQ6IHRlc3QtZW50ZXJwcmlzZS1rOHMtMS4yNS12YWx1ZXMtbWluaW8uY2l0ZXN0bnMuc3ZjOjkwMDAKICAgIGluc2VjdXJlOiB0cnVlCiAgICBzZWNyZXRfYWNjZXNzX2tleTogc3VwZXJzZWNyZXQKYXV0aDoKICB0eXBlOiBlbnRlcnByaXNlCmJsb2Nrc19zdG9yYWdlOgogIGJhY2tlbmQ6IHMzCiAgYnVja2V0X3N0b3JlOgogICAgc3luY19kaXI6IC9kYXRhL3RzZGItc3luYwogIHMzOgogICAgYWNjZXNzX2tleV9pZDogZ3JhZmFuYS1taW1pcgogICAgYnVja2V0X25hbWU6IG1pbWlyLXRzZGIKICAgIGVuZHBvaW50OiB0ZXN0LWVudGVycHJpc2UtazhzLTEuMjUtdmFsdWVzLW1pbmlvLmNpdGVzdG5zLnN2Yzo5MDAwCiAgICBpbnNlY3VyZTogdHJ1ZQogICAgc2VjcmV0X2FjY2Vzc19rZXk6IHN1cGVyc2VjcmV0CiAgdHNkYjoKICAgIGRpcjogL2RhdGEvdHNkYgpjbHVzdGVyX25hbWU6IHRlc3QtZW50ZXJwcmlzZS1rOHMtMS4yNS12YWx1ZXMKY29tcGFjdG9yOgogIGRhdGFfZGlyOiAvZGF0YQpmcm9udGVuZDoKICBhbGlnbl9xdWVyaWVzX3dpdGhfc3RlcDogdHJ1ZQogIGxvZ19xdWVyaWVzX2xvbmdlcl90aGFuOiAxMHMKICBwYXJhbGxlbGl6ZV9zaGFyZGFibGVfcXVlcmllczogdHJ1ZQogIHNjaGVkdWxlcl9hZGRyZXNzOiB0ZXN0LWVudGVycHJpc2UtazhzLTEuMjUtdmFsdWVzLW1pbWlyLXF1ZXJ5LXNjaGVkdWxlci1oZWFkbGVzcy5jaXRlc3Rucy5zdmM6OTA5NQpmcm9udGVuZF93b3JrZXI6CiAgc2NoZWR1bGVyX2FkZHJlc3M6IHRlc3QtZW50ZXJwcmlzZS1rOHMtMS4yNS12YWx1ZXMtbWltaXItcXVlcnktc2NoZWR1bGVyLWhlYWRsZXNzLmNpdGVzdG5zLnN2Yzo5MDk1CmdhdGV3YXk6CiAgcHJveHk6CiAgICBhZG1pbl9hcGk6CiAgICAgIHVybDogaHR0cDovL3Rlc3QtZW50ZXJwcmlzZS1rOHMtMS4yNS12YWx1ZXMtbWltaXItYWRtaW4tYXBpLmNpdGVzdG5zLnN2Yzo4MDgwCiAgICBhbGVydG1hbmFnZXI6CiAgICAgIHVybDogaHR0cDovL3Rlc3QtZW50ZXJwcmlzZS1rOHMtMS4yNS12YWx1ZXMtbWltaXItYWxlcnRtYW5hZ2VyLmNpdGVzdG5zLnN2Yzo4MDgwCiAgICBjb21wYWN0b3I6CiAgICAgIHVybDogaHR0cDovL3Rlc3QtZW50ZXJwcmlzZS1rOHMtMS4yNS12YWx1ZXMtbWltaXItY29tcGFjdG9yLmNpdGVzdG5zLnN2Yzo4MDgwCiAgICBkZWZhdWx0OgogICAgICB1cmw6IGh0dHA6Ly90ZXN0LWVudGVycHJpc2UtazhzLTEuMjUtdmFsdWVzLW1pbWlyLWFkbWluLWFwaS5jaXRlc3Rucy5zdmM6ODA4MAogICAgZGlzdHJpYnV0b3I6CiAgICAgIHVybDogZG5zOi8vL3Rlc3QtZW50ZXJwcmlzZS1rOHMtMS4yNS12YWx1ZXMtbWltaXItZGlzdHJpYnV0b3ItaGVhZGxlc3MuY2l0ZXN0bnMuc3ZjLmNsdXN0ZXIubG9jYWw6OTA5NQogICAgaW5nZXN0ZXI6CiAgICAgIHVybDogaHR0cDovL3Rlc3QtZW50ZXJwcmlzZS1rOHMtMS4yNS12YWx1ZXMtbWltaXItaW5nZXN0ZXIuY2l0ZXN0bnMuc3ZjOjgwODAKICAgIHF1ZXJ5X2Zyb250ZW5kOgogICAgICB1cmw6IGh0dHA6Ly90ZXN0LWVudGVycHJpc2UtazhzLTEuMjUtdmFsdWVzLW1pbWlyLXF1ZXJ5LWZyb250ZW5kLmNpdGVzdG5zLnN2Yzo4MDgwCiAgICBydWxlcjoKICAgICAgdXJsOiBodHRwOi8vdGVzdC1lbnRlcnByaXNlLWs4cy0xLjI1LXZhbHVlcy1taW1pci1ydWxlci5jaXRlc3Rucy5zdmM6ODA4MAogICAgc3RvcmVfZ2F0ZXdheToKICAgICAgdXJsOiBodHRwOi8vdGVzdC1lbnRlcnByaXNlLWs4cy0xLjI1LXZhbHVlcy1taW1pci1zdG9yZS1nYXRld2F5LmNpdGVzdG5zLnN2Yzo4MDgwCmluZ2VzdGVyOgogIHJpbmc6CiAgICBmaW5hbF9zbGVlcDogMHMKICAgIG51bV90b2tlbnM6IDUxMgogICAgdG9rZW5zX2ZpbGVfcGF0aDogL2RhdGEvdG9rZW5zCiAgICB1bnJlZ2lzdGVyX29uX3NodXRkb3duOiBmYWxzZQppbmdlc3Rlcl9jbGllbnQ6CiAgZ3JwY19jbGllbnRfY29uZmlnOgogICAgbWF4X3JlY3ZfbXNnX3NpemU6IDEwNDg1NzYwMAogICAgbWF4X3NlbmRfbXNnX3NpemU6IDEwNDg1NzYwMAppbnN0cnVtZW50YXRpb246CiAgZGlzdHJpYnV0b3JfY2xpZW50OgogICAgYWRkcmVzczogZG5zOi8vL3Rlc3QtZW50ZXJwcmlzZS1rOHMtMS4yNS12YWx1ZXMtbWltaXItZGlzdHJpYnV0b3ItaGVhZGxlc3MuY2l0ZXN0bnMuc3ZjLmNsdXN0ZXIubG9jYWw6OTA5NQogIGVuYWJsZWQ6IHRydWUKbGljZW5zZToKICBwYXRoOiAvbGljZW5zZS9saWNlbnNlLmp3dApsaW1pdHM6CiAgbWF4X3F1ZXJ5X3BhcmFsbGVsaXNtOiAyMjQKbWVtYmVybGlzdDoKICBhYm9ydF9pZl9jbHVzdGVyX2pvaW5fZmFpbHM6IGZhbHNlCiAgY29tcHJlc3Npb25fZW5hYmxlZDogZmFsc2UKICBqb2luX21lbWJlcnM6CiAgLSBkbnMrdGVzdC1lbnRlcnByaXNlLWs4cy0xLjI1LXZhbHVlcy1taW1pci1nb3NzaXAtcmluZy5jaXRlc3Rucy5zdmMuY2x1c3Rlci5sb2NhbDo3OTQ2CnF1ZXJpZXI6CiAgbWF4X2NvbmN1cnJlbnQ6IDE2CnF1ZXJ5X3NjaGVkdWxlcjoKICBtYXhfb3V0c3RhbmRpbmdfcmVxdWVzdHNfcGVyX3RlbmFudDogMTYwMApydWxlcjoKICBhbGVydG1hbmFnZXJfdXJsOiBkbnNzcnZub2EraHR0cDovL19odHRwLW1ldHJpY3MuX3RjcC50ZXN0LWVudGVycHJpc2UtazhzLTEuMjUtdmFsdWVzLW1pbWlyLWFsZXJ0bWFuYWdlci1oZWFkbGVzcy5jaXRlc3Rucy5zdmMuY2x1c3Rlci5sb2NhbC9hbGVydG1hbmFnZXIKICBlbmFibGVfYXBpOiB0cnVlCiAgcnVsZV9wYXRoOiAvZGF0YQpydWxlcl9zdG9yYWdlOgogIGJhY2tlbmQ6IHMzCiAgczM6CiAgICBhY2Nlc3Nfa2V5X2lkOiBncmFmYW5hLW1pbWlyCiAgICBidWNrZXRfbmFtZTogbWltaXItcnVsZXIKICAgIGVuZHBvaW50OiB0ZXN0LWVudGVycHJpc2UtazhzLTEuMjUtdmFsdWVzLW1pbmlvLmNpdGVzdG5zLnN2Yzo5MDAwCiAgICBpbnNlY3VyZTogdHJ1ZQogICAgc2VjcmV0X2FjY2Vzc19rZXk6IHN1cGVyc2VjcmV0CnJ1bnRpbWVfY29uZmlnOgogIGZpbGU6IC92YXIvbWltaXIvcnVudGltZS55YW1sCnNlcnZlcjoKICBncnBjX3NlcnZlcl9tYXhfY29uY3VycmVudF9zdHJlYW1zOiAxMDAwCiAgZ3JwY19zZXJ2ZXJfbWF4X2Nvbm5lY3Rpb25fYWdlOiAybQogIGdycGNfc2VydmVyX21heF9jb25uZWN0aW9uX2FnZV9ncmFjZTogNW0KICBncnBjX3NlcnZlcl9tYXhfY29ubmVjdGlvbl9pZGxlOiAxbQpzdG9yZV9nYXRld2F5OgogIHNoYXJkaW5nX3Jpbmc6CiAgICB0b2tlbnNfZmlsZV9wYXRoOiAvZGF0YS90b2tlbnM=
+  mimir.yaml: |
+    
+    activity_tracker:
+      filepath: /data/metrics-activity.log
+    admin_api:
+      leader_election:
+        enabled: true
+        ring:
+          kvstore:
+            store: memberlist
+    admin_client:
+      storage:
+        s3:
+          access_key_id: grafana-mimir
+          bucket_name: enterprise-metrics-admin
+          endpoint: test-enterprise-k8s-1.25-values-minio.citestns.svc:9000
+          insecure: true
+          secret_access_key: supersecret
+        type: s3
+    alertmanager:
+      data_dir: /data
+      enable_api: true
+      external_url: /alertmanager
+    alertmanager_storage:
+      backend: s3
+      s3:
+        access_key_id: grafana-mimir
+        bucket_name: mimir-ruler
+        endpoint: test-enterprise-k8s-1.25-values-minio.citestns.svc:9000
+        insecure: true
+        secret_access_key: supersecret
+    auth:
+      type: enterprise
+    blocks_storage:
+      backend: s3
+      bucket_store:
+        sync_dir: /data/tsdb-sync
+      s3:
+        access_key_id: grafana-mimir
+        bucket_name: mimir-tsdb
+        endpoint: test-enterprise-k8s-1.25-values-minio.citestns.svc:9000
+        insecure: true
+        secret_access_key: supersecret
+      tsdb:
+        dir: /data/tsdb
+    cluster_name: test-enterprise-k8s-1.25-values
+    compactor:
+      data_dir: /data
+    frontend:
+      align_queries_with_step: true
+      log_queries_longer_than: 10s
+      parallelize_shardable_queries: true
+      scheduler_address: test-enterprise-k8s-1.25-values-mimir-query-scheduler-headless.citestns.svc:9095
+    frontend_worker:
+      scheduler_address: test-enterprise-k8s-1.25-values-mimir-query-scheduler-headless.citestns.svc:9095
+    gateway:
+      proxy:
+        admin_api:
+          url: http://test-enterprise-k8s-1.25-values-mimir-admin-api.citestns.svc:8080
+        alertmanager:
+          url: http://test-enterprise-k8s-1.25-values-mimir-alertmanager.citestns.svc:8080
+        compactor:
+          url: http://test-enterprise-k8s-1.25-values-mimir-compactor.citestns.svc:8080
+        default:
+          url: http://test-enterprise-k8s-1.25-values-mimir-admin-api.citestns.svc:8080
+        distributor:
+          url: dns:///test-enterprise-k8s-1.25-values-mimir-distributor-headless.citestns.svc.cluster.local:9095
+        ingester:
+          url: http://test-enterprise-k8s-1.25-values-mimir-ingester.citestns.svc:8080
+        query_frontend:
+          url: http://test-enterprise-k8s-1.25-values-mimir-query-frontend.citestns.svc:8080
+        ruler:
+          url: http://test-enterprise-k8s-1.25-values-mimir-ruler.citestns.svc:8080
+        store_gateway:
+          url: http://test-enterprise-k8s-1.25-values-mimir-store-gateway.citestns.svc:8080
+    ingester:
+      ring:
+        final_sleep: 0s
+        num_tokens: 512
+        tokens_file_path: /data/tokens
+        unregister_on_shutdown: false
+    ingester_client:
+      grpc_client_config:
+        max_recv_msg_size: 104857600
+        max_send_msg_size: 104857600
+    instrumentation:
+      distributor_client:
+        address: dns:///test-enterprise-k8s-1.25-values-mimir-distributor-headless.citestns.svc.cluster.local:9095
+      enabled: true
+    license:
+      path: /license/license.jwt
+    limits:
+      max_query_parallelism: 224
+    memberlist:
+      abort_if_cluster_join_fails: false
+      compression_enabled: false
+      join_members:
+      - dns+test-enterprise-k8s-1.25-values-mimir-gossip-ring.citestns.svc.cluster.local:7946
+    querier:
+      max_concurrent: 16
+    query_scheduler:
+      max_outstanding_requests_per_tenant: 1600
+    ruler:
+      alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.test-enterprise-k8s-1.25-values-mimir-alertmanager-headless.citestns.svc.cluster.local/alertmanager
+      enable_api: true
+      rule_path: /data
+    ruler_storage:
+      backend: s3
+      s3:
+        access_key_id: grafana-mimir
+        bucket_name: mimir-ruler
+        endpoint: test-enterprise-k8s-1.25-values-minio.citestns.svc:9000
+        insecure: true
+        secret_access_key: supersecret
+    runtime_config:
+      file: /var/mimir/runtime.yaml
+    server:
+      grpc_server_max_concurrent_streams: 1000
+      grpc_server_max_connection_age: 2m
+      grpc_server_max_connection_age_grace: 5m
+      grpc_server_max_connection_idle: 1m
+    store_gateway:
+      sharding_ring:
+        tokens_file_path: /data/tokens

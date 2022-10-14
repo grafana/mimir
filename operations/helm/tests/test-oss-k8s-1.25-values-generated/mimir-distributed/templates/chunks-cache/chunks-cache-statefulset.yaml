@@ -32,7 +32,6 @@ spec:
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: chunks-cache
       annotations:
-        minio-secret-version: "42"
 
     spec:
       serviceAccountName: test-oss-k8s-1.25-values-mimir
@@ -58,15 +57,15 @@ spec:
           imagePullPolicy: IfNotPresent
           resources:
             limits:
-              memory: 12Mi
+              memory: 9830Mi
             requests:
               cpu: 500m
-              memory: 12Mi
+              memory: 9830Mi
           ports:
             - containerPort: 11211
               name: client
           args:
-            - -m 10
+            - -m 8192
             - -o
             - modern
             - -I 1m
@@ -75,8 +74,6 @@ spec:
             - -u 11211
           env:
           envFrom:
-            - secretRef:
-                name: mimir-minio-secret
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

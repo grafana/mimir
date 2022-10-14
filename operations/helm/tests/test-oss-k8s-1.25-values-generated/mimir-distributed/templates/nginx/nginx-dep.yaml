@@ -24,7 +24,6 @@ spec:
   template:
     metadata:
       annotations:
-        minio-secret-version: "42"
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-k8s-1.25-values
@@ -49,8 +48,6 @@ spec:
               protocol: TCP
           env:
           envFrom:
-            - secretRef:
-                name: mimir-minio-secret
           readinessProbe:
             httpGet:
               path: /

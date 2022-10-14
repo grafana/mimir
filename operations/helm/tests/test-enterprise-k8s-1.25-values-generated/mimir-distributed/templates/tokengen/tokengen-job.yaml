@@ -50,8 +50,11 @@ spec:
       restartPolicy: OnFailure
       volumes:
         - name: config
-          secret:
-            secretName: test-enterprise-k8s-1.25-values-mimir-config
+          configMap:
+            name: test-enterprise-k8s-1.25-values-mimir-config
+            items:
+              - key: "mimir.yaml"
+                path: "mimir.yaml"
         - name: license
           secret:
             secretName: test-enterprise-k8s-1.25-values-mimir-license

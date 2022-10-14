@@ -29,7 +29,6 @@ spec:
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: query-frontend
       annotations:
-        minio-secret-version: "42"
       namespace: "citestns"
     spec:
       serviceAccountName: test-oss-k8s-1.25-values-mimir
@@ -73,8 +72,6 @@ spec:
             readOnlyRootFilesystem: true
           env:
           envFrom:
-            - secretRef:
-                name: mimir-minio-secret
       nodeSelector:
         {}
       affinity:

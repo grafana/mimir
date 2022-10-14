@@ -1,61 +1,14 @@
 # Pin kube version so results are the same for running in CI and locally where the installed kube version may be different.
 kubeVersionOverride: "1.25"
 
-global:
-  extraEnvFrom:
-    - secretRef:
-        name: mimir-minio-secret
-  podAnnotations:
-    minio-secret-version: '42'
-
-mimir:
-  structuredConfig:
-    alertmanager_storage:
-      s3:
-        access_key_id: "${MINIO_ROOT_USER}"
-        secret_access_key: "${MINIO_ROOT_PASSWORD}"
-    blocks_storage:
-      s3:
-        access_key_id: "${MINIO_ROOT_USER}"
-        secret_access_key: "${MINIO_ROOT_PASSWORD}"
-    ruler_storage:
-      s3:
-        access_key_id: "${MINIO_ROOT_USER}"
-        secret_access_key: "${MINIO_ROOT_PASSWORD}"
-
-alertmanager:
-  persistentVolume:
-    enabled: false
-
-compactor:
-  persistentVolume:
-    enabled: false
-
-ingester:
-  persistentVolume:
-    enabled: false
-
-store_gateway:
-  persistentVolume:
-    enabled: false
-
-# For testing only
-testing:
-  minio:
-    use_secret: true
-
 chunks-cache:
   enabled: true
-  allocatedMemory: 10
 
 index-cache:
   enabled: true
-  allocatedMemory: 30
 
 metadata-cache:
   enabled: true
-  allocatedMemory: 10
 
 results-cache:
   enabled: true
-  allocatedMemory: 10

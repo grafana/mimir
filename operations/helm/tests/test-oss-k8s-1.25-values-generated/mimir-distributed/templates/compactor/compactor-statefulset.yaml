@@ -23,6 +23,16 @@ spec:
   updateStrategy:
     type: RollingUpdate
   serviceName: test-oss-k8s-1.25-values-mimir-compactor
+  volumeClaimTemplates:
+    - metadata:
+        name: storage
+      spec:
+        accessModes:
+          
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: "2Gi"
   template:
     metadata:
       labels:
@@ -32,7 +42,6 @@ spec:
         app.kubernetes.io/component: compactor
         app.kubernetes.io/part-of: memberlist
       annotations:
-        minio-secret-version: "42"
       namespace: "citestns"
     spec:
       serviceAccountName: test-oss-k8s-1.25-values-mimir
@@ -66,8 +75,6 @@ spec:
         - name: runtime-config
           configMap:
             name: test-oss-k8s-1.25-values-mimir-runtime
-        - name: storage
-          emptyDir: {}
       containers:
         - name: compactor
           imagePullPolicy: IfNotPresent
@@ -107,5 +114,3 @@ spec:
             readOnlyRootFilesystem: true
           env:
           envFrom:
-            - secretRef:
-                name: mimir-minio-secret
