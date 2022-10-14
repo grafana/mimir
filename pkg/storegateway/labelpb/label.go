@@ -1,5 +1,7 @@
-// Copyright (c) The Thanos Authors.
-// Licensed under the Apache License 2.0.
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/thanos-io/thanos/blob/main/pkg/store/labelpb/label.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Thanos Authors.
 
 // Package containing proto and JSON serializable Labels and ZLabels (no copy) structs used to
 // identify series. This package expose no-copy converters to Prometheus labels.Labels.
@@ -116,7 +118,7 @@ func (m *ZLabel) MarshalToSizedBuffer(data []byte) (int, error) {
 }
 
 // Unmarshal unmarshalls gRPC protobuf into ZLabel struct. ZLabel string is directly using bytes passed in `data`.
-// To use it add (gogoproto.customtype) = "github.com/thanos-io/thanos/pkg/store/labelpb.ZLabel" to proto field tag.
+// To use it add (gogoproto.customtype) = "github.com/grafana/mimir/pkg/storegateway/labelpb.ZLabel" to proto field tag.
 // NOTE: This exists in internal Google protobuf implementation, but not in open source one: https://news.ycombinator.com/item?id=23588882
 func (m *ZLabel) Unmarshal(data []byte) error {
 	l := len(data)

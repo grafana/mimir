@@ -1,5 +1,7 @@
-// Copyright (c) The Thanos Authors.
-// Licensed under the Apache License 2.0.
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/thanos-io/thanos/blob/main/pkg/store/hintspb/custom.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Thanos Authors.
 
 package hintspb
 

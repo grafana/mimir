@@ -181,7 +181,13 @@ pkg/distributor/ha_tracker.pb.go: pkg/distributor/ha_tracker.proto
 pkg/ruler/rulespb/rules.pb.go: pkg/ruler/rulespb/rules.proto
 pkg/ruler/ruler.pb.go: pkg/ruler/ruler.proto
 pkg/scheduler/schedulerpb/scheduler.pb.go: pkg/scheduler/schedulerpb/scheduler.proto
+pkg/storegateway/labelpb/types.pb.go: pkg/storegateway/labelpb/types.proto
+pkg/storegateway/prompb/types.pb.go: pkg/storegateway/prompb/types.proto
+pkg/storegateway/labelpb/types.pb.go: pkg/storegateway/labelpb/types.proto
+pkg/storegateway/hintspb/hints.pb.go: pkg/storegateway/hintspb/hints.proto
 pkg/storegateway/storegatewaypb/gateway.pb.go: pkg/storegateway/storegatewaypb/gateway.proto
+pkg/storegateway/storepb/rpc.pb.go: pkg/storegateway/storepb/rpc.proto
+pkg/storegateway/storepb/types.pb.go: pkg/storegateway/storepb/types.proto
 pkg/alertmanager/alertmanagerpb/alertmanager.pb.go: pkg/alertmanager/alertmanagerpb/alertmanager.proto
 pkg/alertmanager/alertspb/alerts.pb.go: pkg/alertmanager/alertspb/alerts.proto
 
@@ -236,9 +242,7 @@ protos: ## Generates protobuf files.
 protos: $(PROTO_GOS)
 
 %.pb.go:
-	@# The store-gateway RPC is based on Thanos which uses relative references to other protos, so we need
-	@# to configure all such relative paths.
-	protoc -I $(GOPATH)/src:./vendor/github.com/thanos-io/thanos/pkg:./vendor/github.com/gogo/protobuf:./vendor:./$(@D) --gogoslick_out=plugins=grpc,Mgoogle/protobuf/any.proto=github.com/gogo/protobuf/types,:./$(@D) ./$(patsubst %.pb.go,%.proto,$@)
+	protoc -I $(GOPATH)/src:./vendor/github.com/gogo/protobuf:./vendor:./$(@D):./pkg/storegateway/storepb --gogoslick_out=plugins=grpc,Mgoogle/protobuf/any.proto=github.com/gogo/protobuf/types,:./$(@D) ./$(patsubst %.pb.go,%.proto,$@)
 
 lint-packaging-scripts: packaging/deb/control/postinst packaging/deb/control/prerm packaging/rpm/control/post packaging/rpm/control/preun
 	shellcheck $?

@@ -1,5 +1,7 @@
-// Copyright (c) The Thanos Authors.
-// Licensed under the Apache License 2.0.
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/thanos-io/thanos/blob/main/pkg/store/storepb/types.proto
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Thanos Authors.
 
 syntax = "proto3";
 package thanos;
@@ -7,7 +9,7 @@ package thanos;
 option go_package = "storepb";
 
 import "gogoproto/gogo.proto";
-import "store/labelpb/types.proto";
+import "github.com/grafana/mimir/pkg/storegateway/labelpb/types.proto";
 
 option (gogoproto.sizer_all) = true;
 option (gogoproto.marshaler_all) = true;
@@ -22,14 +24,14 @@ option (gogoproto.goproto_sizecache_all) = false;
 
 message Chunk {
   enum Encoding {
-    XOR = 0;
+    Chunk_XOR = 0;
   }
   Encoding type  = 1;
   bytes data     = 2;
 }
 
 message Series {
-  repeated Label labels      = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "github.com/thanos-io/thanos/pkg/store/labelpb.ZLabel"];
+  repeated Label labels      = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "github.com/grafana/mimir/pkg/storegateway/labelpb.ZLabel"];
   repeated AggrChunk chunks  = 2 [(gogoproto.nullable) = false];
 }
 
@@ -48,10 +50,10 @@ message AggrChunk {
 // Matcher specifies a rule, which can match or set of labels or not.
 message LabelMatcher {
   enum Type {
-    EQ  = 0; // =
-    NEQ = 1; // !=
-    RE  = 2; // =~
-    NRE = 3; // !~
+    LabelMatcher_EQ  = 0; // =
+    LabelMatcher_NEQ = 1; // !=
+    LabelMatcher_RE  = 2; // =~
+    LabelMatcher_NRE = 3; // !~
   }
   Type type    = 1;
   string name  = 2;
@@ -63,11 +65,11 @@ enum PartialResponseStrategy {
   /// WARN strategy tells server to treat any error that will related to single StoreAPI (e.g missing chunk series because of underlying
   /// storeAPI is temporarily not available) as warning which will not fail the whole query (still OK response).
   /// Server should produce those as a warnings field in response.
-  WARN = 0;
+  PartialResponseStrategy_WARN = 0;
   /// ABORT strategy tells server to treat any error that will related to single StoreAPI (e.g missing chunk series because of underlying
   /// storeAPI is temporarily not available) as the gRPC error that aborts the query.
   ///
   /// This is especially useful for any rule/alert evaluations on top of StoreAPI which usually does not tolerate partial
   /// errors.
-  ABORT = 1;
+  PartialResponseStrategy_ABORT = 1;
 }

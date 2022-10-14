@@ -1,5 +1,7 @@
-// Copyright (c) The Thanos Authors.
-// Licensed under the Apache License 2.0.
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/thanos-io/thanos/blob/main/pkg/store/storepb/custom.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Thanos Authors.
 
 package storepb
 
@@ -518,9 +520,10 @@ func (c *SeriesStatsCounter) Count(series *Series) {
 	}
 }
 
-func (m *SeriesRequest) ToPromQL() string {
-	return m.QueryHints.toPromQL(m.Matchers)
-}
+// TODO remove
+//func (m *SeriesRequest) ToPromQL() string {
+//	return m.QueryHints.toPromQL(m.Matchers)
+//}
 
 // IsSafeToExecute returns true if the function or aggregation from the query hint
 // can be safely executed by the underlying Prometheus instance without affecting the

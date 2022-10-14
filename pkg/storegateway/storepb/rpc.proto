@@ -1,13 +1,15 @@
-// Copyright (c) The Thanos Authors.
-// Licensed under the Apache License 2.0.
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/thanos-io/thanos/blob/main/pkg/store/storepb/rpc.proto
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Thanos Authors.
 
 syntax = "proto3";
 package thanos;
 
-import "store/storepb/types.proto";
+import "types.proto";
 import "gogoproto/gogo.proto";
-import "store/storepb/prompb/types.proto";
-import "store/labelpb/types.proto";
+import "github.com/grafana/mimir/pkg/storegateway/prompb/types.proto";
+import "github.com/grafana/mimir/pkg/storegateway/labelpb/types.proto";
 import "google/protobuf/any.proto";
 
 option go_package = "storepb";
@@ -77,7 +79,7 @@ enum StoreType {
 
 message InfoResponse {
   // Deprecated. Use label_sets instead.
-  repeated Label labels = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "github.com/thanos-io/thanos/pkg/store/labelpb.ZLabel"];
+  repeated Label labels = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "github.com/grafana/mimir/pkg/storegateway/labelpb.ZLabel"];
   int64 min_time = 2;
   int64 max_time = 3;
   StoreType storeType = 4;
@@ -173,12 +175,12 @@ message Range {
 }
 
 enum Aggr {
-  RAW = 0;
-  COUNT = 1;
-  SUM = 2;
-  MIN = 3;
-  MAX = 4;
-  COUNTER = 5;
+  Aggr_RAW = 0;
+  Aggr_COUNT = 1;
+  Aggr_SUM = 2;
+  Aggr_MIN = 3;
+  Aggr_MAX = 4;
+  Aggr_COUNTER = 5;
 }
 
 message SeriesResponse {
