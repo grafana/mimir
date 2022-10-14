@@ -57,7 +57,7 @@ import (
 )
 
 var (
-	errFail       = fmt.Errorf("Fail")
+	errFail       = httpgrpc.Errorf(http.StatusInternalServerError, "Fail")
 	emptyResponse = &mimirpb.WriteResponse{}
 )
 
@@ -288,8 +288,18 @@ func TestDistributor_Push(t *testing.T) {
 
 			request := makeWriteRequest(tc.samples.startTimestampMs, tc.samples.num, tc.metadata, false)
 			response, err := ds[0].Push(ctx, request)
-			assert.Equal(t, tc.expectedResponse, response)
-			assert.Equal(t, tc.expectedError, err)
+
+			if tc.expectedError == nil {
+				assert.Equal(t, emptyResponse, response)
+				assert.Nil(t, err)
+			} else {
+				assert.Nil(t, response)
+				assert.EqualError(t, err, tc.expectedError.Error())
+
+				// Assert that downstream GRPC statuses are passed back upstream
+				_, ok := httpgrpc.HTTPResponseFromError(err)
+				assert.True(t, ok)
+			}
 
 			// Check tracked Prometheus metrics. Since the Push() response is sent as soon as the quorum
 			// is reached, when we reach this point the 3rd ingester may not have received series/metadata
@@ -992,7 +1002,16 @@ func TestDistributor_PushQuery(t *testing.T) {
 			assert.Nil(t, err)
 
 			series, err := ds[0].QueryStream(ctx, 0, 10, tc.matchers...)
-			assert.Equal(t, tc.expectedError, err)
+
+			if tc.expectedError == nil {
+				assert.Nil(t, err)
+			} else {
+				assert.EqualError(t, err, tc.expectedError.Error())
+
+				// Assert that downstream GRPC statuses are passed back upstream
+				_, ok := httpgrpc.HTTPResponseFromError(err)
+				assert.True(t, ok)
+			}
 
 			var response model.Matrix
 			if series == nil {
