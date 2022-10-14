@@ -13,7 +13,6 @@ metadata:
     {}
   namespace: "citestns"
 spec:
-  replicas: 1
   strategy:
     type: RollingUpdate
   selector:
@@ -68,7 +67,8 @@ spec:
             - name: docker-entrypoint-d-override
               mountPath: /docker-entrypoint.d
           resources:
-            {}
+            requests:
+              cpu: 1
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
