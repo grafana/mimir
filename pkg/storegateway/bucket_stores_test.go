@@ -549,7 +549,6 @@ func querySeries(stores *BucketStores, userID, metricName string, minT, maxT int
 			Name:  labels.MetricName,
 			Value: metricName,
 		}},
-		PartialResponseStrategy: storepb.PartialResponseStrategy_ABORT,
 	}
 
 	ctx := setUserIDToGRPCContext(context.Background(), userID)

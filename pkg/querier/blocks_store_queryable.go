@@ -1001,12 +1001,11 @@ func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skip
 	}
 
 	return &storepb.SeriesRequest{
-		MinTime:                 minT,
-		MaxTime:                 maxT,
-		Matchers:                matchers,
-		PartialResponseStrategy: storepb.PartialResponseStrategy_ABORT,
-		Hints:                   anyHints,
-		SkipChunks:              skipChunks,
+		MinTime:    minT,
+		MaxTime:    maxT,
+		Matchers:   matchers,
+		Hints:      anyHints,
+		SkipChunks: skipChunks,
 	}, nil
 }
 

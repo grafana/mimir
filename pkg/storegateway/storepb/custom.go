@@ -7,11 +7,7 @@ package storepb
 
 import (
 	"bytes"
-	"encoding/binary"
 	"fmt"
-	"sort"
-	"strconv"
-	"strings"
 
 	"github.com/gogo/protobuf/types"
 	"github.com/pkg/errors"
@@ -19,23 +15,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/storegateway/labelpb"
 )
-
-var PartialResponseStrategyValues = func() []string {
-	var s []string
-	for k := range PartialResponseStrategy_value {
-		s = append(s, k)
-	}
-	sort.Strings(s)
-	return s
-}()
-
-func NewWarnSeriesResponse(err error) *SeriesResponse {
-	return &SeriesResponse{
-		Result: &SeriesResponse_Warning{
-			Warning: err.Error(),
-		},
-	}
-}
 
 func NewSeriesResponse(series *Series) *SeriesResponse {
 	return &SeriesResponse{
@@ -317,30 +296,6 @@ func (m *Chunk) Compare(b *Chunk) int {
 	return bytes.Compare(m.Data, b.Data)
 }
 
-func (x *PartialResponseStrategy) UnmarshalJSON(entry []byte) error {
-	fieldStr, err := strconv.Unquote(string(entry))
-	if err != nil {
-		return errors.Wrapf(err, fmt.Sprintf("failed to unqote %v, in order to unmarshal as 'partial_response_strategy'. Possible values are %s", string(entry), strings.Join(PartialResponseStrategyValues, ",")))
-	}
-
-	if fieldStr == "" {
-		// NOTE: For Rule default is abort as this is recommended for alerting.
-		*x = PartialResponseStrategy_ABORT
-		return nil
-	}
-
-	strategy, ok := PartialResponseStrategy_value[strings.ToUpper(fieldStr)]
-	if !ok {
-		return errors.Errorf(fmt.Sprintf("failed to unmarshal %v as 'partial_response_strategy'. Possible values are %s", string(entry), strings.Join(PartialResponseStrategyValues, ",")))
-	}
-	*x = PartialResponseStrategy(strategy)
-	return nil
-}
-
-func (x *PartialResponseStrategy) MarshalJSON() ([]byte, error) {
-	return []byte(strconv.Quote(x.String())), nil
-}
-
 // PromMatchersToMatchers returns proto matchers from Prometheus matchers.
 // NOTE: It allocates memory.
 func PromMatchersToMatchers(ms ...*labels.Matcher) ([]LabelMatcher, error) {
@@ -393,19 +348,6 @@ func MatchersToPromMatchers(ms ...LabelMatcher) ([]*labels.Matcher, error) {
 	return res, nil
 }
 
-// MatchersToString converts label matchers to string format.
-// String should be parsable as a valid PromQL query metric selector.
-func MatchersToString(ms ...LabelMatcher) string {
-	var res string
-	for i, m := range ms {
-		res += m.PromString()
-		if i < len(ms)-1 {
-			res += ", "
-		}
-	}
-	return "{" + res + "}"
-}
-
 // PromMatchersToString converts prometheus label matchers to string format.
 // String should be parsable as a valid PromQL query metric selector.
 func PromMatchersToString(ms ...*labels.Matcher) string {
@@ -439,108 +381,4 @@ func (x LabelMatcher_Type) PromString() string {
 // PromLabels return Prometheus labels.Labels without extra allocation.
 func (m *Series) PromLabels() labels.Labels {
 	return labelpb.ZLabelsToPromLabels(m.Labels)
-}
-
-// Deprecated.
-// TODO(bwplotka): Remove this once Cortex dep will stop using it.
-type Label = labelpb.ZLabel
-
-// Deprecated.
-// TODO(bwplotka): Remove this in next PR. Done to reduce diff only.
-type LabelSet = labelpb.ZLabelSet
-
-// Deprecated.
-// TODO(bwplotka): Remove this once Cortex dep will stop using it.
-func CompareLabels(a, b []Label) int {
-	return labels.Compare(labelpb.ZLabelsToPromLabels(a), labelpb.ZLabelsToPromLabels(b))
-}
-
-// Deprecated.
-// TODO(bwplotka): Remove this once Cortex dep will stop using it.
-func LabelsToPromLabelsUnsafe(lset []Label) labels.Labels {
-	return labelpb.ZLabelsToPromLabels(lset)
-}
-
-// XORNumSamples return number of samples. Returns 0 if it's not XOR chunk.
-func (m *Chunk) XORNumSamples() int {
-	if m.Type == Chunk_XOR {
-		return int(binary.BigEndian.Uint16(m.Data))
-	}
-	return 0
-}
-
-type SeriesStatsCounter struct {
-	lastSeriesHash uint64
-
-	Series  int
-	Chunks  int
-	Samples int
-}
-
-func (c *SeriesStatsCounter) CountSeries(seriesLabels []labelpb.ZLabel) {
-	seriesHash := labelpb.HashWithPrefix("", seriesLabels)
-	if c.lastSeriesHash != 0 || seriesHash != c.lastSeriesHash {
-		c.lastSeriesHash = seriesHash
-		c.Series++
-	}
-}
-
-func (c *SeriesStatsCounter) Count(series *Series) {
-	c.CountSeries(series.Labels)
-	for _, chk := range series.Chunks {
-		if chk.Raw != nil {
-			c.Chunks++
-			c.Samples += chk.Raw.XORNumSamples()
-		}
-
-		if chk.Count != nil {
-			c.Chunks++
-			c.Samples += chk.Count.XORNumSamples()
-		}
-
-		if chk.Counter != nil {
-			c.Chunks++
-			c.Samples += chk.Counter.XORNumSamples()
-		}
-
-		if chk.Max != nil {
-			c.Chunks++
-			c.Samples += chk.Max.XORNumSamples()
-		}
-
-		if chk.Min != nil {
-			c.Chunks++
-			c.Samples += chk.Min.XORNumSamples()
-		}
-
-		if chk.Sum != nil {
-			c.Chunks++
-			c.Samples += chk.Sum.XORNumSamples()
-		}
-	}
-}
-
-// TODO remove
-//func (m *SeriesRequest) ToPromQL() string {
-//	return m.QueryHints.toPromQL(m.Matchers)
-//}
-
-// IsSafeToExecute returns true if the function or aggregation from the query hint
-// can be safely executed by the underlying Prometheus instance without affecting the
-// result of the query.
-func (m *QueryHints) IsSafeToExecute() bool {
-	distributiveOperations := []string{
-		"max",
-		"max_over_time",
-		"min",
-		"min_over_time",
-		"group",
-	}
-	for _, op := range distributiveOperations {
-		if m.Func.Name == op {
-			return true
-		}
-	}
-
-	return false
 }

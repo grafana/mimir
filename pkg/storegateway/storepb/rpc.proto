@@ -95,11 +95,11 @@ message SeriesRequest {
   int64 max_resolution_window = 4;
   repeated Aggr aggregates = 5;
 
-  // Deprecated. Use partial_response_strategy instead.
-  bool partial_response_disabled = 6;
+  // Thanos partial_response_disabled.
+  reserved 6;
 
-  // TODO(bwplotka): Move Thanos components to use strategy instead. Including QueryAPI.
-  PartialResponseStrategy partial_response_strategy = 7;
+  // Thanos partial_response_strategy.
+  reserved 7;
 
   // skip_chunks controls whether sending chunks or not in series responses.
   bool skip_chunks = 8;
@@ -117,61 +117,11 @@ message SeriesRequest {
   // Deprecated: Use query_hints instead.
   int64 range = 11;
 
-  // query_hints are the hints coming from the PromQL engine when
-  // requesting a storage.SeriesSet for a given expression.
-  QueryHints query_hints = 12;
+  // Thanos query_hints.
+  reserved 12;
 
-  // shard_info is used by the querier to request a specific
-  // shard of blocks instead of entire blocks.
-  ShardInfo shard_info = 13;
-}
-
-
-// Analogous to storage.SelectHints.
-message QueryHints {
-  // Query step size in milliseconds.
-  int64 step_millis = 1;
-
-  // The surrounding function or aggregation.
-  Func func = 2;
-
-  // The grouping expression
-  Grouping grouping = 4;
-
-  // Range vector selector.
-  Range range = 5;
-}
-
-// ShardInfo are the parameters used to shard series in Stores.
-message ShardInfo {
-  // The index of the current shard.
-  int64 shard_index = 1;
-
-  // The total number of shards.
-  int64 total_shards = 2;
-
-  // Group by or without labels.
-  bool by = 3;
-
-  // Labels on which to partition series.
-  repeated string labels = 4;
-}
-
-message Func {
-  // The function or aggregation name
-  string name = 1;
-}
-
-message Grouping {
-  // Indicate whether it is without or by.
-  bool by = 1;
-
-  // List of label names used in the grouping.
-  repeated string labels = 3;
-}
-
-message Range {
-  int64 millis = 1;
+  // Thanos shard_info.
+  reserved 13;
 }
 
 enum Aggr {
@@ -202,10 +152,11 @@ message SeriesResponse {
 }
 
 message LabelNamesRequest {
-  bool partial_response_disabled = 1;
+  // Thanos partial_response_disabled.
+  reserved 1;
 
-  // TODO(bwplotka): Move Thanos components to use strategy instead. Including QueryAPI.
-  PartialResponseStrategy partial_response_strategy = 2;
+  // Thanos partial_response_strategy.
+  reserved 2;
 
   int64 start = 3;
 
@@ -232,10 +183,11 @@ message LabelNamesResponse {
 message LabelValuesRequest {
   string label = 1;
 
-  bool partial_response_disabled = 2;
+  // Thanos partial_response_disabled.
+  reserved 2;
 
-  // TODO(bwplotka): Move Thanos components to use strategy instead. Including QueryAPI.
-  PartialResponseStrategy partial_response_strategy = 3;
+  // Thanos partial_response_strategy.
+  reserved 3;
 
   int64 start = 4;
 
