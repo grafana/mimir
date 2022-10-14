@@ -25,10 +25,10 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
-* [CHANGE] Nginx: fixed `imagePullSecret` value reference inconsistency. #3208
 * [ENHANCEMENT] Metamonitoring: If enabled and no URL is configured, then metamonitoring metrics will be sent to
   Mimir under the `metamonitoring` tenant; this enhancement does not apply to GEM. #3176
 * [BUGFIX] Fix an issue that caused metamonitoring secrets to be created incorrectly #3170
+* [BUGFIX] Nginx: fixed `imagePullSecret` value reference inconsistency. #3208
 
 ## 3.2.0
 
