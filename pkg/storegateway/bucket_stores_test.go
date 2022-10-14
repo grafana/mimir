@@ -35,8 +35,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	filesystemstore "github.com/thanos-io/objstore/providers/filesystem"
+	"github.com/thanos-io/thanos/pkg/block"
 	thanos_metadata "github.com/thanos-io/thanos/pkg/block/metadata"
-	"github.com/thanos-io/thanos/pkg/extprom"
 	"github.com/thanos-io/thanos/pkg/store/labelpb"
 	"github.com/thanos-io/thanos/pkg/store/storepb"
 	"github.com/weaveworks/common/logging"
@@ -699,7 +699,7 @@ func (u *userShardingStrategy) FilterUsers(ctx context.Context, userIDs []string
 	return u.users, nil
 }
 
-func (u *userShardingStrategy) FilterBlocks(ctx context.Context, userID string, metas map[ulid.ULID]*thanos_metadata.Meta, loaded map[ulid.ULID]struct{}, synced *extprom.TxGaugeVec) error {
+func (u *userShardingStrategy) FilterBlocks(ctx context.Context, userID string, metas map[ulid.ULID]*thanos_metadata.Meta, loaded map[ulid.ULID]struct{}, synced block.GaugeVec) error {
 	if util.StringsContain(u.users, userID) {
 		return nil
 	}
@@ -718,7 +718,7 @@ type failFirstGetBucket struct {
 }
 
 func (f *failFirstGetBucket) Get(ctx context.Context, name string) (io.ReadCloser, error) {
-	if f.firstGet.CAS(false, true) {
+	if f.firstGet.CompareAndSwap(false, true) {
 		return nil, errors.New("Get() request mocked error")
 	}
 

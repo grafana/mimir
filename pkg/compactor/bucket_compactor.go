@@ -27,7 +27,6 @@ import (
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/errutil"
-	"github.com/thanos-io/thanos/pkg/extprom"
 	"github.com/thanos-io/thanos/pkg/runutil"
 	"go.uber.org/atomic"
 
@@ -332,7 +331,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			return issue347Error(errors.Wrapf(err, "invalid, but reparable block %s", bdir), meta.ULID)
 		}
 
-		if err := stats.PrometheusIssue5372Err(); err != nil {
+		if err := stats.OutOfOrderLabelsErr(); err != nil {
 			return errors.Wrapf(err, "block id %s", meta.ULID)
 		}
 		return nil
@@ -902,7 +901,7 @@ func (f *NoCompactionMarkFilter) NoCompactMarkedBlocks() map[ulid.ULID]struct{} 
 
 // Filter finds blocks that should not be compacted, and fills f.noCompactMarkedMap. If f.removeNoCompactBlocks is true,
 // blocks are also removed from metas. (Thanos version of the filter doesn't do removal).
-func (f *NoCompactionMarkFilter) Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced *extprom.TxGaugeVec, modified *extprom.TxGaugeVec) error {
+func (f *NoCompactionMarkFilter) Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced block.GaugeVec, modified block.GaugeVec) error {
 	noCompactMarkedMap := make(map[ulid.ULID]struct{})
 
 	// Find all no-compact markers in the storage.
@@ -966,7 +965,7 @@ func (f *ExcludeMarkedForDeletionFilter) DeletionMarkBlocks() map[ulid.ULID]stru
 
 // Filter filters out blocks that are marked for deletion.
 // It also builds the map returned by DeletionMarkBlocks() method.
-func (f *ExcludeMarkedForDeletionFilter) Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced *extprom.TxGaugeVec, modified *extprom.TxGaugeVec) error {
+func (f *ExcludeMarkedForDeletionFilter) Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced block.GaugeVec, modified block.GaugeVec) error {
 	deletionMarkMap := make(map[ulid.ULID]struct{})
 
 	// Find all markers in the storage.
