@@ -9,8 +9,6 @@ weight: 10
 
 # Deploying Grafana Mimir with Jsonnet and Tanka
 
-> **Note**: Jsonnet-based installation assumes that you have support for `EtcdCluster` resource already installed in your kubernetes.
-
 You can use [Tanka](https://tanka.dev/) and [jsonnet-bundler](https://github.com/jsonnet-bundler/jsonnet-bundler) to generate Kubernetes YAML manifests from the jsonnet files.
 
 1. Install `tanka` and `jb`:
@@ -101,4 +99,5 @@ You can use [Tanka](https://tanka.dev/) and [jsonnet-bundler](https://github.com
      kubectl apply -k manifests/
      ```
 
-   > **Note**: The generated Kubernetes manifests create resources in the `default` namespace. To use a different namespace, change the `namespace` configuration option in the `environments/default/main.jsonnet` file, and re-generate the Kubernetes manifests.
+   > **Note**: The generated Kubernetes manifests create resources in the `default` namespace. To use a different namespace, change the `namespace` configuration option in the `environments/default/main.jsonnet` file, and re-generate the Kubernetes manifests. 
+   > Jsonnet-based installation uses etcd for the HA tracker by default. To install etcd, we expect you have the [etcd-operator](https://github.com/coreos/etcd-operator) running in your K8S cluster.
