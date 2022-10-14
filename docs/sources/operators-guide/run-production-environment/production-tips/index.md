@@ -128,8 +128,7 @@ For more information about securing a Mimir cluster, refer to [Secure Grafana Mi
 ## Network
 
 Most of the communication between Mimir components occurs over gRPC. The gRPC
-connection does not use any compression by default. This can be most noticeable is the connection between
-distributors and an ingesters.
+connection does not use any compression by default.
 
 If network throughput is a concern or a high cost, then you can enable compression on the gRPC connection between
 components. This will reduce the network throughput at the cost of increased CPU usage. You can choose between gzip and
