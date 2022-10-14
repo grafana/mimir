@@ -624,6 +624,7 @@ dist/$(UPTODATE)-packages: $(wildcard packaging/deb/**) $(wildcard packaging/rpm
 			docs/configurations/single-process-config-blocks.yaml=/etc/mimir/config.example.yaml; \
 		$(FPM_OPTS) -t rpm  \
 			--architecture $$rpm_arch \
+			--rpm-os linux \
 			--after-install packaging/rpm/control/post \
 			--before-remove packaging/rpm/control/preun \
 			--package dist/mimir-$(VERSION)_$$arch.rpm \
