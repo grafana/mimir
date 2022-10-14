@@ -18,9 +18,6 @@ spec:
       app: enterprise-metrics-query-frontend
       release: test-enterprise-legacy-label-values
   strategy:
-    rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 1
     type: RollingUpdate
   template:
     metadata:

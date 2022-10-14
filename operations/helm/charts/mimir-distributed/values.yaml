@@ -529,9 +529,6 @@ distributor:
 
   strategy:
     type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 1
 
   terminationGracePeriodSeconds: 60
 
@@ -635,11 +632,6 @@ ingester:
   containerSecurityContext:
     readOnlyRootFilesystem: true
 
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 1
   statefulStrategy:
     type: RollingUpdate
 
@@ -667,9 +659,6 @@ overrides_exporter:
 
   strategy:
     type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 1
 
   podLabels: {}
   podAnnotations: {}
@@ -848,9 +837,6 @@ querier:
 
   strategy:
     type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 1
 
   terminationGracePeriodSeconds: 180
 
@@ -917,9 +903,6 @@ query_frontend:
 
   strategy:
     type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 1
 
   terminationGracePeriodSeconds: 180
 
@@ -2050,9 +2033,6 @@ admin_api:
 
   strategy:
     type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 1
 
   podLabels: {}
   podAnnotations: {}
@@ -2122,9 +2102,6 @@ gateway:
 
   strategy:
     type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 1
 
   podLabels: {}
   podAnnotations: {}
@@ -2271,9 +2248,6 @@ graphite:
 
     strategy:
       type: RollingUpdate
-      rollingUpdate:
-        maxSurge: 0
-        maxUnavailable: 1
 
     terminationGracePeriodSeconds: 180
 
@@ -2340,9 +2314,7 @@ graphite:
     securityContext: {}
     strategy:
       type: RollingUpdate
-      rollingUpdate:
-        maxSurge: 0
-        maxUnavailable: 1
+
     # -- Grace period to allow the graphite-write-proxy to shutdown before it is killed
     terminationGracePeriodSeconds: 180
     env: []
