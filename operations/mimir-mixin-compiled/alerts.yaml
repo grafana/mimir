@@ -78,7 +78,7 @@ groups:
         There are {{ $value }} queued up queries in {{ $labels.cluster }}/{{ $labels.namespace }} {{ $labels.job }}.
     expr: |
       sum by (cluster, namespace, job) (min_over_time(cortex_query_scheduler_queue_length[1m])) > 0
-    for: 5m
+    for: 7m
     labels:
       severity: critical
   - alert: MimirMemcachedRequestErrors

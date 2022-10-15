@@ -144,7 +144,7 @@
           expr: |||
             sum by (%s, job) (min_over_time(cortex_query_scheduler_queue_length[1m])) > 0
           ||| % $._config.alert_aggregation_labels,
-          'for': '5m',  // We don't want to block for longer.
+          'for': '7m',  // We don't want to block for longer.
           labels: {
             severity: 'critical',
           },
