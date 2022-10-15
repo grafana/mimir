@@ -123,3 +123,5 @@ spec:
 {{- end }}
         - name: storage
           emptyDir: {}
+        - name: active-queries
+          emptyDir: {}

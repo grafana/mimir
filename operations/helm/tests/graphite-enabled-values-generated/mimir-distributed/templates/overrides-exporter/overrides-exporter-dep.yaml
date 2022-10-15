@@ -104,3 +104,5 @@ spec:
             name: graphite-enabled-values-mimir-runtime
         - name: storage
           emptyDir: {}
+        - name: active-queries
+          emptyDir: {}

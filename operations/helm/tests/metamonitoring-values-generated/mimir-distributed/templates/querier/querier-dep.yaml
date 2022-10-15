@@ -107,3 +107,5 @@ spec:
             name: metamonitoring-values-mimir-runtime
         - name: storage
           emptyDir: {}
+        - name: active-queries
+          emptyDir: {}
