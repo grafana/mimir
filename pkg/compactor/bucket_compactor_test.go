@@ -19,11 +19,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
-	"github.com/thanos-io/thanos/pkg/extprom"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
+	"github.com/grafana/mimir/pkg/util/extprom"
 )
 
 func TestGroupKey(t *testing.T) {

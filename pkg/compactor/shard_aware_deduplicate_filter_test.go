@@ -15,11 +15,11 @@ import (
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/require"
-	"github.com/thanos-io/thanos/pkg/extprom"
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
+	"github.com/grafana/mimir/pkg/util/extprom"
 )
 
 func ULID(i int) ulid.ULID { return ulid.MustNew(uint64(i), nil) }

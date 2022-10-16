@@ -20,7 +20,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/thanos-io/objstore"
-	"github.com/thanos-io/thanos/pkg/extprom"
 	"github.com/weaveworks/common/logging"
 	"github.com/weaveworks/common/tracing"
 
@@ -30,6 +29,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
+	"github.com/grafana/mimir/pkg/util/extprom"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 

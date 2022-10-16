@@ -29,9 +29,9 @@ import (
 
 	"github.com/grafana/dskit/runutil"
 	"github.com/thanos-io/thanos/pkg/errutil"
-	"github.com/thanos-io/thanos/pkg/extprom"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
+	"github.com/grafana/mimir/pkg/util/extprom"
 )
 
 const FetcherConcurrency = 32
