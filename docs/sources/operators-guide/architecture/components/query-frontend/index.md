@@ -16,7 +16,7 @@ The query-frontend internally holds queries in an internal queue.
 In this situation, queriers act as workers that pull jobs from the queue, execute them, and return the results to the query-frontend for aggregation.
 To connect the queriers with the query-frontends, configure queriers with the query-frontend address via the `-querier.frontend-address` flag.
 
-We recommend that you run at least two query-frontend replicas for high-availability reasons.
+Run at least two query-frontend replicas for high-availability reasons.
 
 ![Query-frontend architecture](query-frontend-architecture.png)
 

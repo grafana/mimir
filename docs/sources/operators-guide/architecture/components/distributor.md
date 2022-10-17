@@ -101,7 +101,7 @@ The distributor waits for a successful response from `n`/2 + 1 ingesters, where 
 
 ## Load balancing across distributors
 
-We recommend randomly load balancing write requests across distributor instances.
+Randomly load balance write requests across distributor instances.
 If you're running Grafana Mimir in a Kubernetes cluster, you can define a Kubernetes [Service](https://kubernetes.io/docs/concepts/services-networking/service/) as ingress for the distributors.
 
 > **Note:** A Kubernetes Service balances TCP connections across Kubernetes endpoints and does not balance HTTP requests within a single TCP connection.

@@ -19,7 +19,7 @@ The ingester receives samples from distributor, and appends the received samples
 The per-tenant TSDB is composed of several files and the ingester keeps a file descriptor open for each TSDB file.
 The total number of file descriptors, used to load TSDB files, linearly increases with the number of tenants in the Grafana Mimir cluster and the configured `-blocks-storage.tsdb.retention-period`.
 
-We recommend fine-tuning the following settings to avoid reaching the maximum number of open file descriptors:
+To avoid reaching the maximum number of open file descriptors, fine tune the following settings:
 
 1. Configure the system's `file-max` ulimit to at least `65536`. Increase the limit to `1048576` when running a Grafana Mimir cluster with more than a thousand tenants.
 1. Enable ingesters [shuffle sharding]({{< relref "../../configure/configuring-shuffle-sharding/index.md" >}}) to reduce the number of tenants per ingester.
@@ -44,9 +44,8 @@ For these reasons, run the ingesters on disks such as SSDs that have fast disk s
 
 ### Ensure caching is enabled
 
-The querier supports caching to reduce the number API calls to the long-term storage.
+The querier supports caching. Ro reduce the number API calls to the long-term storage, enable caching in the querier.
 
-We recommend enabling caching in the querier.
 For more information about configuring the cache, refer to [querier]({{< relref "../../architecture/components/querier.md" >}}).
 
 ### Avoid querying non-compacted blocks
@@ -82,9 +81,8 @@ Based on these assumptions, in the worst-case scenario, it takes up to six hours
 
 ### Ensure caching is enabled
 
-The store-gateway supports caching that reduces the number of API calls to the long-term storage and improves query performance.
+The store-gateway supports caching. To reduce the number of API calls to the long-term storage and improves query performance, enable caching.
 
-We recommend enabling caching in the store-gateway.
 For more information about configuring the cache, refer to [store-gateway]({{< relref "../../architecture/components/store-gateway.md" >}}).
 
 ### Ensure a high number of maximum open file descriptors
@@ -93,7 +91,7 @@ The store-gateway stores each block’s index-header on the local disk and loads
 The store-gateway keeps a file descriptor open for each index-header loaded at a given time.
 The total number of file descriptors used to load index-headers linearly increases with the number of blocks owned by the store-gateway instance.
 
-We recommend configuring the system's `file-max` ulimit at least to `65536` to avoid reaching the maximum number of open file descriptors.
+Configure the system's `file-max` ulimit at least to `65536` to avoid reaching the maximum number of open file descriptors.
 
 ### Store-gateway disk IOPS
 
@@ -113,12 +111,11 @@ For more information about required disk space, refer to [Compactor disk utiliza
 
 ### Ensure Memcached is properly scaled
 
-We recommend ensuring Memcached evictions happen infrequently.
+Ensure Memcached evictions happen infrequently.
 Grafana Mimir query performances might be negatively affected if your Memcached cluster evicts items frequently.
-We recommend increasing your Memcached cluster replicas to add more memory to the cluster and reduce evictions.
+Increase your Memcached cluster replicas to add more memory to the cluster and reduce evictions.
 
-We also recommend running a dedicated Memcached cluster for each type of cache: query results, metadata, index, and chunks.
-Running a dedicated Memcached cluster for each cache type is not required, but recommended so that each cache is isolated from the others.
+We also recommend running a dedicated Memcached cluster for each type of cache: query results, metadata, index, and chunks. While not required, it ensures that each cache is isolated from the others.
 
 ## Security
 

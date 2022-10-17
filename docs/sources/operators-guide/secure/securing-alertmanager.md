@@ -15,7 +15,7 @@ For example, the `webhook` receiver enables a user to configure an arbitrary URL
 If the Alertmanager network security is not hardened, Grafana Mimir users might configure the Alertmanager to issue requests to any network address both in the local network and the Internet.
 
 We recommend hardening the network on which the Alertmanager runs.
-Although hardening the network is out of the scope for Grafana Mimir, Grafana Mimir provides a basic built-in firewall that blocks connections created by Alertmanager receivers:
+Although hardening the network is out of the scope for Grafana Mimir, we reommend doing so where Alertmanager is running. Grafana Mimir provides a basic built-in firewall that blocks connections created by Alertmanager receivers:
 
 - To block specific network addresses in Alertmanager receivers, set `-alertmanager.receivers-firewall-block-cidr-networks` to a comma-separated list of network CIDRs to block.
 - To block private and local addresses in Alertmanager receivers, set `-alertmanager.receivers-firewall-block-private-addresses=true`.

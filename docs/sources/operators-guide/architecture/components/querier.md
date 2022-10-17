@@ -27,8 +27,7 @@ Queriers lazily download the bucket index when they receive the first query for 
 
 The bucket index contains a list of blocks and block deletion marks of a tenant. The querier later uses the list of blocks and block deletion marks to locate the set of blocks that need to be queried for the given query.
 
-When the querier runs with the bucket index enabled, the querier startup time and the volume of API calls to object storage are reduced.
-We recommend that you keep the bucket index enabled.
+When the querier runs with the bucket index enabled, the querier startup time and the volume of API calls to object storage are reduced. It is recommended that it is enabled
 
 ### Bucket index disabled
 

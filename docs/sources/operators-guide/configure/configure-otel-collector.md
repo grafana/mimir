@@ -9,7 +9,7 @@ weight: 150
 
 When using the [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/), you can write metrics into Mimir via two options: `prometheusremotewrite` and `otlphttp`.
 
-We recommend using the `prometheusremotewrite` exporter when possible because the remote write ingest path is tested and proven at scale.
+Use the `prometheusremotewrite` exporter when possible because the remote write ingest path is tested and proven at scale.
 
 ## Remote Write
 

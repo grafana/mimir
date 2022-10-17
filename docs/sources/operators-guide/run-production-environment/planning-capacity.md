@@ -138,7 +138,7 @@ When [remote]({{< relref "../architecture/components/ruler/index.md#internal" >}
 The [compactor]({{< relref "../architecture/components/compactor/index.md" >}}) component resources utilization is determined by the number of active series.
 
 The compactor can scale horizontally both in Grafana Mimir clusters with one tenant and multiple tenants.
-We recommend to run at least one compactor instance every 20 million active series ingested in total in the Grafana Mimir cluster, calculated before ingesters replication.
+Run at least one compactor instance every 20 million active series ingested in total in the Grafana Mimir cluster, calculated before ingesters replication.
 
 Assuming you run one compactor instance every 20 million active series, the estimated required CPU, memory and disk for each compactor instance are:
 
