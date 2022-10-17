@@ -3,6 +3,12 @@
 
 set -e
 
+# Load common lib.
+CURR_DIR="$(dirname "$0")"
+. "${CURR_DIR}/common.sh"
+
+check_required_setup
+
 # Ensure the current branch is a release one.
 BRANCH=$(git branch --show-current)
 if [[ ! $BRANCH =~ ^release-([0-9]+\.[0-9]+)$ ]]; then

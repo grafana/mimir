@@ -19,7 +19,7 @@ fi
 CURR_DIR="$(dirname "$0")"
 . "${CURR_DIR}/common.sh"
 
-check_required_tools
+check_required_setup
 
 # Ensure there are not uncommitted changes.
 if [ -n "$(git status --porcelain=v1 2> /dev/null)" ]; then
