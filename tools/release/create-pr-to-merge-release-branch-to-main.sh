@@ -53,16 +53,18 @@ git checkout -b "${BRANCH_NAME}"
 
 # The merge command could fail if there are conflicts but we don't want to abort the script in that case.
 echo ""
-git merge "${LAST_RELEASE_BRANCH}" || true
+git merge -m "Merge ${LAST_RELEASE_BRANCH} branch to main" "origin/${LAST_RELEASE_BRANCH}" || true
 echo ""
 
 # Wait until the status is clean.
 while true; do
   # Print some instructions on how to proceed.
   echo "The '${LAST_RELEASE_BRANCH}' branch has been merged to main. Please do the following:"
-  echo "1. Ensure VERSION is not changed (keep the same version as in main)"
-  echo "2. Fix any conflict and run 'git commit' once done"
+  echo "1. Ensure VERSION is not changed (keep the same version as in main)."
+  echo "2. Fix any conflict."
+  echo "3. Clean up CHANGELOG.md: incoming entries from release branch should be under proper release version. There may be duplicate entries already."
   echo ""
+  echo "Run 'git commit' once done."
 
   read -p "Press any key to continue... " -n 1 -r
   echo ""
