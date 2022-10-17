@@ -1007,6 +1007,7 @@ spec:
   template:
     metadata:
       labels:
+        gossip_ring_member: "true"
         name: ruler-query-frontend
     spec:
       containers:
@@ -1082,6 +1083,7 @@ spec:
   template:
     metadata:
       labels:
+        gossip_ring_member: "true"
         name: ruler-query-scheduler
     spec:
       affinity:
