@@ -843,30 +843,6 @@ func debugFoundBlockSetOverview(logger log.Logger, mint, maxt, maxResolutionMill
 	level.Debug(logger).Log("msg", "Blocks source resolutions", "blocks", len(bs), "Maximum Resolution", maxResolutionMillis, "mint", mint, "maxt", maxt, "spans", strings.Join(parts, "\n"))
 }
 
-func NewStatsResponse(indexBytesFetched int) *storegatewaypb.SeriesResponse {
-	return &storegatewaypb.SeriesResponse{
-		Result: &storegatewaypb.SeriesResponse_Stats{
-			Stats: &storegatewaypb.Stats{IndexBytesFetched: int64(indexBytesFetched)},
-		},
-	}
-}
-
-func NewSeriesResponse(series *storepb.Series) *storegatewaypb.SeriesResponse {
-	return &storegatewaypb.SeriesResponse{
-		Result: &storegatewaypb.SeriesResponse_Series{
-			Series: series,
-		},
-	}
-}
-
-func NewHintsSeriesResponse(hints *types.Any) *storegatewaypb.SeriesResponse {
-	return &storegatewaypb.SeriesResponse{
-		Result: &storegatewaypb.SeriesResponse_Hints{
-			Hints: hints,
-		},
-	}
-}
-
 // Series implements the storepb.StoreServer interface.
 func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_SeriesServer) (err error) {
 	if s.queryGate != nil {
@@ -1087,7 +1063,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		}
 	}
 
-	if err = srv.Send(NewStatsResponse(stats.postingsFetchedSizeSum)); err != nil {
+	if err = srv.Send(storepb.NewStatsResponse(stats.postingsFetchedSizeSum)); err != nil {
 		err = status.Error(codes.Unknown, errors.Wrap(err, "sends series response stats").Error())
 		return
 	}

@@ -52,7 +52,7 @@ func Test_newStoreGatewayClientFactory(t *testing.T) {
 		defer client.Close() //nolint:errcheck
 
 		ctx := user.InjectOrgID(context.Background(), "test")
-		stream, err := client.(*storeGatewayClient).Series(ctx, &storegatewaypb.SeriesRequest{})
+		stream, err := client.(*storeGatewayClient).Series(ctx, &storepb.SeriesRequest{})
 		assert.NoError(t, err)
 
 		// Read the entire response from the stream.
@@ -74,14 +74,14 @@ func Test_newStoreGatewayClientFactory(t *testing.T) {
 
 type mockStoreGatewayServer struct{}
 
-func (m *mockStoreGatewayServer) Series(_ *storegatewaypb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer) error {
+func (m *mockStoreGatewayServer) Series(_ *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer) error {
 	return nil
 }
 
-func (m *mockStoreGatewayServer) LabelNames(context.Context, *storegatewaypb.LabelNamesRequest) (*storegatewaypb.LabelNamesResponse, error) {
+func (m *mockStoreGatewayServer) LabelNames(context.Context, *storepb.LabelNamesRequest) (*storepb.LabelNamesResponse, error) {
 	return nil, nil
 }
 
-func (m *mockStoreGatewayServer) LabelValues(context.Context, *storegatewaypb.LabelValuesRequest) (*storegatewaypb.LabelValuesResponse, error) {
+func (m *mockStoreGatewayServer) LabelValues(context.Context, *storepb.LabelValuesRequest) (*storepb.LabelValuesResponse, error) {
 	return nil, nil
 }

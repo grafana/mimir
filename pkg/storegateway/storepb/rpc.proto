@@ -75,9 +75,10 @@ message SeriesRequest {
 
   // Thanos query_hints.
   reserved 12;
+}
 
-  // Thanos shard_info.
-  reserved 13;
+message Stats {
+  int64 index_bytes_fetched = 1;
 }
 
 enum Aggr {
@@ -104,6 +105,8 @@ message SeriesResponse {
     /// multiple SeriesResponse frames contain hints for a single Series() request and how should they
     /// be handled in such case (ie. merged vs keep the first/last one).
     google.protobuf.Any hints = 3;
+
+    Stats stats = 4;
   }
 }
 
