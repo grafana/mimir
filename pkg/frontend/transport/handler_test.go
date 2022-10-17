@@ -152,7 +152,9 @@ func TestHandler_FailedRoundTrip(t *testing.T) {
 			)
 
 			require.NoError(t, err)
+
 			assert.Contains(t, strings.TrimSpace(logs.String()), "sharded_queries")
+			assert.Contains(t, strings.TrimSpace(logs.String()), "status")
 			if test.expectQueryParamLog {
 				assert.Contains(t, strings.TrimSpace(logs.String()), "param_query")
 			}

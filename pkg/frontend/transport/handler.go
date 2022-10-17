@@ -227,14 +227,12 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 	}, formatQueryString(queryString)...)
 
 	if queryErr != nil {
-		logMessage = append(logMessage, []interface{}{
+		logMessage = append(logMessage,
 			"status", "failed",
-			"err", queryErr,
-		})
+			"err", queryErr)
 	} else {
-		logMessage = append(logMessage, []interface{}{
-			"status", "success",
-		})
+		logMessage = append(logMessage,
+			"status", "success")
 	}
 
 	level.Info(util_log.WithContext(r.Context(), f.log)).Log(logMessage...)
