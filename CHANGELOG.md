@@ -34,7 +34,7 @@
 
 ### Tools
 
-* [ENHANCEMENT] Mimir rules GitHub action: Added the ability to change default value of `label` when running `prepare` command. #3235
+* [ENHANCEMENT] Mimir rules GitHub action: Added the ability to change default value of `label` when running `prepare` command. #3236
 
 ## 2.4.0-rc.1
 
