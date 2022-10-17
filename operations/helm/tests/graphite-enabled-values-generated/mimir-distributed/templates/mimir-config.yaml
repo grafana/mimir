@@ -13,7 +13,7 @@ data:
   mimir.yaml: |
     
     activity_tracker:
-      filepath: /data/metrics-activity.log
+      filepath: /active-query-tracker/activity.log
     admin_api:
       leader_election:
         enabled: true

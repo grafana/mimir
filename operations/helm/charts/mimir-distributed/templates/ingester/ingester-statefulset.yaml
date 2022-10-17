@@ -87,6 +87,8 @@ spec:
         {{- if .Values.ingester.extraVolumes }}
         {{ toYaml .Values.ingester.extraVolumes | nindent 8 }}
         {{- end }}
+        - name: active-queries
+          emptyDir: {}
       containers:
         {{- if .Values.ingester.extraContainers }}
         {{ toYaml .Values.ingester.extraContainers | nindent 8 }}
@@ -120,6 +122,8 @@ spec:
             - name: license
               mountPath: /license
             {{- end }}
+            - name: active-queries
+              mountPath: /active-query-tracker
           ports:
             - name: http-metrics
               containerPort: {{ include "mimir.serverHttpListenPort" . }}

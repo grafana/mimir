@@ -62,6 +62,8 @@ spec:
             - name: storage
               mountPath: "/data"
               subPath: {{ .Values.distributor.persistence.subPath }}
+            - name: active-queries
+              mountPath: /active-query-tracker
           ports:
             - name: http-metrics
               containerPort: {{ include "mimir.serverHttpListenPort" . }}
@@ -121,5 +123,7 @@ spec:
 {{ toYaml .Values.distributor.extraVolumes | indent 8}}
 {{- end }}
         - name: storage
+          emptyDir: {}
+        - name: active-queries
           emptyDir: {}
 

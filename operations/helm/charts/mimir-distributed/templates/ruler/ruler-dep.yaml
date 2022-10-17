@@ -63,6 +63,8 @@ spec:
             - name: storage
               mountPath: "/data"
               subPath: {{ .Values.ruler.persistence.subPath }}
+            - name: active-queries
+              mountPath: /active-query-tracker
           ports:
             - name: http-metrics
               containerPort: {{ include "mimir.serverHttpListenPort" . }}
@@ -122,5 +124,7 @@ spec:
 {{ toYaml .Values.ruler.extraVolumes | indent 8}}
 {{- end }}
         - name: storage
+          emptyDir: {}
+        - name: active-queries
           emptyDir: {}
 {{- end -}}

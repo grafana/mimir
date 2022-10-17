@@ -79,6 +79,8 @@ spec:
         - name: runtime-config
           configMap:
             name: graphite-enabled-values-mimir-runtime
+        - name: active-queries
+          emptyDir: {}
       containers:
         - name: ingester
           imagePullPolicy: IfNotPresent
@@ -96,6 +98,8 @@ spec:
               mountPath: "/data"
             - name: license
               mountPath: /license
+            - name: active-queries
+              mountPath: /active-query-tracker
           ports:
             - name: http-metrics
               containerPort: 8080

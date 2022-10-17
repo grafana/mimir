@@ -77,6 +77,8 @@ spec:
             name: metamonitoring-values-mimir-runtime
         - name: tmp
           emptyDir: {}
+        - name: active-queries
+          emptyDir: {}
       containers:
         - name: alertmanager
           imagePullPolicy: IfNotPresent
@@ -93,6 +95,8 @@ spec:
               mountPath: "/data"
             - name: tmp
               mountPath: /tmp
+            - name: active-queries
+              mountPath: /active-query-tracker
           ports:
             - name: http-metrics
               containerPort: 8080

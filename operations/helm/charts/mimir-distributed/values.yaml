@@ -82,7 +82,7 @@ mimir:
   # To modify the resulting configuration, either copy and alter 'mimir.config' as a whole or use the 'mimir.structuredConfig' to add and modify certain YAML elements.
   config: |
     activity_tracker:
-      filepath: /data/metrics-activity.log
+      filepath: /active-query-tracker/activity.log
 
     {{- if .Values.enterprise.enabled }}
     admin_api:

@@ -71,6 +71,8 @@ spec:
         - name: runtime-config
           configMap:
             name: test-enterprise-legacy-label-values-enterprise-metrics-runtime
+        - name: active-queries
+          emptyDir: {}
       containers:
         - name: compactor
           imagePullPolicy: IfNotPresent
@@ -87,6 +89,8 @@ spec:
               mountPath: /var/enterprise-metrics
             - name: storage
               mountPath: "/data"
+            - name: active-queries
+              mountPath: /active-query-tracker
           ports:
             - name: http-metrics
               containerPort: 8080

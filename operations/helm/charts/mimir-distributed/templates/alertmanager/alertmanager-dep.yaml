@@ -66,6 +66,8 @@ spec:
               subPath: {{ .Values.alertmanager.persistence.subPath }}
             - name: tmp
               mountPath: /tmp
+            - name: active-queries
+              mountPath: /active-query-tracker
           ports:
             - name: http-metrics
               containerPort: {{ include "mimir.serverHttpListenPort" . }}
@@ -127,6 +129,8 @@ spec:
         - name: storage
           emptyDir: {}
         - name: tmp
+          emptyDir: {}
+        - name: active-queries
           emptyDir: {}
 {{- end -}}
 {{- end -}}

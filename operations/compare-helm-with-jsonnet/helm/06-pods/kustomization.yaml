@@ -31,9 +31,17 @@ patches:
       - op: remove
         path: /spec/template/spec/containers/0/ports/2
 
-  # TODO(logiraptor): Helm adds an emptyDir volume to several components. This is due to the fact that readOnlyRootFilesystem=true and some ephemeral data is written
+  # TODO(logiraptor): Helm adds an emptyDir volume (storage) to several components. This is due to the fact that readOnlyRootFilesystem=true and some ephemeral data is written
   - target:
       name: mimir-(distributor|query-frontend|query-scheduler|querier|ruler|querier|overrides-exporter|alertmanager)
+      kind: Deployment|StatefulSet
+    patch: |-
+      - op: remove
+        path: /spec/template/spec/volumes/1
+
+  # TODO(krajo): Helm adds an emptyDir volume (active-queries) to all Mimir components. This is due to the fact that we set up query tracker in the common configuration
+  - target:
+      name: mimir-(alertmanager|compactor|distributor|ingester|overrides-exporter|query-frontend|query-scheduler|querier|ruler|querier|store-gateway)
       kind: Deployment|StatefulSet
     patch: |-
       - op: remove
