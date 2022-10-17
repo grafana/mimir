@@ -3,6 +3,18 @@
 
 set -e
 
+# Check input parameters.
+if [ $# -gt 1 ]; then
+  echo "Usage: $0 [release-branch]"
+  echo ""
+  echo "  release-branch  The release branch name. If omitted, the latest"
+  echo "                  release branch will be auto-detected."
+  echo ""
+  exit 1
+elif [ $# -eq 1 ]; then
+  LAST_RELEASE_BRANCH="$1"
+fi
+
 # Load common lib.
 CURR_DIR="$(dirname "$0")"
 . "${CURR_DIR}/common.sh"
@@ -15,11 +27,13 @@ if [ -n "$(git status --porcelain=v1 2> /dev/null)" ]; then
   exit 1
 fi
 
-# Get the last release branch.
-LAST_RELEASE_BRANCH=$(git branch --list 'release-*' | sort -V | grep -Eo 'release-[^ ]+' | tail -1)
+# Auto-detect the last release branch, if it wasn't provided.
 if [ -z "${LAST_RELEASE_BRANCH}" ]; then
-  echo "Unable to find the last release branch."
-  exit 1
+  LAST_RELEASE_BRANCH=$(git branch --list 'release-*' | sort -V | grep -Eo 'release-[^ ]+' | tail -1)
+  if [ -z "${LAST_RELEASE_BRANCH}" ]; then
+    echo "Unable to find the last release branch. You can provide it directly to the script."
+    exit 1
+  fi
 fi
 
 BRANCH_NAME="merge-${LAST_RELEASE_BRANCH}-to-main"
