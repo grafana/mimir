@@ -115,13 +115,15 @@
     (super.ingester_zone_c_statefulset + if !$._config.memberlist_ring_enabled then {} else gossipLabel),
 
   querier_deployment+: if !$._config.memberlist_ring_enabled then {} else gossipLabel,
-
   ruler_querier_deployment+: if !$._config.memberlist_ring_enabled || !$._config.ruler_remote_evaluation_enabled then {} else gossipLabel,
 
   ruler_deployment+: if !$._config.memberlist_ring_enabled || !$._config.ruler_enabled then {} else gossipLabel,
 
   query_scheduler_deployment+: if !querySchedulerMemberlistEnabled then {} else gossipLabel,
+  ruler_query_scheduler_deployment+: if !querySchedulerMemberlistEnabled || !$._config.ruler_remote_evaluation_enabled then {} else gossipLabel,
+
   query_frontend_deployment+: if !queryFrontendMemberlistEnabled then {} else gossipLabel,
+  ruler_query_frontend_deployment+: if !queryFrontendMemberlistEnabled || !$._config.ruler_remote_evaluation_enabled then {} else gossipLabel,
 
   store_gateway_statefulset: if $._config.multi_zone_store_gateway_enabled && !$._config.multi_zone_store_gateway_migration_enabled then null else
     (super.store_gateway_statefulset + if !$._config.memberlist_ring_enabled then {} else gossipLabel),
