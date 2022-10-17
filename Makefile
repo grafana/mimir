@@ -183,7 +183,6 @@ pkg/ruler/ruler.pb.go: pkg/ruler/ruler.proto
 pkg/scheduler/schedulerpb/scheduler.pb.go: pkg/scheduler/schedulerpb/scheduler.proto
 pkg/storegateway/labelpb/types.pb.go: pkg/storegateway/labelpb/types.proto
 pkg/storegateway/prompb/types.pb.go: pkg/storegateway/prompb/types.proto
-pkg/storegateway/labelpb/types.pb.go: pkg/storegateway/labelpb/types.proto
 pkg/storegateway/hintspb/hints.pb.go: pkg/storegateway/hintspb/hints.proto
 pkg/storegateway/storegatewaypb/gateway.pb.go: pkg/storegateway/storegatewaypb/gateway.proto
 pkg/storegateway/storepb/rpc.pb.go: pkg/storegateway/storepb/rpc.proto
