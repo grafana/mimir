@@ -11,7 +11,6 @@
 * [ENHANCEMENT] Query-frontend: truncate queries based on the configured creation grace period (`--validation.create-grace-period`) to avoid querying too far into the future. #3172
 * [ENHANCEMENT] Ingester: Reduce activity tracker memory allocation. #3203
 * [BUGFIX] Flusher: Add `Overrides` as a dependency to prevent panics when starting with `-target=flusher`. #3151
-* [BUGFIX] Fix incorrect OS value set in Mimir v2.3.* RPM packages. #3221
 
 ### Mixin
 
@@ -34,6 +33,13 @@
 * [ENHANCEMENT] Improve `MimirSchedulerQueriesStuck` runbook to reflect debug steps with querier auto-scaling enabled. #3223
 
 ### Tools
+
+## 2.4.0-rc.1
+
+### Grafana Mimir
+
+* [BUGFIX] Fix distributor from returning a 500 status code when a 400 was received from the ingester. #3211
+* [BUGFIX] Fix incorrect OS value set in Mimir v2.3.* RPM packages. #3221
 
 ## 2.4.0-rc.0
 
