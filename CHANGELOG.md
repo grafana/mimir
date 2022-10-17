@@ -1,5 +1,11 @@
 # Changelog
 
+## Grafana Mimir - main / unreleased
+
+### Grafana Mimir
+
+* [BUGFIX] Fix incorrect OS value set in Mimir v2.3.* RPM packages. #3221
+
 ## 2.4.0-rc.0
 
 ### Grafana Mimir
