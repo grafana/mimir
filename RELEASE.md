@@ -197,15 +197,26 @@ branch with the merge commit of the PR you labelled. See [PR#2290 (original PR)]
 
 ### Merging release branch into main
 
-To merge a release branch `release-X.Y` into `main`, please do the following:
+To merge a release branch `release-X.Y` into `main`:
+
+1. Create a PR to merge `release-X.Y` into `main` (_see below_)
+2. Once approved, merge the PR with a **Merge** commit through one of the following strategies:
+   - Temporarily enable "Allow merge commits" option in "Settings > Options"
+   - Locally merge the `merge-release-X.Y-to-main` branch into `main`, and push the changes to `main` back to GitHub. This doesn't break `main` branch protection, since the PR has been approved already, and it also doesn't require removing the protection.
+
+**How to create the PR using the script:**
+
+```bash
+# Run the following script and follow the instructions:
+./tools/release/create-pr-to-merge-release-branch-to-main.sh
+```
+
+**How to create the PR manually:**
 
 - Create `merge-release-X.Y-to-main` branch **from the upstream `main` branch** locally
 - Merge the `release-X.Y` branch into your `merge-release-X.Y-to-main` branch and resolve conflicts
   - Keep the `main`'s `VERSION` file contents
 - Make a PR for merging your `merge-release-X.Y-to-main` branch into `main`
-- Once approved, merge the PR with a **Merge** commit through one of the following strategies:
-  - Temporarily enable "Allow merge commits" option in "Settings > Options"
-  - Locally merge the `merge-release-X.Y-to-main` branch into `main`, and push the changes to `main` back to GitHub. This doesn't break `main` branch protection, since the PR has been approved already, and it also doesn't require removing the protection.
 
 ## Release helm
 
