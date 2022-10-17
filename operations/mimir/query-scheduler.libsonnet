@@ -65,6 +65,7 @@
   } + (
     if $._config.query_scheduler_service_discovery_mode == 'ring' && $._config.query_scheduler_service_discovery_ring_read_path_enabled then {
       'query-scheduler.service-discovery-mode': 'ring',
+      'query-scheduler.ring.prefix': if name == 'query-scheduler' then '' else '%s/' % name,
     } else {
       'querier.scheduler-address': querySchedulerAddress(name),
     }
@@ -73,6 +74,7 @@
   queryFrontendUseQuerySchedulerArgs(name)::
     if $._config.query_scheduler_service_discovery_mode == 'ring' && $._config.query_scheduler_service_discovery_ring_read_path_enabled then {
       'query-scheduler.service-discovery-mode': 'ring',
+      'query-scheduler.ring.prefix': if name == 'query-scheduler' then '' else '%s/' % name,
     } else {
       'query-frontend.scheduler-address': querySchedulerAddress(name),
     },
