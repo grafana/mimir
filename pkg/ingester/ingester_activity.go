@@ -168,11 +168,16 @@ func queryRequestActivity(name, userID, traceID string, req *client.QueryRequest
 		make([]byte, 0, 8192),
 	)
 	sb.WriteString(name)
-	sb.WriteString(`: user="`)
-	sb.WriteString(userID)
-	sb.WriteString(`" trace="`)
-	sb.WriteString(traceID)
-	sb.WriteString(`" request="`)
+
+	sb.WriteString(`: user=`)
+	b := strconv.AppendQuote(sb.Bytes(), userID)
+	sb = bytes.NewBuffer(b)
+
+	sb.WriteString(` trace=`)
+	b = strconv.AppendQuote(sb.Bytes(), traceID)
+	sb = bytes.NewBuffer(b)
+
+	sb.WriteString(` request=`)
 	queryRequestToString(sb, req)
 
 	return sb.String()
