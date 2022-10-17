@@ -145,6 +145,8 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		writeError(w, err)
+		queryString = f.parseRequestQueryString(r, buf)
+		f.reportQueryStats(r, queryString, queryResponseTime, stats, err)
 		return
 	}
 
@@ -171,7 +173,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.reportSlowQuery(r, queryString, queryResponseTime)
 	}
 	if f.cfg.QueryStatsEnabled {
-		f.reportQueryStats(r, queryString, queryResponseTime, stats)
+		f.reportQueryStats(r, queryString, queryResponseTime, stats, nil)
 	}
 }
 
@@ -188,7 +190,7 @@ func (f *Handler) reportSlowQuery(r *http.Request, queryString url.Values, query
 	level.Info(util_log.WithContext(r.Context(), f.log)).Log(logMessage...)
 }
 
-func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, queryResponseTime time.Duration, stats *querier_stats.Stats) {
+func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, queryResponseTime time.Duration, stats *querier_stats.Stats, queryErr error) {
 	tenantIDs, err := tenant.TenantIDs(r.Context())
 	if err != nil {
 		return
@@ -200,12 +202,14 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 	numChunks := stats.LoadFetchedChunks()
 	sharded := strconv.FormatBool(stats.GetShardedQueries() > 0)
 
-	// Track stats.
-	f.querySeconds.WithLabelValues(userID, sharded).Add(wallTime.Seconds())
-	f.querySeries.WithLabelValues(userID).Add(float64(numSeries))
-	f.queryBytes.WithLabelValues(userID).Add(float64(numBytes))
-	f.queryChunks.WithLabelValues(userID).Add(float64(numChunks))
-	f.activeUsers.UpdateUserTimestamp(userID, time.Now())
+	if stats != nil {
+		// Track stats.
+		f.querySeconds.WithLabelValues(userID, sharded).Add(wallTime.Seconds())
+		f.querySeries.WithLabelValues(userID).Add(float64(numSeries))
+		f.queryBytes.WithLabelValues(userID).Add(float64(numBytes))
+		f.queryChunks.WithLabelValues(userID).Add(float64(numChunks))
+		f.activeUsers.UpdateUserTimestamp(userID, time.Now())
+	}
 
 	// Log stats.
 	logMessage := append([]interface{}{
@@ -221,6 +225,15 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 		"sharded_queries", stats.LoadShardedQueries(),
 		"split_queries", stats.LoadSplitQueries(),
 	}, formatQueryString(queryString)...)
+
+	if queryErr != nil {
+		logMessage = append(logMessage,
+			"status", "failed",
+			"err", queryErr)
+	} else {
+		logMessage = append(logMessage,
+			"status", "success")
+	}
 
 	level.Info(util_log.WithContext(r.Context(), f.log)).Log(logMessage...)
 }
