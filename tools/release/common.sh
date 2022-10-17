@@ -6,11 +6,19 @@
 
 set -e
 
-check_required_tools() {
+check_required_setup() {
   # Ensure "gh" tool is installed.
   if ! command -v gh &> /dev/null; then
-      echo "The 'gh' command cannot be found. Please install it: https://cli.github.com"
-      exit 1
+    echo "The 'gh' command cannot be found. Please install it: https://cli.github.com"
+    exit 1
+  fi
+
+  # Ensure the repository has only 1 remote named "origin".
+  if [ "$(git remote)" != "origin" ]; then
+    echo "The release automation scripts require the git clone to only have 1 remote named 'origin', but found:"
+    git remote
+
+    exit 1
   fi
 }
 

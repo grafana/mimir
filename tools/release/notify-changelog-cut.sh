@@ -7,7 +7,7 @@ set -e
 CURR_DIR="$(dirname "$0")"
 . "${CURR_DIR}/common.sh"
 
-check_required_tools
+check_required_setup
 
 # Config
 NOTIFICATION_LABEL="release/notified-changelog-cut"
