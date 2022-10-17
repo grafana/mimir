@@ -591,6 +591,7 @@ type BucketCompactorMetrics struct {
 	groupCompactions             prometheus.Counter
 	blocksMarkedForDeletion      prometheus.Counter
 	blocksMarkedForNoCompact     prometheus.Counter
+	blocksMaxTimeDelta           prometheus.Histogram
 }
 
 // NewBucketCompactorMetrics makes a new BucketCompactorMetrics.
@@ -617,6 +618,11 @@ func NewBucketCompactorMetrics(blocksMarkedForDeletion prometheus.Counter, reg p
 			Name:        "cortex_compactor_blocks_marked_for_no_compaction_total",
 			Help:        "Total number of blocks that were marked for no-compaction.",
 			ConstLabels: prometheus.Labels{"reason": metadata.OutOfOrderChunksNoCompactReason},
+		}),
+		blocksMaxTimeDelta: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:    "cortex_compactor_block_max_time_delta_seconds",
+			Help:    "Difference between now and the max time of a block being compacted in seconds.",
+			Buckets: prometheus.LinearBuckets(86400, 43200, 8), // 1 to 5 days, in 12 hour intervals
 		}),
 	}
 }
@@ -804,6 +810,16 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 		jobs, err = c.filterOwnJobs(jobs)
 		if err != nil {
 			return err
+		}
+
+		// Record the difference between now and the max time for a block being compacted. This
+		// is used to detect compactors not being able to keep up with the rate of blocks being
+		// created. The idea is that most blocks should be for within 24h or 48h.
+		now := time.Now().Unix()
+		for _, gr := range jobs {
+			for _, meta := range gr.Metas() {
+				c.metrics.blocksMaxTimeDelta.Observe(float64(now - meta.MaxTime))
+			}
 		}
 
 		// Sort jobs based on the configured ordering algorithm.
