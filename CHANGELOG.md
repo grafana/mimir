@@ -1,9 +1,10 @@
 # Changelog
 
-## Grafana Mimir - main / unreleased
+## 2.4.0-rc.1
 
 ### Grafana Mimir
 
+* [BUGFIX] Fix distributor returning a 500 status code when receives a 400 from the ingester. #3211
 * [BUGFIX] Fix incorrect OS value set in Mimir v2.3.* RPM packages. #3221
 
 ## 2.4.0-rc.0
