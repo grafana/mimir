@@ -169,6 +169,26 @@
           "fieldCategory": "advanced"
         },
         {
+          "kind": "field",
+          "name": "tls_cipher_suites",
+          "required": false,
+          "desc": "Comma-separated list of cipher suites to use. If blank, the default Go cipher suites is used.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "server.tls-cipher-suites",
+          "fieldType": "string"
+        },
+        {
+          "kind": "field",
+          "name": "tls_min_version",
+          "required": false,
+          "desc": "Minimum TLS version to use. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13. If blank, the Go TLS minimum version is used.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "server.tls-min-version",
+          "fieldType": "string"
+        },
+        {
           "kind": "block",
           "name": "http_tls_config",
           "required": false,

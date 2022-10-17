@@ -48,7 +48,36 @@ Every gRPC link between Grafana Mimir components supports TLS configuration as s
 
 #### Server flags
 
-Server flag settings determine if a server requires a client to provide a valid certificate back to the server.
+You can set the cipher suites and minimum TLS version that the server will accept:
+
+- `-server.tls-cipher-suites`: Comma-separated list of cipher suites to use. If blank, the default Go cipher suites is used.
+  Possible values, from https://pkg.go.dev/crypto/tls#pkg-constants:
+  - TLS_RSA_WITH_RC4_128_SHA
+  - TLS_RSA_WITH_3DES_EDE_CBC_SHA
+  - TLS_RSA_WITH_AES_128_CBC_SHA
+  - TLS_RSA_WITH_AES_256_CBC_SHA
+  - TLS_RSA_WITH_AES_128_CBC_SHA256
+  - TLS_RSA_WITH_AES_128_GCM_SHA256
+  - TLS_RSA_WITH_AES_256_GCM_SHA384
+  - TLS_ECDHE_ECDSA_WITH_RC4_128_SHA
+  - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA
+  - TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA
+  - TLS_ECDHE_RSA_WITH_RC4_128_SHA
+  - TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
+  - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA
+  - TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA
+  - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256
+  - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256
+  - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+  - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+  - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+  - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+  - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+  - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+- `-server.tls-min-version`: Minimum TLS version to use. Allowed values: "VersionTLS10", "VersionTLS11", "VersionTLS12", "VersionTLS13". If blank, the Go TLS minimum version is used.
+
+The following
+server flag settings determine if a server requires a client to provide a valid certificate back to the server.
 The flags support all the values defined in the [crypto/tls](https://pkg.go.dev/crypto/tls#ClientAuthType) standard library.
 
 For all values except `NoClientCert`, the policy defines that the server requests a client certificate during the handshake. The values determine whether the client must send certificates and if the server must verify them.
@@ -84,6 +113,9 @@ In the following example, both of the server authorization flags, `-server.http-
 
     # Type of Client Auth for the gRPC Server
     -server.grpc-tls-client-auth="RequireAndVerifyClientCert"
+
+    # Path to the Client CA Cert for the gRPC Server
+    -server.grpc-tls-ca-path=/path/to/root.crt
 
     # Path to the Client CA Cert for the gRPC Server
     -server.grpc-tls-ca-path=/path/to/root.crt
