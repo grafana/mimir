@@ -223,7 +223,7 @@ usage_stats:
   # CLI flag: -usage-stats.enabled
   [enabled: <boolean> | default = true]
 
-  # (experimental) Installation mode (one of: custom, helm, jsonnet).
+  # (experimental) Installation mode. Supported values: custom, helm, jsonnet.
   # CLI flag: -usage-stats.installation-mode
   [installation_mode: <string> | default = "custom"]
 
