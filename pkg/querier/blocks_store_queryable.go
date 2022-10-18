@@ -792,7 +792,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 				}
 
 				if s := resp.GetStats(); s != nil {
-					indexBytesFetched += s.IndexBytesFetched
+					indexBytesFetched += s.FetchedIndexBytes
 				}
 			}
 

@@ -75,10 +75,13 @@ message SeriesRequest {
 
   // Thanos query_hints.
   reserved 12;
+
+  // Thanos shard_info.
+  reserved 13;
 }
 
 message Stats {
-  int64 index_bytes_fetched = 1;
+  int64 fetched_index_bytes = 1;
 }
 
 enum Aggr {

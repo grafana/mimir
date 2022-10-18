@@ -35,7 +35,7 @@ func NewHintsSeriesResponse(hints *types.Any) *SeriesResponse {
 func NewStatsResponse(indexBytesFetched int) *SeriesResponse {
 	return &SeriesResponse{
 		Result: &SeriesResponse_Stats{
-			Stats: &Stats{IndexBytesFetched: int64(indexBytesFetched)},
+			Stats: &Stats{FetchedIndexBytes: int64(indexBytesFetched)},
 		},
 	}
 }
