@@ -35,7 +35,7 @@ global:
     cluster: my-prometheus
 ```
 
-Reload or restart Prometheus or Grafana Agent after updating the configuration.
+Reload or restart Prometheus or Grafana Agent after you update the configuration.
 
 > **Note:** [Configure high availability]({{< relref "../configuring-high-availability-deduplication.md" >}}).
 > document contains the same information on Prometheus setup for HA dedup.
