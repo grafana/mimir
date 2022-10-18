@@ -54,7 +54,7 @@ func (cfg *Config) Validate() error {
 	case HelmInstallationMode, JsonnetInstallationMode, CustomInstallationMode:
 		// valid
 	default:
-		return errors.Errorf("unsupported installation mode: %s", cfg.InstallationMode)
+		return errors.Errorf("unsupported installation mode: %q", cfg.InstallationMode)
 	}
 	return nil
 }
