@@ -46,7 +46,7 @@ type Config struct {
 // RegisterFlags adds the flags required to config this to the given FlagSet
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.Enabled, "usage-stats.enabled", true, "Enable anonymous usage reporting.")
-	f.StringVar(&cfg.InstallationMode, "usage-stats.installation-mode", CustomInstallationMode, "Installation mode (one of: custom, helm, jsonnet).")
+	f.StringVar(&cfg.InstallationMode, "usage-stats.installation-mode", CustomInstallationMode, fmt.Sprintf("Installation mode (one of: %s, %s, %s).", CustomInstallationMode, HelmInstallationMode, JsonnetInstallationMode))
 }
 
 func (cfg *Config) Validate() error {
