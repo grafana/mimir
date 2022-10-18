@@ -18,8 +18,7 @@ You need to have a Grafana Mimir installed via the mimir-distributed Helm chart.
 
 For conceptual information about how Mimir deduplicates incoming HA samples, refer to [Configure high availability]({{< relref "../configuring-high-availability-deduplication.md" >}}).
 
-You also have to configure HA for Prometheus or Grafana Agent. Last, you need a KV store. In this guide you will
-use Consul. You will be guided on the setup if you haven't had one.
+You also need to configure HA for Prometheus or Grafana Agent. Lastly, you need a key-value store such as Consul KV.
 
 ## Configure Prometheus or Grafana Agent to send HA external labels
 
