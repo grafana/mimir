@@ -18,7 +18,7 @@ CHANGELOG_PATH="${CURR_DIR}/../../CHANGELOG.md"
 #
 
 # We use the 2-dots notation to diff because in this context we only want to get the new commits in the last release.
-NUM_PRS=$(git log --pretty=format:"%s" "${PREV_RELEASE_TAG}..${LAST_RELEASE_TAG}" | grep -Eo '#[0-9]+' | wc -l | grep -Eo '[0-9]+')
+NUM_PRS=$(git log --pretty=format:"%s" "${PREV_RELEASE_TAG}..${LAST_RELEASE_TAG}" | grep -cE '#[0-9]+')
 NUM_AUTHORS=$(git log --pretty=format:"%an" "${PREV_RELEASE_TAG}..${LAST_RELEASE_TAG}" | sort | uniq -i | wc -l | grep -Eo '[0-9]+')
 NEW_AUTHORS=$(diff <(git log --pretty=format:"%an" "${PREV_RELEASE_TAG}" | sort | uniq -i) <(git log --pretty=format:"%an" "${LAST_RELEASE_TAG}" | sort | uniq -i) | grep -E '^>' | cut -c 3- | gsed -z 's/\n/, /g;s/, $//')
 
@@ -32,11 +32,17 @@ fi
 # Release notes
 #
 
-# Title
-printf "# Grafana Mimir version %s release notes\n\n" "${LAST_RELEASE_VERSION}"
+# We don't publish release notes for patch versions.
+PREV_RELEASE_MINOR_VERSION=$(echo -n "${PREV_RELEASE_VERSION}" | grep -Eo '^[0-9]+\.[0-9]+')
+LAST_RELEASE_MINOR_VERSION=$(echo -n "${LAST_RELEASE_VERSION}" | grep -Eo '^[0-9]+\.[0-9]+')
 
-# Add a place holder for the release notes.
-printf "**TODO: add release notes here**\n\n"
+if [ "${PREV_RELEASE_MINOR_VERSION}" != "${LAST_RELEASE_MINOR_VERSION}" ]; then
+  # Title
+  printf "# Grafana Mimir version %s release notes\n\n" "${LAST_RELEASE_VERSION}"
+
+  # Add a place holder for the release notes.
+  printf "**TODO: add release notes here**\n\n"
+fi
 
 #
 # CHANGELOG
