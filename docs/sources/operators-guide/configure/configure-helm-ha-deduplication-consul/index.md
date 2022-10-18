@@ -38,6 +38,9 @@ global:
 
 Reload or restart Prometheus or Grafana Agent after updating the configuration.
 
+> **Note:** [Configure high availability]({{< relref "../configuring-high-availability-deduplication.md" >}}).
+> document contains the same information on Prometheus setup for HA dedup.
+
 ## Install Consul using Helm
 
 To get and install Consul on Kubernetes, use the [Consul helm chart](https://github.com/hashicorp/consul-k8s/tree/main/charts/consul).
