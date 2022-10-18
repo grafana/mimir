@@ -12,7 +12,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"sort"
 	"sync"
 	"time"
 
@@ -23,7 +22,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/thanos-io/objstore"
 	"golang.org/x/sync/errgroup"
@@ -32,7 +30,6 @@ import (
 	"github.com/grafana/dskit/runutil"
 	"github.com/thanos-io/thanos/pkg/errutil"
 	"github.com/thanos-io/thanos/pkg/extprom"
-	"github.com/thanos-io/thanos/pkg/model"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
@@ -518,221 +515,8 @@ func (f *MetaFetcher) UpdateOnChange(listener func([]metadata.Meta, error)) {
 	f.listener = listener
 }
 
-var _ MetadataFilter = &TimePartitionMetaFilter{}
-
-// TimePartitionMetaFilter is a BaseFetcher filter that filters out blocks that are outside of specified time range.
-// Not go-routine safe.
-type TimePartitionMetaFilter struct {
-	minTime, maxTime model.TimeOrDurationValue
-}
-
-// NewTimePartitionMetaFilter creates TimePartitionMetaFilter.
-func NewTimePartitionMetaFilter(MinTime, MaxTime model.TimeOrDurationValue) *TimePartitionMetaFilter {
-	return &TimePartitionMetaFilter{minTime: MinTime, maxTime: MaxTime}
-}
-
-// Filter filters out blocks that are outside of specified time range.
-func (f *TimePartitionMetaFilter) Filter(_ context.Context, metas map[ulid.ULID]*metadata.Meta, synced GaugeVec, modified GaugeVec) error {
-	for id, m := range metas {
-		if m.MaxTime >= f.minTime.PrometheusTimestamp() && m.MinTime <= f.maxTime.PrometheusTimestamp() {
-			continue
-		}
-		synced.WithLabelValues(timeExcludedMeta).Inc()
-		delete(metas, id)
-	}
-	return nil
-}
-
-var _ MetadataFilter = &LabelShardedMetaFilter{}
-
-// LabelShardedMetaFilter represents struct that allows sharding.
-// Not go-routine safe.
-type LabelShardedMetaFilter struct {
-	relabelConfig []*relabel.Config
-}
-
-// NewLabelShardedMetaFilter creates LabelShardedMetaFilter.
-func NewLabelShardedMetaFilter(relabelConfig []*relabel.Config) *LabelShardedMetaFilter {
-	return &LabelShardedMetaFilter{relabelConfig: relabelConfig}
-}
-
 // Special label that will have an ULID of the meta.json being referenced to.
 const BlockIDLabel = "__block_id"
-
-// Filter filters out blocks that have no labels after relabelling of each block external (Thanos) labels.
-func (f *LabelShardedMetaFilter) Filter(_ context.Context, metas map[ulid.ULID]*metadata.Meta, synced GaugeVec, modified GaugeVec) error {
-	var lbls labels.Labels
-	for id, m := range metas {
-		lbls = lbls[:0]
-		lbls = append(lbls, labels.Label{Name: BlockIDLabel, Value: id.String()})
-		for k, v := range m.Thanos.Labels {
-			lbls = append(lbls, labels.Label{Name: k, Value: v})
-		}
-
-		if processedLabels := relabel.Process(lbls, f.relabelConfig...); len(processedLabels) == 0 {
-			synced.WithLabelValues(labelExcludedMeta).Inc()
-			delete(metas, id)
-		}
-	}
-	return nil
-}
-
-var _ MetadataFilter = &DeduplicateFilter{}
-
-// DeduplicateFilter is a BaseFetcher filter that filters out older blocks that have exactly the same data.
-// Not go-routine safe.
-type DeduplicateFilter struct {
-	duplicateIDs []ulid.ULID
-	concurrency  int
-	mu           sync.Mutex
-}
-
-// NewDeduplicateFilter creates DeduplicateFilter.
-func NewDeduplicateFilter(concurrency int) *DeduplicateFilter {
-	return &DeduplicateFilter{concurrency: concurrency}
-}
-
-// Filter filters out duplicate blocks that can be formed
-// from two or more overlapping blocks that fully submatches the source blocks of the older blocks.
-func (f *DeduplicateFilter) Filter(_ context.Context, metas map[ulid.ULID]*metadata.Meta, synced GaugeVec, modified GaugeVec) error {
-	f.duplicateIDs = f.duplicateIDs[:0]
-
-	var wg sync.WaitGroup
-	var groupChan = make(chan []*metadata.Meta)
-
-	// Start up workers to deduplicate workgroups when they're ready.
-	for i := 0; i < f.concurrency; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for group := range groupChan {
-				f.filterGroup(group, metas, synced)
-			}
-		}()
-	}
-
-	// We need only look within a compaction group for duplicates, so splitting by group key gives us parallelizable streams.
-	metasByCompactionGroup := make(map[string][]*metadata.Meta)
-	for _, meta := range metas {
-		groupKey := meta.Thanos.GroupKey()
-		metasByCompactionGroup[groupKey] = append(metasByCompactionGroup[groupKey], meta)
-	}
-	for _, group := range metasByCompactionGroup {
-		groupChan <- group
-	}
-	close(groupChan)
-	wg.Wait()
-
-	return nil
-}
-
-func (f *DeduplicateFilter) filterGroup(metaSlice []*metadata.Meta, metas map[ulid.ULID]*metadata.Meta, synced GaugeVec) {
-	sort.Slice(metaSlice, func(i, j int) bool {
-		ilen := len(metaSlice[i].Compaction.Sources)
-		jlen := len(metaSlice[j].Compaction.Sources)
-
-		if ilen == jlen {
-			return metaSlice[i].ULID.Compare(metaSlice[j].ULID) < 0
-		}
-
-		return ilen-jlen > 0
-	})
-
-	var coveringSet []*metadata.Meta
-	var duplicates []ulid.ULID
-childLoop:
-	for _, child := range metaSlice {
-		childSources := child.Compaction.Sources
-		for _, parent := range coveringSet {
-			parentSources := parent.Compaction.Sources
-
-			// child's sources are present in parent's sources, filter it out.
-			if contains(parentSources, childSources) {
-				duplicates = append(duplicates, child.ULID)
-				continue childLoop
-			}
-		}
-
-		// Child's sources not covered by any member of coveringSet, add it to coveringSet.
-		coveringSet = append(coveringSet, child)
-	}
-
-	f.mu.Lock()
-	for _, duplicate := range duplicates {
-		if metas[duplicate] != nil {
-			f.duplicateIDs = append(f.duplicateIDs, duplicate)
-		}
-		synced.WithLabelValues(duplicateMeta).Inc()
-		delete(metas, duplicate)
-	}
-	f.mu.Unlock()
-}
-
-// DuplicateIDs returns slice of block ids that are filtered out by DeduplicateFilter.
-func (f *DeduplicateFilter) DuplicateIDs() []ulid.ULID {
-	return f.duplicateIDs
-}
-
-func contains(s1, s2 []ulid.ULID) bool {
-	for _, a := range s2 {
-		found := false
-		for _, e := range s1 {
-			if a.Compare(e) == 0 {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return false
-		}
-	}
-	return true
-}
-
-var _ MetadataFilter = &ReplicaLabelRemover{}
-
-// ReplicaLabelRemover is a BaseFetcher filter that modifies external labels of existing blocks, it removes given replica labels from the metadata of blocks that have it.
-type ReplicaLabelRemover struct {
-	logger log.Logger
-
-	replicaLabels []string
-}
-
-// NewReplicaLabelRemover creates a ReplicaLabelRemover.
-func NewReplicaLabelRemover(logger log.Logger, replicaLabels []string) *ReplicaLabelRemover {
-	return &ReplicaLabelRemover{logger: logger, replicaLabels: replicaLabels}
-}
-
-// Filter modifies external labels of existing blocks, it removes given replica labels from the metadata of blocks that have it.
-func (r *ReplicaLabelRemover) Filter(_ context.Context, metas map[ulid.ULID]*metadata.Meta, synced GaugeVec, modified GaugeVec) error {
-	if len(r.replicaLabels) == 0 {
-		return nil
-	}
-
-	for u, meta := range metas {
-		l := make(map[string]string)
-		for n, v := range meta.Thanos.Labels {
-			l[n] = v
-		}
-
-		for _, replicaLabel := range r.replicaLabels {
-			if _, exists := l[replicaLabel]; exists {
-				level.Debug(r.logger).Log("msg", "replica label removed", "label", replicaLabel)
-				delete(l, replicaLabel)
-				modified.WithLabelValues(replicaRemovedMeta).Inc()
-			}
-		}
-		if len(l) == 0 {
-			level.Warn(r.logger).Log("msg", "block has no labels left, creating one", r.replicaLabels[0], "deduped")
-			l[r.replicaLabels[0]] = "deduped"
-		}
-
-		nm := *meta
-		nm.Thanos.Labels = l
-		metas[u] = &nm
-	}
-	return nil
-}
 
 // ConsistencyDelayMetaFilter is a BaseFetcher filter that filters out blocks that are created before a specified consistency delay.
 // Not go-routine safe.
