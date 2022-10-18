@@ -16,6 +16,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/runutil"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
@@ -23,7 +24,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
-	"github.com/thanos-io/thanos/pkg/runutil"
 
 	"github.com/grafana/mimir/integration/e2emimir"
 	"github.com/grafana/mimir/pkg/storage/bucket"
