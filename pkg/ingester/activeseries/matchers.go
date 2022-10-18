@@ -35,12 +35,12 @@ func (m *Matchers) Config() CustomTrackersConfig {
 	return m.cfg
 }
 
-// Matches returns a fixedSlice containing only matcher indexes which are matching
-func (m *Matchers) Matches(series labels.Labels) preAllocDynamicSlice {
+// Matches returns a PreAllocDynamicSlice containing only matcher indexes which are matching
+func (m *Matchers) Matches(series labels.Labels) PreAllocDynamicSlice {
 	if len(m.matchers) == 0 {
-		return preAllocDynamicSlice{}
+		return PreAllocDynamicSlice{}
 	}
-	var matches preAllocDynamicSlice
+	var matches PreAllocDynamicSlice
 	for i, sm := range m.matchers {
 		if sm.Matches(series) {
 			matches.append(i)
@@ -83,13 +83,13 @@ func amlabelMatcherToProm(m *amlabels.Matcher) *labels.Matcher {
 
 const preAllocatedSize = 3
 
-type preAllocDynamicSlice struct {
+type PreAllocDynamicSlice struct {
 	arr  [preAllocatedSize]uint16
 	arrl byte
 	rest []uint16
 }
 
-func (fs *preAllocDynamicSlice) append(val int) {
+func (fs *PreAllocDynamicSlice) append(val int) {
 	if fs.arrl < preAllocatedSize {
 		fs.arr[fs.arrl] = uint16(val)
 		fs.arrl++
@@ -98,13 +98,13 @@ func (fs *preAllocDynamicSlice) append(val int) {
 	fs.rest = append(fs.rest, uint16(val))
 }
 
-func (fs *preAllocDynamicSlice) get(idx int) uint16 {
+func (fs *PreAllocDynamicSlice) get(idx int) uint16 {
 	if idx < preAllocatedSize {
 		return fs.arr[idx]
 	}
 	return fs.rest[idx-preAllocatedSize]
 }
 
-func (fs *preAllocDynamicSlice) len() int {
+func (fs *PreAllocDynamicSlice) len() int {
 	return int(fs.arrl) + len(fs.rest)
 }

@@ -73,7 +73,7 @@ func TestMatcher_MatchesSeries(t *testing.T) {
 	}
 }
 
-func preAllocDynamicSliceToSlice(prealloc preAllocDynamicSlice) []int {
+func preAllocDynamicSliceToSlice(prealloc PreAllocDynamicSlice) []int {
 	slice := make([]int, prealloc.len())
 	for i := 0; i < prealloc.len(); i++ {
 		slice[i] = int(prealloc.get(i))
