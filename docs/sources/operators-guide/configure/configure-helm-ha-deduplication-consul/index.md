@@ -25,8 +25,9 @@ You also need to configure HA for Prometheus or Grafana Agent. Lastly, you need 
 Configure the Prometheus or Grafana Agent HA setup by setting the labels named `cluster` and `__replica__`,
 which are the default labels for a HA setup in Grafana Mimir. If you want to change the HA labels,
 make sure to change them in Mimir as well. This ensures that the configurations of Grafana Mimir, Prometheus, and Grafana Agent all match each other. Otherwise, HA deduplication will not work.
-* The value of the `cluster` label must be same across replica that belong to the same cluster.
-* The value of the `__replica__` label must be unique across different replica within the same cluster.
+
+- The value of the `cluster` label must be same across replica that belong to the same cluster.
+- The value of the `__replica__` label must be unique across different replica within the same cluster.
 
 ```yaml
 global:
