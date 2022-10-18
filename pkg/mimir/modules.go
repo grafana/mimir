@@ -776,6 +776,7 @@ func (t *Mimir) initUsageStats() (services.Service, error) {
 
 	// Track anonymous usage statistics.
 	usagestats.GetString("blocks_storage_backend").Set(t.Cfg.BlocksStorage.Bucket.Backend)
+	usagestats.GetString("installation_mode").Set(t.Cfg.UsageStats.InstallationMode)
 
 	t.UsageStatsReporter = usagestats.NewReporter(bucketClient, util_log.Logger, t.Registerer)
 	return t.UsageStatsReporter, nil

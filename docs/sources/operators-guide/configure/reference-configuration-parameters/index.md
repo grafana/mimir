@@ -223,6 +223,10 @@ usage_stats:
   # CLI flag: -usage-stats.enabled
   [enabled: <boolean> | default = true]
 
+  # (experimental) Installation mode (one of: custom, helm, jsonnet).
+  # CLI flag: -usage-stats.installation-mode
+  [installation_mode: <string> | default = "custom"]
+
 # The common block holds configurations that configure multiple components at a
 # time.
 [common: <common>]

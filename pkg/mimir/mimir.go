@@ -242,6 +242,9 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.QueryScheduler.Validate(); err != nil {
 		return errors.Wrap(err, "invalid query-scheduler config")
 	}
+	if err := c.UsageStats.Validate(); err != nil {
+		return errors.Wrap(err, "invalid usage stats config")
+	}
 	if c.isAnyModuleEnabled(AlertManager, Backend) {
 		if err := c.Alertmanager.Validate(); err != nil {
 			return errors.Wrap(err, "invalid alertmanager config")

@@ -15,12 +15,11 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/thanos-io/objstore"
-
-	"github.com/grafana/dskit/services"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 )
@@ -33,13 +32,31 @@ const (
 	defaultStatsServerURL      = "https://stats.grafana.org/mimir-usage-report"
 )
 
+const (
+	CustomInstallationMode  = "custom"
+	HelmInstallationMode    = "helm"
+	JsonnetInstallationMode = "jsonnet"
+)
+
 type Config struct {
-	Enabled bool `yaml:"enabled" category:"experimental"`
+	Enabled          bool   `yaml:"enabled" category:"experimental"`
+	InstallationMode string `yaml:"installation_mode" category:"experimental"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.Enabled, "usage-stats.enabled", true, "Enable anonymous usage reporting.")
+	f.StringVar(&cfg.InstallationMode, "usage-stats.installation-mode", CustomInstallationMode, "Installation mode (one of: custom, helm, jsonnet).")
+}
+
+func (cfg *Config) Validate() error {
+	switch cfg.InstallationMode {
+	case HelmInstallationMode, JsonnetInstallationMode, CustomInstallationMode:
+		// valid
+	default:
+		return errors.Errorf("unsupported installation mode: %s", cfg.InstallationMode)
+	}
+	return nil
 }
 
 type Reporter struct {
