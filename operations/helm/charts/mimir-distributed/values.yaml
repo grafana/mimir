@@ -11,7 +11,7 @@
 # which may or may not match your cluster's server version. Example: 'v1.24.4'. Set to null to use the version that helm
 # devises.
 
-# Note: The values in this file is not backward compatible. If you copy and paste the values for your installation configuration,
+# Note: The values in this file is not backward compatible. Copay paste the values are discouraged, but if you still do,
 # make sure to use the values.yaml from branch or tag that matches the mimir-distributed helm chart version you want to install.
 kubeVersionOverride: null
 
