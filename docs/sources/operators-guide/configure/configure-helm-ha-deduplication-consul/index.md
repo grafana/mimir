@@ -82,11 +82,26 @@ mimir:
 
 ### Configure HA deduplication per tenant
 
-Before you begin, make sure that Mimir was installed using the Helm chart.
+Before you begin, make sure that Mimir was installed using the mimir-distributed Helm chart.
 
 1. Add the following configuration to the `custom.yaml` file:
 
 ```yaml
+mimir:
+  structuredConfig:
+    limits:
+      accept_ha_samples: true
+      # The following two configurations must match those of external_labels in Prometheus
+      # The config values below are the default and can be removed if you don't want to override to a new value
+      ha_cluster_label: cluster
+      ha_replica_label: __replica__
+    distributor:
+      ha_tracker:
+        enable_ha_tracker: true
+        kvstore:
+          store: consul
+          consul:
+            host: <consul-endpoint> # example: http://consul.consul.svc.cluster.local:8500
 runtimeConfig:
   overrides:
     <tenant-id>: # put real tenant ID here
@@ -94,6 +109,9 @@ runtimeConfig:
       ha_cluster_label: cluster
       ha_replica_label: __replica__
 ```
+
+The `mimir` configuration block is similar with Globally configure HA deduplication setup. The `runtimeConfig` block
+is the configuration for per tenant HA deduplication.
 
 2. Upgrade the Mimir's helm release using the following command:
 
