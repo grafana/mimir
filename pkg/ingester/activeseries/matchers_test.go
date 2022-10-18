@@ -68,15 +68,15 @@ func TestMatcher_MatchesSeries(t *testing.T) {
 	} {
 		t.Run(tc.series.String(), func(t *testing.T) {
 			got := asm.Matches(tc.series)
-			assert.Equal(t, tc.expected, fixedSliceToSlice(got))
+			assert.Equal(t, tc.expected, preAllocDynamicSliceToSlice(got))
 		})
 	}
 }
 
-func fixedSliceToSlice(fixed fixedSlice) []int {
-	slice := make([]int, fixed.len())
-	for i := 0; i < fixed.len(); i++ {
-		slice[i] = fixed.get(i)
+func preAllocDynamicSliceToSlice(prealloc preAllocDynamicSlice) []int {
+	slice := make([]int, prealloc.len())
+	for i := 0; i < prealloc.len(); i++ {
+		slice[i] = int(prealloc.get(i))
 	}
 	return slice
 }

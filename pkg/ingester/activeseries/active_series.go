@@ -48,8 +48,8 @@ type seriesStripe struct {
 // seriesEntry holds a timestamp for single series.
 type seriesEntry struct {
 	lbs     labels.Labels
-	nanos   *atomic.Int64 // Unix timestamp in nanoseconds. Needs to be a pointer because we don't store pointers to entries in the stripe.
-	matches fixedSlice    //  Index of the matcher matching
+	nanos   *atomic.Int64        // Unix timestamp in nanoseconds. Needs to be a pointer because we don't store pointers to entries in the stripe.
+	matches preAllocDynamicSlice //  Index of the matcher matching
 }
 
 func NewActiveSeries(asm *Matchers, timeout time.Duration) *ActiveSeries {
@@ -209,7 +209,7 @@ func (s *seriesStripe) findOrCreateEntryForSeries(fingerprint uint64, series lab
 	return e.nanos, true
 }
 
-//nolint // Linter reports that this method is unused, but it is.
+// nolint // Linter reports that this method is unused, but it is.
 func (s *seriesStripe) clear() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
