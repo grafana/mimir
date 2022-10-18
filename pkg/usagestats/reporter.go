@@ -11,6 +11,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -22,6 +23,7 @@ import (
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
@@ -39,7 +41,7 @@ const (
 )
 
 var (
-    supportedInstallationModes = []string{installationModeCustom, installationModeHelm, installationModeJsonnet}
+	supportedInstallationModes = []string{installationModeCustom, installationModeHelm, installationModeJsonnet}
 )
 
 type Config struct {
@@ -50,16 +52,15 @@ type Config struct {
 // RegisterFlags adds the flags required to config this to the given FlagSet
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.Enabled, "usage-stats.enabled", true, "Enable anonymous usage reporting.")
-	f.StringVar(&cfg.InstallationMode, "usage-stats.installation-mode", CustomInstallationMode, fmt.Sprintf("Installation mode (one of: %s, %s, %s).", CustomInstallationMode, HelmInstallationMode, JsonnetInstallationMode))
+	f.StringVar(&cfg.InstallationMode, "usage-stats.installation-mode", installationModeCustom, fmt.Sprintf("Installation mode. %s", fmt.Sprintf("Supported values: %s.", strings.Join(supportedInstallationModes, ", "))))
 }
 
 func (cfg *Config) Validate() error {
-	switch cfg.InstallationMode {
-	case HelmInstallationMode, JsonnetInstallationMode, CustomInstallationMode:
-		// valid
-	default:
+	if !util.StringsContain(supportedInstallationModes, cfg.InstallationMode) {
 		return errors.Errorf("unsupported installation mode: %q", cfg.InstallationMode)
+
 	}
+
 	return nil
 }
 

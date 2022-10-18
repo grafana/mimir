@@ -62,7 +62,7 @@ func TestConfigValidation(t *testing.T) {
 				Enabled:          true,
 				InstallationMode: "unknown",
 			},
-			expectedError: "unsupported installation mode: unknown",
+			expectedError: "unsupported installation mode: \"unknown\"",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

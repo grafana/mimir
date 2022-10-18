@@ -11292,7 +11292,7 @@
           "kind": "field",
           "name": "installation_mode",
           "required": false,
-          "desc": "Installation mode (one of: custom, helm, jsonnet).",
+          "desc": "Installation mode. Supported values: custom, helm, jsonnet.",
           "fieldValue": null,
           "fieldDefaultValue": "custom",
           "fieldFlag": "usage-stats.installation-mode",
