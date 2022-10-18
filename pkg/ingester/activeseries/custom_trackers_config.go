@@ -11,6 +11,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const maxNumberOfTrackers = 64000
+
 // CustomTrackersConfig configures active series custom trackers.
 // It can be set using a flag, or parsed from yaml.
 type CustomTrackersConfig struct {
@@ -142,6 +144,9 @@ func (c CustomTrackersConfig) MarshalYAML() (interface{}, error) {
 func NewCustomTrackersConfig(m map[string]string) (c CustomTrackersConfig, err error) {
 	c.source = m
 	c.config = map[string]labelsMatchers{}
+	if len(m) > maxNumberOfTrackers {
+		return c, fmt.Errorf("the number of trackers set [%d] exceeds the maximum number of trackers [%d]", len(m), maxNumberOfTrackers)
+	}
 	for name, matcher := range m {
 		sm, err := amlabels.ParseMatchers(matcher)
 		if err != nil {
