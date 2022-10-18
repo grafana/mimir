@@ -33,9 +33,13 @@ const (
 )
 
 const (
-	CustomInstallationMode  = "custom"
-	HelmInstallationMode    = "helm"
-	JsonnetInstallationMode = "jsonnet"
+	installationModeCustom  = "custom"
+	installationModeHelm    = "helm"
+	installationModeJsonnet = "jsonnet"
+)
+
+var (
+    supportedInstallationModes = []string{installationModeCustom, installationModeHelm, installationModeJsonnet}
 )
 
 type Config struct {
