@@ -109,6 +109,10 @@ mimir:
       data_dir: /data
       enable_api: true
       external_url: /alertmanager
+      {{- if .Values.alertmanager.zoneAwareReplication.enabled }}
+      sharding_ring:
+        zone_awareness_enabled: true
+      {{- end }}
 
     {{- if .Values.minio.enabled }}
     alertmanager_storage:
@@ -200,7 +204,7 @@ mimir:
         admin_api:
           url: http://{{ template "mimir.fullname" . }}-admin-api.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
         alertmanager:
-          url: http://{{ template "mimir.fullname" . }}-alertmanager.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
+          url: http://{{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
         compactor:
           url: http://{{ template "mimir.fullname" . }}-compactor.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
         default:
@@ -208,13 +212,13 @@ mimir:
         distributor:
           url: dns:///{{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverGrpcListenPort" . }}
         ingester:
-          url: http://{{ template "mimir.fullname" . }}-ingester.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
+          url: http://{{ template "mimir.fullname" . }}-ingester-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
         query_frontend:
           url: http://{{ template "mimir.fullname" . }}-query-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
         ruler:
           url: http://{{ template "mimir.fullname" . }}-ruler.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
         store_gateway:
-          url: http://{{ template "mimir.fullname" . }}-store-gateway.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
+          url: http://{{ template "mimir.fullname" . }}-store-gateway-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
         {{- if and .Values.enterprise.enabled .Values.graphite.enabled }}
         graphite_write_proxy:
           url: http://{{ template "mimir.fullname" . }}-graphite-write-proxy.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}
@@ -229,6 +233,9 @@ mimir:
         num_tokens: 512
         tokens_file_path: /data/tokens
         unregister_on_shutdown: false
+        {{- if .Values.ingester.zoneAwareReplication.enabled }}
+        zone_awareness_enabled: true
+        {{- end }}
 
     ingester_client:
       grpc_client_config:
@@ -293,7 +300,14 @@ mimir:
 
     store_gateway:
       sharding_ring:
+        {{- if .Values.store_gateway.zoneAwareReplication.enabled }}
+        kvstore:
+          prefix: multi-zone/
+        {{- end }}
         tokens_file_path: /data/tokens
+        {{- if .Values.store_gateway.zoneAwareReplication.enabled }}
+        zone_awareness_enabled: true
+        {{- end }}
 
     {{- if and .Values.enterprise.enabled .Values.graphite.enabled }}
     graphite:
@@ -336,6 +350,10 @@ rbac:
 
 alertmanager:
   enabled: true
+  # -- Total number of replicas for the alertmanager accross all availability zones
+  # If alertmanager.zoneAwareReplication.enabled=false, this number is taken as is.
+  # Otherwise each zone starts `ceil(replicas / number_of_zones)` number of pods.
+  #   E.g. if 'replicas' is set to 4 and there are 3 zones, then 4/3=1.33 and after rounding up it means 2 pods per zone are started.
   replicas: 1
 
   statefulSet:
@@ -358,13 +376,15 @@ alertmanager:
   # Pod Annotations
   podAnnotations: {}
 
-  # Pod Disruption Budget
+  # -- Pod Disruption Budget for alertmanager, this will be applied accross availability zones to prevent losing redundancy
   podDisruptionBudget: {}
 
   # -- The name of the PriorityClass for alertmanager pods
   priorityClassName: null
 
+  # -- NodeSelector to pin alertmanager pods to certain set of nodes. This is ignored when alertmanager.zoneAwareReplication.enabled=true.
   nodeSelector: {}
+  # -- Pod affinity settings for the alertmanager. This is ignored when alertmanager.zoneAwareReplication.enabled=true.
   affinity: {}
 
   # -- topologySpreadConstraints allows to customize part of the default topologySpreadConstraints. labelSelectors
@@ -434,6 +454,7 @@ alertmanager:
     rollingUpdate:
       maxSurge: 0
       maxUnavailable: 1
+  # -- updateStrategy of the alertmanager statefulset. This is ignored when alertmanager.zoneAwareReplication.enabled=true.
   statefulStrategy:
     type: RollingUpdate
 
@@ -473,6 +494,66 @@ alertmanager:
   # Extra env variables to pass to the alertmanager container
   env: []
   extraEnvFrom: []
+
+  # -- Options to configure zone-aware replication for alertmanager
+  # Example configuration with full geographical redundancy:
+  # rollout_operator:
+  #   enabled: true
+  # alertmanager:
+  #   zoneAwareReplication:
+  #     enabled: true
+  #     topologyKey: 'kubernetes.io/hostname'  # This generates default anti-affinity rules
+  #     zones:  # Zone list has to be fully redefined for modification. Update with you actual zones or skip to use logical zones only.
+  #     - name: zone-a
+  #       nodeSelector:
+  #         topology.kubernetes.io/zone: us-central1-a
+  #     - name: zone-a
+  #       nodeSelector:
+  #         topology.kubernetes.io/zone: us-central1-b
+  #     - name: zone-c
+  #       nodeSelector:
+  #         topology.kubernetes.io/zone: us-central1-c
+  #
+  zoneAwareReplication:
+    # -- Enable zone-aware replication for alertmanager
+    enabled: false
+    # -- Maximum number of alertmanagers that can be unavailable per zone during rollout
+    maxUnavailable: 2
+    # -- topologyKey to use in pod anti-affinity. If unset, no anti-affinity rules are generated. If set, the generated anti-affinity rule makes sure that pods from different zones do not mix.
+    # E.g.: topologyKey: 'kubernetes.io/hostname'
+    topologyKey: null
+    # -- Auxiliary values for migration, see https://grafana.com/docs/mimir/latest/migration-guide/migrating-from-single-zone-with-helm/
+    migration:
+      # -- Indicate if migration is ongoing for multi zone alertmanager
+      enabled: false
+      # -- Start zone-aware alertmanagers
+      writePath: false
+    # -- Zone definitions for alertmanager zones. Note: you have to redefine the whole list to change parts as YAML does not allow to modify parts of a list.
+    zones:
+    # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+    - name: zone-a
+      # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
+      # nodeSelector:
+      #   topology.kubernetes.io/zone: zone-a
+      nodeSelector: null
+      # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
+      extraAffinity: {}
+    # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+    - name: zone-b
+      # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
+      # nodeSelector:
+      #   topology.kubernetes.io/zone: zone-b
+      nodeSelector: null
+      # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
+      extraAffinity: {}
+    # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+    - name: zone-c
+      # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
+      # nodeSelector:
+      #   topology.kubernetes.io/zone: zone-c
+      nodeSelector: null
+      # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
+      extraAffinity: {}
 
 distributor:
   replicas: 1
@@ -541,6 +622,10 @@ distributor:
   extraEnvFrom: []
 
 ingester:
+  # -- Total number of replicas for the ingester accross all availability zones
+  # If ingester.zoneAwareReplication.enabled=false, this number is taken as is.
+  # Otherwise each zone starts `ceil(replicas / number_of_zones)` number of pods.
+  #   E.g. if 'replicas' is set to 4 and there are 3 zones, then 4/3=1.33 and after rounding up it means 2 pods per zone are started.
   replicas: 3
 
   statefulSet:
@@ -566,13 +651,15 @@ ingester:
   # -- The name of the PriorityClass for ingester pods
   priorityClassName: null
 
-  # Pod Disruption Budget
+  # -- Pod Disruption Budget for ingester, this will be applied accross availability zones to prevent losing redundancy
   podDisruptionBudget:
     maxUnavailable: 1
 
   podManagementPolicy: Parallel
 
+  # -- NodeSelector to pin ingester pods to certain set of nodes. This is ignored when ingester.zoneAwareReplication.enabled=true.
   nodeSelector: {}
+  # -- Pod affinity settings for the ingester. This is ignored when ingester.zoneAwareReplication.enabled=true.
   affinity: {}
 
   # -- topologySpreadConstraints allows to customize part of the default topologySpreadConstraints. labelSelectors
@@ -632,6 +719,7 @@ ingester:
   containerSecurityContext:
     readOnlyRootFilesystem: true
 
+  # -- updateStrategy of the ingester statefulset. This is ignored when ingester.zoneAwareReplication.enabled=true.
   statefulStrategy:
     type: RollingUpdate
 
@@ -644,6 +732,74 @@ ingester:
   extraVolumeMounts: []
   env: []
   extraEnvFrom: []
+
+  # -- Options to configure zone-aware replication for ingester
+  # Example configuration with full geographical redundancy:
+  # rollout_operator:
+  #   enabled: true
+  # ingester:
+  #   zoneAwareReplication:
+  #     enabled: true
+  #     topologyKey: 'kubernetes.io/hostname'  # This generates default anti-affinity rules
+  #     zones:  # Zone list has to be fully redefined for modification. Update with you actual zones or skip to use logical zones only.
+  #     - name: zone-a
+  #       nodeSelector:
+  #         topology.kubernetes.io/zone: us-central1-a
+  #     - name: zone-a
+  #       nodeSelector:
+  #         topology.kubernetes.io/zone: us-central1-b
+  #     - name: zone-c
+  #       nodeSelector:
+  #         topology.kubernetes.io/zone: us-central1-c
+  #
+  zoneAwareReplication:
+    # -- Enable zone-aware replication for ingester
+    enabled: true
+    # -- Maximum number of ingesters that can be unavailable per zone during rollout
+    maxUnavailable: 25
+    # -- topologyKey to use in pod anti-affinity. If unset, no anti-affinity rules are generated. If set, the generated anti-affinity rule makes sure that pods from different zones do not mix.
+    # E.g.: topologyKey: 'kubernetes.io/hostname'
+    topologyKey: null
+    # -- Auxiliary values for migration, see https://grafana.com/docs/mimir/latest/migration-guide/migrating-from-single-zone-with-helm/
+    migration:
+      # -- Indicate if migration is ongoing for multi zone ingester
+      enabled: false
+      # -- Exclude default zone on write path
+      excludeDefaultZone: false
+      # -- Enable zone-awareness, read path only
+      readPath: false
+      # -- Total number of replicas to start in availability zones when migration is enabled
+      replicas: 0
+      # -- Scale default zone ingesters to 0
+      scaleDownDefaultZone: false
+      # -- Enable zone-awareness, write path only
+      writePath: false
+    # -- Zone definitions for ingester zones. Note: you have to redefine the whole list to change parts as YAML does not allow to modify parts of a list.
+    zones:
+    # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+    - name: zone-a
+      # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
+      # nodeSelector:
+      #   topology.kubernetes.io/zone: zone-a
+      nodeSelector: null
+      # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
+      extraAffinity: {}
+    # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+    - name: zone-b
+      # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
+      # nodeSelector:
+      #   topology.kubernetes.io/zone: zone-b
+      nodeSelector: null
+      # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
+      extraAffinity: {}
+    # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+    - name: zone-c
+      # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
+      # nodeSelector:
+      #   topology.kubernetes.io/zone: zone-c
+      nodeSelector: null
+      # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
+      extraAffinity: {}
 
 overrides_exporter:
   enabled: true
@@ -984,6 +1140,10 @@ query_scheduler:
   extraEnvFrom: []
 
 store_gateway:
+  # -- Total number of replicas for the store-gateway accross all availability zones
+  # If store_gateway.zoneAwareReplication.enabled=false, this number is taken as is.
+  # Otherwise each zone starts `ceil(replicas / number_of_zones)` number of pods.
+  #   E.g. if 'replicas' is set to 4 and there are 3 zones, then 4/3=1.33 and after rounding up it means 2 pods per zone are started.
   replicas: 1
 
   service:
@@ -1004,14 +1164,16 @@ store_gateway:
   # Pod Annotations
   podAnnotations: {}
 
-  # Pod Disruption Budget
+  # -- Pod Disruption Budget for store-gateway, this will be applied accross availability zones to prevent losing redundancy
   podDisruptionBudget:
     maxUnavailable: 1
 
   # -- The name of the PriorityClass for store-gateway pods
   priorityClassName: null
 
+  # -- NodeSelector to pin store-gateway pods to certain set of nodes. This is ignored when store_gateway.zoneAwareReplication.enabled=true.
   nodeSelector: {}
+  # -- Pod affinity settings for the store_gateway. This is ignored when store_gateway.zoneAwareReplication.enabled=true.
   affinity: {}
 
   # -- topologySpreadConstraints allows to customize part of the default topologySpreadConstraints. labelSelectors
@@ -1073,6 +1235,7 @@ store_gateway:
   containerSecurityContext:
     readOnlyRootFilesystem: true
 
+  # -- updateStrategy of the store-gateway statefulset. This is ignored when store_gateway.zoneAwareReplication.enabled=true.
   strategy:
     type: RollingUpdate
 
@@ -1085,6 +1248,66 @@ store_gateway:
   extraVolumeMounts: []
   env: []
   extraEnvFrom: []
+
+  # -- Options to configure zone-aware replication for store-gateway
+  # Example configuration with full geographical redundancy:
+  # rollout_operator:
+  #   enabled: true
+  # store_gateway:
+  #   zoneAwareReplication:
+  #     enabled: true
+  #     topologyKey: 'kubernetes.io/hostname'  # This generates default anti-affinity rules
+  #     zones:  # Zone list has to be fully redefined for modification. Update with you actual zones or skip to use logical zones only.
+  #     - name: zone-a
+  #       nodeSelector:
+  #         topology.kubernetes.io/zone: us-central1-a
+  #     - name: zone-a
+  #       nodeSelector:
+  #         topology.kubernetes.io/zone: us-central1-b
+  #     - name: zone-c
+  #       nodeSelector:
+  #         topology.kubernetes.io/zone: us-central1-c
+  #
+  zoneAwareReplication:
+    # -- Enable zone-aware replication for store-gateway
+    enabled: true
+    # -- Maximum number of store-gateways that can be unavailable per zone during rollout
+    maxUnavailable: 10
+    # -- topologyKey to use in pod anti-affinity. If unset, no anti-affinity rules are generated. If set, the generated anti-affinity rule makes sure that pods from different zones do not mix.
+    # E.g.: topologyKey: 'kubernetes.io/hostname'
+    topologyKey: null
+    # -- Auxiliary values for migration, see https://grafana.com/docs/mimir/latest/migration-guide/migrating-from-single-zone-with-helm/
+    migration:
+      # -- Indicate if migration is ongoing for multi zone store-gateway
+      enabled: false
+      # -- Enable zone-awareness on the readPath
+      readPath: false
+    # -- Zone definitions for store-gateway zones. Note: you have to redefine the whole list to change parts as YAML does not allow to modify parts of a list.
+    zones:
+    # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+    - name: zone-a
+      # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
+      # nodeSelector:
+      #   topology.kubernetes.io/zone: zone-a
+      nodeSelector: null
+      # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
+      extraAffinity: {}
+    # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+    - name: zone-b
+      # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
+      # nodeSelector:
+      #   topology.kubernetes.io/zone: zone-b
+      nodeSelector: null
+      # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
+      extraAffinity: {}
+    # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+    - name: zone-c
+      # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
+      # nodeSelector:
+      #   topology.kubernetes.io/zone: zone-c
+      nodeSelector: null
+      # -- extraAffinity adds user defined custom affinity rules (merged with generated rules)
+      extraAffinity: {}
 
 compactor:
   replicas: 1
@@ -1501,6 +1724,10 @@ results-cache:
     annotations: {}
     labels: {}
 
+# -- Setting for the Grafana Rollout Operator https://github.com/grafana/helm-charts/tree/main/charts/rollout-operator
+rollout_operator:
+  enabled: true
+
 minio:
   enabled: true
   mode: standalone
@@ -1789,13 +2016,13 @@ nginx:
 
           # Alertmanager endpoints
           location {{ template "mimir.alertmanagerHttpPrefix" . }} {
-            proxy_pass      http://{{ template "mimir.fullname" . }}-alertmanager.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
+            proxy_pass      http://{{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
           }
           location = /multitenant_alertmanager/status {
-            proxy_pass      http://{{ template "mimir.fullname" . }}-alertmanager.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
+            proxy_pass      http://{{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
           }
           location = /api/v1/alerts {
-            proxy_pass      http://{{ template "mimir.fullname" . }}-alertmanager.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
+            proxy_pass      http://{{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
           }
 
           # Ruler endpoints

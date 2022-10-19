@@ -170,13 +170,26 @@ Memberlist bind port
 
 {{/*
 Resource name template
+Params:
+  ctx = . context
+  component = component name (optional)
+  rolloutZoneName = rollout zone name (optional)
 */}}
 {{- define "mimir.resourceName" -}}
-{{ include "mimir.fullname" .ctx }}{{- if .component -}}-{{ .component }}{{- end -}}
+{{- $resourceName := include "mimir.fullname" .ctx -}}
+{{- if .component -}}{{- $resourceName = printf "%s-%s" $resourceName .component -}}{{- end -}}
+{{- if and (not .component) .rolloutZoneName -}}{{- printf "Component name cannot be empty if rolloutZoneName (%s) is set" .rolloutZoneName | fail -}}{{- end -}}
+{{- if .rolloutZoneName -}}{{- $resourceName = printf "%s-%s" $resourceName .rolloutZoneName -}}{{- end -}}
+{{- if gt (len $resourceName) 253 -}}{{- printf "Resource name (%s) exceeds kubernetes limit of 253 character. To fix: shorten release name if this will be a fresh install or shorten zone names (e.g. \"a\" instead of \"zone-a\") if using zone-awareness." $resourceName | fail -}}{{- end -}}
+{{- $resourceName -}}
 {{- end -}}
 
 {{/*
-Simple resource labels
+Resource labels
+Params:
+  ctx = . context
+  component = component name (optional)
+  rolloutZoneName = rollout zone name (optional)
 */}}
 {{- define "mimir.labels" -}}
 {{- if .ctx.Values.enterprise.legacyLabels }}
@@ -205,6 +218,14 @@ app.kubernetes.io/version: {{ .ctx.Chart.AppVersion | quote }}
 {{- end }}
 app.kubernetes.io/managed-by: {{ .ctx.Release.Service }}
 {{- end }}
+{{- if .rolloutZoneName }}
+{{-   if not .component }}
+{{-     printf "Component name cannot be empty if rolloutZoneName (%s) is set" .rolloutZoneName | fail }}
+{{-   end }}
+name: "{{ .component }}-{{ .rolloutZoneName }}" {{- /* Currently required for rollout-operator. https://github.com/grafana/rollout-operator/issues/15 */}}
+rollout-group: {{ .component }}
+zone: {{ .rolloutZoneName }}
+{{- end }}
 {{- end -}}
 
 {{/*
@@ -213,12 +234,15 @@ Params:
   ctx = . context
   component = name of the component
   memberlist = true if part of memberlist gossip ring
+  rolloutZoneName = rollout zone name (optional)
 */}}
 {{- define "mimir.podLabels" -}}
 {{- if .ctx.Values.enterprise.legacyLabels }}
 {{- if .component -}}
 app: {{ include "mimir.name" .ctx }}-{{ .component }}
+{{- if not .rolloutZoneName }}
 name: {{ .component }}
+{{- end }}
 {{- end }}
 {{- if .memberlist }}
 gossip_ring_member: "true"
@@ -243,6 +267,14 @@ app.kubernetes.io/part-of: memberlist
 {{- $componentSection := include "mimir.componentSectionFromName" . | fromYaml }}
 {{- with ($componentSection).podLabels }}
 {{ toYaml . }}
+{{- end }}
+{{- if .rolloutZoneName }}
+{{-   if not .component }}
+{{-     printf "Component name cannot be empty if rolloutZoneName (%s) is set" .rolloutZoneName | fail }}
+{{-   end }}
+name: "{{ .component }}-{{ .rolloutZoneName }}" {{- /* Currently required for rollout-operator. https://github.com/grafana/rollout-operator/issues/15 */}}
+rollout-group: {{ .component }}
+zone: {{ .rolloutZoneName }}
 {{- end }}
 {{- end -}}
 
@@ -270,7 +302,11 @@ checksum/config: {{ include (print .ctx.Template.BasePath "/mimir-config.yaml") 
 {{- end -}}
 
 {{/*
-Simple service selector labels
+Service selector labels
+Params:
+  ctx = . context
+  component = name of the component
+  rolloutZoneName = rollout zone name (optional)
 */}}
 {{- define "mimir.selectorLabels" -}}
 {{- if .ctx.Values.enterprise.legacyLabels }}
@@ -285,7 +321,15 @@ app.kubernetes.io/instance: {{ .ctx.Release.Name }}
 app.kubernetes.io/component: {{ .component }}
 {{- end }}
 {{- end -}}
+{{- if .rolloutZoneName }}
+{{-   if not .component }}
+{{-     printf "Component name cannot be empty if rolloutZoneName (%s) is set" .rolloutZoneName | fail }}
+{{-   end }}
+rollout-group: {{ .component }}
+zone: {{ .rolloutZoneName }}
+{{- end }}
 {{- end -}}
+
 
 {{/*
 Alertmanager http prefix
@@ -402,4 +446,109 @@ Return if we should create a SecurityContextConstraints. Takes into account user
 
 {{- define "mimir.remoteWriteUrl.inCluster" -}}
 {{ include "mimir.gatewayUrl" . }}/api/v1/push
+{{- end -}}
+
+{{/*
+Creates dict for zone-aware replication configuration
+Params:
+  ctx = . context
+  component = component name
+Return value:
+  {
+    zoneName: {
+      affinity: <affinity>,
+      nodeSelector: <nodeSelector>,
+      replicas: <N>
+    },
+    ...
+  }
+During migration there is a special case where an extra "zone" is generated with zonaName == "" empty string.
+The empty string evaulates to false in boolean expressions so it is treated as the default (non zone-aware) zone,
+which allows us to keep generating everything for the default zone.
+*/}}
+{{- define "mimir.zoneAwareReplicationMap" -}}
+{{- $zonesMap := (dict) -}}
+{{- $componentSection := include "mimir.componentSectionFromName" . | fromYaml -}}
+{{- $defaultZone := (dict "affinity" $componentSection.affinity "nodeSelector" $componentSection.nodeSelector "replicas" $componentSection.replicas) -}}
+
+{{- if $componentSection.zoneAwareReplication.enabled -}}
+{{- $numberOfZones := len $componentSection.zoneAwareReplication.zones -}}
+{{- if lt $numberOfZones 3 -}}
+{{- fail "When zone-awareness is enabled, you must have at least 3 zones defined." -}}
+{{- end -}}
+
+{{- $requestedReplicas := $componentSection.replicas -}}
+{{- if and (has .component (list "ingester" "alertmanager")) $componentSection.zoneAwareReplication.migration.enabled (not $componentSection.zoneAwareReplication.migration.writePath) -}}
+{{- $requestedReplicas = $componentSection.zoneAwareReplication.migration.replicas }}
+{{- end -}}
+{{- $replicaPerZone := div (add $requestedReplicas $numberOfZones -1) $numberOfZones -}}
+
+{{- range $idx, $rolloutZone := $componentSection.zoneAwareReplication.zones -}}
+{{- $_ := set $zonesMap $rolloutZone.name (dict
+  "affinity" (($rolloutZone.extraAffinity | default (dict)) | mergeOverwrite (include "mimir.zoneAntiAffinity" (dict "component" $.component "rolloutZoneName" $rolloutZone.name "topologyKey" $componentSection.zoneAwareReplication.topologyKey ) | fromYaml ) )
+  "nodeSelector" ($rolloutZone.nodeSelector | default (dict) )
+  "replicas" $replicaPerZone
+  ) -}}
+{{- end -}}
+{{- if $componentSection.zoneAwareReplication.migration.enabled -}}
+{{- if $componentSection.zoneAwareReplication.migration.scaleDownDefaultZone -}}
+{{- $_ := set $defaultZone "replicas" 0 -}}
+{{- end -}}
+{{- $_ := set $zonesMap "" $defaultZone -}}
+{{- end -}}
+
+{{- else -}}
+{{- $_ := set $zonesMap "" $defaultZone -}}
+{{- end -}}
+{{- $zonesMap | toYaml }}
+
+{{- end -}}
+
+{{/*
+Calculate anti-affinity for a zone
+Params:
+  component = component name
+  rolloutZoneName = name of the rollout zone
+  topologyKey = topology key
+*/}}
+{{- define "mimir.zoneAntiAffinity" -}}
+{{- if .topologyKey -}}
+podAntiAffinity:
+  requiredDuringSchedulingIgnoredDuringExecution:
+    - labelSelector:
+        matchExpressions:
+          - key: rollout-group
+            operator: In
+            values:
+              - {{ .component }}
+          - key: app.kubernetes.io/component
+            operator: NotIn
+            values:
+              - {{ .component }}-{{ .rolloutZoneName }}
+      topologyKey: {{ .topologyKey | quote }}
+{{- else -}}
+{}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Calculate annotations with zone-awareness
+Params:
+  ctx = . context
+  component = component name
+  rolloutZoneName = rollout zone name (optional)
+*/}}
+{{- define "mimir.componentAnnotations" -}}
+{{- $componentSection := include "mimir.componentSectionFromName" . | fromYaml -}}
+{{- if and (or $componentSection.zoneAwareReplication.enabled $componentSection.zoneAwareReplication.migration.enabled) .rolloutZoneName }}
+{{- $map := dict "rollout-max-unavailable" ($componentSection.zoneAwareReplication.maxUnavailable | toString) -}}
+{{- toYaml (deepCopy $map | mergeOverwrite $componentSection.annotations) }}
+{{- else -}}
+{{ toYaml $componentSection.annotations }}
+{{- end -}}
+{{- end -}}
+
+
+{{- define "mimir.var_dump" -}}
+{{- . | mustToPrettyJson | printf "\nThe JSON output of the dumped var is: \n%s" | fail }}
 {{- end -}}

@@ -1,0 +1,20 @@
+diff -c -r step5/mimir-distributed/templates/ingester/ingester-statefulset.yaml step6/mimir-distributed/templates/ingester/ingester-statefulset.yaml
+*** step5/mimir-distributed/templates/ingester/ingester-statefulset.yaml
+--- step6/mimir-distributed/templates/ingester/ingester-statefulset.yaml
+***************
+*** 15,21 ****
+    namespace: "default"
+  spec:
+    podManagementPolicy: Parallel
+!   replicas: 3
+    selector:
+      matchLabels:
+        app.kubernetes.io/name: mimir
+--- 15,21 ----
+    namespace: "default"
+  spec:
+    podManagementPolicy: Parallel
+!   replicas: 0
+    selector:
+      matchLabels:
+        app.kubernetes.io/name: mimir

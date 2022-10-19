@@ -5,3 +5,12 @@ enterprise:
   enabled: true
 graphite:
   enabled: true
+
+ingester:
+  zoneAwareReplication:
+    enabled: false
+store_gateway:
+  zoneAwareReplication:
+    enabled: false
+rollout_operator:
+  enabled: false

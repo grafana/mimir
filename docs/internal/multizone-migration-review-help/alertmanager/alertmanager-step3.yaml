@@ -1,0 +1,6 @@
+alertmanager:
+  zoneAwareReplication:
+    enabled: true
+
+rollout_operator:
+  enabled: true

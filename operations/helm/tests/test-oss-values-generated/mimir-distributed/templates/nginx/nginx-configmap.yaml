@@ -64,13 +64,13 @@ data:
     
         # Alertmanager endpoints
         location /alertmanager {
-          proxy_pass      http://test-oss-values-mimir-alertmanager.citestns.svc.cluster.local:8080$request_uri;
+          proxy_pass      http://test-oss-values-mimir-alertmanager-headless.citestns.svc.cluster.local:8080$request_uri;
         }
         location = /multitenant_alertmanager/status {
-          proxy_pass      http://test-oss-values-mimir-alertmanager.citestns.svc.cluster.local:8080$request_uri;
+          proxy_pass      http://test-oss-values-mimir-alertmanager-headless.citestns.svc.cluster.local:8080$request_uri;
         }
         location = /api/v1/alerts {
-          proxy_pass      http://test-oss-values-mimir-alertmanager.citestns.svc.cluster.local:8080$request_uri;
+          proxy_pass      http://test-oss-values-mimir-alertmanager-headless.citestns.svc.cluster.local:8080$request_uri;
         }
     
         # Ruler endpoints

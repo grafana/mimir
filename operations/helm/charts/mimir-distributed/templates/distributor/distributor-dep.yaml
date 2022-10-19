@@ -44,6 +44,14 @@ spec:
             - "-target=distributor"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+          {{- if .Values.ingester.zoneAwareReplication.migration.enabled }}
+            {{- if not .Values.ingester.zoneAwareReplication.migration.writePath }}
+            - "-ingester.ring.zone-awareness-enabled=false"
+            {{- end }}
+            {{- if .Values.ingester.zoneAwareReplication.migration.excludeDefaultZone }}
+            - "-ingester.ring.excluded-zones=zone-default"
+            {{- end }}
+          {{- end }}
           {{- range $key, $value := .Values.distributor.extraArgs }}
             - "-{{ $key }}={{ $value }}"
           {{- end }}

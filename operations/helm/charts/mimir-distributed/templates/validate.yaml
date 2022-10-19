@@ -145,7 +145,86 @@
 {{- end }}
 
 {{- if not .Values.ingester.statefulSet.enabled -}}
-{{- fail "You have set ingester.statefulSet.enabled: false. Ingesters are stateful, kubernetes Deployment workloads are no longer supported. Please refer to the documentation for more details." }}
+{{- fail "You have set ingester.statefulSet.enabled=false. Ingesters are stateful, kubernetes Deployment workloads are no longer supported. Please refer to the documentation for more details." }}
+{{- end -}}
+
+
+{{- if and .Values.ingester.zoneAwareReplication.enabled (not ((($calculatedConfig).ingester).ring).zone_awareness_enabled) -}}
+{{- fail "You have set ingester.zoneAwareReplication.enabled=true. The mimir.config must include ingester.ring.zone_awareness_enabled=true. Please merge the latest mimir.config from the chart with your mimir.config."}}
+{{- end -}}
+
+{{- if and .Values.ingester.zoneAwareReplication.migration.enabled (not .Values.ingester.zoneAwareReplication.enabled) -}}
+{{- fail "You have set ingester.zoneAwareReplication.migration.enabled=true, but ingester.zoneAwareReplication.enabled=false. Please consult the Migrating from single zone with Helm document."}}
+{{- end -}}
+
+{{- with $.Values.ingester.zoneAwareReplication.migration }}
+{{- if and .replicas (not .enabled) }}
+{{- fail "You have set ingester.zoneAwareReplication.migration.replicas, but ingester.zoneAwareReplication.migration.enabled=false. Please consult the Migrating from single zone with Helm document."}}
+{{- end -}}
+{{/* Check that if a migration step is enabled, every previous step is also enabled. */}}
+{{- $steps := list "enabled" "writePath" "readPath" "excludeDefaultZone" "scaleDownDefaultZone" }}
+{{- range $i, $item := rest $steps -}}
+{{- range $j, $mustHave := slice $steps 0 $i }}
+{{- with $.Values.ingester.zoneAwareReplication.migration }}
+{{- if and (index . $item) (not (index . $mustHave)) -}}
+{{- printf "You have set ingester.zoneAwareReplication.migration.%s=true, but ingester.zoneAwareReplication.migration.%s=false. Please consult the Migrating from single zone with Helm document." $item $mustHave | fail }}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+
+{{- if and .Values.store_gateway.zoneAwareReplication.enabled (not ((($calculatedConfig).store_gateway).sharding_ring).zone_awareness_enabled) -}}
+{{- fail "You have set store_gateway.zoneAwareReplication.enabled=true. The mimir.config must include store_gateway.sharding_ring.zone_awareness_enabled=true. Please merge the latest mimir.config from the chart with your mimir.config."}}
+{{- end -}}
+
+{{- if and .Values.store_gateway.zoneAwareReplication.migration.enabled (ne (((($calculatedConfig).store_gateway).sharding_ring).kvstore).prefix "multi-zone/") -}}
+{{- fail "You have set store_gateway.zoneAwareReplication.migration.enabled=true. The mimir.config must include store_gateway.sharding_ring.kvstore.prefix=multi-zone/. Please merge the latest mimir.config from the chart with your mimir.config."}}
+{{- end -}}
+
+{{- if and .Values.store_gateway.zoneAwareReplication.migration.enabled (not .Values.store_gateway.zoneAwareReplication.enabled) -}}
+{{- fail "You have set store_gateway.zoneAwareReplication.migration.enabled=true, but store_gateway.zoneAwareReplication.enabled=false. Please consult the Migrating from single zone with Helm document."}}
+{{- end -}}
+
+{{- with $.Values.store_gateway.zoneAwareReplication.migration }}
+{{/* Check that if a migration step is enabled, every previous step is also enabled. */}}
+{{- $steps := list "enabled" "readPath" }}
+{{- range $i, $item := rest $steps -}}
+{{- range $j, $mustHave := slice $steps 0 $i }}
+{{- with $.Values.store_gateway.zoneAwareReplication.migration }}
+{{- if and (index . $item) (not (index . $mustHave)) -}}
+{{- printf "You have set store_gateway.zoneAwareReplication.migration.%s=true, but store_gateway.zoneAwareReplication.migration.%s=false. Please consult the Migrating from single zone with Helm document." $item $mustHave | fail }}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{- if and .Values.alertmanager.zoneAwareReplication.enabled (not .Values.alertmanager.statefulSet.enabled) -}}
+{{- fail "You have set alertmanager.zoneAwareReplication.enabled=true, but alertmanager.statefulSet.enabled=false. This is not a supported configuration." -}}
+{{- end -}}
+
+{{- if and .Values.alertmanager.zoneAwareReplication.enabled (not ((($calculatedConfig).alertmanager).sharding_ring).zone_awareness_enabled) -}}
+{{- fail "You have set alertmanager.zoneAwareReplication.enabled=true. The mimir.config must include alertmanager.sharding_ring.zone_awareness_enabled=true. Please merge the latest mimir.config from the chart with your mimir.config."}}
+{{- end -}}
+
+{{- if and .Values.alertmanager.zoneAwareReplication.migration.enabled (not .Values.alertmanager.zoneAwareReplication.enabled) -}}
+{{- fail "You have set alertmanager.zoneAwareReplication.migration.enabled=true, but alertmanager.zoneAwareReplication.enabled=false. Please consult the Migrating from single zone with Helm document."}}
+{{- end -}}
+
+{{- with $.Values.alertmanager.zoneAwareReplication.migration }}
+{{/* Check that if a migration step is enabled, every previous step is also enabled. */}}
+{{- $steps := list "enabled" "writePath" }}
+{{- range $i, $item := rest $steps -}}
+{{- range $j, $mustHave := slice $steps 0 $i }}
+{{- with $.Values.alertmanager.zoneAwareReplication.migration }}
+{{- if and (index . $item) (not (index . $mustHave)) -}}
+{{- printf "You have set alertmanager.zoneAwareReplication.migration.%s=true, but alertmanager.zoneAwareReplication.migration.%s=false. Please consult the Migrating from single zone with Helm document." $item $mustHave | fail }}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 
 {{- with .Values.nginx -}}
