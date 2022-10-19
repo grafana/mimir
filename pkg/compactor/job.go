@@ -99,6 +99,13 @@ func (job *Job) MaxTime() int64 {
 	return max
 }
 
+// Metas returns the metadata for each block that is part of this job, ordered by the block's MinTime
+func (job *Job) Metas() []*metadata.Meta {
+	out := make([]*metadata.Meta, len(job.metasByMinTime))
+	copy(out, job.metasByMinTime)
+	return out
+}
+
 // Labels returns the external labels for the output block(s) of this job.
 func (job *Job) Labels() labels.Labels {
 	return job.labels
