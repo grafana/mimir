@@ -46,5 +46,10 @@ find_prev_release() {
     exit 1
   fi
 
+  # Find the prev release version. Since all tags start with "mimir-"
+  # we can simply find the version:
+  PREV_RELEASE_VERSION=$(echo "${PREV_RELEASE_TAG}" | cut -c 7-)
+
   export PREV_RELEASE_TAG
+  export PREV_RELEASE_VERSION
 }

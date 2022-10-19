@@ -381,8 +381,8 @@ func (a *API) RegisterQueryAPI(handler http.Handler, buildInfoHandler http.Handl
 	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/cardinality/label_values"), handler, true, true, "GET", "POST")
 }
 
-// RegisterQueryFrontend registers the Prometheus routes supported by the
-// Mimir querier service. Currently this can not be registered simultaneously
+// RegisterQueryFrontendHandler registers the Prometheus routes supported by the
+// Mimir querier service. Currently, this can not be registered simultaneously
 // with the Querier.
 func (a *API) RegisterQueryFrontendHandler(h http.Handler, buildInfoHandler http.Handler) {
 	a.RegisterQueryAPI(h, buildInfoHandler)

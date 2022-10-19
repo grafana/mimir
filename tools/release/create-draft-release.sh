@@ -33,7 +33,7 @@ gh release create \
 # Print instructions to move on.
 echo ""
 echo "The draft release has been created. To continue:"
-echo "1. Copy the release notes from the documentation and fix the links."
+echo "1. Copy the release notes from the documentation and fix the links. Skip if publishing a patch release."
 echo "2. Review the draft release."
 echo "3. If this is a stable release, remove the tick from 'This is a pre-release'."
 echo "4. Publish it."
