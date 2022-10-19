@@ -20,8 +20,8 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/notifier"
-	"github.com/thanos-io/thanos/pkg/cacheutil"
 
+	"github.com/grafana/mimir/pkg/cacheutil"
 	"github.com/grafana/mimir/pkg/util"
 )
 

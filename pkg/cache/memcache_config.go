@@ -11,8 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/thanos-io/thanos/pkg/cacheutil"
 	"github.com/thanos-io/thanos/pkg/model"
+
+	"github.com/grafana/mimir/pkg/cacheutil"
 )
 
 var (

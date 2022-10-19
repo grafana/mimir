@@ -13,7 +13,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/thanos-io/thanos/pkg/cacheutil"
+
+	"github.com/grafana/mimir/pkg/cacheutil"
 )
 
 // Cache is a generic interface.
