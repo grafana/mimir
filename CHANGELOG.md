@@ -39,6 +39,23 @@
 ### Jsonnet
 
 * [CHANGE] Replaced the deprecated `policy/v1beta1` with `policy/v1` when configuring a PodDisruptionBudget. #3284
+* [CHANGE] [Common storage configuration](https://grafana.com/docs/mimir/v2.3.x/operators-guide/configure/configure-object-storage-backend/#common-configuration) is now used to configure object storage in all components. This is a breaking change in terms of Jsonnet manifests and also a CLI flag update for components that use object storage, so it will require a rollout of those components. The changes include: #3257
+  * `blocks_storage_backend` was renamed to `storage_backend` and is now used as the common storage backend for all components.
+    * So were the related `blocks_storage_azure_account_(name|key)` and `blocks_storage_s3_endpoint` configurations.
+  * `storage_s3_endpoint` is now rendered by default using the `aws_region` configuration instead of a hardcoded `us-east-1`.
+  * `ruler_client_type` and `alertmanager_client_type` were renamed to `ruler_storage_backend` and `alertmanager_storage_backend` respectively, and their corresponding CLI flags won't be rendered unless explicitly set to a value different from the one in `storage_backend` (like `local`).
+  * `alertmanager_s3_bucket_name`, `alertmanager_gcs_bucket_name` and `alertmanager_azure_container_name` have been removed, and replaced by a single `alertmanager_storage_bucket_name` configuration used for all object storages.
+  * `genericBlocksStorageConfig` configuration object was removed, and so any extensions to it will be now ignored. Use `blockStorageConfig` instead.
+  * `rulerClientConfig` and `alertmanagerStorageClientConfig` configuration objects were renamed to `rulerStorageConfig` and `alertmanagerStorageConfig` respectively, and so any extensions to their previous names will be now ignored. Use the new names instead.
+  * The CLI flags `*.s3.region` are no longer rendered as they are optional and the region can be inferred by Mimir by performing an initial API call to the endpoint.
+  * The migration to this change should usually consist of:
+    * Renaming `blocks_storage_backend` key to `storage_backend`.
+    * For Azure/S3:
+      * Renaming `blocks_storage_(azure|s3)_*` configurations to `storage_(azure|s3)_*`.
+      * If `ruler_storage_(azure|s3)_*` and `alertmanager_storage_(azure|s3)_*` keys were different from the `block_storage_*` ones, they should be now provided using CLI flags, see [configuration reference](https://grafana.com/docs/mimir/v2.3.x/operators-guide/configure/reference-configuration-parameters/) for more details.
+    * Removing `ruler_client_type` and `alertmanager_client_type` if their value match the `storage_backend`, or renaming them to their new names otherwise.
+    * Reviewing any possible extensions to `genericBlocksStorageConfig`, `rulerClientConfig` and `alertmanagerStorageClientConfig` and moving them to the corresponding new options.
+    * Renaming the alertmanager's bucket name configuration from provider-specific to the new `alertmanager_storage_bucket_name` key.
 * [ENHANCEMENT] Added `$._config.usageStatsConfig` to track the installation mode via the anonymous usage statistics. #3294
 * [ENHANCEMENT] The query-tee node port (`$._config.query_tee_node_port`) is now optional. #3272
 * [BUGFIX] Fixed query-scheduler ring configuration for dedicated ruler's queries and query-frontends. #3237 #3239
