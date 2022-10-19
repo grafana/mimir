@@ -175,9 +175,12 @@ local filename = 'mimir-overview.json';
             $.queries.query_frontend.rangeQueriesPerSecond,
             $.queries.query_frontend.labelQueriesPerSecond,
             $.queries.query_frontend.seriesQueriesPerSecond,
+            $.queries.query_frontend.remoteReadQueriesPerSecond,
+            $.queries.query_frontend.metadataQueriesPerSecond,
+            $.queries.query_frontend.exemplarsQueriesPerSecond,
             $.queries.query_frontend.otherQueriesPerSecond,
           ],
-          ['instant queries', 'range queries', 'label queries', 'series queries', 'other'],
+          ['instant queries', 'range queries', 'label queries', 'series queries', 'remote read queries', 'metadata queries', 'exemplar queries', 'other'],
         ) +
         $.stack +
         { yaxes: $.yaxes('reqps') },
