@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/thanos-io/thanos/pkg/model"
+	model "github.com/grafana/dskit/flagext"
 
 	"github.com/grafana/mimir/pkg/cacheutil"
 )

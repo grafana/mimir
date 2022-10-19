@@ -17,6 +17,7 @@ import (
 	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	model "github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -26,7 +27,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/gate"
 	"github.com/thanos-io/thanos/pkg/discovery/dns"
 	memcacheDiscovery "github.com/thanos-io/thanos/pkg/discovery/memcache"
-	"github.com/thanos-io/thanos/pkg/model"
 )
 
 const (

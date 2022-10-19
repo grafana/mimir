@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	model "github.com/grafana/dskit/flagext"
 	lru "github.com/hashicorp/golang-lru/simplelru"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
@@ -19,7 +20,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/thanos-io/thanos/pkg/model"
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"

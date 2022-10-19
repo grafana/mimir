@@ -12,9 +12,9 @@ import (
 
 	"github.com/alecthomas/units"
 	"github.com/go-kit/log"
+	model "github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/thanos-io/thanos/pkg/model"
 
 	"github.com/grafana/mimir/pkg/cache"
 	"github.com/grafana/mimir/pkg/cacheutil"
