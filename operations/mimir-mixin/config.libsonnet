@@ -27,21 +27,21 @@
     // Whenever you do any change here, please reflect it in the doc at:
     // docs/sources/operators-guide/monitoring-grafana-mimir/requirements.md
     job_names: {
-      ingester: '(ingester.*|cortex|mimir|mimir-write)',  // Match also custom and per-zone ingester deployments.
-      distributor: '(distributor|cortex|mimir|mimir-write)',
-      querier: '(querier.*|cortex|mimir|mimir-read)',  // Match also custom querier deployments.
+      ingester: '(ingester.*|cortex|mimir|mimir-write.*)',  // Match also custom and per-zone ingester deployments.
+      distributor: '(distributor|cortex|mimir|mimir-write.*)',
+      querier: '(querier.*|cortex|mimir|mimir-read.*)',  // Match also custom querier deployments.
       ruler_querier: '(ruler-querier.*)',  // Match also custom querier deployments.
-      ruler: '(ruler|cortex|mimir|mimir-backend)',
-      query_frontend: '(query-frontend.*|cortex|mimir|mimir-read)',  // Match also custom query-frontend deployments.
+      ruler: '(ruler|cortex|mimir|mimir-backend.*)',
+      query_frontend: '(query-frontend.*|cortex|mimir|mimir-read.*)',  // Match also custom query-frontend deployments.
       ruler_query_frontend: '(ruler-query-frontend.*)',  // Match also custom ruler-query-frontend deployments.
-      query_scheduler: '(query-scheduler.*|mimir-backend)',  // Not part of single-binary. Match also custom query-scheduler deployments.
+      query_scheduler: '(query-scheduler.*|mimir-backend.*)',  // Not part of single-binary. Match also custom query-scheduler deployments.
       ruler_query_scheduler: '(ruler-query-scheduler.*)',  // Not part of single-binary. Match also custom query-scheduler deployments.
       ring_members: ['alertmanager', 'compactor', 'distributor', 'ingester.*', 'querier.*', 'ruler', 'ruler-querier.*', 'store-gateway.*', 'cortex', 'mimir'],
-      store_gateway: '(store-gateway.*|cortex|mimir|mimir-backend)',  // Match also per-zone store-gateway deployments.
+      store_gateway: '(store-gateway.*|cortex|mimir|mimir-backend.*)',  // Match also per-zone store-gateway deployments.
       gateway: '(gateway|cortex-gw|cortex-gw-internal)',
-      compactor: '(compactor.*|cortex|mimir|mimir-backend)',  // Match also custom compactor deployments.
-      alertmanager: '(alertmanager|cortex|mimir|mimir-backend)',
-      overrides_exporter: '(overrides-exporter|mimir-backend)',
+      compactor: '(compactor.*|cortex|mimir|mimir-backend.*)',  // Match also custom compactor deployments.
+      alertmanager: '(alertmanager|cortex|mimir|mimir-backend.*)',
+      overrides_exporter: '(overrides-exporter|mimir-backend.*)',
     },
 
     // The label used to differentiate between different Kubernetes clusters.
