@@ -519,6 +519,8 @@ Querying with using `{__mimir_storage__="ephemeral"}` selector no longer works. 
 
 ### Tools
 
+* [ENHANCEMENT] Querier: Reduce allocations on query stream response unmarshal. #3295
+
 ## 2.5.0
 
 ### Grafana Mimir

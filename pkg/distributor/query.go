@@ -10,6 +10,7 @@ package distributor
 import (
 	"context"
 	"io"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log/level"
@@ -202,6 +203,19 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 	queryLimiter := limiter.QueryLimiterFromContextWithFallback(ctx)
 	reqStats := stats.FromContext(ctx)
 
+	var unsafeResponsesMtx sync.Mutex
+	unsafeResponses := make([]*ingester_client.QueryStreamResponse, 0, len(replicationSet.Instances))
+
+	defer func() {
+		unsafeResponsesMtx.Lock()
+		defer unsafeResponsesMtx.Unlock()
+
+		// Reuse ingester query stream responses.
+		for _, unsafeResp := range unsafeResponses {
+			ingester_client.ReuseQueryStreamResponse(unsafeResp)
+		}
+	}()
+
 	queryIngester := func(ctx context.Context, ing *ring.InstanceDesc) (ingesterQueryResult, error) {
 		client, err := d.ingesterPool.GetClientFor(ing.Addr)
 		if err != nil {
@@ -231,7 +245,9 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 		streamingSeriesCount := 0
 
 		for {
-			resp, err := stream.Recv()
+			var unsafeResp ingester_client.WrappedQueryStreamResponse
+
+			err := stream.(ingester_client.IngesterQueryStreamClientWrappedReceiver).RecvWrapped(&unsafeResp)
 			if errors.Is(err, io.EOF) {
 				// We will never get an EOF here from an ingester that is streaming chunks, so we don't need to do anything to set up streaming here.
 				return result, nil
@@ -239,36 +255,36 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 				return ingesterQueryResult{}, err
 			}
 
-			if len(resp.Timeseries) > 0 {
-				for _, series := range resp.Timeseries {
+			if len(unsafeResp.Timeseries) > 0 {
+				for _, series := range unsafeResp.Timeseries {
 					if limitErr := queryLimiter.AddSeries(series.Labels); limitErr != nil {
 						return ingesterQueryResult{}, validation.LimitError(limitErr.Error())
 					}
 				}
 
-				result.timeseriesBatches = append(result.timeseriesBatches, resp.Timeseries)
-			} else if len(resp.Chunkseries) > 0 {
+				result.timeseriesBatches = append(result.timeseriesBatches, unsafeResp.Timeseries)
+			} else if len(unsafeResp.Chunkseries) > 0 {
 				// Enforce the max chunks limits.
-				if chunkLimitErr := queryLimiter.AddChunks(ingester_client.ChunksCount(resp.Chunkseries)); chunkLimitErr != nil {
+				if chunkLimitErr := queryLimiter.AddChunks(ingester_client.ChunksCount(unsafeResp.Chunkseries)); chunkLimitErr != nil {
 					return ingesterQueryResult{}, validation.LimitError(chunkLimitErr.Error())
 				}
 
-				for _, series := range resp.Chunkseries {
+				for _, series := range unsafeResp.Chunkseries {
 					if limitErr := queryLimiter.AddSeries(series.Labels); limitErr != nil {
 						return ingesterQueryResult{}, validation.LimitError(limitErr.Error())
 					}
 				}
 
-				if chunkBytesLimitErr := queryLimiter.AddChunkBytes(ingester_client.ChunksSize(resp.Chunkseries)); chunkBytesLimitErr != nil {
+				if chunkBytesLimitErr := queryLimiter.AddChunkBytes(ingester_client.ChunksSize(unsafeResp.Chunkseries)); chunkBytesLimitErr != nil {
 					return ingesterQueryResult{}, validation.LimitError(chunkBytesLimitErr.Error())
 				}
 
-				result.chunkseriesBatches = append(result.chunkseriesBatches, resp.Chunkseries)
-			} else if len(resp.StreamingSeries) > 0 {
-				labelsBatch := make([]labels.Labels, 0, len(resp.StreamingSeries))
-				streamingSeriesCount += len(resp.StreamingSeries)
+				result.chunkseriesBatches = append(result.chunkseriesBatches, unsafeResp.Chunkseries)
+			} else if len(unsafeResp.StreamingSeries) > 0 {
+				labelsBatch := make([]labels.Labels, 0, len(unsafeResp.StreamingSeries))
+				streamingSeriesCount += len(unsafeResp.StreamingSeries)
 
-				for _, s := range resp.StreamingSeries {
+				for _, s := range unsafeResp.StreamingSeries {
 					if limitErr := queryLimiter.AddSeries(s.Labels); limitErr != nil {
 						return ingesterQueryResult{}, validation.LimitError(limitErr.Error())
 					}
@@ -279,7 +295,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 				streamingSeriesBatches = append(streamingSeriesBatches, labelsBatch)
 			}
 
-			if resp.IsEndOfSeriesStream {
+			if unsafeResp.IsEndOfSeriesStream {
 				if streamingSeriesCount > 0 {
 					result.streamingSeries.Series = make([]labels.Labels, 0, streamingSeriesCount)
 
@@ -294,6 +310,9 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 
 				return result, nil
 			}
+			unsafeResponsesMtx.Lock()
+			unsafeResponses = append(unsafeResponses, unsafeResp.QueryStreamResponse)
+			unsafeResponsesMtx.Unlock()
 		}
 	}
 
@@ -368,7 +387,11 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 		StreamingSeries: mergeSeriesChunkStreams(results, d.estimatedIngestersPerSeries(replicationSet)),
 	}
 	for _, series := range hashToChunkseries {
-		resp.Chunkseries = append(resp.Chunkseries, series)
+		// Make a deep copy of each TimeSeriesChunk object, as those could be reused after invoking
+		// ingester_client.ReuseQueryStreamResponse. Note that the number of chunks allocated in the
+		// copy will still be smaller compared to those contained in the original responses,
+		// as most of those have been deduplicated after calling accumulateChunks function.
+		resp.Chunkseries = append(resp.Chunkseries, ingester_client.CopyTimeSeriesChunk(series))
 	}
 	for _, series := range hashToTimeSeries {
 		resp.Timeseries = append(resp.Timeseries, series)

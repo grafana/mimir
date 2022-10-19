@@ -11,7 +11,9 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/rand"
 	"net/http"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -39,6 +41,7 @@ import (
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/mtime"
 	"github.com/weaveworks/common/user"
+	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
@@ -2827,7 +2830,7 @@ type prepConfig struct {
 	timeOut bool
 }
 
-func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*prometheus.Registry) {
+func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []mockIngester, []*prometheus.Registry) {
 	ingesters := []mockIngester{}
 	for i := 0; i < cfg.happyIngesters; i++ {
 		zone := ""
@@ -3620,6 +3623,44 @@ func (s *labelNamesAndValuesMockStream) Recv() (*client.LabelNamesAndValuesRespo
 	return result, nil
 }
 
+func (s *stream) RecvWrapped(m *client.WrappedQueryStreamResponse) error {
+	res, err := s.Recv()
+	if err != nil {
+		return err
+	}
+	// Create a copy of TimeSeriesChunk objects by reusing labels and chunk slices from client package sync.Pool.
+	chunkSeries := make([]client.TimeSeriesChunk, len(res.Chunkseries))
+	for i := 0; i < len(res.Chunkseries); i++ {
+		chunkSeries[i].Labels = client.LabelSliceFromPool()
+		chunkSeries[i].Labels = append(chunkSeries[i].Labels[:0], res.Chunkseries[i].Labels...)
+
+		chunks := client.ChunkSliceFromPool()
+
+		j := 0
+		for ; j < len(res.Chunkseries[i].Chunks); j++ {
+			if j < len(chunks) {
+				chunks[j].Encoding = res.Chunkseries[i].Chunks[j].Encoding
+				chunks[j].StartTimestampMs = res.Chunkseries[i].Chunks[j].StartTimestampMs
+				chunks[j].EndTimestampMs = res.Chunkseries[i].Chunks[j].EndTimestampMs
+				chunks[j].Data = append(chunks[j].Data[:0], res.Chunkseries[i].Chunks[j].Data...)
+			} else {
+				chunks = append(chunks, client.Chunk{
+					Encoding:         res.Chunkseries[i].Chunks[j].Encoding,
+					StartTimestampMs: res.Chunkseries[i].Chunks[j].StartTimestampMs,
+					EndTimestampMs:   res.Chunkseries[i].Chunks[j].StartTimestampMs,
+					Data:             append([]byte(nil), res.Chunkseries[i].Chunks[j].Data...),
+				})
+			}
+		}
+		chunkSeries[i].Chunks = chunks[:j]
+	}
+	m.QueryStreamResponse = &client.QueryStreamResponse{
+		Chunkseries: chunkSeries,
+		Timeseries:  res.Timeseries,
+	}
+	return nil
+}
+
 func (i *mockIngester) LabelValuesCardinality(_ context.Context, req *client.LabelValuesCardinalityRequest, _ ...grpc.CallOption) (client.Ingester_LabelValuesCardinalityClient, error) {
 	i.Lock()
 	defer i.Unlock()
@@ -4044,6 +4085,107 @@ func TestDistributor_Push_Relabel(t *testing.T) {
 				assert.Equal(t, tc.expectedSeries, mimirpb.FromLabelAdaptersToLabels(v.Labels))
 			}
 		}
+	}
+}
+
+func TestDistributor_QueryStreamCorrectness(t *testing.T) {
+	const (
+		totalQueries         = 1_000
+		maxConcurrentQueries = 10
+		totalSeries          = 5
+		maxSamplesPerSeries  = 480 // 2 hours at 1 sample every 15 seconds.
+	)
+
+	const orgID = "user"
+	ctx := user.InjectOrgID(context.Background(), orgID)
+
+	// Prepare matchers sets and series.
+	matchers := make([][]*labels.Matcher, totalSeries)
+	for i := 0; i < totalSeries; i++ {
+		matchers[i] = []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, fmt.Sprintf("n%d", i)),
+		}
+	}
+	series := make([]*mimirpb.PreallocTimeseries, totalSeries)
+	for i := 0; i < totalSeries; i++ {
+		ss := &mimirpb.PreallocTimeseries{
+			TimeSeries: &mimirpb.TimeSeries{
+				Labels: []mimirpb.LabelAdapter{
+					{Name: labels.MetricName, Value: fmt.Sprintf("n%d", i)},
+				},
+			},
+		}
+		totalSamples := rand.Int31n(maxSamplesPerSeries)
+		now := time.Now().Add(-2 * time.Hour)
+
+		for j := int32(0); j < totalSamples; j++ {
+			ss.Samples = append(ss.Samples, mimirpb.Sample{
+				TimestampMs: now.Add(time.Second * 15 * time.Duration(j)).Unix(),
+				Value:       rand.Float64(),
+			})
+		}
+		series[i] = ss
+	}
+
+	// Set up distributors and ingesters.
+	ds, ingesters, _ := prepare(t, prepConfig{
+		numIngesters:    3,
+		happyIngesters:  3,
+		numDistributors: 1,
+	})
+	// Prepare ingester mocked series.
+	for i := 0; i < len(ingesters); i++ {
+		ingesters[i].timeseries = map[uint32]*mimirpb.PreallocTimeseries{}
+
+		for j := 0; j < totalSeries; j++ {
+			hash := shardByAllLabels(orgID, series[j].Labels)
+			ingesters[i].timeseries[hash] = series[j]
+		}
+	}
+
+	wg := sync.WaitGroup{}
+	wg.Add(totalQueries)
+
+	// Run total queries concurrently asking for all possible series
+	// to validate that nothing messes up when querying multiple ingesters.
+	type queryResult struct {
+		seriesIdx int
+		resp      client.CombinedQueryStreamResponse
+	}
+	results := make(chan queryResult, totalQueries)
+
+	var indexes atomic.Int64
+	indexes.Store(-1)
+
+	for ix := 0; ix < maxConcurrentQueries; ix++ {
+		go func() {
+			for {
+				idx := int(indexes.Add(1))
+				if idx >= totalQueries {
+					return
+				}
+				seriesIdx := idx % totalSeries
+
+				resp, err := ds[0].QueryStream(ctx, math.MinInt64, math.MaxInt64, matchers[seriesIdx]...)
+				require.NoError(t, err)
+
+				results <- queryResult{seriesIdx: seriesIdx, resp: resp}
+				wg.Done()
+			}
+		}()
+	}
+	wg.Wait()
+	close(results)
+
+	seenRes := make(map[int]client.CombinedQueryStreamResponse, totalQueries)
+	for res := range results {
+		prevRes, ok := seenRes[res.seriesIdx]
+		if !ok {
+			// Register returned response to be compared against on next iterations.
+			seenRes[res.seriesIdx] = res.resp
+			continue
+		}
+		require.True(t, reflect.DeepEqual(prevRes, res.resp))
 	}
 }
 

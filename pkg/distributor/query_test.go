@@ -616,3 +616,68 @@ type byLabels []labels.Labels
 func (b byLabels) Len() int           { return len(b) }
 func (b byLabels) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
 func (b byLabels) Less(i, j int) bool { return labels.Compare(b[i], b[j]) < 0 }
+
+func BenchmarkDistributor_QueryStream(b *testing.B) {
+	const totalIngesters = 10
+
+	bcs := []struct {
+		name       string
+		numMetrics int
+		numSamples int
+	}{
+		{
+			name:       "10 metrics, 100 samples",
+			numMetrics: 10,
+			numSamples: 10,
+		},
+		{
+			name:       "100 series, 1k samples",
+			numMetrics: 100,
+			numSamples: 50,
+		},
+		{
+			name:       "1k series, 1k samples",
+			numMetrics: 1_000,
+			numSamples: 100,
+		},
+	}
+	for _, bc := range bcs {
+		b.Run(bc.name, func(b *testing.B) {
+			b.ReportAllocs()
+
+			var limits validation.Limits
+			flagext.DefaultValues(&limits)
+
+			limits.IngestionRate = math.MaxFloat64
+			limits.IngestionBurstSize = math.MaxInt64
+
+			ds, _, _ := prepare(b, prepConfig{
+				numDistributors:   1,
+				numIngesters:      totalIngesters,
+				happyIngesters:    totalIngesters,
+				replicationFactor: 3,
+				limits:            &limits,
+			})
+
+			var metrics []string
+			for i := 0; i < bc.numMetrics; i++ {
+				metrics = append(metrics, fmt.Sprintf("metric_%d", i))
+			}
+
+			ctx := user.InjectOrgID(context.Background(), "test_org")
+
+			request := makeWriteRequest(0, bc.numSamples, 0, false, false, metrics...)
+			_, err := ds[0].Push(ctx, request)
+			require.NoError(b, err)
+
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				ms := labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".*")
+
+				resp, err := ds[0].QueryStream(ctx, model.Time(0), model.Time(100_000), ms)
+				require.NoError(b, err)
+				require.NotNil(b, resp)
+			}
+		})
+	}
+}
