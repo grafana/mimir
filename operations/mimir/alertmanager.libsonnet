@@ -11,7 +11,7 @@
 
   alertmanager_args::
     $._config.grpcConfig +
-    $._config.alertmanagerStorageClientConfig +
+    $._config.alertmanagerStorageConfig +
     {
       target: 'alertmanager',
       'alertmanager.storage.path': '/data',
