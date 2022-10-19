@@ -10,6 +10,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
   local warningColor = '#EAB839',
   local errorColor = '#E24D42',
 
+  // Colors palette picked from Grafana UI, excluding red-ish colors which we want to keep reserved for errors / failures.
+  local nonErrorColorsPalette = ['#429D48', '#F1C731', '#2A66CF', '#9E44C1', '#FFAB57', '#C79424', '#84D586', '#A1C4FC', '#C788DE'],
+
   _config:: error 'must provide _config',
 
   row(title)::
@@ -758,6 +761,18 @@ local utils = import 'mixin-utils/utils.libsonnet';
       ### %s
       %s
     ||| % [title, description],
+  },
+
+  panelSeriesNonErrorColorsPalette(legends):: {
+    seriesOverrides: std.prune(std.mapWithIndex(function(idx, legend) (
+      // Do not define an override if we exausted the colors in the palette.
+      // Grafana will automatically choose another color.
+      if idx >= std.length(nonErrorColorsPalette) then null else
+        {
+          alias: legend,
+          color: nonErrorColorsPalette[idx],
+        }
+    ), legends)),
   },
 
   // Panel query override functions

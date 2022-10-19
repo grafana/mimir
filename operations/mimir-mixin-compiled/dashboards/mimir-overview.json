@@ -657,7 +657,40 @@
                   "pointradius": 5,
                   "points": false,
                   "renderer": "flot",
-                  "seriesOverrides": [ ],
+                  "seriesOverrides": [
+                     {
+                        "alias": "instant queries",
+                        "color": "#429D48"
+                     },
+                     {
+                        "alias": "range queries",
+                        "color": "#F1C731"
+                     },
+                     {
+                        "alias": "label queries",
+                        "color": "#2A66CF"
+                     },
+                     {
+                        "alias": "series queries",
+                        "color": "#9E44C1"
+                     },
+                     {
+                        "alias": "remote read queries",
+                        "color": "#FFAB57"
+                     },
+                     {
+                        "alias": "metadata queries",
+                        "color": "#C79424"
+                     },
+                     {
+                        "alias": "exemplar queries",
+                        "color": "#84D586"
+                     },
+                     {
+                        "alias": "other",
+                        "color": "#A1C4FC"
+                     }
+                  ],
                   "spaceLength": 10,
                   "span": 3,
                   "stack": true,
@@ -1180,7 +1213,36 @@
                   "pointradius": 5,
                   "points": false,
                   "renderer": "flot",
-                  "seriesOverrides": [ ],
+                  "seriesOverrides": [
+                     {
+                        "alias": "attributes",
+                        "color": "#429D48"
+                     },
+                     {
+                        "alias": "delete",
+                        "color": "#F1C731"
+                     },
+                     {
+                        "alias": "exists",
+                        "color": "#2A66CF"
+                     },
+                     {
+                        "alias": "get",
+                        "color": "#9E44C1"
+                     },
+                     {
+                        "alias": "get_range",
+                        "color": "#FFAB57"
+                     },
+                     {
+                        "alias": "iter",
+                        "color": "#C79424"
+                     },
+                     {
+                        "alias": "upload",
+                        "color": "#84D586"
+                     }
+                  ],
                   "spaceLength": 10,
                   "span": 3,
                   "stack": true,

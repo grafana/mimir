@@ -168,6 +168,8 @@ local filename = 'mimir-overview.json';
         )
       )
       .addPanel(
+        local legends = ['instant queries', 'range queries', 'label queries', 'series queries', 'remote read queries', 'metadata queries', 'exemplar queries', 'other'];
+
         $.panel('Queries / sec') +
         $.queryPanel(
           [
@@ -180,8 +182,9 @@ local filename = 'mimir-overview.json';
             $.queries.query_frontend.exemplarsQueriesPerSecond,
             $.queries.query_frontend.otherQueriesPerSecond,
           ],
-          ['instant queries', 'range queries', 'label queries', 'series queries', 'remote read queries', 'metadata queries', 'exemplar queries', 'other'],
+          legends,
         ) +
+        $.panelSeriesNonErrorColorsPalette(legends) +
         $.stack +
         { yaxes: $.yaxes('reqps') },
       )
@@ -245,6 +248,7 @@ local filename = 'mimir-overview.json';
       .addPanel(
         $.panel('Operations / sec') +
         $.queryPanel('sum by(operation) (rate(thanos_objstore_bucket_operations_total{%s}[$__rate_interval]))' % $.namespaceMatcher(), '{{operation}}') +
+        $.panelSeriesNonErrorColorsPalette(['attributes', 'delete', 'exists', 'get', 'get_range', 'iter', 'upload']) +
         $.stack +
         { yaxes: $.yaxes('reqps') },
       )
