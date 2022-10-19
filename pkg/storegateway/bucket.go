@@ -40,9 +40,9 @@ import (
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
+	"github.com/thanos-io/objstore/tracing"
 	"github.com/thanos-io/thanos/pkg/pool"
 	"github.com/thanos-io/thanos/pkg/strutil"
-	"github.com/thanos-io/thanos/pkg/tracing"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -846,7 +846,7 @@ func debugFoundBlockSetOverview(logger log.Logger, mint, maxt, maxResolutionMill
 // Series implements the storepb.StoreServer interface.
 func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_SeriesServer) (err error) {
 	if s.queryGate != nil {
-		tracing.DoInSpan(srv.Context(), "store_query_gate_ismyturn", func(ctx context.Context) {
+		tracing.DoWithSpan(srv.Context(), "store_query_gate_ismyturn", func(ctx context.Context, _ tracing.Span) {
 			err = s.queryGate.Start(srv.Context())
 		})
 		if err != nil {
@@ -1013,7 +1013,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		s.metrics.seriesBlocksQueried.Observe(float64(stats.blocksQueried))
 	}
 	// Merge the sub-results from each selected block.
-	tracing.DoInSpan(ctx, "bucket_store_merge_all", func(ctx context.Context) {
+	tracing.DoWithSpan(ctx, "bucket_store_merge_all", func(ctx context.Context, _ tracing.Span) {
 		begin := time.Now()
 
 		// NOTE: We "carefully" assume series and chunks are sorted within each SeriesSet. This should be guaranteed by
