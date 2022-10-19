@@ -476,7 +476,6 @@ spec:
     spec:
       containers:
       - args:
-        - -blocks-storage.backend=gcs
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
         - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local:11211
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
@@ -484,6 +483,7 @@ spec:
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.gcs.bucket-name=blocks-bucket
+        - -common.storage.backend=gcs
         - -distributor.health-check-ingesters=true
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.prefix=
@@ -705,7 +705,6 @@ spec:
     spec:
       containers:
       - args:
-        - -blocks-storage.backend=gcs
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
         - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local:11211
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
@@ -713,6 +712,7 @@ spec:
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.gcs.bucket-name=blocks-bucket
+        - -common.storage.backend=gcs
         - -distributor.health-check-ingesters=true
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.prefix=
@@ -721,7 +721,6 @@ spec:
         - -memberlist.bind-port=7946
         - -memberlist.cluster-label=my-cluster-label
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
-        - -ruler-storage.backend=gcs
         - -ruler-storage.gcs.bucket-name=rules-bucket
         - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local/alertmanager
         - -ruler.max-rule-groups-per-tenant=35
@@ -795,7 +794,6 @@ spec:
     spec:
       containers:
       - args:
-        - -alertmanager-storage.backend=gcs
         - -alertmanager-storage.gcs.bucket-name=alerts-bucket
         - -alertmanager.sharding-ring.replication-factor=3
         - -alertmanager.sharding-ring.store=memberlist
@@ -884,8 +882,8 @@ spec:
     spec:
       containers:
       - args:
-        - -blocks-storage.backend=gcs
         - -blocks-storage.gcs.bucket-name=blocks-bucket
+        - -common.storage.backend=gcs
         - -compactor.block-ranges=2h,12h,24h
         - -compactor.blocks-retention-period=0
         - -compactor.cleanup-interval=15m
@@ -988,11 +986,11 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
-        - -blocks-storage.backend=gcs
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -blocks-storage.tsdb.block-ranges-period=2h
         - -blocks-storage.tsdb.dir=/data/tsdb
         - -blocks-storage.tsdb.ship-interval=1m
+        - -common.storage.backend=gcs
         - -distributor.health-check-ingesters=true
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
@@ -1303,7 +1301,6 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
-        - -blocks-storage.backend=gcs
         - -blocks-storage.bucket-store.chunks-cache.backend=memcached
         - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached.default.svc.cluster.local:11211
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency=50
@@ -1329,6 +1326,7 @@ spec:
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.gcs.bucket-name=blocks-bucket
+        - -common.storage.backend=gcs
         - -memberlist.bind-port=7946
         - -memberlist.cluster-label=my-cluster-label
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
