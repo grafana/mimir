@@ -712,7 +712,7 @@ Before starting this procedure, set up your zones according to [Configure zone-a
 
    1. Wait until queriers and rulers have restarted and are ready.
 
-   1. The resouce utilization of queriers and rulers should return to pre-migration levels and you can scale them down to previous numbers.
+   1. The resource utilization of queriers and rulers should return to pre-migration levels and you can scale them down to previous numbers.
 
 1. Undo the doubling of series limits done in the first step.
 
