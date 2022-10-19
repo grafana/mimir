@@ -75,3 +75,6 @@ config:
     sharding_ring:
       kvstore:
         prefix:
+  common:
+    storage:
+      backend:
