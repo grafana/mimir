@@ -6,12 +6,11 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"io/ioutil"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"github.com/thanos-io/thanos/pkg/objstore"
+	"github.com/thanos-io/objstore"
 )
 
 func TestPrefixedBucketClient(t *testing.T) {
@@ -44,7 +43,7 @@ func TestPrefixedBucketClient(t *testing.T) {
 	})
 
 	t.Run("Get", func(t *testing.T) {
-		mockBucket.On("Get", mock.Anything, prefix+"/file").Return(ioutil.NopCloser(bytes.NewReader([]byte(("1")))), nil)
+		mockBucket.On("Get", mock.Anything, prefix+"/file").Return(io.NopCloser(bytes.NewReader([]byte(("1")))), nil)
 
 		reader, err := client.Get(context.Background(), "file")
 		assert.NoError(t, err)
@@ -55,7 +54,7 @@ func TestPrefixedBucketClient(t *testing.T) {
 	})
 
 	t.Run("GetRange", func(t *testing.T) {
-		mockBucket.On("GetRange", mock.Anything, prefix+"/file", mock.Anything, mock.Anything).Return(ioutil.NopCloser(bytes.NewReader([]byte(("1")))), nil)
+		mockBucket.On("GetRange", mock.Anything, prefix+"/file", mock.Anything, mock.Anything).Return(io.NopCloser(bytes.NewReader([]byte(("1")))), nil)
 
 		reader, err := client.GetRange(context.Background(), "file", 0, 10)
 		assert.NoError(t, err)

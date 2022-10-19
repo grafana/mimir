@@ -68,7 +68,7 @@ groups:
       message: |
         There are {{ $value }} queued up queries in {{ $labels.cluster }}/{{ $labels.namespace }} {{ $labels.job }}.
     expr: |
-      sum by (cluster, namespace, job) (cortex_query_frontend_queue_length) > 1
+      sum by (cluster, namespace, job) (min_over_time(cortex_query_frontend_queue_length[1m])) > 0
     for: 5m
     labels:
       severity: critical
@@ -77,8 +77,8 @@ groups:
       message: |
         There are {{ $value }} queued up queries in {{ $labels.cluster }}/{{ $labels.namespace }} {{ $labels.job }}.
     expr: |
-      sum by (cluster, namespace, job) (cortex_query_scheduler_queue_length) > 1
-    for: 5m
+      sum by (cluster, namespace, job) (min_over_time(cortex_query_scheduler_queue_length[1m])) > 0
+    for: 7m
     labels:
       severity: critical
   - alert: MimirMemcachedRequestErrors
@@ -125,6 +125,35 @@ groups:
     for: 5m
     labels:
       severity: critical
+  - alert: MimirDistributorForwardingErrorRate
+    annotations:
+      message: |
+        Mimir in {{ $labels.cluster }}/{{ $labels.namespace }} has a high failure rate when forwarding samples.
+    expr: |
+      sum by (cluster, namespace) (rate(cortex_distributor_forward_errors_total{}[1m]))
+      /
+      sum by (cluster, namespace) (rate(cortex_distributor_forward_requests_total{}[1m]))
+      > 0.01
+    for: 5m
+    labels:
+      severity: critical
+  - alert: MimirRingMembersMismatch
+    annotations:
+      message: |
+        Number of members in Mimir ingester hash ring does not match the expected number in {{ $labels.cluster }}/{{ $labels.namespace }}.
+    expr: |
+      (
+        avg by(cluster, namespace) (sum by(cluster, namespace, pod) (cortex_ring_members{name="ingester",job=~"(.*/)?(ingester.*|cortex|mimir|mimir-write.*)"}))
+        != sum by(cluster, namespace) (up{job=~"(.*/)?(ingester.*|cortex|mimir|mimir-write.*)"})
+      )
+      and
+      (
+        count by(cluster, namespace) (cortex_build_info) > 0
+      )
+    for: 15m
+    labels:
+      component: ingester
+      severity: warning
 - name: mimir_instance_limits_alerts
   rules:
   - alert: MimirIngesterReachingSeriesLimit
@@ -248,6 +277,15 @@ groups:
     for: 30m
     labels:
       severity: warning
+  - alert: RolloutOperatorNotReconciling
+    annotations:
+      message: |
+        Rollout operator is not reconciling the rollout group {{ $labels.rollout_group }} in {{ $labels.cluster }}/{{ $labels.namespace }}.
+    expr: |
+      max by(cluster, namespace, rollout_group) (time() - rollout_operator_last_successful_group_reconcile_timestamp_seconds) > 600
+    for: 5m
+    labels:
+      severity: critical
 - name: mimir-provisioning
   rules:
   - alert: MimirProvisioningTooManyActiveSeries
@@ -713,15 +751,15 @@ groups:
   rules:
   - alert: MimirQuerierAutoscalerNotActive
     annotations:
-      message: The Horizontal Pod Autoscaler (HPA) in {{ $labels.namespace }} is not
-        active.
+      message: The Horizontal Pod Autoscaler (HPA) {{ $labels.horizontalpodautoscaler
+        }} in {{ $labels.namespace }} is not active.
     expr: |
-      kube_horizontalpodautoscaler_status_condition{horizontalpodautoscaler="keda-hpa-querier",condition="ScalingActive",status="false"}
+      kube_horizontalpodautoscaler_status_condition{horizontalpodautoscaler=~"(keda-hpa-querier)|(keda-hpa-ruler-querier)",condition="ScalingActive",status="false"}
       * on(cluster, namespace) group_left max by(cluster, namespace) (cortex_build_info)
       > 0
-    for: 15m
+    for: 1h
     labels:
-      severity: warning
+      severity: critical
 - name: mimir_continuous_test
   rules:
   - alert: MimirContinuousTestNotRunningOnWrites

@@ -8,7 +8,6 @@ package compactor
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
@@ -24,26 +23,16 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
-	"github.com/thanos-io/thanos/pkg/compact/downsample"
 	"github.com/thanos-io/thanos/pkg/errutil"
-	"github.com/thanos-io/thanos/pkg/extprom"
-	"github.com/thanos-io/thanos/pkg/objstore"
 	"github.com/thanos-io/thanos/pkg/runutil"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimit_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
-)
-
-type ResolutionLevel int64
-
-const (
-	ResolutionLevelRaw = ResolutionLevel(downsample.ResLevel0)
-	ResolutionLevel5m  = ResolutionLevel(downsample.ResLevel1)
-	ResolutionLevel1h  = ResolutionLevel(downsample.ResLevel2)
 )
 
 type DeduplicateFilter interface {
@@ -342,7 +331,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			return issue347Error(errors.Wrapf(err, "invalid, but reparable block %s", bdir), meta.ULID)
 		}
 
-		if err := stats.PrometheusIssue5372Err(); err != nil {
+		if err := stats.OutOfOrderLabelsErr(); err != nil {
 			return errors.Wrapf(err, "block id %s", meta.ULID)
 		}
 		return nil
@@ -530,7 +519,7 @@ func RepairIssue347(ctx context.Context, logger log.Logger, bkt objstore.Bucket,
 
 	level.Info(logger).Log("msg", "Repairing block broken by https://github.com/prometheus/tsdb/issues/347", "id", ie.id, "err", issue347Err)
 
-	tmpdir, err := ioutil.TempDir("", fmt.Sprintf("repair-issue-347-id-%s-", ie.id))
+	tmpdir, err := os.MkdirTemp("", fmt.Sprintf("repair-issue-347-id-%s-", ie.id))
 	if err != nil {
 		return err
 	}
@@ -602,6 +591,7 @@ type BucketCompactorMetrics struct {
 	groupCompactions             prometheus.Counter
 	blocksMarkedForDeletion      prometheus.Counter
 	blocksMarkedForNoCompact     prometheus.Counter
+	blocksMaxTimeDelta           prometheus.Histogram
 }
 
 // NewBucketCompactorMetrics makes a new BucketCompactorMetrics.
@@ -628,6 +618,11 @@ func NewBucketCompactorMetrics(blocksMarkedForDeletion prometheus.Counter, reg p
 			Name:        "cortex_compactor_blocks_marked_for_no_compaction_total",
 			Help:        "Total number of blocks that were marked for no-compaction.",
 			ConstLabels: prometheus.Labels{"reason": metadata.OutOfOrderChunksNoCompactReason},
+		}),
+		blocksMaxTimeDelta: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:    "cortex_compactor_block_max_time_delta_seconds",
+			Help:    "Difference between now and the max time of a block being compacted in seconds.",
+			Buckets: prometheus.LinearBuckets(86400, 43200, 8), // 1 to 5 days, in 12 hour intervals
 		}),
 	}
 }
@@ -817,6 +812,16 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 			return err
 		}
 
+		// Record the difference between now and the max time for a block being compacted. This
+		// is used to detect compactors not being able to keep up with the rate of blocks being
+		// created. The idea is that most blocks should be for within 24h or 48h.
+		now := time.Now().Unix()
+		for _, gr := range jobs {
+			for _, meta := range gr.Metas() {
+				c.metrics.blocksMaxTimeDelta.Observe(float64(now - meta.MaxTime))
+			}
+		}
+
 		// Sort jobs based on the configured ordering algorithm.
 		jobs = c.sortJobs(jobs)
 
@@ -912,7 +917,7 @@ func (f *NoCompactionMarkFilter) NoCompactMarkedBlocks() map[ulid.ULID]struct{} 
 
 // Filter finds blocks that should not be compacted, and fills f.noCompactMarkedMap. If f.removeNoCompactBlocks is true,
 // blocks are also removed from metas. (Thanos version of the filter doesn't do removal).
-func (f *NoCompactionMarkFilter) Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced *extprom.TxGaugeVec, modified *extprom.TxGaugeVec) error {
+func (f *NoCompactionMarkFilter) Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced block.GaugeVec, modified block.GaugeVec) error {
 	noCompactMarkedMap := make(map[ulid.ULID]struct{})
 
 	// Find all no-compact markers in the storage.
@@ -976,7 +981,7 @@ func (f *ExcludeMarkedForDeletionFilter) DeletionMarkBlocks() map[ulid.ULID]stru
 
 // Filter filters out blocks that are marked for deletion.
 // It also builds the map returned by DeletionMarkBlocks() method.
-func (f *ExcludeMarkedForDeletionFilter) Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced *extprom.TxGaugeVec, modified *extprom.TxGaugeVec) error {
+func (f *ExcludeMarkedForDeletionFilter) Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced block.GaugeVec, modified block.GaugeVec) error {
 	deletionMarkMap := make(map[ulid.ULID]struct{})
 
 	// Find all markers in the storage.

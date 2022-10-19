@@ -1,0 +1,34 @@
+---
+# Source: mimir-distributed/templates/metamonitoring/logs-instance.yaml
+apiVersion: monitoring.grafana.com/v1alpha1
+kind: LogsInstance
+metadata:
+  name: metamonitoring-values-mimir-meta-monitoring
+  namespace: "citestns"
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: metamonitoring-values
+    app.kubernetes.io/component: meta-monitoring
+    app.kubernetes.io/managed-by: Helm
+spec:
+  clients:
+      
+      - url: https://loki.example.com
+        basicAuth:
+          username:
+            name: metamonitoring-values-mimir-logs-instance-usernames
+            key: "username-0"
+          password:
+            name: "my-secret"
+            key: "logs"
+        externalLabels:
+          cluster: "metamonitoring-values"
+
+  # Supply an empty namespace selector to look in all namespaces. Remove
+  # this to only look in the same namespace as the LogsInstance CR
+  podLogsNamespaceSelector: {}
+
+  podLogsSelector:
+    matchLabels:
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: metamonitoring-values

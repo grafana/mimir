@@ -8,7 +8,6 @@ metadata:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-enterprise-configmap-values
     app.kubernetes.io/component: gateway
-    app.kubernetes.io/version: "2.2.0"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -16,9 +15,13 @@ metadata:
 spec:
   type: ClusterIP
   ports:
-    - port: 8080
+    - port: 80
       protocol: TCP
       name: http-metrics
+      targetPort: http-metrics
+    - port: 8080
+      protocol: TCP
+      name: legacy-http-metrics
       targetPort: http-metrics
   selector:
     app.kubernetes.io/name: mimir

@@ -1,0 +1,85 @@
+version: '3.4'
+services:
+
+  consul:
+    image: consul
+    command: [ "agent", "-dev" ,"-client=0.0.0.0", "-log-level=info" ]
+    ports:
+      - 8500:8500
+
+  minio:
+    image: minio/minio
+    command: [ "server", "/data" ]
+    environment:
+      - MINIO_ROOT_USER=mimir
+      - MINIO_ROOT_PASSWORD=supersecret
+    ports:
+      - 9000:9000
+    volumes:
+      - .data-minio:/data:delegated
+
+  prometheus:
+    image: prom/prometheus:v2.16.0
+    command: ["--config.file=/etc/prometheus/prometheus.yaml"]
+    volumes:
+      - ./config:/etc/prometheus
+    ports:
+      - 9090:9090
+
+  # Scrape the metrics also with the Grafana agent (useful to test metadata ingestion
+  # until metadata remote write is not supported by Prometheus).
+  grafana-agent:
+    image: grafana/agent:v0.2.0
+    command: ["-config.file=/etc/agent-config/grafana-agent.yaml", "-prometheus.wal-directory=/tmp"]
+    volumes:
+      - ./config:/etc/agent-config
+    ports:
+      - 9091:9091
+
+  jaeger:
+    image: jaegertracing/all-in-one
+    ports:
+      - 16686:16686
+      - "14268"
+
+  mimir-1:
+    build:
+      context:    .
+      dockerfile: dev.dockerfile
+    image: mimir
+    command: ["sh", "-c", "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=all -server.http-listen-port=8001 -server.grpc-listen-port=9001"]
+    depends_on:
+      - consul
+      - minio
+    environment:
+      - JAEGER_AGENT_HOST=jaeger
+      - JAEGER_AGENT_PORT=6831
+      - JAEGER_TAGS=app=mimir-1
+      - JAEGER_SAMPLER_TYPE=const
+      - JAEGER_SAMPLER_PARAM=1
+    ports:
+      - 8001:8001
+    volumes:
+      - ./config:/mimir/config
+      - .data-mimir-1:/data:delegated
+
+  mimir-2:
+    build:
+      context:    .
+      dockerfile: dev.dockerfile
+    image: mimir
+    command: ["sh", "-c", "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=all -server.http-listen-port=8002 -server.grpc-listen-port=9002"]
+    depends_on:
+      - consul
+      - minio
+    environment:
+      - JAEGER_AGENT_HOST=jaeger
+      - JAEGER_AGENT_PORT=6831
+      - JAEGER_TAGS=app=mimir-2
+      - JAEGER_SAMPLER_TYPE=const
+      - JAEGER_SAMPLER_PARAM=1
+    ports:
+      - 8002:8002
+    volumes:
+      - ./config:/mimir/config
+      - .data-mimir-2:/data:delegated

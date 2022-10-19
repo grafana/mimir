@@ -31,6 +31,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 )
 
@@ -39,7 +40,7 @@ type Config struct {
 	SchedulerAddress  string            `yaml:"scheduler_address"`
 	DNSLookupPeriod   time.Duration     `yaml:"scheduler_dns_lookup_period" category:"advanced"`
 	WorkerConcurrency int               `yaml:"scheduler_worker_concurrency" category:"advanced"`
-	GRPCClientConfig  grpcclient.Config `yaml:"grpc_client_config"`
+	GRPCClientConfig  grpcclient.Config `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate between the query-frontends and the query-schedulers."`
 
 	// Used to find local IP address, that is sent to scheduler and querier-worker.
 	InfNames []string `yaml:"instance_interface_names" category:"advanced" doc:"default=[<private network interfaces>]"`
@@ -47,10 +48,13 @@ type Config struct {
 	// If set, address is not computed from interfaces.
 	Addr string `yaml:"address" category:"advanced"`
 	Port int    `category:"advanced"`
+
+	// This configuration is injected internally.
+	QuerySchedulerDiscovery schedulerdiscovery.Config `yaml:"-"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
-	f.StringVar(&cfg.SchedulerAddress, "query-frontend.scheduler-address", "", "DNS hostname used for finding query-schedulers.")
+	f.StringVar(&cfg.SchedulerAddress, "query-frontend.scheduler-address", "", fmt.Sprintf("Address of the query-scheduler component, in host:port format. The host should resolve to all query-scheduler instances. This option should be set only when query-scheduler component is in use and -%s is set to '%s'.", schedulerdiscovery.ModeFlagName, schedulerdiscovery.ModeDNS))
 	f.DurationVar(&cfg.DNSLookupPeriod, "query-frontend.scheduler-dns-lookup-period", 10*time.Second, "How often to resolve the scheduler-address, in order to look for new query-scheduler instances.")
 	f.IntVar(&cfg.WorkerConcurrency, "query-frontend.scheduler-worker-concurrency", 5, "Number of concurrent workers forwarding queries to single query-scheduler.")
 
@@ -60,6 +64,14 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.Port, "query-frontend.instance-port", 0, "Port to advertise to querier (via scheduler) (defaults to server.grpc-listen-port).")
 
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("query-frontend.grpc-client-config", f)
+}
+
+func (cfg *Config) Validate(log log.Logger) error {
+	if cfg.QuerySchedulerDiscovery.Mode == schedulerdiscovery.ModeRing && cfg.SchedulerAddress != "" {
+		return fmt.Errorf("scheduler address cannot be specified when query-scheduler service discovery mode is set to '%s'", cfg.QuerySchedulerDiscovery.Mode)
+	}
+
+	return cfg.GRPCClientConfig.Validate(log)
 }
 
 // Frontend implements GrpcRoundTripper. It queues HTTP requests,
@@ -75,8 +87,9 @@ type Frontend struct {
 	// frontend workers will read from this channel, and send request to scheduler.
 	requestsCh chan *frontendRequest
 
-	schedulerWorkers *frontendSchedulerWorkers
-	requests         *requestsInProgress
+	schedulerWorkers        *frontendSchedulerWorkers
+	schedulerWorkersWatcher *services.FailureWatcher
+	requests                *requestsInProgress
 }
 
 type frontendRequest struct {
@@ -117,11 +130,12 @@ func NewFrontend(cfg Config, log log.Logger, reg prometheus.Registerer) (*Fronte
 	}
 
 	f := &Frontend{
-		cfg:              cfg,
-		log:              log,
-		requestsCh:       requestsCh,
-		schedulerWorkers: schedulerWorkers,
-		requests:         newRequestsInProgress(),
+		cfg:                     cfg,
+		log:                     log,
+		requestsCh:              requestsCh,
+		schedulerWorkers:        schedulerWorkers,
+		schedulerWorkersWatcher: services.NewFailureWatcher(),
+		requests:                newRequestsInProgress(),
 	}
 	// Randomize to avoid getting responses from queries sent before restart, which could lead to mixing results
 	// between different queries. Note that frontend verifies the user, so it cannot leak results between tenants.
@@ -142,19 +156,30 @@ func NewFrontend(cfg Config, log log.Logger, reg prometheus.Registerer) (*Fronte
 		return float64(f.schedulerWorkers.getWorkersCount())
 	})
 
-	f.Service = services.NewIdleService(f.starting, f.stopping)
+	f.Service = services.NewBasicService(f.starting, f.running, f.stopping)
 	return f, nil
 }
 
 func (f *Frontend) starting(ctx context.Context) error {
+	f.schedulerWorkersWatcher.WatchService(f.schedulerWorkers)
+
 	return errors.Wrap(services.StartAndAwaitRunning(ctx, f.schedulerWorkers), "failed to start frontend scheduler workers")
+}
+
+func (f *Frontend) running(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return nil
+	case err := <-f.schedulerWorkersWatcher.Chan():
+		return errors.Wrap(err, "query-frontend subservice failed")
+	}
 }
 
 func (f *Frontend) stopping(_ error) error {
 	return errors.Wrap(services.StopAndAwaitTerminated(context.Background(), f.schedulerWorkers), "failed to stop frontend scheduler workers")
 }
 
-// RoundTripGRPC round trips a proto (instead of a HTTP request).
+// RoundTripGRPC round trips a proto (instead of an HTTP request).
 func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error) {
 	if s := f.State(); s != services.Running {
 		return nil, fmt.Errorf("frontend not running: %v", s)

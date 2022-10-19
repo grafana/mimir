@@ -19,13 +19,15 @@ A Grafana Mimir operator can observe the configuration and use runtime configura
 
 Runtime configuration values take precedence over command-line options.
 
+If multiple runtime configuration files are specified the runtime config files will be merged in a left to right order.
+
 ## Enable runtime configuration
 
-To enable runtime configuration, specify a path to the file upon startup by using the `-runtime-config.file=<filepath>` CLI flag or from within your YAML configuration file in the `runtime_config` block.
+To enable runtime configuration, specify a comma-separated list of file paths upon startup by using the `-runtime-config.file=<filepath>,<filepath>` CLI flag or from within your YAML configuration file in the `runtime_config` block.
 
-By default, Grafana Mimir reloads the contents of this file every 10 seconds. You can configure this interval by using the `-runtime-config.reload-period=<duration>` CLI flag or by specifying the `period` value in your YAML configuration file.
+By default, Grafana Mimir reloads the contents of these files every 10 seconds and merges these files from left to right. You can configure this interval by using the `-runtime-config.reload-period=<duration>` CLI flag or by specifying the `period` value in your YAML configuration file.
 
-When running Grafana Mimir on Kubernetes, store the runtime configuration file in a [ConfigMap](https://kubernetes.io/docs/concepts/configuration/configmap/) and mount it in each container.
+When running Grafana Mimir on Kubernetes, store the runtime configuration files in a [ConfigMap](https://kubernetes.io/docs/concepts/configuration/configmap/) and mount the ConfigMaps in each container.
 
 ## Viewing the runtime configuration
 

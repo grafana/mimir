@@ -11,7 +11,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"sort"
 	"strings"
 	"testing"
@@ -23,7 +22,7 @@ import (
 	"github.com/pkg/errors"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
-	"github.com/thanos-io/thanos/pkg/objstore"
+	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/cache"
 )
@@ -245,7 +244,7 @@ func verifyGetRange(t *testing.T, cachingBucket *CachingBucket, name string, off
 	r, err := cachingBucket.GetRange(context.Background(), name, offset, length)
 	assert.NoError(t, err)
 
-	read, err := ioutil.ReadAll(r)
+	read, err := io.ReadAll(r)
 	assert.NoError(t, err)
 	assert.Equal(t, expectedLength, int64(len(read)))
 
@@ -558,7 +557,7 @@ func verifyGet(t *testing.T, cb *CachingBucket, file string, expectedData []byte
 	} else {
 		assert.NoError(t, err)
 		defer runutil.CloseWithLogOnErr(log.NewNopLogger(), r, "verifyGet")
-		data, err := ioutil.ReadAll(r)
+		data, err := io.ReadAll(r)
 		assert.NoError(t, err)
 		assert.Equal(t, expectedData, data)
 

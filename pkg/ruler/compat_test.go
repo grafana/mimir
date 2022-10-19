@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
@@ -29,6 +30,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 type fakePusher struct {
@@ -44,7 +46,7 @@ func (p *fakePusher) Push(ctx context.Context, r *mimirpb.WriteRequest) (*mimirp
 
 func TestPusherAppendable(t *testing.T) {
 	pusher := &fakePusher{}
-	pa := NewPusherAppendable(pusher, "user-1", nil, prometheus.NewCounter(prometheus.CounterOpts{}), prometheus.NewCounter(prometheus.CounterOpts{}))
+	pa := NewPusherAppendable(pusher, "user-1", nil, promauto.With(nil).NewCounter(prometheus.CounterOpts{}), promauto.With(nil).NewCounter(prometheus.CounterOpts{}))
 
 	for _, tc := range []struct {
 		name       string
@@ -130,10 +132,13 @@ func TestPusherErrors(t *testing.T) {
 
 			pusher := &fakePusher{err: tc.returnedError, response: &mimirpb.WriteResponse{}}
 
-			writes := prometheus.NewCounter(prometheus.CounterOpts{})
-			failures := prometheus.NewCounter(prometheus.CounterOpts{})
+			writes := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
+			failures := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
+			limits := validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
+				defaults.RulerEvaluationDelay = 0
+			})
 
-			pa := NewPusherAppendable(pusher, "user-1", ruleLimits{evalDelay: 10 * time.Second}, writes, failures)
+			pa := NewPusherAppendable(pusher, "user-1", limits, writes, failures)
 
 			lbls, err := parser.ParseMetric("foo_bar")
 			require.NoError(t, err)
@@ -219,8 +224,8 @@ func TestMetricsQueryFuncErrors(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			queries := prometheus.NewCounter(prometheus.CounterOpts{})
-			failures := prometheus.NewCounter(prometheus.CounterOpts{})
+			queries := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
+			failures := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
 
 			mockFunc := func(ctx context.Context, q string, t time.Time) (promql.Vector, error) {
 				return promql.Vector{}, tc.returnedError
@@ -237,7 +242,7 @@ func TestMetricsQueryFuncErrors(t *testing.T) {
 }
 
 func TestRecordAndReportRuleQueryMetrics(t *testing.T) {
-	queryTime := prometheus.NewCounterVec(prometheus.CounterOpts{}, []string{"user"})
+	queryTime := promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"})
 
 	mockFunc := func(ctx context.Context, q string, t time.Time) (promql.Vector, error) {
 		time.Sleep(1 * time.Second)
@@ -255,10 +260,7 @@ func TestRecordAndReportRuleQueryMetrics(t *testing.T) {
 func TestManagerFactory_CorrectQueryableUsed(t *testing.T) {
 	const userID = "tenant-1"
 
-	dummyRules := []*rulespb.RuleDesc{{
-		Expr:   "sum(up)",
-		Record: "sum:up",
-	}}
+	dummyRules := []*rulespb.RuleDesc{mockRecordingRuleDesc("sum:up", "sum(up)")}
 
 	testCases := map[string]struct {
 		ruleGroup rulespb.RuleGroupDesc
@@ -304,9 +306,9 @@ func TestManagerFactory_CorrectQueryableUsed(t *testing.T) {
 
 			// setup
 			cfg := defaultRulerConfig(t)
-			_, _, pusher, logger, overrides := testSetup()
-			notifierManager := notifier.NewManager(&notifier.Options{Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil }}, logger)
-			ruleFiles := writeRuleGroupToFiles(t, cfg.RulePath, logger, userID, tc.ruleGroup)
+			options := applyPrepareOptions()
+			notifierManager := notifier.NewManager(&notifier.Options{Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil }}, options.logger)
+			ruleFiles := writeRuleGroupToFiles(t, cfg.RulePath, options.logger, userID, tc.ruleGroup)
 			regularQueryable, federatedQueryable := newMockQueryable(), newMockQueryable()
 
 			tracker := promql.NewActiveQueryTracker(t.TempDir(), 20, log.NewNopLogger())
@@ -321,9 +323,11 @@ func TestManagerFactory_CorrectQueryableUsed(t *testing.T) {
 			queryFunc := TenantFederationQueryFunc(regularQueryFunc, federatedQueryFunc)
 
 			// create and use manager factory
-			managerFactory := DefaultTenantManagerFactory(cfg, pusher, federatedQueryable, queryFunc, overrides, nil)
+			pusher := newPusherMock()
+			pusher.MockPush(&mimirpb.WriteResponse{}, nil)
+			managerFactory := DefaultTenantManagerFactory(cfg, pusher, federatedQueryable, queryFunc, options.limits, nil)
 
-			manager := managerFactory(context.Background(), userID, notifierManager, logger, nil)
+			manager := managerFactory(context.Background(), userID, notifierManager, options.logger, nil)
 
 			// load rules into manager and start
 			require.NoError(t, manager.Update(time.Millisecond, ruleFiles, nil, "", nil))

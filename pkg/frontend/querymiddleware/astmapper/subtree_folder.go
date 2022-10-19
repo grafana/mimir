@@ -9,7 +9,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
-// subtreeFolder is a NodeMapper which embeds an entire parser.Node in an embedded query,
+// subtreeFolder is a ExprMapper which embeds an entire parser.Expr in an embedded query,
 // if it does not contain any previously embedded queries. This allows the query-frontend
 // to "zip up" entire subtrees of an AST that have not already been parallelized.
 type subtreeFolder struct{}
@@ -17,35 +17,35 @@ type subtreeFolder struct{}
 // newSubtreeFolder creates a subtreeFolder which can reduce an AST
 // to one embedded query if it contains no embedded queries yet.
 func newSubtreeFolder() ASTMapper {
-	return NewASTNodeMapper(&subtreeFolder{})
+	return NewASTExprMapper(&subtreeFolder{})
 }
 
-// MapNode implements NodeMapper.
-func (f *subtreeFolder) MapNode(node parser.Node, _ *MapperStats) (mapped parser.Node, finished bool, err error) {
-	hasEmbeddedQueries, err := anyNode(node, hasEmbeddedQueries)
+// MapExpr implements ExprMapper.
+func (f *subtreeFolder) MapExpr(expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
+	hasEmbeddedQueries, err := anyNode(expr, hasEmbeddedQueries)
 	if err != nil {
 		return nil, true, err
 	}
 
-	// Don't change the node if it already contains embedded queries.
+	// Don't change the expr if it already contains embedded queries.
 	if hasEmbeddedQueries {
-		return node, false, nil
+		return expr, false, nil
 	}
 
-	hasVectorSelector, err := anyNode(node, isVectorSelector)
+	hasVectorSelector, err := anyNode(expr, isVectorSelector)
 	if err != nil {
 		return nil, true, err
 	}
 
-	// Change the node if it contains vector selectors, as only those need to be embedded.
+	// Change the expr if it contains vector selectors, as only those need to be embedded.
 	if hasVectorSelector {
-		expr, err := vectorSquasher(node)
+		expr, err := vectorSquasher(expr)
 		return expr, true, err
 	}
-	return node, false, nil
+	return expr, false, nil
 }
 
-// hasEmbeddedQueries returns whether the node has embedded queries.
+// hasEmbeddedQueries returns whether the expr has embedded queries.
 func hasEmbeddedQueries(node parser.Node) (bool, error) {
 	switch n := node.(type) {
 	case *parser.VectorSelector:
@@ -56,7 +56,7 @@ func hasEmbeddedQueries(node parser.Node) (bool, error) {
 	return false, nil
 }
 
-// hasEmbeddedQueries returns whether the node is a vector selector.
+// hasEmbeddedQueries returns whether the expr is a vector selector.
 func isVectorSelector(n parser.Node) (bool, error) {
 	_, ok := n.(*parser.VectorSelector)
 	return ok, nil
@@ -73,6 +73,14 @@ func anyNode(node parser.Node, fn predicate) (bool, error) {
 		return false, err
 	}
 	return v.result, nil
+}
+
+// visitNode recursively traverse the node's subtree and call fn for each node encountered.
+func visitNode(node parser.Node, fn func(node parser.Node)) {
+	_ = parser.Walk(&visitor{fn: func(node parser.Node) (bool, error) {
+		fn(node)
+		return false, nil
+	}}, node, nil)
 }
 
 type predicate = func(parser.Node) (bool, error)

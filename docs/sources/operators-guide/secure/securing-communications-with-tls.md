@@ -48,7 +48,36 @@ Every gRPC link between Grafana Mimir components supports TLS configuration as s
 
 #### Server flags
 
-Server flag settings determine if a server requires a client to provide a valid certificate back to the server.
+You can set the cipher suites and minimum TLS version that the server will accept:
+
+- `-server.tls-cipher-suites`: Comma-separated list of cipher suites to use. If blank, the default Go cipher suites is used.
+  Possible values, from https://pkg.go.dev/crypto/tls#pkg-constants:
+  - TLS_RSA_WITH_RC4_128_SHA
+  - TLS_RSA_WITH_3DES_EDE_CBC_SHA
+  - TLS_RSA_WITH_AES_128_CBC_SHA
+  - TLS_RSA_WITH_AES_256_CBC_SHA
+  - TLS_RSA_WITH_AES_128_CBC_SHA256
+  - TLS_RSA_WITH_AES_128_GCM_SHA256
+  - TLS_RSA_WITH_AES_256_GCM_SHA384
+  - TLS_ECDHE_ECDSA_WITH_RC4_128_SHA
+  - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA
+  - TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA
+  - TLS_ECDHE_RSA_WITH_RC4_128_SHA
+  - TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
+  - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA
+  - TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA
+  - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256
+  - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256
+  - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+  - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+  - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+  - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+  - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+  - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+- `-server.tls-min-version`: Minimum TLS version to use. Allowed values: "VersionTLS10", "VersionTLS11", "VersionTLS12", "VersionTLS13". If blank, the Go TLS minimum version is used.
+
+The following
+server flag settings determine if a server requires a client to provide a valid certificate back to the server.
 The flags support all the values defined in the [crypto/tls](https://pkg.go.dev/crypto/tls#ClientAuthType) standard library.
 
 For all values except `NoClientCert`, the policy defines that the server requests a client certificate during the handshake. The values determine whether the client must send certificates and if the server must verify them.
@@ -87,6 +116,9 @@ In the following example, both of the server authorization flags, `-server.http-
 
     # Path to the Client CA Cert for the gRPC Server
     -server.grpc-tls-ca-path=/path/to/root.crt
+
+    # Path to the Client CA Cert for the gRPC Server
+    -server.grpc-tls-ca-path=/path/to/root.crt
 ```
 
 #### Client flags
@@ -97,12 +129,13 @@ To enable TLS for a component, use the client flag that contains the suffix `*.t
 
 The following Grafana Mimir components support TLS for inter-communication, which are shown with their corresponding configuration flag prefixes:
 
-- Query scheduler gRPC client used to connect to query-frontends: `-query-scheduler.grpc-client-config.*`
+- Query-scheduler gRPC client used to connect to query-frontends: `-query-scheduler.grpc-client-config.*`
 - Querier gRPC client used to connect to store-gateways: `-querier.store-gateway-client.*`
-- Query-frontend gRPC client used to connect to query-schedulers: `-query-frontend.grpc-client-config.*`
 - Querier gRPC client used to connect to query-frontends and query-schedulers: `-querier.frontend-client.*`
+- Query-frontend gRPC client used to connect to query-schedulers: `-query-frontend.grpc-client-config.*`
 - Ruler gRPC client used to connect to other ruler instances: `-ruler.client.*`
 - Ruler gRPC client used to connect to query-frontend: `-ruler.query-frontend.grpc-client-config.*`
+- Distributor gRPC client used to forward series matching a configured set to a dedicated remote endpoint: `-distributor.forwarding.grpc-client.*`
 - Alertmanager gRPC client used to connect to other Alertmanager instances: `-alertmanager.alertmanager-client.*`
 - gRPC client used by distributors, queriers, and rulers to connect to ingesters: `-ingester.client.*`
 - etcd client used by all Mimir components to connect to etcd, which is required only if you're running the hash ring or HA tracker on the etcd backend: `-<prefix>.etcd.*`
@@ -113,6 +146,8 @@ Each of the components listed above support the following TLS configuration opti
 - `*.tls-enabled=<boolean>`: Enable TLS in the client.
 - `*.tls-server-name=<string>`: Override the expected name on the server certificate.
 - `*.tls-insecure-skip-verify=<boolean>`: Skip validating the server certificate.
+- `*.tls-cipher-suites=<string>`: Comma-separated list of accepted cipher suites. For the list of supported cipher suites, refer to [Grafana Mimir configuration parameters]({{< relref "../configure/reference-configuration-parameters/index.md" >}}).
+- `*.tls-min-version=<string>`: Minimum TLS version required. For the list of supported versions, refer to [Grafana Mimir configuration parameters]({{< relref "../configure/reference-configuration-parameters/index.md" >}}).
 
 The following example shows how to configure the gRPC client flags in the querier used to connect to the query-frontend:
 

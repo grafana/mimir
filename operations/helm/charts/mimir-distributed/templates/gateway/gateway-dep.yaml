@@ -19,9 +19,6 @@ spec:
     metadata:
       labels:
         {{- include "mimir.podLabels" (dict "ctx" . "component" "gateway") | nindent 8 }}
-        {{- with .Values.gateway.podLabels }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
       annotations:
         {{- include "mimir.podAnnotations" (dict "ctx" . "component" "gateway") | nindent 8 }}
       namespace: {{ .Release.Namespace | quote }}
@@ -64,6 +61,8 @@ spec:
             - name: storage
               mountPath: "/data"
               subPath: {{ .Values.gateway.persistence.subPath }}
+            - name: active-queries
+              mountPath: /active-query-tracker
           ports:
             - name: http-metrics
               containerPort: {{ include "mimir.serverHttpListenPort" . }}
@@ -97,6 +96,8 @@ spec:
         {{- toYaml .Values.gateway.nodeSelector | nindent 8 }}
       affinity:
         {{- toYaml .Values.gateway.affinity | nindent 8 }}
+      topologySpreadConstraints:
+        {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "gateway") | nindent 8 }}
       tolerations:
         {{- toYaml .Values.gateway.tolerations | nindent 8 }}
       terminationGracePeriodSeconds: {{ .Values.gateway.terminationGracePeriodSeconds }}
@@ -113,5 +114,7 @@ spec:
           secret:
             secretName: {{ tpl .Values.license.secretName . }}
         - name: storage
+          emptyDir: {}
+        - name: active-queries
           emptyDir: {}
 {{- end -}}

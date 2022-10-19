@@ -30,10 +30,10 @@ In order to search, template, install, upgrade, etc beta versions of charts, Hel
 
 ## Linting
 
-Install [ct](https://github.com/helm/chart-testing) and run
+Run [ct](https://github.com/helm/chart-testing) with the `docker` command:
 
 ```bash
-ct lint --config operations/helm/ct.yaml --charts operations/helm/charts/mimir-distributed
+docker run --rm -u $(id -g):$(id -u) -e HOME=/tmp -v $(pwd):/data quay.io/helmpack/chart-testing:latest sh -c "ct lint --all --debug --chart-dirs /data/operations/helm/charts --check-version-increment false --config /data/operations/helm/ct.yaml"
 ```
 
 ## Automated comparison with Jsonnet
@@ -113,3 +113,9 @@ This is useful to limit otherwise noisy output to only show objects of a certain
 cd operations/compare-helm-with-jsonnet
 ./compare-kustomize-outputs.sh ./helm/09-* ./jsonnet/09-* 'select(.kind == "StatefulSet")'
 ```
+
+### Static checks
+
+Use the make targets `conftest-fmt`, `conftest-verify` and `conftest-test` to lint, verify and execute [conftest](https://www.conftest.dev/) static analysis tests.
+
+The tests are verifying that the policies defined in `operations/helm/policies` are met for all Kubernetes manifests generated from configurations defined under `operations/helm/charts/mimir-distributed/ci`.

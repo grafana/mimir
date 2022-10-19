@@ -14,6 +14,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/opentracing/opentracing-go"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/weaveworks/common/user"
 
@@ -21,6 +22,7 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/util"
+	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -31,8 +33,8 @@ type Limits interface {
 	// MaxQueryLookback returns the max lookback period of queries.
 	MaxQueryLookback(userID string) time.Duration
 
-	// MaxQueryLength returns the limit of the length (in time) of a query.
-	MaxQueryLength(userID string) time.Duration
+	// MaxTotalQueryLength returns the limit of the length (in time) of a query.
+	MaxTotalQueryLength(userID string) time.Duration
 
 	// MaxQueryParallelism returns the limit to the number of split queries the
 	// frontend will process in parallel.
@@ -49,9 +51,22 @@ type Limits interface {
 	// be run for a given received query. 0 to disable limit.
 	QueryShardingMaxShardedQueries(userID string) int
 
+	// SplitInstantQueriesByInterval returns the time interval to split instant queries for a given tenant.
+	SplitInstantQueriesByInterval(userID string) time.Duration
+
 	// CompactorSplitAndMergeShards returns the number of shards to use when splitting blocks
 	// This method is copied from compactor.ConfigProvider.
 	CompactorSplitAndMergeShards(userID string) int
+
+	// CompactorBlocksRetentionPeriod returns the retention period for a given user.
+	CompactorBlocksRetentionPeriod(userID string) time.Duration
+
+	// OutOfOrderTimeWindow returns the out-of-order time window for the user.
+	OutOfOrderTimeWindow(userID string) model.Duration
+
+	// CreationGracePeriod returns the time interval to control how far into the future
+	// incoming samples are accepted compared to the wall clock.
+	CreationGracePeriod(userID string) time.Duration
 }
 
 type limitsMiddleware struct {
@@ -80,19 +95,22 @@ func (l limitsMiddleware) Do(ctx context.Context, r Request) (Response, error) {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	// Clamp the time range based on the max query lookback.
-
-	if maxQueryLookback := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, l.MaxQueryLookback); maxQueryLookback > 0 {
-		minStartTime := util.TimeToMillis(time.Now().Add(-maxQueryLookback))
+	// Clamp the time range based on the max query lookback and block retention period.
+	blocksRetentionPeriod := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, l.CompactorBlocksRetentionPeriod)
+	maxQueryLookback := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, l.MaxQueryLookback)
+	maxLookback := util_math.MinDuration(blocksRetentionPeriod, maxQueryLookback)
+	if maxLookback > 0 {
+		minStartTime := util.TimeToMillis(time.Now().Add(-maxLookback))
 
 		if r.GetEnd() < minStartTime {
 			// The request is fully outside the allowed range, so we can return an
 			// empty response.
 			level.Debug(log).Log(
-				"msg", "skipping the execution of the query because its time range is before the 'max query lookback' setting",
+				"msg", "skipping the execution of the query because its time range is before the 'max query lookback' or 'blocks retention period' setting",
 				"reqStart", util.FormatTimeMillis(r.GetStart()),
 				"redEnd", util.FormatTimeMillis(r.GetEnd()),
-				"maxQueryLookback", maxQueryLookback)
+				"maxQueryLookback", maxQueryLookback,
+				"blocksRetentionPeriod", blocksRetentionPeriod)
 
 			return newEmptyPrometheusResponse(), nil
 		}
@@ -100,19 +118,37 @@ func (l limitsMiddleware) Do(ctx context.Context, r Request) (Response, error) {
 		if r.GetStart() < minStartTime {
 			// Replace the start time in the request.
 			level.Debug(log).Log(
-				"msg", "the start time of the query has been manipulated because of the 'max query lookback' setting",
+				"msg", "the start time of the query has been manipulated because of the 'max query lookback' or 'blocks retention period' setting",
 				"original", util.FormatTimeMillis(r.GetStart()),
-				"updated", util.FormatTimeMillis(minStartTime))
+				"updated", util.FormatTimeMillis(minStartTime),
+				"maxQueryLookback", maxQueryLookback,
+				"blocksRetentionPeriod", blocksRetentionPeriod)
 
 			r = r.WithStartEnd(minStartTime, r.GetEnd())
 		}
 	}
 
+	// Enforce the max end time.
+	creationGracePeriod := validation.LargestPositiveNonZeroDurationPerTenant(tenantIDs, l.CreationGracePeriod)
+	if creationGracePeriod > 0 {
+		maxEndTime := util.TimeToMillis(time.Now().Add(creationGracePeriod))
+		if r.GetEnd() > maxEndTime {
+			// Replace the end time in the request.
+			level.Debug(log).Log(
+				"msg", "the end time of the query has been manipulated because of the 'creation grace period' setting",
+				"original", util.FormatTimeMillis(r.GetEnd()),
+				"updated", util.FormatTimeMillis(maxEndTime),
+				"creationGracePeriod", creationGracePeriod)
+
+			r = r.WithStartEnd(r.GetStart(), maxEndTime)
+		}
+	}
+
 	// Enforce the max query length.
-	if maxQueryLength := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, l.MaxQueryLength); maxQueryLength > 0 {
+	if maxQueryLength := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, l.MaxTotalQueryLength); maxQueryLength > 0 {
 		queryLen := timestamp.Time(r.GetEnd()).Sub(timestamp.Time(r.GetStart()))
 		if queryLen > maxQueryLength {
-			return nil, apierror.New(apierror.TypeBadData, validation.NewMaxQueryLengthError(queryLen, maxQueryLength).Error())
+			return nil, apierror.New(apierror.TypeBadData, validation.NewMaxTotalQueryLengthError(queryLen, maxQueryLength).Error())
 		}
 	}
 

@@ -1,4 +1,5 @@
 {{- $calculatedConfig := include "mimir.calculatedConfig" . | fromYaml }}
+{{- $unstructuredConfig := include "mimir.unstructuredConfig" . | fromYaml }}
 
 {{- if .Values.config }}
 {{- fail "Top level 'config' is not allowed. In 'mimir.config', provide the configuration as a string that can contain template expressions. Alternatively, you can provide the configuration as an external secret." }}
@@ -9,15 +10,19 @@
 {{- end }}
 
 {{- if not ($calculatedConfig.activity_tracker).filepath }}
-{{- fail "The 'activity_tracker.filepath' in 'mimir.config' should be set to a path that is on a writeable volume. For example: '/data/metrics-activity.log'." }}
+{{- fail "The 'activity_tracker.filepath' in 'mimir.config' should be set to a path that is on a writeable volume. For example: '/active-query-tracker/activity.log'." }}
 {{- end }}
 
-{{- if ($calculatedConfig.server).http_listen_port }}
-{{- fail "The setting 'server.http_listen_port' is not allowed in 'mimir.config' as it leads to circular dependency and thus is not supported. Use 'nginx.service.port' or 'gateway.service.port' for enterprise to expose services on a different port." }}
+{{- if ($unstructuredConfig.server).http_listen_port }}
+{{- fail "The setting 'server.http_listen_port' is not allowed in 'mimir.config' as it leads to a circular dependency. Set it in 'mimir.structuredConfig' instead." }}
 {{- end }}
 
-{{- if ($calculatedConfig.server).grpc_listen_port }}
-{{- fail "The setting 'server.grpc_listen_port' is not allowed in 'mimir.config' as it leads to circular dependency and thus is not supported." }}
+{{- if ($unstructuredConfig.server).grpc_listen_port }}
+{{- fail "The setting 'server.grpc_listen_port' is not allowed in 'mimir.config' as it leads to a circular dependency. Set it in 'mimir.structuredConfig' instead." }}
+{{- end }}
+
+{{- if ($unstructuredConfig.memberlist).bind_port }}
+{{- fail "The setting 'memberlist.bind_port' is not allowed in 'mimir.config' as it leads to a circular dependency. Set it in 'mimir.structuredConfig' instead." }}
 {{- end }}
 
 {{- if not (has .Values.configStorageType (list "Secret" "ConfigMap")) }}
@@ -53,10 +58,12 @@
         (ne .memcached.addresses (include "mimir.chunksCacheAddress" $))
         }}
       {{- fail (cat 
-          "chunks cache is enabled, but blocks_storage.bucket_store.chunks_cache.memcached.addresses is not set to the correct address, expected " 
-          (include "mimir.chunksCacheAddress" $) 
-          ", but got" 
-          .memcached.addresses) 
+          "you set chunks-cache.enabled, but the address of the chunks cache in the Mimir configuration in 'blocks_storage.bucket_store.chunks_cache.memcached.addresses'"
+          " is different from the address of the memcached instance created by the chart. (actual: "
+          .memcached.addresses
+          ", expected: "
+          (include "mimir.chunksCacheAddress" $)
+          "). If you want to use your own memcached cluster, disable chunks-cache.enabled and keep the Mimir configuration in mimir.config or mimir.structuredConfig")
         }}
     {{- end }}
   {{- end }}
@@ -67,10 +74,12 @@
         (ne .memcached.addresses (include "mimir.metadataCacheAddress" $))
         }}
       {{- fail (cat 
-          "metadata cache is enabled, but blocks_storage.bucket_store.metadata_cache.memcached.addresses is not set to the correct address, expected " 
-          (include "mimir.metadataCacheAddress" $) 
-          ", but got" 
-          .memcached.addresses) 
+          "you set metadata-cache.enabled, but the address of the metadata cache in the Mimir configuration in 'blocks_storage.bucket_store.metadata_cache.memcached.addresses'"
+          " is different from the address of the memcached instance created by the chart. (actual: "
+          .memcached.addresses
+          ", expected: "
+          (include "mimir.metadataCacheAddress" $)
+          "). If you want to use your own memcached cluster, disable metadata-cache.enabled and keep the Mimir configuration in mimir.config or mimir.structuredConfig")
         }}
     {{- end }}
   {{- end }}
@@ -81,10 +90,12 @@
         (ne .memcached.addresses (include "mimir.indexCacheAddress" $))
         }}
       {{- fail (cat 
-          "index cache is enabled, but blocks_storage.bucket_store.index_cache.memcached.addresses is not set to the correct address, expected " 
-          (include "mimir.indexCacheAddress" $) 
-          ", but got" 
-          .memcached.addresses) 
+          "you set index-cache.enabled, but the address of the index cache in the Mimir configuration in 'blocks_storage.bucket_store.index_cache.memcached.addresses'"
+          " is different from the address of the memcached instance created by the chart. (actual: "
+          .memcached.addresses
+          ", expected: "
+          (include "mimir.indexCacheAddress" $)
+          "). If you want to use your own memcached cluster, disable index-cache.enabled and keep the Mimir configuration in mimir.config or mimir.structuredConfig")
         }}
     {{- end }}
   {{- end }}
@@ -98,10 +109,12 @@
         (ne .memcached.addresses (include "mimir.resultsCacheAddress" $))
         }}
       {{- fail (cat 
-          "results cache is enabled, but frontend.results_cache.memcached.addresses is not set to the correct address, expected " 
-          (include "mimir.resultsCacheAddress" $) 
-          ", but got" 
-          .memcached.addresses) 
+          "you set results-cache.enabled, but the address of the results cache in the Mimir configuration in 'frontend.results_cache.memcached.addresses'"
+          " is different from the address of the memcached instance created by the chart. (actual: "
+          .memcached.addresses
+          ", expected: "
+          (include "mimir.resultsCacheAddress" $)
+          "). If you want to use your own memcached cluster, disable results-cache.enabled and keep the Mimir configuration in mimir.config or mimir.structuredConfig")
         }}
     {{- end }}
   {{- end }}
@@ -130,3 +143,16 @@
     {{- fail "memcached-results.enabled has been renamed to results-cache.enabled" }}
   {{- end }}
 {{- end }}
+
+{{- if not .Values.ingester.statefulSet.enabled -}}
+{{- fail "You have set ingester.statefulSet.enabled: false. Ingesters are stateful, kubernetes Deployment workloads are no longer supported. Please refer to the documentation for more details." }}
+{{- end -}}
+
+{{- with .Values.nginx -}}
+{{- if and .autoscaling.enabled .autoscaling.targetCPUUtilizationPercentage (not ((.resources).requests).cpu) -}}
+{{- fail "You have enabled nginx.autoscaling.targetCPUUtilizationPercentage, you must also set nginx.resources.requests.cpu." -}}
+{{- end -}}
+{{- if and .autoscaling.enabled .autoscaling.targetMemoryUtilizationPercentage (not ((.resources).requests).memory) -}}
+{{- fail "You have enabled nginx.autoscaling.targetMemoryUtilizationPercentage, you must also set nginx.resources.requests.memory." -}}
+{{- end -}}
+{{- end -}}

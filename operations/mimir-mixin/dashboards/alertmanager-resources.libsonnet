@@ -30,7 +30,8 @@ local filename = 'mimir-alertmanager-resources.json';
         $.goHeapInUsePanel('Memory (go heap inuse)', 'alertmanager'),
       )
     )
-    .addRow(
+    .addRowIf(
+      $._config.alertmanager_im_enabled,
       $.row('Instance mapper')
       .addPanel(
         $.containerCPUUsagePanel('CPU', 'alertmanager-im'),

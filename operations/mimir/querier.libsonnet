@@ -9,6 +9,7 @@
     $._config.queryEngineConfig +
     $._config.ingesterRingClientConfig +
     $._config.queryBlocksStorageConfig +
+    $._config.querySchedulerRingClientConfig +
     $.blocks_metadata_caching_config +
     $.bucket_index_config
     {
@@ -55,7 +56,7 @@
   newQuerierDeployment(name, container)::
     deployment.new(name, $._config.querier.replicas, [container]) +
     $.newMimirSpreadTopology(name, $._config.querier_topology_spread_max_skew) +
-    $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint) +
+    $.mimirVolumeMounts +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(5) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1),

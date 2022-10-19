@@ -18,17 +18,14 @@ spec:
     metadata:
       labels:
         {{- include "mimir.podLabels" (dict "ctx" . "component" "query-frontend") | nindent 8 }}
-        {{- with .Values.query_frontend.podLabels }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
       annotations:
         {{- include "mimir.podAnnotations" (dict "ctx" . "component" "query-frontend") | nindent 8 }}
       namespace: {{ .Release.Namespace | quote }}
     spec:
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
-    {{- if .Values.query_frontend.priorityClassName }}
+      {{- if .Values.query_frontend.priorityClassName }}
       priorityClassName: {{ .Values.query_frontend.priorityClassName }}
-    {{- end }}
+      {{- end }}
       securityContext:
         {{- toYaml .Values.query_frontend.securityContext | nindent 8 }}
       initContainers:
@@ -67,6 +64,8 @@ spec:
               {{- if .Values.query_frontend.persistence.subPath }}
               subPath: {{ .Values.query_frontend.persistence.subPath }}
               {{- end }}
+            - name: active-queries
+              mountPath: /active-query-tracker
           ports:
             - name: http-metrics
               containerPort: {{ include "mimir.serverHttpListenPort" . }}
@@ -103,6 +102,8 @@ spec:
         {{- toYaml .Values.query_frontend.nodeSelector | nindent 8 }}
       affinity:
         {{- toYaml .Values.query_frontend.affinity | nindent 8 }}
+      topologySpreadConstraints:
+        {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "query-frontend") | nindent 8 }}
       tolerations:
         {{- toYaml .Values.query_frontend.tolerations | nindent 8 }}
       terminationGracePeriodSeconds: {{ .Values.query_frontend.terminationGracePeriodSeconds }}
@@ -121,4 +122,6 @@ spec:
 {{ toYaml .Values.query_frontend.extraVolumes | indent 8}}
 {{- end }}
         - name: storage
+          emptyDir: {}
+        - name: active-queries
           emptyDir: {}

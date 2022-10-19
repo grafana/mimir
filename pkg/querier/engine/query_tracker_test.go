@@ -4,69 +4,22 @@ package engine
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/uber/jaeger-client-go"
 	"github.com/weaveworks/common/user"
-
-	"github.com/grafana/mimir/pkg/util/activitytracker" //lint:ignore faillint queryTracker uses activitytracker
 )
 
-func setupActivityTracker(t *testing.T, maxEntries int) *activitytracker.ActivityTracker {
-	d := t.TempDir()
-
-	cfg := activitytracker.Config{
-		Filepath:   filepath.Join(d, "activity"),
-		MaxEntries: maxEntries,
-	}
-
-	at, err := activitytracker.NewActivityTracker(cfg, nil)
-	require.NoError(t, err)
-
-	t.Cleanup(func() {
-		_ = at.Close()
-	})
-
-	return at
-}
-
-func TestQueryTrackerMaxConcurrency(t *testing.T) {
-	for name, tracker := range map[string]*activitytracker.ActivityTracker{
-		"nil tracker":     nil,
-		"non-nil tracker": setupActivityTracker(t, 16),
-	} {
-		t.Run(name, func(t *testing.T) {
-			const maxConcurrency = 5
-			qt := newQueryTracker(maxConcurrency, tracker)
-
-			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-			defer cancel()
-
-			for i := 0; i < maxConcurrency; i++ {
-				_, err := qt.Insert(ctx, "test query")
-				require.NoError(t, err)
-			}
-
-			_, err := qt.Insert(ctx, "another test query")
-			require.Error(t, err) // Will wait until context timeout.
-
-			// This decreases semaphore in QueryTracker, but doesn't remove activity from ActivityTracker.
-			// For our tests, this is fine.
-			qt.Delete(-1)
-
-			_, err = qt.Insert(ctx, "another test query")
-			require.NoError(t, err)
-		})
-	}
+func TestQueryTrackerUnlimitedMaxConcurrency(t *testing.T) {
+	qt := newQueryTracker(nil)
+	require.Equal(t, -1, qt.GetMaxConcurrent())
 }
 
 func TestQueryTrackerWithNilActivityTrackerInsertDoesntAllocate(t *testing.T) {
-	qt := newQueryTracker(0, nil)
+	qt := newQueryTracker(nil)
 
 	assert.Zero(t, testing.AllocsPerRun(1000, func() {
 		_, _ = qt.Insert(context.Background(), "query string")

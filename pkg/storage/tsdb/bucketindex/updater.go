@@ -8,7 +8,7 @@ package bucketindex
 import (
 	"context"
 	"encoding/json"
-	"io/ioutil"
+	"io"
 	"path"
 	"time"
 
@@ -17,9 +17,9 @@ import (
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
+	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
-	"github.com/thanos-io/thanos/pkg/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -137,7 +137,7 @@ func (w *Updater) updateBlockIndexEntry(ctx context.Context, id ulid.ULID) (*Blo
 	}
 	defer runutil.CloseWithLogOnErr(w.logger, r, "close get block meta file")
 
-	metaContent, err := ioutil.ReadAll(r)
+	metaContent, err := io.ReadAll(r)
 	if err != nil {
 		return nil, errors.Wrapf(err, "read block meta file: %v", metaFile)
 	}

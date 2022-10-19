@@ -41,9 +41,6 @@ spec:
     metadata:
       labels:
         {{- include "mimir.podLabels" (dict "ctx" . "component" "compactor" "memberlist" true) | nindent 8 }}
-        {{- with .Values.compactor.podLabels }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
       annotations:
         {{- include "mimir.podAnnotations" (dict "ctx" . "component" "compactor") | nindent 8 }}
       namespace: {{ .Release.Namespace | quote }}
@@ -66,6 +63,8 @@ spec:
         {{- toYaml .Values.compactor.nodeSelector | nindent 8 }}
       affinity:
         {{- toYaml .Values.compactor.affinity | nindent 8 }}
+      topologySpreadConstraints:
+        {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "compactor") | nindent 8 }}
       tolerations:
         {{- toYaml .Values.compactor.tolerations | nindent 8 }}
       terminationGracePeriodSeconds: {{ .Values.compactor.terminationGracePeriodSeconds }}
@@ -87,6 +86,8 @@ spec:
         {{- if .Values.compactor.extraVolumes }}
         {{ toYaml .Values.compactor.extraVolumes | nindent 8 }}
         {{- end }}
+        - name: active-queries
+          emptyDir: {}
       containers:
         {{- if .Values.compactor.extraContainers }}
         {{ toYaml .Values.compactor.extraContainers | nindent 8 }}
@@ -118,6 +119,8 @@ spec:
               {{- if .Values.compactor.persistentVolume.subPath }}
               subPath: {{ .Values.compactor.persistentVolume.subPath }}
               {{- end }}
+            - name: active-queries
+              mountPath: /active-query-tracker
           ports:
             - name: http-metrics
               containerPort: {{ include "mimir.serverHttpListenPort" . }}

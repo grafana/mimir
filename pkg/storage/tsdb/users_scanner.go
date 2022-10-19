@@ -11,7 +11,9 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/thanos-io/thanos/pkg/objstore"
+	"github.com/thanos-io/objstore"
+
+	"github.com/grafana/mimir/pkg/storage/bucket"
 )
 
 // AllUsers returns true to each call and should be used whenever the UsersScanner should not filter out
@@ -39,10 +41,7 @@ func NewUsersScanner(bucketClient objstore.Bucket, isOwned func(userID string) (
 //
 // If sharding is enabled, returned lists contains only the users owned by this instance.
 func (s *UsersScanner) ScanUsers(ctx context.Context) (users, markedForDeletion []string, err error) {
-	err = s.bucketClient.Iter(ctx, "", func(entry string) error {
-		users = append(users, strings.TrimSuffix(entry, "/"))
-		return nil
-	})
+	users, err = ListUsers(ctx, s.bucketClient)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -74,4 +73,27 @@ func (s *UsersScanner) ScanUsers(ctx context.Context) (users, markedForDeletion 
 	}
 
 	return users, markedForDeletion, nil
+}
+
+// ListUsers returns all user IDs found scanning the root of the bucket.
+func ListUsers(ctx context.Context, bucketClient objstore.Bucket) (users []string, err error) {
+	// Iterate the bucket to find all users in the bucket. Due to how the bucket listing
+	// caching works, it's more likely to have a cache hit if there's no delay while
+	// iterating the bucket, so we do load all users in memory and later process them.
+	err = bucketClient.Iter(ctx, "", func(entry string) error {
+		userID := strings.TrimSuffix(entry, "/")
+		if isUserIDReserved(userID) {
+			return nil
+		}
+
+		users = append(users, userID)
+		return nil
+	})
+
+	return users, err
+}
+
+// isUserIDReserved returns whether the provided user ID is reserved and can't be used for storing metrics.
+func isUserIDReserved(name string) bool {
+	return name == bucket.MimirInternalsPrefix
 }

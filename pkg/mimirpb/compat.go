@@ -239,9 +239,9 @@ func SampleJsoniterEncode(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 	}
 
 	stream.WriteArrayStart()
-	stream.WriteFloat64(float64(sample.TimestampMs) / float64(time.Second/time.Millisecond))
+	marshalTimestamp(sample.TimestampMs, stream)
 	stream.WriteMore()
-	stream.WriteString(model.SampleValue(sample.Value).String())
+	marshalValue(sample.Value, stream)
 	stream.WriteArrayEnd()
 }
 
@@ -279,6 +279,45 @@ func SampleJsoniterDecode(ptr unsafe.Pointer, iter *jsoniter.Iterator) {
 		TimestampMs: int64(t),
 		Value:       v,
 	}
+}
+
+func marshalTimestamp(t int64, stm *jsoniter.Stream) {
+	// Write out the timestamp as a float divided by 1000.
+	// This is ~3x faster than converting to a float.
+	if t < 0 {
+		stm.WriteRaw(`-`)
+		t = -t
+	}
+	stm.WriteInt64(t / 1000)
+	fraction := t % 1000
+	if fraction != 0 {
+		stm.WriteRaw(`.`)
+		if fraction < 100 {
+			stm.WriteRaw(`0`)
+		}
+		if fraction < 10 {
+			stm.WriteRaw(`0`)
+		}
+		stm.WriteInt64(fraction)
+	}
+}
+
+func marshalValue(v float64, stm *jsoniter.Stream) {
+	stm.WriteRaw(`"`)
+	// Taken from https://github.com/json-iterator/go/blob/master/stream_float.go#L71 as a workaround
+	// to https://github.com/json-iterator/go/issues/365 (jsoniter, to follow json standard, doesn't allow inf/nan).
+	buf := stm.Buffer()
+	abs := math.Abs(v)
+	format := byte('f')
+	// Note: Must use float32 comparisons for underlying float32 value to get precise cutoffs right.
+	if abs != 0 {
+		if abs < 1e-6 || abs >= 1e21 {
+			format = 'e'
+		}
+	}
+	buf = strconv.AppendFloat(buf, v, format, -1, 64)
+	stm.SetBuffer(buf)
+	stm.WriteRaw(`"`)
 }
 
 func init() {

@@ -13,7 +13,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math"
 	"net"
 	"net/http"
@@ -44,7 +43,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/thanos-io/thanos/pkg/objstore"
+	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/thanos/pkg/shipper"
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/middleware"
@@ -58,6 +57,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -712,11 +712,6 @@ func TestIngester_Push(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			registry := prometheus.NewRegistry()
 
-			registry.MustRegister(validation.DiscardedSamples)
-			validation.DiscardedSamples.Reset()
-			registry.MustRegister(validation.DiscardedMetadata)
-			validation.DiscardedMetadata.Reset()
-
 			// Create a mocked ingester
 			cfg := defaultIngesterTestConfig(t)
 			cfg.IngesterRing.ReplicationFactor = 1
@@ -801,6 +796,30 @@ func TestIngester_Push(t *testing.T) {
 			// Check tracked Prometheus metrics
 			err = testutil.GatherAndCompare(registry, strings.NewReader(testData.expectedMetrics), mn...)
 			assert.NoError(t, err)
+
+			// Check anonymous usage stats.
+			expectedTenantsCount := 0
+			expectedSamplesCount := 0
+			expectedExemplarsCount := 0
+			if len(testData.expectedIngested) > 0 {
+				expectedTenantsCount = 1
+			}
+			for _, stream := range testData.expectedIngested {
+				expectedSamplesCount += len(stream.Values)
+			}
+			for _, series := range testData.expectedExemplarsIngested {
+				expectedExemplarsCount += len(series.Exemplars)
+			}
+
+			i.updateUsageStats()
+
+			assert.Equal(t, int64(len(testData.expectedIngested)), usagestats.GetInt(memorySeriesStatsName).Value())
+			assert.Equal(t, int64(expectedTenantsCount), usagestats.GetInt(memoryTenantsStatsName).Value())
+			assert.Equal(t, int64(expectedSamplesCount), usagestats.GetCounter(appendedSamplesStatsName).Total())
+			assert.Equal(t, int64(expectedExemplarsCount), usagestats.GetCounter(appendedExemplarsStatsName).Total())
+			assert.Equal(t, int64(0), usagestats.GetInt(tenantsWithOutOfOrderEnabledStatName).Value())
+			assert.Equal(t, int64(0), usagestats.GetInt(minOutOfOrderTimeWindowSecondsStatName).Value())
+			assert.Equal(t, int64(0), usagestats.GetInt(maxOutOfOrderTimeWindowSecondsStatName).Value())
 		})
 	}
 }
@@ -1729,36 +1748,6 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 	}
 }
 
-func BenchmarkIngester_LabelValuesCardinality(b *testing.B) {
-	var (
-		userID              = "test"
-		numSeries           = 10000
-		numSamplesPerSeries = 60 * 6 // 6h on 1 sample per minute
-		startTimestamp      = util.TimeToMillis(time.Now())
-		step                = int64(60000) // 1 sample per minute
-	)
-
-	// Create ingester
-	ing := createIngesterWithSeries(b, userID, numSeries, numSamplesPerSeries, startTimestamp, step)
-
-	ctx := user.InjectOrgID(context.Background(), userID)
-	s := &mockLabelValuesCardinalityServer{context: ctx}
-
-	req := &client.LabelValuesCardinalityRequest{
-		LabelNames: []string{labels.MetricName},
-		Matchers: []*client.LabelMatcher{
-			{Type: client.EQUAL, Name: "label_8", Value: "8"},
-		},
-	}
-	b.Run("label values cardinality", func(b *testing.B) {
-		// Run benchmarks
-		for i := 0; i < b.N; i++ {
-			err := ing.LabelValuesCardinality(req, s)
-			require.NoError(b, err)
-		}
-	})
-}
-
 type series struct {
 	lbls      labels.Labels
 	value     float64
@@ -2384,7 +2373,7 @@ func TestIngester_QueryStream(t *testing.T) {
 
 				for {
 					resp, err := s.Recv()
-					if err == io.EOF {
+					if errors.Is(err, io.EOF) {
 						break
 					}
 					if err != nil {
@@ -2561,7 +2550,7 @@ func TestIngester_QueryStreamManySamples(t *testing.T) {
 
 	for {
 		resp, err := s.Recv()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		require.NoError(t, err)
@@ -2658,7 +2647,7 @@ func TestIngester_QueryStreamManySamplesChunks(t *testing.T) {
 
 	for {
 		resp, err := s.Recv()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		require.NoError(t, err)
@@ -2942,6 +2931,27 @@ func mockWriteRequest(t testing.TB, lbls labels.Labels, value float64, timestamp
 	return req, expectedQueryRes, expectedQueryStreamResSamples, expectedQueryStreamResChunks
 }
 
+func prepareHealthyIngester(b testing.TB) *Ingester {
+	cfg := defaultIngesterTestConfig(b)
+	limits := defaultLimitsTestConfig()
+	limits.MaxGlobalSeriesPerMetric = 0
+	limits.MaxGlobalSeriesPerUser = 0
+
+	// Create ingester.
+	i, err := prepareIngesterWithBlocksStorageAndLimits(b, cfg, limits, "", nil)
+	require.NoError(b, err)
+	require.NoError(b, services.StartAndAwaitRunning(context.Background(), i))
+	b.Cleanup(func() {
+		require.NoError(b, services.StopAndAwaitTerminated(context.Background(), i))
+	})
+
+	// Wait until it's healthy.
+	test.Poll(b, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
+	})
+	return i
+}
+
 func prepareIngesterWithBlocksStorage(t testing.TB, ingesterCfg Config, registerer prometheus.Registerer) (*Ingester, error) {
 	return prepareIngesterWithBlocksStorageAndLimits(t, ingesterCfg, defaultLimitsTestConfig(), "", registerer)
 }
@@ -3047,8 +3057,8 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 				// it's the last one and opening TSDB should fail).
 				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user0", "wal", ""), 0700))
 				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user0", "chunks_head", ""), 0700))
-				require.NoError(t, ioutil.WriteFile(filepath.Join(dir, "user0", "chunks_head", "00000001"), nil, 0700))
-				require.NoError(t, ioutil.WriteFile(filepath.Join(dir, "user0", "chunks_head", "00000002"), nil, 0700))
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "user0", "chunks_head", "00000001"), nil, 0700))
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "user0", "chunks_head", "00000002"), nil, 0700))
 
 				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user1", "dummy"), 0700))
 			},
@@ -3071,8 +3081,8 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 				// it's the last one and opening TSDB should fail).
 				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user2", "wal", ""), 0700))
 				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user2", "chunks_head", ""), 0700))
-				require.NoError(t, ioutil.WriteFile(filepath.Join(dir, "user2", "chunks_head", "00000001"), nil, 0700))
-				require.NoError(t, ioutil.WriteFile(filepath.Join(dir, "user2", "chunks_head", "00000002"), nil, 0700))
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "user2", "chunks_head", "00000001"), nil, 0700))
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "user2", "chunks_head", "00000002"), nil, 0700))
 			},
 			check: func(t *testing.T, i *Ingester) {
 				require.Equal(t, 0, len(i.tsdbs))
@@ -5858,8 +5868,14 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 	pushSamples(90, 99, true)
 	verifySamples(100, 100)
 
+	i.updateUsageStats()
+	assert.Equal(t, int64(0), usagestats.GetInt(tenantsWithOutOfOrderEnabledStatName).Value())
+	assert.Equal(t, int64(0), usagestats.GetInt(minOutOfOrderTimeWindowSecondsStatName).Value())
+	assert.Equal(t, int64(0), usagestats.GetInt(maxOutOfOrderTimeWindowSecondsStatName).Value())
+
 	// Increasing the OOO time window.
 	setOOOTimeWindow(model.Duration(30 * time.Minute))
+
 	// Now it works.
 	pushSamples(90, 99, false)
 	verifySamples(90, 100)
@@ -5872,15 +5888,30 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 	pushSamples(50, 69, true)
 	verifySamples(70, 100)
 
+	i.updateUsageStats()
+	assert.Equal(t, int64(1), usagestats.GetInt(tenantsWithOutOfOrderEnabledStatName).Value())
+	assert.Equal(t, int64(30*60), usagestats.GetInt(minOutOfOrderTimeWindowSecondsStatName).Value())
+	assert.Equal(t, int64(30*60), usagestats.GetInt(maxOutOfOrderTimeWindowSecondsStatName).Value())
+
 	// Increase the time window again. It works.
 	setOOOTimeWindow(model.Duration(60 * time.Minute))
 	pushSamples(50, 69, false)
 	verifySamples(50, 100)
 
+	i.updateUsageStats()
+	assert.Equal(t, int64(1), usagestats.GetInt(tenantsWithOutOfOrderEnabledStatName).Value())
+	assert.Equal(t, int64(60*60), usagestats.GetInt(minOutOfOrderTimeWindowSecondsStatName).Value())
+	assert.Equal(t, int64(60*60), usagestats.GetInt(maxOutOfOrderTimeWindowSecondsStatName).Value())
+
 	// Decrease the time window again. Same push should fail.
 	setOOOTimeWindow(model.Duration(30 * time.Minute))
 	pushSamples(50, 69, true)
 	verifySamples(50, 100)
+
+	i.updateUsageStats()
+	assert.Equal(t, int64(1), usagestats.GetInt(tenantsWithOutOfOrderEnabledStatName).Value())
+	assert.Equal(t, int64(30*60), usagestats.GetInt(minOutOfOrderTimeWindowSecondsStatName).Value())
+	assert.Equal(t, int64(30*60), usagestats.GetInt(maxOutOfOrderTimeWindowSecondsStatName).Value())
 }
 
 func TestNewIngestErrMsgs(t *testing.T) {

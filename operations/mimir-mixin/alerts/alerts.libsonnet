@@ -127,7 +127,7 @@
         {
           alert: $.alertName('FrontendQueriesStuck'),
           expr: |||
-            sum by (%s, job) (cortex_query_frontend_queue_length) > 1
+            sum by (%s, job) (min_over_time(cortex_query_frontend_queue_length[1m])) > 0
           ||| % $._config.alert_aggregation_labels,
           'for': '5m',  // We don't want to block for longer.
           labels: {
@@ -142,9 +142,9 @@
         {
           alert: $.alertName('SchedulerQueriesStuck'),
           expr: |||
-            sum by (%s, job) (cortex_query_scheduler_queue_length) > 1
+            sum by (%s, job) (min_over_time(cortex_query_scheduler_queue_length[1m])) > 0
           ||| % $._config.alert_aggregation_labels,
-          'for': '5m',  // We don't want to block for longer.
+          'for': '7m',  // We don't want to block for longer.
           labels: {
             severity: 'critical',
           },
@@ -221,6 +221,64 @@
             message: '{{ $labels.job }}/%(alert_instance_variable)s has a number of mmap-ed areas close to the limit.' % $._config,
           },
         },
+        {
+          alert: $.alertName('DistributorForwardingErrorRate'),
+          expr: |||
+            sum by (%(alert_aggregation_labels)s) (rate(cortex_distributor_forward_errors_total{}[1m]))
+            /
+            sum by (%(alert_aggregation_labels)s) (rate(cortex_distributor_forward_requests_total{}[1m]))
+            > 0.01
+          ||| % {
+            alert_aggregation_labels: $._config.alert_aggregation_labels,
+          },
+          'for': '5m',
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: |||
+              %(product)s in %(alert_aggregation_variables)s has a high failure rate when forwarding samples.
+            ||| % $._config,
+          },
+        },
+      ] + [
+        {
+          alert: $.alertName('RingMembersMismatch'),
+          expr: |||
+            (
+              avg by(%(alert_aggregation_labels)s) (sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ring_members{name="%(component)s",job=~"(.*/)?%(job)s"}))
+              != sum by(%(alert_aggregation_labels)s) (up{job=~"(.*/)?%(job)s"})
+            )
+            and
+            (
+              count by(%(alert_aggregation_labels)s) (cortex_build_info) > 0
+            )
+          ||| % {
+            alert_aggregation_labels: $._config.alert_aggregation_labels,
+            per_instance_label: $._config.per_instance_label,
+            component: component_job[0],
+            job: component_job[1],
+          },
+          'for': '15m',
+          labels: {
+            component: component_job[0],
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              Number of members in %(product)s %(component)s hash ring does not match the expected number in %(alert_aggregation_variables)s.
+            ||| % { component: component_job[0], alert_aggregation_variables: $._config.alert_aggregation_variables, product: $._config.product },
+          },
+        }
+        // NOTE(jhesketh): It is expected that the stateless components may trigger this alert
+        //                 too often. Just alert on ingester for now.
+        for component_job in [
+          // ['compactor', $._config.job_names.compactor],
+          // ['distributor', $._config.job_names.distributor],
+          ['ingester', $._config.job_names.ingester],
+          // ['ruler', $._config.job_names.ruler],
+          // ['store-gateway', $._config.job_names.store_gateway],
+        ]
       ],
     },
     {
@@ -405,6 +463,21 @@
           annotations: {
             message: |||
               The {{ $labels.rollout_group }} rollout is stuck in %(alert_aggregation_variables)s.
+            ||| % $._config,
+          },
+        },
+        {
+          alert: 'RolloutOperatorNotReconciling',
+          expr: |||
+            max by(%s, rollout_group) (time() - rollout_operator_last_successful_group_reconcile_timestamp_seconds) > 600
+          ||| % $._config.alert_aggregation_labels,
+          'for': '5m',
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: |||
+              Rollout operator is not reconciling the rollout group {{ $labels.rollout_group }} in %(alert_aggregation_variables)s.
             ||| % $._config,
           },
         },

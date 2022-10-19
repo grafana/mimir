@@ -8,6 +8,7 @@ package worker
 import (
 	"context"
 	"flag"
+	"fmt"
 	"os"
 	"sync"
 	"time"
@@ -21,22 +22,25 @@ import (
 	"github.com/weaveworks/common/httpgrpc"
 	"google.golang.org/grpc"
 
-	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
+	"github.com/grafana/mimir/pkg/util/servicediscovery"
 )
 
 type Config struct {
-	FrontendAddress       string        `yaml:"frontend_address"`
-	SchedulerAddress      string        `yaml:"scheduler_address"`
-	DNSLookupPeriod       time.Duration `yaml:"dns_lookup_duration" category:"advanced"`
-	MaxConcurrentRequests int           `yaml:"-"` // Must be same as passed to PromQL Engine.
-	QuerierID             string        `yaml:"id" category:"advanced"`
+	FrontendAddress  string            `yaml:"frontend_address"`
+	SchedulerAddress string            `yaml:"scheduler_address"`
+	DNSLookupPeriod  time.Duration     `yaml:"dns_lookup_duration" category:"advanced"`
+	QuerierID        string            `yaml:"id" category:"advanced"`
+	GRPCClientConfig grpcclient.Config `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate between the queriers and the query-frontends / query-schedulers."`
 
-	GRPCClientConfig grpcclient.Config `yaml:"grpc_client_config"`
+	// This configuration is injected internally.
+	MaxConcurrentRequests   int                       `yaml:"-"` // Must be same as passed to PromQL Engine.
+	QuerySchedulerDiscovery schedulerdiscovery.Config `yaml:"-"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
-	f.StringVar(&cfg.SchedulerAddress, "querier.scheduler-address", "", "Address of the query-scheduler component, in host:port format. Only one of -querier.frontend-address or -querier.scheduler-address can be set. If neither is set, queries are only received via HTTP endpoint.")
-	f.StringVar(&cfg.FrontendAddress, "querier.frontend-address", "", "Address of the query-frontend component, in host:port format. Only one of -querier.frontend-address or -querier.scheduler-address can be set. If neither is set, queries are only received via HTTP endpoint.")
+	f.StringVar(&cfg.SchedulerAddress, "querier.scheduler-address", "", fmt.Sprintf("Address of the query-scheduler component, in host:port format. The host should resolve to all query-scheduler instances. This option should be set only when query-scheduler component is in use and -%s is set to '%s'.", schedulerdiscovery.ModeFlagName, schedulerdiscovery.ModeDNS))
+	f.StringVar(&cfg.FrontendAddress, "querier.frontend-address", "", "Address of the query-frontend component, in host:port format. If multiple query-frontends are running, the host should be a DNS resolving to all query-frontend instances. This option should be set only when query-scheduler component is not in use.")
 	f.DurationVar(&cfg.DNSLookupPeriod, "querier.dns-lookup-period", 10*time.Second, "How often to query DNS for query-frontend or query-scheduler address.")
 	f.StringVar(&cfg.QuerierID, "querier.id", "", "Querier ID, sent to the query-frontend to identify requests from the same querier. Defaults to hostname.")
 
@@ -47,10 +51,18 @@ func (cfg *Config) Validate(log log.Logger) error {
 	if cfg.FrontendAddress != "" && cfg.SchedulerAddress != "" {
 		return errors.New("frontend address and scheduler address are mutually exclusive, please use only one")
 	}
+	if cfg.QuerySchedulerDiscovery.Mode == schedulerdiscovery.ModeRing && (cfg.FrontendAddress != "" || cfg.SchedulerAddress != "") {
+		return fmt.Errorf("frontend address and scheduler address cannot be specified when query-scheduler service discovery mode is set to '%s'", cfg.QuerySchedulerDiscovery.Mode)
+	}
+
 	return cfg.GRPCClientConfig.Validate(log)
 }
 
-// Handler for HTTP requests wrapped in protobuf messages.
+func (cfg *Config) IsFrontendOrSchedulerConfigured() bool {
+	return cfg.FrontendAddress != "" || cfg.SchedulerAddress != "" || cfg.QuerySchedulerDiscovery.Mode == schedulerdiscovery.ModeRing
+}
+
+// RequestHandler for HTTP requests wrapped in protobuf messages.
 type RequestHandler interface {
 	Handle(context.Context, *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error)
 }
@@ -71,6 +83,9 @@ type processor interface {
 	notifyShutdown(ctx context.Context, conn *grpc.ClientConn, address string)
 }
 
+// serviceDiscoveryFactory makes a new service discovery instance.
+type serviceDiscoveryFactory func(receiver servicediscovery.Notifications) (services.Service, error)
+
 type querierWorker struct {
 	*services.BasicService
 
@@ -79,11 +94,13 @@ type querierWorker struct {
 
 	processor processor
 
-	subservices *services.Manager
+	// Subservices manager.
+	subservices        *services.Manager
+	subservicesWatcher *services.FailureWatcher
 
-	mu sync.Mutex
-	// Set to nil when stop is called... no more managers are created afterwards.
-	managers map[string]*processorManager
+	mu        sync.Mutex
+	managers  map[string]*processorManager
+	instances map[string]servicediscovery.Instance
 }
 
 func NewQuerierWorker(cfg Config, handler RequestHandler, log log.Logger, reg prometheus.Registerer) (services.Service, error) {
@@ -97,39 +114,46 @@ func NewQuerierWorker(cfg Config, handler RequestHandler, log log.Logger, reg pr
 
 	var processor processor
 	var servs []services.Service
-	var address string
+	var factory serviceDiscoveryFactory
 
 	switch {
-	case cfg.SchedulerAddress != "":
+	case cfg.SchedulerAddress != "" || cfg.QuerySchedulerDiscovery.Mode == schedulerdiscovery.ModeRing:
 		level.Info(log).Log("msg", "Starting querier worker connected to query-scheduler", "scheduler", cfg.SchedulerAddress)
 
-		address = cfg.SchedulerAddress
+		factory = func(receiver servicediscovery.Notifications) (services.Service, error) {
+			return schedulerdiscovery.New(cfg.QuerySchedulerDiscovery, cfg.SchedulerAddress, cfg.DNSLookupPeriod, "querier", receiver, log, reg)
+		}
+
 		processor, servs = newSchedulerProcessor(cfg, handler, log, reg)
 
 	case cfg.FrontendAddress != "":
 		level.Info(log).Log("msg", "Starting querier worker connected to query-frontend", "frontend", cfg.FrontendAddress)
 
-		address = cfg.FrontendAddress
+		factory = func(receiver servicediscovery.Notifications) (services.Service, error) {
+			return servicediscovery.NewDNS(cfg.FrontendAddress, cfg.DNSLookupPeriod, receiver)
+		}
+
 		processor = newFrontendProcessor(cfg, handler, log)
 
 	default:
 		return nil, errors.New("no query-scheduler or query-frontend address")
 	}
 
-	return newQuerierWorkerWithProcessor(cfg, log, processor, address, servs)
+	return newQuerierWorkerWithProcessor(cfg, log, processor, factory, servs)
 }
 
-func newQuerierWorkerWithProcessor(cfg Config, log log.Logger, processor processor, address string, servs []services.Service) (*querierWorker, error) {
+func newQuerierWorkerWithProcessor(cfg Config, log log.Logger, processor processor, newServiceDiscovery serviceDiscoveryFactory, servs []services.Service) (*querierWorker, error) {
 	f := &querierWorker{
 		cfg:       cfg,
 		log:       log,
 		managers:  map[string]*processorManager{},
+		instances: map[string]servicediscovery.Instance{},
 		processor: processor,
 	}
 
-	// Empty address is only used in tests, where individual targets are added manually.
-	if address != "" {
-		w, err := util.NewDNSWatcher(address, cfg.DNSLookupPeriod, f)
+	// There's no service discovery in some tests.
+	if newServiceDiscovery != nil {
+		w, err := newServiceDiscovery(f)
 		if err != nil {
 			return nil, err
 		}
@@ -144,9 +168,10 @@ func newQuerierWorkerWithProcessor(cfg Config, log log.Logger, processor process
 		}
 
 		f.subservices = subservices
+		f.subservicesWatcher = services.NewFailureWatcher()
 	}
 
-	f.BasicService = services.NewIdleService(f.starting, f.stopping)
+	f.BasicService = services.NewBasicService(f.starting, f.running, f.stopping)
 	return f, nil
 }
 
@@ -154,15 +179,29 @@ func (w *querierWorker) starting(ctx context.Context) error {
 	if w.subservices == nil {
 		return nil
 	}
+
+	w.subservicesWatcher.WatchManager(w.subservices)
 	return services.StartManagerAndAwaitHealthy(ctx, w.subservices)
+}
+
+func (w *querierWorker) running(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return nil
+	case err := <-w.subservicesWatcher.Chan(): // The channel will be nil if w.subservicesWatcher is not set.
+		return errors.Wrap(err, "querier worker subservice failed")
+	}
 }
 
 func (w *querierWorker) stopping(_ error) error {
 	// Stop all goroutines fetching queries. Note that in Stopping state,
-	// worker no longer creates new managers in AddressAdded method.
+	// worker no longer creates new managers in InstanceAdded method.
 	w.mu.Lock()
-	for _, m := range w.managers {
+	for address, m := range w.managers {
 		m.stop()
+
+		delete(w.managers, address)
+		delete(w.instances, address)
 	}
 	w.mu.Unlock()
 
@@ -170,24 +209,27 @@ func (w *querierWorker) stopping(_ error) error {
 		return nil
 	}
 
-	// Stop DNS watcher and services used by processor.
+	// Stop service discovery and services used by processor.
 	return services.StopManagerAndAwaitStopped(context.Background(), w.subservices)
 }
 
-func (w *querierWorker) AddressAdded(address string) {
+func (w *querierWorker) InstanceAdded(instance servicediscovery.Instance) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	// Ensure the querier worker hasn't been stopped (or is stopping).
+	// This check is done inside the lock, to avoid any race condition with the stopping() function.
 	ctx := w.ServiceContext()
 	if ctx == nil || ctx.Err() != nil {
 		return
 	}
 
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
+	address := instance.Address
 	if m := w.managers[address]; m != nil {
 		return
 	}
 
-	level.Info(w.log).Log("msg", "adding connection", "addr", address)
+	level.Info(w.log).Log("msg", "adding connection", "addr", address, "in-use", instance.InUse)
 	conn, err := w.connect(context.Background(), address)
 	if err != nil {
 		level.Error(w.log).Log("msg", "error connecting", "addr", address, "err", err)
@@ -195,55 +237,125 @@ func (w *querierWorker) AddressAdded(address string) {
 	}
 
 	w.managers[address] = newProcessorManager(ctx, w.processor, conn, address)
+	w.instances[address] = instance
+
 	// Called with lock.
 	w.resetConcurrency()
 }
 
-func (w *querierWorker) AddressRemoved(address string) {
-	level.Info(w.log).Log("msg", "removing connection", "addr", address)
+func (w *querierWorker) InstanceRemoved(instance servicediscovery.Instance) {
+	address := instance.Address
+
+	level.Info(w.log).Log("msg", "removing connection", "addr", address, "in-use", instance.InUse)
 
 	w.mu.Lock()
 	p := w.managers[address]
 	delete(w.managers, address)
+	delete(w.instances, address)
 	w.mu.Unlock()
 
 	if p != nil {
 		p.stop()
 	}
+
+	// Re-balance the connections between the available query-frontends / query-schedulers.
+	w.mu.Lock()
+	w.resetConcurrency()
+	w.mu.Unlock()
+}
+
+func (w *querierWorker) InstanceChanged(instance servicediscovery.Instance) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	// Ensure the querier worker hasn't been stopped (or is stopping).
+	// This check is done inside the lock, to avoid any race condition with the stopping() function.
+	ctx := w.ServiceContext()
+	if ctx == nil || ctx.Err() != nil {
+		return
+	}
+
+	// Ensure there's a manager for the instance. If there's no, then it's a bug.
+	if m := w.managers[instance.Address]; m == nil {
+		level.Error(w.log).Log("msg", "received a notification about an unknown backend instance", "addr", instance.Address, "in-use", instance.InUse)
+		return
+	}
+
+	level.Info(w.log).Log("msg", "updating connection", "addr", instance.Address, "in-use", instance.InUse)
+
+	// Update instance and adjust concurrency.
+	w.instances[instance.Address] = instance
+
+	// Called with lock.
+	w.resetConcurrency()
 }
 
 // Must be called with lock.
 func (w *querierWorker) resetConcurrency() {
-	totalConcurrency := 0
-	index := 0
+	desiredConcurrency := w.getDesiredConcurrency()
 
 	for _, m := range w.managers {
-		concurrency := w.cfg.MaxConcurrentRequests / len(w.managers)
+		concurrency, ok := desiredConcurrency[m.address]
+		if !ok {
+			// This error should never happen. If it does, it means there's a bug in the code.
+			level.Error(w.log).Log("msg", "a querier worker is connected to an unknown remote endpoint", "addr", m.address)
 
-		// If max concurrency does not evenly divide into our frontends a subset will be chosen
-		// to receive an extra connection.  Frontend addresses were shuffled above so this will be a
-		// random selection of frontends.
-		if index < w.cfg.MaxConcurrentRequests%len(w.managers) {
-			level.Warn(w.log).Log("msg", "max concurrency is not evenly divisible across targets, adding an extra connection", "addr", m.address)
+			// Consider it as not in-use.
+			concurrency = 1
+		}
+
+		m.concurrency(concurrency)
+	}
+}
+
+// getDesiredConcurrency returns the number of desired connections for each discovered query-frontend / query-scheduler instance.
+// Must be called with lock.
+func (w *querierWorker) getDesiredConcurrency() map[string]int {
+	// Count the number of in-use instances.
+	numInUse := 0
+	for _, instance := range w.instances {
+		if instance.InUse {
+			numInUse++
+		}
+	}
+
+	var (
+		desired    = make(map[string]int, len(w.instances))
+		inUseIndex = 0
+	)
+
+	// Compute the number of desired connections for each discovered instance.
+	for address, instance := range w.instances {
+		// Run only 1 worker for each instance not in-use, to allow for the queues
+		// to be drained when the in-use instances change or if, for any reason,
+		// queries are enqueued on the ones not in-use.
+		if !instance.InUse {
+			desired[address] = 1
+			continue
+		}
+
+		concurrency := w.cfg.MaxConcurrentRequests / numInUse
+
+		// If max concurrency does not evenly divide into in-use instances, then a subset will be chosen
+		// to receive an extra connection. Since we're iterating a map (whose iteration order is not guaranteed),
+		// then this should pratically select a random address for the extra connection.
+		if inUseIndex < w.cfg.MaxConcurrentRequests%numInUse {
+			level.Warn(w.log).Log("msg", "max concurrency is not evenly divisible across targets, adding an extra connection", "addr", address)
 			concurrency++
 		}
 
 		// If concurrency is 0 then MaxConcurrentRequests is less than the total number of
 		// frontends/schedulers. In order to prevent accidentally starving a frontend or scheduler we are just going to
-		// always connect once to every target.  This is dangerous b/c we may start exceeding PromQL
-		// max concurrency.
+		// always connect once to every target.
 		if concurrency == 0 {
 			concurrency = 1
 		}
 
-		totalConcurrency += concurrency
-		m.concurrency(concurrency)
-		index++
+		desired[address] = concurrency
+		inUseIndex++
 	}
 
-	if totalConcurrency > w.cfg.MaxConcurrentRequests {
-		level.Warn(w.log).Log("msg", "total worker concurrency is greater than promql max concurrency. Queries may be queued in the querier which reduces QOS")
-	}
+	return desired
 }
 
 func (w *querierWorker) connect(ctx context.Context, address string) (*grpc.ClientConn, error) {

@@ -1,4 +1,4 @@
-{{- if and ((.Values.metaMonitoring).grafanaAgent).enabled ((((.Values.metaMonitoring).grafanaAgent).metrics).scrapeK8s).enabled }}
+{{- if and .Values.metaMonitoring.grafanaAgent.enabled .Values.metaMonitoring.grafanaAgent.metrics.enabled .Values.metaMonitoring.grafanaAgent.metrics.scrapeK8s.enabled }}
 {{- with .Values.metaMonitoring.serviceMonitor }}
 {{- if .enabled }}
 apiVersion: monitoring.coreos.com/v1

@@ -16,8 +16,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/thanos-io/thanos/pkg/objstore"
+	"github.com/thanos-io/objstore"
 	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -106,22 +105,22 @@ func (b *BucketValidationCommand) Register(app *kingpin.Application, _ EnvVarNam
 }
 
 func (b *BucketValidationCommand) validate(k *kingpin.ParseContext) error {
+	b.logger = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 	if b.bucketConfigHelp {
-		b.printBucketConfigHelp()
+		b.printBucketConfigHelp(b.logger)
 		return nil
 	}
 
-	err := b.parseBucketConfig()
+	err := b.parseBucketConfig(b.logger)
 	if err != nil {
 		return errors.Wrap(err, "error when parsing bucket config")
 	}
 
 	b.setObjectNames()
 	b.objectContent = "testData"
-	b.logger = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 	ctx := context.Background()
 
-	bucketClient, err := bucket.NewClient(ctx, b.cfg, "testClient", b.logger, prometheus.DefaultRegisterer)
+	bucketClient, err := bucket.NewClient(ctx, b.cfg, "testClient", b.logger, nil)
 	if err != nil {
 		return errors.Wrap(err, "failed to create the bucket client")
 	}
@@ -164,9 +163,9 @@ func (b *BucketValidationCommand) validate(k *kingpin.ParseContext) error {
 	return nil
 }
 
-func (b *BucketValidationCommand) printBucketConfigHelp() {
+func (b *BucketValidationCommand) printBucketConfigHelp(logger log.Logger) {
 	fs := flag.NewFlagSet("bucket-config", flag.ContinueOnError)
-	b.cfg.RegisterFlags(fs)
+	b.cfg.RegisterFlags(fs, logger)
 
 	fmt.Fprintf(fs.Output(), `
 The following help text describes the arguments
@@ -180,9 +179,9 @@ mimirtool bucket-validation --bucket-config='-backend=s3 -s3.endpoint=localhost:
 	fs.Usage()
 }
 
-func (b *BucketValidationCommand) parseBucketConfig() error {
+func (b *BucketValidationCommand) parseBucketConfig(logger log.Logger) error {
 	fs := flag.NewFlagSet("bucket-config", flag.ContinueOnError)
-	b.cfg.RegisterFlags(fs)
+	b.cfg.RegisterFlags(fs, logger)
 	err := fs.Parse(strings.Split(b.bucketConfig, " "))
 	if err != nil {
 		return err

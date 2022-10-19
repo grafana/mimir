@@ -10,7 +10,7 @@ import (
 	"crypto/sha256"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"math/rand"
 	"os"
 	"runtime"
@@ -32,7 +32,7 @@ import (
 )
 
 // configHash exposes information about the loaded config
-var configHash *prometheus.GaugeVec = prometheus.NewGaugeVec(
+var configHash = prometheus.NewGaugeVec(
 	prometheus.GaugeOpts{
 		Name: "cortex_config_hash",
 		Help: "Hash of the currently active config file.",
@@ -185,7 +185,7 @@ func main() {
 	// Initialise seed for randomness usage.
 	rand.Seed(time.Now().UnixNano())
 
-	t, err := mimir.New(cfg)
+	t, err := mimir.New(cfg, prometheus.DefaultRegisterer)
 	util_log.CheckFatal("initializing application", err)
 
 	if mainFlags.printModules {
@@ -219,7 +219,7 @@ func main() {
 func parseConfigFileParameter(args []string) (configFile string, expandEnv bool) {
 	// ignore errors and any output here. Any flag errors will be reported by main flag.Parse() call.
 	fs := flag.NewFlagSet("", flag.ContinueOnError)
-	fs.SetOutput(ioutil.Discard)
+	fs.SetOutput(io.Discard)
 
 	// usage not used in these functions.
 	fs.StringVar(&configFile, configFileOption, "", "")
@@ -238,7 +238,7 @@ func parseConfigFileParameter(args []string) (configFile string, expandEnv bool)
 
 // LoadConfig read YAML-formatted config from filename into cfg.
 func LoadConfig(filename string, expandEnv bool, cfg *mimir.Config) error {
-	buf, err := ioutil.ReadFile(filename)
+	buf, err := os.ReadFile(filename)
 	if err != nil {
 		return errors.Wrap(err, "Error reading config file")
 	}

@@ -7,8 +7,10 @@ package push
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -16,10 +18,14 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	"github.com/grafana/dskit/tenant"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/middleware"
+	"go.opentelemetry.io/collector/pdata/pcommon"
+	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -33,12 +39,116 @@ func TestHandler_remoteWrite(t *testing.T) {
 	assert.Equal(t, 200, resp.Code)
 }
 
-func TestHandler_otlpWrite(t *testing.T) {
-	req := createOTLPRequest(t, createOTLPMetricRequest(t))
+func TestHandler_otlpWriteNoCompression(t *testing.T) {
+	req := createOTLPRequest(t, createOTLPMetricRequest(t), false)
 	resp := httptest.NewRecorder()
-	handler := OTLPHandler(100000, nil, false, verifyWriteRequestHandler(t, mimirpb.API))
+	handler := OTLPHandler(100000, nil, false, nil, verifyWriteRequestHandler(t, mimirpb.API))
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
+}
+
+func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
+	// https://github.com/grafana/mimir/issues/3037 is triggered by a single metric
+	// having two different datapoints that correspond to different Prometheus metrics.
+
+	// For the error to be triggered, md.MetricCount() < len(tsMap), hence we're inserting 3 valid
+	// samples from one metric (len = 3), and one invalid metric (metric count = 2).
+
+	md := pmetric.NewMetrics()
+	const name = "foo"
+	attributes := pcommon.NewMap()
+	attributes.InsertString(model.MetricNameLabel, name)
+
+	metric1 := md.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+	metric1.SetName(name)
+	metric1.SetDataType(pmetric.MetricDataTypeGauge)
+
+	datapoint1 := metric1.Gauge().DataPoints().AppendEmpty()
+	datapoint1.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+	datapoint1.SetDoubleVal(0)
+	attributes.CopyTo(datapoint1.Attributes())
+	datapoint1.Attributes().InsertString("diff_label", "bar")
+
+	datapoint2 := metric1.Gauge().DataPoints().AppendEmpty()
+	datapoint2.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+	datapoint2.SetDoubleVal(0)
+	attributes.CopyTo(datapoint2.Attributes())
+	datapoint2.Attributes().InsertString("diff_label", "baz")
+
+	datapoint3 := metric1.Gauge().DataPoints().AppendEmpty()
+	datapoint3.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+	datapoint3.SetDoubleVal(0)
+	attributes.CopyTo(datapoint3.Attributes())
+	datapoint3.Attributes().InsertString("diff_label", "food")
+
+	metric2 := md.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+	metric2.SetName(name)
+	metric2.SetDataType(pmetric.MetricDataTypeGauge)
+
+	req := createOTLPRequest(t, pmetricotlp.NewRequestFromMetrics(md), false)
+	resp := httptest.NewRecorder()
+	handler := OTLPHandler(100000, nil, false, nil, func(ctx context.Context, request *mimirpb.WriteRequest, cleanup func()) (response *mimirpb.WriteResponse, err error) {
+		assert.Len(t, request.Timeseries, 3)
+		assert.False(t, request.SkipLabelNameValidation)
+		cleanup()
+		return &mimirpb.WriteResponse{}, nil
+	})
+	handler.ServeHTTP(resp, req)
+	assert.Equal(t, 200, resp.Code)
+}
+
+func TestHandler_otlpWriteWithCompression(t *testing.T) {
+	req := createOTLPRequest(t, createOTLPMetricRequest(t), true)
+	resp := httptest.NewRecorder()
+	handler := OTLPHandler(100000, nil, false, nil, verifyWriteRequestHandler(t, mimirpb.API))
+	handler.ServeHTTP(resp, req)
+	assert.Equal(t, 200, resp.Code)
+}
+
+func TestHandler_otlpWriteRequestTooBigNoCompression(t *testing.T) {
+	req := createOTLPRequest(t, createOTLPMetricRequest(t), false)
+	resp := httptest.NewRecorder()
+
+	// This one is caught in the r.ContentLength check.
+	handler := OTLPHandler(30, nil, false, nil, verifyWriteRequestHandler(t, mimirpb.API))
+	handler.ServeHTTP(resp, req)
+	assert.Equal(t, http.StatusRequestEntityTooLarge, resp.Code)
+	assert.Contains(t, resp.Body.String(), "the incoming push request has been rejected because its message size of 37 bytes is larger than the allowed limit of 30 bytes (err-mimir-distributor-max-write-message-size). To adjust the related limit, configure -distributor.max-recv-msg-size, or contact your service administrator.")
+}
+
+func TestHandler_otlpWriteRequestTooBigWithCompression(t *testing.T) {
+
+	// createOTLPRequest will create a request which is BIGGER with compression (37 vs 58 bytes).
+	// Hence creating a dummy request.
+	var b bytes.Buffer
+	gz := gzip.NewWriter(&b)
+	_, err := gz.Write(make([]byte, 100000))
+	require.NoError(t, err)
+	require.NoError(t, gz.Close())
+
+	req, err := http.NewRequest("POST", "http://localhost/", bytes.NewReader(b.Bytes()))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/x-protobuf")
+	req.Header.Set("Content-Encoding", "gzip")
+
+	resp := httptest.NewRecorder()
+
+	handler := OTLPHandler(140, nil, false, nil, verifyWriteRequestHandler(t, mimirpb.API))
+	handler.ServeHTTP(resp, req)
+	assert.Equal(t, http.StatusRequestEntityTooLarge, resp.Code)
+	body, err := io.ReadAll(resp.Body)
+	assert.NoError(t, err)
+	assert.Contains(t, string(body), "the incoming push request has been rejected because its message size is larger than the allowed limit of 140 bytes (err-mimir-distributor-max-write-message-size). To adjust the related limit, configure -distributor.max-recv-msg-size, or contact your service administrator.")
+}
+
+func TestHandler_otlpWriteRequestWithUnSupportedCompression(t *testing.T) {
+	req := createOTLPRequest(t, createOTLPMetricRequest(t), true)
+	req.Header.Set("Content-Encoding", "snappy")
+
+	resp := httptest.NewRecorder()
+	handler := OTLPHandler(100000, nil, false, nil, verifyWriteRequestHandler(t, mimirpb.API))
+	handler.ServeHTTP(resp, req)
+	assert.Equal(t, http.StatusUnsupportedMediaType, resp.Code)
 }
 
 func TestHandler_mimirWriteRequest(t *testing.T) {
@@ -187,15 +297,38 @@ func createRequest(t testing.TB, protobuf []byte) *http.Request {
 	return req
 }
 
-func createOTLPRequest(t testing.TB, metricRequest pmetricotlp.Request) *http.Request {
+func createOTLPRequest(t testing.TB, metricRequest pmetricotlp.Request, compress bool) *http.Request {
 	t.Helper()
 
 	rawBytes, err := metricRequest.MarshalProto()
 	require.NoError(t, err)
 
-	req, err := http.NewRequest("POST", "http://localhost/", bytes.NewReader(rawBytes))
+	body := rawBytes
+
+	if compress {
+		var b bytes.Buffer
+		gz := gzip.NewWriter(&b)
+		_, err := gz.Write(rawBytes)
+		require.NoError(t, err)
+		require.NoError(t, gz.Close())
+
+		body = b.Bytes()
+	}
+
+	req, err := http.NewRequest("POST", "http://localhost/", bytes.NewReader(body))
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/x-protobuf")
+	req.Header.Set("X-Scope-OrgID", "test")
+
+	// We need this for testing dropped metrics codepath which requires
+	// tenantID to be present.
+	_, ctx, err := tenant.ExtractTenantIDFromHTTPRequest(req)
+	require.NoError(t, err)
+	req = req.WithContext(ctx)
+
+	if compress {
+		req.Header.Set("Content-Encoding", "gzip")
+	}
 	return req
 }
 
@@ -295,3 +428,10 @@ type bufCloser struct {
 
 func (bufCloser) Close() error                 { return nil }
 func (n bufCloser) BytesBuffer() *bytes.Buffer { return n.Buffer }
+
+func TestNewDistributorMaxWriteMessageSizeErr(t *testing.T) {
+	err := distributorMaxWriteMessageSizeErr{actual: 100, limit: 50}
+	msg := `the incoming push request has been rejected because its message size of 100 bytes is larger than the allowed limit of 50 bytes (err-mimir-distributor-max-write-message-size). To adjust the related limit, configure -distributor.max-recv-msg-size, or contact your service administrator.`
+
+	assert.Equal(t, msg, err.Error())
+}

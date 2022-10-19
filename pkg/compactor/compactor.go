@@ -10,7 +10,6 @@ import (
 	"flag"
 	"fmt"
 	"hash/fnv"
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"path"
@@ -27,8 +26,8 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/thanos/pkg/block"
-	"github.com/thanos-io/thanos/pkg/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -189,8 +188,10 @@ type ConfigProvider interface {
 	// CompactorTenantShardSize returns number of compactors that this user can use. 0 = all compactors.
 	CompactorTenantShardSize(userID string) int
 
-	// CompactorPartialBlockDeletionDelay returns the partial block delay time period for a given user.
-	CompactorPartialBlockDeletionDelay(userID string) time.Duration
+	// CompactorPartialBlockDeletionDelay returns the partial block delay time period for a given user,
+	// and whether the configured value was valid. If the value wasn't valid, the returned delay is the default one
+	// and the caller is responsible to warn the Mimir operator about it.
+	CompactorPartialBlockDeletionDelay(userID string) (delay time.Duration, valid bool)
 
 	// CompactorBlockUploadEnabled returns whether block upload is enabled for a given tenant.
 	CompactorBlockUploadEnabled(tenantID string) bool
@@ -726,14 +727,7 @@ func (c *MultitenantCompactor) discoverUsersWithRetries(ctx context.Context) ([]
 }
 
 func (c *MultitenantCompactor) discoverUsers(ctx context.Context) ([]string, error) {
-	var users []string
-
-	err := c.bucketClient.Iter(ctx, "", func(entry string) error {
-		users = append(users, strings.TrimSuffix(entry, "/"))
-		return nil
-	})
-
-	return users, err
+	return mimir_tsdb.ListUsers(ctx, c.bucketClient)
 }
 
 // shardingStrategy describes whether compactor "owns" given user or job.
@@ -830,7 +824,7 @@ func (c *MultitenantCompactor) metaSyncDirForUser(userID string) string {
 func (c *MultitenantCompactor) listTenantsWithMetaSyncDirectories() map[string]struct{} {
 	result := map[string]struct{}{}
 
-	files, err := ioutil.ReadDir(c.compactorCfg.DataDir)
+	files, err := os.ReadDir(c.compactorCfg.DataDir)
 	if err != nil {
 		return nil
 	}

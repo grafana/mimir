@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -17,6 +16,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -102,7 +102,7 @@ func TestSampledRemoteRead(t *testing.T) {
 
 	require.Equal(t, 200, recorder.Result().StatusCode)
 	require.Equal(t, []string([]string{"application/x-protobuf"}), recorder.Result().Header["Content-Type"])
-	responseBody, err := ioutil.ReadAll(recorder.Result().Body)
+	responseBody, err := io.ReadAll(recorder.Result().Body)
 	require.NoError(t, err)
 	responseBody, err = snappy.Decode(nil, responseBody)
 	require.NoError(t, err)
@@ -272,7 +272,7 @@ func TestStreamedRemoteRead(t *testing.T) {
 			for {
 				var res client.StreamReadResponse
 				err := stream.NextProto(&res)
-				if err == io.EOF {
+				if errors.Is(err, io.EOF) {
 					break
 				}
 				require.NoError(t, err)

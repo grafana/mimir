@@ -54,10 +54,11 @@ func newBlocksStoreReplicationSet(
 	reg prometheus.Registerer,
 ) (*blocksStoreReplicationSet, error) {
 	s := &blocksStoreReplicationSet{
-		storesRing:        storesRing,
-		clientsPool:       newStoreGatewayClientPool(client.NewRingServiceDiscovery(storesRing), clientConfig, logger, reg),
-		balancingStrategy: balancingStrategy,
-		limits:            limits,
+		storesRing:         storesRing,
+		clientsPool:        newStoreGatewayClientPool(client.NewRingServiceDiscovery(storesRing), clientConfig, logger, reg),
+		balancingStrategy:  balancingStrategy,
+		limits:             limits,
+		subservicesWatcher: services.NewFailureWatcher(),
 	}
 
 	var err error

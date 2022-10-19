@@ -1,0 +1,161 @@
+"services":
+  "grafana-agent":
+    "command":
+      - "-config.file=/etc/agent-config/grafana-agent.yaml"
+      - "-prometheus.wal-directory=/tmp"
+    "image": "grafana/agent:v0.21.2"
+    "ports":
+      - "9091:9091"
+    "volumes":
+      - "./config:/etc/agent-config"
+  "memcached":
+    "image": "memcached:1.6"
+  "mimir-backend-1":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "./mimir"
+      - "-config.file=./config/mimir.yaml"
+      - "-target=backend"
+      - "-activity-tracker.filepath=/activity/mimir-backend-1"
+    "depends_on":
+      - "minio"
+    "environment": []
+    "hostname": "mimir-backend-1"
+    "image": "mimir"
+    "ports":
+      - "8006:8080"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+  "mimir-backend-2":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "./mimir"
+      - "-config.file=./config/mimir.yaml"
+      - "-target=backend"
+      - "-activity-tracker.filepath=/activity/mimir-backend-2"
+    "depends_on":
+      - "minio"
+    "environment": []
+    "hostname": "mimir-backend-2"
+    "image": "mimir"
+    "ports":
+      - "8007:8080"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+  "mimir-read-1":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "./mimir"
+      - "-config.file=./config/mimir.yaml"
+      - "-target=read"
+      - "-activity-tracker.filepath=/activity/mimir-read-1"
+    "depends_on":
+      - "minio"
+    "environment": []
+    "hostname": "mimir-read-1"
+    "image": "mimir"
+    "ports":
+      - "8004:8080"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+  "mimir-read-2":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "./mimir"
+      - "-config.file=./config/mimir.yaml"
+      - "-target=read"
+      - "-activity-tracker.filepath=/activity/mimir-read-2"
+    "depends_on":
+      - "minio"
+    "environment": []
+    "hostname": "mimir-read-2"
+    "image": "mimir"
+    "ports":
+      - "8005:8080"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+  "mimir-write-1":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "./mimir"
+      - "-config.file=./config/mimir.yaml"
+      - "-target=write"
+      - "-activity-tracker.filepath=/activity/mimir-write-1"
+    "depends_on":
+      - "minio"
+    "environment": []
+    "hostname": "mimir-write-1"
+    "image": "mimir"
+    "ports":
+      - "8001:8080"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+      - ".data-mimir-write-1:/data:delegated"
+  "mimir-write-2":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "./mimir"
+      - "-config.file=./config/mimir.yaml"
+      - "-target=write"
+      - "-activity-tracker.filepath=/activity/mimir-write-2"
+    "depends_on":
+      - "minio"
+    "environment": []
+    "hostname": "mimir-write-2"
+    "image": "mimir"
+    "ports":
+      - "8002:8080"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+      - ".data-mimir-write-2:/data:delegated"
+  "mimir-write-3":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "./mimir"
+      - "-config.file=./config/mimir.yaml"
+      - "-target=write"
+      - "-activity-tracker.filepath=/activity/mimir-write-3"
+    "depends_on":
+      - "minio"
+    "environment": []
+    "hostname": "mimir-write-3"
+    "image": "mimir"
+    "ports":
+      - "8003:8080"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+      - ".data-mimir-write-3:/data:delegated"
+  "minio":
+    "command":
+      - "server"
+      - "/data"
+    "environment":
+      - "MINIO_ROOT_USER=mimir"
+      - "MINIO_ROOT_PASSWORD=supersecret"
+    "image": "minio/minio"
+    "ports":
+      - "9000:9000"
+    "volumes":
+      - ".data-minio:/data:delegated"
+"version": "3.4"

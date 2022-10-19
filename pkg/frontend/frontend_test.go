@@ -8,7 +8,7 @@ package frontend
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -35,6 +35,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/transport"
 	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
+	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 )
 
 const (
@@ -84,7 +85,7 @@ func TestFrontend_RequestHostHeaderWhenDownstreamURLIsConfigured(t *testing.T) {
 		require.Equal(t, 200, resp.StatusCode)
 
 		defer resp.Body.Close()
-		_, err = ioutil.ReadAll(resp.Body)
+		_, err = io.ReadAll(resp.Body)
 		require.NoError(t, err)
 
 		// We expect the Host received by the downstream is the downstream host itself
@@ -142,7 +143,7 @@ func TestFrontend_LogsSlowQueriesFormValues(t *testing.T) {
 
 		resp, err := client.Do(req)
 		assert.NoError(t, err)
-		b, err := ioutil.ReadAll(resp.Body)
+		b, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
 
 		assert.NoError(t, err)
@@ -200,7 +201,7 @@ func TestFrontend_ReturnsRequestBodyTooLargeError(t *testing.T) {
 
 		resp, err := client.Do(req)
 		assert.NoError(t, err)
-		b, err := ioutil.ReadAll(resp.Body)
+		b, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		assert.NoError(t, err)
 
@@ -279,6 +280,11 @@ func defaultFrontendConfig() CombinedFrontendConfig {
 	flagext.DefaultValues(&config.Handler)
 	flagext.DefaultValues(&config.FrontendV1)
 	flagext.DefaultValues(&config.FrontendV2)
+
+	querySchedulerDiscoveryConfig := schedulerdiscovery.Config{}
+	flagext.DefaultValues(&querySchedulerDiscoveryConfig)
+	config.FrontendV2.QuerySchedulerDiscovery = querySchedulerDiscoveryConfig
+
 	return config
 }
 

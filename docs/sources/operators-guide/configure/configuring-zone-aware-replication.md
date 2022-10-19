@@ -54,6 +54,10 @@ Zone-aware replication in the ingester ensures that Grafana Mimir replicates eac
 2. Roll out ingesters so that each ingester replica runs with a configured zone.
 3. Set the `-ingester.ring.zone-awareness-enabled=true` CLI flag or its respective YAML configuration parameter for distributors, ingesters, and queriers.
 
+> **Note:** The requests that the distributors receive are usually compressed, and the requests that the distributors send to the ingesters are uncompressed by default.
+> This can result in increased cross-zone bandwidth costs (because at least two ingesters will be in different availability zones).
+> If this cost is a concern, you can compress those requests by setting the `-ingester.client.grpc-compression` CLI flag, or its respective YAML configuration parameter, to `snappy` or `gzip` in the distributors.
+
 ## Configuring store-gateway blocks replication
 
 To enable zone-aware replication for the store-gateways, refer to [Zone awareness]({{< relref "../architecture/components/store-gateway.md#zone-awareness" >}}).
@@ -84,4 +88,4 @@ The [Kubernetes Rollout Operator](https://github.com/grafana/rollout-operator) i
 ## Enabling zone-awareness via the Grafana Mimir Jsonnet
 
 Instead of configuring Grafana Mimir directly, you can use the [Grafana Mimir Jsonnet](https://github.com/grafana/mimir/tree/main/operations/mimir) to enable ingester and store-gateway zone awareness.
-To enable ingester and store-gateway zone awareness, set the top level `cortex_multi_zone_store_gateway_enabled` or `cortex_multi_zone_ingester_enabled` Jsonnet fields to `true`. These flags set the required Grafana Mimir configuration parameters that support ingester and store-gateway zone awareness.
+To enable ingester and store-gateway zone awareness, set the top level `multi_zone_store_gateway_enabled` or `multi_zone_ingester_enabled` Jsonnet fields to `true`. These flags set the required Grafana Mimir configuration parameters that support ingester and store-gateway zone awareness.

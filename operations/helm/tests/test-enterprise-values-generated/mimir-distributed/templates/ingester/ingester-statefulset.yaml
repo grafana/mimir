@@ -9,7 +9,6 @@ metadata:
     app.kubernetes.io/instance: test-enterprise-values
     app.kubernetes.io/component: ingester
     app.kubernetes.io/part-of: memberlist
-    app.kubernetes.io/version: "2.2.0"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -25,12 +24,21 @@ spec:
   updateStrategy:
     type: RollingUpdate
   serviceName: test-enterprise-values-mimir-ingester-headless
+  volumeClaimTemplates:
+    - metadata:
+        name: storage
+      spec:
+        accessModes:
+          
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: "2Gi"
   template:
     metadata:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-enterprise-values
-        app.kubernetes.io/version: "2.2.0"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: ingester
         app.kubernetes.io/part-of: memberlist
@@ -46,6 +54,15 @@ spec:
         {}
       affinity:
         {}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: mimir
+              app.kubernetes.io/instance: test-enterprise-values
+              app.kubernetes.io/component: ingester
       tolerations:
         []
       terminationGracePeriodSeconds: 240
@@ -59,7 +76,7 @@ spec:
         - name: runtime-config
           configMap:
             name: test-enterprise-values-mimir-runtime
-        - name: storage
+        - name: active-queries
           emptyDir: {}
       containers:
         - name: ingester
@@ -78,6 +95,8 @@ spec:
               mountPath: "/data"
             - name: license
               mountPath: /license
+            - name: active-queries
+              mountPath: /active-query-tracker
           ports:
             - name: http-metrics
               containerPort: 8080
@@ -97,7 +116,7 @@ spec:
             initialDelaySeconds: 60
           resources:
             requests:
-              cpu: 10m
+              cpu: 100m
               memory: 512Mi
           securityContext:
             readOnlyRootFilesystem: true

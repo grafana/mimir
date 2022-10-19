@@ -8,7 +8,6 @@ metadata:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-values
     app.kubernetes.io/component: memcached
-    app.kubernetes.io/version: "2.2.0"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -30,7 +29,6 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-values
-        app.kubernetes.io/version: "2.2.0"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: index-cache
       annotations:
@@ -49,16 +47,18 @@ spec:
         {}
       affinity:
         {}
+      topologySpreadConstraints:
+        
       tolerations:
         []
       terminationGracePeriodSeconds: 60
       containers:
         - name: memcached
-          image: memcached:1.6.9-alpine
+          image: memcached:1.6.16-alpine
           imagePullPolicy: IfNotPresent
           resources:
-            requests:
-              cpu: 10m
+            limits: null
+            requests: null
           ports:
             - containerPort: 11211
               name: client
@@ -92,3 +92,9 @@ spec:
           resources:
             limits: {}
             requests: {}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true

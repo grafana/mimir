@@ -120,6 +120,8 @@ type RulesLimits interface {
 	RulerTenantShardSize(userID string) int
 	RulerMaxRuleGroupsPerTenant(userID string) int
 	RulerMaxRulesPerRuleGroup(userID string) int
+	RulerRecordingRulesEvaluationEnabled(userID string) bool
+	RulerAlertingRulesEvaluationEnabled(userID string) bool
 }
 
 func MetricsQueryFunc(qf rules.QueryFunc, queries, failedQueries prometheus.Counter) rules.QueryFunc {
@@ -270,12 +272,13 @@ func DefaultTenantManagerFactory(
 			Context:                    user.InjectOrgID(ctx, userID),
 			GroupEvaluationContextFunc: FederatedGroupContextFunc,
 			ExternalURL:                cfg.ExternalURL.URL,
-			NotifyFunc:                 SendAlerts(notifier, cfg.ExternalURL.URL.String()),
+			NotifyFunc:                 SendAlerts(notifier, cfg.ExternalURL.String()),
 			Logger:                     log.With(logger, "user", userID),
 			Registerer:                 reg,
 			OutageTolerance:            cfg.OutageTolerance,
 			ForGracePeriod:             cfg.ForGracePeriod,
 			ResendDelay:                cfg.ResendDelay,
+			AlwaysRestoreAlertState:    true,
 			DefaultEvaluationDelay: func() time.Duration {
 				// Delay the evaluation of all rules by a set interval to give a buffer
 				// to metric that haven't been forwarded to Mimir yet.

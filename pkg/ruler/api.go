@@ -7,7 +7,7 @@ package ruler
 
 import (
 	"encoding/json"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
 	"sort"
@@ -376,14 +376,14 @@ func parseRequest(req *http.Request, requireNamespace, requireGroup bool) (strin
 
 	namespace, err := parseNamespace(vars)
 	if err != nil {
-		if err != ErrNoNamespace || requireNamespace {
+		if !errors.Is(err, ErrNoNamespace) || requireNamespace {
 			return "", "", "", err
 		}
 	}
 
 	group, err := parseGroupName(vars)
 	if err != nil {
-		if err != ErrNoGroupName || requireGroup {
+		if !errors.Is(err, ErrNoGroupName) || requireGroup {
 			return "", "", "", err
 		}
 	}
@@ -456,7 +456,7 @@ func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	payload, err := ioutil.ReadAll(req.Body)
+	payload, err := io.ReadAll(req.Body)
 	if err != nil {
 		level.Error(logger).Log("msg", "unable to read rule group payload", "err", err.Error())
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -528,7 +528,7 @@ func (a *API) DeleteNamespace(w http.ResponseWriter, req *http.Request) {
 
 	err = a.store.DeleteNamespace(req.Context(), userID, namespace)
 	if err != nil {
-		if err == rulestore.ErrGroupNamespaceNotFound {
+		if errors.Is(err, rulestore.ErrGroupNamespaceNotFound) {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
 		}
@@ -550,7 +550,7 @@ func (a *API) DeleteRuleGroup(w http.ResponseWriter, req *http.Request) {
 
 	err = a.store.DeleteRuleGroup(req.Context(), userID, namespace, groupName)
 	if err != nil {
-		if err == rulestore.ErrGroupNotFound {
+		if errors.Is(err, rulestore.ErrGroupNotFound) {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
 		}

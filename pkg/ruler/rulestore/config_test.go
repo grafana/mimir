@@ -34,6 +34,13 @@ func TestIsDefaults(t *testing.T) {
 			},
 			expected: false,
 		},
+		"should return true if only a non-config field has changed": {
+			setup: func(cfg *Config) {
+				flagext.DefaultValues(cfg)
+				cfg.Middlewares = append(cfg.Middlewares, nil)
+			},
+			expected: true,
+		},
 	}
 
 	for testName, testData := range tests {

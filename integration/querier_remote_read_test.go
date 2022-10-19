@@ -10,8 +10,8 @@ package integration
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
-	"io/ioutil"
 	"math/rand"
 	"net/http"
 	"testing"
@@ -111,7 +111,7 @@ func TestQuerierRemoteRead(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, httpResp.StatusCode)
 
-	compressed, err = ioutil.ReadAll(httpResp.Body)
+	compressed, err = io.ReadAll(httpResp.Body)
 	require.NoError(t, err)
 
 	uncompressed, err := snappy.Decode(nil, compressed)
@@ -217,6 +217,7 @@ func TestQuerierStreamingRemoteRead(t *testing.T) {
 
 	httpReq, err := http.NewRequestWithContext(httpReqCtx, "POST", "http://"+querier.HTTPEndpoint()+"/prometheus/api/v1/read", bytes.NewReader(compressed))
 	require.NoError(t, err)
+	httpReq.Header.Add("Accept-Encoding", "snappy")
 	httpReq.Header.Set("X-Scope-OrgID", "user-1")
 	httpReq.Header.Set("User-Agent", "Prometheus/1.8.2")
 	httpReq.Header.Set("X-Prometheus-Remote-Read-Version", "0.1.0")
@@ -232,7 +233,7 @@ func TestQuerierStreamingRemoteRead(t *testing.T) {
 	for {
 		var res prompb.ChunkedReadResponse
 		err := stream.NextProto(&res)
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		require.NoError(t, err)

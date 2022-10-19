@@ -361,7 +361,7 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=distributor
-        image: grafana/mimir:2.2.0
+        image: grafana/mimir:2.3.1
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -454,7 +454,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1024"
-        image: grafana/mimir:2.2.0
+        image: grafana/mimir:2.3.1
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -514,7 +514,7 @@ spec:
     spec:
       containers:
       - args:
-        - -query-frontend.align-querier-with-step=false
+        - -query-frontend.align-queries-with-step=false
         - -query-frontend.cache-results=true
         - -query-frontend.max-cache-freshness=10m
         - -query-frontend.results-cache.backend=memcached
@@ -528,7 +528,7 @@ spec:
         - -server.http-write-timeout=1m
         - -store.max-query-length=12000h
         - -target=query-frontend
-        image: grafana/mimir:2.2.0
+        image: grafana/mimir:2.3.1
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -598,7 +598,7 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=query-scheduler
-        image: grafana/mimir:2.2.0
+        image: grafana/mimir:2.3.1
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -673,7 +673,7 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=compactor
-        image: grafana/mimir:2.2.0
+        image: grafana/mimir:2.3.1
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -759,13 +759,10 @@ spec:
         - -distributor.health-check-ingesters=true
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
-        - -ingester.max-global-series-per-metric=20000
         - -ingester.max-global-series-per-user=150000
-        - -ingester.ring.heartbeat-period=15s
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.num-tokens=512
         - -ingester.ring.prefix=
-        - -ingester.ring.readiness-check-ring-health=false
         - -ingester.ring.replication-factor=3
         - -ingester.ring.store=memberlist
         - -ingester.ring.tokens-file-path=/data/tokens
@@ -778,7 +775,7 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=ingester
-        image: grafana/mimir:2.2.0
+        image: grafana/mimir:2.3.1
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -856,7 +853,7 @@ spec:
         - -I 1m
         - -c 16384
         - -v
-        image: memcached:1.6.9-alpine
+        image: memcached:1.6.16-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -909,7 +906,7 @@ spec:
         - -I 5m
         - -c 1024
         - -v
-        image: memcached:1.6.9-alpine
+        image: memcached:1.6.16-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -962,7 +959,7 @@ spec:
         - -I 5m
         - -c 16384
         - -v
-        image: memcached:1.6.9-alpine
+        image: memcached:1.6.16-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -1015,7 +1012,7 @@ spec:
         - -I 1m
         - -c 16384
         - -v
-        image: memcached:1.6.9-alpine
+        image: memcached:1.6.16-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -1106,7 +1103,7 @@ spec:
         - -store-gateway.sharding-ring.tokens-file-path=/data/tokens
         - -store-gateway.sharding-ring.wait-stability-min-duration=1m
         - -target=store-gateway
-        image: grafana/mimir:2.2.0
+        image: grafana/mimir:2.3.1
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:

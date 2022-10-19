@@ -9,7 +9,7 @@ import (
 	"bytes"
 	"context"
 	"html/template"
-	"io/ioutil"
+	"io"
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
@@ -221,6 +221,13 @@ func (b bytesBuffered) BytesBuffer() *bytes.Buffer {
 }
 
 func TestIsRequestBodyTooLargeRegression(t *testing.T) {
-	_, err := ioutil.ReadAll(http.MaxBytesReader(httptest.NewRecorder(), ioutil.NopCloser(bytes.NewReader([]byte{1, 2, 3, 4})), 1))
+	_, err := io.ReadAll(http.MaxBytesReader(httptest.NewRecorder(), io.NopCloser(bytes.NewReader([]byte{1, 2, 3, 4})), 1))
 	assert.True(t, util.IsRequestBodyTooLarge(err))
+}
+
+func TestNewMsgSizeTooLargeErr(t *testing.T) {
+	err := util.MsgSizeTooLargeErr{Actual: 100, Limit: 50}
+	msg := `the request has been rejected because its size of 100 bytes exceeds the limit of 50 bytes`
+
+	assert.Equal(t, msg, err.Error())
 }

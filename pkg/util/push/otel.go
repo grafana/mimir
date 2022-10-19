@@ -3,9 +3,9 @@
 package push
 
 import (
+	"compress/gzip"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"time"
@@ -14,13 +14,17 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/pkg/translator/prometheusremotewrite"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/middleware"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -31,16 +35,17 @@ const (
 
 	otelParseError = "otlp_parse_error"
 	maxErrMsgLen   = 1024
-
-	messageSizeLargerErrFmt = "received message larger than max (%d > %d)"
 )
 
 func OTLPHandler(
 	maxRecvMsgSize int,
 	sourceIPs *middleware.SourceIPExtractor,
 	allowSkipLabelNameValidation bool,
+	reg prometheus.Registerer,
 	push Func,
 ) http.Handler {
+	discardedDueToOtelParseError := validation.DiscardedSamplesCounter(reg, otelParseError)
+
 	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, push, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, dst []byte, req *mimirpb.PreallocWriteRequest) ([]byte, error) {
 		var decoderFunc func(buf []byte) (pmetricotlp.Request, error)
 
@@ -61,17 +66,41 @@ func OTLPHandler(
 			}
 
 		default:
-			return nil, fmt.Errorf("unsupported content type: %s, supported: [%s, %s]", contentType, jsonContentType, pbContentType)
+			return nil, httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported content type: %s, supported: [%s, %s]", contentType, jsonContentType, pbContentType)
 		}
 
 		if r.ContentLength > int64(maxRecvMsgSize) {
-			return nil, fmt.Errorf(messageSizeLargerErrFmt, r.ContentLength, maxRecvMsgSize)
+			return nil, httpgrpc.Errorf(http.StatusRequestEntityTooLarge, distributorMaxWriteMessageSizeErr{actual: int(r.ContentLength), limit: maxRecvMsgSize}.Error())
 		}
 
-		reader := http.MaxBytesReader(nil, r.Body, int64(maxRecvMsgSize))
+		reader := r.Body
+		// Handle compression.
+		switch r.Header.Get("Content-Encoding") {
+		case "gzip":
+			gr, err := gzip.NewReader(reader)
+			if err != nil {
+				return nil, err
+			}
+			reader = gr
+
+		case "":
+			// No compression.
+
+		default:
+			return nil, httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported compression: %s. Only \"gzip\" or no compression supported", r.Header.Get("Content-Encoding"))
+		}
+
+		// Protect against a large input.
+		reader = http.MaxBytesReader(nil, reader, int64(maxRecvMsgSize))
+
 		body, err := io.ReadAll(reader)
 		if err != nil {
 			r.Body.Close()
+
+			if util.IsRequestBodyTooLarge(err) {
+				return body, httpgrpc.Errorf(http.StatusRequestEntityTooLarge, distributorMaxWriteMessageSizeErr{actual: -1, limit: maxRecvMsgSize}.Error())
+			}
+
 			return body, err
 		}
 
@@ -84,7 +113,7 @@ func OTLPHandler(
 			return body, err
 		}
 
-		metrics, err := otelMetricsToTimeseries(ctx, logger, otlpReq.Metrics())
+		metrics, err := otelMetricsToTimeseries(ctx, discardedDueToOtelParseError, logger, otlpReq.Metrics())
 		if err != nil {
 			return body, err
 		}
@@ -94,7 +123,7 @@ func OTLPHandler(
 	})
 }
 
-func otelMetricsToTimeseries(ctx context.Context, logger kitlog.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
+func otelMetricsToTimeseries(ctx context.Context, discardedDueToOtelParseError *prometheus.CounterVec, logger kitlog.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
 	tsMap, errs := prometheusremotewrite.FromMetrics(md, prometheusremotewrite.Settings{})
 
 	if errs != nil {
@@ -103,8 +132,8 @@ func otelMetricsToTimeseries(ctx context.Context, logger kitlog.Logger, md pmetr
 			return nil, err
 		}
 
-		dropped := md.MetricCount() - len(tsMap)
-		validation.DiscardedSamples.WithLabelValues(otelParseError, userID).Add(float64(dropped))
+		dropped := md.DataPointCount() - sampleCountInMap(tsMap)
+		discardedDueToOtelParseError.WithLabelValues(userID).Add(float64(dropped))
 
 		parseErrs := errs.Error()
 		if len(parseErrs) > maxErrMsgLen {
@@ -177,7 +206,7 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries) pmetricotlp.Request
 		attributes := pcommon.NewMap()
 
 		for _, l := range ts.Labels {
-			if l.Name == "__name__" {
+			if l.Name == model.MetricNameLabel {
 				name = l.Value
 				continue
 			}
@@ -198,4 +227,13 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries) pmetricotlp.Request
 	}
 
 	return pmetricotlp.NewRequestFromMetrics(d)
+}
+
+func sampleCountInMap(tsMap map[string]*prompb.TimeSeries) int {
+	count := 0
+	for _, ts := range tsMap {
+		count += len(ts.Samples)
+	}
+
+	return count
 }

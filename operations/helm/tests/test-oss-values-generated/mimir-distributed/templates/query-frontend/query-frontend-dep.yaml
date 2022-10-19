@@ -8,7 +8,6 @@ metadata:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-values
     app.kubernetes.io/component: query-frontend
-    app.kubernetes.io/version: "2.2.0"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -21,16 +20,12 @@ spec:
       app.kubernetes.io/instance: test-oss-values
       app.kubernetes.io/component: query-frontend
   strategy:
-    rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 1
     type: RollingUpdate
   template:
     metadata:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-values
-        app.kubernetes.io/version: "2.2.0"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: query-frontend
       annotations:
@@ -56,6 +51,8 @@ spec:
               mountPath: /etc/mimir
             - name: storage
               mountPath: /data
+            - name: active-queries
+              mountPath: /active-query-tracker
           ports:
             - name: http-metrics
               containerPort: 8080
@@ -71,9 +68,7 @@ spec:
               port: http-metrics
             initialDelaySeconds: 45
           resources:
-            requests:
-              cpu: 100m
-              memory: 128Mi
+            limits: null
           securityContext:
             readOnlyRootFilesystem: true
           env:
@@ -83,17 +78,16 @@ spec:
       nodeSelector:
         {}
       affinity:
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-          - podAffinityTerm:
-              labelSelector:
-                matchExpressions:
-                - key: target
-                  operator: In
-                  values:
-                  - query-frontend
-              topologyKey: kubernetes.io/hostname
-            weight: 100
+        {}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: mimir
+              app.kubernetes.io/instance: test-oss-values
+              app.kubernetes.io/component: query-frontend
       tolerations:
         []
       terminationGracePeriodSeconds: 180
@@ -108,4 +102,6 @@ spec:
           configMap:
             name: test-oss-values-mimir-runtime
         - name: storage
+          emptyDir: {}
+        - name: active-queries
           emptyDir: {}

@@ -16,6 +16,7 @@
     (import 'dashboards/overrides.libsonnet') +
     (import 'dashboards/tenants.libsonnet') +
     (import 'dashboards/top-tenants.libsonnet') +
+    (import 'dashboards/overview.libsonnet') +
 
     (if !$._config.resources_dashboards_enabled then {} else
        (import 'dashboards/reads-resources.libsonnet') +

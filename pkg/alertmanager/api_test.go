@@ -9,7 +9,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -22,7 +22,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	commoncfg "github.com/prometheus/common/config"
 	"github.com/stretchr/testify/assert"
-	"github.com/thanos-io/thanos/pkg/objstore"
+	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore/bucketclient"
@@ -645,7 +645,7 @@ template_files:
 			am.SetUserConfig(w, req.WithContext(ctx))
 			resp := w.Result()
 
-			body, err := ioutil.ReadAll(resp.Body)
+			body, err := io.ReadAll(resp.Body)
 			require.NoError(t, err)
 
 			if tc.err == nil {
@@ -777,7 +777,7 @@ receivers:
 	resp := w.Result()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.Equal(t, "application/yaml", resp.Header.Get("Content-Type"))
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 
 	expectedYaml := `user1:
@@ -851,6 +851,30 @@ func TestValidateAlertmanagerConfig(t *testing.T) {
 				CertFile: "/cert",
 			},
 			expected: errTLSFileNotAllowed,
+		},
+		"*GlobalConfig.SMTPAuthPasswordFile": {
+			input: &config.GlobalConfig{
+				SMTPAuthPasswordFile: "/file",
+			},
+			expected: errPasswordFileNotAllowed,
+		},
+		"GlobalConfig.SMTPAuthPasswordFile": {
+			input: config.GlobalConfig{
+				SMTPAuthPasswordFile: "/file",
+			},
+			expected: errPasswordFileNotAllowed,
+		},
+		"*EmailConfig.AuthPasswordFile": {
+			input: &config.EmailConfig{
+				AuthPasswordFile: "/file",
+			},
+			expected: errPasswordFileNotAllowed,
+		},
+		"EmailConfig.AuthPasswordFile": {
+			input: config.EmailConfig{
+				AuthPasswordFile: "/file",
+			},
+			expected: errPasswordFileNotAllowed,
 		},
 		"struct containing *HTTPClientConfig as direct child": {
 			input: config.GlobalConfig{

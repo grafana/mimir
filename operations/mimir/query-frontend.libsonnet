@@ -2,7 +2,8 @@
   local container = $.core.v1.container,
 
   query_frontend_args::
-    $._config.grpcConfig
+    $._config.grpcConfig +
+    $._config.querySchedulerRingClientConfig +
     {
       target: 'query-frontend',
 
@@ -13,7 +14,7 @@
       'server.http-write-timeout': '1m',
 
       // Cache query results.
-      'query-frontend.align-querier-with-step': false,
+      'query-frontend.align-queries-with-step': false,
       'query-frontend.cache-results': true,
       'query-frontend.results-cache.backend': 'memcached',
       'query-frontend.results-cache.memcached.addresses': 'dnssrvnoa+memcached-frontend.%(namespace)s.svc.cluster.local:11211' % $._config,
@@ -24,12 +25,13 @@
 
       // Limit queries to 500 days, allow this to be override per-user.
       'store.max-query-length': '12000h',  // 500 Days
-      'runtime-config.file': '%s/overrides.yaml' % $._config.overrides_configmap_mountpoint,
-    },
+    } + $.mimirRuntimeConfigFile,
+
+  query_frontend_ports:: $.util.defaultPorts,
 
   newQueryFrontendContainer(name, args)::
     container.new(name, $._images.query_frontend) +
-    container.withPorts($.util.defaultPorts) +
+    container.withPorts($.query_frontend_ports) +
     container.withArgsMixin($.util.mapToFlags(args)) +
     $.jaeger_mixin +
     $.util.readinessProbe +
@@ -43,7 +45,7 @@
 
   newQueryFrontendDeployment(name, container)::
     deployment.new(name, $._config.queryFrontend.replicas, [container]) +
-    $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint) +
+    $.mimirVolumeMounts +
     $.newMimirSpreadTopology(name, $._config.query_frontend_topology_spread_max_skew) +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(1) +

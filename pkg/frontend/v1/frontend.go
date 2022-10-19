@@ -88,9 +88,10 @@ type request struct {
 // New creates a new frontend. Frontend implements service, and must be started and stopped.
 func New(cfg Config, limits Limits, log log.Logger, registerer prometheus.Registerer) (*Frontend, error) {
 	f := &Frontend{
-		cfg:    cfg,
-		log:    log,
-		limits: limits,
+		cfg:                cfg,
+		log:                log,
+		limits:             limits,
+		subservicesWatcher: services.NewFailureWatcher(),
 		queueLength: promauto.With(registerer).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_query_frontend_queue_length",
 			Help: "Number of queries in the queue.",
@@ -155,7 +156,7 @@ func (f *Frontend) cleanupInactiveUserMetrics(user string) {
 	f.discardedRequests.DeleteLabelValues(user)
 }
 
-// RoundTripGRPC round trips a proto (instead of a HTTP request).
+// RoundTripGRPC round trips a proto (instead of an HTTP request).
 func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error) {
 	// Propagate trace context in gRPC too - this will be ignored if using HTTP.
 	tracer, span := opentracing.GlobalTracer(), opentracing.SpanFromContext(ctx)
@@ -330,7 +331,7 @@ func (f *Frontend) queueRequest(ctx context.Context, req *request) error {
 	f.activeUsers.UpdateUserTimestamp(joinedTenantID, now)
 
 	err = f.requestQueue.EnqueueRequest(joinedTenantID, req, maxQueriers, nil)
-	if err == queue.ErrTooManyRequests {
+	if errors.Is(err, queue.ErrTooManyRequests) {
 		return errTooManyRequest
 	}
 	return err

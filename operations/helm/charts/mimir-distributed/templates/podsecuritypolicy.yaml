@@ -1,4 +1,4 @@
-{{- if and .Values.rbac.create (eq .Values.rbac.type "psp") }}
+{{- if eq (include "mimir.rbac.usePodSecurityPolicy" .) "true" }}
 apiVersion: policy/v1beta1
 kind: PodSecurityPolicy
 metadata:

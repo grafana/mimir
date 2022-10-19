@@ -70,32 +70,39 @@ How to **fix** it:
 2. **Check if shuffle-sharding shard size is correct**<br />
 
 - When shuffle-sharding is enabled, we target up to 100K series / tenant / ingester assuming tenants on average use 50% of their max series limit.
-- Run the following **instant query** to find tenants that might cause higher pressure on some ingesters:
+- Run the following **instant query** to find tenants that might cause higher pressure on ingesters. The query excludes tenants which are already sharded across all ingesters:
 
   ```
-  (
-    sum by(user) (cortex_ingester_memory_series_created_total{namespace="<namespace>"}
-    -
-    cortex_ingester_memory_series_removed_total{namespace="<namespace>"})
+  topk by (pod) (5, # top 5 tenants per ingester
+      sum by (user, pod) ( # get in-memory series for each tenant on each pod
+          cortex_ingester_memory_series_created_total{namespace="<namespace>"} - cortex_ingester_memory_series_removed_total{namespace="<namespace>"}
+      )
+      and on(user) # intersection with tenants that are exceeding 50% of their series limit (added acorss ingesters & accounting for replication)
+      (
+          sum by (user) ( # total in-memory series for the tenant across ingesters
+              cortex_ingester_memory_series_created_total{namespace="<namespace>"} - cortex_ingester_memory_series_removed_total{namespace="<namespace>"}
+          )
+          > 200000 # show only big tenants - with more than 200k series across ingesters
+          >
+          (
+              max by(user) (cortex_limits_overrides{namespace="<namespace>", limit_name="max_global_series_per_user"}) # global limit
+              *
+              scalar(max(cortex_distributor_replication_factor{namespace="<namespace>"})) # with replication
+              *
+              0.5 # 50%
+          )
+      )
+      and on (pod) ( # intersection with top 3 ingesters by in-memory series
+          topk(3,
+              sum by (pod) (cortex_ingester_memory_series{namespace="<namespace>"})
+          )
+      )
+      and on(user) ( # intersection with the tenants which don't have series on all ingesters
+          count by (user) (cortex_ingester_memory_series_created_total{namespace="<namespace>"}) # count ingesters where each tenant has series
+          !=
+          scalar(count(count by (pod) (cortex_ingester_memory_series{namespace="<namespace>"}))) # count total ingesters: first `count` counts series by ingester (we ignore the counted number), second `count` counts rows in series per ingester, second count gives the number of ingesters
+      )
   )
-  >
-  (
-    max by(user) (cortex_limits_overrides{namespace="<namespace>",limit_name="max_global_series_per_user"})
-    *
-    scalar(max(cortex_distributor_replication_factor{namespace="<namespace>"}))
-    *
-    0.5
-  )
-  > 200000
-
-  # Decomment the following to show only tenants beloging to a specific ingester's shard.
-  # and count by(user) (cortex_ingester_active_series{namespace="<namespace>",pod="ingester-<id>"})
-  ```
-
-- Run the following **instant query** to find tenants that contribute the most to active series on a specific ingester:
-
-  ```
-  topk(10, sum by(user) (cortex_ingester_memory_series_created_total{namespace="<namespace>",pod="ingester-<id>"} - cortex_ingester_memory_series_removed_total{namespace="<namespace>",pod="ingester-<id>"}))
   ```
 
 - Check the current shard size of each tenant in the output and, if they're not already sharded across all ingesters, you may consider to double their shard size
@@ -277,7 +284,7 @@ How to **investigate**:
 
 ### MimirIngesterUnhealthy
 
-This alert goes off when an ingester is marked as unhealthy. Check the ring web page to see which is marked as unhealthy. You could then check the logs to see if there are any related to that ingester ex: `kubectl logs -f ingester-01 --namespace=prod`. A simple way to resolve this may be to click the "Forgot" button on the ring page, especially if the pod doesn't exist anymore. It might not exist anymore because it was on a node that got shut down, so you could check to see if there are any logs related to the node that pod is/was on, ex: `kubectl get events --namespace=prod | grep cloud-provider-node`.
+This alert goes off when one or more ingesters are marked as unhealthy. Check the ring web page to see which ones are marked as unhealthy. You could then check the logs to see if there are any related to involved ingesters, f.ex: `kubectl logs -f ingester-01 --namespace=prod`. A simple way to resolve this may be to click the "Forget" button on the ring page, especially if the pod doesn't exist anymore. It might not exist anymore because it was on a node that got shut down, so you could check to see if there are any logs related to the node that pod is/was on, f.ex.: `kubectl get events --namespace=prod | grep cloud-provider-node`.
 
 ### MimirMemoryMapAreasTooHigh
 
@@ -604,11 +611,12 @@ How to **investigate**:
    1. Determine when the partial block was uploaded: `gsutil ls -l gs://${BUCKET}/${TENANT_ID}/${BLOCK_ID}`. Alternatively you can use `ulidtime` command from Mimir tools directory `ulidtime ${BLOCK_ID}` to find block creation time.
    1. Search in the logs around that time to find the log entry from when the compactor created the block ("compacted blocks" for log message)
    1. From the compactor log entry you found, pick the job ID from the `groupKey` field, f.ex. `0@9748515562602778029-merge--1645711200000-1645718400000`
-   1. Then search the logs for the job ID and look for an entry with the message "compaction job finished" and `false` for the `success` field, this will show that the compactor failed uploading the block
-   1. If you found a failed compaction job, as outlined in the previous step, try searching for a corresponding log message (for the same job ID) "compaction job finished" with "success=`true`". This will mean that the compaction job was retried successfully. Note: this should produce a different block ID from the failed upload.
+   1. Then search the logs for the job ID and look for an entry with the message "compaction job failed", this will show that the compactor failed uploading the block
+   1. If you found a failed compaction job, as outlined in the previous step, try searching for a corresponding log message (for the same job ID) "compaction job succeeded". This will mean that the compaction job was retried successfully. Note: this should produce a different block ID from the failed upload.
 1. Investigate if it was a partial upload or partial delete
    1. If it was a partial delete or an upload failed by a compactor you can safely mark the block for deletion, and compactor will delete the block. You can use `markblocks` command from Mimir tools directory: `markblocks -mark deletion -allow-partial -tenant <tenant> <blockID>` with correct backend (eg. GCS: `-backend gcs -gcs.bucket-name <bucket-name>`) configuration.
    1. If it was a failed upload by an ingester, but not later retried (ingesters are expected to retry uploads until succeed), further investigate
+1. Prevent the issue from reoccurring by enabling automatic partial block cleanup. This can be enabled with the `-compactor.partial-block-deletion-delay` flag. It takes a duration as an argument. If a partial block persists past the specified duration, the compactor will automatically delete it. One can monitor automatic cleanup of partial blocks via the `cortex_compactor_blocks_marked_for_deletion_total{reason="partial"}` counter.
 
 ### MimirQueriesIncorrect
 
@@ -674,6 +682,7 @@ How to **investigate**:
   - Temporarily scale up queriers to try to stop the bleed
   - Check if a specific tenant is running heavy queries
     - Run `sum by (user) (cortex_query_scheduler_queue_length{namespace="<namespace>"}) > 0` to find tenants with enqueued queries
+    - If remote ruler evaluation is enabled, make sure you understand which one of the read paths (user or ruler queries?) is being affected - check the alert message.
     - Check the `Mimir / Slow Queries` dashboard to find slow queries
   - On multi-tenant Mimir cluster with **shuffle-sharing for queriers disabled**, you may consider to enable it for that specific tenant to reduce its blast radius. To enable queriers shuffle-sharding for a single tenant you need to set the `max_queriers_per_tenant` limit override for the specific tenant (the value should be set to the number of queriers assigned to the tenant).
   - On multi-tenant Mimir cluster with **shuffle-sharding for queriers enabled**, you may consider to temporarily increase the shard size for affected tenants: be aware that this could affect other tenants too, reducing resources available to run other tenant queries. Alternatively, you may choose to do nothing and let Mimir return errors for that given user once the per-tenant queue is full.
@@ -681,6 +690,7 @@ How to **investigate**:
   - On multi-tenant Mimir clusters with **query-sharding enabled** and **only a single tenant** being affected:
     - Verify if the particular queries are hitting edge cases, where query-sharding is not benefical, by getting traces from the `Mimir / Slow Queries` dashboard and then look where time is spent. If time is spent in the query-frontend running PromQL engine, then it means query-sharding is not beneficial for this tenant. Consider disabling query-sharding or reduce the shard count using the `query_sharding_total_shards` override.
     - Otherwise and only if the queries by the tenant are within reason representing normal usage, consider scaling of queriers and potentially store-gateways.
+  - On a Mimir cluster with **querier auto-scaling enabled** after checking the health of the existing querier replicas, check to see if the auto-scaler has added additional querier replicas or if the maximum number of querier replicas has been reached and is not sufficient and should be increased.
 
 ### MimirMemcachedRequestErrors
 
@@ -983,7 +993,7 @@ How to **investigate**:
   ```
   kubectl describe hpa -n <namespace> keda-hpa-querier
   ```
-- Ensure KEDA custom metrics API server is up and running
+- Ensure KEDA pods are up and running
   ```
   # Assuming KEDA is running in a dedicated namespace "keda":
   kubectl get pods -n keda
@@ -992,6 +1002,16 @@ How to **investigate**:
   ```
   # Assuming KEDA is running in a dedicated namespace "keda":
   kubectl logs -n keda deployment/keda-operator-metrics-apiserver
+  ```
+- Check KEDA operator logs
+  ```
+  # Assuming KEDA is running in a dedicated namespace "keda":
+  kubectl logs -n keda deployment/keda-operator
+  ```
+- Check that Prometheus is running (since we configure KEDA to scrape custom metrics from it by default)
+  ```
+  # Assuming Prometheus is running in namespace "default":
+  kubectl -n default get pod -lname=prometheus
   ```
 
 ### MimirContinuousTestNotRunningOnWrites
@@ -1037,6 +1057,52 @@ How to **investigate**:
 - This alert should always be actionable. There are two possible outcomes:
   1. The alert fired because of a bug in Mimir: fix it.
   1. The alert fired because of a bug or edge case in the continuous test tool, causing a false positive: fix it.
+
+### MimirDistributorForwardingErrorRate
+
+This alert fires when the Distributor is trying to forward samples to a forwarding target, but the forwarding requests
+result in errors at a high rate.
+
+How it **works**:
+
+- The alert compares the total rate of forwarding requests to the rate of forwarding requests which result in an error.
+
+How to **investigate**:
+
+- Check the `Mimir / Writes` dashboard, it should have a row named `Distributor Forwarding` which also shows the type of error if an HTTP status code was returned.
+- Check the Distributor logs, depending on the type of errors which occur the Distributor might log information about the errors.
+- Check what the forwarding targets are in use, this can be seen in the runtime config under the key `forwarding_endpoint`, then check the logs of the forwarding target(s).
+
+### MimirRingMembersMismatch
+
+This alert fires when the number of ring members does not match the number of running replicas.
+
+How it **works**:
+
+- The alert compares each component (currently just `ingester`) against the number of `up` instances for the component in that cluster.
+
+How to **investigate**:
+
+- Check the [hash ring web page]({{< relref "../reference-http-api/index.md#ingesters-ring-status" >}}) for the component for which the alert has fired, and look for unexpected instances in the list.
+- Consider manually forgetting unexpected instances in an `Unhealthy` state.
+- Ensure all the registered instances in the ring belong to the Mimir cluster for which the alert fired.
+
+### RolloutOperatorNotReconciling
+
+This alert fires if the [`rollout-operator`](https://github.com/grafana/rollout-operator) is not successfully reconciling in a namespace.
+
+How it **works**:
+
+- The rollout-operator coordinates the rollout of pods between different StatefulSets within a specific namespace and is used to manage multi-zone deployments
+- The rollout-operator is deployed in namespaces where some Mimir components (e.g. ingesters) are deployed in multi-zone
+- The rollout-operator reconciles as soon as there's any change in observed Kubernetes resources or every 5m at most
+
+How to **investigate**:
+
+- Check rollout-operator logs to find more details about the error, e.g. with the following Grafana Loki query:
+  ```
+  {name="rollout-operator",namespace="<namespace>"}
+  ```
 
 ## Errors catalog
 
@@ -1139,13 +1205,6 @@ Each metric metadata must have a metric name. Rarely it does not, in which case 
 ### err-mimir-metric-name-too-long
 
 This non-critical error occurs when Mimir receives a write request that contains a metric metadata with a metric name whose length exceeds the configured limit.
-The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-metadata-length` option.
-
-> **Note**: Invalid metrics metadata are skipped during the ingestion, and valid metadata within the same request are ingested.
-
-### err-mimir-help-too-long
-
-This non-critical error occurs when Mimir receives a write request that contains a metric metadata with an help description whose length exceeds the configured limit.
 The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-metadata-length` option.
 
 > **Note**: Invalid metrics metadata are skipped during the ingestion, and valid metadata within the same request are ingested.
@@ -1357,7 +1416,7 @@ How to **fix** it:
 
 ### err-mimir-max-query-length
 
-This error occurs when the time range of a query exceeds the configured maximum length.
+This error occurs when the time range of a partial (after possible splitting, sharding by the query-frontend) query exceeds the configured maximum length. For a limit on the total query length, see [err-mimir-max-total-query-length](#err-mimir-max-total-query-length).
 
 Both PromQL instant and range queries can fetch metrics data over a period of time.
 A [range query](https://prometheus.io/docs/prometheus/latest/querying/api/#range-queries) requires a `start` and `end` timestamp, so the difference of `end` minus `start` is the time range length of the query.
@@ -1369,6 +1428,18 @@ This time period is what Grafana Mimir calls the _query time range length_ (or _
 Mimir has a limit on the query length.
 This limit is applied to partial queries, after they've split (according to time) by the query-frontend. This limit protects the system’s stability from potential abuse or mistakes.
 To configure the limit on a per-tenant basis, use the `-store.max-query-length` option (or `max_query_length` in the runtime configuration).
+
+### err-mimir-max-total-query-length
+
+This error occurs when the time range of a query exceeds the configured maximum length. For a limit on the partial query length (after query splitting by interval and/or sharding), see [err-mimir-max-query-length](#err-mimir-max-query-length).
+
+PromQL range queries can fetch metrics data over a period of time.
+A [range query](https://prometheus.io/docs/prometheus/latest/querying/api/#range-queries) requires a `start` and `end` timestamp, so the difference of `end` minus `start` is the time range length of the query.
+
+Mimir has a limit on the query length.
+This limit is applied to range queries before they are split (according to time) or sharded by the query-frontend. This limit protects the system’s stability from potential abuse or mistakes.
+To configure the limit on a per-tenant basis, use the `-query-frontend.max-total-query-length` option (or `max_total_query_length` in the runtime configuration).
+If this limit is set to 0, it takes its value from `-store.max-query-length`.
 
 ### err-mimir-tenant-max-request-rate
 
@@ -1435,6 +1506,7 @@ Common **causes**:
 - You are running multiple Prometheus instances pushing the same metrics and [your high-availability tracker is not properly configured for deduplication]({{< relref "../configure/configuring-high-availability-deduplication.md" >}}).
 - Prometheus relabelling has been configured and it causes series to clash after the relabelling. Check the error message for information about which series has received a sample out of order.
 - A Prometheus instance was restarted, and it pushed all data from its Write-Ahead Log to remote write upon restart, some of which has already been pushed and ingested. This is normal and can be ignored.
+- Prometheus and Mimir have the same recording rule, which generates the exact same series in both places and causes either the remote write or the rule evaluation to fail randomly, depending on timing.
 
 > **Note**: You can learn more about out of order samples in Prometheus, in the blog post [Debugging out of order samples](https://www.robustperception.io/debugging-out-of-order-samples/).
 
@@ -1488,6 +1560,19 @@ How to **fix** it:
 - Ensure the compactor is running successfully (e.g. not crashing, not going out of memory).
 - Ensure each compactor replica has successfully updated bucket index of each owned tenant within the double of `-compactor.cleanup-interval` (query below assumes the cleanup interval is set to 15 minutes):
   `time() - cortex_compactor_block_cleanup_last_successful_run_timestamp_seconds > 2 * (15 * 60)`
+
+### err-mimir-distributor-max-write-message-size
+
+This error occurs when a distributor rejects a write request because its message size is larger than the allowed limit.
+
+How it **works**:
+
+- The distributor implements an upper limit on the message size of incoming write requests.
+- To configure the limit, set the `-distributor.max-recv-msg-size` option.
+
+How to **fix** it:
+
+- Increase the allowed limit by using the `-distributor.max-recv-msg-size` option.
 
 ## Mimir routes by path
 

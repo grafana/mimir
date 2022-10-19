@@ -28,7 +28,6 @@ const (
 	AlertManager
 	Ruler
 	StoreGateway
-	Purger
 )
 
 var (
@@ -42,7 +41,6 @@ var (
 		AlertManager:   {"cortex_alertmanager"},
 		Ruler:          {},
 		StoreGateway:   {"!cortex_storegateway_client", "cortex_storegateway"}, // The metrics prefix cortex_storegateway_client may be used by other components so we ignore it.
-		Purger:         {"cortex_purger"},
 	}
 
 	// Blacklisted metrics prefixes across any Mimir service.

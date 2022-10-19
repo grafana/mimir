@@ -45,13 +45,13 @@ func NewBlocksConsistencyChecker(uploadGracePeriod, deletionGracePeriod time.Dur
 func (c *BlocksConsistencyChecker) Check(knownBlocks bucketindex.Blocks, knownDeletionMarks map[ulid.ULID]*bucketindex.BlockDeletionMark, queriedBlocks []ulid.ULID) (missingBlocks []ulid.ULID) {
 	c.checksTotal.Inc()
 
-	// Reverse the map of queried blocks, so that we can easily look for missing ones.
+	// Make map of queried blocks, for quick lookup.
 	actualBlocks := map[ulid.ULID]struct{}{}
 	for _, blockID := range queriedBlocks {
 		actualBlocks[blockID] = struct{}{}
 	}
 
-	// Look for any missing block.
+	// Look for any missing blocks.
 	for _, block := range knownBlocks {
 		// Some recently uploaded blocks, already discovered by the querier, may not have been discovered
 		// and loaded by the store-gateway yet. In order to avoid false positives, we grant some time

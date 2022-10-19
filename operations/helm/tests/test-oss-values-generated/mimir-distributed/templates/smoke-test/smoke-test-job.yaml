@@ -8,10 +8,10 @@ metadata:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-oss-values
     app.kubernetes.io/component: smoke-test
-    app.kubernetes.io/version: "2.2.0"
     app.kubernetes.io/managed-by: Helm
   annotations:
     "helm.sh/hook": test
+  namespace: "citestns"
 spec:
   backoffLimit: 5
   completions: 1
@@ -22,7 +22,6 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-values
-        app.kubernetes.io/version: "2.2.0"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: smoke-test
     spec:

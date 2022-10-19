@@ -8,7 +8,6 @@ package local
 import (
 	"context"
 	"flag"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 
@@ -32,7 +31,8 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 }
 
 // Client expects to load already existing rules located at:
-//  cfg.Directory / userID / namespace
+//
+//	cfg.Directory / userID / namespace
 type Client struct {
 	cfg    Config
 	loader promRules.GroupLoader
@@ -51,7 +51,7 @@ func NewLocalRulesClient(cfg Config, loader promRules.GroupLoader) (*Client, err
 
 func (l *Client) ListAllUsers(ctx context.Context) ([]string, error) {
 	root := l.cfg.Directory
-	infos, err := ioutil.ReadDir(root)
+	infos, err := os.ReadDir(root)
 	if err != nil {
 		return nil, errors.Wrapf(err, "unable to read dir %s", root)
 	}
@@ -60,16 +60,19 @@ func (l *Client) ListAllUsers(ctx context.Context) ([]string, error) {
 	for _, info := range infos {
 		// After resolving link, info.Name() may be different than user, so keep original name.
 		user := info.Name()
+		isDir := info.IsDir()
 
-		if info.Mode()&os.ModeSymlink != 0 {
-			// ioutil.ReadDir only returns result of LStat. Calling Stat resolves symlink.
-			info, err = os.Stat(filepath.Join(root, info.Name()))
+		if info.Type()&os.ModeSymlink != 0 {
+			// os.ReadDir only returns result of LStat. Calling Stat resolves symlink.
+			finfo, err := os.Stat(filepath.Join(root, info.Name()))
 			if err != nil {
 				return nil, err
 			}
+
+			isDir = finfo.IsDir()
 		}
 
-		if info.IsDir() {
+		if isDir {
 			result = append(result, user)
 		}
 	}
@@ -115,7 +118,7 @@ func (l *Client) loadAllRulesGroupsForUser(ctx context.Context, userID string) (
 	var allLists rulespb.RuleGroupList
 
 	root := filepath.Join(l.cfg.Directory, userID)
-	infos, err := ioutil.ReadDir(root)
+	infos, err := os.ReadDir(root)
 	if err != nil {
 		return nil, errors.Wrapf(err, "unable to read rule dir %s", root)
 	}
@@ -123,17 +126,20 @@ func (l *Client) loadAllRulesGroupsForUser(ctx context.Context, userID string) (
 	for _, info := range infos {
 		// After resolving link, info.Name() may be different than namespace, so keep original name.
 		namespace := info.Name()
+		isDir := info.IsDir()
 
-		if info.Mode()&os.ModeSymlink != 0 {
-			// ioutil.ReadDir only returns result of LStat. Calling Stat resolves symlink.
+		if info.Type()&os.ModeSymlink != 0 {
+			// os.ReadDir only returns result of LStat. Calling Stat resolves symlink.
 			path := filepath.Join(root, info.Name())
-			info, err = os.Stat(path)
+			finfo, err := os.Stat(path)
 			if err != nil {
 				return nil, errors.Wrapf(err, "unable to stat rule file %s", path)
 			}
+
+			isDir = finfo.IsDir()
 		}
 
-		if info.IsDir() {
+		if isDir {
 			continue
 		}
 

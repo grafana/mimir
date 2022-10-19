@@ -28,6 +28,7 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/cache"
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -35,6 +36,11 @@ import (
 const (
 	// Cache entries for 7 days. We're not disabling TTL because the backend client currently doesn't support it.
 	resultsCacheTTL = 7 * 24 * time.Hour
+	// resultsCacheLowerTTL is the smaller TTL used in specific cases. For example OOO queries.
+	resultsCacheLowerTTL                  = 10 * time.Minute
+	notCachableReasonUnalignedTimeRange   = "unaligned-time-range"
+	notCachableReasonTooNew               = "too-new"
+	notCachableReasonModifiersNotCachable = "has-modifiers"
 )
 
 var (
@@ -44,16 +50,34 @@ var (
 )
 
 type splitAndCacheMiddlewareMetrics struct {
-	splitQueriesCount prometheus.Counter
+	splitQueriesCount              prometheus.Counter
+	queryResultCacheAttemptedCount prometheus.Counter
+	queryResultCacheSkippedCount   *prometheus.CounterVec
 }
 
 func newSplitAndCacheMiddlewareMetrics(reg prometheus.Registerer) *splitAndCacheMiddlewareMetrics {
-	return &splitAndCacheMiddlewareMetrics{
+	m := &splitAndCacheMiddlewareMetrics{
 		splitQueriesCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_frontend_split_queries_total",
-			Help: "Total number of underlying query requests after the split by interval is applied",
+			Help: "Total number of underlying query requests after the split by interval is applied.",
 		}),
+		queryResultCacheAttemptedCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_frontend_query_result_cache_attempted_total",
+			Help: "Total number of queries that were attempted to be fetched from cache.",
+		}),
+		queryResultCacheSkippedCount: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_frontend_query_result_cache_skipped_total",
+			Help: "Total number of times a query was not cacheable because of a reason. This metric is tracked for each partial query when time-splitting is enabled.",
+		}, []string{"reason"}),
 	}
+
+	// Initialize known label values.
+	for _, reason := range []string{notCachableReasonUnalignedTimeRange, notCachableReasonTooNew,
+		notCachableReasonModifiersNotCachable} {
+		m.queryResultCacheSkippedCount.WithLabelValues(reason)
+	}
+
+	return m
 }
 
 // splitAndCacheMiddleware is a Middleware that can (optionally) split the query by interval
@@ -132,14 +156,17 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 
 	// Lookup the results cache.
 	if isCacheEnabled {
+		s.metrics.queryResultCacheAttemptedCount.Add(float64(len(splitReqs)))
+
 		// Build the cache keys for all requests to try to fetch from cache.
 		lookupReqs := make([]*splitRequest, 0, len(splitReqs))
 		lookupKeys := make([]string, 0, len(splitReqs))
 
 		for _, splitReq := range splitReqs {
 			// Do not try to pick response from cache at all if the request is not cachable.
-			if !isRequestCachable(splitReq.orig, maxCacheTime, s.cacheUnalignedRequests, s.logger) {
+			if cachable, reason := isRequestCachable(splitReq.orig, maxCacheTime, s.cacheUnalignedRequests, s.logger); !cachable {
 				splitReq.downstreamRequests = []Request{splitReq.orig}
+				s.metrics.queryResultCacheSkippedCount.WithLabelValues(reason).Inc()
 				continue
 			}
 
@@ -190,6 +217,11 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 	// Prepare and execute the downstream requests.
 	execReqs := splitReqs.prepareDownstreamRequests()
 
+	// Update query stats.
+	// Only consider the actual number of downstream requests, not the cache hits.
+	queryStats := stats.FromContext(ctx)
+	queryStats.AddSplitQueries(uint32(len(execReqs)))
+
 	if len(execReqs) > 0 {
 		execResps, err := doRequests(ctx, s.next, execReqs, true)
 		if err != nil {
@@ -212,7 +244,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 			}
 
 			// Skip caching if the request is not cachable.
-			if !isRequestCachable(splitReq.orig, maxCacheTime, s.cacheUnalignedRequests, s.logger) {
+			if cachable, _ := isRequestCachable(splitReq.orig, maxCacheTime, s.cacheUnalignedRequests, s.logger); !cachable {
 				continue
 			}
 
@@ -244,13 +276,14 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 			}
 
 			// Filter out recent extents from merged ones.
+			// TODO(codesome): make filterRecentCacheExtents break it into 2 sets, one to cache with lower TTL and one with the usual TTL.
 			filteredExtents, err := filterRecentCacheExtents(splitReq.orig, maxCacheFreshness, s.extractor, mergedExtents)
 			if err != nil {
 				return nil, err
 			}
 
 			// Put back into the cache the filtered ones.
-			s.storeCacheExtents(ctx, splitReq.cacheKey, filteredExtents)
+			s.storeCacheExtents(ctx, splitReq.cacheKey, tenantIDs, filteredExtents)
 		}
 	}
 
@@ -350,7 +383,16 @@ func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, keys []
 }
 
 // storeCacheExtents stores the extents for given key in the cache.
-func (s *splitAndCacheMiddleware) storeCacheExtents(ctx context.Context, key string, extents []Extent) {
+func (s *splitAndCacheMiddleware) storeCacheExtents(ctx context.Context, key string, tenantIDs []string, extents []Extent) {
+	ttl := resultsCacheTTL
+	lowerTTLWithinTimePeriod := validation.MaxDurationPerTenant(tenantIDs, func(tenantID string) time.Duration {
+		return time.Duration(s.limits.OutOfOrderTimeWindow(tenantID))
+	})
+	if lowerTTLWithinTimePeriod > 0 && len(extents) > 0 &&
+		extents[len(extents)-1].End >= time.Now().Add(-lowerTTLWithinTimePeriod).UnixMilli() {
+		ttl = resultsCacheLowerTTL
+	}
+
 	buf, err := proto.Marshal(&CachedResponse{
 		Key:     key,
 		Extents: extents,
@@ -360,7 +402,7 @@ func (s *splitAndCacheMiddleware) storeCacheExtents(ctx context.Context, key str
 		return
 	}
 
-	s.cache.Store(ctx, map[string][]byte{cacheHashKey(key): buf}, resultsCacheTTL)
+	s.cache.Store(ctx, map[string][]byte{cacheHashKey(key): buf}, ttl)
 }
 
 // splitRequest holds information about a split request.

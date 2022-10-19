@@ -16,7 +16,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
-	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 type validateLabelsCfg struct {
@@ -51,6 +50,9 @@ func (vm validateMetadataCfg) MaxMetadataLength(userID string) int {
 }
 
 func TestValidateLabels(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	s := NewSampleValidationMetrics(reg)
+
 	var cfg validateLabelsCfg
 	userID := "testUser"
 
@@ -117,13 +119,14 @@ func TestValidateLabels(t *testing.T) {
 			nil,
 		},
 	} {
-		err := ValidateLabels(cfg, userID, mimirpb.FromMetricsToLabelAdapters(c.metric), c.skipLabelNameValidation)
+		err := ValidateLabels(s, cfg, userID, mimirpb.FromMetricsToLabelAdapters(c.metric), c.skipLabelNameValidation)
 		assert.Equal(t, c.err, err, "wrong error")
 	}
 
-	DiscardedSamples.WithLabelValues("random reason", "different user").Inc()
+	randomReason := DiscardedSamplesCounter(reg, "random reason")
+	randomReason.WithLabelValues("different user").Inc()
 
-	require.NoError(t, testutil.GatherAndCompare(prometheus.DefaultGatherer, strings.NewReader(`
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 			# TYPE cortex_discarded_samples_total counter
 			cortex_discarded_samples_total{reason="label_invalid",user="testUser"} 1
@@ -136,9 +139,9 @@ func TestValidateLabels(t *testing.T) {
 			cortex_discarded_samples_total{reason="random reason",user="different user"} 1
 	`), "cortex_discarded_samples_total"))
 
-	DeletePerUserValidationMetrics(userID, util_log.Logger)
+	s.DeleteUserMetrics(userID)
 
-	require.NoError(t, testutil.GatherAndCompare(prometheus.DefaultGatherer, strings.NewReader(`
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 			# TYPE cortex_discarded_samples_total counter
 			cortex_discarded_samples_total{reason="random reason",user="different user"} 1
@@ -146,6 +149,9 @@ func TestValidateLabels(t *testing.T) {
 }
 
 func TestValidateExemplars(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	m := NewExemplarValidationMetrics(reg)
+
 	userID := "testUser"
 
 	invalidExemplars := []mimirpb.Exemplar{
@@ -175,7 +181,7 @@ func TestValidateExemplars(t *testing.T) {
 	}
 
 	for _, ie := range invalidExemplars {
-		assert.Error(t, ValidateExemplar(userID, []mimirpb.LabelAdapter{}, ie))
+		assert.Error(t, ValidateExemplar(m, userID, []mimirpb.LabelAdapter{}, ie))
 	}
 
 	validExemplars := []mimirpb.Exemplar{
@@ -192,12 +198,12 @@ func TestValidateExemplars(t *testing.T) {
 	}
 
 	for _, ve := range validExemplars {
-		assert.NoError(t, ValidateExemplar(userID, []mimirpb.LabelAdapter{}, ve))
+		assert.NoError(t, ValidateExemplar(m, userID, []mimirpb.LabelAdapter{}, ve))
 	}
 
-	DiscardedExemplars.WithLabelValues("random reason", "different user").Inc()
+	DiscardedExemplarsCounter(reg, "random reason").WithLabelValues("different user").Inc()
 
-	require.NoError(t, testutil.GatherAndCompare(prometheus.DefaultGatherer, strings.NewReader(`
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_discarded_exemplars_total The total number of exemplars that were discarded.
 			# TYPE cortex_discarded_exemplars_total counter
 			cortex_discarded_exemplars_total{reason="exemplar_labels_blank",user="testUser"} 2
@@ -209,8 +215,8 @@ func TestValidateExemplars(t *testing.T) {
 		`), "cortex_discarded_exemplars_total"))
 
 	// Delete test user and verify only different remaining
-	DeletePerUserValidationMetrics(userID, util_log.Logger)
-	require.NoError(t, testutil.GatherAndCompare(prometheus.DefaultGatherer, strings.NewReader(`
+	m.DeleteUserMetrics(userID)
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_discarded_exemplars_total The total number of exemplars that were discarded.
 			# TYPE cortex_discarded_exemplars_total counter
 			cortex_discarded_exemplars_total{reason="random reason",user="different user"} 1
@@ -218,54 +224,77 @@ func TestValidateExemplars(t *testing.T) {
 }
 
 func TestValidateMetadata(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	m := NewMetadataValidationMetrics(reg)
+
 	userID := "testUser"
 	var cfg validateMetadataCfg
 	cfg.enforceMetadataMetricName = true
 	cfg.maxMetadataLength = 22
 
 	for _, c := range []struct {
-		desc     string
-		metadata *mimirpb.MetricMetadata
-		err      error
+		desc        string
+		metadata    *mimirpb.MetricMetadata
+		err         error
+		metadataOut *mimirpb.MetricMetadata
 	}{
 		{
 			"with a valid config",
 			&mimirpb.MetricMetadata{MetricFamilyName: "go_goroutines", Type: mimirpb.COUNTER, Help: "Number of goroutines.", Unit: ""},
 			nil,
+			&mimirpb.MetricMetadata{MetricFamilyName: "go_goroutines", Type: mimirpb.COUNTER, Help: "Number of goroutines.", Unit: ""},
 		},
 		{
 			"with no metric name",
 			&mimirpb.MetricMetadata{MetricFamilyName: "", Type: mimirpb.COUNTER, Help: "Number of goroutines.", Unit: ""},
 			newMetadataMetricNameMissingError(),
+			nil,
 		},
 		{
 			"with a long metric name",
 			&mimirpb.MetricMetadata{MetricFamilyName: "go_goroutines_and_routines_and_routines", Type: mimirpb.COUNTER, Help: "Number of goroutines.", Unit: ""},
 			newMetadataMetricNameTooLongError(&mimirpb.MetricMetadata{MetricFamilyName: "go_goroutines_and_routines_and_routines"}),
+			nil,
 		},
 		{
 			"with a long help",
 			&mimirpb.MetricMetadata{MetricFamilyName: "go_goroutines", Type: mimirpb.COUNTER, Help: "Number of goroutines that currently exist.", Unit: ""},
-			newMetadataHelpTooLongError(&mimirpb.MetricMetadata{MetricFamilyName: "go_goroutines", Help: "Number of goroutines that currently exist."}),
+			nil,
+			&mimirpb.MetricMetadata{MetricFamilyName: "go_goroutines", Type: mimirpb.COUNTER, Help: "Number of goroutines t", Unit: ""},
+		},
+		{
+			"with a long UTF-8 help",
+			&mimirpb.MetricMetadata{MetricFamilyName: "go_goroutines", Type: mimirpb.COUNTER, Help: "This help has wchar:日日日", Unit: ""},
+			nil,
+			&mimirpb.MetricMetadata{MetricFamilyName: "go_goroutines", Type: mimirpb.COUNTER, Help: "This help has wchar:", Unit: ""},
+		},
+		{
+			"with invalid long UTF-8 help",
+			&mimirpb.MetricMetadata{MetricFamilyName: "go_goroutines", Type: mimirpb.COUNTER, Help: "This help has \xe6char:日日日", Unit: ""},
+			nil,
+			&mimirpb.MetricMetadata{MetricFamilyName: "go_goroutines", Type: mimirpb.COUNTER, Help: "This help has \xe6char:", Unit: ""},
 		},
 		{
 			"with a long unit",
 			&mimirpb.MetricMetadata{MetricFamilyName: "go_goroutines", Type: mimirpb.COUNTER, Help: "Number of goroutines.", Unit: "a_made_up_unit_that_is_really_long"},
 			newMetadataUnitTooLongError(&mimirpb.MetricMetadata{MetricFamilyName: "go_goroutines", Unit: "a_made_up_unit_that_is_really_long"}),
+			nil,
 		},
 	} {
 		t.Run(c.desc, func(t *testing.T) {
-			err := ValidateMetadata(cfg, userID, c.metadata)
+			err := CleanAndValidateMetadata(m, cfg, userID, c.metadata)
 			assert.Equal(t, c.err, err, "wrong error")
+			if err == nil {
+				assert.Equal(t, c.metadataOut, c.metadata)
+			}
 		})
 	}
 
-	DiscardedMetadata.WithLabelValues("random reason", "different user").Inc()
+	DiscardedMetadataCounter(reg, "random reason").WithLabelValues("different user").Inc()
 
-	require.NoError(t, testutil.GatherAndCompare(prometheus.DefaultGatherer, strings.NewReader(`
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_discarded_metadata_total The total number of metadata that were discarded.
 			# TYPE cortex_discarded_metadata_total counter
-			cortex_discarded_metadata_total{reason="help_too_long",user="testUser"} 1
 			cortex_discarded_metadata_total{reason="metric_name_too_long",user="testUser"} 1
 			cortex_discarded_metadata_total{reason="missing_metric_name",user="testUser"} 1
 			cortex_discarded_metadata_total{reason="unit_too_long",user="testUser"} 1
@@ -273,9 +302,9 @@ func TestValidateMetadata(t *testing.T) {
 			cortex_discarded_metadata_total{reason="random reason",user="different user"} 1
 	`), "cortex_discarded_metadata_total"))
 
-	DeletePerUserValidationMetrics(userID, util_log.Logger)
+	m.DeleteUserMetrics(userID)
 
-	require.NoError(t, testutil.GatherAndCompare(prometheus.DefaultGatherer, strings.NewReader(`
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_discarded_metadata_total The total number of metadata that were discarded.
 			# TYPE cortex_discarded_metadata_total counter
 			cortex_discarded_metadata_total{reason="random reason",user="different user"} 1
@@ -290,7 +319,7 @@ func TestValidateLabelOrder(t *testing.T) {
 
 	userID := "testUser"
 
-	actual := ValidateLabels(cfg, userID, []mimirpb.LabelAdapter{
+	actual := ValidateLabels(NewSampleValidationMetrics(nil), cfg, userID, []mimirpb.LabelAdapter{
 		{Name: model.MetricNameLabel, Value: "m"},
 		{Name: "b", Value: "b"},
 		{Name: "a", Value: "a"},
@@ -311,7 +340,7 @@ func TestValidateLabelDuplication(t *testing.T) {
 
 	userID := "testUser"
 
-	actual := ValidateLabels(cfg, userID, []mimirpb.LabelAdapter{
+	actual := ValidateLabels(NewSampleValidationMetrics(nil), cfg, userID, []mimirpb.LabelAdapter{
 		{Name: model.MetricNameLabel, Value: "a"},
 		{Name: model.MetricNameLabel, Value: "b"},
 	}, false)
@@ -321,7 +350,7 @@ func TestValidateLabelDuplication(t *testing.T) {
 	}, model.MetricNameLabel)
 	assert.Equal(t, expected, actual)
 
-	actual = ValidateLabels(cfg, userID, []mimirpb.LabelAdapter{
+	actual = ValidateLabels(NewSampleValidationMetrics(nil), cfg, userID, []mimirpb.LabelAdapter{
 		{Name: model.MetricNameLabel, Value: "a"},
 		{Name: "a", Value: "a"},
 		{Name: "a", Value: "a"},

@@ -96,7 +96,14 @@ Create the app name for clients. Defaults to the same logic as "mimir.fullname",
 Calculate the config from structured and unstructred text input
 */}}
 {{- define "mimir.calculatedConfig" -}}
-{{ tpl (mergeOverwrite (include (print $.Template.BasePath "/_config-render.tpl") . | fromYaml) .Values.mimir.structuredConfig | toYaml) . }}
+{{ tpl (mergeOverwrite (include "mimir.unstructuredConfig" . | fromYaml) .Values.mimir.structuredConfig | toYaml) . }}
+{{- end -}}
+
+{{/*
+Calculate the config from the unstructred text input
+*/}}
+{{- define "mimir.unstructuredConfig" -}}
+{{ include (print $.Template.BasePath "/_config-render.tpl") . }}
 {{- end -}}
 
 {{/*
@@ -119,14 +126,14 @@ configMap:
 Internal servers http listen port - derived from Mimir default
 */}}
 {{- define "mimir.serverHttpListenPort" -}}
-8080
+{{ (((.Values.mimir).structuredConfig).server).http_listen_port | default "8080" }}
 {{- end -}}
 
 {{/*
 Internal servers grpc listen port - derived from Mimir default
 */}}
 {{- define "mimir.serverGrpcListenPort" -}}
-9095
+{{ (((.Values.mimir).structuredConfig).server).grpc_listen_port | default "9095" }}
 {{- end -}}
 
 {{/*
@@ -158,11 +165,7 @@ dns+{{ template "mimir.fullname" . }}-results-cache.{{ .Release.Namespace }}.svc
 Memberlist bind port
 */}}
 {{- define "mimir.memberlistBindPort" -}}
-{{- if (include "mimir.calculatedConfig" . | fromYaml).memberlist -}}
-{{ (include "mimir.calculatedConfig" . | fromYaml).memberlist.bind_port | default "7946" }}
-{{- else -}}
-{{- print "7946" -}}
-{{- end -}}
+{{ (((.Values.mimir).structuredConfig).memberlist).bind_port | default "7946" }}
 {{- end -}}
 
 {{/*
@@ -206,6 +209,10 @@ app.kubernetes.io/managed-by: {{ .ctx.Release.Service }}
 
 {{/*
 POD labels
+Params:
+  ctx = . context
+  component = name of the component
+  memberlist = true if part of memberlist gossip ring
 */}}
 {{- define "mimir.podLabels" -}}
 {{- if .ctx.Values.enterprise.legacyLabels }}
@@ -233,10 +240,17 @@ app.kubernetes.io/component: {{ .component }}
 app.kubernetes.io/part-of: memberlist
 {{- end }}
 {{- end }}
+{{- $componentSection := include "mimir.componentSectionFromName" . | fromYaml }}
+{{- with ($componentSection).podLabels }}
+{{ toYaml . }}
+{{- end }}
 {{- end -}}
 
 {{/*
 POD annotations
+Params:
+  ctx = . context
+  component = name of the component
 */}}
 {{- define "mimir.podAnnotations" -}}
 {{- if .ctx.Values.useExternalConfig }}
@@ -248,11 +262,8 @@ checksum/config: {{ include (print .ctx.Template.BasePath "/mimir-config.yaml") 
 {{ toYaml . }}
 {{- end }}
 {{- if .component }}
-{{- $componentSection := .component | replace "-" "_" }}
-{{- if not (hasKey .ctx.Values $componentSection) }}
-{{- print "Component section " $componentSection " does not exist" | fail }}
-{{- end }}
-{{- with (index .ctx.Values $componentSection).podAnnotations }}
+{{- $componentSection := include "mimir.componentSectionFromName" . | fromYaml }}
+{{- with ($componentSection).podAnnotations }}
 {{ toYaml . }}
 {{- end }}
 {{- end }}
@@ -313,9 +324,82 @@ Cluster name that shows up in dashboard metrics
 
 {{/* Get API Versions */}}
 {{- define "mimir.podDisruptionBudget.apiVersion" -}}
-  {{- if and (.Capabilities.APIVersions.Has "policy/v1") (semverCompare ">= 1.21-0" (include "mimir.kubeVersion" .)) -}}
-      {{- print "policy/v1" -}}
+  {{- if semverCompare ">= 1.21-0" (include "mimir.kubeVersion" .) -}}
+    {{- print "policy/v1" -}}
   {{- else -}}
     {{- print "policy/v1beta1" -}}
   {{- end -}}
+{{- end -}}
+
+{{/*
+mimir.componentSectionFromName returns the sections from the user .Values in YAML
+that corresponds to the requested component. mimir.componentSectionFromName takes two arguments
+  .ctx = the root context of the chart
+  .component = the name of the component. mimir.componentSectionFromName uses an internal mapping to know
+                which component lives where in the values.yaml
+Examples:
+  $componentSection := include "mimir.componentSectionFromName" (dict "ctx" . "component" "store-gateway") | fromYaml
+  $componentSection.podLabels ...
+*/}}
+{{- define "mimir.componentSectionFromName" -}}
+{{- $componentsMap := dict
+  "admin-api" "admin_api"
+  "alertmanager" "alertmanager"
+  "chunks-cache" "chunks-cache"
+  "compactor" "compactor"
+  "continuous-test" "continuous_test"
+  "distributor" "distributor"
+  "gateway" "gateway"
+  "gr-aggr-cache" "gr-aggr-cache"
+  "gr-metricname-cache" "gr-metricname-cache"
+  "graphite-querier" "graphite.querier"
+  "graphite-web" "graphite.web"
+  "graphite-write-proxy" "graphite.write_proxy"
+  "index-cache" "index-cache"
+  "ingester" "ingester"
+  "metadata-cache" "metadata-cache"
+  "nginx" "nginx"
+  "overrides-exporter" "overrides_exporter"
+  "querier" "querier"
+  "query-frontend" "query_frontend"
+  "query-scheduler" "query_scheduler"
+  "results-cache" "results-cache"
+  "ruler" "ruler"
+  "smoke-test" "smoke_test"
+  "store-gateway" "store_gateway"
+  "tokengen" "tokengenJob"
+-}}
+{{- $componentSection := index $componentsMap .component -}}
+{{- if not $componentSection -}}{{- printf "No component section mapping for %s not found in values; submit a bug report if you are a user, edit mimir.componentSectionFromName if you are a contributor" .component | fail -}}{{- end -}}
+{{- $section := .ctx.Values -}}
+{{- range regexSplit "\\." $componentSection -1 -}}
+  {{- $section = index $section . -}}
+  {{- if not $section -}}{{- printf "Component section %s not found in values; values: %s" . ($.ctx.Values | toJson | abbrev 100) | fail -}}{{- end -}}
+{{- end -}}
+{{- $section | toYaml -}}
+{{- end -}}
+
+{{/*
+Get the no_auth_tenant from the configuration
+*/}}
+{{- define "mimir.noAuthTenant" -}}
+{{- (include "mimir.calculatedConfig" . | fromYaml).no_auth_tenant | default "anonymous" -}}
+{{- end -}}
+
+{{/*
+Return if we should create a PodSecurityPoliPodSecurityPolicycy. Takes into account user values and supported kubernetes versions.
+*/}}
+{{- define "mimir.rbac.usePodSecurityPolicy" -}}
+{{- and (semverCompare "< 1.25-0" (include "mimir.kubeVersion" .)) (and .Values.rbac.create (eq .Values.rbac.type "psp")) -}}
+{{- end -}}
+
+{{/*
+Return if we should create a SecurityContextConstraints. Takes into account user values and supported openshift versions.
+*/}}
+{{- define "mimir.rbac.useSecurityContextConstraints" -}}
+{{- and .Values.rbac.create (eq .Values.rbac.type "scc") -}}
+{{- end -}}
+
+{{- define "mimir.remoteWriteUrl.inCluster" -}}
+{{ include "mimir.gatewayUrl" . }}/api/v1/push
 {{- end -}}

@@ -1,4 +1,4 @@
-{{- if and .Values.rbac.create (eq .Values.rbac.type "scc") }}
+{{- if eq (include "mimir.rbac.useSecurityContextConstraints" .) "true" }}
 apiVersion: security.openshift.io/v1
 kind: SecurityContextConstraints
 metadata:

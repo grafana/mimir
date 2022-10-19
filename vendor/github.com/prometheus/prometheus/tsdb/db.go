@@ -194,9 +194,6 @@ type Options struct {
 	// OutOfOrderCapMax is maximum capacity for OOO chunks (in samples).
 	// If it is <=0, the default value is assumed.
 	OutOfOrderCapMax int64
-
-	// Temporary flag which we use to select whether we want to use the new or the old chunk disk mapper.
-	NewChunkDiskMapper bool
 }
 
 type BlocksToDeleteFunc func(blocks []*Block) map[ulid.ULID]struct{}
@@ -815,7 +812,6 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	headOpts.OutOfOrderTimeWindow.Store(opts.OutOfOrderTimeWindow)
 	headOpts.OutOfOrderCapMin.Store(opts.OutOfOrderCapMin)
 	headOpts.OutOfOrderCapMax.Store(opts.OutOfOrderCapMax)
-	headOpts.NewChunkDiskMapper = opts.NewChunkDiskMapper
 	if opts.IsolationDisabled {
 		// We only override this flag if isolation is disabled at DB level. We use the default otherwise.
 		headOpts.IsolationDisabled = opts.IsolationDisabled
@@ -861,6 +857,11 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 				return nil, errors.Wrap(err, "repair corrupted WAL")
 			}
 		}
+	}
+
+	if db.head.MinOOOTime() != int64(math.MaxInt64) {
+		// Some OOO data was replayed from the disk that needs compaction and cleanup.
+		db.oooWasEnabled.Store(true)
 	}
 
 	go db.run()
@@ -958,15 +959,18 @@ func (db *DB) Appender(ctx context.Context) storage.Appender {
 // Behaviour of 'OutOfOrderTimeWindow' is as follows:
 // OOO enabled = oooTimeWindow > 0. OOO disabled = oooTimeWindow is 0.
 // 1) Before: OOO disabled, Now: OOO enabled =>
-//    * A new WBL is created for the head block.
-//    * OOO compaction is enabled.
-//    * Overlapping queries are enabled.
+//   - A new WBL is created for the head block.
+//   - OOO compaction is enabled.
+//   - Overlapping queries are enabled.
+//
 // 2) Before: OOO enabled, Now: OOO enabled =>
-//    * Only the time window is updated.
+//   - Only the time window is updated.
+//
 // 3) Before: OOO enabled, Now: OOO disabled =>
-//    * Time Window set to 0. So no new OOO samples will be allowed.
-//    * OOO WBL will stay and follow the usual cleanup until a restart.
-//    * OOO Compaction and overlapping queries will remain enabled until a restart.
+//   - Time Window set to 0. So no new OOO samples will be allowed.
+//   - OOO WBL will stay and follow the usual cleanup until a restart.
+//   - OOO Compaction and overlapping queries will remain enabled until a restart.
+//
 // 4) Before: OOO disabled, Now: OOO disabled => no-op.
 func (db *DB) ApplyConfig(conf *config.Config) error {
 	oooTimeWindow := int64(0)
@@ -980,7 +984,10 @@ func (db *DB) ApplyConfig(conf *config.Config) error {
 	// Create WBL if it was not present and if OOO is enabled with WAL enabled.
 	var wblog *wal.WAL
 	var err error
-	if !db.oooWasEnabled.Load() && oooTimeWindow > 0 && db.opts.WALSegmentSize >= 0 {
+	if db.head.wbl != nil {
+		// The existing WBL from the disk might have been replayed while OOO was disabled.
+		wblog = db.head.wbl
+	} else if !db.oooWasEnabled.Load() && oooTimeWindow > 0 && db.opts.WALSegmentSize >= 0 {
 		segmentSize := wal.DefaultSegmentSize
 		// Wal is set to a custom size.
 		if db.opts.WALSegmentSize > 0 {
@@ -1341,7 +1348,7 @@ func (db *DB) reloadBlocks() (err error) {
 		blockMetas = append(blockMetas, b.Meta())
 	}
 	if overlaps := OverlappingBlocks(blockMetas); len(overlaps) > 0 {
-		level.Warn(db.logger).Log("msg", "Overlapping blocks found during reloadBlocks", "detail", overlaps.String())
+		level.Debug(db.logger).Log("msg", "Overlapping blocks found during reloadBlocks", "detail", overlaps.String())
 	}
 
 	// Append blocks to old, deletable blocks, so we can close them.

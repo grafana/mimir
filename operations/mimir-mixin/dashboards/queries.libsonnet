@@ -109,6 +109,22 @@ local filename = 'mimir-queries.json';
           'Missed query results per second'
         ),
       )
+      .addPanel(
+        $.panel('Query results cache skipped') +
+        $.queryPanel(|||
+          sum(rate(cortex_frontend_query_result_cache_skipped_total{%s}[$__rate_interval])) by (reason) /
+          ignoring (reason) group_left sum(rate(cortex_frontend_query_result_cache_attempted_total{%s}[$__rate_interval]))
+        ||| % [$.jobMatcher($._config.job_names.query_frontend), $.jobMatcher($._config.job_names.query_frontend)], '{{reason}}') +
+        { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) } +
+        $.stack +
+        $.panelDescription(
+          'Query results cache skipped',
+          |||
+            The % of queries whose results could not be cached.
+            It is tracked for each split query when the splitting by interval is enabled.
+          |||
+        ),
+      )
     )
     .addRow(
       $.row('Query-frontend - query sharding')
@@ -181,7 +197,7 @@ local filename = 'mimir-queries.json';
       )
       .addPanel(
         $.panel('Consistency checks failed') +
-        $.queryPanel('sum(rate(cortex_querier_blocks_consistency_checks_failed_total{%s}[$__rate_interval])) / sum(rate(cortex_querier_blocks_consistency_checks_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.querier), $.jobMatcher($._config.job_names.querier)], 'Failure Rate') +
+        $.failurePanel('sum(rate(cortex_querier_blocks_consistency_checks_failed_total{%s}[$__rate_interval])) / sum(rate(cortex_querier_blocks_consistency_checks_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.querier), $.jobMatcher($._config.job_names.querier)], 'Failure Rate') +
         { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) },
       )
     )
@@ -197,11 +213,12 @@ local filename = 'mimir-queries.json';
         { yaxes: $.yaxes('short') },
       )
       .addPanel(
+        $.panel('Bucket indexes load / sec') +
         $.successFailurePanel(
-          'Bucket indexes load / sec',
           'sum(rate(cortex_bucket_index_loads_total{%s}[$__rate_interval])) - sum(rate(cortex_bucket_index_load_failures_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.querier), $.jobMatcher($._config.job_names.querier)],
           'sum(rate(cortex_bucket_index_load_failures_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.querier),
-        )
+        ) +
+        $.stack
       )
       .addPanel(
         $.panel('Bucket indexes load latency') +
@@ -251,18 +268,20 @@ local filename = 'mimir-queries.json';
         { fill: 0 }
       )
       .addPanel(
+        $.panel('Blocks loaded / sec') +
         $.successFailurePanel(
-          'Blocks loaded / sec',
           'sum(rate(cortex_bucket_store_block_loads_total{component="store-gateway",%s}[$__rate_interval])) - sum(rate(cortex_bucket_store_block_load_failures_total{component="store-gateway",%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)],
           'sum(rate(cortex_bucket_store_block_load_failures_total{component="store-gateway",%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.store_gateway),
-        )
+        ) +
+        $.stack
       )
       .addPanel(
+        $.panel('Blocks dropped / sec') +
         $.successFailurePanel(
-          'Blocks dropped / sec',
           'sum(rate(cortex_bucket_store_block_drops_total{component="store-gateway",%s}[$__rate_interval])) - sum(rate(cortex_bucket_store_block_drop_failures_total{component="store-gateway",%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)],
           'sum(rate(cortex_bucket_store_block_drop_failures_total{component="store-gateway",%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.store_gateway),
-        )
+        ) +
+        $.stack
       )
     )
     .addRow(

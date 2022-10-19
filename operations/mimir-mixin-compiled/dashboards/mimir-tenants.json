@@ -96,36 +96,32 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(\n  (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=\"$user\"}\n    - cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=\"$user\"}\n  )\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\"})\n)\n",
+                        "expr": "sum(\n  (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n    - cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n  )\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\"})\n)\n",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "in-memory",
                         "legendLink": null,
                         "step": 10
                      },
                      {
-                        "expr": "max(cortex_limits_overrides{cluster=~\"$cluster\", job=~\"($namespace)/(overrides-exporter)\", limit_name=\"max_global_series_per_user\", user=\"$user\"})\nor\nmax(cortex_limits_defaults{cluster=~\"$cluster\", job=~\"($namespace)/(overrides-exporter)\", limit_name=\"max_global_series_per_user\"})\n",
+                        "expr": "max(cortex_limits_overrides{cluster=~\"$cluster\", job=~\"($namespace)/((overrides-exporter|mimir-backend.*))\", limit_name=\"max_global_series_per_user\", user=\"$user\"})\nor\nmax(cortex_limits_defaults{cluster=~\"$cluster\", job=~\"($namespace)/((overrides-exporter|mimir-backend.*))\", limit_name=\"max_global_series_per_user\"})\n",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "limit",
                         "legendLink": null,
                         "step": 10
                      },
                      {
-                        "expr": "sum(\n  cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=\"$user\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\"})\n)\n",
+                        "expr": "sum(\n  cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\"})\n)\n",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "active",
                         "legendLink": null,
                         "step": 10
                      },
                      {
-                        "expr": "sum by (name) (\n  cortex_ingester_active_series_custom_tracker{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=\"$user\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\"})\n) > 0\n",
+                        "expr": "sum by (name) (\n  cortex_ingester_active_series_custom_tracker{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\"})\n) > 0\n",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "active ({{ name }})",
                         "legendLink": null,
@@ -195,9 +191,8 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(\n  cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=\"$user\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\"})\n)\n",
+                        "expr": "sum(\n  cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\"})\n)\n",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "series",
                         "legendLink": null,
@@ -267,9 +262,8 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "time() - max(cortex_distributor_latest_seen_sample_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\", user=\"$user\"} > 0)",
+                        "expr": "time() - max(cortex_distributor_latest_seen_sample_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\", user=\"$user\"} > 0)",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "age",
                         "legendLink": null,
@@ -339,9 +333,8 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "time() - min(cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=\"$user\"} > 0)",
+                        "expr": "time() - min(cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"} > 0)",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "age",
                         "legendLink": null,
@@ -402,9 +395,260 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "description": "### Distributor samples incoming rate\nThe rate of samples that have come in to the distributor, including rejected or deduped exemplars.\n\n",
+                  "description": "### Distributor requests incoming rate\nThe rate of requests that have come in to the distributor, including rejected requests.\n\n",
                   "fill": 1,
                   "id": 6,
+                  "legend": {
+                     "show": false
+                  },
+                  "lines": true,
+                  "linewidth": 1,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "percentage": false,
+                  "pointradius": 5,
+                  "points": false,
+                  "renderer": "flot",
+                  "seriesOverrides": [ ],
+                  "spaceLength": 10,
+                  "span": 4,
+                  "stack": false,
+                  "steppedLine": false,
+                  "targets": [
+                     {
+                        "expr": "sum(rate(cortex_distributor_requests_in_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "rate",
+                        "legendLink": null,
+                        "step": 10
+                     }
+                  ],
+                  "thresholds": [ ],
+                  "timeFrom": null,
+                  "timeShift": null,
+                  "title": "Distributor requests incoming rate",
+                  "tooltip": {
+                     "shared": false,
+                     "sort": 0,
+                     "value_type": "individual"
+                  },
+                  "type": "graph",
+                  "xaxis": {
+                     "buckets": null,
+                     "mode": "time",
+                     "name": null,
+                     "show": true,
+                     "values": [ ]
+                  },
+                  "yaxes": [
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               },
+               {
+                  "aliasColors": { },
+                  "bars": false,
+                  "dashLength": 10,
+                  "dashes": false,
+                  "datasource": "$datasource",
+                  "description": "### Distributor requests received (accepted) rate\nThe rate of received requests, excluding rejected requests.\n\n",
+                  "fill": 1,
+                  "id": 7,
+                  "legend": {
+                     "avg": false,
+                     "current": false,
+                     "max": false,
+                     "min": false,
+                     "show": true,
+                     "total": false,
+                     "values": false
+                  },
+                  "lines": true,
+                  "linewidth": 1,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "percentage": false,
+                  "pointradius": 5,
+                  "points": false,
+                  "renderer": "flot",
+                  "seriesOverrides": [
+                     {
+                        "alias": "limit",
+                        "dashes": true,
+                        "fill": 0
+                     }
+                  ],
+                  "spaceLength": 10,
+                  "span": 4,
+                  "stack": false,
+                  "steppedLine": false,
+                  "targets": [
+                     {
+                        "expr": "sum(rate(cortex_distributor_received_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "rate",
+                        "legendLink": null,
+                        "step": 10
+                     },
+                     {
+                        "expr": "max(cortex_limits_overrides{cluster=~\"$cluster\", job=~\"($namespace)/((overrides-exporter|mimir-backend.*))\", limit_name=\"request_rate\", user=\"$user\"})\nor\nmax(cortex_limits_defaults{cluster=~\"$cluster\", job=~\"($namespace)/((overrides-exporter|mimir-backend.*))\", limit_name=\"request_rate\"})\n",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "limit",
+                        "legendLink": null,
+                        "step": 10
+                     }
+                  ],
+                  "thresholds": [ ],
+                  "timeFrom": null,
+                  "timeShift": null,
+                  "title": "Distributor requests received (accepted) rate",
+                  "tooltip": {
+                     "shared": false,
+                     "sort": 0,
+                     "value_type": "individual"
+                  },
+                  "type": "graph",
+                  "xaxis": {
+                     "buckets": null,
+                     "mode": "time",
+                     "name": null,
+                     "show": true,
+                     "values": [ ]
+                  },
+                  "yaxes": [
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               },
+               {
+                  "aliasColors": { },
+                  "bars": false,
+                  "dashLength": 10,
+                  "dashes": false,
+                  "datasource": "$datasource",
+                  "description": "### Distributor discarded requests rate\nThe rate of each request's discarding reason.\n\n",
+                  "fill": 1,
+                  "id": 8,
+                  "legend": {
+                     "avg": false,
+                     "current": false,
+                     "max": false,
+                     "min": false,
+                     "show": true,
+                     "total": false,
+                     "values": false
+                  },
+                  "lines": true,
+                  "linewidth": 1,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "percentage": false,
+                  "pointradius": 5,
+                  "points": false,
+                  "renderer": "flot",
+                  "seriesOverrides": [ ],
+                  "spaceLength": 10,
+                  "span": 4,
+                  "stack": false,
+                  "steppedLine": false,
+                  "targets": [
+                     {
+                        "expr": "sum by (reason) (rate(cortex_discarded_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "{{ reason }}",
+                        "legendLink": null,
+                        "step": 10
+                     }
+                  ],
+                  "thresholds": [ ],
+                  "timeFrom": null,
+                  "timeShift": null,
+                  "title": "Distributor discarded requests rate",
+                  "tooltip": {
+                     "shared": false,
+                     "sort": 0,
+                     "value_type": "individual"
+                  },
+                  "type": "graph",
+                  "xaxis": {
+                     "buckets": null,
+                     "mode": "time",
+                     "name": null,
+                     "show": true,
+                     "values": [ ]
+                  },
+                  "yaxes": [
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "Distributor ingestion requests",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": false,
+            "height": "250px",
+            "panels": [
+               {
+                  "aliasColors": { },
+                  "bars": false,
+                  "dashLength": 10,
+                  "dashes": false,
+                  "datasource": "$datasource",
+                  "description": "### Distributor samples incoming rate\nThe rate of samples that have come in to the distributor, including rejected or deduped exemplars.\n\n",
+                  "fill": 1,
+                  "id": 9,
                   "legend": {
                      "show": false
                   },
@@ -423,9 +667,8 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(rate(cortex_distributor_samples_in_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\", user=\"$user\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_distributor_samples_in_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "rate",
                         "legendLink": null,
@@ -476,7 +719,7 @@
                   "datasource": "$datasource",
                   "description": "### Distributor samples received (accepted) rate\nThe rate of received samples, excluding rejected and deduped samples.\n\n",
                   "fill": 1,
-                  "id": 7,
+                  "id": 10,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -507,18 +750,16 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(rate(cortex_distributor_received_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\", user=\"$user\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_distributor_received_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "rate",
                         "legendLink": null,
                         "step": 10
                      },
                      {
-                        "expr": "max(cortex_limits_overrides{cluster=~\"$cluster\", job=~\"($namespace)/(overrides-exporter)\", limit_name=\"ingestion_rate\", user=\"$user\"})\nor\nmax(cortex_limits_defaults{cluster=~\"$cluster\", job=~\"($namespace)/(overrides-exporter)\", limit_name=\"ingestion_rate\"})\n",
+                        "expr": "max(cortex_limits_overrides{cluster=~\"$cluster\", job=~\"($namespace)/((overrides-exporter|mimir-backend.*))\", limit_name=\"ingestion_rate\", user=\"$user\"})\nor\nmax(cortex_limits_defaults{cluster=~\"$cluster\", job=~\"($namespace)/((overrides-exporter|mimir-backend.*))\", limit_name=\"ingestion_rate\"})\n",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "limit",
                         "legendLink": null,
@@ -569,7 +810,7 @@
                   "datasource": "$datasource",
                   "description": "### Distributor deduplicated/non-HA\nThe rate of deduplicated samples and the rate of received samples for a user that has HA tracking turned on, but the sample didn't contain both HA labels.\n\n",
                   "fill": 1,
-                  "id": 8,
+                  "id": 11,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -594,18 +835,16 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(rate(cortex_distributor_deduped_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\", user=\"$user\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_distributor_deduped_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "deduplicated",
                         "legendLink": null,
                         "step": 10
                      },
                      {
-                        "expr": "sum(rate(cortex_distributor_non_ha_samples_received_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\", user=\"$user\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_distributor_non_ha_samples_received_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "non-HA",
                         "legendLink": null,
@@ -656,7 +895,7 @@
                   "datasource": "$datasource",
                   "description": "### Distributor and ingester discarded samples rate\nThe rate of each sample's discarding reason.\n\n",
                   "fill": 1,
-                  "id": 9,
+                  "id": 12,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -681,18 +920,16 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (reason) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\", user=\"$user\"}[$__rate_interval]))",
+                        "expr": "sum by (reason) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "{{ reason }} (distributor)",
                         "legendLink": null,
                         "step": 10
                      },
                      {
-                        "expr": "sum by (reason) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=\"$user\"}[$__rate_interval]))",
+                        "expr": "sum by (reason) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "{{ reason }} (ingester)",
                         "legendLink": null,
@@ -755,7 +992,7 @@
                   "datasource": "$datasource",
                   "description": "### Distributor exemplars incoming rate\nThe rate of exemplars that have come in to the distributor, including rejected or deduped exemplars.\n\n",
                   "fill": 1,
-                  "id": 10,
+                  "id": 13,
                   "legend": {
                      "show": false
                   },
@@ -774,9 +1011,8 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(rate(cortex_distributor_exemplars_in_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\", user=\"$user\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_distributor_exemplars_in_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "rate",
                         "legendLink": null,
@@ -827,7 +1063,7 @@
                   "datasource": "$datasource",
                   "description": "### Distributor exemplars received (accepted) rate\nThe rate of received exemplars, excluding rejected and deduped exemplars.\nThis number can be sensibly lower than incoming rate because we dedupe the HA sent exemplars, and then reject based on time.\nSee discarded rate for reasons why exemplars are being discarded.\n\n",
                   "fill": 1,
-                  "id": 11,
+                  "id": 14,
                   "legend": {
                      "show": false
                   },
@@ -846,9 +1082,8 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(rate(cortex_distributor_received_exemplars_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\", user=\"$user\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_distributor_received_exemplars_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "rate",
                         "legendLink": null,
@@ -899,7 +1134,7 @@
                   "datasource": "$datasource",
                   "description": "### Distributor discarded exemplars rate\nThe rate of each exmplars' discarding reason.\n\n",
                   "fill": 1,
-                  "id": 12,
+                  "id": 15,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -924,9 +1159,8 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (reason) (rate(cortex_discarded_exemplars_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\", user=\"$user\"}[$__rate_interval]))",
+                        "expr": "sum by (reason) (rate(cortex_discarded_exemplars_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "{{ reason }}",
                         "legendLink": null,
@@ -977,7 +1211,7 @@
                   "datasource": "$datasource",
                   "description": "### Ingester appended exemplars rate\nTotal number of exemplars appended in the ingesters.\nThis can be lower than ingested exemplars rate since TSDB does not append the same exemplar twice, and those can be frequent.\n\n",
                   "fill": 1,
-                  "id": 13,
+                  "id": 16,
                   "legend": {
                      "show": false
                   },
@@ -996,9 +1230,8 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(\n  rate(cortex_ingester_tsdb_exemplar_exemplars_appended_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=\"$user\"}[$__rate_interval])\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\"})\n)\n",
+                        "expr": "sum(\n  rate(cortex_ingester_tsdb_exemplar_exemplars_appended_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval])\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\"})\n)\n",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "rate",
                         "legendLink": null,
@@ -1061,7 +1294,7 @@
                   "datasource": "$datasource",
                   "description": "### Symbol table size for loaded blocks\nSize of symbol table in memory for loaded blocks, averaged by ingester.\n\n",
                   "fill": 1,
-                  "id": 14,
+                  "id": 17,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1086,9 +1319,8 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (job) (cortex_ingester_tsdb_symbol_table_size_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=\"$user\"})",
+                        "expr": "sum by (job) (cortex_ingester_tsdb_symbol_table_size_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"})",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "{{ job }}",
                         "legendLink": null,
@@ -1139,7 +1371,7 @@
                   "datasource": "$datasource",
                   "description": "### Space used by local blocks\nThe number of bytes that are currently used for local storage by all blocks.\n\n",
                   "fill": 1,
-                  "id": 15,
+                  "id": 18,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1164,9 +1396,8 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (job) (cortex_ingester_tsdb_storage_blocks_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=\"$user\"})",
+                        "expr": "sum by (job) (cortex_ingester_tsdb_storage_blocks_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"})",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "{{ job }}",
                         "legendLink": null,
@@ -1229,7 +1460,7 @@
                   "datasource": "$datasource",
                   "description": "### Number of groups\nTotal number of rule groups for a tenant.\n\n",
                   "fill": 1,
-                  "id": 16,
+                  "id": 19,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1260,18 +1491,16 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "count(sum by (rule_group) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=\"$user\"}))",
+                        "expr": "count(sum by (rule_group) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\", user=\"$user\"}))",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "groups",
                         "legendLink": null,
                         "step": 10
                      },
                      {
-                        "expr": "max(cortex_limits_overrides{cluster=~\"$cluster\", job=~\"($namespace)/(overrides-exporter)\", limit_name=\"ruler_max_rule_groups_per_tenant\", user=\"$user\"})\nor\nmax(cortex_limits_defaults{cluster=~\"$cluster\", job=~\"($namespace)/(overrides-exporter)\", limit_name=\"ruler_max_rule_groups_per_tenant\"})\n",
+                        "expr": "max(cortex_limits_overrides{cluster=~\"$cluster\", job=~\"($namespace)/((overrides-exporter|mimir-backend.*))\", limit_name=\"ruler_max_rule_groups_per_tenant\", user=\"$user\"})\nor\nmax(cortex_limits_defaults{cluster=~\"$cluster\", job=~\"($namespace)/((overrides-exporter|mimir-backend.*))\", limit_name=\"ruler_max_rule_groups_per_tenant\"})\n",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "limit",
                         "legendLink": null,
@@ -1322,7 +1551,7 @@
                   "datasource": "$datasource",
                   "description": "### Number of rules\nTotal number of rules for a tenant.\n\n",
                   "fill": 1,
-                  "id": 17,
+                  "id": 20,
                   "legend": {
                      "show": false
                   },
@@ -1341,9 +1570,8 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=\"$user\"})",
+                        "expr": "sum(cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\", user=\"$user\"})",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "rules",
                         "legendLink": null,
@@ -1393,7 +1621,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 18,
+                  "id": 21,
                   "legend": {
                      "show": false
                   },
@@ -1412,9 +1640,8 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(rate(cortex_prometheus_rule_evaluations_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=\"$user\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_prometheus_rule_evaluations_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\", user=\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "rate",
                         "legendLink": null,
@@ -1464,7 +1691,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 19,
+                  "id": 22,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1489,9 +1716,8 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (rule_group) (rate(cortex_prometheus_rule_evaluation_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=\"$user\"}[$__rate_interval])) > 0",
+                        "expr": "sum by (rule_group) (rate(cortex_prometheus_rule_evaluation_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\", user=\"$user\"}[$__rate_interval])) > 0",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "{{ rule_group }}",
                         "legendLink": null,
@@ -1553,7 +1779,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 20,
+                  "id": 23,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1616,7 +1842,7 @@
                   ],
                   "targets": [
                      {
-                        "expr": "topk($limit, sum by (rule_group) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=\"$user\"}))",
+                        "expr": "topk($limit, sum by (rule_group) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\", user=\"$user\"}))",
                         "format": "table",
                         "instant": true,
                         "intervalFactor": 2,
@@ -1669,7 +1895,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 21,
+                  "id": 24,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1732,7 +1958,7 @@
                   ],
                   "targets": [
                      {
-                        "expr": "topk($limit, sum by (rule_group) (cortex_prometheus_rule_group_last_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=\"$user\"}))",
+                        "expr": "topk($limit, sum by (rule_group) (cortex_prometheus_rule_group_last_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\", user=\"$user\"}))",
                         "format": "table",
                         "instant": true,
                         "intervalFactor": 2,
@@ -1797,7 +2023,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 22,
+                  "id": 25,
                   "legend": {
                      "show": false
                   },
@@ -1816,9 +2042,8 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(rate(cortex_prometheus_notifications_sent_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=\"$user\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_prometheus_notifications_sent_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\", user=\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "rate",
                         "legendLink": null,
@@ -1862,13 +2087,15 @@
                   ]
                },
                {
-                  "aliasColors": { },
+                  "aliasColors": {
+                     "rate": "#E24D42"
+                  },
                   "bars": false,
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 23,
+                  "id": 26,
                   "legend": {
                      "show": false
                   },
@@ -1887,9 +2114,8 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(rate(cortex_prometheus_notifications_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=\"$user\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_prometheus_notifications_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\", user=\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
-                        "interval": "15s",
                         "intervalFactor": 2,
                         "legendFormat": "rate",
                         "legendLink": null,

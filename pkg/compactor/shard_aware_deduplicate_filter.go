@@ -10,8 +10,8 @@ import (
 	"sort"
 
 	"github.com/oklog/ulid"
+	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
-	"github.com/thanos-io/thanos/pkg/extprom"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
@@ -33,7 +33,7 @@ func NewShardAwareDeduplicateFilter() *ShardAwareDeduplicateFilter {
 
 // Filter filters out duplicate blocks that can be formed
 // from two or more overlapping blocks that fully submatches the source blocks of the older blocks.
-func (f *ShardAwareDeduplicateFilter) Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced *extprom.TxGaugeVec, modified *extprom.TxGaugeVec) error {
+func (f *ShardAwareDeduplicateFilter) Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced block.GaugeVec, modified block.GaugeVec) error {
 	f.duplicateIDs = f.duplicateIDs[:0]
 
 	metasByResolution := make(map[int64][]*metadata.Meta)
@@ -65,51 +65,52 @@ func (f *ShardAwareDeduplicateFilter) Filter(ctx context.Context, metas map[ulid
 // tree of blocks, where children are successors of given block.
 //
 // For example for input ("four base blocks merged and split into 2 separate shards, plus another level" test):
-//				ULID(1): {sources: []ulid.ULID{ULID(1)}},
-//				ULID(2): {sources: []ulid.ULID{ULID(2)}},
-//				ULID(3): {sources: []ulid.ULID{ULID(3)}},
-//				ULID(4): {sources: []ulid.ULID{ULID(4)}},
 //
-//				ULID(5): {sources: []ulid.ULID{ULID(1), ULID(2)}, shardID: "1_of_2"},
-//				ULID(6): {sources: []ulid.ULID{ULID(1), ULID(2)}, shardID: "2_of_2"},
+//	ULID(1): {sources: []ulid.ULID{ULID(1)}},
+//	ULID(2): {sources: []ulid.ULID{ULID(2)}},
+//	ULID(3): {sources: []ulid.ULID{ULID(3)}},
+//	ULID(4): {sources: []ulid.ULID{ULID(4)}},
 //
-//				ULID(7): {sources: []ulid.ULID{ULID(3), ULID(4)}, shardID: "1_of_2"},
-//				ULID(8): {sources: []ulid.ULID{ULID(3), ULID(4)}, shardID: "2_of_2"},
+//	ULID(5): {sources: []ulid.ULID{ULID(1), ULID(2)}, shardID: "1_of_2"},
+//	ULID(6): {sources: []ulid.ULID{ULID(1), ULID(2)}, shardID: "2_of_2"},
 //
-//				ULID(9):  {sources: []ulid.ULID{ULID(1), ULID(2), ULID(3), ULID(4)}, shardID: "1_of_2"},
-//				ULID(10): {sources: []ulid.ULID{ULID(1), ULID(2), ULID(3), ULID(4)}, shardID: "2_of_2"},
+//	ULID(7): {sources: []ulid.ULID{ULID(3), ULID(4)}, shardID: "1_of_2"},
+//	ULID(8): {sources: []ulid.ULID{ULID(3), ULID(4)}, shardID: "2_of_2"},
+//
+//	ULID(9):  {sources: []ulid.ULID{ULID(1), ULID(2), ULID(3), ULID(4)}, shardID: "1_of_2"},
+//	ULID(10): {sources: []ulid.ULID{ULID(1), ULID(2), ULID(3), ULID(4)}, shardID: "2_of_2"},
 //
 // Resulting tree will look like this:
 //
-//   Root
-//   `--- ULID(1)
-//   |    `--- ULID(5)
-//   |    |    `--- ULID(9)
-//   |    |    `--- ULID(10)
-//   |    `--- ULID(6)
-//   |         `--- ULID(9)
-//   |         `--- ULID(10)
-//   `--- ULID(2)
-//   |    `--- ULID(5)
-//   |    |    `--- ULID(9)
-//   |    |    `--- ULID(10)
-//   |    `--- ULID(6)
-//   |         `--- ULID(9)
-//   |         `--- ULID(10)
-//   `--- ULID(3)
-//   |    `--- ULID(7)
-//   |    |    `--- ULID(9)
-//   |    |    `--- ULID(10)
-//   |    `--- ULID(8)
-//   |         `--- ULID(9)
-//   |         `--- ULID(10)
-//   `--- ULID(4)
-//        `--- ULID(7)
-//        |    `--- ULID(9)
-//        |    `--- ULID(10)
-//        `--- ULID(8)
-//             `--- ULID(9)
-//             `--- ULID(10)
+//	Root
+//	`--- ULID(1)
+//	|    `--- ULID(5)
+//	|    |    `--- ULID(9)
+//	|    |    `--- ULID(10)
+//	|    `--- ULID(6)
+//	|         `--- ULID(9)
+//	|         `--- ULID(10)
+//	`--- ULID(2)
+//	|    `--- ULID(5)
+//	|    |    `--- ULID(9)
+//	|    |    `--- ULID(10)
+//	|    `--- ULID(6)
+//	|         `--- ULID(9)
+//	|         `--- ULID(10)
+//	`--- ULID(3)
+//	|    `--- ULID(7)
+//	|    |    `--- ULID(9)
+//	|    |    `--- ULID(10)
+//	|    `--- ULID(8)
+//	|         `--- ULID(9)
+//	|         `--- ULID(10)
+//	`--- ULID(4)
+//	     `--- ULID(7)
+//	     |    `--- ULID(9)
+//	     |    `--- ULID(10)
+//	     `--- ULID(8)
+//	          `--- ULID(9)
+//	          `--- ULID(10)
 //
 // There is a lot of repetition in this tree, but individual block nodes are shared (it would be difficult to draw that though).
 // So for example there is only one ULID(9) node, referenced from nodes 5, 6, 7, 8 (each of them also exists only once). See

@@ -61,7 +61,7 @@ If the cached results are incomplete, the query-frontend calculates the required
 The query-frontend can optionally align queries with their step parameter to improve the cacheability of the query results.
 The result cache is backed by Memcached.
 
-Although aligning the step parameter to the query time range increases the performance of Grafana Mimir, it violates the [PromQL conformance](https://prometheus.io/blog/2021/05/03/introducing-prometheus-conformance-program/) of Grafana Mimir. If PromQL conformance is not a priority to you, you can enable step alignment by setting `-query-frontend.align-querier-with-step=true`.
+Although aligning the step parameter to the query time range increases the performance of Grafana Mimir, it violates the [PromQL conformance](https://prometheus.io/blog/2021/05/03/introducing-prometheus-conformance-program/) of Grafana Mimir. If PromQL conformance is not a priority to you, you can enable step alignment by setting `-query-frontend.align-queries-with-step=true`.
 
 ### About query sharding
 
@@ -80,13 +80,7 @@ After a connection is established, multiple queries are delivered through the co
 To balance the number of workers connected to each query-frontend, the querier workers use a round-robin method to select the query-frontend replicas to connect to.
 
 If you run more query-frontend replicas than the number of workers per querier, the querier increases the number of internal workers to match the query-frontend replicas.
-This ensures that all query-frontends have some of the workers connected.
-
-However, the PromQL engine running in the querier is also configured with a max concurrency equal to `-querier.max-concurrent`.
-If the number of querier workers is higher than the PromQL engine maximum concurrency, a worker might pull a query from the query-frontend, but not be able to execute it because the maximum concurrency has been reached.
-The queries exceeding the configured maximum concurrency create a backlog in the querier until other queries have been executed.
-
-The backlog might cause a suboptimal utilization of querier resources, which can result in poor query performance when you run Grafana Mimir at scale.
+This ensures that all query-frontends have some of the workers connected, but introduces a scalability limit because the more query-frontend replicas you run, the higher is the number of workers running for each querier, regardless of the configured `-querier.max-concurrent`.
 
 The [query-scheduler]({{< relref "../query-scheduler/index.md" >}}) is an optional component that you can deploy to overcome the query-frontend scalability limitations.
 

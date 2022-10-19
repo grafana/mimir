@@ -26,10 +26,7 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "mimir.podLabels" (dict "ctx" $.ctx "component" $.component) | nindent 8 }}
-        {{- with .podLabels }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
+        {{- include "mimir.podLabels" $ | nindent 8 }}
       annotations:
         {{- with $.ctx.Values.global.podAnnotations }}
         {{- toYaml . | nindent 8 }}
@@ -51,6 +48,8 @@ spec:
         {{- toYaml .nodeSelector | nindent 8 }}
       affinity:
         {{- toYaml .affinity | nindent 8 }}
+      topologySpreadConstraints:
+        {{- include "mimir.lib.topologySpreadConstraints" $ | nindent 8 }}
       tolerations:
         {{- toYaml .tolerations | nindent 8 }}
       terminationGracePeriodSeconds: {{ .terminationGracePeriodSeconds }}
@@ -73,11 +72,13 @@ spec:
           {{- if .resources }}
             {{- toYaml .resources | nindent 12 }}
           {{- else }}
+          {{- /* Calculate requested memory as round(allocatedMemory * 1.2). But with integer built-in operators. */}}
+          {{- $requestMemory := div (add (mul .allocatedMemory 12) 5) 10 }}
             limits:
-              memory: {{ round (mulf .allocatedMemory 1.2) 0 }}Mi
+              memory: {{ $requestMemory }}Mi
             requests:
               cpu: 500m
-              memory: {{ round (mulf .allocatedMemory 1.2) 0 }}Mi
+              memory: {{ $requestMemory }}Mi
           {{- end }}
           ports:
             - containerPort: {{ .port }}
@@ -118,6 +119,8 @@ spec:
             - "--web.listen-address=0.0.0.0:9150"
           resources:
             {{- toYaml $.ctx.Values.memcachedExporter.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml $.ctx.Values.memcachedExporter.containerSecurityContext | nindent 12 }}
       {{- end }}
 {{- end -}}
 {{- end -}}

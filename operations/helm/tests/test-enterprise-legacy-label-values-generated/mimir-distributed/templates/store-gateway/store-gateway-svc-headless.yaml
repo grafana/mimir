@@ -1,0 +1,25 @@
+---
+# Source: mimir-distributed/templates/store-gateway/store-gateway-svc-headless.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-enterprise-legacy-label-values-enterprise-metrics-store-gateway-headless
+  labels:
+    app: enterprise-metrics-store-gateway
+    heritage: Helm
+    release: test-enterprise-legacy-label-values
+    prometheus.io/service-monitor: "false"
+  annotations:
+    {}
+  namespace: "citestns"
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - port: 9095
+      protocol: TCP
+      name: grpc
+      targetPort: grpc
+  selector:
+    app: enterprise-metrics-store-gateway
+    release: test-enterprise-legacy-label-values

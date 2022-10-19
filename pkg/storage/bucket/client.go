@@ -14,7 +14,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/thanos-io/thanos/pkg/objstore"
+	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/regexp"
 
@@ -44,6 +44,10 @@ const (
 
 	// validPrefixCharactersRegex allows only alphanumeric characters to prevent subtle bugs and simplify validation
 	validPrefixCharactersRegex = `^[\da-zA-Z]+$`
+
+	// MimirInternalsPrefix is the bucket prefix under which all Mimir internal cluster-wide objects are stored.
+	// The object storage path delimiter (/) is appended to this prefix when building the full object path.
+	MimirInternalsPrefix = "__mimir_cluster"
 )
 
 var (
@@ -77,15 +81,15 @@ func (cfg *StorageBackendConfig) supportedBackends() []string {
 }
 
 // RegisterFlags registers the backend storage config.
-func (cfg *StorageBackendConfig) RegisterFlags(f *flag.FlagSet) {
-	cfg.RegisterFlagsWithPrefix("", f)
+func (cfg *StorageBackendConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
+	cfg.RegisterFlagsWithPrefix("", f, logger)
 }
 
-func (cfg *StorageBackendConfig) RegisterFlagsWithPrefixAndDefaultDirectory(prefix, dir string, f *flag.FlagSet) {
+func (cfg *StorageBackendConfig) RegisterFlagsWithPrefixAndDefaultDirectory(prefix, dir string, f *flag.FlagSet, logger log.Logger) {
 	cfg.RegisteredFlags = util.TrackRegisteredFlags(prefix, f, func(prefix string, f *flag.FlagSet) {
 		cfg.S3.RegisterFlagsWithPrefix(prefix, f)
 		cfg.GCS.RegisterFlagsWithPrefix(prefix, f)
-		cfg.Azure.RegisterFlagsWithPrefix(prefix, f)
+		cfg.Azure.RegisterFlagsWithPrefix(prefix, f, logger)
 		cfg.Swift.RegisterFlagsWithPrefix(prefix, f)
 		cfg.Filesystem.RegisterFlagsWithPrefixAndDefaultDirectory(prefix, dir, f)
 
@@ -93,8 +97,8 @@ func (cfg *StorageBackendConfig) RegisterFlagsWithPrefixAndDefaultDirectory(pref
 	})
 }
 
-func (cfg *StorageBackendConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	cfg.RegisterFlagsWithPrefixAndDefaultDirectory(prefix, "", f)
+func (cfg *StorageBackendConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet, logger log.Logger) {
+	cfg.RegisterFlagsWithPrefixAndDefaultDirectory(prefix, "", f, logger)
 }
 
 func (cfg *StorageBackendConfig) Validate() error {
@@ -119,21 +123,21 @@ type Config struct {
 
 	// Not used internally, meant to allow callers to wrap Buckets
 	// created using this config
-	Middlewares []func(objstore.Bucket) (objstore.Bucket, error) `yaml:"-"`
+	Middlewares []func(objstore.InstrumentedBucket) (objstore.InstrumentedBucket, error) `yaml:"-"`
 }
 
 // RegisterFlags registers the backend storage config.
-func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
-	cfg.RegisterFlagsWithPrefix("", f)
+func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
+	cfg.RegisterFlagsWithPrefix("", f, logger)
 }
 
-func (cfg *Config) RegisterFlagsWithPrefixAndDefaultDirectory(prefix, dir string, f *flag.FlagSet) {
-	cfg.StorageBackendConfig.RegisterFlagsWithPrefixAndDefaultDirectory(prefix, dir, f)
+func (cfg *Config) RegisterFlagsWithPrefixAndDefaultDirectory(prefix, dir string, f *flag.FlagSet, logger log.Logger) {
+	cfg.StorageBackendConfig.RegisterFlagsWithPrefixAndDefaultDirectory(prefix, dir, f, logger)
 	f.StringVar(&cfg.StoragePrefix, prefix+"storage-prefix", "", "Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.")
 }
 
-func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	cfg.RegisterFlagsWithPrefixAndDefaultDirectory(prefix, "", f)
+func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet, logger log.Logger) {
+	cfg.RegisterFlagsWithPrefixAndDefaultDirectory(prefix, "", f, logger)
 }
 
 func (cfg *Config) Validate() error {
@@ -148,18 +152,23 @@ func (cfg *Config) Validate() error {
 }
 
 // NewClient creates a new bucket client based on the configured backend
-func NewClient(ctx context.Context, cfg Config, name string, logger log.Logger, reg prometheus.Registerer) (client objstore.Bucket, err error) {
+func NewClient(ctx context.Context, cfg Config, name string, logger log.Logger, reg prometheus.Registerer) (objstore.InstrumentedBucket, error) {
+	var (
+		backendClient objstore.Bucket
+		err           error
+	)
+
 	switch cfg.Backend {
 	case S3:
-		client, err = s3.NewBucketClient(cfg.S3, name, logger)
+		backendClient, err = s3.NewBucketClient(cfg.S3, name, logger)
 	case GCS:
-		client, err = gcs.NewBucketClient(ctx, cfg.GCS, name, logger)
+		backendClient, err = gcs.NewBucketClient(ctx, cfg.GCS, name, logger)
 	case Azure:
-		client, err = azure.NewBucketClient(cfg.Azure, name, logger)
+		backendClient, err = azure.NewBucketClient(cfg.Azure, name, logger)
 	case Swift:
-		client, err = swift.NewBucketClient(cfg.Swift, name, logger)
+		backendClient, err = swift.NewBucketClient(cfg.Swift, name, logger)
 	case Filesystem:
-		client, err = filesystem.NewBucketClient(cfg.Filesystem)
+		backendClient, err = filesystem.NewBucketClient(cfg.Filesystem)
 	default:
 		return nil, ErrUnsupportedStorageBackend
 	}
@@ -169,20 +178,20 @@ func NewClient(ctx context.Context, cfg Config, name string, logger log.Logger, 
 	}
 
 	if cfg.StoragePrefix != "" {
-		client = NewPrefixedBucketClient(client, cfg.StoragePrefix)
+		backendClient = NewPrefixedBucketClient(backendClient, cfg.StoragePrefix)
 	}
 
-	client = objstore.NewTracingBucket(bucketWithMetrics(client, name, reg))
+	instrumentedClient := objstore.NewTracingBucket(bucketWithMetrics(backendClient, name, reg))
 
 	// Wrap the client with any provided middleware
 	for _, wrap := range cfg.Middlewares {
-		client, err = wrap(client)
+		instrumentedClient, err = wrap(instrumentedClient)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	return client, nil
+	return instrumentedClient, nil
 }
 
 func bucketWithMetrics(bucketClient objstore.Bucket, name string, reg prometheus.Registerer) objstore.Bucket {

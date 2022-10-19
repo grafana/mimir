@@ -10,14 +10,14 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"strings"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	"github.com/pkg/errors"
-	"github.com/thanos-io/thanos/pkg/objstore"
+	"github.com/thanos-io/objstore"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
@@ -26,8 +26,8 @@ import (
 )
 
 const (
-	// The bucket prefix under which all tenants rule groups are stored.
-	rulesPrefix = "rules"
+	// RulesPrefix is the bucket prefix under which all tenants rule groups are stored.
+	RulesPrefix = "rules"
 
 	loadConcurrency = 10
 )
@@ -49,7 +49,7 @@ type BucketRuleStore struct {
 
 func NewBucketRuleStore(bkt objstore.Bucket, cfgProvider bucket.TenantConfigProvider, logger log.Logger) *BucketRuleStore {
 	return &BucketRuleStore{
-		bucket:      bucket.NewPrefixedBucketClient(bkt, rulesPrefix),
+		bucket:      bucket.NewPrefixedBucketClient(bkt, RulesPrefix),
 		cfgProvider: cfgProvider,
 		logger:      logger,
 	}
@@ -71,7 +71,7 @@ func (b *BucketRuleStore) getRuleGroup(ctx context.Context, userID, namespace, g
 	}
 	defer func() { _ = reader.Close() }()
 
-	buf, err := ioutil.ReadAll(reader)
+	buf, err := io.ReadAll(reader)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to read rule group %s", objectKey)
 	}

@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/packaging/deb/systemd/cortex.service
+# Provenance-includes-license: Apache-2.0
+# Provenance-includes-copyright: The Cortex Authors.
+
+[Unit]
+Description=Horizontally scalable, highly available, multi-tenant, long term Prometheus.
+Documentation=https://grafana.com/oss/mimir/
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Restart=always
+User=mimir
+EnvironmentFile=/etc/default/mimir
+ExecStart=/usr/local/bin/mimir --log.level $LOG_LEVEL $CUSTOM_ARGS
+ExecReload=/bin/kill -HUP $MAINPID
+TimeoutStopSec=20s
+SendSIGKILL=no
+WorkingDirectory=/var/lib/mimir
+
+[Install]
+WantedBy=multi-user.target

@@ -6,10 +6,8 @@
 package querytee
 
 import (
-	"context"
 	"flag"
 	"fmt"
-	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -20,15 +18,16 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/gorilla/mux"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/weaveworks/common/server"
 )
 
 var errMinBackends = errors.New("at least 1 backend is required")
 
 type ProxyConfig struct {
-	ServerServicePort              int
+	ServerHTTPServicePort          int
+	ServerGRPCServicePort          int
 	BackendEndpoints               string
 	PreferredBackend               string
 	BackendReadTimeout             time.Duration
@@ -40,7 +39,8 @@ type ProxyConfig struct {
 }
 
 func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
-	f.IntVar(&cfg.ServerServicePort, "server.service-port", 80, "The port where the query-tee service listens to.")
+	f.IntVar(&cfg.ServerHTTPServicePort, "server.http-service-port", 80, "The HTTP port where the query-tee service listens to HTTP requests.")
+	f.IntVar(&cfg.ServerGRPCServicePort, "server.grpc-service-port", 9095, "The GRPC port where the query-tee service listens to HTTP over gRPC messages.")
 	f.StringVar(&cfg.BackendEndpoints, "backend.endpoints", "", "Comma separated list of backend endpoints to query.")
 	f.StringVar(&cfg.PreferredBackend, "backend.preferred", "", "The hostname of the preferred backend when selecting the response to send back to the client. If no preferred backend is configured then the query-tee will send back to the client the first successful response received without waiting for other backends.")
 	f.DurationVar(&cfg.BackendReadTimeout, "backend.read-timeout", 90*time.Second, "The timeout when reading the response from a backend.")
@@ -59,15 +59,15 @@ type Route struct {
 }
 
 type Proxy struct {
-	cfg      ProxyConfig
-	backends []*ProxyBackend
-	logger   log.Logger
-	metrics  *ProxyMetrics
-	routes   []Route
+	cfg        ProxyConfig
+	backends   []*ProxyBackend
+	logger     log.Logger
+	registerer prometheus.Registerer
+	metrics    *ProxyMetrics
+	routes     []Route
 
-	// The HTTP server used to run the proxy service.
-	srv         *http.Server
-	srvListener net.Listener
+	// The HTTP and gRPC servers used to run the proxy service.
+	server *server.Server
 
 	// Wait group used to wait until the server has done.
 	done sync.WaitGroup
@@ -83,10 +83,11 @@ func NewProxy(cfg ProxyConfig, logger log.Logger, routes []Route, registerer pro
 	}
 
 	p := &Proxy{
-		cfg:     cfg,
-		logger:  logger,
-		metrics: NewProxyMetrics(registerer),
-		routes:  routes,
+		cfg:        cfg,
+		logger:     logger,
+		registerer: registerer,
+		metrics:    NewProxyMetrics(registerer),
+		routes:     routes,
 	}
 
 	// Parse the backend endpoints (comma separated).
@@ -108,7 +109,7 @@ func NewProxy(cfg ProxyConfig, logger log.Logger, routes []Route, registerer pro
 		name := u.Hostname()
 		preferred := name == cfg.PreferredBackend
 
-		// In tests we have the same hostname for all backends, so we also
+		// In tests, we have the same hostname for all backends, so we also
 		// support a numeric preferred backend which is the index in the list
 		// of backends.
 		if preferredIdx, err := strconv.Atoi(cfg.PreferredBackend); err == nil {
@@ -123,7 +124,7 @@ func NewProxy(cfg ProxyConfig, logger log.Logger, routes []Route, registerer pro
 		return nil, errMinBackends
 	}
 
-	// If the preferred backend is configured, then it must exists among the actual backends.
+	// If the preferred backend is configured, then it must exist among the actual backends.
 	if cfg.PreferredBackend != "" {
 		exists := false
 		for _, b := range p.backends {
@@ -151,13 +152,33 @@ func NewProxy(cfg ProxyConfig, logger log.Logger, routes []Route, registerer pro
 }
 
 func (p *Proxy) Start() error {
-	// Setup listener first, so we can fail early if the port is in use.
-	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", p.cfg.ServerServicePort))
+	// Setup server first, so we can fail early if the ports are in use.
+	serv, err := server.New(server.Config{
+		// HTTP configs
+		HTTPListenPort:                p.cfg.ServerHTTPServicePort,
+		HTTPServerReadTimeout:         1 * time.Minute,
+		HTTPServerWriteTimeout:        2 * time.Minute,
+		ServerGracefulShutdownTimeout: 0,
+
+		// gRPC configs
+		GRPCListenPort: p.cfg.ServerGRPCServicePort,
+		// Same size configurations as in Mimir default gRPC configuration values
+		GPRCServerMaxRecvMsgSize:           100 * 1024 * 1024,
+		GRPCServerMaxSendMsgSize:           100 * 1024 * 1024,
+		GPRCServerMaxConcurrentStreams:     10000,
+		GRPCServerMinTimeBetweenPings:      10 * time.Second,
+		GRPCServerPingWithoutStreamAllowed: true,
+
+		// Use Proxy's prometheus registry
+		MetricsNamespace:        queryTeeMetricsNamespace,
+		Registerer:              p.registerer,
+		RegisterInstrumentation: false,
+	})
 	if err != nil {
 		return err
 	}
 
-	router := mux.NewRouter()
+	router := serv.HTTP
 
 	// Health check endpoint.
 	router.Path("/").Methods("GET").Handler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -182,44 +203,32 @@ func (p *Proxy) Start() error {
 		}
 	}
 
-	p.srvListener = listener
-	p.srv = &http.Server{
-		ReadTimeout:  1 * time.Minute,
-		WriteTimeout: 2 * time.Minute,
-		Handler:      router,
-	}
+	p.server = serv
 
 	// Run in a dedicated goroutine.
 	p.done.Add(1)
 	go func() {
 		defer p.done.Done()
 
-		if err := p.srv.Serve(p.srvListener); err != nil {
+		if err := p.server.Run(); err != nil {
 			level.Error(p.logger).Log("msg", "Proxy server failed", "err", err)
 		}
 	}()
 
-	level.Info(p.logger).Log("msg", "The proxy is up and running.")
+	level.Info(p.logger).Log("msg", "The proxy is up and running.", "httpPort", p.cfg.ServerHTTPServicePort, "grpcPort", p.cfg.ServerGRPCServicePort)
 	return nil
 }
 
 func (p *Proxy) Stop() error {
-	if p.srv == nil {
+	if p.server == nil {
 		return nil
 	}
 
-	return p.srv.Shutdown(context.Background())
+	p.server.Shutdown()
+	return nil
 }
 
 func (p *Proxy) Await() {
 	// Wait until terminated.
 	p.done.Wait()
-}
-
-func (p *Proxy) Endpoint() string {
-	if p.srvListener == nil {
-		return ""
-	}
-
-	return p.srvListener.Addr().String()
 }

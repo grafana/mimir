@@ -9,7 +9,6 @@ metadata:
     app.kubernetes.io/instance: test-enterprise-configmap-values
     app.kubernetes.io/component: compactor
     app.kubernetes.io/part-of: memberlist
-    app.kubernetes.io/version: "2.2.0"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -29,7 +28,6 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-enterprise-configmap-values
-        app.kubernetes.io/version: "2.2.0"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: compactor
         app.kubernetes.io/part-of: memberlist
@@ -45,17 +43,16 @@ spec:
       nodeSelector:
         {}
       affinity:
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-          - podAffinityTerm:
-              labelSelector:
-                matchExpressions:
-                - key: target
-                  operator: In
-                  values:
-                  - compactor
-              topologyKey: kubernetes.io/hostname
-            weight: 100
+        {}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: mimir
+              app.kubernetes.io/instance: test-enterprise-configmap-values
+              app.kubernetes.io/component: compactor
       tolerations:
         []
       terminationGracePeriodSeconds: 240
@@ -74,6 +71,8 @@ spec:
             name: test-enterprise-configmap-values-mimir-runtime
         - name: storage
           emptyDir: {}
+        - name: active-queries
+          emptyDir: {}
       containers:
         - name: compactor
           imagePullPolicy: IfNotPresent
@@ -90,6 +89,8 @@ spec:
               mountPath: /var/mimir
             - name: storage
               mountPath: "/data"
+            - name: active-queries
+              mountPath: /active-query-tracker
           ports:
             - name: http-metrics
               containerPort: 8080
@@ -108,9 +109,7 @@ spec:
               port: http-metrics
             initialDelaySeconds: 60
           resources:
-            requests:
-              cpu: 100m
-              memory: 512Mi
+            limits: null
           securityContext:
             readOnlyRootFilesystem: true
           env:

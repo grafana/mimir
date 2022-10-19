@@ -9,7 +9,6 @@ metadata:
     app.kubernetes.io/instance: test-oss-values
     app.kubernetes.io/component: ruler
     app.kubernetes.io/part-of: memberlist
-    app.kubernetes.io/version: "2.2.0"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -31,7 +30,6 @@ spec:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-values
-        app.kubernetes.io/version: "2.2.0"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: ruler
         app.kubernetes.io/part-of: memberlist
@@ -59,6 +57,8 @@ spec:
             - name: storage
               mountPath: "/data"
               subPath: 
+            - name: active-queries
+              mountPath: /active-query-tracker
           ports:
             - name: http-metrics
               containerPort: 8080
@@ -90,6 +90,15 @@ spec:
         {}
       affinity:
         {}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: mimir
+              app.kubernetes.io/instance: test-oss-values
+              app.kubernetes.io/component: ruler
       tolerations:
         []
       terminationGracePeriodSeconds: 180
@@ -104,4 +113,6 @@ spec:
           configMap:
             name: test-oss-values-mimir-runtime
         - name: storage
+          emptyDir: {}
+        - name: active-queries
           emptyDir: {}

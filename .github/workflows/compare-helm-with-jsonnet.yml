@@ -13,15 +13,10 @@ jobs:
   compare-manifests:
     runs-on: ubuntu-latest
     steps:
-    - name: Find Comment
-      uses: peter-evans/find-comment@v2
-      id: fc
-      with:
-        issue-number: ${{ github.event.pull_request.number }}
-        comment-author: 'github-actions[bot]'
-        body-includes: '**Helm <> Jsonnet Diff**'
-
     - uses: actions/checkout@v2
+    - uses: actions/setup-go@v3
+      with:
+        go-version: '1.19.2'
     - uses: helm/kind-action@v1.2.0
     - uses: frenck/action-setup-yq@a2ad11c46c5d7ba576861216963c9365b53f35bc
     - uses: dsaltares/fetch-gh-release-asset@d9376dacd30fd38f49238586cd2e9295a8307f4c
@@ -38,65 +33,19 @@ jobs:
         file: 'jb-linux-amd64'
         target: 'bin/jb'
         token: ${{ secrets.GITHUB_TOKEN }}
-    - run: |
+    - name: Configure dependencies
+      run: |
         set -e
         chmod +x $PWD/bin/tk
         chmod +x $PWD/bin/jb
         echo $PWD/bin >> $GITHUB_PATH
-
-    - id: compare-manifests
-      run: |
         set +e
-        # Make dependencies first so their output doesn't appear in the PR comment
+    - name: Make dependencies
+      run: |
+        # Make dependencies first to have their output in another step
         make operations/helm/charts/mimir-distributed/charts
         make build-jsonnet-tests
-
-        OUTPUT="$(./operations/compare-helm-with-jsonnet/compare-helm-with-jsonnet.sh 2>&1)"
-
-        if [ $? -eq 0 ]; then
-          echo "::set-output name=changed::false"
-        else
-          echo "$OUTPUT"
-          # This makes a multiline output work
-          # https://trstringer.com/github-actions-multiline-strings/
-          OUTPUT="${OUTPUT//'%'/'%25'}"
-          OUTPUT="${OUTPUT//$'\n'/'%0A'}"
-          OUTPUT="${OUTPUT//$'\r'/'%0D'}"
-          echo "::set-output name=changed::true"
-          echo "::set-output name=diff::$OUTPUT"
-        fi
-
-    - name: Create or update comment
-      continue-on-error: true
-      uses: peter-evans/create-or-update-comment@v2
-      if: ${{ steps.compare-manifests.outputs.changed == 'true' }}
-      with:
-        comment-id: ${{ steps.progress-comment.outputs.comment-id }}
-        issue-number: ${{ github.event.pull_request.number }}
-        body: |
-          **Helm <> Jsonnet Diff**
-
-          :warning: A difference was detected between the Helm chart and the Jsonnet library.
-
-          1. Use `make check-helm-jsonnet-diff` to reproduce the output locally.
-          2. This test is experimental while we gather feedback about its usefulness.
-          3. It does not block your PR from being merged, but we would appreciate you trying to keep feature parity between the Helm chart and Jsonnet library if possible.
-
-          **If you get stuck on this step and the Mimir maintainers aren't able to help, feel free to merge without making this step pass and tag `@Logiraptor` so the Mimir maintainers can gather feedback later.**
-
-          [Please see the contribution docs here for more info.](https://github.com/grafana/mimir/blob/main/docs/internal/contributing/contributing-to-helm-chart.md)
-
-          <details>
-
-          <summary>
-          Expand to see the output
-          </summary>
-
-          Output of https://github.com/${{github.repository}}/actions/runs/${{github.run_id}}
-
-          ```diff
-          ${{ steps.compare-manifests.outputs.diff }}
-          ```
-
-          </details>
-        edit-mode: replace
+    - name: Compare manifests
+      id: compare-manifests
+      run: |
+        ./operations/compare-helm-with-jsonnet/compare-helm-with-jsonnet.sh || (echo "Please fix the errors above and run 'make check-helm-jsonnet-diff' to validate" && false)

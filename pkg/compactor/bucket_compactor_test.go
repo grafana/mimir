@@ -13,13 +13,14 @@ import (
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/extprom"
-	"github.com/thanos-io/thanos/pkg/objstore"
 
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 
@@ -116,7 +117,7 @@ func TestFilterOwnJobs(t *testing.T) {
 		},
 	}
 
-	m := NewBucketCompactorMetrics(prometheus.NewCounter(prometheus.CounterOpts{}), nil)
+	m := NewBucketCompactorMetrics(promauto.With(nil).NewCounter(prometheus.CounterOpts{}), nil)
 	for testName, testCase := range tests {
 		t.Run(testName, func(t *testing.T) {
 			bc, err := NewBucketCompactor(log.NewNopLogger(), nil, nil, nil, nil, "", nil, 2, false, testCase.ownJob, nil, 4, m)
@@ -141,8 +142,8 @@ func TestNoCompactionMarkFilter(t *testing.T) {
 	block4 := ulid.MustParse("01DTVP434PA9VFXSW2JK000004") // Has invalid marker file.
 	block5 := ulid.MustParse("01DTVP434PA9VFXSW2JK000005") // No mark file.
 
-	for name, testFn := range map[string]func(t *testing.T, synced *extprom.TxGaugeVec){
-		"filter with no deletion of blocks marked for no-compaction": func(t *testing.T, synced *extprom.TxGaugeVec) {
+	for name, testFn := range map[string]func(t *testing.T, synced block.GaugeVec){
+		"filter with no deletion of blocks marked for no-compaction": func(t *testing.T, synced block.GaugeVec) {
 			metas := map[ulid.ULID]*metadata.Meta{
 				block1: blockMeta(block1.String(), 100, 200, nil),
 				block2: blockMeta(block2.String(), 200, 300, nil), // Has no-compaction marker.
@@ -161,10 +162,9 @@ func TestNoCompactionMarkFilter(t *testing.T) {
 			require.Len(t, f.NoCompactMarkedBlocks(), 2)
 			require.Contains(t, f.NoCompactMarkedBlocks(), block2, block4)
 
-			synced.Submit()
 			assert.Equal(t, 2.0, testutil.ToFloat64(synced.WithLabelValues(block.MarkedForNoCompactionMeta)))
 		},
-		"filter with deletion enabled": func(t *testing.T, synced *extprom.TxGaugeVec) {
+		"filter with deletion enabled": func(t *testing.T, synced block.GaugeVec) {
 			metas := map[ulid.ULID]*metadata.Meta{
 				block1: blockMeta(block1.String(), 100, 200, nil),
 				block2: blockMeta(block2.String(), 300, 300, nil), // Has no-compaction marker.
@@ -184,10 +184,9 @@ func TestNoCompactionMarkFilter(t *testing.T) {
 			require.Contains(t, f.NoCompactMarkedBlocks(), block2)
 			require.Contains(t, f.NoCompactMarkedBlocks(), block4)
 
-			synced.Submit()
 			assert.Equal(t, 2.0, testutil.ToFloat64(synced.WithLabelValues(block.MarkedForNoCompactionMeta)))
 		},
-		"filter with deletion enabled, but canceled context": func(t *testing.T, synced *extprom.TxGaugeVec) {
+		"filter with deletion enabled, but canceled context": func(t *testing.T, synced block.GaugeVec) {
 			metas := map[ulid.ULID]*metadata.Meta{
 				block1: blockMeta(block1.String(), 100, 200, nil),
 				block2: blockMeta(block2.String(), 200, 300, nil),
@@ -209,10 +208,9 @@ func TestNoCompactionMarkFilter(t *testing.T) {
 			require.Contains(t, metas, block5)
 
 			require.Empty(t, f.NoCompactMarkedBlocks())
-			synced.Submit()
 			assert.Equal(t, 0.0, testutil.ToFloat64(synced.WithLabelValues(block.MarkedForNoCompactionMeta)))
 		},
-		"filtering block with wrong marker version": func(t *testing.T, synced *extprom.TxGaugeVec) {
+		"filtering block with wrong marker version": func(t *testing.T, synced block.GaugeVec) {
 			metas := map[ulid.ULID]*metadata.Meta{
 				block3: blockMeta(block3.String(), 300, 300, nil), // Has compaction marker with invalid version, but Filter doesn't check for that.
 			}
@@ -222,13 +220,12 @@ func TestNoCompactionMarkFilter(t *testing.T) {
 			require.NoError(t, err)
 			require.Empty(t, metas)
 
-			synced.Submit()
 			assert.Equal(t, 1.0, testutil.ToFloat64(synced.WithLabelValues(block.MarkedForNoCompactionMeta)))
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			// Block 2 is marked for no-compaction.
-			require.NoError(t, block.MarkForNoCompact(ctx, log.NewNopLogger(), bkt, block2, metadata.OutOfOrderChunksNoCompactReason, "details...", prometheus.NewCounter(prometheus.CounterOpts{})))
+			require.NoError(t, block.MarkForNoCompact(ctx, log.NewNopLogger(), bkt, block2, metadata.OutOfOrderChunksNoCompactReason, "details...", promauto.With(nil).NewCounter(prometheus.CounterOpts{})))
 			// Block 3 has marker with invalid version
 			require.NoError(t, bkt.Upload(ctx, block3.String()+"/no-compact-mark.json", strings.NewReader(`{"id":"`+block3.String()+`","version":100,"details":"details","no_compact_time":1637757932,"reason":"reason"}`)))
 			// Block 4 has marker with invalid JSON syntax

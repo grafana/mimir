@@ -5,7 +5,7 @@
 package integration
 
 import (
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -73,7 +73,7 @@ func TestMimirCanParseIntZeroAsZeroDuration(t *testing.T) {
 	const singleProcessConfigFile = "docs/configurations/single-process-config-blocks.yaml"
 
 	// Use an example single process config file.
-	config, err := ioutil.ReadFile(filepath.Join(getMimirProjectDir(), singleProcessConfigFile))
+	config, err := os.ReadFile(filepath.Join(getMimirProjectDir(), singleProcessConfigFile))
 	require.NoError(t, err, "unable to read config file")
 
 	// Ensure that there's `server:` to replace in the config, otherwise we're testing nothing.
@@ -87,6 +87,7 @@ func TestMimirCanParseIntZeroAsZeroDuration(t *testing.T) {
 	flags := map[string]string{
 		"-common.storage.backend":        "filesystem",
 		"-common.storage.filesystem.dir": "./bucket",
+		"-blocks-storage.storage-prefix": "blocks",
 	}
 
 	mimir := e2emimir.NewSingleBinary("mimir-1", flags, e2emimir.WithPorts(9009, 9095), e2emimir.WithConfigFile(mimirConfigFile))

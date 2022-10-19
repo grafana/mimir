@@ -141,8 +141,7 @@ func NewIngester(name string, consulAddress string, flags map[string]string, opt
 			"-ingester.ring.store":           "consul",
 			"-ingester.ring.consul.hostname": consulAddress,
 			// Speed up the startup.
-			"-ingester.ring.min-ready-duration":          "0s",
-			"-ingester.ring.readiness-check-ring-health": "false",
+			"-ingester.ring.min-ready-duration": "0s",
 		},
 		flags,
 		options...,
@@ -206,8 +205,7 @@ func NewSingleBinary(name string, flags map[string]string, options ...Option) *M
 			"-target":    "all",
 			"-log.level": "warn",
 			// Speed up the startup.
-			"-ingester.ring.min-ready-duration":          "0s",
-			"-ingester.ring.readiness-check-ring-health": "false",
+			"-ingester.ring.min-ready-duration": "0s",
 		},
 		flags,
 		options...,
@@ -254,20 +252,6 @@ func NewRuler(name string, consulAddress string, flags map[string]string, option
 			// Configure the ingesters ring backend
 			"-ingester.ring.store":           "consul",
 			"-ingester.ring.consul.hostname": consulAddress,
-		},
-		flags,
-		options...,
-	)
-}
-
-func NewPurger(name string, flags map[string]string, options ...Option) *MimirService {
-	return newMimirServiceFromOptions(
-		name,
-		map[string]string{
-			"-target":                   "purger",
-			"-log.level":                "warn",
-			"-purger.object-store-type": "filesystem",
-			"-local.chunk-directory":    e2e.ContainerSharedDir,
 		},
 		flags,
 		options...,

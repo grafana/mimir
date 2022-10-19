@@ -8,7 +8,7 @@ package bucketclient
 import (
 	"bytes"
 	"context"
-	"io/ioutil"
+	"io"
 	"strings"
 	"sync"
 
@@ -17,22 +17,22 @@ import (
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/runutil"
 	"github.com/pkg/errors"
-	"github.com/thanos-io/thanos/pkg/objstore"
+	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 )
 
 const (
-	// The bucket prefix under which all tenants alertmanager configs are stored.
+	// AlertsPrefix is the bucket prefix under which all tenants alertmanager configs are stored.
 	// Note that objects stored under this prefix follow the pattern:
 	//     alerts/<user-id>
-	alertsPrefix = "alerts"
+	AlertsPrefix = "alerts"
 
-	// The bucket prefix under which other alertmanager state is stored.
+	// AlertmanagerPrefix is the bucket prefix under which other alertmanager state is stored.
 	// Note that objects stored under this prefix follow the pattern:
 	//     alertmanager/<user-id>/<object>
-	alertmanagerPrefix = "alertmanager"
+	AlertmanagerPrefix = "alertmanager"
 
 	// The name of alertmanager full state objects (notification log + silences).
 	fullStateName = "fullstate"
@@ -52,8 +52,8 @@ type BucketAlertStore struct {
 
 func NewBucketAlertStore(bkt objstore.Bucket, cfgProvider bucket.TenantConfigProvider, logger log.Logger) *BucketAlertStore {
 	return &BucketAlertStore{
-		alertsBucket: bucket.NewPrefixedBucketClient(bkt, alertsPrefix),
-		amBucket:     bucket.NewPrefixedBucketClient(bkt, alertmanagerPrefix),
+		alertsBucket: bucket.NewPrefixedBucketClient(bkt, AlertsPrefix),
+		amBucket:     bucket.NewPrefixedBucketClient(bkt, AlertmanagerPrefix),
 		cfgProvider:  cfgProvider,
 		logger:       logger,
 	}
@@ -191,7 +191,7 @@ func (s *BucketAlertStore) get(ctx context.Context, bkt objstore.Bucket, name st
 
 	defer runutil.CloseWithLogOnErr(s.logger, readCloser, "close bucket reader")
 
-	buf, err := ioutil.ReadAll(readCloser)
+	buf, err := io.ReadAll(readCloser)
 	if err != nil {
 		return errors.Wrapf(err, "failed to read alertmanager config for user %s", name)
 	}

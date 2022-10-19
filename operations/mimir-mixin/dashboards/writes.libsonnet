@@ -1,7 +1,8 @@
 local utils = import 'mixin-utils/utils.libsonnet';
 local filename = 'mimir-writes.json';
 
-(import 'dashboard-utils.libsonnet') {
+(import 'dashboard-utils.libsonnet') +
+(import 'dashboard-queries.libsonnet') {
   [filename]:
     ($.dashboard('Writes') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
@@ -37,11 +38,7 @@ local filename = 'mimir-writes.json';
       .addPanel(
         $.panel('Samples / sec') +
         $.statPanel(
-          'sum(%(group_prefix_jobs)s:cortex_distributor_received_samples:rate5m{%(job)s})' % (
-            $._config {
-              job: $.jobMatcher($._config.job_names.distributor),
-            }
-          ),
+          $.queries.distributor.samplesPerSecond,
           format='short'
         )
       )
@@ -49,11 +46,7 @@ local filename = 'mimir-writes.json';
         local title = 'Exemplars / sec';
         $.panel(title) +
         $.statPanel(
-          'sum(%(group_prefix_jobs)s:cortex_distributor_received_exemplars:rate5m{%(job)s})' % (
-            $._config {
-              job: $.jobMatcher($._config.job_names.distributor),
-            }
-          ),
+          $.queries.distributor.exemplarsPerSecond,
           format='short'
         ) +
         $.panelDescription(
@@ -106,7 +99,7 @@ local filename = 'mimir-writes.json';
       .addPanelIf(
         $._config.gateway_enabled,
         $.panel('Requests / sec') +
-        $.statPanel('sum(rate(cortex_request_duration_seconds_count{%s, route=~"api_(v1|prom)_push"}[$__rate_interval]))' % $.jobMatcher($._config.job_names.gateway), format='reqps')
+        $.statPanel('sum(rate(cortex_request_duration_seconds_count{%s, route=~"%s"}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.gateway), $.queries.write_http_routes_regex], format='reqps')
       )
     )
     .addRowIf(
@@ -114,36 +107,102 @@ local filename = 'mimir-writes.json';
       $.row('Gateway')
       .addPanel(
         $.panel('Requests / sec') +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"api_(v1|prom)_push"}' % $.jobMatcher($._config.job_names.gateway))
+        $.qpsPanel($.queries.gateway.writeRequestsPerSecond)
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', 'api_(v1|prom)_push')])
+        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', $.queries.write_http_routes_regex)])
       )
       .addPanel(
-        $.panel('Per %s p99 latency' % $._config.per_instance_label) +
+        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"api_(v1|prom)_push"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.gateway)], ''
-        ) +
-        { yaxes: $.yaxes('s') }
+          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.gateway), $.queries.write_http_routes_regex], ''
+        )
       )
     )
     .addRow(
       $.row('Distributor')
       .addPanel(
         $.panel('Requests / sec') +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push"}' % $.jobMatcher($._config.job_names.distributor))
+        $.qpsPanel($.queries.distributor.writeRequestsPerSecond)
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.distributor) + [utils.selector.re('route', '/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push')])
+        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.distributor) + [utils.selector.re('route', '/distributor.Distributor/Push|/httpgrpc.*|%s' % $.queries.write_http_routes_regex)])
       )
       .addPanel(
-        $.panel('Per %s p99 latency' % $._config.per_instance_label) +
+        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.distributor)], ''
-        ) +
-        { yaxes: $.yaxes('s') }
+          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"/distributor.Distributor/Push|/httpgrpc.*|%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.distributor), $.queries.write_http_routes_regex], ''
+        )
+      )
+    )
+    .addRowIf(
+      $._config.forwarding_enabled,
+      $.row('Distributor Forwarding')
+      .addPanel(
+        $.panel('Requests / sec') +
+        $.queryPanel(
+          [
+            |||
+              sum(
+                rate(
+                  cortex_distributor_forward_requests_total{%(distributorMatcher)s}[$__rate_interval]
+                )
+              )
+              -
+              sum(
+                rate(
+                  cortex_distributor_forward_errors_total{%(distributorMatcher)s}[$__rate_interval]
+                )
+              )
+            ||| % {
+              distributorMatcher: $.jobMatcher($._config.job_names.distributor),
+            },
+            |||
+              label_replace(
+                sum by (status_code) (
+                  rate(
+                    cortex_distributor_forward_errors_total{%(distributorMatcher)s}[$__rate_interval]
+                  )
+                ),
+                "status_code",
+                "error",
+                "status_code",
+                "failed"
+              )
+            ||| % {
+              distributorMatcher: $.jobMatcher($._config.job_names.distributor),
+            },
+          ], [
+            'success',
+            '{{ status_code }}',
+          ],
+        ) + $.stack + {
+          aliasColors: {
+            '1xx': '#EAB839',
+            '2xx': '#7EB26D',
+            '3xx': '#6ED0E0',
+            '4xx': '#EF843C',
+            '5xx': '#E24D42',
+            success: '#7EB26D',
+            'error': '#E24D42',
+          },
+        },
+      )
+      .addPanel(
+        $.panel('Latency') +
+        $.latencyPanel('cortex_distributor_forward_requests_latency_seconds', '{%s}' % $.jobMatcher($._config.job_names.distributor))
+      )
+      .addPanel(
+        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
+        $.hiddenLegendQueryPanel(
+          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_distributor_forward_requests_latency_seconds_bucket{%s}[$__rate_interval])))' % [
+            $._config.per_instance_label,
+            $.jobMatcher($._config.job_names.distributor),
+          ],
+          '{{ %s }}' % $._config.per_instance_label
+        )
       )
     )
     .addRow(
@@ -157,11 +216,10 @@ local filename = 'mimir-writes.json';
         utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.ingester) + [utils.selector.eq('route', '/cortex.Ingester/Push')])
       )
       .addPanel(
-        $.panel('Per %s p99 latency' % $._config.per_instance_label) +
+        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
           'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route="/cortex.Ingester/Push"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)], ''
-        ) +
-        { yaxes: $.yaxes('s') }
+        )
       )
     )
     .addRow(
@@ -176,8 +234,8 @@ local filename = 'mimir-writes.json';
     .addRow(
       $.row('Ingester - shipper')
       .addPanel(
+        $.panel('Uploaded blocks / sec') +
         $.successFailurePanel(
-          'Uploaded blocks / sec',
           'sum(rate(cortex_ingester_shipper_uploads_total{%s}[$__rate_interval])) - sum(rate(cortex_ingester_shipper_upload_failures_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
           'sum(rate(cortex_ingester_shipper_upload_failures_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),
         ) +
@@ -187,7 +245,8 @@ local filename = 'mimir-writes.json';
             The rate of blocks being uploaded from the ingesters
             to object storage.
           |||
-        ),
+        ) +
+        $.stack,
       )
       .addPanel(
         $.panel('Upload latency') +
@@ -204,8 +263,8 @@ local filename = 'mimir-writes.json';
     .addRow(
       $.row('Ingester - TSDB head')
       .addPanel(
+        $.panel('Compactions / sec') +
         $.successFailurePanel(
-          'Compactions / sec',
           'sum(rate(cortex_ingester_tsdb_compactions_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
           'sum(rate(cortex_ingester_tsdb_compactions_failed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),
         ) +
@@ -216,7 +275,8 @@ local filename = 'mimir-writes.json';
             active time series; these blocks get periodically compacted (by default, every 2h).
             This panel shows the rate of compaction operations across all TSDBs on all ingesters.
           |||
-        ),
+        ) +
+        $.stack,
       )
       .addPanel(
         $.panel('Compactions latency') +
@@ -233,8 +293,8 @@ local filename = 'mimir-writes.json';
     .addRow(
       $.row('Ingester - TSDB write ahead log (WAL)')
       .addPanel(
+        $.panel('WAL truncations / sec') +
         $.successFailurePanel(
-          'WAL truncations / sec',
           'sum(rate(cortex_ingester_tsdb_wal_truncations_total{%s}[$__rate_interval])) - sum(rate(cortex_ingester_tsdb_wal_truncations_failed_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
           'sum(rate(cortex_ingester_tsdb_wal_truncations_failed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),
         ) +
@@ -244,11 +304,12 @@ local filename = 'mimir-writes.json';
             The WAL is truncated each time a new TSDB block is written. This panel measures the rate of
             truncations.
           |||
-        ),
+        ) +
+        $.stack,
       )
       .addPanel(
+        $.panel('Checkpoints created / sec') +
         $.successFailurePanel(
-          'Checkpoints created / sec',
           'sum(rate(cortex_ingester_tsdb_checkpoint_creations_total{%s}[$__rate_interval])) - sum(rate(cortex_ingester_tsdb_checkpoint_creations_failed_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
           'sum(rate(cortex_ingester_tsdb_checkpoint_creations_failed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),
         ) +
@@ -258,7 +319,8 @@ local filename = 'mimir-writes.json';
             Checkpoints are created as part of the WAL truncation process.
             This metric measures the rate of checkpoint creation.
           |||
-        ),
+        ) +
+        $.stack,
       )
       .addPanel(
         $.panel('WAL truncations latency (includes checkpointing)') +

@@ -129,14 +129,12 @@
 
     // Querier component config (shared between the ruler and querier).
     queryConfig: {
-      'runtime-config.file': '%s/overrides.yaml' % $._config.overrides_configmap_mountpoint,
-
       // Don't allow individual queries of longer than 32days.  Due to day query
       // splitting in the frontend, the reality is this only limits rate(foo[32d])
       // type queries. 32 days to allow for comparision over the last month (31d) and
       // then some.
       'store.max-query-length': '768h',
-    },
+    } + $.mimirRuntimeConfigFile,
 
     // PromQL query engine config (shared between all services running PromQL engine, like the ruler and querier).
     queryEngineConfig: {},
@@ -151,6 +149,27 @@
       'ingester.ring.store': 'consul',
       'ingester.ring.prefix': '',
     },
+
+    local querySchedulerRingConfig = {
+      'query-scheduler.ring.store': 'consul',
+      'query-scheduler.ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
+      'query-scheduler.ring.prefix': '',
+    },
+
+    // The query-scheduler ring client config that should be shared across all Mimir services
+    // using or watching the query-scheduler ring.
+    querySchedulerRingClientConfig:
+      if $._config.query_scheduler_service_discovery_mode != 'ring' || !$._config.query_scheduler_service_discovery_ring_read_path_enabled then
+        {}
+      else
+        querySchedulerRingConfig,
+
+    // The query-scheduler ring lifecycler config (set only to the query-scheduler).
+    querySchedulerRingLifecyclerConfig:
+      if $._config.query_scheduler_service_discovery_mode != 'ring' then
+        {}
+      else
+        querySchedulerRingConfig,
 
     ruler_enabled: false,
     ruler_client_type: error 'you must specify a storage backend type for the ruler (azure, gcs, s3, local)',
@@ -230,7 +249,6 @@
     },
     ingesterLimitsConfig: {
       'ingester.max-global-series-per-user': $._config.limits.max_global_series_per_user,
-      'ingester.max-global-series-per-metric': $._config.limits.max_global_series_per_metric,
       'ingester.max-global-metadata-per-user': $._config.limits.max_global_metadata_per_user,
       'ingester.max-global-metadata-per-metric': $._config.limits.max_global_metadata_per_metric,
     },
@@ -247,11 +265,18 @@
     overrides_configmap: 'overrides',
     overrides_configmap_mountpoint: '/etc/mimir',
 
+    // Configmaps mounted to all components. Maps config map name to mount point.
+    configmaps: {
+      [$._config.overrides_configmap]: $._config.overrides_configmap_mountpoint,
+    },
+
+    // Paths to runtime config files. Paths are passed to -runtime-config.files in specified order.
+    runtime_config_files: ['%s/overrides.yaml' % $._config.overrides_configmap_mountpoint],
+
     overrides: {
       extra_small_user:: {
         // Our limit should be 100k, but we need some room of about ~50% to take rollouts into account
         max_global_series_per_user: 150000,
-        max_global_series_per_metric: 20000,
         max_global_metadata_per_user: std.ceil(self.max_global_series_per_user * 0.2),
         max_global_metadata_per_metric: 10,
 
@@ -268,7 +293,6 @@
 
       medium_small_user:: {
         max_global_series_per_user: 300000,
-        max_global_series_per_metric: 30000,
         max_global_metadata_per_user: std.ceil(self.max_global_series_per_user * 0.2),
         max_global_metadata_per_metric: 10,
 
@@ -282,7 +306,6 @@
 
       small_user:: {
         max_global_series_per_user: 1000000,
-        max_global_series_per_metric: 100000,
         max_global_metadata_per_user: std.ceil(self.max_global_series_per_user * 0.2),
         max_global_metadata_per_metric: 10,
 
@@ -296,7 +319,6 @@
 
       medium_user:: {
         max_global_series_per_user: 3000000,  // 3M
-        max_global_series_per_metric: 300000,  // 300K
         max_global_metadata_per_user: std.ceil(self.max_global_series_per_user * 0.2),
         max_global_metadata_per_metric: 10,
 
@@ -310,7 +332,6 @@
 
       big_user:: {
         max_global_series_per_user: 6000000,  // 6M
-        max_global_series_per_metric: 600000,  // 600K
         max_global_metadata_per_user: std.ceil(self.max_global_series_per_user * 0.2),
         max_global_metadata_per_metric: 10,
 
@@ -324,7 +345,6 @@
 
       super_user:: {
         max_global_series_per_user: 12000000,  // 12M
-        max_global_series_per_metric: 1200000,  // 1.2M
         max_global_metadata_per_user: std.ceil(self.max_global_series_per_user * 0.2),
         max_global_metadata_per_metric: 10,
 
@@ -343,7 +363,6 @@
       // This user class has limits increased by +50% compared to the previous one.
       mega_user+:: {
         max_global_series_per_user: 16000000,  // 16M
-        max_global_series_per_metric: 1600000,  // 1.6M
         max_global_metadata_per_user: std.ceil(self.max_global_series_per_user * 0.2),
         max_global_metadata_per_metric: 10,
 
@@ -369,6 +388,14 @@
 
     // Enables query-scheduler component, and reconfigures querier and query-frontend to use it.
     query_scheduler_enabled: true,
+    query_scheduler_service_discovery_mode: 'dns',  // Supported values: 'dns', 'ring'.
+
+    // Migrating a Mimir cluster from DNS to ring-based service discovery is a two steps process:
+    // 1. Set `query_scheduler_service_discovery_mode: 'ring' and `query_scheduler_service_discovery_ring_read_path_enabled: false`,
+    //    so that query-schedulers join a ring, but queriers and query-frontends will still discover the query-scheduler via DNS.
+    // 2. Remove the setting `query_scheduler_service_discovery_ring_read_path_enabled: false`, so that queriers and query-frontends
+    //    will discover the query-schedulers via ring.
+    query_scheduler_service_discovery_ring_read_path_enabled: true,
 
     // Enables streaming of chunks from ingesters using blocks.
     // Changing it will not cause new rollout of ingesters, as it gets passed to them via runtime-config.

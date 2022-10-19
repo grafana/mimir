@@ -8,6 +8,7 @@ package compactor
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,15 +20,16 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
-	"github.com/thanos-io/thanos/pkg/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const (
@@ -355,11 +357,14 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string) (returnErr
 	// Partial blocks with a deletion mark can be cleaned up. This is a best effort, so we don't return
 	// error if the cleanup of partial blocks fail.
 	if len(partials) > 0 {
-		delay := c.cfgProvider.CompactorPartialBlockDeletionDelay(userID)
-		var partialDeletionCutoffTime time.Time
-		if delay > 0 {
+		var partialDeletionCutoffTime time.Time // zero value, disabled.
+		if delay, valid := c.cfgProvider.CompactorPartialBlockDeletionDelay(userID); delay > 0 {
+			// enable cleanup of partial blocks without deletion marker
 			partialDeletionCutoffTime = time.Now().Add(-delay)
+		} else if !valid {
+			level.Warn(userLogger).Log("msg", "partial blocks deletion has been disabled for tenant because the delay has been set lower than the minimum value allowed", "minimum", validation.MinCompactorPartialBlockDeletionDelay)
 		}
+
 		c.cleanUserPartialBlocks(ctx, partials, idx, partialDeletionCutoffTime, userBucket, userLogger)
 	}
 
@@ -412,6 +417,7 @@ func (c *BlocksCleaner) deleteBlocksMarkedForDeletion(ctx context.Context, idx *
 }
 
 // cleanUserPartialBlocks deletes partial blocks which are safe to be deleted. The provided index is updated accordingly.
+// partialDeletionCutoffTime, if not zero, is used to find blocks without deletion marker that were last modified before this time. Such blocks will be marked for deletion.
 func (c *BlocksCleaner) cleanUserPartialBlocks(ctx context.Context, partials map[ulid.ULID]error, idx *bucketindex.Index, partialDeletionCutoffTime time.Time, userBucket objstore.InstrumentedBucket, userLogger log.Logger) {
 	// Collect all blocks with missing meta.json into buffered channel.
 	blocks := make([]ulid.ULID, 0, len(partials))
@@ -425,7 +431,7 @@ func (c *BlocksCleaner) cleanUserPartialBlocks(ctx context.Context, partials map
 	}
 
 	var mu sync.Mutex
-	var blocksWithoutMeta []ulid.ULID
+	var partialBlocksWithoutDeletionMarker []ulid.ULID
 
 	// We don't want to return errors from our function, as that would stop ForEach loop early.
 	_ = concurrency.ForEachJob(ctx, len(blocks), c.cfg.DeleteBlocksConcurrency, func(ctx context.Context, jobIdx int) error {
@@ -435,7 +441,7 @@ func (c *BlocksCleaner) cleanUserPartialBlocks(ctx context.Context, partials map
 		err := metadata.ReadMarker(ctx, userLogger, userBucket, blockID.String(), &metadata.DeletionMark{})
 		if errors.Is(err, metadata.ErrorMarkerNotFound) {
 			mu.Lock()
-			blocksWithoutMeta = append(blocksWithoutMeta, blockID)
+			partialBlocksWithoutDeletionMarker = append(partialBlocksWithoutDeletionMarker, blockID)
 			mu.Unlock()
 			return nil
 		}
@@ -465,8 +471,8 @@ func (c *BlocksCleaner) cleanUserPartialBlocks(ctx context.Context, partials map
 
 	// Check if partial blocks are older than delay period, and mark for deletion
 	if !partialDeletionCutoffTime.IsZero() {
-		for _, blockID := range blocksWithoutMeta {
-			lastModified, err := findMostRecentModifiedTimeForBlock(ctx, blockID, userBucket, userLogger)
+		for _, blockID := range partialBlocksWithoutDeletionMarker {
+			lastModified, err := findMostRecentModifiedTimeForBlock(ctx, blockID, userBucket)
 			if err != nil {
 				level.Warn(userLogger).Log("msg", "failed to find last modified time for partial block", "block", blockID, "err", err)
 				continue
@@ -524,18 +530,22 @@ func listBlocksOutsideRetentionPeriod(idx *bucketindex.Index, threshold time.Tim
 	return
 }
 
-// findMostRecentModifiedTimeForBlock finds the most recent modification time for all files in a block
-func findMostRecentModifiedTimeForBlock(ctx context.Context, blockID ulid.ULID, userBucket objstore.InstrumentedBucket, userLogger log.Logger) (time.Time, error) {
-	var modifiedTime time.Time
+// findMostRecentModifiedTimeForBlock finds the most recent modification time for all files in a block.
+func findMostRecentModifiedTimeForBlock(ctx context.Context, blockID ulid.ULID, userBucket objstore.Bucket) (time.Time, error) {
+	var result time.Time
+
 	err := userBucket.Iter(ctx, blockID.String(), func(name string) error {
+		if strings.HasSuffix(name, objstore.DirDelim) {
+			return nil
+		}
 		attrib, err := userBucket.Attributes(ctx, name)
 		if err != nil {
 			return errors.Wrapf(err, "failed to get attributes for %s", name)
 		}
-		if attrib.LastModified.After(modifiedTime) {
-			modifiedTime = attrib.LastModified
+		if attrib.LastModified.After(result) {
+			result = attrib.LastModified
 		}
 		return nil
-	})
-	return modifiedTime, err
+	}, objstore.WithRecursiveIter)
+	return result, err
 }

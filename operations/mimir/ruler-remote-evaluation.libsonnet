@@ -7,6 +7,7 @@
     // Note: There is no option to disable ruler-query-scheduler.
   },
 
+  local rulerQuerySchedulerName = 'ruler-query-scheduler',
   local useRulerQueryFrontend = $._config.ruler_remote_evaluation_enabled && !$._config.ruler_remote_evaluation_migration_enabled,
 
   ruler_args+:: if !useRulerQueryFrontend then {} else {
@@ -32,7 +33,7 @@
 
   ruler_querier_args+::
     $.querier_args +
-    $.querierUseQuerySchedulerArgs('ruler-query-scheduler'),
+    $.querierUseQuerySchedulerArgs(rulerQuerySchedulerName),
 
   ruler_querier_container::
     $.newQuerierContainer('ruler-querier', $.ruler_querier_args),
@@ -49,7 +50,7 @@
 
   ruler_query_frontend_args+::
     $.query_frontend_args +
-    $.queryFrontendUseQuerySchedulerArgs('ruler-query-scheduler') +
+    $.queryFrontendUseQuerySchedulerArgs(rulerQuerySchedulerName) +
     queryFrontendDisableCacheArgs,
 
   ruler_query_frontend_container::
@@ -68,17 +69,24 @@
   //
 
   ruler_query_scheduler_args+::
-    $.query_scheduler_args,
+    $.query_scheduler_args +
+    (
+      // If the ruler-query-schedulers form a ring then they need to build a different
+      // ring than the standard query-schedulers.
+      if $._config.query_scheduler_service_discovery_mode != 'ring' then {} else {
+        'query-scheduler.ring.prefix': '%s/' % rulerQuerySchedulerName,
+      }
+    ),
 
   ruler_query_scheduler_container::
-    $.newQuerySchedulerContainer('ruler-query-scheduler', $.ruler_query_scheduler_args),
+    $.newQuerySchedulerContainer(rulerQuerySchedulerName, $.ruler_query_scheduler_args),
 
   ruler_query_scheduler_deployment: if !$._config.ruler_remote_evaluation_enabled then {} else
-    $.newQuerySchedulerDeployment('ruler-query-scheduler', $.ruler_query_scheduler_container),
+    $.newQuerySchedulerDeployment(rulerQuerySchedulerName, $.ruler_query_scheduler_container),
 
   ruler_query_scheduler_service: if !$._config.ruler_remote_evaluation_enabled then {} else
     $.util.serviceFor($.ruler_query_scheduler_deployment, $._config.service_ignored_labels),
 
   ruler_query_scheduler_discovery_service: if !$._config.ruler_remote_evaluation_enabled then {} else
-    $.newQuerySchedulerDiscoveryService('ruler-query-scheduler', $.ruler_query_scheduler_deployment),
+    $.newQuerySchedulerDiscoveryService(rulerQuerySchedulerName, $.ruler_query_scheduler_deployment),
 }

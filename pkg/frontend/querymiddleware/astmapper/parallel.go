@@ -48,55 +48,51 @@ var FuncsWithDefaultTimeArg = []string{
 
 // CanParallelize tests if a subtree is parallelizable.
 // A subtree is parallelizable if all of its components are parallelizable.
-func CanParallelize(node parser.Node, logger log.Logger) bool {
-	switch n := node.(type) {
+func CanParallelize(expr parser.Expr, logger log.Logger) bool {
+	switch e := expr.(type) {
 	case nil:
 		// nil handles cases where we check optional fields that are not set
 		return true
 
-	case parser.Expressions:
-		for _, e := range n {
-			if !CanParallelize(e, logger) {
-				return false
-			}
-		}
-		return true
-
 	case *parser.AggregateExpr:
-		_, ok := summableAggregates[n.Op]
+		_, ok := summableAggregates[e.Op]
 		if !ok {
 			return false
 		}
 
 		// Ensure there are no nested aggregations
-		nestedAggrs, err := anyNode(n.Expr, isAggregateExpr)
+		nestedAggrs, err := anyNode(e.Expr, isAggregateExpr)
 
-		return err == nil && !nestedAggrs && CanParallelize(n.Expr, logger)
+		return err == nil && !nestedAggrs && CanParallelize(e.Expr, logger)
 
 	case *parser.BinaryExpr:
-		// Binary expressions can be parallelised when one of the sides is a constant scalar value
-		// and the other one can be parallelised and does not contain agggregations.
+		// Binary expressions can be parallelised when:
+		// - It's not a bool expr: bool expression should yield only one result, but sharding would provide many.
+		// - One of the sides is a constant scalar value
+		// - The other side:
+		//   - Is not a constant scalar value (because why would we shard then?)
+		//   - Does not contain aggregations
+		//
 		// If one side contained aggregations, like sum(foo) > 0, then aggregated values from different shards can cancel
 		// each other, like foo{shard="1"}=1 and foo{shard="2"}=-1: aggregated sum is zero, but if we concat results from different shards it's not.
-		// Both comparison and arithmetic binary operations _can_ be parallelised, but not all of them are worth parallelising,
-		// this function doesn't decide that.
+		//
 		// Since we don't care about the order in which binary op is written, we extract the condition into a lambda and check both ways.
-		parallelisable := func(a, b parser.Node) bool {
-			return CanParallelize(a, logger) && noAggregates(a) && isConstantScalar(b)
+		parallelisable := func(a, b parser.Expr) bool {
+			return CanParallelize(a, logger) && noAggregates(a) && !isConstantScalar(a) && isConstantScalar(b)
 		}
-		// If n.VectorMatching is not nil, then both hands are vector operators, so none of them is a constant scalar, so we can't shard it.
+		// If e.VectorMatching is not nil, then both hands are vector operators, so none of them is a constant scalar, so we can't shard it.
 		// It is just a shortcut, but the other two operations should imply the same.
-		return n.VectorMatching == nil && (parallelisable(n.LHS, n.RHS) || parallelisable(n.RHS, n.LHS))
+		return e.VectorMatching == nil && !e.ReturnBool && (parallelisable(e.LHS, e.RHS) || parallelisable(e.RHS, e.LHS))
 
 	case *parser.Call:
-		if n.Func == nil {
+		if e.Func == nil {
 			return false
 		}
-		if !ParallelizableFunc(*n.Func) {
+		if !ParallelizableFunc(*e.Func) {
 			return false
 		}
 
-		for _, e := range argsWithDefaults(n) {
+		for _, e := range argsWithDefaults(e) {
 			if !CanParallelize(e, logger) {
 				return false
 			}
@@ -105,32 +101,42 @@ func CanParallelize(node parser.Node, logger log.Logger) bool {
 
 	case *parser.SubqueryExpr:
 		// Subqueries are parallelizable if they are parallelizable themselves
-		// and they don't contain aggregations over series in children nodes.
-		return !containsAggregateExpr(n) && CanParallelize(n.Expr, logger)
+		// and they don't contain aggregations over series in children exprs.
+		return !containsAggregateExpr(e) && CanParallelize(e.Expr, logger)
 
 	case *parser.ParenExpr:
-		return CanParallelize(n.Expr, logger)
+		return CanParallelize(e.Expr, logger)
 
 	case *parser.UnaryExpr:
 		// Since these are only currently supported for Scalars, should be parallel-compatible
 		return true
 
-	case *parser.EvalStmt:
-		return CanParallelize(n.Expr, logger)
-
 	case *parser.MatrixSelector, *parser.NumberLiteral, *parser.StringLiteral, *parser.VectorSelector:
 		return true
 
 	default:
-		level.Error(logger).Log("err", fmt.Sprintf("CanParallel: unhandled node type %T", node)) //lint:ignore faillint allow global logger for now
+		level.Error(logger).Log("err", fmt.Sprintf("CanParallelize: unhandled expr type %T", expr)) //lint:ignore faillint allow global logger for now
 		return false
 	}
 }
 
-// containsAggregateExpr returns true if the given node contains an aggregate expression within its children.
-func containsAggregateExpr(n parser.Node) bool {
-	containsAggregate, _ := anyNode(n, isAggregateExpr)
+// containsAggregateExpr returns true if the given expr contains an aggregate expression within its children.
+func containsAggregateExpr(e parser.Expr) bool {
+	containsAggregate, _ := anyNode(e, isAggregateExpr)
 	return containsAggregate
+}
+
+// countVectorSelectors returns the number of vector selectors in the input expression.
+func countVectorSelectors(e parser.Expr) int {
+	count := 0
+
+	visitNode(e, func(node parser.Node) {
+		if ok, _ := isVectorSelector(node); ok {
+			count++
+		}
+	})
+
+	return count
 }
 
 func isAggregateExpr(n parser.Node) (bool, error) {

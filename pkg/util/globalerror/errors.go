@@ -46,10 +46,11 @@ const (
 
 	MetricMetadataMissingMetricName ID = "metadata-missing-metric-name"
 	MetricMetadataMetricNameTooLong ID = "metric-name-too-long"
-	MetricMetadataHelpTooLong       ID = "help-too-long"
+	MetricMetadataHelpTooLong       ID = "help-too-long" // unused, left here to prevent reuse for different purpose
 	MetricMetadataUnitTooLong       ID = "unit-too-long"
 
 	MaxQueryLength       ID = "max-query-length"
+	MaxTotalQueryLength  ID = "max-total-query-length"
 	RequestRateLimited   ID = "tenant-max-request-rate"
 	IngestionRateLimited ID = "tenant-max-ingestion-rate"
 	TooManyHAClusters    ID = "tenant-too-many-ha-clusters"
@@ -61,6 +62,8 @@ const (
 
 	StoreConsistencyCheckFailed ID = "store-consistency-check-failed"
 	BucketIndexTooOld           ID = "bucket-index-too-old"
+
+	DistributorMaxWriteMessageSize ID = "distributor-max-write-message-size"
 )
 
 // Message returns the provided msg, appending the error id.
@@ -68,9 +71,21 @@ func (id ID) Message(msg string) string {
 	return fmt.Sprintf("%s (%s%s)", msg, errPrefix, id)
 }
 
-// MessageWithLimitConfig returns the provided msg, appending the error id and a suggestion on
-// which configuration flag(s) to use to change the limit.
-func (id ID) MessageWithLimitConfig(msg, flag string, addFlags ...string) string {
+// MessageWithPerInstanceLimitConfig returns the provided msg, appending the error id and a suggestion on
+// which configuration flag(s) to use to change the per-instance limit.
+func (id ID) MessageWithPerInstanceLimitConfig(msg, flag string, addFlags ...string) string {
+	flagsList, plural := buildFlagsList(flag, addFlags...)
+	return fmt.Sprintf("%s (%s%s). To adjust the related limit%s, configure %s, or contact your service administrator.", msg, errPrefix, id, plural, flagsList)
+}
+
+// MessageWithPerTenantLimitConfig returns the provided msg, appending the error id and a suggestion on
+// which configuration flag(s) to use to change the per-tenant limit.
+func (id ID) MessageWithPerTenantLimitConfig(msg, flag string, addFlags ...string) string {
+	flagsList, plural := buildFlagsList(flag, addFlags...)
+	return fmt.Sprintf("%s (%s%s). To adjust the related per-tenant limit%s, configure %s, or contact your service administrator.", msg, errPrefix, id, plural, flagsList)
+}
+
+func buildFlagsList(flag string, addFlags ...string) (string, string) {
 	var sb strings.Builder
 	sb.WriteString("-")
 	sb.WriteString(flag)
@@ -84,5 +99,6 @@ func (id ID) MessageWithLimitConfig(msg, flag string, addFlags ...string) string
 		sb.WriteString(" and -")
 		sb.WriteString(addFlags[len(addFlags)-1])
 	}
-	return fmt.Sprintf("%s (%s%s). To adjust the related per-tenant limit%s, configure %s, or contact your service administrator.", msg, errPrefix, id, plural, sb.String())
+
+	return sb.String(), plural
 }

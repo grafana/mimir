@@ -13,6 +13,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/flagext"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/server"
@@ -26,7 +27,7 @@ func TestAPIConfig(t *testing.T) {
 	actualCfg := newDefaultConfig()
 
 	mimir := &Mimir{
-		Server: &server.Server{},
+		Server: &server.Server{Registerer: prometheus.NewPedanticRegistry()},
 	}
 
 	for _, tc := range []struct {
@@ -145,7 +146,7 @@ func TestMimir_InitRulerStorage(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			mimir := &Mimir{
-				Server: &server.Server{},
+				Server: &server.Server{Registerer: prometheus.NewPedanticRegistry()},
 				Cfg:    *testData.config,
 			}
 
@@ -204,10 +205,19 @@ func TestMultiKVSetup(t *testing.T) {
 		Compactor: func(t *testing.T, c Config) {
 			require.NotNil(t, c.Compactor.ShardingRing.KVStore.Multi.ConfigProvider)
 		},
+
+		QueryScheduler: func(t *testing.T, c Config) {
+			require.NotNil(t, c.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.Multi.ConfigProvider)
+		},
+
+		Backend: func(t *testing.T, c Config) {
+			require.NotNil(t, c.StoreGateway.ShardingRing.KVStore.Multi.ConfigProvider)
+			require.NotNil(t, c.Compactor.ShardingRing.KVStore.Multi.ConfigProvider)
+			require.NotNil(t, c.Ruler.Ring.KVStore.Multi.ConfigProvider)
+			require.NotNil(t, c.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.Multi.ConfigProvider)
+		},
 	} {
 		t.Run(target, func(t *testing.T) {
-			prepareGlobalMetricsRegistry(t)
-
 			cfg := Config{}
 			flagext.DefaultValues(&cfg)
 			// Set to 0 to find any free port.
@@ -216,9 +226,9 @@ func TestMultiKVSetup(t *testing.T) {
 			cfg.Target = []string{target}
 
 			// Must be set, otherwise MultiKV config provider will not be set.
-			cfg.RuntimeConfig.LoadPath = filepath.Join(dir, "config.yaml")
+			cfg.RuntimeConfig.LoadPath = []string{filepath.Join(dir, "config.yaml")}
 
-			c, err := New(cfg)
+			c, err := New(cfg, prometheus.NewPedanticRegistry())
 			require.NoError(t, err)
 
 			_, err = c.ModuleManager.InitModuleServices(cfg.Target...)

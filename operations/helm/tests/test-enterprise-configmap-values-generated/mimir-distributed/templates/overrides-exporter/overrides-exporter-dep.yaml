@@ -9,7 +9,6 @@ metadata:
     app.kubernetes.io/name: mimir
     app.kubernetes.io/instance: test-enterprise-configmap-values
     app.kubernetes.io/component: overrides-exporter
-    app.kubernetes.io/version: "2.2.0"
     app.kubernetes.io/managed-by: Helm
   name: test-enterprise-configmap-values-mimir-overrides-exporter
   namespace: "citestns"
@@ -21,16 +20,12 @@ spec:
       app.kubernetes.io/instance: test-enterprise-configmap-values
       app.kubernetes.io/component: overrides-exporter
   strategy:
-    rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 1
     type: RollingUpdate
   template:
     metadata:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-enterprise-configmap-values
-        app.kubernetes.io/version: "2.2.0"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: overrides-exporter
       annotations:
@@ -59,6 +54,8 @@ spec:
             - name: storage
               mountPath: "/data"
               subPath: 
+            - name: active-queries
+              mountPath: /active-query-tracker
           ports:
             - name: http-metrics
               containerPort: 8080
@@ -90,6 +87,8 @@ spec:
         {}
       affinity:
         {}
+      topologySpreadConstraints:
+        
       tolerations:
         []
       terminationGracePeriodSeconds: 60
@@ -107,4 +106,6 @@ spec:
           configMap:
             name: test-enterprise-configmap-values-mimir-runtime
         - name: storage
+          emptyDir: {}
+        - name: active-queries
           emptyDir: {}

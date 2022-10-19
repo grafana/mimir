@@ -155,17 +155,14 @@ func makeLabels(namesAndValues ...string) []*dto.LabelPair {
 // TestSendSumOfGaugesPerUserWithLabels tests to ensure multiple metrics for the same user with a matching label are
 // summed correctly
 func TestSendSumOfGaugesPerUserWithLabels(t *testing.T) {
-	user1Metric := prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "test_metric"}, []string{"label_one", "label_two"})
-	user2Metric := prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "test_metric"}, []string{"label_one", "label_two"})
+	user1Reg := prometheus.NewRegistry()
+	user2Reg := prometheus.NewRegistry()
+	user1Metric := promauto.With(user1Reg).NewGaugeVec(prometheus.GaugeOpts{Name: "test_metric"}, []string{"label_one", "label_two"})
+	user2Metric := promauto.With(user2Reg).NewGaugeVec(prometheus.GaugeOpts{Name: "test_metric"}, []string{"label_one", "label_two"})
 	user1Metric.WithLabelValues("a", "b").Set(100)
 	user1Metric.WithLabelValues("a", "c").Set(80)
 	user2Metric.WithLabelValues("a", "b").Set(60)
 	user2Metric.WithLabelValues("a", "c").Set(40)
-
-	user1Reg := prometheus.NewRegistry()
-	user2Reg := prometheus.NewRegistry()
-	user1Reg.MustRegister(user1Metric)
-	user2Reg.MustRegister(user2Metric)
 
 	regs := NewUserRegistries()
 	regs.AddUserRegistry("user-1", user1Reg)
@@ -249,17 +246,14 @@ func TestSendMaxOfGauges(t *testing.T) {
 
 func TestSendSumOfHistogramsWithLabels(t *testing.T) {
 	buckets := []float64{1, 2, 3}
-	user1Metric := prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "test_metric", Buckets: buckets}, []string{"label_one", "label_two"})
-	user2Metric := prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "test_metric", Buckets: buckets}, []string{"label_one", "label_two"})
+	user1Reg := prometheus.NewRegistry()
+	user2Reg := prometheus.NewRegistry()
+	user1Metric := promauto.With(user1Reg).NewHistogramVec(prometheus.HistogramOpts{Name: "test_metric", Buckets: buckets}, []string{"label_one", "label_two"})
+	user2Metric := promauto.With(user2Reg).NewHistogramVec(prometheus.HistogramOpts{Name: "test_metric", Buckets: buckets}, []string{"label_one", "label_two"})
 	user1Metric.WithLabelValues("a", "b").Observe(1)
 	user1Metric.WithLabelValues("a", "c").Observe(2)
 	user2Metric.WithLabelValues("a", "b").Observe(3)
 	user2Metric.WithLabelValues("a", "c").Observe(4)
-
-	user1Reg := prometheus.NewRegistry()
-	user2Reg := prometheus.NewRegistry()
-	user1Reg.MustRegister(user1Metric)
-	user2Reg.MustRegister(user2Metric)
 
 	regs := NewUserRegistries()
 	regs.AddUserRegistry("user-1", user1Reg)
@@ -325,22 +319,18 @@ func TestSendSumOfHistogramsWithLabels(t *testing.T) {
 // TestSendSumOfCountersPerUser_WithLabels tests to ensure multiple metrics for the same user with a matching label are
 // summed correctly
 func TestSendSumOfCountersPerUser_WithLabels(t *testing.T) {
-	user1Metric := prometheus.NewCounterVec(prometheus.CounterOpts{Name: "test_metric"}, []string{"label_one", "label_two"})
-	user2Metric := prometheus.NewCounterVec(prometheus.CounterOpts{Name: "test_metric"}, []string{"label_one", "label_two"})
-	user3Metric := prometheus.NewCounterVec(prometheus.CounterOpts{Name: "test_metric"}, []string{"label_one", "label_two"})
+	user1Reg := prometheus.NewRegistry()
+	user2Reg := prometheus.NewRegistry()
+	user3Reg := prometheus.NewRegistry()
+	user1Metric := promauto.With(user1Reg).NewCounterVec(prometheus.CounterOpts{Name: "test_metric"}, []string{"label_one", "label_two"})
+	user2Metric := promauto.With(user2Reg).NewCounterVec(prometheus.CounterOpts{Name: "test_metric"}, []string{"label_one", "label_two"})
+	user3Metric := promauto.With(user3Reg).NewCounterVec(prometheus.CounterOpts{Name: "test_metric"}, []string{"label_one", "label_two"})
 	user1Metric.WithLabelValues("a", "b").Add(100)
 	user1Metric.WithLabelValues("a", "c").Add(80)
 	user2Metric.WithLabelValues("a", "b").Add(60)
 	user2Metric.WithLabelValues("a", "c").Add(0)
 	user3Metric.WithLabelValues("a", "b").Add(0)
 	user3Metric.WithLabelValues("a", "c").Add(0)
-
-	user1Reg := prometheus.NewRegistry()
-	user2Reg := prometheus.NewRegistry()
-	user3Reg := prometheus.NewRegistry()
-	user1Reg.MustRegister(user1Metric)
-	user2Reg.MustRegister(user2Metric)
-	user3Reg.MustRegister(user3Metric)
 
 	regs := NewUserRegistries()
 	regs.AddUserRegistry("user-1", user1Reg)
@@ -434,19 +424,16 @@ func TestSendSumOfCountersPerUser_WithLabels(t *testing.T) {
 
 func TestSendSumOfSummariesPerUser(t *testing.T) {
 	objectives := map[float64]float64{0.25: 25, 0.5: 50, 0.75: 75}
-	user1Metric := prometheus.NewSummary(prometheus.SummaryOpts{Name: "test_metric", Objectives: objectives})
-	user2Metric := prometheus.NewSummary(prometheus.SummaryOpts{Name: "test_metric", Objectives: objectives})
+	user1Reg := prometheus.NewRegistry()
+	user2Reg := prometheus.NewRegistry()
+	user1Metric := promauto.With(user1Reg).NewSummary(prometheus.SummaryOpts{Name: "test_metric", Objectives: objectives})
+	user2Metric := promauto.With(user2Reg).NewSummary(prometheus.SummaryOpts{Name: "test_metric", Objectives: objectives})
 	user1Metric.Observe(25)
 	user1Metric.Observe(50)
 	user1Metric.Observe(75)
 	user2Metric.Observe(25)
 	user2Metric.Observe(50)
 	user2Metric.Observe(76)
-
-	user1Reg := prometheus.NewRegistry()
-	user2Reg := prometheus.NewRegistry()
-	user1Reg.MustRegister(user1Metric)
-	user2Reg.MustRegister(user2Metric)
 
 	regs := NewUserRegistries()
 	regs.AddUserRegistry("user-1", user1Reg)
@@ -1094,7 +1081,7 @@ func uint64p(v uint64) *uint64 {
 }
 
 func BenchmarkGetLabels_SmallSet(b *testing.B) {
-	m := prometheus.NewCounterVec(prometheus.CounterOpts{
+	m := promauto.With(nil).NewCounterVec(prometheus.CounterOpts{
 		Name: "test",
 		ConstLabels: map[string]string{
 			"cluster": "abc",
@@ -1119,7 +1106,7 @@ func BenchmarkGetLabels_SmallSet(b *testing.B) {
 }
 
 func BenchmarkGetLabels_MediumSet(b *testing.B) {
-	m := prometheus.NewCounterVec(prometheus.CounterOpts{
+	m := promauto.With(nil).NewCounterVec(prometheus.CounterOpts{
 		Name: "test",
 		ConstLabels: map[string]string{
 			"cluster": "abc",
@@ -1148,7 +1135,7 @@ func BenchmarkGetLabels_MediumSet(b *testing.B) {
 }
 
 func TestGetLabels(t *testing.T) {
-	m := prometheus.NewCounterVec(prometheus.CounterOpts{
+	m := promauto.With(nil).NewCounterVec(prometheus.CounterOpts{
 		Name: "test",
 		ConstLabels: map[string]string{
 			"cluster": "abc",

@@ -14,8 +14,8 @@ local filename = 'mimir-reads-networking.json';
     + {
       templating+: {
         list: [
-          // Do not allow to include all clusters/namespaces.
-          l + (if (l.name == 'cluster' || l.name == 'namespace') then { includeAll: false } else {})
+          // Do not allow to include all namespaces.
+          l + (if (l.name == 'namespace') then { includeAll: false } else {})
           for l in super.list
         ],
       },

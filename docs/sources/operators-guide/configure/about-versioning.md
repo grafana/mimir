@@ -33,6 +33,7 @@ We consider any deviation from this 100% API compatibility to be a bug, except f
 - Additional API endpoints for creating, removing, modifying alerts, and recording rules.
 - Additional APIs that push metrics (under `/prometheus/api/push`).
 - Additional API endpoints for management of Grafana Mimir, such as the ring. These APIs are not included in any compatibility guarantees.
+- [Delete series API](https://prometheus.io/docs/prometheus/latest/querying/api/#delete-series).
 
 ## Experimental features
 
@@ -47,14 +48,15 @@ The following features are currently experimental:
 
 - Ruler
   - Tenant federation
-  - Use query-frontend for rule evaluation
+  - Disable alerting and recording rules evaluation on a per-tenant basis
+    - `-ruler.recording-rules-evaluation-enabled`
+    - `-ruler.alerting-rules-evaluation-enabled`
 - Distributor
   - Metrics relabeling
   - Request rate limit
     - `-distributor.request-rate-limit`
     - `-distributor.request-burst-limit`
   - OTLP ingestion path
-- Purger: Tenant deletion API
 - Exemplar storage
   - `-ingester.max-global-exemplars-per-user`
   - `-ingester.exemplars-update-period`
@@ -75,32 +77,28 @@ The following features are currently experimental:
     - `-compactor.ring.heartbeat-period=0`
     - `-store-gateway.sharding-ring.heartbeat-period=0`
   - Exclude ingesters running in specific zones (`-ingester.ring.excluded-zones`)
-- Memberlist
-  - Cluster label support
-    - `-memberlist.cluster-label`
-    - `-memberlist.cluster-label-verification-disabled`
 - Ingester
   - Add variance to chunks end time to spread writing across time (`-blocks-storage.tsdb.head-chunks-end-time-variance`)
-  - Using queue and asynchronous chunks disk mapper (`-blocks-storage.tsdb.head-chunks-write-queue-size`)
   - Snapshotting of in-memory TSDB data on disk when shutting down (`-blocks-storage.tsdb.memory-snapshot-on-shutdown`)
   - Out-of-order samples ingestion (`-ingester.out-of-order-allowance`)
 - Query-frontend
+  - `-query-frontend.max-total-query-length`
   - `-query-frontend.querier-forget-delay`
+  - Instant query splitting (`-query-frontend.split-instant-queries-by-interval`)
+  - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-allowance` from ingesters)
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
+  - Ring-based service discovery (`-query-scheduler.service-discovery-mode` and `-query-scheduler.ring.*`)
+  - Max number of used instances (`-query-scheduler.max-used-instances`)
 - Store-gateway
-  - `-blocks-storage.bucket-store.index-header-thread-pool-size`
+  - `-blocks-storage.bucket-store.index-header.map-populate-enabled`
+  - `-blocks-storage.bucket-store.max-concurrent-reject-over-limit`
 - Blocks Storage, Alertmanager, and Ruler support for partitioning access to the same storage bucket
   - `-alertmanager-storage.storage-prefix`
   - `-blocks-storage.storage-prefix`
   - `-ruler-storage.storage-prefix`
 - Compactor
   - HTTP API for uploading TSDB blocks
-
-## Deprecated features
-
-The following features are currently deprecated:
-
-- Ingester:
-  - `-blocks-storage.tsdb.isolation-enabled` CLI flag and `isolation_enabled` YAML config parameter. This will be removed in version 2.3.0.
-  - `active_series_custom_trackers` YAML config parameter in the ingester block. The configuration has been moved to limit config, the ingester config will be removed in version 2.3.0.
+- Anonymous usage statistics tracking
+- Read-write deployment mode
+- `/api/v1/user_limits` API endpoint

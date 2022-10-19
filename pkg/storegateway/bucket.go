@@ -13,7 +13,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math"
 	"os"
 	"path"
@@ -40,15 +39,10 @@ import (
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
-	"github.com/thanos-io/thanos/pkg/compact/downsample"
-	"github.com/thanos-io/thanos/pkg/gate"
-	"github.com/thanos-io/thanos/pkg/objstore"
 	"github.com/thanos-io/thanos/pkg/pool"
-	"github.com/thanos-io/thanos/pkg/store/hintspb"
-	"github.com/thanos-io/thanos/pkg/store/labelpb"
-	"github.com/thanos-io/thanos/pkg/store/storepb"
 	"github.com/thanos-io/thanos/pkg/strutil"
 	"github.com/thanos-io/thanos/pkg/tracing"
 	"golang.org/x/sync/errgroup"
@@ -57,8 +51,12 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
+	"github.com/grafana/mimir/pkg/storegateway/labelpb"
+	"github.com/grafana/mimir/pkg/storegateway/storepb"
+	"github.com/grafana/mimir/pkg/util/gate"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -348,7 +346,7 @@ func (s *BucketStore) InitialSync(ctx context.Context) error {
 		return errors.Wrap(err, "sync block")
 	}
 
-	fis, err := ioutil.ReadDir(s.dir)
+	fis, err := os.ReadDir(s.dir)
 	if err != nil {
 		return errors.Wrap(err, "read dir")
 	}
@@ -576,7 +574,11 @@ func blockSeries(
 	logger log.Logger,
 ) (storepb.SeriesSet, *queryStats, error) {
 	span, ctx := tracing.StartSpan(ctx, "blockSeries()")
-	span.LogKV("block ID", indexr.block.meta.ULID.String())
+	span.LogKV(
+		"block ID", indexr.block.meta.ULID.String(),
+		"block min time", time.UnixMilli(indexr.block.meta.MinTime).UTC().Format(time.RFC3339Nano),
+		"block max time", time.UnixMilli(indexr.block.meta.MinTime).UTC().Format(time.RFC3339Nano),
+	)
 	defer span.Finish()
 
 	if skipChunks {
@@ -803,67 +805,7 @@ func populateChunk(out *storepb.AggrChunk, in chunkenc.Chunk, aggrs []storepb.Ag
 		out.Raw = &storepb.Chunk{Type: storepb.Chunk_XOR, Data: b}
 		return nil
 	}
-	if in.Encoding() != downsample.ChunkEncAggr {
-		return errors.Errorf("unsupported chunk encoding %d", in.Encoding())
-	}
-
-	ac := downsample.AggrChunk(in.Bytes())
-
-	for _, at := range aggrs {
-		switch at {
-		case storepb.Aggr_COUNT:
-			x, err := ac.Get(downsample.AggrCount)
-			if err != nil {
-				return errors.Errorf("aggregate %s does not exist", downsample.AggrCount)
-			}
-			b, err := save(x.Bytes())
-			if err != nil {
-				return err
-			}
-			out.Count = &storepb.Chunk{Type: storepb.Chunk_XOR, Data: b}
-		case storepb.Aggr_SUM:
-			x, err := ac.Get(downsample.AggrSum)
-			if err != nil {
-				return errors.Errorf("aggregate %s does not exist", downsample.AggrSum)
-			}
-			b, err := save(x.Bytes())
-			if err != nil {
-				return err
-			}
-			out.Sum = &storepb.Chunk{Type: storepb.Chunk_XOR, Data: b}
-		case storepb.Aggr_MIN:
-			x, err := ac.Get(downsample.AggrMin)
-			if err != nil {
-				return errors.Errorf("aggregate %s does not exist", downsample.AggrMin)
-			}
-			b, err := save(x.Bytes())
-			if err != nil {
-				return err
-			}
-			out.Min = &storepb.Chunk{Type: storepb.Chunk_XOR, Data: b}
-		case storepb.Aggr_MAX:
-			x, err := ac.Get(downsample.AggrMax)
-			if err != nil {
-				return errors.Errorf("aggregate %s does not exist", downsample.AggrMax)
-			}
-			b, err := save(x.Bytes())
-			if err != nil {
-				return err
-			}
-			out.Max = &storepb.Chunk{Type: storepb.Chunk_XOR, Data: b}
-		case storepb.Aggr_COUNTER:
-			x, err := ac.Get(downsample.AggrCounter)
-			if err != nil {
-				return errors.Errorf("aggregate %s does not exist", downsample.AggrCounter)
-			}
-			b, err := save(x.Bytes())
-			if err != nil {
-				return err
-			}
-			out.Counter = &storepb.Chunk{Type: storepb.Chunk_XOR, Data: b}
-		}
-	}
-	return nil
+	return errors.Errorf("unsupported chunk encoding %d", in.Encoding())
 }
 
 // debugFoundBlockSetOverview logs on debug level what exactly blocks we used for query in terms of
@@ -954,6 +896,15 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 	s.mtx.RLock()
 
 	blocks := s.blockSet.getFor(req.MinTime, req.MaxTime, req.MaxResolutionWindow, reqBlockMatchers)
+
+	spanLogger := spanlogger.FromContext(srv.Context(), s.logger)
+	level.Debug(spanLogger).Log(
+		"msg", "BucketStore.Series",
+		"request min time", time.UnixMilli(req.MinTime).UTC().Format(time.RFC3339Nano),
+		"request max time", time.UnixMilli(req.MaxTime).UTC().Format(time.RFC3339Nano),
+		"request matchers", storepb.PromMatchersToString(matchers...),
+		"request shard selector", maybeNilShard(shardSelector).LabelValue(),
+	)
 
 	if s.debugLogging {
 		debugFoundBlockSetOverview(s.logger, req.MinTime, req.MaxTime, req.MaxResolutionWindow, blocks)
@@ -1366,6 +1317,7 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 // optionally restricting the search to the series that match the matchers provided.
 // - First we fetch all possible values for this label from the index.
 //   - If no matchers were provided, we just return those values.
+//
 // - Next we load the postings (references to series) for supplied matchers.
 // - Then we load the postings for each label-value fetched in the first step.
 // - Finally, we check if postings from each label-value intersect postings from matchers.
@@ -1471,10 +1423,11 @@ type bucketBlockSet struct {
 }
 
 // newBucketBlockSet initializes a new set with the known downsampling windows hard-configured.
+// (Mimir only supports no-downsampling)
 // The set currently does not support arbitrary ranges.
 func newBucketBlockSet() *bucketBlockSet {
 	return &bucketBlockSet{
-		resolutions: []int64{downsample.ResLevel2, downsample.ResLevel1, downsample.ResLevel0},
+		resolutions: []int64{0},
 		blocks:      make([][]*bucketBlock, 3),
 	}
 }
@@ -2140,7 +2093,7 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 
 		// Cache miss; save pointer for actual posting in index stored in object store.
 		ptr, err := r.block.indexHeaderReader.PostingsOffset(key.Name, key.Value)
-		if err == indexheader.NotFoundRangeErr {
+		if errors.Is(err, indexheader.NotFoundRangeErr) {
 			// This block does not have any posting for given key.
 			output[ix] = index.EmptyPostings()
 			continue
@@ -2637,7 +2590,7 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, a
 	for i, pIdx := range pIdxs {
 		// Fast forward range reader to the next chunk start in case of sparse (for our purposes) byte range.
 		for readOffset < int(pIdx.offset) {
-			written, err = io.CopyN(ioutil.Discard, bufReader, int64(pIdx.offset)-int64(readOffset))
+			written, err = io.CopyN(io.Discard, bufReader, int64(pIdx.offset)-int64(readOffset))
 			if err != nil {
 				return errors.Wrap(err, "fast forward range reader")
 			}

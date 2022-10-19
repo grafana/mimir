@@ -9,7 +9,6 @@ metadata:
     app.kubernetes.io/instance: test-enterprise-values
     app.kubernetes.io/component: compactor
     app.kubernetes.io/part-of: memberlist
-    app.kubernetes.io/version: "2.2.0"
     app.kubernetes.io/managed-by: Helm
   annotations:
     {}
@@ -24,12 +23,21 @@ spec:
   updateStrategy:
     type: RollingUpdate
   serviceName: test-enterprise-values-mimir-compactor
+  volumeClaimTemplates:
+    - metadata:
+        name: storage
+      spec:
+        accessModes:
+          
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: "2Gi"
   template:
     metadata:
       labels:
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-enterprise-values
-        app.kubernetes.io/version: "2.2.0"
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: compactor
         app.kubernetes.io/part-of: memberlist
@@ -44,17 +52,16 @@ spec:
       nodeSelector:
         {}
       affinity:
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-          - podAffinityTerm:
-              labelSelector:
-                matchExpressions:
-                - key: target
-                  operator: In
-                  values:
-                  - compactor
-              topologyKey: kubernetes.io/hostname
-            weight: 100
+        {}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: mimir
+              app.kubernetes.io/instance: test-enterprise-values
+              app.kubernetes.io/component: compactor
       tolerations:
         []
       terminationGracePeriodSeconds: 240
@@ -68,7 +75,7 @@ spec:
         - name: runtime-config
           configMap:
             name: test-enterprise-values-mimir-runtime
-        - name: storage
+        - name: active-queries
           emptyDir: {}
       containers:
         - name: compactor
@@ -86,6 +93,8 @@ spec:
               mountPath: /var/mimir
             - name: storage
               mountPath: "/data"
+            - name: active-queries
+              mountPath: /active-query-tracker
           ports:
             - name: http-metrics
               containerPort: 8080

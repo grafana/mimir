@@ -12,7 +12,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket/s3"
 )
 
-// CortexToMimirMapper maps from cortex-1.11.0 to mimir-2.0.0 configurations
+// CortexToMimirMapper maps from cortex-1.11.0 to latest mimir configurations
 func CortexToMimirMapper() Mapper {
 	return MultiMapper{
 		mapCortexInstanceInterfaceNames(),
@@ -1065,6 +1065,15 @@ var removedConfigPaths = append(gemRemovedConfigPath, []string{
 	"ruler.sharding_strategy",                // -ruler.sharding-strategy
 	"store_gateway.sharding_enabled",         // -store-gateway.sharding-enabled
 	"store_gateway.sharding_strategy",        // -store-gateway.sharding-strategy
+
+	// Removed in 2.1, 2.2 and 2.3
+	"distributor.extend_writes",                          // -distributor.extend-writes
+	"querier.shuffle_sharding_ingesters_lookback_period", // -querier.shuffle-sharding-ingesters-lookback-period
+	"ruler.flush_period",                                 // -ruler.flush-period
+	"ruler.search_pending_for",                           // -ruler.search-pending-for
+
+	// Removed in 2.4
+	"ingester.lifecycler.join_after", // -ingester.join-after
 }...)
 
 // CLI options removed since Cortex 1.10.0. These flags only existed as CLI Flags, and were not included in YAML Config.
@@ -1075,7 +1084,7 @@ var removedCLIOptions = []string{
 	"ingester-client.expected-samples-per-series",
 	"ingester-client.expected-timeseries",
 	"ingester.chunk-encoding",
-	"ingester.lifecycler.address",
+	"ingester.lifecycler.addr",
 	"ingester.lifecycler.id",
 	"ingester.lifecycler.port",
 	"querier.query-parallelism",

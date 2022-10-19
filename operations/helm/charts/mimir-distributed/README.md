@@ -1,12 +1,16 @@
 # Grafana Mimir Helm chart
 
-Helm chart for deploying [Grafana Mimir](https://grafana.com/docs/mimir/v2.2.x/) or optionally [Grafana Enterprise Metrics](https://grafana.com/docs/enterprise-metrics/v2.2.x/) to Kubernetes. Derived from [Grafana Enterprise Metrics Helm Chart](https://github.com/grafana/helm-charts/blob/main/charts/enterprise-metrics/README.md)
+Helm chart for deploying [Grafana Mimir](https://grafana.com/docs/mimir/v2.3.x/) or optionally [Grafana Enterprise Metrics](https://grafana.com/docs/enterprise-metrics/v2.3.x/) to Kubernetes. Derived from [Grafana Enterprise Metrics Helm Chart](https://github.com/grafana/helm-charts/blob/main/charts/enterprise-metrics/README.md)
 
-See the [Grafana Mimir version 2.2 release notes](https://grafana.com/docs/mimir/v2.2.x/release-notes/v2.2/) and [Upgrade the Grafana Mimir Helm chart from version 2.1 to 3.0](https://grafana.com/docs/mimir/latest/operators-guide/deploying-grafana-mimir/upgrade-helm-chart-2.1-to-3.0/).
+See the [Grafana Mimir version 2.3 release notes](https://grafana.com/docs/mimir/v2.3.x/release-notes/v2.3/).
+
+When upgrading from Helm chart version 2.1, please see [Upgrade the Grafana Mimir Helm chart from version 2.1 to 3.0](https://grafana.com/docs/mimir/latest/operators-guide/deploying-grafana-mimir/upgrade-helm-chart-2.1-to-3.0/) as well.
+
+**IMPORTANT**: Always consult the [CHANGELOG.md](./CHANGELOG.md) file and the deprecation list there to learn about breaking changes that require action during upgrade.
 
 # mimir-distributed
 
-![Version: 3.1.0-weekly.196](https://img.shields.io/badge/Version-3.1.0--weekly.196-informational?style=flat-square) ![AppVersion: 2.2.0](https://img.shields.io/badge/AppVersion-2.2.0-informational?style=flat-square)
+![Version: 4.0.0-weekly.207](https://img.shields.io/badge/Version-4.0.0--weekly.207-informational?style=flat-square) ![AppVersion: r207](https://img.shields.io/badge/AppVersion-r207-informational?style=flat-square)
 
 Grafana Mimir
 
@@ -16,8 +20,8 @@ Kubernetes: `^1.20.0-0`
 
 | Repository | Name | Version |
 |------------|------|---------|
-| https://grafana.github.io/helm-charts | grafana-agent-operator(grafana-agent-operator) | 0.1.12 |
-| https://helm.min.io/ | minio(minio) | 8.0.10 |
+| https://charts.min.io/ | minio(minio) | 4.0.12 |
+| https://grafana.github.io/helm-charts | grafana-agent-operator(grafana-agent-operator) | 0.2.5 |
 
 ## Dependencies
 
@@ -26,12 +30,12 @@ Kubernetes: `^1.20.0-0`
 Grafana Mimir and Grafana Enterprise Metrics require an object storage backend to store metrics and indexes.
 
 The default chart values will deploy [Minio](https://min.io) for initial set up. Production deployments should use a separately deployed object store.
-See [Grafana Mimir documentation](https://grafana.com/docs/mimir/v2.2.x/) for details on storage types and documentation.
+See [Grafana Mimir documentation](https://grafana.com/docs/mimir/v2.3.x/) for details on storage types and documentation.
 
 ### Grafana Enterprise Metrics license
 
 In order to use the enterprise features of this chart, you need to provide the contents of a Grafana Enterprise Metrics license file as the value for the `license.contents` variable.
-To obtain a Grafana Enterprise Metrics license, refer to [Get a license](https://grafana.com/docs/enterprise-metrics/v2.2.x/setup/#get-a-gem-license).
+To obtain a Grafana Enterprise Metrics license, refer to [Get a license](https://grafana.com/docs/enterprise-metrics/v2.3.x/setup/#get-a-gem-license).
 
 ### Helm3
 
@@ -61,9 +65,9 @@ As part of this chart many different pods and services are installed which all
 have varying resource requirements. Please make sure that you have sufficient
 resources (CPU/memory) available in your cluster before installing Grafana Mimir Helm Chart.
 
-### Migration from Cortex to Grafana Mimir
+### Migrate from Cortex to Grafana Mimir
 
-Please consult the [Migration from Cortex to Grafana](https://grafana.com/docs/mimir/v2.2.x/migration-guide/migrating-from-cortex/) guide on how to update the configuration.
+Please consult the [Migration from Cortex to Grafana](https://grafana.com/docs/mimir/v2.3.x/migration-guide/migrating-from-cortex/) guide on how to update the configuration.
 Prepare a custom values file with the contents:
 
 ```yaml
@@ -128,14 +132,14 @@ Alternative values files are included to provide a more realistic configuration 
 ### Small
 
 The `small.yaml` values file configures the Grafana Mimir cluster to
-handle production ingestion of ~1M active series using the blocks storage engine.
+handle production ingestion of ~1M series using the blocks storage engine.
 Query requirements can vary dramatically depending on query rate and query
 ranges. The values here satisfy a "usual" query load as seen from our
 production clusters at this scale.
 It is important to ensure that you run no more than one ingester replica
 per node so that a single node failure does not cause data loss. Zone aware
 replication can be configured to ensure data replication spans availability
-zones. Refer to [Zone Aware Replication](https://grafana.com/docs/mimir/v2.2.x/operators-guide/configuring/configuring-zone-aware-replication/)
+zones. Refer to [Zone Aware Replication](https://grafana.com/docs/mimir/v2.3.x/operators-guide/configuring/configuring-zone-aware-replication/)
 for more information.
 Minio is no longer enabled and you are encouraged to use your cloud providers
 object storage service for production deployments.
@@ -149,15 +153,14 @@ helm install <cluster name> grafana/mimir-distributed -f small.yaml
 ### Large
 
 The `large.yaml` values file configures the Grafana Mimir cluster to
-handle production ingestion of ~10M active series using the blocks
-storage engine.
+handle production ingestion of ~10M series using the blocks storage engine.
 Query requirements can vary dramatically depending on query rate and query
 ranges. The values here satisfy a "usual" query load as seen from our
 production clusters at this scale.
 It is important to ensure that you run no more than one ingester replica
 per node so that a single node failure does not cause data loss. Zone aware
 replication can be configured to ensure data replication spans availability
-zones. Refer to [Zone Aware Replication](https://grafana.com/docs/mimir/v2.2.x/operators-guide/configuring/configuring-zone-aware-replication/)
+zones. Refer to [Zone Aware Replication](https://grafana.com/docs/mimir/v2.3.x/operators-guide/configuring/configuring-zone-aware-replication/)
 for more information.
 Minio is no longer enabled and you are encouraged to use your cloud providers
 object storage service for production deployments.
@@ -183,6 +186,6 @@ To install the chart with the values used in CI tests:
 helm install test ./ --values ./ci/test-values.yaml
 ```
 
-# Contributing/Releasing
+# Contributing and releasing
 
 Please see the dedicated "[Contributing to Grafana Mimir helm chart](https://github.com/grafana/mimir/tree/main/docs/internal/contributing/contributing-to-helm-chart.md)" page.

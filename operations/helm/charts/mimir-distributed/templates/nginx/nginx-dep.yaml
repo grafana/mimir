@@ -32,15 +32,14 @@ spec:
         {{- end }}
       labels:
         {{- include "mimir.podLabels" (dict "ctx" . "component" "nginx") | nindent 8 }}
-        {{- with .Values.nginx.podLabels }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
       namespace: {{ .Release.Namespace | quote }}
     spec:
       serviceAccountName: {{ include "mimir.serviceAccountName" . }}
-      {{- with .Values.imagePullSecrets }}
+      {{- if .Values.image.pullSecrets }}
       imagePullSecrets:
-        {{- toYaml . | nindent 8 }}
+      {{- range .Values.image.pullSecrets }}
+        - name: {{ . }}
+      {{- end }}
       {{- end }}
       {{- if .Values.nginx.priorityClassName }}
       priorityClassName: {{ .Values.nginx.priorityClassName }}
@@ -103,6 +102,8 @@ spec:
       affinity:
         {{- tpl . $ | nindent 8 }}
       {{- end }}
+      topologySpreadConstraints:
+        {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "nginx") | nindent 8 }}
       {{- with .Values.nginx.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

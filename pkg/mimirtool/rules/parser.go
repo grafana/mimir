@@ -88,7 +88,7 @@ func ParseBytes(content []byte) ([]RuleNamespace, []error) {
 	for {
 		var ns RuleNamespace
 		err := decoder.Decode(&ns)
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {

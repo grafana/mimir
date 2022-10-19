@@ -70,7 +70,7 @@ func (p *processor) print(req *request, resp *response) {
 		return
 	}
 
-	if p.cfg.successOnly && (req.Error != "" || resp.Error != "") {
+	if p.cfg.successOnly && ((req != nil && req.Error != "") || (resp != nil && resp.Error != "")) {
 		return
 	}
 

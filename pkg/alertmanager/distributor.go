@@ -8,7 +8,7 @@ package alertmanager
 import (
 	"context"
 	"hash/fnv"
-	"io/ioutil"
+	"io"
 	"math/rand"
 	"net/http"
 	"path"
@@ -157,7 +157,7 @@ func (d *Distributor) doQuorum(userID string, w http.ResponseWriter, r *http.Req
 	var body []byte
 	var err error
 	if r.Body != nil {
-		body, err = ioutil.ReadAll(http.MaxBytesReader(w, r.Body, d.maxRecvMsgSize))
+		body, err = io.ReadAll(http.MaxBytesReader(w, r.Body, d.maxRecvMsgSize))
 		if err != nil {
 			if util.IsRequestBodyTooLarge(err) {
 				http.Error(w, "Request body too large", http.StatusRequestEntityTooLarge)
@@ -226,7 +226,7 @@ func (d *Distributor) doUnary(userID string, w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	body, err := ioutil.ReadAll(http.MaxBytesReader(w, r.Body, d.maxRecvMsgSize))
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, d.maxRecvMsgSize))
 	if err != nil {
 		if util.IsRequestBodyTooLarge(err) {
 			http.Error(w, "Request body too large", http.StatusRequestEntityTooLarge)

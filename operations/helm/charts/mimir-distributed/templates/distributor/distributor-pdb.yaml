@@ -1,14 +1,1 @@
-{{- if .Values.distributor.podDisruptionBudget -}}
-apiVersion: {{ include "mimir.podDisruptionBudget.apiVersion" . }}
-kind: PodDisruptionBudget
-metadata:
-  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "distributor") }}
-  labels:
-    {{- include "mimir.labels" (dict "ctx" . "component" "distributor" "memberlist" true) | nindent 4 }}
-  namespace: {{ .Release.Namespace | quote }}
-spec:
-  selector:
-    matchLabels:
-      {{- include "mimir.selectorLabels" (dict "ctx" . "component" "distributor" "memberlist" true) | nindent 6 }}
-{{ toYaml .Values.distributor.podDisruptionBudget | indent 2 }}
-{{- end -}}
+{{- include "mimir.lib.podDisruptionBudget" (dict "ctx" $ "component" "distributor" "memberlist" true) }}

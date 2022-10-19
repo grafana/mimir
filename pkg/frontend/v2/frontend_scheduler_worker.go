@@ -22,8 +22,9 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
+	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
-	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/servicediscovery"
 )
 
 const (
@@ -43,7 +44,8 @@ type frontendSchedulerWorkers struct {
 	// Channel with requests that should be forwarded to the scheduler.
 	requestsCh <-chan *frontendRequest
 
-	watcher services.Service
+	schedulerDiscovery        services.Service
+	schedulerDiscoveryWatcher *services.FailureWatcher
 
 	mu sync.Mutex
 	// Set to nil when stop is called... no more workers are created afterwards.
@@ -54,33 +56,45 @@ type frontendSchedulerWorkers struct {
 
 func newFrontendSchedulerWorkers(cfg Config, frontendAddress string, requestsCh <-chan *frontendRequest, log log.Logger, reg prometheus.Registerer) (*frontendSchedulerWorkers, error) {
 	f := &frontendSchedulerWorkers{
-		cfg:             cfg,
-		log:             log,
-		frontendAddress: frontendAddress,
-		requestsCh:      requestsCh,
-		workers:         map[string]*frontendSchedulerWorker{},
+		cfg:                       cfg,
+		log:                       log,
+		frontendAddress:           frontendAddress,
+		requestsCh:                requestsCh,
+		workers:                   map[string]*frontendSchedulerWorker{},
+		schedulerDiscoveryWatcher: services.NewFailureWatcher(),
 		enqueuedRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_query_frontend_workers_enqueued_requests_total",
 			Help: "Total number of requests enqueued by each query frontend worker (regardless of the result), labeled by scheduler address.",
 		}, []string{schedulerAddressLabel}),
 	}
 
-	w, err := util.NewDNSWatcher(cfg.SchedulerAddress, cfg.DNSLookupPeriod, f)
+	var err error
+	f.schedulerDiscovery, err = schedulerdiscovery.New(cfg.QuerySchedulerDiscovery, cfg.SchedulerAddress, cfg.DNSLookupPeriod, "query-frontend", f, log, reg)
 	if err != nil {
 		return nil, err
 	}
 
-	f.watcher = w
-	f.Service = services.NewIdleService(f.starting, f.stopping)
+	f.Service = services.NewBasicService(f.starting, f.running, f.stopping)
 	return f, nil
 }
 
 func (f *frontendSchedulerWorkers) starting(ctx context.Context) error {
-	return services.StartAndAwaitRunning(ctx, f.watcher)
+	f.schedulerDiscoveryWatcher.WatchService(f.schedulerDiscovery)
+
+	return services.StartAndAwaitRunning(ctx, f.schedulerDiscovery)
+}
+
+func (f *frontendSchedulerWorkers) running(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return nil
+	case err := <-f.schedulerDiscoveryWatcher.Chan():
+		return errors.Wrap(err, "query-frontend workers subservice failed")
+	}
 }
 
 func (f *frontendSchedulerWorkers) stopping(_ error) error {
-	err := services.StopAndAwaitTerminated(context.Background(), f.watcher)
+	err := services.StopAndAwaitTerminated(context.Background(), f.schedulerDiscovery)
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -93,7 +107,14 @@ func (f *frontendSchedulerWorkers) stopping(_ error) error {
 	return err
 }
 
-func (f *frontendSchedulerWorkers) AddressAdded(address string) {
+func (f *frontendSchedulerWorkers) InstanceAdded(instance servicediscovery.Instance) {
+	// Connect only to in-use query-scheduler instances.
+	if instance.InUse {
+		f.addScheduler(instance.Address)
+	}
+}
+
+func (f *frontendSchedulerWorkers) addScheduler(address string) {
 	f.mu.Lock()
 	ws := f.workers
 	w := f.workers[address]
@@ -105,10 +126,10 @@ func (f *frontendSchedulerWorkers) AddressAdded(address string) {
 	}
 	f.mu.Unlock()
 
-	level.Info(f.log).Log("msg", "adding connection to scheduler", "addr", address)
+	level.Info(f.log).Log("msg", "adding connection to query-scheduler", "addr", address)
 	conn, err := f.connectToScheduler(context.Background(), address)
 	if err != nil {
-		level.Error(f.log).Log("msg", "error connecting to scheduler", "addr", address, "err", err)
+		level.Error(f.log).Log("msg", "error connecting to query-scheduler", "addr", address, "err", err)
 		return
 	}
 
@@ -131,19 +152,34 @@ func (f *frontendSchedulerWorkers) AddressAdded(address string) {
 	w.start()
 }
 
-func (f *frontendSchedulerWorkers) AddressRemoved(address string) {
-	level.Info(f.log).Log("msg", "removing connection to scheduler", "addr", address)
+func (f *frontendSchedulerWorkers) InstanceRemoved(instance servicediscovery.Instance) {
+	f.removeScheduler(instance.Address)
+}
 
+func (f *frontendSchedulerWorkers) removeScheduler(address string) {
 	f.mu.Lock()
-	// This works fine if f.workers is nil already.
+	// This works fine if f.workers is nil already or the worker is missing
+	// because the query-scheduler instance was not in use.
 	w := f.workers[address]
 	delete(f.workers, address)
 	f.mu.Unlock()
 
 	if w != nil {
+		level.Info(f.log).Log("msg", "removing connection to query-scheduler", "addr", address)
 		w.stop()
 	}
 	f.enqueuedRequests.Delete(prometheus.Labels{schedulerAddressLabel: address})
+}
+
+func (f *frontendSchedulerWorkers) InstanceChanged(instance servicediscovery.Instance) {
+	// Ensure the query-frontend connects to in-use query-scheduler instances and disconnect from ones no more in use.
+	// The called methods correctly handle the case the query-frontend is already connected/disconnected
+	// to/from the given query-scheduler instance.
+	if instance.InUse {
+		f.addScheduler(instance.Address)
+	} else {
+		f.removeScheduler(instance.Address)
+	}
 }
 
 // Get number of workers.
@@ -231,8 +267,8 @@ func (w *frontendSchedulerWorker) stop() {
 
 func (w *frontendSchedulerWorker) runOne(ctx context.Context, client schedulerpb.SchedulerForFrontendClient) {
 	backoffConfig := backoff.Config{
-		MinBackoff: 50 * time.Millisecond,
-		MaxBackoff: 1 * time.Second,
+		MinBackoff: 250 * time.Millisecond,
+		MaxBackoff: 2 * time.Second,
 	}
 
 	backoff := backoff.New(ctx, backoffConfig)

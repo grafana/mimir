@@ -11,7 +11,7 @@ local filename = 'mimir-object-store.json';
         $.panel('RPS / component') +
         $.queryPanel('sum by(component) (rate(thanos_objstore_bucket_operations_total{%s}[$__rate_interval]))' % $.namespaceMatcher(), '{{component}}') +
         $.stack +
-        { yaxes: $.yaxes('rps') },
+        { yaxes: $.yaxes('reqps') },
       )
       .addPanel(
         $.panel('Error rate / component') +
@@ -25,7 +25,7 @@ local filename = 'mimir-object-store.json';
         $.panel('RPS / operation') +
         $.queryPanel('sum by(operation) (rate(thanos_objstore_bucket_operations_total{%s}[$__rate_interval]))' % $.namespaceMatcher(), '{{operation}}') +
         $.stack +
-        { yaxes: $.yaxes('rps') },
+        { yaxes: $.yaxes('reqps') },
       )
       .addPanel(
         $.panel('Error rate / operation') +

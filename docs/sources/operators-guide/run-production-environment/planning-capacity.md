@@ -160,5 +160,17 @@ The [Alertmanager]({{< relref "../architecture/components/alertmanager.md" >}}) 
 
 Estimated required CPU and memory:
 
-- CPU: 1 CPU core for every 100 firing alerts
-- Memory: 1GB for every 100 firing alerts
+- CPU: 1 CPU core for every 100 firing alert notifications per second
+- Memory: 1GB for every 5,000 firing alerts
+
+To estimate the peak of firing alert notifications per second in the last 24 hours, run the following query across all Prometheus servers:
+
+```
+sum(max_over_time(rate(alertmanager_alerts_received_total[5m])[24h:5m]))
+```
+
+To estimate the maximum number of firing alerts in the last 24 hours, run the following query across all Prometheus servers:
+
+```
+sum(max_over_time(alertmanager_alerts[24h]))
+```

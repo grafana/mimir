@@ -7,7 +7,7 @@ package integration
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
@@ -22,9 +22,9 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
+	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
-	"github.com/thanos-io/thanos/pkg/objstore"
 	"github.com/thanos-io/thanos/pkg/runutil"
 
 	"github.com/grafana/mimir/integration/e2emimir"
@@ -95,14 +95,14 @@ overrides:
 			return out != newOut
 		})
 
-		// Try to upload block using mimirtool. Should fail because upload is not enabled for user.
+		// Upload block using mimirtool, should work since upload is enabled for user.
 		output, err := runMimirtoolBackfill(tmpDir, compactor, block1)
 		require.Contains(t, output, fmt.Sprintf("msg=\"block uploaded successfully\" block=%s", block1))
 		require.NoError(t, err)
 	}
 
 	{
-		// Upload block1 and block2. Block 1 already exists, but block2 should be uploaded without problem.
+		// Upload block1 and block2. Block 1 already exists, but block2 should be uploaded without problems.
 		output, err := runMimirtoolBackfill(tmpDir, compactor, block1, block2)
 		require.Contains(t, output, fmt.Sprintf("msg=\"block already exists on the server\" path=%s", path.Join(e2e.ContainerSharedDir, block1.String())))
 		require.Contains(t, output, fmt.Sprintf("msg=\"block uploaded successfully\" block=%s", block2))
@@ -128,7 +128,7 @@ overrides:
 	}
 
 	{
-		// Let's try to upload block without meta.json.
+		// Let's try to upload a block without meta.json.
 		b, err := testhelper.CreateBlock(context.Background(), tmpDir, []labels.Labels{labels.FromStrings("test", "bad")}, 100, blockEnd.Add(-2*time.Hour).UnixMilli(), blockEnd.UnixMilli(), nil, 0, metadata.NoneFunc)
 		require.NoError(t, err)
 		require.NoError(t, os.Remove(filepath.Join(tmpDir, b.String(), block.MetaFilename)))
@@ -159,7 +159,7 @@ func verifyBlock(t *testing.T, client objstore.Bucket, ulid ulid.ULID, localPath
 		fi, err := os.Stat(filepath.Join(localPath, filepath.FromSlash(fn)))
 		require.NoError(t, err)
 
-		require.Equal(t, a.Size, fi.Size())
+		require.Equal(t, fi.Size(), a.Size)
 	}
 
 	localMeta, err := metadata.ReadFromDir(localPath)
@@ -207,7 +207,7 @@ func getURL(url string) (string, error) {
 	}
 
 	defer runutil.ExhaustCloseWithErrCapture(&err, res.Body, "reading body")
-	body, err := ioutil.ReadAll(res.Body)
+	body, err := io.ReadAll(res.Body)
 
 	return string(body), err
 }

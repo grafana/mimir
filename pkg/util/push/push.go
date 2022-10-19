@@ -8,6 +8,7 @@ package push
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"sync"
 
@@ -17,6 +18,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -46,8 +48,24 @@ func Handler(
 	push Func,
 ) http.Handler {
 	return handler(maxRecvMsgSize, sourceIPs, allowSkipLabelNameValidation, push, func(ctx context.Context, r *http.Request, maxRecvMsgSize int, dst []byte, req *mimirpb.PreallocWriteRequest) ([]byte, error) {
-		return util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, dst, req, util.RawSnappy)
+		res, err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, dst, req, util.RawSnappy)
+		if errors.Is(err, util.MsgSizeTooLargeErr{}) {
+			err = distributorMaxWriteMessageSizeErr{actual: int(r.ContentLength), limit: maxRecvMsgSize}
+		}
+		return res, err
 	})
+}
+
+type distributorMaxWriteMessageSizeErr struct {
+	actual, limit int
+}
+
+func (e distributorMaxWriteMessageSizeErr) Error() string {
+	msgSizeDesc := fmt.Sprintf(" of %d bytes", e.actual)
+	if e.actual < 0 {
+		msgSizeDesc = ""
+	}
+	return globalerror.DistributorMaxWriteMessageSize.MessageWithPerInstanceLimitConfig(fmt.Sprintf("the incoming push request has been rejected because its message size%s is larger than the allowed limit of %d bytes", msgSizeDesc, e.limit), "distributor.max-recv-msg-size")
 }
 
 // handler requires an additional parser argument.
@@ -72,7 +90,14 @@ func handler(maxRecvMsgSize int,
 		buf, err := parser(ctx, r, maxRecvMsgSize, bufHolder.buf, &req)
 		if err != nil {
 			level.Error(logger).Log("err", err.Error())
-			http.Error(w, err.Error(), http.StatusBadRequest)
+
+			// Check for httpgrpc error.
+			if resp, ok := httpgrpc.HTTPResponseFromError(err); ok {
+				http.Error(w, string(resp.Body), int(resp.Code))
+			} else {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+			}
+
 			bufferPool.Put(bufHolder)
 			return
 		}

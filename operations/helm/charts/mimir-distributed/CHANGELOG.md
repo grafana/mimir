@@ -1,5 +1,17 @@
 # Changelog
 
+## Deprecated features
+
+This section contains deprecated features and interfaces that the chart exposes. The deprecation policy of the chart is to
+remove a deprecated item from the third major release after it has been deprecated it.
+
+### List
+
+* GEM gateway: remove port 8080 on the Service resource. Deprecated in 3.1.0 and will be removed in 6.x.x.
+  * __How to migrate__: replace usages of port 8080 with port 80; these usages can be in dashboards, Prometheus remote-write configurations, or automation for updating rules.
+
+## Format of changelog
+
 This changelog is continued from `enterprise-metrics` after Grafana Enterprise Metrics was added to `mimir-distributed` in PR #1203.
 All notable changes to this chart will be documented in this file.
 
@@ -13,10 +25,94 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [ENHANCEMENT] Metamonitoring: If enabled and no URL is configured, then metamonitoring metrics will be sent to
+  Mimir under the `metamonitoring` tenant; this enhancement does not apply to GEM. #3176
+* [ENHANCEMENT] Improve default rollout strategies. Now distributor, overrides_exporter, querier, query_frontend, admin_api, gateway, and graphite components can be upgraded more quickly and also can be rolled out with a single replica without downtime. #3029
+* [ENHANCEMENT] Metamonitoring: make scrape interval configurable. #2945
+* [BUGFIX] Fix an issue that caused metamonitoring secrets to be created incorrectly #3170
+* [BUGFIX] Nginx: fixed `imagePullSecret` value reference inconsistency. #3208
+* [BUGFIX] Move the activity tracker log from /data to /active-query-tracker to remove ignore log messages. #3169
+
+## 3.2.0
+
+* [CHANGE] Nginx: replace topology key previously used in `podAntiAffinity` (`failure-domain.beta.kubernetes.io/zone`) with a different one `topologySpreadConstraints` (`kubernetes.io/hostname`). #2722
+* [CHANGE] Use `topologySpreadConstraints` instead of `podAntiAffinity` by default. #2722
+  - **Important**: if you are not using the sizing plans (small.yaml, large.yaml, capped-small.yaml, capped-large.yaml) in production, you should reintroduce pod affinity rules for the ingester and store-gateway. This also fixes a missing label selector for the ingester.
+     Merge the following to your custom values file:
+     ```yaml
+     ingester:
+       affinity:
+         podAntiAffinity:
+           requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchExpressions:
+                    - key: target
+                      operator: In
+                      values:
+                        - ingester
+                topologyKey: 'kubernetes.io/hostname'
+              - labelSelector:
+                  matchExpressions:
+                    - key: app.kubernetes.io/component
+                      operator: In
+                      values:
+                        - ingester
+                topologyKey: 'kubernetes.io/hostname'
+     store_gateway:
+       affinity:
+         podAntiAffinity:
+           requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchExpressions:
+                    - key: target
+                      operator: In
+                      values:
+                        - store-gateway
+                topologyKey: 'kubernetes.io/hostname'
+              - labelSelector:
+                  matchExpressions:
+                    - key: app.kubernetes.io/component
+                      operator: In
+                      values:
+                        - store-gateway
+                topologyKey: 'kubernetes.io/hostname'
+     ```
+* [CHANGE] Ingresses for the GEM gateway and nginx will no longer render on Kubernetes versions <1.19. #2872
+* [FEATURE] Add support for OpenShift Routes for Nginx #2908
+* [FEATURE] Add support for `topologySpreadConstraints` to all components; add `topologySpreadConstraints` to GEM gateway, admin-api, and alertmanager, which did not have `podAntiAffinity` previously. #2722
+* [ENHANCEMENT] Document `kubeVersionOverride`. If you rely on `helm template`, use this in your values to set the Kubernetes version. If unset helm will use the kubectl client version as the Kubernetes version with `helm template`, which may cause the chart to render incompatible manifests for the actual server version. #2872
+* [ENHANCEMENT] Support autoscaling/v2 HorizontalPodAutoscaler for nginx autoscaling. This is used when deploying on Kubernetes >= 1.25. #2848
+* [ENHANCEMENT] Monitoring: Add additional flags to conditionally enable log / metric scraping. #2936
+* [ENHANCEMENT] Add podAntiAffinity to sizing plans (small.yaml, large.yaml, capped-small.yaml, capped-large.yaml). #2906
+* [ENHANCEMENT] Add ability to configure and run mimir-continuous-test. #3117
+* [BUGFIX] Fix wrong label selector in ingester anti affinity rules in the sizing plans. #2906
+
+## 3.1.0
+
+* [CHANGE] **breaking change** Update minio deprecated helm chart (<https://helm.min.io/>) to the supported chart's version (<https://charts.min.io/>). #2427
+  - Renamed helm config values `minio.accessKey` to `minio.rootUser`.
+  - Renamed helm config values `minio.secretKey` to `minio.rootPassword`.
+  - Minio container images are now loaded from quay.io instead of Docker Hub. Set `minio.image.repository` value to override the default behavior.
+* [CHANGE] Enable [query sharding](https://grafana.com/docs/mimir/latest/operators-guide/architecture/query-sharding/) by default. If you override the value of `mimir.config`, then take a look at `mimir.config` in the `values.yaml` from this version of the chart and incorporate the differences. If you override `mimir.config`, then consider switching to `mimir.structuredConfig`. To disable query sharding set `mimir.structuredConfig.frontend.parallelize_shardable_queries` to `false`. #2655
+* [FEATURE] Add query-scheduler, which is now enabled by default. If you have copied the `mimir.config`, then update it to correctly configure the query-frontend and the querier. #2087
+* [FEATURE] Added support to run graphite-proxy alongside GEM. It is disabled by default. Set `graphite.enabled=true` in your values config to get it running. #2711
 * [ENHANCEMENT] Add backfill endpoints to Nginx configuration. #2478
-* [ENHANCEMENT] Memberlist now uses DNS service-discovery by default. #2549
+* [ENHANCEMENT] Add `namespace` to smoke-test helm template to allow the job to be deployed within the same namespace as the rest of the deployment. #2515
+* [ENHANCEMENT] Memberlist now uses DNS service-discovery by default. #2549 #2561
+* [ENHANCEMENT] The Mimir configuration parameters `server.http_listen_port` and `server.grpc_listen_port` are now configurable in `mimir.structuredConfig`. #2561
+* [ENHANCEMENT] Default to injecting the `no_auth_tenant` from the Mimir configuration as the value for `X-Scope-OrgID` in nginx. #2614
+* [ENHANCEMENT] Default `ingester.ring.tokens-file-path` and `store-gateway.sharding-ring.tokens-file-path` to `/data/tokens` to prevent resharding on restarts. #2726
+* [ENHANCEMENT] Upgrade memcached image tag to `memcached:1.6.16-alpine`. #2740
+* [ENHANCEMENT] Upgrade nginx image tag to `nginxinc/nginx-unprivileged:1.22-alpine`. #2742
+* [ENHANCEMENT] Upgrade minio subchart to `4.0.12`. #2759
+* [ENHANCEMENT] Update agent-operator subchart to `0.2.5`. #3009
 * [BUGFIX] `nginx.extraArgs` are now actually passed to the nginx container. #2336
 * [BUGFIX] Add missing `containerSecurityContext` to alertmanager and tokengen job. #2416
+* [BUGFIX] Add missing `containerSecutiryContext` to memcached exporter containers. #2666
+* [BUGFIX] Do not use undocumented `mulf` function in templates. #2752
+* [BUGFIX] Open port 80 for the Enterprise `gateway` service so that the read and write address reported by NOTES.txt is correct. Also deprecate the current default of 8080. #2860
+* [BUGFIX] Periodically rebalance gRPC connection between GEM gateway and distributors after scale out of the distributors. #2862
+* [BUGFIX] Remove PodSecurityPolicy when running against Kubernetes >= 1.25. #2870
 
 ## 3.0.0
 

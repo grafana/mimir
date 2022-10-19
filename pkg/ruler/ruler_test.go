@@ -8,7 +8,7 @@ package ruler
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
@@ -27,6 +27,7 @@ import (
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
@@ -37,7 +38,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/thanos-io/thanos/pkg/objstore"
+	"github.com/thanos-io/objstore"
 	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
@@ -49,6 +50,7 @@ import (
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
 	"github.com/grafana/mimir/pkg/ruler/rulestore/bucketclient"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func defaultRulerConfig(t testing.TB) Config {
@@ -73,57 +75,6 @@ func defaultRulerConfig(t testing.TB) Config {
 	cfg.EnableQueryStats = false
 
 	return cfg
-}
-
-type ruleLimits struct {
-	evalDelay            time.Duration
-	tenantShard          int
-	maxRulesPerRuleGroup int
-	maxRuleGroups        int
-}
-
-func (r ruleLimits) EvaluationDelay(_ string) time.Duration {
-	return r.evalDelay
-}
-
-func (r ruleLimits) RulerTenantShardSize(_ string) int {
-	return r.tenantShard
-}
-
-func (r ruleLimits) RulerMaxRuleGroupsPerTenant(_ string) int {
-	return r.maxRuleGroups
-}
-
-func (r ruleLimits) RulerMaxRulesPerRuleGroup(_ string) int {
-	return r.maxRulesPerRuleGroup
-}
-
-func testSetup() (storage.QueryableFunc, promRules.QueryFunc, Pusher, log.Logger, RulesLimits) {
-	noopQueryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-		return storage.NoopQuerier(), nil
-	})
-	noopQueryFunc := func(ctx context.Context, q string, t time.Time) (promql.Vector, error) {
-		return nil, nil
-	}
-
-	// Mock the pusher
-	pusher := newPusherMock()
-	pusher.MockPush(&mimirpb.WriteResponse{}, nil)
-
-	l := log.NewLogfmtLogger(os.Stdout)
-	l = level.NewFilter(l, level.AllowInfo())
-
-	return noopQueryable, noopQueryFunc, pusher, l, ruleLimits{evalDelay: 0, maxRuleGroups: 20, maxRulesPerRuleGroup: 15}
-}
-
-func newManager(t *testing.T, cfg Config) *DefaultMultiTenantManager {
-	noopQueryable, noopQueryFunc, pusher, logger, overrides := testSetup()
-
-	mngFactory := DefaultTenantManagerFactory(cfg, pusher, noopQueryable, noopQueryFunc, overrides, nil)
-	manager, err := NewDefaultMultiTenantManager(cfg, mngFactory, prometheus.NewRegistry(), logger, nil)
-	require.NoError(t, err)
-
-	return manager
 }
 
 type mockRulerClientsPool struct {
@@ -164,27 +115,98 @@ func newMockClientsPool(cfg Config, logger log.Logger, reg prometheus.Registerer
 	}
 }
 
-func buildRuler(t *testing.T, cfg Config, storage rulestore.RuleStore, rulerAddrMap map[string]*Ruler) *Ruler {
-	noopQueryable, noopQueryFunc, pusher, logger, overrides := testSetup()
+type prepareOption func(opts *prepareOptions)
 
-	reg := prometheus.NewRegistry()
-	managerFactory := DefaultTenantManagerFactory(cfg, pusher, noopQueryable, noopQueryFunc, overrides, reg)
-	manager, err := NewDefaultMultiTenantManager(cfg, managerFactory, reg, log.NewNopLogger(), nil)
+type prepareOptions struct {
+	limits       RulesLimits
+	logger       log.Logger
+	registerer   prometheus.Registerer
+	rulerAddrMap map[string]*Ruler
+	start        bool
+}
+
+func applyPrepareOptions(opts ...prepareOption) prepareOptions {
+	defaultLogger := log.NewLogfmtLogger(os.Stdout)
+	defaultLogger = level.NewFilter(defaultLogger, level.AllowInfo())
+
+	applied := prepareOptions{
+		// Default limits in the ruler tests.
+		limits: validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
+			defaults.RulerEvaluationDelay = 0
+			defaults.RulerMaxRuleGroupsPerTenant = 20
+			defaults.RulerMaxRulesPerRuleGroup = 15
+		}),
+		logger:     defaultLogger,
+		registerer: prometheus.NewPedanticRegistry(),
+	}
+
+	for _, opt := range opts {
+		opt(&applied)
+	}
+
+	return applied
+}
+
+// withStart is a prepareOption that automatically starts the ruler.
+func withStart() prepareOption {
+	return func(opts *prepareOptions) {
+		opts.start = true
+	}
+}
+
+// withLimits is a prepareOption that overrides the limits used in the test.
+func withLimits(limits RulesLimits) prepareOption {
+	return func(opts *prepareOptions) {
+		opts.limits = limits
+	}
+}
+
+// withRulerAddrMap is a prepareOption that configures the mapping between rulers and their network addresses.
+func withRulerAddrMap(addrs map[string]*Ruler) prepareOption {
+	return func(opts *prepareOptions) {
+		opts.rulerAddrMap = addrs
+	}
+}
+
+func prepareRuler(t *testing.T, cfg Config, storage rulestore.RuleStore, opts ...prepareOption) *Ruler {
+	options := applyPrepareOptions(opts...)
+	manager := prepareRulerManager(t, cfg, opts...)
+
+	ruler, err := newRuler(cfg, manager, options.registerer, options.logger, storage, options.limits, newMockClientsPool(cfg, options.logger, options.registerer, options.rulerAddrMap))
 	require.NoError(t, err)
 
-	ruler, err := newRuler(cfg, manager, reg, logger, storage, overrides, newMockClientsPool(cfg, logger, reg, rulerAddrMap))
-	require.NoError(t, err)
+	// Start the ruler if requested to do so.
+	if options.start {
+		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ruler))
+
+		// Ensure the service is stopped at the end of the test.
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), ruler))
+		})
+	}
+
 	return ruler
 }
 
-func newTestRuler(t *testing.T, cfg Config, storage rulestore.RuleStore) *Ruler {
-	ruler := buildRuler(t, cfg, storage, nil)
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ruler))
+func prepareRulerManager(t *testing.T, cfg Config, opts ...prepareOption) *DefaultMultiTenantManager {
+	options := applyPrepareOptions(opts...)
 
-	// Ensure all rules are loaded before usage
-	ruler.syncRules(context.Background(), rulerSyncReasonInitial)
+	noopQueryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+		return storage.NoopQuerier(), nil
+	})
+	noopQueryFunc := func(ctx context.Context, q string, t time.Time) (promql.Vector, error) {
+		return nil, nil
+	}
 
-	return ruler
+	// Mock the pusher
+	pusher := newPusherMock()
+	pusher.MockPush(&mimirpb.WriteResponse{}, nil)
+
+	managerFactory := DefaultTenantManagerFactory(cfg, pusher, noopQueryable, noopQueryFunc, options.limits, options.registerer)
+	manager, err := NewDefaultMultiTenantManager(cfg, managerFactory, prometheus.NewRegistry(), options.logger, nil)
+	require.NoError(t, err)
+
+	return manager
 }
 
 var _ MultiTenantManager = &DefaultMultiTenantManager{}
@@ -206,7 +228,7 @@ func TestNotifierSendsUserIDHeader(t *testing.T) {
 	cfg := defaultRulerConfig(t)
 	cfg.AlertmanagerURL = ts.URL
 
-	manager := newManager(t, cfg)
+	manager := prepareRulerManager(t, cfg)
 	defer manager.Stop()
 
 	n, err := manager.getOrCreateNotifier("1")
@@ -252,17 +274,8 @@ func TestRuler_Rules(t *testing.T) {
 						Namespace:     "namespace1",
 						User:          "user1",
 						SourceTenants: []string{"tenant-1"},
-						Rules: []*rulespb.RuleDesc{
-							{
-								Record: "UP_RULE",
-								Expr:   "up",
-							},
-							{
-								Alert: "UP_ALERT",
-								Expr:  "up < 1",
-							},
-						},
-						Interval: interval,
+						Rules:         []*rulespb.RuleDesc{mockRecordingRuleDesc("UP_RULE", "up"), mockAlertingRuleDesc("UP_ALERT", "up < 1")},
+						Interval:      interval,
 					},
 				},
 			},
@@ -274,10 +287,16 @@ func TestRuler_Rules(t *testing.T) {
 			cfg := defaultRulerConfig(t)
 			cfg.TenantFederation.Enabled = true
 
-			r := newTestRuler(t, cfg, newMockRuleStore(tc.mockRules))
-			defer services.StopAndAwaitTerminated(context.Background(), r) //nolint:errcheck
+			r := prepareRuler(t, cfg, newMockRuleStore(tc.mockRules), withStart())
 
+			// Rules will be synchronized asynchronously, so we wait until the expected number of rule groups
+			// has been synched.
 			ctx := user.InjectOrgID(context.Background(), tc.userID)
+			test.Poll(t, 5*time.Second, len(mockRules[tc.userID]), func() interface{} {
+				rls, _ := r.Rules(ctx, &RulesRequest{})
+				return len(rls.Groups)
+			})
+
 			rls, err := r.Rules(ctx, &RulesRequest{})
 			require.NoError(t, err)
 			require.Len(t, rls.Groups, len(mockRules[tc.userID]))
@@ -369,8 +388,11 @@ func TestGetRules(t *testing.T) {
 					},
 				}
 
-				r := buildRuler(t, cfg, storage, rulerAddrMap)
-				r.limits = ruleLimits{evalDelay: 0, tenantShard: tc.shuffleShardSize}
+				r := prepareRuler(t, cfg, storage, withRulerAddrMap(rulerAddrMap), withLimits(validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
+					defaults.RulerEvaluationDelay = 0
+					defaults.RulerTenantShardSize = tc.shuffleShardSize
+				})))
+
 				rulerAddrMap[id] = r
 				if r.ring != nil {
 					require.NoError(t, services.StartAndAwaitRunning(context.Background(), r.ring))
@@ -809,8 +831,10 @@ func TestSharding(t *testing.T) {
 					DisabledTenants: tc.disabledUsers,
 				}
 
-				r := buildRuler(t, cfg, newMockRuleStore(allRules), nil)
-				r.limits = ruleLimits{evalDelay: 0, tenantShard: tc.shuffleShardSize}
+				r := prepareRuler(t, cfg, newMockRuleStore(allRules), withLimits(validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
+					defaults.RulerEvaluationDelay = 0
+					defaults.RulerTenantShardSize = tc.shuffleShardSize
+				})))
 
 				if forceRing != nil {
 					r.ring = forceRing
@@ -1003,8 +1027,7 @@ type ruleGroupKey struct {
 func TestRuler_ListAllRules(t *testing.T) {
 	cfg := defaultRulerConfig(t)
 
-	r := newTestRuler(t, cfg, newMockRuleStore(mockRules))
-	defer services.StopAndAwaitTerminated(context.Background(), r) //nolint:errcheck
+	r := prepareRuler(t, cfg, newMockRuleStore(mockRules), withStart())
 
 	router := mux.NewRouter()
 	router.Path("/ruler/rule_groups").Methods(http.MethodGet).HandlerFunc(r.ListAllRules)
@@ -1014,7 +1037,7 @@ func TestRuler_ListAllRules(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	resp := w.Result()
-	body, _ := ioutil.ReadAll(resp.Body)
+	body, _ := io.ReadAll(resp.Body)
 
 	// Check status code and header
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -1107,5 +1130,241 @@ func TestSendAlerts(t *testing.T) {
 			})
 			SendAlerts(senderFunc, "http://localhost:9090")(context.TODO(), "up", tc.in...)
 		})
+	}
+}
+
+func TestFilterRuleGroupsByEnabled(t *testing.T) {
+	tests := map[string]struct {
+		configs  map[string]rulespb.RuleGroupList
+		limits   RulesLimits
+		expected map[string]rulespb.RuleGroupList
+	}{
+		"should return an empty map on empty input": {
+			configs:  nil,
+			limits:   validation.MockDefaultOverrides(),
+			expected: nil,
+		},
+		"should remove alerting rules if disabled for a given tenant": {
+			configs: map[string]rulespb.RuleGroupList{
+				"user-1": {
+					mockRuleGroup("group-1", "user-1", mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")),
+					mockRuleGroup("group-2", "user-1", mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")),
+					mockRuleGroup("group-3", "user-1", mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")),
+				},
+				"user-2": {
+					mockRuleGroup("group-1", "user-2", mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")),
+					mockRuleGroup("group-2", "user-2", mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")),
+					mockRuleGroup("group-3", "user-2", mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")),
+				},
+			},
+			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+				tenantLimits["user-1"] = validation.MockDefaultLimits()
+				tenantLimits["user-1"].RulerRecordingRulesEvaluationEnabled = true
+				tenantLimits["user-1"].RulerAlertingRulesEvaluationEnabled = false
+			}),
+			expected: map[string]rulespb.RuleGroupList{
+				"user-1": {
+					mockRuleGroup("group-1", "user-1", mockRecordingRuleDesc("record:1", "1"), mockRecordingRuleDesc("record:3", "3")),
+					mockRuleGroup("group-2", "user-1", mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")),
+				},
+				"user-2": {
+					mockRuleGroup("group-1", "user-2", mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")),
+					mockRuleGroup("group-2", "user-2", mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")),
+					mockRuleGroup("group-3", "user-2", mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")),
+				},
+			},
+		},
+		"should remove recording rules if disabled for a given tenant": {
+			configs: map[string]rulespb.RuleGroupList{
+				"user-1": {
+					mockRuleGroup("group-1", "user-1", mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")),
+					mockRuleGroup("group-2", "user-1", mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")),
+					mockRuleGroup("group-3", "user-1", mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")),
+				},
+				"user-2": {
+					mockRuleGroup("group-1", "user-2", mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")),
+					mockRuleGroup("group-2", "user-2", mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")),
+					mockRuleGroup("group-3", "user-2", mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")),
+				},
+			},
+			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+				tenantLimits["user-1"] = validation.MockDefaultLimits()
+				tenantLimits["user-1"].RulerRecordingRulesEvaluationEnabled = false
+				tenantLimits["user-1"].RulerAlertingRulesEvaluationEnabled = true
+			}),
+			expected: map[string]rulespb.RuleGroupList{
+				"user-1": {
+					mockRuleGroup("group-1", "user-1", mockAlertingRuleDesc("alert-2", "2")),
+					mockRuleGroup("group-3", "user-1", mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")),
+				},
+				"user-2": {
+					mockRuleGroup("group-1", "user-2", mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")),
+					mockRuleGroup("group-2", "user-2", mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")),
+					mockRuleGroup("group-3", "user-2", mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")),
+				},
+			},
+		},
+		"should remove all config for a user if both recording and alerting rules are disabled": {
+			configs: map[string]rulespb.RuleGroupList{
+				"user-1": {
+					mockRuleGroup("group-1", "user-1", mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")),
+					mockRuleGroup("group-2", "user-1", mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")),
+					mockRuleGroup("group-3", "user-1", mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")),
+				},
+				"user-2": {
+					mockRuleGroup("group-1", "user-2", mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")),
+					mockRuleGroup("group-2", "user-2", mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")),
+					mockRuleGroup("group-3", "user-2", mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")),
+				},
+			},
+			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+				tenantLimits["user-1"] = validation.MockDefaultLimits()
+				tenantLimits["user-1"].RulerRecordingRulesEvaluationEnabled = false
+				tenantLimits["user-1"].RulerAlertingRulesEvaluationEnabled = false
+			}),
+			expected: map[string]rulespb.RuleGroupList{
+				"user-2": {
+					mockRuleGroup("group-1", "user-2", mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")),
+					mockRuleGroup("group-2", "user-2", mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")),
+					mockRuleGroup("group-3", "user-2", mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")),
+				},
+			},
+		},
+		"should remove configs for all users if both recording and alerting rules are disabled for every user": {
+			configs: map[string]rulespb.RuleGroupList{
+				"user-1": {
+					mockRuleGroup("group-1", "user-1", mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")),
+					mockRuleGroup("group-2", "user-1", mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")),
+					mockRuleGroup("group-3", "user-1", mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")),
+				},
+				"user-2": {
+					mockRuleGroup("group-1", "user-2", mockRecordingRuleDesc("record:1", "1"), mockAlertingRuleDesc("alert-2", "2"), mockRecordingRuleDesc("record:3", "3")),
+					mockRuleGroup("group-2", "user-2", mockRecordingRuleDesc("record:4", "4"), mockRecordingRuleDesc("record:5", "5")),
+					mockRuleGroup("group-3", "user-2", mockAlertingRuleDesc("alert-6", "6"), mockAlertingRuleDesc("alert-7", "7")),
+				},
+			},
+			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+				defaults.RulerRecordingRulesEvaluationEnabled = false
+				defaults.RulerAlertingRulesEvaluationEnabled = false
+			}),
+			expected: map[string]rulespb.RuleGroupList{},
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			logger := log.NewNopLogger()
+
+			actual := filterRuleGroupsByEnabled(testData.configs, testData.limits, logger)
+			assert.Equal(t, testData.expected, actual)
+		})
+	}
+}
+
+func BenchmarkFilterRuleGroupsByEnabled(b *testing.B) {
+	const (
+		numTenants                    = 1000
+		numRuleGroupsPerTenant        = 10
+		numRecordingRulesPerRuleGroup = 10
+		numAlertingRulesPerRuleGroup  = 10
+	)
+
+	var (
+		logger = log.NewNopLogger()
+	)
+
+	b.Logf("total number of rules: %d", numTenants*numRuleGroupsPerTenant*(numRecordingRulesPerRuleGroup+numAlertingRulesPerRuleGroup))
+
+	// Utility used to create the ruler configs.
+	buildConfigs := func() map[string]rulespb.RuleGroupList {
+		configs := make(map[string]rulespb.RuleGroupList, numTenants)
+
+		for t := 0; t < numTenants; t++ {
+			tenantID := fmt.Sprintf("tenant-%d", t)
+			configs[tenantID] = make(rulespb.RuleGroupList, 0, numRuleGroupsPerTenant)
+
+			for g := 0; g < numRuleGroupsPerTenant; g++ {
+				group := &rulespb.RuleGroupDesc{
+					User:  tenantID,
+					Name:  fmt.Sprintf("group-%d", g),
+					Rules: make([]*rulespb.RuleDesc, 0, numRecordingRulesPerRuleGroup+numAlertingRulesPerRuleGroup),
+				}
+
+				for r := 0; r < numRecordingRulesPerRuleGroup; r++ {
+					group.Rules = append(group.Rules, mockRecordingRuleDesc(fmt.Sprintf("record:%d", r), "count(up)"))
+				}
+
+				for r := 0; r < numAlertingRulesPerRuleGroup; r++ {
+					group.Rules = append(group.Rules, mockAlertingRuleDesc(fmt.Sprintf("alert-%d", r), "count(up)"))
+				}
+
+				configs[tenantID] = append(configs[tenantID], group)
+			}
+		}
+
+		return configs
+	}
+
+	tests := map[string]struct {
+		limits RulesLimits
+	}{
+		"all rules enabled": {
+			limits: validation.MockDefaultOverrides(),
+		},
+		"recording rules disabled": {
+			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+				defaults.RulerRecordingRulesEvaluationEnabled = false
+			}),
+		},
+		"alerting rules disabled": {
+			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+				defaults.RulerAlertingRulesEvaluationEnabled = false
+			}),
+		},
+		"all rules disabled": {
+			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+				defaults.RulerRecordingRulesEvaluationEnabled = false
+				defaults.RulerAlertingRulesEvaluationEnabled = false
+			}),
+		},
+	}
+
+	for testName, testData := range tests {
+		b.Run(testName, func(b *testing.B) {
+			for n := 0; n < b.N; n++ {
+				// The CPU/mem required to build the initial config is taken in account too.
+				// Unfortunately if build it upfront and then reset the timer after building it,
+				// the filterRuleGroupsByEnabled() (in-place replacement version) is so fast that
+				// the benchmark will run a very high b.N  which will in turn exhaust the memory.
+				filterRuleGroupsByEnabled(buildConfigs(), testData.limits, logger)
+			}
+		})
+	}
+}
+
+func mockRecordingRuleDesc(record, expr string) *rulespb.RuleDesc {
+	return &rulespb.RuleDesc{
+		Record: record,
+		Expr:   expr,
+	}
+}
+
+func mockAlertingRuleDesc(alert, expr string) *rulespb.RuleDesc {
+	return &rulespb.RuleDesc{
+		Alert: alert,
+		Expr:  expr,
+	}
+}
+
+// mockRuleGroup creates a rule group filling in all fields, so that we can use it in tests to check if all fields
+// are copied when a rule group is cloned.
+func mockRuleGroup(name, user string, rules ...*rulespb.RuleDesc) *rulespb.RuleGroupDesc {
+	return &rulespb.RuleGroupDesc{
+		Name:          name,
+		Namespace:     "test",
+		Interval:      time.Minute,
+		Rules:         rules,
+		User:          user,
+		SourceTenants: []string{user},
 	}
 }

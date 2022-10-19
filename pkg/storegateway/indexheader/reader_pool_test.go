@@ -7,7 +7,6 @@ package indexheader
 
 import (
 	"context"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -18,9 +17,9 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 
+	"github.com/thanos-io/objstore/providers/filesystem"
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
-	"github.com/thanos-io/thanos/pkg/objstore/filesystem"
 
 	"github.com/grafana/mimir/pkg/storegateway/testhelper"
 )
@@ -45,7 +44,7 @@ func TestReaderPool_NewBinaryReader(t *testing.T) {
 
 	ctx := context.Background()
 
-	tmpDir, err := ioutil.TempDir("", "test-indexheader")
+	tmpDir, err := os.MkdirTemp("", "test-indexheader")
 	require.NoError(t, err)
 	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
 
@@ -83,7 +82,7 @@ func TestReaderPool_ShouldCloseIdleLazyReaders(t *testing.T) {
 
 	ctx := context.Background()
 
-	tmpDir, err := ioutil.TempDir("", "test-indexheader")
+	tmpDir, err := os.MkdirTemp("", "test-indexheader")
 	require.NoError(t, err)
 	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
 

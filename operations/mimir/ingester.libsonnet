@@ -17,16 +17,9 @@
 
       // Ring config.
       'ingester.ring.num-tokens': 512,
-      'ingester.ring.heartbeat-period': '15s',
       'ingester.ring.unregister-on-shutdown': $._config.unregister_ingesters_on_shutdown,
 
-      // Disable the ring health check in the readiness endpoint so that we can quickly rollout
-      // multiple ingesters in multi-zone deployments. It's also safe to disable it everywhere,
-      // given we deploy all ingesters with StatefulSets.
-      'ingester.ring.readiness-check-ring-health': false,
-
       // Limits config.
-      'runtime-config.file': '%s/overrides.yaml' % $._config.overrides_configmap_mountpoint,
       'server.grpc-max-concurrent-streams': 10000,
 
       // Blocks storage.
@@ -37,7 +30,7 @@
       // Persist ring tokens so that when the ingester will be restarted
       // it will pick the same tokens
       'ingester.ring.tokens-file-path': '/data/tokens',
-    },
+    } + $.mimirRuntimeConfigFile,
 
   ingester_ports:: $.util.defaultPorts,
 
@@ -70,7 +63,7 @@
     // When the ingester needs to flush blocks to the storage, it may take quite a lot of time.
     // For this reason, we grant an high termination period (80 minutes).
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(1200) +
-    $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint) +
+    $.mimirVolumeMounts +
     $.util.podPriority('high') +
     (if with_anti_affinity then $.util.antiAffinity else {}),
 

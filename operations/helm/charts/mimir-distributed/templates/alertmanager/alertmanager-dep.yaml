@@ -20,17 +20,14 @@ spec:
     metadata:
       labels:
         {{- include "mimir.podLabels" (dict "ctx" . "component" "alertmanager" "memberlist" true) | nindent 8 }}
-        {{- with .Values.alertmanager.podLabels }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
       annotations:
         {{- include "mimir.podAnnotations" (dict "ctx" . "component" "alertmanager") | nindent 8 }}
       namespace: {{ .Release.Namespace | quote }}
     spec:
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
-    {{- if .Values.alertmanager.priorityClassName }}
+      {{- if .Values.alertmanager.priorityClassName }}
       priorityClassName: {{ .Values.query_frontend.priorityClassName }}
-    {{- end }}
+      {{- end }}
       securityContext:
         {{- toYaml .Values.alertmanager.securityContext | nindent 8 }}
       initContainers:
@@ -69,6 +66,8 @@ spec:
               subPath: {{ .Values.alertmanager.persistence.subPath }}
             - name: tmp
               mountPath: /tmp
+            - name: active-queries
+              mountPath: /active-query-tracker
           ports:
             - name: http-metrics
               containerPort: {{ include "mimir.serverHttpListenPort" . }}
@@ -108,6 +107,8 @@ spec:
         {{- toYaml .Values.alertmanager.nodeSelector | nindent 8 }}
       affinity:
         {{- toYaml .Values.alertmanager.affinity | nindent 8 }}
+      topologySpreadConstraints:
+        {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "alertmanager") | nindent 8 }}
       tolerations:
         {{- toYaml .Values.alertmanager.tolerations | nindent 8 }}
       terminationGracePeriodSeconds: {{ .Values.alertmanager.terminationGracePeriodSeconds }}
@@ -128,6 +129,8 @@ spec:
         - name: storage
           emptyDir: {}
         - name: tmp
+          emptyDir: {}
+        - name: active-queries
           emptyDir: {}
 {{- end -}}
 {{- end -}}

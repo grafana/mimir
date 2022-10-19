@@ -10,8 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/time/rate"
@@ -19,7 +21,7 @@ import (
 
 func TestRateLimitedNotifier(t *testing.T) {
 	mock := &mockNotifier{}
-	counter := prometheus.NewCounter(prometheus.CounterOpts{})
+	counter := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
 
 	// Initial limits.
 	limiter := &limiter{limit: 5, burst: 5}
@@ -54,7 +56,7 @@ func runNotifications(t *testing.T, rateLimitedNotifier *rateLimitedNotifier, co
 
 		if err == nil {
 			success++
-		} else if err == errRateLimited {
+		} else if errors.Is(err, errRateLimited) {
 			rateLimited++
 			assert.False(t, retry)
 		} else {

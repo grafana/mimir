@@ -10,6 +10,7 @@ package ingester
 
 import (
 	"context"
+	"expvar"
 	"flag"
 	"fmt"
 	"io"
@@ -26,8 +27,6 @@ import (
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
-	"github.com/opentracing/opentracing-go"
-	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -39,8 +38,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
+	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
-	"github.com/thanos-io/thanos/pkg/objstore"
 	"github.com/weaveworks/common/httpgrpc"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
@@ -55,6 +54,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -74,6 +74,9 @@ const (
 	// Period at which to attempt purging metadata from memory.
 	metadataPurgePeriod = 5 * time.Minute
 
+	// How frequently update the usage statistics.
+	usageStatsUpdateInterval = usagestats.DefaultReportSendInterval / 10
+
 	// IngesterRingKey is the key under which we store the ingesters ring in the KVStore.
 	IngesterRingKey = "ring"
 
@@ -88,6 +91,16 @@ const (
 	sampleTooOld         = "sample-too-old"
 	newValueForTimestamp = "new-value-for-timestamp"
 	sampleOutOfBounds    = "sample-out-of-bounds"
+
+	replicationFactorStatsName             = "ingester_replication_factor"
+	ringStoreStatsName                     = "ingester_ring_store"
+	memorySeriesStatsName                  = "ingester_inmemory_series"
+	memoryTenantsStatsName                 = "ingester_inmemory_tenants"
+	appendedSamplesStatsName               = "ingester_appended_samples"
+	appendedExemplarsStatsName             = "ingester_appended_exemplars"
+	tenantsWithOutOfOrderEnabledStatName   = "ingester_ooo_enabled_tenants"
+	minOutOfOrderTimeWindowSecondsStatName = "ingester_ooo_min_window"
+	maxOutOfOrderTimeWindowSecondsStatName = "ingester_ooo_max_window"
 )
 
 // BlocksUploader interface is used to have an easy way to mock it in tests.
@@ -225,6 +238,15 @@ type Ingester struct {
 	// Rate of pushed samples. Used to limit global samples push rate.
 	ingestionRate        *util_math.EwmaRate
 	inflightPushRequests atomic.Int64
+
+	// Anonymous usage statistics tracked by ingester.
+	memorySeriesStats                  *expvar.Int
+	memoryTenantsStats                 *expvar.Int
+	appendedSamplesStats               *usagestats.Counter
+	appendedExemplarsStats             *usagestats.Counter
+	tenantsWithOutOfOrderEnabledStat   *expvar.Int
+	minOutOfOrderTimeWindowSecondsStat *expvar.Int
+	maxOutOfOrderTimeWindowSecondsStat *expvar.Int
 }
 
 func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
@@ -236,6 +258,10 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create the bucket client")
 	}
+
+	// Track constant usage stats.
+	usagestats.GetInt(replicationFactorStatsName).Set(int64(cfg.IngesterRing.ReplicationFactor))
+	usagestats.GetString(ringStoreStatsName).Set(cfg.IngesterRing.KVStore.Store)
 
 	return &Ingester{
 		cfg:    cfg,
@@ -249,6 +275,14 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 		forceCompactTrigger: make(chan requestWithUsersAndCallback),
 		shipTrigger:         make(chan requestWithUsersAndCallback),
 		seriesHashCache:     hashcache.NewSeriesHashCache(cfg.BlocksStorageConfig.TSDB.SeriesHashCacheMaxBytes),
+
+		memorySeriesStats:                  usagestats.GetAndResetInt(memorySeriesStatsName),
+		memoryTenantsStats:                 usagestats.GetAndResetInt(memoryTenantsStatsName),
+		appendedSamplesStats:               usagestats.GetAndResetCounter(appendedSamplesStatsName),
+		appendedExemplarsStats:             usagestats.GetAndResetCounter(appendedExemplarsStatsName),
+		tenantsWithOutOfOrderEnabledStat:   usagestats.GetAndResetInt(tenantsWithOutOfOrderEnabledStatName),
+		minOutOfOrderTimeWindowSecondsStat: usagestats.GetAndResetInt(minOutOfOrderTimeWindowSecondsStatName),
+		maxOutOfOrderTimeWindowSecondsStat: usagestats.GetAndResetInt(maxOutOfOrderTimeWindowSecondsStatName),
 	}, nil
 }
 
@@ -427,6 +461,9 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 	metadataPurgeTicker := time.NewTicker(metadataPurgePeriod)
 	defer metadataPurgeTicker.Stop()
 
+	usageStatsUpdateTicker := time.NewTicker(usageStatsUpdateInterval)
+	defer usageStatsUpdateTicker.Stop()
+
 	for {
 		select {
 		case <-metadataPurgeTicker.C:
@@ -446,6 +483,9 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 
 		case <-activeSeriesTickerChan:
 			i.updateActiveSeries(time.Now())
+
+		case <-usageStatsUpdateTicker.C:
+			i.updateUsageStats()
 
 		case <-ctx.Done():
 			return nil
@@ -493,6 +533,51 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 			}
 		}
 	}
+}
+
+// updateUsageStats updated some anonymous usage statistics tracked by the ingester.
+// This function is expected to be called periodically.
+func (i *Ingester) updateUsageStats() {
+	memoryUsersCount := int64(0)
+	memorySeriesCount := int64(0)
+	tenantsWithOutOfOrderEnabledCount := int64(0)
+	minOutOfOrderTimeWindow := time.Duration(0)
+	maxOutOfOrderTimeWindow := time.Duration(0)
+
+	for _, userID := range i.getTSDBUsers() {
+		userDB := i.getTSDB(userID)
+		if userDB == nil {
+			continue
+		}
+
+		// Track only tenants with at least 1 series.
+		numSeries := userDB.Head().NumSeries()
+		if numSeries == 0 {
+			continue
+		}
+
+		memoryUsersCount++
+		memorySeriesCount += int64(numSeries)
+
+		oooWindow := time.Duration(i.limits.OutOfOrderTimeWindow(userID))
+		if oooWindow > 0 {
+			tenantsWithOutOfOrderEnabledCount++
+
+			if minOutOfOrderTimeWindow == 0 || oooWindow < minOutOfOrderTimeWindow {
+				minOutOfOrderTimeWindow = oooWindow
+			}
+			if oooWindow > maxOutOfOrderTimeWindow {
+				maxOutOfOrderTimeWindow = oooWindow
+			}
+		}
+	}
+
+	// Track anonymous usage stats.
+	i.memorySeriesStats.Set(memorySeriesCount)
+	i.memoryTenantsStats.Set(memoryUsersCount)
+	i.tenantsWithOutOfOrderEnabledStat.Set(tenantsWithOutOfOrderEnabledCount)
+	i.minOutOfOrderTimeWindowSecondsStat.Set(int64(minOutOfOrderTimeWindow.Seconds()))
+	i.maxOutOfOrderTimeWindowSecondsStat.Set(int64(maxOutOfOrderTimeWindow.Seconds()))
 }
 
 // applyTSDBSettings goes through all tenants and applies
@@ -594,10 +679,9 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	}
 	defer db.releaseAppendLock()
 
-	span := opentracing.SpanFromContext(ctx)
-	if span != nil {
-		span.LogFields(otlog.String("event", "acquired append lock"))
-	}
+	// Note that we don't .Finish() the span in this method on purpose
+	spanlog := spanlogger.FromContext(ctx, i.logger)
+	level.Debug(spanlog).Log("event", "acquired append lock")
 
 	// Keep track of some stats which are tracked only if the samples will be
 	// successfully committed
@@ -625,11 +709,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 
 	// Walk the samples, appending them to the users database
 	app := db.Appender(ctx).(extendedAppender)
-
-	if span != nil {
-		span.LogFields(otlog.String("event", "got appender"),
-			otlog.Int("numseries", len(req.Timeseries)))
-	}
+	level.Debug(spanlog).Log("event", "got appender", "numSeries", len(req.Timeseries))
 
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)
 	for _, ts := range req.Timeseries {
@@ -683,6 +763,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 			// of it, so that we can return it back to the distributor, which will return a
 			// 400 error to the client. The client (Prometheus) will not retry on 400, and
 			// we actually ingested all samples which haven't failed.
+			//nolint:errorlint // We don't expect the cause error to be wrapped.
 			switch cause := errors.Cause(err); cause {
 			case storage.ErrOutOfBounds:
 				sampleOutOfBoundsCount++
@@ -771,19 +852,22 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	// At this point all samples have been added to the appender, so we can track the time it took.
 	i.metrics.appenderAddDuration.Observe(time.Since(startAppend).Seconds())
 
-	if span != nil {
-		span.LogFields(otlog.String("event", "start commit"),
-			otlog.Int("succeededSamplesCount", succeededSamplesCount),
-			otlog.Int("failedSamplesCount", failedSamplesCount),
-			otlog.Int("succeededExemplarsCount", succeededExemplarsCount),
-			otlog.Int("failedExemplarsCount", failedExemplarsCount))
-	}
+	level.Debug(spanlog).Log(
+		"event", "start commit",
+		"succeededSamplesCount", succeededSamplesCount,
+		"failedSamplesCount", failedSamplesCount,
+		"succeededExemplarsCount", succeededExemplarsCount,
+		"failedExemplarsCount", failedExemplarsCount,
+	)
 
 	startCommit := time.Now()
 	if err := app.Commit(); err != nil {
 		return nil, wrapWithUser(err, userID)
 	}
-	i.metrics.appenderCommitDuration.Observe(time.Since(startCommit).Seconds())
+
+	commitDuration := time.Since(startCommit)
+	i.metrics.appenderCommitDuration.Observe(commitDuration.Seconds())
+	level.Debug(spanlog).Log("event", "complete commit", "commitDuration", commitDuration.String())
 
 	// If only invalid samples are pushed, don't change "last update", as TSDB was not modified.
 	if succeededSamplesCount > 0 {
@@ -797,24 +881,26 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	i.metrics.ingestedSamplesFail.WithLabelValues(userID).Add(float64(failedSamplesCount))
 	i.metrics.ingestedExemplars.Add(float64(succeededExemplarsCount))
 	i.metrics.ingestedExemplarsFail.Add(float64(failedExemplarsCount))
+	i.appendedSamplesStats.Inc(int64(succeededSamplesCount))
+	i.appendedExemplarsStats.Inc(int64(succeededExemplarsCount))
 
 	if sampleOutOfBoundsCount > 0 {
-		validation.DiscardedSamples.WithLabelValues(sampleOutOfBounds, userID).Add(float64(sampleOutOfBoundsCount))
+		i.metrics.discardedSamplesSampleOutOfBounds.WithLabelValues(userID).Add(float64(sampleOutOfBoundsCount))
 	}
 	if sampleOutOfOrderCount > 0 {
-		validation.DiscardedSamples.WithLabelValues(sampleOutOfOrder, userID).Add(float64(sampleOutOfOrderCount))
+		i.metrics.discardedSamplesSampleOutOfOrder.WithLabelValues(userID).Add(float64(sampleOutOfOrderCount))
 	}
 	if sampleTooOldCount > 0 {
-		validation.DiscardedSamples.WithLabelValues(sampleTooOld, userID).Add(float64(sampleTooOldCount))
+		i.metrics.discardedSamplesSampleTooOld.WithLabelValues(userID).Add(float64(sampleTooOldCount))
 	}
 	if newValueForTimestampCount > 0 {
-		validation.DiscardedSamples.WithLabelValues(newValueForTimestamp, userID).Add(float64(newValueForTimestampCount))
+		i.metrics.discardedSamplesNewValueForTimestamp.WithLabelValues(userID).Add(float64(newValueForTimestampCount))
 	}
 	if perUserSeriesLimitCount > 0 {
-		validation.DiscardedSamples.WithLabelValues(perUserSeriesLimit, userID).Add(float64(perUserSeriesLimitCount))
+		i.metrics.discardedSamplesPerUserSeriesLimit.WithLabelValues(userID).Add(float64(perUserSeriesLimitCount))
 	}
 	if perMetricSeriesLimitCount > 0 {
-		validation.DiscardedSamples.WithLabelValues(perMetricSeriesLimit, userID).Add(float64(perMetricSeriesLimitCount))
+		i.metrics.discardedSamplesPerMetricSeriesLimit.WithLabelValues(userID).Add(float64(perMetricSeriesLimitCount))
 	}
 	if succeededSamplesCount > 0 {
 		i.ingestionRate.Add(int64(succeededSamplesCount))
@@ -1503,9 +1589,8 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		MaxExemplars:                   int64(maxExemplars),
 		SeriesHashCache:                i.seriesHashCache,
 		EnableMemorySnapshotOnShutdown: i.cfg.BlocksStorageConfig.TSDB.MemorySnapshotOnShutdown,
-		IsolationDisabled:              !i.cfg.BlocksStorageConfig.TSDB.IsolationEnabled,
+		IsolationDisabled:              true,
 		HeadChunksWriteQueueSize:       i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteQueueSize,
-		NewChunkDiskMapper:             i.cfg.BlocksStorageConfig.TSDB.NewChunkDiskMapper,
 		AllowOverlappingQueries:        true,                 // We can have overlapping blocks from past or out-of-order enabled during runtime.
 		AllowOverlappingCompaction:     false,                // always false since Mimir only uploads lvl 1 compacted blocks
 		OutOfOrderTimeWindow:           oooTW.Milliseconds(), // The unit must be same as our timestamps.
@@ -1662,7 +1747,7 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 
 			// If the dir is empty skip it
 			if _, err := f.Readdirnames(1); err != nil {
-				if err == io.EOF {
+				if errors.Is(err, io.EOF) {
 					return filepath.SkipDir
 				}
 
@@ -1692,6 +1777,9 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 		level.Error(i.logger).Log("msg", "error while opening existing TSDBs", "err", err)
 		return err
 	}
+
+	// Update the usage statistics once all TSDBs have been opened.
+	i.updateUsageStats()
 
 	level.Info(i.logger).Log("msg", "successfully opened existing TSDBs")
 	return nil
@@ -1987,8 +2075,6 @@ func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckRes
 	i.metrics.deletePerUserMetrics(userID)
 	i.metrics.deletePerUserCustomTrackerMetrics(userID, userDB.activeSeries.CurrentMatcherNames())
 
-	validation.DeletePerUserValidationMetrics(userID, i.logger)
-
 	// And delete local data.
 	if err := os.RemoveAll(dir); err != nil {
 		level.Error(i.logger).Log("msg", "failed to delete local TSDB", "user", userID, "err", err)
@@ -2167,8 +2253,8 @@ func (i *Ingester) getInstanceLimits() *InstanceLimits {
 }
 
 // ShutdownHandler triggers the following set of operations in order:
-//     * Change the state of ring to stop accepting writes.
-//     * Flush all the chunks.
+//   - Change the state of ring to stop accepting writes.
+//   - Flush all the chunks.
 func (i *Ingester) ShutdownHandler(w http.ResponseWriter, r *http.Request) {
 	originalFlush := i.lifecycler.FlushOnShutdown()
 	// We want to flush the chunks if transfer fails irrespective of original flag.

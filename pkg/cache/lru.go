@@ -25,9 +25,9 @@ type LRUCache struct {
 	items    prometheus.GaugeFunc
 }
 
-type cacheItem struct {
-	data      []byte
-	expiresAt time.Time
+type Item struct {
+	Data      []byte
+	ExpiresAt time.Time
 }
 
 // WrapWithLRUCache wraps a given `Cache` c with a LRU cache. The LRU cache will always store items in both caches.
@@ -82,9 +82,9 @@ func (l *LRUCache) Store(ctx context.Context, data map[string][]byte, ttl time.D
 	defer l.mtx.Unlock()
 
 	for k, v := range data {
-		l.lru.Add(k, &cacheItem{
-			data:      v,
-			expiresAt: time.Now().Add(ttl),
+		l.lru.Add(k, &Item{
+			Data:      v,
+			ExpiresAt: time.Now().Add(ttl),
 		})
 	}
 }
@@ -105,9 +105,9 @@ func (l *LRUCache) Fetch(ctx context.Context, keys []string) (result map[string]
 			miss = append(miss, k)
 			continue
 		}
-		item := val.(*cacheItem)
-		if item.expiresAt.After(now) {
-			found[k] = item.data
+		item := val.(*Item)
+		if item.ExpiresAt.After(now) {
+			found[k] = item.Data
 			continue
 		}
 		l.lru.Remove(k)
@@ -120,9 +120,9 @@ func (l *LRUCache) Fetch(ctx context.Context, keys []string) (result map[string]
 		result = l.c.Fetch(ctx, miss)
 		for k, v := range result {
 			// we don't know the ttl of the result, so we use the default one.
-			l.lru.Add(k, &cacheItem{
-				data:      v,
-				expiresAt: now.Add(l.defaultTTL),
+			l.lru.Add(k, &Item{
+				Data:      v,
+				ExpiresAt: now.Add(l.defaultTTL),
 			})
 			found[k] = v
 		}

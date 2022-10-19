@@ -11,6 +11,12 @@ weight: 10
 # About Grafana Mimir dashboards and alerts requirements
 
 Grafana Mimir dashboards and alerts require certain labels to exist on metrics scraped from Grafana Mimir.
+
+The `mimir-distributed` Helm chart provides metamonitoring support, which takes care of these labels.
+For more information about Helm chart metamonitoring, refer to [Collect metrics and logs via the Helm chart]({{< relref "collecting-metrics-and-logs.md#collect-metrics-and-logs-via-the-helm-chart" >}}).
+If you are using Helm chart metamonitoring, go to [Installing Grafana Mimir dashboards and alerts]({{< relref "installing-dashboards-and-alerts.md" >}}).
+
+If you are not, then continue reading.
 Your Prometheus or Grafana Agent must be configured to add these labels in order for the dashboards and alerts to function.
 The following table shows the required label names and whether they can be customized when [compiling dashboards or alerts from sources]({{< relref "installing-dashboards-and-alerts.md" >}}).
 
@@ -23,6 +29,11 @@ The following table shows the required label names and whether they can be custo
 | `instance`  | Yes           | The unique identifier of the node or machine where the Mimir replica is running (eg. the node when running on Kubernetes). You can configure the node label via the `per_node_label` field in the mixin configuration.                                                                                                                                                                                                                                                                                 |
 
 For rules and alerts to function properly, you must configure your Prometheus or Grafana Agent to scrape metrics from Grafana Mimir at an interval of `15s` or shorter.
+
+## Deployment type
+
+By default, Grafana Mimir dashboards assume Mimir is deployed in containers orchestrated by Kubernetes.
+If you're running Mimir on baremental, you should set the configuration field `deployment_type: 'baremetal'` and [re-compile the dashboards]({{< relref "installing-dashboards-and-alerts.md" >}}).
 
 ## Job selection
 

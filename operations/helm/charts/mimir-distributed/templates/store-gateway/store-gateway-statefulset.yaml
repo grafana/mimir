@@ -41,9 +41,6 @@ spec:
     metadata:
       labels:
         {{- include "mimir.podLabels" (dict "ctx" . "component" "store-gateway" "memberlist" true) | nindent 8 }}
-        {{- with .Values.store_gateway.podLabels }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
       annotations:
         {{- include "mimir.podAnnotations" (dict "ctx" . "component" "store-gateway") | nindent 8 }}
       namespace: {{ .Release.Namespace | quote }}
@@ -66,6 +63,8 @@ spec:
         {{- toYaml .Values.store_gateway.nodeSelector | nindent 8 }}
       affinity:
         {{- toYaml .Values.store_gateway.affinity | nindent 8 }}
+      topologySpreadConstraints:
+        {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "store-gateway") | nindent 8 }}
       tolerations:
         {{- toYaml .Values.store_gateway.tolerations | nindent 8 }}
       terminationGracePeriodSeconds: {{ .Values.store_gateway.terminationGracePeriodSeconds }}
@@ -87,6 +86,8 @@ spec:
         {{- if .Values.store_gateway.extraVolumes }}
         {{ toYaml .Values.store_gateway.extraVolumes | nindent 8 }}
         {{- end }}
+        - name: active-queries
+          emptyDir: {}
       containers:
         {{- if .Values.store_gateway.extraContainers }}
         {{ toYaml .Values.store_gateway.extraContainers | nindent 8 }}
@@ -118,6 +119,8 @@ spec:
               {{- if .Values.store_gateway.persistentVolume.subPath }}
               subPath: {{ .Values.store_gateway.persistentVolume.subPath }}             
               {{- end }}
+            - name: active-queries
+              mountPath: /active-query-tracker
           ports:
             - name: http-metrics
               containerPort: {{ include "mimir.serverHttpListenPort" . }}

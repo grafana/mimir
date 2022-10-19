@@ -8,6 +8,7 @@ package mimir
 import (
 	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -147,36 +148,68 @@ func TestMimir(t *testing.T) {
 			ReplicationFactor:      1,
 			InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
 		}},
-
-		Target: []string{All, AlertManager},
 	}
 
-	c, err := New(cfg)
-	require.NoError(t, err)
+	tests := map[string]struct {
+		target                  []string
+		expectedEnabledModules  []string
+		expectedDisabledModules []string
+	}{
+		"-target=all,alertmanager": {
+			target: []string{All, AlertManager},
+			expectedEnabledModules: []string{
+				// Check random modules that we expect to be configured when using Target=All.
+				Server, IngesterService, Ring, DistributorService, Compactor,
 
-	serviceMap, err := c.ModuleManager.InitModuleServices(cfg.Target...)
-	require.NoError(t, err)
-	require.NotNil(t, serviceMap)
-
-	for m, s := range serviceMap {
-		// make sure each service is still New
-		require.Equal(t, services.New, s.State(), "module: %s", m)
+				// Check that Alertmanager is configured which is not part of Target=All.
+				AlertManager,
+			},
+		},
+		"-target=write": {
+			target:                  []string{Write},
+			expectedEnabledModules:  []string{DistributorService, IngesterService},
+			expectedDisabledModules: []string{Querier, Ruler, StoreGateway, Compactor, AlertManager},
+		},
+		"-target=read": {
+			target:                  []string{Read},
+			expectedEnabledModules:  []string{QueryFrontend, Querier},
+			expectedDisabledModules: []string{IngesterService, Ruler, StoreGateway, Compactor, AlertManager},
+		},
+		"-target=backend": {
+			target:                  []string{Backend},
+			expectedEnabledModules:  []string{QueryScheduler, Ruler, StoreGateway, Compactor, AlertManager},
+			expectedDisabledModules: []string{IngesterService, QueryFrontend, Querier},
+		},
 	}
 
-	// check random modules that we expect to be configured when using Target=All
-	require.NotNil(t, serviceMap[Server])
-	require.NotNil(t, serviceMap[IngesterService])
-	require.NotNil(t, serviceMap[Ring])
-	require.NotNil(t, serviceMap[DistributorService])
-	require.NotNil(t, serviceMap[Compactor])
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			cfg.Target = testData.target
+			c, err := New(cfg, prometheus.NewPedanticRegistry())
+			require.NoError(t, err)
 
-	// check that alertmanager is configured which is not part of Target=All
-	require.NotNil(t, serviceMap[AlertManager])
+			serviceMap, err := c.ModuleManager.InitModuleServices(cfg.Target...)
+			require.NoError(t, err)
+			require.NotNil(t, serviceMap)
+
+			for m, s := range serviceMap {
+				// make sure each service is still New
+				require.Equal(t, services.New, s.State(), "module: %s", m)
+			}
+
+			for _, module := range testData.expectedEnabledModules {
+				require.NotNilf(t, serviceMap[module], "module=%s", module)
+			}
+
+			for _, module := range testData.expectedDisabledModules {
+				require.Nilf(t, serviceMap[module], "module=%s", module)
+			}
+		})
+	}
 }
 
 func TestMimirServerShutdownWithActivityTrackerEnabled(t *testing.T) {
 	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
-	prepareGlobalMetricsRegistry(t)
 
 	cfg := Config{}
 
@@ -186,14 +219,14 @@ func TestMimirServerShutdownWithActivityTrackerEnabled(t *testing.T) {
 	tmpDir := t.TempDir()
 	cfg.ActivityTracker.Filepath = filepath.Join(tmpDir, "activity.log") // Enable activity tracker
 
-	cfg.Target = []string{API}
+	cfg.Target = []string{Querier}
 	cfg.Server = getServerConfig(t)
 	require.NoError(t, cfg.Server.LogFormat.Set("logfmt"))
 	require.NoError(t, cfg.Server.LogLevel.Set("debug"))
 
 	util_log.InitLogger(&cfg.Server)
 
-	c, err := New(cfg)
+	c, err := New(cfg, prometheus.NewPedanticRegistry())
 	require.NoError(t, err)
 
 	errCh := make(chan error)
@@ -378,9 +411,233 @@ func TestConfigValidation(t *testing.T) {
 	}
 }
 
-func TestGrpcAuthMiddleware(t *testing.T) {
-	prepareGlobalMetricsRegistry(t)
+func TestConfig_validateFilesystemPaths(t *testing.T) {
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
 
+	tests := map[string]struct {
+		setup       func(cfg *Config)
+		expectedErr string
+	}{
+		"should succeed with the default configuration": {
+			setup: func(cfg *Config) {},
+		},
+		"should fail if alertmanager filesystem backend directory is equal to alertmanager data directory": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{AlertManager}
+				cfg.Alertmanager.DataDir = "/path/to/alertmanager"
+				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Backend = bucket.Filesystem
+				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Filesystem.Directory = "/path/to/alertmanager/"
+			},
+			expectedErr: `the configured alertmanager data directory "/path/to/alertmanager" cannot overlap with the configured alertmanager storage filesystem directory "/path/to/alertmanager/"`,
+		},
+		"should fail if alertmanager filesystem backend directory is a subdirectory of alertmanager data directory": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{AlertManager}
+				cfg.Alertmanager.DataDir = "/path/to/alertmanager"
+				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Backend = bucket.Filesystem
+				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Filesystem.Directory = "/path/to/alertmanager/subdir"
+			},
+			expectedErr: `the configured alertmanager data directory "/path/to/alertmanager" cannot overlap with the configured alertmanager storage filesystem directory "/path/to/alertmanager/subdir"`,
+		},
+		"should fail if alertmanager data directory is a subdirectory of alertmanager filesystem backend directory, and matches with the prefix used to store alerts": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{AlertManager}
+				cfg.Alertmanager.DataDir = "/path/to/alertmanager/alerts"
+				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Backend = bucket.Filesystem
+				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Filesystem.Directory = "/path/to/alertmanager"
+			},
+			expectedErr: `the configured alertmanager data directory "/path/to/alertmanager/alerts" cannot overlap with the configured alertmanager storage filesystem directory "/path/to/alertmanager"`,
+		},
+		"should succeed if alertmanager data directory is a subdirectory of alertmanager filesystem backend directory, but doesn't match with the prefix used to store alerts": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{AlertManager}
+				cfg.Alertmanager.DataDir = "/path/to/alertmanager/data"
+				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Backend = bucket.Filesystem
+				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Filesystem.Directory = "/path/to/alertmanager"
+			},
+		},
+		"should fail if alertmanager data directory (relative) is a subdirectory of alertmanager filesystem backend directory (absolute), and matches with the prefix used to store alertmanager config": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{AlertManager}
+				cfg.Alertmanager.DataDir = "./data/alertmanager"
+				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Backend = bucket.Filesystem
+				cfg.AlertmanagerStorage.Config.StorageBackendConfig.Filesystem.Directory = filepath.Join(cwd, "data")
+			},
+			expectedErr: fmt.Sprintf(`the configured alertmanager data directory "./data/alertmanager" cannot overlap with the configured alertmanager storage filesystem directory "%s"`, filepath.Join(cwd, "data")),
+		},
+		"should fail if ruler filesystem backend directory is equal to ruler data directory": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{Ruler}
+				cfg.Ruler.RulePath = "/path/to/ruler"
+				cfg.RulerStorage.Config.StorageBackendConfig.Backend = bucket.Filesystem
+				cfg.RulerStorage.Config.StorageBackendConfig.Filesystem.Directory = "/path/to/ruler/"
+			},
+			expectedErr: `the configured ruler data directory "/path/to/ruler" cannot overlap with the configured ruler storage filesystem directory "/path/to/ruler/"`,
+		},
+		"should fail if store-gateway and compactor data directory overlap": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{StoreGateway, Compactor}
+				cfg.BlocksStorage.BucketStore.SyncDir = "/path/to/data"
+				cfg.Compactor.DataDir = "/path/to/data/compactor"
+			},
+			expectedErr: `the configured bucket store sync directory "/path/to/data" cannot overlap with the configured compactor data directory "/path/to/data/compactor"`,
+		},
+		"should succeed if store-gateway and compactor data directory overlap, but it's running only the store-gateway": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{StoreGateway}
+				cfg.BlocksStorage.BucketStore.SyncDir = "/path/to/data"
+				cfg.Compactor.DataDir = "/path/to/data/compactor"
+			},
+		},
+		"should fail if tsdb directory and blocks storage filesystem directory overlap": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{Ingester}
+				cfg.BlocksStorage.TSDB.Dir = "/path/to/data"
+				cfg.BlocksStorage.Bucket.Backend = bucket.Filesystem
+				cfg.BlocksStorage.Bucket.Filesystem.Directory = "/path/to/data/blocks"
+			},
+			expectedErr: `the configured blocks storage filesystem directory "/path/to/data/blocks" cannot overlap with the configured tsdb directory "/path/to/data"`,
+		},
+		"should succeed if tsdb directory and blocks storage filesystem directory overlap, but blocks storage has prefix configured": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{Ingester}
+				cfg.BlocksStorage.TSDB.Dir = "/path/to/data/tsdb"
+				cfg.BlocksStorage.Bucket.Backend = bucket.Filesystem
+
+				// The storage directory itself overlaps with TSDB data directory,
+				// but it doesn't if you also apply the prefix.
+				cfg.BlocksStorage.Bucket.Filesystem.Directory = "/path/to/data"
+				cfg.BlocksStorage.Bucket.StoragePrefix = "blocks"
+			},
+		},
+		"should succeed if tsdb directory and blocks storage filesystem directory don't overlap": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{Ingester}
+				cfg.BlocksStorage.TSDB.Dir = "/path/to/data/tsdb"
+				cfg.BlocksStorage.Bucket.Backend = bucket.Filesystem
+				cfg.BlocksStorage.Bucket.Filesystem.Directory = "/path/to/data/blocks"
+			},
+		},
+		"should succeed if tsdb directory and blocks storage filesystem directory don't overlap and one has the same prefix of the other one": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{Ingester}
+				cfg.BlocksStorage.TSDB.Dir = "/path/to/data"
+				cfg.BlocksStorage.Bucket.Backend = bucket.Filesystem
+				cfg.BlocksStorage.Bucket.Filesystem.Directory = "/path/to/data-blocks"
+			},
+		},
+		"should succeed if tsdb directory and blocks storage filesystem directory don't overlap and they're both root directories": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{Ingester}
+				cfg.BlocksStorage.TSDB.Dir = "/data"
+				cfg.BlocksStorage.Bucket.Backend = bucket.Filesystem
+				cfg.BlocksStorage.Bucket.Filesystem.Directory = "/data-blocks"
+			},
+		},
+		"should succeed if tsdb directory and blocks storage filesystem directory don't overlap and they're both child of the same directory": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{Ingester}
+				cfg.BlocksStorage.TSDB.Dir = "./data"
+				cfg.BlocksStorage.Bucket.Backend = bucket.Filesystem
+				cfg.BlocksStorage.Bucket.Filesystem.Directory = "./data-blocks"
+			},
+		},
+		"should succeed if blocks storage filesystem directory overlaps with alertmanager data directory, but we're running alertmanager in microservices mode": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{AlertManager}
+				cfg.BlocksStorage.Bucket.Backend = bucket.Filesystem
+				cfg.BlocksStorage.Bucket.Filesystem.Directory = "blocks"
+				cfg.AlertmanagerStorage.Backend = bucket.Filesystem
+				cfg.AlertmanagerStorage.Filesystem.Directory = "/data/alertmanager"
+				cfg.Alertmanager.DataDir = cwd
+			},
+		},
+		"should fail if blocks storage filesystem directory overlaps with alertmanager data directory, and alertmanager is running along with other components": {
+			setup: func(cfg *Config) {
+				cfg.Target = flagext.StringSliceCSV{All, AlertManager}
+				cfg.Common.Storage.Backend = bucket.Filesystem
+				cfg.Common.Storage.Filesystem.Directory = "blocks"
+				cfg.Alertmanager.DataDir = cwd
+			},
+			expectedErr: fmt.Sprintf(`the configured blocks storage filesystem directory "blocks" cannot overlap with the configured alertmanager data directory "%s"`, cwd),
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			cfg := Config{}
+			flagext.DefaultValues(&cfg)
+			testData.setup(&cfg)
+
+			actualErr := cfg.validateFilesystemPaths(log.NewNopLogger())
+
+			if testData.expectedErr != "" {
+				require.Error(t, actualErr)
+				require.Contains(t, actualErr.Error(), testData.expectedErr)
+			} else {
+				require.NoError(t, actualErr)
+			}
+		})
+	}
+}
+
+func TestIsAbsPathOverlapping(t *testing.T) {
+	tests := []struct {
+		first    string
+		second   string
+		expected bool
+	}{
+		{
+			first:    "/",
+			second:   "/",
+			expected: true,
+		},
+		{
+			first:    "/data",
+			second:   "/",
+			expected: true,
+		},
+		{
+			first:    "/",
+			second:   "/data",
+			expected: true,
+		},
+		{
+			first:    "/data",
+			second:   "/data-more",
+			expected: false,
+		},
+		{
+			first:    "/path/to/data",
+			second:   "/path/to/data",
+			expected: true,
+		},
+		{
+			first:    "/path/to/data",
+			second:   "/path/to/data/more",
+			expected: true,
+		},
+		{
+			first:    "/path/to/data",
+			second:   "/path/to/data-more",
+			expected: false,
+		},
+		{
+			first:    "/path/to/data",
+			second:   "/path/to/more/data",
+			expected: false,
+		},
+	}
+
+	for _, testData := range tests {
+		t.Run(fmt.Sprintf("check if %q overlaps %q", testData.first, testData.second), func(t *testing.T) {
+			assert.Equal(t, testData.expected, isAbsPathOverlapping(testData.first, testData.second))
+		})
+	}
+}
+
+func TestGrpcAuthMiddleware(t *testing.T) {
 	cfg := Config{
 		MultitenancyEnabled: true, // We must enable this to enable Auth middleware for gRPC server.
 		Server:              getServerConfig(t),
@@ -392,7 +649,7 @@ func TestGrpcAuthMiddleware(t *testing.T) {
 
 	// Setup server, using Mimir config. This includes authentication middleware.
 	{
-		c, err := New(cfg)
+		c, err := New(cfg, prometheus.NewPedanticRegistry())
 		require.NoError(t, err)
 
 		serv, err := c.initServer()
@@ -450,7 +707,7 @@ func TestFlagDefaults(t *testing.T) {
 	pingWithoutStreamChecked := false
 	for {
 		line, err := buf.ReadString(delim)
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 
@@ -528,15 +785,4 @@ func (m *mockGrpcServiceHandler) Process(_ frontendv1pb.Frontend_ProcessServer) 
 
 func (m *mockGrpcServiceHandler) QuerierLoop(_ schedulerpb.SchedulerForQuerier_QuerierLoopServer) error {
 	panic("implement me")
-}
-
-func prepareGlobalMetricsRegistry(t *testing.T) {
-	oldReg, oldGat := prometheus.DefaultRegisterer, prometheus.DefaultGatherer
-
-	reg := prometheus.NewRegistry()
-	prometheus.DefaultRegisterer, prometheus.DefaultGatherer = reg, reg
-
-	t.Cleanup(func() {
-		prometheus.DefaultRegisterer, prometheus.DefaultGatherer = oldReg, oldGat
-	})
 }

@@ -1,0 +1,10 @@
+# Example rules file to load to Mimir via the ruler API.
+groups:
+  - name: alerts
+    rules:
+      - alert: AlwaysFiring
+        expr: count(up) >= 0
+        labels:
+          severity: page
+        annotations:
+          summary: This is an always-firing test alert.

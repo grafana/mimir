@@ -4,6 +4,7 @@ package ruler
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 	"testing"
@@ -98,6 +99,57 @@ func TestRemoteQuerier_QueryReqTimeout(t *testing.T) {
 	tm := time.Unix(1649092025, 515834)
 	_, err := q.Query(context.Background(), "qs", tm)
 	require.Error(t, err)
+}
+
+func TestRemoteQuerier_BackoffRetry(t *testing.T) {
+	tcs := map[string]struct {
+		failedRequests  int
+		expectedError   string
+		requestDeadline time.Duration
+	}{
+		"succeed on failed requests <= max retries": {
+			failedRequests: maxRequestRetries,
+		},
+		"fail on failed requests > max retries": {
+			failedRequests: maxRequestRetries + 1,
+			expectedError:  "failed request: 4",
+		},
+		"return last known error on context cancellation": {
+			failedRequests:  1,
+			requestDeadline: 50 * time.Millisecond, // force context cancellation while waiting for retry
+			expectedError:   "context deadline exceeded while retrying request, last err was: failed request: 1",
+		},
+	}
+	for tn, tc := range tcs {
+		t.Run(tn, func(t *testing.T) {
+			retries := 0
+			mockClientFn := func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
+				retries++
+				if retries <= tc.failedRequests {
+					return nil, fmt.Errorf("failed request: %d", retries)
+				}
+				return &httpgrpc.HTTPResponse{Code: http.StatusOK, Body: []byte(`{
+							"status": "success","data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[1,"773054.5916666666"]}]}
+						}`)}, nil
+			}
+			q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, "/prometheus", log.NewNopLogger())
+
+			ctx := context.Background()
+			if tc.requestDeadline > 0 {
+				var cancelFn context.CancelFunc
+				ctx, cancelFn = context.WithTimeout(ctx, tc.requestDeadline)
+				defer cancelFn()
+			}
+
+			resp, err := q.Query(ctx, "qs", time.Now())
+			if tc.expectedError != "" {
+				require.EqualError(t, err, tc.expectedError)
+			} else {
+				require.NotNil(t, resp)
+				require.Len(t, resp, 1)
+			}
+		})
+	}
 }
 
 func TestRemoteQuerier_StatusErrorResponses(t *testing.T) {

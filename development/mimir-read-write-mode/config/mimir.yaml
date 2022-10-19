@@ -1,0 +1,61 @@
+multitenancy_enabled: false
+
+common:
+  storage:
+    backend: s3
+    s3:
+      endpoint:          minio:9000
+      access_key_id:     mimir
+      secret_access_key: supersecret
+      insecure:          true
+
+blocks_storage:
+  s3:
+    bucket_name:       mimir-blocks
+  tsdb:
+    dir: /data/ingester
+
+  bucket_store:
+    index_cache:
+      backend: memcached
+      memcached:
+        addresses: dns+memcached:11211
+
+    chunks_cache:
+      backend: memcached
+      memcached:
+        addresses: dns+memcached:11211
+
+    metadata_cache:
+      backend: memcached
+      memcached:
+        addresses: dns+memcached:11211
+
+
+memberlist:
+  # Use write replicas as seed nodes.
+  join_members: [ mimir-write-1, mimir-write-2, mimir-write-3 ]
+
+ruler:
+  rule_path: /data/ruler
+  # Each ruler is configured to route alerts to the Alertmanager running within the same component.
+  alertmanager_url: http://localhost:8080/alertmanager
+
+ruler_storage:
+  s3:
+    bucket_name:       mimir-ruler
+
+query_scheduler:
+  service_discovery_mode: "ring"
+
+alertmanager:
+  data_dir: /data/alertmanager
+  fallback_config_file: ./config/alertmanager-fallback-config.yaml
+  external_url: http://localhost:8006/alertmanager
+
+alertmanager_storage:
+  s3:
+    bucket_name: mimir-alertmanager
+
+runtime_config:
+  file: ./config/runtime.yaml

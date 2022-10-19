@@ -8,7 +8,7 @@ package v1
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -23,6 +23,7 @@ import (
 	"github.com/opentracing-contrib/go-stdlib/nethttp"
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -60,7 +61,7 @@ func TestFrontend(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, 200, resp.StatusCode)
 
-		body, err := ioutil.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
 		require.NoError(t, err)
 
 		assert.Equal(t, "Hello World", string(body))
@@ -109,7 +110,7 @@ func TestFrontendPropagateTrace(t *testing.T) {
 		require.Equal(t, 200, resp.StatusCode)
 
 		defer resp.Body.Close()
-		_, err = ioutil.ReadAll(resp.Body)
+		_, err = io.ReadAll(resp.Body)
 		require.NoError(t, err)
 
 		// Query should do one call.
@@ -132,8 +133,8 @@ func TestFrontendCheckReady(t *testing.T) {
 			f := &Frontend{
 				log: log.NewNopLogger(),
 				requestQueue: queue.NewRequestQueue(5, 0,
-					prometheus.NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
-					prometheus.NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
+					promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+					promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 				),
 			}
 			for i := 0; i < tt.connectedClients; i++ {
@@ -201,7 +202,7 @@ func TestFrontendMetricsCleanup(t *testing.T) {
 		require.Equal(t, 200, resp.StatusCode)
 		defer resp.Body.Close()
 
-		body, err := ioutil.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
 		require.NoError(t, err)
 
 		assert.Equal(t, "Hello World", string(body))
