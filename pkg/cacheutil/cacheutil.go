@@ -10,7 +10,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/thanos-io/thanos/pkg/gate"
+	"github.com/grafana/mimir/pkg/util/gate"
 )
 
 // doWithBatch do func with batch and gate. batchSize==0 means one batch. gate==nil means no gate.

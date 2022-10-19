@@ -22,10 +22,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"gopkg.in/yaml.v2"
 
+	"github.com/grafana/mimir/pkg/util/extprom"
+	"github.com/grafana/mimir/pkg/util/gate"
 	"github.com/thanos-io/thanos/pkg/discovery/dns"
 	memcacheDiscovery "github.com/thanos-io/thanos/pkg/discovery/memcache"
-	"github.com/thanos-io/thanos/pkg/extprom"
-	"github.com/thanos-io/thanos/pkg/gate"
 	"github.com/thanos-io/thanos/pkg/model"
 )
 
