@@ -26,3 +26,12 @@ metaMonitoring:
           username: tenant-1
           passwordSecretName: my-secret
           passwordSecretKey: logs
+
+ingester:
+  zoneAwareReplication:
+    enabled: false
+store_gateway:
+  zoneAwareReplication:
+    enabled: false
+rollout_operator:
+  enabled: false

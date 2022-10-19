@@ -133,9 +133,11 @@ Query requirements can vary dramatically depending on query rate and query
 ranges. The values here satisfy a "usual" query load as seen from our
 production clusters at this scale.
 It is important to ensure that you run no more than one ingester replica
-per node so that a single node failure does not cause data loss. Zone aware
-replication can be configured to ensure data replication spans availability
-zones. Refer to [Zone Aware Replication]({{ template "chart.homepage" . }}operators-guide/configuring/configuring-zone-aware-replication/)
+per node so that a single node failure does not cause data loss. Zone-aware
+replication can be configured with values under `ingester.zoneAwareReplication`
+to ensure data replication spans availability
+zones. Refer to [Migrate from single zone to zone-aware replication with Helm]({{ template "chart.homepage" . }}/migration-guide/migrating-from-single-zone-with-helm.md) and
+[Zone-Aware Replication]({{ template "chart.homepage" . }}operators-guide/configure/configuring-zone-aware-replication/)
 for more information.
 Minio is no longer enabled and you are encouraged to use your cloud providers
 object storage service for production deployments.
@@ -154,9 +156,11 @@ Query requirements can vary dramatically depending on query rate and query
 ranges. The values here satisfy a "usual" query load as seen from our
 production clusters at this scale.
 It is important to ensure that you run no more than one ingester replica
-per node so that a single node failure does not cause data loss. Zone aware
-replication can be configured to ensure data replication spans availability
-zones. Refer to [Zone Aware Replication]({{ template "chart.homepage" . }}operators-guide/configuring/configuring-zone-aware-replication/)
+per node so that a single node failure does not cause data loss. Zone-aware
+replication can be configured with values under `ingester.zoneAwareReplication`
+to ensure data replication spans availability
+zones. Refer to [Migrate from single zone to zone-aware replication with Helm]({{ template "chart.homepage" . }}/migration-guide/migrating-from-single-zone-with-helm.md) and
+[Zone-Aware Replication]({{ template "chart.homepage" . }}operators-guide/configure/configuring-zone-aware-replication/)
 for more information.
 Minio is no longer enabled and you are encouraged to use your cloud providers
 object storage service for production deployments.

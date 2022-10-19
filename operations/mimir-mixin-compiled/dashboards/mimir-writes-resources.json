@@ -276,7 +276,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write))\"})",
+                        "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\"})",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{pod}}",
@@ -362,7 +362,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (cortex_ingester_memory_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write))\"})",
+                        "expr": "sum by(pod) (cortex_ingester_memory_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{pod}}",
@@ -763,7 +763,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write))\"})",
+                        "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{pod}}",

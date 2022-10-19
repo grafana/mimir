@@ -71,7 +71,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(rate(cortex_compactor_runs_started_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend))\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_compactor_runs_started_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "started",
@@ -79,7 +79,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "sum(rate(cortex_compactor_runs_completed_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend))\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_compactor_runs_completed_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "completed",
@@ -87,7 +87,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "sum(rate(cortex_compactor_runs_failed_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend))\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_compactor_runs_failed_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "failed",
@@ -164,7 +164,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "(\n  cortex_compactor_tenants_processing_succeeded{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend))\"} +\n  cortex_compactor_tenants_processing_failed{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend))\"} +\n  cortex_compactor_tenants_skipped{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend))\"}\n)\n/\ncortex_compactor_tenants_discovered{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend))\"}\n",
+                        "expr": "(\n  cortex_compactor_tenants_processing_succeeded{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"} +\n  cortex_compactor_tenants_processing_failed{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"} +\n  cortex_compactor_tenants_skipped{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"}\n)\n/\ncortex_compactor_tenants_discovered{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"}\n",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{pod}}",
@@ -325,7 +325,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "max by(pod)\n(\n  (time() * (max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend))\"}[1h]) !=bool 0))\n  -\n  max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend))\"}[1h])\n)\n",
+                        "expr": "max by(pod)\n(\n  (time() * (max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"}[1h]) !=bool 0))\n  -\n  max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"}[1h])\n)\n",
                         "format": "table",
                         "instant": true,
                         "interval": "",
@@ -551,7 +551,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "max by(pod)\n(\n  (time() * (max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend))\"}[1h]) !=bool 0))\n  -\n  max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend))\"}[1h])\n)\n",
+                        "expr": "max by(pod)\n(\n  (time() * (max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"}[1h]) !=bool 0))\n  -\n  max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"}[1h])\n)\n",
                         "format": "table",
                         "instant": true,
                         "intervalFactor": 2,
@@ -701,7 +701,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(rate(prometheus_tsdb_compactions_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend))\"}[$__rate_interval]))",
+                        "expr": "sum(rate(prometheus_tsdb_compactions_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "compactions",
@@ -778,7 +778,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "histogram_quantile(0.99, sum(rate(prometheus_tsdb_compaction_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend))\"}[$__rate_interval])) by (le)) * 1e3",
+                        "expr": "histogram_quantile(0.99, sum(rate(prometheus_tsdb_compaction_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])) by (le)) * 1e3",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "99th Percentile",
@@ -786,7 +786,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "histogram_quantile(0.50, sum(rate(prometheus_tsdb_compaction_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend))\"}[$__rate_interval])) by (le)) * 1e3",
+                        "expr": "histogram_quantile(0.50, sum(rate(prometheus_tsdb_compaction_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])) by (le)) * 1e3",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "50th Percentile",
@@ -794,7 +794,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "sum(rate(prometheus_tsdb_compaction_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend))\"}[$__rate_interval])) * 1e3 / sum(rate(prometheus_tsdb_compaction_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend))\"}[$__rate_interval]))",
+                        "expr": "sum(rate(prometheus_tsdb_compaction_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])) * 1e3 / sum(rate(prometheus_tsdb_compaction_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "Average",
@@ -882,7 +882,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "avg(max by(user) (cortex_bucket_blocks_count{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend))\"}))",
+                        "expr": "avg(max by(user) (cortex_bucket_blocks_count{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"}))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "avg",
@@ -959,7 +959,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "topk(10, max by(user) (cortex_bucket_blocks_count{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend))\"}))",
+                        "expr": "topk(10, max by(user) (cortex_bucket_blocks_count{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"}))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{user}}",
@@ -1047,7 +1047,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(rate(cortex_compactor_blocks_marked_for_deletion_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend))\"}[$__rate_interval]))\n",
+                        "expr": "sum(rate(cortex_compactor_blocks_marked_for_deletion_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "blocks",
@@ -1126,7 +1126,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(rate(cortex_compactor_blocks_cleaned_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend))\"}[$__rate_interval]))\n",
+                        "expr": "sum(rate(cortex_compactor_blocks_cleaned_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "successful",
@@ -1134,7 +1134,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "sum(rate(cortex_compactor_block_cleanup_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend))\"}[$__rate_interval]))\n",
+                        "expr": "sum(rate(cortex_compactor_block_cleanup_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "failed",
@@ -1225,7 +1225,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(rate(cortex_compactor_meta_syncs_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend))\"}[$__rate_interval]))\n-\nsum(rate(cortex_compactor_meta_sync_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend))\"}[$__rate_interval]))\n",
+                        "expr": "sum(rate(cortex_compactor_meta_syncs_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n-\nsum(rate(cortex_compactor_meta_sync_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "successful",
@@ -1233,7 +1233,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "sum(rate(cortex_compactor_meta_sync_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend))\"}[$__rate_interval]))\n",
+                        "expr": "sum(rate(cortex_compactor_meta_sync_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))\n",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "failed",
@@ -1309,7 +1309,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "histogram_quantile(0.99, sum(rate(cortex_compactor_meta_sync_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend))\"}[$__rate_interval])) by (le)) * 1e3",
+                        "expr": "histogram_quantile(0.99, sum(rate(cortex_compactor_meta_sync_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])) by (le)) * 1e3",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "99th Percentile",
@@ -1317,7 +1317,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "histogram_quantile(0.50, sum(rate(cortex_compactor_meta_sync_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend))\"}[$__rate_interval])) by (le)) * 1e3",
+                        "expr": "histogram_quantile(0.50, sum(rate(cortex_compactor_meta_sync_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])) by (le)) * 1e3",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "50th Percentile",
@@ -1325,7 +1325,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "sum(rate(cortex_compactor_meta_sync_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend))\"}[$__rate_interval])) * 1e3 / sum(rate(cortex_compactor_meta_sync_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend))\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_compactor_meta_sync_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval])) * 1e3 / sum(rate(cortex_compactor_meta_sync_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\"}[$__rate_interval]))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "Average",
@@ -2237,7 +2237,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_kv_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend))\", kv_name=~\".+\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-z]+)\"))\n",
+                        "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_kv_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\", kv_name=~\".+\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-z]+)\"))\n",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{status}}",
@@ -2313,7 +2313,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "histogram_quantile(0.99, sum(rate(cortex_kv_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend))\", kv_name=~\".+\"}[$__rate_interval])) by (le)) * 1e3",
+                        "expr": "histogram_quantile(0.99, sum(rate(cortex_kv_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\", kv_name=~\".+\"}[$__rate_interval])) by (le)) * 1e3",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "99th Percentile",
@@ -2321,7 +2321,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "histogram_quantile(0.50, sum(rate(cortex_kv_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend))\", kv_name=~\".+\"}[$__rate_interval])) by (le)) * 1e3",
+                        "expr": "histogram_quantile(0.50, sum(rate(cortex_kv_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\", kv_name=~\".+\"}[$__rate_interval])) by (le)) * 1e3",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "50th Percentile",
@@ -2329,7 +2329,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "sum(rate(cortex_kv_request_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend))\", kv_name=~\".+\"}[$__rate_interval])) * 1e3 / sum(rate(cortex_kv_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend))\", kv_name=~\".+\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_kv_request_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\", kv_name=~\".+\"}[$__rate_interval])) * 1e3 / sum(rate(cortex_kv_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir|mimir-backend.*))\", kv_name=~\".+\"}[$__rate_interval]))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "Average",

@@ -1506,6 +1506,7 @@ Common **causes**:
 - You are running multiple Prometheus instances pushing the same metrics and [your high-availability tracker is not properly configured for deduplication]({{< relref "../configure/configuring-high-availability-deduplication.md" >}}).
 - Prometheus relabelling has been configured and it causes series to clash after the relabelling. Check the error message for information about which series has received a sample out of order.
 - A Prometheus instance was restarted, and it pushed all data from its Write-Ahead Log to remote write upon restart, some of which has already been pushed and ingested. This is normal and can be ignored.
+- Prometheus and Mimir have the same recording rule, which generates the exact same series in both places and causes either the remote write or the rule evaluation to fail randomly, depending on timing.
 
 > **Note**: You can learn more about out of order samples in Prometheus, in the blog post [Debugging out of order samples](https://www.robustperception.io/debugging-out-of-order-samples/).
 

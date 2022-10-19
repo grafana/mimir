@@ -276,7 +276,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read))\"})",
+                        "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"})",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{pod}}",
@@ -572,7 +572,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|mimir-backend))\"})",
+                        "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|mimir-backend.*))\"})",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{pod}}",
@@ -868,7 +868,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir|mimir-read))\"})",
+                        "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir|mimir-read.*))\"})",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{pod}}",
@@ -1059,7 +1059,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write))\"})",
+                        "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{pod}}",
@@ -1367,7 +1367,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend))\"})",
+                        "expr": "sum by(pod) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"})",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{pod}}",
@@ -1665,7 +1665,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend))\"})",
+                        "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"})",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{pod}}",
@@ -1856,7 +1856,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend))\"})",
+                        "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"})",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{pod}}",

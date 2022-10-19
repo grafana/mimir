@@ -17,3 +17,8 @@ dependencies:
     version: 0.2.5
     repository: https://grafana.github.io/helm-charts
     condition: metaMonitoring.grafanaAgent.installOperator
+  - name: rollout-operator
+    alias: rollout_operator
+    repository: https://grafana.github.io/helm-charts
+    version: 0.1.2
+    condition: rollout_operator.enabled

@@ -11,6 +11,7 @@
 * [ENHANCEMENT] Query-frontend: truncate queries based on the configured creation grace period (`--validation.create-grace-period`) to avoid querying too far into the future. #3172
 * [ENHANCEMENT] Ingester: Reduce activity tracker memory allocation. #3203
 * [ENHANCEMENT] Query-frontend: Log more detailed information in the case of a failed query. #3190
+* [ENHANCEMENT] Compactor: Add new `cortex_compactor_block_max_time_delta_seconds` histogram for detecting if compaction of blocks is lagging behind. #3240
 * [BUGFIX] Flusher: Add `Overrides` as a dependency to prevent panics when starting with `-target=flusher`. #3151
 
 ### Mixin
@@ -21,6 +22,7 @@
 * [ENHANCEMENT] Dashboards: Remove the "Instance Mapper" row from the "Alertmanager Resources Dashboard". This is a Grafana Cloud specific service and not relevant for external users. #3152
 * [ENHANCEMENT] Dashboards: Add "remote read", "metadata", and "exemplar" queries to "Mimir / Overview" dashboard. #3245
 * [ENHANCEMENT] Dashboards: Use non-red colors for non-error series in the "Mimir / Overview" dashboard. #3246
+* [ENHANCEMENT] Dashboards: Add support to multi-zone deployments for the experimental read-write deployment mode. #3254
 * [BUGFIX] Dashboards: Fix legend showing `persistentvolumeclaim` when using `deployment_type=baremetal` for `Disk space utilization` panels. #3173
 
 ### Jsonnet
