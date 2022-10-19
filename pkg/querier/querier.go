@@ -20,7 +20,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/thanos-io/thanos/pkg/strutil"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/dskit/tenant"
@@ -341,7 +340,7 @@ func (q querier) LabelValues(name string, matchers ...*labels.Matcher) ([]string
 		return nil, nil, err
 	}
 
-	return strutil.MergeSlices(sets...), warnings, nil
+	return util.MergeSlices(sets...), warnings, nil
 }
 
 func (q querier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
@@ -381,7 +380,7 @@ func (q querier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warn
 		return nil, nil, err
 	}
 
-	return strutil.MergeSlices(sets...), warnings, nil
+	return util.MergeSlices(sets...), warnings, nil
 }
 
 func (querier) Close() error {

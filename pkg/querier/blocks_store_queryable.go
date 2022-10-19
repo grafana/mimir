@@ -29,7 +29,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/thanos-io/objstore"
-	"github.com/thanos-io/thanos/pkg/strutil"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 	grpc_metadata "google.golang.org/grpc/metadata"
@@ -385,7 +384,7 @@ func (q *blocksStoreQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, 
 		return nil, nil, err
 	}
 
-	return strutil.MergeSlices(resNameSets...), resWarnings, nil
+	return util.MergeSlices(resNameSets...), resWarnings, nil
 }
 
 func (q *blocksStoreQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
@@ -426,7 +425,7 @@ func (q *blocksStoreQuerier) LabelValues(name string, matchers ...*labels.Matche
 		return nil, nil, err
 	}
 
-	return strutil.MergeSlices(resValueSets...), resWarnings, nil
+	return util.MergeSlices(resValueSets...), resWarnings, nil
 }
 
 func (q *blocksStoreQuerier) Close() error {
