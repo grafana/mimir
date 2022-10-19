@@ -70,7 +70,7 @@ data:
         admin_api:
           url: http://test-enterprise-configmap-values-mimir-admin-api.citestns.svc:8080
         alertmanager:
-          url: http://test-enterprise-configmap-values-mimir-alertmanager.citestns.svc:8080
+          url: http://test-enterprise-configmap-values-mimir-alertmanager-headless.citestns.svc:8080
         compactor:
           url: http://test-enterprise-configmap-values-mimir-compactor.citestns.svc:8080
         default:
@@ -78,13 +78,13 @@ data:
         distributor:
           url: dns:///test-enterprise-configmap-values-mimir-distributor-headless.citestns.svc.cluster.local:9095
         ingester:
-          url: http://test-enterprise-configmap-values-mimir-ingester.citestns.svc:8080
+          url: http://test-enterprise-configmap-values-mimir-ingester-headless.citestns.svc:8080
         query_frontend:
           url: http://test-enterprise-configmap-values-mimir-query-frontend.citestns.svc:8080
         ruler:
           url: http://test-enterprise-configmap-values-mimir-ruler.citestns.svc:8080
         store_gateway:
-          url: http://test-enterprise-configmap-values-mimir-store-gateway.citestns.svc:8080
+          url: http://test-enterprise-configmap-values-mimir-store-gateway-headless.citestns.svc:8080
     ingester:
       ring:
         final_sleep: 0s

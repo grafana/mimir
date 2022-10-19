@@ -1,0 +1,13 @@
+diff -c -r step3/mimir-distributed/templates/querier/querier-dep.yaml step4/mimir-distributed/templates/querier/querier-dep.yaml
+*** step3/mimir-distributed/templates/querier/querier-dep.yaml
+--- step4/mimir-distributed/templates/querier/querier-dep.yaml
+***************
+*** 47,53 ****
+              - "-target=querier"
+              - "-config.expand-env=true"
+              - "-config.file=/etc/mimir/mimir.yaml"
+-             - "-ingester.ring.zone-awareness-enabled=false"
+            volumeMounts:
+              - name: config
+                mountPath: /etc/mimir
+--- 47,52 ----

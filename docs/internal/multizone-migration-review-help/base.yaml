@@ -1,0 +1,15 @@
+alertmanager:
+  zoneAwareReplication:
+    enabled: false
+ingester:
+  zoneAwareReplication:
+    enabled: false
+store_gateway:
+  zoneAwareReplication:
+    enabled: false
+rollout_operator:
+  enabled: false
+
+metaMonitoring:
+  serviceMonitor:
+    enabled: true

@@ -25,6 +25,24 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [CHANGE] **breaking change** **Data loss without action.** Enables [zone-aware replication](https://grafana.com/docs/mimir/latest/operators-guide/configure/configuring-zone-aware-replication/) for ingesters and store-gateways by default. #2778
+  - If you are **upgrading** an existing installation:
+    - Turn off zone-aware replication, by setting the following values:
+      ```yaml
+      ingester:
+        zoneAwareReplication:
+          enabled: false
+      store_gateway:
+        zoneAwareReplication:
+          enabled: false
+      rollout_operator:
+        enabled: false
+      ```
+    - After the upgrade you can migrate to the new zone-aware replication setup, see [Migrate from single zone to zone-aware replication with Helm](https://grafana.com/docs/mimir/latest/migration-guide/migrating-from-single-zone-with-helm/) guide.
+  - If you are **installing** the chart:
+    - Ingesters and store-gateways are installed with 3 logical zones, which means both ingesters and store-gateways start 3 replicas each.
+* [CHANGE] Nginx: uses the headless service of alertmanager, ingester and store-gateway as backends, because there are 3 separate services for each zone. #2778
+* [CHANGE] Gateway: uses the headless service of alertmanager as backend, because there are 3 separate services for each zone. #2778
 * [ENHANCEMENT] Metamonitoring: If enabled and no URL is configured, then metamonitoring metrics will be sent to
   Mimir under the `metamonitoring` tenant; this enhancement does not apply to GEM. #3176
 * [ENHANCEMENT] Improve default rollout strategies. Now distributor, overrides_exporter, querier, query_frontend, admin_api, gateway, and graphite components can be upgraded more quickly and also can be rolled out with a single replica without downtime. #3029

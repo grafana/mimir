@@ -29,7 +29,6 @@ spec:
         name: storage
       spec:
         accessModes:
-          
           - ReadWriteOnce
         resources:
           requests:
