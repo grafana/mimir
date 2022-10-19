@@ -54,7 +54,7 @@ You can configure Mimir HA deduplication globally or at the tenant level.
 
 Before you begin, make sure that Mimir was installed using the mimir-distributed Helm chart.
 
-1. Add the following configuration to your `custom.yaml` file:
+1. Merge the following configuration to your `custom.yaml` file:
 
 ```yaml
 mimir:
@@ -84,7 +84,7 @@ mimir:
 
 Before you begin, make sure that Mimir was installed using the mimir-distributed Helm chart.
 
-1. Add the following configuration to the `custom.yaml` file:
+1. Merge the following configuration to the `custom.yaml` file:
 
 ```yaml
 mimir:
