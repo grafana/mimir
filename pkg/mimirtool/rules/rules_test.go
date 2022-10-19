@@ -58,7 +58,7 @@ func TestAggregateBy(t *testing.T) {
 									Alert: yaml.Node{Value: "SkipWithout"},
 									Expr: yaml.Node{
 										Value: `
-											min without(alertmanager) (
+											min without (alertmanager) (
 												rate(prometheus_notifications_errors_total{job="default/prometheus"}[5m])
 											/
 												rate(prometheus_notifications_sent_total{job="default/prometheus"}[5m])
@@ -72,7 +72,7 @@ func TestAggregateBy(t *testing.T) {
 					},
 				},
 			},
-			expectedExpr: []string{`min without(alertmanager) (rate(prometheus_notifications_errors_total{job="default/prometheus"}[5m]) / rate(prometheus_notifications_sent_total{job="default/prometheus"}[5m])) * 100 > 3`},
+			expectedExpr: []string{`min without (alertmanager) (rate(prometheus_notifications_errors_total{job="default/prometheus"}[5m]) / rate(prometheus_notifications_sent_total{job="default/prometheus"}[5m])) * 100 > 3`},
 			count:        1, modified: 1, expect: nil,
 		},
 		{
@@ -98,7 +98,7 @@ func TestAggregateBy(t *testing.T) {
 					},
 				},
 			},
-			expectedExpr: []string{"sum by(namespace, job, cluster) (rate(cortex_prometheus_rule_evaluation_failures_total[1m])) / sum by(namespace, job, cluster) (rate(cortex_prometheus_rule_evaluations_total[1m])) > 0.01"},
+			expectedExpr: []string{"sum by (namespace, job, cluster) (rate(cortex_prometheus_rule_evaluation_failures_total[1m])) / sum by (namespace, job, cluster) (rate(cortex_prometheus_rule_evaluations_total[1m])) > 0.01"},
 			count:        1, modified: 1, expect: nil,
 		},
 		{
@@ -123,7 +123,7 @@ func TestAggregateBy(t *testing.T) {
 					},
 				},
 			},
-			expectedExpr: []string{`count by(cluster) (count by(gitVersion, cluster) (label_replace(kubernetes_build_info{job!~"kube-dns|coredns"}, "gitVersion", "$1", "gitVersion", "(v[0-9]*.[0-9]*.[0-9]*).*"))) > 1`},
+			expectedExpr: []string{`count by (cluster) (count by (gitVersion, cluster) (label_replace(kubernetes_build_info{job!~"kube-dns|coredns"}, "gitVersion", "$1", "gitVersion", "(v[0-9]*.[0-9]*.[0-9]*).*"))) > 1`},
 			count:        1, modified: 1, expect: nil,
 		},
 		{
@@ -136,14 +136,14 @@ func TestAggregateBy(t *testing.T) {
 							Rules: []rulefmt.RuleNode{
 								{
 									Alert: yaml.Node{Value: "VectorMatching"},
-									Expr:  yaml.Node{Value: `count by(cluster, node) (sum by(node, cpu, cluster) (node_cpu_seconds_total{job="default/node-exporter"} * on(namespace, instance) group_left(node) node_namespace_pod:kube_pod_info:))`},
+									Expr:  yaml.Node{Value: `count by (cluster, node) (sum by (node, cpu, cluster) (node_cpu_seconds_total{job="default/node-exporter"} * on (namespace, instance) group_left (node) node_namespace_pod:kube_pod_info:))`},
 								},
 							},
 						},
 					},
 				},
 			},
-			expectedExpr: []string{`count by(cluster, node) (sum by(node, cpu, cluster) (node_cpu_seconds_total{job="default/node-exporter"} * on(namespace, instance, cluster) group_left(node) node_namespace_pod:kube_pod_info:))`},
+			expectedExpr: []string{`count by (cluster, node) (sum by (node, cpu, cluster) (node_cpu_seconds_total{job="default/node-exporter"} * on (namespace, instance, cluster) group_left (node) node_namespace_pod:kube_pod_info:))`},
 			count:        1, modified: 1, expect: nil,
 		},
 		{
@@ -159,7 +159,7 @@ func TestAggregateBy(t *testing.T) {
 										Value: "CountAggregation",
 									},
 									Expr: yaml.Node{
-										Value: `count by(namespace) (test_series) > 1`,
+										Value: `count by (namespace) (test_series) > 1`,
 									},
 								},
 							},
@@ -173,7 +173,7 @@ func TestAggregateBy(t *testing.T) {
 										Value: "CountSkipped",
 									},
 									Expr: yaml.Node{
-										Value: `count by(namespace) (test_series) > 1`,
+										Value: `count by (namespace) (test_series) > 1`,
 									},
 								},
 							},
@@ -184,7 +184,7 @@ func TestAggregateBy(t *testing.T) {
 			applyTo: func(group rwrulefmt.RuleGroup, rule rulefmt.RuleNode) bool {
 				return group.Name != "CountSkipped"
 			},
-			expectedExpr: []string{`count by(namespace, cluster) (test_series) > 1`, `count by(namespace) (test_series) > 1`},
+			expectedExpr: []string{`count by (namespace, cluster) (test_series) > 1`, `count by (namespace) (test_series) > 1`},
 			count:        2, modified: 1, expect: nil,
 		},
 	}
@@ -227,7 +227,7 @@ func TestLintExpressions(t *testing.T) {
 		{
 			name:     "it lints aggregations expressions",
 			expr:     "avg (rate(prometheus_notifications_queue_capacity[5m])) by (cluster, job)",
-			expected: "avg by(cluster, job) (rate(prometheus_notifications_queue_capacity[5m]))",
+			expected: "avg by (cluster, job) (rate(prometheus_notifications_queue_capacity[5m]))",
 			count:    1, modified: 1,
 			err: "",
 		},
@@ -240,8 +240,8 @@ func TestLintExpressions(t *testing.T) {
 		},
 		{
 			name:     "with a complex expression",
-			expr:     `sum by(cluster, namespace) (sum_over_time((rate(loki_distributor_bytes_received_total{job=~".*/distributor"}[1m]) * 60)[1h:1m])) / 1e+09 / 5 * 1 > (sum by(cluster, namespace) (memcached_limit_bytes{job=~".+/memcached"}) / 1e+09)`,
-			expected: `sum by(cluster, namespace) (sum_over_time((rate(loki_distributor_bytes_received_total{job=~".*/distributor"}[1m]) * 60)[1h:1m])) / 1e+09 / 5 * 1 > (sum by(cluster, namespace) (memcached_limit_bytes{job=~".+/memcached"}) / 1e+09)`,
+			expr:     `sum by (cluster, namespace) (sum_over_time((rate(loki_distributor_bytes_received_total{job=~".*/distributor"}[1m]) * 60)[1h:1m])) / 1e+09 / 5 * 1 > (sum by (cluster, namespace) (memcached_limit_bytes{job=~".+/memcached"}) / 1e+09)`,
+			expected: `sum by (cluster, namespace) (sum_over_time((rate(loki_distributor_bytes_received_total{job=~".*/distributor"}[1m]) * 60)[1h:1m])) / 1e+09 / 5 * 1 > (sum by (cluster, namespace) (memcached_limit_bytes{job=~".+/memcached"}) / 1e+09)`,
 			count:    1, modified: 0,
 			err: "",
 		},

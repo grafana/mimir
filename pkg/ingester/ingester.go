@@ -1591,10 +1591,8 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		EnableMemorySnapshotOnShutdown: i.cfg.BlocksStorageConfig.TSDB.MemorySnapshotOnShutdown,
 		IsolationDisabled:              true,
 		HeadChunksWriteQueueSize:       i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteQueueSize,
-		AllowOverlappingQueries:        true,                 // We can have overlapping blocks from past or out-of-order enabled during runtime.
 		AllowOverlappingCompaction:     false,                // always false since Mimir only uploads lvl 1 compacted blocks
 		OutOfOrderTimeWindow:           oooTW.Milliseconds(), // The unit must be same as our timestamps.
-		OutOfOrderCapMin:               int64(i.cfg.BlocksStorageConfig.TSDB.OutOfOrderCapacityMin),
 		OutOfOrderCapMax:               int64(i.cfg.BlocksStorageConfig.TSDB.OutOfOrderCapacityMax),
 	}, nil)
 	if err != nil {
