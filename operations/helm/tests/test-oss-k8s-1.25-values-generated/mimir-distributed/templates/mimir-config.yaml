@@ -13,7 +13,7 @@ data:
   mimir.yaml: |
     
     activity_tracker:
-      filepath: /data/metrics-activity.log
+      filepath: /active-query-tracker/activity.log
     alertmanager:
       data_dir: /data
       enable_api: true
@@ -75,6 +75,7 @@ data:
         num_tokens: 512
         tokens_file_path: /data/tokens
         unregister_on_shutdown: false
+        zone_awareness_enabled: true
     ingester_client:
       grpc_client_config:
         max_recv_msg_size: 104857600
@@ -111,4 +112,7 @@ data:
       grpc_server_max_connection_idle: 1m
     store_gateway:
       sharding_ring:
+        kvstore:
+          prefix: multi-zone/
         tokens_file_path: /data/tokens
+        zone_awareness_enabled: true

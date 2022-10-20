@@ -28,7 +28,6 @@ spec:
         name: storage
       spec:
         accessModes:
-          
           - ReadWriteOnce
         resources:
           requests:
@@ -46,7 +45,12 @@ spec:
     spec:
       serviceAccountName: test-enterprise-k8s-1.25-values-mimir
       securityContext:
-        {}
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
       initContainers:
         []
       nodeSelector:
@@ -78,6 +82,8 @@ spec:
         - name: runtime-config
           configMap:
             name: test-enterprise-k8s-1.25-values-mimir-runtime
+        - name: active-queries
+          emptyDir: {}
       containers:
         - name: compactor
           imagePullPolicy: IfNotPresent
@@ -94,6 +100,8 @@ spec:
               mountPath: /var/mimir
             - name: storage
               mountPath: "/data"
+            - name: active-queries
+              mountPath: /active-query-tracker
           ports:
             - name: http-metrics
               containerPort: 8080
@@ -116,6 +124,10 @@ spec:
               cpu: 100m
               memory: 512Mi
           securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
             readOnlyRootFilesystem: true
           env:
           envFrom:
