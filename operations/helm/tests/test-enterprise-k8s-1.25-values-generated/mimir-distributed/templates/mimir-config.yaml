@@ -13,7 +13,7 @@ data:
   mimir.yaml: |
     
     activity_tracker:
-      filepath: /data/metrics-activity.log
+      filepath: /active-query-tracker/activity.log
     admin_api:
       leader_election:
         enabled: true
@@ -70,7 +70,7 @@ data:
         admin_api:
           url: http://test-enterprise-k8s-1.25-values-mimir-admin-api.citestns.svc:8080
         alertmanager:
-          url: http://test-enterprise-k8s-1.25-values-mimir-alertmanager.citestns.svc:8080
+          url: http://test-enterprise-k8s-1.25-values-mimir-alertmanager-headless.citestns.svc:8080
         compactor:
           url: http://test-enterprise-k8s-1.25-values-mimir-compactor.citestns.svc:8080
         default:
@@ -78,19 +78,20 @@ data:
         distributor:
           url: dns:///test-enterprise-k8s-1.25-values-mimir-distributor-headless.citestns.svc.cluster.local:9095
         ingester:
-          url: http://test-enterprise-k8s-1.25-values-mimir-ingester.citestns.svc:8080
+          url: http://test-enterprise-k8s-1.25-values-mimir-ingester-headless.citestns.svc:8080
         query_frontend:
           url: http://test-enterprise-k8s-1.25-values-mimir-query-frontend.citestns.svc:8080
         ruler:
           url: http://test-enterprise-k8s-1.25-values-mimir-ruler.citestns.svc:8080
         store_gateway:
-          url: http://test-enterprise-k8s-1.25-values-mimir-store-gateway.citestns.svc:8080
+          url: http://test-enterprise-k8s-1.25-values-mimir-store-gateway-headless.citestns.svc:8080
     ingester:
       ring:
         final_sleep: 0s
         num_tokens: 512
         tokens_file_path: /data/tokens
         unregister_on_shutdown: false
+        zone_awareness_enabled: true
     ingester_client:
       grpc_client_config:
         max_recv_msg_size: 104857600
@@ -133,4 +134,7 @@ data:
       grpc_server_max_connection_idle: 1m
     store_gateway:
       sharding_ring:
+        kvstore:
+          prefix: multi-zone/
         tokens_file_path: /data/tokens
+        zone_awareness_enabled: true

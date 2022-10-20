@@ -45,6 +45,8 @@ spec:
             - "-target=query-scheduler"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            - "-server.grpc.keepalive.max-connection-age=2562047h" # 100000 days, effectively infinity
+            - "-server.grpc.keepalive.max-connection-age-grace=2562047h" # 100000 days, effectively infinity
           volumeMounts:
             - name: runtime-config
               mountPath: /var/mimir
@@ -54,6 +56,8 @@ spec:
               mountPath: /etc/mimir
             - name: storage
               mountPath: /data
+            - name: active-queries
+              mountPath: /active-query-tracker
           ports:
             - name: http-metrics
               containerPort: 8080
@@ -106,4 +110,6 @@ spec:
           configMap:
             name: test-enterprise-k8s-1.25-values-mimir-runtime
         - name: storage
+          emptyDir: {}
+        - name: active-queries
           emptyDir: {}

@@ -53,6 +53,8 @@ spec:
             - name: storage
               mountPath: "/data"
               subPath: 
+            - name: active-queries
+              mountPath: /active-query-tracker
           ports:
             - name: http-metrics
               containerPort: 8080
@@ -95,4 +97,6 @@ spec:
           secret:
             secretName: test-enterprise-k8s-1.25-values-mimir-license
         - name: storage
+          emptyDir: {}
+        - name: active-queries
           emptyDir: {}
