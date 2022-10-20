@@ -87,6 +87,7 @@
     query_tee_enabled: false,
     query_tee_backend_endpoints: [],
     query_tee_backend_preferred: '',
+    query_tee_node_port: null,
 
     grpcConfig:: {
       'server.grpc.keepalive.min-time-between-pings': '10s',
