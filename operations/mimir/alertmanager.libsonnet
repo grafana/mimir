@@ -12,6 +12,7 @@
   alertmanager_args::
     $._config.usageStatsConfig +
     $._config.grpcConfig +
+    $._config.storageConfig +
     $._config.alertmanagerStorageConfig +
     {
       target: 'alertmanager',

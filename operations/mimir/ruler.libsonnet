@@ -6,10 +6,10 @@
     $._config.grpcConfig +
     $._config.storageConfig +
     $._config.blocksStorageConfig +
+    $._config.rulerStorageConfig +
     $._config.queryConfig +
     $._config.queryEngineConfig +
     $._config.ingesterRingClientConfig +
-    $._config.rulerStorageConfig +
     $._config.rulerLimitsConfig +
     $._config.queryBlocksStorageConfig +
     $.blocks_metadata_caching_config +
