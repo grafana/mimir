@@ -58,11 +58,11 @@ func (c *config) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&c.maxTime, "max-time", fmt.Sprintf("If set, only blocks with MaxTime <= this value are copied. The supported time format is %q.", time.RFC3339))
 	f.IntVar(&c.tenantConcurrency, "tenant-concurrency", 5, "How many tenants to process at once.")
 	f.IntVar(&c.blocksConcurrency, "block-concurrency", 5, "How many blocks to copy at once per tenant.")
-	f.DurationVar(&c.copyPeriod, "copy-period", 0, "How often to repeat the copy. If set to 0, copy is done once, and program stops. Otherwise program keeps running and copying blocks until terminated.")
+	f.DurationVar(&c.copyPeriod, "copy-period", 0, "How often to repeat the copy. If set to 0, copy is done once, and the program stops. Otherwise, the program keeps running and copying blocks until it is terminated.")
 	f.Var(&c.enabledUsers, "enabled-users", "If not empty, only blocks for these users are copied.")
 	f.Var(&c.disabledUsers, "disabled-users", "If not empty, blocks for these users are not copied.")
 	f.StringVar(&c.httpListen, "http-listen-address", ":8080", "HTTP listen address.")
-	f.BoolVar(&c.dryRun, "dry-run", false, "Don't perform copy, only log what would happen.")
+	f.BoolVar(&c.dryRun, "dry-run", false, "Don't perform copy; only log what would happen.")
 }
 
 type metrics struct {
