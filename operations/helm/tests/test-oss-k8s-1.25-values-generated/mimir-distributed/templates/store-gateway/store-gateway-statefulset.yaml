@@ -53,7 +53,12 @@ spec:
     spec:
       serviceAccountName: test-oss-k8s-1.25-values-mimir
       securityContext:
-        {}
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
       initContainers:
         []
       nodeSelector:
@@ -123,6 +128,10 @@ spec:
               cpu: 100m
               memory: 512Mi
           securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
             readOnlyRootFilesystem: true
           env:
           envFrom:
@@ -181,7 +190,12 @@ spec:
     spec:
       serviceAccountName: test-oss-k8s-1.25-values-mimir
       securityContext:
-        {}
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
       initContainers:
         []
       nodeSelector:
@@ -251,6 +265,10 @@ spec:
               cpu: 100m
               memory: 512Mi
           securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
             readOnlyRootFilesystem: true
           env:
           envFrom:
@@ -309,7 +327,12 @@ spec:
     spec:
       serviceAccountName: test-oss-k8s-1.25-values-mimir
       securityContext:
-        {}
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
       initContainers:
         []
       nodeSelector:
@@ -379,6 +402,10 @@ spec:
               cpu: 100m
               memory: 512Mi
           securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
             readOnlyRootFilesystem: true
           env:
           envFrom:
