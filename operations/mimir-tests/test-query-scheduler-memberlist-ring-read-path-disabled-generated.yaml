@@ -812,6 +812,8 @@ spec:
         - -alertmanager.sharding-ring.store=memberlist
         - -alertmanager.storage.path=/data
         - -alertmanager.web.external-url=http://test/alertmanager
+        - -common.storage.backend=s3
+        - -common.storage.s3.endpoint=s3.dualstack.eu-west-1.amazonaws.com
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml

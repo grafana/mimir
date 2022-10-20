@@ -802,6 +802,7 @@ spec:
         - -alertmanager.sharding-ring.store=memberlist
         - -alertmanager.storage.path=/data
         - -alertmanager.web.external-url=http://test/alertmanager
+        - -common.storage.backend=gcs
         - -memberlist.bind-port=7946
         - -memberlist.cluster-label=my-cluster-label
         - -memberlist.cluster-label-verification-disabled=true
