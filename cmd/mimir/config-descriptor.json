@@ -11287,6 +11287,17 @@
           "fieldFlag": "usage-stats.enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "installation_mode",
+          "required": false,
+          "desc": "Installation mode. Supported values: custom, helm, jsonnet.",
+          "fieldValue": null,
+          "fieldDefaultValue": "custom",
+          "fieldFlag": "usage-stats.installation-mode",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
