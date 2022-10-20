@@ -25,7 +25,6 @@
 * [CHANGE] Querier: removed the deprecated configuration option `-querier.shuffle-sharding-ingesters-lookback-period`. The value of `-querier.query-ingesters-within` is now used internally for shuffle sharding lookback, while you can use `-querier.shuffle-sharding-ingesters-enabled` to enable or disable shuffle sharding on the read path. #3111
 * [CHANGE] Memberlist: cluster label verification feature (`-memberlist.cluster-label` and `-memberlist.cluster-label-verification-disabled`) is now marked as stable. #3108
 * [CHANGE] Distributor: only single per-tenant forwarding endpoint can be configured now. Support for per-rule endpoint has been removed. #3095
-* [CHANGE] Query-frontend: truncate queries based on the configured blocks retention period (`-compactor.blocks-retention-period`) to avoid querying past this period. #3134
 * [FEATURE] Query-scheduler: added an experimental ring-based service discovery support for the query-scheduler. Refer to [query-scheduler configuration](https://grafana.com/docs/mimir/next/operators-guide/architecture/components/query-scheduler/#configuration) for more information. #2957
 * [FEATURE] Introduced the experimental endpoint `/api/v1/user_limits` exposed by all components that load runtime configuration. This endpoint exposes realtime limits for the authenticated tenant, in JSON format. #2864 #3017
 * [FEATURE] Query-scheduler: added the experimental configuration option `-query-scheduler.max-used-instances` to restrict the number of query-schedulers effectively used regardless how many replicas are running. This feature can be useful when using the experimental read-write deployment mode. #3005
@@ -90,6 +89,7 @@
 * [ENHANCEMENT] Ingester: improved the performance of label value cardinality endpoint. #3044
 * [ENHANCEMENT] Ruler: use backoff retry on remote evaluation #3098
 * [ENHANCEMENT] Query-frontend: Include multiple tenant IDs in query logs when present instead of dropping them. #3125
+* [ENHANCEMENT] Query-frontend: truncate queries based on the configured blocks retention period (`-compactor.blocks-retention-period`) to avoid querying past this period. #3134
 * [ENHANCEMENT] Alertmanager: reduced memory utilization in Mimir clusters with a large number of tenants. #3143
 * [ENHANCEMENT] Store-gateway: added extra span logging to improve observability. #3131
 * [BUGFIX] Querier: Fix 400 response while handling streaming remote read. #2963
