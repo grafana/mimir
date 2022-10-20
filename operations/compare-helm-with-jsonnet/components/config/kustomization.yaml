@@ -77,6 +77,8 @@ patches:
     patch: |-
       - op: remove
         path: /config/store_gateway/sharding_ring/tokens_file_path
+      - op: remove
+        path: /config/store_gateway/sharding_ring/wait_stability_min_duration
 
   - target:
       kind: MimirConfig
