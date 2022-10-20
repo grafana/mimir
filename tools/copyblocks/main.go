@@ -236,7 +236,7 @@ func copyBlocks(ctx context.Context, cfg config, logger log.Logger, m *metrics) 
 
 			// If the min time filter is set, only blocks with MinTime >= the configured value are copied.
 			if filterMinTime := time.Time(cfg.minTime); !filterMinTime.IsZero() && blockMinTime.Before(filterMinTime) {
-				level.Debug(logger).Log("msg", "skipping block, block min time is lower than the configured min time filter", "configured_min_time", filterMinTime)
+				level.Debug(logger).Log("msg", "skipping block, block min time is less than the configured min time filter", "configured_min_time", filterMinTime)
 				return nil
 			}
 
@@ -249,7 +249,7 @@ func copyBlocks(ctx context.Context, cfg config, logger log.Logger, m *metrics) 
 			if cfg.minBlockDuration > 0 {
 				blockDuration := time.Millisecond * time.Duration(blockMeta.MaxTime-blockMeta.MinTime)
 				if blockDuration < cfg.minBlockDuration {
-					level.Debug(logger).Log("msg", "skipping block, block duration is smaller than minimum duration", "block_duration", blockDuration, "configured_min_duration", cfg.minBlockDuration)
+					level.Debug(logger).Log("msg", "skipping block, block duration is less than the configured minimum duration", "block_duration", blockDuration, "configured_min_duration", cfg.minBlockDuration)
 					return nil
 				}
 			}
