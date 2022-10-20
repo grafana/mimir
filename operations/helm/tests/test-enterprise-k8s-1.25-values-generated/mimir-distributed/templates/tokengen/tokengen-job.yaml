@@ -43,6 +43,8 @@ spec:
               mountPath: /etc/mimir
             - name: license
               mountPath: /license
+            - name: active-queries
+              mountPath: /active-query-tracker
           env:
           envFrom:
           securityContext:
@@ -59,4 +61,6 @@ spec:
           secret:
             secretName: test-enterprise-k8s-1.25-values-mimir-license
         - name: storage
+          emptyDir: {}
+        - name: active-queries
           emptyDir: {}
