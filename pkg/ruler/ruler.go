@@ -30,9 +30,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/rulefmt"
-	"github.com/prometheus/prometheus/notifier"
 	promRules "github.com/prometheus/prometheus/rules"
-	"github.com/prometheus/prometheus/util/strutil"
 	"github.com/weaveworks/common/user"
 	"golang.org/x/sync/errgroup"
 
@@ -361,39 +359,6 @@ func (r *Ruler) stopping(_ error) error {
 		_ = services.StopManagerAndAwaitStopped(context.Background(), r.subservices)
 	}
 	return nil
-}
-
-type sender interface {
-	Send(alerts ...*notifier.Alert)
-}
-
-// SendAlerts implements a rules.NotifyFunc for a Notifier.
-// It filters any non-firing alerts from the input.
-//
-// Copied from Prometheus's main.go.
-func SendAlerts(n sender, externalURL string) promRules.NotifyFunc {
-	return func(ctx context.Context, expr string, alerts ...*promRules.Alert) {
-		var res []*notifier.Alert
-
-		for _, alert := range alerts {
-			a := &notifier.Alert{
-				StartsAt:     alert.FiredAt,
-				Labels:       alert.Labels,
-				Annotations:  alert.Annotations,
-				GeneratorURL: externalURL + strutil.TableLinkForExpression(expr),
-			}
-			if !alert.ResolvedAt.IsZero() {
-				a.EndsAt = alert.ResolvedAt
-			} else {
-				a.EndsAt = alert.ValidUntil
-			}
-			res = append(res, a)
-		}
-
-		if len(alerts) > 0 {
-			n.Send(res...)
-		}
-	}
 }
 
 var sep = []byte("/")
