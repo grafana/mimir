@@ -52,6 +52,13 @@ patches:
 
   - target:
       kind: MimirConfig
+      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|ruler|store-gateway|query-scheduler|query-frontend'
+    patch: |-
+      - op: remove
+        path: /config/frontend_worker
+
+  - target:
+      kind: MimirConfig
       name: 'alertmanager|compactor|store-gateway|query-frontend|query-scheduler|overrides-exporter'
     patch: |-
       - op: remove

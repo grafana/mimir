@@ -193,6 +193,8 @@ mimir:
       {{- end }}
 
     frontend_worker:
+      grpc_client_config:
+        max_send_msg_size: 419430400 # 400MiB
       {{- if .Values.query_scheduler.enabled }}
       scheduler_address: {{ template "mimir.fullname" . }}-query-scheduler-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" . }}
       {{- else }}
@@ -298,6 +300,7 @@ mimir:
       grpc_server_max_connection_age: 2m
       grpc_server_max_connection_age_grace: 5m
       grpc_server_max_connection_idle: 1m
+      http_server_write_timeout: 1m
 
     store_gateway:
       sharding_ring:
