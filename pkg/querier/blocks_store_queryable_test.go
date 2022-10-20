@@ -1932,7 +1932,7 @@ func mockSeriesResponseWithChunks(lbls labels.Labels, chunks ...storepb.AggrChun
 func mockStatsResponse(fetchedIndexBytes int) *storepb.SeriesResponse {
 	return &storepb.SeriesResponse{
 		Result: &storepb.SeriesResponse_Stats{
-			Stats: &storepb.Stats{FetchedIndexBytes: int64(fetchedIndexBytes)},
+			Stats: &storepb.Stats{FetchedIndexBytes: uint64(fetchedIndexBytes)},
 		},
 	}
 }

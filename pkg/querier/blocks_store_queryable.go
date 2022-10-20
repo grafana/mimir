@@ -728,7 +728,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 			mySeries := []*storepb.Series(nil)
 			myWarnings := storage.Warnings(nil)
 			myQueriedBlocks := []ulid.ULID(nil)
-			indexBytesFetched := int64(0)
+			indexBytesFetched := uint64(0)
 
 			for {
 				// Ensure the context hasn't been canceled in the meanwhile (eg. an error occurred
@@ -802,7 +802,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 			reqStats.AddFetchedSeries(uint64(numSeries))
 			reqStats.AddFetchedChunkBytes(uint64(chunkBytes))
 			reqStats.AddFetchedChunks(uint64(chunksFetched))
-			reqStats.AddFetchedIndexBytes(uint64(indexBytesFetched))
+			reqStats.AddFetchedIndexBytes(indexBytesFetched)
 
 			level.Debug(spanLog).Log("msg", "received series from store-gateway",
 				"instance", c.RemoteAddress(),
