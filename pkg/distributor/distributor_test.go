@@ -1653,7 +1653,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 						lbls.Set(fmt.Sprintf("name_%d", i), fmt.Sprintf("value_%d", i))
 					}
 
-					metrics[i] = lbls.Labels()
+					metrics[i] = lbls.Labels(nil)
 					samples[i] = mimirpb.Sample{
 						Value:       float64(i),
 						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
@@ -1679,7 +1679,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 						lbls.Set(fmt.Sprintf("name_%d", i), fmt.Sprintf("value_%d", i))
 					}
 
-					metrics[i] = lbls.Labels()
+					metrics[i] = lbls.Labels(nil)
 					samples[i] = mimirpb.Sample{
 						Value:       float64(i),
 						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
@@ -1704,7 +1704,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 						lbls.Set(fmt.Sprintf("name_%d", i), fmt.Sprintf("value_%d", i))
 					}
 
-					metrics[i] = lbls.Labels()
+					metrics[i] = lbls.Labels(nil)
 					samples[i] = mimirpb.Sample{
 						Value:       float64(i),
 						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
@@ -1732,7 +1732,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 					// Add a label with a very long name.
 					lbls.Set(fmt.Sprintf("xxx_%0.2000d", 1), "xxx")
 
-					metrics[i] = lbls.Labels()
+					metrics[i] = lbls.Labels(nil)
 					samples[i] = mimirpb.Sample{
 						Value:       float64(i),
 						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
@@ -1760,7 +1760,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 					// Add a label with a very long value.
 					lbls.Set("xxx", fmt.Sprintf("xxx_%0.2000d", 1))
 
-					metrics[i] = lbls.Labels()
+					metrics[i] = lbls.Labels(nil)
 					samples[i] = mimirpb.Sample{
 						Value:       float64(i),
 						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
@@ -1785,7 +1785,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 						lbls.Set(fmt.Sprintf("name_%d", i), fmt.Sprintf("value_%d", i))
 					}
 
-					metrics[i] = lbls.Labels()
+					metrics[i] = lbls.Labels(nil)
 					samples[i] = mimirpb.Sample{
 						Value:       float64(i),
 						TimestampMs: time.Now().Add(time.Hour).UnixNano() / int64(time.Millisecond),
