@@ -13,6 +13,7 @@
 ### Mimirtool
 
 ### Documentation
+* [ENHANCEMENT] Documented how to configure HA deduplication using Consul in a Mimir Helm deployment. #2972
 
 ### Tools
 
@@ -138,7 +139,6 @@
 ### Documentation
 
 * [ENHANCEMENT] Added documentation on how to configure storage retention. #2970
-* [ENHANCEMENT] Documented how to configure HA deduplication using Consul in a Mimir Helm deployment. #2972
 * [ENHANCEMENT] Improved gRPC clients config documentation. #3020
 * [ENHANCEMENT] Added documentation on how to manage alerting and recording rules. #2983
 * [ENHANCEMENT] Improved `MimirSchedulerQueriesStuck` runbook. #3006
