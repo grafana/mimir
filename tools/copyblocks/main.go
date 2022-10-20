@@ -447,7 +447,7 @@ func listPrefix(ctx context.Context, bkt *storage.BucketHandle, prefix string, r
 	for {
 		obj, err := it.Next()
 
-		if err == iterator.Done {
+		if errors.Is(err, iterator.Done) {
 			break
 		}
 
