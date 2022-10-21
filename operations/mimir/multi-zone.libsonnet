@@ -2,7 +2,7 @@
   local container = $.core.v1.container,
   local deployment = $.apps.v1.deployment,
   local statefulSet = $.apps.v1.statefulSet,
-  local podDisruptionBudget = $.policy.v1beta1.podDisruptionBudget,
+  local podDisruptionBudget = $.policy.v1.podDisruptionBudget,
   local volume = $.core.v1.volume,
   local roleBinding = $.rbac.v1.roleBinding,
   local role = $.rbac.v1.role,
@@ -146,8 +146,7 @@
     $.newIngesterZoneService($.ingester_zone_c_statefulset),
 
   ingester_rollout_pdb: if !$._config.multi_zone_ingester_enabled then null else
-    podDisruptionBudget.new() +
-    podDisruptionBudget.mixin.metadata.withName('ingester-rollout-pdb') +
+    podDisruptionBudget.new('ingester-rollout-pdb') +
     podDisruptionBudget.mixin.metadata.withLabels({ name: 'ingester-rollout-pdb' }) +
     podDisruptionBudget.mixin.spec.selector.withMatchLabels({ 'rollout-group': 'ingester' }) +
     podDisruptionBudget.mixin.spec.withMaxUnavailable(1),
@@ -283,8 +282,7 @@
     service.mixin.metadata.withLabels({ name: name }),
 
   store_gateway_rollout_pdb: if !$._config.multi_zone_store_gateway_enabled then null else
-    podDisruptionBudget.new() +
-    podDisruptionBudget.mixin.metadata.withName('store-gateway-rollout-pdb') +
+    podDisruptionBudget.new('store-gateway-rollout-pdb') +
     podDisruptionBudget.mixin.metadata.withLabels({ name: 'store-gateway-rollout-pdb' }) +
     podDisruptionBudget.mixin.spec.selector.withMatchLabels({ 'rollout-group': 'store-gateway' }) +
     podDisruptionBudget.mixin.spec.withMaxUnavailable(1),
