@@ -62,8 +62,8 @@ Make sure that the version of the `mimir-distributed` Helm chart that you have i
       the chart created for NGINX or the GEM gateway.
 
       Reusing the name allows the `helm` command to retain the existing resource instead of deleting it and
-      recreating it under a slightly different name. Retaining the existing resource means that the Ingress 
-      Controller in your Kubernetes cluster does not need to delete and recreate the backing resources for the 
+      recreating it under a slightly different name. Retaining the existing resource means that the Ingress
+      Controller in your Kubernetes cluster does not need to delete and recreate the backing resources for the
       Ingress, which may take time depending on which Ingress Controller you use.
 
       In the example that follows, the name of the Ingress
@@ -99,13 +99,13 @@ Make sure that the version of the `mimir-distributed` Helm chart that you have i
       ```
 
    3. Update the `service` section.
-      
-      If you are overriding anything in the `nginx.service` section, then copy the contents of `nginx.service` 
+
+      If you are overriding anything in the `nginx.service` section, then copy the contents of `nginx.service`
       section from `nginx` to `gateway`.
 
-      Next, override the resource name to the name of the Service resource that the chart created for NGINX. Reusing 
+      Next, override the resource name to the name of the Service resource that the chart created for NGINX. Reusing
       the name allows the `helm` command to retain the existing resource instead of deleting it and
-      recreating it under a slightly different name. Reusing the name also allows existing clients within the 
+      recreating it under a slightly different name. Reusing the name also allows existing clients within the
       Kubernetes cluster to keep using the nginx Service address without disruption.
 
       In the example that follows, the name of the Service
