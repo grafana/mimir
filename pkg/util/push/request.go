@@ -8,11 +8,11 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-// supplierFunc should return either a non-nil body or a non-nil error. The cleanup function can be nil.
-type supplierFunc func() (*mimirpb.WriteRequest, func(), error)
+// supplierFunc should return either a non-nil body or a non-nil error. The returned cleanup function can be nil.
+type supplierFunc func() (req *mimirpb.WriteRequest, cleanup func(), err error)
 
 // Request represents a push request. It allows lazy body reading from the underlying http request
-// and adding cleanups that should be done after the request is completed.
+// and adding cleanup functions that should be called after the request has been handled.
 type Request struct {
 	cleanups []func()
 
