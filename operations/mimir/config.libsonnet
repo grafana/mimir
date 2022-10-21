@@ -45,8 +45,22 @@
     // storage_backend will be used for all components that use block storage.
     // Each component can override this by specific CLI flags.
     // See https://grafana.com/docs/mimir/latest/operators-guide/configure/about-configurations/#common-configurations
-    storage_backend: 'gcs',  // Available options are 'gcs', 's3', 'azure'.
+    storage_backend: error 'should specify storage backend',  // Available options are 'gcs', 's3', 'azure'.
+
+    // GCS authentication can be configured by setting a non-null service account value, which will be then rendered
+    // as a CLI flag. Please note that there are alternative ways of configuring GCS authentication:
+    // See https://grafana.com/docs/mimir/latest/operators-guide/configure/reference-configuration-parameters/#gcs_storage_backend
+    // See https://cloud.google.com/storage/docs/authentication#libauth
+    storage_gcs_service_account: null,
+
+    // S3 credentials are optional and will be only set as CLI flags if not null.
+    // This is useful because S3 can be accessed without credentials under certain conditions.
+    // See: https://aws.amazon.com/premiumsupport/knowledge-center/s3-private-connection-no-authentication/
+    storage_s3_secret_access_key: null,
+    storage_s3_access_key_id: null,
     storage_s3_endpoint: 's3.dualstack.%(aws_region)s.amazonaws.com' % $._config,
+
+    // Azure credentials are required by the client implementation when azure is used.
     storage_azure_account_name: error 'must specify Azure account name',
     storage_azure_account_key: error 'must specify Azure account key',
 
@@ -101,11 +115,17 @@
     } + (
       if $._config.storage_backend == 's3' then {
         'common.storage.s3.endpoint': $._config.storage_s3_endpoint,
+        'common.storage.s3.access-key-id': $._config.storage_s3_access_key_id,
+        'common.storage.s3.secret-access-key': $._config.storage_s3_secret_access_key,
       }
       else if $._config.storage_backend == 'azure' then {
         'common.storage.azure.account-name': $._config.storage_azure_account_name,
         'common.storage.azure.account-key': $._config.storage_azure_account_key,
-      } else {}
+      }
+      else if $._config.storage_backend == 'gcs' then {
+        'common.storage.gcs.service-account': $._config.storage_gcs_service_account,
+      }
+      else {}
     ),
 
     blocks_storage_bucket_name: error 'must specify blocks storage bucket name',
