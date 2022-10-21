@@ -89,7 +89,6 @@ data:
       grpc_server_max_connection_age: 2m
       grpc_server_max_connection_age_grace: 5m
       grpc_server_max_connection_idle: 1m
-      http_server_write_timeout: 1m
     store_gateway:
       sharding_ring:
         tokens_file_path: /data/tokens
