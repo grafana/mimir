@@ -10,13 +10,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/dns"
 	"github.com/grafana/dskit/flagext"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/stretchr/testify/require"
-	"github.com/thanos-io/thanos/pkg/discovery/dns"
 
 	"github.com/grafana/mimir/pkg/util"
 )

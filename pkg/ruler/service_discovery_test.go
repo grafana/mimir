@@ -7,13 +7,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/dns"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/thanos-io/thanos/pkg/discovery/dns"
 )
 
 func TestConfig_TranslatesToPrometheusTargetGroup(t *testing.T) {
