@@ -30,6 +30,7 @@ mimir + overridesExporter {
     'server.http-write-timeout': '1m',
     'server.grpc-max-recv-msg-size-bytes': '104857600',
     'store.max-query-length': '0',
+    'query-frontend.query-sharding-total-shards': '16',
   },
 
   alertmanager_args+:: self.helm_common_args,
