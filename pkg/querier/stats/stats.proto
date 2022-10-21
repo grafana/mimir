@@ -28,4 +28,6 @@ message Stats {
   uint32 sharded_queries = 5;
   // The number of split partial queries executed. 0 if splitting is disabled or the query can't be split.
   uint32 split_queries = 6;
+  // The number of index bytes fetched on the store-gateway for the query
+  uint64 fetched_index_bytes = 7;
 }

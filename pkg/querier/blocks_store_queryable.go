@@ -728,6 +728,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 			mySeries := []*storepb.Series(nil)
 			myWarnings := storage.Warnings(nil)
 			myQueriedBlocks := []ulid.ULID(nil)
+			indexBytesFetched := uint64(0)
 
 			for {
 				// Ensure the context hasn't been canceled in the meanwhile (eg. an error occurred
@@ -789,6 +790,10 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 
 					myQueriedBlocks = append(myQueriedBlocks, ids...)
 				}
+
+				if s := resp.GetStats(); s != nil {
+					indexBytesFetched += s.FetchedIndexBytes
+				}
 			}
 
 			numSeries := len(mySeries)
@@ -797,12 +802,14 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 			reqStats.AddFetchedSeries(uint64(numSeries))
 			reqStats.AddFetchedChunkBytes(uint64(chunkBytes))
 			reqStats.AddFetchedChunks(uint64(chunksFetched))
+			reqStats.AddFetchedIndexBytes(indexBytesFetched)
 
 			level.Debug(spanLog).Log("msg", "received series from store-gateway",
 				"instance", c.RemoteAddress(),
 				"fetched series", numSeries,
 				"fetched chunk bytes", chunkBytes,
 				"fetched chunks", chunksFetched,
+				"fetched index bytes", indexBytesFetched,
 				"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "),
 				"queried blocks", strings.Join(convertULIDsToString(myQueriedBlocks), " "))
 

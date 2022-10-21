@@ -117,6 +117,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 						mockSeriesResponse(labels.Labels{metricNameLabel}, minT, 1),
 						mockSeriesResponse(labels.Labels{metricNameLabel}, minT+1, 2),
 						mockHintsResponse(block1, block2),
+						mockStatsResponse(50),
 					}}: {block1, block2},
 				},
 			},
@@ -1924,6 +1925,14 @@ func mockSeriesResponseWithChunks(lbls labels.Labels, chunks ...storepb.AggrChun
 				Labels: labelpb.ZLabelsFromPromLabels(lbls),
 				Chunks: chunks,
 			},
+		},
+	}
+}
+
+func mockStatsResponse(fetchedIndexBytes int) *storepb.SeriesResponse {
+	return &storepb.SeriesResponse{
+		Result: &storepb.SeriesResponse_Stats{
+			Stats: &storepb.Stats{FetchedIndexBytes: uint64(fetchedIndexBytes)},
 		},
 	}
 }
