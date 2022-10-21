@@ -1,11 +1,11 @@
 ---
 description: Learn how to configure the Grafana Mimir object storage backend when using Jsonnet.
-menuTitle: Configuring object storage
-title: Configuring the Grafana Mimir object storage backend with Jsonnet
+menuTitle: Configure object storage
+title: Configure the Grafana Mimir object storage backend with Jsonnet
 weight: 20
 ---
 
-# Configuring the Grafana Mimir object storage backend with Jsonnet
+# Configure the Grafana Mimir object storage backend with Jsonnet
 
 The object storage backend can be configured for all Mimir components from a single place.
 The minimum Jsonnet code required for this is:
