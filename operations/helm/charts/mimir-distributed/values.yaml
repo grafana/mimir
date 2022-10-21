@@ -177,13 +177,12 @@ mimir:
       data_dir: "/data"
 
     frontend:
-      align_queries_with_step: true
-      log_queries_longer_than: 10s
       parallelize_shardable_queries: true
       {{- if index .Values "results-cache" "enabled" }}
       results_cache:
         backend: memcached
         memcached:
+          timeout: 500ms
           addresses: {{ include "mimir.resultsCacheAddress" . }}
           max_item_size: {{ mul (index .Values "results-cache").maxItemMemory 1024 1024 }}
       cache_results: true
