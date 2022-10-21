@@ -14,7 +14,9 @@ type supplierFunc func() (req *mimirpb.WriteRequest, cleanup func(), err error)
 // Request represents a push request. It allows lazy body reading from the underlying http request
 // and adding cleanup functions that should be called after the request has been handled.
 type Request struct {
-	cleanups []func()
+	// have a backing array to avoid extra allocations
+	cleanupsArr [10]func()
+	cleanups    []func()
 
 	getRequest supplierFunc
 
@@ -23,10 +25,11 @@ type Request struct {
 }
 
 func newRequest(p supplierFunc) *Request {
-	return &Request{
-		cleanups:   make([]func(), 0, 10),
+	r := &Request{
 		getRequest: p,
 	}
+	r.cleanups = r.cleanupsArr[:0]
+	return r
 }
 
 func NewParsedRequest(r *mimirpb.WriteRequest) *Request {
