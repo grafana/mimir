@@ -49,6 +49,8 @@ patches:
     patch: |-
       - op: remove
         path: /config/frontend
+      - op: remove
+        path: /config/limits/max_cache_freshness
 
   - target:
       kind: MimirConfig
