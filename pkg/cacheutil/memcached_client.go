@@ -26,7 +26,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/util/extprom"
 	"github.com/grafana/mimir/pkg/util/gate"
-	memcacheDiscovery "github.com/thanos-io/thanos/pkg/discovery/memcache"
 )
 
 const (
@@ -57,7 +56,6 @@ var (
 		MaxGetMultiConcurrency:    100,
 		MaxGetMultiBatchSize:      0,
 		DNSProviderUpdateInterval: 10 * time.Second,
-		AutoDiscovery:             false,
 	}
 )
 
@@ -259,22 +257,11 @@ func newMemcachedClient(
 	reg prometheus.Registerer,
 	name string,
 ) (*memcachedClient, error) {
-	promRegisterer := extprom.WrapRegistererWithPrefix("thanos_memcached_", reg)
-
-	var addressProvider AddressProvider
-	if config.AutoDiscovery {
-		addressProvider = memcacheDiscovery.NewProvider(
-			logger,
-			promRegisterer,
-			config.Timeout,
-		)
-	} else {
-		addressProvider = dns.NewProvider(
-			logger,
-			extprom.WrapRegistererWithPrefix("thanos_memcached_", reg),
-			dns.MiekgdnsResolverType,
-		)
-	}
+	addressProvider := dns.NewProvider(
+		logger,
+		extprom.WrapRegistererWithPrefix("thanos_memcached_", reg),
+		dns.MiekgdnsResolverType,
+	)
 
 	c := &memcachedClient{
 		logger:          log.With(logger, "name", name),
