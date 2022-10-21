@@ -60,9 +60,11 @@ func (r *Request) AddCleanup(f func()) {
 	r.cleanups = append(r.cleanups, f)
 }
 
-// CleanUp calls all added cleanups in reverse order - the last added is the first invoked.
+// CleanUp calls all added cleanups in reverse order - the last added is the first invoked. CleanUp removes
+// each called cleanup function from the list of cleanups. So subsequent calls to CleanUp will not invoke the same cleanup functions.
 func (r *Request) CleanUp() {
 	for i := len(r.cleanups) - 1; i >= 0; i-- {
 		r.cleanups[i]()
 	}
+	r.cleanups = r.cleanups[:0]
 }

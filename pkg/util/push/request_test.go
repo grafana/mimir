@@ -34,6 +34,19 @@ func TestRequest_CleanUpOrder(t *testing.T) {
 	assert.Equal(t, []int{2, 1}, cleanupOrder)
 }
 
+// TestRequest_CleanUpDoubleCalling tests that calling CleanUp twice doesn't invoke the functions again.
+func TestRequest_CleanUpDoubleCalling(t *testing.T) {
+	invocations := 0
+
+	r := newRequest(noopParser)
+
+	r.AddCleanup(func() { invocations++ })
+	r.CleanUp()
+	r.CleanUp()
+
+	assert.Equal(t, 1, invocations)
+}
+
 func TestRequest_WriteRequestIsParsedOnlyOnce(t *testing.T) {
 	parseCount := 0
 	p := supplierFunc(func() (*mimirpb.WriteRequest, func(), error) {
