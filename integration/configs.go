@@ -20,18 +20,17 @@ import (
 )
 
 const (
-	userID              = "e2e-user"
-	defaultNetworkName  = "e2e-mimir-test"
-	mimirBucketName     = "mimir"
-	blocksBucketName    = "mimir-blocks"
-	alertsBucketName    = "mimir-alerts"
-	rulestoreBucketName = "mimir-ruler"
-	mimirConfigFile     = "config.yaml"
-	clientCertFile      = "certs/client.crt"
-	clientKeyFile       = "certs/client.key"
-	caCertFile          = "certs/root.crt"
-	serverCertFile      = "certs/server.crt"
-	serverKeyFile       = "certs/server.key"
+	userID             = "e2e-user"
+	defaultNetworkName = "e2e-mimir-test"
+	mimirBucketName    = "mimir"
+	blocksBucketName   = "mimir-blocks"
+	alertsBucketName   = "mimir-alerts"
+	mimirConfigFile    = "config.yaml"
+	clientCertFile     = "certs/client.crt"
+	clientKeyFile      = "certs/client.key"
+	caCertFile         = "certs/root.crt"
+	serverCertFile     = "certs/server.crt"
+	serverKeyFile      = "certs/server.key"
 )
 
 // GetNetworkName returns the docker network name to run tests within.
