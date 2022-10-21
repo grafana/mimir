@@ -1634,7 +1634,7 @@ When the compactor is **halted**:
 
 ### Recover source blocks from ingesters
 
-Ingesters keep, on their persistent disk, the blocks compacted from TSDB head until the `-experimental.tsdb.retention-period` retention expires. The **default retention is 4 days**, in order to give cluster operators enough time to react in case of a data loss incident.
+Ingesters keep, on their persistent disk, the blocks compacted from TSDB head until the `-blocks-storage.tsdb.retention-period` retention expires.
 
 The blocks retained in the ingesters can be used in case the compactor generates corrupted blocks and the source blocks, shipped from ingesters, have already been hard deleted from the bucket.
 
