@@ -20,21 +20,79 @@ The minimum Jsonnet code required for this is:
 ```
 
 The `storage_backend` option must be one of either `azure`, `gcs`, or `s3`.
-For each one of those providers, additional configuration options are required:
+Additional configuration options are available for each one of these providers.
 
-- Amazon S3 (`s3`)
+## Amazon S3 (`s3`) storage configuration options
 
-  - `aws_region`
+Amazon S3 storage can be accessed without credentials when [using Amazon VPC](https://aws.amazon.com/premiumsupport/knowledge-center/s3-private-connection-no-authentication/).
+In this case, `storage_s3_secret_access_key` and `storage_s3_access_key_id` are optional and can be left null, as in the following example:
 
-- Azure (`azure`)
+```jsonnet
+{
+  _config+:: {
+    storage_backend: 's3',
+    blocks_storage_bucket_name: 'blocks-bucket',
+    aws_region: 'af-south-1',
+  }
+}
+```
 
-  - `storage_azure_account_name`
-  - `storage_azure_account_key`
+If credentials are required, it is a good practice to keep them in secrets. In that case environment variable interpolation can be used:
 
-> **Note:** You need to manually provide the storage credentials for `s3` and `gcs` by using additional command line arguments as necessary.
-> For more information about different common storage configurations, see [Grafana Mimir configuration parameters: `common`]({{< relref "../../configure/reference-configuration-parameters/index.md#common" >}}).
->
-> For more information about how to provide GCS and S3 storage credentials see the following resources:
->
-> - [Grafana Mimir configuration parameters: `gcs_storage_backend`]({{< relref "../../configure/reference-configuration-parameters/#gcs_storage_backend" >}})
-> - [Grafana Mimir configuration parameters: `s3_storage_backend`]({{< relref "../../configure/reference-configuration-parameters/#s3_storage_backend" >}})
+```jsonnet
+{
+  _config+:: {
+    storage_backend: 's3',
+    storage_s3_access_key_id: '$(BLOCKS_STORAGE_S3_ACCESS_KEY_ID)',
+    storage_s3_secret_access_key: '$(BLOCKS_STORAGE_S3_SECRET_ACCESS_KEY)',
+    aws_region: 'af-south-1',
+    blocks_storage_bucket_name: 'blocks-bucket',
+  }
+}
+```
+
+## Azure (`azure`) storage configuration options
+
+Azure storage client requires the `storagE_azurE_account_name` and `storage_azure_account_key` to be configured.
+It is a good practice to keep them in secrets. In that case environment variable interpolation can be used:
+
+```jsonnet
+{
+  _config+:: {
+    storage_backend: 'azure',
+    storage_azure_account_name: '$(STORAGE_AZURE_ACCOUNT_NAME)',
+    storage_azure_account_key: '$(STORAGE_AZURE_ACCOUNT_KEY)',
+    blocks_storage_bucket_name: 'blocks-bucket',
+  }
+}
+```
+
+## Google Cloud Storage (`gcs`) storage configuration options
+
+There are multiple [ways to configure Google Cloud Storage client](https://grafana.com/docs/mimir/latest/operators-guide/configure/reference-configuration-parameters/#gcs_storage_backend).
+If you run Mimir on Google Cloud Platform it is possible that [the environment already has the credentials configured](https://cloud.google.com/storage/docs/authentication#libauth),
+in that case the minimum jsonnet configuration is valid:
+
+```jsonnet
+{
+  _config+:: {
+    storage_backend: 'gcs',
+    blocks_storage_bucket_name: 'blocks-bucket',
+  }
+}
+```
+
+You can use the `storage_gcs_service_account` configuration key to provide the service account when authentication is needed.
+It is a good practice to keep credentials in secrets, so environment variable interpolation can be used:
+
+```jsonnet
+{
+  _config+:: {
+    storage_backend: 'gcs',
+    storage_gcs_service_account: '$(STORAGE_GCS_SERVICE_ACCOUNT)',
+    blocks_storage_bucket_name: 'blocks-bucket',
+  }
+}
+```
+
+Alternatively, you can set the `GOOGLE_APPLICATION_CREDENTIALS` environment variable to point to the service account file mounted from a secret.
