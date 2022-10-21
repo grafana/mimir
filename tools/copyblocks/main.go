@@ -225,7 +225,7 @@ func copyBlocks(ctx context.Context, cfg config, logger log.Logger, m *metrics) 
 
 			// Optimization: if the block has been created before the min time filter, then we're comfortable
 			// assuming there will be no samples >= min time filter in the block.
-			if filterMinTime, blockCreationTime := time.Time(cfg.minTime), time.UnixMilli(int64(blockID.Time())); !filterMinTime.IsZero() && blockCreationTime.Before(filterMinTime) {
+			if filterMinTime, blockCreationTime := time.Time(cfg.minTime), ulid.Time(blockID.Time()); !filterMinTime.IsZero() && blockCreationTime.Before(filterMinTime) {
 				level.Debug(logger).Log("msg", "skipping block, block creation time is lower than the configured min time filter", "configured_min_time", filterMinTime, "block_creation_time", blockCreationTime)
 				return nil
 			}
