@@ -45,6 +45,7 @@
 ### Tools
 
 * [FEATURE] Add `copyblocks` tool, to copy Mimir blocks between two GCS buckets. #3263
+* [ENHANCEMENT] copyblocks: copy no-compact global markers and optimize min time filter check. #3268
 * [ENHANCEMENT] Mimir rules GitHub action: Added the ability to change default value of `label` when running `prepare` command. #3236
 
 ## 2.4.0-rc.1

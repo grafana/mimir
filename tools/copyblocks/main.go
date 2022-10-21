@@ -223,6 +223,13 @@ func copyBlocks(ctx context.Context, cfg config, logger log.Logger, m *metrics) 
 				return nil
 			}
 
+			// Optimization: if the block has been created before the min time filter, then we're comfortable
+			// assuming there will be no samples >= min time filter in the block.
+			if filterMinTime, blockCreationTime := time.Time(cfg.minTime), ulid.Time(blockID.Time()); !filterMinTime.IsZero() && blockCreationTime.Before(filterMinTime) {
+				level.Debug(logger).Log("msg", "skipping block, block creation time is lower than the configured min time filter", "configured_min_time", filterMinTime, "block_creation_time", blockCreationTime)
+				return nil
+			}
+
 			blockMeta, err := loadMetaJSONFile(ctx, sourceBucket, tenantID, blockID)
 			if err != nil {
 				level.Error(logger).Log("msg", "skipping block, failed to read meta.json file", "err", err)
@@ -266,7 +273,7 @@ func copyBlocks(ctx context.Context, cfg config, logger log.Logger, m *metrics) 
 
 			level.Info(logger).Log("msg", "copying block")
 
-			err = copySingleBlock(ctx, tenantID, blockID, sourceBucket, destBucket)
+			err = copySingleBlock(ctx, tenantID, blockID, markers[blockID], sourceBucket, destBucket)
 			if err != nil {
 				m.blocksCopyFailed.Inc()
 				level.Error(logger).Log("msg", "failed to copy block", "err", err)
@@ -303,7 +310,7 @@ func isAllowedUser(enabled map[string]struct{}, disabled map[string]struct{}, te
 }
 
 // This method copies files within single TSDB block to a destination bucket.
-func copySingleBlock(ctx context.Context, tenantID string, blockID ulid.ULID, srcBkt, destBkt *storage.BucketHandle) error {
+func copySingleBlock(ctx context.Context, tenantID string, blockID ulid.ULID, markers blockMarkers, srcBkt, destBkt *storage.BucketHandle) error {
 	paths, err := listPrefix(ctx, srcBkt, tenantID+delim+blockID.String(), true)
 	if err != nil {
 		return errors.Wrapf(err, "copySingleBlock: failed to list block files for %v/%v", tenantID, blockID.String())
@@ -320,9 +327,17 @@ func copySingleBlock(ctx context.Context, tenantID string, blockID ulid.ULID, sr
 		}
 	}
 
-	for _, p := range paths {
-		fullPath := tenantID + delim + blockID.String() + delim + p
+	// Generate the full paths.
+	for idx, p := range paths {
+		paths[idx] = tenantID + delim + blockID.String() + delim + p
+	}
 
+	// Copy global markers too (skipping deletion mark because deleted blocks are not copied by this tool).
+	if markers.noCompact {
+		paths = append(paths, tenantID+delim+bucketindex.NoCompactMarkFilepath(blockID))
+	}
+
+	for _, fullPath := range paths {
 		srcObj := srcBkt.Object(fullPath)
 		destObj := destBkt.Object(fullPath)
 
@@ -399,8 +414,9 @@ func listBlocksForTenant(ctx context.Context, bkt *storage.BucketHandle, tenantI
 
 // Each block can have multiple markers. This struct combines them together into single struct.
 type blockMarkers struct {
-	deletion bool
-	copied   bool
+	deletion  bool
+	copied    bool
+	noCompact bool
 }
 
 func listBlockMarkersForTenant(ctx context.Context, bkt *storage.BucketHandle, tenantID string, destinationBucket string) (map[ulid.ULID]blockMarkers, error) {
@@ -415,6 +431,12 @@ func listBlockMarkersForTenant(ctx context.Context, bkt *storage.BucketHandle, t
 		if id, ok := bucketindex.IsBlockDeletionMarkFilename(m); ok {
 			bm := result[id]
 			bm.deletion = true
+			result[id] = bm
+		}
+
+		if id, ok := bucketindex.IsNoCompactMarkFilename(m); ok {
+			bm := result[id]
+			bm.noCompact = true
 			result[id] = bm
 		}
 
