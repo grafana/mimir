@@ -45,7 +45,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
-	"github.com/thanos-io/thanos/pkg/pool"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
@@ -58,6 +57,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/labelpb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util/gate"
+	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 

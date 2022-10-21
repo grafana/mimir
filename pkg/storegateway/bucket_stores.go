@@ -23,7 +23,6 @@ import (
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/thanos-io/objstore"
-	"github.com/thanos-io/thanos/pkg/pool"
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/logging"
 	"google.golang.org/grpc/metadata"
@@ -36,6 +35,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/extprom"
 	"github.com/grafana/mimir/pkg/util/gate"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
