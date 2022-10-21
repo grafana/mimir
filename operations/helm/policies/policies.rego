@@ -36,7 +36,7 @@ pod_template_has_labels(template, labels) {
 
 deny[msg] {
 	obj := input[i].contents
-	msg := sprintf("TopologySpreadConstraints use labels not presnet on pods: %v", [obj])
+	msg := sprintf("TopologySpreadConstraints use labels not present on pods: %v", [obj])
 	can_use_topology_spread_constraints(obj.kind)
 
 	pod_template := obj.spec.template

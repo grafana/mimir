@@ -41,7 +41,7 @@ It also assumes that you have an understanding of what the `kubectl` command doe
 ### Security setup
 
 This installation will not succeed if you have enabled the
-[PodSecurityPolicy admission controller](https://v1-23.docs.kubernetes.io/docs/reference/access-authn-authz/admission-controllers/#podsecuritypolicy)
+[PodSecurityPolicy](https://v1-23.docs.kubernetes.io/docs/reference/access-authn-authz/admission-controllers/#podsecuritypolicy) admission controller
 or if you are enforcing the Restricted policy with [Pod Security](https://v1-24.docs.kubernetes.io/docs/concepts/security/pod-security-admission/#pod-security-admission-labels-for-namespaces) admission controller.
 The reason is that the installation includes a deployment of MinIO. The [minio/minio chart](https://github.com/minio/minio/tree/master/helm/minio)
 is not compatible with running under a Restricted policy or the PodSecurityPolicy that the mimir-distributed chart provides.
@@ -50,7 +50,7 @@ If you are using the PodSecurityPolicy admission controller, then it is not poss
 Refer to [Run Grafana Mimir in production using the Helm chart]({{< relref "../../running-production-environment-with-helm" >}}) for instructions on
 setting up an external object storage and disable the built-in MinIO deployment with `minio.enabled: false` in the Helm values file.
 
-If you are using the [Pod Security](https://kubernetes.io/docs/concepts/security/pod-security-admission/) admission controller, then MinIO and the mimir-distributed chart can successfully deploy under a with the [baseline](https://kubernetes.io/docs/concepts/security/pod-security-admission/#pod-security-levels) pod security level.
+If you are using the [Pod Security](https://kubernetes.io/docs/concepts/security/pod-security-admission/) admission controller, then MinIO and the mimir-distributed chart can successfully deploy under the [baseline](https://kubernetes.io/docs/concepts/security/pod-security-admission/#pod-security-levels) pod security level.
 
 ## Install the Helm chart in a custom namespace
 
