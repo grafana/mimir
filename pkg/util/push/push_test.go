@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/middleware"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -458,19 +459,41 @@ func TestNewDistributorMaxWriteMessageSizeErr(t *testing.T) {
 	assert.Equal(t, msg, err.Error())
 }
 
-func TestHandler_Returns4xxForAllParserErrors(t *testing.T) {
-	parserFunc := func(context.Context, *http.Request, int, []byte, *mimirpb.PreallocWriteRequest) ([]byte, error) {
-		return nil, fmt.Errorf("something's wrong")
+func TestHandler_ErrorTranslation(t *testing.T) {
+	testCases := []struct {
+		name               string
+		err                error
+		expectedHTTPStatus int
+	}{
+		{
+			name:               "a generic error gets an HTTP 400",
+			err:                fmt.Errorf("something's wrong"),
+			expectedHTTPStatus: http.StatusBadRequest,
+		},
+		{
+			name:               "an gRPC error with a status gets translated into HTTP error",
+			err:                httpgrpc.Errorf(http.StatusRequestEntityTooLarge, "too big"),
+			expectedHTTPStatus: http.StatusRequestEntityTooLarge,
+		},
 	}
-	pushFunc := func(ctx context.Context, req *Request) (*mimirpb.WriteResponse, error) {
-		_, err := req.WriteRequest() // just read the body so we can trigger the parser
-		return nil, err
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			parserFunc := func(context.Context, *http.Request, int, []byte, *mimirpb.PreallocWriteRequest) ([]byte, error) {
+				return nil, tc.err
+			}
+			pushFunc := func(ctx context.Context, req *Request) (*mimirpb.WriteResponse, error) {
+				_, err := req.WriteRequest() // just read the body so we can trigger the parser
+				return nil, err
+			}
+
+			h := handler(10, nil, false, pushFunc, parserFunc)
+
+			recorder := httptest.NewRecorder()
+			h.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/push", bufCloser{&bytes.Buffer{}}))
+
+			assert.Equal(t, tc.expectedHTTPStatus, recorder.Code)
+		})
 	}
-
-	h := handler(10, nil, false, pushFunc, parserFunc)
-
-	recorder := httptest.NewRecorder()
-	h.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/push", bufCloser{&bytes.Buffer{}}))
-
-	assert.Equal(t, http.StatusBadRequest, recorder.Code)
 }
