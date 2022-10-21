@@ -279,5 +279,4 @@ If you need redundancy on the write path before it reaches Mimir, then you
 can set up redundant instances of Prometheus or Grafana Agent to
 write metrics to Mimir.
 
-For more information, see [Configuring mimir-distributed Helm Chart for
-high-availability deduplication with Consul]({{< relref "../configure/setting-ha-helm-deduplication-consul">}}).
+For more information, see [Configure high-availability deduplication with Consul]({{< relref "../configure/configure-helm-ha-deduplication-consul/">}}).
