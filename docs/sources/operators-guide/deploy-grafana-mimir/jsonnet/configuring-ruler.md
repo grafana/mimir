@@ -24,7 +24,7 @@ To enable it, add the following Jsonnet code to the `_config` section:
 ```
 
 By default, the object storage backend used for the ruler will be the one set by the `$._config.storage_backend` option.
-If desired, it can be overridden by setting the `$._config.ruler_storage_backend` option.
+If desired, you can override it by setting the `$._config.ruler_storage_backend` option.
 The `ruler_storage_backend` option must be one of either `local`, `azure`, `gcs`, or `s3`.
 For more information about the options available for storing ruler state, see [Grafana Mimir ruler: State]({{< relref "../../architecture/components/ruler/index.md#state" >}}).
 
@@ -40,7 +40,7 @@ To get started, use the `local` client type for initial testing:
 }
 ```
 
-If you are using object storage, `ruler_storage_bucket_name` must be set to the name of the bucket to use.
+If you are using object storage, you must set `ruler_storage_bucket_name` to the name of the bucket that you want to use.
 
 > **Note:** If ruler object storage credentials differ from the ones defined in the common section, you need to manually provide them by using additional command line arguments.
 > For more information, see [Grafana Mimir configuration parameters: ruler_storage]({{< relref "../../configure/reference-configuration-parameters/index.md#ruler_storage" >}}).
