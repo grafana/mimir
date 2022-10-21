@@ -62,7 +62,7 @@ func (r *Request) AddCleanup(f func()) {
 
 // CleanUp calls all added cleanups.
 func (r *Request) CleanUp() {
-	for _, f := range r.cleanups {
-		f()
+	for i := len(r.cleanups) - 1; i >= 0; i-- {
+		r.cleanups[i]()
 	}
 }

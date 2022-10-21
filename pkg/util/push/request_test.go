@@ -14,6 +14,8 @@ var noopParser = supplierFunc(func() (*mimirpb.WriteRequest, func(), error) {
 	return &mimirpb.WriteRequest{}, nil, nil
 })
 
+// TestRequest_CleanUpOrder tests that the semantics of cleanups is similar to stacking defer statements:
+// last one is the first to be executed.
 func TestRequest_CleanUpOrder(t *testing.T) {
 	var cleanupOrder []int
 	cleanupOne := func() {
@@ -29,7 +31,7 @@ func TestRequest_CleanUpOrder(t *testing.T) {
 	r.AddCleanup(cleanupTwo)
 	r.CleanUp()
 
-	assert.Equal(t, []int{1, 2}, cleanupOrder)
+	assert.Equal(t, []int{2, 1}, cleanupOrder)
 }
 
 func TestRequest_WriteRequestIsParsedOnlyOnce(t *testing.T) {
