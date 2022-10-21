@@ -138,6 +138,7 @@
 * [ENHANCEMENT] Alertmanager: reduced memory utilization in Mimir clusters with a large number of tenants. #3143
 * [ENHANCEMENT] Store-gateway: added extra span logging to improve observability. #3131
 * [ENHANCEMENT] Compactor: cleaning up different tenants' old blocks and updating bucket indexes is now more independent. This prevents a single tenant from delaying cleanup for other tenants. #2631
+* [ENHANCEMENT] Distributor: request rate, ingestion rate, and inflight requests limits are now enforced before reading and parsing the body of the request. This makes the distributor more resilient against a burst of requests over those limit. #2419
 * [BUGFIX] Querier: Fix 400 response while handling streaming remote read. #2963
 * [BUGFIX] Fix a bug causing query-frontend, query-scheduler, and querier not failing if one of their internal components fail. #2978
 * [BUGFIX] Querier: re-balance the querier worker connections when a query-frontend or query-scheduler is terminated. #3005

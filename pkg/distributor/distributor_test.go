@@ -53,6 +53,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	util_math "github.com/grafana/mimir/pkg/util/math"
+	"github.com/grafana/mimir/pkg/util/push"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -2237,12 +2238,12 @@ func TestDistributor_LabelNamesAndValues(t *testing.T) {
 
 			// Create distributor
 			ds, _, _ := prepare(t, prepConfig{
-				numIngesters:       12,
-				happyIngesters:     12,
-				numDistributors:    1,
-				replicationFactor:  3,
-				ingesterZones:      testData.zones,
-				zonesResponseDelay: testData.zonesResponseDelay,
+				numIngesters:                       12,
+				happyIngesters:                     12,
+				numDistributors:                    1,
+				replicationFactor:                  3,
+				ingesterZones:                      testData.zones,
+				labelNamesStreamZonesResponseDelay: testData.zonesResponseDelay,
 			})
 			t.Cleanup(func() {
 				require.NoError(t, services.StopAndAwaitTerminated(ctx, ds[0]))
@@ -2588,7 +2589,7 @@ func prepareWithZoneAwarenessAndZoneDelay(t *testing.T, fixtures []series) (cont
 		numDistributors:   1,
 		replicationFactor: 3,
 		ingesterZones:     []string{"ZONE-A", "ZONE-B", "ZONE-C"},
-		zonesResponseDelay: map[string]time.Duration{
+		labelNamesStreamZonesResponseDelay: map[string]time.Duration{
 			// ingesters from zones A and B will respond in 1 second but ingesters from zone C will respond in 2 seconds.
 			"ZONE-A": 1 * time.Second,
 			"ZONE-B": 1 * time.Second,
@@ -2907,10 +2908,12 @@ func TestHaDedupeMiddleware(t *testing.T) {
 
 			nextCallCount := 0
 			var gotReqs []*mimirpb.WriteRequest
-			next := func(ctx context.Context, req *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error) {
+			next := func(ctx context.Context, pushReq *push.Request) (*mimirpb.WriteResponse, error) {
 				nextCallCount++
+				req, err := pushReq.WriteRequest()
+				require.NoError(t, err)
 				gotReqs = append(gotReqs, req)
-				cleanup()
+				pushReq.CleanUp()
 				return nil, nil
 			}
 
@@ -2929,7 +2932,9 @@ func TestHaDedupeMiddleware(t *testing.T) {
 
 			var gotErrs []error
 			for _, req := range tc.reqs {
-				_, err := middleware(tc.ctx, req, cleanup)
+				pushReq := push.NewParsedRequest(req)
+				pushReq.AddCleanup(cleanup)
+				_, err := middleware(tc.ctx, pushReq)
 				gotErrs = append(gotErrs, err)
 			}
 
@@ -2970,8 +2975,10 @@ func TestInstanceLimitsBeforeHaDedupe(t *testing.T) {
 
 	// Capture the submitted write requests which the middlewares pass into the mock push function.
 	var submittedWriteReqs []*mimirpb.WriteRequest
-	mockPush := func(_ context.Context, writeReq *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error) {
-		defer cleanup()
+	mockPush := func(ctx context.Context, pushReq *push.Request) (*mimirpb.WriteResponse, error) {
+		defer pushReq.CleanUp()
+		writeReq, err := pushReq.WriteRequest()
+		require.NoError(t, err)
 		submittedWriteReqs = append(submittedWriteReqs, writeReq)
 		return nil, nil
 	}
@@ -2996,7 +3003,7 @@ func TestInstanceLimitsBeforeHaDedupe(t *testing.T) {
 
 	// If we HA deduplication runs before instance limits check,
 	// then this would set replica for the cluster.
-	_, err := wrappedMockPush(ctx, writeReqReplica1, func() {})
+	_, err := wrappedMockPush(ctx, push.NewParsedRequest(writeReqReplica1))
 	require.Equal(t, errMaxInflightRequestsReached, err)
 
 	// Simulate no other inflight request.
@@ -3005,7 +3012,7 @@ func TestInstanceLimitsBeforeHaDedupe(t *testing.T) {
 	// We now send request from second replica.
 	// If HA deduplication middleware ran before instance limits check, then replica would be already set,
 	// and HA deduplication would return 202 status code for this request instead.
-	_, err = wrappedMockPush(ctx, writeReqReplica2, func() {})
+	_, err = wrappedMockPush(ctx, push.NewParsedRequest(writeReqReplica2))
 	require.NoError(t, err)
 
 	// Check that the write requests which have been submitted to the push function look as expected,
@@ -3093,9 +3100,11 @@ func TestRelabelMiddleware(t *testing.T) {
 			}
 
 			var gotReqs []*mimirpb.WriteRequest
-			next := func(ctx context.Context, req *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error) {
+			next := func(ctx context.Context, pushReq *push.Request) (*mimirpb.WriteResponse, error) {
+				req, err := pushReq.WriteRequest()
+				require.NoError(t, err)
 				gotReqs = append(gotReqs, req)
-				cleanup()
+				pushReq.CleanUp()
 				return nil, nil
 			}
 
@@ -3111,7 +3120,9 @@ func TestRelabelMiddleware(t *testing.T) {
 
 			var gotErrs []bool
 			for _, req := range tc.reqs {
-				_, err := middleware(tc.ctx, req, cleanup)
+				pushReq := push.NewParsedRequest(req)
+				pushReq.AddCleanup(cleanup)
+				_, err := middleware(tc.ctx, pushReq)
 				gotErrs = append(gotErrs, err != nil)
 			}
 
@@ -3152,7 +3163,9 @@ func TestHaDedupeAndRelabelBeforeForwarding(t *testing.T) {
 
 	// Capture the submitted write requests which the middlewares pass into the mock push function.
 	var submittedWriteReqs []*mimirpb.WriteRequest
-	mockPush := func(_ context.Context, writeReq *mimirpb.WriteRequest, _ func()) (*mimirpb.WriteResponse, error) {
+	mockPush := func(ctx context.Context, pushReq *push.Request) (*mimirpb.WriteResponse, error) {
+		writeReq, err := pushReq.WriteRequest()
+		require.NoError(t, err)
 		submittedWriteReqs = append(submittedWriteReqs, writeReq)
 		return nil, nil
 	}
@@ -3202,9 +3215,9 @@ func TestHaDedupeAndRelabelBeforeForwarding(t *testing.T) {
 	// 3) Apply drop_label rules
 	// 4) Forward the result via the mock forwarder
 	// 5) Submit the result to the mock push function
-	_, err := wrappedMockPush(ctx, writeReqReplica1, func() {})
+	_, err := wrappedMockPush(ctx, push.NewParsedRequest(writeReqReplica1))
 	assert.NoError(t, err)
-	_, err = wrappedMockPush(ctx, writeReqReplica2, func() {})
+	_, err = wrappedMockPush(ctx, push.NewParsedRequest(writeReqReplica2))
 	resp, ok := httpgrpc.HTTPResponseFromError(err)
 	assert.True(t, ok)
 	assert.Equal(t, int32(202), resp.Code) // 202 due to HA-dedupe.
@@ -3239,22 +3252,23 @@ func mockWriteRequest(lbls labels.Labels, value float64, timestampMs int64) *mim
 }
 
 type prepConfig struct {
-	numIngesters, happyIngesters int
-	queryDelay                   time.Duration
-	shuffleShardSize             int
-	limits                       *validation.Limits
-	numDistributors              int
-	skipLabelNameValidation      bool
-	maxInflightRequests          int
-	maxInflightRequestsBytes     int
-	maxIngestionRate             float64
-	replicationFactor            int
-	enableTracker                bool
-	ingestersSeriesCountTotal    uint64
-	ingesterZones                []string
-	zonesResponseDelay           map[string]time.Duration
-	forwarding                   bool
-	getForwarder                 func() forwarding.Forwarder
+	numIngesters, happyIngesters       int
+	queryDelay                         time.Duration
+	pushDelay                          time.Duration
+	shuffleShardSize                   int
+	limits                             *validation.Limits
+	numDistributors                    int
+	skipLabelNameValidation            bool
+	maxInflightRequests                int
+	maxInflightRequestsBytes           int
+	maxIngestionRate                   float64
+	replicationFactor                  int
+	enableTracker                      bool
+	ingestersSeriesCountTotal          uint64
+	ingesterZones                      []string
+	labelNamesStreamZonesResponseDelay map[string]time.Duration
+	forwarding                         bool
+	getForwarder                       func() forwarding.Forwarder
 }
 
 func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*prometheus.Registry) {
@@ -3264,21 +3278,23 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 		if len(cfg.ingesterZones) > 0 {
 			zone = cfg.ingesterZones[i%len(cfg.ingesterZones)]
 		}
-		var responseDelay time.Duration
-		if len(cfg.zonesResponseDelay) > 0 {
-			responseDelay = cfg.zonesResponseDelay[zone]
+		var labelNamesStreamResponseDelay time.Duration
+		if len(cfg.labelNamesStreamZonesResponseDelay) > 0 {
+			labelNamesStreamResponseDelay = cfg.labelNamesStreamZonesResponseDelay[zone]
 		}
 		ingesters = append(ingesters, mockIngester{
-			happy:            true,
-			queryDelay:       cfg.queryDelay,
-			seriesCountTotal: cfg.ingestersSeriesCountTotal,
-			zone:             zone,
-			responseDelay:    responseDelay,
+			happy:                         true,
+			queryDelay:                    cfg.queryDelay,
+			pushDelay:                     cfg.pushDelay,
+			seriesCountTotal:              cfg.ingestersSeriesCountTotal,
+			zone:                          zone,
+			labelNamesStreamResponseDelay: labelNamesStreamResponseDelay,
 		})
 	}
 	for i := cfg.happyIngesters; i < cfg.numIngesters; i++ {
 		ingesters = append(ingesters, mockIngester{
 			queryDelay:       cfg.queryDelay,
+			pushDelay:        cfg.pushDelay,
 			seriesCountTotal: cfg.ingestersSeriesCountTotal,
 		})
 	}
@@ -3644,15 +3660,16 @@ type mockIngester struct {
 	sync.Mutex
 	client.IngesterClient
 	grpc_health_v1.HealthClient
-	happy            bool
-	stats            client.UsersStatsResponse
-	timeseries       map[uint32]*mimirpb.PreallocTimeseries
-	metadata         map[uint32]map[mimirpb.MetricMetadata]struct{}
-	queryDelay       time.Duration
-	calls            map[string]int
-	seriesCountTotal uint64
-	zone             string
-	responseDelay    time.Duration
+	happy                         bool
+	stats                         client.UsersStatsResponse
+	timeseries                    map[uint32]*mimirpb.PreallocTimeseries
+	metadata                      map[uint32]map[mimirpb.MetricMetadata]struct{}
+	queryDelay                    time.Duration
+	pushDelay                     time.Duration
+	calls                         map[string]int
+	seriesCountTotal              uint64
+	zone                          string
+	labelNamesStreamResponseDelay time.Duration
 }
 
 func (i *mockIngester) series() map[uint32]*mimirpb.PreallocTimeseries {
@@ -3680,6 +3697,7 @@ func (i *mockIngester) Close() error {
 }
 
 func (i *mockIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, opts ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
+	time.Sleep(i.pushDelay)
 
 	i.Lock()
 	defer i.Unlock()
@@ -3903,7 +3921,7 @@ func (i *mockIngester) LabelNamesAndValues(_ context.Context, _ *client.LabelNam
 		items = append(items, &client.LabelValues{LabelName: labelName, Values: values})
 	}
 	resp := &client.LabelNamesAndValuesResponse{Items: items}
-	return &labelNamesAndValuesMockStream{responses: []*client.LabelNamesAndValuesResponse{resp}, responseDelay: i.responseDelay}, nil
+	return &labelNamesAndValuesMockStream{responses: []*client.LabelNamesAndValuesResponse{resp}, responseDelay: i.labelNamesStreamResponseDelay}, nil
 }
 
 type labelNamesAndValuesMockStream struct {
@@ -4762,4 +4780,36 @@ func TestDistributor_MetricsWithRequestModifications(t *testing.T) {
 			metricNames...,
 		))
 	})
+}
+
+func TestDistributor_CleanupIsDoneAfterLastIngesterReturns(t *testing.T) {
+	// We want to decrement inflight requests and other counters that we use for limits
+	// only after the last ingester has returned.
+	// Distributor.Push returns after a quorum of ingesters have returned.
+	// But there are still resources occupied within the distributor while it's
+	// waiting for all ingesters to return. So we want the instance limits to accurately reflect that.
+
+	distributors, ingesters, _ := prepare(t, prepConfig{
+		numIngesters:        3,
+		happyIngesters:      3,
+		numDistributors:     1,
+		maxInflightRequests: 1,
+		replicationFactor:   3,
+		enableTracker:       false,
+	})
+	ingesters[2].pushDelay = time.Second // give the test enough time to do assertions
+
+	lbls := labels.Labels{
+		{Name: "__name__", Value: "metric_1"},
+		{Name: "key", Value: "value_1"},
+	}
+	ctx := user.InjectOrgID(context.Background(), "user")
+
+	_, err := distributors[0].Push(ctx, mockWriteRequest(lbls, 1, 1))
+	assert.NoError(t, err)
+
+	// First push request returned, but there's still an ingester call inflight.
+	// This means that the push request is counted as inflight, so another incoming request should be rejected.
+	_, err = distributors[0].Push(ctx, mockWriteRequest(nil, 1, 1))
+	assert.ErrorIs(t, err, errMaxInflightRequestsReached)
 }
