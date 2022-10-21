@@ -11,7 +11,7 @@ test_container_security_context_without_readOnlyRootFS if {
 		)]}}}}},
 	)]
 
-	contains(reason, "Mimir/GEM containers doesn't have the restricted security context")
+	contains(reason, "Mimir or GEM containers do not have the restricted security context")
 }
 
 test_container_security_context_with_priv_escalation if {
@@ -23,7 +23,7 @@ test_container_security_context_with_priv_escalation if {
 		)]}}}}},
 	)]
 
-	contains(reason, "Mimir/GEM containers doesn't have the restricted security context")
+	contains(reason, "Mimir or GEM containers do not have the restricted security context")
 }
 
 test_container_security_context_without_dropping_all if {
@@ -35,7 +35,7 @@ test_container_security_context_without_dropping_all if {
 		)]}}}}},
 	)]
 
-	contains(reason, "Mimir/GEM containers doesn't have the restricted security context")
+	contains(reason, "Mimir or GEM containers do not have the restricted security context")
 }
 
 test_container_security_context_without_dropping_all if {
@@ -47,22 +47,22 @@ test_container_security_context_without_dropping_all if {
 		)]}}}}},
 	)]
 
-	contains(reason, "Mimir/GEM containers doesn't have the restricted security context")
+	contains(reason, "Mimir or GEM containers do not have the restricted security context")
 }
 
 test_container_security_context_unset_fields if {
 	deny[reason] with input as [json.remove(passing_deployment, ["contents/spec/template/spec/containers/0/securityContext/allowPrivilegeEscalation"])]
-	contains(reason, "Mimir/GEM containers doesn't have the restricted security context")
+	contains(reason, "Mimir or GEM containers do not have the restricted security context")
 }
 
 test_container_security_context_unset_fields if {
 	deny[reason] with input as [json.remove(passing_deployment, ["contents/spec/template/spec/containers/0/securityContext/readOnlyRootFilesystem"])]
-	contains(reason, "Mimir/GEM containers doesn't have the restricted security context")
+	contains(reason, "Mimir or GEM containers do not have the restricted security context")
 }
 
 test_container_security_context_unset_fields if {
 	deny[reason] with input as [json.remove(passing_deployment, ["contents/spec/template/spec/containers/0/securityContext/capabilities"])]
-	contains(reason, "Mimir/GEM containers doesn't have the restricted security context")
+	contains(reason, "Mimir or GEM containers do not have the restricted security context")
 }
 
 test_pod_security_context_not_correct if {
@@ -71,7 +71,7 @@ test_pod_security_context_not_correct if {
 		{"contents": {"spec": {"template": {"spec": {"securityContext": {"runAsNonRoot": false}}}}}},
 	)]
 
-	contains(reason, "Mimir/GEM Pod doesn't have the restricted security context")
+	contains(reason, "The Mimir or GEM Pod doesn't have the restricted security context")
 }
 
 test_pod_security_context_not_correct if {
@@ -80,15 +80,15 @@ test_pod_security_context_not_correct if {
 		{"contents": {"spec": {"template": {"spec": {"securityContext": {"seccompProfile": {"type": "SomethingElse"}}}}}}},
 	)]
 
-	contains(reason, "Mimir/GEM Pod doesn't have the restricted security context")
+	contains(reason, "The Mimir or GEM Pod doesn't have the restricted security context")
 }
 
 test_pod_security_context_unset_fields if {
 	deny[reason] with input as [json.remove(passing_deployment, ["contents/spec/template/spec/securityContext/seccompProfile"])]
-	contains(reason, "Mimir/GEM Pod doesn't have the restricted security context")
+	contains(reason, "The Mimir or GEM Pod doesn't have the restricted security context")
 }
 
 test_pod_security_context_unset_fields if {
 	deny[reason] with input as [json.remove(passing_deployment, ["contents/spec/template/spec/securityContext/runAsNonRoot"])]
-	contains(reason, "Mimir/GEM Pod doesn't have the restricted security context")
+	contains(reason, "The Mimir or GEM Pod doesn't have the restricted security context")
 }

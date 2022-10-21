@@ -16,5 +16,5 @@ test_topology_spread_constraints_use_wrong_labels if {
 		},
 	}}]
 
-	contains(reason, "TopologySpreadConstraints use labels not presnet on pods")
+	contains(reason, "TopologySpreadConstraints use labels not present on pods")
 }

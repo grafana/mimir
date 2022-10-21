@@ -55,7 +55,7 @@ is_mimir_or_gem_image(image) {
 
 deny[msg] {
 	obj := input[i].contents
-	msg := sprintf("Mimir/GEM containers doesn't have the restricted security context: %v", [obj])
+	msg := sprintf("Mimir or GEM containers do not have the restricted security context: %v", [obj])
 
 	obj.kind in ["StatefulSet", "Deployment"]
 	container := obj.spec.template.spec.containers[j]
@@ -72,7 +72,7 @@ deny[msg] {
 
 deny[msg] {
 	obj := input[i].contents
-	msg := sprintf("Mimir/GEM Pod doesn't have the restricted security context: %v", [obj])
+	msg := sprintf("The Mimir or GEM Pod doesn't have the restricted security context: %v", [obj])
 
 	obj.kind in ["StatefulSet", "Deployment"]
 	pod_spec := obj.spec.template.spec
