@@ -29,6 +29,7 @@
 
 ### Jsonnet
 
+* [ENHANCEMENT] The query-tee node port (`$._config.query_tee_node_port`) is now optional. #3272
 * [BUGFIX] Fixed query-scheduler ring configuration for dedicated ruler's queries and query-frontends. #3237 #3239
 
 ### Mimirtool

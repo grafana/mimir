@@ -27,7 +27,7 @@
   query_tee_service: if !($._config.query_tee_enabled) then {} else
     service.new('query-tee', { name: 'query-tee' }, [
       servicePort.newNamed('http', 80, 80) +
-      servicePort.withNodePort($._config.query_tee_node_port),
+      (if $._config.query_tee_node_port == null then {} else servicePort.withNodePort($._config.query_tee_node_port)),
     ]) +
     service.mixin.spec.withType('NodePort'),
 }
