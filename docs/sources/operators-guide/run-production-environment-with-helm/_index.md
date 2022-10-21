@@ -1,13 +1,13 @@
 ---
-title: "Prepare Grafana Mimir for production using the Helm chart"
+title: "Run Grafana Mimir in production using the Helm chart"
 aliases:
   - docs/mimir/latest/operators-guide/run-production-environment-with-helm/
-menuTitle: "Prepare Grafana Mimir for production using the Helm chart"
-description: "Prepare Grafana Mimir to ingest metrics in a production environment using the mimir-distributed Helm chart."
+menuTitle: "Run Grafana Mimir in production using the Helm chart"
+description: "Learn how to run Grafana Mimir in production using the mimir-distributed Helm chart."
 weight: 90
 ---
 
-# Prepare Grafana Mimir for production using the Helm chart
+# Run Grafana Mimir in production using the Helm chart
 
 Beyond [Getting started with Grafana Mimir using the Helm chart]({{< relref "../deploy-grafana-mimir/getting-started-helm-charts" >}}),
 which covers setting up Grafana Mimir on a local Kubernetes cluster or
