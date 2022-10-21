@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
+	"github.com/weaveworks/common/user"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -75,6 +76,7 @@ func TestForwardingSamplesSuccessfullyToSingleTarget(t *testing.T) {
 	for _, req := range reqs() {
 		require.Equal(t, "snappy", req.Header.Get("Content-Encoding"))
 		require.Equal(t, "application/x-protobuf", req.Header.Get("Content-Type"))
+		require.Equal(t, "user", req.Header.Get(user.OrgIDHeaderName))
 	}
 
 	bodies := bodiesFn()
@@ -873,6 +875,7 @@ func TestForwardingToHTTPGrpcTarget(t *testing.T) {
 	for _, req := range reqs1() {
 		ce := ""
 		ct := ""
+		us := ""
 
 		for _, h := range req.Headers {
 			if h.Key == "Content-Encoding" {
@@ -881,9 +884,13 @@ func TestForwardingToHTTPGrpcTarget(t *testing.T) {
 			if h.Key == "Content-Type" {
 				ct = h.Values[0]
 			}
+			if h.Key == user.OrgIDHeaderName {
+				us = h.Values[0]
+			}
 		}
 		require.Equal(t, "snappy", ce)
 		require.Equal(t, "application/x-protobuf", ct)
+		require.Equal(t, "user", us)
 	}
 
 	bodies := reqs1()
