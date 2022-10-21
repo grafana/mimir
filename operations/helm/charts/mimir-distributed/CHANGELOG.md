@@ -55,6 +55,18 @@ Entries should include a reference to the Pull Request that introduced the chang
   Mimir under the `metamonitoring` tenant; this enhancement does not apply to GEM. #3176
 * [ENHANCEMENT] Improve default rollout strategies. Now distributor, overrides_exporter, querier, query_frontend, admin_api, gateway, and graphite components can be upgraded more quickly and also can be rolled out with a single replica without downtime. #3029
 * [ENHANCEMENT] Metamonitoring: make scrape interval configurable. #2945
+* [ENHANCEMENT] Update read path configuration to match Jsonnet #2998
+  * This also now matches production configuration from Grafana Cloud
+  * Set `blocks_storage.bucket_store.max_chunk_pool_bytes` to `12GiB` (Increased from `2GiB`)
+  * Set `blocks_storage.bucket_Store.index_cache.memcached.max_item_size` to `5MiB` (Decreased from `15MiB`)
+  * Set `frontend.grpc_client_config.max_send_msg_size` to `400MiB` (Increased from `100MiB`)
+  * Set `limits.max_cache_freshness` to `10m` (Increased from `1m`)
+  * Set `limits.max_query_parallelism` to `240` (Increased from `224`)
+  * Set `query_scheduler.max_outstanding_requests_per_tenant` to `800` (Decreased from `1600`)
+  * Set `store_gateway.sharding_ring.wait_stability_min_duration` to `1m` (Increased from `0`)
+  * Set `frontend.results_cache.memcached.timeout` to `500ms` (Increased from `100ms`)
+  * Unset `frontend.align_queries_with_step` (Was `true`, now defaults to `false`)
+  * Unset `frontend.log_queries_longer_than` (Was `10s`, now defaults to `0`, which is disabled)
 * [BUGFIX] Fix an issue that caused metamonitoring secrets to be created incorrectly #3170
 * [BUGFIX] Nginx: fixed `imagePullSecret` value reference inconsistency. #3208
 * [BUGFIX] Move the activity tracker log from /data to /active-query-tracker to remove ignore log messages. #3169
@@ -107,10 +119,6 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [CHANGE] Ingresses for the GEM gateway and nginx will no longer render on Kubernetes versions <1.19. #2872
 * [FEATURE] Add support for OpenShift Routes for Nginx #2908
 * [FEATURE] Add support for `topologySpreadConstraints` to all components; add `topologySpreadConstraints` to GEM gateway, admin-api, and alertmanager, which did not have `podAntiAffinity` previously. #2722
-* [ENHANCEMENT] Update the index-cache max item size to 5MB (down from 15MB) #2998
-  * This now matches the default in Jsonnet and the production configuration for Grafana Cloud
-* [ENHANCEMENT] Update `limits.max_query_parallelism` to 240 (from 224) and `query_scheduler.max_outstanding_requests_per_tenant` to 800 (from 1600). #2998
-  * This now matches the default in Jsonnet and the production configuration for Grafana Cloud
 * [ENHANCEMENT] Document `kubeVersionOverride`. If you rely on `helm template`, use this in your values to set the Kubernetes version. If unset helm will use the kubectl client version as the Kubernetes version with `helm template`, which may cause the chart to render incompatible manifests for the actual server version. #2872
 * [ENHANCEMENT] Support autoscaling/v2 HorizontalPodAutoscaler for nginx autoscaling. This is used when deploying on Kubernetes >= 1.25. #2848
 * [ENHANCEMENT] Monitoring: Add additional flags to conditionally enable log / metric scraping. #2936
