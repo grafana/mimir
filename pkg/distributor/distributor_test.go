@@ -2378,8 +2378,8 @@ func BenchmarkDistributor_Push(b *testing.B) {
 				limits.AcceptHASamples = true
 				limits.HAMaxClusters = 100
 			},
-			prepareSeries: func() ([]labels.Labels, []mimirpb.Sample) {
-				metrics := make([]labels.Labels, numSeriesPerRequest)
+			prepareSeries: func() ([][]mimirpb.LabelAdapter, []mimirpb.Sample) {
+				metrics := make([][]mimirpb.LabelAdapter, numSeriesPerRequest)
 				samples := make([]mimirpb.Sample, numSeriesPerRequest)
 
 				for i := 0; i < numSeriesPerRequest; i++ {
@@ -2390,7 +2390,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 					lbls.Set("cluster", "c1")
 					lbls.Set("__replica__", "r1")
 
-					metrics[i] = lbls.Labels()
+					metrics[i] = mimirpb.FromLabelsToLabelAdapters(lbls.Labels())
 					samples[i] = mimirpb.Sample{
 						Value:       float64(i),
 						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
@@ -2406,8 +2406,8 @@ func BenchmarkDistributor_Push(b *testing.B) {
 				limits.AcceptHASamples = true
 				limits.HAMaxClusters = 100
 			},
-			prepareSeries: func() ([]labels.Labels, []mimirpb.Sample) {
-				metrics := make([]labels.Labels, numSeriesPerRequest)
+			prepareSeries: func() ([][]mimirpb.LabelAdapter, []mimirpb.Sample) {
+				metrics := make([][]mimirpb.LabelAdapter, numSeriesPerRequest)
 				samples := make([]mimirpb.Sample, numSeriesPerRequest)
 
 				for i := 0; i < numSeriesPerRequest; i++ {
@@ -2440,7 +2440,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 					lbls.Set("cluster", cluster)
 					lbls.Set("__replica__", replica)
 
-					metrics[i] = lbls.Labels()
+					metrics[i] = mimirpb.FromLabelsToLabelAdapters(lbls.Labels())
 					samples[i] = mimirpb.Sample{
 						Value:       float64(i),
 						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
@@ -2449,8 +2449,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 
 				return metrics, samples
 			},
-			// not really an error but :shrug:
-			expectedErr: "",
+			expectedErr: "replicas did not mach, rejecting sample:",
 		},
 	}
 
