@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -33,6 +34,7 @@ import (
 	"github.com/weaveworks/common/server"
 	"github.com/weaveworks/common/signals"
 	"go.opentelemetry.io/otel"
+	"go.uber.org/atomic"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"gopkg.in/yaml.v3"
 
@@ -95,6 +97,7 @@ type Config struct {
 	Target              flagext.StringSliceCSV `yaml:"target"`
 	MultitenancyEnabled bool                   `yaml:"multitenancy_enabled"`
 	NoAuthTenant        string                 `yaml:"no_auth_tenant" category:"advanced"`
+	ShutdownDelay       time.Duration          `yaml:"shutdown_delay" category:"experimental"`
 	PrintConfig         bool                   `yaml:"-"`
 	ApplicationName     string                 `yaml:"-"`
 
@@ -143,6 +146,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&c.MultitenancyEnabled, "auth.multitenancy-enabled", true, "When set to true, incoming HTTP requests must specify tenant ID in HTTP X-Scope-OrgId header. When set to false, tenant ID from -auth.no-auth-tenant is used instead.")
 	f.StringVar(&c.NoAuthTenant, "auth.no-auth-tenant", "anonymous", "Tenant ID to use when multitenancy is disabled.")
 	f.BoolVar(&c.PrintConfig, "print.config", false, "Print the config and exit.")
+	f.DurationVar(&c.ShutdownDelay, "shutdown-delay", 0, "How long to wait between SIGTERM and shutdown. After receiving SIGTERM, Mimir will report not-ready status via readiness handler.")
 
 	c.API.RegisterFlags(f)
 	c.registerServerFlagsWithChangedDefaultValues(f)
@@ -756,10 +760,19 @@ func (t *Mimir) Run() error {
 		return err
 	}
 
+	// `ready` is used to allow our signal handler to immediately mark this component
+	// as "not ready" before starting the process of shutting down all dependent services
+	ready := atomic.NewBool(true)
+
 	// before starting servers, register /ready handler and gRPC health check service.
-	// It should reflect entire Mimir.
-	t.Server.HTTP.Path("/ready").Handler(t.readyHandler(sm))
-	grpc_health_v1.RegisterHealthServer(t.Server.GRPC, grpcutil.NewHealthCheck(sm))
+	// It should reflect entire Mimir. We use a combination of a check based on an atomic
+	// boolean (set via our signal handler) and a check based on the health of the service
+	// manager.
+	t.Server.HTTP.Path("/ready").Handler(t.readyHandler(sm, ready))
+	grpc_health_v1.RegisterHealthServer(t.Server.GRPC, newCompositeCheck(
+		newAtomicHealthCheck(ready),
+		grpcutil.NewHealthCheck(sm),
+	))
 
 	// Let's listen for events from this manager, and log them.
 	healthy := func() { level.Info(util_log.Logger).Log("msg", "Application started") }
@@ -785,11 +798,12 @@ func (t *Mimir) Run() error {
 
 	sm.AddListener(services.NewManagerListener(healthy, stopped, serviceFailed))
 
-	// Setup signal handler. If signal arrives, we stop the manager, which stops all the services.
-	handler := signals.NewHandler(t.Server.Log)
+	// Setup signal handler. If a signal arrives, we mark ourselves as "not ready", disable HTTP
+	// keep-alives, optionally wait some amount of time, and then stop the manager which stops
+	// all dependent the services.
+	handler := signals.NewHandler(t.Server.Log, newShutdownSignalReceiver(t.Cfg.ShutdownDelay, ready, t.Server.HTTPServer, sm))
 	go func() {
 		handler.Loop()
-		sm.StopAsync()
 	}()
 
 	// Start all services. This can really only fail if some service is already
@@ -818,9 +832,9 @@ func (t *Mimir) Run() error {
 	return err
 }
 
-func (t *Mimir) readyHandler(sm *services.Manager) http.HandlerFunc {
+func (t *Mimir) readyHandler(sm *services.Manager, ready *atomic.Bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !sm.IsHealthy() {
+		if !ready.Load() || !sm.IsHealthy() {
 			var serviceNamesStates []string
 			for name, s := range t.ServiceMap {
 				if s.State() != services.Running {
@@ -828,9 +842,8 @@ func (t *Mimir) readyHandler(sm *services.Manager) http.HandlerFunc {
 				}
 			}
 
-			level.Debug(util_log.Logger).Log("msg", "some services are not Running", "services", serviceNamesStates)
-
-			httpResponse := "Some services are not Running:\n" + strings.Join(serviceNamesStates, "\n")
+			level.Debug(util_log.Logger).Log("msg", "component is stopping or some services are not Running", "services", serviceNamesStates)
+			httpResponse := "Component is stopping or some services are not Running:\n" + strings.Join(serviceNamesStates, "\n")
 			http.Error(w, httpResponse, http.StatusServiceUnavailable)
 			return
 		}
