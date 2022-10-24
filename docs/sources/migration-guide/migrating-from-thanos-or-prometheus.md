@@ -78,15 +78,149 @@ If you need to have external labels in your query results, this is currently not
 For best query performance, only upload Thanos blocks from a single Prometheus replica from each HA pair.
 If you upload blocks from both replicas, the query results returned by Mimir will include samples from both replicas.
 
-> **Note**: Thanos provides the `thanos tools bucket rewrite` tool for manipulating blocks in the bucket.
-> It may be possible to use this tool to embed external labels into blocks.
-> Please refer to [`thanos tools bucket rewrite` documentation](https://thanos.io/tip/components/tools.md/#bucket-rewrite) for more details.
-
 **Grafana Mimir does not support Thanos’ _downsampling_ feature.**
 To guarantee query results correctness please only upload original (raw) Thanos blocks into Mimir's storage.
 If you also upload blocks with downsampled data (ie. blocks with non-zero `Resolution` field in `meta.json` file), Grafana Mimir will merge raw samples and downsampled samples together at the query time.
 This may cause that incorrect results are returned for the query.
 
-> **Note**: It is possible to run compaction and deduplicate blocks by Thanos first by using `thanos compact` command
-> with `--compact.enable-vertical-compaction --deduplication.func=penalty --deduplication.replica-label=<LABEL>` flags.
-> Please refer to [Vertical Compaction Use Cases](https://thanos.io/tip/components/compact.md/#vertical-compaction-use-cases) for more details on offline deduplication.
+## Migrating historic TSDB blocks from Thanos to Grafana Mimir
+
+1) Copy the blocks from Thanos's bucket to an Intermediate bucket
+
+   Create an intermediate object storage bucket(S3,GCS,etc.) in your cloud provider where you can copy the historical blocks and work on them before uploading to the Mimir bucket.
+
+    For AWS S3, use the aws tool in the following command:
+
+    ```bash
+    aws s3 cp -r s3://<THANOS-BUCKET> s3://<TENANT>/<DIRECTORY>
+    ```
+
+    For Google Cloud Storage (GCS), use the gsutil tool in the following command:
+    
+    ```bash
+    gsutil -m cp -r gs://<THANOS-BUCKET>/* gs://<INTERMEDIATE-MIMIR-BUCKET>/
+    ```
+    
+    Once the copy process is done, inspect the blocks in the bucket to ensure it's valid from Thanos perspective.
+    
+    ```bash
+    thanos tools bucket inspect --objstore.config-file bucket.yaml
+    ```
+
+2) Remove the downsampled blocks
+
+   Mimir doesn't understand the downsampled blocks(ie. blocks with non-zero Resolution field in meta.json file) in Thanos. Therefore we need to remove the 5m and 1h downsampled blocks from this bucket.
+   
+   Mark the downsampled blocks for deletion.
+   
+   ```bash
+   thanos tools bucket retention --objstore.config-file bucket.yaml --retention.resolution-1h=2h --retention.resolution-5m=2h --retention.resolution-raw=0d
+   ```
+   Cleanup the blocks marked for deletion.
+   
+   ```bash
+   thanos tools bucket cleanup --objstore.config-file bucket.yaml --delete-delay=0
+   ```
+  
+3) Remove the duplicated blocks
+
+   If two replicas of Prometheus instancesare deployed for HA, then only upload the blocks from one of the replicas and drop the other.
+   
+   ```bash
+   thanos tools bucket inspect --objstore.config-file bucket.yaml --output=tsv | grep prometheus_replica=<PROMETHEUS-REPLICA-TO-DROP> | awk '{print $1}' | xargs -n 1 -P 1 thanos tools bucket mark --marker="deletion-mark.json" --objstore.config-file bucket.yaml --details="Removed as duplicate" --id
+   ```
+   
+   > **Note**: Replace **prometheus_replica** with the unique label that would differentiate prometheus replicas in your setup.
+
+   Again cleanup the duplicate blocks marked for deletion.
+  
+   ```bash
+   thanos tools bucket cleanup --objstore.config-file bucket.yaml --delete-delay=0
+   ```
+  
+   > **ProTip!**: If you want to visualize what exactly is happening in the blocks with respect to the source of blocks, labels, compaction levels, etc, you can use the below command to get the output as CSV and import it to a google sheet.
+   > ```bash 
+   > thanos tools bucket inspect --objstore.config-file bucket-prod.yaml --output=csv >> thanos-blocks.csv
+   > ```
+
+4) Relabel the blocks with external labels
+
+   Relabel the blocks with the required external labels. Create a rewrite config like the following:
+   
+   ```bash
+   # relabel-config.yaml
+   - action: replace
+     target_label: "<LABEL-KEY>"
+     replacement: "<LABEL-VALUE"
+   ```
+   
+   Perform the rewrite dry run to confirm all work well.
+   
+   ```bash
+   thanos tools bucket rewrite  --objstore.config-file bucket.yaml --rewrite.to-relabel-config-file relabel-config.yaml --dry-run --id
+   ```
+   
+   After confirming that the rewrite is working as expected in **--dry-run**, you can apply the changes with the **--no-dry-run** flag.
+   
+   ```bash
+   thanos tools bucket rewrite  --objstore.config-file bucket.yaml --rewrite.to-relabel-config-file relabel-config.yaml --no-dry-run --delete-blocks --id
+   ```
+   
+   The output of relabelling of every block would look like something below.
+   
+   ```bash
+   level=info ts=2022-10-10T13:03:32.032820262Z caller=factory.go:50 msg="loading bucket configuration"
+   level=info ts=2022-10-10T13:03:32.516953867Z caller=tools_bucket.go:1160 msg="downloading block" source=01GEGWPME2187SVFH63G8DH7KH
+   level=info ts=2022-10-10T13:03:35.825009556Z caller=tools_bucket.go:1197 msg="changelog will be available" file=/tmp/thanos-  rewrite/01GF0ZWPWGEPHG5NV79NH9KMPV/change.log
+   level=info ts=2022-10-10T13:03:35.836953593Z caller=tools_bucket.go:1212 msg="starting rewrite for block" source=01GEGWPME2187SVFH63G8DH7KH  new=01GF0ZWPWGEPHG5NV79NH9KMPV toDelete= toRelabel="- action: replace\n  target_label: \"cluster\"\n  replacement: \"prod-cluster\"\n"
+   level=info ts=2022-10-10T13:04:47.57624244Z caller=compactor.go:42 msg="processed 10.00% of 701243 series"
+   level=info ts=2022-10-10T13:04:53.4046885Z caller=compactor.go:42 msg="processed 20.00% of 701243 series"
+   level=info ts=2022-10-10T13:04:59.649337602Z caller=compactor.go:42 msg="processed 30.00% of 701243 series"
+   level=info ts=2022-10-10T13:05:02.986219042Z caller=compactor.go:42 msg="processed 40.00% of 701243 series"
+   level=info ts=2022-10-10T13:05:05.990498497Z caller=compactor.go:42 msg="processed 50.00% of 701243 series"
+   level=info ts=2022-10-10T13:05:09.349918024Z caller=compactor.go:42 msg="processed 60.00% of 701243 series"
+   level=info ts=2022-10-10T13:05:12.040895624Z caller=compactor.go:42 msg="processed 70.00% of 701243 series"
+   level=info ts=2022-10-10T13:05:15.253899238Z caller=compactor.go:42 msg="processed 80.00% of 701243 series"
+   level=info ts=2022-10-10T13:05:18.471471014Z caller=compactor.go:42 msg="processed 90.00% of 701243 series"
+   level=info ts=2022-10-10T13:05:21.536267363Z caller=compactor.go:42 msg="processed 100.00% of 701243 series"
+   level=info ts=2022-10-10T13:05:21.536466158Z caller=tools_bucket.go:1222 msg="wrote new block after modifications; flushing" source=01GEGWPME2187SVFH63G8DH7KH new=01GF0ZWPWGEPHG5NV79NH9KMPV
+   level=info ts=2022-10-10T13:05:28.675240198Z caller=tools_bucket.go:1231 msg="uploading new block" source=01GEGWPME2187SVFH63G8DH7KH new=01GF0ZWPWGEPHG5NV79NH9KMPV
+   level=info ts=2022-10-10T13:05:38.922348564Z caller=tools_bucket.go:1241 msg=uploaded source=01GEGWPME2187SVFH63G8DH7KH new=01GF0ZWPWGEPHG5NV79NH9KMPV
+   level=info ts=2022-10-10T13:05:38.979696873Z caller=block.go:203 msg="block has been marked for deletion" block=01GEGWPME2187SVFH63G8DH7KH
+   level=info ts=2022-10-10T13:05:38.979832767Z caller=tools_bucket.go:1249 msg="rewrite done" IDs=01GEGWPME2187SVFH63G8DH7KH
+   level=info ts=2022-10-10T13:05:38.980197796Z caller=main.go:161 msg=exiting
+   ```
+   
+   
+   Cleanup the original blocks which are marked for deletion.
+  
+   ```bash
+   thanos tools bucket cleanup --objstore.config-file bucket.yaml --delete-delay=0
+   ```
+  
+   > **Note**: If there are multiple prometheus clusters and the process of relabelling each of them parallely would speed up the process.
+   > Get the blocks ids of the blocks that are responsible for the cluster and write a for loop to iterate over them.
+   > ```bash
+   > thanos tools bucket inspect --objstore.config-file bucket.yaml --output=tsv | grep <PROMETHEUS-CLUSTER-NAME> | awk '{print $1}' | xargs -n 1 -P 1 > prod-blocks.txt
+   >```
+  
+   >```bash
+   > for i in `cat prod-blocks.txt`; do thanos tools bucket rewrite  --objstore.config-file bucket.yaml --rewrite.to-relabel-config-file relabel-config.yaml --id $i --no-dry-run --delete-blocks; done
+   >```
+  
+5) Copy the blocks from the intermediate bucket to the Mimir bucket
+  
+   Once the relabelling process is done, copy the blocks from the intermediate bucket to the Mimir bucket.
+  
+   ```bash
+   gsutil -m cp -r gs://<mimir-intermediate-bucket>/$i gs://<mimir-gcs-bucket>/<TENANT>/
+   ```
+ 
+6) Mimir compactor updates bucket index
+  
+   The historical blocks will not be available for querying as soon as they are uploaded, as the bucket index to include all available blocks in the index have to be updated by the compactor and it would take time(depending on the number of blocks to be updated and the index updation normally runs every 15 minutes). Once this is done, other components like querier, store-gateway  will be able to work with these the historical blocks and they will be available for querying through Grafana. You can check the storegateway HTTP endpoint at ```http://<STORE-GATEWAY-ENDPOINT>/store-gateway/tenant/<TENANT-NAME>/blocks``` and you should be able to see the uploaded blocks there.
+  
+> **Note**: It is recommeneded to run all the above steps in a **screen** command to avoid any interruptions as these may take time depending on the amount of data to be processed.
+  
+  
+   
