@@ -67,13 +67,13 @@ func TestMatcher_MatchesSeries(t *testing.T) {
 		},
 	} {
 		t.Run(tc.series.String(), func(t *testing.T) {
-			got := asm.Matches(tc.series)
+			got := asm.matches(tc.series)
 			assert.Equal(t, tc.expected, preAllocDynamicSliceToSlice(got))
 		})
 	}
 }
 
-func preAllocDynamicSliceToSlice(prealloc PreAllocDynamicSlice) []int {
+func preAllocDynamicSliceToSlice(prealloc preAllocDynamicSlice) []int {
 	slice := make([]int, prealloc.len())
 	for i := 0; i < prealloc.len(); i++ {
 		slice[i] = int(prealloc.get(i))
@@ -113,7 +113,7 @@ func BenchmarkMatchesSeries(b *testing.B) {
 		for j, labelCount := range labelCounts {
 			b.Run(fmt.Sprintf("TrackerCount: %d, LabelCount: %d", trackerCount, labelCount), func(b *testing.B) {
 				for x := 0; x < b.N; x++ {
-					got := asms[i].Matches(series[j])
+					got := asms[i].matches(series[j])
 					if got.len() > 2 {
 						b.FailNow()
 					}
