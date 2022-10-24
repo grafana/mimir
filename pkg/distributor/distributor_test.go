@@ -290,8 +290,8 @@ func TestDistributor_Push(t *testing.T) {
 			response, err := ds[0].Push(ctx, request)
 
 			if tc.expectedError == nil {
+				require.NoError(t, err)
 				assert.Equal(t, emptyResponse, response)
-				assert.Nil(t, err)
 			} else {
 				assert.Nil(t, response)
 				assert.EqualError(t, err, tc.expectedError.Error())
