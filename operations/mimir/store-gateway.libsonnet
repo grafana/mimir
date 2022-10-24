@@ -13,6 +13,7 @@
     pvc.mixin.metadata.withName('store-gateway-data'),
 
   store_gateway_args::
+    $._config.usageStatsConfig +
     $._config.grpcConfig +
     $._config.storageConfig +
     $._config.blocksStorageConfig +
