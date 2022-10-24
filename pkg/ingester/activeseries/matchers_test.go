@@ -82,42 +82,54 @@ func preAllocDynamicSliceToSlice(prealloc preAllocDynamicSlice) []int {
 }
 
 func BenchmarkMatchesSeries(b *testing.B) {
-
-	trackerCounts := []int{10, 100, 1000, 10000}
+	trackerCounts := []int{10, 100, 1000}
 	asms := make([]*Matchers, len(trackerCounts))
 
 	for i, matcherCount := range trackerCounts {
 		configMap := map[string]string{}
 		for j := 0; j < matcherCount; j++ {
-			configMap[strconv.Itoa(j)] = fmt.Sprintf("{grafanacloud_usage_group=~%d.*}", j)
+			configMap[strconv.Itoa(j)] = fmt.Sprintf(`{this_will_match_%d="true"}`, j)
 		}
 		config, err := NewCustomTrackersConfig(configMap)
 		require.NoError(b, err)
 		asms[i] = NewMatchers(config)
-
 	}
 
-	labelCounts := []int{1, 10, 100}
-	series := make([]labels.Labels, len(labelCounts))
-	for i, labelCount := range labelCounts {
-		l := labels.Labels{
-			{Name: "grafanacloud_usage_group", Value: "1"}, // going to match exactly to one matcher
+	makeLabels := func(total, matching int) labels.Labels {
+		if total < matching {
+			b.Fatal("wrong test setup, total < matching")
 		}
-		for j := 1; j < labelCount; j++ {
-			labelEntry := labels.Label{Name: fmt.Sprintf("foo%d", j), Value: "true"}
-			l = append(l, labelEntry)
+		lbs := make(labels.Labels, 0, total)
+		for i := 0; i < matching; i++ {
+			lbs = append(lbs, labels.Label{Name: fmt.Sprintf("this_will_match_%d", i), Value: "true"})
 		}
-		series[i] = l
+		for i := matching; i < total; i++ {
+			lbs = append(lbs, labels.Label{Name: fmt.Sprintf("something_else_%d", i), Value: "true"})
+		}
+		return lbs
 	}
 
 	for i, trackerCount := range trackerCounts {
-		for j, labelCount := range labelCounts {
-			b.Run(fmt.Sprintf("TrackerCount: %d, LabelCount: %d", trackerCount, labelCount), func(b *testing.B) {
+		for _, bc := range []struct {
+			total, matching int
+		}{
+			{1, 0},
+			{1, 1},
+			{10, 1},
+			{10, 2},
+			{10, 5},
+			{25, 1},
+			{25, 2},
+			{25, 5},
+			{100, 1},
+			{100, 2},
+			{100, 5},
+		} {
+			series := makeLabels(bc.total, bc.matching)
+			b.Run(fmt.Sprintf("TrackerCount: %d, Labels: %d, Matching: %d", trackerCount, bc.total, bc.matching), func(b *testing.B) {
 				for x := 0; x < b.N; x++ {
-					got := asms[i].matches(series[j])
-					if got.len() > 2 {
-						b.FailNow()
-					}
+					got := asms[i].matches(series)
+					require.Equal(b, bc.matching, got.len())
 				}
 			})
 		}
