@@ -19,7 +19,7 @@ This document is applicable to both Grafana Mimir and Grafana Enterprise Metrics
 
 1. The installation is already upgraded to `mimir-distributed` Helm chart version 4.0.0 or later.
 
-1. If you have modified the `mimir.config` value, please make sure to merge in the latest version from the chart. Or consider using `mimir.structuredConfig` instead, see [Manage the configuration of Grafana Mimir with Helm]({{< relref "../operators-guide/running-production-environment-with-helm/configuration-with-helm.md" >}})
+1. If you have modified the `mimir.config` value, please make sure to merge in the latest version from the chart. Or consider using `mimir.structuredConfig` instead, see [Manage the configuration of Grafana Mimir with Helm]({{< relref "../operators-guide/run-production-environment-with-helm/configuration-with-helm.md" >}})
 
 ## Migrate alertmanager to zone-aware replication
 

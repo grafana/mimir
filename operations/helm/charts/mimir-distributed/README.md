@@ -40,7 +40,7 @@ To obtain a Grafana Enterprise Metrics license, refer to [Get a license](https:/
 
 ### Helm3
 
-The chart requires at least Helm version 3 to work.
+The chart requires at least Helm version 3.0.0 to work.
 
 ## Installation
 
@@ -70,22 +70,7 @@ For details about setting up Grafana Mimir, refer to [Get started with Grafana M
 
 ### Migrate from Cortex to Grafana Mimir
 
-Please consult the [Migration from Cortex to Grafana](https://grafana.com/docs/mimir/v2.3.x/migration-guide/migrating-from-cortex/) guide on how to update the configuration.
-Prepare a custom values file with the contents:
-
-```yaml
-nameOverride: cortex
-
-mimir:
-  config: |
-    <text of configuration>
-```
-
-Perform the upgrade:
-
-```bash
-helm upgrade <cluster name> grafana/mimir-distributed -f <custom values file>
-```
+To update the configuration, see [Migrating from Cortex to Grafana Mimir](https://grafana.com/docs/mimir/latest/migration-guide/migrating-from-cortex/).
 
 ## Installation of Grafana Enterprise Metrics
 
@@ -127,71 +112,12 @@ enterprise:
   enabled: true
 ```
 
-## Scale values
+## Sizing values
 
 The default Helm chart values in the `values.yaml` file are configured to allow you to quickly test out Grafana Mimir.
 Alternative values files are included to provide a more realistic configuration that should facilitate a certain level of ingest load.
 
-### Small
-
-The `small.yaml` values file configures the Grafana Mimir cluster to
-handle production ingestion of ~1M series using the blocks storage engine.
-Query requirements can vary dramatically depending on query rate and query
-ranges. The values here satisfy a "usual" query load as seen from our
-production clusters at this scale.
-It is important to ensure that you run no more than one ingester replica
-per node so that a single node failure does not cause data loss. Zone-aware
-replication can be configured with values under `ingester.zoneAwareReplication`
-to ensure data replication spans availability
-zones. Refer to [Migrate from single zone to zone-aware replication with Helm](https://grafana.com/docs/mimir/v2.3.x//migration-guide/migrating-from-single-zone-with-helm.md) and
-[Zone-Aware Replication](https://grafana.com/docs/mimir/v2.3.x/operators-guide/configure/configuring-zone-aware-replication/)
-for more information.
-Minio is no longer enabled and you are encouraged to use your cloud providers
-object storage service for production deployments.
-
-To deploy a cluster using `small.yaml` values file:
-
-```bash
-helm install <cluster name> grafana/mimir-distributed -f small.yaml
-```
-
-### Large
-
-The `large.yaml` values file configures the Grafana Mimir cluster to
-handle production ingestion of ~10M series using the blocks storage engine.
-Query requirements can vary dramatically depending on query rate and query
-ranges. The values here satisfy a "usual" query load as seen from our
-production clusters at this scale.
-It is important to ensure that you run no more than one ingester replica
-per node so that a single node failure does not cause data loss. Zone-aware
-replication can be configured with values under `ingester.zoneAwareReplication`
-to ensure data replication spans availability
-zones. Refer to [Migrate from single zone to zone-aware replication with Helm](https://grafana.com/docs/mimir/v2.3.x//migration-guide/migrating-from-single-zone-with-helm.md) and
-[Zone-Aware Replication](https://grafana.com/docs/mimir/v2.3.x/operators-guide/configure/configuring-zone-aware-replication/)
-for more information.
-Minio is no longer enabled and you are encouraged to use your cloud providers
-object storage service for production deployments.
-
-To deploy a cluster using the `large.yaml` values file:
-
-```bash
-helm install <cluster name> grafana/mimir-distributed -f large.yaml
-```
-
-# Development
-
-To configure a local default storage class for k3d:
-
-```bash
-kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/master/deploy/local-path-storage.yaml
-kubectl patch storageclass local-path -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
-```
-
-To install the chart with the values used in CI tests:
-
-```bash
-helm install test ./ --values ./ci/test-values.yaml
-```
+For details about the sizing plans, see [Capacity planning and Pod scheduling](https://grafana.com/docs/mimir/latest/operators-guide/run-production-environment-with-helm/#plan-capacity).
 
 # Contributing and releasing
 
