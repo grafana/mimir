@@ -266,18 +266,15 @@ func (w *frontendSchedulerWorker) stop() {
 }
 
 func (w *frontendSchedulerWorker) runOne(ctx context.Context, client schedulerpb.SchedulerForFrontendClient) {
-	backoffConfig := backoff.Config{
-		MinBackoff: 250 * time.Millisecond,
-		MaxBackoff: 2 * time.Second,
-	}
+	// attemptLoop returns false if there was any error with forwarding requests to scheduler.
+	attemptLoop := func() bool {
+		ctx, cancel := context.WithCancel(ctx)
+		defer cancel() // cancel the stream after we are done to release resources
 
-	backoff := backoff.New(ctx, backoffConfig)
-	for backoff.Ongoing() {
 		loop, loopErr := client.FrontendLoop(ctx)
 		if loopErr != nil {
 			level.Error(w.log).Log("msg", "error contacting scheduler", "err", loopErr, "addr", w.schedulerAddr)
-			backoff.Wait()
-			continue
+			return false
 		}
 
 		loopErr = w.schedulerLoop(loop)
@@ -287,11 +284,22 @@ func (w *frontendSchedulerWorker) runOne(ctx context.Context, client schedulerpb
 
 		if loopErr != nil {
 			level.Error(w.log).Log("msg", "error sending requests to scheduler", "err", loopErr, "addr", w.schedulerAddr)
-			backoff.Wait()
-			continue
+			return false
 		}
+		return true
+	}
 
-		backoff.Reset()
+	backoffConfig := backoff.Config{
+		MinBackoff: 250 * time.Millisecond,
+		MaxBackoff: 2 * time.Second,
+	}
+	backoff := backoff.New(ctx, backoffConfig)
+	for backoff.Ongoing() {
+		if !attemptLoop() {
+			backoff.Wait()
+		} else {
+			backoff.Reset()
+		}
 	}
 }
 
