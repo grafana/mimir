@@ -83,7 +83,7 @@ To guarantee query results correctness please only upload original (raw) Thanos 
 If you also upload blocks with downsampled data (ie. blocks with non-zero `Resolution` field in `meta.json` file), Grafana Mimir will merge raw samples and downsampled samples together at the query time.
 This may cause that incorrect results are returned for the query.
 
-## Migrating historic TSDB blocks from Thanos to Grafana Mimir
+## Migrate historic TSDB blocks from Thanos to Grafana Mimir
 
 1) Copy the blocks from Thanos's bucket to an Intermediate bucket
 
@@ -104,7 +104,8 @@ This may cause that incorrect results are returned for the query.
     Once the copy process is done, inspect the blocks in the bucket to ensure it's valid from Thanos perspective.
     
     ```bash
-    thanos tools bucket inspect --objstore.config-file bucket.yaml
+    thanos tools bucket inspect \
+        --objstore.config-file bucket.yaml
     ```
 
 2) Remove the downsampled blocks
@@ -114,12 +115,18 @@ This may cause that incorrect results are returned for the query.
    Mark the downsampled blocks for deletion.
    
    ```bash
-   thanos tools bucket retention --objstore.config-file bucket.yaml --retention.resolution-1h=2h --retention.resolution-5m=2h --retention.resolution-raw=0d
+   thanos tools bucket retention \
+       --objstore.config-file bucket.yaml \
+       --retention.resolution-1h=2h \
+       --retention.resolution-5m=2h \
+       --retention.resolution-raw=0d
    ```
    Cleanup the blocks marked for deletion.
    
    ```bash
-   thanos tools bucket cleanup --objstore.config-file bucket.yaml --delete-delay=0
+   thanos tools bucket cleanup \
+       --objstore.config-file bucket.yaml \
+       --delete-delay=0
    ```
   
 3) Remove the duplicated blocks
@@ -127,7 +134,18 @@ This may cause that incorrect results are returned for the query.
    If two replicas of Prometheus instancesare deployed for HA, then only upload the blocks from one of the replicas and drop the other.
    
    ```bash
-   thanos tools bucket inspect --objstore.config-file bucket.yaml --output=tsv | grep prometheus_replica=<PROMETHEUS-REPLICA-TO-DROP> | awk '{print $1}' | xargs -n 1 -P 1 thanos tools bucket mark --marker="deletion-mark.json" --objstore.config-file bucket.yaml --details="Removed as duplicate" --id
+   #Get the block id of the duplicate block and using xargs pass the block id as argument and mark the block for deletion.
+   thanos tools bucket inspect \
+       --objstore.config-file bucket.yaml \
+       --output=tsv \
+       | grep prometheus_replica=<PROMETHEUS-REPLICA-TO-DROP> \
+       | awk '{print $1}' \
+       | xargs -n 1 -P 1 \
+       thanos tools bucket mark \
+       --marker="deletion-mark.json" \
+       --objstore.config-file bucket.yaml \
+       --details="Removed as duplicate" \
+       --id
    ```
    
    > **Note**: Replace **prometheus_replica** with the unique label that would differentiate prometheus replicas in your setup.
@@ -135,12 +153,16 @@ This may cause that incorrect results are returned for the query.
    Again cleanup the duplicate blocks marked for deletion.
   
    ```bash
-   thanos tools bucket cleanup --objstore.config-file bucket.yaml --delete-delay=0
+   thanos tools bucket cleanup \
+       --objstore.config-file bucket.yaml \
+       --delete-delay=0
    ```
   
    > **ProTip!**: If you want to visualize what exactly is happening in the blocks with respect to the source of blocks, labels, compaction levels, etc, you can use the below command to get the output as CSV and import it to a google sheet.
    > ```bash 
-   > thanos tools bucket inspect --objstore.config-file bucket-prod.yaml --output=csv >> thanos-blocks.csv
+   > thanos tools bucket inspect \
+   >     --objstore.config-file bucket-prod.yaml \
+   >     --output=csv >> thanos-blocks.csv
    > ```
 
 4) Relabel the blocks with external labels
@@ -157,13 +179,35 @@ This may cause that incorrect results are returned for the query.
    Perform the rewrite dry run to confirm all work well.
    
    ```bash
-   thanos tools bucket rewrite  --objstore.config-file bucket.yaml --rewrite.to-relabel-config-file relabel-config.yaml --dry-run --id
+   #Get the block ids of all the blocks and pass them as argument to the thanos tool rewrite command using xargs.
+   thanos tools bucket inspect \
+       --objstore.config-file bucket.yaml \
+       --output=tsv \
+       | grep <PROMETHEUS-CLUSTER-NAME> \
+       | awk '{print $1}' \
+       | xargs -n 1 -P 1 \
+       thanos tools bucket rewrite \
+       --objstore.config-file bucket.yaml \
+       --rewrite.to-relabel-config-file relabel-config.yaml \
+       --dry-run \
+       --id
    ```
    
    After confirming that the rewrite is working as expected in **--dry-run**, you can apply the changes with the **--no-dry-run** flag.
    
    ```bash
-   thanos tools bucket rewrite  --objstore.config-file bucket.yaml --rewrite.to-relabel-config-file relabel-config.yaml --no-dry-run --delete-blocks --id
+   thanos tools bucket inspect \
+       --objstore.config-file bucket.yaml \
+       --output=tsv \
+       | grep <PROMETHEUS-CLUSTER-NAME> \
+       | awk '{print $1}' \
+       | xargs -n 1 -P 1 \
+       thanos tools bucket rewrite  \
+       --objstore.config-file bucket.yaml \
+       --rewrite.to-relabel-config-file relabel-config.yaml \
+       --no-dry-run \
+       --delete-blocks 
+       --id
    ```
    
    The output of relabelling of every block would look like something below.
@@ -195,17 +239,31 @@ This may cause that incorrect results are returned for the query.
    Cleanup the original blocks which are marked for deletion.
   
    ```bash
-   thanos tools bucket cleanup --objstore.config-file bucket.yaml --delete-delay=0
+   thanos tools bucket cleanup \
+       --objstore.config-file bucket.yaml \
+       --delete-delay=0
    ```
   
-   > **Note**: If there are multiple prometheus clusters and the process of relabelling each of them parallely would speed up the process.
+   > **Note**: If there are multiple prometheus clusters and relabelling each of them parallely would speed up the entire process.
    > Get the blocks ids of the blocks that are responsible for the cluster and write a for loop to iterate over them.
    > ```bash
-   > thanos tools bucket inspect --objstore.config-file bucket.yaml --output=tsv | grep <PROMETHEUS-CLUSTER-NAME> | awk '{print $1}' | xargs -n 1 -P 1 > prod-blocks.txt
+   > thanos tools bucket inspect \
+   >     --objstore.config-file bucket.yaml \
+   >     --output=tsv \
+   >     | grep <PROMETHEUS-CLUSTER-NAME> \
+   >     | awk '{print $1}' > prod-blocks.txt
    >```
   
    >```bash
-   > for i in `cat prod-blocks.txt`; do thanos tools bucket rewrite  --objstore.config-file bucket.yaml --rewrite.to-relabel-config-file relabel-config.yaml --id $i --no-dry-run --delete-blocks; done
+   > for i in `cat prod-blocks.txt`
+   > do
+   >     thanos tools bucket rewrite  \
+   >        --objstore.config-file bucket.yaml \
+   >        --rewrite.to-relabel-config-file relabel-config.yaml \
+   >        --delete-blocks \
+   >        --no-dry-run \
+   >        --id $i \         
+   > done
    >```
   
 5) Copy the blocks from the intermediate bucket to the Mimir bucket
@@ -218,7 +276,9 @@ This may cause that incorrect results are returned for the query.
  
 6) Mimir compactor updates bucket index
   
-   The historical blocks will not be available for querying as soon as they are uploaded, as the bucket index to include all available blocks in the index have to be updated by the compactor and it would take time(depending on the number of blocks to be updated and the index updation normally runs every 15 minutes). Once this is done, other components like querier, store-gateway  will be able to work with these the historical blocks and they will be available for querying through Grafana. You can check the storegateway HTTP endpoint at ```http://<STORE-GATEWAY-ENDPOINT>/store-gateway/tenant/<TENANT-NAME>/blocks``` and you should be able to see the uploaded blocks there.
+   The historical blocks will not be available for querying as soon as they are uploaded, as the bucket index to include all available blocks in the index have to be updated by the compactor and it would take time(depending on the number of blocks to be updated and the index updation normally runs every 15 minutes). Once this is done, other components like querier, store-gateway  will be able to work with these the historical blocks and they will be available for querying through Grafana. 
+   
+   You can check the storegateway HTTP endpoint at ```http://<STORE-GATEWAY-ENDPOINT>/store-gateway/tenant/<TENANT-NAME>/blocks``` and you should be able to see the uploaded blocks there.
   
 > **Note**: It is recommeneded to run all the above steps in a **screen** command to avoid any interruptions as these may take time depending on the amount of data to be processed.
   
