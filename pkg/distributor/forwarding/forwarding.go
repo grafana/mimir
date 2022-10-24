@@ -433,7 +433,7 @@ func (f *forwarder) submitForwardingRequest(ctx context.Context, user string, en
 	req.errCh = errCh
 	req.requestWg = requestWg
 
-	// Target endpoint and TimeSeries to forward.
+	// Request parameters.
 	req.user = user
 	req.endpoint = endpoint
 	req.ts = ts
