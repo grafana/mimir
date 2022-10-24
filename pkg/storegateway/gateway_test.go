@@ -1083,11 +1083,11 @@ func TestStoreGateway_Series_QuerySharding(t *testing.T) {
 		ctx    = context.Background()
 		userID = "user-1"
 		series = []labels.Labels{
-			labels.New(labels.Label{Name: labels.MetricName, Value: "series_1"}), // Hash: 12248531033489120077
-			labels.New(labels.Label{Name: labels.MetricName, Value: "series_2"}), // Hash: 4624373102974193462
-			labels.New(labels.Label{Name: labels.MetricName, Value: "series_3"}), // Hash: 11488854180004364397
-			labels.New(labels.Label{Name: labels.MetricName, Value: "series_4"}), // Hash: 7076372709108762848
-			labels.New(labels.Label{Name: labels.MetricName, Value: "series_5"}), // Hash: 2682489904774096023
+			labels.FromStrings(labels.MetricName, "series_1"), // Hash: 12248531033489120077
+			labels.FromStrings(labels.MetricName, "series_2"), // Hash: 4624373102974193462
+			labels.FromStrings(labels.MetricName, "series_3"), // Hash: 11488854180004364397
+			labels.FromStrings(labels.MetricName, "series_4"), // Hash: 7076372709108762848
+			labels.FromStrings(labels.MetricName, "series_5"), // Hash: 2682489904774096023
 		}
 	)
 
@@ -1413,7 +1413,7 @@ func mockTSDB(t *testing.T, dir string, numSeries, numBlocks int, minT, maxT int
 
 	step := (maxT - minT) / int64(numSeries)
 	addSample := func(i int) {
-		lbls := labels.Labels{labels.Label{Name: "series_id", Value: strconv.Itoa(i)}}
+		lbls := labels.FromStrings("series_id", strconv.Itoa(i))
 
 		app := db.Appender(context.Background())
 		_, err := app.Append(0, lbls, minT+(step*int64(i)), float64(i))

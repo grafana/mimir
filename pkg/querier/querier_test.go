@@ -73,11 +73,9 @@ func TestQuerier(t *testing.T) {
 		// Very simple single-point gets, with low step.  Performance should be
 		// similar to above.
 		{
-			query: "foo",
-			step:  sampleRate * 4,
-			labels: labels.Labels{
-				labels.Label{Name: model.MetricNameLabel, Value: "foo"},
-			},
+			query:  "foo",
+			step:   sampleRate * 4,
+			labels: labels.FromStrings(model.MetricNameLabel, "foo"),
 			samples: func(from, through time.Time, step time.Duration) int {
 				return int(through.Sub(from)/step) + 1
 			},
@@ -101,11 +99,9 @@ func TestQuerier(t *testing.T) {
 
 		// Single points gets with large step; excersise Seek performance.
 		{
-			query: "foo",
-			step:  sampleRate * 4 * 10,
-			labels: labels.Labels{
-				labels.Label{Name: model.MetricNameLabel, Value: "foo"},
-			},
+			query:  "foo",
+			step:   sampleRate * 4 * 10,
+			labels: labels.FromStrings(model.MetricNameLabel, "foo"),
 			samples: func(from, through time.Time, step time.Duration) int {
 				return int(through.Sub(from)/step) + 1
 			},
@@ -242,9 +238,7 @@ func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time
 
 	app := head.Appender(context.Background())
 
-	l := labels.Labels{
-		{Name: model.MetricNameLabel, Value: "foo"},
-	}
+	l := labels.FromStrings(model.MetricNameLabel, "foo")
 
 	cnt := 0
 	chunkStartTs := mint

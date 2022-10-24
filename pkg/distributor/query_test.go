@@ -195,7 +195,8 @@ func makeExemplarQueryResponse(numSeries int) *ingester_client.ExemplarQueryResp
 	now := time.Now()
 	ts := make([]mimirpb.TimeSeries, numSeries)
 	for i := 0; i < numSeries; i++ {
-		lbls := labels.NewBuilder(labels.Labels{{Name: model.MetricNameLabel, Value: "foo"}})
+		lbls := labels.NewBuilder(labels.EmptyLabels())
+		lbls.Set(model.MetricNameLabel, "foo")
 		for i := 0; i < 10; i++ {
 			lbls.Set(fmt.Sprintf("name_%d", i), fmt.Sprintf("value_%d", i))
 		}
