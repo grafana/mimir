@@ -4,6 +4,7 @@ package activeseries
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 
@@ -11,7 +12,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const maxNumberOfTrackers = 64000
+// preAllocDynamicSlice is using uint16 to represent custom tracker matches
+const maxNumberOfTrackers = math.MaxUint16
 
 // CustomTrackersConfig configures active series custom trackers.
 // It can be set using a flag, or parsed from yaml.

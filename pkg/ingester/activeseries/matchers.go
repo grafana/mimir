@@ -83,6 +83,10 @@ func amlabelMatcherToProm(m *amlabels.Matcher) *labels.Matcher {
 
 const preAllocatedSize = 3
 
+// preAllocDynamicSlice is a slice-like uint16 data structure that allocates space for the first `preAllocatedSize` elements.
+// When more than `preAllocatedSize` elements are appended, it allocates a slice that escapes to heap.
+// This trades in extra allocated space (2x more with `preAllocatedSize=3`) for zero-allocations in most of the cases,
+// relying on the assumption that most of the matchers will not match more than `preAllocatedSize` trackers.
 type preAllocDynamicSlice struct {
 	arr  [preAllocatedSize]uint16
 	arrl byte
