@@ -28,7 +28,12 @@ spec:
     spec:
       serviceAccountName: test-enterprise-k8s-1.25-values-mimir
       securityContext:
-        null
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
       initContainers:
         []
       containers:
@@ -48,6 +53,10 @@ spec:
           env:
           envFrom:
           securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
             readOnlyRootFilesystem: true
       restartPolicy: OnFailure
       volumes:

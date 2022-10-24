@@ -45,6 +45,12 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [CHANGE] Nginx: uses the headless service of alertmanager, ingester and store-gateway as backends, because there are 3 separate services for each zone. #2778
 * [CHANGE] Gateway: uses the headless service of alertmanager as backend, because there are 3 separate services for each zone. #2778
 * [CHANGE] Update sizing plans (small.yaml, large.yaml, capped-small.yaml, capped-large.yaml). These reflect better how we recommend running Mimir and GEM in production. most plans have adjusted number of replicas and resource requirements. The only **breaking change** is in small.yaml which has reduced the number of ingesters from 4 to 3; for scaling down ingesters refer to [Scaling down ingesters](https://grafana.com/docs/mimir/latest/operators-guide/run-production-environment/scaling-out/#scaling-down-ingesters). #3035
+* [CHANGE] Change default securityContext of Mimir and GEM Pods and containers, so that they comply with a [Restricted pod security policy](https://kubernetes.io/docs/concepts/security/pod-security-standards/).
+  This changes what user the containers run as from `root` to `10001`. The files in the Pods' attached volumes should change ownership with the `fsGroup` change;
+  most CSI drivers support changing the value of `fsGroup`, or kubelet is able to do the ownership change instead of the CSI driver. This is not the case for the HostPath driver.
+  If you are using HostPath or another driver that doesn't support changing `fsGroup`, then you have a couple of options: A) set the `securityContext` of all Mimir and GEM components to `{}` in your values file; B) delete PersistentVolumes and PersistentVolumeClaims and upgrade the chart; C) add an initContainer to all components that use a PVC that changes ownership of the mounted volumes.
+  If you take no action and `fsGroup` is not supported by your CSI driver, then components will fail to start. #3007
+* [CHANGE] Restrict Pod seccomp profile to `runtime/default` in the default PodSecurityPolicy of the chart. #3007
 * [ENHANCEMENT] Metamonitoring: If enabled and no URL is configured, then metamonitoring metrics will be sent to
   Mimir under the `metamonitoring` tenant; this enhancement does not apply to GEM. #3176
 * [ENHANCEMENT] Improve default rollout strategies. Now distributor, overrides_exporter, querier, query_frontend, admin_api, gateway, and graphite components can be upgraded more quickly and also can be rolled out with a single replica without downtime. #3029

@@ -17,19 +17,19 @@ The instructions that follow are common across any flavor of Kubernetes. They al
 
 It also assumes that you have an understanding of what the `kubectl` command does.
 
-> **Caution:** Do not use this getting-started procedure in a production environment.
+> **Caution:** This getting-started procedure is primarily aimed at local or development setups. For setting up in a production environment refer to [Run Grafana Mimir in production using the Helm chart]({{< relref "../../running-production-environment-with-helm" >}}).
 
-Hardware requirements:
+### Hardware requirements
 
 - A single Kubernetes node with a minimum of 4 cores and 16GiB RAM
 
-Software requirements:
+### Software requirements
 
 - Kubernetes 1.20 or higher
 - The `kubectl` command for your version of Kubernetes
 - Helm 3 or higher
 
-Verify that you have:
+### Verify that you have
 
 - Access to the Kubernetes cluster
 - Persistent storage is enabled in the Kubernetes cluster, which has a default storage class set up. You can [change the default StorageClass](https://kubernetes.io/docs/tasks/administer-cluster/change-default-storage-class/).
@@ -37,6 +37,20 @@ Verify that you have:
 - An ingress controller is set up in the Kubernetes cluster, for example [ingress-nginx](https://kubernetes.github.io/ingress-nginx/)
 
 > **Note:** Although this is not strictly necessary, if you want to access Mimir from outside of the Kubernetes cluster, you will need an ingress. This procedure assumes you have an ingress controller set up.
+
+### Security setup
+
+This installation will not succeed if you have enabled the
+[PodSecurityPolicy](https://v1-23.docs.kubernetes.io/docs/reference/access-authn-authz/admission-controllers/#podsecuritypolicy) admission controller
+or if you are enforcing the Restricted policy with [Pod Security](https://v1-24.docs.kubernetes.io/docs/concepts/security/pod-security-admission/#pod-security-admission-labels-for-namespaces) admission controller.
+The reason is that the installation includes a deployment of MinIO. The [minio/minio chart](https://github.com/minio/minio/tree/master/helm/minio)
+is not compatible with running under a Restricted policy or the PodSecurityPolicy that the mimir-distributed chart provides.
+
+If you are using the PodSecurityPolicy admission controller, then it is not possible to deploy the mimir-distributed chart with MinIO.
+Refer to [Run Grafana Mimir in production using the Helm chart]({{< relref "../../running-production-environment-with-helm" >}}) for instructions on
+setting up an external object storage and disable the built-in MinIO deployment with `minio.enabled: false` in the Helm values file.
+
+If you are using the [Pod Security](https://kubernetes.io/docs/concepts/security/pod-security-admission/) admission controller, then MinIO and the mimir-distributed chart can successfully deploy under the [baseline](https://kubernetes.io/docs/concepts/security/pod-security-admission/#pod-security-levels) pod security level.
 
 ## Install the Helm chart in a custom namespace
 
