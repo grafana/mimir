@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/weaveworks/common/httpgrpc"
+	"github.com/weaveworks/common/user"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/keepalive"
@@ -253,7 +254,7 @@ func (f *forwarder) Forward(ctx context.Context, endpoint string, dontForwardBef
 		var requestWg sync.WaitGroup
 		requestWg.Add(1)
 
-		f.submitForwardingRequest(ctx, endpoint, toForward, counts, &requestWg, errCh)
+		f.submitForwardingRequest(ctx, user, endpoint, toForward, counts, &requestWg, errCh)
 
 		// keep span running until goroutine finishes.
 		finishSpanlogInDefer = false
@@ -405,6 +406,7 @@ type request struct {
 	errCh           chan error
 	requestWg       *sync.WaitGroup
 
+	user     string
 	endpoint string
 	ts       []mimirpb.PreallocTimeseries
 	counts   TimeseriesCounts
@@ -418,7 +420,7 @@ type request struct {
 
 // submitForwardingRequest launches a new forwarding request and sends it to a worker via a channel.
 // It might block if all the workers are busy.
-func (f *forwarder) submitForwardingRequest(ctx context.Context, endpoint string, ts []mimirpb.PreallocTimeseries, counts TimeseriesCounts, requestWg *sync.WaitGroup, errCh chan error) {
+func (f *forwarder) submitForwardingRequest(ctx context.Context, user string, endpoint string, ts []mimirpb.PreallocTimeseries, counts TimeseriesCounts, requestWg *sync.WaitGroup, errCh chan error) {
 	req := f.pools.getReq()
 
 	req.pools = f.pools
@@ -431,7 +433,8 @@ func (f *forwarder) submitForwardingRequest(ctx context.Context, endpoint string
 	req.errCh = errCh
 	req.requestWg = requestWg
 
-	// Target endpoint and TimeSeries to forward.
+	// Request parameters.
+	req.user = user
 	req.endpoint = endpoint
 	req.ts = ts
 	req.counts = counts
@@ -503,6 +506,7 @@ func (r *request) doHTTP(ctx context.Context, body []byte) error {
 	httpReq.Header.Set("Content-Type", "application/x-protobuf")
 	// Mark request as idempotent, so that http client can retry them on (some) errors.
 	httpReq.Header.Set("Idempotency-Key", "true")
+	httpReq.Header.Set(user.OrgIDHeaderName, r.user)
 
 	r.requests.Inc()
 	r.samples.Add(float64(r.counts.SampleCount))
@@ -562,10 +566,13 @@ func (r *request) doHTTPGrpc(ctx context.Context, body []byte) error {
 	}
 
 	req := &httpgrpc.HTTPRequest{
-		Method:  "POST",
-		Url:     u.Path,
-		Body:    body,
-		Headers: headers,
+		Method: "POST",
+		Url:    u.Path,
+		Body:   body,
+		Headers: append(headers, &httpgrpc.Header{
+			Key:    user.OrgIDHeaderName,
+			Values: []string{r.user},
+		}),
 	}
 
 	// Use dns:/// prefix to enable client-side load balancing inside gRPC client.
