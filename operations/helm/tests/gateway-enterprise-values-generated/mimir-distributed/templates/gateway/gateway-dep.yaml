@@ -32,10 +32,12 @@ spec:
     spec:
       serviceAccountName: gateway-enterprise-values-mimir
       securityContext:
-        fsGroup: 101
-        runAsGroup: 101
+        fsGroup: 10001
+        runAsGroup: 10001
         runAsNonRoot: true
-        runAsUser: 101
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
       initContainers:
         []
       containers:
