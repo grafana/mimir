@@ -91,7 +91,8 @@ func BenchmarkMatchesSeries(b *testing.B) {
 		for j := 0; j < matcherCount; j++ {
 			configMap[strconv.Itoa(j)] = fmt.Sprintf("{grafanacloud_usage_group=~%d.*}", j)
 		}
-		config, _ := NewCustomTrackersConfig(configMap)
+		config, err := NewCustomTrackersConfig(configMap)
+		require.NoError(b, err)
 		asms[i] = NewMatchers(config)
 
 	}
