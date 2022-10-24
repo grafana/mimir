@@ -298,7 +298,7 @@ func TestDistributor_Push(t *testing.T) {
 
 				// Assert that downstream GRPC statuses are passed back upstream
 				_, ok := httpgrpc.HTTPResponseFromError(err)
-				assert.True(t, ok)
+				assert.True(t, ok, fmt.Sprintf("expected error to be an httpgrpc error, but got: %T", err))
 			}
 
 			// Check tracked Prometheus metrics. Since the Push() response is sent as soon as the quorum
@@ -1004,13 +1004,13 @@ func TestDistributor_PushQuery(t *testing.T) {
 			series, err := ds[0].QueryStream(ctx, 0, 10, tc.matchers...)
 
 			if tc.expectedError == nil {
-				assert.Nil(t, err)
+				require.NoError(t, err)
 			} else {
 				assert.EqualError(t, err, tc.expectedError.Error())
 
 				// Assert that downstream GRPC statuses are passed back upstream
 				_, ok := httpgrpc.HTTPResponseFromError(err)
-				assert.True(t, ok)
+				assert.True(t, ok, fmt.Sprintf("expected error to be an httpgrpc error, but got: %T", err))
 			}
 
 			var response model.Matrix
