@@ -17,7 +17,7 @@ The instructions that follow are common across any flavor of Kubernetes. They al
 
 It also assumes that you have an understanding of what the `kubectl` command does.
 
-> **Caution:** This getting-started procedure is primarily aimed at local or development setups. For setting up in a production environment refer to [Run Grafana Mimir in production using the Helm chart]({{< relref "../../running-production-environment-with-helm" >}}).
+> **Caution:** This getting-started procedure is primarily aimed at local or development setups. For setting up in a production environment refer to [Run Grafana Mimir in production using the Helm chart]({{< relref "../../run-production-environment-with-helm" >}}).
 
 ### Hardware requirements
 
@@ -47,7 +47,7 @@ The reason is that the installation includes a deployment of MinIO. The [minio/m
 is not compatible with running under a Restricted policy or the PodSecurityPolicy that the mimir-distributed chart provides.
 
 If you are using the PodSecurityPolicy admission controller, then it is not possible to deploy the mimir-distributed chart with MinIO.
-Refer to [Run Grafana Mimir in production using the Helm chart]({{< relref "../../running-production-environment-with-helm" >}}) for instructions on
+Refer to [Run Grafana Mimir in production using the Helm chart]({{< relref "../../run-production-environment-with-helm" >}}) for instructions on
 setting up an external object storage and disable the built-in MinIO deployment with `minio.enabled: false` in the Helm values file.
 
 If you are using the [Pod Security](https://kubernetes.io/docs/concepts/security/pod-security-admission/) admission controller, then MinIO and the mimir-distributed chart can successfully deploy under the [baseline](https://kubernetes.io/docs/concepts/security/pod-security-admission/#pod-security-levels) pod security level.
