@@ -134,18 +134,24 @@ This may cause that incorrect results are returned for the query.
    If two replicas of Prometheus instancesare deployed for HA, then only upload the blocks from one of the replicas and drop the other.
    
    ```bash
-   #Get the block id of the duplicate block and using xargs pass the block id as argument and mark the block for deletion.
+   # Get list of all blocks in the bucket
    thanos tools bucket inspect \
        --objstore.config-file bucket.yaml \
-       --output=tsv \
-       | grep prometheus_replica=<PROMETHEUS-REPLICA-TO-DROP> \
-       | awk '{print $1}' \
-       | xargs -n 1 -P 1 \
+       --output=tsv >> blocks.tsv
+       
+   # Find blocks from replica that we will drop    
+   cat blocks.tsv| grep prometheus_replica=<PROMETHEUS-REPLICA-TO-DROP> \
+       | awk '{print $1}' >> blocks_to_drop.tsv
+       
+   # Mark found blocks for deletion
+   for ID in $(cat blocks_to_drop.tsv)
+   do
        thanos tools bucket mark \
-       --marker="deletion-mark.json" \
-       --objstore.config-file bucket.yaml \
-       --details="Removed as duplicate" \
-       --id
+          --marker="deletion-mark.json" \
+          --objstore.config-file bucket.yaml \
+          --details="Removed as duplicate" \
+          --id $ID
+   done
    ```
    
    > **Note**: Replace **prometheus_replica** with the unique label that would differentiate prometheus replicas in your setup.
@@ -179,35 +185,35 @@ This may cause that incorrect results are returned for the query.
    Perform the rewrite dry run to confirm all work well.
    
    ```bash
-   #Get the block ids of all the blocks and pass them as argument to the thanos tool rewrite command using xargs.
+   # Get list of all blocks in the bucket after removing the depuplicate and downsampled blocks.
    thanos tools bucket inspect \
        --objstore.config-file bucket.yaml \
-       --output=tsv \
-       | grep <PROMETHEUS-CLUSTER-NAME> \
-       | awk '{print $1}' \
-       | xargs -n 1 -P 1 \
+       --output=tsv >> blocks-to-rewrite.tsv
+   
+   # Check if rewrite of the blocks with external labels is working as expected.
+   for ID in $(cat blocks-to-rewrite.tsv)
+   do
        thanos tools bucket rewrite \
-       --objstore.config-file bucket.yaml \
-       --rewrite.to-relabel-config-file relabel-config.yaml \
-       --dry-run \
-       --id
+           --objstore.config-file bucket.yaml \
+           --rewrite.to-relabel-config-file relabel-config.yaml \
+           --dry-run \
+           --id $ID
+   done
    ```
    
    After confirming that the rewrite is working as expected in **--dry-run**, you can apply the changes with the **--no-dry-run** flag.
    
    ```bash
-   thanos tools bucket inspect \
-       --objstore.config-file bucket.yaml \
-       --output=tsv \
-       | grep <PROMETHEUS-CLUSTER-NAME> \
-       | awk '{print $1}' \
-       | xargs -n 1 -P 1 \
+   # Rewrite the blocks with external labels and mark the original blocks for deletion.
+   for ID in $(cat blocks-to-rewrite.tsv)
+   do
        thanos tools bucket rewrite  \
-       --objstore.config-file bucket.yaml \
-       --rewrite.to-relabel-config-file relabel-config.yaml \
-       --no-dry-run \
-       --delete-blocks 
-       --id
+           --objstore.config-file bucket.yaml \
+           --rewrite.to-relabel-config-file relabel-config.yaml \
+           --no-dry-run \
+           --delete-blocks 
+           --id $ID
+   done
    ```
    
    The output of relabelling of every block would look like something below.
@@ -251,18 +257,18 @@ This may cause that incorrect results are returned for the query.
    >     --objstore.config-file bucket.yaml \
    >     --output=tsv \
    >     | grep <PROMETHEUS-CLUSTER-NAME> \
-   >     | awk '{print $1}' > prod-blocks.txt
+   >     | awk '{print $1}' > prod-blocks.tsv
    >```
   
    >```bash
-   > for i in `cat prod-blocks.txt`
+   > for ID in `cat prod-blocks.tsv`
    > do
    >     thanos tools bucket rewrite  \
    >        --objstore.config-file bucket.yaml \
    >        --rewrite.to-relabel-config-file relabel-config.yaml \
    >        --delete-blocks \
    >        --no-dry-run \
-   >        --id $i \         
+   >        --id $ID \         
    > done
    >```
   
