@@ -271,8 +271,58 @@ This may cause that incorrect results are returned for the query.
    >        --id $ID \         
    > done
    >```
-  
-5) Copy the blocks from the intermediate bucket to the Mimir bucket
+ 
+5) Remove external labels from meta.json
+   
+   Mimir compactor will not be able to compact the blocks with external labels in their meta.json. Therefore these external labels have to be  removed before copying them to the Mimir bucket.
+   
+   ```bash
+   # Create a folder named "orig".
+   mkdir -p orig
+   
+   # Copy the meta.json file from all the blocks to orig folder in your local machine excluding the index and chunk folders.
+   gsutil -m rsync -r -x '.*(index|chunks|debug).*' "gs://{Intermediate Mimir bucket}/" orig/
+   ```
+   
+   Use the below script to remove the labels from the meta.json.
+   
+   ```bash
+   #!/bin/bash
+   # Description: Update Thanos external labels
+   # Create a folder called output
+   mkdir -p output
+   
+   # Get all meta.json file under the orig folder
+   find orig -name 'meta.json' |
+   while read orig; do
+     block="$(echo "${orig}" | cut -f2 -d'/')"
+     tmpfile=$(mktemp)
+   
+     # use jq to delete the labels from the meta.sjon file
+     jq 'del(.thanos.labels.<LABEL-KEY-1>, .thanos.labels.<LABEL-KEY-2), .thanos.labels.<LABEL-KEY-3>)' "${orig}" > "${tmpfile}"
+   
+     # check if there are changes in the tmpfile
+     if ! diff -u <(jq -S . "${orig}") <(jq -S . "${tmpfile}") > /dev/null; then
+        echo "Updating ${block}"
+        mkdir -p "output/${block}"
+        cp "${tmpfile}" "output/${block}/meta.json"
+     else
+        echo "No diff on ${block}"
+     fi
+     rm "${tmpfile}"
+   done
+   ```
+   
+   Sync the meta.json in the output folder and the blocks folder in the GCS bucket.
+   
+   ```bash
+   for ID in $(ls -al ~/output/| awk '{print $9}')
+   do
+       gsutil -m rsync -r -x '.*(index|chunks|debug).*' ~/output/$ID gs://{mimir-intermediate-bucket}/$ID
+   done
+   ```
+   
+6) Copy the blocks from the intermediate bucket to the Mimir bucket
   
    Once the relabelling process is done, copy the blocks from the intermediate bucket to the Mimir bucket.
   
@@ -280,7 +330,7 @@ This may cause that incorrect results are returned for the query.
    gsutil -m cp -r gs://<mimir-intermediate-bucket>/$i gs://<mimir-gcs-bucket>/<TENANT>/
    ```
  
-6) Mimir compactor updates bucket index
+7) Mimir compactor updates bucket index
   
    The historical blocks will not be available for querying as soon as they are uploaded, as the bucket index to include all available blocks in the index have to be updated by the compactor and it would take time(depending on the number of blocks to be updated and the index updation normally runs every 15 minutes). Once this is done, other components like querier, store-gateway  will be able to work with these the historical blocks and they will be available for querying through Grafana. 
    
