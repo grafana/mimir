@@ -16,35 +16,10 @@ patches:
       kind: MimirConfig
     path: ./compactor-config.yaml
 
-  # TODO: Read path differences
-  - target:
-      kind: MimirConfig
-    path: ./read-path-config.yaml
-
   # TODO: Write path differences
   - target:
       kind: MimirConfig
     path: ./write-path-config.yaml
-
-  # TODO query-sharding is disabled by default in jsonnet
-  - target:
-      kind: MimirConfig
-      name: query-frontend
-    patch: |-
-      - op: remove
-        path: /config/limits/max_query_parallelism
-      - op: remove
-        path: /config/frontend/parallelize_shardable_queries
-      - op: remove
-        path: /config/query_scheduler/max_outstanding_requests_per_tenant
-
-  # TODO query-sharding is disabled by default in jsonnet
-  - target:
-      kind: MimirConfig
-      name: query-scheduler
-    patch: |-
-      - op: remove
-        path: /config/query_scheduler/max_outstanding_requests_per_tenant
 
   # Remove fields on components where they are not relevant. For example, the
   # ingester ring configuration is not relevant to the compactor Since jsonnet
@@ -74,6 +49,15 @@ patches:
     patch: |-
       - op: remove
         path: /config/frontend
+      - op: remove
+        path: /config/limits/max_cache_freshness
+
+  - target:
+      kind: MimirConfig
+      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|ruler|store-gateway|query-scheduler|query-frontend'
+    patch: |-
+      - op: remove
+        path: /config/frontend_worker
 
   - target:
       kind: MimirConfig
@@ -102,6 +86,10 @@ patches:
     patch: |-
       - op: remove
         path: /config/store_gateway/sharding_ring/tokens_file_path
+      - op: remove
+        path: /config/store_gateway/sharding_ring/wait_stability_min_duration
+      - op: remove
+        path: /config/blocks_storage/bucket_store/max_chunk_pool_bytes
 
   - target:
       kind: MimirConfig
@@ -109,6 +97,13 @@ patches:
     patch: |-
       - op: remove
         path: /config/query_scheduler
+
+  - target:
+      kind: MimirConfig
+      name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|query-frontend|query-scheduler|ruler|store-gateway'
+    patch: |-
+      - op: remove
+        path: /config/querier/max_concurrent
 
   - target:
       kind: MimirConfig

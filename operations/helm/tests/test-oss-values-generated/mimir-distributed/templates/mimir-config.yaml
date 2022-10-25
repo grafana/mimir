@@ -39,7 +39,8 @@ data:
           backend: memcached
           memcached:
             addresses: dns+test-oss-values-mimir-index-cache.citestns.svc:11211
-            max_item_size: 15728640
+            max_item_size: 5242880
+        max_chunk_pool_bytes: 12884901888
         metadata_cache:
           backend: memcached
           memcached:
@@ -57,17 +58,18 @@ data:
     compactor:
       data_dir: /data
     frontend:
-      align_queries_with_step: true
       cache_results: true
-      log_queries_longer_than: 10s
       parallelize_shardable_queries: true
       results_cache:
         backend: memcached
         memcached:
           addresses: dns+test-oss-values-mimir-results-cache.citestns.svc:11211
           max_item_size: 1048576
+          timeout: 500ms
       scheduler_address: test-oss-values-mimir-query-scheduler-headless.citestns.svc:9095
     frontend_worker:
+      grpc_client_config:
+        max_send_msg_size: 419430400
       scheduler_address: test-oss-values-mimir-query-scheduler-headless.citestns.svc:9095
     ingester:
       ring:
@@ -80,7 +82,8 @@ data:
         max_recv_msg_size: 104857600
         max_send_msg_size: 104857600
     limits:
-      max_query_parallelism: 224
+      max_cache_freshness: 10m
+      max_query_parallelism: 240
     memberlist:
       abort_if_cluster_join_fails: false
       compression_enabled: false
@@ -89,7 +92,7 @@ data:
     querier:
       max_concurrent: 16
     query_scheduler:
-      max_outstanding_requests_per_tenant: 1600
+      max_outstanding_requests_per_tenant: 800
     ruler:
       alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.test-oss-values-mimir-alertmanager-headless.citestns.svc.cluster.local/alertmanager
       enable_api: true
@@ -112,3 +115,4 @@ data:
     store_gateway:
       sharding_ring:
         tokens_file_path: /data/tokens
+        wait_stability_min_duration: 1m

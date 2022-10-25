@@ -46,6 +46,7 @@ data:
     blocks_storage:
       backend: s3
       bucket_store:
+        max_chunk_pool_bytes: 12884901888
         sync_dir: /data/tsdb-sync
       s3:
         access_key_id: grafana-mimir
@@ -59,11 +60,11 @@ data:
     compactor:
       data_dir: /data
     frontend:
-      align_queries_with_step: true
-      log_queries_longer_than: 10s
       parallelize_shardable_queries: true
       scheduler_address: test-enterprise-k8s-1.25-values-mimir-query-scheduler-headless.citestns.svc:9095
     frontend_worker:
+      grpc_client_config:
+        max_send_msg_size: 419430400
       scheduler_address: test-enterprise-k8s-1.25-values-mimir-query-scheduler-headless.citestns.svc:9095
     gateway:
       proxy:
@@ -103,7 +104,8 @@ data:
     license:
       path: /license/license.jwt
     limits:
-      max_query_parallelism: 224
+      max_cache_freshness: 10m
+      max_query_parallelism: 240
     memberlist:
       abort_if_cluster_join_fails: false
       compression_enabled: false
@@ -112,7 +114,7 @@ data:
     querier:
       max_concurrent: 16
     query_scheduler:
-      max_outstanding_requests_per_tenant: 1600
+      max_outstanding_requests_per_tenant: 800
     ruler:
       alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.test-enterprise-k8s-1.25-values-mimir-alertmanager-headless.citestns.svc.cluster.local/alertmanager
       enable_api: true
@@ -137,4 +139,5 @@ data:
         kvstore:
           prefix: multi-zone/
         tokens_file_path: /data/tokens
+        wait_stability_min_duration: 1m
         zone_awareness_enabled: true

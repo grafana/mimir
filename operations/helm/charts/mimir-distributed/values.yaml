@@ -134,6 +134,7 @@ mimir:
     blocks_storage:
       backend: s3
       bucket_store:
+        max_chunk_pool_bytes: 12884901888 # 12GiB
         {{- if index .Values "chunks-cache" "enabled" }}
         chunks_cache:
           backend: memcached
@@ -176,13 +177,12 @@ mimir:
       data_dir: "/data"
 
     frontend:
-      align_queries_with_step: true
-      log_queries_longer_than: 10s
       parallelize_shardable_queries: true
       {{- if index .Values "results-cache" "enabled" }}
       results_cache:
         backend: memcached
         memcached:
+          timeout: 500ms
           addresses: {{ include "mimir.resultsCacheAddress" . }}
           max_item_size: {{ mul (index .Values "results-cache").maxItemMemory 1024 1024 }}
       cache_results: true
@@ -192,6 +192,8 @@ mimir:
       {{- end }}
 
     frontend_worker:
+      grpc_client_config:
+        max_send_msg_size: 419430400 # 400MiB
       {{- if .Values.query_scheduler.enabled }}
       scheduler_address: {{ template "mimir.fullname" . }}-query-scheduler-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" . }}
       {{- else }}
@@ -253,9 +255,12 @@ mimir:
     {{- end }}
 
     limits:
-      # Adjust max query parallelism to 16x sharding, without sharding we can run 14d queries fully in parallel.
-      # With sharding we can further shard each day another 16 times. 14 days * 16 shards = 224 subqueries.
-      max_query_parallelism: 224
+      # Adjust max query parallelism to 16x sharding, without sharding we can run 15d queries fully in parallel.
+      # With sharding we can further shard each day another 16 times. 15 days * 16 shards = 240 subqueries.
+      max_query_parallelism: 240
+      # Avoid caching results newer than 10m because some samples can be delayed
+      # This presents caching incomplete results
+      max_cache_freshness: 10m
 
     memberlist:
       abort_if_cluster_join_fails: false
@@ -271,7 +276,7 @@ mimir:
 
     query_scheduler:
       # Increase from default of 100 to account for queries created by query sharding
-      max_outstanding_requests_per_tenant: 1600
+      max_outstanding_requests_per_tenant: 800
 
     ruler:
       alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.{{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}/alertmanager
@@ -300,6 +305,7 @@ mimir:
 
     store_gateway:
       sharding_ring:
+        wait_stability_min_duration: 1m
         {{- if .Values.store_gateway.zoneAwareReplication.enabled }}
         kvstore:
           prefix: multi-zone/
@@ -1629,7 +1635,7 @@ index-cache:
   allocatedMemory: 2048
 
   # -- Maximum item index-cache for memcached (in MB).
-  maxItemMemory: 15
+  maxItemMemory: 5
 
   # -- Extra init containers for index-cache pods
   initContainers: []

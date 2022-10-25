@@ -55,6 +55,18 @@ Entries should include a reference to the Pull Request that introduced the chang
   Mimir under the `metamonitoring` tenant; this enhancement does not apply to GEM. #3176
 * [ENHANCEMENT] Improve default rollout strategies. Now distributor, overrides_exporter, querier, query_frontend, admin_api, gateway, and graphite components can be upgraded more quickly and also can be rolled out with a single replica without downtime. #3029
 * [ENHANCEMENT] Metamonitoring: make scrape interval configurable. #2945
+* [ENHANCEMENT] Update read path configuration to match Jsonnet #2998
+  * This also now matches production configuration from Grafana Cloud
+  * Set `blocks_storage.bucket_store.max_chunk_pool_bytes` to `12GiB` (Increased from `2GiB`)
+  * Set `blocks_storage.bucket_Store.index_cache.memcached.max_item_size` to `5MiB` (Decreased from `15MiB`)
+  * Set `frontend.grpc_client_config.max_send_msg_size` to `400MiB` (Increased from `100MiB`)
+  * Set `limits.max_cache_freshness` to `10m` (Increased from `1m`)
+  * Set `limits.max_query_parallelism` to `240` (Increased from `224`)
+  * Set `query_scheduler.max_outstanding_requests_per_tenant` to `800` (Decreased from `1600`)
+  * Set `store_gateway.sharding_ring.wait_stability_min_duration` to `1m` (Increased from `0`)
+  * Set `frontend.results_cache.memcached.timeout` to `500ms` (Increased from `100ms`)
+  * Unset `frontend.align_queries_with_step` (Was `true`, now defaults to `false`)
+  * Unset `frontend.log_queries_longer_than` (Was `10s`, now defaults to `0`, which is disabled)
 * [BUGFIX] Fix an issue that caused metamonitoring secrets to be created incorrectly #3170
 * [BUGFIX] Nginx: fixed `imagePullSecret` value reference inconsistency. #3208
 * [BUGFIX] Move the activity tracker log from /data to /active-query-tracker to remove ignore log messages. #3169
