@@ -59,6 +59,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	util_math "github.com/grafana/mimir/pkg/util/math"
+	"github.com/grafana/mimir/pkg/util/push"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -624,10 +625,10 @@ type extendedAppender interface {
 }
 
 // PushWithCleanup is the Push() implementation for blocks storage and takes a WriteRequest and adds it to the TSDB head.
-func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error) {
+func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (*mimirpb.WriteResponse, error) {
 	// NOTE: because we use `unsafe` in deserialisation, we must not
 	// retain anything from `req` past the exit from this function.
-	defer cleanup()
+	defer pushReq.CleanUp()
 
 	var firstPartialErr error
 
@@ -655,6 +656,11 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 		if rate := i.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
 			return nil, errMaxIngestionRateReached
 		}
+	}
+
+	req, err := pushReq.WriteRequest()
+	if err != nil {
+		return nil, err
 	}
 
 	// Given metadata is a best-effort approach, and we don't halt on errors
@@ -1591,10 +1597,8 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		EnableMemorySnapshotOnShutdown: i.cfg.BlocksStorageConfig.TSDB.MemorySnapshotOnShutdown,
 		IsolationDisabled:              true,
 		HeadChunksWriteQueueSize:       i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteQueueSize,
-		AllowOverlappingQueries:        true,                 // We can have overlapping blocks from past or out-of-order enabled during runtime.
 		AllowOverlappingCompaction:     false,                // always false since Mimir only uploads lvl 1 compacted blocks
 		OutOfOrderTimeWindow:           oooTW.Milliseconds(), // The unit must be same as our timestamps.
-		OutOfOrderCapMin:               int64(i.cfg.BlocksStorageConfig.TSDB.OutOfOrderCapacityMin),
 		OutOfOrderCapMax:               int64(i.cfg.BlocksStorageConfig.TSDB.OutOfOrderCapacityMax),
 	}, nil)
 	if err != nil {
@@ -2284,7 +2288,9 @@ func (i *Ingester) checkRunning() error {
 
 // Push implements client.IngesterServer
 func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
-	return i.PushWithCleanup(ctx, req, func() { mimirpb.ReuseSlice(req.Timeseries) })
+	pushReq := push.NewParsedRequest(req)
+	pushReq.AddCleanup(func() { mimirpb.ReuseSlice(req.Timeseries) })
+	return i.PushWithCleanup(ctx, pushReq)
 }
 
 // pushMetadata returns number of ingested metadata.

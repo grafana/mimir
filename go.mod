@@ -17,7 +17,7 @@ require (
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.0
 	github.com/grafana/dskit v0.0.0-20221018134951-0d3fc3d6c266
-	github.com/grafana/e2e v0.1.1-0.20221013164451-2c8db587f293
+	github.com/grafana/e2e v0.1.1-0.20221018202458-cffd2bb71c7b
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/json-iterator/go v1.1.12
 	github.com/minio/minio-go/v7 v7.0.37
@@ -29,7 +29,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/alertmanager v0.24.1-0.20221006070151-78b5a27d40c0
 	github.com/prometheus/client_golang v1.13.0
-	github.com/prometheus/client_model v0.2.0
+	github.com/prometheus/client_model v0.3.0
 	github.com/prometheus/common v0.37.0
 	github.com/prometheus/prometheus v1.8.2-0.20220620125440-d7e7b8e04b5e
 	github.com/segmentio/fasthash v0.0.0-20180216231524-a72b379d632e
@@ -51,6 +51,7 @@ require (
 )
 
 require (
+	cloud.google.com/go/storage v1.27.0
 	github.com/alecthomas/chroma v0.10.0
 	github.com/cespare/xxhash/v2 v2.1.2
 	github.com/google/go-cmp v0.5.9
@@ -65,6 +66,7 @@ require (
 	go.opentelemetry.io/otel v1.10.0
 	go.opentelemetry.io/otel/trace v1.10.0
 	golang.org/x/sys v0.0.0-20220919091848-fb04ddd9f9c8
+	google.golang.org/api v0.97.0
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	sigs.k8s.io/kustomize/kyaml v0.13.7
 )
@@ -73,7 +75,6 @@ require (
 	cloud.google.com/go v0.104.0 // indirect
 	cloud.google.com/go/compute v1.7.0 // indirect
 	cloud.google.com/go/iam v0.3.0 // indirect
-	cloud.google.com/go/storage v1.27.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.1.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.1.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.0.0 // indirect
@@ -211,19 +212,19 @@ require (
 	go.opentelemetry.io/otel/sdk v1.10.0 // indirect
 	go.uber.org/multierr v1.8.0 // indirect
 	go.uber.org/zap v1.21.0 // indirect
+	golang.org/x/exp v0.0.0-20220722155223-a9213eeb770e // indirect
 	golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4 // indirect
 	golang.org/x/oauth2 v0.0.0-20220909003341-f21342109be1 // indirect
-	golang.org/x/text v0.3.7 // indirect
+	golang.org/x/text v0.3.8 // indirect
 	golang.org/x/tools v0.1.12 // indirect
 	golang.org/x/xerrors v0.0.0-20220609144429-65e65417b02f // indirect
-	google.golang.org/api v0.97.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto v0.0.0-20220920201722-2b89144ce006 // indirect
 	google.golang.org/protobuf v1.28.1 // indirect
 	gopkg.in/ini.v1 v1.66.6 // indirect
 	gopkg.in/telebot.v3 v3.0.0 // indirect
-	k8s.io/kube-openapi v0.0.0-20220401212409-b28bf2818661 // indirect
-	k8s.io/utils v0.0.0-20220210201930-3a6ce19ff2f9 // indirect
+	k8s.io/kube-openapi v0.0.0-20220803162953-67bda5d908f1 // indirect
+	k8s.io/utils v0.0.0-20220728103510-ee6ede2d64ed // indirect
 	sigs.k8s.io/yaml v1.3.0 // indirect
 )
 
@@ -231,7 +232,7 @@ require (
 replace github.com/bradfitz/gomemcache => github.com/grafana/gomemcache v0.0.0-20220812141943-44b6cde200bb
 
 // Using a fork of Prometheus while we work on querysharding to avoid a dependency on the upstream.
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20221007080257-ecc05616ec93
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20221011060152-c77b24bcb23f
 
 // Pin hashicorp depencencies since the Prometheus fork, go mod tries to update them.
 replace github.com/hashicorp/go-immutable-radix => github.com/hashicorp/go-immutable-radix v1.2.0

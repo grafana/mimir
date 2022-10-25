@@ -8,6 +8,7 @@ package compactor
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -53,6 +54,7 @@ type BlocksCleaner struct {
 	bucketClient objstore.Bucket
 	usersScanner *mimir_tsdb.UsersScanner
 	ownUser      func(userID string) (bool, error)
+	singleFlight *concurrency.LimitedConcurrencySingleFlight
 
 	// Keep track of the last owned users.
 	lastOwnedUsers []string
@@ -79,6 +81,7 @@ func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, own
 		usersScanner: mimir_tsdb.NewUsersScanner(bucketClient, ownUser, logger),
 		ownUser:      ownUser,
 		cfgProvider:  cfgProvider,
+		singleFlight: concurrency.NewLimitedConcurrencySingleFlight(cfg.CleanupConcurrency),
 		logger:       log.With(logger, "component", "cleaner"),
 		runsStarted: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_compactor_block_cleanup_started_total",
@@ -136,46 +139,80 @@ func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, own
 		}, []string{"user"}),
 	}
 
-	c.Service = services.NewTimerService(cfg.CleanupInterval, c.starting, c.ticker, nil)
+	c.Service = services.NewTimerService(cfg.CleanupInterval, c.starting, c.ticker, c.stopping)
 
 	return c
+}
+
+func (c *BlocksCleaner) stopping(error) error {
+	c.singleFlight.Wait()
+	return nil
 }
 
 func (c *BlocksCleaner) starting(ctx context.Context) error {
 	// Run an initial cleanup in starting state. (Note that compactor no longer waits
 	// for blocks cleaner to finish starting before it starts compactions.)
-	c.runCleanup(ctx)
+	c.runCleanup(ctx, false)
 
 	return nil
 }
 
 func (c *BlocksCleaner) ticker(ctx context.Context) error {
-	c.runCleanup(ctx)
+	c.runCleanup(ctx, true)
 
 	return nil
 }
 
-func (c *BlocksCleaner) runCleanup(ctx context.Context) {
-	level.Info(c.logger).Log("msg", "started blocks cleanup and maintenance")
-	c.runsStarted.Inc()
+func (c *BlocksCleaner) runCleanup(ctx context.Context, async bool) {
+	// Wrap logger with some unique ID so if runCleanUp does run in parallel with itself, we can
+	// at least differentiate the logs in this function for each run.
+	logger := log.With(c.logger, "run_id", strconv.FormatInt(time.Now().Unix(), 10))
 
-	if err := c.cleanUsers(ctx); err == nil {
-		level.Info(c.logger).Log("msg", "successfully completed blocks cleanup and maintenance")
+	c.instrumentStartedCleanupRun(logger)
+
+	allUsers, isDeleted, err := c.refreshOwnedUsers(ctx)
+	if err != nil {
+		c.instrumentFinishedCleanupRun(err, logger)
+		return
+	}
+
+	doCleanup := func() {
+		err := c.cleanUsers(ctx, allUsers, isDeleted)
+		c.instrumentFinishedCleanupRun(err, logger)
+	}
+
+	if async {
+		go doCleanup()
+	} else {
+		doCleanup()
+	}
+}
+
+func (c *BlocksCleaner) instrumentStartedCleanupRun(logger log.Logger) {
+	level.Info(logger).Log("msg", "started blocks cleanup and maintenance")
+	c.runsStarted.Inc()
+}
+
+func (c *BlocksCleaner) instrumentFinishedCleanupRun(err error, logger log.Logger) {
+	if err == nil {
+		level.Info(logger).Log("msg", "successfully completed blocks cleanup and maintenance")
 		c.runsCompleted.Inc()
 		c.runsLastSuccess.SetToCurrentTime()
 	} else if errors.Is(err, context.Canceled) {
-		level.Info(c.logger).Log("msg", "canceled blocks cleanup and maintenance", "err", err)
+		level.Info(logger).Log("msg", "canceled blocks cleanup and maintenance", "err", err)
 		return
 	} else {
-		level.Error(c.logger).Log("msg", "failed to run blocks cleanup and maintenance", "err", err.Error())
+		level.Error(logger).Log("msg", "failed to run blocks cleanup and maintenance", "err", err.Error())
 		c.runsFailed.Inc()
 	}
 }
 
-func (c *BlocksCleaner) cleanUsers(ctx context.Context) error {
+// refreshOwnedUsers is not required to be concurrency safe, but a single instance of this function
+// could run concurrently with the cleanup job for any tenant.
+func (c *BlocksCleaner) refreshOwnedUsers(ctx context.Context) ([]string, map[string]bool, error) {
 	users, deleted, err := c.usersScanner.ScanUsers(ctx)
 	if err != nil {
-		return errors.Wrap(err, "failed to discover users from bucket")
+		return nil, nil, errors.Wrap(err, "failed to discover users from bucket")
 	}
 
 	isActive := util.StringsMap(users)
@@ -194,8 +231,12 @@ func (c *BlocksCleaner) cleanUsers(ctx context.Context) error {
 		}
 	}
 	c.lastOwnedUsers = allUsers
+	return allUsers, isDeleted, nil
+}
 
-	return concurrency.ForEachUser(ctx, allUsers, c.cfg.CleanupConcurrency, func(ctx context.Context, userID string) error {
+// cleanUsers must be concurrency-safe because some invocations may take longer and overlap with the next periodic invocation.
+func (c *BlocksCleaner) cleanUsers(ctx context.Context, allUsers []string, isDeleted map[string]bool) error {
+	return c.singleFlight.ForEachNotInFlight(ctx, allUsers, func(ctx context.Context, userID string) error {
 		own, err := c.ownUser(userID)
 		if err != nil || !own {
 			// This returns error only if err != nil. ForEachUser keeps working for other users.
@@ -209,7 +250,7 @@ func (c *BlocksCleaner) cleanUsers(ctx context.Context) error {
 	})
 }
 
-// Remove blocks and remaining data for tenant marked for deletion.
+// deleteUserMarkedForDeletion removes blocks and remaining data for tenant marked for deletion.
 func (c *BlocksCleaner) deleteUserMarkedForDeletion(ctx context.Context, userID string) error {
 	userLogger := util_log.WithUserID(userID, c.logger)
 	userBucket := bucket.NewUserBucketClient(userID, c.bucketClient, c.cfgProvider)
@@ -277,7 +318,7 @@ func (c *BlocksCleaner) deleteUserMarkedForDeletion(ctx context.Context, userID 
 		return errors.Wrap(err, "failed to read tenant deletion mark")
 	}
 	if mark == nil {
-		return errors.Wrap(err, "cannot find tenant deletion mark anymore")
+		return fmt.Errorf("cannot find tenant deletion mark anymore")
 	}
 
 	// If we have just deleted some blocks, update "finished" time. Also update "finished" time if it wasn't set yet, but there are no blocks.

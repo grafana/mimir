@@ -25,7 +25,6 @@ spec:
         name: storage
       spec:
         accessModes:
-          
           - ReadWriteOnce
         resources:
           requests:
@@ -43,7 +42,12 @@ spec:
     spec:
       serviceAccountName: test-enterprise-legacy-label-values-enterprise-metrics
       securityContext:
-        {}
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
       initContainers:
         []
       nodeSelector:
@@ -113,6 +117,10 @@ spec:
               cpu: 100m
               memory: 512Mi
           securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
             readOnlyRootFilesystem: true
           env:
           envFrom:

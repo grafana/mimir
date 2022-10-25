@@ -223,6 +223,10 @@ usage_stats:
   # CLI flag: -usage-stats.enabled
   [enabled: <boolean> | default = true]
 
+  # (experimental) Installation mode. Supported values: custom, helm, jsonnet.
+  # CLI flag: -usage-stats.installation-mode
+  [installation_mode: <string> | default = "custom"]
+
 # The common block holds configurations that configure multiple components at a
 # time.
 [common: <common>]
@@ -3115,11 +3119,6 @@ tsdb:
   # (advanced) limit the number of concurrently opening TSDB's on startup
   # CLI flag: -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup
   [max_tsdb_opening_concurrency_on_startup: <int> | default = 10]
-
-  # (experimental) Minimum capacity for out-of-order chunks, in samples between
-  # 0 and 255.
-  # CLI flag: -blocks-storage.tsdb.out-of-order-capacity-min
-  [out_of_order_capacity_min: <int> | default = 4]
 
   # (experimental) Maximum capacity for out of order chunks, in samples between
   # 1 and 255.

@@ -733,6 +733,7 @@ func (c *MultitenantCompactor) discoverUsers(ctx context.Context) ([]string, err
 // shardingStrategy describes whether compactor "owns" given user or job.
 type shardingStrategy interface {
 	compactorOwnUser(userID string) (bool, error)
+	// blocksCleanerOwnUser must be concurrency-safe
 	blocksCleanerOwnUser(userID string) (bool, error)
 	ownJob(job *Job) (bool, error)
 }
@@ -757,7 +758,7 @@ func newSplitAndMergeShardingStrategy(allowedTenants *util.AllowedTenants, ring 
 	}
 }
 
-// Only single instance in the subring can run blocks cleaner for given user.
+// Only single instance in the subring can run blocks cleaner for given user. blocksCleanerOwnUser is concurrency-safe.
 func (s *splitAndMergeShardingStrategy) blocksCleanerOwnUser(userID string) (bool, error) {
 	if !s.allowedTenants.IsAllowed(userID) {
 		return false, nil

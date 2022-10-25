@@ -25,6 +25,32 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [CHANGE] **breaking change** **Data loss without action.** Enables [zone-aware replication](https://grafana.com/docs/mimir/latest/operators-guide/configure/configuring-zone-aware-replication/) for ingesters and store-gateways by default. #2778
+  - If you are **upgrading** an existing installation:
+    - Turn off zone-aware replication, by setting the following values:
+      ```yaml
+      ingester:
+        zoneAwareReplication:
+          enabled: false
+      store_gateway:
+        zoneAwareReplication:
+          enabled: false
+      rollout_operator:
+        enabled: false
+      ```
+    - After the upgrade you can migrate to the new zone-aware replication setup, see [Migrate from single zone to zone-aware replication with Helm](https://grafana.com/docs/mimir/latest/migration-guide/migrating-from-single-zone-with-helm/) guide.
+  - If you are **installing** the chart:
+    - Ingesters and store-gateways are installed with 3 logical zones, which means both ingesters and store-gateways start 3 replicas each.
+* [CHANGE] **breaking change** Reduce the number of ingesters in small.yaml form 4 to 3. This should be more accurate size for the scale of 1M AS. Before upgrading refer to [Scaling down ingesters](https://grafana.com/docs/mimir/latest/operators-guide/run-production-environment/scaling-out/#scaling-down-ingesters) to scale down `ingester-3`. Alternatively override the number of ingesters to 4. #3035
+* [CHANGE] Nginx: uses the headless service of alertmanager, ingester and store-gateway as backends, because there are 3 separate services for each zone. #2778
+* [CHANGE] Gateway: uses the headless service of alertmanager as backend, because there are 3 separate services for each zone. #2778
+* [CHANGE] Update sizing plans (small.yaml, large.yaml, capped-small.yaml, capped-large.yaml). These reflect better how we recommend running Mimir and GEM in production. most plans have adjusted number of replicas and resource requirements. The only **breaking change** is in small.yaml which has reduced the number of ingesters from 4 to 3; for scaling down ingesters refer to [Scaling down ingesters](https://grafana.com/docs/mimir/latest/operators-guide/run-production-environment/scaling-out/#scaling-down-ingesters). #3035
+* [CHANGE] Change default securityContext of Mimir and GEM Pods and containers, so that they comply with a [Restricted pod security policy](https://kubernetes.io/docs/concepts/security/pod-security-standards/).
+  This changes what user the containers run as from `root` to `10001`. The files in the Pods' attached volumes should change ownership with the `fsGroup` change;
+  most CSI drivers support changing the value of `fsGroup`, or kubelet is able to do the ownership change instead of the CSI driver. This is not the case for the HostPath driver.
+  If you are using HostPath or another driver that doesn't support changing `fsGroup`, then you have a couple of options: A) set the `securityContext` of all Mimir and GEM components to `{}` in your values file; B) delete PersistentVolumes and PersistentVolumeClaims and upgrade the chart; C) add an initContainer to all components that use a PVC that changes ownership of the mounted volumes.
+  If you take no action and `fsGroup` is not supported by your CSI driver, then components will fail to start. #3007
+* [CHANGE] Restrict Pod seccomp profile to `runtime/default` in the default PodSecurityPolicy of the chart. #3007
 * [ENHANCEMENT] Metamonitoring: If enabled and no URL is configured, then metamonitoring metrics will be sent to
   Mimir under the `metamonitoring` tenant; this enhancement does not apply to GEM. #3176
 * [ENHANCEMENT] Improve default rollout strategies. Now distributor, overrides_exporter, querier, query_frontend, admin_api, gateway, and graphite components can be upgraded more quickly and also can be rolled out with a single replica without downtime. #3029
@@ -32,6 +58,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Fix an issue that caused metamonitoring secrets to be created incorrectly #3170
 * [BUGFIX] Nginx: fixed `imagePullSecret` value reference inconsistency. #3208
 * [BUGFIX] Move the activity tracker log from /data to /active-query-tracker to remove ignore log messages. #3169
+* [BUGFIX] Fix Invalid ingress nginx config due to newline in prometheusHttpPrefix Helm named templates. #3088
 
 ## 3.2.0
 
@@ -86,6 +113,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Add podAntiAffinity to sizing plans (small.yaml, large.yaml, capped-small.yaml, capped-large.yaml). #2906
 * [ENHANCEMENT] Add ability to configure and run mimir-continuous-test. #3117
 * [BUGFIX] Fix wrong label selector in ingester anti affinity rules in the sizing plans. #2906
+* [BUGFIX] Query-scheduler no longer periodically terminates connections from query-frontends and queriers. This caused some queries to time out and EOF errors in the logs. #3262
 
 ## 3.1.0
 

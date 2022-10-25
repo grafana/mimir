@@ -26,6 +26,7 @@ When the usage statistics reporting is enabled, Grafana Mimir collects the follo
   - The timestamp when the anonymous usage statistics reporting was enabled for the first time, and the cluster identifier was created.
   - The Mimir version, such as `2.3.0`.
   - The Mimir branch, revision, and Golang version that was used to build the binary.
+  - The installation mode used to deploy Mimir, such as `helm`.
 - Information about the **environment** where Mimir is running:
   - The operating system, such as `linux`.
   - The architecture, such as `amd64`.

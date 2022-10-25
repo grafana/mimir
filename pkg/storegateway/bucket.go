@@ -1063,6 +1063,11 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		}
 	}
 
+	if err = srv.Send(storepb.NewStatsResponse(stats.postingsFetchedSizeSum + stats.seriesFetchedSizeSum)); err != nil {
+		err = status.Error(codes.Unknown, errors.Wrap(err, "sends series response stats").Error())
+		return
+	}
+
 	return err
 }
 

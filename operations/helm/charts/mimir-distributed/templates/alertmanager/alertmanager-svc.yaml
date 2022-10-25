@@ -1,10 +1,19 @@
 {{- if .Values.alertmanager.enabled -}}
+{{- $args := dict "ctx" . "component" "alertmanager" "memberlist" true -}}
+{{- $zonesMap := include "mimir.zoneAwareReplicationMap" $args | fromYaml -}}
+{{- range $zoneName, $rolloutZone := $zonesMap }}
+{{- with $ -}}
+{{- $_ := set $args "rolloutZoneName" $zoneName -}}
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "alertmanager") }}
+  name: {{ include "mimir.resourceName" $args }}
   labels:
-    {{- include "mimir.labels" (dict "ctx" . "component" "alertmanager" "memberlist" true) | nindent 4 }}
+    {{- include "mimir.labels" $args | nindent 4 }}
+    {{- if and $zoneName .Values.alertmanager.zoneAwareReplication.migration.enabled }}
+    # Prevent scraping PODs via this service during migration as the original non zone-aware service already scrapes all PODs and you get duplicate metrics.
+    prometheus.io/service-monitor: "false"
+    {{- end }}
     {{- with .Values.alertmanager.service.labels }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
@@ -23,5 +32,9 @@ spec:
       name: grpc
       targetPort: grpc
   selector:
-    {{- include "mimir.selectorLabels" (dict "ctx" . "component" "alertmanager" "memberlist" true) | nindent 4 }}
-{{- end -}}
+    {{- include "mimir.selectorLabels" $args | nindent 4 }}
+
+---
+{{ end }}
+{{ end }}
+{{ end }}

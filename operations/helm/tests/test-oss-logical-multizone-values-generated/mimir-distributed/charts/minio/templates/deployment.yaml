@@ -1,0 +1,83 @@
+---
+# Source: mimir-distributed/charts/minio/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-oss-logical-multizone-values-minio
+  namespace: "citestns"
+  labels:
+    app: minio
+    chart: minio-4.0.12
+    release: test-oss-logical-multizone-values
+    heritage: Helm
+spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 100%
+      maxUnavailable: 0
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minio
+      release: test-oss-logical-multizone-values
+  template:
+    metadata:
+      name: test-oss-logical-multizone-values-minio
+      labels:
+        app: minio
+        release: test-oss-logical-multizone-values
+      annotations:
+        checksum/secrets: 943819666fdc02a79435c9234b495b68634162b885f40b5e2b714cd604bfca4d
+        checksum/config: 57ea306764d01022b3abed88f2523317aca322b7911e6141b4defea7dc50b202
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+
+      serviceAccountName: minio-sa
+      containers:
+        - name: minio
+          image: "quay.io/minio/minio:RELEASE.2022-08-13T21-54-44Z"
+          imagePullPolicy: IfNotPresent
+          command:
+            - "/bin/sh"
+            - "-ce"
+            - "/usr/bin/docker-entrypoint.sh minio server /export -S /etc/minio/certs/ --address :9000 --console-address :9001"
+          volumeMounts:
+            - name: minio-user
+              mountPath: "/tmp/credentials"
+              readOnly: true
+            - name: export
+              mountPath: /export            
+          ports:
+            - name: http
+              containerPort: 9000
+            - name: http-console
+              containerPort: 9001
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: test-oss-logical-multizone-values-minio
+                  key: rootUser
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: test-oss-logical-multizone-values-minio
+                  key: rootPassword
+            - name: MINIO_PROMETHEUS_AUTH_TYPE
+              value: "public"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi      
+      volumes:
+        - name: export
+          persistentVolumeClaim:
+            claimName: test-oss-logical-multizone-values-minio
+        - name: minio-user
+          secret:
+            secretName: test-oss-logical-multizone-values-minio

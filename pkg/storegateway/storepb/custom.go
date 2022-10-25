@@ -32,6 +32,14 @@ func NewHintsSeriesResponse(hints *types.Any) *SeriesResponse {
 	}
 }
 
+func NewStatsResponse(indexBytesFetched int) *SeriesResponse {
+	return &SeriesResponse{
+		Result: &SeriesResponse_Stats{
+			Stats: &Stats{FetchedIndexBytes: uint64(indexBytesFetched)},
+		},
+	}
+}
+
 type emptySeriesSet struct{}
 
 func (emptySeriesSet) Next() bool                       { return false }

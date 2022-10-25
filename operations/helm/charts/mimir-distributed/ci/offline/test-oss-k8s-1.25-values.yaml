@@ -1,0 +1,21 @@
+# Pin kube version so results are the same for running in CI and locally where the installed kube version may be different.
+kubeVersionOverride: "1.25"
+
+chunks-cache:
+  enabled: true
+
+index-cache:
+  enabled: true
+
+metadata-cache:
+  enabled: true
+
+results-cache:
+  enabled: true
+
+nginx:
+  autoscaling:
+    enabled: true
+  resources:
+    requests:
+      cpu: 1

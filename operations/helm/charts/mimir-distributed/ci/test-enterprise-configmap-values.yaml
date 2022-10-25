@@ -53,11 +53,15 @@ ingester:
     <<: *ci_resources
   persistentVolume:
     enabled: false
+  zoneAwareReplication:
+    enabled: false
 
 store_gateway:
   resources:
     <<: *ci_resources
   persistentVolume:
+    enabled: false
+  zoneAwareReplication:
     enabled: false
 
 querier:
@@ -76,3 +80,6 @@ query_scheduler:
 testing:
   minio:
     use_secret: true
+
+rollout_operator:
+  enabled: false

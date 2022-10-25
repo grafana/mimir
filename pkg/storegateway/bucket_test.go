@@ -2236,7 +2236,7 @@ func createHeadWithSeries(t testing.TB, j int, opts headGenOptions) (*tsdb.Head,
 		lbls.Set("i", fmt.Sprintf("%07d%s", tsLabel, labelLongSuffix))
 		ref, err := app.Append(
 			0,
-			lbls.Labels(),
+			lbls.Labels(nil),
 			int64(tsLabel)*opts.ScrapeInterval.Milliseconds(),
 			opts.Random.Float64(),
 		)

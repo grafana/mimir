@@ -5902,17 +5902,6 @@
             },
             {
               "kind": "field",
-              "name": "out_of_order_capacity_min",
-              "required": false,
-              "desc": "Minimum capacity for out-of-order chunks, in samples between 0 and 255.",
-              "fieldValue": null,
-              "fieldDefaultValue": 4,
-              "fieldFlag": "blocks-storage.tsdb.out-of-order-capacity-min",
-              "fieldType": "int",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
               "name": "out_of_order_capacity_max",
               "required": false,
               "desc": "Maximum capacity for out of order chunks, in samples between 1 and 255.",
@@ -11286,6 +11275,17 @@
           "fieldDefaultValue": true,
           "fieldFlag": "usage-stats.enabled",
           "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "installation_mode",
+          "required": false,
+          "desc": "Installation mode. Supported values: custom, helm, jsonnet.",
+          "fieldValue": null,
+          "fieldDefaultValue": "custom",
+          "fieldFlag": "usage-stats.installation-mode",
+          "fieldType": "string",
           "fieldCategory": "experimental"
         }
       ],

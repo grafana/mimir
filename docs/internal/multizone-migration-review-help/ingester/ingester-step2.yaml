@@ -1,0 +1,9 @@
+ingester:
+  zoneAwareReplication:
+    enabled: true
+    migration:
+      enabled: true
+      replicas: 3
+
+rollout_operator:
+  enabled: true

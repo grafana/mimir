@@ -70,7 +70,7 @@ data:
         admin_api:
           url: http://graphite-enabled-values-mimir-admin-api.citestns.svc:8080
         alertmanager:
-          url: http://graphite-enabled-values-mimir-alertmanager.citestns.svc:8080
+          url: http://graphite-enabled-values-mimir-alertmanager-headless.citestns.svc:8080
         compactor:
           url: http://graphite-enabled-values-mimir-compactor.citestns.svc:8080
         default:
@@ -82,13 +82,13 @@ data:
         graphite_write_proxy:
           url: http://graphite-enabled-values-mimir-graphite-write-proxy.citestns.svc:8080
         ingester:
-          url: http://graphite-enabled-values-mimir-ingester.citestns.svc:8080
+          url: http://graphite-enabled-values-mimir-ingester-headless.citestns.svc:8080
         query_frontend:
           url: http://graphite-enabled-values-mimir-query-frontend.citestns.svc:8080
         ruler:
           url: http://graphite-enabled-values-mimir-ruler.citestns.svc:8080
         store_gateway:
-          url: http://graphite-enabled-values-mimir-store-gateway.citestns.svc:8080
+          url: http://graphite-enabled-values-mimir-store-gateway-headless.citestns.svc:8080
     graphite:
       enabled: true
       querier:
