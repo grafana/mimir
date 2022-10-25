@@ -1008,7 +1008,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 			} else {
 				assert.EqualError(t, err, tc.expectedError.Error())
 
-				// Assert that downstream GRPC statuses are passed back upstream
+				// Assert that downstream gRPC statuses are passed back upstream
 				_, ok := httpgrpc.HTTPResponseFromError(err)
 				assert.True(t, ok, fmt.Sprintf("expected error to be an httpgrpc error, but got: %T", err))
 			}
