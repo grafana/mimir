@@ -16,6 +16,7 @@
 * [ENHANCEMENT] Compactor: Add new `cortex_compactor_block_max_time_delta_seconds` histogram for detecting if compaction of blocks is lagging behind. #3240
 * [BUGFIX] Flusher: Add `Overrides` as a dependency to prevent panics when starting with `-target=flusher`. #3151
 * [BUGFIX] Updated `golang.org/x/text` dependency to fix CVE-2022-32149. #3285
+* [BUGFIX] Query-frontend: properly close gRPC streams to the query-scheduler to stop memory and goroutines leak. #3302
 
 ### Mixin
 
