@@ -137,11 +137,11 @@ This may cause that incorrect results are returned for the query.
    # Get list of all blocks in the bucket
    thanos tools bucket inspect \
        --objstore.config-file bucket.yaml \
-       --output=tsv >> blocks.tsv
+       --output=tsv > blocks.tsv
        
    # Find blocks from replica that we will drop    
    cat blocks.tsv| grep prometheus_replica=<PROMETHEUS-REPLICA-TO-DROP> \
-       | awk '{print $1}' >> blocks_to_drop.tsv
+       | awk '{print $1}' > blocks_to_drop.tsv
        
    # Mark found blocks for deletion
    for ID in $(cat blocks_to_drop.tsv)
@@ -168,7 +168,7 @@ This may cause that incorrect results are returned for the query.
    > ```bash 
    > thanos tools bucket inspect \
    >     --objstore.config-file bucket-prod.yaml \
-   >     --output=csv >> thanos-blocks.csv
+   >     --output=csv > thanos-blocks.csv
    > ```
 
 4) Relabel the blocks with external labels
@@ -188,7 +188,7 @@ This may cause that incorrect results are returned for the query.
    # Get list of all blocks in the bucket after removing the depuplicate and downsampled blocks.
    thanos tools bucket inspect \
        --objstore.config-file bucket.yaml \
-       --output=tsv >> blocks-to-rewrite.tsv
+       --output=tsv > blocks-to-rewrite.tsv
    
    # Check if rewrite of the blocks with external labels is working as expected.
    for ID in $(cat blocks-to-rewrite.tsv)
@@ -201,7 +201,7 @@ This may cause that incorrect results are returned for the query.
    done
    ```
    
-   After confirming that the rewrite is working as expected in **--dry-run**, you can apply the changes with the **--no-dry-run** flag.
+   After confirming that the rewrite is working as expected in **--dry-run**, you can apply the changes with the **--no-dry-run** flag. Don't forget to include **--delete-blocks**, if not the original blocks will not be marked for deletion.
    
    ```bash
    # Rewrite the blocks with external labels and mark the original blocks for deletion.
@@ -211,7 +211,7 @@ This may cause that incorrect results are returned for the query.
            --objstore.config-file bucket.yaml \
            --rewrite.to-relabel-config-file relabel-config.yaml \
            --no-dry-run \
-           --delete-blocks 
+           --delete-blocks \
            --id $ID
    done
    ```
@@ -268,7 +268,7 @@ This may cause that incorrect results are returned for the query.
    >        --rewrite.to-relabel-config-file relabel-config.yaml \
    >        --delete-blocks \
    >        --no-dry-run \
-   >        --id $ID \         
+   >        --id $ID         
    > done
    >```
  
@@ -299,7 +299,7 @@ This may cause that incorrect results are returned for the query.
      tmpfile=$(mktemp)
    
      # use jq to delete the labels from the meta.sjon file
-     jq 'del(.thanos.labels.<LABEL-KEY-1>, .thanos.labels.<LABEL-KEY-2), .thanos.labels.<LABEL-KEY-3>)' "${orig}" > "${tmpfile}"
+     jq 'del(.thanos.labels)' "${orig}" > "${tmpfile}"
    
      # check if there are changes in the tmpfile
      if ! diff -u <(jq -S . "${orig}") <(jq -S . "${tmpfile}") > /dev/null; then
@@ -338,5 +338,3 @@ This may cause that incorrect results are returned for the query.
   
 > **Note**: It is recommeneded to run all the above steps in a **screen** command to avoid any interruptions as these may take time depending on the amount of data to be processed.
   
-  
-   
