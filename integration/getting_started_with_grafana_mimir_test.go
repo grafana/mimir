@@ -43,26 +43,17 @@ func TestPlayWithGrafanaMimirTutorial(t *testing.T) {
 	require.NoError(t, copyFileToSharedDir(s, "docs/sources/tutorials/play-with-grafana-mimir/config/mimir.yaml", "mimir.yaml"))
 
 	// Start dependencies.
-	minio := e2edb.NewMinio(9000, blocksBucketName, rulestoreBucketName, alertsBucketName)
+	minio := e2edb.NewMinio(9000, mimirBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	flags := map[string]string{
-		// Override the storage config.
-		"-blocks-storage.s3.access-key-id":           e2edb.MinioAccessKey,
-		"-blocks-storage.s3.secret-access-key":       e2edb.MinioSecretKey,
-		"-blocks-storage.s3.bucket-name":             blocksBucketName,
-		"-blocks-storage.s3.endpoint":                fmt.Sprintf("%s-minio-9000:9000", networkName),
-		"-blocks-storage.s3.insecure":                "true",
-		"-ruler-storage.s3.access-key-id":            e2edb.MinioAccessKey,
-		"-ruler-storage.s3.secret-access-key":        e2edb.MinioSecretKey,
-		"-ruler-storage.s3.bucket-name":              rulestoreBucketName,
-		"-ruler-storage.s3.endpoint":                 fmt.Sprintf("%s-minio-9000:9000", networkName),
-		"-ruler-storage.s3.insecure":                 "true",
-		"-alertmanager-storage.s3.access-key-id":     e2edb.MinioAccessKey,
-		"-alertmanager-storage.s3.secret-access-key": e2edb.MinioSecretKey,
-		"-alertmanager-storage.s3.bucket-name":       alertsBucketName,
-		"-alertmanager-storage.s3.endpoint":          fmt.Sprintf("%s-minio-9000:9000", networkName),
-		"-alertmanager-storage.s3.insecure":          "true",
+		// Override storage config as Minio setup is different in integration tests.
+		"-common.storage.s3.endpoint":          fmt.Sprintf("%s-minio-9000:9000", networkName),
+		"-common.storage.s3.access-key-id":     e2edb.MinioAccessKey,
+		"-common.storage.s3.secret-access-key": e2edb.MinioSecretKey,
+		"-common.storage.s3.insecure":          "true",
+		"-common.storage.s3.bucket-name":       mimirBucketName,
+
 		// Override the list of members to join, setting the hostname we expect within the Docker network created by integration tests.
 		"-memberlist.join": networkName + "-mimir-1",
 	}
