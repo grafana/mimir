@@ -842,8 +842,8 @@ github.com/stretchr/testify v1.8.0 h1:pSgiaMZlXftHpm5L7V1+rVB+AZJydKsMxsQBIJw4PK
 github.com/stretchr/testify v1.8.0/go.mod h1:yNjHg4UonilssWZ8iaSj1OCr/vHnekPRkoO+kdMU+MU=
 github.com/subosito/gotenv v1.2.0/go.mod h1:N0PQaV/YGNqwC0u51sEeR/aUtSLEXKX9iv69rRypqCw=
 github.com/tencentyun/cos-go-sdk-v5 v0.7.34 h1:xm+Pg+6m486y4eugRI7/E4WasbVmpY1hp9QBSRErgp8=
-github.com/thanos-io/objstore v0.0.0-20221006135717-79dcec7fe604 h1:9dceDSKKsLWNHjrMpyzK1t7eVcAZv9Dp3FX+uokUS2Y=
-github.com/thanos-io/objstore v0.0.0-20221006135717-79dcec7fe604/go.mod h1:Vx5dZs9ElxEhNLnum/OgB0pNTqNdI2zdXL82BeJr3T4=
+github.com/thanos-io/objstore v0.0.0-20221025150406-0ea26d7a8d2b h1:J2zP7NCpEblo1HxmdUnGow2WOX8e1h8DEypaOEwHTPc=
+github.com/thanos-io/objstore v0.0.0-20221025150406-0ea26d7a8d2b/go.mod h1:Vx5dZs9ElxEhNLnum/OgB0pNTqNdI2zdXL82BeJr3T4=
 github.com/tidwall/pretty v1.0.0/go.mod h1:XNkn88O1ChpSDQmQeStsy+sBenx6DDtFZJxhVysOjyk=
 github.com/tidwall/pretty v1.2.0 h1:RWIZEg2iJ8/g6fDDYzMpobmaoGh5OLl4AXtGUGPcqCs=
 github.com/tidwall/pretty v1.2.0/go.mod h1:ITEVvHYasfjBbM0u2Pg8T2nJnzm8xPwvNhhsoaGGjNU=
