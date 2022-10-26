@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -28,6 +30,7 @@ import (
 	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/keepalive"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/querier/stats"
@@ -39,10 +42,14 @@ import (
 const testFrontendWorkerConcurrency = 5
 
 func setupFrontend(t *testing.T, reg prometheus.Registerer, schedulerReplyFunc func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend) (*Frontend, *mockScheduler) {
+	return setupFrontendWithConcurrencyAndServerOptions(t, reg, schedulerReplyFunc, testFrontendWorkerConcurrency)
+}
+
+func setupFrontendWithConcurrencyAndServerOptions(t *testing.T, reg prometheus.Registerer, schedulerReplyFunc func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend, concurrency int, opts ...grpc.ServerOption) (*Frontend, *mockScheduler) {
 	l, err := net.Listen("tcp", "")
 	require.NoError(t, err)
 
-	server := grpc.NewServer()
+	server := grpc.NewServer(opts...)
 
 	h, p, err := net.SplitHostPort(l.Addr().String())
 	require.NoError(t, err)
@@ -53,12 +60,11 @@ func setupFrontend(t *testing.T, reg prometheus.Registerer, schedulerReplyFunc f
 	cfg := Config{}
 	flagext.DefaultValues(&cfg)
 	cfg.SchedulerAddress = l.Addr().String()
-	cfg.WorkerConcurrency = testFrontendWorkerConcurrency
+	cfg.WorkerConcurrency = concurrency
 	cfg.Addr = h
 	cfg.Port = grpcPort
 
-	//logger := log.NewLogfmtLogger(os.Stdout)
-	logger := log.NewNopLogger()
+	logger := log.NewLogfmtLogger(os.Stdout)
 	f, err := NewFrontend(cfg, logger, reg)
 	require.NoError(t, err)
 
@@ -67,17 +73,18 @@ func setupFrontend(t *testing.T, reg prometheus.Registerer, schedulerReplyFunc f
 	ms := newMockScheduler(t, f, schedulerReplyFunc)
 	schedulerpb.RegisterSchedulerForFrontendServer(server, ms)
 
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), f))
-	t.Cleanup(func() {
-		_ = services.StopAndAwaitTerminated(context.Background(), f)
-	})
-
 	go func() {
 		_ = server.Serve(l)
 	}()
 
 	t.Cleanup(func() {
 		_ = l.Close()
+		server.GracefulStop()
+	})
+
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), f))
+	t.Cleanup(func() {
+		_ = services.StopAndAwaitTerminated(context.Background(), f)
 	})
 
 	// Wait for frontend to connect to scheduler.
@@ -424,4 +431,53 @@ func TestConfig_Validate(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestWithClosingGrpcServer(t *testing.T) {
+	// This test is easier with single frontend worker.
+	const frontendConcurrency = 1
+	const userID = "test"
+
+	f, _ := setupFrontendWithConcurrencyAndServerOptions(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
+	}, frontendConcurrency, grpc.KeepaliveParams(keepalive.ServerParameters{
+		MaxConnectionIdle:     100 * time.Millisecond,
+		MaxConnectionAge:      100 * time.Millisecond,
+		MaxConnectionAgeGrace: 100 * time.Millisecond,
+		Time:                  1 * time.Second,
+		Timeout:               1 * time.Second,
+	}))
+
+	// Connection will be established on the first roundtrip.
+	resp, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), &httpgrpc.HTTPRequest{})
+	require.NoError(t, err)
+	require.Equal(t, int(resp.Code), http.StatusTooManyRequests)
+
+	// Verify that there is one stream open.
+	require.Equal(t, 1, checkStreamGoroutines())
+
+	// Wait a bit, to make sure that server closes connection.
+	time.Sleep(1 * time.Second)
+
+	// Despite server closing connections, stream-related goroutines still exist.
+	require.Equal(t, 1, checkStreamGoroutines())
+
+	// Another request will work as before, because worker will recreate connection.
+	resp, err = f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), &httpgrpc.HTTPRequest{})
+	require.NoError(t, err)
+	require.Equal(t, int(resp.Code), http.StatusTooManyRequests)
+
+	// There should still be only one stream open, and one goroutine created for it.
+	// Previously frontend leaked goroutine because stream that received "EOF" due to server closing the connection, never stopped its goroutine.
+	require.Equal(t, 1, checkStreamGoroutines())
+}
+
+func checkStreamGoroutines() int {
+	const streamGoroutineStackFrameTrailer = "created by google.golang.org/grpc.newClientStreamWithParams"
+
+	buf := make([]byte, 1000000)
+	stacklen := runtime.Stack(buf, true)
+
+	goroutineStacks := string(buf[:stacklen])
+	return strings.Count(goroutineStacks, streamGoroutineStackFrameTrailer)
 }
