@@ -27,13 +27,13 @@ func TestMatcher_MatchesSeries(t *testing.T) {
 		expected []int
 	}{
 		{
-			series: labels.Labels{{Name: "foo", Value: "true"}, {Name: "baz", Value: "unrelated"}},
+			series: labels.FromStrings("foo", "true", "baz", "unrelated"),
 			expected: []int{
 				3, // has_foo_label
 			},
 		},
 		{
-			series: labels.Labels{{Name: "foo", Value: "true"}, {Name: "bar", Value: "100"}, {Name: "baz", Value: "unrelated"}},
+			series: labels.FromStrings("foo", "true", "bar", "100", "baz", "unrelated"),
 			expected: []int{
 				0, // bar_starts_with_1
 				2, // has_foo_and_bar_starts_with_1
@@ -41,26 +41,26 @@ func TestMatcher_MatchesSeries(t *testing.T) {
 			},
 		},
 		{
-			series: labels.Labels{{Name: "foo", Value: "true"}, {Name: "bar", Value: "200"}, {Name: "baz", Value: "unrelated"}},
+			series: labels.FromStrings("foo", "true", "bar", "200", "baz", "unrelated"),
 			expected: []int{
 				3, // has_foo_label
 			},
 		},
 		{
-			series: labels.Labels{{Name: "bar", Value: "200"}, {Name: "baz", Value: "unrelated"}},
+			series: labels.FromStrings("bar", "200", "baz", "unrelated"),
 			expected: []int{
 				1, // does_not_have_foo_label
 			},
 		},
 		{
-			series: labels.Labels{{Name: "bar", Value: "100"}, {Name: "baz", Value: "unrelated"}},
+			series: labels.FromStrings("bar", "100", "baz", "unrelated"),
 			expected: []int{
 				0, // bar_starts_with_1
 				1, // does_not_have_foo_label
 			},
 		},
 		{
-			series: labels.Labels{{Name: "baz", Value: "unrelated"}},
+			series: labels.FromStrings("baz", "unrelated"),
 			expected: []int{
 				1, // does_not_have_foo_label
 			},

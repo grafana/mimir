@@ -354,9 +354,7 @@ func BenchmarkActiveSeriesTest_single_series(b *testing.B) {
 }
 
 func benchmarkActiveSeriesConcurrencySingleSeries(b *testing.B, goroutines int) {
-	series := labels.Labels{
-		{Name: "a", Value: "a"},
-	}
+	series := labels.FromStrings("a", "a")
 
 	c := NewActiveSeries(&Matchers{}, DefaultTimeout)
 
@@ -451,7 +449,7 @@ func benchmarkPurge(b *testing.B, twice bool) {
 
 	series := [numSeries]labels.Labels{}
 	for s := 0; s < numSeries; s++ {
-		series[s] = labels.Labels{{Name: "a", Value: strconv.Itoa(s)}}
+		series[s] = labels.FromStrings("a", strconv.Itoa(s))
 	}
 
 	for i := 0; i < b.N; i++ {

@@ -53,9 +53,7 @@ func TestBlockQuerierSeries(t *testing.T) {
 					{MinTime: minTimestamp.Unix() * 1000, MaxTime: maxTimestamp.Unix() * 1000, Raw: &storepb.Chunk{Type: storepb.Chunk_XOR, Data: mockTSDBChunkData()}},
 				},
 			},
-			expectedMetric: labels.Labels{
-				{Name: "foo", Value: "bar"},
-			},
+			expectedMetric: labels.FromStrings("foo", "bar"),
 			expectedSamples: []model.SamplePair{
 				{Timestamp: model.TimeFromUnixNano(time.Unix(1, 0).UnixNano()), Value: model.SampleValue(1)},
 				{Timestamp: model.TimeFromUnixNano(time.Unix(2, 0).UnixNano()), Value: model.SampleValue(2)},
@@ -68,7 +66,7 @@ func TestBlockQuerierSeries(t *testing.T) {
 					{MinTime: minTimestamp.Unix() * 1000, MaxTime: maxTimestamp.Unix() * 1000, Raw: &storepb.Chunk{Type: storepb.Chunk_XOR, Data: []byte{0, 1}}},
 				},
 			},
-			expectedMetric: labels.Labels{labels.Label{Name: "foo", Value: "bar"}},
+			expectedMetric: labels.FromStrings("foo", "bar"),
 			expectedErr:    `cannot iterate chunk for series: {foo="bar"}: EOF`,
 		},
 	}

@@ -200,46 +200,10 @@ func TestGenLabelsCorrectness(t *testing.T) {
 		sort.Sort(set)
 	}
 	expected := []labels.Labels{
-		{
-			labels.Label{
-				Name:  "a",
-				Value: "0",
-			},
-			labels.Label{
-				Name:  "b",
-				Value: "0",
-			},
-		},
-		{
-			labels.Label{
-				Name:  "a",
-				Value: "0",
-			},
-			labels.Label{
-				Name:  "b",
-				Value: "1",
-			},
-		},
-		{
-			labels.Label{
-				Name:  "a",
-				Value: "1",
-			},
-			labels.Label{
-				Name:  "b",
-				Value: "0",
-			},
-		},
-		{
-			labels.Label{
-				Name:  "a",
-				Value: "1",
-			},
-			labels.Label{
-				Name:  "b",
-				Value: "1",
-			},
-		},
+		labels.FromStrings("a", "0", "b", "0"),
+		labels.FromStrings("a", "0", "b", "1"),
+		labels.FromStrings("a", "1", "b", "0"),
+		labels.FromStrings("a", "1", "b", "1"),
 	}
 	require.Equal(t, expected, ls)
 }

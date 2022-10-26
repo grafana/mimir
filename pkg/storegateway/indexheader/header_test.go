@@ -60,7 +60,7 @@ func TestReaders(t *testing.T) {
 		{{Name: "a", Value: "13"}},
 		{{Name: "a", Value: "1"}, {Name: "longer-string", Value: "1"}},
 		{{Name: "a", Value: "1"}, {Name: "longer-string", Value: "2"}},
-	}, 100, 0, 1000, labels.Labels{{Name: "ext1", Value: "1"}}, 124, metadata.NoneFunc)
+	}, 100, 0, 1000, labels.FromStrings("ext1", "1"), 124, metadata.NoneFunc)
 	require.NoError(t, err)
 
 	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, id1.String()), metadata.NoneFunc))
@@ -87,7 +87,7 @@ func TestReaders(t *testing.T) {
 	test.Copy(t, "./testdata/index_format_v1", filepath.Join(tmpDir, m.ULID.String()))
 
 	_, err = metadata.InjectThanos(log.NewNopLogger(), filepath.Join(tmpDir, m.ULID.String()), metadata.Thanos{
-		Labels:     labels.Labels{{Name: "ext1", Value: "1"}}.Map(),
+		Labels:     labels.FromStrings("ext1", "1").Map(),
 		Downsample: metadata.ThanosDownsample{Resolution: 0},
 		Source:     metadata.TestSource,
 	}, &m.BlockMeta)
@@ -331,7 +331,7 @@ func prepareIndexV2Block(t testing.TB, tmpDir string, bkt objstore.Bucket) *meta
 	test.Copy(t, "./testdata/index_format_v2", filepath.Join(tmpDir, m.ULID.String()))
 
 	_, err = metadata.InjectThanos(log.NewNopLogger(), filepath.Join(tmpDir, m.ULID.String()), metadata.Thanos{
-		Labels:     labels.Labels{{Name: "ext1", Value: "1"}}.Map(),
+		Labels:     labels.FromStrings("ext1", "1").Map(),
 		Downsample: metadata.ThanosDownsample{Resolution: 0},
 		Source:     metadata.TestSource,
 	}, &m.BlockMeta)
@@ -407,11 +407,11 @@ func benchmarkBinaryReaderLookupSymbol(b *testing.B, numSeries int) {
 	// Generate series labels.
 	seriesLabels := make([]labels.Labels, 0, numSeries)
 	for i := 0; i < numSeries; i++ {
-		seriesLabels = append(seriesLabels, labels.Labels{{Name: "a", Value: strconv.Itoa(i)}})
+		seriesLabels = append(seriesLabels, labels.FromStrings("a", strconv.Itoa(i)))
 	}
 
 	// Create a block.
-	id1, err := testhelper.CreateBlock(ctx, tmpDir, seriesLabels, 100, 0, 1000, labels.Labels{{Name: "ext1", Value: "1"}}, 124, metadata.NoneFunc)
+	id1, err := testhelper.CreateBlock(ctx, tmpDir, seriesLabels, 100, 0, 1000, labels.FromStrings("ext1", "1"), 124, metadata.NoneFunc)
 	require.NoError(b, err)
 	require.NoError(b, block.Upload(ctx, logger, bkt, filepath.Join(tmpDir, id1.String()), metadata.NoneFunc))
 

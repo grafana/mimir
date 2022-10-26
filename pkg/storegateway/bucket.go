@@ -1584,10 +1584,7 @@ func newBucketBlock(
 		meta:              meta,
 		indexHeaderReader: indexHeadReader,
 		// Inject the block ID as a label to allow to match blocks by ID.
-		blockLabels: labels.Labels{labels.Label{
-			Name:  block.BlockIDLabel,
-			Value: meta.ULID.String(),
-		}},
+		blockLabels: labels.FromStrings(block.BlockIDLabel, meta.ULID.String()),
 	}
 
 	// Get object handles for all chunk files (segment files) from meta.json, if available.

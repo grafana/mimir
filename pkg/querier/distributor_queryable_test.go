@@ -173,11 +173,11 @@ func TestIngesterStreaming(t *testing.T) {
 
 	require.True(t, seriesSet.Next())
 	series := seriesSet.At()
-	require.Equal(t, labels.Labels{{Name: "bar", Value: "baz"}}, series.Labels())
+	require.Equal(t, labels.FromStrings("bar", "baz"), series.Labels())
 
 	require.True(t, seriesSet.Next())
 	series = seriesSet.At()
-	require.Equal(t, labels.Labels{{Name: "foo", Value: "bar"}}, series.Labels())
+	require.Equal(t, labels.FromStrings("foo", "bar"), series.Labels())
 
 	require.False(t, seriesSet.Next())
 	require.NoError(t, seriesSet.Err())
@@ -248,13 +248,13 @@ func TestIngesterStreamingMixedResults(t *testing.T) {
 	require.NoError(t, seriesSet.Err())
 
 	require.True(t, seriesSet.Next())
-	verifySeries(t, seriesSet.At(), labels.Labels{{Name: labels.MetricName, Value: "one"}}, s1)
+	verifySeries(t, seriesSet.At(), labels.FromStrings(labels.MetricName, "one"), s1)
 
 	require.True(t, seriesSet.Next())
-	verifySeries(t, seriesSet.At(), labels.Labels{{Name: labels.MetricName, Value: "three"}}, s1)
+	verifySeries(t, seriesSet.At(), labels.FromStrings(labels.MetricName, "three"), s1)
 
 	require.True(t, seriesSet.Next())
-	verifySeries(t, seriesSet.At(), labels.Labels{{Name: labels.MetricName, Value: "two"}}, mergedSamplesS1S2)
+	verifySeries(t, seriesSet.At(), labels.FromStrings(labels.MetricName, "two"), mergedSamplesS1S2)
 
 	require.False(t, seriesSet.Next())
 	require.NoError(t, seriesSet.Err())
