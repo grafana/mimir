@@ -937,6 +937,7 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=distributor
+        - -usage-stats.installation-mode=jsonnet
         image: grafana/mimir:2.3.1
         imagePullPolicy: IfNotPresent
         name: distributor
@@ -1026,6 +1027,7 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -store.max-query-length=768h
         - -target=querier
+        - -usage-stats.installation-mode=jsonnet
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1024"
@@ -1101,6 +1103,7 @@ spec:
         - -server.http-write-timeout=1m
         - -store.max-query-length=12000h
         - -target=query-frontend
+        - -usage-stats.installation-mode=jsonnet
         image: grafana/mimir:2.3.1
         imagePullPolicy: IfNotPresent
         name: query-frontend
@@ -1171,6 +1174,7 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=query-scheduler
+        - -usage-stats.installation-mode=jsonnet
         image: grafana/mimir:2.3.1
         imagePullPolicy: IfNotPresent
         name: query-scheduler
@@ -1301,6 +1305,7 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -store.max-query-length=768h
         - -target=ruler
+        - -usage-stats.installation-mode=jsonnet
         image: grafana/mimir:2.3.1
         imagePullPolicy: IfNotPresent
         name: ruler
@@ -1370,6 +1375,7 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=alertmanager
+        - -usage-stats.installation-mode=jsonnet
         env:
         - name: POD_IP
           valueFrom:
@@ -1466,6 +1472,7 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=compactor
+        - -usage-stats.installation-mode=jsonnet
         image: grafana/mimir:2.3.1
         imagePullPolicy: IfNotPresent
         name: compactor
@@ -1577,6 +1584,7 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=ingester
+        - -usage-stats.installation-mode=jsonnet
         image: grafana/mimir:2.3.1
         imagePullPolicy: IfNotPresent
         name: ingester
@@ -1688,6 +1696,7 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=ingester
+        - -usage-stats.installation-mode=jsonnet
         image: grafana/mimir:2.3.1
         imagePullPolicy: IfNotPresent
         name: ingester
@@ -1799,6 +1808,7 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=ingester
+        - -usage-stats.installation-mode=jsonnet
         image: grafana/mimir:2.3.1
         imagePullPolicy: IfNotPresent
         name: ingester
@@ -2137,6 +2147,7 @@ spec:
         - -store-gateway.sharding-ring.wait-stability-min-duration=1m
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=store-gateway
+        - -usage-stats.installation-mode=jsonnet
         image: grafana/mimir:2.3.1
         imagePullPolicy: IfNotPresent
         name: store-gateway
@@ -2263,6 +2274,7 @@ spec:
         - -store-gateway.sharding-ring.wait-stability-min-duration=1m
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=store-gateway
+        - -usage-stats.installation-mode=jsonnet
         image: grafana/mimir:2.3.1
         imagePullPolicy: IfNotPresent
         name: store-gateway
@@ -2389,6 +2401,7 @@ spec:
         - -store-gateway.sharding-ring.wait-stability-min-duration=1m
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=store-gateway
+        - -usage-stats.installation-mode=jsonnet
         image: grafana/mimir:2.3.1
         imagePullPolicy: IfNotPresent
         name: store-gateway

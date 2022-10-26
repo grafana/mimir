@@ -25,6 +25,7 @@
       '%dm%ds' % [seconds / 60, seconds % 60],
 
   compactor_args::
+    $._config.usageStatsConfig +
     $._config.grpcConfig +
     $._config.storageConfig +
     $._config.blocksStorageConfig +

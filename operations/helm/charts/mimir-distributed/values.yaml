@@ -81,6 +81,9 @@ mimir:
   # -- Base config file for Grafana Mimir and Grafana Enterprise Metrics. Contains Helm templates that are evaulated at install/upgrade.
   # To modify the resulting configuration, either copy and alter 'mimir.config' as a whole or use the 'mimir.structuredConfig' to add and modify certain YAML elements.
   config: |
+    usage_stats:
+      installation_mode: helm
+
     activity_tracker:
       filepath: /active-query-tracker/activity.log
 

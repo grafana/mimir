@@ -361,6 +361,7 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=distributor
+        - -usage-stats.installation-mode=jsonnet
         image: grafana/mimir:2.3.1
         imagePullPolicy: IfNotPresent
         name: distributor
@@ -451,6 +452,7 @@ spec:
         - -store-gateway.sharding-ring.store=memberlist
         - -store.max-query-length=768h
         - -target=querier
+        - -usage-stats.installation-mode=jsonnet
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1024"
@@ -528,6 +530,7 @@ spec:
         - -server.http-write-timeout=1m
         - -store.max-query-length=12000h
         - -target=query-frontend
+        - -usage-stats.installation-mode=jsonnet
         image: grafana/mimir:2.3.1
         imagePullPolicy: IfNotPresent
         name: query-frontend
@@ -598,6 +601,7 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=query-scheduler
+        - -usage-stats.installation-mode=jsonnet
         image: grafana/mimir:2.3.1
         imagePullPolicy: IfNotPresent
         name: query-scheduler
@@ -673,6 +677,7 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=compactor
+        - -usage-stats.installation-mode=jsonnet
         image: grafana/mimir:2.3.1
         imagePullPolicy: IfNotPresent
         name: compactor
@@ -775,6 +780,7 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=ingester
+        - -usage-stats.installation-mode=jsonnet
         image: grafana/mimir:2.3.1
         imagePullPolicy: IfNotPresent
         name: ingester
@@ -1103,6 +1109,7 @@ spec:
         - -store-gateway.sharding-ring.tokens-file-path=/data/tokens
         - -store-gateway.sharding-ring.wait-stability-min-duration=1m
         - -target=store-gateway
+        - -usage-stats.installation-mode=jsonnet
         image: grafana/mimir:2.3.1
         imagePullPolicy: IfNotPresent
         name: store-gateway
