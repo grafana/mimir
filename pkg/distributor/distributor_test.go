@@ -58,7 +58,7 @@ import (
 )
 
 var (
-	errFail       = fmt.Errorf("Fail")
+	errFail       = httpgrpc.Errorf(http.StatusInternalServerError, "Fail")
 	emptyResponse = &mimirpb.WriteResponse{}
 )
 
@@ -115,27 +115,24 @@ func TestDistributor_Push(t *testing.T) {
 		startTimestampMs int64
 	}
 	for name, tc := range map[string]struct {
-		metricNames      []string
-		numIngesters     int
-		happyIngesters   int
-		samples          samplesIn
-		metadata         int
-		expectedResponse *mimirpb.WriteResponse
-		expectedError    error
-		expectedMetrics  string
+		metricNames     []string
+		numIngesters    int
+		happyIngesters  int
+		samples         samplesIn
+		metadata        int
+		expectedError   error
+		expectedMetrics string
 	}{
 		"A push of no samples shouldn't block or return error, even if ingesters are sad": {
-			numIngesters:     3,
-			happyIngesters:   0,
-			expectedResponse: emptyResponse,
+			numIngesters:   3,
+			happyIngesters: 0,
 		},
 		"A push to 3 happy ingesters should succeed": {
-			numIngesters:     3,
-			happyIngesters:   3,
-			samples:          samplesIn{num: 5, startTimestampMs: 123456789000},
-			metadata:         5,
-			expectedResponse: emptyResponse,
-			metricNames:      []string{lastSeenTimestamp},
+			numIngesters:   3,
+			happyIngesters: 3,
+			samples:        samplesIn{num: 5, startTimestampMs: 123456789000},
+			metadata:       5,
+			metricNames:    []string{lastSeenTimestamp},
 			expectedMetrics: `
 				# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
 				# TYPE cortex_distributor_latest_seen_sample_timestamp_seconds gauge
@@ -143,12 +140,11 @@ func TestDistributor_Push(t *testing.T) {
 			`,
 		},
 		"A push to 2 happy ingesters should succeed": {
-			numIngesters:     3,
-			happyIngesters:   2,
-			samples:          samplesIn{num: 5, startTimestampMs: 123456789000},
-			metadata:         5,
-			expectedResponse: emptyResponse,
-			metricNames:      []string{lastSeenTimestamp},
+			numIngesters:   3,
+			happyIngesters: 2,
+			samples:        samplesIn{num: 5, startTimestampMs: 123456789000},
+			metadata:       5,
+			metricNames:    []string{lastSeenTimestamp},
 			expectedMetrics: `
 				# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
 				# TYPE cortex_distributor_latest_seen_sample_timestamp_seconds gauge
@@ -193,12 +189,11 @@ func TestDistributor_Push(t *testing.T) {
 			`,
 		},
 		"A push to ingesters with an old sample should report the correct metrics with no metadata": {
-			numIngesters:     3,
-			happyIngesters:   2,
-			samples:          samplesIn{num: 1, startTimestampMs: now.UnixMilli() - 80000*1000}, // 80k seconds old
-			metadata:         0,
-			metricNames:      []string{distributorSampleDelay},
-			expectedResponse: emptyResponse,
+			numIngesters:   3,
+			happyIngesters: 2,
+			samples:        samplesIn{num: 1, startTimestampMs: now.UnixMilli() - 80000*1000}, // 80k seconds old
+			metadata:       0,
+			metricNames:    []string{distributorSampleDelay},
 			expectedMetrics: `
 				# HELP cortex_distributor_sample_delay_seconds Number of seconds by which a sample came in late wrt wallclock.
 				# TYPE cortex_distributor_sample_delay_seconds histogram
@@ -220,12 +215,11 @@ func TestDistributor_Push(t *testing.T) {
 			`,
 		},
 		"A push to ingesters with a current sample should report the correct metrics with no metadata": {
-			numIngesters:     3,
-			happyIngesters:   2,
-			samples:          samplesIn{num: 1, startTimestampMs: now.UnixMilli() - 1000}, // 1 second old
-			metadata:         0,
-			metricNames:      []string{distributorSampleDelay},
-			expectedResponse: emptyResponse,
+			numIngesters:   3,
+			happyIngesters: 2,
+			samples:        samplesIn{num: 1, startTimestampMs: now.UnixMilli() - 1000}, // 1 second old
+			metadata:       0,
+			metricNames:    []string{distributorSampleDelay},
 			expectedMetrics: `
 				# HELP cortex_distributor_sample_delay_seconds Number of seconds by which a sample came in late wrt wallclock.
 				# TYPE cortex_distributor_sample_delay_seconds histogram
@@ -247,12 +241,11 @@ func TestDistributor_Push(t *testing.T) {
 			`,
 		},
 		"A push to ingesters without samples should report the correct metrics": {
-			numIngesters:     3,
-			happyIngesters:   2,
-			samples:          samplesIn{num: 0, startTimestampMs: 123456789000},
-			metadata:         1,
-			metricNames:      []string{distributorSampleDelay},
-			expectedResponse: emptyResponse,
+			numIngesters:   3,
+			happyIngesters: 2,
+			samples:        samplesIn{num: 0, startTimestampMs: 123456789000},
+			metadata:       1,
+			metricNames:    []string{distributorSampleDelay},
 			expectedMetrics: `
 				# HELP cortex_distributor_sample_delay_seconds Number of seconds by which a sample came in late wrt wallclock.
 				# TYPE cortex_distributor_sample_delay_seconds histogram
@@ -289,8 +282,18 @@ func TestDistributor_Push(t *testing.T) {
 
 			request := makeWriteRequest(tc.samples.startTimestampMs, tc.samples.num, tc.metadata, false)
 			response, err := ds[0].Push(ctx, request)
-			assert.Equal(t, tc.expectedResponse, response)
-			assert.Equal(t, tc.expectedError, err)
+
+			if tc.expectedError == nil {
+				require.NoError(t, err)
+				assert.Equal(t, emptyResponse, response)
+			} else {
+				assert.Nil(t, response)
+				assert.EqualError(t, err, tc.expectedError.Error())
+
+				// Assert that downstream gRPC statuses are passed back upstream
+				_, ok := httpgrpc.HTTPResponseFromError(err)
+				assert.True(t, ok, fmt.Sprintf("expected error to be an httpgrpc error, but got: %T", err))
+			}
 
 			// Check tracked Prometheus metrics. Since the Push() response is sent as soon as the quorum
 			// is reached, when we reach this point the 3rd ingester may not have received series/metadata
@@ -993,7 +996,16 @@ func TestDistributor_PushQuery(t *testing.T) {
 			assert.Nil(t, err)
 
 			series, err := ds[0].QueryStream(ctx, 0, 10, tc.matchers...)
-			assert.Equal(t, tc.expectedError, err)
+
+			if tc.expectedError == nil {
+				require.NoError(t, err)
+			} else {
+				assert.EqualError(t, err, tc.expectedError.Error())
+
+				// Assert that downstream gRPC statuses are passed back upstream
+				_, ok := httpgrpc.HTTPResponseFromError(err)
+				assert.True(t, ok, fmt.Sprintf("expected error to be an httpgrpc error, but got: %T", err))
+			}
 
 			var response model.Matrix
 			if series == nil {
