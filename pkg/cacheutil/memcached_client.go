@@ -219,7 +219,7 @@ type memcachedGetMultiResult struct {
 }
 
 // NewMemcachedClient makes a new RemoteCacheClient.
-func NewMemcachedClient(logger log.Logger, name string, conf []byte, reg prometheus.Registerer) (*memcachedClient, error) {
+func NewMemcachedClient(logger log.Logger, name string, conf []byte, reg prometheus.Registerer) (RemoteCacheClient, error) {
 	config, err := parseMemcachedClientConfig(conf)
 	if err != nil {
 		return nil, err
@@ -229,7 +229,7 @@ func NewMemcachedClient(logger log.Logger, name string, conf []byte, reg prometh
 }
 
 // NewMemcachedClientWithConfig makes a new RemoteCacheClient.
-func NewMemcachedClientWithConfig(logger log.Logger, name string, config MemcachedClientConfig, reg prometheus.Registerer) (*memcachedClient, error) {
+func NewMemcachedClientWithConfig(logger log.Logger, name string, config MemcachedClientConfig, reg prometheus.Registerer) (RemoteCacheClient, error) {
 	if err := config.validate(); err != nil {
 		return nil, err
 	}
@@ -405,7 +405,7 @@ func (c *memcachedClient) SetAsync(_ context.Context, key string, value []byte, 
 		c.duration.WithLabelValues(opSet).Observe(time.Since(start).Seconds())
 	})
 
-	if err == errMemcachedAsyncBufferFull {
+	if errors.Is(err, errMemcachedAsyncBufferFull) {
 		c.skipped.WithLabelValues(opSet, reasonAsyncBufferFull).Inc()
 		level.Debug(c.logger).Log("msg", "failed to store item to memcached because the async buffer is full", "err", err, "size", len(c.asyncQueue))
 		return nil
