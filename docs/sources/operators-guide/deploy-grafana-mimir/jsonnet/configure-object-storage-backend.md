@@ -53,7 +53,7 @@ If credentials are required, it is a good practice to keep them in secrets. In t
 
 ## Azure (`azure`) storage configuration options
 
-Azure storage client requires the `storagE_azurE_account_name` and `storage_azure_account_key` to be configured.
+Azure storage client requires the `storage_azure_account_name` and `storage_azure_account_key` to be configured.
 It is a good practice to keep them in secrets. In that case environment variable interpolation can be used:
 
 ```jsonnet
