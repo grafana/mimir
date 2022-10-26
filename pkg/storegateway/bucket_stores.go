@@ -32,7 +32,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
-	"github.com/grafana/mimir/pkg/util/extprom"
 	"github.com/grafana/mimir/pkg/util/gate"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/pool"
@@ -91,7 +90,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 	}
 
 	// The number of concurrent queries against the tenants BucketStores are limited.
-	queryGateReg := extprom.WrapRegistererWithPrefix("cortex_bucket_stores_", reg)
+	queryGateReg := prometheus.WrapRegistererWithPrefix("cortex_bucket_stores_", reg)
 	var queryGate gate.Gate
 	if cfg.BucketStore.MaxConcurrentRejectOverLimit {
 		queryGate = gate.NewRejecting(cfg.BucketStore.MaxConcurrent)

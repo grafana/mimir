@@ -13,7 +13,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
-	"github.com/grafana/mimir/pkg/util/extprom"
 )
 
 // BucketStoreMetrics holds all the metrics tracked by BucketStore. These metrics
@@ -175,7 +174,7 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 		},
 	})
 
-	m.indexHeaderReaderMetrics = indexheader.NewReaderPoolMetrics(extprom.WrapRegistererWithPrefix("cortex_bucket_store_", reg))
+	m.indexHeaderReaderMetrics = indexheader.NewReaderPoolMetrics(prometheus.WrapRegistererWithPrefix("cortex_bucket_store_", reg))
 
 	return &m
 }

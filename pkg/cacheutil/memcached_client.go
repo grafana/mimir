@@ -24,7 +24,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"gopkg.in/yaml.v2"
 
-	"github.com/grafana/mimir/pkg/util/extprom"
 	"github.com/grafana/mimir/pkg/util/gate"
 )
 
@@ -259,7 +258,7 @@ func newMemcachedClient(
 ) (*memcachedClient, error) {
 	addressProvider := dns.NewProvider(
 		logger,
-		extprom.WrapRegistererWithPrefix("thanos_memcached_", reg),
+		prometheus.WrapRegistererWithPrefix("thanos_memcached_", reg),
 		dns.MiekgdnsResolverType,
 	)
 
@@ -272,7 +271,7 @@ func newMemcachedClient(
 		asyncQueue:      make(chan func(), config.MaxAsyncBufferSize),
 		stop:            make(chan struct{}, 1),
 		getMultiGate: gate.New(
-			extprom.WrapRegistererWithPrefix("thanos_memcached_getmulti_", reg),
+			prometheus.WrapRegistererWithPrefix("thanos_memcached_getmulti_", reg),
 			config.MaxGetMultiConcurrency,
 		),
 	}

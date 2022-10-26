@@ -46,7 +46,6 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/extprom"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -207,7 +206,7 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 	}
 
 	// Blocks finder doesn't use chunks, but we pass config for consistency.
-	cachingBucket, err := mimir_tsdb.CreateCachingBucket(storageCfg.BucketStore.ChunksCache, storageCfg.BucketStore.MetadataCache, bucketClient, logger, extprom.WrapRegistererWith(prometheus.Labels{"component": "querier"}, reg))
+	cachingBucket, err := mimir_tsdb.CreateCachingBucket(storageCfg.BucketStore.ChunksCache, storageCfg.BucketStore.MetadataCache, bucketClient, logger, prometheus.WrapRegistererWith(prometheus.Labels{"component": "querier"}, reg))
 	if err != nil {
 		return nil, errors.Wrap(err, "create caching bucket")
 	}

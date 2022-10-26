@@ -29,7 +29,6 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
-	"github.com/grafana/mimir/pkg/util/extprom"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -158,7 +157,7 @@ func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 
 	shardingStrategy = NewShuffleShardingStrategy(g.ring, lifecyclerCfg.ID, lifecyclerCfg.Addr, limits, logger)
 
-	g.stores, err = NewBucketStores(storageCfg, shardingStrategy, bucketClient, limits, logLevel, logger, extprom.WrapRegistererWith(prometheus.Labels{"component": "store-gateway"}, reg))
+	g.stores, err = NewBucketStores(storageCfg, shardingStrategy, bucketClient, limits, logLevel, logger, prometheus.WrapRegistererWith(prometheus.Labels{"component": "store-gateway"}, reg))
 	if err != nil {
 		return nil, errors.Wrap(err, "create bucket stores")
 	}
