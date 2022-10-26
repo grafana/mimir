@@ -472,22 +472,12 @@ func TestWithClosingGrpcServer(t *testing.T) {
 	require.Equal(t, 1, checkStreamGoroutines())
 }
 
-const createdBy = "created by google.golang.org/grpc.newClientStreamWithParams"
-
 func checkStreamGoroutines() int {
+	const streamGoroutineStackFrameTrailer = "created by google.golang.org/grpc.newClientStreamWithParams"
+
 	buf := make([]byte, 1000000)
 	stacklen := runtime.Stack(buf, true)
 
-	str := string(buf[:stacklen])
-	count := 0
-	for len(str) > 0 {
-		ix := strings.Index(str, createdBy)
-		if ix < 0 {
-			break
-		}
-		count++
-
-		str = str[ix+len(createdBy):]
-	}
-	return count
+	goroutineStacks := string(buf[:stacklen])
+	return strings.Count(goroutineStacks, streamGoroutineStackFrameTrailer)
 }
