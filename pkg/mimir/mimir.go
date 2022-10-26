@@ -794,11 +794,18 @@ func (t *Mimir) Run() error {
 
 	sm.AddListener(services.NewManagerListener(healthy, stopped, serviceFailed))
 
-	// Setup signal handler. If a signal arrives, we mark ourselves as "not ready", disable HTTP
-	// keep-alives, optionally wait some amount of time.
-	handler := signals.NewHandler(t.Server.Log, newShutdownSignalReceiver(t.Cfg.ShutdownDelay, shutdownRequested, t.Server.HTTPServer))
+	// Setup signal handler to gracefully shutdown in response to SIGTERM or SIGINT
+	handler := signals.NewHandler(t.Server.Log)
 	go func() {
 		handler.Loop()
+
+		shutdownRequested.Store(true)
+		t.Server.HTTPServer.SetKeepAlivesEnabled(false)
+
+		if t.Cfg.ShutdownDelay > 0 {
+			time.Sleep(t.Cfg.ShutdownDelay)
+		}
+
 		sm.StopAsync()
 	}()
 
@@ -870,34 +877,4 @@ func (t *Mimir) readyHandler(sm *services.Manager, shutdownRequested *atomic.Boo
 
 		util.WriteTextResponse(w, "ready")
 	}
-}
-
-// newShutdownSignalReceiver creates a new signals.SignalReceiver implementation that
-// handles everything required to cleanly shut down Mimir in response to a SIGTERM or
-// SIGINT signal.
-func newShutdownSignalReceiver(delay time.Duration, shutdownRequested *atomic.Bool, server *http.Server) signals.SignalReceiver {
-	return &shutdownSignalReceiver{
-		delay:             delay,
-		shutdownRequested: shutdownRequested,
-		server:            server,
-	}
-}
-
-// shutdownSignalReceiver takes care of the process of cleanly shutting down Mimir
-// in the event of a SIGTERM or SIGINT signal.
-type shutdownSignalReceiver struct {
-	delay             time.Duration
-	shutdownRequested *atomic.Bool
-	server            *http.Server
-}
-
-func (r *shutdownSignalReceiver) Stop() error {
-	r.shutdownRequested.Store(true)
-	r.server.SetKeepAlivesEnabled(false)
-
-	if r.delay > 0 {
-		time.Sleep(r.delay)
-	}
-
-	return nil
 }
