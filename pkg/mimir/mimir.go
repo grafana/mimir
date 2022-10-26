@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -33,6 +34,7 @@ import (
 	"github.com/weaveworks/common/server"
 	"github.com/weaveworks/common/signals"
 	"go.opentelemetry.io/otel"
+	"go.uber.org/atomic"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"gopkg.in/yaml.v3"
 
@@ -95,6 +97,7 @@ type Config struct {
 	Target              flagext.StringSliceCSV `yaml:"target"`
 	MultitenancyEnabled bool                   `yaml:"multitenancy_enabled"`
 	NoAuthTenant        string                 `yaml:"no_auth_tenant" category:"advanced"`
+	ShutdownDelay       time.Duration          `yaml:"shutdown_delay" category:"experimental"`
 	PrintConfig         bool                   `yaml:"-"`
 	ApplicationName     string                 `yaml:"-"`
 
@@ -143,6 +146,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&c.MultitenancyEnabled, "auth.multitenancy-enabled", true, "When set to true, incoming HTTP requests must specify tenant ID in HTTP X-Scope-OrgId header. When set to false, tenant ID from -auth.no-auth-tenant is used instead.")
 	f.StringVar(&c.NoAuthTenant, "auth.no-auth-tenant", "anonymous", "Tenant ID to use when multitenancy is disabled.")
 	f.BoolVar(&c.PrintConfig, "print.config", false, "Print the config and exit.")
+	f.DurationVar(&c.ShutdownDelay, "shutdown-delay", 0, "How long to wait between SIGTERM and shutdown. After receiving SIGTERM, Mimir will report not-ready status via /ready endpoint.")
 
 	c.API.RegisterFlags(f)
 	c.registerServerFlagsWithChangedDefaultValues(f)
@@ -756,10 +760,15 @@ func (t *Mimir) Run() error {
 		return err
 	}
 
+	// Used to delay shutdown but return "not ready" during this delay.
+	shutdownRequested := atomic.NewBool(false)
+
 	// before starting servers, register /ready handler and gRPC health check service.
-	// It should reflect entire Mimir.
-	t.Server.HTTP.Path("/ready").Handler(t.readyHandler(sm))
-	grpc_health_v1.RegisterHealthServer(t.Server.GRPC, grpcutil.NewHealthCheck(sm))
+	t.Server.HTTP.Path("/ready").Handler(t.readyHandler(sm, shutdownRequested))
+	grpc_health_v1.RegisterHealthServer(t.Server.GRPC, grpcutil.NewHealthCheckFrom(
+		grpcutil.WithShutdownRequested(shutdownRequested),
+		grpcutil.WithManager(sm),
+	))
 
 	// Let's listen for events from this manager, and log them.
 	healthy := func() { level.Info(util_log.Logger).Log("msg", "Application started") }
@@ -785,10 +794,18 @@ func (t *Mimir) Run() error {
 
 	sm.AddListener(services.NewManagerListener(healthy, stopped, serviceFailed))
 
-	// Setup signal handler. If signal arrives, we stop the manager, which stops all the services.
+	// Setup signal handler to gracefully shutdown in response to SIGTERM or SIGINT
 	handler := signals.NewHandler(t.Server.Log)
 	go func() {
 		handler.Loop()
+
+		shutdownRequested.Store(true)
+		t.Server.HTTPServer.SetKeepAlivesEnabled(false)
+
+		if t.Cfg.ShutdownDelay > 0 {
+			time.Sleep(t.Cfg.ShutdownDelay)
+		}
+
 		sm.StopAsync()
 	}()
 
@@ -818,8 +835,14 @@ func (t *Mimir) Run() error {
 	return err
 }
 
-func (t *Mimir) readyHandler(sm *services.Manager) http.HandlerFunc {
+func (t *Mimir) readyHandler(sm *services.Manager, shutdownRequested *atomic.Bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if shutdownRequested.Load() {
+			level.Debug(util_log.Logger).Log("msg", "application is stopping")
+			http.Error(w, "Application is stopping", http.StatusServiceUnavailable)
+			return
+		}
+
 		if !sm.IsHealthy() {
 			var serviceNamesStates []string
 			for name, s := range t.ServiceMap {
@@ -829,7 +852,6 @@ func (t *Mimir) readyHandler(sm *services.Manager) http.HandlerFunc {
 			}
 
 			level.Debug(util_log.Logger).Log("msg", "some services are not Running", "services", serviceNamesStates)
-
 			httpResponse := "Some services are not Running:\n" + strings.Join(serviceNamesStates, "\n")
 			http.Error(w, httpResponse, http.StatusServiceUnavailable)
 			return

@@ -36,6 +36,17 @@
       "fieldCategory": "advanced"
     },
     {
+      "kind": "field",
+      "name": "shutdown_delay",
+      "required": false,
+      "desc": "How long to wait between SIGTERM and shutdown. After receiving SIGTERM, Mimir will report not-ready status via /ready endpoint.",
+      "fieldValue": null,
+      "fieldDefaultValue": 0,
+      "fieldFlag": "shutdown-delay",
+      "fieldType": "duration",
+      "fieldCategory": "experimental"
+    },
+    {
       "kind": "block",
       "name": "api",
       "required": false,
