@@ -25,6 +25,7 @@
 ### Mixin
 
 * [CHANGE] Alerts: Change `MimirSchedulerQueriesStuck` `for` time to 7 minutes to account for the time it takes for HPA to scale up. #3223
+* [CHANGE] Dashboards: Removed the `Querier > Stages` panel from the `Mimir / Queries` dashboard. #3311
 * [ENHANCEMENT] Alerts: Add MimirRingMembersMismatch firing when a component does not have the expected number of running jobs. #2404
 * [ENHANCEMENT] Dashboards: Add optional row about the Distributor's metric forwarding feature to the `Mimir / Writes` dashboard. #3182
 * [ENHANCEMENT] Dashboards: Remove the "Instance Mapper" row from the "Alertmanager Resources Dashboard". This is a Grafana Cloud specific service and not relevant for external users. #3152
