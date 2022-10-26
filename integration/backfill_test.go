@@ -72,7 +72,8 @@ func TestMimirtoolBackfill(t *testing.T) {
 	{
 		// Try to upload block using mimirtool. Should fail because upload is not enabled for user.
 		output, err := runMimirtoolBackfill(tmpDir, compactor, block1)
-		require.Contains(t, output, "server returned HTTP status 400 Bad Request: block upload is disabled")
+		require.Contains(t, output, "400 Bad Request")
+		require.Contains(t, output, "block upload is disabled")
 		require.Error(t, err)
 	}
 

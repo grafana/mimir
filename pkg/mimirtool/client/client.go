@@ -6,7 +6,6 @@
 package client
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -174,37 +173,38 @@ func checkResponse(r *http.Response) error {
 		return nil
 	}
 
-	var msg, errMsg string
-	scanner := bufio.NewScanner(io.LimitReader(r.Body, 512))
-	if scanner.Scan() {
-		msg = scanner.Text()
+	bodyHead, err := io.ReadAll(io.LimitReader(r.Body, 1024))
+	if err != nil {
+		return errors.Wrapf(err, "reading body")
 	}
-
-	if msg == "" {
-		errMsg = fmt.Sprintf("server returned HTTP status %s", r.Status)
-	} else {
-		errMsg = fmt.Sprintf("server returned HTTP status %s: %s", r.Status, msg)
-	}
-
+	bodyStr := string(bodyHead)
+	const msg = "response"
 	if r.StatusCode == http.StatusNotFound {
 		log.WithFields(log.Fields{
 			"status": r.Status,
-			"msg":    msg,
-		}).Debugln(errMsg)
+			"body":   bodyStr,
+		}).Debugln(msg)
 		return ErrResourceNotFound
 	}
 	if r.StatusCode == http.StatusConflict {
 		log.WithFields(log.Fields{
 			"status": r.Status,
-			"msg":    msg,
-		}).Debugln(errMsg)
+			"body":   bodyStr,
+		}).Debugln(msg)
 		return errConflict
 	}
 
 	log.WithFields(log.Fields{
 		"status": r.Status,
-		"msg":    msg,
-	}).Errorln(errMsg)
+		"body":   bodyStr,
+	}).Errorln(msg)
+
+	var errMsg string
+	if bodyStr == "" {
+		errMsg = fmt.Sprintf("server returned HTTP status: %s", r.Status)
+	} else {
+		errMsg = fmt.Sprintf("server returned HTTP status: %s, body: %q", r.Status, bodyStr)
+	}
 
 	return errors.New(errMsg)
 }
