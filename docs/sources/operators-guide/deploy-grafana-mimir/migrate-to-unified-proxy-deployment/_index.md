@@ -9,7 +9,7 @@ aliases:
 
 # Migrate to the unified gateway deployment for NGINX and GEM gateway in Helm
 
-Version 4.0.0 of the `mimir-distributed` Helm chart adds a new way to deploy the NGINX reverse proxy in front of
+Version `4.0.0` of the `mimir-distributed` Helm chart adds a new way to deploy the NGINX reverse proxy in front of
 Mimir. The NGINX configuration was unified with the GEM (Grafana Enterprise Metrics) gateway configuration. Using a
 single section makes it possible to migrate from Mimir to GEM without downtime.
 
@@ -17,7 +17,7 @@ The unification also brings new features to the GEM gateway: OpenShift Route and
 gateway Pods.
 
 The unified configuration lives in the `gateway` section of the values file. With this we also
-deprecate the `nginx` section. It will be removed in `mimir-distributed` version 7.0.0.
+deprecate the `nginx` section. It will be removed in `mimir-distributed` version `7.0.0`.
 
 It is possible to migrate from `nginx` to the `gateway` configuration without downtime too. The migration should take
 less than 30 minutes. The rest of this article contains a procedure for migrating from the old `nignx` section to
@@ -25,16 +25,19 @@ less than 30 minutes. The rest of this article contains a procedure for migratin
 
 ## Before you begin
 
-Make sure that the version of the `mimir-distributed` Helm chart that you have installed is 4.0.0 or higher.
+Make sure that the version of the `mimir-distributed` Helm chart that you have installed is `4.0.0` or higher.
 
 ## Procedure
 
-1. Scale out the `gateway` deployment
+1. Scale out the `gateway` deployment:
 
-   1. Change your Helm values file to enable the `gateway` and increase its replicas. Set the number of replicas of
-      the gateway Deployment to the number of
-      replicas that NGINX are running with. For example, if you have deployed 10 NGINX replicas, then
-      add the following to your Helm values file `custom.yaml`:
+   1. Change your Helm chart values file to enable the `gateway` and increase its replicas:
+   
+      1. Set the number of replicas of the gateway Deployment to the number of
+      replicas that NGINX is running with.
+      
+      For example, if you have deployed 10 NGINX replicas, then
+      add the following configuration to your Helm chart values file `custom.yaml`:
 
       ```yaml
       gateway:
@@ -42,29 +45,29 @@ Make sure that the version of the `mimir-distributed` Helm chart that you have i
         replicas: 10
       ```
 
-   2. Deploy your changes.
+   2. Deploy your changes:
 
       ```bash
       helm upgrade $RELEASE grafana/mimir-distributed -f custom.yaml
       ```
 
-2. Replace the `nginx` deployment with `gateway`.
+2. Replace the `nginx` deployment with `gateway`:
 
-   1. Disable NGINX. Add or merge the following with your values file:
+   1. Disable NGINX by adding or merging the following configuration with your values file:
 
       ```yaml
       nginx:
         enabled: false
       ```
 
-   2. If you are using the Ingress that the chart provides, then copy the `ingress` section from `nginx` to
-      `gateway` and override the name. Override the name to the name of the Ingress resource that
-      the chart created for NGINX or the GEM gateway.
+   2. If you are using the Ingress that the Helm chart provides, then copy the `ingress` section from `nginx` to
+      `gateway`, and override the name to the name of the Ingress resource that
+      the Helm chart created for NGINX or the GEM gateway.
 
       Reusing the name allows the `helm` command to retain the existing resource instead of deleting it and
       recreating it under a slightly different name. Retaining the existing resource means that the Ingress
       Controller in your Kubernetes cluster does not need to delete and recreate the backing resources for the
-      Ingress, which may take time depending on which Ingress Controller you use.
+      Ingress, which might take time depending on which Ingress Controller you use.
 
       In the example that follows, the name of the Ingress
       resource was `mimir-nginx`. Use `kubectl` to get the name of the existing Ingress resource:
@@ -78,7 +81,7 @@ Make sure that the version of the `mimir-distributed` Helm chart that you have i
       mimir-nginx   <none>   mimir.example.com   10.0.0.1   80, 443   172d
       ```
 
-      After carrying out this step the Helm values for `gateway` should look like the following:
+      The Helm chart values for `gateway` should look similar to this:
 
       ```yaml
       gateway:
@@ -146,10 +149,10 @@ Make sure that the version of the `mimir-distributed` Helm chart that you have i
 
    4. Update the readiness probe endpoint if you are overriding `nginx.nginxConfig`.
 
-      The readiness probe in the `gateway` setup uses the `/ready` endpoint on the containers. Version 4.0.0 of
+      The readiness probe in the `gateway` setup uses the `/ready` endpoint on the containers. Version `4.0.0` of
       `mimir-distributed` configures the NGINX to serve this endpoint. In versions prior to that that endpoint
       does not exist. If you have copied the contents of `nginx.nginxConfig` into your values file prior
-      to version 4.0.0, then you need to correct the readiness probe.
+      to version `4.0.0`, then you need to correct the readiness probe.
 
       After carrying out this step the Helm values for `gateway` should look like the following:
 
