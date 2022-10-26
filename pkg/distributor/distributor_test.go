@@ -114,27 +114,24 @@ func TestDistributor_Push(t *testing.T) {
 		startTimestampMs int64
 	}
 	for name, tc := range map[string]struct {
-		metricNames      []string
-		numIngesters     int
-		happyIngesters   int
-		samples          samplesIn
-		metadata         int
-		expectedResponse *mimirpb.WriteResponse
-		expectedError    error
-		expectedMetrics  string
+		metricNames     []string
+		numIngesters    int
+		happyIngesters  int
+		samples         samplesIn
+		metadata        int
+		expectedError   error
+		expectedMetrics string
 	}{
 		"A push of no samples shouldn't block or return error, even if ingesters are sad": {
-			numIngesters:     3,
-			happyIngesters:   0,
-			expectedResponse: emptyResponse,
+			numIngesters:   3,
+			happyIngesters: 0,
 		},
 		"A push to 3 happy ingesters should succeed": {
-			numIngesters:     3,
-			happyIngesters:   3,
-			samples:          samplesIn{num: 5, startTimestampMs: 123456789000},
-			metadata:         5,
-			expectedResponse: emptyResponse,
-			metricNames:      []string{lastSeenTimestamp},
+			numIngesters:   3,
+			happyIngesters: 3,
+			samples:        samplesIn{num: 5, startTimestampMs: 123456789000},
+			metadata:       5,
+			metricNames:    []string{lastSeenTimestamp},
 			expectedMetrics: `
 				# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
 				# TYPE cortex_distributor_latest_seen_sample_timestamp_seconds gauge
@@ -142,12 +139,11 @@ func TestDistributor_Push(t *testing.T) {
 			`,
 		},
 		"A push to 2 happy ingesters should succeed": {
-			numIngesters:     3,
-			happyIngesters:   2,
-			samples:          samplesIn{num: 5, startTimestampMs: 123456789000},
-			metadata:         5,
-			expectedResponse: emptyResponse,
-			metricNames:      []string{lastSeenTimestamp},
+			numIngesters:   3,
+			happyIngesters: 2,
+			samples:        samplesIn{num: 5, startTimestampMs: 123456789000},
+			metadata:       5,
+			metricNames:    []string{lastSeenTimestamp},
 			expectedMetrics: `
 				# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
 				# TYPE cortex_distributor_latest_seen_sample_timestamp_seconds gauge
@@ -192,12 +188,11 @@ func TestDistributor_Push(t *testing.T) {
 			`,
 		},
 		"A push to ingesters with an old sample should report the correct metrics with no metadata": {
-			numIngesters:     3,
-			happyIngesters:   2,
-			samples:          samplesIn{num: 1, startTimestampMs: now.UnixMilli() - 80000*1000}, // 80k seconds old
-			metadata:         0,
-			metricNames:      []string{distributorSampleDelay},
-			expectedResponse: emptyResponse,
+			numIngesters:   3,
+			happyIngesters: 2,
+			samples:        samplesIn{num: 1, startTimestampMs: now.UnixMilli() - 80000*1000}, // 80k seconds old
+			metadata:       0,
+			metricNames:    []string{distributorSampleDelay},
 			expectedMetrics: `
 				# HELP cortex_distributor_sample_delay_seconds Number of seconds by which a sample came in late wrt wallclock.
 				# TYPE cortex_distributor_sample_delay_seconds histogram
@@ -219,12 +214,11 @@ func TestDistributor_Push(t *testing.T) {
 			`,
 		},
 		"A push to ingesters with a current sample should report the correct metrics with no metadata": {
-			numIngesters:     3,
-			happyIngesters:   2,
-			samples:          samplesIn{num: 1, startTimestampMs: now.UnixMilli() - 1000}, // 1 second old
-			metadata:         0,
-			metricNames:      []string{distributorSampleDelay},
-			expectedResponse: emptyResponse,
+			numIngesters:   3,
+			happyIngesters: 2,
+			samples:        samplesIn{num: 1, startTimestampMs: now.UnixMilli() - 1000}, // 1 second old
+			metadata:       0,
+			metricNames:    []string{distributorSampleDelay},
 			expectedMetrics: `
 				# HELP cortex_distributor_sample_delay_seconds Number of seconds by which a sample came in late wrt wallclock.
 				# TYPE cortex_distributor_sample_delay_seconds histogram
@@ -246,12 +240,11 @@ func TestDistributor_Push(t *testing.T) {
 			`,
 		},
 		"A push to ingesters without samples should report the correct metrics": {
-			numIngesters:     3,
-			happyIngesters:   2,
-			samples:          samplesIn{num: 0, startTimestampMs: 123456789000},
-			metadata:         1,
-			metricNames:      []string{distributorSampleDelay},
-			expectedResponse: emptyResponse,
+			numIngesters:   3,
+			happyIngesters: 2,
+			samples:        samplesIn{num: 0, startTimestampMs: 123456789000},
+			metadata:       1,
+			metricNames:    []string{distributorSampleDelay},
 			expectedMetrics: `
 				# HELP cortex_distributor_sample_delay_seconds Number of seconds by which a sample came in late wrt wallclock.
 				# TYPE cortex_distributor_sample_delay_seconds histogram
