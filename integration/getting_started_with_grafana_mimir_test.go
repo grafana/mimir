@@ -5,6 +5,7 @@
 package integration
 
 import (
+	"fmt"
 	"math"
 	"net/http"
 	"testing"
@@ -45,12 +46,17 @@ func TestPlayWithGrafanaMimirTutorial(t *testing.T) {
 	minio := e2edb.NewMinio(9000, mimirBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio))
 
-	flags := mergeFlags(
-		// Override the storage config.
-		CommonStorageBackendFlags(),
+	flags := map[string]string{
+		// Override storage config as Minio setup is different in integration tests.
+		"-common.storage.s3.endpoint":          fmt.Sprintf("%s-minio-9000:9000", networkName),
+		"-common.storage.s3.access-key-id":     e2edb.MinioAccessKey,
+		"-common.storage.s3.secret-access-key": e2edb.MinioSecretKey,
+		"-common.storage.s3.insecure":          "true",
+		"-common.storage.s3.bucket-name":       mimirBucketName,
+
 		// Override the list of members to join, setting the hostname we expect within the Docker network created by integration tests.
-		map[string]string{"-memberlist.join": networkName + "-mimir-1"},
-	)
+		"-memberlist.join": networkName + "-mimir-1",
+	}
 
 	// Start Mimir (3 replicas).
 	mimir1 := e2emimir.NewSingleBinary("mimir-1", flags, e2emimir.WithConfigFile("mimir.yaml"))
