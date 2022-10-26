@@ -298,13 +298,6 @@ lint: check-makefiles
 		./pkg/querier/... \
 		./pkg/ruler/...
 
-	faillint -paths "github.com/thanos-io/thanos/pkg/block.{NewIgnoreDeletionMarkFilter}" \
-		./pkg/compactor/...
-
-	faillint -paths "github.com/thanos-io/thanos/pkg/shipper.{New}" ./pkg/...
-
-	faillint -paths "github.com/thanos-io/thanos/pkg/block/indexheader" ./pkg/...
-
 	# We've copied github.com/NYTimes/gziphandler to pkg/util/gziphandler
 	# at least until https://github.com/nytimes/gziphandler/pull/112 is merged
 	faillint -paths "github.com/NYTimes/gziphandler" \
@@ -317,9 +310,7 @@ lint: check-makefiles
 
 	# Ensure packages we imported from Thanos are no longer used.
 	GOFLAGS="-tags=requires_docker" faillint -paths \
-		"github.com/thanos/thanos-io/pkg/store,\
-		github.com/thanos-io/thanos/pkg/testutil/..., \
-		github.com/thanos-io/thanos/pkg/store/cache" \
+		"github.com/thanos-io/thanos/pkg/..." \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
 	# Ensure we never use the default registerer and we allow to use a custom one (improves testability).
