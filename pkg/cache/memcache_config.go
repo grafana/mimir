@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	model "github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/flagext"
 
 	"github.com/grafana/mimir/pkg/cacheutil"
 )
@@ -68,7 +68,7 @@ func (cfg MemcachedConfig) ToMemcachedClientConfig() cacheutil.MemcachedClientCo
 		MaxAsyncBufferSize:        cfg.MaxAsyncBufferSize,
 		MaxGetMultiConcurrency:    cfg.MaxGetMultiConcurrency,
 		MaxGetMultiBatchSize:      cfg.MaxGetMultiBatchSize,
-		MaxItemSize:               model.Bytes(cfg.MaxItemSize),
+		MaxItemSize:               flagext.Bytes(cfg.MaxItemSize),
 		DNSProviderUpdateInterval: 30 * time.Second,
 	}
 }

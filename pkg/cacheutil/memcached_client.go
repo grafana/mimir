@@ -18,7 +18,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/dns"
-	model "github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -51,7 +51,7 @@ var (
 		MaxIdleConnections:        100,
 		MaxAsyncConcurrency:       20,
 		MaxAsyncBufferSize:        10000,
-		MaxItemSize:               model.Bytes(1024 * 1024),
+		MaxItemSize:               flagext.Bytes(1024 * 1024),
 		MaxGetMultiConcurrency:    100,
 		MaxGetMultiBatchSize:      0,
 		DNSProviderUpdateInterval: 10 * time.Second,
@@ -128,7 +128,7 @@ type MemcachedClientConfig struct {
 	// MaxItemSize specifies the maximum size of an item stored in memcached.
 	// Items bigger than MaxItemSize are skipped.
 	// If set to 0, no maximum size is enforced.
-	MaxItemSize model.Bytes `yaml:"max_item_size"`
+	MaxItemSize flagext.Bytes `yaml:"max_item_size"`
 
 	// MaxGetMultiBatchSize specifies the maximum number of keys a single underlying
 	// GetMulti() should run. If more keys are specified, internally keys are splitted

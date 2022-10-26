@@ -12,7 +12,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	model "github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/flagext"
 	lru "github.com/hashicorp/golang-lru/simplelru"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
@@ -62,9 +62,9 @@ type InMemoryIndexCache struct {
 // InMemoryIndexCacheConfig holds the in-memory index cache config.
 type InMemoryIndexCacheConfig struct {
 	// MaxSize represents overall maximum number of bytes cache can contain.
-	MaxSize model.Bytes `yaml:"max_size"`
+	MaxSize flagext.Bytes `yaml:"max_size"`
 	// MaxItemSize represents maximum size of single item.
-	MaxItemSize model.Bytes `yaml:"max_item_size"`
+	MaxItemSize flagext.Bytes `yaml:"max_item_size"`
 }
 
 // parseInMemoryIndexCacheConfig unmarshals a buffer into a InMemoryIndexCacheConfig with default values.
