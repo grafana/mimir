@@ -342,7 +342,7 @@ github.com/go-openapi/jsonreference/internal
 # github.com/go-openapi/loads v0.21.2
 ## explicit; go 1.13
 github.com/go-openapi/loads
-# github.com/go-openapi/runtime v0.24.1
+# github.com/go-openapi/runtime v0.24.3-0.20221021160911-4425b20330b2
 ## explicit; go 1.15
 github.com/go-openapi/runtime
 github.com/go-openapi/runtime/flagext
@@ -673,7 +673,7 @@ github.com/pkg/errors
 # github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
 ## explicit
 github.com/pmezard/go-difflib/difflib
-# github.com/prometheus/alertmanager v0.24.1-0.20221006070151-78b5a27d40c0
+# github.com/prometheus/alertmanager v0.24.1-0.20221026084920-33bba9509939
 ## explicit; go 1.18
 github.com/prometheus/alertmanager/api
 github.com/prometheus/alertmanager/api/metrics
@@ -696,6 +696,7 @@ github.com/prometheus/alertmanager/inhibit
 github.com/prometheus/alertmanager/nflog
 github.com/prometheus/alertmanager/nflog/nflogpb
 github.com/prometheus/alertmanager/notify
+github.com/prometheus/alertmanager/notify/discord
 github.com/prometheus/alertmanager/notify/email
 github.com/prometheus/alertmanager/notify/opsgenie
 github.com/prometheus/alertmanager/notify/pagerduty

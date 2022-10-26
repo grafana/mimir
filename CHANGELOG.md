@@ -6,6 +6,7 @@
 
 * [CHANGE] Flag `-azure.msi-resource` is now ignored, and will be removed in Mimir 2.7. This setting is now made automatically by Azure. #2682
 * [CHANGE] Experimental flag `-blocks-storage.tsdb.out-of-order-capacity-min` has been removed. #3261
+* [FEATURE] Alertmanager: added Discord support. #3309
 * [ENHANCEMENT] Added `<prefix>.tls-min-version` and `<prefix>.tls-cipher-suites` flags to configure cipher suites and min TLS version supported by servers. #2898
 * [ENHANCEMENT] Distributor: Add age filter to forwarding functionality, to not forward samples which are older than defined duration. If such samples are not ingested, `cortex_discarded_samples_total{reason="forwarded-sample-too-old"}` is increased. #3049 #3133
 * [ENHANCEMENT] Store-gateway: Reduce memory allocation when generating ids in index cache. #3179
@@ -16,6 +17,7 @@
 * [ENHANCEMENT] Compactor: Add new `cortex_compactor_block_max_time_delta_seconds` histogram for detecting if compaction of blocks is lagging behind. #3240
 * [ENHANCEMENT] Ingester: reduced the memory footprint of active series custom trackers. #2568
 * [ENHANCEMENT] Distributor: Include `X-Scope-OrgId` header in requests forwarded to configured forwarding endpoint. #3283
+* [ENHANCEMENT] Alertmanager: reduced memory utilization in Mimir clusters with a large number of tenants. #3309
 * [BUGFIX] Flusher: Add `Overrides` as a dependency to prevent panics when starting with `-target=flusher`. #3151
 * [BUGFIX] Updated `golang.org/x/text` dependency to fix CVE-2022-32149. #3285
 * [BUGFIX] Query-frontend: properly close gRPC streams to the query-scheduler to stop memory and goroutines leak. #3302

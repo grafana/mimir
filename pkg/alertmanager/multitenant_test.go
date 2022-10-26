@@ -485,6 +485,21 @@ receivers:
 `, backendURL)
 			},
 		},
+		"discord": {
+			getAlertmanagerConfig: func(backendURL string) string {
+				return fmt.Sprintf(`
+route:
+  receiver: discord
+  group_wait: 0s
+  group_interval: 1s
+
+receivers:
+  - name: discord
+    discord_configs:
+      - webhook_url: %s
+`, backendURL)
+			},
+		},
 		// We expect requests against the HTTP proxy to be blocked too.
 		"HTTP proxy": {
 			getAlertmanagerConfig: func(backendURL string) string {

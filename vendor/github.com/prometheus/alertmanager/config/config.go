@@ -248,6 +248,9 @@ func resolveFilepaths(baseDir string, cfg *Config) {
 		for _, cfg := range receiver.TelegramConfigs {
 			cfg.HTTPConfig.SetDirectory(baseDir)
 		}
+		for _, cfg := range receiver.DiscordConfigs {
+			cfg.HTTPConfig.SetDirectory(baseDir)
+		}
 	}
 }
 
@@ -333,6 +336,10 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 	if c.Global.OpsGenieAPIKey != "" && len(c.Global.OpsGenieAPIKeyFile) > 0 {
 		return fmt.Errorf("at most one of opsgenie_api_key & opsgenie_api_key_file must be configured")
+	}
+
+	if c.Global.VictorOpsAPIKey != "" && len(c.Global.VictorOpsAPIKeyFile) > 0 {
+		return fmt.Errorf("at most one of victorops_api_key & victorops_api_key_file must be configured")
 	}
 
 	if len(c.Global.SMTPAuthPassword) > 0 && len(c.Global.SMTPAuthPasswordFile) > 0 {
@@ -476,11 +483,12 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 			if !strings.HasSuffix(voc.APIURL.Path, "/") {
 				voc.APIURL.Path += "/"
 			}
-			if voc.APIKey == "" {
-				if c.Global.VictorOpsAPIKey == "" {
+			if voc.APIKey == "" && len(voc.APIKeyFile) == 0 {
+				if c.Global.VictorOpsAPIKey == "" && len(c.Global.VictorOpsAPIKeyFile) == 0 {
 					return fmt.Errorf("no global VictorOps API Key set")
 				}
 				voc.APIKey = c.Global.VictorOpsAPIKey
+				voc.APIKeyFile = c.Global.VictorOpsAPIKeyFile
 			}
 		}
 		for _, sns := range rcv.SNSConfigs {
@@ -495,6 +503,14 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 			}
 			if telegram.APIUrl == nil {
 				telegram.APIUrl = c.Global.TelegramAPIUrl
+			}
+		}
+		for _, discord := range rcv.DiscordConfigs {
+			if discord.HTTPConfig == nil {
+				discord.HTTPConfig = c.Global.HTTPConfig
+			}
+			if discord.WebhookURL == nil {
+				return fmt.Errorf("no discord webhook URL provided")
 			}
 		}
 
@@ -718,6 +734,7 @@ type GlobalConfig struct {
 	WeChatAPICorpID      string     `yaml:"wechat_api_corp_id,omitempty" json:"wechat_api_corp_id,omitempty"`
 	VictorOpsAPIURL      *URL       `yaml:"victorops_api_url,omitempty" json:"victorops_api_url,omitempty"`
 	VictorOpsAPIKey      Secret     `yaml:"victorops_api_key,omitempty" json:"victorops_api_key,omitempty"`
+	VictorOpsAPIKeyFile  string     `yaml:"victorops_api_key_file,omitempty" json:"victorops_api_key_file,omitempty"`
 	TelegramAPIUrl       *URL       `yaml:"telegram_api_url,omitempty" json:"telegram_api_url,omitempty"`
 }
 
@@ -850,6 +867,7 @@ type Receiver struct {
 	// A unique identifier for this receiver.
 	Name string `yaml:"name" json:"name"`
 
+	DiscordConfigs   []*DiscordConfig   `yaml:"discord_configs,omitempty" json:"discord_configs,omitempty"`
 	EmailConfigs     []*EmailConfig     `yaml:"email_configs,omitempty" json:"email_configs,omitempty"`
 	PagerdutyConfigs []*PagerdutyConfig `yaml:"pagerduty_configs,omitempty" json:"pagerduty_configs,omitempty"`
 	SlackConfigs     []*SlackConfig     `yaml:"slack_configs,omitempty" json:"slack_configs,omitempty"`

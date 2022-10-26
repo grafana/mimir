@@ -495,6 +495,22 @@ alertmanager_config: |
 			err: errors.Wrap(errOpsGenieAPIKeyFileFileNotAllowed, "error validating Alertmanager config"),
 		},
 		{
+			name: "Should return error if global victorops_api_key_file is set",
+			cfg: `
+alertmanager_config: |
+  global:
+    victorops_api_key_file: /secrets
+  receivers:
+    - name: default-receiver
+      victorops_configs:
+        - routing_key: test
+
+  route:
+    receiver: 'default-receiver'
+`,
+			err: errors.Wrap(errVictorOpsAPIKeyFileNotAllowed, "error validating Alertmanager config"),
+		},
+		{
 			name: "Should return error if VictorOps api_key_file is set",
 			cfg: `
 alertmanager_config: |
@@ -502,13 +518,41 @@ alertmanager_config: |
     - name: default-receiver
       victorops_configs:
         - api_key_file: /secrets
-          api_key: my-key
           routing_key: test
 
   route:
     receiver: 'default-receiver'
 `,
 			err: errors.Wrap(errVictorOpsAPIKeyFileNotAllowed, "error validating Alertmanager config"),
+		},
+		{
+			name: "Should return error if PagerDuty service_key_file is set",
+			cfg: `
+alertmanager_config: |
+  receivers:
+    - name: default-receiver
+      pagerduty_configs:
+        - service_key_file: /secrets
+          routing_key: test
+
+  route:
+    receiver: 'default-receiver'
+`,
+			err: errors.Wrap(errPagerDutyServiceKeyFileNotAllowed, "error validating Alertmanager config"),
+		},
+		{
+			name: "Should return error if PagerDuty routing_key_file is set",
+			cfg: `
+alertmanager_config: |
+  receivers:
+    - name: default-receiver
+      pagerduty_configs:
+        - routing_key_file: /secrets
+
+  route:
+    receiver: 'default-receiver'
+`,
+			err: errors.Wrap(errPagerDutyRoutingKeyFileNotAllowed, "error validating Alertmanager config"),
 		},
 		{
 			name: "should return error if template is wrong",
