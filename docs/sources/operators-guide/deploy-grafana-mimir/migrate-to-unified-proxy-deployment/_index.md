@@ -32,10 +32,10 @@ Make sure that the version of the `mimir-distributed` Helm chart that you have i
 1. Scale out the `gateway` deployment:
 
    1. Change your Helm chart values file to enable the `gateway` and increase its replicas:
-   
+
       1. Set the number of replicas of the gateway Deployment to the number of
-      replicas that NGINX is running with.
-      
+         replicas that NGINX is running with.
+
       For example, if you have deployed 10 NGINX replicas, then
       add the following configuration to your Helm chart values file `custom.yaml`:
 
