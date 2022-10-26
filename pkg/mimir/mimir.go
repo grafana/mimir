@@ -146,7 +146,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&c.MultitenancyEnabled, "auth.multitenancy-enabled", true, "When set to true, incoming HTTP requests must specify tenant ID in HTTP X-Scope-OrgId header. When set to false, tenant ID from -auth.no-auth-tenant is used instead.")
 	f.StringVar(&c.NoAuthTenant, "auth.no-auth-tenant", "anonymous", "Tenant ID to use when multitenancy is disabled.")
 	f.BoolVar(&c.PrintConfig, "print.config", false, "Print the config and exit.")
-	f.DurationVar(&c.ShutdownDelay, "shutdown-delay", 0, "How long to wait between SIGTERM and shutdown. After receiving SIGTERM, Mimir will report not-ready status via readiness handler.")
+	f.DurationVar(&c.ShutdownDelay, "shutdown-delay", 0, "How long to wait between SIGTERM and shutdown. After receiving SIGTERM, Mimir will report not-ready status via /ready endpoint.")
 
 	c.API.RegisterFlags(f)
 	c.registerServerFlagsWithChangedDefaultValues(f)
@@ -760,18 +760,14 @@ func (t *Mimir) Run() error {
 		return err
 	}
 
-	// `ready` is used to allow our signal handler to immediately mark this component
-	// as "not ready" before starting the process of shutting down all dependent services
-	ready := atomic.NewBool(true)
+	// Used to delay shutdown but return "not ready" during this delay.
+	shutdownRequested := atomic.NewBool(false)
 
 	// before starting servers, register /ready handler and gRPC health check service.
-	// It should reflect entire Mimir. We use a combination of a check based on an atomic
-	// boolean (set via our signal handler) and a check based on the health of the service
-	// manager.
-	t.Server.HTTP.Path("/ready").Handler(t.readyHandler(sm, ready))
-	grpc_health_v1.RegisterHealthServer(t.Server.GRPC, newCompositeCheck(
-		newAtomicHealthCheck(ready),
-		grpcutil.NewHealthCheck(sm),
+	t.Server.HTTP.Path("/ready").Handler(t.readyHandler(sm, shutdownRequested))
+	grpc_health_v1.RegisterHealthServer(t.Server.GRPC, grpcutil.NewHealthCheckFrom(
+		grpcutil.WithShutdownRequested(shutdownRequested),
+		grpcutil.WithManager(sm),
 	))
 
 	// Let's listen for events from this manager, and log them.
@@ -799,11 +795,11 @@ func (t *Mimir) Run() error {
 	sm.AddListener(services.NewManagerListener(healthy, stopped, serviceFailed))
 
 	// Setup signal handler. If a signal arrives, we mark ourselves as "not ready", disable HTTP
-	// keep-alives, optionally wait some amount of time, and then stop the manager which stops
-	// all dependent the services.
-	handler := signals.NewHandler(t.Server.Log, newShutdownSignalReceiver(t.Cfg.ShutdownDelay, ready, t.Server.HTTPServer, sm))
+	// keep-alives, optionally wait some amount of time.
+	handler := signals.NewHandler(t.Server.Log, newShutdownSignalReceiver(t.Cfg.ShutdownDelay, shutdownRequested, t.Server.HTTPServer))
 	go func() {
 		handler.Loop()
+		sm.StopAsync()
 	}()
 
 	// Start all services. This can really only fail if some service is already
@@ -832,9 +828,15 @@ func (t *Mimir) Run() error {
 	return err
 }
 
-func (t *Mimir) readyHandler(sm *services.Manager, ready *atomic.Bool) http.HandlerFunc {
+func (t *Mimir) readyHandler(sm *services.Manager, shutdownRequested *atomic.Bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !ready.Load() || !sm.IsHealthy() {
+		if shutdownRequested.Load() {
+			level.Debug(util_log.Logger).Log("msg", "component is stopping")
+			http.Error(w, "Component is stopping", http.StatusServiceUnavailable)
+			return
+		}
+
+		if !sm.IsHealthy() {
 			var serviceNamesStates []string
 			for name, s := range t.ServiceMap {
 				if s.State() != services.Running {
@@ -842,8 +844,8 @@ func (t *Mimir) readyHandler(sm *services.Manager, ready *atomic.Bool) http.Hand
 				}
 			}
 
-			level.Debug(util_log.Logger).Log("msg", "component is stopping or some services are not Running", "services", serviceNamesStates)
-			httpResponse := "Component is stopping or some services are not Running:\n" + strings.Join(serviceNamesStates, "\n")
+			level.Debug(util_log.Logger).Log("msg", "some services are not Running", "services", serviceNamesStates)
+			httpResponse := "Some services are not Running:\n" + strings.Join(serviceNamesStates, "\n")
 			http.Error(w, httpResponse, http.StatusServiceUnavailable)
 			return
 		}
@@ -868,4 +870,34 @@ func (t *Mimir) readyHandler(sm *services.Manager, ready *atomic.Bool) http.Hand
 
 		util.WriteTextResponse(w, "ready")
 	}
+}
+
+// newShutdownSignalReceiver creates a new signals.SignalReceiver implementation that
+// handles everything required to cleanly shut down Mimir in response to a SIGTERM or
+// SIGINT signal.
+func newShutdownSignalReceiver(delay time.Duration, shutdownRequested *atomic.Bool, server *http.Server) signals.SignalReceiver {
+	return &shutdownSignalReceiver{
+		delay:             delay,
+		shutdownRequested: shutdownRequested,
+		server:            server,
+	}
+}
+
+// shutdownSignalReceiver takes care of the process of cleanly shutting down Mimir
+// in the event of a SIGTERM or SIGINT signal.
+type shutdownSignalReceiver struct {
+	delay             time.Duration
+	shutdownRequested *atomic.Bool
+	server            *http.Server
+}
+
+func (r *shutdownSignalReceiver) Stop() error {
+	r.shutdownRequested.Store(true)
+	r.server.SetKeepAlivesEnabled(false)
+
+	if r.delay > 0 {
+		time.Sleep(r.delay)
+	}
+
+	return nil
 }

@@ -113,7 +113,7 @@ where `default_value` is the value to use if the environment variable is undefin
 [no_auth_tenant: <string> | default = "anonymous"]
 
 # (experimental) How long to wait between SIGTERM and shutdown. After receiving
-# SIGTERM, Mimir will report not-ready status via readiness handler.
+# SIGTERM, Mimir will report not-ready status via /ready endpoint.
 # CLI flag: -shutdown-delay
 [shutdown_delay: <duration> | default = 0s]
 
