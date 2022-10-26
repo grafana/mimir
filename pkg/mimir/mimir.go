@@ -695,6 +695,7 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 		Registerer: reg,
 	}
 
+	mimir.setupObjstoreTracing()
 	otel.SetTracerProvider(NewOpenTelemetryProviderBridge(opentracing.GlobalTracer()))
 
 	if err := mimir.setupModuleManager(); err != nil {
@@ -702,6 +703,13 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 	}
 
 	return mimir, nil
+}
+
+// setupObjstoreTracing appends a gRPC middleware used to inject our tracer into the custom
+// context used by thanos-io/objstore, in order to get Objstore spans correctly attached to our traces.
+func (t *Mimir) setupObjstoreTracing() {
+	t.Cfg.Server.GRPCMiddleware = append(t.Cfg.Server.GRPCMiddleware, ThanosTracerUnaryInterceptor)
+	t.Cfg.Server.GRPCStreamMiddleware = append(t.Cfg.Server.GRPCStreamMiddleware, ThanosTracerStreamInterceptor)
 }
 
 // Run starts Mimir running, and blocks until a Mimir stops.
