@@ -1,0 +1,18 @@
+---
+# Source: mimir-distributed/charts/minio/templates/pvc.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gateway-nginx-values-minio
+  namespace: "citestns"
+  labels:
+    app: minio
+    chart: minio-4.0.12
+    release: gateway-nginx-values
+    heritage: Helm
+spec:
+  accessModes:
+    - "ReadWriteOnce"
+  resources:
+    requests:
+      storage: "5Gi"

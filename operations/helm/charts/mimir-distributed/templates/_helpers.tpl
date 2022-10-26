@@ -35,8 +35,8 @@ Calculate the infix for naming
 Calculate the gateway url
 */}}
 {{- define "mimir.gatewayUrl" -}}
-{{- if .Values.enterprise.enabled -}}
-http://{{ template "mimir.fullname" . }}-gateway.{{ .Release.Namespace }}.svc:{{ .Values.gateway.service.port | default (include "mimir.serverHttpListenPort" . ) }}
+{{- if eq (include "mimir.gateway.isEnabled" . ) "true" -}}
+http://{{ include "mimir.gateway.service.name" . }}.{{ .Release.Namespace }}.svc:{{ .Values.gateway.service.port | default (include "mimir.serverHttpListenPort" . ) }}
 {{- else -}}
 http://{{ template "mimir.fullname" . }}-nginx.{{ .Release.Namespace }}.svc:{{ .Values.nginx.service.port }}
 {{- end -}}

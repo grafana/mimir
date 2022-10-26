@@ -1,0 +1,12 @@
+{{- if and (not .Values.enterprise.enabled) .Values.gateway.enabledNonEnterprise -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "gateway-nginx") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "gateway-nginx") | nindent 4 }}
+  namespace: {{ .Release.Namespace | quote }}
+data:
+  nginx.conf: |
+    {{- tpl .Values.gateway.nginx.config.file . | nindent 4 }}
+{{- end -}}
