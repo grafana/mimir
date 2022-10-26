@@ -289,7 +289,7 @@ func newRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer,
 		return nil, errors.Wrap(err, "create KV store client")
 	}
 
-	if err = enableSharding(ruler, ringStore); err != nil {
+	if err := enableSharding(ruler, ringStore); err != nil {
 		return nil, errors.Wrap(err, "setup ruler sharding ring")
 	}
 

@@ -219,8 +219,8 @@ func TestNotifierSendsUserIDHeader(t *testing.T) {
 	wg.Add(1)
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		userID, _, err := tenant.ExtractTenantIDFromHTTPRequest(r)
-		assert.NoError(t, err)
-		assert.Equal(t, userID, "1")
+		require.NoError(t, err)
+		assert.Equal(t, "1", userID)
 		wg.Done()
 	}))
 	defer ts.Close()
@@ -311,8 +311,10 @@ func TestRuler_Rules(t *testing.T) {
 }
 
 func compareRuleGroupDescToStateDesc(t *testing.T, expected *rulespb.RuleGroupDesc, got *GroupStateDesc) {
-	require.Equal(t, got.Group.Name, expected.Name)
-	require.Equal(t, got.Group.Namespace, expected.Namespace)
+	t.Helper()
+
+	require.Equal(t, expected.Name, got.Group.Name)
+	require.Equal(t, expected.Namespace, got.Group.Namespace)
 	require.Len(t, expected.Rules, len(got.ActiveRules))
 	require.ElementsMatch(t, expected.SourceTenants, got.Group.SourceTenants)
 	for i := range got.ActiveRules {
@@ -938,7 +940,7 @@ func TestDeleteTenantRuleGroups(t *testing.T) {
 		require.NoError(t, rs.SetRuleGroup(context.Background(), key.user, key.namespace, desc))
 	}
 
-	require.Equal(t, 3, len(obj.Objects()))
+	require.Len(t, obj.Objects(), 3)
 
 	cfg := defaultRulerConfig(t)
 	api, err := NewRuler(cfg, nil, nil, log.NewNopLogger(), rs, nil)
@@ -954,7 +956,7 @@ func TestDeleteTenantRuleGroups(t *testing.T) {
 
 	{
 		callDeleteTenantAPI(t, api, "user-with-no-rule-groups")
-		require.Equal(t, 3, len(obj.Objects()))
+		require.Len(t, obj.Objects(), 3)
 
 		verifyExpectedDeletedRuleGroupsForUser(t, api, "user-with-no-rule-groups", true) // Has no rule groups
 		verifyExpectedDeletedRuleGroupsForUser(t, api, "userA", false)
@@ -963,7 +965,7 @@ func TestDeleteTenantRuleGroups(t *testing.T) {
 
 	{
 		callDeleteTenantAPI(t, api, "userA")
-		require.Equal(t, 2, len(obj.Objects()))
+		require.Len(t, obj.Objects(), 2)
 
 		verifyExpectedDeletedRuleGroupsForUser(t, api, "user-with-no-rule-groups", true) // Has no rule groups
 		verifyExpectedDeletedRuleGroupsForUser(t, api, "userA", true)                    // Just deleted.
@@ -973,7 +975,7 @@ func TestDeleteTenantRuleGroups(t *testing.T) {
 	// Deleting same user again works fine and reports no problems.
 	{
 		callDeleteTenantAPI(t, api, "userA")
-		require.Equal(t, 2, len(obj.Objects()))
+		require.Len(t, obj.Objects(), 2)
 
 		verifyExpectedDeletedRuleGroupsForUser(t, api, "user-with-no-rule-groups", true) // Has no rule groups
 		verifyExpectedDeletedRuleGroupsForUser(t, api, "userA", true)                    // Already deleted before.
@@ -982,7 +984,7 @@ func TestDeleteTenantRuleGroups(t *testing.T) {
 
 	{
 		callDeleteTenantAPI(t, api, "userB")
-		require.Equal(t, 0, len(obj.Objects()))
+		require.Empty(t, obj.Objects())
 
 		verifyExpectedDeletedRuleGroupsForUser(t, api, "user-with-no-rule-groups", true) // Has no rule groups
 		verifyExpectedDeletedRuleGroupsForUser(t, api, "userA", true)                    // Deleted previously
@@ -1015,7 +1017,7 @@ func verifyExpectedDeletedRuleGroupsForUser(t *testing.T, r *Ruler, userID strin
 	require.NoError(t, err)
 
 	if expectedDeleted {
-		require.Equal(t, 0, len(list))
+		require.Empty(t, list)
 	} else {
 		require.NotEqual(t, 0, len(list))
 	}
