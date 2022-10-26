@@ -110,6 +110,8 @@ func TestDistributor_Push(t *testing.T) {
 		mtime.NowReset()
 	})
 
+	expErrFail := httpgrpc.Errorf(http.StatusInternalServerError, "failed pushing to ingester: Fail")
+
 	type samplesIn struct {
 		num              int
 		startTimestampMs int64
@@ -155,7 +157,7 @@ func TestDistributor_Push(t *testing.T) {
 			numIngesters:   3,
 			happyIngesters: 1,
 			samples:        samplesIn{num: 10, startTimestampMs: 123456789000},
-			expectedError:  errFail,
+			expectedError:  expErrFail,
 			metricNames:    []string{lastSeenTimestamp},
 			expectedMetrics: `
 				# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
@@ -167,7 +169,7 @@ func TestDistributor_Push(t *testing.T) {
 			numIngesters:   3,
 			happyIngesters: 0,
 			samples:        samplesIn{num: 10, startTimestampMs: 123456789000},
-			expectedError:  errFail,
+			expectedError:  expErrFail,
 			metricNames:    []string{lastSeenTimestamp},
 			expectedMetrics: `
 				# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
