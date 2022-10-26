@@ -838,8 +838,8 @@ func (t *Mimir) Run() error {
 func (t *Mimir) readyHandler(sm *services.Manager, shutdownRequested *atomic.Bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if shutdownRequested.Load() {
-			level.Debug(util_log.Logger).Log("msg", "component is stopping")
-			http.Error(w, "Component is stopping", http.StatusServiceUnavailable)
+			level.Debug(util_log.Logger).Log("msg", "application is stopping")
+			http.Error(w, "Application is stopping", http.StatusServiceUnavailable)
 			return
 		}
 
