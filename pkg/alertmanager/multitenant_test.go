@@ -54,6 +54,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/validation"
+	amconfig "github.com/prometheus/alertmanager/config"
 )
 
 const (
@@ -2161,6 +2162,25 @@ receivers:
 	_, _, err = uam.lastPipeline.Exec(ctx, log.NewNopLogger(), &types.Alert{})
 	require.NotNil(t, err)
 	require.Contains(t, err.Error(), errRateLimited.Error())
+}
+
+func TestMultitenantAlertmanager_computeFallbackConfig(t *testing.T) {
+	// If no fallback config is set, it should return a valid empty config.
+	fallbackConfig, err := computeFallbackConfig("")
+	require.NoError(t, err)
+
+	_, err = amconfig.Load(string(fallbackConfig))
+	require.NoError(t, err)
+
+	// If a fallback config file is set, it should return it's content.
+	configDir := t.TempDir()
+	configFile := filepath.Join(configDir, "test.yaml")
+	err = os.WriteFile(configFile, []byte(simpleConfigOne), 0664)
+	assert.NoError(t, err)
+
+	fallbackConfig, err = computeFallbackConfig(configFile)
+	require.NoError(t, err)
+	require.Equal(t, simpleConfigOne, string(fallbackConfig))
 }
 
 type passthroughAlertmanagerClient struct {

@@ -33,6 +33,7 @@ import (
 	"github.com/weaveworks/common/httpgrpc/server"
 	"github.com/weaveworks/common/user"
 	"golang.org/x/time/rate"
+	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/dskit/tenant"
 
@@ -283,16 +284,9 @@ func NewMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, store alerts
 		return nil, fmt.Errorf("unable to create Alertmanager data directory %q: %s", cfg.DataDir, err)
 	}
 
-	var fallbackConfig []byte
-	if cfg.FallbackConfigFile != "" {
-		fallbackConfig, err = os.ReadFile(cfg.FallbackConfigFile)
-		if err != nil {
-			return nil, fmt.Errorf("unable to read fallback config %q: %s", cfg.FallbackConfigFile, err)
-		}
-		_, err = amconfig.LoadFile(cfg.FallbackConfigFile)
-		if err != nil {
-			return nil, fmt.Errorf("unable to load fallback config %q: %s", cfg.FallbackConfigFile, err)
-		}
+	fallbackConfig, err := computeFallbackConfig(cfg.FallbackConfigFile)
+	if err != nil {
+		return nil, err
 	}
 
 	ringStore, err := kv.NewClient(
@@ -306,6 +300,39 @@ func NewMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, store alerts
 	}
 
 	return createMultitenantAlertmanager(cfg, fallbackConfig, store, ringStore, limits, logger, registerer)
+}
+
+// computeFallbackConfig will load, vaildate and return the provided fallbackConfigFile
+// or return an valid empty default configuration if none is provided.
+func computeFallbackConfig(fallbackConfigFile string) ([]byte, error) {
+	if fallbackConfigFile != "" {
+		fallbackConfig, err := os.ReadFile(fallbackConfigFile)
+		if err != nil {
+			return nil, fmt.Errorf("unable to read fallback config %q: %s", fallbackConfigFile, err)
+		}
+		_, err = amconfig.LoadFile(fallbackConfigFile)
+		if err != nil {
+			return nil, fmt.Errorf("unable to load fallback config %q: %s", fallbackConfigFile, err)
+		}
+		return fallbackConfig, nil
+	}
+	globalConfig := amconfig.DefaultGlobalConfig()
+	defaultConfig := amconfig.Config{
+		Global: &globalConfig,
+		Route: &amconfig.Route{
+			Receiver: "empty-receiver",
+		},
+		Receivers: []*amconfig.Receiver{
+			{
+				Name: "empty-receiver",
+			},
+		},
+	}
+	fallbackConfig, err := yaml.Marshal(defaultConfig)
+	if err != nil {
+		return nil, fmt.Errorf("unable to marshal default config: %s", err)
+	}
+	return fallbackConfig, nil
 }
 
 func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackConfig []byte, store alertstore.AlertStore, ringStore kv.Client, limits Limits, logger log.Logger, registerer prometheus.Registerer) (*MultitenantAlertmanager, error) {
@@ -864,8 +891,8 @@ func (am *MultitenantAlertmanager) alertmanagerFromFallbackConfig(ctx context.Co
 
 	level.Warn(am.logger).Log("msg", "no configuration exists for user; uploading fallback configuration", "user", userID)
 
-	// Upload an empty config so that the Alertmanager is no de-activated in the next poll
-	cfgDesc := alertspb.ToProto("", nil, userID)
+	// Upload fallback config so that the Alertmanager is no de-activated in the next poll
+	cfgDesc := alertspb.ToProto(am.fallbackConfig, nil, userID)
 	err = am.store.SetAlertConfig(ctx, cfgDesc)
 	if err != nil {
 		return nil, err
