@@ -16,11 +16,11 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/efficientgo/tools/core/pkg/testutil"
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/stretchr/testify/require"
 
 	"github.com/thanos-io/objstore"
 
@@ -35,21 +35,21 @@ func TestShipperTimestamps(t *testing.T) {
 
 	// Missing thanos meta file.
 	_, _, err := s.Timestamps()
-	testutil.NotOk(t, err)
+	require.Error(t, err)
 
 	meta := &Meta{Version: MetaVersion1}
-	testutil.Ok(t, WriteMetaFile(log.NewNopLogger(), dir, meta))
+	require.NoError(t, WriteMetaFile(log.NewNopLogger(), dir, meta))
 
 	// Nothing uploaded, nothing in the filesystem. We assume that
 	// we are still waiting for TSDB to dump first TSDB block.
 	mint, maxt, err := s.Timestamps()
-	testutil.Ok(t, err)
-	testutil.Equals(t, int64(0), mint)
-	testutil.Equals(t, int64(math.MinInt64), maxt)
+	require.NoError(t, err)
+	require.Equal(t, int64(0), mint)
+	require.Equal(t, int64(math.MinInt64), maxt)
 
 	id1 := ulid.MustNew(1, nil)
-	testutil.Ok(t, os.Mkdir(path.Join(dir, id1.String()), os.ModePerm))
-	testutil.Ok(t, metadata.Meta{
+	require.NoError(t, os.Mkdir(path.Join(dir, id1.String()), os.ModePerm))
+	require.NoError(t, metadata.Meta{
 		BlockMeta: tsdb.BlockMeta{
 			ULID:    id1,
 			MaxTime: 2000,
@@ -58,13 +58,13 @@ func TestShipperTimestamps(t *testing.T) {
 		},
 	}.WriteToDir(log.NewNopLogger(), path.Join(dir, id1.String())))
 	mint, maxt, err = s.Timestamps()
-	testutil.Ok(t, err)
-	testutil.Equals(t, int64(1000), mint)
-	testutil.Equals(t, int64(math.MinInt64), maxt)
+	require.NoError(t, err)
+	require.Equal(t, int64(1000), mint)
+	require.Equal(t, int64(math.MinInt64), maxt)
 
 	id2 := ulid.MustNew(2, nil)
-	testutil.Ok(t, os.Mkdir(path.Join(dir, id2.String()), os.ModePerm))
-	testutil.Ok(t, metadata.Meta{
+	require.NoError(t, os.Mkdir(path.Join(dir, id2.String()), os.ModePerm))
+	require.NoError(t, metadata.Meta{
 		BlockMeta: tsdb.BlockMeta{
 			ULID:    id2,
 			MaxTime: 4000,
@@ -73,27 +73,27 @@ func TestShipperTimestamps(t *testing.T) {
 		},
 	}.WriteToDir(log.NewNopLogger(), path.Join(dir, id2.String())))
 	mint, maxt, err = s.Timestamps()
-	testutil.Ok(t, err)
-	testutil.Equals(t, int64(1000), mint)
-	testutil.Equals(t, int64(math.MinInt64), maxt)
+	require.NoError(t, err)
+	require.Equal(t, int64(1000), mint)
+	require.Equal(t, int64(math.MinInt64), maxt)
 
 	meta = &Meta{
 		Version:  MetaVersion1,
 		Uploaded: []ulid.ULID{id1},
 	}
-	testutil.Ok(t, WriteMetaFile(log.NewNopLogger(), dir, meta))
+	require.NoError(t, WriteMetaFile(log.NewNopLogger(), dir, meta))
 	mint, maxt, err = s.Timestamps()
-	testutil.Ok(t, err)
-	testutil.Equals(t, int64(1000), mint)
-	testutil.Equals(t, int64(2000), maxt)
+	require.NoError(t, err)
+	require.Equal(t, int64(1000), mint)
+	require.Equal(t, int64(2000), maxt)
 }
 
 func TestIterBlockMetas(t *testing.T) {
 	dir := t.TempDir()
 
 	id1 := ulid.MustNew(1, nil)
-	testutil.Ok(t, os.Mkdir(path.Join(dir, id1.String()), os.ModePerm))
-	testutil.Ok(t, metadata.Meta{
+	require.NoError(t, os.Mkdir(path.Join(dir, id1.String()), os.ModePerm))
+	require.NoError(t, metadata.Meta{
 		BlockMeta: tsdb.BlockMeta{
 			ULID:    id1,
 			MaxTime: 2000,
@@ -103,8 +103,8 @@ func TestIterBlockMetas(t *testing.T) {
 	}.WriteToDir(log.NewNopLogger(), path.Join(dir, id1.String())))
 
 	id2 := ulid.MustNew(2, nil)
-	testutil.Ok(t, os.Mkdir(path.Join(dir, id2.String()), os.ModePerm))
-	testutil.Ok(t, metadata.Meta{
+	require.NoError(t, os.Mkdir(path.Join(dir, id2.String()), os.ModePerm))
+	require.NoError(t, metadata.Meta{
 		BlockMeta: tsdb.BlockMeta{
 			ULID:    id2,
 			MaxTime: 5000,
@@ -114,8 +114,8 @@ func TestIterBlockMetas(t *testing.T) {
 	}.WriteToDir(log.NewNopLogger(), path.Join(dir, id2.String())))
 
 	id3 := ulid.MustNew(3, nil)
-	testutil.Ok(t, os.Mkdir(path.Join(dir, id3.String()), os.ModePerm))
-	testutil.Ok(t, metadata.Meta{
+	require.NoError(t, os.Mkdir(path.Join(dir, id3.String()), os.ModePerm))
+	require.NoError(t, metadata.Meta{
 		BlockMeta: tsdb.BlockMeta{
 			ULID:    id3,
 			MaxTime: 3000,
@@ -126,8 +126,8 @@ func TestIterBlockMetas(t *testing.T) {
 
 	shipper := New(nil, nil, dir, nil, nil, metadata.TestSource, false, false, metadata.NoneFunc)
 	metas, err := shipper.blockMetasFromOldest()
-	testutil.Ok(t, err)
-	testutil.Equals(t, sort.SliceIsSorted(metas, func(i, j int) bool {
+	require.NoError(t, err)
+	require.Equal(t, sort.SliceIsSorted(metas, func(i, j int) bool {
 		return metas[i].BlockMeta.MinTime < metas[j].BlockMeta.MinTime
 	}), true)
 }
@@ -138,8 +138,8 @@ func BenchmarkIterBlockMetas(b *testing.B) {
 
 	for i := 0; i < 100; i++ {
 		id := ulid.MustNew(uint64(i), nil)
-		testutil.Ok(b, os.Mkdir(path.Join(dir, id.String()), os.ModePerm))
-		testutil.Ok(b,
+		require.NoError(b, os.Mkdir(path.Join(dir, id.String()), os.ModePerm))
+		require.NoError(b,
 			metadata.Meta{
 				BlockMeta: tsdb.BlockMeta{
 					ULID:    id,
@@ -158,7 +158,7 @@ func BenchmarkIterBlockMetas(b *testing.B) {
 	shipper := New(nil, nil, dir, nil, nil, metadata.TestSource, false, false, metadata.NoneFunc)
 
 	_, err := shipper.blockMetasFromOldest()
-	testutil.Ok(b, err)
+	require.NoError(b, err)
 }
 
 func TestShipperAddsSegmentFiles(t *testing.T) {
@@ -172,10 +172,10 @@ func TestShipperAddsSegmentFiles(t *testing.T) {
 	id := ulid.MustNew(1, nil)
 	blockDir := path.Join(dir, id.String())
 	chunksDir := path.Join(blockDir, block.ChunksDirname)
-	testutil.Ok(t, os.MkdirAll(chunksDir, os.ModePerm))
+	require.NoError(t, os.MkdirAll(chunksDir, os.ModePerm))
 
 	// Prepare minimal "block" for shipper (meta.json, index, one segment file).
-	testutil.Ok(t, metadata.Meta{
+	require.NoError(t, metadata.Meta{
 		BlockMeta: tsdb.BlockMeta{
 			ULID:    id,
 			MaxTime: 2000,
@@ -186,18 +186,18 @@ func TestShipperAddsSegmentFiles(t *testing.T) {
 			},
 		},
 	}.WriteToDir(log.NewNopLogger(), path.Join(dir, id.String())))
-	testutil.Ok(t, os.WriteFile(filepath.Join(blockDir, "index"), []byte("index file"), 0666))
+	require.NoError(t, os.WriteFile(filepath.Join(blockDir, "index"), []byte("index file"), 0666))
 	segmentFile := "00001"
-	testutil.Ok(t, os.WriteFile(filepath.Join(chunksDir, segmentFile), []byte("hello world"), 0666))
+	require.NoError(t, os.WriteFile(filepath.Join(chunksDir, segmentFile), []byte("hello world"), 0666))
 
 	uploaded, err := s.Sync(context.Background())
-	testutil.Ok(t, err)
-	testutil.Equals(t, 1, uploaded)
+	require.NoError(t, err)
+	require.Equal(t, 1, uploaded)
 
 	meta, err := block.DownloadMeta(context.Background(), log.NewNopLogger(), inmemory, id)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
-	testutil.Equals(t, []string{segmentFile}, meta.Thanos.SegmentFiles)
+	require.Equal(t, []string{segmentFile}, meta.Thanos.SegmentFiles)
 }
 
 func TestReadMetaFile(t *testing.T) {
@@ -207,25 +207,25 @@ func TestReadMetaFile(t *testing.T) {
 
 		_, err := ReadMetaFile(dpath)
 		fpath := filepath.Join(dpath, MetaFilename)
-		testutil.Equals(t, fmt.Sprintf(`failed to read %s: open %s: no such file or directory`, fpath, fpath), err.Error())
+		require.Equal(t, fmt.Sprintf(`failed to read %s: open %s: no such file or directory`, fpath, fpath), err.Error())
 	})
 
 	t.Run("Non-JSON meta file", func(t *testing.T) {
 		dpath := t.TempDir()
 		fpath := filepath.Join(dpath, MetaFilename)
 		// Make an invalid JSON file
-		testutil.Ok(t, os.WriteFile(fpath, []byte("{"), 0600))
+		require.NoError(t, os.WriteFile(fpath, []byte("{"), 0600))
 
 		_, err := ReadMetaFile(dpath)
-		testutil.Equals(t, fmt.Sprintf(`failed to parse %s as JSON: "{": unexpected end of JSON input`, fpath), err.Error())
+		require.Equal(t, fmt.Sprintf(`failed to parse %s as JSON: "{": unexpected end of JSON input`, fpath), err.Error())
 	})
 
 	t.Run("Wrongly versioned meta file", func(t *testing.T) {
 		dpath := t.TempDir()
 		fpath := filepath.Join(dpath, MetaFilename)
-		testutil.Ok(t, os.WriteFile(fpath, []byte(`{"version": 2}`), 0600))
+		require.NoError(t, os.WriteFile(fpath, []byte(`{"version": 2}`), 0600))
 
 		_, err := ReadMetaFile(dpath)
-		testutil.Equals(t, "unexpected meta file version 2", err.Error())
+		require.Equal(t, "unexpected meta file version 2", err.Error())
 	})
 }

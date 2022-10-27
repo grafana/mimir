@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/efficientgo/tools/core/pkg/testutil"
 	"github.com/pkg/errors"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 )
 
@@ -22,15 +22,15 @@ func TestMain(m *testing.M) {
 
 func TestBytesPool(t *testing.T) {
 	chunkPool, err := NewBucketedBytes(10, 100, 2, 1000)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
-	testutil.Equals(t, []int{10, 20, 40, 80}, chunkPool.sizes)
+	require.Equal(t, []int{10, 20, 40, 80}, chunkPool.sizes)
 
 	for i := 0; i < 10; i++ {
 		b, err := chunkPool.Get(40)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 
-		testutil.Equals(t, uint64(40), chunkPool.usedTotal)
+		require.Equal(t, uint64(40), chunkPool.usedTotal)
 
 		if i%2 == 0 {
 			for j := 0; j < 6; j++ {
@@ -42,32 +42,32 @@ func TestBytesPool(t *testing.T) {
 
 	for i := 0; i < 10; i++ {
 		b, err := chunkPool.Get(19)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		chunkPool.Put(b)
 	}
 
 	// Outside of any bucket.
 	b, err := chunkPool.Get(1000)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 	chunkPool.Put(b)
 
 	// Check size limitation.
 	b1, err := chunkPool.Get(500)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	b2, err := chunkPool.Get(600)
-	testutil.NotOk(t, err)
-	testutil.Equals(t, ErrPoolExhausted, err)
+	require.Error(t, err)
+	require.Equal(t, ErrPoolExhausted, err)
 
 	chunkPool.Put(b1)
 	chunkPool.Put(b2)
 
-	testutil.Equals(t, uint64(0), chunkPool.usedTotal)
+	require.Equal(t, uint64(0), chunkPool.usedTotal)
 }
 
 func TestRacePutGet(t *testing.T) {
 	chunkPool, err := NewBucketedBytes(3, 100, 2, 5000)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	s := sync.WaitGroup{}
 
@@ -125,7 +125,7 @@ func TestRacePutGet(t *testing.T) {
 	s.Wait()
 	select {
 	case err := <-errs:
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 	default:
 	}
 }
