@@ -1023,7 +1023,15 @@
                         "expr": "sum(cortex_bucket_stores_gate_queries_in_flight{cluster=~\"$cluster\", namespace=~\"$namespace\", component=\"alertmanager-storage\"})",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "Total",
+                        "legendFormat": "total",
+                        "legendLink": null,
+                        "step": 10
+                     },
+                     {
+                        "expr": "max(cortex_bucket_stores_gate_queries_in_flight{cluster=~\"$cluster\", namespace=~\"$namespace\", component=\"alertmanager-storage\"})",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "highest",
                         "legendLink": null,
                         "step": 10
                      }

@@ -597,7 +597,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
     )
     .addPanel(
       $.panel('Inflight requests') +
-      $.queryPanel('sum(cortex_bucket_stores_gate_queries_in_flight{%s, component="%s"})' % [$.namespaceMatcher(), component], 'Total')
+      $.queryPanel(
+        [
+          'sum(cortex_bucket_stores_gate_queries_in_flight{%s, component="%s"})' % [$.namespaceMatcher(), component],
+          'max(cortex_bucket_stores_gate_queries_in_flight{%s, component="%s"})' % [$.namespaceMatcher(), component],
+        ],
+        [
+          'total',
+          'highest',
+        ]
+      )
     ),
     $.row('')
     .addPanel(
