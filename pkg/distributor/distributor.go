@@ -1157,7 +1157,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 
 		err := d.send(localCtx, ingester, timeseries, metadata, req.Source)
 		if errors.Is(err, context.DeadlineExceeded) {
-			return errors.Wrap(err, "exceeded configured distributor remote timeout")
+			return httpgrpc.Errorf(500, "exceeded configured distributor remote timeout: %s", err.Error())
 		}
 		return err
 	}, func() { pushReq.CleanUp(); cancel() })
