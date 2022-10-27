@@ -2,6 +2,7 @@
   local container = $.core.v1.container,
 
   ruler_args::
+    $._config.usageStatsConfig +
     $._config.grpcConfig +
     $._config.storageConfig +
     $._config.blocksStorageConfig +

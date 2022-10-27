@@ -1144,96 +1144,8 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "fill": 10,
-                  "id": 14,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
-                  },
-                  "lines": true,
-                  "linewidth": 0,
-                  "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
-                  "span": 12,
-                  "stack": true,
-                  "steppedLine": false,
-                  "targets": [
-                     {
-                        "expr": "max by (slice) (prometheus_engine_query_duration_seconds{quantile=\"0.9\",cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir|mimir-read.*))\"}) * 1e3",
-                        "format": "time_series",
-                        "intervalFactor": 2,
-                        "legendFormat": "{{slice}}",
-                        "legendLink": null,
-                        "step": 10
-                     }
-                  ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
-                  "title": "Stages",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "ms",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
-               }
-            ],
-            "repeat": null,
-            "repeatIteration": null,
-            "repeatRowId": null,
-            "showTitle": true,
-            "title": "Querier",
-            "titleSize": "h6"
-         },
-         {
-            "collapse": false,
-            "height": "250px",
-            "panels": [
-               {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
-                  "datasource": "$datasource",
                   "fill": 1,
-                  "id": 15,
+                  "id": 14,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1325,7 +1237,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 16,
+                  "id": 15,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1417,7 +1329,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 17,
+                  "id": 16,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1521,7 +1433,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 18,
+                  "id": 17,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1613,7 +1525,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 19,
+                  "id": 18,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1707,7 +1619,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 20,
+                  "id": 19,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1795,7 +1707,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 21,
+                  "id": 20,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1890,7 +1802,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 10,
-                  "id": 22,
+                  "id": 21,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1974,7 +1886,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 23,
+                  "id": 22,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2078,7 +1990,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 24,
+                  "id": 23,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2154,7 +2066,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 10,
-                  "id": 25,
+                  "id": 24,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2230,7 +2142,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 10,
-                  "id": 26,
+                  "id": 25,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2318,7 +2230,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 27,
+                  "id": 26,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2410,7 +2322,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 28,
+                  "id": 27,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2502,7 +2414,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 29,
+                  "id": 28,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2590,7 +2502,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 0,
-                  "id": 30,
+                  "id": 29,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2669,7 +2581,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 10,
-                  "id": 31,
+                  "id": 30,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2756,7 +2668,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 10,
-                  "id": 32,
+                  "id": 31,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2852,7 +2764,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 0,
-                  "id": 33,
+                  "id": 32,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2928,7 +2840,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 34,
+                  "id": 33,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -3032,7 +2944,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 35,
+                  "id": 34,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -3108,7 +3020,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 36,
+                  "id": 35,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -3184,7 +3096,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 37,
+                  "id": 36,
                   "legend": {
                      "avg": false,
                      "current": false,

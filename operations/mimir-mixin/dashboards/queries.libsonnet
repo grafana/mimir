@@ -157,15 +157,6 @@ local filename = 'mimir-queries.json';
       )
     )
     .addRow(
-      $.row('Querier')
-      .addPanel(
-        $.panel('Stages') +
-        $.queryPanel('max by (slice) (prometheus_engine_query_duration_seconds{quantile="0.9",%s}) * 1e3' % $.jobMatcher($._config.job_names.querier), '{{slice}}') +
-        { yaxes: $.yaxes('ms') } +
-        $.stack,
-      )
-    )
-    .addRow(
       $.row('Ingester')
       .addPanel(
         $.panel('Series per query') +

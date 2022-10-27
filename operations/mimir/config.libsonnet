@@ -89,6 +89,14 @@
     query_tee_backend_preferred: '',
     query_tee_node_port: null,
 
+    // usage_stats_enabled enables the reporting of anonymous usage statistics about the Mimir installation.
+    // For more details about usage statistics, see:
+    // https://grafana.com/docs/mimir/latest/operators-guide/configure/about-anonymous-usage-statistics-reporting/
+    usage_stats_enabled: true,
+    usageStatsConfig: if !$._config.usage_stats_enabled then {} else {
+      'usage-stats.installation-mode': 'jsonnet',
+    },
+
     grpcConfig:: {
       'server.grpc.keepalive.min-time-between-pings': '10s',
       'server.grpc.keepalive.ping-without-stream-allowed': true,

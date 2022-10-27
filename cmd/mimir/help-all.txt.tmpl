@@ -1871,6 +1871,8 @@ Usage of ./cmd/mimir/mimir:
     	Comma-separated list of cipher suites to use. If blank, the default Go cipher suites is used.
   -server.tls-min-version string
     	Minimum TLS version to use. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13. If blank, the Go TLS minimum version is used.
+  -shutdown-delay duration
+    	[experimental] How long to wait between SIGTERM and shutdown. After receiving SIGTERM, Mimir will report not-ready status via /ready endpoint.
   -store-gateway.sharding-ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -store-gateway.sharding-ring.consul.cas-retry-delay duration
