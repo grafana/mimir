@@ -1155,7 +1155,11 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 			}
 		}
 
-		return d.send(localCtx, ingester, timeseries, metadata, req.Source)
+		err := d.send(localCtx, ingester, timeseries, metadata, req.Source)
+		if errors.Is(err, context.DeadlineExceeded) {
+			return httpgrpc.Errorf(500, "exceeded configured distributor remote timeout: %s", err.Error())
+		}
+		return err
 	}, func() { pushReq.CleanUp(); cancel() })
 
 	if err != nil {
@@ -1203,8 +1207,11 @@ func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, time
 		Source:     source,
 	}
 	_, err = c.Push(ctx, &req)
-
-	return err
+	if resp, ok := httpgrpc.HTTPResponseFromError(err); ok {
+		// Wrap HTTP gRPC error with more explanatory message.
+		return httpgrpc.Errorf(int(resp.Code), "failed pushing to ingester: %s", resp.Body)
+	}
+	return errors.Wrap(err, "failed pushing to ingester")
 }
 
 // forReplicationSet runs f, in parallel, for all ingesters in the input replication set.

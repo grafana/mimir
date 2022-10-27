@@ -110,6 +110,8 @@ func TestDistributor_Push(t *testing.T) {
 		mtime.NowReset()
 	})
 
+	expErrFail := httpgrpc.Errorf(http.StatusInternalServerError, "failed pushing to ingester: Fail")
+
 	type samplesIn struct {
 		num              int
 		startTimestampMs int64
@@ -122,6 +124,7 @@ func TestDistributor_Push(t *testing.T) {
 		metadata        int
 		expectedError   error
 		expectedMetrics string
+		timeOut         bool
 	}{
 		"A push of no samples shouldn't block or return error, even if ingesters are sad": {
 			numIngesters:   3,
@@ -155,7 +158,7 @@ func TestDistributor_Push(t *testing.T) {
 			numIngesters:   3,
 			happyIngesters: 1,
 			samples:        samplesIn{num: 10, startTimestampMs: 123456789000},
-			expectedError:  errFail,
+			expectedError:  expErrFail,
 			metricNames:    []string{lastSeenTimestamp},
 			expectedMetrics: `
 				# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
@@ -167,7 +170,7 @@ func TestDistributor_Push(t *testing.T) {
 			numIngesters:   3,
 			happyIngesters: 0,
 			samples:        samplesIn{num: 10, startTimestampMs: 123456789000},
-			expectedError:  errFail,
+			expectedError:  expErrFail,
 			metricNames:    []string{lastSeenTimestamp},
 			expectedMetrics: `
 				# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
@@ -266,6 +269,20 @@ func TestDistributor_Push(t *testing.T) {
 				cortex_distributor_sample_delay_seconds_count 0
 			`,
 		},
+		"A timed out push should fail": {
+			numIngesters:   3,
+			happyIngesters: 3,
+			samples:        samplesIn{num: 10, startTimestampMs: 123456789000},
+			timeOut:        true,
+			expectedError: httpgrpc.Errorf(http.StatusInternalServerError,
+				"exceeded configured distributor remote timeout: failed pushing to ingester: context deadline exceeded"),
+			metricNames: []string{lastSeenTimestamp},
+			expectedMetrics: `
+				# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
+				# TYPE cortex_distributor_latest_seen_sample_timestamp_seconds gauge
+				cortex_distributor_latest_seen_sample_timestamp_seconds{user="user"} 123456789.009
+			`,
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			limits := &validation.Limits{}
@@ -278,6 +295,7 @@ func TestDistributor_Push(t *testing.T) {
 				happyIngesters:  tc.happyIngesters,
 				numDistributors: 1,
 				limits:          limits,
+				timeOut:         tc.timeOut,
 			})
 
 			request := makeWriteRequest(tc.samples.startTimestampMs, tc.samples.num, tc.metadata, false)
@@ -3220,6 +3238,7 @@ type prepConfig struct {
 	labelNamesStreamZonesResponseDelay map[string]time.Duration
 	forwarding                         bool
 	getForwarder                       func() forwarding.Forwarder
+	timeOut                            bool
 }
 
 func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*prometheus.Registry) {
@@ -3240,6 +3259,7 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 			seriesCountTotal:              cfg.ingestersSeriesCountTotal,
 			zone:                          zone,
 			labelNamesStreamResponseDelay: labelNamesStreamResponseDelay,
+			timeOut:                       cfg.timeOut,
 		})
 	}
 	for i := cfg.happyIngesters; i < cfg.numIngesters; i++ {
@@ -3621,6 +3641,7 @@ type mockIngester struct {
 	seriesCountTotal              uint64
 	zone                          string
 	labelNamesStreamResponseDelay time.Duration
+	timeOut                       bool
 }
 
 func (i *mockIngester) series() map[uint32]*mimirpb.PreallocTimeseries {
@@ -3657,6 +3678,10 @@ func (i *mockIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, opts
 
 	if !i.happy {
 		return nil, errFail
+	}
+
+	if i.timeOut {
+		return nil, context.DeadlineExceeded
 	}
 
 	if i.timeseries == nil {
