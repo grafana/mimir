@@ -2354,7 +2354,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(rate({cluster=~\"$cluster\", namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"msg=\\\"query stats\\\"\" |= \"user=$user\" |= \"status=success\" [$__interval]))",
+                        "expr": "sum(rate({cluster=~\"$cluster\", namespace=~\"$namespace\", name=~\"query-frontend.*\"} |= \"msg=\\\"query stats\\\"\" |= \"user=$user\" |= \"status=success\" [$__interval]))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "success rate",
@@ -2362,7 +2362,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "sum(rate({cluster=~\"$cluster\",namespace=~\"$namespace\",name=~\"query-frontend.*\"} |= \"msg=\\\"query stats\\\"\" |= \"user=$user\" |= \"status=failed\" [$__interval]))",
+                        "expr": "sum(rate({cluster=~\"$cluster\", namespace=~\"$namespace\", name=~\"query-frontend.*\"} |= \"msg=\\\"query stats\\\"\" |= \"user=$user\" |= \"status=failed\" [$__interval]))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "failure rate",
@@ -2438,7 +2438,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "quantile_over_time(0.99, {cluster=~\"$cluster\", namespace=~\"$namespace\",name=~\"query-frontend.*\"}  |= \"msg=\\\"query stats\\\"\" |= \"user=$user\" | logfmt | unwrap duration(response_time)[$__interval]) by (user)",
+                        "expr": "quantile_over_time(0.99, {cluster=~\"$cluster\", namespace=~\"$namespace\" ,name=~\"query-frontend.*\"}  |= \"msg=\\\"query stats\\\"\" |= \"user=$user\" | logfmt | unwrap duration(response_time)[$__interval]) by (user)",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "p99",
@@ -2446,7 +2446,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "quantile_over_time(0.50, {cluster=~\"$cluster\", namespace=~\"$namespace\",name=~\"query-frontend.*\"}  |= \"msg=\\\"query stats\\\"\" |= \"user=$user\" | logfmt | unwrap duration(response_time)[$__interval]) by (user)",
+                        "expr": "quantile_over_time(0.50, {cluster=~\"$cluster\", namespace=~\"$namespace\" ,name=~\"query-frontend.*\"}  |= \"msg=\\\"query stats\\\"\" |= \"user=$user\" | logfmt | unwrap duration(response_time)[$__interval]) by (user)",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "p50",
@@ -2454,7 +2454,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "quantile_over_time(0.95, {cluster=~\"$cluster\", namespace=~\"$namespace\",name=~\"query-frontend.*\"}  |= \"msg=\\\"query stats\\\"\" |= \"user=$user\" | logfmt | unwrap duration(response_time)[$__interval]) by (user)",
+                        "expr": "quantile_over_time(0.95, {cluster=~\"$cluster\", namespace=~\"$namespace\" ,name=~\"query-frontend.*\"}  |= \"msg=\\\"query stats\\\"\" |= \"user=$user\" | logfmt | unwrap duration(response_time)[$__interval]) by (user)",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "p95",
