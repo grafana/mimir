@@ -533,13 +533,13 @@ local filename = 'mimir-tenants.json';
     )
 
     .addRow(
-      $.row("Read Path Insights")
+      $.row('Read Path Insights')
       .addPanel(
         local title = 'Rate of Read Requests';
         $.panel(title) +
         $.queryPanel(
-            'sum(rate(cortex_query_frontend_queries_total{cluster=~"$cluster", namespace=~"$namespace", user="$user"}[$__rate_interval]))',
-            'rate'
+          'sum(rate(cortex_query_frontend_queries_total{cluster=~"$cluster", namespace=~"$namespace", user="$user"}[$__rate_interval]))',
+          'rate'
         )
       )
       .addPanel(
@@ -547,10 +547,10 @@ local filename = 'mimir-tenants.json';
         $.panel(title) +
         $.queryPanel(
           [
-            'sum(cortex_query_scheduler_queue_length{cluster=~"$cluster", namespace=~"$namespace", container="query-scheduler", user="$user"})'
+            'sum(cortex_query_scheduler_queue_length{cluster=~"$cluster", namespace=~"$namespace", container="query-scheduler", user="$user"})',
           ],
           [
-            'queue length'
+            'queue length',
           ],
         )
       )
@@ -560,14 +560,14 @@ local filename = 'mimir-tenants.json';
         $.queryPanel(
           [
             'sum(rate({cluster=~"$cluster", namespace=~"$namespace",name=~"query-frontend.*"} |= "msg=\\"query stats\\"" |= "user=$user" |= "status=success" [$__interval]))',
-            'sum(rate({cluster=~"$cluster",namespace=~"$namespace",name=~"query-frontend.*"} |= "msg=\\"query stats\\"" |= "user=$user" |= "status=failed" [$__interval]))'
+            'sum(rate({cluster=~"$cluster",namespace=~"$namespace",name=~"query-frontend.*"} |= "msg=\\"query stats\\"" |= "user=$user" |= "status=failed" [$__interval]))',
           ],
           [
             'success rate',
-            'failure rate'
+            'failure rate',
           ],
         ) + {
-          datasource: '${lokidatasource}'
+          datasource: '${lokidatasource}',
         }
       )
       .addPanel(
@@ -577,17 +577,17 @@ local filename = 'mimir-tenants.json';
           [
             'quantile_over_time(0.99, {cluster=~"$cluster", namespace=~"$namespace",name=~"query-frontend.*"}  |= "msg=\\"query stats\\"" |= "user=$user" | logfmt | unwrap duration(response_time)[$__interval]) by (user)',
             'quantile_over_time(0.50, {cluster=~"$cluster", namespace=~"$namespace",name=~"query-frontend.*"}  |= "msg=\\"query stats\\"" |= "user=$user" | logfmt | unwrap duration(response_time)[$__interval]) by (user)',
-            'quantile_over_time(0.95, {cluster=~"$cluster", namespace=~"$namespace",name=~"query-frontend.*"}  |= "msg=\\"query stats\\"" |= "user=$user" | logfmt | unwrap duration(response_time)[$__interval]) by (user)'
+            'quantile_over_time(0.95, {cluster=~"$cluster", namespace=~"$namespace",name=~"query-frontend.*"}  |= "msg=\\"query stats\\"" |= "user=$user" | logfmt | unwrap duration(response_time)[$__interval]) by (user)',
           ],
           [
             'p99',
             'p50',
-            'p95'
+            'p95',
           ],
         ) + {
-          datasource: '${lokidatasource}'
+          datasource: '${lokidatasource}',
         }
-      )         
+      )
     )
     + {
       templating+: {
@@ -604,5 +604,5 @@ local filename = 'mimir-tenants.json';
           },
         ],
       },
-    }
+    },
 }
