@@ -1,6 +1,6 @@
 #!/bin/env bash
 
-python3 extract-yamls.py ../../sources/migration-guide/migrating-from-single-zone-with-helm.md
+python3 extract-yamls.py ../../sources/mimir/migration-guide/migrating-from-single-zone-with-helm.md
 
 SED="sed"
 

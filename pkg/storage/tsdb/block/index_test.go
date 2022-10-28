@@ -28,12 +28,12 @@ func TestRewrite(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	b, err := e2eutil.CreateBlock(ctx, tmpDir, []labels.Labels{
-		{{Name: "a", Value: "1"}},
-		{{Name: "a", Value: "2"}},
-		{{Name: "a", Value: "3"}},
-		{{Name: "a", Value: "4"}},
-		{{Name: "a", Value: "1"}, {Name: "b", Value: "1"}},
-	}, 150, 0, 1000, nil, 124, metadata.NoneFunc)
+		labels.FromStrings("a", "1"),
+		labels.FromStrings("a", "2"),
+		labels.FromStrings("a", "3"),
+		labels.FromStrings("a", "4"),
+		labels.FromStrings("a", "1", "b", "1"),
+	}, 150, 0, 1000, labels.EmptyLabels(), 124, metadata.NoneFunc)
 	require.NoError(t, err)
 
 	ir, err := index.NewFileReader(filepath.Join(tmpDir, b.String(), IndexFilename))

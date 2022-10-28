@@ -45,21 +45,21 @@ func TestReaders(t *testing.T) {
 
 	// Create block index version 2.
 	id1, err := testhelper.CreateBlock(ctx, tmpDir, []labels.Labels{
-		{{Name: "a", Value: "1"}},
-		{{Name: "a", Value: "2"}},
-		{{Name: "a", Value: "3"}},
-		{{Name: "a", Value: "4"}},
-		{{Name: "a", Value: "5"}},
-		{{Name: "a", Value: "6"}},
-		{{Name: "a", Value: "7"}},
-		{{Name: "a", Value: "8"}},
-		{{Name: "a", Value: "9"}},
+		labels.FromStrings("a", "1"),
+		labels.FromStrings("a", "2"),
+		labels.FromStrings("a", "3"),
+		labels.FromStrings("a", "4"),
+		labels.FromStrings("a", "5"),
+		labels.FromStrings("a", "6"),
+		labels.FromStrings("a", "7"),
+		labels.FromStrings("a", "8"),
+		labels.FromStrings("a", "9"),
 		// Missing 10 on purpose.
-		{{Name: "a", Value: "11"}},
-		{{Name: "a", Value: "12"}},
-		{{Name: "a", Value: "13"}},
-		{{Name: "a", Value: "1"}, {Name: "longer-string", Value: "1"}},
-		{{Name: "a", Value: "1"}, {Name: "longer-string", Value: "2"}},
+		labels.FromStrings("a", "11"),
+		labels.FromStrings("a", "12"),
+		labels.FromStrings("a", "13"),
+		labels.FromStrings("a", "1", "longer-string", "1"),
+		labels.FromStrings("a", "1", "longer-string", "2"),
 	}, 100, 0, 1000, labels.FromStrings("ext1", "1"), 124, metadata.NoneFunc)
 	require.NoError(t, err)
 

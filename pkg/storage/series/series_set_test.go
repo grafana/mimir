@@ -49,11 +49,5 @@ func TestMatrixToSeriesSetSortsMetricLabels(t *testing.T) {
 	require.NoError(t, ss.Err())
 
 	l := ss.At().Labels()
-	require.Equal(t, labels.Labels{
-		{Name: string(model.MetricNameLabel), Value: "testmetric"},
-		{Name: "a", Value: "b"},
-		{Name: "c", Value: "d"},
-		{Name: "e", Value: "f"},
-		{Name: "g", Value: "h"},
-	}, l)
+	require.Equal(t, labels.FromStrings(model.MetricNameLabel, "testmetric", "a", "b", "c", "d", "e", "f", "g", "h"), l)
 }

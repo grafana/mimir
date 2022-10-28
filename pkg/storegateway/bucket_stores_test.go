@@ -399,8 +399,8 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 	cfg := prepareStorageConfig(t)
 
 	// Generate a single block with 1 series and a lot of samples.
-	seriesWithOutOfOrderChunks := labels.Labels{labels.Label{Name: "case", Value: "out_of_order"}, labels.Label{Name: labels.MetricName, Value: metricName}}
-	seriesWithOverlappingChunks := labels.Labels{labels.Label{Name: "case", Value: "overlapping"}, labels.Label{Name: labels.MetricName, Value: metricName}}
+	seriesWithOutOfOrderChunks := labels.FromStrings("case", "out_of_order", labels.MetricName, metricName)
+	seriesWithOverlappingChunks := labels.FromStrings("case", "overlapping", labels.MetricName, metricName)
 	specs := []*mimir_testutil.BlockSeriesSpec{
 		// Series with out of order chunks.
 		{
@@ -527,7 +527,7 @@ func generateStorageBlock(t *testing.T, storageDir, userID string, metricName st
 		require.NoError(t, db.Close())
 	}()
 
-	series := labels.Labels{labels.Label{Name: labels.MetricName, Value: metricName}}
+	series := labels.FromStrings(labels.MetricName, metricName)
 
 	app := db.Appender(context.Background())
 	for ts := minT; ts < maxT; ts += int64(step) {

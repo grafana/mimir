@@ -7,6 +7,7 @@ package ingester
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path"
 	"path/filepath"
@@ -14,13 +15,14 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/thanos-io/objstore"
 
-	"github.com/grafana/mimir/pkg/shipper"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
@@ -98,7 +100,7 @@ func NewShipper(
 //
 // It is not concurrency-safe, however it is compactor-safe (running concurrently with compactor is ok).
 func (s *Shipper) Sync(ctx context.Context) (uploaded int, err error) {
-	meta, err := shipper.ReadMetaFile(s.dir)
+	meta, err := readShipperMetaFile(s.dir)
 	if err != nil {
 		// If we encounter any error, proceed with an empty meta file and overwrite it later.
 		// The meta file is only used to avoid unnecessary bucket.Exists call,
@@ -106,7 +108,7 @@ func (s *Shipper) Sync(ctx context.Context) (uploaded int, err error) {
 		if !os.IsNotExist(err) {
 			level.Warn(s.logger).Log("msg", "reading meta file failed, will override it", "err", err)
 		}
-		meta = &shipper.Meta{Version: shipper.MetaVersion1}
+		meta = &shipperMeta{Version: shipperMetaVersion1}
 	}
 
 	// Build a map of blocks we already uploaded.
@@ -165,7 +167,7 @@ func (s *Shipper) Sync(ctx context.Context) (uploaded int, err error) {
 		uploaded++
 		s.metrics.uploads.Inc()
 	}
-	if err := shipper.WriteMetaFile(s.logger, s.dir, meta); err != nil {
+	if err := writeShipperMetaFile(s.logger, s.dir, meta); err != nil {
 		level.Warn(s.logger).Log("msg", "updating meta file failed", "err", err)
 	}
 
@@ -230,19 +232,97 @@ func (s *Shipper) blockMetasFromOldest() (metas []*metadata.Meta, _ error) {
 }
 
 func readShippedBlocks(dir string) (map[ulid.ULID]struct{}, error) {
-	shipperMeta, err := shipper.ReadMetaFile(dir)
+	meta, err := readShipperMetaFile(dir)
 	if errors.Is(err, os.ErrNotExist) {
 		// If the meta file doesn't exist it means the shipper hasn't run yet.
-		shipperMeta = &shipper.Meta{}
+		meta = &shipperMeta{}
 	} else if err != nil {
 		return nil, err
 	}
 
 	// Build a map.
-	shippedBlocks := make(map[ulid.ULID]struct{}, len(shipperMeta.Uploaded))
-	for _, blockID := range shipperMeta.Uploaded {
+	shippedBlocks := make(map[ulid.ULID]struct{}, len(meta.Uploaded))
+	for _, blockID := range meta.Uploaded {
 		shippedBlocks[blockID] = struct{}{}
 	}
 
 	return shippedBlocks, nil
+}
+
+// shipperMeta defines the format thanos.shipper.json file that the shipper places in the data directory.
+type shipperMeta struct {
+	Version  int         `json:"version"`
+	Uploaded []ulid.ULID `json:"uploaded"`
+}
+
+const (
+	// shipperMetaFilename is the known JSON filename for meta information.
+	shipperMetaFilename = "thanos.shipper.json"
+
+	// shipperMetaVersion1 represents 1 version of meta.
+	shipperMetaVersion1 = 1
+)
+
+// writeShipperMetaFile writes the given meta into <dir>/thanos.shipper.json.
+func writeShipperMetaFile(logger log.Logger, dir string, meta *shipperMeta) error {
+	// Make any changes to the file appear atomic.
+	path := filepath.Join(dir, shipperMetaFilename)
+	tmp := path + ".tmp"
+
+	f, err := os.Create(tmp)
+	if err != nil {
+		return err
+	}
+
+	enc := json.NewEncoder(f)
+	enc.SetIndent("", "\t")
+
+	if err := enc.Encode(meta); err != nil {
+		runutil.CloseWithLogOnErr(logger, f, "write meta file close")
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return renameFile(logger, tmp, path)
+}
+
+// readShipperMetaFile reads the given meta from <dir>/thanos.shipper.json.
+func readShipperMetaFile(dir string) (*shipperMeta, error) {
+	fpath := filepath.Join(dir, filepath.Clean(shipperMetaFilename))
+	b, err := os.ReadFile(fpath)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to read %s", fpath)
+	}
+
+	var m shipperMeta
+	if err := json.Unmarshal(b, &m); err != nil {
+		return nil, errors.Wrapf(err, "failed to parse %s as JSON: %q", fpath, string(b))
+	}
+	if m.Version != shipperMetaVersion1 {
+		return nil, errors.Errorf("unexpected meta file version %d", m.Version)
+	}
+
+	return &m, nil
+}
+
+func renameFile(logger log.Logger, from, to string) error {
+	if err := os.RemoveAll(to); err != nil {
+		return err
+	}
+	if err := os.Rename(from, to); err != nil {
+		return err
+	}
+
+	// Directory was renamed; sync parent dir to persist rename.
+	pdir, err := fileutil.OpenDir(filepath.Dir(to))
+	if err != nil {
+		return err
+	}
+
+	if err = fileutil.Fdatasync(pdir); err != nil {
+		runutil.CloseWithLogOnErr(logger, pdir, "rename file dir close")
+		return err
+	}
+	return pdir.Close()
 }
