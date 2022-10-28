@@ -59,15 +59,18 @@ MIXIN_OUT_PATH_SUFFIXES := "" "-baremetal"
 # path to the mimir jsonnet manifests
 JSONNET_MANIFESTS_PATH := operations/mimir
 
+# path to the mimir doc sources
+DOC_SOURCES_PATH := docs/sources/mimir
+
 # Doc templates in use
-DOC_TEMPLATES := docs/sources/operators-guide/configure/reference-configuration-parameters/index.template
+DOC_TEMPLATES := $(DOC_SOURCES_PATH)/operators-guide/configure/reference-configuration-parameters/index.template
 
 # Documents to run through embedding
-DOC_EMBED := docs/sources/operators-guide/configure/configure-the-query-frontend-work-with-prometheus.md \
-	docs/sources/operators-guide/configure/mirror-requests-to-a-second-cluster/index.md \
-	docs/sources/operators-guide/architecture/components/overrides-exporter.md \
-	docs/sources/operators-guide/get-started/_index.md \
-	docs/sources/operators-guide/deploy-grafana-mimir/jsonnet/deploy.md
+DOC_EMBED := $(DOC_SOURCES_PATH)/operators-guide/configure/configure-the-query-frontend-work-with-prometheus.md \
+	$(DOC_SOURCES_PATH)/operators-guide/configure/mirror-requests-to-a-second-cluster/index.md \
+	$(DOC_SOURCES_PATH)/operators-guide/architecture/components/overrides-exporter.md \
+	$(DOC_SOURCES_PATH)/operators-guide/get-started/_index.md \
+	$(DOC_SOURCES_PATH)/operators-guide/deploy-grafana-mimir/jsonnet/deploy.md
 
 .PHONY: image-tag
 image-tag: ## Print the docker image tag.
@@ -215,14 +218,17 @@ GO_FLAGS := -ldflags "\
 
 ifeq ($(BUILD_IN_CONTAINER),true)
 
-GOVOLUMES=	-v mimir-go-cache:/go/cache \
-			-v mimir-go-pkg:/go/pkg \
+GOVOLUMES=	-v $(shell pwd)/.cache:/go/cache:$(CONTAINER_MOUNT_OPTIONS) \
+			-v $(shell pwd)/.pkg:/go/pkg:$(CONTAINER_MOUNT_OPTIONS) \
 			-v $(shell pwd):/go/src/github.com/grafana/mimir:$(CONTAINER_MOUNT_OPTIONS)
 
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
 SSHVOLUME=  -v ~/.ssh/:/root/.ssh:$(CONTAINER_MOUNT_OPTIONS)
 
 exes $(EXES) protos $(PROTO_GOS) lint lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt conftest-test conftest-verify check-helm-tests build-helm-tests: fetch-build-image
+	@mkdir -p $(shell pwd)/.pkg
+	@mkdir -p $(shell pwd)/.cache
+	@echo
 	@echo ">>>> Entering build container: $@"
 	$(SUDO) time docker run --rm $(TTY) -i $(SSHVOLUME) $(GOVOLUMES) $(BUILD_IMAGE) GOOS=$(GOOS) GOARCH=$(GOARCH) BINARY_SUFFIX=$(BINARY_SUFFIX) $@;
 
@@ -244,7 +250,7 @@ lint-packaging-scripts: packaging/deb/control/postinst packaging/deb/control/pre
 
 lint: ## Run lints to check for style issues.
 lint: check-makefiles
-	misspell -error docs/sources
+	misspell -error $(DOC_SOURCES_PATH)
 
 	# Configured via .golangci.yml.
 	golangci-lint run
@@ -460,8 +466,7 @@ format-makefiles: $(MAKE_FILES)
 
 clean: ## Cleanup the docker images, object files and executables.
 	$(SUDO) docker rmi $(IMAGE_NAMES) >/dev/null 2>&1 || true
-	$(SUDO) docker volume rm -f mimir-go-pkg mimir-go-cache
-	rm -rf -- $(UPTODATE_FILES) $(EXES) dist
+	rm -rf -- $(UPTODATE_FILES) $(EXES) .cache dist
 	# Remove executables built for multiarch images.
 	find . -type f -name '*_linux_arm64' -perm +u+x -exec rm {} \;
 	find . -type f -name '*_linux_amd64' -perm +u+x -exec rm {} \;
@@ -485,7 +490,7 @@ check-doc: doc
 # https://github.com/grafana/technical-documentation/tree/main/tools/doc-validator
 check-doc-validator: ## Check documentation using doc-validator tool
 	docker pull grafana/doc-validator:latest
-	docker run -v "$(CURDIR)/docs/sources:/docs/sources" grafana/doc-validator:v1.0.0 ./docs/sources
+	docker run -v "$(CURDIR)/$(DOC_SOURCES_PATH):/$(DOC_SOURCES_PATH)" grafana/doc-validator:v1.0.0 ./$(DOC_SOURCES_PATH)
 
 .PHONY: reference-help
 reference-help: ## Generates the reference help documentation.
@@ -495,7 +500,7 @@ reference-help: cmd/mimir/mimir
 	@(go run ./tools/config-inspector || true) > cmd/mimir/config-descriptor.json
 
 clean-white-noise: ## Clean the white noise in the markdown files.
-	@find . -path ./.pkg -prune -o -path ./.cache -prune -o -path "*/vendor/*" -prune -or -type f -name "*.md" -print | \
+	@find . -path ./.pkg -prune -o -path "*/vendor/*" -prune -or -type f -name "*.md" -print | \
 	SED_BIN="$(SED)" xargs ./tools/cleanup-white-noise.sh
 
 check-white-noise: ## Check the white noise in the markdown files.
@@ -528,7 +533,7 @@ mixin-serve: ## Runs Grafana loading the mixin dashboards compiled at operations
 	@./operations/mimir-mixin-tools/serve/run.sh
 
 mixin-screenshots: ## Generates mixin dashboards screenshots.
-	@find docs/sources/operators-guide/monitor-grafana-mimir/dashboards -name '*.png' -delete
+	@find $(DOC_SOURCES_PATH)/operators-guide/monitor-grafana-mimir/dashboards -name '*.png' -delete
 	@./operations/mimir-mixin-tools/screenshots/run.sh
 
 check-jsonnet-manifests: ## Check the jsonnet manifests.
@@ -590,6 +595,8 @@ ifeq ($(PACKAGE_IN_CONTAINER), true)
 
 .PHONY: packages
 packages: dist packaging/fpm/$(UPTODATE)
+	@mkdir -p $(shell pwd)/.pkg
+	@mkdir -p $(shell pwd)/.cache
 	@echo ">>>> Entering build container: $@"
 	$(SUDO) time docker run --rm $(TTY) \
 		-v  $(shell pwd):/go/src/github.com/grafana/mimir:$(CONTAINER_MOUNT_OPTIONS) \
@@ -650,5 +657,5 @@ test-packages: packages packaging/rpm/centos-systemd/$(UPTODATE) packaging/deb/d
 	./tools/packaging/test-packages $(IMAGE_PREFIX) $(VERSION)
 
 include docs/docs.mk
-DOCS_DIR = docs/sources
+DOCS_DIR = $(DOC_SOURCES_PATH)
 docs: doc

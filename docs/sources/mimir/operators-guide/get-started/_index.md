@@ -49,7 +49,7 @@ The written instructions focus on deploying Grafana Mimir as a [monolith]({{< re
 To run Grafana Mimir as a monolith and with local filesystem storage, write the following YAML configuration to a file called `demo.yaml`:
 
 <!-- prettier-ignore-start -->
-[embedmd]:# (../../../configurations/demo.yaml)
+[embedmd]:# (../../../../configurations/demo.yaml)
 ```yaml
 # Do not use this configuration in production.
 # It is for demonstration purposes only.

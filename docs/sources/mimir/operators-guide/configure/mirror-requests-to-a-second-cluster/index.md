@@ -41,7 +41,7 @@ The following diagram illustrates a simplified network structure.
 The following Envoy configuration shows an example that includes two Grafana Mimir clusters. Envoy listens on port `9900` and proxies all requests to `mimir-primary:8080`, while also mirroring them to `mimir-secondary:8080`.
 
 <!-- prettier-ignore-start -->
-[embedmd]:# (../../../../configurations/requests-mirroring-envoy.yaml)
+[embedmd]:# (../../../../../configurations/requests-mirroring-envoy.yaml)
 ```yaml
 admin:
   # No access logs.
