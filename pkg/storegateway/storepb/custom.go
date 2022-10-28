@@ -154,7 +154,7 @@ func (s *mergedSeriesSet) Next() bool {
 	s.lset = lset
 
 	// Slice reuse is not generally safe with nested merge iterators.
-	// We err on the safe side an create a new slice.
+	// We err on the safe side and create a new slice.
 	s.chunks = make([]AggrChunk, 0, len(chksA)+len(chksB))
 
 	b := 0
@@ -222,13 +222,13 @@ func (s *uniqueSeriesSet) Next() bool {
 		}
 		lset, chks := s.SeriesSet.At()
 		if s.peek == nil {
-			s.peek = &Series{Labels: mimirpb.FromLabelsToLabelAdapters(lset), Chunks: chks}
+			s.setPeek(lset, chks)
 			continue
 		}
 
 		if labels.Compare(lset, s.peek.PromLabels()) != 0 {
 			s.lset, s.chunks = s.peek.PromLabels(), s.peek.Chunks
-			s.peek = &Series{Labels: mimirpb.FromLabelsToLabelAdapters(lset), Chunks: chks}
+			s.setPeek(lset, chks)
 			return true
 		}
 
@@ -244,6 +244,10 @@ func (s *uniqueSeriesSet) Next() bool {
 	s.lset, s.chunks = s.peek.PromLabels(), s.peek.Chunks
 	s.peek = nil
 	return true
+}
+
+func (s *uniqueSeriesSet) setPeek(lset labels.Labels, chks []AggrChunk) {
+	s.peek = &Series{Labels: mimirpb.FromLabelsToLabelAdapters(lset), Chunks: chks}
 }
 
 // Compare returns positive 1 if chunk is smaller -1 if larger than b by min time, then max time.
