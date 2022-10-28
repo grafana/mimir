@@ -78,14 +78,7 @@
 * [ENHANCEMENT] copyblocks: copy no-compact global markers and optimize min time filter check. #3268
 * [ENHANCEMENT] Mimir rules GitHub action: Added the ability to change default value of `label` when running `prepare` command. #3236
 
-## 2.4.0-rc.1
-
-### Grafana Mimir
-
-* [BUGFIX] Fix distributor from returning a 500 status code when a 400 was received from the ingester. #3211
-* [BUGFIX] Fix incorrect OS value set in Mimir v2.3.* RPM packages. #3221
-
-## 2.4.0-rc.0
+## 2.4.0
 
 ### Grafana Mimir
 
@@ -180,6 +173,8 @@
 * [BUGFIX] Alertmanager: Fix parsing of label matchers without label value in the API used to retrieve alerts. #3097
 * [BUGFIX] Ruler: Fix not restoring alert state for rule groups when other ruler replicas shut down. #3156
 * [BUGFIX] Updated `golang.org/x/net` dependency to fix CVE-2022-27664. #3124
+* [BUGFIX] Fix distributor from returning a `500` status code when a `400` was received from the ingester. #3211
+* [BUGFIX] Fix incorrect OS value set in Mimir v2.3.* RPM packages. #3221
 
 ### Mixin
 

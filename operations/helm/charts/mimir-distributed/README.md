@@ -1,8 +1,8 @@
 # Grafana Mimir Helm chart
 
-Helm chart for deploying [Grafana Mimir](https://grafana.com/docs/mimir/v2.3.x/) or optionally [Grafana Enterprise Metrics](https://grafana.com/docs/enterprise-metrics/v2.3.x/) to Kubernetes. Derived from [Grafana Enterprise Metrics Helm Chart](https://github.com/grafana/helm-charts/blob/main/charts/enterprise-metrics/README.md)
+Helm chart for deploying [Grafana Mimir](https://grafana.com/docs/mimir/v2.4.x/) or optionally [Grafana Enterprise Metrics](https://grafana.com/docs/enterprise-metrics/v2.4.x/) to Kubernetes. Derived from [Grafana Enterprise Metrics Helm chart](https://github.com/grafana/helm-charts/blob/main/charts/enterprise-metrics/README.md)
 
-See the [Grafana Mimir version 2.3 release notes](https://grafana.com/docs/mimir/v2.3.x/release-notes/v2.3/).
+See the [Grafana Mimir version 2.4 release notes](https://grafana.com/docs/mimir/v2.4.x/release-notes/v2.4/).
 
 When upgrading from Helm chart version 2.1, please see [Upgrade the Grafana Mimir Helm chart from version 2.1 to 3.0](https://grafana.com/docs/mimir/latest/operators-guide/deploying-grafana-mimir/upgrade-helm-chart-2.1-to-3.0/) as well.
 
@@ -31,12 +31,12 @@ Kubernetes: `^1.20.0-0`
 Grafana Mimir and Grafana Enterprise Metrics require an object storage backend to store metrics and indexes.
 
 The default chart values will deploy [Minio](https://min.io) for initial set up. Production deployments should use a separately deployed object store.
-See [Grafana Mimir documentation](https://grafana.com/docs/mimir/v2.3.x/) for details on storage types and documentation.
+See [Grafana Mimir documentation](https://grafana.com/docs/mimir/v2.4.x/) for details on storage types and documentation.
 
 ### Grafana Enterprise Metrics license
 
 In order to use the enterprise features of this chart, you need to provide the contents of a Grafana Enterprise Metrics license file as the value for the `license.contents` variable.
-To obtain a Grafana Enterprise Metrics license, refer to [Get a license](https://grafana.com/docs/enterprise-metrics/v2.3.x/setup/#get-a-gem-license).
+To obtain a Grafana Enterprise Metrics license, refer to [Get a license](https://grafana.com/docs/enterprise-metrics/v2.4.x/setup/#get-a-gem-license).
 
 ### Helm3
 
