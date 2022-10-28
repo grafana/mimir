@@ -4308,7 +4308,7 @@ func TestDistributorValidation(t *testing.T) {
 		// Test metadata validation fails
 		{
 			metadata: []*mimirpb.MetricMetadata{{MetricFamilyName: "", Help: "a test metric.", Unit: "", Type: mimirpb.COUNTER}},
-			labels:   []labels.Labels{{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}},
+			labels:   []labels.Labels{labels.FromStrings(labels.MetricName, "testmetric", "foo", "bar")},
 			samples: []mimirpb.Sample{{
 				TimestampMs: int64(now),
 				Value:       1,
@@ -4330,7 +4330,7 @@ func TestDistributorValidation(t *testing.T) {
 				Value:       1,
 			}},
 			expectedStatusCode: http.StatusBadRequest,
-			expectedErr:        fmt.Sprintf("received an exemplar with no valid labels, timestamp: %d series: %+v labels: {}", now, labels.Labels{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}),
+			expectedErr:        fmt.Sprintf("received an exemplar with no valid labels, timestamp: %d series: %+v labels: {}", now, labels.FromStrings(labels.MetricName, "testmetric", "foo", "bar")),
 		},
 	} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
@@ -4895,10 +4895,7 @@ func TestDistributor_CleanupIsDoneAfterLastIngesterReturns(t *testing.T) {
 	})
 	ingesters[2].pushDelay = time.Second // give the test enough time to do assertions
 
-	lbls := labels.Labels{
-		{Name: "__name__", Value: "metric_1"},
-		{Name: "key", Value: "value_1"},
-	}
+	lbls := labels.FromStrings("__name__", "metric_1", "key", "value_1")
 	ctx := user.InjectOrgID(context.Background(), "user")
 
 	_, err := distributors[0].Push(ctx, mockWriteRequest(lbls, 1, 1))
@@ -4906,7 +4903,7 @@ func TestDistributor_CleanupIsDoneAfterLastIngesterReturns(t *testing.T) {
 
 	// First push request returned, but there's still an ingester call inflight.
 	// This means that the push request is counted as inflight, so another incoming request should be rejected.
-	_, err = distributors[0].Push(ctx, mockWriteRequest(nil, 1, 1))
+	_, err = distributors[0].Push(ctx, mockWriteRequest(labels.EmptyLabels(), 1, 1))
 	assert.ErrorIs(t, err, errMaxInflightRequestsReached)
 }
 

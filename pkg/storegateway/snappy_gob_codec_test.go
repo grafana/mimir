@@ -20,8 +20,8 @@ func TestSnappyGobSeriesCacheEntryCodec(t *testing.T) {
 
 	entry := testType{
 		LabelSets: []labels.Labels{
-			{{Name: "foo", Value: "bar"}},
-			{{Name: "baz", Value: "boo"}},
+			labels.FromStrings("foo", "bar"),
+			labels.FromStrings("baz", "boo"),
 		},
 		MatchersKey: indexcache.CanonicalLabelMatchersKey([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar")}),
 	}
