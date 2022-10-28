@@ -42,13 +42,29 @@
       replicas: 2,
     },
 
-    jaeger_agent_host: null,
+    // storage_backend will be used for all components that use block storage.
+    // Each component can override this by specific CLI flags.
+    // See https://grafana.com/docs/mimir/latest/operators-guide/configure/about-configurations/#common-configurations
+    storage_backend: error 'should specify storage backend',  // Available options are 'gcs', 's3', 'azure'.
 
-    blocks_storage_backend: 'gcs',  // Available options are 'gcs', 's3', 'azure'
-    blocks_storage_bucket_name: error 'must specify blocks storage bucket name',
-    blocks_storage_s3_endpoint: 's3.dualstack.us-east-1.amazonaws.com',
-    blocks_storage_azure_account_name: if $._config.blocks_storage_backend == 'azure' then error 'must specify azure account name' else '',
-    blocks_storage_azure_account_key: if $._config.blocks_storage_backend == 'azure' then error 'must specify azure account key' else '',
+    // GCS authentication can be configured by setting a non-null service account value, which will be then rendered
+    // as a CLI flag. Please note that there are alternative ways of configuring GCS authentication:
+    // See https://grafana.com/docs/mimir/latest/operators-guide/configure/reference-configuration-parameters/#gcs_storage_backend
+    // See https://cloud.google.com/storage/docs/authentication#libauth
+    storage_gcs_service_account: null,
+
+    // S3 credentials are optional and will be only set as CLI flags if not null.
+    // This is useful because S3 can be accessed without credentials under certain conditions.
+    // See: https://aws.amazon.com/premiumsupport/knowledge-center/s3-private-connection-no-authentication/
+    storage_s3_secret_access_key: null,
+    storage_s3_access_key_id: null,
+    storage_s3_endpoint: 's3.dualstack.%(aws_region)s.amazonaws.com' % $._config,
+
+    // Azure credentials are required by the client implementation when azure is used.
+    storage_azure_account_name: error 'must specify Azure account name',
+    storage_azure_account_key: error 'must specify Azure account key',
+
+    jaeger_agent_host: null,
 
     // Allow to configure the ingester disk.
     ingester_data_disk_size: '100Gi',
@@ -102,8 +118,34 @@
       'server.grpc.keepalive.ping-without-stream-allowed': true,
     },
 
-    storageConfig:: {},
-    genericBlocksStorageConfig:: {},
+    storageConfig: {
+      'common.storage.backend': $._config.storage_backend,
+    } + (
+      if $._config.storage_backend == 's3' then {
+        'common.storage.s3.endpoint': $._config.storage_s3_endpoint,
+        'common.storage.s3.access-key-id': $._config.storage_s3_access_key_id,
+        'common.storage.s3.secret-access-key': $._config.storage_s3_secret_access_key,
+      }
+      else if $._config.storage_backend == 'azure' then {
+        'common.storage.azure.account-name': $._config.storage_azure_account_name,
+        'common.storage.azure.account-key': $._config.storage_azure_account_key,
+      }
+      else if $._config.storage_backend == 'gcs' then {
+        'common.storage.gcs.service-account': $._config.storage_gcs_service_account,
+      }
+      else {}
+    ),
+
+    blocks_storage_bucket_name: error 'must specify blocks storage bucket name',
+
+    blocksStorageConfig: {
+      [
+      if $._config.storage_backend == 'gcs' then 'blocks-storage.gcs.bucket-name'
+      else if $._config.storage_backend == 's3' then 'blocks-storage.s3.bucket-name'
+      else if $._config.storage_backend == 'azure' then 'blocks-storage.azure.container-name'
+      ]: $._config.blocks_storage_bucket_name,
+    },
+
     queryBlocksStorageConfig:: {
       'blocks-storage.bucket-store.sync-dir': '/data/tsdb',
 
@@ -112,29 +154,6 @@
       'store-gateway.sharding-ring.prefix': '',
       'store-gateway.sharding-ring.replication-factor': $._config.store_gateway_replication_factor,
     },
-    gcsBlocksStorageConfig:: $._config.genericBlocksStorageConfig {
-      'blocks-storage.backend': 'gcs',
-      'blocks-storage.gcs.bucket-name': $._config.blocks_storage_bucket_name,
-    },
-    s3BlocksStorageConfig:: $._config.genericBlocksStorageConfig {
-      'blocks-storage.backend': 's3',
-      'blocks-storage.s3.bucket-name': $._config.blocks_storage_bucket_name,
-      'blocks-storage.s3.endpoint': $._config.blocks_storage_s3_endpoint,
-    },
-    azureBlocksStorageConfig:: $._config.genericBlocksStorageConfig {
-      'blocks-storage.backend': 'azure',
-      'blocks-storage.azure.container-name': $._config.blocks_storage_bucket_name,
-      'blocks-storage.azure.account-name': $._config.blocks_storage_azure_account_name,
-      'blocks-storage.azure.account-key': $._config.blocks_storage_azure_account_key,
-    },
-    // Blocks storage configuration, used only when 'blocks' storage
-    // engine is explicitly enabled.
-    blocksStorageConfig: (
-      if $._config.blocks_storage_backend == 'gcs' then $._config.gcsBlocksStorageConfig
-      else if $._config.blocks_storage_backend == 's3' then $._config.s3BlocksStorageConfig
-      else if $._config.blocks_storage_backend == 'azure' then $._config.azureBlocksStorageConfig
-      else $._config.genericBlocksStorageConfig
-    ),
 
     // Querier component config (shared between the ruler and querier).
     queryConfig: {
@@ -181,33 +200,21 @@
         querySchedulerRingConfig,
 
     ruler_enabled: false,
-    ruler_client_type: error 'you must specify a storage backend type for the ruler (azure, gcs, s3, local)',
+    ruler_storage_backend: $._config.storage_backend,
     ruler_storage_bucket_name: error 'must specify the ruler storage bucket name',
-    ruler_storage_azure_account_name: error 'must specify the ruler storage Azure account name',
-    ruler_storage_azure_account_key: error 'must specify the ruler storage Azure account key',
+    ruler_local_directory: error 'you must specify the local directory for ruler storage',
 
-    rulerClientConfig:
+    rulerStorageConfig:
       {
-        'ruler-storage.backend': $._config.ruler_client_type,
-      } +
-      {
-        gcs: {
-          'ruler-storage.gcs.bucket-name': $._config.ruler_storage_bucket_name,
-        },
-        s3: {
-          'ruler-storage.s3.region': $._config.aws_region,
-          'ruler-storage.s3.bucket-name': $._config.ruler_storage_bucket_name,
-          'ruler-storage.s3.endpoint': 's3.dualstack.%s.amazonaws.com' % $._config.aws_region,
-        },
-        azure: {
-          'ruler-storage.azure.container-name': $._config.ruler_storage_bucket_name,
-          'ruler-storage.azure.account-name': $._config.ruler_storage_azure_account_name,
-          'ruler-storage.azure.account-key': $._config.ruler_storage_azure_account_key,
-        },
-        'local': {
-          'ruler-storage.local.directory': $._config.ruler_local_directory,
-        },
-      }[$._config.ruler_client_type],
+        [
+        if $._config.ruler_storage_backend == 'gcs' then 'ruler-storage.gcs.bucket-name'
+        else if $._config.ruler_storage_backend == 's3' then 'ruler-storage.s3.bucket-name'
+        else if $._config.ruler_storage_backend == 'azure' then 'ruler-storage.azure.container-name'
+        ]: $._config.ruler_storage_bucket_name,
+
+        [if $._config.ruler_storage_backend != $._config.storage_backend then 'ruler-storage.backend']: $._config.ruler_storage_backend,
+        [if $._config.ruler_storage_backend == 'local' then 'ruler-storage.local.directory']: $._config.ruler_local_directory,
+      },
 
     server_http_port: 8080,
 
@@ -219,32 +226,22 @@
       ring_replication_factor: $._config.replication_factor,
     },
 
-    alertmanager_client_type: error 'you must specify a storage backend type for the alertmanager (azure, gcs, s3, local)',
-    alertmanager_s3_bucket_name: error 'you must specify the alertmanager S3 bucket name',
-    alertmanager_gcs_bucket_name: error 'you must specify a GCS bucket name',
-    alertmanager_azure_container_name: error 'you must specify an Azure container name',
+    alertmanager_enabled: false,
+    alertmanager_storage_backend: $._config.storage_backend,
+    alertmanager_storage_bucket_name: error 'you must specify the alertmanager storage bucket name',
+    alertmanager_local_directory: error 'you must specify the local directory for alertmanager storage',
 
-    alertmanagerStorageClientConfig:
+    alertmanagerStorageConfig:
       {
-        'alertmanager-storage.backend': $._config.alertmanager_client_type,
-      } +
-      {
-        azure: {
-          'alertmanager-storage.azure.account-key': $._config.alertmanager_azure_account_key,
-          'alertmanager-storage.azure.account-name': $._config.alertmanager_azure_account_name,
-          'alertmanager-storage.azure.container-name': $._config.alertmanager_azure_container_name,
-        },
-        gcs: {
-          'alertmanager-storage.gcs.bucket-name': $._config.alertmanager_gcs_bucket_name,
-        },
-        s3: {
-          'alertmanager-storage.s3.region': $._config.aws_region,
-          'alertmanager-storage.s3.bucket-name': $._config.alertmanager_s3_bucket_name,
-        },
-        'local': {
-          'alertmanager-storage.local.path': $._config.alertmanager_local_directory,
-        },
-      }[$._config.alertmanager_client_type],
+        [
+        if $._config.alertmanager_storage_backend == 'gcs' then 'alertmanager-storage.gcs.bucket-name'
+        else if $._config.alertmanager_storage_backend == 's3' then 'alertmanager-storage.s3.bucket-name'
+        else if $._config.alertmanager_storage_backend == 'azure' then 'alertmanager-storage.azure.container-name'
+        ]: $._config.alertmanager_storage_bucket_name,
+
+        [if $._config.alertmanager_storage_backend != $._config.storage_backend then 'alertmanager-storage.backend']: $._config.alertmanager_storage_backend,
+        [if $._config.alertmanager_storage_backend == 'local' then 'alertmanager-storage.local.path']: $._config.alertmanager_local_directory,
+      },
 
     // === Per-tenant usage limits. ===
     //
@@ -392,8 +389,6 @@
     multi_kv_config: {},
 
     enable_pod_priorities: true,
-
-    alertmanager_enabled: false,
 
     // Enables query-scheduler component, and reconfigures querier and query-frontend to use it.
     query_scheduler_enabled: true,

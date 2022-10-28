@@ -15,42 +15,35 @@ For more information about the ruler, see [Grafana Mimir ruler]({{< relref "../.
 To enable it, add the following Jsonnet code to the `_config` section:
 
 ```jsonnet
-_config+:: {
-  ruler_enabled: true
-  ruler_client_type: '<type>',
+{
+  _config+:: {
+    ruler_enabled: true,
+    ruler_storage_bucket_name: 'ruler-bucket-name',
+  },
 }
 ```
 
-The `ruler_client_type` option must be one of either `local`, `azure`, `aws`, or `s3`.
+By default, the object storage backend used for the ruler will be the one set by the `$._config.storage_backend` option.
+If desired, you can override it by setting the `$._config.ruler_storage_backend` option.
+The `ruler_storage_backend` option must be one of either `local`, `azure`, `gcs`, or `s3`.
 For more information about the options available for storing ruler state, see [Grafana Mimir ruler: State]({{< relref "../../architecture/components/ruler/index.md#state" >}}).
 
 To get started, use the `local` client type for initial testing:
 
 ```jsonnet
-_config+:: {
-  ruler_enabled: true
-  ruler_client_type: 'local',
-  ruler_local_directory: '/path/to/local/directory',
+{
+  _config+:: {
+    ruler_enabled: true,
+    ruler_storage_backend: 'local',
+    ruler_local_directory: '/path/to/local/directory',
+  },
 }
 ```
 
-If you are using object storage, additional configuration options are required:
+If you are using object storage, you must set `ruler_storage_bucket_name` to the name of the bucket that you want to use.
 
-- Amazon S3 (`s3`)
-
-  - `ruler_storage_bucket_name`
-  - `aws_region`
-
-- Google Cloud Storage (`gcs`)
-
-  - `ruler_storage_bucket_name`
-
-- Azure (`azure`)
-  - `ruler_storage_bucket_name`
-  - `ruler_storage_azure_account_name`
-  - `ruler_storage_azure_account_key`
-
-> **Note:** You need to manually provide the storage credentials for `s3` and `gcs` by using additional command line arguments as necessary. For more information, see [Grafana Mimir configuration parameters: ruler_storage]({{< relref "../../configure/reference-configuration-parameters/index.md#ruler_storage" >}}).
+> **Note:** If ruler object storage credentials differ from the ones defined in the common section, you need to manually provide them by using additional command line arguments.
+> For more information, see [Grafana Mimir configuration parameters: ruler_storage]({{< relref "../../configure/reference-configuration-parameters/index.md#ruler_storage" >}}).
 
 ## Operational modes
 
@@ -60,8 +53,10 @@ For more information about these modes, see [Operational modes]({{< relref "../.
 To enable the remote operational mode, add the following code to the Jsonnet:
 
 ```jsonnet
-_config+:: {
-  ruler_remote_evaluation_enabled: true
+{
+  _config+:: {
+    ruler_remote_evaluation_enabled: true,
+  },
 }
 ```
 
@@ -79,9 +74,11 @@ To perform a zero downtime migration from internal to remote rule evaluation, fo
    Doing so causes the three new and previously listed Kubernetes deployments to start. However, they will not reconfigure the ruler to use them just yet.
 
    ```jsonnet
-   _config+:: {
-     ruler_remote_evaluation_enabled: true
-     ruler_remote_evaluation_migration_enabled: true
+   {
+    _config+:: {
+      ruler_remote_evaluation_enabled: true,
+      ruler_remote_evaluation_migration_enabled: true,
+    },
    }
    ```
 
@@ -94,7 +91,9 @@ To perform a zero downtime migration from internal to remote rule evaluation, fo
 1. Reconfigure the ruler pods to perform remote evaluation, by deploying the following changes:
 
    ```jsonnet
-   _config+:: {
-     ruler_remote_evaluation_enabled: true
+   {
+     _config+:: {
+       ruler_remote_evaluation_enabled: true,
+     },
    }
    ```
