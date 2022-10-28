@@ -536,11 +536,27 @@ type seriesRepair struct {
 	chks []chunks.Meta
 }
 
+// This is tsdb.IndexReader without the PostingsForMatchers method,
+// which index.Reader does not implement.
+type indexReader interface {
+	Symbols() index.StringIter
+	SortedLabelValues(name string, matchers ...*labels.Matcher) ([]string, error)
+	LabelValues(name string, matchers ...*labels.Matcher) ([]string, error)
+	Postings(name string, values ...string) (index.Postings, error)
+	SortedPostings(index.Postings) index.Postings
+	ShardedPostings(p index.Postings, shardIndex, shardCount uint64) index.Postings
+	Series(ref storage.SeriesRef, lset *labels.Labels, chks *[]chunks.Meta) error
+	LabelNames(matchers ...*labels.Matcher) ([]string, error)
+	LabelValueFor(id storage.SeriesRef, label string) (string, error)
+	LabelNamesFor(ids ...storage.SeriesRef) ([]string, error)
+	Close() error
+}
+
 // rewrite writes all data from the readers back into the writers while cleaning
 // up mis-ordered and duplicated chunks.
 func rewrite(
 	logger log.Logger,
-	indexr tsdb.IndexReader, chunkr tsdb.ChunkReader,
+	indexr indexReader, chunkr tsdb.ChunkReader,
 	indexw tsdb.IndexWriter, chunkw tsdb.ChunkWriter,
 	meta *metadata.Meta,
 	ignoreChkFns []ignoreFnType,

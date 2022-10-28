@@ -39,6 +39,20 @@ func CreateBlock(
 	return createBlock(ctx, dir, series, numSamples, mint, maxt, extLset, resolution, false, hashFunc)
 }
 
+// CreateBlockWithTombstone is same as CreateBlock but leaves tombstones which mimics the Prometheus local block.
+func CreateBlockWithTombstone(
+	ctx context.Context,
+	dir string,
+	series []labels.Labels,
+	numSamples int,
+	mint, maxt int64,
+	extLset labels.Labels,
+	resolution int64,
+	hashFunc metadata.HashFunc,
+) (id ulid.ULID, err error) {
+	return createBlock(ctx, dir, series, numSamples, mint, maxt, extLset, resolution, true, hashFunc)
+}
+
 func createBlock(
 	ctx context.Context,
 	dir string,
