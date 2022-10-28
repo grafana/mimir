@@ -44,6 +44,7 @@ type emptySeriesSet struct{}
 
 func (emptySeriesSet) Next() bool                       { return false }
 func (emptySeriesSet) At() (labels.Labels, []AggrChunk) { return nil, nil }
+func (emptySeriesSet) CleanupFunc() func()              { return nil }
 func (emptySeriesSet) Err() error                       { return nil }
 
 // EmptySeriesSet returns a new series set that contains no series.
@@ -84,6 +85,11 @@ func MergeSeriesSets(all ...SeriesSet) SeriesSet {
 type SeriesSet interface {
 	Next() bool
 	At() (labels.Labels, []AggrChunk)
+	// CleanupFunc can return a callback that the caller uses to confirm receiving and processing all the series returned
+	// so far, including the current one. The callback can be used to clean up resources that are backing the series.
+	// The caller should not use the returned chunks after invoking the function returned by cleanup.
+	// Implementations can return a nil function.
+	CleanupFunc() func()
 	Err() error
 }
 
@@ -94,6 +100,7 @@ type mergedSeriesSet struct {
 	lset         labels.Labels
 	chunks       []AggrChunk
 	adone, bdone bool
+	cleanup      func()
 }
 
 func newMergedSeriesSet(a, b SeriesSet) *mergedSeriesSet {
@@ -108,6 +115,10 @@ func newMergedSeriesSet(a, b SeriesSet) *mergedSeriesSet {
 
 func (s *mergedSeriesSet) At() (labels.Labels, []AggrChunk) {
 	return s.lset, s.chunks
+}
+
+func (s *mergedSeriesSet) CleanupFunc() func() {
+	return s.cleanup
 }
 
 func (s *mergedSeriesSet) Err() error {
@@ -137,11 +148,13 @@ func (s *mergedSeriesSet) Next() bool {
 	d := s.compare()
 	if d > 0 {
 		s.lset, s.chunks = s.b.At()
+		s.cleanup = s.b.CleanupFunc()
 		s.bdone = !s.b.Next()
 		return true
 	}
 	if d < 0 {
 		s.lset, s.chunks = s.a.At()
+		s.cleanup = s.a.CleanupFunc()
 		s.adone = !s.a.Next()
 		return true
 	}
@@ -153,8 +166,19 @@ func (s *mergedSeriesSet) Next() bool {
 	_, chksB := s.b.At()
 	s.lset = lset
 
+	cleanupA := s.a.CleanupFunc()
+	cleanupB := s.b.CleanupFunc()
+	s.cleanup = func() {
+		if cleanupA != nil {
+			cleanupA()
+		}
+		if cleanupB != nil {
+			cleanupB()
+		}
+	}
+
 	// Slice reuse is not generally safe with nested merge iterators.
-	// We err on the safe side an create a new slice.
+	// We err on the safe side and create a new slice.
 	s.chunks = make([]AggrChunk, 0, len(chksA)+len(chksB))
 
 	b := 0
@@ -197,10 +221,12 @@ type uniqueSeriesSet struct {
 	SeriesSet
 	done bool
 
-	peek *Series
+	peek        *Series
+	peekCleanup func()
 
-	lset   labels.Labels
-	chunks []AggrChunk
+	lset    labels.Labels
+	chunks  []AggrChunk
+	cleanup func()
 }
 
 func newUniqueSeriesSet(wrapped SeriesSet) *uniqueSeriesSet {
@@ -209,6 +235,10 @@ func newUniqueSeriesSet(wrapped SeriesSet) *uniqueSeriesSet {
 
 func (s *uniqueSeriesSet) At() (labels.Labels, []AggrChunk) {
 	return s.lset, s.chunks
+}
+
+func (s *uniqueSeriesSet) CleanupFunc() func() {
+	return s.cleanup
 }
 
 func (s *uniqueSeriesSet) Next() bool {
@@ -221,14 +251,15 @@ func (s *uniqueSeriesSet) Next() bool {
 			break
 		}
 		lset, chks := s.SeriesSet.At()
+		cleanup := s.SeriesSet.CleanupFunc()
 		if s.peek == nil {
-			s.peek = &Series{Labels: mimirpb.FromLabelsToLabelAdapters(lset), Chunks: chks}
+			s.setPeek(lset, chks, cleanup)
 			continue
 		}
 
 		if labels.Compare(lset, s.peek.PromLabels()) != 0 {
-			s.lset, s.chunks = s.peek.PromLabels(), s.peek.Chunks
-			s.peek = &Series{Labels: mimirpb.FromLabelsToLabelAdapters(lset), Chunks: chks}
+			s.lset, s.chunks, s.cleanup = s.peek.PromLabels(), s.peek.Chunks, s.peekCleanup
+			s.setPeek(lset, chks, cleanup)
 			return true
 		}
 
@@ -241,9 +272,15 @@ func (s *uniqueSeriesSet) Next() bool {
 		return false
 	}
 
-	s.lset, s.chunks = s.peek.PromLabels(), s.peek.Chunks
+	s.lset, s.chunks, s.cleanup = s.peek.PromLabels(), s.peek.Chunks, s.peekCleanup
 	s.peek = nil
+	s.peekCleanup = nil
 	return true
+}
+
+func (s *uniqueSeriesSet) setPeek(lset labels.Labels, chks []AggrChunk, cleanup func()) {
+	s.peek = &Series{Labels: mimirpb.FromLabelsToLabelAdapters(lset), Chunks: chks}
+	s.peekCleanup = cleanup
 }
 
 // Compare returns positive 1 if chunk is smaller -1 if larger than b by min time, then max time.

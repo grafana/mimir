@@ -105,6 +105,11 @@ type BucketStore struct {
 	// Number of goroutines to use when syncing blocks from object storage.
 	blockSyncConcurrency int
 
+	// disableSeriesLoadingInBatches controls whether to load all series and chunks in memory for each Series() call
+	// or to load and unload them in batches
+	disableSeriesLoadingInBatches bool
+	seriesPerBatch                int
+
 	// Query gate which limits the maximum amount of concurrent queries.
 	queryGate gate.Gate
 
@@ -194,6 +199,18 @@ func WithChunkPool(chunkPool pool.Bytes) BucketStoreOption {
 func WithDebugLogging() BucketStoreOption {
 	return func(s *BucketStore) {
 		s.debugLogging = true
+	}
+}
+
+func WithBatchedSeries(enabled bool) BucketStoreOption {
+	return func(s *BucketStore) {
+		s.disableSeriesLoadingInBatches = !enabled
+	}
+}
+
+func WithBatchSeriesSize(seriesPerBatch int) BucketStoreOption {
+	return func(s *BucketStore) {
+		s.seriesPerBatch = seriesPerBatch
 	}
 }
 
@@ -540,6 +557,10 @@ func (s *bucketSeriesSet) At() (labels.Labels, []storepb.AggrChunk) {
 	return s.set[s.i].lset, s.set[s.i].chks
 }
 
+func (s *bucketSeriesSet) CleanupFunc() func() {
+	return nil
+}
+
 func (s *bucketSeriesSet) Err() error {
 	return s.err
 }
@@ -814,6 +835,17 @@ func debugFoundBlockSetOverview(logger log.Logger, mint, maxt, maxResolutionMill
 
 // Series implements the storepb.StoreServer interface.
 func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_SeriesServer) (err error) {
+	defer func() {
+		if err == nil {
+			return
+		}
+		code := codes.Aborted
+		if st, ok := status.FromError(errors.Cause(err)); ok {
+			code = st.Code()
+		}
+		err = status.Error(code, err.Error())
+	}()
+
 	if s.queryGate != nil {
 		tracing.DoWithSpan(srv.Context(), "store_query_gate_ismyturn", func(ctx context.Context, _ tracing.Span) {
 			err = s.queryGate.Start(srv.Context())
@@ -904,29 +936,54 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		if shardSelector != nil {
 			blockSeriesHashCache = s.seriesHashCache.GetBlockCache(b.meta.ULID.String())
 		}
-
 		g.Go(func() error {
-			part, pstats, err := blockSeries(
-				gctx,
-				indexr,
-				chunkr,
-				matchers,
-				shardSelector,
-				blockSeriesHashCache,
-				chunksLimiter,
-				seriesLimiter,
-				req.SkipChunks,
-				req.MinTime, req.MaxTime,
-				req.Aggregates,
-				s.logger,
+			var (
+				pstats *safeQueryStats
+				part   storepb.SeriesSet
+				err    error
 			)
+
+			if s.disableSeriesLoadingInBatches {
+				part, pstats, err = blockSeries(
+					gctx,
+					indexr,
+					chunkr,
+					matchers,
+					shardSelector,
+					blockSeriesHashCache,
+					chunksLimiter,
+					seriesLimiter,
+					req.SkipChunks,
+					req.MinTime, req.MaxTime,
+					req.Aggregates,
+					s.logger,
+				)
+			} else {
+				part, err = batchedBlockSeries(
+					gctx,
+					s.seriesPerBatch,
+					indexr,
+					chunkr,
+					matchers,
+					shardSelector,
+					blockSeriesHashCache,
+					chunksLimiter,
+					seriesLimiter,
+					req.SkipChunks,
+					req.MinTime, req.MaxTime,
+					req.Aggregates,
+					s.logger,
+				)
+			}
 			if err != nil {
 				return errors.Wrapf(err, "fetch series for block %s", b.meta.ULID)
 			}
 
 			mtx.Lock()
 			res = append(res, part)
-			stats = stats.merge(pstats.export())
+			if pstats != nil {
+				stats = stats.merge(pstats.export())
+			}
 			mtx.Unlock()
 
 			return nil
@@ -970,11 +1027,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		err = g.Wait()
 		gspan.Finish()
 		if err != nil {
-			code := codes.Aborted
-			if s, ok := status.FromError(errors.Cause(err)); ok {
-				code = s.Code()
-			}
-			return status.Error(code, err.Error())
+			return
 		}
 		stats.blocksQueried = len(res)
 		stats.getAllDuration = time.Since(begin)
@@ -1004,12 +1057,18 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 			}
 			series.Labels = mimirpb.FromLabelsToLabelAdapters(lset)
 			if err = srv.Send(storepb.NewSeriesResponse(&series)); err != nil {
+				if cleanup := set.CleanupFunc(); cleanup != nil {
+					cleanup()
+				}
 				err = status.Error(codes.Unknown, errors.Wrap(err, "send series response").Error())
 				return
 			}
+			if cleanup := set.CleanupFunc(); cleanup != nil {
+				cleanup()
+			}
 		}
 		if set.Err() != nil {
-			err = status.Error(codes.Unknown, errors.Wrap(set.Err(), "expand series set").Error())
+			err = errors.Wrap(set.Err(), "expand series set")
 			return
 		}
 		stats.mergeDuration = time.Since(begin)
@@ -1031,6 +1090,13 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 	if err = srv.Send(storepb.NewHintsSeriesResponse(anyHints)); err != nil {
 		err = status.Error(codes.Unknown, errors.Wrap(err, "send series response hints").Error())
 		return
+	}
+
+	for _, p := range res {
+		// TODO dimitarvdimitrov this is also hacky. Maybe have a new interface that a SeriesSet can optionally implement which provides stats
+		if batchedSet, ok := p.(*batchedSeriesSet); ok {
+			stats = batchedSet.stats.merge(stats).unsafeStats
+		}
 	}
 
 	if err = srv.Send(storepb.NewStatsResponse(stats.postingsFetchedSizeSum + stats.seriesFetchedSizeSum)); err != nil {

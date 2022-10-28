@@ -5693,6 +5693,28 @@
               "fieldFlag": "blocks-storage.bucket-store.max-concurrent-reject-over-limit",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "batched_series_loading",
+              "required": false,
+              "desc": "If enabled, store-gateway will load series from the store in batches instead of loading them all in memory.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.bucket-store.batched-series-loading",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "batch_series_size",
+              "required": false,
+              "desc": "How many series to fetch per batch when batched-series-loading is enabled.",
+              "fieldValue": null,
+              "fieldDefaultValue": 65536,
+              "fieldFlag": "blocks-storage.bucket-store.batch-series-size",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
