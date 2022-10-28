@@ -17,26 +17,26 @@ type seriesChunksSetIterator interface {
 type seriesChunksSet struct {
 	series []seriesEntry
 
-	bytesReleaser releaser
+	// chunksReleaser releases the memory used to allocate series chunks.
+	chunksReleaser chunksReleaser
 }
 
 //nolint:unused // dead code while we are working on PR 3355
-type releaser interface{ Release() }
+type chunksReleaser interface {
+	// Release the memory used to allocate series chunks.
+	Release()
+}
 
 //nolint:unused // dead code while we are working on PR 3355
 func (b *seriesChunksSet) release() {
-	if len(b.series) == 0 {
-		// There's nothing to release, just return; this also allows to call release() on a zero-valued seriesChunksSet.
-		return
+	if b.chunksReleaser != nil {
+		b.chunksReleaser.Release()
+		b.chunksReleaser = nil
 	}
 
-	b.bytesReleaser.Release()
-
-	// Make it harder to do a "use after free".
 	b.series = nil
 }
 
-//nolint:unused // dead code while we are working on PR 3355
 func (b seriesChunksSet) len() int {
 	return len(b.series)
 }
