@@ -538,7 +538,7 @@ local filename = 'mimir-tenants.json';
         local title = 'Rate of Read Requests';
         $.panel(title) +
         $.queryPanel(
-          'sum(rate(cortex_query_frontend_queries_total{cluster=~"$cluster", namespace=~"$namespace", user="$user"}[$__rate_interval]))',
+          'sum(rate(cortex_query_frontend_queries_total{%s, user="$user"}[$__rate_interval]))' % $.namespaceMatcher(),
           'rate'
         )
       )
@@ -547,7 +547,7 @@ local filename = 'mimir-tenants.json';
         $.panel(title) +
         $.queryPanel(
           [
-            'sum(cortex_query_scheduler_queue_length{cluster=~"$cluster", namespace=~"$namespace", container="query-scheduler", user="$user"})',
+            'sum(cortex_query_scheduler_queue_length{%s, container="query-scheduler", user="$user"})' % $.namespaceMatcher(),
           ],
           [
             'queue length',
@@ -559,8 +559,8 @@ local filename = 'mimir-tenants.json';
         $.panel(title) +
         $.queryPanel(
           [
-            'sum(rate({cluster=~"$cluster", namespace=~"$namespace",name=~"query-frontend.*"} |= "msg=\\"query stats\\"" |= "user=$user" |= "status=success" [$__interval]))',
-            'sum(rate({cluster=~"$cluster",namespace=~"$namespace",name=~"query-frontend.*"} |= "msg=\\"query stats\\"" |= "user=$user" |= "status=failed" [$__interval]))',
+            'sum(rate({%s, name=~"query-frontend.*"} |= "msg=\\"query stats\\"" |= "user=$user" |= "status=success" [$__interval]))' % $.namespaceMatcher(),
+            'sum(rate({%s, name=~"query-frontend.*"} |= "msg=\\"query stats\\"" |= "user=$user" |= "status=failed" [$__interval]))' % $.namespaceMatcher(),
           ],
           [
             'success rate',
@@ -575,9 +575,9 @@ local filename = 'mimir-tenants.json';
         $.panel(title) +
         $.queryPanel(
           [
-            'quantile_over_time(0.99, {cluster=~"$cluster", namespace=~"$namespace",name=~"query-frontend.*"}  |= "msg=\\"query stats\\"" |= "user=$user" | logfmt | unwrap duration(response_time)[$__interval]) by (user)',
-            'quantile_over_time(0.50, {cluster=~"$cluster", namespace=~"$namespace",name=~"query-frontend.*"}  |= "msg=\\"query stats\\"" |= "user=$user" | logfmt | unwrap duration(response_time)[$__interval]) by (user)',
-            'quantile_over_time(0.95, {cluster=~"$cluster", namespace=~"$namespace",name=~"query-frontend.*"}  |= "msg=\\"query stats\\"" |= "user=$user" | logfmt | unwrap duration(response_time)[$__interval]) by (user)',
+            'quantile_over_time(0.99, {%s ,name=~"query-frontend.*"}  |= "msg=\\"query stats\\"" |= "user=$user" | logfmt | unwrap duration(response_time)[$__interval]) by (user)' % $.namespaceMatcher(),
+            'quantile_over_time(0.50, {%s ,name=~"query-frontend.*"}  |= "msg=\\"query stats\\"" |= "user=$user" | logfmt | unwrap duration(response_time)[$__interval]) by (user)' % $.namespaceMatcher(),
+            'quantile_over_time(0.95, {%s ,name=~"query-frontend.*"}  |= "msg=\\"query stats\\"" |= "user=$user" | logfmt | unwrap duration(response_time)[$__interval]) by (user)' % $.namespaceMatcher(),
           ],
           [
             'p99',
