@@ -265,6 +265,10 @@ Usage of ./cmd/mimir/mimir:
     	User assigned identity. If empty, then System assigned identity is used.
   -blocks-storage.backend string
     	Backend storage to use. Supported backends are: s3, gcs, azure, swift, filesystem. (default "filesystem")
+  -blocks-storage.bucket-store.batch-series-size int
+    	[experimental] How many series to fetch per batch when batched-series-loading is enabled. (default 65536)
+  -blocks-storage.bucket-store.batched-series-loading
+    	[experimental] If enabled, store-gateway will load series from the store in batches instead of loading them all in memory.
   -blocks-storage.bucket-store.block-sync-concurrency int
     	Maximum number of concurrent blocks synching per tenant. (default 20)
   -blocks-storage.bucket-store.bucket-index.enabled
