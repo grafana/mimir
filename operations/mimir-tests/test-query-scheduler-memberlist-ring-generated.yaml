@@ -426,7 +426,7 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=distributor
-        image: grafana/mimir:2.3.1
+        image: grafana/mimir:2.4.0
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -522,7 +522,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1024"
-        image: grafana/mimir:2.3.1
+        image: grafana/mimir:2.4.0
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -601,7 +601,7 @@ spec:
         - -server.http-write-timeout=1m
         - -store.max-query-length=12000h
         - -target=query-frontend
-        image: grafana/mimir:2.3.1
+        image: grafana/mimir:2.4.0
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -679,7 +679,7 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=query-scheduler
-        image: grafana/mimir:2.3.1
+        image: grafana/mimir:2.4.0
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -767,7 +767,7 @@ spec:
         - -store-gateway.sharding-ring.store=memberlist
         - -store.max-query-length=768h
         - -target=ruler
-        image: grafana/mimir:2.3.1
+        image: grafana/mimir:2.4.0
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
@@ -844,7 +844,7 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
-        image: grafana/mimir:2.3.1
+        image: grafana/mimir:2.4.0
         imagePullPolicy: IfNotPresent
         name: alertmanager
         ports:
@@ -940,7 +940,7 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=compactor
-        image: grafana/mimir:2.3.1
+        image: grafana/mimir:2.4.0
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -1043,7 +1043,7 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=ingester
-        image: grafana/mimir:2.3.1
+        image: grafana/mimir:2.4.0
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -1372,7 +1372,7 @@ spec:
         - -store-gateway.sharding-ring.tokens-file-path=/data/tokens
         - -store-gateway.sharding-ring.wait-stability-min-duration=1m
         - -target=store-gateway
-        image: grafana/mimir:2.3.1
+        image: grafana/mimir:2.4.0
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
