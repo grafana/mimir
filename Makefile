@@ -196,7 +196,7 @@ GO_FLAGS := -ldflags "\
 		-X $(MIMIR_VERSION).Branch=$(GIT_BRANCH) \
 		-X $(MIMIR_VERSION).Revision=$(GIT_REVISION) \
 		-X $(MIMIR_VERSION).Version=$(VERSION) \
-		-extldflags \"-static\" -s -w" -tags netgo
+		-extldflags \"-static\" -s -w" -tags netgo,stringlabels
 
 ifeq ($(BUILD_IN_CONTAINER),true)
 
@@ -321,15 +321,15 @@ format: ## Run gofmt and goimports.
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec goimports -w -local github.com/grafana/mimir {} \;
 
 test: ## Run all unit tests.
-	go test -timeout 30m ./...
+	go test -tags stringlabels -timeout 30m ./...
 
 test-with-race: ## Run all unit tests with data race detect.
-	go test -tags netgo -timeout 30m -race -count 1 ./...
+	go test -tags netgo,stringlabels -timeout 30m -race -count 1 ./...
 
 cover: ## Run all unit tests with code coverage and generates reports.
 	$(eval COVERDIR := $(shell mktemp -d coverage.XXXXXXXXXX))
 	$(eval COVERFILE := $(shell mktemp $(COVERDIR)/unit.XXXXXXXXXX))
-	go test -tags netgo -timeout 30m -race -count 1 -coverprofile=$(COVERFILE) ./...
+	go test -tags netgo,stringlabels -timeout 30m -race -count 1 -coverprofile=$(COVERFILE) ./...
 	go tool cover -html=$(COVERFILE) -o cover.html
 	go tool cover -func=cover.html | tail -n1
 
