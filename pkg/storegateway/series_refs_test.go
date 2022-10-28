@@ -656,12 +656,15 @@ func TestSeriesSetWithoutChunks(t *testing.T) {
 		},
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
 	for name, testCase := range testCases {
 		name, testCase := name, testCase
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			chainedSet := newSeriesSetWithoutChunks(testCase.input)
+			chainedSet := newSeriesSetWithoutChunks(ctx, testCase.input)
 			actual := readAllSeriesLabels(chainedSet)
 			require.NoError(t, chainedSet.Err())
 			assert.Equal(t, testCase.expected, actual)

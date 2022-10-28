@@ -1055,6 +1055,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 		NewBucketStoreMetrics(nil),
 		WithLogger(logger),
 		WithChunkPool(chunkPool),
+		WithStreamingSeriesPerBatch(65536),
 	)
 	assert.NoError(t, err)
 
@@ -1259,6 +1260,7 @@ func TestBucketSeries_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 		queryGate:            gate.NewNoop(),
 		chunksLimiterFactory: NewChunksLimiterFactory(0),
 		seriesLimiterFactory: NewSeriesLimiterFactory(0),
+		maxSeriesPerBatch:    65536,
 		chunkPool:            chunkPool,
 	}
 
@@ -1410,6 +1412,7 @@ func TestSeries_ErrorUnmarshallingRequestHints(t *testing.T) {
 		NewBucketStoreMetrics(nil),
 		WithLogger(logger),
 		WithIndexCache(indexCache),
+		WithStreamingSeriesPerBatch(65536),
 	)
 	assert.NoError(t, err)
 	defer func() { assert.NoError(t, store.RemoveBlocksAndClose()) }()
@@ -1500,6 +1503,7 @@ func TestSeries_BlockWithMultipleChunks(t *testing.T) {
 		NewBucketStoreMetrics(nil),
 		WithLogger(logger),
 		WithIndexCache(indexCache),
+		WithStreamingSeriesPerBatch(65536),
 	)
 	assert.NoError(t, err)
 	assert.NoError(t, store.SyncBlocks(context.Background()))
@@ -1665,6 +1669,7 @@ func setupStoreForHintsTest(t *testing.T) (test.TB, *BucketStore, []*storepb.Ser
 		NewBucketStoreMetrics(nil),
 		WithLogger(logger),
 		WithIndexCache(indexCache),
+		WithStreamingSeriesPerBatch(65536),
 	)
 	assert.NoError(tb, err)
 	assert.NoError(tb, store.SyncBlocks(context.Background()))

@@ -205,6 +205,7 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 		NewBucketStoreMetrics(nil),
 		WithLogger(s.logger),
 		WithIndexCache(s.cache),
+		WithStreamingSeriesPerBatch(65536),
 	)
 	assert.NoError(t, err)
 	t.Cleanup(func() {
