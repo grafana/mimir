@@ -9,7 +9,6 @@ CURR_DIR="$(dirname "$0")"
 
 check_required_setup
 find_last_release
-find_prev_release
 
 # Build binaries and packages.
 echo "Building binaries (this may take a while)..."
