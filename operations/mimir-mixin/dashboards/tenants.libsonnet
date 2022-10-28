@@ -530,5 +530,79 @@ local filename = 'mimir-tenants.json';
         ) +
         { legend: { show: false } },
       )
-    ),
+    )
+
+    .addRow(
+      $.row("Read Path Insights")
+      .addPanel(
+        local title = 'Rate of Read Requests';
+        $.panel(title) +
+        $.queryPanel(
+            'sum(rate(cortex_query_frontend_queries_total{cluster=~"$cluster", namespace=~"$namespace", user="$user"}[$__rate_interval]))',
+            'rate'
+        )
+      )
+      .addPanel(
+        local title = 'Number of Queries Queued';
+        $.panel(title) +
+        $.queryPanel(
+          [
+            'sum(cortex_query_scheduler_queue_length{cluster=~"$cluster", namespace=~"$namespace", container="query-scheduler", user="$user"})'
+          ],
+          [
+            'queue length'
+          ],
+        )
+      )
+      .addPanel(
+        local title = 'Query Success vs Failure Rate';
+        $.panel(title) +
+        $.queryPanel(
+          [
+            'sum(rate({cluster=~"$cluster", namespace=~"$namespace",name=~"query-frontend.*"} |= "msg=\\"query stats\\"" |= "user=$user" |= "status=success" [$__interval]))',
+            'sum(rate({cluster=~"$cluster",namespace=~"$namespace",name=~"query-frontend.*"} |= "msg=\\"query stats\\"" |= "user=$user" |= "status=failed" [$__interval]))'
+          ],
+          [
+            'success rate',
+            'failure rate'
+          ],
+        ) + {
+          datasource: '${lokidatasource}'
+        }
+      )
+      .addPanel(
+        local title = 'Query Response Time';
+        $.panel(title) +
+        $.queryPanel(
+          [
+            'quantile_over_time(0.99, {cluster=~"$cluster", namespace=~"$namespace",name=~"query-frontend.*"}  |= "msg=\\"query stats\\"" |= "user=$user" | logfmt | unwrap duration(response_time)[$__interval]) by (user)',
+            'quantile_over_time(0.50, {cluster=~"$cluster", namespace=~"$namespace",name=~"query-frontend.*"}  |= "msg=\\"query stats\\"" |= "user=$user" | logfmt | unwrap duration(response_time)[$__interval]) by (user)',
+            'quantile_over_time(0.95, {cluster=~"$cluster", namespace=~"$namespace",name=~"query-frontend.*"}  |= "msg=\\"query stats\\"" |= "user=$user" | logfmt | unwrap duration(response_time)[$__interval]) by (user)'
+          ],
+          [
+            'p99',
+            'p50',
+            'p95'
+          ],
+        ) + {
+          datasource: '${lokidatasource}'
+        }
+      )         
+    )
+    + {
+      templating+: {
+        list+: [
+          // Add the Loki datasource.
+          {
+            type: 'datasource',
+            name: 'lokidatasource',
+            label: 'Logs datasource',
+            query: 'loki',
+            hide: 0,
+            includeAll: false,
+            multi: false,
+          },
+        ],
+      },
+    }
 }
