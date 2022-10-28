@@ -3022,6 +3022,12 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.max-concurrent-reject-over-limit
   [max_concurrent_reject_over_limit: <boolean> | default = false]
 
+  # (experimental) If larger than 0, store-gateway will load series from the
+  # store in batches and stream them to the querier instead of loading them all
+  # in memory. This option controls how many series to fetch per batch
+  # CLI flag: -blocks-storage.bucket-store.batch-series-size
+  [streaming_series_batch_size: <int> | default = 0]
+
 tsdb:
   # Directory to store TSDBs (including WAL) in the ingesters. This directory is
   # required to be persisted between restarts.

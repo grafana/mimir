@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/runutil"
+	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -48,7 +49,20 @@ func newBucketChunkReader(ctx context.Context, block *bucketBlock, chunkBytes *p
 
 func (r *bucketChunkReader) Close() error {
 	r.block.pendingReaders.Done()
+	r.reset(nil)
 	return nil
+}
+
+// reset resets the chunks scheduled for loading. It does not release any loaded chunks.
+// Use the injected pool.BatchBytes to release the bytes.
+func (r *bucketChunkReader) reset(chunkBytes *pool.BatchBytes) {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+	r.chunkBytes = chunkBytes
+
+	for i := range r.toLoad {
+		r.toLoad[i] = r.toLoad[i][:0]
+	}
 }
 
 // addLoad adds the chunk with id to the data set to be fetched.
@@ -254,4 +268,54 @@ func (b rawChunk) Appender() (chunkenc.Appender, error) {
 
 func (b rawChunk) NumSamples() int {
 	panic("invalid call")
+}
+
+type chunkReaders struct {
+	chunkBytesReleaser *pool.BatchBytes
+	chunkBytesPool     pool.Bytes
+	readers            map[ulid.ULID]chunkReader
+}
+
+type chunkReader interface {
+	io.Closer
+
+	addLoad(id chunks.ChunkRef, seriesEntry, chunk int) error
+	load(result []seriesEntry, _ []storepb.Aggr, stats *safeQueryStats) error
+	reset(chunkBytes *pool.BatchBytes)
+}
+
+func newChunkReaders(readersMap map[ulid.ULID]chunkReader, chunkBytes *pool.BatchBytes, chunkBytesPool pool.Bytes) *chunkReaders {
+	return &chunkReaders{
+		chunkBytesPool:     chunkBytesPool,
+		chunkBytesReleaser: chunkBytes,
+		readers:            readersMap,
+	}
+}
+
+func (r chunkReaders) addLoad(blockID ulid.ULID, id chunks.ChunkRef, seriesEntry, chunk int) error {
+	return r.readers[blockID].addLoad(id, seriesEntry, chunk)
+}
+
+func (r chunkReaders) load(entries []seriesEntry, stats *safeQueryStats) error {
+	g := &errgroup.Group{}
+	for _, reader := range r.readers {
+		reader := reader
+		g.Go(func() error {
+			return reader.load(entries, nil, stats)
+		})
+	}
+
+	// Block until all goroutines are done. We need to wait for all goroutines and
+	// can't return on first error, otherwise a subsequent release of the bytes pool
+	// could cause a race condition.
+	return g.Wait()
+}
+
+// reset resets the chunks scheduled for loading. It does not release any loaded chunks.
+// Use chunkBytesReleaser.Release before calling reset to release the bytes.
+func (r *chunkReaders) reset() {
+	r.chunkBytesReleaser = &pool.BatchBytes{Delegate: r.chunkBytesPool}
+	for _, reader := range r.readers {
+		reader.reset(r.chunkBytesReleaser)
+	}
 }
