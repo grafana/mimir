@@ -17,7 +17,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/efficientgo/tools/core/pkg/testutil"
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
@@ -25,11 +24,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	e2eutil "github.com/grafana/mimir/pkg/storegateway/testhelper"
-	copyutil "github.com/grafana/mimir/pkg/util/test"
+	testutil "github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestIsBlockDir(t *testing.T) {
@@ -68,7 +68,7 @@ func TestIsBlockDir(t *testing.T) {
 	} {
 		t.Run(tc.input, func(t *testing.T) {
 			id, ok := IsBlockDir(tc.input)
-			testutil.Equals(t, tc.bdir, ok)
+			require.Equal(t, tc.bdir, ok)
 
 			if id.Compare(tc.id) != 0 {
 				t.Errorf("expected %s got %s", tc.id, id)
@@ -79,7 +79,7 @@ func TestIsBlockDir(t *testing.T) {
 }
 
 func TestUpload(t *testing.T) {
-	defer testutil.TolerantVerifyLeak(t)
+	testutil.VerifyNoLeak(t)
 
 	ctx := context.Background()
 
@@ -93,61 +93,55 @@ func TestUpload(t *testing.T) {
 		{{Name: "a", Value: "4"}},
 		{{Name: "b", Value: "1"}},
 	}, 100, 0, 1000, labels.Labels{{Name: "ext1", Value: "val1"}}, 124, metadata.NoneFunc)
-	testutil.Ok(t, err)
-	testutil.Ok(t, os.MkdirAll(path.Join(tmpDir, "test", b1.String()), os.ModePerm))
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(path.Join(tmpDir, "test", b1.String()), os.ModePerm))
 
 	{
 		// Wrong dir.
 		err := Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "not-existing"), metadata.NoneFunc)
-		testutil.NotOk(t, err)
-		testutil.Assert(t, strings.HasSuffix(err.Error(), "/not-existing: no such file or directory"), "")
+		require.ErrorContains(t, err, "/not-existing: no such file or directory")
 	}
 	{
 		// Wrong existing dir (not a block).
 		err := Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test"), metadata.NoneFunc)
-		testutil.NotOk(t, err)
-		testutil.Equals(t, "not a block dir: ulid: bad data size when unmarshaling", err.Error())
+		require.ErrorContains(t, err, "not a block dir: ulid: bad data size when unmarshaling")
 	}
 	{
 		// Empty block dir.
 		err := Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), metadata.NoneFunc)
-		testutil.NotOk(t, err)
-		testutil.Assert(t, strings.HasSuffix(err.Error(), "/meta.json: no such file or directory"), "")
+		require.ErrorContains(t, err, "/meta.json: no such file or directory")
 	}
-	copyutil.Copy(t, path.Join(tmpDir, b1.String(), MetaFilename), path.Join(tmpDir, "test", b1.String(), MetaFilename))
+	testutil.Copy(t, path.Join(tmpDir, b1.String(), MetaFilename), path.Join(tmpDir, "test", b1.String(), MetaFilename))
 	{
 		// Missing chunks.
 		err := Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), metadata.NoneFunc)
-		testutil.NotOk(t, err)
-		testutil.Assert(t, strings.HasSuffix(err.Error(), "/chunks: no such file or directory"), err.Error())
+		require.ErrorContains(t, err, "/chunks: no such file or directory")
 	}
-	testutil.Ok(t, os.MkdirAll(path.Join(tmpDir, "test", b1.String(), ChunksDirname), os.ModePerm))
-	copyutil.Copy(t, path.Join(tmpDir, b1.String(), ChunksDirname, "000001"), path.Join(tmpDir, "test", b1.String(), ChunksDirname, "000001"))
+	require.NoError(t, os.MkdirAll(path.Join(tmpDir, "test", b1.String(), ChunksDirname), os.ModePerm))
+	testutil.Copy(t, path.Join(tmpDir, b1.String(), ChunksDirname, "000001"), path.Join(tmpDir, "test", b1.String(), ChunksDirname, "000001"))
 	{
 		// Missing index file.
 		err := Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), metadata.NoneFunc)
-		testutil.NotOk(t, err)
-		testutil.Assert(t, strings.HasSuffix(err.Error(), "/index: no such file or directory"), "")
+		require.ErrorContains(t, err, "/index: no such file or directory")
 	}
-	copyutil.Copy(t, path.Join(tmpDir, b1.String(), IndexFilename), path.Join(tmpDir, "test", b1.String(), IndexFilename))
-	testutil.Ok(t, os.Remove(path.Join(tmpDir, "test", b1.String(), MetaFilename)))
+	testutil.Copy(t, path.Join(tmpDir, b1.String(), IndexFilename), path.Join(tmpDir, "test", b1.String(), IndexFilename))
+	require.NoError(t, os.Remove(path.Join(tmpDir, "test", b1.String(), MetaFilename)))
 	{
 		// Missing meta.json file.
 		err := Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), metadata.NoneFunc)
-		testutil.NotOk(t, err)
-		testutil.Assert(t, strings.HasSuffix(err.Error(), "/meta.json: no such file or directory"), "")
+		require.ErrorContains(t, err, "/meta.json: no such file or directory")
 	}
-	copyutil.Copy(t, path.Join(tmpDir, b1.String(), MetaFilename), path.Join(tmpDir, "test", b1.String(), MetaFilename))
+	testutil.Copy(t, path.Join(tmpDir, b1.String(), MetaFilename), path.Join(tmpDir, "test", b1.String(), MetaFilename))
 	{
 		// Full block.
-		testutil.Ok(t, Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), metadata.NoneFunc))
-		testutil.Equals(t, 3, len(bkt.Objects()))
-		testutil.Equals(t, 3751, len(bkt.Objects()[path.Join(b1.String(), ChunksDirname, "000001")]))
-		testutil.Equals(t, 401, len(bkt.Objects()[path.Join(b1.String(), IndexFilename)]))
-		testutil.Equals(t, 570, len(bkt.Objects()[path.Join(b1.String(), MetaFilename)]))
+		require.NoError(t, Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), metadata.NoneFunc))
+		require.Equal(t, 3, len(bkt.Objects()))
+		require.Equal(t, 3751, len(bkt.Objects()[path.Join(b1.String(), ChunksDirname, "000001")]))
+		require.Equal(t, 401, len(bkt.Objects()[path.Join(b1.String(), IndexFilename)]))
+		require.Equal(t, 570, len(bkt.Objects()[path.Join(b1.String(), MetaFilename)]))
 
 		// File stats are gathered.
-		testutil.Equals(t, fmt.Sprintf(`{
+		require.Equal(t, fmt.Sprintf(`{
 	"ulid": "%s",
 	"minTime": 0,
 	"maxTime": 1000,
@@ -191,11 +185,11 @@ func TestUpload(t *testing.T) {
 	}
 	{
 		// Test Upload is idempotent.
-		testutil.Ok(t, Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), metadata.NoneFunc))
-		testutil.Equals(t, 3, len(bkt.Objects()))
-		testutil.Equals(t, 3751, len(bkt.Objects()[path.Join(b1.String(), ChunksDirname, "000001")]))
-		testutil.Equals(t, 401, len(bkt.Objects()[path.Join(b1.String(), IndexFilename)]))
-		testutil.Equals(t, 570, len(bkt.Objects()[path.Join(b1.String(), MetaFilename)]))
+		require.NoError(t, Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), metadata.NoneFunc))
+		require.Equal(t, 3, len(bkt.Objects()))
+		require.Equal(t, 3751, len(bkt.Objects()[path.Join(b1.String(), ChunksDirname, "000001")]))
+		require.Equal(t, 401, len(bkt.Objects()[path.Join(b1.String(), IndexFilename)]))
+		require.Equal(t, 570, len(bkt.Objects()[path.Join(b1.String(), MetaFilename)]))
 	}
 	{
 		// Upload with no external labels should be blocked.
@@ -206,11 +200,11 @@ func TestUpload(t *testing.T) {
 			{{Name: "a", Value: "4"}},
 			{{Name: "b", Value: "1"}},
 		}, 100, 0, 1000, nil, 124, metadata.NoneFunc)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		err = Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, b2.String()), metadata.NoneFunc)
-		testutil.NotOk(t, err)
-		testutil.Equals(t, "empty external labels are not allowed for Thanos block", err.Error())
-		testutil.Equals(t, 3, len(bkt.Objects()))
+		require.Error(t, err)
+		require.Equal(t, "empty external labels are not allowed for Thanos block", err.Error())
+		require.Equal(t, 3, len(bkt.Objects()))
 	}
 	{
 		// No external labels with UploadPromBlocks.
@@ -221,18 +215,18 @@ func TestUpload(t *testing.T) {
 			{{Name: "a", Value: "4"}},
 			{{Name: "b", Value: "1"}},
 		}, 100, 0, 1000, nil, 124, metadata.NoneFunc)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		err = UploadPromBlock(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, b2.String()), metadata.NoneFunc)
-		testutil.Ok(t, err)
-		testutil.Equals(t, 6, len(bkt.Objects()))
-		testutil.Equals(t, 3736, len(bkt.Objects()[path.Join(b2.String(), ChunksDirname, "000001")]))
-		testutil.Equals(t, 401, len(bkt.Objects()[path.Join(b2.String(), IndexFilename)]))
-		testutil.Equals(t, 549, len(bkt.Objects()[path.Join(b2.String(), MetaFilename)]))
+		require.NoError(t, err)
+		require.Equal(t, 6, len(bkt.Objects()))
+		require.Equal(t, 3736, len(bkt.Objects()[path.Join(b2.String(), ChunksDirname, "000001")]))
+		require.Equal(t, 401, len(bkt.Objects()[path.Join(b2.String(), IndexFilename)]))
+		require.Equal(t, 549, len(bkt.Objects()[path.Join(b2.String(), MetaFilename)]))
 	}
 }
 
 func TestDelete(t *testing.T) {
-	defer testutil.TolerantVerifyLeak(t)
+	testutil.VerifyNoLeak(t)
 	ctx := context.Background()
 
 	tmpDir := t.TempDir()
@@ -246,16 +240,16 @@ func TestDelete(t *testing.T) {
 			{{Name: "a", Value: "4"}},
 			{{Name: "b", Value: "1"}},
 		}, 100, 0, 1000, labels.Labels{{Name: "ext1", Value: "val1"}}, 124, metadata.NoneFunc)
-		testutil.Ok(t, err)
-		testutil.Ok(t, Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, b1.String()), metadata.NoneFunc))
-		testutil.Equals(t, 3, len(bkt.Objects()))
+		require.NoError(t, err)
+		require.NoError(t, Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, b1.String()), metadata.NoneFunc))
+		require.Equal(t, 3, len(bkt.Objects()))
 
 		markedForDeletion := promauto.With(prometheus.NewRegistry()).NewCounter(prometheus.CounterOpts{Name: "test"})
-		testutil.Ok(t, MarkForDeletion(ctx, log.NewNopLogger(), bkt, b1, "", markedForDeletion))
+		require.NoError(t, MarkForDeletion(ctx, log.NewNopLogger(), bkt, b1, "", markedForDeletion))
 
 		// Full delete.
-		testutil.Ok(t, Delete(ctx, log.NewNopLogger(), bkt, b1))
-		testutil.Equals(t, 0, len(bkt.Objects()))
+		require.NoError(t, Delete(ctx, log.NewNopLogger(), bkt, b1))
+		require.Equal(t, 0, len(bkt.Objects()))
 	}
 	{
 		b2, err := e2eutil.CreateBlock(ctx, tmpDir, []labels.Labels{
@@ -265,19 +259,19 @@ func TestDelete(t *testing.T) {
 			{{Name: "a", Value: "4"}},
 			{{Name: "b", Value: "1"}},
 		}, 100, 0, 1000, labels.Labels{{Name: "ext1", Value: "val1"}}, 124, metadata.NoneFunc)
-		testutil.Ok(t, err)
-		testutil.Ok(t, Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, b2.String()), metadata.NoneFunc))
-		testutil.Equals(t, 3, len(bkt.Objects()))
+		require.NoError(t, err)
+		require.NoError(t, Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, b2.String()), metadata.NoneFunc))
+		require.Equal(t, 3, len(bkt.Objects()))
 
 		// Remove meta.json and check if delete can delete it.
-		testutil.Ok(t, bkt.Delete(ctx, path.Join(b2.String(), MetaFilename)))
-		testutil.Ok(t, Delete(ctx, log.NewNopLogger(), bkt, b2))
-		testutil.Equals(t, 0, len(bkt.Objects()))
+		require.NoError(t, bkt.Delete(ctx, path.Join(b2.String(), MetaFilename)))
+		require.NoError(t, Delete(ctx, log.NewNopLogger(), bkt, b2))
+		require.Equal(t, 0, len(bkt.Objects()))
 	}
 }
 
 func TestMarkForDeletion(t *testing.T) {
-	defer testutil.TolerantVerifyLeak(t)
+	testutil.VerifyNoLeak(t)
 	ctx := context.Background()
 
 	tmpDir := t.TempDir()
@@ -301,8 +295,8 @@ func TestMarkForDeletion(t *testing.T) {
 					DeletionTime: time.Now().Unix(),
 					Version:      metadata.DeletionMarkVersion1,
 				})
-				testutil.Ok(t, err)
-				testutil.Ok(t, bkt.Upload(ctx, path.Join(id.String(), metadata.DeletionMarkFilename), bytes.NewReader(deletionMark)))
+				require.NoError(t, err)
+				require.NoError(t, bkt.Upload(ctx, path.Join(id.String(), metadata.DeletionMarkFilename), bytes.NewReader(deletionMark)))
 			},
 			blocksMarked: 0,
 		},
@@ -316,22 +310,22 @@ func TestMarkForDeletion(t *testing.T) {
 				{{Name: "a", Value: "4"}},
 				{{Name: "b", Value: "1"}},
 			}, 100, 0, 1000, labels.Labels{{Name: "ext1", Value: "val1"}}, 124, metadata.NoneFunc)
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 
 			tcase.preUpload(t, id, bkt)
 
-			testutil.Ok(t, Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, id.String()), metadata.NoneFunc))
+			require.NoError(t, Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, id.String()), metadata.NoneFunc))
 
 			c := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
 			err = MarkForDeletion(ctx, log.NewNopLogger(), bkt, id, "", c)
-			testutil.Ok(t, err)
-			testutil.Equals(t, float64(tcase.blocksMarked), promtest.ToFloat64(c))
+			require.NoError(t, err)
+			require.Equal(t, float64(tcase.blocksMarked), promtest.ToFloat64(c))
 		})
 	}
 }
 
 func TestMarkForNoCompact(t *testing.T) {
-	defer testutil.TolerantVerifyLeak(t)
+	testutil.VerifyNoLeak(t)
 	ctx := context.Background()
 
 	tmpDir := t.TempDir()
@@ -355,8 +349,8 @@ func TestMarkForNoCompact(t *testing.T) {
 					NoCompactTime: time.Now().Unix(),
 					Version:       metadata.NoCompactMarkVersion1,
 				})
-				testutil.Ok(t, err)
-				testutil.Ok(t, bkt.Upload(ctx, path.Join(id.String(), metadata.NoCompactMarkFilename), bytes.NewReader(m)))
+				require.NoError(t, err)
+				require.NoError(t, bkt.Upload(ctx, path.Join(id.String(), metadata.NoCompactMarkFilename), bytes.NewReader(m)))
 			},
 			blocksMarked: 0,
 		},
@@ -370,16 +364,16 @@ func TestMarkForNoCompact(t *testing.T) {
 				{{Name: "a", Value: "4"}},
 				{{Name: "b", Value: "1"}},
 			}, 100, 0, 1000, labels.Labels{{Name: "ext1", Value: "val1"}}, 124, metadata.NoneFunc)
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 
 			tcase.preUpload(t, id, bkt)
 
-			testutil.Ok(t, Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, id.String()), metadata.NoneFunc))
+			require.NoError(t, Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, id.String()), metadata.NoneFunc))
 
 			c := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
 			err = MarkForNoCompact(ctx, log.NewNopLogger(), bkt, id, metadata.ManualNoCompactReason, "", c)
-			testutil.Ok(t, err)
-			testutil.Equals(t, float64(tcase.blocksMarked), promtest.ToFloat64(c))
+			require.NoError(t, err)
+			require.Equal(t, float64(tcase.blocksMarked), promtest.ToFloat64(c))
 		})
 	}
 }
@@ -388,7 +382,7 @@ func TestMarkForNoCompact(t *testing.T) {
 // and tries to download it to the same dir. It should not try
 // to download twice.
 func TestHashDownload(t *testing.T) {
-	defer testutil.TolerantVerifyLeak(t)
+	testutil.VerifyNoLeak(t)
 
 	ctx := context.Background()
 
@@ -401,33 +395,33 @@ func TestHashDownload(t *testing.T) {
 	b1, err := e2eutil.CreateBlockWithTombstone(ctx, tmpDir, []labels.Labels{
 		{{Name: "a", Value: "1"}},
 	}, 100, 0, 1000, labels.Labels{{Name: "ext1", Value: "val1"}}, 42, metadata.SHA256Func)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
-	testutil.Ok(t, Upload(ctx, log.NewNopLogger(), instrumentedBkt, path.Join(tmpDir, b1.String()), metadata.SHA256Func))
-	testutil.Equals(t, 3, len(bkt.Objects()))
+	require.NoError(t, Upload(ctx, log.NewNopLogger(), instrumentedBkt, path.Join(tmpDir, b1.String()), metadata.SHA256Func))
+	require.Equal(t, 3, len(bkt.Objects()))
 
 	m, err := DownloadMeta(ctx, log.NewNopLogger(), bkt, b1)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	for _, fl := range m.Thanos.Files {
 		if fl.RelPath == MetaFilename {
 			continue
 		}
-		testutil.Assert(t, fl.Hash != nil, "expected a hash for %s but got nil", fl.RelPath)
+		require.NotNilf(t, fl.Hash, "expected a hash for %s but got nil", fl.RelPath)
 	}
 
 	// Remove the hash from one file to check if we always download it.
 	m.Thanos.Files[1].Hash = nil
 
 	metaEncoded := strings.Builder{}
-	testutil.Ok(t, m.Write(&metaEncoded))
-	testutil.Ok(t, bkt.Upload(ctx, path.Join(b1.String(), MetaFilename), strings.NewReader(metaEncoded.String())))
+	require.NoError(t, m.Write(&metaEncoded))
+	require.NoError(t, bkt.Upload(ctx, path.Join(b1.String(), MetaFilename), strings.NewReader(metaEncoded.String())))
 
 	// Only downloads MetaFile and IndexFile.
 	{
 		err = Download(ctx, log.NewNopLogger(), instrumentedBkt, m.ULID, path.Join(tmpDir, b1.String()))
-		testutil.Ok(t, err)
-		testutil.Ok(t, promtest.GatherAndCompare(r, strings.NewReader(`
+		require.NoError(t, err)
+		require.NoError(t, promtest.GatherAndCompare(r, strings.NewReader(`
 		# HELP thanos_objstore_bucket_operations_total Total number of all attempted operations against a bucket.
         # TYPE thanos_objstore_bucket_operations_total counter
         thanos_objstore_bucket_operations_total{bucket="test",operation="attributes"} 0
@@ -442,10 +436,10 @@ func TestHashDownload(t *testing.T) {
 
 	// Ensures that we always download MetaFile.
 	{
-		testutil.Ok(t, os.Remove(path.Join(tmpDir, b1.String(), MetaFilename)))
+		require.NoError(t, os.Remove(path.Join(tmpDir, b1.String(), MetaFilename)))
 		err = Download(ctx, log.NewNopLogger(), instrumentedBkt, m.ULID, path.Join(tmpDir, b1.String()))
-		testutil.Ok(t, err)
-		testutil.Ok(t, promtest.GatherAndCompare(r, strings.NewReader(`
+		require.NoError(t, err)
+		require.NoError(t, promtest.GatherAndCompare(r, strings.NewReader(`
 		# HELP thanos_objstore_bucket_operations_total Total number of all attempted operations against a bucket.
         # TYPE thanos_objstore_bucket_operations_total counter
         thanos_objstore_bucket_operations_total{bucket="test",operation="attributes"} 0
@@ -462,10 +456,10 @@ func TestHashDownload(t *testing.T) {
 	// Always downloads MetaFile.
 	// Finally, downloads the IndexFile since we have removed its hash.
 	{
-		testutil.Ok(t, os.RemoveAll(path.Join(tmpDir, b1.String(), ChunksDirname)))
+		require.NoError(t, os.RemoveAll(path.Join(tmpDir, b1.String(), ChunksDirname)))
 		err = Download(ctx, log.NewNopLogger(), instrumentedBkt, m.ULID, path.Join(tmpDir, b1.String()))
-		testutil.Ok(t, err)
-		testutil.Ok(t, promtest.GatherAndCompare(r, strings.NewReader(`
+		require.NoError(t, err)
+		require.NoError(t, promtest.GatherAndCompare(r, strings.NewReader(`
 			# HELP thanos_objstore_bucket_operations_total Total number of all attempted operations against a bucket.
 			# TYPE thanos_objstore_bucket_operations_total counter
 			thanos_objstore_bucket_operations_total{bucket="test",operation="attributes"} 0
@@ -480,7 +474,7 @@ func TestHashDownload(t *testing.T) {
 }
 
 func TestUploadCleanup(t *testing.T) {
-	defer testutil.TolerantVerifyLeak(t)
+	testutil.VerifyNoLeak(t)
 
 	ctx := context.Background()
 
@@ -494,31 +488,31 @@ func TestUploadCleanup(t *testing.T) {
 		{{Name: "a", Value: "4"}},
 		{{Name: "b", Value: "1"}},
 	}, 100, 0, 1000, labels.Labels{{Name: "ext1", Value: "val1"}}, 124, metadata.NoneFunc)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	{
 		errBkt := errBucket{Bucket: bkt, failSuffix: "/index"}
 
 		uploadErr := Upload(ctx, log.NewNopLogger(), errBkt, path.Join(tmpDir, b1.String()), metadata.NoneFunc)
-		testutil.Assert(t, errors.Is(uploadErr, errUploadFailed))
+		require.ErrorIs(t, uploadErr, errUploadFailed)
 
 		// If upload of index fails, block is deleted.
-		testutil.Equals(t, 0, len(bkt.Objects()))
-		testutil.Assert(t, len(bkt.Objects()[path.Join(DebugMetas, fmt.Sprintf("%s.json", b1.String()))]) == 0)
+		require.Equal(t, 0, len(bkt.Objects()))
+		require.Equal(t, 0, len(bkt.Objects()[path.Join(DebugMetas, fmt.Sprintf("%s.json", b1.String()))]))
 	}
 
 	{
 		errBkt := errBucket{Bucket: bkt, failSuffix: "/meta.json"}
 
 		uploadErr := Upload(ctx, log.NewNopLogger(), errBkt, path.Join(tmpDir, b1.String()), metadata.NoneFunc)
-		testutil.Assert(t, errors.Is(uploadErr, errUploadFailed))
+		require.ErrorIs(t, uploadErr, errUploadFailed)
 
 		// If upload of meta.json fails, nothing is cleaned up.
-		testutil.Equals(t, 3, len(bkt.Objects()))
-		testutil.Assert(t, len(bkt.Objects()[path.Join(b1.String(), ChunksDirname, "000001")]) > 0)
-		testutil.Assert(t, len(bkt.Objects()[path.Join(b1.String(), IndexFilename)]) > 0)
-		testutil.Assert(t, len(bkt.Objects()[path.Join(b1.String(), MetaFilename)]) > 0)
-		testutil.Assert(t, len(bkt.Objects()[path.Join(DebugMetas, fmt.Sprintf("%s.json", b1.String()))]) == 0)
+		require.Equal(t, 3, len(bkt.Objects()))
+		require.Greater(t, len(bkt.Objects()[path.Join(b1.String(), ChunksDirname, "000001")]), 0)
+		require.Greater(t, len(bkt.Objects()[path.Join(b1.String(), IndexFilename)]), 0)
+		require.Greater(t, len(bkt.Objects()[path.Join(b1.String(), MetaFilename)]), 0)
+		require.Equal(t, 0, len(bkt.Objects()[path.Join(DebugMetas, fmt.Sprintf("%s.json", b1.String()))]))
 	}
 }
 

@@ -8,8 +8,8 @@ package block
 import (
 	"testing"
 
-	"github.com/efficientgo/tools/core/pkg/testutil"
 	"github.com/oklog/ulid"
+	"github.com/stretchr/testify/require"
 )
 
 func ULID(i int) ulid.ULID { return ulid.MustNew(uint64(i), nil) }
@@ -30,12 +30,11 @@ func Test_ParseRelabelConfig(t *testing.T) {
       source_labels:
       - cluster
     `), SelectorSupportedRelabelActions)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	_, err = ParseRelabelConfig([]byte(`
     - action: labelmap
       regex: "A"
     `), SelectorSupportedRelabelActions)
-	testutil.NotOk(t, err)
-	testutil.Equals(t, "unsupported relabel action: labelmap", err.Error())
+	require.ErrorContains(t, err, "unsupported relabel action: labelmap")
 }
