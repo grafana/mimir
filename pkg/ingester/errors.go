@@ -34,7 +34,7 @@ func makeMetricLimitError(labels labels.Labels, err error) error {
 }
 
 func (e *validationError) Error() string {
-	if e.labels == nil {
+	if e.labels.IsEmpty() {
 		return e.err.Error()
 	}
 	return fmt.Sprintf("%s This is for series %s", e.err.Error(), e.labels.String())
