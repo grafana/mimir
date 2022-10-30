@@ -99,14 +99,15 @@ func BenchmarkMatchesSeries(b *testing.B) {
 		if total < matching {
 			b.Fatal("wrong test setup, total < matching")
 		}
-		lbs := make(labels.Labels, 0, total)
+		builder := labels.NewScratchBuilder(total)
 		for i := 0; i < matching; i++ {
-			lbs = append(lbs, labels.Label{Name: fmt.Sprintf("this_will_match_%d", i), Value: "true"})
+			builder.Add(fmt.Sprintf("this_will_match_%d", i), "true")
 		}
 		for i := matching; i < total; i++ {
-			lbs = append(lbs, labels.Label{Name: fmt.Sprintf("something_else_%d", i), Value: "true"})
+			builder.Add(fmt.Sprintf("something_else_%d", i), "true")
 		}
-		return lbs
+		builder.Sort()
+		return builder.Labels()
 	}
 
 	for i, trackerCount := range trackerCounts {
