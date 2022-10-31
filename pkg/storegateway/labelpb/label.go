@@ -12,11 +12,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"sort"
 	"strings"
 	"unsafe"
 
-	"github.com/cespare/xxhash/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 )
@@ -217,76 +215,4 @@ func (m *ZLabel) Compare(other ZLabel) int {
 		return c
 	}
 	return strings.Compare(m.Value, other.Value)
-}
-
-func (m *ZLabelSet) UnmarshalJSON(entry []byte) error {
-	lbls := labels.Labels{}
-	if err := lbls.UnmarshalJSON(entry); err != nil {
-		return errors.Wrapf(err, "labels: labels field unmarshal: %v", string(entry))
-	}
-	sort.Sort(lbls)
-	m.Labels = ZLabelsFromPromLabels(lbls)
-	return nil
-}
-
-func (m *ZLabelSet) MarshalJSON() ([]byte, error) {
-	return m.PromLabels().MarshalJSON()
-}
-
-// PromLabels return Prometheus labels.Labels without extra allocation.
-func (m *ZLabelSet) PromLabels() labels.Labels {
-	return ZLabelsToPromLabels(m.Labels)
-}
-
-// HashWithPrefix returns a hash for the given prefix and labels.
-func HashWithPrefix(prefix string, lbls []ZLabel) uint64 {
-	// Use xxhash.Sum64(b) for fast path as it's faster.
-	b := make([]byte, 0, 1024)
-	b = append(b, prefix...)
-	b = append(b, sep[0])
-
-	for i, v := range lbls {
-		if len(b)+len(v.Name)+len(v.Value)+2 >= cap(b) {
-			// If labels entry is 1KB allocate do not allocate whole entry.
-			h := xxhash.New()
-			_, _ = h.Write(b)
-			for _, v := range lbls[i:] {
-				_, _ = h.WriteString(v.Name)
-				_, _ = h.Write(sep)
-				_, _ = h.WriteString(v.Value)
-				_, _ = h.Write(sep)
-			}
-			return h.Sum64()
-		}
-		b = append(b, v.Name...)
-		b = append(b, sep[0])
-		b = append(b, v.Value...)
-		b = append(b, sep[0])
-	}
-	return xxhash.Sum64(b)
-}
-
-// ZLabelSets is a sortable list of ZLabelSet. It assumes the label pairs in each ZLabelSet element are already sorted.
-type ZLabelSets []ZLabelSet
-
-func (z ZLabelSets) Len() int { return len(z) }
-
-func (z ZLabelSets) Swap(i, j int) { z[i], z[j] = z[j], z[i] }
-
-func (z ZLabelSets) Less(i, j int) bool {
-	l := 0
-	r := 0
-	var result int
-	lenI, lenJ := len(z[i].Labels), len(z[j].Labels)
-	for l < lenI && r < lenJ {
-		result = z[i].Labels[l].Compare(z[j].Labels[r])
-		if result == 0 {
-			l++
-			r++
-			continue
-		}
-		return result < 0
-	}
-
-	return l == lenI
 }
