@@ -1,13 +1,14 @@
 ---
 aliases:
   - /docs/mimir/latest/operators-guide/configuring/configuring-hash-rings/
+  - /docs/mimir/latest/operators-guide/configure/configuring-hash-rings/
 description: Learn how to configure Grafana Mimir hash rings.
-menuTitle: Configuring hash rings
-title: Configuring Grafana Mimir hash rings
+menuTitle: Configure hash rings
+title: Configure Grafana Mimir hash rings
 weight: 60
 ---
 
-# Configuring Grafana Mimir hash rings
+# Configure Grafana Mimir hash rings
 
 [Hash rings]({{< relref "../architecture/hash-ring/index.md" >}}) are a distributed consistent hashing scheme and are widely used by Grafana Mimir for sharding and replication.
 

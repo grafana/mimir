@@ -66,7 +66,7 @@ Use the following flags to configure the rate limits:
 ### Configuration
 
 The distributors form a [hash ring]({{< relref "../hash-ring/index.md" >}}) (called the distributors’ ring) to discover each other and enforce limits correctly.
-To configure the distributors' hash ring, refer to [configuring hash rings]({{< relref "../../configure/configuring-hash-rings.md" >}}).
+To configure the distributors' hash ring, refer to [configuring hash rings]({{< relref "../../configure/configure-hash-rings.md" >}}).
 
 ## High-availability tracker
 
