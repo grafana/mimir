@@ -533,7 +533,7 @@ local filename = 'mimir-tenants.json';
     )
 
     .addRow(
-      $.row('Read Path Insights')
+      $.row('Read Path - Insights')
       .addPanel(
         local title = 'Rate of Read Requests';
         $.panel(title) +
@@ -554,6 +554,10 @@ local filename = 'mimir-tenants.json';
           ],
         )
       )
+    )
+
+    .addRow(
+      ($.row('Read Path - Queries') + { collapse: true })
       .addPanel(
         local title = 'Query Success vs Failure Rate';
         $.panel(title) +

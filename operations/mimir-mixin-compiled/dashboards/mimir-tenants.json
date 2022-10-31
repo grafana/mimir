@@ -2197,7 +2197,7 @@
                   "renderer": "flot",
                   "seriesOverrides": [ ],
                   "spaceLength": 10,
-                  "span": 3,
+                  "span": 6,
                   "stack": false,
                   "steppedLine": false,
                   "targets": [
@@ -2273,7 +2273,7 @@
                   "renderer": "flot",
                   "seriesOverrides": [ ],
                   "spaceLength": 10,
-                  "span": 3,
+                  "span": 6,
                   "stack": false,
                   "steppedLine": false,
                   "targets": [
@@ -2321,7 +2321,19 @@
                         "show": false
                      }
                   ]
-               },
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "Read Path - Insights",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": true,
+            "height": "250px",
+            "panels": [
                {
                   "aliasColors": { },
                   "bars": false,
@@ -2349,7 +2361,7 @@
                   "renderer": "flot",
                   "seriesOverrides": [ ],
                   "spaceLength": 10,
-                  "span": 3,
+                  "span": 6,
                   "stack": false,
                   "steppedLine": false,
                   "targets": [
@@ -2433,7 +2445,7 @@
                   "renderer": "flot",
                   "seriesOverrides": [ ],
                   "spaceLength": 10,
-                  "span": 3,
+                  "span": 6,
                   "stack": false,
                   "steppedLine": false,
                   "targets": [
@@ -2503,7 +2515,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Read Path Insights",
+            "title": "Read Path - Queries",
             "titleSize": "h6"
          }
       ],
