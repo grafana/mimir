@@ -369,7 +369,7 @@ grpc_tls_config:
 
 # (advanced) Write timeout for HTTP server
 # CLI flag: -server.http-write-timeout
-[http_server_write_timeout: <duration> | default = 30s]
+[http_server_write_timeout: <duration> | default = 2m]
 
 # (advanced) Idle timeout for HTTP server
 # CLI flag: -server.http-idle-timeout
