@@ -533,21 +533,44 @@ local filename = 'mimir-tenants.json';
     )
 
     .addRow(
-      $.row('Read Path - Insights')
+      $.row('Read Path - Query Frontend Insights')
       .addPanel(
-        local title = 'Rate of Read Requests';
+        local title = 'Rate of Read Requests - Query Frontend';
         $.panel(title) +
         $.queryPanel(
-          'sum(rate(cortex_query_frontend_queries_total{%s, user="$user"}[$__rate_interval]))' % $.namespaceMatcher(),
+          'sum(rate(cortex_query_frontend_queries_total{%s, container="query-frontend", user="$user"}[$__rate_interval]))' % $.namespaceMatcher(),
           'rate'
         )
       )
       .addPanel(
-        local title = 'Number of Queries Queued';
+        local title = 'Rate of Read Requests - Ruler Query Frontend';
+        $.panel(title) +
+        $.queryPanel(
+          'sum(rate(cortex_query_frontend_queries_total{%s, container="ruler-query-frontend", user="$user"}[$__rate_interval]))' % $.namespaceMatcher(),
+          'rate'
+        )
+      )
+    )
+    .addRow(
+      $.row('Read Path - Query Scheduler Insights')
+      .addPanel(
+        local title = 'Number of Queries Queued - Query Scheduler';
         $.panel(title) +
         $.queryPanel(
           [
             'sum(cortex_query_scheduler_queue_length{%s, container="query-scheduler", user="$user"})' % $.namespaceMatcher(),
+          ],
+          [
+            'queue length',
+          ],
+        )
+      )
+      .addPanel(
+        local title = 'Number of Queries Queued - Ruler Query Scheduler';
+        $.panel(title) +
+        $.queryPanel(
+          [
+            'sum(cortex_query_scheduler_queue_length{%s, container="ruler-query-scheduler", user="$user"})' % $.namespaceMatcher(),
           ],
           [
             'queue length',
@@ -581,12 +604,12 @@ local filename = 'mimir-tenants.json';
           [
             'quantile_over_time(0.99, {%s ,name=~"query-frontend.*"}  |= "msg=\\"query stats\\"" |= "user=$user" | logfmt | unwrap duration(response_time)[$__interval]) by (user)' % $.namespaceMatcher(),
             'quantile_over_time(0.50, {%s ,name=~"query-frontend.*"}  |= "msg=\\"query stats\\"" |= "user=$user" | logfmt | unwrap duration(response_time)[$__interval]) by (user)' % $.namespaceMatcher(),
-            'quantile_over_time(0.95, {%s ,name=~"query-frontend.*"}  |= "msg=\\"query stats\\"" |= "user=$user" | logfmt | unwrap duration(response_time)[$__interval]) by (user)' % $.namespaceMatcher(),
+            'avg_over_time({%s ,name=~"query-frontend.*"}  |= "msg=\\"query stats\\"" |= "user=$user" | logfmt | unwrap duration(response_time)[$__interval]) by (user)' % $.namespaceMatcher(),
           ],
           [
             'p99',
             'p50',
-            'p95',
+            'average',
           ],
         ) + {
           datasource: '${lokidatasource}',

@@ -2202,7 +2202,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(rate(cortex_query_frontend_queries_total{cluster=~\"$cluster\", namespace=~\"$namespace\", user=\"$user\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_query_frontend_queries_total{cluster=~\"$cluster\", namespace=~\"$namespace\", container=\"query-frontend\", user=\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "rate",
@@ -2213,7 +2213,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Rate of Read Requests",
+                  "title": "Rate of Read Requests - Query Frontend",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -2278,10 +2278,10 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(cortex_query_scheduler_queue_length{cluster=~\"$cluster\", namespace=~\"$namespace\", container=\"query-scheduler\", user=\"$user\"})",
+                        "expr": "sum(rate(cortex_query_frontend_queries_total{cluster=~\"$cluster\", namespace=~\"$namespace\", container=\"ruler-query-frontend\", user=\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "queue length",
+                        "legendFormat": "rate",
                         "legendLink": null,
                         "step": 10
                      }
@@ -2289,7 +2289,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Number of Queries Queued",
+                  "title": "Rate of Read Requests - Ruler Query Frontend",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -2327,7 +2327,171 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Read Path - Insights",
+            "title": "Read Path - Query Frontend Insights",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": false,
+            "height": "250px",
+            "panels": [
+               {
+                  "aliasColors": { },
+                  "bars": false,
+                  "dashLength": 10,
+                  "dashes": false,
+                  "datasource": "$datasource",
+                  "fill": 1,
+                  "id": 29,
+                  "legend": {
+                     "avg": false,
+                     "current": false,
+                     "max": false,
+                     "min": false,
+                     "show": true,
+                     "total": false,
+                     "values": false
+                  },
+                  "lines": true,
+                  "linewidth": 1,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "percentage": false,
+                  "pointradius": 5,
+                  "points": false,
+                  "renderer": "flot",
+                  "seriesOverrides": [ ],
+                  "spaceLength": 10,
+                  "span": 6,
+                  "stack": false,
+                  "steppedLine": false,
+                  "targets": [
+                     {
+                        "expr": "sum(cortex_query_scheduler_queue_length{cluster=~\"$cluster\", namespace=~\"$namespace\", container=\"query-scheduler\", user=\"$user\"})",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "queue length",
+                        "legendLink": null,
+                        "step": 10
+                     }
+                  ],
+                  "thresholds": [ ],
+                  "timeFrom": null,
+                  "timeShift": null,
+                  "title": "Number of Queries Queued - Query Scheduler",
+                  "tooltip": {
+                     "shared": false,
+                     "sort": 0,
+                     "value_type": "individual"
+                  },
+                  "type": "graph",
+                  "xaxis": {
+                     "buckets": null,
+                     "mode": "time",
+                     "name": null,
+                     "show": true,
+                     "values": [ ]
+                  },
+                  "yaxes": [
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               },
+               {
+                  "aliasColors": { },
+                  "bars": false,
+                  "dashLength": 10,
+                  "dashes": false,
+                  "datasource": "$datasource",
+                  "fill": 1,
+                  "id": 30,
+                  "legend": {
+                     "avg": false,
+                     "current": false,
+                     "max": false,
+                     "min": false,
+                     "show": true,
+                     "total": false,
+                     "values": false
+                  },
+                  "lines": true,
+                  "linewidth": 1,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "percentage": false,
+                  "pointradius": 5,
+                  "points": false,
+                  "renderer": "flot",
+                  "seriesOverrides": [ ],
+                  "spaceLength": 10,
+                  "span": 6,
+                  "stack": false,
+                  "steppedLine": false,
+                  "targets": [
+                     {
+                        "expr": "sum(cortex_query_scheduler_queue_length{cluster=~\"$cluster\", namespace=~\"$namespace\", container=\"ruler-query-scheduler\", user=\"$user\"})",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "queue length",
+                        "legendLink": null,
+                        "step": 10
+                     }
+                  ],
+                  "thresholds": [ ],
+                  "timeFrom": null,
+                  "timeShift": null,
+                  "title": "Number of Queries Queued - Ruler Query Scheduler",
+                  "tooltip": {
+                     "shared": false,
+                     "sort": 0,
+                     "value_type": "individual"
+                  },
+                  "type": "graph",
+                  "xaxis": {
+                     "buckets": null,
+                     "mode": "time",
+                     "name": null,
+                     "show": true,
+                     "values": [ ]
+                  },
+                  "yaxes": [
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "Read Path - Query Scheduler Insights",
             "titleSize": "h6"
          },
          {
@@ -2341,7 +2505,7 @@
                   "dashes": false,
                   "datasource": "${lokidatasource}",
                   "fill": 1,
-                  "id": 29,
+                  "id": 31,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2425,7 +2589,7 @@
                   "dashes": false,
                   "datasource": "${lokidatasource}",
                   "fill": 1,
-                  "id": 30,
+                  "id": 32,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2466,10 +2630,10 @@
                         "step": 10
                      },
                      {
-                        "expr": "quantile_over_time(0.95, {cluster=~\"$cluster\", namespace=~\"$namespace\" ,name=~\"query-frontend.*\"}  |= \"msg=\\\"query stats\\\"\" |= \"user=$user\" | logfmt | unwrap duration(response_time)[$__interval]) by (user)",
+                        "expr": "avg_over_time({cluster=~\"$cluster\", namespace=~\"$namespace\" ,name=~\"query-frontend.*\"}  |= \"msg=\\\"query stats\\\"\" |= \"user=$user\" | logfmt | unwrap duration(response_time)[$__interval]) by (user)",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "p95",
+                        "legendFormat": "average",
                         "legendLink": null,
                         "step": 10
                      }
