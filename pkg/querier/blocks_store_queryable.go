@@ -33,7 +33,6 @@ import (
 	"golang.org/x/sync/errgroup"
 	grpc_metadata "google.golang.org/grpc/metadata"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/series"
@@ -749,7 +748,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 					mySeries = append(mySeries, s)
 
 					// Add series fingerprint to query limiter; will return error if we are over the limit
-					limitErr := queryLimiter.AddSeries(mimirpb.FromLabelsToLabelAdapters(s.PromLabels()))
+					limitErr := queryLimiter.AddSeries(s.Labels)
 					if limitErr != nil {
 						return validation.LimitError(limitErr.Error())
 					}
