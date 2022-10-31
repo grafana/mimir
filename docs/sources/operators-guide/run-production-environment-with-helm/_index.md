@@ -98,7 +98,7 @@ configure the Helm chart to deploy Grafana Mimir with zone-aware replication.
 
 ### New installations
 
-Grafana Mimir supports [replication across availability zones]({{< relref "../configure/configuring-zone-aware-replication/">}})
+Grafana Mimir supports [replication across availability zones]({{< relref "../configure/configure-zone-aware-replication/">}})
 within your Kubernetes cluster.
 This further increases fault tolerance of the Mimir cluster. Even if you
 do not currently have multiple zones across your Kubernetes cluster, you

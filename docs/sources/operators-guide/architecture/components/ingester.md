@@ -79,7 +79,7 @@ Zone aware replication ensures that the ingester replicas for a given time serie
 Zones can represent logical or physical failure domains, for example, different data centers.
 Dividing replicas across multiple zones prevents data loss and service interruptions when there is a zone-wide outage.
 
-To set up multi-zone replication, refer to [Configuring zone-aware replication]({{< relref "../../configure/configuring-zone-aware-replication.md" >}}).
+To set up multi-zone replication, refer to [Configuring zone-aware replication]({{< relref "../../configure/configure-zone-aware-replication.md" >}}).
 
 ## Shuffle sharding
 

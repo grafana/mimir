@@ -82,7 +82,7 @@ The Grafana Mimir shuffle sharding implementation provides the following benefit
 - **Shuffling**<br />
   Probabilistically and for a large enough cluster, shuffle sharding ensures that every tenant receives a different set of instances with a reduced number of overlapping instances between two tenants, which improves failure isolation.
 - **Zone-awareness**<br />
-  When you enable [zone-aware replication]({{< relref "../configuring-zone-aware-replication.md" >}}), the subset of instances selected for each tenant contains a balanced number of instances for each availability zone.
+  When you enable [zone-aware replication]({{< relref "../configure-zone-aware-replication.md" >}}), the subset of instances selected for each tenant contains a balanced number of instances for each availability zone.
 
 ### Ingesters shuffle sharding
 
