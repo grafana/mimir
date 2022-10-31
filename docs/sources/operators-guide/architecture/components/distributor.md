@@ -77,7 +77,7 @@ The distributor includes an HA tracker.
 When the HA tracker is enabled, the distributor deduplicates incoming series from Prometheus HA pairs.
 This enables you to have multiple HA replicas of the same Prometheus servers that write the same series to Mimir and then deduplicates the series in the Mimir distributor.
 
-For more information about HA deduplication and how to configure it, refer to [configure HA deduplication]({{< relref "../../configure/configuring-high-availability-deduplication.md" >}}).
+For more information about HA deduplication and how to configure it, refer to [configure HA deduplication]({{< relref "../../configure/configure-high-availability-deduplication.md" >}}).
 
 ## Sharding and replication
 

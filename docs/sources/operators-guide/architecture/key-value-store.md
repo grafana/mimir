@@ -11,7 +11,7 @@ A key-value (KV) store is a database that stores data indexed by key.
 Grafana Mimir requires a key-value store for the following features:
 
 - [Hash ring]({{< relref "hash-ring/index.md" >}})
-- [(Optional) Distributor high-availability tracker]({{< relref "../configure/configuring-high-availability-deduplication.md" >}})
+- [(Optional) Distributor high-availability tracker]({{< relref "../configure/configure-high-availability-deduplication.md" >}})
 
 ## Supported key-value store backends
 
