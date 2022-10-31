@@ -85,7 +85,7 @@ To set up multi-zone replication, refer to [Configuring zone-aware replication](
 
 Shuffle sharding can be used to reduce the effect that multiple tenants can have on each other.
 
-For more information on shuffle sharding, refer to [Configuring shuffle sharding]({{< relref "../../configure/configuring-shuffle-sharding/index.md" >}}).
+For more information on shuffle sharding, refer to [Configuring shuffle sharding]({{< relref "../../configure/configure-shuffle-sharding/index.md" >}}).
 
 ## Out-of-order samples ingestion
 

@@ -1,13 +1,14 @@
 ---
 aliases:
   - /docs/mimir/latest/operators-guide/configuring/configuring-shuffle-sharding/
+  - /docs/mimir/latest/operators-guide/configure/configuring-shuffle-sharding/
 description: Learn how to configure shuffle sharding.
-menuTitle: Configuring shuffle sharding
-title: Configuring Grafana Mimir shuffle sharding
+menuTitle: Configure shuffle sharding
+title: Configure Grafana Mimir shuffle sharding
 weight: 80
 ---
 
-# Configuring Grafana Mimir shuffle sharding
+# Configure Grafana Mimir shuffle sharding
 
 Grafana Mimir leverages sharding to horizontally scale both single- and multi-tenant clusters beyond the capacity of a single node.
 

@@ -547,7 +547,7 @@ Before starting this procedure, set up your zones according to [Configure zone-a
 
    1. If the current `<N>` above in `ingester.zoneAwareReplication.migration.replicas` is less than `ingester.replicas`, go back and increase `<N>` with at most 21 and repeat these four steps.
 
-1. If you are using [shuffle sharding]({{< relref "../operators-guide/configure/configuring-shuffle-sharding" >}}), it must be turned off on the read path at this point.
+1. If you are using [shuffle sharding]({{< relref "../operators-guide/configure/configure-shuffle-sharding" >}}), it must be turned off on the read path at this point.
 
    1. Update your configuration with these values and keep them until otherwise instructed.
 
@@ -691,7 +691,7 @@ Before starting this procedure, set up your zones according to [Configure zone-a
 
    The 3 hours is calculated from `blocks_storage.tsdb.block_ranges_period` + `blocks_storage.tsdb.head_compaction_idle_timeout` Grafana Mimir parameters to give enough time for ingesters to remove stale series from memory. Stale series will be there due to series being moved between ingesters.
 
-1. If you are using [shuffle sharding]({{< relref "../operators-guide/configure/configuring-shuffle-sharding" >}}):
+1. If you are using [shuffle sharding]({{< relref "../operators-guide/configure/configure-shuffle-sharding" >}}):
 
    1. Wait an extra 12 hours.
 
