@@ -1,15 +1,16 @@
 ---
 aliases:
   - /docs/mimir/latest/operators-guide/configuring/mirroring-requests-to-a-second-cluster/
+  - /docs/mimir/latest/operators-guide/configure/mirroring-requests-to-a-second-cluster/
 description:
   Learn how to set up a testing cluster that receives the same series of
   the primary cluster.
-menuTitle: Mirroring requests to a second cluster
-title: Mirroring requests to a second Grafana Mimir cluster
+menuTitle: Mirror requests to a second cluster
+title: Mirror requests to a second Grafana Mimir cluster
 weight: 120
 ---
 
-# Mirroring requests to a second Grafana Mimir cluster
+# Mirror requests to a second Grafana Mimir cluster
 
 Use request mirroring when you want to set up a Grafana Mimir testing cluster that receives the same series that are ingested by a primary cluster and when you don't have control over the Prometheus remote write configuration.
 

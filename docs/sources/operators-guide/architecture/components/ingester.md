@@ -29,7 +29,7 @@ Each ingester could be in one of the following states:
 - `UNHEALTHY`<br />
   The ingester has failed to heartbeat to the hash ring. While in this state, distributors bypass the ingester, which means that the ingester does not receive write or read requests.
 
-To configure the ingesters' hash ring, refer to [configuring hash rings]({{< relref "../../configure/configuring-hash-rings.md" >}}).
+To configure the ingesters' hash ring, refer to [configuring hash rings]({{< relref "../../configure/configure-hash-rings.md" >}}).
 
 ## Ingesters write de-amplification
 
@@ -79,13 +79,13 @@ Zone aware replication ensures that the ingester replicas for a given time serie
 Zones can represent logical or physical failure domains, for example, different data centers.
 Dividing replicas across multiple zones prevents data loss and service interruptions when there is a zone-wide outage.
 
-To set up multi-zone replication, refer to [Configuring zone-aware replication]({{< relref "../../configure/configuring-zone-aware-replication.md" >}}).
+To set up multi-zone replication, refer to [Configuring zone-aware replication]({{< relref "../../configure/configure-zone-aware-replication.md" >}}).
 
 ## Shuffle sharding
 
 Shuffle sharding can be used to reduce the effect that multiple tenants can have on each other.
 
-For more information on shuffle sharding, refer to [Configuring shuffle sharding]({{< relref "../../configure/configuring-shuffle-sharding/index.md" >}}).
+For more information on shuffle sharding, refer to [Configuring shuffle sharding]({{< relref "../../configure/configure-shuffle-sharding/index.md" >}}).
 
 ## Out-of-order samples ingestion
 

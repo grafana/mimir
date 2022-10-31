@@ -1,13 +1,14 @@
 ---
 aliases:
   - /docs/mimir/latest/operators-guide/configuring/configuring-zone-aware-replication/
+  - /docs/mimir/latest/operators-guide/configure/configuring-zone-aware-replication/
 description: Learn how to replicate data across failure domains.
-menuTitle: Configuring zone-aware replication
-title: Configuring Grafana Mimir zone-aware replication
+menuTitle: Configure zone-aware replication
+title: Configure Grafana Mimir zone-aware replication
 weight: 110
 ---
 
-# Configuring Grafana Mimir zone-aware replication
+# Configure Grafana Mimir zone-aware replication
 
 Zone-aware replication is the replication of data across failure domains.
 Zone-aware replication helps to avoid data loss during a domain outage.

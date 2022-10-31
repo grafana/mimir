@@ -1,13 +1,14 @@
 ---
 aliases:
   - /docs/mimir/latest/operators-guide/configuring/configuring-shuffle-sharding/
+  - /docs/mimir/latest/operators-guide/configure/configuring-shuffle-sharding/
 description: Learn how to configure shuffle sharding.
-menuTitle: Configuring shuffle sharding
-title: Configuring Grafana Mimir shuffle sharding
+menuTitle: Configure shuffle sharding
+title: Configure Grafana Mimir shuffle sharding
 weight: 80
 ---
 
-# Configuring Grafana Mimir shuffle sharding
+# Configure Grafana Mimir shuffle sharding
 
 Grafana Mimir leverages sharding to horizontally scale both single- and multi-tenant clusters beyond the capacity of a single node.
 
@@ -82,7 +83,7 @@ The Grafana Mimir shuffle sharding implementation provides the following benefit
 - **Shuffling**<br />
   Probabilistically and for a large enough cluster, shuffle sharding ensures that every tenant receives a different set of instances with a reduced number of overlapping instances between two tenants, which improves failure isolation.
 - **Zone-awareness**<br />
-  When you enable [zone-aware replication]({{< relref "../configuring-zone-aware-replication.md" >}}), the subset of instances selected for each tenant contains a balanced number of instances for each availability zone.
+  When you enable [zone-aware replication]({{< relref "../configure-zone-aware-replication.md" >}}), the subset of instances selected for each tenant contains a balanced number of instances for each availability zone.
 
 ### Ingesters shuffle sharding
 

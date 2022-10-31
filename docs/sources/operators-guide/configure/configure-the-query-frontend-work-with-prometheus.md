@@ -1,13 +1,14 @@
 ---
 aliases:
   - /docs/mimir/latest/operators-guide/configuring/configuring-the-query-frontend-work-with-prometheus/
+  - /docs/mimir/latest/operators-guide/configure/configuring-the-query-frontend-work-with-prometheus/
 description: Learn how to configure the query-frontend to work with Prometheus.
-menuTitle: Configuring the query-frontend to work with Prometheus
-title: Configuring the Grafana Mimir query-frontend to work with Prometheus
+menuTitle: Configure the query-frontend to work with Prometheus
+title: Configure the Grafana Mimir query-frontend to work with Prometheus
 weight: 90
 ---
 
-# Configuring the Grafana Mimir query-frontend to work with Prometheus
+# Configure the Grafana Mimir query-frontend to work with Prometheus
 
 You can use the Grafana Mimir query-frontend with any Prometheus-API compatible
 service, including Prometheus and Thanos. Use this configuration file to

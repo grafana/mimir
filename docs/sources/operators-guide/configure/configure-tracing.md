@@ -1,13 +1,14 @@
 ---
 aliases:
   - /docs/mimir/latest/operators-guide/configuring/configuring-tracing/
+  - /docs/mimir/latest/operators-guide/configure/configuring-tracing/
 description: Learn how to configure Grafana Mimir to send traces to Jaeger.
-menuTitle: Configuring tracing
-title: Configuring Grafana Mimir tracing
+menuTitle: Configure tracing
+title: Configure Grafana Mimir tracing
 weight: 100
 ---
 
-# Configuring Grafana Mimir tracing
+# Configure Grafana Mimir tracing
 
 Grafana Mimir uses [Jaeger](https://www.jaegertracing.io/) to implement distributed
 tracing. Jaeger is a valuable tool for troubleshooting the behavior of

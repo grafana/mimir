@@ -1,13 +1,14 @@
 ---
 aliases:
   - /docs/mimir/latest/operators-guide/configuring/configuring-high-availability-deduplication/
+  - /docs/mimir/latest/operators-guide/configure/configuring-high-availability-deduplication/
 description: Learn how to configure Grafana Mimir to handle HA Prometheus server deduplication.
-menuTitle: Configuring high-availability deduplication
-title: Configuring Grafana Mimir high-availability deduplication
+menuTitle: Configure high-availability deduplication
+title: Configure Grafana Mimir high-availability deduplication
 weight: 70
 ---
 
-# Configuring Grafana Mimir high-availability deduplication
+# Configure Grafana Mimir high-availability deduplication
 
 You can have more than one Prometheus instance that scrapes the same metrics for redundancy. Grafana Mimir already performs replication for redundancy,
 so you do not need to ingest the same data twice. In Grafana Mimir, you can deduplicate the data that you receive from HA pairs of Prometheus instances.

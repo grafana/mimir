@@ -1,13 +1,14 @@
 ---
 aliases:
   - /docs/mimir/latest/operators-guide/configuring/configuring-custom-trackers/
+  - /docs/mimir/latest/operators-guide/configure/configuring-custom-trackers/
 description: Use the custom tracker to count the number of active series on an ingester.
-menuTitle: Configuring custom active series trackers
-title: Configuring custom active series trackers
+menuTitle: Configure custom active series trackers
+title: Configure custom active series trackers
 weight: 100
 ---
 
-# Configuring custom active series trackers
+# Configure custom active series trackers
 
 You can use the custom tracker feature to count the number of active series on an ingester that match a particular label pattern.
 
