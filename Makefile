@@ -66,7 +66,7 @@ DOC_EMBED := docs/sources/operators-guide/configure/configuring-the-query-fronte
 	docs/sources/operators-guide/configure/mirroring-requests-to-a-second-cluster/index.md \
 	docs/sources/operators-guide/architecture/components/overrides-exporter.md \
 	docs/sources/operators-guide/get-started/_index.md \
-	docs/sources/operators-guide/deploy-grafana-mimir/jsonnet/deploying.md
+	docs/sources/operators-guide/deploy-grafana-mimir/jsonnet/deploy.md
 
 .PHONY: image-tag
 image-tag: ## Print the docker image tag.

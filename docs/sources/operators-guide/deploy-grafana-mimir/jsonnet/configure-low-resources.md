@@ -1,13 +1,14 @@
 ---
 aliases:
   - /docs/mimir/latest/operators-guide/deploying-grafana-mimir/jsonnet/configuring-low-resources/
+  - /docs/mimir/latest/operators-guide/deploy-grafana-mimir/jsonnet/configuring-low-resources/
 description: Learn how to configure Grafana Mimir when using Jsonnet.
-menuTitle: Configuring low resources
-title: Configuring Grafana Mimir to use low resources with Jsonnet
+menuTitle: Configure low resources
+title: Configure Grafana Mimir to use low resources with Jsonnet
 weight: 20
 ---
 
-# Configuring Grafana Mimir to use low resources with Jsonnet
+# Configure Grafana Mimir to use low resources with Jsonnet
 
 This page describes how to configure Jsonnet to deploy Grafana Mimir in a Kubernetes cluster with low CPU and memory resources available.
 

@@ -1,13 +1,14 @@
 ---
 aliases:
   - /docs/mimir/latest/operators-guide/deploying-grafana-mimir/jsonnet/configuring-ruler/
+  - /docs/mimir/latest/operators-guide/deploy-grafana-mimir/jsonnet/configuring-ruler/
 description: Learn how to configure the Grafana Mimir ruler when using Jsonnet.
-menuTitle: Configuring ruler
-title: Configuring the Grafana Mimir ruler with Jsonnet
+menuTitle: Configure ruler
+title: Configure the Grafana Mimir ruler with Jsonnet
 weight: 20
 ---
 
-# Configuring the Grafana Mimir ruler with Jsonnet
+# Configure the Grafana Mimir ruler with Jsonnet
 
 The ruler is an optional component and is therefore not deployed by default when using Jsonnet.
 For more information about the ruler, see [Grafana Mimir ruler]({{< relref "../../architecture/components/ruler/index.md" >}}).
