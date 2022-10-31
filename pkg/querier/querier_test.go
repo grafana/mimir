@@ -1035,9 +1035,10 @@ func TestStoreQueryable(t *testing.T) {
 }
 
 func TestConfig_Validate(t *testing.T) {
+	httpServerTimeout := 2 * time.Minute
 	tests := map[string]struct {
 		setup    func(cfg *Config)
-		expected error
+		expected string
 	}{
 		"should pass with default config": {
 			setup: func(cfg *Config) {},
@@ -1058,7 +1059,13 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.QueryStoreAfter = 3 * time.Hour
 				cfg.QueryIngestersWithin = 2 * time.Hour
 			},
-			expected: errBadLookbackConfigs,
+			expected: errBadLookbackConfigs.Error(),
+		},
+		"should fail if querier timeout is bigger than http server timeout": {
+			setup: func(cfg *Config) {
+				cfg.EngineConfig.Timeout = httpServerTimeout + time.Second
+			},
+			expected: "querier timeout (2m1s) must be lower than HTTP server write timeout (2m0s)",
 		},
 	}
 
@@ -1067,8 +1074,11 @@ func TestConfig_Validate(t *testing.T) {
 			cfg := &Config{}
 			flagext.DefaultValues(cfg)
 			testData.setup(cfg)
-
-			assert.Equal(t, testData.expected, cfg.Validate())
+			if testData.expected == "" {
+				assert.NoError(t, cfg.Validate(httpServerTimeout))
+			} else {
+				assert.ErrorContains(t, cfg.Validate(httpServerTimeout), testData.expected)
+			}
 		})
 	}
 }

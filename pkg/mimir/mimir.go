@@ -222,7 +222,7 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.Distributor.Validate(c.LimitsConfig); err != nil {
 		return errors.Wrap(err, "invalid distributor config")
 	}
-	if err := c.Querier.Validate(); err != nil {
+	if err := c.Querier.Validate(c.Server.HTTPServerWriteTimeout); err != nil {
 		return errors.Wrap(err, "invalid querier config")
 	}
 	if err := c.IngesterClient.Validate(log); err != nil {
