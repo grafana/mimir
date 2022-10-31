@@ -484,6 +484,7 @@ func (c *Config) registerServerFlagsWithChangedDefaultValues(fs *flag.FlagSet) {
 	c.Server.RegisterFlags(throwaway)
 
 	defaultsOverrides := map[string]string{
+		"server.http-write-timeout":                         "2m",
 		"server.grpc.keepalive.min-time-between-pings":      "10s",
 		"server.grpc.keepalive.ping-without-stream-allowed": "true",
 		"server.http-listen-port":                           "8080",
