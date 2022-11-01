@@ -6,11 +6,13 @@
 package commands
 
 import (
+	"runtime"
+	"strconv"
+
 	"gopkg.in/alecthomas/kingpin.v2"
 )
 
-type AnalyzeCommand struct {
-}
+type AnalyzeCommand struct{}
 
 func (cmd *AnalyzeCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
 	analyzeCmd := app.Command("analyze", "Run analysis against your Prometheus, Grafana, and Grafana Mimir to see which metrics are being used and exported.")
@@ -38,6 +40,9 @@ func (cmd *AnalyzeCommand) Register(app *kingpin.Application, envVars EnvVarName
 	prometheusAnalyzeCmd.Flag("ruler-metrics-file", "The path for the input file containing the metrics from ruler-analyze command").
 		Default("metrics-in-ruler.json").
 		StringVar(&paCmd.rulerMetricsFile)
+	prometheusAnalyzeCmd.Flag("concurrency", "Concurrency (Default: runtime.NumCPU())").
+		Default(strconv.Itoa(runtime.NumCPU())).
+		IntVar(&paCmd.concurrency)
 	prometheusAnalyzeCmd.Flag("output", "The path for the output file").
 		Default("prometheus-metrics.json").
 		StringVar(&paCmd.outputFile)
