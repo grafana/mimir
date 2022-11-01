@@ -11,7 +11,8 @@ metadata:
     app.kubernetes.io/component: meta-monitoring
     app.kubernetes.io/managed-by: Helm
 spec:
-  serviceAccountName: metamonitoring-values-mimir-grafana-agent
+  serviceAccountName: metamonitoring-values-mimir
+
   logs:
     instanceSelector:
       matchLabels:
