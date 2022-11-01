@@ -57,6 +57,7 @@ Entries should include a reference to the Pull Request that introduced the chang
   If you are using HostPath or another driver that doesn't support changing `fsGroup`, then you have a couple of options: A) set the `securityContext` of all Mimir and GEM components to `{}` in your values file; B) delete PersistentVolumes and PersistentVolumeClaims and upgrade the chart; C) add an initContainer to all components that use a PVC that changes ownership of the mounted volumes.
   If you take no action and `fsGroup` is not supported by your CSI driver, then components will fail to start. #3007
 * [CHANGE] Restrict Pod seccomp profile to `runtime/default` in the default PodSecurityPolicy of the chart. #3007
+* [CHANGE] Use the chart's service account for metamonitoring instead of creating one specific to metamonitoring. #3350
 * [ENHANCEMENT] Metamonitoring: If enabled and no URL is configured, then metamonitoring metrics will be sent to
   Mimir under the `metamonitoring` tenant; this enhancement does not apply to GEM. #3176
 * [ENHANCEMENT] Improve default rollout strategies. Now distributor, overrides_exporter, querier, query_frontend, admin_api, gateway, and graphite components can be upgraded more quickly and also can be rolled out with a single replica without downtime. #3029
@@ -82,6 +83,7 @@ Entries should include a reference to the Pull Request that introduced the chang
   * Unset `frontend.align_queries_with_step` (Was `true`, now defaults to `false`)
   * Unset `frontend.log_queries_longer_than` (Was `10s`, now defaults to `0`, which is disabled)
 * [ENHANCEMENT] Added `usage_stats.installation_mode` configuration to track the installation mode via the anonymous usage statistics. #3294
+* [ENHANCEMENT] Update grafana-agent-operator subchart to 0.2.8. Notable changes are being able to configure Pod's SecurityContext and Container's SecurityContext. #3350
 * [BUGFIX] Fix an issue that caused metamonitoring secrets to be created incorrectly #3170
 * [BUGFIX] Nginx: fixed `imagePullSecret` value reference inconsistency. #3208
 * [BUGFIX] Move the activity tracker log from /data to /active-query-tracker to remove ignore log messages. #3169
