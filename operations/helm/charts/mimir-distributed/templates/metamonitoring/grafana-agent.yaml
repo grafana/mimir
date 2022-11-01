@@ -15,7 +15,7 @@ metadata:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
-  serviceAccountName: {{ default (include "mimir.resourceName" (dict "ctx" $)) .serviceAccountName }}
+  serviceAccountName: {{ include "mimir.serviceAccountName" $ }}
   {{- with .podSecurityContext }}
   securityContext:
     {{- . | toYaml | nindent 4 }}
