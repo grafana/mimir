@@ -13,7 +13,8 @@
 
 # Note: The values in this file is not backward compatible. Copy-paste the values are discouraged, but if you still do,
 # make sure to use the values.yaml from the branch or tag that matches the mimir-distributed Helm chart version that you
-# want to install.
+# want to install. You also can see values.yaml for a specific version by running
+# `helm show values grafana/mimir-distributed --version <version>`
 kubeVersionOverride: null
 
 # -- Overrides the chart's name. Used to change mimir/enterprise-metrics infix in the resource names. E.g. myRelease-mimir-ingester-1 to myRelease-nameOverride-ingester-1.
