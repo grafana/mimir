@@ -11,11 +11,6 @@ patches:
       kind: MimirConfig
     path: ./common-config.yaml
 
-  # TODO: Compactor differences
-  - target:
-      kind: MimirConfig
-    path: ./compactor-config.yaml
-
   # TODO: Write path differences
   - target:
       kind: MimirConfig
