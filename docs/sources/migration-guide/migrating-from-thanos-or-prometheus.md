@@ -89,7 +89,7 @@ This may cause that incorrect results are returned for the query.
 
    Create an intermediate object storage bucket(S3,GCS,etc.) in your cloud provider where you can copy the historical blocks and work on them before uploading to the Mimir bucket.
    
-   > **Note**: It is recommeneded to run all the above steps in a **screen** command to avoid any interruptions as these may take time depending on the amount of data to be processed.
+   > **Note**: It is recommeneded to run all of the following steps in a **screen** or **tmux** command to avoid any interruptions as these may take time depending on the amount of data to be processed.
 
     For AWS S3, use the aws tool in the following command:
 
@@ -175,7 +175,7 @@ This may cause that incorrect results are returned for the query.
 
 4) Relabel the blocks with external labels
 
-   Mimir doesn't inject external labels from the meta.json into query results. Therefore we relabel the blocks with the required external labels in the meta.json. 
+   Mimir doesn't inject external labels from the `meta.json` file into query results. Therefore we relabel the blocks with the required external labels in the `meta.json`. 
    
    > **Note**: You can get the external labels in the meta.json of each block from the CSV file imported in the above **ProTip** and build the rewrite config accordingly.
    
@@ -209,7 +209,7 @@ This may cause that incorrect results are returned for the query.
    
    After confirming that the rewrite is working as expected in **--dry-run**, you can apply the changes with the **--no-dry-run** flag. Don't forget to include **--delete-blocks**, otherwise the original blocks will not be marked for deletion.
    
-   ```bash
+   ```console
    # Rewrite the blocks with external labels and mark the original blocks for deletion.
    for ID in $(cat blocks-to-rewrite.tsv)
    do
@@ -280,7 +280,7 @@ This may cause that incorrect results are returned for the query.
  
 5) Remove external labels from meta.json
    
-   Mimir compactor will not be able to compact the blocks with external labels in their meta.json. Therefore these external labels have to be  removed before copying them to the Mimir bucket.
+   Mimir compactor will not be able to compact the blocks having external labels with Mimir's own blocks that don't have any such labels in their meta.json. Therefore these external labels have to be removed before copying them to the Mimir bucket.
    
    Use the below script to remove the labels from the meta.json.
    
@@ -309,15 +309,9 @@ This may cause that incorrect results are returned for the query.
    done
    ```
    
-   Clean up the original meta.json file which were backed using the below command.
-   
-   ```bash
-   gsutil rm gs://<mimir-intermediate-bucket>/*/*.orig
-   ```
-   
 6) Copy the blocks from the intermediate bucket to the Mimir bucket
   
-   Once the relabelling process is done, copy the blocks from the intermediate bucket to the Mimir bucket.
+   Copy the blocks from the intermediate bucket to the Mimir bucket.
   
    ```bash
    gsutil -m cp -r gs://<mimir-intermediate-bucket> gs://<mimir-gcs-bucket>/<TENANT>/
@@ -327,5 +321,5 @@ This may cause that incorrect results are returned for the query.
   
    Historical blocks will not be available for querying as soon as they are uploaded, because the bucket index with the list of all available blocks needs to be updated by the compactor first. Compactor typically does this update every 15 minutes. Once this is done, other components like querier or store-gateway will be able to work with these the historical blocks, and blocks will be available for querying through Grafana. 
    
-   You can check the storegateway HTTP endpoint at ```http://<STORE-GATEWAY-ENDPOINT>/store-gateway/tenant/<TENANT-NAME>/blocks``` and you should be able to see the uploaded blocks there.
+   You can check the storegateway HTTP endpoint at `http://<STORE-GATEWAY-ENDPOINT>/store-gateway/tenant/<TENANT-NAME>/blocks` and you should be able to see the uploaded blocks there.
   
