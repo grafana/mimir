@@ -24,6 +24,13 @@ patches:
 
   - target:
       kind: MimirConfig
+      name: 'alertmanager|distributor|ingester|overrides-exporter|querier|query-frontend|query-scheduler|ruler|store-gateway'
+    patch: |-
+      - op: remove
+        path: /config/compactor
+
+  - target:
+      kind: MimirConfig
       name: 'alertmanager|compactor|distributor|ingester|overrides-exporter|querier|ruler|query-frontend|query-scheduler'
     patch: |-
       - op: remove
@@ -127,3 +134,13 @@ patches:
       # Helm sets it to helm, jsonnet sets it to jsonnet
       - op: remove
         path: /config/usage_stats/installation_mode
+
+  - target:
+      kind: MimirConfig
+      name: 'compactor'
+    patch: |-
+      # Jsonnet sets this limit to 1, which makes sense in a cloud, multi-tenant environment
+      # By default, it probably makes more sense for tenants to use all compactors
+      # This makes it simpler to just scale up the compactor and improve compaction time
+      - op: remove
+        path: /config/limits/compactor_tenant_shard_size
