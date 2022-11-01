@@ -2662,10 +2662,9 @@ metaMonitoring:
     #    type: RuntimeDefault
 
     # -- SecurityContext of Grafana Agent containers. This is different from the SecurityContext that the operator container runs with.
-    # The operator container SecurityContext is still not configurable.
     containerSecurityContext:
     #  allowPrivilegeEscalation: false
-    #  readOnlyRootFilesystem: true
+    #  runAsUser: 10001
     #  capabilities:
     #    drop: [ALL]
 
