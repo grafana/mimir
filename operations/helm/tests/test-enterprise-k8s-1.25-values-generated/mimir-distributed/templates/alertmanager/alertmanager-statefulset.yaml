@@ -41,7 +41,7 @@ spec:
         app.kubernetes.io/component: alertmanager
         app.kubernetes.io/part-of: memberlist
       annotations:
-        checksum/alertmanager-fallback-config: 73a4411a83443bdf9d83335e2101b1849598c8c1572dab5e20b24b197ffb8096
+        checksum/alertmanager-fallback-config: a5f307e03c6bb2343204070735ff8a24f9c37ceae41c4831b61fd59cc7b0746b
       namespace: "citestns"
     spec:
       serviceAccountName: test-enterprise-k8s-1.25-values-mimir

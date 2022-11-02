@@ -41,7 +41,7 @@ spec:
         app.kubernetes.io/component: alertmanager
         app.kubernetes.io/part-of: memberlist
       annotations:
-        checksum/alertmanager-fallback-config: f89807801812918e7116500bb8423b4e71ba148a4a8d1d19f3e893feb4485e51
+        checksum/alertmanager-fallback-config: b9b656cf1b088e84177b535e2b5a66d7898bbcbc98074483ffec8585237acffe
       namespace: "citestns"
     spec:
       serviceAccountName: gateway-nginx-values-mimir
