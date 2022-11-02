@@ -222,8 +222,12 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.Distributor.Validate(c.LimitsConfig); err != nil {
 		return errors.Wrap(err, "invalid distributor config")
 	}
-	if err := c.Querier.Validate(c.Server.HTTPServerWriteTimeout); err != nil {
+	if err := c.Querier.Validate(); err != nil {
 		return errors.Wrap(err, "invalid querier config")
+	}
+	if c.Querier.EngineConfig.Timeout > c.Server.HTTPServerWriteTimeout {
+		return fmt.Errorf("querier timeout (%s) must be lower than HTTP server write timeout (%s)",
+			c.Querier.EngineConfig.Timeout, c.Server.HTTPServerWriteTimeout)
 	}
 	if err := c.IngesterClient.Validate(log); err != nil {
 		return errors.Wrap(err, "invalid ingester_client config")

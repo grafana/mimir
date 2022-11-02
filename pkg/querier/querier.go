@@ -79,16 +79,12 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 }
 
 // Validate the config
-func (cfg *Config) Validate(httpServerWriteTimeout time.Duration) error {
+func (cfg *Config) Validate() error {
 	// Ensure the config wont create a situation where no queriers are returned.
 	if cfg.QueryIngestersWithin != 0 && cfg.QueryStoreAfter != 0 {
 		if cfg.QueryStoreAfter >= cfg.QueryIngestersWithin {
 			return errBadLookbackConfigs
 		}
-	}
-
-	if cfg.EngineConfig.Timeout > httpServerWriteTimeout {
-		return fmt.Errorf("querier timeout (%s) must be lower than HTTP server write timeout (%s)", cfg.EngineConfig.Timeout, httpServerWriteTimeout)
 	}
 
 	return nil
