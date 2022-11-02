@@ -123,8 +123,7 @@ spec:
             - name: storage
               mountPath: "/data"
             - name: alertmanager-fallback-config
-              mountPath: /configs/alertmanager_fallback_config.yaml
-              subPath: fallback-config.yaml
+              mountPath: /configs/
             - name: tmp
               mountPath: /tmp
             - name: active-queries
@@ -283,8 +282,7 @@ spec:
             - name: storage
               mountPath: "/data"
             - name: alertmanager-fallback-config
-              mountPath: /configs/alertmanager_fallback_config.yaml
-              subPath: fallback-config.yaml
+              mountPath: /configs/
             - name: tmp
               mountPath: /tmp
             - name: active-queries
@@ -443,8 +441,7 @@ spec:
             - name: storage
               mountPath: "/data"
             - name: alertmanager-fallback-config
-              mountPath: /configs/alertmanager_fallback_config.yaml
-              subPath: fallback-config.yaml
+              mountPath: /configs/
             - name: tmp
               mountPath: /tmp
             - name: active-queries

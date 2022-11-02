@@ -150,8 +150,7 @@ spec:
               {{- end }}
             {{- if .Values.alertmanager.fallbackConfig }}
             - name: alertmanager-fallback-config
-              mountPath: /configs/alertmanager_fallback_config.yaml
-              subPath: fallback-config.yaml
+              mountPath: /configs/
             {{- end }}
             - name: tmp
               mountPath: /tmp
