@@ -9,7 +9,7 @@ set -e
 check_required_setup() {
   # Ensure "gh" tool is installed.
   if ! command -v gh &> /dev/null; then
-    echo "The 'gh' command cannot be found. Please install it: https://cli.github.com"
+    echo "The 'gh' command cannot be found. Please install it: https://cli.github.com" > /dev/stderr
     exit 1
   fi
 
@@ -23,10 +23,10 @@ check_required_setup() {
 }
 
 find_last_release() {
-  LAST_RELEASE_TAG=$(git tag --list 'mimir-[0-9]*' | sort -V | tail -1)
+  LAST_RELEASE_TAG=$(git tag --list --sort=taggerdate 'mimir-[0-9]*' | tail -1)
 
   if [ -z "${LAST_RELEASE_TAG}" ]; then
-    echo "Unable to find the last release git tag"
+    echo "Unable to find the last release git tag" > /dev/stderr
     exit 1
   fi
 
@@ -38,11 +38,19 @@ find_last_release() {
   export LAST_RELEASE_VERSION
 }
 
+# Find the previous release. If the last release is a stable release then it only takes in account stable releases
+# (the previous release of a stable release must be another stable release).
 find_prev_release() {
-  PREV_RELEASE_TAG=$(git tag --list 'mimir-[0-9]*' | sort -V | tail -2 | head -1)
+  find_last_release
+
+  if [[ $LAST_RELEASE_VERSION =~ "-rc" ]]; then
+    PREV_RELEASE_TAG=$(git tag --list --sort=taggerdate 'mimir-[0-9]*' | tail -2 | head -1)
+  else
+    PREV_RELEASE_TAG=$(git tag --list --sort=taggerdate 'mimir-[0-9]*' | grep -v -- '-rc' | tail -2 | head -1)
+  fi
 
   if [ -z "${PREV_RELEASE_TAG}" ]; then
-    echo "Unable to find the previous release git tag"
+    echo "Unable to find the previous release git tag" > /dev/stderr
     exit 1
   fi
 
