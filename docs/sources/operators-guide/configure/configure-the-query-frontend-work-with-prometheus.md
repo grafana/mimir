@@ -34,7 +34,7 @@ api:
 
 server:
   http_listen_port: 9091
-  
+
 frontend:
   split_queries_by_interval: 24h
   align_queries_with_step: true
