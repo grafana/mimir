@@ -85,36 +85,36 @@ This may cause that incorrect results are returned for the query.
 
 ## Migrate historic TSDB blocks from Thanos to Grafana Mimir
 
-1) Copy the blocks from Thanos's bucket to an Intermediate bucket
+1. Copy the blocks from Thanos's bucket to an Intermediate bucket.
 
-   Create an intermediate object storage bucket(S3,GCS,etc.) in your cloud provider where you can copy the historical blocks and work on them before uploading to the Mimir bucket.
+   Create an intermediate object storage bucket (such as Amazon S3 or GCS) within your cloud provider, where you can copy the historical blocks and work on them before uploading them to the Mimir bucket.
    
-   > **Note**: It is recommeneded to run all of the following steps in a **screen** or **tmux** command to avoid any interruptions as these may take time depending on the amount of data to be processed.
+   > **Tip:** Run the commands within a `screen` or `tmux` session, to avoid any interruptions because the steps might take time depending on the amount of data being processed.
 
-    For AWS S3, use the aws tool in the following command:
+    For Amazon S3, use the `aws` tool:
 
     ```bash
     aws s3 cp -r s3://<THANOS-BUCKET> s3://<TENANT>/<DIRECTORY>
     ```
 
-    For Google Cloud Storage (GCS), use the gsutil tool in the following command:
+    For Google Cloud Storage (GCS), use the `gsutil` tool:
     
     ```bash
     gsutil -m cp -r gs://<THANOS-BUCKET>/* gs://<INTERMEDIATE-MIMIR-BUCKET>/
     ```
     
-    Once the copy process is done, inspect the blocks in the bucket to ensure it's valid from Thanos perspective.
+    After the copy process completes, inspect the blocks in the bucket to make sure that they are valid from a Thanos perspective.
     
     ```bash
     thanos tools bucket inspect \
         --objstore.config-file bucket.yaml
     ```
 
-2) Remove the downsampled blocks
+2. Remove the downsampled blocks.
 
-   Mimir doesn't understand the downsampled blocks from Thanos (ie. blocks with non-zero `Resolution` field in meta.json file). Therefore we need to remove the 5m and 1h downsampled blocks from this bucket.
+   Mimir doesn’t understand the downsampled blocks from Thanos, such as blocks with a non-zero `Resolution` field in the `meta.json` file. Therefore, you need to remove the `5m` and `1h` downsampled blocks from this bucket.
    
-   Mark the downsampled blocks for deletion.
+   Mark the downsampled blocks for deletion:
    
    ```bash
    thanos tools bucket retention \
@@ -131,9 +131,9 @@ This may cause that incorrect results are returned for the query.
        --delete-delay=0
    ```
   
-3) Remove the duplicated blocks
+3. Remove the duplicated blocks.
 
-   If two replicas of Prometheus instances are deployed for HA, then only upload the blocks from one of the replicas and drop the other.
+   If two replicas of Prometheus instances are deployed for high-availability, then only upload the blocks from one of the replicas and drop from the other replica.
    
    ```bash
    # Get list of all blocks in the bucket
@@ -156,9 +156,9 @@ This may cause that incorrect results are returned for the query.
    done
    ```
    
-   > **Note**: Replace **prometheus_replica** with the unique label that would differentiate prometheus replicas in your setup.
+   > **Note:** Replace `prometheus_replica` with the unique label that would differentiate Prometheus replicas in your setup.
 
-   Again cleanup the duplicate blocks marked for deletion.
+   Clean up the duplicate blocks marked for deletion again:
   
    ```bash
    thanos tools bucket cleanup \
@@ -166,20 +166,20 @@ This may cause that incorrect results are returned for the query.
        --delete-delay=0
    ```
   
-   > **ProTip!**: If you want to visualize what exactly is happening in the blocks with respect to the source of blocks, external labels, compaction levels, etc, you can use the below command to get the output as CSV and import it to a google sheet.
+   > **Tip:** If you want to visualize exactly what is happening in the blocks, with respect to the source of blocks, external labels, compaction levels, and more, you can use the following command to get the output as CSV and import it into a Google spreadsheet:
    > ```bash 
    > thanos tools bucket inspect \
    >     --objstore.config-file bucket-prod.yaml \
    >     --output=csv > thanos-blocks.csv
    > ```
 
-4) Relabel the blocks with external labels
+4. Relabel the blocks with external labels.
 
-   Mimir doesn't inject external labels from the `meta.json` file into query results. Therefore we relabel the blocks with the required external labels in the `meta.json`. 
+   Mimir doesn’t inject external labels from the `meta.json` file into query results. Therefore, you need to relabel the blocks with the required external labels in the `meta.json` file. 
    
-   > **Note**: You can get the external labels in the meta.json of each block from the CSV file imported in the above **ProTip** and build the rewrite config accordingly.
+   > **Note:** You can get the external labels in the `meta.json` file of each block from the CSV file that is imported (as mentioned in the preceding tip), and build the rewrite configuration accordingly.
    
-   Create a rewrite config like the following:
+   Create a rewrite configuration that is similar to this:
    
    ```bash
    # relabel-config.yaml
@@ -188,7 +188,7 @@ This may cause that incorrect results are returned for the query.
      replacement: "<LABEL-VALUE"
    ```
    
-   Perform the rewrite dry run to confirm all work well.
+   Perform the rewrite dry run to confirm all works well.
    
    ```bash
    # Get list of all blocks in the bucket after removing the depuplicate and downsampled blocks.
@@ -207,9 +207,9 @@ This may cause that incorrect results are returned for the query.
    done
    ```
    
-   After confirming that the rewrite is working as expected in **--dry-run**, you can apply the changes with the **--no-dry-run** flag. Don't forget to include **--delete-blocks**, otherwise the original blocks will not be marked for deletion.
+   After you confirm that the rewrite is working as expected via `--dry-run`, apply the changes with the `--no-dry-run` flag. Remember to include `--delete-blocks, otherwise the original blocks will not be marked for deletion.
    
-   ```console
+   ```bash
    # Rewrite the blocks with external labels and mark the original blocks for deletion.
    for ID in $(cat blocks-to-rewrite.tsv)
    do
@@ -224,7 +224,7 @@ This may cause that incorrect results are returned for the query.
    
    The output of relabelling of every block would look like something below.
    
-   ```bash
+   ```console
    level=info ts=2022-10-10T13:03:32.032820262Z caller=factory.go:50 msg="loading bucket configuration"
    level=info ts=2022-10-10T13:03:32.516953867Z caller=tools_bucket.go:1160 msg="downloading block" source=01GEGWPME2187SVFH63G8DH7KH
    level=info ts=2022-10-10T13:03:35.825009556Z caller=tools_bucket.go:1197 msg="changelog will be available" file=/tmp/thanos-  rewrite/01GF0ZWPWGEPHG5NV79NH9KMPV/change.log
@@ -278,7 +278,7 @@ This may cause that incorrect results are returned for the query.
    > done
    >```
  
-5) Remove external labels from meta.json
+5) Remove external labels from meta.json.
    
    Mimir compactor will not be able to compact the blocks having external labels with Mimir's own blocks that don't have any such labels in their meta.json. Therefore these external labels have to be removed before copying them to the Mimir bucket.
    
@@ -309,17 +309,15 @@ This may cause that incorrect results are returned for the query.
    done
    ```
    
-6) Copy the blocks from the intermediate bucket to the Mimir bucket
+6. Copy the blocks from the intermediate bucket to the Mimir bucket.
   
-   Copy the blocks from the intermediate bucket to the Mimir bucket.
+   Copy the blocks from the intermediate bucket to the Mimir bucket using the below gsutil command.
   
    ```bash
    gsutil -m cp -r gs://<mimir-intermediate-bucket> gs://<mimir-gcs-bucket>/<TENANT>/
    ```
- 
-7) Mimir compactor updates bucket index
-  
-   Historical blocks will not be available for querying as soon as they are uploaded, because the bucket index with the list of all available blocks needs to be updated by the compactor first. Compactor typically does this update every 15 minutes. Once this is done, other components like querier or store-gateway will be able to work with these the historical blocks, and blocks will be available for querying through Grafana. 
    
-   You can check the storegateway HTTP endpoint at `http://<STORE-GATEWAY-ENDPOINT>/store-gateway/tenant/<TENANT-NAME>/blocks` and you should be able to see the uploaded blocks there.
+   Historical blocks are not available for querying immediately after they are uploaded because the bucket index with the list of all available blocks first needs to be updated by the compactor. The compactor typically perform such an update every 15 minutes. After an update completes, other components such as the querier or store-gateway are able to work with the historical blocks, and the blocks are available for querying through Grafana. 
+   
+7. Check the `store-gateway` HTTP endpoint at `http://<STORE-GATEWAY-ENDPOINT>/store-gateway/tenant/<TENANT-NAME>/blocks` to verify that the uploaded blocks are there.
   
