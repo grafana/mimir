@@ -34,7 +34,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager-storage.s3.sse.kms-key-id string
     	KMS Key ID used to encrypt objects in S3
   -alertmanager-storage.s3.sse.type string
-    	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
+    	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3, SSE-C.
   -alertmanager-storage.swift.auth-url string
     	OpenStack Swift authentication URL
   -alertmanager-storage.swift.auth-version int
@@ -158,7 +158,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.s3.sse.kms-key-id string
     	KMS Key ID used to encrypt objects in S3
   -blocks-storage.s3.sse.type string
-    	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
+    	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3, SSE-C.
   -blocks-storage.swift.auth-url string
     	OpenStack Swift authentication URL
   -blocks-storage.swift.auth-version int
@@ -224,7 +224,7 @@ Usage of ./cmd/mimir/mimir:
   -common.storage.s3.sse.kms-key-id string
     	KMS Key ID used to encrypt objects in S3
   -common.storage.s3.sse.type string
-    	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
+    	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3, SSE-C.
   -common.storage.swift.auth-url string
     	OpenStack Swift authentication URL
   -common.storage.swift.auth-version int
@@ -472,7 +472,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler-storage.s3.sse.kms-key-id string
     	KMS Key ID used to encrypt objects in S3
   -ruler-storage.s3.sse.type string
-    	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
+    	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3, SSE-C.
   -ruler-storage.swift.auth-url string
     	OpenStack Swift authentication URL
   -ruler-storage.swift.auth-version int

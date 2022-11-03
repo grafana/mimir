@@ -27,6 +27,9 @@ type TenantConfigProvider interface {
 
 	// S3SSEKMSEncryptionContext returns the per-tenant S3 KMS-SSE key id or an empty string if not set.
 	S3SSEKMSEncryptionContext(userID string) string
+
+	// S3SSECEncryptionKeyPath returns the per-tenant S3 SSE-C file path of the encryption key or an empty string if not set.
+	S3SSECEncryptionKeyPath(userID string) string
 }
 
 // SSEBucketClient is a wrapper around a objstore.BucketReader that configures the object

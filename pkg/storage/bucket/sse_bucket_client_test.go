@@ -114,6 +114,7 @@ type mockTenantConfigProvider struct {
 	s3SseType              string
 	s3KmsKeyID             string
 	s3KmsEncryptionContext string
+	s3EncryptionKey        string
 }
 
 func (m *mockTenantConfigProvider) S3SSEType(_ string) string {
@@ -126,4 +127,8 @@ func (m *mockTenantConfigProvider) S3SSEKMSKeyID(_ string) string {
 
 func (m *mockTenantConfigProvider) S3SSEKMSEncryptionContext(_ string) string {
 	return m.s3KmsEncryptionContext
+}
+
+func (m *mockTenantConfigProvider) S3SSECEncryptionKeyPath(_ string) string {
+	return m.s3EncryptionKey
 }

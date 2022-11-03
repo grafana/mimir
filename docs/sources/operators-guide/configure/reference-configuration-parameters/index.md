@@ -2654,6 +2654,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 # the SSE type override is not set.
 [s3_sse_kms_encryption_context: <string> | default = ""]
 
+# (experimental) Filepath of the S3 server-side encryption customer key. Ignored
+# if the SSE type override is not set.
+[s3_sse_c_encryption_key_path: <string> | default = ""]
+
 # Comma-separated list of network CIDRs to block in Alertmanager receiver
 # integrations.
 # CLI flag: -alertmanager.receivers-firewall-block-cidr-networks
@@ -3528,7 +3532,7 @@ The s3_backend block configures the connection to Amazon S3 object storage backe
 [signature_version: <string> | default = "v4"]
 
 sse:
-  # Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
+  # Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3, SSE-C.
   # CLI flag: -<prefix>.s3.sse.type
   [type: <string> | default = ""]
 
@@ -3540,6 +3544,10 @@ sse:
   # string.
   # CLI flag: -<prefix>.s3.sse.kms-encryption-context
   [kms_encryption_context: <string> | default = ""]
+
+  # (experimental) File path of the customer key to encrypt objects in S3.
+  # CLI flag: -<prefix>.s3.sse.encryption-key-path
+  [encryption_key_path: <string> | default = ""]
 
 http:
   # (advanced) The time an idle connection will remain idle before closing.

@@ -3387,6 +3387,16 @@
         },
         {
           "kind": "field",
+          "name": "s3_sse_c_encryption_key_path",
+          "required": false,
+          "desc": "Filepath of the S3 server-side encryption customer key. Ignored if the SSE type override is not set.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "alertmanager_receivers_firewall_block_cidr_networks",
           "required": false,
           "desc": "Comma-separated list of network CIDRs to block in Alertmanager receiver integrations.",
@@ -4415,7 +4425,7 @@
                   "kind": "field",
                   "name": "type",
                   "required": false,
-                  "desc": "Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.",
+                  "desc": "Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3, SSE-C.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "blocks-storage.s3.sse.type",
@@ -4440,6 +4450,17 @@
                   "fieldDefaultValue": "",
                   "fieldFlag": "blocks-storage.s3.sse.kms-encryption-context",
                   "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "encryption_key_path",
+                  "required": false,
+                  "desc": "File path of the customer key to encrypt objects in S3.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "blocks-storage.s3.sse.encryption-key-path",
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
@@ -8350,7 +8371,7 @@
                   "kind": "field",
                   "name": "type",
                   "required": false,
-                  "desc": "Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.",
+                  "desc": "Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3, SSE-C.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "ruler-storage.s3.sse.type",
@@ -8375,6 +8396,17 @@
                   "fieldDefaultValue": "",
                   "fieldFlag": "ruler-storage.s3.sse.kms-encryption-context",
                   "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "encryption_key_path",
+                  "required": false,
+                  "desc": "File path of the customer key to encrypt objects in S3.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.s3.sse.encryption-key-path",
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
@@ -9713,7 +9745,7 @@
                   "kind": "field",
                   "name": "type",
                   "required": false,
-                  "desc": "Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.",
+                  "desc": "Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3, SSE-C.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "alertmanager-storage.s3.sse.type",
@@ -9738,6 +9770,17 @@
                   "fieldDefaultValue": "",
                   "fieldFlag": "alertmanager-storage.s3.sse.kms-encryption-context",
                   "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "encryption_key_path",
+                  "required": false,
+                  "desc": "File path of the customer key to encrypt objects in S3.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "alertmanager-storage.s3.sse.encryption-key-path",
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
@@ -11413,7 +11456,7 @@
                       "kind": "field",
                       "name": "type",
                       "required": false,
-                      "desc": "Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.",
+                      "desc": "Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3, SSE-C.",
                       "fieldValue": null,
                       "fieldDefaultValue": "",
                       "fieldFlag": "common.storage.s3.sse.type",
@@ -11438,6 +11481,17 @@
                       "fieldDefaultValue": "",
                       "fieldFlag": "common.storage.s3.sse.kms-encryption-context",
                       "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "encryption_key_path",
+                      "required": false,
+                      "desc": "File path of the customer key to encrypt objects in S3.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "common.storage.s3.sse.encryption-key-path",
+                      "fieldType": "string",
+                      "fieldCategory": "experimental"
                     }
                   ],
                   "fieldValue": null,

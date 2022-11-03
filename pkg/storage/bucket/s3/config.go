@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -32,11 +33,15 @@ const (
 	// SSES3 config type constant to configure S3 server side encryption with AES-256
 	// https://docs.aws.amazon.com/AmazonS3/latest/dev/UsingServerSideEncryption.html
 	SSES3 = "SSE-S3"
+
+	// SSEC config type constant to configure S3 server side encryption with
+	// https://docs.aws.amazon.com/AmazonS3/latest/userguide/ServerSideEncryptionCustomerKeys.html
+	SSEC = "SSE-C"
 )
 
 var (
 	supportedSignatureVersions     = []string{SignatureVersionV4, SignatureVersionV2}
-	supportedSSETypes              = []string{SSEKMS, SSES3}
+	supportedSSETypes              = []string{SSEKMS, SSES3, SSEC}
 	errUnsupportedSignatureVersion = fmt.Errorf("unsupported signature version (supported values: %s)", strings.Join(supportedSignatureVersions, ", "))
 	errUnsupportedSSEType          = errors.New("unsupported S3 SSE type")
 	errInvalidSSEContext           = errors.New("invalid S3 SSE encryption context")
@@ -120,6 +125,7 @@ type SSEConfig struct {
 	Type                 string `yaml:"type"`
 	KMSKeyID             string `yaml:"kms_key_id"`
 	KMSEncryptionContext string `yaml:"kms_encryption_context"`
+	EncryptionKeyPath    string `yaml:"encryption_key_path" category:"experimental"`
 }
 
 func (cfg *SSEConfig) RegisterFlags(f *flag.FlagSet) {
@@ -131,6 +137,7 @@ func (cfg *SSEConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.StringVar(&cfg.Type, prefix+"type", "", fmt.Sprintf("Enable AWS Server Side Encryption. Supported values: %s.", strings.Join(supportedSSETypes, ", ")))
 	f.StringVar(&cfg.KMSKeyID, prefix+"kms-key-id", "", "KMS Key ID used to encrypt objects in S3")
 	f.StringVar(&cfg.KMSEncryptionContext, prefix+"kms-encryption-context", "", "KMS Encryption Context used for object encryption. It expects JSON formatted string.")
+	f.StringVar(&cfg.EncryptionKeyPath, prefix+"encryption-key-path", "", "File path of the customer key to encrypt objects in S3.")
 }
 
 func (cfg *SSEConfig) Validate() error {
@@ -165,6 +172,11 @@ func (cfg *SSEConfig) BuildThanosConfig() (s3.SSEConfig, error) {
 		return s3.SSEConfig{
 			Type: s3.SSES3,
 		}, nil
+	case SSEC:
+		return s3.SSEConfig{
+			Type:          s3.SSEC,
+			EncryptionKey: cfg.EncryptionKeyPath,
+		}, nil
 	default:
 		return s3.SSEConfig{}, errUnsupportedSSEType
 	}
@@ -188,6 +200,12 @@ func (cfg *SSEConfig) BuildMinioConfig() (encrypt.ServerSide, error) {
 		return encrypt.NewSSEKMS(cfg.KMSKeyID, encryptionCtx)
 	case SSES3:
 		return encrypt.NewSSE(), nil
+	case SSEC:
+		key, err := os.ReadFile(cfg.EncryptionKeyPath)
+		if err != nil {
+			return nil, err
+		}
+		return encrypt.NewSSEC(key)
 	default:
 		return nil, errUnsupportedSSEType
 	}

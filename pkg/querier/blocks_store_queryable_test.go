@@ -1910,6 +1910,10 @@ func (m *blocksStoreLimitsMock) S3SSEKMSEncryptionContext(_ string) string {
 	return ""
 }
 
+func (m *blocksStoreLimitsMock) S3SSECEncryptionKeyPath(_ string) string {
+	return ""
+}
+
 func mockSeriesResponse(lbls labels.Labels, timeMillis int64, value float64) *storepb.SeriesResponse {
 	return mockSeriesResponseWithSamples(lbls, promql.Point{T: timeMillis, V: value})
 }

@@ -102,3 +102,8 @@ The following features are currently experimental:
 - Anonymous usage statistics tracking
 - Read-write deployment mode
 - `/api/v1/user_limits` API endpoint
+- Blocks Storage, Alertmanager, and Ruler support for SSE-C
+  - `-alertmanager-storage.s3.sse.encryption-key-path`
+  - `-blocks-storage.s3.sse.encryption-key-path`
+  - `-common.storage.s3.sse.encryption-key-path`
+  - `-ruler-storage.s3.sse.encryption-key-path`

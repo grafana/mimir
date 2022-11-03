@@ -26,6 +26,7 @@ Grafana Mimir supports the following AWS S3 SSE modes:
 
 - [Server-Side Encryption with Amazon S3-Managed Keys (SSE-S3)](https://docs.aws.amazon.com/AmazonS3/latest/dev/UsingServerSideEncryption.html)
 - [Server-Side Encryption with KMS keys Stored in AWS Key Management Service (SSE-KMS)](https://docs.aws.amazon.com/AmazonS3/latest/dev/UsingKMSEncryption.html)
+- [Server-Side Encryption with customer-provided keys (SSE-C)](https://docs.aws.amazon.com/AmazonS3/latest/userguide/ServerSideEncryptionCustomerKeys.html)
 
 You can configure AWS S3 SSE globally or for specific tenants.
 
@@ -73,6 +74,9 @@ You can use the following settings to override AWS S3 SSE for each tenant:
   S3 server-side encryption KMS encryption context.
   If this setting is not applied, and the key ID override is set, the encryption context is not be provided to S3.
   This setting is ignored if the SSE type override is not set or the type is not `SSE-KMS`.
+- **`s3_sse_c_encryption_key_path`**<br />
+  S3 server-side encryption key filepath.
+  This setting is ignored if the SSE type override is not set or the type is not `SSE-C`.
 
 **To configure AWS S3 SSE for a specific tenant**:
 
