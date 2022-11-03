@@ -226,7 +226,7 @@ func (c *Config) Validate(log log.Logger) error {
 		return errors.Wrap(err, "invalid querier config")
 	}
 	if c.Querier.EngineConfig.Timeout > c.Server.HTTPServerWriteTimeout {
-		return fmt.Errorf("querier timeout (%s) must be lower than HTTP server write timeout (%s)",
+		return fmt.Errorf("querier timeout (%s) must be lower than or equal to HTTP server write timeout (%s)",
 			c.Querier.EngineConfig.Timeout, c.Server.HTTPServerWriteTimeout)
 	}
 	if err := c.IngesterClient.Validate(log); err != nil {
