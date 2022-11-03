@@ -346,6 +346,20 @@ How to **fix** it:
 - Increase the evaluation interval of the rule group. You can use the rate of missed evaluation to estimate how long the rule group evaluation actually takes.
 - Try splitting up the rule group into multiple rule groups. Rule groups are evaluated in parallel, so the same rules may still fit in the same resolution.
 
+### MimirRulerRemoteEvaluationFailing
+
+This alert fires when communication between `ruler` and `ruler-query-frontend` is failing to be established.
+
+The `ruler-query-frontend` component is exclusively used by the `ruler` to evaluate rule expressions when running in remote operational mode. If communication between these two components breaks, gaps are expected to appear in the case of recording rules or alerting rules will not fire when they should.
+
+How to **investigate**:
+
+- Check the `Mimir / Remote ruler reads` dashboard to see if the issue is caused by failures or high latency
+  - **Failures**
+    - Check the `ruler-query-frontend` logs to find out more details about the error
+  - **High latency**
+    - Check the `Mimir / Remote ruler reads resources` dashboard to see if CPU or Memory usage increased unexpectedly
+
 ### MimirIngesterHasNotShippedBlocks
 
 This alert fires when a Mimir ingester is not uploading any block to the long-term storage. An ingester is expected to upload a block to the storage every block range period (defaults to 2h) and if a longer time elapse since the last successful upload it means something is not working correctly.
