@@ -16,6 +16,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	promgate "github.com/prometheus/prometheus/util/gate"
 )
 
 var ErrMaxConcurrent = errors.New("max concurrent requests inflight")
@@ -46,6 +47,18 @@ type noopGate struct{}
 
 func (noopGate) Start(context.Context) error { return nil }
 func (noopGate) Done()                       {}
+
+// New returns an instrumented gate limiting the number of requests being
+// executed concurrently.
+//
+// The gate implementation is based on the
+// github.com/prometheus/prometheus/util/gate package.
+//
+// It can be called several times but not with the same registerer otherwise it
+// will panic when trying to register the same metric multiple times.
+func New(reg prometheus.Registerer, maxConcurrent int) Gate {
+	return NewInstrumented(reg, maxConcurrent, promgate.New(maxConcurrent))
+}
 
 // NewInstrumented wraps a Gate implementation with one that records max number of inflight
 // requests, currently inflight requests, and the duration of calls to the Start method.

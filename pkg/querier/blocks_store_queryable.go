@@ -29,9 +29,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/thanos-io/objstore"
-	"github.com/thanos-io/thanos/pkg/block"
-	"github.com/thanos-io/thanos/pkg/extprom"
-	"github.com/thanos-io/thanos/pkg/strutil"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 	grpc_metadata "google.golang.org/grpc/metadata"
@@ -42,6 +39,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/storegateway/hintspb"
@@ -208,7 +206,7 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 	}
 
 	// Blocks finder doesn't use chunks, but we pass config for consistency.
-	cachingBucket, err := mimir_tsdb.CreateCachingBucket(storageCfg.BucketStore.ChunksCache, storageCfg.BucketStore.MetadataCache, bucketClient, logger, extprom.WrapRegistererWith(prometheus.Labels{"component": "querier"}, reg))
+	cachingBucket, err := mimir_tsdb.CreateCachingBucket(storageCfg.BucketStore.ChunksCache, storageCfg.BucketStore.MetadataCache, bucketClient, logger, prometheus.WrapRegistererWith(prometheus.Labels{"component": "querier"}, reg))
 	if err != nil {
 		return nil, errors.Wrap(err, "create caching bucket")
 	}
@@ -385,7 +383,7 @@ func (q *blocksStoreQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, 
 		return nil, nil, err
 	}
 
-	return strutil.MergeSlices(resNameSets...), resWarnings, nil
+	return util.MergeSlices(resNameSets...), resWarnings, nil
 }
 
 func (q *blocksStoreQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
@@ -426,7 +424,7 @@ func (q *blocksStoreQuerier) LabelValues(name string, matchers ...*labels.Matche
 		return nil, nil, err
 	}
 
-	return strutil.MergeSlices(resValueSets...), resWarnings, nil
+	return util.MergeSlices(resValueSets...), resWarnings, nil
 }
 
 func (q *blocksStoreQuerier) Close() error {

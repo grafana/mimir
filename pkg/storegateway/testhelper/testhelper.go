@@ -19,8 +19,9 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
-	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
 // CreateBlock writes a block with the given series and numSamples samples each.
@@ -36,6 +37,20 @@ func CreateBlock(
 	hashFunc metadata.HashFunc,
 ) (id ulid.ULID, err error) {
 	return createBlock(ctx, dir, series, numSamples, mint, maxt, extLset, resolution, false, hashFunc)
+}
+
+// CreateBlockWithTombstone is same as CreateBlock but leaves tombstones which mimics the Prometheus local block.
+func CreateBlockWithTombstone(
+	ctx context.Context,
+	dir string,
+	series []labels.Labels,
+	numSamples int,
+	mint, maxt int64,
+	extLset labels.Labels,
+	resolution int64,
+	hashFunc metadata.HashFunc,
+) (id ulid.ULID, err error) {
+	return createBlock(ctx, dir, series, numSamples, mint, maxt, extLset, resolution, true, hashFunc)
 }
 
 func createBlock(

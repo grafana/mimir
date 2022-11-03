@@ -11,7 +11,6 @@ package storegateway
 import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/thanos-io/thanos/pkg/extprom"
 
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
 )
@@ -175,7 +174,7 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 		},
 	})
 
-	m.indexHeaderReaderMetrics = indexheader.NewReaderPoolMetrics(extprom.WrapRegistererWithPrefix("cortex_bucket_store_", reg))
+	m.indexHeaderReaderMetrics = indexheader.NewReaderPoolMetrics(prometheus.WrapRegistererWithPrefix("cortex_bucket_store_", reg))
 
 	return &m
 }

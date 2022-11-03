@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/flagext"
 	lru "github.com/hashicorp/golang-lru/simplelru"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
@@ -19,7 +20,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/thanos-io/thanos/pkg/model"
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
@@ -62,9 +62,9 @@ type InMemoryIndexCache struct {
 // InMemoryIndexCacheConfig holds the in-memory index cache config.
 type InMemoryIndexCacheConfig struct {
 	// MaxSize represents overall maximum number of bytes cache can contain.
-	MaxSize model.Bytes `yaml:"max_size"`
+	MaxSize flagext.Bytes `yaml:"max_size"`
 	// MaxItemSize represents maximum size of single item.
-	MaxItemSize model.Bytes `yaml:"max_item_size"`
+	MaxItemSize flagext.Bytes `yaml:"max_item_size"`
 }
 
 // parseInMemoryIndexCacheConfig unmarshals a buffer into a InMemoryIndexCacheConfig with default values.

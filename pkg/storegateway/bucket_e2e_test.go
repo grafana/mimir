@@ -23,13 +23,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
-	"github.com/thanos-io/thanos/pkg/block"
-	"github.com/thanos-io/thanos/pkg/block/metadata"
-	"github.com/thanos-io/thanos/pkg/model"
 	"github.com/weaveworks/common/httpgrpc"
 	"google.golang.org/grpc/codes"
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
 	"github.com/grafana/mimir/pkg/storegateway/labelpb"
@@ -38,10 +37,8 @@ import (
 )
 
 var (
-	minTime         = time.Unix(0, 0)
-	maxTime, _      = time.Parse(time.RFC3339, "9999-12-31T23:59:59Z")
-	minTimeDuration = model.TimeOrDurationValue{Time: &minTime}
-	maxTimeDuration = model.TimeOrDurationValue{Time: &maxTime}
+	minTime    = time.Unix(0, 0)
+	maxTime, _ = time.Parse(time.RFC3339, "9999-12-31T23:59:59Z")
 )
 
 type swappableCache struct {
@@ -530,8 +527,8 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 				Matchers: []storepb.LabelMatcher{
 					{Type: storepb.LabelMatcher_EQ, Name: "a", Value: "1"},
 				},
-				MinTime: minTimeDuration.PrometheusTimestamp(),
-				MaxTime: maxTimeDuration.PrometheusTimestamp(),
+				MinTime: timestamp.FromTime(minTime),
+				MaxTime: timestamp.FromTime(maxTime),
 			}
 
 			s.cache.SwapWith(noopCache{})

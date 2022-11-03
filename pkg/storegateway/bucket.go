@@ -40,24 +40,24 @@ import (
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
-	"github.com/thanos-io/thanos/pkg/block"
-	"github.com/thanos-io/thanos/pkg/block/metadata"
-	"github.com/thanos-io/thanos/pkg/pool"
-	"github.com/thanos-io/thanos/pkg/strutil"
-	"github.com/thanos-io/thanos/pkg/tracing"
+	"github.com/thanos-io/objstore/tracing"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
 	"github.com/grafana/mimir/pkg/storegateway/labelpb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/gate"
 	util_math "github.com/grafana/mimir/pkg/util/math"
+	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -846,7 +846,7 @@ func debugFoundBlockSetOverview(logger log.Logger, mint, maxt, maxResolutionMill
 // Series implements the storepb.StoreServer interface.
 func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_SeriesServer) (err error) {
 	if s.queryGate != nil {
-		tracing.DoInSpan(srv.Context(), "store_query_gate_ismyturn", func(ctx context.Context) {
+		tracing.DoWithSpan(srv.Context(), "store_query_gate_ismyturn", func(ctx context.Context, _ tracing.Span) {
 			err = s.queryGate.Start(srv.Context())
 		})
 		if err != nil {
@@ -1013,7 +1013,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		s.metrics.seriesBlocksQueried.Observe(float64(stats.blocksQueried))
 	}
 	// Merge the sub-results from each selected block.
-	tracing.DoInSpan(ctx, "bucket_store_merge_all", func(ctx context.Context) {
+	tracing.DoWithSpan(ctx, "bucket_store_merge_all", func(ctx context.Context, _ tracing.Span) {
 		begin := time.Now()
 
 		// NOTE: We "carefully" assume series and chunks are sorted within each SeriesSet. This should be guaranteed by
@@ -1152,7 +1152,7 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 	}
 
 	return &storepb.LabelNamesResponse{
-		Names: strutil.MergeSlices(sets...),
+		Names: util.MergeSlices(sets...),
 		Hints: anyHints,
 	}, nil
 }
@@ -1313,7 +1313,7 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 	}
 
 	return &storepb.LabelValuesResponse{
-		Values: strutil.MergeSlices(sets...),
+		Values: util.MergeSlices(sets...),
 		Hints:  anyHints,
 	}, nil
 }

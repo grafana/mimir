@@ -40,12 +40,12 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
-	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 	"github.com/grafana/mimir/pkg/util/validation"
 )

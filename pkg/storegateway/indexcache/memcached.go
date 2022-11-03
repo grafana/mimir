@@ -18,9 +18,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/thanos-io/thanos/pkg/cacheutil"
 	"golang.org/x/crypto/blake2b"
 
+	"github.com/grafana/mimir/pkg/cacheutil"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 )
 

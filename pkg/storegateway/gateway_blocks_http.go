@@ -13,9 +13,9 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/prometheus/prometheus/model/labels"
 	prom_tsdb "github.com/prometheus/prometheus/tsdb"
-	"github.com/thanos-io/thanos/pkg/block/metadata"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/listblocks"
 )

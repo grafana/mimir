@@ -6,17 +6,30 @@
 package cache
 
 import (
+	"context"
 	"fmt"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/thanos-io/thanos/pkg/cache"
-	"github.com/thanos-io/thanos/pkg/cacheutil"
+
+	"github.com/grafana/mimir/pkg/cacheutil"
 )
 
-// Cache is a generic interface. Re-mapping Thanos one for convenience (same packages name make it annoying to use).
-type Cache = cache.Cache
+// Cache is a generic interface.
+type Cache interface {
+	// Store data into the cache.
+	//
+	// Note that individual byte buffers may be retained by the cache!
+	Store(ctx context.Context, data map[string][]byte, ttl time.Duration)
+
+	// Fetch multiple keys from cache. Returns map of input keys to data.
+	// If key isn't in the map, data for given key was not found.
+	Fetch(ctx context.Context, keys []string) map[string][]byte
+
+	Name() string
+}
 
 const (
 	BackendMemcached = "memcached"
@@ -42,7 +55,7 @@ func (cfg *BackendConfig) Validate() error {
 	return nil
 }
 
-func CreateClient(cacheName string, cfg BackendConfig, logger log.Logger, reg prometheus.Registerer) (cache.Cache, error) {
+func CreateClient(cacheName string, cfg BackendConfig, logger log.Logger, reg prometheus.Registerer) (Cache, error) {
 	switch cfg.Backend {
 	case "":
 		// No caching.
@@ -53,7 +66,7 @@ func CreateClient(cacheName string, cfg BackendConfig, logger log.Logger, reg pr
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to create memcached client")
 		}
-		return cache.NewMemcachedCache(cacheName, logger, client, reg), nil
+		return NewMemcachedCache(cacheName, logger, client, reg), nil
 
 	default:
 		return nil, errors.Errorf("unsupported cache type for cache %s: %s", cacheName, cfg.Backend)

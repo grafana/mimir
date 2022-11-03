@@ -17,11 +17,11 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/relabel"
-	"github.com/thanos-io/thanos/pkg/block"
 	"golang.org/x/time/rate"
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
 const (
