@@ -397,6 +397,17 @@ func TestConfigValidation(t *testing.T) {
 			},
 			expectedError: nil,
 		},
+		{
+			name: "should fail if querier timeout is bigger than http server timeout",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				_ = cfg.Target.Set("all,alertmanager")
+				cfg.Querier.EngineConfig.Timeout = cfg.Server.HTTPServerWriteTimeout + time.Second
+
+				return cfg
+			},
+			expectAnyError: true,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := tc.getTestConfig().Validate(nil)

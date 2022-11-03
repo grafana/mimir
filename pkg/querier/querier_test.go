@@ -1067,7 +1067,6 @@ func TestConfig_Validate(t *testing.T) {
 			cfg := &Config{}
 			flagext.DefaultValues(cfg)
 			testData.setup(cfg)
-
 			assert.Equal(t, testData.expected, cfg.Validate())
 		})
 	}

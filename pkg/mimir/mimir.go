@@ -225,6 +225,10 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.Querier.Validate(); err != nil {
 		return errors.Wrap(err, "invalid querier config")
 	}
+	if c.Querier.EngineConfig.Timeout > c.Server.HTTPServerWriteTimeout {
+		return fmt.Errorf("querier timeout (%s) must be lower than or equal to HTTP server write timeout (%s)",
+			c.Querier.EngineConfig.Timeout, c.Server.HTTPServerWriteTimeout)
+	}
 	if err := c.IngesterClient.Validate(log); err != nil {
 		return errors.Wrap(err, "invalid ingester_client config")
 	}
@@ -484,6 +488,7 @@ func (c *Config) registerServerFlagsWithChangedDefaultValues(fs *flag.FlagSet) {
 	c.Server.RegisterFlags(throwaway)
 
 	defaultsOverrides := map[string]string{
+		"server.http-write-timeout":                         "2m",
 		"server.grpc.keepalive.min-time-between-pings":      "10s",
 		"server.grpc.keepalive.ping-without-stream-allowed": "true",
 		"server.http-listen-port":                           "8080",
