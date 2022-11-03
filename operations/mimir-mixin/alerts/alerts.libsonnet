@@ -644,7 +644,7 @@
           alert: $.alertName('RulerRemoteEvaluationFailing'),
           expr: |||
             100 * (
-            sum by (%s) (rate(cortex_request_duration_seconds_count{route="/httpgrpc.HTTP/Handle", status_code!~"5..", %s}[5m]))
+            sum by (%s) (rate(cortex_request_duration_seconds_count{route="/httpgrpc.HTTP/Handle", status_code=~"5..", %s}[5m]))
               /
             sum by (%s) (rate(cortex_request_duration_seconds_count{route="/httpgrpc.HTTP/Handle", %s}[5m]))
             ) > 1
