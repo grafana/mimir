@@ -8,8 +8,8 @@ package thanos;
 
 option go_package = "storepb";
 
-import "gogoproto/gogo.proto";
-import "github.com/grafana/mimir/pkg/storegateway/labelpb/types.proto";
+import "github.com/gogo/protobuf/gogoproto/gogo.proto";
+import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
 
 option (gogoproto.sizer_all) = true;
 option (gogoproto.marshaler_all) = true;
@@ -31,7 +31,7 @@ message Chunk {
 }
 
 message Series {
-  repeated Label labels      = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "github.com/grafana/mimir/pkg/storegateway/labelpb.ZLabel"];
+  repeated cortexpb.LabelPair labels      = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"];
   repeated AggrChunk chunks  = 2 [(gogoproto.nullable) = false];
 }
 

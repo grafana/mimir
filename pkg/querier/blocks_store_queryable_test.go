@@ -32,10 +32,10 @@ import (
 	"github.com/weaveworks/common/user"
 	"google.golang.org/grpc"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway/hintspb"
-	"github.com/grafana/mimir/pkg/storegateway/labelpb"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
@@ -1922,7 +1922,7 @@ func mockSeriesResponseWithChunks(lbls labels.Labels, chunks ...storepb.AggrChun
 	return &storepb.SeriesResponse{
 		Result: &storepb.SeriesResponse_Series{
 			Series: &storepb.Series{
-				Labels: labelpb.ZLabelsFromPromLabels(lbls),
+				Labels: mimirpb.FromLabelsToLabelAdapters(lbls),
 				Chunks: chunks,
 			},
 		},

@@ -26,12 +26,12 @@ import (
 	"github.com/weaveworks/common/httpgrpc"
 	"google.golang.org/grpc/codes"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
-	"github.com/grafana/mimir/pkg/storegateway/labelpb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/storegateway/testhelper"
 )
@@ -216,7 +216,7 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 	// TODO(bwplotka): Add those test cases to TSDB querier_test.go as well, there are no tests for matching.
 	for i, tcase := range []struct {
 		req              *storepb.SeriesRequest
-		expected         [][]labelpb.ZLabel
+		expected         [][]mimirpb.LabelAdapter
 		expectedChunkLen int
 	}{
 		{
@@ -228,7 +228,7 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 				MaxTime: maxt,
 			},
 			expectedChunkLen: 3,
-			expected: [][]labelpb.ZLabel{
+			expected: [][]mimirpb.LabelAdapter{
 				{{Name: "a", Value: "1"}, {Name: "b", Value: "1"}},
 				{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}},
 				{{Name: "a", Value: "1"}, {Name: "c", Value: "1"}},
@@ -248,7 +248,7 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 				MaxTime: maxt,
 			},
 			expectedChunkLen: 3,
-			expected: [][]labelpb.ZLabel{
+			expected: [][]mimirpb.LabelAdapter{
 				{{Name: "a", Value: "1"}, {Name: "b", Value: "1"}},
 				{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}},
 				{{Name: "a", Value: "1"}, {Name: "c", Value: "1"}},
@@ -264,7 +264,7 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 				MaxTime: maxt,
 			},
 			expectedChunkLen: 3,
-			expected: [][]labelpb.ZLabel{
+			expected: [][]mimirpb.LabelAdapter{
 				{{Name: "a", Value: "1"}, {Name: "b", Value: "1"}},
 				{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}},
 				{{Name: "a", Value: "1"}, {Name: "c", Value: "1"}},
@@ -280,7 +280,7 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 				MaxTime: maxt,
 			},
 			expectedChunkLen: 3,
-			expected: [][]labelpb.ZLabel{
+			expected: [][]mimirpb.LabelAdapter{
 				{{Name: "a", Value: "1"}, {Name: "b", Value: "1"}},
 				{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}},
 				{{Name: "a", Value: "1"}, {Name: "c", Value: "1"}},
@@ -300,7 +300,7 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 				MaxTime: maxt,
 			},
 			expectedChunkLen: 3,
-			expected: [][]labelpb.ZLabel{
+			expected: [][]mimirpb.LabelAdapter{
 				{{Name: "a", Value: "1"}, {Name: "b", Value: "1"}},
 				{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}},
 				{{Name: "a", Value: "1"}, {Name: "c", Value: "1"}},
@@ -320,7 +320,7 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 				MaxTime: maxt,
 			},
 			expectedChunkLen: 3,
-			expected: [][]labelpb.ZLabel{
+			expected: [][]mimirpb.LabelAdapter{
 				{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}},
 				{{Name: "a", Value: "2"}, {Name: "b", Value: "2"}},
 			},
@@ -334,7 +334,7 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 				MaxTime: maxt,
 			},
 			expectedChunkLen: 3,
-			expected: [][]labelpb.ZLabel{
+			expected: [][]mimirpb.LabelAdapter{
 				{{Name: "a", Value: "1"}, {Name: "b", Value: "1"}},
 				{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}},
 				{{Name: "a", Value: "1"}, {Name: "c", Value: "1"}},
@@ -350,7 +350,7 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 				MaxTime: maxt,
 			},
 			expectedChunkLen: 3,
-			expected: [][]labelpb.ZLabel{
+			expected: [][]mimirpb.LabelAdapter{
 				{{Name: "a", Value: "1"}, {Name: "b", Value: "1"}},
 				{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}},
 				{{Name: "a", Value: "1"}, {Name: "c", Value: "1"}},
@@ -384,7 +384,7 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 				SkipChunks: true,
 			},
 			expectedChunkLen: 0,
-			expected: [][]labelpb.ZLabel{
+			expected: [][]mimirpb.LabelAdapter{
 				{{Name: "a", Value: "1"}, {Name: "b", Value: "1"}},
 				{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}},
 				{{Name: "a", Value: "1"}, {Name: "c", Value: "1"}},

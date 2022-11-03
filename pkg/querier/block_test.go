@@ -21,7 +21,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/storegateway/labelpb"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -46,7 +46,7 @@ func TestBlockQuerierSeries(t *testing.T) {
 		},
 		"should return series on success": {
 			series: &storepb.Series{
-				Labels: []labelpb.ZLabel{
+				Labels: []mimirpb.LabelAdapter{
 					{Name: "foo", Value: "bar"},
 				},
 				Chunks: []storepb.AggrChunk{
@@ -61,7 +61,7 @@ func TestBlockQuerierSeries(t *testing.T) {
 		},
 		"should return error on failure while reading encoded chunk data": {
 			series: &storepb.Series{
-				Labels: []labelpb.ZLabel{{Name: "foo", Value: "bar"}},
+				Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}},
 				Chunks: []storepb.AggrChunk{
 					{MinTime: minTimestamp.Unix() * 1000, MaxTime: maxTimestamp.Unix() * 1000, Raw: &storepb.Chunk{Type: storepb.Chunk_XOR, Data: []byte{0, 1}}},
 				},
@@ -75,7 +75,7 @@ func TestBlockQuerierSeries(t *testing.T) {
 		testData := testData
 
 		t.Run(testName, func(t *testing.T) {
-			series := newBlockQuerierSeries(labelpb.ZLabelsToPromLabels(testData.series.Labels), testData.series.Chunks)
+			series := newBlockQuerierSeries(mimirpb.FromLabelAdaptersToLabels(testData.series.Labels), testData.series.Chunks)
 
 			assert.Equal(t, testData.expectedMetric, series.Labels())
 
@@ -412,11 +412,11 @@ func createAggrChunk(minTime, maxTime int64, samples ...promql.Point) storepb.Ag
 	}
 }
 
-func mkZLabels(s ...string) []labelpb.ZLabel {
-	var result []labelpb.ZLabel
+func mkZLabels(s ...string) []mimirpb.LabelAdapter {
+	var result []mimirpb.LabelAdapter
 
 	for i := 0; i+1 < len(s); i = i + 2 {
-		result = append(result, labelpb.ZLabel{
+		result = append(result, mimirpb.LabelAdapter{
 			Name:  s[i],
 			Value: s[i+1],
 		})
@@ -426,7 +426,7 @@ func mkZLabels(s ...string) []labelpb.ZLabel {
 }
 
 func mkLabels(s ...string) []labels.Label {
-	return labelpb.ZLabelsToPromLabels(mkZLabels(s...))
+	return mimirpb.FromLabelAdaptersToLabels(mkZLabels(s...))
 }
 
 func Benchmark_newBlockQuerierSeries(b *testing.B) {
