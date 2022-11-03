@@ -9,8 +9,6 @@
   alertName(name)::
     $._config.product + name,
 
-  // The mixin allow specialism of the job selector depending on if its a single binary
-  // deployment or a namespaced one.
   jobMatcher(job)::
     'job=~".*/%s"' % job,
 }
