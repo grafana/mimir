@@ -5,7 +5,7 @@
 
 FROM k8s.gcr.io/kustomize/kustomize:v4.5.5 as kustomize
 FROM alpine/helm:3.8.2 as helm
-FROM golang:1.19.2-bullseye
+FROM golang:1.19.3-bullseye
 ARG goproxyValue
 ENV GOPROXY=${goproxyValue}
 RUN apt-get update && apt-get install -y curl python3-requests python3-yaml file jq zip unzip protobuf-compiler libprotobuf-dev shellcheck libpcap-dev skopeo && \
