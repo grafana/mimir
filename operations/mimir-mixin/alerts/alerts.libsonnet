@@ -644,11 +644,11 @@
           alert: $.alertName('RulerRemoteEvaluationFailing'),
           expr: |||
             100 * (
-            sum by (%s) (rate(cortex_request_duration_seconds_count{route="/httpgrpc.HTTP/Handle", status_code!~"5..", job=~".*/ruler-query-frontend"}[5m]))
+            sum by (%s) (rate(cortex_request_duration_seconds_count{route="/httpgrpc.HTTP/Handle", status_code!~"5..", %s}[5m]))
               /
-            sum by (%s) (rate(cortex_request_duration_seconds_count{route="/httpgrpc.HTTP/Handle", job=~".*/ruler-query-frontend"}[5m]))
+            sum by (%s) (rate(cortex_request_duration_seconds_count{route="/httpgrpc.HTTP/Handle", %s}[5m]))
             ) > 1
-          ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels],
+          ||| % [$._config.alert_aggregation_labels, $.jobMatcher($._config.job_names.ruler_query_frontend), $._config.alert_aggregation_labels, $.jobMatcher($._config.job_names.ruler_query_frontend)],
           'for': '5m',
           labels: {
             severity: 'warning',
