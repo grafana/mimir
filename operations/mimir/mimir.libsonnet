@@ -28,5 +28,8 @@
 (import 'memberlist.libsonnet') +
 (import 'continuous-test.libsonnet') +
 
-// Import autoscaling at the end because it overrides deployments.
-(import 'autoscaling.libsonnet')
+// Import autoscaling after other features because it overrides deployments.
+(import 'autoscaling.libsonnet') +
+
+// Read-write deployment mode.
+(import 'read-write-deployment.libsonnet')

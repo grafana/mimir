@@ -59,6 +59,19 @@
     * Removing `ruler_client_type` and `alertmanager_client_type` if their value match the `storage_backend`, or renaming them to their new names otherwise.
     * Reviewing any possible extensions to `genericBlocksStorageConfig`, `rulerClientConfig` and `alertmanagerStorageClientConfig` and moving them to the corresponding new options.
     * Renaming the alertmanager's bucket name configuration from provider-specific to the new `alertmanager_storage_bucket_name` key.
+* [FEATURE] Added support for experimental read-write deployment mode. You can enable it setting: #3379
+  ```jsonnet
+  {
+    _config+:: {
+      read_write_deployment_enabled: true,
+
+      // See operations/mimir/read-write-deployment.libsonnet for more configuration options.
+      mimir_write_replicas: 3,
+      mimir_read_replicas: 2,
+      mimir_backend_replicas: 3,
+    }
+  }
+  ```
 * [ENHANCEMENT] Added `$._config.usageStatsConfig` to track the installation mode via the anonymous usage statistics. #3294
 * [ENHANCEMENT] The query-tee node port (`$._config.query_tee_node_port`) is now optional. #3272
 * [BUGFIX] Fixed query-scheduler ring configuration for dedicated ruler's queries and query-frontends. #3237 #3239
