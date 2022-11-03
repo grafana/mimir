@@ -15,6 +15,7 @@
 (import 'query-scheduler.libsonnet') +
 (import 'compactor.libsonnet') +
 (import 'store-gateway.libsonnet') +
+(import 'overrides-exporter.libsonnet') +
 
 // Supporting services
 (import 'etcd.libsonnet') +

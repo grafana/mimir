@@ -59,6 +59,14 @@
     * Removing `ruler_client_type` and `alertmanager_client_type` if their value match the `storage_backend`, or renaming them to their new names otherwise.
     * Reviewing any possible extensions to `genericBlocksStorageConfig`, `rulerClientConfig` and `alertmanagerStorageClientConfig` and moving them to the corresponding new options.
     * Renaming the alertmanager's bucket name configuration from provider-specific to the new `alertmanager_storage_bucket_name` key.
+* [CHANGE] The `overrides-exporter.libsonnet` file is now always imported. The overrides-exporter can be enabled in jsonnet setting the following: #3379
+  ```jsonnet
+  {
+    _config+:: {
+      overrides_exporter_enabled: true,
+    }
+  }
+  ```
 * [FEATURE] Added support for experimental read-write deployment mode. You can enable it setting: #3379
   ```jsonnet
   {
