@@ -94,7 +94,7 @@ This may cause that incorrect results are returned for the query.
     For Amazon S3, use the `aws` tool:
 
     ```bash
-    aws s3 cp -r s3://<THANOS-BUCKET> s3://<TENANT>/<DIRECTORY>
+    aws s3 cp -r s3://<THANOS-BUCKET> s3://<INTERMEDIATE-MIMIR-BUCKET>/
     ```
 
     For Google Cloud Storage (GCS), use the `gsutil` tool:
@@ -185,7 +185,7 @@ This may cause that incorrect results are returned for the query.
    # relabel-config.yaml
    - action: replace
      target_label: "<LABEL-KEY>"
-     replacement: "<LABEL-VALUE"
+     replacement: "<LABEL-VALUE>"
    ```
    
    Perform the rewrite dry run to confirm all works well.
@@ -207,7 +207,7 @@ This may cause that incorrect results are returned for the query.
    done
    ```
    
-   After you confirm that the rewrite is working as expected via `--dry-run`, apply the changes with the `--no-dry-run` flag. Remember to include `--delete-blocks, otherwise the original blocks will not be marked for deletion.
+   After you confirm that the rewrite is working as expected via `--dry-run`, apply the changes with the `--no-dry-run` flag. Remember to include `--delete-blocks`, otherwise the original blocks will not be marked for deletion.
    
    ```bash
    # Rewrite the blocks with external labels and mark the original blocks for deletion.
@@ -310,11 +310,17 @@ This may cause that incorrect results are returned for the query.
    ```
    
 6. Copy the blocks from the intermediate bucket to the Mimir bucket.
+   
+    For Amazon S3, use the `aws` tool:
+
+    ```bash
+    aws s3 cp -r s3://<INTERMEDIATE-MIMIR-BUCKET> s3://<MIMIR-GCS-BUCKET>/<TENANT>/
+    ```   
   
-   Copy the blocks from the intermediate bucket to the Mimir bucket using the below gsutil command.
+   For Google Cloud Storage (GCS), use the gsutil tool:
   
    ```bash
-   gsutil -m cp -r gs://<mimir-intermediate-bucket> gs://<mimir-gcs-bucket>/<TENANT>/
+   gsutil -m cp -r gs://<INTERMEDIATE-MIMIR-BUCKET> gs://<MIMIR-GCS-BUCKET>/<TENANT>/
    ```
    
    Historical blocks are not available for querying immediately after they are uploaded because the bucket index with the list of all available blocks first needs to be updated by the compactor. The compactor typically perform such an update every 15 minutes. After an update completes, other components such as the querier or store-gateway are able to work with the historical blocks, and the blocks are available for querying through Grafana. 
