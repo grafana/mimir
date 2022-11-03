@@ -12,7 +12,5 @@
   // The mixin allow specialism of the job selector depending on if its a single binary
   // deployment or a namespaced one.
   jobMatcher(job)::
-    if $._config.singleBinary
-    then 'job=~"$job"'
-    else '%s=~"$cluster", job=~"($namespace)/(%s)"' % [$._config.per_cluster_label, job],
+    'job=~".*/%s"' % job,
 }
