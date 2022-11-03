@@ -3528,7 +3528,7 @@ The s3_backend block configures the connection to Amazon S3 object storage backe
 [signature_version: <string> | default = "v4"]
 
 sse:
-  # Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
+  # Enable AWS Server Side Encryption. Supported values: SSE-C, SSE-KMS, SSE-S3.
   # CLI flag: -<prefix>.s3.sse.type
   [type: <string> | default = ""]
 
@@ -3540,6 +3540,10 @@ sse:
   # string.
   # CLI flag: -<prefix>.s3.sse.kms-encryption-context
   [kms_encryption_context: <string> | default = ""]
+
+  # File name for the file containing the SSE-C key in bytes.
+  # CLI flag: -<prefix>.s3.sse.encryption-key
+  [encryption_key: <string> | default = ""]
 
 http:
   # (advanced) The time an idle connection will remain idle before closing.

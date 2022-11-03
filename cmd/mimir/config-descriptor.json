@@ -4415,7 +4415,7 @@
                   "kind": "field",
                   "name": "type",
                   "required": false,
-                  "desc": "Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.",
+                  "desc": "Enable AWS Server Side Encryption. Supported values: SSE-C, SSE-KMS, SSE-S3.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "blocks-storage.s3.sse.type",
@@ -4439,6 +4439,16 @@
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "blocks-storage.s3.sse.kms-encryption-context",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "encryption_key",
+                  "required": false,
+                  "desc": "File name for the file containing the SSE-C key in bytes.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "blocks-storage.s3.sse.encryption-key",
                   "fieldType": "string"
                 }
               ],
@@ -8350,7 +8360,7 @@
                   "kind": "field",
                   "name": "type",
                   "required": false,
-                  "desc": "Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.",
+                  "desc": "Enable AWS Server Side Encryption. Supported values: SSE-C, SSE-KMS, SSE-S3.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "ruler-storage.s3.sse.type",
@@ -8374,6 +8384,16 @@
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "ruler-storage.s3.sse.kms-encryption-context",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "encryption_key",
+                  "required": false,
+                  "desc": "File name for the file containing the SSE-C key in bytes.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler-storage.s3.sse.encryption-key",
                   "fieldType": "string"
                 }
               ],
@@ -9713,7 +9733,7 @@
                   "kind": "field",
                   "name": "type",
                   "required": false,
-                  "desc": "Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.",
+                  "desc": "Enable AWS Server Side Encryption. Supported values: SSE-C, SSE-KMS, SSE-S3.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "alertmanager-storage.s3.sse.type",
@@ -9737,6 +9757,16 @@
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "alertmanager-storage.s3.sse.kms-encryption-context",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "encryption_key",
+                  "required": false,
+                  "desc": "File name for the file containing the SSE-C key in bytes.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "alertmanager-storage.s3.sse.encryption-key",
                   "fieldType": "string"
                 }
               ],
@@ -11413,7 +11443,7 @@
                       "kind": "field",
                       "name": "type",
                       "required": false,
-                      "desc": "Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.",
+                      "desc": "Enable AWS Server Side Encryption. Supported values: SSE-C, SSE-KMS, SSE-S3.",
                       "fieldValue": null,
                       "fieldDefaultValue": "",
                       "fieldFlag": "common.storage.s3.sse.type",
@@ -11437,6 +11467,16 @@
                       "fieldValue": null,
                       "fieldDefaultValue": "",
                       "fieldFlag": "common.storage.s3.sse.kms-encryption-context",
+                      "fieldType": "string"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "encryption_key",
+                      "required": false,
+                      "desc": "File name for the file containing the SSE-C key in bytes.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "common.storage.s3.sse.encryption-key",
                       "fieldType": "string"
                     }
                   ],
