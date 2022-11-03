@@ -17,6 +17,9 @@
 
     // Query-scheduler ring-based service discovery is always enabled in the Mimir read-write deployment mode.
     query_scheduler_service_discovery_mode: if $._config.read_write_deployment_enabled then 'ring' else super.query_scheduler_service_discovery_mode,
+
+    // Overrides-exporter is part of the backend component in the Mimir read-write deployment mode.
+    overrides_exporter_enabled: if $._config.read_write_deployment_enabled then false else super.overrides_exporter_enabled,
   },
 
   local container = $.core.v1.container,
@@ -45,6 +48,9 @@
   check_ruler_remote_evaluation_enabled: if !$._config.read_write_deployment_enabled || !$._config.ruler_remote_evaluation_enabled then null else
     error 'please set ruler_remote_evaluation_enabled to false when using Mimir read-write deployment mode',
 
+  check_overrides_exporter_enabled: if !$._config.read_write_deployment_enabled || !$._config.overrides_exporter_enabled then null else
+    error 'please set overrides_exporter_enabled to false when using Mimir read-write deployment mode',
+
   check_memberlist_ring: if !$._config.read_write_deployment_enabled || $._config.memberlist_ring_enabled then null else
     error 'please set memberlist_ring_enabled to true when using Mimir read-write deployment mode',
 
@@ -60,7 +66,6 @@
   ingester_zone_a_statefulset: uninstall('ingester_zone_a_statefulset'),
   ingester_zone_b_statefulset: uninstall('ingester_zone_b_statefulset'),
   ingester_zone_c_statefulset: uninstall('ingester_zone_c_statefulset'),
-  overrides_exporter_deployment: uninstall('overrides_exporter_deployment'),
   querier_deployment: uninstall('querier_deployment'),
   query_frontend_deployment: uninstall('query_frontend_deployment'),
   query_scheduler_deployment: uninstall('query_scheduler_deployment'),
@@ -77,7 +82,6 @@
   ingester_zone_a_service: uninstall('ingester_zone_a_service'),
   ingester_zone_b_service: uninstall('ingester_zone_b_service'),
   ingester_zone_c_service: uninstall('ingester_zone_c_service'),
-  overrides_exporter_service: uninstall('overrides_exporter_service'),
   querier_service: uninstall('querier_service'),
   query_frontend_service: uninstall('query_frontend_service'),
   query_frontend_discovery_service: uninstall('query_frontend_discovery_service'),
