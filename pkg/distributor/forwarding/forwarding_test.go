@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/textproto"
 	"strconv"
 	"strings"
 	"sync"
@@ -884,7 +885,7 @@ func TestForwardingToHTTPGrpcTarget(t *testing.T) {
 			if h.Key == "Content-Type" {
 				ct = h.Values[0]
 			}
-			if h.Key == user.OrgIDHeaderName {
+			if h.Key == textproto.CanonicalMIMEHeaderKey(user.OrgIDHeaderName) {
 				us = h.Values[0]
 			}
 		}
