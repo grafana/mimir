@@ -116,9 +116,6 @@ In the following example, both of the server authorization flags, `-server.http-
 
     # Path to the Client CA Cert for the gRPC Server
     -server.grpc-tls-ca-path=/path/to/root.crt
-
-    # Path to the Client CA Cert for the gRPC Server
-    -server.grpc-tls-ca-path=/path/to/root.crt
 ```
 
 #### Client flags
