@@ -2205,7 +2205,7 @@
                         "expr": "sum(rate(cortex_query_frontend_queries_total{cluster=~\"$cluster\", namespace=~\"$namespace\", container=\"query-frontend\", user=\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "rate",
+                        "legendFormat": "Queries / Sec",
                         "legendLink": null,
                         "step": 10
                      }
@@ -2213,7 +2213,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Rate of Read Requests - Query Frontend",
+                  "title": "Rate of Read Requests - query-frontend",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -2278,10 +2278,10 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(rate(cortex_query_frontend_queries_total{cluster=~\"$cluster\", namespace=~\"$namespace\", container=\"ruler-query-frontend\", user=\"$user\"}[$__rate_interval]))",
+                        "expr": "sum(cortex_query_scheduler_queue_length{cluster=~\"$cluster\", namespace=~\"$namespace\", container=\"query-scheduler\", user=\"$user\"})",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "rate",
+                        "legendFormat": "Queue Length",
                         "legendLink": null,
                         "step": 10
                      }
@@ -2289,7 +2289,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Rate of Read Requests - Ruler Query Frontend",
+                  "title": "Number of Queries Queued - query-scheduler",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -2327,7 +2327,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Read Path - Query Frontend Insights",
+            "title": "Read Path - Queries (User)",
             "titleSize": "h6"
          },
          {
@@ -2366,10 +2366,10 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(cortex_query_scheduler_queue_length{cluster=~\"$cluster\", namespace=~\"$namespace\", container=\"query-scheduler\", user=\"$user\"})",
+                        "expr": "sum(rate(cortex_query_frontend_queries_total{cluster=~\"$cluster\", namespace=~\"$namespace\", container=\"ruler-query-frontend\", user=\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "queue length",
+                        "legendFormat": "Queries / Sec",
                         "legendLink": null,
                         "step": 10
                      }
@@ -2377,7 +2377,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Number of Queries Queued - Query Scheduler",
+                  "title": "Rate of Read Requests - ruler-query-frontend",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -2445,7 +2445,7 @@
                         "expr": "sum(cortex_query_scheduler_queue_length{cluster=~\"$cluster\", namespace=~\"$namespace\", container=\"ruler-query-scheduler\", user=\"$user\"})",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "queue length",
+                        "legendFormat": "Queue Length",
                         "legendLink": null,
                         "step": 10
                      }
@@ -2453,7 +2453,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Number of Queries Queued - Ruler Query Scheduler",
+                  "title": "Number of Queries Queued - ruler-query-scheduler",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -2491,195 +2491,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Read Path - Query Scheduler Insights",
-            "titleSize": "h6"
-         },
-         {
-            "collapse": true,
-            "height": "250px",
-            "panels": [
-               {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
-                  "datasource": "${lokidatasource}",
-                  "fill": 1,
-                  "id": 31,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
-                  },
-                  "lines": true,
-                  "linewidth": 1,
-                  "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
-                  "span": 6,
-                  "stack": false,
-                  "steppedLine": false,
-                  "targets": [
-                     {
-                        "expr": "sum(rate({cluster=~\"$cluster\", namespace=~\"$namespace\", name=~\"query-frontend.*\"} |= \"msg=\\\"query stats\\\"\" |= \"user=$user\" |= \"status=success\" [$__interval]))",
-                        "format": "time_series",
-                        "intervalFactor": 2,
-                        "legendFormat": "success rate",
-                        "legendLink": null,
-                        "step": 10
-                     },
-                     {
-                        "expr": "sum(rate({cluster=~\"$cluster\", namespace=~\"$namespace\", name=~\"query-frontend.*\"} |= \"msg=\\\"query stats\\\"\" |= \"user=$user\" |= \"status=failed\" [$__interval]))",
-                        "format": "time_series",
-                        "intervalFactor": 2,
-                        "legendFormat": "failure rate",
-                        "legendLink": null,
-                        "step": 10
-                     }
-                  ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
-                  "title": "Query Success vs Failure Rate",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
-               },
-               {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
-                  "datasource": "${lokidatasource}",
-                  "fill": 1,
-                  "id": 32,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
-                  },
-                  "lines": true,
-                  "linewidth": 1,
-                  "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
-                  "span": 6,
-                  "stack": false,
-                  "steppedLine": false,
-                  "targets": [
-                     {
-                        "expr": "quantile_over_time(0.99, {cluster=~\"$cluster\", namespace=~\"$namespace\" ,name=~\"query-frontend.*\"}  |= \"msg=\\\"query stats\\\"\" |= \"user=$user\" | logfmt | unwrap duration(response_time)[$__interval]) by (user)",
-                        "format": "time_series",
-                        "intervalFactor": 2,
-                        "legendFormat": "p99",
-                        "legendLink": null,
-                        "step": 10
-                     },
-                     {
-                        "expr": "quantile_over_time(0.50, {cluster=~\"$cluster\", namespace=~\"$namespace\" ,name=~\"query-frontend.*\"}  |= \"msg=\\\"query stats\\\"\" |= \"user=$user\" | logfmt | unwrap duration(response_time)[$__interval]) by (user)",
-                        "format": "time_series",
-                        "intervalFactor": 2,
-                        "legendFormat": "p50",
-                        "legendLink": null,
-                        "step": 10
-                     },
-                     {
-                        "expr": "avg_over_time({cluster=~\"$cluster\", namespace=~\"$namespace\" ,name=~\"query-frontend.*\"}  |= \"msg=\\\"query stats\\\"\" |= \"user=$user\" | logfmt | unwrap duration(response_time)[$__interval]) by (user)",
-                        "format": "time_series",
-                        "intervalFactor": 2,
-                        "legendFormat": "average",
-                        "legendLink": null,
-                        "step": 10
-                     }
-                  ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
-                  "title": "Query Response Time",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
-               }
-            ],
-            "repeat": null,
-            "repeatIteration": null,
-            "repeatRowId": null,
-            "showTitle": true,
-            "title": "Read Path - Queries",
+            "title": "Read Path - Queries (Ruler)",
             "titleSize": "h6"
          }
       ],
@@ -2813,15 +2625,6 @@
                   }
                ],
                "type": "custom"
-            },
-            {
-               "hide": 0,
-               "includeAll": false,
-               "label": "Logs datasource",
-               "multi": false,
-               "name": "lokidatasource",
-               "query": "loki",
-               "type": "datasource"
             }
          ]
       },

@@ -533,103 +533,49 @@ local filename = 'mimir-tenants.json';
     )
 
     .addRow(
-      $.row('Read Path - Query Frontend Insights')
+      $.row('Read Path - Queries (User)')
       .addPanel(
-        local title = 'Rate of Read Requests - Query Frontend';
+        local title = 'Rate of Read Requests - query-frontend';
         $.panel(title) +
         $.queryPanel(
           'sum(rate(cortex_query_frontend_queries_total{%s, container="query-frontend", user="$user"}[$__rate_interval]))' % $.namespaceMatcher(),
-          'rate'
+          'Queries / Sec'
         )
       )
       .addPanel(
-        local title = 'Rate of Read Requests - Ruler Query Frontend';
-        $.panel(title) +
-        $.queryPanel(
-          'sum(rate(cortex_query_frontend_queries_total{%s, container="ruler-query-frontend", user="$user"}[$__rate_interval]))' % $.namespaceMatcher(),
-          'rate'
-        )
-      )
-    )
-    .addRow(
-      $.row('Read Path - Query Scheduler Insights')
-      .addPanel(
-        local title = 'Number of Queries Queued - Query Scheduler';
+        local title = 'Number of Queries Queued - query-scheduler';
         $.panel(title) +
         $.queryPanel(
           [
             'sum(cortex_query_scheduler_queue_length{%s, container="query-scheduler", user="$user"})' % $.namespaceMatcher(),
           ],
           [
-            'queue length',
+            'Queue Length',
           ],
         )
       )
+    )
+    .addRow(
+      $.row('Read Path - Queries (Ruler)')
       .addPanel(
-        local title = 'Number of Queries Queued - Ruler Query Scheduler';
+        local title = 'Rate of Read Requests - ruler-query-frontend';
+        $.panel(title) +
+        $.queryPanel(
+          'sum(rate(cortex_query_frontend_queries_total{%s, container="ruler-query-frontend", user="$user"}[$__rate_interval]))' % $.namespaceMatcher(),
+          'Queries / Sec'
+        )
+      )
+      .addPanel(
+        local title = 'Number of Queries Queued - ruler-query-scheduler';
         $.panel(title) +
         $.queryPanel(
           [
             'sum(cortex_query_scheduler_queue_length{%s, container="ruler-query-scheduler", user="$user"})' % $.namespaceMatcher(),
           ],
           [
-            'queue length',
+            'Queue Length',
           ],
         )
       )
-    )
-
-    .addRow(
-      ($.row('Read Path - Queries') + { collapse: true })
-      .addPanel(
-        local title = 'Query Success vs Failure Rate';
-        $.panel(title) +
-        $.queryPanel(
-          [
-            'sum(rate({%s, name=~"query-frontend.*"} |= "msg=\\"query stats\\"" |= "user=$user" |= "status=success" [$__interval]))' % $.namespaceMatcher(),
-            'sum(rate({%s, name=~"query-frontend.*"} |= "msg=\\"query stats\\"" |= "user=$user" |= "status=failed" [$__interval]))' % $.namespaceMatcher(),
-          ],
-          [
-            'success rate',
-            'failure rate',
-          ],
-        ) + {
-          datasource: '${lokidatasource}',
-        }
-      )
-      .addPanel(
-        local title = 'Query Response Time';
-        $.panel(title) +
-        $.queryPanel(
-          [
-            'quantile_over_time(0.99, {%s ,name=~"query-frontend.*"}  |= "msg=\\"query stats\\"" |= "user=$user" | logfmt | unwrap duration(response_time)[$__interval]) by (user)' % $.namespaceMatcher(),
-            'quantile_over_time(0.50, {%s ,name=~"query-frontend.*"}  |= "msg=\\"query stats\\"" |= "user=$user" | logfmt | unwrap duration(response_time)[$__interval]) by (user)' % $.namespaceMatcher(),
-            'avg_over_time({%s ,name=~"query-frontend.*"}  |= "msg=\\"query stats\\"" |= "user=$user" | logfmt | unwrap duration(response_time)[$__interval]) by (user)' % $.namespaceMatcher(),
-          ],
-          [
-            'p99',
-            'p50',
-            'average',
-          ],
-        ) + {
-          datasource: '${lokidatasource}',
-        }
-      )
-    )
-    + {
-      templating+: {
-        list+: [
-          // Add the Loki datasource.
-          {
-            type: 'datasource',
-            name: 'lokidatasource',
-            label: 'Logs datasource',
-            query: 'loki',
-            hide: 0,
-            includeAll: false,
-            multi: false,
-          },
-        ],
-      },
-    },
+    ),
 }
