@@ -12,7 +12,9 @@ weight: 30
 
 Mimir Jsonnet supports autoscaling for the following components:
 
+- [Ruler Querier]({{< relref "../../architecture/components/ruler/index.md" >}})
 - [Querier]({{< relref "../../architecture/components/querier.md" >}})
+- [Distributor]({{< relref "../../architecture/components/distributor.md" >}})
 
 Autoscaling, which is based on Prometheus metrics and [KEDA (Kubernetes-based Event Driven Autoscaler)](https://keda.sh), uses Kubernetes’ Horizontal Pod Autoscaler (HPA).
 
@@ -45,7 +47,7 @@ However, if KEDA is not running successfully, there are consequences for Mimir a
 - `keda-operator` is down (not critical): changes to `ScaledObject` CRD will not be reflected to the HPA until the operator will get back online. HPA functionality is not affected.
 - `keda-operator-metrics-apiserver` is down (critical): HPA is not able to fetch updated metrics and it will stop scaling the deployment until metrics will be back. The deployment (e.g. queriers) will keep working but, in case of any surge of traffic, HPA will not be able to detect it (because of a lack of metrics) and so will not scale up.
 
-The [alert `MimirQuerierAutoscalerNotActive`]({{< relref "../../monitor-grafana-mimir/_index.md" >}}) fires if HPA is unable to scale the deployment for any reason (e.g. unable to scrape metrics from KEDA metrics API server).
+The [alert `MimirAutoscalerNotActive`]({{< relref "../../monitor-grafana-mimir/_index.md" >}}) fires if HPA is unable to scale the deployment for any reason (e.g. unable to scrape metrics from KEDA metrics API server).
 
 ## How Kubernetes HPA works
 
@@ -60,11 +62,19 @@ local mimir = import 'mimir/mimir.libsonnet';
 
 mimir {
     _config+:: {
+        autoscaling_prometheus_url: 'http://prometheus.default:9090/prometheus',
         // Enable queriers autoscaling.
         autoscaling_querier_enabled: true,
         autoscaling_querier_min_replicas: 10,
         autoscaling_querier_max_replicas: 40,
-        autoscaling_prometheus_url: 'http://prometheus.default:9090/prometheus',
+        // Enable ruler queriers autoscaling.
+        autoscaling_ruler_querier_enabled: true,
+        autoscaling_ruler_querier_min_replicas: 10,
+        autoscaling_ruler_querier_max_replicas: 40,
+        // Enable distributor autoscaling.
+        autoscaling_distributor_enabled: true,
+        autoscaling_distributor_min_replicas: 10,
+        autoscaling_distributor_max_replicas: 40,
     }
 }
 ```
@@ -80,14 +90,14 @@ There are two options to disable autoscaling in a Mimir cluster:
 
 ### Set minimum replicas = maximum replicas
 
-If KEDA and Kubernetes HPA work correctly but the HPA configuration (metric and threshold) are not giving the expected results (e.g. not scaling up when required), a simple solution to bypass the autoscaling algorithm is to set `autoscaling_querier_min_replicas` and `autoscaling_querier_max_replicas` to the same value.
+If KEDA and Kubernetes HPA work correctly but the HPA configuration (metric and threshold) are not giving the expected results (e.g. not scaling up when required), a simple solution to bypass the autoscaling algorithm is to set the minimum and maximum replicas to the same value. (e.g. `autoscaling_querier_min_replicas: 40` and `autoscaling_querier_max_replicas: 40`).
 
 ### Decommission HPA
 
 To fully decommission HPA in a Mimir cluster you have to:
 
-1. Set `autoscaling_querier_enabled: false`
-2. Manually set the expected number of replicas for the given Mimir component
+1. Disable the relevant autoscaler (e.g. `autoscaling_querier_enabled: false`).
+2. Manually set the expected number of replicas for the given Mimir component.
 
 The following example shows how to disable querier autoscaler and configure querier Deployment with 10 replicas:
 

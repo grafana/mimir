@@ -3,7 +3,15 @@
   // This includes all features, since the compiled version can't be customized.
   _config+:: {
     autoscaling+: {
-      querier_enabled: true,
+      querier+: {
+        enabled: true,
+      },
+      ruler_querier+: {
+        enabled: true,
+      },
+      distributor+: {
+        enabled: true,
+      },
     },
   },
 }

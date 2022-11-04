@@ -991,21 +991,21 @@ How to **investigate**:
     ```
     - In case you need to quickly reject write path traffic from a single tenant, you can override its `ingestion_rate` and `ingestion_rate_burst` setting lower values (so that some/most of their traffic will be rejected)
 
-### MimirQuerierAutoscalerNotActive
+### MimirAutoscalerNotActive
 
-This alert fires when the Mimir querier Kubernetes Horizontal Pod Autoscaler's (HPA) `ScalingActive` condition is `false`. When this happens, it's not able to calculate desired scale and generally indicates problems with fetching metrics.
+This alert fires when any of Mimir's Kubernetes Horizontal Pod Autoscaler's (HPA) `ScalingActive` condition is `false`. When this happens, it's not able to calculate desired scale and generally indicates problems with fetching metrics.
 
 How it **works**:
 
-- HPA is configured to autoscale Mimir queriers based on custom metrics fetched from Prometheus via the KEDA custom metrics API server
+- HPA's can be configured to autoscale Mimir components based on custom metrics fetched from Prometheus via the KEDA custom metrics API server
 - HPA periodically queries updated metrics and updates the number of desired replicas based on that
-- Please refer to the [HPA documentation](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/) for more information about it
+- Please refer to [Mimir's Autoscaling documentation]({{< relref "../deploy-grafana-mimir/jsonnet/configure-autoscaling.md" >}}) and the upstream [HPA documentation](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/) for more information
 
 How to **investigate**:
 
 - Check HPA conditions and events to get more details about the failure
   ```
-  kubectl describe hpa -n <namespace> keda-hpa-querier
+  kubectl describe hpa -n <namespace> keda-hpa-$component
   ```
 - Ensure KEDA pods are up and running
   ```

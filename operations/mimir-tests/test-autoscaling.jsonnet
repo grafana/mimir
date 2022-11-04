@@ -22,5 +22,9 @@ mimir {
     autoscaling_ruler_querier_enabled: true,
     autoscaling_ruler_querier_min_replicas: 3,
     autoscaling_ruler_querier_max_replicas: 30,
+
+    autoscaling_distributor_enabled: true,
+    autoscaling_distributor_min_replicas: 3,
+    autoscaling_distributor_max_replicas: 30,
   },
 }
