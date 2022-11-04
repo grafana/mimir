@@ -542,7 +542,7 @@ func newFileBinaryReader(path string, postingOffsetsInMemSampling int, cfg Binar
 		r.postingsV1 = map[string]map[string]index.Range{}
 
 		var prevRng index.Range
-		if err := readOffsetTable(r.b, r.toc.PostingsOffsetTable, postingTableReader, func(lbl labels.Label, off uint64, _ int) error {
+		if err := readPostingsOffsetTable(r.b, r.toc.PostingsOffsetTable, func(lbl labels.Label, off uint64, _ int) error {
 			if lastSet {
 				prevRng.End = int64(off - crc32.Size)
 				r.postingsV1[lastLbl.Name][lastLbl.Value] = prevRng
@@ -570,7 +570,7 @@ func newFileBinaryReader(path string, postingOffsetsInMemSampling int, cfg Binar
 
 		// For the postings offset table we keep every label name but only every nth
 		// label value (plus the first and last one), to save memory.
-		if err := readOffsetTable(r.b, r.toc.PostingsOffsetTable, postingTableReader, func(lbl labels.Label, off uint64, tableOff int) error {
+		if err := readPostingsOffsetTable(r.b, r.toc.PostingsOffsetTable, func(lbl labels.Label, off uint64, tableOff int) error {
 			if _, ok := r.postings[lbl.Name]; !ok {
 				// Not seen before label name.
 				r.postings[lbl.Name] = &postingValueOffsets{}
@@ -943,7 +943,8 @@ func (b realByteSlice) Sub(start, end int) index.ByteSlice {
 // ReadOffsetTable reads an offset table and at the given position calls f for each
 // found entry. If f returns an error it stops decoding and returns the received error.
 // TODO: use the upstreamed version from Prometheus tsdb/index package when available.
-func readOffsetTable[T any](bs index.ByteSlice, off uint64, read func(d *encoding.Decbuf) (T, error), f func(T, uint64, int) error) error {
+// TODO: see https://github.com/prometheus/prometheus/pull/11535
+func readPostingsOffsetTable(bs index.ByteSlice, off uint64, f func(labels.Label, uint64, int) error) error {
 	d := encoding.NewDecbufAt(bs, int(off), castagnoliTable)
 	startLen := d.Len()
 	cnt := d.Be32()
@@ -951,31 +952,22 @@ func readOffsetTable[T any](bs index.ByteSlice, off uint64, read func(d *encodin
 	for d.Err() == nil && d.Len() > 0 && cnt > 0 {
 		offsetPos := startLen - d.Len()
 
-		item, err := read(&d)
-		if err != nil {
-			return err
+		if keyCount := d.Uvarint(); keyCount != 2 {
+			return errors.Errorf("unexpected key length for posting table %d", keyCount)
 		}
+
+		var lbl labels.Label
+		lbl.Name = d.UvarintStr()
+		lbl.Value = d.UvarintStr()
 
 		o := d.Uvarint64()
 		if d.Err() != nil {
 			break
 		}
-		if err := f(item, o, offsetPos); err != nil {
+		if err := f(lbl, o, offsetPos); err != nil {
 			return err
 		}
 		cnt--
 	}
 	return d.Err()
-}
-
-// PostingTableReader can be used as read function for ReadOffsetTable to read the posting offset table.
-// TODO: use the upstreamed version from Prometheus tsdb/index package when available.
-func postingTableReader(d *encoding.Decbuf) (labels.Label, error) {
-	if keyCount := d.Uvarint(); keyCount != 2 {
-		return labels.Label{}, errors.Errorf("unexpected key length for posting table %d", keyCount)
-	}
-	var lbl labels.Label
-	lbl.Name = d.UvarintStr()
-	lbl.Value = d.UvarintStr()
-	return lbl, nil
 }
