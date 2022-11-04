@@ -934,7 +934,13 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 		d.ingestionRate.Add(int64(totalN))
 
 		cleanupInDefer = false
-		return next(ctx, pushReq)
+		res, err := next(ctx, pushReq)
+		if err != nil {
+			// Errors resulting from the pushing to the ingesters have priority over validation errors.
+			return nil, err
+		}
+
+		return res, firstPartialErr
 	}
 }
 
