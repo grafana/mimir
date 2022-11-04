@@ -6,8 +6,12 @@
 package s3
 
 import (
+	"crypto/md5"
 	"encoding/base64"
+	"math/rand"
 	"net/http"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/grafana/dskit/flagext"
@@ -53,6 +57,22 @@ func TestSSEConfig_Validate(t *testing.T) {
 				}
 			},
 		},
+		"should pass on SSE-C encryption type with an encryption key path provided": {
+			setup: func() *SSEConfig {
+				return &SSEConfig{
+					Type:              SSEC,
+					EncryptionKeyPath: "/ignore",
+				}
+			},
+		},
+		"should fail on SSE-C with no encryption key path provided": {
+			setup: func() *SSEConfig {
+				return &SSEConfig{
+					Type: SSEC,
+				}
+			},
+			expected: errMissingSSECEncryptionKeyPath,
+		},
 	}
 
 	for testName, testData := range tests {
@@ -62,7 +82,7 @@ func TestSSEConfig_Validate(t *testing.T) {
 	}
 }
 
-func TestSSEConfig_BuildMinioConfig(t *testing.T) {
+func TestSSEKMSConfig_BuildMinioConfig(t *testing.T) {
 	tests := map[string]struct {
 		cfg             *SSEConfig
 		expectedType    string
@@ -101,6 +121,80 @@ func TestSSEConfig_BuildMinioConfig(t *testing.T) {
 			assert.Equal(t, testData.expectedType, headers.Get("x-amz-server-side-encryption"))
 			assert.Equal(t, testData.expectedKeyID, headers.Get("x-amz-server-side-encryption-aws-kms-key-id"))
 			assert.Equal(t, base64.StdEncoding.EncodeToString([]byte(testData.expectedContext)), headers.Get("x-amz-server-side-encryption-context"))
+		})
+	}
+}
+func TestSSEC_BuildMinioConfig(t *testing.T) {
+	dir := t.TempDir()
+
+	tests := map[string]struct {
+		setup func() (string, []byte)
+		valid bool
+	}{
+		"Missing key": {
+			setup: func() (string, []byte) {
+				path := filepath.Join(dir, "missing")
+				return path, []byte{}
+			},
+			valid: false,
+		},
+		"Smaller key": {
+			setup: func() (string, []byte) {
+				path := filepath.Join(dir, "smaller")
+				key := []byte{1} // non 256 bit key
+				assert.NoError(t, os.WriteFile(path, key, 0600))
+				return path, key
+			},
+			valid: false,
+		},
+		"Larger key": {
+			setup: func() (string, []byte) {
+				path := filepath.Join(dir, "larger")
+				key := []byte{33} // non 256 bit key
+				assert.NoError(t, os.WriteFile(path, key, 0600))
+				return path, key
+			},
+			valid: false,
+		},
+		"Valid key": {
+			setup: func() (string, []byte) {
+				path := filepath.Join(dir, "valid")
+				key := make([]byte, 32)
+				rand.Read(key)
+				assert.NoError(t, os.WriteFile(path, key, 0600))
+				return path, key
+			},
+			valid: true,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			path, key := testData.setup()
+			cfg := &SSEConfig{
+				Type:              SSEC,
+				EncryptionKeyPath: path,
+			}
+
+			sse, err := cfg.BuildMinioConfig()
+			if !testData.valid {
+				assert.Error(t, err)
+				assert.Nil(t, sse)
+				return
+			}
+
+			assert.NoError(t, err)
+
+			hash := md5.New()
+			_, err = hash.Write(key)
+			assert.NoError(t, err)
+
+			headers := http.Header{}
+			sse.Marshal(headers)
+
+			assert.Equal(t, "AES256", headers.Get("x-amz-server-side-encryption-customer-algorithm"))
+			assert.Equal(t, base64.StdEncoding.EncodeToString(key), headers.Get("x-amz-server-side-encryption-customer-key"))
+			assert.Equal(t, base64.StdEncoding.EncodeToString(hash.Sum(nil)), headers.Get("x-amz-server-side-encryption-customer-key-MD5"))
 		})
 	}
 }

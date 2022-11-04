@@ -40,11 +40,12 @@ const (
 )
 
 var (
-	supportedSignatureVersions     = []string{SignatureVersionV4, SignatureVersionV2}
-	supportedSSETypes              = []string{SSEC, SSEKMS, SSES3}
-	errUnsupportedSignatureVersion = fmt.Errorf("unsupported signature version (supported values: %s)", strings.Join(supportedSignatureVersions, ", "))
-	errUnsupportedSSEType          = errors.New("unsupported S3 SSE type")
-	errInvalidSSEContext           = errors.New("invalid S3 SSE encryption context")
+	supportedSignatureVersions      = []string{SignatureVersionV4, SignatureVersionV2}
+	supportedSSETypes               = []string{SSEC, SSEKMS, SSES3}
+	errUnsupportedSignatureVersion  = fmt.Errorf("unsupported signature version (supported values: %s)", strings.Join(supportedSignatureVersions, ", "))
+	errUnsupportedSSEType           = errors.New("unsupported S3 SSE type")
+	errInvalidSSEContext            = errors.New("invalid S3 SSE encryption context")
+	errMissingSSECEncryptionKeyPath = errors.New("an encryption key path must be configured when using S3 SSE-C")
 )
 
 // HTTPConfig stores the http.Transport configuration for the s3 minio client.
@@ -125,7 +126,7 @@ type SSEConfig struct {
 	Type                 string `yaml:"type"`
 	KMSKeyID             string `yaml:"kms_key_id"`
 	KMSEncryptionContext string `yaml:"kms_encryption_context"`
-	EncryptionKey        string `yaml:"encryption_key"`
+	EncryptionKeyPath    string `yaml:"encryption_key_path"`
 }
 
 func (cfg *SSEConfig) RegisterFlags(f *flag.FlagSet) {
@@ -137,12 +138,16 @@ func (cfg *SSEConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.StringVar(&cfg.Type, prefix+"type", "", fmt.Sprintf("Enable AWS Server Side Encryption. Supported values: %s.", strings.Join(supportedSSETypes, ", ")))
 	f.StringVar(&cfg.KMSKeyID, prefix+"kms-key-id", "", "KMS Key ID used to encrypt objects in S3")
 	f.StringVar(&cfg.KMSEncryptionContext, prefix+"kms-encryption-context", "", "KMS Encryption Context used for object encryption. It expects JSON formatted string.")
-	f.StringVar(&cfg.EncryptionKey, prefix+"encryption-key", "", "File name for the file containing the SSE-C key in bytes.")
+	f.StringVar(&cfg.EncryptionKeyPath, prefix+"encryption-key-path", "", "File path for the file containing the SSE-C key in bytes.")
 }
 
 func (cfg *SSEConfig) Validate() error {
 	if cfg.Type != "" && !util.StringsContain(supportedSSETypes, cfg.Type) {
 		return errUnsupportedSSEType
+	}
+
+	if cfg.Type == SSEC && cfg.EncryptionKeyPath == "" {
+		return errMissingSSECEncryptionKeyPath
 	}
 
 	if _, err := parseKMSEncryptionContext(cfg.KMSEncryptionContext); err != nil {
@@ -160,7 +165,7 @@ func (cfg *SSEConfig) BuildThanosConfig() (s3.SSEConfig, error) {
 	case SSEC:
 		return s3.SSEConfig{
 			Type:          s3.SSEC,
-			EncryptionKey: cfg.EncryptionKey,
+			EncryptionKey: cfg.EncryptionKeyPath,
 		}, nil
 	case SSEKMS:
 		encryptionCtx, err := parseKMSEncryptionContext(cfg.KMSEncryptionContext)
@@ -188,7 +193,7 @@ func (cfg *SSEConfig) BuildMinioConfig() (encrypt.ServerSide, error) {
 	case "":
 		return nil, nil
 	case SSEC:
-		key, err := os.ReadFile(cfg.EncryptionKey)
+		key, err := os.ReadFile(cfg.EncryptionKeyPath)
 		if err != nil {
 			return nil, err
 		}
