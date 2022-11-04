@@ -113,7 +113,7 @@
   // Creates a headless service for the per-zone ingesters StatefulSet. We don't use it
   // but we need to create it anyway because it's responsible for the network identity of
   // the StatefulSet pods. For more information, see:
-  // https://v1-18.docs.kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#statefulset-v1-apps
+  // https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.25/#statefulset-v1-apps
   newIngesterZoneService(sts)::
     $.util.serviceFor(sts, $._config.service_ignored_labels) +
     service.mixin.spec.withClusterIp('None'),  // Headless.
@@ -228,7 +228,7 @@
   // Creates a headless service for the per-zone store-gateways StatefulSet. We don't use it
   // but we need to create it anyway because it's responsible for the network identity of
   // the StatefulSet pods. For more information, see:
-  // https://v1-18.docs.kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#statefulset-v1-apps
+  // https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.25/#statefulset-v1-apps
   newStoreGatewayZoneService(sts)::
     $.util.serviceFor(sts, $._config.service_ignored_labels) +
     service.mixin.spec.withClusterIp('None'),  // Headless.
