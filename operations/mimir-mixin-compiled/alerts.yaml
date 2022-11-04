@@ -390,7 +390,7 @@ groups:
   - alert: MimirRulerRemoteEvaluationFailing
     annotations:
       message: |
-        Mimir Ruler {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} is failing to perform {{ printf "%.2f" $value }}% of remote evaluations when communicating with ruler-query-frontend.
+        Mimir rulers in {{ $labels.cluster }}/{{ $labels.namespace }} are failing to perform {{ printf "%.2f" $value }}% of remote evaluations through the ruler-query-frontend.
     expr: |
       100 * (
       sum by (cluster, namespace) (rate(cortex_request_duration_seconds_count{route="/httpgrpc.HTTP/Handle", status_code=~"5..", job=~".*/(ruler-query-frontend.*)"}[5m]))

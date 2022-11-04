@@ -655,7 +655,7 @@
           },
           annotations: {
             message: |||
-              %(product)s Ruler %(alert_instance_variable)s in %(alert_aggregation_variables)s is failing to perform {{ printf "%%.2f" $value }}%% of remote evaluations when communicating with ruler-query-frontend.
+              %(product)s rulers in %(alert_aggregation_variables)s are failing to perform {{ printf "%%.2f" $value }}%% of remote evaluations through the ruler-query-frontend.
             ||| % $._config,
           },
         },
