@@ -840,10 +840,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 		var firstPartialErr error
 
 		// A WriteRequest can only contain series or metadata but not both. This might change in the future.
-		// For each timeseries or samples, we compute a hash to distribute across ingesters;
-		// check each sample/metadata and discard if outside limits.
-		validatedMetadata := make([]*mimirpb.MetricMetadata, 0, len(req.Metadata))
-		metadataKeys := make([]uint32, 0, len(req.Metadata))
+		validatedMetadata := 0
 		validatedSamples := 0
 		validatedExemplars := 0
 
@@ -890,12 +887,12 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 					firstPartialErr = httpgrpc.Errorf(http.StatusBadRequest, validationErr.Error())
 				}
 				removeIndexes = append(removeIndexes, tsIdx)
+				continue
 			}
 
 			validatedSamples += len(ts.Samples)
 			validatedExemplars += len(ts.Exemplars)
 		}
-
 		if len(removeIndexes) > 0 {
 			req.Timeseries = util.RemoveSliceIndexes(req.Timeseries, removeIndexes)
 			removeIndexes = removeIndexes[:0]
@@ -910,34 +907,35 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 				}
 
 				removeIndexes = append(removeIndexes, mIdx)
+				continue
 			}
-			// move to push metadataKeys = append(metadataKeys, d.tokenForMetadata(userID, m.MetricFamilyName))
-		}
 
+			validatedMetadata++
+		}
 		if len(removeIndexes) > 0 {
 			req.Metadata = util.RemoveSliceIndexes(req.Metadata, removeIndexes)
 		}
 
 		d.receivedSamples.WithLabelValues(userID).Add(float64(validatedSamples))
 		d.receivedExemplars.WithLabelValues(userID).Add(float64(validatedExemplars))
-		d.receivedMetadata.WithLabelValues(userID).Add(float64(len(validatedMetadata)))
+		d.receivedMetadata.WithLabelValues(userID).Add(float64(validatedMetadata))
 
-		if len(req.Timeseries) == 0 && len(metadataKeys) == 0 {
+		if validatedSamples == 0 && validatedMetadata == 0 {
 			return &mimirpb.WriteResponse{}, firstPartialErr
 		}
 
-		totalN := validatedSamples + validatedExemplars + len(validatedMetadata)
+		totalN := validatedSamples + validatedExemplars + validatedMetadata
 		if !d.ingestionRateLimiter.AllowN(now, userID, totalN) {
 			d.discardedSamplesRateLimited.WithLabelValues(userID).Add(float64(validatedSamples))
 			d.discardedExemplarsRateLimited.WithLabelValues(userID).Add(float64(validatedExemplars))
-			d.discardedMetadataRateLimited.WithLabelValues(userID).Add(float64(len(validatedMetadata)))
+			d.discardedMetadataRateLimited.WithLabelValues(userID).Add(float64(validatedMetadata))
 			// Return a 429 here to tell the client it is going too fast.
 			// Client may discard the data or slow down and re-send.
 			// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
 			return nil, httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewIngestionRateLimitedError(d.limits.IngestionRate(userID), d.limits.IngestionBurstSize(userID)).Error())
 		}
 
-		// totalN included samples and metadata. Ingester follows this pattern when computing its ingestion rate.
+		// totalN included samples, exemplars and metadata. Ingester follows this pattern when computing its ingestion rate.
 		d.ingestionRate.Add(int64(totalN))
 
 		cleanupInDefer = false
@@ -1147,8 +1145,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 	metadataKeys := make([]uint32, 0, len(req.Metadata))
 	seriesKeys := make([]uint32, 0, len(req.Timeseries))
 
-	// For each timeseries, compute a hash to distribute across ingesters;
-	// check each sample and discard if outside limits.
+	// For each timeseries, compute a hash to distribute across ingesters
 	for _, ts := range req.Timeseries {
 		// Generate the sharding token based on the series labels without the HA replica
 		// label and dropped labels (if any)
