@@ -145,16 +145,11 @@ local filename = 'mimir-writes.json';
         $.queryPanel(
           [
             |||
-              sum(
-                rate(
-                  cortex_distributor_forward_requests_total{%(distributorMatcher)s}[$__rate_interval]
-                )
-              )
+              (sum(rate(cortex_distributor_forward_requests_total{%(distributorMatcher)s}[$__rate_interval])))
               -
-              sum(
-                rate(
-                  cortex_distributor_forward_errors_total{%(distributorMatcher)s}[$__rate_interval]
-                )
+              (
+                sum(rate(cortex_distributor_forward_errors_total{%(distributorMatcher)s}[$__rate_interval]))
+                or 0 * sum(rate(cortex_distributor_forward_requests_total{%(distributorMatcher)s}[$__rate_interval]))
               )
             ||| % {
               distributorMatcher: $.jobMatcher($._config.job_names.distributor),
