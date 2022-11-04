@@ -67,6 +67,10 @@ mimir {
         autoscaling_querier_enabled: true,
         autoscaling_querier_min_replicas: 10,
         autoscaling_querier_max_replicas: 40,
+        // Enable ruler queriers autoscaling.
+        autoscaling_ruler_querier_enabled: true,
+        autoscaling_ruler_querier_min_replicas: 10,
+        autoscaling_ruler_querier_max_replicas: 40,
         // Enable distributor autoscaling.
         autoscaling_distributor_enabled: true,
         autoscaling_distributor_min_replicas: 10,
@@ -92,7 +96,7 @@ If KEDA and Kubernetes HPA work correctly but the HPA configuration (metric and 
 
 To fully decommission HPA in a Mimir cluster you have to:
 
-1. Disable the relevant autoscaler (e.g. `autoscaling_querier_enabled: false`),
+1. Disable the relevant autoscaler (e.g. `autoscaling_querier_enabled: false`).
 2. Manually set the expected number of replicas for the given Mimir component.
 
 The following example shows how to disable querier autoscaler and configure querier Deployment with 10 replicas:

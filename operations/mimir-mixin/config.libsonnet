@@ -214,11 +214,11 @@
     // Whether autoscaling panels and alerts should be enabled for specific Mimir services.
     autoscaling: {
       querier: {
-        enabled: true,
+        enabled: false,
         hpa_name: 'keda-hpa-querier',
       },
       ruler_querier: {
-        enabled: true,
+        enabled: false,
         hpa_name: 'keda-hpa-ruler-querier',
       },
       distributor: {

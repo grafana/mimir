@@ -269,11 +269,7 @@
       max_replicas=$._config.autoscaling_distributor_max_replicas,
     ),
 
-  distributor_deployment: if !$._config.autoscaling_distributor_enabled then super.distributor_deployment else (
-    super.distributor_deployment + (
-      if !$._config.autoscaling_distributor_enabled then {} else
-        removeReplicasFromSpec
-    )
-  ),
+  distributor_deployment+: if !$._config.autoscaling_distributor_enabled then {} else
+    removeReplicasFromSpec,
 
 }
