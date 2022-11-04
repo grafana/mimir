@@ -535,6 +535,7 @@ func newFileBinaryReader(path string, postingOffsetsInMemSampling int, cfg Binar
 	}
 
 	var lastLbl labels.Label
+	var lastSet bool
 	if r.indexVersion == index.FormatV1 {
 		// Earlier V1 formats don't have a sorted postings offset table, so
 		// load the whole offset table into memory.
@@ -542,7 +543,7 @@ func newFileBinaryReader(path string, postingOffsetsInMemSampling int, cfg Binar
 
 		var prevRng index.Range
 		if err := readOffsetTable(r.b, r.toc.PostingsOffsetTable, postingTableReader, func(lbl labels.Label, off uint64, _ int) error {
-			if lastLbl.Name != "" {
+			if lastSet {
 				prevRng.End = int64(off - crc32.Size)
 				r.postingsV1[lastLbl.Name][lastLbl.Value] = prevRng
 			}
@@ -552,6 +553,7 @@ func newFileBinaryReader(path string, postingOffsetsInMemSampling int, cfg Binar
 				r.postings[lbl.Name] = nil // Used to get a list of labelnames in places.
 			}
 
+			lastSet = true
 			lastLbl = lbl
 			prevRng = index.Range{Start: int64(off + postingLengthFieldSize)}
 			return nil
@@ -572,17 +574,19 @@ func newFileBinaryReader(path string, postingOffsetsInMemSampling int, cfg Binar
 			if _, ok := r.postings[lbl.Name]; !ok {
 				// Not seen before label name.
 				r.postings[lbl.Name] = &postingValueOffsets{}
-				if lastLbl.Name != "" {
+				if lastSet {
 					// Always include last value for each label name, unless it was just added in previous iteration based
 					// on valueCount.
 					if (valueCount-1)%postingOffsetsInMemSampling != 0 {
 						r.postings[lastLbl.Name].offsets = append(r.postings[lastLbl.Name].offsets, postingOffset{value: lastLbl.Value, tableOff: lastTableOff})
 					}
 					r.postings[lastLbl.Name].lastValOffset = int64(off - crc32.Size)
+					lastLbl = labels.Label{}
 				}
 				valueCount = 0
 			}
 
+			lastSet = true
 			lastLbl = lbl
 			lastTableOff = tableOff
 			valueCount++
@@ -595,7 +599,7 @@ func newFileBinaryReader(path string, postingOffsetsInMemSampling int, cfg Binar
 		}); err != nil {
 			return nil, errors.Wrap(err, "read postings table")
 		}
-		if lastLbl.Name != "" {
+		if lastSet {
 			if (valueCount-1)%postingOffsetsInMemSampling != 0 {
 				// Always include last value for each label name if not included already based on valueCount.
 				r.postings[lastLbl.Name].offsets = append(r.postings[lastLbl.Name].offsets, postingOffset{value: lastLbl.Value, tableOff: lastTableOff})
