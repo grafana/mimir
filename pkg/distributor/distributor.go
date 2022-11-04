@@ -837,8 +837,6 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 		d.receivedRequests.WithLabelValues(userID).Add(1)
 		d.activeUsers.UpdateUserTimestamp(userID, now)
 
-		var firstPartialErr error
-
 		// A WriteRequest can only contain series or metadata but not both. This might change in the future.
 		validatedMetadata := 0
 		validatedSamples := 0
@@ -865,6 +863,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 			minExemplarTS = earliestSampleTimestampMs - 300000
 		}
 
+		var firstPartialErr error
 		var removeIndexes []int
 		for tsIdx, ts := range req.Timeseries {
 			if len(ts.Labels) == 0 {
