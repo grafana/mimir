@@ -3387,6 +3387,15 @@
         },
         {
           "kind": "field",
+          "name": "s3_sse_encryption_key_path",
+          "required": false,
+          "desc": "S3 server-side encryption encryption key path for the key used with SSE-C. Ignored if the SSE type override is not set.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldType": "string"
+        },
+        {
+          "kind": "field",
           "name": "alertmanager_receivers_firewall_block_cidr_networks",
           "required": false,
           "desc": "Comma-separated list of network CIDRs to block in Alertmanager receiver integrations.",
@@ -4443,12 +4452,12 @@
                 },
                 {
                   "kind": "field",
-                  "name": "encryption_key",
+                  "name": "encryption_key_path",
                   "required": false,
-                  "desc": "File name for the file containing the SSE-C key in bytes.",
+                  "desc": "File path for the file containing the SSE-C key in bytes.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "blocks-storage.s3.sse.encryption-key",
+                  "fieldFlag": "blocks-storage.s3.sse.encryption-key-path",
                   "fieldType": "string"
                 }
               ],
@@ -8388,12 +8397,12 @@
                 },
                 {
                   "kind": "field",
-                  "name": "encryption_key",
+                  "name": "encryption_key_path",
                   "required": false,
-                  "desc": "File name for the file containing the SSE-C key in bytes.",
+                  "desc": "File path for the file containing the SSE-C key in bytes.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "ruler-storage.s3.sse.encryption-key",
+                  "fieldFlag": "ruler-storage.s3.sse.encryption-key-path",
                   "fieldType": "string"
                 }
               ],
@@ -9761,12 +9770,12 @@
                 },
                 {
                   "kind": "field",
-                  "name": "encryption_key",
+                  "name": "encryption_key_path",
                   "required": false,
-                  "desc": "File name for the file containing the SSE-C key in bytes.",
+                  "desc": "File path for the file containing the SSE-C key in bytes.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
-                  "fieldFlag": "alertmanager-storage.s3.sse.encryption-key",
+                  "fieldFlag": "alertmanager-storage.s3.sse.encryption-key-path",
                   "fieldType": "string"
                 }
               ],
@@ -11471,12 +11480,12 @@
                     },
                     {
                       "kind": "field",
-                      "name": "encryption_key",
+                      "name": "encryption_key_path",
                       "required": false,
-                      "desc": "File name for the file containing the SSE-C key in bytes.",
+                      "desc": "File path for the file containing the SSE-C key in bytes.",
                       "fieldValue": null,
                       "fieldDefaultValue": "",
-                      "fieldFlag": "common.storage.s3.sse.encryption-key",
+                      "fieldFlag": "common.storage.s3.sse.encryption-key-path",
                       "fieldType": "string"
                     }
                   ],

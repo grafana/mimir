@@ -2654,6 +2654,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 # the SSE type override is not set.
 [s3_sse_kms_encryption_context: <string> | default = ""]
 
+# S3 server-side encryption encryption key path for the key used with SSE-C.
+# Ignored if the SSE type override is not set.
+[s3_sse_encryption_key_path: <string> | default = ""]
+
 # Comma-separated list of network CIDRs to block in Alertmanager receiver
 # integrations.
 # CLI flag: -alertmanager.receivers-firewall-block-cidr-networks
@@ -3541,9 +3545,9 @@ sse:
   # CLI flag: -<prefix>.s3.sse.kms-encryption-context
   [kms_encryption_context: <string> | default = ""]
 
-  # File name for the file containing the SSE-C key in bytes.
-  # CLI flag: -<prefix>.s3.sse.encryption-key
-  [encryption_key: <string> | default = ""]
+  # File path for the file containing the SSE-C key in bytes.
+  # CLI flag: -<prefix>.s3.sse.encryption-key-path
+  [encryption_key_path: <string> | default = ""]
 
 http:
   # (advanced) The time an idle connection will remain idle before closing.

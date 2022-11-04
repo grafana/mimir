@@ -1018,6 +1018,10 @@ func (m *mockConfigProvider) S3SSEKMSEncryptionContext(userID string) string {
 	return ""
 }
 
+func (m *mockConfigProvider) S3SSEEncryptionKeyPath(userID string) string {
+	return ""
+}
+
 func (c *BlocksCleaner) runCleanupWithErr(ctx context.Context) error {
 	allUsers, isDeleted, err := c.refreshOwnedUsers(ctx)
 	if err != nil {
