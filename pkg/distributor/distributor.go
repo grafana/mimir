@@ -915,10 +915,6 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 			req.Metadata = util.RemoveSliceIndexes(req.Metadata, removeIndexes)
 		}
 
-		d.receivedSamples.WithLabelValues(userID).Add(float64(validatedSamples))
-		d.receivedExemplars.WithLabelValues(userID).Add(float64(validatedExemplars))
-		d.receivedMetadata.WithLabelValues(userID).Add(float64(validatedMetadata))
-
 		if validatedSamples == 0 && validatedMetadata == 0 {
 			return &mimirpb.WriteResponse{}, firstPartialErr
 		}
@@ -1136,6 +1132,12 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 		return nil, err
 	}
 
+	d.updateReceivedMetrics(req, userID)
+
+	if len(req.Timeseries) == 0 && len(req.Metadata) == 0 {
+		return &mimirpb.WriteResponse{}, nil
+	}
+
 	span := opentracing.SpanFromContext(ctx)
 	if span != nil {
 		span.SetTag("organization", userID)
@@ -1191,6 +1193,19 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 		return nil, err
 	}
 	return &mimirpb.WriteResponse{}, nil
+}
+
+func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID string) {
+	var receivedSamples, receivedExemplars, receivedMetadata int
+	for _, ts := range req.Timeseries {
+		receivedSamples += len(ts.TimeSeries.Samples)
+		receivedExemplars += len(ts.TimeSeries.Exemplars)
+	}
+	receivedMetadata = len(req.Metadata)
+
+	d.receivedSamples.WithLabelValues(userID).Add(float64(receivedSamples))
+	d.receivedExemplars.WithLabelValues(userID).Add(float64(receivedExemplars))
+	d.receivedMetadata.WithLabelValues(userID).Add(float64(receivedMetadata))
 }
 
 func copyString(s string) string {
