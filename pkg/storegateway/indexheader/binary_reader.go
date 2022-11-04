@@ -853,7 +853,7 @@ func (r *BinaryReader) LookupSymbol(o uint32) (string, error) {
 	return s, nil
 }
 
-func (r *BinaryReader) LabelValues(name string) ([]string, error) {
+func (r *BinaryReader) LabelValues(name string, filter func(string) bool) ([]string, error) {
 	if r.indexVersion == index.FormatV1 {
 		e, ok := r.postingsV1[name]
 		if !ok {
@@ -861,7 +861,9 @@ func (r *BinaryReader) LabelValues(name string) ([]string, error) {
 		}
 		values := make([]string, 0, len(e))
 		for k := range e {
-			values = append(values, k)
+			if filter == nil || filter(k) {
+				values = append(values, k)
+			}
 		}
 		sort.Strings(values)
 		return values, nil
@@ -893,7 +895,9 @@ func (r *BinaryReader) LabelValues(name string) ([]string, error) {
 			d.Skip(skip)
 		}
 		s := yoloString(d.UvarintBytes()) // Label value.
-		values = append(values, s)
+		if filter == nil || filter(s) {
+			values = append(values, s)
+		}
 		if s == lastVal {
 			break
 		}

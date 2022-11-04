@@ -1336,7 +1336,8 @@ func blockLabelValues(ctx context.Context, indexr *bucketIndexReader, labelName 
 		return values, nil
 	}
 
-	allValues, err := indexr.block.indexHeaderReader.LabelValues(labelName)
+	// TODO: if matchers contains labelName, we could use it to filter out label values here.
+	allValues, err := indexr.block.indexHeaderReader.LabelValues(labelName, nil)
 	if err != nil {
 		return nil, errors.Wrap(err, "index header label values")
 	}
@@ -1963,7 +1964,7 @@ func checkNilPosting(l labels.Label, p index.Postings) index.Postings {
 }
 
 // NOTE: Derived from tsdb.postingsForMatcher. index.Merge is equivalent to map duplication.
-func toPostingGroup(lvalsFn func(name string) ([]string, error), m *labels.Matcher) (*postingGroup, error) {
+func toPostingGroup(lvalsFn func(name string, filter func(string) bool) ([]string, error), m *labels.Matcher) (*postingGroup, error) {
 	if setMatches := m.SetMatches(); len(setMatches) > 0 && (m.Type == labels.MatchRegexp || m.Type == labels.MatchNotRegexp) {
 		keys := make([]labels.Label, 0, len(setMatches))
 		for _, val := range setMatches {
@@ -1991,11 +1992,6 @@ func toPostingGroup(lvalsFn func(name string) ([]string, error), m *labels.Match
 		}
 	}
 
-	vals, err := lvalsFn(m.Name)
-	if err != nil {
-		return nil, err
-	}
-
 	// This is a more generic approach for the previous case.
 	// Here we can enter with `label=""` or regexp matchers that match the empty value,
 	// like `=~"|foo" or `error!~"5..".
@@ -2003,26 +1999,26 @@ func toPostingGroup(lvalsFn func(name string) ([]string, error), m *labels.Match
 	// have the label name set too. See: https://github.com/prometheus/prometheus/issues/3575
 	// and https://github.com/prometheus/prometheus/pull/3578#issuecomment-351653555.
 	if m.Matches("") {
-		var toRemove []labels.Label
-		for _, val := range vals {
-			if !m.Matches(val) {
-				toRemove = append(toRemove, labels.Label{Name: m.Name, Value: val})
-			}
+		vals, err := lvalsFn(m.Name, not(m.Matches))
+		toRemove := make([]labels.Label, len(vals))
+		for i := range vals {
+			toRemove[i] = labels.Label{Name: m.Name, Value: vals[i]}
 		}
-
-		return newPostingGroup(true, nil, toRemove), nil
+		return newPostingGroup(true, nil, toRemove), err
 	}
 
 	// Our matcher does not match the empty value, so we just need the postings that correspond
 	// to label values matched by the matcher.
-	var toAdd []labels.Label
-	for _, val := range vals {
-		if m.Matches(val) {
-			toAdd = append(toAdd, labels.Label{Name: m.Name, Value: val})
-		}
+	vals, err := lvalsFn(m.Name, m.Matches)
+	toAdd := make([]labels.Label, len(vals))
+	for i := range vals {
+		toAdd[i] = labels.Label{Name: m.Name, Value: vals[i]}
 	}
+	return newPostingGroup(false, toAdd, nil), err
+}
 
-	return newPostingGroup(false, toAdd, nil), nil
+func not(filter func(string) bool) func(string) bool {
+	return func(s string) bool { return !filter(s) }
 }
 
 type postingPtr struct {
