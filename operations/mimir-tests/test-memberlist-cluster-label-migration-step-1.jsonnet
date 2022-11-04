@@ -6,10 +6,7 @@ mimir {
     external_url: 'http://test',
 
     storage_backend: 'gcs',
-
     blocks_storage_bucket_name: 'blocks-bucket',
-    bucket_index_enabled: true,
-    query_scheduler_enabled: true,
 
     ruler_enabled: true,
     ruler_storage_bucket_name: 'rules-bucket',
@@ -19,7 +16,6 @@ mimir {
 
     // Step 1: Disable verification of cluster label (becaue during the migration we'll
     // have members both with and without the cluster label set).
-    memberlist_ring_enabled: true,
     memberlist_cluster_label_verification_disabled: true,
   },
 }

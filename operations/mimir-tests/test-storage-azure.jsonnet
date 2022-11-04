@@ -10,8 +10,6 @@ mimir {
     storage_azure_account_key: 'azure-account-key',
 
     blocks_storage_bucket_name: 'blocks-bucket',
-    bucket_index_enabled: true,
-    query_scheduler_enabled: true,
 
     ruler_enabled: true,
     ruler_storage_bucket_name: 'rules-bucket',
