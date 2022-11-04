@@ -231,7 +231,7 @@
   // Creates a headless service for the per-zone mimir-write StatefulSet. We don't use it
   // but we need to create it anyway because it's responsible for the network identity of
   // the StatefulSet pods. For more information, see:
-  // https://v1-18.docs.kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#statefulset-v1-apps
+  // https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.25/#statefulset-v1-apps
   newMimirWriteZoneService(sts)::
     $.util.serviceFor(sts, $._config.service_ignored_labels) +
     service.mixin.spec.withClusterIp('None'),  // Headless.
@@ -410,7 +410,7 @@
   // Creates a headless service for the per-zone mimir-backends StatefulSet. We don't use it
   // but we need to create it anyway because it's responsible for the network identity of
   // the StatefulSet pods. For more information, see:
-  // https://v1-18.docs.kubernetes.io/docs/reference/generated/kubernetes-api/v1.18/#statefulset-v1-apps
+  // https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.25/#statefulset-v1-apps
   newMimirBackendZoneService(sts)::
     $.util.serviceFor(sts, $._config.service_ignored_labels) +
     service.mixin.spec.withClusterIp('None'),  // Headless.
