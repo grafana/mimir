@@ -75,6 +75,7 @@
 * [ENHANCEMENT] Improve `MimirQuerierAutoscalerNotActive` runbook. #3186
 * [ENHANCEMENT] Improve `MimirSchedulerQueriesStuck` runbook to reflect debug steps with querier auto-scaling enabled. #3223
 * [BUGFIX] Fixed TSDB retention mentioned in the "Recover source blocks from ingesters" runbook. #3278
+* [BUGFIX] Fixed configuration example in the "Configuring the Grafana Mimir query-frontend to work with Prometheus" guide. #3373
 
 ### Tools
 

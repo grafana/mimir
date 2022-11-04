@@ -35,7 +35,7 @@ api:
 server:
   http_listen_port: 9091
 
-query_range:
+frontend:
   split_queries_by_interval: 24h
   align_queries_with_step: true
   cache_results: true
@@ -48,9 +48,7 @@ query_range:
       # instances using a SRV DNS query (host) or list comma separated memcached addresses.
       addresses: "dnssrvnoa+memcached.mimir.svc.cluster.local:11211"
 
-frontend:
   log_queries_longer_than: 1s
-  compress_responses: true
 
   # The Prometheus URL to which the query-frontend should connect to.
   downstream_url: http://prometheus.mydomain.com
