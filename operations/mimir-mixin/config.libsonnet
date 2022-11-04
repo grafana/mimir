@@ -212,23 +212,21 @@
     },
 
     // Whether autoscaling panels and alerts should be enabled for specific Mimir services.
-    autoscaling: [
-      {
-        name: 'querier',
+    autoscaling: {
+      querier: {
         enabled: true,
         hpa_name: 'keda-hpa-querier',
       },
-      {
-        name: 'ruler_querier',
-        enabled: false,
+      ruler_querier: {
+        enabled: true,
         hpa_name: 'keda-hpa-ruler-querier',
       },
-      {
-        name: 'distributor',
+      distributor: {
         enabled: false,
         hpa_name: 'keda-hpa-distributor',
       },
-    ],
+    },
+
 
     // The routes to exclude from alerts.
     alert_excluded_routes: [],
