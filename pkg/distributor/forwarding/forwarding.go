@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/textproto"
 	"net/url"
 	"strconv"
 	"strings"
@@ -570,7 +571,7 @@ func (r *request) doHTTPGrpc(ctx context.Context, body []byte) error {
 		Url:    u.Path,
 		Body:   body,
 		Headers: append(headers, &httpgrpc.Header{
-			Key:    user.OrgIDHeaderName,
+			Key:    textproto.CanonicalMIMEHeaderKey(user.OrgIDHeaderName),
 			Values: []string{r.user},
 		}),
 	}
