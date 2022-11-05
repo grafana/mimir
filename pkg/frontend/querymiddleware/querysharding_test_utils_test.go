@@ -10,7 +10,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"sort"
 	"testing"
 	"time"
 
@@ -31,7 +30,7 @@ import (
 func genLabels(
 	labelSet []string,
 	labelBuckets int,
-) (result []labels.Labels) {
+) (result [][]labels.Label) {
 	if len(labelSet) == 0 {
 		return result
 	}
@@ -45,7 +44,7 @@ func genLabels(
 			Value: fmt.Sprintf("%d", i),
 		}
 		if len(rest) == 0 {
-			set := labels.Labels{x}
+			set := []labels.Label{x}
 			result = append(result, set)
 			continue
 		}
@@ -80,7 +79,7 @@ func newMockShardedQueryable(
 	sets := genLabels(labelSet, labelBuckets)
 	xs := make([]storage.Series, 0, len(sets))
 	for _, ls := range sets {
-		xs = append(xs, series.NewConcreteSeries(ls, samples, histograms))
+		xs = append(xs, series.NewConcreteSeries(labels.New(ls...), samples, histograms))
 	}
 
 	return &mockShardedQueryable{
@@ -172,19 +171,18 @@ type shardLabelSeries struct {
 // Labels impls storage.Series
 func (s *shardLabelSeries) Labels() labels.Labels {
 	ls := s.Series.Labels()
+	b := labels.NewBuilder(ls)
 
 	if s.name != "" {
-		ls = append(ls, labels.Label{
-			Name:  "__name__",
-			Value: s.name,
-		})
+		b.Set("__name__", s.name)
 	}
 
 	if s.shard != nil {
-		ls = append(ls, s.shard.Label())
+		l := s.shard.Label()
+		b.Set(l.Name, l.Value)
 	}
 
-	return ls
+	return b.Labels()
 }
 
 // LabelValues impls storage.Querier
@@ -204,16 +202,16 @@ func (q *mockShardedQueryable) Close() error {
 
 func TestGenLabelsCorrectness(t *testing.T) {
 	ls := genLabels([]string{"a", "b"}, 2)
-	for _, set := range ls {
-		sort.Sort(set)
-	}
 	expected := []labels.Labels{
 		labels.FromStrings("a", "0", "b", "0"),
 		labels.FromStrings("a", "0", "b", "1"),
 		labels.FromStrings("a", "1", "b", "0"),
 		labels.FromStrings("a", "1", "b", "1"),
 	}
-	require.Equal(t, expected, ls)
+	for i, x := range expected {
+		got := labels.New(ls[i]...)
+		require.Equal(t, x, got)
+	}
 }
 
 func TestGenLabelsSize(t *testing.T) {
