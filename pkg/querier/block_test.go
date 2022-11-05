@@ -42,7 +42,7 @@ func TestBlockQuerierSeries(t *testing.T) {
 	}{
 		"empty series": {
 			series:         &storepb.Series{},
-			expectedMetric: labels.Labels(nil),
+			expectedMetric: labels.EmptyLabels(),
 			expectedErr:    "no chunks",
 		},
 		"should return float series on success": {
