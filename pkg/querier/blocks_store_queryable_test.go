@@ -2092,9 +2092,9 @@ func mockValuesHints(ids ...ulid.ULID) *types.Any {
 func namesFromSeries(series ...labels.Labels) []string {
 	namesMap := map[string]struct{}{}
 	for _, s := range series {
-		for _, l := range s {
+		s.Range(func(l labels.Label) {
 			namesMap[l.Name] = struct{}{}
-		}
+		})
 	}
 
 	names := []string{}
@@ -2109,11 +2109,11 @@ func namesFromSeries(series ...labels.Labels) []string {
 func valuesFromSeries(name string, series ...labels.Labels) []string {
 	valuesMap := map[string]struct{}{}
 	for _, s := range series {
-		for _, l := range s {
+		s.Range(func(l labels.Label) {
 			if l.Name == name {
 				valuesMap[l.Value] = struct{}{}
 			}
-		}
+		})
 	}
 
 	values := []string{}

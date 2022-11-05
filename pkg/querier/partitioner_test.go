@@ -68,7 +68,7 @@ func testPartitionChunksOutputIsSortedByLabels(t *testing.T, encoding chunk.Enco
 	for i := count; i > 0; i-- {
 		ch := mkChunk(t, model.Time(0), model.Time(1000), time.Millisecond, encoding)
 		// mkChunk uses `foo` as metric name, so we rename metric to be unique
-		ch.Metric[0].Value = fmt.Sprintf("%02d", i)
+		ch.Metric = labels.FromStrings(model.MetricNameLabel, fmt.Sprintf("%02d", i))
 
 		allChunks = append(allChunks, ch)
 	}

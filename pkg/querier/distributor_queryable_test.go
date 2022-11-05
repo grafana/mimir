@@ -141,7 +141,7 @@ func TestIngesterStreaming(t *testing.T) {
 	require.NoError(t, err)
 
 	clientChunks, err := chunkcompat.ToChunks([]chunk.Chunk{
-		chunk.NewChunk(nil, promChunk, model.Earliest, model.Earliest),
+		chunk.NewChunk(labels.EmptyLabels(), promChunk, model.Earliest, model.Earliest),
 	})
 	require.NoError(t, err)
 
@@ -478,15 +478,16 @@ func BenchmarkDistributorQueryable_Select(b *testing.B) {
 	require.NoError(b, err)
 
 	clientChunks, err := chunkcompat.ToChunks([]chunk.Chunk{
-		chunk.NewChunk(nil, promChunk, model.Earliest, model.Earliest),
+		chunk.NewChunk(labels.EmptyLabels(), promChunk, model.Earliest, model.Earliest),
 	})
 	require.NoError(b, err)
 
 	// Generate fixtures for series that are going to be returned by the mocked QueryStream().
-	commonLabelsBuilder := labels.NewBuilder(nil)
+	commonLabelsBuilder := labels.NewScratchBuilder(numLabelsPerSeries - 1)
 	for i := 0; i < numLabelsPerSeries-1; i++ {
-		commonLabelsBuilder.Set(fmt.Sprintf("label_%d", i), fmt.Sprintf("value_%d", i))
+		commonLabelsBuilder.Add(fmt.Sprintf("label_%d", i), fmt.Sprintf("value_%d", i))
 	}
+	commonLabelsBuilder.Sort()
 	commonLabels := commonLabelsBuilder.Labels()
 
 	response := &client.QueryStreamResponse{Chunkseries: make([]client.TimeSeriesChunk, 0, numSeries)}
@@ -570,7 +571,7 @@ func convertToChunks(t *testing.T, samples []interface{}) []client.Chunk {
 		if len(chunks) == 0 || chunks[len(chunks)-1].Data.Encoding() != enc {
 			c, err := chunk.NewForEncoding(enc)
 			require.NoError(t, err)
-			chunks = append(chunks, chunk.NewChunk(nil, c, model.Time(ts), model.Time(ts)))
+			chunks = append(chunks, chunk.NewChunk(labels.EmptyLabels(), c, model.Time(ts), model.Time(ts)))
 			return
 		}
 		chunks[len(chunks)-1].Through = model.Time(ts)
