@@ -675,20 +675,20 @@ func (r *bucketIndexReader) Close() error {
 }
 
 // LookupLabelsSymbols populates label set strings from symbolized label set.
-func (r *bucketIndexReader) LookupLabelsSymbols(symbolized []symbolizedLabel) (labels.Labels, error) {
-	lbls := make(labels.Labels, len(symbolized))
-	for ix, s := range symbolized {
+func (r *bucketIndexReader) LookupLabelsSymbols(symbolized []symbolizedLabel, builder *labels.ScratchBuilder) (labels.Labels, error) {
+	builder.Reset()
+	for _, s := range symbolized {
 		ln, err := r.dec.LookupSymbol(s.name)
 		if err != nil {
-			return nil, errors.Wrap(err, "lookup label name")
+			return labels.EmptyLabels(), errors.Wrap(err, "lookup label name")
 		}
 		lv, err := r.dec.LookupSymbol(s.value)
 		if err != nil {
-			return nil, errors.Wrap(err, "lookup label value")
+			return labels.EmptyLabels(), errors.Wrap(err, "lookup label value")
 		}
-		lbls[ix] = labels.Label{Name: ln, Value: lv}
+		builder.Add(ln, lv)
 	}
-	return lbls, nil
+	return builder.Labels(), nil
 }
 
 // bucketIndexLoadedSeries holds the result of a series load operation.

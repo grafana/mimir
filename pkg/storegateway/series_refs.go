@@ -831,9 +831,10 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 	// This can be released by the caller because loadingSeriesChunkRefsSetIterator doesn't retain it
 	// after Next() will be called again.
 	nextSet := newSeriesChunkRefsSet(len(nextPostings), true)
+	var builder labels.ScratchBuilder
 
 	for _, id := range nextPostings {
-		lset, metas, err := s.loadSeries(id, loadedSeries, loadStats)
+		lset, metas, err := s.loadSeries(id, loadedSeries, loadStats, &builder)
 		if err != nil {
 			s.err = errors.Wrap(err, "read series")
 			return false
@@ -1024,13 +1025,13 @@ func (s *loadingSeriesChunkRefsSetIterator) Err() error {
 }
 
 // loadSeries returns a for chunks. It is not safe to use the returned []chunks.Meta after calling loadSeries again
-func (s *loadingSeriesChunkRefsSetIterator) loadSeries(ref storage.SeriesRef, loadedSeries *bucketIndexLoadedSeries, stats *queryStats) (labels.Labels, []chunks.Meta, error) {
+func (s *loadingSeriesChunkRefsSetIterator) loadSeries(ref storage.SeriesRef, loadedSeries *bucketIndexLoadedSeries, stats *queryStats, builder *labels.ScratchBuilder) (labels.Labels, []chunks.Meta, error) {
 	ok, err := loadedSeries.unsafeLoadSeries(ref, &s.symbolizedLsetBuffer, &s.chunkMetasBuffer, s.skipChunks, stats)
 	if !ok || err != nil {
 		return labels.EmptyLabels(), nil, errors.Wrap(err, "loadSeries")
 	}
 
-	lset, err := s.indexr.LookupLabelsSymbols(s.symbolizedLsetBuffer)
+	lset, err := s.indexr.LookupLabelsSymbols(s.symbolizedLsetBuffer, builder)
 	if err != nil {
 		return labels.EmptyLabels(), nil, errors.Wrap(err, "lookup labels symbols")
 	}
