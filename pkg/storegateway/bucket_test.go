@@ -715,13 +715,13 @@ func (iir *interceptedIndexReader) LabelNames() ([]string, error) {
 	return iir.Reader.LabelNames()
 }
 
-func (iir *interceptedIndexReader) LabelValues(name string) ([]string, error) {
+func (iir *interceptedIndexReader) LabelValues(name string, filter func(string) bool) ([]string, error) {
 	if iir.onLabelValuesCalled != nil {
 		if err := iir.onLabelValuesCalled(name); err != nil {
 			return nil, err
 		}
 	}
-	return iir.Reader.LabelValues(name)
+	return iir.Reader.LabelValues(name, filter)
 }
 
 type contextNotifyingOnDoneWaiting struct {

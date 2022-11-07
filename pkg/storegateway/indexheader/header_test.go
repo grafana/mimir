@@ -143,7 +143,7 @@ func TestReaders(t *testing.T) {
 						},
 					}, br.postings)
 
-					vals, err := br.LabelValues("not-existing")
+					vals, err := br.LabelValues("not-existing", nil)
 					require.NoError(t, err)
 					require.Equal(t, []string(nil), vals)
 
@@ -252,7 +252,7 @@ func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerRe
 		expectedLabelVals, err := indexReader.SortedLabelValues(lname)
 		require.NoError(t, err)
 
-		vals, err := headerReader.LabelValues(lname)
+		vals, err := headerReader.LabelValues(lname, nil)
 		require.NoError(t, err)
 		require.Equal(t, expectedLabelVals, vals)
 
