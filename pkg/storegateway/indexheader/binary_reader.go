@@ -535,7 +535,7 @@ func newFileBinaryReader(path string, postingOffsetsInMemSampling int, cfg Binar
 	}
 
 	var lastLbl labels.Label
-	var lastSet bool
+	lastSet := false
 	if r.indexVersion == index.FormatV1 {
 		// Earlier V1 formats don't have a sorted postings offset table, so
 		// load the whole offset table into memory.
@@ -581,7 +581,6 @@ func newFileBinaryReader(path string, postingOffsetsInMemSampling int, cfg Binar
 						r.postings[lastLbl.Name].offsets = append(r.postings[lastLbl.Name].offsets, postingOffset{value: lastLbl.Value, tableOff: lastTableOff})
 					}
 					r.postings[lastLbl.Name].lastValOffset = int64(off - crc32.Size)
-					lastLbl = labels.Label{}
 				}
 				valueCount = 0
 			}
