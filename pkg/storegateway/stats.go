@@ -5,8 +5,12 @@
 
 package storegateway
 
-import "time"
+import (
+	"sync"
+	"time"
+)
 
+// queryStats holds query statistics. This data structure is NOT concurrency safe.
 type queryStats struct {
 	blocksQueried int
 
@@ -92,4 +96,29 @@ func (s queryStats) merge(o *queryStats) *queryStats {
 	s.mergeDuration += o.mergeDuration
 
 	return &s
+}
+
+// safeQueryStats wraps queryStats adding functions to lock/unlock a mutex before manipulating the statistics.
+type safeQueryStats struct {
+	mtx sync.Mutex
+	*queryStats
+}
+
+func newSafeQueryStats() *safeQueryStats {
+	return &safeQueryStats{
+		queryStats: &queryStats{},
+	}
+}
+
+func (s *safeQueryStats) lock() {
+	s.mtx.Lock()
+}
+
+func (s *safeQueryStats) unlock() {
+	s.mtx.Unlock()
+}
+
+func (s *safeQueryStats) merge(o *queryStats) *safeQueryStats {
+	s.queryStats.merge(o)
+	return s
 }
