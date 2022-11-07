@@ -581,7 +581,7 @@ func newFileBinaryReader(path string, postingOffsetsInMemSampling int, cfg Binar
 					// Always include last value for each label name, unless it was just added in previous iteration based
 					// on valueCount.
 					if (valueCount-1)%postingOffsetsInMemSampling != 0 {
-						r.postings[lbl.yoloName].offsets = append(r.postings[lbl.yoloName].offsets, postingOffset{value: lbl.value(), tableOff: lastTableOff})
+						r.postings[lastLbl.yoloName].offsets = append(r.postings[lastLbl.yoloName].offsets, postingOffset{value: lastLbl.value(), tableOff: lastTableOff})
 					}
 					r.postings[lastLbl.yoloName].lastValOffset = int64(off - crc32.Size)
 				}
