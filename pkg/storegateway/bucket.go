@@ -614,7 +614,8 @@ func blockSeries(
 	// Preload all series index data.
 	// TODO(bwplotka): Consider not keeping all series in memory all the time.
 	// TODO(bwplotka): Do lazy loading in one step as `ExpandingPostings` method.
-	if err := indexr.PreloadSeries(ctx, ps, indexStats); err != nil {
+	loadedSeries, err := indexr.PreloadSeries(ctx, ps, indexStats)
+	if err != nil {
 		return nil, nil, errors.Wrap(err, "preload series")
 	}
 
@@ -631,7 +632,7 @@ func blockSeries(
 			chks           []chunks.Meta
 		)
 		for _, id := range ps {
-			ok, err := indexr.LoadSeriesForTime(id, &symbolizedLset, &chks, skipChunks, minTime, maxTime, indexStats.queryStats)
+			ok, err := loadedSeries.loadSeriesForTime(id, &symbolizedLset, &chks, skipChunks, minTime, maxTime, indexStats.queryStats)
 			if err != nil {
 				lookupErr = errors.Wrap(err, "read series")
 				return
@@ -1705,8 +1706,7 @@ type bucketIndexReader struct {
 	block *bucketBlock
 	dec   *index.Decoder
 
-	mtx          sync.Mutex
-	loadedSeries map[storage.SeriesRef][]byte
+	mtx sync.Mutex
 }
 
 func newBucketIndexReader(block *bucketBlock) *bucketIndexReader {
@@ -1715,7 +1715,6 @@ func newBucketIndexReader(block *bucketBlock) *bucketIndexReader {
 		dec: &index.Decoder{
 			LookupSymbol: block.indexHeaderReader.LookupSymbol,
 		},
-		loadedSeries: map[storage.SeriesRef][]byte{},
 	}
 	return r
 }
@@ -2289,18 +2288,20 @@ func (it *bigEndianPostings) length() int {
 	return len(it.list) / 4
 }
 
-func (r *bucketIndexReader) PreloadSeries(ctx context.Context, ids []storage.SeriesRef, stats *safeQueryStats) error {
+func (r *bucketIndexReader) PreloadSeries(ctx context.Context, ids []storage.SeriesRef, stats *safeQueryStats) (*bucketIndexLoadedSeries, error) {
 	span, ctx := tracing.StartSpan(ctx, "PreloadSeries()")
 	defer span.Finish()
 
 	timer := prometheus.NewTimer(r.block.metrics.seriesFetchDuration)
 	defer timer.ObserveDuration()
 
+	loaded := newBucketIndexLoadedSeries()
+
 	// Load series from cache, overwriting the list of ids to preload
 	// with the missing ones.
 	fromCache, ids := r.block.indexCache.FetchMultiSeriesForRefs(ctx, r.block.userID, r.block.meta.ULID, ids)
 	for id, b := range fromCache {
-		r.loadedSeries[id] = b
+		loaded.series[id] = b
 	}
 
 	parts := r.block.partitioner.Partition(len(ids), func(i int) (start, end uint64) {
@@ -2312,13 +2313,13 @@ func (r *bucketIndexReader) PreloadSeries(ctx context.Context, ids []storage.Ser
 		i, j := p.ElemRng[0], p.ElemRng[1]
 
 		g.Go(func() error {
-			return r.loadSeries(ctx, ids[i:j], false, s, e, stats)
+			return r.loadSeries(ctx, ids[i:j], false, s, e, loaded, stats)
 		})
 	}
-	return g.Wait()
+	return loaded, g.Wait()
 }
 
-func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.SeriesRef, refetch bool, start, end uint64, stats *safeQueryStats) error {
+func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.SeriesRef, refetch bool, start, end uint64, loaded *bucketIndexLoadedSeries, stats *safeQueryStats) error {
 	begin := time.Now()
 
 	b, err := r.block.readIndexRange(ctx, int64(start), int64(end-start))
@@ -2350,11 +2351,11 @@ func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.Series
 			level.Warn(r.block.logger).Log("msg", "series size exceeded expected size; refetching", "id", id, "series length", n+int(l), "maxSeriesSize", maxSeriesSize)
 
 			// Fetch plus to get the size of next one if exists.
-			return r.loadSeries(ctx, ids[i:], true, uint64(id), uint64(id)+uint64(n+int(l)+1), stats)
+			return r.loadSeries(ctx, ids[i:], true, uint64(id), uint64(id)+uint64(n+int(l)+1), loaded, stats)
 		}
 		c = c[n : n+int(l)]
 		r.mtx.Lock()
-		r.loadedSeries[id] = c
+		loaded.series[id] = c
 		r.block.indexCache.StoreSeriesForRef(ctx, r.block.userID, r.block.meta.ULID, id, c)
 		r.mtx.Unlock()
 	}
@@ -2378,23 +2379,6 @@ type Partitioner interface {
 
 type symbolizedLabel struct {
 	name, value uint32
-}
-
-// LoadSeriesForTime populates the given symbolized labels for the series identified by the reference if at least one chunk is within
-// time selection.
-// LoadSeriesForTime also populates chunk metas slices if skipChunks if set to false. Chunks are also limited by the given time selection.
-// LoadSeriesForTime returns false, when there are no series data for given time range.
-//
-// Error is returned on decoding error or if the reference does not resolve to a known series.
-func (r *bucketIndexReader) LoadSeriesForTime(ref storage.SeriesRef, lset *[]symbolizedLabel, chks *[]chunks.Meta, skipChunks bool, mint, maxt int64, stats *queryStats) (ok bool, err error) {
-	b, ok := r.loadedSeries[ref]
-	if !ok {
-		return false, errors.Errorf("series %d not found", ref)
-	}
-
-	stats.seriesTouched++
-	stats.seriesTouchedSizeSum += len(b)
-	return decodeSeriesForTime(b, lset, chks, skipChunks, mint, maxt)
 }
 
 // Close released the underlying resources of the reader.
