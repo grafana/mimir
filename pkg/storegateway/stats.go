@@ -100,7 +100,7 @@ func (s queryStats) merge(o *queryStats) *queryStats {
 
 // safeQueryStats wraps queryStats adding functions to lock/unlock a mutex before manipulating the statistics.
 type safeQueryStats struct {
-	mtx sync.Mutex
+	sync.Mutex
 	*queryStats
 }
 
@@ -108,14 +108,6 @@ func newSafeQueryStats() *safeQueryStats {
 	return &safeQueryStats{
 		queryStats: &queryStats{},
 	}
-}
-
-func (s *safeQueryStats) lock() {
-	s.mtx.Lock()
-}
-
-func (s *safeQueryStats) unlock() {
-	s.mtx.Unlock()
 }
 
 func (s *safeQueryStats) merge(o *queryStats) *safeQueryStats {

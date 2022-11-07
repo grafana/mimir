@@ -2137,12 +2137,12 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 			}
 			fetchTime := time.Since(begin)
 
-			stats.lock()
+			stats.Lock()
 			stats.postingsFetchCount++
 			stats.postingsFetched += j - i
 			stats.postingsFetchDurationSum += fetchTime
 			stats.postingsFetchedSizeSum += int(length)
-			stats.unlock()
+			stats.Unlock()
 
 			for _, p := range ptrs[i:j] {
 				// index-header can estimate endings, which means we need to resize the endings.
@@ -2181,7 +2181,7 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 				r.mtx.Unlock()
 
 				// If we just fetched it we still have to update the stats for touched postings.
-				stats.lock()
+				stats.Lock()
 				stats.postingsTouched++
 				stats.postingsTouchedSizeSum += len(pBytes)
 				stats.cachedPostingsCompressions += compressions
@@ -2189,7 +2189,7 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 				stats.cachedPostingsOriginalSizeSum += len(pBytes)
 				stats.cachedPostingsCompressedSizeSum += compressedSize
 				stats.cachedPostingsCompressionTimeSum += compressionTime
-				stats.unlock()
+				stats.Unlock()
 			}
 			return nil
 		})
@@ -2327,12 +2327,12 @@ func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.Series
 		return errors.Wrap(err, "read series range")
 	}
 
-	stats.lock()
+	stats.Lock()
 	stats.seriesFetchCount++
 	stats.seriesFetched += len(ids)
 	stats.seriesFetchDurationSum += time.Since(begin)
 	stats.seriesFetchedSizeSum += int(end - start)
-	stats.unlock()
+	stats.Unlock()
 
 	for i, id := range ids {
 		c := b[uint64(id)-start:]
