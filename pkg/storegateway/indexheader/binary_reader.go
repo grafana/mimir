@@ -560,7 +560,7 @@ func newFileBinaryReader(path string, postingOffsetsInMemSampling int, cfg Binar
 		}); err != nil {
 			return nil, errors.Wrap(err, "read postings table")
 		}
-		if lastLbl.Name != "" {
+		if lastSet {
 			prevRng.End = r.indexLastPostingEnd - crc32.Size
 			r.postingsV1[lastLbl.Name][lastLbl.Value] = prevRng
 		}
