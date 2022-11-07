@@ -98,19 +98,41 @@ func (s queryStats) merge(o *queryStats) *queryStats {
 	return &s
 }
 
-// safeQueryStats wraps queryStats adding functions to lock/unlock a mutex before manipulating the statistics.
+// safeQueryStats wraps queryStats adding functions manipulate the statistics while holding a lock.
 type safeQueryStats struct {
-	sync.Mutex
-	*queryStats
+	unsafeStatsMx sync.Mutex
+	unsafeStats   *queryStats
 }
 
 func newSafeQueryStats() *safeQueryStats {
 	return &safeQueryStats{
-		queryStats: &queryStats{},
+		unsafeStats: &queryStats{},
 	}
 }
 
+// update the statistics while holding the lock.
+func (s *safeQueryStats) update(fn func(stats *queryStats)) {
+	s.unsafeStatsMx.Lock()
+	defer s.unsafeStatsMx.Unlock()
+
+	fn(s.unsafeStats)
+}
+
+// merge the statistics while holding the lock. Returns a new object with the merged statistics.
 func (s *safeQueryStats) merge(o *queryStats) *safeQueryStats {
-	s.queryStats.merge(o)
-	return s
+	s.unsafeStatsMx.Lock()
+	defer s.unsafeStatsMx.Unlock()
+
+	return &safeQueryStats{
+		unsafeStats: s.unsafeStats.merge(o),
+	}
+}
+
+// export returns a copy of the internal statistics.
+func (s *safeQueryStats) export() *queryStats {
+	s.unsafeStatsMx.Lock()
+	defer s.unsafeStatsMx.Unlock()
+
+	copy := *s.unsafeStats
+	return &copy
 }

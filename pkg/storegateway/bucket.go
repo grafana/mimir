@@ -626,9 +626,18 @@ func blockSeries(
 		var (
 			symbolizedLset []symbolizedLabel
 			chks           []chunks.Meta
+			postingsStats  = &queryStats{}
 		)
+
+		// Keep track of postings lookup stats in a dedicated stats structure that doesn't require lock
+		// and then merge it once done. We do it to avoid the lock overhead because loadSeriesForTime()
+		// may be called many times.
+		defer func() {
+			indexStats = indexStats.merge(postingsStats)
+		}()
+
 		for _, id := range ps {
-			ok, err := loadedSeries.loadSeriesForTime(id, &symbolizedLset, &chks, skipChunks, minTime, maxTime, indexStats.queryStats)
+			ok, err := loadedSeries.loadSeriesForTime(id, &symbolizedLset, &chks, skipChunks, minTime, maxTime, postingsStats)
 			if err != nil {
 				lookupErr = errors.Wrap(err, "read series")
 				return
@@ -956,7 +965,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 
 			mtx.Lock()
 			res = append(res, part)
-			stats = stats.merge(pstats.queryStats)
+			stats = stats.merge(pstats.export())
 			mtx.Unlock()
 
 			return nil
