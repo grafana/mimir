@@ -614,7 +614,7 @@ func blockSeries(
 	// Preload all series index data.
 	// TODO(bwplotka): Consider not keeping all series in memory all the time.
 	// TODO(bwplotka): Do lazy loading in one step as `ExpandingPostings` method.
-	loadedSeries, err := indexr.PreloadSeries(ctx, ps, indexStats)
+	loadedSeries, err := indexr.preloadSeries(ctx, ps, indexStats)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "preload series")
 	}
@@ -2288,8 +2288,8 @@ func (it *bigEndianPostings) length() int {
 	return len(it.list) / 4
 }
 
-func (r *bucketIndexReader) PreloadSeries(ctx context.Context, ids []storage.SeriesRef, stats *safeQueryStats) (*bucketIndexLoadedSeries, error) {
-	span, ctx := tracing.StartSpan(ctx, "PreloadSeries()")
+func (r *bucketIndexReader) preloadSeries(ctx context.Context, ids []storage.SeriesRef, stats *safeQueryStats) (*bucketIndexLoadedSeries, error) {
+	span, ctx := tracing.StartSpan(ctx, "preloadSeries()")
 	defer span.Finish()
 
 	timer := prometheus.NewTimer(r.block.metrics.seriesFetchDuration)
