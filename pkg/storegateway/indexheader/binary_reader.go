@@ -26,6 +26,7 @@ import (
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -533,37 +534,35 @@ func newFileBinaryReader(path string, postingOffsetsInMemSampling int, cfg Binar
 		return nil, errors.Wrap(err, "read symbols")
 	}
 
-	var lastKey []string
+	var lastLbl labels.Label
+	lastSet := false
 	if r.indexVersion == index.FormatV1 {
 		// Earlier V1 formats don't have a sorted postings offset table, so
 		// load the whole offset table into memory.
 		r.postingsV1 = map[string]map[string]index.Range{}
 
 		var prevRng index.Range
-		if err := index.ReadOffsetTable(r.b, r.toc.PostingsOffsetTable, func(key []string, off uint64, _ int) error {
-			if len(key) != 2 {
-				return errors.Errorf("unexpected key length for posting table %d", len(key))
-			}
-
-			if lastKey != nil {
+		if err := readPostingsOffsetTable(r.b, r.toc.PostingsOffsetTable, func(lbl labels.Label, off uint64, _ int) error {
+			if lastSet {
 				prevRng.End = int64(off - crc32.Size)
-				r.postingsV1[lastKey[0]][lastKey[1]] = prevRng
+				r.postingsV1[lastLbl.Name][lastLbl.Value] = prevRng
 			}
 
-			if _, ok := r.postingsV1[key[0]]; !ok {
-				r.postingsV1[key[0]] = map[string]index.Range{}
-				r.postings[key[0]] = nil // Used to get a list of labelnames in places.
+			if _, ok := r.postingsV1[lbl.Name]; !ok {
+				r.postingsV1[lbl.Name] = map[string]index.Range{}
+				r.postings[lbl.Name] = nil // Used to get a list of labelnames in places.
 			}
 
-			lastKey = key
+			lastSet = true
+			lastLbl = lbl
 			prevRng = index.Range{Start: int64(off + postingLengthFieldSize)}
 			return nil
 		}); err != nil {
 			return nil, errors.Wrap(err, "read postings table")
 		}
-		if lastKey != nil {
+		if lastSet {
 			prevRng.End = r.indexLastPostingEnd - crc32.Size
-			r.postingsV1[lastKey[0]][lastKey[1]] = prevRng
+			r.postingsV1[lastLbl.Name][lastLbl.Value] = prevRng
 		}
 	} else {
 		lastTableOff := 0
@@ -571,46 +570,42 @@ func newFileBinaryReader(path string, postingOffsetsInMemSampling int, cfg Binar
 
 		// For the postings offset table we keep every label name but only every nth
 		// label value (plus the first and last one), to save memory.
-		if err := index.ReadOffsetTable(r.b, r.toc.PostingsOffsetTable, func(key []string, off uint64, tableOff int) error {
-			if len(key) != 2 {
-				return errors.Errorf("unexpected key length for posting table %d", len(key))
-			}
-
-			if _, ok := r.postings[key[0]]; !ok {
+		if err := readPostingsOffsetTable(r.b, r.toc.PostingsOffsetTable, func(lbl labels.Label, off uint64, tableOff int) error {
+			if _, ok := r.postings[lbl.Name]; !ok {
 				// Not seen before label name.
-				r.postings[key[0]] = &postingValueOffsets{}
-				if lastKey != nil {
+				r.postings[lbl.Name] = &postingValueOffsets{}
+				if lastSet {
 					// Always include last value for each label name, unless it was just added in previous iteration based
 					// on valueCount.
 					if (valueCount-1)%postingOffsetsInMemSampling != 0 {
-						r.postings[lastKey[0]].offsets = append(r.postings[lastKey[0]].offsets, postingOffset{value: lastKey[1], tableOff: lastTableOff})
+						r.postings[lastLbl.Name].offsets = append(r.postings[lastLbl.Name].offsets, postingOffset{value: lastLbl.Value, tableOff: lastTableOff})
 					}
-					r.postings[lastKey[0]].lastValOffset = int64(off - crc32.Size)
-					lastKey = nil
+					r.postings[lastLbl.Name].lastValOffset = int64(off - crc32.Size)
 				}
 				valueCount = 0
 			}
 
-			lastKey = key
+			lastSet = true
+			lastLbl = lbl
 			lastTableOff = tableOff
 			valueCount++
 
 			if (valueCount-1)%postingOffsetsInMemSampling == 0 {
-				r.postings[key[0]].offsets = append(r.postings[key[0]].offsets, postingOffset{value: key[1], tableOff: tableOff})
+				r.postings[lbl.Name].offsets = append(r.postings[lbl.Name].offsets, postingOffset{value: lbl.Value, tableOff: tableOff})
 			}
 
 			return nil
 		}); err != nil {
 			return nil, errors.Wrap(err, "read postings table")
 		}
-		if lastKey != nil {
+		if lastSet {
 			if (valueCount-1)%postingOffsetsInMemSampling != 0 {
 				// Always include last value for each label name if not included already based on valueCount.
-				r.postings[lastKey[0]].offsets = append(r.postings[lastKey[0]].offsets, postingOffset{value: lastKey[1], tableOff: lastTableOff})
+				r.postings[lastLbl.Name].offsets = append(r.postings[lastLbl.Name].offsets, postingOffset{value: lastLbl.Value, tableOff: lastTableOff})
 			}
 			// In any case lastValOffset is unknown as don't have next posting anymore. Guess from TOC table.
 			// In worst case we will overfetch a few bytes.
-			r.postings[lastKey[0]].lastValOffset = r.indexLastPostingEnd - crc32.Size
+			r.postings[lastLbl.Name].lastValOffset = r.indexLastPostingEnd - crc32.Size
 		}
 		// Trim any extra space in the slices.
 		for k, v := range r.postings {
@@ -942,4 +937,36 @@ func (b realByteSlice) Range(start, end int) []byte {
 
 func (b realByteSlice) Sub(start, end int) index.ByteSlice {
 	return b[start:end]
+}
+
+// ReadOffsetTable reads an offset table and at the given position calls f for each
+// found entry. If f returns an error it stops decoding and returns the received error.
+// TODO: use the upstreamed version from Prometheus tsdb/index package when available.
+// TODO: see https://github.com/prometheus/prometheus/pull/11535
+func readPostingsOffsetTable(bs index.ByteSlice, off uint64, f func(labels.Label, uint64, int) error) error {
+	d := encoding.NewDecbufAt(bs, int(off), castagnoliTable)
+	startLen := d.Len()
+	cnt := d.Be32()
+
+	for d.Err() == nil && d.Len() > 0 && cnt > 0 {
+		offsetPos := startLen - d.Len()
+
+		if keyCount := d.Uvarint(); keyCount != 2 {
+			return errors.Errorf("unexpected key length for posting table %d", keyCount)
+		}
+
+		var lbl labels.Label
+		lbl.Name = d.UvarintStr()
+		lbl.Value = d.UvarintStr()
+
+		o := d.Uvarint64()
+		if d.Err() != nil {
+			break
+		}
+		if err := f(lbl, o, offsetPos); err != nil {
+			return err
+		}
+		cnt--
+	}
+	return d.Err()
 }
