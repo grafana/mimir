@@ -1848,7 +1848,7 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 	// NOTE: Derived from tsdb.PostingsForMatchers.
 	for _, m := range ms {
 		// Each group is separate to tell later what postings are intersecting with what.
-		pg, err := toPostingGroup(r.block.indexHeaderReader.LabelValues, m)
+		pg, err := toPostingGroup(r.block.indexHeaderReader, m)
 		if err != nil {
 			return nil, errors.Wrap(err, "toPostingGroup")
 		}
@@ -1963,8 +1963,12 @@ func checkNilPosting(l labels.Label, p index.Postings) index.Postings {
 	return p
 }
 
+type labelValuesReader interface {
+	LabelValues(name string, filter func(string) bool) ([]string, error)
+}
+
 // NOTE: Derived from tsdb.postingsForMatcher. index.Merge is equivalent to map duplication.
-func toPostingGroup(lvalsFn func(name string, filter func(string) bool) ([]string, error), m *labels.Matcher) (*postingGroup, error) {
+func toPostingGroup(lvr labelValuesReader, m *labels.Matcher) (*postingGroup, error) {
 	if setMatches := m.SetMatches(); len(setMatches) > 0 && (m.Type == labels.MatchRegexp || m.Type == labels.MatchNotRegexp) {
 		keys := make([]labels.Label, 0, len(setMatches))
 		for _, val := range setMatches {
@@ -1999,7 +2003,7 @@ func toPostingGroup(lvalsFn func(name string, filter func(string) bool) ([]strin
 	// have the label name set too. See: https://github.com/prometheus/prometheus/issues/3575
 	// and https://github.com/prometheus/prometheus/pull/3578#issuecomment-351653555.
 	if m.Matches("") {
-		vals, err := lvalsFn(m.Name, not(m.Matches))
+		vals, err := lvr.LabelValues(m.Name, not(m.Matches))
 		toRemove := make([]labels.Label, len(vals))
 		for i := range vals {
 			toRemove[i] = labels.Label{Name: m.Name, Value: vals[i]}
@@ -2009,7 +2013,7 @@ func toPostingGroup(lvalsFn func(name string, filter func(string) bool) ([]strin
 
 	// Our matcher does not match the empty value, so we just need the postings that correspond
 	// to label values matched by the matcher.
-	vals, err := lvalsFn(m.Name, m.Matches)
+	vals, err := lvr.LabelValues(m.Name, m.Matches)
 	toAdd := make([]labels.Label, len(vals))
 	for i := range vals {
 		toAdd[i] = labels.Label{Name: m.Name, Value: vals[i]}
