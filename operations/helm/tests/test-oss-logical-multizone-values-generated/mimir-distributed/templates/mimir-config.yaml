@@ -18,6 +18,7 @@ data:
       data_dir: /data
       enable_api: true
       external_url: /alertmanager
+      fallback_config_file: /configs/alertmanager_fallback_config.yaml
       sharding_ring:
         zone_awareness_enabled: true
     alertmanager_storage:

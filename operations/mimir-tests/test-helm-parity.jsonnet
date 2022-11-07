@@ -14,6 +14,13 @@ mimir {
     unregister_ingesters_on_shutdown: false,
     query_sharding_enabled: true,
     overrides_exporter_enabled: true,
+
+    alertmanager+: {
+      fallback_config: {
+        route: { receiver: 'default-receiver' },
+        receivers: [{ name: 'default-receiver' }],
+      },
+    },
   },
 
   // These are properties that are set differently on different components in jsonnet.

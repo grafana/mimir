@@ -54,6 +54,9 @@ spec:
         {{- include "mimir.podLabels" $args | nindent 8 }}
       annotations:
         {{- include "mimir.podAnnotations" $args | nindent 8 }}
+        {{- if .Values.alertmanager.fallbackConfig }}
+        checksum/alertmanager-fallback-config: {{ include (print .Template.BasePath "/alertmanager/alertmanager-config.yaml") . | sha256sum }}
+        {{- end }}
       namespace: {{ .Release.Namespace | quote }}
     spec:
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
@@ -96,11 +99,16 @@ spec:
         {{- end }}
         - name: tmp
           emptyDir: {}
+        - name: active-queries
+          emptyDir: {}
+        {{- if .Values.alertmanager.fallbackConfig }}
+        - name: alertmanager-fallback-config
+          configMap:
+            name: {{ include "mimir.resourceName" (dict "ctx" . "component" "alertmanager") }}-fallback-config
+        {{- end }}
         {{- if .Values.alertmanager.extraVolumes }}
         {{ toYaml .Values.alertmanager.extraVolumes | nindent 8 }}
         {{- end }}
-        - name: active-queries
-          emptyDir: {}
       containers:
         {{- if .Values.alertmanager.extraContainers }}
         {{ toYaml .Values.alertmanager.extraContainers | nindent 8 }}
@@ -140,6 +148,10 @@ spec:
               subPath: {{ .Values.alertmanager.persistentVolume.subPath }}
               {{- else }}
               {{- end }}
+            {{- if .Values.alertmanager.fallbackConfig }}
+            - name: alertmanager-fallback-config
+              mountPath: /configs/
+            {{- end }}
             - name: tmp
               mountPath: /tmp
             - name: active-queries

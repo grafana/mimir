@@ -116,6 +116,9 @@ mimir:
       sharding_ring:
         zone_awareness_enabled: true
       {{- end }}
+      {{- if .Values.alertmanager.fallbackConfig }}
+      fallback_config_file: /configs/alertmanager_fallback_config.yaml
+      {{- end }}
 
     {{- if .Values.minio.enabled }}
     alertmanager_storage:
@@ -383,6 +386,14 @@ alertmanager:
     requests:
       cpu: 10m
       memory: 32Mi
+
+  # -- Fallback config for alertmanager.
+  # When a tenant doesn't have an Alertmanager configuration, the Grafana Mimir Alertmanager uses the fallback configuration.
+  fallbackConfig: |
+    receivers:
+        - name: default-receiver
+    route:
+        receiver: default-receiver
 
   extraArgs: {}
 

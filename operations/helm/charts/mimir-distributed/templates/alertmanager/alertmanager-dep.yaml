@@ -22,6 +22,9 @@ spec:
         {{- include "mimir.podLabels" (dict "ctx" . "component" "alertmanager" "memberlist" true) | nindent 8 }}
       annotations:
         {{- include "mimir.podAnnotations" (dict "ctx" . "component" "alertmanager") | nindent 8 }}
+        {{- if .Values.alertmanager.fallbackConfig }}
+        checksum/alertmanager-fallback-config: {{ include (print .Template.BasePath "/alertmanager/alertmanager-config.yaml") . | sha256sum }}
+        {{- end }}
       namespace: {{ .Release.Namespace | quote }}
     spec:
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
@@ -64,6 +67,10 @@ spec:
             - name: storage
               mountPath: "/data"
               subPath: {{ .Values.alertmanager.persistence.subPath }}
+            {{- if .Values.alertmanager.fallbackConfig }}
+            - name: alertmanager-fallback-config
+              mountPath: /configs/
+            {{- end }}
             - name: tmp
               mountPath: /tmp
             - name: active-queries
@@ -132,5 +139,10 @@ spec:
           emptyDir: {}
         - name: active-queries
           emptyDir: {}
+        {{- if .Values.alertmanager.fallbackConfig }}
+        - name: alertmanager-fallback-config
+          configMap:
+            name: {{ include "mimir.resourceName" (dict "ctx" . "component" "alertmanager") }}-fallback-config
+        {{- end }}
 {{- end -}}
 {{- end -}}

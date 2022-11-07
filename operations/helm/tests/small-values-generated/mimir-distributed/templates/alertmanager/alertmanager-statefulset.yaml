@@ -41,6 +41,7 @@ spec:
         app.kubernetes.io/component: alertmanager
         app.kubernetes.io/part-of: memberlist
       annotations:
+        checksum/alertmanager-fallback-config: 20adf761e35be4e51ff0fdc67272b96bc09aa90f9b2d026fd8637427e0f4b4a5
       namespace: "citestns"
     spec:
       serviceAccountName: small-values-mimir
@@ -83,6 +84,9 @@ spec:
           emptyDir: {}
         - name: active-queries
           emptyDir: {}
+        - name: alertmanager-fallback-config
+          configMap:
+            name: small-values-mimir-alertmanager-fallback-config
       containers:
         - name: alertmanager
           imagePullPolicy: IfNotPresent
@@ -97,6 +101,8 @@ spec:
               mountPath: /var/mimir
             - name: storage
               mountPath: "/data"
+            - name: alertmanager-fallback-config
+              mountPath: /configs/
             - name: tmp
               mountPath: /tmp
             - name: active-queries
