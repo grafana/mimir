@@ -40,7 +40,7 @@ spec:
         rollout-group: alertmanager
         zone: zone-a
       annotations:
-        checksum/alertmanager-fallback-config: 873113766eecc970b0b8d64345f8dedf9289bbdaa77f5fa57bd4a610777f084e
+        checksum/alertmanager-fallback-config: 2b303630873f4b4e3a0ed5d987e99086e1260c612ed3fc95a5cc0c85da113143
       namespace: "citestns"
     spec:
       serviceAccountName: test-oss-logical-multizone-values-mimir
@@ -178,7 +178,7 @@ spec:
         rollout-group: alertmanager
         zone: zone-b
       annotations:
-        checksum/alertmanager-fallback-config: 873113766eecc970b0b8d64345f8dedf9289bbdaa77f5fa57bd4a610777f084e
+        checksum/alertmanager-fallback-config: 2b303630873f4b4e3a0ed5d987e99086e1260c612ed3fc95a5cc0c85da113143
       namespace: "citestns"
     spec:
       serviceAccountName: test-oss-logical-multizone-values-mimir
@@ -316,7 +316,7 @@ spec:
         rollout-group: alertmanager
         zone: zone-c
       annotations:
-        checksum/alertmanager-fallback-config: 873113766eecc970b0b8d64345f8dedf9289bbdaa77f5fa57bd4a610777f084e
+        checksum/alertmanager-fallback-config: 2b303630873f4b4e3a0ed5d987e99086e1260c612ed3fc95a5cc0c85da113143
       namespace: "citestns"
     spec:
       serviceAccountName: test-oss-logical-multizone-values-mimir

@@ -33,7 +33,7 @@ spec:
         app.kubernetes.io/part-of: memberlist
       annotations:
         minio-secret-version: "42"
-        checksum/alertmanager-fallback-config: 902e6dbd6912175190f83c1a6eab7022ca330436c598e628f8e9392e837bdd87
+        checksum/alertmanager-fallback-config: 97672a522b483dd3563f2944bbd87852b9d9e66c1e4530328c12ee907609c068
       namespace: "citestns"
     spec:
       serviceAccountName: test-oss-values-mimir
