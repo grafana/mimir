@@ -2651,6 +2651,44 @@ metaMonitoring:
     # Does not affect the ServiceMonitors for kubernetes metrics; use serviceMonitor.annotations for that.
     annotations: {}
 
+    # -- SecurityContext of Grafana Agent pods. This is different from the SecurityContext that the operator pod runs with.
+    # The operator pod SecurityContext is configured in the grafana-agent-operator.podSecurityContext value.
+    # As of mimir-distributed 4.0.0 the Agent DaemonSet that collects logs needs to run as root and be able to access the
+    # pod logs on each host. Because of that the agent subchart is incompabitble with the PodSecurityPolicy of the
+    # mimir-distributed chart and with the Restricted policy of Pod Security Standards https://kubernetes.io/docs/concepts/security/pod-security-standards/
+    podSecurityContext:
+    #  fsGroup: 10001
+    #  runAsGroup: 10001
+    #  runAsNonRoot: true
+    #  runAsUser: 10001
+    #  seccompProfile:
+    #    type: RuntimeDefault
+
+    # -- SecurityContext of Grafana Agent containers. This is different from the SecurityContext that the operator container runs with.
+    # As of mimir-distributed 4.0.0 the agent subchart needs to have root file system write access so that the Agent pods can write temporary files where.
+    # This makes the subchart incompatible with the PodSecurityPolicy of the mimir-distributed chart.
+    containerSecurityContext:
+    #  allowPrivilegeEscalation: false
+    #  runAsUser: 10001
+    #  capabilities:
+    #    drop: [ALL]
+
+# -- Values exposed by the [Grafana agent-operator chart](https://github.com/grafana/helm-charts/blob/main/charts/agent-operator/values.yaml)
+grafana-agent-operator:
+  podSecurityContext:
+    fsGroup: 10001
+    runAsGroup: 10001
+    runAsNonRoot: true
+    runAsUser: 10001
+    seccompProfile:
+      type: RuntimeDefault
+
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
+
 ##############################################################################
 # The values in and after the `enterprise:` key configure the enterprise features
 enterprise:
