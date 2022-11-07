@@ -211,36 +211,35 @@ func TestReadIndexCache_LoadSeries(t *testing.T) {
 	assert.NoError(t, bkt.Upload(context.Background(), filepath.Join(b.meta.ULID.String(), block.IndexFilename), bytes.NewReader(buf.Get())))
 
 	r := bucketIndexReader{
-		block:        b,
-		stats:        &queryStats{},
-		loadedSeries: map[storage.SeriesRef][]byte{},
+		block: b,
 	}
 
 	// Success with no refetches.
-	assert.NoError(t, r.loadSeries(context.TODO(), []storage.SeriesRef{2, 13, 24}, false, 2, 100))
+	loaded := newBucketIndexLoadedSeries()
+	assert.NoError(t, r.loadSeries(context.TODO(), []storage.SeriesRef{2, 13, 24}, false, 2, 100, loaded, newSafeQueryStats()))
 	assert.Equal(t, map[storage.SeriesRef][]byte{
 		2:  []byte("aaaaaaaaaa"),
 		13: []byte("bbbbbbbbbb"),
 		24: []byte("cccccccccc"),
-	}, r.loadedSeries)
+	}, loaded.series)
 	assert.Equal(t, float64(0), promtest.ToFloat64(s.seriesRefetches))
 
 	// Success with 2 refetches.
-	r.loadedSeries = map[storage.SeriesRef][]byte{}
-	assert.NoError(t, r.loadSeries(context.TODO(), []storage.SeriesRef{2, 13, 24}, false, 2, 15))
+	loaded = newBucketIndexLoadedSeries()
+	assert.NoError(t, r.loadSeries(context.TODO(), []storage.SeriesRef{2, 13, 24}, false, 2, 15, loaded, newSafeQueryStats()))
 	assert.Equal(t, map[storage.SeriesRef][]byte{
 		2:  []byte("aaaaaaaaaa"),
 		13: []byte("bbbbbbbbbb"),
 		24: []byte("cccccccccc"),
-	}, r.loadedSeries)
+	}, loaded.series)
 	assert.Equal(t, float64(2), promtest.ToFloat64(s.seriesRefetches))
 
 	// Success with refetch on first element.
-	r.loadedSeries = map[storage.SeriesRef][]byte{}
-	assert.NoError(t, r.loadSeries(context.TODO(), []storage.SeriesRef{2}, false, 2, 5))
+	loaded = newBucketIndexLoadedSeries()
+	assert.NoError(t, r.loadSeries(context.TODO(), []storage.SeriesRef{2}, false, 2, 5, loaded, newSafeQueryStats()))
 	assert.Equal(t, map[storage.SeriesRef][]byte{
 		2: []byte("aaaaaaaaaa"),
-	}, r.loadedSeries)
+	}, loaded.series)
 	assert.Equal(t, float64(3), promtest.ToFloat64(s.seriesRefetches))
 
 	buf.Reset()
@@ -251,7 +250,7 @@ func TestReadIndexCache_LoadSeries(t *testing.T) {
 	assert.NoError(t, bkt.Upload(context.Background(), filepath.Join(b.meta.ULID.String(), block.IndexFilename), bytes.NewReader(buf.Get())))
 
 	// Fail, but no recursion at least.
-	assert.Error(t, r.loadSeries(context.TODO(), []storage.SeriesRef{2, 13, 24}, false, 1, 15))
+	assert.Error(t, r.loadSeries(context.TODO(), []storage.SeriesRef{2, 13, 24}, false, 1, 15, newBucketIndexLoadedSeries(), newSafeQueryStats()))
 }
 
 func TestBlockLabelNames(t *testing.T) {
@@ -377,7 +376,7 @@ func TestBlockLabelValues(t *testing.T) {
 
 	t.Run("happy case with no matchers", func(t *testing.T) {
 		b := newTestBucketBlock()
-		names, err := blockLabelValues(context.Background(), b.indexReader(), "j", nil, log.NewNopLogger())
+		names, err := blockLabelValues(context.Background(), b.indexReader(), "j", nil, log.NewNopLogger(), newSafeQueryStats())
 		require.NoError(t, err)
 		require.Equal(t, []string{"bar", "foo"}, names)
 	})
@@ -390,7 +389,7 @@ func TestBlockLabelValues(t *testing.T) {
 		}
 		b.indexCache = cacheNotExpectingToStoreLabelValues{t: t}
 
-		_, err := blockLabelValues(context.Background(), b.indexReader(), "j", nil, log.NewNopLogger())
+		_, err := blockLabelValues(context.Background(), b.indexReader(), "j", nil, log.NewNopLogger(), newSafeQueryStats())
 		require.Error(t, err)
 	})
 
@@ -409,12 +408,12 @@ func TestBlockLabelValues(t *testing.T) {
 		}
 		b.indexCache = newInMemoryIndexCache(t)
 
-		names, err := blockLabelValues(context.Background(), b.indexReader(), "j", nil, log.NewNopLogger())
+		names, err := blockLabelValues(context.Background(), b.indexReader(), "j", nil, log.NewNopLogger(), newSafeQueryStats())
 		require.NoError(t, err)
 		require.Equal(t, []string{"bar", "foo"}, names)
 
 		// hit the cache now
-		names, err = blockLabelValues(context.Background(), b.indexReader(), "j", nil, log.NewNopLogger())
+		names, err = blockLabelValues(context.Background(), b.indexReader(), "j", nil, log.NewNopLogger(), newSafeQueryStats())
 		require.NoError(t, err)
 		require.Equal(t, []string{"bar", "foo"}, names)
 	})
@@ -430,7 +429,7 @@ func TestBlockLabelValues(t *testing.T) {
 		// This test relies on the fact that p~=foo.* has to call LabelValues(p) when doing ExpandedPostings().
 		// We make that call fail in order to make the entire LabelValues(p~=foo.*) call fail.
 		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "p", "foo.*")}
-		_, err := blockLabelValues(context.Background(), b.indexReader(), "j", matchers, log.NewNopLogger())
+		_, err := blockLabelValues(context.Background(), b.indexReader(), "j", matchers, log.NewNopLogger(), newSafeQueryStats())
 		require.Error(t, err)
 	})
 
@@ -439,12 +438,12 @@ func TestBlockLabelValues(t *testing.T) {
 		b.indexCache = newInMemoryIndexCache(t)
 
 		pFooMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "p", "foo")}
-		values, err := blockLabelValues(context.Background(), b.indexReader(), "j", pFooMatchers, log.NewNopLogger())
+		values, err := blockLabelValues(context.Background(), b.indexReader(), "j", pFooMatchers, log.NewNopLogger(), newSafeQueryStats())
 		require.NoError(t, err)
 		require.Equal(t, []string{"foo"}, values)
 
 		qFooMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "q", "foo")}
-		values, err = blockLabelValues(context.Background(), b.indexReader(), "j", qFooMatchers, log.NewNopLogger())
+		values, err = blockLabelValues(context.Background(), b.indexReader(), "j", qFooMatchers, log.NewNopLogger(), newSafeQueryStats())
 		require.NoError(t, err)
 		require.Equal(t, []string{"bar"}, values)
 
@@ -453,10 +452,10 @@ func TestBlockLabelValues(t *testing.T) {
 		indexrWithoutHeaderReader := b.indexReader()
 		indexrWithoutHeaderReader.block.indexHeaderReader = nil
 
-		values, err = blockLabelValues(context.Background(), indexrWithoutHeaderReader, "j", pFooMatchers, log.NewNopLogger())
+		values, err = blockLabelValues(context.Background(), indexrWithoutHeaderReader, "j", pFooMatchers, log.NewNopLogger(), newSafeQueryStats())
 		require.NoError(t, err)
 		require.Equal(t, []string{"foo"}, values)
-		values, err = blockLabelValues(context.Background(), indexrWithoutHeaderReader, "j", qFooMatchers, log.NewNopLogger())
+		values, err = blockLabelValues(context.Background(), indexrWithoutHeaderReader, "j", qFooMatchers, log.NewNopLogger(), newSafeQueryStats())
 		require.NoError(t, err)
 		require.Equal(t, []string{"bar"}, values)
 	})
@@ -487,7 +486,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 
 		// cache provides undecodable values
 		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
-		refs, err := b.indexReader().ExpandedPostings(context.Background(), matchers)
+		refs, err := b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
 		require.NoError(t, err)
 		require.Equal(t, series, len(refs))
 	})
@@ -544,7 +543,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 			indexr := b.indexReader()
 			defer indexr.Close()
 
-			ress[0], errs[0] = indexr.ExpandedPostings(context.Background(), deduplicatedCallMatchers)
+			ress[0], errs[0] = indexr.ExpandedPostings(context.Background(), deduplicatedCallMatchers, newSafeQueryStats())
 		}()
 		// wait for this call to actually create a promise and call LabelValues
 		labelValuesCalls["i"].Wait()
@@ -556,7 +555,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 			indexr := b.indexReader()
 			defer indexr.Close()
 
-			ress[1], errs[1] = indexr.ExpandedPostings(secondContext, deduplicatedCallMatchers)
+			ress[1], errs[1] = indexr.ExpandedPostings(secondContext, deduplicatedCallMatchers, newSafeQueryStats())
 		}()
 		// wait until this is waiting on the promise
 		<-secondContext.waitingDone
@@ -569,7 +568,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 			indexr := b.indexReader()
 			defer indexr.Close()
 
-			ress[2], errs[2] = indexr.ExpandedPostings(thirdContext, deduplicatedCallMatchers)
+			ress[2], errs[2] = indexr.ExpandedPostings(thirdContext, deduplicatedCallMatchers, newSafeQueryStats())
 		}()
 		// wait until this is waiting on the promise
 		<-thirdContext.waitingDone
@@ -582,7 +581,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 			indexr := b.indexReader()
 			defer indexr.Close()
 
-			ress[3], errs[3] = indexr.ExpandedPostings(context.Background(), otherMatchers)
+			ress[3], errs[3] = indexr.ExpandedPostings(context.Background(), otherMatchers, newSafeQueryStats())
 		}()
 		// wait for this call to actually create a promise and call LabelValues
 		labelValuesCalls["n"].Wait()
@@ -593,7 +592,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 			indexr := b.indexReader()
 			defer indexr.Close()
 
-			ress[4], errs[4] = indexr.ExpandedPostings(context.Background(), failingMatchers)
+			ress[4], errs[4] = indexr.ExpandedPostings(context.Background(), failingMatchers, newSafeQueryStats())
 		}()
 		// wait for this call to actually create a promise and call LabelValues
 		labelValuesCalls["fail"].Wait()
@@ -605,7 +604,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 			indexr := b.indexReader()
 			defer indexr.Close()
 
-			ress[5], errs[5] = indexr.ExpandedPostings(sixthContext, failingMatchers)
+			ress[5], errs[5] = indexr.ExpandedPostings(sixthContext, failingMatchers, newSafeQueryStats())
 		}()
 		// wait until this is waiting on the promise
 		<-sixthContext.waitingDone
@@ -649,20 +648,20 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 
 		// first call succeeds and caches value
 		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
-		refs, err := b.indexReader().ExpandedPostings(context.Background(), matchers)
+		refs, err := b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
 		require.NoError(t, err)
 		require.Equal(t, series, len(refs))
 		require.Equal(t, map[string]int{"i": 1}, labelValuesCalls, "Should have called LabelValues once for label 'i'.")
 
 		// second call uses cached value, so it doesn't call LabelValues again
-		refs, err = b.indexReader().ExpandedPostings(context.Background(), matchers)
+		refs, err = b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
 		require.NoError(t, err)
 		require.Equal(t, series, len(refs))
 		require.Equal(t, map[string]int{"i": 1}, labelValuesCalls, "Should have used cached value, so it shouldn't call LabelValues again for label 'i'.")
 
 		// different matcher on same label should not be cached
 		differentMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "i", "")}
-		refs, err = b.indexReader().ExpandedPostings(context.Background(), differentMatchers)
+		refs, err = b.indexReader().ExpandedPostings(context.Background(), differentMatchers, newSafeQueryStats())
 		require.NoError(t, err)
 		require.Equal(t, series, len(refs))
 		require.Equal(t, map[string]int{"i": 2}, labelValuesCalls, "Should have called LabelValues again for label 'i'.")
@@ -673,7 +672,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 		b.indexCache = corruptedExpandedPostingsCache{}
 
 		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
-		refs, err := b.indexReader().ExpandedPostings(context.Background(), matchers)
+		refs, err := b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
 		require.NoError(t, err)
 		require.Equal(t, series, len(refs))
 	})
@@ -689,7 +688,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 		b.indexCache = cacheNotExpectingToStoreExpandedPostings{t: t}
 
 		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
-		_, err := b.indexReader().ExpandedPostings(context.Background(), matchers)
+		_, err := b.indexReader().ExpandedPostings(context.Background(), matchers, newSafeQueryStats())
 		require.Error(t, err)
 	})
 }
@@ -923,10 +922,11 @@ func benchmarkExpandedPostings(
 	for _, c := range cases {
 		t.Run(c.name, func(t test.TB) {
 			indexr := newBucketIndexReader(newTestBucketBlock())
+			indexrStats := newSafeQueryStats()
 
 			t.ResetTimer()
 			for i := 0; i < t.N(); i++ {
-				p, err := indexr.ExpandedPostings(ctx, c.matchers)
+				p, err := indexr.ExpandedPostings(ctx, c.matchers, indexrStats)
 
 				if err != nil {
 					t.Fatal(err.Error())
