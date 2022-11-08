@@ -8,12 +8,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"path"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -1349,23 +1347,4 @@ func TestMultitenantCompactor_GetBlockUploadStateHandler(t *testing.T) {
 			require.Equal(t, tc.expectedBody, strings.TrimSpace(string(body)))
 		})
 	}
-}
-
-// createUploadBlock calls createTSDBBlock, then renames meta.json to uploading-meta.json
-func createUploadBlock(t *testing.T, bkt objstore.Bucket, userID string, minT, maxT int64, numSeries int, externalLabels map[string]string) string {
-	ctx := context.Background()
-	blockID := createTSDBBlock(t, bkt, userID, minT, maxT, numSeries, externalLabels)
-	metaPath := filepath.Join(userID, blockID.String(), block.MetaFilename)
-	var meta metadata.Meta
-	r, err := bkt.Get(ctx, metaPath)
-	require.NoError(t, err)
-	body, err := ioutil.ReadAll(r)
-	require.NoError(t, err)
-	err = json.Unmarshal(body, &meta)
-	require.NoError(t, err)
-	err = bkt.Delete(ctx, metaPath)
-	require.NoError(t, err)
-	err = marshalAndUploadToBucket(ctx, bkt, filepath.Join(userID, blockID.String(), uploadingMetaFilename), meta)
-	require.NoError(t, err)
-	return blockID.String()
 }
