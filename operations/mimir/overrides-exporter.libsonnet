@@ -5,9 +5,10 @@
   local name = 'overrides-exporter',
 
   _config+: {
+    overrides_exporter_enabled: false,
+
     // overrides exporter can also make the configured presets available, this
     // list references entries within $._config.overrides
-
     overrides_exporter_presets:: [
       'extra_small_user',
       'small_user',
@@ -39,11 +40,11 @@
     container.mixin.readinessProbe.httpGet.withPort($.overrides_exporter_port.name),
 
   local deployment = $.apps.v1.deployment,
-  overrides_exporter_deployment:
+  overrides_exporter_deployment: if !$._config.overrides_exporter_enabled then null else
     deployment.new(name, 1, [$.overrides_exporter_container], { name: name }) +
     $.mimirVolumeMounts +
     deployment.mixin.metadata.withLabels({ name: name }),
 
-  overrides_exporter_service:
+  overrides_exporter_service: if !$._config.overrides_exporter_enabled then null else
     $.util.serviceFor($.overrides_exporter_deployment, $._config.service_ignored_labels),
 }

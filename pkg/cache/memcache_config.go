@@ -11,8 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/thanos-io/thanos/pkg/cacheutil"
-	"github.com/thanos-io/thanos/pkg/model"
+	"github.com/grafana/dskit/flagext"
+
+	"github.com/grafana/mimir/pkg/cacheutil"
 )
 
 var (
@@ -67,7 +68,7 @@ func (cfg MemcachedConfig) ToMemcachedClientConfig() cacheutil.MemcachedClientCo
 		MaxAsyncBufferSize:        cfg.MaxAsyncBufferSize,
 		MaxGetMultiConcurrency:    cfg.MaxGetMultiConcurrency,
 		MaxGetMultiBatchSize:      cfg.MaxGetMultiBatchSize,
-		MaxItemSize:               model.Bytes(cfg.MaxItemSize),
+		MaxItemSize:               flagext.Bytes(cfg.MaxItemSize),
 		DNSProviderUpdateInterval: 30 * time.Second,
 	}
 }

@@ -37,7 +37,7 @@ const (
 var (
 	supportedSignatureVersions     = []string{SignatureVersionV4, SignatureVersionV2}
 	supportedSSETypes              = []string{SSEKMS, SSES3}
-	errUnsupportedSignatureVersion = errors.New("unsupported signature version")
+	errUnsupportedSignatureVersion = fmt.Errorf("unsupported signature version (supported values: %s)", strings.Join(supportedSignatureVersions, ", "))
 	errUnsupportedSSEType          = errors.New("unsupported S3 SSE type")
 	errInvalidSSEContext           = errors.New("invalid S3 SSE encryption context")
 )

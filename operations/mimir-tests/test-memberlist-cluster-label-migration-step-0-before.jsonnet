@@ -6,10 +6,7 @@ mimir {
     external_url: 'http://test',
 
     storage_backend: 'gcs',
-
     blocks_storage_bucket_name: 'blocks-bucket',
-    bucket_index_enabled: true,
-    query_scheduler_enabled: true,
 
     ruler_enabled: true,
     ruler_storage_bucket_name: 'rules-bucket',
@@ -18,6 +15,5 @@ mimir {
     alertmanager_storage_bucket_name: 'alerts-bucket',
 
     // Step 0: Memberlist is enabled without any cluster label.
-    memberlist_ring_enabled: true,
   },
 }

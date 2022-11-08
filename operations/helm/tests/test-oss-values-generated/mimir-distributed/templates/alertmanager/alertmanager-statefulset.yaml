@@ -33,6 +33,7 @@ spec:
         app.kubernetes.io/part-of: memberlist
       annotations:
         minio-secret-version: "42"
+        checksum/alertmanager-fallback-config: 97672a522b483dd3563f2944bbd87852b9d9e66c1e4530328c12ee907609c068
       namespace: "citestns"
     spec:
       serviceAccountName: test-oss-values-mimir
@@ -77,6 +78,9 @@ spec:
           emptyDir: {}
         - name: active-queries
           emptyDir: {}
+        - name: alertmanager-fallback-config
+          configMap:
+            name: test-oss-values-mimir-alertmanager-fallback-config
       containers:
         - name: alertmanager
           imagePullPolicy: IfNotPresent
@@ -91,6 +95,8 @@ spec:
               mountPath: /var/mimir
             - name: storage
               mountPath: "/data"
+            - name: alertmanager-fallback-config
+              mountPath: /configs/
             - name: tmp
               mountPath: /tmp
             - name: active-queries

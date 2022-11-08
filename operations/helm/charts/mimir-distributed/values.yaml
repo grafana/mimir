@@ -25,7 +25,7 @@ image:
   # -- Grafana Mimir container image repository. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.repository'
   repository: grafana/mimir
   # -- Grafana Mimir container image tag. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.tag'
-  tag: r209-bc07330
+  tag: r211-fcdaf01
   # -- Container pull policy - shared between Grafana Mimir and Grafana Enterprise Metrics
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets - shared between Grafana Mimir and Grafana Enterprise Metrics
@@ -116,6 +116,9 @@ mimir:
       sharding_ring:
         zone_awareness_enabled: true
       {{- end }}
+      {{- if .Values.alertmanager.fallbackConfig }}
+      fallback_config_file: /configs/alertmanager_fallback_config.yaml
+      {{- end }}
 
     {{- if .Values.minio.enabled }}
     alertmanager_storage:
@@ -177,7 +180,14 @@ mimir:
     {{- end }}
 
     compactor:
+      compaction_interval: 30m
+      deletion_delay: 2h
+      max_closing_blocks_concurrency: 2
+      max_opening_blocks_concurrency: 4
+      symbols_flushers_concurrency: 4
       data_dir: "/data"
+      sharding_ring:
+        wait_stability_min_duration: 1m
 
     frontend:
       parallelize_shardable_queries: true
@@ -376,6 +386,14 @@ alertmanager:
     requests:
       cpu: 10m
       memory: 32Mi
+
+  # -- Fallback config for alertmanager.
+  # When a tenant doesn't have an Alertmanager configuration, the Grafana Mimir Alertmanager uses the fallback configuration.
+  fallbackConfig: |
+    receivers:
+        - name: default-receiver
+    route:
+        receiver: default-receiver
 
   extraArgs: {}
 
@@ -2644,6 +2662,44 @@ metaMonitoring:
     # Does not affect the ServiceMonitors for kubernetes metrics; use serviceMonitor.annotations for that.
     annotations: {}
 
+    # -- SecurityContext of Grafana Agent pods. This is different from the SecurityContext that the operator pod runs with.
+    # The operator pod SecurityContext is configured in the grafana-agent-operator.podSecurityContext value.
+    # As of mimir-distributed 4.0.0 the Agent DaemonSet that collects logs needs to run as root and be able to access the
+    # pod logs on each host. Because of that the agent subchart is incompabitble with the PodSecurityPolicy of the
+    # mimir-distributed chart and with the Restricted policy of Pod Security Standards https://kubernetes.io/docs/concepts/security/pod-security-standards/
+    podSecurityContext:
+    #  fsGroup: 10001
+    #  runAsGroup: 10001
+    #  runAsNonRoot: true
+    #  runAsUser: 10001
+    #  seccompProfile:
+    #    type: RuntimeDefault
+
+    # -- SecurityContext of Grafana Agent containers. This is different from the SecurityContext that the operator container runs with.
+    # As of mimir-distributed 4.0.0 the agent subchart needs to have root file system write access so that the Agent pods can write temporary files where.
+    # This makes the subchart incompatible with the PodSecurityPolicy of the mimir-distributed chart.
+    containerSecurityContext:
+    #  allowPrivilegeEscalation: false
+    #  runAsUser: 10001
+    #  capabilities:
+    #    drop: [ALL]
+
+# -- Values exposed by the [Grafana agent-operator chart](https://github.com/grafana/helm-charts/blob/main/charts/agent-operator/values.yaml)
+grafana-agent-operator:
+  podSecurityContext:
+    fsGroup: 10001
+    runAsGroup: 10001
+    runAsNonRoot: true
+    runAsUser: 10001
+    seccompProfile:
+      type: RuntimeDefault
+
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
+
 ##############################################################################
 # The values in and after the `enterprise:` key configure the enterprise features
 enterprise:
@@ -2660,7 +2716,7 @@ enterprise:
     # -- Grafana Enterprise Metrics container image repository. Note: for Grafana Mimir use the value 'image.repository'
     repository: grafana/enterprise-metrics
     # -- Grafana Enterprise Metrics container image tag. Note: for Grafana Mimir use the value 'image.tag'
-    tag: r209-5e93e6cc
+    tag: r211-d7cccb37
     # Note: pullPolicy and optional pullSecrets are set in toplevel 'image' section, not here
 
 # In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics
@@ -3139,7 +3195,7 @@ gr-metricname-cache:
 smoke_test:
   image:
     repository: grafana/mimir-continuous-test
-    tag: r209-bc07330
+    tag: r211-fcdaf01
     pullPolicy: IfNotPresent
   tenantId: ''
   extraArgs: {}
@@ -3159,7 +3215,7 @@ continuous_test:
   replicas: 1
   image:
     repository: grafana/mimir-continuous-test
-    tag: r209-bc07330
+    tag: r211-fcdaf01
     pullPolicy: IfNotPresent
     # Note: optional pullSecrets are set in toplevel 'image' section, not here
 

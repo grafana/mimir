@@ -11,7 +11,7 @@ import (
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/log"
-	"github.com/thanos-io/thanos/pkg/tracing"
+	"github.com/thanos-io/objstore/tracing"
 	"github.com/uber/jaeger-client-go"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"

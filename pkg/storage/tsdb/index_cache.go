@@ -12,12 +12,12 @@ import (
 
 	"github.com/alecthomas/units"
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/thanos-io/thanos/pkg/cacheutil"
-	"github.com/thanos-io/thanos/pkg/model"
 
 	"github.com/grafana/mimir/pkg/cache"
+	"github.com/grafana/mimir/pkg/cacheutil"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -32,7 +32,7 @@ const (
 	// IndexCacheBackendDefault is the value for the default index cache backend.
 	IndexCacheBackendDefault = IndexCacheBackendInMemory
 
-	defaultMaxItemSize = model.Bytes(128 * units.MiB)
+	defaultMaxItemSize = flagext.Bytes(128 * units.MiB)
 )
 
 var (
@@ -93,7 +93,7 @@ func NewIndexCache(cfg IndexCacheConfig, logger log.Logger, registerer prometheu
 }
 
 func newInMemoryIndexCache(cfg InMemoryIndexCacheConfig, logger log.Logger, registerer prometheus.Registerer) (indexcache.IndexCache, error) {
-	maxCacheSize := model.Bytes(cfg.MaxSizeBytes)
+	maxCacheSize := flagext.Bytes(cfg.MaxSizeBytes)
 
 	// Calculate the max item size.
 	maxItemSize := defaultMaxItemSize

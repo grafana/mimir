@@ -11,6 +11,7 @@ We use *breaking :warning:* to mark changes that are not backward compatible (re
 ## Unreleased
 
 ### Fixed
+- [#33](https://github.com/thanos-io/objstore/pull/33) Tracing: Add `ContextWithTracer()` to inject the tracer into the context.
 
 ### Added
 - [#15](https://github.com/thanos-io/objstore/pull/15) Add Oracle Cloud Infrastructure Object Storage Bucket support.

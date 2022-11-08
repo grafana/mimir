@@ -26,6 +26,9 @@ func ToProto(user string, namespace string, rl rulefmt.RuleGroup) *RuleGroupDesc
 		User:          user,
 		SourceTenants: rl.SourceTenants,
 	}
+	if rl.EvaluationDelay != nil && *rl.EvaluationDelay > 0 {
+		rg.EvaluationDelay = time.Duration(*rl.EvaluationDelay)
+	}
 	return &rg
 }
 
@@ -52,6 +55,10 @@ func FromProto(rg *RuleGroupDesc) rulefmt.RuleGroup {
 		Interval:      model.Duration(rg.Interval),
 		Rules:         make([]rulefmt.RuleNode, len(rg.GetRules())),
 		SourceTenants: rg.GetSourceTenants(),
+	}
+	if rg.EvaluationDelay > 0 {
+		formattedRuleGroup.EvaluationDelay = new(model.Duration)
+		*formattedRuleGroup.EvaluationDelay = model.Duration(rg.EvaluationDelay)
 	}
 
 	for i, rl := range rg.GetRules() {

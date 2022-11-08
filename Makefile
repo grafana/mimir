@@ -62,11 +62,11 @@ JSONNET_MANIFESTS_PATH := operations/mimir
 DOC_TEMPLATES := docs/sources/operators-guide/configure/reference-configuration-parameters/index.template
 
 # Documents to run through embedding
-DOC_EMBED := docs/sources/operators-guide/configure/configuring-the-query-frontend-work-with-prometheus.md \
-	docs/sources/operators-guide/configure/mirroring-requests-to-a-second-cluster/index.md \
+DOC_EMBED := docs/sources/operators-guide/configure/configure-the-query-frontend-work-with-prometheus.md \
+	docs/sources/operators-guide/configure/mirror-requests-to-a-second-cluster/index.md \
 	docs/sources/operators-guide/architecture/components/overrides-exporter.md \
 	docs/sources/operators-guide/get-started/_index.md \
-	docs/sources/operators-guide/deploy-grafana-mimir/jsonnet/deploying.md
+	docs/sources/operators-guide/deploy-grafana-mimir/jsonnet/deploy.md
 
 .PHONY: image-tag
 image-tag: ## Print the docker image tag.
@@ -181,8 +181,6 @@ pkg/distributor/ha_tracker.pb.go: pkg/distributor/ha_tracker.proto
 pkg/ruler/rulespb/rules.pb.go: pkg/ruler/rulespb/rules.proto
 pkg/ruler/ruler.pb.go: pkg/ruler/ruler.proto
 pkg/scheduler/schedulerpb/scheduler.pb.go: pkg/scheduler/schedulerpb/scheduler.proto
-pkg/storegateway/labelpb/types.pb.go: pkg/storegateway/labelpb/types.proto
-pkg/storegateway/prompb/types.pb.go: pkg/storegateway/prompb/types.proto
 pkg/storegateway/hintspb/hints.pb.go: pkg/storegateway/hintspb/hints.proto
 pkg/storegateway/storegatewaypb/gateway.pb.go: pkg/storegateway/storegatewaypb/gateway.proto
 pkg/storegateway/storepb/rpc.pb.go: pkg/storegateway/storepb/rpc.proto
@@ -200,7 +198,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= update-go-1.19.2-e84f42bcd
+LATEST_BUILD_IMAGE_TAG ?= chore-upgrade-go-036177f2f
 
 # TTY is parameterized to allow Google Cloud Builder to run builds,
 # as it currently disallows TTY devices. This value needs to be overridden
@@ -298,13 +296,6 @@ lint: check-makefiles
 		./pkg/querier/... \
 		./pkg/ruler/...
 
-	faillint -paths "github.com/thanos-io/thanos/pkg/block.{NewIgnoreDeletionMarkFilter}" \
-		./pkg/compactor/...
-
-	faillint -paths "github.com/thanos-io/thanos/pkg/shipper.{New}" ./pkg/...
-
-	faillint -paths "github.com/thanos-io/thanos/pkg/block/indexheader" ./pkg/...
-
 	# We've copied github.com/NYTimes/gziphandler to pkg/util/gziphandler
 	# at least until https://github.com/nytimes/gziphandler/pull/112 is merged
 	faillint -paths "github.com/NYTimes/gziphandler" \
@@ -317,9 +308,7 @@ lint: check-makefiles
 
 	# Ensure packages we imported from Thanos are no longer used.
 	GOFLAGS="-tags=requires_docker" faillint -paths \
-		"github.com/thanos/thanos-io/pkg/store,\
-		github.com/thanos-io/thanos/pkg/testutil/..., \
-		github.com/thanos-io/thanos/pkg/store/cache" \
+		"github.com/thanos-io/thanos/pkg/..." \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
 	# Ensure we never use the default registerer and we allow to use a custom one (improves testability).

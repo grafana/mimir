@@ -10,7 +10,8 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
-	"github.com/thanos-io/thanos/pkg/block/metadata"
+
+	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
 func TestSplitAndMergePlanner_Plan(t *testing.T) {

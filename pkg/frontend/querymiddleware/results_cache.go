@@ -23,7 +23,6 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/thanos-io/thanos/pkg/extprom"
 	"github.com/uber/jaeger-client-go"
 
 	"github.com/grafana/mimir/pkg/cache"
@@ -85,7 +84,7 @@ func errUnsupportedResultsCacheBackend(unsupportedBackend string) error {
 func newResultsCache(cfg ResultsCacheConfig, logger log.Logger, reg prometheus.Registerer) (cache.Cache, error) {
 	// Add the "component" label similarly to other components, so that metrics don't clash and have the same labels set
 	// when running in monolithic mode.
-	reg = extprom.WrapRegistererWith(prometheus.Labels{"component": "query-frontend"}, reg)
+	reg = prometheus.WrapRegistererWith(prometheus.Labels{"component": "query-frontend"}, reg)
 
 	client, err := cache.CreateClient("frontend-cache", cfg.BackendConfig, logger, reg)
 	if err != nil {

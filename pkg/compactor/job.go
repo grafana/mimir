@@ -10,7 +10,8 @@ import (
 
 	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/thanos-io/thanos/pkg/block/metadata"
+
+	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
 // Job holds a compaction job, which consists of a group of blocks that should be compacted together.

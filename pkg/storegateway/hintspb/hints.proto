@@ -6,7 +6,7 @@
 syntax = "proto3";
 package hintspb;
 
-import "gogoproto/gogo.proto";
+import "github.com/gogo/protobuf/gogoproto/gogo.proto";
 import "github.com/grafana/mimir/pkg/storegateway/storepb/types.proto";
 
 option go_package = "hintspb";

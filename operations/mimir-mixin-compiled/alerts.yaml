@@ -387,6 +387,19 @@ groups:
     for: 5m
     labels:
       severity: critical
+  - alert: MimirRulerRemoteEvaluationFailing
+    annotations:
+      message: |
+        Mimir rulers in {{ $labels.cluster }}/{{ $labels.namespace }} are failing to perform {{ printf "%.2f" $value }}% of remote evaluations through the ruler-query-frontend.
+    expr: |
+      100 * (
+      sum by (cluster, namespace) (rate(cortex_request_duration_seconds_count{route="/httpgrpc.HTTP/Handle", status_code=~"5..", job=~".*/(ruler-query-frontend.*)"}[5m]))
+        /
+      sum by (cluster, namespace) (rate(cortex_request_duration_seconds_count{route="/httpgrpc.HTTP/Handle", job=~".*/(ruler-query-frontend.*)"}[5m]))
+      ) > 1
+    for: 5m
+    labels:
+      severity: warning
 - name: gossip_alerts
   rules:
   - alert: MimirGossipMembersMismatch
@@ -747,14 +760,14 @@ groups:
     for: 1m
     labels:
       severity: warning
-- name: mimir_autoscaling_querier
+- name: mimir_autoscaling
   rules:
-  - alert: MimirQuerierAutoscalerNotActive
+  - alert: MimirAutoscalerNotActive
     annotations:
       message: The Horizontal Pod Autoscaler (HPA) {{ $labels.horizontalpodautoscaler
         }} in {{ $labels.namespace }} is not active.
     expr: |
-      kube_horizontalpodautoscaler_status_condition{horizontalpodautoscaler=~"(keda-hpa-querier)|(keda-hpa-ruler-querier)",condition="ScalingActive",status="false"}
+      kube_horizontalpodautoscaler_status_condition{condition="ScalingActive",status="false"}
       * on(cluster, namespace) group_left max by(cluster, namespace) (cortex_build_info)
       > 0
     for: 1h

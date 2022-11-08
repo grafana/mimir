@@ -346,7 +346,7 @@
           "required": false,
           "desc": "Write timeout for HTTP server",
           "fieldValue": null,
-          "fieldDefaultValue": 30000000000,
+          "fieldDefaultValue": 120000000000,
           "fieldFlag": "server.http-write-timeout",
           "fieldType": "duration",
           "fieldCategory": "advanced"

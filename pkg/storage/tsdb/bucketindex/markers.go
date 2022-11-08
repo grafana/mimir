@@ -11,7 +11,8 @@ import (
 	"strings"
 
 	"github.com/oklog/ulid"
-	"github.com/thanos-io/thanos/pkg/block/metadata"
+
+	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
 const (

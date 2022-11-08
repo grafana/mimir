@@ -21,10 +21,10 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
 	promRules "github.com/prometheus/prometheus/rules"
-	"github.com/thanos-io/thanos/pkg/cacheutil"
 	"github.com/weaveworks/common/user"
 	"golang.org/x/net/context/ctxhttp"
 
+	"github.com/grafana/mimir/pkg/cacheutil"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 )
 

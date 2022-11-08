@@ -7,7 +7,7 @@ metadata:
   namespace: "citestns"
   labels:
     app: minio-make-bucket-job
-    chart: minio-4.0.12
+    chart: minio-5.0.0
     release: test-oss-values
     heritage: Helm
   annotations:
@@ -29,9 +29,11 @@ spec:
                 name: test-oss-values-minio
             - secret:
                 name: test-oss-values-minio
+
+      serviceAccountName: minio-sa
       containers:
       - name: minio-mc
-        image: "quay.io/minio/mc:RELEASE.2022-08-11T00-30-48Z"
+        image: "quay.io/minio/mc:RELEASE.2022-10-20T23-26-33Z"
         imagePullPolicy: IfNotPresent
         command: ["/bin/sh", "/config/initialize"]
         env:

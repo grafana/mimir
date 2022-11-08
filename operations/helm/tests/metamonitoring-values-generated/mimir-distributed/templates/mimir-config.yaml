@@ -18,6 +18,7 @@ data:
       data_dir: /data
       enable_api: true
       external_url: /alertmanager
+      fallback_config_file: /configs/alertmanager_fallback_config.yaml
     alertmanager_storage:
       backend: s3
       s3:
@@ -40,7 +41,14 @@ data:
       tsdb:
         dir: /data/tsdb
     compactor:
+      compaction_interval: 30m
       data_dir: /data
+      deletion_delay: 2h
+      max_closing_blocks_concurrency: 2
+      max_opening_blocks_concurrency: 4
+      sharding_ring:
+        wait_stability_min_duration: 1m
+      symbols_flushers_concurrency: 4
     frontend:
       parallelize_shardable_queries: true
       scheduler_address: metamonitoring-values-mimir-query-scheduler-headless.citestns.svc:9095

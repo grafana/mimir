@@ -8,13 +8,14 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/grafana/dskit/dns"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/thanos-io/thanos/pkg/cacheutil"
-	"github.com/thanos-io/thanos/pkg/discovery/dns"
+
+	"github.com/grafana/mimir/pkg/cacheutil"
 )
 
 const (

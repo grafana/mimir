@@ -23,19 +23,18 @@ import (
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/thanos-io/objstore"
-	"github.com/thanos-io/thanos/pkg/block"
-	"github.com/thanos-io/thanos/pkg/extprom"
-	"github.com/thanos-io/thanos/pkg/pool"
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/logging"
 	"google.golang.org/grpc/metadata"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util/gate"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -91,7 +90,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 	}
 
 	// The number of concurrent queries against the tenants BucketStores are limited.
-	queryGateReg := extprom.WrapRegistererWithPrefix("cortex_bucket_stores_", reg)
+	queryGateReg := prometheus.WrapRegistererWithPrefix("cortex_bucket_stores_", reg)
 	var queryGate gate.Gate
 	if cfg.BucketStore.MaxConcurrentRejectOverLimit {
 		queryGate = gate.NewRejecting(cfg.BucketStore.MaxConcurrent)

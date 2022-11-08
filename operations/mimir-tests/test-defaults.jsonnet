@@ -6,7 +6,6 @@ mimir {
     external_url: 'http://test',
 
     storage_backend: 'gcs',
-
     blocks_storage_bucket_name: 'blocks-bucket',
   },
 }

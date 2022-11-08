@@ -9,10 +9,7 @@ mimir {
     memberlist_ring_enabled: false,
 
     storage_backend: 'gcs',
-
     blocks_storage_bucket_name: 'blocks-bucket',
-    bucket_index_enabled: true,
-    query_scheduler_enabled: true,
 
     ruler_enabled: false,
 

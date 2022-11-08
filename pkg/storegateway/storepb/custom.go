@@ -13,7 +13,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 
-	"github.com/grafana/mimir/pkg/storegateway/labelpb"
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 func NewSeriesResponse(series *Series) *SeriesResponse {
@@ -222,13 +222,13 @@ func (s *uniqueSeriesSet) Next() bool {
 		}
 		lset, chks := s.SeriesSet.At()
 		if s.peek == nil {
-			s.peek = &Series{Labels: labelpb.ZLabelsFromPromLabels(lset), Chunks: chks}
+			s.peek = &Series{Labels: mimirpb.FromLabelsToLabelAdapters(lset), Chunks: chks}
 			continue
 		}
 
 		if labels.Compare(lset, s.peek.PromLabels()) != 0 {
 			s.lset, s.chunks = s.peek.PromLabels(), s.peek.Chunks
-			s.peek = &Series{Labels: labelpb.ZLabelsFromPromLabels(lset), Chunks: chks}
+			s.peek = &Series{Labels: mimirpb.FromLabelsToLabelAdapters(lset), Chunks: chks}
 			return true
 		}
 
@@ -388,5 +388,5 @@ func (x LabelMatcher_Type) PromString() string {
 
 // PromLabels return Prometheus labels.Labels without extra allocation.
 func (m *Series) PromLabels() labels.Labels {
-	return labelpb.ZLabelsToPromLabels(m.Labels)
+	return mimirpb.FromLabelAdaptersToLabels(m.Labels)
 }

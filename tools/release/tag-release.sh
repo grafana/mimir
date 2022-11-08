@@ -12,7 +12,7 @@ check_required_setup
 # Ensure the current branch is a release one.
 BRANCH=$(git branch --show-current)
 if [[ ! $BRANCH =~ ^release-([0-9]+\.[0-9]+)$ ]]; then
-  echo "The current branch '${BRANCH}' is not a release branch."
+  echo "The current branch '${BRANCH}' is not a release branch." > /dev/stderr
   exit 1
 fi
 
@@ -22,7 +22,7 @@ BRANCH_VERSION=${BASH_REMATCH[1]}
 # Load the version and ensure it matches.
 ACTUAL_VERSION=$(cat VERSION)
 if [[ ! $ACTUAL_VERSION =~ ^$BRANCH_VERSION ]]; then
-  echo "The current branch '${BRANCH}' doesn't match the content of the VERSION file '${ACTUAL_VERSION}'"
+  echo "The current branch '${BRANCH}' doesn't match the content of the VERSION file '${ACTUAL_VERSION}'" > /dev/stderr
   exit 1
 fi
 
@@ -30,7 +30,7 @@ fi
 read -p "You're about to tag the version '${ACTUAL_VERSION}'. Do you want to continue? (y/n) " -n 1 -r
 echo ""
 if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    echo "Aborting ..."
+    echo "Aborting ..." > /dev/stderr
     exit 1
 fi
 

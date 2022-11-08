@@ -75,7 +75,7 @@ The `store_gateway_tenant_shard_size` in the limits overrides can override the s
 
 The default `-store-gateway.tenant-shard-size` value is 0, which means that tenant's blocks are sharded across all store-gateway instances.
 
-For more information about shuffle sharding, refer to [configure shuffle sharding]({{< relref "../../configure/configuring-shuffle-sharding/index.md" >}}).
+For more information about shuffle sharding, refer to [configure shuffle sharding]({{< relref "../../configure/configure-shuffle-sharding/index.md" >}}).
 
 ### Auto-forget
 
@@ -86,7 +86,7 @@ The auto-forget feature works as follows: when an healthy store-gateway instance
 
 ### Zone-awareness
 
-Store-gateway replication optionally supports [zone-awareness]({{< relref "../../configure/configuring-zone-aware-replication.md" >}}). When you enable zone-aware replication and the blocks replication factor is greater than 1, each block is replicated across store-gateway instances located in different availability zones.
+Store-gateway replication optionally supports [zone-awareness]({{< relref "../../configure/configure-zone-aware-replication.md" >}}). When you enable zone-aware replication and the blocks replication factor is greater than 1, each block is replicated across store-gateway instances located in different availability zones.
 
 **To enable zone-aware replication for the store-gateways**:
 

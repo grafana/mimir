@@ -346,6 +346,20 @@ How to **fix** it:
 - Increase the evaluation interval of the rule group. You can use the rate of missed evaluation to estimate how long the rule group evaluation actually takes.
 - Try splitting up the rule group into multiple rule groups. Rule groups are evaluated in parallel, so the same rules may still fit in the same resolution.
 
+### MimirRulerRemoteEvaluationFailing
+
+This alert fires when communication between `ruler` and `ruler-query-frontend` is failing to be established.
+
+The `ruler-query-frontend` component is exclusively used by the `ruler` to evaluate rule expressions when running in remote operational mode. If communication between these two components breaks, gaps are expected to appear in the case of recording rules or alerting rules will not fire when they should.
+
+How to **investigate**:
+
+- Check the `Mimir / Remote ruler reads` dashboard to see if the issue is caused by failures or high latency
+  - **Failures**
+    - Check the `ruler-query-frontend` logs to find out more details about the error
+  - **High latency**
+    - Check the `Mimir / Remote ruler reads resources` dashboard to see if CPU or Memory usage increased unexpectedly
+
 ### MimirIngesterHasNotShippedBlocks
 
 This alert fires when a Mimir ingester is not uploading any block to the long-term storage. An ingester is expected to upload a block to the storage every block range period (defaults to 2h) and if a longer time elapse since the last successful upload it means something is not working correctly.
@@ -977,21 +991,21 @@ How to **investigate**:
     ```
     - In case you need to quickly reject write path traffic from a single tenant, you can override its `ingestion_rate` and `ingestion_rate_burst` setting lower values (so that some/most of their traffic will be rejected)
 
-### MimirQuerierAutoscalerNotActive
+### MimirAutoscalerNotActive
 
-This alert fires when the Mimir querier Kubernetes Horizontal Pod Autoscaler's (HPA) `ScalingActive` condition is `false`. When this happens, it's not able to calculate desired scale and generally indicates problems with fetching metrics.
+This alert fires when any of Mimir's Kubernetes Horizontal Pod Autoscaler's (HPA) `ScalingActive` condition is `false`. When this happens, it's not able to calculate desired scale and generally indicates problems with fetching metrics.
 
 How it **works**:
 
-- HPA is configured to autoscale Mimir queriers based on custom metrics fetched from Prometheus via the KEDA custom metrics API server
+- HPA's can be configured to autoscale Mimir components based on custom metrics fetched from Prometheus via the KEDA custom metrics API server
 - HPA periodically queries updated metrics and updates the number of desired replicas based on that
-- Please refer to the [HPA documentation](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/) for more information about it
+- Please refer to [Mimir's Autoscaling documentation]({{< relref "../deploy-grafana-mimir/jsonnet/configure-autoscaling.md" >}}) and the upstream [HPA documentation](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/) for more information
 
 How to **investigate**:
 
 - Check HPA conditions and events to get more details about the failure
   ```
-  kubectl describe hpa -n <namespace> keda-hpa-querier
+  kubectl describe hpa -n <namespace> keda-hpa-$component
   ```
 - Ensure KEDA pods are up and running
   ```
@@ -1469,7 +1483,7 @@ How to **fix** it:
 
 ### err-mimir-tenant-too-many-ha-clusters
 
-This error occurs when a distributor rejects a write request because the number of [high-availability (HA) clusters]({{< relref "../configure/configuring-high-availability-deduplication.md" >}}) has hit the configured limit for this tenant.
+This error occurs when a distributor rejects a write request because the number of [high-availability (HA) clusters]({{< relref "../configure/configure-high-availability-deduplication.md" >}}) has hit the configured limit for this tenant.
 
 How it **works**:
 
@@ -1503,7 +1517,7 @@ Common **causes**:
 
 - Your code has a single target that exposes the same time series multiple times, or multiple targets with identical labels.
 - System time of your Prometheus instance has been shifted backwards. If this was a mistake, fix the system time back to normal. Otherwise, wait until the system time catches up to the time it was changed.
-- You are running multiple Prometheus instances pushing the same metrics and [your high-availability tracker is not properly configured for deduplication]({{< relref "../configure/configuring-high-availability-deduplication.md" >}}).
+- You are running multiple Prometheus instances pushing the same metrics and [your high-availability tracker is not properly configured for deduplication]({{< relref "../configure/configure-high-availability-deduplication.md" >}}).
 - Prometheus relabelling has been configured and it causes series to clash after the relabelling. Check the error message for information about which series has received a sample out of order.
 - A Prometheus instance was restarted, and it pushed all data from its Write-Ahead Log to remote write upon restart, some of which has already been pushed and ingested. This is normal and can be ignored.
 - Prometheus and Mimir have the same recording rule, which generates the exact same series in both places and causes either the remote write or the rule evaluation to fail randomly, depending on timing.

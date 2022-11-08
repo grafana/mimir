@@ -25,9 +25,9 @@ import (
 
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
-	"github.com/thanos-io/thanos/pkg/block"
-	"github.com/thanos-io/thanos/pkg/block/metadata"
 
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/storegateway/testhelper"
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -143,7 +143,7 @@ func TestReaders(t *testing.T) {
 						},
 					}, br.postings)
 
-					vals, err := br.LabelValues("not-existing")
+					vals, err := br.LabelValues("not-existing", nil)
 					require.NoError(t, err)
 					require.Equal(t, []string(nil), vals)
 
@@ -252,7 +252,7 @@ func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerRe
 		expectedLabelVals, err := indexReader.SortedLabelValues(lname)
 		require.NoError(t, err)
 
-		vals, err := headerReader.LabelValues(lname)
+		vals, err := headerReader.LabelValues(lname, nil)
 		require.NoError(t, err)
 		require.Equal(t, expectedLabelVals, vals)
 
@@ -361,11 +361,11 @@ func BenchmarkBinaryWrite(t *testing.B) {
 	}
 }
 
-func BenchmarkBinaryReader(t *testing.B) {
+func BenchmarkBinaryReader_ThanosbenchBlock(t *testing.B) {
 	ctx := context.Background()
 	tmpDir, err := os.MkdirTemp("", "bench-indexheader")
 	require.NoError(t, err)
-	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
+	t.Cleanup(func() { require.NoError(t, os.RemoveAll(tmpDir)) })
 
 	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
 	require.NoError(t, err)
@@ -380,6 +380,49 @@ func BenchmarkBinaryReader(t *testing.B) {
 		require.NoError(t, err)
 		require.NoError(t, br.Close())
 	}
+}
+
+func BenchmarkBinaryReader_LargerBlock(b *testing.B) {
+	const (
+		// labelLongSuffix is a label with ~50B in size, to emulate real-world high cardinality.
+		labelLongSuffix = "aaaaaaaaaabbbbbbbbbbccccccccccdddddddddd"
+		series          = 1e6
+	)
+
+	ctx := context.Background()
+	tmpDir, err := os.MkdirTemp("", "bench-indexheader-large")
+	require.NoError(b, err)
+	b.Cleanup(func() { require.NoError(b, os.RemoveAll(tmpDir)) })
+
+	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
+	require.NoError(b, err)
+
+	seriesLabels := make([]labels.Labels, 0, series)
+	for n := 0; n < 10; n++ {
+		for i := 0; i < series/10/5; i++ {
+			seriesLabels = append(seriesLabels, labels.FromStrings("i", strconv.Itoa(i)+labelLongSuffix, "n", strconv.Itoa(n)+labelLongSuffix, "j", "foo", "p", "foo"))
+			seriesLabels = append(seriesLabels, labels.FromStrings("i", strconv.Itoa(i)+labelLongSuffix, "n", strconv.Itoa(n)+labelLongSuffix, "j", "bar", "q", "foo"))
+			seriesLabels = append(seriesLabels, labels.FromStrings("i", strconv.Itoa(i)+labelLongSuffix, "n", "0_"+strconv.Itoa(n)+labelLongSuffix, "j", "bar", "r", "foo"))
+			seriesLabels = append(seriesLabels, labels.FromStrings("i", strconv.Itoa(i)+labelLongSuffix, "n", "1_"+strconv.Itoa(n)+labelLongSuffix, "j", "bar", "s", "foo"))
+			seriesLabels = append(seriesLabels, labels.FromStrings("i", strconv.Itoa(i)+labelLongSuffix, "n", "2_"+strconv.Itoa(n)+labelLongSuffix, "j", "foo", "t", "foo"))
+		}
+	}
+
+	blockID, err := testhelper.CreateBlock(ctx, tmpDir, seriesLabels, 100, 0, 1000, labels.FromStrings("ext1", "1"), 124, metadata.NoneFunc)
+	require.NoError(b, err)
+	require.NoError(b, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), metadata.NoneFunc))
+
+	filename := filepath.Join(tmpDir, "bkt", blockID.String(), block.IndexHeaderFilename)
+	require.NoError(b, WriteBinary(ctx, bkt, blockID, filename))
+
+	b.ResetTimer()
+	b.Run("benchmark", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			br, err := newFileBinaryReader(filename, 32, BinaryReaderConfig{})
+			require.NoError(b, err)
+			require.NoError(b, br.Close())
+		}
+	})
 }
 
 func BenchmarkBinaryReader_LookupSymbol(b *testing.B) {

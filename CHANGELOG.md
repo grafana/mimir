@@ -7,8 +7,9 @@
 * [CHANGE] Flag `-azure.msi-resource` is now ignored, and will be removed in Mimir 2.7. This setting is now made automatically by Azure. #2682
 * [CHANGE] Experimental flag `-blocks-storage.tsdb.out-of-order-capacity-min` has been removed. #3261
 * [CHANGE] Distributor: Wrap errors from pushing to ingesters with useful context, for example clarifying timeouts. #3307
+* [CHANGE] The default value of `-server.http-write-timeout` has changed from 30s to 2m. #3346
 * [FEATURE] Alertmanager: added Discord support. #3309
-* [ENHANCEMENT] Added `<prefix>.tls-min-version` and `<prefix>.tls-cipher-suites` flags to configure cipher suites and min TLS version supported by servers. #2898
+* [ENHANCEMENT] Added `-server.tls-min-version` and `-server.tls-cipher-suites` flags to configure cipher suites and min TLS version supported by HTTP and gRPC servers. #2898
 * [ENHANCEMENT] Distributor: Add age filter to forwarding functionality, to not forward samples which are older than defined duration. If such samples are not ingested, `cortex_discarded_samples_total{reason="forwarded-sample-too-old"}` is increased. #3049 #3133
 * [ENHANCEMENT] Store-gateway: Reduce memory allocation when generating ids in index cache. #3179
 * [ENHANCEMENT] Query-frontend: truncate queries based on the configured creation grace period (`--validation.create-grace-period`) to avoid querying too far into the future. #3172
@@ -20,20 +21,29 @@
 * [ENHANCEMENT] Distributor: Include `X-Scope-OrgId` header in requests forwarded to configured forwarding endpoint. #3283
 * [ENHANCEMENT] Alertmanager: reduced memory utilization in Mimir clusters with a large number of tenants. #3309
 * [ENHANCEMENT] Add experimental flag `-shutdown-delay` to allow components to wait after receiving SIGTERM and before stopping. In this time the component returns 503 from /ready endpoint. #3298
+* [ENHANCEMENT] Go: update to go 1.19.3. #3371
+* [ENHANCEMENT] Alerts: added `RulerRemoteEvaluationFailing` alert, firing when communication between ruler and frontend fails in remote operational mode. #3177 #3389
+* [ENHANCEMENT] Clarify which S3 signature versions are supported in the error "unsupported signature version". #3376
+* [ENHANCEMENT] Store-gateway: improved index header reading performance. #3393
+* [ENHANCEMENT] Store-gateway: improved performance of series matching. #3391
 * [BUGFIX] Flusher: Add `Overrides` as a dependency to prevent panics when starting with `-target=flusher`. #3151
 * [BUGFIX] Updated `golang.org/x/text` dependency to fix CVE-2022-32149. #3285
 * [BUGFIX] Query-frontend: properly close gRPC streams to the query-scheduler to stop memory and goroutines leak. #3302
+* [BUGFIX] Ruler: persist evaluation delay configured in the rulegroup. #3392
 
 ### Mixin
 
 * [CHANGE] Alerts: Change `MimirSchedulerQueriesStuck` `for` time to 7 minutes to account for the time it takes for HPA to scale up. #3223
 * [CHANGE] Dashboards: Removed the `Querier > Stages` panel from the `Mimir / Queries` dashboard. #3311
+* [CHANGE] Configuration: The format of the `autoscaling` section of the configuration has changed to support more components. #3378
+  * Instead of specific config variables for each component, they are listed in a dictionary. For example, `autoscaling.querier_enabled` becomes `autoscaling.querier.enabled`.
 * [ENHANCEMENT] Alerts: Add MimirRingMembersMismatch firing when a component does not have the expected number of running jobs. #2404
-* [ENHANCEMENT] Dashboards: Add optional row about the Distributor's metric forwarding feature to the `Mimir / Writes` dashboard. #3182
+* [ENHANCEMENT] Dashboards: Add optional row about the Distributor's metric forwarding feature to the `Mimir / Writes` dashboard. #3182 #3394
 * [ENHANCEMENT] Dashboards: Remove the "Instance Mapper" row from the "Alertmanager Resources Dashboard". This is a Grafana Cloud specific service and not relevant for external users. #3152
 * [ENHANCEMENT] Dashboards: Add "remote read", "metadata", and "exemplar" queries to "Mimir / Overview" dashboard. #3245
 * [ENHANCEMENT] Dashboards: Use non-red colors for non-error series in the "Mimir / Overview" dashboard. #3246
 * [ENHANCEMENT] Dashboards: Add support to multi-zone deployments for the experimental read-write deployment mode. #3254
+* [ENHANCEMENT] Dashboards: If enabled, add new row to the `Mimir / Writes` for distributor autoscaling metrics. #3378
 * [BUGFIX] Dashboards: Fix legend showing `persistentvolumeclaim` when using `deployment_type=baremetal` for `Disk space utilization` panels. #3173
 
 ### Jsonnet
@@ -56,8 +66,30 @@
     * Removing `ruler_client_type` and `alertmanager_client_type` if their value match the `storage_backend`, or renaming them to their new names otherwise.
     * Reviewing any possible extensions to `genericBlocksStorageConfig`, `rulerClientConfig` and `alertmanagerStorageClientConfig` and moving them to the corresponding new options.
     * Renaming the alertmanager's bucket name configuration from provider-specific to the new `alertmanager_storage_bucket_name` key.
+* [CHANGE] The `overrides-exporter.libsonnet` file is now always imported. The overrides-exporter can be enabled in jsonnet setting the following: #3379
+  ```jsonnet
+  {
+    _config+:: {
+      overrides_exporter_enabled: true,
+    }
+  }
+  ```
+* [FEATURE] Added support for experimental read-write deployment mode. Enabling the read-write deployment mode on a existing Mimir cluster is a destructive operation, because the cluster will be re-created. If you're creating a new Mimir cluster, you can deploy it in read-write mode adding the following configuration: #3379
+  ```jsonnet
+  {
+    _config+:: {
+      read_write_deployment_enabled: true,
+
+      // See operations/mimir/read-write-deployment.libsonnet for more configuration options.
+      mimir_write_replicas: 3,
+      mimir_read_replicas: 2,
+      mimir_backend_replicas: 3,
+    }
+  }
+  ```
 * [ENHANCEMENT] Added `$._config.usageStatsConfig` to track the installation mode via the anonymous usage statistics. #3294
 * [ENHANCEMENT] The query-tee node port (`$._config.query_tee_node_port`) is now optional. #3272
+* [ENHANCEMENT] Add support for autoscaling distributors. #3378
 * [BUGFIX] Fixed query-scheduler ring configuration for dedicated ruler's queries and query-frontends. #3237 #3239
 
 ### Mimirtool
@@ -71,6 +103,7 @@
 * [ENHANCEMENT] Improve `MimirQuerierAutoscalerNotActive` runbook. #3186
 * [ENHANCEMENT] Improve `MimirSchedulerQueriesStuck` runbook to reflect debug steps with querier auto-scaling enabled. #3223
 * [BUGFIX] Fixed TSDB retention mentioned in the "Recover source blocks from ingesters" runbook. #3278
+* [BUGFIX] Fixed configuration example in the "Configuring the Grafana Mimir query-frontend to work with Prometheus" guide. #3373
 
 ### Tools
 

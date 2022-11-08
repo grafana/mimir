@@ -52,14 +52,14 @@ fi
 CHANGELOG_SECTION_TITLE="## ${LAST_RELEASE_VERSION}"
 CHANGELOG_BEGIN_LINE=$(awk "/^${CHANGELOG_SECTION_TITLE}$/{ print NR; exit }" "${CHANGELOG_PATH}")
 if [ -z "${CHANGELOG_BEGIN_LINE}" ]; then
-  echo "Unable to find the section title '${CHANGELOG_SECTION_TITLE}' in the ${CHANGELOG_PATH}"
+  echo "Unable to find the section title '${CHANGELOG_SECTION_TITLE}' in the ${CHANGELOG_PATH}" > /dev/stderr
   exit 1
 fi
 
 # Find the line at which the CHANGELOG for this version ends.
 CHANGELOG_END_LINE=$(tail -n +$((CHANGELOG_BEGIN_LINE + 1)) "${CHANGELOG_PATH}" | awk "/^## /{ print NR - 1; exit }")
 if [ -z "${CHANGELOG_END_LINE}" ]; then
-  echo "Unable to find the end of the section '${CHANGELOG_SECTION_TITLE}' in the ${CHANGELOG_PATH}"
+  echo "Unable to find the end of the section '${CHANGELOG_SECTION_TITLE}' in the ${CHANGELOG_PATH}" > /dev/stderr
   exit 1
 fi
 

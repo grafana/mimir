@@ -640,6 +640,25 @@
             ||| % $._config,
           },
         },
+        {
+          alert: $.alertName('RulerRemoteEvaluationFailing'),
+          expr: |||
+            100 * (
+            sum by (%s) (rate(cortex_request_duration_seconds_count{route="/httpgrpc.HTTP/Handle", status_code=~"5..", %s}[5m]))
+              /
+            sum by (%s) (rate(cortex_request_duration_seconds_count{route="/httpgrpc.HTTP/Handle", %s}[5m]))
+            ) > 1
+          ||| % [$._config.alert_aggregation_labels, $.jobMatcher($._config.job_names.ruler_query_frontend), $._config.alert_aggregation_labels, $.jobMatcher($._config.job_names.ruler_query_frontend)],
+          'for': '5m',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              %(product)s rulers in %(alert_aggregation_variables)s are failing to perform {{ printf "%%.2f" $value }}%% of remote evaluations through the ruler-query-frontend.
+            ||| % $._config,
+          },
+        },
       ],
     },
     {

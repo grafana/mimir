@@ -14,12 +14,12 @@ import (
 	"github.com/grafana/dskit/concurrency"
 	"github.com/oklog/ulid"
 	"github.com/thanos-io/objstore"
-	"github.com/thanos-io/thanos/pkg/block"
-	"github.com/thanos-io/thanos/pkg/block/metadata"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
+	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
 // LoadMetaFilesAndDeletionMarkers reads the bucket and loads the meta files for the provided user.
