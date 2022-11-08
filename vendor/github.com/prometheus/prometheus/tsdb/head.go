@@ -130,6 +130,9 @@ type Head struct {
 	reg   prometheus.Registerer
 
 	memTruncationInProcess atomic.Bool
+
+	stringsMtx sync.Mutex
+	strings    map[string]string
 }
 
 type ExemplarStorage interface {
@@ -249,6 +252,8 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal, wbl *wal.WAL, opts *Hea
 		reg:   r,
 
 		pfmc: NewPostingsForMatchersCache(defaultPostingsForMatchersCacheTTL, defaultPostingsForMatchersCacheSize),
+
+		strings: make(map[string]string),
 	}
 	if err := h.resetInMemoryState(); err != nil {
 		return nil, err
@@ -1399,7 +1404,10 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 
 	// Drop old chunks and remember series IDs and hashes if they can be
 	// deleted entirely.
-	deleted, chunksRemoved, actualInOrderMint, minOOOTime, minMmapFile := h.series.gc(mint, minOOOMmapRef)
+	deleted, chunksRemoved, actualInOrderMint, minOOOTime, minMmapFile, strings := h.series.gc(mint, minOOOMmapRef)
+	h.stringsMtx.Lock()
+	h.strings = strings
+	h.stringsMtx.Unlock()
 	seriesRemoved := len(deleted)
 
 	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
@@ -1529,6 +1537,9 @@ func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool, e
 
 func (h *Head) getOrCreateWithID(id chunks.HeadSeriesRef, hash uint64, lset labels.Labels) (*memSeries, bool, error) {
 	s, created, err := h.series.getOrSet(hash, lset, func() *memSeries {
+		h.stringsMtx.Lock()
+		lset = lset.WithInternedStrings(mapInterner(h.strings))
+		h.stringsMtx.Unlock()
 		return newMemSeries(lset, id, hash, h.opts.ChunkEndTimeVariance, h.opts.IsolationDisabled)
 	})
 	if err != nil {
@@ -1543,6 +1554,16 @@ func (h *Head) getOrCreateWithID(id chunks.HeadSeriesRef, hash uint64, lset labe
 
 	h.postings.Add(storage.SeriesRef(id), lset)
 	return s, true, nil
+}
+
+type mapInterner map[string]string
+
+func (m mapInterner) Intern(s string) string {
+	if is, ok := m[s]; ok {
+		return is
+	}
+	m[s] = s
+	return s
 }
 
 // seriesHashmap is a simple hashmap for memSeries by their label set. It is built
@@ -1634,13 +1655,14 @@ func newStripeSeries(stripeSize int, seriesCallback SeriesLifecycleCallback) *st
 // but the returned map goes into postings.Delete() which expects a map[storage.SeriesRef]struct
 // and there's no easy way to cast maps.
 // minMmapFile is the min mmap file number seen in the series (in-order and out-of-order) after gc'ing the series.
-func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (_ map[storage.SeriesRef]struct{}, _ int, _, _ int64, minMmapFile int) {
+func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (_ map[storage.SeriesRef]struct{}, _ int, _, _ int64, minMmapFile int, _ map[string]string) {
 	var (
 		deleted                  = map[storage.SeriesRef]struct{}{}
 		deletedForCallback       = []labels.Labels{}
 		rmChunks                 = 0
 		actualMint         int64 = math.MaxInt64
 		minOOOTime         int64 = math.MaxInt64
+		strings                  = make(map[string]string)
 	)
 	minMmapFile = math.MaxInt32
 	// Run through all series and truncate old chunks. Mark those with no
@@ -1682,6 +1704,10 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 						actualMint = seriesMint
 					}
 					series.Unlock()
+					for _, l := range series.lset {
+						mapInterner(strings).Intern(l.Name)
+						mapInterner(strings).Intern(l.Value)
+					}
 					continue
 				}
 
@@ -1719,7 +1745,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 		actualMint = mint
 	}
 
-	return deleted, rmChunks, actualMint, minOOOTime, minMmapFile
+	return deleted, rmChunks, actualMint, minOOOTime, minMmapFile, strings
 }
 
 func (s *stripeSeries) getByID(id chunks.HeadSeriesRef) *memSeries {
