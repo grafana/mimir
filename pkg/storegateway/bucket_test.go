@@ -1263,6 +1263,7 @@ func TestBucketSeries_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 		queryGate:            gate.NewNoop(),
 		chunksLimiterFactory: NewChunksLimiterFactory(0),
 		seriesLimiterFactory: NewSeriesLimiterFactory(0),
+		chunkPool:            pool.NoopBytes{},
 	}
 
 	t.Run("invoke series for one block. Fill the cache on the way.", func(t *testing.T) {
@@ -2041,7 +2042,7 @@ func benchmarkBlockSeriesWithConcurrency(b *testing.B, concurrency int, blockMet
 				require.NoError(b, err)
 
 				indexReader := blk.indexReader()
-				chunkReader := blk.chunkReader(ctx)
+				chunkReader := blk.chunkReader(ctx, newChunksKeeper(blk.chunkPool))
 
 				seriesSet, _, err := blockSeries(context.Background(), indexReader, chunkReader, matchers, shardSelector, seriesHashCache, chunksLimiter, seriesLimiter, req.SkipChunks, req.MinTime, req.MaxTime, req.Aggregates, log.NewNopLogger())
 				require.NoError(b, err)

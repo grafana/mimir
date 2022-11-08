@@ -65,6 +65,20 @@ func TestBytesPool(t *testing.T) {
 	require.Equal(t, uint64(0), chunkPool.usedTotal)
 }
 
+// TestBytesPool_PutNil checks if putting a nil into the pool doesn't break it
+func TestBytesPool_PutNil(t *testing.T) {
+	chunkPool, err := NewBucketedBytes(10, 100, 2, 1000)
+	require.NoError(t, err)
+
+	chunkPool.Put(nil)
+
+	slice, err := chunkPool.Get(1)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, cap(*slice), 1)
+
+	chunkPool.Put(slice)
+}
+
 func TestRacePutGet(t *testing.T) {
 	chunkPool, err := NewBucketedBytes(3, 100, 2, 5000)
 	require.NoError(t, err)

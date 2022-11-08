@@ -799,18 +799,6 @@ func filterPostingsByCachedShardHash(ps []storage.SeriesRef, shard *sharding.Sha
 	return ps, stats
 }
 
-func populateChunk(out *storepb.AggrChunk, in chunkenc.Chunk, aggrs []storepb.Aggr, save func([]byte) ([]byte, error)) error {
-	if in.Encoding() == chunkenc.EncXOR {
-		b, err := save(in.Bytes())
-		if err != nil {
-			return err
-		}
-		out.Raw = &storepb.Chunk{Type: storepb.Chunk_XOR, Data: b}
-		return nil
-	}
-	return errors.Errorf("unsupported chunk encoding %d", in.Encoding())
-}
-
 // debugFoundBlockSetOverview logs on debug level what exactly blocks we used for query in terms of
 // labels and resolution. This is important because we allow mixed resolution results, so it is quite crucial
 // to be aware what exactly resolution we see on query.
@@ -899,6 +887,8 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 	s.mtx.RLock()
 
 	blocks := s.blockSet.getFor(req.MinTime, req.MaxTime, req.MaxResolutionWindow, reqBlockMatchers)
+	chunksKeeper := newChunksKeeper(s.chunkPool)
+	defer chunksKeeper.ReclaimAll()
 
 	spanLogger := spanlogger.FromContext(srv.Context(), s.logger)
 	level.Debug(spanLogger).Log(
@@ -925,7 +915,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		// We must keep the readers open until all their data has been sent.
 		indexr := b.indexReader()
 		if !req.SkipChunks {
-			chunkr = b.chunkReader(gctx)
+			chunkr = b.chunkReader(gctx, chunksKeeper)
 			defer runutil.CloseWithLogOnErr(s.logger, chunkr, "series block")
 		}
 
@@ -1022,6 +1012,10 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		// NOTE: We "carefully" assume series and chunks are sorted within each SeriesSet. This should be guaranteed by
 		// blockSeries method. In worst case deduplication logic won't deduplicate correctly, which will be accounted later.
 		set := storepb.MergeSeriesSets(res...)
+		// The reclaiming set needs to be the first to be invoked because it will take care of reclaiming
+		// the memory of the chunks, and we don't want to reclaim memory while there is an upper layer
+		// of series sets that are still referencing the chunks.
+		set = newReclaimingSeriesSet(set, chunksKeeper)
 		for set.Next() {
 			var series storepb.Series
 
@@ -1672,9 +1666,9 @@ func (b *bucketBlock) indexReader() *bucketIndexReader {
 	return newBucketIndexReader(b)
 }
 
-func (b *bucketBlock) chunkReader(ctx context.Context) *bucketChunkReader {
+func (b *bucketBlock) chunkReader(ctx context.Context, factory chunksFactory) *bucketChunkReader {
 	b.pendingReaders.Add(1)
-	return newBucketChunkReader(ctx, b)
+	return newBucketChunkReader(ctx, b, factory)
 }
 
 // matchLabels verifies whether the block matches the given matchers.
@@ -2468,6 +2462,10 @@ type loadIdx struct {
 	chunk       int
 }
 
+type chunksFactory interface {
+	NewChunk(in chunkenc.Chunk) (*storepb.Chunk, error)
+}
+
 type bucketChunkReader struct {
 	ctx   context.Context
 	block *bucketBlock
@@ -2476,26 +2474,23 @@ type bucketChunkReader struct {
 
 	// Mutex protects access to following fields, when updated from chunks-loading goroutines.
 	// After chunks are loaded, mutex is no longer used.
-	mtx        sync.Mutex
-	stats      *queryStats
-	chunkBytes []*[]byte // Byte slice to return to the chunk pool on close.
+	mtx     sync.Mutex
+	stats   *queryStats
+	factory chunksFactory
 }
 
-func newBucketChunkReader(ctx context.Context, block *bucketBlock) *bucketChunkReader {
+func newBucketChunkReader(ctx context.Context, block *bucketBlock, factory chunksFactory) *bucketChunkReader {
 	return &bucketChunkReader{
-		ctx:    ctx,
-		block:  block,
-		stats:  &queryStats{},
-		toLoad: make([][]loadIdx, len(block.chunkObjs)),
+		ctx:     ctx,
+		block:   block,
+		stats:   &queryStats{},
+		toLoad:  make([][]loadIdx, len(block.chunkObjs)),
+		factory: factory,
 	}
 }
 
 func (r *bucketChunkReader) Close() error {
 	r.block.pendingReaders.Done()
-
-	for _, b := range r.chunkBytes {
-		r.block.chunkPool.Put(b)
-	}
 	return nil
 }
 
@@ -2610,7 +2605,7 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, a
 		// There is also crc32 after the chunk, but we ignore that.
 		chunkLen = n + 1 + int(chunkDataLen)
 		if chunkLen <= len(cb) {
-			err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunk]), rawChunk(cb[n:chunkLen]), aggrs, r.save)
+			res[pIdx.seriesEntry].chks[pIdx.chunk].Raw, err = r.factory.NewChunk(rawChunk(cb[n:chunkLen]))
 			if err != nil {
 				return errors.Wrap(err, "populate chunk")
 			}
@@ -2641,34 +2636,15 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, a
 		r.stats.chunksFetchCount++
 		r.stats.chunksFetchDurationSum += time.Since(fetchBegin)
 		r.stats.chunksFetchedSizeSum += len(*nb)
-		err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunk]), rawChunk((*nb)[n:]), aggrs, r.save)
+		res[pIdx.seriesEntry].chks[pIdx.chunk].Raw, err = r.factory.NewChunk(rawChunk((*nb)[n:]))
+		r.block.chunkPool.Put(nb)
 		if err != nil {
-			r.block.chunkPool.Put(nb)
 			return errors.Wrap(err, "populate chunk")
 		}
 		r.stats.chunksTouched++
 		r.stats.chunksTouchedSizeSum += int(chunkDataLen)
-
-		r.block.chunkPool.Put(nb)
 	}
 	return nil
-}
-
-// save saves a copy of b's payload to a memory pool of its own and returns a new byte slice referencing said copy.
-// Returned slice becomes invalid once r.block.chunkPool.Put() is called.
-func (r *bucketChunkReader) save(b []byte) ([]byte, error) {
-	// Ensure we never grow slab beyond original capacity.
-	if len(r.chunkBytes) == 0 ||
-		cap(*r.chunkBytes[len(r.chunkBytes)-1])-len(*r.chunkBytes[len(r.chunkBytes)-1]) < len(b) {
-		s, err := r.block.chunkPool.Get(len(b))
-		if err != nil {
-			return nil, errors.Wrap(err, "allocate chunk bytes")
-		}
-		r.chunkBytes = append(r.chunkBytes, s)
-	}
-	slab := r.chunkBytes[len(r.chunkBytes)-1]
-	*slab = append(*slab, b...)
-	return (*slab)[len(*slab)-len(b):], nil
 }
 
 // rawChunk is a helper type that wraps a chunk's raw bytes and implements the chunkenc.Chunk

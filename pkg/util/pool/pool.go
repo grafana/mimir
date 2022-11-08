@@ -15,7 +15,7 @@ import (
 type Bytes interface {
 	// Get returns a new byte slices that fits the given size.
 	Get(sz int) (*[]byte, error)
-	// Put returns a byte slice to the right bucket in the pool.
+	// Put returns a byte slice to the right bucket in the pool. In case the slice is nil Put is a noop.
 	Put(b *[]byte)
 }
 
