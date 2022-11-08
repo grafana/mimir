@@ -58,6 +58,7 @@ Entries should include a reference to the Pull Request that introduced the chang
   If you take no action and `fsGroup` is not supported by your CSI driver, then components will fail to start. #3007
 * [CHANGE] Restrict Pod seccomp profile to `runtime/default` in the default PodSecurityPolicy of the chart. #3007
 * [CHANGE] Use the chart's service account for metamonitoring instead of creating one specific to metamonitoring. #3350
+* [CHANGE] Use mimir for the nginx ingress example #3336
 * [ENHANCEMENT] Metamonitoring: If enabled and no URL is configured, then metamonitoring metrics will be sent to
   Mimir under the `metamonitoring` tenant; this enhancement does not apply to GEM. #3176
 * [ENHANCEMENT] Improve default rollout strategies. Now distributor, overrides_exporter, querier, query_frontend, admin_api, gateway, and graphite components can be upgraded more quickly and also can be rolled out with a single replica without downtime. #3029

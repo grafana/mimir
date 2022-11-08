@@ -13,8 +13,8 @@ metadata:
 spec:
   tls:
     - hosts:
-        - "nginx.loki.example.com"
-      secretName: loki-nginx-tls
+        - "nginx.mimir.example.com"
+      secretName: mimir-nginx-tls
   rules:
     - host: "nginx.mimir.example.com"
       http:
