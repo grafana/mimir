@@ -565,25 +565,25 @@ func newFileBinaryReader(path string, postingOffsetsInMemSampling int, cfg Binar
 			r.postingsV1[lastLbl.Name][lastLbl.Value] = prevRng
 		}
 	} else {
-		var lastLbl yoloLabel
+		var lastLbl unsafeLabel
 		lastSet := false
 		lastTableOff := 0
 		valueCount := 0
 
 		// For the postings offset table we keep every label name but only every nth
 		// label value (plus the first and last one), to save memory.
-		if err := readOffsetTable(r.b, r.toc.PostingsOffsetTable, yoloPostingsOffsetTableReader, func(lbl yoloLabel, off uint64, tableOff int) error {
-			if _, ok := r.postings[lbl.yoloName]; !ok {
+		if err := readOffsetTable(r.b, r.toc.PostingsOffsetTable, unsafePostingsOffsetTableReader, func(lbl unsafeLabel, off uint64, tableOff int) error {
+			if _, ok := r.postings[lbl.unsafeName]; !ok {
 				// Not seen before label name.
 				// We need to set a new key in the map, which will be kept in memory so we need a un-yoloed version of the label name.
-				r.postings[lbl.name()] = &postingValueOffsets{}
+				r.postings[lbl.safeName()] = &postingValueOffsets{}
 				if lastSet {
 					// Always include last value for each label name, unless it was just added in previous iteration based
 					// on valueCount.
 					if (valueCount-1)%postingOffsetsInMemSampling != 0 {
-						r.postings[lastLbl.yoloName].offsets = append(r.postings[lastLbl.yoloName].offsets, postingOffset{value: lastLbl.value(), tableOff: lastTableOff})
+						r.postings[lastLbl.unsafeName].offsets = append(r.postings[lastLbl.unsafeName].offsets, postingOffset{value: lastLbl.safeValue(), tableOff: lastTableOff})
 					}
-					r.postings[lastLbl.yoloName].lastValOffset = int64(off - crc32.Size)
+					r.postings[lastLbl.unsafeName].lastValOffset = int64(off - crc32.Size)
 				}
 				valueCount = 0
 			}
@@ -594,7 +594,7 @@ func newFileBinaryReader(path string, postingOffsetsInMemSampling int, cfg Binar
 			valueCount++
 
 			if (valueCount-1)%postingOffsetsInMemSampling == 0 {
-				r.postings[lbl.yoloName].offsets = append(r.postings[lbl.yoloName].offsets, postingOffset{value: lbl.value(), tableOff: tableOff})
+				r.postings[lbl.unsafeName].offsets = append(r.postings[lbl.unsafeName].offsets, postingOffset{value: lbl.safeValue(), tableOff: tableOff})
 			}
 
 			return nil
@@ -604,11 +604,11 @@ func newFileBinaryReader(path string, postingOffsetsInMemSampling int, cfg Binar
 		if lastSet {
 			if (valueCount-1)%postingOffsetsInMemSampling != 0 {
 				// Always include last value for each label name if not included already based on valueCount.
-				r.postings[lastLbl.yoloName].offsets = append(r.postings[lastLbl.yoloName].offsets, postingOffset{value: lastLbl.value(), tableOff: lastTableOff})
+				r.postings[lastLbl.unsafeName].offsets = append(r.postings[lastLbl.unsafeName].offsets, postingOffset{value: lastLbl.safeValue(), tableOff: lastTableOff})
 			}
 			// In any case lastValOffset is unknown as don't have next posting anymore. Guess from TOC table.
 			// In worst case we will overfetch a few bytes.
-			r.postings[lastLbl.yoloName].lastValOffset = r.indexLastPostingEnd - crc32.Size
+			r.postings[lastLbl.unsafeName].lastValOffset = r.indexLastPostingEnd - crc32.Size
 		}
 		// Trim any extra space in the slices.
 		for k, v := range r.postings {
@@ -984,33 +984,33 @@ func postingsOffsetTableReader(d *encoding.Decbuf) (labels.Label, error) {
 	return lbl, nil
 }
 
-// yoloPostingsOffsetTableReader reads the postings table returning a yoloed label, which can be used for comparison
-// without allocating a new string (since in most of the cases, we just want to see if the label name has changed).
-func yoloPostingsOffsetTableReader(d *encoding.Decbuf) (yoloLabel, error) {
+// unsafePostingsOffsetTableReader reads the postings table returning a label whose string shares the memory with the buffer.
+// It can be used for comparison without allocating a new string (since in most of the cases, we just want to see if the label name has changed).
+func unsafePostingsOffsetTableReader(d *encoding.Decbuf) (unsafeLabel, error) {
 	if keyCount := d.Uvarint(); keyCount != 2 {
-		return yoloLabel{}, errors.Errorf("unexpected key length for posting table %d", keyCount)
+		return unsafeLabel{}, errors.Errorf("unexpected key length for posting table %d", keyCount)
 	}
-	var lbl yoloLabel
-	lbl.yoloName = yoloString(d.UvarintBytes())
-	lbl.yoloValue = yoloString(d.UvarintBytes())
+	var lbl unsafeLabel
+	lbl.unsafeName = yoloString(d.UvarintBytes())
+	lbl.unsafeValue = yoloString(d.UvarintBytes())
 	return lbl, nil
 }
 
-// yoloLabel is like a labels.Label but its fields are yolo-ed from the underlying buffer,
+// unsafeLabel is like a labels.Label but its fields are yolo-ed from the underlying buffer,
 // you shouldn't store references to them as it might be expensive, but it's fine enough to compare & discard.
-type yoloLabel struct {
-	yoloName  string
-	yoloValue string
+type unsafeLabel struct {
+	unsafeName  string
+	unsafeValue string
 }
 
-func (yl yoloLabel) name() string {
-	return copyString(yl.yoloName)
+func (ul unsafeLabel) safeName() string {
+	return copyString(ul.unsafeName)
 }
-func (yl yoloLabel) value() string {
-	return copyString(yl.yoloValue)
+func (ul unsafeLabel) safeValue() string {
+	return copyString(ul.unsafeValue)
 }
 
-// copyString unyoloes a yoloed string.
+// copyString copies the contents of a string into a new string.
 func copyString(s string) string {
 	return string([]byte(s))
 }
