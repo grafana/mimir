@@ -311,6 +311,15 @@ func (ls Labels) WithoutEmpty() Labels {
 	return ls
 }
 
+func (ls Labels) WithInternedStrings(interner interface{ Intern(string) string }) Labels {
+	els := make(Labels, len(ls))
+	for i := range ls {
+		els[i].Name = interner.Intern(ls[i].Name)
+		els[i].Value = interner.Intern(ls[i].Value)
+	}
+	return els
+}
+
 // Equal returns whether the two label sets are equal.
 func Equal(ls, o Labels) bool {
 	if len(ls) != len(o) {
