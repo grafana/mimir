@@ -8,10 +8,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"path"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -47,8 +49,8 @@ func verifyUploadedMeta(t *testing.T, bkt *bucket.ClientMock, expMeta metadata.M
 	assert.Equal(t, expMeta, gotMeta)
 }
 
-// Test MultitenantCompactor.HandleBlockUpload with uploadComplete=false (the default).
-func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
+// Test MultitenantCompactor.StartBlockUpload
+func TestMultitenantCompactor_StartBlockUpload(t *testing.T) {
 	const tenantID = "test"
 	const blockID = "01G3FZ0JWJYJC0ZM6Y9778P6KD"
 	bULID := ulid.MustParse(blockID)
@@ -680,7 +682,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Create(t *testing.T) {
 	}
 }
 
-// Test MultitenantCompactor.UploadBlockFile.
+// Test MultitenantCompactor.UploadBlockFile
 func TestMultitenantCompactor_UploadBlockFile(t *testing.T) {
 	const tenantID = "test"
 	const blockID = "01G3FZ0JWJYJC0ZM6Y9778P6KD"
@@ -1056,8 +1058,8 @@ func setUpGet(bkt *bucket.ClientMock, pth string, content []byte, err error) {
 	})
 }
 
-// Test MultitenantCompactor.HandleBlockUpload with uploadComplete=true.
-func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
+// Test MultitenantCompactor.FinishBlockUpload
+func TestMultitenantCompactor_FinishBlockUpload(t *testing.T) {
 	const tenantID = "test"
 	const blockID = "01G3FZ0JWJYJC0ZM6Y9778P6KD"
 	uploadingMetaPath := path.Join(tenantID, blockID, uploadingMetaFilename)
@@ -1084,27 +1086,16 @@ func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 		},
 	}
 
-	setUpSuccessfulComplete := func(bkt *bucket.ClientMock) {
-		metaJSON, err := json.Marshal(validMeta)
-		require.NoError(t, err)
-		bkt.MockExists(metaPath, false, nil)
-		setUpGet(bkt, uploadingMetaPath, metaJSON, nil)
-		setUpGet(bkt, validationPath, nil, bucket.ErrObjectDoesNotExist)
-		bkt.MockUpload(metaPath, nil)
-		bkt.MockDelete(uploadingMetaPath, nil)
-	}
 	testCases := []struct {
 		name                   string
 		tenantID               string
 		blockID                string
 		disableBlockUpload     bool
-		expMeta                metadata.Meta
 		expBadRequest          string
 		expConflict            string
 		expNotFound            string
 		expInternalServerError bool
 		setUpBucketMock        func(bkt *bucket.ClientMock)
-		verifyUpload           func(*testing.T, *bucket.ClientMock, metadata.Meta)
 	}{
 		{
 			name:          "without tenant ID",
@@ -1178,42 +1169,33 @@ func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 			expInternalServerError: true,
 		},
 		{
-			name:     "uploading meta file fails",
+			name:     "uploading validation file fails",
 			tenantID: tenantID,
 			blockID:  blockID,
 			setUpBucketMock: func(bkt *bucket.ClientMock) {
-				bkt.MockExists(metaPath, false, nil)
 				metaJSON, err := json.Marshal(validMeta)
 				require.NoError(t, err)
+				bkt.MockExists(metaPath, false, nil)
 				setUpGet(bkt, uploadingMetaPath, metaJSON, nil)
 				setUpGet(bkt, validationPath, nil, bucket.ErrObjectDoesNotExist)
-				bkt.MockUpload(metaPath, fmt.Errorf("test"))
+
+				bkt.MockUpload(validationPath, fmt.Errorf("fail"))
 			},
 			expInternalServerError: true,
 		},
 		{
-			name:     "removing in-flight meta file fails",
+			name:     "valid request",
 			tenantID: tenantID,
 			blockID:  blockID,
 			setUpBucketMock: func(bkt *bucket.ClientMock) {
-				bkt.MockExists(metaPath, false, nil)
 				metaJSON, err := json.Marshal(validMeta)
 				require.NoError(t, err)
+				bkt.MockExists(metaPath, false, nil)
 				setUpGet(bkt, uploadingMetaPath, metaJSON, nil)
 				setUpGet(bkt, validationPath, nil, bucket.ErrObjectDoesNotExist)
-				bkt.MockUpload(metaPath, nil)
-				bkt.MockDelete(uploadingMetaPath, fmt.Errorf("test"))
+
+				bkt.MockUpload(validationPath, nil)
 			},
-			expMeta:      validMeta,
-			verifyUpload: verifyUploadedMeta,
-		},
-		{
-			name:            "valid request",
-			tenantID:        tenantID,
-			blockID:         blockID,
-			setUpBucketMock: setUpSuccessfulComplete,
-			expMeta:         validMeta,
-			verifyUpload:    verifyUploadedMeta,
 		},
 	}
 	for _, tc := range testCases {
@@ -1229,6 +1211,7 @@ func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 				bucketClient: &bkt,
 				cfgProvider:  cfgProvider,
 			}
+			c.compactorCfg.disableBackgroundValidationInFinishBlockUpload = true
 			r := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/upload/block/%s/finish", tc.blockID), nil)
 			if tc.tenantID != "" {
 				r = r.WithContext(user.InjectOrgID(r.Context(), tenantID))
@@ -1262,10 +1245,6 @@ func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 			}
 
 			bkt.AssertExpectations(t)
-
-			if tc.verifyUpload != nil {
-				tc.verifyUpload(t, &bkt, tc.expMeta)
-			}
 		})
 	}
 }
@@ -1273,9 +1252,8 @@ func TestMultitenantCompactor_HandleBlockUpload_Complete(t *testing.T) {
 // marshalAndUploadJSON is a test helper for uploading a meta file to a certain path in a bucket.
 func marshalAndUploadJSON(t *testing.T, bkt objstore.Bucket, pth string, val interface{}) {
 	t.Helper()
-	buf, err := json.Marshal(val)
+	err := marshalAndUploadToBucket(context.Background(), bkt, pth, val)
 	require.NoError(t, err)
-	require.NoError(t, bkt.Upload(context.Background(), pth, bytes.NewReader(buf)))
 }
 
 func TestMultitenantCompactor_GetBlockUploadStateHandler(t *testing.T) {
@@ -1371,4 +1349,23 @@ func TestMultitenantCompactor_GetBlockUploadStateHandler(t *testing.T) {
 			require.Equal(t, tc.expectedBody, strings.TrimSpace(string(body)))
 		})
 	}
+}
+
+// createUploadBlock calls createTSDBBlock, then renames meta.json to uploading-meta.json
+func createUploadBlock(t *testing.T, bkt objstore.Bucket, userID string, minT, maxT int64, numSeries int, externalLabels map[string]string) string {
+	ctx := context.Background()
+	blockID := createTSDBBlock(t, bkt, userID, minT, maxT, numSeries, externalLabels)
+	metaPath := filepath.Join(userID, blockID.String(), block.MetaFilename)
+	var meta metadata.Meta
+	r, err := bkt.Get(ctx, metaPath)
+	require.NoError(t, err)
+	body, err := ioutil.ReadAll(r)
+	require.NoError(t, err)
+	err = json.Unmarshal(body, &meta)
+	require.NoError(t, err)
+	err = bkt.Delete(ctx, metaPath)
+	require.NoError(t, err)
+	err = marshalAndUploadToBucket(ctx, bkt, filepath.Join(userID, blockID.String(), uploadingMetaFilename), meta)
+	require.NoError(t, err)
+	return blockID.String()
 }

@@ -7,8 +7,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
 	"path"
+	"path/filepath"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -99,9 +104,14 @@ func (c *MultitenantCompactor) FinishBlockUpload(w http.ResponseWriter, r *http.
 		return
 	}
 
-	if err := c.completeBlockUpload(ctx, logger, userBkt, blockID, *m); err != nil {
-		writeBlockUploadError(err, op, "", logger, w)
+	// create validation file
+	if err := c.uploadValidation(ctx, logger, blockID, userBkt); err != nil {
+		writeBlockUploadError(err, op, "while creating validation file", logger, w)
 		return
+	}
+
+	if !c.compactorCfg.disableBackgroundValidationInFinishBlockUpload {
+		go c.completeBlockUpload(ctx, logger, userBkt, blockID, *m)
 	}
 
 	w.WriteHeader(http.StatusOK)
@@ -262,22 +272,58 @@ func (c *MultitenantCompactor) UploadBlockFile(w http.ResponseWriter, r *http.Re
 	w.WriteHeader(http.StatusOK)
 }
 
-func (c *MultitenantCompactor) completeBlockUpload(ctx context.Context, logger log.Logger, userBkt objstore.Bucket, blockID ulid.ULID, meta metadata.Meta) error {
+func (c *MultitenantCompactor) completeBlockUpload(ctx context.Context, logger log.Logger, userBkt objstore.Bucket, blockID ulid.ULID, meta metadata.Meta) {
 	level.Debug(logger).Log("msg", "completing block upload", "files", len(meta.Thanos.Files))
+
+	// start go routine that updates validation file timestamp once per minute
+	ch := make(chan string)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	ctx, cancel := context.WithCancel(ctx)
+	go c.periodicValidationUpdater(ctx, logger, blockID, userBkt, ch, &wg, cancel)
+
+	if err := c.validateBlock(ctx, blockID, userBkt, meta); err != nil {
+		level.Error(logger).Log("msg", "error while validating block")
+		if !errors.Is(err, context.Canceled) {
+			close(ch)
+			wg.Wait()
+			err := c.uploadValidationWithError(ctx, blockID, userBkt, err.Error())
+			if err != nil {
+				level.Error(logger).Log("msg", "error updating validation file after failed validation in object store")
+			}
+		}
+		return
+	}
+
+	close(ch)
+	// use waitgroup to ensure validation ts update is complete
+	wg.Wait()
 
 	// Upload meta file so block is considered complete
 	if err := c.uploadMeta(ctx, logger, meta, blockID, block.MetaFilename, userBkt); err != nil {
-		return err
+		level.Error(logger).Log("msg", "error uploading block metadata file")
+		if !errors.Is(err, context.Canceled) {
+			err := c.uploadValidationWithError(ctx, blockID, userBkt, err.Error())
+			if err != nil {
+				level.Error(logger).Log("msg", "error updating validation file while uploading metadata file")
+			}
+		}
+		return
 	}
 
 	if err := userBkt.Delete(ctx, path.Join(blockID.String(), uploadingMetaFilename)); err != nil {
 		level.Warn(logger).Log("msg", fmt.Sprintf(
 			"failed to delete %s from block in object storage", uploadingMetaFilename), "err", err)
-		return nil
+		return
+	}
+
+	if err := userBkt.Delete(ctx, path.Join(blockID.String(), validationFilename)); err != nil {
+		level.Warn(logger).Log("msg", fmt.Sprintf(
+			"failed to delete %s from block in object storage", validationFilename), "err", err)
+		return
 	}
 
 	level.Debug(logger).Log("msg", "successfully completed block upload")
-	return nil
 }
 
 // sanitizeMeta sanitizes and validates a metadata.Meta object. If a validation error occurs, an error
@@ -360,6 +406,77 @@ func (c *MultitenantCompactor) uploadMeta(ctx context.Context, logger log.Logger
 	}
 	if err := userBkt.Upload(ctx, dst, buf); err != nil {
 		return errors.Wrapf(err, "failed uploading %s to bucket", name)
+	}
+
+	return nil
+}
+
+func (c *MultitenantCompactor) validateBlock(ctx context.Context, blockID ulid.ULID,
+	userBkt objstore.Bucket, meta metadata.Meta) error {
+	blockDir, err := os.MkdirTemp(filepath.Join(c.compactorCfg.DataDir), "upload")
+	if err != nil {
+		return errors.Wrap(err, "failed to create temp dir")
+	}
+	defer func() {
+		if err := os.RemoveAll(blockDir); err != nil {
+			level.Warn(c.logger).Log("msg", "failed to remove temp dir", "path", blockDir, "err", err)
+		}
+	}()
+
+	if err := userBkt.Iter(ctx, blockID.String(), func(pth string) error {
+		fname := filepath.Join(blockDir, filepath.FromSlash(pth))
+		if strings.HasSuffix("/", fname) {
+			if err := os.Mkdir(fname, os.ModeDir); err != nil {
+				return errors.Wrap(err, fmt.Sprintf("Error creating directory: %s", fname))
+			}
+			return nil
+		}
+		if pth == uploadingMetaFilename {
+			fname = filepath.Join(blockDir, block.MetaFilename) // rename to final meta.json in temp dir
+		}
+
+		r, err := userBkt.Get(ctx, pth)
+		if err != nil {
+			return errors.Wrap(err, fmt.Sprintf("failed to get object %q from object storage", pth))
+		}
+
+		f, err := os.Create(fname)
+		if err != nil {
+			return errors.Wrap(err, "failed creating temp file")
+		}
+		defer func() {
+			_ = f.Close()
+		}()
+		_, err = io.Copy(f, r)
+		if err != nil {
+			return err
+		}
+		if err := f.Close(); err != nil {
+			return errors.Wrap(err, "failed to close temp file")
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrapf(err, "failed to iterate block %s", blockID.String())
+	}
+
+	blockMetadata, err := metadata.ReadFromDir(blockDir)
+	if err != nil {
+		return errors.Wrap(err, "error reading block metadata file")
+	}
+
+	for _, f := range blockMetadata.Thanos.Files {
+		fi, err := os.Stat(filepath.Join(blockDir, filepath.FromSlash(f.RelPath)))
+		if err != nil {
+			return errors.Wrapf(err, "failed to stat %s", f.RelPath)
+		}
+
+		if !fi.Mode().IsRegular() {
+			return errors.Errorf("not a file: %s", f.RelPath)
+		}
+
+		if f.RelPath != block.MetaFilename && fi.Size() != f.SizeBytes {
+			return errors.Errorf("file size mismatch for %s", f.RelPath)
+		}
 	}
 
 	return nil
@@ -558,4 +675,50 @@ func (c *MultitenantCompactor) loadValidation(ctx context.Context, userBkt objst
 	}
 
 	return v, nil
+}
+
+func (c *MultitenantCompactor) uploadValidationWithError(ctx context.Context, blockID ulid.ULID,
+	userBkt objstore.Bucket, errorStr string) error {
+	val := validationFile{
+		LastUpdate: time.Now().UnixMilli(),
+		Error:      errorStr,
+	}
+	dst := path.Join(blockID.String(), validationFilename)
+	if err := marshalAndUploadToBucket(ctx, userBkt, dst, val); err != nil {
+		return errors.Wrapf(err, "failed uploading %s to bucket", validationFilename)
+	}
+	return nil
+}
+
+func (c *MultitenantCompactor) uploadValidation(ctx context.Context, logger log.Logger, blockID ulid.ULID,
+	userBkt objstore.Bucket) error {
+	return c.uploadValidationWithError(ctx, blockID, userBkt, "")
+}
+
+func (c *MultitenantCompactor) periodicValidationUpdater(ctx context.Context, logger log.Logger, blockID ulid.ULID,
+	userBkt objstore.Bucket, ch chan string, wg *sync.WaitGroup, cancelFn func()) {
+	defer wg.Done()
+	for {
+		select {
+		case <-ch:
+			return
+		case <-time.After(1 * time.Minute):
+			if err := c.uploadValidation(ctx, logger, blockID, userBkt); err != nil {
+				level.Warn(logger).Log("msg", "error during periodic update of validation file")
+				cancelFn()
+				return
+			}
+		}
+	}
+}
+
+func marshalAndUploadToBucket(ctx context.Context, bkt objstore.Bucket, pth string, val interface{}) error {
+	buf, err := json.Marshal(val)
+	if err != nil {
+		return err
+	}
+	if err := bkt.Upload(ctx, pth, bytes.NewReader(buf)); err != nil {
+		return err
+	}
+	return nil
 }
