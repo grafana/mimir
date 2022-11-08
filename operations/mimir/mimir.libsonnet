@@ -33,4 +33,4 @@
 (import 'autoscaling.libsonnet') +
 
 // Read-write deployment mode.
-(import 'read-write-deployment.libsonnet')
+(import 'read-write-deployment/main.libsonnet')

@@ -1,0 +1,47 @@
+{
+  // Uninstall resources used by microservices deployment mode.
+  local uninstall(name) =
+    if ($._config.read_write_deployment_enabled) then null
+    else (if name in super then super[name] else null),
+
+  alertmanager_statefulset: uninstall('alertmanager_statefulset'),
+  compactor_statefulset: uninstall('compactor_statefulset'),
+  distributor_deployment: uninstall('distributor_deployment'),
+  ingester_statefulset: uninstall('ingester_statefulset'),
+  ingester_zone_a_statefulset: uninstall('ingester_zone_a_statefulset'),
+  ingester_zone_b_statefulset: uninstall('ingester_zone_b_statefulset'),
+  ingester_zone_c_statefulset: uninstall('ingester_zone_c_statefulset'),
+  querier_deployment: uninstall('querier_deployment'),
+  query_frontend_deployment: uninstall('query_frontend_deployment'),
+  query_scheduler_deployment: uninstall('query_scheduler_deployment'),
+  ruler_deployment: uninstall('ruler_deployment'),
+  store_gateway_statefulset: uninstall('store_gateway_statefulset'),
+  store_gateway_zone_a_statefulset: uninstall('store_gateway_zone_a_statefulset'),
+  store_gateway_zone_b_statefulset: uninstall('store_gateway_zone_b_statefulset'),
+  store_gateway_zone_c_statefulset: uninstall('store_gateway_zone_c_statefulset'),
+
+  alertmanager_service: uninstall('alertmanager_service'),
+  compactor_service: uninstall('compactor_service'),
+  distributor_service: uninstall('distributor_service'),
+  ingester_service: uninstall('ingester_service'),
+  ingester_zone_a_service: uninstall('ingester_zone_a_service'),
+  ingester_zone_b_service: uninstall('ingester_zone_b_service'),
+  ingester_zone_c_service: uninstall('ingester_zone_c_service'),
+  querier_service: uninstall('querier_service'),
+  query_frontend_service: uninstall('query_frontend_service'),
+  query_frontend_discovery_service: uninstall('query_frontend_discovery_service'),
+  query_scheduler_service: uninstall('query_scheduler_service'),
+  query_scheduler_discovery_service: uninstall('query_scheduler_discovery_service'),
+  ruler_service: uninstall('ruler_service'),
+  store_gateway_service: uninstall('store_gateway_service'),
+  store_gateway_multi_zone_service: uninstall('store_gateway_multi_zone_service'),
+  store_gateway_zone_a_service: uninstall('store_gateway_zone_a_service'),
+  store_gateway_zone_b_service: uninstall('store_gateway_zone_b_service'),
+  store_gateway_zone_c_service: uninstall('store_gateway_zone_c_service'),
+
+  alertmanager_pdb: uninstall('alertmanager_pdb'),
+  ingester_pdb: uninstall('ingester_pdb'),
+  ingester_rollout_pdb: uninstall('ingester_rollout_pdb'),
+  store_gateway_pdb: uninstall('store_gateway_pdb'),
+  store_gateway_rollout_pdb: uninstall('store_gateway_rollout_pdb'),
+}
