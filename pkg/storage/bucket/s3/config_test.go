@@ -62,6 +62,43 @@ func TestSSEConfig_Validate(t *testing.T) {
 	}
 }
 
+func TestConfig_Validate(t *testing.T) {
+	tests := map[string]struct {
+		setup    func() *Config
+		expected error
+	}{
+		"should pass with default config": {
+			setup: func() *Config {
+				sseCfg := &SSEConfig{}
+				flagext.DefaultValues(sseCfg)
+				cfg := &Config{
+					Endpoint:         "s3.eu-central-1.amazonaws.com",
+					BucketName:       "mimir-block",
+					SSE:              *sseCfg,
+					SignatureVersion: SignatureVersionV4,
+				}
+				return cfg
+			},
+		},
+		"should fail on invalid endpoint prefix": {
+			setup: func() *Config {
+				return &Config{
+					Endpoint:         "mimir-blocks.s3.eu-central-1.amazonaws.com",
+					BucketName:       "mimir-blocks",
+					SignatureVersion: SignatureVersionV4,
+				}
+			},
+			expected: errInvalidEndpointPrefix,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			assert.Equal(t, testData.expected, testData.setup().Validate())
+		})
+	}
+}
+
 func TestSSEConfig_BuildMinioConfig(t *testing.T) {
 	tests := map[string]struct {
 		cfg             *SSEConfig
