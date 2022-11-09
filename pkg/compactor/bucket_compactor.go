@@ -195,7 +195,7 @@ func DefaultGroupKey(meta metadata.Thanos) string {
 }
 
 func defaultGroupKey(res int64, lbls labels.Labels) string {
-	return fmt.Sprintf("%d@%v", res, lbls.Hash())
+	return fmt.Sprintf("%d@%v", res, labels.StableHash(lbls))
 }
 
 func minTime(metas []*metadata.Meta) time.Time {
