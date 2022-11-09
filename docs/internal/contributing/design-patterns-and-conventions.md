@@ -1,6 +1,6 @@
 # Design patterns and code conventions
 
-Grafana Mimir adopts some design patterns and code conventions that we ask you to follow when contributing to the project. These conventions have been adopted based on the experience gained over the time and aim to enforce good coding practices and keep a consistent UX (ie. config).
+Grafana Mimir adopts some design patterns and code conventions that we ask you to follow when contributing to the project. These conventions have been adopted based on experience gained over time and aim to enforce good coding practices and keep a consistent UX (ie. config).
 
 ## Go coding style
 
@@ -16,11 +16,11 @@ When registering a metric:
 
 - Do not use a global variable for the metric
 - Create and register the metric with `promauto.With(reg)`
-- In any internal Grafana Mimir component, do not register the metric to the default prometheus registerer, but take the registerer in input (ie. `NewComponent(reg prometheus.Registerer)`)
+- In any internal Grafana Mimir component, do not register the metric to the default Prometheus registerer, but take the registerer in input (ie. `NewComponent(reg prometheus.Registerer)`)
 
 Testing metrics:
 
-- When writing using tests, test exported metrics using `testutil.GatherAndCompare()`
+- When writing unit tests, test exported metrics using `testutil.GatherAndCompare()`
 
 ## Config file and CLI flags conventions
 

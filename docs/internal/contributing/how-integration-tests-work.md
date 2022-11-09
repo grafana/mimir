@@ -2,7 +2,7 @@ Mimir integration tests are written in Go and based on a [custom framework](http
 
 ## How to run integration tests
 
-When integration tests run in CI, we build the Mimir docker image based on the PR code and then run the integration tests against it. When running tests **locally** you should build the Mimir Docker image first:
+When integration tests run in CI, we build the Mimir Docker image based on the PR code and then run the integration tests against it. When running tests **locally** you should build the Mimir Docker image first:
 
 ```
 make ./cmd/mimir/.uptodate
