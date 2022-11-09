@@ -145,7 +145,7 @@ func NewTripperware(
 		return nil, err
 	}
 	return MergeTripperwares(
-		newActiveUsersTripperware(log, registerer),
+		newActiveUsersTripperware(registerer),
 		queryRangeTripperware,
 	), err
 }
@@ -266,7 +266,7 @@ func newQueryTripperware(
 	}, nil
 }
 
-func newActiveUsersTripperware(logger log.Logger, registerer prometheus.Registerer) Tripperware {
+func newActiveUsersTripperware(registerer prometheus.Registerer) Tripperware {
 	// Per tenant query metrics.
 	queriesPerTenant := promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_query_frontend_queries_total",
