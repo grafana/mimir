@@ -13,6 +13,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/prometheus/common/model"
+
 	"github.com/grafana-tools/sdk"
 	"gopkg.in/alecthomas/kingpin.v2"
 
@@ -77,11 +79,11 @@ func unmarshalDashboard(data []byte, link sdk.FoundBoard) (minisdk.Board, error)
 }
 
 func writeOut(mig *analyze.MetricsInGrafana, outputFile string) error {
-	var metricsUsed []string
+	var metricsUsed model.LabelValues
 	for metric := range mig.OverallMetrics {
-		metricsUsed = append(metricsUsed, metric)
+		metricsUsed = append(metricsUsed, model.LabelValue(metric))
 	}
-	sort.Strings(metricsUsed)
+	sort.Sort(metricsUsed)
 
 	mig.MetricsUsed = metricsUsed
 	out, err := json.MarshalIndent(mig, "", "  ")
@@ -89,7 +91,7 @@ func writeOut(mig *analyze.MetricsInGrafana, outputFile string) error {
 		return err
 	}
 
-	if err := os.WriteFile(outputFile, out, os.FileMode(int(0666))); err != nil {
+	if err := os.WriteFile(outputFile, out, os.FileMode(int(0o666))); err != nil {
 		return err
 	}
 

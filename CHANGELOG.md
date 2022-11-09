@@ -96,6 +96,8 @@
 ### Mimirtool
 
 * [ENHANCEMENT] Added `mimirtool rules delete-namespace` command to delete all of the rule groups in a namespace including the namespace itself. #3136
+* [ENHANCEMENT] Refactor `mimirtool analyze prometheus`: add concurrency and resiliency #3062
+  * Add `--concurrency` flag. Default: number of logical CPUs
 * [BUGFIX] `--log.level=debug` now correctly prints the response from the remote endpoint when a request fails. #3180
 
 ### Documentation

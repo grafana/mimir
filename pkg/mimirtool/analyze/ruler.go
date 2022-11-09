@@ -9,6 +9,7 @@ import (
 	"sort"
 
 	"github.com/pkg/errors"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql/parser"
 	log "github.com/sirupsen/logrus"
 
@@ -16,7 +17,7 @@ import (
 )
 
 type MetricsInRuler struct {
-	MetricsUsed    []string            `json:"metricsUsed"`
+	MetricsUsed    model.LabelValues   `json:"metricsUsed"`
 	OverallMetrics map[string]struct{} `json:"-"`
 	RuleGroups     []RuleGroupMetrics  `json:"ruleGroups"`
 }
