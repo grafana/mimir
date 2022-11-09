@@ -41,7 +41,7 @@
     },
   },
 
-  querier_scaled_object: if !$._config.autoscaling_mimir_read_enabled then null else
+  read_scaled_object: if !$._config.autoscaling_mimir_read_enabled then null else
     self.newMimirReadScaledObject(
       name='mimir-read',
       query_scheduler_container='mimir-backend',
