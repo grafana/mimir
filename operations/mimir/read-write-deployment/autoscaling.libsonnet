@@ -50,7 +50,12 @@
       max_replicas=$._config.autoscaling_mimir_read_max_replicas,
     ),
 
-  mimir_read_deployment+: if !$._config.autoscaling_mimir_read_enabled then {} else
-    removeReplicasFromSpec,
-
+  // NOTE(jhesketh): We cannot extend this with `mimir_read_deployment+` as
+  // mimir_read_deployment may not exist when not in read-write-deployment mode.
+  mimir_read_deployment: if !$._config.read_write_deployment_enabled then null else (
+    super.mimir_read_deployment + (
+      if !$._config.autoscaling_mimir_read_enabled then {} else
+        removeReplicasFromSpec
+    )
+  ),
 }
