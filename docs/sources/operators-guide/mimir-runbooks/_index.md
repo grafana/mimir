@@ -1620,7 +1620,7 @@ How to **fix** it:
 - `prometheus_rules_namespace`
 - `prometheus_rules`
 
-## Mimir blocks storage - What to do when things to wrong
+## Mimir blocks storage - What to do when things go wrong
 
 ## Recovering from a potential data loss incident
 
@@ -1650,9 +1650,9 @@ When the compactor is **halted**:
 
 Ingesters keep, on their persistent disk, the blocks compacted from TSDB head until the `-blocks-storage.tsdb.retention-period` retention expires.
 
-The blocks retained in the ingesters can be used in case the compactor generates corrupted blocks and the source blocks, shipped from ingesters, have already been hard deleted from the bucket.
+The blocks retained in the ingesters can be used in case the compactor generates corrupted blocks and the source blocks, uploaded from ingesters, have already been hard deleted from the bucket.
 
-How to manually blocks from ingesters to the bucket:
+How to manually upload blocks from ingesters to the bucket:
 
 1. Ensure [`gsutil`](https://cloud.google.com/storage/docs/gsutil) is installed in the Mimir pod. If not, [install it](#install-gsutil-in-the-mimir-pod)
 2. Run `cd /data/tsdb && /path/to/gsutil -m rsync -n -r -x 'thanos.shipper.json|chunks_head|wal' . gs://<bucket>/recovered/`

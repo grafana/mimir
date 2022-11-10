@@ -50,8 +50,8 @@ To run the integration tests suite please see "[How integration tests work](./ho
 
 If using macOS, make sure you have `gnu-sed` installed; otherwise, some make targets will not work properly.
 
-Depending on how docker is installed, configured but also the hardening applied to your workstation using the docker mount options might not work properly.
-This is also true if you are using an alternative to docker like for example podman. In such case, you can use `CONTAINER_MOUNT_OPTIONS` to adjust the mount option.
+Depending on how Docker is installed and configured and also the hardening applied to your workstation, using the Docker mount options might not work properly.
+This is also true if you are using an alternative to Docker like Podman. In such case, you can use `CONTAINER_MOUNT_OPTIONS` to adjust the mount option.
 
 Example:
 
@@ -93,7 +93,7 @@ Please see the dedicated "[Design patterns and Code conventions](design-patterns
 
 The Grafana Mimir documentation is compiled into a website published at [grafana.com](https://grafana.com/). Run `make docs` to build and serve the documentation locally.
 
-Note: if you attempt to view pages on Github, it's likely that you might find broken links or pages. That is expected and should not be addressed unless it is causing issues with the site that occur as part of the build.
+Note: if you attempt to view pages on GitHub, it's likely that you might find broken links or pages. That is expected and should not be addressed unless it is causing issues with the site that occur as part of the build.
 
 ## Errors catalog
 
@@ -121,7 +121,7 @@ The FEATURE scope denotes a change that adds new functionality to the project/se
 
 #### [ENHANCEMENT]
 
-The ENHANCEMENT scope denotes a change that improves upon the current functionality of the project/service. Generally, an enhancement is something that improves upon something that is already present. Either by making it simpler, more powerful, or more performant. For Example:
+The ENHANCEMENT scope denotes a change that improves upon the current functionality of the project/service. Generally, an enhancement is something that improves upon something that is already present. Either by making it simpler, more powerful, or more performant. For example:
 
 - An optimization on a particular process in a service that makes it more performant
 - Simpler syntax for setting a configuration value, like allowing `1m` instead of 60 for a duration setting.
