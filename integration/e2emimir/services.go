@@ -218,8 +218,6 @@ func NewReadInstance(name string, flags map[string]string, options ...Option) *M
 		map[string]string{
 			"-target":    "read",
 			"-log.level": "warn",
-			// Speed up startup.
-			"-ingester.ring.min-ready-duration": "0s",
 		},
 		flags,
 		options...,
@@ -246,8 +244,6 @@ func NewBackendInstance(name string, flags map[string]string, options ...Option)
 		map[string]string{
 			"-target":    "backend",
 			"-log.level": "warn",
-			// Speed up startup.
-			"-ingester.ring.min-ready-duration": "0s",
 		},
 		flags,
 		options...,
