@@ -21,7 +21,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore/tracing"
 	"golang.org/x/sync/errgroup"
@@ -588,19 +587,4 @@ func (l *bucketIndexLoadedSeries) loadSeriesForTime(ref storage.SeriesRef, lset 
 	stats.seriesTouched++
 	stats.seriesTouchedSizeSum += len(b)
 	return decodeSeriesForTime(b, lset, chks, skipChunks, mint, maxt)
-}
-
-func resizePostings(b []byte) ([]byte, error) {
-	d := encoding.Decbuf{B: b}
-	n := d.Be32int()
-	if d.Err() != nil {
-		return nil, errors.Wrap(d.Err(), "read postings list")
-	}
-
-	// 4 for postings number of entries, then 4, foreach each big endian posting.
-	size := 4 + n*4
-	if len(b) < size {
-		return nil, encoding.ErrInvalidSize
-	}
-	return b[:size], nil
 }
