@@ -147,6 +147,12 @@ func TestBlockMaxTimeDeltas(t *testing.T) {
 			MaxTime: 1500002700159,
 		},
 	}))
+	require.NoError(t, j2.AppendMeta(&metadata.Meta{
+		BlockMeta: tsdb.BlockMeta{
+			MinTime: 1500002700159,
+			MaxTime: 1500002800159,
+		},
+	}))
 
 	metrics := NewBucketCompactorMetrics(promauto.With(nil).NewCounter(prometheus.CounterOpts{}), nil)
 	now := time.UnixMilli(1500002900159)
@@ -154,7 +160,7 @@ func TestBlockMaxTimeDeltas(t *testing.T) {
 	require.NoError(t, err)
 
 	deltas := bc.blockMaxTimeDeltas(now, []*Job{j1, j2})
-	assert.Equal(t, []float64{100, 200}, deltas)
+	assert.Equal(t, []float64{100, 200, 100}, deltas)
 }
 
 func TestNoCompactionMarkFilter(t *testing.T) {
