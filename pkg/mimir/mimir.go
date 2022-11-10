@@ -97,7 +97,7 @@ type Config struct {
 	Target              flagext.StringSliceCSV `yaml:"target"`
 	MultitenancyEnabled bool                   `yaml:"multitenancy_enabled"`
 	NoAuthTenant        string                 `yaml:"no_auth_tenant" category:"advanced"`
-	ShutdownDelay       time.Duration          `yaml:"shutdown_delay" category:"experimental"`
+	ShutdownDelay       time.Duration          `yaml:"shutdown_delay" category:"advanced"`
 	PrintConfig         bool                   `yaml:"-"`
 	ApplicationName     string                 `yaml:"-"`
 

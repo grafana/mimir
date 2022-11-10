@@ -1061,8 +1061,6 @@ Usage of ./cmd/mimir/mimir:
     	Etcd username.
   -ingester.ring.excluded-zones comma-separated-list-of-strings
     	Comma-separated list of zones to exclude from the ring. Instances in excluded zones will be filtered out from the ring. This option needs be set on ingesters, distributors, queriers and rulers when running in microservices mode.
-  -ingester.ring.final-sleep duration
-    	Duration to sleep for before exiting, to ensure metrics are scraped.
   -ingester.ring.heartbeat-period duration
     	Period at which to heartbeat to the ring. 0 = disabled. (default 15s)
   -ingester.ring.heartbeat-timeout duration
@@ -1872,7 +1870,7 @@ Usage of ./cmd/mimir/mimir:
   -server.tls-min-version string
     	Minimum TLS version to use. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13. If blank, the Go TLS minimum version is used.
   -shutdown-delay duration
-    	[experimental] How long to wait between SIGTERM and shutdown. After receiving SIGTERM, Mimir will report not-ready status via /ready endpoint.
+    	How long to wait between SIGTERM and shutdown. After receiving SIGTERM, Mimir will report not-ready status via /ready endpoint.
   -store-gateway.sharding-ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -store-gateway.sharding-ring.consul.cas-retry-delay duration

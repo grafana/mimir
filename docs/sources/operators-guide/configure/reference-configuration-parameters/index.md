@@ -112,7 +112,7 @@ where `default_value` is the value to use if the environment variable is undefin
 # CLI flag: -auth.no-auth-tenant
 [no_auth_tenant: <string> | default = "anonymous"]
 
-# (experimental) How long to wait between SIGTERM and shutdown. After receiving
+# (advanced) How long to wait between SIGTERM and shutdown. After receiving
 # SIGTERM, Mimir will report not-ready status via /ready endpoint.
 # CLI flag: -shutdown-delay
 [shutdown_delay: <duration> | default = 0s]
@@ -783,11 +783,6 @@ ring:
   # cluster instances enough time to receive ring updates.
   # CLI flag: -ingester.ring.min-ready-duration
   [min_ready_duration: <duration> | default = 15s]
-
-  # (advanced) Duration to sleep for before exiting, to ensure metrics are
-  # scraped.
-  # CLI flag: -ingester.ring.final-sleep
-  [final_sleep: <duration> | default = 0s]
 
   # (advanced) When enabled the readiness probe succeeds only after all
   # instances are ACTIVE and healthy in the ring, otherwise only the instance

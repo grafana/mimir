@@ -25,7 +25,6 @@ func TestRingConfig_DefaultConfigToLifecyclerConfig(t *testing.T) {
 	expected.RingConfig.KVStore.Store = "memberlist"
 	expected.NumTokens = cfg.NumTokens
 	expected.MinReadyDuration = cfg.MinReadyDuration
-	expected.FinalSleep = cfg.FinalSleep
 	expected.ReadinessCheckRingHealth = false
 	expected.HeartbeatPeriod = 15 * time.Second
 
@@ -52,7 +51,6 @@ func TestRingConfig_CustomConfigToLifecyclerConfig(t *testing.T) {
 	cfg.UnregisterOnShutdown = true
 	cfg.ObservePeriod = 10 * time.Minute
 	cfg.MinReadyDuration = 3 * time.Minute
-	cfg.FinalSleep = 2 * time.Minute
 	cfg.ReadinessCheckRingHealth = false
 	cfg.ListenPort = 10
 
@@ -71,7 +69,6 @@ func TestRingConfig_CustomConfigToLifecyclerConfig(t *testing.T) {
 	expected.JoinAfter = 0
 	expected.MinReadyDuration = cfg.MinReadyDuration
 	expected.InfNames = cfg.InstanceInterfaceNames
-	expected.FinalSleep = cfg.FinalSleep
 	expected.TokensFilePath = cfg.TokensFilePath
 	expected.Zone = cfg.InstanceZone
 	expected.UnregisterOnShutdown = cfg.UnregisterOnShutdown

@@ -44,7 +44,7 @@
       "fieldDefaultValue": 0,
       "fieldFlag": "shutdown-delay",
       "fieldType": "duration",
-      "fieldCategory": "experimental"
+      "fieldCategory": "advanced"
     },
     {
       "kind": "block",
@@ -2624,17 +2624,6 @@
               "fieldValue": null,
               "fieldDefaultValue": 15000000000,
               "fieldFlag": "ingester.ring.min-ready-duration",
-              "fieldType": "duration",
-              "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
-              "name": "final_sleep",
-              "required": false,
-              "desc": "Duration to sleep for before exiting, to ensure metrics are scraped.",
-              "fieldValue": null,
-              "fieldDefaultValue": 0,
-              "fieldFlag": "ingester.ring.final-sleep",
               "fieldType": "duration",
               "fieldCategory": "advanced"
             },
