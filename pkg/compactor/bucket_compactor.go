@@ -879,11 +879,10 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 // block that will be compacted as part of the provided jobs, in seconds.
 func (c *BucketCompactor) blockMaxTimeDeltas(now time.Time, jobs []*Job) []float64 {
 	var out []float64
-	nowMs := now.UnixMilli()
 
 	for _, j := range jobs {
 		for _, m := range j.Metas() {
-			out = append(out, float64((nowMs-m.MaxTime)/1000))
+			out = append(out, now.Sub(time.UnixMilli(m.MaxTime)).Seconds())
 		}
 	}
 
