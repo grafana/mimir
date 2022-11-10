@@ -9,6 +9,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
@@ -128,6 +129,38 @@ func TestFilterOwnJobs(t *testing.T) {
 			assert.Len(t, res, testCase.expectedJobs)
 		})
 	}
+}
+
+func TestBlockMaxTimeDeltas(t *testing.T) {
+	j1 := NewJob("user", "key1", nil, 0, metadata.NoneFunc, false, 0, "")
+	require.NoError(t, j1.AppendMeta(&metadata.Meta{
+		BlockMeta: tsdb.BlockMeta{
+			MinTime: 1500002700159,
+			MaxTime: 1500002800159,
+		},
+	}))
+
+	j2 := NewJob("user", "key2", nil, 0, metadata.NoneFunc, false, 0, "")
+	require.NoError(t, j2.AppendMeta(&metadata.Meta{
+		BlockMeta: tsdb.BlockMeta{
+			MinTime: 1500002600159,
+			MaxTime: 1500002700159,
+		},
+	}))
+	require.NoError(t, j2.AppendMeta(&metadata.Meta{
+		BlockMeta: tsdb.BlockMeta{
+			MinTime: 1500002700159,
+			MaxTime: 1500002800159,
+		},
+	}))
+
+	metrics := NewBucketCompactorMetrics(promauto.With(nil).NewCounter(prometheus.CounterOpts{}), nil)
+	now := time.UnixMilli(1500002900159)
+	bc, err := NewBucketCompactor(log.NewNopLogger(), nil, nil, nil, nil, "", nil, 2, false, nil, nil, 4, metrics)
+	require.NoError(t, err)
+
+	deltas := bc.blockMaxTimeDeltas(now, []*Job{j1, j2})
+	assert.Equal(t, []float64{100, 200, 100}, deltas)
 }
 
 func TestNoCompactionMarkFilter(t *testing.T) {

@@ -815,11 +815,9 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 		// Record the difference between now and the max time for a block being compacted. This
 		// is used to detect compactors not being able to keep up with the rate of blocks being
 		// created. The idea is that most blocks should be for within 24h or 48h.
-		now := time.Now().Unix()
-		for _, gr := range jobs {
-			for _, meta := range gr.Metas() {
-				c.metrics.blocksMaxTimeDelta.Observe(float64(now - meta.MaxTime))
-			}
+		now := time.Now()
+		for _, delta := range c.blockMaxTimeDeltas(now, jobs) {
+			c.metrics.blocksMaxTimeDelta.Observe(delta)
 		}
 
 		// Sort jobs based on the configured ordering algorithm.
@@ -875,6 +873,20 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 	}
 	level.Info(c.logger).Log("msg", "compaction iterations done")
 	return nil
+}
+
+// blockMaxTimeDeltas returns a slice of the difference between now and the MaxTime of each
+// block that will be compacted as part of the provided jobs, in seconds.
+func (c *BucketCompactor) blockMaxTimeDeltas(now time.Time, jobs []*Job) []float64 {
+	var out []float64
+
+	for _, j := range jobs {
+		for _, m := range j.Metas() {
+			out = append(out, now.Sub(time.UnixMilli(m.MaxTime)).Seconds())
+		}
+	}
+
+	return out
 }
 
 func (c *BucketCompactor) filterOwnJobs(jobs []*Job) ([]*Job, error) {
