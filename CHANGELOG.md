@@ -24,7 +24,7 @@
 * [ENHANCEMENT] Go: update to go 1.19.3. #3371
 * [ENHANCEMENT] Alerts: added `RulerRemoteEvaluationFailing` alert, firing when communication between ruler and frontend fails in remote operational mode. #3177 #3389
 * [ENHANCEMENT] Clarify which S3 signature versions are supported in the error "unsupported signature version". #3376
-* [ENHANCEMENT] Store-gateway: improved index header reading performance. #3393
+* [ENHANCEMENT] Store-gateway: improved index header reading performance. #3393 #3397
 * [ENHANCEMENT] Store-gateway: improved performance of series matching. #3391
 * [BUGFIX] Flusher: Add `Overrides` as a dependency to prevent panics when starting with `-target=flusher`. #3151
 * [BUGFIX] Updated `golang.org/x/text` dependency to fix CVE-2022-32149. #3285
