@@ -147,7 +147,13 @@ func (s *BucketStore) SeriesStreaming(req *storepb.SeriesRequest, srv storepb.St
 		batch := allSeries.At()
 
 		// TODO Load all the chunks for all the series in the batch
-		// TODO Call srv.Send() for each series
+
+		for _, series := range batch.Next() {
+			// TODO Call srv.Send() for each series
+			srv.Send(batch.At())
+		}
+
+		batch.Release()
 	}
 
 	//
