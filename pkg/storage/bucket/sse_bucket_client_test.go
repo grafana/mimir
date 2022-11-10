@@ -7,9 +7,14 @@ package bucket
 
 import (
 	"context"
+	"crypto/md5"
 	"encoding/base64"
+	"hash"
+	"math/rand"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -23,6 +28,9 @@ import (
 )
 
 func TestSSEBucketClient_Upload_ShouldInjectCustomSSEConfig(t *testing.T) {
+
+	keyPath, key, keyHash := setupSSECKey(t)
+
 	tests := map[string]struct {
 		withExpectedErrs bool
 	}{
@@ -106,8 +114,36 @@ func TestSSEBucketClient_Upload_ShouldInjectCustomSSEConfig(t *testing.T) {
 			assert.Equal(t, "aws:kms", req.Header.Get("x-amz-server-side-encryption"))
 			assert.Equal(t, kmsKeyID, req.Header.Get("x-amz-server-side-encryption-aws-kms-key-id"))
 			assert.Equal(t, base64.StdEncoding.EncodeToString([]byte(kmsEncryptionContext)), req.Header.Get("x-amz-server-side-encryption-context"))
+
+			// Configure the config provider with SSE-C.
+			cfgProvider.s3SseType = s3.SSEC
+			cfgProvider.s3KmsKeyID = ""
+			cfgProvider.s3KmsEncryptionContext = ""
+			cfgProvider.s3EncryptionKeyPath = keyPath
+
+			err = sseBkt.Upload(context.Background(), "test", strings.NewReader("test"))
+			require.NoError(t, err)
+
+			// Ensure the SSEC headers have been injected.
+			assert.Equal(t, "AES256", req.Header.Get("x-amz-server-side-encryption-customer-algorithm"))
+			assert.Equal(t, base64.StdEncoding.EncodeToString(key), req.Header.Get("x-amz-server-side-encryption-customer-key"))
+			assert.Equal(t, base64.StdEncoding.EncodeToString(keyHash.Sum(nil)), req.Header.Get("x-amz-server-side-encryption-customer-key-MD5"))
 		})
 	}
+}
+
+func setupSSECKey(t *testing.T) (keyPath string, key []byte, keyHash hash.Hash) {
+	dir := t.TempDir()
+	keyPath = filepath.Join(dir, "key")
+
+	key = make([]byte, 32)
+	rand.Read(key)
+	assert.NoError(t, os.WriteFile(keyPath, key, 0600))
+
+	keyHash = md5.New()
+	_, err := keyHash.Write(key)
+	assert.NoError(t, err)
+	return
 }
 
 type mockTenantConfigProvider struct {
