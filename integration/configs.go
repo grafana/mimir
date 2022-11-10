@@ -25,6 +25,7 @@ const (
 	mimirBucketName    = "mimir"
 	blocksBucketName   = "mimir-blocks"
 	alertsBucketName   = "mimir-alerts"
+	rulerBucketName    = "mimir-ruler"
 	mimirConfigFile    = "config.yaml"
 	clientCertFile     = "certs/client.crt"
 	clientKeyFile      = "certs/client.key"
