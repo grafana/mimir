@@ -170,7 +170,6 @@ func prepareStoreWithTestBlocksForSeries(t testing.TB, dir string, bkt objstore.
 		mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 		indexheader.BinaryReaderConfig{},
 		true,
-		true,
 		time.Minute,
 		hashcache.NewSeriesHashCache(1024*1024),
 		NewBucketStoreMetrics(nil),
