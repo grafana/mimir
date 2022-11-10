@@ -978,9 +978,10 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 	defer func() { assert.NoError(t, bkt.Close()) }()
 
 	var (
-		logger = log.NewNopLogger()
-		series []*storepb.Series
-		random = rand.New(rand.NewSource(120))
+		logger                = log.NewNopLogger()
+		series                []*storepb.Series
+		expectedQueriesBlocks []hintspb.Block
+		random                = rand.New(rand.NewSource(120))
 	)
 
 	extLset := labels.FromStrings("ext1", "1")
@@ -1017,6 +1018,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 		id := createBlockFromHead(t, blockDir, head)
 		assert.NoError(t, head.Close())
 		series = append(series, bSeries...)
+		expectedQueriesBlocks = append(expectedQueriesBlocks, hintspb.Block{Id: id.String()})
 
 		meta, err := metadata.InjectThanos(logger, filepath.Join(blockDir, id.String()), thanosMeta, nil)
 		assert.NoError(t, err)
@@ -1043,7 +1045,6 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 		1,
 		mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 		indexheader.BinaryReaderConfig{},
-		false,
 		false,
 		0,
 		hashcache.NewSeriesHashCache(1024*1024),
@@ -1081,6 +1082,9 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 					{Type: storepb.LabelMatcher_EQ, Name: "foo", Value: "bar"},
 				},
 				SkipChunks: skipChunk,
+			},
+			ExpectedHints: hintspb.SeriesResponseHints{
+				QueriedBlocks: expectedQueriesBlocks,
 			},
 			// This does not cut chunks properly, but those are assured against for non benchmarks only, where we use 100% case only.
 			ExpectedSeries: series[:seriesCut],
@@ -1406,7 +1410,6 @@ func TestSeries_ErrorUnmarshallingRequestHints(t *testing.T) {
 		10,
 		mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 		indexheader.BinaryReaderConfig{},
-		true,
 		false,
 		0,
 		hashcache.NewSeriesHashCache(1024*1024),
@@ -1497,7 +1500,6 @@ func TestSeries_BlockWithMultipleChunks(t *testing.T) {
 		10,
 		mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 		indexheader.BinaryReaderConfig{},
-		true,
 		false,
 		0,
 		hashcache.NewSeriesHashCache(1024*1024),
@@ -1663,7 +1665,6 @@ func setupStoreForHintsTest(t *testing.T) (test.TB, *BucketStore, []*storepb.Ser
 		10,
 		mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 		indexheader.BinaryReaderConfig{},
-		true,
 		false,
 		0,
 		hashcache.NewSeriesHashCache(1024*1024),

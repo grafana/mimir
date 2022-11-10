@@ -120,9 +120,6 @@ type BucketStore struct {
 
 	// Additional configuration for experimental indexheader.BinaryReader behaviour.
 	indexHeaderCfg indexheader.BinaryReaderConfig
-
-	// Enables hints in the Series() response.
-	enableSeriesResponseHints bool
 }
 
 type noopCache struct{}
@@ -213,7 +210,6 @@ func NewBucketStore(
 	blockSyncConcurrency int,
 	postingOffsetsInMemSampling int,
 	indexHeaderCfg indexheader.BinaryReaderConfig,
-	enableSeriesResponseHints bool, // TODO(pracucci) Thanos 0.12 and below doesn't gracefully handle new fields in SeriesResponse. Drop this flag and always enable hints once we can drop backward compatibility.
 	lazyIndexReaderEnabled bool,
 	lazyIndexReaderIdleTimeout time.Duration,
 	seriesHashCache *hashcache.SeriesHashCache,
@@ -236,7 +232,6 @@ func NewBucketStore(
 		partitioner:                 partitioner,
 		postingOffsetsInMemSampling: postingOffsetsInMemSampling,
 		indexHeaderCfg:              indexHeaderCfg,
-		enableSeriesResponseHints:   enableSeriesResponseHints,
 		seriesHashCache:             seriesHashCache,
 		metrics:                     metrics,
 		userID:                      userID,
@@ -887,10 +882,8 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 	for _, b := range blocks {
 		b := b
 
-		if s.enableSeriesResponseHints {
-			// Keep track of queried blocks.
-			resHints.AddQueriedBlock(b.meta.ULID)
-		}
+		// Keep track of queried blocks.
+		resHints.AddQueriedBlock(b.meta.ULID)
 
 		var chunkr *bucketChunkReader
 		// We must keep the readers open until all their data has been sent.
@@ -1023,18 +1016,15 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		err = nil
 	})
 
-	if s.enableSeriesResponseHints {
-		var anyHints *types.Any
+	var anyHints *types.Any
+	if anyHints, err = types.MarshalAny(resHints); err != nil {
+		err = status.Error(codes.Unknown, errors.Wrap(err, "marshal series response hints").Error())
+		return
+	}
 
-		if anyHints, err = types.MarshalAny(resHints); err != nil {
-			err = status.Error(codes.Unknown, errors.Wrap(err, "marshal series response hints").Error())
-			return
-		}
-
-		if err = srv.Send(storepb.NewHintsSeriesResponse(anyHints)); err != nil {
-			err = status.Error(codes.Unknown, errors.Wrap(err, "send series response hints").Error())
-			return
-		}
+	if err = srv.Send(storepb.NewHintsSeriesResponse(anyHints)); err != nil {
+		err = status.Error(codes.Unknown, errors.Wrap(err, "send series response hints").Error())
+		return
 	}
 
 	if err = srv.Send(storepb.NewStatsResponse(stats.postingsFetchedSizeSum + stats.seriesFetchedSizeSum)); err != nil {
