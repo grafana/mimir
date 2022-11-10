@@ -125,7 +125,7 @@ func (r *bucketIndexReader) expandedPostingsPromise(ctx context.Context, ms []*l
 	defer close(done)
 	defer r.block.expandedPostingsPromises.Delete(key)
 
-	refs, cached = r.fetchCachedExpandedPostings(ctx, r.block.userID, key, stats.queryStats)
+	refs, cached = r.fetchCachedExpandedPostings(ctx, r.block.userID, key, stats)
 	if cached {
 		return promise, false
 	}
@@ -146,7 +146,7 @@ func (r *bucketIndexReader) cacheExpandedPostings(ctx context.Context, userID st
 	r.block.indexCache.StoreExpandedPostings(ctx, userID, r.block.meta.ULID, key, data)
 }
 
-func (r *bucketIndexReader) fetchCachedExpandedPostings(ctx context.Context, userID string, key indexcache.LabelMatchersKey, stats *queryStats) ([]storage.SeriesRef, bool) {
+func (r *bucketIndexReader) fetchCachedExpandedPostings(ctx context.Context, userID string, key indexcache.LabelMatchersKey, stats *safeQueryStats) ([]storage.SeriesRef, bool) {
 	data, ok := r.block.indexCache.FetchExpandedPostings(ctx, userID, r.block.meta.ULID, key)
 	if !ok {
 		return nil, false
@@ -311,10 +311,12 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 	for ix, key := range keys {
 		// Get postings for the given key from cache first.
 		if b, ok := fromCache[key]; ok {
-			stats.postingsTouched++
-			stats.postingsTouchedSizeSum += len(b)
+			stats.update(func(stats *queryStats) {
+				stats.postingsTouched++
+				stats.postingsTouchedSizeSum += len(b)
+			})
 
-			l, err := r.decodePostings(b, stats.queryStats)
+			l, err := r.decodePostings(b, stats)
 			if err == nil {
 				output[ix] = l
 				continue
@@ -342,7 +344,10 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 			return nil, errors.Wrap(err, "index header PostingsOffset")
 		}
 
-		stats.postingsToFetch++
+		stats.update(func(stats *queryStats) {
+			stats.postingsToFetch++
+		})
+
 		ptrs = append(ptrs, postingPtr{ptr: ptr, keyID: ix})
 	}
 
@@ -374,12 +379,12 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 			}
 			fetchTime := time.Since(begin)
 
-			stats.Lock()
-			stats.postingsFetchCount++
-			stats.postingsFetched += j - i
-			stats.postingsFetchDurationSum += fetchTime
-			stats.postingsFetchedSizeSum += int(length)
-			stats.Unlock()
+			stats.update(func(stats *queryStats) {
+				stats.postingsFetchCount++
+				stats.postingsFetched += j - i
+				stats.postingsFetchDurationSum += fetchTime
+				stats.postingsFetchedSizeSum += int(length)
+			})
 
 			for _, p := range ptrs[i:j] {
 				// index-header can estimate endings, which means we need to resize the endings.
@@ -418,15 +423,15 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 				r.mtx.Unlock()
 
 				// If we just fetched it we still have to update the stats for touched postings.
-				stats.Lock()
-				stats.postingsTouched++
-				stats.postingsTouchedSizeSum += len(pBytes)
-				stats.cachedPostingsCompressions += compressions
-				stats.cachedPostingsCompressionErrors += compressionErrors
-				stats.cachedPostingsOriginalSizeSum += len(pBytes)
-				stats.cachedPostingsCompressedSizeSum += compressedSize
-				stats.cachedPostingsCompressionTimeSum += compressionTime
-				stats.Unlock()
+				stats.update(func(stats *queryStats) {
+					stats.postingsTouched++
+					stats.postingsTouchedSizeSum += len(pBytes)
+					stats.cachedPostingsCompressions += compressions
+					stats.cachedPostingsCompressionErrors += compressionErrors
+					stats.cachedPostingsOriginalSizeSum += len(pBytes)
+					stats.cachedPostingsCompressedSizeSum += compressedSize
+					stats.cachedPostingsCompressionTimeSum += compressionTime
+				})
 			}
 			return nil
 		})
@@ -435,7 +440,7 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 	return output, g.Wait()
 }
 
-func (r *bucketIndexReader) decodePostings(b []byte, stats *queryStats) (index.Postings, error) {
+func (r *bucketIndexReader) decodePostings(b []byte, stats *safeQueryStats) (index.Postings, error) {
 	// Even if this instance is not using compression, there may be compressed
 	// entries in the cache written by other stores.
 	var (
@@ -445,11 +450,14 @@ func (r *bucketIndexReader) decodePostings(b []byte, stats *queryStats) (index.P
 	if isDiffVarintSnappyEncodedPostings(b) {
 		s := time.Now()
 		l, err = diffVarintSnappyDecode(b)
-		stats.cachedPostingsDecompressions++
-		stats.cachedPostingsDecompressionTimeSum += time.Since(s)
-		if err != nil {
-			stats.cachedPostingsDecompressionErrors++
-		}
+
+		stats.update(func(stats *queryStats) {
+			stats.cachedPostingsDecompressions++
+			stats.cachedPostingsDecompressionTimeSum += time.Since(s)
+			if err != nil {
+				stats.cachedPostingsDecompressionErrors++
+			}
+		})
 	} else {
 		_, l, err = r.dec.Postings(b)
 	}
@@ -494,12 +502,12 @@ func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.Series
 		return errors.Wrap(err, "read series range")
 	}
 
-	stats.Lock()
-	stats.seriesFetchCount++
-	stats.seriesFetched += len(ids)
-	stats.seriesFetchDurationSum += time.Since(begin)
-	stats.seriesFetchedSizeSum += int(end - start)
-	stats.Unlock()
+	stats.update(func(stats *queryStats) {
+		stats.seriesFetchCount++
+		stats.seriesFetched += len(ids)
+		stats.seriesFetchDurationSum += time.Since(begin)
+		stats.seriesFetchedSizeSum += int(end - start)
+	})
 
 	for i, id := range ids {
 		c := b[uint64(id)-start:]
