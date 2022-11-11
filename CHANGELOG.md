@@ -30,6 +30,7 @@
 * [BUGFIX] Updated `golang.org/x/text` dependency to fix CVE-2022-32149. #3285
 * [BUGFIX] Query-frontend: properly close gRPC streams to the query-scheduler to stop memory and goroutines leak. #3302
 * [BUGFIX] Ruler: persist evaluation delay configured in the rulegroup. #3392
+* [BUGFIX] Ring status pages: show 100% ownership as "100%", not "1e+02%". #3435
 
 ### Mixin
 
