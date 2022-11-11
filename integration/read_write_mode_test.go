@@ -23,21 +23,15 @@ func TestReadWriteMode(t *testing.T) {
 	require.NoError(t, err)
 	defer s.Close()
 
-	minio := e2edb.NewMinio(9000, blocksBucketName, alertsBucketName, rulerBucketName)
+	minio := e2edb.NewMinio(9000, mimirBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio))
 
-	flags := map[string]string{
-		"-common.storage.backend":              "s3",
-		"-common.storage.s3.access-key-id":     e2edb.MinioAccessKey,
-		"-common.storage.s3.secret-access-key": e2edb.MinioSecretKey,
-		"-common.storage.s3.endpoint":          minio.NetworkHTTPEndpoint(),
-		"-common.storage.s3.insecure":          "true",
-		"-blocks-storage.s3.bucket-name":       blocksBucketName,
-		"-alertmanager-storage.s3.bucket-name": alertsBucketName,
-		"-ruler-storage.s3.bucket-name":        rulerBucketName,
-		"-ingester.ring.replication-factor":    "1",
-		"-memberlist.join":                     "mimir-backend-1",
-	}
+	flags := mergeFlags(
+		CommonStorageBackendFlags(),
+		map[string]string{
+			"-memberlist.join": "mimir-backend-1",
+		},
+	)
 
 	readInstance := e2emimir.NewReadInstance("mimir-read-1", flags)
 	writeInstance := e2emimir.NewWriteInstance("mimir-write-1", flags)

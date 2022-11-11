@@ -216,8 +216,9 @@ func NewReadInstance(name string, flags map[string]string, options ...Option) *M
 	return newMimirServiceFromOptions(
 		name,
 		map[string]string{
-			"-target":    "read",
-			"-log.level": "warn",
+			"-target":                           "read",
+			"-log.level":                        "warn",
+			"-ingester.ring.replication-factor": "1",
 		},
 		flags,
 		options...,
@@ -228,8 +229,9 @@ func NewWriteInstance(name string, flags map[string]string, options ...Option) *
 	return newMimirServiceFromOptions(
 		name,
 		map[string]string{
-			"-target":    "write",
-			"-log.level": "warn",
+			"-target":                           "write",
+			"-log.level":                        "warn",
+			"-ingester.ring.replication-factor": "1",
 			// Speed up startup.
 			"-ingester.ring.min-ready-duration": "0s",
 		},
@@ -242,8 +244,9 @@ func NewBackendInstance(name string, flags map[string]string, options ...Option)
 	return newMimirServiceFromOptions(
 		name,
 		map[string]string{
-			"-target":    "backend",
-			"-log.level": "warn",
+			"-target":                           "backend",
+			"-log.level":                        "warn",
+			"-ingester.ring.replication-factor": "1",
 		},
 		flags,
 		options...,
