@@ -41,6 +41,9 @@ func TestReadWriteMode(t *testing.T) {
 	c, err := e2emimir.NewClient(writeInstance.HTTPEndpoint(), readInstance.HTTPEndpoint(), "", "", "user-1")
 	require.NoError(t, err)
 
+	// Wait for all three instances to start and discover each other.
+	require.NoError(t, backendInstance.WaitSumMetrics(e2e.Equals(3), "memberlist_client_cluster_members_count"))
+
 	// Push some data to the cluster.
 	now := time.Now()
 	series, expectedVector := generateSeries("test_series_1", now, prompb.Label{Name: "foo", Value: "bar"})
