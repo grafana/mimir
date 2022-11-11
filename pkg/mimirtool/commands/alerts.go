@@ -61,8 +61,6 @@ type AlertCommand struct {
 // Register rule related commands and flags with the kingpin application
 func (a *AlertmanagerCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
 	alertCmd := app.Command("alertmanager", "View and edit Alertmanager configurations that are stored in Grafana Mimir.").PreAction(a.setup)
-	alertCmd.Flag("address", "Address of the Grafana Mimir cluster; alternatively, set "+envVars.Address+".").Envar(envVars.Address).Required().StringVar(&a.ClientConfig.Address)
-	alertCmd.Flag("id", "Grafana Mimir tenant ID; alternatively, set "+envVars.TenantID+".").Envar(envVars.TenantID).Required().StringVar(&a.ClientConfig.ID)
 	alertCmd.Flag("user", fmt.Sprintf("API user to use when contacting Grafana Mimir; alternatively, set %s. If empty, %s is used instead.", envVars.APIUser, envVars.TenantID)).Default("").Envar(envVars.APIUser).StringVar(&a.ClientConfig.User)
 	alertCmd.Flag("key", "API key to use when contacting Grafana Mimir; alternatively, set "+envVars.APIKey+".").Default("").Envar(envVars.APIKey).StringVar(&a.ClientConfig.Key)
 	alertCmd.Flag("tls-ca-path", "TLS CA certificate to verify Grafana Mimir API as part of mTLS; alternatively, set "+envVars.TLSCAPath+".").Default("").Envar(envVars.TLSCAPath).StringVar(&a.ClientConfig.TLS.CAPath)
@@ -72,13 +70,22 @@ func (a *AlertmanagerCommand) Register(app *kingpin.Application, envVars EnvVarN
 	// Get Alertmanager Configs Command
 	getAlertsCmd := alertCmd.Command("get", "Get the Alertmanager configuration that is currently in the Grafana Mimir Alertmanager.").Action(a.getConfig)
 	getAlertsCmd.Flag("disable-color", "disable colored output").BoolVar(&a.DisableColor)
+	getAlertsCmd.Flag("address", "Address of the Grafana Mimir cluster; alternatively, set "+envVars.Address+".").Envar(envVars.Address).Required().StringVar(&a.ClientConfig.Address)
+	getAlertsCmd.Flag("id", "Grafana Mimir tenant ID; alternatively, set "+envVars.TenantID+".").Envar(envVars.TenantID).Required().StringVar(&a.ClientConfig.ID)
 
-	alertCmd.Command("delete", "Delete the Alertmanager configuration that is currently in the Grafana Mimir Alertmanager.").Action(a.deleteConfig)
+	deleteCmd := alertCmd.Command("delete", "Delete the Alertmanager configuration that is currently in the Grafana Mimir Alertmanager.").Action(a.deleteConfig)
+	deleteCmd.Flag("address", "Address of the Grafana Mimir cluster; alternatively, set "+envVars.Address+".").Envar(envVars.Address).Required().StringVar(&a.ClientConfig.Address)
+	deleteCmd.Flag("id", "Grafana Mimir tenant ID; alternatively, set "+envVars.TenantID+".").Envar(envVars.TenantID).Required().StringVar(&a.ClientConfig.ID)
 
 	loadalertCmd := alertCmd.Command("load", "Load Alertmanager tenant configuration and template files into Grafana Mimir.").Action(a.loadConfig)
 	loadalertCmd.Arg("config", "Alertmanager configuration to load").Required().StringVar(&a.AlertmanagerConfigFile)
 	loadalertCmd.Arg("template-files", "The template files to load").ExistingFilesVar(&a.TemplateFiles)
-	loadalertCmd.Flag("validate-only", "Validate the configuration and template files without loading them into Grafana Mimir.").BoolVar(&a.ValidateOnly)
+	loadalertCmd.Flag("address", "Address of the Grafana Mimir cluster; alternatively, set "+envVars.Address+".").Envar(envVars.Address).Required().StringVar(&a.ClientConfig.Address)
+	loadalertCmd.Flag("id", "Grafana Mimir tenant ID; alternatively, set "+envVars.TenantID+".").Envar(envVars.TenantID).Required().StringVar(&a.ClientConfig.ID)
+
+	vertifyalertCmd := alertCmd.Command("verify", "Verify Alertmanager tenant configuration and template files.").Action(a.verifyAlertmanagerConfig)
+	vertifyalertCmd.Arg("config", "Alertmanager configuration to load").Required().StringVar(&a.AlertmanagerConfigFile)
+	vertifyalertCmd.Arg("template-files", "The template files to load").ExistingFilesVar(&a.TemplateFiles)	
 }
 
 func (a *AlertmanagerCommand) setup(k *kingpin.ParseContext) error {
@@ -106,32 +113,39 @@ func (a *AlertmanagerCommand) getConfig(k *kingpin.ParseContext) error {
 	return p.PrintAlertmanagerConfig(cfg, templates)
 }
 
-func (a *AlertmanagerCommand) loadConfig(k *kingpin.ParseContext) error {
+func (a *AlertmanagerCommand) prepareAlertManagerConfig(k *kingpin.ParseContext) (error, string, map[string]string) {
 	content, err := os.ReadFile(a.AlertmanagerConfigFile)
 	if err != nil {
-		return errors.Wrap(err, "unable to load config file: "+a.AlertmanagerConfigFile)
+		return errors.Wrap(err, "unable to load config file: "+a.AlertmanagerConfigFile), "", nil
 	}
 
 	cfg := string(content)
 	_, err = config.Load(cfg)
 	if err != nil {
-		return err
+		return err, "", nil
 	}
 
 	templates := map[string]string{}
 	for _, f := range a.TemplateFiles {
 		tmpl, err := os.ReadFile(f)
 		if err != nil {
-			return errors.Wrap(err, "unable to load template file: "+f)
+			return errors.Wrap(err, "unable to load template file: "+f), "", nil
 		}
 		templates[f] = string(tmpl)
 	}
+	return nil, cfg, templates
+}
 
-	if a.ValidateOnly {
-		log.Infof("configuration and template files are valid")
-		return nil
+func (a *AlertmanagerCommand) verifyAlertmanagerConfig(k *kingpin.ParseContext) error {
+	err, _, _ := a.prepareAlertManagerConfig(k)
+	return err
+}
+
+func (a *AlertmanagerCommand) loadConfig(k *kingpin.ParseContext) error {
+	err, cfg, templates := a.prepareAlertManagerConfig(k)
+	if err != nil {
+		return err
 	}
-
 	return a.cli.CreateAlertmanagerConfig(context.Background(), cfg, templates)
 }
 
