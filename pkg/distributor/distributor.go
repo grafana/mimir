@@ -676,6 +676,7 @@ func (d *Distributor) wrapPushWithMiddlewares(next push.Func) push.Func {
 	middlewares = append(middlewares, d.metricsMiddleware)
 	middlewares = append(middlewares, d.prePushHaDedupeMiddleware)
 	middlewares = append(middlewares, d.prePushRelabelMiddleware)
+	middlewares = append(middlewares, d.prePushValidationMiddleware)
 	middlewares = append(middlewares, d.prePushForwardingMiddleware)
 
 	for ix := len(middlewares) - 1; ix >= 0; ix-- {
@@ -805,11 +806,147 @@ func (d *Distributor) prePushRelabelMiddleware(next push.Func) push.Func {
 		}
 
 		if len(removeTsIndexes) > 0 {
+			for _, removeTsIndex := range removeTsIndexes {
+				mimirpb.ReusePreallocTimeseries(req.Timeseries[removeTsIndex])
+			}
 			req.Timeseries = util.RemoveSliceIndexes(req.Timeseries, removeTsIndexes)
 		}
 
 		cleanupInDefer = false
 		return next(ctx, pushReq)
+	}
+}
+
+func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
+	return func(ctx context.Context, pushReq *push.Request) (*mimirpb.WriteResponse, error) {
+		cleanupInDefer := true
+		defer func() {
+			if cleanupInDefer {
+				pushReq.CleanUp()
+			}
+		}()
+
+		req, err := pushReq.WriteRequest()
+		if err != nil {
+			return nil, err
+		}
+
+		userID, err := tenant.TenantID(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		now := mtime.Now()
+		d.receivedRequests.WithLabelValues(userID).Add(1)
+		d.activeUsers.UpdateUserTimestamp(userID, now)
+
+		// A WriteRequest can only contain series or metadata but not both. This might change in the future.
+		validatedMetadata := 0
+		validatedSamples := 0
+		validatedExemplars := 0
+
+		// Find the earliest and latest samples in the batch.
+		earliestSampleTimestampMs, latestSampleTimestampMs := int64(math.MaxInt64), int64(0)
+		for _, ts := range req.Timeseries {
+			for _, s := range ts.Samples {
+				earliestSampleTimestampMs = util_math.Min64(earliestSampleTimestampMs, s.TimestampMs)
+				latestSampleTimestampMs = util_math.Max64(latestSampleTimestampMs, s.TimestampMs)
+			}
+		}
+		// Update this metric even in case of errors.
+		if latestSampleTimestampMs > 0 {
+			d.latestSeenSampleTimestampPerUser.WithLabelValues(userID).Set(float64(latestSampleTimestampMs) / 1000)
+		}
+
+		// Exemplars are not expired by Prometheus client libraries, therefore we may receive old exemplars
+		// repeated on every scrape. Drop any that are more than 5 minutes older than samples in the same batch.
+		// (If we didn't find any samples this will be 0, and we won't reject any exemplars.)
+		var minExemplarTS int64
+		if earliestSampleTimestampMs != math.MaxInt64 {
+			minExemplarTS = earliestSampleTimestampMs - 300000
+		}
+
+		var firstPartialErr error
+		var removeIndexes []int
+		for tsIdx, ts := range req.Timeseries {
+			if len(ts.Labels) == 0 {
+				removeIndexes = append(removeIndexes, tsIdx)
+				continue
+			}
+
+			d.labelsHistogram.Observe(float64(len(ts.Labels)))
+
+			skipLabelNameValidation := d.cfg.SkipLabelNameValidation || req.GetSkipLabelNameValidation()
+			// Note that validateSeries may drop some data in ts.
+			validationErr := d.validateSeries(now, ts, userID, skipLabelNameValidation, minExemplarTS)
+
+			// Errors in validation are considered non-fatal, as one series in a request may contain
+			// invalid data but all the remaining series could be perfectly valid.
+			if validationErr != nil {
+				if firstPartialErr == nil {
+					// The series labels may be retained by validationErr but that's not a problem for this
+					// use case because we format it calling Error() and then we discard it.
+					firstPartialErr = httpgrpc.Errorf(http.StatusBadRequest, validationErr.Error())
+				}
+				removeIndexes = append(removeIndexes, tsIdx)
+				continue
+			}
+
+			validatedSamples += len(ts.Samples)
+			validatedExemplars += len(ts.Exemplars)
+		}
+		if len(removeIndexes) > 0 {
+			for _, removeIndex := range removeIndexes {
+				mimirpb.ReusePreallocTimeseries(req.Timeseries[removeIndex])
+			}
+			req.Timeseries = util.RemoveSliceIndexes(req.Timeseries, removeIndexes)
+			removeIndexes = removeIndexes[:0]
+		}
+
+		for mIdx, m := range req.Metadata {
+			if validationErr := validation.CleanAndValidateMetadata(d.metadataValidationMetrics, d.limits, userID, m); validationErr != nil {
+				if firstPartialErr == nil {
+					// The metadata info may be retained by validationErr but that's not a problem for this
+					// use case because we format it calling Error() and then we discard it.
+					firstPartialErr = httpgrpc.Errorf(http.StatusBadRequest, validationErr.Error())
+				}
+
+				removeIndexes = append(removeIndexes, mIdx)
+				continue
+			}
+
+			validatedMetadata++
+		}
+		if len(removeIndexes) > 0 {
+			req.Metadata = util.RemoveSliceIndexes(req.Metadata, removeIndexes)
+		}
+
+		if validatedSamples == 0 && validatedMetadata == 0 {
+			return &mimirpb.WriteResponse{}, firstPartialErr
+		}
+
+		totalN := validatedSamples + validatedExemplars + validatedMetadata
+		if !d.ingestionRateLimiter.AllowN(now, userID, totalN) {
+			d.discardedSamplesRateLimited.WithLabelValues(userID).Add(float64(validatedSamples))
+			d.discardedExemplarsRateLimited.WithLabelValues(userID).Add(float64(validatedExemplars))
+			d.discardedMetadataRateLimited.WithLabelValues(userID).Add(float64(validatedMetadata))
+			// Return a 429 here to tell the client it is going too fast.
+			// Client may discard the data or slow down and re-send.
+			// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
+			return nil, httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewIngestionRateLimitedError(d.limits.IngestionRate(userID), d.limits.IngestionBurstSize(userID)).Error())
+		}
+
+		// totalN included samples, exemplars and metadata. Ingester follows this pattern when computing its ingestion rate.
+		d.ingestionRate.Add(int64(totalN))
+
+		cleanupInDefer = false
+		res, err := next(ctx, pushReq)
+		if err != nil {
+			// Errors resulting from the pushing to the ingesters have priority over validation errors.
+			return nil, err
+		}
+
+		return res, firstPartialErr
 	}
 }
 
@@ -1007,56 +1144,22 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 		return nil, err
 	}
 
+	d.updateReceivedMetrics(req, userID)
+
+	if len(req.Timeseries) == 0 && len(req.Metadata) == 0 {
+		return &mimirpb.WriteResponse{}, nil
+	}
+
 	span := opentracing.SpanFromContext(ctx)
 	if span != nil {
 		span.SetTag("organization", userID)
 	}
 
-	now := mtime.Now()
-	d.receivedRequests.WithLabelValues(userID).Add(1)
-	d.activeUsers.UpdateUserTimestamp(userID, now)
-
-	source := util.GetSourceIPsFromOutgoingCtx(ctx)
-
-	var firstPartialErr error
-
-	// A WriteRequest can only contain series or metadata but not both. This might change in the future.
-	// For each timeseries or samples, we compute a hash to distribute across ingesters;
-	// check each sample/metadata and discard if outside limits.
-	validatedTimeseries := make([]mimirpb.PreallocTimeseries, 0, len(req.Timeseries))
-	validatedMetadata := make([]*mimirpb.MetricMetadata, 0, len(req.Metadata))
 	metadataKeys := make([]uint32, 0, len(req.Metadata))
 	seriesKeys := make([]uint32, 0, len(req.Timeseries))
-	validatedSamples := 0
-	validatedExemplars := 0
 
-	// Find the earliest and latest samples in the batch.
-	earliestSampleTimestampMs, latestSampleTimestampMs := int64(math.MaxInt64), int64(0)
+	// For each timeseries, compute a hash to distribute across ingesters
 	for _, ts := range req.Timeseries {
-		for _, s := range ts.Samples {
-			earliestSampleTimestampMs = util_math.Min64(earliestSampleTimestampMs, s.TimestampMs)
-			latestSampleTimestampMs = util_math.Max64(latestSampleTimestampMs, s.TimestampMs)
-		}
-	}
-	// Update this metric even in case of errors.
-	if latestSampleTimestampMs > 0 {
-		d.latestSeenSampleTimestampPerUser.WithLabelValues(userID).Set(float64(latestSampleTimestampMs) / 1000)
-	}
-	// Exemplars are not expired by Prometheus client libraries, therefore we may receive old exemplars
-	// repeated on every scrape. Drop any that are more than 5 minutes older than samples in the same batch.
-	// (If we didn't find any samples this will be 0, and we won't reject any exemplars.)
-	var minExemplarTS int64
-	if earliestSampleTimestampMs != math.MaxInt64 {
-		minExemplarTS = earliestSampleTimestampMs - 300000
-	}
-
-	// For each timeseries, compute a hash to distribute across ingesters;
-	// check each sample and discard if outside limits.
-	for _, ts := range req.Timeseries {
-		if len(ts.Labels) == 0 {
-			continue
-		}
-
 		// Generate the sharding token based on the series labels without the HA replica
 		// label and dropped labels (if any)
 		key, err := d.tokenForLabels(userID, ts.Labels)
@@ -1064,65 +1167,12 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 			return nil, err
 		}
 
-		d.labelsHistogram.Observe(float64(len(ts.Labels)))
-
-		skipLabelNameValidation := d.cfg.SkipLabelNameValidation || req.GetSkipLabelNameValidation()
-		// Note that validateSeries may drop some data in ts.
-		validationErr := d.validateSeries(now, ts, userID, skipLabelNameValidation, minExemplarTS)
-
-		// Errors in validation are considered non-fatal, as one series in a request may contain
-		// invalid data but all the remaining series could be perfectly valid.
-		if validationErr != nil {
-			if firstPartialErr == nil {
-				// The series labels may be retained by validationErr but that's not a problem for this
-				// use case because we format it calling Error() and then we discard it.
-				firstPartialErr = httpgrpc.Errorf(http.StatusBadRequest, validationErr.Error())
-			}
-			continue
-		}
-
 		seriesKeys = append(seriesKeys, key)
-		validatedTimeseries = append(validatedTimeseries, ts)
-		validatedSamples += len(ts.Samples)
-		validatedExemplars += len(ts.Exemplars)
 	}
 
 	for _, m := range req.Metadata {
-		if validationErr := validation.CleanAndValidateMetadata(d.metadataValidationMetrics, d.limits, userID, m); validationErr != nil {
-			if firstPartialErr == nil {
-				// The metadata info may be retained by validationErr but that's not a problem for this
-				// use case because we format it calling Error() and then we discard it.
-				firstPartialErr = httpgrpc.Errorf(http.StatusBadRequest, validationErr.Error())
-			}
-
-			continue
-		}
-
 		metadataKeys = append(metadataKeys, d.tokenForMetadata(userID, m.MetricFamilyName))
-		validatedMetadata = append(validatedMetadata, m)
 	}
-
-	d.receivedSamples.WithLabelValues(userID).Add(float64(validatedSamples))
-	d.receivedExemplars.WithLabelValues(userID).Add(float64(validatedExemplars))
-	d.receivedMetadata.WithLabelValues(userID).Add(float64(len(validatedMetadata)))
-
-	if len(seriesKeys) == 0 && len(metadataKeys) == 0 {
-		return &mimirpb.WriteResponse{}, firstPartialErr
-	}
-
-	totalN := validatedSamples + validatedExemplars + len(validatedMetadata)
-	if !d.ingestionRateLimiter.AllowN(now, userID, totalN) {
-		d.discardedSamplesRateLimited.WithLabelValues(userID).Add(float64(validatedSamples))
-		d.discardedExemplarsRateLimited.WithLabelValues(userID).Add(float64(validatedExemplars))
-		d.discardedMetadataRateLimited.WithLabelValues(userID).Add(float64(len(validatedMetadata)))
-		// Return a 429 here to tell the client it is going too fast.
-		// Client may discard the data or slow down and re-send.
-		// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
-		return nil, httpgrpc.Errorf(http.StatusTooManyRequests, validation.NewIngestionRateLimitedError(d.limits.IngestionRate(userID), d.limits.IngestionBurstSize(userID)).Error())
-	}
-
-	// totalN included samples and metadata. Ingester follows this pattern when computing its ingestion rate.
-	d.ingestionRate.Add(int64(totalN))
 
 	// Get a subring if tenant has shuffle shard size configured.
 	subRing := d.ingestersRing.ShuffleShard(userID, d.limits.IngestionTenantShardSize(userID))
@@ -1131,31 +1181,20 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 	localCtx, cancel := context.WithTimeout(context.Background(), d.cfg.RemoteTimeout)
 	localCtx = user.InjectOrgID(localCtx, userID)
 	// Get clientIP(s) from Context and add it to localCtx
+	source := util.GetSourceIPsFromOutgoingCtx(ctx)
 	localCtx = util.AddSourceIPsToOutgoingContext(localCtx, source)
 	if sp := opentracing.SpanFromContext(ctx); sp != nil {
 		localCtx = opentracing.ContextWithSpan(localCtx, sp)
 	}
 
 	keys := append(seriesKeys, metadataKeys...)
-	initialMetadataIndex := len(seriesKeys)
 
 	// we must not re-use buffers now until all DoBatch goroutines have finished,
 	// so set this flag false and pass cleanup() to DoBatch.
 	cleanupInDefer = false
 
 	err = ring.DoBatch(ctx, ring.WriteNoExtend, subRing, keys, func(ingester ring.InstanceDesc, indexes []int) error {
-		timeseries := make([]mimirpb.PreallocTimeseries, 0, len(indexes))
-		var metadata []*mimirpb.MetricMetadata
-
-		for _, i := range indexes {
-			if i >= initialMetadataIndex {
-				metadata = append(metadata, validatedMetadata[i-initialMetadataIndex])
-			} else {
-				timeseries = append(timeseries, validatedTimeseries[i])
-			}
-		}
-
-		err := d.send(localCtx, ingester, timeseries, metadata, req.Source)
+		err := d.send(localCtx, ingester, req.Timeseries, req.Metadata, req.Source)
 		if errors.Is(err, context.DeadlineExceeded) {
 			return httpgrpc.Errorf(500, "exceeded configured distributor remote timeout: %s", err.Error())
 		}
@@ -1165,7 +1204,20 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 	if err != nil {
 		return nil, err
 	}
-	return &mimirpb.WriteResponse{}, firstPartialErr
+	return &mimirpb.WriteResponse{}, nil
+}
+
+func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID string) {
+	var receivedSamples, receivedExemplars, receivedMetadata int
+	for _, ts := range req.Timeseries {
+		receivedSamples += len(ts.TimeSeries.Samples)
+		receivedExemplars += len(ts.TimeSeries.Exemplars)
+	}
+	receivedMetadata = len(req.Metadata)
+
+	d.receivedSamples.WithLabelValues(userID).Add(float64(receivedSamples))
+	d.receivedExemplars.WithLabelValues(userID).Add(float64(receivedExemplars))
+	d.receivedMetadata.WithLabelValues(userID).Add(float64(receivedMetadata))
 }
 
 func copyString(s string) string {
