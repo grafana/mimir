@@ -27,6 +27,9 @@ jsonnet-example/
 jsonnet-tests/
 metrics-activity.log
 
+# Used to aid in helm chart development.
+operations/helm/charts/mimir-distributed/scripts/license.jwt
+
 # Binaries built from ./cmd
 /mimir
 /mimirtool

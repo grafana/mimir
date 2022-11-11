@@ -1,0 +1,122 @@
+{{- if .Values.enterprise.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "datadog-proxy-writes") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "datadog-proxy-writes") | nindent 4 }}
+  annotations:
+    {{- toYaml .Values.datadog.writes.annotations | nindent 4 }}
+  namespace: {{ .Release.Namespace | quote }}
+spec:
+  replicas: {{ .Values.datadog.writes.replicas }}
+  selector:
+    matchLabels:
+      {{- include "mimir.selectorLabels" (dict "ctx" . "component" "datadog-proxy-writes") | nindent 6 }}
+  strategy:
+    {{- toYaml .Values.datadog.writes.strategy | nindent 4 }}
+  template:
+    metadata:
+      labels:
+        {{- include "mimir.podLabels" (dict "ctx" . "component" "datadog-proxy-writes") | nindent 8 }}
+      annotations:
+        {{- include "mimir.podAnnotations" (dict "ctx" . "component" "datadog-proxy-writes") | nindent 8 }}
+      namespace: {{ .Release.Namespace | quote }}
+    spec:
+      serviceAccountName: {{ template "mimir.serviceAccountName" . }}
+      {{- if .Values.datadog.writes.priorityClassName }}
+      priorityClassName: {{ .Values.datadog.writes.priorityClassName }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.datadog.writes.securityContext | nindent 8 }}
+      initContainers:
+        {{- with .Values.datadog.writes.initContainers }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- if .Values.image.pullSecrets }}
+      imagePullSecrets:
+      {{- range .Values.image.pullSecrets }}
+        - name: {{ . }}
+      {{- end}}
+      {{- end }}
+      containers:
+        {{- if .Values.datadog.writes.extraContainers }}
+        {{ toYaml .Values.datadog.writes.extraContainers | nindent 8 }}
+        {{- end }}
+        - name: datadog-proxy-writes
+          image: "{{ include "mimir.imageReference" . }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - -target=datadog-write-proxy
+            - -config.file=/etc/mimir/mimir.yaml
+          {{- range $key, $value := .Values.datadog.writes.extraArgs }}
+            - "-{{ $key }}={{ $value }}"
+          {{- end }}
+          volumeMounts:
+            {{- if .Values.datadog.writes.extraVolumeMounts }}
+              {{ toYaml .Values.datadog.writes.extraVolumeMounts | nindent 12}}
+            {{- end }}
+            - name: config
+              mountPath: /etc/mimir
+            - name: runtime-config
+              mountPath: /var/{{ include "mimir.name" . }}
+            - name: license
+              mountPath: /license
+            - name: storage
+              mountPath: "/data"
+              subPath: {{ .Values.datadog.writes.persistence.subPath }}
+            - name: active-queries
+              mountPath: /active-query-tracker
+          ports:
+            - name: http-metrics
+              containerPort: {{ include "mimir.serverHttpListenPort" . }}
+              protocol: TCP
+            - name: grpc
+              containerPort: {{ include "mimir.serverGrpcListenPort" . }}
+              protocol: TCP
+          livenessProbe:
+            {{- toYaml .Values.datadog.writes.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.datadog.writes.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.datadog.writes.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.datadog.writes.containerSecurityContext | nindent 12 }}
+          env:
+            {{- with .Values.global.extraEnv }}
+              {{ toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.datadog.writes.env }}
+              {{ toYaml . | nindent 12 }}
+            {{- end }}
+          envFrom:
+            {{- with .Values.global.extraEnvFrom }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.datadog.writes.extraEnvFrom }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+      nodeSelector:
+        {{- toYaml .Values.datadog.writes.nodeSelector | nindent 8 }}
+      affinity:
+        {{- toYaml .Values.datadog.writes.affinity | nindent 8 }}
+      tolerations:
+        {{- toYaml .Values.datadog.writes.tolerations | nindent 8 }}
+      terminationGracePeriodSeconds: {{ .Values.datadog.writes.terminationGracePeriodSeconds }}
+      volumes:
+        - name: config
+          {{- include "mimir.configVolume" . | nindent 10 }}
+        - name: runtime-config
+          configMap:
+            name: {{ template "mimir.fullname" . }}-runtime
+        {{- if .Values.datadog.writes.extraVolumes }}
+        {{ toYaml .Values.datadog.writes.extraVolumes | indent 8}}
+        {{- end }}
+        - name: license
+          secret:
+            secretName: {{ tpl .Values.license.secretName . }}
+        - name: storage
+          emptyDir: {}
+        - name: active-queries
+          emptyDir: {}
+{{- end -}}
