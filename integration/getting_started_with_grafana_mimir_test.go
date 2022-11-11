@@ -6,7 +6,6 @@ package integration
 
 import (
 	"fmt"
-	"math"
 	"net/http"
 	"testing"
 	"time"
@@ -92,15 +91,11 @@ func runTestPushSeriesAndQueryBack(t *testing.T, mimir *e2emimir.MimirService) {
 	require.Equal(t, model.ValVector, result.Type())
 	assert.Equal(t, expectedVector, result.(model.Vector))
 
-	// Work around the Prometheus client lib not having a way to omit the start and end params.
-	minTime := time.Unix(math.MinInt64/1000+62135596801, 0).UTC()
-	maxTime := time.Unix(math.MaxInt64/1000-62135596801, 999999999).UTC()
-
-	labelValues, err := c.LabelValues("foo", minTime, maxTime, nil)
+	labelValues, err := c.LabelValues("foo", prometheusMinTime, prometheusMaxTime, nil)
 	require.NoError(t, err)
 	require.Equal(t, model.LabelValues{"bar"}, labelValues)
 
-	labelNames, err := c.LabelNames(minTime, maxTime)
+	labelNames, err := c.LabelNames(prometheusMinTime, prometheusMaxTime)
 	require.NoError(t, err)
 	require.Equal(t, []string{"__name__", "foo"}, labelNames)
 

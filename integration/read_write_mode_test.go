@@ -5,7 +5,6 @@
 package integration
 
 import (
-	"math"
 	"testing"
 	"time"
 
@@ -58,15 +57,12 @@ func TestReadWriteMode(t *testing.T) {
 	_, err = c.QueryRange("test_series_1", now.Add(-5*time.Minute), now, 15*time.Second)
 	require.NoError(t, err)
 
-	minTime := time.Unix(math.MinInt64/1000+62135596801, 0).UTC()
-	maxTime := time.Unix(math.MaxInt64/1000-62135596801, 999999999).UTC()
-
 	// Verify we can retrieve the labels we just pushed.
-	labelValues, err := c.LabelValues("foo", minTime, maxTime, nil)
+	labelValues, err := c.LabelValues("foo", prometheusMinTime, prometheusMaxTime, nil)
 	require.NoError(t, err)
 	require.Equal(t, model.LabelValues{"bar"}, labelValues)
 
-	labelNames, err := c.LabelNames(minTime, maxTime)
+	labelNames, err := c.LabelNames(prometheusMinTime, prometheusMaxTime)
 	require.NoError(t, err)
 	require.Equal(t, []string{"__name__", "foo"}, labelNames)
 }
