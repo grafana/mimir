@@ -565,25 +565,25 @@ func newFileBinaryReader(path string, postingOffsetsInMemSampling int, cfg Binar
 			r.postingsV1[lastLbl.Name][lastLbl.Value] = prevRng
 		}
 	} else {
-		var lastLbl unsafeLabel
+		var lastLbl bytesLabel
 		lastSet := false
 		lastTableOff := 0
 		valueCount := 0
 
 		// For the postings offset table we keep every label name but only every nth
 		// label value (plus the first and last one), to save memory.
-		if err := readOffsetTable(r.b, r.toc.PostingsOffsetTable, unsafePostingsOffsetTableReader, func(lbl unsafeLabel, off uint64, tableOff int) error {
-			if _, ok := r.postings[lbl.unsafeName]; !ok {
+		if err := readOffsetTable(r.b, r.toc.PostingsOffsetTable, bytesPostingsOffsetTableReader, func(lbl bytesLabel, off uint64, tableOff int) error {
+			if _, ok := r.postings[string(lbl.name)]; !ok {
 				// Not seen before label name.
 				// We need to set a new key in the map, which will be kept in memory so we need a un-yoloed version of the label name.
-				r.postings[lbl.safeName()] = &postingValueOffsets{}
+				r.postings[string(lbl.name)] = &postingValueOffsets{}
 				if lastSet {
 					// Always include last value for each label name, unless it was just added in previous iteration based
 					// on valueCount.
 					if (valueCount-1)%postingOffsetsInMemSampling != 0 {
-						r.postings[lastLbl.unsafeName].offsets = append(r.postings[lastLbl.unsafeName].offsets, postingOffset{value: lastLbl.safeValue(), tableOff: lastTableOff})
+						r.postings[string(lastLbl.name)].offsets = append(r.postings[string(lastLbl.name)].offsets, postingOffset{value: string(lastLbl.value), tableOff: lastTableOff})
 					}
-					r.postings[lastLbl.unsafeName].lastValOffset = int64(off - crc32.Size)
+					r.postings[string(lastLbl.name)].lastValOffset = int64(off - crc32.Size)
 				}
 				valueCount = 0
 			}
@@ -594,7 +594,7 @@ func newFileBinaryReader(path string, postingOffsetsInMemSampling int, cfg Binar
 			valueCount++
 
 			if (valueCount-1)%postingOffsetsInMemSampling == 0 {
-				r.postings[lbl.unsafeName].offsets = append(r.postings[lbl.unsafeName].offsets, postingOffset{value: lbl.safeValue(), tableOff: tableOff})
+				r.postings[string(lbl.name)].offsets = append(r.postings[string(lbl.name)].offsets, postingOffset{value: string(lbl.value), tableOff: tableOff})
 			}
 
 			return nil
@@ -604,11 +604,11 @@ func newFileBinaryReader(path string, postingOffsetsInMemSampling int, cfg Binar
 		if lastSet {
 			if (valueCount-1)%postingOffsetsInMemSampling != 0 {
 				// Always include last value for each label name if not included already based on valueCount.
-				r.postings[lastLbl.unsafeName].offsets = append(r.postings[lastLbl.unsafeName].offsets, postingOffset{value: lastLbl.safeValue(), tableOff: lastTableOff})
+				r.postings[string(lastLbl.name)].offsets = append(r.postings[string(lastLbl.name)].offsets, postingOffset{value: string(lastLbl.value), tableOff: lastTableOff})
 			}
 			// In any case lastValOffset is unknown as don't have next posting anymore. Guess from TOC table.
 			// In worst case we will overfetch a few bytes.
-			r.postings[lastLbl.unsafeName].lastValOffset = r.indexLastPostingEnd - crc32.Size
+			r.postings[string(lastLbl.name)].lastValOffset = r.indexLastPostingEnd - crc32.Size
 		}
 		// Trim any extra space in the slices.
 		for k, v := range r.postings {
@@ -984,33 +984,22 @@ func postingsOffsetTableReader(d *encoding.Decbuf) (labels.Label, error) {
 	return lbl, nil
 }
 
-// unsafePostingsOffsetTableReader reads the postings table returning a label whose string shares the memory with the buffer.
+// bytesPostingsOffsetTableReader reads the postings table returning a label with []byte name and value which share the underlying buffer.
 // It can be used for comparison without allocating a new string (since in most of the cases, we just want to see if the label name has changed).
-func unsafePostingsOffsetTableReader(d *encoding.Decbuf) (unsafeLabel, error) {
+func bytesPostingsOffsetTableReader(d *encoding.Decbuf) (bytesLabel, error) {
 	if keyCount := d.Uvarint(); keyCount != 2 {
-		return unsafeLabel{}, errors.Errorf("unexpected key length for posting table %d", keyCount)
+		return bytesLabel{}, errors.Errorf("unexpected key length for posting table %d", keyCount)
 	}
-	var lbl unsafeLabel
-	lbl.unsafeName = yoloString(d.UvarintBytes())
-	lbl.unsafeValue = yoloString(d.UvarintBytes())
+	var lbl bytesLabel
+	lbl.name = d.UvarintBytes()
+	lbl.value = d.UvarintBytes()
 	return lbl, nil
 }
 
-// unsafeLabel is like a labels.Label but its fields are yolo-ed from the underlying buffer,
-// you shouldn't store references to them as it might be expensive, but it's fine enough to compare & discard.
-type unsafeLabel struct {
-	unsafeName  string
-	unsafeValue string
-}
-
-func (ul unsafeLabel) safeName() string {
-	return copyString(ul.unsafeName)
-}
-func (ul unsafeLabel) safeValue() string {
-	return copyString(ul.unsafeValue)
-}
-
-// copyString copies the contents of a string into a new string.
-func copyString(s string) string {
-	return string([]byte(s))
+// bytesLabel is like a labels.Label but its fields are []byte that are portions of the underlying buffer.
+// you shouldn't store references to them as that would leak memory, but it's fine enough to compare & discard.
+// Note that checking map[string(bytesLabel.name)] is optimized by the compiler and does not allocate (see benchmarks before changing).
+type bytesLabel struct {
+	name  []byte
+	value []byte
 }
