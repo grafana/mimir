@@ -212,6 +212,47 @@ func NewSingleBinary(name string, flags map[string]string, options ...Option) *M
 	)
 }
 
+func NewReadInstance(name string, flags map[string]string, options ...Option) *MimirService {
+	return newMimirServiceFromOptions(
+		name,
+		map[string]string{
+			"-target":                           "read",
+			"-log.level":                        "warn",
+			"-ingester.ring.replication-factor": "1",
+		},
+		flags,
+		options...,
+	)
+}
+
+func NewWriteInstance(name string, flags map[string]string, options ...Option) *MimirService {
+	return newMimirServiceFromOptions(
+		name,
+		map[string]string{
+			"-target":                           "write",
+			"-log.level":                        "warn",
+			"-ingester.ring.replication-factor": "1",
+			// Speed up startup.
+			"-ingester.ring.min-ready-duration": "0s",
+		},
+		flags,
+		options...,
+	)
+}
+
+func NewBackendInstance(name string, flags map[string]string, options ...Option) *MimirService {
+	return newMimirServiceFromOptions(
+		name,
+		map[string]string{
+			"-target":                           "backend",
+			"-log.level":                        "warn",
+			"-ingester.ring.replication-factor": "1",
+		},
+		flags,
+		options...,
+	)
+}
+
 func NewAlertmanager(name string, flags map[string]string, options ...Option) *MimirService {
 	return newMimirServiceFromOptions(
 		name,

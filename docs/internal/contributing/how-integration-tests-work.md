@@ -22,6 +22,12 @@ If you want to run a single test you can use a filter. For example, to only run 
 go test -v -tags=requires_docker ./integration -run "^TestChunksStorageAllIndexBackends$"
 ```
 
+When running all integration tests, the test process may time out before the tests complete. If this happens, you can increase `go test`'s default 10 minute timeout to something longer with the `-timeout` flag, for example:
+
+```
+go test -v -tags=requires_docker -timeout=20m ./integration/...
+```
+
 ### Supported environment variables
 
 - **`MIMIR_IMAGE`**<br />
