@@ -92,6 +92,16 @@ mimirtool alertmanager load <config_file>
 mimirtool alertmanager load <config_file> <template_files>...
 ```
 
+### Validate Alertmanager configuration
+
+The following command validates an Alertmanager configuration file. It does not load the configuration to the Alertmanager instance.
+
+```bash
+mimirtool alertmanager load --validate-only <config_file> [template_files...] \
+  --address dummy
+  --id dummy
+```
+
 ##### Example
 
 ```bash
