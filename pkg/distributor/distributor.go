@@ -896,7 +896,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 
 			skipLabelNameValidation := d.cfg.SkipLabelNameValidation || req.GetSkipLabelNameValidation()
 			// Note that validateSeries may drop some data in ts.
-			validationErr := d.validateSeries(now, ts, userID, skipLabelNameValidation, minExemplarTS)
+			validationErr := d.validateSeries(now, ts, userID, d.limits.SeparateMetricsLabel(userID), skipLabelNameValidation, minExemplarTS)
 
 			// Errors in validation are considered non-fatal, as one series in a request may contain
 			// invalid data but all the remaining series could be perfectly valid.
