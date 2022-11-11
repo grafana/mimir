@@ -124,7 +124,7 @@ func runQuerierShardingTest(t *testing.T, cfg querierShardingTestConfig) {
 	require.NoError(t, err)
 
 	var series []prompb.TimeSeries
-	series, expectedVector := generateSeries("series_1", now)
+	series, expectedVector, _ := generateSeries("series_1", now)
 
 	res, err := distClient.Push(series)
 	require.NoError(t, err)

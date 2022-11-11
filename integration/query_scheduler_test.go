@@ -89,7 +89,7 @@ func TestQuerySchedulerWithMaxUsedInstances(t *testing.T) {
 
 	// Push some series to Mimir.
 	now := time.Now()
-	series, expectedVector := generateSeries("series_1", now, prompb.Label{Name: "foo", Value: "bar"})
+	series, expectedVector, _ := generateSeries("series_1", now, prompb.Label{Name: "foo", Value: "bar"})
 
 	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", userID)
 	require.NoError(t, err)

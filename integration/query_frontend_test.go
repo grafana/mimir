@@ -273,7 +273,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 		require.NoError(t, err)
 
 		var series []prompb.TimeSeries
-		series, expectedVectors[u] = generateSeries("series_1", now)
+		series, expectedVectors[u], _ = generateSeries("series_1", now)
 
 		res, err := c.Push(series)
 		require.NoError(t, err)
@@ -433,7 +433,7 @@ overrides:
 	require.NoError(t, err)
 
 	for i := 0; i < 50; i++ {
-		series, _ := generateSeries(
+		series, _, _ := generateSeries(
 			"metric",
 			now,
 			prompb.Label{Name: "unique", Value: strconv.Itoa(i)},
@@ -741,7 +741,7 @@ func runQueryFrontendWithQueryShardingHTTPTest(t *testing.T, cfg queryFrontendTe
 	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), queryFrontend.HTTPEndpoint(), "", "", userID)
 	require.NoError(t, err)
 	var series []prompb.TimeSeries
-	series, _ = generateSeries("series_1", now)
+	series, _, _ = generateSeries("series_1", now)
 
 	res, err := c.Push(series)
 	require.NoError(t, err)

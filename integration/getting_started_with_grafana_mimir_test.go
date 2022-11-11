@@ -79,7 +79,7 @@ func runTestPushSeriesAndQueryBack(t *testing.T, mimir *e2emimir.MimirService) {
 
 	// Push some series to Mimir.
 	now := time.Now()
-	series, expectedVector := generateSeries("series_1", now, prompb.Label{Name: "foo", Value: "bar"})
+	series, expectedVector, expectedMatrix := generateSeries("series_1", now, prompb.Label{Name: "foo", Value: "bar"})
 
 	res, err := c.Push(series)
 	require.NoError(t, err)
@@ -99,7 +99,8 @@ func runTestPushSeriesAndQueryBack(t *testing.T, mimir *e2emimir.MimirService) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"__name__", "foo"}, labelNames)
 
-	// Check that a range query does not return an error to sanity check the queryrange tripperware.
-	_, err = c.QueryRange("series_1", now.Add(-15*time.Minute), now, 15*time.Second)
+	rangeResult, err := c.QueryRange("series_1", now.Add(-15*time.Minute), now, 15*time.Second)
 	require.NoError(t, err)
+	require.Equal(t, model.ValMatrix, rangeResult.Type())
+	require.Equal(t, expectedMatrix, rangeResult.(model.Matrix))
 }
