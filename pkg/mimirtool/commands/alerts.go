@@ -37,6 +37,7 @@ type AlertmanagerCommand struct {
 	AlertmanagerConfigFile string
 	TemplateFiles          []string
 	DisableColor           bool
+	ValidateOnly           bool
 
 	cli *client.MimirClient
 }
@@ -77,6 +78,7 @@ func (a *AlertmanagerCommand) Register(app *kingpin.Application, envVars EnvVarN
 	loadalertCmd := alertCmd.Command("load", "Load Alertmanager tenant configuration and template files into Grafana Mimir.").Action(a.loadConfig)
 	loadalertCmd.Arg("config", "Alertmanager configuration to load").Required().StringVar(&a.AlertmanagerConfigFile)
 	loadalertCmd.Arg("template-files", "The template files to load").ExistingFilesVar(&a.TemplateFiles)
+	loadalertCmd.Flag("validate-only", "Validate the configuration and template files without loading them into Grafana Mimir.").BoolVar(&a.ValidateOnly)
 }
 
 func (a *AlertmanagerCommand) setup(k *kingpin.ParseContext) error {
@@ -123,6 +125,11 @@ func (a *AlertmanagerCommand) loadConfig(k *kingpin.ParseContext) error {
 			return errors.Wrap(err, "unable to load template file: "+f)
 		}
 		templates[f] = string(tmpl)
+	}
+
+	if a.ValidateOnly {
+		log.Infof("configuration and template files are valid")
+		return nil
 	}
 
 	return a.cli.CreateAlertmanagerConfig(context.Background(), cfg, templates)
