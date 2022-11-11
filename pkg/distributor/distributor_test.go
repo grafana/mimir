@@ -2965,7 +2965,7 @@ func TestInstanceLimitsBeforeHaDedupe(t *testing.T) {
 		enableTracker:       true,
 		maxInflightRequests: 1,
 	})
-	wrappedMockPush := ds[0].wrapPushWithMiddlewares(mockPush)
+	wrappedMockPush := ds[0].wrapPushWithMiddlewares(nil, mockPush)
 
 	// Make sure first request hits the limit.
 	ds[0].inflightPushRequests.Inc()
@@ -3176,7 +3176,7 @@ func TestHaDedupeAndRelabelBeforeForwarding(t *testing.T) {
 		forwarding:      true,
 		getForwarder:    getForwarder,
 	})
-	wrappedMockPush := ds[0].wrapPushWithMiddlewares(mockPush)
+	wrappedMockPush := ds[0].wrapPushWithMiddlewares(nil, mockPush)
 
 	// Submit the two write requests into the wrapped mock push function, it should:
 	// 1) Perform HA-deduplication
@@ -3310,7 +3310,7 @@ func TestValidationBeforeForwarding(t *testing.T) {
 		forwarding:      true,
 		getForwarder:    getForwarder,
 	})
-	wrappedMockPush := ds[0].wrapPushWithMiddlewares(mockPush)
+	wrappedMockPush := ds[0].wrapPushWithMiddlewares(nil, mockPush)
 
 	// Submit the write request into the wrapped mock push function,
 	// before samples get forwarded the invalid ones should be removed.

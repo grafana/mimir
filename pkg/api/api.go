@@ -62,7 +62,8 @@ type Config struct {
 	// This allows downstream projects to wrap the distributor push function
 	// and access the deserialized write requests before/after they are pushed.
 	// This function will only receive samples that don't get forwarded to an
-	// alternative remote_write endpoint by the distributor's forwarding feature.
+	// alternative remote_write endpoint by the distributor's forwarding feature,
+	// or dropped by HA deduplication.
 	DistributorPushWrapper DistributorPushWrapper `yaml:"-"`
 
 	// The CustomConfigHandler allows for providing a different handler for the
@@ -82,15 +83,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.StringVar(&cfg.AlertmanagerHTTPPrefix, prefix+"http.alertmanager-http-prefix", "/alertmanager", "HTTP URL path under which the Alertmanager ui and api will be served.")
 	f.StringVar(&cfg.PrometheusHTTPPrefix, prefix+"http.prometheus-http-prefix", "/prometheus", "HTTP URL path under which the Prometheus api will be served.")
-}
-
-// Push either wraps the distributor push function as configured or returns the distributor push directly.
-func (cfg *Config) wrapDistributorPush(next push.Func) push.Func {
-	if cfg.DistributorPushWrapper != nil {
-		return cfg.DistributorPushWrapper(next)
-	}
-
-	return next
 }
 
 type API struct {
@@ -242,9 +234,9 @@ func (a *API) RegisterRuntimeConfig(runtimeConfigHandler http.HandlerFunc, userL
 func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distributor.Config, reg prometheus.Registerer) {
 	distributorpb.RegisterDistributorServer(a.server.GRPC, d)
 
-	wrappedPush := a.cfg.wrapDistributorPush(d.PushWithMiddlewares)
-	a.RegisterRoute("/api/v1/push", push.Handler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, wrappedPush), true, false, "POST")
-	a.RegisterRoute("/otlp/v1/metrics", push.OTLPHandler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, reg, wrappedPush), true, false, "POST")
+	pushFn := d.GetPushFunc(a.cfg.DistributorPushWrapper)
+	a.RegisterRoute("/api/v1/push", push.Handler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, pushFn), true, false, "POST")
+	a.RegisterRoute("/otlp/v1/metrics", push.OTLPHandler(pushConfig.MaxRecvMsgSize, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader, reg, pushFn), true, false, "POST")
 
 	a.indexPage.AddLinks(defaultWeight, "Distributor", []IndexPageLink{
 		{Desc: "Ring status", Path: "/distributor/ring"},
