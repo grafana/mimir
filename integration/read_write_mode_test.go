@@ -53,13 +53,15 @@ func TestReadWriteMode(t *testing.T) {
 	require.Equal(t, 200, res.StatusCode)
 
 	// Verify we can read the data we just pushed, both with an instant query and a range query.
-	result, err := c.Query("test_series_1", now)
+	queryResult, err := c.Query("test_series_1", now)
 	require.NoError(t, err)
-	require.Equal(t, model.ValVector, result.Type())
-	require.Equal(t, expectedVector, result.(model.Vector))
+	require.Equal(t, model.ValVector, queryResult.Type())
+	require.Equal(t, expectedVector, queryResult.(model.Vector))
 
-	_, err = c.QueryRange("test_series_1", now.Add(-5*time.Minute), now, 15*time.Second)
+	rangeResult, err := c.QueryRange("test_series_1", now.Add(-5*time.Minute), now, 15*time.Second)
 	require.NoError(t, err)
+	require.Equal(t, model.ValMatrix, rangeResult.Type())
+	require.Equal(t, expectedMatrix(series), rangeResult.(model.Matrix))
 
 	minTime := time.Unix(math.MinInt64/1000+62135596801, 0).UTC()
 	maxTime := time.Unix(math.MaxInt64/1000-62135596801, 999999999).UTC()
@@ -72,4 +74,31 @@ func TestReadWriteMode(t *testing.T) {
 	labelNames, err := c.LabelNames(minTime, maxTime)
 	require.NoError(t, err)
 	require.Equal(t, []string{"__name__", "foo"}, labelNames)
+}
+
+func expectedMatrix(series []prompb.TimeSeries) model.Matrix {
+	m := make(model.Matrix, 0, len(series))
+
+	for _, s := range series {
+
+		m = append(m, &model.SampleStream{
+			Metric: prompbLabelsToModelMetric(s.Labels),
+			Values: prompbSamplesToModelSamplePairs(s.Samples),
+		})
+	}
+
+	return m
+}
+
+func prompbSamplesToModelSamplePairs(samples []prompb.Sample) []model.SamplePair {
+	v := make([]model.SamplePair, 0, len(samples))
+
+	for _, s := range samples {
+		v = append(v, model.SamplePair{
+			Timestamp: model.TimeFromUnixNano(s.Timestamp * 1000000),
+			Value:     model.SampleValue(s.Value),
+		})
+	}
+
+	return v
 }
