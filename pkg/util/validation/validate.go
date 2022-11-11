@@ -82,7 +82,7 @@ func DiscardedSamplesCounter(reg prometheus.Registerer, reason string) *promethe
 		ConstLabels: map[string]string{
 			discardReasonLabel: reason,
 		},
-	}, []string{"user"})
+	}, []string{"user", "splitLabel"})
 }
 
 // DiscardedExemplarsCounter creates per-user counter vector for exemplars discarded for a given reason.
@@ -181,11 +181,11 @@ func NewExemplarValidationMetrics(r prometheus.Registerer) *ExemplarValidationMe
 // ValidateSample returns an err if the sample is invalid.
 // The returned error may retain the provided series labels.
 // It uses the passed 'now' time to measure the relative time of the sample.
-func ValidateSample(m *SampleValidationMetrics, now model.Time, cfg SampleValidationConfig, userID string, ls []mimirpb.LabelAdapter, s mimirpb.Sample) ValidationError {
+func ValidateSample(m *SampleValidationMetrics, now model.Time, cfg SampleValidationConfig, userID, splitLabel string, ls []mimirpb.LabelAdapter, s mimirpb.Sample) ValidationError {
 	unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
 
 	if model.Time(s.TimestampMs) > now.Add(cfg.CreationGracePeriod(userID)) {
-		m.tooFarInFuture.WithLabelValues(userID).Inc()
+		m.tooFarInFuture.WithLabelValues(userID, splitLabel).Inc()
 		return newSampleTimestampTooNewError(unsafeMetricName, s.TimestampMs)
 	}
 
@@ -262,21 +262,21 @@ type LabelValidationConfig interface {
 
 // ValidateLabels returns an err if the labels are invalid.
 // The returned error may retain the provided series labels.
-func ValidateLabels(m *SampleValidationMetrics, cfg LabelValidationConfig, userID string, ls []mimirpb.LabelAdapter, skipLabelNameValidation bool) ValidationError {
+func ValidateLabels(m *SampleValidationMetrics, cfg LabelValidationConfig, userID, splitLabel string, ls []mimirpb.LabelAdapter, skipLabelNameValidation bool) ValidationError {
 	unsafeMetricName, err := extract.UnsafeMetricNameFromLabelAdapters(ls)
 	if err != nil {
-		m.missingMetricName.WithLabelValues(userID).Inc()
+		m.missingMetricName.WithLabelValues(userID, splitLabel).Inc()
 		return newNoMetricNameError()
 	}
 
 	if !model.IsValidMetricName(model.LabelValue(unsafeMetricName)) {
-		m.invalidMetricName.WithLabelValues(userID).Inc()
+		m.invalidMetricName.WithLabelValues(userID, splitLabel).Inc()
 		return newInvalidMetricNameError(unsafeMetricName)
 	}
 
 	numLabelNames := len(ls)
 	if numLabelNames > cfg.MaxLabelNamesPerSeries(userID) {
-		m.maxLabelNamesPerSeries.WithLabelValues(userID).Inc()
+		m.maxLabelNamesPerSeries.WithLabelValues(userID, splitLabel).Inc()
 		return newTooManyLabelsError(ls, cfg.MaxLabelNamesPerSeries(userID))
 	}
 
@@ -285,16 +285,16 @@ func ValidateLabels(m *SampleValidationMetrics, cfg LabelValidationConfig, userI
 	lastLabelName := ""
 	for _, l := range ls {
 		if !skipLabelNameValidation && !model.LabelName(l.Name).IsValid() {
-			m.invalidLabel.WithLabelValues(userID).Inc()
+			m.invalidLabel.WithLabelValues(userID, splitLabel).Inc()
 			return newInvalidLabelError(ls, l.Name)
 		} else if len(l.Name) > maxLabelNameLength {
-			m.labelNameTooLong.WithLabelValues(userID).Inc()
+			m.labelNameTooLong.WithLabelValues(userID, splitLabel).Inc()
 			return newLabelNameTooLongError(ls, l.Name)
 		} else if len(l.Value) > maxLabelValueLength {
-			m.labelValueTooLong.WithLabelValues(userID).Inc()
+			m.labelValueTooLong.WithLabelValues(userID, splitLabel).Inc()
 			return newLabelValueTooLongError(ls, l.Value)
 		} else if lastLabelName == l.Name {
-			m.duplicateLabelNames.WithLabelValues(userID).Inc()
+			m.duplicateLabelNames.WithLabelValues(userID, splitLabel).Inc()
 			return newDuplicatedLabelError(ls, l.Name)
 		}
 
