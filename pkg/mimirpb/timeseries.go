@@ -326,6 +326,17 @@ func ReuseTimeseries(ts *TimeSeries) {
 	timeSeriesPool.Put(ts)
 }
 
+// ReusePreallocTimeseries puts the timeseries and the yoloSlice back into their respective pools for re-use.
+func ReusePreallocTimeseries(ts PreallocTimeseries) {
+	if ts.TimeSeries != nil {
+		ReuseTimeseries(ts.TimeSeries)
+	}
+
+	if ts.yoloSlice != nil {
+		reuseYoloSlice(ts.yoloSlice)
+	}
+}
+
 func yoloSliceFromPool() *[]byte {
 	return yoloSlicePool.Get().(*[]byte)
 }
