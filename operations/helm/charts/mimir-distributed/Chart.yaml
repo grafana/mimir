@@ -1,5 +1,5 @@
 apiVersion: v2
-version: 3.2.0
+version: 3.3.0
 appVersion: 2.4.0
 description: "Grafana Mimir"
 home: https://grafana.com/docs/mimir/v2.4.x/
