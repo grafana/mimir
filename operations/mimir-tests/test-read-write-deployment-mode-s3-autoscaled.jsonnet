@@ -20,5 +20,9 @@ mimir {
     read_write_deployment_enabled: true,
     multi_zone_ingester_enabled: true,
     multi_zone_store_gateway_enabled: true,
+
+    autoscaling_mimir_read_enabled: true,
+    autoscaling_mimir_read_min_replicas: 2,
+    autoscaling_mimir_read_max_replicas: 20,
   },
 }
