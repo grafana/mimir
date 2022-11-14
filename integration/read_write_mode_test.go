@@ -95,7 +95,7 @@ func prompbSamplesToModelSamplePairs(samples []prompb.Sample) []model.SamplePair
 
 	for _, s := range samples {
 		v = append(v, model.SamplePair{
-			Timestamp: model.TimeFromUnixNano(s.Timestamp * 1000000),
+			Timestamp: model.Time(s.Timestamp),
 			Value:     model.SampleValue(s.Value),
 		})
 	}
