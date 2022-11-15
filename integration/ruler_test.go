@@ -598,7 +598,7 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 
 	// Push some series to Mimir -- enough so that we can hit some limits.
 	for i := 0; i < 10; i++ {
-		series, _ := generateSeries("metric", time.Now(), prompb.Label{Name: "foo", Value: fmt.Sprintf("%d", i)})
+		series, _, _ := generateSeries("metric", time.Now(), prompb.Label{Name: "foo", Value: fmt.Sprintf("%d", i)})
 
 		res, err := c.Push(series)
 		require.NoError(t, err)
@@ -784,7 +784,7 @@ func TestRulerFederatedRules(t *testing.T) {
 				client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", tenantID)
 				require.NoError(t, err)
 
-				series, _ := generateSeries("metric", sampleTime)
+				series, _, _ := generateSeries("metric", sampleTime)
 
 				res, err := client.Push(series)
 				require.NoError(t, err)
@@ -908,7 +908,7 @@ func TestRulerRemoteEvaluation(t *testing.T) {
 				client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", tenantID)
 				require.NoError(t, err)
 
-				series, _ := generateSeries("metric", sampleTime)
+				series, _, _ := generateSeries("metric", sampleTime)
 
 				res, err := client.Push(series)
 				require.NoError(t, err)

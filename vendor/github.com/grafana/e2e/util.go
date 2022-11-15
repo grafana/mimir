@@ -125,7 +125,7 @@ func TimeToMilliseconds(t time.Time) int64 {
 	return (int64(s) * 1e3) + (int64(ns * 1e3))
 }
 
-func GenerateSeries(name string, ts time.Time, additionalLabels ...prompb.Label) (series []prompb.TimeSeries, vector model.Vector) {
+func GenerateSeries(name string, ts time.Time, additionalLabels ...prompb.Label) (series []prompb.TimeSeries, vector model.Vector, matrix model.Matrix) {
 	tsMillis := TimeToMilliseconds(ts)
 	value := rand.Float64()
 
@@ -149,7 +149,7 @@ func GenerateSeries(name string, ts time.Time, additionalLabels ...prompb.Label)
 		},
 	})
 
-	// Generate the expected vector when querying it
+	// Generate the expected vector and matrix when querying it
 	metric := model.Metric{}
 	metric[labels.MetricName] = model.LabelValue(name)
 	for _, lbl := range additionalLabels {
@@ -160,6 +160,16 @@ func GenerateSeries(name string, ts time.Time, additionalLabels ...prompb.Label)
 		Metric:    metric,
 		Value:     model.SampleValue(value),
 		Timestamp: model.Time(tsMillis),
+	})
+
+	matrix = append(matrix, &model.SampleStream{
+		Metric: metric,
+		Values: []model.SamplePair{
+			{
+				Timestamp: model.Time(tsMillis),
+				Value:     model.SampleValue(value),
+			},
+		},
 	})
 
 	return

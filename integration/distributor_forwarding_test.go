@@ -153,7 +153,7 @@ func TestDistributorForwarding(t *testing.T) {
 			// Submit metrics to Mimir.
 			now := time.Now()
 			for _, metric := range tc.submitMetrics {
-				series, _ := generateSeries(metric, now)
+				series, _, _ := generateSeries(metric, now)
 				res, err := mimirClient.Push(series)
 				require.NoError(t, err)
 				require.Equal(t, 200, res.StatusCode)

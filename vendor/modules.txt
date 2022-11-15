@@ -494,7 +494,7 @@ github.com/grafana/dskit/services
 github.com/grafana/dskit/spanlogger
 github.com/grafana/dskit/tenant
 github.com/grafana/dskit/test
-# github.com/grafana/e2e v0.1.1-0.20221018202458-cffd2bb71c7b
+# github.com/grafana/e2e v0.1.1-0.20221115065638-fe4609fcbc71
 ## explicit; go 1.17
 github.com/grafana/e2e
 github.com/grafana/e2e/cache

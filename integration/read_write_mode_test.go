@@ -50,20 +50,22 @@ func TestReadWriteMode(t *testing.T) {
 
 	// Push some data to the cluster.
 	now := time.Now()
-	series, expectedVector := generateSeries("test_series_1", now, prompb.Label{Name: "foo", Value: "bar"})
+	series, expectedVector, expectedMatrix := generateSeries("test_series_1", now, prompb.Label{Name: "foo", Value: "bar"})
 
 	res, err := c.Push(series)
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
 
 	// Verify we can read the data we just pushed, both with an instant query and a range query.
-	result, err := c.Query("test_series_1", now)
+	queryResult, err := c.Query("test_series_1", now)
 	require.NoError(t, err)
-	require.Equal(t, model.ValVector, result.Type())
-	require.Equal(t, expectedVector, result.(model.Vector))
+	require.Equal(t, model.ValVector, queryResult.Type())
+	require.Equal(t, expectedVector, queryResult.(model.Vector))
 
-	_, err = c.QueryRange("test_series_1", now.Add(-5*time.Minute), now, 15*time.Second)
+	rangeResult, err := c.QueryRange("test_series_1", now.Add(-5*time.Minute), now, 15*time.Second)
 	require.NoError(t, err)
+	require.Equal(t, model.ValMatrix, rangeResult.Type())
+	require.Equal(t, expectedMatrix, rangeResult.(model.Matrix))
 
 	// Verify we can retrieve the labels we just pushed.
 	labelValues, err := c.LabelValues("foo", prometheusMinTime, prometheusMaxTime, nil)

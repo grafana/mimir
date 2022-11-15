@@ -90,8 +90,8 @@ func runBackwardCompatibilityTest(t *testing.T, previousImage string, oldFlagsMa
 	// Push some series to Mimir.
 	series1Timestamp := time.Now()
 	series2Timestamp := series1Timestamp.Add(blockRangePeriod * 2)
-	series1, expectedVector1 := generateSeries("series_1", series1Timestamp, prompb.Label{Name: "series_1", Value: "series_1"})
-	series2, expectedVector2 := generateSeries("series_2", series2Timestamp, prompb.Label{Name: "series_2", Value: "series_2"})
+	series1, expectedVector1, _ := generateSeries("series_1", series1Timestamp, prompb.Label{Name: "series_1", Value: "series_1"})
+	series2, expectedVector2, _ := generateSeries("series_2", series2Timestamp, prompb.Label{Name: "series_2", Value: "series_2"})
 
 	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", "user-1")
 	require.NoError(t, err)
@@ -112,7 +112,7 @@ func runBackwardCompatibilityTest(t *testing.T, previousImage string, oldFlagsMa
 	// Push another series to further compact another block and delete the first block
 	// due to expired retention.
 	series3Timestamp := series2Timestamp.Add(blockRangePeriod * 2)
-	series3, expectedVector3 := generateSeries("series_3", series3Timestamp, prompb.Label{Name: "series_3", Value: "series_3"})
+	series3, expectedVector3, _ := generateSeries("series_3", series3Timestamp, prompb.Label{Name: "series_3", Value: "series_3"})
 
 	res, err = c.Push(series3)
 	require.NoError(t, err)
@@ -180,7 +180,7 @@ func runNewDistributorsCanPushToOldIngestersWithReplication(t *testing.T, previo
 
 	// Push some series to Mimir.
 	now := time.Now()
-	series, expectedVector := generateSeries("series_1", now)
+	series, expectedVector, _ := generateSeries("series_1", now)
 
 	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", "user-1")
 	require.NoError(t, err)

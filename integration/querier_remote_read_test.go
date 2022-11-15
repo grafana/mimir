@@ -61,7 +61,7 @@ func TestQuerierRemoteRead(t *testing.T) {
 	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", "user-1")
 	require.NoError(t, err)
 
-	series, expectedVectors := generateSeries("series_1", now)
+	series, expectedVectors, _ := generateSeries("series_1", now)
 	res, err := c.Push(series)
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)

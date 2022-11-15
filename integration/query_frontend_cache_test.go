@@ -87,7 +87,7 @@ func TestQueryFrontendUnalignedQuery(t *testing.T) {
 
 	sampleTime := now.Add(-3 * time.Minute)
 
-	series, expectedVector := generateSeries("series_1", sampleTime)
+	series, expectedVector, _ := generateSeries("series_1", sampleTime)
 	val := expectedVector[0].Value
 
 	res, err := c.Push(series)
