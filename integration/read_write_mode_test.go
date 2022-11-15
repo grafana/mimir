@@ -11,6 +11,7 @@ import (
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/require"
 
@@ -39,6 +40,13 @@ func TestReadWriteMode(t *testing.T) {
 
 	c, err := e2emimir.NewClient(writeInstance.HTTPEndpoint(), readInstance.HTTPEndpoint(), "", "", "user-1")
 	require.NoError(t, err)
+
+	// Wait for the ingester to join the ring and become active - this prevents "empty ring" errors later when we try to query data.
+	require.NoError(t, readInstance.WaitSumMetricsWithOptions(
+		e2e.Equals(1),
+		[]string{"cortex_ring_members"},
+		e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"), labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE")),
+	))
 
 	// Push some data to the cluster.
 	now := time.Now()
