@@ -84,8 +84,8 @@ func (a *AlertmanagerCommand) Register(app *kingpin.Application, envVars EnvVarN
 	loadalertCmd.Flag("id", "Grafana Mimir tenant ID; alternatively, set "+envVars.TenantID+".").Envar(envVars.TenantID).Required().StringVar(&a.ClientConfig.ID)
 
 	vertifyalertCmd := alertCmd.Command("verify", "Verify Alertmanager tenant configuration and template files.").Action(a.verifyAlertmanagerConfig)
-	vertifyalertCmd.Arg("config", "Alertmanager configuration to load").Required().StringVar(&a.AlertmanagerConfigFile)
-	vertifyalertCmd.Arg("template-files", "The template files to load").ExistingFilesVar(&a.TemplateFiles)	
+	vertifyalertCmd.Arg("config", "Alertmanager configuration to verify").Required().StringVar(&a.AlertmanagerConfigFile)
+	vertifyalertCmd.Arg("template-files", "The template files to verify").ExistingFilesVar(&a.TemplateFiles)	
 }
 
 func (a *AlertmanagerCommand) setup(k *kingpin.ParseContext) error {
