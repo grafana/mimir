@@ -70,18 +70,17 @@ func (a *AlertmanagerCommand) Register(app *kingpin.Application, envVars EnvVarN
 	// Get Alertmanager Configs Command
 	getAlertsCmd := alertCmd.Command("get", "Get the Alertmanager configuration that is currently in the Grafana Mimir Alertmanager.").Action(a.getConfig)
 	getAlertsCmd.Flag("disable-color", "disable colored output").BoolVar(&a.DisableColor)
-	getAlertsCmd.Flag("address", "Address of the Grafana Mimir cluster; alternatively, set "+envVars.Address+".").Envar(envVars.Address).Required().StringVar(&a.ClientConfig.Address)
-	getAlertsCmd.Flag("id", "Grafana Mimir tenant ID; alternatively, set "+envVars.TenantID+".").Envar(envVars.TenantID).Required().StringVar(&a.ClientConfig.ID)
 
 	deleteCmd := alertCmd.Command("delete", "Delete the Alertmanager configuration that is currently in the Grafana Mimir Alertmanager.").Action(a.deleteConfig)
-	deleteCmd.Flag("address", "Address of the Grafana Mimir cluster; alternatively, set "+envVars.Address+".").Envar(envVars.Address).Required().StringVar(&a.ClientConfig.Address)
-	deleteCmd.Flag("id", "Grafana Mimir tenant ID; alternatively, set "+envVars.TenantID+".").Envar(envVars.TenantID).Required().StringVar(&a.ClientConfig.ID)
 
 	loadalertCmd := alertCmd.Command("load", "Load Alertmanager tenant configuration and template files into Grafana Mimir.").Action(a.loadConfig)
 	loadalertCmd.Arg("config", "Alertmanager configuration to load").Required().StringVar(&a.AlertmanagerConfigFile)
 	loadalertCmd.Arg("template-files", "The template files to load").ExistingFilesVar(&a.TemplateFiles)
-	loadalertCmd.Flag("address", "Address of the Grafana Mimir cluster; alternatively, set "+envVars.Address+".").Envar(envVars.Address).Required().StringVar(&a.ClientConfig.Address)
-	loadalertCmd.Flag("id", "Grafana Mimir tenant ID; alternatively, set "+envVars.TenantID+".").Envar(envVars.TenantID).Required().StringVar(&a.ClientConfig.ID)
+
+	for _, cmd := range []*kingpin.CmdClause{getAlertsCmd, deleteCmd, loadalertCmd} {
+		cmd.Flag("address", "Address of the Grafana Mimir cluster; alternatively, set "+envVars.Address+".").Envar(envVars.Address).Required().StringVar(&a.ClientConfig.Address)
+		cmd.Flag("id", "Grafana Mimir tenant ID; alternatively, set "+envVars.TenantID+".").Envar(envVars.TenantID).Required().StringVar(&a.ClientConfig.ID)
+	}	
 
 	vertifyalertCmd := alertCmd.Command("verify", "Verify Alertmanager tenant configuration and template files.").Action(a.verifyAlertmanagerConfig)
 	vertifyalertCmd.Arg("config", "Alertmanager configuration to verify").Required().StringVar(&a.AlertmanagerConfigFile)
