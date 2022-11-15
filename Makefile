@@ -483,7 +483,7 @@ check-doc: doc
 # https://github.com/grafana/technical-documentation/tree/main/tools/doc-validator
 check-doc-validator: ## Check documentation using doc-validator tool
 	docker pull grafana/doc-validator:latest
-	docker run -v "$(CURDIR)/docs/sources:/docs/sources" grafana/doc-validator:latest ./docs/sources
+	docker run -v "$(CURDIR)/docs/sources:/docs/sources" grafana/doc-validator:v1.0.0 ./docs/sources
 
 .PHONY: reference-help
 reference-help: ## Generates the reference help documentation.
