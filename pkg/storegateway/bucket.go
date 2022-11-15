@@ -1016,6 +1016,10 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		err = nil
 	})
 
+	if err != nil {
+		return
+	}
+
 	var anyHints *types.Any
 	if anyHints, err = types.MarshalAny(resHints); err != nil {
 		err = status.Error(codes.Unknown, errors.Wrap(err, "marshal series response hints").Error())
