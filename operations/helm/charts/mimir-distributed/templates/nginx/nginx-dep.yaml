@@ -44,8 +44,10 @@ spec:
       {{- if .Values.nginx.priorityClassName }}
       priorityClassName: {{ .Values.nginx.priorityClassName }}
       {{- end }}
+      {{- if not .Values.global.openshift.enabled }}
       securityContext:
         {{- toYaml .Values.nginx.podSecurityContext | nindent 8 }}
+      {{- end }}
       terminationGracePeriodSeconds: {{ .Values.nginx.terminationGracePeriodSeconds }}
       containers:
         - name: nginx

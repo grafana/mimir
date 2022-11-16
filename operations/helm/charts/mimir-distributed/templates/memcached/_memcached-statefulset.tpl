@@ -1,7 +1,7 @@
 {{/*
 memcached StatefulSet
 */}}
-{{- define "mimir.memcached.statefulSet" -}}
+{{- define "mimir.memcached.statefulSet" -}} 
 {{ with (index $.ctx.Values $.component) }}
 {{- if .enabled -}}
 apiVersion: apps/v1
@@ -40,8 +40,10 @@ spec:
       {{- if .priorityClassName }}
       priorityClassName: {{ .priorityClassName }}
       {{- end }}
+      {{- if not  $.ctx.Values.global.openshift.enabled }}
       securityContext:
         {{- toYaml $.ctx.Values.memcached.podSecurityContext | nindent 8 }}
+      {{- end }}
       initContainers:
         {{- toYaml .initContainers | nindent 8 }}
       nodeSelector:

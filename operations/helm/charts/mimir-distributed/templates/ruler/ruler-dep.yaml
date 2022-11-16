@@ -27,8 +27,10 @@ spec:
       {{- if .Values.ruler.priorityClassName }}
       priorityClassName: {{ .Values.ruler.priorityClassName }}
       {{- end }}
+      {{- if not .Values.global.openshift.enabled }}
       securityContext:
         {{- toYaml .Values.ruler.securityContext | nindent 8 }}
+      {{- end }}
       initContainers:
         {{- toYaml .Values.ruler.initContainers | nindent 8 }}
       {{- if .Values.image.pullSecrets }}

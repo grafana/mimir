@@ -27,8 +27,10 @@ spec:
       {{- if .Values.overrides_exporter.priorityClassName }}
       priorityClassName: {{ .Values.overrides_exporter.priorityClassName }}
       {{- end }}
+      {{- if not .Values.global.openshift.enabled }}
       securityContext:
         {{- toYaml .Values.overrides_exporter.securityContext | nindent 8 }}
+      {{- end }}
       {{- if .Values.image.pullSecrets }}
       imagePullSecrets:
       {{- range .Values.image.pullSecrets }}

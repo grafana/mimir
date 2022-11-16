@@ -31,8 +31,10 @@ spec:
         - name: graphite-web
           image: "{{ .Values.graphite.web.image.repository }}:{{ .Values.graphite.web.image.tag }}"
           imagePullPolicy: {{ .Values.graphite.web.image.pullPolicy }}
+          {{- if not .Values.global.openshift.enabled }}
           securityContext:
             {{- toYaml .Values.graphite.web.securityContext | nindent 12 }}
+          {{- end }}
           env:
             - name: GRAPHITE_CLUSTER_SERVERS
               value: {{ template "mimir.fullname" . }}-graphite.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" .  }}/graphite

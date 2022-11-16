@@ -37,8 +37,10 @@ spec:
       {{- if .priorityClassName }}
       priorityClassName: {{ .priorityClassName }}
       {{- end }}
+      {{- if not .Values.global.openshift.enabled }}
       securityContext:
         {{- toYaml .securityContext | nindent 8 }}
+      {{- end }}
       initContainers:
         {{- toYaml .initContainers | nindent 8 }}
       {{- if $.Values.image.pullSecrets }}

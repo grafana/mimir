@@ -27,8 +27,10 @@ spec:
       {{- if .Values.graphite.write_proxy.priorityClassName }}
       priorityClassName: {{ .Values.graphite.write_proxy.priorityClassName }}
       {{- end }}
+      {{- if not .Values.global.openshift.enabled }}
       securityContext:
         {{- toYaml .Values.graphite.write_proxy.securityContext | nindent 8 }}
+      {{- end }}
       initContainers:
         {{- with .Values.graphite.write_proxy.initContainers }}
         {{- toYaml . | nindent 8 }}

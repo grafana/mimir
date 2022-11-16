@@ -27,8 +27,10 @@ spec:
       {{- if .Values.continuous_test.priorityClassName }}
       priorityClassName: {{ .Values.continuous_test.priorityClassName }}
       {{- end }}
+      {{- if not .Values.global.openshift.enabled }}
       securityContext:
         {{- toYaml .Values.continuous_test.securityContext | nindent 8 }}
+      {{- end }}
       initContainers:
         {{- toYaml .Values.continuous_test.initContainers | nindent 8 }}
       {{- if .Values.image.pullSecrets }}

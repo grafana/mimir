@@ -27,8 +27,10 @@ spec:
       {{- if .Values.graphite.querier.priorityClassName }}
       priorityClassName: {{ .Values.graphite.querier.priorityClassName }}
       {{- end }}
+      {{- if not .Values.global.openshift.enabled }}
       securityContext:
         {{- toYaml .Values.graphite.querier.securityContext | nindent 8 }}
+      {{- end }}
       initContainers:
         {{- with .Values.graphite.querier.initContainers }}
         {{- toYaml . | nindent 8 }}

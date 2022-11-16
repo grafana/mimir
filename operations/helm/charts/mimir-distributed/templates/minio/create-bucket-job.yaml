@@ -46,10 +46,12 @@ spec:
 {{ toYaml . | indent 8 }}
 {{- end }}
 {{- if .Values.minio.makeBucketJob.securityContext.enabled }}
+{{- if not .Values.global.openshift.enabled }}
       securityContext:
         runAsUser: {{ .Values.minio.makeBucketJob.securityContext.runAsUser }}
         runAsGroup: {{ .Values.minio.makeBucketJob.securityContext.runAsGroup }}
         fsGroup: {{ .Values.minio.makeBucketJob.securityContext.fsGroup }}
+{{- end }}
 {{- end }}
       volumes:
         - name: minio-configuration

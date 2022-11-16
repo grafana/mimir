@@ -56,6 +56,10 @@ global:
   # scope: admin-api, alertmanager, compactor, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, tokengen
   podAnnotations: {}
 
+  # -- If Grafana Mimir is deployed to an OpenShift platform, then set this flag to true
+  openshift:
+    enabled: false
+
 serviceAccount:
   # -- Whether to create a service account or not. In case 'create' is false, do set 'name' to an existing service account name.
   create: true

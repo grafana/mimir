@@ -27,8 +27,10 @@ spec:
       {{- if .Values.admin_api.priorityClassName }}
       priorityClassName: {{ .Values.admin_api.priorityClassName }}
       {{- end }}
+      {{- if not .Values.global.openshift.enabled }}
       securityContext:
         {{- toYaml .Values.admin_api.securityContext | nindent 8 }}
+      {{- end }}
       initContainers:
         {{- with .Values.admin_api.initContainers }}
         {{- toYaml . | nindent 8 }}
