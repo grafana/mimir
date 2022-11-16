@@ -1,3 +1,4 @@
+{{- $openshiftEnabled := .Values.global.openshift.enabled }}
 {{- if (eq (include "mimir.gateway.isEnabled" .) "true") }}
 {{- with .Values.gateway }}
 {{- $isGEMGateway := $.Values.enterprise.enabled -}}
@@ -37,7 +38,7 @@ spec:
       {{- if .priorityClassName }}
       priorityClassName: {{ .priorityClassName }}
       {{- end }}
-      {{- if not .Values.global.openshift.enabled }}
+      {{- if not $openshiftEnabled }}
       securityContext:
         {{- toYaml .securityContext | nindent 8 }}
       {{- end }}
