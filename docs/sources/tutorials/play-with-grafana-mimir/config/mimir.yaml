@@ -22,7 +22,7 @@ blocks_storage:
 
 # Use memberlist, a gossip-based protocol, to enable the 3 Mimir replicas to communicate 
 memberlist:
-  join_members: [ "dns+load-balancer:9009" ]
+  join_members: [ "dns+load-balancer:7946" ]
 
 ruler:
   rule_path: /data/ruler
@@ -38,4 +38,4 @@ alertmanager:
   external_url: http://localhost:9009/alertmanager
 
 server:
-  log_level: warn
+  log_level: debug
