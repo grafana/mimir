@@ -1195,13 +1195,25 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 	}
 
 	keys := append(seriesKeys, metadataKeys...)
+	initialMetadataIndex := len(seriesKeys)
 
 	// we must not re-use buffers now until all DoBatch goroutines have finished,
 	// so set this flag false and pass cleanup() to DoBatch.
 	cleanupInDefer = false
 
 	err = ring.DoBatch(ctx, ring.WriteNoExtend, subRing, keys, func(ingester ring.InstanceDesc, indexes []int) error {
-		err := d.send(localCtx, ingester, req.Timeseries, req.Metadata, req.Source)
+		timeseries := make([]mimirpb.PreallocTimeseries, 0, len(indexes))
+		var metadata []*mimirpb.MetricMetadata
+
+		for _, i := range indexes {
+			if i >= initialMetadataIndex {
+				metadata = append(metadata, req.Metadata[i-initialMetadataIndex])
+			} else {
+				timeseries = append(timeseries, req.Timeseries[i])
+			}
+		}
+
+		err := d.send(localCtx, ingester, timeseries, metadata, req.Source)
 		if errors.Is(err, context.DeadlineExceeded) {
 			return httpgrpc.Errorf(500, "exceeded configured distributor remote timeout: %s", err.Error())
 		}
