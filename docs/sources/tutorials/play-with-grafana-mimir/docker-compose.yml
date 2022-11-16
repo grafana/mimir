@@ -53,23 +53,15 @@ services:
       - "mimir-2"
       - "mimir-3"
 
-  load-balancer:
-    image: nginx:latest
-    volumes:
-      - ./config/nginx.conf:/etc/nginx/nginx.conf:ro
-    depends_on:
-      - "mimir-1"
-      - "mimir-2"
-      - "mimir-3"
-    ports:
-      - 9009:9009
-
   mimir-1:
     image: grafana/mimir:latest
     command: ["-config.file=/etc/mimir.yaml"]
     hostname: mimir-1
     depends_on:
       - minio
+    networks:
+      default:
+        aliases: [load-balancer]
     volumes:
       - ./config/mimir.yaml:/etc/mimir.yaml
       - ./config/alertmanager-fallback-config.yaml:/etc/alertmanager-fallback-config.yaml
@@ -81,6 +73,9 @@ services:
     hostname: mimir-2
     depends_on:
       - minio
+    networks:
+      default:
+        aliases: [load-balancer]
     volumes:
       - ./config/mimir.yaml:/etc/mimir.yaml
       - ./config/alertmanager-fallback-config.yaml:/etc/alertmanager-fallback-config.yaml
@@ -92,6 +87,9 @@ services:
     hostname: mimir-3
     depends_on:
       - minio
+    networks:
+      default:
+        aliases: [load-balancer]
     volumes:
       - ./config/mimir.yaml:/etc/mimir.yaml
       - ./config/alertmanager-fallback-config.yaml:/etc/alertmanager-fallback-config.yaml
