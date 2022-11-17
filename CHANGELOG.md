@@ -41,7 +41,7 @@
 * [CHANGE] Configuration: The format of the `autoscaling` section of the configuration has changed to support more components. #3378
   * Instead of specific config variables for each component, they are listed in a dictionary. For example, `autoscaling.querier_enabled` becomes `autoscaling.querier.enabled`.
 * [ENHANCEMENT] Alerts: Add MimirRingMembersMismatch firing when a component does not have the expected number of running jobs. #2404
-* [ENHANCEMENT] Dashboards: Add optional row about the Distributor's metric forwarding feature to the `Mimir / Writes` dashboard. #3182 #3394
+* [ENHANCEMENT] Dashboards: Add optional row about the Distributor's metric forwarding feature to the `Mimir / Writes` dashboard. #3182 #3394 #3394 #3461
 * [ENHANCEMENT] Dashboards: Remove the "Instance Mapper" row from the "Alertmanager Resources Dashboard". This is a Grafana Cloud specific service and not relevant for external users. #3152
 * [ENHANCEMENT] Dashboards: Add "remote read", "metadata", and "exemplar" queries to "Mimir / Overview" dashboard. #3245
 * [ENHANCEMENT] Dashboards: Use non-red colors for non-error series in the "Mimir / Overview" dashboard. #3246
