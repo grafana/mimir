@@ -1,4 +1,4 @@
- local utils = import 'mixin-utils/utils.libsonnet';
+local utils = import 'mixin-utils/utils.libsonnet';
 
 (import 'alerts-utils.libsonnet') {
   // simpleRegexpOpt produces a simple regexp that matches all strings in the input array.
@@ -727,5 +727,5 @@
     },
   ],
 
-  groups+: $.withRunbookURL( 'https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#%s', alertGroups)
+  groups+: $.withRunbookURL('https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#%s', alertGroups),
 }
