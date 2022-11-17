@@ -7,6 +7,7 @@ package indexheader
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/binary"
 	"flag"
@@ -35,6 +36,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	mmap "github.com/grafana/mimir/pkg/storegateway/indexheader/fileutil"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 const (
@@ -42,7 +44,7 @@ const (
 	BinaryFormatV1 = 1
 
 	indexTOCLen  = 6*8 + crc32.Size
-	binaryTOCLen = 2*8 + crc32.Size
+	binaryTOCLen = 3*8 + crc32.Size
 	// headerLen represents number of bytes reserved of index header for header.
 	headerLen = 4 + 1 + 1 + 8
 
@@ -72,7 +74,8 @@ type BinaryTOC struct {
 	// Symbols holds start to the same symbols section as index related to this index header.
 	Symbols uint64
 	// PostingsOffsetTable holds start to the same Postings Offset Table section as index related to this index header.
-	PostingsOffsetTable uint64
+	PostingsOffsetTable   uint64
+	PostingsOffsetTableV2 uint64
 }
 
 // WriteBinary build index-header file from the pieces of index in object storage.
@@ -104,7 +107,38 @@ func WriteBinary(ctx context.Context, bkt objstore.BucketReader, id ulid.ULID, f
 		return errors.Wrap(err, "flush")
 	}
 
-	if err := ir.CopyPostingsOffsets(bw.PostingOffsetsWriter(), buf); err != nil {
+	potFilename := filename + "-postings-offset-table.tmp"
+	potFile, err := os.OpenFile(filepath.Clean(potFilename), os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return errors.Wrap(err, "create postings offset table temp file")
+	}
+	defer func() {
+		if err := os.Remove(potFilename); err != nil {
+			// TODO: We need a logger here
+			level.Error(util_log.Logger).Log("msg", "can't remove postings offset table tmp file", "err", err)
+		}
+	}()
+	potFileClosed := false
+	defer func() {
+		if !potFileClosed {
+			runutil.CloseWithErrCapture(&err, potFile, "close postings offset file")
+		}
+	}()
+
+	if err := ir.copyPostingsOffsets(bw.PostingOffsetsWriter(), buf, potFile); err != nil {
+		return err
+	}
+
+	mf, err := mmap.MmapOpenedFile(potFile)
+	if err != nil {
+		return errors.Wrap(err, "mmap postings offset table")
+	}
+	defer func() {
+		runutil.CloseWithErrCapture(&err, mf, "close postings offset table mmap")
+		potFileClosed = true
+	}()
+	bw.toc.PostingsOffsetTableV2 = bw.f.Pos()
+	if err := ir.buildPostingsOffsetsV2(bw.f, buf, mf.Bytes()); err != nil {
 		return err
 	}
 
@@ -221,18 +255,111 @@ func (r *chunkedIndexReader) CopySymbols(w io.Writer, buf []byte) (err error) {
 	return nil
 }
 
-func (r *chunkedIndexReader) CopyPostingsOffsets(w io.Writer, buf []byte) (err error) {
+func (r *chunkedIndexReader) copyPostingsOffsets(w io.Writer, buf []byte, tmpFile *os.File) (err error) {
 	rc, err := r.bkt.GetRange(r.ctx, r.path, int64(r.toc.PostingsTable), int64(r.size-r.toc.PostingsTable))
 	if err != nil {
 		return errors.Wrapf(err, "get posting offset table from object storage of %s", r.path)
 	}
 	defer runutil.CloseWithErrCapture(&err, rc, "close posting offsets reader")
 
-	if _, err := io.CopyBuffer(w, rc, buf); err != nil {
+	if _, err := io.CopyBuffer(tmpFile, rc, buf); err != nil {
 		return errors.Wrap(err, "copy posting offsets")
 	}
 
+	if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
+		return errors.Wrap(err, "seek posting offsets")
+	}
+
+	if _, err := io.CopyBuffer(w, tmpFile, buf); err != nil {
+		return errors.Wrap(err, "copy posting offsets")
+	}
+
+	if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
+		return errors.Wrap(err, "seek posting offsets again")
+	}
+
 	return nil
+}
+
+func (r *chunkedIndexReader) buildPostingsOffsetsV2(w *FileWriter, bufBytes []byte, potBytes []byte) (err error) {
+	startPos := w.Pos()
+	// Leave 4 bytes of space for the length, which will be calculated later.
+	if err := w.Write([]byte("NULL")); err != nil {
+		return err
+	}
+	crc := crc32.New(castagnoliTable)
+
+	buf := encoding.Encbuf{B: bufBytes[:0]}
+
+	d := encoding.NewDecbufAt(realByteSlice(potBytes), 0, castagnoliTable)
+	cnt := int(d.Be32())
+	if d.Err() != nil {
+		return errors.Wrap(d.Err(), "read postings offsets table length")
+	}
+
+	buf.PutBE32int(int(cnt)) // Count.
+	buf.WriteToHash(crc)
+	if err := w.Write(buf.Get()); err != nil {
+		return err
+	}
+
+	var lastLabelName []byte
+	type lblOffset struct {
+		value  []byte
+		offset uint64
+	}
+
+	// Be pessimistic here: this is not a big struct to allocate, but prefer it to have to grow it.
+	lblOffsets := make([]lblOffset, 0, cnt)
+	writeLabelOffsets := func() error {
+		if lastLabelName != nil {
+			buf.Reset()
+			buf.PutUvarintBytes(lastLabelName)
+			buf.PutUvarint(len(lblOffsets))
+			for _, o := range lblOffsets {
+				buf.PutUvarintBytes(o.value)
+				buf.PutUvarint64(o.offset)
+			}
+			buf.WriteToHash(crc)
+			if err := w.Write(buf.Get()); err != nil {
+				return err
+			}
+			lblOffsets = lblOffsets[:0]
+		}
+		return nil
+	}
+
+	if err := readOffsetTable(realByteSlice(potBytes), 0, bytesPostingsOffsetTableReader, func(lbl bytesLabel, off uint64, _ int) error {
+		if !bytes.Equal(lbl.name, lastLabelName) {
+			if err := writeLabelOffsets(); err != nil {
+				return errors.Wrap(err, "write postings offsets table v2")
+			}
+		}
+		lastLabelName = lbl.name
+		lblOffsets = append(lblOffsets, lblOffset{value: lbl.value, offset: off})
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "read postings table for building v2")
+	}
+
+	if err := writeLabelOffsets(); err != nil {
+		return errors.Wrap(err, "write postings offsets table v2")
+	}
+
+	l := w.Pos() - startPos - 4
+	if l > math.MaxUint32 {
+		return errors.Errorf("postings offset table v2 size exceeds 4 bytes: %d", l)
+	}
+
+	buf.Reset()
+	buf.PutBE32int(int(l))
+	if err := w.WriteAt(buf.Get(), startPos); err != nil {
+		return err
+	}
+
+	buf.Reset()
+	buf.PutHashSum(crc)
+	return w.Write(buf.Get())
 }
 
 // TODO(bwplotka): Add padding for efficient read.
@@ -392,11 +519,17 @@ func (w *binaryWriter) PostingOffsetsWriter() io.Writer {
 	return w
 }
 
+func (w *binaryWriter) PostingOffsetsWriterV2() io.Writer {
+	w.toc.PostingsOffsetTableV2 = w.f.Pos()
+	return w
+}
+
 func (w *binaryWriter) WriteTOC() error {
 	w.buf.Reset()
 
 	w.buf.PutBE64(w.toc.Symbols)
 	w.buf.PutBE64(w.toc.PostingsOffsetTable)
+	w.buf.PutBE64(w.toc.PostingsOffsetTableV2)
 
 	w.buf.PutHash(w.crc32)
 
@@ -407,6 +540,10 @@ func (w *binaryWriter) Write(p []byte) (int, error) {
 	n := w.f.Pos()
 	err := w.f.Write(p)
 	return int(w.f.Pos() - n), err
+}
+
+func (w *binaryWriter) WriteAt(p []byte, pos uint64) error {
+	return w.f.WriteAt(p, pos)
 }
 
 func (w *binaryWriter) Close() error {
@@ -572,7 +709,7 @@ func newFileBinaryReader(path string, postingOffsetsInMemSampling int, cfg Binar
 
 		// For the postings offset table we keep every label name but only every nth
 		// label value (plus the first and last one), to save memory.
-		if err := readOffsetTable(r.b, r.toc.PostingsOffsetTable, bytesPostingsOffsetTableReader, func(lbl bytesLabel, off uint64, tableOff int) error {
+		if err := readOffsetTableV2(r.b, r.toc.PostingsOffsetTableV2, func(lbl bytesLabel, off uint64, tableOff int) error {
 			if _, ok := r.postings[string(lbl.name)]; !ok {
 				// Not seen before label name.
 				// We need to set a new key in the map, which will be kept in memory so we need a un-yoloed version of the label name.
@@ -599,7 +736,7 @@ func newFileBinaryReader(path string, postingOffsetsInMemSampling int, cfg Binar
 
 			return nil
 		}); err != nil {
-			return nil, errors.Wrap(err, "read postings table")
+			return nil, errors.Wrap(err, "read postings table v2")
 		}
 		if lastSet {
 			if (valueCount-1)%postingOffsetsInMemSampling != 0 {
@@ -654,8 +791,9 @@ func newBinaryTOCFromByteSlice(bs index.ByteSlice) (*BinaryTOC, error) {
 	}
 
 	return &BinaryTOC{
-		Symbols:             d.Be64(),
-		PostingsOffsetTable: d.Be64(),
+		Symbols:               d.Be64(),
+		PostingsOffsetTable:   d.Be64(),
+		PostingsOffsetTableV2: d.Be64(),
 	}, nil
 }
 
@@ -713,7 +851,6 @@ func (r *BinaryReader) postingsOffset(name string, values ...string) ([]index.Ra
 		return nil, nil
 	}
 
-	buf := 0
 	valueIndex := 0
 	for valueIndex < len(values) && values[valueIndex] < e.offsets[0].value {
 		// Discard values before the start.
@@ -736,7 +873,7 @@ func (r *BinaryReader) postingsOffset(name string, values ...string) ([]index.Ra
 
 		// Don't Crc32 the entire postings offset table, this is very slow
 		// so hope any issues were caught at startup.
-		d := encoding.NewDecbufAt(r.b, int(r.toc.PostingsOffsetTable), nil)
+		d := encoding.NewDecbufAt(r.b, int(r.toc.PostingsOffsetTableV2), nil)
 		d.Skip(e.offsets[i].tableOff)
 
 		// Iterate on the offset table.
@@ -753,7 +890,6 @@ func (r *BinaryReader) postingsOffset(name string, values ...string) ([]index.Ra
 			// │ │  offset <uvarint64>                    │ │
 			// │ └────────────────────────────────────────┘ │
 			// First, let's skip n and name.
-			skipNAndName(&d, &buf)
 			value := d.UvarintBytes() // Label value.
 			postingOffset := int64(d.Uvarint64())
 
@@ -804,7 +940,6 @@ func (r *BinaryReader) postingsOffset(name string, values ...string) ([]index.Ra
 				// We added some ranges in this iteration. Use next posting offset as the end of our ranges.
 				// We know it exists as we never go further in this loop than e.offsets[i, i+1].
 
-				skipNAndName(&d, &buf)
 				d.UvarintBytes() // Label value.
 				postingOffset := int64(d.Uvarint64())
 
@@ -881,22 +1016,11 @@ func (r *BinaryReader) LabelValues(name string, filter func(string) bool) ([]str
 	}
 	values := make([]string, 0, len(e.offsets)*r.postingOffsetsInMemSampling)
 
-	d := encoding.NewDecbufAt(r.b, int(r.toc.PostingsOffsetTable), nil)
+	d := encoding.NewDecbufAt(r.b, int(r.toc.PostingsOffsetTableV2), nil)
 	d.Skip(e.offsets[0].tableOff)
 	lastVal := e.offsets[len(e.offsets)-1].value
 
-	skip := 0
 	for d.Err() == nil {
-		if skip == 0 {
-			// These are always the same number of bytes,
-			// and it's faster to skip than parse.
-			skip = d.Len()
-			d.Uvarint()      // Keycount.
-			d.UvarintBytes() // Label name.
-			skip -= d.Len()
-		} else {
-			d.Skip(skip)
-		}
 		s := yoloString(d.UvarintBytes()) // Label value.
 		if filter == nil || filter(s) {
 			values = append(values, s)
@@ -1002,4 +1126,32 @@ func bytesPostingsOffsetTableReader(d *encoding.Decbuf) (bytesLabel, error) {
 type bytesLabel struct {
 	name  []byte
 	value []byte
+}
+
+func readOffsetTableV2(bs index.ByteSlice, off uint64, f func(bytesLabel, uint64, int) error) error {
+	d := encoding.NewDecbufAt(bs, int(off), castagnoliTable)
+	startLen := d.Len()
+	cnt := d.Be32()
+
+	labelCount := 0
+	var labelName []byte
+	for d.Err() == nil && d.Len() > 0 && cnt > 0 {
+		if labelCount == 0 {
+			labelName = d.UvarintBytes()
+			labelCount = d.Uvarint()
+		}
+
+		offsetPos := startLen - d.Len()
+		labelValue := d.UvarintBytes()
+		o := d.Uvarint64()
+		if d.Err() != nil {
+			break
+		}
+		if err := f(bytesLabel{labelName, labelValue}, o, offsetPos); err != nil {
+			return err
+		}
+		cnt--
+		labelCount--
+	}
+	return d.Err()
 }

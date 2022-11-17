@@ -30,6 +30,24 @@ func OpenMmapFileWithSize(path string, size int, populate bool) (mf *MmapFile, r
 			f.Close()
 		}
 	}()
+	b, err := mmapOSFile(f, size, populate)
+	if err != nil {
+		return nil, err
+	}
+
+	return &MmapFile{f: f, b: b}, nil
+}
+
+func MmapOpenedFile(f *os.File) (mf *MmapFile, retErr error) {
+	b, err := mmapOSFile(f, 0, false)
+	if err != nil {
+		return nil, err
+	}
+
+	return &MmapFile{f: f, b: b}, nil
+}
+
+func mmapOSFile(f *os.File, size int, populate bool) ([]byte, error) {
 	if size <= 0 {
 		info, err := f.Stat()
 		if err != nil {
@@ -42,8 +60,7 @@ func OpenMmapFileWithSize(path string, size int, populate bool) (mf *MmapFile, r
 	if err != nil {
 		return nil, errors.Wrapf(err, "mmap, size %d", size)
 	}
-
-	return &MmapFile{f: f, b: b}, nil
+	return b, nil
 }
 
 func (f *MmapFile) Close() error {
