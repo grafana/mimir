@@ -1,5 +1,5 @@
 {
-  groups+: [
+  local alertGroups = [
     {
       name: 'mimir_autoscaling',
       rules: [
@@ -23,4 +23,6 @@
       ],
     },
   ],
+
+  groups+: $.withRunbookURL('https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#%s', alertGroups),
 }

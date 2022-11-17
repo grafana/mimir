@@ -1,5 +1,5 @@
 (import 'alerts-utils.libsonnet') {
-  groups+: [
+  local alertGroups = [
     {
       name: 'mimir_continuous_test',
       rules: [
@@ -50,4 +50,6 @@
       ],
     },
   ],
+
+  groups+: $.withRunbookURL('https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#%s', alertGroups),
 }

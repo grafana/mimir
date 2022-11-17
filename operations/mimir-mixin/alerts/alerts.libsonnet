@@ -1,3 +1,5 @@
+local utils = import 'mixin-utils/utils.libsonnet';
+
 (import 'alerts-utils.libsonnet') {
   // simpleRegexpOpt produces a simple regexp that matches all strings in the input array.
   local simpleRegexpOpt(strings) =
@@ -10,7 +12,7 @@
   local groupStatefulSetByRolloutGroup(metricName) =
     'sum without(statefulset) (label_replace(%s, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))' % metricName,
 
-  groups+: [
+  local alertGroups = [
     {
       name: 'mimir_alerts',
       rules: [
@@ -724,4 +726,6 @@
       ],
     },
   ],
+
+  groups+: $.withRunbookURL('https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#%s', alertGroups),
 }

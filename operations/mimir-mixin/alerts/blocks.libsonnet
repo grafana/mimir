@@ -1,5 +1,5 @@
 (import 'alerts-utils.libsonnet') {
-  groups+: [
+  local alertGroups = [
     {
       name: 'mimir_blocks_alerts',
       rules: [
@@ -253,4 +253,6 @@
       ],
     },
   ],
+
+  groups+: $.withRunbookURL('https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#%s', alertGroups),
 }
