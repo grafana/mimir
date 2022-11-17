@@ -738,7 +738,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 		}
 
 		// Look up a reference for this series.
-		ref, copiedLabels := app.GetRef(mimirpb.FromLabelAdaptersToLabels(ts.Labels))
+		ref, tsdbLabels := app.GetRef(mimirpb.FromLabelAdaptersToLabels(ts.Labels))
 
 		// To find out if any sample was added to this series, we keep old value.
 		oldSucceededSamplesCount := succeededSamplesCount
@@ -748,13 +748,13 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 			// If the cached reference exists, we try to use it.
 			if ref != 0 {
-				if _, err = app.Append(ref, copiedLabels, s.TimestampMs, s.Value); err == nil {
+				if _, err = app.Append(ref, tsdbLabels, s.TimestampMs, s.Value); err == nil {
 					succeededSamplesCount++
 					continue
 				}
 			} else {
 				// Copy the label set because both TSDB and the active series tracker may retain it.
-				copiedLabels = mimirpb.FromLabelAdaptersToLabelsWithCopy(ts.Labels)
+				copiedLabels := mimirpb.FromLabelAdaptersToLabelsWithCopy(ts.Labels)
 
 				// Retain the reference in case there are multiple samples for the series.
 				if ref, err = app.Append(0, copiedLabels, s.TimestampMs, s.Value); err == nil {
@@ -802,6 +802,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 			case errMaxSeriesPerMetricLimitExceeded:
 				perMetricSeriesLimitCount++
+				copiedLabels := mimirpb.FromLabelAdaptersToLabelsWithCopy(ts.Labels)
 				updateFirstPartial(func() error {
 					return makeMetricLimitError(perMetricSeriesLimit, copiedLabels, i.limiter.FormatError(userID, cause))
 				})
@@ -817,10 +818,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 		}
 
 		if i.cfg.ActiveSeriesMetricsEnabled && succeededSamplesCount > oldSucceededSamplesCount {
-			db.activeSeries.UpdateSeries(mimirpb.FromLabelAdaptersToLabels(ts.Labels), startAppend, func(l labels.Labels) labels.Labels {
-				// we must already have copied the labels if succeededSamplesCount has been incremented.
-				return copiedLabels
-			})
+			db.activeSeries.UpdateSeries(tsdbLabels, startAppend, func(l labels.Labels) labels.Labels { return l })
 		}
 
 		if len(ts.Exemplars) > 0 && i.limits.MaxGlobalExemplarsPerUser(userID) > 0 {
