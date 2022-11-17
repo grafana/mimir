@@ -413,6 +413,37 @@ func (w *binaryWriter) Close() error {
 	return w.f.Close()
 }
 
+func newFileByteSlice(path string, _ BinaryReaderConfig) (index.ByteSlice, io.Closer, error) {
+	s, err := os.Stat(path)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	defer func() { _ = f.Close() }()
+	buf := make([]byte, s.Size())
+
+	_, err = io.ReadFull(f, buf)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return realByteSlice(buf), io.NopCloser(nil), nil
+}
+
+func newMmapByteSlice(path string, cfg BinaryReaderConfig) (index.ByteSlice, io.Closer, error) {
+	f, err := mmap.OpenMmapFile(path, cfg.MapPopulateEnabled)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return realByteSlice(f.Bytes()), f, nil
+}
+
 type postingValueOffsets struct {
 	offsets       []postingOffset
 	lastValOffset int64
@@ -464,10 +495,12 @@ type BinaryReader struct {
 
 type BinaryReaderConfig struct {
 	MapPopulateEnabled bool `yaml:"map_populate_enabled" category:"experimental"`
+	NativeFileReads    bool `yaml:"native_file_reads" category:"experimental"`
 }
 
 func (cfg *BinaryReaderConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.BoolVar(&cfg.MapPopulateEnabled, prefix+"map-populate-enabled", false, "If enabled, the store-gateway will attempt to pre-populate the file system cache when memory-mapping index-header files.")
+	f.BoolVar(&cfg.NativeFileReads, prefix+"native-file-reads", false, "If enabled, the store-gateway will use native reads to load index-headers and keep them in memory, NOT memory-mapped files.")
 }
 
 // NewBinaryReader loads or builds new index-header if not present on disk.
@@ -490,19 +523,30 @@ func NewBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.Bucket
 }
 
 func newFileBinaryReader(path string, postingOffsetsInMemSampling int, cfg BinaryReaderConfig) (bw *BinaryReader, err error) {
-	f, err := mmap.OpenMmapFile(path, cfg.MapPopulateEnabled)
+	var (
+		b index.ByteSlice
+		c io.Closer
+	)
+
+	if cfg.NativeFileReads {
+		b, c, err = newFileByteSlice(path, cfg)
+	} else {
+		b, c, err = newMmapByteSlice(path, cfg)
+	}
+
 	if err != nil {
 		return nil, err
 	}
+
 	defer func() {
 		if err != nil {
-			runutil.CloseWithErrCapture(&err, f, "index header close")
+			runutil.CloseWithErrCapture(&err, c, "index header close")
 		}
 	}()
 
 	r := &BinaryReader{
-		b:                           realByteSlice(f.Bytes()),
-		c:                           f,
+		b:                           b,
+		c:                           c,
 		postings:                    map[string]*postingValueOffsets{},
 		postingOffsetsInMemSampling: postingOffsetsInMemSampling,
 	}

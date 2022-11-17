@@ -3012,6 +3012,11 @@ bucket_store:
     # CLI flag: -blocks-storage.bucket-store.index-header.map-populate-enabled
     [map_populate_enabled: <boolean> | default = false]
 
+    # (experimental) If enabled, the store-gateway will use native reads to load
+    # index-headers and keep them in memory, NOT memory-mapped files.
+    # CLI flag: -blocks-storage.bucket-store.index-header.native-file-reads
+    [native_file_reads: <boolean> | default = false]
+
   # (experimental) True to reject queries above the max number of concurrent
   # queries to execute against long-term storage. If false, queries will block
   # until they are able to run.

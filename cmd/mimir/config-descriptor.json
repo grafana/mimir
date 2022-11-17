@@ -5678,6 +5678,17 @@
                   "fieldFlag": "blocks-storage.bucket-store.index-header.map-populate-enabled",
                   "fieldType": "boolean",
                   "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "native_file_reads",
+                  "required": false,
+                  "desc": "If enabled, the store-gateway will use native reads to load index-headers and keep them in memory, NOT memory-mapped files.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "blocks-storage.bucket-store.index-header.native-file-reads",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
