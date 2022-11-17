@@ -759,8 +759,19 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 				// Retain the reference in case there are multiple samples for the series.
 				if ref, err = app.Append(0, copiedLabels, s.TimestampMs, s.Value); err == nil {
 					succeededSamplesCount++
-					continue
+
+					var appendedRef storage.SeriesRef
+					appendedRef, tsdbLabels = app.GetRef(copiedLabels)
+					if appendedRef != 0 {
+						continue
+					}
+					level.Warn(i.logger).Log("msg", "failed to get the ref of the appended series", "user", userID)
+					// TODO Actually 0 is a valid ref, so we can't fail here.
+					//      Since the append succeded, it should be valid, so don't fail now.
+					//      Fix it in Prometheus.
+					continue // TODO should be err = errors.New("failed to get the ref of the appended series")
 				}
+
 			}
 
 			failedSamplesCount++
