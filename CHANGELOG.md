@@ -99,6 +99,7 @@
 
 ### Mimirtool
 
+* [FEATURE] Added `mimirtool alertmanager verify` command to validate configuration without uploading. #3440
 * [ENHANCEMENT] Added `mimirtool rules delete-namespace` command to delete all of the rule groups in a namespace including the namespace itself. #3136
 * [ENHANCEMENT] Refactor `mimirtool analyze prometheus`: add concurrency and resiliency #3062
   * Add `--concurrency` flag. Default: number of logical CPUs

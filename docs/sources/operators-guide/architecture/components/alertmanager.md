@@ -24,6 +24,12 @@ The Mimir Alertmanager uses the same [configuration file](https://prometheus.io/
 > **Note:** The Mimir Alertmanager exposes the configuration API according to the path set by the `-server.path-prefix` flag. It does not use the path set by the `-http.alertmanager-http-prefix` flag.
 > If you run Mimir with the default configuration (`-server.path-prefix`, where the default value is `/`), then only set the hostname for the `--address` flag of the `mimirtool` command; do not set a path-specific address. For example, `/` is correct, and `/alertmanager` is incorrect.
 
+You can validate a configuration file using the `mimirtool` command:
+
+```bash
+mimirtool alertmanager verify <ALERTMANAGER CONFIGURATION FILE>
+```
+
 The following sample command shows how to upload a tenant's Alertmanager configuration using `mimirtool`:
 
 ```bash
