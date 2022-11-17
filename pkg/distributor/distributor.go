@@ -811,7 +811,7 @@ func (d *Distributor) prePushRelabelMiddleware(next push.Func) push.Func {
 
 		if len(removeTsIndexes) > 0 {
 			for _, removeTsIndex := range removeTsIndexes {
-				mimirpb.ReusePreallocTimeseries(req.Timeseries[removeTsIndex])
+				mimirpb.ReusePreallocTimeseries(&req.Timeseries[removeTsIndex])
 			}
 			req.Timeseries = util.RemoveSliceIndexes(req.Timeseries, removeTsIndexes)
 		}
@@ -901,7 +901,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 		}
 		if len(removeIndexes) > 0 {
 			for _, removeIndex := range removeIndexes {
-				mimirpb.ReusePreallocTimeseries(req.Timeseries[removeIndex])
+				mimirpb.ReusePreallocTimeseries(&req.Timeseries[removeIndex])
 			}
 			req.Timeseries = util.RemoveSliceIndexes(req.Timeseries, removeIndexes)
 			removeIndexes = removeIndexes[:0]
