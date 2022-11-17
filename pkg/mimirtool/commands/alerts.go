@@ -112,36 +112,36 @@ func (a *AlertmanagerCommand) getConfig(k *kingpin.ParseContext) error {
 	return p.PrintAlertmanagerConfig(cfg, templates)
 }
 
-func (a *AlertmanagerCommand) readAlertManagerConfig(k *kingpin.ParseContext) (error, string, map[string]string) {
+func (a *AlertmanagerCommand) readAlertManagerConfig(k *kingpin.ParseContext) (string, map[string]string, error) {
 	content, err := os.ReadFile(a.AlertmanagerConfigFile)
 	if err != nil {
-		return errors.Wrap(err, "unable to load config file: "+a.AlertmanagerConfigFile), "", nil
+		return "", nil, errors.Wrap(err, "unable to load config file: "+a.AlertmanagerConfigFile)
 	}
 
 	cfg := string(content)
 	_, err = config.Load(cfg)
 	if err != nil {
-		return err, "", nil
+		return "", nil, err
 	}
 
 	templates := map[string]string{}
 	for _, f := range a.TemplateFiles {
 		tmpl, err := os.ReadFile(f)
 		if err != nil {
-			return errors.Wrap(err, "unable to load template file: "+f), "", nil
+			return "", nil, errors.Wrap(err, "unable to load template file: "+f)
 		}
 		templates[f] = string(tmpl)
 	}
-	return nil, cfg, templates
+	return cfg, templates, nil
 }
 
 func (a *AlertmanagerCommand) verifyAlertmanagerConfig(k *kingpin.ParseContext) error {
-	err, _, _ := a.readAlertManagerConfig(k)
+	_, _, err := a.readAlertManagerConfig(k)
 	return err
 }
 
 func (a *AlertmanagerCommand) loadConfig(k *kingpin.ParseContext) error {
-	err, cfg, templates := a.readAlertManagerConfig(k)
+	cfg, templates, err := a.readAlertManagerConfig(k)
 	if err != nil {
 		return err
 	}
