@@ -143,6 +143,8 @@ type Distributor struct {
 	sampleValidationMetrics   *validation.SampleValidationMetrics
 	exemplarValidationMetrics *validation.ExemplarValidationMetrics
 	metadataValidationMetrics *validation.MetadataValidationMetrics
+
+	pushWithMiddlewares push.Func
 }
 
 // Config contains the configuration required to
@@ -424,6 +426,8 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	if d.forwarder != nil {
 		subservices = append(subservices, d.forwarder)
 	}
+
+	d.pushWithMiddlewares = d.GetPushFunc(nil)
 
 	subservices = append(subservices, d.ingesterPool, d.activeUsers)
 	d.subservices, err = services.NewManager(subservices...)
@@ -1120,7 +1124,7 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 	pushReq := push.NewParsedRequest(req)
 	pushReq.AddCleanup(func() { mimirpb.ReuseSlice(req.Timeseries) })
 
-	return d.GetPushFunc(nil)(ctx, pushReq)
+	return d.pushWithMiddlewares(ctx, pushReq)
 }
 
 // GetPushFunc returns push.Func that can be used by push handler.
