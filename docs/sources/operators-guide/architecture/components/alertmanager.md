@@ -27,7 +27,7 @@ The Mimir Alertmanager uses the same [configuration file](https://prometheus.io/
 You can validate a configuration file using the `mimirtool` command:
 
 ```bash
-mimirtool alertmanager verify <ALERTMANAGER CONFIGURATION FILE> 
+mimirtool alertmanager verify <ALERTMANAGER CONFIGURATION FILE>
 ```
 
 The following sample command shows how to upload a tenant's Alertmanager configuration using `mimirtool`:
