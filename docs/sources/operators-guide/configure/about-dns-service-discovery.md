@@ -35,4 +35,6 @@ You select a discovery mode by adding one of the following supported prefixes to
 - **`dnssrvnoa+`**<br />
   The domain name after the prefix is looked up as a SRV query, with no A/AAAA lookup made after that. For example: `dnssrvnoa+_memcached._tcp.memcached.namespace.svc.cluster.local`.
 
+The Alertmanager URL must also contain the scheme. For example: `dns+http://alermanager.local:8080`.
+
 If no prefix is provided, the provided IP or hostname is used without pre-resolving it.
