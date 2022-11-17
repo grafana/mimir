@@ -108,8 +108,8 @@ func (cfg *Config) Validate() error {
 		return errUnsupportedSignatureVersion
 	}
 	if cfg.Endpoint != "" {
-		endPoint := strings.Split(cfg.Endpoint, ".")
-		if cfg.BucketName != "" && endPoint[0] != "" && endPoint[0] == cfg.BucketName {
+		endpoint := strings.Split(cfg.Endpoint, ".")
+		if cfg.BucketName != "" && endpoint[0] != "" && endpoint[0] == cfg.BucketName {
 			return errInvalidEndpointPrefix
 		}
 	}
