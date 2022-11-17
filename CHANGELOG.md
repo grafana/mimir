@@ -26,7 +26,7 @@
 * [ENHANCEMENT] Clarify which S3 signature versions are supported in the error "unsupported signature version". #3376
 * [ENHANCEMENT] Store-gateway: improved index header reading performance. #3393 #3397 #3436
 * [ENHANCEMENT] Store-gateway: improved performance of series matching. #3391
-* [ENHANCEMENT] Move the validation of incoming series before the distributor's forwarding functionality, so that we don't forward invalid series. #3386
+* [ENHANCEMENT] Move the validation of incoming series before the distributor's forwarding functionality, so that we don't forward invalid series. #3386 #3458
 * [ENHANCEMENT] S3 bucket configuration now validates that the endpoint does not have the bucket name prefix. #3414
 * [BUGFIX] Flusher: Add `Overrides` as a dependency to prevent panics when starting with `-target=flusher`. #3151
 * [BUGFIX] Updated `golang.org/x/text` dependency to fix CVE-2022-32149. #3285
