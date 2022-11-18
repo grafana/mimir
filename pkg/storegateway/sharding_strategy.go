@@ -7,6 +7,7 @@ package storegateway
 
 import (
 	"context"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -47,21 +48,23 @@ type ShardingLimits interface {
 // ShuffleShardingStrategy is a shuffle sharding strategy, based on the hash ring formed by store-gateways,
 // where each tenant blocks are sharded across a subset of store-gateway instances.
 type ShuffleShardingStrategy struct {
-	r            *ring.Ring
-	instanceID   string
-	instanceAddr string
-	limits       ShardingLimits
-	logger       log.Logger
+	r                             *ring.Ring
+	recentBlocksReplicationFactor int
+	instanceID                    string
+	instanceAddr                  string
+	limits                        ShardingLimits
+	logger                        log.Logger
 }
 
 // NewShuffleShardingStrategy makes a new ShuffleShardingStrategy.
-func NewShuffleShardingStrategy(r *ring.Ring, instanceID, instanceAddr string, limits ShardingLimits, logger log.Logger) *ShuffleShardingStrategy {
+func NewShuffleShardingStrategy(r *ring.Ring, instanceID, instanceAddr string, recentBlocksReplicationFactor int, limits ShardingLimits, logger log.Logger) *ShuffleShardingStrategy {
 	return &ShuffleShardingStrategy{
-		r:            r,
-		instanceID:   instanceID,
-		instanceAddr: instanceAddr,
-		limits:       limits,
-		logger:       logger,
+		r:                             r,
+		instanceID:                    instanceID,
+		instanceAddr:                  instanceAddr,
+		recentBlocksReplicationFactor: recentBlocksReplicationFactor,
+		limits:                        limits,
+		logger:                        logger,
 	}
 }
 
@@ -114,11 +117,15 @@ func (s *ShuffleShardingStrategy) FilterBlocks(_ context.Context, userID string,
 	r := GetShuffleShardingSubring(s.r, userID, s.limits)
 	bufDescs, bufHosts, bufZones := ring.MakeBuffersForGet()
 
-	for blockID := range metas {
+	for blockID, meta := range metas {
+		var getRingOptions []ring.GetOption
+		if s.recentBlocksReplicationFactor > 0 && extendReplicationSetForBlockLoading(meta.MaxTime, time.Now()) {
+			getRingOptions = []ring.GetOption{ring.WithReplicationFactor(s.recentBlocksReplicationFactor)}
+		}
+
 		key := mimir_tsdb.HashBlockID(blockID)
 
-		// Check if the block is owned by the store-gateway
-		set, err := r.Get(key, BlocksOwnerSync, bufDescs, bufHosts, bufZones)
+		set, err := r.Get(key, BlocksOwnerSync, bufDescs, bufHosts, bufZones, getRingOptions...)
 
 		// If an error occurs while checking the ring, we keep the previously loaded blocks.
 		if err != nil {
@@ -145,7 +152,7 @@ func (s *ShuffleShardingStrategy) FilterBlocks(_ context.Context, userID string,
 		// for queries.
 		if _, ok := loaded[blockID]; ok {
 			// The ring Get() returns an error if there's no available instance.
-			if _, err := r.Get(key, BlocksOwnerRead, bufDescs, bufHosts, bufZones); err != nil {
+			if _, err := r.Get(key, BlocksOwnerRead, bufDescs, bufHosts, bufZones, getRingOptions...); err != nil {
 				// Keep the block.
 				continue
 			}
@@ -173,6 +180,28 @@ func GetShuffleShardingSubring(ring *ring.Ring, userID string, limits ShardingLi
 	}
 
 	return ring.ShuffleShard(userID, shardSize)
+}
+
+const (
+	recentBlockPeriodForQuerying = 48 * time.Hour
+
+	// recentBlockPeriodForLoading is longer that the store-gateway can keep the block loaded
+	// slightly longer than the querier will try to query it. Otherwise, there is a race condition
+	// between a store-gateway unloading a recent block and the querier taking time.Now().
+	//
+	// This time buffer is an optimization. The reason is that even if a querier queries a block that has
+	// been unloaded, the store-gateway will return an empty response. Then the querier will keep trying
+	// the remaining instances in the replication set. Of the remaining instances at least one will still have
+	// the block loaded. We optimize to avoid the extra round trips with empty responses.
+	recentBlockPeriodForLoading = recentBlockPeriodForQuerying + time.Hour
+)
+
+func ExtendReplicationSetForBlockQuerying(blockMaxTime int64, now time.Time) bool {
+	return blockMaxTime > now.Add(-recentBlockPeriodForQuerying).Unix()
+}
+
+func extendReplicationSetForBlockLoading(blockMaxTime int64, now time.Time) bool {
+	return blockMaxTime > now.Add(-recentBlockPeriodForLoading).Unix()
 }
 
 type shardingMetadataFilterAdapter struct {

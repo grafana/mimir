@@ -385,7 +385,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 
 			// Assert on filter users.
 			for _, expected := range testData.expectedUsers {
-				filter := NewShuffleShardingStrategy(r, expected.instanceID, expected.instanceAddr, testData.limits, log.NewNopLogger())
+				filter := NewShuffleShardingStrategy(r, expected.instanceID, expected.instanceAddr, 3, testData.limits, log.NewNopLogger())
 				actualUsers, err := filter.FilterUsers(ctx, []string{userID})
 				assert.Equal(t, expected.err, err)
 				assert.Equal(t, expected.users, actualUsers)
@@ -393,7 +393,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 
 			// Assert on filter blocks.
 			for _, expected := range testData.expectedBlocks {
-				filter := NewShuffleShardingStrategy(r, expected.instanceID, expected.instanceAddr, testData.limits, log.NewNopLogger())
+				filter := NewShuffleShardingStrategy(r, expected.instanceID, expected.instanceAddr, 3, testData.limits, log.NewNopLogger())
 				synced := extprom.NewTxGaugeVec(nil, prometheus.GaugeOpts{}, []string{"state"})
 				synced.WithLabelValues(shardExcludedMeta).Set(0)
 

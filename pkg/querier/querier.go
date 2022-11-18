@@ -52,6 +52,9 @@ type Config struct {
 
 	// PromQL engine config.
 	EngineConfig engine.Config `yaml:",inline"`
+
+	// RecentBlocksReplicationFactor is parsed in the store-gateway config.
+	RecentBlocksReplicationFactor int `yaml:"-"`
 }
 
 const (

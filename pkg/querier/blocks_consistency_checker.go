@@ -42,7 +42,7 @@ func NewBlocksConsistencyChecker(uploadGracePeriod, deletionGracePeriod time.Dur
 	}
 }
 
-func (c *BlocksConsistencyChecker) Check(knownBlocks bucketindex.Blocks, knownDeletionMarks map[ulid.ULID]*bucketindex.BlockDeletionMark, queriedBlocks []ulid.ULID) (missingBlocks []ulid.ULID) {
+func (c *BlocksConsistencyChecker) Check(knownBlocks bucketindex.Blocks, knownDeletionMarks map[ulid.ULID]*bucketindex.BlockDeletionMark, queriedBlocks []ulid.ULID) (missingBlocks bucketindex.Blocks) {
 	c.checksTotal.Inc()
 
 	// Make map of queried blocks, for quick lookup.
@@ -79,7 +79,7 @@ func (c *BlocksConsistencyChecker) Check(knownBlocks bucketindex.Blocks, knownDe
 		}
 
 		if _, ok := actualBlocks[block.ID]; !ok {
-			missingBlocks = append(missingBlocks, block.ID)
+			missingBlocks = append(missingBlocks, block)
 		}
 	}
 

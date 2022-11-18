@@ -113,7 +113,7 @@ func TestBlocksConsistencyChecker_Check(t *testing.T) {
 			c := NewBlocksConsistencyChecker(uploadGracePeriod, deletionGracePeriod, log.NewNopLogger(), reg)
 
 			missingBlocks := c.Check(testData.knownBlocks, testData.knownDeletionMarks, testData.queriedBlocks)
-			assert.Equal(t, testData.expectedMissingBlocks, missingBlocks)
+			assert.Equal(t, testData.expectedMissingBlocks, missingBlocks.GetULIDs())
 			assert.Equal(t, float64(1), testutil.ToFloat64(c.checksTotal))
 
 			if len(testData.expectedMissingBlocks) > 0 {

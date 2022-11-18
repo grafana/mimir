@@ -42,7 +42,7 @@ type ReadRing interface {
 	// Get returns n (or more) instances which form the replicas for the given key.
 	// bufDescs, bufHosts and bufZones are slices to be overwritten for the return value
 	// to avoid memory allocation; can be nil, or created with ring.MakeBuffersForGet().
-	Get(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts, bufZones []string) (ReplicationSet, error)
+	Get(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts, bufZones []string, opts ...GetOption) (ReplicationSet, error)
 
 	// GetAllHealthy returns all healthy instances in the ring, for the given operation.
 	// This function doesn't check if the quorum is honored, so doesn't fail if the number
@@ -332,8 +332,20 @@ func (r *Ring) updateRingState(ringDesc *Desc) {
 	r.updateRingMetrics(rc)
 }
 
+type GetConfig struct {
+	ReplicationFactor int
+}
+
+type GetOption func(*GetConfig)
+
+func WithReplicationFactor(n int) GetOption {
+	return func(config *GetConfig) {
+		config.ReplicationFactor = n
+	}
+}
+
 // Get returns n (or more) instances which form the replicas for the given key.
-func (r *Ring) Get(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts, bufZones []string) (ReplicationSet, error) {
+func (r *Ring) Get(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts, bufZones []string, getOpts ...GetOption) (ReplicationSet, error) {
 	r.mtx.RLock()
 	defer r.mtx.RUnlock()
 	if r.ringDesc == nil || len(r.ringTokens) == 0 {
@@ -351,6 +363,18 @@ func (r *Ring) Get(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts, 
 		distinctHosts = bufHosts[:0]
 		distinctZones = bufZones[:0]
 	)
+
+	// TODO dimitarvdimitrov test
+	if len(getOpts) > 0 { // Avoid allocations if there are no opts
+		config := &GetConfig{}
+		for _, o := range getOpts {
+			o(config)
+		}
+
+		if config.ReplicationFactor != 0 {
+			n = config.ReplicationFactor
+		}
+	}
 	for i := start; len(distinctHosts) < n && iterations < len(r.ringTokens); i++ {
 		iterations++
 		// Wrap i around in the ring.

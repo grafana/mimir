@@ -66,12 +66,13 @@ var (
 // is used to strip down the config to the minimum, and avoid confusion
 // to the user.
 type RingConfig struct {
-	KVStore              kv.Config     `yaml:"kvstore" doc:"description=The key-value store used to share the hash ring across multiple instances. This option needs be set both on the store-gateway, querier and ruler when running in microservices mode."`
-	HeartbeatPeriod      time.Duration `yaml:"heartbeat_period" category:"advanced"`
-	HeartbeatTimeout     time.Duration `yaml:"heartbeat_timeout" category:"advanced"`
-	ReplicationFactor    int           `yaml:"replication_factor" category:"advanced"`
-	TokensFilePath       string        `yaml:"tokens_file_path"`
-	ZoneAwarenessEnabled bool          `yaml:"zone_awareness_enabled"`
+	KVStore                       kv.Config     `yaml:"kvstore" doc:"description=The key-value store used to share the hash ring across multiple instances. This option needs be set both on the store-gateway, querier and ruler when running in microservices mode."`
+	HeartbeatPeriod               time.Duration `yaml:"heartbeat_period" category:"advanced"`
+	HeartbeatTimeout              time.Duration `yaml:"heartbeat_timeout" category:"advanced"`
+	ReplicationFactor             int           `yaml:"replication_factor" category:"advanced"`
+	RecentBlocksReplicationFactor int           `yaml:"recent_blocks_replication_factor" category:"experimental"`
+	TokensFilePath                string        `yaml:"tokens_file_path"`
+	ZoneAwarenessEnabled          bool          `yaml:"zone_awareness_enabled"`
 
 	// Wait ring stability.
 	WaitStabilityMinDuration time.Duration `yaml:"wait_stability_min_duration" category:"advanced"`
@@ -99,14 +100,18 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 		os.Exit(1)
 	}
 
-	ringFlagsPrefix := "store-gateway.sharding-ring."
+	const (
+		ringFlagsPrefix       = "store-gateway.sharding-ring."
+		replicationFactorFlag = ringFlagsPrefix + "replication-factor"
+	)
 
 	// Ring flags
 	cfg.KVStore.Store = "memberlist"
 	cfg.KVStore.RegisterFlagsWithPrefix(ringFlagsPrefix, "collectors/", f)
 	f.DurationVar(&cfg.HeartbeatPeriod, ringFlagsPrefix+"heartbeat-period", 15*time.Second, "Period at which to heartbeat to the ring. 0 = disabled.")
 	f.DurationVar(&cfg.HeartbeatTimeout, ringFlagsPrefix+"heartbeat-timeout", time.Minute, "The heartbeat timeout after which store gateways are considered unhealthy within the ring. 0 = never (timeout disabled)."+sharedOptionWithRingClient)
-	f.IntVar(&cfg.ReplicationFactor, ringFlagsPrefix+"replication-factor", 3, "The replication factor to use when sharding blocks."+sharedOptionWithRingClient)
+	f.IntVar(&cfg.ReplicationFactor, replicationFactorFlag, 3, "The replication factor to use when sharding blocks."+sharedOptionWithRingClient)
+	f.IntVar(&cfg.RecentBlocksReplicationFactor, ringFlagsPrefix+"recent-blocks-replication-factor", -1, "The replication factor to use when sharding recent (last 48 hours) blocks. Set to zero or a negative value to use the same value as "+replicationFactorFlag+sharedOptionWithRingClient)
 	f.StringVar(&cfg.TokensFilePath, ringFlagsPrefix+"tokens-file-path", "", "File path where tokens are stored. If empty, tokens are not stored at shutdown and restored at startup.")
 	f.BoolVar(&cfg.ZoneAwarenessEnabled, ringFlagsPrefix+"zone-awareness-enabled", false, "True to enable zone-awareness and replicate blocks across different availability zones."+sharedOptionWithRingClient)
 

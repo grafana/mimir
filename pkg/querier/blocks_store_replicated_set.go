@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/ring"
@@ -19,6 +20,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -35,6 +37,8 @@ const (
 type blocksStoreReplicationSet struct {
 	services.Service
 
+	recentBlocksReplicationFactor int
+
 	storesRing        *ring.Ring
 	clientsPool       *client.Pool
 	balancingStrategy loadBalancingStrategy
@@ -49,16 +53,17 @@ func newBlocksStoreReplicationSet(
 	storesRing *ring.Ring,
 	balancingStrategy loadBalancingStrategy,
 	limits BlocksStoreLimits,
-	clientConfig ClientConfig,
+	config Config,
 	logger log.Logger,
 	reg prometheus.Registerer,
 ) (*blocksStoreReplicationSet, error) {
 	s := &blocksStoreReplicationSet{
-		storesRing:         storesRing,
-		clientsPool:        newStoreGatewayClientPool(client.NewRingServiceDiscovery(storesRing), clientConfig, logger, reg),
-		balancingStrategy:  balancingStrategy,
-		limits:             limits,
-		subservicesWatcher: services.NewFailureWatcher(),
+		recentBlocksReplicationFactor: config.RecentBlocksReplicationFactor,
+		storesRing:                    storesRing,
+		clientsPool:                   newStoreGatewayClientPool(client.NewRingServiceDiscovery(storesRing), config.StoreGatewayClient, logger, reg),
+		balancingStrategy:             balancingStrategy,
+		limits:                        limits,
+		subservicesWatcher:            services.NewFailureWatcher(),
 	}
 
 	var err error
@@ -97,18 +102,23 @@ func (s *blocksStoreReplicationSet) stopping(_ error) error {
 	return services.StopManagerAndAwaitStopped(context.Background(), s.subservices)
 }
 
-func (s *blocksStoreReplicationSet) GetClientsFor(userID string, blockIDs []ulid.ULID, exclude map[ulid.ULID][]string) (map[BlocksStoreClient][]ulid.ULID, error) {
+func (s *blocksStoreReplicationSet) GetClientsFor(userID string, blocks bucketindex.Blocks, exclude map[ulid.ULID][]string) (map[BlocksStoreClient][]ulid.ULID, error) {
 	shards := map[string][]ulid.ULID{}
 
 	userRing := storegateway.GetShuffleShardingSubring(s.storesRing, userID, s.limits)
 
 	// Find the replication set of each block we need to query.
-	for _, blockID := range blockIDs {
+	for _, block := range blocks {
+		blockID := block.ID
+		var ringGetOptions []ring.GetOption
+		if s.recentBlocksReplicationFactor > 0 && storegateway.ExtendReplicationSetForBlockQuerying(block.MaxTime, time.Now()) {
+			ringGetOptions = []ring.GetOption{ring.WithReplicationFactor(s.recentBlocksReplicationFactor)}
+		}
 		// Do not reuse the same buffer across multiple Get() calls because we do retain the
 		// returned replication set.
 		bufDescs, bufHosts, bufZones := ring.MakeBuffersForGet()
 
-		set, err := userRing.Get(mimir_tsdb.HashBlockID(blockID), storegateway.BlocksRead, bufDescs, bufHosts, bufZones)
+		set, err := userRing.Get(mimir_tsdb.HashBlockID(blockID), storegateway.BlocksRead, bufDescs, bufHosts, bufZones, ringGetOptions...)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to get store-gateway replication set owning the block %s", blockID.String())
 		}
