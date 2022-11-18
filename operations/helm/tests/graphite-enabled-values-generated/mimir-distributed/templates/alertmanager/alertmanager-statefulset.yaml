@@ -41,7 +41,6 @@ spec:
         app.kubernetes.io/component: alertmanager
         app.kubernetes.io/part-of: memberlist
       annotations:
-        checksum/alertmanager-fallback-config: bda77839b7c05d228d55793cf7573c093548fc9f54274e407a32d643d77753b9
       namespace: "citestns"
     spec:
       serviceAccountName: graphite-enabled-values-mimir
