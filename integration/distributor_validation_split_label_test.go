@@ -19,30 +19,26 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Empty Config Label
-// Config Label
-// Incorrect Config Label
-
-func TestValidateSplitLabel(t *testing.T) {
+func TestValidateCustomUserLabel(t *testing.T) {
 	tests := map[string]struct {
-		splitLabel    string
-		labelToSearch string
-		metricExists  bool
+		customUserLabel string
+		labelToSearch   string
+		metricExists    bool
 	}{
-		"No split label present": {
-			splitLabel:    "",
-			labelToSearch: "",
-			metricExists:  false,
+		"No custom user label present": {
+			customUserLabel: "",
+			labelToSearch:   "",
+			metricExists:    false,
 		},
-		"Check for correct split label": {
-			splitLabel:    "group-1",
-			labelToSearch: "group-1",
-			metricExists:  true,
+		"Check for correct label": {
+			customUserLabel: "group-1",
+			labelToSearch:   "group-1",
+			metricExists:    true,
 		},
-		"Check for incorrect split label": {
-			splitLabel:    "group-1",
-			labelToSearch: "incorrect-group",
-			metricExists:  false,
+		"Check for incorrect label": {
+			customUserLabel: "group-1",
+			labelToSearch:   "incorrect-group",
+			metricExists:    false,
 		},
 	}
 
@@ -57,7 +53,7 @@ func TestValidateSplitLabel(t *testing.T) {
 				BlocksStorageS3Flags(),
 			)
 
-			flags["-validation.separate-metrics-label"] = testData.splitLabel
+			flags["-validation.separate-metrics-label"] = testData.customUserLabel
 
 			// Start dependencies.
 			consul := e2edb.NewConsul()
