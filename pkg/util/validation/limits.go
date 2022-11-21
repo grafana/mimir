@@ -100,8 +100,8 @@ type Limits struct {
 	// Max allowed time window for out-of-order samples.
 	OutOfOrderTimeWindow model.Duration `yaml:"out_of_order_time_window" json:"out_of_order_time_window" category:"experimental"`
 
-	// Label to further separate specfic metrics by
-	SeparateMetricsLabel string `yaml:"separate_metrics_label" json:"separate_metrics_label"`
+	// User defined label to give the option of subdividing specific metrics by another label
+	CustomUserLabel string `yaml:"custom_user_label" json:"custom_user_label"`
 
 	// Querier enforced limits.
 	MaxChunksPerQuery              int            `yaml:"max_fetched_chunks_per_query" json:"max_fetched_chunks_per_query"`
@@ -198,7 +198,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.ActiveSeriesCustomTrackersConfig, "ingester.active-series-custom-trackers", "Additional active series metrics, matching the provided matchers. Matchers should be in form <name>:<matcher>, like 'foobar:{foo=\"bar\"}'. Multiple matchers can be provided either providing the flag multiple times or providing multiple semicolon-separated values to a single flag.")
 	f.Var(&l.OutOfOrderTimeWindow, "ingester.out-of-order-time-window", "Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. A lower TTL of 10 minutes will be set for the query cache entries that overlap with this window.")
 
-	f.StringVar(&l.SeparateMetricsLabel, "validation.separate-metrics-label", "team", "Label used to further separate specific metrics")
+	f.StringVar(&l.CustomUserLabel, "validation.separate-metrics-label", "team", "Label used to further separate specific metrics")
 
 	f.IntVar(&l.MaxChunksPerQuery, MaxChunksPerQueryFlag, 2e6, "Maximum number of chunks that can be fetched in a single query from ingesters and long-term storage. This limit is enforced in the querier, ruler and store-gateway. 0 to disable.")
 	f.IntVar(&l.MaxFetchedSeriesPerQuery, MaxSeriesPerQueryFlag, 0, "The maximum number of unique series for which a query can fetch samples from each ingesters and storage. This limit is enforced in the querier and ruler. 0 to disable")
@@ -540,9 +540,9 @@ func (o *Overrides) OutOfOrderTimeWindow(userID string) model.Duration {
 	return o.getOverridesForUser(userID).OutOfOrderTimeWindow
 }
 
-// SeparateMetricsLabel returns the label used to further separate specific metrics
-func (o *Overrides) SeparateMetricsLabel(userID string) string {
-	return o.getOverridesForUser(userID).SeparateMetricsLabel
+// CustomUserLabel returns the user defined label applied to specific metrics
+func (o *Overrides) CustomUserLabel(userID string) string {
+	return o.getOverridesForUser(userID).CustomUserLabel
 }
 
 // IngestionTenantShardSize returns the ingesters shard size for a given user.

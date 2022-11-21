@@ -629,8 +629,8 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 // May alter timeseries data in-place.
 // The returned error may retain the series labels.
 // It uses the passed nowt time to observe the delay of sample timestamps.
-func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseries, userID, splitLabel string, skipLabelNameValidation bool, minExemplarTS int64) error {
-	if err := validation.ValidateLabels(d.sampleValidationMetrics, d.limits, userID, splitLabel, ts.Labels, skipLabelNameValidation); err != nil {
+func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseries, userID, customUserLabel string, skipLabelNameValidation bool, minExemplarTS int64) error {
+	if err := validation.ValidateLabels(d.sampleValidationMetrics, d.limits, userID, customUserLabel, ts.Labels, skipLabelNameValidation); err != nil {
 		return err
 	}
 
@@ -643,7 +643,7 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 			d.sampleDelayHistogram.Observe(float64(delta) / 1000)
 		}
 
-		if err := validation.ValidateSample(d.sampleValidationMetrics, now, d.limits, userID, splitLabel, ts.Labels, s); err != nil {
+		if err := validation.ValidateSample(d.sampleValidationMetrics, now, d.limits, userID, customUserLabel, ts.Labels, s); err != nil {
 			return err
 		}
 	}
@@ -895,7 +895,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 
 			skipLabelNameValidation := d.cfg.SkipLabelNameValidation || req.GetSkipLabelNameValidation()
 			// Note that validateSeries may drop some data in ts.
-			validationErr := d.validateSeries(now, ts, userID, d.limits.SeparateMetricsLabel(userID), skipLabelNameValidation, minExemplarTS)
+			validationErr := d.validateSeries(now, ts, userID, d.limits.CustomUserLabel(userID), skipLabelNameValidation, minExemplarTS)
 
 			// Errors in validation are considered non-fatal, as one series in a request may contain
 			// invalid data but all the remaining series could be perfectly valid.
