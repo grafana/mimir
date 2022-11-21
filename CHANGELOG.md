@@ -8,6 +8,7 @@
 * [CHANGE] Experimental flag `-blocks-storage.tsdb.out-of-order-capacity-min` has been removed. #3261
 * [CHANGE] Distributor: Wrap errors from pushing to ingesters with useful context, for example clarifying timeouts. #3307
 * [CHANGE] The default value of `-server.http-write-timeout` has changed from 30s to 2m. #3346
+* [CHANGE] Reduce period of health checks in connection pools for querier->store-gateway, ruler->ruler, and alertmanager->alertmanager clients to 10s. This reduces the time to fail a gRPC call when the remote stops responding. #3168
 * [FEATURE] Alertmanager: added Discord support. #3309
 * [ENHANCEMENT] Added `-server.tls-min-version` and `-server.tls-cipher-suites` flags to configure cipher suites and min TLS version supported by HTTP and gRPC servers. #2898
 * [ENHANCEMENT] Distributor: Add age filter to forwarding functionality, to not forward samples which are older than defined duration. If such samples are not ingested, `cortex_discarded_samples_total{reason="forwarded-sample-too-old"}` is increased. #3049 #3133

@@ -75,7 +75,7 @@ func newAlertmanagerClientsPool(discovery client.PoolServiceDiscovery, amClientC
 	}
 
 	poolCfg := client.PoolConfig{
-		CheckInterval:      time.Minute,
+		CheckInterval:      10 * time.Second,
 		HealthCheckEnabled: true,
 		HealthCheckTimeout: 10 * time.Second,
 	}
