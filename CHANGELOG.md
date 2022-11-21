@@ -106,6 +106,7 @@
 * [ENHANCEMENT] Refactor `mimirtool analyze prometheus`: add concurrency and resiliency #3349
   * Add `--concurrency` flag. Default: number of logical CPUs
 * [BUGFIX] `--log.level=debug` now correctly prints the response from the remote endpoint when a request fails. #3180
+* [BUGFIX] Make `/prometheus` endpoint prefix configurable in `mimirtool rules` and `mimirtool alerts`. #2918
 
 ### Documentation
 
