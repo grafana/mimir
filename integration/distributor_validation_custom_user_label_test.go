@@ -13,10 +13,11 @@ import (
 
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
-	"github.com/grafana/mimir/integration/e2emimir"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/integration/e2emimir"
 )
 
 func TestValidateCustomUserLabel(t *testing.T) {
@@ -99,6 +100,7 @@ func TestValidateCustomUserLabel(t *testing.T) {
 				// Check the counter was at least updated, regardless of label
 				var metricNumSeriesNoLabel []float64
 				metricNumSeriesNoLabel, err = distributor.SumMetrics([]string{"cortex_discarded_samples_total"})
+				require.NoError(t, err)
 				require.Equal(t, []float64{1}, metricNumSeriesNoLabel)
 				return
 			}

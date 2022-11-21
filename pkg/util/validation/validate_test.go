@@ -119,7 +119,7 @@ func TestValidateLabels(t *testing.T) {
 			nil,
 		},
 	} {
-		err := ValidateLabels(s, cfg, userID, mimirpb.FromMetricsToLabelAdapters(c.metric), c.skipLabelNameValidation)
+		err := ValidateLabels(s, cfg, userID, "customUserLabel", mimirpb.FromMetricsToLabelAdapters(c.metric), c.skipLabelNameValidation)
 		assert.Equal(t, c.err, err, "wrong error")
 	}
 
@@ -318,8 +318,9 @@ func TestValidateLabelDuplication(t *testing.T) {
 	cfg.maxLabelValueLength = 10
 
 	userID := "testUser"
+	customUserLabel := "customUserLabel"
 
-	actual := ValidateLabels(NewSampleValidationMetrics(nil), cfg, userID, []mimirpb.LabelAdapter{
+	actual := ValidateLabels(NewSampleValidationMetrics(nil), cfg, userID, customUserLabel, []mimirpb.LabelAdapter{
 		{Name: model.MetricNameLabel, Value: "a"},
 		{Name: model.MetricNameLabel, Value: "b"},
 	}, false)
@@ -329,7 +330,7 @@ func TestValidateLabelDuplication(t *testing.T) {
 	}, model.MetricNameLabel)
 	assert.Equal(t, expected, actual)
 
-	actual = ValidateLabels(NewSampleValidationMetrics(nil), cfg, userID, []mimirpb.LabelAdapter{
+	actual = ValidateLabels(NewSampleValidationMetrics(nil), cfg, userID, customUserLabel, []mimirpb.LabelAdapter{
 		{Name: model.MetricNameLabel, Value: "a"},
 		{Name: "a", Value: "a"},
 		{Name: "a", Value: "a"},
