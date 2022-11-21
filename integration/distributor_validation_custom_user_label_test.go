@@ -53,7 +53,7 @@ func TestValidateCustomUserLabel(t *testing.T) {
 				BlocksStorageS3Flags(),
 			)
 
-			flags["-validation.separate-metrics-label"] = testData.customUserLabel
+			flags["-validation.custom-user-label"] = testData.customUserLabel
 
 			// Start dependencies.
 			consul := e2edb.NewConsul()
@@ -91,7 +91,7 @@ func TestValidateCustomUserLabel(t *testing.T) {
 			require.Equal(t, 400, res.StatusCode)
 
 			metricNumSeries, err := distributor.SumMetrics([]string{"cortex_discarded_samples_total"},
-				e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "splitLabel", testData.labelToSearch)),
+				e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "custom_user_label", testData.labelToSearch)),
 				e2e.WaitMissingMetrics)
 
 			if !testData.metricExists {
