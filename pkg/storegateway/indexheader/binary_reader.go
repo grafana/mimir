@@ -30,7 +30,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
-
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -453,8 +452,6 @@ type BinaryReader struct {
 		symbol string
 	}
 
-	dec *index.Decoder
-
 	version             int
 	indexVersion        int
 	indexLastPostingEnd int64
@@ -629,8 +626,6 @@ func newFileBinaryReader(path string, postingOffsetsInMemSampling int, cfg Binar
 		}
 		r.nameSymbols[off] = k
 	}
-
-	r.dec = &index.Decoder{LookupSymbol: r.LookupSymbol}
 
 	return r, nil
 }
