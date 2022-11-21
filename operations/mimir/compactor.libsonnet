@@ -106,10 +106,10 @@
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(900) +
     $.mimirVolumeMounts,
 
-  compactor_statefulset: if $._config.deployment_mode != 'microservices' then null else
+  compactor_statefulset: if !$._config.is_microservices_deployment_mode then null else
     $.newCompactorStatefulSet('compactor', $.compactor_container),
 
-  compactor_service: if $._config.deployment_mode != 'microservices' then null else
+  compactor_service: if !$._config.is_microservices_deployment_mode then null else
     local service = $.core.v1.service;
 
     $.util.serviceFor($.compactor_statefulset, $._config.service_ignored_labels) +

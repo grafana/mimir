@@ -70,7 +70,7 @@
   // Multi-zone ingesters.
   //
 
-  local multi_zone_ingesters_deployed = $._config.deployment_mode == 'microservices' && $._config.multi_zone_ingester_enabled,
+  local multi_zone_ingesters_deployed = $._config.is_microservices_deployment_mode && $._config.multi_zone_ingester_enabled,
 
   ingester_zone_a_args:: {},
   ingester_zone_b_args:: {},
@@ -159,19 +159,19 @@
 
   ingester_statefulset:
     // Remove the default "ingester" StatefulSet if multi-zone is enabled and no migration is in progress.
-    if $._config.deployment_mode != 'microservices' || ($._config.multi_zone_ingester_enabled && !$._config.multi_zone_ingester_migration_enabled)
+    if !$._config.is_microservices_deployment_mode || ($._config.multi_zone_ingester_enabled && !$._config.multi_zone_ingester_migration_enabled)
     then null
     else super.ingester_statefulset,
 
   ingester_service:
     // Remove the default "ingester" service if multi-zone is enabled and no migration is in progress.
-    if $._config.deployment_mode != 'microservices' || ($._config.multi_zone_ingester_enabled && !$._config.multi_zone_ingester_migration_enabled)
+    if !$._config.is_microservices_deployment_mode || ($._config.multi_zone_ingester_enabled && !$._config.multi_zone_ingester_migration_enabled)
     then null
     else super.ingester_service,
 
   ingester_pdb:
     // There's no parent PDB if deployment mode is not microservices.
-    if $._config.deployment_mode != 'microservices'
+    if !$._config.is_microservices_deployment_mode
     then null
     // Keep it if multi-zone is disabled.
     else if !$._config.multi_zone_ingester_enabled
@@ -186,7 +186,7 @@
   // Multi-zone store-gateways.
   //
 
-  local multi_zone_store_gateways_deployed = $._config.deployment_mode == 'microservices' && $._config.multi_zone_store_gateway_enabled,
+  local multi_zone_store_gateways_deployed = $._config.is_microservices_deployment_mode && $._config.multi_zone_store_gateway_enabled,
 
   store_gateway_zone_a_args:: {},
   store_gateway_zone_b_args:: {},
@@ -300,19 +300,19 @@
 
   store_gateway_statefulset:
     // Remove the default store-gateway StatefulSet if multi-zone is enabled and no migration is in progress.
-    if $._config.deployment_mode != 'microservices' || ($._config.multi_zone_store_gateway_enabled && !$._config.multi_zone_store_gateway_migration_enabled)
+    if !$._config.is_microservices_deployment_mode || ($._config.multi_zone_store_gateway_enabled && !$._config.multi_zone_store_gateway_migration_enabled)
     then null
     else super.store_gateway_statefulset,
 
   store_gateway_service:
     // Remove the default store-gateway service if multi-zone is enabled and no migration is in progress.
-    if $._config.deployment_mode != 'microservices' || ($._config.multi_zone_store_gateway_enabled && !$._config.multi_zone_store_gateway_migration_enabled)
+    if !$._config.is_microservices_deployment_mode || ($._config.multi_zone_store_gateway_enabled && !$._config.multi_zone_store_gateway_migration_enabled)
     then null
     else super.store_gateway_service,
 
   store_gateway_pdb:
     // Remove the default store-gateway PodDisruptionBudget if multi-zone is enabled and no migration is in progress.
-    if $._config.deployment_mode != 'microservices' || ($._config.multi_zone_store_gateway_enabled && !$._config.multi_zone_store_gateway_migration_enabled)
+    if !$._config.is_microservices_deployment_mode || ($._config.multi_zone_store_gateway_enabled && !$._config.multi_zone_store_gateway_migration_enabled)
     then null
     else super.store_gateway_pdb,
 

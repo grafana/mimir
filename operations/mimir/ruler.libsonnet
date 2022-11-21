@@ -43,7 +43,7 @@
 
   local deployment = $.apps.v1.deployment,
 
-  ruler_deployment: if $._config.deployment_mode != 'microservices' || !$._config.ruler_enabled then null else
+  ruler_deployment: if !$._config.is_microservices_deployment_mode || !$._config.ruler_enabled then null else
     local name = 'ruler';
 
     deployment.new(name, 2, [$.ruler_container]) +
@@ -54,6 +54,6 @@
     $.newMimirSpreadTopology(name, $._config.querier_topology_spread_max_skew) +
     $.mimirVolumeMounts,
 
-  ruler_service: if $._config.deployment_mode != 'microservices' || !$._config.ruler_enabled then null else
+  ruler_service: if !$._config.is_microservices_deployment_mode || !$._config.ruler_enabled then null else
     $.util.serviceFor($.ruler_deployment, $._config.service_ignored_labels),
 }

@@ -11,6 +11,8 @@
 
     // The deployment mode to use. Supported values are: microservices, read-write.
     deployment_mode: 'microservices',
+    is_microservices_deployment_mode: $._config.deployment_mode == 'microservices',
+    is_read_write_deployment_mode: $._config.deployment_mode == 'read-write',
 
     // If false, ingesters are not unregistered on shutdown and left in the ring with
     // the LEAVING state. Setting to false prevents series resharding during ingesters rollouts,
@@ -422,6 +424,13 @@
     // Labels that service selectors should not use
     service_ignored_labels:: [self.gossip_member_label],
   },
+
+  // Check configured deployment mode to ensure configuration is correct and consistent.
+  check_deployment_mode: if $._config.deployment_mode == 'microservices' || $._config.deployment_mode == 'read-write' then null else
+    error 'unsupported deployment mode "%s"' % $._config.deployment_mode,
+
+  check_deployment_mode_mutually_exclusive: if $._config.is_microservices_deployment_mode != $._config.is_read_write_deployment_mode then null else
+    error 'both is_microservices_deployment_mode and is_read_write_deployment_mode are set to the same value, while one and only one must be enabled',
 
   local configMap = $.core.v1.configMap,
 
