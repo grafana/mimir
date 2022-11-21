@@ -28,7 +28,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
-* [BUGFIX] Added missing endpoint for OTLP in NGINX #3424
+
 * [FEATURE] Support deploying NGINX via the `gateway` section. The `nginx` section will be removed in `7.0.0`. See
   [Migrate to using the unified proxy deployment for NGINX and GEM gateway](https://grafana.com/docs/mimir/latest/operators-guide/deploying-grafana-mimir/migrate-to-unified-gateway-deployment/)
 * [CHANGE] **breaking change** **Data loss without action.** Enables [zone-aware replication](https://grafana.com/docs/mimir/latest/operators-guide/configure/configure-zone-aware-replication/) for ingesters and store-gateways by default. #2778
@@ -91,6 +91,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Nginx: fixed `imagePullSecret` value reference inconsistency. #3208
 * [BUGFIX] Move the activity tracker log from /data to /active-query-tracker to remove ignore log messages. #3169
 * [BUGFIX] Fix Invalid ingress nginx config due to newline in prometheusHttpPrefix Helm named templates. #3088
+* [BUGFIX] Added missing endpoint for OTLP in NGINX #3479
 
 ## 3.2.0
 
