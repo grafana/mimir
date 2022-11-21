@@ -42,6 +42,18 @@
       compactor: '(compactor.*|cortex|mimir|mimir-backend.*)',  // Match also custom compactor deployments.
       alertmanager: '(alertmanager|cortex|mimir|mimir-backend.*)',
       overrides_exporter: '(overrides-exporter|mimir-backend.*)',
+
+      // The following are job matchers used to select all components in a given "path".
+      write: '(distributor|ingester.*|mimir-write.*)',
+      read: '(query-frontend.*|querier.*|ruler-query-frontend.*|ruler-querier.*|mimir-read.*)',
+      backend: '(ruler|query-scheduler.*|ruler-query-scheduler.*|store-gateway.*|compactor.*|alertmanager|overrides-exporter|mimir-backend.*)',
+    },
+
+    container_names: {
+      // The following are container matchers used to select all components in a given "path".
+      write: 'distributor|ingester|mimir-write',
+      read: 'query-frontend|querier|ruler-query-frontend|ruler-querier|mimir-read',
+      backend: 'query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter|mimir-backend',
     },
 
     // The label used to differentiate between different Kubernetes clusters.
@@ -142,14 +154,14 @@
         disk_utilization:
           |||
             max by(persistentvolumeclaim) (
-              kubelet_volume_stats_used_bytes{%(namespace)s} /
-              kubelet_volume_stats_capacity_bytes{%(namespace)s}
+              kubelet_volume_stats_used_bytes{%(namespaceMatcher)s} /
+              kubelet_volume_stats_capacity_bytes{%(namespaceMatcher)s}
             )
             and
             count by(persistentvolumeclaim) (
               kube_persistentvolumeclaim_labels{
-                %(namespace)s,
-                %(label)s
+                %(namespaceMatcher)s,
+                %(containerMatcher)s
               }
             )
           |||,
@@ -194,8 +206,8 @@
           |||,
         disk_utilization:
           |||
-            1 - ((node_filesystem_avail_bytes{%(namespace)s,%(instance)s=~".*%(instanceName)s.*", mountpoint="%(instanceDataDir)s"})
-                / node_filesystem_size_bytes{%(namespace)s,%(instance)s=~".*%(instanceName)s.*", mountpoint="%(instanceDataDir)s"})
+            1 - ((node_filesystem_avail_bytes{%(namespaceMatcher)s,%(instanceLabel)s=~".*%(instanceName)s.*", mountpoint="%(instanceDataDir)s"})
+                / node_filesystem_size_bytes{%(namespaceMatcher)s,%(instanceLabel)s=~".*%(instanceName)s.*", mountpoint="%(instanceDataDir)s"})
           |||,
       },
     },

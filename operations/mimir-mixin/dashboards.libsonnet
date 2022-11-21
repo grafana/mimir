@@ -19,6 +19,7 @@
     (import 'dashboards/overview.libsonnet') +
 
     (if !$._config.resources_dashboards_enabled then {} else
+       (import 'dashboards/overview-resources.libsonnet') +
        (import 'dashboards/reads-resources.libsonnet') +
        (import 'dashboards/remote-ruler-reads-resources.libsonnet') +
        (import 'dashboards/reads-networking.libsonnet') +
