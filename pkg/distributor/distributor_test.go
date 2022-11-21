@@ -1610,7 +1610,7 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 				numDistributors: 1,
 			})
 			for _, ts := range tc.req.Timeseries {
-				err := ds[0].validateSeries(now, ts, "user", false, tc.minExemplarTS)
+				err := ds[0].validateSeries(now, ts, "user", "customLabel", false, tc.minExemplarTS)
 				assert.NoError(t, err)
 			}
 			assert.Equal(t, tc.expectedExemplars, tc.req.Timeseries)
