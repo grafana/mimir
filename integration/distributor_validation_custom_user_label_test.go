@@ -83,7 +83,7 @@ func TestValidateCustomUserLabel(t *testing.T) {
 			require.NoError(t, err)
 
 			// Push an invalid metric to increment cortex_discarded_samples_total
-			series, _ := generateSeries("TestMetric", now, prompb.Label{
+			series, _, _ := generateSeries("TestMetric", now, prompb.Label{
 				Name:  "Test|Invalid|Label|Char",
 				Value: "123",
 			})
