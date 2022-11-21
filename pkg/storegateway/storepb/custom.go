@@ -44,7 +44,6 @@ type emptySeriesSet struct{}
 
 func (emptySeriesSet) Next() bool                       { return false }
 func (emptySeriesSet) At() (labels.Labels, []AggrChunk) { return nil, nil }
-func (emptySeriesSet) CleanupFunc() func()              { return nil }
 func (emptySeriesSet) Err() error                       { return nil }
 
 // EmptySeriesSet returns a new series set that contains no series.
@@ -85,11 +84,6 @@ func MergeSeriesSets(all ...SeriesSet) SeriesSet {
 type SeriesSet interface {
 	Next() bool
 	At() (labels.Labels, []AggrChunk)
-	// CleanupFunc can return a callback that the caller uses to confirm receiving and processing all the series returned
-	// so far, including the current one. The callback can be used to clean up resources that are backing the series.
-	// The caller should not use the returned chunks after invoking the function returned by cleanup.
-	// Implementations can return a nil function.
-	CleanupFunc() func()
 	Err() error
 }
 
@@ -100,7 +94,6 @@ type mergedSeriesSet struct {
 	lset         labels.Labels
 	chunks       []AggrChunk
 	adone, bdone bool
-	cleanup      func()
 }
 
 func newMergedSeriesSet(a, b SeriesSet) *mergedSeriesSet {
@@ -115,10 +108,6 @@ func newMergedSeriesSet(a, b SeriesSet) *mergedSeriesSet {
 
 func (s *mergedSeriesSet) At() (labels.Labels, []AggrChunk) {
 	return s.lset, s.chunks
-}
-
-func (s *mergedSeriesSet) CleanupFunc() func() {
-	return s.cleanup
 }
 
 func (s *mergedSeriesSet) Err() error {
@@ -148,13 +137,11 @@ func (s *mergedSeriesSet) Next() bool {
 	d := s.compare()
 	if d > 0 {
 		s.lset, s.chunks = s.b.At()
-		s.cleanup = s.b.CleanupFunc()
 		s.bdone = !s.b.Next()
 		return true
 	}
 	if d < 0 {
 		s.lset, s.chunks = s.a.At()
-		s.cleanup = s.a.CleanupFunc()
 		s.adone = !s.a.Next()
 		return true
 	}
@@ -165,17 +152,6 @@ func (s *mergedSeriesSet) Next() bool {
 	lset, chksA := s.a.At()
 	_, chksB := s.b.At()
 	s.lset = lset
-
-	cleanupA := s.a.CleanupFunc()
-	cleanupB := s.b.CleanupFunc()
-	s.cleanup = func() {
-		if cleanupA != nil {
-			cleanupA()
-		}
-		if cleanupB != nil {
-			cleanupB()
-		}
-	}
 
 	// Slice reuse is not generally safe with nested merge iterators.
 	// We err on the safe side and create a new slice.
@@ -221,12 +197,10 @@ type uniqueSeriesSet struct {
 	SeriesSet
 	done bool
 
-	peek        *Series
-	peekCleanup func()
+	peek *Series
 
-	lset    labels.Labels
-	chunks  []AggrChunk
-	cleanup func()
+	lset   labels.Labels
+	chunks []AggrChunk
 }
 
 func newUniqueSeriesSet(wrapped SeriesSet) *uniqueSeriesSet {
@@ -235,10 +209,6 @@ func newUniqueSeriesSet(wrapped SeriesSet) *uniqueSeriesSet {
 
 func (s *uniqueSeriesSet) At() (labels.Labels, []AggrChunk) {
 	return s.lset, s.chunks
-}
-
-func (s *uniqueSeriesSet) CleanupFunc() func() {
-	return s.cleanup
 }
 
 func (s *uniqueSeriesSet) Next() bool {
@@ -251,15 +221,14 @@ func (s *uniqueSeriesSet) Next() bool {
 			break
 		}
 		lset, chks := s.SeriesSet.At()
-		cleanup := s.SeriesSet.CleanupFunc()
 		if s.peek == nil {
-			s.setPeek(lset, chks, cleanup)
+			s.setPeek(lset, chks)
 			continue
 		}
 
 		if labels.Compare(lset, s.peek.PromLabels()) != 0 {
-			s.lset, s.chunks, s.cleanup = s.peek.PromLabels(), s.peek.Chunks, s.peekCleanup
-			s.setPeek(lset, chks, cleanup)
+			s.lset, s.chunks = s.peek.PromLabels(), s.peek.Chunks
+			s.setPeek(lset, chks)
 			return true
 		}
 
@@ -272,15 +241,13 @@ func (s *uniqueSeriesSet) Next() bool {
 		return false
 	}
 
-	s.lset, s.chunks, s.cleanup = s.peek.PromLabels(), s.peek.Chunks, s.peekCleanup
+	s.lset, s.chunks = s.peek.PromLabels(), s.peek.Chunks
 	s.peek = nil
-	s.peekCleanup = nil
 	return true
 }
 
-func (s *uniqueSeriesSet) setPeek(lset labels.Labels, chks []AggrChunk, cleanup func()) {
+func (s *uniqueSeriesSet) setPeek(lset labels.Labels, chks []AggrChunk) {
 	s.peek = &Series{Labels: mimirpb.FromLabelsToLabelAdapters(lset), Chunks: chks}
-	s.peekCleanup = cleanup
 }
 
 // Compare returns positive 1 if chunk is smaller -1 if larger than b by min time, then max time.

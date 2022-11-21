@@ -4,17 +4,40 @@ package storegateway
 
 import (
 	"context"
+	"sync"
+	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/runutil"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
+	"github.com/thanos-io/objstore/tracing"
+	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/sharding"
+	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 )
+
+type batch struct {
+	series []seriesEntry
+}
+
+func (batch) Close() error {
+	return nil
+}
+
+type batchSet interface {
+	Next() bool
+	At() batch
+	Err() error
+}
 
 type batchedSeriesSet struct {
 	ctx      context.Context
@@ -38,8 +61,6 @@ type batchedSeriesSet struct {
 	minTime, maxTime int64                   // Series must have data in this time range to be returned (ignored if skipChunks=true).
 	loadAggregates   []storepb.Aggr          // List of aggregates to load when loading chunks.
 	logger           log.Logger
-
-	cleanupFuncs []func()
 }
 
 func batchedBlockSeries(
@@ -56,7 +77,7 @@ func batchedBlockSeries(
 	minTime, maxTime int64, // Series must have data in this time range to be returned (ignored if skipChunks=true).
 	loadAggregates []storepb.Aggr, // List of aggregates to load when loading chunks.
 	logger log.Logger,
-) (storepb.SeriesSet, error) {
+) (batchSet, error) {
 	if batchSize <= 0 {
 		return nil, errors.New("batch size must be a positive number")
 	}
@@ -227,7 +248,6 @@ func (s *batchedSeriesSet) resetPreloaded() {
 	s.loadAggregates = s.loadAggregates[:0]
 	if s.chunkr != nil { // can be nil when the client didn't want to load chunks
 		s.chunkr.reset()
-		s.cleanupFuncs = append(s.cleanupFuncs, s.chunkr.unload)
 	}
 	s.currBatchIdx = 0
 }
@@ -241,19 +261,6 @@ func (s *batchedSeriesSet) At() (labels.Labels, []storepb.AggrChunk) {
 
 func (s *batchedSeriesSet) Err() error {
 	return s.err
-}
-
-func (s *batchedSeriesSet) CleanupFunc() func() {
-	if len(s.cleanupFuncs) == 0 {
-		return nil
-	}
-	cleanUps := s.cleanupFuncs[:]
-	s.cleanupFuncs = s.cleanupFuncs[len(s.cleanupFuncs):]
-	return func() {
-		for _, cleanup := range cleanUps {
-			cleanup()
-		}
-	}
 }
 
 type seriesHasher interface {
@@ -289,4 +296,116 @@ func shardOwned(shard *sharding.ShardSelector, hasher seriesHasher, id storage.S
 	hash := hasher.Hash(id, lset)
 
 	return hash%shard.ShardCount == shard.ShardIndex
+}
+
+func (s *BucketStore) batchSetsForBlocks(ctx context.Context, req *storepb.SeriesRequest, blocks []*bucketBlock, shardSelector *sharding.ShardSelector, matchers []*labels.Matcher, chunksLimiter ChunksLimiter, seriesLimiter SeriesLimiter) ([]batchSet, *hintspb.SeriesResponseHints, *queryStats, error) {
+	resHints := &hintspb.SeriesResponseHints{}
+	mtx := sync.Mutex{}
+	batches := make([]batchSet, 0, len(blocks))
+	g, ctx := errgroup.WithContext(ctx)
+	stats := &queryStats{}
+
+	for _, b := range blocks {
+		b := b
+
+		// Keep track of queried blocks.
+		resHints.AddQueriedBlock(b.meta.ULID)
+
+		var chunkr *bucketChunkReader
+		// We must keep the readers open until all their data has been sent.
+		indexr := b.indexReader()
+		if !req.SkipChunks {
+			chunkr = b.chunkReader(ctx)
+			defer runutil.CloseWithLogOnErr(s.logger, chunkr, "series block")
+		}
+
+		// Defer all closes to the end of Series method.
+		defer runutil.CloseWithLogOnErr(s.logger, indexr, "series block")
+
+		// If query sharding is enabled we have to get the block-specific series hash cache
+		// which is used by blockSeries().
+		var blockSeriesHashCache *hashcache.BlockSeriesHashCache
+		if shardSelector != nil {
+			blockSeriesHashCache = s.seriesHashCache.GetBlockCache(b.meta.ULID.String())
+		}
+		g.Go(func() error {
+			var (
+				pstats *safeQueryStats
+				part   storepb.SeriesSet
+				err    error
+			)
+
+			part, err = batchedBlockSeries(
+				ctx, s.seriesPerBatch, indexr, chunkr, matchers, shardSelector, blockSeriesHashCache, chunksLimiter, seriesLimiter, req.SkipChunks, req.MinTime, req.MaxTime, req.Aggregates, s.logger)
+			if err != nil {
+				return errors.Wrapf(err, "fetch series for block %s", b.meta.ULID)
+			}
+
+			mtx.Lock()
+			batches = append(batches, part)
+			if pstats != nil {
+				stats = stats.merge(pstats.export())
+			}
+			mtx.Unlock()
+
+			return nil
+		})
+	}
+
+	s.mtx.RUnlock()
+
+	// Concurrently get data from all blocks.
+	{
+		begin := time.Now()
+		err := g.Wait()
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		stats.blocksQueried = len(batches)
+		stats.getAllDuration = time.Since(begin)
+	}
+	return batches, resHints, stats, nil
+
+}
+
+func (s *BucketStore) sendSeriesBatches(ctx context.Context, sets []batchSet, skipChunks bool, srv storepb.Store_SeriesServer) (stats *queryStats, err error) {
+	tracing.DoWithSpan(ctx, "bucket_store_merge_all", func(ctx context.Context, _ tracing.Span) {
+		stats = &queryStats{}
+		begin := time.Now()
+
+		// NOTE: We "carefully" assume series and chunks are sorted within each SeriesSet. This should be guaranteed by
+		// blockSeries method. In worst case deduplication logic won't deduplicate correctly, which will be accounted later.
+		//set := storepb.MergeSeriesSets(sets...) // TODO dimitarvdimitrov
+		set := sets[0]
+		for set.Next() {
+			var series storepb.Series
+
+			stats.mergedSeriesCount++
+
+			b := set.At()
+			var lset labels.Labels
+			if skipChunks {
+
+			} else {
+				lset, series.Chunks = set.At()
+
+				stats.mergedChunksCount += len(series.Chunks)
+				s.metrics.chunkSizeBytes.Observe(float64(chunksSize(series.Chunks)))
+			}
+			series.Labels = mimirpb.FromLabelsToLabelAdapters(lset)
+			if err = srv.Send(storepb.NewSeriesResponse(&series)); err != nil {
+				err = status.Error(codes.Unknown, errors.Wrap(err, "send series response").Error())
+				return
+			}
+		}
+		if set.Err() != nil {
+			err = errors.Wrap(set.Err(), "expand series set")
+			return
+		}
+		stats.mergeDuration = time.Since(begin)
+		s.metrics.seriesMergeDuration.Observe(stats.mergeDuration.Seconds())
+
+		err = nil
+	})
+	return
 }
