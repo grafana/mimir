@@ -9,6 +9,9 @@
 
     aws_region: error 'must specify AWS region',
 
+    // The deployment mode to use. Supported values are: microservices, read-write.
+    deployment_mode: 'microservices',
+
     // If false, ingesters are not unregistered on shutdown and left in the ring with
     // the LEAVING state. Setting to false prevents series resharding during ingesters rollouts,
     // but requires to:

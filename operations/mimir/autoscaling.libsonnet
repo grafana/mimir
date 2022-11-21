@@ -178,11 +178,16 @@
       max_replicas=$._config.autoscaling_querier_max_replicas,
     ),
 
-  querier_deployment+: if !$._config.autoscaling_querier_enabled then {} else
-    removeReplicasFromSpec,
+  querier_deployment: overrideSuperIfExists(
+    'querier_deployment',
+    if !$._config.autoscaling_querier_enabled then {} else removeReplicasFromSpec
+  ),
 
-  query_frontend_deployment+: if !$._config.query_sharding_enabled || !$._config.autoscaling_querier_enabled then {} else
-    queryFrontendReplicas($._config.autoscaling_querier_max_replicas),
+  query_frontend_deployment: overrideSuperIfExists(
+    'query_frontend_deployment',
+    if !$._config.query_sharding_enabled || !$._config.autoscaling_querier_enabled then {} else
+      queryFrontendReplicas($._config.autoscaling_querier_max_replicas)
+  ),
 
   //
   // Ruler-queriers
@@ -214,18 +219,15 @@
       max_replicas=$._config.autoscaling_ruler_querier_max_replicas,
     ),
 
-  ruler_querier_deployment: if !$._config.ruler_remote_evaluation_enabled then null else (
-    super.ruler_querier_deployment + (
-      if !$._config.autoscaling_ruler_querier_enabled then {} else
-        removeReplicasFromSpec
-    )
+  ruler_querier_deployment: overrideSuperIfExists(
+    'ruler_querier_deployment',
+    if !$._config.autoscaling_ruler_querier_enabled then {} else removeReplicasFromSpec
   ),
 
-  ruler_query_frontend_deployment: if !$._config.ruler_remote_evaluation_enabled then null else (
-    super.ruler_query_frontend_deployment + (
-      if !$._config.query_sharding_enabled || !$._config.autoscaling_ruler_querier_enabled then {} else
-        queryFrontendReplicas($._config.autoscaling_ruler_querier_max_replicas)
-    )
+  ruler_query_frontend_deployment: overrideSuperIfExists(
+    'ruler_query_frontend_deployment',
+    if !$._config.query_sharding_enabled || !$._config.autoscaling_ruler_querier_enabled then {} else
+      queryFrontendReplicas($._config.autoscaling_ruler_querier_max_replicas)
   ),
 
   //
@@ -269,7 +271,12 @@
       max_replicas=$._config.autoscaling_distributor_max_replicas,
     ),
 
-  distributor_deployment+: if !$._config.autoscaling_distributor_enabled then {} else
-    removeReplicasFromSpec,
+  distributor_deployment: overrideSuperIfExists(
+    'distributor_deployment',
+    if !$._config.autoscaling_distributor_enabled then {} else removeReplicasFromSpec
+  ),
 
+  // Utility used to override a field only if exists in super.
+  local overrideSuperIfExists(name, override) = if !( name in super) || super[name] == null || super[name] == {} then null else
+    super[name] + override,
 }

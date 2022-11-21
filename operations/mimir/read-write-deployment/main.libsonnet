@@ -1,5 +1,4 @@
 (import 'config.libsonnet') +
-(import 'uninstall_micro.libsonnet') +
 (import 'utils.libsonnet') +
 (import 'read.libsonnet') +
 (import 'write.libsonnet') +
