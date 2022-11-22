@@ -255,19 +255,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
     else [resourceName],
 
   resourceUtilizationQuery(metric, instanceName)::
-    if $._config.deployment_type == 'kubernetes'
-    then
-      $._config.resources_panel_queries[$._config.deployment_type]['%s_usage' % metric] % {
-        instance: $._config.per_instance_label,
-        namespace: $.namespaceMatcher(),
-        instanceName: instanceName,
-      }
-    else
-      $._config.resources_panel_queries[$._config.deployment_type]['%s_usage' % metric] % {
-        instance: $._config.per_instance_label,
-        namespace: $.namespaceMatcher(),
-        instanceName: instanceName,
-      },
+    $._config.resources_panel_queries[$._config.deployment_type]['%s_usage' % metric] % {
+      instance: $._config.per_instance_label,
+      namespace: $.namespaceMatcher(),
+      instanceName: instanceName,
+    },
 
   resourceUtilizationAndLimitQueries(metric, instanceName)::
     if $._config.deployment_type == 'kubernetes'
