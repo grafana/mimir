@@ -77,34 +77,6 @@ func NewReadBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.Bu
 	return newFileReadBinaryReader(binfn, postingOffsetsInMemSampling)
 }
 
-// readDecbufBytes reads Decbuf encoded bytes from a file which can then be
-// passed to NewDecbuf for parsing.
-func readDecbufBytes(f *os.File, off int64) (index.ByteSlice, error) {
-	// Pull the length field out first, so we know how much data to read.
-	// Decbuf begins with a big endian uint32 length field.
-	lengthBytes := make([]byte, 4)
-	n, err := f.ReadAt(lengthBytes, off)
-	if err != nil {
-		return nil, err
-	}
-	if n != len(lengthBytes) {
-		return nil, errors.Errorf("insufficient bytes read (got %d, wanted %d)", n, len(lengthBytes))
-	}
-	length := binary.BigEndian.Uint32(lengthBytes)
-
-	// We now read: [4 byte length] + [<size> bytes data] + [4 byte CRC]
-	// Note we re-read the size field for simplicity; it needs to be passed to NewDecbuf.
-	allBytes := make([]byte, 4+int(length)+4)
-	n, err = f.ReadAt(allBytes, off)
-	if err != nil {
-		return nil, err
-	}
-	if n != len(allBytes) {
-		return nil, errors.Errorf("insufficient bytes read (got %d, wanted %d)", n, len(allBytes))
-	}
-	return realByteSlice(allBytes), nil
-}
-
 func newFileReadBinaryReader(path string, postingOffsetsInMemSampling int) (bw *ReadBinaryReader, err error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -277,45 +249,6 @@ func newFileReadBinaryReader(path string, postingOffsetsInMemSampling int) (bw *
 
 	//fmt.Println("End")
 	return r, nil
-}
-
-// newBinaryTOCFromByteSlice return parsed TOC from given index header byte slice.
-func newBinaryTOCFromFile(f *os.File) (*BinaryTOC, error) {
-	info, err := f.Stat()
-	if err != nil {
-		return nil, errors.Wrap(err, "stat")
-	}
-	fSize := info.Size()
-
-	if fSize < binaryTOCLen {
-		return nil, encoding.ErrInvalidSize
-	}
-
-	tocBytes := make([]byte, binaryTOCLen)
-	n, err := f.ReadAt(tocBytes, fSize-binaryTOCLen)
-	if err != nil {
-		return nil, err
-	}
-	if n != len(tocBytes) {
-		return nil, errors.Wrapf(encoding.ErrInvalidSize, "insufficient bytes read for binary toc (read %db, needed %db)", n, headerLen)
-	}
-	b := realByteSlice(tocBytes)
-
-	expCRC := binary.BigEndian.Uint32(b[len(b)-4:])
-	d := encoding.Decbuf{B: b[:len(b)-4]}
-
-	if d.Crc32(castagnoliTable) != expCRC {
-		return nil, errors.Wrap(encoding.ErrInvalidChecksum, "read index header TOC")
-	}
-
-	if err := d.Err(); err != nil {
-		return nil, err
-	}
-
-	return &BinaryTOC{
-		Symbols:             d.Be64(),
-		PostingsOffsetTable: d.Be64(),
-	}, nil
 }
 
 func (r *ReadBinaryReader) IndexVersion() (int, error) {
