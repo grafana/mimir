@@ -47,6 +47,9 @@ If something is not clear, you can get back to this document to learn more about
 ````markdown
 ### Publish the release candidate
 
+- [ ] Begin drafting the [release notes](https://github.com/grafana/mimir/blob/main/RELEASE.md#write-release-notes-document)
+  - Write release notes to `main`, then cherry pick them into the release branch
+  - Don't block on it to publish the release candidate
 - [ ] Wait for any open PR we want to get merged before cutting the release candidate
   - [ ] Eventually open a PR for every experimental feature we want to promote to stable
   - [ ] Eventually open a PR to remove any deprecated feature or configuration option that should be removed in this release
@@ -58,14 +61,15 @@ If something is not clear, you can get back to this document to learn more about
 - [ ] Run `make mixin-screenshots`
   - Before opening the PR, review all updated screenshots and ensure no sensitive data is disclosed
 - [ ] Create new release branch
-  ```bash
-  git checkout main
-  git checkout -b release-<version>
-  git push -u origin release-<version>
-  ```
+  - [ ] Create the branch
+    ```bash
+    git checkout main
+    git checkout -b release-<version>
+    git push -u origin release-<version>
+    ```
+  - [ ] Remove "main / unreleased" section from the CHANGELOG
 - [ ] Publish the Mimir release candidate
-  - [ ] Begin drafting the [release notes](https://github.com/grafana/mimir/blob/main/RELEASE.md#write-release-notes-document), but don't block on it to publish the release candidate
-  - [ ] Update VERSION in the release branch and remove "main / unreleased" section from the CHANGELOG
+  - [ ] Update VERSION in the release branch
   - [ ] [Tag the release](https://github.com/grafana/mimir/blob/main/RELEASE.md#how-to-tag-a-release)
     ```bash
     git checkout release-<version>
@@ -84,12 +88,14 @@ If something is not clear, you can get back to this document to learn more about
   - [ ] Announce the release candidate on socials
 - [ ] Publish the [Helm release candidate](https://github.com/grafana/mimir/blob/main/RELEASE.md#release-helm)
   - _Ask people working on Helm to do it_
-- [ ] Vendor the release commit of Mimir into GEM
+- [ ] Vendor the release commit of Mimir into Grafana Enterprise Metrics (GEM)
+  - _This is addressed by Grafana Labs_
 
 ### Publish the stable release
 
 - [ ] Publish the Mimir stable release
   - [ ] [Write release notes](https://github.com/grafana/mimir/blob/main/RELEASE.md#write-release-notes-document)
+    - Ensure the any change to release notes in `main` has been cherry picked to the release branch
   - [ ] Update version in release-<version> branch
     - VERSION
     - CHANGELOG
