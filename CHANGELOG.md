@@ -80,11 +80,11 @@
     }
   }
   ```
-* [FEATURE] Added support for experimental read-write deployment mode. Enabling the read-write deployment mode on a existing Mimir cluster is a destructive operation, because the cluster will be re-created. If you're creating a new Mimir cluster, you can deploy it in read-write mode adding the following configuration: #3379
+* [FEATURE] Added support for experimental read-write deployment mode. Enabling the read-write deployment mode on a existing Mimir cluster is a destructive operation, because the cluster will be re-created. If you're creating a new Mimir cluster, you can deploy it in read-write mode adding the following configuration: #3379 #3475
   ```jsonnet
   {
     _config+:: {
-      read_write_deployment_enabled: true,
+      deployment_mode: 'read-write',
 
       // See operations/mimir/read-write-deployment.libsonnet for more configuration options.
       mimir_write_replicas: 3,

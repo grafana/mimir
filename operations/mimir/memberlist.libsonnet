@@ -93,49 +93,95 @@
   // Don't add label to matcher, only to pod labels.
   local gossipLabel = $.apps.v1.statefulSet.spec.template.metadata.withLabelsMixin({ [$._config.gossip_member_label]: 'true' }),
 
-  alertmanager_statefulset+: if !$._config.memberlist_ring_enabled || !$._config.alertmanager_enabled then {} else
-    gossipLabel,
+  alertmanager_statefulset: overrideSuperIfExists(
+    'alertmanager_statefulset',
+    if !$._config.memberlist_ring_enabled then {} else gossipLabel
+  ),
 
-  compactor_statefulset+: if !$._config.memberlist_ring_enabled then {} else
-    gossipLabel,
+  compactor_statefulset: overrideSuperIfExists(
+    'compactor_statefulset',
+    if !$._config.memberlist_ring_enabled then {} else gossipLabel
+  ),
 
-  distributor_deployment+: if !$._config.memberlist_ring_enabled then {} else
-    gossipLabel,
+  distributor_deployment: overrideSuperIfExists(
+    'distributor_deployment',
+    if !$._config.memberlist_ring_enabled then {} else gossipLabel
+  ),
 
-  ingester_statefulset: if $._config.multi_zone_ingester_enabled && !$._config.multi_zone_ingester_migration_enabled then null else
-    (super.ingester_statefulset + if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  ingester_statefulset: overrideSuperIfExists(
+    'ingester_statefulset',
+    if !$._config.memberlist_ring_enabled then {} else gossipLabel
+  ),
 
-  ingester_zone_a_statefulset: if !$._config.multi_zone_ingester_enabled then null else
-    (super.ingester_zone_a_statefulset + if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  ingester_zone_a_statefulset: overrideSuperIfExists(
+    'ingester_zone_a_statefulset',
+    if !$._config.memberlist_ring_enabled then {} else gossipLabel
+  ),
 
-  ingester_zone_b_statefulset: if !$._config.multi_zone_ingester_enabled then null else
-    (super.ingester_zone_b_statefulset + if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  ingester_zone_b_statefulset: overrideSuperIfExists(
+    'ingester_zone_b_statefulset',
+    if !$._config.memberlist_ring_enabled then {} else gossipLabel
+  ),
 
-  ingester_zone_c_statefulset: if !$._config.multi_zone_ingester_enabled then null else
-    (super.ingester_zone_c_statefulset + if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  ingester_zone_c_statefulset: overrideSuperIfExists(
+    'ingester_zone_c_statefulset',
+    if !$._config.memberlist_ring_enabled then {} else gossipLabel
+  ),
 
-  querier_deployment+: if !$._config.memberlist_ring_enabled then {} else gossipLabel,
-  ruler_querier_deployment+: if !$._config.memberlist_ring_enabled || !$._config.ruler_remote_evaluation_enabled then {} else gossipLabel,
+  querier_deployment: overrideSuperIfExists(
+    'querier_deployment',
+    if !$._config.memberlist_ring_enabled then {} else gossipLabel
+  ),
 
-  ruler_deployment+: if !$._config.memberlist_ring_enabled || !$._config.ruler_enabled then {} else gossipLabel,
+  ruler_querier_deployment: overrideSuperIfExists(
+    'ruler_querier_deployment',
+    if !$._config.memberlist_ring_enabled then {} else gossipLabel
+  ),
 
-  query_scheduler_deployment+: if !querySchedulerMemberlistEnabled then {} else gossipLabel,
-  ruler_query_scheduler_deployment+: if !querySchedulerMemberlistEnabled || !$._config.ruler_remote_evaluation_enabled then {} else gossipLabel,
+  ruler_deployment: overrideSuperIfExists(
+    'ruler_deployment',
+    if !$._config.memberlist_ring_enabled then {} else gossipLabel
+  ),
 
-  query_frontend_deployment+: if !queryFrontendMemberlistEnabled then {} else gossipLabel,
-  ruler_query_frontend_deployment+: if !queryFrontendMemberlistEnabled || !$._config.ruler_remote_evaluation_enabled then {} else gossipLabel,
+  query_scheduler_deployment: overrideSuperIfExists(
+    'query_scheduler_deployment',
+    if !querySchedulerMemberlistEnabled then {} else gossipLabel
+  ),
 
-  store_gateway_statefulset: if $._config.multi_zone_store_gateway_enabled && !$._config.multi_zone_store_gateway_migration_enabled then null else
-    (super.store_gateway_statefulset + if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  ruler_query_scheduler_deployment: overrideSuperIfExists(
+    'ruler_query_scheduler_deployment',
+    if !querySchedulerMemberlistEnabled then {} else gossipLabel
+  ),
 
-  store_gateway_zone_a_statefulset: if !$._config.multi_zone_store_gateway_enabled then null else
-    (super.store_gateway_zone_a_statefulset + if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  query_frontend_deployment: overrideSuperIfExists(
+    'query_frontend_deployment',
+    if !queryFrontendMemberlistEnabled then {} else gossipLabel
+  ),
 
-  store_gateway_zone_b_statefulset: if !$._config.multi_zone_store_gateway_enabled then null else
-    (super.store_gateway_zone_b_statefulset + if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  ruler_query_frontend_deployment: overrideSuperIfExists(
+    'ruler_query_frontend_deployment',
+    if !queryFrontendMemberlistEnabled then {} else gossipLabel
+  ),
 
-  store_gateway_zone_c_statefulset: if !$._config.multi_zone_store_gateway_enabled then null else
-    (super.store_gateway_zone_c_statefulset + if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  store_gateway_statefulset: overrideSuperIfExists(
+    'store_gateway_statefulset',
+    if !$._config.memberlist_ring_enabled then {} else gossipLabel
+  ),
+
+  store_gateway_zone_a_statefulset: overrideSuperIfExists(
+    'store_gateway_zone_a_statefulset',
+    if !$._config.memberlist_ring_enabled then {} else gossipLabel
+  ),
+
+  store_gateway_zone_b_statefulset: overrideSuperIfExists(
+    'store_gateway_zone_b_statefulset',
+    if !$._config.memberlist_ring_enabled then {} else gossipLabel
+  ),
+
+  store_gateway_zone_c_statefulset: overrideSuperIfExists(
+    'store_gateway_zone_c_statefulset',
+    if !$._config.memberlist_ring_enabled then {} else gossipLabel
+  ),
 
   // Headless service (= no assigned IP, DNS returns all targets instead) pointing to gossip network members.
   gossip_ring_service:
@@ -153,4 +199,8 @@
         { [$._config.gossip_member_label]: 'true' },  // point to all gossip members
         ports,
       ) + service.mixin.spec.withClusterIp('None'),  // headless service
+
+  // Utility used to override a field only if exists in super.
+  local overrideSuperIfExists(name, override) = if !( name in super) || super[name] == null || super[name] == {} then null else
+    super[name] + override,
 }

@@ -36,7 +36,11 @@
       replicas: std.max(super.replicas, min_replicas),
     },
   },
-  query_frontend_deployment+: if $._config.query_sharding_enabled then ensure_replica_ratio_to_queriers else {},
+
+  query_frontend_deployment: overrideSuperIfExists(
+    'query_frontend_deployment',
+    if $._config.query_sharding_enabled then ensure_replica_ratio_to_queriers else {}
+  ),
 
   query_frontend_args+:: if !$._config.query_sharding_enabled then {} else
     // When sharding is enabled, query-frontend runs PromQL engine internally.
@@ -74,4 +78,8 @@
     // Raise the msg size for the GRPC messages query-frontend <-> querier by a factor when query sharding is enabled
     'querier.frontend-client.grpc-max-send-msg-size': super['querier.frontend-client.grpc-max-send-msg-size'] * $._config.query_sharding_msg_size_factor,
   },
+
+  // Utility used to override a field only if exists in super.
+  local overrideSuperIfExists(name, override) = if !( name in super) || super[name] == null || super[name] == {} then null else
+    super[name] + override,
 }
