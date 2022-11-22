@@ -637,6 +637,8 @@ func newBinaryTOCFromByteSlice(bs index.ByteSlice) (*BinaryTOC, error) {
 	}
 	b := bs.Range(bs.Len()-binaryTOCLen, bs.Len())
 
+	// COMMON
+
 	expCRC := binary.BigEndian.Uint32(b[len(b)-4:])
 	d := encoding.Decbuf{B: b[:len(b)-4]}
 
