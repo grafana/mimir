@@ -450,10 +450,6 @@ var (
 			},
 		},
 		{
-			name:    "ReadBinaryReader",
-			newFunc: func(path string, sampling int) (Reader, error) { return newFileReadBinaryReader(path, sampling) },
-		},
-		{
 			name:    "StreamBinaryReader",
 			newFunc: func(path string, sampling int) (Reader, error) { return newFileStreamBinaryReader(path, sampling) },
 		},
@@ -648,11 +644,6 @@ func TestBinaryReaderHangs(t *testing.T) {
 	t.Run("BinaryReader", func(t *testing.T) {
 		testBinaryReaderHangs(t, func(path string, sampling int) (Reader, error) {
 			return newFileBinaryReader(path, sampling, BinaryReaderConfig{})
-		})
-	})
-	t.Run("ReadBinaryReader", func(t *testing.T) {
-		testBinaryReaderHangs(t, func(path string, sampling int) (Reader, error) {
-			return newFileReadBinaryReader(path, sampling)
 		})
 	})
 	t.Run("StreamBinaryReader", func(t *testing.T) {
