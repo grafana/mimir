@@ -53,7 +53,7 @@
 
     // Some dashboards show panels grouping together multiple components of a given "path".
     // This mapping configures which components belong to each group.
-    component_groups: {
+    local componentGroups = {
       write: ['distributor', 'ingester', 'mimir_write'],
       read: ['query_frontend', 'querier', 'ruler_query_frontend', 'ruler_querier', 'mimir_read'],
       backend: ['query_scheduler', 'ruler_query_scheduler', 'ruler', 'store_gateway', 'compactor', 'alertmanager', 'overrides_exporter', 'mimir_backend'],
@@ -113,18 +113,18 @@
       local componentsGroupMatcher = function(components)
         instanceMatcher('(%s)' % std.join('|', std.map(function(name) componentNameRegexp[name], components))),
 
-      write: componentsGroupMatcher($._config.component_groups.write),
-      read: componentsGroupMatcher($._config.component_groups.read),
-      backend: componentsGroupMatcher($._config.component_groups.backend),
+      write: componentsGroupMatcher(componentGroups.write),
+      read: componentsGroupMatcher(componentGroups.read),
+      backend: componentsGroupMatcher(componentGroups.backend),
     },
 
     container_names: {
       // The following are container matchers used to select all components in a given "path".
       local componentsGroupMatcher = function(components) std.join('|', std.map(function(name) componentNameRegexp[name], components)),
 
-      write: componentsGroupMatcher($._config.component_groups.write),
-      read: componentsGroupMatcher($._config.component_groups.read),
-      backend: componentsGroupMatcher($._config.component_groups.backend),
+      write: componentsGroupMatcher(componentGroups.write),
+      read: componentsGroupMatcher(componentGroups.read),
+      backend: componentsGroupMatcher(componentGroups.backend),
     },
 
     // The label used to differentiate between different Kubernetes clusters.
