@@ -39,6 +39,90 @@ See the next section for details on cutting an individual release.
 
 ## How to cut an individual release
 
+### Release issue template
+
+The quick and easy way to create a GitHub issue using the following template and follow the instructions from the issue itself.
+If something is not clear, you can get back to this document to learn more about the process.
+
+````markdown
+### Publish the release candidate
+
+- [ ] Begin drafting the [release notes](https://github.com/grafana/mimir/blob/main/RELEASE.md#write-release-notes-document)
+  - Write release notes to `main`, then cherry pick them into the release branch
+  - Don't block on it to publish the release candidate
+- [ ] Wait for any open PR we want to get merged before cutting the release candidate
+  - [ ] Eventually open a PR for every experimental feature we want to promote to stable
+  - [ ] Eventually open a PR to remove any deprecated feature or configuration option that should be removed in this release
+- [ ] Update `CHANGELOG.md`
+  - [ ] Run `./tools/release/check-changelog.sh LAST-RELEASE-TAG...main` and add missing PRs to CHANGELOG
+  - [ ] Ensure CHANGELOG entries are [sorted by type](https://github.com/grafana/mimir/blob/main/docs/internal/contributing/README.md#changelog)
+  - [ ] Add a new section for the new release so that `## main / unreleased` is blank and at the top. The new section should say `## x.y.0-rc.0`.
+- [ ] Run `./tools/release/notify-changelog-cut.sh`
+- [ ] Run `make mixin-screenshots`
+  - Before opening the PR, review all updated screenshots and ensure no sensitive data is disclosed
+- [ ] Create new release branch
+  - [ ] Create the branch
+    ```bash
+    git checkout main
+    git checkout -b release-<version>
+    git push -u origin release-<version>
+    ```
+  - [ ] Remove "main / unreleased" section from the CHANGELOG
+- [ ] Publish the Mimir release candidate
+  - [ ] Update VERSION in the release branch and update CHANGELOG with version and release date.
+  - [ ] [Tag the release](https://github.com/grafana/mimir/blob/main/RELEASE.md#how-to-tag-a-release)
+    ```bash
+    git checkout release-<version>
+    ./tools/release/tag-release.sh
+    ```
+  - [ ] Wait until the CI pipeline succeeds
+  - [ ] [Create a pre-release on GitHub](https://github.com/grafana/mimir/blob/main/RELEASE.md#creating-release-on-github)
+    ```bash
+    git checkout release-<version>
+    ./tools/release/create-draft-release.sh
+    ```
+  - [ ] [Merge the release branch release-<version> into main](https://github.com/grafana/mimir/blob/main/RELEASE.md#merging-release-branch-into-main)
+    ```bash
+    ./tools/release/create-pr-to-merge-release-branch-to-main.sh
+    ```
+  - [ ] Announce the release candidate on socials
+- [ ] Publish the [Helm release candidate](https://github.com/grafana/mimir/blob/main/RELEASE.md#release-helm)
+  - _Ask people working on Helm to do it_
+- [ ] Vendor the release commit of Mimir into Grafana Enterprise Metrics (GEM)
+  - _This is addressed by Grafana Labs_
+
+### Publish the stable release
+
+- [ ] Publish the Mimir stable release
+  - [ ] [Write release notes](https://github.com/grafana/mimir/blob/main/RELEASE.md#write-release-notes-document)
+    - Ensure the any change to release notes in `main` has been cherry picked to the release branch
+  - [ ] Update version in release-<version> branch
+    - VERSION
+    - CHANGELOG
+    - `operations/mimir/images.libsonnet` (`_images.mimir` and `_images.query_tee` fields)
+    - `operations/mimir-rules-action/Dockerfile` (`grafana/mimirtool` image tag)
+  - [ ] [Tag the release](https://github.com/grafana/mimir/blob/main/RELEASE.md#how-to-tag-a-release)
+    ```bash
+    git checkout release-<version>
+    ./tools/release/tag-release.sh
+    ```
+  - [ ] Wait until the CI pipeline succeeds
+  - [ ] [Create a release on GitHub](https://github.com/grafana/mimir/blob/main/RELEASE.md#creating-release-on-github)
+    ```bash
+    git checkout release-<version>
+    ./tools/release/create-draft-release.sh
+    ```
+  - [ ] [Merge the release branch release-<version> into main](https://github.com/grafana/mimir/blob/main/RELEASE.md#merging-release-branch-into-main)
+    ```bash
+    ./tools/release/create-pr-to-merge-release-branch-to-main.sh
+    ```
+  - [ ] Announce the release on socials
+  - [ ] Open a PR to add the new version to the backward compatibility integration test (`integration/backward_compatibility_test.go`)
+  - [ ] [Publish dashboards to grafana.com](https://github.com/grafana/mimir/blob/main/RELEASE.md#publish-a-stable-release)
+- [ ] Publish the [Helm release candidate](https://github.com/grafana/mimir/blob/main/RELEASE.md#release-helm)
+  - _Ask people working on Helm to do it_
+````
+
 ### Branch management and versioning strategy
 
 We use [Semantic Versioning](https://semver.org/).
