@@ -3065,6 +3065,16 @@
         },
         {
           "kind": "field",
+          "name": "custom_user_label",
+          "required": false,
+          "desc": "User configured label value to be added to specific metrics",
+          "fieldValue": null,
+          "fieldDefaultValue": "team",
+          "fieldFlag": "validation.custom-user-label-value",
+          "fieldType": "string"
+        },
+        {
+          "kind": "field",
           "name": "max_fetched_chunks_per_query",
           "required": false,
           "desc": "Maximum number of chunks that can be fetched in a single query from ingesters and long-term storage. This limit is enforced in the querier, ruler and store-gateway. 0 to disable.",
