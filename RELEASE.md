@@ -69,7 +69,7 @@ If something is not clear, you can get back to this document to learn more about
     ```
   - [ ] Remove "main / unreleased" section from the CHANGELOG
 - [ ] Publish the Mimir release candidate
-  - [ ] Update VERSION in the release branch
+  - [ ] Update VERSION in the release branch and update CHANGELOG with version and release date.
   - [ ] [Tag the release](https://github.com/grafana/mimir/blob/main/RELEASE.md#how-to-tag-a-release)
     ```bash
     git checkout release-<version>
