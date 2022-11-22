@@ -8,12 +8,17 @@ package indexheader
 import (
 	"context"
 	"fmt"
+	"golang.org/x/sys/unix"
 	"io/ioutil"
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
+	"runtime/pprof"
 	"strconv"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
@@ -32,6 +37,10 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/testhelper"
 	"github.com/grafana/mimir/pkg/util/test"
 )
+
+//func TestFuseMount(t *testing.T) {
+//	require.NoError(t, NewFuseMount())
+//}
 
 func TestReaders(t *testing.T) {
 	ctx := context.Background()
@@ -375,6 +384,355 @@ func BenchmarkBinaryReader(t *testing.B) {
 	}
 }
 
+type newBinaryReaderFunc = func(path string, postingOffsetsInMemSampling int) (Reader, error)
+
+type binaryReaderVariant struct {
+	name    string
+	newFunc newBinaryReaderFunc
+}
+
+var (
+	binaryReaderVariants = []binaryReaderVariant{
+		{
+			name:    "BinaryReader",
+			newFunc: func(path string, sampling int) (Reader, error) { return newFileBinaryReader(path, sampling) },
+		},
+		{
+			name:    "ReadBinaryReader",
+			newFunc: func(path string, sampling int) (Reader, error) { return newFileReadBinaryReader(path, sampling) },
+		},
+		{
+			name:    "PopulateBinaryReader",
+			newFunc: func(path string, sampling int) (Reader, error) { return newFilePopulateBinaryReader(path, sampling) },
+		},
+		{
+			name:    "StreamBinaryReader",
+			newFunc: func(path string, sampling int) (Reader, error) { return newFileStreamBinaryReader(path, sampling) },
+		},
+	}
+)
+
+func BenchmarkOpsBinaryReader(t *testing.B) {
+	for _, v := range binaryReaderVariants {
+		if v.name == os.Getenv("BINARY_READER") {
+			fmt.Println(v.name)
+			t.Run("cold-cache", func(t *testing.B) {
+				doBenchmarkOpsBinaryReader(t, false, v.newFunc)
+			})
+			t.Run("warm-cache", func(t *testing.B) {
+				doBenchmarkOpsBinaryReader(t, true, v.newFunc)
+			})
+		}
+	}
+}
+
+func flushFile(file string) error {
+	f, err := fileutil.OpenMmapFile(file)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	src := f.Bytes()
+
+	const POSIX_FADV_WILLNEED = 3
+	const POSIX_FADV_DONTNEED = 4
+	err = unix.Fadvise(int(f.File().Fd()), 0, int64(len(src)), POSIX_FADV_DONTNEED) // _POSIX_FADV_DONTNEED)
+	if err != nil {
+		return err
+	}
+	//fmt.Printf("Flushed\n")
+
+	f.Close()
+	return nil
+}
+
+func doBenchmarkOpsBinaryReader(t *testing.B, warm bool, f newBinaryReaderFunc) {
+
+	flush := func(file string) error {
+		f, err := fileutil.OpenMmapFile(file)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		src := f.Bytes()
+
+		const POSIX_FADV_WILLNEED = 3
+		const POSIX_FADV_DONTNEED = 4
+		err = unix.Fadvise(int(f.File().Fd()), 0, int64(len(src)), POSIX_FADV_DONTNEED) // _POSIX_FADV_DONTNEED)
+		if err != nil {
+			return err
+		}
+		//fmt.Printf("Flushed\n")
+
+		f.Close()
+		return nil
+	}
+	fn := "/home/steve/grafana/ops-index-header"
+
+	//var slowfile *SlowFileMount
+	//if
+	//	slowfile, err := NewSlowFileMount(tmpDir, fn)
+	//	require.NoError(t, err)
+	//	defer slowfile.Close()
+
+	if warm {
+		br, err := f(fn, 32)
+		require.NoError(t, err)
+		require.NoError(t, br.Close())
+	}
+
+	t.ResetTimer()
+	for i := 0; i < t.N; i++ {
+		if !warm {
+			t.StopTimer()
+			require.NoError(t, flush(fn))
+			t.StartTimer()
+		}
+
+		br, err := f(fn, 32)
+
+		t.StopTimer()
+		{
+			f, err := os.Create("before_gc.heap")
+			require.NoError(t, err)
+			err = pprof.WriteHeapProfile(f)
+			require.NoError(t, err)
+		}
+		runtime.GC()
+		{
+			f, err := os.Create("after_gc.heap")
+			require.NoError(t, err)
+			err = pprof.WriteHeapProfile(f)
+			require.NoError(t, err)
+		}
+
+		require.NoError(t, err)
+		require.NoError(t, br.Close())
+		runtime.GC()
+		{
+			f, err := os.Create("after_close_and_gc.heap")
+			require.NoError(t, err)
+			err = pprof.WriteHeapProfile(f)
+			require.NoError(t, err)
+		}
+
+		t.StartTimer()
+	}
+}
+
+func RunTestWithConcurrentTicker(f func()) {
+	tickMilliseconds := 100
+	ticker := time.NewTicker(time.Duration(tickMilliseconds) * time.Millisecond)
+	defer ticker.Stop()
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	start := time.Now()
+	ticks := 0
+	go func() {
+		defer wg.Done()
+
+		for {
+			select {
+			case <-ticker.C:
+				ticks++
+				continue
+			case <-ctx.Done():
+				return
+			}
+		}
+
+	}()
+
+	f()
+	cancel()
+	wg.Wait()
+
+	elapsed := time.Now().Sub(start)
+	expected := (elapsed.Milliseconds() / int64(tickMilliseconds)) // floor
+	fmt.Printf("Elapsed: %v , Ticks: %d , Expected: %d\n", elapsed, ticks, expected)
+}
+
+func TestOpsBinaryReaderHangs(t *testing.T) {
+	lastMaxProcs := runtime.GOMAXPROCS(1)
+	defer runtime.GOMAXPROCS(lastMaxProcs)
+
+	//ctx := context.Background()
+	tmpDir, err := ioutil.TempDir("", "test-indexheader")
+	require.NoError(t, err)
+	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
+
+	//bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
+	//require.NoError(t, err)
+
+	//fmt.Println("Writing")
+
+	//m := prepareIndexV2Block(t, tmpDir, bkt)
+	//fn := filepath.Join(tmpDir, m.ULID.String(), block.IndexHeaderFilename)
+	//require.NoError(t, WriteBinary(ctx, bkt, m.ULID, fn))
+
+	fn := "/home/steve/grafana/ops-index-header"
+
+	//	slowfile, err := NewSlowFileMount(tmpDir, fn)
+	//	require.NoError(t, err)
+	//	defer slowfile.Close()
+
+	//	flush(slowfile.File())
+
+	RunTestWithConcurrentTicker(func() {
+		for i := 0; i < 10; i++ {
+			require.NoError(t, flushFile(fn))
+			br, err := newFileBinaryReader(fn, 32)
+			require.NoError(t, err)
+			require.NoError(t, br.Close())
+		}
+	})
+}
+
+//type newBinaryReaderFunc = func(path string, postingOffsetsInMemSampling int) (Reader, error)
+
+func TestBinaryReaderHangs(t *testing.T) {
+	t.Run("BinaryReader", func(t *testing.T) {
+		testBinaryReaderHangs(t, func(path string, sampling int) (Reader, error) {
+			return newFileBinaryReader(path, sampling)
+		})
+	})
+	t.Run("ReadBinaryReader", func(t *testing.T) {
+		testBinaryReaderHangs(t, func(path string, sampling int) (Reader, error) {
+			return newFileReadBinaryReader(path, sampling)
+		})
+	})
+	t.Run("PopulateBinaryReader", func(t *testing.T) {
+		testBinaryReaderHangs(t, func(path string, sampling int) (Reader, error) {
+			return newFilePopulateBinaryReader(path, sampling)
+		})
+	})
+	t.Run("StreamBinaryReader", func(t *testing.T) {
+		testBinaryReaderHangs(t, func(path string, sampling int) (Reader, error) {
+			return newFileStreamBinaryReader(path, sampling)
+		})
+	})
+}
+
+func testBinaryReaderHangs(t *testing.T, f newBinaryReaderFunc) {
+	lastMaxProcs := runtime.GOMAXPROCS(1)
+	defer runtime.GOMAXPROCS(lastMaxProcs)
+
+	//ctx := context.Background()
+	tmpDir, err := ioutil.TempDir("", "test-indexheader")
+	require.NoError(t, err)
+	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
+
+	//bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
+	//require.NoError(t, err)
+
+	//fmt.Println("Writing")
+
+	//m := prepareIndexV2Block(t, tmpDir, bkt)
+	//fn := filepath.Join(tmpDir, m.ULID.String(), block.IndexHeaderFilename)
+	//require.NoError(t, WriteBinary(ctx, bkt, m.ULID, fn))
+
+	fn := "/home/steve/grafana/ops-index-header"
+
+	slowfile, err := NewSlowFileMount(tmpDir, fn)
+	require.NoError(t, err)
+	defer slowfile.Close()
+
+	flushFile(slowfile.File())
+
+	RunTestWithConcurrentTicker(func() {
+		br, err := f(slowfile.File(), 32)
+		require.NoError(t, err)
+		require.NoError(t, br.Close())
+	})
+
+	RunTestWithConcurrentTicker(func() {
+		br, err := f(slowfile.File(), 32)
+		require.NoError(t, err)
+		require.NoError(t, br.Close())
+	})
+}
+
+/*
+func TestBinaryReaderHangs(t *testing.T) {
+	ctx := context.Background()
+	tmpDir, err := ioutil.TempDir("", "test-indexheader")
+	require.NoError(t, err)
+	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
+
+	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
+	require.NoError(t, err)
+
+	fmt.Println("Writing")
+
+	slowfs := "/mnt/testloop"
+
+	m := prepareIndexV2Block(t, tmpDir, bkt)
+	fn := filepath.Join(slowfs, m.ULID.String(), block.IndexHeaderFilename)
+	require.NoError(t, WriteBinary(ctx, bkt, m.ULID, fn+"-1"))
+	require.NoError(t, WriteBinary(ctx, bkt, m.ULID, fn+"-2"))
+	require.NoError(t, WriteBinary(ctx, bkt, m.ULID, fn+"-3"))
+	require.NoError(t, WriteBinary(ctx, bkt, m.ULID, fn+"-4"))
+	require.NoError(t, WriteBinary(ctx, bkt, m.ULID, fn+"-5"))
+
+	// Flush it
+	flush := func(file string) error {
+		f, err := fileutil.OpenMmapFile(file)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		src := f.Bytes()
+
+		const POSIX_FADV_WILLNEED = 3
+		const POSIX_FADV_DONTNEED = 4
+		err = unix.Fadvise(int(f.File().Fd()), 0, int64(len(src)), POSIX_FADV_DONTNEED) // _POSIX_FADV_DONTNEED)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Flushed\n")
+
+		f.Close()
+		return nil
+	}
+	require.NoError(t, flush(fn+"-1"))
+	require.NoError(t, flush(fn+"-2"))
+	require.NoError(t, flush(fn+"-3"))
+	require.NoError(t, flush(fn+"-4"))
+	require.NoError(t, flush(fn+"-5"))
+
+	//
+	start := time.Now()
+	fmt.Printf("Reading %s\n", fn+"-1")
+
+	br, err := newFileBinaryReader(fn+"-1", 32)
+	require.NoError(t, err)
+	require.NoError(t, br.Close())
+
+	br, err = newFileBinaryReader(fn+"-2", 32)
+	require.NoError(t, err)
+	require.NoError(t, br.Close())
+
+	br, err = newFileBinaryReader(fn+"-3", 32)
+	require.NoError(t, err)
+	require.NoError(t, br.Close())
+
+	br, err = newFileBinaryReader(fn+"-4", 32)
+	require.NoError(t, err)
+	require.NoError(t, br.Close())
+
+	br, err = newFileBinaryReader(fn+"-5", 32)
+	require.NoError(t, err)
+	require.NoError(t, br.Close())
+
+	elapsed := time.Now().Sub(start)
+	fmt.Printf("Elapsed: %v\n", elapsed)
+
+}
+*/
 func BenchmarkBinaryReader_LookupSymbol(b *testing.B) {
 	for _, numSeries := range []int{valueSymbolsCacheSize, valueSymbolsCacheSize * 10} {
 		b.Run(fmt.Sprintf("num series = %d", numSeries), func(b *testing.B) {
