@@ -77,9 +77,6 @@ externalConfigSecretName: '{{ include "mimir.resourceName" (dict "ctx" . "compon
 # -- When 'useExternalConfig' is true, then changing 'externalConfigVersion' triggers restart of services - otherwise changes to the configuration cause a restart.
 externalConfigVersion: '0'
 
-# -- Some storage providers work by utilising an alternate scheduler on Deployments and StatefulSets that require a PVC. Setting this value will set the scheduler name on all services that use a PVC.
-# schedulerName:
-
 mimir:
   # -- Base config file for Grafana Mimir and Grafana Enterprise Metrics. Contains Helm templates that are evaulated at install/upgrade.
   # To modify the resulting configuration, either copy and alter 'mimir.config' as a whole or use the 'mimir.structuredConfig' to add and modify certain YAML elements.
@@ -385,6 +382,9 @@ alertmanager:
     annotations: {}
     labels: {}
 
+  # -- Optionally set the scheduler for pods of the alertmanager
+  schedulerName: ""
+
   resources:
     requests:
       cpu: 10m
@@ -683,6 +683,9 @@ ingester:
   service:
     annotations: {}
     labels: {}
+
+  # -- Optionally set the scheduler for pods of the ingester
+  schedulerName: ""
 
   resources:
     requests:
@@ -1254,6 +1257,9 @@ store_gateway:
     annotations: {}
     labels: {}
 
+  # -- Optionally set the scheduler for pods of the store-gateway
+  schedulerName: ""
+
   resources:
     requests:
       cpu: 100m
@@ -1428,6 +1434,9 @@ compactor:
   service:
     annotations: {}
     labels: {}
+
+  # -- Optionally set the scheduler for pods of the compactor
+  schedulerName: ""
 
   resources:
     requests:
