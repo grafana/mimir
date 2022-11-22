@@ -22,6 +22,43 @@
     // modify the job selectors in the dashboard queries.
     singleBinary: false,
 
+    // This is mapping between a Mimir component name and the regular expression that should be used
+    // to match its instance and container name. Mimir jsonnet and Helm guarantee that the instance name
+    // (e.g. Kubernetes Deployment) and container name always match, so it's safe to use a shared mapping.
+    //
+    // This mapping is intentionally local and can't be overridden. If the final user needs to customize
+    // dashboards and alerts, they should override the final matcher regexp (e.g. container_names or instance_names).
+    local componentNameRegexp = {
+      // Microservices deployment mode.
+      compactor: 'compactor',
+      alertmanager: 'alertmanager',
+      ingester: 'ingester',
+      distributor: 'distributor',
+      querier: 'querier',
+      query_frontend: 'query-frontend',
+      query_scheduler: 'query-scheduler',
+      ruler: 'ruler',
+      ruler_querier: 'ruler-querier',
+      ruler_query_frontend: 'ruler-query-frontend',
+      ruler_query_scheduler: 'ruler-query-scheduler',
+      store_gateway: 'store-gateway',
+      overrides_exporter: 'overrides-exporter',
+      gateway: '(gateway|cortex-gw|cortex-gw-internal)',
+
+      // Read-write deployment mode.
+      mimir_write: 'mimir-write',
+      mimir_read: 'mimir-read',
+      mimir_backend: 'mimir-backend',
+    },
+
+    // Some dashboards show panels grouping together multiple components of a given "path".
+    // This mapping configures which components belong to each group.
+    local componentGroups = {
+      write: ['distributor', 'ingester', 'mimir_write'],
+      read: ['query_frontend', 'querier', 'ruler_query_frontend', 'ruler_querier', 'mimir_read'],
+      backend: ['query_scheduler', 'ruler_query_scheduler', 'ruler', 'store_gateway', 'compactor', 'alertmanager', 'overrides_exporter', 'mimir_backend'],
+    },
+
     // These are used by the dashboards and allow for the simultaneous display of
     // microservice and single binary Mimir clusters.
     // Whenever you do any change here, please reflect it in the doc at:
@@ -49,11 +86,45 @@
       backend: '(ruler|query-scheduler.*|ruler-query-scheduler.*|store-gateway.*|compactor.*|alertmanager|overrides-exporter|mimir-backend.*)',
     },
 
+    // Name selectors for different application instances, using the "per_instance_label".
+    instance_names: {
+      local helmCompatibleMatcher = function(regexp) '(.*-mimir-)?%s' % regexp,
+      local instanceMatcher = function(regexp) helmCompatibleMatcher('%s.*' % regexp),
+
+      // Microservices deployment mode.
+      compactor: instanceMatcher(componentNameRegexp.compactor),
+      alertmanager: instanceMatcher(componentNameRegexp.alertmanager),
+      ingester: instanceMatcher(componentNameRegexp.ingester),
+      distributor: instanceMatcher(componentNameRegexp.distributor),
+      querier: instanceMatcher(componentNameRegexp.querier),
+      ruler: instanceMatcher(componentNameRegexp.ruler),
+      query_frontend: instanceMatcher(componentNameRegexp.query_frontend),
+      query_scheduler: instanceMatcher(componentNameRegexp.query_scheduler),
+      store_gateway: instanceMatcher(componentNameRegexp.store_gateway),
+      overrides_exporter: instanceMatcher(componentNameRegexp.overrides_exporter),
+      gateway: instanceMatcher(componentNameRegexp.gateway),
+
+      // Read-write deployment mode.
+      mimir_write: instanceMatcher(componentNameRegexp.mimir_write),
+      mimir_read: instanceMatcher(componentNameRegexp.mimir_read),
+      mimir_backend: instanceMatcher(componentNameRegexp.mimir_backend),
+
+      // The following are instance matchers used to select all components in a given "path".
+      local componentsGroupMatcher = function(components)
+        instanceMatcher('(%s)' % std.join('|', std.map(function(name) componentNameRegexp[name], components))),
+
+      write: componentsGroupMatcher(componentGroups.write),
+      read: componentsGroupMatcher(componentGroups.read),
+      backend: componentsGroupMatcher(componentGroups.backend),
+    },
+
     container_names: {
       // The following are container matchers used to select all components in a given "path".
-      write: 'distributor|ingester|mimir-write',
-      read: 'query-frontend|querier|ruler-query-frontend|ruler-querier|mimir-read',
-      backend: 'query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter|mimir-backend',
+      local componentsGroupMatcher = function(components) std.join('|', std.map(function(name) componentNameRegexp[name], components)),
+
+      write: componentsGroupMatcher(componentGroups.write),
+      read: componentsGroupMatcher(componentGroups.read),
+      backend: componentsGroupMatcher(componentGroups.backend),
     },
 
     // The label used to differentiate between different Kubernetes clusters.
@@ -87,22 +158,6 @@
     // The label used to differentiate between different application instances (i.e. 'pod' in a kubernetes install).
     per_instance_label: 'pod',
 
-    // Name selectors for different application instances, using the "per_instance_label".
-    instance_names: {
-      local helmCompatibleName = function(name) '(.*-mimir-)?%s' % name,
-
-      compactor: helmCompatibleName('compactor.*'),
-      alertmanager: helmCompatibleName('alertmanager.*'),
-      ingester: helmCompatibleName('ingester.*'),
-      distributor: helmCompatibleName('distributor.*'),
-      querier: helmCompatibleName('querier.*'),
-      ruler: helmCompatibleName('ruler.*'),
-      query_frontend: helmCompatibleName('query-frontend.*'),
-      query_scheduler: helmCompatibleName('query-scheduler.*'),
-      store_gateway: helmCompatibleName('store-gateway.*'),
-      gateway: helmCompatibleName('(gateway|cortex-gw|cortex-gw).*'),
-    },
-
     deployment_type: 'kubernetes',
     // System mount point where mimir stores its data, used for baremetal
     // deployment only.
@@ -132,7 +187,7 @@
         memory_rss_usage: 'max by(%(instance)s) (container_memory_rss{%(namespace)s,container=~"%(instanceName)s"})',
         memory_rss_limit: 'min(container_spec_memory_limit_bytes{%(namespace)s,container=~"%(instanceName)s"} > 0)',
         memory_rss_request: 'min(kube_pod_container_resource_requests{%(namespace)s,container=~"%(instanceName)s",resource="memory"})',
-        network: 'sum by(%(instance)s) (rate(%(metric)s{%(namespace)s,%(instance)s=~"%(instanceName)s"}[$__rate_interval]))',
+        network: 'sum by(%(instanceLabel)s) (rate(%(metric)s{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}[$__rate_interval]))',
         disk_writes:
           |||
             sum by(%(instanceLabel)s, %(instance)s, device) (
@@ -187,7 +242,7 @@
             node_memory_Active_anon_bytes{%(namespace)s,%(instance)s=~".*%(instanceName)s.*"}
             + node_memory_SwapCached_bytes{%(namespace)s,%(instance)s=~".*%(instanceName)s.*"}
           |||,
-        network: 'sum by(%(instance)s) (rate(%(metric)s{%(namespace)s,%(instance)s=~".*%(instanceName)s.*"}[$__rate_interval]))',
+        network: 'sum by(%(instanceLabel)s) (rate(%(metric)s{%(namespaceMatcher)s,%(instanceLabel)s=~".*%(instanceName)s.*"}[$__rate_interval]))',
         disk_writes:
           |||
             sum by(%(instanceLabel)s, %(instance)s, device) (
