@@ -16,6 +16,7 @@ const customViewportHeight = {
     'mimir-object-store': 1400,
     'mimir-overrides': 800,
     'mimir-overview': 1400,
+    'mimir-overview-resources': 1700,
     'mimir-reads-networking': 2000,
     'mimir-rollout-progress': 800,
     'mimir-scaling': 800,

@@ -248,20 +248,23 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
     },
 
-  resourcesPanelLegend(first_legend)::
+  resourceUtilizationAndLimitLegend(resourceName)::
     if $._config.deployment_type == 'kubernetes'
-    then [first_legend, 'limit', 'request']
+    then [resourceName, 'limit', 'request']
     // limit and request does not makes sense when running on baremetal
-    else [first_legend],
+    else [resourceName],
 
-  resourcesPanelQueries(metric, instanceName)::
+  resourceUtilizationQuery(metric, instanceName)::
+    $._config.resources_panel_queries[$._config.deployment_type]['%s_usage' % metric] % {
+      instance: $._config.per_instance_label,
+      namespace: $.namespaceMatcher(),
+      instanceName: instanceName,
+    },
+
+  resourceUtilizationAndLimitQueries(metric, instanceName)::
     if $._config.deployment_type == 'kubernetes'
     then [
-      $._config.resources_panel_queries[$._config.deployment_type]['%s_usage' % metric] % {
-        instance: $._config.per_instance_label,
-        namespace: $.namespaceMatcher(),
-        instanceName: instanceName,
-      },
+      $.resourceUtilizationQuery(metric, instanceName),
       $._config.resources_panel_queries[$._config.deployment_type]['%s_limit' % metric] % {
         namespace: $.namespaceMatcher(),
         instanceName: instanceName,
@@ -272,16 +275,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
     ]
     else [
-      $._config.resources_panel_queries[$._config.deployment_type]['%s_usage' % metric] % {
-        instance: $._config.per_instance_label,
-        namespace: $.namespaceMatcher(),
-        instanceName: instanceName,
-      },
+      $.resourceUtilizationQuery(metric, instanceName),
     ],
 
   containerCPUUsagePanel(title, instanceName)::
     $.panel(title) +
-    $.queryPanel($.resourcesPanelQueries('cpu', instanceName), $.resourcesPanelLegend('{{%s}}' % $._config.per_instance_label)) +
+    $.queryPanel($.resourceUtilizationAndLimitQueries('cpu', instanceName), $.resourceUtilizationAndLimitLegend('{{%s}}' % $._config.per_instance_label)) +
     {
       seriesOverrides: [
         resourceRequestStyle,
@@ -293,7 +292,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
   containerMemoryWorkingSetPanel(title, instanceName)::
     $.panel(title) +
-    $.queryPanel($.resourcesPanelQueries('memory_working', instanceName), $.resourcesPanelLegend('{{%s}}' % $._config.per_instance_label)) +
+    $.queryPanel($.resourceUtilizationAndLimitQueries('memory_working', instanceName), $.resourceUtilizationAndLimitLegend('{{%s}}' % $._config.per_instance_label)) +
     {
       seriesOverrides: [
         resourceRequestStyle,
@@ -306,7 +305,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
   containerMemoryRSSPanel(title, instanceName)::
     $.panel(title) +
-    $.queryPanel($.resourcesPanelQueries('memory_rss', instanceName), $.resourcesPanelLegend('{{%s}}' % $._config.per_instance_label)) +
+    $.queryPanel($.resourceUtilizationAndLimitQueries('memory_rss', instanceName), $.resourceUtilizationAndLimitLegend('{{%s}}' % $._config.per_instance_label)) +
     {
       seriesOverrides: [
         resourceRequestStyle,
@@ -368,12 +367,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
   containerDiskSpaceUtilization(title, instanceName)::
     local label = if $._config.deployment_type == 'kubernetes' then '{{persistentvolumeclaim}}' else '{{instance}}';
+
     $.panel(title) +
     $.queryPanel(
       $._config.resources_panel_queries[$._config.deployment_type].disk_utilization % {
-        namespace: $.namespaceMatcher(),
-        label: $.containerLabelMatcher(instanceName),
-        instance: $._config.per_instance_label,
+        namespaceMatcher: $.namespaceMatcher(),
+        containerMatcher: $.containerLabelNameMatcher(instanceName),
+        instanceLabel: $._config.per_instance_label,
         instanceName: instanceName,
         instanceDataDir: $._config.instance_data_mountpoint,
       }, label
@@ -383,10 +383,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
       fill: 0,
     },
 
-  containerLabelMatcher(instanceName)::
-    if instanceName == 'ingester' then 'label_name=~"ingester.*"'
-    else if instanceName == 'store-gateway' then 'label_name=~"store-gateway.*"'
-    else 'label_name="%s"' % instanceName,
+  containerLabelNameMatcher(containerNameOrRegex)::
+    // Check only the prefix so that a multi-zone deployment matches too.
+    'label_name=~"(%s).*"' % containerNameOrRegex,
 
   jobNetworkingRow(title, name)::
     local vars = $._config {
@@ -708,7 +707,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           (
             container_fs_writes_bytes_total{
               %s,
-              container="%s",
+              container=~"%s",
               device!~".*sda.*"
             }
           ),
