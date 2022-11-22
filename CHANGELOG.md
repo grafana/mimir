@@ -52,6 +52,7 @@
 * [ENHANCEMENT] Dashboards: Add read path insights row to the "Mimir / Tenants" dashboard. #3326
 * [ENHANCEMENT] Alerts: Add runbook urls for alerts. #3452
 * [BUGFIX] Dashboards: Fix legend showing `persistentvolumeclaim` when using `deployment_type=baremetal` for `Disk space utilization` panels. #3173
+* [BUGFIX] Alerts: Fixed `MimirGossipMembersMismatch` alert when Mimir is deployed in read-write mode. #3489
 
 ### Jsonnet
 
