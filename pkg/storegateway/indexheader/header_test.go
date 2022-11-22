@@ -19,8 +19,6 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/sys/unix"
-
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
@@ -29,10 +27,9 @@ import (
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/sys/unix"
-
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
+	"golang.org/x/sys/unix"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
@@ -447,8 +444,10 @@ type binaryReaderVariant struct {
 var (
 	binaryReaderVariants = []binaryReaderVariant{
 		{
-			name:    "BinaryReader",
-			newFunc: func(path string, sampling int) (Reader, error) { return newFileBinaryReader(path, sampling, BinaryReaderConfig{}) },
+			name: "BinaryReader",
+			newFunc: func(path string, sampling int) (Reader, error) {
+				return newFileBinaryReader(path, sampling, BinaryReaderConfig{})
+			},
 		},
 		{
 			name:    "ReadBinaryReader",
@@ -646,8 +645,6 @@ func TestOpsBinaryReaderHangs(t *testing.T) {
 		}
 	})
 }
-
-
 
 //type newBinaryReaderFunc = func(path string, postingOffsetsInMemSampling int) (Reader, error)
 
