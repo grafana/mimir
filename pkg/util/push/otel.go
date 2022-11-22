@@ -41,6 +41,7 @@ const (
 func OTLPHandler(
 	maxRecvMsgSize int,
 	sourceIPs *middleware.SourceIPExtractor,
+	customLabelGetter GetCustomUserLabelValue,
 	allowSkipLabelNameValidation bool,
 	reg prometheus.Registerer,
 	push Func,
@@ -114,7 +115,7 @@ func OTLPHandler(
 			return body, err
 		}
 
-		metrics, err := otelMetricsToTimeseries(ctx, discardedDueToOtelParseError, logger, otlpReq.Metrics())
+		metrics, err := otelMetricsToTimeseries(ctx, discardedDueToOtelParseError, customLabelGetter, logger, otlpReq.Metrics())
 		if err != nil {
 			return body, err
 		}
@@ -124,7 +125,7 @@ func OTLPHandler(
 	})
 }
 
-func otelMetricsToTimeseries(ctx context.Context, discardedDueToOtelParseError *prometheus.CounterVec, logger kitlog.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
+func otelMetricsToTimeseries(ctx context.Context, discardedDueToOtelParseError *prometheus.CounterVec, customLabelGetter GetCustomUserLabelValue, logger kitlog.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
 	tsMap, errs := prometheusremotewrite.FromMetrics(md, prometheusremotewrite.Settings{})
 
 	if errs != nil {
@@ -134,7 +135,7 @@ func otelMetricsToTimeseries(ctx context.Context, discardedDueToOtelParseError *
 		}
 
 		dropped := len(multierr.Errors(errs))
-		discardedDueToOtelParseError.WithLabelValues(userID).Add(float64(dropped))
+		discardedDueToOtelParseError.WithLabelValues(userID, customLabelGetter.CustomUserLabelValue(userID)).Add(float64(dropped))
 
 		parseErrs := errs.Error()
 		if len(parseErrs) > maxErrMsgLen {

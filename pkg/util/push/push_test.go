@@ -43,7 +43,7 @@ func TestHandler_remoteWrite(t *testing.T) {
 func TestHandler_otlpWriteNoCompression(t *testing.T) {
 	req := createOTLPRequest(t, createOTLPMetricRequest(t), false)
 	resp := httptest.NewRecorder()
-	handler := OTLPHandler(100000, nil, false, nil, verifyWritePushFunc(t, mimirpb.API))
+	handler := OTLPHandler(100000, nil, &mockCustomLabelGetter{customLabelValue: "abc"}, false, nil, verifyWritePushFunc(t, mimirpb.API))
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
 }
@@ -88,7 +88,7 @@ func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
 
 	req := createOTLPRequest(t, pmetricotlp.NewRequestFromMetrics(md), false)
 	resp := httptest.NewRecorder()
-	handler := OTLPHandler(100000, nil, false, nil, func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
+	handler := OTLPHandler(100000, nil, &mockCustomLabelGetter{customLabelValue: "abc"}, false, nil, func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
 		request, err := pushReq.WriteRequest()
 		assert.NoError(t, err)
 		assert.Len(t, request.Timeseries, 3)
@@ -169,7 +169,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 func TestHandler_otlpWriteWithCompression(t *testing.T) {
 	req := createOTLPRequest(t, createOTLPMetricRequest(t), true)
 	resp := httptest.NewRecorder()
-	handler := OTLPHandler(100000, nil, false, nil, verifyWritePushFunc(t, mimirpb.API))
+	handler := OTLPHandler(100000, nil, &mockCustomLabelGetter{customLabelValue: "abc"}, false, nil, verifyWritePushFunc(t, mimirpb.API))
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
 }
@@ -179,7 +179,7 @@ func TestHandler_otlpWriteRequestTooBigNoCompression(t *testing.T) {
 	resp := httptest.NewRecorder()
 
 	// This one is caught in the r.ContentLength check.
-	handler := OTLPHandler(30, nil, false, nil, readBodyPushFunc(t))
+	handler := OTLPHandler(30, nil, &mockCustomLabelGetter{customLabelValue: "abc"}, false, nil, readBodyPushFunc(t))
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, http.StatusRequestEntityTooLarge, resp.Code)
 	assert.Contains(t, resp.Body.String(), "the incoming push request has been rejected because its message size of 37 bytes is larger than the allowed limit of 30 bytes (err-mimir-distributor-max-write-message-size). To adjust the related limit, configure -distributor.max-recv-msg-size, or contact your service administrator.")
@@ -202,7 +202,7 @@ func TestHandler_otlpWriteRequestTooBigWithCompression(t *testing.T) {
 
 	resp := httptest.NewRecorder()
 
-	handler := OTLPHandler(140, nil, false, nil, readBodyPushFunc(t))
+	handler := OTLPHandler(140, nil, &mockCustomLabelGetter{customLabelValue: "abc"}, false, nil, readBodyPushFunc(t))
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, http.StatusRequestEntityTooLarge, resp.Code)
 	body, err := io.ReadAll(resp.Body)
@@ -215,7 +215,7 @@ func TestHandler_otlpWriteRequestWithUnSupportedCompression(t *testing.T) {
 	req.Header.Set("Content-Encoding", "snappy")
 
 	resp := httptest.NewRecorder()
-	handler := OTLPHandler(100000, nil, false, nil, readBodyPushFunc(t))
+	handler := OTLPHandler(100000, nil, &mockCustomLabelGetter{customLabelValue: "abc"}, false, nil, readBodyPushFunc(t))
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, http.StatusUnsupportedMediaType, resp.Code)
 }
@@ -562,4 +562,12 @@ func TestHandler_ErrorTranslation(t *testing.T) {
 			assert.Equal(t, tc.expectedHTTPStatus, recorder.Code)
 		})
 	}
+}
+
+type mockCustomLabelGetter struct {
+	customLabelValue string
+}
+
+func (m *mockCustomLabelGetter) CustomUserLabelValue(userID string) string {
+	return m.customLabelValue
 }
