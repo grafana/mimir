@@ -5,7 +5,7 @@ local filename = 'mimir-overview-resources.json';
 (import 'dashboard-queries.libsonnet') {
   [filename]:
     ($.dashboard('Overview resources') + { uid: std.md5(filename) })
-    .addClusterSelectorTemplates()
+    .addClusterSelectorTemplates(false)
 
     .addRowIf(
       $._config.gateway_enabled,

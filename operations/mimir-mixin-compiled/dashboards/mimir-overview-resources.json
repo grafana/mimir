@@ -1247,17 +1247,16 @@
                "type": "datasource"
             },
             {
-               "allValue": ".+",
+               "allValue": ".*",
                "current": {
-                  "selected": true,
-                  "text": "All",
-                  "value": "$__all"
+                  "text": "prod",
+                  "value": "prod"
                },
                "datasource": "$datasource",
                "hide": 0,
                "includeAll": true,
                "label": "cluster",
-               "multi": true,
+               "multi": false,
                "name": "cluster",
                "options": [ ],
                "query": "label_values(cortex_build_info, cluster)",
@@ -1271,17 +1270,16 @@
                "useTags": false
             },
             {
-               "allValue": ".+",
+               "allValue": null,
                "current": {
-                  "selected": true,
-                  "text": "All",
-                  "value": "$__all"
+                  "text": "prod",
+                  "value": "prod"
                },
                "datasource": "$datasource",
                "hide": 0,
-               "includeAll": true,
+               "includeAll": false,
                "label": "namespace",
-               "multi": true,
+               "multi": false,
                "name": "namespace",
                "options": [ ],
                "query": "label_values(cortex_build_info{cluster=~\"$cluster\"}, namespace)",
