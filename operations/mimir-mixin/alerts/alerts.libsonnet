@@ -123,8 +123,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
           annotations: {
             message: |||
-              {{ $labels.%s }} failed to reload runtime config.
-            ||| % $._config.per_job_label,
+              {{ $labels.%(per_job_label)s }} failed to reload runtime config.
+            ||| % $._config,
           },
         },
         {
