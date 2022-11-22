@@ -422,7 +422,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	d.replicationFactor.Set(float64(ingestersRing.ReplicationFactor()))
 	d.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(d.cleanupInactiveUser)
 
-	d.forwarder = forwarding.NewForwarder(cfg.Forwarding, reg, log)
+	d.forwarder = forwarding.NewForwarder(cfg.Forwarding, reg, log, limits)
 	// The forwarder is an optional feature, if it's disabled then d.forwarder will be nil.
 	if d.forwarder != nil {
 		subservices = append(subservices, d.forwarder)
