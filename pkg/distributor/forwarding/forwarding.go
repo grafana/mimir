@@ -58,6 +58,7 @@ type forwarder struct {
 	pools              *pools
 	client             http.Client
 	log                log.Logger
+	limits             *validation.Overrides
 	workerWg           sync.WaitGroup
 	reqCh              chan *request
 	httpGrpcClientPool *client.Pool
@@ -73,16 +74,17 @@ type forwarder struct {
 }
 
 // NewForwarder returns a new forwarder, if forwarding is disabled it returns nil.
-func NewForwarder(cfg Config, reg prometheus.Registerer, log log.Logger) Forwarder {
+func NewForwarder(cfg Config, reg prometheus.Registerer, log log.Logger, limits *validation.Overrides) Forwarder {
 	if !cfg.Enabled {
 		return nil
 	}
 
 	f := &forwarder{
-		cfg:   cfg,
-		pools: newPools(),
-		log:   log,
-		reqCh: make(chan *request, cfg.RequestConcurrency),
+		cfg:    cfg,
+		pools:  newPools(),
+		log:    log,
+		limits: limits,
+		reqCh:  make(chan *request, cfg.RequestConcurrency),
 		client: http.Client{
 			Transport: &http.Transport{
 				MaxIdleConns:        0,                      // no limit
@@ -339,7 +341,7 @@ func (f *forwarder) splitToIngestedAndForwardedTimeseries(tsSliceIn []mimirpb.Pr
 			if filteredSamples > 0 {
 				err = errSamplesTooOld
 				if !ingest {
-					f.discardedSamplesTooOld.WithLabelValues(user).Add(float64(filteredSamples))
+					f.discardedSamplesTooOld.WithLabelValues(user, f.limits.CustomUserLabelValue(user)).Add(float64(filteredSamples))
 				}
 			}
 
