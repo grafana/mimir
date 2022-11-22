@@ -749,7 +749,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 			}
 
 			if errors.Is(err, tooManyClustersError{}) {
-				d.discardedSamplesTooManyHaClusters.WithLabelValues(userID).Add(float64(numSamples))
+				d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, d.limits.CustomUserLabelValue(userID)).Add(float64(numSamples))
 				return nil, httpgrpc.Errorf(http.StatusBadRequest, err.Error())
 			}
 
