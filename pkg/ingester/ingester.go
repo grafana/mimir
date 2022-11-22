@@ -890,23 +890,25 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	i.appendedSamplesStats.Inc(int64(succeededSamplesCount))
 	i.appendedExemplarsStats.Inc(int64(succeededExemplarsCount))
 
+	customUserLabelValue := i.limits.CustomUserLabelValue(userID)
+
 	if sampleOutOfBoundsCount > 0 {
-		i.metrics.discardedSamplesSampleOutOfBounds.WithLabelValues(userID).Add(float64(sampleOutOfBoundsCount))
+		i.metrics.discardedSamplesSampleOutOfBounds.WithLabelValues(userID, customUserLabelValue).Add(float64(sampleOutOfBoundsCount))
 	}
 	if sampleOutOfOrderCount > 0 {
-		i.metrics.discardedSamplesSampleOutOfOrder.WithLabelValues(userID).Add(float64(sampleOutOfOrderCount))
+		i.metrics.discardedSamplesSampleOutOfOrder.WithLabelValues(userID, customUserLabelValue).Add(float64(sampleOutOfOrderCount))
 	}
 	if sampleTooOldCount > 0 {
-		i.metrics.discardedSamplesSampleTooOld.WithLabelValues(userID).Add(float64(sampleTooOldCount))
+		i.metrics.discardedSamplesSampleTooOld.WithLabelValues(userID, customUserLabelValue).Add(float64(sampleTooOldCount))
 	}
 	if newValueForTimestampCount > 0 {
-		i.metrics.discardedSamplesNewValueForTimestamp.WithLabelValues(userID).Add(float64(newValueForTimestampCount))
+		i.metrics.discardedSamplesNewValueForTimestamp.WithLabelValues(userID, customUserLabelValue).Add(float64(newValueForTimestampCount))
 	}
 	if perUserSeriesLimitCount > 0 {
-		i.metrics.discardedSamplesPerUserSeriesLimit.WithLabelValues(userID).Add(float64(perUserSeriesLimitCount))
+		i.metrics.discardedSamplesPerUserSeriesLimit.WithLabelValues(userID, customUserLabelValue).Add(float64(perUserSeriesLimitCount))
 	}
 	if perMetricSeriesLimitCount > 0 {
-		i.metrics.discardedSamplesPerMetricSeriesLimit.WithLabelValues(userID).Add(float64(perMetricSeriesLimitCount))
+		i.metrics.discardedSamplesPerMetricSeriesLimit.WithLabelValues(userID, customUserLabelValue).Add(float64(perMetricSeriesLimitCount))
 	}
 	if succeededSamplesCount > 0 {
 		i.ingestionRate.Add(int64(succeededSamplesCount))

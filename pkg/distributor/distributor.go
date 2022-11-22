@@ -883,6 +883,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 			minExemplarTS = earliestSampleTimestampMs - 300000
 		}
 
+		customUserLabelValue := d.limits.CustomUserLabelValue(userID)
 		var firstPartialErr error
 		var removeIndexes []int
 		for tsIdx, ts := range req.Timeseries {
@@ -895,7 +896,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 
 			skipLabelNameValidation := d.cfg.SkipLabelNameValidation || req.GetSkipLabelNameValidation()
 			// Note that validateSeries may drop some data in ts.
-			validationErr := d.validateSeries(now, ts, userID, d.limits.CustomUserLabelValue(userID), skipLabelNameValidation, minExemplarTS)
+			validationErr := d.validateSeries(now, ts, userID, customUserLabelValue, skipLabelNameValidation, minExemplarTS)
 
 			// Errors in validation are considered non-fatal, as one series in a request may contain
 			// invalid data but all the remaining series could be perfectly valid.
@@ -944,7 +945,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 
 		totalN := validatedSamples + validatedExemplars + validatedMetadata
 		if !d.ingestionRateLimiter.AllowN(now, userID, totalN) {
-			d.discardedSamplesRateLimited.WithLabelValues(userID).Add(float64(validatedSamples))
+			d.discardedSamplesRateLimited.WithLabelValues(userID, customUserLabelValue).Add(float64(validatedSamples))
 			d.discardedExemplarsRateLimited.WithLabelValues(userID).Add(float64(validatedExemplars))
 			d.discardedMetadataRateLimited.WithLabelValues(userID).Add(float64(validatedMetadata))
 			// Return a 429 here to tell the client it is going too fast.
