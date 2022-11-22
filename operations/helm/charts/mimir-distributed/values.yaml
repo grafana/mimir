@@ -382,6 +382,9 @@ alertmanager:
     annotations: {}
     labels: {}
 
+  # -- Optionally set the scheduler for pods of the alertmanager
+  schedulerName: ""
+
   resources:
     requests:
       cpu: 10m
@@ -680,6 +683,9 @@ ingester:
   service:
     annotations: {}
     labels: {}
+
+  # -- Optionally set the scheduler for pods of the ingester
+  schedulerName: ""
 
   resources:
     requests:
@@ -1251,6 +1257,9 @@ store_gateway:
     annotations: {}
     labels: {}
 
+  # -- Optionally set the scheduler for pods of the store-gateway
+  schedulerName: ""
+
   resources:
     requests:
       cpu: 100m
@@ -1425,6 +1434,9 @@ compactor:
   service:
     annotations: {}
     labels: {}
+
+  # -- Optionally set the scheduler for pods of the compactor
+  schedulerName: ""
 
   resources:
     requests:
