@@ -18,6 +18,7 @@ local filename = 'mimir-overview.json';
       alertmanagerResourcesDashboardURL: $.dashboardURL('mimir-alertmanager-resources.json'),
       compactorDashboardURL: $.dashboardURL('mimir-compactor.json'),
       objectStoreDashboardURL: $.dashboardURL('mimir-object-store.json'),
+      overviewNetworkingDashboardURL: $.dashboardURL('mimir-overview-networking.json'),
       overviewResourcesDashboardURL: $.dashboardURL('mimir-overview-resources.json'),
       queriesDashboardURL: $.dashboardURL('mimir-queries.json'),
       readsDashboardURL: $.dashboardURL('mimir-reads.json'),
@@ -108,6 +109,7 @@ local filename = 'mimir-overview.json';
           - <a target="_blank" href="%(writesResourcesDashboardURL)s">Writes resources</a>
           - <a target="_blank" href="%(writesNetworkingDashboardURL)s">Writes networking</a>
           - <a target="_blank" href="%(overviewResourcesDashboardURL)s">Overview resources</a>
+          - <a target="_blank" href="%(overviewNetworkingDashboardURL)s">Overview networking</a>
         ||| % helpers),
       )
       .addPanel(
@@ -149,6 +151,7 @@ local filename = 'mimir-overview.json';
           - <a target="_blank" href="%(readsResourcesDashboardURL)s">Reads resources</a>
           - <a target="_blank" href="%(readsNetworkingDashboardURL)s">Reads networking</a>
           - <a target="_blank" href="%(overviewResourcesDashboardURL)s">Overview resources</a>
+          - <a target="_blank" href="%(overviewNetworkingDashboardURL)s">Overview networking</a>
           - <a target="_blank" href="%(queriesDashboardURL)s">Queries</a>
           - <a target="_blank" href="%(compactorDashboardURL)s">Compactor</a>
         ||| % helpers),
@@ -204,6 +207,7 @@ local filename = 'mimir-overview.json';
           - <a target="_blank" href="%(alertmanagerDashboardURL)s">Alertmanager</a>
           - <a target="_blank" href="%(alertmanagerResourcesDashboardURL)s">Alertmanager resources</a>
           - <a target="_blank" href="%(overviewResourcesDashboardURL)s">Overview resources</a>
+          - <a target="_blank" href="%(overviewNetworkingDashboardURL)s">Overview networking</a>
         ||| % helpers),
       )
       .addPanel(

@@ -320,9 +320,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.panel(title) +
     $.queryPanel(
       $._config.resources_panel_queries[$._config.deployment_type].network % {
-        namespace: $.namespaceMatcher(),
+        namespaceMatcher: $.namespaceMatcher(),
         metric: metric,
-        instance: $._config.per_instance_label,
+        instanceLabel: $._config.per_instance_label,
         instanceName: instanceName,
       }, '{{%s}}' % $._config.per_instance_label
     ) +
