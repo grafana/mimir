@@ -31,8 +31,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/storage/remote"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
@@ -211,10 +214,10 @@ func TestDistributor_Push(t *testing.T) {
 				cortex_distributor_sample_delay_seconds_bucket{le="7200"} 0
 				cortex_distributor_sample_delay_seconds_bucket{le="10800"} 0
 				cortex_distributor_sample_delay_seconds_bucket{le="21600"} 0
-				cortex_distributor_sample_delay_seconds_bucket{le="86400"} 1
-				cortex_distributor_sample_delay_seconds_bucket{le="+Inf"} 1
-				cortex_distributor_sample_delay_seconds_sum 80000
-				cortex_distributor_sample_delay_seconds_count 1
+				cortex_distributor_sample_delay_seconds_bucket{le="86400"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="+Inf"} 2
+				cortex_distributor_sample_delay_seconds_sum 160000
+				cortex_distributor_sample_delay_seconds_count 2
 			`,
 		},
 		"A push to ingesters with a current sample should report the correct metrics with no metadata": {
@@ -226,21 +229,21 @@ func TestDistributor_Push(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_distributor_sample_delay_seconds Number of seconds by which a sample came in late wrt wallclock.
 				# TYPE cortex_distributor_sample_delay_seconds histogram
-				cortex_distributor_sample_delay_seconds_bucket{le="30"} 1
-				cortex_distributor_sample_delay_seconds_bucket{le="60"} 1
-				cortex_distributor_sample_delay_seconds_bucket{le="120"} 1
-				cortex_distributor_sample_delay_seconds_bucket{le="240"} 1
-				cortex_distributor_sample_delay_seconds_bucket{le="480"} 1
-				cortex_distributor_sample_delay_seconds_bucket{le="600"} 1
-				cortex_distributor_sample_delay_seconds_bucket{le="1800"} 1
-				cortex_distributor_sample_delay_seconds_bucket{le="3600"} 1
-				cortex_distributor_sample_delay_seconds_bucket{le="7200"} 1
-				cortex_distributor_sample_delay_seconds_bucket{le="10800"} 1
-				cortex_distributor_sample_delay_seconds_bucket{le="21600"} 1
-				cortex_distributor_sample_delay_seconds_bucket{le="86400"} 1
-				cortex_distributor_sample_delay_seconds_bucket{le="+Inf"} 1
-				cortex_distributor_sample_delay_seconds_sum 1.000
-				cortex_distributor_sample_delay_seconds_count 1
+				cortex_distributor_sample_delay_seconds_bucket{le="30"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="60"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="120"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="240"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="480"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="600"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="1800"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="3600"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="7200"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="10800"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="21600"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="86400"} 2
+				cortex_distributor_sample_delay_seconds_bucket{le="+Inf"} 2
+				cortex_distributor_sample_delay_seconds_sum 2.000
+				cortex_distributor_sample_delay_seconds_count 2
 			`,
 		},
 		"A push to ingesters without samples should report the correct metrics": {
@@ -298,7 +301,7 @@ func TestDistributor_Push(t *testing.T) {
 				timeOut:         tc.timeOut,
 			})
 
-			request := makeWriteRequest(tc.samples.startTimestampMs, tc.samples.num, tc.metadata, false)
+			request := makeWriteRequest(tc.samples.startTimestampMs, tc.samples.num, tc.metadata, false, true)
 			response, err := ds[0].Push(ctx, request)
 
 			if tc.expectedError == nil {
@@ -348,7 +351,7 @@ func TestDistributor_ContextCanceledRequest(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "user")
 	ctx, cancel := context.WithCancel(ctx)
 	cancel()
-	request := makeWriteRequest(123456789000, 1, 1, false)
+	request := makeWriteRequest(123456789000, 1, 1, false, false)
 	_, err := ds[0].Push(ctx, request)
 	require.Error(t, err)
 	require.ErrorIs(t, err, context.Canceled)
@@ -364,12 +367,16 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 	metrics := []string{
 		"cortex_distributor_received_samples_total",
 		"cortex_distributor_received_exemplars_total",
+		"cortex_distributor_received_histograms_total",
 		"cortex_distributor_received_metadata_total",
 		"cortex_distributor_deduped_samples_total",
+		"cortex_distributor_deduped_histograms_total",
 		"cortex_distributor_samples_in_total",
 		"cortex_distributor_exemplars_in_total",
+		"cortex_distributor_histograms_in_total",
 		"cortex_distributor_metadata_in_total",
 		"cortex_distributor_non_ha_samples_received_total",
+		"cortex_distributor_non_ha_histograms_received_total",
 		"cortex_distributor_latest_seen_sample_timestamp_seconds",
 	}
 
@@ -377,19 +384,28 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 	d.receivedSamples.WithLabelValues("userB").Add(10)
 	d.receivedExemplars.WithLabelValues("userA").Add(5)
 	d.receivedExemplars.WithLabelValues("userB").Add(10)
+	d.receivedHistograms.WithLabelValues("userA").Add(5)
+	d.receivedHistograms.WithLabelValues("userB").Add(10)
 	d.receivedMetadata.WithLabelValues("userA").Add(5)
 	d.receivedMetadata.WithLabelValues("userB").Add(10)
 	d.incomingSamples.WithLabelValues("userA").Add(5)
 	d.incomingExemplars.WithLabelValues("userA").Add(5)
+	d.incomingHistograms.WithLabelValues("userA").Add(5)
 	d.incomingMetadata.WithLabelValues("userA").Add(5)
 	d.nonHASamples.WithLabelValues("userA").Add(5)
+	d.nonHAHistograms.WithLabelValues("userA").Add(5)
 	d.dedupedSamples.WithLabelValues("userA", "cluster1").Inc() // We cannot clean this metric
+	d.dedupedHistograms.WithLabelValues("userA", "cluster1").Inc()
 	d.latestSeenSampleTimestampPerUser.WithLabelValues("userA").Set(1111)
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_distributor_deduped_samples_total The total number of deduplicated samples.
 		# TYPE cortex_distributor_deduped_samples_total counter
 		cortex_distributor_deduped_samples_total{cluster="cluster1",user="userA"} 1
+
+		# HELP cortex_distributor_deduped_histograms_total The total number of deduplicated histograms.
+		# TYPE cortex_distributor_deduped_histograms_total counter
+		cortex_distributor_deduped_histograms_total{cluster="cluster1",user="userA"} 1
 
 		# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
 		# TYPE cortex_distributor_latest_seen_sample_timestamp_seconds gauge
@@ -402,6 +418,10 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 		# HELP cortex_distributor_non_ha_samples_received_total The total number of received samples for a user that has HA tracking turned on, but the sample didn't contain both HA labels.
 		# TYPE cortex_distributor_non_ha_samples_received_total counter
 		cortex_distributor_non_ha_samples_received_total{user="userA"} 5
+
+		# HELP cortex_distributor_non_ha_histograms_received_total The total number of received histograms for a user that has HA tracking turned on, but the histogram didn't contain both HA labels.
+		# TYPE cortex_distributor_non_ha_histograms_received_total counter
+		cortex_distributor_non_ha_histograms_received_total{user="userA"} 5
 
 		# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
 		# TYPE cortex_distributor_received_metadata_total counter
@@ -418,6 +438,11 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 		cortex_distributor_received_exemplars_total{user="userA"} 5
 		cortex_distributor_received_exemplars_total{user="userB"} 10
 
+		# HELP cortex_distributor_received_histograms_total The total number of received histograms, excluding rejected and deduped histograms.
+		# TYPE cortex_distributor_received_histograms_total counter
+		cortex_distributor_received_histograms_total{user="userA"} 5
+		cortex_distributor_received_histograms_total{user="userB"} 10
+
 		# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.
 		# TYPE cortex_distributor_samples_in_total counter
 		cortex_distributor_samples_in_total{user="userA"} 5
@@ -425,6 +450,10 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 		# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected, forwarded or deduped exemplars.
 		# TYPE cortex_distributor_exemplars_in_total counter
 		cortex_distributor_exemplars_in_total{user="userA"} 5
+		
+		# HELP cortex_distributor_histograms_in_total The total number of histograms that have come in to the distributor, including rejected or deduped histograms.
+		# TYPE cortex_distributor_histograms_in_total counter
+		cortex_distributor_histograms_in_total{user="userA"} 5
 		`), metrics...))
 
 	d.cleanupInactiveUser("userA")
@@ -432,6 +461,9 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_distributor_deduped_samples_total The total number of deduplicated samples.
 		# TYPE cortex_distributor_deduped_samples_total counter
+
+		# HELP cortex_distributor_deduped_histograms_total The total number of deduplicated histograms.
+		# TYPE cortex_distributor_deduped_histograms_total counter
 
 		# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
 		# TYPE cortex_distributor_latest_seen_sample_timestamp_seconds gauge
@@ -441,6 +473,9 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 
 		# HELP cortex_distributor_non_ha_samples_received_total The total number of received samples for a user that has HA tracking turned on, but the sample didn't contain both HA labels.
 		# TYPE cortex_distributor_non_ha_samples_received_total counter
+
+		# HELP cortex_distributor_non_ha_histograms_received_total The total number of received histograms for a user that has HA tracking turned on, but the histogram didn't contain both HA labels.
+		# TYPE cortex_distributor_non_ha_histograms_received_total counter
 
 		# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
 		# TYPE cortex_distributor_received_metadata_total counter
@@ -454,11 +489,18 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 		# TYPE cortex_distributor_received_exemplars_total counter
 		cortex_distributor_received_exemplars_total{user="userB"} 10
 
+		# HELP cortex_distributor_received_histograms_total The total number of received histograms, excluding rejected and deduped histograms.
+		# TYPE cortex_distributor_received_histograms_total counter
+		cortex_distributor_received_histograms_total{user="userB"} 10
+
 		# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected, forwarded or deduped samples.
 		# TYPE cortex_distributor_samples_in_total counter
 
 		# HELP cortex_distributor_exemplars_in_total The total number of exemplars that have come in to the distributor, including rejected, forwarded or deduped exemplars.
 		# TYPE cortex_distributor_exemplars_in_total counter
+
+		# HELP cortex_distributor_histograms_in_total The total number of histograms that have come in to the distributor, including rejected or deduped histograms.
+		# TYPE cortex_distributor_histograms_in_total counter
 		`), metrics...))
 }
 
@@ -525,7 +567,7 @@ func TestDistributor_PushRequestRateLimiter(t *testing.T) {
 
 			// Send multiple requests to the first distributor
 			for _, push := range testData.pushes {
-				request := makeWriteRequest(0, 1, 1, false)
+				request := makeWriteRequest(0, 1, 1, false, false)
 				response, err := distributors[0].Push(ctx, request)
 
 				if push.expectedError == nil {
@@ -601,7 +643,7 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 
 			// Push samples in multiple requests to the first distributor
 			for _, push := range testData.pushes {
-				request := makeWriteRequest(0, push.samples, push.metadata, false)
+				request := makeWriteRequest(0, push.samples, push.metadata, false, false)
 				response, err := distributors[0].Push(ctx, request)
 
 				if push.expectedError == nil {
@@ -779,7 +821,7 @@ func TestDistributor_PushInstanceLimits(t *testing.T) {
 			d.ingestionRate.Tick()
 
 			for _, push := range testData.pushes {
-				request := makeWriteRequest(0, push.samples, push.metadata, false)
+				request := makeWriteRequest(0, push.samples, push.metadata, false, false)
 				_, err := d.Push(ctx, request)
 
 				if push.expectedError == nil {
@@ -1008,7 +1050,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 
 			ds, ingesters, _ := prepare(t, cfg)
 
-			request := makeWriteRequest(0, tc.samples, tc.metadata, false)
+			request := makeWriteRequest(0, tc.samples, tc.metadata, false, false)
 			writeResponse, err := ds[0].Push(ctx, request)
 			assert.Equal(t, &mimirpb.WriteResponse{}, writeResponse)
 			assert.Nil(t, err)
@@ -1066,7 +1108,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunksPerQueryLimitIsReac
 	// Push a number of series below the max chunks limit. Each series has 1 sample,
 	// so expect 1 chunk per series when querying back.
 	initialSeries := maxChunksLimit / 3
-	writeReq := makeWriteRequest(0, initialSeries, 0, false)
+	writeReq := makeWriteRequest(0, initialSeries, 0, false, false)
 	writeRes, err := ds[0].Push(ctx, writeReq)
 	assert.Equal(t, &mimirpb.WriteResponse{}, writeRes)
 	assert.Nil(t, err)
@@ -1118,7 +1160,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxSeriesPerQueryLimitIsReac
 
 	// Push a number of series below the max series limit.
 	initialSeries := maxSeriesLimit
-	writeReq := makeWriteRequest(0, initialSeries, 0, false)
+	writeReq := makeWriteRequest(0, initialSeries, 0, false, false)
 	writeRes, err := ds[0].Push(ctx, writeReq)
 	assert.Equal(t, &mimirpb.WriteResponse{}, writeRes)
 	assert.Nil(t, err)
@@ -1190,7 +1232,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunkBytesPerQueryLimitIs
 	ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(0, maxBytesLimit, 0))
 
 	// Push a number of series below the max chunk bytes limit. Subtract one for the series added above.
-	writeReq = makeWriteRequest(0, seriesToAdd-1, 0, false)
+	writeReq = makeWriteRequest(0, seriesToAdd-1, 0, false, false)
 	writeRes, err = ds[0].Push(ctx, writeReq)
 	assert.Equal(t, &mimirpb.WriteResponse{}, writeRes)
 	assert.Nil(t, err)
@@ -1460,6 +1502,50 @@ func TestDistributor_Push_ExemplarValidation(t *testing.T) {
 				happyIngesters:   2,
 				numDistributors:  1,
 				shuffleShardSize: 0,
+			})
+			_, err := ds[0].Push(ctx, tc.req)
+			if tc.errMsg != "" {
+				fromError, _ := status.FromError(err)
+				assert.Contains(t, fromError.Message(), tc.errMsg)
+				assert.Contains(t, fromError.Message(), tc.errID)
+			} else {
+				assert.Nil(t, err)
+			}
+		})
+	}
+}
+
+func TestDistributor_Push_HistogramValidation(t *testing.T) {
+	ctx := user.InjectOrgID(context.Background(), "user")
+
+	tests := map[string]struct {
+		req    *mimirpb.WriteRequest
+		errMsg string
+		errID  globalerror.ID
+	}{
+		"valid histogram": {
+			req: makeWriteRequestHistogram([]string{model.MetricNameLabel, "test"}, 1000, tsdb.GenerateTestHistograms(1)[0]),
+		},
+		"rejects a histogram whose timestamp is too new": {
+			req:    makeWriteRequestHistogram([]string{model.MetricNameLabel, "test"}, time.Now().Add(time.Hour).UnixNano()/int64(time.Millisecond), tsdb.GenerateTestHistograms(1)[0]),
+			errMsg: `received a histogram whose timestamp is too far in the future`,
+			errID:  globalerror.SampleTooFarInFuture,
+		},
+		// TODO: more tests to come, all the needed validation checks aren't complete yet.
+	}
+
+	for testName, tc := range tests {
+		t.Run(testName, func(t *testing.T) {
+			limits := &validation.Limits{}
+			flagext.DefaultValues(limits)
+			limits.CreationGracePeriod = model.Duration(time.Minute)
+
+			ds, _, _ := prepare(t, prepConfig{
+				numIngesters:     2,
+				happyIngesters:   2,
+				numDistributors:  1,
+				shuffleShardSize: 0,
+				limits:           limits,
 			})
 			_, err := ds[0].Push(ctx, tc.req)
 			if tc.errMsg != "" {
@@ -2091,7 +2177,7 @@ func TestDistributor_MetricsMetadata(t *testing.T) {
 			// Push metadata
 			ctx := user.InjectOrgID(context.Background(), "test")
 
-			req := makeWriteRequest(0, 0, 10, false)
+			req := makeWriteRequest(0, 0, 10, false, false)
 			_, err := ds[0].Push(ctx, req)
 			require.NoError(t, err)
 
@@ -2280,7 +2366,7 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 	testcases := []testcase{
 		{
 			name:                  "do ingest with only samples",
-			request:               makeWriteRequest(123456789000, 5, 0, false, metric),
+			request:               makeWriteRequest(123456789000, 5, 0, false, false, metric),
 			ingestSample:          true,
 			expectIngestedMetrics: []string{metric},
 			expectedMetrics: `
@@ -2311,7 +2397,7 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 `,
 		}, {
 			name:                  "don't ingest with only samples",
-			request:               makeWriteRequest(123456789000, 5, 0, false, metric),
+			request:               makeWriteRequest(123456789000, 5, 0, false, false, metric),
 			ingestSample:          false,
 			expectIngestedMetrics: []string{},
 			expectedMetrics: `
@@ -2342,7 +2428,7 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 `,
 		}, {
 			name:                  "do ingest with metadata",
-			request:               makeWriteRequest(123456789000, 5, 5, false, metric),
+			request:               makeWriteRequest(123456789000, 5, 5, false, false, metric),
 			ingestSample:          true,
 			expectIngestedMetrics: []string{metric},
 			expectedMetrics: `
@@ -2373,7 +2459,7 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 `,
 		}, {
 			name:                  "don't ingest with metadata",
-			request:               makeWriteRequest(123456789000, 5, 5, false, metric),
+			request:               makeWriteRequest(123456789000, 5, 5, false, false, metric),
 			ingestSample:          false,
 			expectIngestedMetrics: []string{},
 			expectedMetrics: `
@@ -2404,7 +2490,7 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 `,
 		}, {
 			name:                  "do ingest with exemplars",
-			request:               makeWriteRequest(123456789000, 5, 0, true, metric),
+			request:               makeWriteRequest(123456789000, 5, 0, true, false, metric),
 			ingestSample:          true,
 			expectIngestedMetrics: []string{metric},
 			expectedMetrics: `
@@ -2435,7 +2521,7 @@ func TestDistributor_IngestionIsControlledByForwarder(t *testing.T) {
 `,
 		}, {
 			name:                  "don't ingest with exemplars",
-			request:               makeWriteRequest(123456789000, 5, 0, true, metric),
+			request:               makeWriteRequest(123456789000, 5, 0, true, false, metric),
 			ingestSample:          false,
 			expectIngestedMetrics: []string{},
 			expectedMetrics: `
@@ -3540,7 +3626,7 @@ func stopAll(ds []*Distributor, r *ring.Ring) {
 	r.StopAsync()
 }
 
-func makeWriteRequest(startTimestampMs int64, samples int, metadata int, exemplars bool, metrics ...string) *mimirpb.WriteRequest {
+func makeWriteRequest(startTimestampMs int64, samples int, metadata int, exemplars, histograms bool, metrics ...string) *mimirpb.WriteRequest {
 	request := &mimirpb.WriteRequest{}
 
 	if len(metrics) == 0 {
@@ -3569,6 +3655,10 @@ func makeWriteRequest(startTimestampMs int64, samples int, metadata int, exempla
 					startTimestampMs+int64(i),
 					float64(i),
 				)
+			}
+
+			if histograms {
+				req.Histograms = makeWriteRequestHistograms(startTimestampMs+int64(i), tsdb.GenerateTestHistograms(i + 1)[i])
 			}
 
 			request.Timeseries = append(request.Timeseries, req)
@@ -3607,6 +3697,14 @@ func makeWriteRequestExamplars(labels []mimirpb.LabelAdapter, ts int64, value fl
 		Value:       value,
 		TimestampMs: ts,
 	}}
+}
+
+func makeWriteRequestHistograms(ts int64, histogram *histogram.Histogram) []mimirpb.Histogram {
+	h := remote.HistogramToHistogramProto(ts, histogram)
+	d, _ := h.Marshal()
+	h2 := mimirpb.Histogram{}
+	h2.Unmarshal(d) // nolint:errcheck
+	return []mimirpb.Histogram{h2}
 }
 
 // labelSetGenWithReplicaAndCluster returns generator for a label set with the given replica and cluster,
@@ -3692,7 +3790,7 @@ func makeWriteRequestForGenerators(series int, lsg labelSetGen, elsg labelSetGen
 				TimestampMs: int64(100 + i),
 			}}
 		}
-
+		ts.Histograms = makeWriteRequestHistograms(int64(i), tsdb.GenerateTestHistograms(i + 1)[i])
 		request.Timeseries = append(request.Timeseries, ts)
 
 	}
@@ -3716,6 +3814,14 @@ func makeWriteRequestExemplar(seriesLabels []string, timestamp int64, exemplarLa
 	}
 }
 
+func makeWriteRequestHistogram(seriesLabels []string, timestamp int64, histogram *histogram.Histogram) *mimirpb.WriteRequest {
+	return &mimirpb.WriteRequest{
+		Timeseries: []mimirpb.PreallocTimeseries{
+			makeHistogramTimeseries(seriesLabels, timestamp, histogram),
+		},
+	}
+}
+
 func makeExemplarTimeseries(seriesLabels []string, timestamp int64, exemplarLabels []string) mimirpb.PreallocTimeseries {
 	return mimirpb.PreallocTimeseries{
 		TimeSeries: &mimirpb.TimeSeries{
@@ -3726,6 +3832,15 @@ func makeExemplarTimeseries(seriesLabels []string, timestamp int64, exemplarLabe
 					TimestampMs: timestamp,
 				},
 			},
+		},
+	}
+}
+
+func makeHistogramTimeseries(seriesLabels []string, timestamp int64, histogram *histogram.Histogram) mimirpb.PreallocTimeseries {
+	return mimirpb.PreallocTimeseries{
+		TimeSeries: &mimirpb.TimeSeries{
+			Labels:     mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(seriesLabels...)),
+			Histograms: makeWriteRequestHistograms(timestamp, histogram),
 		},
 	}
 }
