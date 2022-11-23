@@ -1595,6 +1595,13 @@ a different number of buckets then there are provided.
 
 > **Note**: Series with invalid histograms are skipped during the ingestion, and series within the same request are ingested.
 
+### err-mimir-histogram-span-negative-offset
+
+This non-critical error occurs when Mimir receives a write request that contains a native (also known as sparse) histogram which has a span whose offset is negative, making it overlap with a previous span.
+
+> **Note**: Series with invalid histograms are skipped during the ingestion, and series within the same request are ingested.
+
+
 ## Mimir routes by path
 
 **Write path**:

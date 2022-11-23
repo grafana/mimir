@@ -1531,7 +1531,66 @@ func TestDistributor_Push_HistogramValidation(t *testing.T) {
 			errMsg: `received a histogram whose timestamp is too far in the future`,
 			errID:  globalerror.SampleTooFarInFuture,
 		},
-		// TODO: more tests to come, all the needed validation checks aren't complete yet.
+		"rejects histogram who has too few negative buckets": {
+			req: makeWriteRequestHistogram(
+				[]string{model.MetricNameLabel, "test"}, 1000,
+				&histogram.Histogram{
+					NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+					NegativeBuckets: []int64{},
+				}),
+			errMsg: `received a histogram whose negative spans`,
+			errID:  globalerror.HistogramDifferentNumberSpansBuckets,
+		},
+		"rejects histogram who has too few positive buckets": {
+			req: makeWriteRequestHistogram(
+				[]string{model.MetricNameLabel, "test"}, 1000,
+				&histogram.Histogram{
+					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+					PositiveBuckets: []int64{},
+				}),
+			errMsg: `received a histogram whose positive spans`,
+			errID:  globalerror.HistogramDifferentNumberSpansBuckets,
+		},
+		"rejects histogram who has too many negative buckets": {
+			req: makeWriteRequestHistogram(
+				[]string{model.MetricNameLabel, "test"}, 1000,
+				&histogram.Histogram{
+					NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+					NegativeBuckets: []int64{1, 2},
+				}),
+			errMsg: `received a histogram whose negative spans`,
+			errID:  globalerror.HistogramDifferentNumberSpansBuckets,
+		},
+		"rejects histogram who has too many positive buckets": {
+			req: makeWriteRequestHistogram(
+				[]string{model.MetricNameLabel, "test"}, 1000,
+				&histogram.Histogram{
+					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+					PositiveBuckets: []int64{1, 2},
+				}),
+			errMsg: `received a histogram whose positive spans`,
+			errID:  globalerror.HistogramDifferentNumberSpansBuckets,
+		},
+		"rejects a histogram which has a negative span with a negative offset": {
+			req: makeWriteRequestHistogram(
+				[]string{model.MetricNameLabel, "test"}, 1000,
+				&histogram.Histogram{
+					NegativeSpans:   []histogram.Span{{Offset: -1, Length: 1}},
+					NegativeBuckets: []int64{1},
+				}),
+			errMsg: `received a histogram which has a negative span (number 1)`,
+			errID:  globalerror.HistogramSpanNegativeOffset,
+		},
+		"rejects a histogram which has a positive span with a negative offset": {
+			req: makeWriteRequestHistogram(
+				[]string{model.MetricNameLabel, "test"}, 1000,
+				&histogram.Histogram{
+					PositiveSpans:   []histogram.Span{{Offset: -1, Length: 1}},
+					PositiveBuckets: []int64{1},
+				}),
+			errMsg: `received a histogram which has a negative span (number 1)`,
+			errID:  globalerror.HistogramSpanNegativeOffset,
+		},
 	}
 
 	for testName, tc := range tests {
