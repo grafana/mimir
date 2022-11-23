@@ -2,6 +2,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
 local filename = 'mimir-alertmanager-resources.json';
 
 (import 'dashboard-utils.libsonnet') {
+  // This dashboard focuses only on compactor. When Mimir is deployed in read-write mode, the compactor
+  // runs as part of the backend, so we show the backend resources instead.
+  local alertmanagerInstanceName = $._config.instance_names.alertmanager_or_backend,
+  local alertmanagerContainerName = $._config.container_names.alertmanager_or_backend,
+
   [filename]:
     ($.dashboard('Alertmanager resources') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates(false)
@@ -21,26 +26,26 @@ local filename = 'mimir-alertmanager-resources.json';
     .addRow(
       $.row('Alertmanager')
       .addPanel(
-        $.containerCPUUsagePanel($._config.instance_names.alertmanager, $._config.container_names.alertmanager),
+        $.containerCPUUsagePanel(alertmanagerInstanceName, alertmanagerContainerName),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel($._config.instance_names.alertmanager, $._config.container_names.alertmanager),
+        $.containerMemoryWorkingSetPanel(alertmanagerInstanceName, alertmanagerContainerName),
       )
       .addPanel(
-        $.containerGoHeapInUsePanel($._config.instance_names.alertmanager, $._config.container_names.alertmanager),
+        $.containerGoHeapInUsePanel(alertmanagerInstanceName, alertmanagerContainerName),
       )
     )
     .addRowIf(
       $._config.alertmanager_im_enabled,
       $.row('Instance mapper')
       .addPanel(
-        $.containerCPUUsagePanel($._config.instance_names.alertmanager_im, $._config.container_names.alertmanager_im),
+        $.containerCPUUsagePanel($._config.instance_names.alertmanager_im, $._config.container_name.alertmanager_im),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel($._config.instance_names.alertmanager_im, $._config.container_names.alertmanager_im),
+        $.containerMemoryWorkingSetPanel($._config.instance_names.alertmanager_im, $._config.container_name.alertmanager_im),
       )
       .addPanel(
-        $.containerGoHeapInUsePanel($._config.instance_names.alertmanager_im, $._config.container_names.alertmanager_im),
+        $.containerGoHeapInUsePanel($._config.instance_names.alertmanager_im, $._config.container_name.alertmanager_im),
       )
     )
     .addRow(
@@ -55,16 +60,16 @@ local filename = 'mimir-alertmanager-resources.json';
     .addRow(
       $.row('Disk')
       .addPanel(
-        $.containerDiskWritesPanel($._config.instance_names.alertmanager, $._config.container_names.alertmanager),
+        $.containerDiskWritesPanel(alertmanagerInstanceName, alertmanagerContainerName),
       )
       .addPanel(
-        $.containerDiskReadsPanel($._config.instance_names.alertmanager, $._config.container_names.alertmanager),
+        $.containerDiskReadsPanel(alertmanagerInstanceName, alertmanagerContainerName),
       )
     )
     .addRow(
       $.row('')
       .addPanel(
-        $.containerDiskSpaceUtilization($._config.instance_names.alertmanager, $._config.container_names.alertmanager),
+        $.containerDiskSpaceUtilization(alertmanagerInstanceName, alertmanagerContainerName),
       )
     ),
 }

@@ -125,6 +125,11 @@
       mimir_read: instanceMatcher(componentNameRegexp.mimir_read),
       mimir_backend: instanceMatcher(componentNameRegexp.mimir_backend),
 
+      // Any deployment mode. The following matchers MUST match the given component
+      // either Mimir is deployed in microservices or read-write mode.
+      compactor_or_backend: instanceMatcher('(%s|%s)' % [componentNameRegexp.compactor, componentNameRegexp.mimir_backend]),
+      alertmanager_or_backend: instanceMatcher('(%s|%s)' % [componentNameRegexp.alertmanager, componentNameRegexp.mimir_backend]),
+
       // The following are instance matchers used to select all components in a given "path".
       // These matchers CAN match both instances deployed in "microservices" and "read-write" mode.
       local componentsGroupMatcher = function(components)
@@ -153,6 +158,11 @@
       alertmanager: componentNameRegexp.alertmanager,
       alertmanager_im: componentNameRegexp.alertmanager_im,
       compactor: componentNameRegexp.compactor,
+
+      // Any deployment mode. The following matchers MUST match the given component
+      // either Mimir is deployed in microservices or read-write mode.
+      compactor_or_backend: '(%s|%s)' % [componentNameRegexp.compactor, componentNameRegexp.mimir_backend],
+      alertmanager_or_backend: '(%s|%s)' % [componentNameRegexp.alertmanager, componentNameRegexp.mimir_backend],
 
       // The following are container matchers used to select all components in a given "path".
       // These matchers CAN match both instances deployed in "microservices" and "read-write" mode.

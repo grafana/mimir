@@ -2,46 +2,51 @@ local utils = import 'mixin-utils/utils.libsonnet';
 local filename = 'mimir-compactor-resources.json';
 
 (import 'dashboard-utils.libsonnet') {
+  // This dashboard focuses only on compactor. When Mimir is deployed in read-write mode, the compactor
+  // runs as part of the backend, so we show the backend resources instead.
+  local compactorInstanceName = $._config.instance_names.compactor_or_backend,
+  local compactorContainerName = $._config.container_names.compactor_or_backend,
+
   [filename]:
     ($.dashboard('Compactor resources') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
     .addRow(
       $.row('CPU and memory')
       .addPanel(
-        $.containerCPUUsagePanel($._config.instance_names.compactor, $._config.container_names.compactor),
+        $.containerCPUUsagePanel(compactorInstanceName, compactorContainerName),
       )
       .addPanel(
-        $.containerGoHeapInUsePanel($._config.instance_names.compactor, $._config.container_names.compactor),
+        $.containerGoHeapInUsePanel(compactorInstanceName, compactorContainerName),
       )
     )
     .addRow(
       $.row('')
       .addPanel(
-        $.containerMemoryRSSPanel($._config.instance_names.compactor, $._config.container_names.compactor),
+        $.containerMemoryRSSPanel(compactorInstanceName, compactorContainerName),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel($._config.instance_names.compactor, $._config.container_names.compactor),
+        $.containerMemoryWorkingSetPanel(compactorInstanceName, compactorContainerName),
       )
     )
     .addRow(
       $.row('Network')
       .addPanel(
-        $.containerNetworkReceiveBytesPanel($._config.instance_names.compactor),
+        $.containerNetworkReceiveBytesPanel(compactorInstanceName),
       )
       .addPanel(
-        $.containerNetworkTransmitBytesPanel($._config.instance_names.compactor),
+        $.containerNetworkTransmitBytesPanel(compactorInstanceName),
       )
     )
     .addRow(
       $.row('Disk')
       .addPanel(
-        $.containerDiskWritesPanel($._config.instance_names.compactor, $._config.container_names.compactor),
+        $.containerDiskWritesPanel(compactorInstanceName, compactorContainerName),
       )
       .addPanel(
-        $.containerDiskReadsPanel($._config.instance_names.compactor, $._config.container_names.compactor),
+        $.containerDiskReadsPanel(compactorInstanceName, compactorContainerName),
       )
       .addPanel(
-        $.containerDiskSpaceUtilization($._config.instance_names.compactor, $._config.container_names.compactor),
+        $.containerDiskSpaceUtilization(compactorInstanceName, compactorContainerName),
       )
     ) + {
       templating+: {
