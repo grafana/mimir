@@ -1588,7 +1588,7 @@ How to **fix** it:
 
 - Increase the allowed limit by using the `-distributor.max-recv-msg-size` option.
 
-### err-histogram-different-number-spans-buckets
+### err-mimir-histogram-different-number-spans-buckets
 
 This non-critical error occurs when Mimir receives a write request that contains a native (also known as sparse) histogram whose either negative or positive spans specify
 a different number of buckets then there are provided.
