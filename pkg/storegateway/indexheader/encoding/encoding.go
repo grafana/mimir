@@ -18,6 +18,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash/crc32"
+	"io"
 	"os"
 	//"math"
 
@@ -111,14 +112,14 @@ func NewFileReader(file *os.File, base, length int) *FileReader {
 }
 
 func (f *FileReader) Reset() {
-	if _, err := f.file.Seek(int64(f.base), 0); err != nil {
+	if _, err := f.file.Seek(int64(f.base), io.SeekStart); err != nil {
 		fmt.Printf("seek: %v\n", err)
 	}
 	f.buf.Reset(f.file)
 }
 
 func (f *FileReader) ResetAt(off int) error {
-	if _, err := f.file.Seek(int64(off), 0); err != nil {
+	if _, err := f.file.Seek(int64(f.base+off), io.SeekStart); err != nil {
 		fmt.Printf("seek: %v\n", err)
 	}
 	f.buf.Reset(f.file)
