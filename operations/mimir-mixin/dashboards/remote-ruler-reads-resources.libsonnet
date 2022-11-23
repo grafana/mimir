@@ -8,37 +8,37 @@ local filename = 'mimir-remote-ruler-reads-resources.json';
     .addRow(
       $.row('Query-frontend (dedicated to ruler)')
       .addPanel(
-        $.containerCPUUsagePanel('ruler-query-frontend', 'ruler-query-frontend'),
+        $.containerCPUUsagePanel($._config.instance_names.ruler_query_frontend, $._config.container_names.ruler_query_frontend),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel('ruler-query-frontend', 'ruler-query-frontend'),
+        $.containerMemoryWorkingSetPanel($._config.instance_names.ruler_query_frontend, $._config.container_names.ruler_query_frontend),
       )
       .addPanel(
-        $.goHeapInUsePanel($._config.job_names.ruler_query_frontend),
+        $.containerGoHeapInUsePanel($._config.instance_names.ruler_query_frontend, $._config.container_names.ruler_query_frontend),
       )
     )
     .addRow(
       $.row('Query-scheduler (dedicated to ruler)')
       .addPanel(
-        $.containerCPUUsagePanel('ruler-query-scheduler', 'ruler-query-scheduler'),
+        $.containerCPUUsagePanel($._config.instance_names.ruler_query_scheduler, $._config.container_names.ruler_query_scheduler),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel('ruler-query-scheduler', 'ruler-query-scheduler'),
+        $.containerMemoryWorkingSetPanel($._config.instance_names.ruler_query_scheduler, $._config.container_names.ruler_query_scheduler),
       )
       .addPanel(
-        $.goHeapInUsePanel($._config.job_names.ruler_query_scheduler),
+        $.containerGoHeapInUsePanel($._config.instance_names.ruler_query_scheduler, $._config.container_names.ruler_query_scheduler),
       )
     )
     .addRow(
       $.row('Querier (dedicated to ruler)')
       .addPanel(
-        $.containerCPUUsagePanel('ruler-querier', 'ruler-querier'),
+        $.containerCPUUsagePanel($._config.instance_names.ruler_querier, $._config.container_names.ruler_querier),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel('ruler-querier', 'ruler-querier'),
+        $.containerMemoryWorkingSetPanel($._config.instance_names.ruler_querier, $._config.container_names.ruler_querier),
       )
       .addPanel(
-        $.goHeapInUsePanel($._config.job_names.ruler_querier),
+        $.containerGoHeapInUsePanel($._config.instance_names.ruler_querier, $._config.container_names.ruler_querier),
       )
     ) + {
       templating+: {

@@ -66,7 +66,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (rate(node_network_receive_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\".*(distributor|ingester|mimir-write).*.*\"}[$__rate_interval]))",
+                        "expr": "sum by(pod) (rate(node_network_receive_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\".*(distributor|ingester|mimir-write).*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{pod}}",
@@ -142,7 +142,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (rate(node_network_transmit_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\".*(distributor|ingester|mimir-write).*.*\"}[$__rate_interval]))",
+                        "expr": "sum by(pod) (rate(node_network_transmit_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\".*(distributor|ingester|mimir-write).*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{pod}}",
@@ -406,7 +406,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (rate(node_network_receive_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier|mimir-read).*.*\"}[$__rate_interval]))",
+                        "expr": "sum by(pod) (rate(node_network_receive_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier|mimir-read).*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{pod}}",
@@ -482,7 +482,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (rate(node_network_transmit_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier|mimir-read).*.*\"}[$__rate_interval]))",
+                        "expr": "sum by(pod) (rate(node_network_transmit_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\".*(query-frontend|querier|ruler-query-frontend|ruler-querier|mimir-read).*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{pod}}",
@@ -746,7 +746,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (rate(node_network_receive_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\".*(query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter|mimir-backend).*.*\"}[$__rate_interval]))",
+                        "expr": "sum by(pod) (rate(node_network_receive_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\".*(query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter|mimir-backend).*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{pod}}",
@@ -822,7 +822,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (rate(node_network_transmit_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\".*(query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter|mimir-backend).*.*\"}[$__rate_interval]))",
+                        "expr": "sum by(pod) (rate(node_network_transmit_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\".*(query-scheduler|ruler-query-scheduler|ruler|store-gateway|compactor|alertmanager|overrides-exporter|mimir-backend).*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{pod}}",

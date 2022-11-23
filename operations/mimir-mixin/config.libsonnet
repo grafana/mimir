@@ -34,6 +34,7 @@
       // matcher shouldn't match "mimir-write" too).
       compactor: 'compactor',
       alertmanager: 'alertmanager',
+      alertmanager_im: 'alertmanager-im',
       ingester: 'ingester',
       distributor: 'distributor',
       querier: 'querier',
@@ -94,17 +95,23 @@
     instance_names: {
       // Wrap the regexp into an Helm compatible matcher if the deployment type is "kubernetes".
       local helmCompatibleMatcher = function(regexp) if $._config.deployment_type == 'kubernetes' then '(.*-mimir-)?%s' % regexp else regexp,
-      local instanceMatcher = function(regexp) helmCompatibleMatcher('%s.*' % regexp),
+      // Wrap the regexp to match any prefix if the deployment type is "baremetal".
+      local baremetalCompatibleMatcher = function(regexp) if $._config.deployment_type == 'baremetal' then '.*%s' % regexp else regexp,
+      local instanceMatcher = function(regexp) baremetalCompatibleMatcher(helmCompatibleMatcher('%s.*' % regexp)),
 
       // Microservices deployment mode. The following matchers MUST match only
       // the instance when deployed in microservices mode (e.g. "distributor"
       // matcher shouldn't match "mimir-write" too).
       compactor: instanceMatcher(componentNameRegexp.compactor),
       alertmanager: instanceMatcher(componentNameRegexp.alertmanager),
+      alertmanager_im: instanceMatcher(componentNameRegexp.alertmanager_im),
       ingester: instanceMatcher(componentNameRegexp.ingester),
       distributor: instanceMatcher(componentNameRegexp.distributor),
       querier: instanceMatcher(componentNameRegexp.querier),
       ruler: instanceMatcher(componentNameRegexp.ruler),
+      ruler_query_frontend: instanceMatcher(componentNameRegexp.ruler_query_frontend),
+      ruler_query_scheduler: instanceMatcher(componentNameRegexp.ruler_query_scheduler),
+      ruler_querier: instanceMatcher(componentNameRegexp.ruler_querier),
       query_frontend: instanceMatcher(componentNameRegexp.query_frontend),
       query_scheduler: instanceMatcher(componentNameRegexp.query_scheduler),
       store_gateway: instanceMatcher(componentNameRegexp.store_gateway),
@@ -135,6 +142,17 @@
       gateway: componentNameRegexp.gateway,
       distributor: componentNameRegexp.distributor,
       ingester: componentNameRegexp.ingester,
+      query_frontend: componentNameRegexp.query_frontend,
+      query_scheduler: componentNameRegexp.query_scheduler,
+      querier: componentNameRegexp.querier,
+      store_gateway: componentNameRegexp.store_gateway,
+      ruler: componentNameRegexp.ruler,
+      ruler_query_frontend: componentNameRegexp.ruler_query_frontend,
+      ruler_query_scheduler: componentNameRegexp.ruler_query_scheduler,
+      ruler_querier: componentNameRegexp.ruler_querier,
+      alertmanager: componentNameRegexp.alertmanager,
+      alertmanager_im: componentNameRegexp.alertmanager_im,
+      compactor: componentNameRegexp.compactor,
 
       // The following are container matchers used to select all components in a given "path".
       // These matchers CAN match both instances deployed in "microservices" and "read-write" mode.
@@ -243,31 +261,31 @@
       baremetal: {
         // Somes queries does not makes sense when running mimir on baremetal
         // no need to define them
-        cpu_usage: 'sum by(%(instanceLabel)s) (rate(node_cpu_seconds_total{mode="user",%(namespace)s,%(instanceLabel)s=~".*%(instanceName)s.*"}[$__rate_interval]))',
+        cpu_usage: 'sum by(%(instanceLabel)s) (rate(node_cpu_seconds_total{mode="user",%(namespace)s,%(instanceLabel)s=~"%(instanceName)s"}[$__rate_interval]))',
         memory_working_usage:
           |||
-            node_memory_MemTotal_bytes{%(namespace)s,%(instanceLabel)s=~".*%(instanceName)s.*"}
-            - node_memory_MemFree_bytes{%(namespace)s,%(instanceLabel)s=~".*%(instanceName)s.*"}
-            - node_memory_Buffers_bytes{%(namespace)s,%(instanceLabel)s=~".*%(instanceName)s.*"}
-            - node_memory_Cached_bytes{%(namespace)s,%(instanceLabel)s=~".*%(instanceName)s.*"}
-            - node_memory_Slab_bytes{%(namespace)s,%(instanceLabel)s=~".*%(instanceName)s.*"}
-            - node_memory_PageTables_bytes{%(namespace)s,%(instanceLabel)s=~".*%(instanceName)s.*"}
-            - node_memory_SwapCached_bytes{%(namespace)s,%(instanceLabel)s=~".*%(instanceName)s.*"}
+            node_memory_MemTotal_bytes{%(namespace)s,%(instanceLabel)s=~"%(instanceName)s"}
+            - node_memory_MemFree_bytes{%(namespace)s,%(instanceLabel)s=~"%(instanceName)s"}
+            - node_memory_Buffers_bytes{%(namespace)s,%(instanceLabel)s=~"%(instanceName)s"}
+            - node_memory_Cached_bytes{%(namespace)s,%(instanceLabel)s=~"%(instanceName)s"}
+            - node_memory_Slab_bytes{%(namespace)s,%(instanceLabel)s=~"%(instanceName)s"}
+            - node_memory_PageTables_bytes{%(namespace)s,%(instanceLabel)s=~"%(instanceName)s"}
+            - node_memory_SwapCached_bytes{%(namespace)s,%(instanceLabel)s=~"%(instanceName)s"}
           |||,
         // From cAdvisor code, the memory RSS is:
         // The amount of anonymous and swap cache memory (includes transparent hugepages).
         memory_rss_usage:
           |||
-            node_memory_Active_anon_bytes{%(namespace)s,%(instanceLabel)s=~".*%(instanceName)s.*"}
-            + node_memory_SwapCached_bytes{%(namespace)s,%(instanceLabel)s=~".*%(instanceName)s.*"}
+            node_memory_Active_anon_bytes{%(namespace)s,%(instanceLabel)s=~"%(instanceName)s"}
+            + node_memory_SwapCached_bytes{%(namespace)s,%(instanceLabel)s=~"%(instanceName)s"}
           |||,
-        memory_go_heap_usage: 'sum by(%(instanceLabel)s) (go_memstats_heap_inuse_bytes{%(namespace)s,%(instanceLabel)s=~".*%(instanceName)s.*"})',
-        network: 'sum by(%(instanceLabel)s) (rate(%(metric)s{%(namespaceMatcher)s,%(instanceLabel)s=~".*%(instanceName)s.*"}[$__rate_interval]))',
+        memory_go_heap_usage: 'sum by(%(instanceLabel)s) (go_memstats_heap_inuse_bytes{%(namespace)s,%(instanceLabel)s=~"%(instanceName)s"})',
+        network: 'sum by(%(instanceLabel)s) (rate(%(metric)s{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}[$__rate_interval]))',
         disk_writes:
           |||
             sum by(%(nodeLabel)s, %(instanceLabel)s, device) (
               rate(
-                node_disk_written_bytes_total{%(namespace)s,%(instanceLabel)s=~".*%(instanceName)s.*"}[$__rate_interval]
+                node_disk_written_bytes_total{%(namespace)s,%(instanceLabel)s=~"%(instanceName)s"}[$__rate_interval]
               )
             )
           |||,
@@ -275,14 +293,14 @@
           |||
             sum by(%(nodeLabel)s, %(instanceLabel)s, device) (
               rate(
-                node_disk_read_bytes_total{%(namespace)s,%(instanceLabel)s=~".*%(instanceName)s.*"}[$__rate_interval]
+                node_disk_read_bytes_total{%(namespace)s,%(instanceLabel)s=~"%(instanceName)s"}[$__rate_interval]
               )
             )
           |||,
         disk_utilization:
           |||
-            1 - ((node_filesystem_avail_bytes{%(namespaceMatcher)s,%(instanceLabel)s=~".*%(instanceName)s.*", mountpoint="%(instanceDataDir)s"})
-                / node_filesystem_size_bytes{%(namespaceMatcher)s,%(instanceLabel)s=~".*%(instanceName)s.*", mountpoint="%(instanceDataDir)s"})
+            1 - ((node_filesystem_avail_bytes{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s", mountpoint="%(instanceDataDir)s"})
+                / node_filesystem_size_bytes{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s", mountpoint="%(instanceDataDir)s"})
           |||,
       },
     },

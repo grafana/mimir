@@ -17,7 +17,7 @@ local filename = 'mimir-overview-resources.json';
         $.containerMemoryWorkingSetPanel($._config.instance_names.gateway, $._config.container_names.gateway),
       )
       .addPanel(
-        $.goHeapInUsePanel($._config.job_names.gateway),
+        $.containerGoHeapInUsePanel($._config.instance_names.gateway, $._config.container_names.gateway),
       )
     )
 
@@ -33,19 +33,19 @@ local filename = 'mimir-overview-resources.json';
         { yaxes: $.yaxes('bytes') },
       )
       .addPanel(
-        $.goHeapInUsePanel($._config.job_names.write),
+        $.containerGoHeapInUsePanel($._config.instance_names.write, $._config.container_names.write),
       )
     )
     .addRow(
       $.row('')
       .addPanel(
-        $.containerDiskWritesPanel('Disk writes', $._config.instance_names.write, $._config.container_names.write)
+        $.containerDiskWritesPanel($._config.instance_names.write, $._config.container_names.write)
       )
       .addPanel(
-        $.containerDiskReadsPanel('Disk reads', $._config.instance_names.write, $._config.container_names.write)
+        $.containerDiskReadsPanel($._config.instance_names.write, $._config.container_names.write)
       )
       .addPanel(
-        $.containerDiskSpaceUtilization('Disk space utilization', $._config.instance_names.write, $._config.container_names.write),
+        $.containerDiskSpaceUtilization($._config.instance_names.write, $._config.container_names.write),
       )
     )
 
@@ -61,7 +61,7 @@ local filename = 'mimir-overview-resources.json';
         { yaxes: $.yaxes('bytes') },
       )
       .addPanel(
-        $.goHeapInUsePanel($._config.job_names.read),
+        $.containerGoHeapInUsePanel($._config.instance_names.read, $._config.container_names.read),
       )
     )
 
@@ -77,19 +77,19 @@ local filename = 'mimir-overview-resources.json';
         { yaxes: $.yaxes('bytes') },
       )
       .addPanel(
-        $.goHeapInUsePanel($._config.job_names.backend),
+        $.containerGoHeapInUsePanel($._config.instance_names.backend, $._config.container_names.backend),
       )
     )
     .addRow(
       $.row('')
       .addPanel(
-        $.containerDiskWritesPanel('Disk writes', $._config.instance_names.backend, $._config.container_names.backend)
+        $.containerDiskWritesPanel($._config.instance_names.backend, $._config.container_names.backend)
       )
       .addPanel(
-        $.containerDiskReadsPanel('Disk reads', $._config.instance_names.backend, $._config.container_names.backend)
+        $.containerDiskReadsPanel($._config.instance_names.backend, $._config.container_names.backend)
       )
       .addPanel(
-        $.containerDiskSpaceUtilization('Disk space utilization', $._config.instance_names.backend, $._config.container_names.backend),
+        $.containerDiskSpaceUtilization($._config.instance_names.backend, $._config.container_names.backend),
       )
     ),
 }

@@ -244,7 +244,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", job=~\"($namespace)/(alertmanager)\"})",
+                        "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\".*alertmanager.*\"})",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{pod}}",
@@ -330,7 +330,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (rate(node_network_receive_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\".*alertmanager.*.*\"}[$__rate_interval]))",
+                        "expr": "sum by(pod) (rate(node_network_receive_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\".*alertmanager.*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{pod}}",
@@ -406,7 +406,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (rate(node_network_transmit_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\".*alertmanager.*.*\"}[$__rate_interval]))",
+                        "expr": "sum by(pod) (rate(node_network_transmit_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\".*alertmanager.*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{pod}}",
@@ -505,7 +505,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Writes",
+                  "title": "Disk writes",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -581,7 +581,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Reads",
+                  "title": "Disk reads",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
