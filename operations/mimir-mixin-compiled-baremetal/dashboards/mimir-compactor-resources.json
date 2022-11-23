@@ -431,7 +431,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (rate(node_network_receive_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\".*(.*-mimir-)?compactor.*.*\"}[$__rate_interval]))",
+                        "expr": "sum by(pod) (rate(node_network_receive_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\".*compactor.*.*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{pod}}",
@@ -507,7 +507,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (rate(node_network_transmit_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\".*(.*-mimir-)?compactor.*.*\"}[$__rate_interval]))",
+                        "expr": "sum by(pod) (rate(node_network_transmit_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\".*compactor.*.*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{pod}}",
