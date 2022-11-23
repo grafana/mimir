@@ -8,6 +8,7 @@ package querier
 import (
 	"sort"
 
+	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -105,24 +106,20 @@ func (t *timeSeriesSeriesIterator) At() (int64, float64) {
 	return t.ts.series.Samples[t.i].TimestampMs, t.ts.series.Samples[t.i].Value
 }
 
-// AtHistogram implements chunkenc.Iterator. Histogram support isn't complete yet,
-// so this function just returns (0, nil).
+// AtHistogram implements chunkenc.Iterator.
 func (t *timeSeriesSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
-	return 0, nil
+	panic(errors.New("timeSeriesSeriesIterator: AtFloatHistogram is not implemented"))
 }
 
-// AtFloatHistogram implements chunkenc.Iterator. Histogram suppport isn't complete
-// yet, so this function just returns (0, nil).
+// AtFloatHistogram implements chunkenc.Iterator.
 func (t *timeSeriesSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
-	return 0, nil
+	panic(errors.New("timeSeriesSeriesIterator: AtFloatHistogram is not implemented"))
 }
 
 // AtT implements the SeriesIterator interface
 func (t *timeSeriesSeriesIterator) AtT() int64 {
-	if t.i < 0 || t.i >= len(t.ts.series.Samples) {
-		return 0
-	}
-	return t.ts.series.Samples[t.i].TimestampMs
+	ts, _ := t.At()
+	return ts
 }
 
 // Next implements the SeriesIterator interface
