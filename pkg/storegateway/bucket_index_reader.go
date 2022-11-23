@@ -39,8 +39,6 @@ type expandedPostingsPromise func(ctx context.Context) ([]storage.SeriesRef, boo
 type bucketIndexReader struct {
 	block *bucketBlock
 	dec   *index.Decoder
-
-	mtx sync.Mutex
 }
 
 func newBucketIndexReader(block *bucketBlock) *bucketIndexReader {
