@@ -50,7 +50,6 @@ func newBucketChunkReader(ctx context.Context, block *bucketBlock, chunkBytes *p
 
 func (r *bucketChunkReader) Close() error {
 	r.block.pendingReaders.Done()
-	r.chunkBytes.Release()
 	return nil
 }
 
