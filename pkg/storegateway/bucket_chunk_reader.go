@@ -213,18 +213,14 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, a
 // save saves a copy of b's payload to a memory pool of its own and returns a new byte slice referencing said copy.
 // Returned slice becomes invalid once r.block.chunkPool.Put() is called.
 func (r *bucketChunkReader) save(b []byte) ([]byte, error) {
-	// Ensure we never grow slab beyond original capacity.
-	if len(r.chunkBytes) == 0 ||
-		cap(*r.chunkBytes[len(r.chunkBytes)-1])-len(*r.chunkBytes[len(r.chunkBytes)-1]) < len(b) {
-		s, err := r.block.chunkPool.Get(len(b))
-		if err != nil {
-			return nil, errors.Wrap(err, "allocate chunk bytes")
-		}
-		r.chunkBytes = append(r.chunkBytes, s)
+	s, err := r.block.chunkPool.Get(len(b))
+	if err != nil {
+		return nil, errors.Wrap(err, "allocate chunk bytes")
 	}
-	slab := r.chunkBytes[len(r.chunkBytes)-1]
-	*slab = append(*slab, b...)
-	return (*slab)[len(*slab)-len(b):], nil
+	r.chunkBytes = append(r.chunkBytes, s)
+	saved := (*s)[:len(b)]
+	copy(saved, b)
+	return saved, nil
 }
 
 type loadIdx struct {
