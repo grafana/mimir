@@ -215,8 +215,8 @@ func newExemplarMaxLabelLengthError(seriesLabels []mimirpb.LabelAdapter, exempla
 
 func newHistogramDifferentNumberSpansBucketsError(sign string, spanBuckets, buckets uint32, timestamp int64, metricName string) ValidationError {
 	return fmt.Errorf(globalerror.HistogramDifferentNumberSpansBuckets.Message(
-		"received a histogram whose %s spans require %d buckets, while %s %d buckets are provided, timestamp: %d series: '%.200s'",
-	), sign, spanBuckets, sign, buckets, timestamp, metricName)
+		"received a histogram whose %s spans require %d buckets, while %d %s buckets are provided, timestamp: %d series: '%.200s'",
+	), sign, spanBuckets, buckets, sign, timestamp, metricName)
 }
 
 func newHistogramSpanNegativeOffsetError(sign string, span int, offset int32, timestamp int64, metricName string) ValidationError {
