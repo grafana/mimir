@@ -11,13 +11,13 @@ local filename = 'mimir-overview-resources.json';
       $._config.gateway_enabled,
       $.row('Gateway')
       .addPanel(
-        $.containerCPUUsagePanel('CPU', $._config.job_names.gateway),
+        $.containerCPUUsagePanel($._config.instance_names.gateway, $._config.container_names.gateway),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel('Memory (workingset)', $._config.job_names.gateway),
+        $.containerMemoryWorkingSetPanel($._config.instance_names.gateway, $._config.container_names.gateway),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.gateway),
+        $.goHeapInUsePanel($._config.job_names.gateway),
       )
     )
 
@@ -25,27 +25,27 @@ local filename = 'mimir-overview-resources.json';
       $.row('Writes')
       .addPanel(
         $.panel('CPU') +
-        $.queryPanel($.resourceUtilizationQuery('cpu', $._config.container_names.write), '{{%s}}' % $._config.per_instance_label),
+        $.queryPanel($.resourceUtilizationQuery('cpu', $._config.instance_names.write, $._config.container_names.write), '{{%s}}' % $._config.per_instance_label),
       )
       .addPanel(
         $.panel('Memory (workingset)') +
-        $.queryPanel($.resourceUtilizationQuery('memory_working', $._config.container_names.write), '{{%s}}' % $._config.per_instance_label) +
+        $.queryPanel($.resourceUtilizationQuery('memory_working', $._config.instance_names.write, $._config.container_names.write), '{{%s}}' % $._config.per_instance_label) +
         { yaxes: $.yaxes('bytes') },
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.write),
+        $.goHeapInUsePanel($._config.job_names.write),
       )
     )
     .addRow(
       $.row('')
       .addPanel(
-        $.containerDiskWritesPanel('Disk writes', $._config.container_names.write)
+        $.containerDiskWritesPanel('Disk writes', $._config.instance_names.write, $._config.container_names.write)
       )
       .addPanel(
-        $.containerDiskReadsPanel('Disk reads', $._config.container_names.write)
+        $.containerDiskReadsPanel('Disk reads', $._config.instance_names.write, $._config.container_names.write)
       )
       .addPanel(
-        $.containerDiskSpaceUtilization('Disk space utilization', $._config.container_names.write),
+        $.containerDiskSpaceUtilization('Disk space utilization', $._config.instance_names.write, $._config.container_names.write),
       )
     )
 
@@ -53,15 +53,15 @@ local filename = 'mimir-overview-resources.json';
       $.row('Reads')
       .addPanel(
         $.panel('CPU') +
-        $.queryPanel($.resourceUtilizationQuery('cpu', $._config.container_names.read), '{{%s}}' % $._config.per_instance_label),
+        $.queryPanel($.resourceUtilizationQuery('cpu', $._config.instance_names.read, $._config.container_names.read), '{{%s}}' % $._config.per_instance_label),
       )
       .addPanel(
         $.panel('Memory (workingset)') +
-        $.queryPanel($.resourceUtilizationQuery('memory_working', $._config.container_names.read), '{{%s}}' % $._config.per_instance_label) +
+        $.queryPanel($.resourceUtilizationQuery('memory_working', $._config.instance_names.read, $._config.container_names.read), '{{%s}}' % $._config.per_instance_label) +
         { yaxes: $.yaxes('bytes') },
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.read),
+        $.goHeapInUsePanel($._config.job_names.read),
       )
     )
 
@@ -69,27 +69,27 @@ local filename = 'mimir-overview-resources.json';
       $.row('Backend')
       .addPanel(
         $.panel('CPU') +
-        $.queryPanel($.resourceUtilizationQuery('cpu', $._config.container_names.backend), '{{%s}}' % $._config.per_instance_label),
+        $.queryPanel($.resourceUtilizationQuery('cpu', $._config.instance_names.backend, $._config.container_names.backend), '{{%s}}' % $._config.per_instance_label),
       )
       .addPanel(
         $.panel('Memory (workingset)') +
-        $.queryPanel($.resourceUtilizationQuery('memory_working', $._config.container_names.backend), '{{%s}}' % $._config.per_instance_label) +
+        $.queryPanel($.resourceUtilizationQuery('memory_working', $._config.instance_names.backend, $._config.container_names.backend), '{{%s}}' % $._config.per_instance_label) +
         { yaxes: $.yaxes('bytes') },
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.backend),
+        $.goHeapInUsePanel($._config.job_names.backend),
       )
     )
     .addRow(
       $.row('')
       .addPanel(
-        $.containerDiskWritesPanel('Disk writes', $._config.container_names.backend)
+        $.containerDiskWritesPanel('Disk writes', $._config.instance_names.backend, $._config.container_names.backend)
       )
       .addPanel(
-        $.containerDiskReadsPanel('Disk reads', $._config.container_names.backend)
+        $.containerDiskReadsPanel('Disk reads', $._config.instance_names.backend, $._config.container_names.backend)
       )
       .addPanel(
-        $.containerDiskSpaceUtilization('Disk space utilization', $._config.container_names.backend),
+        $.containerDiskSpaceUtilization('Disk space utilization', $._config.instance_names.backend, $._config.container_names.backend),
       )
     ),
 }

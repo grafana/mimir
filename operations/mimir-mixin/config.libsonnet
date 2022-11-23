@@ -29,7 +29,9 @@
     // This mapping is intentionally local and can't be overridden. If the final user needs to customize
     // dashboards and alerts, they should override the final matcher regexp (e.g. container_names or instance_names).
     local componentNameRegexp = {
-      // Microservices deployment mode.
+      // Microservices deployment mode. The following matchers MUST match only
+      // the instance when deployed in microservices mode (e.g. "distributor"
+      // matcher shouldn't match "mimir-write" too).
       compactor: 'compactor',
       alertmanager: 'alertmanager',
       ingester: 'ingester',
@@ -45,7 +47,9 @@
       overrides_exporter: 'overrides-exporter',
       gateway: '(gateway|cortex-gw|cortex-gw-internal)',
 
-      // Read-write deployment mode.
+      // Read-write deployment mode. The following matchers MUST match only
+      // the instance when deployed in read-write deployment mode (e.g. "mimir-write"
+      // matcher shouldn't match "distributor" too).
       mimir_write: 'mimir-write',
       mimir_read: 'mimir-read',
       mimir_backend: 'mimir-backend',
@@ -91,7 +95,9 @@
       local helmCompatibleMatcher = function(regexp) '(.*-mimir-)?%s' % regexp,
       local instanceMatcher = function(regexp) helmCompatibleMatcher('%s.*' % regexp),
 
-      // Microservices deployment mode.
+      // Microservices deployment mode. The following matchers MUST match only
+      // the instance when deployed in microservices mode (e.g. "distributor"
+      // matcher shouldn't match "mimir-write" too).
       compactor: instanceMatcher(componentNameRegexp.compactor),
       alertmanager: instanceMatcher(componentNameRegexp.alertmanager),
       ingester: instanceMatcher(componentNameRegexp.ingester),
@@ -104,12 +110,15 @@
       overrides_exporter: instanceMatcher(componentNameRegexp.overrides_exporter),
       gateway: instanceMatcher(componentNameRegexp.gateway),
 
-      // Read-write deployment mode.
+      // Read-write deployment mode. The following matchers MUST match only
+      // the instance when deployed in read-write deployment mode (e.g. "mimir-write"
+      // matcher shouldn't match "distributor" too).
       mimir_write: instanceMatcher(componentNameRegexp.mimir_write),
       mimir_read: instanceMatcher(componentNameRegexp.mimir_read),
       mimir_backend: instanceMatcher(componentNameRegexp.mimir_backend),
 
       // The following are instance matchers used to select all components in a given "path".
+      // These matchers CAN match both instances deployed in "microservices" and "read-write" mode.
       local componentsGroupMatcher = function(components)
         instanceMatcher('(%s)' % std.join('|', std.map(function(name) componentNameRegexp[name], components))),
 
@@ -119,7 +128,15 @@
     },
 
     container_names: {
+      // Microservices deployment mode. The following matchers MUST match only
+      // the instance when deployed in microservices mode (e.g. "distributor"
+      // matcher shouldn't match "mimir-write" too).
+      gateway: componentNameRegexp.gateway,
+      distributor: componentNameRegexp.distributor,
+      ingester: componentNameRegexp.ingester,
+
       // The following are container matchers used to select all components in a given "path".
+      // These matchers CAN match both instances deployed in "microservices" and "read-write" mode.
       local componentsGroupMatcher = function(components) std.join('|', std.map(function(name) componentNameRegexp[name], components)),
 
       write: componentsGroupMatcher(componentGroups.write),
@@ -174,23 +191,24 @@
     },
     resources_panel_queries: {
       kubernetes: {
-        cpu_usage: 'sum by(%(instance)s) (rate(container_cpu_usage_seconds_total{%(namespace)s,container=~"%(instanceName)s"}[$__rate_interval]))',
-        cpu_limit: 'min(container_spec_cpu_quota{%(namespace)s,container=~"%(instanceName)s"} / container_spec_cpu_period{%(namespace)s,container=~"%(instanceName)s"})',
-        cpu_request: 'min(kube_pod_container_resource_requests{%(namespace)s,container=~"%(instanceName)s",resource="cpu"})',
+        cpu_usage: 'sum by(%(instanceLabel)s) (rate(container_cpu_usage_seconds_total{%(namespace)s,container=~"%(containerName)s"}[$__rate_interval]))',
+        cpu_limit: 'min(container_spec_cpu_quota{%(namespace)s,container=~"%(containerName)s"} / container_spec_cpu_period{%(namespace)s,container=~"%(containerName)s"})',
+        cpu_request: 'min(kube_pod_container_resource_requests{%(namespace)s,container=~"%(containerName)s",resource="cpu"})',
         // We use "max" instead of "sum" otherwise during a rolling update of a statefulset we will end up
         // summing the memory of the old instance/pod (whose metric will be stale for 5m) to the new instance/pod.
-        memory_working_usage: 'max by(%(instance)s) (container_memory_working_set_bytes{%(namespace)s,container=~"%(instanceName)s"})',
-        memory_working_limit: 'min(container_spec_memory_limit_bytes{%(namespace)s,container=~"%(instanceName)s"} > 0)',
-        memory_working_request: 'min(kube_pod_container_resource_requests{%(namespace)s,container=~"%(instanceName)s",resource="memory"})',
+        memory_working_usage: 'max by(%(instanceLabel)s) (container_memory_working_set_bytes{%(namespace)s,container=~"%(containerName)s"})',
+        memory_working_limit: 'min(container_spec_memory_limit_bytes{%(namespace)s,container=~"%(containerName)s"} > 0)',
+        memory_working_request: 'min(kube_pod_container_resource_requests{%(namespace)s,container=~"%(containerName)s",resource="memory"})',
         // We use "max" instead of "sum" otherwise during a rolling update of a statefulset we will end up
         // summing the memory of the old instance/pod (whose metric will be stale for 5m) to the new instance/pod.
-        memory_rss_usage: 'max by(%(instance)s) (container_memory_rss{%(namespace)s,container=~"%(instanceName)s"})',
-        memory_rss_limit: 'min(container_spec_memory_limit_bytes{%(namespace)s,container=~"%(instanceName)s"} > 0)',
-        memory_rss_request: 'min(kube_pod_container_resource_requests{%(namespace)s,container=~"%(instanceName)s",resource="memory"})',
+        memory_rss_usage: 'max by(%(instanceLabel)s) (container_memory_rss{%(namespace)s,container=~"%(containerName)s"})',
+        memory_rss_limit: 'min(container_spec_memory_limit_bytes{%(namespace)s,container=~"%(containerName)s"} > 0)',
+        memory_rss_request: 'min(kube_pod_container_resource_requests{%(namespace)s,container=~"%(containerName)s",resource="memory"})',
+        memory_go_heap_usage: 'sum by(%(instanceLabel)s) (go_memstats_heap_inuse_bytes{%(namespace)s,container=~"%(containerName)s"})',
         network: 'sum by(%(instanceLabel)s) (rate(%(metric)s{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}[$__rate_interval]))',
         disk_writes:
           |||
-            sum by(%(instanceLabel)s, %(instance)s, device) (
+            sum by(%(nodeLabel)s, %(instanceLabel)s, device) (
               rate(
                 node_disk_written_bytes_total[$__rate_interval]
               )
@@ -200,7 +218,7 @@
           |||,
         disk_reads:
           |||
-            sum by(%(instanceLabel)s, %(instance)s, device) (
+            sum by(%(nodeLabel)s, %(instanceLabel)s, device) (
               rate(
                 node_disk_read_bytes_total[$__rate_interval]
               )
@@ -224,38 +242,39 @@
       baremetal: {
         // Somes queries does not makes sense when running mimir on baremetal
         // no need to define them
-        cpu_usage: 'sum by(%(instance)s) (rate(node_cpu_seconds_total{mode="user",%(namespace)s,%(instance)s=~".*%(instanceName)s.*"}[$__rate_interval]))',
+        cpu_usage: 'sum by(%(instanceLabel)s) (rate(node_cpu_seconds_total{mode="user",%(namespace)s,%(instanceLabel)s=~".*%(instanceName)s.*"}[$__rate_interval]))',
         memory_working_usage:
           |||
-            node_memory_MemTotal_bytes{%(namespace)s,%(instance)s=~".*%(instanceName)s.*"}
-            - node_memory_MemFree_bytes{%(namespace)s,%(instance)s=~".*%(instanceName)s.*"}
-            - node_memory_Buffers_bytes{%(namespace)s,%(instance)s=~".*%(instanceName)s.*"}
-            - node_memory_Cached_bytes{%(namespace)s,%(instance)s=~".*%(instanceName)s.*"}
-            - node_memory_Slab_bytes{%(namespace)s,%(instance)s=~".*%(instanceName)s.*"}
-            - node_memory_PageTables_bytes{%(namespace)s,%(instance)s=~".*%(instanceName)s.*"}
-            - node_memory_SwapCached_bytes{%(namespace)s,%(instance)s=~".*%(instanceName)s.*"}
+            node_memory_MemTotal_bytes{%(namespace)s,%(instanceLabel)s=~".*%(instanceName)s.*"}
+            - node_memory_MemFree_bytes{%(namespace)s,%(instanceLabel)s=~".*%(instanceName)s.*"}
+            - node_memory_Buffers_bytes{%(namespace)s,%(instanceLabel)s=~".*%(instanceName)s.*"}
+            - node_memory_Cached_bytes{%(namespace)s,%(instanceLabel)s=~".*%(instanceName)s.*"}
+            - node_memory_Slab_bytes{%(namespace)s,%(instanceLabel)s=~".*%(instanceName)s.*"}
+            - node_memory_PageTables_bytes{%(namespace)s,%(instanceLabel)s=~".*%(instanceName)s.*"}
+            - node_memory_SwapCached_bytes{%(namespace)s,%(instanceLabel)s=~".*%(instanceName)s.*"}
           |||,
         // From cAdvisor code, the memory RSS is:
         // The amount of anonymous and swap cache memory (includes transparent hugepages).
         memory_rss_usage:
           |||
-            node_memory_Active_anon_bytes{%(namespace)s,%(instance)s=~".*%(instanceName)s.*"}
-            + node_memory_SwapCached_bytes{%(namespace)s,%(instance)s=~".*%(instanceName)s.*"}
+            node_memory_Active_anon_bytes{%(namespace)s,%(instanceLabel)s=~".*%(instanceName)s.*"}
+            + node_memory_SwapCached_bytes{%(namespace)s,%(instanceLabel)s=~".*%(instanceName)s.*"}
           |||,
+        memory_go_heap_usage: 'sum by(%(instanceLabel)s) (go_memstats_heap_inuse_bytes{%(namespace)s,%(instanceLabel)s=~".*%(instanceName)s.*"})',
         network: 'sum by(%(instanceLabel)s) (rate(%(metric)s{%(namespaceMatcher)s,%(instanceLabel)s=~".*%(instanceName)s.*"}[$__rate_interval]))',
         disk_writes:
           |||
-            sum by(%(instanceLabel)s, %(instance)s, device) (
+            sum by(%(nodeLabel)s, %(instanceLabel)s, device) (
               rate(
-                node_disk_written_bytes_total{%(namespace)s,%(instance)s=~".*%(instanceName)s.*"}[$__rate_interval]
+                node_disk_written_bytes_total{%(namespace)s,%(instanceLabel)s=~".*%(instanceName)s.*"}[$__rate_interval]
               )
             )
           |||,
         disk_reads:
           |||
-            sum by(%(instanceLabel)s, %(instance)s, device) (
+            sum by(%(nodeLabel)s, %(instanceLabel)s, device) (
               rate(
-                node_disk_read_bytes_total{%(namespace)s,%(instance)s=~".*%(instanceName)s.*"}[$__rate_interval]
+                node_disk_read_bytes_total{%(namespace)s,%(instanceLabel)s=~".*%(instanceName)s.*"}[$__rate_interval]
               )
             )
           |||,

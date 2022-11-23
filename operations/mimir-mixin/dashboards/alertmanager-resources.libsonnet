@@ -9,38 +9,38 @@ local filename = 'mimir-alertmanager-resources.json';
       $._config.gateway_enabled,
       $.row('Gateway')
       .addPanel(
-        $.containerCPUUsagePanel('CPU', $._config.job_names.gateway),
+        $.containerCPUUsagePanel($._config.job_names.gateway, $._config.job_names.gateway),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel('Memory (workingset)', $._config.job_names.gateway),
+        $.containerMemoryWorkingSetPanel($._config.job_names.gateway, $._config.job_names.gateway),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.gateway),
+        $.goHeapInUsePanel($._config.job_names.gateway),
       )
     )
     .addRow(
       $.row('Alertmanager')
       .addPanel(
-        $.containerCPUUsagePanel('CPU', 'alertmanager'),
+        $.containerCPUUsagePanel('alertmanager', 'alertmanager'),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel('Memory (workingset)', 'alertmanager'),
+        $.containerMemoryWorkingSetPanel('alertmanager', 'alertmanager'),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', 'alertmanager'),
+        $.goHeapInUsePanel('alertmanager'),
       )
     )
     .addRowIf(
       $._config.alertmanager_im_enabled,
       $.row('Instance mapper')
       .addPanel(
-        $.containerCPUUsagePanel('CPU', 'alertmanager-im'),
+        $.containerCPUUsagePanel('alertmanager-im', 'alertmanager-im'),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel('Memory (workingset)', 'alertmanager-im'),
+        $.containerMemoryWorkingSetPanel('alertmanager-im', 'alertmanager-im'),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', 'alertmanager-im'),
+        $.goHeapInUsePanel('alertmanager-im'),
       )
     )
     .addRow(
@@ -55,16 +55,16 @@ local filename = 'mimir-alertmanager-resources.json';
     .addRow(
       $.row('Disk')
       .addPanel(
-        $.containerDiskWritesPanel('Writes', 'alertmanager'),
+        $.containerDiskWritesPanel('Writes', 'alertmanager', 'alertmanager'),
       )
       .addPanel(
-        $.containerDiskReadsPanel('Reads', 'alertmanager'),
+        $.containerDiskReadsPanel('Reads', 'alertmanager', 'alertmanager'),
       )
     )
     .addRow(
       $.row('')
       .addPanel(
-        $.containerDiskSpaceUtilization('Disk space utilization', 'alertmanager'),
+        $.containerDiskSpaceUtilization('Disk space utilization', 'alertmanager', 'alertmanager'),
       )
     ),
 }

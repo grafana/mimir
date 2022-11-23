@@ -8,37 +8,37 @@ local filename = 'mimir-remote-ruler-reads-resources.json';
     .addRow(
       $.row('Query-frontend (dedicated to ruler)')
       .addPanel(
-        $.containerCPUUsagePanel('CPU', 'ruler-query-frontend'),
+        $.containerCPUUsagePanel('ruler-query-frontend', 'ruler-query-frontend'),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel('Memory (workingset)', 'ruler-query-frontend'),
+        $.containerMemoryWorkingSetPanel('ruler-query-frontend', 'ruler-query-frontend'),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.ruler_query_frontend),
+        $.goHeapInUsePanel($._config.job_names.ruler_query_frontend),
       )
     )
     .addRow(
       $.row('Query-scheduler (dedicated to ruler)')
       .addPanel(
-        $.containerCPUUsagePanel('CPU', 'ruler-query-scheduler'),
+        $.containerCPUUsagePanel('ruler-query-scheduler', 'ruler-query-scheduler'),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel('Memory (workingset)', 'ruler-query-scheduler'),
+        $.containerMemoryWorkingSetPanel('ruler-query-scheduler', 'ruler-query-scheduler'),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.ruler_query_scheduler),
+        $.goHeapInUsePanel($._config.job_names.ruler_query_scheduler),
       )
     )
     .addRow(
       $.row('Querier (dedicated to ruler)')
       .addPanel(
-        $.containerCPUUsagePanel('CPU', 'ruler-querier'),
+        $.containerCPUUsagePanel('ruler-querier', 'ruler-querier'),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel('Memory (workingset)', 'ruler-querier'),
+        $.containerMemoryWorkingSetPanel('ruler-querier', 'ruler-querier'),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.ruler_querier),
+        $.goHeapInUsePanel($._config.job_names.ruler_querier),
       )
     ) + {
       templating+: {
