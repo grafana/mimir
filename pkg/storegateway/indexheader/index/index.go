@@ -14,6 +14,7 @@
 package index
 
 import (
+	"fmt"
 	//"fmt"
 	"hash"
 	"hash/crc32"
@@ -21,9 +22,10 @@ import (
 	"unsafe"
 
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/tsdb/index"
+
 	//"github.com/prometheus/prometheus/tsdb/encoding"
 	stream_encoding "github.com/grafana/mimir/pkg/storegateway/indexheader/encoding"
-	"github.com/prometheus/prometheus/tsdb/index"
 )
 
 // The table gets initialized with sync.Once but may still cause a race
@@ -72,9 +74,10 @@ func NewSymbols(bs ByteSlice, version, off int) (*Symbols, error) {
 	}
 
 	d := stream_encoding.NewDecbuf(r, off, castagnoliTable)
-	//	if d.Err() != nil {
-	//		fmt.Printf("error: %v\n", d.Err())
-	//	}
+	if d.Err() != nil {
+		fmt.Printf("error: %v\n", d.Err())
+	}
+
 	var (
 		origLen = d.Len()
 		cnt     = d.Be32int()
@@ -85,6 +88,8 @@ func NewSymbols(bs ByteSlice, version, off int) (*Symbols, error) {
 		//fmt.Printf("seen=%d cnt=%d\n", s.seen, cnt)
 
 		if s.seen%symbolFactor == 0 {
+			// TODO: d.Len() never changes in our Decbuf implementation but it DOES in the TSDB version
+			//  based on how much of the underlying buffer has been consumed.
 			s.offsets = append(s.offsets, basePos+origLen-d.Len())
 		}
 		d.UvarintBytes() // The symbol.
@@ -113,6 +118,11 @@ func (s Symbols) Lookup(o uint32) (string, error) {
 			d.UvarintBytes()
 		}
 	} else {
+
+		// TODO: This is always wrong for v1 by 14 bytes. Meaning, if we do `d.Skip(int(0 - 14))` it works
+		//  perfectly. We're not accounting for the index header somewhere or we stopped including it somewhere
+		//  that we used to include it in.
+
 		d.Skip(int(o))
 	}
 	sym := d.UvarintStr()

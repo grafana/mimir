@@ -121,6 +121,7 @@ func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int) (bw
 		return nil, errors.Wrap(err, "read index header TOC")
 	}
 
+	// TODO: Symbols byteslice is offset by 14 bytes _BUT_ symbol lookups for v1 are always off by 14 bytes
 	symbolsByteSlice, err := readDecbufBytes(f, int64(r.toc.Symbols))
 	if err != nil {
 		return nil, errors.Wrap(err, "read symbols")
