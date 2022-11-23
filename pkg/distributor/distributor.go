@@ -526,10 +526,11 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.nonHASamples.DeleteLabelValues(userID)
 	d.latestSeenSampleTimestampPerUser.DeleteLabelValues(userID)
 
-	d.dedupedSamples.DeletePartialMatch(prometheus.Labels{"user": userID})
+	filter := prometheus.Labels{"user": userID}
+	d.dedupedSamples.DeletePartialMatch(filter)
+	d.discardedSamplesTooManyHaClusters.DeletePartialMatch(filter)
+	d.discardedSamplesRateLimited.DeletePartialMatch(filter)
 
-	d.discardedSamplesTooManyHaClusters.DeleteLabelValues(userID)
-	d.discardedSamplesRateLimited.DeleteLabelValues(userID)
 	d.discardedRequestsRateLimited.DeleteLabelValues(userID)
 	d.discardedExemplarsRateLimited.DeleteLabelValues(userID)
 	d.discardedMetadataRateLimited.DeleteLabelValues(userID)
