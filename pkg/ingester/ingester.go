@@ -675,6 +675,15 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 		return &mimirpb.WriteResponse{}, nil
 	}
 
+	/* ----------------------------------- */
+	// Temporary histogram debugging code:
+	for _, ts := range req.Timeseries {
+		for _, h := range ts.Histograms {
+			fmt.Println(h.GoString())
+		}
+	}
+	/* ----------------------------------- */
+
 	db, err := i.getOrCreateTSDB(userID, false)
 	if err != nil {
 		return nil, wrapWithUser(err, userID)
