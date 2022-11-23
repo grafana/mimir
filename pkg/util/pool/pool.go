@@ -136,10 +136,14 @@ func (p *BucketedBytes) Put(b *[]byte) {
 type BatchBytes struct {
 	Delegate Bytes
 
+	mtx   sync.Mutex
 	slabs []*[]byte
 }
 
 func (b *BatchBytes) Release() {
+	b.mtx.Lock()
+	defer b.mtx.Unlock()
+
 	for _, slab := range b.slabs {
 		b.Delegate.Put(slab)
 	}
@@ -147,6 +151,9 @@ func (b *BatchBytes) Release() {
 }
 
 func (b *BatchBytes) Get(sz int) ([]byte, error) {
+	b.mtx.Lock()
+	defer b.mtx.Unlock()
+
 	if len(b.slabs) == 0 ||
 		// Ensure we never grow slab beyond original capacity.
 		cap(*b.slabs[len(b.slabs)-1])-len(*b.slabs[len(b.slabs)-1]) < sz {
