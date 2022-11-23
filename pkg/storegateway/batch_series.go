@@ -9,49 +9,111 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/runutil"
+	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
-	"github.com/thanos-io/objstore/tracing"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 )
 
-type batch struct {
-	series []seriesEntry
+type loadedBatch struct {
+	Entries []seriesEntry // this should ideally be its own type that doesn't have the refs
+	Stats   *queryStats
+
+	bytesReleaser releaser
 }
 
-func (batch) Close() error {
-	return nil
+func (b *loadedBatch) release() {
+	if len(b.Entries) == 0 {
+		return // there's nothing to release, just return; this also allows to call release() on a zero-valued loadedBatch
+	}
+	b.bytesReleaser.Release()
+	b.Entries = nil // make it harder to do a "use after free"
 }
 
-type batchSet interface {
+func (b loadedBatch) len() int {
+	return len(b.Entries)
+}
+
+type LoadedBatchEntry struct {
+	Lset   labels.Labels
+	Chunks []storepb.AggrChunk
+}
+
+type loadedBatchSet interface {
 	Next() bool
-	At() batch
+	At() loadedBatch
 	Err() error
 }
 
-type batchedSeriesSet struct {
+type unloadedBatch struct {
+	Entries []unloadedBatchEntry
+	Stats   *safeQueryStats
+}
+
+func newBatch(size int) unloadedBatch {
+	return unloadedBatch{
+		Entries: make([]unloadedBatchEntry, size),
+		Stats:   newSafeQueryStats(),
+	}
+}
+
+func (b unloadedBatch) len() int {
+	return len(b.Entries)
+}
+
+type unloadedBatchEntry struct {
+	lset   labels.Labels
+	chunks []unloadedChunk
+}
+
+type unloadedChunk struct {
+	BlockID          ulid.ULID
+	Ref              chunks.ChunkRef
+	MinTime, MaxTime int64
+}
+
+func (m unloadedChunk) Compare(b unloadedChunk) int {
+	if m.MinTime < b.MinTime {
+		return 1
+	}
+	if m.MinTime > b.MinTime {
+		return -1
+	}
+
+	// Same min time.
+	if m.MaxTime < b.MaxTime {
+		return 1
+	}
+	if m.MaxTime > b.MaxTime {
+		return -1
+	}
+	return 0
+}
+
+type unloadedBatchSet interface {
+	Next() bool
+	At() unloadedBatch
+	Err() error
+}
+
+type bucketBatchSet struct {
 	ctx      context.Context
 	postings []storage.SeriesRef
 
 	batchSize               int
-	currBatchIdx            int
 	currBatchPostingsOffset int
-	preloaded               []seriesEntry
-	stats                   *safeQueryStats
+	currentBatch            unloadedBatch
 	err                     error
 
+	blockID          ulid.ULID
 	indexr           *bucketIndexReader      // Index reader for block.
-	chunkr           *bucketChunkReader      // Chunk reader for block.
 	matchers         []*labels.Matcher       // Series matchers.
 	shard            *sharding.ShardSelector // Shard selector.
 	seriesHasher     seriesHasher            // Block-specific series hash cache (used only if shard selector is specified).
@@ -63,11 +125,11 @@ type batchedSeriesSet struct {
 	logger           log.Logger
 }
 
-func batchedBlockSeries(
+func unloadedBucketBatches(
 	ctx context.Context,
 	batchSize int,
 	indexr *bucketIndexReader, // Index reader for block.
-	chunkr *bucketChunkReader, // Chunk reader for block.
+	blockID ulid.ULID,
 	matchers []*labels.Matcher, // Series matchers.
 	shard *sharding.ShardSelector, // Shard selector.
 	seriesHashCache *hashcache.BlockSeriesHashCache, // Block-specific series hash cache (used only if shard selector is specified).
@@ -77,16 +139,11 @@ func batchedBlockSeries(
 	minTime, maxTime int64, // Series must have data in this time range to be returned (ignored if skipChunks=true).
 	loadAggregates []storepb.Aggr, // List of aggregates to load when loading chunks.
 	logger log.Logger,
-) (batchSet, error) {
+) (unloadedBatchSet, error) {
 	if batchSize <= 0 {
 		return nil, errors.New("batch size must be a positive number")
 	}
-	//if skipChunks {
-	//	res, ok := fetchCachedSeries(ctx, indexr.block.userID, indexr.block.indexCache, indexr.block.meta.ULID, matchers, shard, logger)
-	//	if ok {
-	//		return newBucketSeriesSet(res), nil
-	//	}
-	//}
+
 	stats := newSafeQueryStats()
 	ps, err := indexr.ExpandedPostings(ctx, matchers, stats)
 	if err != nil {
@@ -102,15 +159,13 @@ func batchedBlockSeries(
 		stats = stats.merge(&unsafeStats)
 	}
 
-	return &batchedSeriesSet{
+	return &bucketBatchSet{
+		blockID:                 blockID,
 		batchSize:               batchSize,
-		preloaded:               make([]seriesEntry, 0, batchSize),
-		stats:                   stats,
 		currBatchPostingsOffset: -batchSize,
 		ctx:                     ctx,
 		postings:                ps,
 		indexr:                  indexr,
-		chunkr:                  chunkr,
 		matchers:                matchers,
 		shard:                   shard,
 		seriesHasher:            cachedSeriesHasher{cache: seriesHashCache, stats: stats},
@@ -124,19 +179,15 @@ func batchedBlockSeries(
 	}, nil
 }
 
-func (s *batchedSeriesSet) Next() bool {
-	if s.currBatchPostingsOffset+s.currBatchIdx >= len(s.postings)-1 || s.err != nil {
+func (s *bucketBatchSet) Next() bool {
+	if s.currBatchPostingsOffset >= len(s.postings)-1 || s.err != nil {
 		return false
 	}
-	s.currBatchIdx++
-	if s.currBatchIdx >= len(s.preloaded) {
-		return s.preload()
-	}
-	return true
+	s.currentBatch = newBatch(s.batchSize)
+	return s.loadBatch()
 }
 
-func (s *batchedSeriesSet) preload() bool {
-	s.resetPreloaded()
+func (s *bucketBatchSet) loadBatch() bool {
 	s.currBatchPostingsOffset += s.batchSize
 	if s.currBatchPostingsOffset > len(s.postings) {
 		return false
@@ -146,9 +197,9 @@ func (s *batchedSeriesSet) preload() bool {
 	if end > len(s.postings) {
 		end = len(s.postings)
 	}
-	nextBatch := s.postings[s.currBatchPostingsOffset:end]
+	nextPostings := s.postings[s.currBatchPostingsOffset:end]
 
-	loadedSeries, err := s.indexr.preloadSeries(s.ctx, nextBatch, s.stats)
+	loadedSeries, err := s.indexr.preloadSeries(s.ctx, nextPostings, s.currentBatch.Stats)
 	if err != nil {
 		s.err = errors.Wrap(err, "preload series")
 		return false
@@ -157,9 +208,10 @@ func (s *batchedSeriesSet) preload() bool {
 	var (
 		symbolizedLset []symbolizedLabel
 		chks           []chunks.Meta
+		i              int
 	)
-	for _, id := range nextBatch {
-		ok, err := loadedSeries.loadSeriesForTime(id, &symbolizedLset, &chks, s.skipChunks, s.minTime, s.maxTime, s.stats.unsafeStats)
+	for _, id := range nextPostings {
+		ok, err := loadedSeries.loadSeriesForTime(id, &symbolizedLset, &chks, s.skipChunks, s.minTime, s.maxTime, s.currentBatch.Stats.export())
 		if err != nil {
 			s.err = errors.Wrap(err, "read series")
 			return false
@@ -185,7 +237,7 @@ func (s *batchedSeriesSet) preload() bool {
 			return false
 		}
 
-		entry := seriesEntry{lset: lset}
+		entry := unloadedBatchEntry{lset: lset}
 
 		if !s.skipChunks {
 			// Ensure sample limit through chunksLimiter if we return chunks.
@@ -193,73 +245,39 @@ func (s *batchedSeriesSet) preload() bool {
 				s.err = errors.Wrap(err, "exceeded chunks limit")
 				return false
 			}
-			// seriesEntry entry is appended to preloaded, but not at every outer loop iteration,
-			// therefore len(preloaded) is the index we need here, not outer loop iteration number.
-			entry.refs, entry.chks, s.err = s.scheduleChunksLoading(chks, len(s.preloaded))
-			if s.err != nil {
-				return false
-			}
+			entry.chunks = metasToChunks(s.blockID, chks)
 		}
 
-		s.preloaded = append(s.preloaded, entry)
+		s.currentBatch.Entries[i] = entry
+		i++
 	}
+	s.currentBatch.Entries = s.currentBatch.Entries[:i]
 
-	if len(s.preloaded) == 0 {
-		return s.preload() // we didn't find any suitable series in this batch, try with the next one
-	}
-
-	if s.skipChunks {
-		storeCachedSeries(s.ctx, s.indexr.block.indexCache, s.indexr.block.userID, s.indexr.block.meta.ULID, s.matchers, s.shard, s.preloaded, s.logger)
-		return true
-	}
-
-	if !s.skipChunks {
-		s.stats = s.stats.merge(s.chunkr.stats)
-		if err := s.chunkr.load(s.preloaded, s.loadAggregates); err != nil {
-			s.err = errors.Wrap(err, "load chunks")
-			return false
-		}
-		return true
+	if s.currentBatch.len() == 0 {
+		return s.loadBatch() // we didn't find any suitable series in this batch, try with the next one
 	}
 
 	return true
 }
 
-func (s *batchedSeriesSet) scheduleChunksLoading(metas []chunks.Meta, seriesIdx int) ([]chunks.ChunkRef, []storepb.AggrChunk, error) {
-	refs := make([]chunks.ChunkRef, 0, len(metas))
-	chks := make([]storepb.AggrChunk, 0, len(metas))
-
-	for j, meta := range metas {
-		if err := s.chunkr.addLoad(meta.Ref, seriesIdx, j); err != nil {
-			return nil, nil, errors.Wrap(err, "add chunk load")
-		}
-		chks = append(chks, storepb.AggrChunk{
+func metasToChunks(blockID ulid.ULID, metas []chunks.Meta) []unloadedChunk {
+	chks := make([]unloadedChunk, len(metas))
+	for i, meta := range metas {
+		chks[i] = unloadedChunk{
 			MinTime: meta.MinTime,
 			MaxTime: meta.MaxTime,
-		})
-		refs = append(refs, meta.Ref)
+			Ref:     meta.Ref,
+			BlockID: blockID,
+		}
 	}
-
-	return refs, chks, nil
+	return chks
 }
 
-func (s *batchedSeriesSet) resetPreloaded() {
-	s.preloaded = s.preloaded[:0]
-	s.loadAggregates = s.loadAggregates[:0]
-	if s.chunkr != nil { // can be nil when the client didn't want to load chunks
-		s.chunkr.reset()
-	}
-	s.currBatchIdx = 0
+func (s *bucketBatchSet) At() unloadedBatch {
+	return s.currentBatch
 }
 
-func (s *batchedSeriesSet) At() (labels.Labels, []storepb.AggrChunk) {
-	if s.currBatchIdx >= len(s.preloaded) {
-		return nil, nil
-	}
-	return s.preloaded[s.currBatchIdx].lset, s.preloaded[s.currBatchIdx].chks
-}
-
-func (s *batchedSeriesSet) Err() error {
+func (s *bucketBatchSet) Err() error {
 	return s.err
 }
 
@@ -298,29 +316,24 @@ func shardOwned(shard *sharding.ShardSelector, hasher seriesHasher, id storage.S
 	return hash%shard.ShardCount == shard.ShardIndex
 }
 
-func (s *BucketStore) batchSetsForBlocks(ctx context.Context, req *storepb.SeriesRequest, blocks []*bucketBlock, shardSelector *sharding.ShardSelector, matchers []*labels.Matcher, chunksLimiter ChunksLimiter, seriesLimiter SeriesLimiter) ([]batchSet, *hintspb.SeriesResponseHints, *queryStats, error) {
+func (s *BucketStore) batchSetsForBlocks(ctx context.Context, req *storepb.SeriesRequest, blocks []*bucketBlock, chunkReaders *chunkReaders, shardSelector *sharding.ShardSelector, matchers []*labels.Matcher, chunksLimiter ChunksLimiter, seriesLimiter SeriesLimiter) (storepb.SeriesSet, *hintspb.SeriesResponseHints, *queryStats, func(), error) {
 	resHints := &hintspb.SeriesResponseHints{}
 	mtx := sync.Mutex{}
-	batches := make([]batchSet, 0, len(blocks))
+	batches := make([]unloadedBatchSet, 0, len(blocks))
 	g, ctx := errgroup.WithContext(ctx)
 	stats := &queryStats{}
+	cleanups := make([]func(), 0, len(blocks))
 
 	for _, b := range blocks {
 		b := b
 
 		// Keep track of queried blocks.
 		resHints.AddQueriedBlock(b.meta.ULID)
-
-		var chunkr *bucketChunkReader
-		// We must keep the readers open until all their data has been sent.
 		indexr := b.indexReader()
-		if !req.SkipChunks {
-			chunkr = b.chunkReader(ctx)
-			defer runutil.CloseWithLogOnErr(s.logger, chunkr, "series block")
-		}
-
-		// Defer all closes to the end of Series method.
-		defer runutil.CloseWithLogOnErr(s.logger, indexr, "series block")
+		cleanups = append(cleanups, func() {
+			// Defer all closes to the end of Series method.
+			runutil.CloseWithLogOnErr(s.logger, indexr, "series block")
+		})
 
 		// If query sharding is enabled we have to get the block-specific series hash cache
 		// which is used by blockSeries().
@@ -331,12 +344,12 @@ func (s *BucketStore) batchSetsForBlocks(ctx context.Context, req *storepb.Serie
 		g.Go(func() error {
 			var (
 				pstats *safeQueryStats
-				part   storepb.SeriesSet
+				part   unloadedBatchSet
 				err    error
 			)
 
-			part, err = batchedBlockSeries(
-				ctx, s.seriesPerBatch, indexr, chunkr, matchers, shardSelector, blockSeriesHashCache, chunksLimiter, seriesLimiter, req.SkipChunks, req.MinTime, req.MaxTime, req.Aggregates, s.logger)
+			part, err = unloadedBucketBatches(
+				ctx, s.seriesPerBatch, indexr, b.meta.ULID, matchers, shardSelector, blockSeriesHashCache, chunksLimiter, seriesLimiter, req.SkipChunks, req.MinTime, req.MaxTime, req.Aggregates, s.logger)
 			if err != nil {
 				return errors.Wrapf(err, "fetch series for block %s", b.meta.ULID)
 			}
@@ -353,59 +366,481 @@ func (s *BucketStore) batchSetsForBlocks(ctx context.Context, req *storepb.Serie
 	}
 
 	s.mtx.RUnlock()
+	cleanup := func() {
+		for _, c := range cleanups {
+			c()
+		}
+	}
 
 	// Concurrently get data from all blocks.
 	{
 		begin := time.Now()
 		err := g.Wait()
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, cleanup, err
 		}
 		stats.blocksQueried = len(batches)
 		stats.getAllDuration = time.Since(begin)
 	}
-	return batches, resHints, stats, nil
 
+	mergedBatches := mergedBatchSets(s.seriesPerBatch, batches...)
+	var set storepb.SeriesSet
+	if chunkReaders != nil {
+		set = newSeriesSetWithChunks(ctx, *chunkReaders, mergedBatches)
+	} else {
+		set = newSeriesSetWithoutChunks(mergedBatches)
+	}
+	return set, resHints, stats, cleanup, nil
 }
 
-func (s *BucketStore) sendSeriesBatches(ctx context.Context, sets []batchSet, skipChunks bool, srv storepb.Store_SeriesServer) (stats *queryStats, err error) {
-	tracing.DoWithSpan(ctx, "bucket_store_merge_all", func(ctx context.Context, _ tracing.Span) {
-		stats = &queryStats{}
-		begin := time.Now()
+type seriesSetWithoutChunks struct {
+	from unloadedBatchSet
 
-		// NOTE: We "carefully" assume series and chunks are sorted within each SeriesSet. This should be guaranteed by
-		// blockSeries method. In worst case deduplication logic won't deduplicate correctly, which will be accounted later.
-		//set := storepb.MergeSeriesSets(sets...) // TODO dimitarvdimitrov
-		set := sets[0]
-		for set.Next() {
-			var series storepb.Series
+	currentIterator *unloadedBatchIterator
+}
 
-			stats.mergedSeriesCount++
+func newSeriesSetWithoutChunks(batches unloadedBatchSet) storepb.SeriesSet {
+	return &seriesSetWithoutChunks{
+		from:            batches,
+		currentIterator: newBatchIterator(unloadedBatch{}),
+	}
+}
 
-			b := set.At()
-			var lset labels.Labels
-			if skipChunks {
+func (s *seriesSetWithoutChunks) Next() bool {
+	if s.currentIterator.Next() {
+		return true
+	}
+	if !s.from.Next() {
+		return false
+	}
 
-			} else {
-				lset, series.Chunks = set.At()
+	next := s.from.At()
+	s.currentIterator.reset(next)
+	return !s.currentIterator.Done()
+}
 
-				stats.mergedChunksCount += len(series.Chunks)
-				s.metrics.chunkSizeBytes.Observe(float64(chunksSize(series.Chunks)))
-			}
-			series.Labels = mimirpb.FromLabelsToLabelAdapters(lset)
-			if err = srv.Send(storepb.NewSeriesResponse(&series)); err != nil {
-				err = status.Error(codes.Unknown, errors.Wrap(err, "send series response").Error())
-				return
+func (s *seriesSetWithoutChunks) At() (labels.Labels, []storepb.AggrChunk) {
+	return s.currentIterator.At().lset, nil
+}
+
+func (s *seriesSetWithoutChunks) Err() error {
+	return s.from.Err()
+}
+
+func newSeriesSetWithChunks(ctx context.Context, chunkReaders chunkReaders, batches unloadedBatchSet) storepb.SeriesSet {
+	return &batchedSeriesSet{
+		from: newPreloadingBatchSet(ctx, 1, newLoadingBatchSet(chunkReaders, batches)),
+	}
+}
+
+type loadingBatchSet struct {
+	chunkReaders chunkReaders
+	from         unloadedBatchSet
+
+	current loadedBatch
+	err     error
+}
+
+func newLoadingBatchSet(chunkReaders chunkReaders, from unloadedBatchSet) *loadingBatchSet {
+	return &loadingBatchSet{
+		chunkReaders: chunkReaders,
+		from:         from,
+	}
+}
+
+func (c *loadingBatchSet) Next() bool {
+	if c.err != nil {
+		return false
+	}
+
+	if !c.from.Next() {
+		c.err = c.from.Err()
+		return false
+	}
+
+	nextUnloaded := c.from.At()
+	entries := make([]seriesEntry, nextUnloaded.len())
+	c.chunkReaders.reset()
+	for i, s := range nextUnloaded.Entries {
+		entries[i].lset = s.lset
+		entries[i].chks = make([]storepb.AggrChunk, len(s.chunks))
+
+		for j, chunk := range s.chunks {
+			entries[i].chks[j].MinTime = chunk.MinTime
+			entries[i].chks[j].MaxTime = chunk.MaxTime
+
+			err := c.chunkReaders.addLoad(chunk.BlockID, chunk.Ref, i, j)
+			if err != nil {
+				c.err = errors.Wrap(err, "preloading chunks")
+				return false
 			}
 		}
-		if set.Err() != nil {
-			err = errors.Wrap(set.Err(), "expand series set")
-			return
-		}
-		stats.mergeDuration = time.Since(begin)
-		s.metrics.seriesMergeDuration.Observe(stats.mergeDuration.Seconds())
+	}
 
-		err = nil
-	})
+	err := c.chunkReaders.load(entries)
+	if err != nil {
+		c.err = errors.Wrap(err, "loading chunks")
+		return false
+	}
+	nextLoaded := loadedBatch{
+		Entries:       entries,
+		Stats:         c.chunkReaders.stats(),
+		bytesReleaser: c.chunkReaders.chunkBytes,
+	}
+	c.current = nextLoaded
+	return true
+}
+
+func (c *loadingBatchSet) At() loadedBatch {
+	return c.current
+}
+
+func (c *loadingBatchSet) Err() error {
+	return c.err
+}
+
+type preloadingBatchSet struct {
+	ctx     context.Context
+	from    loadedBatchSet
+	current loadedBatch
+
+	preloaded chan loadedBatch
+	err       error
+}
+
+func newPreloadingBatchSet(ctx context.Context, preloadNumberOfBatches int, from loadedBatchSet) *preloadingBatchSet {
+	preloadedSet := &preloadingBatchSet{
+		ctx:       ctx,
+		from:      from,
+		preloaded: make(chan loadedBatch, preloadNumberOfBatches-1), // one will be kept outside the channel when the channel blocks
+	}
+	go preloadedSet.preload()
+	return preloadedSet
+}
+
+func (p *preloadingBatchSet) preload() {
+	defer close(p.preloaded)
+loop:
+	for p.from.Next() {
+		select {
+		case <-p.ctx.Done():
+			break loop
+		case p.preloaded <- p.from.At():
+		}
+	}
+	p.err = p.from.Err()
+}
+
+func (p *preloadingBatchSet) Next() (ok bool) {
+	// TODO dimitarvdimitrov instrument the time we wait here
+	p.current, ok = <-p.preloaded
 	return
+}
+
+func (p *preloadingBatchSet) At() loadedBatch {
+	return p.current
+}
+
+func (p *preloadingBatchSet) Err() error {
+	return p.err
+}
+
+type emptyBatchSet struct {
+}
+
+func (emptyBatchSet) Next() bool        { return false }
+func (emptyBatchSet) At() unloadedBatch { return unloadedBatch{} }
+func (emptyBatchSet) Err() error        { return nil }
+
+func mergedBatchSets(mergedSize int, all ...unloadedBatchSet) unloadedBatchSet {
+	switch len(all) {
+	case 0:
+		return emptyBatchSet{}
+	case 1:
+		return newDeduplicatingBatchSet(mergedSize, all[0])
+	}
+	h := len(all) / 2
+
+	return newMergedBatchSet(
+		mergedSize,
+		mergedBatchSets(mergedSize, all[:h]...),
+		mergedBatchSets(mergedSize, all[h:]...),
+	)
+}
+
+type mergedBatchSet struct {
+	batchSize int
+
+	a, b     unloadedBatchSet
+	aAt, bAt *unloadedBatchIterator
+	current  unloadedBatch
+}
+
+func newMergedBatchSet(mergedBatchSize int, a, b unloadedBatchSet) *mergedBatchSet {
+	return &mergedBatchSet{
+		batchSize: mergedBatchSize,
+		a:         a,
+		b:         b,
+		// start iterator on an empty batch. It will be reset with a non-empty batch next time Next() is called
+		aAt: newBatchIterator(unloadedBatch{}),
+		bAt: newBatchIterator(unloadedBatch{}),
+	}
+}
+
+func (s *mergedBatchSet) Err() error {
+	if err := s.a.Err(); err != nil {
+		return err
+	} else if err = s.b.Err(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *mergedBatchSet) Next() bool {
+	next := newBatch(s.batchSize)
+	var ok bool
+	for i := 0; i < next.len(); i++ {
+		if s.aAt.Done() {
+			if s.a.Next() {
+				s.aAt.reset(s.a.At())
+				next.Stats = next.Stats.merge(s.a.At().Stats.export())
+			}
+		}
+		if s.bAt.Done() {
+			if s.b.Next() {
+				s.bAt.reset(s.b.At())
+				next.Stats = next.Stats.merge(s.b.At().Stats.export())
+			}
+		}
+		next.Entries[i], ok = nextUniqueEntry(s.aAt, s.bAt)
+		if !ok {
+			next.Entries = next.Entries[:i]
+			break
+		}
+	}
+
+	s.current = next
+	return s.current.len() > 0
+}
+
+// nextUniqueEntry returns the next unique entry from both a and b. If a.At() and b.At() have the same
+// label set, nextUniqueEntry merges their chunks. The merged chunks are sorted by their MinTime and then by MaxTIme.
+func nextUniqueEntry(a, b *unloadedBatchIterator) (toReturn unloadedBatchEntry, _ bool) {
+	if a.Done() && b.Done() {
+		return toReturn, false
+	} else if a.Done() {
+		toReturn = b.At()
+		b.Next()
+		return toReturn, true
+	} else if b.Done() {
+		toReturn = a.At()
+		a.Next()
+		return toReturn, true
+	}
+
+	aAt := a.At()
+	lsetA, chksA := aAt.lset, aAt.chunks
+	bAt := b.At()
+	lsetB, chksB := bAt.lset, bAt.chunks
+
+	if d := labels.Compare(lsetA, lsetB); d > 0 {
+		toReturn = b.At()
+		b.Next()
+		return toReturn, true
+	} else if d < 0 {
+		toReturn = a.At()
+		a.Next()
+		return toReturn, true
+	}
+
+	// Both a and b contains the same series. Go through all chunks, remove duplicates and concatenate chunks from both
+	// series sets. We best effortly assume chunks are sorted by min time. If not, we will not detect all deduplicate which will
+	// be account on select layer anyway. We do it still for early optimization.
+	toReturn.lset = lsetA
+
+	// Slice reuse is not generally safe with nested merge iterators.
+	// We err on the safe side and create a new slice.
+	toReturn.chunks = make([]unloadedChunk, 0, len(chksA)+len(chksB))
+
+	bChunksOffset := 0
+Outer:
+	for aChunksOffset := range chksA {
+		for {
+			if bChunksOffset >= len(chksB) {
+				// No more b chunks.
+				toReturn.chunks = append(toReturn.chunks, chksA[aChunksOffset:]...)
+				break Outer
+			}
+
+			if chksA[aChunksOffset].Compare(chksB[bChunksOffset]) > 0 {
+				toReturn.chunks = append(toReturn.chunks, chksA[aChunksOffset])
+				break
+			} else {
+				toReturn.chunks = append(toReturn.chunks, chksB[bChunksOffset])
+				bChunksOffset++
+			}
+		}
+	}
+
+	if bChunksOffset < len(chksB) {
+		toReturn.chunks = append(toReturn.chunks, chksB[bChunksOffset:]...)
+	}
+
+	a.Next()
+	b.Next()
+	return toReturn, true
+}
+
+func (s *mergedBatchSet) At() unloadedBatch {
+	return s.current
+}
+
+type deduplicatingBatchSet struct {
+	batchSize int
+
+	from    *chainedBatchSetIterator
+	peek    *unloadedBatchEntry
+	current unloadedBatch
+}
+
+func newDeduplicatingBatchSet(batchSize int, wrapped unloadedBatchSet) *deduplicatingBatchSet {
+	return &deduplicatingBatchSet{
+		batchSize: batchSize,
+		from:      newChainedSeriesSet(wrapped),
+	}
+}
+
+func (s *deduplicatingBatchSet) Err() error {
+	return s.from.Err()
+}
+
+func (s *deduplicatingBatchSet) At() unloadedBatch {
+	return s.current
+}
+
+func (s *deduplicatingBatchSet) Next() bool {
+	nextBatch := newBatch(s.batchSize)
+	if s.peek == nil {
+		if !s.from.Next() {
+			return false
+		}
+		nextBatch.Entries[0] = s.from.At()
+	} else {
+		nextBatch.Entries[0] = *s.peek
+		s.peek = nil
+	}
+	var nextEntry unloadedBatchEntry
+	for i := 0; i < s.batchSize; {
+		if !s.from.Next() {
+			nextBatch.Entries = nextBatch.Entries[:i+1]
+			break
+		}
+		nextEntry = s.from.At()
+		if labels.Compare(nextBatch.Entries[i].lset, nextEntry.lset) == 0 {
+			nextBatch.Entries[i].chunks = append(nextBatch.Entries[i].chunks, nextEntry.chunks...)
+		} else {
+			i++
+			if i >= s.batchSize {
+				s.peek = &nextEntry
+				break
+			}
+			nextBatch.Entries[i] = nextEntry
+		}
+	}
+	s.current = nextBatch
+	return true
+}
+
+type chainedBatchSetIterator struct {
+	from     unloadedBatchSet
+	iterator *unloadedBatchIterator
+}
+
+func newChainedSeriesSet(from unloadedBatchSet) *chainedBatchSetIterator {
+	return &chainedBatchSetIterator{
+		from:     from,
+		iterator: newBatchIterator(unloadedBatch{}), // start with an empty batch and initialize on the first call to Next()
+	}
+}
+
+func (c chainedBatchSetIterator) Next() bool {
+	if c.iterator.Next() {
+		return true
+	}
+	if !c.from.Next() {
+		return false
+	}
+	c.iterator.reset(c.from.At())
+	return true
+}
+
+func (c chainedBatchSetIterator) At() unloadedBatchEntry {
+	return c.iterator.At()
+}
+
+func (c chainedBatchSetIterator) Err() error {
+	return c.from.Err()
+}
+
+type unloadedBatchIterator struct {
+	currentOffset int
+	b             unloadedBatch
+}
+
+func newBatchIterator(b unloadedBatch) *unloadedBatchIterator {
+	return &unloadedBatchIterator{
+		b:             b,
+		currentOffset: -1,
+	}
+}
+
+// reset replaces the current batch with the provided batch. There is no need to call Next after reset
+func (c *unloadedBatchIterator) reset(b unloadedBatch) {
+	c.b = b
+	c.currentOffset = 0
+}
+
+func (c *unloadedBatchIterator) Next() bool {
+	c.currentOffset++
+	return !c.Done()
+}
+
+func (c *unloadedBatchIterator) Done() bool {
+	return c.currentOffset < 0 || c.currentOffset >= c.b.len()
+}
+
+func (c *unloadedBatchIterator) At() unloadedBatchEntry {
+	if c.Done() {
+		return unloadedBatchEntry{}
+	}
+	return c.b.Entries[c.currentOffset]
+}
+
+type batchedSeriesSet struct {
+	from loadedBatchSet
+
+	current         loadedBatch
+	offsetInCurrent int
+}
+
+func (b *batchedSeriesSet) Next() bool {
+	b.offsetInCurrent++
+	if b.offsetInCurrent >= b.current.len() {
+		if !b.from.Next() {
+			return false
+		}
+		b.current.release()
+		b.current = b.from.At()
+		b.offsetInCurrent = 0
+	}
+	return true
+}
+
+// At returns the current series. The result from At() MUST not be retained after calling Next()
+func (b *batchedSeriesSet) At() (labels.Labels, []storepb.AggrChunk) {
+	return b.current.Entries[b.offsetInCurrent].lset, b.current.Entries[b.offsetInCurrent].chks
+}
+
+func (b *batchedSeriesSet) Err() error {
+	return b.from.Err()
 }

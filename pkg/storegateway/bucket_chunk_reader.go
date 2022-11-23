@@ -14,7 +14,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/runutil"
+	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -50,7 +52,20 @@ func newBucketChunkReader(ctx context.Context, block *bucketBlock, chunkBytes *p
 
 func (r *bucketChunkReader) Close() error {
 	r.block.pendingReaders.Done()
+	r.reset()
 	return nil
+}
+
+// reset resets the chunks scheduled for loading. It does not release any loaded chunks.
+// Use unload() to release the loaded chunks.
+func (r *bucketChunkReader) reset() {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+	r.stats = &queryStats{}
+
+	for i := range r.toLoad {
+		r.toLoad[i] = r.toLoad[i][:0]
+	}
 }
 
 // addLoad adds the chunk with id to the data set to be fetched.
@@ -250,4 +265,59 @@ func (b rawChunk) Appender() (chunkenc.Appender, error) {
 
 func (b rawChunk) NumSamples() int {
 	panic("invalid call")
+}
+
+type releaser interface{ Release() }
+
+type chunkReaders struct {
+	chunkBytes releaser
+	readers    map[ulid.ULID]*bucketChunkReader
+}
+
+func newChunkReaders(ctx context.Context, blocks []*bucketBlock, chunkBytes *pool.BatchBytes) *chunkReaders {
+	readers := &chunkReaders{
+		chunkBytes: chunkBytes,
+		readers:    make(map[ulid.ULID]*bucketChunkReader, len(blocks)),
+	}
+	for _, b := range blocks {
+		readers.readers[b.meta.ULID] = b.chunkReader(ctx, chunkBytes)
+	}
+	return readers
+}
+
+func (r chunkReaders) addLoad(blockID ulid.ULID, id chunks.ChunkRef, seriesEntry, chunk int) error {
+	return r.readers[blockID].addLoad(id, seriesEntry, chunk)
+}
+
+func (r chunkReaders) load(entries []seriesEntry) error {
+	g := &errgroup.Group{}
+	for _, reader := range r.readers {
+		reader := reader
+		g.Go(func() error {
+			return reader.load(entries, nil)
+		})
+	}
+	return g.Wait()
+}
+
+func (r chunkReaders) reset() {
+	for _, reader := range r.readers {
+		reader.reset()
+	}
+}
+
+func (r chunkReaders) stats() *queryStats {
+	s := &queryStats{}
+	for _, reader := range r.readers {
+		s = s.merge(reader.stats)
+	}
+	return s
+}
+
+func (r chunkReaders) Close() error {
+	var errs multierror.MultiError
+	for _, reader := range r.readers {
+		errs.Add(reader.Close())
+	}
+	return errs.Err()
 }

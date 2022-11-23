@@ -43,6 +43,8 @@ type bucketIndexReader struct {
 	mtx sync.Mutex
 }
 
+type bucketIndexReaderFactory func() *bucketIndexReader
+
 func newBucketIndexReader(block *bucketBlock) *bucketIndexReader {
 	r := &bucketIndexReader{
 		block: block,
