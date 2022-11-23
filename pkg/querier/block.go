@@ -180,12 +180,12 @@ func (it *blockQuerierSeriesIterator) At() (int64, float64) {
 }
 
 // AtHistogram returns (0, nil) because histograms aren't implemented yet.
-func (a *blockQuerierSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
+func (it *blockQuerierSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
 	return 0, nil
 }
 
 // AtFloatHistogram returns (0, nil) because histograms aren't implemented yet.
-func (a *blockQuerierSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+func (it *blockQuerierSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
 	return 0, nil
 }
 

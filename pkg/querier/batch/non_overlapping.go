@@ -6,8 +6,9 @@
 package batch
 
 import (
-	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+
+	"github.com/grafana/mimir/pkg/storage/chunk"
 )
 
 type nonOverlappingIterator struct {
