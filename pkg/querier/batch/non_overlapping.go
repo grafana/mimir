@@ -7,6 +7,7 @@ package batch
 
 import (
 	"github.com/grafana/mimir/pkg/storage/chunk"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
 type nonOverlappingIterator struct {
@@ -25,26 +26,26 @@ func newNonOverlappingIterator(chunks []GenericChunk) *nonOverlappingIterator {
 	return it
 }
 
-func (it *nonOverlappingIterator) Seek(t int64, size int) bool {
+func (it *nonOverlappingIterator) Seek(t int64, size int) chunkenc.ValueType {
 	for {
-		if it.iter.Seek(t, size) {
-			return true
+		if typ := it.iter.Seek(t, size); typ != chunkenc.ValNone {
+			return typ
 		} else if it.iter.Err() != nil {
-			return false
+			return chunkenc.ValNone
 		} else if !it.next() {
-			return false
+			return chunkenc.ValNone
 		}
 	}
 }
 
-func (it *nonOverlappingIterator) Next(size int) bool {
+func (it *nonOverlappingIterator) Next(size int) chunkenc.ValueType {
 	for {
-		if it.iter.Next(size) {
-			return true
+		if typ := it.iter.Next(size); typ != chunkenc.ValNone {
+			return typ
 		} else if it.iter.Err() != nil {
-			return false
+			return chunkenc.ValNone
 		} else if !it.next() {
-			return false
+			return chunkenc.ValNone
 		}
 	}
 }

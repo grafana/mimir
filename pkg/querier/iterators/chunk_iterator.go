@@ -6,7 +6,11 @@
 package iterators
 
 import (
+	"errors"
+
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
 	"github.com/grafana/mimir/pkg/storage/chunk"
 )
@@ -24,13 +28,13 @@ type chunkIterator struct {
 
 // Seek advances the iterator forward to the value at or after
 // the given timestamp.
-func (i *chunkIterator) Seek(t int64) bool {
+func (i *chunkIterator) Seek(t int64) chunkenc.ValueType {
 	i.cacheValid = false
 
 	// We assume seeks only care about a specific window; if this chunk doesn't
 	// contain samples in that window, we can shortcut.
 	if int64(i.Through) < t {
-		return false
+		return chunkenc.ValNone
 	}
 
 	return i.it.FindAtOrAfter(model.Time(t))
@@ -58,7 +62,26 @@ func (i *chunkIterator) At() (int64, float64) {
 	return i.cachedTime, i.cachedValue
 }
 
-func (i *chunkIterator) Next() bool {
+func (i *chunkIterator) AtHistogram() (int64, *histogram.Histogram) {
+	panic(errors.New("chunkIterator: AtHistogram not implemented"))
+}
+
+func (i *chunkIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+	panic(errors.New("chunkIterator: AtFloatHistogram not implemented"))
+}
+
+func (i *chunkIterator) AtT() int64 {
+	if i.cacheValid {
+		return i.cachedTime
+	}
+
+	v := i.it.Value()
+	i.cachedTime, i.cachedValue = int64(v.Timestamp), float64(v.Value)
+	i.cacheValid = true
+	return i.cachedTime
+}
+
+func (i *chunkIterator) Next() chunkenc.ValueType {
 	i.cacheValid = false
 	return i.it.Scan()
 }

@@ -2437,12 +2437,12 @@ func TestIngester_QueryStream(t *testing.T) {
 				// We expect 1 sample with the same timestamp and value we've written.
 				it := data.Iterator(nil)
 
-				require.True(t, it.Next())
+				require.True(t, it.Next() == chunkenc.ValFloat)
 				actualTs, actualValue := it.At()
 				assert.Equal(t, int64(seriesID), actualTs)
 				assert.Equal(t, float64(seriesID), actualValue)
 
-				assert.False(t, it.Next())
+				assert.False(t, it.Next() == chunkenc.ValFloat)
 				assert.NoError(t, it.Err())
 			}
 		})

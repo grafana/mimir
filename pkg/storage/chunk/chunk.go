@@ -10,6 +10,7 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
 const (
@@ -45,13 +46,13 @@ type Iterator interface {
 	// Scans the next value in the chunk. Directly after the iterator has
 	// been created, the next value is the first value in the
 	// chunk. Otherwise, it is the value following the last value scanned or
-	// found (by one of the Find... methods). Returns false if either the
+	// found (by one of the Find... methods). Returns chunkenc.ValNone if either the
 	// end of the chunk is reached or an error has occurred.
-	Scan() bool
-	// Finds the oldest value at or after the provided time. Returns false
+	Scan() chunkenc.ValueType
+	// Finds the oldest value at or after the provided time. Returns chunkenc.ValNone
 	// if either the chunk contains no value at or after the provided time,
 	// or an error has occurred.
-	FindAtOrAfter(model.Time) bool
+	FindAtOrAfter(model.Time) chunkenc.ValueType
 	// Returns the last value scanned (by the scan method) or found (by one
 	// of the find... methods). It returns model.ZeroSamplePair before any of
 	// those methods were called.
@@ -105,12 +106,12 @@ func (c *Chunk) Samples(from, through model.Time) ([]model.SamplePair, error) {
 // range from an Iterator.
 func rangeValues(it Iterator, oldestInclusive, newestInclusive model.Time) ([]model.SamplePair, error) {
 	result := []model.SamplePair{}
-	if !it.FindAtOrAfter(oldestInclusive) {
+	if it.FindAtOrAfter(oldestInclusive) == chunkenc.ValNone {
 		return result, it.Err()
 	}
 	for !it.Value().Timestamp.After(newestInclusive) {
 		result = append(result, it.Value())
-		if !it.Scan() {
+		if it.Scan() == chunkenc.ValNone {
 			break
 		}
 	}

@@ -10,6 +10,7 @@ import (
 	"sort"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
 	"github.com/grafana/mimir/pkg/storage/chunk"
@@ -34,7 +35,7 @@ func NewChunkMergeIterator(cs []chunk.Chunk, _, _ model.Time) chunkenc.Iterator 
 	}
 
 	for _, iter := range c.its {
-		if iter.Next() {
+		if iter.Next() == chunkenc.ValFloat {
 			c.h = append(c.h, iter)
 			continue
 		}
@@ -78,18 +79,18 @@ outer:
 	return its
 }
 
-func (c *chunkMergeIterator) Seek(t int64) bool {
+func (c *chunkMergeIterator) Seek(t int64) chunkenc.ValueType {
 	c.h = c.h[:0]
 
 	for _, iter := range c.its {
-		if iter.Seek(t) {
+		if iter.Seek(t) == chunkenc.ValFloat {
 			c.h = append(c.h, iter)
 			continue
 		}
 
 		if err := iter.Err(); err != nil {
 			c.currErr = err
-			return false
+			return chunkenc.ValNone
 		}
 	}
 
@@ -97,22 +98,22 @@ func (c *chunkMergeIterator) Seek(t int64) bool {
 
 	if len(c.h) > 0 {
 		c.currTime, c.currValue = c.h[0].At()
-		return true
+		return chunkenc.ValFloat
 	}
 
-	return false
+	return chunkenc.ValNone
 }
 
-func (c *chunkMergeIterator) Next() bool {
+func (c *chunkMergeIterator) Next() chunkenc.ValueType {
 	if len(c.h) == 0 {
-		return false
+		return chunkenc.ValNone
 	}
 
 	lastTime := c.currTime
 	for c.currTime == lastTime && len(c.h) > 0 {
 		c.currTime, c.currValue = c.h[0].At()
 
-		if c.h[0].Next() {
+		if c.h[0].Next() == chunkenc.ValFloat {
 			heap.Fix(&c.h, 0)
 			continue
 		}
@@ -120,15 +121,32 @@ func (c *chunkMergeIterator) Next() bool {
 		iter := heap.Pop(&c.h).(chunkenc.Iterator)
 		if err := iter.Err(); err != nil {
 			c.currErr = err
-			return false
+			return chunkenc.ValNone
 		}
 	}
 
-	return c.currTime != lastTime
+	if c.currTime != lastTime {
+		return chunkenc.ValFloat
+	}
+	return chunkenc.ValNone
 }
 
 func (c *chunkMergeIterator) At() (t int64, v float64) {
 	return c.currTime, c.currValue
+}
+
+// Histogram support isn't complete yet, so this function just returns (0, nil).
+func (c *chunkMergeIterator) AtHistogram() (int64, *histogram.Histogram) {
+	return 0, nil
+}
+
+// Histogram suppport isn't complete yet, so this function just returns (0, nil).
+func (c *chunkMergeIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+	return 0, nil
+}
+
+func (c *chunkMergeIterator) AtT() int64 {
+	return c.currTime
 }
 
 func (c *chunkMergeIterator) Err() error {
@@ -182,22 +200,25 @@ func newNonOverlappingIterator(chunks []*chunkIterator) *nonOverlappingIterator 
 	}
 }
 
-func (it *nonOverlappingIterator) Seek(t int64) bool {
+func (it *nonOverlappingIterator) Seek(t int64) chunkenc.ValueType {
 	for ; it.curr < len(it.chunks); it.curr++ {
-		if it.chunks[it.curr].Seek(t) {
-			return true
+		if v := it.chunks[it.curr].Seek(t); v != chunkenc.ValNone {
+			return v
 		}
 	}
 
-	return false
+	return chunkenc.ValNone
 }
 
-func (it *nonOverlappingIterator) Next() bool {
-	for it.curr < len(it.chunks) && !it.chunks[it.curr].Next() {
+func (it *nonOverlappingIterator) Next() chunkenc.ValueType {
+	for it.curr < len(it.chunks) && it.chunks[it.curr].Next() == chunkenc.ValNone {
 		it.curr++
 	}
 
-	return it.curr < len(it.chunks)
+	if it.curr >= len(it.chunks) {
+		return chunkenc.ValNone
+	}
+	return chunkenc.ValFloat
 }
 
 func (it *nonOverlappingIterator) AtTime() int64 {
@@ -206,6 +227,18 @@ func (it *nonOverlappingIterator) AtTime() int64 {
 
 func (it *nonOverlappingIterator) At() (int64, float64) {
 	return it.chunks[it.curr].At()
+}
+
+func (it *nonOverlappingIterator) AtHistogram() (int64, *histogram.Histogram) {
+	return it.chunks[it.curr].AtHistogram()
+}
+
+func (it *nonOverlappingIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+	return it.chunks[it.curr].AtFloatHistogram()
+}
+
+func (it *nonOverlappingIterator) AtT() int64 {
+	return it.chunks[it.curr].AtT()
 }
 
 func (it *nonOverlappingIterator) Err() error {

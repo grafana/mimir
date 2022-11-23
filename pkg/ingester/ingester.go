@@ -1343,7 +1343,7 @@ func (i *Ingester) queryStreamSamples(ctx context.Context, db *userTSDB, from, t
 		}
 
 		it := series.Iterator()
-		for it.Next() {
+		for it.Next() == chunkenc.ValFloat {
 			t, v := it.At()
 			ts.Samples = append(ts.Samples, mimirpb.Sample{Value: v, TimestampMs: t})
 		}

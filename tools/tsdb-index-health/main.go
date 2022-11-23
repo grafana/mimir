@@ -18,6 +18,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
 
@@ -338,7 +339,7 @@ func verifyChunks(l log.Logger, cr *chunks.Reader, lset labels.Labels, chks []ch
 		prevTs := int64(-1)
 
 		it := ch.Iterator(nil)
-		for it.Err() == nil && it.Next() {
+		for it.Err() == nil && it.Next() == chunkenc.ValFloat {
 			samples++
 			ts, _ := it.At()
 

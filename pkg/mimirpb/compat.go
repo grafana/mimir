@@ -157,9 +157,14 @@ func FromExemplarProtosToExemplars(es []Exemplar) []exemplar.Exemplar {
 	return result
 }
 
-// FromPointsToSamples casts []promql.Point to []Sample. It uses unsafe.
+// FromPointsToSamples converts []promql.Point to []Sample.
 func FromPointsToSamples(points []promql.Point) []Sample {
-	return *(*[]Sample)(unsafe.Pointer(&points))
+	samples := make([]Sample, len(points))
+	for i := 0; i < len(points); i++ {
+		samples[i].TimestampMs = points[i].T
+		samples[i].Value = points[i].V
+	}
+	return samples
 }
 
 type byLabel []LabelAdapter
