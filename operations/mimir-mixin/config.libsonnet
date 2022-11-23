@@ -118,6 +118,7 @@
       mimir_backend: instanceMatcher(componentNameRegexp.mimir_backend),
 
       // The following are instance matchers used to select all components in a given "path".
+      // These matchers CAN match both instances deployed in "microservices" and "read-write" mode.
       local componentsGroupMatcher = function(components)
         instanceMatcher('(%s)' % std.join('|', std.map(function(name) componentNameRegexp[name], components))),
 
@@ -135,6 +136,7 @@
       ingester: componentNameRegexp.ingester,
 
       // The following are container matchers used to select all components in a given "path".
+      // These matchers CAN match both instances deployed in "microservices" and "read-write" mode.
       local componentsGroupMatcher = function(components) std.join('|', std.map(function(name) componentNameRegexp[name], components)),
 
       write: componentsGroupMatcher(componentGroups.write),
