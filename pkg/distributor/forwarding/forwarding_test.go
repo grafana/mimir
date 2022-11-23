@@ -223,7 +223,7 @@ func TestForwardingOmitOldSamples(t *testing.T) {
 			expectedMetrics: `
 			# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 			# TYPE cortex_discarded_samples_total counter
-			cortex_discarded_samples_total{custom_user_label="team",reason="forwarded-sample-too-old",user="user"} 3
+			cortex_discarded_samples_total{custom_user_label="",reason="forwarded-sample-too-old",user="user"} 3
 `,
 		}, {
 			name: "split one sample slice in the middle",
