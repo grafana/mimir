@@ -622,14 +622,14 @@ func blockSeries(
 		)
 
 		// Keep track of postings lookup stats in a dedicated stats structure that doesn't require lock
-		// and then merge it once done. We do it to avoid the lock overhead because loadSeriesForTime()
+		// and then merge it once done. We do it to avoid the lock overhead because unsafeLoadSeriesForTime()
 		// may be called many times.
 		defer func() {
 			indexStats = indexStats.merge(postingsStats)
 		}()
 
 		for _, id := range ps {
-			ok, err := loadedSeries.loadSeriesForTime(id, &symbolizedLset, &chks, skipChunks, minTime, maxTime, postingsStats)
+			ok, err := loadedSeries.unsafeLoadSeriesForTime(id, &symbolizedLset, &chks, skipChunks, minTime, maxTime, postingsStats)
 			if err != nil {
 				lookupErr = errors.Wrap(err, "read series")
 				return
