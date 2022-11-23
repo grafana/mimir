@@ -92,7 +92,8 @@
 
     // Name selectors for different application instances, using the "per_instance_label".
     instance_names: {
-      local helmCompatibleMatcher = function(regexp) '(.*-mimir-)?%s' % regexp,
+      // Wrap the regexp into an Helm compatible matcher if the deployment type is "kubernetes".
+      local helmCompatibleMatcher = function(regexp) if $._config.deployment_type == 'kubernetes' then '(.*-mimir-)?%s' % regexp else regexp,
       local instanceMatcher = function(regexp) helmCompatibleMatcher('%s.*' % regexp),
 
       // Microservices deployment mode. The following matchers MUST match only
