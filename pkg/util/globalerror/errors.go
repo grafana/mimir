@@ -65,8 +65,10 @@ const (
 
 	DistributorMaxWriteMessageSize ID = "distributor-max-write-message-size"
 
-	HistogramDifferentNumberSpansBuckets ID = "histogram-different-number-spans-buckets"
-	HistogramSpanNegativeOffset          ID = "histogram-span-negative-offset"
+	HistogramSpansBucketsMismatch ID = "histogram-spans-buckets-mismatch"
+	HistogramSpanNegativeOffset   ID = "histogram-span-negative-offset"
+	HistogramNegativeBucketCount  ID = "histogram-negative-bucket-count"
+	HistogramCountNotBigEnough    ID = "histogram-count-not-big-enough"
 )
 
 // Message returns the provided msg, appending the error id.
