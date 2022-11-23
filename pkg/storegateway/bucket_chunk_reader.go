@@ -22,6 +22,7 @@ import (
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
+	"github.com/grafana/mimir/pkg/util/pool"
 )
 
 type bucketChunkReader struct {
@@ -34,24 +35,21 @@ type bucketChunkReader struct {
 	// After chunks are loaded, mutex is no longer used.
 	mtx        sync.Mutex
 	stats      *queryStats
-	chunkBytes []*[]byte // Byte slice to return to the chunk pool on close.
+	chunkBytes *pool.BatchBytes
 }
 
-func newBucketChunkReader(ctx context.Context, block *bucketBlock) *bucketChunkReader {
+func newBucketChunkReader(ctx context.Context, block *bucketBlock, chunkBytes *pool.BatchBytes) *bucketChunkReader {
 	return &bucketChunkReader{
-		ctx:    ctx,
-		block:  block,
-		stats:  &queryStats{},
-		toLoad: make([][]loadIdx, len(block.chunkObjs)),
+		ctx:        ctx,
+		block:      block,
+		stats:      &queryStats{},
+		toLoad:     make([][]loadIdx, len(block.chunkObjs)),
+		chunkBytes: chunkBytes,
 	}
 }
 
 func (r *bucketChunkReader) Close() error {
 	r.block.pendingReaders.Done()
-
-	for _, b := range r.chunkBytes {
-		r.block.chunkPool.Put(b)
-	}
 	return nil
 }
 
@@ -213,18 +211,12 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, a
 // save saves a copy of b's payload to a memory pool of its own and returns a new byte slice referencing said copy.
 // Returned slice becomes invalid once r.block.chunkPool.Put() is called.
 func (r *bucketChunkReader) save(b []byte) ([]byte, error) {
-	// Ensure we never grow slab beyond original capacity.
-	if len(r.chunkBytes) == 0 ||
-		cap(*r.chunkBytes[len(r.chunkBytes)-1])-len(*r.chunkBytes[len(r.chunkBytes)-1]) < len(b) {
-		s, err := r.block.chunkPool.Get(len(b))
-		if err != nil {
-			return nil, errors.Wrap(err, "allocate chunk bytes")
-		}
-		r.chunkBytes = append(r.chunkBytes, s)
+	dst, err := r.chunkBytes.Get(len(b))
+	if err != nil {
+		return nil, err
 	}
-	slab := r.chunkBytes[len(r.chunkBytes)-1]
-	*slab = append(*slab, b...)
-	return (*slab)[len(*slab)-len(b):], nil
+	copy(dst, b)
+	return dst, nil
 }
 
 type loadIdx struct {

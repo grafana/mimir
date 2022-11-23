@@ -878,6 +878,8 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 	if s.debugLogging {
 		debugFoundBlockSetOverview(s.logger, req.MinTime, req.MaxTime, req.MaxResolutionWindow, blocks)
 	}
+	chunkBytes := &pool.BatchBytes{Delegate: s.chunkPool}
+	defer chunkBytes.Release()
 
 	for _, b := range blocks {
 		b := b
@@ -889,7 +891,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		// We must keep the readers open until all their data has been sent.
 		indexr := b.indexReader()
 		if !req.SkipChunks {
-			chunkr = b.chunkReader(gctx)
+			chunkr = b.chunkReader(gctx, chunkBytes)
 			defer runutil.CloseWithLogOnErr(s.logger, chunkr, "series block")
 		}
 
@@ -1637,9 +1639,9 @@ func (b *bucketBlock) indexReader() *bucketIndexReader {
 	return newBucketIndexReader(b)
 }
 
-func (b *bucketBlock) chunkReader(ctx context.Context) *bucketChunkReader {
+func (b *bucketBlock) chunkReader(ctx context.Context, chunkBytes *pool.BatchBytes) *bucketChunkReader {
 	b.pendingReaders.Add(1)
-	return newBucketChunkReader(ctx, b)
+	return newBucketChunkReader(ctx, b, chunkBytes)
 }
 
 // matchLabels verifies whether the block matches the given matchers.
