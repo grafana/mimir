@@ -327,17 +327,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
       fill: 0,
     },
 
-  // The provided containerName should be a regexp from $._config.container_names.
-  containerGoHeapInUsePanel(containerName)::
+  // The provided instanceName should be a regexp from $._config.instance_names, while
+  // the provided containerName should be a regexp from $._config.container_names.
+  containerGoHeapInUsePanel(instanceName, containerName)::
     $.panel('Memory (go heap inuse)') +
-    $.queryPanel(
-      'sum by(%(instanceLabel)s) (go_memstats_heap_inuse_bytes{%(namespaceMatcher)s,container=~"%(containerName)s"})' % {
-        instanceLabel: $._config.per_instance_label,
-        namespaceMatcher: $.namespaceMatcher(),
-        containerName: containerName,
-      },
-      '{{%s}}' % $._config.per_instance_label
-    ) +
+    $.queryPanel($.resourceUtilizationQuery('memory_go_heap', instanceName, containerName), '{{%s}}' % $._config.per_instance_label) +
     {
       yaxes: $.yaxes('bytes'),
       tooltip: { sort: 2 },  // Sort descending.

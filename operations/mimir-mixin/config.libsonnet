@@ -202,6 +202,7 @@
         memory_rss_usage: 'max by(%(instanceLabel)s) (container_memory_rss{%(namespace)s,container=~"%(containerName)s"})',
         memory_rss_limit: 'min(container_spec_memory_limit_bytes{%(namespace)s,container=~"%(containerName)s"} > 0)',
         memory_rss_request: 'min(kube_pod_container_resource_requests{%(namespace)s,container=~"%(containerName)s",resource="memory"})',
+        memory_go_heap_usage: 'sum by(%(instanceLabel)s) (go_memstats_heap_inuse_bytes{%(namespace)s,container=~"%(containerName)s"})',
         network: 'sum by(%(instanceLabel)s) (rate(%(metric)s{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}[$__rate_interval]))',
         disk_writes:
           |||
@@ -257,6 +258,7 @@
             node_memory_Active_anon_bytes{%(namespace)s,%(instanceLabel)s=~".*%(instanceName)s.*"}
             + node_memory_SwapCached_bytes{%(namespace)s,%(instanceLabel)s=~".*%(instanceName)s.*"}
           |||,
+        memory_go_heap_usage: 'sum by(%(instanceLabel)s) (go_memstats_heap_inuse_bytes{%(namespace)s,%(instanceLabel)s=~".*%(instanceName)s.*"})',
         network: 'sum by(%(instanceLabel)s) (rate(%(metric)s{%(namespaceMatcher)s,%(instanceLabel)s=~".*%(instanceName)s.*"}[$__rate_interval]))',
         disk_writes:
           |||

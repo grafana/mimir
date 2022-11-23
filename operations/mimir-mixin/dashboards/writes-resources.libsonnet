@@ -19,7 +19,7 @@ local filename = 'mimir-writes-resources.json';
         { yaxes: $.yaxes('bytes') },
       )
       .addPanel(
-        $.containerGoHeapInUsePanel($._config.container_names.write) +
+        $.containerGoHeapInUsePanel($._config.instance_names.write, $._config.container_names.write) +
         $.stack,
       )
     )
@@ -33,7 +33,7 @@ local filename = 'mimir-writes-resources.json';
         $.containerMemoryWorkingSetPanel($._config.instance_names.gateway, $._config.container_names.gateway),
       )
       .addPanel(
-        $.containerGoHeapInUsePanel($._config.container_names.gateway),
+        $.containerGoHeapInUsePanel($._config.instance_names.gateway, $._config.container_names.gateway),
       )
     )
     .addRow(
@@ -45,7 +45,7 @@ local filename = 'mimir-writes-resources.json';
         $.containerMemoryWorkingSetPanel($._config.instance_names.distributor, $._config.container_names.distributor),
       )
       .addPanel(
-        $.containerGoHeapInUsePanel($._config.container_names.distributor),
+        $.containerGoHeapInUsePanel($._config.instance_names.distributor, $._config.container_names.distributor),
       )
     )
     .addRow(
@@ -74,7 +74,7 @@ local filename = 'mimir-writes-resources.json';
         $.containerMemoryWorkingSetPanel($._config.instance_names.ingester, $._config.container_names.ingester),
       )
       .addPanel(
-        $.containerGoHeapInUsePanel($._config.container_names.ingester),
+        $.containerGoHeapInUsePanel($._config.instance_names.ingester, $._config.container_names.ingester),
       )
     )
     .addRow(
