@@ -132,7 +132,8 @@ func (p *BucketedBytes) Put(b *[]byte) {
 
 // BatchBytes uses a Bytes pool to hand out byte slices, but they don't need to be
 // individually put back into the pool. Instead, they can be all released at once.
-// Additionally, BatchBytes combines results from the other two
+// Additionally, BatchBytes combines results from the other two.
+// BatchBytes is concurrency safe.
 type BatchBytes struct {
 	Delegate Bytes
 
