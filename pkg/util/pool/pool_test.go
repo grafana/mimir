@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 )
@@ -128,4 +129,54 @@ func TestRacePutGet(t *testing.T) {
 		require.NoError(t, err)
 	default:
 	}
+}
+
+func TestBatchBytes(t *testing.T) {
+	t.Run("byte slices do not overlap when fit on the same slab", func(t *testing.T) {
+		bytesPool, err := NewBucketedBytes(10, 100, 2, 1000)
+		require.NoError(t, err)
+		batchBytes := BatchBytes{Delegate: bytesPool}
+		bytesA, err := batchBytes.Get(5)
+		assert.NoError(t, err)
+		assert.Len(t, bytesA, 5)
+		assert.Equal(t, 5, cap(bytesA))
+		copy(bytesA, "12345")
+
+		bytesB, err := batchBytes.Get(5)
+		assert.NoError(t, err)
+		assert.Len(t, bytesB, 5)
+		assert.Equal(t, 5, cap(bytesB))
+		copy(bytesB, "67890")
+
+		assert.Equal(t, 10, int(bytesPool.usedTotal))
+		assert.Equal(t, "12345", string(bytesA))
+		assert.Equal(t, "67890", string(bytesB))
+
+		batchBytes.Release()
+		assert.Zero(t, int(bytesPool.usedTotal))
+	})
+
+	t.Run("a new slab is created when the new slice doesn't fit on an existing one", func(t *testing.T) {
+		bytesPool, err := NewBucketedBytes(10, 100, 2, 1000)
+		require.NoError(t, err)
+		batchBytes := BatchBytes{Delegate: bytesPool}
+		bytesA, err := batchBytes.Get(5)
+		assert.NoError(t, err)
+		assert.Len(t, bytesA, 5)
+		assert.Equal(t, 5, cap(bytesA))
+		copy(bytesA, "12345")
+
+		bytesB, err := batchBytes.Get(6)
+		assert.NoError(t, err)
+		assert.Len(t, bytesB, 6)
+		assert.Equal(t, 6, cap(bytesB))
+		copy(bytesB, "67890-")
+
+		assert.Equal(t, 20, int(bytesPool.usedTotal))
+		assert.Equal(t, "12345", string(bytesA))
+		assert.Equal(t, "67890-", string(bytesB))
+
+		batchBytes.Release()
+		assert.Zero(t, int(bytesPool.usedTotal))
+	})
 }
