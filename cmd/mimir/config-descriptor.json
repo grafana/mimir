@@ -3069,7 +3069,7 @@
           "required": false,
           "desc": "User configured label value to be added to specific metrics",
           "fieldValue": null,
-          "fieldDefaultValue": "team",
+          "fieldDefaultValue": "",
           "fieldFlag": "validation.custom-user-label-value",
           "fieldType": "string"
         },
