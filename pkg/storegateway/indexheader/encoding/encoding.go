@@ -36,11 +36,26 @@ type Reader interface {
 	Read(int) []byte
 	Peek(int) []byte
 	Len() int
+
+	// TODO: Seems like we need a "Remaining()" method here because Decbuf
+	//  expects to be able to do `d.B = d.B[n:]` when it consumes parts of the
+	//  underlying byte slice.
+
+	// TODO: Add Seek method here to allow us to skip bytes without
+	//  needing to read them or allocate? Easy to implement for BufReader
+	//  and supported by bufio.Reader used in FileReader via Discard()
 }
 
 type BufReader struct {
 	initial []byte
 	b       []byte
+}
+
+func NewBufReader(bs ByteSlice) *BufReader {
+	b := bs.Range(0, bs.Len())
+	r := &BufReader{initial: b}
+	r.Reset()
+	return r
 }
 
 func (b *BufReader) Reset() {
@@ -103,7 +118,7 @@ func (f *FileReader) Reset() {
 }
 
 func (f *FileReader) ResetAt(off int) error {
-	if _, err := f.file.Seek(int64(f.base), 0); err != nil {
+	if _, err := f.file.Seek(int64(off), 0); err != nil {
 		fmt.Printf("seek: %v\n", err)
 	}
 	f.buf.Reset(f.file)
@@ -130,6 +145,10 @@ func (f *FileReader) Read(n int) []byte {
 }
 
 func (f *FileReader) Len() int {
+	// TODO: BufReader returns whatever is left in the backing byte slice
+	//  here while _we_ only ever return the original size of the file (instead
+	//  of how much of the file we haven't yet read). Is this a problem? Seems
+	//  like it will be.
 	return f.length
 }
 
@@ -141,13 +160,6 @@ type Decbuf struct {
 	//	B []byte
 	r Reader
 	E error
-}
-
-func NewBufReader(bs ByteSlice) *BufReader {
-	b := bs.Range(0, bs.Len())
-	r := &BufReader{initial: b}
-	r.Reset()
-	return r
 }
 
 func NewDecbufAt(bs ByteSlice, off int, castagnoliTable *crc32.Table) Decbuf {
