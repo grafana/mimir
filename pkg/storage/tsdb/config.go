@@ -52,7 +52,7 @@ const (
 	EstimatedMaxChunkSize = 16000
 
 	// ChunkPoolDefaultMinBucketSize is the default minimum bucket size (bytes) of the chunk pool.
-	ChunkPoolDefaultMinBucketSize = EstimatedMaxChunkSize
+	ChunkPoolDefaultMinBucketSize = 128
 
 	// ChunkPoolDefaultMaxBucketSize is the default maximum bucket size (bytes) of the chunk pool.
 	ChunkPoolDefaultMaxBucketSize = 50e6

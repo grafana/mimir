@@ -2973,7 +2973,7 @@ bucket_store:
 
   # (advanced) Size - in bytes - of the smallest chunks pool bucket.
   # CLI flag: -blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes
-  [chunk_pool_min_bucket_size_bytes: <int> | default = 16000]
+  [chunk_pool_min_bucket_size_bytes: <int> | default = 128]
 
   # (advanced) Size - in bytes - of the largest chunks pool bucket.
   # CLI flag: -blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes
