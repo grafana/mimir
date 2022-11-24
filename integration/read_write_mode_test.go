@@ -23,30 +23,7 @@ func TestReadWriteModeQuerying(t *testing.T) {
 	require.NoError(t, err)
 	defer s.Close()
 
-	minio := e2edb.NewMinio(9000, mimirBucketName)
-	require.NoError(t, s.StartAndWaitReady(minio))
-
-	flags := mergeFlags(
-		CommonStorageBackendFlags(),
-		map[string]string{
-			"-memberlist.join": "mimir-backend-1",
-		},
-	)
-
-	readInstance := e2emimir.NewReadInstance("mimir-read-1", flags)
-	writeInstance := e2emimir.NewWriteInstance("mimir-write-1", flags)
-	backendInstance := e2emimir.NewBackendInstance("mimir-backend-1", flags)
-	require.NoError(t, s.StartAndWaitReady(readInstance, writeInstance, backendInstance))
-
-	c, err := e2emimir.NewClient(writeInstance.HTTPEndpoint(), readInstance.HTTPEndpoint(), "", "", "user-1")
-	require.NoError(t, err)
-
-	// Wait for the ingester to join the ring and become active - this prevents "empty ring" errors later when we try to query data.
-	require.NoError(t, readInstance.WaitSumMetricsWithOptions(
-		e2e.Equals(1),
-		[]string{"cortex_ring_members"},
-		e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"), labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE")),
-	))
+	c := startReadWriteModeCluster(t, s)
 
 	// Push some data to the cluster.
 	now := time.Now()
@@ -75,4 +52,33 @@ func TestReadWriteModeQuerying(t *testing.T) {
 	labelNames, err := c.LabelNames(prometheusMinTime, prometheusMaxTime)
 	require.NoError(t, err)
 	require.Equal(t, []string{"__name__", "foo"}, labelNames)
+}
+
+func startReadWriteModeCluster(t *testing.T, s *e2e.Scenario) *e2emimir.Client {
+	minio := e2edb.NewMinio(9000, mimirBucketName)
+	require.NoError(t, s.StartAndWaitReady(minio))
+
+	flags := mergeFlags(
+		CommonStorageBackendFlags(),
+		map[string]string{
+			"-memberlist.join": "mimir-backend-1",
+		},
+	)
+
+	readInstance := e2emimir.NewReadInstance("mimir-read-1", flags)
+	writeInstance := e2emimir.NewWriteInstance("mimir-write-1", flags)
+	backendInstance := e2emimir.NewBackendInstance("mimir-backend-1", flags)
+	require.NoError(t, s.StartAndWaitReady(readInstance, writeInstance, backendInstance))
+
+	c, err := e2emimir.NewClient(writeInstance.HTTPEndpoint(), readInstance.HTTPEndpoint(), "", "", "user-1")
+	require.NoError(t, err)
+
+	// Wait for the ingester to join the ring and become active - this prevents "empty ring" errors later when we try to query data.
+	require.NoError(t, readInstance.WaitSumMetricsWithOptions(
+		e2e.Equals(1),
+		[]string{"cortex_ring_members"},
+		e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"), labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE")),
+	))
+
+	return c
 }
