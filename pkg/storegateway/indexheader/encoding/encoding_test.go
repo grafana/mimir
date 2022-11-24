@@ -23,12 +23,12 @@ func TestBe32(t *testing.T) {
 			enc.PutBE32(c)
 
 			dec := NewDecbufRaw(realByteSlice(enc.Get()))
-			require.Equal(t, dec.Len(), 4)
+			require.Equal(t, 4, dec.Len())
 
 			actual := dec.Be32()
 			require.NoError(t, dec.Err())
-			require.Equal(t, actual, c)
-			require.Equal(t, dec.Len(), 0)
+			require.Equal(t, c, actual)
+			require.Equal(t, 0, dec.Len())
 		})
 	}
 }
@@ -46,12 +46,12 @@ func TestBe32int(t *testing.T) {
 			enc.PutBE32int(c)
 
 			dec := NewDecbufRaw(realByteSlice(enc.Get()))
-			require.Equal(t, dec.Len(), 4)
+			require.Equal(t, 4, dec.Len())
 
 			actual := dec.Be32int()
 			require.NoError(t, dec.Err())
-			require.Equal(t, actual, c)
-			require.Equal(t, dec.Len(), 0)
+			require.Equal(t, c, actual)
+			require.Equal(t, 0, dec.Len())
 		})
 	}
 }
@@ -64,16 +64,16 @@ func TestSkip(t *testing.T) {
 	enc.PutBE32(expected)
 
 	dec := NewDecbufRaw(realByteSlice(enc.Get()))
-	require.Equal(t, dec.Len(), 8)
+	require.Equal(t, 8, dec.Len())
 
 	dec.Skip(4)
 	require.NoError(t, dec.Err())
-	require.Equal(t, dec.Len(), 4)
+	require.Equal(t, 4, dec.Len())
 
 	actual := dec.Be32()
 	require.NoError(t, dec.Err())
-	require.Equal(t, actual, expected)
-	require.Equal(t, dec.Len(), 0)
+	require.Equal(t, expected, actual)
+	require.Equal(t, 0, dec.Len())
 }
 
 func TestUvarint(t *testing.T) {
@@ -94,12 +94,12 @@ func TestUvarint(t *testing.T) {
 			enc.PutUvarint(c.value)
 
 			dec := NewDecbufRaw(realByteSlice(enc.Get()))
-			require.Equal(t, dec.Len(), c.bytes)
+			require.Equal(t, c.bytes, dec.Len())
 
 			actual := dec.Uvarint()
 			require.NoError(t, dec.Err())
-			require.Equal(t, actual, c.value)
-			require.Equal(t, dec.Len(), 0)
+			require.Equal(t, c.value, actual)
+			require.Equal(t, 0, dec.Len())
 		})
 	}
 }
@@ -123,12 +123,12 @@ func TestUvarint64(t *testing.T) {
 			enc.PutUvarint64(c.value)
 
 			dec := NewDecbufRaw(realByteSlice(enc.Get()))
-			require.Equal(t, dec.Len(), c.bytes)
+			require.Equal(t, c.bytes, dec.Len())
 
 			actual := dec.Uvarint64()
 			require.NoError(t, dec.Err())
-			require.Equal(t, actual, c.value)
-			require.Equal(t, dec.Len(), 0)
+			require.Equal(t, c.value, actual)
+			require.Equal(t, 0, dec.Len())
 		})
 	}
 }
@@ -155,8 +155,8 @@ func TestUvarintBytes(t *testing.T) {
 
 			actual := dec.UvarintBytes()
 			require.NoError(t, dec.Err())
-			require.Equal(t, actual, c.value)
-			require.Equal(t, dec.Len(), 0)
+			require.Equal(t, c.value, actual)
+			require.Equal(t, 0, dec.Len())
 		})
 	}
 }
@@ -183,8 +183,8 @@ func TestUvarintString(t *testing.T) {
 
 			actual := dec.UvarintStr()
 			require.NoError(t, dec.Err())
-			require.Equal(t, actual, c.value)
-			require.Equal(t, dec.Len(), 0)
+			require.Equal(t, c.value, actual)
+			require.Equal(t, 0, dec.Len())
 		})
 	}
 }
