@@ -3024,10 +3024,6 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.dir
   [dir: <string> | default = "./tsdb/"]
 
-  # (advanced) TSDB blocks range period.
-  # CLI flag: -blocks-storage.tsdb.block-ranges-period
-  [block_ranges_period: <list of durations> | default = 2h0m0s]
-
   # TSDB blocks retention in the ingester before a block is removed, relative to
   # the newest block written for the tenant. This should be larger than the
   # -blocks-storage.tsdb.block-ranges-period, -querier.query-store-after and
