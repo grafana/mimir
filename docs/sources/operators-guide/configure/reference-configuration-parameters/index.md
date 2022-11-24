@@ -1243,8 +1243,8 @@ The `ruler` block configures the ruler.
 
 # Comma-separated list of URL(s) of the Alertmanager(s) to send notifications
 # to. Each URL is treated as a separate group. Multiple Alertmanagers in HA per
-# group can be supported by using DNS service discovery format. Basic auth is
-# supported as part of the URL.
+# group can be supported by using DNS service discovery format, comprehensive of
+# the scheme. Basic auth is supported as part of the URL.
 # CLI flag: -ruler.alertmanager-url
 [alertmanager_url: <string> | default = ""]
 

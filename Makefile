@@ -54,6 +54,7 @@ JSONNET_FMT := jsonnetfmt
 # path to the mimir-mixin
 MIXIN_PATH := operations/mimir-mixin
 MIXIN_OUT_PATH := operations/mimir-mixin-compiled
+MIXIN_OUT_PATH_SUFFIXES := "" "-baremetal"
 
 # path to the mimir jsonnet manifests
 JSONNET_MANIFESTS_PATH := operations/mimir
@@ -407,15 +408,18 @@ dist: ## Generates binaries for a Mimir release.
 
 build-mixin: ## Generates the mimir mixin zip file.
 build-mixin: check-mixin-jb
-	# Empty the compiled mixin directories content, without removing the directories itself,
-	# so that Grafana can refresh re-build dashboards when using "make mixin-serve".
-	@mkdir -p $(MIXIN_OUT_PATH)
-	@find $(MIXIN_OUT_PATH) -type f -delete
-
-	@mixtool generate all --output-alerts $(MIXIN_OUT_PATH)/alerts.yaml --output-rules $(MIXIN_OUT_PATH)/rules.yaml --directory $(MIXIN_OUT_PATH)/dashboards ${MIXIN_PATH}/mixin-compiled.libsonnet
-	@./tools/check-rules.sh $(MIXIN_OUT_PATH)/rules.yaml 20 # If any rule group has more than 20 rules, fail. 20 is our default per-tenant limit in the ruler.
-	@cd $(MIXIN_OUT_PATH)/.. && zip -q -r mimir-mixin.zip $$(basename "$(MIXIN_OUT_PATH)")
-	@echo "The mixin has been compiled to $(MIXIN_OUT_PATH) and archived to $$(realpath --relative-to=$$(pwd) $(MIXIN_OUT_PATH)/../mimir-mixin.zip)"
+	@# Empty the compiled mixin directories content, without removing the directories itself,
+	@# so that Grafana can refresh re-build dashboards when using "make mixin-serve".
+	@# If any rule group has more than 20 rules, fail. 20 is our default per-tenant limit in the ruler.
+	@for suffix in $(MIXIN_OUT_PATH_SUFFIXES); do \
+		mkdir -p "$(MIXIN_OUT_PATH)$$suffix"; \
+		find "$(MIXIN_OUT_PATH)$$suffix" -type f -delete; \
+		mixtool generate all --output-alerts "$(MIXIN_OUT_PATH)$$suffix/alerts.yaml" --output-rules "$(MIXIN_OUT_PATH)$$suffix/rules.yaml" --directory "$(MIXIN_OUT_PATH)$$suffix/dashboards" "${MIXIN_PATH}/mixin-compiled$$suffix.libsonnet"; \
+		./tools/check-rules.sh "$(MIXIN_OUT_PATH)$$suffix/rules.yaml" 20 ; \
+		cd "$(MIXIN_OUT_PATH)$$suffix/.." && zip -q -r "mimir-mixin$$suffix.zip" $$(basename "$(MIXIN_OUT_PATH)$$suffix"); \
+		cd -; \
+		echo "The mixin has been compiled to $(MIXIN_OUT_PATH)$$suffix and archived to $$(realpath --relative-to=$$(pwd) $(MIXIN_OUT_PATH)$$suffix/../mimir-mixin$$suffix.zip)"; \
+	done
 
 check-mixin-tests: ## Test the mixin files.
 	@./operations/mimir-mixin-tests/run.sh || (echo "Mixin tests are failing. Please fix the reported issues. You can run mixin tests with 'make check-mixin-tests'" && false)
@@ -503,7 +507,9 @@ check-white-noise: clean-white-noise
 check-mixin: ## Build, format and check the mixin files.
 check-mixin: build-mixin format-mixin check-mixin-jb check-mixin-mixtool check-mixin-runbooks
 	@echo "Checking diff:"
-	@./tools/find-diff-or-untracked.sh $(MIXIN_PATH) $(MIXIN_OUT_PATH) || (echo "Please build and format mixin by running 'make build-mixin format-mixin'" && false)
+	@for suffix in $(MIXIN_OUT_PATH_SUFFIXES); do \
+		./tools/find-diff-or-untracked.sh $(MIXIN_PATH) "$(MIXIN_OUT_PATH)$$suffix" || (echo "Please build and format mixin by running 'make build-mixin format-mixin'" && false); \
+	done
 
 	@cd $(MIXIN_PATH) && \
 	jb install && \

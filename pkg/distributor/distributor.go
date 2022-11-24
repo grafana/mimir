@@ -143,6 +143,8 @@ type Distributor struct {
 	sampleValidationMetrics   *validation.SampleValidationMetrics
 	exemplarValidationMetrics *validation.ExemplarValidationMetrics
 	metadataValidationMetrics *validation.MetadataValidationMetrics
+
+	pushWithMiddlewares push.Func
 }
 
 // Config contains the configuration required to
@@ -424,6 +426,8 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	if d.forwarder != nil {
 		subservices = append(subservices, d.forwarder)
 	}
+
+	d.pushWithMiddlewares = d.GetPushFunc(nil)
 
 	subservices = append(subservices, d.ingesterPool, d.activeUsers)
 	d.subservices, err = services.NewManager(subservices...)
@@ -807,7 +811,7 @@ func (d *Distributor) prePushRelabelMiddleware(next push.Func) push.Func {
 
 		if len(removeTsIndexes) > 0 {
 			for _, removeTsIndex := range removeTsIndexes {
-				mimirpb.ReusePreallocTimeseries(req.Timeseries[removeTsIndex])
+				mimirpb.ReusePreallocTimeseries(&req.Timeseries[removeTsIndex])
 			}
 			req.Timeseries = util.RemoveSliceIndexes(req.Timeseries, removeTsIndexes)
 		}
@@ -897,7 +901,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 		}
 		if len(removeIndexes) > 0 {
 			for _, removeIndex := range removeIndexes {
-				mimirpb.ReusePreallocTimeseries(req.Timeseries[removeIndex])
+				mimirpb.ReusePreallocTimeseries(&req.Timeseries[removeIndex])
 			}
 			req.Timeseries = util.RemoveSliceIndexes(req.Timeseries, removeIndexes)
 			removeIndexes = removeIndexes[:0]
@@ -1120,7 +1124,7 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 	pushReq := push.NewParsedRequest(req)
 	pushReq.AddCleanup(func() { mimirpb.ReuseSlice(req.Timeseries) })
 
-	return d.GetPushFunc(nil)(ctx, pushReq)
+	return d.pushWithMiddlewares(ctx, pushReq)
 }
 
 // GetPushFunc returns push.Func that can be used by push handler.
@@ -1195,13 +1199,25 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 	}
 
 	keys := append(seriesKeys, metadataKeys...)
+	initialMetadataIndex := len(seriesKeys)
 
 	// we must not re-use buffers now until all DoBatch goroutines have finished,
 	// so set this flag false and pass cleanup() to DoBatch.
 	cleanupInDefer = false
 
 	err = ring.DoBatch(ctx, ring.WriteNoExtend, subRing, keys, func(ingester ring.InstanceDesc, indexes []int) error {
-		err := d.send(localCtx, ingester, req.Timeseries, req.Metadata, req.Source)
+		timeseries := make([]mimirpb.PreallocTimeseries, 0, len(indexes))
+		var metadata []*mimirpb.MetricMetadata
+
+		for _, i := range indexes {
+			if i >= initialMetadataIndex {
+				metadata = append(metadata, req.Metadata[i-initialMetadataIndex])
+			} else {
+				timeseries = append(timeseries, req.Timeseries[i])
+			}
+		}
+
+		err := d.send(localCtx, ingester, timeseries, metadata, req.Source)
 		if errors.Is(err, context.DeadlineExceeded) {
 			return httpgrpc.Errorf(500, "exceeded configured distributor remote timeout: %s", err.Error())
 		}

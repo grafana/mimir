@@ -62,7 +62,7 @@ func TestMimirClient_X(t *testing.T) {
 			expURLPath: "/prometheus/config/v1/rules/My%2FNamespace/%2Ffirst-char-slash",
 		},
 		{
-			test:       "special-characters-slash-first",
+			test:       "special-characters-slash-last",
 			namespace:  "My/Namespace",
 			name:       "last-char-slash/",
 			expURLPath: "/prometheus/config/v1/rules/My%2FNamespace/last-char-slash%2F",
@@ -74,7 +74,6 @@ func TestMimirClient_X(t *testing.T) {
 
 			req := <-requestCh
 			require.Equal(t, tc.expURLPath, req.URL.EscapedPath())
-
 		})
 	}
 

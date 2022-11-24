@@ -40,6 +40,7 @@ var (
 	errUnsupportedSignatureVersion = fmt.Errorf("unsupported signature version (supported values: %s)", strings.Join(supportedSignatureVersions, ", "))
 	errUnsupportedSSEType          = errors.New("unsupported S3 SSE type")
 	errInvalidSSEContext           = errors.New("invalid S3 SSE encryption context")
+	errInvalidEndpointPrefix       = errors.New("the endpoint must not prefixed with the bucket name")
 )
 
 // HTTPConfig stores the http.Transport configuration for the s3 minio client.
@@ -106,7 +107,12 @@ func (cfg *Config) Validate() error {
 	if !util.StringsContain(supportedSignatureVersions, cfg.SignatureVersion) {
 		return errUnsupportedSignatureVersion
 	}
-
+	if cfg.Endpoint != "" {
+		endpoint := strings.Split(cfg.Endpoint, ".")
+		if cfg.BucketName != "" && endpoint[0] != "" && endpoint[0] == cfg.BucketName {
+			return errInvalidEndpointPrefix
+		}
+	}
 	if err := cfg.SSE.Validate(); err != nil {
 		return err
 	}

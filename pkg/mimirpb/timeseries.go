@@ -289,12 +289,7 @@ func PreallocTimeseriesSliceFromPool() []PreallocTimeseries {
 // ReuseSlice puts the slice back into a sync.Pool for reuse.
 func ReuseSlice(ts []PreallocTimeseries) {
 	for i := range ts {
-		ReuseTimeseries(ts[i].TimeSeries)
-
-		if ts[i].yoloSlice != nil {
-			reuseYoloSlice(ts[i].yoloSlice)
-			ts[i].yoloSlice = nil
-		}
+		ReusePreallocTimeseries(&ts[i])
 	}
 
 	slicePool.Put(ts[:0]) //nolint:staticcheck //see comment on slicePool for more details
@@ -327,13 +322,14 @@ func ReuseTimeseries(ts *TimeSeries) {
 }
 
 // ReusePreallocTimeseries puts the timeseries and the yoloSlice back into their respective pools for re-use.
-func ReusePreallocTimeseries(ts PreallocTimeseries) {
+func ReusePreallocTimeseries(ts *PreallocTimeseries) {
 	if ts.TimeSeries != nil {
 		ReuseTimeseries(ts.TimeSeries)
 	}
 
 	if ts.yoloSlice != nil {
 		reuseYoloSlice(ts.yoloSlice)
+		ts.yoloSlice = nil
 	}
 }
 

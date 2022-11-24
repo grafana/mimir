@@ -129,3 +129,42 @@ func (p *BucketedBytes) Put(b *[]byte) {
 		p.usedTotal -= uint64(sz)
 	}
 }
+
+// BatchBytes uses a Bytes pool to hand out byte slices, but they don't need to be
+// individually put back into the pool. Instead, they can be all released at once.
+// Additionally, BatchBytes combines results from the other two.
+// BatchBytes is concurrency safe.
+type BatchBytes struct {
+	Delegate Bytes
+
+	mtx   sync.Mutex
+	slabs []*[]byte
+}
+
+func (b *BatchBytes) Release() {
+	b.mtx.Lock()
+	defer b.mtx.Unlock()
+
+	for _, slab := range b.slabs {
+		b.Delegate.Put(slab)
+	}
+	b.slabs = b.slabs[:0]
+}
+
+func (b *BatchBytes) Get(sz int) ([]byte, error) {
+	b.mtx.Lock()
+	defer b.mtx.Unlock()
+
+	if len(b.slabs) == 0 ||
+		// Ensure we never grow slab beyond original capacity.
+		cap(*b.slabs[len(b.slabs)-1])-len(*b.slabs[len(b.slabs)-1]) < sz {
+		s, err := b.Delegate.Get(sz)
+		if err != nil {
+			return nil, errors.Wrap(err, "allocate chunk bytes")
+		}
+		b.slabs = append(b.slabs, s)
+	}
+	slab := b.slabs[len(b.slabs)-1]
+	*slab = (*slab)[:len(*slab)+sz]
+	return (*slab)[len(*slab)-sz : len(*slab) : len(*slab)], nil
+}

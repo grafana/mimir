@@ -1,3 +1,5 @@
+local utils = import 'mixin-utils/utils.libsonnet';
+
 (import 'alerts-utils.libsonnet') {
   // simpleRegexpOpt produces a simple regexp that matches all strings in the input array.
   local simpleRegexpOpt(strings) =
@@ -10,7 +12,7 @@
   local groupStatefulSetByRolloutGroup(metricName) =
     'sum without(statefulset) (label_replace(%s, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))' % metricName,
 
-  groups+: [
+  local alertGroups = [
     {
       name: 'mimir_alerts',
       rules: [
@@ -32,12 +34,13 @@
           // Note if alert_aggregation_labels is "job", this will repeat the label. But
           // prometheus seems to tolerate that.
           expr: |||
-            100 * sum by (%(group_by)s, job, route) (rate(cortex_request_duration_seconds_count{status_code=~"5..",route!~"%(excluded_routes)s"}[1m]))
+            100 * sum by (%(group_by)s, %(job_label)s, route) (rate(cortex_request_duration_seconds_count{status_code=~"5..",route!~"%(excluded_routes)s"}[1m]))
               /
-            sum by (%(group_by)s, job, route) (rate(cortex_request_duration_seconds_count{route!~"%(excluded_routes)s"}[1m]))
+            sum by (%(group_by)s, %(job_label)s, route) (rate(cortex_request_duration_seconds_count{route!~"%(excluded_routes)s"}[1m]))
               > 1
           ||| % {
             group_by: $._config.alert_aggregation_labels,
+            job_label: $._config.per_job_label,
             excluded_routes: std.join('|', ['ready'] + $._config.alert_excluded_routes),
           },
           'for': '15m',
@@ -71,8 +74,8 @@
           },
           annotations: {
             message: |||
-              {{ $labels.job }} {{ $labels.route }} is experiencing {{ printf "%.2f" $value }}s 99th percentile latency.
-            |||,
+              {{ $labels.%(per_job_label)s }} {{ $labels.route }} is experiencing {{ printf "%%.2f" $value }}s 99th percentile latency.
+            ||| % $._config,
           },
         },
         {
@@ -95,8 +98,8 @@
         {
           alert: $.alertName('InconsistentRuntimeConfig'),
           expr: |||
-            count(count by(%s, job, sha256) (cortex_runtime_config_hash)) without(sha256) > 1
-          ||| % $._config.alert_aggregation_labels,
+            count(count by(%(alert_aggregation_labels)s, %(per_job_label)s, sha256) (cortex_runtime_config_hash)) without(sha256) > 1
+          ||| % $._config,
           'for': '1h',
           labels: {
             severity: 'critical',
@@ -120,37 +123,37 @@
           },
           annotations: {
             message: |||
-              {{ $labels.job }} failed to reload runtime config.
-            |||,
+              {{ $labels.%(per_job_label)s }} failed to reload runtime config.
+            ||| % $._config,
           },
         },
         {
           alert: $.alertName('FrontendQueriesStuck'),
           expr: |||
-            sum by (%s, job) (min_over_time(cortex_query_frontend_queue_length[1m])) > 0
-          ||| % $._config.alert_aggregation_labels,
+            sum by (%(alert_aggregation_labels)s, %(per_job_label)s) (min_over_time(cortex_query_frontend_queue_length[1m])) > 0
+          ||| % $._config,
           'for': '5m',  // We don't want to block for longer.
           labels: {
             severity: 'critical',
           },
           annotations: {
             message: |||
-              There are {{ $value }} queued up queries in %(alert_aggregation_variables)s {{ $labels.job }}.
+              There are {{ $value }} queued up queries in %(alert_aggregation_variables)s {{ $labels.%(per_job_label)s }}.
             ||| % $._config,
           },
         },
         {
           alert: $.alertName('SchedulerQueriesStuck'),
           expr: |||
-            sum by (%s, job) (min_over_time(cortex_query_scheduler_queue_length[1m])) > 0
-          ||| % $._config.alert_aggregation_labels,
+            sum by (%(alert_aggregation_labels)s, %(per_job_label)s) (min_over_time(cortex_query_scheduler_queue_length[1m])) > 0
+          ||| % $._config,
           'for': '7m',  // We don't want to block for longer.
           labels: {
             severity: 'critical',
           },
           annotations: {
             message: |||
-              There are {{ $value }} queued up queries in %(alert_aggregation_variables)s {{ $labels.job }}.
+              There are {{ $value }} queued up queries in %(alert_aggregation_variables)s {{ $labels.%(per_job_label)s }}.
             ||| % $._config,
           },
         },
@@ -175,8 +178,8 @@
         {
           alert: $.alertName('IngesterRestarts'),
           expr: |||
-            changes(process_start_time_seconds{job=~".+(cortex|ingester.*)"}[30m]) >= 2
-          |||,
+            changes(process_start_time_seconds{%s=~".+(cortex|ingester.*)"}[30m]) >= 2
+          ||| % $._config.per_job_label,
           labels: {
             // This alert is on a cause not symptom. A couple of ingesters restarts may be suspicious but
             // not necessarily an issue (eg. may happen because of the K8S node autoscaler), so we're
@@ -184,7 +187,7 @@
             severity: 'warning',
           },
           annotations: {
-            message: '{{ $labels.job }}/%(alert_instance_variable)s has restarted {{ printf "%%.2f" $value }} times in the last 30 mins.' % $._config,
+            message: '{{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s has restarted {{ printf "%%.2f" $value }} times in the last 30 mins.' % $._config,
           },
         },
         {
@@ -211,14 +214,14 @@
         {
           alert: $.alertName('MemoryMapAreasTooHigh'),
           expr: |||
-            process_memory_map_areas{job=~".+(cortex|ingester.*|store-gateway.*)"} / process_memory_map_areas_limit{job=~".+(cortex|ingester.*|store-gateway.*)"} > 0.8
-          |||,
+            process_memory_map_areas{%(per_job_label)s=~".+(cortex|ingester.*|store-gateway.*)"} / process_memory_map_areas_limit{%(per_job_label)s=~".+(cortex|ingester.*|store-gateway.*)"} > 0.8
+          ||| % $._config,
           'for': '5m',
           labels: {
             severity: 'critical',
           },
           annotations: {
-            message: '{{ $labels.job }}/%(alert_instance_variable)s has a number of mmap-ed areas close to the limit.' % $._config,
+            message: '{{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s has a number of mmap-ed areas close to the limit.' % $._config,
           },
         },
         {
@@ -299,7 +302,7 @@
           },
           annotations: {
             message: |||
-              Ingester {{ $labels.job }}/%(alert_instance_variable)s has reached {{ $value | humanizePercentage }} of its series limit.
+              Ingester {{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s has reached {{ $value | humanizePercentage }} of its series limit.
             ||| % $._config,
           },
         },
@@ -318,7 +321,7 @@
           },
           annotations: {
             message: |||
-              Ingester {{ $labels.job }}/%(alert_instance_variable)s has reached {{ $value | humanizePercentage }} of its series limit.
+              Ingester {{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s has reached {{ $value | humanizePercentage }} of its series limit.
             ||| % $._config,
           },
         },
@@ -337,7 +340,7 @@
           },
           annotations: {
             message: |||
-              Ingester {{ $labels.job }}/%(alert_instance_variable)s has reached {{ $value | humanizePercentage }} of its tenant limit.
+              Ingester {{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s has reached {{ $value | humanizePercentage }} of its tenant limit.
             ||| % $._config,
           },
         },
@@ -356,7 +359,7 @@
           },
           annotations: {
             message: |||
-              Ingester {{ $labels.job }}/%(alert_instance_variable)s has reached {{ $value | humanizePercentage }} of its tenant limit.
+              Ingester {{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s has reached {{ $value | humanizePercentage }} of its tenant limit.
             ||| % $._config,
           },
         },
@@ -372,7 +375,7 @@
           },
           annotations: {
             message: |||
-              %(product)s instance {{ $labels.job }}/%(alert_instance_variable)s has reached {{ $value | humanizePercentage }} of its TCP connections limit for {{ $labels.protocol }} protocol.
+              %(product)s instance {{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s has reached {{ $value | humanizePercentage }} of its TCP connections limit for {{ $labels.protocol }} protocol.
             ||| % $._config,
           },
         },
@@ -391,7 +394,7 @@
           },
           annotations: {
             message: |||
-              Distributor {{ $labels.job }}/%(alert_instance_variable)s has reached {{ $value | humanizePercentage }} of its inflight push request limit.
+              Distributor {{ $labels.%(per_job_label)s }}/%(alert_instance_variable)s has reached {{ $value | humanizePercentage }} of its inflight push request limit.
             ||| % $._config,
           },
         },
@@ -627,9 +630,9 @@
         {
           alert: $.alertName('RulerFailedRingCheck'),
           expr: |||
-            sum by (%s, job) (rate(cortex_ruler_ring_check_errors_total[1m]))
+            sum by (%(alert_aggregation_labels)s, %(per_job_label)s) (rate(cortex_ruler_ring_check_errors_total[1m]))
                > 0
-          ||| % $._config.alert_aggregation_labels,
+          ||| % $._config,
           'for': '5m',
           labels: {
             severity: 'critical',
@@ -668,8 +671,8 @@
           alert: $.alertName('GossipMembersMismatch'),
           expr:
             |||
-              avg by (%s) (memberlist_client_cluster_members_count) != sum by (%s) (up{job=~".+/%s"})
-            ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels, simpleRegexpOpt($._config.job_names.ring_members)],
+              avg by (%s) (memberlist_client_cluster_members_count) != sum by (%s) (up{%s=~".+/%s"})
+            ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels, $._config.per_job_label, simpleRegexpOpt($._config.job_names.ring_members)],
           'for': '15m',
           labels: {
             severity: 'warning',
@@ -724,4 +727,6 @@
       ],
     },
   ],
+
+  groups+: $.withRunbookURL('https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#%s', alertGroups),
 }

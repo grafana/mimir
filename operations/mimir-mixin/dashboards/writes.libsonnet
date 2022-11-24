@@ -149,7 +149,7 @@ local filename = 'mimir-writes.json';
               -
               (
                 sum(rate(cortex_distributor_forward_errors_total{%(distributorMatcher)s}[$__rate_interval]))
-                or 0 * sum(rate(cortex_distributor_forward_requests_total{%(distributorMatcher)s}[$__rate_interval]))
+                or vector(0)
               )
             ||| % {
               distributorMatcher: $.jobMatcher($._config.job_names.distributor),

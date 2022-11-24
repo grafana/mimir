@@ -116,6 +116,14 @@ The following command deletes the Alertmanager configuration in the Grafana Mimi
 mimirtool alertmanager delete
 ```
 
+#### Validate Alertmanager configuration
+
+The following command validates an Alertmanager configuration file. It does not load the configuration to the Alertmanager instance.
+
+```bash
+mimirtool alertmanager verify <config_file> [template_files...]
+```
+
 #### Alert verification
 
 The following command verifies if alerts in an Alertmanager cluster are deduplicated. This command is useful for verifying the correct configuration when transferring from Prometheus to Grafana Mimir alert evaluation.

@@ -17,7 +17,7 @@ local filename = 'mimir-slow-queries.json';
           targets: [
             {
               // Filter out the remote read endpoint.
-              expr: '{%s=~"$cluster",namespace=~"$namespace",name=~"query-frontend.*"} |= "query stats" != "/api/v1/read" | logfmt | user=~"${tenant_id}" | response_time > ${min_duration}' % $._config.per_cluster_label,
+              expr: '{%s=~"$cluster",%s=~"$namespace",name=~"query-frontend.*"} |= "query stats" != "/api/v1/read" | logfmt | user=~"${tenant_id}" | response_time > ${min_duration}' % [$._config.per_cluster_label, $._config.per_namespace_label],
               instant: false,
               legendFormat: '',
               range: true,
