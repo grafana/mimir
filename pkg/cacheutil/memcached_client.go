@@ -29,8 +29,8 @@ import (
 
 const (
 	opSet                 = "set"
-	opSetMulti            = "setmulti"
 	opGetMulti            = "getmulti"
+	opDelete              = "delete"
 	reasonMaxItemSize     = "max-item-size"
 	reasonAsyncBufferFull = "async-buffer-full"
 	reasonMalformedKey    = "malformed-key"
@@ -73,6 +73,10 @@ type RemoteCacheClient interface {
 	// underlying async operation will fail, the error will be tracked/logged.
 	SetAsync(ctx context.Context, key string, value []byte, ttl time.Duration) error
 
+	// Del deletes a key from memcached.
+	// This operation is blocking and will return an error in case of failure.
+	Del(ctx context.Context, key string) error
+
 	// Stop client and release underlying resources.
 	Stop()
 }
@@ -84,6 +88,7 @@ type MemcachedClient = RemoteCacheClient
 type memcachedClientBackend interface {
 	GetMulti(keys []string) (map[string]*memcache.Item, error)
 	Set(item *memcache.Item) error
+	Delete(key string) error
 }
 
 // updatableServerSelector extends the interface used for picking a memcached server
@@ -299,6 +304,7 @@ func newMemcachedClient(
 	}, []string{"operation"})
 	c.operations.WithLabelValues(opGetMulti)
 	c.operations.WithLabelValues(opSet)
+	c.operations.WithLabelValues(opDelete)
 
 	c.failures = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "thanos_memcached_operation_failures_total",
@@ -314,6 +320,11 @@ func newMemcachedClient(
 	c.failures.WithLabelValues(opSet, reasonServerError)
 	c.failures.WithLabelValues(opSet, reasonNetworkError)
 	c.failures.WithLabelValues(opSet, reasonOther)
+	c.failures.WithLabelValues(opDelete, reasonTimeout)
+	c.failures.WithLabelValues(opDelete, reasonMalformedKey)
+	c.failures.WithLabelValues(opDelete, reasonServerError)
+	c.failures.WithLabelValues(opDelete, reasonNetworkError)
+	c.failures.WithLabelValues(opDelete, reasonOther)
 
 	c.skipped = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "thanos_memcached_operation_skipped_total",
@@ -330,6 +341,7 @@ func newMemcachedClient(
 	}, []string{"operation"})
 	c.duration.WithLabelValues(opGetMulti)
 	c.duration.WithLabelValues(opSet)
+	c.duration.WithLabelValues(opDelete)
 
 	c.dataSize = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name: "thanos_memcached_operation_data_size_bytes",
@@ -439,6 +451,46 @@ func (c *memcachedClient) GetMulti(ctx context.Context, keys []string) map[strin
 	}
 
 	return hits
+}
+
+func (c *memcachedClient) Del(ctx context.Context, key string) error {
+	errCh := make(chan error, 1)
+
+	// Enqueue delete operation to ensure the affected item is effectively removed,
+	// even when prior set operations are still waiting in the async queue.
+	err := c.enqueueAsync(func() {
+		start := time.Now()
+		c.operations.WithLabelValues(opDelete).Inc()
+
+		var err error
+		select {
+		case <-ctx.Done():
+			err = ctx.Err()
+		default:
+			err = c.client.Delete(key)
+		}
+
+		if err != nil {
+			level.Debug(c.logger).Log(
+				"msg", "failed to delete memcached item",
+				"key", key,
+				"err", err,
+			)
+			c.trackError(opDelete, err)
+		} else {
+			c.duration.WithLabelValues(opDelete).Observe(time.Since(start).Seconds())
+		}
+		errCh <- err
+		return
+	})
+
+	if errors.Is(err, errMemcachedAsyncBufferFull) {
+		c.skipped.WithLabelValues(opDelete, reasonAsyncBufferFull).Inc()
+		level.Debug(c.logger).Log("msg", "failed to delete memcached item because the async buffer is full", "err", err, "size", len(c.asyncQueue))
+		return err
+	}
+	// Wait for the delete operation to complete.
+	return <-errCh
 }
 
 func (c *memcachedClient) getMultiBatched(ctx context.Context, keys []string) ([]map[string]*memcache.Item, error) {
