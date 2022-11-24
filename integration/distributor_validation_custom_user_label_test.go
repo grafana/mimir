@@ -24,21 +24,24 @@ func TestValidateCustomUserLabel(t *testing.T) {
 	tests := map[string]struct {
 		customUserLabelValue string
 		labelToSearch        string
+		configFlagSet        bool
 		metricExists         bool
 	}{
 		"No custom user label present": {
-			customUserLabelValue: "",
-			labelToSearch:        "",
-			metricExists:         false,
+			labelToSearch: "",
+			configFlagSet: false,
+			metricExists:  true,
 		},
 		"Check for correct label": {
 			customUserLabelValue: "group-1",
 			labelToSearch:        "group-1",
+			configFlagSet:        true,
 			metricExists:         true,
 		},
 		"Check for incorrect label": {
 			customUserLabelValue: "group-1",
 			labelToSearch:        "incorrect-group",
+			configFlagSet:        true,
 			metricExists:         false,
 		},
 	}
@@ -54,7 +57,9 @@ func TestValidateCustomUserLabel(t *testing.T) {
 				BlocksStorageS3Flags(),
 			)
 
-			flags["-validation.custom-user-label-value"] = testData.customUserLabelValue
+			if testData.configFlagSet {
+				flags["-validation.custom-user-label-value"] = testData.customUserLabelValue
+			}
 
 			// Start dependencies.
 			consul := e2edb.NewConsul()
