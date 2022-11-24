@@ -215,11 +215,11 @@ func (m *HistogramValidationMetrics) DeleteUserMetrics(userID string) {
 
 func NewHistogramValidationMetrics(r prometheus.Registerer) *HistogramValidationMetrics {
 	return &HistogramValidationMetrics{
-		tooFarInFuture:       DiscardedSamplesCounter(r, reasonTooFarInFuture),
-		spansBucketsMismatch: DiscardedSamplesCounter(r, reasonHistogramSpansBucketsMismatch),
-		spanNegativeOffset:   DiscardedSamplesCounter(r, reasonHistogramSpanNegativeOffset),
-		negativeBucketCount:  DiscardedSamplesCounter(r, reasonHistogramNegativeBucketCount),
-		countNotBigEnough:    DiscardedSamplesCounter(r, reasonHistogramCountNotBigEnough),
+		tooFarInFuture:       DiscardedHistogramsCounter(r, reasonTooFarInFuture),
+		spansBucketsMismatch: DiscardedHistogramsCounter(r, reasonHistogramSpansBucketsMismatch),
+		spanNegativeOffset:   DiscardedHistogramsCounter(r, reasonHistogramSpanNegativeOffset),
+		negativeBucketCount:  DiscardedHistogramsCounter(r, reasonHistogramNegativeBucketCount),
+		countNotBigEnough:    DiscardedHistogramsCounter(r, reasonHistogramCountNotBigEnough),
 	}
 }
 
