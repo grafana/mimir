@@ -359,8 +359,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
   // The provided instanceName should be a regexp from $._config.instance_names, while
   // the provided containerName should be a regexp from $._config.container_names.
-  containerDiskWritesPanel(title, instanceName, containerName)::
-    $.panel(title) +
+  containerDiskWritesPanel(instanceName, containerName)::
+    $.panel('Disk writes') +
     $.queryPanel(
       $._config.resources_panel_queries[$._config.deployment_type].disk_writes % {
         namespace: $.namespaceMatcher(),
@@ -376,8 +376,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
   // The provided instanceName should be a regexp from $._config.instance_names, while
   // the provided containerName should be a regexp from $._config.container_names.
-  containerDiskReadsPanel(title, instanceName, containerName)::
-    $.panel(title) +
+  containerDiskReadsPanel(instanceName, containerName)::
+    $.panel('Disk reads') +
     $.queryPanel(
       $._config.resources_panel_queries[$._config.deployment_type].disk_reads % {
         namespace: $.namespaceMatcher(),
@@ -393,10 +393,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
   // The provided instanceName should be a regexp from $._config.instance_names, while
   // the provided containerName should be a regexp from $._config.container_names.
-  containerDiskSpaceUtilization(title, instanceName, containerName)::
+  containerDiskSpaceUtilization(instanceName, containerName)::
     local label = if $._config.deployment_type == 'kubernetes' then '{{persistentvolumeclaim}}' else '{{instance}}';
 
-    $.panel(title) +
+    $.panel('Disk space utilization') +
     $.queryPanel(
       $._config.resources_panel_queries[$._config.deployment_type].disk_utilization % {
         namespaceMatcher: $.namespaceMatcher(),
@@ -452,19 +452,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.panel('Latency') +
       $.latencyPanel('cortex_kv_request_duration_seconds', '{%s, kv_name=~"%s"}' % [$.jobMatcher($._config.job_names[jobName]), kvName])
     ),
-
-  // Deprecated: use containerGoHeapInUsePanel() instead.
-  goHeapInUsePanel(jobName)::
-    $.panel('Memory (go heap inuse)') +
-    $.queryPanel(
-      'sum by(%s) (go_memstats_heap_inuse_bytes{%s})' % [$._config.per_instance_label, $.jobMatcher(jobName)],
-      '{{%s}}' % $._config.per_instance_label
-    ) +
-    {
-      yaxes: $.yaxes('bytes'),
-      tooltip: { sort: 2 },  // Sort descending.
-      fill: 0,
-    },
 
   newStatPanel(queries, legends='', unit='percentunit', decimals=1, thresholds=[], instant=false, novalue='')::
     super.queryPanel(queries, legends) + {

@@ -5,71 +5,89 @@ local filename = 'mimir-reads-resources.json';
   [filename]:
     ($.dashboard('Reads resources') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates(false)
+    .addRow(
+      $.row('Summary')
+      .addPanel(
+        $.panel('CPU') +
+        $.queryPanel($.resourceUtilizationQuery('cpu', $._config.instance_names.read, $._config.container_names.read), '{{%s}}' % $._config.per_instance_label) +
+        $.stack,
+      )
+      .addPanel(
+        $.panel('Memory (workingset)') +
+        $.queryPanel($.resourceUtilizationQuery('memory_working', $._config.instance_names.read, $._config.container_names.read), '{{%s}}' % $._config.per_instance_label) +
+        $.stack +
+        { yaxes: $.yaxes('bytes') },
+      )
+      .addPanel(
+        $.containerGoHeapInUsePanel($._config.instance_names.read, $._config.container_names.read) +
+        $.stack,
+      )
+    )
     .addRowIf(
       $._config.gateway_enabled,
       $.row('Gateway')
       .addPanel(
-        $.containerCPUUsagePanel($._config.job_names.gateway, $._config.job_names.gateway),
+        $.containerCPUUsagePanel($._config.instance_names.gateway, $._config.container_names.gateway),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel($._config.job_names.gateway, $._config.job_names.gateway),
+        $.containerMemoryWorkingSetPanel($._config.instance_names.gateway, $._config.container_names.gateway),
       )
       .addPanel(
-        $.goHeapInUsePanel($._config.job_names.gateway),
+        $.containerGoHeapInUsePanel($._config.instance_names.gateway, $._config.container_names.gateway),
       )
     )
     .addRow(
       $.row('Query-frontend')
       .addPanel(
-        $.containerCPUUsagePanel('query-frontend', 'query-frontend'),
+        $.containerCPUUsagePanel($._config.instance_names.query_frontend, $._config.container_names.query_frontend),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel('query-frontend', 'query-frontend'),
+        $.containerMemoryWorkingSetPanel($._config.instance_names.query_frontend, $._config.container_names.query_frontend),
       )
       .addPanel(
-        $.goHeapInUsePanel($._config.job_names.query_frontend),
+        $.containerGoHeapInUsePanel($._config.instance_names.query_frontend, $._config.container_names.query_frontend),
       )
     )
     .addRow(
       $.row('Query-scheduler')
       .addPanel(
-        $.containerCPUUsagePanel('query-scheduler', 'query-scheduler'),
+        $.containerCPUUsagePanel($._config.instance_names.query_scheduler, $._config.container_names.query_scheduler),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel('query-scheduler', 'query-scheduler'),
+        $.containerMemoryWorkingSetPanel($._config.instance_names.query_scheduler, $._config.container_names.query_scheduler),
       )
       .addPanel(
-        $.goHeapInUsePanel($._config.job_names.query_scheduler),
+        $.containerGoHeapInUsePanel($._config.instance_names.query_scheduler, $._config.container_names.query_scheduler),
       )
     )
     .addRow(
       $.row('Querier')
       .addPanel(
-        $.containerCPUUsagePanel('querier', 'querier'),
+        $.containerCPUUsagePanel($._config.instance_names.querier, $._config.container_names.querier),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel('querier', 'querier'),
+        $.containerMemoryWorkingSetPanel($._config.instance_names.querier, $._config.container_names.querier),
       )
       .addPanel(
-        $.goHeapInUsePanel($._config.job_names.querier),
+        $.containerGoHeapInUsePanel($._config.instance_names.querier, $._config.container_names.querier),
       )
     )
     .addRow(
       $.row('Ingester')
       .addPanel(
-        $.containerCPUUsagePanel('ingester', 'ingester'),
+        $.containerCPUUsagePanel($._config.instance_names.ingester, $._config.container_names.ingester),
       )
       .addPanel(
-        $.goHeapInUsePanel($._config.job_names.ingester),
+        $.containerGoHeapInUsePanel($._config.instance_names.ingester, $._config.container_names.ingester),
       )
     )
     .addRow(
       $.row('')
       .addPanel(
-        $.containerMemoryRSSPanel('ingester', 'ingester'),
+        $.containerMemoryRSSPanel($._config.instance_names.ingester, $._config.container_names.ingester),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel('ingester', 'ingester'),
+        $.containerMemoryWorkingSetPanel($._config.instance_names.ingester, $._config.container_names.ingester),
       )
     )
     .addRow(
@@ -82,46 +100,46 @@ local filename = 'mimir-reads-resources.json';
         ),
       )
       .addPanel(
-        $.containerCPUUsagePanel('ruler', 'ruler'),
+        $.containerCPUUsagePanel($._config.instance_names.ruler, $._config.container_names.ruler),
       )
     )
     .addRow(
       $.row('')
       .addPanel(
-        $.containerMemoryWorkingSetPanel('ruler', 'ruler'),
+        $.containerMemoryWorkingSetPanel($._config.instance_names.ruler, $._config.container_names.ruler),
       )
       .addPanel(
-        $.goHeapInUsePanel($._config.job_names.ruler),
+        $.containerGoHeapInUsePanel($._config.instance_names.ruler, $._config.container_names.ruler),
       )
     )
     .addRow(
       $.row('Store-gateway')
       .addPanel(
-        $.containerCPUUsagePanel('store-gateway', 'store-gateway'),
+        $.containerCPUUsagePanel($._config.instance_names.store_gateway, $._config.container_names.store_gateway),
       )
       .addPanel(
-        $.goHeapInUsePanel($._config.job_names.store_gateway),
-      )
-    )
-    .addRow(
-      $.row('')
-      .addPanel(
-        $.containerMemoryRSSPanel('store-gateway', 'store-gateway'),
-      )
-      .addPanel(
-        $.containerMemoryWorkingSetPanel('store-gateway', 'store-gateway'),
+        $.containerGoHeapInUsePanel($._config.instance_names.store_gateway, $._config.container_names.store_gateway),
       )
     )
     .addRow(
       $.row('')
       .addPanel(
-        $.containerDiskWritesPanel('Disk writes', 'store-gateway', 'store-gateway'),
+        $.containerMemoryRSSPanel($._config.instance_names.store_gateway, $._config.container_names.store_gateway),
       )
       .addPanel(
-        $.containerDiskReadsPanel('Disk reads', 'store-gateway', 'store-gateway'),
+        $.containerMemoryWorkingSetPanel($._config.instance_names.store_gateway, $._config.container_names.store_gateway),
+      )
+    )
+    .addRow(
+      $.row('')
+      .addPanel(
+        $.containerDiskWritesPanel($._config.instance_names.store_gateway, $._config.container_names.store_gateway),
       )
       .addPanel(
-        $.containerDiskSpaceUtilization('Disk space utilization', 'store-gateway', 'store-gateway'),
+        $.containerDiskReadsPanel($._config.instance_names.store_gateway, $._config.container_names.store_gateway),
+      )
+      .addPanel(
+        $.containerDiskSpaceUtilization($._config.instance_names.store_gateway, $._config.container_names.store_gateway),
       )
     ) + {
       templating+: {

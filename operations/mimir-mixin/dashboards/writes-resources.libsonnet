@@ -80,13 +80,13 @@ local filename = 'mimir-writes-resources.json';
     .addRow(
       $.row('')
       .addPanel(
-        $.containerDiskWritesPanel('Disk writes', $._config.instance_names.ingester, $._config.container_names.ingester)
+        $.containerDiskWritesPanel($._config.instance_names.ingester, $._config.container_names.ingester)
       )
       .addPanel(
-        $.containerDiskReadsPanel('Disk reads', $._config.instance_names.ingester, $._config.container_names.ingester)
+        $.containerDiskReadsPanel($._config.instance_names.ingester, $._config.container_names.ingester)
       )
       .addPanel(
-        $.containerDiskSpaceUtilization('Disk space utilization', $._config.instance_names.ingester, $._config.container_names.ingester),
+        $.containerDiskSpaceUtilization($._config.instance_names.ingester, $._config.container_names.ingester),
       )
     )
     + {
