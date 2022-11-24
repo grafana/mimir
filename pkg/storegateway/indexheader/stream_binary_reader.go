@@ -135,7 +135,7 @@ func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int) (bw
 	//length := len(lengthBytes) + int(binary.BigEndian.Uint32(lengthBytes)) + 4
 
 	//fr := stream_encoding.NewFileReader(f, int(r.toc.Symbols), length)
-	r.symbols, err = stream_index.NewSymbols(symbolsByteSlice, r.indexVersion, 0)
+	r.symbols, err = stream_index.NewSymbols(symbolsByteSlice, r.indexVersion, int(r.toc.Symbols))
 	if err != nil {
 		return nil, errors.Wrap(err, "read symbols")
 	}
