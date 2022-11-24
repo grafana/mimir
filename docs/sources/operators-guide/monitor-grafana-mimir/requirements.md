@@ -38,7 +38,7 @@ If you're running Mimir on baremetal, set the configuration field `deployment_ty
 ## Job selection
 
 A metric could be exposed by multiple Grafana Mimir components, or even different applications running in the same namespace.
-To provide accurate dashboards and alerts, we use a job label (by default `job`) to select a metric from specific components.
+To provide accurate dashboards and alerts, the job label (by default `job`) selects a metric from specific components.
 A job is a combination of a prefix (the default prefix is the Kubernetes namespace followed by a slash) and component, for example `<namespace>/ingester`.
 
 Pre-compiled dashboards and alerts are shipped with a default configuration.
