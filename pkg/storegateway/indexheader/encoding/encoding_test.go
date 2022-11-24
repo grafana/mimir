@@ -33,6 +33,25 @@ func TestBe32(t *testing.T) {
 	}
 }
 
+func FuzzBe32(f *testing.F) {
+	f.Add(uint32(0))
+	f.Add(uint32(1))
+	f.Add(uint32(0xFFFF_FFFF))
+
+	f.Fuzz(func(t *testing.T, n uint32) {
+		enc := prom_encoding.Encbuf{}
+		enc.PutBE32(n)
+
+		dec := NewDecbufRaw(realByteSlice(enc.Get()))
+		require.Equal(t, 4, dec.Len())
+
+		actual := dec.Be32()
+		require.NoError(t, dec.Err())
+		require.Equal(t, n, actual)
+		require.Equal(t, 0, dec.Len())
+	})
+}
+
 func TestBe32int(t *testing.T) {
 	cases := []int{
 		0,
@@ -54,6 +73,29 @@ func TestBe32int(t *testing.T) {
 			require.Equal(t, 0, dec.Len())
 		})
 	}
+}
+
+func FuzzBe32int(f *testing.F) {
+	f.Add(0)
+	f.Add(1)
+	f.Add(0xFFFF_FFFF)
+
+	f.Fuzz(func(t *testing.T, n int) {
+		if n < 0 || n > 0xFFFF_FFFF {
+			t.Skip()
+		}
+
+		enc := prom_encoding.Encbuf{}
+		enc.PutBE32int(n)
+
+		dec := NewDecbufRaw(realByteSlice(enc.Get()))
+		require.Equal(t, 4, dec.Len())
+
+		actual := dec.Be32int()
+		require.NoError(t, dec.Err())
+		require.Equal(t, n, actual)
+		require.Equal(t, 0, dec.Len())
+	})
 }
 
 func TestSkip(t *testing.T) {
@@ -104,6 +146,27 @@ func TestUvarint(t *testing.T) {
 	}
 }
 
+func FuzzUvarint(f *testing.F) {
+	f.Add(0)
+	f.Add(1)
+	f.Add(0xFFFF_FFFF)
+
+	f.Fuzz(func(t *testing.T, n int) {
+		if n < 0 {
+			t.Skip()
+		}
+
+		enc := prom_encoding.Encbuf{}
+		enc.PutUvarint(n)
+
+		dec := NewDecbufRaw(realByteSlice(enc.Get()))
+		actual := dec.Uvarint()
+		require.NoError(t, dec.Err())
+		require.Equal(t, n, actual)
+		require.Equal(t, 0, dec.Len())
+	})
+}
+
 func TestUvarint64(t *testing.T) {
 	cases := []struct {
 		value uint64
@@ -131,6 +194,26 @@ func TestUvarint64(t *testing.T) {
 			require.Equal(t, 0, dec.Len())
 		})
 	}
+}
+
+func FuzzUvarint64(f *testing.F) {
+	f.Add(uint64(0))
+	f.Add(uint64(1))
+	f.Add(uint64(127))
+	f.Add(uint64(128))
+	f.Add(uint64(0xFFFF_FFFF))
+	f.Add(uint64(0xFFFF_FFFF_FFFF_FFFF))
+
+	f.Fuzz(func(t *testing.T, n uint64) {
+		enc := prom_encoding.Encbuf{}
+		enc.PutUvarint64(n)
+
+		dec := NewDecbufRaw(realByteSlice(enc.Get()))
+		actual := dec.Uvarint64()
+		require.NoError(t, dec.Err())
+		require.Equal(t, n, actual)
+		require.Equal(t, 0, dec.Len())
+	})
 }
 
 func TestUvarintBytes(t *testing.T) {
@@ -161,6 +244,24 @@ func TestUvarintBytes(t *testing.T) {
 	}
 }
 
+func FuzzUvarintBytes(f *testing.F) {
+	f.Add([]byte{})
+	f.Add([]byte{0x12})
+	f.Add([]byte("1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567"))
+	f.Add([]byte("12345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678"))
+
+	f.Fuzz(func(t *testing.T, b []byte) {
+		enc := prom_encoding.Encbuf{}
+		enc.PutUvarintBytes(b)
+
+		dec := NewDecbufRaw(realByteSlice(enc.Get()))
+		actual := dec.UvarintBytes()
+		require.NoError(t, dec.Err())
+		require.Equal(t, b, actual)
+		require.Equal(t, 0, dec.Len())
+	})
+}
+
 func TestUvarintString(t *testing.T) {
 	cases := []struct {
 		name              string
@@ -187,6 +288,24 @@ func TestUvarintString(t *testing.T) {
 			require.Equal(t, 0, dec.Len())
 		})
 	}
+}
+
+func FuzzUvarintString(f *testing.F) {
+	f.Add("")
+	f.Add("a")
+	f.Add("1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567")
+	f.Add("12345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678")
+
+	f.Fuzz(func(t *testing.T, s string) {
+		enc := prom_encoding.Encbuf{}
+		enc.PutUvarintStr(s)
+
+		dec := NewDecbufRaw(realByteSlice(enc.Get()))
+		actual := dec.UvarintStr()
+		require.NoError(t, dec.Err())
+		require.Equal(t, s, actual)
+		require.Equal(t, 0, dec.Len())
+	})
 }
 
 type realByteSlice []byte
