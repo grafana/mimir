@@ -8,19 +8,19 @@ local filename = 'mimir-compactor-resources.json';
     .addRow(
       $.row('CPU and memory')
       .addPanel(
-        $.containerCPUUsagePanel('CPU', 'compactor'),
+        $.containerCPUUsagePanel($._config.instance_names.compactor, $._config.container_names.compactor),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.compactor),
+        $.containerGoHeapInUsePanel($._config.instance_names.compactor, $._config.container_names.compactor),
       )
     )
     .addRow(
       $.row('')
       .addPanel(
-        $.containerMemoryRSSPanel('Memory (RSS)', 'compactor'),
+        $.containerMemoryRSSPanel($._config.instance_names.compactor, $._config.container_names.compactor),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel('Memory (workingset)', 'compactor'),
+        $.containerMemoryWorkingSetPanel($._config.instance_names.compactor, $._config.container_names.compactor),
       )
     )
     .addRow(
@@ -35,13 +35,13 @@ local filename = 'mimir-compactor-resources.json';
     .addRow(
       $.row('Disk')
       .addPanel(
-        $.containerDiskWritesPanel('Disk writes', 'compactor'),
+        $.containerDiskWritesPanel($._config.instance_names.compactor, $._config.container_names.compactor),
       )
       .addPanel(
-        $.containerDiskReadsPanel('Disk reads', 'compactor'),
+        $.containerDiskReadsPanel($._config.instance_names.compactor, $._config.container_names.compactor),
       )
       .addPanel(
-        $.containerDiskSpaceUtilization('Disk space utilization', 'compactor'),
+        $.containerDiskSpaceUtilization($._config.instance_names.compactor, $._config.container_names.compactor),
       )
     ) + {
       templating+: {

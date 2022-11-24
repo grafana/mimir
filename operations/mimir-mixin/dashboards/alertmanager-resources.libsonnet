@@ -9,38 +9,38 @@ local filename = 'mimir-alertmanager-resources.json';
       $._config.gateway_enabled,
       $.row('Gateway')
       .addPanel(
-        $.containerCPUUsagePanel('CPU', $._config.job_names.gateway),
+        $.containerCPUUsagePanel($._config.instance_names.gateway, $._config.container_names.gateway),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel('Memory (workingset)', $._config.job_names.gateway),
+        $.containerMemoryWorkingSetPanel($._config.instance_names.gateway, $._config.container_names.gateway),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.gateway),
+        $.containerGoHeapInUsePanel($._config.instance_names.gateway, $._config.container_names.gateway),
       )
     )
     .addRow(
       $.row('Alertmanager')
       .addPanel(
-        $.containerCPUUsagePanel('CPU', 'alertmanager'),
+        $.containerCPUUsagePanel($._config.instance_names.alertmanager, $._config.container_names.alertmanager),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel('Memory (workingset)', 'alertmanager'),
+        $.containerMemoryWorkingSetPanel($._config.instance_names.alertmanager, $._config.container_names.alertmanager),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', 'alertmanager'),
+        $.containerGoHeapInUsePanel($._config.instance_names.alertmanager, $._config.container_names.alertmanager),
       )
     )
     .addRowIf(
       $._config.alertmanager_im_enabled,
       $.row('Instance mapper')
       .addPanel(
-        $.containerCPUUsagePanel('CPU', 'alertmanager-im'),
+        $.containerCPUUsagePanel($._config.instance_names.alertmanager_im, $._config.container_names.alertmanager_im),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel('Memory (workingset)', 'alertmanager-im'),
+        $.containerMemoryWorkingSetPanel($._config.instance_names.alertmanager_im, $._config.container_names.alertmanager_im),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', 'alertmanager-im'),
+        $.containerGoHeapInUsePanel($._config.instance_names.alertmanager_im, $._config.container_names.alertmanager_im),
       )
     )
     .addRow(
@@ -55,16 +55,16 @@ local filename = 'mimir-alertmanager-resources.json';
     .addRow(
       $.row('Disk')
       .addPanel(
-        $.containerDiskWritesPanel('Writes', 'alertmanager'),
+        $.containerDiskWritesPanel($._config.instance_names.alertmanager, $._config.container_names.alertmanager),
       )
       .addPanel(
-        $.containerDiskReadsPanel('Reads', 'alertmanager'),
+        $.containerDiskReadsPanel($._config.instance_names.alertmanager, $._config.container_names.alertmanager),
       )
     )
     .addRow(
       $.row('')
       .addPanel(
-        $.containerDiskSpaceUtilization('Disk space utilization', 'alertmanager'),
+        $.containerDiskSpaceUtilization($._config.instance_names.alertmanager, $._config.container_names.alertmanager),
       )
     ),
 }

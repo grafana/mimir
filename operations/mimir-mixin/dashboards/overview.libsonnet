@@ -18,6 +18,8 @@ local filename = 'mimir-overview.json';
       alertmanagerResourcesDashboardURL: $.dashboardURL('mimir-alertmanager-resources.json'),
       compactorDashboardURL: $.dashboardURL('mimir-compactor.json'),
       objectStoreDashboardURL: $.dashboardURL('mimir-object-store.json'),
+      overviewNetworkingDashboardURL: $.dashboardURL('mimir-overview-networking.json'),
+      overviewResourcesDashboardURL: $.dashboardURL('mimir-overview-resources.json'),
       queriesDashboardURL: $.dashboardURL('mimir-queries.json'),
       readsDashboardURL: $.dashboardURL('mimir-reads.json'),
       readsNetworkingDashboardURL: $.dashboardURL('mimir-reads-networking.json'),
@@ -36,7 +38,7 @@ local filename = 'mimir-overview.json';
       .addPanel(
         $.textPanel('', |||
           The 'Status' panel shows an overview on the cluster health over the time.
-          Visit the following specific dashboards to investigate failures in a specific area:
+          To investigate failures, see a specific dashboard:
 
           - <a target="_blank" href="%(writesDashboardURL)s">Writes</a>
           - <a target="_blank" href="%(readsDashboardURL)s">Reads</a>
@@ -101,11 +103,13 @@ local filename = 'mimir-overview.json';
       .addPanel(
         $.textPanel('', |||
           These panels show an overview on the write path. %(gatewayEnabledRowDescription)s
-          Visit the following specific dashboards to drill down into the write path:
+          To examine the write path in detail, see a specific dashboard:
 
           - <a target="_blank" href="%(writesDashboardURL)s">Writes</a>
           - <a target="_blank" href="%(writesResourcesDashboardURL)s">Writes resources</a>
           - <a target="_blank" href="%(writesNetworkingDashboardURL)s">Writes networking</a>
+          - <a target="_blank" href="%(overviewResourcesDashboardURL)s">Overview resources</a>
+          - <a target="_blank" href="%(overviewNetworkingDashboardURL)s">Overview networking</a>
         ||| % helpers),
       )
       .addPanel(
@@ -141,11 +145,13 @@ local filename = 'mimir-overview.json';
       .addPanel(
         $.textPanel('', |||
           These panels show an overview on the read path. %(gatewayEnabledRowDescription)s
-          Visit the following specific dashboards to drill down into the read path:
+          To examine the read path in detail, see a specific dashboard:
 
           - <a target="_blank" href="%(readsDashboardURL)s">Reads</a>
           - <a target="_blank" href="%(readsResourcesDashboardURL)s">Reads resources</a>
           - <a target="_blank" href="%(readsNetworkingDashboardURL)s">Reads networking</a>
+          - <a target="_blank" href="%(overviewResourcesDashboardURL)s">Overview resources</a>
+          - <a target="_blank" href="%(overviewNetworkingDashboardURL)s">Overview networking</a>
           - <a target="_blank" href="%(queriesDashboardURL)s">Queries</a>
           - <a target="_blank" href="%(compactorDashboardURL)s">Compactor</a>
         ||| % helpers),
@@ -195,11 +201,13 @@ local filename = 'mimir-overview.json';
       .addPanel(
         $.textPanel('', |||
           These panels show an overview on the recording and alerting rules evaluation.
-          Visit the following specific dashboards to drill down into the rules evaluation and alerts notifications:
+          To examine the rules evaluation and alerts notifications in detail, see a specific dashboard:
 
           - <a target="_blank" href="%(rulerDashboardURL)s">Ruler</a>
           - <a target="_blank" href="%(alertmanagerDashboardURL)s">Alertmanager</a>
           - <a target="_blank" href="%(alertmanagerResourcesDashboardURL)s">Alertmanager resources</a>
+          - <a target="_blank" href="%(overviewResourcesDashboardURL)s">Overview resources</a>
+          - <a target="_blank" href="%(overviewNetworkingDashboardURL)s">Overview networking</a>
         ||| % helpers),
       )
       .addPanel(
@@ -233,7 +241,7 @@ local filename = 'mimir-overview.json';
       .addPanel(
         $.textPanel('', |||
           These panels show an overview on the long-term storage (object storage).
-          Visit the following specific dashboards to drill down into the storage:
+          To examine the storage in detail, see a specific dashboard:
 
           - <a target="_blank" href="%(objectStoreDashboardURL)s">Object store</a>
           - <a target="_blank" href="%(compactorDashboardURL)s">Compactor</a>

@@ -39,8 +39,6 @@ type expandedPostingsPromise func(ctx context.Context) ([]storage.SeriesRef, boo
 type bucketIndexReader struct {
 	block *bucketBlock
 	dec   *index.Decoder
-
-	mtx sync.Mutex
 }
 
 func newBucketIndexReader(block *bucketBlock) *bucketIndexReader {
@@ -413,10 +411,10 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 					compressionErrors = 1
 				}
 
-				r.mtx.Lock()
 				// Return postings. Truncate first 4 bytes which are length of posting.
+				// Access to output is not protected by a mutex because each goroutine
+				// is expected to handle a different set of keys.
 				output[p.keyID] = newBigEndianPostings(pBytes[4:])
-				r.mtx.Unlock()
 
 				r.block.indexCache.StorePostings(ctx, r.block.userID, r.block.meta.ULID, keys[p.keyID], dataToCache)
 
@@ -474,7 +472,7 @@ func (r *bucketIndexReader) preloadSeries(ctx context.Context, ids []storage.Ser
 	// with the missing ones.
 	fromCache, ids := r.block.indexCache.FetchMultiSeriesForRefs(ctx, r.block.userID, r.block.meta.ULID, ids)
 	for id, b := range fromCache {
-		loaded.series[id] = b
+		loaded.addSeries(id, b)
 	}
 
 	parts := r.block.partitioner.Partition(len(ids), func(i int) (start, end uint64) {
@@ -527,9 +525,8 @@ func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.Series
 			return r.loadSeries(ctx, ids[i:], true, uint64(id), uint64(id)+uint64(n+int(l)+1), loaded, stats)
 		}
 		c = c[n : n+int(l)]
-		r.mtx.Lock()
-		loaded.series[id] = c
-		r.mtx.Unlock()
+
+		loaded.addSeries(id, c)
 
 		r.block.indexCache.StoreSeriesForRef(ctx, r.block.userID, r.block.meta.ULID, id, c)
 	}
@@ -560,10 +557,10 @@ func (r *bucketIndexReader) LookupLabelsSymbols(symbolized []symbolizedLabel) (l
 }
 
 // bucketIndexLoadedSeries holds the result of a series load operation.
-// This data structure is NOT concurrency safe.
 type bucketIndexLoadedSeries struct {
 	// Keeps the series that have been loaded from the index.
-	series map[storage.SeriesRef][]byte
+	seriesMx sync.Mutex
+	series   map[storage.SeriesRef][]byte
 }
 
 func newBucketIndexLoadedSeries() *bucketIndexLoadedSeries {
@@ -572,13 +569,23 @@ func newBucketIndexLoadedSeries() *bucketIndexLoadedSeries {
 	}
 }
 
-// loadSeriesForTime populates the given symbolized labels for the series identified by the reference if at least one chunk is within
+// addSeries stores a series raw data in the data structure. A stored series can be loaded via unsafeLoadSeriesForTime().
+// This function is concurrency safe.
+func (l *bucketIndexLoadedSeries) addSeries(ref storage.SeriesRef, data []byte) {
+	l.seriesMx.Lock()
+	l.series[ref] = data
+	l.seriesMx.Unlock()
+}
+
+// unsafeLoadSeriesForTime populates the given symbolized labels for the series identified by the reference if at least one chunk is within
 // time selection.
-// loadSeriesForTime also populates chunk metas slices if skipChunks if set to false. Chunks are also limited by the given time selection.
-// loadSeriesForTime returns false, when there are no series data for given time range.
+// unsafeLoadSeriesForTime also populates chunk metas slices if skipChunks is set to false. Chunks are also limited by the given time selection.
+// unsafeLoadSeriesForTime returns false, when there are no series data for given time range.
 //
 // Error is returned on decoding error or if the reference does not resolve to a known series.
-func (l *bucketIndexLoadedSeries) loadSeriesForTime(ref storage.SeriesRef, lset *[]symbolizedLabel, chks *[]chunks.Meta, skipChunks bool, mint, maxt int64, stats *queryStats) (ok bool, err error) {
+//
+// It's NOT safe to call this function concurrently with addSeries().
+func (l *bucketIndexLoadedSeries) unsafeLoadSeriesForTime(ref storage.SeriesRef, lset *[]symbolizedLabel, chks *[]chunks.Meta, skipChunks bool, mint, maxt int64, stats *queryStats) (ok bool, err error) {
 	b, ok := l.series[ref]
 	if !ok {
 		return false, errors.Errorf("series %d not found", ref)

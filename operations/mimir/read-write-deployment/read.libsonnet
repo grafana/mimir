@@ -29,7 +29,7 @@
 
   mimir_read_env_map:: $.querier_env_map,
 
-  mimir_read_container:: if !$._config.read_write_deployment_enabled then null else
+  mimir_read_container:: if !$._config.is_read_write_deployment_mode then null else
     container.new('mimir-read', $._images.mimir_read) +
     container.withPorts($.mimir_read_ports) +
     container.withArgsMixin($.util.mapToFlags($.mimir_read_args)) +
@@ -39,7 +39,7 @@
     $.util.resourcesRequests('1', '12Gi') +
     $.util.resourcesLimits(null, '24Gi'),
 
-  mimir_read_deployment: if !$._config.read_write_deployment_enabled then null else
+  mimir_read_deployment: if !$._config.is_read_write_deployment_mode then null else
     deployment.new('mimir-read', $._config.mimir_read_replicas, [$.mimir_read_container]) +
     $.mimirVolumeMounts +
     $.newMimirSpreadTopology('mimir-read', $._config.mimir_read_topology_spread_max_skew) +
@@ -48,6 +48,6 @@
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1) +
     (if $._config.memberlist_ring_enabled then gossipLabel else {}),
 
-  mimir_read_service: if !$._config.read_write_deployment_enabled then null else
+  mimir_read_service: if !$._config.is_read_write_deployment_mode then null else
     $.util.serviceFor($.mimir_read_deployment, $._config.service_ignored_labels),
 }

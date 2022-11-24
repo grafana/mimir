@@ -55,6 +55,9 @@ spec:
         {{- include "mimir.podAnnotations" $args | nindent 8 }}
       namespace: {{ .Release.Namespace | quote }}
     spec:
+      {{- with .Values.ingester.schedulerName }}
+      schedulerName: {{ . | quote }}
+      {{- end }}
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
       {{- if .Values.ingester.priorityClassName }}
       priorityClassName: {{ .Values.ingester.priorityClassName }}

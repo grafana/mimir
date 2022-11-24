@@ -569,7 +569,7 @@ func blockSeries(
 	)
 	defer span.Finish()
 
-	indexStats := newSafeQueryStats()
+	reqStats := newSafeQueryStats()
 
 	if skipChunks {
 		span.LogKV("msg", "manipulating mint/maxt to cover the entire block as skipChunks=true")
@@ -578,11 +578,11 @@ func blockSeries(
 		res, ok := fetchCachedSeries(ctx, indexr.block.userID, indexr.block.indexCache, indexr.block.meta.ULID, matchers, shard, logger)
 		if ok {
 			span.LogKV("msg", "using cached result", "len", len(res))
-			return newBucketSeriesSet(res), indexStats, nil
+			return newBucketSeriesSet(res), reqStats, nil
 		}
 	}
 
-	ps, err := indexr.ExpandedPostings(ctx, matchers, indexStats)
+	ps, err := indexr.ExpandedPostings(ctx, matchers, reqStats)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "expanded matching posting")
 	}
@@ -596,13 +596,13 @@ func blockSeries(
 	}
 
 	if len(ps) == 0 {
-		return storepb.EmptySeriesSet(), indexStats, nil
+		return storepb.EmptySeriesSet(), reqStats, nil
 	}
 
 	// Preload all series index data.
 	// TODO(bwplotka): Consider not keeping all series in memory all the time.
 	// TODO(bwplotka): Do lazy loading in one step as `ExpandingPostings` method.
-	loadedSeries, err := indexr.preloadSeries(ctx, ps, indexStats)
+	loadedSeries, err := indexr.preloadSeries(ctx, ps, reqStats)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "preload series")
 	}
@@ -622,14 +622,14 @@ func blockSeries(
 		)
 
 		// Keep track of postings lookup stats in a dedicated stats structure that doesn't require lock
-		// and then merge it once done. We do it to avoid the lock overhead because loadSeriesForTime()
+		// and then merge it once done. We do it to avoid the lock overhead because unsafeLoadSeriesForTime()
 		// may be called many times.
 		defer func() {
-			indexStats = indexStats.merge(postingsStats)
+			reqStats.merge(postingsStats)
 		}()
 
 		for _, id := range ps {
-			ok, err := loadedSeries.loadSeriesForTime(id, &symbolizedLset, &chks, skipChunks, minTime, maxTime, postingsStats)
+			ok, err := loadedSeries.unsafeLoadSeriesForTime(id, &symbolizedLset, &chks, skipChunks, minTime, maxTime, postingsStats)
 			if err != nil {
 				lookupErr = errors.Wrap(err, "read series")
 				return
@@ -705,14 +705,16 @@ func blockSeries(
 
 	if skipChunks {
 		storeCachedSeries(ctx, indexr.block.indexCache, indexr.block.userID, indexr.block.meta.ULID, matchers, shard, res, logger)
-		return newBucketSeriesSet(res), indexStats.merge(&seriesCacheStats), nil
+		reqStats.merge(&seriesCacheStats)
+		return newBucketSeriesSet(res), reqStats, nil
 	}
 
-	if err := chunkr.load(res, loadAggregates); err != nil {
+	if err := chunkr.load(res, loadAggregates, reqStats); err != nil {
 		return nil, nil, errors.Wrap(err, "load chunks")
 	}
 
-	return newBucketSeriesSet(res), indexStats.merge(chunkr.stats).merge(&seriesCacheStats), nil
+	reqStats.merge(&seriesCacheStats)
+	return newBucketSeriesSet(res), reqStats, nil
 }
 
 type seriesCacheEntry struct {
@@ -878,6 +880,8 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 	if s.debugLogging {
 		debugFoundBlockSetOverview(s.logger, req.MinTime, req.MaxTime, req.MaxResolutionWindow, blocks)
 	}
+	chunkBytes := &pool.BatchBytes{Delegate: s.chunkPool}
+	defer chunkBytes.Release()
 
 	for _, b := range blocks {
 		b := b
@@ -889,7 +893,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		// We must keep the readers open until all their data has been sent.
 		indexr := b.indexReader()
 		if !req.SkipChunks {
-			chunkr = b.chunkReader(gctx)
+			chunkr = b.chunkReader(gctx, chunkBytes)
 			defer runutil.CloseWithLogOnErr(s.logger, chunkr, "series block")
 		}
 
@@ -1637,9 +1641,9 @@ func (b *bucketBlock) indexReader() *bucketIndexReader {
 	return newBucketIndexReader(b)
 }
 
-func (b *bucketBlock) chunkReader(ctx context.Context) *bucketChunkReader {
+func (b *bucketBlock) chunkReader(ctx context.Context, chunkBytes *pool.BatchBytes) *bucketChunkReader {
 	b.pendingReaders.Add(1)
-	return newBucketChunkReader(ctx, b)
+	return newBucketChunkReader(ctx, b, chunkBytes)
 }
 
 // matchLabels verifies whether the block matches the given matchers.
