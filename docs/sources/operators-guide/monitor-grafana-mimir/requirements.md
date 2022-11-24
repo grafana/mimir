@@ -33,7 +33,7 @@ For rules and alerts to function properly, you must configure your Prometheus or
 ## Deployment type
 
 By default, Grafana Mimir dashboards assume Mimir is deployed in containers orchestrated by Kubernetes.
-If you're running Mimir on baremetal, you should set the configuration field `deployment_type: 'baremetal'` and [re-compile the dashboards]({{< relref "installing-dashboards-and-alerts.md" >}}).
+If you're running Mimir on baremetal, set the configuration field `deployment_type: 'baremetal'` and [re-compile the dashboards]({{< relref "installing-dashboards-and-alerts.md" >}}).
 
 ## Job selection
 
