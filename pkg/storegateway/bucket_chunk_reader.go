@@ -34,7 +34,6 @@ type bucketChunkReader struct {
 	// Mutex protects access to following fields, when updated from chunks-loading goroutines.
 	// After chunks are loaded, mutex is no longer used.
 	mtx        sync.Mutex
-	stats      *queryStats
 	chunkBytes *pool.BatchBytes
 }
 
@@ -42,7 +41,6 @@ func newBucketChunkReader(ctx context.Context, block *bucketBlock, chunkBytes *p
 	return &bucketChunkReader{
 		ctx:        ctx,
 		block:      block,
-		stats:      &queryStats{},
 		toLoad:     make([][]loadIdx, len(block.chunkObjs)),
 		chunkBytes: chunkBytes,
 	}
@@ -68,7 +66,7 @@ func (r *bucketChunkReader) addLoad(id chunks.ChunkRef, seriesEntry, chunk int) 
 }
 
 // load loads all added chunks and saves resulting aggrs to res.
-func (r *bucketChunkReader) load(res []seriesEntry, aggrs []storepb.Aggr) error {
+func (r *bucketChunkReader) load(res []seriesEntry, aggrs []storepb.Aggr, stats *safeQueryStats) error {
 	g, ctx := errgroup.WithContext(r.ctx)
 
 	for seq, pIdxs := range r.toLoad {
@@ -84,7 +82,7 @@ func (r *bucketChunkReader) load(res []seriesEntry, aggrs []storepb.Aggr) error 
 			p := p
 			indices := pIdxs[p.ElemRng[0]:p.ElemRng[1]]
 			g.Go(func() error {
-				return r.loadChunks(ctx, res, aggrs, seq, p, indices)
+				return r.loadChunks(ctx, res, aggrs, seq, p, indices, stats)
 			})
 		}
 	}
@@ -93,7 +91,7 @@ func (r *bucketChunkReader) load(res []seriesEntry, aggrs []storepb.Aggr) error 
 
 // loadChunks will read range [start, end] from the segment file with sequence number seq.
 // This data range covers chunks starting at supplied offsets.
-func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, aggrs []storepb.Aggr, seq int, part Part, pIdxs []loadIdx) error {
+func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, aggrs []storepb.Aggr, seq int, part Part, pIdxs []loadIdx, stats *safeQueryStats) error {
 	fetchBegin := time.Now()
 
 	// Get a reader for the required range.
@@ -104,19 +102,25 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, a
 	defer runutil.CloseWithLogOnErr(r.block.logger, reader, "readChunkRange close range reader")
 	bufReader := bufio.NewReaderSize(reader, mimir_tsdb.EstimatedMaxChunkSize)
 
+	// Since we may load many chunks, to avoid having to lock very frequently we accumulate
+	// all stats in a local instance and then merge it in the defer.
+	localStats := queryStats{}
+
 	locked := true
 	r.mtx.Lock()
 
 	defer func() {
+		stats.merge(&localStats)
+
 		if locked {
 			r.mtx.Unlock()
 		}
 	}()
 
-	r.stats.chunksFetchCount++
-	r.stats.chunksFetched += len(pIdxs)
-	r.stats.chunksFetchDurationSum += time.Since(fetchBegin)
-	r.stats.chunksFetchedSizeSum += int(part.End - part.Start)
+	localStats.chunksFetchCount++
+	localStats.chunksFetched += len(pIdxs)
+	localStats.chunksFetchDurationSum += time.Since(fetchBegin)
+	localStats.chunksFetchedSizeSum += int(part.End - part.Start)
 
 	var (
 		buf        = make([]byte, mimir_tsdb.EstimatedMaxChunkSize)
@@ -168,8 +172,8 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, a
 			if err != nil {
 				return errors.Wrap(err, "populate chunk")
 			}
-			r.stats.chunksTouched++
-			r.stats.chunksTouchedSizeSum += int(chunkDataLen)
+			localStats.chunksTouched++
+			localStats.chunksTouchedSizeSum += int(chunkDataLen)
 			continue
 		}
 
@@ -192,16 +196,16 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, a
 		r.mtx.Lock()
 		locked = true
 
-		r.stats.chunksFetchCount++
-		r.stats.chunksFetchDurationSum += time.Since(fetchBegin)
-		r.stats.chunksFetchedSizeSum += len(*nb)
+		localStats.chunksFetchCount++
+		localStats.chunksFetchDurationSum += time.Since(fetchBegin)
+		localStats.chunksFetchedSizeSum += len(*nb)
 		err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunk]), rawChunk((*nb)[n:]), aggrs, r.save)
 		if err != nil {
 			r.block.chunkPool.Put(nb)
 			return errors.Wrap(err, "populate chunk")
 		}
-		r.stats.chunksTouched++
-		r.stats.chunksTouchedSizeSum += int(chunkDataLen)
+		localStats.chunksTouched++
+		localStats.chunksTouchedSizeSum += int(chunkDataLen)
 
 		r.block.chunkPool.Put(nb)
 	}

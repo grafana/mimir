@@ -569,7 +569,7 @@ func blockSeries(
 	)
 	defer span.Finish()
 
-	indexStats := newSafeQueryStats()
+	reqStats := newSafeQueryStats()
 
 	if skipChunks {
 		span.LogKV("msg", "manipulating mint/maxt to cover the entire block as skipChunks=true")
@@ -578,11 +578,11 @@ func blockSeries(
 		res, ok := fetchCachedSeries(ctx, indexr.block.userID, indexr.block.indexCache, indexr.block.meta.ULID, matchers, shard, logger)
 		if ok {
 			span.LogKV("msg", "using cached result", "len", len(res))
-			return newBucketSeriesSet(res), indexStats, nil
+			return newBucketSeriesSet(res), reqStats, nil
 		}
 	}
 
-	ps, err := indexr.ExpandedPostings(ctx, matchers, indexStats)
+	ps, err := indexr.ExpandedPostings(ctx, matchers, reqStats)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "expanded matching posting")
 	}
@@ -596,13 +596,13 @@ func blockSeries(
 	}
 
 	if len(ps) == 0 {
-		return storepb.EmptySeriesSet(), indexStats, nil
+		return storepb.EmptySeriesSet(), reqStats, nil
 	}
 
 	// Preload all series index data.
 	// TODO(bwplotka): Consider not keeping all series in memory all the time.
 	// TODO(bwplotka): Do lazy loading in one step as `ExpandingPostings` method.
-	loadedSeries, err := indexr.preloadSeries(ctx, ps, indexStats)
+	loadedSeries, err := indexr.preloadSeries(ctx, ps, reqStats)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "preload series")
 	}
@@ -625,7 +625,7 @@ func blockSeries(
 		// and then merge it once done. We do it to avoid the lock overhead because unsafeLoadSeriesForTime()
 		// may be called many times.
 		defer func() {
-			indexStats = indexStats.merge(postingsStats)
+			reqStats.merge(postingsStats)
 		}()
 
 		for _, id := range ps {
@@ -705,14 +705,16 @@ func blockSeries(
 
 	if skipChunks {
 		storeCachedSeries(ctx, indexr.block.indexCache, indexr.block.userID, indexr.block.meta.ULID, matchers, shard, res, logger)
-		return newBucketSeriesSet(res), indexStats.merge(&seriesCacheStats), nil
+		reqStats.merge(&seriesCacheStats)
+		return newBucketSeriesSet(res), reqStats, nil
 	}
 
-	if err := chunkr.load(res, loadAggregates); err != nil {
+	if err := chunkr.load(res, loadAggregates, reqStats); err != nil {
 		return nil, nil, errors.Wrap(err, "load chunks")
 	}
 
-	return newBucketSeriesSet(res), indexStats.merge(chunkr.stats).merge(&seriesCacheStats), nil
+	reqStats.merge(&seriesCacheStats)
+	return newBucketSeriesSet(res), reqStats, nil
 }
 
 type seriesCacheEntry struct {
