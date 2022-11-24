@@ -1,15 +1,33 @@
 package storegateway
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 )
 
+// sliceUnloadedBatchSet implement unloadedBatchSet and
+// returns the provided err when the batches are exhausted
 type sliceUnloadedBatchSet struct {
 	current int
 	batches []unloadedBatch
+
+	err error
+}
+
+func newSliceUnloadedBatchSet(err error, batches ...unloadedBatch) *sliceUnloadedBatchSet {
+	for i := range batches {
+		if batches[i].Stats == nil {
+			batches[i].Stats = newSafeQueryStats()
+		}
+	}
+	return &sliceUnloadedBatchSet{
+		current: -1,
+		batches: batches,
+		err:     err,
+	}
 }
 
 func (s *sliceUnloadedBatchSet) Next() bool {
@@ -22,23 +40,25 @@ func (s *sliceUnloadedBatchSet) At() unloadedBatch {
 }
 
 func (s *sliceUnloadedBatchSet) Err() error {
+	if s.current >= len(s.batches) {
+		return s.err
+	}
 	return nil
 }
 
 func TestDeduplicatingBatchSet(t *testing.T) {
-	repeatingBatchSet := &sliceUnloadedBatchSet{
-		current: -1,
-		batches: []unloadedBatch{
-			{Entries: []unloadedBatchEntry{
+	repeatingBatchSet := newSliceUnloadedBatchSet(nil,
+		unloadedBatch{
+			Entries: []unloadedBatchEntry{
 				{lset: labels.FromStrings("l1", "v1"), chunks: make([]unloadedChunk, 2)},
 				{lset: labels.FromStrings("l1", "v1"), chunks: make([]unloadedChunk, 3)},
 			}},
-			{Entries: []unloadedBatchEntry{
+		unloadedBatch{
+			Entries: []unloadedBatchEntry{
 				{lset: labels.FromStrings("l1", "v2"), chunks: make([]unloadedChunk, 4)},
 				{lset: labels.FromStrings("l1", "v2"), chunks: make([]unloadedChunk, 4)},
 			}},
-		},
-	}
+	)
 	uniqueSet := newDeduplicatingBatchSet(100, repeatingBatchSet)
 
 	batches := readAllBatches(uniqueSet)
@@ -50,42 +70,149 @@ func TestDeduplicatingBatchSet(t *testing.T) {
 	assert.Len(t, batches[0].Entries[1].chunks, 8)
 }
 
+func TestDeduplicatingBatchSet_PropagatesErrors(t *testing.T) {
+	chainedSet := newDeduplicatingBatchSet(100, newSliceUnloadedBatchSet(errors.New("something went wrong"), unloadedBatch{
+		Entries: []unloadedBatchEntry{
+			{lset: labels.FromStrings("l1", "v1"), chunks: make([]unloadedChunk, 1)},
+			{lset: labels.FromStrings("l1", "v1"), chunks: make([]unloadedChunk, 1)},
+			{lset: labels.FromStrings("l1", "v2"), chunks: make([]unloadedChunk, 1)},
+			{lset: labels.FromStrings("l1", "v2"), chunks: make([]unloadedChunk, 1)},
+		},
+	}))
+
+	for chainedSet.Next() {
+	}
+
+	assert.ErrorContains(t, chainedSet.Err(), "something went wrong")
+}
+
 func TestMergedBatchSet(t *testing.T) {
-	batchSet1 := &sliceUnloadedBatchSet{
-		current: -1,
-		batches: []unloadedBatch{
-			{
+	testCases := map[string]struct {
+		set1, set2      unloadedBatchSet
+		expectedBatches []unloadedBatch
+		expectedErr     string
+	}{
+		"merges two batches without overlap": {
+			set1: newSliceUnloadedBatchSet(nil, unloadedBatch{
+				Entries: []unloadedBatchEntry{
+					{lset: labels.FromStrings("l1", "v1"), chunks: make([]unloadedChunk, 1)},
+				},
+			}),
+			set2: newSliceUnloadedBatchSet(nil, unloadedBatch{
+				Entries: []unloadedBatchEntry{
+					{lset: labels.FromStrings("l1", "v2"), chunks: make([]unloadedChunk, 3)},
+				},
+			}),
+			expectedBatches: []unloadedBatch{
+				{Entries: []unloadedBatchEntry{
+					{lset: labels.FromStrings("l1", "v1"), chunks: make([]unloadedChunk, 1)},
+					{lset: labels.FromStrings("l1", "v2"), chunks: make([]unloadedChunk, 3)},
+				}},
+			},
+		},
+		"merges two batches with last series from each overlapping": {
+			set1: newSliceUnloadedBatchSet(nil, unloadedBatch{
 				Entries: []unloadedBatchEntry{
 					{lset: labels.FromStrings("l1", "v2"), chunks: make([]unloadedChunk, 1)},
 				},
-				Stats: newSafeQueryStats(),
-			},
-		},
-	}
-
-	batchSet2 := &sliceUnloadedBatchSet{
-		current: -1,
-		batches: []unloadedBatch{
-			{
+			}),
+			set2: newSliceUnloadedBatchSet(nil, unloadedBatch{
 				Entries: []unloadedBatchEntry{
 					{lset: labels.FromStrings("l1", "v1"), chunks: make([]unloadedChunk, 2)},
 					{lset: labels.FromStrings("l1", "v2"), chunks: make([]unloadedChunk, 3)},
 				},
-				Stats: newSafeQueryStats(),
+			}),
+			expectedBatches: []unloadedBatch{
+				{Entries: []unloadedBatchEntry{
+					{lset: labels.FromStrings("l1", "v1"), chunks: make([]unloadedChunk, 2)},
+					{lset: labels.FromStrings("l1", "v2"), chunks: make([]unloadedChunk, 4)}, // the chunks of two series with the same label set are merged
+				}},
 			},
+		},
+		"merges two batches where the first is empty": {
+			set1: emptyBatchSet{},
+			set2: newSliceUnloadedBatchSet(nil, unloadedBatch{
+				Entries: []unloadedBatchEntry{
+					{lset: labels.FromStrings("l1", "v1"), chunks: make([]unloadedChunk, 1)},
+					{lset: labels.FromStrings("l1", "v2"), chunks: make([]unloadedChunk, 1)},
+				},
+			}),
+			expectedBatches: []unloadedBatch{
+				{Entries: []unloadedBatchEntry{
+					{lset: labels.FromStrings("l1", "v1"), chunks: make([]unloadedChunk, 1)},
+					{lset: labels.FromStrings("l1", "v2"), chunks: make([]unloadedChunk, 1)},
+				}},
+			},
+		},
+		"merges two batches with first one erroring at the end": {
+			set1: newSliceUnloadedBatchSet(errors.New("something went wrong"), unloadedBatch{
+				Entries: []unloadedBatchEntry{
+					{lset: labels.FromStrings("l1", "v2"), chunks: make([]unloadedChunk, 1)},
+				},
+			}),
+			set2: newSliceUnloadedBatchSet(nil, unloadedBatch{
+				Entries: []unloadedBatchEntry{
+					{lset: labels.FromStrings("l1", "v1"), chunks: make([]unloadedChunk, 1)},
+					{lset: labels.FromStrings("l1", "v2"), chunks: make([]unloadedChunk, 1)},
+				},
+			}),
+			expectedBatches: []unloadedBatch{
+				{Entries: []unloadedBatchEntry{
+					{lset: labels.FromStrings("l1", "v1"), chunks: make([]unloadedChunk, 1)},
+					{lset: labels.FromStrings("l1", "v2"), chunks: make([]unloadedChunk, 2)},
+				}},
+			},
+			expectedErr: "something went wrong",
+		},
+		"merges two batches with second one erroring at the end": {
+			set1: newSliceUnloadedBatchSet(nil, unloadedBatch{
+				Entries: []unloadedBatchEntry{
+					{lset: labels.FromStrings("l1", "v1"), chunks: make([]unloadedChunk, 1)},
+					{lset: labels.FromStrings("l1", "v2"), chunks: make([]unloadedChunk, 1)},
+				},
+			}),
+			set2: newSliceUnloadedBatchSet(errors.New("something went wrong"), unloadedBatch{
+				Entries: []unloadedBatchEntry{
+					{lset: labels.FromStrings("l1", "v2"), chunks: make([]unloadedChunk, 1)},
+					{lset: labels.FromStrings("l1", "v3"), chunks: make([]unloadedChunk, 1)},
+					{lset: labels.FromStrings("l1", "v4"), chunks: make([]unloadedChunk, 1)},
+				},
+			}),
+			expectedBatches: []unloadedBatch{
+				{Entries: []unloadedBatchEntry{
+					{lset: labels.FromStrings("l1", "v1"), chunks: make([]unloadedChunk, 1)},
+					{lset: labels.FromStrings("l1", "v2"), chunks: make([]unloadedChunk, 2)},
+					{lset: labels.FromStrings("l1", "v3"), chunks: make([]unloadedChunk, 1)},
+					{lset: labels.FromStrings("l1", "v4"), chunks: make([]unloadedChunk, 1)},
+				}},
+			},
+			expectedErr: "something went wrong",
 		},
 	}
 
-	mergedSet := newMergedBatchSet(100, batchSet1, batchSet2)
-	batches := readAllBatches(mergedSet)
+	for name, testCase := range testCases {
+		name, testCase := name, testCase
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			mergedSet := newMergedBatchSet(100, testCase.set1, testCase.set2)
+			batches := readAllBatches(mergedSet)
 
-	assert.NoError(t, mergedSet.Err())
-	assert.Len(t, batches, 1)
-	assert.Len(t, batches[0].Entries, 2)
-	assert.Len(t, batches[0].Entries[0].chunks, 2)
-	assert.Zero(t, labels.Compare(batches[0].Entries[0].lset, labels.FromStrings("l1", "v1")), "first series labels don't match")
-	assert.Len(t, batches[0].Entries[1].chunks, 4)
-	assert.Zero(t, labels.Compare(batches[0].Entries[1].lset, labels.FromStrings("l1", "v2")), "second series labels don't match")
+			if testCase.expectedErr != "" {
+				assert.EqualError(t, mergedSet.Err(), testCase.expectedErr)
+			} else {
+				assert.NoError(t, mergedSet.Err())
+			}
+
+			assert.Len(t, batches, len(testCase.expectedBatches))
+			for batchIdx, expectedBatch := range testCase.expectedBatches {
+				assert.Len(t, batches[batchIdx].Entries, len(expectedBatch.Entries))
+				for entryIdx, entry := range expectedBatch.Entries {
+					assert.Len(t, batches[batchIdx].Entries[entryIdx].chunks, len(entry.chunks))
+					assert.Zero(t, labels.Compare(batches[batchIdx].Entries[entryIdx].lset, entry.lset), "series labels don't match")
+				}
+			}
+		})
+	}
 }
 
 func readAllBatches(set unloadedBatchSet) []unloadedBatch {
