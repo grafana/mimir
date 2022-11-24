@@ -42,7 +42,7 @@ To provide accurate dashboards and alerts, the job label (by default `job`) sele
 A job is a combination of a prefix and component. The default prefix is the Kubernetes namespace followed by a slash, for example `<namespace>/` in `<namespace>/ingester`.
 
 Pre-compiled dashboards and alerts are shipped with a default configuration.
-If you compile dashboards and alerts from source; you have the option to customize the label used for the job selection through the `per_job_label` field, the prefix expected in the label value (can be omitted by setting it to `''` ) through the `job_prefix` field, and the regular expression used to select each Mimir component through the `job_names` field in the mixin config.
+If you compile dashboards and alerts from source, you have the option to customize a) the label used for the job selection via the `per_job_label` field, b) the prefix expected in the label value, which you can omit by setting it to `''` via the `job_prefix` field, and c) the regular expression used to select each Mimir component via the `job_names` field in the mixin configuration.
 
 ### Default `job` selection in monolithic mode
 
