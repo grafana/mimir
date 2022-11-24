@@ -249,7 +249,7 @@ func NewDecbufUvarintAt(bs ByteSlice, off int, castagnoliTable *crc32.Table) Dec
 	return dec
 }
 */
-func NewDecbufRaw2(bs ByteSlice) Decbuf {
+func NewDecbufRaw(bs ByteSlice) Decbuf {
 	b := bs.Range(0, bs.Len())
 	r := &BufReader{initial: b}
 	r.Reset()
@@ -345,7 +345,7 @@ func (d *Decbuf) Uvarint64() uint64 {
 	if d.E != nil {
 		return 0
 	}
-	b := d.r.Peek(8)
+	b := d.r.Peek(10)
 	//fmt.Printf("Uvarint64 peeked=%d\n", len(b))
 	x, n := varint.Uvarint(b)
 	//	x, n := varint.Uvarint(d.B)
