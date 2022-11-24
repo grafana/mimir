@@ -264,6 +264,7 @@
         // To scale out relatively quickly, but scale in slower, we look at the max memory utilization across all distributors over 15m.
         query: 'max_over_time(sum(container_memory_working_set_bytes{container="%s",namespace="%s"})[15m:])' % [name, $._config.namespace],
 
+        // threshold is expected to be a string
         threshold: std.toString(siToBytes(distributor_memory_requests)),
       },
     ],
