@@ -16,7 +16,7 @@ jobs:
           path: ./actions
           # pin the version to before https://github.com/grafana/grafana-github-actions/pull/113 because
           # we don't want to have the same strict rules for PR labels
-          ref: 514e35ce4c2bb64ee4407749e8b9ae77f42a5d29
+          ref: d284afd314ca3625c23595e9f62b52d215ead7ce
       - name: Install Actions
         run: npm install --production --prefix ./actions
       - name: Run backport
