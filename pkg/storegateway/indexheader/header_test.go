@@ -29,7 +29,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
-	"golang.org/x/sys/unix"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
@@ -661,47 +660,7 @@ func BenchmarkOpsBinaryReader(t *testing.B) {
 	}
 }
 
-func flushFile(file string) error {
-	f, err := fileutil.OpenMmapFile(file)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	src := f.Bytes()
-
-	const POSIX_FADV_WILLNEED = 3
-	const POSIX_FADV_DONTNEED = 4
-	err = unix.Fadvise(int(f.File().Fd()), 0, int64(len(src)), POSIX_FADV_DONTNEED) // _POSIX_FADV_DONTNEED)
-	if err != nil {
-		return err
-	}
-	//fmt.Printf("Flushed\n")
-
-	f.Close()
-	return nil
-}
-
 func doBenchmarkOpsBinaryReader(t *testing.B, warm bool, f newBinaryReaderFunc) {
-
-	flush := func(file string) error {
-		f, err := fileutil.OpenMmapFile(file)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-		src := f.Bytes()
-
-		const POSIX_FADV_WILLNEED = 3
-		const POSIX_FADV_DONTNEED = 4
-		err = unix.Fadvise(int(f.File().Fd()), 0, int64(len(src)), POSIX_FADV_DONTNEED) // _POSIX_FADV_DONTNEED)
-		if err != nil {
-			return err
-		}
-		//fmt.Printf("Flushed\n")
-
-		f.Close()
-		return nil
-	}
 	fn := "/home/steve/grafana/ops-index-header"
 
 	//var slowfile *SlowFileMount
@@ -720,7 +679,7 @@ func doBenchmarkOpsBinaryReader(t *testing.B, warm bool, f newBinaryReaderFunc) 
 	for i := 0; i < t.N; i++ {
 		if !warm {
 			t.StopTimer()
-			require.NoError(t, flush(fn))
+			require.NoError(t, flushFile(fn))
 			t.StartTimer()
 		}
 
