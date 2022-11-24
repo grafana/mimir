@@ -39,7 +39,7 @@ If you're running Mimir on baremetal, set the configuration field `deployment_ty
 
 A metric could be exposed by multiple Grafana Mimir components, or even different applications running in the same namespace.
 To provide accurate dashboards and alerts, the job label (by default `job`) selects a metric from specific components.
-A job is a combination of a prefix (the default prefix is the Kubernetes namespace followed by a slash) and component, for example `<namespace>/ingester`.
+A job is a combination of a prefix and component. The default prefix is the Kubernetes namespace followed by a slash, for example `<namespace>/` in `<namespace>/ingester`.
 
 Pre-compiled dashboards and alerts are shipped with a default configuration.
 If you compile dashboards and alerts from source; you have the option to customize the label used for the job selection through the `per_job_label` field, the prefix expected in the label value (can be omitted by setting it to `''` ) through the `job_prefix` field, and the regular expression used to select each Mimir component through the `job_names` field in the mixin config.
