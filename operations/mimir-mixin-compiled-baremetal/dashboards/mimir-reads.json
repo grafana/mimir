@@ -593,7 +593,7 @@
                   "targets": [
                      {
                         "exemplar": true,
-                        "expr": "histogram_quantile(0.99, sum by(le, pod) (rate(cortex_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"}[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.99, sum by(le, instance) (rate(cortex_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"}[$__rate_interval])))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "",
@@ -601,7 +601,7 @@
                         "step": 10
                      }
                   ],
-                  "title": "Per pod p99 latency",
+                  "title": "Per instance p99 latency",
                   "type": "timeseries"
                }
             ],
@@ -1211,7 +1211,7 @@
                   "targets": [
                      {
                         "exemplar": true,
-                        "expr": "histogram_quantile(0.99, sum by(le, pod) (rate(cortex_querier_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir|mimir-read.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"}[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.99, sum by(le, instance) (rate(cortex_querier_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir|mimir-read.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"}[$__rate_interval])))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "",
@@ -1219,7 +1219,7 @@
                         "step": 10
                      }
                   ],
-                  "title": "Per pod p99 latency",
+                  "title": "Per instance p99 latency",
                   "type": "timeseries"
                }
             ],
@@ -1722,7 +1722,7 @@
                   "targets": [
                      {
                         "exemplar": true,
-                        "expr": "histogram_quantile(0.99, sum by(le, pod) (rate(cortex_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", route=~\"/cortex.Ingester/Query(Stream)?|/cortex.Ingester/MetricsForLabelMatchers|/cortex.Ingester/LabelValues|/cortex.Ingester/MetricsMetadata\"}[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.99, sum by(le, instance) (rate(cortex_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", route=~\"/cortex.Ingester/Query(Stream)?|/cortex.Ingester/MetricsForLabelMatchers|/cortex.Ingester/LabelValues|/cortex.Ingester/MetricsMetadata\"}[$__rate_interval])))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "",
@@ -1730,7 +1730,7 @@
                         "step": 10
                      }
                   ],
-                  "title": "Per pod p99 latency",
+                  "title": "Per instance p99 latency",
                   "type": "timeseries"
                }
             ],
@@ -1961,7 +1961,7 @@
                   "targets": [
                      {
                         "exemplar": true,
-                        "expr": "histogram_quantile(0.99, sum by(le, pod) (rate(cortex_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\", route=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.99, sum by(le, instance) (rate(cortex_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\", route=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval])))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "",
@@ -1969,7 +1969,7 @@
                         "step": 10
                      }
                   ],
-                  "title": "Per pod p99 latency",
+                  "title": "Per instance p99 latency",
                   "type": "timeseries"
                }
             ],

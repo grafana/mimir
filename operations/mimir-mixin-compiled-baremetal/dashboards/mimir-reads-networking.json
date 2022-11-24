@@ -66,10 +66,10 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (rate(node_network_receive_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\".*query-frontend.*\"}[$__rate_interval]))",
+                        "expr": "sum by(instance) (rate(node_network_receive_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*query-frontend.*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "{{pod}}",
+                        "legendFormat": "{{instance}}",
                         "legendLink": null,
                         "step": 10
                      }
@@ -142,10 +142,10 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (rate(node_network_transmit_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\".*query-frontend.*\"}[$__rate_interval]))",
+                        "expr": "sum by(instance) (rate(node_network_transmit_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*query-frontend.*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "{{pod}}",
+                        "legendFormat": "{{instance}}",
                         "legendLink": null,
                         "step": 10
                      }
@@ -302,7 +302,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "avg(sum by(pod) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}))",
+                        "expr": "avg(sum by(instance) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "avg",
@@ -310,7 +310,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "max(sum by(pod) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}))",
+                        "expr": "max(sum by(instance) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"}))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "highest",
@@ -406,10 +406,10 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (rate(node_network_receive_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\".*query-scheduler.*\"}[$__rate_interval]))",
+                        "expr": "sum by(instance) (rate(node_network_receive_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*query-scheduler.*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "{{pod}}",
+                        "legendFormat": "{{instance}}",
                         "legendLink": null,
                         "step": 10
                      }
@@ -482,10 +482,10 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (rate(node_network_transmit_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\".*query-scheduler.*\"}[$__rate_interval]))",
+                        "expr": "sum by(instance) (rate(node_network_transmit_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*query-scheduler.*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "{{pod}}",
+                        "legendFormat": "{{instance}}",
                         "legendLink": null,
                         "step": 10
                      }
@@ -642,7 +642,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "avg(sum by(pod) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|mimir-backend.*))\"}))",
+                        "expr": "avg(sum by(instance) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|mimir-backend.*))\"}))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "avg",
@@ -650,7 +650,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "max(sum by(pod) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|mimir-backend.*))\"}))",
+                        "expr": "max(sum by(instance) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|mimir-backend.*))\"}))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "highest",
@@ -746,10 +746,10 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (rate(node_network_receive_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\".*querier.*\"}[$__rate_interval]))",
+                        "expr": "sum by(instance) (rate(node_network_receive_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*querier.*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "{{pod}}",
+                        "legendFormat": "{{instance}}",
                         "legendLink": null,
                         "step": 10
                      }
@@ -822,10 +822,10 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (rate(node_network_transmit_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\".*querier.*\"}[$__rate_interval]))",
+                        "expr": "sum by(instance) (rate(node_network_transmit_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*querier.*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "{{pod}}",
+                        "legendFormat": "{{instance}}",
                         "legendLink": null,
                         "step": 10
                      }
@@ -982,7 +982,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "avg(sum by(pod) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir|mimir-read.*))\"}))",
+                        "expr": "avg(sum by(instance) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir|mimir-read.*))\"}))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "avg",
@@ -990,7 +990,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "max(sum by(pod) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir|mimir-read.*))\"}))",
+                        "expr": "max(sum by(instance) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir|mimir-read.*))\"}))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "highest",
@@ -1086,10 +1086,10 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (rate(node_network_receive_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\".*store-gateway.*\"}[$__rate_interval]))",
+                        "expr": "sum by(instance) (rate(node_network_receive_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*store-gateway.*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "{{pod}}",
+                        "legendFormat": "{{instance}}",
                         "legendLink": null,
                         "step": 10
                      }
@@ -1162,10 +1162,10 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (rate(node_network_transmit_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\".*store-gateway.*\"}[$__rate_interval]))",
+                        "expr": "sum by(instance) (rate(node_network_transmit_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*store-gateway.*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "{{pod}}",
+                        "legendFormat": "{{instance}}",
                         "legendLink": null,
                         "step": 10
                      }
@@ -1322,7 +1322,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "avg(sum by(pod) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}))",
+                        "expr": "avg(sum by(instance) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "avg",
@@ -1330,7 +1330,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "max(sum by(pod) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}))",
+                        "expr": "max(sum by(instance) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "highest",
@@ -1426,10 +1426,10 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (rate(node_network_receive_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\".*ruler.*\"}[$__rate_interval]))",
+                        "expr": "sum by(instance) (rate(node_network_receive_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler.*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "{{pod}}",
+                        "legendFormat": "{{instance}}",
                         "legendLink": null,
                         "step": 10
                      }
@@ -1502,10 +1502,10 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (rate(node_network_transmit_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",pod=~\".*ruler.*\"}[$__rate_interval]))",
+                        "expr": "sum by(instance) (rate(node_network_transmit_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ruler.*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "{{pod}}",
+                        "legendFormat": "{{instance}}",
                         "legendLink": null,
                         "step": 10
                      }
@@ -1662,7 +1662,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "avg(sum by(pod) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}))",
+                        "expr": "avg(sum by(instance) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "avg",
@@ -1670,7 +1670,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "max(sum by(pod) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}))",
+                        "expr": "max(sum by(instance) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\"}))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "highest",

@@ -250,10 +250,10 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (cortex_query_frontend_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"})",
+                        "expr": "sum by(instance) (cortex_query_frontend_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\"})",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "{{pod}}",
+                        "legendFormat": "{{instance}}",
                         "legendLink": null,
                         "step": 10
                      }
@@ -261,7 +261,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Queue length (per pod)",
+                  "title": "Queue length (per instance)",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -506,10 +506,10 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (cortex_query_scheduler_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|mimir-backend.*))\"})",
+                        "expr": "sum by(instance) (cortex_query_scheduler_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|mimir-backend.*))\"})",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "{{pod}}",
+                        "legendFormat": "{{instance}}",
                         "legendLink": null,
                         "step": 10
                      }
@@ -517,7 +517,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Queue length (per pod)",
+                  "title": "Queue length (per instance)",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -2530,7 +2530,7 @@
                         "expr": "cortex_bucket_store_blocks_loaded{component=\"store-gateway\",cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "{{pod}}",
+                        "legendFormat": "{{instance}}",
                         "legendLink": null,
                         "step": 10
                      }
@@ -2792,7 +2792,7 @@
                         "expr": "cortex_bucket_store_indexheader_lazy_load_total{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"} - cortex_bucket_store_indexheader_lazy_unload_total{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir|mimir-backend.*))\"}",
                         "format": "time_series",
                         "intervalFactor": 2,
-                        "legendFormat": "{{pod}}",
+                        "legendFormat": "{{instance}}",
                         "legendLink": null,
                         "step": 10
                      }

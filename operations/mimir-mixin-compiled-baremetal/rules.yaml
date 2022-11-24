@@ -399,7 +399,7 @@ groups:
         label_replace(
           label_replace(
             node_namespace_pod_container:container_cpu_usage_seconds_total:sum_irate,
-            "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
+            "deployment", "$1", "instance", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
           ),
           # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
           # always matches everything and the (optional) zone is not removed.
@@ -420,7 +420,7 @@ groups:
           label_replace(
             label_replace(
               kube_pod_container_resource_requests_cpu_cores,
-              "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
+              "deployment", "$1", "instance", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
             ),
             # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
             # always matches everything and the (optional) zone is not removed.
@@ -436,7 +436,7 @@ groups:
           label_replace(
             label_replace(
               kube_pod_container_resource_requests{resource="cpu"},
-              "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
+              "deployment", "$1", "instance", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
             ),
             # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
             # always matches everything and the (optional) zone is not removed.
@@ -461,7 +461,7 @@ groups:
         label_replace(
           label_replace(
             container_memory_usage_bytes{image!=""},
-            "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
+            "deployment", "$1", "instance", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
           ),
           # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
           # always matches everything and the (optional) zone is not removed.
@@ -482,7 +482,7 @@ groups:
           label_replace(
             label_replace(
               kube_pod_container_resource_requests_memory_bytes,
-              "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
+              "deployment", "$1", "instance", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
             ),
             # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
             # always matches everything and the (optional) zone is not removed.
@@ -498,7 +498,7 @@ groups:
           label_replace(
             label_replace(
               kube_pod_container_resource_requests{resource="memory"},
-              "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
+              "deployment", "$1", "instance", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
             ),
             # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
             # always matches everything and the (optional) zone is not removed.
@@ -521,11 +521,11 @@ groups:
 - name: mimir_alertmanager_rules
   rules:
   - expr: |
-      sum by (cluster, job, pod) (cortex_alertmanager_alerts)
-    record: cluster_job_pod:cortex_alertmanager_alerts:sum
+      sum by (cluster, job, instance) (cortex_alertmanager_alerts)
+    record: cluster_job_instance:cortex_alertmanager_alerts:sum
   - expr: |
-      sum by (cluster, job, pod) (cortex_alertmanager_silences)
-    record: cluster_job_pod:cortex_alertmanager_silences:sum
+      sum by (cluster, job, instance) (cortex_alertmanager_silences)
+    record: cluster_job_instance:cortex_alertmanager_silences:sum
   - expr: |
       sum by (cluster, job) (rate(cortex_alertmanager_alerts_received_total[5m]))
     record: cluster_job:cortex_alertmanager_alerts_received_total:rate5m
@@ -553,5 +553,5 @@ groups:
 - name: mimir_ingester_rules
   rules:
   - expr: |
-      sum by(cluster, namespace, pod) (rate(cortex_ingester_ingested_samples_total[1m]))
-    record: cluster_namespace_pod:cortex_ingester_ingested_samples_total:rate1m
+      sum by(cluster, namespace, instance) (rate(cortex_ingester_ingested_samples_total[1m]))
+    record: cluster_namespace_instance:cortex_ingester_ingested_samples_total:rate1m
