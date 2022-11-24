@@ -584,7 +584,7 @@ func (l *bucketIndexLoadedSeries) addSeries(ref storage.SeriesRef, data []byte) 
 //
 // Error is returned on decoding error or if the reference does not resolve to a known series.
 //
-// This function is NOT concurrency safe.
+// It's NOT safe to call this function concurrently with addSeries().
 func (l *bucketIndexLoadedSeries) unsafeLoadSeriesForTime(ref storage.SeriesRef, lset *[]symbolizedLabel, chks *[]chunks.Meta, skipChunks bool, mint, maxt int64, stats *queryStats) (ok bool, err error) {
 	b, ok := l.series[ref]
 	if !ok {
