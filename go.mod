@@ -234,7 +234,7 @@ replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus 
 // Temporary fixes to update the indirect dependency on prometheus/exporter-toolkit to v0.8.1 to match the version used in mimir-prometheus
 replace github.com/prometheus/alertmanager => github.com/simonpasquier/alertmanager v0.11.1-0.20221115151505-b9e5f08fde74
 
-replace github.com/weaveworks/common => github.com/krajorama/weaworks-common v0.0.0-20221123234314-fd399ebbd108
+replace github.com/weaveworks/common => github.com/rabenhorst/common v0.0.0-20221114111857-9eb1f146696e
 
 // Pin hashicorp depencencies since the Prometheus fork, go mod tries to update them.
 replace github.com/hashicorp/go-immutable-radix => github.com/hashicorp/go-immutable-radix v1.2.0
