@@ -338,12 +338,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
       fill: 0,
     },
 
-  containerNetworkPanel(title, metric, instanceName)::
+  containerNetworkBytesPanel(title, metric, instanceName)::
     $.panel(title) +
     $.queryPanel(
-      $._config.resources_panel_queries[$._config.deployment_type].network % {
+      $._config.resources_panel_queries[$._config.deployment_type][metric] % {
         namespaceMatcher: $.namespaceMatcher(),
-        metric: metric,
         instanceLabel: $._config.per_instance_label,
         instanceName: instanceName,
       }, '{{%s}}' % $._config.per_instance_label
@@ -351,11 +350,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.stack +
     { yaxes: $.yaxes('Bps') },
 
+  // The provided instanceName should be a regexp from $._config.instance_names.
   containerNetworkReceiveBytesPanel(instanceName)::
-    $.containerNetworkPanel('Receive bandwidth', $._config.resources_panel_series[$._config.deployment_type].network_receive_bytes_metrics, instanceName),
+    $.containerNetworkBytesPanel('Receive bandwidth', 'network_receive_bytes', instanceName),
 
+  // The provided instanceName should be a regexp from $._config.instance_names.
   containerNetworkTransmitBytesPanel(instanceName)::
-    $.containerNetworkPanel('Transmit bandwidth', $._config.resources_panel_series[$._config.deployment_type].network_transmit_bytes_metrics, instanceName),
+    $.containerNetworkBytesPanel('Transmit bandwidth', 'network_transmit_bytes', instanceName),
 
   // The provided instanceName should be a regexp from $._config.instance_names, while
   // the provided containerName should be a regexp from $._config.container_names.
@@ -416,28 +417,33 @@ local utils = import 'mixin-utils/utils.libsonnet';
     // Check only the prefix so that a multi-zone deployment matches too.
     'label_name=~"(%s).*"' % containerName,
 
-  jobNetworkingRow(title, name)::
+  // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
+  containerNetworkingRow(title, componentName)::
+    // Match series using namespace + instance instead of the job so that we can
+    // select only specific deployments (e.g. "distributor in microservices mode").
     local vars = $._config {
-      job_matcher: $.jobMatcher($._config.job_names[name]),
+      instanceLabel: $._config.per_instance_label,
+      instanceName: $._config.instance_names[componentName],
+      namespaceMatcher: $.namespaceMatcher(),
     };
 
     super.row(title)
-    .addPanel($.containerNetworkReceiveBytesPanel($._config.instance_names[name]))
-    .addPanel($.containerNetworkTransmitBytesPanel($._config.instance_names[name]))
+    .addPanel($.containerNetworkReceiveBytesPanel($._config.instance_names[componentName]))
+    .addPanel($.containerNetworkTransmitBytesPanel($._config.instance_names[componentName]))
     .addPanel(
       $.panel('Inflight requests (per pod)') +
       $.queryPanel([
-        'avg(cortex_inflight_requests{%(job_matcher)s})' % vars,
-        'max(cortex_inflight_requests{%(job_matcher)s})' % vars,
+        'avg(cortex_inflight_requests{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"})' % vars,
+        'max(cortex_inflight_requests{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"})' % vars,
       ], ['avg', 'highest']) +
       { fill: 0 }
     )
     .addPanel(
       $.panel('TCP connections (per pod)') +
       $.queryPanel([
-        'avg(sum by(%(per_instance_label)s) (cortex_tcp_connections{%(job_matcher)s}))' % vars,
-        'max(sum by(%(per_instance_label)s) (cortex_tcp_connections{%(job_matcher)s}))' % vars,
-        'min(cortex_tcp_connections_limit{%(job_matcher)s})' % vars,
+        'avg(sum by(%(per_instance_label)s) (cortex_tcp_connections{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}))' % vars,
+        'max(sum by(%(per_instance_label)s) (cortex_tcp_connections{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}))' % vars,
+        'min(cortex_tcp_connections_limit{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"})' % vars,
       ], ['avg', 'highest', 'limit']) +
       { fill: 0 }
     ),
