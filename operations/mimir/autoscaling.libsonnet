@@ -80,7 +80,9 @@
             //
             // Read more:
             // https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#algorithm-details
-            threshold: trigger.threshold,
+            //
+            // We also have to ensure that the threshold is an integer (represented as a string)
+            threshold: std.toString(std.parseInt(trigger.threshold)),
           },
         }
         for trigger in config.triggers
@@ -141,17 +143,23 @@
     // Simple method to convert binary multiples.
     // Only works for limited set of SI prefixes (as below).
 
-    if std.endsWith(str, 'Ki') then (
-      std.parseJson(std.rstripChars(str, 'Ki')) * std.pow(2, 10)
-    ) else if std.endsWith(str, 'Mi') then (
-      std.parseJson(std.rstripChars(str, 'Mi')) * std.pow(2, 20)
-    ) else if std.endsWith(str, 'Gi') then (
-      std.parseJson(std.rstripChars(str, 'Gi')) * std.pow(2, 30)
-    ) else if std.endsWith(str, 'Ti') then (
-      std.parseJson(std.rstripChars(str, 'Ti')) * std.pow(2, 40)
-    ) else (
-      str
-    )
+    // Utility converting the input to a (potentially decimal) number of bytes
+    local siToBytesDecimal(str) = (
+      if std.endsWith(str, 'Ki') then (
+        std.parseJson(std.rstripChars(str, 'Ki')) * std.pow(2, 10)
+      ) else if std.endsWith(str, 'Mi') then (
+        std.parseJson(std.rstripChars(str, 'Mi')) * std.pow(2, 20)
+      ) else if std.endsWith(str, 'Gi') then (
+        std.parseJson(std.rstripChars(str, 'Gi')) * std.pow(2, 30)
+      ) else if std.endsWith(str, 'Ti') then (
+        std.parseJson(std.rstripChars(str, 'Ti')) * std.pow(2, 40)
+      ) else (
+        std.parseJson(str)
+      )
+    );
+
+    // Round down to nearest integer
+    std.floor(siToBytesDecimal(str))
   ),
 
   local cpuToMilliCPUInt(str) = (
@@ -256,8 +264,8 @@
         // To scale out relatively quickly, but scale in slower, we look at the max memory utilization across all distributors over 15m.
         query: 'max_over_time(sum(container_memory_working_set_bytes{container="%s",namespace="%s"})[15m:])' % [name, $._config.namespace],
 
-        // threshold is expected to be a string, so use '' to cast any ints returned by siToBytes.
-        threshold: siToBytes(distributor_memory_requests) + '',
+        // threshold is expected to be a string
+        threshold: std.toString(siToBytes(distributor_memory_requests)),
       },
     ],
   }),
