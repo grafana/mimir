@@ -154,12 +154,12 @@
       ) else if std.endsWith(str, 'Ti') then (
         std.parseJson(std.rstripChars(str, 'Ti')) * std.pow(2, 40)
       ) else (
-        str
+        std.parseJson(str)
       )
     );
 
     // Round down to nearest integer
-    std.parseInt(std.split(std.toString(siToBytesDecimal(str)), '.')[0])
+    std.floor(siToBytesDecimal(str))
   ),
 
   local cpuToMilliCPUInt(str) = (
