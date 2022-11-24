@@ -183,7 +183,6 @@ func (s *bucketBatchSet) Next() bool {
 	if s.currBatchPostingsOffset >= len(s.postings)-1 || s.err != nil {
 		return false
 	}
-	s.currentBatch = newBatch(s.batchSize)
 	return s.loadBatch()
 }
 
@@ -197,6 +196,7 @@ func (s *bucketBatchSet) loadBatch() bool {
 	if end > len(s.postings) {
 		end = len(s.postings)
 	}
+	s.currentBatch = newBatch(s.batchSize)
 	nextPostings := s.postings[s.currBatchPostingsOffset:end]
 
 	loadedSeries, err := s.indexr.preloadSeries(s.ctx, nextPostings, s.currentBatch.Stats)
