@@ -950,7 +950,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 			chunkr         *chunkReaders
 		)
 		if !req.SkipChunks {
-			chunkr = newChunkReaders(ctx, blocks, chunkBytes)
+			chunkr = newChunkReaders(ctx, blocks, s.chunkPool)
 			defer runutil.CloseWithLogOnErr(s.logger, chunkr, "chunk readers")
 		}
 

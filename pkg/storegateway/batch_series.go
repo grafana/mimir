@@ -485,7 +485,7 @@ func (c *loadingBatchSet) Next() bool {
 	nextLoaded := loadedBatch{
 		Entries:       entries,
 		Stats:         c.chunkReaders.stats(),
-		bytesReleaser: c.chunkReaders.chunkBytes,
+		bytesReleaser: c.chunkReaders.chunkBytesReleaser,
 	}
 	c.current = nextLoaded
 	return true

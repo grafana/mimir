@@ -52,16 +52,17 @@ func newBucketChunkReader(ctx context.Context, block *bucketBlock, chunkBytes *p
 
 func (r *bucketChunkReader) Close() error {
 	r.block.pendingReaders.Done()
-	r.reset()
+	r.reset(nil)
 	return nil
 }
 
 // reset resets the chunks scheduled for loading. It does not release any loaded chunks.
-// Use unload() to release the loaded chunks.
-func (r *bucketChunkReader) reset() {
+// Use the injected pool.BatchBytes to release the bytes.
+func (r *bucketChunkReader) reset(chunkBytes *pool.BatchBytes) {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
 	r.stats = &queryStats{}
+	r.chunkBytes = chunkBytes
 
 	for i := range r.toLoad {
 		r.toLoad[i] = r.toLoad[i][:0]
@@ -270,17 +271,20 @@ func (b rawChunk) NumSamples() int {
 type releaser interface{ Release() }
 
 type chunkReaders struct {
-	chunkBytes releaser
-	readers    map[ulid.ULID]*bucketChunkReader
+	chunkBytesReleaser *pool.BatchBytes
+	chunkBytesPool     pool.Bytes
+	readers            map[ulid.ULID]*bucketChunkReader
 }
 
-func newChunkReaders(ctx context.Context, blocks []*bucketBlock, chunkBytes *pool.BatchBytes) *chunkReaders {
+func newChunkReaders(ctx context.Context, blocks []*bucketBlock, chunkBytes pool.Bytes) *chunkReaders {
+	batchBytes := &pool.BatchBytes{Delegate: chunkBytes}
 	readers := &chunkReaders{
-		chunkBytes: chunkBytes,
-		readers:    make(map[ulid.ULID]*bucketChunkReader, len(blocks)),
+		chunkBytesPool:     chunkBytes,
+		chunkBytesReleaser: batchBytes,
+		readers:            make(map[ulid.ULID]*bucketChunkReader, len(blocks)),
 	}
 	for _, b := range blocks {
-		readers.readers[b.meta.ULID] = b.chunkReader(ctx, chunkBytes)
+		readers.readers[b.meta.ULID] = b.chunkReader(ctx, batchBytes)
 	}
 	return readers
 }
@@ -300,9 +304,12 @@ func (r chunkReaders) load(entries []seriesEntry) error {
 	return g.Wait()
 }
 
-func (r chunkReaders) reset() {
+// reset resets the chunks scheduled for loading. It does not release any loaded chunks.
+// Use chunkBytesReleaser.Release before calling reset to release the bytes.
+func (r *chunkReaders) reset() {
+	r.chunkBytesReleaser = &pool.BatchBytes{Delegate: r.chunkBytesPool}
 	for _, reader := range r.readers {
-		reader.reset()
+		reader.reset(r.chunkBytesReleaser)
 	}
 }
 
