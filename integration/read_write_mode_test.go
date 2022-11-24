@@ -18,7 +18,7 @@ import (
 	"github.com/grafana/mimir/integration/e2emimir"
 )
 
-func TestReadWriteMode(t *testing.T) {
+func TestReadWriteModeQuerying(t *testing.T) {
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
 	defer s.Close()
