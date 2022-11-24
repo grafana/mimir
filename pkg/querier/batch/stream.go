@@ -6,9 +6,10 @@
 package batch
 
 import (
-	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+
+	"github.com/grafana/mimir/pkg/storage/chunk"
 )
 
 // batchStream deals with iteratoring through multiple, non-overlapping batches,
