@@ -481,7 +481,6 @@ func (c *memcachedClient) Del(ctx context.Context, key string) error {
 			c.duration.WithLabelValues(opDelete).Observe(time.Since(start).Seconds())
 		}
 		errCh <- err
-		return
 	})
 
 	if errors.Is(err, errMemcachedAsyncBufferFull) {

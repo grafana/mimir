@@ -776,6 +776,12 @@ func (c *mockedMemcachedClient) SetAsync(ctx context.Context, key string, value 
 	return nil
 }
 
+func (c *mockedMemcachedClient) Del(_ context.Context, key string) error {
+	delete(c.cache, key)
+
+	return nil
+}
+
 func (c *mockedMemcachedClient) Stop() {
 	// Nothing to do.
 }
