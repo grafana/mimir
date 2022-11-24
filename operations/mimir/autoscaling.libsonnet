@@ -212,9 +212,10 @@
         // Due to the more predicatable nature of the ruler-querier workload we can scale on CPU usage.
         // To scale out relatively quickly, but scale in slower, we look at the average CPU utilization per ruler-querier over 5m (rolling window)
         // and then we pick the highest value over the last 15m.
-        query: 'max_over_time(sum(rate(container_cpu_usage_seconds_total{container="%s",namespace="%s"}[5m]))[15m:])' % [name, $._config.namespace],
+        query: 'max_over_time(sum(rate(container_cpu_usage_seconds_total{container="%s",namespace="%s"}[5m]))[15m:]) * 1000' % [name, $._config.namespace],
 
-        threshold: querier_cpu_requests,
+        // threshold is expected to be a string.
+        threshold: std.toString(cpuToMilliCPUInt(querier_cpu_requests)),
       },
     ],
   }),
@@ -255,8 +256,8 @@
         // Multiply by 1000 to get the result in millicores. This is due to KEDA only working with Ints.
         query: 'max_over_time(sum(rate(container_cpu_usage_seconds_total{container="%s",namespace="%s"}[5m]))[15m:]) * 1000' % [name, $._config.namespace],
 
-        // threshold is expected to be a string, so use '' to cast any ints returned by cpuToMilliCPUInt.
-        threshold: cpuToMilliCPUInt(distributor_cpu_requests) + '',
+        // threshold is expected to be a string.
+        threshold: std.toString(cpuToMilliCPUInt(distributor_cpu_requests)),
       },
       {
         metric_name: 'cortex_%s_memory_hpa_%s' % [std.strReplace(name, '-', '_'), $._config.namespace],

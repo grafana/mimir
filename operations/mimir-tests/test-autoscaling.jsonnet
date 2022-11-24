@@ -34,4 +34,8 @@ mimir {
     // the KEDA threshold
     k.util.resourcesRequests(2, '3.2Gi') +
     k.util.resourcesLimits(null, '6Gi'),
+  ruler_querier_container+::
+    // Test a <1 non-integer CPU request, to verify that this gets converted into an integer for
+    // the KEDA threshold
+    k.util.resourcesRequests(0.2, '1Gi'),
 }
