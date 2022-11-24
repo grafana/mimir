@@ -50,10 +50,10 @@ type ByteSlice interface {
 }
 
 type Symbols struct {
-	bs      ByteSlice
-	r       stream_encoding.Reader
-	version int
-	off     int
+	bs                  ByteSlice
+	r                   stream_encoding.Reader
+	version             int
+	symbolTablePosition int
 
 	offsets []int
 	seen    int
@@ -61,19 +61,19 @@ type Symbols struct {
 
 const symbolFactor = 32
 
-//func NewSymbols(bs ByteSlice, version, off int) (*Symbols, error) {
-
 // NewSymbols returns a Symbols object for symbol lookups.
-func NewSymbols(bs ByteSlice, version, off int) (*Symbols, error) {
+// bs should contain the Decbuf-encoded symbol table, including leading length and trailing checksum bytes.
+// symbolTablePosition should be the offset, from the beginning of the index file, of the symbol table.
+func NewSymbols(bs ByteSlice, version, symbolTablePosition int) (*Symbols, error) {
 	r := stream_encoding.NewBufReader(bs)
 	s := &Symbols{
-		bs:      bs,
-		r:       r,
-		version: version,
-		off:     off,
+		bs:                  bs,
+		r:                   r,
+		version:             version,
+		symbolTablePosition: symbolTablePosition,
 	}
 
-	d := stream_encoding.NewDecbuf(r, off, castagnoliTable)
+	d := stream_encoding.NewDecbuf(r, 0, castagnoliTable)
 	if d.Err() != nil {
 		fmt.Printf("error: %v\n", d.Err())
 	}
@@ -81,7 +81,7 @@ func NewSymbols(bs ByteSlice, version, off int) (*Symbols, error) {
 	var (
 		origLen = d.Len()
 		cnt     = d.Be32int()
-		basePos = off + 4
+		basePos = 4
 	)
 	s.offsets = make([]int, 0, 1+cnt/symbolFactor)
 	for d.Err() == nil && s.seen < cnt {
@@ -118,12 +118,11 @@ func (s Symbols) Lookup(o uint32) (string, error) {
 			d.UvarintBytes()
 		}
 	} else {
-
-		// TODO: This is always wrong for v1 by 14 bytes. Meaning, if we do `d.Skip(int(0 - 14))` it works
-		//  perfectly. We're not accounting for the index header somewhere or we stopped including it somewhere
-		//  that we used to include it in.
-
-		d.Skip(int(o))
+		// In v1, o is relative to the beginning of the whole index header file, so we
+		// need to adjust for the fact our view into the file starts at the beginning
+		// of the symbol table.
+		offsetInTable := int(o) - s.symbolTablePosition
+		d.Skip(offsetInTable)
 	}
 	sym := d.UvarintStr()
 	if d.Err() != nil {
