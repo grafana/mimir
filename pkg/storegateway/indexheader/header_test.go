@@ -225,7 +225,7 @@ func TestReadersStreaming(t *testing.T) {
 	defer func() { require.NoError(t, bkt.Close()) }()
 
 	// Create block index version 2.
-	id1, err := testhelper.CreateBlock(ctx, tmpDir, []labels.Labels{
+	idV2, err := testhelper.CreateBlock(ctx, tmpDir, []labels.Labels{
 		{{Name: "a", Value: "1"}},
 		{{Name: "a", Value: "2"}},
 		{{Name: "a", Value: "3"}},
@@ -244,7 +244,7 @@ func TestReadersStreaming(t *testing.T) {
 	}, 100, 0, 1000, labels.FromStrings("ext1", "1"), 124, metadata.NoneFunc)
 	require.NoError(t, err)
 
-	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, id1.String()), metadata.NoneFunc))
+	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, idV2.String()), metadata.NoneFunc))
 
 	// Copy block index version 1 for backward compatibility.
 	/* The block here was produced at the commit
@@ -263,27 +263,26 @@ func TestReadersStreaming(t *testing.T) {
 	   db.Close()
 	*/
 
-	m, err := metadata.ReadFromDir("./testdata/index_format_v1")
+	metaV1, err := metadata.ReadFromDir("./testdata/index_format_v1")
 	require.NoError(t, err)
-	test.Copy(t, "./testdata/index_format_v1", filepath.Join(tmpDir, m.ULID.String()))
+	test.Copy(t, "./testdata/index_format_v1", filepath.Join(tmpDir, metaV1.ULID.String()))
 
-	_, err = metadata.InjectThanos(log.NewNopLogger(), filepath.Join(tmpDir, m.ULID.String()), metadata.Thanos{
+	_, err = metadata.InjectThanos(log.NewNopLogger(), filepath.Join(tmpDir, metaV1.ULID.String()), metadata.Thanos{
 		Labels:     labels.FromStrings("ext1", "1").Map(),
 		Downsample: metadata.ThanosDownsample{Resolution: 0},
 		Source:     metadata.TestSource,
-	}, &m.BlockMeta)
+	}, &metaV1.BlockMeta)
 	require.NoError(t, err)
-	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, m.ULID.String()), metadata.NoneFunc))
+	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, metaV1.ULID.String()), metadata.NoneFunc))
 
-	//for _, id := range []ulid.ULID{id1, m.ULID} {
-	for _, id := range []ulid.ULID{m.ULID} {
+	//for _, id := range []ulid.ULID{idV2, metaV1.ULID} {
+	for _, id := range []ulid.ULID{metaV1.ULID} {
 		t.Run(id.String(), func(t *testing.T) {
 			indexFile, err := fileutil.OpenMmapFile(filepath.Join(tmpDir, id.String(), block.IndexFilename))
 			require.NoError(t, err)
 			defer func() { _ = indexFile.Close() }()
 
 			b := realByteSlice(indexFile.Bytes())
-
 
 			fmt.Printf("BYTE SLICE LEN: %d\n", len(b))
 
@@ -296,7 +295,7 @@ func TestReadersStreaming(t *testing.T) {
 
 				defer func() { require.NoError(t, br.Close()) }()
 
-				if id == id1 {
+				if id == idV2 {
 					require.Equal(t, 1, br.version)
 					require.Equal(t, 2, br.indexVersion)
 					require.Equal(t, &BinaryTOC{Symbols: headerLen, PostingsOffsetTable: 70}, br.toc)
