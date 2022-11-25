@@ -928,7 +928,7 @@ spec:
           limits:
             memory: 24Gi
           requests:
-            cpu: 0.2
+            cpu: "0.2"
             memory: 1Gi
         volumeMounts:
         - mountPath: /etc/mimir
