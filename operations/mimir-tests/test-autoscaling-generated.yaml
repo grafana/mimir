@@ -928,8 +928,8 @@ spec:
           limits:
             memory: 24Gi
           requests:
-            cpu: "1"
-            memory: 12Gi
+            cpu: "0.2"
+            memory: 1Gi
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
@@ -1813,6 +1813,7 @@ spec:
   - metadata:
       metricName: cortex_ruler_querier_hpa_default
       query: max_over_time(sum(rate(container_cpu_usage_seconds_total{container="ruler-querier",namespace="default"}[5m]))[15m:])
+        * 1000
       serverAddress: http://prometheus.default:9090/prometheus
-      threshold: "1"
+      threshold: "200"
     type: prometheus
