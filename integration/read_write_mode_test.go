@@ -72,7 +72,17 @@ func TestReadWriteModeRecordingRule(t *testing.T) {
 		},
 	)
 
-	// Create a recording rule
+	// Push data that should be captured by the recording rule
+	pushTime := time.Now()
+	series, _, _ := generateSeries("test_series", pushTime, prompb.Label{Name: "foo", Value: "bar"})
+
+	res, err := c.Push(series)
+	require.NoError(t, err)
+	require.Equal(t, 200, res.StatusCode)
+
+	// Create recording rule
+	// (we create the rule after pushing the data to avoid race conditions around pushing the data and evaluating the rule -
+	// Mimir guarantees that previously pushed data will be captured by the recording rule evaluation)
 	record := yaml.Node{}
 	testRuleName := "test_rule"
 	record.SetString(testRuleName)
@@ -93,20 +103,8 @@ func TestReadWriteModeRecordingRule(t *testing.T) {
 
 	require.NoError(t, c.SetRuleGroup(ruleGroup, "test_rule_group_namespace"))
 
-	require.NoError(t, backendInstance.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(1), []string{"cortex_prometheus_rule_evaluations_total"}, e2e.WaitMissingMetrics))
-	ruleEvaluationsBeforePush, err := backendInstance.SumMetrics([]string{"cortex_prometheus_rule_evaluations_total"})
-	require.NoError(t, err)
-
-	// Push data that should be captured by the recording rule
-	pushTime := time.Now()
-	series, _, _ := generateSeries("test_series", pushTime, prompb.Label{Name: "foo", Value: "bar"})
-
-	res, err := c.Push(series)
-	require.NoError(t, err)
-	require.Equal(t, 200, res.StatusCode)
-
 	// Wait for recording rule to evaluate
-	require.NoError(t, backendInstance.WaitSumMetrics(e2e.Greater(ruleEvaluationsBeforePush[0]), "cortex_prometheus_rule_evaluations_total"))
+	require.NoError(t, backendInstance.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(1), []string{"cortex_prometheus_rule_evaluations_total"}, e2e.WaitMissingMetrics))
 
 	// Verify recorded series is as expected
 	queryTime := time.Now()
