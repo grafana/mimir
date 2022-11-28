@@ -466,13 +466,14 @@ func FuzzDecbuf_UvarintStr(f *testing.F) {
 }
 
 func TestDecbuf_Crc32(t *testing.T) {
-	dec := NewDecbufRaw(realByteSlice([]byte{0x01, 0x02, 0x03, 0x04}))
+	dec := NewDecbufRaw(realByteSlice([]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06}))
 	table := crc32.MakeTable(crc32.Castagnoli)
 	actual := dec.Crc32(table)
-	expected := uint32(0x29308cf4)
+	expected := uint32(0x4f4dfbab)
 
 	require.NoError(t, dec.Err())
 	require.Equal(t, expected, actual)
+	require.Equal(t, 6, dec.Len(), "computing checksum of buffer should not consume it")
 }
 
 type realByteSlice []byte
