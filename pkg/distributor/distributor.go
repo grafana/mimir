@@ -894,7 +894,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 		if len(req.Timeseries) > 0 {
 			group = validation.FindGroupLabel(d.limits, userID, req.Timeseries[0].Labels)
 		}
-		fmt.Println("FAZ DIST GROUP: ", len(req.Timeseries), group)
+
 		var firstPartialErr error
 		var removeIndexes []int
 		for tsIdx, ts := range req.Timeseries {
