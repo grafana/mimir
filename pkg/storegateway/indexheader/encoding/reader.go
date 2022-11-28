@@ -8,7 +8,7 @@ import (
 )
 
 type Reader interface {
-	Reset()
+	Reset() error
 	ResetAt(off int) error
 	Read(int) []byte
 	Peek(int) []byte
@@ -31,12 +31,13 @@ type BufReader struct {
 func NewBufReader(bs ByteSlice) *BufReader {
 	b := bs.Range(0, bs.Len())
 	r := &BufReader{initial: b}
-	r.Reset()
+	_ = r.Reset()
 	return r
 }
 
-func (b *BufReader) Reset() {
+func (b *BufReader) Reset() error {
 	b.b = b.initial
+	return nil
 }
 
 func (b *BufReader) ResetAt(off int) error {
@@ -77,19 +78,24 @@ type FileReader struct {
 	pos    int
 }
 
-func NewFileReader(file *os.File, base, length int) *FileReader {
+func NewFileReader(file *os.File, base, length int) (*FileReader, error) {
 	f := &FileReader{
 		file:   file,
 		buf:    bufio.NewReader(file),
 		base:   base,
 		length: length,
 	}
-	f.Reset()
-	return f
+
+	err := f.Reset()
+	if err != nil {
+		return nil, err
+	}
+
+	return f, nil
 }
 
-func (f *FileReader) Reset() {
-	_ = f.ResetAt(0)
+func (f *FileReader) Reset() error {
+	return f.ResetAt(0)
 }
 
 func (f *FileReader) ResetAt(off int) error {
@@ -98,7 +104,6 @@ func (f *FileReader) ResetAt(off int) error {
 	}
 
 	pos, err := f.file.Seek(int64(f.base+off), io.SeekStart)
-
 	if err != nil {
 		return err
 	}
