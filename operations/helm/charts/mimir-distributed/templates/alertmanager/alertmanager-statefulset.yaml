@@ -59,6 +59,9 @@ spec:
         {{- end }}
       namespace: {{ .Release.Namespace | quote }}
     spec:
+      {{- with .Values.alertmanager.schedulerName }}
+      schedulerName: {{ . | quote }}
+      {{- end }}
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
       {{- if .Values.alertmanager.priorityClassName }}
       priorityClassName: {{ .Values.alertmanager.priorityClassName }}

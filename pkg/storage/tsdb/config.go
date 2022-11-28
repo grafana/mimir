@@ -149,7 +149,7 @@ func (cfg *BlocksStorageConfig) Validate() error {
 //nolint:golint
 type TSDBConfig struct {
 	Dir                       string        `yaml:"dir"`
-	BlockRanges               DurationList  `yaml:"block_ranges_period" category:"advanced"`
+	BlockRanges               DurationList  `yaml:"block_ranges_period" category:"experimental" doc:"hidden"`
 	Retention                 time.Duration `yaml:"retention_period"`
 	ShipInterval              time.Duration `yaml:"ship_interval" category:"advanced"`
 	ShipConcurrency           int           `yaml:"ship_concurrency" category:"advanced"`

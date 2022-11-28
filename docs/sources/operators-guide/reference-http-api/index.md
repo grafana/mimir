@@ -840,7 +840,7 @@ Get the current Alertmanager configuration for the authenticated tenant, reading
 
 This endpoint doesn't accept any URL query parameter and returns `200` on success.
 
-This endpoint can disabled enabled via the `-alertmanager.enable-api` CLI flag (or its respective YAML config option).
+This endpoint can be enabled and disabled via the `-alertmanager.enable-api` CLI flag (or its respective YAML config option).
 
 Requires [authentication](#authentication).
 
@@ -856,7 +856,7 @@ Stores or updates the Alertmanager configuration for the authenticated tenant. T
 
 This endpoint expects the Alertmanager **YAML** configuration in the request body and returns `201` on success.
 
-This endpoint can disabled enabled via the `-alertmanager.enable-api` CLI flag (or its respective YAML config option).
+This endpoint can be enabled and disabled via the `-alertmanager.enable-api` CLI flag (or its respective YAML config option).
 
 Requires [authentication](#authentication).
 
@@ -896,7 +896,7 @@ Deletes the Alertmanager configuration for the authenticated tenant.
 
 This endpoint doesn't accept any URL query parameter and returns `200` on success.
 
-This endpoint can be disabled via the `-alertmanager.enable-api` CLI flag (or its respective YAML config option).
+This endpoint can be enabled and disabled via the `-alertmanager.enable-api` CLI flag (or its respective YAML config option).
 
 Requires [authentication](#authentication).
 

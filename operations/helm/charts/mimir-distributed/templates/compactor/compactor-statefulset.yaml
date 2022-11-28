@@ -45,6 +45,9 @@ spec:
         {{- include "mimir.podAnnotations" (dict "ctx" . "component" "compactor") | nindent 8 }}
       namespace: {{ .Release.Namespace | quote }}
     spec:
+      {{- with .Values.compactor.schedulerName }}
+      schedulerName: {{ . | quote }}
+      {{- end }}
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
       {{- if .Values.compactor.priorityClassName }}
       priorityClassName: {{ .Values.compactor.priorityClassName }}

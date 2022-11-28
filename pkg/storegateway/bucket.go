@@ -569,7 +569,7 @@ func blockSeries(
 	)
 	defer span.Finish()
 
-	indexStats := newSafeQueryStats()
+	reqStats := newSafeQueryStats()
 
 	if skipChunks {
 		span.LogKV("msg", "manipulating mint/maxt to cover the entire block as skipChunks=true")
@@ -578,11 +578,11 @@ func blockSeries(
 		res, ok := fetchCachedSeries(ctx, indexr.block.userID, indexr.block.indexCache, indexr.block.meta.ULID, matchers, shard, logger)
 		if ok {
 			span.LogKV("msg", "using cached result", "len", len(res))
-			return newBucketSeriesSet(res), indexStats, nil
+			return newBucketSeriesSet(res), reqStats, nil
 		}
 	}
 
-	ps, err := indexr.ExpandedPostings(ctx, matchers, indexStats)
+	ps, err := indexr.ExpandedPostings(ctx, matchers, reqStats)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "expanded matching posting")
 	}
@@ -596,13 +596,13 @@ func blockSeries(
 	}
 
 	if len(ps) == 0 {
-		return storepb.EmptySeriesSet(), indexStats, nil
+		return storepb.EmptySeriesSet(), reqStats, nil
 	}
 
 	// Preload all series index data.
 	// TODO(bwplotka): Consider not keeping all series in memory all the time.
 	// TODO(bwplotka): Do lazy loading in one step as `ExpandingPostings` method.
-	loadedSeries, err := indexr.preloadSeries(ctx, ps, indexStats)
+	loadedSeries, err := indexr.preloadSeries(ctx, ps, reqStats)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "preload series")
 	}
@@ -622,14 +622,14 @@ func blockSeries(
 		)
 
 		// Keep track of postings lookup stats in a dedicated stats structure that doesn't require lock
-		// and then merge it once done. We do it to avoid the lock overhead because loadSeriesForTime()
+		// and then merge it once done. We do it to avoid the lock overhead because unsafeLoadSeriesForTime()
 		// may be called many times.
 		defer func() {
-			indexStats = indexStats.merge(postingsStats)
+			reqStats.merge(postingsStats)
 		}()
 
 		for _, id := range ps {
-			ok, err := loadedSeries.loadSeriesForTime(id, &symbolizedLset, &chks, skipChunks, minTime, maxTime, postingsStats)
+			ok, err := loadedSeries.unsafeLoadSeriesForTime(id, &symbolizedLset, &chks, skipChunks, minTime, maxTime, postingsStats)
 			if err != nil {
 				lookupErr = errors.Wrap(err, "read series")
 				return
@@ -705,14 +705,16 @@ func blockSeries(
 
 	if skipChunks {
 		storeCachedSeries(ctx, indexr.block.indexCache, indexr.block.userID, indexr.block.meta.ULID, matchers, shard, res, logger)
-		return newBucketSeriesSet(res), indexStats.merge(&seriesCacheStats), nil
+		reqStats.merge(&seriesCacheStats)
+		return newBucketSeriesSet(res), reqStats, nil
 	}
 
-	if err := chunkr.load(res, loadAggregates); err != nil {
+	if err := chunkr.load(res, loadAggregates, reqStats); err != nil {
 		return nil, nil, errors.Wrap(err, "load chunks")
 	}
 
-	return newBucketSeriesSet(res), indexStats.merge(chunkr.stats).merge(&seriesCacheStats), nil
+	reqStats.merge(&seriesCacheStats)
+	return newBucketSeriesSet(res), reqStats, nil
 }
 
 type seriesCacheEntry struct {
@@ -836,6 +838,15 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		return status.Error(codes.InvalidArgument, errors.Wrap(err, "parse query sharding label").Error())
 	}
 
+	spanLogger := spanlogger.FromContext(srv.Context(), s.logger)
+	level.Debug(spanLogger).Log(
+		"msg", "BucketStore.Series",
+		"request min time", time.UnixMilli(req.MinTime).UTC().Format(time.RFC3339Nano),
+		"request max time", time.UnixMilli(req.MaxTime).UTC().Format(time.RFC3339Nano),
+		"request matchers", storepb.PromMatchersToString(matchers...),
+		"request shard selector", maybeNilShard(shardSelector).LabelValue(),
+	)
+
 	var (
 		ctx              = srv.Context()
 		stats            = &queryStats{}
@@ -862,22 +873,10 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 
 	gspan, gctx := tracing.StartSpan(gctx, "bucket_store_preload_all")
 
-	s.mtx.RLock()
+	chunkBytes := &pool.BatchBytes{Delegate: s.chunkPool}
+	defer chunkBytes.Release()
 
-	blocks := s.blockSet.getFor(req.MinTime, req.MaxTime, req.MaxResolutionWindow, reqBlockMatchers)
-
-	spanLogger := spanlogger.FromContext(srv.Context(), s.logger)
-	level.Debug(spanLogger).Log(
-		"msg", "BucketStore.Series",
-		"request min time", time.UnixMilli(req.MinTime).UTC().Format(time.RFC3339Nano),
-		"request max time", time.UnixMilli(req.MaxTime).UTC().Format(time.RFC3339Nano),
-		"request matchers", storepb.PromMatchersToString(matchers...),
-		"request shard selector", maybeNilShard(shardSelector).LabelValue(),
-	)
-
-	if s.debugLogging {
-		debugFoundBlockSetOverview(s.logger, req.MinTime, req.MaxTime, req.MaxResolutionWindow, blocks)
-	}
+	blocks, indexReaders, chunkReaders := s.openBlocksForReading(ctx, req.SkipChunks, req.MinTime, req.MaxTime, req.MaxResolutionWindow, reqBlockMatchers, chunkBytes)
 
 	for _, b := range blocks {
 		b := b
@@ -885,16 +884,15 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		// Keep track of queried blocks.
 		resHints.AddQueriedBlock(b.meta.ULID)
 
-		var chunkr *bucketChunkReader
 		// We must keep the readers open until all their data has been sent.
-		indexr := b.indexReader()
-		if !req.SkipChunks {
-			chunkr = b.chunkReader(gctx)
+		indexr := indexReaders[b.meta.ULID]
+		defer runutil.CloseWithLogOnErr(s.logger, indexr, "series block")
+
+		chunkr := chunkReaders[b.meta.ULID]
+		if chunkr != nil { // chunkr is nil when skipChunks == true
+			// Defer all closes to the end of Series method.
 			defer runutil.CloseWithLogOnErr(s.logger, chunkr, "series block")
 		}
-
-		// Defer all closes to the end of Series method.
-		defer runutil.CloseWithLogOnErr(s.logger, indexr, "series block")
 
 		// If query sharding is enabled we have to get the block-specific series hash cache
 		// which is used by blockSeries().
@@ -930,8 +928,6 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 			return nil
 		})
 	}
-
-	s.mtx.RUnlock()
 
 	defer func() {
 		s.metrics.seriesDataTouched.WithLabelValues("postings").Observe(float64(stats.postingsTouched))
@@ -1044,6 +1040,32 @@ func chunksSize(chks []storepb.AggrChunk) (size int) {
 		size += chk.Size() // This gets the encoded proto size.
 	}
 	return size
+}
+
+func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool, minT, maxT, maxResolutionMillis int64, blockMatchers []*labels.Matcher, chunkPool *pool.BatchBytes) ([]*bucketBlock, map[ulid.ULID]*bucketIndexReader, map[ulid.ULID]*bucketChunkReader) {
+	s.mtx.RLock()
+	defer s.mtx.RUnlock()
+
+	// Find all blocks owned by this store-gateway instance and matching the request.
+	blocks := s.blockSet.getFor(minT, maxT, maxResolutionMillis, blockMatchers)
+	if s.debugLogging {
+		debugFoundBlockSetOverview(s.logger, minT, maxT, maxResolutionMillis, blocks)
+	}
+
+	indexReaders := make(map[ulid.ULID]*bucketIndexReader, len(blocks))
+	for _, b := range blocks {
+		indexReaders[b.meta.ULID] = b.indexReader()
+	}
+	if skipChunks {
+		return blocks, indexReaders, nil
+	}
+
+	chunkReaders := make(map[ulid.ULID]*bucketChunkReader, len(blocks))
+	for _, b := range blocks {
+		chunkReaders[b.meta.ULID] = b.chunkReader(ctx, chunkPool)
+	}
+
+	return blocks, indexReaders, chunkReaders
 }
 
 // LabelNames implements the storepb.StoreServer interface.
@@ -1637,9 +1659,9 @@ func (b *bucketBlock) indexReader() *bucketIndexReader {
 	return newBucketIndexReader(b)
 }
 
-func (b *bucketBlock) chunkReader(ctx context.Context) *bucketChunkReader {
+func (b *bucketBlock) chunkReader(ctx context.Context, chunkBytes *pool.BatchBytes) *bucketChunkReader {
 	b.pendingReaders.Add(1)
-	return newBucketChunkReader(ctx, b)
+	return newBucketChunkReader(ctx, b, chunkBytes)
 }
 
 // matchLabels verifies whether the block matches the given matchers.

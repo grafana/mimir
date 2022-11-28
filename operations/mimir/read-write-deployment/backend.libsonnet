@@ -110,38 +110,38 @@
     $.util.serviceFor(sts, $._config.service_ignored_labels) +
     service.mixin.spec.withClusterIp('None'),  // Headless.
 
-  mimir_backend_zone_a_container:: if !$._config.read_write_deployment_enabled then null else
+  mimir_backend_zone_a_container:: if !$._config.is_read_write_deployment_mode then null else
     $.newMimirBackendZoneContainer('a', $.mimir_backend_zone_a_args),
 
-  mimir_backend_zone_b_container:: if !$._config.read_write_deployment_enabled then null else
+  mimir_backend_zone_b_container:: if !$._config.is_read_write_deployment_mode then null else
     $.newMimirBackendZoneContainer('b', $.mimir_backend_zone_b_args),
 
-  mimir_backend_zone_c_container:: if !$._config.read_write_deployment_enabled then null else
+  mimir_backend_zone_c_container:: if !$._config.is_read_write_deployment_mode then null else
     $.newMimirBackendZoneContainer('c', $.mimir_backend_zone_c_args),
 
-  mimir_backend_zone_a_statefulset: if !$._config.read_write_deployment_enabled then null else
+  mimir_backend_zone_a_statefulset: if !$._config.is_read_write_deployment_mode then null else
     $.newMimirBackendZoneStatefulset('a', $.mimir_backend_zone_a_container),
 
-  mimir_backend_zone_b_statefulset: if !$._config.read_write_deployment_enabled then null else
+  mimir_backend_zone_b_statefulset: if !$._config.is_read_write_deployment_mode then null else
     $.newMimirBackendZoneStatefulset('b', $.mimir_backend_zone_b_container),
 
-  mimir_backend_zone_c_statefulset: if !$._config.read_write_deployment_enabled then null else
+  mimir_backend_zone_c_statefulset: if !$._config.is_read_write_deployment_mode then null else
     $.newMimirBackendZoneStatefulset('c', $.mimir_backend_zone_c_container),
 
-  mimir_backend_zone_a_service: if !$._config.read_write_deployment_enabled then null else
+  mimir_backend_zone_a_service: if !$._config.is_read_write_deployment_mode then null else
     $.newMimirBackendZoneService($.mimir_backend_zone_a_statefulset),
 
-  mimir_backend_zone_b_service: if !$._config.read_write_deployment_enabled then null else
+  mimir_backend_zone_b_service: if !$._config.is_read_write_deployment_mode then null else
     $.newMimirBackendZoneService($.mimir_backend_zone_b_statefulset),
 
-  mimir_backend_zone_c_service: if !$._config.read_write_deployment_enabled then null else
+  mimir_backend_zone_c_service: if !$._config.is_read_write_deployment_mode then null else
     $.newMimirBackendZoneService($.mimir_backend_zone_c_statefulset),
 
   // Create a service backed by all mimir-backend replicas (in all zone).
   // This service is used to access the mimir-backend admin UI.
-  mimir_backend_service: if !$._config.read_write_deployment_enabled then null else
+  mimir_backend_service: if !$._config.is_read_write_deployment_mode then null else
     $.newMimirRolloutGroupService('mimir-backend', [$.mimir_backend_zone_a_statefulset, $.mimir_backend_zone_b_statefulset, $.mimir_backend_zone_c_statefulset], $._config.service_ignored_labels),
 
-  mimir_backend_rollout_pdb: if !$._config.read_write_deployment_enabled then null else
+  mimir_backend_rollout_pdb: if !$._config.is_read_write_deployment_mode then null else
     $.newMimirRolloutGroupPDB('mimir-backend', 1),
 }

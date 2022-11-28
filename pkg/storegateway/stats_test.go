@@ -19,13 +19,13 @@ func TestSafeQueryStats_merge(t *testing.T) {
 		stats.blocksQueried = 2
 	})
 
-	merged := first.merge(second.export())
+	first.merge(second.export())
 
-	// Ensure first is not modified in-place.
-	assert.Equal(t, 1, first.export().blocksQueried)
+	// Ensure first is modified in-place.
+	assert.Equal(t, 3, first.export().blocksQueried)
 
-	// Ensure the returned merged stats are correct.
-	assert.Equal(t, 3, merged.export().blocksQueried)
+	// Ensure second is not modified.
+	assert.Equal(t, 2, second.export().blocksQueried)
 }
 
 func TestSafeQueryStats_export(t *testing.T) {

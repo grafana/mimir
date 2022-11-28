@@ -28,7 +28,7 @@
       max_replicas=$._config.autoscaling_mimir_read_max_replicas,
     ),
 
-  mimir_read_deployment: if !$._config.read_write_deployment_enabled then null else (
+  mimir_read_deployment: if !$._config.is_read_write_deployment_mode then null else (
     super.mimir_read_deployment + (
       if !$._config.autoscaling_mimir_read_enabled then {} else
         removeReplicasFromSpec

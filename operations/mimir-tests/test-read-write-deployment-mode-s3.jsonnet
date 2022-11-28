@@ -17,7 +17,7 @@ mimir {
     alertmanager_enabled: true,
     alertmanager_storage_bucket_name: 'alerts-bucket',
 
-    read_write_deployment_enabled: true,
+    deployment_mode: 'read-write',
     multi_zone_ingester_enabled: true,
     multi_zone_store_gateway_enabled: true,
   },

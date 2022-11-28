@@ -97,37 +97,37 @@
     $.util.serviceFor(sts, $._config.service_ignored_labels) +
     service.mixin.spec.withClusterIp('None'),  // Headless.
 
-  mimir_write_zone_a_container:: if !$._config.read_write_deployment_enabled then null else
+  mimir_write_zone_a_container:: if !$._config.is_read_write_deployment_mode then null else
     $.newMimirWriteZoneContainer('a', $.mimir_write_zone_a_args),
 
-  mimir_write_zone_b_container:: if !$._config.read_write_deployment_enabled then null else
+  mimir_write_zone_b_container:: if !$._config.is_read_write_deployment_mode then null else
     $.newMimirWriteZoneContainer('b', $.mimir_write_zone_b_args),
 
-  mimir_write_zone_c_container:: if !$._config.read_write_deployment_enabled then null else
+  mimir_write_zone_c_container:: if !$._config.is_read_write_deployment_mode then null else
     $.newMimirWriteZoneContainer('c', $.mimir_write_zone_c_args),
 
-  mimir_write_zone_a_statefulset: if !$._config.read_write_deployment_enabled then null else
+  mimir_write_zone_a_statefulset: if !$._config.is_read_write_deployment_mode then null else
     $.newMimirWriteZoneStatefulset('a', $.mimir_write_zone_a_container),
 
-  mimir_write_zone_b_statefulset: if !$._config.read_write_deployment_enabled then null else
+  mimir_write_zone_b_statefulset: if !$._config.is_read_write_deployment_mode then null else
     $.newMimirWriteZoneStatefulset('b', $.mimir_write_zone_b_container),
 
-  mimir_write_zone_c_statefulset: if !$._config.read_write_deployment_enabled then null else
+  mimir_write_zone_c_statefulset: if !$._config.is_read_write_deployment_mode then null else
     $.newMimirWriteZoneStatefulset('c', $.mimir_write_zone_c_container),
 
-  mimir_write_zone_a_service: if !$._config.read_write_deployment_enabled then null else
+  mimir_write_zone_a_service: if !$._config.is_read_write_deployment_mode then null else
     $.newMimirWriteZoneService($.mimir_write_zone_a_statefulset),
 
-  mimir_write_zone_b_service: if !$._config.read_write_deployment_enabled then null else
+  mimir_write_zone_b_service: if !$._config.is_read_write_deployment_mode then null else
     $.newMimirWriteZoneService($.mimir_write_zone_b_statefulset),
 
-  mimir_write_zone_c_service: if !$._config.read_write_deployment_enabled then null else
+  mimir_write_zone_c_service: if !$._config.is_read_write_deployment_mode then null else
     $.newMimirWriteZoneService($.mimir_write_zone_c_statefulset),
 
   // This service is used as ingress on the write path, and to access the admin UI.
-  mimir_write_service: if !$._config.read_write_deployment_enabled then null else
+  mimir_write_service: if !$._config.is_read_write_deployment_mode then null else
     $.newMimirRolloutGroupService('mimir-write', [$.mimir_write_zone_a_statefulset, $.mimir_write_zone_b_statefulset, $.mimir_write_zone_c_statefulset], $._config.service_ignored_labels),
 
-  mimir_write_rollout_pdb: if !$._config.read_write_deployment_enabled then null else
+  mimir_write_rollout_pdb: if !$._config.is_read_write_deployment_mode then null else
     $.newMimirRolloutGroupPDB('mimir-write', 1),
 }

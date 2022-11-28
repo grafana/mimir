@@ -86,6 +86,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Added `usage_stats.installation_mode` configuration to track the installation mode via the anonymous usage statistics. #3294
 * [ENHANCEMENT] Update grafana-agent-operator subchart to 0.2.8. Notable changes are being able to configure Pod's SecurityContext and Container's SecurityContext. #3350
 * [ENHANCEMENT] Add possibility to configure fallbackConfig for alertmanager and set it by default. Now tenants without an alertmanager config will not see errors accessing the alertmanager UI or when using the alertmanager API. #3360
+* [ENHANCEMENT] Add ability to set a `schedulerName` for alertmanager, compactor, ingester and store-gateway. This is needed for example for some storage providers. #3140
 * [BUGFIX] Fix an issue that caused metamonitoring secrets to be created incorrectly #3170
 * [BUGFIX] Nginx: fixed `imagePullSecret` value reference inconsistency. #3208
 * [BUGFIX] Move the activity tracker log from /data to /active-query-tracker to remove ignore log messages. #3169
