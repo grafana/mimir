@@ -18,12 +18,11 @@ import (
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
-	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	//stream_encoding "github.com/grafana/mimir/pkg/storegateway/indexheader/encoding"
+	stream_encoding "github.com/grafana/mimir/pkg/storegateway/indexheader/encoding"
 	stream_index "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
 )
 
@@ -100,7 +99,7 @@ func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int) (bw
 		return nil, err
 	}
 	if n != headerLen {
-		return nil, errors.Wrapf(encoding.ErrInvalidSize, "insufficient bytes read for header (got %d, wanted %d)", n, headerLen)
+		return nil, errors.Wrapf(stream_encoding.ErrInvalidSize, "insufficient bytes read for header (got %d, wanted %d)", n, headerLen)
 	}
 	headerByteSlice := realByteSlice(headerBytes)
 
@@ -136,7 +135,7 @@ func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int) (bw
 	//fr := stream_encoding.NewFileReader(f, int(r.toc.Symbols), length)
 	r.symbols, err = stream_index.NewSymbols(symbolsByteSlice, r.indexVersion, int(r.toc.Symbols))
 	if err != nil {
-		return nil, errors.Wrap(err, "read symbols")
+		return nil, errors.Wrap(err, "load symbols")
 	}
 
 	// TODO(bwplotka): Consider contributing to Prometheus to allow specifying custom number for symbolsFactor.
@@ -299,7 +298,7 @@ func newBinaryTOCFromFile(f *os.File) (*BinaryTOC, error) {
 	fSize := info.Size()
 
 	if fSize < binaryTOCLen {
-		return nil, encoding.ErrInvalidSize
+		return nil, stream_encoding.ErrInvalidSize
 	}
 
 	tocBytes := make([]byte, binaryTOCLen)
@@ -308,25 +307,31 @@ func newBinaryTOCFromFile(f *os.File) (*BinaryTOC, error) {
 		return nil, err
 	}
 	if n != len(tocBytes) {
-		return nil, errors.Wrapf(encoding.ErrInvalidSize, "insufficient bytes read for binary toc (read %db, needed %db)", n, headerLen)
+		return nil, errors.Wrapf(stream_encoding.ErrInvalidSize, "insufficient bytes read for binary toc (read %db, needed %db)", n, headerLen)
 	}
 	b := realByteSlice(tocBytes)
 
 	expCRC := binary.BigEndian.Uint32(b[len(b)-4:])
-	d := encoding.Decbuf{B: b[:len(b)-4]}
+	d := stream_encoding.NewDecbufRaw(b[:len(b)-4])
 
 	if d.Crc32(castagnoliTable) != expCRC {
-		return nil, errors.Wrap(encoding.ErrInvalidChecksum, "read index header TOC")
+		return nil, errors.Wrap(stream_encoding.ErrInvalidChecksum, "read index header TOC")
 	}
 
 	if err := d.Err(); err != nil {
 		return nil, err
 	}
 
-	return &BinaryTOC{
+	toc := BinaryTOC{
 		Symbols:             d.Be64(),
 		PostingsOffsetTable: d.Be64(),
-	}, nil
+	}
+	
+	if err := d.Err(); err != nil {
+		return nil, err
+	}
+
+	return &toc, nil
 }
 
 func (r *StreamBinaryReader) IndexVersion() (int, error) {
@@ -345,7 +350,7 @@ func (r *StreamBinaryReader) PostingsOffset(name, value string) (index.Range, er
 	return rngs[0], nil
 }
 
-func skipNAndName2(d *encoding.Decbuf, buf *int) {
+func skipNAndName2(d *stream_encoding.Decbuf, buf *int) {
 	if *buf == 0 {
 		// Keycount+LabelName are always the same number of bytes,
 		// and it's faster to skip than parse.
@@ -413,7 +418,7 @@ func (r *StreamBinaryReader) postingsOffset(name string, values ...string) ([]in
 
 		// Don't Crc32 the entire postings offset table, this is very slow
 		// so hope any issues were caught at startup.
-		d := encoding.NewDecbufAt(bs, 0, nil)
+		d := stream_encoding.NewDecbufAt(bs, 0, nil)
 		d.Skip(e.offsets[i].tableOff)
 
 		// Iterate on the offset table.
@@ -563,7 +568,7 @@ func (r *StreamBinaryReader) LabelValues(name string, filter func(string) bool) 
 		return nil, errors.Wrap(err, "read postings")
 	}
 
-	d := encoding.NewDecbufAt(bs, 0, nil)
+	d := stream_encoding.NewDecbufAt(bs, 0, nil)
 	d.Skip(e.offsets[0].tableOff)
 	lastVal := e.offsets[len(e.offsets)-1].value
 
