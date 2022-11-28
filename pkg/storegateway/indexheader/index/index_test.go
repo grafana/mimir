@@ -69,7 +69,7 @@ func TestSymbols(t *testing.T) {
 
 	d := stream_encoding.NewDecbufAt(realByteSlice(buf.Get()), symbolsStart, castagnoliTable)
 	require.NoError(t, d.E)
-	s, err := NewSymbols(realByteSlice(buf.Get()), index.FormatV2, symbolsStart)
+	s, err := NewSymbols(realByteSlice(buf.Get()[symbolsStart:]), index.FormatV2, symbolsStart)
 	require.NoError(t, err)
 
 	// We store only 4 offsets to symbols.
