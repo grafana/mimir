@@ -871,15 +871,15 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		}
 	}
 
+	gspan, gctx := tracing.StartSpan(gctx, "bucket_store_preload_all")
+
+	s.mtx.RLock()
+
 	// Find all blocks owned by this store-gateway instance and matching the request.
 	blocks := s.blockSet.getFor(req.MinTime, req.MaxTime, req.MaxResolutionWindow, reqBlockMatchers)
 	if s.debugLogging {
 		debugFoundBlockSetOverview(s.logger, req.MinTime, req.MaxTime, req.MaxResolutionWindow, blocks)
 	}
-
-	gspan, gctx := tracing.StartSpan(gctx, "bucket_store_preload_all")
-
-	s.mtx.RLock()
 
 	chunkBytes := &pool.BatchBytes{Delegate: s.chunkPool}
 	defer chunkBytes.Release()
