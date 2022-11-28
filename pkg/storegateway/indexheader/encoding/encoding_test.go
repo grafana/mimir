@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestBe32(t *testing.T) {
+func TestDecbuf_Be32(t *testing.T) {
 	cases := []uint32{
 		0,
 		1,
@@ -33,7 +33,7 @@ func TestBe32(t *testing.T) {
 	}
 }
 
-func FuzzBe32(f *testing.F) {
+func FuzzDecbuf_Be32(f *testing.F) {
 	f.Add(uint32(0))
 	f.Add(uint32(1))
 	f.Add(uint32(0xFFFF_FFFF))
@@ -52,7 +52,7 @@ func FuzzBe32(f *testing.F) {
 	})
 }
 
-func TestBe32int(t *testing.T) {
+func TestDecbuf_Be32int(t *testing.T) {
 	cases := []int{
 		0,
 		1,
@@ -75,7 +75,7 @@ func TestBe32int(t *testing.T) {
 	}
 }
 
-func FuzzBe32int(f *testing.F) {
+func FuzzDecbuf_Be32int(f *testing.F) {
 	f.Add(0)
 	f.Add(1)
 	f.Add(0xFFFF_FFFF)
@@ -98,7 +98,7 @@ func FuzzBe32int(f *testing.F) {
 	})
 }
 
-func TestSkip(t *testing.T) {
+func TestDecbuf_Skip(t *testing.T) {
 	expected := uint32(0x12345678)
 
 	enc := prom_encoding.Encbuf{}
@@ -118,7 +118,7 @@ func TestSkip(t *testing.T) {
 	require.Equal(t, 0, dec.Len())
 }
 
-func TestUvarint(t *testing.T) {
+func TestDecbuf_Uvarint(t *testing.T) {
 	cases := []struct {
 		value int
 		bytes int
@@ -146,7 +146,7 @@ func TestUvarint(t *testing.T) {
 	}
 }
 
-func FuzzUvarint(f *testing.F) {
+func FuzzDecbuf_Uvarint(f *testing.F) {
 	f.Add(0)
 	f.Add(1)
 	f.Add(0xFFFF_FFFF)
@@ -167,7 +167,7 @@ func FuzzUvarint(f *testing.F) {
 	})
 }
 
-func TestUvarint64(t *testing.T) {
+func TestDecbuf_Uvarint64(t *testing.T) {
 	cases := []struct {
 		value uint64
 		bytes int
@@ -196,7 +196,7 @@ func TestUvarint64(t *testing.T) {
 	}
 }
 
-func FuzzUvarint64(f *testing.F) {
+func FuzzDecbuf_Uvarint64(f *testing.F) {
 	f.Add(uint64(0))
 	f.Add(uint64(1))
 	f.Add(uint64(127))
@@ -216,7 +216,7 @@ func FuzzUvarint64(f *testing.F) {
 	})
 }
 
-func TestUvarintBytes(t *testing.T) {
+func TestDecbuf_UvarintBytes(t *testing.T) {
 	cases := []struct {
 		name              string
 		value             []byte
@@ -244,7 +244,7 @@ func TestUvarintBytes(t *testing.T) {
 	}
 }
 
-func FuzzUvarintBytes(f *testing.F) {
+func FuzzDecbuf_UvarintBytes(f *testing.F) {
 	f.Add([]byte{})
 	f.Add([]byte{0x12})
 	f.Add([]byte("1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567"))
@@ -262,7 +262,7 @@ func FuzzUvarintBytes(f *testing.F) {
 	})
 }
 
-func TestUvarintString(t *testing.T) {
+func TestDecbuf_UvarintString(t *testing.T) {
 	cases := []struct {
 		name              string
 		value             string
@@ -290,7 +290,7 @@ func TestUvarintString(t *testing.T) {
 	}
 }
 
-func FuzzUvarintString(f *testing.F) {
+func FuzzDecbuf_UvarintString(f *testing.F) {
 	f.Add("")
 	f.Add("a")
 	f.Add("1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567")
