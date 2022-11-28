@@ -838,6 +838,15 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		return status.Error(codes.InvalidArgument, errors.Wrap(err, "parse query sharding label").Error())
 	}
 
+	spanLogger := spanlogger.FromContext(srv.Context(), s.logger)
+	level.Debug(spanLogger).Log(
+		"msg", "BucketStore.Series",
+		"request min time", time.UnixMilli(req.MinTime).UTC().Format(time.RFC3339Nano),
+		"request max time", time.UnixMilli(req.MaxTime).UTC().Format(time.RFC3339Nano),
+		"request matchers", storepb.PromMatchersToString(matchers...),
+		"request shard selector", maybeNilShard(shardSelector).LabelValue(),
+	)
+
 	var (
 		ctx              = srv.Context()
 		stats            = &queryStats{}
@@ -862,24 +871,16 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		}
 	}
 
+	// Find all blocks owned by this store-gateway instance and matching the request.
+	blocks := s.blockSet.getFor(req.MinTime, req.MaxTime, req.MaxResolutionWindow, reqBlockMatchers)
+	if s.debugLogging {
+		debugFoundBlockSetOverview(s.logger, req.MinTime, req.MaxTime, req.MaxResolutionWindow, blocks)
+	}
+
 	gspan, gctx := tracing.StartSpan(gctx, "bucket_store_preload_all")
 
 	s.mtx.RLock()
 
-	blocks := s.blockSet.getFor(req.MinTime, req.MaxTime, req.MaxResolutionWindow, reqBlockMatchers)
-
-	spanLogger := spanlogger.FromContext(srv.Context(), s.logger)
-	level.Debug(spanLogger).Log(
-		"msg", "BucketStore.Series",
-		"request min time", time.UnixMilli(req.MinTime).UTC().Format(time.RFC3339Nano),
-		"request max time", time.UnixMilli(req.MaxTime).UTC().Format(time.RFC3339Nano),
-		"request matchers", storepb.PromMatchersToString(matchers...),
-		"request shard selector", maybeNilShard(shardSelector).LabelValue(),
-	)
-
-	if s.debugLogging {
-		debugFoundBlockSetOverview(s.logger, req.MinTime, req.MaxTime, req.MaxResolutionWindow, blocks)
-	}
 	chunkBytes := &pool.BatchBytes{Delegate: s.chunkPool}
 	defer chunkBytes.Release()
 
