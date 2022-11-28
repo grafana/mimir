@@ -330,7 +330,7 @@ func computeFallbackConfig(fallbackConfigFile string) ([]byte, error) {
 	}
 	fallbackConfig, err := yaml.Marshal(defaultConfig)
 	if err != nil {
-		return nil, fmt.Errorf("unable to marshal default config: %s", err)
+		return nil, fmt.Errorf("unable to marshal default fallback config: %s", err)
 	}
 	return fallbackConfig, nil
 }
