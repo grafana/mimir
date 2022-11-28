@@ -1,11 +1,15 @@
 package storegateway
 
 import (
+	"context"
 	"errors"
 	"testing"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/thanos-io/objstore"
+	"go.uber.org/atomic"
 )
 
 // sliceUnloadedBatchSet implement unloadedBatchSet and
@@ -213,6 +217,54 @@ func TestMergedBatchSet(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestBucketBatchSet(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	suite := prepareStoreWithTestBlocks(t, t.TempDir(), objstore.NewInMemBucket(), false, NewChunksLimiterFactory(0), NewSeriesLimiterFactory(0))
+	var firstBlock *bucketBlock
+	for _, b := range suite.store.blocks {
+		firstBlock = b
+		break
+	}
+
+	indexReader := firstBlock.indexReader()
+	defer indexReader.Close()
+
+	batchSet, err := unloadedBucketBatches(
+		ctx,
+		100,
+		indexReader,
+		firstBlock.meta.ULID,
+		[]*labels.Matcher{{Type: labels.MatchRegexp, Name: "a", Value: ".+"}},
+		nil,
+		suite.store.seriesHashCache.GetBlockCache(firstBlock.meta.ULID.String()),
+		&limiter{limit: 1},
+		&limiter{limit: 100000},
+		false,
+		firstBlock.meta.MinTime,
+		firstBlock.meta.MaxTime,
+		nil,
+		suite.logger,
+	)
+	require.NoError(t, err)
+
+	_ = readAllBatches(batchSet)
+	assert.ErrorContains(t, batchSet.Err(), "test limit exceeded")
+}
+
+type limiter struct {
+	limit   uint64
+	current atomic.Uint64
+}
+
+func (l *limiter) Reserve(num uint64) error {
+	if l.current.Add(num) > l.limit {
+		return errors.New("test limit exceeded")
+	}
+	return nil
 }
 
 func readAllBatches(set unloadedBatchSet) []unloadedBatch {
