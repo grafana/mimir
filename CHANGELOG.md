@@ -144,10 +144,10 @@
 * [ENHANCEMENT] Use common config in the tutorial again. #3282
 * [ENHANCEMENT] Clarify changelog and remove duplicate flag in the documentation. #3370
 * [ENHANCEMENT] Updated detailed steps for migrating blocks from Thanos to Mimir. #3290
-* [ENHANCEMENT] Remove reference to file that no longer exists in contributing guide. #3404
-* [ENHANCEMENT] Fix some minor typos in the contributing guide and on the runbooks page. #3418
 * [ENHANCEMENT] Add scheme to DNS service discovery docs. #3450
-* [ENHANCEMENT] Fix small typos in API reference. #3526
+* [BUGFIX] Remove reference to file that no longer exists in contributing guide. #3404
+* [BUGFIX] Fix some minor typos in the contributing guide and on the runbooks page. #3418
+* [BUGFIX] Fix small typos in API reference. #3526
 * [BUGFIX] Fixed TSDB retention mentioned in the "Recover source blocks from ingesters" runbook. #3278
 * [BUGFIX] Fixed configuration example in the "Configuring the Grafana Mimir query-frontend to work with Prometheus" guide. #3374
 
