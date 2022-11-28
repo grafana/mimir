@@ -2148,6 +2148,9 @@ nginx:
           location = /api/v1/push {
             proxy_pass      http://{{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
           }
+          location /otlp/v1/metrics {
+            proxy_pass      http://{{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
+          }
 
           # Alertmanager endpoints
           location {{ template "mimir.alertmanagerHttpPrefix" . }} {

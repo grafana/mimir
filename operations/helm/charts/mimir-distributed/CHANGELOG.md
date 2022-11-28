@@ -91,6 +91,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Nginx: fixed `imagePullSecret` value reference inconsistency. #3208
 * [BUGFIX] Move the activity tracker log from /data to /active-query-tracker to remove ignore log messages. #3169
 * [BUGFIX] Fix Invalid ingress nginx config due to newline in prometheusHttpPrefix Helm named templates. #3088
+* [BUGFIX] Added missing endpoint for OTLP in NGINX #3479
 
 ## 3.2.0
 
