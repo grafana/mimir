@@ -51,7 +51,9 @@ func TestReaders_Peek(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, []byte("fghij1234567890"), peekBeyondEnd, "peek beyond end")
 
-		r.Read(15)
+		_, err = r.Read(15)
+		require.NoError(t, err)
+
 		peekAfterEnd, err := r.Peek(1)
 		require.NoError(t, err)
 		require.Empty(t, peekAfterEnd, "peek after end")
@@ -60,7 +62,8 @@ func TestReaders_Peek(t *testing.T) {
 
 func TestReaders_Reset(t *testing.T) {
 	testReaders(t, func(t *testing.T, r Reader) {
-		r.Read(5)
+		_, err := r.Read(5)
+		require.NoError(t, err)
 		require.NoError(t, r.Reset())
 
 		readAfterReset, err := r.Read(5)
@@ -94,17 +97,20 @@ func TestReaders_Len(t *testing.T) {
 	testReaders(t, func(t *testing.T, r Reader) {
 		require.Equal(t, 20, r.Len(), "initial length")
 
-		r.Read(5)
+		_, err := r.Read(5)
+		require.NoError(t, err)
 		require.Equal(t, 15, r.Len(), "after first read")
 
-		r.Read(2)
+		_, err = r.Read(2)
+		require.NoError(t, err)
 		require.Equal(t, 13, r.Len(), "after second read")
 
-		_, err := r.Peek(3)
+		_, err = r.Peek(3)
 		require.NoError(t, err)
 		require.Equal(t, 13, r.Len(), "after peek")
 
-		r.Read(14)
+		_, err = r.Read(14)
+		require.NoError(t, err)
 		require.Equal(t, 0, r.Len(), "after read beyond end")
 
 		require.NoError(t, r.Reset())
