@@ -52,7 +52,7 @@ func TestReaders_Peek(t *testing.T) {
 func TestReaders_Reset(t *testing.T) {
 	testReaders(t, func(t *testing.T, r Reader) {
 		r.Read(5)
-		r.Reset()
+		require.NoError(t, r.Reset())
 
 		readAfterReset := r.Read(5)
 		require.Equal(t, []byte("abcde"), readAfterReset)
@@ -93,7 +93,7 @@ func TestReaders_Len(t *testing.T) {
 		r.Read(14)
 		require.Equal(t, 0, r.Len(), "after read beyond end")
 
-		r.Reset()
+		require.NoError(t, r.Reset())
 		require.Equal(t, 20, r.Len(), "after reset to beginning")
 
 		require.NoError(t, r.ResetAt(3))
@@ -117,7 +117,9 @@ func testReaders(t *testing.T, test func(t *testing.T, r Reader)) {
 		f, err := os.Open(filePath)
 		require.NoError(t, err)
 
-		r := NewFileReader(f, 0, len(testReaderContents))
+		r, err := NewFileReader(f, 0, len(testReaderContents))
+		require.NoError(t, err)
+
 		test(t, r)
 	})
 
@@ -132,7 +134,9 @@ func testReaders(t *testing.T, test func(t *testing.T, r Reader)) {
 		f, err := os.Open(filePath)
 		require.NoError(t, err)
 
-		r := NewFileReader(f, len(offsetBytes), len(testReaderContents))
+		r, err := NewFileReader(f, len(offsetBytes), len(testReaderContents))
+		require.NoError(t, err)
+
 		test(t, r)
 	})
 }

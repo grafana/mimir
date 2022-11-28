@@ -31,7 +31,6 @@ var (
 // Several datums can be extracted without checking for errors. However, before using
 // any datum, the err() method must be checked.
 type Decbuf struct {
-	//	B []byte
 	r Reader
 	E error
 }
@@ -123,14 +122,14 @@ func NewDecbufUvarintAt(bs ByteSlice, off int, castagnoliTable *crc32.Table) Dec
 }
 */
 func NewDecbufRaw(bs ByteSlice) Decbuf {
-	b := bs.Range(0, bs.Len())
-	r := &BufReader{initial: b}
-	r.Reset()
-	return Decbuf{r: r}
+	return Decbuf{r: NewBufReader(bs)}
 }
 
 func NewDecbufRawReader(r Reader) Decbuf {
-	r.Reset()
+	err := r.Reset()
+	if err != nil {
+		return Decbuf{E: err}
+	}
 	return Decbuf{r: r}
 }
 
