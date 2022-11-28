@@ -3065,12 +3065,12 @@
         },
         {
           "kind": "field",
-          "name": "custom_user_label",
+          "name": "separate_metrics_label",
           "required": false,
-          "desc": "User configured label value to be added to specific metrics",
+          "desc": "Label used to further separate specific metrics",
           "fieldValue": null,
           "fieldDefaultValue": "",
-          "fieldFlag": "validation.custom-user-label-value",
+          "fieldFlag": "validation.separate-metrics-label",
           "fieldType": "string"
         },
         {

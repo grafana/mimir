@@ -27,7 +27,7 @@ func TestValidateSeparateMetrics(t *testing.T) {
 		configFlagSet bool
 		metricExists  bool
 	}{
-		"No custom user label present": {
+		"No separate metrics label present": {
 			labelToSearch: "",
 			configFlagSet: false,
 			metricExists:  true,

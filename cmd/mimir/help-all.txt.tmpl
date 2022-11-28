@@ -1981,8 +1981,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Installation mode. Supported values: custom, helm, jsonnet. (default "custom")
   -validation.create-grace-period duration
     	Controls how far into the future incoming samples are accepted compared to the wall clock. Any sample with timestamp `t` will be rejected if `t > (now + validation.create-grace-period)`. Also used by query-frontend to avoid querying too far into the future. 0 to disable. (default 10m)
-  -validation.custom-user-label-value string
-    	User configured label value to be added to specific metrics
   -validation.enforce-metadata-metric-name
     	Enforce every metadata has a metric name. (default true)
   -validation.max-label-names-per-series int
@@ -1993,5 +1991,7 @@ Usage of ./cmd/mimir/mimir:
     	Maximum length accepted for label value. This setting also applies to the metric name (default 2048)
   -validation.max-metadata-length int
     	Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT. Longer metadata is dropped except for HELP which is truncated. (default 1024)
+  -validation.separate-metrics-label string
+    	Label used to further separate specific metrics
   -version
     	Print application version and exit.
