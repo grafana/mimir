@@ -24,7 +24,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb/index"
 
-	//"github.com/prometheus/prometheus/tsdb/encoding"
 	stream_encoding "github.com/grafana/mimir/pkg/storegateway/indexheader/encoding"
 )
 
