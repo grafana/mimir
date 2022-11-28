@@ -58,7 +58,9 @@ func (bs *batchStream) atFloatHistogram() (int64, *histogram.FloatHistogram) {
 	return b.Timestamps[b.Index], b.FloatHistogramValues[b.Index]
 }
 
-// TODO: this function needs to be sorted out.
+// mergeStreams merges streams of Batches of the same series over time.
+// Samples are simply merged by time when they are the same type (float/histogram/...), with the left stream taking precedence if the timestamps are equal.
+// When sample are different type, batches are not merged. In case of equal timestamps, histograms take precedence since they have more information.
 func mergeStreams(left, right batchStream, result batchStream, size int) batchStream {
 
 	// Reset the Index and Length of existing batches.
@@ -66,17 +68,15 @@ func mergeStreams(left, right batchStream, result batchStream, size int) batchSt
 		result[i].Index = 0
 		result[i].Length = 0
 	}
+
 	resultLen := 1 // Number of batches in the final result.
 	b := &result[0]
-	b.SampleValues = &[chunk.BatchSize]float64{}
-	b.HistogramValues = &[chunk.BatchSize]*histogram.Histogram{}
-	b.FloatHistogramValues = &[chunk.BatchSize]*histogram.FloatHistogram{}
 
 	// This function adds a new batch to the result
 	// if the current batch being appended is full.
 	checkForFullBatch := func(valueTypes chunkenc.ValueType) {
 		if b.Index == size {
-			// The batch reached it intended size.
+			// The batch reached its intended size.
 			// Add another batch the the result
 			// and use it for further appending.
 
@@ -91,21 +91,43 @@ func mergeStreams(left, right batchStream, result batchStream, size int) batchSt
 			}
 			b = &result[resultLen-1]
 		}
-		b.ValueTypes = valueTypes
+	}
+
+	// Ensure that the batch we're writing to is not full and of the right type.
+	ensureBatch := func(valueTypes chunkenc.ValueType) {
+		checkForFullBatch(valueTypes)
+		if b.ValueTypes != valueTypes {
+			if b.ValueTypes == chunkenc.ValNone {
+				// Uninitialized Batch
+				initBatchType(b, valueTypes)
+			} else {
+				// This should be rare, means that we're merging into something where the chunk type changed
+				result[resultLen-1] = createBatch(valueTypes)
+				b = &result[resultLen-1]
+			}
+		}
 	}
 
 	for {
-		if lt, rt := left.hasNext(), right.hasNext(); lt != chunkenc.ValNone && rt != chunkenc.ValNone && lt == rt {
-			checkForFullBatch(lt)
+		if lt, rt := left.hasNext(), right.hasNext(); lt != chunkenc.ValNone && rt != chunkenc.ValNone {
 			t1, t2 := left.atTime(), right.atTime()
 			if t1 < t2 {
+				ensureBatch(lt)
 				populate(b, left, lt)
 				left.next()
 			} else if t1 > t2 {
+				ensureBatch(rt)
 				populate(b, right, rt)
 				right.next()
 			} else {
-				populate(b, left, lt)
+				if (rt == chunkenc.ValHistogram || rt == chunkenc.ValFloatHistogram) && lt == chunkenc.ValFloat {
+					// Prefer historgrams over floats. Take left side if both has histograms.
+					ensureBatch(rt)
+					populate(b, right, rt)
+				} else {
+					ensureBatch(lt)
+					populate(b, left, lt)
+				}
 				left.next()
 				right.next()
 			}
@@ -120,7 +142,7 @@ func mergeStreams(left, right batchStream, result batchStream, size int) batchSt
 	addToResult := func(bs batchStream) {
 		for {
 			if t := bs.hasNext(); t != chunkenc.ValNone {
-				checkForFullBatch(t)
+				ensureBatch(t)
 				populate(b, bs, t)
 				b.Index++
 				b.Length++
@@ -158,6 +180,19 @@ func createBatch(valueTypes chunkenc.ValueType) (batch chunk.Batch) {
 		batch.FloatHistogramValues = &[chunk.BatchSize]*histogram.FloatHistogram{}
 	}
 	return
+}
+
+// Call on uninitialized Batch to allocate the correct valueType array
+func initBatchType(batch *chunk.Batch, valueTypes chunkenc.ValueType) {
+	batch.ValueTypes = valueTypes
+	switch valueTypes {
+	case chunkenc.ValFloat:
+		batch.SampleValues = &[chunk.BatchSize]float64{}
+	case chunkenc.ValHistogram:
+		batch.HistogramValues = &[chunk.BatchSize]*histogram.Histogram{}
+	case chunkenc.ValFloatHistogram:
+		batch.FloatHistogramValues = &[chunk.BatchSize]*histogram.FloatHistogram{}
+	}
 }
 
 func populate(b *chunk.Batch, s batchStream, valueTypes chunkenc.ValueType) {

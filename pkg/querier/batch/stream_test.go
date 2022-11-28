@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/storage/chunk"
@@ -57,7 +58,7 @@ func TestStream(t *testing.T) {
 }
 
 func mkBatch(from int64) chunk.Batch {
-	var result chunk.Batch
+	result := createBatch(chunkenc.ValFloat)
 	for i := int64(0); i < chunk.BatchSize; i++ {
 		result.Timestamps[i] = from + i
 		result.SampleValues[i] = float64(from + i)
