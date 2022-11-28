@@ -31,7 +31,6 @@
 * [ENHANCEMENT] Store-gateway: improved performance of series matching. #3391
 * [ENHANCEMENT] Move the validation of incoming series before the distributor's forwarding functionality, so that we don't forward invalid series. #3386 #3458
 * [ENHANCEMENT] S3 bucket configuration now validates that the endpoint does not have the bucket name prefix. #3414
-* [ENHANCEMENT] Store-gateway: extract read locking during Series. #3546
 * [ENHANCEMENT] Store-gateway: index stats response. #3206
 * [ENHANCEMENT] Distributor: push wrapper should only receive unforwarded samples. #2980
 * [ENHANCEMENT] Ruler: Added `ruler.tls-enabled` configuration for alertmanager client. #3432
