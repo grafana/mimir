@@ -72,39 +72,55 @@ func mergeStreams(left, right batchStream, result batchStream, size int) batchSt
 	resultLen := 1 // Number of batches in the final result.
 	b := &result[0]
 
-	// This function adds a new batch to the result
-	// if the current batch being appended is full.
-	checkForFullBatch := func(valueTypes chunkenc.ValueType) {
-		if b.Index == size {
-			// The batch reached its intended size.
-			// Add another batch the the result
-			// and use it for further appending.
+	// Step to the next Batch in the result, create it if it does not exist
+	nextBatch := func(valueTypes chunkenc.ValueType) {
+		// The Index is the place at which new sample
+		// has to be appended, hence it tells the length.
+		b.Length = b.Index
+		resultLen++
+		if resultLen > len(result) {
+			// It is possible that result can grow longer
+			// then the one provided.
+			result = append(result, createBatch(valueTypes))
+		}
+		b = &result[resultLen-1]
+	}
 
-			// The Index is the place at which new sample
-			// has to be appended, hence it tells the length.
-			b.Length = b.Index
-			resultLen++
-			if resultLen > len(result) {
-				// It is possible that result can grow longer
-				// then the one provided.
-				result = append(result, createBatch(valueTypes))
+	// ensureBatchType sets the Batch type and returns true if it was successful
+	ensureBatchType := func(valueTypes chunkenc.ValueType) bool {
+		if b.ValueTypes == valueTypes {
+			return true
+		}
+		if b.ValueTypes == chunkenc.ValNone {
+			// Uninitialized Batch
+			initBatchType(b, valueTypes)
+			return true
+		} else {
+			// This should be rare, means that we're merging into something where the chunk type changed
+			if b.Index == 0 {
+				// Batch not written yet
+				result[resultLen-1] = createBatch(valueTypes)
+				b = &result[resultLen-1]
+				return true
+			} else {
+				// Batch already started, finish and start new
+				// We don't know it's type so return false (but it will either be None or have b.Index==0)
+				nextBatch(valueTypes)
+				return false
 			}
-			b = &result[resultLen-1]
 		}
 	}
 
 	// Ensure that the batch we're writing to is not full and of the right type.
 	ensureBatch := func(valueTypes chunkenc.ValueType) {
-		checkForFullBatch(valueTypes)
-		if b.ValueTypes != valueTypes {
-			if b.ValueTypes == chunkenc.ValNone {
-				// Uninitialized Batch
-				initBatchType(b, valueTypes)
-			} else {
-				// This should be rare, means that we're merging into something where the chunk type changed
-				result[resultLen-1] = createBatch(valueTypes)
-				b = &result[resultLen-1]
-			}
+		if b.Index == size {
+			// The batch reached its intended size.
+			// Add another batch the the result
+			// and use it for further appending.
+			nextBatch(valueTypes)
+		}
+		if !ensureBatchType(valueTypes) {
+			ensureBatchType(valueTypes)
 		}
 	}
 
