@@ -8,16 +8,11 @@ package indexheader
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"math"
 	"os"
 	"path/filepath"
-	"runtime"
-	"runtime/pprof"
 	"strconv"
-	"sync"
 	"testing"
-	"time"
 
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
@@ -36,20 +31,28 @@ import (
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
-//func TestFuseMount(t *testing.T) {
-//	require.NoError(t, NewFuseMount())
-//}
+func TestReadersIndexVersion1(t *testing.T) {
+
+}
+
+func TestReadersIndexVersion2(t *testing.T) {
+
+}
 
 func TestReaders(t *testing.T) {
 	ctx := context.Background()
 
 	tmpDir, err := os.MkdirTemp("", "test-indexheader")
 	require.NoError(t, err)
-	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
+	t.Cleanup(func() {
+		require.NoError(t, os.RemoveAll(tmpDir))
+	})
 
 	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
 	require.NoError(t, err)
-	defer func() { require.NoError(t, bkt.Close()) }()
+	t.Cleanup(func() {
+		require.NoError(t, bkt.Close())
+	})
 
 	// Create block index version 2.
 	id1, err := testhelper.CreateBlock(ctx, tmpDir, []labels.Labels{
@@ -70,25 +73,7 @@ func TestReaders(t *testing.T) {
 		labels.FromStrings("a", "1", "longer-string", "2"),
 	}, 100, 0, 1000, labels.FromStrings("ext1", "1"), 124, metadata.NoneFunc)
 	require.NoError(t, err)
-
 	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, id1.String()), metadata.NoneFunc))
-
-	// Copy block index version 1 for backward compatibility.
-	/* The block here was produced at the commit
-	    706602daed1487f7849990678b4ece4599745905 used in 2.0.0 with:
-	   db, _ := Open("v1db", nil, nil, nil)
-	   app := db.Appender()
-	   app.Add(labels.FromStrings("foo", "bar"), 1, 2)
-	   app.Add(labels.FromStrings("foo", "baz"), 3, 4)
-	   app.Add(labels.FromStrings("foo", "meh"), 1000*3600*4, 4) // Not in the block.
-	   // Make sure we've enough values for the lack of sorting of postings offsets to show up.
-	   for i := 0; i < 100; i++ {
-	     app.Add(labels.FromStrings("bar", strconv.FormatInt(int64(i), 10)), 0, 0)
-	   }
-	   app.Commit()
-	   db.compact()
-	   db.Close()
-	*/
 
 	m, err := metadata.ReadFromDir("./testdata/index_format_v1")
 	require.NoError(t, err)
@@ -99,303 +84,67 @@ func TestReaders(t *testing.T) {
 		Downsample: metadata.ThanosDownsample{Resolution: 0},
 		Source:     metadata.TestSource,
 	}, &m.BlockMeta)
+
 	require.NoError(t, err)
 	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, m.ULID.String()), metadata.NoneFunc))
 
 	for _, id := range []ulid.ULID{id1, m.ULID} {
 		t.Run(id.String(), func(t *testing.T) {
+			indexName := filepath.Join(tmpDir, id.String(), block.IndexHeaderFilename)
+			require.NoError(t, WriteBinary(ctx, bkt, id, indexName))
+
 			indexFile, err := fileutil.OpenMmapFile(filepath.Join(tmpDir, id.String(), block.IndexFilename))
 			require.NoError(t, err)
-			defer func() { _ = indexFile.Close() }()
+			t.Cleanup(func() {
+				require.NoError(t, indexFile.Close())
+			})
 
 			b := realByteSlice(indexFile.Bytes())
 
-			testBinaryReader := func(t *testing.T, cfg BinaryReaderConfig) {
-				fn := filepath.Join(tmpDir, id.String(), block.IndexHeaderFilename)
-				require.NoError(t, WriteBinary(ctx, bkt, id, fn))
-
-				br, err := NewBinaryReader(ctx, log.NewNopLogger(), nil, tmpDir, id, 3, cfg)
+			t.Run("binary reader", func(t *testing.T) {
+				br, err := NewBinaryReader(ctx, log.NewNopLogger(), nil, tmpDir, id, 3, BinaryReaderConfig{})
 				require.NoError(t, err)
-
-				defer func() { require.NoError(t, br.Close()) }()
-
-				if id == id1 {
-					require.Equal(t, 1, br.version)
-					require.Equal(t, 2, br.indexVersion)
-					require.Equal(t, &BinaryTOC{Symbols: headerLen, PostingsOffsetTable: 70}, br.toc)
-					require.Equal(t, int64(710), br.indexLastPostingEnd)
-					require.Equal(t, 8, br.symbols.Size())
-					require.Equal(t, 0, len(br.postingsV1))
-					require.Equal(t, 2, len(br.nameSymbols))
-					require.Equal(t, map[string]*postingValueOffsets{
-						"": {
-							offsets:       []postingOffset{{value: "", tableOff: 4}},
-							lastValOffset: 440,
-						},
-						"a": {
-							offsets: []postingOffset{
-								{value: "1", tableOff: 9},
-								{value: "13", tableOff: 32},
-								{value: "4", tableOff: 54},
-								{value: "7", tableOff: 75},
-								{value: "9", tableOff: 89},
-							},
-							lastValOffset: 640,
-						},
-						"longer-string": {
-							offsets: []postingOffset{
-								{value: "1", tableOff: 96},
-								{value: "2", tableOff: 115},
-							},
-							lastValOffset: 706,
-						},
-					}, br.postings)
-
-					vals, err := br.LabelValues("not-existing", nil)
-					require.NoError(t, err)
-					require.Equal(t, []string(nil), vals)
-
-					// Regression tests for https://github.com/thanos-io/thanos/issues/2213.
-					// Most of not existing value was working despite bug, except in certain unlucky cases
-					// it was causing "invalid size" errors.
-					_, err = br.PostingsOffset("not-existing", "1")
-					require.Equal(t, NotFoundRangeErr, err)
-					_, err = br.PostingsOffset("a", "0")
-					require.Equal(t, NotFoundRangeErr, err)
-					// Unlucky case, because the bug was causing unnecessary read & decode requiring more bytes than
-					// available. For rest cases read was noop wrong, but at least not failing.
-					_, err = br.PostingsOffset("a", "10")
-					require.Equal(t, NotFoundRangeErr, err)
-					_, err = br.PostingsOffset("a", "121")
-					require.Equal(t, NotFoundRangeErr, err)
-					_, err = br.PostingsOffset("a", "131")
-					require.Equal(t, NotFoundRangeErr, err)
-					_, err = br.PostingsOffset("a", "91")
-					require.Equal(t, NotFoundRangeErr, err)
-					_, err = br.PostingsOffset("longer-string", "0")
-					require.Equal(t, NotFoundRangeErr, err)
-					_, err = br.PostingsOffset("longer-string", "11")
-					require.Equal(t, NotFoundRangeErr, err)
-					_, err = br.PostingsOffset("longer-string", "21")
-					require.Equal(t, NotFoundRangeErr, err)
-				}
+				t.Cleanup(func() {
+					require.NoError(t, br.Close())
+				})
 
 				compareIndexToHeader(t, b, br)
-			}
-
-			t.Run("binary reader", func(t *testing.T) {
-				testBinaryReader(t, BinaryReaderConfig{})
 			})
 
 			t.Run("binary reader with map populate", func(t *testing.T) {
-				testBinaryReader(t, BinaryReaderConfig{MapPopulateEnabled: true})
+				br, err := NewBinaryReader(ctx, log.NewNopLogger(), nil, tmpDir, id, 3, BinaryReaderConfig{MapPopulateEnabled: true})
+				require.NoError(t, err)
+				t.Cleanup(func() {
+					require.NoError(t, br.Close())
+				})
+
+				compareIndexToHeader(t, b, br)
 			})
 
 			t.Run("lazy binary reader", func(t *testing.T) {
-				fn := filepath.Join(tmpDir, id.String(), block.IndexHeaderFilename)
-				require.NoError(t, WriteBinary(ctx, bkt, id, fn))
-
 				br, err := NewLazyBinaryReader(ctx, log.NewNopLogger(), nil, tmpDir, id, 3, BinaryReaderConfig{}, NewLazyBinaryReaderMetrics(nil), nil)
 				require.NoError(t, err)
-
-				defer func() { require.NoError(t, br.Close()) }()
+				t.Cleanup(func() {
+					require.NoError(t, br.Close())
+				})
 
 				compareIndexToHeader(t, b, br)
 			})
-		})
-	}
 
-}
-
-
-
-
-
-
-
-func TestReadersStreaming(t *testing.T) {
-	ctx := context.Background()
-
-	tmpDir, err := os.MkdirTemp("", "test-indexheader")
-	require.NoError(t, err)
-	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
-
-	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
-	require.NoError(t, err)
-	defer func() { require.NoError(t, bkt.Close()) }()
-
-	// Create block index version 2.
-	idV2, err := testhelper.CreateBlock(ctx, tmpDir, []labels.Labels{
-		{{Name: "a", Value: "1"}},
-		{{Name: "a", Value: "2"}},
-		{{Name: "a", Value: "3"}},
-		{{Name: "a", Value: "4"}},
-		{{Name: "a", Value: "5"}},
-		{{Name: "a", Value: "6"}},
-		{{Name: "a", Value: "7"}},
-		{{Name: "a", Value: "8"}},
-		{{Name: "a", Value: "9"}},
-		// Missing 10 on purpose.
-		{{Name: "a", Value: "11"}},
-		{{Name: "a", Value: "12"}},
-		{{Name: "a", Value: "13"}},
-		{{Name: "a", Value: "1"}, {Name: "longer-string", Value: "1"}},
-		{{Name: "a", Value: "1"}, {Name: "longer-string", Value: "2"}},
-	}, 100, 0, 1000, labels.FromStrings("ext1", "1"), 124, metadata.NoneFunc)
-	require.NoError(t, err)
-
-	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, idV2.String()), metadata.NoneFunc))
-
-	// Copy block index version 1 for backward compatibility.
-	/* The block here was produced at the commit
-	    706602daed1487f7849990678b4ece4599745905 used in 2.0.0 with:
-	   db, _ := Open("v1db", nil, nil, nil)
-	   app := db.Appender()
-	   app.Add(labels.FromStrings("foo", "bar"), 1, 2)
-	   app.Add(labels.FromStrings("foo", "baz"), 3, 4)
-	   app.Add(labels.FromStrings("foo", "meh"), 1000*3600*4, 4) // Not in the block.
-	   // Make sure we've enough values for the lack of sorting of postings offsets to show up.
-	   for i := 0; i < 100; i++ {
-	     app.Add(labels.FromStrings("bar", strconv.FormatInt(int64(i), 10)), 0, 0)
-	   }
-	   app.Commit()
-	   db.compact()
-	   db.Close()
-	*/
-
-	metaV1, err := metadata.ReadFromDir("./testdata/index_format_v1")
-	require.NoError(t, err)
-	test.Copy(t, "./testdata/index_format_v1", filepath.Join(tmpDir, metaV1.ULID.String()))
-
-	_, err = metadata.InjectThanos(log.NewNopLogger(), filepath.Join(tmpDir, metaV1.ULID.String()), metadata.Thanos{
-		Labels:     labels.FromStrings("ext1", "1").Map(),
-		Downsample: metadata.ThanosDownsample{Resolution: 0},
-		Source:     metadata.TestSource,
-	}, &metaV1.BlockMeta)
-	require.NoError(t, err)
-	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, metaV1.ULID.String()), metadata.NoneFunc))
-
-	//for _, id := range []ulid.ULID{idV2, metaV1.ULID} {
-	for _, id := range []ulid.ULID{metaV1.ULID} {
-		t.Run(id.String(), func(t *testing.T) {
-			indexFile, err := fileutil.OpenMmapFile(filepath.Join(tmpDir, id.String(), block.IndexFilename))
-			require.NoError(t, err)
-			defer func() { _ = indexFile.Close() }()
-
-			b := realByteSlice(indexFile.Bytes())
-
-			fmt.Printf("BYTE SLICE LEN: %d\n", len(b))
-
-			testBinaryReader := func(t *testing.T, cfg BinaryReaderConfig) {
-				fn := filepath.Join(tmpDir, id.String(), block.IndexHeaderFilename)
-				require.NoError(t, WriteBinary(ctx, bkt, id, fn))
-
+			t.Run("stream binary reader", func(t *testing.T) {
 				br, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, tmpDir, id, 3)
 				require.NoError(t, err)
-
-				defer func() { require.NoError(t, br.Close()) }()
-
-				if id == idV2 {
-					require.Equal(t, 1, br.version)
-					require.Equal(t, 2, br.indexVersion)
-					require.Equal(t, &BinaryTOC{Symbols: headerLen, PostingsOffsetTable: 70}, br.toc)
-					require.Equal(t, int64(710), br.indexLastPostingEnd)
-					require.Equal(t, 8, br.symbols.Size())
-					require.Equal(t, 0, len(br.postingsV1))
-					require.Equal(t, 2, len(br.nameSymbols))
-					require.Equal(t, map[string]*postingValueOffsets{
-						"": {
-							offsets:       []postingOffset{{value: "", tableOff: 4}},
-							lastValOffset: 440,
-						},
-						"a": {
-							offsets: []postingOffset{
-								{value: "1", tableOff: 9},
-								{value: "13", tableOff: 32},
-								{value: "4", tableOff: 54},
-								{value: "7", tableOff: 75},
-								{value: "9", tableOff: 89},
-							},
-							lastValOffset: 640,
-						},
-						"longer-string": {
-							offsets: []postingOffset{
-								{value: "1", tableOff: 96},
-								{value: "2", tableOff: 115},
-							},
-							lastValOffset: 706,
-						},
-					}, br.postings)
-
-					vals, err := br.LabelValues("not-existing", nil)
-					require.NoError(t, err)
-					require.Equal(t, []string(nil), vals)
-
-					// Regression tests for https://github.com/thanos-io/thanos/issues/2213.
-					// Most of not existing value was working despite bug, except in certain unlucky cases
-					// it was causing "invalid size" errors.
-					_, err = br.PostingsOffset("not-existing", "1")
-					require.Equal(t, NotFoundRangeErr, err)
-					_, err = br.PostingsOffset("a", "0")
-					require.Equal(t, NotFoundRangeErr, err)
-					// Unlucky case, because the bug was causing unnecessary read & decode requiring more bytes than
-					// available. For rest cases read was noop wrong, but at least not failing.
-					_, err = br.PostingsOffset("a", "10")
-					require.Equal(t, NotFoundRangeErr, err)
-					_, err = br.PostingsOffset("a", "121")
-					require.Equal(t, NotFoundRangeErr, err)
-					_, err = br.PostingsOffset("a", "131")
-					require.Equal(t, NotFoundRangeErr, err)
-					_, err = br.PostingsOffset("a", "91")
-					require.Equal(t, NotFoundRangeErr, err)
-					_, err = br.PostingsOffset("longer-string", "0")
-					require.Equal(t, NotFoundRangeErr, err)
-					_, err = br.PostingsOffset("longer-string", "11")
-					require.Equal(t, NotFoundRangeErr, err)
-					_, err = br.PostingsOffset("longer-string", "21")
-					require.Equal(t, NotFoundRangeErr, err)
-				}
+				t.Cleanup(func() {
+					require.NoError(t, br.Close())
+				})
 
 				compareIndexToHeader(t, b, br)
-			}
-
-			t.Run("binary reader", func(t *testing.T) {
-				testBinaryReader(t, BinaryReaderConfig{})
 			})
 
-			//t.Run("binary reader with map populate", func(t *testing.T) {
-			//	testBinaryReader(t, BinaryReaderConfig{MapPopulateEnabled: true})
-			//})
-			//
-			//t.Run("lazy binary reader", func(t *testing.T) {
-			//	fn := filepath.Join(tmpDir, id.String(), block.IndexHeaderFilename)
-			//	require.NoError(t, WriteBinary(ctx, bkt, id, fn))
-			//
-			//	br, err := NewLazyBinaryReader(ctx, log.NewNopLogger(), nil, tmpDir, id, 3, BinaryReaderConfig{}, NewLazyBinaryReaderMetrics(nil), nil)
-			//	require.NoError(t, err)
-			//
-			//	defer func() { require.NoError(t, br.Close()) }()
-			//
-			//	compareIndexToHeader(t, b, br)
-			//})
 		})
 	}
 
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerReader Reader) {
 	indexReader, err := index.NewReader(indexByteSlice)
@@ -622,304 +371,6 @@ func BenchmarkBinaryReader_LargerBlock(b *testing.B) {
 		}
 	})
 }
-
-type newBinaryReaderFunc = func(path string, postingOffsetsInMemSampling int) (Reader, error)
-
-type binaryReaderVariant struct {
-	name    string
-	newFunc newBinaryReaderFunc
-}
-
-var (
-	binaryReaderVariants = []binaryReaderVariant{
-		{
-			name: "BinaryReader",
-			newFunc: func(path string, sampling int) (Reader, error) {
-				return newFileBinaryReader(path, sampling, BinaryReaderConfig{})
-			},
-		},
-		{
-			name:    "StreamBinaryReader",
-			newFunc: func(path string, sampling int) (Reader, error) { return newFileStreamBinaryReader(path, sampling) },
-		},
-	}
-)
-
-func BenchmarkOpsBinaryReader(t *testing.B) {
-	for _, v := range binaryReaderVariants {
-		if v.name == os.Getenv("BINARY_READER") {
-			fmt.Println(v.name)
-			t.Run("cold-cache", func(t *testing.B) {
-				doBenchmarkOpsBinaryReader(t, false, v.newFunc)
-			})
-			t.Run("warm-cache", func(t *testing.B) {
-				doBenchmarkOpsBinaryReader(t, true, v.newFunc)
-			})
-		}
-	}
-}
-
-func doBenchmarkOpsBinaryReader(t *testing.B, warm bool, f newBinaryReaderFunc) {
-	fn := "/home/steve/grafana/ops-index-header"
-
-	//var slowfile *SlowFileMount
-	//if
-	//	slowfile, err := NewSlowFileMount(tmpDir, fn)
-	//	require.NoError(t, err)
-	//	defer slowfile.Close()
-
-	if warm {
-		br, err := f(fn, 32)
-		require.NoError(t, err)
-		require.NoError(t, br.Close())
-	}
-
-	t.ResetTimer()
-	for i := 0; i < t.N; i++ {
-		if !warm {
-			t.StopTimer()
-			require.NoError(t, flushFile(fn))
-			t.StartTimer()
-		}
-
-		br, err := f(fn, 32)
-
-		t.StopTimer()
-		{
-			f, err := os.Create("before_gc.heap")
-			require.NoError(t, err)
-			err = pprof.WriteHeapProfile(f)
-			require.NoError(t, err)
-		}
-		runtime.GC()
-		{
-			f, err := os.Create("after_gc.heap")
-			require.NoError(t, err)
-			err = pprof.WriteHeapProfile(f)
-			require.NoError(t, err)
-		}
-
-		require.NoError(t, err)
-		require.NoError(t, br.Close())
-		runtime.GC()
-		{
-			f, err := os.Create("after_close_and_gc.heap")
-			require.NoError(t, err)
-			err = pprof.WriteHeapProfile(f)
-			require.NoError(t, err)
-		}
-
-		t.StartTimer()
-	}
-}
-
-func RunTestWithConcurrentTicker(f func()) {
-	tickMilliseconds := 100
-	ticker := time.NewTicker(time.Duration(tickMilliseconds) * time.Millisecond)
-	defer ticker.Stop()
-
-	ctx, cancel := context.WithCancel(context.Background())
-
-	var wg sync.WaitGroup
-	wg.Add(1)
-
-	start := time.Now()
-	ticks := 0
-	go func() {
-		defer wg.Done()
-
-		for {
-			select {
-			case <-ticker.C:
-				ticks++
-				continue
-			case <-ctx.Done():
-				return
-			}
-		}
-
-	}()
-
-	f()
-	cancel()
-	wg.Wait()
-
-	elapsed := time.Now().Sub(start)
-	expected := (elapsed.Milliseconds() / int64(tickMilliseconds)) // floor
-	fmt.Printf("Elapsed: %v , Ticks: %d , Expected: %d\n", elapsed, ticks, expected)
-}
-
-func TestOpsBinaryReaderHangs(t *testing.T) {
-	t.Skip()
-
-	lastMaxProcs := runtime.GOMAXPROCS(1)
-	defer runtime.GOMAXPROCS(lastMaxProcs)
-
-	//ctx := context.Background()
-	tmpDir, err := ioutil.TempDir("", "test-indexheader")
-	require.NoError(t, err)
-	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
-
-	//bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
-	//require.NoError(t, err)
-
-	//fmt.Println("Writing")
-
-	//m := prepareIndexV2Block(t, tmpDir, bkt)
-	//fn := filepath.Join(tmpDir, m.ULID.String(), block.IndexHeaderFilename)
-	//require.NoError(t, WriteBinary(ctx, bkt, m.ULID, fn))
-
-	fn := "/home/steve/grafana/ops-index-header"
-
-	//	slowfile, err := NewSlowFileMount(tmpDir, fn)
-	//	require.NoError(t, err)
-	//	defer slowfile.Close()
-
-	//	flush(slowfile.File())
-
-	RunTestWithConcurrentTicker(func() {
-		for i := 0; i < 10; i++ {
-			require.NoError(t, flushFile(fn))
-			br, err := newFileBinaryReader(fn, 32, BinaryReaderConfig{})
-			require.NoError(t, err)
-			require.NoError(t, br.Close())
-		}
-	})
-}
-
-//type newBinaryReaderFunc = func(path string, postingOffsetsInMemSampling int) (Reader, error)
-
-func TestBinaryReaderHangs(t *testing.T) {
-	t.Run("BinaryReader", func(t *testing.T) {
-		testBinaryReaderHangs(t, func(path string, sampling int) (Reader, error) {
-			return newFileBinaryReader(path, sampling, BinaryReaderConfig{})
-		})
-	})
-	t.Run("StreamBinaryReader", func(t *testing.T) {
-		testBinaryReaderHangs(t, func(path string, sampling int) (Reader, error) {
-			return newFileStreamBinaryReader(path, sampling)
-		})
-	})
-}
-
-func testBinaryReaderHangs(t *testing.T, f newBinaryReaderFunc) {
-	t.Skip()
-
-	lastMaxProcs := runtime.GOMAXPROCS(1)
-	defer runtime.GOMAXPROCS(lastMaxProcs)
-
-	//ctx := context.Background()
-	tmpDir, err := ioutil.TempDir("", "test-indexheader")
-	require.NoError(t, err)
-	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
-
-	//bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
-	//require.NoError(t, err)
-
-	//fmt.Println("Writing")
-
-	//m := prepareIndexV2Block(t, tmpDir, bkt)
-	//fn := filepath.Join(tmpDir, m.ULID.String(), block.IndexHeaderFilename)
-	//require.NoError(t, WriteBinary(ctx, bkt, m.ULID, fn))
-
-	fn := "/home/steve/grafana/ops-index-header"
-
-	slowfile, err := NewSlowFileMount(tmpDir, fn)
-	require.NoError(t, err)
-	defer slowfile.Close()
-
-	flushFile(slowfile.File())
-
-	RunTestWithConcurrentTicker(func() {
-		br, err := f(slowfile.File(), 32)
-		require.NoError(t, err)
-		require.NoError(t, br.Close())
-	})
-
-	RunTestWithConcurrentTicker(func() {
-		br, err := f(slowfile.File(), 32)
-		require.NoError(t, err)
-		require.NoError(t, br.Close())
-	})
-}
-
-/*
-func TestBinaryReaderHangs(t *testing.T) {
-	ctx := context.Background()
-	tmpDir, err := ioutil.TempDir("", "test-indexheader")
-	require.NoError(t, err)
-	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
-
-	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
-	require.NoError(t, err)
-
-	fmt.Println("Writing")
-
-	slowfs := "/mnt/testloop"
-
-	m := prepareIndexV2Block(t, tmpDir, bkt)
-	fn := filepath.Join(slowfs, m.ULID.String(), block.IndexHeaderFilename)
-	require.NoError(t, WriteBinary(ctx, bkt, m.ULID, fn+"-1"))
-	require.NoError(t, WriteBinary(ctx, bkt, m.ULID, fn+"-2"))
-	require.NoError(t, WriteBinary(ctx, bkt, m.ULID, fn+"-3"))
-	require.NoError(t, WriteBinary(ctx, bkt, m.ULID, fn+"-4"))
-	require.NoError(t, WriteBinary(ctx, bkt, m.ULID, fn+"-5"))
-
-	// Flush it
-	flush := func(file string) error {
-		f, err := fileutil.OpenMmapFile(file)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-		src := f.Bytes()
-
-		const POSIX_FADV_WILLNEED = 3
-		const POSIX_FADV_DONTNEED = 4
-		err = unix.Fadvise(int(f.File().Fd()), 0, int64(len(src)), POSIX_FADV_DONTNEED) // _POSIX_FADV_DONTNEED)
-		if err != nil {
-			return err
-		}
-		fmt.Printf("Flushed\n")
-
-		f.Close()
-		return nil
-	}
-	require.NoError(t, flush(fn+"-1"))
-	require.NoError(t, flush(fn+"-2"))
-	require.NoError(t, flush(fn+"-3"))
-	require.NoError(t, flush(fn+"-4"))
-	require.NoError(t, flush(fn+"-5"))
-
-	//
-	start := time.Now()
-	fmt.Printf("Reading %s\n", fn+"-1")
-
-	br, err := newFileBinaryReader(fn+"-1", 32)
-	require.NoError(t, err)
-	require.NoError(t, br.Close())
-
-	br, err = newFileBinaryReader(fn+"-2", 32)
-	require.NoError(t, err)
-	require.NoError(t, br.Close())
-
-	br, err = newFileBinaryReader(fn+"-3", 32)
-	require.NoError(t, err)
-	require.NoError(t, br.Close())
-
-	br, err = newFileBinaryReader(fn+"-4", 32)
-	require.NoError(t, err)
-	require.NoError(t, br.Close())
-
-	br, err = newFileBinaryReader(fn+"-5", 32)
-	require.NoError(t, err)
-	require.NoError(t, br.Close())
-
-	elapsed := time.Now().Sub(start)
-	fmt.Printf("Elapsed: %v\n", elapsed)
-
-}
-*/
 
 func BenchmarkBinaryReader_LookupSymbol(b *testing.B) {
 	for _, numSeries := range []int{valueSymbolsCacheSize, valueSymbolsCacheSize * 10} {
