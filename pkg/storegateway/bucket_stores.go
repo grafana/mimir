@@ -463,8 +463,7 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 		WithIndexCache(u.indexCache),
 		WithQueryGate(u.queryGate),
 		WithChunkPool(u.chunksPool),
-		WithBatchedSeries(u.cfg.BucketStore.BatchedSeriesLoading),
-		WithBatchSeriesSize(u.cfg.BucketStore.BatchSeriesSize),
+		WithStreamingSeriesPerBatch(u.cfg.BucketStore.StreamingBatchSize),
 	}
 	if u.logLevel.String() == "debug" {
 		bucketStoreOpts = append(bucketStoreOpts, WithDebugLogging())

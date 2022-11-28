@@ -105,10 +105,10 @@ type BucketStore struct {
 	// Number of goroutines to use when syncing blocks from object storage.
 	blockSyncConcurrency int
 
-	// disableSeriesLoadingInBatches controls whether to load all series and chunks in memory for each Series() call
-	// or to load and unload them in batches
-	disableSeriesLoadingInBatches bool
-	seriesPerBatch                int
+	// maxSeriesPerBatch controls whether to load all series and chunks in memory for each Series() call
+	// or to load and unload them in batches and stream them to the querier. The bucketStore uses streaming when
+	// maxSeriesPerBatch is larger than zero.
+	maxSeriesPerBatch int
 
 	// Query gate which limits the maximum amount of concurrent queries.
 	queryGate gate.Gate
@@ -202,15 +202,9 @@ func WithDebugLogging() BucketStoreOption {
 	}
 }
 
-func WithBatchedSeries(enabled bool) BucketStoreOption {
+func WithStreamingSeriesPerBatch(seriesPerBatch int) BucketStoreOption {
 	return func(s *BucketStore) {
-		s.disableSeriesLoadingInBatches = !enabled
-	}
-}
-
-func WithBatchSeriesSize(seriesPerBatch int) BucketStoreOption {
-	return func(s *BucketStore) {
-		s.seriesPerBatch = seriesPerBatch
+		s.maxSeriesPerBatch = seriesPerBatch
 	}
 }
 
@@ -938,7 +932,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		cleanup    func()
 		chunkBytes = &pool.BatchBytes{Delegate: s.chunkPool}
 	)
-	if s.disableSeriesLoadingInBatches {
+	if s.maxSeriesPerBatch <= 0 {
 		var seriesSetStats *queryStats
 		seriesSets, resHints, seriesSetStats, cleanup, err = s.synchronousSeriesSet(ctx, req, blocks, chunkBytes, shardSelector, matchers, chunksLimiter, seriesLimiter)
 		if seriesSetStats != nil {

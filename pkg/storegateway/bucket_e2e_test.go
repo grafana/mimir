@@ -175,8 +175,7 @@ func prepareStoreWithTestBlocksForSeries(t testing.TB, dir string, bkt objstore.
 		NewBucketStoreMetrics(nil),
 		WithLogger(s.logger),
 		WithIndexCache(s.cache),
-		WithBatchedSeries(true),
-		WithBatchSeriesSize(65536),
+		WithStreamingSeriesPerBatch(65536),
 	)
 	assert.NoError(t, err)
 	t.Cleanup(func() {
