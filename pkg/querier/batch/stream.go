@@ -95,20 +95,18 @@ func mergeStreams(left, right batchStream, result batchStream, size int) batchSt
 			// Uninitialized Batch
 			initBatchType(b, valueTypes)
 			return true
-		} else {
-			// This should be rare, means that we're merging into something where the chunk type changed
-			if b.Index == 0 {
-				// Batch not written yet
-				result[resultLen-1] = createBatch(valueTypes)
-				b = &result[resultLen-1]
-				return true
-			} else {
-				// Batch already started, finish and start new
-				// We don't know it's type so return false (but it will either be None or have b.Index==0)
-				nextBatch(valueTypes)
-				return false
-			}
 		}
+		// These should be rare, means that we're merging into something where the chunk type changed
+		if b.Index == 0 {
+			// Batch not written yet
+			result[resultLen-1] = createBatch(valueTypes)
+			b = &result[resultLen-1]
+			return true
+		}
+		// Batch already started, finish and start new
+		// We don't know it's type so return false (but it will either be None or have b.Index==0)
+		nextBatch(valueTypes)
+		return false
 	}
 
 	// Ensure that the batch we're writing to is not full and of the right type.
