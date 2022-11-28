@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"os"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -42,12 +41,7 @@ func TestReadersIndexVersion2(t *testing.T) {
 func TestReaders(t *testing.T) {
 	ctx := context.Background()
 
-	tmpDir, err := os.MkdirTemp("", "test-indexheader")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(tmpDir))
-	})
-
+	tmpDir := t.TempDir()
 	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -291,10 +285,7 @@ func prepareIndexV2Block(t testing.TB, tmpDir string, bkt objstore.Bucket) *meta
 func BenchmarkBinaryWrite(t *testing.B) {
 	ctx := context.Background()
 
-	tmpDir, err := os.MkdirTemp("", "bench-indexheader")
-	require.NoError(t, err)
-	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
-
+	tmpDir := t.TempDir()
 	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
 	require.NoError(t, err)
 	defer func() { require.NoError(t, bkt.Close()) }()
@@ -310,10 +301,8 @@ func BenchmarkBinaryWrite(t *testing.B) {
 
 func BenchmarkBinaryReader_ThanosbenchBlock(t *testing.B) {
 	ctx := context.Background()
-	tmpDir, err := os.MkdirTemp("", "bench-indexheader")
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, os.RemoveAll(tmpDir)) })
 
+	tmpDir := t.TempDir()
 	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
 	require.NoError(t, err)
 
@@ -337,10 +326,8 @@ func BenchmarkBinaryReader_LargerBlock(b *testing.B) {
 	)
 
 	ctx := context.Background()
-	tmpDir, err := os.MkdirTemp("", "bench-indexheader-large")
-	require.NoError(b, err)
-	b.Cleanup(func() { require.NoError(b, os.RemoveAll(tmpDir)) })
 
+	tmpDir := b.TempDir()
 	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
 	require.NoError(b, err)
 
@@ -386,10 +373,7 @@ func benchmarkBinaryReaderLookupSymbol(b *testing.B, numSeries int) {
 	ctx := context.Background()
 	logger := log.NewNopLogger()
 
-	tmpDir, err := os.MkdirTemp("", "benchmark-lookupsymbol")
-	require.NoError(b, err)
-	defer func() { require.NoError(b, os.RemoveAll(tmpDir)) }()
-
+	tmpDir := b.TempDir()
 	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
 	require.NoError(b, err)
 	defer func() { require.NoError(b, bkt.Close()) }()
