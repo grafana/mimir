@@ -22,25 +22,21 @@ import (
 
 func TestValidateSeparateMetrics(t *testing.T) {
 	tests := map[string]struct {
-		//group         string
 		labelToSearch string
 		configFlagSet bool
 		metricExists  bool
 	}{
 		"No separate metrics label present": {
-			//group:         "group-1",
 			labelToSearch: "",
 			configFlagSet: false,
 			metricExists:  true,
 		},
 		"Check for correct label": {
-			//group:         "group-1",
 			labelToSearch: "test-group",
 			configFlagSet: true,
 			metricExists:  true,
 		},
 		"Check for incorrect label": {
-			//group:         "group-1",
 			labelToSearch: "incorrect-group",
 			configFlagSet: true,
 			metricExists:  false,
