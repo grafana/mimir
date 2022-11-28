@@ -96,7 +96,7 @@ type BucketStore struct {
 	seriesHashCache *hashcache.SeriesHashCache
 
 	// Sets of blocks that have the same labels. They are indexed by a hash over their label set.
-	mtx      sync.RWMutex
+	blocksMx sync.RWMutex
 	blocks   map[ulid.ULID]*bucketBlock
 	blockSet *bucketBlockSet
 
@@ -265,9 +265,9 @@ func (s *BucketStore) RemoveBlocksAndClose() error {
 func (s *BucketStore) Stats() BucketStoreStats {
 	stats := BucketStoreStats{}
 
-	s.mtx.RLock()
+	s.blocksMx.RLock()
 	stats.BlocksLoaded = len(s.blocks)
-	s.mtx.RUnlock()
+	s.blocksMx.RUnlock()
 
 	return stats
 }
@@ -361,8 +361,8 @@ func (s *BucketStore) InitialSync(ctx context.Context) error {
 }
 
 func (s *BucketStore) getBlock(id ulid.ULID) *bucketBlock {
-	s.mtx.RLock()
-	defer s.mtx.RUnlock()
+	s.blocksMx.RLock()
+	defer s.blocksMx.RUnlock()
 	return s.blocks[id]
 }
 
@@ -425,8 +425,8 @@ func (s *BucketStore) addBlock(ctx context.Context, meta *metadata.Meta) (err er
 		}
 	}()
 
-	s.mtx.Lock()
-	defer s.mtx.Unlock()
+	s.blocksMx.Lock()
+	defer s.blocksMx.Unlock()
 
 	if err = s.blockSet.add(b); err != nil {
 		return errors.Wrap(err, "add block to set")
@@ -443,13 +443,13 @@ func (s *BucketStore) removeBlock(id ulid.ULID) (returnErr error) {
 		}
 	}()
 
-	s.mtx.Lock()
+	s.blocksMx.Lock()
 	b, ok := s.blocks[id]
 	if ok {
 		s.blockSet.remove(id)
 		delete(s.blocks, id)
 	}
-	s.mtx.Unlock()
+	s.blocksMx.Unlock()
 
 	if !ok {
 		return nil
@@ -470,12 +470,12 @@ func (s *BucketStore) removeBlock(id ulid.ULID) (returnErr error) {
 
 func (s *BucketStore) removeAllBlocks() error {
 	// Build a list of blocks to remove.
-	s.mtx.Lock()
+	s.blocksMx.Lock()
 	blockIDs := make([]ulid.ULID, 0, len(s.blocks))
 	for id := range s.blocks {
 		blockIDs = append(blockIDs, id)
 	}
-	s.mtx.Unlock()
+	s.blocksMx.Unlock()
 
 	// Close all blocks.
 	errs := multierror.New()
@@ -491,8 +491,8 @@ func (s *BucketStore) removeAllBlocks() error {
 
 // TimeRange returns the minimum and maximum timestamp of data available in the store.
 func (s *BucketStore) TimeRange() (mint, maxt int64) {
-	s.mtx.RLock()
-	defer s.mtx.RUnlock()
+	s.blocksMx.RLock()
+	defer s.blocksMx.RUnlock()
 
 	mint = math.MaxInt64
 	maxt = math.MinInt64
@@ -1086,8 +1086,8 @@ func chunksSize(chks []storepb.AggrChunk) (size int) {
 }
 
 func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool, minT, maxT, maxResolutionMillis int64, blockMatchers []*labels.Matcher, chunkPool *pool.BatchBytes) ([]*bucketBlock, map[ulid.ULID]*bucketIndexReader, map[ulid.ULID]*bucketChunkReader) {
-	s.mtx.RLock()
-	defer s.mtx.RUnlock()
+	s.blocksMx.RLock()
+	defer s.blocksMx.RUnlock()
 
 	// Find all blocks owned by this store-gateway instance and matching the request.
 	blocks := s.blockSet.getFor(minT, maxT, maxResolutionMillis, blockMatchers)
@@ -1136,7 +1136,7 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 
 	g, gctx := errgroup.WithContext(ctx)
 
-	s.mtx.RLock()
+	s.blocksMx.RLock()
 
 	var mtx sync.Mutex
 	var sets [][]string
@@ -1173,7 +1173,7 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 		})
 	}
 
-	s.mtx.RUnlock()
+	s.blocksMx.RUnlock()
 
 	if err := g.Wait(); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
@@ -1298,7 +1298,7 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 		}
 	}
 
-	s.mtx.RLock()
+	s.blocksMx.RLock()
 
 	var mtx sync.Mutex
 	var sets [][]string
@@ -1334,7 +1334,7 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 		})
 	}
 
-	s.mtx.RUnlock()
+	s.blocksMx.RUnlock()
 
 	if err := g.Wait(); err != nil {
 		return nil, status.Error(codes.Aborted, err.Error())
