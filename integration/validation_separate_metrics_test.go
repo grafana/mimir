@@ -22,24 +22,25 @@ import (
 
 func TestValidateSeparateMetrics(t *testing.T) {
 	tests := map[string]struct {
-		group         string
+		//group         string
 		labelToSearch string
 		configFlagSet bool
 		metricExists  bool
 	}{
 		"No separate metrics label present": {
+			//group:         "group-1",
 			labelToSearch: "",
 			configFlagSet: false,
 			metricExists:  true,
 		},
 		"Check for correct label": {
-			group:         "group-1",
-			labelToSearch: "group-1",
+			//group:         "group-1",
+			labelToSearch: "test-group",
 			configFlagSet: true,
 			metricExists:  true,
 		},
 		"Check for incorrect label": {
-			group:         "group-1",
+			//group:         "group-1",
 			labelToSearch: "incorrect-group",
 			configFlagSet: true,
 			metricExists:  false,
@@ -58,7 +59,7 @@ func TestValidateSeparateMetrics(t *testing.T) {
 			)
 
 			if testData.configFlagSet {
-				flags["-validation.separate-metrics-label"] = testData.group
+				flags["-validation.separate-metrics-label"] = "group-1"
 			}
 
 			// Start dependencies.
@@ -91,7 +92,11 @@ func TestValidateSeparateMetrics(t *testing.T) {
 			series, _, _ := generateSeries("TestMetric", now, prompb.Label{
 				Name:  "Test|Invalid|Label|Char",
 				Value: "123",
+			}, prompb.Label{
+				Name:  "group-1",
+				Value: "test-group",
 			})
+
 			res, err := client.Push(series)
 			require.NoError(t, err)
 			require.Equal(t, 400, res.StatusCode)
