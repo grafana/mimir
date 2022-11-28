@@ -499,12 +499,19 @@ func (c *loadingBatchSet) Err() error {
 	return c.err
 }
 
+// preloadedBatch holds the result of preloading the next batch. It can either contain
+// the preloaded batch or an error, but not both.
+type preloadedBatch struct {
+	batch loadedBatch
+	err   error
+}
+
 type preloadingBatchSet struct {
 	ctx     context.Context
 	from    loadedBatchSet
 	current loadedBatch
 
-	preloaded chan loadedBatch
+	preloaded chan preloadedBatch
 	err       error
 }
 
@@ -512,7 +519,7 @@ func newPreloadingBatchSet(ctx context.Context, preloadNumberOfBatches int, from
 	preloadedSet := &preloadingBatchSet{
 		ctx:       ctx,
 		from:      from,
-		preloaded: make(chan loadedBatch, preloadNumberOfBatches-1), // one will be kept outside the channel when the channel blocks
+		preloaded: make(chan preloadedBatch, preloadNumberOfBatches-1), // one will be kept outside the channel when the channel blocks
 	}
 	go preloadedSet.preload()
 	return preloadedSet
@@ -520,21 +527,34 @@ func newPreloadingBatchSet(ctx context.Context, preloadNumberOfBatches int, from
 
 func (p *preloadingBatchSet) preload() {
 	defer close(p.preloaded)
-loop:
+
 	for p.from.Next() {
 		select {
 		case <-p.ctx.Done():
-			break loop
-		case p.preloaded <- p.from.At():
+			// If the context is done, we should just stop the preloading goroutine.
+			return
+		case p.preloaded <- preloadedBatch{batch: p.from.At()}:
 		}
 	}
-	p.err = p.from.Err()
+
+	if p.from.Err() != nil {
+		p.preloaded <- preloadedBatch{err: p.from.Err()}
+	}
 }
 
-func (p *preloadingBatchSet) Next() (ok bool) {
+func (p *preloadingBatchSet) Next() bool {
 	// TODO dimitarvdimitrov instrument the time we wait here
-	p.current, ok = <-p.preloaded
-	return
+
+	preloaded, ok := <-p.preloaded
+	if !ok {
+		// Iteration reached the end or context has been canceled.
+		return false
+	}
+
+	p.current = preloaded.batch
+	p.err = preloaded.err
+
+	return p.err == nil
 }
 
 func (p *preloadingBatchSet) At() loadedBatch {
