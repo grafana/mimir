@@ -130,14 +130,14 @@ func unloadedBucketBatches(
 	batchSize int,
 	indexr *bucketIndexReader, // Index reader for block.
 	blockID ulid.ULID,
-	matchers []*labels.Matcher, // Series matchers.
-	shard *sharding.ShardSelector, // Shard selector.
+	matchers []*labels.Matcher,                      // Series matchers.
+	shard *sharding.ShardSelector,                   // Shard selector.
 	seriesHashCache *hashcache.BlockSeriesHashCache, // Block-specific series hash cache (used only if shard selector is specified).
-	chunksLimiter ChunksLimiter, // Rate limiter for loading chunks.
-	seriesLimiter SeriesLimiter, // Rate limiter for loading series.
-	skipChunks bool, // If true chunks are not loaded and minTime/maxTime are ignored.
-	minTime, maxTime int64, // Series must have data in this time range to be returned (ignored if skipChunks=true).
-	loadAggregates []storepb.Aggr, // List of aggregates to load when loading chunks.
+	chunksLimiter ChunksLimiter,                     // Rate limiter for loading chunks.
+	seriesLimiter SeriesLimiter,                     // Rate limiter for loading series.
+	skipChunks bool,                                 // If true chunks are not loaded and minTime/maxTime are ignored.
+	minTime, maxTime int64,                          // Series must have data in this time range to be returned (ignored if skipChunks=true).
+	loadAggregates []storepb.Aggr,                   // List of aggregates to load when loading chunks.
 	logger log.Logger,
 ) (unloadedBatchSet, error) {
 	if batchSize <= 0 {
@@ -372,16 +372,13 @@ func (s *BucketStore) batchSetsForBlocks(ctx context.Context, req *storepb.Serie
 		}
 	}
 
-	// Concurrently get data from all blocks.
-	{
-		begin := time.Now()
-		err := g.Wait()
-		if err != nil {
-			return nil, nil, nil, cleanup, err
-		}
-		stats.blocksQueried = len(batches)
-		stats.getAllDuration = time.Since(begin)
+	begin := time.Now()
+	err := g.Wait()
+	if err != nil {
+		return nil, nil, nil, cleanup, err
 	}
+	stats.blocksQueried = len(batches)
+	stats.getAllDuration = time.Since(begin)
 
 	mergedBatches := mergedBatchSets(s.seriesPerBatch, batches...)
 	var set storepb.SeriesSet
