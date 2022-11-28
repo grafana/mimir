@@ -400,7 +400,11 @@ func TestPreloadingBatchSet_Concurrency(t *testing.T) {
 	// Create some batches.
 	batches := make([]loadedBatch, 0, numBatches)
 	for i := 0; i < numBatches; i++ {
-		batches = append(batches, loadedBatch{})
+		batches = append(batches, loadedBatch{
+			Entries: []seriesEntry{{
+				lset: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i)),
+			}},
+		})
 	}
 
 	// Run many times to increase the likelihood to find a race (if any).
@@ -410,7 +414,7 @@ func TestPreloadingBatchSet_Concurrency(t *testing.T) {
 
 		for preloading.Next() {
 			require.NoError(t, preloading.Err())
-			require.NotNil(t, preloading.At())
+			require.NotZero(t, preloading.At())
 		}
 		require.Error(t, preloading.Err())
 	}
