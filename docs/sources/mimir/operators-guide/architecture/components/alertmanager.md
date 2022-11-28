@@ -60,7 +60,7 @@ After the tenant uploads an Alertmanager configuration, the tenant can access th
 
 When a tenant doesn't have a Alertmanager configuration, the Grafana Mimir Alertmanager uses a fallback configuration.
 By default, there is always a fallback configuration set.
-The default fallback configuration can be overwritten using the `-alertmanager.configs.fallback` command-line flag.
+You can overwrite the default fallback configuration via the `-alertmanager.configs.fallback` command-line flag.
 
 > **Warning**: Without a fallback configuration or a tenant specific configuration, the Alertmanager UI is inaccessible and ruler notifications for that tenant fail.
 
