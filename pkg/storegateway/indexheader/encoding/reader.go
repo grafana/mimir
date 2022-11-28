@@ -23,11 +23,9 @@ type Reader interface {
 	// without consuming them. It is valid to Peek beyond the end of the underlying
 	// store. In this case the available bytes are returned with a nil error.
 	Peek(int) ([]byte, error)
-	Len() int
 
-	// TODO: Seems like we need a "Remaining()" method here because Decbuf
-	//  expects to be able to do `d.B = d.B[n:]` when it consumes parts of the
-	//  underlying byte slice.
+	// Len returns the remaining number of bytes in the underlying store.
+	Len() int
 
 	// TODO: Add Seek method here to allow us to skip bytes without
 	//  needing to read them or allocate? Easy to implement for BufReader
