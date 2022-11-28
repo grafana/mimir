@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestDecbuf_Be32(t *testing.T) {
+func TestDecbuf_Be32HappyPath(t *testing.T) {
 	cases := []uint32{
 		0,
 		1,
@@ -33,6 +33,21 @@ func TestDecbuf_Be32(t *testing.T) {
 	}
 }
 
+func TestDecbuf_Be32EmptyBuffer(t *testing.T) {
+	dec := NewDecbufRaw(realByteSlice(nil))
+	_ = dec.Be32()
+	require.ErrorIs(t, dec.Err(), ErrInvalidSize)
+}
+
+func TestDecbuf_Be32InsufficientBuffer(t *testing.T) {
+	enc := prom_encoding.Encbuf{}
+	enc.PutBE32(0xFFFF_FFFF)
+
+	dec := NewDecbufRaw(realByteSlice(enc.Get()[:2]))
+	_ = dec.Be32()
+	require.ErrorIs(t, dec.Err(), ErrInvalidSize)
+}
+
 func FuzzDecbuf_Be32(f *testing.F) {
 	f.Add(uint32(0))
 	f.Add(uint32(1))
@@ -52,7 +67,7 @@ func FuzzDecbuf_Be32(f *testing.F) {
 	})
 }
 
-func TestDecbuf_Be32int(t *testing.T) {
+func TestDecbuf_Be32intHappyPath(t *testing.T) {
 	cases := []int{
 		0,
 		1,
@@ -73,6 +88,21 @@ func TestDecbuf_Be32int(t *testing.T) {
 			require.Equal(t, 0, dec.Len())
 		})
 	}
+}
+
+func TestDecbuf_Be32intEmptyBuffer(t *testing.T) {
+	dec := NewDecbufRaw(realByteSlice(nil))
+	_ = dec.Be32int()
+	require.ErrorIs(t, dec.Err(), ErrInvalidSize)
+}
+
+func TestDecbuf_Be32intInsufficientBuffer(t *testing.T) {
+	enc := prom_encoding.Encbuf{}
+	enc.PutBE32int(0xFFFF_FFFF)
+
+	dec := NewDecbufRaw(realByteSlice(enc.Get()[:2]))
+	_ = dec.Be32int()
+	require.ErrorIs(t, dec.Err(), ErrInvalidSize)
 }
 
 func FuzzDecbuf_Be32int(f *testing.F) {
@@ -121,11 +151,14 @@ func TestDecbuf_Be64HappyPath(t *testing.T) {
 	}
 }
 
-func TestDecbuf_Be64InsufficientLength(t *testing.T) {
-	enc := prom_encoding.Encbuf{}
-	enc.PutByte(0x01)
+func TestDecbuf_Be64EmptyBuffer(t *testing.T) {
+	dec := NewDecbufRaw(realByteSlice(nil))
+	_ = dec.Be64()
+	require.ErrorIs(t, dec.Err(), ErrInvalidSize)
+}
 
-	dec := NewDecbufRaw(realByteSlice(enc.Get()))
+func TestDecbuf_Be64InsufficientBuffer(t *testing.T) {
+	dec := NewDecbufRaw(realByteSlice([]byte{0x01}))
 	_ = dec.Be64()
 	require.ErrorIs(t, dec.Err(), ErrInvalidSize)
 }
@@ -149,7 +182,7 @@ func FuzzDecbuf_Be64(f *testing.F) {
 	})
 }
 
-func TestDecbuf_Skip(t *testing.T) {
+func TestDecbuf_SkipHappyPath(t *testing.T) {
 	expected := uint32(0x12345678)
 
 	enc := prom_encoding.Encbuf{}
@@ -169,7 +202,19 @@ func TestDecbuf_Skip(t *testing.T) {
 	require.Equal(t, 0, dec.Len())
 }
 
-func TestDecbuf_Uvarint(t *testing.T) {
+func TestDecbuf_SkipEmptyBuffer(t *testing.T) {
+	dec := NewDecbufRaw(realByteSlice(nil))
+	dec.Skip(2)
+	require.ErrorIs(t, dec.Err(), ErrInvalidSize)
+}
+
+func TestDecbuf_SkipInsufficientBuffer(t *testing.T) {
+	dec := NewDecbufRaw(realByteSlice([]byte{0x01}))
+	dec.Skip(2)
+	require.ErrorIs(t, dec.Err(), ErrInvalidSize)
+}
+
+func TestDecbuf_UvarintHappyPath(t *testing.T) {
 	cases := []struct {
 		value int
 		bytes int
@@ -197,6 +242,21 @@ func TestDecbuf_Uvarint(t *testing.T) {
 	}
 }
 
+func TestDecbuf_UvarintEmptyBuffer(t *testing.T) {
+	dec := NewDecbufRaw(realByteSlice(nil))
+	_ = dec.Uvarint()
+	require.ErrorIs(t, dec.Err(), ErrInvalidSize)
+}
+
+func TestDecbuf_UvarintInsufficientBuffer(t *testing.T) {
+	enc := prom_encoding.Encbuf{}
+	enc.PutUvarint(0xFFFF_FFFF)
+
+	dec := NewDecbufRaw(realByteSlice(enc.Get()[:2]))
+	_ = dec.Uvarint()
+	require.ErrorIs(t, dec.Err(), ErrInvalidSize)
+}
+
 func FuzzDecbuf_Uvarint(f *testing.F) {
 	f.Add(0)
 	f.Add(1)
@@ -218,7 +278,7 @@ func FuzzDecbuf_Uvarint(f *testing.F) {
 	})
 }
 
-func TestDecbuf_Uvarint64(t *testing.T) {
+func TestDecbuf_Uvarint64HappyPath(t *testing.T) {
 	cases := []struct {
 		value uint64
 		bytes int
@@ -247,6 +307,21 @@ func TestDecbuf_Uvarint64(t *testing.T) {
 	}
 }
 
+func TestDecbuf_Uvarint64EmptyBuffer(t *testing.T) {
+	dec := NewDecbufRaw(realByteSlice(nil))
+	_ = dec.Uvarint64()
+	require.ErrorIs(t, dec.Err(), ErrInvalidSize)
+}
+
+func TestDecbuf_Uvarint64InsufficientBuffer(t *testing.T) {
+	enc := prom_encoding.Encbuf{}
+	enc.PutUvarint64(0xFFFF_FFFF)
+
+	dec := NewDecbufRaw(realByteSlice(enc.Get()[:2]))
+	_ = dec.Uvarint64()
+	require.ErrorIs(t, dec.Err(), ErrInvalidSize)
+}
+
 func FuzzDecbuf_Uvarint64(f *testing.F) {
 	f.Add(uint64(0))
 	f.Add(uint64(1))
@@ -267,7 +342,7 @@ func FuzzDecbuf_Uvarint64(f *testing.F) {
 	})
 }
 
-func TestDecbuf_UvarintBytes(t *testing.T) {
+func TestDecbuf_UvarintBytesHappyPath(t *testing.T) {
 	cases := []struct {
 		name              string
 		value             []byte
@@ -295,6 +370,21 @@ func TestDecbuf_UvarintBytes(t *testing.T) {
 	}
 }
 
+func TestDecbuf_UvarintBytesEmptyBuffer(t *testing.T) {
+	dec := NewDecbufRaw(realByteSlice(nil))
+	_ = dec.UvarintBytes()
+	require.ErrorIs(t, dec.Err(), ErrInvalidSize)
+}
+
+func TestDecbuf_UvarintBytesInsufficientBuffer(t *testing.T) {
+	enc := prom_encoding.Encbuf{}
+	enc.PutUvarintBytes([]byte("123456"))
+
+	dec := NewDecbufRaw(realByteSlice(enc.Get()[:2]))
+	_ = dec.UvarintBytes()
+	require.ErrorIs(t, dec.Err(), ErrInvalidSize)
+}
+
 func FuzzDecbuf_UvarintBytes(f *testing.F) {
 	f.Add([]byte{})
 	f.Add([]byte{0x12})
@@ -313,7 +403,7 @@ func FuzzDecbuf_UvarintBytes(f *testing.F) {
 	})
 }
 
-func TestDecbuf_UvarintString(t *testing.T) {
+func TestDecbuf_UvarintStrHappyPath(t *testing.T) {
 	cases := []struct {
 		name              string
 		value             string
@@ -341,7 +431,22 @@ func TestDecbuf_UvarintString(t *testing.T) {
 	}
 }
 
-func FuzzDecbuf_UvarintString(f *testing.F) {
+func TestDecbuf_UvarintStrEmptyBuffer(t *testing.T) {
+	dec := NewDecbufRaw(realByteSlice(nil))
+	_ = dec.UvarintStr()
+	require.ErrorIs(t, dec.Err(), ErrInvalidSize)
+}
+
+func TestDecbuf_UvarintStringInsufficientBuffer(t *testing.T) {
+	enc := prom_encoding.Encbuf{}
+	enc.PutUvarintStr("123456")
+
+	dec := NewDecbufRaw(realByteSlice(enc.Get()[:2]))
+	_ = dec.UvarintStr()
+	require.ErrorIs(t, dec.Err(), ErrInvalidSize)
+}
+
+func FuzzDecbuf_UvarintStr(f *testing.F) {
 	f.Add("")
 	f.Add("a")
 	f.Add("1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567")
