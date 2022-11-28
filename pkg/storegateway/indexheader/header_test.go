@@ -49,7 +49,7 @@ func TestReaders(t *testing.T) {
 	})
 
 	// Create block index version 2.
-	id1, err := testhelper.CreateBlock(ctx, tmpDir, []labels.Labels{
+	idIndexV2, err := testhelper.CreateBlock(ctx, tmpDir, []labels.Labels{
 		labels.FromStrings("a", "1"),
 		labels.FromStrings("a", "2"),
 		labels.FromStrings("a", "3"),
@@ -67,22 +67,22 @@ func TestReaders(t *testing.T) {
 		labels.FromStrings("a", "1", "longer-string", "2"),
 	}, 100, 0, 1000, labels.FromStrings("ext1", "1"), 124, metadata.NoneFunc)
 	require.NoError(t, err)
-	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, id1.String()), metadata.NoneFunc))
+	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, idIndexV2.String()), metadata.NoneFunc))
 
-	m, err := metadata.ReadFromDir("./testdata/index_format_v1")
+	metaIndexV1, err := metadata.ReadFromDir("./testdata/index_format_v1")
 	require.NoError(t, err)
-	test.Copy(t, "./testdata/index_format_v1", filepath.Join(tmpDir, m.ULID.String()))
+	test.Copy(t, "./testdata/index_format_v1", filepath.Join(tmpDir, metaIndexV1.ULID.String()))
 
-	_, err = metadata.InjectThanos(log.NewNopLogger(), filepath.Join(tmpDir, m.ULID.String()), metadata.Thanos{
+	_, err = metadata.InjectThanos(log.NewNopLogger(), filepath.Join(tmpDir, metaIndexV1.ULID.String()), metadata.Thanos{
 		Labels:     labels.FromStrings("ext1", "1").Map(),
 		Downsample: metadata.ThanosDownsample{Resolution: 0},
 		Source:     metadata.TestSource,
-	}, &m.BlockMeta)
+	}, &metaIndexV1.BlockMeta)
 
 	require.NoError(t, err)
-	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, m.ULID.String()), metadata.NoneFunc))
+	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, metaIndexV1.ULID.String()), metadata.NoneFunc))
 
-	for _, id := range []ulid.ULID{id1, m.ULID} {
+	for _, id := range []ulid.ULID{idIndexV2, metaIndexV1.ULID} {
 		t.Run(id.String(), func(t *testing.T) {
 			indexName := filepath.Join(tmpDir, id.String(), block.IndexHeaderFilename)
 			require.NoError(t, WriteBinary(ctx, bkt, id, indexName))
