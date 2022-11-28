@@ -284,7 +284,7 @@ func NewMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, store alerts
 		return nil, fmt.Errorf("unable to create Alertmanager data directory %q: %s", cfg.DataDir, err)
 	}
 
-	fallbackConfig, err := computeFallbackConfig(cfg.FallbackConfigFile)
+	fallbackConfig, err := ComputeFallbackConfig(cfg.FallbackConfigFile)
 	if err != nil {
 		return nil, err
 	}
@@ -302,9 +302,9 @@ func NewMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, store alerts
 	return createMultitenantAlertmanager(cfg, fallbackConfig, store, ringStore, limits, logger, registerer)
 }
 
-// computeFallbackConfig will load, vaildate and return the provided fallbackConfigFile
+// ComputeFallbackConfig will load, vaildate and return the provided fallbackConfigFile
 // or return an valid empty default configuration if none is provided.
-func computeFallbackConfig(fallbackConfigFile string) ([]byte, error) {
+func ComputeFallbackConfig(fallbackConfigFile string) ([]byte, error) {
 	if fallbackConfigFile != "" {
 		fallbackConfig, err := os.ReadFile(fallbackConfigFile)
 		if err != nil {

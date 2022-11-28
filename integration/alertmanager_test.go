@@ -19,6 +19,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
+	alertConfig "github.com/prometheus/alertmanager/config"
 	amlabels "github.com/prometheus/alertmanager/pkg/labels"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/common/model"
@@ -27,8 +28,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/integration/e2emimir"
+	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/storage/bucket/s3"
+
+	yaml "gopkg.in/yaml.v3"
 )
 
 const simpleAlertmanagerConfig = `route:
@@ -226,10 +230,16 @@ func TestAlertmanagerStoreAPI(t *testing.T) {
 	require.NoError(t, am.WaitRemovedMetric("cortex_alertmanager_config_last_reload_successful_seconds", e2e.WithLabelMatchers(
 		labels.MustNewMatcher(labels.MatchEqual, "user", "user-1"))))
 
+	// This will trigger to apply the fallback configuration.
 	cfg, err = c.GetAlertmanagerConfig(context.Background())
-	require.Error(t, err)
-	require.Nil(t, cfg)
-	require.EqualError(t, err, "getting config failed with status 412 and error the Alertmanager is not configured\n")
+	require.NoError(t, err)
+	require.NotNil(t, cfg)
+
+	fallbackCfgBytes, _ := alertmanager.ComputeFallbackConfig("")
+	fallbackCfg := &alertConfig.Config{}
+	err = yaml.Unmarshal([]byte(fallbackCfgBytes), fallbackCfg)
+	require.NoError(t, err)
+	require.Equal(t, cfg, fallbackCfg)
 }
 
 func TestAlertmanagerSharding(t *testing.T) {
