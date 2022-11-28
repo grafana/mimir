@@ -66,7 +66,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(instance) (rate(node_network_receive_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*distributor.*\"}[$__rate_interval]))",
+                        "expr": "sum by(instance) (rate(node_network_receive_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{instance}}",
@@ -142,7 +142,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(instance) (rate(node_network_transmit_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*distributor.*\"}[$__rate_interval]))",
+                        "expr": "sum by(instance) (rate(node_network_transmit_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{instance}}",
@@ -218,7 +218,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "avg(cortex_inflight_requests{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\"})",
+                        "expr": "avg(cortex_inflight_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"})",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "avg",
@@ -226,7 +226,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "max(cortex_inflight_requests{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\"})",
+                        "expr": "max(cortex_inflight_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"})",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "highest",
@@ -302,7 +302,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "avg(sum by(instance) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\"}))",
+                        "expr": "avg(sum by(instance) (cortex_tcp_connections{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"}))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "avg",
@@ -310,7 +310,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "max(sum by(instance) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\"}))",
+                        "expr": "max(sum by(instance) (cortex_tcp_connections{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"}))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "highest",
@@ -318,7 +318,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "min(cortex_tcp_connections_limit{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir|mimir-write.*))\"})",
+                        "expr": "min(cortex_tcp_connections_limit{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*(distributor|ingester|mimir-write).*\"})",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "limit",
@@ -367,7 +367,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Distributor",
+            "title": "Summary",
             "titleSize": "h6"
          },
          {
@@ -406,7 +406,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(instance) (rate(node_network_receive_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"}[$__rate_interval]))",
+                        "expr": "sum by(instance) (rate(node_network_receive_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*distributor.*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{instance}}",
@@ -482,7 +482,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(instance) (rate(node_network_transmit_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"}[$__rate_interval]))",
+                        "expr": "sum by(instance) (rate(node_network_transmit_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*distributor.*\"}[$__rate_interval]))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "{{instance}}",
@@ -558,7 +558,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "avg(cortex_inflight_requests{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})",
+                        "expr": "avg(cortex_inflight_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*distributor.*\"})",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "avg",
@@ -566,7 +566,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "max(cortex_inflight_requests{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})",
+                        "expr": "max(cortex_inflight_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*distributor.*\"})",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "highest",
@@ -642,7 +642,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "avg(sum by(instance) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}))",
+                        "expr": "avg(sum by(instance) (cortex_tcp_connections{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*distributor.*\"}))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "avg",
@@ -650,7 +650,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "max(sum by(instance) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}))",
+                        "expr": "max(sum by(instance) (cortex_tcp_connections{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*distributor.*\"}))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "highest",
@@ -658,7 +658,347 @@
                         "step": 10
                      },
                      {
-                        "expr": "min(cortex_tcp_connections_limit{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})",
+                        "expr": "min(cortex_tcp_connections_limit{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*distributor.*\"})",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "limit",
+                        "legendLink": null,
+                        "step": 10
+                     }
+                  ],
+                  "thresholds": [ ],
+                  "timeFrom": null,
+                  "timeShift": null,
+                  "title": "TCP connections (per pod)",
+                  "tooltip": {
+                     "shared": false,
+                     "sort": 0,
+                     "value_type": "individual"
+                  },
+                  "type": "graph",
+                  "xaxis": {
+                     "buckets": null,
+                     "mode": "time",
+                     "name": null,
+                     "show": true,
+                     "values": [ ]
+                  },
+                  "yaxes": [
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "Distributor",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": false,
+            "height": "250px",
+            "panels": [
+               {
+                  "aliasColors": { },
+                  "bars": false,
+                  "dashLength": 10,
+                  "dashes": false,
+                  "datasource": "$datasource",
+                  "fill": 10,
+                  "id": 9,
+                  "legend": {
+                     "avg": false,
+                     "current": false,
+                     "max": false,
+                     "min": false,
+                     "show": true,
+                     "total": false,
+                     "values": false
+                  },
+                  "lines": true,
+                  "linewidth": 0,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "percentage": false,
+                  "pointradius": 5,
+                  "points": false,
+                  "renderer": "flot",
+                  "seriesOverrides": [ ],
+                  "spaceLength": 10,
+                  "span": 3,
+                  "stack": true,
+                  "steppedLine": false,
+                  "targets": [
+                     {
+                        "expr": "sum by(instance) (rate(node_network_receive_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "{{instance}}",
+                        "legendLink": null,
+                        "step": 10
+                     }
+                  ],
+                  "thresholds": [ ],
+                  "timeFrom": null,
+                  "timeShift": null,
+                  "title": "Receive bandwidth",
+                  "tooltip": {
+                     "shared": false,
+                     "sort": 0,
+                     "value_type": "individual"
+                  },
+                  "type": "graph",
+                  "xaxis": {
+                     "buckets": null,
+                     "mode": "time",
+                     "name": null,
+                     "show": true,
+                     "values": [ ]
+                  },
+                  "yaxes": [
+                     {
+                        "format": "Bps",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               },
+               {
+                  "aliasColors": { },
+                  "bars": false,
+                  "dashLength": 10,
+                  "dashes": false,
+                  "datasource": "$datasource",
+                  "fill": 10,
+                  "id": 10,
+                  "legend": {
+                     "avg": false,
+                     "current": false,
+                     "max": false,
+                     "min": false,
+                     "show": true,
+                     "total": false,
+                     "values": false
+                  },
+                  "lines": true,
+                  "linewidth": 0,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "percentage": false,
+                  "pointradius": 5,
+                  "points": false,
+                  "renderer": "flot",
+                  "seriesOverrides": [ ],
+                  "spaceLength": 10,
+                  "span": 3,
+                  "stack": true,
+                  "steppedLine": false,
+                  "targets": [
+                     {
+                        "expr": "sum by(instance) (rate(node_network_transmit_bytes_total{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "{{instance}}",
+                        "legendLink": null,
+                        "step": 10
+                     }
+                  ],
+                  "thresholds": [ ],
+                  "timeFrom": null,
+                  "timeShift": null,
+                  "title": "Transmit bandwidth",
+                  "tooltip": {
+                     "shared": false,
+                     "sort": 0,
+                     "value_type": "individual"
+                  },
+                  "type": "graph",
+                  "xaxis": {
+                     "buckets": null,
+                     "mode": "time",
+                     "name": null,
+                     "show": true,
+                     "values": [ ]
+                  },
+                  "yaxes": [
+                     {
+                        "format": "Bps",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               },
+               {
+                  "aliasColors": { },
+                  "bars": false,
+                  "dashLength": 10,
+                  "dashes": false,
+                  "datasource": "$datasource",
+                  "fill": 0,
+                  "id": 11,
+                  "legend": {
+                     "avg": false,
+                     "current": false,
+                     "max": false,
+                     "min": false,
+                     "show": true,
+                     "total": false,
+                     "values": false
+                  },
+                  "lines": true,
+                  "linewidth": 1,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "percentage": false,
+                  "pointradius": 5,
+                  "points": false,
+                  "renderer": "flot",
+                  "seriesOverrides": [ ],
+                  "spaceLength": 10,
+                  "span": 3,
+                  "stack": false,
+                  "steppedLine": false,
+                  "targets": [
+                     {
+                        "expr": "avg(cortex_inflight_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"})",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "avg",
+                        "legendLink": null,
+                        "step": 10
+                     },
+                     {
+                        "expr": "max(cortex_inflight_requests{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"})",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "highest",
+                        "legendLink": null,
+                        "step": 10
+                     }
+                  ],
+                  "thresholds": [ ],
+                  "timeFrom": null,
+                  "timeShift": null,
+                  "title": "Inflight requests (per pod)",
+                  "tooltip": {
+                     "shared": false,
+                     "sort": 0,
+                     "value_type": "individual"
+                  },
+                  "type": "graph",
+                  "xaxis": {
+                     "buckets": null,
+                     "mode": "time",
+                     "name": null,
+                     "show": true,
+                     "values": [ ]
+                  },
+                  "yaxes": [
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               },
+               {
+                  "aliasColors": { },
+                  "bars": false,
+                  "dashLength": 10,
+                  "dashes": false,
+                  "datasource": "$datasource",
+                  "fill": 0,
+                  "id": 12,
+                  "legend": {
+                     "avg": false,
+                     "current": false,
+                     "max": false,
+                     "min": false,
+                     "show": true,
+                     "total": false,
+                     "values": false
+                  },
+                  "lines": true,
+                  "linewidth": 1,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "percentage": false,
+                  "pointradius": 5,
+                  "points": false,
+                  "renderer": "flot",
+                  "seriesOverrides": [ ],
+                  "spaceLength": 10,
+                  "span": 3,
+                  "stack": false,
+                  "steppedLine": false,
+                  "targets": [
+                     {
+                        "expr": "avg(sum by(instance) (cortex_tcp_connections{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"}))",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "avg",
+                        "legendLink": null,
+                        "step": 10
+                     },
+                     {
+                        "expr": "max(sum by(instance) (cortex_tcp_connections{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"}))",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "highest",
+                        "legendLink": null,
+                        "step": 10
+                     },
+                     {
+                        "expr": "min(cortex_tcp_connections_limit{cluster=~\"$cluster\", namespace=~\"$namespace\",instance=~\".*ingester.*\"})",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "limit",
