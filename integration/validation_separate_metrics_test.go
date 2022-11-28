@@ -20,12 +20,12 @@ import (
 	"github.com/grafana/mimir/integration/e2emimir"
 )
 
-func TestValidateCustomUserLabel(t *testing.T) {
+func TestValidateSeparateMetrics(t *testing.T) {
 	tests := map[string]struct {
-		customUserLabelValue string
-		labelToSearch        string
-		configFlagSet        bool
-		metricExists         bool
+		group         string
+		labelToSearch string
+		configFlagSet bool
+		metricExists  bool
 	}{
 		"No custom user label present": {
 			labelToSearch: "",
@@ -33,16 +33,16 @@ func TestValidateCustomUserLabel(t *testing.T) {
 			metricExists:  true,
 		},
 		"Check for correct label": {
-			customUserLabelValue: "group-1",
-			labelToSearch:        "group-1",
-			configFlagSet:        true,
-			metricExists:         true,
+			group:         "group-1",
+			labelToSearch: "group-1",
+			configFlagSet: true,
+			metricExists:  true,
 		},
 		"Check for incorrect label": {
-			customUserLabelValue: "group-1",
-			labelToSearch:        "incorrect-group",
-			configFlagSet:        true,
-			metricExists:         false,
+			group:         "group-1",
+			labelToSearch: "incorrect-group",
+			configFlagSet: true,
+			metricExists:  false,
 		},
 	}
 
@@ -58,7 +58,7 @@ func TestValidateCustomUserLabel(t *testing.T) {
 			)
 
 			if testData.configFlagSet {
-				flags["-validation.custom-user-label-value"] = testData.customUserLabelValue
+				flags["-validation.separate-metrics-label"] = testData.group
 			}
 
 			// Start dependencies.
@@ -97,7 +97,7 @@ func TestValidateCustomUserLabel(t *testing.T) {
 			require.Equal(t, 400, res.StatusCode)
 
 			metricNumSeries, err := distributor.SumMetrics([]string{"cortex_discarded_samples_total"},
-				e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "custom_user_label", testData.labelToSearch)),
+				e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "group", testData.labelToSearch)),
 				e2e.WaitMissingMetrics)
 
 			if !testData.metricExists {
