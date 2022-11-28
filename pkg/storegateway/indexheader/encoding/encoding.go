@@ -46,7 +46,10 @@ func NewDecbuf(r Reader, off int, castagnoliTable *crc32.Table) Decbuf {
 	if err := r.ResetAt(off); err != nil {
 		return Decbuf{E: err}
 	}
-	lenBytes := r.Read(4)
+	lenBytes, err := r.Read(4)
+	if err != nil {
+		return Decbuf{E: err}
+	}
 	if len(lenBytes) != 4 {
 		return Decbuf{E: ErrInvalidSize}
 	}
@@ -64,13 +67,20 @@ func NewDecbuf(r Reader, off int, castagnoliTable *crc32.Table) Decbuf {
 	//	dec := Decbuf{B: b[:len(b)-4]}
 
 	if castagnoliTable != nil {
+		data, err := r.Read(l)
+		if err != nil {
+			return Decbuf{E: err}
+		}
 
-		data := r.Read(l)
 		if len(data) != l {
 			return Decbuf{E: ErrInvalidSize}
 		}
 
-		crcBytes := r.Read(4)
+		crcBytes, err := r.Read(4)
+		if err != nil {
+			return Decbuf{E: err}
+		}
+
 		if len(crcBytes) != 4 {
 			return Decbuf{E: ErrInvalidSize}
 		}
@@ -84,7 +94,12 @@ func NewDecbuf(r Reader, off int, castagnoliTable *crc32.Table) Decbuf {
 		if err := r.ResetAt(off); err != nil {
 			return Decbuf{E: err}
 		}
-		_ = r.Read(4)
+
+		// TODO: Can we just add this to the ResetAt offset?
+		_, err = r.Read(4)
+		if err != nil {
+			return Decbuf{E: err}
+		}
 	}
 	//	return dec
 	return Decbuf{r: r}
@@ -169,7 +184,11 @@ func (d *Decbuf) Skip(l int) {
 		d.E = ErrInvalidSize
 		return
 	}
-	_ = d.r.Read(l)
+	_, err = d.r.Read(l)
+	if err != nil {
+		d.E = err
+		return
+	}
 }
 
 func (d *Decbuf) UvarintStr() string {
@@ -185,7 +204,11 @@ func (d *Decbuf) UvarintBytes() []byte {
 		return []byte{}
 	}
 	//fmt.Printf("UvarintBytes l=%d\n", l)
-	b := d.r.Read(int(l))
+	b, err := d.r.Read(int(l))
+	if err != nil {
+		d.E = err
+		return []byte{}
+	}
 
 	//fmt.Printf("UvarintBytes read=%d\n", len(b))
 	if len(b) < int(l) {
@@ -241,12 +264,19 @@ func (d *Decbuf) Uvarint64() uint64 {
 		return 0
 	}
 	//fmt.Printf("Uvarint64 consume=%d\n", n)
-	_ = d.r.Read(n)
+	_, err = d.r.Read(n)
+	if err != nil {
+		d.E = err
+		return 0
+	}
 	//d.B = d.B[n:]
 	return x
 }
 
 func (d *Decbuf) Be64() uint64 {
+	// TODO: This method checks remaining bytes before doing a read. Be32 doesn't check
+	//  remaining bytes before the read, but confirms number of bytes read after the read.
+	//  Pick one approach and use it for both methods.
 	if d.E != nil {
 		return 0
 	}
@@ -256,9 +286,13 @@ func (d *Decbuf) Be64() uint64 {
 		return 0
 	}
 
-	b := d.r.Read(8)
-	x := binary.BigEndian.Uint64(b)
+	b, err := d.r.Read(8)
+	if err != nil {
+		d.E = err
+		return 0
+	}
 
+	x := binary.BigEndian.Uint64(b)
 	return x
 }
 
@@ -276,7 +310,12 @@ func (d *Decbuf) Be32() uint32 {
 	//		d.E = ErrInvalidSize
 	//		return 0
 	//	}
-	b := d.r.Read(4)
+	b, err := d.r.Read(4)
+	if err != nil {
+		d.E = err
+		return 0
+	}
+
 	if len(b) != 4 {
 		d.E = ErrInvalidSize
 		return 0
