@@ -41,7 +41,7 @@ func (b *BufReader) Reset() {
 
 func (b *BufReader) ResetAt(off int) error {
 	b.b = b.initial
-	if len(b.b) < off {
+	if off >= len(b.b) {
 		return ErrInvalidSize
 	}
 	b.b = b.b[off:]
@@ -74,6 +74,7 @@ type FileReader struct {
 	buf    *bufio.Reader
 	base   int
 	length int
+	pos    int
 }
 
 func NewFileReader(file *os.File, base, length int) *FileReader {
@@ -88,17 +89,23 @@ func NewFileReader(file *os.File, base, length int) *FileReader {
 }
 
 func (f *FileReader) Reset() {
-	if _, err := f.file.Seek(int64(f.base), io.SeekStart); err != nil {
-		fmt.Printf("seek: %v\n", err)
-	}
-	f.buf.Reset(f.file)
+	_ = f.ResetAt(0)
 }
 
 func (f *FileReader) ResetAt(off int) error {
-	if _, err := f.file.Seek(int64(f.base+off), io.SeekStart); err != nil {
-		fmt.Printf("seek: %v\n", err)
+	if off >= f.length {
+		return ErrInvalidSize
 	}
+
+	pos, err := f.file.Seek(int64(f.base+off), io.SeekStart)
+
+	if err != nil {
+		return err
+	}
+
 	f.buf.Reset(f.file)
+	f.pos = int(pos) - f.base
+
 	return nil
 }
 
@@ -116,15 +123,12 @@ func (f *FileReader) Read(n int) []byte {
 	n, err := f.buf.Read(b)
 	fmt.Printf("read: %v\n", err)
 	if n > 0 {
+		f.pos += n
 		return b[:n]
 	}
 	return nil
 }
 
 func (f *FileReader) Len() int {
-	// TODO: BufReader returns whatever is left in the backing byte slice
-	//  here while _we_ only ever return the original size of the file (instead
-	//  of how much of the file we haven't yet read). Is this a problem? Seems
-	//  like it will be.
-	return f.length
+	return f.length - f.pos
 }
