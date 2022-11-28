@@ -3,6 +3,7 @@ package storegateway
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/oklog/ulid"
@@ -12,6 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
+
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 // sliceUnloadedBatchSet implement unloadedBatchSet and
@@ -46,6 +49,39 @@ func (s *sliceUnloadedBatchSet) At() unloadedBatch {
 }
 
 func (s *sliceUnloadedBatchSet) Err() error {
+	if s.current >= len(s.batches) {
+		return s.err
+	}
+	return nil
+}
+
+// sliceLoadedBatchSet implement loadedBatchSet and
+// returns the provided err when the batches are exhausted
+type sliceLoadedBatchSet struct {
+	current int
+	batches []loadedBatch
+
+	err error
+}
+
+func newSliceLoadedBatchSet(err error, batches ...loadedBatch) *sliceLoadedBatchSet {
+	return &sliceLoadedBatchSet{
+		current: -1,
+		batches: batches,
+		err:     err,
+	}
+}
+
+func (s *sliceLoadedBatchSet) Next() bool {
+	s.current++
+	return s.current < len(s.batches)
+}
+
+func (s *sliceLoadedBatchSet) At() loadedBatch {
+	return s.batches[s.current]
+}
+
+func (s *sliceLoadedBatchSet) Err() error {
 	if s.current >= len(s.batches) {
 		return s.err
 	}
@@ -301,6 +337,126 @@ func TestMergedBatchSet(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPreloadingBatchSet(t *testing.T) {
+	test.VerifyNoLeak(t)
+
+	// Create some batches, each batch containing 1 series.
+	batches := make([]loadedBatch, 0, 10)
+	for i := 0; i < 10; i++ {
+		batches = append(batches, loadedBatch{
+			Entries: []seriesEntry{{
+				lset: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i)),
+				refs: []chunks.ChunkRef{chunks.ChunkRef(i)},
+			}},
+		})
+	}
+
+	t.Run("should iterate all batches if no error occurs", func(t *testing.T) {
+		for preloadSize := 1; preloadSize <= len(batches)+1; preloadSize++ {
+			t.Run(fmt.Sprintf("preload size: %d", preloadSize), func(t *testing.T) {
+				source := newSliceLoadedBatchSet(nil, batches...)
+				preloading := newPreloadingBatchSet(context.Background(), preloadSize, source)
+
+				// Ensure expected batches are returned in order.
+				expectedIdx := 0
+				for preloading.Next() {
+					require.NoError(t, preloading.Err())
+					require.Equal(t, batches[expectedIdx], preloading.At())
+					expectedIdx++
+				}
+
+				// Ensure all batches have been returned.
+				require.NoError(t, preloading.Err())
+				require.Equal(t, len(batches), expectedIdx)
+			})
+		}
+	})
+
+	t.Run("should stop iterating once an error is found", func(t *testing.T) {
+		for preloadSize := 1; preloadSize <= len(batches)+1; preloadSize++ {
+			t.Run(fmt.Sprintf("preload size: %d", preloadSize), func(t *testing.T) {
+				source := newSliceLoadedBatchSet(errors.New("mocked error"), batches...)
+				preloading := newPreloadingBatchSet(context.Background(), preloadSize, source)
+
+				// Ensure expected batches are returned in order.
+				expectedIdx := 0
+				for preloading.Next() {
+					require.NoError(t, preloading.Err())
+					require.Equal(t, batches[expectedIdx], preloading.At())
+					expectedIdx++
+				}
+
+				// Ensure an error is returned at the end.
+				require.Error(t, preloading.Err())
+				require.Equal(t, len(batches), expectedIdx)
+			})
+		}
+	})
+
+	t.Run("should not leak preloading goroutine if caller doesn't iterated until the end of batches but context is canceled", func(t *testing.T) {
+		ctx, cancelCtx := context.WithCancel(context.Background())
+
+		source := newSliceLoadedBatchSet(errors.New("mocked error"), batches...)
+		preloading := newPreloadingBatchSet(ctx, 1, source)
+
+		// Just call Next() once.
+		require.True(t, preloading.Next())
+		require.NoError(t, preloading.Err())
+		require.Equal(t, batches[0], preloading.At())
+
+		// Cancel the context. At this point we expect Next() to return false.
+		cancelCtx()
+		require.False(t, preloading.Next())
+		require.NoError(t, preloading.Err())
+	})
+
+	t.Run("should not leak preloading goroutine if caller doesn't call Next() until false but context is canceled", func(t *testing.T) {
+		ctx, cancelCtx := context.WithCancel(context.Background())
+
+		source := newSliceLoadedBatchSet(errors.New("mocked error"), batches...)
+		preloading := newPreloadingBatchSet(ctx, 1, source)
+
+		// Just call Next() once.
+		require.True(t, preloading.Next())
+		require.NoError(t, preloading.Err())
+		require.Equal(t, batches[0], preloading.At())
+
+		// Cancel the context. Do NOT call Next() after canceling the context.
+		cancelCtx()
+	})
+}
+
+func TestPreloadingBatchSet_Concurrency(t *testing.T) {
+	const (
+		numRuns     = 100
+		numBatches  = 100
+		preloadSize = 10
+	)
+
+	// Create some batches.
+	batches := make([]loadedBatch, 0, numBatches)
+	for i := 0; i < numBatches; i++ {
+		batches = append(batches, loadedBatch{
+			Entries: []seriesEntry{{
+				lset: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i)),
+			}},
+		})
+	}
+
+	// Run many times to increase the likelihood to find a race (if any).
+	for i := 0; i < numRuns; i++ {
+		source := newSliceLoadedBatchSet(errors.New("mocked error"), batches...)
+		preloading := newPreloadingBatchSet(context.Background(), preloadSize, source)
+
+		for preloading.Next() {
+			require.NoError(t, preloading.Err())
+			require.NotZero(t, preloading.At())
+		}
+		require.Error(t, preloading.Err())
+	}
+
 }
 
 func TestBucketBatchSet(t *testing.T) {
