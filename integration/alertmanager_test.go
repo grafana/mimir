@@ -186,8 +186,7 @@ func TestAlertmanagerStoreAPI(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = c.GetAlertmanagerConfig(context.Background())
-	require.Error(t, err)
-	require.EqualError(t, err, "getting config failed with status 412 and error the Alertmanager is not configured\n")
+	require.NoError(t, err)
 
 	err = c.SetAlertmanagerConfig(context.Background(), mimirAlertmanagerUserConfigYaml, map[string]string{})
 	require.NoError(t, err)
