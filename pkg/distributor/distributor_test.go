@@ -3457,6 +3457,15 @@ func TestValidationBeforeForwarding(t *testing.T) {
 	expectedWriteReq.Timeseries[1].Samples[0].Value += 2
 	expectedWriteReq.Timeseries[1].Samples[0].TimestampMs += 2
 
+	// We need to perform a similar adjustment to the expected histogram in the 2nd series. Any property that is
+	// dependent on `n` in `tsdb.GenerateTestHistograms` will need to be adjusted. Instead of hard-coding the final
+	// values below, we try to make the +2 adjustment explicit for each property.
+	expectedWriteReq.Timeseries[1].Histograms[0].Count = &mimirpb.Histogram_CountInt{CountInt: expectedWriteReq.Timeseries[1].Histograms[0].GetCountInt() + (2 * 4)}
+	expectedWriteReq.Timeseries[1].Histograms[0].ZeroCount = &mimirpb.Histogram_ZeroCountInt{ZeroCountInt: expectedWriteReq.Timeseries[1].Histograms[0].GetZeroCountInt() + 2}
+	expectedWriteReq.Timeseries[1].Histograms[0].Sum += 2 * 18.4
+	expectedWriteReq.Timeseries[1].Histograms[0].PositiveDeltas = []int64{expectedWriteReq.Timeseries[1].Histograms[0].PositiveDeltas[0] + 2, 1, -1, 0}
+	expectedWriteReq.Timeseries[1].Histograms[0].Timestamp += 2
+
 	// Capture the submitted write requests which the middlewares pass into the mock push function.
 	var submittedWriteReqs []*mimirpb.WriteRequest
 	mockPush := func(ctx context.Context, pushReq *push.Request) (*mimirpb.WriteResponse, error) {
@@ -3891,7 +3900,6 @@ func makeWriteRequestForGenerators(series int, lsg labelSetGen, elsg labelSetGen
 		}
 		ts.Histograms = makeWriteRequestHistograms(int64(i), tsdb.GenerateTestHistograms(i + 1)[i])
 		request.Timeseries = append(request.Timeseries, ts)
-
 	}
 
 	if mdg != nil {
