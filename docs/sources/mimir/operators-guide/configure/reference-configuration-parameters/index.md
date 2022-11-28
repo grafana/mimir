@@ -2474,9 +2474,9 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.out-of-order-time-window
 [out_of_order_time_window: <duration> | default = 0s]
 
-# User configured label value to be added to specific metrics
-# CLI flag: -validation.custom-user-label-value
-[custom_user_label: <string> | default = ""]
+# Label used to further separate specific metrics
+# CLI flag: -validation.separate-metrics-label
+[separate_metrics_label: <string> | default = ""]
 
 # Maximum number of chunks that can be fetched in a single query from ingesters
 # and long-term storage. This limit is enforced in the querier, ruler and
