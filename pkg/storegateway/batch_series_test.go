@@ -142,8 +142,8 @@ func TestMergedBatchSet(t *testing.T) {
 			}),
 			expectedBatches: []unloadedBatch{
 				{Entries: []unloadedBatchEntry{
-					{lset: labels.FromStrings("l1", "v1"), chunks: []unloadedChunk{c[0]}},
-					{lset: labels.FromStrings("l1", "v2"), chunks: []unloadedChunk{c[0], c[0], c[2], c[3]}},
+					{lset: labels.FromStrings("l1", "v1"), chunks: []unloadedChunk{c[1]}},
+					{lset: labels.FromStrings("l1", "v2"), chunks: []unloadedChunk{c[0], c[2], c[3], c[0]}},
 				}},
 			},
 		},
@@ -256,9 +256,9 @@ func TestMergedBatchSet(t *testing.T) {
 			assert.Len(t, batches, len(testCase.expectedBatches))
 			for batchIdx, expectedBatch := range testCase.expectedBatches {
 				assert.Len(t, batches[batchIdx].Entries, len(expectedBatch.Entries))
-				for entryIdx, entry := range expectedBatch.Entries {
-					assert.Len(t, batches[batchIdx].Entries[entryIdx].chunks, len(entry.chunks))
-					assert.Zero(t, labels.Compare(batches[batchIdx].Entries[entryIdx].lset, entry.lset), "series labels don't match")
+				for expectedSeriesIdx, expectedSeries := range expectedBatch.Entries {
+					assert.Equal(t, expectedSeries.lset, batches[batchIdx].Entries[expectedSeriesIdx].lset)
+					assert.Equal(t, expectedSeries.chunks, batches[batchIdx].Entries[expectedSeriesIdx].chunks)
 				}
 			}
 		})
