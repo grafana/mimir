@@ -98,6 +98,57 @@ func FuzzDecbuf_Be32int(f *testing.F) {
 	})
 }
 
+func TestDecbuf_Be64HappyPath(t *testing.T) {
+	cases := []uint64{
+		0,
+		1,
+		0xFFFF_FFFF_FFFF_FFFF,
+	}
+
+	for _, c := range cases {
+		t.Run(strconv.FormatUint(c, 10), func(t *testing.T) {
+			enc := prom_encoding.Encbuf{}
+			enc.PutBE64(c)
+
+			dec := NewDecbufRaw(realByteSlice(enc.Get()))
+			require.Equal(t, 8, dec.Len())
+
+			actual := dec.Be64()
+			require.NoError(t, dec.Err())
+			require.Equal(t, c, actual)
+			require.Equal(t, 0, dec.Len())
+		})
+	}
+}
+
+func TestDecbuf_Be64InsufficientLength(t *testing.T) {
+	enc := prom_encoding.Encbuf{}
+	enc.PutByte(0x01)
+
+	dec := NewDecbufRaw(realByteSlice(enc.Get()))
+	_ = dec.Be64()
+	require.ErrorIs(t, dec.Err(), ErrInvalidSize)
+}
+
+func FuzzDecbuf_Be64(f *testing.F) {
+	f.Add(uint64(0))
+	f.Add(uint64(1))
+	f.Add(uint64(0xFFFF_FFFF_FFFF_FFFF))
+
+	f.Fuzz(func(t *testing.T, n uint64) {
+		enc := prom_encoding.Encbuf{}
+		enc.PutBE64(n)
+
+		dec := NewDecbufRaw(realByteSlice(enc.Get()))
+		require.Equal(t, 8, dec.Len())
+
+		actual := dec.Be64()
+		require.NoError(t, dec.Err())
+		require.Equal(t, n, actual)
+		require.Equal(t, 0, dec.Len())
+	})
+}
+
 func TestDecbuf_Skip(t *testing.T) {
 	expected := uint32(0x12345678)
 

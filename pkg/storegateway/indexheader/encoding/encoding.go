@@ -232,24 +232,28 @@ func (d *Decbuf) Uvarint64() uint64 {
 	return x
 }
 
-/*
 func (d *Decbuf) Be64() uint64 {
 	if d.E != nil {
 		return 0
 	}
-	if len(d.B) < 8 {
+
+	if d.r.Len() < 8 {
 		d.E = ErrInvalidSize
 		return 0
 	}
-	x := binary.BigEndian.Uint64(d.B)
-	d.B = d.B[8:]
+
+	b := d.r.Read(8)
+	x := binary.BigEndian.Uint64(b)
+
 	return x
 }
 
+/*
 func (d *Decbuf) Be64Float64() float64 {
 	return math.Float64frombits(d.Be64())
 }
 */
+
 func (d *Decbuf) Be32() uint32 {
 	if d.E != nil {
 		return 0
