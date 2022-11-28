@@ -873,16 +873,10 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 
 	gspan, gctx := tracing.StartSpan(gctx, "bucket_store_preload_all")
 
-	s.mtx.RLock()
-
-	// Find all blocks owned by this store-gateway instance and matching the request.
-	blocks := s.blockSet.getFor(req.MinTime, req.MaxTime, req.MaxResolutionWindow, reqBlockMatchers)
-	if s.debugLogging {
-		debugFoundBlockSetOverview(s.logger, req.MinTime, req.MaxTime, req.MaxResolutionWindow, blocks)
-	}
-
 	chunkBytes := &pool.BatchBytes{Delegate: s.chunkPool}
 	defer chunkBytes.Release()
+
+	blocks, indexReaders, chunkReaders := s.openBlocksForReading(ctx, req.SkipChunks, req.MinTime, req.MaxTime, req.MaxResolutionWindow, reqBlockMatchers, chunkBytes)
 
 	for _, b := range blocks {
 		b := b
@@ -890,16 +884,15 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		// Keep track of queried blocks.
 		resHints.AddQueriedBlock(b.meta.ULID)
 
-		var chunkr *bucketChunkReader
 		// We must keep the readers open until all their data has been sent.
-		indexr := b.indexReader()
-		if !req.SkipChunks {
-			chunkr = b.chunkReader(gctx, chunkBytes)
+		indexr := indexReaders[b.meta.ULID]
+		defer runutil.CloseWithLogOnErr(s.logger, indexr, "series block")
+
+		chunkr := chunkReaders[b.meta.ULID]
+		if chunkr != nil { // chunkr is nil when skipChunks == true
+			// Defer all closes to the end of Series method.
 			defer runutil.CloseWithLogOnErr(s.logger, chunkr, "series block")
 		}
-
-		// Defer all closes to the end of Series method.
-		defer runutil.CloseWithLogOnErr(s.logger, indexr, "series block")
 
 		// If query sharding is enabled we have to get the block-specific series hash cache
 		// which is used by blockSeries().
@@ -935,8 +928,6 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 			return nil
 		})
 	}
-
-	s.mtx.RUnlock()
 
 	defer func() {
 		s.metrics.seriesDataTouched.WithLabelValues("postings").Observe(float64(stats.postingsTouched))
@@ -1049,6 +1040,32 @@ func chunksSize(chks []storepb.AggrChunk) (size int) {
 		size += chk.Size() // This gets the encoded proto size.
 	}
 	return size
+}
+
+func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool, minT, maxT, maxResolutionMillis int64, blockMatchers []*labels.Matcher, chunkPool *pool.BatchBytes) ([]*bucketBlock, map[ulid.ULID]*bucketIndexReader, map[ulid.ULID]*bucketChunkReader) {
+	s.mtx.RLock()
+	defer s.mtx.RUnlock()
+
+	// Find all blocks owned by this store-gateway instance and matching the request.
+	blocks := s.blockSet.getFor(minT, maxT, maxResolutionMillis, blockMatchers)
+	if s.debugLogging {
+		debugFoundBlockSetOverview(s.logger, minT, maxT, maxResolutionMillis, blocks)
+	}
+
+	indexReaders := make(map[ulid.ULID]*bucketIndexReader, len(blocks))
+	for _, b := range blocks {
+		indexReaders[b.meta.ULID] = b.indexReader()
+	}
+	if skipChunks {
+		return blocks, indexReaders, nil
+	}
+
+	chunkReaders := make(map[ulid.ULID]*bucketChunkReader, len(blocks))
+	for _, b := range blocks {
+		chunkReaders[b.meta.ULID] = b.chunkReader(ctx, chunkPool)
+	}
+
+	return blocks, indexReaders, chunkReaders
 }
 
 // LabelNames implements the storepb.StoreServer interface.
