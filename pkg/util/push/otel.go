@@ -22,6 +22,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
+	"go.uber.org/multierr"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
@@ -132,7 +133,7 @@ func otelMetricsToTimeseries(ctx context.Context, discardedDueToOtelParseError *
 			return nil, err
 		}
 
-		dropped := md.DataPointCount() - sampleCountInMap(tsMap)
+		dropped := len(multierr.Errors(errs))
 		discardedDueToOtelParseError.WithLabelValues(userID).Add(float64(dropped))
 
 		parseErrs := errs.Error()
@@ -227,13 +228,4 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries) pmetricotlp.Request
 	}
 
 	return pmetricotlp.NewRequestFromMetrics(d)
-}
-
-func sampleCountInMap(tsMap map[string]*prompb.TimeSeries) int {
-	count := 0
-	for _, ts := range tsMap {
-		count += len(ts.Samples)
-	}
-
-	return count
 }
