@@ -346,7 +346,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{custom_user_label="",reason="sample-out-of-order",user="test"} 1
+				cortex_discarded_samples_total{group="",reason="sample-out-of-order",user="test"} 1
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
@@ -398,7 +398,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{custom_user_label="",reason="sample-out-of-bounds",user="test"} 2
+				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 2
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
@@ -453,7 +453,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{custom_user_label="",reason="sample-out-of-bounds",user="test"} 2
+				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 2
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
@@ -501,7 +501,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{custom_user_label="",reason="new-value-for-timestamp",user="test"} 1
+				cortex_discarded_samples_total{group="",reason="new-value-for-timestamp",user="test"} 1
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1

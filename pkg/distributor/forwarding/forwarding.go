@@ -341,7 +341,7 @@ func (f *forwarder) splitToIngestedAndForwardedTimeseries(tsSliceIn []mimirpb.Pr
 			if filteredSamples > 0 {
 				err = errSamplesTooOld
 				if !ingest {
-					f.discardedSamplesTooOld.WithLabelValues(user, f.limits.CustomUserLabelValue(user)).Add(float64(filteredSamples))
+					f.discardedSamplesTooOld.WithLabelValues(user, f.limits.SeparateMetricsLabel(user)).Add(float64(filteredSamples))
 				}
 			}
 

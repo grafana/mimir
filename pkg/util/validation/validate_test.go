@@ -129,14 +129,14 @@ func TestValidateLabels(t *testing.T) {
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 			# TYPE cortex_discarded_samples_total counter
-			cortex_discarded_samples_total{custom_user_label="custom label",reason="label_invalid",user="testUser"} 1
-			cortex_discarded_samples_total{custom_user_label="custom label",reason="label_name_too_long",user="testUser"} 1
-			cortex_discarded_samples_total{custom_user_label="custom label",reason="label_value_too_long",user="testUser"} 1
-			cortex_discarded_samples_total{custom_user_label="custom label",reason="max_label_names_per_series",user="testUser"} 1
-			cortex_discarded_samples_total{custom_user_label="custom label",reason="metric_name_invalid",user="testUser"} 1
-			cortex_discarded_samples_total{custom_user_label="custom label",reason="missing_metric_name",user="testUser"} 1
+			cortex_discarded_samples_total{group="custom label",reason="label_invalid",user="testUser"} 1
+			cortex_discarded_samples_total{group="custom label",reason="label_name_too_long",user="testUser"} 1
+			cortex_discarded_samples_total{group="custom label",reason="label_value_too_long",user="testUser"} 1
+			cortex_discarded_samples_total{group="custom label",reason="max_label_names_per_series",user="testUser"} 1
+			cortex_discarded_samples_total{group="custom label",reason="metric_name_invalid",user="testUser"} 1
+			cortex_discarded_samples_total{group="custom label",reason="missing_metric_name",user="testUser"} 1
 
-			cortex_discarded_samples_total{custom_user_label="custom label",reason="random reason",user="different user"} 1
+			cortex_discarded_samples_total{group="custom label",reason="random reason",user="different user"} 1
 	`), "cortex_discarded_samples_total"))
 
 	s.DeleteUserMetrics(userID)
@@ -144,7 +144,7 @@ func TestValidateLabels(t *testing.T) {
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 			# TYPE cortex_discarded_samples_total counter
-			cortex_discarded_samples_total{custom_user_label="custom label",reason="random reason",user="different user"} 1
+			cortex_discarded_samples_total{group="custom label",reason="random reason",user="different user"} 1
 	`), "cortex_discarded_samples_total"))
 }
 
