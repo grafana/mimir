@@ -215,8 +215,8 @@ GO_FLAGS := -ldflags "\
 
 ifeq ($(BUILD_IN_CONTAINER),true)
 
-GOVOLUMES=	-v $(shell pwd)/.cache:/go/cache:$(CONTAINER_MOUNT_OPTIONS) \
-			-v $(shell pwd)/.pkg:/go/pkg:$(CONTAINER_MOUNT_OPTIONS) \
+GOVOLUMES=	-v mimir-go-cache:/go/cache \
+			-v mimir-go-pkg:/go/pkg \
 			-v $(shell pwd):/go/src/github.com/grafana/mimir:$(CONTAINER_MOUNT_OPTIONS)
 
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
