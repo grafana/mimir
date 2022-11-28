@@ -11,13 +11,13 @@ local filename = 'mimir-overview-resources.json';
       $._config.gateway_enabled,
       $.row('Gateway')
       .addPanel(
-        $.containerCPUUsagePanel($._config.instance_names.gateway, $._config.container_names.gateway),
+        $.containerCPUUsagePanelByComponent('gateway'),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel($._config.instance_names.gateway, $._config.container_names.gateway),
+        $.containerMemoryWorkingSetPanelByComponent('gateway'),
       )
       .addPanel(
-        $.containerGoHeapInUsePanel($._config.instance_names.gateway, $._config.container_names.gateway),
+        $.containerGoHeapInUsePanelByComponent('gateway'),
       )
     )
 
@@ -33,19 +33,19 @@ local filename = 'mimir-overview-resources.json';
         { yaxes: $.yaxes('bytes') },
       )
       .addPanel(
-        $.containerGoHeapInUsePanel($._config.instance_names.write, $._config.container_names.write),
+        $.containerGoHeapInUsePanelByComponent('write'),
       )
     )
     .addRow(
       $.row('')
       .addPanel(
-        $.containerDiskWritesPanel($._config.instance_names.write, $._config.container_names.write)
+        $.containerDiskWritesPanelByComponent('write')
       )
       .addPanel(
-        $.containerDiskReadsPanel($._config.instance_names.write, $._config.container_names.write)
+        $.containerDiskReadsPanelByComponent('write')
       )
       .addPanel(
-        $.containerDiskSpaceUtilization($._config.instance_names.write, $._config.container_names.write),
+        $.containerDiskSpaceUtilizationPanelByComponent('write'),
       )
     )
 
@@ -61,7 +61,7 @@ local filename = 'mimir-overview-resources.json';
         { yaxes: $.yaxes('bytes') },
       )
       .addPanel(
-        $.containerGoHeapInUsePanel($._config.instance_names.read, $._config.container_names.read),
+        $.containerGoHeapInUsePanelByComponent('read'),
       )
     )
 
@@ -77,19 +77,19 @@ local filename = 'mimir-overview-resources.json';
         { yaxes: $.yaxes('bytes') },
       )
       .addPanel(
-        $.containerGoHeapInUsePanel($._config.instance_names.backend, $._config.container_names.backend),
+        $.containerGoHeapInUsePanelByComponent('backend'),
       )
     )
     .addRow(
       $.row('')
       .addPanel(
-        $.containerDiskWritesPanel($._config.instance_names.backend, $._config.container_names.backend)
+        $.containerDiskWritesPanelByComponent('backend')
       )
       .addPanel(
-        $.containerDiskReadsPanel($._config.instance_names.backend, $._config.container_names.backend)
+        $.containerDiskReadsPanelByComponent('backend')
       )
       .addPanel(
-        $.containerDiskSpaceUtilization($._config.instance_names.backend, $._config.container_names.backend),
+        $.containerDiskSpaceUtilizationPanelByComponent('backend'),
       )
     ),
 }
