@@ -604,12 +604,18 @@ func (s *mergedBatchSet) Next() bool {
 			if s.a.Next() {
 				s.aAt.reset(s.a.At())
 				next.Stats = next.Stats.merge(s.a.At().Stats.export())
+			} else if s.a.Err() != nil {
+				// Stop iterating on first error encountered.
+				return false
 			}
 		}
 		if s.bAt.Done() {
 			if s.b.Next() {
 				s.bAt.reset(s.b.At())
 				next.Stats = next.Stats.merge(s.b.At().Stats.export())
+			} else if s.b.Err() != nil {
+				// Stop iterating on first error encountered.
+				return false
 			}
 		}
 		next.Entries[i], ok = nextUniqueEntry(s.aAt, s.bAt)
