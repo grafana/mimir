@@ -12,16 +12,20 @@ import (
 
 func TestReaders_Read(t *testing.T) {
 	testReaders(t, func(t *testing.T, r Reader) {
-		firstRead := r.Read(5)
+		firstRead, err := r.Read(5)
+		require.NoError(t, err)
 		require.Equal(t, []byte("abcde"), firstRead, "first read")
 
-		secondRead := r.Read(5)
+		secondRead, err := r.Read(5)
+		require.NoError(t, err)
 		require.Equal(t, []byte("fghij"), secondRead, "second read")
 
-		readBeyondEnd := r.Read(12)
+		readBeyondEnd, err := r.Read(12)
+		require.NoError(t, err)
 		require.Equal(t, []byte("1234567890"), readBeyondEnd, "read beyond end")
 
-		readAfterEnd := r.Read(1)
+		readAfterEnd, err := r.Read(1)
+		require.NoError(t, err)
 		require.Empty(t, readAfterEnd, "read after end")
 	})
 }
@@ -36,7 +40,7 @@ func TestReaders_Peek(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, []byte("abcde"), secondPeek, "peek (second call)")
 
-		readAfterPeek := r.Read(5)
+		readAfterPeek, err := r.Read(5)
 		require.Equal(t, []byte("abcde"), readAfterPeek, "first read call")
 
 		peekAfterRead, err := r.Peek(5)
@@ -59,7 +63,8 @@ func TestReaders_Reset(t *testing.T) {
 		r.Read(5)
 		require.NoError(t, r.Reset())
 
-		readAfterReset := r.Read(5)
+		readAfterReset, err := r.Read(5)
+		require.NoError(t, err)
 		require.Equal(t, []byte("abcde"), readAfterReset)
 	})
 }
@@ -67,15 +72,18 @@ func TestReaders_Reset(t *testing.T) {
 func TestReaders_ResetAt(t *testing.T) {
 	testReaders(t, func(t *testing.T, r Reader) {
 		require.NoError(t, r.ResetAt(5))
-		readAfterReset := r.Read(5)
+		readAfterReset, err := r.Read(5)
+
 		require.Equal(t, []byte("fghij"), readAfterReset, "read after reset to non-zero offset")
 
 		require.NoError(t, r.ResetAt(0))
-		readAfterResetToBeginning := r.Read(5)
+		readAfterResetToBeginning, err := r.Read(5)
+		require.NoError(t, err)
 		require.Equal(t, []byte("abcde"), readAfterResetToBeginning, "read after reset to zero offset")
 
 		require.NoError(t, r.ResetAt(19))
-		readAfterResetToLastByte := r.Read(1)
+		readAfterResetToLastByte, err := r.Read(1)
+		require.NoError(t, err)
 		require.Equal(t, []byte("0"), readAfterResetToLastByte, "read after reset to last byte")
 
 		require.ErrorIs(t, r.ResetAt(20), ErrInvalidSize)

@@ -3,7 +3,6 @@ package encoding
 import (
 	"bufio"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 )
@@ -15,7 +14,10 @@ type Reader interface {
 	// ResetAt moves the cursor position to the given offset in the underlying store.
 	ResetAt(off int) error
 
-	Read(int) []byte
+	// Read returns at most the given number of bytes from the underlying store, consuming
+	// them. It is valid to Read beyond the end of the underlying store. In this case the
+	// available bytes are returned with a nil error
+	Read(int) ([]byte, error)
 
 	// Peek returns at most the given number of bytes from the underlying store
 	// without consuming them. It is valid to Peek beyond the end of the underlying
@@ -66,13 +68,13 @@ func (b *BufReader) Peek(n int) ([]byte, error) {
 	return res, nil
 }
 
-func (b *BufReader) Read(n int) []byte {
+func (b *BufReader) Read(n int) ([]byte, error) {
 	if len(b.b) < n {
 		n = len(b.b)
 	}
 	res := b.b[:n]
 	b.b = b.b[n:]
-	return res
+	return res, nil
 }
 
 func (b *BufReader) Len() int {
@@ -138,15 +140,18 @@ func (f *FileReader) Peek(n int) ([]byte, error) {
 	return nil, nil
 }
 
-func (f *FileReader) Read(n int) []byte {
+func (f *FileReader) Read(n int) ([]byte, error) {
 	b := make([]byte, n)
 	n, err := f.buf.Read(b)
-	fmt.Printf("read: %v\n", err)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return nil, err
+	}
+
 	if n > 0 {
 		f.pos += n
-		return b[:n]
+		return b[:n], nil
 	}
-	return nil
+	return nil, nil
 }
 
 func (f *FileReader) Len() int {
