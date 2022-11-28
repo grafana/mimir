@@ -2,6 +2,8 @@
 
 ## Grafana Mimir - main / unreleased
 
+## 2.5.0
+
 ### Grafana Mimir
 
 * [CHANGE] Flag `-azure.msi-resource` is now ignored, and will be removed in Mimir 2.7. This setting is now made automatically by Azure. #2682
