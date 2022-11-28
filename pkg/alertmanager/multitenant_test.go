@@ -47,6 +47,8 @@ import (
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 
+	amconfig "github.com/prometheus/alertmanager/config"
+
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
@@ -54,7 +56,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/validation"
-	amconfig "github.com/prometheus/alertmanager/config"
 )
 
 const (
