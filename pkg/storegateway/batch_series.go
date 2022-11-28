@@ -659,9 +659,9 @@ func nextUniqueEntry(a, b *unloadedBatchIterator) (toReturn unloadedBatchEntry, 
 		return toReturn, true
 	}
 
-	// Both a and b contains the same series. Go through all chunks, remove duplicates and concatenate chunks from both
-	// series sets. We best effortly assume chunks are sorted by min time. If not, we will not detect all deduplicate which will
-	// be account on select layer anyway. We do it still for early optimization.
+	// Both a and b contains the same series. Go through all chunk references and concatenate them from both
+	// series sets. We best effortly assume chunk references are sorted by min time, so that the sorting by min
+	// time is honored in the returned chunk references too.
 	toReturn.lset = lsetA
 
 	// Slice reuse is not generally safe with nested merge iterators.
