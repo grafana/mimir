@@ -149,9 +149,10 @@ func (d *Decbuf) Be32int() int { return int(d.Be32()) }
 //func (d *Decbuf) Be64int64() int64 { return int64(d.Be64()) }
 
 // Crc32 returns a CRC32 checksum over the remaining bytes.
-//func (d *Decbuf) Crc32(castagnoliTable *crc32.Table) uint32 {
-//	return crc32.Checksum(d.B, castagnoliTable)
-//}
+func (d *Decbuf) Crc32(castagnoliTable *crc32.Table) uint32 {
+	// TODO: compute the checksum while streaming the data from disk, rather than reading all of the source data into memory and then computing the checksum
+	return crc32.Checksum(d.r.Read(d.r.Len()), castagnoliTable)
+}
 
 func (d *Decbuf) Skip(l int) {
 	b := d.r.Peek(l)
