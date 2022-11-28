@@ -135,7 +135,15 @@ func otelMetricsToTimeseries(ctx context.Context, discardedDueToOtelParseError *
 		}
 
 		dropped := len(multierr.Errors(errs))
-		discardedDueToOtelParseError.WithLabelValues(userID, separateMetricsLabelGetter.SeparateMetricsLabel(userID)).Add(float64(dropped))
+		// TODO (Question for reviewers, will cleanup)
+		// Metrics are not yet converted to timeseries so there are no labels to search for, and tsMap may be corrupted
+		// Should we still search for a label here somehow, or set a default group value?
+		discardedDueToOtelParseError.WithLabelValues(userID, "").Add(float64(dropped))
+		// group := ""
+		// if len(req.Timeseries) > 0 {
+		// 	group = validation.FindGroupLabel(overrides, userID, timeSeriesLabels)
+		// }
+		// discardedDueToOtelParseError.WithLabelValues(userID, group).Add(float64(dropped))
 
 		parseErrs := errs.Error()
 		if len(parseErrs) > maxErrMsgLen {

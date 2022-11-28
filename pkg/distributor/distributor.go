@@ -751,7 +751,12 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 			}
 
 			if errors.Is(err, tooManyClustersError{}) {
-				d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, d.limits.SeparateMetricsLabel(userID)).Add(float64(numSamples))
+				group := ""
+				if len(req.Timeseries) > 0 {
+					group = validation.FindGroupLabel(d.limits, userID, req.Timeseries[0].Labels)
+				}
+
+				d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group).Add(float64(numSamples))
 				return nil, httpgrpc.Errorf(http.StatusBadRequest, err.Error())
 			}
 
@@ -885,7 +890,11 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 			minExemplarTS = earliestSampleTimestampMs - 300000
 		}
 
-		group := d.limits.SeparateMetricsLabel(userID)
+		group := ""
+		if len(req.Timeseries) > 0 {
+			group = validation.FindGroupLabel(d.limits, userID, req.Timeseries[0].Labels)
+		}
+		fmt.Println("FAZ DIST GROUP: ", len(req.Timeseries), group)
 		var firstPartialErr error
 		var removeIndexes []int
 		for tsIdx, ts := range req.Timeseries {

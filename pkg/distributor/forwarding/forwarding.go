@@ -341,7 +341,8 @@ func (f *forwarder) splitToIngestedAndForwardedTimeseries(tsSliceIn []mimirpb.Pr
 			if filteredSamples > 0 {
 				err = errSamplesTooOld
 				if !ingest {
-					f.discardedSamplesTooOld.WithLabelValues(user, f.limits.SeparateMetricsLabel(user)).Add(float64(filteredSamples))
+					group := validation.FindGroupLabel(f.limits, user, ts.Labels)
+					f.discardedSamplesTooOld.WithLabelValues(user, group).Add(float64(filteredSamples))
 				}
 			}
 
