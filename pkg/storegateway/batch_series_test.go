@@ -135,6 +135,8 @@ func TestMergedBatchSet(t *testing.T) {
 		c = append(c, unloadedChunk{
 			BlockID: ulid.MustNew(uint64(i), nil),
 			Ref:     chunks.ChunkRef(i),
+			MinTime: int64(i),
+			MaxTime: int64(i),
 		})
 	}
 
@@ -179,7 +181,7 @@ func TestMergedBatchSet(t *testing.T) {
 			expectedBatches: []unloadedBatch{
 				{Entries: []unloadedBatchEntry{
 					{lset: labels.FromStrings("l1", "v1"), chunks: []unloadedChunk{c[1]}},
-					{lset: labels.FromStrings("l1", "v2"), chunks: []unloadedChunk{c[0], c[2], c[3], c[0]}},
+					{lset: labels.FromStrings("l1", "v2"), chunks: []unloadedChunk{c[0], c[0], c[2], c[3]}},
 				}},
 			},
 		},
@@ -273,6 +275,42 @@ func TestMergedBatchSet(t *testing.T) {
 				}},
 			},
 			expectedErr: "something went wrong",
+		},
+		"should return merged chunks sorted by min time (assuming source sets have sorted chunks) on first chunk on first set": {
+			batchSize: 100,
+			set1: newSliceUnloadedBatchSet(nil, unloadedBatch{
+				Entries: []unloadedBatchEntry{
+					{lset: labels.FromStrings("l1", "v1"), chunks: []unloadedChunk{c[1], c[3]}},
+				},
+			}),
+			set2: newSliceUnloadedBatchSet(nil, unloadedBatch{
+				Entries: []unloadedBatchEntry{
+					{lset: labels.FromStrings("l1", "v1"), chunks: []unloadedChunk{c[0], c[2]}},
+				},
+			}),
+			expectedBatches: []unloadedBatch{
+				{Entries: []unloadedBatchEntry{
+					{lset: labels.FromStrings("l1", "v1"), chunks: []unloadedChunk{c[0], c[1], c[2], c[3]}},
+				}},
+			},
+		},
+		"should return merged chunks sorted by min time (assuming source sets have sorted chunks) on first chunk on second set": {
+			batchSize: 100,
+			set1: newSliceUnloadedBatchSet(nil, unloadedBatch{
+				Entries: []unloadedBatchEntry{
+					{lset: labels.FromStrings("l1", "v1"), chunks: []unloadedChunk{c[0], c[3]}},
+				},
+			}),
+			set2: newSliceUnloadedBatchSet(nil, unloadedBatch{
+				Entries: []unloadedBatchEntry{
+					{lset: labels.FromStrings("l1", "v1"), chunks: []unloadedChunk{c[1], c[2]}},
+				},
+			}),
+			expectedBatches: []unloadedBatch{
+				{Entries: []unloadedBatchEntry{
+					{lset: labels.FromStrings("l1", "v1"), chunks: []unloadedChunk{c[0], c[1], c[2], c[3]}},
+				}},
+			},
 		},
 	}
 
