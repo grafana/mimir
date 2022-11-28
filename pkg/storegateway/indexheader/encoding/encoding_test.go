@@ -3,6 +3,7 @@
 package encoding
 
 import (
+	"hash/crc32"
 	"strconv"
 	"testing"
 
@@ -462,6 +463,16 @@ func FuzzDecbuf_UvarintStr(f *testing.F) {
 		require.Equal(t, s, actual)
 		require.Equal(t, 0, dec.Len())
 	})
+}
+
+func TestDecbuf_Crc32(t *testing.T) {
+	dec := NewDecbufRaw(realByteSlice([]byte{0x01, 0x02, 0x03, 0x04}))
+	table := crc32.MakeTable(crc32.Castagnoli)
+	actual := dec.Crc32(table)
+	expected := uint32(0x29308cf4)
+
+	require.NoError(t, dec.Err())
+	require.Equal(t, expected, actual)
 }
 
 type realByteSlice []byte
