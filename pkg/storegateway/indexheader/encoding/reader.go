@@ -142,14 +142,17 @@ func (f *FileReader) Peek(n int) ([]byte, error) {
 
 func (f *FileReader) Read(n int) ([]byte, error) {
 	b := make([]byte, n)
-	n, err := f.buf.Read(b)
+	r, err := f.buf.Read(b)
+	if r > 0 {
+		f.pos += r
+	}
+
 	if err != nil && !errors.Is(err, io.EOF) {
 		return nil, err
 	}
 
-	if n > 0 {
-		f.pos += n
-		return b[:n], nil
+	if r > 0 {
+		return b[:r], nil
 	}
 	return nil, nil
 }
