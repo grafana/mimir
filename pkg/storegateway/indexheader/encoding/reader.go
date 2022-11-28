@@ -2,16 +2,25 @@ package encoding
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 )
 
 type Reader interface {
+	// Reset moves the cursor position to the beginning of the underlying store.
 	Reset() error
+
+	// ResetAt moves the cursor position to the given offset in the underlying store.
 	ResetAt(off int) error
+
 	Read(int) []byte
-	Peek(int) []byte
+
+	// Peek returns at most the given number of bytes from the underlying store
+	// without consuming them. It is valid to Peek beyond the end of the underlying
+	// store. In this case the available bytes are returned with a nil error.
+	Peek(int) ([]byte, error)
 	Len() int
 
 	// TODO: Seems like we need a "Remaining()" method here because Decbuf
@@ -49,12 +58,12 @@ func (b *BufReader) ResetAt(off int) error {
 	return nil
 }
 
-func (b *BufReader) Peek(n int) []byte {
+func (b *BufReader) Peek(n int) ([]byte, error) {
 	if len(b.b) < n {
 		n = len(b.b)
 	}
 	res := b.b[:n]
-	return res
+	return res, nil
 }
 
 func (b *BufReader) Read(n int) []byte {
@@ -114,13 +123,19 @@ func (f *FileReader) ResetAt(off int) error {
 	return nil
 }
 
-func (f *FileReader) Peek(n int) []byte {
+func (f *FileReader) Peek(n int) ([]byte, error) {
 	b, err := f.buf.Peek(n)
-	fmt.Printf("peek: %v\n", err)
-	if len(b) > 0 {
-		return b
+	// bufio.Reader still returns what it read when it hits EOF and callers
+	// expect to be able to peek past the end of a file.
+	if err != nil && !errors.Is(err, io.EOF) {
+		return nil, err
 	}
-	return nil
+
+	if len(b) > 0 {
+		return b, nil
+	}
+
+	return nil, nil
 }
 
 func (f *FileReader) Read(n int) []byte {

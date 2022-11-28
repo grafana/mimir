@@ -28,23 +28,28 @@ func TestReaders_Read(t *testing.T) {
 
 func TestReaders_Peek(t *testing.T) {
 	testReaders(t, func(t *testing.T, r Reader) {
-		firstPeek := r.Peek(5)
+		firstPeek, err := r.Peek(5)
+		require.NoError(t, err)
 		require.Equal(t, []byte("abcde"), firstPeek, "peek (first call)")
 
-		secondPeek := r.Peek(5)
+		secondPeek, err := r.Peek(5)
+		require.NoError(t, err)
 		require.Equal(t, []byte("abcde"), secondPeek, "peek (second call)")
 
 		readAfterPeek := r.Read(5)
 		require.Equal(t, []byte("abcde"), readAfterPeek, "first read call")
 
-		peekAfterRead := r.Peek(5)
+		peekAfterRead, err := r.Peek(5)
+		require.NoError(t, err)
 		require.Equal(t, []byte("fghij"), peekAfterRead, "peek after read")
 
-		peekBeyondEnd := r.Peek(20)
+		peekBeyondEnd, err := r.Peek(20)
+		require.NoError(t, err)
 		require.Equal(t, []byte("fghij1234567890"), peekBeyondEnd, "peek beyond end")
 
 		r.Read(15)
-		peekAfterEnd := r.Peek(1)
+		peekAfterEnd, err := r.Peek(1)
+		require.NoError(t, err)
 		require.Empty(t, peekAfterEnd, "peek after end")
 	})
 }
@@ -87,7 +92,8 @@ func TestReaders_Len(t *testing.T) {
 		r.Read(2)
 		require.Equal(t, 13, r.Len(), "after second read")
 
-		r.Peek(3)
+		_, err := r.Peek(3)
+		require.NoError(t, err)
 		require.Equal(t, 13, r.Len(), "after peek")
 
 		r.Read(14)
@@ -116,6 +122,9 @@ func testReaders(t *testing.T, test func(t *testing.T, r Reader)) {
 
 		f, err := os.Open(filePath)
 		require.NoError(t, err)
+		t.Cleanup(func() {
+			require.NoError(t, f.Close())
+		})
 
 		r, err := NewFileReader(f, 0, len(testReaderContents))
 		require.NoError(t, err)
@@ -133,6 +142,9 @@ func testReaders(t *testing.T, test func(t *testing.T, r Reader)) {
 
 		f, err := os.Open(filePath)
 		require.NoError(t, err)
+		t.Cleanup(func() {
+			require.NoError(t, f.Close())
+		})
 
 		r, err := NewFileReader(f, len(offsetBytes), len(testReaderContents))
 		require.NoError(t, err)
