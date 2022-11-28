@@ -192,6 +192,30 @@ func TestMergedBatchSet(t *testing.T) {
 			},
 			expectedErr: "something went wrong",
 		},
+		"merges two batches with shorter one erroring at the end": {
+			set1: newSliceUnloadedBatchSet(errors.New("something went wrong"), unloadedBatch{
+				Entries: []unloadedBatchEntry{
+					{lset: labels.FromStrings("l1", "v1"), chunks: make([]unloadedChunk, 1)},
+					{lset: labels.FromStrings("l1", "v2"), chunks: make([]unloadedChunk, 1)},
+				},
+			}),
+			set2: newSliceUnloadedBatchSet(nil, unloadedBatch{
+				Entries: []unloadedBatchEntry{
+					{lset: labels.FromStrings("l1", "v2"), chunks: make([]unloadedChunk, 1)},
+					{lset: labels.FromStrings("l1", "v3"), chunks: make([]unloadedChunk, 1)},
+					{lset: labels.FromStrings("l1", "v4"), chunks: make([]unloadedChunk, 1)},
+				},
+			}),
+			expectedBatches: []unloadedBatch{
+				{Entries: []unloadedBatchEntry{
+					{lset: labels.FromStrings("l1", "v1"), chunks: make([]unloadedChunk, 1)},
+					{lset: labels.FromStrings("l1", "v2"), chunks: make([]unloadedChunk, 2)},
+					{lset: labels.FromStrings("l1", "v3"), chunks: make([]unloadedChunk, 1)},
+					{lset: labels.FromStrings("l1", "v4"), chunks: make([]unloadedChunk, 1)},
+				}},
+			},
+			expectedErr: "something went wrong",
+		},
 	}
 
 	for name, testCase := range testCases {
