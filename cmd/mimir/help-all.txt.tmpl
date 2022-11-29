@@ -480,7 +480,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.swift.username string
     	OpenStack Swift username.
   -blocks-storage.tsdb.block-ranges-period comma-separated-list-of-durations
-    	[experimental] TSDB blocks range period. (default 2h0m0s)
+    	TSDB blocks range period. (default 2h0m0s)
   -blocks-storage.tsdb.close-idle-tsdb-timeout duration
     	If TSDB has not received any data for this duration, and all blocks from TSDB have been shipped, TSDB is closed and deleted from local disk. If set to positive value, this value should be equal or higher than -querier.query-ingesters-within flag to make sure that TSDB is not closed prematurely, which could cause partial query results. 0 or negative value disables closing of idle TSDB. (default 13h0m0s)
   -blocks-storage.tsdb.dir string

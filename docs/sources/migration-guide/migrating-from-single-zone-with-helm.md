@@ -336,7 +336,7 @@ Set the chosen configuration in your custom values (e.g. `custom.yaml`).
 There are two ways to do the migration:
 
 1. With downtime. In this [procedure](#migrate-ingesters-with-downtime) ingress is stopped to the cluster while ingesters are migrated. This is the quicker and simpler way. The time it takes to execute this migration depends on how fast ingesters restart and upload their data to object storage, but in general should be finished in an hour.
-1. Without downtime. This is a multi step [procedure](#migrate-ingesters-without-downtime) which requires additional hardware resources as the old and new ingesters run in parallel for some time. This is a complex migration that can take days and requires monitoring for increased resouce utilization. The minimum time it takes to do this migration can be calculated as (`querier.query_store_after`) + (2h TSDB blocks range period + `blocks_storage.tsdb.head_compaction_idle_timeout`) \* (1 + number_of_ingesters / 21). With the default values this means 12h + 3h \* (1 + number of ingesters / 21) = 15h + 3h \* (number_of_ingesters / 21). Add an extra 12 hours if shuffle sharding is enabled.
+1. Without downtime. This is a multi step [procedure](#migrate-ingesters-without-downtime) which requires additional hardware resources as the old and new ingesters run in parallel for some time. This is a complex migration that can take days and requires monitoring for increased resouce utilization. The minimum time it takes to do this migration can be calculated as (`querier.query_store_after`) + (`blocks_storage.tsdb.block_ranges_period` + `blocks_storage.tsdb.head_compaction_idle_timeout`) \* (1 + number_of_ingesters / 21). With the default values this means 12h + 3h \* (1 + number of ingesters / 21) = 15h + 3h \* (number_of_ingesters / 21). Add an extra 12 hours if shuffle sharding is enabled.
 
 ### Migrate ingesters with downtime
 
@@ -543,7 +543,7 @@ Before starting this procedure, set up your zones according to [Configure zone-a
 
    1. Once the new ingesters are started and are ready, wait at least 3 hours.
 
-      The 3 hours is calculated from 2h TSDB block range period + `blocks_storage.tsdb.head_compaction_idle_timeout` Grafana Mimir parameters to give enough time for ingesters to remove stale series from memory. Stale series will be there due to series being moved between ingesters.
+      The 3 hours is calculated from `blocks_storage.tsdb.block_ranges_period` + `blocks_storage.tsdb.head_compaction_idle_timeout` Grafana Mimir parameters to give enough time for ingesters to remove stale series from memory. Stale series will be there due to series being moved between ingesters.
 
    1. If the current `<N>` above in `ingester.zoneAwareReplication.migration.replicas` is less than `ingester.replicas`, go back and increase `<N>` with at most 21 and repeat these four steps.
 
@@ -689,7 +689,7 @@ Before starting this procedure, set up your zones according to [Configure zone-a
 
 1. Wait at least 3 hours.
 
-   The 3 hours is calculated from 2h TSDB block range period + `blocks_storage.tsdb.head_compaction_idle_timeout` Grafana Mimir parameters to give enough time for ingesters to remove stale series from memory. Stale series will be there due to series being moved between ingesters.
+   The 3 hours is calculated from `blocks_storage.tsdb.block_ranges_period` + `blocks_storage.tsdb.head_compaction_idle_timeout` Grafana Mimir parameters to give enough time for ingesters to remove stale series from memory. Stale series will be there due to series being moved between ingesters.
 
 1. If you are using [shuffle sharding]({{< relref "../operators-guide/configure/configure-shuffle-sharding" >}}):
 

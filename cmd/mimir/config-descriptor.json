@@ -5716,6 +5716,17 @@
             },
             {
               "kind": "field",
+              "name": "block_ranges_period",
+              "required": false,
+              "desc": "TSDB blocks range period.",
+              "fieldValue": null,
+              "fieldDefaultValue": [],
+              "fieldFlag": "blocks-storage.tsdb.block-ranges-period",
+              "fieldType": "list of durations",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
               "name": "retention_period",
               "required": false,
               "desc": "TSDB blocks retention in the ingester before a block is removed, relative to the newest block written for the tenant. This should be larger than the -blocks-storage.tsdb.block-ranges-period, -querier.query-store-after and large enough to give store-gateways and queriers enough time to discover newly uploaded blocks.",
