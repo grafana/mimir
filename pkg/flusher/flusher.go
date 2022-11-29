@@ -18,6 +18,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/grafana/mimir/pkg/ingester"
+	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -38,6 +39,7 @@ type Flusher struct {
 
 	cfg            Config
 	ingesterConfig ingester.Config
+	clientConfig   client.Config
 	limits         *validation.Overrides
 	registerer     prometheus.Registerer
 	logger         log.Logger
@@ -52,6 +54,7 @@ const (
 func New(
 	cfg Config,
 	ingesterConfig ingester.Config,
+	clientConfig client.Config,
 	limits *validation.Overrides,
 	registerer prometheus.Registerer,
 	logger log.Logger,
@@ -60,6 +63,7 @@ func New(
 	f := &Flusher{
 		cfg:            cfg,
 		ingesterConfig: ingesterConfig,
+		clientConfig:   clientConfig,
 		limits:         limits,
 		registerer:     registerer,
 		logger:         logger,
@@ -69,7 +73,7 @@ func New(
 }
 
 func (f *Flusher) running(ctx context.Context) error {
-	ing, err := ingester.NewForFlusher(f.ingesterConfig, f.limits, f.registerer, f.logger)
+	ing, err := ingester.NewForFlusher(f.ingesterConfig, f.clientConfig, f.limits, f.registerer, f.logger)
 	if err != nil {
 		return errors.Wrap(err, "create ingester")
 	}

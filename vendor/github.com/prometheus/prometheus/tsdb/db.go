@@ -1663,6 +1663,13 @@ func (db *DB) Blocks() []*Block {
 	return db.blocks
 }
 
+func (db *DB) ReloadBlocks() error {
+	db.cmtx.Lock()
+	defer db.cmtx.Unlock()
+
+	return db.reloadBlocks()
+}
+
 // inOrderBlocksMaxTime returns the max time among the blocks that were not totally created
 // out of out-of-order data. If the returned boolean is true, it means there is at least
 // one such block.

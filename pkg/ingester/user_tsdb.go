@@ -30,6 +30,7 @@ const (
 	forceCompacting                  // TSDB is being force-compacted.
 	closing                          // Used while closing idle TSDB.
 	closed                           // Used to avoid setting closing back to active in closeAndDeleteIdleUsers method.
+	reloadingBlocks                  // Used when reloading blocks after fetching them from bucket to make sure we don't start closing TSDB at the same time. Pushes are allowed.
 )
 
 // Describes result of TSDB-close check. String is used as metric label.
@@ -140,6 +141,12 @@ func (u *userTSDB) casState(from, to tsdbState) bool {
 	}
 	u.state = to
 	return true
+}
+
+func (u *userTSDB) getState() tsdbState {
+	u.stateMtx.RLock()
+	defer u.stateMtx.RUnlock()
+	return u.state
 }
 
 // compactHead compacts the Head block at specified block durations avoiding a single huge block.
@@ -335,6 +342,7 @@ func (u *userTSDB) acquireAppendLock() error {
 	switch u.state {
 	case active:
 	case activeShipping:
+	case reloadingBlocks:
 		// Pushes are allowed.
 	case forceCompacting:
 		return errors.New("forced compaction in progress")

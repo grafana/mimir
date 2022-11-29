@@ -471,7 +471,7 @@ func (t *Mimir) initIngesterService() (serv services.Service, err error) {
 	t.Cfg.Ingester.InstanceLimitsFn = ingesterInstanceLimits(t.RuntimeConfig)
 	t.tsdbIngesterConfig()
 
-	t.Ingester, err = ingester.New(t.Cfg.Ingester, t.Overrides, t.Registerer, util_log.Logger)
+	t.Ingester, err = ingester.New(t.Cfg.Ingester, t.Cfg.IngesterClient, t.Overrides, t.Registerer, util_log.Logger)
 	if err != nil {
 		return
 	}
@@ -496,6 +496,7 @@ func (t *Mimir) initFlusher() (serv services.Service, err error) {
 	t.Flusher, err = flusher.New(
 		t.Cfg.Flusher,
 		t.Cfg.Ingester,
+		t.Cfg.IngesterClient,
 		t.Overrides,
 		t.Registerer,
 		util_log.Logger,

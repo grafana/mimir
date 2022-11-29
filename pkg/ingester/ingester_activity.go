@@ -131,6 +131,15 @@ func (i *ActivityTrackerWrapper) LabelValuesCardinality(request *client.LabelVal
 	return i.ing.LabelValuesCardinality(request, server)
 }
 
+func (i *ActivityTrackerWrapper) FetchBlock(ctx context.Context, r *client.FetchBlockRequest) (*client.FetchBlockResponse, error) {
+	ix := i.tracker.Insert(func() string {
+		return requestActivity(ctx, "Ingester/FetchBlock", r)
+	})
+	defer i.tracker.Delete(ix)
+
+	return i.ing.FetchBlock(ctx, r)
+}
+
 func (i *ActivityTrackerWrapper) FlushHandler(w http.ResponseWriter, r *http.Request) {
 	ix := i.tracker.Insert(func() string {
 		return requestActivity(r.Context(), "Ingester/FlushHandler", nil)

@@ -14,6 +14,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -25,8 +26,10 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
+	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -40,6 +43,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/thanos-io/objstore"
 	"github.com/weaveworks/common/httpgrpc"
+	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
@@ -53,6 +57,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
@@ -197,7 +202,8 @@ func (cfg *Config) getIgnoreSeriesLimitForMetricNamesMap() map[string]struct{} {
 type Ingester struct {
 	*services.BasicService
 
-	cfg Config
+	cfg          Config
+	clientConfig client.Config
 
 	metrics *ingesterMetrics
 	logger  log.Logger
@@ -250,7 +256,7 @@ type Ingester struct {
 	maxOutOfOrderTimeWindowSecondsStat *expvar.Int
 }
 
-func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
+func newIngester(cfg Config, clientConfig client.Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
 	if cfg.BlocksStorageConfig.Bucket.Backend == bucket.Filesystem {
 		level.Warn(logger).Log("msg", "-blocks-storage.backend=filesystem is for development and testing only; you should switch to an external object store for production use or use a shared filesystem")
 	}
@@ -265,9 +271,10 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 	usagestats.GetString(ringStoreStatsName).Set(cfg.IngesterRing.KVStore.Store)
 
 	return &Ingester{
-		cfg:    cfg,
-		limits: limits,
-		logger: logger,
+		cfg:          cfg,
+		clientConfig: clientConfig,
+		limits:       limits,
+		logger:       logger,
 
 		tsdbs:               make(map[string]*userTSDB),
 		usersMetadata:       make(map[string]*userMetricsMetadata),
@@ -288,14 +295,14 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 }
 
 // New returns an Ingester that uses Mimir block storage.
-func New(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
+func New(cfg Config, clientConfig client.Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
 	defaultInstanceLimits = &cfg.DefaultLimits
 
 	if cfg.ingesterClientFactory == nil {
 		cfg.ingesterClientFactory = client.MakeIngesterClient
 	}
 
-	i, err := newIngester(cfg, limits, registerer, logger)
+	i, err := newIngester(cfg, clientConfig, limits, registerer, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -343,8 +350,8 @@ func New(cfg Config, limits *validation.Overrides, registerer prometheus.Registe
 // NewForFlusher is a special version of ingester used by Flusher. This
 // ingester is not ingesting anything, its only purpose is to react on Flush
 // method and flush all openened TSDBs when called.
-func NewForFlusher(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
-	i, err := newIngester(cfg, limits, registerer, logger)
+func NewForFlusher(cfg Config, clientConfig client.Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
+	i, err := newIngester(cfg, clientConfig, limits, registerer, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -2099,23 +2106,159 @@ func (i *Ingester) TransferOut(_ context.Context) error {
 	return ring.ErrTransferDisabled
 }
 
-// This method will flush all data. It is called as part of Lifecycler's shutdown (if flush on shutdown is configured), or from the flusher.
+// Flush will flush all data. It is called as part of Lifecycler's shutdown (if flush on shutdown is configured), or from the flusher.
 //
 // When called as during Lifecycler shutdown, this happens as part of normal Ingester shutdown (see stopping method).
 // Samples are not received at this stage. Compaction and Shipping loops have already been stopped as well.
 //
 // When used from flusher, ingester is constructed in a way that compaction, shipping and receiving of samples is never started.
 func (i *Ingester) Flush() {
+	err := i.FlushWithError(context.Background())
+	level.Error(i.logger).Log("flushing finished with error", "err", err)
+}
+
+func (i *Ingester) FlushWithError(ctx context.Context) error {
 	level.Info(i.logger).Log("msg", "starting to flush and ship TSDB blocks")
 
-	ctx := context.Background()
-
+	// TODO: handle errors in compaction or shipping
 	i.compactBlocks(ctx, true, nil)
 	if i.cfg.BlocksStorageConfig.TSDB.IsBlocksShippingEnabled() {
 		i.shipBlocks(ctx, nil)
 	}
 
 	level.Info(i.logger).Log("msg", "finished flushing and shipping TSDB blocks")
+	return nil
+}
+
+// TransferAfterFlush is called during shutdown after FlushWithError has finished successfully.
+func (i *Ingester) TransferAfterFlush(ctx context.Context) error {
+	// for each tenant, and each block find target ingester, and ask it to download block from bucket.
+	ringConfig := i.cfg.IngesterRing.ToRingConfig()
+
+	r, err := ring.New(ringConfig, "transfer-ingester-ring", i.lifecycler.RingKey, i.logger, nil)
+	if err != nil {
+		return err
+	}
+
+	if err := services.StartAndAwaitRunning(ctx, r); err != nil {
+		return err
+	}
+	defer func() {
+		_ = services.StopAndAwaitTerminated(ctx, r)
+	}()
+
+	return i.transferBlocks(ctx, r)
+}
+
+func (i *Ingester) transferBlocks(ctx context.Context, r *ring.Ring) error {
+	i.tsdbsMtx.Lock()
+
+	cnt := len(i.tsdbs)
+	errs := make(chan error, cnt)
+
+	// Concurrently transfer blocks from all open TSDBs
+	for userID, userDB := range i.tsdbs {
+		userID := userID
+		userDB := userDB
+
+		go func() {
+			errs <- i.transferBlocksForTenant(ctx, userID, userDB, r)
+		}()
+	}
+
+	i.tsdbsMtx.Unlock()
+
+	// Wait until all users are finished.
+	var result multierror.MultiError
+	for ix := 0; ix < cnt; ix++ {
+		result.Add(<-errs)
+	}
+	return result.Err()
+}
+
+func (i *Ingester) transferBlocksForTenant(ctx context.Context, userID string, db *userTSDB, r *ring.Ring) error {
+	// Get a subring if tenant has shuffle shard size configured.
+
+	// TODO: this isn't going to work very well... shuffle shard will include ingesters that may be LEAVING at the moment.
+	// Ideally we would want to include their "replacements" in the shuffle shard, but that's not possible with our current ring code.
+	// This effectively limits transfers of very tiny tenants, say with shuffle shard size = 3, and three zones. There will simply be no other ingester returned
+	// in the same zone :-(
+	// TODO: implenent ring filtering
+	subRing := r.ShuffleShard(userID, i.limits.IngestionTenantShardSize(userID))
+
+	blocks := db.Blocks()
+	for _, b := range blocks {
+		level.Info(i.logger).Log("msg", "going to transfer block", "block", b.Meta().ULID, "user", userID)
+
+		// TODO: if zone awareness is disabled, abort.
+		err := i.transferSingleBlockForTenant(ctx, userID, b, i.cfg.IngesterRing.InstanceZone, subRing)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (i *Ingester) transferSingleBlockForTenant(ctx context.Context, userID string, b *tsdb.Block, zone string, r ring.ReadRing) error {
+	// We get all healthy instances from the same zone, and send block to one of them. We don't really care which one.
+	// We don't use ring.Get(token,...) operation, because it has behaviour that doesn't work well in our case:
+	// - it tries to find instances from all zones
+	// - we can't use it repeatedly if transfer to one instance fails
+	// - it honors replication factor, and can return failure if not enough instances (across all zones) are available.
+
+	healthy, err := r.GetAllHealthy(ring.Write)
+	if err != nil {
+		return err
+	}
+
+	instances := healthy.Instances
+
+	// remove instances from different zone
+	for ix := 0; ix < len(instances); {
+		if instances[ix].Zone != zone {
+			instances = append(instances[:ix], instances[ix+1:]...)
+			continue
+		}
+		ix++
+	}
+
+	// shuffle remaining instances based on block ID
+	src := rand.New(rand.NewSource(int64(mimir_tsdb.HashBlockID(b.Meta().ULID))))
+	src.Shuffle(len(instances), func(i, j int) {
+		instances[i], instances[j] = instances[j], instances[i]
+	})
+
+	// now try to transfer block to one of the instances in shuffled order
+	userCtx := user.InjectOrgID(ctx, userID)
+	for ix := 0; ix < len(instances); ix++ {
+		c, err := i.cfg.ingesterClientFactory(instances[ix].Addr, i.clientConfig)
+		if err != nil {
+			level.Warn(i.logger).Log("msg", "failed to transfer block to ingester", "user", userID, "block", b.Meta().ULID.String(), "ingester", instances[ix].Addr, "err", err)
+			continue
+		}
+		defer func() {
+			// TODO: close sooner.
+			_ = c.Close()
+		}()
+
+		res, err := c.FetchBlock(userCtx, &client.FetchBlockRequest{BlockId: b.Meta().ULID.String()})
+		if err != nil {
+			level.Warn(i.logger).Log("msg", "failed to transfer block to ingester", "user", userID, "block", b.Meta().ULID.String(), "ingester", instances[ix].Addr, "err", err)
+			continue
+		}
+
+		if res.Error != "" {
+			level.Warn(i.logger).Log("msg", "failed to transfer block to ingester", "user", userID, "block", b.Meta().ULID.String(), "ingester", instances[ix].Addr, "err", res.Error)
+			continue
+		}
+
+		level.Info(i.logger).Log("msg", "successfully transferred block to ingester", "block", b.Meta().ULID.String(), "ingester", instances[ix].Addr)
+
+		return nil
+	}
+
+	// If no ingester succeeded, error.
+	return fmt.Errorf("failed to transfer block %s to any ingesters", b.Meta().ULID.String())
 }
 
 const (
@@ -2454,4 +2597,104 @@ func allOutOfBounds(samples []mimirpb.Sample, minValidTime int64) bool {
 		}
 	}
 	return true
+}
+
+// FetchBlock fetches block from bucket and stores it under a tenant.
+func (i *Ingester) FetchBlock(ctx context.Context, request *client.FetchBlockRequest) (*client.FetchBlockResponse, error) {
+	if err := i.checkRunning(); err != nil {
+		return nil, err
+	}
+
+	userID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if request.BlockId == "" {
+		return nil, fmt.Errorf("no block id")
+	}
+
+	blockID, err := ulid.Parse(request.BlockId)
+	if err != nil {
+		return nil, fmt.Errorf("invalid block id")
+	}
+
+	// This fails if ingester is not ACTIVE (good)
+	db, err := i.getOrCreateTSDB(userID, false)
+	if err != nil {
+		return nil, err
+	}
+
+	if s := db.getState(); s == closing || s == closed {
+		return nil, fmt.Errorf("TSDB not active")
+	}
+
+	if tsdbHasBlock(db, blockID) {
+		// Already exists, no need to fetch it.
+		level.Info(i.logger).Log("msg", "fetching block: already exists", "block", blockID.String(), "user", userID)
+		return &client.FetchBlockResponse{}, nil
+	}
+
+	level.Info(i.logger).Log("msg", "fetching block", "block", blockID.String(), "user", userID)
+
+	// fetch block to temp directory
+	tmpDir := filepath.Join(db.db.Dir(), request.BlockId+".fetch")
+	userBkt := bucket.NewUserBucketClient(userID, i.bucket, i.limits)
+	if err := block.Download(ctx, i.logger, userBkt, blockID, tmpDir); err != nil {
+		level.Info(i.logger).Log("msg", "fetching block failed", "block", blockID.String(), "user", userID, "err", err)
+		_ = os.RemoveAll(tmpDir)
+		return nil, err
+	}
+
+	// If download succeeded, let's rename the directory, and reload TSDB.
+	// We set TSDB state to make sure that TSDB doesn't get closed while we want block to get loaded.
+	stateSet := false
+	for ctx.Err() == nil && db.getState() != closing && db.getState() != closed {
+		if db.casState(active, reloadingBlocks) {
+			stateSet = true
+			break
+		}
+		time.Sleep(1 * time.Second)
+	}
+
+	if !stateSet {
+		level.Info(i.logger).Log("msg", "fetching block failed", "block", blockID.String(), "user", userID, "err", "failed to set TSDB state")
+		_ = os.RemoveAll(tmpDir)
+		return nil, fmt.Errorf("failed to set TSDB state")
+	}
+
+	defer db.casState(reloadingBlocks, active)
+
+	if err := os.Rename(tmpDir, filepath.Join(db.db.Dir(), request.BlockId)); err != nil {
+		level.Info(i.logger).Log("msg", "fetching block failed", "block", blockID.String(), "user", userID, "err", "failed to rename directory")
+		_ = os.RemoveAll(tmpDir)
+		return nil, fmt.Errorf("failed to reload TSDB")
+	}
+
+	if err := db.db.ReloadBlocks(); err != nil {
+		level.Info(i.logger).Log("msg", "fetching block failed: reload TSDB", "block", blockID.String(), "user", userID, "err", err)
+		return nil, fmt.Errorf("failed to reload TSDB")
+	}
+
+	// Make sure TSDB doesn't get idle right after we loaded new block.
+	db.setLastUpdate(time.Now())
+
+	// before returning OK, let's check if ingester is still ACTIVE. If it started shutting down in the meantime, we don't want to report OK back.
+	if ingesterState := i.lifecycler.GetState(); ingesterState != ring.ACTIVE {
+		return nil, fmt.Errorf("ingester not ACTIVE in the ring")
+	}
+
+	level.Info(i.logger).Log("msg", "successfully fetched block", "block", blockID.String(), "user", userID)
+
+	// everything is awesome
+	return &client.FetchBlockResponse{}, nil
+}
+
+func tsdbHasBlock(db *userTSDB, blockID ulid.ULID) bool {
+	for _, b := range db.Blocks() {
+		if b.Meta().ULID == blockID {
+			return true
+		}
+	}
+	return false
 }

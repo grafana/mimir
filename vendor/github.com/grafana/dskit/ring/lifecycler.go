@@ -491,12 +491,12 @@ func (i *Lifecycler) stopping(runningError error) error {
 
 	// Do the transferring / flushing on a background goroutine so we can continue
 	// to heartbeat to consul.
-	done := make(chan struct{})
+	done := make(chan error, 1)
 	go func() {
-		i.processShutdown(context.Background())
-		close(done)
+		done <- i.processShutdown(context.Background())
 	}()
 
+	var shutdownError error
 heartbeatLoop:
 	for {
 		select {
@@ -506,7 +506,7 @@ heartbeatLoop:
 				level.Error(i.logger).Log("msg", "failed to write to the KV store, sleeping", "ring", i.RingName, "err", err)
 			}
 
-		case <-done:
+		case shutdownError = <-done:
 			break heartbeatLoop
 		}
 	}
@@ -525,7 +525,7 @@ heartbeatLoop:
 		level.Info(i.logger).Log("msg", "removed tokens file from disk", "path", i.cfg.TokensFilePath)
 	}
 
-	return nil
+	return shutdownError
 }
 
 // initRing is the first thing we do when we start. It:
@@ -850,15 +850,21 @@ func (i *Lifecycler) SetClearTokensOnShutdown(enabled bool) {
 	i.clearTokensOnShutdown.Store(enabled)
 }
 
-func (i *Lifecycler) processShutdown(ctx context.Context) {
+func (i *Lifecycler) processShutdown(ctx context.Context) (error) {
 	flushRequired := i.FlushOnShutdown()
+	var retErr error
+
 	transferStart := time.Now()
 	if err := i.flushTransferer.TransferOut(ctx); err != nil {
 		if err == ErrTransferDisabled {
 			level.Info(i.logger).Log("msg", "transfers are disabled")
 		} else {
-			level.Error(i.logger).Log("msg", "failed to transfer chunks to another instance", "ring", i.RingName, "err", err)
+			level.Error(i.logger).Log("msg", "transfer failed", "ring", i.RingName, "err", err)
 			i.lifecyclerMetrics.shutdownDuration.WithLabelValues("transfer", "fail").Observe(time.Since(transferStart).Seconds())
+			// no need to report this error if flush succeeds.
+			if !flushRequired {
+				retErr = err
+			}
 		}
 	} else {
 		flushRequired = false
@@ -867,13 +873,35 @@ func (i *Lifecycler) processShutdown(ctx context.Context) {
 
 	if flushRequired {
 		flushStart := time.Now()
-		i.flushTransferer.Flush()
-		i.lifecyclerMetrics.shutdownDuration.WithLabelValues("flush", "success").Observe(time.Since(flushStart).Seconds())
+
+		if f, ok := i.flushTransferer.(FlushTransferer2); ok {
+			err := f.FlushWithError(ctx)
+			if err != nil {
+				i.lifecyclerMetrics.shutdownDuration.WithLabelValues("flush", "fail").Observe(time.Since(flushStart).Seconds())
+				retErr = fmt.Errorf("flush failed: %v", err)
+			} else {
+				i.lifecyclerMetrics.shutdownDuration.WithLabelValues("flush", "success").Observe(time.Since(flushStart).Seconds())
+
+				if err := f.TransferAfterFlush(ctx); err != nil {
+					if err != ErrTransferDisabled {
+						level.Error(i.logger).Log("msg", "post-flush transfer failed", "ring", i.RingName, "err", err)
+						i.lifecyclerMetrics.shutdownDuration.WithLabelValues("transfer", "fail").Observe(time.Since(transferStart).Seconds())
+						retErr = fmt.Errorf("post-flush transfer failed: %v", err)
+					}
+				} else {
+					i.lifecyclerMetrics.shutdownDuration.WithLabelValues("transfer", "success").Observe(time.Since(transferStart).Seconds())
+				}
+			}
+		} else {
+			i.flushTransferer.Flush()
+			i.lifecyclerMetrics.shutdownDuration.WithLabelValues("flush", "success").Observe(time.Since(flushStart).Seconds())
+		}
 	}
 
 	// Sleep so the shutdownDuration metric can be collected.
 	level.Info(i.logger).Log("msg", "lifecycler entering final sleep before shutdown", "final_sleep", i.cfg.FinalSleep)
 	time.Sleep(i.cfg.FinalSleep)
+	return retErr
 }
 
 func (i *Lifecycler) casRing(ctx context.Context, f func(in interface{}) (out interface{}, retry bool, err error)) error {

@@ -36,6 +36,9 @@ service Ingester {
   // that match the matchers.
   // The listing order of the labels is not guaranteed.
   rpc LabelValuesCardinality(LabelValuesCardinalityRequest) returns (stream LabelValuesCardinalityResponse) {};
+
+  // Ask ingester to fetch block from storage for authenticated user.
+  rpc FetchBlock(FetchBlockRequest) returns (FetchBlockResponse) {};
 }
 
 message LabelNamesAndValuesRequest {
@@ -220,4 +223,13 @@ message TimeSeriesFile {
   string user_id = 2;
   string filename = 3;
   bytes data = 4;
+}
+
+message FetchBlockRequest {
+  string block_id = 1;
+}
+
+message FetchBlockResponse {
+  // Error message, if fetch operation failed.
+  string error = 1;
 }
