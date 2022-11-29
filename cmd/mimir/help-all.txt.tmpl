@@ -1792,7 +1792,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.tenant-shard-size int
     	The tenant's shard size when sharding is used by ruler. Value of 0 disables shuffle sharding for the tenant, and tenant rules will be sharded across all ruler replicas.
   -ruler.tls-enabled
-    	Enable TLS for gRPC client connecting to alertmanager-client. (default true)
+    	Enable TLS for gRPC client connecting to alertmanager. (default true)
   -runtime-config.file comma-separated-list-of-strings
     	Comma separated list of yaml files with the configuration that can be updated at runtime. Runtime config files will be merged from left to right.
   -runtime-config.reload-period duration

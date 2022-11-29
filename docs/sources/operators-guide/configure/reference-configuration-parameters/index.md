@@ -1264,7 +1264,7 @@ The `ruler` block configures the ruler.
 [notification_timeout: <duration> | default = 10s]
 
 alertmanager_client:
-  # (advanced) Enable TLS for gRPC client connecting to alertmanager-client.
+  # (advanced) Enable TLS for gRPC client connecting to alertmanager.
   # CLI flag: -ruler.tls-enabled
   [tls_enabled: <boolean> | default = true]
 
