@@ -52,51 +52,6 @@ type loadedBatchSet interface {
 	Err() error
 }
 
-type unloadedBatch struct {
-	Entries []unloadedBatchEntry
-	Stats   *safeQueryStats
-}
-
-func newBatch(size int) unloadedBatch {
-	return unloadedBatch{
-		Entries: make([]unloadedBatchEntry, size),
-		Stats:   newSafeQueryStats(),
-	}
-}
-
-func (b unloadedBatch) len() int {
-	return len(b.Entries)
-}
-
-type unloadedBatchEntry struct {
-	lset   labels.Labels
-	chunks []unloadedChunk
-}
-
-type unloadedChunk struct {
-	BlockID          ulid.ULID
-	Ref              chunks.ChunkRef
-	MinTime, MaxTime int64
-}
-
-func (m unloadedChunk) Compare(b unloadedChunk) int {
-	if m.MinTime < b.MinTime {
-		return 1
-	}
-	if m.MinTime > b.MinTime {
-		return -1
-	}
-
-	// Same min time.
-	if m.MaxTime < b.MaxTime {
-		return 1
-	}
-	if m.MaxTime > b.MaxTime {
-		return -1
-	}
-	return 0
-}
-
 type unloadedBatchSet interface {
 	Next() bool
 	At() unloadedBatch
