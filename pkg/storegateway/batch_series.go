@@ -570,10 +570,6 @@ func (s *mergedBatchSet) Err() error {
 
 func (s *mergedBatchSet) Next() bool {
 	next := newSeriesChunkRefsSet(s.batchSize)
-	var (
-		ok         bool
-		nextSeries seriesChunkRefs
-	)
 	for i := 0; i < next.len(); i++ {
 		if s.aAt.Done() {
 			if s.a.Next() {
@@ -591,7 +587,7 @@ func (s *mergedBatchSet) Next() bool {
 				return false
 			}
 		}
-		nextSeries, ok = nextUniqueEntry(s.aAt, s.bAt)
+		nextSeries, ok := nextUniqueEntry(s.aAt, s.bAt)
 		if !ok {
 			break
 		}
