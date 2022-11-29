@@ -907,7 +907,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 
 	var (
 		seriesSets storepb.SeriesSet
-		resHints   *hintspb.SeriesResponseHints
+		resHints   = &hintspb.SeriesResponseHints{}
 		cleanup    func()
 	)
 
