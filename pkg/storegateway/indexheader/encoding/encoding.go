@@ -29,7 +29,7 @@ var (
 // Decbuf provides safe methods to extract data from a byte slice. It does all
 // necessary bounds checking and advancing of the byte slice.
 // Several datums can be extracted without checking for errors. However, before using
-// any datum, the err() method must be checked.
+// any datum, the Err() method must be checked.
 type Decbuf struct {
 	r Reader
 	E error
@@ -286,15 +286,7 @@ func (d *Decbuf) Uvarint64() uint64 {
 }
 
 func (d *Decbuf) Be64() uint64 {
-	// TODO: This method checks remaining bytes before doing a read. Be32 doesn't check
-	//  remaining bytes before the read, but confirms number of bytes read after the read.
-	//  Pick one approach and use it for both methods.
 	if d.E != nil {
-		return 0
-	}
-
-	if d.r.Len() < 8 {
-		d.E = ErrInvalidSize
 		return 0
 	}
 
@@ -304,8 +296,12 @@ func (d *Decbuf) Be64() uint64 {
 		return 0
 	}
 
-	x := binary.BigEndian.Uint64(b)
-	return x
+	if len(b) != 8 {
+		d.E = ErrInvalidSize
+		return 0
+	}
+
+	return binary.BigEndian.Uint64(b)
 }
 
 /*
@@ -318,10 +314,7 @@ func (d *Decbuf) Be32() uint32 {
 	if d.E != nil {
 		return 0
 	}
-	//	if len(d.B) < 4 {
-	//		d.E = ErrInvalidSize
-	//		return 0
-	//	}
+
 	b, err := d.r.Read(4)
 	if err != nil {
 		d.E = err
@@ -332,11 +325,8 @@ func (d *Decbuf) Be32() uint32 {
 		d.E = ErrInvalidSize
 		return 0
 	}
-	return binary.BigEndian.Uint32(b)
 
-	//x := binary.BigEndian.Uint32(d.B)
-	//d.B = d.B[4:]
-	//return x
+	return binary.BigEndian.Uint32(b)
 }
 
 /*
