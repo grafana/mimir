@@ -858,6 +858,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		chunkBytes       = &pool.BatchBytes{Delegate: s.chunkPool}
 	)
 	defer chunkBytes.Release()
+	defer s.recordSeriesCallResult(stats)
 
 	if req.Hints != nil {
 		reqHints := &hintspb.SeriesRequestHints{}
@@ -885,7 +886,6 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 	if cleanup != nil {
 		defer cleanup()
 	}
-	defer s.recordSeriesCallResult(stats)
 	span.Finish()
 
 	if err != nil {
@@ -893,6 +893,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 	}
 
 	// Merge the sub-results from each selected block.
+	mergeStats := &queryStats{}
 	tracing.DoWithSpan(ctx, "bucket_store_merge_all", func(ctx context.Context, _ tracing.Span) {
 		begin := time.Now()
 
@@ -902,18 +903,14 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		for set.Next() {
 			var series storepb.Series
 
-			stats.update(func(stats *queryStats) {
-				stats.mergedSeriesCount++
-			})
+			mergeStats.mergedSeriesCount++
 
 			var lset labels.Labels
 			if req.SkipChunks {
 				lset, _ = set.At()
 			} else {
 				lset, series.Chunks = set.At()
-				stats.update(func(stats *queryStats) {
-					stats.mergedChunksCount += len(series.Chunks)
-				})
+				mergeStats.mergedChunksCount += len(series.Chunks)
 				s.metrics.chunkSizeBytes.Observe(float64(chunksSize(series.Chunks)))
 			}
 			series.Labels = mimirpb.FromLabelsToLabelAdapters(lset)
@@ -927,13 +924,12 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 			return
 		}
 		mergeDuration := time.Since(begin)
-		stats.update(func(stats *queryStats) {
-			stats.mergeDuration += mergeDuration
-		})
+		mergeStats.mergeDuration += mergeDuration
 		s.metrics.seriesMergeDuration.Observe(mergeDuration.Seconds())
 
 		err = nil
 	})
+	stats.merge(mergeStats)
 
 	if err != nil {
 		return
