@@ -506,9 +506,7 @@ func TestPreloadingBatchSet_Concurrency(t *testing.T) {
 
 }
 
-func TestBlockSeriesChunkRefsSetsIterator(t *testing.T) {
-	t.Skip("currently panics, we need to fix it and complete this test")
-
+func TestBlockSeriesChunkRefsSetsIterator_ErrorPropagation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
@@ -518,16 +516,20 @@ func TestBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 		firstBlock = b
 		break
 	}
+	suite.cache.SwapWith(noopCache{})
 
 	indexReader := firstBlock.indexReader()
 	defer indexReader.Close()
+
+	matcher, err := labels.NewMatcher(labels.MatchRegexp, "a", ".+")
+	require.NoError(t, err)
 
 	iterator, err := openBlockSeriesChunkRefsSetsIterator(
 		ctx,
 		100,
 		indexReader,
 		firstBlock.meta.ULID,
-		[]*labels.Matcher{{Type: labels.MatchRegexp, Name: "a", Value: ".+"}},
+		[]*labels.Matcher{matcher},
 		nil,
 		suite.store.seriesHashCache.GetBlockCache(firstBlock.meta.ULID.String()),
 		&limiter{limit: 1},
