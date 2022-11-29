@@ -63,8 +63,8 @@
 * [ENHANCEMENT] Alerts: Add runbook urls for alerts. #3452
 * [ENHANCEMENT] Configuration: Make it possible to configure namespace label, job label, and job prefix. #3482
 * [ENHANCEMENT] Dashboards: improved resources and networking dashboards to work with read-write deployment mode too. #3497 #3504 #3519 #3531
-* [ENHANCEMENT] Alerts: add alert for high error rate in Distributor's forwarding feature. #3200
-* [ENHANCEMENT] Dashboards: fix: use product name in overview dashboard instead of hardcoded "Mimir". #3209
+* [ENHANCEMENT] Alerts: Added "MimirDistributorForwardingErrorRate" alert, which fires on high error rates in the distributor’s forwarding feature. #3200
+* [ENHANCEMENT] Improve phrasing in Overview dashboard. #3488
 * [BUGFIX] Dashboards: Fix legend showing `persistentvolumeclaim` when using `deployment_type=baremetal` for `Disk space utilization` panels. #3173 #3184
 * [BUGFIX] Alerts: Fixed `MimirGossipMembersMismatch` alert when Mimir is deployed in read-write mode. #3489
 * [BUGFIX] Dashboards: Remove "Inflight requests" from object store panels because the panel is not tracking the inflight requests to object storage. #3521
@@ -97,7 +97,7 @@
     }
   }
   ```
-* [FEATURE] Added support for experimental read-write deployment mode. Enabling the read-write deployment mode on a existing Mimir cluster is a destructive operation, because the cluster will be re-created. If you're creating a new Mimir cluster, you can deploy it in read-write mode adding the following configuration: #3379 #3475
+* [FEATURE] Added support for experimental read-write deployment mode. Enabling the read-write deployment mode on a existing Mimir cluster is a destructive operation, because the cluster will be re-created. If you're creating a new Mimir cluster, you can deploy it in read-write mode adding the following configuration: #3379 #3475 #3405
   ```jsonnet
   {
     _config+:: {
@@ -115,8 +115,6 @@
 * [ENHANCEMENT] The query-tee node port (`$._config.query_tee_node_port`) is now optional. #3272
 * [ENHANCEMENT] Add support for autoscaling distributors. #3378
 * [ENHANCEMENT] Make auto-scaling logic ensure integer KEDA thresholds. #3512
-* [ENHANCEMENT] Refactor read-write-deployment jsonnet. #3405
-* [ENHANCEMENT] Improve phrasing in Overview dashboard. #3488
 * [BUGFIX] Fixed query-scheduler ring configuration for dedicated ruler's queries and query-frontends. #3237 #3239
 * [BUGFIX] Jsonnet: Fix auto-scaling so that ruler-querier CPU threshold is a string-encoded integer millicores value. #3520
 
@@ -133,7 +131,6 @@
 * [ENHANCEMENT] Documented how to configure HA deduplication using Consul in a Mimir Helm deployment. #2972
 * [ENHANCEMENT] Improve `MimirQuerierAutoscalerNotActive` runbook. #3186
 * [ENHANCEMENT] Improve `MimirSchedulerQueriesStuck` runbook to reflect debug steps with querier auto-scaling enabled. #3223
-* [ENHANCEMENT] Mimir 2.4 release notes. #3104 #3319
 * [ENHANCEMENT] Use imperative for docs titles. #3178 #3332 #3343
 * [ENHANCEMENT] Docs: mention gRPC compression in "Production tips". #3201
 * [ENHANCEMENT] Update ADOPTERS.md. #3224 #3225
@@ -141,8 +138,7 @@
 * [ENHANCEMENT] out-of-order runbook update with use case. #3253
 * [ENHANCEMENT] Fixed TSDB retention mentioned in the "Recover source blocks from ingesters" runbook. #3280
 * [ENHANCEMENT] Run Grafana Mimir in production using the Helm chart. #3072
-* [ENHANCEMENT] Use common config in the tutorial again. #3282
-* [ENHANCEMENT] Clarify changelog and remove duplicate flag in the documentation. #3370
+* [ENHANCEMENT] Use common configuration in the tutorial. #3282
 * [ENHANCEMENT] Updated detailed steps for migrating blocks from Thanos to Mimir. #3290
 * [ENHANCEMENT] Add scheme to DNS service discovery docs. #3450
 * [BUGFIX] Remove reference to file that no longer exists in contributing guide. #3404
