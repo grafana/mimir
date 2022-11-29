@@ -91,8 +91,6 @@ func NewSymbols(bs ByteSlice, version, symbolTablePosition int) (*Symbols, error
 		//fmt.Printf("seen=%d cnt=%d\n", s.seen, cnt)
 
 		if s.seen%symbolFactor == 0 {
-			// TODO: d.Len() never changes in our Decbuf implementation but it DOES in the TSDB version
-			//  based on how much of the underlying buffer has been consumed.
 			s.offsets = append(s.offsets, basePos+origLen-d.Len())
 		}
 		d.UvarintBytes() // The symbol.
