@@ -545,11 +545,13 @@ func TestBucketBatchSet(t *testing.T) {
 	assert.ErrorContains(t, batchSet.Err(), "test limit exceeded")
 }
 
+// nolint this is used in a skipped test
 type limiter struct {
 	limit   uint64
 	current atomic.Uint64
 }
 
+// nolint this is used in a skipped test
 func (l *limiter) Reserve(num uint64) error {
 	if l.current.Add(num) > l.limit {
 		return errors.New("test limit exceeded")
