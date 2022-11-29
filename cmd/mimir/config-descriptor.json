@@ -5678,6 +5678,17 @@
                   "fieldFlag": "blocks-storage.bucket-store.index-header.map-populate-enabled",
                   "fieldType": "boolean",
                   "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "stream_reader_enabled",
+                  "required": false,
+                  "desc": "If enabled, the store-gateway will use an experimental streaming reader to load and parse index-header files.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "blocks-storage.bucket-store.index-header.stream-reader-enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,

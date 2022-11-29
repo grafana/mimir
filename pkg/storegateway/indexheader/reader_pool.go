@@ -82,7 +82,7 @@ func NewReaderPool(logger log.Logger, lazyReaderEnabled bool, lazyReaderIdleTime
 // NewBinaryReader creates and returns a new binary reader. If the pool has been configured
 // with lazy reader enabled, this function will return a lazy reader. The returned lazy reader
 // is tracked by the pool and automatically closed once the idle timeout expires.
-func (p *ReaderPool) NewBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.BucketReader, dir string, id ulid.ULID, postingOffsetsInMemSampling int, cfg BinaryReaderConfig) (Reader, error) {
+func (p *ReaderPool) NewBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.BucketReader, dir string, id ulid.ULID, postingOffsetsInMemSampling int, cfg Config) (Reader, error) {
 	var reader Reader
 	var err error
 

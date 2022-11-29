@@ -96,7 +96,7 @@ func TestReaders(t *testing.T) {
 			b := realByteSlice(indexFile.Bytes())
 
 			t.Run("binary reader", func(t *testing.T) {
-				br, err := NewBinaryReader(ctx, log.NewNopLogger(), nil, tmpDir, id, 3, BinaryReaderConfig{})
+				br, err := NewBinaryReader(ctx, log.NewNopLogger(), nil, tmpDir, id, 3, Config{})
 				require.NoError(t, err)
 				t.Cleanup(func() {
 					require.NoError(t, br.Close())
@@ -106,7 +106,7 @@ func TestReaders(t *testing.T) {
 			})
 
 			t.Run("binary reader with map populate", func(t *testing.T) {
-				br, err := NewBinaryReader(ctx, log.NewNopLogger(), nil, tmpDir, id, 3, BinaryReaderConfig{MapPopulateEnabled: true})
+				br, err := NewBinaryReader(ctx, log.NewNopLogger(), nil, tmpDir, id, 3, Config{MapPopulateEnabled: true})
 				require.NoError(t, err)
 				t.Cleanup(func() {
 					require.NoError(t, br.Close())
@@ -116,7 +116,7 @@ func TestReaders(t *testing.T) {
 			})
 
 			t.Run("lazy binary reader", func(t *testing.T) {
-				br, err := NewLazyBinaryReader(ctx, log.NewNopLogger(), nil, tmpDir, id, 3, BinaryReaderConfig{}, NewLazyBinaryReaderMetrics(nil), nil)
+				br, err := NewLazyBinaryReader(ctx, log.NewNopLogger(), nil, tmpDir, id, 3, Config{}, NewLazyBinaryReaderMetrics(nil), nil)
 				require.NoError(t, err)
 				t.Cleanup(func() {
 					require.NoError(t, br.Close())
@@ -312,7 +312,7 @@ func BenchmarkBinaryReader_ThanosbenchBlock(t *testing.B) {
 
 	t.ResetTimer()
 	for i := 0; i < t.N; i++ {
-		br, err := newFileBinaryReader(fn, 32, BinaryReaderConfig{})
+		br, err := newFileBinaryReader(fn, 32, Config{})
 		require.NoError(t, err)
 		require.NoError(t, br.Close())
 	}
@@ -352,7 +352,7 @@ func BenchmarkBinaryReader_LargerBlock(b *testing.B) {
 	b.ResetTimer()
 	b.Run("benchmark", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			br, err := newFileBinaryReader(filename, 32, BinaryReaderConfig{})
+			br, err := newFileBinaryReader(filename, 32, Config{})
 			require.NoError(b, err)
 			require.NoError(b, br.Close())
 		}
@@ -390,7 +390,7 @@ func benchmarkBinaryReaderLookupSymbol(b *testing.B, numSeries int) {
 	require.NoError(b, block.Upload(ctx, logger, bkt, filepath.Join(tmpDir, id1.String()), metadata.NoneFunc))
 
 	// Create an index reader.
-	reader, err := NewBinaryReader(ctx, logger, bkt, tmpDir, id1, postingOffsetsInMemSampling, BinaryReaderConfig{})
+	reader, err := NewBinaryReader(ctx, logger, bkt, tmpDir, id1, postingOffsetsInMemSampling, Config{})
 	require.NoError(b, err)
 
 	// Get the offset of each label value symbol.
