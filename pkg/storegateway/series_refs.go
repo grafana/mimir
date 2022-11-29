@@ -8,6 +8,13 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 )
 
+// seriesChunkRefsSetIterator is the interface implemented by an iterator over a sequence of seriesChunkRefsSet.
+type seriesChunkRefsSetIterator interface {
+	Next() bool
+	At() seriesChunkRefsSet
+	Err() error
+}
+
 // seriesChunkRefsSet holds a set of series (sorted by labels) and their chunk references.
 type seriesChunkRefsSet struct {
 	// series sorted by labels.
@@ -55,4 +62,39 @@ func (m seriesChunkRef) Compare(other seriesChunkRef) int {
 		return -1
 	}
 	return 0
+}
+
+// seriesChunkRefsIterator implements an interator over seriesChunkRefsSet.
+type seriesChunkRefsIterator struct {
+	currentOffset int
+	set           seriesChunkRefsSet
+}
+
+func newSeriesChunkRefsIterator(set seriesChunkRefsSet) *seriesChunkRefsIterator {
+	return &seriesChunkRefsIterator{
+		set:           set,
+		currentOffset: -1,
+	}
+}
+
+// reset replaces the current set with the provided one. There is no need to call Next() after reset().
+func (c *seriesChunkRefsIterator) reset(set seriesChunkRefsSet) {
+	c.set = set
+	c.currentOffset = 0
+}
+
+func (c *seriesChunkRefsIterator) Next() bool {
+	c.currentOffset++
+	return !c.Done()
+}
+
+func (c *seriesChunkRefsIterator) Done() bool {
+	return c.currentOffset < 0 || c.currentOffset >= c.set.len()
+}
+
+func (c *seriesChunkRefsIterator) At() seriesChunkRefs {
+	if c.Done() {
+		return seriesChunkRefs{}
+	}
+	return c.set.series[c.currentOffset]
 }

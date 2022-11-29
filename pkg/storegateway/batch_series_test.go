@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/stretchr/testify/assert"
@@ -17,75 +16,9 @@ import (
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
-// sliceUnloadedBatchSet implement unloadedBatchSet and
-// returns the provided err when the batches are exhausted
-type sliceUnloadedBatchSet struct {
-	current int
-	batches []seriesChunkRefsSet
-
-	err error
-}
-
-func newSliceUnloadedBatchSet(err error, batches ...seriesChunkRefsSet) *sliceUnloadedBatchSet {
-	return &sliceUnloadedBatchSet{
-		current: -1,
-		batches: batches,
-		err:     err,
-	}
-}
-
-func (s *sliceUnloadedBatchSet) Next() bool {
-	s.current++
-	return s.current < len(s.batches)
-}
-
-func (s *sliceUnloadedBatchSet) At() seriesChunkRefsSet {
-	return s.batches[s.current]
-}
-
-func (s *sliceUnloadedBatchSet) Err() error {
-	if s.current >= len(s.batches) {
-		return s.err
-	}
-	return nil
-}
-
-// sliceLoadedBatchSet implement loadedBatchSet and
-// returns the provided err when the batches are exhausted
-type sliceLoadedBatchSet struct {
-	current int
-	batches []loadedBatch
-
-	err error
-}
-
-func newSliceLoadedBatchSet(err error, batches ...loadedBatch) *sliceLoadedBatchSet {
-	return &sliceLoadedBatchSet{
-		current: -1,
-		batches: batches,
-		err:     err,
-	}
-}
-
-func (s *sliceLoadedBatchSet) Next() bool {
-	s.current++
-	return s.current < len(s.batches)
-}
-
-func (s *sliceLoadedBatchSet) At() loadedBatch {
-	return s.batches[s.current]
-}
-
-func (s *sliceLoadedBatchSet) Err() error {
-	if s.current >= len(s.batches) {
-		return s.err
-	}
-	return nil
-}
-
 func TestDeduplicatingBatchSet(t *testing.T) {
 	// Generate some chunk fixtures so that we can ensure the right chunks are returned.
-	c := generateUnloadedChunks(8)
+	c := generateSeriesChunkRef(8)
 
 	series1 := labels.FromStrings("l1", "v1")
 	series2 := labels.FromStrings("l1", "v2")
@@ -103,7 +36,7 @@ func TestDeduplicatingBatchSet(t *testing.T) {
 	}
 
 	t.Run("batch size: 1", func(t *testing.T) {
-		repeatingBatchSet := newSliceUnloadedBatchSet(nil, sourceBatches...)
+		repeatingBatchSet := newSliceSeriesChunkRefsSetIterator(nil, sourceBatches...)
 		uniqueSet := newDeduplicatingBatchSet(1, repeatingBatchSet)
 		batches := readAllBatches(uniqueSet)
 
@@ -124,7 +57,7 @@ func TestDeduplicatingBatchSet(t *testing.T) {
 	})
 
 	t.Run("batch size: 2", func(t *testing.T) {
-		repeatingBatchSet := newSliceUnloadedBatchSet(nil, sourceBatches...)
+		repeatingBatchSet := newSliceSeriesChunkRefsSetIterator(nil, sourceBatches...)
 		uniqueSet := newDeduplicatingBatchSet(2, repeatingBatchSet)
 		batches := readAllBatches(uniqueSet)
 
@@ -148,7 +81,7 @@ func TestDeduplicatingBatchSet(t *testing.T) {
 	})
 
 	t.Run("batch size: 3", func(t *testing.T) {
-		repeatingBatchSet := newSliceUnloadedBatchSet(nil, sourceBatches...)
+		repeatingBatchSet := newSliceSeriesChunkRefsSetIterator(nil, sourceBatches...)
 		uniqueSet := newDeduplicatingBatchSet(3, repeatingBatchSet)
 		batches := readAllBatches(uniqueSet)
 
@@ -168,7 +101,7 @@ func TestDeduplicatingBatchSet(t *testing.T) {
 }
 
 func TestDeduplicatingBatchSet_PropagatesErrors(t *testing.T) {
-	chainedSet := newDeduplicatingBatchSet(100, newSliceUnloadedBatchSet(errors.New("something went wrong"), seriesChunkRefsSet{
+	chainedSet := newDeduplicatingBatchSet(100, newSliceSeriesChunkRefsSetIterator(errors.New("something went wrong"), seriesChunkRefsSet{
 		series: []seriesChunkRefs{
 			{lset: labels.FromStrings("l1", "v1"), chunks: make([]seriesChunkRef, 1)},
 			{lset: labels.FromStrings("l1", "v1"), chunks: make([]seriesChunkRef, 1)},
@@ -185,22 +118,22 @@ func TestDeduplicatingBatchSet_PropagatesErrors(t *testing.T) {
 
 func TestMergedBatchSet(t *testing.T) {
 	// Generate some chunk fixtures so that we can ensure the right chunks are merged.
-	c := generateUnloadedChunks(4)
+	c := generateSeriesChunkRef(4)
 
 	testCases := map[string]struct {
 		batchSize       int
-		set1, set2      unloadedBatchSet
+		set1, set2      seriesChunkRefsSetIterator
 		expectedBatches []seriesChunkRefsSet
 		expectedErr     string
 	}{
 		"merges two batches without overlap": {
 			batchSize: 100,
-			set1: newSliceUnloadedBatchSet(nil, seriesChunkRefsSet{
+			set1: newSliceSeriesChunkRefsSetIterator(nil, seriesChunkRefsSet{
 				series: []seriesChunkRefs{
 					{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[0]}},
 				},
 			}),
-			set2: newSliceUnloadedBatchSet(nil, seriesChunkRefsSet{
+			set2: newSliceSeriesChunkRefsSetIterator(nil, seriesChunkRefsSet{
 				series: []seriesChunkRefs{
 					{lset: labels.FromStrings("l1", "v2"), chunks: []seriesChunkRef{c[1], c[2], c[3]}},
 				},
@@ -214,12 +147,12 @@ func TestMergedBatchSet(t *testing.T) {
 		},
 		"merges two batches with last series from each overlapping": {
 			batchSize: 100,
-			set1: newSliceUnloadedBatchSet(nil, seriesChunkRefsSet{
+			set1: newSliceSeriesChunkRefsSetIterator(nil, seriesChunkRefsSet{
 				series: []seriesChunkRefs{
 					{lset: labels.FromStrings("l1", "v2"), chunks: []seriesChunkRef{c[0]}},
 				},
 			}),
-			set2: newSliceUnloadedBatchSet(nil, seriesChunkRefsSet{
+			set2: newSliceSeriesChunkRefsSetIterator(nil, seriesChunkRefsSet{
 				series: []seriesChunkRefs{
 					{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[1]}},
 					{lset: labels.FromStrings("l1", "v2"), chunks: []seriesChunkRef{c[0], c[2], c[3]}},
@@ -235,7 +168,7 @@ func TestMergedBatchSet(t *testing.T) {
 		"merges two batches where the first is empty": {
 			batchSize: 100,
 			set1:      emptyBatchSet{},
-			set2: newSliceUnloadedBatchSet(nil, seriesChunkRefsSet{
+			set2: newSliceSeriesChunkRefsSetIterator(nil, seriesChunkRefsSet{
 				series: []seriesChunkRefs{
 					{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[0]}},
 					{lset: labels.FromStrings("l1", "v2"), chunks: []seriesChunkRef{c[1]}},
@@ -250,12 +183,12 @@ func TestMergedBatchSet(t *testing.T) {
 		},
 		"merges two batches with first one erroring at the end": {
 			batchSize: 100,
-			set1: newSliceUnloadedBatchSet(errors.New("something went wrong"), seriesChunkRefsSet{
+			set1: newSliceSeriesChunkRefsSetIterator(errors.New("something went wrong"), seriesChunkRefsSet{
 				series: []seriesChunkRefs{
 					{lset: labels.FromStrings("l1", "v2"), chunks: []seriesChunkRef{c[1]}},
 				},
 			}),
-			set2: newSliceUnloadedBatchSet(nil, seriesChunkRefsSet{
+			set2: newSliceSeriesChunkRefsSetIterator(nil, seriesChunkRefsSet{
 				series: []seriesChunkRefs{
 					{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[0]}},
 				},
@@ -265,12 +198,12 @@ func TestMergedBatchSet(t *testing.T) {
 		},
 		"merges two batches with second one erroring at the end": {
 			batchSize: 100,
-			set1: newSliceUnloadedBatchSet(errors.New("something went wrong"), seriesChunkRefsSet{
+			set1: newSliceSeriesChunkRefsSetIterator(errors.New("something went wrong"), seriesChunkRefsSet{
 				series: []seriesChunkRefs{
 					{lset: labels.FromStrings("l1", "v2"), chunks: []seriesChunkRef{c[1]}},
 				},
 			}),
-			set2: newSliceUnloadedBatchSet(nil, seriesChunkRefsSet{
+			set2: newSliceSeriesChunkRefsSetIterator(nil, seriesChunkRefsSet{
 				series: []seriesChunkRefs{
 					{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[0]}},
 				},
@@ -280,13 +213,13 @@ func TestMergedBatchSet(t *testing.T) {
 		},
 		"merges two batches with shorter one erroring at the end": {
 			batchSize: 100,
-			set1: newSliceUnloadedBatchSet(errors.New("something went wrong"), seriesChunkRefsSet{
+			set1: newSliceSeriesChunkRefsSetIterator(errors.New("something went wrong"), seriesChunkRefsSet{
 				series: []seriesChunkRefs{
 					{lset: labels.FromStrings("l1", "v1"), chunks: make([]seriesChunkRef, 1)},
 					{lset: labels.FromStrings("l1", "v2"), chunks: make([]seriesChunkRef, 1)},
 				},
 			}),
-			set2: newSliceUnloadedBatchSet(nil, seriesChunkRefsSet{
+			set2: newSliceSeriesChunkRefsSetIterator(nil, seriesChunkRefsSet{
 				series: []seriesChunkRefs{
 					{lset: labels.FromStrings("l1", "v2"), chunks: make([]seriesChunkRef, 1)},
 					{lset: labels.FromStrings("l1", "v3"), chunks: make([]seriesChunkRef, 1)},
@@ -298,13 +231,13 @@ func TestMergedBatchSet(t *testing.T) {
 		},
 		"should stop iterating as soon as the first underlying set returns an error": {
 			batchSize: 1, // Use a batch size of 1 in this test so that we can see when the iteration stops.
-			set1: newSliceUnloadedBatchSet(errors.New("something went wrong"), seriesChunkRefsSet{
+			set1: newSliceSeriesChunkRefsSetIterator(errors.New("something went wrong"), seriesChunkRefsSet{
 				series: []seriesChunkRefs{
 					{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[0]}},
 					{lset: labels.FromStrings("l1", "v3"), chunks: []seriesChunkRef{c[2]}},
 				},
 			}),
-			set2: newSliceUnloadedBatchSet(nil, seriesChunkRefsSet{
+			set2: newSliceSeriesChunkRefsSetIterator(nil, seriesChunkRefsSet{
 				series: []seriesChunkRefs{
 					{lset: labels.FromStrings("l1", "v2"), chunks: []seriesChunkRef{c[1]}},
 					{lset: labels.FromStrings("l1", "v4"), chunks: []seriesChunkRef{c[3]}},
@@ -325,12 +258,12 @@ func TestMergedBatchSet(t *testing.T) {
 		},
 		"should return merged chunks sorted by min time (assuming source sets have sorted chunks) on first chunk on first set": {
 			batchSize: 100,
-			set1: newSliceUnloadedBatchSet(nil, seriesChunkRefsSet{
+			set1: newSliceSeriesChunkRefsSetIterator(nil, seriesChunkRefsSet{
 				series: []seriesChunkRefs{
 					{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[1], c[3]}},
 				},
 			}),
-			set2: newSliceUnloadedBatchSet(nil, seriesChunkRefsSet{
+			set2: newSliceSeriesChunkRefsSetIterator(nil, seriesChunkRefsSet{
 				series: []seriesChunkRefs{
 					{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[0], c[2]}},
 				},
@@ -343,12 +276,12 @@ func TestMergedBatchSet(t *testing.T) {
 		},
 		"should return merged chunks sorted by min time (assuming source sets have sorted chunks) on first chunk on second set": {
 			batchSize: 100,
-			set1: newSliceUnloadedBatchSet(nil, seriesChunkRefsSet{
+			set1: newSliceSeriesChunkRefsSetIterator(nil, seriesChunkRefsSet{
 				series: []seriesChunkRefs{
 					{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[0], c[3]}},
 				},
 			}),
-			set2: newSliceUnloadedBatchSet(nil, seriesChunkRefsSet{
+			set2: newSliceSeriesChunkRefsSetIterator(nil, seriesChunkRefsSet{
 				series: []seriesChunkRefs{
 					{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[1], c[2]}},
 				},
@@ -374,7 +307,7 @@ func TestMergedBatchSet(t *testing.T) {
 				assert.NoError(t, mergedSet.Err())
 			}
 
-			assert.Len(t, batches, len(testCase.expectedBatches))
+			require.Len(t, batches, len(testCase.expectedBatches))
 			for batchIdx, expectedBatch := range testCase.expectedBatches {
 				assert.Len(t, batches[batchIdx].series, len(expectedBatch.series))
 				for expectedSeriesIdx, expectedSeries := range expectedBatch.series {
@@ -390,10 +323,10 @@ func TestPreloadingBatchSet(t *testing.T) {
 	test.VerifyNoLeak(t)
 
 	// Create some batches, each batch containing 1 series.
-	batches := make([]loadedBatch, 0, 10)
+	batches := make([]seriesChunksSet, 0, 10)
 	for i := 0; i < 10; i++ {
-		batches = append(batches, loadedBatch{
-			Entries: []seriesEntry{{
+		batches = append(batches, seriesChunksSet{
+			series: []seriesEntry{{
 				lset: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i)),
 				refs: []chunks.ChunkRef{chunks.ChunkRef(i)},
 			}},
@@ -403,7 +336,7 @@ func TestPreloadingBatchSet(t *testing.T) {
 	t.Run("should iterate all batches if no error occurs", func(t *testing.T) {
 		for preloadSize := 1; preloadSize <= len(batches)+1; preloadSize++ {
 			t.Run(fmt.Sprintf("preload size: %d", preloadSize), func(t *testing.T) {
-				source := newSliceLoadedBatchSet(nil, batches...)
+				source := newSliceSeriesChunksSetIterator(nil, batches...)
 				preloading := newPreloadingBatchSet(context.Background(), preloadSize, source)
 
 				// Ensure expected batches are returned in order.
@@ -424,7 +357,7 @@ func TestPreloadingBatchSet(t *testing.T) {
 	t.Run("should stop iterating once an error is found", func(t *testing.T) {
 		for preloadSize := 1; preloadSize <= len(batches)+1; preloadSize++ {
 			t.Run(fmt.Sprintf("preload size: %d", preloadSize), func(t *testing.T) {
-				source := newSliceLoadedBatchSet(errors.New("mocked error"), batches...)
+				source := newSliceSeriesChunksSetIterator(errors.New("mocked error"), batches...)
 				preloading := newPreloadingBatchSet(context.Background(), preloadSize, source)
 
 				// Ensure expected batches are returned in order.
@@ -445,7 +378,7 @@ func TestPreloadingBatchSet(t *testing.T) {
 	t.Run("should not leak preloading goroutine if caller doesn't iterated until the end of batches but context is canceled", func(t *testing.T) {
 		ctx, cancelCtx := context.WithCancel(context.Background())
 
-		source := newSliceLoadedBatchSet(errors.New("mocked error"), batches...)
+		source := newSliceSeriesChunksSetIterator(errors.New("mocked error"), batches...)
 		preloading := newPreloadingBatchSet(ctx, 1, source)
 
 		// Just call Next() once.
@@ -462,7 +395,7 @@ func TestPreloadingBatchSet(t *testing.T) {
 	t.Run("should not leak preloading goroutine if caller doesn't call Next() until false but context is canceled", func(t *testing.T) {
 		ctx, cancelCtx := context.WithCancel(context.Background())
 
-		source := newSliceLoadedBatchSet(errors.New("mocked error"), batches...)
+		source := newSliceSeriesChunksSetIterator(errors.New("mocked error"), batches...)
 		preloading := newPreloadingBatchSet(ctx, 1, source)
 
 		// Just call Next() once.
@@ -483,10 +416,10 @@ func TestPreloadingBatchSet_Concurrency(t *testing.T) {
 	)
 
 	// Create some batches.
-	batches := make([]loadedBatch, 0, numBatches)
+	batches := make([]seriesChunksSet, 0, numBatches)
 	for i := 0; i < numBatches; i++ {
-		batches = append(batches, loadedBatch{
-			Entries: []seriesEntry{{
+		batches = append(batches, seriesChunksSet{
+			series: []seriesEntry{{
 				lset: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i)),
 			}},
 		})
@@ -494,7 +427,7 @@ func TestPreloadingBatchSet_Concurrency(t *testing.T) {
 
 	// Run many times to increase the likelihood to find a race (if any).
 	for i := 0; i < numRuns; i++ {
-		source := newSliceLoadedBatchSet(errors.New("mocked error"), batches...)
+		source := newSliceSeriesChunksSetIterator(errors.New("mocked error"), batches...)
 		preloading := newPreloadingBatchSet(context.Background(), preloadSize, source)
 
 		for preloading.Next() {
@@ -559,25 +492,10 @@ func (l *limiter) Reserve(num uint64) error {
 	return nil
 }
 
-func readAllBatches(set unloadedBatchSet) []seriesChunkRefsSet {
+func readAllBatches(set seriesChunkRefsSetIterator) []seriesChunkRefsSet {
 	var batches []seriesChunkRefsSet
 	for set.Next() {
 		batches = append(batches, set.At())
 	}
 	return batches
-}
-
-func generateUnloadedChunks(num int) []seriesChunkRef {
-	out := make([]seriesChunkRef, 0, num)
-
-	for i := 0; i < num; i++ {
-		out = append(out, seriesChunkRef{
-			blockID: ulid.MustNew(uint64(i), nil),
-			ref:     chunks.ChunkRef(i),
-			minTime: int64(i),
-			maxTime: int64(i),
-		})
-	}
-
-	return out
 }
