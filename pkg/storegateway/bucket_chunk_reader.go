@@ -26,7 +26,7 @@ import (
 )
 
 // chunkSlicesPool is a pool of chunk slices.
-var chunkSlicesPool = newChunksSlicePool()
+var chkSlicePool = newChunkSlicePool()
 
 type bucketChunkReader struct {
 	ctx   context.Context
@@ -54,7 +54,7 @@ func (r *bucketChunkReader) Close() error {
 	r.block.pendingReaders.Done()
 
 	for _, sl := range r.chunkSlices {
-		chunkSlicesPool.put(sl)
+		chkSlicePool.put(sl)
 	}
 	return nil
 }
@@ -222,7 +222,7 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, a
 
 func (r *bucketChunkReader) getChunk() *storepb.Chunk {
 	if len(r.chunkSlices) == 0 || r.chunkSlices[len(r.chunkSlices)-1].isExhausted() {
-		r.chunkSlices = append(r.chunkSlices, chunkSlicesPool.get())
+		r.chunkSlices = append(r.chunkSlices, chkSlicePool.get())
 	}
 	return r.chunkSlices[len(r.chunkSlices)-1].next()
 }

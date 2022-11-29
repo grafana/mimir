@@ -67,8 +67,8 @@ type chunkSlicePool struct {
 	pool sync.Pool
 }
 
-// newChunksSlicePool creates a new chunks pool.
-func newChunksSlicePool() *chunkSlicePool {
+// newChunkSlicePool creates a new chunkSlicePool.
+func newChunkSlicePool() *chunkSlicePool {
 	return &chunkSlicePool{
 		pool: sync.Pool{
 			New: func() interface{} {
