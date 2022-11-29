@@ -128,7 +128,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 
 	req := createOTLPRequest(t, pmetricotlp.NewRequestFromMetrics(md), false)
 	resp := httptest.NewRecorder()
-	handler := OTLPHandler(100000, nil, false, nil, func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
+	handler := OTLPHandler(100000, nil, &mockSeparateMetricsLabelGetter{separateMetricsLabel: "abc"}, false, nil, func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
 		request, err := pushReq.WriteRequest()
 		assert.NoError(t, err)
 		assert.Len(t, request.Timeseries, 2)
@@ -154,7 +154,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 
 	req = createOTLPRequest(t, pmetricotlp.NewRequestFromMetrics(md), false)
 	resp = httptest.NewRecorder()
-	handler = OTLPHandler(100000, nil, false, nil, func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
+	handler = OTLPHandler(100000, nil, &mockSeparateMetricsLabelGetter{separateMetricsLabel: "abc"}, false, nil, func(ctx context.Context, pushReq *Request) (response *mimirpb.WriteResponse, err error) {
 		request, err := pushReq.WriteRequest()
 		assert.NoError(t, err)
 		assert.Len(t, request.Timeseries, 10) // 6 buckets (including +Inf) + 2 sum/count + 2 from the first case
