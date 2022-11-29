@@ -116,7 +116,11 @@ func TestReaders(t *testing.T) {
 			})
 
 			t.Run("lazy binary reader", func(t *testing.T) {
-				br, err := NewLazyBinaryReader(ctx, log.NewNopLogger(), nil, tmpDir, id, 3, Config{}, NewLazyBinaryReaderMetrics(nil), nil)
+				factory := func() (Reader, error) {
+					return NewBinaryReader(ctx, log.NewNopLogger(), nil, tmpDir, id, 3, Config{})
+				}
+
+				br, err := NewLazyBinaryReader(ctx, factory, log.NewNopLogger(), nil, tmpDir, id, NewLazyBinaryReaderMetrics(nil), nil)
 				require.NoError(t, err)
 				t.Cleanup(func() {
 					require.NoError(t, br.Close())
