@@ -37,16 +37,19 @@ type BufReader struct {
 	b       []byte
 }
 
-func NewBufReader(bs ByteSlice) *BufReader {
+func NewBufReader(bs ByteSlice) (*BufReader, error) {
 	b := bs.Range(0, bs.Len())
 	r := &BufReader{initial: b}
-	_ = r.Reset()
-	return r
+
+	if err := r.Reset(); err != nil {
+		return nil, err
+	}
+
+	return r, nil
 }
 
 func (b *BufReader) Reset() error {
-	b.b = b.initial
-	return nil
+	return b.ResetAt(0)
 }
 
 func (b *BufReader) ResetAt(off int) error {
@@ -149,10 +152,7 @@ func (f *FileReader) Read(n int) ([]byte, error) {
 		return nil, err
 	}
 
-	if r > 0 {
-		return b[:r], nil
-	}
-	return nil, nil
+	return b[:r], nil
 }
 
 func (f *FileReader) Len() int {

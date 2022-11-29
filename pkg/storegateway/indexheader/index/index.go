@@ -64,7 +64,11 @@ const symbolFactor = 32
 // bs should contain the Decbuf-encoded symbol table, including leading length and trailing checksum bytes.
 // symbolTablePosition should be the offset, from the beginning of the index file, of the symbol table.
 func NewSymbols(bs ByteSlice, version, symbolTablePosition int) (*Symbols, error) {
-	r := stream_encoding.NewBufReader(bs)
+	r, err := stream_encoding.NewBufReader(bs)
+	if err != nil {
+		return nil, err
+	}
+
 	s := &Symbols{
 		bs:                  bs,
 		r:                   r,

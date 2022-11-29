@@ -36,7 +36,13 @@ type Decbuf struct {
 }
 
 func NewDecbufAt(bs ByteSlice, off int, castagnoliTable *crc32.Table) Decbuf {
-	return NewDecbuf(NewBufReader(bs), off, castagnoliTable)
+	reader, err := NewBufReader(bs)
+
+	if err != nil {
+		return Decbuf{E: err}
+	}
+
+	return NewDecbuf(reader, off, castagnoliTable)
 }
 
 // NewDecbufAt returns a new decoding buffer. It expects the first 4 bytes
@@ -137,7 +143,13 @@ func NewDecbufUvarintAt(bs ByteSlice, off int, castagnoliTable *crc32.Table) Dec
 }
 */
 func NewDecbufRaw(bs ByteSlice) Decbuf {
-	return Decbuf{r: NewBufReader(bs)}
+	reader, err := NewBufReader(bs)
+
+	if err != nil {
+		return Decbuf{E: err}
+	}
+
+	return Decbuf{r: reader}
 }
 
 func NewDecbufRawReader(r Reader) Decbuf {
