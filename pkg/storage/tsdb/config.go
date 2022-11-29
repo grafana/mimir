@@ -296,7 +296,7 @@ type BucketStoreConfig struct {
 	PostingOffsetsInMemSampling int `yaml:"postings_offsets_in_mem_sampling" category:"advanced"`
 
 	// Controls experimental options for index-header file reading.
-	IndexHeader indexheader.BinaryReaderConfig `yaml:"index_header" category:"experimental"`
+	IndexHeader indexheader.Config `yaml:"index_header" category:"experimental"`
 
 	// Controls what to do when MaxConcurrent is exceeded: fail immediately or wait for a slot to run.
 	MaxConcurrentRejectOverLimit bool `yaml:"max_concurrent_reject_over_limit" category:"experimental"`

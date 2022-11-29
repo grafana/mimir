@@ -77,7 +77,7 @@ type LazyBinaryReader struct {
 	filepath                    string
 	id                          ulid.ULID
 	postingOffsetsInMemSampling int
-	cfg                         BinaryReaderConfig
+	cfg                         Config
 	metrics                     *LazyBinaryReaderMetrics
 	onClosed                    func(*LazyBinaryReader)
 
@@ -100,7 +100,7 @@ func NewLazyBinaryReader(
 	dir string,
 	id ulid.ULID,
 	postingOffsetsInMemSampling int,
-	cfg BinaryReaderConfig,
+	cfg Config,
 	metrics *LazyBinaryReaderMetrics,
 	onClosed func(*LazyBinaryReader),
 ) (*LazyBinaryReader, error) {

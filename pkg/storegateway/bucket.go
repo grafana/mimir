@@ -123,7 +123,7 @@ type BucketStore struct {
 	postingOffsetsInMemSampling int
 
 	// Additional configuration for experimental indexheader.BinaryReader behaviour.
-	indexHeaderCfg indexheader.BinaryReaderConfig
+	indexHeaderCfg indexheader.Config
 }
 
 type noopCache struct{}
@@ -219,7 +219,7 @@ func NewBucketStore(
 	partitioner Partitioner,
 	blockSyncConcurrency int,
 	postingOffsetsInMemSampling int,
-	indexHeaderCfg indexheader.BinaryReaderConfig,
+	indexHeaderCfg indexheader.Config,
 	lazyIndexReaderEnabled bool,
 	lazyIndexReaderIdleTimeout time.Duration,
 	seriesHashCache *hashcache.SeriesHashCache,
