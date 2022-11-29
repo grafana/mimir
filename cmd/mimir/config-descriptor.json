@@ -5696,22 +5696,11 @@
             },
             {
               "kind": "field",
-              "name": "batched_series_loading",
+              "name": "streaming_series_batch_size",
               "required": false,
-              "desc": "If enabled, store-gateway will load series from the store in batches instead of loading them all in memory.",
+              "desc": "If larger than 0, store-gateway will load series from the store in batches and stream them to the querier instead of loading them all in memory. This option controls how many series to fetch per batch",
               "fieldValue": null,
-              "fieldDefaultValue": false,
-              "fieldFlag": "blocks-storage.bucket-store.batched-series-loading",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "batch_series_size",
-              "required": false,
-              "desc": "How many series to fetch per batch when batched-series-loading is enabled.",
-              "fieldValue": null,
-              "fieldDefaultValue": 65536,
+              "fieldDefaultValue": 0,
               "fieldFlag": "blocks-storage.bucket-store.batch-series-size",
               "fieldType": "int",
               "fieldCategory": "experimental"
