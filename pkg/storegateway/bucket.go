@@ -549,16 +549,16 @@ func (s *bucketSeriesSet) Err() error {
 // block to make the result cacheable.
 func blockSeries(
 	ctx context.Context,
-	indexr *bucketIndexReader, // Index reader for block.
-	chunkr *bucketChunkReader, // Chunk reader for block.
-	matchers []*labels.Matcher, // Series matchers.
-	shard *sharding.ShardSelector, // Shard selector.
+	indexr *bucketIndexReader,                       // Index reader for block.
+	chunkr *bucketChunkReader,                       // Chunk reader for block.
+	matchers []*labels.Matcher,                      // Series matchers.
+	shard *sharding.ShardSelector,                   // Shard selector.
 	seriesHashCache *hashcache.BlockSeriesHashCache, // Block-specific series hash cache (used only if shard selector is specified).
-	chunksLimiter ChunksLimiter, // Rate limiter for loading chunks.
-	seriesLimiter SeriesLimiter, // Rate limiter for loading series.
-	skipChunks bool, // If true, chunks are not loaded and minTime/maxTime are ignored.
-	minTime, maxTime int64, // Series must have data in this time range to be returned (ignored if skipChunks=true).
-	loadAggregates []storepb.Aggr, // List of aggregates to load when loading chunks.
+	chunksLimiter ChunksLimiter,                     // Rate limiter for loading chunks.
+	seriesLimiter SeriesLimiter,                     // Rate limiter for loading series.
+	skipChunks bool,                                 // If true, chunks are not loaded and minTime/maxTime are ignored.
+	minTime, maxTime int64,                          // Series must have data in this time range to be returned (ignored if skipChunks=true).
+	loadAggregates []storepb.Aggr,                   // List of aggregates to load when loading chunks.
 	logger log.Logger,
 ) (storepb.SeriesSet, *safeQueryStats, error) {
 	span, ctx := tracing.StartSpan(ctx, "blockSeries()")
