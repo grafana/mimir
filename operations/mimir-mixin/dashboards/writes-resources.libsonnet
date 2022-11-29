@@ -19,7 +19,7 @@ local filename = 'mimir-writes-resources.json';
         { yaxes: $.yaxes('bytes') },
       )
       .addPanel(
-        $.containerGoHeapInUsePanel($._config.instance_names.write, $._config.container_names.write) +
+        $.containerGoHeapInUsePanelByComponent('write') +
         $.stack,
       )
     )
@@ -27,25 +27,25 @@ local filename = 'mimir-writes-resources.json';
       $._config.gateway_enabled,
       $.row('Gateway')
       .addPanel(
-        $.containerCPUUsagePanel($._config.instance_names.gateway, $._config.container_names.gateway),
+        $.containerCPUUsagePanelByComponent('gateway'),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel($._config.instance_names.gateway, $._config.container_names.gateway),
+        $.containerMemoryWorkingSetPanelByComponent('gateway'),
       )
       .addPanel(
-        $.containerGoHeapInUsePanel($._config.instance_names.gateway, $._config.container_names.gateway),
+        $.containerGoHeapInUsePanelByComponent('gateway'),
       )
     )
     .addRow(
       $.row('Distributor')
       .addPanel(
-        $.containerCPUUsagePanel($._config.instance_names.distributor, $._config.container_names.distributor),
+        $.containerCPUUsagePanelByComponent('distributor'),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel($._config.instance_names.distributor, $._config.container_names.distributor),
+        $.containerMemoryWorkingSetPanelByComponent('distributor'),
       )
       .addPanel(
-        $.containerGoHeapInUsePanel($._config.instance_names.distributor, $._config.container_names.distributor),
+        $.containerGoHeapInUsePanelByComponent('distributor'),
       )
     )
     .addRow(
@@ -62,31 +62,31 @@ local filename = 'mimir-writes-resources.json';
         },
       )
       .addPanel(
-        $.containerCPUUsagePanel($._config.instance_names.ingester, $._config.container_names.ingester),
+        $.containerCPUUsagePanelByComponent('ingester'),
       )
     )
     .addRow(
       $.row('')
       .addPanel(
-        $.containerMemoryRSSPanel($._config.instance_names.ingester, $._config.container_names.ingester),
+        $.containerMemoryRSSPanelByComponent('ingester'),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel($._config.instance_names.ingester, $._config.container_names.ingester),
+        $.containerMemoryWorkingSetPanelByComponent('ingester'),
       )
       .addPanel(
-        $.containerGoHeapInUsePanel($._config.instance_names.ingester, $._config.container_names.ingester),
+        $.containerGoHeapInUsePanelByComponent('ingester'),
       )
     )
     .addRow(
       $.row('')
       .addPanel(
-        $.containerDiskWritesPanel($._config.instance_names.ingester, $._config.container_names.ingester)
+        $.containerDiskWritesPanelByComponent('ingester')
       )
       .addPanel(
-        $.containerDiskReadsPanel($._config.instance_names.ingester, $._config.container_names.ingester)
+        $.containerDiskReadsPanelByComponent('ingester')
       )
       .addPanel(
-        $.containerDiskSpaceUtilization($._config.instance_names.ingester, $._config.container_names.ingester),
+        $.containerDiskSpaceUtilizationPanelByComponent('ingester'),
       )
     )
     + {
