@@ -29,10 +29,6 @@ type Reader interface {
 
 	// Len returns the remaining number of bytes in the underlying store.
 	Len() int
-
-	// TODO: Add Seek method here to allow us to skip bytes without
-	//  needing to read them or allocate? Easy to implement for BufReader
-	//  and supported by bufio.Reader used in FileReader via Discard()
 }
 
 type BufReader struct {
