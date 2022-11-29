@@ -30,6 +30,7 @@
 * [ENHANCEMENT] Move the validation of incoming series before the distributor's forwarding functionality, so that we don't forward invalid series. #3386 #3458
 * [ENHANCEMENT] S3 bucket configuration now validates that the endpoint does not have the bucket name prefix. #3414
 * [ENHANCEMENT] Ruler: Added `ruler.tls-enabled` configuration for alertmanager client. #3432
+* [ENHANCEMENT] Activity tracker logs now have `component=activity-tracker` label. #3556
 * [BUGFIX] Flusher: Add `Overrides` as a dependency to prevent panics when starting with `-target=flusher`. #3151
 * [BUGFIX] Updated `golang.org/x/text` dependency to fix CVE-2022-32149. #3285
 * [BUGFIX] Query-frontend: properly close gRPC streams to the query-scheduler to stop memory and goroutines leak. #3302

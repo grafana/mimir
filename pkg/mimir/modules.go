@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/dns"
 	"github.com/grafana/dskit/kv/codec"
@@ -132,7 +133,7 @@ func (t *Mimir) initActivityTracker() (services.Service, error) {
 
 	entries, err := activitytracker.LoadUnfinishedEntries(t.Cfg.ActivityTracker.Filepath)
 
-	l := util_log.Logger
+	l := log.With(util_log.Logger, "component", "activity-tracker")
 	if err != nil {
 		level.Warn(l).Log("msg", "failed to fully read file with unfinished activities", "err", err)
 	}
