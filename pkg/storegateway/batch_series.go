@@ -330,10 +330,13 @@ func (s *BucketStore) batchSetsForBlocks(ctx context.Context, req *storepb.Serie
 		return nil, nil, cleanup, err
 	}
 
+	getAllDuration := time.Since(begin)
 	stats.update(func(stats *queryStats) {
 		stats.blocksQueried = len(batches)
-		stats.getAllDuration = time.Since(begin)
+		stats.getAllDuration = getAllDuration
 	})
+	s.metrics.seriesGetAllDuration.Observe(getAllDuration.Seconds())
+	s.metrics.seriesBlocksQueried.Observe(float64(len(batches)))
 
 	mergedBatches := mergedBatchSets(s.maxSeriesPerBatch, batches...)
 	var set storepb.SeriesSet
