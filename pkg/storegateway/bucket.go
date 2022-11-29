@@ -913,14 +913,10 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 
 	if s.maxSeriesPerBatch <= 0 {
 		seriesSets, cleanup, err = s.synchronousSeriesSet(ctx, req, stats, blocks, indexReaders, chunkr, resHints, shardSelector, matchers, chunksLimiter, seriesLimiter)
-		if cleanup != nil {
-			defer cleanup()
-		}
 	} else {
 		var readers *chunkReaders
 		if !req.SkipChunks {
 			readers = newChunkReaders(chunkr, chunkBytes, s.chunkPool)
-			defer runutil.CloseWithLogOnErr(s.logger, readers, "chunk readers")
 		}
 
 		seriesSets, resHints, cleanup, err = s.batchSetsForBlocks(ctx, req, blocks, indexReaders, readers, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
