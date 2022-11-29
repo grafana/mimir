@@ -875,6 +875,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 	span, ctx := tracing.StartSpan(ctx, "bucket_store_preload_all")
 
 	blocks, indexReaders, chunkReaders := s.openBlocksForReading(ctx, req.SkipChunks, req.MinTime, req.MaxTime, req.MaxResolutionWindow, reqBlockMatchers, chunkBytes)
+	// We must keep the readers open until all their data has been sent.
 	for _, r := range indexReaders {
 		defer runutil.CloseWithLogOnErr(s.logger, r, "close block index reader")
 	}
@@ -971,9 +972,9 @@ func (s *BucketStore) synchronousSeriesSet(
 	seriesLimiter SeriesLimiter,
 ) ([]storepb.SeriesSet, func(), error) {
 	var (
+		resMtx   sync.Mutex
 		res      []storepb.SeriesSet
 		cleanups []func()
-		mtx      sync.Mutex
 	)
 	g, ctx := errgroup.WithContext(ctx)
 
@@ -983,7 +984,6 @@ func (s *BucketStore) synchronousSeriesSet(
 		// Keep track of queried blocks.
 		resHints.AddQueriedBlock(b.meta.ULID)
 
-		// We must keep the readers open until all their data has been sent.
 		indexr := indexReaders[b.meta.ULID]
 		chunkr := chunkReaders[b.meta.ULID]
 
@@ -1014,9 +1014,9 @@ func (s *BucketStore) synchronousSeriesSet(
 			}
 
 			stats.merge(pstats.export())
-			mtx.Lock()
+			resMtx.Lock()
 			res = append(res, part)
-			mtx.Unlock()
+			resMtx.Unlock()
 
 			return nil
 		})
