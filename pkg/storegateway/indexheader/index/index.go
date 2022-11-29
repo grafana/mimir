@@ -43,7 +43,9 @@ type ByteSlice interface {
 
 type Symbols struct {
 	// TODO: we shouldn't be sharing a single file descriptor here, as we will use it from multiple goroutines simultaneously -
-	// pass in file path and create readers when required?
+	//  pass in file path and create readers when required? Or pass in a Reader factory: `func() Reader` that we call to create
+	//  a new reader whenever needed. This could open the file fresh for the FileReader case. This also opens up the possibility
+	//  of pooling the `bufio.Reader`s to avoid allocating when they're created.
 	f           *os.File
 	version     int
 	tableLength int
@@ -149,27 +151,21 @@ func (s Symbols) ReverseLookup(sym string) (uint32, error) {
 		return 0, errors.Errorf("unknown symbol %q - no symbols", sym)
 	}
 
-	i := sort.Search(len(s.offsets), func(i int) bool {
-		// TODO: don't create a new Decbuf instance for every call of this function -
-		// instead, add a Seek() method to Decbuf and use the one instance for the entirety of ReverseLookup()
-		d, err := s.newRawDecbuf()
-		if err != nil {
-			panic(err)
-		}
-
-		d.Skip(s.offsets[i])
-		return yoloString(d.UvarintBytes()) > sym
-	})
-
 	d, err := s.newRawDecbuf()
 	if err != nil {
 		return 0, err
 	}
 
+	i := sort.Search(len(s.offsets), func(i int) bool {
+		d.ResetAt(s.offsets[i])
+		return yoloString(d.UvarintBytes()) > sym
+	})
+
 	if i > 0 {
 		i--
 	}
-	d.Skip(s.offsets[i])
+
+	d.ResetAt(s.offsets[i])
 	res := i * symbolFactor
 	var lastLen int
 	var lastSymbol string

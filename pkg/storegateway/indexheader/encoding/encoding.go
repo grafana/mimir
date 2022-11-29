@@ -202,6 +202,19 @@ func (d *Decbuf) Skip(l int) {
 		return
 	}
 }
+// ResetAt sets the pointer of the underlying Reader to the absolute
+// offset and discards any buffered data. If E is non-nil, this method has
+// no effect.
+func (d *Decbuf) ResetAt(off int) {
+	if d.E != nil {
+		return
+	}
+
+	err := d.r.ResetAt(off)
+	if err != nil {
+		d.E = err
+	}
+}
 
 func (d *Decbuf) UvarintStr() string {
 	return string(d.UvarintBytes())
