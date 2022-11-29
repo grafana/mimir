@@ -12,7 +12,6 @@
 * [CHANGE] The default value of `-server.http-write-timeout` has changed from 30s to 2m. #3346
 * [CHANGE] Reduce period of health checks in connection pools for querier->store-gateway, ruler->ruler, and alertmanager->alertmanager clients to 10s. This reduces the time to fail a gRPC call when the remote stops responding. #3168
 * [CHANGE] Hide TSDB block ranges period config from doc and mark it experimental. #3518
-* [CHANGE] Chore: use upstream rules.SendAlerts(). #3271
 * [FEATURE] Alertmanager: added Discord support. #3309
 * [ENHANCEMENT] Added `-server.tls-min-version` and `-server.tls-cipher-suites` flags to configure cipher suites and min TLS version supported by HTTP and gRPC servers. #2898
 * [ENHANCEMENT] Distributor: Add age filter to forwarding functionality, to not forward samples which are older than defined duration. If such samples are not ingested, `cortex_discarded_samples_total{reason="forwarded-sample-too-old"}` is increased. #3049 #3113
@@ -23,7 +22,7 @@
 * [ENHANCEMENT] Added `-usage-stats.installation-mode` configuration to track the installation mode via the anonymous usage statistics. #3244
 * [ENHANCEMENT] Compactor: Add new `cortex_compactor_block_max_time_delta_seconds` histogram for detecting if compaction of blocks is lagging behind. #3240 #3429
 * [ENHANCEMENT] Ingester: reduced the memory footprint of active series custom trackers. #2568
-* [ENHANCEMENT] Distributor: Include `X-Scope-OrgId` header in requests forwarded to configured forwarding endpoint. #3283
+* [ENHANCEMENT] Distributor: Include `X-Scope-OrgId` header in requests forwarded to configured forwarding endpoint. #3283 #3385
 * [ENHANCEMENT] Alertmanager: reduced memory utilization in Mimir clusters with a large number of tenants. #3309
 * [ENHANCEMENT] Add experimental flag `-shutdown-delay` to allow components to wait after receiving SIGTERM and before stopping. In this time the component returns 503 from /ready endpoint. #3298
 * [ENHANCEMENT] Go: update to go 1.19.3. #3371
@@ -33,7 +32,7 @@
 * [ENHANCEMENT] Store-gateway: improved performance of series matching. #3391
 * [ENHANCEMENT] Move the validation of incoming series before the distributor's forwarding functionality, so that we don't forward invalid series. #3386 #3458
 * [ENHANCEMENT] S3 bucket configuration now validates that the endpoint does not have the bucket name prefix. #3414
-* [ENHANCEMENT] Store-gateway: index stats response. #3206
+* [ENHANCEMENT] Query-frontend: added "fetched index bytes" to query statistics, so that the statistics contain the total bytes read by store-gateways from TSDB block indexes. #3206
 * [ENHANCEMENT] Distributor: push wrapper should only receive unforwarded samples. #2980
 * [ENHANCEMENT] Ruler: Added `ruler.tls-enabled` configuration for alertmanager client. #3432
 * [ENHANCEMENT] Activity tracker logs now have `component=activity-tracker` label. #3556
@@ -43,7 +42,6 @@
 * [BUGFIX] Ruler: persist evaluation delay configured in the rulegroup. #3392
 * [BUGFIX] Ring status pages: show 100% ownership as "100%", not "1e+02%". #3435
 * [BUGFIX] Fix panics in OTLP ingest path when parse errors exist. #3538
-* [BUGFIX] Canonicalize orgid header in forwarding. #3385
 
 ### Mixin
 
@@ -158,7 +156,6 @@
 * [FEATURE] Add `copyblocks` tool, to copy Mimir blocks between two GCS buckets. #3264
 * [ENHANCEMENT] copyblocks: copy no-compact global markers and optimize min time filter check. #3268
 * [ENHANCEMENT] Mimir rules GitHub action: Added the ability to change default value of `label` when running `prepare` command. #3236
-* [ENHANCEMENT] Use delve compatible with Go 1.19.2. #3166
 * [BUGFIX] Mimir rules Github action: Fix single line output. #3421
 
 ## 2.4.0
