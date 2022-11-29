@@ -13,9 +13,10 @@ import (
 
 	"github.com/grafana/dskit/multierror"
 	"github.com/oklog/ulid"
-	"github.com/thanos-io/thanos/pkg/block"
-	"github.com/thanos-io/thanos/pkg/block/metadata"
-	"github.com/thanos-io/thanos/pkg/objstore"
+	"github.com/thanos-io/objstore"
+
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
 // globalMarkersBucket is a bucket client which stores markers (eg. block deletion marks) in a per-tenant

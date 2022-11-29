@@ -1,0 +1,22 @@
+---
+# Source: mimir-distributed/templates/gateway/gateway-route.yaml
+kind: Route
+apiVersion: route.openshift.io/v1
+metadata:
+  name: gateway-enterprise-values-mimir-gateway
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: gateway-enterprise-values
+    app.kubernetes.io/component: gateway
+    app.kubernetes.io/managed-by: Helm
+  namespace: "citestns"
+spec:
+  host: mimir.example.com
+  to:
+    kind: Service
+    name: gateway-enterprise-values-mimir-gateway
+    weight: 100
+  port:
+    targetPort: http-metric
+  tls:
+    termination: edge

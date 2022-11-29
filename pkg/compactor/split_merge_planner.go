@@ -6,7 +6,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/thanos-io/thanos/pkg/block/metadata"
+	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
 type SplitAndMergePlanner struct {

@@ -9,6 +9,8 @@ metadata:
     heritage: Helm
     release: test-enterprise-legacy-label-values
   namespace: "citestns"
+  annotations:
+    "seccomp.security.alpha.kubernetes.io/allowedProfileNames": runtime/default
 spec:
   privileged: false
   allowPrivilegeEscalation: false

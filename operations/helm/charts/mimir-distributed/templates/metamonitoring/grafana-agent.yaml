@@ -15,13 +15,29 @@ metadata:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
-  serviceAccountName: {{ include "mimir.resourceName" (dict "ctx" $ "component" "grafana-agent") }}
+  serviceAccountName: {{ include "mimir.serviceAccountName" $ }}
+  {{- with .podSecurityContext }}
+  securityContext:
+    {{- . | toYaml | nindent 4 }}
+  {{- end }}
+  {{- with .containerSecurityContext }}
+  containers:
+    # The container specs here are merged with the ones in the operator using a strategic merge patch.
+    - name: config-reloader
+      securityContext:
+        {{- . | toYaml | nindent 8 }}
+    - name: grafana-agent
+      securityContext:
+        {{- . | toYaml | nindent 8 }}
+  {{- end }}
+
   logs:
     instanceSelector:
       matchLabels:
         {{- include "mimir.selectorLabels" (dict "ctx" $ "component" "meta-monitoring") | nindent 8 }}
     # cluster label for logs is added in the LogsInstance
   metrics:
+    scrapeInterval: {{ .metrics.scrapeInterval }}
     instanceSelector:
       matchLabels:
         {{- include "mimir.selectorLabels" (dict "ctx" $ "component" "meta-monitoring") | nindent 8 }}

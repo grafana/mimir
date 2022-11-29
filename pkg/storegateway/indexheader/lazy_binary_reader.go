@@ -21,8 +21,9 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"go.uber.org/atomic"
 
-	"github.com/thanos-io/thanos/pkg/block"
-	"github.com/thanos-io/thanos/pkg/objstore"
+	"github.com/thanos-io/objstore"
+
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
 var (
@@ -187,7 +188,7 @@ func (r *LazyBinaryReader) LookupSymbol(o uint32) (string, error) {
 }
 
 // LabelValues implements Reader.
-func (r *LazyBinaryReader) LabelValues(name string) ([]string, error) {
+func (r *LazyBinaryReader) LabelValues(name string, filter func(string) bool) ([]string, error) {
 	r.readerMx.RLock()
 	defer r.readerMx.RUnlock()
 
@@ -196,7 +197,7 @@ func (r *LazyBinaryReader) LabelValues(name string) ([]string, error) {
 	}
 
 	r.usedAt.Store(time.Now().UnixNano())
-	return r.reader.LabelValues(name)
+	return r.reader.LabelValues(name, filter)
 }
 
 // LabelNames implements Reader.

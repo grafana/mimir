@@ -438,39 +438,12 @@ func TestMergeQueryable_Select(t *testing.T) {
 					name:                "should return all series when no matchers are provided",
 					expectedSeriesCount: 6,
 					expectedLabels: []labels.Labels{
-						{
-							{Name: "__tenant_id__", Value: "team-a"},
-							{Name: "instance", Value: "host1"},
-							{Name: "original___tenant_id__", Value: "original-value"},
-							{Name: "tenant-team-a", Value: "static"},
-						},
-						{
-							{Name: "__tenant_id__", Value: "team-a"},
-							{Name: "instance", Value: "host2.team-a"},
-							{Name: "original___tenant_id__", Value: "original-value"},
-						},
-						{
-							{Name: "__tenant_id__", Value: "team-b"},
-							{Name: "instance", Value: "host1"},
-							{Name: "original___tenant_id__", Value: "original-value"},
-							{Name: "tenant-team-b", Value: "static"},
-						},
-						{
-							{Name: "__tenant_id__", Value: "team-b"},
-							{Name: "instance", Value: "host2.team-b"},
-							{Name: "original___tenant_id__", Value: "original-value"},
-						},
-						{
-							{Name: "__tenant_id__", Value: "team-c"},
-							{Name: "instance", Value: "host1"},
-							{Name: "original___tenant_id__", Value: "original-value"},
-							{Name: "tenant-team-c", Value: "static"},
-						},
-						{
-							{Name: "__tenant_id__", Value: "team-c"},
-							{Name: "instance", Value: "host2.team-c"},
-							{Name: "original___tenant_id__", Value: "original-value"},
-						},
+						labels.FromStrings("__tenant_id__", "team-a", "instance", "host1", "original___tenant_id__", "original-value", "tenant-team-a", "static"),
+						labels.FromStrings("__tenant_id__", "team-a", "instance", "host2.team-a", "original___tenant_id__", "original-value"),
+						labels.FromStrings("__tenant_id__", "team-b", "instance", "host1", "original___tenant_id__", "original-value", "tenant-team-b", "static"),
+						labels.FromStrings("__tenant_id__", "team-b", "instance", "host2.team-b", "original___tenant_id__", "original-value"),
+						labels.FromStrings("__tenant_id__", "team-c", "instance", "host1", "original___tenant_id__", "original-value", "tenant-team-c", "static"),
+						labels.FromStrings("__tenant_id__", "team-c", "instance", "host2.team-c", "original___tenant_id__", "original-value"),
 					},
 				},
 				{
@@ -889,30 +862,30 @@ func TestSetLabelsRetainExisting(t *testing.T) {
 	}{
 		// Test adding labels at the end.
 		{
-			labels:           labels.Labels{{Name: "a", Value: "b"}},
-			additionalLabels: labels.Labels{{Name: "c", Value: "d"}},
-			expected:         labels.Labels{{Name: "a", Value: "b"}, {Name: "c", Value: "d"}},
+			labels:           labels.FromStrings("a", "b"),
+			additionalLabels: labels.FromStrings("c", "d"),
+			expected:         labels.FromStrings("a", "b", "c", "d"),
 		},
 
 		// Test adding labels at the beginning.
 		{
-			labels:           labels.Labels{{Name: "c", Value: "d"}},
-			additionalLabels: labels.Labels{{Name: "a", Value: "b"}},
-			expected:         labels.Labels{{Name: "a", Value: "b"}, {Name: "c", Value: "d"}},
+			labels:           labels.FromStrings("c", "d"),
+			additionalLabels: labels.FromStrings("a", "b"),
+			expected:         labels.FromStrings("a", "b", "c", "d"),
 		},
 
 		// Test we do override existing labels and expose the original value.
 		{
-			labels:           labels.Labels{{Name: "a", Value: "b"}},
-			additionalLabels: labels.Labels{{Name: "a", Value: "c"}},
-			expected:         labels.Labels{{Name: "a", Value: "c"}, {Name: "original_a", Value: "b"}},
+			labels:           labels.FromStrings("a", "b"),
+			additionalLabels: labels.FromStrings("a", "c"),
+			expected:         labels.FromStrings("a", "c", "original_a", "b"),
 		},
 
 		// Test we do override existing labels but don't do it recursively.
 		{
-			labels:           labels.Labels{{Name: "a", Value: "b"}, {Name: "original_a", Value: "i am lost"}},
-			additionalLabels: labels.Labels{{Name: "a", Value: "d"}},
-			expected:         labels.Labels{{Name: "a", Value: "d"}, {Name: "original_a", Value: "b"}},
+			labels:           labels.FromStrings("a", "b", "original_a", "i am lost"),
+			additionalLabels: labels.FromStrings("a", "d"),
+			expected:         labels.FromStrings("a", "d", "original_a", "b"),
 		},
 	} {
 		assert.Equal(t, tc.expected, setLabelsRetainExisting(tc.labels, tc.additionalLabels...))

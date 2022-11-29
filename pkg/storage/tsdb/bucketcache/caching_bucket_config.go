@@ -8,7 +8,7 @@ package bucketcache
 import (
 	"time"
 
-	"github.com/thanos-io/thanos/pkg/objstore"
+	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/cache"
 )

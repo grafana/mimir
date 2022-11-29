@@ -1,0 +1,19 @@
+---
+# Source: mimir-distributed/templates/ingester/ingester-pdb.yaml
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: small-values-mimir-ingester
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: small-values
+    app.kubernetes.io/component: ingester
+    app.kubernetes.io/managed-by: Helm
+  namespace: "citestns"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: small-values
+      app.kubernetes.io/component: ingester
+  maxUnavailable: 1

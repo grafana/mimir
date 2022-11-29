@@ -13,8 +13,6 @@ Usage of ./cmd/mimir/mimir:
     	Azure storage endpoint suffix without schema. The account name will be prefixed to this value to create the FQDN. If set to empty string, default endpoint suffix is used.
   -alertmanager-storage.azure.max-retries int
     	Number of retries for recoverable errors (default 20)
-  -alertmanager-storage.azure.msi-resource string
-    	If set, this URL is used instead of https://<storage-account-name>.<endpoint-suffix> for obtaining ServicePrincipalToken from MSI.
   -alertmanager-storage.azure.user-assigned-id string
     	User assigned identity. If empty, then System assigned identity is used.
   -alertmanager-storage.backend string
@@ -263,8 +261,6 @@ Usage of ./cmd/mimir/mimir:
     	Azure storage endpoint suffix without schema. The account name will be prefixed to this value to create the FQDN. If set to empty string, default endpoint suffix is used.
   -blocks-storage.azure.max-retries int
     	Number of retries for recoverable errors (default 20)
-  -blocks-storage.azure.msi-resource string
-    	If set, this URL is used instead of https://<storage-account-name>.<endpoint-suffix> for obtaining ServicePrincipalToken from MSI.
   -blocks-storage.azure.user-assigned-id string
     	User assigned identity. If empty, then System assigned identity is used.
   -blocks-storage.backend string
@@ -484,7 +480,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.swift.username string
     	OpenStack Swift username.
   -blocks-storage.tsdb.block-ranges-period comma-separated-list-of-durations
-    	TSDB blocks range period. (default 2h0m0s)
+    	[experimental] TSDB blocks range period. (default 2h0m0s)
   -blocks-storage.tsdb.close-idle-tsdb-timeout duration
     	If TSDB has not received any data for this duration, and all blocks from TSDB have been shipped, TSDB is closed and deleted from local disk. If set to positive value, this value should be equal or higher than -querier.query-ingesters-within flag to make sure that TSDB is not closed prematurely, which could cause partial query results. 0 or negative value disables closing of idle TSDB. (default 13h0m0s)
   -blocks-storage.tsdb.dir string
@@ -509,8 +505,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] True to enable snapshotting of in-memory TSDB data on disk when shutting down.
   -blocks-storage.tsdb.out-of-order-capacity-max int
     	[experimental] Maximum capacity for out of order chunks, in samples between 1 and 255. (default 32)
-  -blocks-storage.tsdb.out-of-order-capacity-min int
-    	[experimental] Minimum capacity for out-of-order chunks, in samples between 0 and 255. (default 4)
   -blocks-storage.tsdb.retention-period duration
     	TSDB blocks retention in the ingester before a block is removed, relative to the newest block written for the tenant. This should be larger than the -blocks-storage.tsdb.block-ranges-period, -querier.query-store-after and large enough to give store-gateways and queriers enough time to discover newly uploaded blocks. (default 24h0m0s)
   -blocks-storage.tsdb.series-hash-cache-max-size-bytes uint
@@ -535,8 +529,6 @@ Usage of ./cmd/mimir/mimir:
     	Azure storage endpoint suffix without schema. The account name will be prefixed to this value to create the FQDN. If set to empty string, default endpoint suffix is used.
   -common.storage.azure.max-retries int
     	Number of retries for recoverable errors (default 20)
-  -common.storage.azure.msi-resource string
-    	If set, this URL is used instead of https://<storage-account-name>.<endpoint-suffix> for obtaining ServicePrincipalToken from MSI.
   -common.storage.azure.user-assigned-id string
     	User assigned identity. If empty, then System assigned identity is used.
   -common.storage.backend string
@@ -1515,8 +1507,6 @@ Usage of ./cmd/mimir/mimir:
     	Azure storage endpoint suffix without schema. The account name will be prefixed to this value to create the FQDN. If set to empty string, default endpoint suffix is used.
   -ruler-storage.azure.max-retries int
     	Number of retries for recoverable errors (default 20)
-  -ruler-storage.azure.msi-resource string
-    	If set, this URL is used instead of https://<storage-account-name>.<endpoint-suffix> for obtaining ServicePrincipalToken from MSI.
   -ruler-storage.azure.user-assigned-id string
     	User assigned identity. If empty, then System assigned identity is used.
   -ruler-storage.backend string
@@ -1626,7 +1616,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler.alertmanager-refresh-interval duration
     	How long to wait between refreshing DNS resolutions of Alertmanager hosts. (default 1m0s)
   -ruler.alertmanager-url string
-    	Comma-separated list of URL(s) of the Alertmanager(s) to send notifications to. Each URL is treated as a separate group. Multiple Alertmanagers in HA per group can be supported by using DNS service discovery format. Basic auth is supported as part of the URL.
+    	Comma-separated list of URL(s) of the Alertmanager(s) to send notifications to. Each URL is treated as a separate group. Multiple Alertmanagers in HA per group can be supported by using DNS service discovery format, comprehensive of the scheme. Basic auth is supported as part of the URL.
   -ruler.client.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -ruler.client.backoff-min-period duration
@@ -1801,6 +1791,8 @@ Usage of ./cmd/mimir/mimir:
     	Enable running rule groups against multiple tenants. The tenant IDs involved need to be in the rule group's 'source_tenants' field. If this flag is set to 'false' when there are already created federated rule groups, then these rules groups will be skipped during evaluations.
   -ruler.tenant-shard-size int
     	The tenant's shard size when sharding is used by ruler. Value of 0 disables shuffle sharding for the tenant, and tenant rules will be sharded across all ruler replicas.
+  -ruler.tls-enabled
+    	Enable TLS for gRPC client connecting to alertmanager. (default true)
   -runtime-config.file comma-separated-list-of-strings
     	Comma separated list of yaml files with the configuration that can be updated at runtime. Runtime config files will be merged from left to right.
   -runtime-config.reload-period duration
@@ -1864,7 +1856,7 @@ Usage of ./cmd/mimir/mimir:
   -server.http-tls-key-path string
     	HTTP server key path.
   -server.http-write-timeout duration
-    	Write timeout for HTTP server (default 30s)
+    	Write timeout for HTTP server (default 2m0s)
   -server.log-request-at-info-level-enabled
     	Optionally log requests at info level instead of debug level.
   -server.log-source-ips-enabled
@@ -1877,6 +1869,12 @@ Usage of ./cmd/mimir/mimir:
     	Base path to serve all API routes from (e.g. /v1/)
   -server.register-instrumentation
     	Register the intrumentation handlers (/metrics etc). (default true)
+  -server.tls-cipher-suites string
+    	Comma-separated list of cipher suites to use. If blank, the default Go cipher suites is used.
+  -server.tls-min-version string
+    	Minimum TLS version to use. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13. If blank, the Go TLS minimum version is used.
+  -shutdown-delay duration
+    	[experimental] How long to wait between SIGTERM and shutdown. After receiving SIGTERM, Mimir will report not-ready status via /ready endpoint.
   -store-gateway.sharding-ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -store-gateway.sharding-ring.consul.cas-retry-delay duration
@@ -1967,6 +1965,8 @@ Usage of ./cmd/mimir/mimir:
     	If enabled on all services, queries can be federated across multiple tenants. The tenant IDs involved need to be specified separated by a '|' character in the 'X-Scope-OrgID' header.
   -usage-stats.enabled
     	[experimental] Enable anonymous usage reporting. (default true)
+  -usage-stats.installation-mode string
+    	[experimental] Installation mode. Supported values: custom, helm, jsonnet. (default "custom")
   -validation.create-grace-period duration
     	Controls how far into the future incoming samples are accepted compared to the wall clock. Any sample with timestamp `t` will be rejected if `t > (now + validation.create-grace-period)`. Also used by query-frontend to avoid querying too far into the future. 0 to disable. (default 10m)
   -validation.enforce-metadata-metric-name

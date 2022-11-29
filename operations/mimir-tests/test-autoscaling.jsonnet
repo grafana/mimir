@@ -5,19 +5,15 @@ mimir {
     namespace: 'default',
     external_url: 'http://test',
 
-    blocks_storage_backend: 'gcs',
+    storage_backend: 'gcs',
     blocks_storage_bucket_name: 'blocks-bucket',
-    bucket_index_enabled: true,
-    query_scheduler_enabled: true,
 
     ruler_enabled: true,
     ruler_remote_evaluation_enabled: true,
-    ruler_client_type: 'gcs',
     ruler_storage_bucket_name: 'rules-bucket',
 
     alertmanager_enabled: true,
-    alertmanager_client_type: 'gcs',
-    alertmanager_gcs_bucket_name: 'alerts-bucket',
+    alertmanager_storage_bucket_name: 'alerts-bucket',
 
     autoscaling_querier_enabled: true,
     autoscaling_querier_min_replicas: 3,
@@ -26,5 +22,21 @@ mimir {
     autoscaling_ruler_querier_enabled: true,
     autoscaling_ruler_querier_min_replicas: 3,
     autoscaling_ruler_querier_max_replicas: 30,
+
+    autoscaling_distributor_enabled: true,
+    autoscaling_distributor_min_replicas: 3,
+    autoscaling_distributor_max_replicas: 30,
   },
+
+  local k = import 'ksonnet-util/kausal.libsonnet',
+  distributor_container+::
+    // Test a non-integer memory request, to verify that this gets converted into an integer for
+    // the KEDA threshold
+    k.util.resourcesRequests(2, '3.2Gi') +
+    k.util.resourcesLimits(null, '6Gi'),
+  ruler_querier_container+::
+    // Test a <1 non-integer CPU request, to verify that this gets converted into an integer for
+    // the KEDA threshold
+    // Also specify CPU request as a string to make sure it works
+    k.util.resourcesRequests('0.2', '1Gi'),
 }

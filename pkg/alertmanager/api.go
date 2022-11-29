@@ -46,13 +46,15 @@ const (
 )
 
 var (
-	errPasswordFileNotAllowed           = errors.New("setting smtp_auth_password_file, password_file, bearer_token_file, auth_password_file or credentials_file is not allowed")
-	errOAuth2SecretFileNotAllowed       = errors.New("setting OAuth2 client_secret_file is not allowed")
-	errProxyURLNotAllowed               = errors.New("setting proxy_url is not allowed")
-	errTLSFileNotAllowed                = errors.New("setting TLS ca_file, cert_file or key_file is not allowed")
-	errSlackAPIURLFileNotAllowed        = errors.New("setting Slack api_url_file or global slack_api_url_file is not allowed")
-	errVictorOpsAPIKeyFileNotAllowed    = errors.New("setting VictorOps api_key_file is not allowed")
-	errOpsGenieAPIKeyFileFileNotAllowed = errors.New("setting OpsGenie api_key_file or global opsgenie_api_key_file is not allowed")
+	errPasswordFileNotAllowed            = errors.New("setting smtp_auth_password_file, password_file, bearer_token_file, auth_password_file or credentials_file is not allowed")
+	errOAuth2SecretFileNotAllowed        = errors.New("setting OAuth2 client_secret_file is not allowed")
+	errProxyURLNotAllowed                = errors.New("setting proxy_url is not allowed")
+	errTLSFileNotAllowed                 = errors.New("setting TLS ca_file, cert_file or key_file is not allowed")
+	errSlackAPIURLFileNotAllowed         = errors.New("setting Slack api_url_file or global slack_api_url_file is not allowed")
+	errVictorOpsAPIKeyFileNotAllowed     = errors.New("setting VictorOps api_key_file or global victorops_api_key_file is not allowed")
+	errOpsGenieAPIKeyFileFileNotAllowed  = errors.New("setting OpsGenie api_key_file or global opsgenie_api_key_file is not allowed")
+	errPagerDutyServiceKeyFileNotAllowed = errors.New("setting PagerDuty service_key_file is not allowed")
+	errPagerDutyRoutingKeyFileNotAllowed = errors.New("setting PagerDuty routing_key_file is not allowed")
 )
 
 // UserConfig is used to communicate a users alertmanager configs
@@ -368,6 +370,11 @@ func validateAlertmanagerConfig(cfg interface{}) error {
 		if err := validateVictorOpsConfig(v.Interface().(config.VictorOpsConfig)); err != nil {
 			return err
 		}
+
+	case reflect.TypeOf(config.PagerdutyConfig{}):
+		if err := validatePagerDutyConfig(v.Interface().(config.PagerdutyConfig)); err != nil {
+			return err
+		}
 	}
 
 	// If the input config is a struct, recursively iterate on all fields.
@@ -456,6 +463,9 @@ func validateGlobalConfig(cfg config.GlobalConfig) error {
 	if cfg.SMTPAuthPasswordFile != "" {
 		return errPasswordFileNotAllowed
 	}
+	if cfg.VictorOpsAPIKeyFile != "" {
+		return errVictorOpsAPIKeyFileNotAllowed
+	}
 	return nil
 }
 
@@ -492,5 +502,18 @@ func validateOpsGenieConfig(cfg config.OpsGenieConfig) error {
 	if cfg.APIKeyFile != "" {
 		return errOpsGenieAPIKeyFileFileNotAllowed
 	}
+	return nil
+}
+
+// validatePagerDutyConfig validates the PagerDuty config and returns an error if it contains
+// settings not allowed by Mimir.
+func validatePagerDutyConfig(cfg config.PagerdutyConfig) error {
+	if cfg.ServiceKeyFile != "" {
+		return errPagerDutyServiceKeyFileNotAllowed
+	}
+	if cfg.RoutingKeyFile != "" {
+		return errPagerDutyRoutingKeyFileNotAllowed
+	}
+
 	return nil
 }

@@ -6,7 +6,7 @@
 syntax = "proto3";
 package gatewaypb;
 
-import "github.com/thanos-io/thanos/pkg/store/storepb/rpc.proto";
+import "github.com/grafana/mimir/pkg/storegateway/storepb/rpc.proto";
 
 option go_package = "storegatewaypb";
 

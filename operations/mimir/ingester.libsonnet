@@ -5,6 +5,7 @@
   local volumeMount = $.core.v1.volumeMount,
 
   ingester_args::
+    $._config.usageStatsConfig +
     $._config.grpcConfig +
     $._config.storageConfig +
     $._config.blocksStorageConfig +
@@ -67,13 +68,15 @@
     $.util.podPriority('high') +
     (if with_anti_affinity then $.util.antiAffinity else {}),
 
-  ingester_statefulset: self.newIngesterStatefulSet('ingester', $.ingester_container, !$._config.ingester_allow_multiple_replicas_on_same_node),
+  ingester_statefulset: if !$._config.is_microservices_deployment_mode then null else
+    self.newIngesterStatefulSet('ingester', $.ingester_container, !$._config.ingester_allow_multiple_replicas_on_same_node),
 
-  ingester_service:
+  ingester_service: if !$._config.is_microservices_deployment_mode then null else
     $.util.serviceFor($.ingester_statefulset, $._config.service_ignored_labels),
 
   newIngesterPdb(ingesterName)::
     $.newMimirPdb(ingesterName),
 
-  ingester_pdb: self.newIngesterPdb(name),
+  ingester_pdb: if !$._config.is_microservices_deployment_mode then null else
+    self.newIngesterPdb(name),
 }

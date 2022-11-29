@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/mock"
-	"github.com/thanos-io/thanos/pkg/objstore"
+	"github.com/thanos-io/objstore"
 )
 
 // ErrObjectDoesNotExist is used in tests to simulate objstore.Bucket.IsObjNotFoundErr().

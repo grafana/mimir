@@ -5,29 +5,47 @@ local filename = 'mimir-writes-resources.json';
   [filename]:
     ($.dashboard('Writes resources') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates(false)
+    .addRow(
+      $.row('Summary')
+      .addPanel(
+        $.panel('CPU') +
+        $.queryPanel($.resourceUtilizationQuery('cpu', $._config.instance_names.write, $._config.container_names.write), '{{%s}}' % $._config.per_instance_label) +
+        $.stack,
+      )
+      .addPanel(
+        $.panel('Memory (workingset)') +
+        $.queryPanel($.resourceUtilizationQuery('memory_working', $._config.instance_names.write, $._config.container_names.write), '{{%s}}' % $._config.per_instance_label) +
+        $.stack +
+        { yaxes: $.yaxes('bytes') },
+      )
+      .addPanel(
+        $.containerGoHeapInUsePanelByComponent('write') +
+        $.stack,
+      )
+    )
     .addRowIf(
       $._config.gateway_enabled,
       $.row('Gateway')
       .addPanel(
-        $.containerCPUUsagePanel('CPU', $._config.job_names.gateway),
+        $.containerCPUUsagePanelByComponent('gateway'),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel('Memory (workingset)', $._config.job_names.gateway),
+        $.containerMemoryWorkingSetPanelByComponent('gateway'),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.gateway),
+        $.containerGoHeapInUsePanelByComponent('gateway'),
       )
     )
     .addRow(
       $.row('Distributor')
       .addPanel(
-        $.containerCPUUsagePanel('CPU', 'distributor'),
+        $.containerCPUUsagePanelByComponent('distributor'),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel('Memory (workingset)', 'distributor'),
+        $.containerMemoryWorkingSetPanelByComponent('distributor'),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.distributor),
+        $.containerGoHeapInUsePanelByComponent('distributor'),
       )
     )
     .addRow(
@@ -44,31 +62,31 @@ local filename = 'mimir-writes-resources.json';
         },
       )
       .addPanel(
-        $.containerCPUUsagePanel('CPU', 'ingester'),
+        $.containerCPUUsagePanelByComponent('ingester'),
       )
     )
     .addRow(
       $.row('')
       .addPanel(
-        $.containerMemoryRSSPanel('Memory (RSS)', 'ingester'),
+        $.containerMemoryRSSPanelByComponent('ingester'),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel('Memory (workingset)', 'ingester'),
+        $.containerMemoryWorkingSetPanelByComponent('ingester'),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.ingester),
+        $.containerGoHeapInUsePanelByComponent('ingester'),
       )
     )
     .addRow(
       $.row('')
       .addPanel(
-        $.containerDiskWritesPanel('Disk writes', 'ingester')
+        $.containerDiskWritesPanelByComponent('ingester')
       )
       .addPanel(
-        $.containerDiskReadsPanel('Disk reads', 'ingester')
+        $.containerDiskReadsPanelByComponent('ingester')
       )
       .addPanel(
-        $.containerDiskSpaceUtilization('Disk space utilization', 'ingester'),
+        $.containerDiskSpaceUtilizationPanelByComponent('ingester'),
       )
     )
     + {

@@ -1,0 +1,19 @@
+---
+# Source: mimir-distributed/templates/alertmanager/alertmanager-config.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test-enterprise-legacy-label-values-enterprise-metrics-alertmanager-fallback-config
+  labels:
+    app: enterprise-metrics-alertmanager
+    heritage: Helm
+    release: test-enterprise-legacy-label-values
+  annotations:
+    {} 
+  namespace: "citestns"
+data:
+  alertmanager_fallback_config.yaml: |
+    receivers:
+        - name: default-receiver
+    route:
+        receiver: default-receiver

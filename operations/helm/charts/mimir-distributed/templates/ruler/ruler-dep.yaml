@@ -45,6 +45,20 @@ spec:
             - "-target=ruler"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+          {{- if .Values.ingester.zoneAwareReplication.migration.enabled }}
+            {{- if not .Values.ingester.zoneAwareReplication.migration.writePath }}
+            - "-ingester.ring.zone-awareness-enabled=false"
+            {{- end }}
+            {{- if .Values.ingester.zoneAwareReplication.migration.excludeDefaultZone }}
+            - "-ingester.ring.excluded-zones=zone-default"
+            {{- end }}
+          {{- end }}
+          {{- if .Values.store_gateway.zoneAwareReplication.migration.enabled }}
+            {{- if not .Values.store_gateway.zoneAwareReplication.migration.readPath }}
+            - "-store-gateway.sharding-ring.prefix=collectors/"
+            - "-store-gateway.sharding-ring.zone-awareness-enabled=false"
+            {{- end }}
+          {{- end }}
           {{- range $key, $value := .Values.ruler.extraArgs }}
             - "-{{ $key }}={{ $value }}"
           {{- end }}
@@ -63,6 +77,8 @@ spec:
             - name: storage
               mountPath: "/data"
               subPath: {{ .Values.ruler.persistence.subPath }}
+            - name: active-queries
+              mountPath: /active-query-tracker
           ports:
             - name: http-metrics
               containerPort: {{ include "mimir.serverHttpListenPort" . }}
@@ -122,5 +138,7 @@ spec:
 {{ toYaml .Values.ruler.extraVolumes | indent 8}}
 {{- end }}
         - name: storage
+          emptyDir: {}
+        - name: active-queries
           emptyDir: {}
 {{- end -}}

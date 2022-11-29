@@ -9,7 +9,6 @@ package integration
 
 import (
 	"fmt"
-	"math"
 	"testing"
 	"time"
 
@@ -53,7 +52,7 @@ func TestGettingStartedSingleProcessConfigWithBlocksStorage(t *testing.T) {
 
 	// Push some series to Mimir.
 	now := time.Now()
-	series, expectedVector := generateSeries("series_1", now, prompb.Label{Name: "foo", Value: "bar"})
+	series, expectedVector, expectedMatrix := generateSeries("series_1", now, prompb.Label{Name: "foo", Value: "bar"})
 
 	res, err := c.Push(series)
 	require.NoError(t, err)
@@ -65,19 +64,16 @@ func TestGettingStartedSingleProcessConfigWithBlocksStorage(t *testing.T) {
 	require.Equal(t, model.ValVector, result.Type())
 	assert.Equal(t, expectedVector, result.(model.Vector))
 
-	// Work around the Prometheus client lib not having a way to omit the start and end params.
-	minTime := time.Unix(math.MinInt64/1000+62135596801, 0).UTC()
-	maxTime := time.Unix(math.MaxInt64/1000-62135596801, 999999999).UTC()
-
-	labelValues, err := c.LabelValues("foo", minTime, maxTime, nil)
+	labelValues, err := c.LabelValues("foo", prometheusMinTime, prometheusMaxTime, nil)
 	require.NoError(t, err)
 	require.Equal(t, model.LabelValues{"bar"}, labelValues)
 
-	labelNames, err := c.LabelNames(minTime, maxTime)
+	labelNames, err := c.LabelNames(prometheusMinTime, prometheusMaxTime)
 	require.NoError(t, err)
 	require.Equal(t, []string{"__name__", "foo"}, labelNames)
 
-	// Check that a range query does not return an error to sanity check the queryrange tripperware.
-	_, err = c.QueryRange("series_1", now.Add(-15*time.Minute), now, 15*time.Second)
+	rangeResult, err := c.QueryRange("series_1", now.Add(-15*time.Minute), now, 15*time.Second)
 	require.NoError(t, err)
+	require.Equal(t, model.ValMatrix, rangeResult.Type())
+	require.Equal(t, expectedMatrix, rangeResult.(model.Matrix))
 }

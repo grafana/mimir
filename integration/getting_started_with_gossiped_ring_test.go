@@ -108,7 +108,7 @@ func TestGettingStartedWithGossipedRing(t *testing.T) {
 
 	// Push some series to Mimir2
 	now := time.Now()
-	series, expectedVector := generateSeries("series_1", now)
+	series, expectedVector, _ := generateSeries("series_1", now)
 
 	res, err := c2.Push(series)
 	require.NoError(t, err)

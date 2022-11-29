@@ -44,6 +44,8 @@ spec:
             - "-target=query-scheduler"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            - "-server.grpc.keepalive.max-connection-age=2562047h" # 100000 days, effectively infinity
+            - "-server.grpc.keepalive.max-connection-age-grace=2562047h" # 100000 days, effectively infinity
           {{- range $key, $value := .Values.query_scheduler.extraArgs }}
             - "-{{ $key }}={{ $value }}"
           {{- end }}
@@ -64,6 +66,8 @@ spec:
               {{- if .Values.query_scheduler.persistence.subPath }}
               subPath: {{ .Values.query_scheduler.persistence.subPath }}
               {{- end }}
+            - name: active-queries
+              mountPath: /active-query-tracker
           ports:
             - name: http-metrics
               containerPort: {{ include "mimir.serverHttpListenPort" . }}
@@ -120,5 +124,7 @@ spec:
 {{ toYaml .Values.query_scheduler.extraVolumes | indent 8}}
 {{- end }}
         - name: storage
+          emptyDir: {}
+        - name: active-queries
           emptyDir: {}
 {{- end }}

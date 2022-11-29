@@ -20,6 +20,7 @@ import (
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/tenant"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -27,27 +28,22 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/thanos-io/thanos/pkg/block"
-	"github.com/thanos-io/thanos/pkg/extprom"
-	"github.com/thanos-io/thanos/pkg/objstore"
-	"github.com/thanos-io/thanos/pkg/store/hintspb"
-	"github.com/thanos-io/thanos/pkg/store/storepb"
-	"github.com/thanos-io/thanos/pkg/strutil"
+	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 	grpc_metadata "google.golang.org/grpc/metadata"
 
-	"github.com/grafana/dskit/tenant"
-
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway"
+	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
+	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -209,7 +205,7 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 	}
 
 	// Blocks finder doesn't use chunks, but we pass config for consistency.
-	cachingBucket, err := mimir_tsdb.CreateCachingBucket(storageCfg.BucketStore.ChunksCache, storageCfg.BucketStore.MetadataCache, bucketClient, logger, extprom.WrapRegistererWith(prometheus.Labels{"component": "querier"}, reg))
+	cachingBucket, err := mimir_tsdb.CreateCachingBucket(storageCfg.BucketStore.ChunksCache, storageCfg.BucketStore.MetadataCache, bucketClient, logger, prometheus.WrapRegistererWith(prometheus.Labels{"component": "querier"}, reg))
 	if err != nil {
 		return nil, errors.Wrap(err, "create caching bucket")
 	}
@@ -386,7 +382,7 @@ func (q *blocksStoreQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, 
 		return nil, nil, err
 	}
 
-	return strutil.MergeSlices(resNameSets...), resWarnings, nil
+	return util.MergeSlices(resNameSets...), resWarnings, nil
 }
 
 func (q *blocksStoreQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
@@ -427,7 +423,7 @@ func (q *blocksStoreQuerier) LabelValues(name string, matchers ...*labels.Matche
 		return nil, nil, err
 	}
 
-	return strutil.MergeSlices(resValueSets...), resWarnings, nil
+	return util.MergeSlices(resValueSets...), resWarnings, nil
 }
 
 func (q *blocksStoreQuerier) Close() error {
@@ -729,6 +725,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 			mySeries := []*storepb.Series(nil)
 			myWarnings := storage.Warnings(nil)
 			myQueriedBlocks := []ulid.ULID(nil)
+			indexBytesFetched := uint64(0)
 
 			for {
 				// Ensure the context hasn't been canceled in the meanwhile (eg. an error occurred
@@ -751,7 +748,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 					mySeries = append(mySeries, s)
 
 					// Add series fingerprint to query limiter; will return error if we are over the limit
-					limitErr := queryLimiter.AddSeries(mimirpb.FromLabelsToLabelAdapters(s.PromLabels()))
+					limitErr := queryLimiter.AddSeries(s.Labels)
 					if limitErr != nil {
 						return validation.LimitError(limitErr.Error())
 					}
@@ -790,6 +787,10 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 
 					myQueriedBlocks = append(myQueriedBlocks, ids...)
 				}
+
+				if s := resp.GetStats(); s != nil {
+					indexBytesFetched += s.FetchedIndexBytes
+				}
 			}
 
 			numSeries := len(mySeries)
@@ -798,12 +799,14 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 			reqStats.AddFetchedSeries(uint64(numSeries))
 			reqStats.AddFetchedChunkBytes(uint64(chunkBytes))
 			reqStats.AddFetchedChunks(uint64(chunksFetched))
+			reqStats.AddFetchedIndexBytes(indexBytesFetched)
 
 			level.Debug(spanLog).Log("msg", "received series from store-gateway",
 				"instance", c.RemoteAddress(),
 				"fetched series", numSeries,
 				"fetched chunk bytes", chunkBytes,
 				"fetched chunks", chunksFetched,
+				"fetched index bytes", indexBytesFetched,
 				"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "),
 				"queried blocks", strings.Join(convertULIDsToString(myQueriedBlocks), " "))
 
@@ -1002,12 +1005,11 @@ func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skip
 	}
 
 	return &storepb.SeriesRequest{
-		MinTime:                 minT,
-		MaxTime:                 maxT,
-		Matchers:                matchers,
-		PartialResponseStrategy: storepb.PartialResponseStrategy_ABORT,
-		Hints:                   anyHints,
-		SkipChunks:              skipChunks,
+		MinTime:    minT,
+		MaxTime:    maxT,
+		Matchers:   matchers,
+		Hints:      anyHints,
+		SkipChunks: skipChunks,
 	}, nil
 }
 

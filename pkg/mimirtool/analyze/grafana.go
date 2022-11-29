@@ -13,6 +13,7 @@ import (
 
 	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql/parser"
 	log "github.com/sirupsen/logrus"
 
@@ -20,7 +21,7 @@ import (
 )
 
 type MetricsInGrafana struct {
-	MetricsUsed    []string            `json:"metricsUsed"`
+	MetricsUsed    model.LabelValues   `json:"metricsUsed"`
 	OverallMetrics map[string]struct{} `json:"-"`
 	Dashboards     []DashboardMetrics  `json:"dashboards"`
 }
@@ -80,7 +81,6 @@ func ParseMetricsInBoard(mig *MetricsInGrafana, board minisdk.Board) {
 		Metrics:     metricsInBoard,
 		ParseErrors: parseErrs,
 	})
-
 }
 
 func metricsFromTemplating(templating minisdk.Templating, metrics map[string]struct{}) []error {

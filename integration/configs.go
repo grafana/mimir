@@ -20,18 +20,17 @@ import (
 )
 
 const (
-	userID              = "e2e-user"
-	defaultNetworkName  = "e2e-mimir-test"
-	mimirBucketName     = "mimir"
-	blocksBucketName    = "mimir-blocks"
-	alertsBucketName    = "mimir-alerts"
-	rulestoreBucketName = "mimir-ruler"
-	mimirConfigFile     = "config.yaml"
-	clientCertFile      = "certs/client.crt"
-	clientKeyFile       = "certs/client.key"
-	caCertFile          = "certs/root.crt"
-	serverCertFile      = "certs/server.crt"
-	serverKeyFile       = "certs/server.key"
+	userID             = "e2e-user"
+	defaultNetworkName = "e2e-mimir-test"
+	mimirBucketName    = "mimir"
+	blocksBucketName   = "mimir-blocks"
+	alertsBucketName   = "mimir-alerts"
+	mimirConfigFile    = "config.yaml"
+	clientCertFile     = "certs/client.crt"
+	clientKeyFile      = "certs/client.key"
+	caCertFile         = "certs/root.crt"
+	serverCertFile     = "certs/server.crt"
+	serverKeyFile      = "certs/server.key"
 )
 
 // GetNetworkName returns the docker network name to run tests within.
@@ -144,10 +143,12 @@ var (
 		return map[string]string{
 			"-blocks-storage.tsdb.block-ranges-period":          "1m",
 			"-blocks-storage.bucket-store.bucket-index.enabled": "false",
+			"-blocks-storage.bucket-store.ignore-blocks-within": "0",
 			"-blocks-storage.bucket-store.sync-interval":        "5s",
 			"-blocks-storage.tsdb.retention-period":             "5m",
 			"-blocks-storage.tsdb.ship-interval":                "1m",
 			"-blocks-storage.tsdb.head-compaction-interval":     "1s",
+			"-querier.query-store-after":                        "0",
 		}
 	}
 

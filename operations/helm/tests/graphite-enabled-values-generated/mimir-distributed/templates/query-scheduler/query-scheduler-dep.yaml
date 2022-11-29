@@ -35,7 +35,12 @@ spec:
     spec:
       serviceAccountName: graphite-enabled-values-mimir
       securityContext:
-        {}
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
       initContainers:
         []
       containers:
@@ -45,6 +50,8 @@ spec:
             - "-target=query-scheduler"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            - "-server.grpc.keepalive.max-connection-age=2562047h" # 100000 days, effectively infinity
+            - "-server.grpc.keepalive.max-connection-age-grace=2562047h" # 100000 days, effectively infinity
           volumeMounts:
             - name: runtime-config
               mountPath: /var/mimir
@@ -54,6 +61,8 @@ spec:
               mountPath: /etc/mimir
             - name: storage
               mountPath: /data
+            - name: active-queries
+              mountPath: /active-query-tracker
           ports:
             - name: http-metrics
               containerPort: 8080
@@ -73,6 +82,10 @@ spec:
               cpu: 100m
               memory: 128Mi
           securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
             readOnlyRootFilesystem: true
           env:
           envFrom:
@@ -106,4 +119,6 @@ spec:
           configMap:
             name: graphite-enabled-values-mimir-runtime
         - name: storage
+          emptyDir: {}
+        - name: active-queries
           emptyDir: {}

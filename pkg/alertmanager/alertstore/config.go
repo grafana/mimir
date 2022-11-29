@@ -8,6 +8,8 @@ package alertstore
 import (
 	"flag"
 
+	"github.com/go-kit/log"
+
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore/local"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 )
@@ -19,10 +21,10 @@ type Config struct {
 }
 
 // RegisterFlags registers the backend storage config.
-func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
+func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	prefix := "alertmanager-storage."
 
 	cfg.StorageBackendConfig.ExtraBackends = []string{local.Name}
 	cfg.Local.RegisterFlagsWithPrefix(prefix, f)
-	cfg.RegisterFlagsWithPrefixAndDefaultDirectory(prefix, "alertmanager", f)
+	cfg.RegisterFlagsWithPrefixAndDefaultDirectory(prefix, "alertmanager", f, logger)
 }

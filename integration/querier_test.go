@@ -99,8 +99,8 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 
 	series1Timestamp := time.Now()
 	series2Timestamp := series1Timestamp.Add(blockRangePeriod * 2)
-	series1, expectedVector1 := generateSeries("series_1", series1Timestamp, prompb.Label{Name: "series_1", Value: "series_1"})
-	series2, expectedVector2 := generateSeries("series_2", series2Timestamp, prompb.Label{Name: "series_2", Value: "series_2"})
+	series1, expectedVector1, _ := generateSeries("series_1", series1Timestamp, prompb.Label{Name: "series_1", Value: "series_1"})
+	series2, expectedVector2, _ := generateSeries("series_2", series2Timestamp, prompb.Label{Name: "series_2", Value: "series_2"})
 
 	res, err := writeClient.Push(series1)
 	require.NoError(t, err)
@@ -120,7 +120,7 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 	// Push another series to further compact another block and delete the first block
 	// due to expired retention.
 	series3Timestamp := series2Timestamp.Add(blockRangePeriod * 2)
-	series3, expectedVector3 := generateSeries("series_3", series3Timestamp, prompb.Label{Name: "series_3", Value: "series_3"})
+	series3, expectedVector3, _ := generateSeries("series_3", series3Timestamp, prompb.Label{Name: "series_3", Value: "series_3"})
 
 	res, err = writeClient.Push(series3)
 	require.NoError(t, err)
@@ -148,10 +148,8 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 				"-blocks-storage.bucket-store.index-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
 				"-blocks-storage.bucket-store.sync-interval":                   "1s",
 				"-blocks-storage.bucket-store.index-cache.backend":             testCfg.indexCacheBackend,
-				"-blocks-storage.bucket-store.ignore-blocks-within":            "0",
 				"-blocks-storage.bucket-store.bucket-index.enabled":            strconv.FormatBool(testCfg.bucketIndexEnabled),
 				"-store-gateway.tenant-shard-size":                             fmt.Sprintf("%d", testCfg.tenantShardSize),
-				"-querier.query-store-after":                                   "0",
 				"-query-frontend.query-stats-enabled":                          "true",
 				"-query-frontend.parallelize-shardable-queries":                strconv.FormatBool(testCfg.queryShardingEnabled),
 			})
@@ -355,7 +353,6 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 				"-blocks-storage.tsdb.block-ranges-period":                     blockRangePeriod.String(),
 				"-blocks-storage.tsdb.ship-interval":                           "1s",
 				"-blocks-storage.bucket-store.sync-interval":                   "1s",
-				"-blocks-storage.bucket-store.ignore-blocks-within":            "0",
 				"-blocks-storage.tsdb.retention-period":                        ((blockRangePeriod * 2) - 1).String(),
 				"-blocks-storage.bucket-store.index-cache.backend":             testCfg.indexCacheBackend,
 				"-blocks-storage.bucket-store.index-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
@@ -375,8 +372,6 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 				"-compactor.ring.store":                           "consul",
 				"-compactor.ring.consul.hostname":                 consul.NetworkHTTPEndpoint(),
 				"-compactor.cleanup-interval":                     "2s", // Update bucket index often.
-				// Querier.
-				"-querier.query-store-after": "0",
 				// Query-frontend.
 				"-query-frontend.parallelize-shardable-queries": strconv.FormatBool(testCfg.queryShardingEnabled),
 			})
@@ -403,8 +398,8 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 			// Push some series to Mimir.
 			series1Timestamp := time.Now()
 			series2Timestamp := series1Timestamp.Add(blockRangePeriod * 2)
-			series1, expectedVector1 := generateSeries("series_1", series1Timestamp, prompb.Label{Name: "series_1", Value: "series_1"})
-			series2, expectedVector2 := generateSeries("series_2", series2Timestamp, prompb.Label{Name: "series_2", Value: "series_2"})
+			series1, expectedVector1, _ := generateSeries("series_1", series1Timestamp, prompb.Label{Name: "series_1", Value: "series_1"})
+			series2, expectedVector2, _ := generateSeries("series_2", series2Timestamp, prompb.Label{Name: "series_2", Value: "series_2"})
 
 			res, err := c.Push(series1)
 			require.NoError(t, err)
@@ -424,7 +419,7 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 			// Push another series to further compact another block and delete the first block
 			// due to expired retention.
 			series3Timestamp := series2Timestamp.Add(blockRangePeriod * 2)
-			series3, expectedVector3 := generateSeries("series_3", series3Timestamp, prompb.Label{Name: "series_3", Value: "series_3"})
+			series3, expectedVector3, _ := generateSeries("series_3", series3Timestamp, prompb.Label{Name: "series_3", Value: "series_3"})
 
 			res, err = c.Push(series3)
 			require.NoError(t, err)
@@ -754,8 +749,8 @@ func TestQuerierWithBlocksStorageOnMissingBlocksFromStorage(t *testing.T) {
 
 	series1Timestamp := time.Now()
 	series2Timestamp := series1Timestamp.Add(blockRangePeriod * 2)
-	series1, expectedVector1 := generateSeries("series_1", series1Timestamp)
-	series2, _ := generateSeries("series_2", series2Timestamp)
+	series1, expectedVector1, _ := generateSeries("series_1", series1Timestamp)
+	series2, _, _ := generateSeries("series_2", series2Timestamp)
 
 	res, err := c.Push(series1)
 	require.NoError(t, err)
@@ -778,12 +773,10 @@ func TestQuerierWithBlocksStorageOnMissingBlocksFromStorage(t *testing.T) {
 	// blocks (less than 3*sync-interval age) as they could be unnoticed by the store-gateway and ingesters
 	// have them anyway. We turn down the sync-interval to speed up the test.
 	storeGateway := e2emimir.NewStoreGateway("store-gateway", consul.NetworkHTTPEndpoint(), mergeFlags(flags, map[string]string{
-		"-blocks-storage.bucket-store.sync-interval":        "1s",
-		"-blocks-storage.bucket-store.ignore-blocks-within": "0",
+		"-blocks-storage.bucket-store.sync-interval": "1s",
 	}))
 	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), mergeFlags(flags, map[string]string{
 		"-blocks-storage.bucket-store.sync-interval": "1s",
-		"-querier.query-store-after":                 "0",
 	}))
 	require.NoError(t, s.StartAndWaitReady(querier, storeGateway))
 
@@ -861,10 +854,10 @@ func TestQueryLimitsWithBlocksStorageRunningInMicroServices(t *testing.T) {
 	series3Timestamp := series1Timestamp.Add(blockRangePeriod * 2)
 	series4Timestamp := series1Timestamp.Add(blockRangePeriod * 3)
 
-	series1, _ := generateSeries("series_1", series1Timestamp, prompb.Label{Name: "series_1", Value: "series_1"})
-	series2, _ := generateSeries("series_2", series2Timestamp, prompb.Label{Name: "series_2", Value: "series_2"})
-	series3, _ := generateSeries("series_3", series3Timestamp, prompb.Label{Name: "series_3", Value: "series_3"})
-	series4, _ := generateSeries("series_4", series4Timestamp, prompb.Label{Name: "series_4", Value: "series_4"})
+	series1, _, _ := generateSeries("series_1", series1Timestamp, prompb.Label{Name: "series_1", Value: "series_1"})
+	series2, _, _ := generateSeries("series_2", series2Timestamp, prompb.Label{Name: "series_2", Value: "series_2"})
+	series3, _, _ := generateSeries("series_3", series3Timestamp, prompb.Label{Name: "series_3", Value: "series_3"})
+	series4, _, _ := generateSeries("series_4", series4Timestamp, prompb.Label{Name: "series_4", Value: "series_4"})
 
 	res, err := c.Push(series1)
 	require.NoError(t, err)

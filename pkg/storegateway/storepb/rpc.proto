@@ -1,0 +1,177 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/thanos-io/thanos/blob/main/pkg/store/storepb/rpc.proto
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Thanos Authors.
+
+syntax = "proto3";
+package thanos;
+
+import "types.proto";
+import "github.com/gogo/protobuf/gogoproto/gogo.proto";
+import "google/protobuf/any.proto";
+
+option go_package = "storepb";
+
+option (gogoproto.sizer_all) = true;
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+option (gogoproto.goproto_getters_all) = false;
+
+// Do not generate XXX fields to reduce memory footprint and opening a door
+// for zero-copy casts to/from prometheus data types.
+option (gogoproto.goproto_unkeyed_all) = false;
+option (gogoproto.goproto_unrecognized_all) = false;
+option (gogoproto.goproto_sizecache_all) = false;
+
+/// Store represents API against instance that stores XOR encoded values with label set metadata (e.g Prometheus metrics).
+service Store {
+  /// Series streams each Series (Labels and chunk/downsampling chunk) for given label matchers and time range.
+  ///
+  /// Series should strictly stream full series after series, optionally split by time. This means that a single frame can contain
+  /// partition of the single series, but once a new series is started to be streamed it means that no more data will
+  /// be sent for previous one.
+  /// Series has to be sorted.
+  ///
+  /// There is no requirements on chunk sorting, however it is recommended to have chunk sorted by chunk min time.
+  /// This heavily optimizes the resource usage on Querier / Federated Queries.
+  rpc Series(SeriesRequest) returns (stream SeriesResponse);
+
+  /// LabelNames returns all label names constrained by the given matchers.
+  rpc LabelNames(LabelNamesRequest) returns (LabelNamesResponse);
+
+  /// LabelValues returns all label values for given label name.
+  rpc LabelValues(LabelValuesRequest) returns (LabelValuesResponse);
+}
+
+message SeriesRequest {
+  int64 min_time = 1;
+  int64 max_time = 2;
+  repeated LabelMatcher matchers = 3 [(gogoproto.nullable) = false];
+
+  int64 max_resolution_window = 4;
+  repeated Aggr aggregates = 5;
+
+  // Thanos partial_response_disabled.
+  reserved 6;
+
+  // Thanos partial_response_strategy.
+  reserved 7;
+
+  // skip_chunks controls whether sending chunks or not in series responses.
+  bool skip_chunks = 8;
+
+  // hints is an opaque data structure that can be used to carry additional information.
+  // The content of this field and whether it's supported depends on the
+  // implementation of a specific store.
+  google.protobuf.Any hints = 9;
+
+  // Query step size in milliseconds.
+  // Deprecated: Use query_hints instead.
+  int64 step = 10;
+
+  // Range vector selector range in milliseconds.
+  // Deprecated: Use query_hints instead.
+  int64 range = 11;
+
+  // Thanos query_hints.
+  reserved 12;
+
+  // Thanos shard_info.
+  reserved 13;
+}
+
+message Stats {
+  // This is the sum of all fetched index bytes (postings + series) for a series request.
+  uint64 fetched_index_bytes = 1;
+}
+
+enum Aggr {
+  Aggr_RAW = 0;
+  Aggr_COUNT = 1;
+  Aggr_SUM = 2;
+  Aggr_MIN = 3;
+  Aggr_MAX = 4;
+  Aggr_COUNTER = 5;
+}
+
+message SeriesResponse {
+  oneof result {
+    /// series contains 1 response series. The series labels are sorted by name.
+    Series series = 1;
+
+    /// warning is considered an information piece in place of series for warning purposes.
+    /// It is used to warn store API user about suspicious cases or partial response (if enabled).
+    string warning = 2;
+
+    /// hints is an opaque data structure that can be used to carry additional information from
+    /// the store. The content of this field and whether it's supported depends on the
+    /// implementation of a specific store. It's also implementation specific if it's allowed that
+    /// multiple SeriesResponse frames contain hints for a single Series() request and how should they
+    /// be handled in such case (ie. merged vs keep the first/last one).
+    google.protobuf.Any hints = 3;
+
+    /// stats is a object containing stats for a series response from the store-gateways so that we can collect stats
+    /// related to the processing the series response on store-gateways did available to the querier and query-frontends.
+    Stats stats = 4;
+  }
+}
+
+message LabelNamesRequest {
+  // Thanos partial_response_disabled.
+  reserved 1;
+
+  // Thanos partial_response_strategy.
+  reserved 2;
+
+  int64 start = 3;
+
+  int64 end = 4;
+
+  // hints is an opaque data structure that can be used to carry additional information.
+  // The content of this field and whether it's supported depends on the
+  // implementation of a specific store.
+  google.protobuf.Any hints = 5;
+
+  repeated LabelMatcher matchers = 6 [(gogoproto.nullable) = false];
+}
+
+message LabelNamesResponse {
+  repeated string names = 1;
+  repeated string warnings = 2;
+
+  /// hints is an opaque data structure that can be used to carry additional information from
+  /// the store. The content of this field and whether it's supported depends on the
+  /// implementation of a specific store.
+  google.protobuf.Any hints = 3;
+}
+
+message LabelValuesRequest {
+  string label = 1;
+
+  // Thanos partial_response_disabled.
+  reserved 2;
+
+  // Thanos partial_response_strategy.
+  reserved 3;
+
+  int64 start = 4;
+
+  int64 end = 5;
+
+  // hints is an opaque data structure that can be used to carry additional information.
+  // The content of this field and whether it's supported depends on the
+  // implementation of a specific store.
+  google.protobuf.Any hints = 6;
+
+  repeated LabelMatcher matchers = 7 [(gogoproto.nullable) = false];
+}
+
+message LabelValuesResponse {
+  repeated string values = 1;
+  repeated string warnings = 2;
+
+  /// hints is an opaque data structure that can be used to carry additional information from
+  /// the store. The content of this field and whether it's supported depends on the
+  /// implementation of a specific store.
+  google.protobuf.Any hints = 3;
+}

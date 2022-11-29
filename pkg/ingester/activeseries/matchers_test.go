@@ -3,6 +3,8 @@
 package activeseries
 
 import (
+	"fmt"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -22,67 +24,115 @@ func TestMatcher_MatchesSeries(t *testing.T) {
 
 	for _, tc := range []struct {
 		series   labels.Labels
-		expected []bool
+		expected []int
 	}{
 		{
-			series: labels.Labels{{Name: "foo", Value: "true"}, {Name: "baz", Value: "unrelated"}},
-			expected: []bool{
-				false, // bar_starts_with_1
-				false, // does_not_have_foo_label
-				false, // has_foo_and_bar_starts_with_1
-				true,  // has_foo_label
+			series: labels.FromStrings("foo", "true", "baz", "unrelated"),
+			expected: []int{
+				3, // has_foo_label
 			},
 		},
 		{
-			series: labels.Labels{{Name: "foo", Value: "true"}, {Name: "bar", Value: "100"}, {Name: "baz", Value: "unrelated"}},
-			expected: []bool{
-				true,  // bar_starts_with_1
-				false, // does_not_have_foo_label
-				true,  // has_foo_and_bar_starts_with_1
-				true,  // has_foo_label
+			series: labels.FromStrings("foo", "true", "bar", "100", "baz", "unrelated"),
+			expected: []int{
+				0, // bar_starts_with_1
+				2, // has_foo_and_bar_starts_with_1
+				3, // has_foo_label
 			},
 		},
 		{
-			series: labels.Labels{{Name: "foo", Value: "true"}, {Name: "bar", Value: "200"}, {Name: "baz", Value: "unrelated"}},
-			expected: []bool{
-				false, // bar_starts_with_1
-				false, // does_not_have_foo_label
-				false, // has_foo_and_bar_starts_with_1
-				true,  // has_foo_label
+			series: labels.FromStrings("foo", "true", "bar", "200", "baz", "unrelated"),
+			expected: []int{
+				3, // has_foo_label
 			},
 		},
 		{
-			series: labels.Labels{{Name: "bar", Value: "200"}, {Name: "baz", Value: "unrelated"}},
-			expected: []bool{
-				false, // bar_starts_with_1
-				true,  // does_not_have_foo_label
-				false, // has_foo_and_bar_starts_with_1
-				false, // has_foo_label
+			series: labels.FromStrings("bar", "200", "baz", "unrelated"),
+			expected: []int{
+				1, // does_not_have_foo_label
 			},
 		},
 		{
-			series: labels.Labels{{Name: "bar", Value: "100"}, {Name: "baz", Value: "unrelated"}},
-			expected: []bool{
-				true,  // bar_starts_with_1
-				true,  // does_not_have_foo_label
-				false, // has_foo_and_bar_starts_with_1
-				false, // has_foo_label
+			series: labels.FromStrings("bar", "100", "baz", "unrelated"),
+			expected: []int{
+				0, // bar_starts_with_1
+				1, // does_not_have_foo_label
 			},
 		},
 		{
-			series: labels.Labels{{Name: "baz", Value: "unrelated"}},
-			expected: []bool{
-				false, // bar_starts_with_1
-				true,  // does_not_have_foo_label
-				false, // has_foo_and_bar_starts_with_1
-				false, // has_foo_label
+			series: labels.FromStrings("baz", "unrelated"),
+			expected: []int{
+				1, // does_not_have_foo_label
 			},
 		},
 	} {
 		t.Run(tc.series.String(), func(t *testing.T) {
-			got := asm.Matches(tc.series)
-			assert.Equal(t, tc.expected, got)
+			got := asm.matches(tc.series)
+			assert.Equal(t, tc.expected, preAllocDynamicSliceToSlice(got))
 		})
+	}
+}
+
+func preAllocDynamicSliceToSlice(prealloc preAllocDynamicSlice) []int {
+	slice := make([]int, prealloc.len())
+	for i := 0; i < prealloc.len(); i++ {
+		slice[i] = int(prealloc.get(i))
+	}
+	return slice
+}
+
+func BenchmarkMatchesSeries(b *testing.B) {
+	trackerCounts := []int{10, 100, 1000}
+	asms := make([]*Matchers, len(trackerCounts))
+
+	for i, matcherCount := range trackerCounts {
+		configMap := map[string]string{}
+		for j := 0; j < matcherCount; j++ {
+			configMap[strconv.Itoa(j)] = fmt.Sprintf(`{this_will_match_%d="true"}`, j)
+		}
+		config, err := NewCustomTrackersConfig(configMap)
+		require.NoError(b, err)
+		asms[i] = NewMatchers(config)
+	}
+
+	makeLabels := func(total, matching int) labels.Labels {
+		if total < matching {
+			b.Fatal("wrong test setup, total < matching")
+		}
+		lbs := make(labels.Labels, 0, total)
+		for i := 0; i < matching; i++ {
+			lbs = append(lbs, labels.Label{Name: fmt.Sprintf("this_will_match_%d", i), Value: "true"})
+		}
+		for i := matching; i < total; i++ {
+			lbs = append(lbs, labels.Label{Name: fmt.Sprintf("something_else_%d", i), Value: "true"})
+		}
+		return lbs
+	}
+
+	for i, trackerCount := range trackerCounts {
+		for _, bc := range []struct {
+			total, matching int
+		}{
+			{1, 0},
+			{1, 1},
+			{10, 1},
+			{10, 2},
+			{10, 5},
+			{25, 1},
+			{25, 2},
+			{25, 5},
+			{100, 1},
+			{100, 2},
+			{100, 5},
+		} {
+			series := makeLabels(bc.total, bc.matching)
+			b.Run(fmt.Sprintf("TrackerCount: %d, Labels: %d, Matching: %d", trackerCount, bc.total, bc.matching), func(b *testing.B) {
+				for x := 0; x < b.N; x++ {
+					got := asms[i].matches(series)
+					require.Equal(b, bc.matching, got.len())
+				}
+			})
+		}
 	}
 }
 

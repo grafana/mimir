@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
@@ -94,6 +95,70 @@ func TestHandler_ServeHTTP(t *testing.T) {
 
 			assert.NoError(t, err)
 			assert.Equal(t, tt.expectedMetrics, count)
+		})
+	}
+}
+
+func TestHandler_FailedRoundTrip(t *testing.T) {
+	for _, test := range []struct {
+		name                string
+		cfg                 HandlerConfig
+		expectedMetrics     int
+		path                string
+		expectQueryParamLog bool
+		queryErr            error
+	}{
+		{
+			name:                "Failed round trip with context cancelled",
+			cfg:                 HandlerConfig{QueryStatsEnabled: false},
+			expectedMetrics:     0,
+			path:                "/api/v1/query?query=up&time=2015-07-01T20:10:51.781Z",
+			expectQueryParamLog: true,
+			queryErr:            context.Canceled,
+		},
+		{
+			name:                "Failed round trip with no query params",
+			cfg:                 HandlerConfig{QueryStatsEnabled: true},
+			expectedMetrics:     4,
+			path:                "/api/v1/query",
+			expectQueryParamLog: false,
+			queryErr:            context.Canceled,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			roundTripper := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+				return nil, test.queryErr
+			})
+
+			reg := prometheus.NewPedanticRegistry()
+			logs := &concurrency.SyncBuffer{}
+			logger := log.NewLogfmtLogger(logs)
+			handler := NewHandler(test.cfg, roundTripper, logger, reg)
+
+			ctx := user.InjectOrgID(context.Background(), "12345")
+			req := httptest.NewRequest("GET", test.path, nil)
+			req = req.WithContext(ctx)
+			resp := httptest.NewRecorder()
+
+			handler.ServeHTTP(resp, req)
+			require.Equal(t, StatusClientClosedRequest, resp.Code)
+
+			count, err := promtest.GatherAndCount(
+				reg,
+				"cortex_query_seconds_total",
+				"cortex_query_fetched_series_total",
+				"cortex_query_fetched_chunk_bytes_total",
+				"cortex_query_fetched_chunks_total",
+			)
+
+			require.NoError(t, err)
+
+			assert.Contains(t, strings.TrimSpace(logs.String()), "sharded_queries")
+			assert.Contains(t, strings.TrimSpace(logs.String()), "status")
+			if test.expectQueryParamLog {
+				assert.Contains(t, strings.TrimSpace(logs.String()), "param_query")
+			}
+			assert.Equal(t, test.expectedMetrics, count)
 		})
 	}
 }

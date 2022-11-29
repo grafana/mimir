@@ -1,0 +1,474 @@
+---
+# Source: mimir-distributed/templates/alertmanager/alertmanager-statefulset.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: test-oss-multizone-values-mimir-alertmanager-zone-a
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-oss-multizone-values
+    app.kubernetes.io/component: alertmanager
+    app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/managed-by: Helm
+    name: "alertmanager-zone-a"
+    rollout-group: alertmanager
+    zone: zone-a
+  annotations:
+    rollout-max-unavailable: "2"
+  namespace: "citestns"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: test-oss-multizone-values
+      app.kubernetes.io/component: alertmanager
+      rollout-group: alertmanager
+      zone: zone-a
+  updateStrategy:
+    type: OnDelete
+  serviceName: test-oss-multizone-values-mimir-alertmanager
+  volumeClaimTemplates:
+    - metadata:
+        name: storage
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: "1Gi"
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mimir
+        app.kubernetes.io/instance: test-oss-multizone-values
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/component: alertmanager
+        app.kubernetes.io/part-of: memberlist
+        name: "alertmanager-zone-a"
+        rollout-group: alertmanager
+        zone: zone-a
+      annotations:
+      namespace: "citestns"
+    spec:
+      serviceAccountName: test-oss-multizone-values-mimir
+      securityContext:
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        []
+      nodeSelector:
+        {}
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: rollout-group
+                operator: In
+                values:
+                - alertmanager
+              - key: app.kubernetes.io/component
+                operator: NotIn
+                values:
+                - alertmanager-zone-a
+            topologyKey: kubernetes.io/hostname
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: mimir
+              app.kubernetes.io/instance: test-oss-multizone-values
+              app.kubernetes.io/component: alertmanager
+      tolerations:
+        []
+      terminationGracePeriodSeconds: 60
+      volumes:
+        - name: config
+          configMap:
+            name: test-oss-multizone-values-mimir-config
+            items:
+              - key: "mimir.yaml"
+                path: "mimir.yaml"
+        - name: runtime-config
+          configMap:
+            name: test-oss-multizone-values-mimir-runtime
+        - name: tmp
+          emptyDir: {}
+        - name: active-queries
+          emptyDir: {}
+        - name: alertmanager-fallback-config
+          configMap:
+            name: test-oss-multizone-values-mimir-alertmanager-fallback-config
+      containers:
+        - name: alertmanager
+          imagePullPolicy: IfNotPresent
+          args:
+            - "-target=alertmanager"
+            - "-config.expand-env=true"
+            - "-config.file=/etc/mimir/mimir.yaml"
+            - "-alertmanager.sharding-ring.instance-availability-zone=zone-a"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/mimir
+            - name: runtime-config
+              mountPath: /var/mimir
+            - name: storage
+              mountPath: "/data"
+            - name: alertmanager-fallback-config
+              mountPath: /configs/
+            - name: tmp
+              mountPath: /tmp
+            - name: active-queries
+              mountPath: /active-query-tracker
+          ports:
+            - name: http-metrics
+              containerPort: 8080
+              protocol: TCP
+            - name: grpc
+              containerPort: 9095
+              protocol: TCP
+            - name: memberlist
+              containerPort: 7946
+              protocol: TCP
+          livenessProbe:
+            null
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http-metrics
+            initialDelaySeconds: 45
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          env:
+          envFrom:
+---
+# Source: mimir-distributed/templates/alertmanager/alertmanager-statefulset.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: test-oss-multizone-values-mimir-alertmanager-zone-b
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-oss-multizone-values
+    app.kubernetes.io/component: alertmanager
+    app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/managed-by: Helm
+    name: "alertmanager-zone-b"
+    rollout-group: alertmanager
+    zone: zone-b
+  annotations:
+    rollout-max-unavailable: "2"
+  namespace: "citestns"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: test-oss-multizone-values
+      app.kubernetes.io/component: alertmanager
+      rollout-group: alertmanager
+      zone: zone-b
+  updateStrategy:
+    type: OnDelete
+  serviceName: test-oss-multizone-values-mimir-alertmanager
+  volumeClaimTemplates:
+    - metadata:
+        name: storage
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: "1Gi"
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mimir
+        app.kubernetes.io/instance: test-oss-multizone-values
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/component: alertmanager
+        app.kubernetes.io/part-of: memberlist
+        name: "alertmanager-zone-b"
+        rollout-group: alertmanager
+        zone: zone-b
+      annotations:
+      namespace: "citestns"
+    spec:
+      serviceAccountName: test-oss-multizone-values-mimir
+      securityContext:
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        []
+      nodeSelector:
+        {}
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: rollout-group
+                operator: In
+                values:
+                - alertmanager
+              - key: app.kubernetes.io/component
+                operator: NotIn
+                values:
+                - alertmanager-zone-b
+            topologyKey: kubernetes.io/hostname
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: mimir
+              app.kubernetes.io/instance: test-oss-multizone-values
+              app.kubernetes.io/component: alertmanager
+      tolerations:
+        []
+      terminationGracePeriodSeconds: 60
+      volumes:
+        - name: config
+          configMap:
+            name: test-oss-multizone-values-mimir-config
+            items:
+              - key: "mimir.yaml"
+                path: "mimir.yaml"
+        - name: runtime-config
+          configMap:
+            name: test-oss-multizone-values-mimir-runtime
+        - name: tmp
+          emptyDir: {}
+        - name: active-queries
+          emptyDir: {}
+        - name: alertmanager-fallback-config
+          configMap:
+            name: test-oss-multizone-values-mimir-alertmanager-fallback-config
+      containers:
+        - name: alertmanager
+          imagePullPolicy: IfNotPresent
+          args:
+            - "-target=alertmanager"
+            - "-config.expand-env=true"
+            - "-config.file=/etc/mimir/mimir.yaml"
+            - "-alertmanager.sharding-ring.instance-availability-zone=zone-b"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/mimir
+            - name: runtime-config
+              mountPath: /var/mimir
+            - name: storage
+              mountPath: "/data"
+            - name: alertmanager-fallback-config
+              mountPath: /configs/
+            - name: tmp
+              mountPath: /tmp
+            - name: active-queries
+              mountPath: /active-query-tracker
+          ports:
+            - name: http-metrics
+              containerPort: 8080
+              protocol: TCP
+            - name: grpc
+              containerPort: 9095
+              protocol: TCP
+            - name: memberlist
+              containerPort: 7946
+              protocol: TCP
+          livenessProbe:
+            null
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http-metrics
+            initialDelaySeconds: 45
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          env:
+          envFrom:
+---
+# Source: mimir-distributed/templates/alertmanager/alertmanager-statefulset.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: test-oss-multizone-values-mimir-alertmanager-zone-c
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-oss-multizone-values
+    app.kubernetes.io/component: alertmanager
+    app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/managed-by: Helm
+    name: "alertmanager-zone-c"
+    rollout-group: alertmanager
+    zone: zone-c
+  annotations:
+    rollout-max-unavailable: "2"
+  namespace: "citestns"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: test-oss-multizone-values
+      app.kubernetes.io/component: alertmanager
+      rollout-group: alertmanager
+      zone: zone-c
+  updateStrategy:
+    type: OnDelete
+  serviceName: test-oss-multizone-values-mimir-alertmanager
+  volumeClaimTemplates:
+    - metadata:
+        name: storage
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: "1Gi"
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mimir
+        app.kubernetes.io/instance: test-oss-multizone-values
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/component: alertmanager
+        app.kubernetes.io/part-of: memberlist
+        name: "alertmanager-zone-c"
+        rollout-group: alertmanager
+        zone: zone-c
+      annotations:
+      namespace: "citestns"
+    spec:
+      serviceAccountName: test-oss-multizone-values-mimir
+      securityContext:
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        []
+      nodeSelector:
+        {}
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: rollout-group
+                operator: In
+                values:
+                - alertmanager
+              - key: app.kubernetes.io/component
+                operator: NotIn
+                values:
+                - alertmanager-zone-c
+            topologyKey: kubernetes.io/hostname
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: mimir
+              app.kubernetes.io/instance: test-oss-multizone-values
+              app.kubernetes.io/component: alertmanager
+      tolerations:
+        []
+      terminationGracePeriodSeconds: 60
+      volumes:
+        - name: config
+          configMap:
+            name: test-oss-multizone-values-mimir-config
+            items:
+              - key: "mimir.yaml"
+                path: "mimir.yaml"
+        - name: runtime-config
+          configMap:
+            name: test-oss-multizone-values-mimir-runtime
+        - name: tmp
+          emptyDir: {}
+        - name: active-queries
+          emptyDir: {}
+        - name: alertmanager-fallback-config
+          configMap:
+            name: test-oss-multizone-values-mimir-alertmanager-fallback-config
+      containers:
+        - name: alertmanager
+          imagePullPolicy: IfNotPresent
+          args:
+            - "-target=alertmanager"
+            - "-config.expand-env=true"
+            - "-config.file=/etc/mimir/mimir.yaml"
+            - "-alertmanager.sharding-ring.instance-availability-zone=zone-c"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/mimir
+            - name: runtime-config
+              mountPath: /var/mimir
+            - name: storage
+              mountPath: "/data"
+            - name: alertmanager-fallback-config
+              mountPath: /configs/
+            - name: tmp
+              mountPath: /tmp
+            - name: active-queries
+              mountPath: /active-query-tracker
+          ports:
+            - name: http-metrics
+              containerPort: 8080
+              protocol: TCP
+            - name: grpc
+              containerPort: 9095
+              protocol: TCP
+            - name: memberlist
+              containerPort: 7946
+              protocol: TCP
+          livenessProbe:
+            null
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http-metrics
+            initialDelaySeconds: 45
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          env:
+          envFrom:

@@ -10,6 +10,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
   local warningColor = '#EAB839',
   local errorColor = '#E24D42',
 
+  // Colors palette picked from Grafana UI, excluding red-ish colors which we want to keep reserved for errors / failures.
+  local nonErrorColorsPalette = ['#429D48', '#F1C731', '#2A66CF', '#9E44C1', '#FFAB57', '#C79424', '#84D586', '#A1C4FC', '#C788DE'],
+
   _config:: error 'must provide _config',
 
   row(title)::
@@ -82,19 +85,19 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
         if multi then
           if $._config.singleBinary
-          then d.addMultiTemplate('job', $._config.dashboard_variables.job_query, 'job')
+          then d.addMultiTemplate('job', $._config.dashboard_variables.job_query, $._config.per_job_label)
           else d
                .addMultiTemplate('cluster', $._config.dashboard_variables.cluster_query, '%s' % $._config.per_cluster_label)
-               .addMultiTemplate('namespace', $._config.dashboard_variables.namespace_query, 'namespace')
+               .addMultiTemplate('namespace', $._config.dashboard_variables.namespace_query, '%s' % $._config.per_namespace_label)
         else
           if $._config.singleBinary
-          then d.addTemplate('job', $._config.dashboard_variables.job_query, 'job')
+          then d.addTemplate('job', $._config.dashboard_variables.job_query, $._config.per_job_label)
           else d
                .addTemplate('cluster', $._config.dashboard_variables.cluster_query, '%s' % $._config.per_cluster_label, allValue='.*', includeAll=true)
-               .addTemplate('namespace', $._config.dashboard_variables.namespace_query, 'namespace'),
+               .addTemplate('namespace', $._config.dashboard_variables.namespace_query, '%s' % $._config.per_namespace_label),
 
       addActiveUserSelectorTemplates()::
-        self.addTemplate('user', 'cortex_ingester_active_series{%s=~"$cluster", namespace=~"$namespace"}' % $._config.per_cluster_label, 'user'),
+        self.addTemplate('user', 'cortex_ingester_active_series{%s=~"$cluster", %s=~"$namespace"}' % [$._config.per_cluster_label, $._config.per_namespace_label], 'user'),
 
       addCustomTemplate(name, values, defaultIndex=0):: self {
         templating+: {
@@ -141,18 +144,18 @@ local utils = import 'mixin-utils/utils.libsonnet';
   // deployment or a namespaced one.
   jobMatcher(job)::
     if $._config.singleBinary
-    then 'job=~"$job"'
-    else '%s=~"$cluster", job=~"($namespace)/(%s)"' % [$._config.per_cluster_label, job],
+    then '%s=~"$job"' % $._config.per_job_label
+    else '%s=~"$cluster", %s=~"%s(%s)"' % [$._config.per_cluster_label, $._config.per_job_label, $._config.job_prefix, job],
 
   namespaceMatcher()::
     if $._config.singleBinary
-    then 'job=~"$job"'
-    else '%s=~"$cluster", namespace=~"$namespace"' % $._config.per_cluster_label,
+    then '%s=~"$job"' % $._config.per_job_label
+    else '%s=~"$cluster", %s=~"$namespace"' % [$._config.per_cluster_label, $._config.per_namespace_label],
 
   jobSelector(job)::
     if $._config.singleBinary
-    then [utils.selector.noop('%s' % $._config.per_cluster_label), utils.selector.re('job', '$job')]
-    else [utils.selector.re('%s' % $._config.per_cluster_label, '$cluster'), utils.selector.re('job', '($namespace)/(%s)' % job)],
+    then [utils.selector.noop('%s' % $._config.per_cluster_label), utils.selector.re($._config.per_job_label, '$job')]
+    else [utils.selector.re('%s' % $._config.per_cluster_label, '$cluster'), utils.selector.re($._config.per_job_label, '($namespace)/(%s)' % job)],
 
   recordingRulePrefix(selectors)::
     std.join('_', [matcher.label for matcher in selectors]),
@@ -245,40 +248,46 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
     },
 
-  resourcesPanelLegend(first_legend)::
+  resourceUtilizationAndLimitLegend(resourceName)::
     if $._config.deployment_type == 'kubernetes'
-    then [first_legend, 'limit', 'request']
+    then [resourceName, 'limit', 'request']
     // limit and request does not makes sense when running on baremetal
-    else [first_legend],
+    else [resourceName],
 
-  resourcesPanelQueries(metric, instanceName)::
+  // The provided instanceName should be a regexp from $._config.instance_names, while
+  // the provided containerName should be a regexp from $._config.container_names.
+  resourceUtilizationQuery(metric, instanceName, containerName)::
+    $._config.resources_panel_queries[$._config.deployment_type]['%s_usage' % metric] % {
+      instanceLabel: $._config.per_instance_label,
+      namespace: $.namespaceMatcher(),
+      instanceName: instanceName,
+      containerName: containerName,
+    },
+
+  // The provided instanceName should be a regexp from $._config.instance_names, while
+  // the provided containerName should be a regexp from $._config.container_names.
+  resourceUtilizationAndLimitQueries(metric, instanceName, containerName)::
     if $._config.deployment_type == 'kubernetes'
     then [
-      $._config.resources_panel_queries[$._config.deployment_type]['%s_usage' % metric] % {
-        instance: $._config.per_instance_label,
-        namespace: $.namespaceMatcher(),
-        instanceName: instanceName,
-      },
+      $.resourceUtilizationQuery(metric, instanceName, containerName),
       $._config.resources_panel_queries[$._config.deployment_type]['%s_limit' % metric] % {
         namespace: $.namespaceMatcher(),
-        instanceName: instanceName,
+        containerName: containerName,
       },
       $._config.resources_panel_queries[$._config.deployment_type]['%s_request' % metric] % {
         namespace: $.namespaceMatcher(),
-        instanceName: instanceName,
+        containerName: containerName,
       },
     ]
     else [
-      $._config.resources_panel_queries[$._config.deployment_type]['%s_usage' % metric] % {
-        instance: $._config.per_instance_label,
-        namespace: $.namespaceMatcher(),
-        instanceName: instanceName,
-      },
+      $.resourceUtilizationQuery(metric, instanceName, containerName),
     ],
 
-  containerCPUUsagePanel(title, instanceName)::
-    $.panel(title) +
-    $.queryPanel($.resourcesPanelQueries('cpu', instanceName), $.resourcesPanelLegend('{{%s}}' % $._config.per_instance_label)) +
+  // The provided instanceName should be a regexp from $._config.instance_names, while
+  // the provided containerName should be a regexp from $._config.container_names.
+  containerCPUUsagePanel(instanceName, containerName)::
+    $.panel('CPU') +
+    $.queryPanel($.resourceUtilizationAndLimitQueries('cpu', instanceName, containerName), $.resourceUtilizationAndLimitLegend('{{%s}}' % $._config.per_instance_label)) +
     {
       seriesOverrides: [
         resourceRequestStyle,
@@ -288,9 +297,15 @@ local utils = import 'mixin-utils/utils.libsonnet';
       fill: 0,
     },
 
-  containerMemoryWorkingSetPanel(title, instanceName)::
-    $.panel(title) +
-    $.queryPanel($.resourcesPanelQueries('memory_working', instanceName), $.resourcesPanelLegend('{{%s}}' % $._config.per_instance_label)) +
+  // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
+  containerCPUUsagePanelByComponent(componentName)::
+    $.containerCPUUsagePanel($._config.instance_names[componentName], $._config.container_names[componentName]),
+
+  // The provided instanceName should be a regexp from $._config.instance_names, while
+  // the provided containerName should be a regexp from $._config.container_names.
+  containerMemoryWorkingSetPanel(instanceName, containerName)::
+    $.panel('Memory (workingset)') +
+    $.queryPanel($.resourceUtilizationAndLimitQueries('memory_working', instanceName, containerName), $.resourceUtilizationAndLimitLegend('{{%s}}' % $._config.per_instance_label)) +
     {
       seriesOverrides: [
         resourceRequestStyle,
@@ -301,9 +316,15 @@ local utils = import 'mixin-utils/utils.libsonnet';
       fill: 0,
     },
 
-  containerMemoryRSSPanel(title, instanceName)::
-    $.panel(title) +
-    $.queryPanel($.resourcesPanelQueries('memory_rss', instanceName), $.resourcesPanelLegend('{{%s}}' % $._config.per_instance_label)) +
+  // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
+  containerMemoryWorkingSetPanelByComponent(componentName)::
+    $.containerMemoryWorkingSetPanel($._config.instance_names[componentName], $._config.container_names[componentName]),
+
+  // The provided instanceName should be a regexp from $._config.instance_names, while
+  // the provided containerName should be a regexp from $._config.container_names.
+  containerMemoryRSSPanel(instanceName, containerName)::
+    $.panel('Memory (RSS)') +
+    $.queryPanel($.resourceUtilizationAndLimitQueries('memory_rss', instanceName, containerName), $.resourceUtilizationAndLimitLegend('{{%s}}' % $._config.per_instance_label)) +
     {
       seriesOverrides: [
         resourceRequestStyle,
@@ -314,48 +335,76 @@ local utils = import 'mixin-utils/utils.libsonnet';
       fill: 0,
     },
 
-  containerNetworkPanel(title, metric, instanceName)::
+  // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
+  containerMemoryRSSPanelByComponent(componentName)::
+    $.containerMemoryRSSPanel($._config.instance_names[componentName], $._config.container_names[componentName]),
+
+  // The provided instanceName should be a regexp from $._config.instance_names, while
+  // the provided containerName should be a regexp from $._config.container_names.
+  containerGoHeapInUsePanel(instanceName, containerName)::
+    $.panel('Memory (go heap inuse)') +
+    $.queryPanel($.resourceUtilizationQuery('memory_go_heap', instanceName, containerName), '{{%s}}' % $._config.per_instance_label) +
+    {
+      yaxes: $.yaxes('bytes'),
+      tooltip: { sort: 2 },  // Sort descending.
+      fill: 0,
+    },
+
+  // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
+  containerGoHeapInUsePanelByComponent(componentName)::
+    $.containerGoHeapInUsePanel($._config.instance_names[componentName], $._config.container_names[componentName]),
+
+  containerNetworkBytesPanel(title, metric, instanceName)::
     $.panel(title) +
     $.queryPanel(
-      $._config.resources_panel_queries[$._config.deployment_type].network % {
-        namespace: $.namespaceMatcher(),
-        metric: metric,
-        instance: $._config.per_instance_label,
+      $._config.resources_panel_queries[$._config.deployment_type][metric] % {
+        namespaceMatcher: $.namespaceMatcher(),
+        instanceLabel: $._config.per_instance_label,
         instanceName: instanceName,
       }, '{{%s}}' % $._config.per_instance_label
     ) +
     $.stack +
     { yaxes: $.yaxes('Bps') },
 
-  containerNetworkReceiveBytesPanel(instanceName)::
-    $.containerNetworkPanel('Receive bandwidth', $._config.resources_panel_series[$._config.deployment_type].network_receive_bytes_metrics, instanceName),
+  // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
+  containerNetworkReceiveBytesPanelByComponent(componentName)::
+    $.containerNetworkBytesPanel('Receive bandwidth', 'network_receive_bytes', $._config.instance_names[componentName]),
 
-  containerNetworkTransmitBytesPanel(instanceName)::
-    $.containerNetworkPanel('Transmit bandwidth', $._config.resources_panel_series[$._config.deployment_type].network_transmit_bytes_metrics, instanceName),
+  // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
+  containerNetworkTransmitBytesPanelByComponent(componentName)::
+    $.containerNetworkBytesPanel('Transmit bandwidth', 'network_transmit_bytes', $._config.instance_names[componentName]),
 
-  containerDiskWritesPanel(title, instanceName)::
-    $.panel(title) +
+  // The provided instanceName should be a regexp from $._config.instance_names, while
+  // the provided containerName should be a regexp from $._config.container_names.
+  containerDiskWritesPanel(instanceName, containerName)::
+    $.panel('Disk writes') +
     $.queryPanel(
       $._config.resources_panel_queries[$._config.deployment_type].disk_writes % {
         namespace: $.namespaceMatcher(),
-        instanceLabel: $._config.per_node_label,
-        instance: $._config.per_instance_label,
-        filterNodeDiskContainer: $.filterNodeDiskContainer(instanceName),
+        nodeLabel: $._config.per_node_label,
+        instanceLabel: $._config.per_instance_label,
         instanceName: instanceName,
+        filterNodeDiskContainer: $.filterNodeDiskContainer(containerName),
       },
       '{{%s}} - {{device}}' % $._config.per_instance_label
     ) +
     $.stack +
     { yaxes: $.yaxes('Bps') },
 
-  containerDiskReadsPanel(title, instanceName)::
-    $.panel(title) +
+  // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
+  containerDiskWritesPanelByComponent(componentName)::
+    $.containerDiskWritesPanel($._config.instance_names[componentName], $._config.container_names[componentName]),
+
+  // The provided instanceName should be a regexp from $._config.instance_names, while
+  // the provided containerName should be a regexp from $._config.container_names.
+  containerDiskReadsPanel(instanceName, containerName)::
+    $.panel('Disk reads') +
     $.queryPanel(
       $._config.resources_panel_queries[$._config.deployment_type].disk_reads % {
         namespace: $.namespaceMatcher(),
-        instanceLabel: $._config.per_node_label,
-        instance: $._config.per_instance_label,
-        filterNodeDiskContainer: $.filterNodeDiskContainer(instanceName),
+        nodeLabel: $._config.per_node_label,
+        instanceLabel: $._config.per_instance_label,
+        filterNodeDiskContainer: $.filterNodeDiskContainer(containerName),
         instanceName: instanceName,
       },
       '{{%s}} - {{device}}' % $._config.per_instance_label
@@ -363,14 +412,21 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.stack +
     { yaxes: $.yaxes('Bps') },
 
-  containerDiskSpaceUtilization(title, instanceName)::
+  // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
+  containerDiskReadsPanelByComponent(componentName)::
+    $.containerDiskReadsPanel($._config.instance_names[componentName], $._config.container_names[componentName]),
+
+  // The provided instanceName should be a regexp from $._config.instance_names, while
+  // the provided containerName should be a regexp from $._config.container_names.
+  containerDiskSpaceUtilizationPanel(instanceName, containerName)::
     local label = if $._config.deployment_type == 'kubernetes' then '{{persistentvolumeclaim}}' else '{{instance}}';
-    $.panel(title) +
+
+    $.panel('Disk space utilization') +
     $.queryPanel(
       $._config.resources_panel_queries[$._config.deployment_type].disk_utilization % {
-        namespace: $.namespaceMatcher(),
-        label: $.containerLabelMatcher(instanceName),
-        instance: $._config.per_instance_label,
+        namespaceMatcher: $.namespaceMatcher(),
+        containerMatcher: $.containerLabelNameMatcher(containerName),
+        instanceLabel: $._config.per_instance_label,
         instanceName: instanceName,
         instanceDataDir: $._config.instance_data_mountpoint,
       }, label
@@ -380,33 +436,42 @@ local utils = import 'mixin-utils/utils.libsonnet';
       fill: 0,
     },
 
-  containerLabelMatcher(instanceName)::
-    if instanceName == 'ingester' then 'label_name=~"ingester.*"'
-    else if instanceName == 'store-gateway' then 'label_name=~"store-gateway.*"'
-    else 'label_name="%s"' % instanceName,
+  // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
+  containerDiskSpaceUtilizationPanelByComponent(componentName)::
+    $.containerDiskSpaceUtilizationPanel($._config.instance_names[componentName], $._config.container_names[componentName]),
 
-  jobNetworkingRow(title, name)::
+  // The provided containerName should be a regexp from $._config.container_names.
+  containerLabelNameMatcher(containerName)::
+    // Check only the prefix so that a multi-zone deployment matches too.
+    'label_name=~"(%s).*"' % containerName,
+
+  // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
+  containerNetworkingRowByComponent(title, componentName)::
+    // Match series using namespace + instance instead of the job so that we can
+    // select only specific deployments (e.g. "distributor in microservices mode").
     local vars = $._config {
-      job_matcher: $.jobMatcher($._config.job_names[name]),
+      instanceLabel: $._config.per_instance_label,
+      instanceName: $._config.instance_names[componentName],
+      namespaceMatcher: $.namespaceMatcher(),
     };
 
     super.row(title)
-    .addPanel($.containerNetworkReceiveBytesPanel($._config.instance_names[name]))
-    .addPanel($.containerNetworkTransmitBytesPanel($._config.instance_names[name]))
+    .addPanel($.containerNetworkReceiveBytesPanelByComponent(componentName))
+    .addPanel($.containerNetworkTransmitBytesPanelByComponent(componentName))
     .addPanel(
       $.panel('Inflight requests (per pod)') +
       $.queryPanel([
-        'avg(cortex_inflight_requests{%(job_matcher)s})' % vars,
-        'max(cortex_inflight_requests{%(job_matcher)s})' % vars,
+        'avg(cortex_inflight_requests{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"})' % vars,
+        'max(cortex_inflight_requests{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"})' % vars,
       ], ['avg', 'highest']) +
       { fill: 0 }
     )
     .addPanel(
       $.panel('TCP connections (per pod)') +
       $.queryPanel([
-        'avg(sum by(%(per_instance_label)s) (cortex_tcp_connections{%(job_matcher)s}))' % vars,
-        'max(sum by(%(per_instance_label)s) (cortex_tcp_connections{%(job_matcher)s}))' % vars,
-        'min(cortex_tcp_connections_limit{%(job_matcher)s})' % vars,
+        'avg(sum by(%(per_instance_label)s) (cortex_tcp_connections{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}))' % vars,
+        'max(sum by(%(per_instance_label)s) (cortex_tcp_connections{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}))' % vars,
+        'min(cortex_tcp_connections_limit{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"})' % vars,
       ], ['avg', 'highest', 'limit']) +
       { fill: 0 }
     ),
@@ -421,18 +486,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.panel('Latency') +
       $.latencyPanel('cortex_kv_request_duration_seconds', '{%s, kv_name=~"%s"}' % [$.jobMatcher($._config.job_names[jobName]), kvName])
     ),
-
-  goHeapInUsePanel(title, jobName)::
-    $.panel(title) +
-    $.queryPanel(
-      'sum by(%s) (go_memstats_heap_inuse_bytes{%s})' % [$._config.per_instance_label, $.jobMatcher(jobName)],
-      '{{%s}}' % $._config.per_instance_label
-    ) +
-    {
-      yaxes: $.yaxes('bytes'),
-      tooltip: { sort: 2 },  // Sort descending.
-      fill: 0,
-    },
 
   newStatPanel(queries, legends='', unit='percentunit', decimals=1, thresholds=[], instant=false, novalue='')::
     super.queryPanel(queries, legends) + {
@@ -593,23 +646,18 @@ local utils = import 'mixin-utils/utils.libsonnet';
       { yaxes: $.yaxes('percentunit') },
     )
     .addPanel(
-      $.panel('Inflight requests') +
-      $.queryPanel('sum(cortex_bucket_stores_gate_queries_in_flight{%s, component="%s"})' % [$.namespaceMatcher(), component], 'Total')
-    ),
-    $.row('')
-    .addPanel(
       $.panel('Latency of op: Attributes') +
       $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="attributes"}' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
       $.panel('Latency of op: Exists') +
       $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="exists"}' % [$.namespaceMatcher(), component]),
-    )
+    ),
+    $.row('')
     .addPanel(
       $.panel('Latency of op: Get') +
       $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="get"}' % [$.namespaceMatcher(), component]),
-    ),
-    $.row('')
+    )
     .addPanel(
       $.panel('Latency of op: GetRange') +
       $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="get_range"}' % [$.namespaceMatcher(), component]),
@@ -693,19 +741,19 @@ local utils = import 'mixin-utils/utils.libsonnet';
       { yaxes: $.yaxes('percentunit') }
     ),
 
-  filterNodeDiskContainer(instanceName)::
+  filterNodeDiskContainer(containerName)::
     |||
-      ignoring(%s) group_right() (
+      ignoring(%(instanceLabel)s) group_right() (
         label_replace(
           count by(
-            %s,
-            %s,
+            %(nodeLabel)s,
+            %(instanceLabel)s,
             device
           )
           (
             container_fs_writes_bytes_total{
-              %s,
-              container="%s",
+              %(namespaceMatcher)s,
+              container=~"%(containerName)s",
               device!~".*sda.*"
             }
           ),
@@ -715,13 +763,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
           "/dev/(.*)"
         ) * 0
       )
-    ||| % [
-      $._config.per_instance_label,
-      $._config.per_node_label,
-      $._config.per_instance_label,
-      $.namespaceMatcher(),
-      instanceName,
-    ],
+    ||| % {
+      instanceLabel: $._config.per_instance_label,
+      containerName: containerName,
+      nodeLabel: $._config.per_node_label,
+      namespaceMatcher: $.namespaceMatcher(),
+    },
 
   filterKedaMetricByHPA(query, hpa_name)::
     |||
@@ -758,6 +805,18 @@ local utils = import 'mixin-utils/utils.libsonnet';
       ### %s
       %s
     ||| % [title, description],
+  },
+
+  panelSeriesNonErrorColorsPalette(legends):: {
+    seriesOverrides: std.prune(std.mapWithIndex(function(idx, legend) (
+      // Do not define an override if we exausted the colors in the palette.
+      // Grafana will automatically choose another color.
+      if idx >= std.length(nonErrorColorsPalette) then null else
+        {
+          alias: legend,
+          color: nonErrorColorsPalette[idx],
+        }
+    ), legends)),
   },
 
   // Panel query override functions

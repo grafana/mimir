@@ -91,10 +91,9 @@ func TestIngester_LabelValuesCardinality_SentInBatches(t *testing.T) {
 	samples := []mimirpb.Sample{{TimestampMs: 1_000, Value: 1}}
 	seriesForLabel := func(label string) mimirpb.PreallocTimeseries {
 		return mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
-			Labels: mimirpb.FromLabelsToLabelAdapters(labels.Labels{
-				{Name: labels.MetricName, Value: "metric"},
-				{Name: label, Value: nextLabelValue()},
-			}),
+			Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(
+				labels.MetricName, "metric",
+				label, nextLabelValue())),
 			Samples: samples,
 		}}
 	}
@@ -210,11 +209,9 @@ func TestIngester_LabelValuesCardinality_AllValuesToBeReturnedInSingleMessage(t 
 				for idx, lblValue := range lblValues {
 					count := idx + 1
 					for c := 0; c < count; c++ {
-						_, err := in.Push(ctx, writeRequestSingleSeries(labels.Labels{
-							{Name: labels.MetricName, Value: "foo"},
-							{Name: lblName, Value: lblValue},
-							{Name: "counter", Value: strconv.Itoa(c)},
-						}, samples))
+						_, err := in.Push(ctx, writeRequestSingleSeries(
+							labels.FromStrings(labels.MetricName, "foo", lblName, lblValue, "counter", strconv.Itoa(c)),
+							samples))
 						require.NoError(t, err)
 					}
 				}
@@ -316,13 +313,12 @@ func BenchmarkIngester_LabelValuesCardinality(b *testing.B) {
 	for s := 0; s < numSeries; s++ {
 		writeReq.Timeseries = append(writeReq.Timeseries, mimirpb.PreallocTimeseries{
 			TimeSeries: &mimirpb.TimeSeries{
-				Labels: mimirpb.FromLabelsToLabelAdapters(labels.Labels{
-					{Name: labels.MetricName, Value: metricName},
+				Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(
+					labels.MetricName, metricName,
 					// Take prime modulus on the labels, to ensure that each one is a new series.
-					{Name: "mod_10", Value: strconv.Itoa(s % (2 * 5))},
-					{Name: "mod_77", Value: strconv.Itoa(s % (7 * 11))},
-					{Name: "mod_4199", Value: strconv.Itoa(s % (13 * 17 * 19))},
-				}),
+					"mod_10", strconv.Itoa(s%(2*5)),
+					"mod_77", strconv.Itoa(s%(7*11)),
+					"mod_4199", strconv.Itoa(s%(13*17*19)))),
 				Samples: samples,
 			},
 		})

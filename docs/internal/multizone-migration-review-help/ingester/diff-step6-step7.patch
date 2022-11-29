@@ -1,0 +1,232 @@
+diff -c -r step6/mimir-distributed/templates/distributor/distributor-dep.yaml step7/mimir-distributed/templates/distributor/distributor-dep.yaml
+*** step6/mimir-distributed/templates/distributor/distributor-dep.yaml
+--- step7/mimir-distributed/templates/distributor/distributor-dep.yaml
+***************
+*** 48,54 ****
+              - "-target=distributor"
+              - "-config.expand-env=true"
+              - "-config.file=/etc/mimir/mimir.yaml"
+-             - "-ingester.ring.excluded-zones=zone-default"
+            volumeMounts:
+              - name: config
+                mountPath: /etc/mimir
+--- 48,53 ----
+diff -c -r step6/mimir-distributed/templates/ingester/ingester-statefulset.yaml step7/mimir-distributed/templates/ingester/ingester-statefulset.yaml
+*** step6/mimir-distributed/templates/ingester/ingester-statefulset.yaml
+--- step7/mimir-distributed/templates/ingester/ingester-statefulset.yaml
+***************
+*** 3,127 ****
+  apiVersion: apps/v1
+  kind: StatefulSet
+  metadata:
+-   name: krajo-mimir-ingester
+-   labels:
+-     app.kubernetes.io/name: mimir
+-     app.kubernetes.io/instance: krajo
+-     app.kubernetes.io/component: ingester
+-     app.kubernetes.io/part-of: memberlist
+-     app.kubernetes.io/managed-by: Helm
+-   annotations:
+-     {}
+-   namespace: "default"
+- spec:
+-   podManagementPolicy: Parallel
+-   replicas: 0
+-   selector:
+-     matchLabels:
+-       app.kubernetes.io/name: mimir
+-       app.kubernetes.io/instance: krajo
+-       app.kubernetes.io/component: ingester
+-   updateStrategy:
+-     type: RollingUpdate
+-   serviceName: krajo-mimir-ingester-headless
+-   volumeClaimTemplates:
+-     - metadata:
+-         name: storage
+-       spec:
+-         accessModes:
+-           - ReadWriteOnce
+-         resources:
+-           requests:
+-             storage: "2Gi"
+-   template:
+-     metadata:
+-       labels:
+-         app.kubernetes.io/name: mimir
+-         app.kubernetes.io/instance: krajo
+-         app.kubernetes.io/managed-by: Helm
+-         app.kubernetes.io/component: ingester
+-         app.kubernetes.io/part-of: memberlist
+-       annotations:
+-       namespace: "default"
+-     spec:
+-       serviceAccountName: krajo-mimir
+-       securityContext:
+-         {}
+-       initContainers:
+-         []
+-       nodeSelector:
+-         {}
+-       affinity:
+-         {}
+-       topologySpreadConstraints:
+-         - maxSkew: 1
+-           topologyKey: kubernetes.io/hostname
+-           whenUnsatisfiable: ScheduleAnyway
+-           labelSelector:
+-             matchLabels:
+-               app.kubernetes.io/name: mimir
+-               app.kubernetes.io/instance: krajo
+-               app.kubernetes.io/component: ingester
+-       tolerations:
+-         []
+-       terminationGracePeriodSeconds: 240
+-       volumes:
+-         - name: config
+-           configMap:
+-             name: krajo-mimir-config
+-             items:
+-               - key: "mimir.yaml"
+-                 path: "mimir.yaml"
+-         - name: runtime-config
+-           configMap:
+-             name: krajo-mimir-runtime
+-       containers:
+-         - name: ingester
+-           imagePullPolicy: IfNotPresent
+-           args:
+-             - "-target=ingester"
+-             - "-config.expand-env=true"
+-             - "-config.file=/etc/mimir/mimir.yaml"
+-             - "-ingester.ring.instance-availability-zone=zone-default"
+-             - "-blocks-storage.tsdb.flush-blocks-on-shutdown=true"
+-             - "-ingester.ring.unregister-on-shutdown=true"
+-           volumeMounts:
+-             - name: config
+-               mountPath: /etc/mimir
+-             - name: runtime-config
+-               mountPath: /var/mimir
+-             - name: storage
+-               mountPath: "/data"
+-           ports:
+-             - name: http-metrics
+-               containerPort: 8080
+-               protocol: TCP
+-             - name: grpc
+-               containerPort: 9095
+-               protocol: TCP
+-             - name: memberlist
+-               containerPort: 7946
+-               protocol: TCP
+-           livenessProbe:
+-             null
+-           readinessProbe:
+-             httpGet:
+-               path: /ready
+-               port: http-metrics
+-             initialDelaySeconds: 60
+-           resources:
+-             requests:
+-               cpu: 100m
+-               memory: 512Mi
+-           securityContext:
+-             readOnlyRootFilesystem: true
+-           env:
+-           envFrom:
+- ---
+- # Source: mimir-distributed/templates/ingester/ingester-statefulset.yaml
+- apiVersion: apps/v1
+- kind: StatefulSet
+- metadata:
+    name: krajo-mimir-ingester-zone-a
+    labels:
+      app.kubernetes.io/name: mimir
+--- 3,8 ----
+diff -c -r step6/mimir-distributed/templates/ingester/ingester-svc.yaml step7/mimir-distributed/templates/ingester/ingester-svc.yaml
+*** step6/mimir-distributed/templates/ingester/ingester-svc.yaml
+--- step7/mimir-distributed/templates/ingester/ingester-svc.yaml
+***************
+*** 3,38 ****
+  apiVersion: v1
+  kind: Service
+  metadata:
+-   name: krajo-mimir-ingester
+-   labels:
+-     app.kubernetes.io/name: mimir
+-     app.kubernetes.io/instance: krajo
+-     app.kubernetes.io/component: ingester
+-     app.kubernetes.io/part-of: memberlist
+-     app.kubernetes.io/managed-by: Helm
+-   annotations:
+-     {}
+-   namespace: "default"
+- spec:
+-   type: ClusterIP
+-   ports:
+-     - port: 8080
+-       protocol: TCP
+-       name: http-metrics
+-       targetPort: http-metrics
+-     - port: 9095
+-       protocol: TCP
+-       name: grpc
+-       targetPort: grpc
+-   selector:
+-     app.kubernetes.io/name: mimir
+-     app.kubernetes.io/instance: krajo
+-     app.kubernetes.io/component: ingester
+- ---
+- # Source: mimir-distributed/templates/ingester/ingester-svc.yaml
+- apiVersion: v1
+- kind: Service
+- metadata:
+    name: krajo-mimir-ingester-zone-a
+    labels:
+      app.kubernetes.io/name: mimir
+--- 3,8 ----
+***************
+*** 43,50 ****
+      name: "ingester-zone-a"
+      rollout-group: ingester
+      zone: zone-a
+-     # Prevent scraping PODs via this service during migration as the original non zone-aware service already scrapes all PODs and you get duplicate metrics.
+-     prometheus.io/service-monitor: "false"
+    annotations:
+      {}
+    namespace: "default"
+--- 13,18 ----
+***************
+*** 80,87 ****
+      name: "ingester-zone-b"
+      rollout-group: ingester
+      zone: zone-b
+-     # Prevent scraping PODs via this service during migration as the original non zone-aware service already scrapes all PODs and you get duplicate metrics.
+-     prometheus.io/service-monitor: "false"
+    annotations:
+      {}
+    namespace: "default"
+--- 48,53 ----
+***************
+*** 117,124 ****
+      name: "ingester-zone-c"
+      rollout-group: ingester
+      zone: zone-c
+-     # Prevent scraping PODs via this service during migration as the original non zone-aware service already scrapes all PODs and you get duplicate metrics.
+-     prometheus.io/service-monitor: "false"
+    annotations:
+      {}
+    namespace: "default"
+--- 83,88 ----
+diff -c -r step6/mimir-distributed/templates/ruler/ruler-dep.yaml step7/mimir-distributed/templates/ruler/ruler-dep.yaml
+*** step6/mimir-distributed/templates/ruler/ruler-dep.yaml
+--- step7/mimir-distributed/templates/ruler/ruler-dep.yaml
+***************
+*** 48,54 ****
+              - "-target=ruler"
+              - "-config.expand-env=true"
+              - "-config.file=/etc/mimir/mimir.yaml"
+-             - "-ingester.ring.excluded-zones=zone-default"
+            volumeMounts:
+              - name: config
+                mountPath: /etc/mimir
+--- 48,53 ----

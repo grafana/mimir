@@ -2,6 +2,7 @@
   local container = $.core.v1.container,
 
   querier_args::
+    $._config.usageStatsConfig +
     $._config.grpcConfig +
     $._config.storageConfig +
     $._config.blocksStorageConfig +
@@ -61,11 +62,11 @@
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(5) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1),
 
-  querier_deployment:
+  querier_deployment: if !$._config.is_microservices_deployment_mode then null else
     self.newQuerierDeployment('querier', $.querier_container),
 
   local service = $.core.v1.service,
 
-  querier_service:
+  querier_service: if !$._config.is_microservices_deployment_mode then null else
     $.util.serviceFor($.querier_deployment, $._config.service_ignored_labels),
 }

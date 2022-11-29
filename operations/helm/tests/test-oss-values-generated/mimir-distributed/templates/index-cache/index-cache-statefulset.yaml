@@ -41,6 +41,8 @@ spec:
         runAsGroup: 11211
         runAsNonRoot: true
         runAsUser: 11211
+        seccompProfile:
+          type: RuntimeDefault
       initContainers:
         []
       nodeSelector:
@@ -66,7 +68,7 @@ spec:
             - -m 30
             - -o
             - modern
-            - -I 15m
+            - -I 5m
             - -c 16384
             - -v
             - -u 11211

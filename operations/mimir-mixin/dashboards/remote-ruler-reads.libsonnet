@@ -98,16 +98,16 @@ local filename = 'mimir-remote-ruler-reads.json';
       )
     )
     .addRowIf(
-      $._config.autoscaling.querier_enabled,
+      $._config.autoscaling.ruler_querier.enabled,
       $.row('Querier (dedicated to ruler) - autoscaling')
       .addPanel(
         local title = 'Replicas';
         $.panel(title) +
         $.queryPanel(
           [
-            'kube_horizontalpodautoscaler_spec_min_replicas{%s, horizontalpodautoscaler="%s"}' % [$.namespaceMatcher(), $._config.autoscaling.ruler_querier_hpa_name],
-            'kube_horizontalpodautoscaler_spec_max_replicas{%s, horizontalpodautoscaler="%s"}' % [$.namespaceMatcher(), $._config.autoscaling.ruler_querier_hpa_name],
-            'kube_horizontalpodautoscaler_status_current_replicas{%s, horizontalpodautoscaler="%s"}' % [$.namespaceMatcher(), $._config.autoscaling.ruler_querier_hpa_name],
+            'kube_horizontalpodautoscaler_spec_min_replicas{%s, horizontalpodautoscaler="%s"}' % [$.namespaceMatcher(), $._config.autoscaling.ruler_querier.hpa_name],
+            'kube_horizontalpodautoscaler_spec_max_replicas{%s, horizontalpodautoscaler="%s"}' % [$.namespaceMatcher(), $._config.autoscaling.ruler_querier.hpa_name],
+            'kube_horizontalpodautoscaler_status_current_replicas{%s, horizontalpodautoscaler="%s"}' % [$.namespaceMatcher(), $._config.autoscaling.ruler_querier.hpa_name],
           ],
           [
             'Min',
@@ -127,8 +127,8 @@ local filename = 'mimir-remote-ruler-reads.json';
         $.panel(title) +
         $.queryPanel(
           [
-            $.filterKedaMetricByHPA('keda_metrics_adapter_scaler_metrics_value', $._config.autoscaling.ruler_querier_hpa_name),
-            'kube_horizontalpodautoscaler_spec_target_metric{%s, horizontalpodautoscaler="%s"}' % [$.namespaceMatcher(), $._config.autoscaling.ruler_querier_hpa_name],
+            $.filterKedaMetricByHPA('keda_metrics_adapter_scaler_metrics_value', $._config.autoscaling.ruler_querier.hpa_name),
+            'kube_horizontalpodautoscaler_spec_target_metric{%s, horizontalpodautoscaler="%s"}' % [$.namespaceMatcher(), $._config.autoscaling.ruler_querier.hpa_name],
           ], [
             'Scaling metric',
             'Target per replica',
@@ -147,7 +147,7 @@ local filename = 'mimir-remote-ruler-reads.json';
         local title = 'Autoscaler failures rate';
         $.panel(title) +
         $.queryPanel(
-          $.filterKedaMetricByHPA('sum by(metric) (rate(keda_metrics_adapter_scaler_errors[$__rate_interval]))', $._config.autoscaling.ruler_querier_hpa_name),
+          $.filterKedaMetricByHPA('sum by(metric) (rate(keda_metrics_adapter_scaler_errors[$__rate_interval]))', $._config.autoscaling.ruler_querier.hpa_name),
           '{{metric}} failures'
         ) +
         $.panelDescription(

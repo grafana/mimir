@@ -167,15 +167,10 @@ func TestMergeExemplarQuerier_Select(t *testing.T) {
 	fixtureResults := func() ([]exemplar.QueryResult, []exemplar.QueryResult) {
 		res1 := []exemplar.QueryResult{
 			{
-				SeriesLabels: labels.Labels{
-					{
-						Name:  "__name__",
-						Value: "request_duration_seconds",
-					},
-				},
+				SeriesLabels: labels.FromStrings("__name__", "request_duration_seconds"),
 				Exemplars: []exemplar.Exemplar{
 					{
-						Labels: labels.Labels{{Name: "traceID", Value: "abc123"}},
+						Labels: labels.FromStrings("traceID", "abc123"),
 						Value:  123.4,
 						Ts:     now.UnixMilli(),
 					},
@@ -185,15 +180,10 @@ func TestMergeExemplarQuerier_Select(t *testing.T) {
 
 		res2 := []exemplar.QueryResult{
 			{
-				SeriesLabels: labels.Labels{
-					{
-						Name:  "__name__",
-						Value: "request_duration_seconds",
-					},
-				},
+				SeriesLabels: labels.FromStrings("__name__", "request_duration_seconds"),
 				Exemplars: []exemplar.Exemplar{
 					{
-						Labels: labels.Labels{{Name: "traceID", Value: "abc456"}},
+						Labels: labels.FromStrings("traceID", "abc456"),
 						Value:  456.7,
 						Ts:     now.UnixMilli(),
 					},

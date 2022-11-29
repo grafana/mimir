@@ -1,0 +1,24 @@
+---
+# Source: mimir-distributed/templates/nginx/nginx-v2beta1-hpa.yaml
+apiVersion: autoscaling/v2beta1
+kind: HorizontalPodAutoscaler
+metadata:
+  name: test-oss-k8s-1.25-values-mimir-nginx
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-oss-k8s-1.25-values
+    app.kubernetes.io/component: nginx
+    app.kubernetes.io/managed-by: Helm
+  namespace: "citestns"
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: test-oss-k8s-1.25-values-mimir-nginx
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        targetAverageUtilization: 60

@@ -9,6 +9,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
@@ -18,13 +19,12 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/thanos-io/thanos/pkg/block"
-	"github.com/thanos-io/thanos/pkg/extprom"
-	"github.com/thanos-io/thanos/pkg/objstore"
+	"github.com/thanos-io/objstore"
 
-	"github.com/thanos-io/thanos/pkg/block/metadata"
-
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
+	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
+	"github.com/grafana/mimir/pkg/util/extprom"
 )
 
 func TestGroupKey(t *testing.T) {
@@ -131,6 +131,38 @@ func TestFilterOwnJobs(t *testing.T) {
 	}
 }
 
+func TestBlockMaxTimeDeltas(t *testing.T) {
+	j1 := NewJob("user", "key1", nil, 0, metadata.NoneFunc, false, 0, "")
+	require.NoError(t, j1.AppendMeta(&metadata.Meta{
+		BlockMeta: tsdb.BlockMeta{
+			MinTime: 1500002700159,
+			MaxTime: 1500002800159,
+		},
+	}))
+
+	j2 := NewJob("user", "key2", nil, 0, metadata.NoneFunc, false, 0, "")
+	require.NoError(t, j2.AppendMeta(&metadata.Meta{
+		BlockMeta: tsdb.BlockMeta{
+			MinTime: 1500002600159,
+			MaxTime: 1500002700159,
+		},
+	}))
+	require.NoError(t, j2.AppendMeta(&metadata.Meta{
+		BlockMeta: tsdb.BlockMeta{
+			MinTime: 1500002700159,
+			MaxTime: 1500002800159,
+		},
+	}))
+
+	metrics := NewBucketCompactorMetrics(promauto.With(nil).NewCounter(prometheus.CounterOpts{}), nil)
+	now := time.UnixMilli(1500002900159)
+	bc, err := NewBucketCompactor(log.NewNopLogger(), nil, nil, nil, nil, "", nil, 2, false, nil, nil, 4, metrics)
+	require.NoError(t, err)
+
+	deltas := bc.blockMaxTimeDeltas(now, []*Job{j1, j2})
+	assert.Equal(t, []float64{100, 200, 100}, deltas)
+}
+
 func TestNoCompactionMarkFilter(t *testing.T) {
 	ctx := context.Background()
 	// Use bucket with global markers to make sure that our custom filters work correctly.
@@ -142,8 +174,8 @@ func TestNoCompactionMarkFilter(t *testing.T) {
 	block4 := ulid.MustParse("01DTVP434PA9VFXSW2JK000004") // Has invalid marker file.
 	block5 := ulid.MustParse("01DTVP434PA9VFXSW2JK000005") // No mark file.
 
-	for name, testFn := range map[string]func(t *testing.T, synced *extprom.TxGaugeVec){
-		"filter with no deletion of blocks marked for no-compaction": func(t *testing.T, synced *extprom.TxGaugeVec) {
+	for name, testFn := range map[string]func(t *testing.T, synced block.GaugeVec){
+		"filter with no deletion of blocks marked for no-compaction": func(t *testing.T, synced block.GaugeVec) {
 			metas := map[ulid.ULID]*metadata.Meta{
 				block1: blockMeta(block1.String(), 100, 200, nil),
 				block2: blockMeta(block2.String(), 200, 300, nil), // Has no-compaction marker.
@@ -162,10 +194,9 @@ func TestNoCompactionMarkFilter(t *testing.T) {
 			require.Len(t, f.NoCompactMarkedBlocks(), 2)
 			require.Contains(t, f.NoCompactMarkedBlocks(), block2, block4)
 
-			synced.Submit()
 			assert.Equal(t, 2.0, testutil.ToFloat64(synced.WithLabelValues(block.MarkedForNoCompactionMeta)))
 		},
-		"filter with deletion enabled": func(t *testing.T, synced *extprom.TxGaugeVec) {
+		"filter with deletion enabled": func(t *testing.T, synced block.GaugeVec) {
 			metas := map[ulid.ULID]*metadata.Meta{
 				block1: blockMeta(block1.String(), 100, 200, nil),
 				block2: blockMeta(block2.String(), 300, 300, nil), // Has no-compaction marker.
@@ -185,10 +216,9 @@ func TestNoCompactionMarkFilter(t *testing.T) {
 			require.Contains(t, f.NoCompactMarkedBlocks(), block2)
 			require.Contains(t, f.NoCompactMarkedBlocks(), block4)
 
-			synced.Submit()
 			assert.Equal(t, 2.0, testutil.ToFloat64(synced.WithLabelValues(block.MarkedForNoCompactionMeta)))
 		},
-		"filter with deletion enabled, but canceled context": func(t *testing.T, synced *extprom.TxGaugeVec) {
+		"filter with deletion enabled, but canceled context": func(t *testing.T, synced block.GaugeVec) {
 			metas := map[ulid.ULID]*metadata.Meta{
 				block1: blockMeta(block1.String(), 100, 200, nil),
 				block2: blockMeta(block2.String(), 200, 300, nil),
@@ -210,10 +240,9 @@ func TestNoCompactionMarkFilter(t *testing.T) {
 			require.Contains(t, metas, block5)
 
 			require.Empty(t, f.NoCompactMarkedBlocks())
-			synced.Submit()
 			assert.Equal(t, 0.0, testutil.ToFloat64(synced.WithLabelValues(block.MarkedForNoCompactionMeta)))
 		},
-		"filtering block with wrong marker version": func(t *testing.T, synced *extprom.TxGaugeVec) {
+		"filtering block with wrong marker version": func(t *testing.T, synced block.GaugeVec) {
 			metas := map[ulid.ULID]*metadata.Meta{
 				block3: blockMeta(block3.String(), 300, 300, nil), // Has compaction marker with invalid version, but Filter doesn't check for that.
 			}
@@ -223,7 +252,6 @@ func TestNoCompactionMarkFilter(t *testing.T) {
 			require.NoError(t, err)
 			require.Empty(t, metas)
 
-			synced.Submit()
 			assert.Equal(t, 1.0, testutil.ToFloat64(synced.WithLabelValues(block.MarkedForNoCompactionMeta)))
 		},
 	} {

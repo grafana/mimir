@@ -874,12 +874,12 @@ func TestQuerySharding_FunctionCorrectness(t *testing.T) {
 		for _, query := range mkQueries(tc.tpl, tc.fn, tc.rangeQuery, tc.args) {
 			t.Run(query, func(t *testing.T) {
 				queryable := storageSeriesQueryable([]*promql.StorageSeries{
-					newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blop"}, {Name: "foo", Value: "barr"}}, start.Add(-lookbackDelta), end, step, factor(5)),
-					newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blop"}, {Name: "foo", Value: "bazz"}}, start.Add(-lookbackDelta), end, step, factor(7)),
-					newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blap"}, {Name: "foo", Value: "buzz"}}, start.Add(-lookbackDelta), end, step, factor(12)),
-					newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blap"}, {Name: "foo", Value: "bozz"}}, start.Add(-lookbackDelta), end, step, factor(11)),
-					newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blop"}, {Name: "foo", Value: "buzz"}}, start.Add(-lookbackDelta), end, step, factor(8)),
-					newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blap"}, {Name: "foo", Value: "bazz"}}, start.Add(-lookbackDelta), end, step, arithmeticSequence(10)),
+					newSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "barr"), start.Add(-lookbackDelta), end, step, factor(5)),
+					newSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "bazz"), start.Add(-lookbackDelta), end, step, factor(7)),
+					newSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "buzz"), start.Add(-lookbackDelta), end, step, factor(12)),
+					newSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "bozz"), start.Add(-lookbackDelta), end, step, factor(11)),
+					newSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blop", "foo", "buzz"), start.Add(-lookbackDelta), end, step, factor(8)),
+					newSeries(labels.FromStrings("__name__", "bar1", "baz", "blip", "bar", "blap", "foo", "bazz"), start.Add(-lookbackDelta), end, step, arithmeticSequence(10)),
 				})
 
 				req := &PrometheusRangeQueryRequest{
@@ -1225,7 +1225,7 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 			return nil, apierror.Newf(apierror.TypeExec, "expanding series: %s", validation.NewMaxQueryLengthError(744*time.Hour, 720*time.Hour))
 		})
 		queryable = storageSeriesQueryable([]*promql.StorageSeries{
-			newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}}, start.Add(-lookbackDelta), end, step, factor(5)),
+			newSeries(labels.FromStrings("__name__", "bar1"), start.Add(-lookbackDelta), end, step, factor(5)),
 		})
 		queryableSlow = newMockShardedQueryable(
 			2,
@@ -1543,18 +1543,12 @@ func TestPromqlResultToSampleStreams(t *testing.T) {
 			input: &promql.Result{
 				Value: promql.Vector{
 					promql.Sample{
-						Point: promql.Point{T: 1, V: 1},
-						Metric: labels.Labels{
-							{Name: "a", Value: "a1"},
-							{Name: "b", Value: "b1"},
-						},
+						Point:  promql.Point{T: 1, V: 1},
+						Metric: labels.FromStrings("a", "a1", "b", "b1"),
 					},
 					promql.Sample{
-						Point: promql.Point{T: 2, V: 2},
-						Metric: labels.Labels{
-							{Name: "a", Value: "a2"},
-							{Name: "b", Value: "b2"},
-						},
+						Point:  promql.Point{T: 2, V: 2},
+						Metric: labels.FromStrings("a", "a2", "b", "b2"),
 					},
 				},
 			},
@@ -1591,20 +1585,14 @@ func TestPromqlResultToSampleStreams(t *testing.T) {
 			input: &promql.Result{
 				Value: promql.Matrix{
 					{
-						Metric: labels.Labels{
-							{Name: "a", Value: "a1"},
-							{Name: "b", Value: "b1"},
-						},
+						Metric: labels.FromStrings("a", "a1", "b", "b1"),
 						Points: []promql.Point{
 							{T: 1, V: 1},
 							{T: 2, V: 2},
 						},
 					},
 					{
-						Metric: labels.Labels{
-							{Name: "a", Value: "a2"},
-							{Name: "b", Value: "b2"},
-						},
+						Metric: labels.FromStrings("a", "a2", "b", "b2"),
 						Points: []promql.Point{
 							{T: 1, V: 8},
 							{T: 2, V: 9},
@@ -1798,25 +1786,25 @@ func newSeries(metric labels.Labels, from, to time.Time, step time.Duration, gen
 
 // newTestCounterLabels generates series labels for a counter metric used in tests.
 func newTestCounterLabels(id int) labels.Labels {
-	return labels.Labels{
-		{Name: "__name__", Value: "metric_counter"},
-		{Name: "const", Value: "fixed"},                 // A constant label.
-		{Name: "unique", Value: strconv.Itoa(id)},       // A unique label.
-		{Name: "group_1", Value: strconv.Itoa(id % 10)}, // A first grouping label.
-		{Name: "group_2", Value: strconv.Itoa(id % 3)},  // A second grouping label.
-	}
+	return labels.FromStrings(
+		"__name__", "metric_counter",
+		"const", "fixed", // A constant label.
+		"unique", strconv.Itoa(id), // A unique label.
+		"group_1", strconv.Itoa(id%10), // A first grouping label.
+		"group_2", strconv.Itoa(id%3), // A second grouping label.
+	)
 }
 
 // newTestCounterLabels generates series labels for an histogram metric used in tests.
 func newTestHistogramLabels(id int, bucketLe float64) labels.Labels {
-	return labels.Labels{
-		{Name: "__name__", Value: "metric_histogram_bucket"},
-		{Name: "le", Value: fmt.Sprintf("%f", bucketLe)},
-		{Name: "const", Value: "fixed"},                 // A constant label.
-		{Name: "unique", Value: strconv.Itoa(id)},       // A unique label.
-		{Name: "group_1", Value: strconv.Itoa(id % 10)}, // A first grouping label.
-		{Name: "group_2", Value: strconv.Itoa(id % 5)},  // A second grouping label.
-	}
+	return labels.FromStrings(
+		"__name__", "metric_histogram_bucket",
+		"le", fmt.Sprintf("%f", bucketLe),
+		"const", "fixed", // A constant label.
+		"unique", strconv.Itoa(id), // A unique label.
+		"group_1", strconv.Itoa(id%10), // A first grouping label.
+		"group_2", strconv.Itoa(id%3), // A second grouping label.
+	)
 }
 
 // generator defined a function used to generate sample values in tests.

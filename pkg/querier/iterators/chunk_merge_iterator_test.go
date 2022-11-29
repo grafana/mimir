@@ -95,9 +95,7 @@ func TestChunkMergeIteratorSeek(t *testing.T) {
 }
 
 func mkChunk(t require.TestingT, mint, maxt model.Time, step time.Duration, encoding chunk.Encoding) chunk.Chunk {
-	metric := labels.Labels{
-		{Name: model.MetricNameLabel, Value: "foo"},
-	}
+	metric := labels.FromStrings(model.MetricNameLabel, "foo")
 	pc, err := chunk.NewForEncoding(encoding)
 	require.NoError(t, err)
 	for i := mint; i.Before(maxt); i = i.Add(step) {

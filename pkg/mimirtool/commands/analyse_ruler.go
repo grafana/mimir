@@ -11,6 +11,8 @@ import (
 	"os"
 	"sort"
 
+	"github.com/prometheus/common/model"
+
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/alecthomas/kingpin.v2"
 
@@ -57,11 +59,11 @@ func (cmd *RulerAnalyzeCommand) run(k *kingpin.ParseContext) error {
 }
 
 func writeOutRuleMetrics(mir *analyze.MetricsInRuler, outputFile string) error {
-	var metricsUsed []string
+	var metricsUsed model.LabelValues
 	for metric := range mir.OverallMetrics {
-		metricsUsed = append(metricsUsed, metric)
+		metricsUsed = append(metricsUsed, model.LabelValue(metric))
 	}
-	sort.Strings(metricsUsed)
+	sort.Sort(metricsUsed)
 
 	mir.MetricsUsed = metricsUsed
 	out, err := json.MarshalIndent(mir, "", "  ")
@@ -69,7 +71,7 @@ func writeOutRuleMetrics(mir *analyze.MetricsInRuler, outputFile string) error {
 		return err
 	}
 
-	if err := os.WriteFile(outputFile, out, os.FileMode(int(0666))); err != nil {
+	if err := os.WriteFile(outputFile, out, os.FileMode(int(0o666))); err != nil {
 		return err
 	}
 

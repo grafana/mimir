@@ -40,7 +40,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/thanos-io/thanos/pkg/objstore"
+	"github.com/thanos-io/objstore"
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
@@ -482,6 +482,21 @@ receivers:
       - api_url: %s
         bot_token: xxx
         chat_id: 111
+`, backendURL)
+			},
+		},
+		"discord": {
+			getAlertmanagerConfig: func(backendURL string) string {
+				return fmt.Sprintf(`
+route:
+  receiver: discord
+  group_wait: 0s
+  group_interval: 1s
+
+receivers:
+  - name: discord
+    discord_configs:
+      - webhook_url: %s
 `, backendURL)
 			},
 		},

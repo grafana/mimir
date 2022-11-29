@@ -39,13 +39,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"github.com/thanos-io/thanos/pkg/block/metadata"
-	"github.com/thanos-io/thanos/pkg/objstore"
+	"github.com/thanos-io/objstore"
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -1316,7 +1316,7 @@ func createTSDBBlock(t *testing.T, bkt objstore.Bucket, userID string, minT, max
 	db.DisableCompactions()
 
 	appendSample := func(seriesID int, ts int64, value float64) {
-		lbls := labels.Labels{labels.Label{Name: "series_id", Value: strconv.Itoa(seriesID)}}
+		lbls := labels.FromStrings("series_id", strconv.Itoa(seriesID))
 
 		app := db.Appender(context.Background())
 		_, err := app.Append(0, lbls, ts, value)
@@ -1919,7 +1919,7 @@ func TestMultitenantCompactor_OutOfOrderCompaction(t *testing.T) {
 	// Generate a single block with out of order chunks.
 	specs := []*testutil.BlockSeriesSpec{
 		{
-			Labels: labels.Labels{labels.Label{Name: "case", Value: "out_of_order"}},
+			Labels: labels.FromStrings("case", "out_of_order"),
 			Chunks: []chunks.Meta{
 				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{newSample(20, 20), newSample(21, 21)}),
 				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{newSample(10, 10), newSample(11, 11)}),

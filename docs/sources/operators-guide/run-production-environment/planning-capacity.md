@@ -174,3 +174,22 @@ To estimate the maximum number of firing alerts in the last 24 hours, run the fo
 ```
 sum(max_over_time(alertmanager_alerts[24h]))
 ```
+
+### (Optional) Caches
+
+Grafana Mimir supports caching in various stages of the read path:
+
+- results cache to cache partial query results
+- chunks cache to cache timeseries chunks from the object store
+- index cache to accelerate looking up series and labels lookups
+- metadata cache to accelerate looking up individual timeseries blocks
+
+A rule of thumb for scaling memcached deployments for these caches is to look at the rate of evictions. If it 0 during
+steady load and only with occasional spikes, then memcached is sufficiently scaled. If it is >0 all the time, then
+memcached needs to be scaled out.
+
+You can execute the following query to find out the rate of evictions:
+
+```
+sum by(instance) (rate(memcached_items_evicted_total{}[5m]))
+```

@@ -112,6 +112,11 @@ where `default_value` is the value to use if the environment variable is undefin
 # CLI flag: -auth.no-auth-tenant
 [no_auth_tenant: <string> | default = "anonymous"]
 
+# (experimental) How long to wait between SIGTERM and shutdown. After receiving
+# SIGTERM, Mimir will report not-ready status via /ready endpoint.
+# CLI flag: -shutdown-delay
+[shutdown_delay: <duration> | default = 0s]
+
 api:
   # (advanced) Allows to skip label name validation via
   # X-Mimir-SkipLabelNameValidation header on the http write path. Use with
@@ -223,6 +228,10 @@ usage_stats:
   # CLI flag: -usage-stats.enabled
   [enabled: <boolean> | default = true]
 
+  # (experimental) Installation mode. Supported values: custom, helm, jsonnet.
+  # CLI flag: -usage-stats.installation-mode
+  [installation_mode: <string> | default = "custom"]
+
 # The common block holds configurations that configure multiple components at a
 # time.
 [common: <common>]
@@ -302,6 +311,16 @@ The `server` block configures the HTTP and gRPC server of the launched service(s
 # CLI flag: -server.grpc-conn-limit
 [grpc_listen_conn_limit: <int> | default = 0]
 
+# Comma-separated list of cipher suites to use. If blank, the default Go cipher
+# suites is used.
+# CLI flag: -server.tls-cipher-suites
+[tls_cipher_suites: <string> | default = ""]
+
+# Minimum TLS version to use. Allowed values: VersionTLS10, VersionTLS11,
+# VersionTLS12, VersionTLS13. If blank, the Go TLS minimum version is used.
+# CLI flag: -server.tls-min-version
+[tls_min_version: <string> | default = ""]
+
 http_tls_config:
   # (advanced) HTTP server cert path.
   # CLI flag: -server.http-tls-cert-path
@@ -350,7 +369,7 @@ grpc_tls_config:
 
 # (advanced) Write timeout for HTTP server
 # CLI flag: -server.http-write-timeout
-[http_server_write_timeout: <duration> | default = 30s]
+[http_server_write_timeout: <duration> | default = 2m]
 
 # (advanced) Idle timeout for HTTP server
 # CLI flag: -server.http-idle-timeout
@@ -1224,8 +1243,8 @@ The `ruler` block configures the ruler.
 
 # Comma-separated list of URL(s) of the Alertmanager(s) to send notifications
 # to. Each URL is treated as a separate group. Multiple Alertmanagers in HA per
-# group can be supported by using DNS service discovery format. Basic auth is
-# supported as part of the URL.
+# group can be supported by using DNS service discovery format, comprehensive of
+# the scheme. Basic auth is supported as part of the URL.
 # CLI flag: -ruler.alertmanager-url
 [alertmanager_url: <string> | default = ""]
 
@@ -1245,6 +1264,10 @@ The `ruler` block configures the ruler.
 [notification_timeout: <duration> | default = 10s]
 
 alertmanager_client:
+  # (advanced) Enable TLS for gRPC client connecting to alertmanager.
+  # CLI flag: -ruler.tls-enabled
+  [tls_enabled: <boolean> | default = true]
+
   # (advanced) Path to the client certificate file, which will be used for
   # authenticating with the server. Also requires the key path to be configured.
   # CLI flag: -ruler.alertmanager-client.tls-cert-path
@@ -3005,10 +3028,6 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.dir
   [dir: <string> | default = "./tsdb/"]
 
-  # (advanced) TSDB blocks range period.
-  # CLI flag: -blocks-storage.tsdb.block-ranges-period
-  [block_ranges_period: <list of durations> | default = 2h0m0s]
-
   # TSDB blocks retention in the ingester before a block is removed, relative to
   # the newest block written for the tenant. This should be larger than the
   # -blocks-storage.tsdb.block-ranges-period, -querier.query-store-after and
@@ -3105,11 +3124,6 @@ tsdb:
   # (advanced) limit the number of concurrently opening TSDB's on startup
   # CLI flag: -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup
   [max_tsdb_opening_concurrency_on_startup: <int> | default = 10]
-
-  # (experimental) Minimum capacity for out-of-order chunks, in samples between
-  # 0 and 255.
-  # CLI flag: -blocks-storage.tsdb.out-of-order-capacity-min
-  [out_of_order_capacity_min: <int> | default = 4]
 
   # (experimental) Maximum capacity for out of order chunks, in samples between
   # 1 and 255.
@@ -3631,12 +3645,6 @@ The `azure_storage_backend` block configures the connection to Azure object stor
 # (advanced) Number of retries for recoverable errors
 # CLI flag: -<prefix>.azure.max-retries
 [max_retries: <int> | default = 20]
-
-# (advanced) If set, this URL is used instead of
-# https://<storage-account-name>.<endpoint-suffix> for obtaining
-# ServicePrincipalToken from MSI.
-# CLI flag: -<prefix>.azure.msi-resource
-[msi_resource: <string> | default = ""]
 
 # (advanced) User assigned identity. If empty, then System assigned identity is
 # used.

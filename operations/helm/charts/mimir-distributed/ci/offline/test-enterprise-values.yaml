@@ -5,3 +5,7 @@ configStorageType: Secret
 
 enterprise:
   enabled: true
+
+gateway:
+  ingress:
+    enabled: true

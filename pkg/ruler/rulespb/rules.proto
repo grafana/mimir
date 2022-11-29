@@ -22,8 +22,7 @@ message RuleGroupDesc {
   reserved 5, 7, 8;
   string name = 1;
   string namespace = 2;
-  google.protobuf.Duration interval = 3
-      [(gogoproto.nullable) = false, (gogoproto.stdduration) = true];
+  google.protobuf.Duration interval = 3 [(gogoproto.nullable) = false, (gogoproto.stdduration) = true];
   repeated RuleDesc rules = 4;
   string user = 6;
   // The options field can be used to extend Mimir Ruler functionality without
@@ -32,6 +31,7 @@ message RuleGroupDesc {
   // to the Prometheus Manager.
   repeated google.protobuf.Any options = 9;
   repeated string sourceTenants = 10;
+  google.protobuf.Duration evaluationDelay = 11 [(gogoproto.nullable) = false, (gogoproto.stdduration) = true];
 }
 
 // RuleDesc is a proto representation of a Prometheus Rule

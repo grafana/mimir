@@ -1,0 +1,14 @@
+enterprise:
+  enabled: true
+gateway:
+  enabled: true
+  resources:
+    requests:
+      memory: 10Mi
+      cpu: 100m
+  ingress:
+    enabled: true
+  autoscaling:
+    enabled: true
+  route:
+    enabled: true

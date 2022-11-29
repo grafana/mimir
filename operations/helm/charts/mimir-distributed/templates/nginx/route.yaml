@@ -9,6 +9,7 @@ metadata:
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
+  namespace: {{ .Release.Namespace | quote }}
 spec:
   host: {{ .Values.nginx.route.host }}
   to:

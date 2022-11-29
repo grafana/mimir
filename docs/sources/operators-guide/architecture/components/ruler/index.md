@@ -99,7 +99,7 @@ The ruler supports multi-tenancy and horizontal scalability.
 To achieve horizontal scalability, the ruler shards the execution of rules by rule groups.
 Ruler replicas form their own [hash ring]({{< relref "../../hash-ring/index.md" >}}) stored in the [KV store]({{< relref "../../key-value-store.md" >}}) to divide the work of the executing rules.
 
-To configure the rulers' hash ring, refer to [configuring hash rings]({{< relref "../../../configure/configuring-hash-rings.md" >}}).
+To configure the rulers' hash ring, refer to [configuring hash rings]({{< relref "../../../configure/configure-hash-rings.md" >}}).
 
 ## Manage alerting and recording rules
 

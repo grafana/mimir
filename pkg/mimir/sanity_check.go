@@ -12,8 +12,8 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/multierror"
+	"github.com/grafana/dskit/runutil"
 	"github.com/pkg/errors"
-	"github.com/thanos-io/thanos/pkg/runutil"
 
 	alertstorelocal "github.com/grafana/mimir/pkg/alertmanager/alertstore/local"
 	rulestorelocal "github.com/grafana/mimir/pkg/ruler/rulestore/local"

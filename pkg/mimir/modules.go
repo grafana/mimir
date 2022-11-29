@@ -13,7 +13,9 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/dns"
 	"github.com/grafana/dskit/kv/codec"
 	"github.com/grafana/dskit/kv/memberlist"
 	"github.com/grafana/dskit/modules"
@@ -28,7 +30,6 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	prom_storage "github.com/prometheus/prometheus/storage"
 	prom_remote "github.com/prometheus/prometheus/storage/remote"
-	"github.com/thanos-io/thanos/pkg/discovery/dns"
 	httpgrpc_server "github.com/weaveworks/common/httpgrpc/server"
 	"github.com/weaveworks/common/server"
 
@@ -132,7 +133,7 @@ func (t *Mimir) initActivityTracker() (services.Service, error) {
 
 	entries, err := activitytracker.LoadUnfinishedEntries(t.Cfg.ActivityTracker.Filepath)
 
-	l := util_log.Logger
+	l := log.With(util_log.Logger, "component", "activity-tracker")
 	if err != nil {
 		level.Warn(l).Log("msg", "failed to fully read file with unfinished activities", "err", err)
 	}
@@ -776,6 +777,7 @@ func (t *Mimir) initUsageStats() (services.Service, error) {
 
 	// Track anonymous usage statistics.
 	usagestats.GetString("blocks_storage_backend").Set(t.Cfg.BlocksStorage.Bucket.Backend)
+	usagestats.GetString("installation_mode").Set(t.Cfg.UsageStats.InstallationMode)
 
 	t.UsageStatsReporter = usagestats.NewReporter(bucketClient, util_log.Logger, t.Registerer)
 	return t.UsageStatsReporter, nil

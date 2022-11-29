@@ -54,6 +54,7 @@ JSONNET_FMT := jsonnetfmt
 # path to the mimir-mixin
 MIXIN_PATH := operations/mimir-mixin
 MIXIN_OUT_PATH := operations/mimir-mixin-compiled
+MIXIN_OUT_PATH_SUFFIXES := "" "-baremetal"
 
 # path to the mimir jsonnet manifests
 JSONNET_MANIFESTS_PATH := operations/mimir
@@ -62,11 +63,11 @@ JSONNET_MANIFESTS_PATH := operations/mimir
 DOC_TEMPLATES := docs/sources/operators-guide/configure/reference-configuration-parameters/index.template
 
 # Documents to run through embedding
-DOC_EMBED := docs/sources/operators-guide/configure/configuring-the-query-frontend-work-with-prometheus.md \
-	docs/sources/operators-guide/configure/mirroring-requests-to-a-second-cluster/index.md \
+DOC_EMBED := docs/sources/operators-guide/configure/configure-the-query-frontend-work-with-prometheus.md \
+	docs/sources/operators-guide/configure/mirror-requests-to-a-second-cluster/index.md \
 	docs/sources/operators-guide/architecture/components/overrides-exporter.md \
 	docs/sources/operators-guide/get-started/_index.md \
-	docs/sources/operators-guide/deploy-grafana-mimir/jsonnet/deploying.md
+	docs/sources/operators-guide/deploy-grafana-mimir/jsonnet/deploy.md
 
 .PHONY: image-tag
 image-tag: ## Print the docker image tag.
@@ -181,7 +182,10 @@ pkg/distributor/ha_tracker.pb.go: pkg/distributor/ha_tracker.proto
 pkg/ruler/rulespb/rules.pb.go: pkg/ruler/rulespb/rules.proto
 pkg/ruler/ruler.pb.go: pkg/ruler/ruler.proto
 pkg/scheduler/schedulerpb/scheduler.pb.go: pkg/scheduler/schedulerpb/scheduler.proto
+pkg/storegateway/hintspb/hints.pb.go: pkg/storegateway/hintspb/hints.proto
 pkg/storegateway/storegatewaypb/gateway.pb.go: pkg/storegateway/storegatewaypb/gateway.proto
+pkg/storegateway/storepb/rpc.pb.go: pkg/storegateway/storepb/rpc.proto
+pkg/storegateway/storepb/types.pb.go: pkg/storegateway/storepb/types.proto
 pkg/alertmanager/alertmanagerpb/alertmanager.pb.go: pkg/alertmanager/alertmanagerpb/alertmanager.proto
 pkg/alertmanager/alertspb/alerts.pb.go: pkg/alertmanager/alertspb/alerts.proto
 
@@ -195,7 +199,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= update-go-1.19.2-e84f42bcd
+LATEST_BUILD_IMAGE_TAG ?= chore-upgrade-go-036177f2f
 
 # TTY is parameterized to allow Google Cloud Builder to run builds,
 # as it currently disallows TTY devices. This value needs to be overridden
@@ -211,17 +215,14 @@ GO_FLAGS := -ldflags "\
 
 ifeq ($(BUILD_IN_CONTAINER),true)
 
-GOVOLUMES=	-v $(shell pwd)/.cache:/go/cache:$(CONTAINER_MOUNT_OPTIONS) \
-			-v $(shell pwd)/.pkg:/go/pkg:$(CONTAINER_MOUNT_OPTIONS) \
+GOVOLUMES=	-v mimir-go-cache:/go/cache \
+			-v mimir-go-pkg:/go/pkg \
 			-v $(shell pwd):/go/src/github.com/grafana/mimir:$(CONTAINER_MOUNT_OPTIONS)
 
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
 SSHVOLUME=  -v ~/.ssh/:/root/.ssh:$(CONTAINER_MOUNT_OPTIONS)
 
 exes $(EXES) protos $(PROTO_GOS) lint lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt conftest-test conftest-verify check-helm-tests build-helm-tests: fetch-build-image
-	@mkdir -p $(shell pwd)/.pkg
-	@mkdir -p $(shell pwd)/.cache
-	@echo
 	@echo ">>>> Entering build container: $@"
 	$(SUDO) time docker run --rm $(TTY) -i $(SSHVOLUME) $(GOVOLUMES) $(BUILD_IMAGE) GOOS=$(GOOS) GOARCH=$(GOARCH) BINARY_SUFFIX=$(BINARY_SUFFIX) $@;
 
@@ -236,9 +237,7 @@ protos: ## Generates protobuf files.
 protos: $(PROTO_GOS)
 
 %.pb.go:
-	@# The store-gateway RPC is based on Thanos which uses relative references to other protos, so we need
-	@# to configure all such relative paths.
-	protoc -I $(GOPATH)/src:./vendor/github.com/thanos-io/thanos/pkg:./vendor/github.com/gogo/protobuf:./vendor:./$(@D) --gogoslick_out=plugins=grpc,Mgoogle/protobuf/any.proto=github.com/gogo/protobuf/types,:./$(@D) ./$(patsubst %.pb.go,%.proto,$@)
+	protoc -I $(GOPATH)/src:./vendor/github.com/gogo/protobuf:./vendor:./$(@D):./pkg/storegateway/storepb --gogoslick_out=plugins=grpc,Mgoogle/protobuf/any.proto=github.com/gogo/protobuf/types,:./$(@D) ./$(patsubst %.pb.go,%.proto,$@)
 
 lint-packaging-scripts: packaging/deb/control/postinst packaging/deb/control/prerm packaging/rpm/control/post packaging/rpm/control/preun
 	shellcheck $?
@@ -295,13 +294,6 @@ lint: check-makefiles
 		./pkg/querier/... \
 		./pkg/ruler/...
 
-	faillint -paths "github.com/thanos-io/thanos/pkg/block.{NewIgnoreDeletionMarkFilter}" \
-		./pkg/compactor/...
-
-	faillint -paths "github.com/thanos-io/thanos/pkg/shipper.{New}" ./pkg/...
-
-	faillint -paths "github.com/thanos-io/thanos/pkg/block/indexheader" ./pkg/...
-
 	# We've copied github.com/NYTimes/gziphandler to pkg/util/gziphandler
 	# at least until https://github.com/nytimes/gziphandler/pull/112 is merged
 	faillint -paths "github.com/NYTimes/gziphandler" \
@@ -314,9 +306,7 @@ lint: check-makefiles
 
 	# Ensure packages we imported from Thanos are no longer used.
 	GOFLAGS="-tags=requires_docker" faillint -paths \
-		"github.com/thanos/thanos-io/pkg/store,\
-		github.com/thanos-io/thanos/pkg/testutil/..., \
-		github.com/thanos-io/thanos/pkg/store/cache" \
+		"github.com/thanos-io/thanos/pkg/..." \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
 	# Ensure we never use the default registerer and we allow to use a custom one (improves testability).
@@ -415,15 +405,18 @@ dist: ## Generates binaries for a Mimir release.
 
 build-mixin: ## Generates the mimir mixin zip file.
 build-mixin: check-mixin-jb
-	# Empty the compiled mixin directories content, without removing the directories itself,
-	# so that Grafana can refresh re-build dashboards when using "make mixin-serve".
-	@mkdir -p $(MIXIN_OUT_PATH)
-	@find $(MIXIN_OUT_PATH) -type f -delete
-
-	@mixtool generate all --output-alerts $(MIXIN_OUT_PATH)/alerts.yaml --output-rules $(MIXIN_OUT_PATH)/rules.yaml --directory $(MIXIN_OUT_PATH)/dashboards ${MIXIN_PATH}/mixin-compiled.libsonnet
-	@./tools/check-rules.sh $(MIXIN_OUT_PATH)/rules.yaml 20 # If any rule group has more than 20 rules, fail. 20 is our default per-tenant limit in the ruler.
-	@cd $(MIXIN_OUT_PATH)/.. && zip -q -r mimir-mixin.zip $$(basename "$(MIXIN_OUT_PATH)")
-	@echo "The mixin has been compiled to $(MIXIN_OUT_PATH) and archived to $$(realpath --relative-to=$$(pwd) $(MIXIN_OUT_PATH)/../mimir-mixin.zip)"
+	@# Empty the compiled mixin directories content, without removing the directories itself,
+	@# so that Grafana can refresh re-build dashboards when using "make mixin-serve".
+	@# If any rule group has more than 20 rules, fail. 20 is our default per-tenant limit in the ruler.
+	@for suffix in $(MIXIN_OUT_PATH_SUFFIXES); do \
+		mkdir -p "$(MIXIN_OUT_PATH)$$suffix"; \
+		find "$(MIXIN_OUT_PATH)$$suffix" -type f -delete; \
+		mixtool generate all --output-alerts "$(MIXIN_OUT_PATH)$$suffix/alerts.yaml" --output-rules "$(MIXIN_OUT_PATH)$$suffix/rules.yaml" --directory "$(MIXIN_OUT_PATH)$$suffix/dashboards" "${MIXIN_PATH}/mixin-compiled$$suffix.libsonnet"; \
+		./tools/check-rules.sh "$(MIXIN_OUT_PATH)$$suffix/rules.yaml" 20 ; \
+		cd "$(MIXIN_OUT_PATH)$$suffix/.." && zip -q -r "mimir-mixin$$suffix.zip" $$(basename "$(MIXIN_OUT_PATH)$$suffix"); \
+		cd -; \
+		echo "The mixin has been compiled to $(MIXIN_OUT_PATH)$$suffix and archived to $$(realpath --relative-to=$$(pwd) $(MIXIN_OUT_PATH)$$suffix/../mimir-mixin$$suffix.zip)"; \
+	done
 
 check-mixin-tests: ## Test the mixin files.
 	@./operations/mimir-mixin-tests/run.sh || (echo "Mixin tests are failing. Please fix the reported issues. You can run mixin tests with 'make check-mixin-tests'" && false)
@@ -467,7 +460,8 @@ format-makefiles: $(MAKE_FILES)
 
 clean: ## Cleanup the docker images, object files and executables.
 	$(SUDO) docker rmi $(IMAGE_NAMES) >/dev/null 2>&1 || true
-	rm -rf -- $(UPTODATE_FILES) $(EXES) .cache dist
+	$(SUDO) docker volume rm -f mimir-go-pkg mimir-go-cache
+	rm -rf -- $(UPTODATE_FILES) $(EXES) dist
 	# Remove executables built for multiarch images.
 	find . -type f -name '*_linux_arm64' -perm +u+x -exec rm {} \;
 	find . -type f -name '*_linux_amd64' -perm +u+x -exec rm {} \;
@@ -491,7 +485,7 @@ check-doc: doc
 # https://github.com/grafana/technical-documentation/tree/main/tools/doc-validator
 check-doc-validator: ## Check documentation using doc-validator tool
 	docker pull grafana/doc-validator:latest
-	docker run -v "$(CURDIR)/docs/sources:/docs/sources" grafana/doc-validator:latest ./docs/sources
+	docker run -v "$(CURDIR)/docs/sources:/docs/sources" grafana/doc-validator:v1.0.0 ./docs/sources
 
 .PHONY: reference-help
 reference-help: ## Generates the reference help documentation.
@@ -501,7 +495,7 @@ reference-help: cmd/mimir/mimir
 	@(go run ./tools/config-inspector || true) > cmd/mimir/config-descriptor.json
 
 clean-white-noise: ## Clean the white noise in the markdown files.
-	@find . -path ./.pkg -prune -o -path "*/vendor/*" -prune -or -type f -name "*.md" -print | \
+	@find . -path ./.pkg -prune -o -path ./.cache -prune -o -path "*/vendor/*" -prune -or -type f -name "*.md" -print | \
 	SED_BIN="$(SED)" xargs ./tools/cleanup-white-noise.sh
 
 check-white-noise: ## Check the white noise in the markdown files.
@@ -511,7 +505,9 @@ check-white-noise: clean-white-noise
 check-mixin: ## Build, format and check the mixin files.
 check-mixin: build-mixin format-mixin check-mixin-jb check-mixin-mixtool check-mixin-runbooks
 	@echo "Checking diff:"
-	@./tools/find-diff-or-untracked.sh $(MIXIN_PATH) $(MIXIN_OUT_PATH) || (echo "Please build and format mixin by running 'make build-mixin format-mixin'" && false)
+	@for suffix in $(MIXIN_OUT_PATH_SUFFIXES); do \
+		./tools/find-diff-or-untracked.sh $(MIXIN_PATH) "$(MIXIN_OUT_PATH)$$suffix" || (echo "Please build and format mixin by running 'make build-mixin format-mixin'" && false); \
+	done
 
 	@cd $(MIXIN_PATH) && \
 	jb install && \
@@ -594,8 +590,6 @@ ifeq ($(PACKAGE_IN_CONTAINER), true)
 
 .PHONY: packages
 packages: dist packaging/fpm/$(UPTODATE)
-	@mkdir -p $(shell pwd)/.pkg
-	@mkdir -p $(shell pwd)/.cache
 	@echo ">>>> Entering build container: $@"
 	$(SUDO) time docker run --rm $(TTY) \
 		-v  $(shell pwd):/go/src/github.com/grafana/mimir:$(CONTAINER_MOUNT_OPTIONS) \
@@ -624,6 +618,7 @@ dist/$(UPTODATE)-packages: $(wildcard packaging/deb/**) $(wildcard packaging/rpm
 			docs/configurations/single-process-config-blocks.yaml=/etc/mimir/config.example.yaml; \
 		$(FPM_OPTS) -t rpm  \
 			--architecture $$rpm_arch \
+			--rpm-os linux \
 			--after-install packaging/rpm/control/post \
 			--before-remove packaging/rpm/control/preun \
 			--package dist/mimir-$(VERSION)_$$arch.rpm \

@@ -11,7 +11,8 @@ metadata:
     app.kubernetes.io/component: meta-monitoring
     app.kubernetes.io/managed-by: Helm
 spec:
-  serviceAccountName: metamonitoring-values-mimir-grafana-agent
+  serviceAccountName: metamonitoring-values-mimir
+
   logs:
     instanceSelector:
       matchLabels:
@@ -20,6 +21,7 @@ spec:
         app.kubernetes.io/component: meta-monitoring
     # cluster label for logs is added in the LogsInstance
   metrics:
+    scrapeInterval: 60s
     instanceSelector:
       matchLabels:
         app.kubernetes.io/name: mimir

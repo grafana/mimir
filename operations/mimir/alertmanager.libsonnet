@@ -10,8 +10,10 @@
   local hasFallbackConfig = std.length($._config.alertmanager.fallback_config) > 0,
 
   alertmanager_args::
+    $._config.usageStatsConfig +
     $._config.grpcConfig +
-    $._config.alertmanagerStorageClientConfig +
+    $._config.storageConfig +
+    $._config.alertmanagerStorageConfig +
     {
       target: 'alertmanager',
       'alertmanager.storage.path': '/data',
@@ -66,7 +68,7 @@
     else {},
 
   alertmanager_statefulset:
-    if $._config.alertmanager_enabled then
+    if $._config.is_microservices_deployment_mode && $._config.alertmanager_enabled then
       $.newMimirStatefulSet('alertmanager', $._config.alertmanager.replicas, $.alertmanager_container, $.alertmanager_pvc, podManagementPolicy=null) +
       statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(900) +
       $.mimirVolumeMounts +
@@ -78,11 +80,11 @@
     else {},
 
   alertmanager_service:
-    if $._config.alertmanager_enabled then
+    if $._config.is_microservices_deployment_mode && $._config.alertmanager_enabled then
       $.util.serviceFor($.alertmanager_statefulset, $._config.service_ignored_labels) +
       service.mixin.spec.withClusterIp('None')
     else {},
 
-  alertmanager_pdb: if !$._config.alertmanager_enabled then null else
+  alertmanager_pdb: if !$._config.is_microservices_deployment_mode || !$._config.alertmanager_enabled then null else
     $.newMimirPdb('alertmanager'),
 }

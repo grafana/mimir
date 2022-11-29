@@ -3,7 +3,7 @@ kind: Namespace
 metadata:
   name: default
 ---
-apiVersion: policy/v1beta1
+apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
@@ -16,7 +16,7 @@ spec:
     matchLabels:
       name: alertmanager
 ---
-apiVersion: policy/v1beta1
+apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
@@ -29,7 +29,7 @@ spec:
     matchLabels:
       name: ingester
 ---
-apiVersion: policy/v1beta1
+apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
@@ -42,7 +42,7 @@ spec:
     matchLabels:
       rollout-group: ingester
 ---
-apiVersion: policy/v1beta1
+apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
@@ -55,7 +55,7 @@ spec:
     matchLabels:
       name: store-gateway
 ---
-apiVersion: policy/v1beta1
+apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
@@ -645,7 +645,8 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=distributor
-        image: grafana/mimir:2.3.1
+        - -usage-stats.installation-mode=jsonnet
+        image: grafana/mimir:2.4.0
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -706,7 +707,6 @@ spec:
     spec:
       containers:
       - args:
-        - -blocks-storage.backend=gcs
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
         - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local:11211
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
@@ -714,6 +714,7 @@ spec:
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.gcs.bucket-name=blocks-bucket
+        - -common.storage.backend=gcs
         - -distributor.health-check-ingesters=true
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.prefix=
@@ -737,10 +738,11 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -store.max-query-length=768h
         - -target=querier
+        - -usage-stats.installation-mode=jsonnet
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1024"
-        image: grafana/mimir:2.3.1
+        image: grafana/mimir:2.4.0
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -814,7 +816,8 @@ spec:
         - -server.http-write-timeout=1m
         - -store.max-query-length=12000h
         - -target=query-frontend
-        image: grafana/mimir:2.3.1
+        - -usage-stats.installation-mode=jsonnet
+        image: grafana/mimir:2.4.0
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -884,7 +887,8 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=query-scheduler
-        image: grafana/mimir:2.3.1
+        - -usage-stats.installation-mode=jsonnet
+        image: grafana/mimir:2.4.0
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -981,7 +985,6 @@ spec:
     spec:
       containers:
       - args:
-        - -blocks-storage.backend=gcs
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
         - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local:11211
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
@@ -989,6 +992,7 @@ spec:
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.gcs.bucket-name=blocks-bucket
+        - -common.storage.backend=gcs
         - -distributor.health-check-ingesters=true
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.prefix=
@@ -997,7 +1001,6 @@ spec:
         - -ingester.ring.zone-awareness-enabled=true
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
-        - -ruler-storage.backend=gcs
         - -ruler-storage.gcs.bucket-name=rules-bucket
         - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local/alertmanager
         - -ruler.max-rule-groups-per-tenant=35
@@ -1014,7 +1017,8 @@ spec:
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -store.max-query-length=768h
         - -target=ruler
-        image: grafana/mimir:2.3.1
+        - -usage-stats.installation-mode=jsonnet
+        image: grafana/mimir:2.4.0
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
@@ -1072,12 +1076,12 @@ spec:
     spec:
       containers:
       - args:
-        - -alertmanager-storage.backend=gcs
         - -alertmanager-storage.gcs.bucket-name=alerts-bucket
         - -alertmanager.sharding-ring.replication-factor=3
         - -alertmanager.sharding-ring.store=memberlist
         - -alertmanager.storage.path=/data
         - -alertmanager.web.external-url=http://test/alertmanager
+        - -common.storage.backend=gcs
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -1085,12 +1089,13 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=alertmanager
+        - -usage-stats.installation-mode=jsonnet
         env:
         - name: POD_IP
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
-        image: grafana/mimir:2.3.1
+        image: grafana/mimir:2.4.0
         imagePullPolicy: IfNotPresent
         name: alertmanager
         ports:
@@ -1160,8 +1165,8 @@ spec:
     spec:
       containers:
       - args:
-        - -blocks-storage.backend=gcs
         - -blocks-storage.gcs.bucket-name=blocks-bucket
+        - -common.storage.backend=gcs
         - -compactor.block-ranges=2h,12h,24h
         - -compactor.blocks-retention-period=0
         - -compactor.cleanup-interval=15m
@@ -1185,7 +1190,8 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=compactor
-        image: grafana/mimir:2.3.1
+        - -usage-stats.installation-mode=jsonnet
+        image: grafana/mimir:2.4.0
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -1263,11 +1269,11 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
-        - -blocks-storage.backend=gcs
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -blocks-storage.tsdb.block-ranges-period=2h
         - -blocks-storage.tsdb.dir=/data/tsdb
         - -blocks-storage.tsdb.ship-interval=1m
+        - -common.storage.backend=gcs
         - -distributor.health-check-ingesters=true
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
@@ -1287,7 +1293,8 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=ingester
-        image: grafana/mimir:2.3.1
+        - -usage-stats.installation-mode=jsonnet
+        image: grafana/mimir:2.4.0
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -1376,11 +1383,11 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
-        - -blocks-storage.backend=gcs
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -blocks-storage.tsdb.block-ranges-period=2h
         - -blocks-storage.tsdb.dir=/data/tsdb
         - -blocks-storage.tsdb.ship-interval=1m
+        - -common.storage.backend=gcs
         - -distributor.health-check-ingesters=true
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
@@ -1402,7 +1409,8 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=ingester
-        image: grafana/mimir:2.3.1
+        - -usage-stats.installation-mode=jsonnet
+        image: grafana/mimir:2.4.0
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -1491,11 +1499,11 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
-        - -blocks-storage.backend=gcs
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -blocks-storage.tsdb.block-ranges-period=2h
         - -blocks-storage.tsdb.dir=/data/tsdb
         - -blocks-storage.tsdb.ship-interval=1m
+        - -common.storage.backend=gcs
         - -distributor.health-check-ingesters=true
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
@@ -1517,7 +1525,8 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=ingester
-        image: grafana/mimir:2.3.1
+        - -usage-stats.installation-mode=jsonnet
+        image: grafana/mimir:2.4.0
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -1606,11 +1615,11 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
-        - -blocks-storage.backend=gcs
         - -blocks-storage.gcs.bucket-name=blocks-bucket
         - -blocks-storage.tsdb.block-ranges-period=2h
         - -blocks-storage.tsdb.dir=/data/tsdb
         - -blocks-storage.tsdb.ship-interval=1m
+        - -common.storage.backend=gcs
         - -distributor.health-check-ingesters=true
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
@@ -1632,7 +1641,8 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -target=ingester
-        image: grafana/mimir:2.3.1
+        - -usage-stats.installation-mode=jsonnet
+        image: grafana/mimir:2.4.0
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -1922,7 +1932,6 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
-        - -blocks-storage.backend=gcs
         - -blocks-storage.bucket-store.chunks-cache.backend=memcached
         - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached.default.svc.cluster.local:11211
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency=50
@@ -1948,6 +1957,7 @@ spec:
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.gcs.bucket-name=blocks-bucket
+        - -common.storage.backend=gcs
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -1960,7 +1970,8 @@ spec:
         - -store-gateway.sharding-ring.tokens-file-path=/data/tokens
         - -store-gateway.sharding-ring.wait-stability-min-duration=1m
         - -target=store-gateway
-        image: grafana/mimir:2.3.1
+        - -usage-stats.installation-mode=jsonnet
+        image: grafana/mimir:2.4.0
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -2049,7 +2060,6 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
-        - -blocks-storage.backend=gcs
         - -blocks-storage.bucket-store.chunks-cache.backend=memcached
         - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached.default.svc.cluster.local:11211
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency=50
@@ -2075,6 +2085,7 @@ spec:
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.gcs.bucket-name=blocks-bucket
+        - -common.storage.backend=gcs
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -2090,7 +2101,8 @@ spec:
         - -store-gateway.sharding-ring.wait-stability-min-duration=1m
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=store-gateway
-        image: grafana/mimir:2.3.1
+        - -usage-stats.installation-mode=jsonnet
+        image: grafana/mimir:2.4.0
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -2179,7 +2191,6 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
-        - -blocks-storage.backend=gcs
         - -blocks-storage.bucket-store.chunks-cache.backend=memcached
         - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached.default.svc.cluster.local:11211
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency=50
@@ -2205,6 +2216,7 @@ spec:
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.gcs.bucket-name=blocks-bucket
+        - -common.storage.backend=gcs
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -2220,7 +2232,8 @@ spec:
         - -store-gateway.sharding-ring.wait-stability-min-duration=1m
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=store-gateway
-        image: grafana/mimir:2.3.1
+        - -usage-stats.installation-mode=jsonnet
+        image: grafana/mimir:2.4.0
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -2309,7 +2322,6 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
-        - -blocks-storage.backend=gcs
         - -blocks-storage.bucket-store.chunks-cache.backend=memcached
         - -blocks-storage.bucket-store.chunks-cache.memcached.addresses=dnssrvnoa+memcached.default.svc.cluster.local:11211
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency=50
@@ -2335,6 +2347,7 @@ spec:
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.gcs.bucket-name=blocks-bucket
+        - -common.storage.backend=gcs
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
@@ -2350,7 +2363,8 @@ spec:
         - -store-gateway.sharding-ring.wait-stability-min-duration=1m
         - -store-gateway.sharding-ring.zone-awareness-enabled=true
         - -target=store-gateway
-        image: grafana/mimir:2.3.1
+        - -usage-stats.installation-mode=jsonnet
+        image: grafana/mimir:2.4.0
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:

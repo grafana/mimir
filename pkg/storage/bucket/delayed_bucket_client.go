@@ -8,7 +8,7 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/thanos-io/thanos/pkg/objstore"
+	"github.com/thanos-io/objstore"
 )
 
 // DelayedBucketClient wraps objstore.InstrumentedBucket and add a random delay to each API call.

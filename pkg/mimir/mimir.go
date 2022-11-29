@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -33,6 +34,7 @@ import (
 	"github.com/weaveworks/common/server"
 	"github.com/weaveworks/common/signals"
 	"go.opentelemetry.io/otel"
+	"go.uber.org/atomic"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"gopkg.in/yaml.v3"
 
@@ -95,6 +97,7 @@ type Config struct {
 	Target              flagext.StringSliceCSV `yaml:"target"`
 	MultitenancyEnabled bool                   `yaml:"multitenancy_enabled"`
 	NoAuthTenant        string                 `yaml:"no_auth_tenant" category:"advanced"`
+	ShutdownDelay       time.Duration          `yaml:"shutdown_delay" category:"experimental"`
 	PrintConfig         bool                   `yaml:"-"`
 	ApplicationName     string                 `yaml:"-"`
 
@@ -143,6 +146,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&c.MultitenancyEnabled, "auth.multitenancy-enabled", true, "When set to true, incoming HTTP requests must specify tenant ID in HTTP X-Scope-OrgId header. When set to false, tenant ID from -auth.no-auth-tenant is used instead.")
 	f.StringVar(&c.NoAuthTenant, "auth.no-auth-tenant", "anonymous", "Tenant ID to use when multitenancy is disabled.")
 	f.BoolVar(&c.PrintConfig, "print.config", false, "Print the config and exit.")
+	f.DurationVar(&c.ShutdownDelay, "shutdown-delay", 0, "How long to wait between SIGTERM and shutdown. After receiving SIGTERM, Mimir will report not-ready status via /ready endpoint.")
 
 	c.API.RegisterFlags(f)
 	c.registerServerFlagsWithChangedDefaultValues(f)
@@ -154,22 +158,22 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.LimitsConfig.RegisterFlags(f)
 	c.Worker.RegisterFlags(f)
 	c.Frontend.RegisterFlags(f, logger)
-	c.BlocksStorage.RegisterFlags(f)
+	c.BlocksStorage.RegisterFlags(f, logger)
 	c.Compactor.RegisterFlags(f, logger)
 	c.StoreGateway.RegisterFlags(f, logger)
 	c.TenantFederation.RegisterFlags(f)
 
 	c.Ruler.RegisterFlags(f, logger)
-	c.RulerStorage.RegisterFlags(f)
+	c.RulerStorage.RegisterFlags(f, logger)
 	c.Alertmanager.RegisterFlags(f, logger)
-	c.AlertmanagerStorage.RegisterFlags(f)
+	c.AlertmanagerStorage.RegisterFlags(f, logger)
 	c.RuntimeConfig.RegisterFlags(f)
 	c.MemberlistKV.RegisterFlags(f)
 	c.ActivityTracker.RegisterFlags(f)
 	c.QueryScheduler.RegisterFlags(f, logger)
 	c.UsageStats.RegisterFlags(f)
 
-	c.Common.RegisterFlags(f)
+	c.Common.RegisterFlags(f, logger)
 }
 
 func (c *Config) CommonConfigInheritance() CommonConfigInheritance {
@@ -221,6 +225,10 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.Querier.Validate(); err != nil {
 		return errors.Wrap(err, "invalid querier config")
 	}
+	if c.Querier.EngineConfig.Timeout > c.Server.HTTPServerWriteTimeout {
+		return fmt.Errorf("querier timeout (%s) must be lower than or equal to HTTP server write timeout (%s)",
+			c.Querier.EngineConfig.Timeout, c.Server.HTTPServerWriteTimeout)
+	}
 	if err := c.IngesterClient.Validate(log); err != nil {
 		return errors.Wrap(err, "invalid ingester_client config")
 	}
@@ -241,6 +249,9 @@ func (c *Config) Validate(log log.Logger) error {
 	}
 	if err := c.QueryScheduler.Validate(); err != nil {
 		return errors.Wrap(err, "invalid query-scheduler config")
+	}
+	if err := c.UsageStats.Validate(); err != nil {
+		return errors.Wrap(err, "invalid usage stats config")
 	}
 	if c.isAnyModuleEnabled(AlertManager, Backend) {
 		if err := c.Alertmanager.Validate(); err != nil {
@@ -477,6 +488,7 @@ func (c *Config) registerServerFlagsWithChangedDefaultValues(fs *flag.FlagSet) {
 	c.Server.RegisterFlags(throwaway)
 
 	defaultsOverrides := map[string]string{
+		"server.http-write-timeout":                         "2m",
 		"server.grpc.keepalive.min-time-between-pings":      "10s",
 		"server.grpc.keepalive.ping-without-stream-allowed": "true",
 		"server.http-listen-port":                           "8080",
@@ -580,8 +592,8 @@ type CommonConfigInheritance struct {
 }
 
 // RegisterFlags registers flag.
-func (c *CommonConfig) RegisterFlags(f *flag.FlagSet) {
-	c.Storage.RegisterFlagsWithPrefix("common.storage.", f)
+func (c *CommonConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
+	c.Storage.RegisterFlagsWithPrefix("common.storage.", f, logger)
 }
 
 // configWithCustomCommonUnmarshaler unmarshals config with custom unmarshaler for the `common` field.
@@ -688,7 +700,7 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 		Registerer: reg,
 	}
 
-	mimir.setupThanosTracing()
+	mimir.setupObjstoreTracing()
 	otel.SetTracerProvider(NewOpenTelemetryProviderBridge(opentracing.GlobalTracer()))
 
 	if err := mimir.setupModuleManager(); err != nil {
@@ -698,9 +710,9 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 	return mimir, nil
 }
 
-// setupThanosTracing appends a gRPC middleware used to inject our tracer into the custom
-// context used by Thanos, in order to get Thanos spans correctly attached to our traces.
-func (t *Mimir) setupThanosTracing() {
+// setupObjstoreTracing appends a gRPC middleware used to inject our tracer into the custom
+// context used by thanos-io/objstore, in order to get Objstore spans correctly attached to our traces.
+func (t *Mimir) setupObjstoreTracing() {
 	t.Cfg.Server.GRPCMiddleware = append(t.Cfg.Server.GRPCMiddleware, ThanosTracerUnaryInterceptor)
 	t.Cfg.Server.GRPCStreamMiddleware = append(t.Cfg.Server.GRPCStreamMiddleware, ThanosTracerStreamInterceptor)
 }
@@ -753,10 +765,15 @@ func (t *Mimir) Run() error {
 		return err
 	}
 
+	// Used to delay shutdown but return "not ready" during this delay.
+	shutdownRequested := atomic.NewBool(false)
+
 	// before starting servers, register /ready handler and gRPC health check service.
-	// It should reflect entire Mimir.
-	t.Server.HTTP.Path("/ready").Handler(t.readyHandler(sm))
-	grpc_health_v1.RegisterHealthServer(t.Server.GRPC, grpcutil.NewHealthCheck(sm))
+	t.Server.HTTP.Path("/ready").Handler(t.readyHandler(sm, shutdownRequested))
+	grpc_health_v1.RegisterHealthServer(t.Server.GRPC, grpcutil.NewHealthCheckFrom(
+		grpcutil.WithShutdownRequested(shutdownRequested),
+		grpcutil.WithManager(sm),
+	))
 
 	// Let's listen for events from this manager, and log them.
 	healthy := func() { level.Info(util_log.Logger).Log("msg", "Application started") }
@@ -782,10 +799,18 @@ func (t *Mimir) Run() error {
 
 	sm.AddListener(services.NewManagerListener(healthy, stopped, serviceFailed))
 
-	// Setup signal handler. If signal arrives, we stop the manager, which stops all the services.
+	// Setup signal handler to gracefully shutdown in response to SIGTERM or SIGINT
 	handler := signals.NewHandler(t.Server.Log)
 	go func() {
 		handler.Loop()
+
+		shutdownRequested.Store(true)
+		t.Server.HTTPServer.SetKeepAlivesEnabled(false)
+
+		if t.Cfg.ShutdownDelay > 0 {
+			time.Sleep(t.Cfg.ShutdownDelay)
+		}
+
 		sm.StopAsync()
 	}()
 
@@ -815,8 +840,14 @@ func (t *Mimir) Run() error {
 	return err
 }
 
-func (t *Mimir) readyHandler(sm *services.Manager) http.HandlerFunc {
+func (t *Mimir) readyHandler(sm *services.Manager, shutdownRequested *atomic.Bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if shutdownRequested.Load() {
+			level.Debug(util_log.Logger).Log("msg", "application is stopping")
+			http.Error(w, "Application is stopping", http.StatusServiceUnavailable)
+			return
+		}
+
 		if !sm.IsHealthy() {
 			var serviceNamesStates []string
 			for name, s := range t.ServiceMap {
@@ -826,7 +857,6 @@ func (t *Mimir) readyHandler(sm *services.Manager) http.HandlerFunc {
 			}
 
 			level.Debug(util_log.Logger).Log("msg", "some services are not Running", "services", serviceNamesStates)
-
 			httpResponse := "Some services are not Running:\n" + strings.Join(serviceNamesStates, "\n")
 			http.Error(w, httpResponse, http.StatusServiceUnavailable)
 			return

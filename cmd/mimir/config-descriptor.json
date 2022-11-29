@@ -36,6 +36,17 @@
       "fieldCategory": "advanced"
     },
     {
+      "kind": "field",
+      "name": "shutdown_delay",
+      "required": false,
+      "desc": "How long to wait between SIGTERM and shutdown. After receiving SIGTERM, Mimir will report not-ready status via /ready endpoint.",
+      "fieldValue": null,
+      "fieldDefaultValue": 0,
+      "fieldFlag": "shutdown-delay",
+      "fieldType": "duration",
+      "fieldCategory": "experimental"
+    },
+    {
       "kind": "block",
       "name": "api",
       "required": false,
@@ -167,6 +178,26 @@
           "fieldFlag": "server.grpc-conn-limit",
           "fieldType": "int",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "tls_cipher_suites",
+          "required": false,
+          "desc": "Comma-separated list of cipher suites to use. If blank, the default Go cipher suites is used.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "server.tls-cipher-suites",
+          "fieldType": "string"
+        },
+        {
+          "kind": "field",
+          "name": "tls_min_version",
+          "required": false,
+          "desc": "Minimum TLS version to use. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13. If blank, the Go TLS minimum version is used.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "server.tls-min-version",
+          "fieldType": "string"
         },
         {
           "kind": "block",
@@ -315,7 +346,7 @@
           "required": false,
           "desc": "Write timeout for HTTP server",
           "fieldValue": null,
-          "fieldDefaultValue": 30000000000,
+          "fieldDefaultValue": 120000000000,
           "fieldFlag": "server.http-write-timeout",
           "fieldType": "duration",
           "fieldCategory": "advanced"
@@ -4605,17 +4636,6 @@
             },
             {
               "kind": "field",
-              "name": "msi_resource",
-              "required": false,
-              "desc": "If set, this URL is used instead of https://\u003cstorage-account-name\u003e.\u003cendpoint-suffix\u003e for obtaining ServicePrincipalToken from MSI.",
-              "fieldValue": null,
-              "fieldDefaultValue": "",
-              "fieldFlag": "blocks-storage.azure.msi-resource",
-              "fieldType": "string",
-              "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
               "name": "user_assigned_id",
               "required": false,
               "desc": "User assigned identity. If empty, then System assigned identity is used.",
@@ -5696,17 +5716,6 @@
             },
             {
               "kind": "field",
-              "name": "block_ranges_period",
-              "required": false,
-              "desc": "TSDB blocks range period.",
-              "fieldValue": null,
-              "fieldDefaultValue": [],
-              "fieldFlag": "blocks-storage.tsdb.block-ranges-period",
-              "fieldType": "list of durations",
-              "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
               "name": "retention_period",
               "required": false,
               "desc": "TSDB blocks retention in the ingester before a block is removed, relative to the newest block written for the tenant. This should be larger than the -blocks-storage.tsdb.block-ranges-period, -querier.query-store-after and large enough to give store-gateways and queriers enough time to discover newly uploaded blocks.",
@@ -5890,17 +5899,6 @@
               "fieldFlag": "blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup",
               "fieldType": "int",
               "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
-              "name": "out_of_order_capacity_min",
-              "required": false,
-              "desc": "Minimum capacity for out-of-order chunks, in samples between 0 and 255.",
-              "fieldValue": null,
-              "fieldDefaultValue": 4,
-              "fieldFlag": "blocks-storage.tsdb.out-of-order-capacity-min",
-              "fieldType": "int",
-              "fieldCategory": "experimental"
             },
             {
               "kind": "field",
@@ -7357,7 +7355,7 @@
           "kind": "field",
           "name": "alertmanager_url",
           "required": false,
-          "desc": "Comma-separated list of URL(s) of the Alertmanager(s) to send notifications to. Each URL is treated as a separate group. Multiple Alertmanagers in HA per group can be supported by using DNS service discovery format. Basic auth is supported as part of the URL.",
+          "desc": "Comma-separated list of URL(s) of the Alertmanager(s) to send notifications to. Each URL is treated as a separate group. Multiple Alertmanagers in HA per group can be supported by using DNS service discovery format, comprehensive of the scheme. Basic auth is supported as part of the URL.",
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "ruler.alertmanager-url",
@@ -7402,6 +7400,17 @@
           "required": false,
           "desc": "",
           "blockEntries": [
+            {
+              "kind": "field",
+              "name": "tls_enabled",
+              "required": false,
+              "desc": "Enable TLS for gRPC client connecting to alertmanager.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "ruler.tls-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
             {
               "kind": "field",
               "name": "tls_cert_path",
@@ -8558,17 +8567,6 @@
               "fieldDefaultValue": 20,
               "fieldFlag": "ruler-storage.azure.max-retries",
               "fieldType": "int",
-              "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
-              "name": "msi_resource",
-              "required": false,
-              "desc": "If set, this URL is used instead of https://\u003cstorage-account-name\u003e.\u003cendpoint-suffix\u003e for obtaining ServicePrincipalToken from MSI.",
-              "fieldValue": null,
-              "fieldDefaultValue": "",
-              "fieldFlag": "ruler-storage.azure.msi-resource",
-              "fieldType": "string",
               "fieldCategory": "advanced"
             },
             {
@@ -9936,17 +9934,6 @@
             },
             {
               "kind": "field",
-              "name": "msi_resource",
-              "required": false,
-              "desc": "If set, this URL is used instead of https://\u003cstorage-account-name\u003e.\u003cendpoint-suffix\u003e for obtaining ServicePrincipalToken from MSI.",
-              "fieldValue": null,
-              "fieldDefaultValue": "",
-              "fieldFlag": "alertmanager-storage.azure.msi-resource",
-              "fieldType": "string",
-              "fieldCategory": "advanced"
-            },
-            {
-              "kind": "field",
               "name": "user_assigned_id",
               "required": false,
               "desc": "User assigned identity. If empty, then System assigned identity is used.",
@@ -11300,6 +11287,17 @@
           "fieldFlag": "usage-stats.enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "installation_mode",
+          "required": false,
+          "desc": "Installation mode. Supported values: custom, helm, jsonnet.",
+          "fieldValue": null,
+          "fieldDefaultValue": "custom",
+          "fieldFlag": "usage-stats.installation-mode",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -11632,17 +11630,6 @@
                   "fieldDefaultValue": 20,
                   "fieldFlag": "common.storage.azure.max-retries",
                   "fieldType": "int",
-                  "fieldCategory": "advanced"
-                },
-                {
-                  "kind": "field",
-                  "name": "msi_resource",
-                  "required": false,
-                  "desc": "If set, this URL is used instead of https://\u003cstorage-account-name\u003e.\u003cendpoint-suffix\u003e for obtaining ServicePrincipalToken from MSI.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "common.storage.azure.msi-resource",
-                  "fieldType": "string",
                   "fieldCategory": "advanced"
                 },
                 {

@@ -13,6 +13,7 @@
     pvc.mixin.metadata.withName('store-gateway-data'),
 
   store_gateway_args::
+    $._config.usageStatsConfig +
     $._config.grpcConfig +
     $._config.storageConfig +
     $._config.blocksStorageConfig +
@@ -70,12 +71,13 @@
     $.mimirVolumeMounts +
     (if with_anti_affinity then $.util.antiAffinity else {}),
 
-  store_gateway_statefulset: self.newStoreGatewayStatefulSet('store-gateway', $.store_gateway_container, !$._config.store_gateway_allow_multiple_replicas_on_same_node),
+  store_gateway_statefulset: if !$._config.is_microservices_deployment_mode then null else
+    self.newStoreGatewayStatefulSet('store-gateway', $.store_gateway_container, !$._config.store_gateway_allow_multiple_replicas_on_same_node),
 
-  store_gateway_service:
+  store_gateway_service: if !$._config.is_microservices_deployment_mode then null else
     $.util.serviceFor($.store_gateway_statefulset, $._config.service_ignored_labels),
 
-  store_gateway_pdb:
+  store_gateway_pdb: if !$._config.is_microservices_deployment_mode then null else
     // To avoid any disruption in the read path we need at least 1 replica of each
     // block available, so the disruption budget depends on the blocks replication factor.
     local maxUnavailable = if $._config.store_gateway_replication_factor > 1 then $._config.store_gateway_replication_factor - 1 else 1;

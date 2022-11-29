@@ -15,7 +15,7 @@ import (
 
 	"github.com/grafana/dskit/services"
 	"github.com/stretchr/testify/require"
-	"github.com/thanos-io/thanos/pkg/objstore"
+	"github.com/thanos-io/objstore"
 	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb"

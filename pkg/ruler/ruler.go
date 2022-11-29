@@ -30,9 +30,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/rulefmt"
-	"github.com/prometheus/prometheus/notifier"
 	promRules "github.com/prometheus/prometheus/rules"
-	"github.com/prometheus/prometheus/util/strutil"
 	"github.com/weaveworks/common/user"
 	"golang.org/x/sync/errgroup"
 
@@ -143,7 +141,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.EvaluationInterval, "ruler.evaluation-interval", 1*time.Minute, "How frequently to evaluate rules")
 	f.DurationVar(&cfg.PollInterval, "ruler.poll-interval", 1*time.Minute, "How frequently to poll for rule changes")
 
-	f.StringVar(&cfg.AlertmanagerURL, "ruler.alertmanager-url", "", "Comma-separated list of URL(s) of the Alertmanager(s) to send notifications to. Each URL is treated as a separate group. Multiple Alertmanagers in HA per group can be supported by using DNS service discovery format. Basic auth is supported as part of the URL.")
+	f.StringVar(&cfg.AlertmanagerURL, "ruler.alertmanager-url", "", "Comma-separated list of URL(s) of the Alertmanager(s) to send notifications to. Each URL is treated as a separate group. Multiple Alertmanagers in HA per group can be supported by using DNS service discovery format, comprehensive of the scheme. Basic auth is supported as part of the URL.")
 	f.DurationVar(&cfg.AlertmanagerRefreshInterval, "ruler.alertmanager-refresh-interval", 1*time.Minute, "How long to wait between refreshing DNS resolutions of Alertmanager hosts.")
 	f.IntVar(&cfg.NotificationQueueCapacity, "ruler.notification-queue-capacity", 10000, "Capacity of the queue for notifications to be sent to the Alertmanager.")
 	f.DurationVar(&cfg.NotificationTimeout, "ruler.notification-timeout", 10*time.Second, "HTTP timeout duration when sending notifications to the Alertmanager.")
@@ -291,7 +289,7 @@ func newRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer,
 		return nil, errors.Wrap(err, "create KV store client")
 	}
 
-	if err = enableSharding(ruler, ringStore); err != nil {
+	if err := enableSharding(ruler, ringStore); err != nil {
 		return nil, errors.Wrap(err, "setup ruler sharding ring")
 	}
 
@@ -361,39 +359,6 @@ func (r *Ruler) stopping(_ error) error {
 		_ = services.StopManagerAndAwaitStopped(context.Background(), r.subservices)
 	}
 	return nil
-}
-
-type sender interface {
-	Send(alerts ...*notifier.Alert)
-}
-
-// SendAlerts implements a rules.NotifyFunc for a Notifier.
-// It filters any non-firing alerts from the input.
-//
-// Copied from Prometheus's main.go.
-func SendAlerts(n sender, externalURL string) promRules.NotifyFunc {
-	return func(ctx context.Context, expr string, alerts ...*promRules.Alert) {
-		var res []*notifier.Alert
-
-		for _, alert := range alerts {
-			a := &notifier.Alert{
-				StartsAt:     alert.FiredAt,
-				Labels:       alert.Labels,
-				Annotations:  alert.Annotations,
-				GeneratorURL: externalURL + strutil.TableLinkForExpression(expr),
-			}
-			if !alert.ResolvedAt.IsZero() {
-				a.EndsAt = alert.ResolvedAt
-			} else {
-				a.EndsAt = alert.ValidUntil
-			}
-			res = append(res, a)
-		}
-
-		if len(alerts) > 0 {
-			n.Send(res...)
-		}
-	}
 }
 
 var sep = []byte("/")

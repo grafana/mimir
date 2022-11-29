@@ -1,0 +1,57 @@
+---
+# Source: mimir-distributed/charts/rollout_operator/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-oss-logical-multizone-values-rollout-operator
+  labels:
+    helm.sh/chart: rollout-operator-0.1.2
+    app.kubernetes.io/name: rollout-operator
+    app.kubernetes.io/instance: test-oss-logical-multizone-values
+    app.kubernetes.io/version: "v0.1.1"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  replicas: 1
+  minReadySeconds: 10
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: rollout-operator
+      app.kubernetes.io/instance: test-oss-logical-multizone-values
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: rollout-operator
+        app.kubernetes.io/instance: test-oss-logical-multizone-values
+    spec:
+      serviceAccountName: test-oss-logical-multizone-values-rollout-operator
+      securityContext:
+        {}
+      containers:
+        - name: rollout-operator
+          securityContext:
+            {}
+          image: "grafana/rollout-operator:v0.1.1"
+          imagePullPolicy: IfNotPresent
+          args:
+          - -kubernetes.namespace=citestns
+          ports:
+            - name: http-metrics
+              containerPort: 8001
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http-metrics
+            initialDelaySeconds: 5
+            timeoutSeconds: 1
+          resources:
+            limits:
+              cpu: "1"
+              memory: 200Mi
+            requests:
+              cpu: 100m
+              memory: 100Mi

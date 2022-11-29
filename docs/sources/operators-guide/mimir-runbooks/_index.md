@@ -346,6 +346,20 @@ How to **fix** it:
 - Increase the evaluation interval of the rule group. You can use the rate of missed evaluation to estimate how long the rule group evaluation actually takes.
 - Try splitting up the rule group into multiple rule groups. Rule groups are evaluated in parallel, so the same rules may still fit in the same resolution.
 
+### MimirRulerRemoteEvaluationFailing
+
+This alert fires when communication between `ruler` and `ruler-query-frontend` is failing to be established.
+
+The `ruler-query-frontend` component is exclusively used by the `ruler` to evaluate rule expressions when running in remote operational mode. If communication between these two components breaks, gaps are expected to appear in the case of recording rules or alerting rules will not fire when they should.
+
+How to **investigate**:
+
+- Check the `Mimir / Remote ruler reads` dashboard to see if the issue is caused by failures or high latency
+  - **Failures**
+    - Check the `ruler-query-frontend` logs to find out more details about the error
+  - **High latency**
+    - Check the `Mimir / Remote ruler reads resources` dashboard to see if CPU or Memory usage increased unexpectedly
+
 ### MimirIngesterHasNotShippedBlocks
 
 This alert fires when a Mimir ingester is not uploading any block to the long-term storage. An ingester is expected to upload a block to the storage every block range period (defaults to 2h) and if a longer time elapse since the last successful upload it means something is not working correctly.
@@ -690,6 +704,7 @@ How to **investigate**:
   - On multi-tenant Mimir clusters with **query-sharding enabled** and **only a single tenant** being affected:
     - Verify if the particular queries are hitting edge cases, where query-sharding is not benefical, by getting traces from the `Mimir / Slow Queries` dashboard and then look where time is spent. If time is spent in the query-frontend running PromQL engine, then it means query-sharding is not beneficial for this tenant. Consider disabling query-sharding or reduce the shard count using the `query_sharding_total_shards` override.
     - Otherwise and only if the queries by the tenant are within reason representing normal usage, consider scaling of queriers and potentially store-gateways.
+  - On a Mimir cluster with **querier auto-scaling enabled** after checking the health of the existing querier replicas, check to see if the auto-scaler has added additional querier replicas or if the maximum number of querier replicas has been reached and is not sufficient and should be increased.
 
 ### MimirMemcachedRequestErrors
 
@@ -976,21 +991,21 @@ How to **investigate**:
     ```
     - In case you need to quickly reject write path traffic from a single tenant, you can override its `ingestion_rate` and `ingestion_rate_burst` setting lower values (so that some/most of their traffic will be rejected)
 
-### MimirQuerierAutoscalerNotActive
+### MimirAutoscalerNotActive
 
-This alert fires when the Mimir querier Kubernetes Horizontal Pod Autoscaler's (HPA) `ScalingActive` condition is `false`. When this happens, it's not able to calculate desired scale and generally indicates problems with fetching metrics.
+This alert fires when any of Mimir's Kubernetes Horizontal Pod Autoscaler's (HPA) `ScalingActive` condition is `false`. When this happens, it's not able to calculate desired scale and generally indicates problems with fetching metrics.
 
 How it **works**:
 
-- HPA is configured to autoscale Mimir queriers based on custom metrics fetched from Prometheus via the KEDA custom metrics API server
+- HPA's can be configured to autoscale Mimir components based on custom metrics fetched from Prometheus via the KEDA custom metrics API server
 - HPA periodically queries updated metrics and updates the number of desired replicas based on that
-- Please refer to the [HPA documentation](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/) for more information about it
+- Please refer to [Mimir's Autoscaling documentation]({{< relref "../deploy-grafana-mimir/jsonnet/configure-autoscaling.md" >}}) and the upstream [HPA documentation](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/) for more information
 
 How to **investigate**:
 
 - Check HPA conditions and events to get more details about the failure
   ```
-  kubectl describe hpa -n <namespace> keda-hpa-querier
+  kubectl describe hpa -n <namespace> keda-hpa-$component
   ```
 - Ensure KEDA pods are up and running
   ```
@@ -1056,6 +1071,21 @@ How to **investigate**:
 - This alert should always be actionable. There are two possible outcomes:
   1. The alert fired because of a bug in Mimir: fix it.
   1. The alert fired because of a bug or edge case in the continuous test tool, causing a false positive: fix it.
+
+### MimirDistributorForwardingErrorRate
+
+This alert fires when the Distributor is trying to forward samples to a forwarding target, but the forwarding requests
+result in errors at a high rate.
+
+How it **works**:
+
+- The alert compares the total rate of forwarding requests to the rate of forwarding requests which result in an error.
+
+How to **investigate**:
+
+- Check the `Mimir / Writes` dashboard, it should have a row named `Distributor Forwarding` which also shows the type of error if an HTTP status code was returned.
+- Check the Distributor logs, depending on the type of errors which occur the Distributor might log information about the errors.
+- Check what the forwarding targets are in use, this can be seen in the runtime config under the key `forwarding_endpoint`, then check the logs of the forwarding target(s).
 
 ### MimirRingMembersMismatch
 
@@ -1453,7 +1483,7 @@ How to **fix** it:
 
 ### err-mimir-tenant-too-many-ha-clusters
 
-This error occurs when a distributor rejects a write request because the number of [high-availability (HA) clusters]({{< relref "../configure/configuring-high-availability-deduplication.md" >}}) has hit the configured limit for this tenant.
+This error occurs when a distributor rejects a write request because the number of [high-availability (HA) clusters]({{< relref "../configure/configure-high-availability-deduplication.md" >}}) has hit the configured limit for this tenant.
 
 How it **works**:
 
@@ -1487,9 +1517,10 @@ Common **causes**:
 
 - Your code has a single target that exposes the same time series multiple times, or multiple targets with identical labels.
 - System time of your Prometheus instance has been shifted backwards. If this was a mistake, fix the system time back to normal. Otherwise, wait until the system time catches up to the time it was changed.
-- You are running multiple Prometheus instances pushing the same metrics and [your high-availability tracker is not properly configured for deduplication]({{< relref "../configure/configuring-high-availability-deduplication.md" >}}).
+- You are running multiple Prometheus instances pushing the same metrics and [your high-availability tracker is not properly configured for deduplication]({{< relref "../configure/configure-high-availability-deduplication.md" >}}).
 - Prometheus relabelling has been configured and it causes series to clash after the relabelling. Check the error message for information about which series has received a sample out of order.
 - A Prometheus instance was restarted, and it pushed all data from its Write-Ahead Log to remote write upon restart, some of which has already been pushed and ingested. This is normal and can be ignored.
+- Prometheus and Mimir have the same recording rule, which generates the exact same series in both places and causes either the remote write or the rule evaluation to fail randomly, depending on timing.
 
 > **Note**: You can learn more about out of order samples in Prometheus, in the blog post [Debugging out of order samples](https://www.robustperception.io/debugging-out-of-order-samples/).
 
@@ -1589,7 +1620,7 @@ How to **fix** it:
 - `prometheus_rules_namespace`
 - `prometheus_rules`
 
-## Mimir blocks storage - What to do when things to wrong
+## Mimir blocks storage - What to do when things go wrong
 
 ## Recovering from a potential data loss incident
 
@@ -1617,11 +1648,11 @@ When the compactor is **halted**:
 
 ### Recover source blocks from ingesters
 
-Ingesters keep, on their persistent disk, the blocks compacted from TSDB head until the `-experimental.tsdb.retention-period` retention expires. The **default retention is 4 days**, in order to give cluster operators enough time to react in case of a data loss incident.
+Ingesters keep, on their persistent disk, the blocks compacted from TSDB head until the `-blocks-storage.tsdb.retention-period` retention expires.
 
-The blocks retained in the ingesters can be used in case the compactor generates corrupted blocks and the source blocks, shipped from ingesters, have already been hard deleted from the bucket.
+The blocks retained in the ingesters can be used in case the compactor generates corrupted blocks and the source blocks, uploaded from ingesters, have already been hard deleted from the bucket.
 
-How to manually blocks from ingesters to the bucket:
+How to manually upload blocks from ingesters to the bucket:
 
 1. Ensure [`gsutil`](https://cloud.google.com/storage/docs/gsutil) is installed in the Mimir pod. If not, [install it](#install-gsutil-in-the-mimir-pod)
 2. Run `cd /data/tsdb && /path/to/gsutil -m rsync -n -r -x 'thanos.shipper.json|chunks_head|wal' . gs://<bucket>/recovered/`

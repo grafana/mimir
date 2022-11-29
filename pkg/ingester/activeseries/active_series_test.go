@@ -90,8 +90,8 @@ func TestActiveSeries_UpdateSeries_WithMatchers(t *testing.T) {
 
 func TestActiveSeries_ShouldCorrectlyHandleFingerprintCollisions(t *testing.T) {
 	metric := labels.NewBuilder(labels.FromStrings("__name__", "logs"))
-	ls1 := metric.Set("_", "ypfajYg2lsv").Labels()
-	ls2 := metric.Set("_", "KiqbryhzUpn").Labels()
+	ls1 := metric.Set("_", "ypfajYg2lsv").Labels(nil)
+	ls2 := metric.Set("_", "KiqbryhzUpn").Labels(nil)
 
 	require.True(t, client.Fingerprint(ls1) == client.Fingerprint(ls2))
 	c := NewActiveSeries(&Matchers{}, DefaultTimeout)
@@ -181,8 +181,8 @@ func TestActiveSeries_Purge_WithMatchers(t *testing.T) {
 
 func TestActiveSeries_PurgeOpt(t *testing.T) {
 	metric := labels.NewBuilder(labels.FromStrings("__name__", "logs"))
-	ls1 := metric.Set("_", "ypfajYg2lsv").Labels()
-	ls2 := metric.Set("_", "KiqbryhzUpn").Labels()
+	ls1 := metric.Set("_", "ypfajYg2lsv").Labels(nil)
+	ls2 := metric.Set("_", "KiqbryhzUpn").Labels(nil)
 
 	currentTime := time.Now()
 	c := NewActiveSeries(&Matchers{}, 59*time.Second)
@@ -354,9 +354,7 @@ func BenchmarkActiveSeriesTest_single_series(b *testing.B) {
 }
 
 func benchmarkActiveSeriesConcurrencySingleSeries(b *testing.B, goroutines int) {
-	series := labels.Labels{
-		{Name: "a", Value: "a"},
-	}
+	series := labels.FromStrings("a", "a")
 
 	c := NewActiveSeries(&Matchers{}, DefaultTimeout)
 
@@ -451,7 +449,7 @@ func benchmarkPurge(b *testing.B, twice bool) {
 
 	series := [numSeries]labels.Labels{}
 	for s := 0; s < numSeries; s++ {
-		series[s] = labels.Labels{{Name: "a", Value: strconv.Itoa(s)}}
+		series[s] = labels.FromStrings("a", strconv.Itoa(s))
 	}
 
 	for i := 0; i < b.N; i++ {

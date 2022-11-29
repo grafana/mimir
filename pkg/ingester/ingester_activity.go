@@ -3,17 +3,19 @@
 package ingester
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/http"
-
-	"github.com/weaveworks/common/tracing"
+	"strconv"
 
 	"github.com/grafana/dskit/tenant"
+	"github.com/weaveworks/common/tracing"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
+	"github.com/grafana/mimir/pkg/util/push"
 )
 
 // ActivityTrackerWrapper is a wrapper around Ingester that adds queries to activity tracker.
@@ -34,9 +36,9 @@ func (i *ActivityTrackerWrapper) Push(ctx context.Context, request *mimirpb.Writ
 	return i.ing.Push(ctx, request)
 }
 
-func (i *ActivityTrackerWrapper) PushWithCleanup(ctx context.Context, w *mimirpb.WriteRequest, c func()) (*mimirpb.WriteResponse, error) {
+func (i *ActivityTrackerWrapper) PushWithCleanup(ctx context.Context, r *push.Request) (*mimirpb.WriteResponse, error) {
 	// No tracking in PushWithCleanup
-	return i.ing.PushWithCleanup(ctx, w, c)
+	return i.ing.PushWithCleanup(ctx, r)
 }
 
 func (i *ActivityTrackerWrapper) QueryStream(request *client.QueryRequest, server client.Ingester_QueryStreamServer) error {
@@ -150,5 +152,74 @@ func (i *ActivityTrackerWrapper) ShutdownHandler(w http.ResponseWriter, r *http.
 func requestActivity(ctx context.Context, name string, req interface{}) string {
 	userID, _ := tenant.TenantID(ctx)
 	traceID, _ := tracing.ExtractSampledTraceID(ctx)
-	return fmt.Sprintf("%s: user=%q trace=%q request=%v", name, userID, traceID, req)
+
+	switch r := req.(type) {
+	case *client.QueryRequest:
+		// To minimize memory allocation, make use of an optimized stringer implementation
+		// for *client.QueryRequest type, as this request can be invoked multiple times per second.
+		return queryRequestActivity(name, userID, traceID, r)
+
+	default:
+		return fmt.Sprintf("%s: user=%q trace=%q request=%v", name, userID, traceID, req)
+	}
+}
+
+func queryRequestActivity(name, userID, traceID string, req *client.QueryRequest) string {
+	sb := bytes.NewBuffer(
+		make([]byte, 0, 8192),
+	)
+	sb.WriteString(name)
+
+	sb.WriteString(`: user=`)
+	b := strconv.AppendQuote(sb.Bytes(), userID)
+	sb = bytes.NewBuffer(b)
+
+	sb.WriteString(` trace=`)
+	b = strconv.AppendQuote(sb.Bytes(), traceID)
+	sb = bytes.NewBuffer(b)
+
+	sb.WriteString(` request=`)
+	queryRequestToString(sb, req)
+
+	return sb.String()
+}
+
+func queryRequestToString(sb *bytes.Buffer, req *client.QueryRequest) {
+	if req == nil {
+		sb.WriteString("nil")
+		return
+	}
+	b := make([]byte, 0, 32)
+
+	sb.WriteString("&QueryRequest{")
+
+	sb.WriteString("StartTimestampMs:")
+	sb.Write(strconv.AppendInt(b, req.StartTimestampMs, 10))
+	sb.WriteString(",")
+
+	b = b[:0]
+	sb.WriteString("EndTimestampMs:")
+	sb.Write(strconv.AppendInt(b, req.EndTimestampMs, 10))
+	sb.WriteString(",")
+
+	sb.WriteString("Matchers:[]*LabelMatcher{")
+	for _, m := range req.Matchers {
+		labelMatcherToString(sb, m)
+		sb.WriteString(",")
+	}
+	sb.WriteString("},}")
+}
+
+func labelMatcherToString(sb *bytes.Buffer, m *client.LabelMatcher) {
+	if m == nil {
+		sb.WriteString("nil")
+		return
+	}
+	sb.WriteString("&LabelMatcher{Type:")
+	sb.WriteString(m.Type.String())
+	sb.WriteString(",Name:")
+	sb.WriteString(m.Name)
+	sb.WriteString(",Value:")
+	sb.WriteString(m.Value)
+	sb.WriteString(",}")
 }

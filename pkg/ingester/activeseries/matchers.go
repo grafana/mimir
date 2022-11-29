@@ -35,13 +35,16 @@ func (m *Matchers) Config() CustomTrackersConfig {
 	return m.cfg
 }
 
-func (m *Matchers) Matches(series labels.Labels) []bool {
+// matches returns a PreAllocDynamicSlice containing only matcher indexes which are matching
+func (m *Matchers) matches(series labels.Labels) preAllocDynamicSlice {
 	if len(m.matchers) == 0 {
-		return nil
+		return preAllocDynamicSlice{}
 	}
-	matches := make([]bool, len(m.matchers))
+	var matches preAllocDynamicSlice
 	for i, sm := range m.matchers {
-		matches[i] = sm.Matches(series)
+		if sm.Matches(series) {
+			matches.append(i)
+		}
 	}
 	return matches
 }
@@ -76,4 +79,36 @@ func (m *Matchers) Swap(i, j int) {
 func amlabelMatcherToProm(m *amlabels.Matcher) *labels.Matcher {
 	// labels.MatchType(m.Type) is a risky conversion because it depends on the iota order, but we have a test for it
 	return labels.MustNewMatcher(labels.MatchType(m.Type), m.Name, m.Value)
+}
+
+const preAllocatedSize = 3
+
+// preAllocDynamicSlice is a slice-like uint16 data structure that allocates space for the first `preAllocatedSize` elements.
+// When more than `preAllocatedSize` elements are appended, it allocates a slice that escapes to heap.
+// This trades in extra allocated space (2x more with `preAllocatedSize=3`) for zero-allocations in most of the cases,
+// relying on the assumption that most of the matchers will not match more than `preAllocatedSize` trackers.
+type preAllocDynamicSlice struct {
+	arr  [preAllocatedSize]uint16
+	arrl byte
+	rest []uint16
+}
+
+func (fs *preAllocDynamicSlice) append(val int) {
+	if fs.arrl < preAllocatedSize {
+		fs.arr[fs.arrl] = uint16(val)
+		fs.arrl++
+		return
+	}
+	fs.rest = append(fs.rest, uint16(val))
+}
+
+func (fs *preAllocDynamicSlice) get(idx int) uint16 {
+	if idx < preAllocatedSize {
+		return fs.arr[idx]
+	}
+	return fs.rest[idx-preAllocatedSize]
+}
+
+func (fs *preAllocDynamicSlice) len() int {
+	return int(fs.arrl) + len(fs.rest)
 }

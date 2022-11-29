@@ -11,8 +11,9 @@ import (
 	"github.com/gogo/protobuf/types"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/thanos-io/thanos/pkg/store/hintspb"
-	"github.com/thanos-io/thanos/pkg/store/storepb"
+
+	"github.com/grafana/mimir/pkg/storegateway/hintspb"
+	"github.com/grafana/mimir/pkg/storegateway/storepb"
 )
 
 // bucketStoreSeriesServer is an fake in-memory gRPC server used to

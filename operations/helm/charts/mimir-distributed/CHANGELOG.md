@@ -7,8 +7,11 @@ remove a deprecated item from the third major release after it has been deprecat
 
 ### List
 
-* GEM gateway: remove port 8080 on the Service resource. Deprecated in 3.1.0 and will be removed in 6.x.x.
+* GEM gateway: remove port 8080 on the Service resource. Deprecated in `3.1.0` and will be removed in `6.0.0`.
   * __How to migrate__: replace usages of port 8080 with port 80; these usages can be in dashboards, Prometheus remote-write configurations, or automation for updating rules.
+* NGINX configuration via `nginx` top-level values sections is being merged with by the `gateway` section. The
+  `nginx` section is deprecated in `4.0.0` and will be removed in `7.0.0`.
+  * __How to migrate__: refer to [Migrate to using the unified proxy deployment for NGINX and GEM gateway](https://grafana.com/docs/mimir/latest/operators-guide/deploying-grafana-mimir/migrate-to-unified-gateway-deployment/)
 
 ## Format of changelog
 
@@ -25,9 +28,70 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [FEATURE] Support deploying NGINX via the `gateway` section. The `nginx` section will be removed in `7.0.0`. See
+  [Migrate to using the unified proxy deployment for NGINX and GEM gateway](https://grafana.com/docs/mimir/latest/operators-guide/deploying-grafana-mimir/migrate-to-unified-gateway-deployment/)
+* [CHANGE] **breaking change** **Data loss without action.** Enables [zone-aware replication](https://grafana.com/docs/mimir/latest/operators-guide/configure/configure-zone-aware-replication/) for ingesters and store-gateways by default. #2778
+  - If you are **upgrading** an existing installation:
+    - Turn off zone-aware replication, by setting the following values:
+      ```yaml
+      ingester:
+        zoneAwareReplication:
+          enabled: false
+      store_gateway:
+        zoneAwareReplication:
+          enabled: false
+      rollout_operator:
+        enabled: false
+      ```
+    - After the upgrade you can migrate to the new zone-aware replication setup, see [Migrate from single zone to zone-aware replication with Helm](https://grafana.com/docs/mimir/latest/migration-guide/migrating-from-single-zone-with-helm/) guide.
+  - If you are **installing** the chart:
+    - Ingesters and store-gateways are installed with 3 logical zones, which means both ingesters and store-gateways start 3 replicas each.
+* [CHANGE] **breaking change** Reduce the number of ingesters in small.yaml form 4 to 3. This should be more accurate size for the scale of 1M AS. Before upgrading refer to [Scaling down ingesters](https://grafana.com/docs/mimir/latest/operators-guide/run-production-environment/scaling-out/#scaling-down-ingesters) to scale down `ingester-3`. Alternatively override the number of ingesters to 4. #3035
+* [CHANGE] **breaking change** Update minio subchart from `4.0.12` to `5.0.0`, which inherits the breaking change of minio gateway mode being removed. #3352
+* [CHANGE] Nginx: uses the headless service of alertmanager, ingester and store-gateway as backends, because there are 3 separate services for each zone. #2778
+* [CHANGE] Gateway: uses the headless service of alertmanager as backend, because there are 3 separate services for each zone. #2778
+* [CHANGE] Update sizing plans (small.yaml, large.yaml, capped-small.yaml, capped-large.yaml). These reflect better how we recommend running Mimir and GEM in production. most plans have adjusted number of replicas and resource requirements. The only **breaking change** is in small.yaml which has reduced the number of ingesters from 4 to 3; for scaling down ingesters refer to [Scaling down ingesters](https://grafana.com/docs/mimir/latest/operators-guide/run-production-environment/scaling-out/#scaling-down-ingesters). #3035
+* [CHANGE] Change default securityContext of Mimir and GEM Pods and containers, so that they comply with a [Restricted pod security policy](https://kubernetes.io/docs/concepts/security/pod-security-standards/).
+  This changes what user the containers run as from `root` to `10001`. The files in the Pods' attached volumes should change ownership with the `fsGroup` change;
+  most CSI drivers support changing the value of `fsGroup`, or kubelet is able to do the ownership change instead of the CSI driver. This is not the case for the HostPath driver.
+  If you are using HostPath or another driver that doesn't support changing `fsGroup`, then you have a couple of options: A) set the `securityContext` of all Mimir and GEM components to `{}` in your values file; B) delete PersistentVolumes and PersistentVolumeClaims and upgrade the chart; C) add an initContainer to all components that use a PVC that changes ownership of the mounted volumes.
+  If you take no action and `fsGroup` is not supported by your CSI driver, then components will fail to start. #3007
+* [CHANGE] Restrict Pod seccomp profile to `runtime/default` in the default PodSecurityPolicy of the chart. #3007
+* [CHANGE] Use the chart's service account for metamonitoring instead of creating one specific to metamonitoring. #3350
+* [CHANGE] Use mimir for the nginx ingress example #3336
 * [ENHANCEMENT] Metamonitoring: If enabled and no URL is configured, then metamonitoring metrics will be sent to
   Mimir under the `metamonitoring` tenant; this enhancement does not apply to GEM. #3176
+* [ENHANCEMENT] Improve default rollout strategies. Now distributor, overrides_exporter, querier, query_frontend, admin_api, gateway, and graphite components can be upgraded more quickly and also can be rolled out with a single replica without downtime. #3029
+* [ENHANCEMENT] Metamonitoring: make scrape interval configurable. #2945
+* [ENHANCEMENT] Update compactor configuration to match Jsonnet. #3353
+  * This also now matches production configuration from Grafana Cloud
+  * Set `compactor.compaction_interval` to `30m` (Decreased from `1h`)
+  * Set `compactor.deletion_delay` to `2h` (Decreased from `12h`)
+  * Set `compactor.max_closing_blocks_concurrency` to `2` (Increased from `1`)
+  * Set `compactor.max_opening_blocks_concurrency` to `4` (Increased from `1`)
+  * Set `compactor.symbols_flushers_concurrency` to `4` (Increased from `1`)
+  * Set `compactor.sharding_ring.wait_stability_min_duration` to `1m` (Increased from `0`)
+* [ENHANCEMENT] Update read path configuration to match Jsonnet #2998
+  * This also now matches production configuration from Grafana Cloud
+  * Set `blocks_storage.bucket_store.max_chunk_pool_bytes` to `12GiB` (Increased from `2GiB`)
+  * Set `blocks_storage.bucket_Store.index_cache.memcached.max_item_size` to `5MiB` (Decreased from `15MiB`)
+  * Set `frontend.grpc_client_config.max_send_msg_size` to `400MiB` (Increased from `100MiB`)
+  * Set `limits.max_cache_freshness` to `10m` (Increased from `1m`)
+  * Set `limits.max_query_parallelism` to `240` (Increased from `224`)
+  * Set `query_scheduler.max_outstanding_requests_per_tenant` to `800` (Decreased from `1600`)
+  * Set `store_gateway.sharding_ring.wait_stability_min_duration` to `1m` (Increased from `0`)
+  * Set `frontend.results_cache.memcached.timeout` to `500ms` (Increased from `100ms`)
+  * Unset `frontend.align_queries_with_step` (Was `true`, now defaults to `false`)
+  * Unset `frontend.log_queries_longer_than` (Was `10s`, now defaults to `0`, which is disabled)
+* [ENHANCEMENT] Added `usage_stats.installation_mode` configuration to track the installation mode via the anonymous usage statistics. #3294
+* [ENHANCEMENT] Update grafana-agent-operator subchart to 0.2.8. Notable changes are being able to configure Pod's SecurityContext and Container's SecurityContext. #3350
+* [ENHANCEMENT] Add possibility to configure fallbackConfig for alertmanager and set it by default. Now tenants without an alertmanager config will not see errors accessing the alertmanager UI or when using the alertmanager API. #3360
+* [ENHANCEMENT] Add ability to set a `schedulerName` for alertmanager, compactor, ingester and store-gateway. This is needed for example for some storage providers. #3140
 * [BUGFIX] Fix an issue that caused metamonitoring secrets to be created incorrectly #3170
+* [BUGFIX] Nginx: fixed `imagePullSecret` value reference inconsistency. #3208
+* [BUGFIX] Move the activity tracker log from /data to /active-query-tracker to remove ignore log messages. #3169
+* [BUGFIX] Fix Invalid ingress nginx config due to newline in prometheusHttpPrefix Helm named templates. #3088
+* [BUGFIX] Added missing endpoint for OTLP in NGINX #3479
 
 ## 3.2.0
 
@@ -82,6 +146,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Add podAntiAffinity to sizing plans (small.yaml, large.yaml, capped-small.yaml, capped-large.yaml). #2906
 * [ENHANCEMENT] Add ability to configure and run mimir-continuous-test. #3117
 * [BUGFIX] Fix wrong label selector in ingester anti affinity rules in the sizing plans. #2906
+* [BUGFIX] Query-scheduler no longer periodically terminates connections from query-frontends and queriers. This caused some queries to time out and EOF errors in the logs. #3262
 
 ## 3.1.0
 

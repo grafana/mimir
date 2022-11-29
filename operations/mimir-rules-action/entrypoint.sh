@@ -55,7 +55,7 @@ case "${ACTION}" in
     STATUS=$?
     ;;
   "$PREPARE_CMD")
-    OUTPUT=$(/bin/mimirtool rules prepare -i --rule-dirs="${RULES_DIR}" --label-excluded-rule-groups="${LABEL_EXCLUDED_RULE_GROUPS}" "$@")
+    OUTPUT=$(/bin/mimirtool rules prepare -i --rule-dirs="${RULES_DIR}" ${LABEL:+ --label=${LABEL}} --label-excluded-rule-groups="${LABEL_EXCLUDED_RULE_GROUPS}" "$@")
     STATUS=$?
     ;;
   "$CHECK_CMD")
@@ -72,7 +72,7 @@ case "${ACTION}" in
     ;;
 esac
 
-SINGLE_LINE_OUTPUT=$(echo "${OUTPUT}" | awk 'BEGIN { RS="" } { gsub(/%/, "%25"); gsub(/\r/, "%0D"); gsub(/\n/, "%0A") } { print }')
+SINGLE_LINE_OUTPUT=$(echo "${OUTPUT}" | awk 'BEGIN { RS="%0A" } { gsub(/%/, "%25"); gsub(/\r/, "%0D"); gsub(/\n/, "%0A") } { print }')
 echo ::set-output name=detailed::"${SINGLE_LINE_OUTPUT}"
 SUMMARY=$(echo "${OUTPUT}" | grep Summary)
 echo ::set-output name=summary::"${SUMMARY}"

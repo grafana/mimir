@@ -6,6 +6,15 @@ ci_resources: &ci_resources
   requests:
   limits:
 
+nginx:
+  ingress:
+    enabled: true
+    hosts:
+      - host: nginx.mimir.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+
 global:
   extraEnvFrom:
     - secretRef:
@@ -41,11 +50,15 @@ ingester:
     <<: *ci_resources
   persistentVolume:
     enabled: false
+  zoneAwareReplication:
+    enabled: false
 
 store_gateway:
   resources:
     <<: *ci_resources
   persistentVolume:
+    enabled: false
+  zoneAwareReplication:
     enabled: false
 
 # For testing only
@@ -88,3 +101,6 @@ query_frontend:
 query_scheduler:
   resources:
     <<: *ci_resources
+
+rollout_operator:
+  enabled: false

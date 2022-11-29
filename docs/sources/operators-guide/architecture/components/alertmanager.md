@@ -24,6 +24,12 @@ The Mimir Alertmanager uses the same [configuration file](https://prometheus.io/
 > **Note:** The Mimir Alertmanager exposes the configuration API according to the path set by the `-server.path-prefix` flag. It does not use the path set by the `-http.alertmanager-http-prefix` flag.
 > If you run Mimir with the default configuration (`-server.path-prefix`, where the default value is `/`), then only set the hostname for the `--address` flag of the `mimirtool` command; do not set a path-specific address. For example, `/` is correct, and `/alertmanager` is incorrect.
 
+You can validate a configuration file using the `mimirtool` command:
+
+```bash
+mimirtool alertmanager verify <ALERTMANAGER CONFIGURATION FILE>
+```
+
 The following sample command shows how to upload a tenant's Alertmanager configuration using `mimirtool`:
 
 ```bash
@@ -96,7 +102,7 @@ Grafana Mimir Alertmanager replicas use [hash ring]({{< relref "../hash-ring/ind
 This means that any Mimir Alertmanager replica can respond to any API or UI request for any tenant.
 If the Mimir Alertmanager replica receiving the HTTP request doesn't own the tenant to which the request belongs, the request is internally routed to the appropriate replica.
 
-To configure the Alertmanagers' hash ring, refer to [configuring hash rings]({{< relref "../../configure/configuring-hash-rings.md" >}}).
+To configure the Alertmanagers' hash ring, refer to [configuring hash rings]({{< relref "../../configure/configure-hash-rings.md" >}}).
 
 > **Note:** When running with a single tenant, scaling the number of replicas to be greater than the replication factor offers no benefits as the Mimir Alertmanager shards by tenant and not individual alerts.
 

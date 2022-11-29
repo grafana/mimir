@@ -3,6 +3,7 @@
   local containerPort = $.core.v1.containerPort,
 
   distributor_args::
+    $._config.usageStatsConfig +
     $._config.grpcConfig +
     $._config.ingesterRingClientConfig +
     $._config.distributorLimitsConfig +
@@ -44,7 +45,7 @@
 
   local deployment = $.apps.v1.deployment,
 
-  distributor_deployment:
+  distributor_deployment: if !$._config.is_microservices_deployment_mode then null else
     deployment.new('distributor', 3, [$.distributor_container]) +
     $.newMimirSpreadTopology('distributor', $._config.distributor_topology_spread_max_skew) +
     $.mimirVolumeMounts +
@@ -54,7 +55,7 @@
 
   local service = $.core.v1.service,
 
-  distributor_service:
+  distributor_service: if !$._config.is_microservices_deployment_mode then null else
     $.util.serviceFor($.distributor_deployment, $._config.service_ignored_labels) +
     service.mixin.spec.withClusterIp('None'),
 }

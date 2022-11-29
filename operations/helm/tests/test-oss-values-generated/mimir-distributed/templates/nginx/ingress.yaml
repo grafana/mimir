@@ -1,0 +1,28 @@
+---
+# Source: mimir-distributed/templates/nginx/ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: test-oss-values-mimir-nginx
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-oss-values
+    app.kubernetes.io/component: nginx
+    app.kubernetes.io/managed-by: Helm
+  namespace: "citestns"
+spec:
+  tls:
+    - hosts:
+        - "nginx.mimir.example.com"
+      secretName: mimir-nginx-tls
+  rules:
+    - host: "nginx.mimir.example.com"
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: test-oss-values-mimir-nginx
+                port:
+                  number: 80

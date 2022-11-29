@@ -10,7 +10,8 @@ import (
 
 	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/thanos-io/thanos/pkg/block/metadata"
+
+	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
 // Job holds a compaction job, which consists of a group of blocks that should be compacted together.
@@ -97,6 +98,13 @@ func (job *Job) MaxTime() int64 {
 		}
 	}
 	return max
+}
+
+// Metas returns the metadata for each block that is part of this job, ordered by the block's MinTime
+func (job *Job) Metas() []*metadata.Meta {
+	out := make([]*metadata.Meta, len(job.metasByMinTime))
+	copy(out, job.metasByMinTime)
+	return out
 }
 
 // Labels returns the external labels for the output block(s) of this job.

@@ -83,7 +83,7 @@ func setLabelsRetainExisting(src labels.Labels, additionalLabels ...labels.Label
 		lb.Set(additionalL.Name, additionalL.Value)
 	}
 
-	return lb.Labels()
+	return lb.Labels(nil)
 }
 
 func sliceToSet(values []string) map[string]struct{} {

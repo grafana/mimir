@@ -1,0 +1,28 @@
+---
+# Source: mimir-distributed/templates/gateway/gateway-ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: gateway-enterprise-values-mimir-gateway
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: gateway-enterprise-values
+    app.kubernetes.io/component: gateway
+    app.kubernetes.io/managed-by: Helm
+  namespace: "citestns"
+spec:
+  tls:
+    - hosts:
+        - "mimir.example.com"
+      secretName: mimir-tls
+  rules:
+    - host: "mimir.example.com"
+      http:
+        paths:
+          - path: /
+            pathType: 
+            backend:
+              service:
+                name: gateway-enterprise-values-mimir-gateway
+                port:
+                  number: 80

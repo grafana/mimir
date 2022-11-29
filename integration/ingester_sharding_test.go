@@ -56,7 +56,6 @@ func TestIngesterSharding(t *testing.T) {
 			// to a small enough value that they'll have been part of the ring for long enough by the time we attempt
 			// to query back the values we wrote to them. If they _haven't_ been part of the ring for long enough, the
 			// query would be sent to all ingesters and our test wouldn't really be testing anything.
-			flags["-querier.query-store-after"] = "0"
 			flags["-querier.query-ingesters-within"] = fmt.Sprintf("%ds", queryIngestersWithinSecs)
 			flags["-ingester.ring.heartbeat-period"] = "1s"
 
@@ -97,7 +96,7 @@ func TestIngesterSharding(t *testing.T) {
 
 			for i := 1; i <= numSeriesToPush; i++ {
 				metricName := fmt.Sprintf("series_%d", i)
-				series, expectedVector := generateSeries(metricName, now)
+				series, expectedVector, _ := generateSeries(metricName, now)
 				res, err := client.Push(series)
 				require.NoError(t, err)
 				require.Equal(t, 200, res.StatusCode)

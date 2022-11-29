@@ -32,7 +32,7 @@ spec:
         {{- end }}
         {{- end }}
         accessModes:
-          {{ toYaml .Values.compactor.persistentVolume.accessModes | nindent 10 }}
+          {{- toYaml .Values.compactor.persistentVolume.accessModes | nindent 10 }}
         resources:
           requests:
             storage: "{{ .Values.compactor.persistentVolume.size }}"
@@ -45,6 +45,9 @@ spec:
         {{- include "mimir.podAnnotations" (dict "ctx" . "component" "compactor") | nindent 8 }}
       namespace: {{ .Release.Namespace | quote }}
     spec:
+      {{- with .Values.compactor.schedulerName }}
+      schedulerName: {{ . | quote }}
+      {{- end }}
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
       {{- if .Values.compactor.priorityClassName }}
       priorityClassName: {{ .Values.compactor.priorityClassName }}
@@ -86,6 +89,8 @@ spec:
         {{- if .Values.compactor.extraVolumes }}
         {{ toYaml .Values.compactor.extraVolumes | nindent 8 }}
         {{- end }}
+        - name: active-queries
+          emptyDir: {}
       containers:
         {{- if .Values.compactor.extraContainers }}
         {{ toYaml .Values.compactor.extraContainers | nindent 8 }}
@@ -117,6 +122,8 @@ spec:
               {{- if .Values.compactor.persistentVolume.subPath }}
               subPath: {{ .Values.compactor.persistentVolume.subPath }}
               {{- end }}
+            - name: active-queries
+              mountPath: /active-query-tracker
           ports:
             - name: http-metrics
               containerPort: {{ include "mimir.serverHttpListenPort" . }}

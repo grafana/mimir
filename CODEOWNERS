@@ -2,4 +2,4 @@
 * @grafana/mimir-maintainers
 
 # Documentation.
-/docs/ @osg-grafana @grafana/mimir-maintainers
+/docs/ @grafana/docs-metrics @grafana/mimir-maintainers

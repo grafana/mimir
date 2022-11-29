@@ -56,6 +56,8 @@ spec:
               mountPath: /etc/mimir
             - name: license
               mountPath: /license
+            - name: active-queries
+              mountPath: /active-query-tracker
           env:
             {{- with .Values.global.extraEnv }}
               {{ toYaml . | nindent 12 }}
@@ -83,6 +85,8 @@ spec:
           secret:
             secretName: {{ tpl .Values.license.secretName . }}
         - name: storage
+          emptyDir: {}
+        - name: active-queries
           emptyDir: {}
 {{- end -}}
 {{- end -}}
