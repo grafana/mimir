@@ -12,19 +12,19 @@ import (
 
 func TestSeriesChunkRef_Compare(t *testing.T) {
 	input := []seriesChunkRef{
-		{BlockID: ulid.MustNew(0, nil), MinTime: 2, MaxTime: 5},
-		{BlockID: ulid.MustNew(1, nil), MinTime: 1, MaxTime: 5},
-		{BlockID: ulid.MustNew(2, nil), MinTime: 1, MaxTime: 3},
-		{BlockID: ulid.MustNew(3, nil), MinTime: 4, MaxTime: 7},
-		{BlockID: ulid.MustNew(4, nil), MinTime: 3, MaxTime: 6},
+		{blockID: ulid.MustNew(0, nil), minTime: 2, maxTime: 5},
+		{blockID: ulid.MustNew(1, nil), minTime: 1, maxTime: 5},
+		{blockID: ulid.MustNew(2, nil), minTime: 1, maxTime: 3},
+		{blockID: ulid.MustNew(3, nil), minTime: 4, maxTime: 7},
+		{blockID: ulid.MustNew(4, nil), minTime: 3, maxTime: 6},
 	}
 
 	expected := []seriesChunkRef{
-		{BlockID: ulid.MustNew(2, nil), MinTime: 1, MaxTime: 3},
-		{BlockID: ulid.MustNew(1, nil), MinTime: 1, MaxTime: 5},
-		{BlockID: ulid.MustNew(0, nil), MinTime: 2, MaxTime: 5},
-		{BlockID: ulid.MustNew(4, nil), MinTime: 3, MaxTime: 6},
-		{BlockID: ulid.MustNew(3, nil), MinTime: 4, MaxTime: 7},
+		{blockID: ulid.MustNew(2, nil), minTime: 1, maxTime: 3},
+		{blockID: ulid.MustNew(1, nil), minTime: 1, maxTime: 5},
+		{blockID: ulid.MustNew(0, nil), minTime: 2, maxTime: 5},
+		{blockID: ulid.MustNew(4, nil), minTime: 3, maxTime: 6},
+		{blockID: ulid.MustNew(3, nil), minTime: 4, maxTime: 7},
 	}
 
 	sort.Slice(input, func(i, j int) bool {

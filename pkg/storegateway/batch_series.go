@@ -154,7 +154,7 @@ func (s *bucketBatchSet) loadBatch() bool {
 	s.currentBatch = newSeriesChunkRefsSet(s.batchSize)
 	nextPostings := s.postings[s.currBatchPostingsOffset:end]
 
-	loadedSeries, err := s.indexr.preloadSeries(s.ctx, nextPostings, s.currentBatch.Stats)
+	loadedSeries, err := s.indexr.preloadSeries(s.ctx, nextPostings, s.currentBatch.stats)
 	if err != nil {
 		s.err = errors.Wrap(err, "preload series")
 		return false
@@ -166,7 +166,7 @@ func (s *bucketBatchSet) loadBatch() bool {
 		i              int
 	)
 	for _, id := range nextPostings {
-		ok, err := loadedSeries.loadSeriesForTime(id, &symbolizedLset, &chks, s.skipChunks, s.minTime, s.maxTime, s.currentBatch.Stats.export())
+		ok, err := loadedSeries.loadSeriesForTime(id, &symbolizedLset, &chks, s.skipChunks, s.minTime, s.maxTime, s.currentBatch.stats.export())
 		if err != nil {
 			s.err = errors.Wrap(err, "read series")
 			return false
@@ -203,10 +203,10 @@ func (s *bucketBatchSet) loadBatch() bool {
 			entry.chunks = metasToChunks(s.blockID, chks)
 		}
 
-		s.currentBatch.Series[i] = entry
+		s.currentBatch.series[i] = entry
 		i++
 	}
-	s.currentBatch.Series = s.currentBatch.Series[:i]
+	s.currentBatch.series = s.currentBatch.series[:i]
 
 	if s.currentBatch.len() == 0 {
 		return s.loadBatch() // we didn't find any suitable series in this batch, try with the next one
@@ -219,10 +219,10 @@ func metasToChunks(blockID ulid.ULID, metas []chunks.Meta) []seriesChunkRef {
 	chks := make([]seriesChunkRef, len(metas))
 	for i, meta := range metas {
 		chks[i] = seriesChunkRef{
-			MinTime: meta.MinTime,
-			MaxTime: meta.MaxTime,
-			Ref:     meta.Ref,
-			BlockID: blockID,
+			minTime: meta.MinTime,
+			maxTime: meta.MaxTime,
+			ref:     meta.Ref,
+			blockID: blockID,
 		}
 	}
 	return chks
@@ -416,15 +416,15 @@ func (c *loadingBatchSet) Next() bool {
 	nextUnloaded := c.from.At()
 	entries := make([]seriesEntry, nextUnloaded.len())
 	c.chunkReaders.reset()
-	for i, s := range nextUnloaded.Series {
+	for i, s := range nextUnloaded.series {
 		entries[i].lset = s.lset
 		entries[i].chks = make([]storepb.AggrChunk, len(s.chunks))
 
 		for j, chunk := range s.chunks {
-			entries[i].chks[j].MinTime = chunk.MinTime
-			entries[i].chks[j].MaxTime = chunk.MaxTime
+			entries[i].chks[j].MinTime = chunk.minTime
+			entries[i].chks[j].MaxTime = chunk.maxTime
 
-			err := c.chunkReaders.addLoad(chunk.BlockID, chunk.Ref, i, j)
+			err := c.chunkReaders.addLoad(chunk.blockID, chunk.ref, i, j)
 			if err != nil {
 				c.err = errors.Wrap(err, "preloading chunks")
 				return false
@@ -578,7 +578,7 @@ func (s *mergedBatchSet) Next() bool {
 		if s.aAt.Done() {
 			if s.a.Next() {
 				s.aAt.reset(s.a.At())
-				next.Stats = next.Stats.merge(s.a.At().Stats.export())
+				next.stats = next.stats.merge(s.a.At().stats.export())
 			} else if s.a.Err() != nil {
 				// Stop iterating on first error encountered.
 				return false
@@ -587,15 +587,15 @@ func (s *mergedBatchSet) Next() bool {
 		if s.bAt.Done() {
 			if s.b.Next() {
 				s.bAt.reset(s.b.At())
-				next.Stats = next.Stats.merge(s.b.At().Stats.export())
+				next.stats = next.stats.merge(s.b.At().stats.export())
 			} else if s.b.Err() != nil {
 				// Stop iterating on first error encountered.
 				return false
 			}
 		}
-		next.Series[i], ok = nextUniqueEntry(s.aAt, s.bAt)
+		next.series[i], ok = nextUniqueEntry(s.aAt, s.bAt)
 		if !ok {
-			next.Series = next.Series[:i]
+			next.series = next.series[:i]
 			break
 		}
 	}
@@ -707,29 +707,29 @@ func (s *deduplicatingBatchSet) Next() bool {
 		if !s.from.Next() {
 			return false
 		}
-		nextBatch.Series[0] = s.from.At()
+		nextBatch.series[0] = s.from.At()
 	} else {
-		nextBatch.Series[0] = *s.peek
+		nextBatch.series[0] = *s.peek
 		s.peek = nil
 	}
 
 	var nextEntry seriesChunkRefs
 	for i := 0; i < s.batchSize; {
 		if !s.from.Next() {
-			nextBatch.Series = nextBatch.Series[:i+1]
+			nextBatch.series = nextBatch.series[:i+1]
 			break
 		}
 		nextEntry = s.from.At()
 
-		if labels.Equal(nextBatch.Series[i].lset, nextEntry.lset) {
-			nextBatch.Series[i].chunks = append(nextBatch.Series[i].chunks, nextEntry.chunks...)
+		if labels.Equal(nextBatch.series[i].lset, nextEntry.lset) {
+			nextBatch.series[i].chunks = append(nextBatch.series[i].chunks, nextEntry.chunks...)
 		} else {
 			i++
 			if i >= s.batchSize {
 				s.peek = &nextEntry
 				break
 			}
-			nextBatch.Series[i] = nextEntry
+			nextBatch.series[i] = nextEntry
 		}
 	}
 	s.current = nextBatch
@@ -798,7 +798,7 @@ func (c *unloadedBatchIterator) At() seriesChunkRefs {
 	if c.Done() {
 		return seriesChunkRefs{}
 	}
-	return c.b.Series[c.currentOffset]
+	return c.b.series[c.currentOffset]
 }
 
 type batchedSeriesSet struct {
