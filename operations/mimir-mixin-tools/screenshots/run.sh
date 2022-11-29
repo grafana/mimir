@@ -13,7 +13,7 @@ GRAFANA_PID=""
 if [ ! -e "${SCRIPT_DIR}/.config" ]; then
   echo "This tool expects a local config file stored at ${SCRIPT_DIR}/.config and containing the following content:"
   echo ""
-  echo "CLUSTER=\"<cluster-to-query>\""
+  echo "CLUSTER=\"<cluster-to-query\""
   echo "MIMIR_NAMESPACE=\"<namespace-where-mimir-is-running>\""
   echo "ALERTMANAGER_NAMESPACE=\"<namespace-where-alertmanager-is-running>\""
   echo ""
