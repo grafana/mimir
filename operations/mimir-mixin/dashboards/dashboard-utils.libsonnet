@@ -612,18 +612,23 @@ local utils = import 'mixin-utils/utils.libsonnet';
       { yaxes: $.yaxes('percentunit') },
     )
     .addPanel(
+      $.panel('Inflight requests') +
+      $.queryPanel('sum(cortex_bucket_stores_gate_queries_in_flight{%s, component="%s"})' % [$.namespaceMatcher(), component], 'Total')
+    ),
+    $.row('')
+    .addPanel(
       $.panel('Latency of op: Attributes') +
       $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="attributes"}' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
       $.panel('Latency of op: Exists') +
       $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="exists"}' % [$.namespaceMatcher(), component]),
-    ),
-    $.row('')
+    )
     .addPanel(
       $.panel('Latency of op: Get') +
       $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="get"}' % [$.namespaceMatcher(), component]),
-    )
+    ),
+    $.row('')
     .addPanel(
       $.panel('Latency of op: GetRange') +
       $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="get_range"}' % [$.namespaceMatcher(), component]),

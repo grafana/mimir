@@ -863,7 +863,7 @@
                   "renderer": "flot",
                   "seriesOverrides": [ ],
                   "spaceLength": 10,
-                  "span": 3,
+                  "span": 4,
                   "stack": true,
                   "steppedLine": false,
                   "targets": [
@@ -939,7 +939,7 @@
                   "renderer": "flot",
                   "seriesOverrides": [ ],
                   "spaceLength": 10,
-                  "span": 3,
+                  "span": 4,
                   "stack": false,
                   "steppedLine": false,
                   "targets": [
@@ -1015,7 +1015,95 @@
                   "renderer": "flot",
                   "seriesOverrides": [ ],
                   "spaceLength": 10,
-                  "span": 3,
+                  "span": 4,
+                  "stack": false,
+                  "steppedLine": false,
+                  "targets": [
+                     {
+                        "expr": "sum(cortex_bucket_stores_gate_queries_in_flight{cluster=~\"$cluster\", namespace=~\"$namespace\", component=\"alertmanager-storage\"})",
+                        "format": "time_series",
+                        "intervalFactor": 2,
+                        "legendFormat": "Total",
+                        "legendLink": null,
+                        "step": 10
+                     }
+                  ],
+                  "thresholds": [ ],
+                  "timeFrom": null,
+                  "timeShift": null,
+                  "title": "Inflight requests",
+                  "tooltip": {
+                     "shared": false,
+                     "sort": 0,
+                     "value_type": "individual"
+                  },
+                  "type": "graph",
+                  "xaxis": {
+                     "buckets": null,
+                     "mode": "time",
+                     "name": null,
+                     "show": true,
+                     "values": [ ]
+                  },
+                  "yaxes": [
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "Alertmanager Configuration Object Store (Alertmanager accesses)",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": false,
+            "height": "250px",
+            "panels": [
+               {
+                  "aliasColors": { },
+                  "bars": false,
+                  "dashLength": 10,
+                  "dashes": false,
+                  "datasource": "$datasource",
+                  "fill": 1,
+                  "id": 13,
+                  "legend": {
+                     "avg": false,
+                     "current": false,
+                     "max": false,
+                     "min": false,
+                     "show": true,
+                     "total": false,
+                     "values": false
+                  },
+                  "lines": true,
+                  "linewidth": 1,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "percentage": false,
+                  "pointradius": 5,
+                  "points": false,
+                  "renderer": "flot",
+                  "seriesOverrides": [ ],
+                  "spaceLength": 10,
+                  "span": 4,
                   "stack": false,
                   "steppedLine": false,
                   "targets": [
@@ -1087,7 +1175,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 13,
+                  "id": 14,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1107,7 +1195,7 @@
                   "renderer": "flot",
                   "seriesOverrides": [ ],
                   "spaceLength": 10,
-                  "span": 3,
+                  "span": 4,
                   "stack": false,
                   "steppedLine": false,
                   "targets": [
@@ -1171,19 +1259,7 @@
                         "show": false
                      }
                   ]
-               }
-            ],
-            "repeat": null,
-            "repeatIteration": null,
-            "repeatRowId": null,
-            "showTitle": true,
-            "title": "Alertmanager Configuration Object Store (Alertmanager accesses)",
-            "titleSize": "h6"
-         },
-         {
-            "collapse": false,
-            "height": "250px",
-            "panels": [
+               },
                {
                   "aliasColors": { },
                   "bars": false,
@@ -1191,7 +1267,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 14,
+                  "id": 15,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1211,7 +1287,7 @@
                   "renderer": "flot",
                   "seriesOverrides": [ ],
                   "spaceLength": 10,
-                  "span": 3,
+                  "span": 4,
                   "stack": false,
                   "steppedLine": false,
                   "targets": [
@@ -1275,7 +1351,19 @@
                         "show": false
                      }
                   ]
-               },
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": false,
+            "height": "250px",
+            "panels": [
                {
                   "aliasColors": { },
                   "bars": false,
@@ -1283,7 +1371,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 15,
+                  "id": 16,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1303,7 +1391,7 @@
                   "renderer": "flot",
                   "seriesOverrides": [ ],
                   "spaceLength": 10,
-                  "span": 3,
+                  "span": 4,
                   "stack": false,
                   "steppedLine": false,
                   "targets": [
@@ -1375,7 +1463,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 16,
+                  "id": 17,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1395,7 +1483,7 @@
                   "renderer": "flot",
                   "seriesOverrides": [ ],
                   "spaceLength": 10,
-                  "span": 3,
+                  "span": 4,
                   "stack": false,
                   "steppedLine": false,
                   "targets": [
@@ -1467,7 +1555,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 17,
+                  "id": 18,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1487,7 +1575,7 @@
                   "renderer": "flot",
                   "seriesOverrides": [ ],
                   "spaceLength": 10,
-                  "span": 3,
+                  "span": 4,
                   "stack": false,
                   "steppedLine": false,
                   "targets": [
@@ -1571,7 +1659,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 10,
-                  "id": 18,
+                  "id": 19,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1647,7 +1735,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 10,
-                  "id": 19,
+                  "id": 20,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1723,7 +1811,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 10,
-                  "id": 20,
+                  "id": 21,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1814,7 +1902,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 21,
+                  "id": 22,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1898,7 +1986,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 22,
+                  "id": 23,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1974,7 +2062,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 23,
+                  "id": 24,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2062,7 +2150,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 24,
+                  "id": 25,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2139,7 +2227,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 25,
+                  "id": 26,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2237,7 +2325,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 26,
+                  "id": 27,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2338,7 +2426,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 27,
+                  "id": 28,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2425,7 +2513,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 28,
+                  "id": 29,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -2512,7 +2600,7 @@
                   "dashes": false,
                   "datasource": "$datasource",
                   "fill": 1,
-                  "id": 29,
+                  "id": 30,
                   "legend": {
                      "avg": false,
                      "current": false,

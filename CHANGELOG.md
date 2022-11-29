@@ -57,7 +57,6 @@
 * [ENHANCEMENT] Dashboards: improved "Mimir / Writes resources" and "Mimir / Reads resources" dashboards to work with read-write deployment mode too. #3497 #3504
 * [BUGFIX] Dashboards: Fix legend showing `persistentvolumeclaim` when using `deployment_type=baremetal` for `Disk space utilization` panels. #3173
 * [BUGFIX] Alerts: Fixed `MimirGossipMembersMismatch` alert when Mimir is deployed in read-write mode. #3489
-* [BUGFIX] Dashboards: Remove "Inflight requests" from object store panels because the panel is not tracking the inflight requests to object storage. #3521
 
 ### Jsonnet
 
