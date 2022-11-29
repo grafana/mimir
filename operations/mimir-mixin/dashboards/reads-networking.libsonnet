@@ -5,13 +5,13 @@ local filename = 'mimir-reads-networking.json';
   [filename]:
     ($.dashboard('Reads networking') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates(false)
-    .addRow($.containerNetworkingRowByComponent('Summary', 'read'))
-    .addRowIf($._config.gateway_enabled, $.containerNetworkingRowByComponent('Gateway', 'gateway'))
-    .addRow($.containerNetworkingRowByComponent('Query-frontend', 'query_frontend'))
-    .addRow($.containerNetworkingRowByComponent('Query-scheduler', 'query_scheduler'))
-    .addRow($.containerNetworkingRowByComponent('Querier', 'querier'))
-    .addRow($.containerNetworkingRowByComponent('Store-gateway', 'store_gateway'))
-    .addRow($.containerNetworkingRowByComponent('Ruler', 'ruler'))
+    .addRow($.containerNetworkingRow('Summary', 'read'))
+    .addRowIf($._config.gateway_enabled, $.containerNetworkingRow('Gateway', 'gateway'))
+    .addRow($.containerNetworkingRow('Query-frontend', 'query_frontend'))
+    .addRow($.containerNetworkingRow('Query-scheduler', 'query_scheduler'))
+    .addRow($.containerNetworkingRow('Querier', 'querier'))
+    .addRow($.containerNetworkingRow('Store-gateway', 'store_gateway'))
+    .addRow($.containerNetworkingRow('Ruler', 'ruler'))
     + {
       templating+: {
         list: [

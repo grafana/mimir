@@ -8,40 +8,40 @@ local filename = 'mimir-compactor-resources.json';
     .addRow(
       $.row('CPU and memory')
       .addPanel(
-        $.containerCPUUsagePanelByComponent('compactor'),
+        $.containerCPUUsagePanel($._config.instance_names.compactor, $._config.container_names.compactor),
       )
       .addPanel(
-        $.containerGoHeapInUsePanelByComponent('compactor'),
+        $.containerGoHeapInUsePanel($._config.instance_names.compactor, $._config.container_names.compactor),
       )
     )
     .addRow(
       $.row('')
       .addPanel(
-        $.containerMemoryRSSPanelByComponent('compactor'),
+        $.containerMemoryRSSPanel($._config.instance_names.compactor, $._config.container_names.compactor),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanelByComponent('compactor'),
+        $.containerMemoryWorkingSetPanel($._config.instance_names.compactor, $._config.container_names.compactor),
       )
     )
     .addRow(
       $.row('Network')
       .addPanel(
-        $.containerNetworkReceiveBytesPanelByComponent('compactor'),
+        $.containerNetworkReceiveBytesPanel($._config.instance_names.compactor),
       )
       .addPanel(
-        $.containerNetworkTransmitBytesPanelByComponent('compactor'),
+        $.containerNetworkTransmitBytesPanel($._config.instance_names.compactor),
       )
     )
     .addRow(
       $.row('Disk')
       .addPanel(
-        $.containerDiskWritesPanelByComponent('compactor'),
+        $.containerDiskWritesPanel($._config.instance_names.compactor, $._config.container_names.compactor),
       )
       .addPanel(
-        $.containerDiskReadsPanelByComponent('compactor'),
+        $.containerDiskReadsPanel($._config.instance_names.compactor, $._config.container_names.compactor),
       )
       .addPanel(
-        $.containerDiskSpaceUtilizationPanelByComponent('compactor'),
+        $.containerDiskSpaceUtilization($._config.instance_names.compactor, $._config.container_names.compactor),
       )
     ) + {
       templating+: {

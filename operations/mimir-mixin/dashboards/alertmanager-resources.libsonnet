@@ -9,62 +9,62 @@ local filename = 'mimir-alertmanager-resources.json';
       $._config.gateway_enabled,
       $.row('Gateway')
       .addPanel(
-        $.containerCPUUsagePanelByComponent('gateway'),
+        $.containerCPUUsagePanel($._config.instance_names.gateway, $._config.container_names.gateway),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanelByComponent('gateway'),
+        $.containerMemoryWorkingSetPanel($._config.instance_names.gateway, $._config.container_names.gateway),
       )
       .addPanel(
-        $.containerGoHeapInUsePanelByComponent('gateway'),
+        $.containerGoHeapInUsePanel($._config.instance_names.gateway, $._config.container_names.gateway),
       )
     )
     .addRow(
       $.row('Alertmanager')
       .addPanel(
-        $.containerCPUUsagePanelByComponent('alertmanager'),
+        $.containerCPUUsagePanel($._config.instance_names.alertmanager, $._config.container_names.alertmanager),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanelByComponent('alertmanager'),
+        $.containerMemoryWorkingSetPanel($._config.instance_names.alertmanager, $._config.container_names.alertmanager),
       )
       .addPanel(
-        $.containerGoHeapInUsePanelByComponent('alertmanager'),
+        $.containerGoHeapInUsePanel($._config.instance_names.alertmanager, $._config.container_names.alertmanager),
       )
     )
     .addRowIf(
       $._config.alertmanager_im_enabled,
       $.row('Instance mapper')
       .addPanel(
-        $.containerCPUUsagePanelByComponent('alertmanager_im'),
+        $.containerCPUUsagePanel($._config.instance_names.alertmanager_im, $._config.container_names.alertmanager_im),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanelByComponent('alertmanager_im'),
+        $.containerMemoryWorkingSetPanel($._config.instance_names.alertmanager_im, $._config.container_names.alertmanager_im),
       )
       .addPanel(
-        $.containerGoHeapInUsePanelByComponent('alertmanager_im'),
+        $.containerGoHeapInUsePanel($._config.instance_names.alertmanager_im, $._config.container_names.alertmanager_im),
       )
     )
     .addRow(
       $.row('Network')
       .addPanel(
-        $.containerNetworkReceiveBytesPanelByComponent('alertmanager'),
+        $.containerNetworkReceiveBytesPanel($._config.instance_names.alertmanager),
       )
       .addPanel(
-        $.containerNetworkTransmitBytesPanelByComponent('alertmanager'),
+        $.containerNetworkTransmitBytesPanel($._config.instance_names.alertmanager),
       )
     )
     .addRow(
       $.row('Disk')
       .addPanel(
-        $.containerDiskWritesPanelByComponent('alertmanager'),
+        $.containerDiskWritesPanel($._config.instance_names.alertmanager, $._config.container_names.alertmanager),
       )
       .addPanel(
-        $.containerDiskReadsPanelByComponent('alertmanager'),
+        $.containerDiskReadsPanel($._config.instance_names.alertmanager, $._config.container_names.alertmanager),
       )
     )
     .addRow(
       $.row('')
       .addPanel(
-        $.containerDiskSpaceUtilizationPanelByComponent('alertmanager'),
+        $.containerDiskSpaceUtilization($._config.instance_names.alertmanager, $._config.container_names.alertmanager),
       )
     ),
 }

@@ -297,10 +297,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
       fill: 0,
     },
 
-  // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
-  containerCPUUsagePanelByComponent(componentName)::
-    $.containerCPUUsagePanel($._config.instance_names[componentName], $._config.container_names[componentName]),
-
   // The provided instanceName should be a regexp from $._config.instance_names, while
   // the provided containerName should be a regexp from $._config.container_names.
   containerMemoryWorkingSetPanel(instanceName, containerName)::
@@ -315,10 +311,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
       tooltip: { sort: 2 },  // Sort descending.
       fill: 0,
     },
-
-  // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
-  containerMemoryWorkingSetPanelByComponent(componentName)::
-    $.containerMemoryWorkingSetPanel($._config.instance_names[componentName], $._config.container_names[componentName]),
 
   // The provided instanceName should be a regexp from $._config.instance_names, while
   // the provided containerName should be a regexp from $._config.container_names.
@@ -335,10 +327,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
       fill: 0,
     },
 
-  // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
-  containerMemoryRSSPanelByComponent(componentName)::
-    $.containerMemoryRSSPanel($._config.instance_names[componentName], $._config.container_names[componentName]),
-
   // The provided instanceName should be a regexp from $._config.instance_names, while
   // the provided containerName should be a regexp from $._config.container_names.
   containerGoHeapInUsePanel(instanceName, containerName)::
@@ -349,10 +337,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
       tooltip: { sort: 2 },  // Sort descending.
       fill: 0,
     },
-
-  // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
-  containerGoHeapInUsePanelByComponent(componentName)::
-    $.containerGoHeapInUsePanel($._config.instance_names[componentName], $._config.container_names[componentName]),
 
   containerNetworkBytesPanel(title, metric, instanceName)::
     $.panel(title) +
@@ -366,13 +350,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.stack +
     { yaxes: $.yaxes('Bps') },
 
-  // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
-  containerNetworkReceiveBytesPanelByComponent(componentName)::
-    $.containerNetworkBytesPanel('Receive bandwidth', 'network_receive_bytes', $._config.instance_names[componentName]),
+  // The provided instanceName should be a regexp from $._config.instance_names.
+  containerNetworkReceiveBytesPanel(instanceName)::
+    $.containerNetworkBytesPanel('Receive bandwidth', 'network_receive_bytes', instanceName),
 
-  // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
-  containerNetworkTransmitBytesPanelByComponent(componentName)::
-    $.containerNetworkBytesPanel('Transmit bandwidth', 'network_transmit_bytes', $._config.instance_names[componentName]),
+  // The provided instanceName should be a regexp from $._config.instance_names.
+  containerNetworkTransmitBytesPanel(instanceName)::
+    $.containerNetworkBytesPanel('Transmit bandwidth', 'network_transmit_bytes', instanceName),
 
   // The provided instanceName should be a regexp from $._config.instance_names, while
   // the provided containerName should be a regexp from $._config.container_names.
@@ -391,10 +375,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.stack +
     { yaxes: $.yaxes('Bps') },
 
-  // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
-  containerDiskWritesPanelByComponent(componentName)::
-    $.containerDiskWritesPanel($._config.instance_names[componentName], $._config.container_names[componentName]),
-
   // The provided instanceName should be a regexp from $._config.instance_names, while
   // the provided containerName should be a regexp from $._config.container_names.
   containerDiskReadsPanel(instanceName, containerName)::
@@ -412,13 +392,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.stack +
     { yaxes: $.yaxes('Bps') },
 
-  // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
-  containerDiskReadsPanelByComponent(componentName)::
-    $.containerDiskReadsPanel($._config.instance_names[componentName], $._config.container_names[componentName]),
-
   // The provided instanceName should be a regexp from $._config.instance_names, while
   // the provided containerName should be a regexp from $._config.container_names.
-  containerDiskSpaceUtilizationPanel(instanceName, containerName)::
+  containerDiskSpaceUtilization(instanceName, containerName)::
     local label = if $._config.deployment_type == 'kubernetes' then '{{persistentvolumeclaim}}' else '{{instance}}';
 
     $.panel('Disk space utilization') +
@@ -436,17 +412,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
       fill: 0,
     },
 
-  // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
-  containerDiskSpaceUtilizationPanelByComponent(componentName)::
-    $.containerDiskSpaceUtilizationPanel($._config.instance_names[componentName], $._config.container_names[componentName]),
-
   // The provided containerName should be a regexp from $._config.container_names.
   containerLabelNameMatcher(containerName)::
     // Check only the prefix so that a multi-zone deployment matches too.
     'label_name=~"(%s).*"' % containerName,
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
-  containerNetworkingRowByComponent(title, componentName)::
+  containerNetworkingRow(title, componentName)::
     // Match series using namespace + instance instead of the job so that we can
     // select only specific deployments (e.g. "distributor in microservices mode").
     local vars = $._config {
@@ -456,8 +428,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
     };
 
     super.row(title)
-    .addPanel($.containerNetworkReceiveBytesPanelByComponent(componentName))
-    .addPanel($.containerNetworkTransmitBytesPanelByComponent(componentName))
+    .addPanel($.containerNetworkReceiveBytesPanel($._config.instance_names[componentName]))
+    .addPanel($.containerNetworkTransmitBytesPanel($._config.instance_names[componentName]))
     .addPanel(
       $.panel('Inflight requests (per pod)') +
       $.queryPanel([
