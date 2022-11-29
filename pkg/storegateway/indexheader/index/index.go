@@ -15,8 +15,6 @@ package index
 
 import (
 	"fmt"
-	//"fmt"
-	"hash"
 	"hash/crc32"
 	"sort"
 	"unsafe"
@@ -34,12 +32,6 @@ var castagnoliTable *crc32.Table
 
 func init() {
 	castagnoliTable = crc32.MakeTable(crc32.Castagnoli)
-}
-
-// newCRC32 initializes a CRC32 hash with a preconfigured polynomial, so the
-// polynomial may be easily changed in one location at a later time, if necessary.
-func newCRC32() hash.Hash32 {
-	return crc32.New(castagnoliTable)
 }
 
 // ByteSlice abstracts a byte slice.
