@@ -917,19 +917,13 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 			defer cleanup()
 		}
 	} else {
-		var (
-			seriesSetStats *queryStats
-			readers        *chunkReaders
-		)
+		var readers *chunkReaders
 		if !req.SkipChunks {
 			readers = newChunkReaders(chunkr, chunkBytes, s.chunkPool)
 			defer runutil.CloseWithLogOnErr(s.logger, readers, "chunk readers")
 		}
 
-		seriesSets, resHints, seriesSetStats, cleanup, err = s.batchSetsForBlocks(ctx, req, blocks, indexReaders, readers, shardSelector, matchers, chunksLimiter, seriesLimiter)
-		if seriesSetStats != nil {
-			stats.merge(seriesSetStats)
-		}
+		seriesSets, resHints, cleanup, err = s.batchSetsForBlocks(ctx, req, blocks, indexReaders, readers, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
 	}
 	if cleanup != nil {
 		defer cleanup()

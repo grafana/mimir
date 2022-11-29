@@ -76,6 +76,7 @@ type bucketBatchSet struct {
 	skipChunks       bool                    // If true chunks are not loaded and minTime/maxTime are ignored.
 	minTime, maxTime int64                   // Series must have data in this time range to be returned (ignored if skipChunks=true).
 	loadAggregates   []storepb.Aggr          // List of aggregates to load when loading chunks.
+	stats            *safeQueryStats
 	logger           log.Logger
 }
 
@@ -92,13 +93,13 @@ func unloadedBucketBatches(
 	skipChunks bool, // If true chunks are not loaded and minTime/maxTime are ignored.
 	minTime, maxTime int64, // Series must have data in this time range to be returned (ignored if skipChunks=true).
 	loadAggregates []storepb.Aggr, // List of aggregates to load when loading chunks.
+	stats *safeQueryStats,
 	logger log.Logger,
 ) (unloadedBatchSet, error) {
 	if batchSize <= 0 {
 		return nil, errors.New("batch size must be a positive number")
 	}
 
-	stats := newSafeQueryStats()
 	ps, err := indexr.ExpandedPostings(ctx, matchers, stats)
 	if err != nil {
 		return nil, errors.Wrap(err, "expanded matching posting")
@@ -129,6 +130,7 @@ func unloadedBucketBatches(
 		minTime:                 minTime,
 		maxTime:                 maxTime,
 		loadAggregates:          loadAggregates,
+		stats:                   stats,
 		logger:                  logger,
 	}, nil
 }
@@ -153,7 +155,7 @@ func (s *bucketBatchSet) loadBatch() bool {
 	s.currentBatch = newSeriesChunkRefsSet(s.batchSize)
 	nextPostings := s.postings[s.currBatchPostingsOffset:end]
 
-	loadedSeries, err := s.indexr.preloadSeries(s.ctx, nextPostings, s.currentBatch.stats)
+	loadedSeries, err := s.indexr.preloadSeries(s.ctx, nextPostings, s.stats)
 	if err != nil {
 		s.err = errors.Wrap(err, "preload series")
 		return false
@@ -164,8 +166,14 @@ func (s *bucketBatchSet) loadBatch() bool {
 		chks           []chunks.Meta
 		i              int
 	)
+
+	// Track the series loading statistics in a not synchronized data structure to avoid locking for each series
+	// and then merge before returning from the function.
+	loadStats := &queryStats{}
+	defer s.stats.merge(loadStats)
+
 	for _, id := range nextPostings {
-		ok, err := loadedSeries.unsafeLoadSeriesForTime(id, &symbolizedLset, &chks, s.skipChunks, s.minTime, s.maxTime, s.currentBatch.stats.export())
+		ok, err := loadedSeries.unsafeLoadSeriesForTime(id, &symbolizedLset, &chks, s.skipChunks, s.minTime, s.maxTime, loadStats)
 		if err != nil {
 			s.err = errors.Wrap(err, "read series")
 			return false
@@ -270,12 +278,11 @@ func shardOwned(shard *sharding.ShardSelector, hasher seriesHasher, id storage.S
 	return hash%shard.ShardCount == shard.ShardIndex
 }
 
-func (s *BucketStore) batchSetsForBlocks(ctx context.Context, req *storepb.SeriesRequest, blocks []*bucketBlock, indexReaders map[ulid.ULID]*bucketIndexReader, chunkReaders *chunkReaders, shardSelector *sharding.ShardSelector, matchers []*labels.Matcher, chunksLimiter ChunksLimiter, seriesLimiter SeriesLimiter) (storepb.SeriesSet, *hintspb.SeriesResponseHints, *queryStats, func(), error) {
+func (s *BucketStore) batchSetsForBlocks(ctx context.Context, req *storepb.SeriesRequest, blocks []*bucketBlock, indexReaders map[ulid.ULID]*bucketIndexReader, chunkReaders *chunkReaders, shardSelector *sharding.ShardSelector, matchers []*labels.Matcher, chunksLimiter ChunksLimiter, seriesLimiter SeriesLimiter, stats *safeQueryStats) (storepb.SeriesSet, *hintspb.SeriesResponseHints, func(), error) {
 	resHints := &hintspb.SeriesResponseHints{}
 	mtx := sync.Mutex{}
 	batches := make([]unloadedBatchSet, 0, len(blocks))
 	g, ctx := errgroup.WithContext(ctx)
-	stats := &queryStats{}
 	cleanups := make([]func(), 0, len(blocks))
 
 	for _, b := range blocks {
@@ -293,22 +300,18 @@ func (s *BucketStore) batchSetsForBlocks(ctx context.Context, req *storepb.Serie
 		}
 		g.Go(func() error {
 			var (
-				pstats *safeQueryStats
-				part   unloadedBatchSet
-				err    error
+				part unloadedBatchSet
+				err  error
 			)
 
 			part, err = unloadedBucketBatches(
-				ctx, s.maxSeriesPerBatch, indexr, b.meta.ULID, matchers, shardSelector, blockSeriesHashCache, chunksLimiter, seriesLimiter, req.SkipChunks, req.MinTime, req.MaxTime, req.Aggregates, s.logger)
+				ctx, s.maxSeriesPerBatch, indexr, b.meta.ULID, matchers, shardSelector, blockSeriesHashCache, chunksLimiter, seriesLimiter, req.SkipChunks, req.MinTime, req.MaxTime, req.Aggregates, stats, s.logger)
 			if err != nil {
 				return errors.Wrapf(err, "fetch series for block %s", b.meta.ULID)
 			}
 
 			mtx.Lock()
 			batches = append(batches, part)
-			if pstats != nil {
-				stats = stats.merge(pstats.export())
-			}
 			mtx.Unlock()
 
 			return nil
@@ -324,10 +327,16 @@ func (s *BucketStore) batchSetsForBlocks(ctx context.Context, req *storepb.Serie
 	begin := time.Now()
 	err := g.Wait()
 	if err != nil {
-		return nil, nil, nil, cleanup, err
+		return nil, nil, cleanup, err
 	}
-	stats.blocksQueried = len(batches)
-	stats.getAllDuration = time.Since(begin)
+
+	getAllDuration := time.Since(begin)
+	stats.update(func(stats *queryStats) {
+		stats.blocksQueried = len(batches)
+		stats.getAllDuration = getAllDuration
+	})
+	s.metrics.seriesGetAllDuration.Observe(getAllDuration.Seconds())
+	s.metrics.seriesBlocksQueried.Observe(float64(len(batches)))
 
 	mergedBatches := mergedBatchSets(s.maxSeriesPerBatch, batches...)
 	var set storepb.SeriesSet
@@ -336,7 +345,7 @@ func (s *BucketStore) batchSetsForBlocks(ctx context.Context, req *storepb.Serie
 	} else {
 		set = newSeriesSetWithoutChunks(mergedBatches)
 	}
-	return set, resHints, stats, cleanup, nil
+	return set, resHints, cleanup, nil
 }
 
 type seriesSetWithoutChunks struct {
@@ -569,7 +578,6 @@ func (s *mergedBatchSet) Next() bool {
 		if s.aAt.Done() {
 			if s.a.Next() {
 				s.aAt.reset(s.a.At())
-				next.stats.merge(s.a.At().stats.export())
 			} else if s.a.Err() != nil {
 				// Stop iterating on first error encountered.
 				return false
@@ -578,7 +586,6 @@ func (s *mergedBatchSet) Next() bool {
 		if s.bAt.Done() {
 			if s.b.Next() {
 				s.bAt.reset(s.b.At())
-				next.stats.merge(s.b.At().stats.export())
 			} else if s.b.Err() != nil {
 				// Stop iterating on first error encountered.
 				return false

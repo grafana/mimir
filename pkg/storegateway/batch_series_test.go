@@ -27,11 +27,6 @@ type sliceUnloadedBatchSet struct {
 }
 
 func newSliceUnloadedBatchSet(err error, batches ...seriesChunkRefsSet) *sliceUnloadedBatchSet {
-	for i := range batches {
-		if batches[i].stats == nil {
-			batches[i].stats = newSafeQueryStats()
-		}
-	}
 	return &sliceUnloadedBatchSet{
 		current: -1,
 		batches: batches,
@@ -541,6 +536,7 @@ func TestBucketBatchSet(t *testing.T) {
 		firstBlock.meta.MinTime,
 		firstBlock.meta.MaxTime,
 		nil,
+		newSafeQueryStats(),
 		suite.logger,
 	)
 	require.NoError(t, err)

@@ -12,13 +12,11 @@ import (
 type seriesChunkRefsSet struct {
 	// series sorted by labels.
 	series []seriesChunkRefs
-	stats  *safeQueryStats
 }
 
 func newSeriesChunkRefsSet(size int) seriesChunkRefsSet {
 	return seriesChunkRefsSet{
 		series: make([]seriesChunkRefs, size),
-		stats:  newSafeQueryStats(),
 	}
 }
 
