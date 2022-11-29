@@ -61,10 +61,10 @@ type blockSeriesChunkRefsSetsIterator struct {
 	ctx      context.Context
 	postings []storage.SeriesRef
 
-	setSize                  int
-	currentSetPostingsOffset int
-	currentSet               seriesChunkRefsSet
-	err                      error
+	batchSize                  int
+	currentBatchPostingsOffset int
+	currentSet                 seriesChunkRefsSet
+	err                        error
 
 	blockID          ulid.ULID
 	indexr           *bucketIndexReader      // Index reader for block.
@@ -115,45 +115,45 @@ func openBlockSeriesChunkRefsSetsIterator(
 	}
 
 	return &blockSeriesChunkRefsSetsIterator{
-		blockID:                  blockID,
-		setSize:                  setSize,
-		currentSetPostingsOffset: -setSize,
-		ctx:                      ctx,
-		postings:                 ps,
-		indexr:                   indexr,
-		matchers:                 matchers,
-		shard:                    shard,
-		seriesHasher:             cachedSeriesHasher{cache: seriesHashCache, stats: stats},
-		chunksLimiter:            chunksLimiter,
-		seriesLimiter:            seriesLimiter,
-		skipChunks:               skipChunks,
-		minTime:                  minTime,
-		maxTime:                  maxTime,
-		loadAggregates:           loadAggregates,
-		stats:                    stats,
-		logger:                   logger,
+		blockID:                    blockID,
+		batchSize:                  setSize,
+		currentBatchPostingsOffset: -setSize,
+		ctx:                        ctx,
+		postings:                   ps,
+		indexr:                     indexr,
+		matchers:                   matchers,
+		shard:                      shard,
+		seriesHasher:               cachedSeriesHasher{cache: seriesHashCache, stats: stats},
+		chunksLimiter:              chunksLimiter,
+		seriesLimiter:              seriesLimiter,
+		skipChunks:                 skipChunks,
+		minTime:                    minTime,
+		maxTime:                    maxTime,
+		loadAggregates:             loadAggregates,
+		stats:                      stats,
+		logger:                     logger,
 	}, nil
 }
 
 func (s *blockSeriesChunkRefsSetsIterator) Next() bool {
-	if s.currentSetPostingsOffset >= len(s.postings)-1 || s.err != nil {
+	if s.currentBatchPostingsOffset >= len(s.postings)-1 || s.err != nil {
 		return false
 	}
-	return s.loadSet()
+	return s.loadBatch()
 }
 
-func (s *blockSeriesChunkRefsSetsIterator) loadSet() bool {
-	s.currentSetPostingsOffset += s.setSize
-	if s.currentSetPostingsOffset > len(s.postings) {
+func (s *blockSeriesChunkRefsSetsIterator) loadBatch() bool {
+	s.currentBatchPostingsOffset += s.batchSize
+	if s.currentBatchPostingsOffset > len(s.postings) {
 		return false
 	}
 
-	end := s.currentSetPostingsOffset + s.setSize
+	end := s.currentBatchPostingsOffset + s.batchSize
 	if end > len(s.postings) {
 		end = len(s.postings)
 	}
-	s.currentSet = newSeriesChunkRefsSet(s.setSize)
-	nextPostings := s.postings[s.currentSetPostingsOffset:end]
+	s.currentSet = newSeriesChunkRefsSet(s.batchSize)
+	nextPostings := s.postings[s.currentBatchPostingsOffset:end]
 
 	loadedSeries, err := s.indexr.preloadSeries(s.ctx, nextPostings, s.stats)
 	if err != nil {
@@ -216,7 +216,7 @@ func (s *blockSeriesChunkRefsSetsIterator) loadSet() bool {
 	s.currentSet.series = s.currentSet.series[:i]
 
 	if s.currentSet.len() == 0 {
-		return s.loadSet() // we didn't find any suitable series in this set, try with the next one
+		return s.loadBatch() // we didn't find any suitable series in this set, try with the next one
 	}
 
 	return true
