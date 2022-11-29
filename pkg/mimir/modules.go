@@ -133,7 +133,7 @@ func (t *Mimir) initActivityTracker() (services.Service, error) {
 
 	entries, err := activitytracker.LoadUnfinishedEntries(t.Cfg.ActivityTracker.Filepath)
 
-	l := log.With(util_log.Logger, "module", "activity-tracker")
+	l := log.With(util_log.Logger, "component", "activity-tracker")
 	if err != nil {
 		level.Warn(l).Log("msg", "failed to fully read file with unfinished activities", "err", err)
 	}
