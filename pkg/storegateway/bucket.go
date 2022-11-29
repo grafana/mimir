@@ -875,10 +875,10 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 
 	blocks, indexReaders, chunkReaders := s.openBlocksForReading(ctx, req.SkipChunks, req.MinTime, req.MaxTime, req.MaxResolutionWindow, reqBlockMatchers, chunkBytes)
 	for _, r := range indexReaders {
-		defer runutil.CloseWithLogOnErr(s.logger, r, "series block")
+		defer runutil.CloseWithLogOnErr(s.logger, r, "close block index reader")
 	}
 	for _, r := range chunkReaders {
-		defer runutil.CloseWithLogOnErr(s.logger, r, "series block")
+		defer runutil.CloseWithLogOnErr(s.logger, r, "close block chunk reader")
 	}
 
 	res, cleanup, err := s.synchronousSeriesSet(ctx, req, stats, blocks, indexReaders, chunkReaders, resHints, shardSelector, matchers, chunksLimiter, seriesLimiter)
@@ -960,8 +960,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 }
 
 // synchronousSeriesSet returns seriesSet that contains the requested series. It returns a cleanup func. The cleanup func
-// should be invoked always when non-nil; even when the returned error is non-nil. synchronousSeriesSet must be called
-// while holding s.mtx.RLock(). synchronousSeriesSet will call s.mtx.RUnlock regardless of its return values
+// should be invoked always when non-nil; even when the returned error is non-nil.
 func (s *BucketStore) synchronousSeriesSet(
 	ctx context.Context,
 	req *storepb.SeriesRequest,
