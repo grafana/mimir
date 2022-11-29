@@ -54,7 +54,7 @@ type loadedBatchSet interface {
 
 type unloadedBatchSet interface {
 	Next() bool
-	At() unloadedBatch
+	At() seriesChunkRefsSet
 	Err() error
 }
 
@@ -64,7 +64,7 @@ type bucketBatchSet struct {
 
 	batchSize               int
 	currBatchPostingsOffset int
-	currentBatch            unloadedBatch
+	currentBatch            seriesChunkRefsSet
 	err                     error
 
 	blockID          ulid.ULID
@@ -151,7 +151,7 @@ func (s *bucketBatchSet) loadBatch() bool {
 	if end > len(s.postings) {
 		end = len(s.postings)
 	}
-	s.currentBatch = newBatch(s.batchSize)
+	s.currentBatch = newSeriesChunkRefsSet(s.batchSize)
 	nextPostings := s.postings[s.currBatchPostingsOffset:end]
 
 	loadedSeries, err := s.indexr.preloadSeries(s.ctx, nextPostings, s.currentBatch.Stats)
@@ -192,7 +192,7 @@ func (s *bucketBatchSet) loadBatch() bool {
 			return false
 		}
 
-		entry := unloadedBatchEntry{lset: lset}
+		entry := seriesChunkRefs{lset: lset}
 
 		if !s.skipChunks {
 			// Ensure sample limit through chunksLimiter if we return chunks.
@@ -203,10 +203,10 @@ func (s *bucketBatchSet) loadBatch() bool {
 			entry.chunks = metasToChunks(s.blockID, chks)
 		}
 
-		s.currentBatch.Entries[i] = entry
+		s.currentBatch.Series[i] = entry
 		i++
 	}
-	s.currentBatch.Entries = s.currentBatch.Entries[:i]
+	s.currentBatch.Series = s.currentBatch.Series[:i]
 
 	if s.currentBatch.len() == 0 {
 		return s.loadBatch() // we didn't find any suitable series in this batch, try with the next one
@@ -215,10 +215,10 @@ func (s *bucketBatchSet) loadBatch() bool {
 	return true
 }
 
-func metasToChunks(blockID ulid.ULID, metas []chunks.Meta) []unloadedChunk {
-	chks := make([]unloadedChunk, len(metas))
+func metasToChunks(blockID ulid.ULID, metas []chunks.Meta) []seriesChunkRef {
+	chks := make([]seriesChunkRef, len(metas))
 	for i, meta := range metas {
-		chks[i] = unloadedChunk{
+		chks[i] = seriesChunkRef{
 			MinTime: meta.MinTime,
 			MaxTime: meta.MaxTime,
 			Ref:     meta.Ref,
@@ -228,7 +228,7 @@ func metasToChunks(blockID ulid.ULID, metas []chunks.Meta) []unloadedChunk {
 	return chks
 }
 
-func (s *bucketBatchSet) At() unloadedBatch {
+func (s *bucketBatchSet) At() seriesChunkRefsSet {
 	return s.currentBatch
 }
 
@@ -357,7 +357,7 @@ type seriesSetWithoutChunks struct {
 func newSeriesSetWithoutChunks(batches unloadedBatchSet) storepb.SeriesSet {
 	return &seriesSetWithoutChunks{
 		from:            batches,
-		currentIterator: newBatchIterator(unloadedBatch{}),
+		currentIterator: newBatchIterator(seriesChunkRefsSet{}),
 	}
 }
 
@@ -416,7 +416,7 @@ func (c *loadingBatchSet) Next() bool {
 	nextUnloaded := c.from.At()
 	entries := make([]seriesEntry, nextUnloaded.len())
 	c.chunkReaders.reset()
-	for i, s := range nextUnloaded.Entries {
+	for i, s := range nextUnloaded.Series {
 		entries[i].lset = s.lset
 		entries[i].chks = make([]storepb.AggrChunk, len(s.chunks))
 
@@ -523,9 +523,9 @@ func (p *preloadingBatchSet) Err() error {
 type emptyBatchSet struct {
 }
 
-func (emptyBatchSet) Next() bool        { return false }
-func (emptyBatchSet) At() unloadedBatch { return unloadedBatch{} }
-func (emptyBatchSet) Err() error        { return nil }
+func (emptyBatchSet) Next() bool             { return false }
+func (emptyBatchSet) At() seriesChunkRefsSet { return seriesChunkRefsSet{} }
+func (emptyBatchSet) Err() error             { return nil }
 
 func mergedBatchSets(mergedSize int, all ...unloadedBatchSet) unloadedBatchSet {
 	switch len(all) {
@@ -548,7 +548,7 @@ type mergedBatchSet struct {
 
 	a, b     unloadedBatchSet
 	aAt, bAt *unloadedBatchIterator
-	current  unloadedBatch
+	current  seriesChunkRefsSet
 }
 
 func newMergedBatchSet(mergedBatchSize int, a, b unloadedBatchSet) *mergedBatchSet {
@@ -557,8 +557,8 @@ func newMergedBatchSet(mergedBatchSize int, a, b unloadedBatchSet) *mergedBatchS
 		a:         a,
 		b:         b,
 		// start iterator on an empty batch. It will be reset with a non-empty batch next time Next() is called
-		aAt: newBatchIterator(unloadedBatch{}),
-		bAt: newBatchIterator(unloadedBatch{}),
+		aAt: newBatchIterator(seriesChunkRefsSet{}),
+		bAt: newBatchIterator(seriesChunkRefsSet{}),
 	}
 }
 
@@ -572,7 +572,7 @@ func (s *mergedBatchSet) Err() error {
 }
 
 func (s *mergedBatchSet) Next() bool {
-	next := newBatch(s.batchSize)
+	next := newSeriesChunkRefsSet(s.batchSize)
 	var ok bool
 	for i := 0; i < next.len(); i++ {
 		if s.aAt.Done() {
@@ -593,9 +593,9 @@ func (s *mergedBatchSet) Next() bool {
 				return false
 			}
 		}
-		next.Entries[i], ok = nextUniqueEntry(s.aAt, s.bAt)
+		next.Series[i], ok = nextUniqueEntry(s.aAt, s.bAt)
 		if !ok {
-			next.Entries = next.Entries[:i]
+			next.Series = next.Series[:i]
 			break
 		}
 	}
@@ -606,7 +606,7 @@ func (s *mergedBatchSet) Next() bool {
 
 // nextUniqueEntry returns the next unique entry from both a and b. If a.At() and b.At() have the same
 // label set, nextUniqueEntry merges their chunks. The merged chunks are sorted by their MinTime and then by MaxTIme.
-func nextUniqueEntry(a, b *unloadedBatchIterator) (toReturn unloadedBatchEntry, _ bool) {
+func nextUniqueEntry(a, b *unloadedBatchIterator) (toReturn seriesChunkRefs, _ bool) {
 	if a.Done() && b.Done() {
 		return toReturn, false
 	} else if a.Done() {
@@ -641,7 +641,7 @@ func nextUniqueEntry(a, b *unloadedBatchIterator) (toReturn unloadedBatchEntry, 
 
 	// Slice reuse is not generally safe with nested merge iterators.
 	// We err on the safe side and create a new slice.
-	toReturn.chunks = make([]unloadedChunk, 0, len(chksA)+len(chksB))
+	toReturn.chunks = make([]seriesChunkRef, 0, len(chksA)+len(chksB))
 
 	bChunksOffset := 0
 Outer:
@@ -672,7 +672,7 @@ Outer:
 	return toReturn, true
 }
 
-func (s *mergedBatchSet) At() unloadedBatch {
+func (s *mergedBatchSet) At() seriesChunkRefsSet {
 	return s.current
 }
 
@@ -682,8 +682,8 @@ type deduplicatingBatchSet struct {
 	batchSize int
 
 	from    *chainedBatchSetIterator
-	peek    *unloadedBatchEntry
-	current unloadedBatch
+	peek    *seriesChunkRefs
+	current seriesChunkRefsSet
 }
 
 func newDeduplicatingBatchSet(batchSize int, wrapped unloadedBatchSet) unloadedBatchSet {
@@ -697,39 +697,39 @@ func (s *deduplicatingBatchSet) Err() error {
 	return s.from.Err()
 }
 
-func (s *deduplicatingBatchSet) At() unloadedBatch {
+func (s *deduplicatingBatchSet) At() seriesChunkRefsSet {
 	return s.current
 }
 
 func (s *deduplicatingBatchSet) Next() bool {
-	nextBatch := newBatch(s.batchSize)
+	nextBatch := newSeriesChunkRefsSet(s.batchSize)
 	if s.peek == nil {
 		if !s.from.Next() {
 			return false
 		}
-		nextBatch.Entries[0] = s.from.At()
+		nextBatch.Series[0] = s.from.At()
 	} else {
-		nextBatch.Entries[0] = *s.peek
+		nextBatch.Series[0] = *s.peek
 		s.peek = nil
 	}
-	var nextEntry unloadedBatchEntry
 
+	var nextEntry seriesChunkRefs
 	for i := 0; i < s.batchSize; {
 		if !s.from.Next() {
-			nextBatch.Entries = nextBatch.Entries[:i+1]
+			nextBatch.Series = nextBatch.Series[:i+1]
 			break
 		}
 		nextEntry = s.from.At()
 
-		if labels.Equal(nextBatch.Entries[i].lset, nextEntry.lset) {
-			nextBatch.Entries[i].chunks = append(nextBatch.Entries[i].chunks, nextEntry.chunks...)
+		if labels.Equal(nextBatch.Series[i].lset, nextEntry.lset) {
+			nextBatch.Series[i].chunks = append(nextBatch.Series[i].chunks, nextEntry.chunks...)
 		} else {
 			i++
 			if i >= s.batchSize {
 				s.peek = &nextEntry
 				break
 			}
-			nextBatch.Entries[i] = nextEntry
+			nextBatch.Series[i] = nextEntry
 		}
 	}
 	s.current = nextBatch
@@ -744,7 +744,7 @@ type chainedBatchSetIterator struct {
 func newChainedSeriesSet(from unloadedBatchSet) *chainedBatchSetIterator {
 	return &chainedBatchSetIterator{
 		from:     from,
-		iterator: newBatchIterator(unloadedBatch{}), // start with an empty batch and initialize on the first call to Next()
+		iterator: newBatchIterator(seriesChunkRefsSet{}), // start with an empty batch and initialize on the first call to Next()
 	}
 }
 
@@ -759,7 +759,7 @@ func (c chainedBatchSetIterator) Next() bool {
 	return true
 }
 
-func (c chainedBatchSetIterator) At() unloadedBatchEntry {
+func (c chainedBatchSetIterator) At() seriesChunkRefs {
 	return c.iterator.At()
 }
 
@@ -769,10 +769,10 @@ func (c chainedBatchSetIterator) Err() error {
 
 type unloadedBatchIterator struct {
 	currentOffset int
-	b             unloadedBatch
+	b             seriesChunkRefsSet
 }
 
-func newBatchIterator(b unloadedBatch) *unloadedBatchIterator {
+func newBatchIterator(b seriesChunkRefsSet) *unloadedBatchIterator {
 	return &unloadedBatchIterator{
 		b:             b,
 		currentOffset: -1,
@@ -780,7 +780,7 @@ func newBatchIterator(b unloadedBatch) *unloadedBatchIterator {
 }
 
 // reset replaces the current batch with the provided batch. There is no need to call Next after reset
-func (c *unloadedBatchIterator) reset(b unloadedBatch) {
+func (c *unloadedBatchIterator) reset(b seriesChunkRefsSet) {
 	c.b = b
 	c.currentOffset = 0
 }
@@ -794,11 +794,11 @@ func (c *unloadedBatchIterator) Done() bool {
 	return c.currentOffset < 0 || c.currentOffset >= c.b.len()
 }
 
-func (c *unloadedBatchIterator) At() unloadedBatchEntry {
+func (c *unloadedBatchIterator) At() seriesChunkRefs {
 	if c.Done() {
-		return unloadedBatchEntry{}
+		return seriesChunkRefs{}
 	}
-	return c.b.Entries[c.currentOffset]
+	return c.b.Series[c.currentOffset]
 }
 
 type batchedSeriesSet struct {
