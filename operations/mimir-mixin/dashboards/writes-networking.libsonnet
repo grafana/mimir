@@ -5,10 +5,9 @@ local filename = 'mimir-writes-networking.json';
   [filename]:
     ($.dashboard('Writes networking') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates(false)
-    .addRow($.containerNetworkingRow('Summary', 'write'))
-    .addRowIf($._config.gateway_enabled, $.containerNetworkingRow('Gateway', 'gateway'))
-    .addRow($.containerNetworkingRow('Distributor', 'distributor'))
-    .addRow($.containerNetworkingRow('Ingester', 'ingester'))
+    .addRowIf($._config.gateway_enabled, $.jobNetworkingRow('Gateway', 'gateway'))
+    .addRow($.jobNetworkingRow('Distributor', 'distributor'))
+    .addRow($.jobNetworkingRow('Ingester', 'ingester'))
     + {
       templating+: {
         list: [

@@ -5,10 +5,10 @@ local filename = 'mimir-overview-networking.json';
   [filename]:
     ($.dashboard('Overview networking') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates(false)
-    .addRowIf($._config.gateway_enabled, $.containerNetworkingRow('Gateway', 'gateway'))
-    .addRow($.containerNetworkingRow('Writes', 'write'))
-    .addRow($.containerNetworkingRow('Reads', 'read'))
-    .addRow($.containerNetworkingRow('Backend', 'backend'))
+    .addRowIf($._config.gateway_enabled, $.jobNetworkingRow('Gateway', 'gateway'))
+    .addRow($.jobNetworkingRow('Writes', 'write'))
+    .addRow($.jobNetworkingRow('Reads', 'read'))
+    .addRow($.jobNetworkingRow('Backend', 'backend'))
     + {
       templating+: {
         list: [

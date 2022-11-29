@@ -201,6 +201,16 @@
     // System mount point where mimir stores its data, used for baremetal
     // deployment only.
     instance_data_mountpoint: '/',
+    resources_panel_series: {
+      kubernetes: {
+        network_receive_bytes_metrics: 'container_network_receive_bytes_total',
+        network_transmit_bytes_metrics: 'container_network_transmit_bytes_total',
+      },
+      baremetal: {
+        network_receive_bytes_metrics: 'node_network_receive_bytes_total',
+        network_transmit_bytes_metrics: 'node_network_transmit_bytes_total',
+      },
+    },
     resources_panel_queries: {
       kubernetes: {
         cpu_usage: 'sum by(%(instanceLabel)s) (rate(container_cpu_usage_seconds_total{%(namespace)s,container=~"%(containerName)s"}[$__rate_interval]))',
@@ -217,8 +227,7 @@
         memory_rss_limit: 'min(container_spec_memory_limit_bytes{%(namespace)s,container=~"%(containerName)s"} > 0)',
         memory_rss_request: 'min(kube_pod_container_resource_requests{%(namespace)s,container=~"%(containerName)s",resource="memory"})',
         memory_go_heap_usage: 'sum by(%(instanceLabel)s) (go_memstats_heap_inuse_bytes{%(namespace)s,container=~"%(containerName)s"})',
-        network_receive_bytes: 'sum by(%(instanceLabel)s) (rate(container_network_receive_bytes_total{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}[$__rate_interval]))',
-        network_transmit_bytes: 'sum by(%(instanceLabel)s) (rate(container_network_transmit_bytes_total{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}[$__rate_interval]))',
+        network: 'sum by(%(instanceLabel)s) (rate(%(metric)s{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}[$__rate_interval]))',
         disk_writes:
           |||
             sum by(%(nodeLabel)s, %(instanceLabel)s, device) (
@@ -274,8 +283,7 @@
             + node_memory_SwapCached_bytes{%(namespace)s,%(instanceLabel)s=~"%(instanceName)s"}
           |||,
         memory_go_heap_usage: 'sum by(%(instanceLabel)s) (go_memstats_heap_inuse_bytes{%(namespace)s,%(instanceLabel)s=~"%(instanceName)s"})',
-        network_receive_bytes: 'sum by(%(instanceLabel)s) (rate(node_network_receive_bytes_total{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}[$__rate_interval]))',
-        network_transmit_bytes: 'sum by(%(instanceLabel)s) (rate(node_network_transmit_bytes_total{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}[$__rate_interval]))',
+        network: 'sum by(%(instanceLabel)s) (rate(%(metric)s{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}[$__rate_interval]))',
         disk_writes:
           |||
             sum by(%(nodeLabel)s, %(instanceLabel)s, device) (
