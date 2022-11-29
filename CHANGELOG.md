@@ -1,4 +1,4 @@
-# Changelog
+# Changelog 
 
 ## Grafana Mimir - main / unreleased
 
