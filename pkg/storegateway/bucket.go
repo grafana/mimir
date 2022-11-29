@@ -1039,10 +1039,14 @@ func (s *BucketStore) synchronousSeriesSet(
 		}
 		return nil, cleanup, status.Error(code, err.Error())
 	}
+
+	getAllDuration := time.Since(begin)
 	stats.update(func(stats *queryStats) {
 		stats.blocksQueried = len(res)
-		stats.getAllDuration = time.Since(begin)
+		stats.getAllDuration = getAllDuration
 	})
+	s.metrics.seriesGetAllDuration.Observe(getAllDuration.Seconds())
+	s.metrics.seriesBlocksQueried.Observe(float64(len(res)))
 
 	return res, cleanup, err
 }
@@ -1072,8 +1076,6 @@ func (s *BucketStore) recordSeriesCallResult(safeStats *safeQueryStats) {
 	s.metrics.cachedPostingsCompressedSizeBytes.Add(float64(stats.cachedPostingsCompressedSizeSum))
 	s.metrics.seriesHashCacheRequests.Add(float64(stats.seriesHashCacheRequests))
 	s.metrics.seriesHashCacheHits.Add(float64(stats.seriesHashCacheHits))
-	s.metrics.seriesGetAllDuration.Observe(stats.getAllDuration.Seconds())
-	s.metrics.seriesBlocksQueried.Observe(float64(stats.blocksQueried))
 }
 
 func chunksSize(chks []storepb.AggrChunk) (size int) {
