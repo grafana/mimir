@@ -93,6 +93,28 @@ func TestReaders_ResetAt(t *testing.T) {
 	})
 }
 
+func TestReaders_Skip(t *testing.T) {
+	testReaders(t, func(t *testing.T, r Reader) {
+		peek, err := r.Peek(5)
+		require.NoError(t, err)
+		require.Equal(t, []byte("abcde"), peek, "peek before skip")
+		require.Equal(t, 20, r.Len())
+
+		require.NoError(t, r.Skip(5))
+		readAfterSkip, err := r.Read(5)
+		require.Equal(t, []byte("fghij"), readAfterSkip, "read after skip")
+		require.Equal(t, 10, r.Len())
+
+		require.NoError(t, r.Skip(5))
+		peekAfterSkip, err := r.Peek(5)
+		require.Equal(t, []byte("67890"), peekAfterSkip, "peek after skip")
+		require.Equal(t, 5, r.Len())
+
+		require.ErrorIs(t, r.Skip(5), ErrInvalidSize)
+		require.Equal(t, 5, r.Len())
+	})
+}
+
 func TestReaders_Len(t *testing.T) {
 	testReaders(t, func(t *testing.T, r Reader) {
 		require.Equal(t, 20, r.Len(), "initial length")
