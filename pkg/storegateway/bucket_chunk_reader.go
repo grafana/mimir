@@ -273,7 +273,6 @@ func (b rawChunk) NumSamples() int {
 type releaser interface{ Release() }
 
 type chunkReaders struct {
-	accumulatedStats   *safeQueryStats
 	chunkBytesReleaser *pool.BatchBytes
 	chunkBytesPool     pool.Bytes
 	readers            map[ulid.ULID]*bucketChunkReader
@@ -284,7 +283,6 @@ func newChunkReaders(readersMap map[ulid.ULID]*bucketChunkReader, chunkBytes *po
 		chunkBytesPool:     chunkBytesPool,
 		chunkBytesReleaser: chunkBytes,
 		readers:            readersMap,
-		accumulatedStats:   newSafeQueryStats(),
 	}
 }
 
@@ -292,12 +290,12 @@ func (r chunkReaders) addLoad(blockID ulid.ULID, id chunks.ChunkRef, seriesEntry
 	return r.readers[blockID].addLoad(id, seriesEntry, chunk)
 }
 
-func (r chunkReaders) load(entries []seriesEntry) error {
+func (r chunkReaders) load(entries []seriesEntry, stats *safeQueryStats) error {
 	g := &errgroup.Group{}
 	for _, reader := range r.readers {
 		reader := reader
 		g.Go(func() error {
-			return reader.load(entries, nil, r.accumulatedStats)
+			return reader.load(entries, nil, stats)
 		})
 	}
 	return g.Wait()
@@ -310,8 +308,4 @@ func (r *chunkReaders) reset() {
 	for _, reader := range r.readers {
 		reader.reset(r.chunkBytesReleaser)
 	}
-}
-
-func (r chunkReaders) stats() *queryStats {
-	return r.accumulatedStats.export()
 }
