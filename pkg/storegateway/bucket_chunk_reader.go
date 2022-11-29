@@ -14,7 +14,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
@@ -285,6 +284,7 @@ func newChunkReaders(readersMap map[ulid.ULID]*bucketChunkReader, chunkBytes *po
 		chunkBytesPool:     chunkBytesPool,
 		chunkBytesReleaser: chunkBytes,
 		readers:            readersMap,
+		accumulatedStats:   newSafeQueryStats(),
 	}
 }
 
@@ -314,12 +314,4 @@ func (r *chunkReaders) reset() {
 
 func (r chunkReaders) stats() *queryStats {
 	return r.accumulatedStats.export()
-}
-
-func (r chunkReaders) Close() error {
-	var errs multierror.MultiError
-	for _, reader := range r.readers {
-		errs.Add(reader.Close())
-	}
-	return errs.Err()
 }
