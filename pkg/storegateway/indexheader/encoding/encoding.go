@@ -186,22 +186,16 @@ func (d *Decbuf) Crc32(castagnoliTable *crc32.Table) uint32 {
 	return crc32.Checksum(contents, castagnoliTable)
 }
 
+// Skip advances the pointer of the underlying Reader by the given number
+// of bytes. Skip-ing beyond the end of the underlying Reader will set E
+// to an error and not advance the pointer of the Reader.
 func (d *Decbuf) Skip(l int) {
-	b, err := d.r.Peek(l)
+	err := d.r.Skip(l)
 	if err != nil {
 		d.E = err
-		return
-	}
-	if len(b) < l {
-		d.E = ErrInvalidSize
-		return
-	}
-	_, err = d.r.Read(l)
-	if err != nil {
-		d.E = err
-		return
 	}
 }
+
 // ResetAt sets the pointer of the underlying Reader to the absolute
 // offset and discards any buffered data. If E is non-nil, this method has
 // no effect.

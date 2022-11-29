@@ -11,8 +11,11 @@ type Reader interface {
 	// Reset moves the cursor position to the beginning of the underlying store.
 	Reset() error
 
-	// ResetAt moves the cursor position to the given offset in the underlying store.
+	// ResetAt moves the cursor position to the given absolute offset in the underlying store.
 	ResetAt(off int) error
+
+	// Skip advances the cursor position by the given number of bytes in the underlying store.
+	Skip(l int) error
 
 	// Read returns at most the given number of bytes from the underlying store, consuming
 	// them. It is valid to Read beyond the end of the underlying store. In this case the
@@ -54,10 +57,15 @@ func (b *BufReader) Reset() error {
 
 func (b *BufReader) ResetAt(off int) error {
 	b.b = b.initial
-	if off >= len(b.b) {
+	return b.Skip(off)
+}
+
+func (b *BufReader) Skip(l int) error {
+	if l >= len(b.b) {
 		return ErrInvalidSize
 	}
-	b.b = b.b[off:]
+
+	b.b = b.b[l:]
 	return nil
 }
 
@@ -124,6 +132,19 @@ func (f *FileReader) ResetAt(off int) error {
 	f.pos = int(pos) - f.base
 
 	return nil
+}
+
+func (f *FileReader) Skip(l int) error {
+	if l >= f.Len() {
+		return ErrInvalidSize
+	}
+
+	n, err := f.buf.Discard(l)
+	if n > 0 {
+		f.pos += n
+	}
+
+	return err
 }
 
 func (f *FileReader) Peek(n int) ([]byte, error) {
