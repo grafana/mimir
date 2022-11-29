@@ -305,7 +305,7 @@ func (s *BucketStore) batchSetsForBlocks(ctx context.Context, req *storepb.Serie
 	mergedBatches := mergedBatchSets(s.maxSeriesPerBatch, batches...)
 	var set storepb.SeriesSet
 	if chunkReaders != nil {
-		set = newSeriesSetWithChunks(ctx, *chunkReaders, mergedBatches)
+		set = newSeriesSetWithChunks(ctx, *chunkReaders, mergedBatches, stats)
 	} else {
 		set = newSeriesSetWithoutChunks(mergedBatches)
 	}
@@ -346,24 +346,27 @@ func (s *seriesSetWithoutChunks) Err() error {
 	return s.from.Err()
 }
 
-func newSeriesSetWithChunks(ctx context.Context, chunkReaders chunkReaders, batches seriesChunkRefsSetIterator) storepb.SeriesSet {
+func newSeriesSetWithChunks(ctx context.Context, chunkReaders chunkReaders, batches seriesChunkRefsSetIterator, stats *safeQueryStats) storepb.SeriesSet {
 	return &batchedSeriesSet{
-		from: newPreloadingBatchSet(ctx, 1, newLoadingBatchSet(chunkReaders, batches)),
+		from:  newPreloadingBatchSet(ctx, 1, newLoadingBatchSet(chunkReaders, batches, stats)),
+		stats: stats,
 	}
 }
 
 type loadingBatchSet struct {
 	chunkReaders chunkReaders
 	from         seriesChunkRefsSetIterator
+	stats        *safeQueryStats
 
 	current seriesChunksSet
 	err     error
 }
 
-func newLoadingBatchSet(chunkReaders chunkReaders, from seriesChunkRefsSetIterator) *loadingBatchSet {
+func newLoadingBatchSet(chunkReaders chunkReaders, from seriesChunkRefsSetIterator, stats *safeQueryStats) *loadingBatchSet {
 	return &loadingBatchSet{
 		chunkReaders: chunkReaders,
 		from:         from,
+		stats:        stats,
 	}
 }
 
@@ -396,14 +399,13 @@ func (c *loadingBatchSet) Next() bool {
 		}
 	}
 
-	err := c.chunkReaders.load(entries)
+	err := c.chunkReaders.load(entries, c.stats)
 	if err != nil {
 		c.err = errors.Wrap(err, "loading chunks")
 		return false
 	}
 	nextLoaded := seriesChunksSet{
 		series:        entries,
-		stats:         c.chunkReaders.stats(),
 		bytesReleaser: c.chunkReaders.chunkBytesReleaser,
 	}
 	c.current = nextLoaded
@@ -730,7 +732,8 @@ func (c chainedBatchSetIterator) Err() error {
 }
 
 type batchedSeriesSet struct {
-	from seriesChunksSetIterator
+	from  seriesChunksSetIterator
+	stats *safeQueryStats
 
 	current         seriesChunksSet
 	offsetInCurrent int

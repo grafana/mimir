@@ -12,7 +12,6 @@ type seriesChunksSetIterator interface {
 // seriesChunksSet holds a set of series, each with its own chunks.
 type seriesChunksSet struct {
 	series []seriesEntry // this should ideally be its own type that doesn't have the refs
-	stats  *queryStats
 
 	bytesReleaser releaser
 }
