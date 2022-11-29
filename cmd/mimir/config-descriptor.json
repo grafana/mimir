@@ -7402,6 +7402,17 @@
           "blockEntries": [
             {
               "kind": "field",
+              "name": "tls_enabled",
+              "required": false,
+              "desc": "Enable TLS for gRPC client connecting to alertmanager.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "ruler.tls-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
               "name": "tls_cert_path",
               "required": false,
               "desc": "Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.",
