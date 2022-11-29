@@ -44,13 +44,6 @@ func (b realByteSlice) Sub(start, end int) index.ByteSlice {
 	return b[start:end]
 }
 
-func TestDecbufUvarintWithInvalidBuffer(t *testing.T) {
-	b := realByteSlice([]byte{0x81, 0x81, 0x81, 0x81, 0x81, 0x81})
-
-	db := encoding.NewDecbufUvarintAt(b, 0, castagnoliTable)
-	require.Error(t, db.Err())
-}
-
 func TestSymbols(t *testing.T) {
 	buf := encoding.Encbuf{}
 
