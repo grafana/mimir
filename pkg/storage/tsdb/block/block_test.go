@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"os"
 	"path"
 	"strings"
@@ -86,6 +87,7 @@ func TestUpload(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	bkt := objstore.NewInMemBucket()
+	rand.Seed(1) // hard-coded sizes later in this test depend on values created "randomly" by CreateBlock.
 	b1, err := e2eutil.CreateBlock(ctx, tmpDir, []labels.Labels{
 		{{Name: "a", Value: "1"}},
 		{{Name: "a", Value: "2"}},
@@ -136,6 +138,7 @@ func TestUpload(t *testing.T) {
 		// Full block.
 		require.NoError(t, Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), metadata.NoneFunc))
 		require.Equal(t, 3, len(bkt.Objects()))
+		// Note this value 3751 depends on random numbers, so we fix the seed earlier.
 		require.Equal(t, 3751, len(bkt.Objects()[path.Join(b1.String(), ChunksDirname, "000001")]))
 		require.Equal(t, 401, len(bkt.Objects()[path.Join(b1.String(), IndexFilename)]))
 		require.Equal(t, 570, len(bkt.Objects()[path.Join(b1.String(), MetaFilename)]))
