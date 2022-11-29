@@ -14,9 +14,9 @@ type seriesChunkRefsSet struct {
 	series []seriesChunkRefs
 }
 
-func newSeriesChunkRefsSet(size int) seriesChunkRefsSet {
+func newSeriesChunkRefsSet(capacity int) seriesChunkRefsSet {
 	return seriesChunkRefsSet{
-		series: make([]seriesChunkRefs, size),
+		series: make([]seriesChunkRefs, 0, capacity),
 	}
 }
 
