@@ -439,7 +439,7 @@ func TestPreloadingBatchSet_Concurrency(t *testing.T) {
 
 }
 
-func TestBucketBatchSet(t *testing.T) {
+func TestBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 	t.Skip("currently panics, we need to fix it and complete this test")
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -455,7 +455,7 @@ func TestBucketBatchSet(t *testing.T) {
 	indexReader := firstBlock.indexReader()
 	defer indexReader.Close()
 
-	batchSet, err := unloadedBucketBatches(
+	iterator, err := openBlockSeriesChunkRefsSetsIterator(
 		ctx,
 		100,
 		indexReader,
@@ -474,8 +474,8 @@ func TestBucketBatchSet(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	_ = readAllBatches(batchSet)
-	assert.ErrorContains(t, batchSet.Err(), "test limit exceeded")
+	_ = readAllBatches(iterator)
+	assert.ErrorContains(t, iterator.Err(), "test limit exceeded")
 }
 
 // nolint this is used in a skipped test
