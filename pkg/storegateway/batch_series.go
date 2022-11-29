@@ -128,7 +128,6 @@ func (s *bucketBatchSet) loadBatch() bool {
 	var (
 		symbolizedLset []symbolizedLabel
 		chks           []chunks.Meta
-		i              int
 	)
 
 	// Track the series loading statistics in a not synchronized data structure to avoid locking for each series
@@ -174,10 +173,8 @@ func (s *bucketBatchSet) loadBatch() bool {
 			entry.chunks = metasToChunks(s.blockID, chks)
 		}
 
-		s.currentBatch.series[i] = entry
-		i++
+		s.currentBatch.series = append(s.currentBatch.series, entry)
 	}
-	s.currentBatch.series = s.currentBatch.series[:i]
 
 	if s.currentBatch.len() == 0 {
 		return s.loadBatch() // we didn't find any suitable series in this batch, try with the next one
@@ -537,7 +534,6 @@ func (s *mergedBatchSet) Err() error {
 
 func (s *mergedBatchSet) Next() bool {
 	next := newSeriesChunkRefsSet(s.batchSize)
-	var ok bool
 	for i := 0; i < next.len(); i++ {
 		if s.aAt.Done() {
 			if s.a.Next() {
@@ -555,11 +551,11 @@ func (s *mergedBatchSet) Next() bool {
 				return false
 			}
 		}
-		next.series[i], ok = nextUniqueEntry(s.aAt, s.bAt)
+		nextSeries, ok := nextUniqueEntry(s.aAt, s.bAt)
 		if !ok {
-			next.series = next.series[:i]
 			break
 		}
+		next.series = append(next.series, nextSeries)
 	}
 
 	s.current = next
@@ -664,34 +660,35 @@ func (s *deduplicatingBatchSet) At() seriesChunkRefsSet {
 }
 
 func (s *deduplicatingBatchSet) Next() bool {
-	nextBatch := newSeriesChunkRefsSet(s.batchSize)
+	var firstSeries seriesChunkRefs
 	if s.peek == nil {
 		if !s.from.Next() {
 			return false
 		}
-		nextBatch.series[0] = s.from.At()
+		firstSeries = s.from.At()
 	} else {
-		nextBatch.series[0] = *s.peek
+		firstSeries = *s.peek
 		s.peek = nil
 	}
+	nextBatch := newSeriesChunkRefsSet(s.batchSize)
+	nextBatch.series = append(nextBatch.series, firstSeries)
 
-	var nextEntry seriesChunkRefs
+	var nextSeries seriesChunkRefs
 	for i := 0; i < s.batchSize; {
 		if !s.from.Next() {
-			nextBatch.series = nextBatch.series[:i+1]
 			break
 		}
-		nextEntry = s.from.At()
+		nextSeries = s.from.At()
 
-		if labels.Equal(nextBatch.series[i].lset, nextEntry.lset) {
-			nextBatch.series[i].chunks = append(nextBatch.series[i].chunks, nextEntry.chunks...)
+		if labels.Equal(nextBatch.series[i].lset, nextSeries.lset) {
+			nextBatch.series[i].chunks = append(nextBatch.series[i].chunks, nextSeries.chunks...)
 		} else {
 			i++
 			if i >= s.batchSize {
-				s.peek = &nextEntry
+				s.peek = &nextSeries
 				break
 			}
-			nextBatch.series[i] = nextEntry
+			nextBatch.series = append(nextBatch.series, nextSeries)
 		}
 	}
 	s.current = nextBatch
