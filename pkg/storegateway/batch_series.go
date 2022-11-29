@@ -721,6 +721,8 @@ func (s *mergedBatchSet) At() unloadedBatch {
 	return s.current
 }
 
+// deduplicatingBatchSet implements unloadedBatchSet, and merges together consecutive
+// series in an underlying unloadedBatchSet.
 type deduplicatingBatchSet struct {
 	batchSize int
 
@@ -729,7 +731,7 @@ type deduplicatingBatchSet struct {
 	current unloadedBatch
 }
 
-func newDeduplicatingBatchSet(batchSize int, wrapped unloadedBatchSet) *deduplicatingBatchSet {
+func newDeduplicatingBatchSet(batchSize int, wrapped unloadedBatchSet) unloadedBatchSet {
 	return &deduplicatingBatchSet{
 		batchSize: batchSize,
 		from:      newChainedSeriesSet(wrapped),
@@ -756,13 +758,15 @@ func (s *deduplicatingBatchSet) Next() bool {
 		s.peek = nil
 	}
 	var nextEntry unloadedBatchEntry
+
 	for i := 0; i < s.batchSize; {
 		if !s.from.Next() {
 			nextBatch.Entries = nextBatch.Entries[:i+1]
 			break
 		}
 		nextEntry = s.from.At()
-		if labels.Compare(nextBatch.Entries[i].lset, nextEntry.lset) == 0 {
+
+		if labels.Equal(nextBatch.Entries[i].lset, nextEntry.lset) {
 			nextBatch.Entries[i].chunks = append(nextBatch.Entries[i].chunks, nextEntry.chunks...)
 		} else {
 			i++

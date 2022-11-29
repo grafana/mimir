@@ -89,27 +89,87 @@ func (s *sliceLoadedBatchSet) Err() error {
 }
 
 func TestDeduplicatingBatchSet(t *testing.T) {
-	repeatingBatchSet := newSliceUnloadedBatchSet(nil,
-		unloadedBatch{
-			Entries: []unloadedBatchEntry{
-				{lset: labels.FromStrings("l1", "v1"), chunks: make([]unloadedChunk, 2)},
-				{lset: labels.FromStrings("l1", "v1"), chunks: make([]unloadedChunk, 3)},
-			}},
-		unloadedBatch{
-			Entries: []unloadedBatchEntry{
-				{lset: labels.FromStrings("l1", "v2"), chunks: make([]unloadedChunk, 4)},
-				{lset: labels.FromStrings("l1", "v2"), chunks: make([]unloadedChunk, 4)},
-			}},
-	)
-	uniqueSet := newDeduplicatingBatchSet(100, repeatingBatchSet)
+	// Generate some chunk fixtures so that we can ensure the right chunks are returned.
+	c := generateUnloadedChunks(8)
 
-	batches := readAllBatches(uniqueSet)
+	series1 := labels.FromStrings("l1", "v1")
+	series2 := labels.FromStrings("l1", "v2")
+	series3 := labels.FromStrings("l1", "v3")
+	sourceBatches := []unloadedBatch{
+		{Entries: []unloadedBatchEntry{
+			{lset: series1, chunks: []unloadedChunk{c[0], c[1]}},
+			{lset: series1, chunks: []unloadedChunk{c[2], c[3], c[4]}},
+		}},
+		{Entries: []unloadedBatchEntry{
+			{lset: series2, chunks: []unloadedChunk{c[0], c[1], c[2], c[3]}},
+			{lset: series3, chunks: []unloadedChunk{c[0]}},
+			{lset: series3, chunks: []unloadedChunk{c[1]}},
+		}},
+	}
 
-	assert.NoError(t, uniqueSet.Err())
-	assert.Len(t, batches, 1)
-	assert.Len(t, batches[0].Entries, 2)
-	assert.Len(t, batches[0].Entries[0].chunks, 5)
-	assert.Len(t, batches[0].Entries[1].chunks, 8)
+	t.Run("batch size: 1", func(t *testing.T) {
+		repeatingBatchSet := newSliceUnloadedBatchSet(nil, sourceBatches...)
+		uniqueSet := newDeduplicatingBatchSet(1, repeatingBatchSet)
+		batches := readAllBatches(uniqueSet)
+
+		require.NoError(t, uniqueSet.Err())
+		require.Len(t, batches, 3)
+
+		require.Len(t, batches[0].Entries, 1)
+		assert.Equal(t, series1, batches[0].Entries[0].lset)
+		assert.Equal(t, []unloadedChunk{c[0], c[1], c[2], c[3], c[4]}, batches[0].Entries[0].chunks)
+
+		require.Len(t, batches[1].Entries, 1)
+		assert.Equal(t, series2, batches[1].Entries[0].lset)
+		assert.Equal(t, []unloadedChunk{c[0], c[1], c[2], c[3]}, batches[1].Entries[0].chunks)
+
+		require.Len(t, batches[2].Entries, 1)
+		assert.Equal(t, series3, batches[2].Entries[0].lset)
+		assert.Equal(t, []unloadedChunk{c[0], c[1]}, batches[2].Entries[0].chunks)
+	})
+
+	t.Run("batch size: 2", func(t *testing.T) {
+		repeatingBatchSet := newSliceUnloadedBatchSet(nil, sourceBatches...)
+		uniqueSet := newDeduplicatingBatchSet(2, repeatingBatchSet)
+		batches := readAllBatches(uniqueSet)
+
+		require.NoError(t, uniqueSet.Err())
+		require.Len(t, batches, 2)
+
+		// First batch.
+		require.Len(t, batches[0].Entries, 2)
+
+		assert.Equal(t, series1, batches[0].Entries[0].lset)
+		assert.Equal(t, []unloadedChunk{c[0], c[1], c[2], c[3], c[4]}, batches[0].Entries[0].chunks)
+
+		assert.Equal(t, series2, batches[0].Entries[1].lset)
+		assert.Equal(t, []unloadedChunk{c[0], c[1], c[2], c[3]}, batches[0].Entries[1].chunks)
+
+		// Second batch.
+		require.Len(t, batches[1].Entries, 1)
+
+		assert.Equal(t, series3, batches[1].Entries[0].lset)
+		assert.Equal(t, []unloadedChunk{c[0], c[1]}, batches[1].Entries[0].chunks)
+	})
+
+	t.Run("batch size: 3", func(t *testing.T) {
+		repeatingBatchSet := newSliceUnloadedBatchSet(nil, sourceBatches...)
+		uniqueSet := newDeduplicatingBatchSet(3, repeatingBatchSet)
+		batches := readAllBatches(uniqueSet)
+
+		require.NoError(t, uniqueSet.Err())
+		require.Len(t, batches, 1)
+		require.Len(t, batches[0].Entries, 3)
+
+		assert.Equal(t, series1, batches[0].Entries[0].lset)
+		assert.Equal(t, []unloadedChunk{c[0], c[1], c[2], c[3], c[4]}, batches[0].Entries[0].chunks)
+
+		assert.Equal(t, series2, batches[0].Entries[1].lset)
+		assert.Equal(t, []unloadedChunk{c[0], c[1], c[2], c[3]}, batches[0].Entries[1].chunks)
+
+		assert.Equal(t, series3, batches[0].Entries[2].lset)
+		assert.Equal(t, []unloadedChunk{c[0], c[1]}, batches[0].Entries[2].chunks)
+	})
 }
 
 func TestDeduplicatingBatchSet_PropagatesErrors(t *testing.T) {
@@ -130,15 +190,7 @@ func TestDeduplicatingBatchSet_PropagatesErrors(t *testing.T) {
 
 func TestMergedBatchSet(t *testing.T) {
 	// Generate some chunk fixtures so that we can ensure the right chunks are merged.
-	var c []unloadedChunk
-	for i := 0; i < 4; i++ {
-		c = append(c, unloadedChunk{
-			BlockID: ulid.MustNew(uint64(i), nil),
-			Ref:     chunks.ChunkRef(i),
-			MinTime: int64(i),
-			MaxTime: int64(i),
-		})
-	}
+	c := generateUnloadedChunks(4)
 
 	testCases := map[string]struct {
 		batchSize       int
@@ -513,4 +565,19 @@ func readAllBatches(set unloadedBatchSet) []unloadedBatch {
 		batches = append(batches, set.At())
 	}
 	return batches
+}
+
+func generateUnloadedChunks(num int) []unloadedChunk {
+	out := make([]unloadedChunk, 0, num)
+
+	for i := 0; i < num; i++ {
+		out = append(out, unloadedChunk{
+			BlockID: ulid.MustNew(uint64(i), nil),
+			Ref:     chunks.ChunkRef(i),
+			MinTime: int64(i),
+			MaxTime: int64(i),
+		})
+	}
+
+	return out
 }
