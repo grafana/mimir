@@ -120,29 +120,10 @@ func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int) (bw
 		return nil, errors.Wrap(err, "read index header TOC")
 	}
 
-	symbolsByteSlice, err := readDecbufBytes(f, int64(r.toc.Symbols))
-	if err != nil {
-		return nil, errors.Wrap(err, "read symbols")
-	}
-
-	lengthBytes := make([]byte, 4)
-	n, err = f.ReadAt(lengthBytes, int64(r.toc.Symbols))
-	if err != nil {
-		return nil, err
-	}
-	//length := len(lengthBytes) + int(binary.BigEndian.Uint32(lengthBytes)) + 4
-
-	//fr := stream_encoding.NewFileReader(f, int(r.toc.Symbols), length)
-	r.symbols, err = stream_index.NewSymbols(symbolsByteSlice, r.indexVersion, int(r.toc.Symbols))
+	r.symbols, err = stream_index.NewSymbols(f, r.indexVersion, int(r.toc.Symbols))
 	if err != nil {
 		return nil, errors.Wrap(err, "load symbols")
 	}
-
-	// TODO(bwplotka): Consider contributing to Prometheus to allow specifying custom number for symbolsFactor.
-	//	r.symbols, err = stream_index.NewSymbols(symbolsByteSlice, r.indexVersion, 0)
-	//	if err != nil {
-	//		return nil, errors.Wrap(err, "read symbols")
-	//	}
 
 	var lastKey []string
 	if r.indexVersion == index.FormatV1 {
@@ -326,7 +307,7 @@ func newBinaryTOCFromFile(f *os.File) (*BinaryTOC, error) {
 		Symbols:             d.Be64(),
 		PostingsOffsetTable: d.Be64(),
 	}
-	
+
 	if err := d.Err(); err != nil {
 		return nil, err
 	}

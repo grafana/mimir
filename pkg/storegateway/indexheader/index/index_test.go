@@ -15,6 +15,8 @@ package index
 
 import (
 	"hash/crc32"
+	"os"
+	"path"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -28,20 +30,6 @@ import (
 
 func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
-}
-
-type realByteSlice []byte
-
-func (b realByteSlice) Len() int {
-	return len(b)
-}
-
-func (b realByteSlice) Range(start, end int) []byte {
-	return b[start:end]
-}
-
-func (b realByteSlice) Sub(start, end int) index.ByteSlice {
-	return b[start:end]
 }
 
 func TestSymbols(t *testing.T) {
@@ -60,9 +48,17 @@ func TestSymbols(t *testing.T) {
 	checksum := crc32.Checksum(buf.Get()[symbolsStart+4:], castagnoliTable)
 	buf.PutBE32(checksum) // Check sum at the end.
 
-	d := stream_encoding.NewDecbufAt(realByteSlice(buf.Get()), symbolsStart, castagnoliTable)
+	dir := t.TempDir()
+	filePath := path.Join(dir, "index")
+	require.NoError(t, os.WriteFile(filePath, buf.Get(), 0700))
+
+	f, err := os.Open(filePath)
+	require.NoError(t, err)
+	r, err := stream_encoding.NewFileReader(f, 0, buf.Len())
+	require.NoError(t, err)
+	d := stream_encoding.NewDecbuf(r, symbolsStart, castagnoliTable)
 	require.NoError(t, d.E)
-	s, err := NewSymbols(realByteSlice(buf.Get()[symbolsStart:]), index.FormatV2, symbolsStart)
+	s, err := NewSymbols(f, index.FormatV2, symbolsStart)
 	require.NoError(t, err)
 
 	// We store only 4 offsets to symbols.
