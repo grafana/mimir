@@ -68,9 +68,7 @@ When the Thanos sidecar uploads blocks, it includes the external labels from Pro
 When you query the block, Thanos injects Prometheus’ external labels in the series returned in the query result.
 Thanos also uses labels for the deduplication of replicated data.
 
-An alternative to migrating the blocks is to continue to run Thanos and Mimir in parallel. You can direct clients (ie. Grafana) to Thanos and then setup Mimir as a storage node within Thanos. This allows you to query historical data from the Thanos storegateway along with current data being pushed into Mimir from your Prometheus servers. You will need to carefully consider the external labels Mimir will present to Thanos along with the external labels that currently exist in Thanos to ensure compatibility with existing dashboards. Once the Thanos retention period has passed you can then tranistion all clients to query Grafana Mimir directly. This approach is very much experimental and has not yet seen significant use in production. For a write-up please see this link [here](https://gist.github.com/gmintoco/e949cb9bf12e427449b36d6897239bcf).
-
-If you still want to use existing blocks from Thanos by Grafana Mimir, there are some considerations:
+If you want to use existing blocks from Thanos by Grafana Mimir, there are some considerations:
 
 **Grafana Mimir doesn't inject external labels into query results.**
 This means that blocks that were originally created by Thanos will not include their external labels in the results when queried by Grafana Mimir.
