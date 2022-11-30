@@ -11,8 +11,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/grafana/mimir/pkg/storegateway/storepb"
 )
 
 func TestSeriesChunkRef_Compare(t *testing.T) {
@@ -173,19 +171,6 @@ func generateSeriesChunkRef(num int) []seriesChunkRef {
 			ref:     chunks.ChunkRef(i),
 			minTime: int64(i),
 			maxTime: int64(i),
-		})
-	}
-
-	return out
-}
-
-func generateAggrChunk(num int) []storepb.AggrChunk {
-	out := make([]storepb.AggrChunk, 0, num)
-
-	for i := 0; i < num; i++ {
-		out = append(out, storepb.AggrChunk{
-			MinTime: int64(i),
-			MaxTime: int64(i),
 		})
 	}
 

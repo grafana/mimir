@@ -763,9 +763,6 @@ func TestPreloadingBatchSet(t *testing.T) {
 		// Cancel the context. Do NOT call Next() after canceling the context.
 		cancelCtx()
 	})
-
-	// Give goroutines time to stop so that they won't be reported as leaking.
-	time.Sleep(100 * time.Millisecond)
 }
 
 func TestPreloadingBatchSet_Concurrency(t *testing.T) {

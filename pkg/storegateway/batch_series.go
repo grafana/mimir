@@ -302,7 +302,7 @@ func (s *BucketStore) batchSetsForBlocks(ctx context.Context, req *storepb.Serie
 	mergedBatches := mergedBatchSets(s.maxSeriesPerBatch, batches...)
 	var set storepb.SeriesSet
 	if chunkReaders != nil {
-		// We pass ctx and not gCtx because the gCtx will be canceled once the goroutines group has done.
+		// We pass ctx and not gCtx because the gCtx will be canceled once the goroutines group is done.
 		set = newSeriesSetWithChunks(ctx, *chunkReaders, mergedBatches, stats)
 	} else {
 		set = newSeriesSetWithoutChunks(mergedBatches)

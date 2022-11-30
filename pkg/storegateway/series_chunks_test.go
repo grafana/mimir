@@ -2,7 +2,11 @@
 
 package storegateway
 
-import "time"
+import (
+	"time"
+
+	"github.com/grafana/mimir/pkg/storegateway/storepb"
+)
 
 // sliceSeriesChunksSetIterator implements seriesChunksSetIterator and
 // returns the provided err when the sets are exhausted
@@ -78,4 +82,17 @@ func (s *delayedSeriesChunksSetIterator) At() seriesChunksSet {
 
 func (s *delayedSeriesChunksSetIterator) Err() error {
 	return s.wrapped.Err()
+}
+
+func generateAggrChunk(num int) []storepb.AggrChunk {
+	out := make([]storepb.AggrChunk, 0, num)
+
+	for i := 0; i < num; i++ {
+		out = append(out, storepb.AggrChunk{
+			MinTime: int64(i),
+			MaxTime: int64(i),
+		})
+	}
+
+	return out
 }
