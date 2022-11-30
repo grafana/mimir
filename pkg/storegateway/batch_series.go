@@ -312,7 +312,7 @@ func (s *BucketStore) batchSetsForBlocks(ctx context.Context, req *storepb.Serie
 type seriesSetWithoutChunks struct {
 	from seriesChunkRefsSetIterator
 
-	currentIterator *seriesChunkRefsIterator
+	currentIterator *seriesChunkRefsIteratorImpl
 }
 
 func newSeriesSetWithoutChunks(batches seriesChunkRefsSetIterator) storepb.SeriesSet {
@@ -326,13 +326,19 @@ func (s *seriesSetWithoutChunks) Next() bool {
 	if s.currentIterator.Next() {
 		return true
 	}
+
+	// The current iterator has no more elements. We check if there's another
+	// iterator to fetch and then iterate on.
 	if !s.from.Next() {
 		return false
 	}
 
 	next := s.from.At()
 	s.currentIterator.reset(next)
-	return !s.currentIterator.Done()
+
+	// We've replaced the current iterator, so can recursively call Next()
+	// to check if there's any item in the new iterator and further advance it if not.
+	return s.Next()
 }
 
 func (s *seriesSetWithoutChunks) At() (labels.Labels, []storepb.AggrChunk) {
@@ -510,7 +516,7 @@ type mergedBatchSet struct {
 	batchSize int
 
 	a, b     seriesChunkRefsSetIterator
-	aAt, bAt *seriesChunkRefsIterator
+	aAt, bAt *seriesChunkRefsIteratorImpl
 	current  seriesChunkRefsSet
 }
 
@@ -536,24 +542,19 @@ func (s *mergedBatchSet) Err() error {
 
 func (s *mergedBatchSet) Next() bool {
 	next := newSeriesChunkRefsSet(s.batchSize)
-	for i := 0; i < next.len(); i++ {
-		if s.aAt.Done() {
-			if s.a.Next() {
-				s.aAt.reset(s.a.At())
-			} else if s.a.Err() != nil {
-				// Stop iterating on first error encountered.
-				return false
-			}
+
+	for i := 0; i < s.batchSize; i++ {
+		if err := s.ensureItemAvailableToRead(s.aAt, s.a); err != nil {
+			// Stop iterating on first error encountered.
+			return false
 		}
-		if s.bAt.Done() {
-			if s.b.Next() {
-				s.bAt.reset(s.b.At())
-			} else if s.b.Err() != nil {
-				// Stop iterating on first error encountered.
-				return false
-			}
+
+		if err := s.ensureItemAvailableToRead(s.bAt, s.b); err != nil {
+			// Stop iterating on first error encountered.
+			return false
 		}
-		nextSeries, ok := nextUniqueEntry(s.aAt, s.bAt)
+
+		nextSeries, ok := s.nextUniqueEntry(s.aAt, s.bAt)
 		if !ok {
 			break
 		}
@@ -564,9 +565,36 @@ func (s *mergedBatchSet) Next() bool {
 	return s.current.len() > 0
 }
 
+// ensureItemAvailableToRead ensures curr has an item available to read, unless we reached the
+// end of all sets. If curr has no item available to read, it will advance the iterator, eventually
+// picking the next one from the set.
+func (s *mergedBatchSet) ensureItemAvailableToRead(curr *seriesChunkRefsIteratorImpl, set seriesChunkRefsSetIterator) error {
+	// Ensure curr has an item available, otherwise fetch the next set.
+	for curr.Done() {
+		if set.Next() {
+			curr.reset(set.At())
+
+			// Advance the iterator to the first element. If the iterator is empty,
+			// it will be detected and handled by the outer for loop.
+			curr.Next()
+			continue
+		}
+
+		if set.Err() != nil {
+			// Stop iterating on first error encountered.
+			return set.Err()
+		}
+
+		// No more sets.
+		return nil
+	}
+
+	return nil
+}
+
 // nextUniqueEntry returns the next unique entry from both a and b. If a.At() and b.At() have the same
 // label set, nextUniqueEntry merges their chunks. The merged chunks are sorted by their MinTime and then by MaxTIme.
-func nextUniqueEntry(a, b *seriesChunkRefsIterator) (toReturn seriesChunkRefs, _ bool) {
+func (s *mergedBatchSet) nextUniqueEntry(a, b *seriesChunkRefsIteratorImpl) (toReturn seriesChunkRefs, _ bool) {
 	if a.Done() && b.Done() {
 		return toReturn, false
 	} else if a.Done() {
@@ -641,7 +669,7 @@ func (s *mergedBatchSet) At() seriesChunkRefsSet {
 type deduplicatingBatchSet struct {
 	batchSize int
 
-	from    *chainedBatchSetIterator
+	from    seriesChunkRefsIterator
 	peek    *seriesChunkRefs
 	current seriesChunkRefsSet
 }
@@ -699,10 +727,10 @@ func (s *deduplicatingBatchSet) Next() bool {
 
 type chainedBatchSetIterator struct {
 	from     seriesChunkRefsSetIterator
-	iterator *seriesChunkRefsIterator
+	iterator *seriesChunkRefsIteratorImpl
 }
 
-func newChainedSeriesSet(from seriesChunkRefsSetIterator) *chainedBatchSetIterator {
+func newChainedSeriesSet(from seriesChunkRefsSetIterator) seriesChunkRefsIterator {
 	return &chainedBatchSetIterator{
 		from:     from,
 		iterator: newSeriesChunkRefsIterator(seriesChunkRefsSet{}), // start with an empty batch and initialize on the first call to Next()
@@ -713,11 +741,18 @@ func (c chainedBatchSetIterator) Next() bool {
 	if c.iterator.Next() {
 		return true
 	}
+
+	// The current iterator has no more elements. We check if there's another
+	// iterator to fetch and then iterate on.
 	if !c.from.Next() {
 		return false
 	}
+
 	c.iterator.reset(c.from.At())
-	return true
+
+	// We've replaced the current iterator, so can recursively call Next()
+	// to check if there's any item in the new iterator and further advance it if not.
+	return c.Next()
 }
 
 func (c chainedBatchSetIterator) At() seriesChunkRefs {
