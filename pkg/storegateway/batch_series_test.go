@@ -834,10 +834,10 @@ func TestBlockSeriesChunkRefsSetsIterator_ErrorPropagation(t *testing.T) {
 			seriesLimit: 100,
 			expectedSeries: []seriesChunkRefsSet{
 				{series: []seriesChunkRefs{
-					{lset: labels.FromStrings("a", "1", "b", "1"), chunks: make([]seriesChunkRef, 1)},
-					{lset: labels.FromStrings("a", "1", "b", "2"), chunks: make([]seriesChunkRef, 1)},
-					{lset: labels.FromStrings("a", "2", "b", "1"), chunks: make([]seriesChunkRef, 1)},
-					{lset: labels.FromStrings("a", "2", "b", "2"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("a", "1", "b", "1")},
+					{lset: labels.FromStrings("a", "1", "b", "2")},
+					{lset: labels.FromStrings("a", "2", "b", "1")},
+					{lset: labels.FromStrings("a", "2", "b", "2")},
 				}},
 			},
 		},
@@ -848,16 +848,16 @@ func TestBlockSeriesChunkRefsSetsIterator_ErrorPropagation(t *testing.T) {
 			seriesLimit: 100,
 			expectedSeries: []seriesChunkRefsSet{
 				{series: []seriesChunkRefs{
-					{lset: labels.FromStrings("a", "1", "b", "1"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("a", "1", "b", "1")},
 				}},
 				{series: []seriesChunkRefs{
-					{lset: labels.FromStrings("a", "1", "b", "2"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("a", "1", "b", "2")},
 				}},
 				{series: []seriesChunkRefs{
-					{lset: labels.FromStrings("a", "2", "b", "1"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("a", "2", "b", "1")},
 				}},
 				{series: []seriesChunkRefs{
-					{lset: labels.FromStrings("a", "2", "b", "2"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("a", "2", "b", "2")},
 				}},
 			},
 		},
@@ -868,8 +868,8 @@ func TestBlockSeriesChunkRefsSetsIterator_ErrorPropagation(t *testing.T) {
 			seriesLimit: 100,
 			expectedSeries: []seriesChunkRefsSet{
 				{series: []seriesChunkRefs{
-					{lset: labels.FromStrings("a", "1", "b", "1"), chunks: make([]seriesChunkRef, 1)},
-					{lset: labels.FromStrings("a", "1", "b", "2"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("a", "1", "b", "1")},
+					{lset: labels.FromStrings("a", "1", "b", "2")},
 				}},
 			},
 		},
@@ -880,10 +880,10 @@ func TestBlockSeriesChunkRefsSetsIterator_ErrorPropagation(t *testing.T) {
 			seriesLimit: 100,
 			expectedSeries: []seriesChunkRefsSet{
 				{series: []seriesChunkRefs{
-					{lset: labels.FromStrings("a", "1", "b", "1"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("a", "1", "b", "1")},
 				}},
 				{series: []seriesChunkRefs{
-					{lset: labels.FromStrings("a", "1", "b", "2"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("a", "1", "b", "2")},
 				}},
 			},
 		},
@@ -943,11 +943,9 @@ func TestBlockSeriesChunkRefsSetsIterator_ErrorPropagation(t *testing.T) {
 					expectedLset := expectedSeries.lset
 					assert.Truef(t, labels.Equal(actualLset, expectedLset), "%d, %d: expected labels %s got labels %s", i, j, expectedLset, actualLset)
 
-					assert.Len(t, actualSeries.chunks, len(expectedSeries.chunks))
-					for _, actualChunk := range actualSeries.chunks {
-						// We can't test anything else from the chunk ref because it is generated on the go in each test case
-						assert.Equal(t, firstBlock.meta.ULID, actualChunk.blockID)
-					}
+					// We can't test anything else from the chunk ref because it is generated on the go in each test case
+					assert.Len(t, actualSeries.chunks, 1)
+					assert.Equal(t, firstBlock.meta.ULID, actualSeries.chunks[0].blockID)
 				}
 			}
 			if testCase.expectedErr != "" {
