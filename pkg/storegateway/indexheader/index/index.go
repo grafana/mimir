@@ -46,17 +46,15 @@ type Symbols struct {
 const symbolFactor = 32
 
 // NewSymbols returns a Symbols object for symbol lookups.
-// f should contain a Decbuf-encoded symbol table at offset.
-func NewSymbols(df *stream_encoding.DecbufFactory, version, offset int) (*Symbols, error) {
-	d := df.NewDecbufAtChecked(offset, castagnoliTable)
+func NewSymbols(factory *stream_encoding.DecbufFactory, version, offset int) (*Symbols, error) {
+	d := factory.NewDecbufAtChecked(offset, castagnoliTable)
 	defer d.Close()
-
-	if d.Err() != nil {
+	if err := d.Err(); err != nil {
 		return nil, errors.Wrap(d.Err(), "decode symbol table")
 	}
 
 	s := &Symbols{
-		factory:     df,
+		factory:     factory,
 		version:     version,
 		tableLength: d.Len() + 4, // NewDecbufAtChecked has already read the size of the table (4 bytes) by the time we get here.
 		tableOffset: offset,
@@ -81,12 +79,11 @@ func NewSymbols(df *stream_encoding.DecbufFactory, version, offset int) (*Symbol
 	return s, nil
 }
 
-func (s Symbols) Lookup(o uint32) (string, error) {
+func (s *Symbols) Lookup(o uint32) (string, error) {
 	d := s.factory.NewDecbufAt(s.tableOffset)
 	defer d.Close()
-
-	if d.Err() != nil {
-		return "", d.Err()
+	if err := d.Err(); err != nil {
+		return "", err
 	}
 
 	if s.version == index.FormatV2 {
@@ -112,16 +109,15 @@ func (s Symbols) Lookup(o uint32) (string, error) {
 	return sym, nil
 }
 
-func (s Symbols) ReverseLookup(sym string) (uint32, error) {
+func (s *Symbols) ReverseLookup(sym string) (uint32, error) {
 	if len(s.offsets) == 0 {
 		return 0, errors.Errorf("unknown symbol %q - no symbols", sym)
 	}
 
 	d := s.factory.NewDecbufAt(s.tableOffset)
 	defer d.Close()
-
-	if d.Err() != nil {
-		return 0, d.Err()
+	if err := d.Err(); err != nil {
+		return 0, err
 	}
 
 	i := sort.Search(len(s.offsets), func(i int) bool {
@@ -157,7 +153,7 @@ func (s Symbols) ReverseLookup(sym string) (uint32, error) {
 	return uint32(s.tableLength - lastLen), nil
 }
 
-func (s Symbols) Size() int {
+func (s *Symbols) Size() int {
 	return len(s.offsets) * 8
 }
 

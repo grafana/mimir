@@ -29,7 +29,8 @@ import (
 type StreamBinaryReader struct {
 	f *os.File
 
-	toc *BinaryTOC
+	factory *stream_encoding.DecbufFactory
+	toc     *BinaryTOC
 
 	// Map of LabelName to a list of some LabelValues's position in the offset table.
 	// The first and last values for each name are always present, we keep only 1/postingOffsetsInMemSampling of the rest.
@@ -88,6 +89,7 @@ func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int) (bw
 
 	r := &StreamBinaryReader{
 		f:                           f,
+		factory:                     stream_encoding.NewDecbufFactory(path),
 		postings:                    map[string]*postingValueOffsets{},
 		postingOffsetsInMemSampling: postingOffsetsInMemSampling,
 	}
@@ -119,8 +121,7 @@ func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int) (bw
 		return nil, errors.Wrap(err, "read index header TOC")
 	}
 
-	df := stream_encoding.NewDecbufFactory(path)
-	r.symbols, err = stream_index.NewSymbols(df, r.indexVersion, int(r.toc.Symbols))
+	r.symbols, err = stream_index.NewSymbols(r.factory, r.indexVersion, int(r.toc.Symbols))
 	if err != nil {
 		return nil, errors.Wrap(err, "load symbols")
 	}
@@ -144,6 +145,8 @@ func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int) (bw
 		if k == "" {
 			continue
 		}
+
+		// TODO: ReverseLookup() opens the index-header for every look up. Add bulk method?
 		off, err := r.symbols.ReverseLookup(k)
 		if err != nil {
 			return nil, errors.Wrap(err, "reverse symbol lookup")
@@ -360,6 +363,12 @@ func (r *StreamBinaryReader) postingsOffset(name string, values ...string) ([]in
 		valueIndex++
 	}
 
+	d := r.factory.NewDecbufAt(int(r.toc.PostingsOffsetTable))
+	defer d.Close()
+	if err := d.Err(); err != nil {
+		return nil, err
+	}
+
 	var newSameRngs []index.Range // The start, end offsets in the postings table in the original index file.
 	for valueIndex < len(values) {
 		wantedValue := values[valueIndex]
@@ -374,11 +383,9 @@ func (r *StreamBinaryReader) postingsOffset(name string, values ...string) ([]in
 			i--
 		}
 
-		// Don't Crc32 the entire postings offset table, this is very slow
-		// so hope any issues were caught at startup.
-		// TODO: use known length rather than reading from disk every time
-		d := stream_encoding.NewDecbufFromFile(r.f, int(r.toc.PostingsOffsetTable), nil)
-		d.Skip(e.offsets[i].tableOff)
+		// Reusing the same decoding buffer on each iteration so make sure it's reset to
+		// the beginning of the posting offset table before we search
+		d.ResetAt(e.offsets[i].tableOff + 4) // 4 byte length of the offset table
 
 		// Iterate on the offset table.
 		newSameRngs = newSameRngs[:0]
@@ -524,8 +531,9 @@ func (r *StreamBinaryReader) LabelValues(name string, filter func(string) bool) 
 
 	// Don't Crc32 the entire postings offset table, this is very slow
 	// so hope any issues were caught at startup.
-	// TODO: use known length rather than reading from disk every time
-	d := stream_encoding.NewDecbufFromFile(r.f, int(r.toc.PostingsOffsetTable), nil)
+	d := r.factory.NewDecbufAt(int(r.toc.PostingsOffsetTable))
+	defer d.Close()
+
 	d.Skip(e.offsets[0].tableOff)
 	lastVal := e.offsets[len(e.offsets)-1].value
 
