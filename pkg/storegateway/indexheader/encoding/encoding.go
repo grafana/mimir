@@ -89,13 +89,8 @@ func NewDecbufFromFile(f *os.File, offset int, castagnoliTable *crc32.Table) Dec
 			return Decbuf{E: ErrInvalidChecksum}
 		}
 
-		if err := r.ResetAt(0); err != nil {
-			return Decbuf{E: err}
-		}
-
-		// TODO: Can we just add this to the ResetAt offset?
-		_, err = r.Read(4)
-		if err != nil {
+		// Return to the beginning of the content.
+		if err := r.ResetAt(4); err != nil {
 			return Decbuf{E: err}
 		}
 	}
