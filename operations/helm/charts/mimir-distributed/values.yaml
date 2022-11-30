@@ -2571,6 +2571,10 @@ metaMonitoring:
   prometheusRule:
     # -- If enabled, a PrometheusRule resource for Prometheus Operator is created
     enabled: false
+    # -- Create standard Mimir alerts in Prometheus Operator via a PrometheusRule CRD
+    mimirAlerts: true
+    # -- Create standard Mimir recording rules in Prometheus Operator via a PrometheusRule CRD
+    mimirRules: true
     # -- PrometheusRule annotations
     annotations: {}
     # -- Additional PrometheusRule labels. To find out what your Prometheus operator expects,
