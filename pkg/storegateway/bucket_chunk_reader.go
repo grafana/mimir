@@ -275,10 +275,18 @@ type releaser interface{ Release() }
 type chunkReaders struct {
 	chunkBytesReleaser *pool.BatchBytes
 	chunkBytesPool     pool.Bytes
-	readers            map[ulid.ULID]*bucketChunkReader
+	readers            map[ulid.ULID]chunkReader
 }
 
-func newChunkReaders(readersMap map[ulid.ULID]*bucketChunkReader, chunkBytes *pool.BatchBytes, chunkBytesPool pool.Bytes) *chunkReaders {
+type chunkReader interface {
+	io.Closer
+
+	addLoad(id chunks.ChunkRef, seriesEntry, chunk int) error
+	load(result []seriesEntry, _ []storepb.Aggr, stats *safeQueryStats) error
+	reset(chunkBytes *pool.BatchBytes)
+}
+
+func newChunkReaders(readersMap map[ulid.ULID]chunkReader, chunkBytes *pool.BatchBytes, chunkBytesPool pool.Bytes) *chunkReaders {
 	return &chunkReaders{
 		chunkBytesPool:     chunkBytesPool,
 		chunkBytesReleaser: chunkBytes,
