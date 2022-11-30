@@ -6,7 +6,6 @@
 package transport
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"flag"
@@ -135,17 +134,24 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	// Buffer the body for later use to track slow queries.
-	var buf bytes.Buffer
-	r.Body = http.MaxBytesReader(w, r.Body, f.cfg.MaxBodySize)
-	r.Body = io.NopCloser(io.TeeReader(r.Body, &buf))
+	var err error
+	r.Body, err = newReadCloseSeeker(http.MaxBytesReader(w, r.Body, f.cfg.MaxBodySize))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
 
+	var resp *http.Response
 	startTime := time.Now()
-	resp, err := f.roundTripper.RoundTrip(r)
+	err = withSeekerBody(r, func(r *http.Request) error {
+		resp, err = f.roundTripper.RoundTrip(r)
+		return err
+	})
 	queryResponseTime := time.Since(startTime)
 
 	if err != nil {
 		writeError(w, err)
-		queryString = f.parseRequestQueryString(r, buf)
+		queryString = f.parseRequestQueryString(r)
 		f.reportQueryStats(r, queryString, queryResponseTime, stats, err)
 		return
 	}
@@ -166,7 +172,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Check whether we should parse the query string.
 	shouldReportSlowQuery := f.cfg.LogQueriesLongerThan > 0 && queryResponseTime > f.cfg.LogQueriesLongerThan
 	if shouldReportSlowQuery || f.cfg.QueryStatsEnabled {
-		queryString = f.parseRequestQueryString(r, buf)
+		queryString = f.parseRequestQueryString(r)
 	}
 
 	if shouldReportSlowQuery {
@@ -240,13 +246,8 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 	level.Info(util_log.WithContext(r.Context(), f.log)).Log(logMessage...)
 }
 
-func (f *Handler) parseRequestQueryString(r *http.Request, bodyBuf bytes.Buffer) url.Values {
-	// Use previously buffered body.
-	r.Body = io.NopCloser(&bodyBuf)
-
-	// Ensure the form has been parsed so all the parameters are present
-	err := r.ParseForm()
-	if err != nil {
+func (f *Handler) parseRequestQueryString(r *http.Request) url.Values {
+	if err := ParseSeekerBodyForm(r); err != nil {
 		level.Warn(util_log.WithContext(r.Context(), f.log)).Log("msg", "unable to parse request form", "err", err)
 		return nil
 	}

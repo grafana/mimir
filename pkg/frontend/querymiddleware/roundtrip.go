@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 
 	"github.com/grafana/mimir/pkg/cache"
+	"github.com/grafana/mimir/pkg/frontend/transport"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -310,10 +311,21 @@ func isInstantQuery(path string) bool {
 
 func defaultInstantQueryParamsRoundTripper(next http.RoundTripper, now func() time.Time) http.RoundTripper {
 	return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
-		if isInstantQuery(r.URL.Path) && !r.URL.Query().Has("time") {
+		// Check r.Form first as that's just looking up in a map, versus r.URL.Query() which parses the RawQuery again.
+		// Most of the clients send the POST urlencoded form anyway.
+		if isInstantQuery(r.URL.Path) && !r.Form.Has("time") && !r.URL.Query().Has("time") {
 			q := r.URL.Query()
 			q.Add("time", strconv.FormatInt(time.Now().Unix(), 10))
 			r.URL.RawQuery = q.Encode()
+
+			// If form was already parsed, we need to try to parse it again,
+			// otherwise upstream won't know about the new "time" value.
+			if r.Form != nil || r.PostForm != nil {
+				r.Form, r.PostForm = nil, nil
+				if err := transport.ParseSeekerBodyForm(r); err != nil {
+					return nil, err
+				}
+			}
 		}
 		return next.RoundTrip(r)
 	})

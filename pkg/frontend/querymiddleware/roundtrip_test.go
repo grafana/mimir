@@ -29,6 +29,7 @@ import (
 	"github.com/weaveworks/common/middleware"
 	"github.com/weaveworks/common/user"
 
+	"github.com/grafana/mimir/pkg/frontend/transport"
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
@@ -128,7 +129,6 @@ func TestInstantTripperware(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	ts := time.Date(2021, 1, 2, 3, 4, 5, 0, time.UTC)
 	rt := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
 		// We will provide a sample exactly for the requested time,
 		// this way we'll also be able to tell which time was requested.
@@ -153,11 +153,14 @@ func TestInstantTripperware(t *testing.T) {
 		})
 	})
 
-	queryClient, err := api.NewClient(api.Config{Address: "http://localhost", RoundTripper: tw(rt)})
-	require.NoError(t, err)
-	api := v1.NewAPI(queryClient)
+	tripper := tw(rt)
 
-	t.Run("happy case roundtrip", func(t *testing.T) {
+	t.Run("specific time happy case", func(t *testing.T) {
+		queryClient, err := api.NewClient(api.Config{Address: "http://localhost", RoundTripper: tripper})
+		require.NoError(t, err)
+		api := v1.NewAPI(queryClient)
+
+		ts := time.Date(2021, 1, 2, 3, 4, 5, 0, time.UTC)
 		res, _, err := api.Query(ctx, `sum(increase(we_dont_care_about_this[1h])) by (foo)`, ts)
 		require.NoError(t, err)
 		require.Equal(t, model.Vector{
@@ -165,8 +168,32 @@ func TestInstantTripperware(t *testing.T) {
 		}, res)
 	})
 
-	t.Run("default time param", func(t *testing.T) {
-		res, _, err := api.Query(ctx, `sum(increase(we_dont_care_about_this[1h])) by (foo)`, time.Now())
+	t.Run("default time param happy case", func(t *testing.T) {
+		queryClient, err := api.NewClient(api.Config{Address: "http://localhost", RoundTripper: tripper})
+		require.NoError(t, err)
+		api := v1.NewAPI(queryClient)
+
+		res, _, err := api.Query(ctx, `sum(increase(we_dont_care_about_this[1h])) by (foo)`, time.Time{})
+		require.NoError(t, err)
+		require.IsType(t, model.Vector{}, res)
+		require.NotEmpty(t, res.(model.Vector))
+
+		resultTime := res.(model.Vector)[0].Timestamp.Time()
+		require.InDelta(t, time.Now().Unix(), resultTime.Unix(), 1)
+	})
+
+	t.Run("default time param with form being already parsed", func(t *testing.T) {
+		formParserRoundTripper := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+			if err := transport.ParseSeekerBodyForm(r); err != nil {
+				return nil, err
+			}
+			return tripper.RoundTrip(r)
+		})
+		queryClient, err := api.NewClient(api.Config{Address: "http://localhost", RoundTripper: formParserRoundTripper})
+		require.NoError(t, err)
+		api := v1.NewAPI(queryClient)
+
+		res, _, err := api.Query(ctx, `sum(increase(we_dont_care_about_this[1h])) by (foo)`, time.Time{})
 		require.NoError(t, err)
 		require.IsType(t, model.Vector{}, res)
 		require.NotEmpty(t, res.(model.Vector))
