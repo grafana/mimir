@@ -1153,7 +1153,7 @@ func TestLoadingBatchSet(t *testing.T) {
 			}
 			assert.Equal(t, expectedReservedBytes, int(bytesPool.balance.Load()))
 
-			// Check that chunks butes are what we expect
+			// Check that chunks bytes are what we expect
 			require.Len(t, loadedSets, len(testCase.expectedSets))
 			for i, loadedSet := range loadedSets {
 				require.Len(t, loadedSet.series, len(testCase.expectedSets[i].series))
