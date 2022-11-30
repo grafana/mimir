@@ -1172,7 +1172,7 @@ func TestLoadingBatchSet(t *testing.T) {
 	}
 }
 
-type fakeChunkReader struct {
+type chunkReaderMock struct {
 	chunks              map[chunks.ChunkRef]storepb.AggrChunk
 	addLoadErr, loadErr error
 
@@ -1180,14 +1180,14 @@ type fakeChunkReader struct {
 	toLoad     map[chunks.ChunkRef]loadIdx
 }
 
-func newFakeChunkReaderWithSeries(series []seriesEntry, addLoadErr, loadErr error, chunkBytes *pool.BatchBytes) *fakeChunkReader {
+func newFakeChunkReaderWithSeries(series []seriesEntry, addLoadErr, loadErr error, chunkBytes *pool.BatchBytes) *chunkReaderMock {
 	chks := map[chunks.ChunkRef]storepb.AggrChunk{}
 	for _, s := range series {
 		for i := range s.chks {
 			chks[s.refs[i]] = s.chks[i]
 		}
 	}
-	return &fakeChunkReader{
+	return &chunkReaderMock{
 		chunks:     chks,
 		addLoadErr: addLoadErr,
 		loadErr:    loadErr,
@@ -1196,11 +1196,11 @@ func newFakeChunkReaderWithSeries(series []seriesEntry, addLoadErr, loadErr erro
 	}
 }
 
-func (f *fakeChunkReader) Close() error {
+func (f *chunkReaderMock) Close() error {
 	return nil
 }
 
-func (f *fakeChunkReader) addLoad(id chunks.ChunkRef, seriesEntry, chunk int) error {
+func (f *chunkReaderMock) addLoad(id chunks.ChunkRef, seriesEntry, chunk int) error {
 	if f.addLoadErr != nil {
 		return f.addLoadErr
 	}
@@ -1208,7 +1208,7 @@ func (f *fakeChunkReader) addLoad(id chunks.ChunkRef, seriesEntry, chunk int) er
 	return nil
 }
 
-func (f *fakeChunkReader) load(result []seriesEntry, _ []storepb.Aggr, _ *safeQueryStats) error {
+func (f *chunkReaderMock) load(result []seriesEntry, _ []storepb.Aggr, _ *safeQueryStats) error {
 	if f.loadErr != nil {
 		return f.loadErr
 	}
@@ -1225,7 +1225,7 @@ func (f *fakeChunkReader) load(result []seriesEntry, _ []storepb.Aggr, _ *safeQu
 	return nil
 }
 
-func (f *fakeChunkReader) reset(chunkBytes *pool.BatchBytes) {
+func (f *chunkReaderMock) reset(chunkBytes *pool.BatchBytes) {
 	f.chunkBytes = chunkBytes
 	f.toLoad = make(map[chunks.ChunkRef]loadIdx)
 }
