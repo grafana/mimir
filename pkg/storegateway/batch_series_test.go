@@ -1011,12 +1011,12 @@ func TestLoadingBatchSet(t *testing.T) {
 
 	block1 := testBlock{
 		ulid:   ulid.MustNew(1, nil),
-		series: generateSeriesChunks(t, 10),
+		series: generateSeriesEntriesWithChunks(t, 10),
 	}
 
 	block2 := testBlock{
 		ulid:   ulid.MustNew(2, nil),
-		series: generateSeriesChunks(t, 10),
+		series: generateSeriesEntriesWithChunks(t, 10),
 	}
 
 	toSeriesChunkRefs := func(block testBlock, seriesIndex int) seriesChunkRefs {
@@ -1277,8 +1277,8 @@ func readAllSeriesLabels(it storepb.SeriesSet) []labels.Labels {
 	return out
 }
 
-// generateSeriesChunks generates seriesEntries with chunks. Each chunk is a random byte slice.
-func generateSeriesChunks(t *testing.T, numSeries int) []seriesEntry {
+// generateSeriesEntriesWithChunks generates seriesEntries with chunks. Each chunk is a random byte slice.
+func generateSeriesEntriesWithChunks(t *testing.T, numSeries int) []seriesEntry {
 	const numChunksPerSeries = 2
 
 	out := make([]seriesEntry, 0, numSeries)
