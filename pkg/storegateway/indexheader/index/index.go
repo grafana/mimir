@@ -1,15 +1,7 @@
-// Copyright 2017 The Prometheus Authors
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/prometheus/prometheus/blob/main/tsdb/index/index.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Prometheus Authors.
 
 package index
 
@@ -41,11 +33,8 @@ type ByteSlice interface {
 }
 
 type Symbols struct {
-	// TODO: we shouldn't be sharing a single file descriptor here, as we will use it from multiple goroutines simultaneously -
-	//  pass in file path and create readers when required? Or pass in a Reader factory: `func() Reader` that we call to create
-	//  a new reader whenever needed. This could open the file fresh for the FileReader case. This also opens up the possibility
-	//  of pooling the `bufio.Reader`s to avoid allocating when they're created.
-	f           *os.File
+	factory *stream_encoding.DecbufFactory
+
 	version     int
 	tableLength int
 	tableOffset int
@@ -58,16 +47,18 @@ const symbolFactor = 32
 
 // NewSymbols returns a Symbols object for symbol lookups.
 // f should contain a Decbuf-encoded symbol table at offset.
-func NewSymbols(f *os.File, version, offset int) (*Symbols, error) {
-	d := stream_encoding.NewDecbufFromFile(f, offset, castagnoliTable)
+func NewSymbols(df *stream_encoding.DecbufFactory, version, offset int) (*Symbols, error) {
+	d := df.NewDecbufAtChecked(offset, castagnoliTable)
+	defer d.Close()
+
 	if d.Err() != nil {
 		return nil, errors.Wrap(d.Err(), "decode symbol table")
 	}
 
 	s := &Symbols{
-		f:           f,
+		factory:     df,
 		version:     version,
-		tableLength: d.Len() + 4, // NewDecbufFromFile has already read the size of the table (4 bytes) by the time we get here.
+		tableLength: d.Len() + 4, // NewDecbufAtChecked has already read the size of the table (4 bytes) by the time we get here.
 		tableOffset: offset,
 	}
 
@@ -90,15 +81,10 @@ func NewSymbols(f *os.File, version, offset int) (*Symbols, error) {
 	return s, nil
 }
 
-// newDecbufWithoutIntegrityCheck returns a Decbuf for reading the contents of this symbol table.
-// It does not check the integrity of the symbol table, as it is assumed that this is
-// done in NewSymbols.
-func (s Symbols) newDecbufWithoutIntegrityCheck() stream_encoding.Decbuf {
-	return stream_encoding.NewDecbufFromFile(s.f, s.tableOffset, nil)
-}
-
 func (s Symbols) Lookup(o uint32) (string, error) {
-	d := s.newDecbufWithoutIntegrityCheck()
+	d := s.factory.NewDecbufAt(s.tableOffset)
+	defer d.Close()
+
 	if d.Err() != nil {
 		return "", d.Err()
 	}
@@ -131,7 +117,9 @@ func (s Symbols) ReverseLookup(sym string) (uint32, error) {
 		return 0, errors.Errorf("unknown symbol %q - no symbols", sym)
 	}
 
-	d := s.newDecbufWithoutIntegrityCheck()
+	d := s.factory.NewDecbufAt(s.tableOffset)
+	defer d.Close()
+
 	if d.Err() != nil {
 		return 0, d.Err()
 	}

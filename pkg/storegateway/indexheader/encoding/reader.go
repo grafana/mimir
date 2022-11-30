@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package encoding
 
 import (
@@ -117,6 +119,7 @@ func NewFileReader(file *os.File, base, length int) (*FileReader, error) {
 		length: length,
 	}
 
+	// TODO: Audit everywhere we create a new reader and see if this is really required
 	err := f.Reset()
 	if err != nil {
 		return nil, err
