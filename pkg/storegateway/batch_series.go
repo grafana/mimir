@@ -21,14 +21,14 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 )
 
-type bucketBatchSet struct {
+type blockSeriesChunkRefsSetsIterator struct {
 	ctx      context.Context
 	postings []storage.SeriesRef
 
-	batchSize               int
-	currBatchPostingsOffset int
-	currentBatch            seriesChunkRefsSet
-	err                     error
+	batchSize                  int
+	currentBatchPostingsOffset int
+	currentSet                 seriesChunkRefsSet
+	err                        error
 
 	blockID          ulid.ULID
 	indexr           *bucketIndexReader      // Index reader for block.
@@ -44,9 +44,9 @@ type bucketBatchSet struct {
 	logger           log.Logger
 }
 
-func unloadedBucketBatches(
+func openBlockSeriesChunkRefsSetsIterator(
 	ctx context.Context,
-	batchSize int,
+	setSize int,
 	indexr *bucketIndexReader, // Index reader for block.
 	blockID ulid.ULID,
 	matchers []*labels.Matcher, // Series matchers.
@@ -60,8 +60,8 @@ func unloadedBucketBatches(
 	stats *safeQueryStats,
 	logger log.Logger,
 ) (seriesChunkRefsSetIterator, error) {
-	if batchSize <= 0 {
-		return nil, errors.New("batch size must be a positive number")
+	if setSize <= 0 {
+		return nil, errors.New("set size must be a positive number")
 	}
 
 	ps, err := indexr.ExpandedPostings(ctx, matchers, stats)
@@ -78,46 +78,46 @@ func unloadedBucketBatches(
 		stats.merge(&unsafeStats)
 	}
 
-	return &bucketBatchSet{
-		blockID:                 blockID,
-		batchSize:               batchSize,
-		currBatchPostingsOffset: -batchSize,
-		ctx:                     ctx,
-		postings:                ps,
-		indexr:                  indexr,
-		matchers:                matchers,
-		shard:                   shard,
-		seriesHasher:            cachedSeriesHasher{cache: seriesHashCache, stats: stats},
-		chunksLimiter:           chunksLimiter,
-		seriesLimiter:           seriesLimiter,
-		skipChunks:              skipChunks,
-		minTime:                 minTime,
-		maxTime:                 maxTime,
-		loadAggregates:          loadAggregates,
-		stats:                   stats,
-		logger:                  logger,
+	return &blockSeriesChunkRefsSetsIterator{
+		blockID:                    blockID,
+		batchSize:                  setSize,
+		currentBatchPostingsOffset: -setSize,
+		ctx:                        ctx,
+		postings:                   ps,
+		indexr:                     indexr,
+		matchers:                   matchers,
+		shard:                      shard,
+		seriesHasher:               cachedSeriesHasher{cache: seriesHashCache, stats: stats},
+		chunksLimiter:              chunksLimiter,
+		seriesLimiter:              seriesLimiter,
+		skipChunks:                 skipChunks,
+		minTime:                    minTime,
+		maxTime:                    maxTime,
+		loadAggregates:             loadAggregates,
+		stats:                      stats,
+		logger:                     logger,
 	}, nil
 }
 
-func (s *bucketBatchSet) Next() bool {
-	if s.currBatchPostingsOffset >= len(s.postings)-1 || s.err != nil {
+func (s *blockSeriesChunkRefsSetsIterator) Next() bool {
+	if s.currentBatchPostingsOffset >= len(s.postings)-1 || s.err != nil {
 		return false
 	}
 	return s.loadBatch()
 }
 
-func (s *bucketBatchSet) loadBatch() bool {
-	s.currBatchPostingsOffset += s.batchSize
-	if s.currBatchPostingsOffset > len(s.postings) {
+func (s *blockSeriesChunkRefsSetsIterator) loadBatch() bool {
+	s.currentBatchPostingsOffset += s.batchSize
+	if s.currentBatchPostingsOffset > len(s.postings) {
 		return false
 	}
 
-	end := s.currBatchPostingsOffset + s.batchSize
+	end := s.currentBatchPostingsOffset + s.batchSize
 	if end > len(s.postings) {
 		end = len(s.postings)
 	}
-	s.currentBatch = newSeriesChunkRefsSet(s.batchSize)
-	nextPostings := s.postings[s.currBatchPostingsOffset:end]
+	s.currentSet = newSeriesChunkRefsSet(s.batchSize)
+	nextPostings := s.postings[s.currentBatchPostingsOffset:end]
 
 	loadedSeries, err := s.indexr.preloadSeries(s.ctx, nextPostings, s.stats)
 	if err != nil {
@@ -173,11 +173,11 @@ func (s *bucketBatchSet) loadBatch() bool {
 			entry.chunks = metasToChunks(s.blockID, chks)
 		}
 
-		s.currentBatch.series = append(s.currentBatch.series, entry)
+		s.currentSet.series = append(s.currentSet.series, entry)
 	}
 
-	if s.currentBatch.len() == 0 {
-		return s.loadBatch() // we didn't find any suitable series in this batch, try with the next one
+	if s.currentSet.len() == 0 {
+		return s.loadBatch() // we didn't find any suitable series in this set, try with the next one
 	}
 
 	return true
@@ -196,11 +196,11 @@ func metasToChunks(blockID ulid.ULID, metas []chunks.Meta) []seriesChunkRef {
 	return chks
 }
 
-func (s *bucketBatchSet) At() seriesChunkRefsSet {
-	return s.currentBatch
+func (s *blockSeriesChunkRefsSetsIterator) At() seriesChunkRefsSet {
+	return s.currentSet
 }
 
-func (s *bucketBatchSet) Err() error {
+func (s *blockSeriesChunkRefsSetsIterator) Err() error {
 	return s.err
 }
 
@@ -265,7 +265,7 @@ func (s *BucketStore) batchSetsForBlocks(ctx context.Context, req *storepb.Serie
 				err  error
 			)
 
-			part, err = unloadedBucketBatches(
+			part, err = openBlockSeriesChunkRefsSetsIterator(
 				ctx, s.maxSeriesPerBatch, indexr, b.meta.ULID, matchers, shardSelector, blockSeriesHashCache, chunksLimiter, seriesLimiter, req.SkipChunks, req.MinTime, req.MaxTime, req.Aggregates, stats, s.logger)
 			if err != nil {
 				return errors.Wrapf(err, "fetch series for block %s", b.meta.ULID)

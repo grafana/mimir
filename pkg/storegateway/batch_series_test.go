@@ -441,9 +441,7 @@ func TestPreloadingBatchSet_Concurrency(t *testing.T) {
 
 }
 
-func TestBucketBatchSet(t *testing.T) {
-	t.Skip("currently panics, we need to fix it and complete this test")
-
+func TestBlockSeriesChunkRefsSetsIterator_ErrorPropagation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
@@ -453,16 +451,20 @@ func TestBucketBatchSet(t *testing.T) {
 		firstBlock = b
 		break
 	}
+	suite.cache.SwapWith(noopCache{})
 
 	indexReader := firstBlock.indexReader()
 	defer indexReader.Close()
 
-	batchSet, err := unloadedBucketBatches(
+	matcher, err := labels.NewMatcher(labels.MatchRegexp, "a", ".+")
+	require.NoError(t, err)
+
+	iterator, err := openBlockSeriesChunkRefsSetsIterator(
 		ctx,
 		100,
 		indexReader,
 		firstBlock.meta.ULID,
-		[]*labels.Matcher{{Type: labels.MatchRegexp, Name: "a", Value: ".+"}},
+		[]*labels.Matcher{matcher},
 		nil,
 		suite.store.seriesHashCache.GetBlockCache(firstBlock.meta.ULID.String()),
 		&limiter{limit: 1},
@@ -476,8 +478,8 @@ func TestBucketBatchSet(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	_ = readAllBatches(batchSet)
-	assert.ErrorContains(t, batchSet.Err(), "test limit exceeded")
+	_ = readAllBatches(iterator)
+	assert.ErrorContains(t, iterator.Err(), "test limit exceeded")
 }
 
 // nolint this is used in a skipped test
