@@ -50,9 +50,11 @@ func TestSeriesChunkRefsIterator(t *testing.T) {
 		})
 
 		require.True(t, it.Done())
+		require.Zero(t, it.At())
 
 		require.False(t, it.Next())
 		require.True(t, it.Done())
+		require.Zero(t, it.At())
 	})
 
 	t.Run("should iterate a set with some items", func(t *testing.T) {
@@ -64,7 +66,8 @@ func TestSeriesChunkRefsIterator(t *testing.T) {
 			},
 		})
 
-		require.True(t, it.Done())
+		require.False(t, it.Done())
+		require.Zero(t, it.At())
 
 		require.True(t, it.Next())
 		require.Equal(t, seriesChunkRefs{lset: series1, chunks: []seriesChunkRef{c[0], c[1]}}, it.At())
@@ -80,6 +83,7 @@ func TestSeriesChunkRefsIterator(t *testing.T) {
 
 		require.False(t, it.Next())
 		require.True(t, it.Done())
+		require.Zero(t, it.At())
 	})
 
 	t.Run("should re-initialize the internal state on reset()", func(t *testing.T) {
@@ -91,7 +95,8 @@ func TestSeriesChunkRefsIterator(t *testing.T) {
 			},
 		})
 
-		require.True(t, it.Done())
+		require.False(t, it.Done())
+		require.Zero(t, it.At())
 
 		require.True(t, it.Next())
 		require.Equal(t, seriesChunkRefs{lset: series1, chunks: []seriesChunkRef{c[0], c[1]}}, it.At())
@@ -111,7 +116,7 @@ func TestSeriesChunkRefsIterator(t *testing.T) {
 
 		require.False(t, it.Done())
 
-		// No need to call Next() because it's implicitly called by reset().
+		require.True(t, it.Next())
 		require.Equal(t, seriesChunkRefs{lset: series1, chunks: []seriesChunkRef{c[3]}}, it.At())
 		require.False(t, it.Done())
 
@@ -121,6 +126,7 @@ func TestSeriesChunkRefsIterator(t *testing.T) {
 
 		require.False(t, it.Next())
 		require.True(t, it.Done())
+		require.Zero(t, it.At())
 	})
 }
 
@@ -132,10 +138,10 @@ type sliceSeriesChunkRefsSetIterator struct {
 	err     error
 }
 
-func newSliceSeriesChunkRefsSetIterator(err error, batches ...seriesChunkRefsSet) seriesChunkRefsSetIterator {
+func newSliceSeriesChunkRefsSetIterator(err error, sets ...seriesChunkRefsSet) seriesChunkRefsSetIterator {
 	return &sliceSeriesChunkRefsSetIterator{
 		current: -1,
-		sets:    batches,
+		sets:    sets,
 		err:     err,
 	}
 }

@@ -3,33 +3,33 @@
 package storegateway
 
 // sliceSeriesChunksSetIterator implements seriesChunksSetIterator and
-// returns the provided err when the batches are exhausted
+// returns the provided err when the sets are exhausted
 type sliceSeriesChunksSetIterator struct {
 	current int
-	batches []seriesChunksSet
+	sets    []seriesChunksSet
 
 	err error
 }
 
-func newSliceSeriesChunksSetIterator(err error, batches ...seriesChunksSet) seriesChunksSetIterator {
+func newSliceSeriesChunksSetIterator(err error, sets ...seriesChunksSet) seriesChunksSetIterator {
 	return &sliceSeriesChunksSetIterator{
 		current: -1,
-		batches: batches,
+		sets:    sets,
 		err:     err,
 	}
 }
 
 func (s *sliceSeriesChunksSetIterator) Next() bool {
 	s.current++
-	return s.current < len(s.batches)
+	return s.current < len(s.sets)
 }
 
 func (s *sliceSeriesChunksSetIterator) At() seriesChunksSet {
-	return s.batches[s.current]
+	return s.sets[s.current]
 }
 
 func (s *sliceSeriesChunksSetIterator) Err() error {
-	if s.current >= len(s.batches) {
+	if s.current >= len(s.sets) {
 		return s.err
 	}
 	return nil

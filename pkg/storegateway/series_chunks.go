@@ -2,7 +2,7 @@
 
 package storegateway
 
-// seriesChunksSetIterator is the interface implemented by an iterator over a sequence of seriesChunksSet.
+// seriesChunksSetIterator is the interface implemented by an iterator returning a sequence of seriesChunksSet.
 type seriesChunksSetIterator interface {
 	Next() bool
 	At() seriesChunksSet
