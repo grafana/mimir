@@ -827,7 +827,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 			seriesLimit: 1,
 			expectedErr: "test limit exceeded",
 		},
-		"selects all series": {
+		"selects all series in a single batch": {
 			matcher:     labels.MustNewMatcher(labels.MatchRegexp, "a", ".+"),
 			batchSize:   100,
 			chunksLimit: 100,
