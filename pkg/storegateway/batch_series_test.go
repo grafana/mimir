@@ -896,7 +896,12 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 
 			suite := prepareStoreWithTestBlocks(t, t.TempDir(), objstore.NewInMemBucket(), false, NewChunksLimiterFactory(0), NewSeriesLimiterFactory(0))
 			var firstBlock *bucketBlock
-			// Find the block with the smallest timestamp in its ULID
+			// Find the block with the smallest timestamp in its ULID.
+			// The test setup creates two blocks - each takes 4 different timeseries; each has
+			// a timestamp of time.Now() when its being created.
+			// We want the first created block because we want to assert on the series inside it.
+			// The block created first contains a known set of 4 series.
+			// TODO dimitarvdimitrov clean this up
 			for _, b := range suite.store.blocks {
 				if firstBlock == nil {
 					firstBlock = b
