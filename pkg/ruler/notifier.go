@@ -26,11 +26,13 @@ import (
 )
 
 type NotifierConfig struct {
-	TLS       tls.ClientConfig `yaml:",inline"`
-	BasicAuth util.BasicAuth   `yaml:",inline"`
+	TLSEnabled bool             `yaml:"tls_enabled" category:"advanced"`
+	TLS        tls.ClientConfig `yaml:",inline"`
+	BasicAuth  util.BasicAuth   `yaml:",inline"`
 }
 
 func (cfg *NotifierConfig) RegisterFlags(f *flag.FlagSet) {
+	f.BoolVar(&cfg.TLSEnabled, "ruler.tls-enabled", true, "Enable TLS for gRPC client connecting to alertmanager.")
 	cfg.TLS.RegisterFlagsWithPrefix("ruler.alertmanager-client", f)
 	cfg.BasicAuth.RegisterFlagsWithPrefix("ruler.alertmanager-client.", f)
 }
@@ -132,15 +134,7 @@ func amConfigWithSD(rulerConfig *Config, url *url.URL, sdConfig discovery.Config
 		PathPrefix:              url.Path,
 		Timeout:                 model.Duration(rulerConfig.NotificationTimeout),
 		ServiceDiscoveryConfigs: discovery.Configs{sdConfig},
-		HTTPClientConfig: config_util.HTTPClientConfig{
-			TLSConfig: config_util.TLSConfig{
-				CAFile:             rulerConfig.Notifier.TLS.CAPath,
-				CertFile:           rulerConfig.Notifier.TLS.CertPath,
-				KeyFile:            rulerConfig.Notifier.TLS.KeyPath,
-				InsecureSkipVerify: rulerConfig.Notifier.TLS.InsecureSkipVerify,
-				ServerName:         rulerConfig.Notifier.TLS.ServerName,
-			},
-		},
+		HTTPClientConfig:        config_util.HTTPClientConfig{},
 	}
 
 	// Check the URL for basic authentication information first
@@ -159,6 +153,17 @@ func amConfigWithSD(rulerConfig *Config, url *url.URL, sdConfig discovery.Config
 		amConfig.HTTPClientConfig.BasicAuth = &config_util.BasicAuth{
 			Username: rulerConfig.Notifier.BasicAuth.Username,
 			Password: config_util.Secret(rulerConfig.Notifier.BasicAuth.Password.String()),
+		}
+	}
+
+	// Whether to use TLS or not.
+	if rulerConfig.Notifier.TLSEnabled {
+		amConfig.HTTPClientConfig.TLSConfig = config_util.TLSConfig{
+			CAFile:             rulerConfig.Notifier.TLS.CAPath,
+			CertFile:           rulerConfig.Notifier.TLS.CertPath,
+			KeyFile:            rulerConfig.Notifier.TLS.KeyPath,
+			InsecureSkipVerify: rulerConfig.Notifier.TLS.InsecureSkipVerify,
+			ServerName:         rulerConfig.Notifier.TLS.ServerName,
 		}
 	}
 
