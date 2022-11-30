@@ -86,6 +86,12 @@ func (b *BufReader) Len() int {
 	return len(b.b)
 }
 
+// ByteSlice abstracts a byte slice.
+type ByteSlice interface {
+	Len() int
+	Range(start, end int) []byte
+}
+
 type FileReader struct {
 	file   *os.File
 	buf    *bufio.Reader

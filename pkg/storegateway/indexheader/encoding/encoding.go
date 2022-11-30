@@ -153,56 +153,26 @@ func (d *Decbuf) UvarintStr() string {
 // The return value becomes invalid if the byte slice goes away.
 // Compared to UvarintStr, this avoid allocations.
 func (d *Decbuf) UvarintBytes() []byte {
-	//fmt.Printf("UvarintBytes\n")
 	l := d.Uvarint64()
 	if d.E != nil {
 		return []byte{}
 	}
-	//fmt.Printf("UvarintBytes l=%d\n", l)
+
 	b, err := d.r.Read(int(l))
 	if err != nil {
 		d.E = err
 		return []byte{}
 	}
 
-	//fmt.Printf("UvarintBytes read=%d\n", len(b))
 	if len(b) < int(l) {
 		d.E = ErrInvalidSize
 		return []byte{}
 	}
-	//fmt.Printf("UvarintBytes ok\n")
+
 	return b
-	//	if len(d.B) < int(l) {
-	//		d.E = ErrInvalidSize
-	//		return []byte{}
-	//	}
-	//	s := d.B[:l]
-	//	d.B = d.B[l:]
-	//	return s
 }
 
-/*
-func (d *Decbuf) Varint64() int64 {
-	if d.E != nil {
-		return 0
-	}
-	// Decode as unsigned first, since that's what the varint library implements.
-	ux, n := varint.Uvarint(d.B)
-	if n < 1 {
-		d.E = ErrInvalidSize
-		return 0
-	}
-	// Now decode "ZigZag encoding" https://developers.google.com/protocol-buffers/docs/encoding#signed_integers.
-	x := int64(ux >> 1)
-	if ux&1 != 0 {
-		x = ^x
-	}
-	d.B = d.B[n:]
-	return x
-}
-*/
 func (d *Decbuf) Uvarint64() uint64 {
-	//fmt.Printf("Uvarint64\n")
 	if d.E != nil {
 		return 0
 	}
@@ -211,20 +181,19 @@ func (d *Decbuf) Uvarint64() uint64 {
 		d.E = err
 		return 0
 	}
-	//fmt.Printf("Uvarint64 peeked=%d\n", len(b))
+
 	x, n := varint.Uvarint(b)
-	//	x, n := varint.Uvarint(d.B)
 	if n < 1 {
 		d.E = ErrInvalidSize
 		return 0
 	}
-	//fmt.Printf("Uvarint64 consume=%d\n", n)
+
 	_, err = d.r.Read(n)
 	if err != nil {
 		d.E = err
 		return 0
 	}
-	//d.B = d.B[n:]
+
 	return x
 }
 
@@ -247,12 +216,6 @@ func (d *Decbuf) Be64() uint64 {
 	return binary.BigEndian.Uint64(b)
 }
 
-/*
-func (d *Decbuf) Be64Float64() float64 {
-	return math.Float64frombits(d.Be64())
-}
-*/
-
 func (d *Decbuf) Be32() uint32 {
 	if d.E != nil {
 		return 0
@@ -272,39 +235,5 @@ func (d *Decbuf) Be32() uint32 {
 	return binary.BigEndian.Uint32(b)
 }
 
-/*
-func (d *Decbuf) Byte() byte {
-	if d.E != nil {
-		return 0
-	}
-	if len(d.B) < 1 {
-		d.E = ErrInvalidSize
-		return 0
-	}
-	x := d.B[0]
-	d.B = d.B[1:]
-	return x
-}
-
-func (d *Decbuf) ConsumePadding() {
-	if d.E != nil {
-		return
-	}
-	for len(d.B) > 1 && d.B[0] == '\x00' {
-		d.B = d.B[1:]
-	}
-	if len(d.B) < 1 {
-		d.E = ErrInvalidSize
-	}
-}
-*/
 func (d *Decbuf) Err() error { return d.E }
 func (d *Decbuf) Len() int   { return d.r.Len() }
-
-//func (d *Decbuf) Get() []byte { return d.B }
-
-// ByteSlice abstracts a byte slice.
-type ByteSlice interface {
-	Len() int
-	Range(start, end int) []byte
-}
