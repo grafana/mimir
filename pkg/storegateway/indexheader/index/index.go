@@ -14,7 +14,6 @@
 package index
 
 import (
-	"encoding/binary"
 	"hash/crc32"
 	"os"
 	"sort"
@@ -60,30 +59,16 @@ const symbolFactor = 32
 // NewSymbols returns a Symbols object for symbol lookups.
 // f should contain a Decbuf-encoded symbol table at offset.
 func NewSymbols(f *os.File, version, offset int) (*Symbols, error) {
-	lengthBytes := make([]byte, 4)
-	n, err := f.ReadAt(lengthBytes, int64(offset))
-	if err != nil {
-		return nil, err
-	}
-	if n != 4 {
-		return nil, errors.Wrapf(stream_encoding.ErrInvalidSize, "insufficient bytes read for symbol table size (got %d, wanted %d)", n, 4)
+	d := stream_encoding.NewDecbufFromFile(f, offset, castagnoliTable)
+	if d.Err() != nil {
+		return nil, errors.Wrap(d.Err(), "decode symbol table")
 	}
 
 	s := &Symbols{
 		f:           f,
 		version:     version,
-		tableLength: len(lengthBytes) + int(binary.BigEndian.Uint32(lengthBytes)) + 4,
+		tableLength: d.Len() + 4, // NewDecbufFromFile has already read the size of the table (4 bytes) by the time we get here.
 		tableOffset: offset,
-	}
-
-	r, err := stream_encoding.NewFileReader(f, offset, s.tableLength)
-	if err != nil {
-		return nil, errors.Wrap(err, "create symbol table file reader")
-	}
-
-	d := stream_encoding.NewDecbuf(r, 0, castagnoliTable)
-	if d.Err() != nil {
-		return nil, errors.Wrap(err, "decode symbol table")
 	}
 
 	origLen := d.Len()
@@ -105,29 +90,24 @@ func NewSymbols(f *os.File, version, offset int) (*Symbols, error) {
 	return s, nil
 }
 
-// newRawDecbuf returns a Decbuf for reading the contents of this symbol table.
+// newDecbufWithoutIntegrityCheck returns a Decbuf for reading the contents of this symbol table.
 // It does not check the integrity of the symbol table, as it is assumed that this is
 // done in NewSymbols.
-func (s Symbols) newRawDecbuf() (stream_encoding.Decbuf, error) {
-	r, err := stream_encoding.NewFileReader(s.f, s.tableOffset, s.tableLength)
-	if err != nil {
-		return stream_encoding.Decbuf{}, errors.Wrap(err, "create symbol table file reader")
-	}
-
-	return stream_encoding.NewDecbufRawReader(r), nil
+func (s Symbols) newDecbufWithoutIntegrityCheck() stream_encoding.Decbuf {
+	return stream_encoding.NewDecbufFromFile(s.f, s.tableOffset, nil)
 }
 
 func (s Symbols) Lookup(o uint32) (string, error) {
-	d, err := s.newRawDecbuf()
-	if err != nil {
-		return "", err
+	d := s.newDecbufWithoutIntegrityCheck()
+	if d.Err() != nil {
+		return "", d.Err()
 	}
 
 	if s.version == index.FormatV2 {
 		if int(o) >= s.seen {
 			return "", errors.Errorf("unknown symbol offset %d", o)
 		}
-		d.Skip(s.offsets[int(o/symbolFactor)])
+		d.ResetAt(s.offsets[int(o/symbolFactor)])
 		// Walk until we find the one we want.
 		for i := o - (o / symbolFactor * symbolFactor); i > 0; i-- {
 			d.UvarintBytes()
@@ -137,7 +117,7 @@ func (s Symbols) Lookup(o uint32) (string, error) {
 		// need to adjust for the fact our view into the file starts at the beginning
 		// of the symbol table.
 		offsetInTable := int(o) - s.tableOffset
-		d.Skip(offsetInTable)
+		d.ResetAt(offsetInTable)
 	}
 	sym := d.UvarintStr()
 	if d.Err() != nil {
@@ -151,9 +131,9 @@ func (s Symbols) ReverseLookup(sym string) (uint32, error) {
 		return 0, errors.Errorf("unknown symbol %q - no symbols", sym)
 	}
 
-	d, err := s.newRawDecbuf()
-	if err != nil {
-		return 0, err
+	d := s.newDecbufWithoutIntegrityCheck()
+	if d.Err() != nil {
+		return 0, d.Err()
 	}
 
 	i := sort.Search(len(s.offsets), func(i int) bool {
@@ -195,8 +175,8 @@ func (s Symbols) Size() int {
 
 // ReadOffsetTable reads an offset table and at the given position calls f for each
 // found entry. If f returns an error it stops decoding and returns the received error.
-func ReadOffsetTable(bs ByteSlice, off uint64, f func([]string, uint64, int) error) error {
-	d := stream_encoding.NewDecbufAt(bs, int(off), castagnoliTable)
+func ReadOffsetTable(src *os.File, off uint64, f func([]string, uint64, int) error) error {
+	d := stream_encoding.NewDecbufFromFile(src, int(off), castagnoliTable)
 	startLen := d.Len()
 	cnt := d.Be32()
 

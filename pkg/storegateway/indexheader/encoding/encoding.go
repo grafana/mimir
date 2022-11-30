@@ -16,6 +16,7 @@ package encoding
 import (
 	"encoding/binary"
 	"hash/crc32"
+	"os"
 
 	"github.com/dennwc/varint"
 	"github.com/pkg/errors"
@@ -35,50 +36,41 @@ type Decbuf struct {
 	E error
 }
 
-func NewDecbufAt(bs ByteSlice, off int, castagnoliTable *crc32.Table) Decbuf {
-	reader, err := NewBufReader(bs)
-
-	if err != nil {
-		return Decbuf{E: err}
-	}
-
-	return NewDecbuf(reader, off, castagnoliTable)
-}
-
-// NewDecbufAt returns a new decoding buffer. It expects the first 4 bytes
+// NewDecbufFromFile returns a new decoding buffer. It expects the first 4 bytes
 // after offset to hold the big endian encoded content length, followed by the contents and the expected
 // checksum.
-func NewDecbuf(r Reader, off int, castagnoliTable *crc32.Table) Decbuf {
-	if err := r.ResetAt(off); err != nil {
-		return Decbuf{E: err}
-	}
-	lenBytes, err := r.Read(4)
+// TODO: might be able to save a small amount of time by not reading the size every time we create a
+// Decbuf if we've read it previously
+func NewDecbufFromFile(f *os.File, offset int, castagnoliTable *crc32.Table) Decbuf {
+	lengthBytes := make([]byte, 4)
+	n, err := f.ReadAt(lengthBytes, int64(offset))
 	if err != nil {
 		return Decbuf{E: err}
 	}
-	if len(lenBytes) != 4 {
-		return Decbuf{E: ErrInvalidSize}
+	if n != 4 {
+		return Decbuf{E: errors.Wrapf(ErrInvalidSize, "insufficient bytes read for size (got %d, wanted %d)", n, 4)}
 	}
-	l := int(binary.BigEndian.Uint32(lenBytes))
 
-	//	crcBytes := r.Read(4)
-	//	if len
+	contentLength := int(binary.BigEndian.Uint32(lengthBytes))
+	bufferLength := len(lengthBytes) + contentLength + 4
+	r, err := NewFileReader(f, offset, bufferLength)
+	if err != nil {
+		return Decbuf{E: errors.Wrap(err, "create file reader")}
+	}
 
-	//	if bs.Len() < off+4+l+4 {
-	//		return Decbuf{E: ErrInvalidSize}
-	//	}
-
-	// Load bytes holding the contents plus a CRC32 checksum.
-	//	b = bs.Range(off+4, off+4+l+4)
-	//	dec := Decbuf{B: b[:len(b)-4]}
+	// Skip to the beginning of the content.
+	if err := r.ResetAt(4); err != nil {
+		return Decbuf{E: err}
+	}
 
 	if castagnoliTable != nil {
-		data, err := r.Read(l)
+		// TODO: don't read the entire buffer into memory at once
+		data, err := r.Read(contentLength)
 		if err != nil {
 			return Decbuf{E: err}
 		}
 
-		if len(data) != l {
+		if len(data) != contentLength {
 			return Decbuf{E: ErrInvalidSize}
 		}
 
@@ -97,7 +89,7 @@ func NewDecbuf(r Reader, off int, castagnoliTable *crc32.Table) Decbuf {
 			return Decbuf{E: ErrInvalidChecksum}
 		}
 
-		if err := r.ResetAt(off); err != nil {
+		if err := r.ResetAt(0); err != nil {
 			return Decbuf{E: err}
 		}
 
@@ -107,7 +99,7 @@ func NewDecbuf(r Reader, off int, castagnoliTable *crc32.Table) Decbuf {
 			return Decbuf{E: err}
 		}
 	}
-	//	return dec
+
 	return Decbuf{r: r}
 }
 
@@ -132,9 +124,9 @@ func NewDecbufRawReader(r Reader) Decbuf {
 func (d *Decbuf) Uvarint() int { return int(d.Uvarint64()) }
 func (d *Decbuf) Be32int() int { return int(d.Be32()) }
 
-//func (d *Decbuf) Be64int64() int64 { return int64(d.Be64()) }
-
 // Crc32 returns a CRC32 checksum over the remaining bytes without consuming them.
+// TODO: we also compute a CRC32 checksum over a Decbuf in NewDecbufFromReaderWithKnownLength
+// - we should probably just have one implementation and use it everywhere
 func (d *Decbuf) Crc32(castagnoliTable *crc32.Table) uint32 {
 	// TODO: compute the checksum while streaming the data from disk, rather than reading all of the source data into memory and then computing the checksum
 	contents, err := d.r.Peek(d.r.Len())

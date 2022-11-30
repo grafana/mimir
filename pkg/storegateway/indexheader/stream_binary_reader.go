@@ -136,7 +136,6 @@ func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int) (bw
 			return nil, errors.Wrap(err, "read symbols")
 		}
 
-		//fmt.Println("ReadOffsetTablev1")
 		var prevRng index.Range
 		if err := index.ReadOffsetTable(offTableByteSlice, 0, func(key []string, off uint64, _ int) error {
 			if len(key) != 2 {
@@ -167,20 +166,12 @@ func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int) (bw
 		lastTableOff := 0
 		valueCount := 0
 
-		//fmt.Println("ReadOffsetTablenotv1")
-		offTableByteSlice, err := readDecbufBytes(f, int64(r.toc.PostingsOffsetTable))
-		if err != nil {
-			return nil, errors.Wrap(err, "read symbols")
-		}
-
 		// For the postings offset table we keep every label name but only every nth
 		// label value (plus the first and last one), to save memory.
-		if err := stream_index.ReadOffsetTable(offTableByteSlice, 0, func(key []string, off uint64, tableOff int) error {
+		if err := stream_index.ReadOffsetTable(f, r.toc.PostingsOffsetTable, func(key []string, off uint64, tableOff int) error {
 			if len(key) != 2 {
 				return errors.Errorf("unexpected key length for posting table %d", len(key))
 			}
-
-			//fmt.Printf("ReadOffsetTable call off=%v tableOff=%v\n", off, tableOff)
 
 			if _, ok := r.postings[key[0]]; !ok {
 				// Not seen before label name.
@@ -238,12 +229,11 @@ func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int) (bw
 		r.nameSymbols[off] = k
 	}
 
-	//fmt.Println("End")
 	return r, nil
 }
 
 // readDecbufBytes reads Decbuf encoded bytes from a file which can then be
-// passed to NewDecbuf for parsing.
+// passed to NewDecbufFromReader for parsing.
 func readDecbufBytes(f *os.File, off int64) (index.ByteSlice, error) {
 	// Pull the length field out first, so we know how much data to read.
 	// Decbuf begins with a big endian uint32 length field.
@@ -258,7 +248,7 @@ func readDecbufBytes(f *os.File, off int64) (index.ByteSlice, error) {
 	length := binary.BigEndian.Uint32(lengthBytes)
 
 	// We now read: [4 byte length] + [<size> bytes data] + [4 byte CRC]
-	// Note we re-read the size field for simplicity; it needs to be passed to NewDecbuf.
+	// Note we re-read the size field for simplicity; it needs to be passed to NewDecbufFromReader.
 	allBytes := make([]byte, 4+int(length)+4)
 	n, err = f.ReadAt(allBytes, off)
 	if err != nil {
@@ -391,15 +381,10 @@ func (r *StreamBinaryReader) postingsOffset(name string, values ...string) ([]in
 			i--
 		}
 
-		//fmt.Println("NewDecBufAt")
-		bs, err := readDecbufBytes(r.f, int64(r.toc.PostingsOffsetTable))
-		if err != nil {
-			return nil, errors.Wrap(err, "read postings")
-		}
-
 		// Don't Crc32 the entire postings offset table, this is very slow
 		// so hope any issues were caught at startup.
-		d := stream_encoding.NewDecbufAt(bs, 0, nil)
+		// TODO: use known length rather than reading from disk every time
+		d := stream_encoding.NewDecbufFromFile(r.f, int(r.toc.PostingsOffsetTable), nil)
 		d.Skip(e.offsets[i].tableOff)
 
 		// Iterate on the offset table.
@@ -544,12 +529,10 @@ func (r *StreamBinaryReader) LabelValues(name string, filter func(string) bool) 
 	}
 	values := make([]string, 0, len(e.offsets)*r.postingOffsetsInMemSampling)
 
-	bs, err := readDecbufBytes(r.f, int64(r.toc.PostingsOffsetTable))
-	if err != nil {
-		return nil, errors.Wrap(err, "read postings")
-	}
-
-	d := stream_encoding.NewDecbufAt(bs, 0, nil)
+	// Don't Crc32 the entire postings offset table, this is very slow
+	// so hope any issues were caught at startup.
+	// TODO: use known length rather than reading from disk every time
+	d := stream_encoding.NewDecbufFromFile(r.f, int(r.toc.PostingsOffsetTable), nil)
 	d.Skip(e.offsets[0].tableOff)
 	lastVal := e.offsets[len(e.offsets)-1].value
 
