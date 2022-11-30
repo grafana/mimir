@@ -36,8 +36,10 @@ type Decbuf struct {
 	E error
 }
 
-// NewDecbufFromFile returns a new decoding buffer. It expects the first 4 bytes
+// NewDecbufFromFile returns a new decoding buffer for f. It expects the first 4 bytes
 // after offset to hold the big endian encoded content length, followed by the contents and the expected
+// checksum.
+// If castagnoliTable is non-nil, the integrity of the contents of f are checked against the expected
 // checksum.
 // TODO: might be able to save a small amount of time by not reading the size every time we create a
 // Decbuf if we've read it previously
@@ -63,30 +65,13 @@ func NewDecbufFromFile(f *os.File, offset int, castagnoliTable *crc32.Table) Dec
 		return Decbuf{E: err}
 	}
 
+	d := Decbuf{r: r}
+
 	if castagnoliTable != nil {
-		// TODO: don't read the entire buffer into memory at once
-		data, err := r.Read(contentLength)
-		if err != nil {
-			return Decbuf{E: err}
-		}
+		d.CheckCrc32(castagnoliTable)
 
-		if len(data) != contentLength {
-			return Decbuf{E: ErrInvalidSize}
-		}
-
-		crcBytes, err := r.Read(4)
-		if err != nil {
-			return Decbuf{E: err}
-		}
-
-		if len(crcBytes) != 4 {
-			return Decbuf{E: ErrInvalidSize}
-		}
-
-		exp := binary.BigEndian.Uint32(crcBytes)
-		res := crc32.Checksum(data, castagnoliTable)
-		if exp != res {
-			return Decbuf{E: ErrInvalidChecksum}
+		if d.Err() != nil {
+			return d
 		}
 
 		// Return to the beginning of the content.
@@ -95,20 +80,13 @@ func NewDecbufFromFile(f *os.File, offset int, castagnoliTable *crc32.Table) Dec
 		}
 	}
 
-	return Decbuf{r: r}
+	return d
 }
 
-func NewDecbufRaw(bs ByteSlice) Decbuf {
-	reader, err := NewBufReader(bs)
-
-	if err != nil {
-		return Decbuf{E: err}
-	}
-
-	return Decbuf{r: reader}
-}
-
-func NewDecbufRawReader(r Reader) Decbuf {
+// NewRawDecbuf returns a new decoding buffer for r.
+// Unlike NewDecbufFromFile, it does not make any assumptions about the contents of r,
+// nor does it perform any form of integrity check.
+func NewRawDecbuf(r Reader) Decbuf {
 	err := r.Reset()
 	if err != nil {
 		return Decbuf{E: err}
@@ -119,18 +97,29 @@ func NewDecbufRawReader(r Reader) Decbuf {
 func (d *Decbuf) Uvarint() int { return int(d.Uvarint64()) }
 func (d *Decbuf) Be32int() int { return int(d.Be32()) }
 
-// Crc32 returns a CRC32 checksum over the remaining bytes without consuming them.
-// TODO: we also compute a CRC32 checksum over a Decbuf in NewDecbufFromReaderWithKnownLength
-// - we should probably just have one implementation and use it everywhere
-func (d *Decbuf) Crc32(castagnoliTable *crc32.Table) uint32 {
-	// TODO: compute the checksum while streaming the data from disk, rather than reading all of the source data into memory and then computing the checksum
-	contents, err := d.r.Peek(d.r.Len())
-	if err != nil {
-		d.E = err
-		return 0
+// CheckCrc32 checks the integrity of the contents of this Decbuf,
+// comparing the contents with the CRC32 checksum stored in the last four bytes.
+// CheckCrc32 consumes the contents of this Decbuf.
+func (d *Decbuf) CheckCrc32(castagnoliTable *crc32.Table) {
+	if d.r.Len() <= 4 {
+		d.E = ErrInvalidSize
+		return
 	}
 
-	return crc32.Checksum(contents, castagnoliTable)
+	// TODO: compute the checksum while streaming the data from disk, rather than reading all of the source data into memory and then computing the checksum
+	contents, err := d.r.Read(d.r.Len() - 4)
+
+	if err != nil {
+		d.E = err
+		return
+	}
+
+	actual := crc32.Checksum(contents, castagnoliTable)
+	expected := d.Be32()
+
+	if actual != expected {
+		d.E = ErrInvalidChecksum
+	}
 }
 
 // Skip advances the pointer of the underlying Reader by the given number

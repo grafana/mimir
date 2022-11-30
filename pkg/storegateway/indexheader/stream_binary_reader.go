@@ -239,22 +239,21 @@ func newBinaryTOCFromFile(f *os.File) (*BinaryTOC, error) {
 		return nil, stream_encoding.ErrInvalidSize
 	}
 
-	tocBytes := make([]byte, binaryTOCLen)
-	n, err := f.ReadAt(tocBytes, fSize-binaryTOCLen)
+	r, err := stream_encoding.NewFileReader(f, int(fSize-binaryTOCLen), binaryTOCLen)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "create reader for binary TOC")
 	}
-	if n != len(tocBytes) {
-		return nil, errors.Wrapf(stream_encoding.ErrInvalidSize, "insufficient bytes read for binary toc (read %db, needed %db)", n, headerLen)
-	}
-	b := realByteSlice(tocBytes)
 
-	expCRC := binary.BigEndian.Uint32(b[len(b)-4:])
-	d := stream_encoding.NewDecbufRaw(b[:len(b)-4])
-
-	if d.Crc32(castagnoliTable) != expCRC {
-		return nil, errors.Wrap(stream_encoding.ErrInvalidChecksum, "read index header TOC")
+	d := stream_encoding.NewRawDecbuf(r)
+	if d.Err() != nil {
+		return nil, errors.Wrap(d.Err(), "decode index header TOC")
 	}
+
+	if d.CheckCrc32(castagnoliTable); d.Err() != nil {
+		return nil, errors.Wrap(d.Err(), "read index header TOC")
+	}
+
+	d.ResetAt(0)
 
 	if err := d.Err(); err != nil {
 		return nil, err
