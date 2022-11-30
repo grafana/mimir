@@ -111,37 +111,6 @@ func NewDecbuf(r Reader, off int, castagnoliTable *crc32.Table) Decbuf {
 	return Decbuf{r: r}
 }
 
-// NewDecbufUvarintAt returns a new decoding buffer. It expects the first bytes
-// after offset to hold the uvarint-encoded buffers length, followed by the contents and the expected
-// checksum.
-/*
-func NewDecbufUvarintAt(bs ByteSlice, off int, castagnoliTable *crc32.Table) Decbuf {
-	// We never have to access this method at the far end of the byte slice. Thus just checking
-	// against the MaxVarintLen32 is sufficient.
-	if bs.Len() < off+binary.MaxVarintLen32 {
-		return Decbuf{E: ErrInvalidSize}
-	}
-	b := bs.Range(off, off+binary.MaxVarintLen32)
-
-	l, n := varint.Uvarint(b)
-	if n <= 0 || n > binary.MaxVarintLen32 {
-		return Decbuf{E: errors.Errorf("invalid uvarint %d", n)}
-	}
-
-	if bs.Len() < off+n+int(l)+4 {
-		return Decbuf{E: ErrInvalidSize}
-	}
-
-	// Load bytes holding the contents plus a CRC32 checksum.
-	b = bs.Range(off+n, off+n+int(l)+4)
-	dec := Decbuf{B: b[:len(b)-4]}
-
-	if dec.Crc32(castagnoliTable) != binary.BigEndian.Uint32(b[len(b)-4:]) {
-		return Decbuf{E: ErrInvalidChecksum}
-	}
-	return dec
-}
-*/
 func NewDecbufRaw(bs ByteSlice) Decbuf {
 	reader, err := NewBufReader(bs)
 
@@ -160,15 +129,6 @@ func NewDecbufRawReader(r Reader) Decbuf {
 	return Decbuf{r: r}
 }
 
-/*
-// NewDecbufRaw returns a new decoding buffer of the given length.
-func NewDecbufRaw(bs ByteSlice, length int) Decbuf {
-	if bs.Len() < length {
-		return Decbuf{E: ErrInvalidSize}
-	}
-	return Decbuf{B: bs.Range(0, length)}
-}
-*/
 func (d *Decbuf) Uvarint() int { return int(d.Uvarint64()) }
 func (d *Decbuf) Be32int() int { return int(d.Be32()) }
 
