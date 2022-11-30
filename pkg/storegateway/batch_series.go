@@ -46,7 +46,7 @@ type blockSeriesChunkRefsSetsIterator struct {
 
 func openBlockSeriesChunkRefsSetsIterator(
 	ctx context.Context,
-	setSize int,
+	batchSize int,
 	indexr *bucketIndexReader, // Index reader for block.
 	blockID ulid.ULID,
 	matchers []*labels.Matcher, // Series matchers.
@@ -60,7 +60,7 @@ func openBlockSeriesChunkRefsSetsIterator(
 	stats *safeQueryStats,
 	logger log.Logger,
 ) (seriesChunkRefsSetIterator, error) {
-	if setSize <= 0 {
+	if batchSize <= 0 {
 		return nil, errors.New("set size must be a positive number")
 	}
 
@@ -80,8 +80,8 @@ func openBlockSeriesChunkRefsSetsIterator(
 
 	return &blockSeriesChunkRefsSetsIterator{
 		blockID:                    blockID,
-		batchSize:                  setSize,
-		currentBatchPostingsOffset: -setSize,
+		batchSize:                  batchSize,
+		currentBatchPostingsOffset: -batchSize,
 		ctx:                        ctx,
 		postings:                   ps,
 		indexr:                     indexr,

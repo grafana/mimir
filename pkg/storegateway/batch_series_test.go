@@ -10,9 +10,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
@@ -803,41 +805,158 @@ func TestBlockSeriesChunkRefsSetsIterator_ErrorPropagation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	suite := prepareStoreWithTestBlocks(t, t.TempDir(), objstore.NewInMemBucket(), false, NewChunksLimiterFactory(0), NewSeriesLimiterFactory(0))
-	var firstBlock *bucketBlock
-	for _, b := range suite.store.blocks {
-		firstBlock = b
-		break
+	testCases := map[string]struct {
+		matcher        *labels.Matcher
+		batchSize      int
+		chunksLimit    int
+		seriesLimit    int
+		expectedErr    string
+		expectedSeries []seriesChunkRefsSet
+	}{
+		"chunks limits reached": {
+			matcher:     labels.MustNewMatcher(labels.MatchRegexp, "a", ".+"),
+			batchSize:   100,
+			chunksLimit: 1,
+			seriesLimit: 100,
+			expectedErr: "test limit exceeded",
+		},
+		"series limits reached": {
+			matcher:     labels.MustNewMatcher(labels.MatchRegexp, "a", ".+"),
+			batchSize:   100,
+			chunksLimit: 100,
+			seriesLimit: 1,
+			expectedErr: "test limit exceeded",
+		},
+		"selects all series": {
+			matcher:     labels.MustNewMatcher(labels.MatchRegexp, "a", ".+"),
+			batchSize:   100,
+			chunksLimit: 100,
+			seriesLimit: 100,
+			expectedSeries: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("a", "1", "b", "1"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("a", "1", "b", "2"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("a", "2", "b", "1"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("a", "2", "b", "2"), chunks: make([]seriesChunkRef, 1)},
+				}},
+			},
+		},
+		"selects all series in multiple batches": {
+			matcher:     labels.MustNewMatcher(labels.MatchRegexp, "a", ".+"),
+			batchSize:   1,
+			chunksLimit: 100,
+			seriesLimit: 100,
+			expectedSeries: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("a", "1", "b", "1"), chunks: make([]seriesChunkRef, 1)},
+				}},
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("a", "1", "b", "2"), chunks: make([]seriesChunkRef, 1)},
+				}},
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("a", "2", "b", "1"), chunks: make([]seriesChunkRef, 1)},
+				}},
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("a", "2", "b", "2"), chunks: make([]seriesChunkRef, 1)},
+				}},
+			},
+		},
+		"selects some series in single batch": {
+			matcher:     labels.MustNewMatcher(labels.MatchEqual, "a", "1"),
+			batchSize:   100,
+			chunksLimit: 100,
+			seriesLimit: 100,
+			expectedSeries: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("a", "1", "b", "1"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("a", "1", "b", "2"), chunks: make([]seriesChunkRef, 1)},
+				}},
+			},
+		},
+		"selects some series in multiple batches": {
+			matcher:     labels.MustNewMatcher(labels.MatchEqual, "a", "1"),
+			batchSize:   1,
+			chunksLimit: 100,
+			seriesLimit: 100,
+			expectedSeries: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("a", "1", "b", "1"), chunks: make([]seriesChunkRef, 1)},
+				}},
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("a", "1", "b", "2"), chunks: make([]seriesChunkRef, 1)},
+				}},
+			},
+		},
 	}
-	suite.cache.SwapWith(noopCache{})
 
-	indexReader := firstBlock.indexReader()
-	defer indexReader.Close()
+	for testName, testCase := range testCases {
+		testName, testCase := testName, testCase
+		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
 
-	matcher, err := labels.NewMatcher(labels.MatchRegexp, "a", ".+")
-	require.NoError(t, err)
+			suite := prepareStoreWithTestBlocks(t, t.TempDir(), objstore.NewInMemBucket(), false, NewChunksLimiterFactory(0), NewSeriesLimiterFactory(0))
+			var firstBlock *bucketBlock
+			// Find the block with the smallest timestamp in its ULID
+			for _, b := range suite.store.blocks {
+				if firstBlock == nil {
+					firstBlock = b
+					continue
+				}
+				if b.meta.ULID.Time() < firstBlock.meta.ULID.Time() {
+					firstBlock = b
+				}
+			}
+			suite.cache.SwapWith(noopCache{})
 
-	iterator, err := openBlockSeriesChunkRefsSetsIterator(
-		ctx,
-		100,
-		indexReader,
-		firstBlock.meta.ULID,
-		[]*labels.Matcher{matcher},
-		nil,
-		suite.store.seriesHashCache.GetBlockCache(firstBlock.meta.ULID.String()),
-		&limiter{limit: 1},
-		&limiter{limit: 100000},
-		false,
-		firstBlock.meta.MinTime,
-		firstBlock.meta.MaxTime,
-		nil,
-		newSafeQueryStats(),
-		suite.logger,
-	)
-	require.NoError(t, err)
+			indexReader := firstBlock.indexReader()
+			defer indexReader.Close()
 
-	_ = readAllSeriesChunkRefsSet(iterator)
-	assert.ErrorContains(t, iterator.Err(), "test limit exceeded")
+			iterator, err := openBlockSeriesChunkRefsSetsIterator(
+				ctx,
+				testCase.batchSize,
+				indexReader,
+				firstBlock.meta.ULID,
+				[]*labels.Matcher{testCase.matcher},
+				nil,
+				hashcache.NewSeriesHashCache(1024*1024).GetBlockCache(firstBlock.meta.ULID.String()),
+				&limiter{limit: testCase.chunksLimit},
+				&limiter{limit: testCase.seriesLimit},
+				false,
+				firstBlock.meta.MinTime,
+				firstBlock.meta.MaxTime,
+				nil,
+				newSafeQueryStats(),
+				log.NewNopLogger(),
+			)
+			require.NoError(t, err)
+
+			actualSeriesSets := readAllSeriesChunkRefsSet(iterator)
+
+			require.Lenf(t, actualSeriesSets, len(testCase.expectedSeries), "expected %d sets, but got %d", len(testCase.expectedSeries), len(actualSeriesSets))
+			for i, actualSeriesSet := range actualSeriesSets {
+				expectedSeriesSet := testCase.expectedSeries[i]
+				require.Equal(t, expectedSeriesSet.len(), actualSeriesSet.len())
+				for j, actualSeries := range actualSeriesSet.series {
+					expectedSeries := testCase.expectedSeries[i].series[j]
+
+					actualLset := actualSeries.lset
+					expectedLset := expectedSeries.lset
+					assert.Truef(t, labels.Equal(actualLset, expectedLset), "%d, %d: expected labels %s got labels %s", i, j, expectedLset, actualLset)
+
+					assert.Len(t, actualSeries.chunks, len(expectedSeries.chunks))
+					for _, actualChunk := range actualSeries.chunks {
+						// We can't test anything else from the chunk ref because it is generated on the go in each test case
+						assert.Equal(t, firstBlock.meta.ULID, actualChunk.blockID)
+					}
+				}
+			}
+			if testCase.expectedErr != "" {
+				assert.ErrorContains(t, iterator.Err(), "test limit exceeded")
+			} else {
+				assert.NoError(t, iterator.Err())
+			}
+		})
+	}
 }
 
 func TestBatchedSeriesSet(t *testing.T) {
@@ -1251,13 +1370,13 @@ func (f *chunkReaderMock) reset(chunkBytes *pool.BatchBytes) {
 
 // nolint this is used in a skipped test
 type limiter struct {
-	limit   uint64
+	limit   int
 	current atomic.Uint64
 }
 
 // nolint this is used in a skipped test
 func (l *limiter) Reserve(num uint64) error {
-	if l.current.Add(num) > l.limit {
+	if l.current.Add(num) > uint64(l.limit) {
 		return errors.New("test limit exceeded")
 	}
 	return nil
