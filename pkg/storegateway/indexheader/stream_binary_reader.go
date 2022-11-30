@@ -50,8 +50,8 @@ type StreamBinaryReader struct {
 		symbol string
 	}
 
-	version             int
-	indexVersion        int
+	version      int
+	indexVersion int
 
 	postingOffsetsInMemSampling int
 }
