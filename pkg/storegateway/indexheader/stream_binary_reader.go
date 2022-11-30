@@ -131,13 +131,8 @@ func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int) (bw
 		// load the whole offset table into memory.
 		r.postingsV1 = map[string]map[string]index.Range{}
 
-		offTableByteSlice, err := readDecbufBytes(f, int64(r.toc.PostingsOffsetTable))
-		if err != nil {
-			return nil, errors.Wrap(err, "read symbols")
-		}
-
 		var prevRng index.Range
-		if err := index.ReadOffsetTable(offTableByteSlice, 0, func(key []string, off uint64, _ int) error {
+		if err := stream_index.ReadOffsetTable(f, r.toc.PostingsOffsetTable, func(key []string, off uint64, _ int) error {
 			if len(key) != 2 {
 				return errors.Errorf("unexpected key length for posting table %d", len(key))
 			}
@@ -230,34 +225,6 @@ func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int) (bw
 	}
 
 	return r, nil
-}
-
-// readDecbufBytes reads Decbuf encoded bytes from a file which can then be
-// passed to NewDecbufFromReader for parsing.
-func readDecbufBytes(f *os.File, off int64) (index.ByteSlice, error) {
-	// Pull the length field out first, so we know how much data to read.
-	// Decbuf begins with a big endian uint32 length field.
-	lengthBytes := make([]byte, 4)
-	n, err := f.ReadAt(lengthBytes, off)
-	if err != nil {
-		return nil, err
-	}
-	if n != len(lengthBytes) {
-		return nil, errors.Errorf("insufficient bytes read (got %d, wanted %d)", n, len(lengthBytes))
-	}
-	length := binary.BigEndian.Uint32(lengthBytes)
-
-	// We now read: [4 byte length] + [<size> bytes data] + [4 byte CRC]
-	// Note we re-read the size field for simplicity; it needs to be passed to NewDecbufFromReader.
-	allBytes := make([]byte, 4+int(length)+4)
-	n, err = f.ReadAt(allBytes, off)
-	if err != nil {
-		return nil, err
-	}
-	if n != len(allBytes) {
-		return nil, errors.Errorf("insufficient bytes read (got %d, wanted %d)", n, len(allBytes))
-	}
-	return realByteSlice(allBytes), nil
 }
 
 // newBinaryTOCFromByteSlice return parsed TOC from given index header byte slice.
