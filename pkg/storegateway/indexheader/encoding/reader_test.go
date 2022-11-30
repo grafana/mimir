@@ -41,6 +41,7 @@ func TestReaders_Peek(t *testing.T) {
 		require.Equal(t, []byte("abcde"), secondPeek, "peek (second call)")
 
 		readAfterPeek, err := r.Read(5)
+		require.NoError(t, err)
 		require.Equal(t, []byte("abcde"), readAfterPeek, "first read call")
 
 		peekAfterRead, err := r.Peek(5)
@@ -76,7 +77,7 @@ func TestReaders_ResetAt(t *testing.T) {
 	testReaders(t, func(t *testing.T, r Reader) {
 		require.NoError(t, r.ResetAt(5))
 		readAfterReset, err := r.Read(5)
-
+		require.NoError(t, err)
 		require.Equal(t, []byte("fghij"), readAfterReset, "read after reset to non-zero offset")
 
 		require.NoError(t, r.ResetAt(0))
@@ -102,11 +103,13 @@ func TestReaders_Skip(t *testing.T) {
 
 		require.NoError(t, r.Skip(5))
 		readAfterSkip, err := r.Read(5)
+		require.NoError(t, err)
 		require.Equal(t, []byte("fghij"), readAfterSkip, "read after skip")
 		require.Equal(t, 10, r.Len())
 
 		require.NoError(t, r.Skip(5))
 		peekAfterSkip, err := r.Peek(5)
+		require.NoError(t, err)
 		require.Equal(t, []byte("67890"), peekAfterSkip, "peek after skip")
 		require.Equal(t, 5, r.Len())
 
