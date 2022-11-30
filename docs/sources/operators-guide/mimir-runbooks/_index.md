@@ -1102,7 +1102,7 @@ If you experience this error, [open an issue in the Mimir repository](https://gi
 
 ### err-mimir-too-far-in-future
 
-This non-critical error occurs when Mimir receives a write request that contains a sample or histogram whose timestamp is in the future compared to the current "real world" time.
+This is a non-critical error. It occurs when Mimir receives a write request that contains a sample or histogram whose timestamp is in the future compared to the current _real world_ time.
 Mimir accepts timestamps that are slightly in the future, due to skewed clocks for example. It rejects timestamps that are too far in the future, based on the definition that you can set via the `-validation.create-grace-period` option.
 On a per-tenant basis, you can fine tune the tolerance by configuring the `-validation.max-length-label-value` option.
 
@@ -1491,26 +1491,26 @@ How to **fix** it:
 
 ### err-mimir-histogram-spans-buckets-mismatch
 
-This non-critical error occurs when Mimir receives a write request that contains a native (also known as sparse) histogram whose either negative or positive spans specify
-a different number of buckets than there are provided.
+This is a non-critical error. It occurs when Mimir receives a write request that contains a native (also known as sparse) histogram whose (either negative or positive) spans specify
+a different number of buckets than are provided.
 
-> **Note**: Series with invalid histograms are skipped during the ingestion, and series within the same request are ingested.
+> **Note:** Series with invalid histograms are skipped during the ingestion, and series within the same request are ingested.
 
 ### err-mimir-histogram-span-negative-offset
 
-This non-critical error occurs when Mimir receives a write request that contains a native (also known as sparse) histogram which has a span whose offset is negative, making it overlap with the previous span.
+This is a non-critical error. It occurs when Mimir receives a write request that contains a native (also known as sparse) histogram that has a span whose offset is negative, which makes it overlap with the previous span.
 
 > **Note**: Series with invalid histograms are skipped during the ingestion, and series within the same request are ingested.
 
 ### err-mimir-histogram-negative-bucket-count
 
-This non-critical error occurs when Mimir receives a write request that contains a native (also known as sparse) histogram which has a bucket whose observation count is negative.
+This is a non-critical error. It occurs when Mimir receives a write request that contains a native (also known as sparse) histogram that has a bucket whose observation count is negative.
 
 > **Note**: Series with invalid histograms are skipped during the ingestion, and series within the same request are ingested.
 
 ### err-mimir-histogram-count-not-big-enough
 
-This non-critical error occurs when Mimir receives a write request that contains a native (also known as sparse) histogram whose overall observation count is lower than the number of observations found in the buckets.
+This is a non-critical error. It occurs when Mimir receives a write request that contains a native (also known as sparse) histogram whose overall observation count is lower than the number of observations found in the buckets.
 
 > **Note**: Series with invalid histograms are skipped during the ingestion, and series within the same request are ingested.
 
