@@ -110,3 +110,7 @@ func (c *seriesChunkRefsIteratorImpl) At() seriesChunkRefs {
 	}
 	return c.set.series[c.currentOffset]
 }
+
+func (c *seriesChunkRefsIteratorImpl) Err() error {
+	return nil
+}
