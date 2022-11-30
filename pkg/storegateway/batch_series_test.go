@@ -1158,8 +1158,10 @@ func TestLoadingBatchSet(t *testing.T) {
 			for i, loadedSet := range loadedSets {
 				require.Len(t, loadedSet.series, len(testCase.expectedSets[i].series))
 				for j, loadedSeries := range loadedSet.series {
-					testCase.expectedSets[i].series[j].refs = nil
-					assert.Equal(t, testCase.expectedSets[i].series[j], loadedSeries)
+					assert.ElementsMatch(t, testCase.expectedSets[i].series[j].chks, loadedSeries.chks)
+					assert.Truef(t, labels.Equal(testCase.expectedSets[i].series[j].lset, loadedSeries.lset),
+						"%d, %d: labels don't match, expected %s, got %s", i, j, testCase.expectedSets[i].series[j].lset, loadedSeries.lset,
+					)
 				}
 			}
 
