@@ -119,7 +119,8 @@ func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int) (bw
 		return nil, errors.Wrap(err, "read index header TOC")
 	}
 
-	r.symbols, err = stream_index.NewSymbols(f, r.indexVersion, int(r.toc.Symbols))
+	df := stream_encoding.NewDecbufFactory(path)
+	r.symbols, err = stream_index.NewSymbols(df, r.indexVersion, int(r.toc.Symbols))
 	if err != nil {
 		return nil, errors.Wrap(err, "load symbols")
 	}
