@@ -56,9 +56,7 @@ func TestSymbols(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = f.Close() })
 
-	r, err := stream_encoding.NewFileReader(f, 0, buf.Len())
-	require.NoError(t, err)
-	d := stream_encoding.NewDecbuf(r, symbolsStart, castagnoliTable)
+	d := stream_encoding.NewDecbufFromFile(f, symbolsStart, castagnoliTable)
 	require.NoError(t, d.E)
 	s, err := NewSymbols(f, index.FormatV2, symbolsStart)
 	require.NoError(t, err)
