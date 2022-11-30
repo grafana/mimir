@@ -2316,9 +2316,9 @@ func runTestServerSeries(t test.TB, store *BucketStore, cases ...*seriesCase) {
 			t.ResetTimer()
 			for i := 0; i < t.N(); i++ {
 				srv := newBucketStoreSeriesServer(context.Background())
-				assert.NoError(t, store.Series(c.Req, srv))
-				assert.Equal(t, len(c.ExpectedWarnings), len(srv.Warnings), "%v", srv.Warnings)
-				assert.Equal(t, len(c.ExpectedSeries), len(srv.SeriesSet))
+				require.NoError(t, store.Series(c.Req, srv))
+				require.Equal(t, len(c.ExpectedWarnings), len(srv.Warnings), "%v", srv.Warnings)
+				require.Equal(t, len(c.ExpectedSeries), len(srv.SeriesSet), "Matchers: %v Min time: %d Max time: %d", c.Req.Matchers, c.Req.MinTime, c.Req.MaxTime)
 
 				if !t.IsBenchmark() {
 					if len(c.ExpectedSeries) == 1 {

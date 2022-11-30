@@ -13,20 +13,21 @@ type seriesChunksSetIterator interface {
 type seriesChunksSet struct {
 	series []seriesEntry // this should ideally be its own type that doesn't have the refs
 
-	bytesReleaser releaser
+	// chunksReleaser releases the memory used to allocate series chunks.
+	chunksReleaser chunksReleaser
 }
 
-type releaser interface{ Release() }
+type chunksReleaser interface {
+	// Release the memory used to allocate series chunks.
+	Release()
+}
 
 func (b *seriesChunksSet) release() {
-	if len(b.series) == 0 {
-		// There's nothing to release, just return; this also allows to call release() on a zero-valued seriesChunksSet.
-		return
+	if b.chunksReleaser != nil {
+		b.chunksReleaser.Release()
+		b.chunksReleaser = nil
 	}
 
-	b.bytesReleaser.Release()
-
-	// Make it harder to do a "use after free".
 	b.series = nil
 }
 

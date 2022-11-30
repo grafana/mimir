@@ -937,11 +937,13 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		// NOTE: We "carefully" assume series and chunks are sorted within each SeriesSet. This should be guaranteed by
 		// blockSeries method. In worst case deduplication logic won't deduplicate correctly, which will be accounted later.
 		for seriesSets.Next() {
+			var lset labels.Labels
 			var series storepb.Series
 
 			mergeStats.mergedSeriesCount++
 
-			var lset labels.Labels
+			// IMPORTANT: do not retain the memory returned by seriesSets.At() beyond this loop cycle
+			// because the subsequent call to seriesSets.Next() may release it.
 			if req.SkipChunks {
 				lset, _ = seriesSets.At()
 			} else {
