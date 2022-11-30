@@ -33,10 +33,6 @@ type bufHolder struct {
 	buf []byte
 }
 
-type GetSeparateMetricsLabel interface {
-	SeparateMetricsLabel(userID string) string
-}
-
 var bufferPool = sync.Pool{
 	New: func() interface{} { return &bufHolder{buf: make([]byte, 256*1024)} },
 }

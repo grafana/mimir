@@ -41,7 +41,6 @@ const (
 func OTLPHandler(
 	maxRecvMsgSize int,
 	sourceIPs *middleware.SourceIPExtractor,
-	separateMetricsLabelGetter GetSeparateMetricsLabel,
 	allowSkipLabelNameValidation bool,
 	reg prometheus.Registerer,
 	push Func,
@@ -115,7 +114,7 @@ func OTLPHandler(
 			return body, err
 		}
 
-		metrics, err := otelMetricsToTimeseries(ctx, discardedDueToOtelParseError, separateMetricsLabelGetter, logger, otlpReq.Metrics())
+		metrics, err := otelMetricsToTimeseries(ctx, discardedDueToOtelParseError, logger, otlpReq.Metrics())
 		if err != nil {
 			return body, err
 		}
@@ -125,7 +124,7 @@ func OTLPHandler(
 	})
 }
 
-func otelMetricsToTimeseries(ctx context.Context, discardedDueToOtelParseError *prometheus.CounterVec, separateMetricsLabelGetter GetSeparateMetricsLabel, logger kitlog.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
+func otelMetricsToTimeseries(ctx context.Context, discardedDueToOtelParseError *prometheus.CounterVec, logger kitlog.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
 	tsMap, errs := prometheusremotewrite.FromMetrics(md, prometheusremotewrite.Settings{})
 
 	if errs != nil {
@@ -135,15 +134,7 @@ func otelMetricsToTimeseries(ctx context.Context, discardedDueToOtelParseError *
 		}
 
 		dropped := len(multierr.Errors(errs))
-		// TODO (Question for reviewers, will cleanup)
-		// Metrics are not yet converted to timeseries so there are no labels to search for, and tsMap may be corrupted
-		// Should we still search for a label here somehow, or set a default group value?
-		discardedDueToOtelParseError.WithLabelValues(userID, "").Add(float64(dropped))
-		// group := ""
-		// if len(req.Timeseries) > 0 {
-		// 	group = validation.FindGroupLabel(overrides, userID, timeSeriesLabels)
-		// }
-		// discardedDueToOtelParseError.WithLabelValues(userID, group).Add(float64(dropped))
+		discardedDueToOtelParseError.WithLabelValues(userID, "").Add(float64(dropped)) // Group is empty here as metrics couldn't be parsed
 
 		parseErrs := errs.Error()
 		if len(parseErrs) > maxErrMsgLen {
