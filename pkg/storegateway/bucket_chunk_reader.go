@@ -304,6 +304,10 @@ func (r chunkReaders) load(entries []seriesEntry, stats *safeQueryStats) error {
 			return reader.load(entries, nil, stats)
 		})
 	}
+
+	// Block until all goroutines have done. We need to wait for all goroutines and
+	// can't return on first error, otherwise a subsequent release of the bytes pool
+	// could cause a race condition.
 	return g.Wait()
 }
 

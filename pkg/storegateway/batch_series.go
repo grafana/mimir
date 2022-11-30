@@ -243,7 +243,7 @@ func (s *BucketStore) batchSetsForBlocks(ctx context.Context, req *storepb.Serie
 	resHints := &hintspb.SeriesResponseHints{}
 	mtx := sync.Mutex{}
 	batches := make([]seriesChunkRefsSetIterator, 0, len(blocks))
-	g, ctx := errgroup.WithContext(ctx)
+	g, gCtx := errgroup.WithContext(ctx)
 	cleanups := make([]func(), 0, len(blocks))
 
 	for _, b := range blocks {
@@ -266,7 +266,7 @@ func (s *BucketStore) batchSetsForBlocks(ctx context.Context, req *storepb.Serie
 			)
 
 			part, err = openBlockSeriesChunkRefsSetsIterator(
-				ctx, s.maxSeriesPerBatch, indexr, b.meta.ULID, matchers, shardSelector, blockSeriesHashCache, chunksLimiter, seriesLimiter, req.SkipChunks, req.MinTime, req.MaxTime, req.Aggregates, stats, s.logger)
+				gCtx, s.maxSeriesPerBatch, indexr, b.meta.ULID, matchers, shardSelector, blockSeriesHashCache, chunksLimiter, seriesLimiter, req.SkipChunks, req.MinTime, req.MaxTime, req.Aggregates, stats, s.logger)
 			if err != nil {
 				return errors.Wrapf(err, "fetch series for block %s", b.meta.ULID)
 			}
@@ -302,6 +302,7 @@ func (s *BucketStore) batchSetsForBlocks(ctx context.Context, req *storepb.Serie
 	mergedBatches := mergedBatchSets(s.maxSeriesPerBatch, batches...)
 	var set storepb.SeriesSet
 	if chunkReaders != nil {
+		// We pass ctx and not gCtx because the gCtx will be canceled once the goroutines group has done.
 		set = newSeriesSetWithChunks(ctx, *chunkReaders, mergedBatches, stats)
 	} else {
 		set = newSeriesSetWithoutChunks(mergedBatches)
@@ -350,10 +351,7 @@ func (s *seriesSetWithoutChunks) Err() error {
 }
 
 func newSeriesSetWithChunks(ctx context.Context, chunkReaders chunkReaders, batches seriesChunkRefsSetIterator, stats *safeQueryStats) storepb.SeriesSet {
-	return &batchedSeriesSet{
-		from:  newPreloadingBatchSet(ctx, 1, newLoadingBatchSet(chunkReaders, batches, stats)),
-		stats: stats,
-	}
+	return newBatchedSeriesSet(newPreloadingBatchSet(ctx, 1, newLoadingBatchSet(chunkReaders, batches, stats)))
 }
 
 type loadingBatchSet struct {
@@ -408,8 +406,8 @@ func (c *loadingBatchSet) Next() bool {
 		return false
 	}
 	nextLoaded := seriesChunksSet{
-		series:        entries,
-		bytesReleaser: c.chunkReaders.chunkBytesReleaser,
+		series:         entries,
+		chunksReleaser: c.chunkReaders.chunkBytesReleaser,
 	}
 	c.current = nextLoaded
 	return true
@@ -764,29 +762,42 @@ func (c chainedBatchSetIterator) Err() error {
 }
 
 type batchedSeriesSet struct {
-	from  seriesChunksSetIterator
-	stats *safeQueryStats
+	from seriesChunksSetIterator
 
-	current         seriesChunksSet
-	offsetInCurrent int
+	currSet    seriesChunksSet
+	currOffset int
 }
 
+func newBatchedSeriesSet(from seriesChunksSetIterator) storepb.SeriesSet {
+	return &batchedSeriesSet{
+		from: from,
+	}
+}
+
+// Next advances to the next item. Once the underlying seriesChunksSet has been fully consumed
+// (which means the call to Next moves to the next set), the seriesChunksSet is released. This
+// means that it's not safe to read from the values returned by At() after Next() is called again.
 func (b *batchedSeriesSet) Next() bool {
-	b.offsetInCurrent++
-	if b.offsetInCurrent >= b.current.len() {
+	b.currOffset++
+	if b.currOffset >= b.currSet.len() {
 		if !b.from.Next() {
+			b.currSet.release()
 			return false
 		}
-		b.current.release()
-		b.current = b.from.At()
-		b.offsetInCurrent = 0
+		b.currSet.release()
+		b.currSet = b.from.At()
+		b.currOffset = 0
 	}
 	return true
 }
 
 // At returns the current series. The result from At() MUST not be retained after calling Next()
 func (b *batchedSeriesSet) At() (labels.Labels, []storepb.AggrChunk) {
-	return b.current.series[b.offsetInCurrent].lset, b.current.series[b.offsetInCurrent].chks
+	if b.currOffset >= b.currSet.len() {
+		return nil, nil
+	}
+
+	return b.currSet.series[b.currOffset].lset, b.currSet.series[b.currOffset].chks
 }
 
 func (b *batchedSeriesSet) Err() error {
