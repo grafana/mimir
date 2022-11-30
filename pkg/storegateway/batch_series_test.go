@@ -801,7 +801,7 @@ func TestPreloadingBatchSet_Concurrency(t *testing.T) {
 
 }
 
-func TestBlockSeriesChunkRefsSetsIterator_ErrorPropagation(t *testing.T) {
+func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
