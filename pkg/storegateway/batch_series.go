@@ -173,7 +173,7 @@ func (s *blockSeriesChunkRefsSetsIterator) loadBatch() bool {
 			entry.chunks = metasToChunks(s.blockID, chks)
 		}
 
-		s.currentSet.series = append(s.currentBatch.series, entry)
+		s.currentSet.series = append(s.currentSet.series, entry)
 	}
 
 	if s.currentSet.len() == 0 {
