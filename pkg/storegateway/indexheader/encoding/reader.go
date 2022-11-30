@@ -8,13 +8,17 @@ import (
 )
 
 type Reader interface {
+	io.Closer
+
 	// Reset moves the cursor position to the beginning of the underlying store.
 	Reset() error
 
 	// ResetAt moves the cursor position to the given absolute offset in the underlying store.
+	// Attempting to ResetAt beyond the end of the underlying store will return an error.
 	ResetAt(off int) error
 
 	// Skip advances the cursor position by the given number of bytes in the underlying store.
+	// Attempting to Skip beyond the end of the underlying store will return an error.
 	Skip(l int) error
 
 	// Read returns at most the given number of bytes from the underlying store, consuming
@@ -84,6 +88,11 @@ func (b *BufReader) Read(n int) ([]byte, error) {
 
 func (b *BufReader) Len() int {
 	return len(b.b)
+}
+
+// Close is a no-op. Calling once or multiple times has no effect.
+func (b *BufReader) Close() error {
+	return nil
 }
 
 // ByteSlice abstracts a byte slice.
@@ -180,4 +189,8 @@ func (f *FileReader) Read(n int) ([]byte, error) {
 
 func (f *FileReader) Len() int {
 	return f.length - f.pos
+}
+
+func (f *FileReader) Close() error {
+	return f.file.Close()
 }

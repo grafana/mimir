@@ -235,5 +235,6 @@ func (d *Decbuf) Be32() uint32 {
 	return binary.BigEndian.Uint32(b)
 }
 
-func (d *Decbuf) Err() error { return d.E }
-func (d *Decbuf) Len() int   { return d.r.Len() }
+func (d *Decbuf) Err() error   { return d.E }
+func (d *Decbuf) Len() int     { return d.r.Len() }
+func (d *Decbuf) Close() error { return d.r.Close() }
