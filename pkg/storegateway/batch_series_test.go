@@ -1045,7 +1045,7 @@ func TestLoadingBatchSet(t *testing.T) {
 		addLoadErr, loadErr error
 		expectedErr         string
 	}{
-		"loads single set": {
+		"loads single set from single block": {
 			existingBlocks: []testBlock{block1},
 			setsToLoad: []seriesChunkRefsSet{
 				{series: []seriesChunkRefs{toSeriesChunkRefs(block1, 0), toSeriesChunkRefs(block1, 1)}},
@@ -1054,7 +1054,7 @@ func TestLoadingBatchSet(t *testing.T) {
 				{series: []seriesEntry{block1.series[0], block1.series[1]}},
 			},
 		},
-		"loads multiple sets": {
+		"loads multiple sets from single block": {
 			existingBlocks: []testBlock{block1},
 			setsToLoad: []seriesChunkRefsSet{
 				{series: []seriesChunkRefs{toSeriesChunkRefs(block1, 0), toSeriesChunkRefs(block1, 1)}},
