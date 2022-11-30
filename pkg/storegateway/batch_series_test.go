@@ -1068,10 +1068,10 @@ func TestLoadingBatchSet(t *testing.T) {
 		"loads single set from multiple blocks": {
 			existingBlocks: []testBlock{block1, block2},
 			setsToLoad: []seriesChunkRefsSet{
-				{series: []seriesChunkRefs{toSeriesChunkRefs(block1, 0), toSeriesChunkRefs(block1, 1)}},
+				{series: []seriesChunkRefs{toSeriesChunkRefs(block1, 0), toSeriesChunkRefs(block2, 1)}},
 			},
 			expectedSets: []seriesChunksSet{
-				{series: []seriesEntry{block1.series[0], block1.series[1]}},
+				{series: []seriesEntry{block1.series[0], block2.series[1]}},
 			},
 		},
 		"loads multiple sets from multiple blocks": {
