@@ -16,7 +16,8 @@ An option when migrating is to allow Thanos to query Mimir. This way you retain 
 The overall setup consists of setting up Thanos Sidecar alongside Mimir and then pointing Thanos Query to the sidecar as if it was just a normal sidecar.
 
 This is not so much of a guide as it is a collection of configurations that have been used with success prior.
-**WARNING** This setup is unsupported, experimental and has not been battle tested. Your mileage may vary, ensure you have tested this for your use case and have made appropriate backups (and tested your procedures for recovery)
+
+**Warning:** This setup is unsupported, experimental and has not been battle tested. Your mileage may vary, ensure you have tested this for your use case and have made appropriate backups (and tested your procedures for recovery)
 
 ## Technical Details
 
