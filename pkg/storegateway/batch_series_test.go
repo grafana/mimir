@@ -1096,6 +1096,23 @@ func TestLoadingBatchSet(t *testing.T) {
 				{series: []seriesEntry{block1.series[1], block2.series[1]}},
 			},
 		},
+		"loads series with chunks from different blocks": {
+			existingBlocks: []testBlock{block1, block2},
+			setsToLoad: []seriesChunkRefsSet{
+				{series: func() []seriesChunkRefs {
+					series := toSeriesChunkRefs(block1, 0)
+					series.chunks = append(series.chunks, toSeriesChunkRefs(block2, 0).chunks...)
+					return []seriesChunkRefs{series}
+				}()},
+			},
+			expectedSets: []seriesChunksSet{
+				{series: func() []seriesEntry {
+					entry := block1.series[0]
+					entry.chks = append(entry.chks, block2.series[0].chks...)
+					return []seriesEntry{entry}
+				}()},
+			},
+		},
 		"handles error in addLoad": {
 			existingBlocks: []testBlock{block1, block2},
 			setsToLoad: []seriesChunkRefsSet{
