@@ -561,7 +561,7 @@ func (s *bucketSeriesSet) Err() error {
 func blockSeries(
 	ctx context.Context,
 	indexr *bucketIndexReader, // Index reader for block.
-	chunkr *bucketChunkReader, // Chunk reader for block.
+	chunkr chunkReader, // Chunk reader for block.
 	matchers []*labels.Matcher, // Series matchers.
 	shard *sharding.ShardSelector, // Shard selector.
 	seriesHashCache *hashcache.BlockSeriesHashCache, // Block-specific series hash cache (used only if shard selector is specified).
@@ -1006,7 +1006,7 @@ func (s *BucketStore) synchronousSeriesSet(
 	stats *safeQueryStats,
 	blocks []*bucketBlock,
 	indexReaders map[ulid.ULID]*bucketIndexReader,
-	chunkReaders map[ulid.ULID]*bucketChunkReader,
+	chunkReaders map[ulid.ULID]chunkReader,
 	resHints *hintspb.SeriesResponseHints,
 	shardSelector *sharding.ShardSelector,
 	matchers []*labels.Matcher,
@@ -1120,7 +1120,7 @@ func (s *BucketStore) recordSeriesCallResult(safeStats *safeQueryStats) {
 	s.metrics.seriesHashCacheHits.Add(float64(stats.seriesHashCacheHits))
 }
 
-func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool, minT, maxT, maxResolutionMillis int64, blockMatchers []*labels.Matcher, chunkPool *pool.BatchBytes) ([]*bucketBlock, map[ulid.ULID]*bucketIndexReader, map[ulid.ULID]*bucketChunkReader) {
+func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool, minT, maxT, maxResolutionMillis int64, blockMatchers []*labels.Matcher, chunkPool *pool.BatchBytes) ([]*bucketBlock, map[ulid.ULID]*bucketIndexReader, map[ulid.ULID]chunkReader) {
 	s.blocksMx.RLock()
 	defer s.blocksMx.RUnlock()
 
@@ -1138,7 +1138,7 @@ func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool,
 		return blocks, indexReaders, nil
 	}
 
-	chunkReaders := make(map[ulid.ULID]*bucketChunkReader, len(blocks))
+	chunkReaders := make(map[ulid.ULID]chunkReader, len(blocks))
 	for _, b := range blocks {
 		chunkReaders[b.meta.ULID] = b.chunkReader(ctx, chunkPool)
 	}
