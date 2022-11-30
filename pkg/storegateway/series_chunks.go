@@ -16,6 +16,8 @@ type seriesChunksSet struct {
 	bytesReleaser releaser
 }
 
+type releaser interface{ Release() }
+
 func (b *seriesChunksSet) release() {
 	if len(b.series) == 0 {
 		// There's nothing to release, just return; this also allows to call release() on a zero-valued seriesChunksSet.

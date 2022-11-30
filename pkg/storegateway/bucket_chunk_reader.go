@@ -270,8 +270,6 @@ func (b rawChunk) NumSamples() int {
 	panic("invalid call")
 }
 
-type releaser interface{ Release() }
-
 type chunkReaders struct {
 	chunkBytesReleaser *pool.BatchBytes
 	chunkBytesPool     pool.Bytes
