@@ -295,7 +295,7 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initDistributor() (serv services.Service, err error) {
-	t.API.RegisterDistributor(t.Distributor, t.Cfg.Distributor, t.Registerer, t.Overrides)
+	t.API.RegisterDistributor(t.Distributor, t.Cfg.Distributor, t.Registerer)
 
 	return nil, nil
 }
