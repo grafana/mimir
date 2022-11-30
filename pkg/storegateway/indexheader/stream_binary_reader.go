@@ -52,7 +52,6 @@ type StreamBinaryReader struct {
 
 	version             int
 	indexVersion        int
-	indexLastPostingEnd int64
 
 	postingOffsetsInMemSampling int
 }
@@ -109,7 +108,7 @@ func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int) (bw
 	r.version = int(headerByteSlice.Range(4, 5)[0])
 	r.indexVersion = int(headerByteSlice.Range(5, 6)[0])
 
-	r.indexLastPostingEnd = int64(binary.BigEndian.Uint64(headerByteSlice.Range(6, headerLen)))
+	indexLastPostingEnd := int64(binary.BigEndian.Uint64(headerByteSlice.Range(6, headerLen)))
 
 	if r.version != BinaryFormatV1 {
 		return nil, errors.Errorf("unknown index header file version %d", r.version)
@@ -125,90 +124,17 @@ func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int) (bw
 		return nil, errors.Wrap(err, "load symbols")
 	}
 
-	var lastKey []string
 	if r.indexVersion == index.FormatV1 {
-		// Earlier V1 formats don't have a sorted postings offset table, so
-		// load the whole offset table into memory.
-		r.postingsV1 = map[string]map[string]index.Range{}
+		r.postingsV1, r.postings, err = loadV1PostingsOffsetTable(f, r.toc, indexLastPostingEnd)
 
-		var prevRng index.Range
-		if err := stream_index.ReadOffsetTable(f, r.toc.PostingsOffsetTable, func(key []string, off uint64, _ int) error {
-			if len(key) != 2 {
-				return errors.Errorf("unexpected key length for posting table %d", len(key))
-			}
-
-			if lastKey != nil {
-				prevRng.End = int64(off - crc32.Size)
-				r.postingsV1[lastKey[0]][lastKey[1]] = prevRng
-			}
-
-			if _, ok := r.postingsV1[key[0]]; !ok {
-				r.postingsV1[key[0]] = map[string]index.Range{}
-				r.postings[key[0]] = nil // Used to get a list of labelnames in places.
-			}
-
-			lastKey = key
-			prevRng = index.Range{Start: int64(off + postingLengthFieldSize)}
-			return nil
-		}); err != nil {
-			return nil, errors.Wrap(err, "read postings table")
-		}
-		if lastKey != nil {
-			prevRng.End = r.indexLastPostingEnd - crc32.Size
-			r.postingsV1[lastKey[0]][lastKey[1]] = prevRng
+		if err != nil {
+			return nil, err
 		}
 	} else {
-		lastTableOff := 0
-		valueCount := 0
+		r.postings, err = loadV2PostingsOffsetTable(f, r.toc, indexLastPostingEnd, postingOffsetsInMemSampling)
 
-		// For the postings offset table we keep every label name but only every nth
-		// label value (plus the first and last one), to save memory.
-		if err := stream_index.ReadOffsetTable(f, r.toc.PostingsOffsetTable, func(key []string, off uint64, tableOff int) error {
-			if len(key) != 2 {
-				return errors.Errorf("unexpected key length for posting table %d", len(key))
-			}
-
-			if _, ok := r.postings[key[0]]; !ok {
-				// Not seen before label name.
-				r.postings[key[0]] = &postingValueOffsets{}
-				if lastKey != nil {
-					// Always include last value for each label name, unless it was just added in previous iteration based
-					// on valueCount.
-					if (valueCount-1)%postingOffsetsInMemSampling != 0 {
-						r.postings[lastKey[0]].offsets = append(r.postings[lastKey[0]].offsets, postingOffset{value: lastKey[1], tableOff: lastTableOff})
-					}
-					r.postings[lastKey[0]].lastValOffset = int64(off - crc32.Size)
-					lastKey = nil
-				}
-				valueCount = 0
-			}
-
-			lastKey = key
-			lastTableOff = tableOff
-			valueCount++
-
-			if (valueCount-1)%postingOffsetsInMemSampling == 0 {
-				r.postings[key[0]].offsets = append(r.postings[key[0]].offsets, postingOffset{value: key[1], tableOff: tableOff})
-			}
-
-			return nil
-		}); err != nil {
-			return nil, errors.Wrap(err, "read postings table")
-		}
-		if lastKey != nil {
-			if (valueCount-1)%postingOffsetsInMemSampling != 0 {
-				// Always include last value for each label name if not included already based on valueCount.
-				r.postings[lastKey[0]].offsets = append(r.postings[lastKey[0]].offsets, postingOffset{value: lastKey[1], tableOff: lastTableOff})
-			}
-			// In any case lastValOffset is unknown as don't have next posting anymore. Guess from TOC table.
-			// In worst case we will overfetch a few bytes.
-			r.postings[lastKey[0]].lastValOffset = r.indexLastPostingEnd - crc32.Size
-		}
-		// Trim any extra space in the slices.
-		for k, v := range r.postings {
-			l := make([]postingOffset, len(v.offsets))
-			copy(l, v.offsets)
-			r.postings[k].offsets = l
+		if err != nil {
+			return nil, err
 		}
 	}
 
@@ -225,6 +151,103 @@ func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int) (bw
 	}
 
 	return r, nil
+}
+
+func loadV1PostingsOffsetTable(f *os.File, toc *BinaryTOC, indexLastPostingEnd int64) (map[string]map[string]index.Range, map[string]*postingValueOffsets, error) {
+	// Earlier V1 formats don't have a sorted postings offset table, so
+	// load the whole offset table into memory.
+	postingsV1 := map[string]map[string]index.Range{}
+	postingsV2 := map[string]*postingValueOffsets{}
+	var lastKey []string
+	var prevRng index.Range
+
+	if err := stream_index.ReadOffsetTable(f, toc.PostingsOffsetTable, func(key []string, off uint64, _ int) error {
+		if len(key) != 2 {
+			return errors.Errorf("unexpected key length for posting table %d", len(key))
+		}
+
+		if lastKey != nil {
+			prevRng.End = int64(off - crc32.Size)
+			postingsV1[lastKey[0]][lastKey[1]] = prevRng
+		}
+
+		if _, ok := postingsV1[key[0]]; !ok {
+			postingsV1[key[0]] = map[string]index.Range{}
+			postingsV2[key[0]] = nil // Used to get a list of labelnames in places.
+		}
+
+		lastKey = key
+		prevRng = index.Range{Start: int64(off + postingLengthFieldSize)}
+		return nil
+	}); err != nil {
+		return nil, nil, errors.Wrap(err, "read postings table")
+	}
+
+	if lastKey != nil {
+		prevRng.End = indexLastPostingEnd - crc32.Size
+		postingsV1[lastKey[0]][lastKey[1]] = prevRng
+	}
+
+	return postingsV1, postingsV2, nil
+}
+
+func loadV2PostingsOffsetTable(f *os.File, toc *BinaryTOC, indexLastPostingEnd int64, postingOffsetsInMemSampling int) (map[string]*postingValueOffsets, error) {
+	postings := map[string]*postingValueOffsets{}
+	lastTableOff := 0
+	valueCount := 0
+	var lastKey []string
+
+	// For the postings offset table we keep every label name but only every nth
+	// label value (plus the first and last one), to save memory.
+	if err := stream_index.ReadOffsetTable(f, toc.PostingsOffsetTable, func(key []string, off uint64, tableOff int) error {
+		if len(key) != 2 {
+			return errors.Errorf("unexpected key length for posting table %d", len(key))
+		}
+
+		if _, ok := postings[key[0]]; !ok {
+			// Not seen before label name.
+			postings[key[0]] = &postingValueOffsets{}
+			if lastKey != nil {
+				// Always include last value for each label name, unless it was just added in previous iteration based
+				// on valueCount.
+				if (valueCount-1)%postingOffsetsInMemSampling != 0 {
+					postings[lastKey[0]].offsets = append(postings[lastKey[0]].offsets, postingOffset{value: lastKey[1], tableOff: lastTableOff})
+				}
+				postings[lastKey[0]].lastValOffset = int64(off - crc32.Size)
+				lastKey = nil
+			}
+			valueCount = 0
+		}
+
+		lastKey = key
+		lastTableOff = tableOff
+		valueCount++
+
+		if (valueCount-1)%postingOffsetsInMemSampling == 0 {
+			postings[key[0]].offsets = append(postings[key[0]].offsets, postingOffset{value: key[1], tableOff: tableOff})
+		}
+
+		return nil
+	}); err != nil {
+		return nil, errors.Wrap(err, "read postings table")
+	}
+	if lastKey != nil {
+		if (valueCount-1)%postingOffsetsInMemSampling != 0 {
+			// Always include last value for each label name if not included already based on valueCount.
+			postings[lastKey[0]].offsets = append(postings[lastKey[0]].offsets, postingOffset{value: lastKey[1], tableOff: lastTableOff})
+		}
+		// In any case lastValOffset is unknown as don't have next posting anymore. Guess from TOC table.
+		// In worst case we will overfetch a few bytes.
+		postings[lastKey[0]].lastValOffset = indexLastPostingEnd - crc32.Size
+	}
+	// Trim any extra space in the slices.
+	for k, v := range postings {
+		l := make([]postingOffset, len(v.offsets))
+		copy(l, v.offsets)
+		postings[k].offsets = l
+	}
+
+	return postings, nil
 }
 
 // newBinaryTOCFromByteSlice return parsed TOC from given index header byte slice.
