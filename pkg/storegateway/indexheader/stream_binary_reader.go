@@ -301,6 +301,9 @@ func skipNAndName2(d *stream_encoding.Decbuf, buf *int) {
 	d.Skip(*buf)
 }
 
+// TODO: can this be simplified to only handle a single value?
+// PostingsOffset only ever calls this method with a single value, although there's a comment
+// in there about taking advantage of retrieving multiple values at once.
 func (r *StreamBinaryReader) postingsOffset(name string, values ...string) ([]index.Range, error) {
 	rngs := make([]index.Range, 0, len(values))
 	if r.indexVersion == index.FormatV1 {
