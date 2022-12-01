@@ -35,7 +35,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/storage/remote"
-	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
@@ -1515,6 +1514,22 @@ func TestDistributor_Push_ExemplarValidation(t *testing.T) {
 	}
 }
 
+// based on GenerateTestHistograms in github.com/prometheus/prometheus/tsdb
+func generateTestHistogram(i int) *histogram.Histogram {
+	return &histogram.Histogram{
+		Count:         5 + uint64(i*4),
+		ZeroCount:     2 + uint64(i),
+		ZeroThreshold: 0.001,
+		Sum:           18.4 * float64(i+1),
+		Schema:        1,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		PositiveBuckets: []int64{int64(i + 1), 1, -1, 0},
+	}
+}
+
 func TestDistributor_Push_HistogramValidation(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "user")
 
@@ -1524,10 +1539,10 @@ func TestDistributor_Push_HistogramValidation(t *testing.T) {
 		errID  globalerror.ID
 	}{
 		"valid histogram": {
-			req: makeWriteRequestHistogram([]string{model.MetricNameLabel, "test"}, 1000, tsdb.GenerateTestHistograms(1)[0]),
+			req: makeWriteRequestHistogram([]string{model.MetricNameLabel, "test"}, 1000, generateTestHistogram(0)),
 		},
 		"rejects a histogram whose timestamp is too new": {
-			req:    makeWriteRequestHistogram([]string{model.MetricNameLabel, "test"}, time.Now().Add(time.Hour).UnixNano()/int64(time.Millisecond), tsdb.GenerateTestHistograms(1)[0]),
+			req:    makeWriteRequestHistogram([]string{model.MetricNameLabel, "test"}, time.Now().Add(time.Hour).UnixNano()/int64(time.Millisecond), generateTestHistogram(0)),
 			errMsg: `received a histogram whose timestamp is too far in the future`,
 			errID:  globalerror.SampleTooFarInFuture,
 		},
@@ -3456,6 +3471,8 @@ func TestValidationBeforeForwarding(t *testing.T) {
 	// but since validation removes samples 1 and 2 we need to increase the values by 2.
 	expectedWriteReq.Timeseries[1].Samples[0].Value += 2
 	expectedWriteReq.Timeseries[1].Samples[0].TimestampMs += 2
+	// We need to do something similar to samples for histograms, but because the data type has more fields to update it's neater to regenerate it
+	expectedWriteReq.Timeseries[1].Histograms = makeWriteRequestHistograms(103, generateTestHistogram(3))
 
 	// Capture the submitted write requests which the middlewares pass into the mock push function.
 	var submittedWriteReqs []*mimirpb.WriteRequest
@@ -3755,7 +3772,7 @@ func makeWriteRequest(startTimestampMs int64, samples int, metadata int, exempla
 			}
 
 			if histograms {
-				req.Histograms = makeWriteRequestHistograms(startTimestampMs+int64(i), tsdb.GenerateTestHistograms(i + 1)[i])
+				req.Histograms = makeWriteRequestHistograms(startTimestampMs+int64(i), generateTestHistogram(i))
 			}
 
 			request.Timeseries = append(request.Timeseries, req)
@@ -3889,7 +3906,7 @@ func makeWriteRequestForGenerators(series int, lsg labelSetGen, elsg labelSetGen
 				TimestampMs: int64(100 + i),
 			}}
 		}
-		ts.Histograms = makeWriteRequestHistograms(int64(i), tsdb.GenerateTestHistograms(i + 1)[i])
+		ts.Histograms = makeWriteRequestHistograms(int64(100+i), generateTestHistogram(i))
 		request.Timeseries = append(request.Timeseries, ts)
 
 	}
