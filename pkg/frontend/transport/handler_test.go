@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -52,21 +53,67 @@ func TestHandler_ServeHTTP(t *testing.T) {
 	for _, tt := range []struct {
 		name            string
 		cfg             HandlerConfig
+		request         func() *http.Request
+		expectedParams  url.Values
 		expectedMetrics int
 	}{
 		{
-			name:            "test handler with stats enabled",
-			cfg:             HandlerConfig{QueryStatsEnabled: true},
+			name: "handler with stats enabled, POST request with params",
+			cfg:  HandlerConfig{QueryStatsEnabled: true, MaxBodySize: 1024},
+			request: func() *http.Request {
+				form := url.Values{
+					"query": []string{"some_metric"},
+					"time":  []string{"42"},
+				}
+				r := httptest.NewRequest("POST", "/api/v1/query", strings.NewReader(form.Encode()))
+				r.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+				return r
+			},
+			expectedParams: url.Values{
+				"query": []string{"some_metric"},
+				"time":  []string{"42"},
+			},
 			expectedMetrics: 4,
 		},
 		{
-			name:            "test handler with stats disabled",
-			cfg:             HandlerConfig{QueryStatsEnabled: false},
+			name: "handler with stats enabled, GET request with params",
+			cfg:  HandlerConfig{QueryStatsEnabled: true},
+			request: func() *http.Request {
+				return httptest.NewRequest("GET", "/api/v1/query?query=some_metric&time=42", nil)
+			},
+			expectedParams: url.Values{
+				"query": []string{"some_metric"},
+				"time":  []string{"42"},
+			},
+			expectedMetrics: 4,
+		},
+		{
+			name: "handler with stats enabled, GET request without params",
+			cfg:  HandlerConfig{QueryStatsEnabled: true},
+			request: func() *http.Request {
+				return httptest.NewRequest("GET", "/api/v1/query", nil)
+			},
+			expectedParams:  url.Values{},
+			expectedMetrics: 4,
+		},
+		{
+			name: "handler with stats disabled, GET request with params",
+			cfg:  HandlerConfig{QueryStatsEnabled: false},
+			request: func() *http.Request {
+				return httptest.NewRequest("GET", "/api/v1/query?query=some_metric&time=42", nil)
+			},
+			expectedParams: url.Values{
+				"query": []string{"some_metric"},
+				"time":  []string{"42"},
+			},
 			expectedMetrics: 0,
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			roundTripper := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+				assert.NoError(t, req.ParseForm())
+				assert.Equal(t, tt.expectedParams, req.Form)
+
 				return &http.Response{
 					StatusCode: http.StatusOK,
 					Body:       io.NopCloser(strings.NewReader("{}")),
@@ -76,9 +123,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
 			handler := NewHandler(tt.cfg, roundTripper, log.NewNopLogger(), reg)
 
-			ctx := user.InjectOrgID(context.Background(), "12345")
-			req := httptest.NewRequest("GET", "/", nil)
-			req = req.WithContext(ctx)
+			req := tt.request().WithContext(user.InjectOrgID(context.Background(), "12345"))
 			resp := httptest.NewRecorder()
 
 			handler.ServeHTTP(resp, req)
