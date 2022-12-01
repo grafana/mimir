@@ -11,7 +11,7 @@ import (
 )
 
 func TestReaders_Read(t *testing.T) {
-	testReaders(t, func(t *testing.T, r Reader) {
+	testReaders(t, func(t *testing.T, r *FileReader) {
 		firstRead, err := r.Read(5)
 		require.NoError(t, err)
 		require.Equal(t, []byte("abcde"), firstRead, "first read")
@@ -31,7 +31,7 @@ func TestReaders_Read(t *testing.T) {
 }
 
 func TestReaders_Peek(t *testing.T) {
-	testReaders(t, func(t *testing.T, r Reader) {
+	testReaders(t, func(t *testing.T, r *FileReader) {
 		firstPeek, err := r.Peek(5)
 		require.NoError(t, err)
 		require.Equal(t, []byte("abcde"), firstPeek, "peek (first call)")
@@ -62,7 +62,7 @@ func TestReaders_Peek(t *testing.T) {
 }
 
 func TestReaders_Reset(t *testing.T) {
-	testReaders(t, func(t *testing.T, r Reader) {
+	testReaders(t, func(t *testing.T, r *FileReader) {
 		_, err := r.Read(5)
 		require.NoError(t, err)
 		require.NoError(t, r.Reset())
@@ -74,7 +74,7 @@ func TestReaders_Reset(t *testing.T) {
 }
 
 func TestReaders_ResetAt(t *testing.T) {
-	testReaders(t, func(t *testing.T, r Reader) {
+	testReaders(t, func(t *testing.T, r *FileReader) {
 		require.NoError(t, r.ResetAt(5))
 		readAfterReset, err := r.Read(5)
 		require.NoError(t, err)
@@ -95,7 +95,7 @@ func TestReaders_ResetAt(t *testing.T) {
 }
 
 func TestReaders_Skip(t *testing.T) {
-	testReaders(t, func(t *testing.T, r Reader) {
+	testReaders(t, func(t *testing.T, r *FileReader) {
 		peek, err := r.Peek(5)
 		require.NoError(t, err)
 		require.Equal(t, []byte("abcde"), peek, "peek before skip")
@@ -119,7 +119,7 @@ func TestReaders_Skip(t *testing.T) {
 }
 
 func TestReaders_Len(t *testing.T) {
-	testReaders(t, func(t *testing.T, r Reader) {
+	testReaders(t, func(t *testing.T, r *FileReader) {
 		require.Equal(t, 20, r.Len(), "initial length")
 
 		_, err := r.Read(5)
@@ -163,7 +163,7 @@ func TestReaders_CreationWithEmptyContents(t *testing.T) {
 	})
 }
 
-func testReaders(t *testing.T, test func(t *testing.T, r Reader)) {
+func testReaders(t *testing.T, test func(t *testing.T, r *FileReader)) {
 	testReaderContents := []byte("abcdefghij1234567890")
 
 	t.Run("FileReaderWithZeroOffset", func(t *testing.T) {
