@@ -9,7 +9,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash/crc32"
-	"os"
 
 	"github.com/dennwc/varint"
 	"github.com/pkg/errors"
@@ -31,56 +30,8 @@ type Decbuf struct {
 	E error
 }
 
-// NewDecbufFromFile returns a new decoding buffer for f. It expects the first 4 bytes
-// after offset to hold the big endian encoded content length, followed by the contents and the expected
-// checksum.
-// If castagnoliTable is non-nil, the integrity of the contents of f are checked against the expected
-// checksum.
-// TODO: might be able to save a small amount of time by not reading the size every time we create a
-// Decbuf if we've read it previously
-func NewDecbufFromFile(f *os.File, offset int, castagnoliTable *crc32.Table) Decbuf {
-	lengthBytes := make([]byte, 4)
-	n, err := f.ReadAt(lengthBytes, int64(offset))
-	if err != nil {
-		return Decbuf{E: err}
-	}
-	if n != 4 {
-		return Decbuf{E: errors.Wrapf(ErrInvalidSize, "insufficient bytes read for size (got %d, wanted %d)", n, 4)}
-	}
-
-	contentLength := int(binary.BigEndian.Uint32(lengthBytes))
-	bufferLength := len(lengthBytes) + contentLength + 4
-	r, err := NewFileReader(f, offset, bufferLength)
-	if err != nil {
-		return Decbuf{E: errors.Wrap(err, "create file reader")}
-	}
-
-	// Skip to the beginning of the content.
-	if err := r.ResetAt(4); err != nil {
-		return Decbuf{E: err}
-	}
-
-	d := Decbuf{r: r}
-
-	if castagnoliTable != nil {
-		d.CheckCrc32(castagnoliTable)
-
-		if d.Err() != nil {
-			return d
-		}
-
-		// Return to the beginning of the content.
-		if err := r.ResetAt(4); err != nil {
-			return Decbuf{E: err}
-		}
-	}
-
-	return d
-}
-
 // NewRawDecbuf returns a new decoding buffer for r.
-// Unlike NewDecbufFromFile, it does not make any assumptions about the contents of r,
-// nor does it perform any form of integrity check.
+// It does not make any assumptions about the contents of r, nor does it perform any form of integrity check.
 func NewRawDecbuf(r *FileReader) Decbuf {
 	err := r.Reset()
 	if err != nil {
