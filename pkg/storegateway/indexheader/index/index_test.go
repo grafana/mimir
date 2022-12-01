@@ -66,12 +66,4 @@ func TestSymbols(t *testing.T) {
 	}
 	_, err = s.ReverseLookup(string(rune(100)))
 	require.Error(t, err)
-
-	//	iter := s.Iter()
-	//	i := 0
-	//	for iter.Next() {
-	//		require.Equal(t, string(rune(i)), iter.At())
-	//		i++
-	//	}
-	//	require.NoError(t, iter.Err())
 }
