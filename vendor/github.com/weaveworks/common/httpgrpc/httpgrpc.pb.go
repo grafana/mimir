@@ -4,7 +4,6 @@
 package httpgrpc
 
 import (
-	bytes "bytes"
 	context "context"
 	fmt "fmt"
 	proto "github.com/gogo/protobuf/proto"
@@ -14,8 +13,6 @@ import (
 	io "io"
 	math "math"
 	math_bits "math/bits"
-	reflect "reflect"
-	strings "strings"
 )
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -30,14 +27,18 @@ var _ = math.Inf
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
 type HTTPRequest struct {
-	Method  string    `protobuf:"bytes,1,opt,name=method,proto3" json:"method,omitempty"`
-	Url     string    `protobuf:"bytes,2,opt,name=url,proto3" json:"url,omitempty"`
-	Headers []*Header `protobuf:"bytes,3,rep,name=headers,proto3" json:"headers,omitempty"`
-	Body    []byte    `protobuf:"bytes,4,opt,name=body,proto3" json:"body,omitempty"`
+	Method               string    `protobuf:"bytes,1,opt,name=method,proto3" json:"method,omitempty"`
+	Url                  string    `protobuf:"bytes,2,opt,name=url,proto3" json:"url,omitempty"`
+	Headers              []*Header `protobuf:"bytes,3,rep,name=headers,proto3" json:"headers,omitempty"`
+	Body                 []byte    `protobuf:"bytes,4,opt,name=body,proto3" json:"body,omitempty"`
+	XXX_NoUnkeyedLiteral struct{}  `json:"-"`
+	XXX_unrecognized     []byte    `json:"-"`
+	XXX_sizecache        int32     `json:"-"`
 }
 
-func (m *HTTPRequest) Reset()      { *m = HTTPRequest{} }
-func (*HTTPRequest) ProtoMessage() {}
+func (m *HTTPRequest) Reset()         { *m = HTTPRequest{} }
+func (m *HTTPRequest) String() string { return proto.CompactTextString(m) }
+func (*HTTPRequest) ProtoMessage()    {}
 func (*HTTPRequest) Descriptor() ([]byte, []int) {
 	return fileDescriptor_6670c8e151665986, []int{0}
 }
@@ -97,13 +98,17 @@ func (m *HTTPRequest) GetBody() []byte {
 }
 
 type HTTPResponse struct {
-	Code    int32     `protobuf:"varint,1,opt,name=Code,proto3" json:"Code,omitempty"`
-	Headers []*Header `protobuf:"bytes,2,rep,name=headers,proto3" json:"headers,omitempty"`
-	Body    []byte    `protobuf:"bytes,3,opt,name=body,proto3" json:"body,omitempty"`
+	Code                 int32     `protobuf:"varint,1,opt,name=Code,proto3" json:"Code,omitempty"`
+	Headers              []*Header `protobuf:"bytes,2,rep,name=headers,proto3" json:"headers,omitempty"`
+	Body                 []byte    `protobuf:"bytes,3,opt,name=body,proto3" json:"body,omitempty"`
+	XXX_NoUnkeyedLiteral struct{}  `json:"-"`
+	XXX_unrecognized     []byte    `json:"-"`
+	XXX_sizecache        int32     `json:"-"`
 }
 
-func (m *HTTPResponse) Reset()      { *m = HTTPResponse{} }
-func (*HTTPResponse) ProtoMessage() {}
+func (m *HTTPResponse) Reset()         { *m = HTTPResponse{} }
+func (m *HTTPResponse) String() string { return proto.CompactTextString(m) }
+func (*HTTPResponse) ProtoMessage()    {}
 func (*HTTPResponse) Descriptor() ([]byte, []int) {
 	return fileDescriptor_6670c8e151665986, []int{1}
 }
@@ -156,12 +161,16 @@ func (m *HTTPResponse) GetBody() []byte {
 }
 
 type Header struct {
-	Key    string   `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
-	Values []string `protobuf:"bytes,2,rep,name=values,proto3" json:"values,omitempty"`
+	Key                  string   `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Values               []string `protobuf:"bytes,2,rep,name=values,proto3" json:"values,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
 }
 
-func (m *Header) Reset()      { *m = Header{} }
-func (*Header) ProtoMessage() {}
+func (m *Header) Reset()         { *m = Header{} }
+func (m *Header) String() string { return proto.CompactTextString(m) }
+func (*Header) ProtoMessage()    {}
 func (*Header) Descriptor() ([]byte, []int) {
 	return fileDescriptor_6670c8e151665986, []int{2}
 }
@@ -215,180 +224,25 @@ func init() {
 func init() { proto.RegisterFile("httpgrpc/httpgrpc.proto", fileDescriptor_6670c8e151665986) }
 
 var fileDescriptor_6670c8e151665986 = []byte{
-	// 295 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xe2, 0x12, 0xcf, 0x28, 0x29, 0x29,
-	0x48, 0x2f, 0x2a, 0x48, 0xd6, 0x87, 0x31, 0xf4, 0x0a, 0x8a, 0xf2, 0x4b, 0xf2, 0x85, 0x38, 0x60,
-	0x7c, 0xa5, 0x72, 0x2e, 0x6e, 0x8f, 0x90, 0x90, 0x80, 0xa0, 0xd4, 0xc2, 0xd2, 0xd4, 0xe2, 0x12,
-	0x21, 0x31, 0x2e, 0xb6, 0xdc, 0xd4, 0x92, 0x8c, 0xfc, 0x14, 0x09, 0x46, 0x05, 0x46, 0x0d, 0xce,
-	0x20, 0x28, 0x4f, 0x48, 0x80, 0x8b, 0xb9, 0xb4, 0x28, 0x47, 0x82, 0x09, 0x2c, 0x08, 0x62, 0x0a,
-	0x69, 0x71, 0xb1, 0x67, 0xa4, 0x26, 0xa6, 0xa4, 0x16, 0x15, 0x4b, 0x30, 0x2b, 0x30, 0x6b, 0x70,
-	0x1b, 0x09, 0xe8, 0xc1, 0x2d, 0xf1, 0x00, 0x4b, 0x04, 0xc1, 0x14, 0x08, 0x09, 0x71, 0xb1, 0x24,
-	0xe5, 0xa7, 0x54, 0x4a, 0xb0, 0x28, 0x30, 0x6a, 0xf0, 0x04, 0x81, 0xd9, 0x4a, 0x49, 0x5c, 0x3c,
-	0x10, 0x8b, 0x8b, 0x0b, 0xf2, 0xf3, 0x8a, 0x53, 0x41, 0x6a, 0x9c, 0xf3, 0x53, 0x52, 0xc1, 0xf6,
-	0xb2, 0x06, 0x81, 0xd9, 0xc8, 0x76, 0x30, 0x11, 0x6b, 0x07, 0x33, 0x92, 0x1d, 0x46, 0x5c, 0x6c,
-	0x10, 0x65, 0x20, 0xf7, 0x67, 0xa7, 0x56, 0x42, 0x3d, 0x05, 0x62, 0x82, 0x7c, 0x5a, 0x96, 0x98,
-	0x53, 0x9a, 0x0a, 0x31, 0x9a, 0x33, 0x08, 0xca, 0x33, 0x72, 0xe4, 0x62, 0x01, 0xb9, 0x4b, 0xc8,
-	0x92, 0x8b, 0xcd, 0x23, 0x31, 0x2f, 0x25, 0x27, 0x55, 0x48, 0x14, 0xc9, 0x52, 0x44, 0x50, 0x49,
-	0x89, 0xa1, 0x0b, 0x43, 0x3c, 0xa2, 0xc4, 0xe0, 0x64, 0x77, 0xe1, 0xa1, 0x1c, 0xc3, 0x8d, 0x87,
-	0x72, 0x0c, 0x1f, 0x1e, 0xca, 0x31, 0x36, 0x3c, 0x92, 0x63, 0x5c, 0xf1, 0x48, 0x8e, 0xf1, 0xc4,
-	0x23, 0x39, 0xc6, 0x0b, 0x8f, 0xe4, 0x18, 0x1f, 0x3c, 0x92, 0x63, 0x7c, 0xf1, 0x48, 0x8e, 0xe1,
-	0xc3, 0x23, 0x39, 0xc6, 0x09, 0x8f, 0xe5, 0x18, 0x2e, 0x3c, 0x96, 0x63, 0xb8, 0xf1, 0x58, 0x8e,
-	0x21, 0x0a, 0x1e, 0x27, 0x49, 0x6c, 0xe0, 0x48, 0x32, 0x06, 0x04, 0x00, 0x00, 0xff, 0xff, 0xd9,
-	0x2e, 0xd7, 0x22, 0xbf, 0x01, 0x00, 0x00,
-}
-
-func (this *HTTPRequest) Equal(that interface{}) bool {
-	if that == nil {
-		return this == nil
-	}
-
-	that1, ok := that.(*HTTPRequest)
-	if !ok {
-		that2, ok := that.(HTTPRequest)
-		if ok {
-			that1 = &that2
-		} else {
-			return false
-		}
-	}
-	if that1 == nil {
-		return this == nil
-	} else if this == nil {
-		return false
-	}
-	if this.Method != that1.Method {
-		return false
-	}
-	if this.Url != that1.Url {
-		return false
-	}
-	if len(this.Headers) != len(that1.Headers) {
-		return false
-	}
-	for i := range this.Headers {
-		if !this.Headers[i].Equal(that1.Headers[i]) {
-			return false
-		}
-	}
-	if !bytes.Equal(this.Body, that1.Body) {
-		return false
-	}
-	return true
-}
-func (this *HTTPResponse) Equal(that interface{}) bool {
-	if that == nil {
-		return this == nil
-	}
-
-	that1, ok := that.(*HTTPResponse)
-	if !ok {
-		that2, ok := that.(HTTPResponse)
-		if ok {
-			that1 = &that2
-		} else {
-			return false
-		}
-	}
-	if that1 == nil {
-		return this == nil
-	} else if this == nil {
-		return false
-	}
-	if this.Code != that1.Code {
-		return false
-	}
-	if len(this.Headers) != len(that1.Headers) {
-		return false
-	}
-	for i := range this.Headers {
-		if !this.Headers[i].Equal(that1.Headers[i]) {
-			return false
-		}
-	}
-	if !bytes.Equal(this.Body, that1.Body) {
-		return false
-	}
-	return true
-}
-func (this *Header) Equal(that interface{}) bool {
-	if that == nil {
-		return this == nil
-	}
-
-	that1, ok := that.(*Header)
-	if !ok {
-		that2, ok := that.(Header)
-		if ok {
-			that1 = &that2
-		} else {
-			return false
-		}
-	}
-	if that1 == nil {
-		return this == nil
-	} else if this == nil {
-		return false
-	}
-	if this.Key != that1.Key {
-		return false
-	}
-	if len(this.Values) != len(that1.Values) {
-		return false
-	}
-	for i := range this.Values {
-		if this.Values[i] != that1.Values[i] {
-			return false
-		}
-	}
-	return true
-}
-func (this *HTTPRequest) GoString() string {
-	if this == nil {
-		return "nil"
-	}
-	s := make([]string, 0, 8)
-	s = append(s, "&httpgrpc.HTTPRequest{")
-	s = append(s, "Method: "+fmt.Sprintf("%#v", this.Method)+",\n")
-	s = append(s, "Url: "+fmt.Sprintf("%#v", this.Url)+",\n")
-	if this.Headers != nil {
-		s = append(s, "Headers: "+fmt.Sprintf("%#v", this.Headers)+",\n")
-	}
-	s = append(s, "Body: "+fmt.Sprintf("%#v", this.Body)+",\n")
-	s = append(s, "}")
-	return strings.Join(s, "")
-}
-func (this *HTTPResponse) GoString() string {
-	if this == nil {
-		return "nil"
-	}
-	s := make([]string, 0, 7)
-	s = append(s, "&httpgrpc.HTTPResponse{")
-	s = append(s, "Code: "+fmt.Sprintf("%#v", this.Code)+",\n")
-	if this.Headers != nil {
-		s = append(s, "Headers: "+fmt.Sprintf("%#v", this.Headers)+",\n")
-	}
-	s = append(s, "Body: "+fmt.Sprintf("%#v", this.Body)+",\n")
-	s = append(s, "}")
-	return strings.Join(s, "")
-}
-func (this *Header) GoString() string {
-	if this == nil {
-		return "nil"
-	}
-	s := make([]string, 0, 6)
-	s = append(s, "&httpgrpc.Header{")
-	s = append(s, "Key: "+fmt.Sprintf("%#v", this.Key)+",\n")
-	s = append(s, "Values: "+fmt.Sprintf("%#v", this.Values)+",\n")
-	s = append(s, "}")
-	return strings.Join(s, "")
-}
-func valueToGoStringHttpgrpc(v interface{}, typ string) string {
-	rv := reflect.ValueOf(v)
-	if rv.IsNil() {
-		return "nil"
-	}
-	pv := reflect.Indirect(rv).Interface()
-	return fmt.Sprintf("func(v %v) *%v { return &v } ( %#v )", typ, typ, pv)
+	// 280 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x8c, 0x91, 0x4f, 0x4f, 0x83, 0x40,
+	0x10, 0xc5, 0xdd, 0x52, 0xd1, 0x6e, 0x7b, 0x68, 0x36, 0xb1, 0x12, 0x0f, 0x84, 0x90, 0x98, 0x10,
+	0x0f, 0x90, 0xd0, 0x93, 0x47, 0xf5, 0xc2, 0xd1, 0x6c, 0x7a, 0xf2, 0xc6, 0x9f, 0x49, 0x31, 0x05,
+	0x06, 0x61, 0x29, 0xe9, 0x37, 0xf4, 0xe8, 0x47, 0x30, 0x7c, 0x12, 0xb3, 0x0b, 0x54, 0xe2, 0xc9,
+	0xdb, 0x7b, 0xc3, 0x0b, 0xbf, 0x79, 0x3b, 0xf4, 0x36, 0x15, 0xa2, 0xdc, 0x57, 0x65, 0xec, 0x8d,
+	0xc2, 0x2d, 0x2b, 0x14, 0xc8, 0xae, 0x47, 0x6f, 0xb7, 0x74, 0x19, 0xec, 0x76, 0xaf, 0x1c, 0x3e,
+	0x1a, 0xa8, 0x05, 0xdb, 0x50, 0x3d, 0x07, 0x91, 0x62, 0x62, 0x10, 0x8b, 0x38, 0x0b, 0x3e, 0x38,
+	0xb6, 0xa6, 0x5a, 0x53, 0x65, 0xc6, 0x4c, 0x0d, 0xa5, 0x64, 0x0f, 0xf4, 0x2a, 0x85, 0x30, 0x81,
+	0xaa, 0x36, 0x34, 0x4b, 0x73, 0x96, 0xfe, 0xda, 0x3d, 0x43, 0x02, 0xf5, 0x81, 0x8f, 0x01, 0xc6,
+	0xe8, 0x3c, 0xc2, 0xe4, 0x64, 0xcc, 0x2d, 0xe2, 0xac, 0xb8, 0xd2, 0x76, 0x44, 0x57, 0x3d, 0xb8,
+	0x2e, 0xb1, 0xa8, 0x41, 0x66, 0x5e, 0x30, 0x01, 0xc5, 0xbd, 0xe4, 0x4a, 0x4f, 0x19, 0xb3, 0xff,
+	0x32, 0xb4, 0x09, 0xc3, 0xa7, 0x7a, 0x1f, 0x93, 0xfb, 0x1f, 0xe0, 0x34, 0x94, 0x92, 0x52, 0x36,
+	0x3d, 0x86, 0x59, 0x03, 0xfd, 0xaf, 0x17, 0x7c, 0x70, 0xfe, 0x13, 0x9d, 0xcb, 0xbd, 0xd8, 0x23,
+	0xd5, 0x83, 0xb0, 0x48, 0x32, 0x60, 0x37, 0x13, 0xe8, 0xef, 0x53, 0xdd, 0x6d, 0xfe, 0x8e, 0xfb,
+	0x22, 0xf6, 0xc5, 0xf3, 0xf6, 0xb3, 0x33, 0xc9, 0x57, 0x67, 0x92, 0xef, 0xce, 0x24, 0x6f, 0xf7,
+	0xfb, 0x77, 0x91, 0x36, 0x91, 0x1b, 0x63, 0xee, 0xb5, 0x10, 0x1e, 0xa1, 0xc5, 0xea, 0x50, 0x7b,
+	0x31, 0xe6, 0x39, 0x16, 0xe7, 0xc3, 0x44, 0xba, 0xba, 0xcc, 0xf6, 0x27, 0x00, 0x00, 0xff, 0xff,
+	0x60, 0x46, 0x09, 0x6a, 0xb4, 0x01, 0x00, 0x00,
 }
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -491,6 +345,10 @@ func (m *HTTPRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if m.XXX_unrecognized != nil {
+		i -= len(m.XXX_unrecognized)
+		copy(dAtA[i:], m.XXX_unrecognized)
+	}
 	if len(m.Body) > 0 {
 		i -= len(m.Body)
 		copy(dAtA[i:], m.Body)
@@ -549,6 +407,10 @@ func (m *HTTPResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if m.XXX_unrecognized != nil {
+		i -= len(m.XXX_unrecognized)
+		copy(dAtA[i:], m.XXX_unrecognized)
+	}
 	if len(m.Body) > 0 {
 		i -= len(m.Body)
 		copy(dAtA[i:], m.Body)
@@ -598,6 +460,10 @@ func (m *Header) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if m.XXX_unrecognized != nil {
+		i -= len(m.XXX_unrecognized)
+		copy(dAtA[i:], m.XXX_unrecognized)
+	}
 	if len(m.Values) > 0 {
 		for iNdEx := len(m.Values) - 1; iNdEx >= 0; iNdEx-- {
 			i -= len(m.Values[iNdEx])
@@ -652,6 +518,9 @@ func (m *HTTPRequest) Size() (n int) {
 	if l > 0 {
 		n += 1 + l + sovHttpgrpc(uint64(l))
 	}
+	if m.XXX_unrecognized != nil {
+		n += len(m.XXX_unrecognized)
+	}
 	return n
 }
 
@@ -674,6 +543,9 @@ func (m *HTTPResponse) Size() (n int) {
 	if l > 0 {
 		n += 1 + l + sovHttpgrpc(uint64(l))
 	}
+	if m.XXX_unrecognized != nil {
+		n += len(m.XXX_unrecognized)
+	}
 	return n
 }
 
@@ -693,6 +565,9 @@ func (m *Header) Size() (n int) {
 			n += 1 + l + sovHttpgrpc(uint64(l))
 		}
 	}
+	if m.XXX_unrecognized != nil {
+		n += len(m.XXX_unrecognized)
+	}
 	return n
 }
 
@@ -701,60 +576,6 @@ func sovHttpgrpc(x uint64) (n int) {
 }
 func sozHttpgrpc(x uint64) (n int) {
 	return sovHttpgrpc(uint64((x << 1) ^ uint64((int64(x) >> 63))))
-}
-func (this *HTTPRequest) String() string {
-	if this == nil {
-		return "nil"
-	}
-	repeatedStringForHeaders := "[]*Header{"
-	for _, f := range this.Headers {
-		repeatedStringForHeaders += strings.Replace(f.String(), "Header", "Header", 1) + ","
-	}
-	repeatedStringForHeaders += "}"
-	s := strings.Join([]string{`&HTTPRequest{`,
-		`Method:` + fmt.Sprintf("%v", this.Method) + `,`,
-		`Url:` + fmt.Sprintf("%v", this.Url) + `,`,
-		`Headers:` + repeatedStringForHeaders + `,`,
-		`Body:` + fmt.Sprintf("%v", this.Body) + `,`,
-		`}`,
-	}, "")
-	return s
-}
-func (this *HTTPResponse) String() string {
-	if this == nil {
-		return "nil"
-	}
-	repeatedStringForHeaders := "[]*Header{"
-	for _, f := range this.Headers {
-		repeatedStringForHeaders += strings.Replace(f.String(), "Header", "Header", 1) + ","
-	}
-	repeatedStringForHeaders += "}"
-	s := strings.Join([]string{`&HTTPResponse{`,
-		`Code:` + fmt.Sprintf("%v", this.Code) + `,`,
-		`Headers:` + repeatedStringForHeaders + `,`,
-		`Body:` + fmt.Sprintf("%v", this.Body) + `,`,
-		`}`,
-	}, "")
-	return s
-}
-func (this *Header) String() string {
-	if this == nil {
-		return "nil"
-	}
-	s := strings.Join([]string{`&Header{`,
-		`Key:` + fmt.Sprintf("%v", this.Key) + `,`,
-		`Values:` + fmt.Sprintf("%v", this.Values) + `,`,
-		`}`,
-	}, "")
-	return s
-}
-func valueToStringHttpgrpc(v interface{}) string {
-	rv := reflect.ValueOf(v)
-	if rv.IsNil() {
-		return "nil"
-	}
-	pv := reflect.Indirect(rv).Interface()
-	return fmt.Sprintf("*%v", pv)
 }
 func (m *HTTPRequest) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
@@ -932,6 +753,7 @@ func (m *HTTPRequest) Unmarshal(dAtA []byte) error {
 			if (iNdEx + skippy) > l {
 				return io.ErrUnexpectedEOF
 			}
+			m.XXX_unrecognized = append(m.XXX_unrecognized, dAtA[iNdEx:iNdEx+skippy]...)
 			iNdEx += skippy
 		}
 	}
@@ -1072,6 +894,7 @@ func (m *HTTPResponse) Unmarshal(dAtA []byte) error {
 			if (iNdEx + skippy) > l {
 				return io.ErrUnexpectedEOF
 			}
+			m.XXX_unrecognized = append(m.XXX_unrecognized, dAtA[iNdEx:iNdEx+skippy]...)
 			iNdEx += skippy
 		}
 	}
@@ -1189,6 +1012,7 @@ func (m *Header) Unmarshal(dAtA []byte) error {
 			if (iNdEx + skippy) > l {
 				return io.ErrUnexpectedEOF
 			}
+			m.XXX_unrecognized = append(m.XXX_unrecognized, dAtA[iNdEx:iNdEx+skippy]...)
 			iNdEx += skippy
 		}
 	}
@@ -1201,7 +1025,6 @@ func (m *Header) Unmarshal(dAtA []byte) error {
 func skipHttpgrpc(dAtA []byte) (n int, err error) {
 	l := len(dAtA)
 	iNdEx := 0
-	depth := 0
 	for iNdEx < l {
 		var wire uint64
 		for shift := uint(0); ; shift += 7 {
@@ -1233,8 +1056,10 @@ func skipHttpgrpc(dAtA []byte) (n int, err error) {
 					break
 				}
 			}
+			return iNdEx, nil
 		case 1:
 			iNdEx += 8
+			return iNdEx, nil
 		case 2:
 			var length int
 			for shift := uint(0); ; shift += 7 {
@@ -1255,30 +1080,55 @@ func skipHttpgrpc(dAtA []byte) (n int, err error) {
 				return 0, ErrInvalidLengthHttpgrpc
 			}
 			iNdEx += length
-		case 3:
-			depth++
-		case 4:
-			if depth == 0 {
-				return 0, ErrUnexpectedEndOfGroupHttpgrpc
+			if iNdEx < 0 {
+				return 0, ErrInvalidLengthHttpgrpc
 			}
-			depth--
+			return iNdEx, nil
+		case 3:
+			for {
+				var innerWire uint64
+				var start int = iNdEx
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return 0, ErrIntOverflowHttpgrpc
+					}
+					if iNdEx >= l {
+						return 0, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					innerWire |= (uint64(b) & 0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				innerWireType := int(innerWire & 0x7)
+				if innerWireType == 4 {
+					break
+				}
+				next, err := skipHttpgrpc(dAtA[start:])
+				if err != nil {
+					return 0, err
+				}
+				iNdEx = start + next
+				if iNdEx < 0 {
+					return 0, ErrInvalidLengthHttpgrpc
+				}
+			}
+			return iNdEx, nil
+		case 4:
+			return iNdEx, nil
 		case 5:
 			iNdEx += 4
+			return iNdEx, nil
 		default:
 			return 0, fmt.Errorf("proto: illegal wireType %d", wireType)
 		}
-		if iNdEx < 0 {
-			return 0, ErrInvalidLengthHttpgrpc
-		}
-		if depth == 0 {
-			return iNdEx, nil
-		}
 	}
-	return 0, io.ErrUnexpectedEOF
+	panic("unreachable")
 }
 
 var (
-	ErrInvalidLengthHttpgrpc        = fmt.Errorf("proto: negative length found during unmarshaling")
-	ErrIntOverflowHttpgrpc          = fmt.Errorf("proto: integer overflow")
-	ErrUnexpectedEndOfGroupHttpgrpc = fmt.Errorf("proto: unexpected end of group")
+	ErrInvalidLengthHttpgrpc = fmt.Errorf("proto: negative length found during unmarshaling")
+	ErrIntOverflowHttpgrpc   = fmt.Errorf("proto: integer overflow")
 )
