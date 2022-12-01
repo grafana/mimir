@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
@@ -22,7 +21,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util/pool"
-	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestDeduplicatingBatchSet(t *testing.T) {
@@ -213,123 +211,6 @@ func TestSeriesSetWithoutChunks(t *testing.T) {
 	}
 }
 
-func TestPreloadingBatchSet(t *testing.T) {
-	test.VerifyNoLeak(t)
-
-	const delay = 10 * time.Millisecond
-
-	// Create some batches, each batch containing 1 series.
-	batches := make([]seriesChunksSet, 0, 10)
-	for i := 0; i < 10; i++ {
-		batches = append(batches, seriesChunksSet{
-			series: []seriesEntry{{
-				lset: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i)),
-				refs: []chunks.ChunkRef{chunks.ChunkRef(i)},
-			}},
-		})
-	}
-
-	t.Run("should iterate all batches if no error occurs", func(t *testing.T) {
-		for preloadSize := 1; preloadSize <= len(batches)+1; preloadSize++ {
-			preloadSize := preloadSize
-
-			t.Run(fmt.Sprintf("preload size: %d", preloadSize), func(t *testing.T) {
-				t.Parallel()
-
-				source := newSliceSeriesChunksSetIterator(batches...)
-				source = newDelayedSeriesChunksSetIterator(delay, source)
-
-				preloading := newPreloadingBatchSet(context.Background(), preloadSize, source)
-
-				// Ensure expected batches are returned in order.
-				expectedIdx := 0
-				for preloading.Next() {
-					require.NoError(t, preloading.Err())
-					require.Equal(t, batches[expectedIdx], preloading.At())
-					expectedIdx++
-				}
-
-				// Ensure all batches have been returned.
-				require.NoError(t, preloading.Err())
-				require.Equal(t, len(batches), expectedIdx)
-			})
-		}
-	})
-
-	t.Run("should stop iterating once an error is found", func(t *testing.T) {
-		for preloadSize := 1; preloadSize <= len(batches)+1; preloadSize++ {
-			preloadSize := preloadSize
-
-			t.Run(fmt.Sprintf("preload size: %d", preloadSize), func(t *testing.T) {
-				t.Parallel()
-
-				source := newSliceSeriesChunksSetIteratorWithError(errors.New("mocked error"), len(batches), batches...)
-				source = newDelayedSeriesChunksSetIterator(delay, source)
-
-				preloading := newPreloadingBatchSet(context.Background(), preloadSize, source)
-
-				// Ensure expected batches are returned in order.
-				expectedIdx := 0
-				for preloading.Next() {
-					require.NoError(t, preloading.Err())
-					require.Equal(t, batches[expectedIdx], preloading.At())
-					expectedIdx++
-				}
-
-				// Ensure an error is returned at the end.
-				require.Error(t, preloading.Err())
-				require.Equal(t, len(batches), expectedIdx)
-			})
-		}
-	})
-
-	t.Run("should not leak preloading goroutine if caller doesn't iterated until the end of batches but context is canceled", func(t *testing.T) {
-		t.Parallel()
-
-		ctx, cancelCtx := context.WithCancel(context.Background())
-
-		source := newSliceSeriesChunksSetIteratorWithError(errors.New("mocked error"), len(batches), batches...)
-		source = newDelayedSeriesChunksSetIterator(delay, source)
-
-		preloading := newPreloadingBatchSet(ctx, 1, source)
-
-		// Just call Next() once.
-		require.True(t, preloading.Next())
-		require.NoError(t, preloading.Err())
-		require.Equal(t, batches[0], preloading.At())
-
-		// Cancel the context.
-		cancelCtx()
-
-		// Give a short time to the preloader goroutine to react to the context cancellation.
-		// This is required to avoid a flaky test.
-		time.Sleep(100 * time.Millisecond)
-
-		// At this point we expect Next() to return false.
-		require.False(t, preloading.Next())
-		require.NoError(t, preloading.Err())
-	})
-
-	t.Run("should not leak preloading goroutine if caller doesn't call Next() until false but context is canceled", func(t *testing.T) {
-		t.Parallel()
-
-		ctx, cancelCtx := context.WithCancel(context.Background())
-
-		source := newSliceSeriesChunksSetIteratorWithError(errors.New("mocked error"), len(batches), batches...)
-		source = newDelayedSeriesChunksSetIterator(delay, source)
-
-		preloading := newPreloadingBatchSet(ctx, 1, source)
-
-		// Just call Next() once.
-		require.True(t, preloading.Next())
-		require.NoError(t, preloading.Err())
-		require.Equal(t, batches[0], preloading.At())
-
-		// Cancel the context. Do NOT call Next() after canceling the context.
-		cancelCtx()
-	})
-}
-
 func TestPreloadingBatchSet_Concurrency(t *testing.T) {
 	const (
 		numRuns     = 100
@@ -350,7 +231,7 @@ func TestPreloadingBatchSet_Concurrency(t *testing.T) {
 	// Run many times to increase the likelihood to find a race (if any).
 	for i := 0; i < numRuns; i++ {
 		source := newSliceSeriesChunksSetIteratorWithError(errors.New("mocked error"), len(batches), batches...)
-		preloading := newPreloadingBatchSet(context.Background(), preloadSize, source)
+		preloading := newPreloadingSeriesChunkSetIterator(context.Background(), preloadSize, source)
 
 		for preloading.Next() {
 			require.NoError(t, preloading.Err())

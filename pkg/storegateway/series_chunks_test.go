@@ -3,14 +3,18 @@
 package storegateway
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestSeriesChunksSeriesSet(t *testing.T) {
@@ -173,6 +177,123 @@ func TestSeriesChunksSeriesSet(t *testing.T) {
 		// Can't release the next ones because can't move forward with the iteration (due to the error).
 		require.False(t, releasers[1].isReleased())
 		require.False(t, releasers[2].isReleased())
+	})
+}
+
+func TestPreloadingSeriesChunkSetIterator(t *testing.T) {
+	test.VerifyNoLeak(t)
+
+	const delay = 10 * time.Millisecond
+
+	// Create some sets, each set containing 1 series.
+	sets := make([]seriesChunksSet, 0, 10)
+	for i := 0; i < 10; i++ {
+		sets = append(sets, seriesChunksSet{
+			series: []seriesEntry{{
+				lset: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i)),
+				refs: []chunks.ChunkRef{chunks.ChunkRef(i)},
+			}},
+		})
+	}
+
+	t.Run("should iterate all sets if no error occurs", func(t *testing.T) {
+		for preloadSize := 1; preloadSize <= len(sets)+1; preloadSize++ {
+			preloadSize := preloadSize
+
+			t.Run(fmt.Sprintf("preload size: %d", preloadSize), func(t *testing.T) {
+				t.Parallel()
+
+				source := newSliceSeriesChunksSetIterator(sets...)
+				source = newDelayedSeriesChunksSetIterator(delay, source)
+
+				preloading := newPreloadingSeriesChunkSetIterator(context.Background(), preloadSize, source)
+
+				// Ensure expected sets are returned in order.
+				expectedIdx := 0
+				for preloading.Next() {
+					require.NoError(t, preloading.Err())
+					require.Equal(t, sets[expectedIdx], preloading.At())
+					expectedIdx++
+				}
+
+				// Ensure all sets have been returned.
+				require.NoError(t, preloading.Err())
+				require.Equal(t, len(sets), expectedIdx)
+			})
+		}
+	})
+
+	t.Run("should stop iterating once an error is found", func(t *testing.T) {
+		for preloadSize := 1; preloadSize <= len(sets)+1; preloadSize++ {
+			preloadSize := preloadSize
+
+			t.Run(fmt.Sprintf("preload size: %d", preloadSize), func(t *testing.T) {
+				t.Parallel()
+
+				source := newSliceSeriesChunksSetIteratorWithError(errors.New("mocked error"), len(sets), sets...)
+				source = newDelayedSeriesChunksSetIterator(delay, source)
+
+				preloading := newPreloadingSeriesChunkSetIterator(context.Background(), preloadSize, source)
+
+				// Ensure expected sets are returned in order.
+				expectedIdx := 0
+				for preloading.Next() {
+					require.NoError(t, preloading.Err())
+					require.Equal(t, sets[expectedIdx], preloading.At())
+					expectedIdx++
+				}
+
+				// Ensure an error is returned at the end.
+				require.Error(t, preloading.Err())
+				require.Equal(t, len(sets), expectedIdx)
+			})
+		}
+	})
+
+	t.Run("should not leak preloading goroutine if caller doesn't iterated until the end of sets but context is canceled", func(t *testing.T) {
+		t.Parallel()
+
+		ctx, cancelCtx := context.WithCancel(context.Background())
+
+		source := newSliceSeriesChunksSetIteratorWithError(errors.New("mocked error"), len(sets), sets...)
+		source = newDelayedSeriesChunksSetIterator(delay, source)
+
+		preloading := newPreloadingSeriesChunkSetIterator(ctx, 1, source)
+
+		// Just call Next() once.
+		require.True(t, preloading.Next())
+		require.NoError(t, preloading.Err())
+		require.Equal(t, sets[0], preloading.At())
+
+		// Cancel the context.
+		cancelCtx()
+
+		// Give a short time to the preloader goroutine to react to the context cancellation.
+		// This is required to avoid a flaky test.
+		time.Sleep(100 * time.Millisecond)
+
+		// At this point we expect Next() to return false.
+		require.False(t, preloading.Next())
+		require.NoError(t, preloading.Err())
+	})
+
+	t.Run("should not leak preloading goroutine if caller doesn't call Next() until false but context is canceled", func(t *testing.T) {
+		t.Parallel()
+
+		ctx, cancelCtx := context.WithCancel(context.Background())
+
+		source := newSliceSeriesChunksSetIteratorWithError(errors.New("mocked error"), len(sets), sets...)
+		source = newDelayedSeriesChunksSetIterator(delay, source)
+
+		preloading := newPreloadingSeriesChunkSetIterator(ctx, 1, source)
+
+		// Just call Next() once.
+		require.True(t, preloading.Next())
+		require.NoError(t, preloading.Err())
+		require.Equal(t, sets[0], preloading.At())
+
+		// Cancel the context. Do NOT call Next() after canceling the context.
+		cancelCtx()
 	})
 }
 
