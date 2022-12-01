@@ -33,6 +33,7 @@ type Decbuf struct {
 // NewRawDecbuf returns a new decoding buffer for r.
 // It does not make any assumptions about the contents of r, nor does it perform any form of integrity check.
 func NewRawDecbuf(r *FileReader) Decbuf {
+	// TODO: Do we need to Reset() here or does "raw" imply that's the responsibility of the caller?
 	err := r.Reset()
 	if err != nil {
 		return Decbuf{E: err}
@@ -181,6 +182,20 @@ func (d *Decbuf) Be32() uint32 {
 	}
 
 	return binary.BigEndian.Uint32(b)
+}
+
+func (d *Decbuf) ByteInt() int {
+	if d.E != nil {
+		return 0
+	}
+
+	b, err := d.r.Read(1)
+	if err != nil {
+		d.E = err
+		return 0
+	}
+
+	return int(b[0])
 }
 
 func (d *Decbuf) Err() error { return d.E }

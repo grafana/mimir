@@ -47,7 +47,7 @@ type PostingOffsetTableV1 struct {
 	postings map[string]map[string]index.Range
 }
 
-func NewPostingOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset int, indexVersion int, indexLastPostingEnd int64, postingOffsetsInMemSampling int) (PostingOffsetTable, error) {
+func NewPostingOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset int, indexVersion int, indexLastPostingEnd uint64, postingOffsetsInMemSampling int) (PostingOffsetTable, error) {
 	if indexVersion == index.FormatV1 {
 		return newV1PostingOffsetTable(factory, tableOffset, indexLastPostingEnd)
 	} else if indexVersion == index.FormatV2 {
@@ -57,7 +57,7 @@ func NewPostingOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset i
 	return nil, fmt.Errorf("unknown index version %v", indexVersion)
 }
 
-func newV1PostingOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset int, indexLastPostingEnd int64) (PostingOffsetTable, error) {
+func newV1PostingOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset int, indexLastPostingEnd uint64) (PostingOffsetTable, error) {
 	t := PostingOffsetTableV1{
 		postings: map[string]map[string]index.Range{},
 	}
@@ -89,14 +89,14 @@ func newV1PostingOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset
 	}
 
 	if lastKey != nil {
-		prevRng.End = indexLastPostingEnd - crc32.Size
+		prevRng.End = int64(indexLastPostingEnd) - crc32.Size
 		t.postings[lastKey[0]][lastKey[1]] = prevRng
 	}
 
 	return &t, nil
 }
 
-func newV2PostingOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset int, indexLastPostingEnd int64, postingOffsetsInMemSampling int) (PostingOffsetTable, error) {
+func newV2PostingOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset int, indexLastPostingEnd uint64, postingOffsetsInMemSampling int) (PostingOffsetTable, error) {
 	t := PostingOffsetTableV2{
 		factory:                     factory,
 		tableOffset:                 tableOffset,
@@ -149,7 +149,7 @@ func newV2PostingOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset
 		}
 		// In any case lastValOffset is unknown as don't have next posting anymore. Guess from TOC table.
 		// In worst case we will overfetch a few bytes.
-		t.postings[lastKey[0]].lastValOffset = indexLastPostingEnd - crc32.Size
+		t.postings[lastKey[0]].lastValOffset = int64(indexLastPostingEnd) - crc32.Size
 	}
 	// Trim any extra space in the slices.
 	for k, v := range t.postings {
