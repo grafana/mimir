@@ -569,7 +569,6 @@ func blockSeries(
 	seriesLimiter SeriesLimiter, // Rate limiter for loading series.
 	skipChunks bool, // If true, chunks are not loaded and minTime/maxTime are ignored.
 	minTime, maxTime int64, // Series must have data in this time range to be returned (ignored if skipChunks=true).
-	loadAggregates []storepb.Aggr, // List of aggregates to load when loading chunks.
 	logger log.Logger,
 ) (storepb.SeriesSet, *safeQueryStats, error) {
 	span, ctx := tracing.StartSpan(ctx, "blockSeries()")
@@ -720,7 +719,7 @@ func blockSeries(
 		return newBucketSeriesSet(res), reqStats, nil
 	}
 
-	if err := chunkr.load(res, loadAggregates, reqStats); err != nil {
+	if err := chunkr.load(res, reqStats); err != nil {
 		return nil, nil, errors.Wrap(err, "load chunks")
 	}
 
@@ -778,7 +777,7 @@ func storeCachedSeries(ctx context.Context, indexCache indexcache.IndexCache, us
 	indexCache.StoreSeries(ctx, userID, blockID, entry.MatchersKey, shard, data)
 }
 
-func populateChunk(out *storepb.AggrChunk, in chunkenc.Chunk, aggrs []storepb.Aggr, save func([]byte) ([]byte, error)) error {
+func populateChunk(out *storepb.AggrChunk, in chunkenc.Chunk, save func([]byte) ([]byte, error)) error {
 	if in.Encoding() == chunkenc.EncXOR {
 		b, err := save(in.Bytes())
 		if err != nil {
@@ -1050,7 +1049,6 @@ func (s *BucketStore) synchronousSeriesSet(
 				seriesLimiter,
 				req.SkipChunks,
 				req.MinTime, req.MaxTime,
-				req.Aggregates,
 				s.logger,
 			)
 			if err != nil {
@@ -1246,7 +1244,7 @@ func blockLabelNames(ctx context.Context, indexr *bucketIndexReader, matchers []
 
 	// We ignore request's min/max time and query the entire block to make the result cacheable.
 	minTime, maxTime := indexr.block.meta.MinTime, indexr.block.meta.MaxTime
-	seriesSet, _, err := blockSeries(ctx, indexr, nil, matchers, nil, nil, nil, seriesLimiter, true, minTime, maxTime, nil, logger)
+	seriesSet, _, err := blockSeries(ctx, indexr, nil, matchers, nil, nil, nil, seriesLimiter, true, minTime, maxTime, logger)
 	if err != nil {
 		return nil, errors.Wrap(err, "fetch series")
 	}
