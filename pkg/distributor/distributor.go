@@ -285,7 +285,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		}, []string{"user"}),
 		receivedHistograms: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
-			Name:      "distributor_received_histogramsm_total",
+			Name:      "distributor_received_histograms_total",
 			Help:      "The total number of received histograms, excluding rejected and deduped histograms.",
 		}, []string{"user"}),
 		receivedMetadata: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
@@ -326,7 +326,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		nonHAHistograms: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
 			Name:      "distributor_non_ha_histograms_received_total",
-			Help:      "The total number of received histograms for a user that has HA tracking turned on, but the sample didn't contain both HA labels.",
+			Help:      "The total number of received histograms for a user that has HA tracking turned on, but the histogram didn't contain both HA labels.",
 		}, []string{"user"}),
 		dedupedSamples: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
@@ -554,9 +554,11 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.incomingHistograms.DeleteLabelValues(userID)
 	d.incomingMetadata.DeleteLabelValues(userID)
 	d.nonHASamples.DeleteLabelValues(userID)
+	d.nonHAHistograms.DeleteLabelValues(userID)
 	d.latestSeenSampleTimestampPerUser.DeleteLabelValues(userID)
 
 	d.dedupedSamples.DeletePartialMatch(prometheus.Labels{"user": userID})
+	d.dedupedHistograms.DeletePartialMatch(prometheus.Labels{"user": userID})
 
 	d.discardedSamplesTooManyHaClusters.DeleteLabelValues(userID)
 	d.discardedHistogramsTooManyHaClusters.DeleteLabelValues(userID)
