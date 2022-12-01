@@ -18,65 +18,49 @@ import (
 
 const postingLengthFieldSize = 4
 
-type PostingOffsetTable struct {
-	indexVersion int
+type PostingOffsetTable interface {
+	// PostingsOffset returns a list of offsets for labels named name with value in values.
+	// TODO: can this be simplified to only handle a single value?
+	// StreamBinaryReader.PostingsOffset only ever calls this method with a single value, although there's a comment
+	// in there about taking advantage of retrieving multiple values at once.
+	PostingsOffset(name string, values ...string) ([]index.Range, error)
 
+	// LabelValues returns a list of values for the label named name that match filter.
+	LabelValues(name string, filter func(string) bool) ([]string, error)
+
+	// LabelNames returns a list of all label names in this table.
+	LabelNames() ([]string, error)
+
+	// ForEachLabelName calls f for each label name in this table.
+	// If f returns a non-nil error for any label name, ForEachLabelName immediately returns that error
+	// and does not call f again.
+	ForEachLabelName(f func(name string) error) error
+
+	// LabelNameCount returns a value which is at least as large as the number of
+	// label names present in this table.
+	LabelNameCount() int
+}
+
+type PostingOffsetTableV1 struct {
 	// For the v1 format, labelname -> labelvalue -> offset.
-	postingsV1 map[string]map[string]index.Range
-
-	// Map of LabelName to a list of some LabelValues's position in the offset table.
-	// The first and last values for each name are always present, we keep only 1/postingOffsetsInMemSampling of the rest.
-	postingsV2 map[string]*postingValueOffsets
-
-	postingOffsetsInMemSampling int
-
-	factory     *stream_encoding.DecbufFactory
-	tableOffset int
+	postings map[string]map[string]index.Range
 }
 
-type postingValueOffsets struct {
-	offsets       []postingOffset
-	lastValOffset int64
-}
-
-type postingOffset struct {
-	// label value.
-	value string
-	// offset of this entry in posting offset table in index-header file.
-	tableOff int
-}
-
-func NewPostingsOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset int, indexVersion int, indexLastPostingEnd int64, postingOffsetsInMemSampling int) (*PostingOffsetTable, error) {
-	t := PostingOffsetTable{
-		indexVersion:                indexVersion,
-		postingOffsetsInMemSampling: postingOffsetsInMemSampling,
-		factory:                     factory,
-		tableOffset:                 tableOffset,
-	}
-
-	if t.indexVersion == index.FormatV1 {
-		var err error
-		t.postingsV1, err = loadV1PostingsOffsetTable(t.factory, t.tableOffset, indexLastPostingEnd)
-
-		if err != nil {
-			return nil, err
-		}
+func NewPostingOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset int, indexVersion int, indexLastPostingEnd int64, postingOffsetsInMemSampling int) (PostingOffsetTable, error) {
+	if indexVersion == index.FormatV1 {
+		return newV1PostingOffsetTable(factory, tableOffset, indexLastPostingEnd)
 	} else {
-		var err error
-		t.postingsV2, err = loadV2PostingsOffsetTable(t.factory, t.tableOffset, indexLastPostingEnd, postingOffsetsInMemSampling)
-
-		if err != nil {
-			return nil, err
-		}
+		return newV2PostingOffsetTable(factory, tableOffset, indexLastPostingEnd, postingOffsetsInMemSampling)
 	}
-
-	return &t, nil
 }
 
-func loadV1PostingsOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset int, indexLastPostingEnd int64) (map[string]map[string]index.Range, error) {
+func newV1PostingOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset int, indexLastPostingEnd int64) (PostingOffsetTable, error) {
+	t := PostingOffsetTableV1{
+		postings: map[string]map[string]index.Range{},
+	}
+
 	// Earlier V1 formats don't have a sorted postings offset table, so
 	// load the whole offset table into memory.
-	postingsV1 := map[string]map[string]index.Range{}
 	var lastKey []string
 	var prevRng index.Range
 
@@ -87,11 +71,11 @@ func loadV1PostingsOffsetTable(factory *stream_encoding.DecbufFactory, tableOffs
 
 		if lastKey != nil {
 			prevRng.End = int64(off - crc32.Size)
-			postingsV1[lastKey[0]][lastKey[1]] = prevRng
+			t.postings[lastKey[0]][lastKey[1]] = prevRng
 		}
 
-		if _, ok := postingsV1[key[0]]; !ok {
-			postingsV1[key[0]] = map[string]index.Range{}
+		if _, ok := t.postings[key[0]]; !ok {
+			t.postings[key[0]] = map[string]index.Range{}
 		}
 
 		lastKey = key
@@ -103,14 +87,20 @@ func loadV1PostingsOffsetTable(factory *stream_encoding.DecbufFactory, tableOffs
 
 	if lastKey != nil {
 		prevRng.End = indexLastPostingEnd - crc32.Size
-		postingsV1[lastKey[0]][lastKey[1]] = prevRng
+		t.postings[lastKey[0]][lastKey[1]] = prevRng
 	}
 
-	return postingsV1, nil
+	return &t, nil
 }
 
-func loadV2PostingsOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset int, indexLastPostingEnd int64, postingOffsetsInMemSampling int) (map[string]*postingValueOffsets, error) {
-	postings := map[string]*postingValueOffsets{}
+func newV2PostingOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset int, indexLastPostingEnd int64, postingOffsetsInMemSampling int) (PostingOffsetTable, error) {
+	t := PostingOffsetTableV2{
+		factory:                     factory,
+		tableOffset:                 tableOffset,
+		postings:                    map[string]*postingValueOffsets{},
+		postingOffsetsInMemSampling: postingOffsetsInMemSampling,
+	}
+
 	lastTableOff := 0
 	valueCount := 0
 	var lastKey []string
@@ -122,16 +112,16 @@ func loadV2PostingsOffsetTable(factory *stream_encoding.DecbufFactory, tableOffs
 			return errors.Errorf("unexpected key length for posting table %d", len(key))
 		}
 
-		if _, ok := postings[key[0]]; !ok {
+		if _, ok := t.postings[key[0]]; !ok {
 			// Not seen before label name.
-			postings[key[0]] = &postingValueOffsets{}
+			t.postings[key[0]] = &postingValueOffsets{}
 			if lastKey != nil {
 				// Always include last value for each label name, unless it was just added in previous iteration based
 				// on valueCount.
 				if (valueCount-1)%postingOffsetsInMemSampling != 0 {
-					postings[lastKey[0]].offsets = append(postings[lastKey[0]].offsets, postingOffset{value: lastKey[1], tableOff: lastTableOff})
+					t.postings[lastKey[0]].offsets = append(t.postings[lastKey[0]].offsets, postingOffset{value: lastKey[1], tableOff: lastTableOff})
 				}
-				postings[lastKey[0]].lastValOffset = int64(off - crc32.Size)
+				t.postings[lastKey[0]].lastValOffset = int64(off - crc32.Size)
 				lastKey = nil
 			}
 			valueCount = 0
@@ -142,7 +132,7 @@ func loadV2PostingsOffsetTable(factory *stream_encoding.DecbufFactory, tableOffs
 		valueCount++
 
 		if (valueCount-1)%postingOffsetsInMemSampling == 0 {
-			postings[key[0]].offsets = append(postings[key[0]].offsets, postingOffset{value: key[1], tableOff: tableOff})
+			t.postings[key[0]].offsets = append(t.postings[key[0]].offsets, postingOffset{value: key[1], tableOff: tableOff})
 		}
 
 		return nil
@@ -152,20 +142,20 @@ func loadV2PostingsOffsetTable(factory *stream_encoding.DecbufFactory, tableOffs
 	if lastKey != nil {
 		if (valueCount-1)%postingOffsetsInMemSampling != 0 {
 			// Always include last value for each label name if not included already based on valueCount.
-			postings[lastKey[0]].offsets = append(postings[lastKey[0]].offsets, postingOffset{value: lastKey[1], tableOff: lastTableOff})
+			t.postings[lastKey[0]].offsets = append(t.postings[lastKey[0]].offsets, postingOffset{value: lastKey[1], tableOff: lastTableOff})
 		}
 		// In any case lastValOffset is unknown as don't have next posting anymore. Guess from TOC table.
 		// In worst case we will overfetch a few bytes.
-		postings[lastKey[0]].lastValOffset = indexLastPostingEnd - crc32.Size
+		t.postings[lastKey[0]].lastValOffset = indexLastPostingEnd - crc32.Size
 	}
 	// Trim any extra space in the slices.
-	for k, v := range postings {
+	for k, v := range t.postings {
 		l := make([]postingOffset, len(v.offsets))
 		copy(l, v.offsets)
-		postings[k].offsets = l
+		t.postings[k].offsets = l
 	}
 
-	return postings, nil
+	return &t, nil
 }
 
 // readOffsetTable reads an offset table and at the given position calls f for each
@@ -198,28 +188,102 @@ func readOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset int, f 
 	return d.Err()
 }
 
-// TODO: can this be simplified to only handle a single value?
-// StreamBinaryReader.PostingsOffset only ever calls this method with a single value, although there's a comment
-// in there about taking advantage of retrieving multiple values at once.
-// TODO: split into V1 and V2 methods
-func (t *PostingOffsetTable) PostingsOffset(name string, values ...string) ([]index.Range, error) {
+func (t *PostingOffsetTableV1) PostingsOffset(name string, values ...string) ([]index.Range, error) {
 	rngs := make([]index.Range, 0, len(values))
-	if t.indexVersion == index.FormatV1 {
-		e, ok := t.postingsV1[name]
+	e, ok := t.postings[name]
+	if !ok {
+		return nil, nil
+	}
+	for _, v := range values {
+		rng, ok := e[v]
 		if !ok {
-			return nil, nil
+			continue
 		}
-		for _, v := range values {
-			rng, ok := e[v]
-			if !ok {
-				continue
-			}
-			rngs = append(rngs, rng)
+		rngs = append(rngs, rng)
+	}
+	return rngs, nil
+}
+
+func (t *PostingOffsetTableV1) LabelValues(name string, filter func(string) bool) ([]string, error) {
+	e, ok := t.postings[name]
+	if !ok {
+		return nil, nil
+	}
+	values := make([]string, 0, len(e))
+	for k := range e {
+		if filter == nil || filter(k) {
+			values = append(values, k)
 		}
-		return rngs, nil
+	}
+	sort.Strings(values)
+	return values, nil
+}
+
+func (t *PostingOffsetTableV1) LabelNames() ([]string, error) {
+	labelNames := make([]string, 0, t.LabelNameCount())
+
+	err := t.ForEachLabelName(func(name string) error {
+		labelNames = append(labelNames, name)
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
 	}
 
-	e, ok := t.postingsV2[name]
+	sort.Strings(labelNames)
+
+	return labelNames, nil
+}
+
+func (t *PostingOffsetTableV1) ForEachLabelName(f func(name string) error) error {
+	allPostingsKeyName, _ := index.AllPostingsKey()
+
+	for name := range t.postings {
+		if name == allPostingsKeyName {
+			continue
+		}
+
+		if err := f(name); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (t *PostingOffsetTableV1) LabelNameCount() int {
+	// This count might include AllPostingsKey's name, but that's OK - we use this method
+	// to pre-allocate slices to hold all label names, and slightly over-allocating is acceptable
+	// in this case.
+	return len(t.postings)
+}
+
+type PostingOffsetTableV2 struct {
+	// Map of LabelName to a list of some LabelValues's position in the offset table.
+	// The first and last values for each name are always present, we keep only 1/postingOffsetsInMemSampling of the rest.
+	postings map[string]*postingValueOffsets
+
+	postingOffsetsInMemSampling int
+
+	factory     *stream_encoding.DecbufFactory
+	tableOffset int
+}
+
+type postingValueOffsets struct {
+	offsets       []postingOffset
+	lastValOffset int64
+}
+
+type postingOffset struct {
+	// label value.
+	value string
+	// offset of this entry in posting offset table in index-header file.
+	tableOff int
+}
+
+func (t *PostingOffsetTableV2) PostingsOffset(name string, values ...string) ([]index.Range, error) {
+	e, ok := t.postings[name]
 	if !ok {
 		return nil, nil
 	}
@@ -228,6 +292,7 @@ func (t *PostingOffsetTable) PostingsOffset(name string, values ...string) ([]in
 		return nil, nil
 	}
 
+	rngs := make([]index.Range, 0, len(values))
 	buf := 0
 	valueIndex := 0
 	for valueIndex < len(values) && values[valueIndex] < e.offsets[0].value {
@@ -343,24 +408,8 @@ func (t *PostingOffsetTable) PostingsOffset(name string, values ...string) ([]in
 	return rngs, nil
 }
 
-// TODO: split into V1 and V2 methods
-func (t *PostingOffsetTable) LabelValues(name string, filter func(string) bool) ([]string, error) {
-	if t.indexVersion == index.FormatV1 {
-		e, ok := t.postingsV1[name]
-		if !ok {
-			return nil, nil
-		}
-		values := make([]string, 0, len(e))
-		for k := range e {
-			if filter == nil || filter(k) {
-				values = append(values, k)
-			}
-		}
-		sort.Strings(values)
-		return values, nil
-
-	}
-	e, ok := t.postingsV2[name]
+func (t *PostingOffsetTableV2) LabelValues(name string, filter func(string) bool) ([]string, error) {
+	e, ok := t.postings[name]
 	if !ok {
 		return nil, nil
 	}
@@ -404,8 +453,7 @@ func (t *PostingOffsetTable) LabelValues(name string, filter func(string) bool) 
 	return values, nil
 }
 
-// LabelNames returns a list of all label names in this table.
-func (t *PostingOffsetTable) LabelNames() ([]string, error) {
+func (t *PostingOffsetTableV2) LabelNames() ([]string, error) {
 	labelNames := make([]string, 0, t.LabelNameCount())
 
 	err := t.ForEachLabelName(func(name string) error {
@@ -422,49 +470,27 @@ func (t *PostingOffsetTable) LabelNames() ([]string, error) {
 	return labelNames, nil
 }
 
-// ForEachLabelName calls f for each label name in this table.
-// If f returns a non-nil error for any label name, ForEachLabelName immediately returns that error
-// and does not call f again.
-func (t *PostingOffsetTable) ForEachLabelName(f func(name string) error) error {
+func (t *PostingOffsetTableV2) ForEachLabelName(f func(name string) error) error {
 	allPostingsKeyName, _ := index.AllPostingsKey()
 
-	if t.indexVersion == index.FormatV1 {
-		for name := range t.postingsV1 {
-			if name == allPostingsKeyName {
-				continue
-			}
-
-			if err := f(name); err != nil {
-				return err
-			}
+	for name := range t.postings {
+		if name == allPostingsKeyName {
+			continue
 		}
-	} else {
-		for name := range t.postingsV2 {
-			if name == allPostingsKeyName {
-				continue
-			}
 
-			if err := f(name); err != nil {
-				return err
-			}
+		if err := f(name); err != nil {
+			return err
 		}
 	}
 
 	return nil
 }
 
-// LabelNameCount returns a value which is at least as large as the number of
-// label names present in this table.
-func (t *PostingOffsetTable) LabelNameCount() int {
+func (t *PostingOffsetTableV2) LabelNameCount() int {
 	// This count might include AllPostingsKey's name, but that's OK - we use this method
 	// to pre-allocate slices to hold all label names, and slightly over-allocating is acceptable
 	// in this case.
-
-	if t.indexVersion == index.FormatV1 {
-		return len(t.postingsV1)
-	}
-
-	return len(t.postingsV2)
+	return len(t.postings)
 }
 
 func skipNAndName(d *stream_encoding.Decbuf, buf *int) {

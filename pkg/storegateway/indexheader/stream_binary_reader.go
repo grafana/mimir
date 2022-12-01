@@ -43,7 +43,7 @@ type StreamBinaryReader struct {
 		symbol string
 	}
 
-	postingsOffsetTable *stream_index.PostingOffsetTable
+	postingsOffsetTable stream_index.PostingOffsetTable
 
 	version      int
 	indexVersion int
@@ -116,7 +116,7 @@ func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int) (bw
 		return nil, errors.Wrap(err, "load symbols")
 	}
 
-	r.postingsOffsetTable, err = stream_index.NewPostingsOffsetTable(r.factory, int(r.toc.PostingsOffsetTable), r.indexVersion, indexLastPostingEnd, postingOffsetsInMemSampling)
+	r.postingsOffsetTable, err = stream_index.NewPostingOffsetTable(r.factory, int(r.toc.PostingsOffsetTable), r.indexVersion, indexLastPostingEnd, postingOffsetsInMemSampling)
 	if err != nil {
 		return nil, err
 	}
