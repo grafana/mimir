@@ -23,13 +23,16 @@ func withSeekerBody(r *http.Request, f func(r *http.Request) error) (err error) 
 	}
 	seeker, ok := r.Body.(io.Seeker)
 	if !ok {
-		seeker, err = newReadCloseSeeker(r.Body)
+		bodySeeker, err := newReadCloseSeeker(r.Body)
 		if err != nil {
 			return fmt.Errorf("can't read body: %w", err)
 		}
 		if err := r.Body.Close(); err != nil {
 			return fmt.Errorf("can't close original body: %w", err)
 		}
+
+		r.Body = bodySeeker
+		seeker = bodySeeker
 	}
 	defer func() {
 		if err == nil {
