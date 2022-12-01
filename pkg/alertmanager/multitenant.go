@@ -632,7 +632,7 @@ func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error
 	var userTemplateDir = filepath.Join(am.getTenantDirectory(cfg.User), templatesDir)
 	var pathsToRemove = make(map[string]struct{})
 
-	// List existing files to keep track the ones to be removed
+	// List existing files to keep track of the ones to be removed
 	if oldTemplateFiles, err := os.ReadDir(userTemplateDir); err == nil {
 		for _, file := range oldTemplateFiles {
 			pathsToRemove[filepath.Join(userTemplateDir, file.Name())] = struct{}{}
