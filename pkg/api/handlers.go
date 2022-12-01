@@ -30,6 +30,7 @@ import (
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/weaveworks/common/instrument"
 	"github.com/weaveworks/common/middleware"
+	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/stats"
@@ -158,6 +159,27 @@ func DefaultConfigHandler(actualCfg interface{}, defaultCfg interface{}) http.Ha
 		}
 
 		util.WriteYAMLResponse(w, output)
+	}
+}
+
+type configResponse struct {
+	Status string `json:"status"`
+	Config string `json:"data"`
+}
+
+func (cfg *Config) statusConfigHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		data, err := yaml.Marshal(cfg)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		response := configResponse{
+			Status: "success",
+			Config: string(data),
+		}
+
+		util.WriteJSONResponse(w, response)
 	}
 }
 
