@@ -243,7 +243,7 @@ func (t *PostingOffsetTable) PostingsOffset(name string, values ...string) ([]in
 		valueIndex++
 	}
 
-	d := t.factory.NewDecbufAtUnchecked(int(t.tableOffset))
+	d := t.factory.NewDecbufAtUnchecked(t.tableOffset)
 	defer d.Close()
 	if err := d.Err(); err != nil {
 		return nil, err
