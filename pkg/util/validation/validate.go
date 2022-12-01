@@ -296,7 +296,7 @@ func ValidateHistogram(m *HistogramValidationMetrics, now model.Time, cfg Sample
 		}
 		if l := uint32(len(buckets)); spanBuckets != l {
 			m.differentNumberSpansBuckets.WithLabelValues(userID).Inc()
-			return newHistogramDifferentNumberSpansBucketError(sign, spanBuckets, l, h.Timestamp, unsafeMetricName)
+			return newHistogramDifferentNumberSpansBucketsError(sign, spanBuckets, l, h.Timestamp, unsafeMetricName)
 		}
 		return nil
 	}
