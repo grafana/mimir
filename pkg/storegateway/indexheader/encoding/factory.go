@@ -72,10 +72,10 @@ func (df *DecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table) Decb
 	return d
 }
 
-// NewDecbufAt returns a new file-backed decoding buffer positioned at offset + 4 bytes.
+// NewDecbufAtUnchecked returns a new file-backed decoding buffer positioned at offset + 4 bytes.
 // It expects the first 4 bytes after offset to hold the big endian encoded content length, followed
 // by the contents and the expected checksum. This method does NOT compute the CRC of the content.
 // To check the CRC of the content, use NewDecbufAtChecked.
-func (df *DecbufFactory) NewDecbufAt(offset int) Decbuf {
+func (df *DecbufFactory) NewDecbufAtUnchecked(offset int) Decbuf {
 	return df.NewDecbufAtChecked(offset, nil)
 }
