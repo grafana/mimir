@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -450,7 +451,7 @@ func seriesSetToSampleStreams(set storage.SeriesSet) ([]SampleStream, error) {
 		stream := SampleStream{Labels: mimirpb.FromLabelsToLabelAdapters(set.At().Labels())}
 
 		it := set.At().Iterator()
-		for it.Next() {
+		for it.Next() == chunkenc.ValFloat {
 			t, v := it.At()
 			stream.Samples = append(stream.Samples, mimirpb.Sample{
 				Value:       v,

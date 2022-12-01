@@ -32,6 +32,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -1491,7 +1492,7 @@ func readSamplesFromChunks(rawChunks []storepb.AggrChunk) ([]sample, error) {
 		}
 
 		it := c.Iterator(nil)
-		for it.Next() {
+		for it.Next() == chunkenc.ValFloat {
 			if it.Err() != nil {
 				return nil, it.Err()
 			}
@@ -1512,8 +1513,10 @@ func readSamplesFromChunks(rawChunks []storepb.AggrChunk) ([]sample, error) {
 }
 
 type sample struct {
-	t int64
-	v float64
+	t  int64
+	v  float64
+	h  *histogram.Histogram
+	fh *histogram.FloatHistogram
 }
 
 func (s sample) T() int64 {
@@ -1522,6 +1525,25 @@ func (s sample) T() int64 {
 
 func (s sample) V() float64 {
 	return s.v
+}
+
+func (s sample) H() *histogram.Histogram {
+	return s.h
+}
+
+func (s sample) FH() *histogram.FloatHistogram {
+	return s.fh
+}
+
+func (s sample) Type() chunkenc.ValueType {
+	switch {
+	case s.h != nil:
+		return chunkenc.ValHistogram
+	case s.fh != nil:
+		return chunkenc.ValFloatHistogram
+	default:
+		return chunkenc.ValFloat
+	}
 }
 
 func defaultLimitsConfig() validation.Limits {
