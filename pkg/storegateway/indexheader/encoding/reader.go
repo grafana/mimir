@@ -43,7 +43,7 @@ func (f *FileReader) Reset() error {
 }
 
 // ResetAt moves the cursor position to the given absolute offset in the file segment.
-// Attempting to ResetAt to the end of the valid is valid. Attempting to ResetAt _beyond_
+// Attempting to ResetAt to the end of the file is valid. Attempting to ResetAt _beyond_
 // the end of the file will return an error.
 func (f *FileReader) ResetAt(off int) error {
 	if off > f.length {
