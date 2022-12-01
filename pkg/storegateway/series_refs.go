@@ -137,7 +137,7 @@ type flattenedSeriesChunkRefsIterator struct {
 func newFlattenedSeriesChunkRefsIterator(from seriesChunkRefsSetIterator) seriesChunkRefsIterator {
 	return &flattenedSeriesChunkRefsIterator{
 		from:     from,
-		iterator: newSeriesChunkRefsIterator(seriesChunkRefsSet{}), // start with an empty batch and initialize on the first call to Next()
+		iterator: newSeriesChunkRefsIterator(seriesChunkRefsSet{}), // start with an empty set and initialize on the first call to Next()
 	}
 }
 
@@ -165,4 +165,179 @@ func (c flattenedSeriesChunkRefsIterator) At() seriesChunkRefs {
 
 func (c flattenedSeriesChunkRefsIterator) Err() error {
 	return c.from.Err()
+}
+
+type emptySeriesChunkRefsSetIterator struct {
+}
+
+func (emptySeriesChunkRefsSetIterator) Next() bool             { return false }
+func (emptySeriesChunkRefsSetIterator) At() seriesChunkRefsSet { return seriesChunkRefsSet{} }
+func (emptySeriesChunkRefsSetIterator) Err() error             { return nil }
+
+func mergedSeriesChunkRefsSetIterators(mergedSize int, all ...seriesChunkRefsSetIterator) seriesChunkRefsSetIterator {
+	switch len(all) {
+	case 0:
+		return emptySeriesChunkRefsSetIterator{}
+	case 1:
+		return newDeduplicatingBatchSet(mergedSize, all[0])
+	}
+	h := len(all) / 2
+
+	return newMergedSeriesChunkRefsSet(
+		mergedSize,
+		mergedSeriesChunkRefsSetIterators(mergedSize, all[:h]...),
+		mergedSeriesChunkRefsSetIterators(mergedSize, all[h:]...),
+	)
+}
+
+type mergedSeriesChunkRefsSet struct {
+	batchSize int
+
+	a, b     seriesChunkRefsSetIterator
+	aAt, bAt *seriesChunkRefsIteratorImpl
+	current  seriesChunkRefsSet
+}
+
+func newMergedSeriesChunkRefsSet(mergedBatchSize int, a, b seriesChunkRefsSetIterator) *mergedSeriesChunkRefsSet {
+	return &mergedSeriesChunkRefsSet{
+		batchSize: mergedBatchSize,
+		a:         a,
+		b:         b,
+		// start iterator on an empty set. It will be reset with a non-empty set when Next() is called
+		aAt: newSeriesChunkRefsIterator(seriesChunkRefsSet{}),
+		bAt: newSeriesChunkRefsIterator(seriesChunkRefsSet{}),
+	}
+}
+
+func (s *mergedSeriesChunkRefsSet) Err() error {
+	if err := s.a.Err(); err != nil {
+		return err
+	} else if err = s.b.Err(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *mergedSeriesChunkRefsSet) Next() bool {
+	next := newSeriesChunkRefsSet(s.batchSize)
+
+	for i := 0; i < s.batchSize; i++ {
+		if err := s.ensureItemAvailableToRead(s.aAt, s.a); err != nil {
+			// Stop iterating on first error encountered.
+			return false
+		}
+
+		if err := s.ensureItemAvailableToRead(s.bAt, s.b); err != nil {
+			// Stop iterating on first error encountered.
+			return false
+		}
+
+		nextSeries, ok := s.nextUniqueEntry(s.aAt, s.bAt)
+		if !ok {
+			break
+		}
+		next.series = append(next.series, nextSeries)
+	}
+
+	s.current = next
+	return s.current.len() > 0
+}
+
+// ensureItemAvailableToRead ensures curr has an item available to read, unless we reached the
+// end of all sets. If curr has no item available to read, it will advance the iterator, eventually
+// picking the next one from the set.
+func (s *mergedSeriesChunkRefsSet) ensureItemAvailableToRead(curr *seriesChunkRefsIteratorImpl, set seriesChunkRefsSetIterator) error {
+	// Ensure curr has an item available, otherwise fetch the next set.
+	for curr.Done() {
+		if set.Next() {
+			curr.reset(set.At())
+
+			// Advance the iterator to the first element. If the iterator is empty,
+			// it will be detected and handled by the outer for loop.
+			curr.Next()
+			continue
+		}
+
+		if set.Err() != nil {
+			// Stop iterating on first error encountered.
+			return set.Err()
+		}
+
+		// No more sets.
+		return nil
+	}
+
+	return nil
+}
+
+// nextUniqueEntry returns the next unique entry from both a and b. If a.At() and b.At() have the same
+// label set, nextUniqueEntry merges their chunks. The merged chunks are sorted by their MinTime and then by MaxTIme.
+func (s *mergedSeriesChunkRefsSet) nextUniqueEntry(a, b *seriesChunkRefsIteratorImpl) (toReturn seriesChunkRefs, _ bool) {
+	if a.Done() && b.Done() {
+		return toReturn, false
+	} else if a.Done() {
+		toReturn = b.At()
+		b.Next()
+		return toReturn, true
+	} else if b.Done() {
+		toReturn = a.At()
+		a.Next()
+		return toReturn, true
+	}
+
+	aAt := a.At()
+	lsetA, chksA := aAt.lset, aAt.chunks
+	bAt := b.At()
+	lsetB, chksB := bAt.lset, bAt.chunks
+
+	if d := labels.Compare(lsetA, lsetB); d > 0 {
+		toReturn = b.At()
+		b.Next()
+		return toReturn, true
+	} else if d < 0 {
+		toReturn = a.At()
+		a.Next()
+		return toReturn, true
+	}
+
+	// Both a and b contains the same series. Go through all chunk references and concatenate them from both
+	// series sets. We best effortly assume chunk references are sorted by min time, so that the sorting by min
+	// time is honored in the returned chunk references too.
+	toReturn.lset = lsetA
+
+	// Slice reuse is not generally safe with nested merge iterators.
+	// We err on the safe side and create a new slice.
+	toReturn.chunks = make([]seriesChunkRef, 0, len(chksA)+len(chksB))
+
+	bChunksOffset := 0
+Outer:
+	for aChunksOffset := range chksA {
+		for {
+			if bChunksOffset >= len(chksB) {
+				// No more b chunks.
+				toReturn.chunks = append(toReturn.chunks, chksA[aChunksOffset:]...)
+				break Outer
+			}
+
+			if chksA[aChunksOffset].Compare(chksB[bChunksOffset]) > 0 {
+				toReturn.chunks = append(toReturn.chunks, chksA[aChunksOffset])
+				break
+			} else {
+				toReturn.chunks = append(toReturn.chunks, chksB[bChunksOffset])
+				bChunksOffset++
+			}
+		}
+	}
+
+	if bChunksOffset < len(chksB) {
+		toReturn.chunks = append(toReturn.chunks, chksB[bChunksOffset:]...)
+	}
+
+	a.Next()
+	b.Next()
+	return toReturn, true
+}
+
+func (s *mergedSeriesChunkRefsSet) At() seriesChunkRefsSet {
+	return s.current
 }
