@@ -12,19 +12,11 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 
 	"github.com/pkg/errors"
-	"github.com/prometheus/prometheus/model/labels"
 
 	stream_encoding "github.com/grafana/mimir/pkg/storegateway/indexheader/encoding"
 )
 
 const postingLengthFieldSize = 4
-
-var allPostingsKey = labels.Label{}
-
-// AllPostingsKey returns the label key that is used to store the postings list of all existing IDs.
-func AllPostingsKey() (name, value string) {
-	return allPostingsKey.Name, allPostingsKey.Value
-}
 
 type PostingOffsetTable struct {
 	indexVersion int
