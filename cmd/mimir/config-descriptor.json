@@ -7407,7 +7407,7 @@
               "desc": "Enable TLS for gRPC client connecting to alertmanager.",
               "fieldValue": null,
               "fieldDefaultValue": true,
-              "fieldFlag": "ruler.tls-enabled",
+              "fieldFlag": "ruler.alertmanager-client.tls-enabled",
               "fieldType": "boolean",
               "fieldCategory": "advanced"
             },

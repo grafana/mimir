@@ -1605,6 +1605,8 @@ Usage of ./cmd/mimir/mimir:
     	Path to the client certificate file, which will be used for authenticating with the server. Also requires the key path to be configured.
   -ruler.alertmanager-client.tls-cipher-suites string
     	Override the default cipher suite list (separated by commas).
+  -ruler.alertmanager-client.tls-enabled
+    	Enable TLS for gRPC client connecting to alertmanager. (default true)
   -ruler.alertmanager-client.tls-insecure-skip-verify
     	Skip validating server certificate.
   -ruler.alertmanager-client.tls-key-path string
@@ -1791,8 +1793,6 @@ Usage of ./cmd/mimir/mimir:
     	Enable running rule groups against multiple tenants. The tenant IDs involved need to be in the rule group's 'source_tenants' field. If this flag is set to 'false' when there are already created federated rule groups, then these rules groups will be skipped during evaluations.
   -ruler.tenant-shard-size int
     	The tenant's shard size when sharding is used by ruler. Value of 0 disables shuffle sharding for the tenant, and tenant rules will be sharded across all ruler replicas.
-  -ruler.tls-enabled
-    	Enable TLS for gRPC client connecting to alertmanager. (default true)
   -runtime-config.file comma-separated-list-of-strings
     	Comma separated list of yaml files with the configuration that can be updated at runtime. Runtime config files will be merged from left to right.
   -runtime-config.reload-period duration
