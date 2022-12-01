@@ -59,15 +59,18 @@ MIXIN_OUT_PATH_SUFFIXES := "" "-baremetal"
 # path to the mimir jsonnet manifests
 JSONNET_MANIFESTS_PATH := operations/mimir
 
+# path to the mimir doc sources
+DOC_SOURCES_PATH := docs/sources/mimir
+
 # Doc templates in use
-DOC_TEMPLATES := docs/sources/operators-guide/configure/reference-configuration-parameters/index.template
+DOC_TEMPLATES := $(DOC_SOURCES_PATH)/operators-guide/configure/reference-configuration-parameters/index.template
 
 # Documents to run through embedding
-DOC_EMBED := docs/sources/operators-guide/configure/configure-the-query-frontend-work-with-prometheus.md \
-	docs/sources/operators-guide/configure/mirror-requests-to-a-second-cluster/index.md \
-	docs/sources/operators-guide/architecture/components/overrides-exporter.md \
-	docs/sources/operators-guide/get-started/_index.md \
-	docs/sources/operators-guide/deploy-grafana-mimir/jsonnet/deploy.md
+DOC_EMBED := $(DOC_SOURCES_PATH)/operators-guide/configure/configure-the-query-frontend-work-with-prometheus.md \
+	$(DOC_SOURCES_PATH)/operators-guide/configure/mirror-requests-to-a-second-cluster/index.md \
+	$(DOC_SOURCES_PATH)/operators-guide/architecture/components/overrides-exporter.md \
+	$(DOC_SOURCES_PATH)/operators-guide/get-started/_index.md \
+	$(DOC_SOURCES_PATH)/operators-guide/deploy-grafana-mimir/jsonnet/deploy.md
 
 .PHONY: image-tag
 image-tag: ## Print the docker image tag.
@@ -247,7 +250,7 @@ lint-packaging-scripts: packaging/deb/control/postinst packaging/deb/control/pre
 
 lint: ## Run lints to check for style issues.
 lint: check-makefiles
-	misspell -error docs/sources
+	misspell -error $(DOC_SOURCES_PATH)
 
 	# Configured via .golangci.yml.
 	golangci-lint run
@@ -487,7 +490,7 @@ check-doc: doc
 # https://github.com/grafana/technical-documentation/tree/main/tools/doc-validator
 check-doc-validator: ## Check documentation using doc-validator tool
 	docker pull grafana/doc-validator:latest
-	docker run -v "$(CURDIR)/docs/sources:/docs/sources" grafana/doc-validator:v1.0.0 ./docs/sources
+	docker run -v "$(CURDIR)/$(DOC_SOURCES_PATH):/$(DOC_SOURCES_PATH)" grafana/doc-validator:v1.0.0 ./$(DOC_SOURCES_PATH)
 
 .PHONY: reference-help
 reference-help: ## Generates the reference help documentation.
@@ -530,7 +533,7 @@ mixin-serve: ## Runs Grafana loading the mixin dashboards compiled at operations
 	@./operations/mimir-mixin-tools/serve/run.sh
 
 mixin-screenshots: ## Generates mixin dashboards screenshots.
-	@find docs/sources/operators-guide/monitor-grafana-mimir/dashboards -name '*.png' -delete
+	@find $(DOC_SOURCES_PATH)/operators-guide/monitor-grafana-mimir/dashboards -name '*.png' -delete
 	@./operations/mimir-mixin-tools/screenshots/run.sh
 
 check-jsonnet-manifests: ## Check the jsonnet manifests.
@@ -654,5 +657,5 @@ test-packages: packages packaging/rpm/centos-systemd/$(UPTODATE) packaging/deb/d
 	./tools/packaging/test-packages $(IMAGE_PREFIX) $(VERSION)
 
 include docs/docs.mk
-DOCS_DIR = docs/sources
+DOCS_DIR = $(DOC_SOURCES_PATH)
 docs: doc

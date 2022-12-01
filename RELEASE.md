@@ -171,7 +171,7 @@ Once your release preparation PR is approved, merge it to the `release-X.Y` bran
 
 ### Write release notes document
 
-Each Grafana Mimir release comes with a release notes that is published on the website. This document is stored in `docs/sources/release-notes/`,
+Each Grafana Mimir release comes with a release notes that is published on the website. This document is stored in `docs/sources/mimir/release-notes/`,
 and contains following sections:
 
 - Features and enhancements
