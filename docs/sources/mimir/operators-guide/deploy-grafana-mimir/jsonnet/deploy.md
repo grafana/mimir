@@ -30,7 +30,7 @@ You can use [Tanka](https://tanka.dev/) and [jsonnet-bundler](https://github.com
 
    <!-- prettier-ignore-start -->
 
-   [embedmd]: # "../../../../../operations/mimir/getting-started.sh"
+   [embedmd]: # "../../../../../../operations/mimir/getting-started.sh"
 
    ```sh
    #!/usr/bin/env bash

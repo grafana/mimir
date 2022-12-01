@@ -24,7 +24,7 @@ The overrides-exporter must be explicitly enabled.
 With a `runtime.yaml` file as follows:
 
 <!-- prettier-ignore-start -->
-[embedmd]:# (../../../../configurations/overrides-exporter-runtime.yaml)
+[embedmd]:# (../../../../../configurations/overrides-exporter-runtime.yaml)
 ```yaml
 # file: runtime.yaml
 # In this example, we're overriding ingestion limits for a single tenant.
