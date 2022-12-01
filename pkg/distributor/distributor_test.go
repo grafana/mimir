@@ -1547,6 +1547,7 @@ func TestDistributor_Push_HistogramValidation(t *testing.T) {
 				shuffleShardSize: 0,
 				limits:           limits,
 			})
+
 			_, err := ds[0].Push(ctx, tc.req)
 			if tc.errMsg != "" {
 				fromError, _ := status.FromError(err)
@@ -1555,6 +1556,10 @@ func TestDistributor_Push_HistogramValidation(t *testing.T) {
 			} else {
 				assert.Nil(t, err)
 			}
+
+			t.Cleanup(func() {
+				require.NoError(t, services.StopAndAwaitTerminated(ctx, ds[0]))
+			})
 		})
 	}
 }
