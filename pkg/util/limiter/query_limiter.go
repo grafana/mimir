@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"go.uber.org/atomic"
 
@@ -92,7 +91,7 @@ func (ql *QueryLimiter) AddSeries(seriesLabels []mimirpb.LabelAdapter) error {
 	ql.uniqueSeries[fingerprint] = struct{}{}
 	if len(ql.uniqueSeries) > ql.maxSeriesPerQuery {
 		// Format error with max limit
-		return errors.New(fmt.Sprintf(MaxSeriesHitMsgFormat, ql.maxSeriesPerQuery))
+		return fmt.Errorf(MaxSeriesHitMsgFormat, ql.maxSeriesPerQuery)
 	}
 	return nil
 }
@@ -110,7 +109,7 @@ func (ql *QueryLimiter) AddChunkBytes(chunkSizeInBytes int) error {
 		return nil
 	}
 	if ql.chunkBytesCount.Add(int64(chunkSizeInBytes)) > int64(ql.maxChunkBytesPerQuery) {
-		return errors.New(fmt.Sprintf(MaxChunkBytesHitMsgFormat, ql.maxChunkBytesPerQuery))
+		return fmt.Errorf(MaxChunkBytesHitMsgFormat, ql.maxChunkBytesPerQuery)
 	}
 	return nil
 }
@@ -121,7 +120,7 @@ func (ql *QueryLimiter) AddChunks(count int) error {
 	}
 
 	if ql.chunkCount.Add(int64(count)) > int64(ql.maxChunksPerQuery) {
-		return errors.New(fmt.Sprintf(MaxChunksPerQueryLimitMsgFormat, ql.maxChunksPerQuery))
+		return fmt.Errorf(MaxChunksPerQueryLimitMsgFormat, ql.maxChunksPerQuery)
 	}
 	return nil
 }

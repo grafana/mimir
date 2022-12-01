@@ -564,7 +564,7 @@ func (r *RuleCommand) syncRules(k *kingpin.ParseContext) error {
 
 	err = r.executeChanges(context.Background(), changes)
 	if err != nil {
-		return errors.Wrap(err, "sync operation unsuccessful, unable to complete executing changes.")
+		return errors.Wrap(err, "sync operation unsuccessful, unable to complete executing changes")
 	}
 
 	return nil
