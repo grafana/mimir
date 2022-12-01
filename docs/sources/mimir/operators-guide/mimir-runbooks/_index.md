@@ -1182,11 +1182,11 @@ If you experience this error, [open an issue in the Mimir repository](https://gi
 
 ### err-mimir-too-far-in-future
 
-This non-critical error occurs when Mimir receives a write request that contains a sample whose timestamp is in the future compared to the current "real world" time.
+This non-critical error occurs when Mimir receives a write request that contains a sample or histogram whose timestamp is in the future compared to the current "real world" time.
 Mimir accepts timestamps that are slightly in the future, due to skewed clocks for example. It rejects timestamps that are too far in the future, based on the definition that you can set via the `-validation.create-grace-period` option.
 On a per-tenant basis, you can fine tune the tolerance by configuring the `-validation.max-length-label-value` option.
 
-> **Note**: Series with invalid samples are skipped during the ingestion, and series within the same request are ingested.
+> **Note**: Series with invalid samples or histograms are skipped during the ingestion, and series within the same request are ingested.
 
 ### err-mimir-exemplar-labels-missing
 
@@ -1587,6 +1587,13 @@ How it **works**:
 How to **fix** it:
 
 - Increase the allowed limit by using the `-distributor.max-recv-msg-size` option.
+
+### err-histogram-different-number-spans-buckets
+
+This non-critical error occurs when Mimir receives a write request that contains a native (also known as sparse) histogram whose either negative or positive spans specify
+a different number of buckets then there are provided.
+
+> **Note**: Series with invalid histograms are skipped during the ingestion, and series within the same request are ingested.
 
 ## Mimir routes by path
 
