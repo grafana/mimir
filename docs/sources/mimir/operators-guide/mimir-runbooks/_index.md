@@ -1601,7 +1601,6 @@ This non-critical error occurs when Mimir receives a write request that contains
 
 > **Note**: Series with invalid histograms are skipped during the ingestion, and series within the same request are ingested.
 
-
 ## Mimir routes by path
 
 **Write path**:
