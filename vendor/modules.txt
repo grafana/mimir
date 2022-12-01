@@ -886,7 +886,7 @@ github.com/uber/jaeger-client-go/utils
 ## explicit
 github.com/uber/jaeger-lib/metrics
 github.com/uber/jaeger-lib/metrics/prometheus
-# github.com/weaveworks/common v0.0.0-20220927162600-d0a1a93a15be => github.com/krajorama/weaworks-common v0.0.0-20221123234314-fd399ebbd108
+# github.com/weaveworks/common v0.0.0-20220927162600-d0a1a93a15be => github.com/rabenhorst/common v0.0.0-20221114111857-9eb1f146696e
 ## explicit; go 1.14
 github.com/weaveworks/common/errors
 github.com/weaveworks/common/grpc
@@ -1335,7 +1335,7 @@ sigs.k8s.io/yaml
 # github.com/bradfitz/gomemcache => github.com/grafana/gomemcache v0.0.0-20220812141943-44b6cde200bb
 # github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20221123154106-5dfa66120387
 # github.com/prometheus/alertmanager => github.com/simonpasquier/alertmanager v0.11.1-0.20221115151505-b9e5f08fde74
-# github.com/weaveworks/common => github.com/krajorama/weaworks-common v0.0.0-20221123234314-fd399ebbd108
+# github.com/weaveworks/common => github.com/rabenhorst/common v0.0.0-20221114111857-9eb1f146696e
 # github.com/hashicorp/go-immutable-radix => github.com/hashicorp/go-immutable-radix v1.2.0
 # github.com/hashicorp/go-hclog => github.com/hashicorp/go-hclog v0.12.2
 # github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe
