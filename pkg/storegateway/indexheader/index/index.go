@@ -80,7 +80,7 @@ func NewSymbols(factory *stream_encoding.DecbufFactory, version, offset int) (*S
 }
 
 func (s *Symbols) Lookup(o uint32) (string, error) {
-	d := s.factory.NewDecbufAt(s.tableOffset)
+	d := s.factory.NewDecbufAtUnchecked(s.tableOffset)
 	defer d.Close()
 	if err := d.Err(); err != nil {
 		return "", err
@@ -114,7 +114,7 @@ func (s *Symbols) ReverseLookup(sym string) (uint32, error) {
 		return 0, errors.Errorf("unknown symbol %q - no symbols", sym)
 	}
 
-	d := s.factory.NewDecbufAt(s.tableOffset)
+	d := s.factory.NewDecbufAtUnchecked(s.tableOffset)
 	defer d.Close()
 	if err := d.Err(); err != nil {
 		return 0, err

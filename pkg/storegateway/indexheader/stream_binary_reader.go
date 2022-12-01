@@ -363,7 +363,7 @@ func (r *StreamBinaryReader) postingsOffset(name string, values ...string) ([]in
 		valueIndex++
 	}
 
-	d := r.factory.NewDecbufAt(int(r.toc.PostingsOffsetTable))
+	d := r.factory.NewDecbufAtUnchecked(int(r.toc.PostingsOffsetTable))
 	defer d.Close()
 	if err := d.Err(); err != nil {
 		return nil, err
@@ -531,7 +531,7 @@ func (r *StreamBinaryReader) LabelValues(name string, filter func(string) bool) 
 
 	// Don't Crc32 the entire postings offset table, this is very slow
 	// so hope any issues were caught at startup.
-	d := r.factory.NewDecbufAt(int(r.toc.PostingsOffsetTable))
+	d := r.factory.NewDecbufAtUnchecked(int(r.toc.PostingsOffsetTable))
 	defer d.Close()
 
 	d.Skip(e.offsets[0].tableOff)
