@@ -34,31 +34,27 @@ type bucketChunkReader struct {
 
 	// Mutex protects access to following fields, when updated from chunks-loading goroutines.
 	// After chunks are loaded, mutex is no longer used.
-	mtx        sync.Mutex
-	chunkBytes *pool.BatchBytes
+	// TODO what does it protect?
+	mtx sync.Mutex
 }
 
-func newBucketChunkReader(ctx context.Context, block *bucketBlock, chunkBytes *pool.BatchBytes) *bucketChunkReader {
+func newBucketChunkReader(ctx context.Context, block *bucketBlock) *bucketChunkReader {
 	return &bucketChunkReader{
-		ctx:        ctx,
-		block:      block,
-		toLoad:     make([][]loadIdx, len(block.chunkObjs)),
-		chunkBytes: chunkBytes,
+		ctx:    ctx,
+		block:  block,
+		toLoad: make([][]loadIdx, len(block.chunkObjs)),
 	}
 }
 
 func (r *bucketChunkReader) Close() error {
 	r.block.pendingReaders.Done()
-	r.reset(nil)
 	return nil
 }
 
-// reset resets the chunks scheduled for loading. It does not release any loaded chunks.
-// Use the injected pool.BatchBytes to release the bytes.
-func (r *bucketChunkReader) reset(chunkBytes *pool.BatchBytes) {
+// reset resets the chunks scheduled for loading.
+func (r *bucketChunkReader) reset() {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
-	r.chunkBytes = chunkBytes
 
 	for i := range r.toLoad {
 		r.toLoad[i] = r.toLoad[i][:0]
@@ -80,7 +76,8 @@ func (r *bucketChunkReader) addLoad(id chunks.ChunkRef, seriesEntry, chunk int) 
 }
 
 // load loads all added chunks and saves resulting aggrs to res.
-func (r *bucketChunkReader) load(res []seriesEntry, aggrs []storepb.Aggr, stats *safeQueryStats) error {
+// TODO remove aggrs
+func (r *bucketChunkReader) load(res []seriesEntry, aggrs []storepb.Aggr, chunkPool *pool.BatchBytes, stats *safeQueryStats) error {
 	g, ctx := errgroup.WithContext(r.ctx)
 
 	for seq, pIdxs := range r.toLoad {
@@ -96,7 +93,7 @@ func (r *bucketChunkReader) load(res []seriesEntry, aggrs []storepb.Aggr, stats 
 			p := p
 			indices := pIdxs[p.ElemRng[0]:p.ElemRng[1]]
 			g.Go(func() error {
-				return r.loadChunks(ctx, res, aggrs, seq, p, indices, stats)
+				return r.loadChunks(ctx, res, seq, p, indices, chunkPool, stats)
 			})
 		}
 	}
@@ -105,7 +102,7 @@ func (r *bucketChunkReader) load(res []seriesEntry, aggrs []storepb.Aggr, stats 
 
 // loadChunks will read range [start, end] from the segment file with sequence number seq.
 // This data range covers chunks starting at supplied offsets.
-func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, aggrs []storepb.Aggr, seq int, part Part, pIdxs []loadIdx, stats *safeQueryStats) error {
+func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, seq int, part Part, pIdxs []loadIdx, chunkPool *pool.BatchBytes, stats *safeQueryStats) error {
 	fetchBegin := time.Now()
 
 	// Get a reader for the required range.
@@ -182,7 +179,7 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, a
 		// There is also crc32 after the chunk, but we ignore that.
 		chunkLen = n + 1 + int(chunkDataLen)
 		if chunkLen <= len(cb) {
-			err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunk]), rawChunk(cb[n:chunkLen]), aggrs, r.save)
+			err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunk]), rawChunk(cb[n:chunkLen]), chunkPool, r.save)
 			if err != nil {
 				return errors.Wrap(err, "populate chunk")
 			}
@@ -213,7 +210,7 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, a
 		localStats.chunksFetchCount++
 		localStats.chunksFetchDurationSum += time.Since(fetchBegin)
 		localStats.chunksFetchedSizeSum += len(*nb)
-		err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunk]), rawChunk((*nb)[n:]), aggrs, r.save)
+		err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunk]), rawChunk((*nb)[n:]), chunkPool, r.save)
 		if err != nil {
 			r.block.chunkPool.Put(nb)
 			return errors.Wrap(err, "populate chunk")
@@ -228,8 +225,9 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, a
 
 // save saves a copy of b's payload to a memory pool of its own and returns a new byte slice referencing said copy.
 // Returned slice becomes invalid once r.block.chunkPool.Put() is called.
-func (r *bucketChunkReader) save(b []byte) ([]byte, error) {
-	dst, err := r.chunkBytes.Get(len(b))
+// TODO update comment
+func (r *bucketChunkReader) save(b []byte, chunkPool *pool.BatchBytes) ([]byte, error) {
+	dst, err := chunkPool.Get(len(b))
 	if err != nil {
 		return nil, err
 	}
@@ -271,24 +269,20 @@ func (b rawChunk) NumSamples() int {
 }
 
 type chunkReaders struct {
-	chunkBytesReleaser *pool.BatchBytes
-	chunkBytesPool     pool.Bytes
-	readers            map[ulid.ULID]chunkReader
+	readers map[ulid.ULID]chunkReader
 }
 
 type chunkReader interface {
 	io.Closer
 
 	addLoad(id chunks.ChunkRef, seriesEntry, chunk int) error
-	load(result []seriesEntry, _ []storepb.Aggr, stats *safeQueryStats) error
-	reset(chunkBytes *pool.BatchBytes)
+	load(result []seriesEntry, _ []storepb.Aggr, chunkPool *pool.BatchBytes, stats *safeQueryStats) error
+	reset()
 }
 
-func newChunkReaders(readersMap map[ulid.ULID]chunkReader, chunkBytes *pool.BatchBytes, chunkBytesPool pool.Bytes) *chunkReaders {
+func newChunkReaders(readersMap map[ulid.ULID]chunkReader) *chunkReaders {
 	return &chunkReaders{
-		chunkBytesPool:     chunkBytesPool,
-		chunkBytesReleaser: chunkBytes,
-		readers:            readersMap,
+		readers: readersMap,
 	}
 }
 
@@ -296,12 +290,12 @@ func (r chunkReaders) addLoad(blockID ulid.ULID, id chunks.ChunkRef, seriesEntry
 	return r.readers[blockID].addLoad(id, seriesEntry, chunk)
 }
 
-func (r chunkReaders) load(entries []seriesEntry, stats *safeQueryStats) error {
+func (r chunkReaders) load(entries []seriesEntry, chunkPool *pool.BatchBytes, stats *safeQueryStats) error {
 	g := &errgroup.Group{}
 	for _, reader := range r.readers {
 		reader := reader
 		g.Go(func() error {
-			return reader.load(entries, nil, stats)
+			return reader.load(entries, nil, chunkPool, stats)
 		})
 	}
 
@@ -311,11 +305,9 @@ func (r chunkReaders) load(entries []seriesEntry, stats *safeQueryStats) error {
 	return g.Wait()
 }
 
-// reset resets the chunks scheduled for loading. It does not release any loaded chunks.
-// Use chunkBytesReleaser.Release before calling reset to release the bytes.
+// reset the chunks scheduled for loading.
 func (r *chunkReaders) reset() {
-	r.chunkBytesReleaser = &pool.BatchBytes{Delegate: r.chunkBytesPool}
 	for _, reader := range r.readers {
-		reader.reset(r.chunkBytesReleaser)
+		reader.reset()
 	}
 }

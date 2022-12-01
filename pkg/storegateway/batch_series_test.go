@@ -1263,15 +1263,14 @@ func TestLoadingBatchSet(t *testing.T) {
 			t.Parallel()
 			// Setup
 			bytesPool := &mockedPool{parent: pool.NoopBytes{}}
-			chunkBytes := &pool.BatchBytes{Delegate: bytesPool}
 			readersMap := make(map[ulid.ULID]chunkReader, len(testCase.existingBlocks))
 			for _, block := range testCase.existingBlocks {
-				readersMap[block.ulid] = newFakeChunkReaderWithSeries(block.series, testCase.addLoadErr, testCase.loadErr, chunkBytes)
+				readersMap[block.ulid] = newFakeChunkReaderWithSeries(block.series, testCase.addLoadErr, testCase.loadErr)
 			}
-			readers := newChunkReaders(readersMap, chunkBytes, bytesPool)
+			readers := newChunkReaders(readersMap)
 
 			// Run test
-			set := newLoadingBatchSet(*readers, newSliceSeriesChunkRefsSetIterator(nil, testCase.setsToLoad...), newSafeQueryStats())
+			set := newLoadingBatchSet(*readers, newSliceSeriesChunkRefsSetIterator(nil, testCase.setsToLoad...), bytesPool, newSafeQueryStats())
 			loadedSets := readAllSeriesChunksSets(set)
 
 			// Assertions
@@ -1317,11 +1316,10 @@ type chunkReaderMock struct {
 	chunks              map[chunks.ChunkRef]storepb.AggrChunk
 	addLoadErr, loadErr error
 
-	chunkBytes *pool.BatchBytes
-	toLoad     map[chunks.ChunkRef]loadIdx
+	toLoad map[chunks.ChunkRef]loadIdx
 }
 
-func newFakeChunkReaderWithSeries(series []seriesEntry, addLoadErr, loadErr error, chunkBytes *pool.BatchBytes) *chunkReaderMock {
+func newFakeChunkReaderWithSeries(series []seriesEntry, addLoadErr, loadErr error) *chunkReaderMock {
 	chks := map[chunks.ChunkRef]storepb.AggrChunk{}
 	for _, s := range series {
 		for i := range s.chks {
@@ -1332,7 +1330,6 @@ func newFakeChunkReaderWithSeries(series []seriesEntry, addLoadErr, loadErr erro
 		chunks:     chks,
 		addLoadErr: addLoadErr,
 		loadErr:    loadErr,
-		chunkBytes: chunkBytes,
 		toLoad:     make(map[chunks.ChunkRef]loadIdx),
 	}
 }
@@ -1349,14 +1346,14 @@ func (f *chunkReaderMock) addLoad(id chunks.ChunkRef, seriesEntry, chunk int) er
 	return nil
 }
 
-func (f *chunkReaderMock) load(result []seriesEntry, _ []storepb.Aggr, _ *safeQueryStats) error {
+func (f *chunkReaderMock) load(result []seriesEntry, _ []storepb.Aggr, chunkPool *pool.BatchBytes, _ *safeQueryStats) error {
 	if f.loadErr != nil {
 		return f.loadErr
 	}
 	for chunkRef, indices := range f.toLoad {
 		// Take bytes from the pool, so we can assert on number of allocations and that frees are happening
 		chunkData := f.chunks[chunkRef].Raw.Data
-		copiedChunkData, err := f.chunkBytes.Get(len(chunkData))
+		copiedChunkData, err := chunkPool.Get(len(chunkData))
 		if err != nil {
 			return fmt.Errorf("couldn't copy test data: %w", err)
 		}
@@ -1366,8 +1363,7 @@ func (f *chunkReaderMock) load(result []seriesEntry, _ []storepb.Aggr, _ *safeQu
 	return nil
 }
 
-func (f *chunkReaderMock) reset(chunkBytes *pool.BatchBytes) {
-	f.chunkBytes = chunkBytes
+func (f *chunkReaderMock) reset() {
 	f.toLoad = make(map[chunks.ChunkRef]loadIdx)
 }
 
