@@ -71,14 +71,8 @@ func (i *chunkIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
 }
 
 func (i *chunkIterator) AtT() int64 {
-	if i.cacheValid {
-		return i.cachedTime
-	}
-
-	v := i.it.Value()
-	i.cachedTime, i.cachedValue = int64(v.Timestamp), float64(v.Value)
-	i.cacheValid = true
-	return i.cachedTime
+	t, _ := i.At()
+	return t
 }
 
 func (i *chunkIterator) Next() chunkenc.ValueType {

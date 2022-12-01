@@ -6,6 +6,7 @@
 package series
 
 import (
+	"errors"
 	"sort"
 
 	"github.com/prometheus/common/model"
@@ -97,7 +98,7 @@ func (c *concreteSeriesIterator) Seek(t int64) chunkenc.ValueType {
 	if c.cur < len(c.series.samples) {
 		return chunkenc.ValFloat
 	}
-	return chunkenc.ValHistogram
+	return chunkenc.ValNone
 }
 
 func (c *concreteSeriesIterator) At() (t int64, v float64) {
@@ -114,11 +115,11 @@ func (c *concreteSeriesIterator) Next() chunkenc.ValueType {
 }
 
 func (c *concreteSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
-	return 0, nil
+	panic(errors.New("concreteSeriesIterator: AtHistogram not implemented"))
 }
 
 func (c *concreteSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
-	return 0, nil
+	panic(errors.New("concreteSeriesIterator: AtHistogram not implemented"))
 }
 
 func (c *concreteSeriesIterator) AtT() int64 {
