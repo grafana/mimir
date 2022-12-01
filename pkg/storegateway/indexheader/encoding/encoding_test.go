@@ -437,14 +437,45 @@ func FuzzDecbuf_UvarintStr(f *testing.F) {
 func TestDecbuf_Crc32(t *testing.T) {
 	table := crc32.MakeTable(crc32.Castagnoli)
 
-	t.Run("matches checksum", func(t *testing.T) {
+	t.Run("matches checksum (small buffer)", func(t *testing.T) {
 		dec := NewRawDecbuf(createReaderWithBytes(t, []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x4f, 0x4d, 0xfb, 0xab}))
 		dec.CheckCrc32(table)
 		require.NoError(t, dec.Err())
 	})
 
-	t.Run("does not match checksum", func(t *testing.T) {
-		dec := NewRawDecbuf(createReaderWithBytes(t, []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x4f, 0x4d, 0xfb, 0xFF}))
+	t.Run("matches checksum (buffer larger than single read)", func(t *testing.T) {
+		bufferSize := 4*1024*1024 + 1
+		enc := prom_encoding.Encbuf{}
+
+		for enc.Len() < bufferSize {
+			enc.PutByte(0x01)
+		}
+
+		enc.PutHash(crc32.New(crc32.MakeTable(crc32.Castagnoli)))
+
+		dec := NewRawDecbuf(createReaderWithBytes(t, enc.Get()))
+		dec.CheckCrc32(table)
+		require.NoError(t, dec.Err())
+	})
+
+	t.Run("does not match checksum (small buffer)", func(t *testing.T) {
+		dec := NewRawDecbuf(createReaderWithBytes(t, []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x4f, 0x4d, 0xfb, 0xff}))
+		dec.CheckCrc32(table)
+		require.ErrorIs(t, dec.Err(), ErrInvalidChecksum)
+	})
+
+	t.Run("does not match checksum (buffer larger than single read)", func(t *testing.T) {
+		bufferSize := 4*1024*1024 + 1
+		enc := prom_encoding.Encbuf{}
+
+		for enc.Len() < bufferSize {
+			enc.PutByte(0x01)
+		}
+
+		b := enc.Get()
+		b = append(b, 0x00, 0x01, 0x02, 0x03)
+
+		dec := NewRawDecbuf(createReaderWithBytes(t, b))
 		dec.CheckCrc32(table)
 		require.ErrorIs(t, dec.Err(), ErrInvalidChecksum)
 	})
