@@ -47,16 +47,14 @@ func newBucketChunkReader(ctx context.Context, block *bucketBlock) *bucketChunkR
 
 func (r *bucketChunkReader) Close() error {
 	r.block.pendingReaders.Done()
-	r.reset(nil)
 	return nil
 }
 
 // reset resets the chunks scheduled for loading. It does not release any loaded chunks.
 // Use the injected pool.BatchBytes to release the bytes.
-func (r *bucketChunkReader) reset(chunkBytes *pool.BatchBytes) {
+func (r *bucketChunkReader) reset() {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
-	r.chunkBytes = chunkBytes
 
 	for i := range r.toLoad {
 		r.toLoad[i] = r.toLoad[i][:0]
@@ -282,24 +280,20 @@ func (b rawChunk) NumSamples() int {
 }
 
 type chunkReaders struct {
-	chunkBytesReleaser *pool.BatchBytes
-	chunkBytesPool     pool.Bytes
-	readers            map[ulid.ULID]chunkReader
+	readers map[ulid.ULID]chunkReader
 }
 
 type chunkReader interface {
 	io.Closer
 
 	addLoad(id chunks.ChunkRef, seriesEntry, chunk int) error
-	load(result []seriesEntry, _ []storepb.Aggr, stats *safeQueryStats) error
-	reset(chunkBytes *pool.BatchBytes)
+	load(result []seriesEntry, chunksPool *pool.BatchBytes, stats *safeQueryStats) error
+	reset()
 }
 
-func newChunkReaders(readersMap map[ulid.ULID]chunkReader, chunkBytes *pool.BatchBytes, chunkBytesPool pool.Bytes) *chunkReaders {
+func newChunkReaders(readersMap map[ulid.ULID]chunkReader) *chunkReaders {
 	return &chunkReaders{
-		chunkBytesPool:     chunkBytesPool,
-		chunkBytesReleaser: chunkBytes,
-		readers:            readersMap,
+		readers: readersMap,
 	}
 }
 
@@ -307,12 +301,12 @@ func (r chunkReaders) addLoad(blockID ulid.ULID, id chunks.ChunkRef, seriesEntry
 	return r.readers[blockID].addLoad(id, seriesEntry, chunk)
 }
 
-func (r chunkReaders) load(entries []seriesEntry, stats *safeQueryStats) error {
+func (r chunkReaders) load(entries []seriesEntry, chunksPool *pool.BatchBytes, stats *safeQueryStats) error {
 	g := &errgroup.Group{}
 	for _, reader := range r.readers {
 		reader := reader
 		g.Go(func() error {
-			return reader.load(entries, nil, stats)
+			return reader.load(entries, chunksPool, stats)
 		})
 	}
 
@@ -322,11 +316,9 @@ func (r chunkReaders) load(entries []seriesEntry, stats *safeQueryStats) error {
 	return g.Wait()
 }
 
-// reset resets the chunks scheduled for loading. It does not release any loaded chunks.
-// Use chunkBytesReleaser.Release before calling reset to release the bytes.
+// reset the chunks scheduled for loading.
 func (r *chunkReaders) reset() {
-	r.chunkBytesReleaser = &pool.BatchBytes{Delegate: r.chunkBytesPool}
 	for _, reader := range r.readers {
-		reader.reset(r.chunkBytesReleaser)
+		reader.reset()
 	}
 }

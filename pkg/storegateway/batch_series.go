@@ -19,6 +19,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
+	"github.com/grafana/mimir/pkg/util/pool"
 )
 
 type blockSeriesChunkRefsSetsIterator struct {
@@ -39,7 +40,6 @@ type blockSeriesChunkRefsSetsIterator struct {
 	seriesLimiter    SeriesLimiter           // Rate limiter for loading series.
 	skipChunks       bool                    // If true chunks are not loaded and minTime/maxTime are ignored.
 	minTime, maxTime int64                   // Series must have data in this time range to be returned (ignored if skipChunks=true).
-	loadAggregates   []storepb.Aggr          // List of aggregates to load when loading chunks.
 	stats            *safeQueryStats
 	logger           log.Logger
 }
@@ -56,7 +56,6 @@ func openBlockSeriesChunkRefsSetsIterator(
 	seriesLimiter SeriesLimiter, // Rate limiter for loading series.
 	skipChunks bool, // If true chunks are not loaded and minTime/maxTime are ignored.
 	minTime, maxTime int64, // Series must have data in this time range to be returned (ignored if skipChunks=true).
-	loadAggregates []storepb.Aggr, // List of aggregates to load when loading chunks.
 	stats *safeQueryStats,
 	logger log.Logger,
 ) (seriesChunkRefsSetIterator, error) {
@@ -93,7 +92,6 @@ func openBlockSeriesChunkRefsSetsIterator(
 		skipChunks:                 skipChunks,
 		minTime:                    minTime,
 		maxTime:                    maxTime,
-		loadAggregates:             loadAggregates,
 		stats:                      stats,
 		logger:                     logger,
 	}, nil
@@ -239,7 +237,7 @@ func shardOwned(shard *sharding.ShardSelector, hasher seriesHasher, id storage.S
 	return hash%shard.ShardCount == shard.ShardIndex
 }
 
-func (s *BucketStore) batchSetsForBlocks(ctx context.Context, req *storepb.SeriesRequest, blocks []*bucketBlock, indexReaders map[ulid.ULID]*bucketIndexReader, chunkReaders *chunkReaders, shardSelector *sharding.ShardSelector, matchers []*labels.Matcher, chunksLimiter ChunksLimiter, seriesLimiter SeriesLimiter, stats *safeQueryStats) (storepb.SeriesSet, *hintspb.SeriesResponseHints, func(), error) {
+func (s *BucketStore) batchSetsForBlocks(ctx context.Context, req *storepb.SeriesRequest, blocks []*bucketBlock, indexReaders map[ulid.ULID]*bucketIndexReader, chunkReaders *chunkReaders, chunksPool pool.Bytes, shardSelector *sharding.ShardSelector, matchers []*labels.Matcher, chunksLimiter ChunksLimiter, seriesLimiter SeriesLimiter, stats *safeQueryStats) (storepb.SeriesSet, *hintspb.SeriesResponseHints, func(), error) {
 	resHints := &hintspb.SeriesResponseHints{}
 	mtx := sync.Mutex{}
 	batches := make([]seriesChunkRefsSetIterator, 0, len(blocks))
@@ -266,7 +264,7 @@ func (s *BucketStore) batchSetsForBlocks(ctx context.Context, req *storepb.Serie
 			)
 
 			part, err = openBlockSeriesChunkRefsSetsIterator(
-				gCtx, s.maxSeriesPerBatch, indexr, b.meta.ULID, matchers, shardSelector, blockSeriesHashCache, chunksLimiter, seriesLimiter, req.SkipChunks, req.MinTime, req.MaxTime, req.Aggregates, stats, s.logger)
+				gCtx, s.maxSeriesPerBatch, indexr, b.meta.ULID, matchers, shardSelector, blockSeriesHashCache, chunksLimiter, seriesLimiter, req.SkipChunks, req.MinTime, req.MaxTime, stats, s.logger)
 			if err != nil {
 				return errors.Wrapf(err, "fetch series for block %s", b.meta.ULID)
 			}
@@ -303,30 +301,32 @@ func (s *BucketStore) batchSetsForBlocks(ctx context.Context, req *storepb.Serie
 	var set storepb.SeriesSet
 	if chunkReaders != nil {
 		// We pass ctx and not gCtx because the gCtx will be canceled once the goroutines group is done.
-		set = newSeriesSetWithChunks(ctx, *chunkReaders, mergedBatches, stats)
+		set = newSeriesSetWithChunks(ctx, *chunkReaders, chunksPool, mergedBatches, stats)
 	} else {
 		set = newSeriesSetWithoutChunks(mergedBatches)
 	}
 	return set, resHints, cleanup, nil
 }
 
-func newSeriesSetWithChunks(ctx context.Context, chunkReaders chunkReaders, batches seriesChunkRefsSetIterator, stats *safeQueryStats) storepb.SeriesSet {
-	return newSeriesChunksSeriesSet(newPreloadingSeriesChunkSetIterator(ctx, 1, newLoadingBatchSet(chunkReaders, batches, stats)))
+func newSeriesSetWithChunks(ctx context.Context, chunkReaders chunkReaders, chunksPool pool.Bytes, batches seriesChunkRefsSetIterator, stats *safeQueryStats) storepb.SeriesSet {
+	return newSeriesChunksSeriesSet(newPreloadingSeriesChunkSetIterator(ctx, 1, newLoadingBatchSet(chunkReaders, chunksPool, batches, stats)))
 }
 
 type loadingBatchSet struct {
 	chunkReaders chunkReaders
 	from         seriesChunkRefsSetIterator
+	chunksPool   pool.Bytes
 	stats        *safeQueryStats
 
 	current seriesChunksSet
 	err     error
 }
 
-func newLoadingBatchSet(chunkReaders chunkReaders, from seriesChunkRefsSetIterator, stats *safeQueryStats) *loadingBatchSet {
+func newLoadingBatchSet(chunkReaders chunkReaders, chunksPool pool.Bytes, from seriesChunkRefsSetIterator, stats *safeQueryStats) *loadingBatchSet {
 	return &loadingBatchSet{
 		chunkReaders: chunkReaders,
 		from:         from,
+		chunksPool:   chunksPool,
 		stats:        stats,
 	}
 }
@@ -360,14 +360,17 @@ func (c *loadingBatchSet) Next() bool {
 		}
 	}
 
-	err := c.chunkReaders.load(entries, c.stats)
+	// Create a batched memory pool that can be released all at once.
+	chunksPool := &pool.BatchBytes{Delegate: c.chunksPool}
+
+	err := c.chunkReaders.load(entries, chunksPool, c.stats)
 	if err != nil {
 		c.err = errors.Wrap(err, "loading chunks")
 		return false
 	}
 	nextLoaded := seriesChunksSet{
 		series:         entries,
-		chunksReleaser: c.chunkReaders.chunkBytesReleaser,
+		chunksReleaser: chunksPool,
 	}
 	c.current = nextLoaded
 	return true

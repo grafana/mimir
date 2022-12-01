@@ -862,9 +862,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		reqBlockMatchers []*labels.Matcher
 		chunksLimiter    = s.chunksLimiterFactory(s.metrics.queriesDropped.WithLabelValues("chunks"))
 		seriesLimiter    = s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
-		chunksPool       = &pool.BatchBytes{Delegate: s.chunkPool}
 	)
-	defer chunksPool.Release()
 	defer s.recordSeriesCallResult(stats)
 
 	if req.Hints != nil {
@@ -899,6 +897,15 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 	)
 
 	if s.maxSeriesPerBatch <= 0 {
+		var chunksPool *pool.BatchBytes
+
+		// All the memory allocated from the pool for the chunks will be released at the end.
+		// Required only if we'll fetch the chunks.
+		if !req.SkipChunks {
+			chunksPool = &pool.BatchBytes{Delegate: s.chunkPool}
+			defer chunksPool.Release()
+		}
+
 		seriesSets, cleanup, err = s.synchronousSeriesSet(ctx, req, stats, blocks, indexReaders, chunkr, chunksPool, resHints, shardSelector, matchers, chunksLimiter, seriesLimiter)
 	} else {
 		var readers *chunkReaders
@@ -906,7 +913,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 			readers = newChunkReaders(chunkr)
 		}
 
-		seriesSets, resHints, cleanup, err = s.batchSetsForBlocks(ctx, req, blocks, indexReaders, readers, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
+		seriesSets, resHints, cleanup, err = s.batchSetsForBlocks(ctx, req, blocks, indexReaders, readers, s.chunkPool, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
 	}
 	if cleanup != nil {
 		defer cleanup()

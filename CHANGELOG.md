@@ -37,14 +37,6 @@
 * [ENHANCEMENT] S3 bucket configuration now validates that the endpoint does not have the bucket name prefix. #3414
 * [ENHANCEMENT] Query-frontend: added "fetched index bytes" to query statistics, so that the statistics contain the total bytes read by store-gateways from TSDB block indexes. #3206
 * [ENHANCEMENT] Distributor: push wrapper should only receive unforwarded samples. #2980
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-* [ENHANCEMENT] Ruler: Added `ruler.tls-enabled` configuration for alertmanager client. #3432
-* [ENHANCEMENT] Activity tracker logs now have `component=activity-tracker` label. #3556
->>>>>>> a61ea757d... add missing entries and release section to changelog in preparation for release (#3550)
-=======
->>>>>>> f6749bd69... fix changelog (#3582)
 * [BUGFIX] Flusher: Add `Overrides` as a dependency to prevent panics when starting with `-target=flusher`. #3151
 * [BUGFIX] Updated `golang.org/x/text` dependency to fix CVE-2022-32149. #3285
 * [BUGFIX] Query-frontend: properly close gRPC streams to the query-scheduler to stop memory and goroutines leak. #3302
