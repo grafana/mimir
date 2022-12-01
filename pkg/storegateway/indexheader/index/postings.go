@@ -34,8 +34,7 @@ type PostingOffsetTable struct {
 
 	// Map of LabelName to a list of some LabelValues's position in the offset table.
 	// The first and last values for each name are always present, we keep only 1/postingOffsetsInMemSampling of the rest.
-	// TODO: rename to postingsV2
-	postings map[string]*postingValueOffsets
+	postingsV2 map[string]*postingValueOffsets
 
 	postingOffsetsInMemSampling int
 
@@ -65,14 +64,14 @@ func NewPostingsOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset 
 
 	if t.indexVersion == index.FormatV1 {
 		var err error
-		t.postingsV1, t.postings, err = loadV1PostingsOffsetTable(t.factory, t.tableOffset, indexLastPostingEnd)
+		t.postingsV1, t.postingsV2, err = loadV1PostingsOffsetTable(t.factory, t.tableOffset, indexLastPostingEnd)
 
 		if err != nil {
 			return nil, err
 		}
 	} else {
 		var err error
-		t.postings, err = loadV2PostingsOffsetTable(t.factory, t.tableOffset, indexLastPostingEnd, postingOffsetsInMemSampling)
+		t.postingsV2, err = loadV2PostingsOffsetTable(t.factory, t.tableOffset, indexLastPostingEnd, postingOffsetsInMemSampling)
 
 		if err != nil {
 			return nil, err
@@ -233,7 +232,7 @@ func (t *PostingOffsetTable) PostingsOffset(name string, values ...string) ([]in
 		return rngs, nil
 	}
 
-	e, ok := t.postings[name]
+	e, ok := t.postingsV2[name]
 	if !ok {
 		return nil, nil
 	}
@@ -374,7 +373,7 @@ func (t *PostingOffsetTable) LabelValues(name string, filter func(string) bool) 
 		return values, nil
 
 	}
-	e, ok := t.postings[name]
+	e, ok := t.postingsV2[name]
 	if !ok {
 		return nil, nil
 	}
@@ -442,7 +441,7 @@ func (t *PostingOffsetTable) LabelNames() ([]string, error) {
 func (t *PostingOffsetTable) ForEachLabelName(f func(name string) error) error {
 	allPostingsKeyName, _ := index.AllPostingsKey()
 
-	for name := range t.postings {
+	for name := range t.postingsV2 {
 		if name == allPostingsKeyName {
 			continue
 		}
@@ -461,7 +460,7 @@ func (t *PostingOffsetTable) LabelNameCount() int {
 	// This might include AllPostingsKey's name, but that's OK - we use this method
 	// to pre-allocate slices to hold all label names, and slightly over-allocating is acceptable
 	// in this case.
-	return len(t.postings)
+	return len(t.postingsV2)
 }
 
 func skipNAndName(d *stream_encoding.Decbuf, buf *int) {
