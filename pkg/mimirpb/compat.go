@@ -181,6 +181,30 @@ func fromSpansProtoToSpans(s []*BucketSpan) []histogram.Span {
 	return spans
 }
 
+func FromHistogramToHistogramProto(timestamp int64, h *histogram.Histogram) Histogram {
+	return Histogram{
+		Count:          &Histogram_CountInt{CountInt: h.Count},
+		Sum:            h.Sum,
+		Schema:         h.Schema,
+		ZeroThreshold:  h.ZeroThreshold,
+		ZeroCount:      &Histogram_ZeroCountInt{ZeroCountInt: h.ZeroCount},
+		NegativeSpans:  fromSpansToSpansProto(h.NegativeSpans),
+		NegativeDeltas: h.NegativeBuckets,
+		PositiveSpans:  fromSpansToSpansProto(h.PositiveSpans),
+		PositiveDeltas: h.PositiveBuckets,
+		Timestamp:      timestamp,
+	}
+}
+
+func fromSpansToSpansProto(s []histogram.Span) []*BucketSpan {
+	spans := make([]*BucketSpan, len(s))
+	for i := 0; i < len(s); i++ {
+		spans[i] = &BucketSpan{Offset: s[i].Offset, Length: s[i].Length}
+	}
+
+	return spans
+}
+
 // FromPointsToSamples converts []promql.Point to []Sample.
 // TODO: adapt to also return histograms.
 func FromPointsToSamples(points []promql.Point) []Sample {

@@ -9,6 +9,7 @@ import (
 	"io"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
@@ -26,6 +27,12 @@ type EncodedChunk interface {
 	// The returned EncodedChunk is the overflow chunk if it was created.
 	// The returned EncodedChunk is nil if the sample got appended to the same chunk.
 	Add(sample model.SamplePair) (EncodedChunk, error)
+	// Add adds a histogram to the chunks, performs any necessary
+	// re-encoding, and creates any necessary overflow chunk.
+	// The returned EncodedChunk is the overflow chunk if it was created.
+	// The returned EncodedChunk is nil if the histogram got appended to the same chunk.
+	AddHistogram(timestamp int64, histogram *histogram.Histogram) (EncodedChunk, error)
+
 	// NewIterator returns an iterator for the chunks.
 	// The iterator passed as argument is for re-use. Depending on implementation,
 	// the iterator can be re-used or a new iterator can be allocated.
@@ -59,7 +66,7 @@ type Iterator interface {
 	Value() model.SamplePair
 	// Returns a batch of the provisded size; NB not idempotent!  Should only be called
 	// once per Scan.
-	Batch(size int) Batch
+	Batch(size int, valueType chunkenc.ValueType) Batch
 	// Returns the last error encountered. In general, an error signals data
 	// corruption in the chunk and requires quarantining.
 	Err() error
@@ -73,9 +80,14 @@ const BatchSize = 12
 // small, and passed by value.
 type Batch struct {
 	Timestamps [BatchSize]int64
-	Values     [BatchSize]float64
-	Index      int
-	Length     int
+
+	ValueTypes           chunkenc.ValueType
+	SampleValues         *[BatchSize]float64
+	HistogramValues      *[BatchSize]*histogram.Histogram
+	FloatHistogramValues *[BatchSize]*histogram.FloatHistogram
+
+	Index  int
+	Length int
 }
 
 // Chunk contains encoded timeseries data

@@ -44,24 +44,24 @@ func (i *chunkIterator) Seek(t int64, size int) chunkenc.ValueType {
 			i.batch.Index++
 		}
 		if i.batch.Index+size < i.batch.Length {
-			return chunkenc.ValFloat
+			return i.batch.ValueTypes
 		}
 	}
 
-	if i.it.FindAtOrAfter(model.Time(t)) == chunkenc.ValFloat {
-		i.batch = i.it.Batch(size)
+	if typ := i.it.FindAtOrAfter(model.Time(t)); typ != chunkenc.ValNone {
+		i.batch = i.it.Batch(size, typ)
 		if i.batch.Length > 0 {
-			return chunkenc.ValFloat
+			return typ
 		}
 	}
 	return chunkenc.ValNone
 }
 
 func (i *chunkIterator) Next(size int) chunkenc.ValueType {
-	if i.it.Scan() == chunkenc.ValFloat {
-		i.batch = i.it.Batch(size)
+	if typ := i.it.Scan(); typ != chunkenc.ValNone {
+		i.batch = i.it.Batch(size, typ)
 		if i.batch.Length > 0 {
-			return chunkenc.ValFloat
+			return typ
 		}
 	}
 	return chunkenc.ValNone

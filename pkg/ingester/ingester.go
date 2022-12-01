@@ -1491,6 +1491,8 @@ func (i *Ingester) queryStreamChunks(ctx context.Context, db *userTSDB, from, th
 			switch meta.Chunk.Encoding() {
 			case chunkenc.EncXOR:
 				ch.Encoding = int32(chunk.PrometheusXorChunk)
+			case chunkenc.EncHistogram:
+				ch.Encoding = int32(chunk.PrometheusHistogramChunk)
 			default:
 				return 0, 0, errors.Errorf("unknown chunk encoding from TSDB chunk querier: %v", meta.Chunk.Encoding())
 			}
