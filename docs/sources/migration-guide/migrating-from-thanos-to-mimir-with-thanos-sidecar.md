@@ -1,13 +1,13 @@
 ---
-title: "Migrating from Thanos to Mimir using Thanos Sidecar"
-menuTitle: "Migrating from Thanos to Mimir using Thanos Sidecar"
-description: "Learn how to migrate from Thanos to Mimir using the Thanos Sidecar"
+title: "Migrate from Thanos to Mimir using Thanos sidecar"
+menuTitle: "Migrate from Thanos to Mimir using Thanos sidecar"
+description: "Learn how to migrate from Thanos to Mimir using Thanos sidecar."
 weight: 10
 ---
 
-# Migrating from Thanos to Mimir using Thanos Sidecar
+# Migrate from Thanos to Mimir using Thanos sidecar
 
-This document guides an operator through the process of migrating a deployment of Thanos to Grafana Mimir making use of the Thanos sidecar to move their metrics over with a stepped workflow.
+As an operator, you can migrate a deployment of Thanos to Grafana Mimir by using Thanos sidecar to move metrics over with a stepped workflow.
 
 ## Overview
 
