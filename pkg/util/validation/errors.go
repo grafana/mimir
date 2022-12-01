@@ -213,16 +213,28 @@ func newExemplarMaxLabelLengthError(seriesLabels []mimirpb.LabelAdapter, exempla
 	}
 }
 
-func newHistogramDifferentNumberSpansBucketsError(sign string, spanBuckets, buckets uint32, timestamp int64, metricName string) ValidationError {
-	return fmt.Errorf(globalerror.HistogramDifferentNumberSpansBuckets.Message(
-		"received a histogram whose %s spans require %d buckets, while %d %s buckets are provided, timestamp: %d series: '%.200s'",
-	), sign, spanBuckets, buckets, sign, timestamp, metricName)
+func newHistogramDifferentNumberSpansBucketsError(spanBuckets, buckets int, timestamp int64, metricName string) ValidationError {
+	return fmt.Errorf(globalerror.HistogramSpansBucketsMismatch.Message(
+		"received a histogram whose spans require %d buckets, while %d buckets are provided, timestamp: %d series: '%.200s'",
+	), spanBuckets, buckets, timestamp, metricName)
 }
 
-func newHistogramSpanNegativeOffsetError(sign string, span int, offset int32, timestamp int64, metricName string) ValidationError {
+func newHistogramSpanNegativeOffsetError(span int, offset int32, timestamp int64, metricName string) ValidationError {
 	return fmt.Errorf(globalerror.HistogramSpanNegativeOffset.Message(
-		"received a histogram which has a %s span (number %d) whose offset is negative: %d, timestamp: %d series: '%.200s'",
-	), sign, span, offset, timestamp, metricName)
+		"received a histogram which has a span (number %d) whose offset is negative: %d, timestamp: %d series: '%.200s'",
+	), span, offset, timestamp, metricName)
+}
+
+func newHistogramNegativeBucketCountError(bucket int, count int64, timestamp int64, metricName string) ValidationError {
+	return fmt.Errorf(globalerror.HistogramNegativeBucketCount.Message(
+		"received a histogram which has a bucket (number %d) whose observation count is negative: %d, timestamp: %d, series: '%.200s'",
+	), bucket, count, timestamp, metricName)
+}
+
+func newHistogramCountNotBigEnoughError(bucketCount, count uint64, timestamp int64, metricName string) ValidationError {
+	return fmt.Errorf(globalerror.HistogramCountNotBigEnough.Message(
+		"received a histogram which has %d observations in buckets but an overall count of %d, timestamp: %d, series: '%.200s'",
+	), bucketCount, count, timestamp, metricName)
 }
 
 type metadataMetricNameMissingError struct{}

@@ -1531,45 +1531,45 @@ func TestDistributor_Push_HistogramValidation(t *testing.T) {
 			errMsg: `received a histogram whose timestamp is too far in the future`,
 			errID:  globalerror.SampleTooFarInFuture,
 		},
-		"rejects histogram who has too few negative buckets": {
+		"rejects histogram which has too few negative buckets": {
 			req: makeWriteRequestHistogram(
 				[]string{model.MetricNameLabel, "test"}, 1000,
 				&histogram.Histogram{
 					NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
 					NegativeBuckets: []int64{},
 				}),
-			errMsg: `received a histogram whose negative spans`,
-			errID:  globalerror.HistogramDifferentNumberSpansBuckets,
+			errMsg: `negative side: received a histogram whose spans`,
+			errID:  globalerror.HistogramSpansBucketsMismatch,
 		},
-		"rejects histogram who has too few positive buckets": {
+		"rejects histogram which has too few positive buckets": {
 			req: makeWriteRequestHistogram(
 				[]string{model.MetricNameLabel, "test"}, 1000,
 				&histogram.Histogram{
 					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
 					PositiveBuckets: []int64{},
 				}),
-			errMsg: `received a histogram whose positive spans`,
-			errID:  globalerror.HistogramDifferentNumberSpansBuckets,
+			errMsg: `positive side: received a histogram whose spans`,
+			errID:  globalerror.HistogramSpansBucketsMismatch,
 		},
-		"rejects histogram who has too many negative buckets": {
+		"rejects histogram which has too many negative buckets": {
 			req: makeWriteRequestHistogram(
 				[]string{model.MetricNameLabel, "test"}, 1000,
 				&histogram.Histogram{
 					NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
 					NegativeBuckets: []int64{1, 2},
 				}),
-			errMsg: `received a histogram whose negative spans`,
-			errID:  globalerror.HistogramDifferentNumberSpansBuckets,
+			errMsg: `negative side: received a histogram whose spans`,
+			errID:  globalerror.HistogramSpansBucketsMismatch,
 		},
-		"rejects histogram who has too many positive buckets": {
+		"rejects histogram which has too many positive buckets": {
 			req: makeWriteRequestHistogram(
 				[]string{model.MetricNameLabel, "test"}, 1000,
 				&histogram.Histogram{
 					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
 					PositiveBuckets: []int64{1, 2},
 				}),
-			errMsg: `received a histogram whose positive spans`,
-			errID:  globalerror.HistogramDifferentNumberSpansBuckets,
+			errMsg: `positive side: received a histogram whose spans`,
+			errID:  globalerror.HistogramSpansBucketsMismatch,
 		},
 		"rejects a histogram which has a negative span with a negative offset": {
 			req: makeWriteRequestHistogram(
@@ -1578,7 +1578,7 @@ func TestDistributor_Push_HistogramValidation(t *testing.T) {
 					NegativeSpans:   []histogram.Span{{Offset: -1, Length: 1}, {Offset: -1, Length: 1}},
 					NegativeBuckets: []int64{1, 2},
 				}),
-			errMsg: `received a histogram which has a negative span (number 2)`,
+			errMsg: `negative side: received a histogram which has a span (number 2)`,
 			errID:  globalerror.HistogramSpanNegativeOffset,
 		},
 		"rejects a histogram which has a positive span with a negative offset": {
@@ -1588,8 +1588,41 @@ func TestDistributor_Push_HistogramValidation(t *testing.T) {
 					PositiveSpans:   []histogram.Span{{Offset: -1, Length: 1}, {Offset: -1, Length: 1}},
 					PositiveBuckets: []int64{1, 2},
 				}),
-			errMsg: `received a histogram which has a positive span (number 2)`,
+			errMsg: `positive side: received a histogram which has a span (number 2)`,
 			errID:  globalerror.HistogramSpanNegativeOffset,
+		},
+		"rejects a histogram which has a negative bucket with a negative count": {
+			req: makeWriteRequestHistogram(
+				[]string{model.MetricNameLabel, "test"}, 1000,
+				&histogram.Histogram{
+					NegativeSpans:   []histogram.Span{{Offset: -1, Length: 1}},
+					NegativeBuckets: []int64{-1},
+				}),
+			errMsg: `negative side: received a histogram which has a bucket`,
+			errID:  globalerror.HistogramNegativeBucketCount,
+		},
+		"rejects a histogram which has a positive bucket with a negative count": {
+			req: makeWriteRequestHistogram(
+				[]string{model.MetricNameLabel, "test"}, 1000,
+				&histogram.Histogram{
+					PositiveSpans:   []histogram.Span{{Offset: -1, Length: 1}},
+					PositiveBuckets: []int64{-1},
+				}),
+			errMsg: `positive side: received a histogram which has a bucket`,
+			errID:  globalerror.HistogramNegativeBucketCount,
+		},
+		"rejects a histogram which which has a lower count than count in buckets": {
+			req: makeWriteRequestHistogram(
+				[]string{model.MetricNameLabel, "test"}, 1000,
+				&histogram.Histogram{
+					Count:           0,
+					NegativeSpans:   []histogram.Span{{Offset: -1, Length: 1}},
+					PositiveSpans:   []histogram.Span{{Offset: -1, Length: 1}},
+					NegativeBuckets: []int64{1},
+					PositiveBuckets: []int64{1},
+				}),
+			errMsg: `received a histogram which has 2 observations`,
+			errID:  globalerror.HistogramCountNotBigEnough,
 		},
 	}
 

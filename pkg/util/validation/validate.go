@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
@@ -47,7 +48,10 @@ var (
 	reasonExemplarTooOld           = "exemplar_too_old"
 
 	// Discarded histograms reasons.
-	reasonHistogramDifferentNumberSpansBuckets = metricReasonFromErrorID(globalerror.HistogramDifferentNumberSpansBuckets)
+	reasonHistogramSpansBucketsMismatch = metricReasonFromErrorID(globalerror.HistogramSpansBucketsMismatch)
+	reasonHistogramSpanNegativeOffset   = metricReasonFromErrorID(globalerror.HistogramSpanNegativeOffset)
+	reasonHistogramNegativeBucketCount  = metricReasonFromErrorID(globalerror.HistogramNegativeBucketCount)
+	reasonHistogramCountNotBigEnough    = metricReasonFromErrorID(globalerror.HistogramCountNotBigEnough)
 
 	// Discarded metadata reasons.
 	reasonMetadataMetricNameTooLong = metricReasonFromErrorID(globalerror.MetricMetadataMetricNameTooLong)
@@ -194,19 +198,28 @@ func NewExemplarValidationMetrics(r prometheus.Registerer) *ExemplarValidationMe
 
 // HistogramValidationMetrics is a collection of metrics used during histogram validation.
 type HistogramValidationMetrics struct {
-	tooFarInFuture              *prometheus.CounterVec
-	differentNumberSpansBuckets *prometheus.CounterVec
+	tooFarInFuture       *prometheus.CounterVec
+	spansBucketsMismatch *prometheus.CounterVec
+	spanNegativeOffset   *prometheus.CounterVec
+	negativeBucketCount  *prometheus.CounterVec
+	countNotBigEnough    *prometheus.CounterVec
 }
 
 func (m *HistogramValidationMetrics) DeleteUserMetrics(userID string) {
 	m.tooFarInFuture.DeleteLabelValues(userID)
-	m.differentNumberSpansBuckets.DeleteLabelValues(userID)
+	m.spansBucketsMismatch.DeleteLabelValues(userID)
+	m.spanNegativeOffset.DeleteLabelValues(userID)
+	m.negativeBucketCount.DeleteLabelValues(userID)
+	m.countNotBigEnough.DeleteLabelValues(userID)
 }
 
 func NewHistogramValidationMetrics(r prometheus.Registerer) *HistogramValidationMetrics {
 	return &HistogramValidationMetrics{
-		tooFarInFuture:              DiscardedSamplesCounter(r, reasonTooFarInFuture),
-		differentNumberSpansBuckets: DiscardedSamplesCounter(r, reasonHistogramDifferentNumberSpansBuckets),
+		tooFarInFuture:       DiscardedSamplesCounter(r, reasonTooFarInFuture),
+		spansBucketsMismatch: DiscardedSamplesCounter(r, reasonHistogramSpansBucketsMismatch),
+		spanNegativeOffset:   DiscardedSamplesCounter(r, reasonHistogramSpanNegativeOffset),
+		negativeBucketCount:  DiscardedSamplesCounter(r, reasonHistogramNegativeBucketCount),
+		countNotBigEnough:    DiscardedSamplesCounter(r, reasonHistogramCountNotBigEnough),
 	}
 }
 
@@ -286,26 +299,58 @@ func ValidateHistogram(m *HistogramValidationMetrics, now model.Time, cfg Sample
 		return newSampleTimestampTooNewError("histogram", unsafeMetricName, h.Timestamp)
 	}
 
-	checkSpans := func(sign string, spans []*mimirpb.BucketSpan, buckets []int64) error {
-		var spanBuckets uint32
+	checkSpans := func(spans []*mimirpb.BucketSpan, numBuckets int) error {
+		var spanBuckets int
 		for n, span := range spans {
 			if n > 0 && span.Offset < 0 {
-				return newHistogramSpanNegativeOffsetError(sign, n+1, span.Offset, h.Timestamp, unsafeMetricName)
+				m.spanNegativeOffset.WithLabelValues(userID).Inc()
+				return newHistogramSpanNegativeOffsetError(n+1, span.Offset, h.Timestamp, unsafeMetricName)
 			}
-			spanBuckets += span.Length
+			spanBuckets += int(span.Length)
 		}
-		if l := uint32(len(buckets)); spanBuckets != l {
-			m.differentNumberSpansBuckets.WithLabelValues(userID).Inc()
-			return newHistogramDifferentNumberSpansBucketsError(sign, spanBuckets, l, h.Timestamp, unsafeMetricName)
+		if spanBuckets != numBuckets {
+			m.spansBucketsMismatch.WithLabelValues(userID).Inc()
+			return newHistogramDifferentNumberSpansBucketsError(spanBuckets, numBuckets, h.Timestamp, unsafeMetricName)
 		}
 		return nil
 	}
 
-	if err := checkSpans("negative", h.NegativeSpans, h.NegativeDeltas); err != nil {
-		return err
+	if err := checkSpans(h.NegativeSpans, len(h.NegativeDeltas)); err != nil {
+		return errors.Wrap(err, "negative side")
 	}
-	if err := checkSpans("positive", h.PositiveSpans, h.PositiveDeltas); err != nil {
-		return err
+	if err := checkSpans(h.PositiveSpans, len(h.PositiveDeltas)); err != nil {
+		return errors.Wrap(err, "positive side")
+	}
+
+	checkBuckets := func(buckets []int64) (uint64, error) {
+		if len(buckets) == 0 {
+			return 0, nil
+		}
+		var count uint64
+		var last int64
+		for i := 0; i < len(buckets); i++ {
+			last += buckets[i]
+			if last < 0 {
+				m.negativeBucketCount.WithLabelValues(userID).Inc()
+				return 0, newHistogramNegativeBucketCountError(i+1, last, h.Timestamp, unsafeMetricName)
+			}
+			count += uint64(last)
+		}
+		return count, nil
+	}
+
+	negativeCount, err := checkBuckets(h.NegativeDeltas)
+	if err != nil {
+		return errors.Wrap(err, "negative side")
+	}
+	positiveCount, err := checkBuckets(h.PositiveDeltas)
+	if err != nil {
+		return errors.Wrap(err, "positive side")
+	}
+
+	if c := negativeCount + positiveCount; c > h.GetCountInt() {
+		m.countNotBigEnough.WithLabelValues(userID).Inc()
+		return newHistogramCountNotBigEnoughError(c, h.GetCountInt(), h.Timestamp, unsafeMetricName)
 	}
 
 	return nil
