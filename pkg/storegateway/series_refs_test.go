@@ -296,7 +296,7 @@ func TestMergedSeriesChunkRefsSet(t *testing.T) {
 					{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[0]}},
 				},
 			}),
-			expectedSets: nil, // We expect no returned batches because an error occurred while creating the first one.
+			expectedSets: nil, // We expect no returned sets because an error occurred while creating the first one.
 			expectedErr:  "something went wrong",
 		},
 		"merges two sets with second one erroring at the end": {
@@ -311,7 +311,7 @@ func TestMergedSeriesChunkRefsSet(t *testing.T) {
 					{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[0]}},
 				},
 			}),
-			expectedSets: nil, // We expect no returned batches because an error occurred while creating the first one.
+			expectedSets: nil, // We expect no returned sets because an error occurred while creating the first one.
 			expectedErr:  "something went wrong",
 		},
 		"merges two sets with shorter one erroring at the end": {
@@ -329,7 +329,7 @@ func TestMergedSeriesChunkRefsSet(t *testing.T) {
 					{lset: labels.FromStrings("l1", "v4"), chunks: make([]seriesChunkRef, 1)},
 				},
 			}),
-			expectedSets: nil, // We expect no returned batches because an error occurred while creating the first one.
+			expectedSets: nil, // We expect no returned sets because an error occurred while creating the first one.
 			expectedErr:  "something went wrong",
 		},
 		"should stop iterating as soon as the first underlying set returns an error": {
@@ -657,6 +657,106 @@ func TestSeriesSetWithoutChunks(t *testing.T) {
 			assert.Equal(t, testCase.expected, actual)
 		})
 	}
+}
+
+func TestDeduplicatingSeriesChunkRefsSetIterator(t *testing.T) {
+	// Generate some chunk fixtures so that we can ensure the right chunks are returned.
+	c := generateSeriesChunkRef(8)
+
+	series1 := labels.FromStrings("l1", "v1")
+	series2 := labels.FromStrings("l1", "v2")
+	series3 := labels.FromStrings("l1", "v3")
+	sourceSets := []seriesChunkRefsSet{
+		{series: []seriesChunkRefs{
+			{lset: series1, chunks: []seriesChunkRef{c[0], c[1]}},
+			{lset: series1, chunks: []seriesChunkRef{c[2], c[3], c[4]}},
+		}},
+		{series: []seriesChunkRefs{
+			{lset: series2, chunks: []seriesChunkRef{c[0], c[1], c[2], c[3]}},
+			{lset: series3, chunks: []seriesChunkRef{c[0]}},
+			{lset: series3, chunks: []seriesChunkRef{c[1]}},
+		}},
+	}
+
+	t.Run("batch size: 1", func(t *testing.T) {
+		repeatingIterator := newSliceSeriesChunkRefsSetIterator(nil, sourceSets...)
+		deduplicatingIterator := newDeduplicatingSeriesChunkRefsSetIterator(1, repeatingIterator)
+		sets := readAllSeriesChunkRefsSet(deduplicatingIterator)
+
+		require.NoError(t, deduplicatingIterator.Err())
+		require.Len(t, sets, 3)
+
+		require.Len(t, sets[0].series, 1)
+		assert.Equal(t, series1, sets[0].series[0].lset)
+		assert.Equal(t, []seriesChunkRef{c[0], c[1], c[2], c[3], c[4]}, sets[0].series[0].chunks)
+
+		require.Len(t, sets[1].series, 1)
+		assert.Equal(t, series2, sets[1].series[0].lset)
+		assert.Equal(t, []seriesChunkRef{c[0], c[1], c[2], c[3]}, sets[1].series[0].chunks)
+
+		require.Len(t, sets[2].series, 1)
+		assert.Equal(t, series3, sets[2].series[0].lset)
+		assert.Equal(t, []seriesChunkRef{c[0], c[1]}, sets[2].series[0].chunks)
+	})
+
+	t.Run("batch size: 2", func(t *testing.T) {
+		repeatingIterator := newSliceSeriesChunkRefsSetIterator(nil, sourceSets...)
+		duplicatingIterator := newDeduplicatingSeriesChunkRefsSetIterator(2, repeatingIterator)
+		sets := readAllSeriesChunkRefsSet(duplicatingIterator)
+
+		require.NoError(t, duplicatingIterator.Err())
+		require.Len(t, sets, 2)
+
+		// First batch.
+		require.Len(t, sets[0].series, 2)
+
+		assert.Equal(t, series1, sets[0].series[0].lset)
+		assert.Equal(t, []seriesChunkRef{c[0], c[1], c[2], c[3], c[4]}, sets[0].series[0].chunks)
+
+		assert.Equal(t, series2, sets[0].series[1].lset)
+		assert.Equal(t, []seriesChunkRef{c[0], c[1], c[2], c[3]}, sets[0].series[1].chunks)
+
+		// Second batch.
+		require.Len(t, sets[1].series, 1)
+
+		assert.Equal(t, series3, sets[1].series[0].lset)
+		assert.Equal(t, []seriesChunkRef{c[0], c[1]}, sets[1].series[0].chunks)
+	})
+
+	t.Run("batch size: 3", func(t *testing.T) {
+		repeatingIterator := newSliceSeriesChunkRefsSetIterator(nil, sourceSets...)
+		deduplciatingIterator := newDeduplicatingSeriesChunkRefsSetIterator(3, repeatingIterator)
+		sets := readAllSeriesChunkRefsSet(deduplciatingIterator)
+
+		require.NoError(t, deduplciatingIterator.Err())
+		require.Len(t, sets, 1)
+		require.Len(t, sets[0].series, 3)
+
+		assert.Equal(t, series1, sets[0].series[0].lset)
+		assert.Equal(t, []seriesChunkRef{c[0], c[1], c[2], c[3], c[4]}, sets[0].series[0].chunks)
+
+		assert.Equal(t, series2, sets[0].series[1].lset)
+		assert.Equal(t, []seriesChunkRef{c[0], c[1], c[2], c[3]}, sets[0].series[1].chunks)
+
+		assert.Equal(t, series3, sets[0].series[2].lset)
+		assert.Equal(t, []seriesChunkRef{c[0], c[1]}, sets[0].series[2].chunks)
+	})
+}
+
+func TestDeduplicatingSeriesChunkRefsSetIterator_PropagatesErrors(t *testing.T) {
+	chainedSet := newDeduplicatingSeriesChunkRefsSetIterator(100, newSliceSeriesChunkRefsSetIterator(errors.New("something went wrong"), seriesChunkRefsSet{
+		series: []seriesChunkRefs{
+			{lset: labels.FromStrings("l1", "v1"), chunks: make([]seriesChunkRef, 1)},
+			{lset: labels.FromStrings("l1", "v1"), chunks: make([]seriesChunkRef, 1)},
+			{lset: labels.FromStrings("l1", "v2"), chunks: make([]seriesChunkRef, 1)},
+			{lset: labels.FromStrings("l1", "v2"), chunks: make([]seriesChunkRef, 1)},
+		},
+	}))
+
+	for chainedSet.Next() {
+	}
+
+	assert.ErrorContains(t, chainedSet.Err(), "something went wrong")
 }
 
 // sliceSeriesChunkRefsSetIterator implements seriesChunkRefsSetIterator and
