@@ -34,7 +34,6 @@ type bucketChunkReader struct {
 
 	// Mutex protects access to following fields, when updated from chunks-loading goroutines.
 	// After chunks are loaded, mutex is no longer used.
-	// TODO what does it protect?
 	mtx sync.Mutex
 }
 
@@ -76,7 +75,6 @@ func (r *bucketChunkReader) addLoad(id chunks.ChunkRef, seriesEntry, chunk int) 
 }
 
 // load loads all added chunks and saves resulting aggrs to res.
-// TODO remove aggrs
 func (r *bucketChunkReader) load(res []seriesEntry, aggrs []storepb.Aggr, chunkPool *pool.BatchBytes, stats *safeQueryStats) error {
 	g, ctx := errgroup.WithContext(r.ctx)
 
@@ -223,9 +221,8 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, s
 	return nil
 }
 
-// save saves a copy of b's payload to a memory pool of its own and returns a new byte slice referencing said copy.
-// Returned slice becomes invalid once r.block.chunkPool.Put() is called.
-// TODO update comment
+// save saves a copy of b's payload to buffer pulled from chunkPool. The chunk buffer is returned.
+// Returned slice becomes invalid once chunkPool is released.
 func (r *bucketChunkReader) save(b []byte, chunkPool *pool.BatchBytes) ([]byte, error) {
 	dst, err := chunkPool.Get(len(b))
 	if err != nil {
