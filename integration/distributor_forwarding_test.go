@@ -27,7 +27,7 @@ func runPrometheus(name string, args ...string) *e2e.HTTPService {
 	port := 9090
 	cmd := e2e.NewCommandWithoutEntrypoint(
 		"/bin/prometheus",
-		append([]string{"--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus"}, args...)...,
+		append([]string{"--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus", "--enable-feature=native-histograms"}, args...)...,
 	)
 	readiness := e2e.NewHTTPReadinessProbe(port, "/-/ready", http.StatusOK, http.StatusOK)
 	service := e2e.NewHTTPService(name, "prom/prometheus:latest", cmd, readiness, port)
