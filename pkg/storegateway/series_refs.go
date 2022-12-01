@@ -6,6 +6,8 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+
+	"github.com/grafana/mimir/pkg/storegateway/storepb"
 )
 
 // seriesChunkRefsSetIterator is the interface implemented by an iterator returning a sequence of seriesChunkRefsSet.
@@ -340,4 +342,44 @@ Outer:
 
 func (s *mergedSeriesChunkRefsSet) At() seriesChunkRefsSet {
 	return s.current
+}
+
+type seriesSetWithoutChunks struct {
+	from seriesChunkRefsSetIterator
+
+	currentIterator *seriesChunkRefsIteratorImpl
+}
+
+func newSeriesSetWithoutChunks(batches seriesChunkRefsSetIterator) storepb.SeriesSet {
+	return &seriesSetWithoutChunks{
+		from:            batches,
+		currentIterator: newSeriesChunkRefsIterator(seriesChunkRefsSet{}),
+	}
+}
+
+func (s *seriesSetWithoutChunks) Next() bool {
+	if s.currentIterator.Next() {
+		return true
+	}
+
+	// The current iterator has no more elements. We check if there's another
+	// iterator to fetch and then iterate on.
+	if !s.from.Next() {
+		return false
+	}
+
+	next := s.from.At()
+	s.currentIterator.reset(next)
+
+	// We've replaced the current iterator, so can recursively call Next()
+	// to check if there's any item in the new iterator and further advance it if not.
+	return s.Next()
+}
+
+func (s *seriesSetWithoutChunks) At() (labels.Labels, []storepb.AggrChunk) {
+	return s.currentIterator.At().lset, nil
+}
+
+func (s *seriesSetWithoutChunks) Err() error {
+	return s.from.Err()
 }
