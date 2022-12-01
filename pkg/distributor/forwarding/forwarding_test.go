@@ -623,9 +623,9 @@ func getForwarderWithValidatingPools(t *testing.T, tsSliceCap, protobufCap, snap
 func newForwarder(tb testing.TB, cfg Config, start bool) (Forwarder, *prometheus.Registry) {
 	reg := prometheus.NewPedanticRegistry()
 	log := log.NewNopLogger()
-	limits := &validation.Limits{}
-	flagext.DefaultValues(limits)
-	override, err := validation.NewOverrides(*limits, nil)
+	limits := validation.Limits{}
+	flagext.DefaultValues(&limits)
+	override, err := validation.NewOverrides(limits, nil)
 	require.NoError(tb, err)
 
 	forwarder := NewForwarder(cfg, reg, log, override)
