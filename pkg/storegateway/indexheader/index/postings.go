@@ -418,18 +418,21 @@ func (t *PostingOffsetTable) LabelValues(name string, filter func(string) bool) 
 	return values, nil
 }
 
-// TODO: use ForEachLabelName()
+// LabelNames returns a list of all label names in this table.
 func (t *PostingOffsetTable) LabelNames() ([]string, error) {
-	allPostingsKeyName, _ := index.AllPostingsKey()
-	labelNames := make([]string, 0, len(t.postings))
-	for name := range t.postings {
-		if name == allPostingsKeyName {
-			// This is not from any metric.
-			continue
-		}
+	labelNames := make([]string, 0, t.LabelNameCount())
+
+	err := t.ForEachLabelName(func(name string) error {
 		labelNames = append(labelNames, name)
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
 	}
+
 	sort.Strings(labelNames)
+
 	return labelNames, nil
 }
 
