@@ -351,7 +351,7 @@ func (s *seriesSetWithoutChunks) Err() error {
 }
 
 func newSeriesSetWithChunks(ctx context.Context, chunkReaders chunkReaders, batches seriesChunkRefsSetIterator, stats *safeQueryStats) storepb.SeriesSet {
-	return newBatchedSeriesSet(newPreloadingBatchSet(ctx, 1, newLoadingBatchSet(chunkReaders, batches, stats)))
+	return newSeriesChunksSeriesSet(newPreloadingBatchSet(ctx, 1, newLoadingBatchSet(chunkReaders, batches, stats)))
 }
 
 type loadingBatchSet struct {
@@ -721,47 +721,4 @@ func (s *deduplicatingBatchSet) Next() bool {
 	}
 	s.current = nextBatch
 	return true
-}
-
-type batchedSeriesSet struct {
-	from seriesChunksSetIterator
-
-	currSet    seriesChunksSet
-	currOffset int
-}
-
-func newBatchedSeriesSet(from seriesChunksSetIterator) storepb.SeriesSet {
-	return &batchedSeriesSet{
-		from: from,
-	}
-}
-
-// Next advances to the next item. Once the underlying seriesChunksSet has been fully consumed
-// (which means the call to Next moves to the next set), the seriesChunksSet is released. This
-// means that it's not safe to read from the values returned by At() after Next() is called again.
-func (b *batchedSeriesSet) Next() bool {
-	b.currOffset++
-	if b.currOffset >= b.currSet.len() {
-		if !b.from.Next() {
-			b.currSet.release()
-			return false
-		}
-		b.currSet.release()
-		b.currSet = b.from.At()
-		b.currOffset = 0
-	}
-	return true
-}
-
-// At returns the current series. The result from At() MUST not be retained after calling Next()
-func (b *batchedSeriesSet) At() (labels.Labels, []storepb.AggrChunk) {
-	if b.currOffset >= b.currSet.len() {
-		return nil, nil
-	}
-
-	return b.currSet.series[b.currOffset].lset, b.currSet.series[b.currOffset].chks
-}
-
-func (b *batchedSeriesSet) Err() error {
-	return b.from.Err()
 }
