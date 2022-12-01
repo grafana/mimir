@@ -344,7 +344,7 @@ func TestGroupCompactE2E(t *testing.T) {
 				numSamples: 100, mint: 0, maxt: 499, extLset: extLabels, res: 124,
 				series: []labels.Labels{
 					labels.FromStrings("a", "1"),
-					{{Name: "a", Value: "2"}, {Name: "b", Value: "2"}},
+					labels.FromStrings("a", "1", "b", "2"),
 					labels.FromStrings("a", "3"),
 					labels.FromStrings("a", "4"),
 				},
@@ -800,9 +800,7 @@ func putOutOfOrderIndex(blockDir string, minTime int64, maxTime int64) error {
 	}
 
 	lbls := []labels.Labels{
-		[]labels.Label{
-			{Name: "lbl1", Value: "1"},
-		},
+		labels.FromStrings("lbl1", "1"),
 	}
 
 	// Sort labels as the index writer expects series in sorted order.

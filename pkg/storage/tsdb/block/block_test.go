@@ -33,6 +33,16 @@ import (
 	testutil "github.com/grafana/mimir/pkg/util/test"
 )
 
+var (
+	fiveLabels = []labels.Labels{
+		labels.FromStrings("a", "1"),
+		labels.FromStrings("a", "2"),
+		labels.FromStrings("a", "3"),
+		labels.FromStrings("a", "4"),
+		labels.FromStrings("b", "1"),
+	}
+)
+
 func TestIsBlockDir(t *testing.T) {
 	for _, tc := range []struct {
 		input string
@@ -88,13 +98,8 @@ func TestUpload(t *testing.T) {
 
 	bkt := objstore.NewInMemBucket()
 	rand.Seed(1) // hard-coded sizes later in this test depend on values created "randomly" by CreateBlock.
-	b1, err := e2eutil.CreateBlock(ctx, tmpDir, []labels.Labels{
-		{{Name: "a", Value: "1"}},
-		{{Name: "a", Value: "2"}},
-		{{Name: "a", Value: "3"}},
-		{{Name: "a", Value: "4"}},
-		{{Name: "b", Value: "1"}},
-	}, 100, 0, 1000, labels.Labels{{Name: "ext1", Value: "val1"}}, 124, metadata.NoneFunc)
+	b1, err := e2eutil.CreateBlock(ctx, tmpDir, fiveLabels,
+		100, 0, 1000, labels.FromStrings("ext1", "val1"), 124, metadata.NoneFunc)
 	require.NoError(t, err)
 	require.NoError(t, os.MkdirAll(path.Join(tmpDir, "test", b1.String()), os.ModePerm))
 
@@ -196,13 +201,8 @@ func TestUpload(t *testing.T) {
 	}
 	{
 		// Upload with no external labels should be blocked.
-		b2, err := e2eutil.CreateBlock(ctx, tmpDir, []labels.Labels{
-			{{Name: "a", Value: "1"}},
-			{{Name: "a", Value: "2"}},
-			{{Name: "a", Value: "3"}},
-			{{Name: "a", Value: "4"}},
-			{{Name: "b", Value: "1"}},
-		}, 100, 0, 1000, nil, 124, metadata.NoneFunc)
+		b2, err := e2eutil.CreateBlock(ctx, tmpDir, fiveLabels,
+			100, 0, 1000, labels.EmptyLabels(), 124, metadata.NoneFunc)
 		require.NoError(t, err)
 		err = Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, b2.String()), metadata.NoneFunc)
 		require.Error(t, err)
@@ -211,13 +211,8 @@ func TestUpload(t *testing.T) {
 	}
 	{
 		// No external labels with UploadPromBlocks.
-		b2, err := e2eutil.CreateBlock(ctx, tmpDir, []labels.Labels{
-			{{Name: "a", Value: "1"}},
-			{{Name: "a", Value: "2"}},
-			{{Name: "a", Value: "3"}},
-			{{Name: "a", Value: "4"}},
-			{{Name: "b", Value: "1"}},
-		}, 100, 0, 1000, nil, 124, metadata.NoneFunc)
+		b2, err := e2eutil.CreateBlock(ctx, tmpDir, fiveLabels,
+			100, 0, 1000, labels.EmptyLabels(), 124, metadata.NoneFunc)
 		require.NoError(t, err)
 		err = UploadPromBlock(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, b2.String()), metadata.NoneFunc)
 		require.NoError(t, err)
@@ -236,13 +231,8 @@ func TestDelete(t *testing.T) {
 
 	bkt := objstore.NewInMemBucket()
 	{
-		b1, err := e2eutil.CreateBlock(ctx, tmpDir, []labels.Labels{
-			{{Name: "a", Value: "1"}},
-			{{Name: "a", Value: "2"}},
-			{{Name: "a", Value: "3"}},
-			{{Name: "a", Value: "4"}},
-			{{Name: "b", Value: "1"}},
-		}, 100, 0, 1000, labels.Labels{{Name: "ext1", Value: "val1"}}, 124, metadata.NoneFunc)
+		b1, err := e2eutil.CreateBlock(ctx, tmpDir, fiveLabels,
+			100, 0, 1000, labels.FromStrings("ext1", "val1"), 124, metadata.NoneFunc)
 		require.NoError(t, err)
 		require.NoError(t, Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, b1.String()), metadata.NoneFunc))
 		require.Equal(t, 3, len(bkt.Objects()))
@@ -255,13 +245,8 @@ func TestDelete(t *testing.T) {
 		require.Equal(t, 0, len(bkt.Objects()))
 	}
 	{
-		b2, err := e2eutil.CreateBlock(ctx, tmpDir, []labels.Labels{
-			{{Name: "a", Value: "1"}},
-			{{Name: "a", Value: "2"}},
-			{{Name: "a", Value: "3"}},
-			{{Name: "a", Value: "4"}},
-			{{Name: "b", Value: "1"}},
-		}, 100, 0, 1000, labels.Labels{{Name: "ext1", Value: "val1"}}, 124, metadata.NoneFunc)
+		b2, err := e2eutil.CreateBlock(ctx, tmpDir, fiveLabels,
+			100, 0, 1000, labels.FromStrings("ext1", "val1"), 124, metadata.NoneFunc)
 		require.NoError(t, err)
 		require.NoError(t, Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, b2.String()), metadata.NoneFunc))
 		require.Equal(t, 3, len(bkt.Objects()))
@@ -306,13 +291,8 @@ func TestMarkForDeletion(t *testing.T) {
 	} {
 		t.Run(tcase.name, func(t *testing.T) {
 			bkt := objstore.NewInMemBucket()
-			id, err := e2eutil.CreateBlock(ctx, tmpDir, []labels.Labels{
-				{{Name: "a", Value: "1"}},
-				{{Name: "a", Value: "2"}},
-				{{Name: "a", Value: "3"}},
-				{{Name: "a", Value: "4"}},
-				{{Name: "b", Value: "1"}},
-			}, 100, 0, 1000, labels.Labels{{Name: "ext1", Value: "val1"}}, 124, metadata.NoneFunc)
+			id, err := e2eutil.CreateBlock(ctx, tmpDir, fiveLabels,
+				100, 0, 1000, labels.FromStrings("ext1", "val1"), 124, metadata.NoneFunc)
 			require.NoError(t, err)
 
 			tcase.preUpload(t, id, bkt)
@@ -360,13 +340,8 @@ func TestMarkForNoCompact(t *testing.T) {
 	} {
 		t.Run(tcase.name, func(t *testing.T) {
 			bkt := objstore.NewInMemBucket()
-			id, err := e2eutil.CreateBlock(ctx, tmpDir, []labels.Labels{
-				{{Name: "a", Value: "1"}},
-				{{Name: "a", Value: "2"}},
-				{{Name: "a", Value: "3"}},
-				{{Name: "a", Value: "4"}},
-				{{Name: "b", Value: "1"}},
-			}, 100, 0, 1000, labels.Labels{{Name: "ext1", Value: "val1"}}, 124, metadata.NoneFunc)
+			id, err := e2eutil.CreateBlock(ctx, tmpDir, fiveLabels,
+				100, 0, 1000, labels.FromStrings("ext1", "val1"), 124, metadata.NoneFunc)
 			require.NoError(t, err)
 
 			tcase.preUpload(t, id, bkt)
@@ -396,8 +371,8 @@ func TestHashDownload(t *testing.T) {
 	instrumentedBkt := objstore.BucketWithMetrics("test", bkt, r)
 
 	b1, err := e2eutil.CreateBlockWithTombstone(ctx, tmpDir, []labels.Labels{
-		{{Name: "a", Value: "1"}},
-	}, 100, 0, 1000, labels.Labels{{Name: "ext1", Value: "val1"}}, 42, metadata.SHA256Func)
+		labels.FromStrings("a", "1"),
+	}, 100, 0, 1000, labels.FromStrings("ext1", "val1"), 42, metadata.SHA256Func)
 	require.NoError(t, err)
 
 	require.NoError(t, Upload(ctx, log.NewNopLogger(), instrumentedBkt, path.Join(tmpDir, b1.String()), metadata.SHA256Func))
@@ -484,13 +459,8 @@ func TestUploadCleanup(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	bkt := objstore.NewInMemBucket()
-	b1, err := e2eutil.CreateBlock(ctx, tmpDir, []labels.Labels{
-		{{Name: "a", Value: "1"}},
-		{{Name: "a", Value: "2"}},
-		{{Name: "a", Value: "3"}},
-		{{Name: "a", Value: "4"}},
-		{{Name: "b", Value: "1"}},
-	}, 100, 0, 1000, labels.Labels{{Name: "ext1", Value: "val1"}}, 124, metadata.NoneFunc)
+	b1, err := e2eutil.CreateBlock(ctx, tmpDir, fiveLabels,
+		100, 0, 1000, labels.FromStrings("ext1", "val1"), 124, metadata.NoneFunc)
 	require.NoError(t, err)
 
 	{

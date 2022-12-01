@@ -15,7 +15,7 @@ type seriesChunksSetIterator interface {
 //
 //nolint:unused // dead code while we are working on PR 3355
 type seriesChunksSet struct {
-	series []seriesEntry // this should ideally be its own type that doesn't have the refs
+	series []seriesEntry
 
 	// chunksReleaser releases the memory used to allocate series chunks.
 	chunksReleaser chunksReleaser

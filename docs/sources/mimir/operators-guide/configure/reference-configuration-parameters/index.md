@@ -1265,7 +1265,7 @@ The `ruler` block configures the ruler.
 
 alertmanager_client:
   # (advanced) Enable TLS for gRPC client connecting to alertmanager.
-  # CLI flag: -ruler.tls-enabled
+  # CLI flag: -ruler.alertmanager-client.tls-enabled
   [tls_enabled: <boolean> | default = true]
 
   # (advanced) Path to the client certificate file, which will be used for

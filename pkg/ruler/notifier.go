@@ -32,7 +32,7 @@ type NotifierConfig struct {
 }
 
 func (cfg *NotifierConfig) RegisterFlags(f *flag.FlagSet) {
-	f.BoolVar(&cfg.TLSEnabled, "ruler.tls-enabled", true, "Enable TLS for gRPC client connecting to alertmanager.")
+	f.BoolVar(&cfg.TLSEnabled, "ruler.alertmanager-client.tls-enabled", true, "Enable TLS for gRPC client connecting to alertmanager.")
 	cfg.TLS.RegisterFlagsWithPrefix("ruler.alertmanager-client", f)
 	cfg.BasicAuth.RegisterFlagsWithPrefix("ruler.alertmanager-client.", f)
 }
