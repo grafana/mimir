@@ -37,7 +37,7 @@ require (
 	github.com/spf13/afero v1.8.2
 	github.com/stretchr/testify v1.8.1
 	github.com/uber/jaeger-client-go v2.30.0+incompatible
-	github.com/weaveworks/common v0.0.0-20220927162600-d0a1a93a15be
+	github.com/weaveworks/common v0.0.0-20221201103051-7c2720a9024d
 	go.uber.org/atomic v1.10.0
 	go.uber.org/goleak v1.2.0
 	golang.org/x/crypto v0.1.0
@@ -181,7 +181,7 @@ require (
 	github.com/pkg/browser v0.0.0-20210115035449-ce105d075bb4 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/prometheus/common/sigv4 v0.1.0 // indirect
-	github.com/prometheus/exporter-toolkit v0.8.1 // indirect
+	github.com/prometheus/exporter-toolkit v0.8.2 // indirect
 	github.com/prometheus/procfs v0.8.0 // indirect
 	github.com/rainycape/unidecode v0.0.0-20150907023854-cb7f23ec59be // indirect
 	github.com/rogpeppe/go-internal v1.9.0 // indirect
@@ -233,8 +233,6 @@ replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus 
 
 // Temporary fixes to update the indirect dependency on prometheus/exporter-toolkit to v0.8.1 to match the version used in mimir-prometheus
 replace github.com/prometheus/alertmanager => github.com/simonpasquier/alertmanager v0.11.1-0.20221115151505-b9e5f08fde74
-
-replace github.com/weaveworks/common => github.com/rabenhorst/common v0.0.0-20221114111857-9eb1f146696e
 
 // Pin hashicorp depencencies since the Prometheus fork, go mod tries to update them.
 replace github.com/hashicorp/go-immutable-radix => github.com/hashicorp/go-immutable-radix v1.2.0
