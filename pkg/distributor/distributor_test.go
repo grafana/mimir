@@ -1588,7 +1588,7 @@ func TestDistributor_Push_HistogramValidation(t *testing.T) {
 					PositiveSpans:   []histogram.Span{{Offset: -1, Length: 1}},
 					PositiveBuckets: []int64{1},
 				}),
-			errMsg: `received a histogram which has a negative span (number 1)`,
+			errMsg: `received a histogram which has a positive span (number 1)`,
 			errID:  globalerror.HistogramSpanNegativeOffset,
 		},
 	}
