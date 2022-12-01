@@ -128,3 +128,41 @@ func (c *seriesChunkRefsIteratorImpl) At() seriesChunkRefs {
 func (c *seriesChunkRefsIteratorImpl) Err() error {
 	return nil
 }
+
+type flattenedSeriesChunkRefsIterator struct {
+	from     seriesChunkRefsSetIterator
+	iterator *seriesChunkRefsIteratorImpl
+}
+
+func newFlattenedSeriesChunkRefsIterator(from seriesChunkRefsSetIterator) seriesChunkRefsIterator {
+	return &flattenedSeriesChunkRefsIterator{
+		from:     from,
+		iterator: newSeriesChunkRefsIterator(seriesChunkRefsSet{}), // start with an empty batch and initialize on the first call to Next()
+	}
+}
+
+func (c flattenedSeriesChunkRefsIterator) Next() bool {
+	if c.iterator.Next() {
+		return true
+	}
+
+	// The current iterator has no more elements. We check if there's another
+	// iterator to fetch and then iterate on.
+	if !c.from.Next() {
+		return false
+	}
+
+	c.iterator.reset(c.from.At())
+
+	// We've replaced the current iterator, so can recursively call Next()
+	// to check if there's any item in the new iterator and further advance it if not.
+	return c.Next()
+}
+
+func (c flattenedSeriesChunkRefsIterator) At() seriesChunkRefs {
+	return c.iterator.At()
+}
+
+func (c flattenedSeriesChunkRefsIterator) Err() error {
+	return c.from.Err()
+}
