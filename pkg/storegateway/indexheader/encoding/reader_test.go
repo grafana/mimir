@@ -147,11 +147,6 @@ func TestReaders_Len(t *testing.T) {
 }
 
 func TestReaders_CreationWithEmptyContents(t *testing.T) {
-	t.Run("BufReader", func(t *testing.T) {
-		_, err := NewBufReader(realByteSlice(nil))
-		require.ErrorIs(t, err, ErrInvalidSize)
-	})
-
 	t.Run("FileReader", func(t *testing.T) {
 		dir := t.TempDir()
 		filePath := path.Join(dir, "test-file")
@@ -170,12 +165,6 @@ func TestReaders_CreationWithEmptyContents(t *testing.T) {
 
 func testReaders(t *testing.T, test func(t *testing.T, r Reader)) {
 	testReaderContents := []byte("abcdefghij1234567890")
-
-	t.Run("BufReader", func(t *testing.T) {
-		r, err := NewBufReader(realByteSlice(testReaderContents))
-		require.NoError(t, err)
-		test(t, r)
-	})
 
 	t.Run("FileReaderWithZeroOffset", func(t *testing.T) {
 		dir := t.TempDir()
