@@ -181,7 +181,7 @@ func mergedSeriesChunkRefsSetIterators(mergedSize int, all ...seriesChunkRefsSet
 	case 0:
 		return emptySeriesChunkRefsSetIterator{}
 	case 1:
-		return newDeduplicatingBatchSet(mergedSize, all[0])
+		return newDeduplicatingSeriesChunkRefsSetIterator(mergedSize, all[0])
 	}
 	h := len(all) / 2
 
@@ -382,4 +382,65 @@ func (s *seriesSetWithoutChunks) At() (labels.Labels, []storepb.AggrChunk) {
 
 func (s *seriesSetWithoutChunks) Err() error {
 	return s.from.Err()
+}
+
+// deduplicatingSeriesChunkRefsSetIterator implements seriesChunkRefsSetIterator, and merges together consecutive
+// series in an underlying seriesChunkRefsSetIterator.
+type deduplicatingSeriesChunkRefsSetIterator struct {
+	batchSize int
+
+	from    seriesChunkRefsIterator
+	peek    *seriesChunkRefs
+	current seriesChunkRefsSet
+}
+
+func newDeduplicatingSeriesChunkRefsSetIterator(batchSize int, wrapped seriesChunkRefsSetIterator) seriesChunkRefsSetIterator {
+	return &deduplicatingSeriesChunkRefsSetIterator{
+		batchSize: batchSize,
+		from:      newFlattenedSeriesChunkRefsIterator(wrapped),
+	}
+}
+
+func (s *deduplicatingSeriesChunkRefsSetIterator) Err() error {
+	return s.from.Err()
+}
+
+func (s *deduplicatingSeriesChunkRefsSetIterator) At() seriesChunkRefsSet {
+	return s.current
+}
+
+func (s *deduplicatingSeriesChunkRefsSetIterator) Next() bool {
+	var firstSeries seriesChunkRefs
+	if s.peek == nil {
+		if !s.from.Next() {
+			return false
+		}
+		firstSeries = s.from.At()
+	} else {
+		firstSeries = *s.peek
+		s.peek = nil
+	}
+	nextSet := newSeriesChunkRefsSet(s.batchSize)
+	nextSet.series = append(nextSet.series, firstSeries)
+
+	var nextSeries seriesChunkRefs
+	for i := 0; i < s.batchSize; {
+		if !s.from.Next() {
+			break
+		}
+		nextSeries = s.from.At()
+
+		if labels.Equal(nextSet.series[i].lset, nextSeries.lset) {
+			nextSet.series[i].chunks = append(nextSet.series[i].chunks, nextSeries.chunks...)
+		} else {
+			i++
+			if i >= s.batchSize {
+				s.peek = &nextSeries
+				break
+			}
+			nextSet.series = append(nextSet.series, nextSeries)
+		}
+	}
+	s.current = nextSet
+	return true
 }
