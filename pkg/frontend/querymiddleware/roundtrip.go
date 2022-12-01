@@ -309,7 +309,7 @@ func isInstantQuery(path string) bool {
 
 func defaultInstantQueryParamsRoundTripper(next http.RoundTripper) http.RoundTripper {
 	return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
-		if isInstantQuery(r.URL.Path) && !r.URL.Query().Has("time") {
+		if isInstantQuery(r.URL.Path) && !r.Form.Has("time") && !r.URL.Query().Has("time") {
 			nowUnixStr := strconv.FormatInt(time.Now().Unix(), 10)
 
 			q := r.URL.Query()
@@ -317,8 +317,9 @@ func defaultInstantQueryParamsRoundTripper(next http.RoundTripper) http.RoundTri
 			r.URL.RawQuery = q.Encode()
 
 			// If form was already parsed, add this param to the form too.
+			// (The form doesn't have "time", otherwise we'd not be here)
 			if r.Form != nil {
-				r.Form.Add("time", nowUnixStr)
+				r.Form.Set("time", nowUnixStr)
 			}
 		}
 		return next.RoundTrip(r)
