@@ -46,6 +46,9 @@ var (
 	reasonExemplarLabelsBlank      = "exemplar_labels_blank"
 	reasonExemplarTooOld           = "exemplar_too_old"
 
+	// Discarded histograms reasons.
+	reasonHistogramDifferentNumberSpansBuckets = metricReasonFromErrorID(globalerror.HistogramDifferentNumberSpansBuckets)
+
 	// Discarded metadata reasons.
 	reasonMetadataMetricNameTooLong = metricReasonFromErrorID(globalerror.MetricMetadataMetricNameTooLong)
 	reasonMetadataUnitTooLong       = metricReasonFromErrorID(globalerror.MetricMetadataUnitTooLong)
@@ -90,6 +93,17 @@ func DiscardedExemplarsCounter(reg prometheus.Registerer, reason string) *promet
 	return promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_discarded_exemplars_total",
 		Help: "The total number of exemplars that were discarded.",
+		ConstLabels: map[string]string{
+			discardReasonLabel: reason,
+		},
+	}, []string{"user"})
+}
+
+// DiscardedHistogramsCounter creates per-user counter vector for histograms discarded for a given reason.
+func DiscardedHistogramsCounter(reg prometheus.Registerer, reason string) *prometheus.CounterVec {
+	return promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		Name: "cortex_discarded_histograms_total",
+		Help: "The total number of histograms that were discarded.",
 		ConstLabels: map[string]string{
 			discardReasonLabel: reason,
 		},
@@ -178,6 +192,24 @@ func NewExemplarValidationMetrics(r prometheus.Registerer) *ExemplarValidationMe
 	}
 }
 
+// HistogramValidationMetrics is a collection of metrics used during histogram validation.
+type HistogramValidationMetrics struct {
+	tooFarInFuture              *prometheus.CounterVec
+	differentNumberSpansBuckets *prometheus.CounterVec
+}
+
+func (m *HistogramValidationMetrics) DeleteUserMetrics(userID string) {
+	m.tooFarInFuture.DeleteLabelValues(userID)
+	m.differentNumberSpansBuckets.DeleteLabelValues(userID)
+}
+
+func NewHistogramValidationMetrics(r prometheus.Registerer) *HistogramValidationMetrics {
+	return &HistogramValidationMetrics{
+		tooFarInFuture:              DiscardedSamplesCounter(r, reasonTooFarInFuture),
+		differentNumberSpansBuckets: DiscardedSamplesCounter(r, reasonHistogramDifferentNumberSpansBuckets),
+	}
+}
+
 // ValidateSample returns an err if the sample is invalid.
 // The returned error may retain the provided series labels.
 // It uses the passed 'now' time to measure the relative time of the sample.
@@ -186,7 +218,7 @@ func ValidateSample(m *SampleValidationMetrics, now model.Time, cfg SampleValida
 
 	if model.Time(s.TimestampMs) > now.Add(cfg.CreationGracePeriod(userID)) {
 		m.tooFarInFuture.WithLabelValues(userID).Inc()
-		return newSampleTimestampTooNewError(unsafeMetricName, s.TimestampMs)
+		return newSampleTimestampTooNewError("sample", unsafeMetricName, s.TimestampMs)
 	}
 
 	return nil
@@ -238,6 +270,39 @@ func ValidateExemplar(m *ExemplarValidationMetrics, userID string, ls []mimirpb.
 	if !foundValidLabel {
 		m.labelsBlank.WithLabelValues(userID).Inc()
 		return newExemplarEmptyLabelsError(ls, e.Labels, e.TimestampMs)
+	}
+
+	return nil
+}
+
+// ValidateHistogram returns an err if the histogram is invalid.
+// The returned error may retain the provided series labels.
+// It uses the passed 'now' time to measure the relative time of the histogram.
+func ValidateHistogram(m *HistogramValidationMetrics, now model.Time, cfg SampleValidationConfig, userID string, ls []mimirpb.LabelAdapter, h mimirpb.Histogram) ValidationError {
+	unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
+
+	if model.Time(h.Timestamp) > now.Add(cfg.CreationGracePeriod(userID)) {
+		m.tooFarInFuture.WithLabelValues(userID).Inc()
+		return newSampleTimestampTooNewError("histogram", unsafeMetricName, h.Timestamp)
+	}
+
+	checkSpansBucketsNumber := func(sign string, spans []*mimirpb.BucketSpan, buckets []int64) error {
+		var spanBuckets uint32
+		for _, span := range spans {
+			spanBuckets += span.Length
+		}
+		if l := uint32(len(buckets)); spanBuckets != l {
+			m.differentNumberSpansBuckets.WithLabelValues(userID).Inc()
+			return newhHistogramDifferentNumberSpansBucketError(sign, spanBuckets, l, unsafeMetricName, h.Timestamp)
+		}
+		return nil
+	}
+
+	if err := checkSpansBucketsNumber("negative", h.NegativeSpans, h.NegativeDeltas); err != nil {
+		return err
+	}
+	if err := checkSpansBucketsNumber("positive", h.PositiveSpans, h.PositiveDeltas); err != nil {
+		return err
 	}
 
 	return nil

@@ -64,6 +64,8 @@ const (
 	BucketIndexTooOld           ID = "bucket-index-too-old"
 
 	DistributorMaxWriteMessageSize ID = "distributor-max-write-message-size"
+
+	HistogramDifferentNumberSpansBuckets ID = "histogram-different-number-spans-buckets"
 )
 
 // Message returns the provided msg, appending the error id.
