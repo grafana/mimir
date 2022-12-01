@@ -4,7 +4,7 @@ output:
 linters:
   enable:
     - goimports
-    - golint
+    - revive
     - gofmt
     - misspell
     - errorlint

@@ -196,7 +196,7 @@ func prepareStoreWithTestBlocksForSeries(t testing.TB, dir string, bkt objstore.
 
 // TODO(bwplotka): Benchmark Series.
 //
-//nolint:golint
+//nolint:revive
 func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 	t.Helper()
 
