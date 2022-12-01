@@ -2011,9 +2011,10 @@ func benchmarkBlockSeriesWithConcurrency(b *testing.B, concurrency int, blockMet
 				require.NoError(b, err)
 
 				indexReader := blk.indexReader()
-				chunkReader := blk.chunkReader(ctx, &pool.BatchBytes{Delegate: pool.NoopBytes{}})
+				chunkReader := blk.chunkReader(ctx)
+				chunksPool := &pool.BatchBytes{Delegate: pool.NoopBytes{}}
 
-				seriesSet, _, err := blockSeries(context.Background(), indexReader, chunkReader, matchers, shardSelector, seriesHashCache, chunksLimiter, seriesLimiter, req.SkipChunks, req.MinTime, req.MaxTime, log.NewNopLogger())
+				seriesSet, _, err := blockSeries(context.Background(), indexReader, chunkReader, chunksPool, matchers, shardSelector, seriesHashCache, chunksLimiter, seriesLimiter, req.SkipChunks, req.MinTime, req.MaxTime, log.NewNopLogger())
 				require.NoError(b, err)
 
 				// Ensure at least 1 series has been returned (as expected).
@@ -2038,7 +2039,7 @@ func TestBlockSeries_skipChunks_ignoresMintMaxt(t *testing.T) {
 
 	sl := NewLimiter(math.MaxUint64, promauto.With(nil).NewCounter(prometheus.CounterOpts{Name: "test"}))
 	matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "i", "")}
-	ss, _, err := blockSeries(context.Background(), b.indexReader(), nil, matchers, nil, nil, nil, sl, skipChunks, mint, maxt, log.NewNopLogger())
+	ss, _, err := blockSeries(context.Background(), b.indexReader(), nil, nil, matchers, nil, nil, nil, sl, skipChunks, mint, maxt, log.NewNopLogger())
 	require.NoError(t, err)
 	require.True(t, ss.Next(), "Result set should have series because when skipChunks=true, mint/maxt should be ignored")
 }
@@ -2059,7 +2060,7 @@ func TestBlockSeries_Cache(t *testing.T) {
 		// This test relies on the fact that p~=foo.* has to call LabelValues(p) when doing ExpandedPostings().
 		// We make that call fail in order to make the entire LabelValues(p~=foo.*) call fail.
 		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "p", "foo.*")}
-		_, _, err := blockSeries(context.Background(), b.indexReader(), nil, matchers, nil, nil, nil, sl, true, b.meta.MinTime, b.meta.MaxTime, log.NewNopLogger())
+		_, _, err := blockSeries(context.Background(), b.indexReader(), nil, nil, matchers, nil, nil, nil, sl, true, b.meta.MinTime, b.meta.MaxTime, log.NewNopLogger())
 		require.Error(t, err)
 	})
 
@@ -2113,7 +2114,7 @@ func TestBlockSeries_Cache(t *testing.T) {
 
 		indexr := b.indexReader()
 		for i, tc := range testCases {
-			ss, _, err := blockSeries(context.Background(), indexr, nil, tc.matchers, tc.shard, shc, nil, sl, true, b.meta.MinTime, b.meta.MaxTime, log.NewNopLogger())
+			ss, _, err := blockSeries(context.Background(), indexr, nil, nil, tc.matchers, tc.shard, shc, nil, sl, true, b.meta.MinTime, b.meta.MaxTime, log.NewNopLogger())
 			require.NoError(t, err, "Unexpected error for test case %d", i)
 			lset := lsetFromSeriesSet(t, ss)
 			require.Equalf(t, tc.expectedLabelSet, lset, "Wrong label set for test case %d", i)
@@ -2123,7 +2124,7 @@ func TestBlockSeries_Cache(t *testing.T) {
 		// We break the LookupSymbol so we know for sure we'll be using the cache in the next calls.
 		indexr.dec.LookupSymbol = nil
 		for i, tc := range testCases {
-			ss, _, err := blockSeries(context.Background(), indexr, nil, tc.matchers, tc.shard, shc, nil, sl, true, b.meta.MinTime, b.meta.MaxTime, log.NewNopLogger())
+			ss, _, err := blockSeries(context.Background(), indexr, nil, nil, tc.matchers, tc.shard, shc, nil, sl, true, b.meta.MinTime, b.meta.MaxTime, log.NewNopLogger())
 			require.NoError(t, err, "Unexpected error for test case %d", i)
 			lset := lsetFromSeriesSet(t, ss)
 			require.Equalf(t, tc.expectedLabelSet, lset, "Wrong label set for test case %d", i)

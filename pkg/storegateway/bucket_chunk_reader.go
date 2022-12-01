@@ -21,6 +21,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util/pool"
 )
 
@@ -32,16 +33,14 @@ type bucketChunkReader struct {
 
 	// Mutex protects access to following fields, when updated from chunks-loading goroutines.
 	// After chunks are loaded, mutex is no longer used.
-	mtx        sync.Mutex
-	chunkBytes *pool.BatchBytes
+	mtx sync.Mutex
 }
 
-func newBucketChunkReader(ctx context.Context, block *bucketBlock, chunkBytes *pool.BatchBytes) *bucketChunkReader {
+func newBucketChunkReader(ctx context.Context, block *bucketBlock) *bucketChunkReader {
 	return &bucketChunkReader{
-		ctx:        ctx,
-		block:      block,
-		toLoad:     make([][]loadIdx, len(block.chunkObjs)),
-		chunkBytes: chunkBytes,
+		ctx:    ctx,
+		block:  block,
+		toLoad: make([][]loadIdx, len(block.chunkObjs)),
 	}
 }
 
@@ -65,7 +64,7 @@ func (r *bucketChunkReader) addLoad(id chunks.ChunkRef, seriesEntry, chunk int) 
 }
 
 // load all added chunks and saves resulting chunks to res.
-func (r *bucketChunkReader) load(res []seriesEntry, stats *safeQueryStats) error {
+func (r *bucketChunkReader) load(res []seriesEntry, chunksPool *pool.BatchBytes, stats *safeQueryStats) error {
 	g, ctx := errgroup.WithContext(r.ctx)
 
 	for seq, pIdxs := range r.toLoad {
@@ -81,7 +80,7 @@ func (r *bucketChunkReader) load(res []seriesEntry, stats *safeQueryStats) error
 			p := p
 			indices := pIdxs[p.ElemRng[0]:p.ElemRng[1]]
 			g.Go(func() error {
-				return r.loadChunks(ctx, res, seq, p, indices, stats)
+				return r.loadChunks(ctx, res, seq, p, indices, chunksPool, stats)
 			})
 		}
 	}
@@ -90,7 +89,7 @@ func (r *bucketChunkReader) load(res []seriesEntry, stats *safeQueryStats) error
 
 // loadChunks will read range [start, end] from the segment file with sequence number seq.
 // This data range covers chunks starting at supplied offsets.
-func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, seq int, part Part, pIdxs []loadIdx, stats *safeQueryStats) error {
+func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, seq int, part Part, pIdxs []loadIdx, chunksPool *pool.BatchBytes, stats *safeQueryStats) error {
 	fetchBegin := time.Now()
 
 	// Get a reader for the required range.
@@ -167,7 +166,7 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, s
 		// There is also crc32 after the chunk, but we ignore that.
 		chunkLen = n + 1 + int(chunkDataLen)
 		if chunkLen <= len(cb) {
-			err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunk]), rawChunk(cb[n:chunkLen]), r.save)
+			err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunk]), rawChunk(cb[n:chunkLen]), chunksPool)
 			if err != nil {
 				return errors.Wrap(err, "populate chunk")
 			}
@@ -198,7 +197,7 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, s
 		localStats.chunksFetchCount++
 		localStats.chunksFetchDurationSum += time.Since(fetchBegin)
 		localStats.chunksFetchedSizeSum += len(*nb)
-		err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunk]), rawChunk((*nb)[n:]), r.save)
+		err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunk]), rawChunk((*nb)[n:]), chunksPool)
 		if err != nil {
 			r.block.chunkPool.Put(nb)
 			return errors.Wrap(err, "populate chunk")
@@ -211,10 +210,23 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, s
 	return nil
 }
 
-// save saves a copy of b's payload to a memory pool of its own and returns a new byte slice referencing said copy.
-// Returned slice becomes invalid once r.block.chunkPool.Put() is called.
-func (r *bucketChunkReader) save(b []byte) ([]byte, error) {
-	dst, err := r.chunkBytes.Get(len(b))
+func populateChunk(out *storepb.AggrChunk, in chunkenc.Chunk, chunksPool *pool.BatchBytes) error {
+	if in.Encoding() == chunkenc.EncXOR {
+		b, err := saveChunk(in.Bytes(), chunksPool)
+		if err != nil {
+			return err
+		}
+		out.Raw = &storepb.Chunk{Type: storepb.Chunk_XOR, Data: b}
+		return nil
+	}
+	return errors.Errorf("unsupported chunk encoding %d", in.Encoding())
+}
+
+// saveChunk saves a copy of b's payload to a buffer pulled from chunksPool.
+// The buffer containing the chunk data is returned.
+// The returned slice becomes invalid once chunksPool is released.
+func saveChunk(b []byte, chunksPool *pool.BatchBytes) ([]byte, error) {
+	dst, err := chunksPool.Get(len(b))
 	if err != nil {
 		return nil, err
 	}
