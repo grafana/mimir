@@ -738,7 +738,8 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 		}
 
 		// Look up a reference for this series.
-		ref, copiedLabels := app.GetRef(mimirpb.FromLabelAdaptersToLabels(ts.Labels))
+		lbls := mimirpb.FromLabelAdaptersToLabels(ts.Labels)
+		ref, copiedLabels := app.GetRef(lbls, lbls.Hash())
 
 		// To find out if any sample was added to this series, we keep old value.
 		oldSucceededSamplesCount := succeededSamplesCount
