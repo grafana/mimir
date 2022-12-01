@@ -312,6 +312,8 @@ func defaultInstantQueryParamsRoundTripper(next http.RoundTripper) http.RoundTri
 	return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
 		// Check r.Form first as that's just looking up in a map, versus r.URL.Query() which parses the RawQuery again.
 		// Most of the clients send the POST urlencoded form anyway.
+		// ParseSeekerBodyForm will call the standard http.Request.ParseForm which will respect the precedence of the
+		// post form over the url query.
 		if isInstantQuery(r.URL.Path) && !r.Form.Has("time") && !r.URL.Query().Has("time") {
 			q := r.URL.Query()
 			q.Add("time", strconv.FormatInt(time.Now().Unix(), 10))
