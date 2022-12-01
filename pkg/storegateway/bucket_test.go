@@ -2184,7 +2184,7 @@ func createHeadWithSeries(t testing.TB, j int, opts headGenOptions) (*tsdb.Head,
 		opts.TSDBDir,
 	)
 
-	var w *wal.WAL
+	var w *wal.WL
 	var err error
 	if opts.WithWAL {
 		w, err = wal.New(nil, nil, filepath.Join(opts.TSDBDir, "wal"), true)
