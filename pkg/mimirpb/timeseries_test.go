@@ -12,6 +12,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/model/histogram"
 )
 
 func TestLabelAdapter_Marshal(t *testing.T) {
@@ -120,6 +122,18 @@ func TestDeepCopyTimeseries(t *testing.T) {
 					{Name: "exemplarLabel2", Value: "exemplarValue2"},
 				},
 			}},
+			Histograms: []Histogram{FromHistogramToHistogramProto(2, &histogram.Histogram{
+				Count:         5,
+				ZeroCount:     2,
+				ZeroThreshold: 0.001,
+				Sum:           18.4,
+				Schema:        1,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []int64{1, 1, -1, 0},
+			})},
 		},
 	}
 	dst := PreallocTimeseries{}
@@ -151,6 +165,10 @@ func TestDeepCopyTimeseries(t *testing.T) {
 			(*reflect.SliceHeader)(unsafe.Pointer(&dst.Exemplars[exemplarIdx].Labels)).Data,
 		)
 	}
+	assert.NotEqual(t,
+		(*reflect.SliceHeader)(unsafe.Pointer(&src.Histograms)).Data,
+		(*reflect.SliceHeader)(unsafe.Pointer(&dst.Histograms)).Data,
+	)
 
 	dst = PreallocTimeseries{}
 	dst = DeepCopyTimeseries(dst, src, false)

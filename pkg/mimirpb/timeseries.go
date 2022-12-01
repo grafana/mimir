@@ -16,10 +16,11 @@ import (
 )
 
 const (
-	expectedTimeseries         = 100
-	expectedLabels             = 20
-	expectedSamplesPerSeries   = 10
-	expectedExemplarsPerSeries = 1
+	expectedTimeseries          = 100
+	expectedLabels              = 20
+	expectedSamplesPerSeries    = 10
+	expectedExemplarsPerSeries  = 1
+	expectedHistogramsPerSeries = 2
 )
 
 var (
@@ -38,9 +39,10 @@ var (
 	timeSeriesPool = sync.Pool{
 		New: func() interface{} {
 			return &TimeSeries{
-				Labels:    make([]LabelAdapter, 0, expectedLabels),
-				Samples:   make([]Sample, 0, expectedSamplesPerSeries),
-				Exemplars: make([]Exemplar, 0, expectedExemplarsPerSeries),
+				Labels:     make([]LabelAdapter, 0, expectedLabels),
+				Samples:    make([]Sample, 0, expectedSamplesPerSeries),
+				Exemplars:  make([]Exemplar, 0, expectedExemplarsPerSeries),
+				Histograms: make([]Histogram, 0, expectedHistogramsPerSeries),
 			}
 		},
 	}
@@ -356,18 +358,18 @@ func DeepCopyTimeseries(dst, src PreallocTimeseries, keepExemplars bool) Preallo
 	dstTs := dst.TimeSeries
 
 	// Prepare a buffer which is large enough to hold all the label names and values of src.
-	requiredYoloSliceCap := countTotalLabelLen(src.TimeSeries, keepExemplars)
+	requiredYoloSliceCap := countTotalLabelLen(srcTs, keepExemplars)
 	dst.yoloSlice = yoloSliceFromPool()
 	buf := ensureCap(dst.yoloSlice, requiredYoloSliceCap)
 
 	// Copy the time series labels by using the prepared buffer.
-	dst.TimeSeries.Labels, buf = copyToYoloLabels(buf, dstTs.Labels, srcTs.Labels)
+	dstTs.Labels, buf = copyToYoloLabels(buf, dstTs.Labels, srcTs.Labels)
 
 	// Copy the samples.
-	if cap(dst.TimeSeries.Samples) < len(src.TimeSeries.Samples) {
-		dstTs.Samples = make([]Sample, len(src.Samples))
+	if cap(dstTs.Samples) < len(srcTs.Samples) {
+		dstTs.Samples = make([]Sample, len(srcTs.Samples))
 	} else {
-		dstTs.Samples = dstTs.Samples[:len(src.Samples)]
+		dstTs.Samples = dstTs.Samples[:len(srcTs.Samples)]
 	}
 	copy(dstTs.Samples, srcTs.Samples)
 
@@ -379,17 +381,25 @@ func DeepCopyTimeseries(dst, src PreallocTimeseries, keepExemplars bool) Preallo
 			dstTs.Exemplars = dstTs.Exemplars[:len(srcTs.Exemplars)]
 		}
 
-		for exemplarIdx := range src.Exemplars {
+		for exemplarIdx := range srcTs.Exemplars {
 			// Copy the exemplar labels by using the prepared buffer.
-			dstTs.Exemplars[exemplarIdx].Labels, buf = copyToYoloLabels(buf, dstTs.Exemplars[exemplarIdx].Labels, src.Exemplars[exemplarIdx].Labels)
+			dstTs.Exemplars[exemplarIdx].Labels, buf = copyToYoloLabels(buf, dstTs.Exemplars[exemplarIdx].Labels, srcTs.Exemplars[exemplarIdx].Labels)
 
 			// Copy the other exemplar properties.
-			dstTs.Exemplars[exemplarIdx].Value = src.Exemplars[exemplarIdx].Value
-			dstTs.Exemplars[exemplarIdx].TimestampMs = src.Exemplars[exemplarIdx].TimestampMs
+			dstTs.Exemplars[exemplarIdx].Value = srcTs.Exemplars[exemplarIdx].Value
+			dstTs.Exemplars[exemplarIdx].TimestampMs = srcTs.Exemplars[exemplarIdx].TimestampMs
 		}
 	} else {
 		dstTs.Exemplars = dstTs.Exemplars[:0]
 	}
+
+	// Copy the histograms.
+	if cap(dstTs.Histograms) < len(srcTs.Histograms) {
+		dstTs.Histograms = make([]Histogram, len(srcTs.Histograms))
+	} else {
+		dstTs.Histograms = dstTs.Histograms[:len(srcTs.Histograms)]
+	}
+	copy(dstTs.Histograms, srcTs.Histograms)
 
 	return dst
 }
