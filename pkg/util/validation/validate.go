@@ -289,7 +289,7 @@ func ValidateHistogram(m *HistogramValidationMetrics, now model.Time, cfg Sample
 	checkSpans := func(sign string, spans []*mimirpb.BucketSpan, buckets []int64) error {
 		var spanBuckets uint32
 		for n, span := range spans {
-			if span.Offset < 0 {
+			if n > 0 && span.Offset < 0 {
 				return newHistogramSpanNegativeOffsetError(sign, n+1, span.Offset, h.Timestamp, unsafeMetricName)
 			}
 			spanBuckets += span.Length

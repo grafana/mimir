@@ -1575,20 +1575,20 @@ func TestDistributor_Push_HistogramValidation(t *testing.T) {
 			req: makeWriteRequestHistogram(
 				[]string{model.MetricNameLabel, "test"}, 1000,
 				&histogram.Histogram{
-					NegativeSpans:   []histogram.Span{{Offset: -1, Length: 1}},
-					NegativeBuckets: []int64{1},
+					NegativeSpans:   []histogram.Span{{Offset: -1, Length: 1}, {Offset: -1, Length: 1}},
+					NegativeBuckets: []int64{1, 2},
 				}),
-			errMsg: `received a histogram which has a negative span (number 1)`,
+			errMsg: `received a histogram which has a negative span (number 2)`,
 			errID:  globalerror.HistogramSpanNegativeOffset,
 		},
 		"rejects a histogram which has a positive span with a negative offset": {
 			req: makeWriteRequestHistogram(
 				[]string{model.MetricNameLabel, "test"}, 1000,
 				&histogram.Histogram{
-					PositiveSpans:   []histogram.Span{{Offset: -1, Length: 1}},
-					PositiveBuckets: []int64{1},
+					PositiveSpans:   []histogram.Span{{Offset: -1, Length: 1}, {Offset: -1, Length: 1}},
+					PositiveBuckets: []int64{1, 2},
 				}),
-			errMsg: `received a histogram which has a positive span (number 1)`,
+			errMsg: `received a histogram which has a positive span (number 2)`,
 			errID:  globalerror.HistogramSpanNegativeOffset,
 		},
 	}
