@@ -3706,6 +3706,8 @@ func makeWriteRequestExamplars(labels []mimirpb.LabelAdapter, ts int64, value fl
 
 func makeWriteRequestHistograms(ts int64, histogram *histogram.Histogram) []mimirpb.Histogram {
 	h := remote.HistogramToHistogramProto(ts, histogram)
+	// This is a little bit of a hacky way to reuse the above function because it returns the Prometheus
+	// histogram protobuf representation but we need the Mimir one here.
 	d, _ := h.Marshal()
 	h2 := mimirpb.Histogram{}
 	h2.Unmarshal(d) // nolint:errcheck
