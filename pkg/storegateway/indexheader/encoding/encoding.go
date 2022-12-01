@@ -127,11 +127,6 @@ func (d *Decbuf) UvarintBytes() []byte {
 		return []byte{}
 	}
 
-	if len(b) < int(l) {
-		d.E = ErrInvalidSize
-		return []byte{}
-	}
-
 	return b
 }
 
@@ -151,7 +146,7 @@ func (d *Decbuf) Uvarint64() uint64 {
 		return 0
 	}
 
-	_, err = d.r.Read(n)
+	err = d.r.Skip(n)
 	if err != nil {
 		d.E = err
 		return 0
@@ -171,11 +166,6 @@ func (d *Decbuf) Be64() uint64 {
 		return 0
 	}
 
-	if len(b) != 8 {
-		d.E = ErrInvalidSize
-		return 0
-	}
-
 	return binary.BigEndian.Uint64(b)
 }
 
@@ -187,11 +177,6 @@ func (d *Decbuf) Be32() uint32 {
 	b, err := d.r.Read(4)
 	if err != nil {
 		d.E = err
-		return 0
-	}
-
-	if len(b) != 4 {
-		d.E = ErrInvalidSize
 		return 0
 	}
 
