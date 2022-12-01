@@ -675,7 +675,7 @@ type deduplicatingBatchSet struct {
 func newDeduplicatingBatchSet(batchSize int, wrapped seriesChunkRefsSetIterator) seriesChunkRefsSetIterator {
 	return &deduplicatingBatchSet{
 		batchSize: batchSize,
-		from:      newChainedSeriesSet(wrapped),
+		from:      newFlattenedSeriesChunkRefsIterator(wrapped),
 	}
 }
 
@@ -721,44 +721,6 @@ func (s *deduplicatingBatchSet) Next() bool {
 	}
 	s.current = nextBatch
 	return true
-}
-
-type chainedBatchSetIterator struct {
-	from     seriesChunkRefsSetIterator
-	iterator *seriesChunkRefsIteratorImpl
-}
-
-func newChainedSeriesSet(from seriesChunkRefsSetIterator) seriesChunkRefsIterator {
-	return &chainedBatchSetIterator{
-		from:     from,
-		iterator: newSeriesChunkRefsIterator(seriesChunkRefsSet{}), // start with an empty batch and initialize on the first call to Next()
-	}
-}
-
-func (c chainedBatchSetIterator) Next() bool {
-	if c.iterator.Next() {
-		return true
-	}
-
-	// The current iterator has no more elements. We check if there's another
-	// iterator to fetch and then iterate on.
-	if !c.from.Next() {
-		return false
-	}
-
-	c.iterator.reset(c.from.At())
-
-	// We've replaced the current iterator, so can recursively call Next()
-	// to check if there's any item in the new iterator and further advance it if not.
-	return c.Next()
-}
-
-func (c chainedBatchSetIterator) At() seriesChunkRefs {
-	return c.iterator.At()
-}
-
-func (c chainedBatchSetIterator) Err() error {
-	return c.from.Err()
 }
 
 type batchedSeriesSet struct {
