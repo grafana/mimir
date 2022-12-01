@@ -66,6 +66,7 @@ const (
 	DistributorMaxWriteMessageSize ID = "distributor-max-write-message-size"
 
 	HistogramDifferentNumberSpansBuckets ID = "histogram-different-number-spans-buckets"
+	HistogramSpanNegativeOffset          ID = "histogram-span-negative-offset"
 )
 
 // Message returns the provided msg, appending the error id.

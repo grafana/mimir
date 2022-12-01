@@ -275,8 +275,6 @@ func ValidateExemplar(m *ExemplarValidationMetrics, userID string, ls []mimirpb.
 	return nil
 }
 
-// TODO: validation checks and the extent of them still needs to be figured out.
-
 // ValidateHistogram returns an err if the histogram is invalid.
 // The returned error may retain the provided series labels.
 // It uses the passed 'now' time to measure the relative time of the histogram.
@@ -288,22 +286,25 @@ func ValidateHistogram(m *HistogramValidationMetrics, now model.Time, cfg Sample
 		return newSampleTimestampTooNewError("histogram", unsafeMetricName, h.Timestamp)
 	}
 
-	checkSpansBucketsNumber := func(sign string, spans []*mimirpb.BucketSpan, buckets []int64) error {
+	checkSpans := func(sign string, spans []*mimirpb.BucketSpan, buckets []int64) error {
 		var spanBuckets uint32
-		for _, span := range spans {
+		for n, span := range spans {
+			if span.Offset < 0 {
+				return newHistogramSpanNegativeOffsetError(sign, n+1, span.Offset, h.Timestamp, unsafeMetricName)
+			}
 			spanBuckets += span.Length
 		}
 		if l := uint32(len(buckets)); spanBuckets != l {
 			m.differentNumberSpansBuckets.WithLabelValues(userID).Inc()
-			return newhHistogramDifferentNumberSpansBucketError(sign, spanBuckets, l, unsafeMetricName, h.Timestamp)
+			return newHistogramDifferentNumberSpansBucketError(sign, spanBuckets, l, h.Timestamp, unsafeMetricName)
 		}
 		return nil
 	}
 
-	if err := checkSpansBucketsNumber("negative", h.NegativeSpans, h.NegativeDeltas); err != nil {
+	if err := checkSpans("negative", h.NegativeSpans, h.NegativeDeltas); err != nil {
 		return err
 	}
-	if err := checkSpansBucketsNumber("positive", h.PositiveSpans, h.PositiveDeltas); err != nil {
+	if err := checkSpans("positive", h.PositiveSpans, h.PositiveDeltas); err != nil {
 		return err
 	}
 
