@@ -252,7 +252,6 @@ func newQueryTripperware(
 		queryrange := newLimitedParallelismRoundTripper(next, codec, limits, queryRangeMiddleware...)
 		instant := defaultInstantQueryParamsRoundTripper(
 			newLimitedParallelismRoundTripper(next, codec, limits, queryInstantMiddleware...),
-			time.Now,
 		)
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
 			switch {
@@ -309,7 +308,7 @@ func isInstantQuery(path string) bool {
 	return strings.HasSuffix(path, instantQueryPathSuffix)
 }
 
-func defaultInstantQueryParamsRoundTripper(next http.RoundTripper, now func() time.Time) http.RoundTripper {
+func defaultInstantQueryParamsRoundTripper(next http.RoundTripper) http.RoundTripper {
 	return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
 		// Check r.Form first as that's just looking up in a map, versus r.URL.Query() which parses the RawQuery again.
 		// Most of the clients send the POST urlencoded form anyway.
