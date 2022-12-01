@@ -25,8 +25,6 @@ import (
 )
 
 type StreamBinaryReader struct {
-	f *os.File
-
 	factory *stream_encoding.DecbufFactory
 	toc     *BinaryTOC
 
@@ -73,14 +71,12 @@ func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int) (bw
 	if err != nil {
 		return nil, err
 	}
+
 	defer func() {
-		if err != nil {
-			runutil.CloseWithErrCapture(&err, f, "index header close")
-		}
+		runutil.CloseWithErrCapture(&err, f, "index header close")
 	}()
 
 	r := &StreamBinaryReader{
-		f:       f,
 		factory: stream_encoding.NewDecbufFactory(path),
 	}
 
@@ -143,8 +139,8 @@ func newBinaryTOCFromFile(f *os.File) (*BinaryTOC, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "stat")
 	}
-	fSize := info.Size()
 
+	fSize := info.Size()
 	if fSize < binaryTOCLen {
 		return nil, stream_encoding.ErrInvalidSize
 	}
@@ -239,4 +235,4 @@ func (r *StreamBinaryReader) LabelNames() ([]string, error) {
 	return r.postingsOffsetTable.LabelNames()
 }
 
-func (r *StreamBinaryReader) Close() error { return r.f.Close() }
+func (r *StreamBinaryReader) Close() error { return nil }
