@@ -6,6 +6,7 @@
 package index
 
 import (
+	"fmt"
 	"hash/crc32"
 	"sort"
 
@@ -49,9 +50,11 @@ type PostingOffsetTableV1 struct {
 func NewPostingOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset int, indexVersion int, indexLastPostingEnd int64, postingOffsetsInMemSampling int) (PostingOffsetTable, error) {
 	if indexVersion == index.FormatV1 {
 		return newV1PostingOffsetTable(factory, tableOffset, indexLastPostingEnd)
-	} else {
+	} else if indexVersion == index.FormatV2 {
 		return newV2PostingOffsetTable(factory, tableOffset, indexLastPostingEnd, postingOffsetsInMemSampling)
 	}
+
+	return nil, fmt.Errorf("unknown index version %v", indexVersion)
 }
 
 func newV1PostingOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset int, indexLastPostingEnd int64) (PostingOffsetTable, error) {
