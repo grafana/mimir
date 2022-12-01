@@ -25,12 +25,6 @@ func init() {
 	castagnoliTable = crc32.MakeTable(crc32.Castagnoli)
 }
 
-// ByteSlice abstracts a byte slice.
-type ByteSlice interface {
-	Len() int
-	Range(start, end int) []byte
-}
-
 type Symbols struct {
 	factory *stream_encoding.DecbufFactory
 
