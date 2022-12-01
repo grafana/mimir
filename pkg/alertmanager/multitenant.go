@@ -635,7 +635,11 @@ func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error
 	// List existing files to keep track of the ones to be removed
 	if oldTemplateFiles, err := os.ReadDir(userTemplateDir); err == nil {
 		for _, file := range oldTemplateFiles {
-			pathsToRemove[filepath.Join(userTemplateDir, file.Name())] = struct{}{}
+			templateFilePath, err := safeTemplateFilepath(userTemplateDir, file.Name())
+			if err != nil {
+				return err
+			}
+			pathsToRemove[templateFilePath] = struct{}{}
 		}
 	}
 
