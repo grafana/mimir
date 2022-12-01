@@ -148,6 +148,9 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Store the r.Form contents copy, as middlewares may modify it (like setting the default values).
+	params := copyValues(r.Form)
+
 	// Seek the body back to the beginning, so it can be read again if it's used to forward the request through a roundtripper.
 	if _, err := seeker.Seek(0, io.SeekStart); err != nil {
 		writeError(w, err)
@@ -165,7 +168,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		writeError(w, err)
-		f.reportQueryStats(r, r.Form, queryResponseTime, stats, err)
+		f.reportQueryStats(r, params, queryResponseTime, stats, err)
 		return
 	}
 
@@ -183,10 +186,10 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.Copy(w, resp.Body)
 
 	if f.cfg.LogQueriesLongerThan > 0 && queryResponseTime > f.cfg.LogQueriesLongerThan {
-		f.reportSlowQuery(r, r.Form, queryResponseTime)
+		f.reportSlowQuery(r, params, queryResponseTime)
 	}
 	if f.cfg.QueryStatsEnabled {
-		f.reportQueryStats(r, r.Form, queryResponseTime, stats, nil)
+		f.reportQueryStats(r, params, queryResponseTime, stats, nil)
 	}
 }
 
@@ -319,3 +322,11 @@ func readIntoReadCloseSeeker(r io.Reader) (readCloseSeeker, error) {
 type readCloseSeeker struct{ *bytes.Reader }
 
 func (readCloseSeeker) Close() error { return nil }
+
+func copyValues(src url.Values) url.Values {
+	dst := make(url.Values, len(src))
+	for k, vs := range src {
+		dst[k] = append([]string(nil), vs...)
+	}
+	return dst
+}
