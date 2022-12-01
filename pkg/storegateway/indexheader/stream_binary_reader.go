@@ -5,7 +5,7 @@ package indexheader
 
 import (
 	"context"
-	"encoding/binary"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -15,7 +15,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
-	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
 
@@ -59,7 +58,7 @@ func NewStreamBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.
 
 	start := time.Now()
 	if err := WriteBinary(ctx, bkt, id, binfn); err != nil {
-		return nil, errors.Wrap(err, "write index header")
+		return nil, fmt.Errorf("cannot write index header: %w", err)
 	}
 
 	level.Debug(logger).Log("msg", "built index-header file", "path", binfn, "elapsed", time.Since(start))
@@ -80,36 +79,46 @@ func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int) (bw
 		factory: stream_encoding.NewDecbufFactory(path),
 	}
 
-	headerBytes := make([]byte, headerLen)
-	n, err := f.ReadAt(headerBytes, 0)
+	stat, err := f.Stat()
 	if err != nil {
 		return nil, err
 	}
-	if n != headerLen {
-		return nil, errors.Wrapf(stream_encoding.ErrInvalidSize, "insufficient bytes read for header (got %d, wanted %d)", n, headerLen)
-	}
-	headerByteSlice := realByteSlice(headerBytes)
 
-	if m := binary.BigEndian.Uint32(headerByteSlice.Range(0, 4)); m != MagicIndex {
-		return nil, errors.Errorf("invalid magic number %x", m)
+	indexHeaderSize := stat.Size()
+	fileReader, err := stream_encoding.NewFileReader(f, 0, int(indexHeaderSize))
+	if err != nil {
+		return nil, fmt.Errorf("cannot create file reader: %w", err)
 	}
-	r.version = int(headerByteSlice.Range(4, 5)[0])
-	r.indexVersion = int(headerByteSlice.Range(5, 6)[0])
 
-	indexLastPostingEnd := int64(binary.BigEndian.Uint64(headerByteSlice.Range(6, headerLen)))
+	d := stream_encoding.NewRawDecbuf(fileReader)
+	if err = d.Err(); err != nil {
+		return nil, fmt.Errorf("cannot create decoding buffer: %w", err)
+	}
+
+	if magic := d.Be32(); magic != MagicIndex {
+		return nil, fmt.Errorf("invalid magic number %x", magic)
+	}
+
+	r.version = d.ByteInt()
+	r.indexVersion = d.ByteInt()
+	indexLastPostingEnd := d.Be64()
+
+	if err = d.Err(); err != nil {
+		return nil, fmt.Errorf("cannot read version and index version: %w", err)
+	}
 
 	if r.version != BinaryFormatV1 {
-		return nil, errors.Errorf("unknown index header file version %d", r.version)
+		return nil, fmt.Errorf("unknown index-header file version %d", r.version)
 	}
 
-	r.toc, err = newBinaryTOCFromFile(f)
+	r.toc, err = newBinaryTOCFromFile(d, indexHeaderSize)
 	if err != nil {
-		return nil, errors.Wrap(err, "read index header TOC")
+		return nil, fmt.Errorf("cannot read table-of-contents: %w", err)
 	}
 
 	r.symbols, err = stream_index.NewSymbols(r.factory, r.indexVersion, int(r.toc.Symbols))
 	if err != nil {
-		return nil, errors.Wrap(err, "load symbols")
+		return nil, fmt.Errorf("cannot load symbols: %w", err)
 	}
 
 	r.postingsOffsetTable, err = stream_index.NewPostingOffsetTable(r.factory, int(r.toc.PostingsOffsetTable), r.indexVersion, indexLastPostingEnd, postingOffsetsInMemSampling)
@@ -122,7 +131,7 @@ func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int) (bw
 		// TODO: ReverseLookup() opens the index-header for every look up. Add bulk method?
 		off, err := r.symbols.ReverseLookup(k)
 		if err != nil {
-			return errors.Wrap(err, "reverse symbol lookup")
+			return fmt.Errorf("reverse symbol lookup: %w", err)
 		}
 		r.nameSymbols[off] = k
 		return nil
@@ -134,47 +143,28 @@ func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int) (bw
 }
 
 // newBinaryTOCFromByteSlice return parsed TOC from given index header byte slice.
-func newBinaryTOCFromFile(f *os.File) (*BinaryTOC, error) {
-	info, err := f.Stat()
-	if err != nil {
-		return nil, errors.Wrap(err, "stat")
-	}
-
-	fSize := info.Size()
-	if fSize < binaryTOCLen {
-		return nil, stream_encoding.ErrInvalidSize
-	}
-
-	r, err := stream_encoding.NewFileReader(f, int(fSize-binaryTOCLen), binaryTOCLen)
-	if err != nil {
-		return nil, errors.Wrap(err, "create reader for binary TOC")
-	}
-
-	d := stream_encoding.NewRawDecbuf(r)
-	if d.Err() != nil {
-		return nil, errors.Wrap(d.Err(), "decode index header TOC")
+func newBinaryTOCFromFile(d stream_encoding.Decbuf, indexHeaderSize int64) (*BinaryTOC, error) {
+	tocOffset := int(indexHeaderSize - binaryTOCLen)
+	if d.ResetAt(tocOffset); d.Err() != nil {
+		return nil, d.Err()
 	}
 
 	if d.CheckCrc32(castagnoliTable); d.Err() != nil {
-		return nil, errors.Wrap(d.Err(), "read index header TOC")
+		return nil, d.Err()
 	}
 
-	d.ResetAt(0)
+	d.ResetAt(tocOffset)
+	symbols := d.Be64()
+	postingsOffsetTable := d.Be64()
 
 	if err := d.Err(); err != nil {
 		return nil, err
 	}
 
-	toc := BinaryTOC{
-		Symbols:             d.Be64(),
-		PostingsOffsetTable: d.Be64(),
-	}
-
-	if err := d.Err(); err != nil {
-		return nil, err
-	}
-
-	return &toc, nil
+	return &BinaryTOC{
+		Symbols:             symbols,
+		PostingsOffsetTable: postingsOffsetTable,
+	}, nil
 }
 
 func (r *StreamBinaryReader) IndexVersion() (int, error) {
