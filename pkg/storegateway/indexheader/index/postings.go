@@ -64,7 +64,7 @@ func NewPostingsOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset 
 
 	if t.indexVersion == index.FormatV1 {
 		var err error
-		t.postingsV1, t.postingsV2, err = loadV1PostingsOffsetTable(t.factory, t.tableOffset, indexLastPostingEnd)
+		t.postingsV1, err = loadV1PostingsOffsetTable(t.factory, t.tableOffset, indexLastPostingEnd)
 
 		if err != nil {
 			return nil, err
@@ -81,11 +81,10 @@ func NewPostingsOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset 
 	return &t, nil
 }
 
-func loadV1PostingsOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset int, indexLastPostingEnd int64) (map[string]map[string]index.Range, map[string]*postingValueOffsets, error) {
+func loadV1PostingsOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset int, indexLastPostingEnd int64) (map[string]map[string]index.Range, error) {
 	// Earlier V1 formats don't have a sorted postings offset table, so
 	// load the whole offset table into memory.
 	postingsV1 := map[string]map[string]index.Range{}
-	postingsV2 := map[string]*postingValueOffsets{}
 	var lastKey []string
 	var prevRng index.Range
 
@@ -101,17 +100,13 @@ func loadV1PostingsOffsetTable(factory *stream_encoding.DecbufFactory, tableOffs
 
 		if _, ok := postingsV1[key[0]]; !ok {
 			postingsV1[key[0]] = map[string]index.Range{}
-
-			// TODO: should be able to eliminate this - only used to iterate over name symbols
-			// - change ForEachLabelName to use postingsV1 or postingsV2 as appropriate
-			postingsV2[key[0]] = nil // Used to get a list of labelnames in places.
 		}
 
 		lastKey = key
 		prevRng = index.Range{Start: int64(off + postingLengthFieldSize)}
 		return nil
 	}); err != nil {
-		return nil, nil, errors.Wrap(err, "read postings table")
+		return nil, errors.Wrap(err, "read postings table")
 	}
 
 	if lastKey != nil {
@@ -119,7 +114,7 @@ func loadV1PostingsOffsetTable(factory *stream_encoding.DecbufFactory, tableOffs
 		postingsV1[lastKey[0]][lastKey[1]] = prevRng
 	}
 
-	return postingsV1, postingsV2, nil
+	return postingsV1, nil
 }
 
 func loadV2PostingsOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset int, indexLastPostingEnd int64, postingOffsetsInMemSampling int) (map[string]*postingValueOffsets, error) {
@@ -441,13 +436,25 @@ func (t *PostingOffsetTable) LabelNames() ([]string, error) {
 func (t *PostingOffsetTable) ForEachLabelName(f func(name string) error) error {
 	allPostingsKeyName, _ := index.AllPostingsKey()
 
-	for name := range t.postingsV2 {
-		if name == allPostingsKeyName {
-			continue
-		}
+	if t.indexVersion == index.FormatV1 {
+		for name := range t.postingsV1 {
+			if name == allPostingsKeyName {
+				continue
+			}
 
-		if err := f(name); err != nil {
-			return err
+			if err := f(name); err != nil {
+				return err
+			}
+		}
+	} else {
+		for name := range t.postingsV2 {
+			if name == allPostingsKeyName {
+				continue
+			}
+
+			if err := f(name); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -457,9 +464,14 @@ func (t *PostingOffsetTable) ForEachLabelName(f func(name string) error) error {
 // LabelNameCount returns a value which is at least as large as the number of
 // label names present in this table.
 func (t *PostingOffsetTable) LabelNameCount() int {
-	// This might include AllPostingsKey's name, but that's OK - we use this method
+	// This count might include AllPostingsKey's name, but that's OK - we use this method
 	// to pre-allocate slices to hold all label names, and slightly over-allocating is acceptable
 	// in this case.
+
+	if t.indexVersion == index.FormatV1 {
+		return len(t.postingsV1)
+	}
+
 	return len(t.postingsV2)
 }
 
