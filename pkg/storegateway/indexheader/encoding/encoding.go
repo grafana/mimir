@@ -7,11 +7,14 @@ package encoding
 
 import (
 	"encoding/binary"
+	"fmt"
 	"hash/crc32"
 	"os"
 
 	"github.com/dennwc/varint"
 	"github.com/pkg/errors"
+
+	"github.com/grafana/mimir/pkg/util/math"
 )
 
 var (
@@ -98,15 +101,32 @@ func (d *Decbuf) CheckCrc32(castagnoliTable *crc32.Table) {
 		return
 	}
 
-	// TODO: compute the checksum while streaming the data from disk, rather than reading all of the source data into memory and then computing the checksum
-	contents, err := d.r.Read(d.r.Len() - 4)
+	hash := crc32.New(castagnoliTable)
+	bytesToRead := d.r.Len() - 4
 
-	if err != nil {
-		d.E = err
-		return
+	for bytesToRead > 0 {
+		maxChunkSize := 1024 * 1024 // TODO: what is a sensible size to use here?
+		chunkSize := math.Min(bytesToRead, maxChunkSize)
+
+		// TODO: pull byte slices from a pool rather than creating a new one every time?
+		b, err := d.r.Read(chunkSize)
+		if err != nil {
+			d.E = errors.Wrap(err, "read contents for CRC32 calculation")
+			return
+		}
+
+		if n, err := hash.Write(b); err != nil {
+			d.E = errors.Wrap(err, "write bytes to CRC32 calculation")
+			return
+		} else if n != len(b) {
+			d.E = fmt.Errorf("CRC32 calculation only wrote %v bytes, expected to write %v bytes", n, len(b))
+			return
+		}
+
+		bytesToRead -= len(b)
 	}
 
-	actual := crc32.Checksum(contents, castagnoliTable)
+	actual := hash.Sum32()
 	expected := d.Be32()
 
 	if actual != expected {
