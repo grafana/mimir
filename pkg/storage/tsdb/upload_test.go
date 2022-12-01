@@ -30,12 +30,12 @@ func TestUploadBlock(t *testing.T) {
 
 	bkt := objstore.NewInMemBucket()
 	b1, err := testhelper.CreateBlock(ctx, tmpDir, []labels.Labels{
-		{{Name: "a", Value: "1"}},
-		{{Name: "a", Value: "2"}},
-		{{Name: "a", Value: "3"}},
-		{{Name: "a", Value: "4"}},
-		{{Name: "b", Value: "1"}},
-	}, 100, 0, 1000, labels.Labels{{Name: "ext1", Value: "val1"}}, 124, metadata.NoneFunc)
+		labels.FromStrings("a", "1"),
+		labels.FromStrings("a", "2"),
+		labels.FromStrings("a", "3"),
+		labels.FromStrings("a", "4"),
+		labels.FromStrings("b", "1"),
+	}, 100, 0, 1000, labels.FromStrings("ext1", "val1"), 124, metadata.NoneFunc)
 	require.NoError(t, err)
 	require.NoError(t, os.MkdirAll(path.Join(tmpDir, "test", b1.String()), os.ModePerm))
 
@@ -140,12 +140,12 @@ func TestUploadBlock(t *testing.T) {
 	t.Run("upload with no external labels works just fine", func(t *testing.T) {
 		// Upload with no external labels should be blocked.
 		b2, err := testhelper.CreateBlock(ctx, tmpDir, []labels.Labels{
-			{{Name: "a", Value: "1"}},
-			{{Name: "a", Value: "2"}},
-			{{Name: "a", Value: "3"}},
-			{{Name: "a", Value: "4"}},
-			{{Name: "b", Value: "1"}},
-		}, 100, 0, 1000, nil, 124, metadata.NoneFunc)
+			labels.FromStrings("a", "1"),
+			labels.FromStrings("a", "2"),
+			labels.FromStrings("a", "3"),
+			labels.FromStrings("a", "4"),
+			labels.FromStrings("b", "1"),
+		}, 100, 0, 1000, labels.EmptyLabels(), 124, metadata.NoneFunc)
 		require.NoError(t, err)
 
 		err = UploadBlock(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, b2.String()), nil)
@@ -171,12 +171,12 @@ func TestUploadBlock(t *testing.T) {
 	t.Run("upload with supplied meta.json", func(t *testing.T) {
 		// Upload with no external labels should be blocked.
 		b3, err := testhelper.CreateBlock(ctx, tmpDir, []labels.Labels{
-			{{Name: "a", Value: "1"}},
-			{{Name: "a", Value: "2"}},
-			{{Name: "a", Value: "3"}},
-			{{Name: "a", Value: "4"}},
-			{{Name: "b", Value: "1"}},
-		}, 100, 0, 1000, nil, 124, metadata.NoneFunc)
+			labels.FromStrings("a", "1"),
+			labels.FromStrings("a", "2"),
+			labels.FromStrings("a", "3"),
+			labels.FromStrings("a", "4"),
+			labels.FromStrings("b", "1"),
+		}, 100, 0, 1000, labels.EmptyLabels(), 124, metadata.NoneFunc)
 		require.NoError(t, err)
 
 		// Prepare metadata that will be uploaded to the bucket.
