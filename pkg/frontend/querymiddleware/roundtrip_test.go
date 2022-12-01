@@ -201,6 +201,29 @@ func TestInstantTripperware(t *testing.T) {
 		resultTime := res.(model.Vector)[0].Timestamp.Time()
 		require.InDelta(t, time.Now().Unix(), resultTime.Unix(), 1)
 	})
+
+	t.Run("post form time param takes precedence over query time param ", func(t *testing.T) {
+		postFormTimeParam := time.Date(2021, 1, 2, 3, 4, 5, 0, time.UTC)
+
+		addQueryTimeParam := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+			query := r.URL.Query()
+			// Set query's "time" param to something wrong, so that it would fail to be parsed if it's used.
+			query.Set("time", "query-time-param-should-not-be-used")
+			r.URL.RawQuery = query.Encode()
+			return tripper.RoundTrip(r)
+		})
+		queryClient, err := api.NewClient(api.Config{Address: "http://localhost", RoundTripper: addQueryTimeParam})
+		require.NoError(t, err)
+		api := v1.NewAPI(queryClient)
+
+		res, _, err := api.Query(ctx, `sum(increase(we_dont_care_about_this[1h])) by (foo)`, postFormTimeParam)
+		require.NoError(t, err)
+		require.IsType(t, model.Vector{}, res)
+		require.NotEmpty(t, res.(model.Vector))
+
+		resultTime := res.(model.Vector)[0].Timestamp.Time()
+		require.Equal(t, postFormTimeParam.Unix(), resultTime.Unix())
+	})
 }
 
 func TestTripperware_Metrics(t *testing.T) {
