@@ -85,19 +85,17 @@ func ToMetricsForLabelMatchersRequest(from, to model.Time, matchers []*labels.Ma
 	}, nil
 }
 
-// FromMetricsForLabelMatchersRequest unpacks a MetricsForLabelMatchersRequest proto
-func FromMetricsForLabelMatchersRequest(req *MetricsForLabelMatchersRequest) (model.Time, model.Time, [][]*labels.Matcher, error) {
+// FromMetricsForLabelMatchersRequest unpacks a MetricsForLabelMatchersRequest proto.
+func FromMetricsForLabelMatchersRequest(req *MetricsForLabelMatchersRequest) ([][]*labels.Matcher, error) {
 	matchersSet := make([][]*labels.Matcher, 0, len(req.MatchersSet))
 	for _, matchers := range req.MatchersSet {
 		matchers, err := FromLabelMatchers(matchers.Matchers)
 		if err != nil {
-			return 0, 0, nil, err
+			return nil, err
 		}
 		matchersSet = append(matchersSet, matchers)
 	}
-	from := model.Time(req.StartTimestampMs)
-	to := model.Time(req.EndTimestampMs)
-	return from, to, matchersSet, nil
+	return matchersSet, nil
 }
 
 // FromMetricsForLabelMatchersResponse unpacks a MetricsForLabelMatchersResponse proto

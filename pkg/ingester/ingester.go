@@ -1059,6 +1059,7 @@ func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest
 	}, nil
 }
 
+// MetricsForLabelMatchers implements IngesterServer.
 func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.MetricsForLabelMatchersRequest) (*client.MetricsForLabelMatchersResponse, error) {
 	if err := i.checkRunning(); err != nil {
 		return nil, err
@@ -1075,7 +1076,7 @@ func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.Metr
 	}
 
 	// Parse the request
-	_, _, matchersSet, err := client.FromMetricsForLabelMatchersRequest(req)
+	matchersSet, err := client.FromMetricsForLabelMatchersRequest(req)
 	if err != nil {
 		return nil, err
 	}
