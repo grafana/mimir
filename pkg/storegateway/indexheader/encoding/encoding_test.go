@@ -462,7 +462,7 @@ func TestDecbuf_Crc32(t *testing.T) {
 	})
 }
 
-func createReaderWithBytes(t *testing.T, b []byte) Reader {
+func createReaderWithBytes(t *testing.T, b []byte) *FileReader {
 	dir := t.TempDir()
 	filePath := path.Join(dir, "test-file")
 	require.NoError(t, os.WriteFile(filePath, b, 0700))

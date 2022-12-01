@@ -24,7 +24,7 @@ var (
 // Several datums can be extracted without checking for errors. However, before using
 // any datum, the Err() method must be checked.
 type Decbuf struct {
-	r Reader
+	r *FileReader
 	E error
 }
 
@@ -78,7 +78,7 @@ func NewDecbufFromFile(f *os.File, offset int, castagnoliTable *crc32.Table) Dec
 // NewRawDecbuf returns a new decoding buffer for r.
 // Unlike NewDecbufFromFile, it does not make any assumptions about the contents of r,
 // nor does it perform any form of integrity check.
-func NewRawDecbuf(r Reader) Decbuf {
+func NewRawDecbuf(r *FileReader) Decbuf {
 	err := r.Reset()
 	if err != nil {
 		return Decbuf{E: err}
@@ -114,9 +114,9 @@ func (d *Decbuf) CheckCrc32(castagnoliTable *crc32.Table) {
 	}
 }
 
-// Skip advances the pointer of the underlying Reader by the given number
-// of bytes. Skip-ing beyond the end of the underlying Reader will set E
-// to an error and not advance the pointer of the Reader.
+// Skip advances the pointer of the underlying FileReader by the given number
+// of bytes. Skip-ing beyond the end of the underlying FileReader will set E
+// to an error and not advance the pointer of the FileReader.
 func (d *Decbuf) Skip(l int) {
 	err := d.r.Skip(l)
 	if err != nil {
@@ -124,7 +124,7 @@ func (d *Decbuf) Skip(l int) {
 	}
 }
 
-// ResetAt sets the pointer of the underlying Reader to the absolute
+// ResetAt sets the pointer of the underlying FileReader to the absolute
 // offset and discards any buffered data. If E is non-nil, this method has
 // no effect.
 func (d *Decbuf) ResetAt(off int) {

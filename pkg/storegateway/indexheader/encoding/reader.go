@@ -9,34 +9,6 @@ import (
 	"os"
 )
 
-type Reader interface {
-	io.Closer
-
-	// Reset moves the cursor position to the beginning of the underlying store.
-	Reset() error
-
-	// ResetAt moves the cursor position to the given absolute offset in the underlying store.
-	// Attempting to ResetAt beyond the end of the underlying store will return an error.
-	ResetAt(off int) error
-
-	// Skip advances the cursor position by the given number of bytes in the underlying store.
-	// Attempting to Skip beyond the end of the underlying store will return an error.
-	Skip(l int) error
-
-	// Read returns at most the given number of bytes from the underlying store, consuming
-	// them. It is valid to Read beyond the end of the underlying store. In this case the
-	// available bytes are returned with a nil error
-	Read(int) ([]byte, error)
-
-	// Peek returns at most the given number of bytes from the underlying store
-	// without consuming them. It is valid to Peek beyond the end of the underlying
-	// store. In this case the available bytes are returned with a nil error.
-	Peek(int) ([]byte, error)
-
-	// Len returns the remaining number of bytes in the underlying store.
-	Len() int
-}
-
 type FileReader struct {
 	file   *os.File
 	buf    *bufio.Reader
@@ -45,6 +17,8 @@ type FileReader struct {
 	pos    int
 }
 
+// NewFileReader creates a new FileReader for the segment of file beginning at base
+// with length length.
 func NewFileReader(file *os.File, base, length int) (*FileReader, error) {
 	f := &FileReader{
 		file:   file,
@@ -62,10 +36,13 @@ func NewFileReader(file *os.File, base, length int) (*FileReader, error) {
 	return f, nil
 }
 
+// Reset moves the cursor position to the beginning of the file segment.
 func (f *FileReader) Reset() error {
 	return f.ResetAt(0)
 }
 
+// ResetAt moves the cursor position to the given absolute offset in the file segment.
+// Attempting to ResetAt beyond the end of the file segment will return an error.
 func (f *FileReader) ResetAt(off int) error {
 	if off >= f.length {
 		return ErrInvalidSize
@@ -82,6 +59,8 @@ func (f *FileReader) ResetAt(off int) error {
 	return nil
 }
 
+// Skip advances the cursor position by the given number of bytes in the file segment.
+// Attempting to Skip beyond the end of the file segment will return an error.
 func (f *FileReader) Skip(l int) error {
 	if l >= f.Len() {
 		return ErrInvalidSize
@@ -95,6 +74,9 @@ func (f *FileReader) Skip(l int) error {
 	return err
 }
 
+// Peek returns at most the given number of bytes from the file segment
+// without consuming them. It is valid to Peek beyond the end of the file
+// segment. In this case the available bytes are returned with a nil error.
 func (f *FileReader) Peek(n int) ([]byte, error) {
 	b, err := f.buf.Peek(n)
 	// bufio.Reader still returns what it read when it hits EOF and callers
@@ -110,6 +92,9 @@ func (f *FileReader) Peek(n int) ([]byte, error) {
 	return nil, nil
 }
 
+// Read returns at most the given number of bytes from the file segment, consuming
+// them. It is valid to Read beyond the end of the file segment. In this case the
+// available bytes are returned with a nil error.
 func (f *FileReader) Read(n int) ([]byte, error) {
 	b := make([]byte, n)
 	r, err := f.buf.Read(b)
@@ -124,10 +109,12 @@ func (f *FileReader) Read(n int) ([]byte, error) {
 	return b[:r], nil
 }
 
+// Len returns the remaining number of bytes in the file segment.
 func (f *FileReader) Len() int {
 	return f.length - f.pos
 }
 
+// Close closes the underlying resources used by this FileReader.
 func (f *FileReader) Close() error {
 	return f.file.Close()
 }
