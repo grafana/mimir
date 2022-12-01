@@ -3,6 +3,8 @@
 package storegateway
 
 import (
+	"context"
+
 	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
@@ -89,4 +91,71 @@ func (b *seriesChunksSeriesSet) At() (labels.Labels, []storepb.AggrChunk) {
 
 func (b *seriesChunksSeriesSet) Err() error {
 	return b.from.Err()
+}
+
+// preloadedSeriesChunksSet holds the result of preloading the next set. It can either contain
+// the preloaded set or an error, but not both.
+type preloadedSeriesChunksSet struct {
+	set seriesChunksSet
+	err error
+}
+
+type preloadingSeriesChunkSetIterator struct {
+	ctx     context.Context
+	from    seriesChunksSetIterator
+	current seriesChunksSet
+
+	preloaded chan preloadedSeriesChunksSet
+	err       error
+}
+
+func newPreloadingSeriesChunkSetIterator(ctx context.Context, preloadedSetsCount int, from seriesChunksSetIterator) *preloadingSeriesChunkSetIterator {
+	preloadedSet := &preloadingSeriesChunkSetIterator{
+		ctx:       ctx,
+		from:      from,
+		preloaded: make(chan preloadedSeriesChunksSet, preloadedSetsCount-1), // one will be kept outside the channel when the channel blocks
+	}
+	go preloadedSet.preload()
+	return preloadedSet
+}
+
+func (p *preloadingSeriesChunkSetIterator) preload() {
+	defer close(p.preloaded)
+
+	for p.from.Next() {
+		// TODO dimitarvdimitrov instrument the time it takes to do one iteration
+		select {
+		case <-p.ctx.Done():
+			// If the context is done, we should just stop the preloading goroutine.
+			return
+		case p.preloaded <- preloadedSeriesChunksSet{set: p.from.At()}:
+		}
+	}
+
+	if p.from.Err() != nil {
+		p.preloaded <- preloadedSeriesChunksSet{err: p.from.Err()}
+	}
+}
+
+func (p *preloadingSeriesChunkSetIterator) Next() bool {
+	// TODO dimitarvdimitrov instrument the time we wait here
+
+	preloaded, ok := <-p.preloaded
+	if !ok {
+		// Iteration reached the end or context has been canceled.
+		return false
+	}
+
+	p.current = preloaded.set
+	p.err = preloaded.err
+
+	return p.err == nil
+}
+
+func (p *preloadingSeriesChunkSetIterator) At() seriesChunksSet {
+	return p.current
+}
+
+func (p *preloadingSeriesChunkSetIterator) Err() error {
+	return p.err
 }

@@ -351,7 +351,7 @@ func (s *seriesSetWithoutChunks) Err() error {
 }
 
 func newSeriesSetWithChunks(ctx context.Context, chunkReaders chunkReaders, batches seriesChunkRefsSetIterator, stats *safeQueryStats) storepb.SeriesSet {
-	return newSeriesChunksSeriesSet(newPreloadingBatchSet(ctx, 1, newLoadingBatchSet(chunkReaders, batches, stats)))
+	return newSeriesChunksSeriesSet(newPreloadingSeriesChunkSetIterator(ctx, 1, newLoadingBatchSet(chunkReaders, batches, stats)))
 }
 
 type loadingBatchSet struct {
@@ -419,72 +419,6 @@ func (c *loadingBatchSet) At() seriesChunksSet {
 
 func (c *loadingBatchSet) Err() error {
 	return c.err
-}
-
-// preloadedBatch holds the result of preloading the next batch. It can either contain
-// the preloaded batch or an error, but not both.
-type preloadedBatch struct {
-	batch seriesChunksSet
-	err   error
-}
-
-type preloadingBatchSet struct {
-	ctx     context.Context
-	from    seriesChunksSetIterator
-	current seriesChunksSet
-
-	preloaded chan preloadedBatch
-	err       error
-}
-
-func newPreloadingBatchSet(ctx context.Context, preloadNumberOfBatches int, from seriesChunksSetIterator) *preloadingBatchSet {
-	preloadedSet := &preloadingBatchSet{
-		ctx:       ctx,
-		from:      from,
-		preloaded: make(chan preloadedBatch, preloadNumberOfBatches-1), // one will be kept outside the channel when the channel blocks
-	}
-	go preloadedSet.preload()
-	return preloadedSet
-}
-
-func (p *preloadingBatchSet) preload() {
-	defer close(p.preloaded)
-
-	for p.from.Next() {
-		select {
-		case <-p.ctx.Done():
-			// If the context is done, we should just stop the preloading goroutine.
-			return
-		case p.preloaded <- preloadedBatch{batch: p.from.At()}:
-		}
-	}
-
-	if p.from.Err() != nil {
-		p.preloaded <- preloadedBatch{err: p.from.Err()}
-	}
-}
-
-func (p *preloadingBatchSet) Next() bool {
-	// TODO dimitarvdimitrov instrument the time we wait here
-
-	preloaded, ok := <-p.preloaded
-	if !ok {
-		// Iteration reached the end or context has been canceled.
-		return false
-	}
-
-	p.current = preloaded.batch
-	p.err = preloaded.err
-
-	return p.err == nil
-}
-
-func (p *preloadingBatchSet) At() seriesChunksSet {
-	return p.current
-}
-
-func (p *preloadingBatchSet) Err() error {
-	return p.err
 }
 
 // deduplicatingBatchSet implements seriesChunkRefsSetIterator, and merges together consecutive
