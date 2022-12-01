@@ -21,11 +21,11 @@ func TestReaders_Read(t *testing.T) {
 		require.Equal(t, []byte("fghij"), secondRead, "second read")
 
 		readBeyondEnd, err := r.Read(12)
-		require.NoError(t, err)
-		require.Equal(t, []byte("1234567890"), readBeyondEnd, "read beyond end")
+		require.ErrorIs(t, err, ErrInvalidSize)
+		require.Empty(t, readBeyondEnd, "read beyond end")
 
 		readAfterEnd, err := r.Read(1)
-		require.NoError(t, err)
+		require.ErrorIs(t, err, ErrInvalidSize)
 		require.Empty(t, readAfterEnd, "read after end")
 	})
 }
@@ -90,7 +90,8 @@ func TestReaders_ResetAt(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, []byte("0"), readAfterResetToLastByte, "read after reset to last byte")
 
-		require.ErrorIs(t, r.ResetAt(20), ErrInvalidSize)
+		require.NoError(t, r.ResetAt(20))
+		require.ErrorIs(t, r.ResetAt(21), ErrInvalidSize)
 	})
 }
 
@@ -113,8 +114,11 @@ func TestReaders_Skip(t *testing.T) {
 		require.Equal(t, []byte("67890"), peekAfterSkip, "peek after skip")
 		require.Equal(t, 5, r.Len())
 
-		require.ErrorIs(t, r.Skip(5), ErrInvalidSize)
-		require.Equal(t, 5, r.Len())
+		// Skip to exactly the end, then skip beyond it
+		require.NoError(t, r.Skip(5))
+		require.Equal(t, 0, r.Len())
+		require.ErrorIs(t, r.Skip(1), ErrInvalidSize)
+
 	})
 }
 
@@ -135,7 +139,7 @@ func TestReaders_Len(t *testing.T) {
 		require.Equal(t, 13, r.Len(), "after peek")
 
 		_, err = r.Read(14)
-		require.NoError(t, err)
+		require.ErrorIs(t, err, ErrInvalidSize)
 		require.Equal(t, 0, r.Len(), "after read beyond end")
 
 		require.NoError(t, r.Reset())
@@ -158,8 +162,10 @@ func TestReaders_CreationWithEmptyContents(t *testing.T) {
 			require.NoError(t, f.Close())
 		})
 
-		_, err = NewFileReader(f, 0, 0)
-		require.ErrorIs(t, err, ErrInvalidSize)
+		r, err := NewFileReader(f, 0, 0)
+		require.NoError(t, err)
+		require.ErrorIs(t, r.Skip(1), ErrInvalidSize)
+		require.ErrorIs(t, r.ResetAt(1), ErrInvalidSize)
 	})
 }
 

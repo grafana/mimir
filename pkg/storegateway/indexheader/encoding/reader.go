@@ -5,6 +5,7 @@ package encoding
 import (
 	"bufio"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 )
@@ -42,9 +43,10 @@ func (f *FileReader) Reset() error {
 }
 
 // ResetAt moves the cursor position to the given absolute offset in the file segment.
-// Attempting to ResetAt beyond the end of the file segment will return an error.
+// Attempting to ResetAt to the end of the valid is valid. Attempting to ResetAt _beyond_
+// the end of the file will return an error.
 func (f *FileReader) ResetAt(off int) error {
-	if off >= f.length {
+	if off > f.length {
 		return ErrInvalidSize
 	}
 
@@ -60,9 +62,10 @@ func (f *FileReader) ResetAt(off int) error {
 }
 
 // Skip advances the cursor position by the given number of bytes in the file segment.
-// Attempting to Skip beyond the end of the file segment will return an error.
+// Attempting to Skip to the end of the file is valid. Attempting to Skip _beyond_ the
+// end of the file will return an error.
 func (f *FileReader) Skip(l int) error {
-	if l >= f.Len() {
+	if l > f.Len() {
 		return ErrInvalidSize
 	}
 
@@ -92,17 +95,20 @@ func (f *FileReader) Peek(n int) ([]byte, error) {
 	return nil, nil
 }
 
-// Read returns at most the given number of bytes from the file segment, consuming
-// them. It is valid to Read beyond the end of the file segment. In this case the
-// available bytes are returned with a nil error.
+// Read returns the given number of bytes from the file segment, consuming them.
+// It is NOT valid to Read beyond the end of the file segment. In this case, a nil
+// byte slice and ErrInvalidSize error will be returned, and the remaining bytes
+// are consumed.
 func (f *FileReader) Read(n int) ([]byte, error) {
 	b := make([]byte, n)
-	r, err := f.buf.Read(b)
+	r, err := io.ReadFull(f.buf, b)
 	if r > 0 {
 		f.pos += r
 	}
 
-	if err != nil && !errors.Is(err, io.EOF) {
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return nil, fmt.Errorf("%w reading %d bytes: %s", ErrInvalidSize, n, err)
+	} else if err != nil {
 		return nil, err
 	}
 
