@@ -21,6 +21,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util/pool"
 )
 
@@ -165,7 +166,7 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, s
 		// There is also crc32 after the chunk, but we ignore that.
 		chunkLen = n + 1 + int(chunkDataLen)
 		if chunkLen <= len(cb) {
-			err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunk]), rawChunk(cb[n:chunkLen]), chunksPool, r.save)
+			err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunk]), rawChunk(cb[n:chunkLen]), chunksPool)
 			if err != nil {
 				return errors.Wrap(err, "populate chunk")
 			}
@@ -196,7 +197,7 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, s
 		localStats.chunksFetchCount++
 		localStats.chunksFetchDurationSum += time.Since(fetchBegin)
 		localStats.chunksFetchedSizeSum += len(*nb)
-		err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunk]), rawChunk((*nb)[n:]), chunksPool, r.save)
+		err = populateChunk(&(res[pIdx.seriesEntry].chks[pIdx.chunk]), rawChunk((*nb)[n:]), chunksPool)
 		if err != nil {
 			r.block.chunkPool.Put(nb)
 			return errors.Wrap(err, "populate chunk")
@@ -209,10 +210,22 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, s
 	return nil
 }
 
-// save a copy of b's payload to a buffer pulled from chunksPool.
+func populateChunk(out *storepb.AggrChunk, in chunkenc.Chunk, chunksPool *pool.BatchBytes) error {
+	if in.Encoding() == chunkenc.EncXOR {
+		b, err := saveChunk(in.Bytes(), chunksPool)
+		if err != nil {
+			return err
+		}
+		out.Raw = &storepb.Chunk{Type: storepb.Chunk_XOR, Data: b}
+		return nil
+	}
+	return errors.Errorf("unsupported chunk encoding %d", in.Encoding())
+}
+
+// saveChunk saves a copy of b's payload to a buffer pulled from chunksPool.
 // The buffer containing the chunk data is returned.
 // The returned slice becomes invalid once chunksPool is released.
-func (r *bucketChunkReader) save(b []byte, chunksPool *pool.BatchBytes) ([]byte, error) {
+func saveChunk(b []byte, chunksPool *pool.BatchBytes) ([]byte, error) {
 	dst, err := chunksPool.Get(len(b))
 	if err != nil {
 		return nil, err

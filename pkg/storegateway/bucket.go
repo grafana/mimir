@@ -29,7 +29,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
@@ -765,18 +764,6 @@ func storeCachedSeries(ctx context.Context, indexCache indexcache.IndexCache, us
 		return
 	}
 	indexCache.StoreSeries(ctx, userID, blockID, entry.MatchersKey, shard, data)
-}
-
-func populateChunk(out *storepb.AggrChunk, in chunkenc.Chunk, chunksPool *pool.BatchBytes, save func([]byte, *pool.BatchBytes) ([]byte, error)) error {
-	if in.Encoding() == chunkenc.EncXOR {
-		b, err := save(in.Bytes(), chunksPool)
-		if err != nil {
-			return err
-		}
-		out.Raw = &storepb.Chunk{Type: storepb.Chunk_XOR, Data: b}
-		return nil
-	}
-	return errors.Errorf("unsupported chunk encoding %d", in.Encoding())
 }
 
 // debugFoundBlockSetOverview logs on debug level what exactly blocks we used for query in terms of
