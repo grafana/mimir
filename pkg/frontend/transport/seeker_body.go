@@ -23,7 +23,7 @@ func withSeekerBody(r *http.Request, f func(r *http.Request) error) (err error) 
 	}
 	seeker, ok := r.Body.(io.Seeker)
 	if !ok {
-		bodySeeker, err := newReadCloseSeeker(r.Body)
+		bodySeeker, err := readIntoReadCloseSeeker(r.Body)
 		if err != nil {
 			return fmt.Errorf("can't read body: %w", err)
 		}
@@ -43,8 +43,8 @@ func withSeekerBody(r *http.Request, f func(r *http.Request) error) (err error) 
 	return f(r)
 }
 
-// newReadCloseSeeker will create a new readCloseSeeker from the data provided by io.Reader.
-func newReadCloseSeeker(r io.Reader) (readCloseSeeker, error) {
+// readIntoReadCloseSeeker will create a new readCloseSeeker from the data provided by io.Reader.
+func readIntoReadCloseSeeker(r io.Reader) (readCloseSeeker, error) {
 	buf, err := io.ReadAll(r)
 	return readCloseSeeker{bytes.NewReader(buf)}, err
 }

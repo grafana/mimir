@@ -135,7 +135,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Buffer the body for later use to track slow queries.
 	var err error
-	r.Body, err = newReadCloseSeeker(http.MaxBytesReader(w, r.Body, f.cfg.MaxBodySize))
+	r.Body, err = readIntoReadCloseSeeker(http.MaxBytesReader(w, r.Body, f.cfg.MaxBodySize))
 	if err != nil {
 		writeError(w, err)
 		return
