@@ -126,14 +126,14 @@ func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int) (bw
 		return nil, err
 	}
 
-	r.nameSymbols = make(map[uint32]string, r.postingsOffsetTable.LabelNameCount())
-	if err := r.postingsOffsetTable.ForEachLabelName(func(k string) error {
-		// TODO: ReverseLookup() opens the index-header for every look up. Add bulk method?
-		off, err := r.symbols.ReverseLookup(k)
-		if err != nil {
-			return fmt.Errorf("reverse symbol lookup: %w", err)
-		}
-		r.nameSymbols[off] = k
+	labelNames, err := r.postingsOffsetTable.LabelNames()
+	if err != nil {
+		return nil, err
+	}
+
+	r.nameSymbols = make(map[uint32]string, len(labelNames))
+	if err := r.symbols.ForEachSymbol(labelNames, func(sym string, offset uint32) error {
+		r.nameSymbols[offset] = sym
 		return nil
 	}); err != nil {
 		return nil, err
@@ -142,7 +142,8 @@ func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int) (bw
 	return r, nil
 }
 
-// newBinaryTOCFromByteSlice return parsed TOC from given index header byte slice.
+// newBinaryTOCFromByteSlice return parsed TOC from given Decbuf. The Decbuf is expected to be
+// configured to access the entirety of the index-header file.
 func newBinaryTOCFromFile(d stream_encoding.Decbuf, indexHeaderSize int64) (*BinaryTOC, error) {
 	tocOffset := int(indexHeaderSize - binaryTOCLen)
 	if d.ResetAt(tocOffset); d.Err() != nil {

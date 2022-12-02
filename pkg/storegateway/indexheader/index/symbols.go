@@ -6,11 +6,12 @@
 package index
 
 import (
+	"errors"
+	"fmt"
 	"hash/crc32"
 	"sort"
 	"unsafe"
 
-	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb/index"
 
 	stream_encoding "github.com/grafana/mimir/pkg/storegateway/indexheader/encoding"
@@ -43,7 +44,7 @@ func NewSymbols(factory *stream_encoding.DecbufFactory, version, offset int) (*S
 	d := factory.NewDecbufAtChecked(offset, castagnoliTable)
 	defer d.Close()
 	if err := d.Err(); err != nil {
-		return nil, errors.Wrap(d.Err(), "decode symbol table")
+		return nil, fmt.Errorf("decode symbol table: %w", d.Err())
 	}
 
 	s := &Symbols{
@@ -81,7 +82,7 @@ func (s *Symbols) Lookup(o uint32) (string, error) {
 
 	if s.version == index.FormatV2 {
 		if int(o) >= s.seen {
-			return "", errors.Errorf("unknown symbol offset %d", o)
+			return "", fmt.Errorf("unknown symbol offset %d", o)
 		}
 		d.ResetAt(s.offsets[int(o/symbolFactor)])
 		// Walk until we find the one we want.
@@ -104,7 +105,7 @@ func (s *Symbols) Lookup(o uint32) (string, error) {
 
 func (s *Symbols) ReverseLookup(sym string) (uint32, error) {
 	if len(s.offsets) == 0 {
-		return 0, errors.Errorf("unknown symbol %q - no symbols", sym)
+		return 0, fmt.Errorf("unknown symbol %q - no symbols", sym)
 	}
 
 	d := s.factory.NewDecbufAtUnchecked(s.tableOffset)
@@ -113,6 +114,39 @@ func (s *Symbols) ReverseLookup(sym string) (uint32, error) {
 		return 0, err
 	}
 
+	return s.reverseLookup(sym, d)
+}
+
+// ForEachSymbol performs a reverse lookup on each syms and passes the symbol and offset to f.
+// If the offset of a symbol cannot be looked up, iteration stops immediately and the error is
+// returned. If f returns an error, iteration stops immediately and the error is returned.
+func (s *Symbols) ForEachSymbol(syms []string, f func(sym string, offset uint32) error) error {
+	if len(s.offsets) == 0 {
+		return errors.New("no symbols")
+	}
+
+	d := s.factory.NewDecbufAtUnchecked(s.tableOffset)
+	defer d.Close()
+	if err := d.Err(); err != nil {
+		return err
+	}
+
+	for _, sym := range syms {
+		offset, err := s.reverseLookup(sym, d)
+		if err != nil {
+			return fmt.Errorf("cannot lookup %q: %w", sym, err)
+		}
+
+		err = f(sym, offset)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (s *Symbols) reverseLookup(sym string, d stream_encoding.Decbuf) (uint32, error) {
 	i := sort.Search(len(s.offsets), func(i int) bool {
 		d.ResetAt(s.offsets[i])
 		return yoloString(d.UvarintBytes()) > sym
@@ -138,7 +172,7 @@ func (s *Symbols) ReverseLookup(sym string) (uint32, error) {
 		return 0, d.Err()
 	}
 	if lastSymbol != sym {
-		return 0, errors.Errorf("unknown symbol %q", sym)
+		return 0, fmt.Errorf("unknown symbol %q", sym)
 	}
 	if s.version == index.FormatV2 {
 		return uint32(res), nil
