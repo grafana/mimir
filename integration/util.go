@@ -10,7 +10,6 @@ package integration
 import (
 	"bytes"
 	"math"
-	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,19 +18,14 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/grafana/e2e"
-	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/prompb"
-	"github.com/prometheus/prometheus/storage/remote"
 )
 
 var (
 	// Expose some utilities from the framework so that we don't have to prefix them
 	// with the package name in tests.
-	mergeFlags = e2e.MergeFlags
-	// generateSeries  = e2e.GenerateSeries
-	// generateNSeries = e2e.GenerateNSeries
+	mergeFlags      = e2e.MergeFlags
+	generateSeries  = e2e.GenerateSeries
+	generateNSeries = e2e.GenerateNSeries
 
 	// These are the earliest and latest possible timestamps supported by the Prometheus API -
 	// the Prometheus API does not support omitting a time range from query requests,
@@ -114,119 +108,4 @@ func getTLSFlagsWithPrefix(prefix string, servername string, http bool) map[stri
 	}
 
 	return flags
-}
-
-// based on GenerateTestHistograms in github.com/prometheus/prometheus/tsdb
-func generateTestHistogram(i int) *histogram.Histogram {
-	return &histogram.Histogram{
-		Count:         5 + uint64(i*4),
-		ZeroCount:     2 + uint64(i),
-		ZeroThreshold: 0.001,
-		Sum:           18.4 * float64(i+1),
-		Schema:        1,
-		PositiveSpans: []histogram.Span{
-			{Offset: 0, Length: 2},
-			{Offset: 1, Length: 2},
-		},
-		PositiveBuckets: []int64{int64(i + 1), 1, -1, 0},
-	}
-}
-
-// Copied from e2e GenerateSeries temporarily until we update it to use newer prometheus (or mimir-prometheus?)
-func generateSeries(name string, ts time.Time, additionalLabels ...prompb.Label) (series []prompb.TimeSeries, vector model.Vector, matrix model.Matrix) {
-	tsMillis := e2e.TimeToMilliseconds(ts)
-	value := rand.Float64()
-
-	lbls := append(
-		[]prompb.Label{
-			{Name: labels.MetricName, Value: name},
-		},
-		additionalLabels...,
-	)
-
-	// Generate the series
-	series = append(series, prompb.TimeSeries{
-		Labels: lbls,
-		Exemplars: []prompb.Exemplar{
-			{Value: value, Timestamp: tsMillis, Labels: []prompb.Label{
-				{Name: "trace_id", Value: "1234"},
-			}},
-		},
-		Samples: []prompb.Sample{
-			{Value: value, Timestamp: tsMillis},
-		},
-		Histograms: []prompb.Histogram{remote.HistogramToHistogramProto(tsMillis, generateTestHistogram(0))},
-	})
-
-	// Generate the expected vector and matrix when querying it
-	metric := model.Metric{}
-	metric[labels.MetricName] = model.LabelValue(name)
-	for _, lbl := range additionalLabels {
-		metric[model.LabelName(lbl.Name)] = model.LabelValue(lbl.Value)
-	}
-
-	vector = append(vector, &model.Sample{
-		Metric:    metric,
-		Value:     model.SampleValue(value),
-		Timestamp: model.Time(tsMillis),
-	})
-
-	matrix = append(matrix, &model.SampleStream{
-		Metric: metric,
-		Values: []model.SamplePair{
-			{
-				Timestamp: model.Time(tsMillis),
-				Value:     model.SampleValue(value),
-			},
-		},
-	})
-
-	return
-}
-
-func generateNSeries(nSeries, nExemplars int, name func() string, ts time.Time, additionalLabels func() []prompb.Label) (series []prompb.TimeSeries, vector model.Vector) {
-	tsMillis := e2e.TimeToMilliseconds(ts)
-
-	// Generate the series
-	for i := 0; i < nSeries; i++ {
-		lbls := []prompb.Label{
-			{Name: labels.MetricName, Value: name()},
-		}
-		if additionalLabels != nil {
-			lbls = append(lbls, additionalLabels()...)
-		}
-
-		value := rand.Float64()
-
-		exemplars := []prompb.Exemplar{}
-		if i < nExemplars {
-			exemplars = []prompb.Exemplar{
-				{Value: value, Timestamp: tsMillis, Labels: []prompb.Label{{Name: "trace_id", Value: "1234"}}},
-			}
-		}
-
-		series = append(series, prompb.TimeSeries{
-			Labels: lbls,
-			Samples: []prompb.Sample{
-				{Value: value, Timestamp: tsMillis},
-			},
-			Exemplars:  exemplars,
-			Histograms: []prompb.Histogram{remote.HistogramToHistogramProto(tsMillis, generateTestHistogram(i))},
-		})
-	}
-
-	// Generate the expected vector when querying it
-	for i := 0; i < nSeries; i++ {
-		metric := model.Metric{}
-		for _, lbl := range series[i].Labels {
-			metric[model.LabelName(lbl.Name)] = model.LabelValue(lbl.Value)
-		}
-
-		vector = append(vector, &model.Sample{
-			Metric:    metric,
-			Value:     model.SampleValue(series[i].Samples[0].Value),
-			Timestamp: model.Time(tsMillis),
-		})
-	}
-	return
 }
