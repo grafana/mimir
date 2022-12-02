@@ -6,14 +6,12 @@ package indexheader
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
@@ -66,35 +64,19 @@ func NewStreamBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.
 }
 
 func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int) (bw *StreamBinaryReader, err error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
+	r := &StreamBinaryReader{factory: stream_encoding.NewDecbufFactory(path)}
 
-	defer func() {
-		runutil.CloseWithErrCapture(&err, f, "index header close")
-	}()
-
-	r := &StreamBinaryReader{
-		factory: stream_encoding.NewDecbufFactory(path),
-	}
-
-	stat, err := f.Stat()
-	if err != nil {
-		return nil, err
-	}
-
-	indexHeaderSize := stat.Size()
-	fileReader, err := stream_encoding.NewFileReader(f, 0, int(indexHeaderSize))
-	if err != nil {
-		return nil, fmt.Errorf("cannot create file reader: %w", err)
-	}
-
-	d := stream_encoding.NewRawDecbuf(fileReader)
+	// Create a new raw decoding buffer with access to the entire index-header file to
+	// read initial version information and the table of contents.
+	d := r.factory.NewRawDecbuf()
+	defer d.Close()
 	if err = d.Err(); err != nil {
 		return nil, fmt.Errorf("cannot create decoding buffer: %w", err)
 	}
 
+	// Grab the full length of the index header before we read any of it. This is needed
+	// so that we can skip directly to the table of contents at the end of file.
+	indexHeaderSize := d.Len()
 	if magic := d.Be32(); magic != MagicIndex {
 		return nil, fmt.Errorf("invalid magic number %x", magic)
 	}
@@ -132,7 +114,7 @@ func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int) (bw
 	}
 
 	r.nameSymbols = make(map[uint32]string, len(labelNames))
-	if err := r.symbols.ForEachSymbol(labelNames, func(sym string, offset uint32) error {
+	if err = r.symbols.ForEachSymbol(labelNames, func(sym string, offset uint32) error {
 		r.nameSymbols[offset] = sym
 		return nil
 	}); err != nil {
@@ -144,8 +126,8 @@ func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int) (bw
 
 // newBinaryTOCFromByteSlice return parsed TOC from given Decbuf. The Decbuf is expected to be
 // configured to access the entirety of the index-header file.
-func newBinaryTOCFromFile(d stream_encoding.Decbuf, indexHeaderSize int64) (*BinaryTOC, error) {
-	tocOffset := int(indexHeaderSize - binaryTOCLen)
+func newBinaryTOCFromFile(d stream_encoding.Decbuf, indexHeaderSize int) (*BinaryTOC, error) {
+	tocOffset := indexHeaderSize - binaryTOCLen
 	if d.ResetAt(tocOffset); d.Err() != nil {
 		return nil, d.Err()
 	}

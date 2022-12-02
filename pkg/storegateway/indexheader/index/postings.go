@@ -443,6 +443,9 @@ func (t *PostingOffsetTableV2) LabelValues(name string, filter func(string) bool
 		}
 		s := yoloString(d.UvarintBytes()) // Label value.
 		if filter == nil || filter(s) {
+			// TODO: Do we need to allocate here since we're using a yolo string and
+			//  the bytes returned by UvarintBytes are invalidated on the next read of
+			//  the underlying reader?
 			values = append(values, s)
 		}
 		if s == lastVal {

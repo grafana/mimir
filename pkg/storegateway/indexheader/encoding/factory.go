@@ -12,6 +12,7 @@ import (
 
 // DecbufFactory creates new file-backed decoding buffer instances for a specific index-header file.
 type DecbufFactory struct {
+	// TODO: After profiling, it might make sense to have a `sync.Pool` of `bufio.Reader`s here
 	path string
 }
 
@@ -78,4 +79,38 @@ func (df *DecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table) Decb
 // To check the CRC of the content, use NewDecbufAtChecked.
 func (df *DecbufFactory) NewDecbufAtUnchecked(offset int) Decbuf {
 	return df.NewDecbufAtChecked(offset, nil)
+}
+
+// NewRawDecbuf returns a new file-backed decoding buffer positioned at the beginning of the file,
+// spanning the entire length of the file. It does not make any assumptions about the contents of the
+// file, nor does it perform any form of integrity check. To create a decoding buffer for some subset
+// of the file or perform integrity checks or use NewDecbufAtUnchecked or NewDecbufAtChecked.
+func (df *DecbufFactory) NewRawDecbuf() Decbuf {
+	f, err := os.Open(df.path)
+	if err != nil {
+		return Decbuf{E: errors.Wrap(err, "open file for decbuf")}
+	}
+
+	// If we return early and don't include a Reader for our Decbuf, we are responsible
+	// for actually closing the file handle.
+	closeFile := true
+	defer func() {
+		if closeFile {
+			_ = f.Close()
+		}
+	}()
+
+	stat, err := f.Stat()
+	if err != nil {
+		return Decbuf{E: errors.Wrap(err, "stat file for decbuf")}
+	}
+
+	fileSize := stat.Size()
+	reader, err := NewFileReader(f, 0, int(fileSize))
+	if err != nil {
+		return Decbuf{E: errors.Wrap(err, "file reader for decbuf")}
+	}
+
+	closeFile = false
+	return Decbuf{r: reader}
 }

@@ -25,8 +25,7 @@ func TestDecbuf_Be32HappyPath(t *testing.T) {
 			enc := prom_encoding.Encbuf{}
 			enc.PutBE32(c)
 
-			reader := createReaderWithBytes(t, enc.Get())
-			dec := NewRawDecbuf(reader)
+			dec := createDecbufWithBytes(t, enc.Get())
 			require.Equal(t, 4, dec.Len())
 
 			actual := dec.Be32()
@@ -41,7 +40,7 @@ func TestDecbuf_Be32InsufficientBuffer(t *testing.T) {
 	enc := prom_encoding.Encbuf{}
 	enc.PutBE32(0xFFFF_FFFF)
 
-	dec := NewRawDecbuf(createReaderWithBytes(t, enc.Get()[:2]))
+	dec := createDecbufWithBytes(t, enc.Get()[:2])
 	_ = dec.Be32()
 	require.ErrorIs(t, dec.Err(), ErrInvalidSize)
 }
@@ -55,8 +54,7 @@ func FuzzDecbuf_Be32(f *testing.F) {
 		enc := prom_encoding.Encbuf{}
 		enc.PutBE32(n)
 
-		r := createReaderWithBytes(t, enc.Get())
-		dec := NewRawDecbuf(r)
+		dec := createDecbufWithBytes(t, enc.Get())
 		require.NoError(t, dec.Err())
 		require.Equal(t, 4, dec.Len())
 
@@ -79,7 +77,7 @@ func TestDecbuf_Be32intHappyPath(t *testing.T) {
 			enc := prom_encoding.Encbuf{}
 			enc.PutBE32int(c)
 
-			dec := NewRawDecbuf(createReaderWithBytes(t, enc.Get()))
+			dec := createDecbufWithBytes(t, enc.Get())
 			require.Equal(t, 4, dec.Len())
 
 			actual := dec.Be32int()
@@ -94,7 +92,7 @@ func TestDecbuf_Be32intInsufficientBuffer(t *testing.T) {
 	enc := prom_encoding.Encbuf{}
 	enc.PutBE32int(0xFFFF_FFFF)
 
-	dec := NewRawDecbuf(createReaderWithBytes(t, enc.Get()[:2]))
+	dec := createDecbufWithBytes(t, enc.Get()[:2])
 	_ = dec.Be32int()
 	require.ErrorIs(t, dec.Err(), ErrInvalidSize)
 }
@@ -112,8 +110,7 @@ func FuzzDecbuf_Be32int(f *testing.F) {
 		enc := prom_encoding.Encbuf{}
 		enc.PutBE32int(n)
 
-		r := createReaderWithBytes(t, enc.Get())
-		dec := NewRawDecbuf(r)
+		dec := createDecbufWithBytes(t, enc.Get())
 		require.NoError(t, dec.Err())
 		require.Equal(t, 4, dec.Len())
 
@@ -136,7 +133,7 @@ func TestDecbuf_Be64HappyPath(t *testing.T) {
 			enc := prom_encoding.Encbuf{}
 			enc.PutBE64(c)
 
-			dec := NewRawDecbuf(createReaderWithBytes(t, enc.Get()))
+			dec := createDecbufWithBytes(t, enc.Get())
 			require.Equal(t, 8, dec.Len())
 
 			actual := dec.Be64()
@@ -148,7 +145,7 @@ func TestDecbuf_Be64HappyPath(t *testing.T) {
 }
 
 func TestDecbuf_Be64InsufficientBuffer(t *testing.T) {
-	dec := NewRawDecbuf(createReaderWithBytes(t, []byte{0x01}))
+	dec := createDecbufWithBytes(t, []byte{0x01})
 	_ = dec.Be64()
 	require.ErrorIs(t, dec.Err(), ErrInvalidSize)
 }
@@ -162,8 +159,7 @@ func FuzzDecbuf_Be64(f *testing.F) {
 		enc := prom_encoding.Encbuf{}
 		enc.PutBE64(n)
 
-		r := createReaderWithBytes(t, enc.Get())
-		dec := NewRawDecbuf(r)
+		dec := createDecbufWithBytes(t, enc.Get())
 		require.NoError(t, dec.Err())
 		require.Equal(t, 8, dec.Len())
 
@@ -181,7 +177,7 @@ func TestDecbuf_SkipHappyPath(t *testing.T) {
 	enc.PutBE32(0xFFFF_FFFF)
 	enc.PutBE32(expected)
 
-	dec := NewRawDecbuf(createReaderWithBytes(t, enc.Get()))
+	dec := createDecbufWithBytes(t, enc.Get())
 	require.Equal(t, 8, dec.Len())
 
 	dec.Skip(4)
@@ -195,7 +191,7 @@ func TestDecbuf_SkipHappyPath(t *testing.T) {
 }
 
 func TestDecbuf_SkipInsufficientBuffer(t *testing.T) {
-	dec := NewRawDecbuf(createReaderWithBytes(t, []byte{0x01}))
+	dec := createDecbufWithBytes(t, []byte{0x01})
 	dec.Skip(2)
 	require.ErrorIs(t, dec.Err(), ErrInvalidSize)
 }
@@ -217,7 +213,7 @@ func TestDecbuf_UvarintHappyPath(t *testing.T) {
 			enc := prom_encoding.Encbuf{}
 			enc.PutUvarint(c.value)
 
-			dec := NewRawDecbuf(createReaderWithBytes(t, enc.Get()))
+			dec := createDecbufWithBytes(t, enc.Get())
 			require.Equal(t, c.bytes, dec.Len())
 
 			actual := dec.Uvarint()
@@ -232,7 +228,7 @@ func TestDecbuf_UvarintInsufficientBuffer(t *testing.T) {
 	enc := prom_encoding.Encbuf{}
 	enc.PutUvarint(0xFFFF_FFFF)
 
-	dec := NewRawDecbuf(createReaderWithBytes(t, enc.Get()[:2]))
+	dec := createDecbufWithBytes(t, enc.Get()[:2])
 	_ = dec.Uvarint()
 	require.ErrorIs(t, dec.Err(), ErrInvalidSize)
 }
@@ -250,8 +246,7 @@ func FuzzDecbuf_Uvarint(f *testing.F) {
 		enc := prom_encoding.Encbuf{}
 		enc.PutUvarint(n)
 
-		r := createReaderWithBytes(t, enc.Get())
-		dec := NewRawDecbuf(r)
+		dec := createDecbufWithBytes(t, enc.Get())
 		require.NoError(t, dec.Err())
 		actual := dec.Uvarint()
 		require.NoError(t, dec.Err())
@@ -278,7 +273,7 @@ func TestDecbuf_Uvarint64HappyPath(t *testing.T) {
 			enc := prom_encoding.Encbuf{}
 			enc.PutUvarint64(c.value)
 
-			dec := NewRawDecbuf(createReaderWithBytes(t, enc.Get()))
+			dec := createDecbufWithBytes(t, enc.Get())
 			require.Equal(t, c.bytes, dec.Len())
 
 			actual := dec.Uvarint64()
@@ -293,7 +288,7 @@ func TestDecbuf_Uvarint64InsufficientBuffer(t *testing.T) {
 	enc := prom_encoding.Encbuf{}
 	enc.PutUvarint64(0xFFFF_FFFF)
 
-	dec := NewRawDecbuf(createReaderWithBytes(t, enc.Get()[:2]))
+	dec := createDecbufWithBytes(t, enc.Get()[:2])
 	_ = dec.Uvarint64()
 	require.ErrorIs(t, dec.Err(), ErrInvalidSize)
 }
@@ -310,8 +305,7 @@ func FuzzDecbuf_Uvarint64(f *testing.F) {
 		enc := prom_encoding.Encbuf{}
 		enc.PutUvarint64(n)
 
-		r := createReaderWithBytes(t, enc.Get())
-		dec := NewRawDecbuf(r)
+		dec := createDecbufWithBytes(t, enc.Get())
 		require.NoError(t, dec.Err())
 		actual := dec.Uvarint64()
 		require.NoError(t, dec.Err())
@@ -337,7 +331,7 @@ func TestDecbuf_UvarintBytesHappyPath(t *testing.T) {
 			enc := prom_encoding.Encbuf{}
 			enc.PutUvarintBytes(c.value)
 
-			dec := NewRawDecbuf(createReaderWithBytes(t, enc.Get()))
+			dec := createDecbufWithBytes(t, enc.Get())
 			require.Equal(t, dec.Len(), c.encodedSizeLength+len(c.value))
 
 			actual := dec.UvarintBytes()
@@ -352,7 +346,7 @@ func TestDecbuf_UvarintBytesInsufficientBuffer(t *testing.T) {
 	enc := prom_encoding.Encbuf{}
 	enc.PutUvarintBytes([]byte("123456"))
 
-	dec := NewRawDecbuf(createReaderWithBytes(t, enc.Get()[:2]))
+	dec := createDecbufWithBytes(t, enc.Get()[:2])
 	_ = dec.UvarintBytes()
 	require.ErrorIs(t, dec.Err(), ErrInvalidSize)
 }
@@ -367,8 +361,7 @@ func FuzzDecbuf_UvarintBytes(f *testing.F) {
 		enc := prom_encoding.Encbuf{}
 		enc.PutUvarintBytes(b)
 
-		r := createReaderWithBytes(t, enc.Get())
-		dec := NewRawDecbuf(r)
+		dec := createDecbufWithBytes(t, enc.Get())
 		require.NoError(t, dec.Err())
 		actual := dec.UvarintBytes()
 		require.NoError(t, dec.Err())
@@ -394,7 +387,7 @@ func TestDecbuf_UvarintStrHappyPath(t *testing.T) {
 			enc := prom_encoding.Encbuf{}
 			enc.PutUvarintStr(c.value)
 
-			dec := NewRawDecbuf(createReaderWithBytes(t, enc.Get()))
+			dec := createDecbufWithBytes(t, enc.Get())
 			require.Equal(t, dec.Len(), c.encodedSizeLength+len(c.value))
 
 			actual := dec.UvarintStr()
@@ -409,7 +402,7 @@ func TestDecbuf_UvarintStrInsufficientBuffer(t *testing.T) {
 	enc := prom_encoding.Encbuf{}
 	enc.PutUvarintStr("123456")
 
-	dec := NewRawDecbuf(createReaderWithBytes(t, enc.Get()[:2]))
+	dec := createDecbufWithBytes(t, enc.Get()[:2])
 	_ = dec.UvarintStr()
 	require.ErrorIs(t, dec.Err(), ErrInvalidSize)
 }
@@ -424,8 +417,7 @@ func FuzzDecbuf_UvarintStr(f *testing.F) {
 		enc := prom_encoding.Encbuf{}
 		enc.PutUvarintStr(s)
 
-		r := createReaderWithBytes(t, enc.Get())
-		dec := NewRawDecbuf(r)
+		dec := createDecbufWithBytes(t, enc.Get())
 		require.NoError(t, dec.Err())
 		actual := dec.UvarintStr()
 		require.NoError(t, dec.Err())
@@ -438,7 +430,7 @@ func TestDecbuf_Crc32(t *testing.T) {
 	table := crc32.MakeTable(crc32.Castagnoli)
 
 	t.Run("matches checksum (small buffer)", func(t *testing.T) {
-		dec := NewRawDecbuf(createReaderWithBytes(t, []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x4f, 0x4d, 0xfb, 0xab}))
+		dec := createDecbufWithBytes(t, []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x4f, 0x4d, 0xfb, 0xab})
 		dec.CheckCrc32(table)
 		require.NoError(t, dec.Err())
 	})
@@ -453,13 +445,13 @@ func TestDecbuf_Crc32(t *testing.T) {
 
 		enc.PutHash(crc32.New(crc32.MakeTable(crc32.Castagnoli)))
 
-		dec := NewRawDecbuf(createReaderWithBytes(t, enc.Get()))
+		dec := createDecbufWithBytes(t, enc.Get())
 		dec.CheckCrc32(table)
 		require.NoError(t, dec.Err())
 	})
 
 	t.Run("does not match checksum (small buffer)", func(t *testing.T) {
-		dec := NewRawDecbuf(createReaderWithBytes(t, []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x4f, 0x4d, 0xfb, 0xff}))
+		dec := createDecbufWithBytes(t, []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x4f, 0x4d, 0xfb, 0xff})
 		dec.CheckCrc32(table)
 		require.ErrorIs(t, dec.Err(), ErrInvalidChecksum)
 	})
@@ -475,37 +467,35 @@ func TestDecbuf_Crc32(t *testing.T) {
 		b := enc.Get()
 		b = append(b, 0x00, 0x01, 0x02, 0x03)
 
-		dec := NewRawDecbuf(createReaderWithBytes(t, b))
+		dec := createDecbufWithBytes(t, b)
 		dec.CheckCrc32(table)
 		require.ErrorIs(t, dec.Err(), ErrInvalidChecksum)
 	})
 
 	t.Run("buffer only contains checksum", func(t *testing.T) {
-		dec := NewRawDecbuf(createReaderWithBytes(t, []byte{0x4f, 0x4d, 0xfb, 0xab}))
+		dec := createDecbufWithBytes(t, []byte{0x4f, 0x4d, 0xfb, 0xab})
 		dec.CheckCrc32(table)
 		require.ErrorIs(t, dec.Err(), ErrInvalidSize)
 	})
 
 	t.Run("buffer too short for checksum", func(t *testing.T) {
-		dec := NewRawDecbuf(createReaderWithBytes(t, []byte{0x4f, 0x4d, 0xfb}))
+		dec := createDecbufWithBytes(t, []byte{0x4f, 0x4d, 0xfb})
 		dec.CheckCrc32(table)
 		require.ErrorIs(t, dec.Err(), ErrInvalidSize)
 	})
 }
 
-func createReaderWithBytes(t *testing.T, b []byte) *FileReader {
+func createDecbufWithBytes(t *testing.T, b []byte) Decbuf {
 	dir := t.TempDir()
 	filePath := path.Join(dir, "test-file")
 	require.NoError(t, os.WriteFile(filePath, b, 0700))
 
-	f, err := os.Open(filePath)
-	require.NoError(t, err)
+	factory := NewDecbufFactory(filePath)
+	decbuf := factory.NewRawDecbuf()
 	t.Cleanup(func() {
-		require.NoError(t, f.Close())
+		require.NoError(t, decbuf.Close())
 	})
 
-	r, err := NewFileReader(f, 0, len(b))
-	require.NoError(t, err)
-
-	return r
+	require.NoError(t, decbuf.Err())
+	return decbuf
 }
