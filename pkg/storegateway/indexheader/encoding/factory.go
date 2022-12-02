@@ -84,7 +84,7 @@ func (df *DecbufFactory) NewDecbufAtUnchecked(offset int) Decbuf {
 // NewRawDecbuf returns a new file-backed decoding buffer positioned at the beginning of the file,
 // spanning the entire length of the file. It does not make any assumptions about the contents of the
 // file, nor does it perform any form of integrity check. To create a decoding buffer for some subset
-// of the file or perform integrity checks or use NewDecbufAtUnchecked or NewDecbufAtChecked.
+// of the file or perform integrity checks use NewDecbufAtUnchecked or NewDecbufAtChecked.
 func (df *DecbufFactory) NewRawDecbuf() Decbuf {
 	f, err := os.Open(df.path)
 	if err != nil {
