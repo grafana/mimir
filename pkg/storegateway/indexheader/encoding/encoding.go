@@ -21,24 +21,14 @@ var (
 	ErrInvalidChecksum = errors.New("invalid checksum")
 )
 
-// Decbuf provides safe methods to extract data from a byte slice. It does all
-// necessary bounds checking and advancing of the byte slice.
-// Several datums can be extracted without checking for errors. However, before using
-// any datum, the Err() method must be checked.
+// Decbuf provides safe methods to extract data from a binary file. It does all
+// necessary bounds checking and advancing of the binary file. Several datums can
+// be extracted without checking for errors. However, before using any datum, the
+// Err() method must be checked. New file-backed Decbuf instances must be created
+// via DecbufFactory
 type Decbuf struct {
 	r *FileReader
 	E error
-}
-
-// NewRawDecbuf returns a new decoding buffer for r.
-// It does not make any assumptions about the contents of r, nor does it perform any form of integrity check.
-func NewRawDecbuf(r *FileReader) Decbuf {
-	// TODO: Do we need to Reset() here or does "raw" imply that's the responsibility of the caller?
-	err := r.Reset()
-	if err != nil {
-		return Decbuf{E: err}
-	}
-	return Decbuf{r: r}
 }
 
 func (d *Decbuf) Uvarint() int { return int(d.Uvarint64()) }
