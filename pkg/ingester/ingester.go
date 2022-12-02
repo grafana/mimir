@@ -1523,7 +1523,7 @@ func (i *Ingester) queryStreamSamples(ctx context.Context, db *userTSDB, from, t
 		return 0, 0, err
 	}
 
-	// Final flush any existing metrics
+	// Finally flush any existing metrics
 	if batchSizeBytes != 0 {
 		err = client.SendQueryStream(stream, &client.QueryStreamResponse{
 			Timeseries: timeseries,
