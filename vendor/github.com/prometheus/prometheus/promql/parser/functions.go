@@ -277,6 +277,11 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
 	},
+	"raw_increase": {
+		Name:       "raw_increase",
+		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar},
+		ReturnType: ValueTypeVector,
+	},
 	"resets": {
 		Name:       "resets",
 		ArgTypes:   []ValueType{ValueTypeMatrix},
