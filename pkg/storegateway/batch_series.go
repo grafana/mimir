@@ -241,7 +241,7 @@ func (s *BucketStore) batchSetsForBlocks(ctx context.Context, req *storepb.Serie
 	resHints := &hintspb.SeriesResponseHints{}
 	mtx := sync.Mutex{}
 	batches := make([]seriesChunkRefsSetIterator, 0, len(blocks))
-	g, gCtx := errgroup.WithContext(ctx)
+	g, _ := errgroup.WithContext(ctx)
 	cleanups := make([]func(), 0, len(blocks))
 
 	for _, b := range blocks {
@@ -264,7 +264,7 @@ func (s *BucketStore) batchSetsForBlocks(ctx context.Context, req *storepb.Serie
 			)
 
 			part, err = openBlockSeriesChunkRefsSetsIterator(
-				gCtx, s.maxSeriesPerBatch, indexr, b.meta.ULID, matchers, shardSelector, blockSeriesHashCache, chunksLimiter, seriesLimiter, req.SkipChunks, req.MinTime, req.MaxTime, stats, s.logger)
+				ctx, s.maxSeriesPerBatch, indexr, b.meta.ULID, matchers, shardSelector, blockSeriesHashCache, chunksLimiter, seriesLimiter, req.SkipChunks, req.MinTime, req.MaxTime, stats, s.logger)
 			if err != nil {
 				return errors.Wrapf(err, "fetch series for block %s", b.meta.ULID)
 			}
