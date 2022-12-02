@@ -94,10 +94,6 @@ Using a custom namespace solves problems later on because you do not have to ove
    ```
 
    > **Note:** To see all of the configurable parameters for a Helm chart installation, use `helm show values grafana/mimir-distributed`.
-   > If you want to get the values file from Github, build the URL as follows because we git tag every release:
-   > `https://github.com/grafana/mimir/blob/mimir-distributed-<chart-version>/operations/helm/charts/mimir-distributed/values.yaml`.
-   > For example, https://github.com/grafana/mimir/blob/mimir-distributed-3.1.0/operations/helm/charts/mimir-distributed/values.yaml.
-   > You must use a matching Helm chart version, because chart values are not guaranteed to be backwards compatible between versions.
 
    An ingress enables you to externally access a Kubernetes cluster.
    Replace _`<ingress-host>`_ with a suitable hostname that DNS can resolve
