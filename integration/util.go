@@ -23,9 +23,11 @@ import (
 var (
 	// Expose some utilities from the framework so that we don't have to prefix them
 	// with the package name in tests.
-	mergeFlags      = e2e.MergeFlags
-	generateSeries  = e2e.GenerateSeries
-	generateNSeries = e2e.GenerateNSeries
+	mergeFlags              = e2e.MergeFlags
+	generateSeries          = e2e.GenerateSeries
+	generateNSeries         = e2e.GenerateNSeries
+	generateHistogramSeries = e2e.GenerateHistogramSeries
+	// generateNHistogramSeries = e2e.GenerateNHistogramSeries
 
 	// These are the earliest and latest possible timestamps supported by the Prometheus API -
 	// the Prometheus API does not support omitting a time range from query requests,

@@ -32,6 +32,7 @@ func TestGettingStartedWithGrafanaMimir(t *testing.T) {
 	require.NoError(t, s.StartAndWaitReady(mimir))
 
 	runTestPushSeriesAndQueryBack(t, mimir)
+	runTestPushHistogramSeriesAndQueryBack(t, mimir)
 }
 
 func TestPlayWithGrafanaMimirTutorial(t *testing.T) {
@@ -103,4 +104,36 @@ func runTestPushSeriesAndQueryBack(t *testing.T, mimir *e2emimir.MimirService) {
 	require.NoError(t, err)
 	require.Equal(t, model.ValMatrix, rangeResult.Type())
 	require.Equal(t, expectedMatrix, rangeResult.(model.Matrix))
+}
+
+func runTestPushHistogramSeriesAndQueryBack(t *testing.T, mimir *e2emimir.MimirService) {
+	c, err := e2emimir.NewClient(mimir.HTTPEndpoint(), mimir.HTTPEndpoint(), "", "", "user-1")
+	require.NoError(t, err)
+
+	// Push some series to Mimir.
+	now := time.Now()
+	series, _, _ := generateHistogramSeries("series_1", now, prompb.Label{Name: "foo", Value: "bar"})
+
+	res, err := c.Push(series)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, res.StatusCode)
+
+	// Query the series.
+	// result, err := c.Query("series_1", now)
+	// require.NoError(t, err)
+	// require.Equal(t, model.ValVector, result.Type())
+	// assert.Equal(t, expectedVector, result.(model.Vector))
+
+	labelValues, err := c.LabelValues("foo", prometheusMinTime, prometheusMaxTime, nil)
+	require.NoError(t, err)
+	require.Equal(t, model.LabelValues{"bar"}, labelValues)
+
+	labelNames, err := c.LabelNames(prometheusMinTime, prometheusMaxTime)
+	require.NoError(t, err)
+	require.Equal(t, []string{"__name__", "foo"}, labelNames)
+
+	// rangeResult, err := c.QueryRange("series_1", now.Add(-15*time.Minute), now, 15*time.Second)
+	// require.NoError(t, err)
+	// require.Equal(t, model.ValMatrix, rangeResult.Type())
+	// require.Equal(t, expectedMatrix, rangeResult.(model.Matrix))
 }

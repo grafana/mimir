@@ -509,8 +509,8 @@ github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9 h1:LQAhgcUPnzdjU
 github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9/go.mod h1:AHHlOEv1+GGQ3ktHMlhuTUwo3zljV3QJbC0+8o2kn+4=
 github.com/grafana/dskit v0.0.0-20221110225216-188592c3d6fc h1:wJH74LRQcSiB4WH0N0LfysF1Hx/5DA1+TsfOmuQ6VTQ=
 github.com/grafana/dskit v0.0.0-20221110225216-188592c3d6fc/go.mod h1:rJRGBDtyQNA3OFh7WecUILvxkgGrdIuA4f9wgZOn3V0=
-github.com/grafana/e2e v0.1.1-0.20221115065638-fe4609fcbc71 h1:sAMF3CGAtlWLimTyvsO46Slwu1p6Fm5EMB64XzG5btI=
-github.com/grafana/e2e v0.1.1-0.20221115065638-fe4609fcbc71/go.mod h1:3UsooRp7yW5/NJQBlXcTsAHOoykEhNUYXkQ3r6ehEEY=
+github.com/grafana/e2e v0.1.1-0.20221202170412-f1dbcf13dee3 h1:6PU7ELmWQfX8bYXDhGZGxInVFQUsu16XX1Yh9tXf/jM=
+github.com/grafana/e2e v0.1.1-0.20221202170412-f1dbcf13dee3/go.mod h1:JQH8f81jdR4oKQjnwQ1juow5x90qQxh/Z9OJKZzwZUw=
 github.com/grafana/gomemcache v0.0.0-20220812141943-44b6cde200bb h1:CqfZjjd8iK3G1TV8Wf0u7WTY+0RxIEbmcgxftt9qVtw=
 github.com/grafana/gomemcache v0.0.0-20220812141943-44b6cde200bb/go.mod h1:H0wQNHz2YrLsuXOZozoeDmnHXkNCRmMW0gwFWDfEZDA=
 github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe h1:yIXAAbLswn7VNWBIvM71O2QsgfgW9fRXZNR0DXe6pDU=
@@ -634,8 +634,8 @@ github.com/kr/logfmt v0.0.0-20140226030751-b84e30acd515/go.mod h1:+0opPa2QZZtGFB
 github.com/kr/pretty v0.1.0/go.mod h1:dAy3ld7l9f0ibDNOQOHHMYYIIbhfbHSm3C4ZsoJORNo=
 github.com/kr/pretty v0.2.0/go.mod h1:ipq/a2n7PKx3OHsz4KJII5eveXtPO4qwEXGdVfWzfnI=
 github.com/kr/pretty v0.2.1/go.mod h1:ipq/a2n7PKx3OHsz4KJII5eveXtPO4qwEXGdVfWzfnI=
-github.com/kr/pretty v0.3.0 h1:WgNl7dwNpEZ6jJ9k1snq4pZsg7DOEN8hP9Xw0Tsjwk0=
 github.com/kr/pretty v0.3.0/go.mod h1:640gp4NfQd8pI5XOwp5fnNeVWj67G7CFk/SaSQn7NBk=
+github.com/kr/pretty v0.3.1 h1:flRD4NNwYAUpkphVc1HcthR4KEIFJ65n8Mw5qdRn3LE=
 github.com/kr/pty v1.1.1/go.mod h1:pFQYn66WHrOpPYNljwOMqo10TkYh1fy3cYio2l3bCsQ=
 github.com/kr/text v0.1.0/go.mod h1:4Jbv+DJW3UT/LiOwJeYQe1efqtUx/iVham/4vfdArNI=
 github.com/kr/text v0.2.0 h1:5Nx0Ya0ZqY2ygV366QzturHI13Jq95ApcVaJBhpS+AY=

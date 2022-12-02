@@ -15,8 +15,10 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/storage/remote"
 )
 
 func RunCommandAndGetOutput(name string, args ...string) ([]byte, error) {
@@ -255,4 +257,98 @@ func GetTempDirectory() (string, error) {
 	}
 
 	return absDir, nil
+}
+
+// based on GenerateTestHistograms in github.com/prometheus/prometheus/tsdb
+func generateTestHistogram(i int) *histogram.Histogram {
+	return &histogram.Histogram{
+		Count:         5 + uint64(i*4),
+		ZeroCount:     2 + uint64(i),
+		ZeroThreshold: 0.001,
+		Sum:           18.4 * float64(i+1),
+		Schema:        1,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		PositiveBuckets: []int64{int64(i + 1), 1, -1, 0},
+	}
+}
+
+func GenerateHistogramSeries(name string, ts time.Time, additionalLabels ...prompb.Label) (series []prompb.TimeSeries, vector model.Vector, matrix model.Matrix) {
+	tsMillis := TimeToMilliseconds(ts)
+	value := rand.Float64()
+
+	lbls := append(
+		[]prompb.Label{
+			{Name: labels.MetricName, Value: name},
+		},
+		additionalLabels...,
+	)
+
+	// Generate the series
+	series = append(series, prompb.TimeSeries{
+		Labels:     lbls,
+		Histograms: []prompb.Histogram{remote.HistogramToHistogramProto(tsMillis, generateTestHistogram(0))},
+	})
+
+	//TODO: FIX
+	// Generate the expected vector and matrix when querying it
+	metric := model.Metric{}
+	metric[labels.MetricName] = model.LabelValue(name)
+	for _, lbl := range additionalLabels {
+		metric[model.LabelName(lbl.Name)] = model.LabelValue(lbl.Value)
+	}
+
+	vector = append(vector, &model.Sample{
+		Metric:    metric,
+		Value:     model.SampleValue(value),
+		Timestamp: model.Time(tsMillis),
+	})
+
+	matrix = append(matrix, &model.SampleStream{
+		Metric: metric,
+		Values: []model.SamplePair{
+			{
+				Timestamp: model.Time(tsMillis),
+				Value:     model.SampleValue(value),
+			},
+		},
+	})
+
+	return
+}
+
+func GenerateNHistogramSeries(nSeries, nExemplars int, name func() string, ts time.Time, additionalLabels func() []prompb.Label) (series []prompb.TimeSeries, vector model.Vector) {
+	tsMillis := TimeToMilliseconds(ts)
+
+	// Generate the series
+	for i := 0; i < nSeries; i++ {
+		lbls := []prompb.Label{
+			{Name: labels.MetricName, Value: name()},
+		}
+		if additionalLabels != nil {
+			lbls = append(lbls, additionalLabels()...)
+		}
+
+		series = append(series, prompb.TimeSeries{
+			Labels:     lbls,
+			Histograms: []prompb.Histogram{remote.HistogramToHistogramProto(tsMillis, generateTestHistogram(i))},
+		})
+	}
+
+	// Generate the expected vector when querying it
+	for i := 0; i < nSeries; i++ {
+		metric := model.Metric{}
+		for _, lbl := range series[i].Labels {
+			metric[model.LabelName(lbl.Name)] = model.LabelValue(lbl.Value)
+		}
+
+		vector = append(vector, &model.Sample{
+			Metric:    metric,
+			Value:     model.SampleValue(series[i].Samples[0].Value),
+			Timestamp: model.Time(tsMillis),
+		})
+	}
+	return
 }
