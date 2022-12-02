@@ -294,6 +294,7 @@ func (g *StoreGateway) syncStores(ctx context.Context, reason string) {
 	}
 }
 
+// Series implements the storegatewaypb.StoreGatewayServer interface.
 func (g *StoreGateway) Series(req *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer) error {
 	ix := g.tracker.Insert(func() string {
 		return requestActivity(srv.Context(), "StoreGateway/Series", req)
@@ -303,7 +304,7 @@ func (g *StoreGateway) Series(req *storepb.SeriesRequest, srv storegatewaypb.Sto
 	return g.stores.Series(req, srv)
 }
 
-// LabelNames implements the Storegateway proto service.
+// LabelNames implements the storegatewaypb.StoreGatewayServer interface.
 func (g *StoreGateway) LabelNames(ctx context.Context, req *storepb.LabelNamesRequest) (*storepb.LabelNamesResponse, error) {
 	ix := g.tracker.Insert(func() string {
 		return requestActivity(ctx, "StoreGateway/LabelNames", req)
@@ -313,7 +314,7 @@ func (g *StoreGateway) LabelNames(ctx context.Context, req *storepb.LabelNamesRe
 	return g.stores.LabelNames(ctx, req)
 }
 
-// LabelValues implements the Storegateway proto service.
+// LabelValues implements the storegatewaypb.StoreGatewayServer interface.
 func (g *StoreGateway) LabelValues(ctx context.Context, req *storepb.LabelValuesRequest) (*storepb.LabelValuesResponse, error) {
 	ix := g.tracker.Insert(func() string {
 		return requestActivity(ctx, "StoreGateway/LabelValues", req)
