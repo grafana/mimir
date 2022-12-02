@@ -71,10 +71,11 @@ func TestStoreGatewayIndexHeaderReaders(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, 200, res.StatusCode)
 
-			// Wait until the TSDB head is shipped to storage and removed from the ingester to ensure we're querying
-			// the store gateway (and thus exercising the index-header).
+			// Wait until the TSDB head is shipped to storage, removed from the ingester, and loaded by the
+			// store-gateway to ensure we're querying the store-gateway (and thus exercising the index-header).
 			require.NoError(t, mimirInstance.WaitSumMetrics(e2e.GreaterOrEqual(1), "cortex_ingester_shipper_uploads_total"))
 			require.NoError(t, mimirInstance.WaitSumMetrics(e2e.Equals(0), "cortex_ingester_memory_series"))
+			require.NoError(t, mimirInstance.WaitSumMetrics(e2e.GreaterOrEqual(1), "cortex_bucket_store_blocks_loaded"))
 
 			// Verify we can read the data we just pushed, both with an instant query and a range query.
 			queryResult, err := c.Query("test_series_1", now)
