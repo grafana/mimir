@@ -10,6 +10,7 @@
 * [BUGFIX] Log the names of services that are not yet running rather than `unsupported value type` when calling `/ready` and some services are not running. #3625
 
 ### Mixin
+* [BUGFIX] Alerts: Fixed `MimirIngesterHasNotShippedBlocks` and `MimirIngesterHasNotShippedBlocksSinceStart` alerts for when Mimir is deployed in read-write or monolithic modes. #3627
 
 * [BUGFIX] Alerts: Fixed `MemoryMapAreasTooHigh` alert when Mimir is deployed in read-write mode. #3626
 * [BUGFIX] Alerts: Fixed `MimirCompactorSkippedBlocksWithOutOfOrderChunks` matching on non-existent label. #3628
