@@ -66,4 +66,22 @@ func TestSymbols(t *testing.T) {
 	}
 	_, err = s.ReverseLookup(string(rune(100)))
 	require.Error(t, err)
+
+	// Use ForEachSymbol to build an offset -> symbol mapping and ensure
+	// that it matches the expected offsets and symbols.
+	var symbols []string
+	expected := make(map[uint32]string)
+	for i := 99; i >= 0; i-- {
+		symbols = append(symbols, string(rune(i)))
+		expected[uint32(i)] = string(rune(i))
+	}
+
+	actual := make(map[uint32]string)
+	err = s.ForEachSymbol(symbols, func(sym string, offset uint32) error {
+		actual[offset] = sym
+		return nil
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, expected, actual)
 }
