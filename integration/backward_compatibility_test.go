@@ -287,12 +287,12 @@ type instantQueryTest struct {
 type testingLogger interface{ Logf(string, ...interface{}) }
 
 func previousImageVersionOverrides(t *testing.T) map[string]e2emimir.FlagMapper {
-	overrides, err := parsePrevioiusImageVersionOverrides(os.Getenv("MIMIR_PREVIOUS_IMAGES"), t)
+	overrides, err := parsePreviousImageVersionOverrides(os.Getenv("MIMIR_PREVIOUS_IMAGES"), t)
 	require.NoError(t, err)
 	return overrides
 }
 
-func parsePrevioiusImageVersionOverrides(env string, logger testingLogger) (map[string]e2emimir.FlagMapper, error) {
+func parsePreviousImageVersionOverrides(env string, logger testingLogger) (map[string]e2emimir.FlagMapper, error) {
 	if env == "" {
 		return nil, nil
 	}
@@ -315,20 +315,20 @@ func parsePrevioiusImageVersionOverrides(env string, logger testingLogger) (map[
 
 func TestParsePreviousImageVersionOverrides(t *testing.T) {
 	t.Run("empty overrides", func(t *testing.T) {
-		overrides, err := parsePrevioiusImageVersionOverrides("", t)
+		overrides, err := parsePreviousImageVersionOverrides("", t)
 		require.NoError(t, err)
 		require.Empty(t, overrides)
 	})
 
 	t.Run("one version override", func(t *testing.T) {
-		overrides, err := parsePrevioiusImageVersionOverrides("first", t)
+		overrides, err := parsePreviousImageVersionOverrides("first", t)
 		require.NoError(t, err)
 		require.Len(t, overrides, 1)
 		require.NotNil(t, overrides["first"])
 	})
 
 	t.Run("comma separated overrides", func(t *testing.T) {
-		overrides, err := parsePrevioiusImageVersionOverrides("first,second", t)
+		overrides, err := parsePreviousImageVersionOverrides("first,second", t)
 		require.NoError(t, err)
 		require.Len(t, overrides, 2)
 		require.NotNil(t, overrides["first"])
@@ -360,7 +360,7 @@ func TestParsePreviousImageVersionOverrides(t *testing.T) {
 				"second": []
 			}`
 
-		overrides, err := parsePrevioiusImageVersionOverrides(jsonOverrides, t)
+		overrides, err := parsePreviousImageVersionOverrides(jsonOverrides, t)
 		require.NoError(t, err)
 		require.Len(t, overrides, 2)
 

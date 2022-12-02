@@ -142,6 +142,8 @@ func NewIngester(name string, consulAddress string, flags map[string]string, opt
 			"-ingester.ring.consul.hostname": consulAddress,
 			// Speed up the startup.
 			"-ingester.ring.min-ready-duration": "0s",
+			// Enable native histograms
+			"-ingester.native-histograms-enabled": "true",
 		},
 		flags,
 		options...,
@@ -206,6 +208,8 @@ func NewSingleBinary(name string, flags map[string]string, options ...Option) *M
 			"-log.level": "warn",
 			// Speed up the startup.
 			"-ingester.ring.min-ready-duration": "0s",
+			// Enable native histograms
+			"-ingester.native-histograms-enabled": "true",
 		},
 		flags,
 		options...,
@@ -234,6 +238,8 @@ func NewWriteInstance(name string, flags map[string]string, options ...Option) *
 			"-ingester.ring.replication-factor": "1",
 			// Speed up startup.
 			"-ingester.ring.min-ready-duration": "0s",
+			// Enable native histograms
+			"-ingester.native-histograms-enabled": "true",
 		},
 		flags,
 		options...,
@@ -460,6 +466,9 @@ func SetFlagMapper(set map[string]string) FlagMapper {
 func copyFlags(flags map[string]string) map[string]string {
 	cp := make(map[string]string)
 	for f, v := range flags {
+		if v == "" {
+			continue
+		}
 		cp[f] = v
 	}
 	return cp

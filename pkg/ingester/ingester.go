@@ -151,6 +151,8 @@ type Config struct {
 
 	// For testing, you can override the address and ID of this ingester.
 	ingesterClientFactory func(addr string, cfg client.Config) (client.HealthAndIngesterClient, error)
+
+	NativeHistogramsEnabled bool `yaml:"native_histograms_enabled" category:"advanced"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -170,6 +172,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.DefaultLimits.RegisterFlags(f)
 
 	f.StringVar(&cfg.IgnoreSeriesLimitForMetricNames, "ingester.ignore-series-limit-for-metric-names", "", "Comma-separated list of metric names, for which the -ingester.max-global-series-per-metric limit will be ignored. Does not affect the -ingester.max-global-series-per-user limit.")
+
+	f.BoolVar(&cfg.NativeHistogramsEnabled, "ingester.native-histograms-enabled", false, "Enable native histograms from prometheus.")
 }
 
 func (cfg *Config) getIgnoreSeriesLimitForMetricNamesMap() map[string]struct{} {
@@ -588,6 +592,13 @@ func (i *Ingester) updateUsageStats() {
 // * The current max-exemplars setting. If it changed, tsdb will resize the buffer; if it didn't change tsdb will return quickly.
 // * The current out-of-order time window. If it changes from 0 to >0, then a new Write-Behind-Log gets created for that tenant.
 func (i *Ingester) applyTSDBSettings() {
+	rwcs := make([]*promcfg.RemoteWriteConfig, 0)
+	if i.cfg.NativeHistogramsEnabled {
+		rwcs = append(rwcs, &promcfg.RemoteWriteConfig{
+			SendNativeHistograms: true,
+		})
+	}
+
 	for _, userID := range i.getTSDBUsers() {
 		globalValue := i.limits.MaxGlobalExemplarsPerUser(userID)
 		localValue := i.limiter.convertGlobalToLocalLimit(userID, globalValue)
@@ -610,9 +621,7 @@ func (i *Ingester) applyTSDBSettings() {
 					OutOfOrderTimeWindow: time.Duration(oooTW).Milliseconds(),
 				},
 			},
-			RemoteWriteConfigs: []*promcfg.RemoteWriteConfig{{
-				SendNativeHistograms: true,
-			}},
+			RemoteWriteConfigs: rwcs,
 		}
 		db := i.getTSDB(userID)
 		if db == nil {
@@ -1653,7 +1662,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		AllowOverlappingCompaction:     false,                // always false since Mimir only uploads lvl 1 compacted blocks
 		OutOfOrderTimeWindow:           oooTW.Milliseconds(), // The unit must be same as our timestamps.
 		OutOfOrderCapMax:               int64(i.cfg.BlocksStorageConfig.TSDB.OutOfOrderCapacityMax),
-		EnableNativeHistograms:         true,
+		EnableNativeHistograms:         i.cfg.NativeHistogramsEnabled,
 	}, nil)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to open TSDB: %s", udir)

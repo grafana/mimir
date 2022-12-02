@@ -850,6 +850,10 @@ instance_limits:
 # the -ingester.max-global-series-per-user limit.
 # CLI flag: -ingester.ignore-series-limit-for-metric-names
 [ignore_series_limit_for_metric_names: <string> | default = ""]
+
+# (advanced) Enable native histograms from prometheus.
+# CLI flag: -ingester.native-histograms-enabled
+[native_histograms_enabled: <boolean> | default = false]
 ```
 
 ### querier

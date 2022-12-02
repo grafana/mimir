@@ -2783,6 +2783,17 @@
           "fieldFlag": "ingester.ignore-series-limit-for-metric-names",
           "fieldType": "string",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "native_histograms_enabled",
+          "required": false,
+          "desc": "Enable native histograms from prometheus.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "ingester.native-histograms-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "advanced"
         }
       ],
       "fieldValue": null,
