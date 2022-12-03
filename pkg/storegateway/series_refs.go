@@ -3,10 +3,14 @@
 package storegateway
 
 import (
+	"context"
+
 	"github.com/oklog/ulid"
+	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 )
 
@@ -443,4 +447,125 @@ func (s *deduplicatingSeriesChunkRefsSetIterator) Next() bool {
 	}
 	s.current = nextSet
 	return true
+}
+
+type limitingSeriesChunkRefsSetIterator struct {
+	from          seriesChunkRefsSetIterator
+	chunksLimiter ChunksLimiter
+	seriesLimiter SeriesLimiter
+
+	err        error
+	currentSet seriesChunkRefsSet
+}
+
+func (l *limitingSeriesChunkRefsSetIterator) Next() bool {
+	if l.err != nil {
+		return false
+	}
+
+	if !l.from.Next() {
+		l.err = l.from.Err()
+		return false
+	}
+
+	l.currentSet = l.from.At()
+	err := l.seriesLimiter.Reserve(uint64(l.currentSet.len()))
+	if err != nil {
+		l.err = errors.Wrap(err, "exceeded series limit")
+		return false
+	}
+
+	var totalChunks int
+	for _, s := range l.currentSet.series {
+		totalChunks += len(s.chunks)
+	}
+
+	err = l.chunksLimiter.Reserve(uint64(totalChunks))
+	if err != nil {
+		l.err = errors.Wrap(err, "exceeded chunks limit")
+		return false
+	}
+	return true
+}
+
+func (l *limitingSeriesChunkRefsSetIterator) At() seriesChunkRefsSet {
+	return l.currentSet
+}
+
+func (l *limitingSeriesChunkRefsSetIterator) Err() error {
+	return l.err
+}
+
+type inflatedSeriesChunkRefsSetIterator struct {
+	ctx                 context.Context
+	postingsSetIterator *postingsSetsIterator
+	indexr              *bucketIndexReader
+	stats               *safeQueryStats
+	blockID             ulid.ULID
+	shard               *sharding.ShardSelector
+	seriesHasher        seriesHasher
+	skipChunks          bool
+	minTime, maxTime    int64
+
+	err        error
+	currentSet seriesChunkRefsSet
+}
+
+func (s *inflatedSeriesChunkRefsSetIterator) Next() bool {
+	if s.err != nil {
+		return false
+	}
+	if !s.postingsSetIterator.Next() {
+		return false
+	}
+	nextPostings := s.postingsSetIterator.At()
+	loadedSeries, err := s.indexr.preloadSeries(s.ctx, nextPostings, s.stats)
+	if err != nil {
+		s.err = errors.Wrap(err, "preload series")
+		return false
+	}
+	inflatedSeries := newBucketIndexInflatedSeries(s.blockID, loadedSeries, s.indexr)
+
+	// Track the series loading statistics in a not synchronized data structure to avoid locking for each series
+	// and then merge before returning from the function.
+	loadStats := &queryStats{}
+	defer s.stats.merge(loadStats)
+
+	nextSet := newSeriesChunkRefsSet(len(nextPostings))
+
+	for _, id := range nextPostings {
+		lset, chks, err := inflatedSeries.inflateSeriesForTime(id, s.skipChunks, s.minTime, s.maxTime, loadStats)
+		if err != nil {
+			s.err = errors.Wrap(err, "read series")
+			return false
+		}
+		if lset.Len() == 0 {
+			// No matching chunks for this time duration, skip series
+			continue
+		}
+
+		if !shardOwned(s.shard, s.seriesHasher, id, lset, loadStats) {
+			continue
+		}
+
+		entry := seriesChunkRefs{
+			lset:   lset,
+			chunks: chks,
+		}
+
+		nextSet.series = append(nextSet.series, entry)
+	}
+	if nextSet.len() == 0 {
+		return s.Next() // we didn't find any suitable series in this set, try with the next one
+	}
+	s.currentSet = nextSet
+	return true
+}
+
+func (s *inflatedSeriesChunkRefsSetIterator) At() seriesChunkRefsSet {
+	return s.currentSet
+}
+
+func (s *inflatedSeriesChunkRefsSetIterator) Err() error {
+	return s.err
 }

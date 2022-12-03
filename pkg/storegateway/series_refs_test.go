@@ -759,6 +759,127 @@ func TestDeduplicatingSeriesChunkRefsSetIterator_PropagatesErrors(t *testing.T) 
 	assert.ErrorContains(t, chainedSet.Err(), "something went wrong")
 }
 
+func TestLimitingSeriesChunkRefsSetIterator(t *testing.T) {
+	testCases := map[string]struct {
+		sets                     []seriesChunkRefsSet
+		seriesLimit, chunksLimit int
+		upstreamErr              error
+
+		expectedSetsCount int
+		expectedErr       string
+	}{
+		"doesn't exceed limits": {
+			seriesLimit:       5,
+			chunksLimit:       5,
+			expectedSetsCount: 1,
+			sets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("l1", "v2"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("l2", "v1"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("l2", "v2"), chunks: make([]seriesChunkRef, 1)},
+				}},
+			},
+		},
+		"exceeds chunks limit": {
+			seriesLimit:       5,
+			chunksLimit:       3,
+			expectedSetsCount: 0,
+			expectedErr:       "exceeded chunks limit",
+			sets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("l1", "v2"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("l2", "v1"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("l2", "v2"), chunks: make([]seriesChunkRef, 1)},
+				}},
+			},
+		},
+		"exceeds chunks limit on second set": {
+			seriesLimit:       5,
+			chunksLimit:       3,
+			expectedSetsCount: 1,
+			expectedErr:       "exceeded chunks limit",
+			sets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("l1", "v2"), chunks: make([]seriesChunkRef, 1)},
+				}},
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l2", "v1"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("l2", "v2"), chunks: make([]seriesChunkRef, 1)},
+				}},
+			},
+		},
+		"exceeds series limit": {
+			seriesLimit:       3,
+			chunksLimit:       5,
+			expectedSetsCount: 0,
+			expectedErr:       "exceeded series limit",
+			sets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("l1", "v2"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("l2", "v1"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("l2", "v2"), chunks: make([]seriesChunkRef, 1)},
+				}},
+			},
+		},
+		"exceeds series limit on second set": {
+			seriesLimit:       3,
+			chunksLimit:       5,
+			expectedSetsCount: 1,
+			expectedErr:       "exceeded series limit",
+			sets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("l1", "v2"), chunks: make([]seriesChunkRef, 1)},
+				}},
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l2", "v1"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("l2", "v2"), chunks: make([]seriesChunkRef, 1)},
+				}},
+			},
+		},
+		"propagates error": {
+			seriesLimit:       5,
+			chunksLimit:       5,
+			upstreamErr:       errors.New("something went wrong"),
+			expectedSetsCount: 2,
+			expectedErr:       "something went wrong",
+			sets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("l1", "v2"), chunks: make([]seriesChunkRef, 1)},
+				}},
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l2", "v1"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("l2", "v2"), chunks: make([]seriesChunkRef, 1)},
+				}},
+			},
+		},
+	}
+
+	for testName, testCase := range testCases {
+		testName, testCase := testName, testCase
+		t.Run(testName, func(t *testing.T) {
+			iterator := &limitingSeriesChunkRefsSetIterator{
+				from:          newSliceSeriesChunkRefsSetIterator(testCase.upstreamErr, testCase.sets...),
+				chunksLimiter: &limiter{limit: testCase.chunksLimit},
+				seriesLimiter: &limiter{limit: testCase.seriesLimit},
+			}
+
+			sets := readAllSeriesChunkRefsSet(iterator)
+			assert.Equal(t, testCase.expectedSetsCount, len(sets))
+			if testCase.expectedErr == "" {
+				assert.NoError(t, iterator.Err())
+			} else {
+				assert.ErrorContains(t, iterator.Err(), testCase.expectedErr)
+			}
+		})
+	}
+}
+
 // sliceSeriesChunkRefsSetIterator implements seriesChunkRefsSetIterator and
 // returns the provided err when the sets are exhausted.
 //

@@ -22,28 +22,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/pool"
 )
 
-type blockSeriesChunkRefsSetsIterator struct {
-	ctx      context.Context
-	postings []storage.SeriesRef
-
-	batchSize                  int
-	currentBatchPostingsOffset int
-	currentSet                 seriesChunkRefsSet
-	err                        error
-
-	blockID          ulid.ULID
-	indexr           *bucketIndexReader      // Index reader for block.
-	matchers         []*labels.Matcher       // Series matchers.
-	shard            *sharding.ShardSelector // Shard selector.
-	seriesHasher     seriesHasher            // Block-specific series hash cache (used only if shard selector is specified).
-	chunksLimiter    ChunksLimiter           // Rate limiter for loading chunks.
-	seriesLimiter    SeriesLimiter           // Rate limiter for loading series.
-	skipChunks       bool                    // If true chunks are not loaded and minTime/maxTime are ignored.
-	minTime, maxTime int64                   // Series must have data in this time range to be returned (ignored if skipChunks=true).
-	stats            *safeQueryStats
-	logger           log.Logger
-}
-
 func openBlockSeriesChunkRefsSetsIterator(
 	ctx context.Context,
 	batchSize int,
@@ -65,7 +43,7 @@ func openBlockSeriesChunkRefsSetsIterator(
 
 	ps, err := indexr.ExpandedPostings(ctx, matchers, stats)
 	if err != nil {
-		return nil, errors.Wrap(err, "expanded matching posting")
+		return nil, errors.Wrap(err, "expanded matching postings")
 	}
 
 	// We can't compute the series hash yet because we're still missing the series labels.
@@ -77,36 +55,52 @@ func openBlockSeriesChunkRefsSetsIterator(
 		stats.merge(&unsafeStats)
 	}
 
-	return &blockSeriesChunkRefsSetsIterator{
-		blockID:                    blockID,
+	postingsIterator := newPostingsSetsIterator(ps, batchSize)
+
+	inflatingIterator := &inflatedSeriesChunkRefsSetIterator{
+		ctx:                 ctx,
+		postingsSetIterator: postingsIterator,
+		indexr:              indexr,
+		stats:               stats,
+		blockID:             blockID,
+		shard:               shard,
+		seriesHasher:        cachedSeriesHasher{cache: seriesHashCache},
+		skipChunks:          skipChunks,
+		minTime:             minTime,
+		maxTime:             maxTime,
+	}
+
+	limitingIterator := &limitingSeriesChunkRefsSetIterator{
+		from:          inflatingIterator,
+		chunksLimiter: chunksLimiter,
+		seriesLimiter: seriesLimiter,
+	}
+	return limitingIterator, nil
+}
+
+type postingsSetsIterator struct {
+	postings []storage.SeriesRef
+
+	batchSize                  int
+	currentBatchPostingsOffset int
+	currentSet                 []storage.SeriesRef
+}
+
+func newPostingsSetsIterator(postings []storage.SeriesRef, batchSize int) *postingsSetsIterator {
+	return &postingsSetsIterator{
+		postings:                   postings,
 		batchSize:                  batchSize,
 		currentBatchPostingsOffset: -batchSize,
-		ctx:                        ctx,
-		postings:                   ps,
-		indexr:                     indexr,
-		matchers:                   matchers,
-		shard:                      shard,
-		seriesHasher:               cachedSeriesHasher{cache: seriesHashCache, stats: stats},
-		chunksLimiter:              chunksLimiter,
-		seriesLimiter:              seriesLimiter,
-		skipChunks:                 skipChunks,
-		minTime:                    minTime,
-		maxTime:                    maxTime,
-		stats:                      stats,
-		logger:                     logger,
-	}, nil
+	}
 }
 
-func (s *blockSeriesChunkRefsSetsIterator) Next() bool {
-	if s.currentBatchPostingsOffset >= len(s.postings)-1 || s.err != nil {
+func (s *postingsSetsIterator) Next() bool {
+	if s.currentBatchPostingsOffset >= len(s.postings)-1 {
 		return false
 	}
-	return s.loadBatch()
-}
 
-func (s *blockSeriesChunkRefsSetsIterator) loadBatch() bool {
 	s.currentBatchPostingsOffset += s.batchSize
-	if s.currentBatchPostingsOffset > len(s.postings) {
+	if s.currentBatchPostingsOffset >= len(s.postings) {
 		return false
 	}
 
@@ -114,71 +108,13 @@ func (s *blockSeriesChunkRefsSetsIterator) loadBatch() bool {
 	if end > len(s.postings) {
 		end = len(s.postings)
 	}
-	s.currentSet = newSeriesChunkRefsSet(s.batchSize)
-	nextPostings := s.postings[s.currentBatchPostingsOffset:end]
-
-	loadedSeries, err := s.indexr.preloadSeries(s.ctx, nextPostings, s.stats)
-	if err != nil {
-		s.err = errors.Wrap(err, "preload series")
-		return false
-	}
-
-	var (
-		symbolizedLset []symbolizedLabel
-		chks           []chunks.Meta
-	)
-
-	// Track the series loading statistics in a not synchronized data structure to avoid locking for each series
-	// and then merge before returning from the function.
-	loadStats := &queryStats{}
-	defer s.stats.merge(loadStats)
-
-	for _, id := range nextPostings {
-		ok, err := loadedSeries.unsafeLoadSeriesForTime(id, &symbolizedLset, &chks, s.skipChunks, s.minTime, s.maxTime, loadStats)
-		if err != nil {
-			s.err = errors.Wrap(err, "read series")
-			return false
-		}
-		if !ok {
-			// No matching chunks for this time duration, skip series
-			continue
-		}
-
-		lset, err := s.indexr.LookupLabelsSymbols(symbolizedLset)
-		if err != nil {
-			s.err = errors.Wrap(err, "lookup labels symbols")
-			return false
-		}
-
-		if !shardOwned(s.shard, s.seriesHasher, id, lset) {
-			continue
-		}
-
-		// Check series limit after filtering out series not belonging to the requested shard (if any).
-		if err := s.seriesLimiter.Reserve(1); err != nil {
-			s.err = errors.Wrap(err, "exceeded series limit")
-			return false
-		}
-
-		entry := seriesChunkRefs{lset: lset}
-
-		if !s.skipChunks {
-			// Ensure sample limit through chunksLimiter if we return chunks.
-			if err = s.chunksLimiter.Reserve(uint64(len(chks))); err != nil {
-				s.err = errors.Wrap(err, "exceeded chunks limit")
-				return false
-			}
-			entry.chunks = metasToChunks(s.blockID, chks)
-		}
-
-		s.currentSet.series = append(s.currentSet.series, entry)
-	}
-
-	if s.currentSet.len() == 0 {
-		return s.loadBatch() // we didn't find any suitable series in this set, try with the next one
-	}
+	s.currentSet = s.postings[s.currentBatchPostingsOffset:end]
 
 	return true
+}
+
+func (s *postingsSetsIterator) At() []storage.SeriesRef {
+	return s.currentSet
 }
 
 func metasToChunks(blockID ulid.ULID, metas []chunks.Meta) []seriesChunkRef {
@@ -194,45 +130,32 @@ func metasToChunks(blockID ulid.ULID, metas []chunks.Meta) []seriesChunkRef {
 	return chks
 }
 
-func (s *blockSeriesChunkRefsSetsIterator) At() seriesChunkRefsSet {
-	return s.currentSet
-}
-
-func (s *blockSeriesChunkRefsSetsIterator) Err() error {
-	return s.err
-}
-
 type seriesHasher interface {
-	Hash(seriesID storage.SeriesRef, lset labels.Labels) uint64
+	Hash(seriesID storage.SeriesRef, lset labels.Labels, stats *queryStats) uint64
 }
 
 type cachedSeriesHasher struct {
 	cache *hashcache.BlockSeriesHashCache
-	stats *safeQueryStats
 }
 
-func (b cachedSeriesHasher) Hash(id storage.SeriesRef, lset labels.Labels) uint64 {
-	hash, ok := b.cache.Fetch(id)
-	b.stats.update(func(stats *queryStats) {
-		stats.seriesHashCacheRequests++
-	})
+func (b cachedSeriesHasher) Hash(id storage.SeriesRef, lset labels.Labels, stats *queryStats) uint64 {
+	stats.seriesHashCacheRequests++
 
+	hash, ok := b.cache.Fetch(id)
 	if !ok {
 		hash = lset.Hash()
 		b.cache.Store(id, hash)
 	} else {
-		b.stats.update(func(stats *queryStats) {
-			stats.seriesHashCacheHits++
-		})
+		stats.seriesHashCacheHits++
 	}
 	return hash
 }
 
-func shardOwned(shard *sharding.ShardSelector, hasher seriesHasher, id storage.SeriesRef, lset labels.Labels) bool {
+func shardOwned(shard *sharding.ShardSelector, hasher seriesHasher, id storage.SeriesRef, lset labels.Labels, stats *queryStats) bool {
 	if shard == nil {
 		return true
 	}
-	hash := hasher.Hash(id, lset)
+	hash := hasher.Hash(id, lset, stats)
 
 	return hash%shard.ShardCount == shard.ShardIndex
 }

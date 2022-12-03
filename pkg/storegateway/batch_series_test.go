@@ -12,6 +12,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/stretchr/testify/assert"
@@ -397,6 +398,49 @@ func TestLoadingBatchSet(t *testing.T) {
 				s.release()
 			}
 			assert.Zero(t, int(bytesPool.balance.Load()))
+		})
+	}
+}
+
+func TestPostingsSetsIterator(t *testing.T) {
+	testCases := map[string]struct {
+		postings        []storage.SeriesRef
+		batchSize       int
+		expectedBatches [][]storage.SeriesRef
+	}{
+		"single batch": {
+			postings:        []storage.SeriesRef{1, 2, 3},
+			batchSize:       3,
+			expectedBatches: [][]storage.SeriesRef{{1, 2, 3}},
+		},
+		"two batches, evenly split": {
+			postings:        []storage.SeriesRef{1, 2, 3, 4},
+			batchSize:       2,
+			expectedBatches: [][]storage.SeriesRef{{1, 2}, {3, 4}},
+		},
+		"two batches, last not full": {
+			postings:        []storage.SeriesRef{1, 2, 3, 4, 5},
+			batchSize:       3,
+			expectedBatches: [][]storage.SeriesRef{{1, 2, 3}, {4, 5}},
+		},
+		"empty postings": {
+			postings:        []storage.SeriesRef{},
+			batchSize:       2,
+			expectedBatches: [][]storage.SeriesRef{},
+		},
+	}
+
+	for testName, testCase := range testCases {
+		testName, testCase := testName, testCase
+		t.Run(testName, func(t *testing.T) {
+			iterator := newPostingsSetsIterator(testCase.postings, testCase.batchSize)
+
+			var actualBatches [][]storage.SeriesRef
+			for iterator.Next() {
+				actualBatches = append(actualBatches, iterator.At())
+			}
+
+			assert.ElementsMatch(t, testCase.expectedBatches, actualBatches)
 		})
 	}
 }

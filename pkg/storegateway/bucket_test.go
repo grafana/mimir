@@ -767,7 +767,7 @@ func BenchmarkBucketIndexReader_ExpandedPostings(b *testing.B) {
 	benchmarkExpandedPostings(test.NewTB(b), newTestBucketBlock, series)
 }
 
-func prepareTestBlock(tb test.TB, series int) func() *bucketBlock {
+func prepareTestBlock(tb test.TB, series int, dataSetup ...func(tb testing.TB, appender storage.Appender)) func() *bucketBlock {
 	tmpDir := tb.TempDir()
 
 	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
@@ -777,7 +777,11 @@ func prepareTestBlock(tb test.TB, series int) func() *bucketBlock {
 		assert.NoError(tb, bkt.Close())
 	})
 
-	id := uploadTestBlock(tb, tmpDir, bkt, series)
+	if len(dataSetup) == 0 {
+		dataSetup = append(dataSetup, func(tb testing.TB, appender storage.Appender) { appendTestData(tb, appender, series) })
+	}
+
+	id := uploadTestBlock(tb, tmpDir, bkt, dataSetup)
 	r, err := indexheader.NewBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, id, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.BinaryReaderConfig{})
 	require.NoError(tb, err)
 
@@ -795,7 +799,7 @@ func prepareTestBlock(tb test.TB, series int) func() *bucketBlock {
 	}
 }
 
-func uploadTestBlock(t testing.TB, tmpDir string, bkt objstore.Bucket, series int) ulid.ULID {
+func uploadTestBlock(t testing.TB, tmpDir string, bkt objstore.Bucket, dataSetup []func(tb testing.TB, appender storage.Appender)) ulid.ULID {
 	headOpts := tsdb.DefaultHeadOptions()
 	headOpts.ChunkDirRoot = tmpDir
 	headOpts.ChunkRange = 1000
@@ -807,7 +811,9 @@ func uploadTestBlock(t testing.TB, tmpDir string, bkt objstore.Bucket, series in
 
 	logger := log.NewNopLogger()
 
-	appendTestData(t, h.Appender(context.Background()), series)
+	for _, setup := range dataSetup {
+		setup(t, h.Appender(context.Background()))
+	}
 
 	assert.NoError(t, os.MkdirAll(filepath.Join(tmpDir, "tmp"), os.ModePerm))
 	id := createBlockFromHead(t, filepath.Join(tmpDir, "tmp"), h)
