@@ -86,6 +86,7 @@ type postingsSetsIterator struct {
 	currentSet                 []storage.SeriesRef
 }
 
+// TODO dimitarvdimitrov add filterPostingsByCachedShardHash to this constructor
 func newPostingsSetsIterator(postings []storage.SeriesRef, batchSize int) *postingsSetsIterator {
 	return &postingsSetsIterator{
 		postings:                   postings,

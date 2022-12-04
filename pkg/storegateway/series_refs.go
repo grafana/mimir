@@ -496,6 +496,7 @@ func (l *limitingSeriesChunkRefsSetIterator) Err() error {
 	return l.err
 }
 
+// TODO dimitarvdimitrov add a constructor and override minTime, maxTime when skipChunks==true; test already exists and is failing
 type inflatedSeriesChunkRefsSetIterator struct {
 	ctx                 context.Context
 	postingsSetIterator *postingsSetsIterator

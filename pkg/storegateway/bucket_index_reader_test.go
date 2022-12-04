@@ -121,6 +121,21 @@ func TestBucketInflatedSeries(t *testing.T) {
 				}},
 			},
 		},
+		"ignores mixT/maxT when skipping chunks": {
+			minT:       0,
+			maxT:       10,
+			skipChunks: true,
+			batchSize:  4,
+			matchers:   []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", "v[1-4]")},
+			expectedSets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1")},
+					{lset: labels.FromStrings("l1", "v2")},
+					{lset: labels.FromStrings("l1", "v3")},
+					{lset: labels.FromStrings("l1", "v4")},
+				}},
+			},
+		},
 	}
 
 	for testName, testCase := range testCases {
