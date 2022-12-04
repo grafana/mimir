@@ -4271,6 +4271,19 @@ func TestDistributorValidation(t *testing.T) {
 			}},
 		},
 
+		// Test validation passes when labels are unsorted.
+		{
+			labels: []labels.Labels{mimirpb.FromLabelAdaptersToLabels(
+				[]mimirpb.LabelAdapter{
+					{Name: "foo", Value: "bar"},
+					{Name: labels.MetricName, Value: "testmetric"},
+				})},
+			samples: []mimirpb.Sample{{
+				TimestampMs: int64(now),
+				Value:       1,
+			}},
+		},
+
 		// Test validation fails for samples from the future.
 		{
 			labels: []labels.Labels{labels.FromStrings(labels.MetricName, "testmetric", "foo", "bar")},
@@ -4405,7 +4418,7 @@ func TestRemoveReplicaLabel(t *testing.T) {
 	}
 }
 
-// This is not great, but we deal with unsorted labels when validating labels.
+// This is not great, but we deal with unsorted labels in prePushRelabelMiddleware.
 func TestShardByAllLabelsReturnsWrongResultsForUnsortedLabels(t *testing.T) {
 	val1 := shardByAllLabels("test", []mimirpb.LabelAdapter{
 		{Name: "__name__", Value: "foo"},
