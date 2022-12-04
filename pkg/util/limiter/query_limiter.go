@@ -10,10 +10,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/prometheus/common/model"
 	"go.uber.org/atomic"
 
-	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -39,7 +37,7 @@ var (
 
 type QueryLimiter struct {
 	uniqueSeriesMx sync.Mutex
-	uniqueSeries   map[model.Fingerprint]struct{}
+	uniqueSeries   map[uint64]struct{}
 
 	chunkBytesCount atomic.Int64
 	chunkCount      atomic.Int64
@@ -54,7 +52,7 @@ type QueryLimiter struct {
 func NewQueryLimiter(maxSeriesPerQuery, maxChunkBytesPerQuery int, maxChunksPerQuery int) *QueryLimiter {
 	return &QueryLimiter{
 		uniqueSeriesMx: sync.Mutex{},
-		uniqueSeries:   map[model.Fingerprint]struct{}{},
+		uniqueSeries:   map[uint64]struct{}{},
 
 		maxSeriesPerQuery:     maxSeriesPerQuery,
 		maxChunkBytesPerQuery: maxChunkBytesPerQuery,
@@ -83,7 +81,7 @@ func (ql *QueryLimiter) AddSeries(seriesLabels []mimirpb.LabelAdapter) error {
 	if ql.maxSeriesPerQuery == 0 {
 		return nil
 	}
-	fingerprint := client.FastFingerprint(seriesLabels)
+	fingerprint := mimirpb.FromLabelAdaptersToLabels(seriesLabels).Hash()
 
 	ql.uniqueSeriesMx.Lock()
 	defer ql.uniqueSeriesMx.Unlock()

@@ -216,23 +216,6 @@ func FromLabelMatchers(matchers []*LabelMatcher) ([]*labels.Matcher, error) {
 	return result, nil
 }
 
-// FastFingerprint runs the same algorithm as Prometheus labelSetToFastFingerprint()
-func FastFingerprint(ls []mimirpb.LabelAdapter) model.Fingerprint {
-	if len(ls) == 0 {
-		return model.Metric(nil).FastFingerprint()
-	}
-
-	var result uint64
-	for _, l := range ls {
-		sum := hashNew()
-		sum = hashAdd(sum, l.Name)
-		sum = hashAddByte(sum, model.SeparatorByte)
-		sum = hashAdd(sum, l.Value)
-		result ^= sum
-	}
-	return model.Fingerprint(result)
-}
-
 // LabelsToKeyString is used to form a string to be used as
 // the hashKey. Don't print, use l.String() for printing.
 func LabelsToKeyString(l labels.Labels) string {
