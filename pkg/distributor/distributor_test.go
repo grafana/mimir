@@ -4457,9 +4457,9 @@ func TestSortLabels(t *testing.T) {
 
 	sortLabelsIfNeeded(unsorted)
 
-	sort.SliceIsSorted(unsorted, func(i, j int) bool {
+	require.True(t, sort.SliceIsSorted(unsorted, func(i, j int) bool {
 		return unsorted[i].Name < unsorted[j].Name
-	})
+	}))
 }
 
 func TestDistributor_Push_Relabel(t *testing.T) {
