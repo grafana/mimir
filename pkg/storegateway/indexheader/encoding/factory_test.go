@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestNewDecbufFactory_NewDecbufAtChecked(t *testing.T) {
+func TestDecbufFactory_NewDecbufAtChecked(t *testing.T) {
 	table := crc32.MakeTable(crc32.Castagnoli)
 
 	t.Run("invalid CRC", func(t *testing.T) {
@@ -75,7 +75,7 @@ func TestNewDecbufFactory_NewDecbufAtChecked(t *testing.T) {
 	})
 }
 
-func TestNewDecbufFactory_NewDecbufAtUnchecked(t *testing.T) {
+func TestDecbufFactory_NewDecbufAtUnchecked(t *testing.T) {
 	table := crc32.MakeTable(crc32.Castagnoli)
 
 	t.Run("happy path", func(t *testing.T) {
@@ -99,7 +99,7 @@ func TestNewDecbufFactory_NewDecbufAtUnchecked(t *testing.T) {
 	})
 }
 
-func TestNewDecbufFactory_NewDecbufRaw(t *testing.T) {
+func TestDecbufFactory_NewDecbufRaw(t *testing.T) {
 	table := crc32.MakeTable(crc32.Castagnoli)
 
 	t.Run("happy path", func(t *testing.T) {
