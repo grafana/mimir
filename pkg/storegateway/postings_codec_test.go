@@ -36,7 +36,7 @@ func TestDiffVarintCodec(t *testing.T) {
 		assert.NoError(t, os.RemoveAll(chunksDir))
 	})
 
-	appendTestData(t, h.Appender(context.Background()), 1e4)
+	appendTestSeries(1e4)(t, h.Appender(context.Background()))
 
 	idx, err := h.Index()
 	assert.NoError(t, err)
