@@ -155,7 +155,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 			// a timestamp of time.Now() when its being created.
 			// We want the first created block because we want to assert on the series inside it.
 			// The block created first contains a known set of 4 series.
-			// TODO dimitarvdimitrov clean this up
+			// TODO dimitarvdimitrov change this setup to use prepareTestBlock() and assert on the chunks too
 			for _, b := range suite.store.blocks {
 				if firstBlock == nil {
 					firstBlock = b
