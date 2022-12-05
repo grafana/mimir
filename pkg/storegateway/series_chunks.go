@@ -66,7 +66,7 @@ func newSeriesChunksSeriesSet(from seriesChunksSetIterator) storepb.SeriesSet {
 }
 
 func newSeriesSetWithChunks(ctx context.Context, chunkReaders chunkReaders, chunksPool pool.Bytes, batches seriesChunkRefsSetIterator, stats *safeQueryStats) storepb.SeriesSet {
-	return newSeriesChunksSeriesSet(newPreloadingSetIterator[seriesChunksSet](ctx, 1, newLoadingBatchSet(chunkReaders, chunksPool, batches, stats)))
+	return newSeriesChunksSeriesSet(newPreloadingSetIterator[seriesChunksSet](ctx, 1, newLoadingSeriesChunksSetIterator(chunkReaders, chunksPool, batches, stats)))
 }
 
 // Next advances to the next item. Once the underlying seriesChunksSet has been fully consumed
