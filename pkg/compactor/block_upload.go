@@ -437,7 +437,7 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, blockID ulid.U
 
 		r, err := userBkt.Get(ctx, pth)
 		if err != nil {
-			return errors.Wrap(err, fmt.Sprintf("failed to get object %q from object storage", pth))
+			return errors.Wrapf(err, "failed to get object %q from object storage", pth)
 		}
 
 		f, err := os.Create(fname)
