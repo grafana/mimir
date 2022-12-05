@@ -413,7 +413,11 @@ func (c *MultitenantCompactor) uploadMeta(ctx context.Context, logger log.Logger
 
 func (c *MultitenantCompactor) validateBlock(ctx context.Context, blockID ulid.ULID,
 	userBkt objstore.Bucket, meta metadata.Meta) error {
-	blockDir, err := os.MkdirTemp(filepath.Join(c.compactorCfg.DataDir), "upload")
+	tmpDir := os.TempDir()
+	if _, err := os.Stat(c.compactorCfg.DataDir); !os.IsNotExist(err) {
+		tmpDir = c.compactorCfg.DataDir
+	}
+	blockDir, err := os.MkdirTemp(tmpDir, "upload")
 	if err != nil {
 		return errors.Wrap(err, "failed to create temp dir")
 	}

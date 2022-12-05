@@ -97,6 +97,7 @@ std.manifestYamlDoc({
     compactor: mimirService({
       target: 'compactor',
       httpPort: 8006,
+      extraArguments: '-compactor.block-upload-enabled=true',
     }),
   },
 
