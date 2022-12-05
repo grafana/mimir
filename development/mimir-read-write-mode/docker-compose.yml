@@ -158,4 +158,20 @@
       - "9000:9000"
     "volumes":
       - ".data-minio:/data:delegated"
+  "store-gateway-load-test":
+    "command":
+      - "-blocks-storage.backend=s3"
+      - "-blocks-storage.s3.access-key-id=mimir"
+      - "-blocks-storage.s3.secret-access-key=supersecret"
+      - "-blocks-storage.s3.insecure=true"
+      - "-blocks-storage.s3.endpoint=minio:9000"
+      - "-blocks-storage.s3.bucket-name=mimir-blocks"
+      - "-memberlist.join=mimir-write-1"
+      - "-tester.user-id=anonymous"
+      - "-tester.min-time=2022-08-26T00:00:00Z"
+      - "-tester.max-time=2022-08-27T00:00:00Z"
+    "depends_on":
+      - "minio"
+    "hostname": "store-gateway-load-test"
+    "image": "grafana/store-gateway-load-test:store-gateway-load-test-a697fa650-WIP"
 "version": "3.4"

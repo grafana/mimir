@@ -72,7 +72,7 @@ func (c *storeGatewayClient) RemoteAddress() string {
 	return c.conn.Target()
 }
 
-func newStoreGatewayClientPool(discovery client.PoolServiceDiscovery, clientConfig ClientConfig, logger log.Logger, reg prometheus.Registerer) *client.Pool {
+func NewStoreGatewayClientPool(discovery client.PoolServiceDiscovery, clientConfig ClientConfig, logger log.Logger, reg prometheus.Registerer) *client.Pool {
 	// We prefer sane defaults instead of exposing further config options.
 	clientCfg := grpcclient.Config{
 		MaxRecvMsgSize:      100 << 20,

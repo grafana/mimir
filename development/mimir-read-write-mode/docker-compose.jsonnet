@@ -7,6 +7,7 @@ std.manifestYamlDoc({
     self.minio +
     self.grafana_agent +
     self.memcached +
+    self.store_gateway_load_test +
     {},
 
   write:: {
@@ -83,6 +84,28 @@ std.manifestYamlDoc({
     },
   },
 
+  store_gateway_load_test:: {
+    'store-gateway-load-test': {
+      image: 'grafana/store-gateway-load-test:store-gateway-load-test-a697fa650-WIP',
+      command: [
+        '-blocks-storage.backend=s3',
+        '-blocks-storage.s3.access-key-id=mimir',
+        '-blocks-storage.s3.secret-access-key=supersecret',
+        '-blocks-storage.s3.insecure=true',
+        '-blocks-storage.s3.endpoint=minio:9000',
+        '-blocks-storage.s3.bucket-name=mimir-blocks',
+        '-memberlist.join=mimir-write-1',
+
+        // Tester config.
+        '-tester.user-id=anonymous',
+        '-tester.min-time=2022-08-26T00:00:00Z',
+        '-tester.max-time=2022-08-27T00:00:00Z',
+      ],
+      hostname: 'store-gateway-load-test',
+      depends_on: ['minio'],
+    },
+  },
+
   // This function builds docker-compose declaration for Mimir service.
   local mimirService(serviceOptions) = {
     local defaultOptions = {
@@ -93,7 +116,6 @@ std.manifestYamlDoc({
       dependsOn: ['minio'],
       env: {},
       extraVolumes: [],
-      memberlistBindPort: self.publishedHttpPort + 2000,
     },
 
     local options = defaultOptions + serviceOptions,

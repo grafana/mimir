@@ -55,7 +55,7 @@ func newBlocksStoreReplicationSet(
 ) (*blocksStoreReplicationSet, error) {
 	s := &blocksStoreReplicationSet{
 		storesRing:         storesRing,
-		clientsPool:        newStoreGatewayClientPool(client.NewRingServiceDiscovery(storesRing), clientConfig, logger, reg),
+		clientsPool:        NewStoreGatewayClientPool(client.NewRingServiceDiscovery(storesRing), clientConfig, logger, reg),
 		balancingStrategy:  balancingStrategy,
 		limits:             limits,
 		subservicesWatcher: services.NewFailureWatcher(),

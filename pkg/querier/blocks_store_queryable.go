@@ -711,7 +711,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 			// But this is an acceptable workaround for now.
 			skipChunks := sp != nil && sp.Func == "series"
 
-			req, err := createSeriesRequest(minT, maxT, convertedMatchers, skipChunks, blockIDs)
+			req, err := CreateSeriesRequest(minT, maxT, convertedMatchers, skipChunks, blockIDs)
 			if err != nil {
 				return errors.Wrapf(err, "failed to create series request")
 			}
@@ -1002,7 +1002,7 @@ func (q *blocksStoreQuerier) fetchLabelValuesFromStore(
 	return valueSets, warnings, queriedBlocks, nil
 }
 
-func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skipChunks bool, blockIDs []ulid.ULID) (*storepb.SeriesRequest, error) {
+func CreateSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skipChunks bool, blockIDs []ulid.ULID) (*storepb.SeriesRequest, error) {
 	// Selectively query only specific blocks.
 	hints := &hintspb.SeriesRequestHints{
 		BlockMatchers: []storepb.LabelMatcher{
