@@ -12,6 +12,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -390,5 +391,40 @@ func generateAggrChunk(num int) []storepb.AggrChunk {
 		})
 	}
 
+	return out
+}
+
+type releaserMock struct {
+	released *atomic.Bool
+}
+
+func newReleaserMock() *releaserMock {
+	return &releaserMock{
+		released: atomic.NewBool(false),
+	}
+}
+
+func (r *releaserMock) Release() {
+	r.released.Store(true)
+}
+
+func (r *releaserMock) isReleased() bool {
+	return r.released.Load()
+}
+
+func readAllSeriesChunksSets(it seriesChunksSetIterator) []seriesChunksSet {
+	var out []seriesChunksSet
+	for it.Next() {
+		out = append(out, it.At())
+	}
+	return out
+}
+
+func readAllSeriesLabels(it storepb.SeriesSet) []labels.Labels {
+	var out []labels.Labels
+	for it.Next() {
+		lbls, _ := it.At()
+		out = append(out, lbls)
+	}
 	return out
 }

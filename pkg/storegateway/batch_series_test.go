@@ -307,39 +307,6 @@ func (l *limiter) Reserve(num uint64) error {
 	return nil
 }
 
-func readAllSeriesChunkRefsSet(it seriesChunkRefsSetIterator) []seriesChunkRefsSet {
-	var out []seriesChunkRefsSet
-	for it.Next() {
-		out = append(out, it.At())
-	}
-	return out
-}
-
-func readAllSeriesChunkRefs(it seriesChunkRefsIterator) []seriesChunkRefs {
-	var out []seriesChunkRefs
-	for it.Next() {
-		out = append(out, it.At())
-	}
-	return out
-}
-
-func readAllSeriesChunksSets(it seriesChunksSetIterator) []seriesChunksSet {
-	var out []seriesChunksSet
-	for it.Next() {
-		out = append(out, it.At())
-	}
-	return out
-}
-
-func readAllSeriesLabels(it storepb.SeriesSet) []labels.Labels {
-	var out []labels.Labels
-	for it.Next() {
-		lbls, _ := it.At()
-		out = append(out, lbls)
-	}
-	return out
-}
-
 // generateSeriesEntriesWithChunks generates seriesEntries with chunks. Each chunk is a random byte slice.
 func generateSeriesEntriesWithChunks(t *testing.T, numSeries int) []seriesEntry {
 	const numChunksPerSeries = 2
@@ -370,22 +337,4 @@ func generateSeriesEntriesWithChunks(t *testing.T, numSeries int) []seriesEntry 
 		out = append(out, entry)
 	}
 	return out
-}
-
-type releaserMock struct {
-	released *atomic.Bool
-}
-
-func newReleaserMock() *releaserMock {
-	return &releaserMock{
-		released: atomic.NewBool(false),
-	}
-}
-
-func (r *releaserMock) Release() {
-	r.released.Store(true)
-}
-
-func (r *releaserMock) isReleased() bool {
-	return r.released.Load()
 }
