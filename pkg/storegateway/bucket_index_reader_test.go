@@ -14,7 +14,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
-func TestBucketInflatedSeries(t *testing.T) {
+func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 	newTestBlock := prepareTestBlock(test.NewTB(t), -1, func(t testing.TB, appender storage.Appender) {
 		for i := 0; i < 100; i++ {
 			_, err := appender.Append(0, labels.FromStrings("l1", fmt.Sprintf("v%d", i)), int64(i*10), 0)
@@ -66,7 +66,7 @@ func TestBucketInflatedSeries(t *testing.T) {
 		"skips chunks": {
 			skipChunks: true,
 			minT:       0,
-			maxT:       10000,
+			maxT:       40,
 			batchSize:  100,
 			matchers:   []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", "v[1-4]")},
 			expectedSets: []seriesChunkRefsSet{
@@ -79,7 +79,6 @@ func TestBucketInflatedSeries(t *testing.T) {
 			},
 		},
 		"doesn't return series if they are outside of minT/maxT": {
-			skipChunks:   true,
 			minT:         20,
 			maxT:         30,
 			batchSize:    100,
@@ -148,11 +147,10 @@ func TestBucketInflatedSeries(t *testing.T) {
 			indexr := block.indexReader()
 			postings, err := indexr.ExpandedPostings(context.Background(), testCase.matchers, newSafeQueryStats())
 			require.NoError(t, err)
-			postingsIterator := &postingsSetsIterator{
-				postings:                   postings,
-				batchSize:                  testCase.batchSize,
-				currentBatchPostingsOffset: -testCase.batchSize,
-			}
+			postingsIterator := newPostingsSetsIterator(
+				postings,
+				testCase.batchSize,
+			)
 			inflatedSeriesIterator := newLoadingSeriesChunkRefsSetIterator(
 				context.Background(),
 				postingsIterator,

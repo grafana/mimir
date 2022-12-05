@@ -781,7 +781,7 @@ func prepareTestBlock(tb test.TB, series int, dataSetup ...func(tb testing.TB, a
 		dataSetup = append(dataSetup, func(tb testing.TB, appender storage.Appender) { appendTestData(tb, appender, series) })
 	}
 
-	id := uploadTestBlock(tb, tmpDir, bkt, dataSetup)
+	id, minT, maxT := uploadTestBlock(tb, tmpDir, bkt, dataSetup)
 	r, err := indexheader.NewBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, id, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.BinaryReaderConfig{})
 	require.NoError(tb, err)
 
@@ -793,13 +793,13 @@ func prepareTestBlock(tb test.TB, series int, dataSetup ...func(tb testing.TB, a
 			indexHeaderReader: r,
 			indexCache:        noopCache{},
 			bkt:               bkt,
-			meta:              &metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: id}},
+			meta:              &metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: id, MinTime: minT, MaxTime: maxT}},
 			partitioner:       newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 		}
 	}
 }
 
-func uploadTestBlock(t testing.TB, tmpDir string, bkt objstore.Bucket, dataSetup []func(tb testing.TB, appender storage.Appender)) ulid.ULID {
+func uploadTestBlock(t testing.TB, tmpDir string, bkt objstore.Bucket, dataSetup []func(tb testing.TB, appender storage.Appender)) (_ ulid.ULID, minT int64, maxT int64) {
 	headOpts := tsdb.DefaultHeadOptions()
 	headOpts.ChunkDirRoot = tmpDir
 	headOpts.ChunkRange = 1000
@@ -827,7 +827,7 @@ func uploadTestBlock(t testing.TB, tmpDir string, bkt objstore.Bucket, dataSetup
 	assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(tmpDir, "tmp", id.String()), metadata.NoneFunc))
 	assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(tmpDir, "tmp", id.String()), metadata.NoneFunc))
 
-	return id
+	return id, h.MinTime(), h.MaxTime()
 }
 
 func appendTestData(t testing.TB, app storage.Appender, series int) {
