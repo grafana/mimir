@@ -700,6 +700,36 @@ func metasToChunks(blockID ulid.ULID, metas []chunks.Meta) []seriesChunkRef {
 	return chks
 }
 
+type seriesHasher interface {
+	Hash(seriesID storage.SeriesRef, lset labels.Labels, stats *queryStats) uint64
+}
+
+type cachedSeriesHasher struct {
+	cache *hashcache.BlockSeriesHashCache
+}
+
+func (b cachedSeriesHasher) Hash(id storage.SeriesRef, lset labels.Labels, stats *queryStats) uint64 {
+	stats.seriesHashCacheRequests++
+
+	hash, ok := b.cache.Fetch(id)
+	if !ok {
+		hash = lset.Hash()
+		b.cache.Store(id, hash)
+	} else {
+		stats.seriesHashCacheHits++
+	}
+	return hash
+}
+
+func shardOwned(shard *sharding.ShardSelector, hasher seriesHasher, id storage.SeriesRef, lset labels.Labels, stats *queryStats) bool {
+	if shard == nil {
+		return true
+	}
+	hash := hasher.Hash(id, lset, stats)
+
+	return hash%shard.ShardCount == shard.ShardIndex
+}
+
 type postingsSetsIterator struct {
 	postings []storage.SeriesRef
 

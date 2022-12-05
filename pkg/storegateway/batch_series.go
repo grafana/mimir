@@ -10,7 +10,6 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"golang.org/x/sync/errgroup"
 
@@ -19,36 +18,6 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util/pool"
 )
-
-type seriesHasher interface {
-	Hash(seriesID storage.SeriesRef, lset labels.Labels, stats *queryStats) uint64
-}
-
-type cachedSeriesHasher struct {
-	cache *hashcache.BlockSeriesHashCache
-}
-
-func (b cachedSeriesHasher) Hash(id storage.SeriesRef, lset labels.Labels, stats *queryStats) uint64 {
-	stats.seriesHashCacheRequests++
-
-	hash, ok := b.cache.Fetch(id)
-	if !ok {
-		hash = lset.Hash()
-		b.cache.Store(id, hash)
-	} else {
-		stats.seriesHashCacheHits++
-	}
-	return hash
-}
-
-func shardOwned(shard *sharding.ShardSelector, hasher seriesHasher, id storage.SeriesRef, lset labels.Labels, stats *queryStats) bool {
-	if shard == nil {
-		return true
-	}
-	hash := hasher.Hash(id, lset, stats)
-
-	return hash%shard.ShardCount == shard.ShardIndex
-}
 
 func (s *BucketStore) batchSetsForBlocks(ctx context.Context, req *storepb.SeriesRequest, blocks []*bucketBlock, indexReaders map[ulid.ULID]*bucketIndexReader, chunkReaders *chunkReaders, chunksPool pool.Bytes, shardSelector *sharding.ShardSelector, matchers []*labels.Matcher, chunksLimiter ChunksLimiter, seriesLimiter SeriesLimiter, stats *safeQueryStats) (storepb.SeriesSet, *hintspb.SeriesResponseHints, func(), error) {
 	resHints := &hintspb.SeriesResponseHints{}
