@@ -10,9 +10,8 @@ import (
 	"hash/crc32"
 	"sort"
 
-	"github.com/prometheus/prometheus/tsdb/index"
-
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/tsdb/index"
 
 	stream_encoding "github.com/grafana/mimir/pkg/storegateway/indexheader/encoding"
 )

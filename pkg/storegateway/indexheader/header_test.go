@@ -30,14 +30,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
-func TestReadersIndexVersion1(t *testing.T) {
-
-}
-
-func TestReadersIndexVersion2(t *testing.T) {
-
-}
-
 func TestReaders(t *testing.T) {
 	ctx := context.Background()
 
