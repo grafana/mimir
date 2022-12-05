@@ -792,15 +792,15 @@ func TestLimitingSeriesChunkRefsSetIterator(t *testing.T) {
 		},
 		"exceeds chunks limit": {
 			seriesLimit:       5,
-			chunksLimit:       3,
+			chunksLimit:       9,
 			expectedSetsCount: 0,
 			expectedErr:       "exceeded chunks limit",
 			sets: []seriesChunkRefsSet{
 				{series: []seriesChunkRefs{
 					{lset: labels.FromStrings("l1", "v1"), chunks: make([]seriesChunkRef, 1)},
-					{lset: labels.FromStrings("l1", "v2"), chunks: make([]seriesChunkRef, 1)},
-					{lset: labels.FromStrings("l2", "v1"), chunks: make([]seriesChunkRef, 1)},
-					{lset: labels.FromStrings("l2", "v2"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("l1", "v2"), chunks: make([]seriesChunkRef, 2)},
+					{lset: labels.FromStrings("l2", "v1"), chunks: make([]seriesChunkRef, 3)},
+					{lset: labels.FromStrings("l2", "v2"), chunks: make([]seriesChunkRef, 4)},
 				}},
 			},
 		},
