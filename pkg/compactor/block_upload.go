@@ -427,7 +427,7 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, blockID ulid.U
 		fname := filepath.Join(blockDir, filepath.FromSlash(pth))
 		if strings.HasSuffix("/", fname) {
 			if err := os.Mkdir(fname, os.ModeDir); err != nil {
-				return errors.Wrap(err, fmt.Sprintf("Error creating directory: %s", fname))
+				return errors.Wrapf(err, "error creating directory: %s", fname)
 			}
 			return nil
 		}
