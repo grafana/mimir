@@ -17,6 +17,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/mimir"
 	"github.com/grafana/mimir/pkg/querier"
@@ -36,6 +37,7 @@ type Config struct {
 	TesterMinRange        time.Duration
 	TesterMaxRange        time.Duration
 	TesterMetricNameRegex string
+	TesterConcurrency     int
 }
 
 func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
@@ -47,6 +49,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&c.TesterMinRange, "tester.min-range", 24*time.Hour, "The minimum time range to query within the configured min and max time.")
 	f.DurationVar(&c.TesterMaxRange, "tester.max-range", 7*24*time.Hour, "The maximum time range to query within the configured min and max time.")
 	f.StringVar(&c.TesterMetricNameRegex, "tester.metric-name-regex", "up", "The metric name regex to use in the request to store-gateways.")
+	f.IntVar(&c.TesterConcurrency, "tester.concurrency", 1, "The number of concurrent requests to run.")
 }
 
 func (c *Config) Validate(logger log.Logger) error {
@@ -138,16 +141,26 @@ func main() {
 	}
 
 	t := newTester(cfg.TesterUserID, finder, selector, logger)
+	g, _ := errgroup.WithContext(ctx)
 
-	for {
-		start, end := getRandomRequestTimeRange(cfg)
-		level.Info(logger).Log("msg", "request", "start", time.UnixMilli(start).String(), "end", time.UnixMilli(end).String(), "metric name regexp", cfg.TesterMetricNameRegex)
+	for c := 0; c < cfg.TesterConcurrency; c++ {
+		// Compare results only on 1 request, to reduce memory utilization.
+		compareResults := c == 0
 
-		if err := t.sendRequestToAllStoreGatewayZonesAndCompareResults(ctx, start, end, matchers); err != nil {
-			level.Error(logger).Log("msg", "failed to run test", "err", err)
-		}
+		g.Go(func() error {
+			for {
+				start, end := getRandomRequestTimeRange(cfg)
+				level.Info(logger).Log("msg", "request", "start", time.UnixMilli(start).String(), "end", time.UnixMilli(end).String(), "metric name regexp", cfg.TesterMetricNameRegex)
 
-		time.Sleep(time.Second)
+				if err := t.sendRequestToAllStoreGatewayZonesAndCompareResults(ctx, start, end, matchers, compareResults); err != nil {
+					level.Error(logger).Log("msg", "failed to run test", "err", err)
+				}
+			}
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		level.Error(logger).Log("msg", "test execution failed", "err", err)
 	}
 }
 
