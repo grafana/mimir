@@ -300,8 +300,6 @@ func TestPreloadingSeriesChunkSetIterator(t *testing.T) {
 
 // sliceSeriesChunksSetIterator implements seriesChunksSetIterator and
 // returns the provided err when the sets are exhausted
-//
-//nolint:unused // dead code while we are working on PR 3355
 type sliceSeriesChunksSetIterator struct {
 	current int
 	sets    []seriesChunksSet
@@ -310,7 +308,6 @@ type sliceSeriesChunksSetIterator struct {
 	errAt int
 }
 
-//nolint:unused // dead code while we are working on PR 3355
 func newSliceSeriesChunksSetIterator(sets ...seriesChunksSet) seriesChunksSetIterator {
 	return &sliceSeriesChunksSetIterator{
 		current: -1,
@@ -318,7 +315,6 @@ func newSliceSeriesChunksSetIterator(sets ...seriesChunksSet) seriesChunksSetIte
 	}
 }
 
-//nolint:unused // dead code while we are working on PR 3355
 func newSliceSeriesChunksSetIteratorWithError(err error, errAt int, sets ...seriesChunksSet) seriesChunksSetIterator {
 	return &sliceSeriesChunksSetIterator{
 		current: -1,
@@ -328,7 +324,6 @@ func newSliceSeriesChunksSetIteratorWithError(err error, errAt int, sets ...seri
 	}
 }
 
-//nolint:unused // dead code while we are working on PR 3355
 func (s *sliceSeriesChunksSetIterator) Next() bool {
 	s.current++
 
@@ -340,12 +335,10 @@ func (s *sliceSeriesChunksSetIterator) Next() bool {
 	return s.current < len(s.sets)
 }
 
-//nolint:unused // dead code while we are working on PR 3355
 func (s *sliceSeriesChunksSetIterator) At() seriesChunksSet {
 	return s.sets[s.current]
 }
 
-//nolint:unused // dead code while we are working on PR 3355
 func (s *sliceSeriesChunksSetIterator) Err() error {
 	if s.err != nil && s.current >= s.errAt {
 		return s.err

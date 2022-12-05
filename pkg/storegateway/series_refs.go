@@ -19,8 +19,6 @@ import (
 )
 
 // seriesChunkRefsSetIterator is the interface implemented by an iterator returning a sequence of seriesChunkRefsSet.
-//
-//nolint:unused // dead code while we are working on PR 3355
 type seriesChunkRefsSetIterator interface {
 	Next() bool
 	At() seriesChunkRefsSet
@@ -28,8 +26,6 @@ type seriesChunkRefsSetIterator interface {
 }
 
 // seriesChunkRefsIterator is the interface implemented by an iterator returning a sequence of seriesChunkRefs.
-//
-//nolint:unused // dead code while we are working on PR 3355
 type seriesChunkRefsIterator interface {
 	Next() bool
 	At() seriesChunkRefs
@@ -37,36 +33,28 @@ type seriesChunkRefsIterator interface {
 }
 
 // seriesChunkRefsSet holds a set of a set of series (sorted by labels) and their chunk references.
-//
-//nolint:unused // dead code while we are working on PR 3355
 type seriesChunkRefsSet struct {
 	// series sorted by labels.
 	series []seriesChunkRefs
 }
 
-//nolint:unused // dead code while we are working on PR 3355
 func newSeriesChunkRefsSet(capacity int) seriesChunkRefsSet {
 	return seriesChunkRefsSet{
 		series: make([]seriesChunkRefs, 0, capacity),
 	}
 }
 
-//nolint:unused // dead code while we are working on PR 3355
 func (b seriesChunkRefsSet) len() int {
 	return len(b.series)
 }
 
 // seriesChunkRefs holds a series with a list of chunk references.
-//
-//nolint:unused // dead code while we are working on PR 3355
 type seriesChunkRefs struct {
 	lset   labels.Labels
 	chunks []seriesChunkRef
 }
 
 // seriesChunkRef holds the reference to a chunk in a given block.
-//
-//nolint:unused // dead code while we are working on PR 3355
 type seriesChunkRef struct {
 	blockID          ulid.ULID
 	ref              chunks.ChunkRef
@@ -75,8 +63,6 @@ type seriesChunkRef struct {
 
 // Compare returns > 0 if m should be before other when sorting seriesChunkRef,
 // 0 if they're equal or < 0 if m should be after other.
-//
-//nolint:unused // dead code while we are working on PR 3355
 func (m seriesChunkRef) Compare(other seriesChunkRef) int {
 	if m.minTime < other.minTime {
 		return 1
@@ -527,6 +513,7 @@ type loadingSeriesChunkRefsSetIterator struct {
 	currentSet seriesChunkRefsSet
 }
 
+//nolint:unused // dead code while we are working on PR 3355
 func openBlockSeriesChunkRefsSetsIterator(
 	ctx context.Context,
 	batchSize int,
