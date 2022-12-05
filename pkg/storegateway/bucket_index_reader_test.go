@@ -151,7 +151,7 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 				postings,
 				testCase.batchSize,
 			)
-			inflatedSeriesIterator := newLoadingSeriesChunkRefsSetIterator(
+			loadingIterator := newLoadingSeriesChunkRefsSetIterator(
 				context.Background(),
 				postingsIterator,
 				indexr,
@@ -165,8 +165,8 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 			)
 
 			// Tests
-			sets := readAllSeriesChunkRefsSet(inflatedSeriesIterator)
-			assert.NoError(t, inflatedSeriesIterator.Err())
+			sets := readAllSeriesChunkRefsSet(loadingIterator)
+			assert.NoError(t, loadingIterator.Err())
 			if !assert.Len(t, sets, len(testCase.expectedSets)) {
 				return
 			}

@@ -556,7 +556,7 @@ func openBlockSeriesChunkRefsSetsIterator(
 	}
 
 	postingsIterator := newPostingsSetsIterator(ps, batchSize)
-	inflatingIterator := newLoadingSeriesChunkRefsSetIterator(
+	loadingIterator := newLoadingSeriesChunkRefsSetIterator(
 		ctx,
 		postingsIterator,
 		indexr,
@@ -570,7 +570,7 @@ func openBlockSeriesChunkRefsSetsIterator(
 	)
 
 	limitingIterator := newLimitingSeriesChunkRefsSetIterator(
-		inflatingIterator,
+		loadingIterator,
 		chunksLimiter,
 		seriesLimiter,
 	)
