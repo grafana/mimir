@@ -283,7 +283,7 @@ func (c *MultitenantCompactor) completeBlockUpload(ctx context.Context, logger l
 	go c.periodicValidationUpdater(ctx, logger, blockID, userBkt, ch, &wg, cancel)
 
 	if err := c.validateBlock(ctx, blockID, userBkt, meta); err != nil {
-		level.Error(logger).Log("msg", "error while validating block")
+		level.Error(logger).Log("msg", "error while validating block", "err", err)
 		if !errors.Is(err, context.Canceled) {
 			close(ch)
 			wg.Wait()
