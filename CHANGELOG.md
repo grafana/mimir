@@ -1,10 +1,24 @@
 # Changelog
 
-## Grafana Mimir - main / unreleased
+## main / unreleased
+
+### Grafana Mimir
 
 * [ENHANCEMENT] Ruler: Added `-ruler.alertmanager-client.tls-enabled` configuration for alertmanager client. #3432 #3597
 * [ENHANCEMENT] Activity tracker logs now have `component=activity-tracker` label. #3556
 * [BUGFIX] Log the names of services that are not yet running rather than `unsupported value type` when calling `/ready` and some services are not running. #3625
+
+### Mixin
+
+### Jsonnet
+
+* [ENHANCEMENT] Update `rollout-operator` to `v0.2.0`. #3624
+
+### Mimirtool
+
+### Documentation
+
+### Tools
 
 ## 2.5.0-rc.0
 
