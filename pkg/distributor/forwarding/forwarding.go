@@ -36,7 +36,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-const weaveWorksGrpcOrgID = "X-Scope-OrgId"
+const weaveWorksGrpcOrgID = "X-Scope-OrgID"
 
 type Forwarder interface {
 	services.Service
