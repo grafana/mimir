@@ -106,33 +106,33 @@ type preloadedSeriesChunksSet[T any] struct {
 	err error
 }
 
-type genericIterator[SET any] interface {
+type genericIterator[V any] interface {
 	Next() bool
-	At() SET
+	At() V
 	Err() error
 }
 
-type preloadingSetIterator[SET any] struct {
+type preloadingSetIterator[Set any] struct {
 	ctx  context.Context
-	from genericIterator[SET]
+	from genericIterator[Set]
 
-	current SET
+	current Set
 
-	preloaded chan preloadedSeriesChunksSet[SET]
+	preloaded chan preloadedSeriesChunksSet[Set]
 	err       error
 }
 
-func newPreloadingSetIterator[SET any](ctx context.Context, preloadedSetsCount int, from genericIterator[SET]) *preloadingSetIterator[SET] {
-	preloadedSet := &preloadingSetIterator[SET]{
+func newPreloadingSetIterator[Set any](ctx context.Context, preloadedSetsCount int, from genericIterator[Set]) *preloadingSetIterator[Set] {
+	preloadedSet := &preloadingSetIterator[Set]{
 		ctx:       ctx,
 		from:      from,
-		preloaded: make(chan preloadedSeriesChunksSet[SET], preloadedSetsCount-1), // one will be kept outside the channel when the channel blocks
+		preloaded: make(chan preloadedSeriesChunksSet[Set], preloadedSetsCount-1), // one will be kept outside the channel when the channel blocks
 	}
 	go preloadedSet.preload()
 	return preloadedSet
 }
 
-func (p *preloadingSetIterator[SET]) preload() {
+func (p *preloadingSetIterator[Set]) preload() {
 	defer close(p.preloaded)
 
 	for p.from.Next() {
@@ -141,16 +141,16 @@ func (p *preloadingSetIterator[SET]) preload() {
 		case <-p.ctx.Done():
 			// If the context is done, we should just stop the preloading goroutine.
 			return
-		case p.preloaded <- preloadedSeriesChunksSet[SET]{set: p.from.At()}:
+		case p.preloaded <- preloadedSeriesChunksSet[Set]{set: p.from.At()}:
 		}
 	}
 
 	if p.from.Err() != nil {
-		p.preloaded <- preloadedSeriesChunksSet[SET]{err: p.from.Err()}
+		p.preloaded <- preloadedSeriesChunksSet[Set]{err: p.from.Err()}
 	}
 }
 
-func (p *preloadingSetIterator[SET]) Next() bool {
+func (p *preloadingSetIterator[Set]) Next() bool {
 	// TODO dimitarvdimitrov instrument the time we wait here
 
 	preloaded, ok := <-p.preloaded
@@ -165,11 +165,11 @@ func (p *preloadingSetIterator[SET]) Next() bool {
 	return p.err == nil
 }
 
-func (p *preloadingSetIterator[SET]) At() SET {
+func (p *preloadingSetIterator[Set]) At() Set {
 	return p.current
 }
 
-func (p *preloadingSetIterator[SET]) Err() error {
+func (p *preloadingSetIterator[Set]) Err() error {
 	return p.err
 }
 
