@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/textproto"
 	"net/url"
 	"strconv"
 	"strings"
@@ -36,6 +35,8 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
+
+const weaveWorksGrpcOrgID = "x-scope-orgid"
 
 type Forwarder interface {
 	services.Service
@@ -571,7 +572,7 @@ func (r *request) doHTTPGrpc(ctx context.Context, body []byte) error {
 		Url:    u.Path,
 		Body:   body,
 		Headers: append(headers, &httpgrpc.Header{
-			Key:    textproto.CanonicalMIMEHeaderKey(user.OrgIDHeaderName),
+			Key:    weaveWorksGrpcOrgID,
 			Values: []string{r.user},
 		}),
 	}
