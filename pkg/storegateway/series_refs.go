@@ -352,20 +352,24 @@ func (s *mergedSeriesChunkRefsSet) At() seriesChunkRefsSet {
 	return s.current
 }
 
-type seriesSetWithoutChunks struct {
+type seriesChunkRefsSeriesSet struct {
 	from seriesChunkRefsSetIterator
 
 	currentIterator *seriesChunkRefsIteratorImpl
 }
 
-func newSeriesSetWithoutChunks(batches seriesChunkRefsSetIterator) storepb.SeriesSet {
-	return &seriesSetWithoutChunks{
-		from:            batches,
+func newSeriesChunkRefsSeriesSet(from seriesChunkRefsSetIterator) storepb.SeriesSet {
+	return &seriesChunkRefsSeriesSet{
+		from:            from,
 		currentIterator: newSeriesChunkRefsIterator(seriesChunkRefsSet{}),
 	}
 }
 
-func (s *seriesSetWithoutChunks) Next() bool {
+func newSeriesSetWithoutChunks(ctx context.Context, batches seriesChunkRefsSetIterator) storepb.SeriesSet {
+	return newSeriesChunkRefsSeriesSet(newPreloadingSetIterator[seriesChunkRefsSet](ctx, 1, batches))
+}
+
+func (s *seriesChunkRefsSeriesSet) Next() bool {
 	if s.currentIterator.Next() {
 		return true
 	}
@@ -384,11 +388,11 @@ func (s *seriesSetWithoutChunks) Next() bool {
 	return s.Next()
 }
 
-func (s *seriesSetWithoutChunks) At() (labels.Labels, []storepb.AggrChunk) {
+func (s *seriesChunkRefsSeriesSet) At() (labels.Labels, []storepb.AggrChunk) {
 	return s.currentIterator.At().lset, nil
 }
 
-func (s *seriesSetWithoutChunks) Err() error {
+func (s *seriesChunkRefsSeriesSet) Err() error {
 	return s.from.Err()
 }
 

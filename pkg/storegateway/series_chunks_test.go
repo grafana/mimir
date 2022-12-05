@@ -185,7 +185,7 @@ func TestSeriesChunksSeriesSet(t *testing.T) {
 	})
 }
 
-func TestPreloadingSeriesChunkSetIterator(t *testing.T) {
+func TestPreloadingSetIterator(t *testing.T) {
 	test.VerifyNoLeak(t)
 
 	const delay = 10 * time.Millisecond
@@ -211,7 +211,7 @@ func TestPreloadingSeriesChunkSetIterator(t *testing.T) {
 				source := newSliceSeriesChunksSetIterator(sets...)
 				source = newDelayedSeriesChunksSetIterator(delay, source)
 
-				preloading := newPreloadingSeriesChunkSetIterator(context.Background(), preloadSize, source)
+				preloading := newPreloadingSetIterator[seriesChunksSet](context.Background(), preloadSize, source)
 
 				// Ensure expected sets are returned in order.
 				expectedIdx := 0
@@ -238,7 +238,7 @@ func TestPreloadingSeriesChunkSetIterator(t *testing.T) {
 				source := newSliceSeriesChunksSetIteratorWithError(errors.New("mocked error"), len(sets), sets...)
 				source = newDelayedSeriesChunksSetIterator(delay, source)
 
-				preloading := newPreloadingSeriesChunkSetIterator(context.Background(), preloadSize, source)
+				preloading := newPreloadingSetIterator[seriesChunksSet](context.Background(), preloadSize, source)
 
 				// Ensure expected sets are returned in order.
 				expectedIdx := 0
@@ -263,7 +263,7 @@ func TestPreloadingSeriesChunkSetIterator(t *testing.T) {
 		source := newSliceSeriesChunksSetIteratorWithError(errors.New("mocked error"), len(sets), sets...)
 		source = newDelayedSeriesChunksSetIterator(delay, source)
 
-		preloading := newPreloadingSeriesChunkSetIterator(ctx, 1, source)
+		preloading := newPreloadingSetIterator[seriesChunksSet](ctx, 1, source)
 
 		// Just call Next() once.
 		require.True(t, preloading.Next())
@@ -290,7 +290,7 @@ func TestPreloadingSeriesChunkSetIterator(t *testing.T) {
 		source := newSliceSeriesChunksSetIteratorWithError(errors.New("mocked error"), len(sets), sets...)
 		source = newDelayedSeriesChunksSetIterator(delay, source)
 
-		preloading := newPreloadingSeriesChunkSetIterator(ctx, 1, source)
+		preloading := newPreloadingSetIterator[seriesChunksSet](ctx, 1, source)
 
 		// Just call Next() once.
 		require.True(t, preloading.Next())
@@ -300,6 +300,37 @@ func TestPreloadingSeriesChunkSetIterator(t *testing.T) {
 		// Cancel the context. Do NOT call Next() after canceling the context.
 		cancelCtx()
 	})
+}
+
+func TestPreloadingSetIterator_Concurrency(t *testing.T) {
+	const (
+		numRuns     = 100
+		numBatches  = 100
+		preloadSize = 10
+	)
+
+	// Create some batches.
+	batches := make([]seriesChunksSet, 0, numBatches)
+	for i := 0; i < numBatches; i++ {
+		batches = append(batches, seriesChunksSet{
+			series: []seriesEntry{{
+				lset: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i)),
+			}},
+		})
+	}
+
+	// Run many times to increase the likelihood to find a race (if any).
+	for i := 0; i < numRuns; i++ {
+		source := newSliceSeriesChunksSetIteratorWithError(errors.New("mocked error"), len(batches), batches...)
+		preloading := newPreloadingSetIterator[seriesChunksSet](context.Background(), preloadSize, source)
+
+		for preloading.Next() {
+			require.NoError(t, preloading.Err())
+			require.NotZero(t, preloading.At())
+		}
+		require.Error(t, preloading.Err())
+	}
+
 }
 
 func TestLoadingSeriesChunksSetIterator(t *testing.T) {

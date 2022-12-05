@@ -85,11 +85,7 @@ func (s *BucketStore) batchSetsForBlocks(ctx context.Context, req *storepb.Serie
 		// We pass ctx and not gCtx because the gCtx will be canceled once the goroutines group is done.
 		set = newSeriesSetWithChunks(ctx, *chunkReaders, chunksPool, mergedBatches, stats)
 	} else {
-		set = newSeriesSetWithoutChunks(mergedBatches)
+		set = newSeriesSetWithoutChunks(ctx, mergedBatches)
 	}
 	return set, resHints, cleanup, nil
-}
-
-func newSeriesSetWithChunks(ctx context.Context, chunkReaders chunkReaders, chunksPool pool.Bytes, batches seriesChunkRefsSetIterator, stats *safeQueryStats) storepb.SeriesSet {
-	return newSeriesChunksSeriesSet(newPreloadingSeriesChunkSetIterator(ctx, 1, newLoadingSeriesChunksSetIterator(chunkReaders, chunksPool, batches, stats)))
 }
