@@ -3,11 +3,11 @@
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
-  name: test-enterprise-legacy-label-values-enterprise-metrics-alerts
+  name: large-values-mimir-alerts
   labels:
-    app: enterprise-metrics
-    heritage: Helm
-    release: test-enterprise-legacy-label-values
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: large-values
+    app.kubernetes.io/managed-by: Helm
   namespace: "citestns"
 spec:
   groups:
