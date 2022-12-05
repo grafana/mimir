@@ -95,14 +95,18 @@ mimir:
           kvstore:
             store: "memberlist"
 
-      {{- if or (eq .Values.minio.enabled true) (eq .Values.minio.useExisting true) }}
+      {{- if .Values.minio.enabled }}
     admin_client:
       storage:
         type: s3
         s3:
           access_key_id: {{ .Values.minio.rootUser }}
           bucket_name: enterprise-metrics-admin
+          {{- if  (.Values.minio.existingEndpoint) }}
+          endpoint: {{ .Values.minio.existingEndpoint }}
+          {{- else -}}
           endpoint: {{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
+          {{- end }}
           insecure: true
           secret_access_key: {{ .Values.minio.rootPassword }}
       {{- end }}
@@ -120,13 +124,17 @@ mimir:
       fallback_config_file: /configs/alertmanager_fallback_config.yaml
       {{- end }}
 
-    {{- if or (eq .Values.minio.enabled true) (eq .Values.minio.useExisting true) }}
+    {{- if  or (.Values.minio.enabled) (.Values.minio.existingEndpoint) }}
     alertmanager_storage:
       backend: s3
       s3:
         access_key_id: {{ .Values.minio.rootUser }}
         bucket_name: {{ include "mimir.minioBucketPrefix" . }}-ruler
+        {{- if  (.Values.minio.existingEndpoint) }}
+        endpoint: {{ .Values.minio.existingEndpoint }}
+        {{- else -}}
         endpoint: {{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
+        {{- end }}
         insecure: true
         secret_access_key: {{ .Values.minio.rootPassword }}
     {{- end }}
@@ -164,11 +172,15 @@ mimir:
             max_item_size: {{ mul (index .Values "metadata-cache").maxItemMemory 1024 1024 }}
         {{- end }}
         sync_dir: /data/tsdb-sync
-      {{- if or (eq .Values.minio.enabled true) (eq .Values.minio.useExisting true) }}
+      {{- if  or (.Values.minio.enabled) (.Values.minio.existingEndpoint) }}
       s3:
         access_key_id: {{ .Values.minio.rootUser }}
         bucket_name: {{ include "mimir.minioBucketPrefix" . }}-tsdb
+        {{- if  (.Values.minio.existingEndpoint) }}
+        endpoint: {{ .Values.minio.existingEndpoint }}
+        {{- else -}}
         endpoint: {{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
+        {{- end }}
         insecure: true
         secret_access_key: {{ .Values.minio.rootPassword }}
       {{- end }}
@@ -296,11 +308,15 @@ mimir:
       enable_api: true
       rule_path: /data
 
-    {{- if or (eq .Values.minio.enabled true) (eq .Values.minio.useExisting true) }}
+    {{- if  or (.Values.minio.enabled) (.Values.minio.existingEndpoint) }}
     ruler_storage:
       backend: s3
       s3:
+        {{- if  (.Values.minio.existingEndpoint) }}
+        endpoint: {{ .Values.minio.existingEndpoint }}
+        {{- else -}}
         endpoint: {{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
+        {{- end }}
         bucket_name: {{ include "mimir.minioBucketPrefix" . }}-ruler
         access_key_id: {{ .Values.minio.rootUser }}
         secret_access_key: {{ .Values.minio.rootPassword }}
@@ -1861,7 +1877,7 @@ rollout_operator:
 
 minio:
   enabled: true
-  useExisting: false
+  existingEndpoint: ""
   mode: standalone
   rootUser: grafana-mimir
   buckets:
