@@ -83,7 +83,7 @@ type postingsSetsIterator struct {
 
 	batchSize                  int
 	currentBatchPostingsOffset int
-	currentSet                 []storage.SeriesRef
+	currentBatch               []storage.SeriesRef
 }
 
 func newPostingsSetsIterator(postings []storage.SeriesRef, batchSize int) *postingsSetsIterator {
@@ -108,13 +108,13 @@ func (s *postingsSetsIterator) Next() bool {
 	if end > len(s.postings) {
 		end = len(s.postings)
 	}
-	s.currentSet = s.postings[s.currentBatchPostingsOffset:end]
+	s.currentBatch = s.postings[s.currentBatchPostingsOffset:end]
 
 	return true
 }
 
 func (s *postingsSetsIterator) At() []storage.SeriesRef {
-	return s.currentSet
+	return s.currentBatch
 }
 
 func metasToChunks(blockID ulid.ULID, metas []chunks.Meta) []seriesChunkRef {

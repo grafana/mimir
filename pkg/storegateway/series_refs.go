@@ -455,8 +455,8 @@ type limitingSeriesChunkRefsSetIterator struct {
 	chunksLimiter ChunksLimiter
 	seriesLimiter SeriesLimiter
 
-	err        error
-	currentSet seriesChunkRefsSet
+	err          error
+	currentBatch seriesChunkRefsSet
 }
 
 func (l *limitingSeriesChunkRefsSetIterator) Next() bool {
@@ -469,15 +469,15 @@ func (l *limitingSeriesChunkRefsSetIterator) Next() bool {
 		return false
 	}
 
-	l.currentSet = l.from.At()
-	err := l.seriesLimiter.Reserve(uint64(l.currentSet.len()))
+	l.currentBatch = l.from.At()
+	err := l.seriesLimiter.Reserve(uint64(l.currentBatch.len()))
 	if err != nil {
 		l.err = errors.Wrap(err, "exceeded series limit")
 		return false
 	}
 
 	var totalChunks int
-	for _, s := range l.currentSet.series {
+	for _, s := range l.currentBatch.series {
 		totalChunks += len(s.chunks)
 	}
 
@@ -490,7 +490,7 @@ func (l *limitingSeriesChunkRefsSetIterator) Next() bool {
 }
 
 func (l *limitingSeriesChunkRefsSetIterator) At() seriesChunkRefsSet {
-	return l.currentSet
+	return l.currentBatch
 }
 
 func (l *limitingSeriesChunkRefsSetIterator) Err() error {
