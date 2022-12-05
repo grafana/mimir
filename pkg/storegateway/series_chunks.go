@@ -65,6 +65,10 @@ func newSeriesChunksSeriesSet(from seriesChunksSetIterator) storepb.SeriesSet {
 	}
 }
 
+func newSeriesSetWithChunks(ctx context.Context, chunkReaders chunkReaders, chunksPool pool.Bytes, batches seriesChunkRefsSetIterator, stats *safeQueryStats) storepb.SeriesSet {
+	return newSeriesChunksSeriesSet(newPreloadingSetIterator[seriesChunksSet](ctx, 1, newLoadingSeriesChunksSetIterator(chunkReaders, chunksPool, batches, stats)))
+}
+
 // Next advances to the next item. Once the underlying seriesChunksSet has been fully consumed
 // (which means the call to Next moves to the next set), the seriesChunksSet is released. This
 // means that it's not safe to read from the values returned by At() after Next() is called again.
@@ -97,31 +101,38 @@ func (b *seriesChunksSeriesSet) Err() error {
 
 // preloadedSeriesChunksSet holds the result of preloading the next set. It can either contain
 // the preloaded set or an error, but not both.
-type preloadedSeriesChunksSet struct {
-	set seriesChunksSet
+type preloadedSeriesChunksSet[T any] struct {
+	set T
 	err error
 }
 
-type preloadingSeriesChunkSetIterator struct {
-	ctx     context.Context
-	from    seriesChunksSetIterator
-	current seriesChunksSet
+type genericIterator[V any] interface {
+	Next() bool
+	At() V
+	Err() error
+}
 
-	preloaded chan preloadedSeriesChunksSet
+type preloadingSetIterator[Set any] struct {
+	ctx  context.Context
+	from genericIterator[Set]
+
+	current Set
+
+	preloaded chan preloadedSeriesChunksSet[Set]
 	err       error
 }
 
-func newPreloadingSeriesChunkSetIterator(ctx context.Context, preloadedSetsCount int, from seriesChunksSetIterator) *preloadingSeriesChunkSetIterator {
-	preloadedSet := &preloadingSeriesChunkSetIterator{
+func newPreloadingSetIterator[Set any](ctx context.Context, preloadedSetsCount int, from genericIterator[Set]) *preloadingSetIterator[Set] {
+	preloadedSet := &preloadingSetIterator[Set]{
 		ctx:       ctx,
 		from:      from,
-		preloaded: make(chan preloadedSeriesChunksSet, preloadedSetsCount-1), // one will be kept outside the channel when the channel blocks
+		preloaded: make(chan preloadedSeriesChunksSet[Set], preloadedSetsCount-1), // one will be kept outside the channel when the channel blocks
 	}
 	go preloadedSet.preload()
 	return preloadedSet
 }
 
-func (p *preloadingSeriesChunkSetIterator) preload() {
+func (p *preloadingSetIterator[Set]) preload() {
 	defer close(p.preloaded)
 
 	for p.from.Next() {
@@ -130,16 +141,16 @@ func (p *preloadingSeriesChunkSetIterator) preload() {
 		case <-p.ctx.Done():
 			// If the context is done, we should just stop the preloading goroutine.
 			return
-		case p.preloaded <- preloadedSeriesChunksSet{set: p.from.At()}:
+		case p.preloaded <- preloadedSeriesChunksSet[Set]{set: p.from.At()}:
 		}
 	}
 
 	if p.from.Err() != nil {
-		p.preloaded <- preloadedSeriesChunksSet{err: p.from.Err()}
+		p.preloaded <- preloadedSeriesChunksSet[Set]{err: p.from.Err()}
 	}
 }
 
-func (p *preloadingSeriesChunkSetIterator) Next() bool {
+func (p *preloadingSetIterator[Set]) Next() bool {
 	// TODO dimitarvdimitrov instrument the time we wait here
 
 	preloaded, ok := <-p.preloaded
@@ -154,11 +165,11 @@ func (p *preloadingSeriesChunkSetIterator) Next() bool {
 	return p.err == nil
 }
 
-func (p *preloadingSeriesChunkSetIterator) At() seriesChunksSet {
+func (p *preloadingSetIterator[Set]) At() Set {
 	return p.current
 }
 
-func (p *preloadingSeriesChunkSetIterator) Err() error {
+func (p *preloadingSetIterator[Set]) Err() error {
 	return p.err
 }
 
