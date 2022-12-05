@@ -190,6 +190,22 @@ func TestDecbuf_SkipHappyPath(t *testing.T) {
 	require.Equal(t, 0, dec.Len())
 }
 
+func TestDecbuf_SkipMultipleBufferReads(t *testing.T) {
+	// The underlying FileReader buffers the file 4k bytes at a time. Ensure
+	// that we can skip multiple 4k chunks without ending up with a short read.
+	bytes := make([]byte, 4096*5)
+	for i := 0; i < len(bytes); i++ {
+		bytes[i] = 0x01
+	}
+
+	dec := createDecbufWithBytes(t, bytes)
+	dec.Skip(4096 * 4)
+
+	require.NoError(t, dec.Err())
+	require.Equal(t, dec.Len(), 4096)
+	require.Equal(t, byte(0x01), dec.Byte())
+}
+
 func TestDecbuf_SkipInsufficientBuffer(t *testing.T) {
 	dec := createDecbufWithBytes(t, []byte{0x01})
 	dec.Skip(2)
