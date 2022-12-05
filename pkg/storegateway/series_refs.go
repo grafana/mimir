@@ -459,6 +459,14 @@ type limitingSeriesChunkRefsSetIterator struct {
 	currentBatch seriesChunkRefsSet
 }
 
+func newLimitingSeriesChunkRefsSetIterator(from seriesChunkRefsSetIterator, chunksLimiter ChunksLimiter, seriesLimiter SeriesLimiter) *limitingSeriesChunkRefsSetIterator {
+	return &limitingSeriesChunkRefsSetIterator{
+		from:          from,
+		chunksLimiter: chunksLimiter,
+		seriesLimiter: seriesLimiter,
+	}
+}
+
 func (l *limitingSeriesChunkRefsSetIterator) Next() bool {
 	if l.err != nil {
 		return false

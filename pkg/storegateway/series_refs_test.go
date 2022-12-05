@@ -863,11 +863,11 @@ func TestLimitingSeriesChunkRefsSetIterator(t *testing.T) {
 	for testName, testCase := range testCases {
 		testName, testCase := testName, testCase
 		t.Run(testName, func(t *testing.T) {
-			iterator := &limitingSeriesChunkRefsSetIterator{
-				from:          newSliceSeriesChunkRefsSetIterator(testCase.upstreamErr, testCase.sets...),
-				chunksLimiter: &limiter{limit: testCase.chunksLimit},
-				seriesLimiter: &limiter{limit: testCase.seriesLimit},
-			}
+			iterator := newLimitingSeriesChunkRefsSetIterator(
+				newSliceSeriesChunkRefsSetIterator(testCase.upstreamErr, testCase.sets...),
+				&limiter{limit: testCase.chunksLimit},
+				&limiter{limit: testCase.seriesLimit},
+			)
 
 			sets := readAllSeriesChunkRefsSet(iterator)
 			assert.Equal(t, testCase.expectedSetsCount, len(sets))
