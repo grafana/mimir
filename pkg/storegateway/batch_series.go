@@ -60,19 +60,6 @@ func (s *postingsSetsIterator) At() []storage.SeriesRef {
 	return s.currentBatch
 }
 
-func metasToChunks(blockID ulid.ULID, metas []chunks.Meta) []seriesChunkRef {
-	chks := make([]seriesChunkRef, len(metas))
-	for i, meta := range metas {
-		chks[i] = seriesChunkRef{
-			minTime: meta.MinTime,
-			maxTime: meta.MaxTime,
-			ref:     meta.Ref,
-			blockID: blockID,
-		}
-	}
-	return chks
-}
-
 type seriesHasher interface {
 	Hash(seriesID storage.SeriesRef, lset labels.Labels, stats *queryStats) uint64
 }

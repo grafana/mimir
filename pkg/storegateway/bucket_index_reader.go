@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log/level"
-	"github.com/oklog/ulid"
 	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -595,52 +594,4 @@ func (l *bucketIndexLoadedSeries) unsafeLoadSeriesForTime(ref storage.SeriesRef,
 	stats.seriesTouched++
 	stats.seriesTouchedSizeSum += len(b)
 	return decodeSeriesForTime(b, lset, chks, skipChunks, mint, maxt)
-}
-
-type symbolsTable interface {
-	LookupLabelsSymbols([]symbolizedLabel) (labels.Labels, error)
-}
-
-type bucketIndexInflatedSeries struct {
-	blockID    ulid.ULID
-	flatSeries *bucketIndexLoadedSeries
-	symbols    symbolsTable
-
-	symbolizedLsetBuffer []symbolizedLabel
-	chksBuffer           []chunks.Meta
-}
-
-func newBucketIndexInflatedSeries(blockID ulid.ULID, flatSeries *bucketIndexLoadedSeries, symbols symbolsTable) *bucketIndexInflatedSeries {
-	return &bucketIndexInflatedSeries{
-		blockID:    blockID,
-		flatSeries: flatSeries,
-		symbols:    symbols,
-	}
-}
-
-// inflateSeriesForTime returns the labels for the series identified by the reference if at least one chunk is within
-// time selection.
-// inflateSeriesForTime also populates chunk metas slices if skipChunks is set to false. Chunks are also limited by the given time selection.
-// inflateSeriesForTime returns an empty label set, when there are no series data for given time range.
-//
-// Error is returned on decoding error or if the reference does not resolve to a known series.
-//
-// It's NOT safe to call this function concurrently with bucketIndexLoadedSeries.addSeries.
-func (s *bucketIndexInflatedSeries) inflateSeriesForTime(ref storage.SeriesRef, skipChunks bool, minT, maxT int64, stats *queryStats) (labels.Labels, []seriesChunkRef, error) {
-	ok, err := s.flatSeries.unsafeLoadSeriesForTime(ref, &s.symbolizedLsetBuffer, &s.chksBuffer, skipChunks, minT, maxT, stats)
-	if !ok || err != nil {
-		return labels.EmptyLabels(), nil, errors.Wrap(err, "inflateSeriesForTime")
-	}
-
-	lset, err := s.symbols.LookupLabelsSymbols(s.symbolizedLsetBuffer)
-	if err != nil {
-		return labels.EmptyLabels(), nil, errors.Wrap(err, "lookup labels symbols")
-	}
-
-	var chks []seriesChunkRef
-	if !skipChunks {
-		chks = metasToChunks(s.blockID, s.chksBuffer)
-	}
-
-	return lset, chks, nil
 }

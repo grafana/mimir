@@ -9,6 +9,7 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 
@@ -518,6 +519,9 @@ type loadingSeriesChunkRefsSetIterator struct {
 	skipChunks          bool
 	minTime, maxTime    int64
 
+	symbolizedLsetBuffer []symbolizedLabel
+	chksBuffer           []chunks.Meta
+
 	err        error
 	currentSet seriesChunkRefsSet
 }
@@ -527,13 +531,13 @@ func openBlockSeriesChunkRefsSetsIterator(
 	batchSize int,
 	indexr *bucketIndexReader, // Index reader for block.
 	blockMeta *metadata.Meta,
-	matchers []*labels.Matcher, // Series matchers.
-	shard *sharding.ShardSelector, // Shard selector.
+	matchers []*labels.Matcher,                      // Series matchers.
+	shard *sharding.ShardSelector,                   // Shard selector.
 	seriesHashCache *hashcache.BlockSeriesHashCache, // Block-specific series hash cache (used only if shard selector is specified).
-	chunksLimiter ChunksLimiter, // Rate limiter for loading chunks.
-	seriesLimiter SeriesLimiter, // Rate limiter for loading series.
-	skipChunks bool, // If true chunks are not loaded and minTime/maxTime are ignored.
-	minTime, maxTime int64, // Series must have data in this time range to be returned (ignored if skipChunks=true).
+	chunksLimiter ChunksLimiter,                     // Rate limiter for loading chunks.
+	seriesLimiter SeriesLimiter,                     // Rate limiter for loading series.
+	skipChunks bool,                                 // If true chunks are not loaded and minTime/maxTime are ignored.
+	minTime, maxTime int64,                          // Series must have data in this time range to be returned (ignored if skipChunks=true).
 	stats *safeQueryStats,
 	logger log.Logger,
 ) (seriesChunkRefsSetIterator, error) {
@@ -621,7 +625,6 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 		s.err = errors.Wrap(err, "preload series")
 		return false
 	}
-	inflatedSeries := newBucketIndexInflatedSeries(s.blockID, loadedSeries, s.indexr)
 
 	// Track the series loading statistics in a not synchronized data structure to avoid locking for each series
 	// and then merge before returning from the function.
@@ -631,7 +634,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 	nextSet := newSeriesChunkRefsSet(len(nextPostings))
 
 	for _, id := range nextPostings {
-		lset, chks, err := inflatedSeries.inflateSeriesForTime(id, s.skipChunks, s.minTime, s.maxTime, loadStats)
+		lset, chks, err := s.loadSeriesForTime(id, loadedSeries, loadStats)
 		if err != nil {
 			s.err = errors.Wrap(err, "read series")
 			return false
@@ -665,4 +668,36 @@ func (s *loadingSeriesChunkRefsSetIterator) At() seriesChunkRefsSet {
 
 func (s *loadingSeriesChunkRefsSetIterator) Err() error {
 	return s.err
+}
+
+func (s *loadingSeriesChunkRefsSetIterator) loadSeriesForTime(ref storage.SeriesRef, loadedSeries *bucketIndexLoadedSeries, stats *queryStats) (labels.Labels, []seriesChunkRef, error) {
+	ok, err := loadedSeries.unsafeLoadSeriesForTime(ref, &s.symbolizedLsetBuffer, &s.chksBuffer, s.skipChunks, s.minTime, s.maxTime, stats)
+	if !ok || err != nil {
+		return labels.EmptyLabels(), nil, errors.Wrap(err, "inflateSeriesForTime")
+	}
+
+	lset, err := s.indexr.LookupLabelsSymbols(s.symbolizedLsetBuffer)
+	if err != nil {
+		return labels.EmptyLabels(), nil, errors.Wrap(err, "lookup labels symbols")
+	}
+
+	var chks []seriesChunkRef
+	if !s.skipChunks {
+		chks = metasToChunks(s.blockID, s.chksBuffer)
+	}
+
+	return lset, chks, nil
+}
+
+func metasToChunks(blockID ulid.ULID, metas []chunks.Meta) []seriesChunkRef {
+	chks := make([]seriesChunkRef, len(metas))
+	for i, meta := range metas {
+		chks[i] = seriesChunkRef{
+			minTime: meta.MinTime,
+			maxTime: meta.MaxTime,
+			ref:     meta.Ref,
+			blockID: blockID,
+		}
+	}
+	return chks
 }
