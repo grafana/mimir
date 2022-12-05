@@ -66,6 +66,7 @@ type mainFlags struct {
 func (mf *mainFlags) registerFlags(fs *flag.FlagSet) {
 	fs.String("auth.type", "", "Ignored")
 	fs.String("admin.client.backend", "", "Ignored")
+	fs.String("instrumentation.enabled", "", "Ignored")
 	fs.IntVar(&mf.ballastBytes, "mem-ballast-size-bytes", 0, "Size of memory ballast to allocate.")
 	fs.IntVar(&mf.mutexProfileFraction, "debug.mutex-profile-fraction", 0, "Fraction of mutex contention events that are reported in the mutex profile. On average 1/rate events are reported. 0 to disable.")
 	fs.IntVar(&mf.blockProfileRate, "debug.block-profile-rate", 0, "Fraction of goroutine blocking events that are reported in the blocking profile. 1 to include every blocking event in the profile, 0 to disable.")
