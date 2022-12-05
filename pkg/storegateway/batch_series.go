@@ -11,7 +11,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"golang.org/x/sync/errgroup"
 
@@ -20,45 +19,6 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util/pool"
 )
-
-type postingsSetsIterator struct {
-	postings []storage.SeriesRef
-
-	batchSize                  int
-	currentBatchPostingsOffset int
-	currentBatch               []storage.SeriesRef
-}
-
-func newPostingsSetsIterator(postings []storage.SeriesRef, batchSize int) *postingsSetsIterator {
-	return &postingsSetsIterator{
-		postings:                   postings,
-		batchSize:                  batchSize,
-		currentBatchPostingsOffset: -batchSize,
-	}
-}
-
-func (s *postingsSetsIterator) Next() bool {
-	if s.currentBatchPostingsOffset >= len(s.postings)-1 {
-		return false
-	}
-
-	s.currentBatchPostingsOffset += s.batchSize
-	if s.currentBatchPostingsOffset >= len(s.postings) {
-		return false
-	}
-
-	end := s.currentBatchPostingsOffset + s.batchSize
-	if end > len(s.postings) {
-		end = len(s.postings)
-	}
-	s.currentBatch = s.postings[s.currentBatchPostingsOffset:end]
-
-	return true
-}
-
-func (s *postingsSetsIterator) At() []storage.SeriesRef {
-	return s.currentBatch
-}
 
 type seriesHasher interface {
 	Hash(seriesID storage.SeriesRef, lset labels.Labels, stats *queryStats) uint64

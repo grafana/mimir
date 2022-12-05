@@ -1230,6 +1230,54 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 	}
 }
 
+func TestPostingsSetsIterator(t *testing.T) {
+	testCases := map[string]struct {
+		postings        []storage.SeriesRef
+		batchSize       int
+		expectedBatches [][]storage.SeriesRef
+	}{
+		"single series": {
+			postings:        []storage.SeriesRef{1},
+			batchSize:       3,
+			expectedBatches: [][]storage.SeriesRef{{1}},
+		},
+		"single batch": {
+			postings:        []storage.SeriesRef{1, 2, 3},
+			batchSize:       3,
+			expectedBatches: [][]storage.SeriesRef{{1, 2, 3}},
+		},
+		"two batches, evenly split": {
+			postings:        []storage.SeriesRef{1, 2, 3, 4},
+			batchSize:       2,
+			expectedBatches: [][]storage.SeriesRef{{1, 2}, {3, 4}},
+		},
+		"two batches, last not full": {
+			postings:        []storage.SeriesRef{1, 2, 3, 4, 5},
+			batchSize:       3,
+			expectedBatches: [][]storage.SeriesRef{{1, 2, 3}, {4, 5}},
+		},
+		"empty postings": {
+			postings:        []storage.SeriesRef{},
+			batchSize:       2,
+			expectedBatches: [][]storage.SeriesRef{},
+		},
+	}
+
+	for testName, testCase := range testCases {
+		testName, testCase := testName, testCase
+		t.Run(testName, func(t *testing.T) {
+			iterator := newPostingsSetsIterator(testCase.postings, testCase.batchSize)
+
+			var actualBatches [][]storage.SeriesRef
+			for iterator.Next() {
+				actualBatches = append(actualBatches, iterator.At())
+			}
+
+			assert.ElementsMatch(t, testCase.expectedBatches, actualBatches)
+		})
+	}
+}
+
 type mockSeriesHasher struct {
 	hashes map[string]uint64
 }

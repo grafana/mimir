@@ -701,3 +701,37 @@ func metasToChunks(blockID ulid.ULID, metas []chunks.Meta) []seriesChunkRef {
 	}
 	return chks
 }
+
+type postingsSetsIterator struct {
+	postings []storage.SeriesRef
+
+	batchSize               int
+	nextBatchPostingsOffset int
+	currentBatch            []storage.SeriesRef
+}
+
+func newPostingsSetsIterator(postings []storage.SeriesRef, batchSize int) *postingsSetsIterator {
+	return &postingsSetsIterator{
+		postings:  postings,
+		batchSize: batchSize,
+	}
+}
+
+func (s *postingsSetsIterator) Next() bool {
+	if s.nextBatchPostingsOffset >= len(s.postings) {
+		return false
+	}
+
+	end := s.nextBatchPostingsOffset + s.batchSize
+	if end > len(s.postings) {
+		end = len(s.postings)
+	}
+	s.currentBatch = s.postings[s.nextBatchPostingsOffset:end]
+	s.nextBatchPostingsOffset += s.batchSize
+
+	return true
+}
+
+func (s *postingsSetsIterator) At() []storage.SeriesRef {
+	return s.currentBatch
+}
