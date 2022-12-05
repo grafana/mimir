@@ -63,7 +63,7 @@ This strategy is suitable for clusters with large tenants. The number of shards 
 
 The number of split groups, _N_, can also be adjusted per tenant using the `-compactor.split-groups` option. Increasing this value produces more compaction jobs with fewer blocks during the split stage. This allows multiple compactors to work on these jobs, and finish the splitting stage faster. However, increasing this value also generates more intermediate blocks during the split stage, which will only be reduced later in the merge stage.
 
-If the configuration of `-compactor.split-and-merge-shards` changes during compaction, the change will affect only the compaction of blocks which have not yet been split. Already split blocks will use the original configuration when merged.. The original configuration is stored in the `meta.json` of each split block.
+If the configuration of `-compactor.split-and-merge-shards` changes during compaction, the change will affect only the compaction of blocks which have not yet been split. Already split blocks will use the original configuration when merged. The original configuration is stored in the `meta.json` of each split block.
 
 Splitting and merging can be horizontally scaled. Nonconflicting and nonoverlapping jobs will be executed in parallel.
 
@@ -73,7 +73,7 @@ The compactor shards compaction jobs, either from a single tenant or multiple te
 
 Whenever the pool of compactors grows or shrinks, tenants and jobs are resharded across the available compactor instances without any manual intervention.
 
-Compactor sharding uses a [hash ring]({{< relref "../../hash-ring/index.md" >}}). At startup, a compactor generates random tokens and registers itself to the compactor hash ring. While running, it periodically scans the storage bucket at every interval defined by `-compactor.compaction-interval`, to discover the list of tenants in storage and compact blocks for each tenant which hash matches the token ranges assigned to the instance itself within the hash ring.
+Compactor sharding uses a [hash ring]({{< relref "../../hash-ring/index.md" >}}). At startup, a compactor generates random tokens and registers itself to the compactor hash ring. While running, it periodically scans the storage bucket at every interval defined by `-compactor.compaction-interval`, to discover the list of tenants in storage and to compact blocks for each tenant whose hash matches the token ranges assigned to the instance itself within the hash ring.
 
 To configure the compactors' hash ring, refer to [configuring hash rings]({{< relref "../../../configure/configure-hash-rings.md" >}}).
 

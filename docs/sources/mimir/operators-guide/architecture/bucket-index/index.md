@@ -43,7 +43,7 @@ You can configure the frequency with which the bucket index is updated via `-com
 
 The use of the bucket index is optional, but the index is built and updated by the compactor even if `-blocks-storage.bucket-store.bucket-index.enabled=false`.
 This behavior ensures that the bucket index for any tenant exists and that query result consistency is guaranteed if a Grafana Mimir cluster operator enable the bucket index in a live cluster.
-The overhead introduced by keeping the bucket index updated is not signifcant.
+The overhead introduced by keeping the bucket index updated is not significant.
 
 ## How it's used by the querier
 
