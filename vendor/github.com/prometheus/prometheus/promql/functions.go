@@ -144,16 +144,32 @@ func funcRawIncrease(vals []parser.Value, args parser.Expressions, enh *EvalNode
 	)
 
 	// Make sure that the requested window is smaller than the matrix selector range.
-	if ms := args[0].(*parser.MatrixSelector); window > ms.Range.Milliseconds() {
+	ms := args[0].(*parser.MatrixSelector)
+	if window > ms.Range.Milliseconds() {
 		panic(fmt.Errorf("invalid window for raw_increase, can't be bigger than matrix selector range: window=%dms > range=%dms", window, ms.Range.Milliseconds()))
 	}
 
-	// No sense in trying to compute a rate without at least two points. Drop this Vector element.
-	if len(samples.Points) < 2 {
+	// No samples for zero samples in the range.
+	// Or zero increase for one sample in the range.
+	if len(samples.Points) == 0 {
 		return enh.Out
+	} else if len(samples.Points) == 1 {
+		// TODO: should this be a raw increase of sample's value?
+		// TODO: if Prometheus just lost a bunch of scrapes, we can't say this is an increase.
+		return append(enh.Out, Sample{
+			Point: Point{V: 0},
+		})
 	}
 
-	fromTs := samples.Points[len(samples.Points)-1].T - window
+	// No increase if all samples are outside of the window, but we still generate the 0 sample (as there are samples in the range).
+	fromTs := enh.Ts - ms.VectorSelector.(*parser.VectorSelector).Offset.Milliseconds() - window
+	if samples.Points[len(samples.Points)-1].T < fromTs {
+		return append(enh.Out, Sample{
+			Point: Point{V: 0},
+		})
+	}
+
+	// Start with two points (last two), and keep adding more points to the evaluation window while they're in the window (T >= fromTs).
 	startIdx := len(samples.Points) - 2
 	for startIdx > 0 && samples.Points[startIdx-1].T >= fromTs {
 		startIdx--
