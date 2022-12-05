@@ -531,13 +531,13 @@ func openBlockSeriesChunkRefsSetsIterator(
 	batchSize int,
 	indexr *bucketIndexReader, // Index reader for block.
 	blockMeta *metadata.Meta,
-	matchers []*labels.Matcher,                      // Series matchers.
-	shard *sharding.ShardSelector,                   // Shard selector.
+	matchers []*labels.Matcher, // Series matchers.
+	shard *sharding.ShardSelector, // Shard selector.
 	seriesHashCache *hashcache.BlockSeriesHashCache, // Block-specific series hash cache (used only if shard selector is specified).
-	chunksLimiter ChunksLimiter,                     // Rate limiter for loading chunks.
-	seriesLimiter SeriesLimiter,                     // Rate limiter for loading series.
-	skipChunks bool,                                 // If true chunks are not loaded and minTime/maxTime are ignored.
-	minTime, maxTime int64,                          // Series must have data in this time range to be returned (ignored if skipChunks=true).
+	chunksLimiter ChunksLimiter, // Rate limiter for loading chunks.
+	seriesLimiter SeriesLimiter, // Rate limiter for loading series.
+	skipChunks bool, // If true chunks are not loaded and minTime/maxTime are ignored.
+	minTime, maxTime int64, // Series must have data in this time range to be returned (ignored if skipChunks=true).
 	stats *safeQueryStats,
 	logger log.Logger,
 ) (seriesChunkRefsSetIterator, error) {
@@ -648,12 +648,10 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 			continue
 		}
 
-		entry := seriesChunkRefs{
+		nextSet.series = append(nextSet.series, seriesChunkRefs{
 			lset:   lset,
 			chunks: chks,
-		}
-
-		nextSet.series = append(nextSet.series, entry)
+		})
 	}
 	if nextSet.len() == 0 {
 		return s.Next() // we didn't find any suitable series in this set, try with the next one
