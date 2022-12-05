@@ -98,7 +98,7 @@
           alert: $.alertName('CompactorSkippedBlocksWithOutOfOrderChunks'),
           'for': '1m',
           expr: |||
-            increase(cortex_compactor_blocks_marked_for_no_compaction_total{component="compactor", reason="block-index-out-of-order-chunk"}[5m]) > 0
+            increase(cortex_compactor_blocks_marked_for_no_compaction_total{reason="block-index-out-of-order-chunk"}[5m]) > 0
           |||,
           labels: {
             severity: 'warning',
