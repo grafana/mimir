@@ -28,6 +28,6 @@
     mimir_backend: self.mimir,
 
     // See: https://github.com/grafana/rollout-operator
-    rollout_operator: 'grafana/rollout-operator:v0.1.1',
+    rollout_operator: 'grafana/rollout-operator:v0.2.0',
   },
 }

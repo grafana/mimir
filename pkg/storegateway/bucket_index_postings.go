@@ -223,7 +223,7 @@ func resizePostings(b []byte) ([]byte, error) {
 func checkNilPosting(l labels.Label, p index.Postings) index.Postings {
 	if p == nil {
 		// This should not happen. Debug for https://github.com/thanos-io/thanos/issues/874.
-		return index.ErrPostings(errors.Errorf("postings is nil for %s. It was never fetched.", l))
+		return index.ErrPostings(errors.Errorf("postings is nil for %s, it was never fetched", l))
 	}
 	return p
 }

@@ -1338,3 +1338,19 @@ func generateSeriesChunkRef(num int) []seriesChunkRef {
 
 	return out
 }
+
+func readAllSeriesChunkRefsSet(it seriesChunkRefsSetIterator) []seriesChunkRefsSet {
+	var out []seriesChunkRefsSet
+	for it.Next() {
+		out = append(out, it.At())
+	}
+	return out
+}
+
+func readAllSeriesChunkRefs(it seriesChunkRefsIterator) []seriesChunkRefs {
+	var out []seriesChunkRefs
+	for it.Next() {
+		out = append(out, it.At())
+	}
+	return out
+}

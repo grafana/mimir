@@ -13,7 +13,7 @@ import (
 )
 
 // NotFoundRangeErr is an error returned by PostingsOffset when there is no posting for given name and value pairs.
-var NotFoundRangeErr = errors.New("range not found") //nolint:golint
+var NotFoundRangeErr = errors.New("range not found") //nolint:revive
 
 // Reader is an interface allowing to read essential, minimal number of index fields from the small portion of index file called header.
 type Reader interface {

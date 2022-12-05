@@ -79,8 +79,6 @@ var (
 )
 
 // BlocksStorageConfig holds the config information for the blocks storage.
-//
-//nolint:golint
 type BlocksStorageConfig struct {
 	Bucket      bucket.Config     `yaml:",inline"`
 	BucketStore BucketStoreConfig `yaml:"bucket_store" doc:"description=This configures how the querier and store-gateway discover and synchronize blocks stored in the bucket."`
@@ -146,7 +144,7 @@ func (cfg *BlocksStorageConfig) Validate() error {
 
 // TSDBConfig holds the config for TSDB opened in the ingesters.
 //
-//nolint:golint
+//nolint:revive
 type TSDBConfig struct {
 	Dir                       string        `yaml:"dir"`
 	BlockRanges               DurationList  `yaml:"block_ranges_period" category:"experimental" doc:"hidden"`
