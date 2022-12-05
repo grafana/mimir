@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -1320,6 +1321,18 @@ func (s *sliceSeriesChunkRefsSetIterator) At() seriesChunkRefsSet {
 func (s *sliceSeriesChunkRefsSetIterator) Err() error {
 	if s.current >= len(s.sets) {
 		return s.err
+	}
+	return nil
+}
+
+type limiter struct {
+	limit   int
+	current atomic.Uint64
+}
+
+func (l *limiter) Reserve(num uint64) error {
+	if l.current.Add(num) > uint64(l.limit) {
+		return errors.New("test limit exceeded")
 	}
 	return nil
 }

@@ -14,7 +14,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util/pool"
@@ -291,20 +290,6 @@ func (f *chunkReaderMock) load(result []seriesEntry, chunksPool *pool.BatchBytes
 
 func (f *chunkReaderMock) reset() {
 	f.toLoad = make(map[chunks.ChunkRef]loadIdx)
-}
-
-// nolint this is used in a skipped test
-type limiter struct {
-	limit   int
-	current atomic.Uint64
-}
-
-// nolint this is used in a skipped test
-func (l *limiter) Reserve(num uint64) error {
-	if l.current.Add(num) > uint64(l.limit) {
-		return errors.New("test limit exceeded")
-	}
-	return nil
 }
 
 // generateSeriesEntriesWithChunks generates seriesEntries with chunks. Each chunk is a random byte slice.
