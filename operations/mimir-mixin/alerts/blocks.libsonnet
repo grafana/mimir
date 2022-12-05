@@ -9,9 +9,9 @@
           alert: $.alertName('IngesterHasNotShippedBlocks'),
           'for': '15m',
           expr: |||
-            (min by(%(alert_aggregation_labels)s, %(per_instance_label)s) (time() - thanos_objstore_bucket_last_successful_upload_time{%(job_regex)s}) > 60 * 60 * 4)
+            (min by(%(alert_aggregation_labels)s, %(per_instance_label)s) (time() - mimir_ingester_shipper_bucket_last_successful_upload_time{%(job_regex)s}) > 60 * 60 * 4)
             and
-            (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (thanos_objstore_bucket_last_successful_upload_time{%(job_regex)s}) > 0)
+            (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (mimir_ingester_shipper_bucket_last_successful_upload_time{%(job_regex)s}) > 0)
             and
             # Only if the ingester has ingested samples over the last 4h.
             (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (max_over_time(%(alert_aggregation_rule_prefix)s_%(per_instance_label)s:cortex_ingester_ingested_samples_total:rate1m[4h])) > 0)
@@ -40,7 +40,7 @@
           alert: $.alertName('IngesterHasNotShippedBlocksSinceStart'),
           'for': '4h',
           expr: |||
-            (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (thanos_objstore_bucket_last_successful_upload_time{%(job_regex)s}) == 0)
+            (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (mimir_ingester_shipper_bucket_last_successful_upload_time{%(job_regex)s}) == 0)
             and
             (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (max_over_time(%(alert_aggregation_rule_prefix)s_%(per_instance_label)s:cortex_ingester_ingested_samples_total:rate1m[4h])) > 0)
           ||| % {
