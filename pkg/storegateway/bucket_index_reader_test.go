@@ -145,7 +145,6 @@ func TestBucketInflatedSeries(t *testing.T) {
 
 			// Setup
 			block := newTestBlock()
-			blockID := block.meta.ULID
 			indexr := block.indexReader()
 			postings, err := indexr.ExpandedPostings(context.Background(), testCase.matchers, newSafeQueryStats())
 			require.NoError(t, err)
@@ -154,18 +153,18 @@ func TestBucketInflatedSeries(t *testing.T) {
 				batchSize:                  testCase.batchSize,
 				currentBatchPostingsOffset: -testCase.batchSize,
 			}
-			inflatedSeriesIterator := &inflatedSeriesChunkRefsSetIterator{
-				ctx:                 context.Background(),
-				postingsSetIterator: postingsIterator,
-				indexr:              indexr,
-				stats:               newSafeQueryStats(),
-				blockID:             blockID,
-				shard:               testCase.shard,
-				seriesHasher:        testCase.seriesHasher,
-				skipChunks:          testCase.skipChunks,
-				minTime:             testCase.minT,
-				maxTime:             testCase.maxT,
-			}
+			inflatedSeriesIterator := newLoadingSeriesChunkRefsSetIterator(
+				context.Background(),
+				postingsIterator,
+				indexr,
+				newSafeQueryStats(),
+				block.meta,
+				testCase.shard,
+				testCase.seriesHasher,
+				testCase.skipChunks,
+				testCase.minT,
+				testCase.maxT,
+			)
 
 			// Tests
 			sets := readAllSeriesChunkRefsSet(inflatedSeriesIterator)
@@ -190,7 +189,7 @@ func TestBucketInflatedSeries(t *testing.T) {
 						assert.Equalf(t, expectedChunk.maxTime, actualChunk.maxTime, "%d, %d, %d", i, j, k)
 						assert.Equalf(t, expectedChunk.minTime, actualChunk.minTime, "%d, %d, %d", i, j, k)
 						assert.Equalf(t, int(expectedChunk.ref), int(actualChunk.ref), "%d, %d, %d", i, j, k)
-						assert.Equalf(t, blockID, actualChunk.blockID, "%d, %d, %d", i, j, k)
+						assert.Equalf(t, block.meta.ULID, actualChunk.blockID, "%d, %d, %d", i, j, k)
 					}
 				}
 			}

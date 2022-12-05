@@ -11,6 +11,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
+	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 )
 
@@ -496,8 +497,7 @@ func (l *limitingSeriesChunkRefsSetIterator) Err() error {
 	return l.err
 }
 
-// TODO dimitarvdimitrov add a constructor and override minTime, maxTime when skipChunks==true; test already exists and is failing
-type inflatedSeriesChunkRefsSetIterator struct {
+type loadingSeriesChunkRefsSetIterator struct {
 	ctx                 context.Context
 	postingsSetIterator *postingsSetsIterator
 	indexr              *bucketIndexReader
@@ -512,7 +512,37 @@ type inflatedSeriesChunkRefsSetIterator struct {
 	currentSet seriesChunkRefsSet
 }
 
-func (s *inflatedSeriesChunkRefsSetIterator) Next() bool {
+func newLoadingSeriesChunkRefsSetIterator(
+	ctx context.Context,
+	postingsSetIterator *postingsSetsIterator,
+	indexr *bucketIndexReader,
+	stats *safeQueryStats,
+	blockMeta *metadata.Meta,
+	shard *sharding.ShardSelector,
+	seriesHasher seriesHasher,
+	skipChunks bool,
+	minTime int64,
+	maxTime int64,
+) *loadingSeriesChunkRefsSetIterator {
+	if skipChunks {
+		minTime, maxTime = blockMeta.MinTime, blockMeta.MaxTime
+	}
+
+	return &loadingSeriesChunkRefsSetIterator{
+		ctx:                 ctx,
+		postingsSetIterator: postingsSetIterator,
+		indexr:              indexr,
+		stats:               stats,
+		blockID:             blockMeta.ULID,
+		shard:               shard,
+		seriesHasher:        seriesHasher,
+		skipChunks:          skipChunks,
+		minTime:             minTime,
+		maxTime:             maxTime,
+	}
+}
+
+func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 	if s.err != nil {
 		return false
 	}
@@ -563,10 +593,10 @@ func (s *inflatedSeriesChunkRefsSetIterator) Next() bool {
 	return true
 }
 
-func (s *inflatedSeriesChunkRefsSetIterator) At() seriesChunkRefsSet {
+func (s *loadingSeriesChunkRefsSetIterator) At() seriesChunkRefsSet {
 	return s.currentSet
 }
 
-func (s *inflatedSeriesChunkRefsSetIterator) Err() error {
+func (s *loadingSeriesChunkRefsSetIterator) Err() error {
 	return s.err
 }

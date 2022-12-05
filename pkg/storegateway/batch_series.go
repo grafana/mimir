@@ -17,6 +17,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
+	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util/pool"
@@ -26,7 +27,7 @@ func openBlockSeriesChunkRefsSetsIterator(
 	ctx context.Context,
 	batchSize int,
 	indexr *bucketIndexReader, // Index reader for block.
-	blockID ulid.ULID,
+	blockMeta *metadata.Meta,
 	matchers []*labels.Matcher, // Series matchers.
 	shard *sharding.ShardSelector, // Shard selector.
 	seriesHashCache *hashcache.BlockSeriesHashCache, // Block-specific series hash cache (used only if shard selector is specified).
@@ -56,19 +57,18 @@ func openBlockSeriesChunkRefsSetsIterator(
 	}
 
 	postingsIterator := newPostingsSetsIterator(ps, batchSize)
-
-	inflatingIterator := &inflatedSeriesChunkRefsSetIterator{
-		ctx:                 ctx,
-		postingsSetIterator: postingsIterator,
-		indexr:              indexr,
-		stats:               stats,
-		blockID:             blockID,
-		shard:               shard,
-		seriesHasher:        cachedSeriesHasher{cache: seriesHashCache},
-		skipChunks:          skipChunks,
-		minTime:             minTime,
-		maxTime:             maxTime,
-	}
+	inflatingIterator := newLoadingSeriesChunkRefsSetIterator(
+		ctx,
+		postingsIterator,
+		indexr,
+		stats,
+		blockMeta,
+		shard,
+		cachedSeriesHasher{cache: seriesHashCache},
+		skipChunks,
+		minTime,
+		maxTime,
+	)
 
 	limitingIterator := &limitingSeriesChunkRefsSetIterator{
 		from:          inflatingIterator,
@@ -86,7 +86,6 @@ type postingsSetsIterator struct {
 	currentSet                 []storage.SeriesRef
 }
 
-// TODO dimitarvdimitrov add filterPostingsByCachedShardHash to this constructor
 func newPostingsSetsIterator(postings []storage.SeriesRef, batchSize int) *postingsSetsIterator {
 	return &postingsSetsIterator{
 		postings:                   postings,
@@ -188,7 +187,7 @@ func (s *BucketStore) batchSetsForBlocks(ctx context.Context, req *storepb.Serie
 			)
 
 			part, err = openBlockSeriesChunkRefsSetsIterator(
-				ctx, s.maxSeriesPerBatch, indexr, b.meta.ULID, matchers, shardSelector, blockSeriesHashCache, chunksLimiter, seriesLimiter, req.SkipChunks, req.MinTime, req.MaxTime, stats, s.logger)
+				ctx, s.maxSeriesPerBatch, indexr, b.meta, matchers, shardSelector, blockSeriesHashCache, chunksLimiter, seriesLimiter, req.SkipChunks, req.MinTime, req.MaxTime, stats, s.logger)
 			if err != nil {
 				return errors.Wrapf(err, "fetch series for block %s", b.meta.ULID)
 			}

@@ -174,7 +174,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 				ctx,
 				testCase.batchSize,
 				indexReader,
-				firstBlock.meta.ULID,
+				firstBlock.meta,
 				[]*labels.Matcher{testCase.matcher},
 				nil,
 				hashcache.NewSeriesHashCache(1024*1024).GetBlockCache(firstBlock.meta.ULID.String()),
