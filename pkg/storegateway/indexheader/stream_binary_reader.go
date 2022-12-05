@@ -83,8 +83,8 @@ func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int) (bw
 		return nil, fmt.Errorf("invalid magic number %x", magic)
 	}
 
-	r.version = d.ByteInt()
-	r.indexVersion = d.ByteInt()
+	r.version = int(d.Byte())
+	r.indexVersion = int(d.Byte())
 	indexLastPostingEnd := d.Be64()
 
 	if err = d.Err(); err != nil {

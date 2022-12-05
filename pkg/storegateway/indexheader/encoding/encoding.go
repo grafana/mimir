@@ -174,7 +174,7 @@ func (d *Decbuf) Be32() uint32 {
 	return binary.BigEndian.Uint32(b)
 }
 
-func (d *Decbuf) ByteInt() int {
+func (d *Decbuf) Byte() byte {
 	if d.E != nil {
 		return 0
 	}
@@ -185,7 +185,7 @@ func (d *Decbuf) ByteInt() int {
 		return 0
 	}
 
-	return int(b[0])
+	return b[0]
 }
 
 func (d *Decbuf) Err() error { return d.E }
