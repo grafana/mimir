@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
@@ -17,67 +16,10 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
-	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util/pool"
 )
-
-func openBlockSeriesChunkRefsSetsIterator(
-	ctx context.Context,
-	batchSize int,
-	indexr *bucketIndexReader, // Index reader for block.
-	blockMeta *metadata.Meta,
-	matchers []*labels.Matcher,                      // Series matchers.
-	shard *sharding.ShardSelector,                   // Shard selector.
-	seriesHashCache *hashcache.BlockSeriesHashCache, // Block-specific series hash cache (used only if shard selector is specified).
-	chunksLimiter ChunksLimiter,                     // Rate limiter for loading chunks.
-	seriesLimiter SeriesLimiter,                     // Rate limiter for loading series.
-	skipChunks bool,                                 // If true chunks are not loaded and minTime/maxTime are ignored.
-	minTime, maxTime int64,                          // Series must have data in this time range to be returned (ignored if skipChunks=true).
-	stats *safeQueryStats,
-	logger log.Logger,
-) (seriesChunkRefsSetIterator, error) {
-	if batchSize <= 0 {
-		return nil, errors.New("set size must be a positive number")
-	}
-
-	ps, err := indexr.ExpandedPostings(ctx, matchers, stats)
-	if err != nil {
-		return nil, errors.Wrap(err, "expanded matching postings")
-	}
-
-	// We can't compute the series hash yet because we're still missing the series labels.
-	// However, if the hash is already in the cache, then we can remove all postings for series
-	// not belonging to the shard.
-	if shard != nil {
-		var unsafeStats queryStats
-		ps, unsafeStats = filterPostingsByCachedShardHash(ps, shard, seriesHashCache)
-		stats.merge(&unsafeStats)
-	}
-
-	postingsIterator := newPostingsSetsIterator(ps, batchSize)
-	inflatingIterator := newLoadingSeriesChunkRefsSetIterator(
-		ctx,
-		postingsIterator,
-		indexr,
-		stats,
-		blockMeta,
-		shard,
-		cachedSeriesHasher{cache: seriesHashCache},
-		skipChunks,
-		minTime,
-		maxTime,
-	)
-
-	limitingIterator := newLimitingSeriesChunkRefsSetIterator(
-		inflatingIterator,
-		chunksLimiter,
-		seriesLimiter,
-	)
-
-	return limitingIterator, nil
-}
 
 type postingsSetsIterator struct {
 	postings []storage.SeriesRef
