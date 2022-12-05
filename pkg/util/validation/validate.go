@@ -296,9 +296,6 @@ func ValidateLabels(m *SampleValidationMetrics, cfg LabelValidationConfig, userI
 		} else if lastLabelName == l.Name {
 			m.duplicateLabelNames.WithLabelValues(userID).Inc()
 			return newDuplicatedLabelError(ls, l.Name)
-		} else if lastLabelName > l.Name {
-			m.labelsNotSorted.WithLabelValues(userID).Inc()
-			return newLabelsNotSortedError(ls, l.Name)
 		}
 
 		lastLabelName = l.Name
