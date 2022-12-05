@@ -704,7 +704,7 @@ func (c *MultitenantCompactor) periodicValidationUpdater(ctx context.Context, lo
 			return
 		case <-time.After(1 * time.Minute):
 			if err := c.uploadValidation(ctx, logger, blockID, userBkt); err != nil {
-				level.Warn(logger).Log("msg", "error during periodic update of validation file")
+				level.Warn(logger).Log("msg", "error during periodic update of validation file", "err", err)
 				cancelFn()
 				return
 			}
