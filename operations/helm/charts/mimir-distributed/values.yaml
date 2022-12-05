@@ -104,7 +104,7 @@ mimir:
           bucket_name: enterprise-metrics-admin
           {{- if  (.Values.minio.existingEndpoint) }}
           endpoint: {{ .Values.minio.existingEndpoint }}
-          {{- else -}}
+          {{- else }}
           endpoint: {{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
           {{- end }}
           insecure: true
@@ -132,7 +132,7 @@ mimir:
         bucket_name: {{ include "mimir.minioBucketPrefix" . }}-ruler
         {{- if  (.Values.minio.existingEndpoint) }}
         endpoint: {{ .Values.minio.existingEndpoint }}
-        {{- else -}}
+        {{- else }}
         endpoint: {{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
         {{- end }}
         insecure: true
@@ -178,7 +178,7 @@ mimir:
         bucket_name: {{ include "mimir.minioBucketPrefix" . }}-tsdb
         {{- if  (.Values.minio.existingEndpoint) }}
         endpoint: {{ .Values.minio.existingEndpoint }}
-        {{- else -}}
+        {{- else }}
         endpoint: {{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
         {{- end }}
         insecure: true
@@ -314,7 +314,7 @@ mimir:
       s3:
         {{- if  (.Values.minio.existingEndpoint) }}
         endpoint: {{ .Values.minio.existingEndpoint }}
-        {{- else -}}
+        {{- else }}
         endpoint: {{ .Release.Name }}-minio.{{ .Release.Namespace }}.svc:9000
         {{- end }}
         bucket_name: {{ include "mimir.minioBucketPrefix" . }}-ruler
