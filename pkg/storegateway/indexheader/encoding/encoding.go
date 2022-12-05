@@ -77,9 +77,14 @@ func (d *Decbuf) CheckCrc32(castagnoliTable *crc32.Table) {
 }
 
 // Skip advances the pointer of the underlying FileReader by the given number
-// of bytes. Skip-ing beyond the end of the underlying FileReader will set E
-// to an error and not advance the pointer of the FileReader.
+// of bytes. If E is non-nil, this method has no effect. Skip-ing beyond the
+// end of the underlying FileReader will set E to an error and not advance the
+// pointer of the FileReader.
 func (d *Decbuf) Skip(l int) {
+	if d.E != nil {
+		return
+	}
+
 	err := d.r.Skip(l)
 	if err != nil {
 		d.E = err
@@ -88,7 +93,8 @@ func (d *Decbuf) Skip(l int) {
 
 // ResetAt sets the pointer of the underlying FileReader to the absolute
 // offset and discards any buffered data. If E is non-nil, this method has
-// no effect.
+// no effect. ResetAt-ing beyond the end of the underlying FileReader will set
+// E to an error and not advance the pointer of FileReader.
 func (d *Decbuf) ResetAt(off int) {
 	if d.E != nil {
 		return
