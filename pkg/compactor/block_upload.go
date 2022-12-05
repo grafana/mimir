@@ -289,7 +289,7 @@ func (c *MultitenantCompactor) completeBlockUpload(ctx context.Context, logger l
 			wg.Wait()
 			err := c.uploadValidationWithError(ctx, blockID, userBkt, err.Error())
 			if err != nil {
-				level.Error(logger).Log("msg", "error updating validation file after failed validation in object store")
+				level.Error(logger).Log("msg", "error updating validation file after failed validation in object store", "err", err)
 			}
 		}
 		return
