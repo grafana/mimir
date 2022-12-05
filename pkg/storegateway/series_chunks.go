@@ -5,9 +5,11 @@ package storegateway
 import (
 	"context"
 
+	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
+	"github.com/grafana/mimir/pkg/util/pool"
 )
 
 // seriesChunksSetIterator is the interface implemented by an iterator returning a sequence of seriesChunksSet.
@@ -158,4 +160,75 @@ func (p *preloadingSeriesChunkSetIterator) At() seriesChunksSet {
 
 func (p *preloadingSeriesChunkSetIterator) Err() error {
 	return p.err
+}
+
+type loadingSeriesChunksSetIterator struct {
+	chunkReaders chunkReaders
+	from         seriesChunkRefsSetIterator
+	chunksPool   pool.Bytes
+	stats        *safeQueryStats
+
+	current seriesChunksSet
+	err     error
+}
+
+func newLoadingSeriesChunksSetIterator(chunkReaders chunkReaders, chunksPool pool.Bytes, from seriesChunkRefsSetIterator, stats *safeQueryStats) *loadingSeriesChunksSetIterator {
+	return &loadingSeriesChunksSetIterator{
+		chunkReaders: chunkReaders,
+		from:         from,
+		chunksPool:   chunksPool,
+		stats:        stats,
+	}
+}
+
+func (c *loadingSeriesChunksSetIterator) Next() bool {
+	if c.err != nil {
+		return false
+	}
+
+	if !c.from.Next() {
+		c.err = c.from.Err()
+		return false
+	}
+
+	nextUnloaded := c.from.At()
+	entries := make([]seriesEntry, nextUnloaded.len())
+	c.chunkReaders.reset()
+	for i, s := range nextUnloaded.series {
+		entries[i].lset = s.lset
+		entries[i].chks = make([]storepb.AggrChunk, len(s.chunks))
+
+		for j, chunk := range s.chunks {
+			entries[i].chks[j].MinTime = chunk.minTime
+			entries[i].chks[j].MaxTime = chunk.maxTime
+
+			err := c.chunkReaders.addLoad(chunk.blockID, chunk.ref, i, j)
+			if err != nil {
+				c.err = errors.Wrap(err, "preloading chunks")
+				return false
+			}
+		}
+	}
+
+	// Create a batched memory pool that can be released all at once.
+	chunksPool := &pool.BatchBytes{Delegate: c.chunksPool}
+
+	err := c.chunkReaders.load(entries, chunksPool, c.stats)
+	if err != nil {
+		c.err = errors.Wrap(err, "loading chunks")
+		return false
+	}
+	c.current = seriesChunksSet{
+		series:         entries,
+		chunksReleaser: chunksPool,
+	}
+	return true
+}
+
+func (c *loadingSeriesChunksSetIterator) At() seriesChunksSet {
+	return c.current
+}
+
+func (c *loadingSeriesChunksSetIterator) Err() error {
+	return c.err
 }
