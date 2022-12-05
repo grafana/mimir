@@ -95,7 +95,7 @@ mimir:
           kvstore:
             store: "memberlist"
 
-      {{- if .Values.minio.enabled }}
+      {{- if or (eq .Values.minio.enabled true) (eq .Values.minio.useExisting true) }}
     admin_client:
       storage:
         type: s3
@@ -120,7 +120,7 @@ mimir:
       fallback_config_file: /configs/alertmanager_fallback_config.yaml
       {{- end }}
 
-    {{- if .Values.minio.enabled }}
+    {{- if or (eq .Values.minio.enabled true) (eq .Values.minio.useExisting true) }}
     alertmanager_storage:
       backend: s3
       s3:
@@ -164,7 +164,7 @@ mimir:
             max_item_size: {{ mul (index .Values "metadata-cache").maxItemMemory 1024 1024 }}
         {{- end }}
         sync_dir: /data/tsdb-sync
-      {{- if .Values.minio.enabled }}
+      {{- if or (eq .Values.minio.enabled true) (eq .Values.minio.useExisting true) }}
       s3:
         access_key_id: {{ .Values.minio.rootUser }}
         bucket_name: {{ include "mimir.minioBucketPrefix" . }}-tsdb
@@ -296,7 +296,7 @@ mimir:
       enable_api: true
       rule_path: /data
 
-    {{- if .Values.minio.enabled }}
+    {{- if or (eq .Values.minio.enabled true) (eq .Values.minio.useExisting true) }}
     ruler_storage:
       backend: s3
       s3:
@@ -1861,6 +1861,7 @@ rollout_operator:
 
 minio:
   enabled: true
+  useExisting: false
   mode: standalone
   rootUser: grafana-mimir
   buckets:
