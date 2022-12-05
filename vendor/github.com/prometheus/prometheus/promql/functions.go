@@ -145,7 +145,7 @@ func funcRawIncrease(vals []parser.Value, args parser.Expressions, enh *EvalNode
 
 	// Make sure that the requested window is smaller than the matrix selector range.
 	if ms := args[0].(*parser.MatrixSelector); window > ms.Range.Milliseconds() {
-		panic(fmt.Sprintf("invalid window for raw_increase, can't be bigger than matrix selector range: window=%dms > range=%dms", window, ms.Range.Milliseconds()))
+		panic(fmt.Errorf("invalid window for raw_increase, can't be bigger than matrix selector range: window=%dms > range=%dms", window, ms.Range.Milliseconds()))
 	}
 
 	// No sense in trying to compute a rate without at least two points. Drop this Vector element.
