@@ -11,7 +11,6 @@ import (
 	"encoding/binary"
 	"io"
 	"sort"
-	"sync"
 	"time"
 
 	"github.com/grafana/dskit/runutil"
@@ -30,10 +29,6 @@ type bucketChunkReader struct {
 	block *bucketBlock
 
 	toLoad [][]loadIdx
-
-	// Mutex protects access to following fields, when updated from chunks-loading goroutines.
-	// After chunks are loaded, mutex is no longer used.
-	mtx sync.Mutex
 }
 
 func newBucketChunkReader(ctx context.Context, block *bucketBlock) *bucketChunkReader {
@@ -89,6 +84,11 @@ func (r *bucketChunkReader) load(res []seriesEntry, chunksPool *pool.BatchBytes,
 
 // loadChunks will read range [start, end] from the segment file with sequence number seq.
 // This data range covers chunks starting at supplied offsets.
+//
+// This function is called concurrently and the same instance of res, part of pIdx is
+// passed to multiple concurrent invocations. However, this shouldn't require a mutex
+// because part and pIdxs is only read, and different calls are expected to write to
+// different chunks in the res.
 func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, seq int, part Part, pIdxs []loadIdx, chunksPool *pool.BatchBytes, stats *safeQueryStats) error {
 	fetchBegin := time.Now()
 
@@ -103,17 +103,7 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, s
 	// Since we may load many chunks, to avoid having to lock very frequently we accumulate
 	// all stats in a local instance and then merge it in the defer.
 	localStats := queryStats{}
-
-	locked := true
-	r.mtx.Lock()
-
-	defer func() {
-		stats.merge(&localStats)
-
-		if locked {
-			r.mtx.Unlock()
-		}
-	}()
+	defer stats.merge(&localStats)
 
 	localStats.chunksFetchCount++
 	localStats.chunksFetched += len(pIdxs)
@@ -175,10 +165,6 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, s
 			continue
 		}
 
-		// If we didn't fetch enough data for the chunk, fetch more.
-		r.mtx.Unlock()
-		locked = false
-
 		fetchBegin = time.Now()
 
 		// Read entire chunk into new buffer.
@@ -190,9 +176,6 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, s
 		if len(*nb) != chunkLen {
 			return errors.Errorf("preloaded chunk too small, expecting %d", chunkLen)
 		}
-
-		r.mtx.Lock()
-		locked = true
 
 		localStats.chunksFetchCount++
 		localStats.chunksFetchDurationSum += time.Since(fetchBegin)

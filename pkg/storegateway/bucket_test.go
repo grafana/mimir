@@ -263,7 +263,7 @@ func TestBlockLabelNames(t *testing.T) {
 	sort.Strings(jNotFooLabelNames)
 
 	sl := NewLimiter(math.MaxUint64, promauto.With(nil).NewCounter(prometheus.CounterOpts{Name: "test"}))
-	newTestBucketBlock := prepareTestBlock(test.NewTB(t), series)
+	newTestBucketBlock := prepareTestBlock(test.NewTB(t), appendTestSeries(series))
 
 	t.Run("happy case with no matchers", func(t *testing.T) {
 		b := newTestBucketBlock()
@@ -371,7 +371,7 @@ func (c cacheNotExpectingToStoreLabelNames) StoreLabelNames(ctx context.Context,
 func TestBlockLabelValues(t *testing.T) {
 	const series = 500
 
-	newTestBucketBlock := prepareTestBlock(test.NewTB(t), series)
+	newTestBucketBlock := prepareTestBlock(test.NewTB(t), appendTestSeries(series))
 
 	t.Run("happy case with no matchers", func(t *testing.T) {
 		b := newTestBucketBlock()
@@ -473,7 +473,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 	tb := test.NewTB(t)
 	const series = 500
 
-	newTestBucketBlock := prepareTestBlock(tb, series)
+	newTestBucketBlock := prepareTestBlock(tb, appendTestSeries(series))
 
 	t.Run("happy cases", func(t *testing.T) {
 		benchmarkExpandedPostings(test.NewTB(t), newTestBucketBlock, series)
@@ -763,11 +763,11 @@ func (c cacheNotExpectingToStoreExpandedPostings) StoreExpandedPostings(ctx cont
 func BenchmarkBucketIndexReader_ExpandedPostings(b *testing.B) {
 	tb := test.NewTB(b)
 	const series = 50e5
-	newTestBucketBlock := prepareTestBlock(tb, series)
+	newTestBucketBlock := prepareTestBlock(tb, appendTestSeries(series))
 	benchmarkExpandedPostings(test.NewTB(b), newTestBucketBlock, series)
 }
 
-func prepareTestBlock(tb test.TB, series int) func() *bucketBlock {
+func prepareTestBlock(tb test.TB, dataSetup ...func(tb testing.TB, appender storage.Appender)) func() *bucketBlock {
 	tmpDir := tb.TempDir()
 
 	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
@@ -777,7 +777,7 @@ func prepareTestBlock(tb test.TB, series int) func() *bucketBlock {
 		assert.NoError(tb, bkt.Close())
 	})
 
-	id := uploadTestBlock(tb, tmpDir, bkt, series)
+	id, minT, maxT := uploadTestBlock(tb, tmpDir, bkt, dataSetup)
 	r, err := indexheader.NewBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, id, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.BinaryReaderConfig{})
 	require.NoError(tb, err)
 
@@ -789,13 +789,13 @@ func prepareTestBlock(tb test.TB, series int) func() *bucketBlock {
 			indexHeaderReader: r,
 			indexCache:        noopCache{},
 			bkt:               bkt,
-			meta:              &metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: id}},
+			meta:              &metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: id, MinTime: minT, MaxTime: maxT}},
 			partitioner:       newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 		}
 	}
 }
 
-func uploadTestBlock(t testing.TB, tmpDir string, bkt objstore.Bucket, series int) ulid.ULID {
+func uploadTestBlock(t testing.TB, tmpDir string, bkt objstore.Bucket, dataSetup []func(tb testing.TB, appender storage.Appender)) (_ ulid.ULID, minT int64, maxT int64) {
 	headOpts := tsdb.DefaultHeadOptions()
 	headOpts.ChunkDirRoot = tmpDir
 	headOpts.ChunkRange = 1000
@@ -807,7 +807,9 @@ func uploadTestBlock(t testing.TB, tmpDir string, bkt objstore.Bucket, series in
 
 	logger := log.NewNopLogger()
 
-	appendTestData(t, h.Appender(context.Background()), series)
+	for _, setup := range dataSetup {
+		setup(t, h.Appender(context.Background()))
+	}
 
 	assert.NoError(t, os.MkdirAll(filepath.Join(tmpDir, "tmp"), os.ModePerm))
 	id := createBlockFromHead(t, filepath.Join(tmpDir, "tmp"), h)
@@ -821,28 +823,30 @@ func uploadTestBlock(t testing.TB, tmpDir string, bkt objstore.Bucket, series in
 	assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(tmpDir, "tmp", id.String()), metadata.NoneFunc))
 	assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(tmpDir, "tmp", id.String()), metadata.NoneFunc))
 
-	return id
+	return id, h.MinTime(), h.MaxTime()
 }
 
-func appendTestData(t testing.TB, app storage.Appender, series int) {
-	addSeries := func(l labels.Labels) {
-		_, err := app.Append(0, l, 0, 0)
-		assert.NoError(t, err)
-	}
-
-	series = series / 5
-	for n := 0; n < 10; n++ {
-		for i := 0; i < series/10; i++ {
-
-			addSeries(labels.FromStrings("i", strconv.Itoa(i)+labelLongSuffix, "n", strconv.Itoa(n)+labelLongSuffix, "j", "foo", "p", "foo"))
-			// Have some series that won't be matched, to properly test inverted matches.
-			addSeries(labels.FromStrings("i", strconv.Itoa(i)+labelLongSuffix, "n", strconv.Itoa(n)+labelLongSuffix, "j", "bar", "q", "foo"))
-			addSeries(labels.FromStrings("i", strconv.Itoa(i)+labelLongSuffix, "n", "0_"+strconv.Itoa(n)+labelLongSuffix, "j", "bar", "r", "foo"))
-			addSeries(labels.FromStrings("i", strconv.Itoa(i)+labelLongSuffix, "n", "1_"+strconv.Itoa(n)+labelLongSuffix, "j", "bar", "s", "foo"))
-			addSeries(labels.FromStrings("i", strconv.Itoa(i)+labelLongSuffix, "n", "2_"+strconv.Itoa(n)+labelLongSuffix, "j", "foo", "t", "foo"))
+func appendTestSeries(series int) func(testing.TB, storage.Appender) {
+	return func(t testing.TB, app storage.Appender) {
+		addSeries := func(l labels.Labels) {
+			_, err := app.Append(0, l, 0, 0)
+			assert.NoError(t, err)
 		}
+
+		series = series / 5
+		for n := 0; n < 10; n++ {
+			for i := 0; i < series/10; i++ {
+
+				addSeries(labels.FromStrings("i", strconv.Itoa(i)+labelLongSuffix, "n", strconv.Itoa(n)+labelLongSuffix, "j", "foo", "p", "foo"))
+				// Have some series that won't be matched, to properly test inverted matches.
+				addSeries(labels.FromStrings("i", strconv.Itoa(i)+labelLongSuffix, "n", strconv.Itoa(n)+labelLongSuffix, "j", "bar", "q", "foo"))
+				addSeries(labels.FromStrings("i", strconv.Itoa(i)+labelLongSuffix, "n", "0_"+strconv.Itoa(n)+labelLongSuffix, "j", "bar", "r", "foo"))
+				addSeries(labels.FromStrings("i", strconv.Itoa(i)+labelLongSuffix, "n", "1_"+strconv.Itoa(n)+labelLongSuffix, "j", "bar", "s", "foo"))
+				addSeries(labels.FromStrings("i", strconv.Itoa(i)+labelLongSuffix, "n", "2_"+strconv.Itoa(n)+labelLongSuffix, "j", "foo", "t", "foo"))
+			}
+		}
+		assert.NoError(t, app.Commit())
 	}
-	assert.NoError(t, app.Commit())
 }
 
 func createBlockFromHead(t testing.TB, dir string, head *tsdb.Head) ulid.ULID {
@@ -1004,7 +1008,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 	}
 
 	// Create 4 blocks. Each will have seriesPerBlock number of series that have samplesPerSeriesPerBlock samples.
-	// Timestamp will be counted for each new series and new sample, so each each series will have unique timestamp.
+	// Timestamp will be counted for each new series and new sample, so each series will have unique timestamp.
 	// This allows to pick time range that will correspond to number of series picked 1:1.
 	for bi := 0; bi < numOfBlocks; bi++ {
 		head, bSeries := createHeadWithSeries(t, bi, headGenOptions{
@@ -2031,7 +2035,7 @@ func benchmarkBlockSeriesWithConcurrency(b *testing.B, concurrency int, blockMet
 
 func TestBlockSeries_skipChunks_ignoresMintMaxt(t *testing.T) {
 	const series = 100
-	newTestBucketBlock := prepareTestBlock(test.NewTB(t), series)
+	newTestBucketBlock := prepareTestBlock(test.NewTB(t), appendTestSeries(series))
 	b := newTestBucketBlock()
 
 	mint, maxt := int64(0), int64(0)
@@ -2045,7 +2049,7 @@ func TestBlockSeries_skipChunks_ignoresMintMaxt(t *testing.T) {
 }
 
 func TestBlockSeries_Cache(t *testing.T) {
-	newTestBucketBlock := prepareTestBlock(test.NewTB(t), 100)
+	newTestBucketBlock := prepareTestBlock(test.NewTB(t), appendTestSeries(100))
 
 	t.Run("does not update cache on error", func(t *testing.T) {
 		b := newTestBucketBlock()
@@ -2310,9 +2314,9 @@ func runTestServerSeries(t test.TB, store *BucketStore, cases ...*seriesCase) {
 			t.ResetTimer()
 			for i := 0; i < t.N(); i++ {
 				srv := newBucketStoreSeriesServer(context.Background())
-				assert.NoError(t, store.Series(c.Req, srv))
-				assert.Equal(t, len(c.ExpectedWarnings), len(srv.Warnings), "%v", srv.Warnings)
-				assert.Equal(t, len(c.ExpectedSeries), len(srv.SeriesSet))
+				require.NoError(t, store.Series(c.Req, srv))
+				require.Equal(t, len(c.ExpectedWarnings), len(srv.Warnings), "%v", srv.Warnings)
+				require.Equal(t, len(c.ExpectedSeries), len(srv.SeriesSet), "Matchers: %v Min time: %d Max time: %d", c.Req.Matchers, c.Req.MinTime, c.Req.MaxTime)
 
 				if !t.IsBenchmark() {
 					if len(c.ExpectedSeries) == 1 {

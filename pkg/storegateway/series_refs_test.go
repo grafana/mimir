@@ -3,6 +3,7 @@
 package storegateway
 
 import (
+	"errors"
 	"sort"
 	"testing"
 
@@ -130,6 +131,634 @@ func TestSeriesChunkRefsIterator(t *testing.T) {
 	})
 }
 
+func TestFlattenedSeriesChunkRefs(t *testing.T) {
+	// Generate some chunk fixtures so that we can ensure the right chunks are returned.
+	c := generateSeriesChunkRef(6)
+
+	testCases := map[string]struct {
+		input    seriesChunkRefsSetIterator
+		expected []seriesChunkRefs
+	}{
+		"should iterate on no sets": {
+			input:    newSliceSeriesChunkRefsSetIterator(nil),
+			expected: nil,
+		},
+		"should iterate an empty set": {
+			input:    newSliceSeriesChunkRefsSetIterator(nil, seriesChunkRefsSet{}),
+			expected: nil,
+		},
+		"should iterate a set with multiple items": {
+			input: newSliceSeriesChunkRefsSetIterator(nil,
+				seriesChunkRefsSet{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[1]}},
+					{lset: labels.FromStrings("l1", "v2"), chunks: []seriesChunkRef{c[2]}},
+				}}),
+			expected: []seriesChunkRefs{
+				{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[1]}},
+				{lset: labels.FromStrings("l1", "v2"), chunks: []seriesChunkRef{c[2]}},
+			},
+		},
+		"should iterate multiple sets with multiple items each": {
+			input: newSliceSeriesChunkRefsSetIterator(nil,
+				seriesChunkRefsSet{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[1]}},
+					{lset: labels.FromStrings("l1", "v2"), chunks: []seriesChunkRef{c[2]}},
+				}},
+				seriesChunkRefsSet{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v3"), chunks: []seriesChunkRef{c[3]}},
+				}},
+				seriesChunkRefsSet{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v4"), chunks: []seriesChunkRef{c[4]}},
+					{lset: labels.FromStrings("l1", "v5"), chunks: []seriesChunkRef{c[5]}},
+				}}),
+			expected: []seriesChunkRefs{
+				{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[1]}},
+				{lset: labels.FromStrings("l1", "v2"), chunks: []seriesChunkRef{c[2]}},
+				{lset: labels.FromStrings("l1", "v3"), chunks: []seriesChunkRef{c[3]}},
+				{lset: labels.FromStrings("l1", "v4"), chunks: []seriesChunkRef{c[4]}},
+				{lset: labels.FromStrings("l1", "v5"), chunks: []seriesChunkRef{c[5]}},
+			},
+		},
+		"should keep iterating on empty sets": {
+			input: newSliceSeriesChunkRefsSetIterator(nil,
+				seriesChunkRefsSet{},
+				seriesChunkRefsSet{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[1]}},
+					{lset: labels.FromStrings("l1", "v2"), chunks: []seriesChunkRef{c[2]}},
+				}},
+				seriesChunkRefsSet{},
+				seriesChunkRefsSet{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v3"), chunks: []seriesChunkRef{c[3]}},
+				}},
+				seriesChunkRefsSet{},
+				seriesChunkRefsSet{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v4"), chunks: []seriesChunkRef{c[4]}},
+					{lset: labels.FromStrings("l1", "v5"), chunks: []seriesChunkRef{c[5]}},
+				}},
+				seriesChunkRefsSet{}),
+			expected: []seriesChunkRefs{
+				{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[1]}},
+				{lset: labels.FromStrings("l1", "v2"), chunks: []seriesChunkRef{c[2]}},
+				{lset: labels.FromStrings("l1", "v3"), chunks: []seriesChunkRef{c[3]}},
+				{lset: labels.FromStrings("l1", "v4"), chunks: []seriesChunkRef{c[4]}},
+				{lset: labels.FromStrings("l1", "v5"), chunks: []seriesChunkRef{c[5]}},
+			},
+		},
+	}
+
+	for name, testCase := range testCases {
+		name, testCase := name, testCase
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			flattenedIterator := newFlattenedSeriesChunkRefsIterator(testCase.input)
+			actual := readAllSeriesChunkRefs(flattenedIterator)
+			require.NoError(t, flattenedIterator.Err())
+			assert.Equal(t, testCase.expected, actual)
+		})
+	}
+}
+
+func TestMergedSeriesChunkRefsSet(t *testing.T) {
+	// Generate some chunk fixtures so that we can ensure the right chunks are merged.
+	c := generateSeriesChunkRef(6)
+
+	testCases := map[string]struct {
+		batchSize    int
+		set1, set2   seriesChunkRefsSetIterator
+		expectedSets []seriesChunkRefsSet
+		expectedErr  string
+	}{
+		"merges two sets without overlap": {
+			batchSize: 100,
+			set1: newSliceSeriesChunkRefsSetIterator(nil, seriesChunkRefsSet{
+				series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[0]}},
+				},
+			}),
+			set2: newSliceSeriesChunkRefsSetIterator(nil, seriesChunkRefsSet{
+				series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v2"), chunks: []seriesChunkRef{c[1], c[2], c[3]}},
+				},
+			}),
+			expectedSets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[0]}},
+					{lset: labels.FromStrings("l1", "v2"), chunks: []seriesChunkRef{c[1], c[2], c[3]}},
+				}},
+			},
+		},
+		"merges two sets with last series from each overlapping": {
+			batchSize: 100,
+			set1: newSliceSeriesChunkRefsSetIterator(nil, seriesChunkRefsSet{
+				series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v2"), chunks: []seriesChunkRef{c[0]}},
+				},
+			}),
+			set2: newSliceSeriesChunkRefsSetIterator(nil, seriesChunkRefsSet{
+				series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[1]}},
+					{lset: labels.FromStrings("l1", "v2"), chunks: []seriesChunkRef{c[0], c[2], c[3]}},
+				},
+			}),
+			expectedSets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[1]}},
+					{lset: labels.FromStrings("l1", "v2"), chunks: []seriesChunkRef{c[0], c[0], c[2], c[3]}},
+				}},
+			},
+		},
+		"merges two sets where the first is empty": {
+			batchSize: 100,
+			set1:      emptySeriesChunkRefsSetIterator{},
+			set2: newSliceSeriesChunkRefsSetIterator(nil, seriesChunkRefsSet{
+				series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[0]}},
+					{lset: labels.FromStrings("l1", "v2"), chunks: []seriesChunkRef{c[1]}},
+				},
+			}),
+			expectedSets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[0]}},
+					{lset: labels.FromStrings("l1", "v2"), chunks: []seriesChunkRef{c[1]}},
+				}},
+			},
+		},
+		"merges two sets with first one erroring at the end": {
+			batchSize: 100,
+			set1: newSliceSeriesChunkRefsSetIterator(errors.New("something went wrong"), seriesChunkRefsSet{
+				series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v2"), chunks: []seriesChunkRef{c[1]}},
+				},
+			}),
+			set2: newSliceSeriesChunkRefsSetIterator(nil, seriesChunkRefsSet{
+				series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[0]}},
+				},
+			}),
+			expectedSets: nil, // We expect no returned sets because an error occurred while creating the first one.
+			expectedErr:  "something went wrong",
+		},
+		"merges two sets with second one erroring at the end": {
+			batchSize: 100,
+			set1: newSliceSeriesChunkRefsSetIterator(errors.New("something went wrong"), seriesChunkRefsSet{
+				series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v2"), chunks: []seriesChunkRef{c[1]}},
+				},
+			}),
+			set2: newSliceSeriesChunkRefsSetIterator(nil, seriesChunkRefsSet{
+				series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[0]}},
+				},
+			}),
+			expectedSets: nil, // We expect no returned sets because an error occurred while creating the first one.
+			expectedErr:  "something went wrong",
+		},
+		"merges two sets with shorter one erroring at the end": {
+			batchSize: 100,
+			set1: newSliceSeriesChunkRefsSetIterator(errors.New("something went wrong"), seriesChunkRefsSet{
+				series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("l1", "v2"), chunks: make([]seriesChunkRef, 1)},
+				},
+			}),
+			set2: newSliceSeriesChunkRefsSetIterator(nil, seriesChunkRefsSet{
+				series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v2"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("l1", "v3"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("l1", "v4"), chunks: make([]seriesChunkRef, 1)},
+				},
+			}),
+			expectedSets: nil, // We expect no returned sets because an error occurred while creating the first one.
+			expectedErr:  "something went wrong",
+		},
+		"should stop iterating as soon as the first underlying set returns an error": {
+			batchSize: 1, // Use a batch size of 1 in this test so that we can see when the iteration stops.
+			set1: newSliceSeriesChunkRefsSetIterator(errors.New("something went wrong"), seriesChunkRefsSet{
+				series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[0]}},
+					{lset: labels.FromStrings("l1", "v3"), chunks: []seriesChunkRef{c[2]}},
+				},
+			}),
+			set2: newSliceSeriesChunkRefsSetIterator(nil, seriesChunkRefsSet{
+				series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v2"), chunks: []seriesChunkRef{c[1]}},
+					{lset: labels.FromStrings("l1", "v4"), chunks: []seriesChunkRef{c[3]}},
+				},
+			}),
+			expectedSets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[0]}},
+				}},
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v2"), chunks: []seriesChunkRef{c[1]}},
+				}},
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v3"), chunks: []seriesChunkRef{c[2]}},
+				}},
+			},
+			expectedErr: "something went wrong",
+		},
+		"should return merged chunks sorted by min time (assuming source sets have sorted chunks) on first chunk on first set": {
+			batchSize: 100,
+			set1: newSliceSeriesChunkRefsSetIterator(nil, seriesChunkRefsSet{
+				series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[1], c[3]}},
+				},
+			}),
+			set2: newSliceSeriesChunkRefsSetIterator(nil, seriesChunkRefsSet{
+				series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[0], c[2]}},
+				},
+			}),
+			expectedSets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[0], c[1], c[2], c[3]}},
+				}},
+			},
+		},
+		"should return merged chunks sorted by min time (assuming source sets have sorted chunks) on first chunk on second set": {
+			batchSize: 100,
+			set1: newSliceSeriesChunkRefsSetIterator(nil, seriesChunkRefsSet{
+				series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[0], c[3]}},
+				},
+			}),
+			set2: newSliceSeriesChunkRefsSetIterator(nil, seriesChunkRefsSet{
+				series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[1], c[2]}},
+				},
+			}),
+			expectedSets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[0], c[1], c[2], c[3]}},
+				}},
+			},
+		},
+		"should keep iterating on empty underlying sets (batch size = 1)": {
+			batchSize: 1,
+			set1: newSliceSeriesChunkRefsSetIterator(nil,
+				seriesChunkRefsSet{},
+				seriesChunkRefsSet{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[1]}}}},
+				seriesChunkRefsSet{},
+				seriesChunkRefsSet{},
+				seriesChunkRefsSet{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v3"), chunks: []seriesChunkRef{c[3]}}}},
+				seriesChunkRefsSet{},
+				seriesChunkRefsSet{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v5"), chunks: []seriesChunkRef{c[5]}}}},
+				seriesChunkRefsSet{},
+			),
+			set2: newSliceSeriesChunkRefsSetIterator(nil,
+				seriesChunkRefsSet{},
+				seriesChunkRefsSet{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v2"), chunks: []seriesChunkRef{c[2]}}}},
+				seriesChunkRefsSet{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v3"), chunks: []seriesChunkRef{c[3]}}}},
+				seriesChunkRefsSet{},
+				seriesChunkRefsSet{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v4"), chunks: []seriesChunkRef{c[4]}}}},
+			),
+			expectedSets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[1]}}}},
+				{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v2"), chunks: []seriesChunkRef{c[2]}}}},
+				{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v3"), chunks: []seriesChunkRef{c[3], c[3]}}}},
+				{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v4"), chunks: []seriesChunkRef{c[4]}}}},
+				{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v5"), chunks: []seriesChunkRef{c[5]}}}},
+			},
+		},
+		"should keep iterating on empty underlying sets (batch size = 2)": {
+			batchSize: 2,
+			set1: newSliceSeriesChunkRefsSetIterator(nil,
+				seriesChunkRefsSet{},
+				seriesChunkRefsSet{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[1]}}}},
+				seriesChunkRefsSet{},
+				seriesChunkRefsSet{},
+				seriesChunkRefsSet{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v3"), chunks: []seriesChunkRef{c[3]}}}},
+				seriesChunkRefsSet{},
+				seriesChunkRefsSet{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v5"), chunks: []seriesChunkRef{c[5]}}}},
+				seriesChunkRefsSet{},
+			),
+			set2: newSliceSeriesChunkRefsSetIterator(nil,
+				seriesChunkRefsSet{},
+				seriesChunkRefsSet{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v2"), chunks: []seriesChunkRef{c[2]}}}},
+				seriesChunkRefsSet{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v3"), chunks: []seriesChunkRef{c[3]}}}},
+				seriesChunkRefsSet{},
+				seriesChunkRefsSet{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v4"), chunks: []seriesChunkRef{c[4]}}}},
+			),
+			expectedSets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[1]}},
+					{lset: labels.FromStrings("l1", "v2"), chunks: []seriesChunkRef{c[2]}},
+				}},
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v3"), chunks: []seriesChunkRef{c[3], c[3]}},
+					{lset: labels.FromStrings("l1", "v4"), chunks: []seriesChunkRef{c[4]}},
+				}},
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v5"), chunks: []seriesChunkRef{c[5]}},
+				}},
+			},
+		},
+		"should keep iterating on second set after first set is exhausted (batch size = 1)": {
+			batchSize: 1,
+			set1: newSliceSeriesChunkRefsSetIterator(nil,
+				seriesChunkRefsSet{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v2"), chunks: []seriesChunkRef{c[2]}}}},
+				seriesChunkRefsSet{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v3"), chunks: []seriesChunkRef{c[3]}}}},
+			),
+			set2: newSliceSeriesChunkRefsSetIterator(nil,
+				seriesChunkRefsSet{},
+				seriesChunkRefsSet{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[1]}}}},
+				seriesChunkRefsSet{},
+				seriesChunkRefsSet{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v4"), chunks: []seriesChunkRef{c[4]}}}},
+				seriesChunkRefsSet{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v5"), chunks: []seriesChunkRef{c[5]}}}},
+			),
+			expectedSets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[1]}}}},
+				{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v2"), chunks: []seriesChunkRef{c[2]}}}},
+				{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v3"), chunks: []seriesChunkRef{c[3]}}}},
+				{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v4"), chunks: []seriesChunkRef{c[4]}}}},
+				{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v5"), chunks: []seriesChunkRef{c[5]}}}},
+			},
+		},
+		"should keep iterating on second set after first set is exhausted (batch size = 100)": {
+			batchSize: 100,
+			set1: newSliceSeriesChunkRefsSetIterator(nil,
+				seriesChunkRefsSet{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v2"), chunks: []seriesChunkRef{c[2]}}}},
+				seriesChunkRefsSet{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v3"), chunks: []seriesChunkRef{c[3]}}}},
+			),
+			set2: newSliceSeriesChunkRefsSetIterator(nil,
+				seriesChunkRefsSet{},
+				seriesChunkRefsSet{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[1]}}}},
+				seriesChunkRefsSet{},
+				seriesChunkRefsSet{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v4"), chunks: []seriesChunkRef{c[4]}}}},
+				seriesChunkRefsSet{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v5"), chunks: []seriesChunkRef{c[5]}}}},
+			),
+			expectedSets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[1]}},
+					{lset: labels.FromStrings("l1", "v2"), chunks: []seriesChunkRef{c[2]}},
+					{lset: labels.FromStrings("l1", "v3"), chunks: []seriesChunkRef{c[3]}},
+					{lset: labels.FromStrings("l1", "v4"), chunks: []seriesChunkRef{c[4]}},
+					{lset: labels.FromStrings("l1", "v5"), chunks: []seriesChunkRef{c[5]}},
+				}},
+			},
+		},
+		"should keep iterating on first set after second set is exhausted (batch size = 1)": {
+			batchSize: 1,
+			set1: newSliceSeriesChunkRefsSetIterator(nil,
+				seriesChunkRefsSet{},
+				seriesChunkRefsSet{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[1]}}}},
+				seriesChunkRefsSet{},
+				seriesChunkRefsSet{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v4"), chunks: []seriesChunkRef{c[4]}}}},
+				seriesChunkRefsSet{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v5"), chunks: []seriesChunkRef{c[5]}}}},
+			),
+			set2: newSliceSeriesChunkRefsSetIterator(nil,
+				seriesChunkRefsSet{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v2"), chunks: []seriesChunkRef{c[2]}}}},
+				seriesChunkRefsSet{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v3"), chunks: []seriesChunkRef{c[3]}}}},
+			),
+			expectedSets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[1]}}}},
+				{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v2"), chunks: []seriesChunkRef{c[2]}}}},
+				{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v3"), chunks: []seriesChunkRef{c[3]}}}},
+				{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v4"), chunks: []seriesChunkRef{c[4]}}}},
+				{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v5"), chunks: []seriesChunkRef{c[5]}}}},
+			},
+		},
+		"should keep iterating on first set after second set is exhausted (batch size = 100)": {
+			batchSize: 100,
+			set1: newSliceSeriesChunkRefsSetIterator(nil,
+				seriesChunkRefsSet{},
+				seriesChunkRefsSet{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[1]}}}},
+				seriesChunkRefsSet{},
+				seriesChunkRefsSet{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v4"), chunks: []seriesChunkRef{c[4]}}}},
+				seriesChunkRefsSet{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v5"), chunks: []seriesChunkRef{c[5]}}}},
+			),
+			set2: newSliceSeriesChunkRefsSetIterator(nil,
+				seriesChunkRefsSet{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v2"), chunks: []seriesChunkRef{c[2]}}}},
+				seriesChunkRefsSet{series: []seriesChunkRefs{{lset: labels.FromStrings("l1", "v3"), chunks: []seriesChunkRef{c[3]}}}},
+			),
+			expectedSets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[1]}},
+					{lset: labels.FromStrings("l1", "v2"), chunks: []seriesChunkRef{c[2]}},
+					{lset: labels.FromStrings("l1", "v3"), chunks: []seriesChunkRef{c[3]}},
+					{lset: labels.FromStrings("l1", "v4"), chunks: []seriesChunkRef{c[4]}},
+					{lset: labels.FromStrings("l1", "v5"), chunks: []seriesChunkRef{c[5]}},
+				}},
+			},
+		},
+	}
+
+	for name, testCase := range testCases {
+		name, testCase := name, testCase
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			mergedSetIterator := newMergedSeriesChunkRefsSet(testCase.batchSize, testCase.set1, testCase.set2)
+			sets := readAllSeriesChunkRefsSet(mergedSetIterator)
+
+			if testCase.expectedErr != "" {
+				assert.EqualError(t, mergedSetIterator.Err(), testCase.expectedErr)
+			} else {
+				assert.NoError(t, mergedSetIterator.Err())
+			}
+
+			require.Len(t, sets, len(testCase.expectedSets))
+			for setIdx, expectedSet := range testCase.expectedSets {
+				require.Len(t, sets[setIdx].series, len(expectedSet.series))
+				for expectedSeriesIdx, expectedSeries := range expectedSet.series {
+					assert.Equal(t, expectedSeries.lset, sets[setIdx].series[expectedSeriesIdx].lset)
+					assert.Equal(t, expectedSeries.chunks, sets[setIdx].series[expectedSeriesIdx].chunks)
+				}
+			}
+		})
+	}
+}
+
+func TestSeriesSetWithoutChunks(t *testing.T) {
+	// Generate some chunk fixtures so that we can ensure the right chunks are returned.
+	c := generateSeriesChunkRef(6)
+
+	testCases := map[string]struct {
+		input    seriesChunkRefsSetIterator
+		expected []labels.Labels
+	}{
+		"should iterate on no sets": {
+			input:    newSliceSeriesChunkRefsSetIterator(nil),
+			expected: nil,
+		},
+		"should iterate an empty set": {
+			input:    newSliceSeriesChunkRefsSetIterator(nil, seriesChunkRefsSet{}),
+			expected: nil,
+		},
+		"should iterate a set with multiple items": {
+			input: newSliceSeriesChunkRefsSetIterator(nil,
+				seriesChunkRefsSet{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[1]}},
+					{lset: labels.FromStrings("l1", "v2"), chunks: []seriesChunkRef{c[2]}},
+				}}),
+			expected: []labels.Labels{
+				labels.FromStrings("l1", "v1"),
+				labels.FromStrings("l1", "v2"),
+			},
+		},
+		"should iterate multiple sets with multiple items each": {
+			input: newSliceSeriesChunkRefsSetIterator(nil,
+				seriesChunkRefsSet{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[1]}},
+					{lset: labels.FromStrings("l1", "v2"), chunks: []seriesChunkRef{c[2]}},
+				}},
+				seriesChunkRefsSet{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v3"), chunks: []seriesChunkRef{c[3]}},
+				}},
+				seriesChunkRefsSet{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v4"), chunks: []seriesChunkRef{c[4]}},
+					{lset: labels.FromStrings("l1", "v5"), chunks: []seriesChunkRef{c[5]}},
+				}}),
+			expected: []labels.Labels{
+				labels.FromStrings("l1", "v1"),
+				labels.FromStrings("l1", "v2"),
+				labels.FromStrings("l1", "v3"),
+				labels.FromStrings("l1", "v4"),
+				labels.FromStrings("l1", "v5"),
+			},
+		},
+		"should keep iterating on empty sets": {
+			input: newSliceSeriesChunkRefsSetIterator(nil,
+				seriesChunkRefsSet{},
+				seriesChunkRefsSet{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{c[1]}},
+					{lset: labels.FromStrings("l1", "v2"), chunks: []seriesChunkRef{c[2]}},
+				}},
+				seriesChunkRefsSet{},
+				seriesChunkRefsSet{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v3"), chunks: []seriesChunkRef{c[3]}},
+				}},
+				seriesChunkRefsSet{},
+				seriesChunkRefsSet{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v4"), chunks: []seriesChunkRef{c[4]}},
+					{lset: labels.FromStrings("l1", "v5"), chunks: []seriesChunkRef{c[5]}},
+				}},
+				seriesChunkRefsSet{}),
+			expected: []labels.Labels{
+				labels.FromStrings("l1", "v1"),
+				labels.FromStrings("l1", "v2"),
+				labels.FromStrings("l1", "v3"),
+				labels.FromStrings("l1", "v4"),
+				labels.FromStrings("l1", "v5"),
+			},
+		},
+	}
+
+	for name, testCase := range testCases {
+		name, testCase := name, testCase
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			chainedSet := newSeriesSetWithoutChunks(testCase.input)
+			actual := readAllSeriesLabels(chainedSet)
+			require.NoError(t, chainedSet.Err())
+			assert.Equal(t, testCase.expected, actual)
+		})
+	}
+}
+
+func TestDeduplicatingSeriesChunkRefsSetIterator(t *testing.T) {
+	// Generate some chunk fixtures so that we can ensure the right chunks are returned.
+	c := generateSeriesChunkRef(8)
+
+	series1 := labels.FromStrings("l1", "v1")
+	series2 := labels.FromStrings("l1", "v2")
+	series3 := labels.FromStrings("l1", "v3")
+	sourceSets := []seriesChunkRefsSet{
+		{series: []seriesChunkRefs{
+			{lset: series1, chunks: []seriesChunkRef{c[0], c[1]}},
+			{lset: series1, chunks: []seriesChunkRef{c[2], c[3], c[4]}},
+		}},
+		{series: []seriesChunkRefs{
+			{lset: series2, chunks: []seriesChunkRef{c[0], c[1], c[2], c[3]}},
+			{lset: series3, chunks: []seriesChunkRef{c[0]}},
+			{lset: series3, chunks: []seriesChunkRef{c[1]}},
+		}},
+	}
+
+	t.Run("batch size: 1", func(t *testing.T) {
+		repeatingIterator := newSliceSeriesChunkRefsSetIterator(nil, sourceSets...)
+		deduplicatingIterator := newDeduplicatingSeriesChunkRefsSetIterator(1, repeatingIterator)
+		sets := readAllSeriesChunkRefsSet(deduplicatingIterator)
+
+		require.NoError(t, deduplicatingIterator.Err())
+		require.Len(t, sets, 3)
+
+		require.Len(t, sets[0].series, 1)
+		assert.Equal(t, series1, sets[0].series[0].lset)
+		assert.Equal(t, []seriesChunkRef{c[0], c[1], c[2], c[3], c[4]}, sets[0].series[0].chunks)
+
+		require.Len(t, sets[1].series, 1)
+		assert.Equal(t, series2, sets[1].series[0].lset)
+		assert.Equal(t, []seriesChunkRef{c[0], c[1], c[2], c[3]}, sets[1].series[0].chunks)
+
+		require.Len(t, sets[2].series, 1)
+		assert.Equal(t, series3, sets[2].series[0].lset)
+		assert.Equal(t, []seriesChunkRef{c[0], c[1]}, sets[2].series[0].chunks)
+	})
+
+	t.Run("batch size: 2", func(t *testing.T) {
+		repeatingIterator := newSliceSeriesChunkRefsSetIterator(nil, sourceSets...)
+		duplicatingIterator := newDeduplicatingSeriesChunkRefsSetIterator(2, repeatingIterator)
+		sets := readAllSeriesChunkRefsSet(duplicatingIterator)
+
+		require.NoError(t, duplicatingIterator.Err())
+		require.Len(t, sets, 2)
+
+		// First batch.
+		require.Len(t, sets[0].series, 2)
+
+		assert.Equal(t, series1, sets[0].series[0].lset)
+		assert.Equal(t, []seriesChunkRef{c[0], c[1], c[2], c[3], c[4]}, sets[0].series[0].chunks)
+
+		assert.Equal(t, series2, sets[0].series[1].lset)
+		assert.Equal(t, []seriesChunkRef{c[0], c[1], c[2], c[3]}, sets[0].series[1].chunks)
+
+		// Second batch.
+		require.Len(t, sets[1].series, 1)
+
+		assert.Equal(t, series3, sets[1].series[0].lset)
+		assert.Equal(t, []seriesChunkRef{c[0], c[1]}, sets[1].series[0].chunks)
+	})
+
+	t.Run("batch size: 3", func(t *testing.T) {
+		repeatingIterator := newSliceSeriesChunkRefsSetIterator(nil, sourceSets...)
+		deduplciatingIterator := newDeduplicatingSeriesChunkRefsSetIterator(3, repeatingIterator)
+		sets := readAllSeriesChunkRefsSet(deduplciatingIterator)
+
+		require.NoError(t, deduplciatingIterator.Err())
+		require.Len(t, sets, 1)
+		require.Len(t, sets[0].series, 3)
+
+		assert.Equal(t, series1, sets[0].series[0].lset)
+		assert.Equal(t, []seriesChunkRef{c[0], c[1], c[2], c[3], c[4]}, sets[0].series[0].chunks)
+
+		assert.Equal(t, series2, sets[0].series[1].lset)
+		assert.Equal(t, []seriesChunkRef{c[0], c[1], c[2], c[3]}, sets[0].series[1].chunks)
+
+		assert.Equal(t, series3, sets[0].series[2].lset)
+		assert.Equal(t, []seriesChunkRef{c[0], c[1]}, sets[0].series[2].chunks)
+	})
+}
+
+func TestDeduplicatingSeriesChunkRefsSetIterator_PropagatesErrors(t *testing.T) {
+	chainedSet := newDeduplicatingSeriesChunkRefsSetIterator(100, newSliceSeriesChunkRefsSetIterator(errors.New("something went wrong"), seriesChunkRefsSet{
+		series: []seriesChunkRefs{
+			{lset: labels.FromStrings("l1", "v1"), chunks: make([]seriesChunkRef, 1)},
+			{lset: labels.FromStrings("l1", "v1"), chunks: make([]seriesChunkRef, 1)},
+			{lset: labels.FromStrings("l1", "v2"), chunks: make([]seriesChunkRef, 1)},
+			{lset: labels.FromStrings("l1", "v2"), chunks: make([]seriesChunkRef, 1)},
+		},
+	}))
+
+	for chainedSet.Next() {
+	}
+
+	assert.ErrorContains(t, chainedSet.Err(), "something went wrong")
+}
+
 // sliceSeriesChunkRefsSetIterator implements seriesChunkRefsSetIterator and
 // returns the provided err when the sets are exhausted.
 //
@@ -180,5 +809,21 @@ func generateSeriesChunkRef(num int) []seriesChunkRef {
 		})
 	}
 
+	return out
+}
+
+func readAllSeriesChunkRefsSet(it seriesChunkRefsSetIterator) []seriesChunkRefsSet {
+	var out []seriesChunkRefsSet
+	for it.Next() {
+		out = append(out, it.At())
+	}
+	return out
+}
+
+func readAllSeriesChunkRefs(it seriesChunkRefsIterator) []seriesChunkRefs {
+	var out []seriesChunkRefs
+	for it.Next() {
+		out = append(out, it.At())
+	}
 	return out
 }

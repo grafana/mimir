@@ -87,17 +87,6 @@ func newDuplicatedLabelError(series []mimirpb.LabelAdapter, labelName string) Va
 	}
 }
 
-var labelsNotSortedMsgFormat = globalerror.SeriesLabelsNotSorted.Message(
-	"received a series where the label names are not alphabetically sorted, label: '%.200s' series: '%.200s'")
-
-func newLabelsNotSortedError(series []mimirpb.LabelAdapter, labelName string) ValidationError {
-	return genericValidationError{
-		message: labelsNotSortedMsgFormat,
-		cause:   labelName,
-		series:  series,
-	}
-}
-
 type tooManyLabelsError struct {
 	series []mimirpb.LabelAdapter
 	limit  int
