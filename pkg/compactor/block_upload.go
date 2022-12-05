@@ -305,7 +305,7 @@ func (c *MultitenantCompactor) completeBlockUpload(ctx context.Context, logger l
 		if !errors.Is(err, context.Canceled) {
 			err := c.uploadValidationWithError(ctx, blockID, userBkt, err.Error())
 			if err != nil {
-				level.Error(logger).Log("msg", "error updating validation file while uploading metadata file")
+				level.Error(logger).Log("msg", "error updating validation file while uploading metadata file", "err", err)
 			}
 		}
 		return
