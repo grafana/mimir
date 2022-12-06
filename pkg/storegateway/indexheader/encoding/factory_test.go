@@ -29,7 +29,7 @@ func TestDecbufFactory_NewDecbufAtChecked(t *testing.T) {
 		factory := createDecbufFactoryWithBytes(t, contentLength, enc.Get())
 		d := factory.NewDecbufAtChecked(0, table)
 		t.Cleanup(func() {
-			require.NoError(t, d.Close())
+			require.NoError(t, factory.Close(d))
 		})
 
 		require.ErrorIs(t, d.Err(), ErrInvalidChecksum)
@@ -48,7 +48,7 @@ func TestDecbufFactory_NewDecbufAtChecked(t *testing.T) {
 		factory := createDecbufFactoryWithBytes(t, contentLength+1000, enc.Get())
 		d := factory.NewDecbufAtChecked(0, table)
 		t.Cleanup(func() {
-			require.NoError(t, d.Close())
+			require.NoError(t, factory.Close(d))
 		})
 
 		require.ErrorIs(t, d.Err(), ErrInvalidSize)
@@ -67,7 +67,7 @@ func TestDecbufFactory_NewDecbufAtChecked(t *testing.T) {
 		factory := createDecbufFactoryWithBytes(t, contentLength, enc.Get())
 		d := factory.NewDecbufAtChecked(0, table)
 		t.Cleanup(func() {
-			require.NoError(t, d.Close())
+			require.NoError(t, factory.Close(d))
 		})
 
 		require.NoError(t, d.Err())
@@ -91,7 +91,7 @@ func TestDecbufFactory_NewDecbufAtUnchecked(t *testing.T) {
 		factory := createDecbufFactoryWithBytes(t, contentLength, enc.Get())
 		d := factory.NewDecbufAtUnchecked(0)
 		t.Cleanup(func() {
-			require.NoError(t, d.Close())
+			require.NoError(t, factory.Close(d))
 		})
 
 		require.NoError(t, d.Err())
@@ -115,14 +115,14 @@ func TestDecbufFactory_NewDecbufRaw(t *testing.T) {
 		factory := createDecbufFactoryWithBytes(t, contentLength, enc.Get())
 		d := factory.NewRawDecbuf()
 		t.Cleanup(func() {
-			require.NoError(t, d.Close())
+			require.NoError(t, factory.Close(d))
 		})
 
 		require.NoError(t, d.Err())
 		require.Equal(t, 4+contentLength+4, d.Len())
 	})
 }
-func createDecbufFactoryWithBytes(t *testing.T, len int, b []byte) *DecbufFactory {
+func createDecbufFactoryWithBytes(t testing.TB, len int, b []byte) *DecbufFactory {
 	// Prepend the contents of the buffer with the length of the content portion
 	// which does not include the trailing 4 bytes for a CRC 32.
 	lenBytes := make([]byte, 4)

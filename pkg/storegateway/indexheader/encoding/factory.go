@@ -3,21 +3,32 @@
 package encoding
 
 import (
+	"bufio"
 	"encoding/binary"
 	"hash/crc32"
 	"os"
+	"sync"
 
 	"github.com/pkg/errors"
 )
 
+const bufferSize = 4096
+
 // DecbufFactory creates new file-backed decoding buffer instances for a specific index-header file.
 type DecbufFactory struct {
-	// TODO: After profiling, it might make sense to have a `sync.Pool` of `bufio.Reader`s here
+	pool sync.Pool
 	path string
 }
 
 func NewDecbufFactory(path string) *DecbufFactory {
-	return &DecbufFactory{path: path}
+	return &DecbufFactory{
+		pool: sync.Pool{
+			New: func() any {
+				return bufio.NewReaderSize(nil, bufferSize)
+			},
+		},
+		path: path,
+	}
 }
 
 // NewDecbufAtChecked returns a new file-backed decoding buffer positioned at offset + 4 bytes.
@@ -48,15 +59,27 @@ func (df *DecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table) Decb
 		return Decbuf{E: errors.Wrapf(ErrInvalidSize, "insufficient bytes read for size (got %d, wanted %d)", n, 4)}
 	}
 
+	// If we return early and don't include a Reader for our Decbuf, we are responsible
+	// for putting our buffer back in the pool.
+	bufReader := df.pool.Get().(*bufio.Reader)
+	freeBuf := true
+	defer func() {
+		if freeBuf {
+			df.pool.Put(bufReader)
+		}
+	}()
+
 	contentLength := int(binary.BigEndian.Uint32(lengthBytes))
 	bufferLength := len(lengthBytes) + contentLength + 4
-	r, err := NewFileReader(f, offset, bufferLength)
+	r, err := NewFileReader(f, offset, bufferLength, bufReader)
 	if err != nil {
 		return Decbuf{E: errors.Wrap(err, "create file reader")}
 	}
 
-	d := Decbuf{r: r}
 	closeFile = false
+	freeBuf = false
+	d := Decbuf{r: r}
+
 	if d.ResetAt(4); d.Err() != nil {
 		return d
 	}
@@ -105,12 +128,32 @@ func (df *DecbufFactory) NewRawDecbuf() Decbuf {
 		return Decbuf{E: errors.Wrap(err, "stat file for decbuf")}
 	}
 
+	// If we return early and don't include a Reader for our Decbuf, we are responsible
+	// for putting our buffer back in the pool.
+	bufReader := df.pool.Get().(*bufio.Reader)
+	freeBuf := true
+	defer func() {
+		if freeBuf {
+			df.pool.Put(bufReader)
+		}
+	}()
+
 	fileSize := stat.Size()
-	reader, err := NewFileReader(f, 0, int(fileSize))
+	reader, err := NewFileReader(f, 0, int(fileSize), bufReader)
 	if err != nil {
 		return Decbuf{E: errors.Wrap(err, "file reader for decbuf")}
 	}
 
 	closeFile = false
+	freeBuf = false
 	return Decbuf{r: reader}
+}
+
+// Close cleans up any resources associated with the Decbuf
+func (df *DecbufFactory) Close(d Decbuf) error {
+	if d.r != nil {
+		df.pool.Put(d.r.buf)
+	}
+
+	return d.close()
 }

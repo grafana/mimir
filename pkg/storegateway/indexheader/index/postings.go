@@ -164,6 +164,8 @@ func newV2PostingOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset
 // found entry. If f returns an error it stops decoding and returns the received error.
 func readOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset int, f func([]string, uint64, int) error) error {
 	d := factory.NewDecbufAtChecked(tableOffset, castagnoliTable)
+	defer factory.Close(d)
+
 	startLen := d.Len()
 	cnt := d.Be32()
 
@@ -303,7 +305,7 @@ func (t *PostingOffsetTableV2) PostingsOffset(name string, values ...string) ([]
 	}
 
 	d := t.factory.NewDecbufAtUnchecked(t.tableOffset)
-	defer d.Close()
+	defer t.factory.Close(d)
 	if err := d.Err(); err != nil {
 		return nil, err
 	}
@@ -423,7 +425,7 @@ func (t *PostingOffsetTableV2) LabelValues(name string, filter func(string) bool
 	// Don't Crc32 the entire postings offset table, this is very slow
 	// so hope any issues were caught at startup.
 	d := t.factory.NewDecbufAtUnchecked(t.tableOffset)
-	defer d.Close()
+	defer t.factory.Close(d)
 
 	d.Skip(e.offsets[0].tableOff)
 	lastVal := e.offsets[len(e.offsets)-1].value

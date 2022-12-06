@@ -19,16 +19,15 @@ type FileReader struct {
 }
 
 // NewFileReader creates a new FileReader for the segment of file beginning at base
-// with length length.
-func NewFileReader(file *os.File, base, length int) (*FileReader, error) {
+// with length total length using the supplied buffered reader.
+func NewFileReader(file *os.File, base, length int, buf *bufio.Reader) (*FileReader, error) {
 	f := &FileReader{
 		file:   file,
-		buf:    bufio.NewReader(file),
+		buf:    buf,
 		base:   base,
 		length: length,
 	}
 
-	// TODO: Audit everywhere we create a new reader and see if this is really required
 	err := f.Reset()
 	if err != nil {
 		return nil, err
@@ -120,7 +119,9 @@ func (f *FileReader) Len() int {
 	return f.length - f.pos
 }
 
-// Close closes the underlying resources used by this FileReader.
-func (f *FileReader) Close() error {
+// close closes the underlying resources used by this FileReader. This method
+// is private to ensure that all resource management is handled by DecbufFactory
+// which pools resources.
+func (f *FileReader) close() error {
 	return f.file.Close()
 }

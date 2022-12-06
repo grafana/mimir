@@ -42,7 +42,7 @@ const symbolFactor = 32
 // NewSymbols returns a Symbols object for symbol lookups.
 func NewSymbols(factory *stream_encoding.DecbufFactory, version, offset int) (*Symbols, error) {
 	d := factory.NewDecbufAtChecked(offset, castagnoliTable)
-	defer d.Close()
+	defer factory.Close(d)
 	if err := d.Err(); err != nil {
 		return nil, fmt.Errorf("decode symbol table: %w", d.Err())
 	}
@@ -75,7 +75,7 @@ func NewSymbols(factory *stream_encoding.DecbufFactory, version, offset int) (*S
 
 func (s *Symbols) Lookup(o uint32) (string, error) {
 	d := s.factory.NewDecbufAtUnchecked(s.tableOffset)
-	defer d.Close()
+	defer s.factory.Close(d)
 	if err := d.Err(); err != nil {
 		return "", err
 	}
@@ -109,7 +109,7 @@ func (s *Symbols) ReverseLookup(sym string) (uint32, error) {
 	}
 
 	d := s.factory.NewDecbufAtUnchecked(s.tableOffset)
-	defer d.Close()
+	defer s.factory.Close(d)
 	if err := d.Err(); err != nil {
 		return 0, err
 	}
@@ -126,7 +126,7 @@ func (s *Symbols) ForEachSymbol(syms []string, f func(sym string, offset uint32)
 	}
 
 	d := s.factory.NewDecbufAtUnchecked(s.tableOffset)
-	defer d.Close()
+	defer s.factory.Close(d)
 	if err := d.Err(); err != nil {
 		return err
 	}
