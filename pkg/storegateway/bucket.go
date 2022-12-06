@@ -1131,6 +1131,7 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 				req.MinTime, req.MaxTime,
 				stats,
 				s.logger,
+				s.metrics,
 			)
 			if err != nil {
 				return errors.Wrapf(err, "fetch series for block %s", b.meta.ULID)

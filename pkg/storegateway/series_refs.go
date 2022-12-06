@@ -530,6 +530,7 @@ func openBlockSeriesChunkRefsSetsIterator(
 	minTime, maxTime int64, // Series must have data in this time range to be returned (ignored if skipChunks=true).
 	stats *safeQueryStats,
 	logger log.Logger,
+	metrics *BucketStoreMetrics,
 ) (seriesChunkRefsSetIterator, error) {
 	if batchSize <= 0 {
 		return nil, errors.New("set size must be a positive number")
@@ -549,10 +550,10 @@ func openBlockSeriesChunkRefsSetsIterator(
 		stats.merge(&unsafeStats)
 	}
 
-	postingsIterator := newPostingsSetsIterator(ps, batchSize)
-	loadingIterator := newLoadingSeriesChunkRefsSetIterator(
+	var iterator seriesChunkRefsSetIterator
+	iterator = newLoadingSeriesChunkRefsSetIterator(
 		ctx,
-		postingsIterator,
+		newPostingsSetsIterator(ps, batchSize),
 		indexr,
 		stats,
 		blockMeta,
@@ -562,14 +563,9 @@ func openBlockSeriesChunkRefsSetsIterator(
 		minTime,
 		maxTime,
 	)
-
-	limitingIterator := newLimitingSeriesChunkRefsSetIterator(
-		loadingIterator,
-		chunksLimiter,
-		seriesLimiter,
-	)
-
-	return limitingIterator, nil
+	iterator = newDurationMeasuringIterator[seriesChunkRefsSet](iterator, metrics.batchLoadDurations.WithLabelValues("index_load"))
+	iterator = newLimitingSeriesChunkRefsSetIterator(iterator, chunksLimiter, seriesLimiter)
+	return iterator, nil
 }
 
 func newLoadingSeriesChunkRefsSetIterator(
