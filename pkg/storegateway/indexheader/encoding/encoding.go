@@ -106,17 +106,38 @@ func (d *Decbuf) ResetAt(off int) {
 	}
 }
 
+// UvarintStr reads varint prefixed bytes into a string and consumes them. The string
+// returned allocates its own memory may be used after subsequent reads from the Decbuf.
+// If E is non-nil, this method returns an empty string.
 func (d *Decbuf) UvarintStr() string {
 	return string(d.UvarintBytes())
 }
 
+// UvarintBytes reads varint prefixed bytes into a byte slice consuming them but without
+// allocating. The bytes returned are no longer value after subsequent reads from the Decbuf.
+// If E is non-nil, this method returns an empty byte slice.
 func (d *Decbuf) UvarintBytes() []byte {
 	l := d.Uvarint64()
 	if d.E != nil {
 		return []byte{}
 	}
 
-	b, err := d.r.Read(int(l))
+	b, err := d.r.Peek(int(l))
+	if err != nil {
+		d.E = err
+		return []byte{}
+	}
+
+	if len(b) != int(l) {
+		d.E = ErrInvalidSize
+		return []byte{}
+	}
+
+	if b == nil {
+		return []byte{}
+	}
+
+	err = d.r.Skip(len(b))
 	if err != nil {
 		d.E = err
 		return []byte{}
