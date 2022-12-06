@@ -2563,6 +2563,42 @@ metaMonitoring:
     # -- ServiceMonitor will use these tlsConfig settings to make the health check requests
     tlsConfig: null
 
+  # Rules for the Prometheus Operator
+  prometheusRule:
+    # -- If enabled, a PrometheusRule resource for Prometheus Operator is created
+    enabled: false
+    # -- Create standard Mimir alerts in Prometheus Operator via a PrometheusRule CRD
+    mimirAlerts: false
+    # -- Create standard Mimir recording rules in Prometheus Operator via a PrometheusRule CRD
+    mimirRules: false
+    # -- PrometheusRule annotations
+    annotations: {}
+    # -- Additional PrometheusRule labels. To find out what your Prometheus operator expects,
+    # see the Prometheus object and field spec.ruleSelector
+    labels: {}
+    # -- prometheusRule namespace. This should be the namespace where the Prometheus Operator is installed,
+    # unless the Prometheus Operator is set up to look for rules outside its namespace
+    namespace: null
+    # -- Contents of Prometheus rules file
+    groups: []
+  #  - name: mimir_api_1
+  #    rules:
+  #    - expr: histogram_quantile(0.99, sum(rate(cortex_request_duration_seconds_bucket[1m]))
+  #        by (le, cluster, job))
+  #      record: cluster_job:cortex_request_duration_seconds:99quantile
+  #    - expr: histogram_quantile(0.50, sum(rate(cortex_request_duration_seconds_bucket[1m]))
+  #        by (le, cluster, job))
+  #      record: cluster_job:cortex_request_duration_seconds:50quantile
+  #    - expr: sum(rate(cortex_request_duration_seconds_sum[1m])) by (cluster, job) / sum(rate(cortex_request_duration_seconds_count[1m]))
+  #        by (cluster, job)
+  #      record: cluster_job:cortex_request_duration_seconds:avg
+  #    - expr: sum(rate(cortex_request_duration_seconds_bucket[1m])) by (le, cluster, job)
+  #      record: cluster_job:cortex_request_duration_seconds_bucket:sum_rate
+  #    - expr: sum(rate(cortex_request_duration_seconds_sum[1m])) by (cluster, job)
+  #      record: cluster_job:cortex_request_duration_seconds_sum:sum_rate
+  #    - expr: sum(rate(cortex_request_duration_seconds_count[1m])) by (cluster, job)
+  #      record: cluster_job:cortex_request_duration_seconds_count:sum_rate
+
   # metaMonitoringAgent configures the built in Grafana Agent that can scrape metrics and logs and send them to a local or remote destination
   grafanaAgent:
     # -- Controls whether to create PodLogs, MetricsInstance, LogsInstance, and GrafanaAgent CRs to scrape the
