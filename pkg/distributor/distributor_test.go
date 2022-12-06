@@ -1244,6 +1244,23 @@ func TestDistributor_Push_LabelRemoval(t *testing.T) {
 				"foo", "bar", "some", "thing"),
 			expectedSeries: labels.FromStrings("__name__", "some_metric", "cluster", "one"),
 		},
+		// Remove blank labels.
+		{
+			inputSeries:    labels.FromStrings("__name__", "some_metric", "blank", "", "foo", "bar"),
+			expectedSeries: labels.FromStrings("__name__", "some_metric", "foo", "bar"),
+		},
+		{
+			inputSeries:    labels.FromStrings("__name__", "some_metric", "foo", "bar", "zzz_blank", ""),
+			expectedSeries: labels.FromStrings("__name__", "some_metric", "foo", "bar"),
+		},
+		{
+			inputSeries:    labels.FromStrings("__blank__", "", "__name__", "some_metric", "foo", "bar"),
+			expectedSeries: labels.FromStrings("__name__", "some_metric", "foo", "bar"),
+		},
+		{
+			inputSeries:    labels.FromStrings("__blank__", "", "__name__", "some_metric", "foo", "bar", "zzz_blank", ""),
+			expectedSeries: labels.FromStrings("__name__", "some_metric", "foo", "bar"),
+		},
 		// Don't remove any labels.
 		{
 			removeReplica:  false,

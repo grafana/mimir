@@ -6,6 +6,7 @@
 
 * [ENHANCEMENT] Ruler: Added `-ruler.alertmanager-client.tls-enabled` configuration for alertmanager client. #3432 #3597
 * [ENHANCEMENT] Activity tracker logs now have `component=activity-tracker` label. #3556
+* [ENHANCEMENT] Distributor: remove labels with empty values #2439
 * [BUGFIX] Log the names of services that are not yet running rather than `unsupported value type` when calling `/ready` and some services are not running. #3625
 
 ### Mixin
