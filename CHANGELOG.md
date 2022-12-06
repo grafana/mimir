@@ -2,7 +2,7 @@
 
 ## main / unreleased
 
-### Grafana Mimir
+### Grafana Mimit r
 
 * [CHANGE] Store-gateway: Remove experimental `-blocks-storage.bucket-store.max-concurrent-reject-over-limit` flag. #3706
 * [FEATURE] Store-gateway: streaming of series. The store-gateway can now stream results back to the querier instead of buffering them. This is expected to greatly reduce peak memory consumption while keeping latency the same. You can enable this feature by setting `-blocks-storage.bucket-store.batch-series-size` to a value in the high thousands (5000-10000). This is still an experimental feature and is subject to a changing API and instability. #3540 #3546 #3587 #3620 #3645 #3355
@@ -36,6 +36,7 @@
 ### Documentation
 
 * [BUGFIX] Querier: Remove assertion that the `-querier.max-concurrent` flag must also be set for the query-frontend. #3678
+* [ENHANCEMENT] Update migration from cortex documentation. #3662
 
 ### Tools
 
