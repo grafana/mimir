@@ -1092,8 +1092,8 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 	}
 
 	for testName, bucketStoreOpts := range map[string][]BucketStoreOption{
-		"run with default options": {WithLogger(logger), WithChunkPool(chunkPool)},
-		"with series streaming":    {WithLogger(logger), WithChunkPool(chunkPool), WithStreamingSeriesPerBatch(5000)},
+		"with default options":  {WithLogger(logger), WithChunkPool(chunkPool)},
+		"with series streaming": {WithLogger(logger), WithChunkPool(chunkPool), WithStreamingSeriesPerBatch(5000)},
 	} {
 		st, err := NewBucketStore(
 			"test",
@@ -1384,14 +1384,14 @@ func TestSeries_RequestAndResponseHints(t *testing.T) {
 	tb, store, seriesSet1, seriesSet2, block1, block2, close := setupStoreForHintsTest(t)
 	tb.Cleanup(close)
 
-	tb.Run("with regular implementation", func(tb test.TB) {
+	tb.Run("with default options", func(tb test.TB) {
 		runTestServerSeries(tb, store, newTestCases(seriesSet1, seriesSet2, block1, block2)...)
 	})
 
 	tb, store, seriesSet1, seriesSet2, block1, block2, close = setupStoreForHintsTest(t, WithStreamingSeriesPerBatch(5000))
 	tb.Cleanup(close)
 
-	tb.Run("with streaming implementation", func(tb test.TB) {
+	tb.Run("with series streaming", func(tb test.TB) {
 		runTestServerSeries(tb, store, newTestCases(seriesSet1, seriesSet2, block1, block2)...)
 	})
 }
