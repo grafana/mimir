@@ -129,42 +129,72 @@ func newCustomSeriesLimiterFactory(limit uint64, code codes.Code) SeriesLimiterF
 	}
 }
 
-func prepareStoreWithTestBlocks(t testing.TB, dir string, bkt objstore.Bucket, manyParts bool, chunksLimiterFactory ChunksLimiterFactory, seriesLimiterFactory SeriesLimiterFactory) *storeSuite {
-	series := []labels.Labels{
-		labels.FromStrings("a", "1", "b", "1"),
-		labels.FromStrings("a", "1", "b", "2"),
-		labels.FromStrings("a", "2", "b", "1"),
-		labels.FromStrings("a", "2", "b", "2"),
-		labels.FromStrings("a", "1", "c", "1"),
-		labels.FromStrings("a", "1", "c", "2"),
-		labels.FromStrings("a", "2", "c", "1"),
-		labels.FromStrings("a", "2", "c", "2"),
-	}
-	return prepareStoreWithTestBlocksForSeries(t, dir, bkt, manyParts, chunksLimiterFactory, seriesLimiterFactory, series)
+type prepareStoreConfig struct {
+	tempDir              string
+	manyParts            bool
+	chunksLimiterFactory ChunksLimiterFactory
+	seriesLimiterFactory SeriesLimiterFactory
+	series               []labels.Labels
+	indexCache           indexcache.IndexCache
 }
 
-func prepareStoreWithTestBlocksForSeries(t testing.TB, dir string, bkt objstore.Bucket, manyParts bool, chunksLimiterFactory ChunksLimiterFactory, seriesLimiterFactory SeriesLimiterFactory, series []labels.Labels) *storeSuite {
+func (c *prepareStoreConfig) apply(opts ...prepareStoreConfigOption) *prepareStoreConfig {
+	for _, o := range opts {
+		o(c)
+	}
+	return c
+}
+
+func defaultPrepareStoreConfig(t testing.TB) *prepareStoreConfig {
+	return &prepareStoreConfig{
+		tempDir:              t.TempDir(),
+		manyParts:            false,
+		seriesLimiterFactory: NewSeriesLimiterFactory(0),
+		chunksLimiterFactory: NewChunksLimiterFactory(0),
+		indexCache:           noopCache{},
+		series: []labels.Labels{
+			labels.FromStrings("a", "1", "b", "1"),
+			labels.FromStrings("a", "1", "b", "2"),
+			labels.FromStrings("a", "2", "b", "1"),
+			labels.FromStrings("a", "2", "b", "2"),
+			labels.FromStrings("a", "1", "c", "1"),
+			labels.FromStrings("a", "1", "c", "2"),
+			labels.FromStrings("a", "2", "c", "1"),
+			labels.FromStrings("a", "2", "c", "2"),
+		},
+	}
+}
+
+type prepareStoreConfigOption func(config *prepareStoreConfig)
+
+func withManyParts() prepareStoreConfigOption {
+	return func(config *prepareStoreConfig) {
+		config.manyParts = true
+	}
+}
+
+func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareStoreConfig) *storeSuite {
 	extLset := labels.FromStrings("ext1", "value1")
 
-	minTime, maxTime := prepareTestBlocks(t, time.Now(), 3, dir, bkt, series, extLset)
+	minTime, maxTime := prepareTestBlocks(t, time.Now(), 3, cfg.tempDir, bkt, cfg.series, extLset)
 
 	s := &storeSuite{
 		logger:  log.NewNopLogger(),
-		cache:   &swappableCache{},
+		cache:   &swappableCache{IndexCache: cfg.indexCache},
 		minTime: minTime,
 		maxTime: maxTime,
 	}
 
-	metaFetcher, err := block.NewMetaFetcher(s.logger, 20, objstore.WithNoopInstr(bkt), dir, nil, []block.MetadataFilter{})
+	metaFetcher, err := block.NewMetaFetcher(s.logger, 20, objstore.WithNoopInstr(bkt), cfg.tempDir, nil, []block.MetadataFilter{})
 	assert.NoError(t, err)
 
 	store, err := NewBucketStore(
 		"tenant",
 		objstore.WithNoopInstr(bkt),
 		metaFetcher,
-		dir,
-		chunksLimiterFactory,
-		seriesLimiterFactory,
+		cfg.tempDir,
+		cfg.chunksLimiterFactory,
+		cfg.seriesLimiterFactory,
 		newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 		20,
 		mimir_tsdb.DefaultPostingOffsetInMemorySampling,
@@ -183,7 +213,7 @@ func prepareStoreWithTestBlocksForSeries(t testing.TB, dir string, bkt objstore.
 
 	s.store = store
 
-	if manyParts {
+	if cfg.manyParts {
 		s.store.partitioner = naivePartitioner{}
 	}
 
@@ -408,13 +438,11 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 }
 
 func TestBucketStore_e2e(t *testing.T) {
-	foreachStore(t, func(t *testing.T, bkt objstore.Bucket) {
+	foreachStore(t, func(t *testing.T, newSuite suiteFactory) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		dir := t.TempDir()
-
-		s := prepareStoreWithTestBlocks(t, dir, bkt, false, NewChunksLimiterFactory(0), NewSeriesLimiterFactory(0))
+		s := newSuite()
 
 		if ok := t.Run("no index cache", func(t *testing.T) {
 			s.cache.SwapWith(noopCache{})
@@ -461,13 +489,14 @@ func (g naivePartitioner) Partition(length int, rng func(int) (uint64, uint64)) 
 // This tests if our, sometimes concurrent, fetches for different parts works.
 // Regression test against: https://github.com/thanos-io/thanos/issues/829.
 func TestBucketStore_ManyParts_e2e(t *testing.T) {
-	foreachStore(t, func(t *testing.T, bkt objstore.Bucket) {
+	foreachStore(t, func(t *testing.T, newSuite suiteFactory) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		dir := t.TempDir()
+		prepareCfg := defaultPrepareStoreConfig(t)
+		prepareCfg.manyParts = true
 
-		s := prepareStoreWithTestBlocks(t, dir, bkt, true, NewChunksLimiterFactory(0), NewSeriesLimiterFactory(0))
+		s := newSuite(withManyParts())
 
 		indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(s.logger, nil, indexcache.InMemoryIndexCacheConfig{
 			MaxItemSize: 1e5,
@@ -517,9 +546,11 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 			defer cancel()
 			bkt := objstore.NewInMemBucket()
 
-			dir := t.TempDir()
+			prepConfig := defaultPrepareStoreConfig(t)
+			prepConfig.chunksLimiterFactory = newCustomChunksLimiterFactory(testData.maxChunksLimit, testData.code)
+			prepConfig.seriesLimiterFactory = newCustomSeriesLimiterFactory(testData.maxSeriesLimit, testData.code)
 
-			s := prepareStoreWithTestBlocks(t, dir, bkt, false, newCustomChunksLimiterFactory(testData.maxChunksLimit, testData.code), newCustomSeriesLimiterFactory(testData.maxSeriesLimit, testData.code))
+			s := prepareStoreWithTestBlocks(t, bkt, prepConfig)
 			assert.NoError(t, s.store.SyncBlocks(ctx))
 
 			req := &storepb.SeriesRequest{
@@ -530,7 +561,6 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 				MaxTime: timestamp.FromTime(maxTime),
 			}
 
-			s.cache.SwapWith(noopCache{})
 			srv := newBucketStoreSeriesServer(ctx)
 			err := s.store.Series(req, srv)
 
@@ -548,14 +578,11 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 }
 
 func TestBucketStore_LabelNames_e2e(t *testing.T) {
-	foreachStore(t, func(t *testing.T, bkt objstore.Bucket) {
+	foreachStore(t, func(t *testing.T, newSuite suiteFactory) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		dir := t.TempDir()
-
-		s := prepareStoreWithTestBlocks(t, dir, bkt, false, NewChunksLimiterFactory(0), NewSeriesLimiterFactory(0))
-		s.cache.SwapWith(noopCache{})
+		s := newSuite()
 
 		mint, maxt := s.store.TimeRange()
 		assert.Equal(t, s.minTime, mint)
@@ -648,14 +675,11 @@ func TestBucketStore_LabelNames_e2e(t *testing.T) {
 }
 
 func TestBucketStore_LabelValues_e2e(t *testing.T) {
-	foreachStore(t, func(t *testing.T, bkt objstore.Bucket) {
+	foreachStore(t, func(t *testing.T, newSuite suiteFactory) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		dir := t.TempDir()
-
-		s := prepareStoreWithTestBlocks(t, dir, bkt, false, NewChunksLimiterFactory(0), NewSeriesLimiterFactory(0))
-		s.cache.SwapWith(noopCache{})
+		s := newSuite()
 
 		mint, maxt := s.store.TimeRange()
 		assert.Equal(t, s.minTime, mint)
@@ -742,12 +766,17 @@ func emptyToNil(values []string) []string {
 	return values
 }
 
-func foreachStore(t *testing.T, testFn func(t *testing.T, bkt objstore.Bucket)) {
+type suiteFactory func(...prepareStoreConfigOption) *storeSuite
+
+func foreachStore(t *testing.T, runTest func(t *testing.T, newSuite suiteFactory)) {
 	t.Parallel()
 
 	// Mandatory Inmem. Not parallel, to detect problem early.
 	if ok := t.Run("inmem", func(t *testing.T) {
-		testFn(t, objstore.NewInMemBucket())
+		factory := func(opts ...prepareStoreConfigOption) *storeSuite {
+			return prepareStoreWithTestBlocks(t, objstore.NewInMemBucket(), defaultPrepareStoreConfig(t).apply(opts...))
+		}
+		runTest(t, factory)
 	}); !ok {
 		return
 	}
@@ -760,6 +789,9 @@ func foreachStore(t *testing.T, testFn func(t *testing.T, bkt objstore.Bucket)) 
 
 		b, err := filesystem.NewBucket(dir)
 		assert.NoError(t, err)
-		testFn(t, b)
+		factory := func(opts ...prepareStoreConfigOption) *storeSuite {
+			return prepareStoreWithTestBlocks(t, b, defaultPrepareStoreConfig(t).apply(opts...))
+		}
+		runTest(t, factory)
 	})
 }
