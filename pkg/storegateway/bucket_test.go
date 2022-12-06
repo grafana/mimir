@@ -1092,8 +1092,9 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 	}
 
 	for testName, bucketStoreOpts := range map[string][]BucketStoreOption{
-		"with default options":  {WithLogger(logger), WithChunkPool(chunkPool)},
-		"with series streaming": {WithLogger(logger), WithChunkPool(chunkPool), WithStreamingSeriesPerBatch(5000)},
+		"with default options":                  {WithLogger(logger), WithChunkPool(chunkPool)},
+		"with series streaming (1K per batch)":  {WithLogger(logger), WithChunkPool(chunkPool), WithStreamingSeriesPerBatch(1000)},
+		"with series streaming (10K per batch)": {WithLogger(logger), WithChunkPool(chunkPool), WithStreamingSeriesPerBatch(10000)},
 	} {
 		st, err := NewBucketStore(
 			"test",
