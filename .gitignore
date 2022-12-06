@@ -35,7 +35,7 @@ metrics-activity.log
 /mimir-continuous-test
 
 # Binaries built from ./tools
-store-gateway-load-test
+/store-gateway-load-test
 
 # This is custom Makefile modification, if it exists.
 Makefile.local
