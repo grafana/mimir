@@ -95,7 +95,7 @@ mimir:
           kvstore:
             store: "memberlist"
 
-      {{- if .Values.minio.enabled }}
+      {{- if  or (.Values.minio.enabled) (.Values.minio.existingEndpoint) }}
     admin_client:
       storage:
         type: s3
