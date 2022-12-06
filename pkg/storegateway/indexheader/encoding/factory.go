@@ -50,6 +50,9 @@ func (df *DecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table) Decb
 		}
 	}()
 
+	// TODO: A particular index-header only has symbols and posting offsets. We should only need to read
+	//  the length of each of those a single time per index-header (DecbufFactory). Should the factory
+	//  cache the length? Should the table of contents be passed to the factory?
 	lengthBytes := make([]byte, 4)
 	n, err := f.ReadAt(lengthBytes, int64(offset))
 	if err != nil {
