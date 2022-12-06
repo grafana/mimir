@@ -36,11 +36,12 @@ type Config struct {
 
 	// Tested config.
 	TesterUserID                      string
-	TesterMinTime                     flagext.Time
-	TesterMaxTime                     flagext.Time
-	TesterMinRange                    time.Duration
-	TesterMaxRange                    time.Duration
-	TesterMetricNameRegex             string
+	TesterRequestMinTime              flagext.Time
+	TesterRequestMaxTime              flagext.Time
+	TesterRequestMinRange             time.Duration
+	TesterRequestMaxRange             time.Duration
+	TesterRequestMetricNameRegex      string
+	TesterRequestSkipChunks           bool
 	TesterConcurrency                 int
 	TesterComparisonAuthoritativeZone string
 }
@@ -49,11 +50,12 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.Mimir.RegisterFlags(f, logger)
 
 	f.StringVar(&c.TesterUserID, "tester.user-id", "anonymous", "The user ID to run queries.")
-	f.Var(&c.TesterMinTime, "tester.min-time", fmt.Sprintf("The minimum time to query. The supported time format is %q.", time.RFC3339))
-	f.Var(&c.TesterMaxTime, "tester.max-time", fmt.Sprintf("The maximum time to query. The supported time format is %q.", time.RFC3339))
-	f.DurationVar(&c.TesterMinRange, "tester.min-range", 24*time.Hour, "The minimum time range to query within the configured min and max time.")
-	f.DurationVar(&c.TesterMaxRange, "tester.max-range", 7*24*time.Hour, "The maximum time range to query within the configured min and max time.")
-	f.StringVar(&c.TesterMetricNameRegex, "tester.metric-name-regex", "up", "The metric name regex to use in the request to store-gateways.")
+	f.Var(&c.TesterRequestMinTime, "tester.request-min-time", fmt.Sprintf("The minimum time to query. The supported time format is %q.", time.RFC3339))
+	f.Var(&c.TesterRequestMaxTime, "tester.request-max-time", fmt.Sprintf("The maximum time to query. The supported time format is %q.", time.RFC3339))
+	f.DurationVar(&c.TesterRequestMinRange, "tester.request-min-range", 24*time.Hour, "The minimum time range to query within the configured min and max time.")
+	f.DurationVar(&c.TesterRequestMaxRange, "tester.request-max-range", 7*24*time.Hour, "The maximum time range to query within the configured min and max time.")
+	f.StringVar(&c.TesterRequestMetricNameRegex, "tester.request-metric-name-regex", "up", "The metric name regex to use in the request to store-gateways.")
+	f.BoolVar(&c.TesterRequestSkipChunks, "tester.request-skip-chunks", false, "True to request series without chunks.")
 	f.IntVar(&c.TesterConcurrency, "tester.concurrency", 1, "The number of concurrent requests to run.")
 	f.StringVar(&c.TesterComparisonAuthoritativeZone, "tester.comparison-authoritative-zone", "zone-c", "The name of the zone to compare results against. This should be the zone expected to return the expected results.")
 }
@@ -142,7 +144,7 @@ func main() {
 		{
 			Type:  storepb.LabelMatcher_RE,
 			Name:  labels.MetricName,
-			Value: cfg.TesterMetricNameRegex,
+			Value: cfg.TesterRequestMetricNameRegex,
 		},
 	}
 
@@ -158,7 +160,7 @@ func main() {
 				start, end := getRandomRequestTimeRange(cfg)
 				//level.Info(logger).Log("msg", "request", "start", time.UnixMilli(start).String(), "end", time.UnixMilli(end).String(), "metric name regexp", cfg.TesterMetricNameRegex)
 
-				if err := t.sendRequestToAllStoreGatewayZonesAndCompareResults(ctx, start, end, matchers, compareResults); err != nil {
+				if err := t.sendRequestToAllStoreGatewayZonesAndCompareResults(ctx, start, end, matchers, cfg.TesterRequestSkipChunks, compareResults); err != nil {
 					level.Error(logger).Log("msg", "failed to run test", "err", err)
 				}
 			}
@@ -172,11 +174,11 @@ func main() {
 
 func getRandomRequestTimeRange(cfg *Config) (start, end int64) {
 	// Get a random time range duration, honoring the configured min and max range.
-	timeRangeDurationMillis := (cfg.TesterMinRange + time.Duration(rand.Int63n(int64(cfg.TesterMaxRange-cfg.TesterMinRange)))).Milliseconds()
+	timeRangeDurationMillis := (cfg.TesterRequestMinRange + time.Duration(rand.Int63n(int64(cfg.TesterRequestMaxRange-cfg.TesterRequestMinRange)))).Milliseconds()
 
 	// Get a random min timestamp, honoring the configured min and max time.
-	minTimeMillis := time.Time(cfg.TesterMinTime).UnixMilli()
-	maxTimeMillis := time.Time(cfg.TesterMaxTime).UnixMilli()
+	minTimeMillis := time.Time(cfg.TesterRequestMinTime).UnixMilli()
+	maxTimeMillis := time.Time(cfg.TesterRequestMaxTime).UnixMilli()
 
 	if timeRangeDurationMillis < maxTimeMillis-minTimeMillis {
 		start = minTimeMillis + rand.Int63n(maxTimeMillis-minTimeMillis-timeRangeDurationMillis)

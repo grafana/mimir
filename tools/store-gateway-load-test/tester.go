@@ -38,8 +38,8 @@ func newTester(userID string, finder querier.BlocksFinder, selector *storeGatewa
 	}
 }
 
-func (t *tester) sendRequestToAllStoreGatewayZonesAndCompareResults(ctx context.Context, minT int64, maxT int64, matchers []storepb.LabelMatcher, compareResults bool) error {
-	perZoneSeries, err := t.sendRequestToAllStoreGatewayZones(ctx, minT, maxT, matchers, compareResults)
+func (t *tester) sendRequestToAllStoreGatewayZonesAndCompareResults(ctx context.Context, minT int64, maxT int64, matchers []storepb.LabelMatcher, skipChunks, compareResults bool) error {
+	perZoneSeries, err := t.sendRequestToAllStoreGatewayZones(ctx, minT, maxT, matchers, skipChunks, compareResults)
 	if err != nil {
 		return err
 	}
@@ -66,7 +66,7 @@ func (t *tester) sendRequestToAllStoreGatewayZonesAndCompareResults(ctx context.
 	return nil
 }
 
-func (t *tester) sendRequestToAllStoreGatewayZones(ctx context.Context, minT int64, maxT int64, matchers []storepb.LabelMatcher, keepResults bool) (map[string][]*storepb.Series, error) {
+func (t *tester) sendRequestToAllStoreGatewayZones(ctx context.Context, minT int64, maxT int64, matchers []storepb.LabelMatcher, skipChunks, keepResults bool) (map[string][]*storepb.Series, error) {
 	// Find the list of blocks we need to query given the time range.
 	knownBlocks, _, err := t.finder.GetBlocks(ctx, t.userID, minT, maxT)
 	if err != nil {
@@ -105,8 +105,6 @@ func (t *tester) sendRequestToAllStoreGatewayZones(ctx context.Context, minT int
 			blockIDs := blockIDs
 
 			g.Go(func() error {
-				skipChunks := false
-
 				req, err := querier.CreateSeriesRequest(minT, maxT, matchers, skipChunks, blockIDs)
 				if err != nil {
 					return errors.Wrapf(err, "failed to create series request")
