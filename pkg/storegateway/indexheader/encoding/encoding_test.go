@@ -386,6 +386,30 @@ func FuzzDecbuf_UvarintBytes(f *testing.F) {
 	})
 }
 
+func BenchmarkDecbuf_UvarintBytes(t *testing.B) {
+	// 127 bytes, the varint size will be 1 byte.
+	val := []byte("1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567")
+	enc := prom_encoding.Encbuf{}
+	enc.PutUvarintBytes(val)
+
+	dec := createDecbufWithBytes(t, enc.Get())
+	t.ResetTimer()
+
+	for i := 0; i < t.N; i++ {
+		b := dec.UvarintBytes()
+		if err := dec.Err(); err != nil {
+			require.NoError(t, err)
+		}
+
+		require.Len(t, b, 127)
+
+		dec.ResetAt(0)
+		if err := dec.Err(); err != nil {
+			require.NoError(t, err)
+		}
+	}
+}
+
 func TestDecbuf_UvarintStrHappyPath(t *testing.T) {
 	cases := []struct {
 		name              string
@@ -501,7 +525,7 @@ func TestDecbuf_Crc32(t *testing.T) {
 	})
 }
 
-func createDecbufWithBytes(t *testing.T, b []byte) Decbuf {
+func createDecbufWithBytes(t testing.TB, b []byte) Decbuf {
 	dir := t.TempDir()
 	filePath := path.Join(dir, "test-file")
 	require.NoError(t, os.WriteFile(filePath, b, 0700))

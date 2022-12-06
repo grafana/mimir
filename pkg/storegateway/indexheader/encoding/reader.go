@@ -77,8 +77,9 @@ func (f *FileReader) Skip(l int) error {
 }
 
 // Peek returns at most the given number of bytes from the file segment
-// without consuming them. It is valid to Peek beyond the end of the file
-// segment. In this case the available bytes are returned with a nil error.
+// without consuming them. The bytes returned become invalid at the next
+// read. It is valid to Peek beyond the end of the file segment. In this
+// case the available bytes are returned with a nil error.
 func (f *FileReader) Peek(n int) ([]byte, error) {
 	b, err := f.buf.Peek(n)
 	// bufio.Reader still returns what it read when it hits EOF and callers
