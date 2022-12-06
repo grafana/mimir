@@ -44,6 +44,7 @@ import (
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/extract"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -421,9 +422,8 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	d.replicationFactor.Set(float64(ingestersRing.ReplicationFactor()))
 	d.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(d.cleanupInactiveUser)
 
-	d.forwarder = forwarding.NewForwarder(cfg.Forwarding, reg, log)
-	// The forwarder is an optional feature, if it's disabled then d.forwarder will be nil.
-	if d.forwarder != nil {
+	if cfg.Forwarding.Enabled || cfg.Forwarding.RulesForwardingEnabled {
+		d.forwarder = forwarding.NewForwarder(cfg.Forwarding, reg, log)
 		subservices = append(subservices, d.forwarder)
 	}
 
@@ -679,6 +679,7 @@ func (d *Distributor) wrapPushWithMiddlewares(externalMiddleware func(next push.
 	middlewares = append(middlewares, d.prePushRelabelMiddleware)
 	middlewares = append(middlewares, d.prePushValidationMiddleware)
 	middlewares = append(middlewares, d.prePushForwardingMiddleware)
+	middlewares = append(middlewares, d.prePushRuleOutputForwardingMiddleware)
 	if externalMiddleware != nil {
 		middlewares = append(middlewares, externalMiddleware)
 	}
@@ -957,7 +958,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 // prePushForwardingMiddleware is used as push.Func middleware in front of push method.
 // It forwards time series to configured remote_write endpoints if the forwarding rules say so.
 func (d *Distributor) prePushForwardingMiddleware(next push.Func) push.Func {
-	if d.forwarder == nil {
+	if !d.cfg.Forwarding.Enabled {
 		// Forwarding is disabled, no need to wrap "next".
 		return next
 	}
@@ -994,6 +995,52 @@ func (d *Distributor) prePushForwardingMiddleware(next push.Func) push.Func {
 		}
 
 		return resp, httpgrpcutil.PrioritizeRecoverableErr(errs...)
+	}
+}
+
+// This middleware forwards rule outputs. Only useful when used from ruler.
+func (d *Distributor) prePushRuleOutputForwardingMiddleware(next push.Func) push.Func {
+	if !d.cfg.Forwarding.RulesForwardingEnabled {
+		// Rules output forwarding is disabled, no need to wrap "next".
+		return next
+	}
+
+	return func(ctx context.Context, pushReq *push.Request) (*mimirpb.WriteResponse, error) {
+		userID, err := tenant.TenantID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		req, err := pushReq.WriteRequest()
+		if err != nil {
+			return nil, err
+		}
+
+		if req.Source == mimirpb.RULE {
+			var errCh <-chan error
+			req.Timeseries, errCh = d.forwardRuleOutputSamples(ctx, userID, req.Timeseries)
+			resp, nextErr := next(ctx, pushReq)
+			errs := []error{nextErr}
+
+		LOOP:
+			for {
+				select {
+				case err, ok := <-errCh:
+					if ok {
+						if err != nil {
+							errs = append(errs, err)
+						}
+					} else {
+						break LOOP
+					}
+				case <-ctx.Done():
+					return resp, ctx.Err()
+				}
+			}
+
+			return resp, httpgrpcutil.PrioritizeRecoverableErr(errs...)
+		} else {
+			return next(ctx, pushReq)
+		}
 	}
 }
 
@@ -1115,6 +1162,30 @@ func (d *Distributor) forwardSamples(ctx context.Context, userID string, ts []mi
 	// Reassign req.Timeseries because the forwarder creates a new slice which has been filtered down.
 	// The cleanup func will cleanup the new slice, it's the forwarders responsibility to return the old one to the pool.
 	ts, forwardingErrCh = d.forwarder.Forward(ctx, endpoint, dropSamplesBeforeTimestamp, forwardingRules, ts, userID)
+
+	return ts, forwardingErrCh
+}
+
+func (d *Distributor) forwardRuleOutputSamples(ctx context.Context, userID string, ts []mimirpb.PreallocTimeseries) ([]mimirpb.PreallocTimeseries, <-chan error) {
+	forwardingErrCh := make(chan error)
+	endpoint := d.limits.ForwardingEndpoint(userID)
+	if endpoint == "" {
+		close(forwardingErrCh)
+		return ts, forwardingErrCh
+	}
+
+	// Create forwarding rules for each series in the input.
+	forwardingRules := validation.ForwardingRules{}
+	for _, s := range ts {
+		metric, err := extract.UnsafeMetricNameFromLabelAdapters(s.Labels)
+		if err == nil {
+			forwardingRules[metric] = validation.ForwardingRule{Ingest: true}
+		}
+	}
+
+	// Reassign req.Timeseries because the forwarder creates a new slice which has been filtered down.
+	// The cleanup func will cleanup the new slice, it's the forwarders responsibility to return the old one to the pool.
+	ts, forwardingErrCh = d.forwarder.Forward(ctx, endpoint, 0, forwardingRules, ts, userID)
 
 	return ts, forwardingErrCh
 }

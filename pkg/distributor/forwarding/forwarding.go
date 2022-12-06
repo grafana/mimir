@@ -73,12 +73,8 @@ type forwarder struct {
 	discardedSamplesTooOld *prometheus.CounterVec
 }
 
-// NewForwarder returns a new forwarder, if forwarding is disabled it returns nil.
+// NewForwarder returns a new forwarder.
 func NewForwarder(cfg Config, reg prometheus.Registerer, log log.Logger) Forwarder {
-	if !cfg.Enabled {
-		return nil
-	}
-
 	f := &forwarder{
 		cfg:   cfg,
 		pools: newPools(),
@@ -232,7 +228,7 @@ func (f *forwarder) worker() {
 //     The Forward() method does not send the time series to the ingesters itself, it expects the caller to do that.
 //   - A chan of errors which resulted from forwarding the time series, the chan gets closed when all forwarding requests have completed.
 func (f *forwarder) Forward(ctx context.Context, endpoint string, dontForwardBefore int64, rules validation.ForwardingRules, in []mimirpb.PreallocTimeseries, user string) ([]mimirpb.PreallocTimeseries, chan error) {
-	if !f.cfg.Enabled || endpoint == "" {
+	if endpoint == "" {
 		errCh := make(chan error)
 		close(errCh)
 		return in, errCh
