@@ -912,7 +912,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 			readers = newChunkReaders(chunkr)
 		}
 
-		seriesSets, resHints, err = s.batchedSeriesSetForBlocks(ctx, req, blocks, indexReaders, readers, s.chunkPool, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
+		seriesSets, resHints, err = s.streamingSeriesSetForBlocks(ctx, req, blocks, indexReaders, readers, s.chunkPool, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
 	}
 
 	if err != nil {
@@ -1078,7 +1078,7 @@ func (s *BucketStore) synchronousSeriesSet(
 	return storepb.MergeSeriesSets(res...), err
 }
 
-func (s *BucketStore) batchedSeriesSetForBlocks(
+func (s *BucketStore) streamingSeriesSetForBlocks(
 	ctx context.Context,
 	req *storepb.SeriesRequest,
 	blocks []*bucketBlock,
