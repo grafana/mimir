@@ -64,7 +64,11 @@ func (r *bucketIndexReader) ExpandedPostings(ctx context.Context, ms []*labels.M
 	var (
 		loaded bool
 		cached bool
+		start  = time.Now()
 	)
+	defer stats.update(func(stats *queryStats) {
+		stats.expandedPostingsDuration += time.Since(start)
+	})
 	span, ctx := tracing.StartSpan(ctx, "ExpandedPostings()")
 	defer func() {
 		span.LogKV("returned postings", len(returnRefs), "cached", cached, "promise_loaded", loaded)

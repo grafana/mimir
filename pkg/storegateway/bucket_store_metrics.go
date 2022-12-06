@@ -50,7 +50,8 @@ type BucketStoreMetrics struct {
 
 	indexHeaderReaderMetrics *indexheader.ReaderPoolMetrics
 
-	iteratorLoadDurations *prometheus.SummaryVec
+	iteratorLoadDurations  *prometheus.SummaryVec
+	expandPostingsDuration prometheus.Summary
 }
 
 func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
@@ -183,6 +184,12 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 		Help:       "The time it takes an iterator to load the next item.",
 		Objectives: map[float64]float64{0.99: 0.001},
 	}, []string{"iterator"})
+
+	m.expandPostingsDuration = promauto.With(reg).NewSummary(prometheus.SummaryOpts{
+		Name:       "cortex_bucket_store_expanded_postings_duration",
+		Help:       "The time it takes to get a list of all series that match the request matcher.",
+		Objectives: map[float64]float64{0.99: 0.001},
+	})
 
 	return &m
 }
