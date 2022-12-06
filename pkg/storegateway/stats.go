@@ -61,6 +61,7 @@ func (s queryStats) merge(o *queryStats) *queryStats {
 
 	s.postingsTouched += o.postingsTouched
 	s.postingsTouchedSizeSum += o.postingsTouchedSizeSum
+	s.postingsToFetch += o.postingsToFetch
 	s.postingsFetched += o.postingsFetched
 	s.postingsFetchedSizeSum += o.postingsFetchedSizeSum
 	s.postingsFetchCount += o.postingsFetchCount
