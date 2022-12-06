@@ -35,13 +35,14 @@ type Config struct {
 	Mimir mimir.Config `yaml:"inline"`
 
 	// Tested config.
-	TesterUserID          string
-	TesterMinTime         flagext.Time
-	TesterMaxTime         flagext.Time
-	TesterMinRange        time.Duration
-	TesterMaxRange        time.Duration
-	TesterMetricNameRegex string
-	TesterConcurrency     int
+	TesterUserID                      string
+	TesterMinTime                     flagext.Time
+	TesterMaxTime                     flagext.Time
+	TesterMinRange                    time.Duration
+	TesterMaxRange                    time.Duration
+	TesterMetricNameRegex             string
+	TesterConcurrency                 int
+	TesterComparisonAuthoritativeZone string
 }
 
 func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
@@ -54,6 +55,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&c.TesterMaxRange, "tester.max-range", 7*24*time.Hour, "The maximum time range to query within the configured min and max time.")
 	f.StringVar(&c.TesterMetricNameRegex, "tester.metric-name-regex", "up", "The metric name regex to use in the request to store-gateways.")
 	f.IntVar(&c.TesterConcurrency, "tester.concurrency", 1, "The number of concurrent requests to run.")
+	f.StringVar(&c.TesterComparisonAuthoritativeZone, "tester.comparison-authoritative-zone", "zone-c", "The name of the zone to compare results against. This should be the zone expected to return the expected results.")
 }
 
 func (c *Config) Validate(logger log.Logger) error {
@@ -144,7 +146,7 @@ func main() {
 		},
 	}
 
-	t := newTester(cfg.TesterUserID, finder, selector, logger)
+	t := newTester(cfg.TesterUserID, finder, selector, cfg.TesterComparisonAuthoritativeZone, logger)
 	g, _ := errgroup.WithContext(ctx)
 
 	for c := 0; c < cfg.TesterConcurrency; c++ {
@@ -154,7 +156,7 @@ func main() {
 		g.Go(func() error {
 			for {
 				start, end := getRandomRequestTimeRange(cfg)
-				level.Info(logger).Log("msg", "request", "start", time.UnixMilli(start).String(), "end", time.UnixMilli(end).String(), "metric name regexp", cfg.TesterMetricNameRegex)
+				//level.Info(logger).Log("msg", "request", "start", time.UnixMilli(start).String(), "end", time.UnixMilli(end).String(), "metric name regexp", cfg.TesterMetricNameRegex)
 
 				if err := t.sendRequestToAllStoreGatewayZonesAndCompareResults(ctx, start, end, matchers, compareResults); err != nil {
 					level.Error(logger).Log("msg", "failed to run test", "err", err)

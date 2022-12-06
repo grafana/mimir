@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"sort"
 	"sync"
@@ -20,18 +21,20 @@ import (
 )
 
 type tester struct {
-	userID   string
-	finder   querier.BlocksFinder
-	selector *storeGatewaySelector
-	logger   log.Logger
+	userID                      string
+	finder                      querier.BlocksFinder
+	selector                    *storeGatewaySelector
+	logger                      log.Logger
+	comparisonAuthoritativeZone string
 }
 
-func newTester(userID string, finder querier.BlocksFinder, selector *storeGatewaySelector, logger log.Logger) *tester {
+func newTester(userID string, finder querier.BlocksFinder, selector *storeGatewaySelector, comparisonAuthoritativeZone string, logger log.Logger) *tester {
 	return &tester{
-		userID:   userID,
-		finder:   finder,
-		selector: selector,
-		logger:   logger,
+		userID:                      userID,
+		finder:                      finder,
+		selector:                    selector,
+		logger:                      logger,
+		comparisonAuthoritativeZone: comparisonAuthoritativeZone,
 	}
 }
 
@@ -41,10 +44,22 @@ func (t *tester) sendRequestToAllStoreGatewayZonesAndCompareResults(ctx context.
 		return err
 	}
 
-	// TODO run the comparison
 	if compareResults {
-		for zone, zoneSeries := range perZoneSeries {
-			level.Info(t.logger).Log("msg", "response", "zone", zone, "num_series", len(zoneSeries))
+		errs := comparePerZoneSeries(perZoneSeries, t.comparisonAuthoritativeZone)
+		if len(errs) > 0 {
+			for _, err := range errs {
+				level.Warn(t.logger).Log("msg", "per-zone response comparison failed", "err", err)
+			}
+		} else {
+			// Find the number of series received per zone (given comparison succeeded,
+			// the number of series is equal in each zone).
+			numSeries := 0
+			for _, series := range perZoneSeries {
+				numSeries = len(series)
+				break
+			}
+
+			level.Info(t.logger).Log("msg", "per-zone response comparison succeeded", "num_zones", len(perZoneSeries), "num_series", numSeries)
 		}
 	}
 
@@ -201,4 +216,56 @@ func (t *tester) sendRequestToStoreGateway(ctx context.Context, client querier.B
 	}
 
 	return receivedSeries, nil
+}
+
+func comparePerZoneSeries(perZoneSeries map[string][]*storepb.Series, authoritativeZone string) []error {
+	var errs []error
+
+	// Get the list of zones.
+	zones := make([]string, 0, len(perZoneSeries))
+	for zone := range perZoneSeries {
+		zones = append(zones, zone)
+	}
+
+	// Compare each zone against the authoritative one.
+	for _, zone := range zones {
+		if zone == authoritativeZone {
+			continue
+		}
+
+		if err := compareSeries(perZoneSeries[zone], perZoneSeries[authoritativeZone], zone, authoritativeZone); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	return errs
+}
+
+func compareSeries(first, second []*storepb.Series, firstZone, secondZone string) error {
+	// Ensure the number of series is the same.
+	if len(first) != len(second) {
+		return fmt.Errorf("the number of series don't match: %s has %d series, while %s has %d series", firstZone, len(first), secondZone, len(second))
+	}
+
+	// Ensure all series match.
+	for i := 0; i < len(first); i++ {
+		if !labels.Equal(first[i].PromLabels(), second[i].PromLabels()) {
+			return fmt.Errorf("the series labels don't match at position %d: %s has series %s, while %s has series %s", i, firstZone, first[i].PromLabels().String(), secondZone, second[i].PromLabels().String())
+		}
+	}
+
+	// Ensure all chunks match.
+	for i := 0; i < len(first); i++ {
+		if len(first[i].Chunks) != len(second[i].Chunks) {
+			return fmt.Errorf("the number of chunks don't match for series at position %d (%s): %s has %d chunks, while %s has %d chunks", i, first[i].PromLabels().String(), firstZone, len(first[i].Chunks), secondZone, len(second[i].Chunks))
+		}
+
+		for c := 0; c < len(first[i].Chunks); c++ {
+			if !first[i].Chunks[c].Equal(second[i].Chunks[c]) {
+				return fmt.Errorf("the chunks don't match for series at position %d (%s): %s has chunk %s at position %d, while %s has chunk %s", i, first[i].PromLabels().String(), firstZone, first[i].Chunks[c].String(), c, secondZone, second[i].Chunks[c].String())
+			}
+		}
+	}
+
+	return nil
 }
