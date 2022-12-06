@@ -71,7 +71,7 @@ func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int) (bw
 	// Create a new raw decoding buffer with access to the entire index-header file to
 	// read initial version information and the table of contents.
 	d := r.factory.NewRawDecbuf()
-	defer d.Close()
+	defer r.factory.Close(d)
 	if err = d.Err(); err != nil {
 		return nil, fmt.Errorf("cannot create decoding buffer: %w", err)
 	}
