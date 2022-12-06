@@ -136,6 +136,7 @@ type prepareStoreConfig struct {
 	seriesLimiterFactory SeriesLimiterFactory
 	series               []labels.Labels
 	indexCache           indexcache.IndexCache
+	bucketStoreOpts      []BucketStoreOption
 }
 
 func (c *prepareStoreConfig) apply(opts ...prepareStoreConfigOption) *prepareStoreConfig {
@@ -173,6 +174,12 @@ func withManyParts() prepareStoreConfigOption {
 	}
 }
 
+func withBucketStoreOptions(opts ...BucketStoreOption) prepareStoreConfigOption {
+	return func(config *prepareStoreConfig) {
+		config.bucketStoreOpts = opts
+	}
+}
+
 func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareStoreConfig) *storeSuite {
 	extLset := labels.FromStrings("ext1", "value1")
 
@@ -187,6 +194,9 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 
 	metaFetcher, err := block.NewMetaFetcher(s.logger, 20, objstore.WithNoopInstr(bkt), cfg.tempDir, nil, []block.MetadataFilter{})
 	assert.NoError(t, err)
+
+	// Have our options in the beginning so tests can override logger and index cache if they need to
+	storeOpts := append([]BucketStoreOption{WithLogger(s.logger), WithIndexCache(s.cache)}, cfg.bucketStoreOpts...)
 
 	store, err := NewBucketStore(
 		"tenant",
@@ -203,9 +213,7 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 		time.Minute,
 		hashcache.NewSeriesHashCache(1024*1024),
 		NewBucketStoreMetrics(nil),
-		WithLogger(s.logger),
-		WithIndexCache(s.cache),
-		WithStreamingSeriesPerBatch(65536),
+		storeOpts...,
 	)
 	assert.NoError(t, err)
 	t.Cleanup(func() {
@@ -786,11 +794,24 @@ func foreachStore(t *testing.T, runTest func(t *testing.T, newSuite suiteFactory
 	t.Run("filesystem", func(t *testing.T) {
 		t.Parallel()
 
-		dir := t.TempDir()
-
-		b, err := filesystem.NewBucket(dir)
+		b, err := filesystem.NewBucket(t.TempDir())
 		assert.NoError(t, err)
 		factory := func(opts ...prepareStoreConfigOption) *storeSuite {
+			return prepareStoreWithTestBlocks(t, b, defaultPrepareStoreConfig(t).apply(opts...))
+		}
+		runTest(t, factory)
+	})
+
+	t.Run("streaming", func(t *testing.T) {
+		t.Parallel()
+
+		b, err := filesystem.NewBucket(t.TempDir())
+		assert.NoError(t, err)
+		factory := func(opts ...prepareStoreConfigOption) *storeSuite {
+			// We want to force each Series() call to use more than one batch to catch some edge cases.
+			// This should make the implementation slightly slower, although test time
+			// should be dominated by the setup.
+			opts = append(opts, withBucketStoreOptions(WithStreamingSeriesPerBatch(10)))
 			return prepareStoreWithTestBlocks(t, b, defaultPrepareStoreConfig(t).apply(opts...))
 		}
 		runTest(t, factory)
