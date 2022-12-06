@@ -1038,77 +1038,87 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 	chunkPool, err := pool.NewBucketedBytes(chunkBytesPoolMinSize, chunkBytesPoolMaxSize, 2, 1e9) // 1GB.
 	assert.NoError(t, err)
 
-	st, err := NewBucketStore(
-		"test",
-		ibkt,
-		f,
-		tmpDir,
-		NewChunksLimiterFactory(0),
-		NewSeriesLimiterFactory(0),
-		newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
-		1,
-		mimir_tsdb.DefaultPostingOffsetInMemorySampling,
-		indexheader.BinaryReaderConfig{},
-		false,
-		0,
-		hashcache.NewSeriesHashCache(1024*1024),
-		NewBucketStoreMetrics(nil),
-		WithLogger(logger),
-		WithChunkPool(chunkPool),
-		WithStreamingSeriesPerBatch(65536),
-	)
-	assert.NoError(t, err)
+	runTestWithStore := func(t test.TB, st *BucketStore) {
+		if !t.IsBenchmark() {
+			st.chunkPool = &mockedPool{parent: st.chunkPool}
+		}
 
-	if !t.IsBenchmark() {
-		st.chunkPool = &mockedPool{parent: st.chunkPool}
+		assert.NoError(t, st.SyncBlocks(context.Background()))
+
+		var bCases []*seriesCase
+		for _, p := range requestedRatios {
+			expectedSamples := int(p * float64(totalSeries*samplesPerSeries))
+			if expectedSamples == 0 {
+				expectedSamples = 1
+			}
+			seriesCut := int(p * float64(numOfBlocks*seriesPerBlock))
+			if seriesCut == 0 {
+				seriesCut = 1
+			} else if seriesCut == 1 {
+				seriesCut = expectedSamples / samplesPerSeriesPerBlock
+			}
+
+			bCases = append(bCases, &seriesCase{
+				Name: fmt.Sprintf("%dof%d", expectedSamples, totalSeries*samplesPerSeries),
+				Req: &storepb.SeriesRequest{
+					MinTime: 0,
+					MaxTime: int64(expectedSamples) - 1,
+					Matchers: []storepb.LabelMatcher{
+						{Type: storepb.LabelMatcher_EQ, Name: "foo", Value: "bar"},
+					},
+					SkipChunks: skipChunk,
+				},
+				ExpectedHints: hintspb.SeriesResponseHints{
+					QueriedBlocks: expectedQueriesBlocks,
+				},
+				// This does not cut chunks properly, but those are assured against for non benchmarks only, where we use 100% case only.
+				ExpectedSeries: series[:seriesCut],
+			})
+		}
+		runTestServerSeries(t, st, bCases...)
+
+		if !t.IsBenchmark() {
+			if !skipChunk {
+				// TODO(bwplotka): This is wrong negative for large number of samples (1mln). Investigate.
+				assert.Equal(t, 0, int(st.chunkPool.(*mockedPool).balance.Load()))
+				st.chunkPool.(*mockedPool).gets.Store(0)
+			}
+
+			for _, b := range st.blocks {
+				// NOTE(bwplotka): It is 4 x 1.0 for 100mln samples. Kind of make sense: long series.
+				assert.Equal(t, 0.0, promtest.ToFloat64(b.metrics.seriesRefetches))
+			}
+		}
 	}
 
-	assert.NoError(t, st.SyncBlocks(context.Background()))
+	for testName, bucketStoreOpts := range map[string][]BucketStoreOption{
+		"run with default options": {WithLogger(logger), WithChunkPool(chunkPool)},
+		"with series streaming":    {WithLogger(logger), WithChunkPool(chunkPool), WithStreamingSeriesPerBatch(5000)},
+	} {
+		st, err := NewBucketStore(
+			"test",
+			ibkt,
+			f,
+			tmpDir,
+			NewChunksLimiterFactory(0),
+			NewSeriesLimiterFactory(0),
+			newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
+			1,
+			mimir_tsdb.DefaultPostingOffsetInMemorySampling,
+			indexheader.BinaryReaderConfig{},
+			false,
+			0,
+			hashcache.NewSeriesHashCache(1024*1024),
+			NewBucketStoreMetrics(nil),
+			bucketStoreOpts...,
+		)
+		assert.NoError(t, err)
 
-	var bCases []*seriesCase
-	for _, p := range requestedRatios {
-		expectedSamples := int(p * float64(totalSeries*samplesPerSeries))
-		if expectedSamples == 0 {
-			expectedSamples = 1
-		}
-		seriesCut := int(p * float64(numOfBlocks*seriesPerBlock))
-		if seriesCut == 0 {
-			seriesCut = 1
-		} else if seriesCut == 1 {
-			seriesCut = expectedSamples / samplesPerSeriesPerBlock
-		}
-
-		bCases = append(bCases, &seriesCase{
-			Name: fmt.Sprintf("%dof%d", expectedSamples, totalSeries*samplesPerSeries),
-			Req: &storepb.SeriesRequest{
-				MinTime: 0,
-				MaxTime: int64(expectedSamples) - 1,
-				Matchers: []storepb.LabelMatcher{
-					{Type: storepb.LabelMatcher_EQ, Name: "foo", Value: "bar"},
-				},
-				SkipChunks: skipChunk,
-			},
-			ExpectedHints: hintspb.SeriesResponseHints{
-				QueriedBlocks: expectedQueriesBlocks,
-			},
-			// This does not cut chunks properly, but those are assured against for non benchmarks only, where we use 100% case only.
-			ExpectedSeries: series[:seriesCut],
+		t.Run(testName, func(t test.TB) {
+			runTestWithStore(t, st)
 		})
 	}
-	runTestServerSeries(t, st, bCases...)
 
-	if !t.IsBenchmark() {
-		if !skipChunk {
-			// TODO(bwplotka): This is wrong negative for large number of samples (1mln). Investigate.
-			assert.Equal(t, 0, int(st.chunkPool.(*mockedPool).balance.Load()))
-			st.chunkPool.(*mockedPool).gets.Store(0)
-		}
-
-		for _, b := range st.blocks {
-			// NOTE(bwplotka): It is 4 x 1.0 for 100mln samples. Kind of make sense: long series.
-			assert.Equal(t, 0.0, promtest.ToFloat64(b.metrics.seriesRefetches))
-		}
-	}
 }
 
 type mockedPool struct {
@@ -1314,65 +1324,76 @@ func TestBucketSeries_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 }
 
 func TestSeries_RequestAndResponseHints(t *testing.T) {
-	tb, store, seriesSet1, seriesSet2, block1, block2, close := setupStoreForHintsTest(t)
-	defer close()
-
-	testCases := []*seriesCase{
-		{
-			Name: "querying a range containing 1 block should return 1 block in the response hints",
-			Req: &storepb.SeriesRequest{
-				MinTime: 0,
-				MaxTime: 1,
-				Matchers: []storepb.LabelMatcher{
-					{Type: storepb.LabelMatcher_EQ, Name: "foo", Value: "bar"},
-				},
-			},
-			ExpectedSeries: seriesSet1,
-			ExpectedHints: hintspb.SeriesResponseHints{
-				QueriedBlocks: []hintspb.Block{
-					{Id: block1.String()},
-				},
-			},
-		}, {
-			Name: "querying a range containing multiple blocks should return multiple blocks in the response hints",
-			Req: &storepb.SeriesRequest{
-				MinTime: 0,
-				MaxTime: 3,
-				Matchers: []storepb.LabelMatcher{
-					{Type: storepb.LabelMatcher_EQ, Name: "foo", Value: "bar"},
-				},
-			},
-			ExpectedSeries: append(append([]*storepb.Series{}, seriesSet1...), seriesSet2...),
-			ExpectedHints: hintspb.SeriesResponseHints{
-				QueriedBlocks: []hintspb.Block{
-					{Id: block1.String()},
-					{Id: block2.String()},
-				},
-			},
-		}, {
-			Name: "querying a range containing multiple blocks but filtering a specific block should query only the requested block",
-			Req: &storepb.SeriesRequest{
-				MinTime: 0,
-				MaxTime: 3,
-				Matchers: []storepb.LabelMatcher{
-					{Type: storepb.LabelMatcher_EQ, Name: "foo", Value: "bar"},
-				},
-				Hints: mustMarshalAny(&hintspb.SeriesRequestHints{
-					BlockMatchers: []storepb.LabelMatcher{
-						{Type: storepb.LabelMatcher_EQ, Name: block.BlockIDLabel, Value: block1.String()},
+	newTestCases := func(seriesSet1 []*storepb.Series, seriesSet2 []*storepb.Series, block1 ulid.ULID, block2 ulid.ULID) []*seriesCase {
+		return []*seriesCase{
+			{
+				Name: "querying a range containing 1 block should return 1 block in the response hints",
+				Req: &storepb.SeriesRequest{
+					MinTime: 0,
+					MaxTime: 1,
+					Matchers: []storepb.LabelMatcher{
+						{Type: storepb.LabelMatcher_EQ, Name: "foo", Value: "bar"},
 					},
-				}),
-			},
-			ExpectedSeries: seriesSet1,
-			ExpectedHints: hintspb.SeriesResponseHints{
-				QueriedBlocks: []hintspb.Block{
-					{Id: block1.String()},
+				},
+				ExpectedSeries: seriesSet1,
+				ExpectedHints: hintspb.SeriesResponseHints{
+					QueriedBlocks: []hintspb.Block{
+						{Id: block1.String()},
+					},
+				},
+			}, {
+				Name: "querying a range containing multiple blocks should return multiple blocks in the response hints",
+				Req: &storepb.SeriesRequest{
+					MinTime: 0,
+					MaxTime: 3,
+					Matchers: []storepb.LabelMatcher{
+						{Type: storepb.LabelMatcher_EQ, Name: "foo", Value: "bar"},
+					},
+				},
+				ExpectedSeries: append(append([]*storepb.Series{}, seriesSet1...), seriesSet2...),
+				ExpectedHints: hintspb.SeriesResponseHints{
+					QueriedBlocks: []hintspb.Block{
+						{Id: block1.String()},
+						{Id: block2.String()},
+					},
+				},
+			}, {
+				Name: "querying a range containing multiple blocks but filtering a specific block should query only the requested block",
+				Req: &storepb.SeriesRequest{
+					MinTime: 0,
+					MaxTime: 3,
+					Matchers: []storepb.LabelMatcher{
+						{Type: storepb.LabelMatcher_EQ, Name: "foo", Value: "bar"},
+					},
+					Hints: mustMarshalAny(&hintspb.SeriesRequestHints{
+						BlockMatchers: []storepb.LabelMatcher{
+							{Type: storepb.LabelMatcher_EQ, Name: block.BlockIDLabel, Value: block1.String()},
+						},
+					}),
+				},
+				ExpectedSeries: seriesSet1,
+				ExpectedHints: hintspb.SeriesResponseHints{
+					QueriedBlocks: []hintspb.Block{
+						{Id: block1.String()},
+					},
 				},
 			},
-		},
+		}
 	}
 
-	runTestServerSeries(tb, store, testCases...)
+	tb, store, seriesSet1, seriesSet2, block1, block2, close := setupStoreForHintsTest(t)
+	tb.Cleanup(close)
+
+	tb.Run("with regular implementation", func(tb test.TB) {
+		runTestServerSeries(tb, store, newTestCases(seriesSet1, seriesSet2, block1, block2)...)
+	})
+
+	tb, store, seriesSet1, seriesSet2, block1, block2, close = setupStoreForHintsTest(t, WithStreamingSeriesPerBatch(5000))
+	tb.Cleanup(close)
+
+	tb.Run("with streaming implementation", func(tb test.TB) {
+		runTestServerSeries(tb, store, newTestCases(seriesSet1, seriesSet2, block1, block2)...)
+	})
 }
 
 func TestSeries_ErrorUnmarshallingRequestHints(t *testing.T) {
@@ -1412,7 +1433,6 @@ func TestSeries_ErrorUnmarshallingRequestHints(t *testing.T) {
 		NewBucketStoreMetrics(nil),
 		WithLogger(logger),
 		WithIndexCache(indexCache),
-		WithStreamingSeriesPerBatch(65536),
 	)
 	assert.NoError(t, err)
 	defer func() { assert.NoError(t, store.RemoveBlocksAndClose()) }()
@@ -1503,7 +1523,6 @@ func TestSeries_BlockWithMultipleChunks(t *testing.T) {
 		NewBucketStoreMetrics(nil),
 		WithLogger(logger),
 		WithIndexCache(indexCache),
-		WithStreamingSeriesPerBatch(65536),
 	)
 	assert.NoError(t, err)
 	assert.NoError(t, store.SyncBlocks(context.Background()))
@@ -1594,7 +1613,7 @@ func createBlockWithOneSeriesWithStep(t test.TB, dir string, lbls labels.Labels,
 	return createBlockFromHead(t, dir, h)
 }
 
-func setupStoreForHintsTest(t *testing.T) (test.TB, *BucketStore, []*storepb.Series, []*storepb.Series, ulid.ULID, ulid.ULID, func()) {
+func setupStoreForHintsTest(t *testing.T, opts ...BucketStoreOption) (test.TB, *BucketStore, []*storepb.Series, []*storepb.Series, ulid.ULID, ulid.ULID, func()) {
 	tb := test.NewTB(t)
 
 	closers := []func(){}
@@ -1652,6 +1671,7 @@ func setupStoreForHintsTest(t *testing.T) (test.TB, *BucketStore, []*storepb.Ser
 	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(logger, nil, indexcache.InMemoryIndexCacheConfig{})
 	assert.NoError(tb, err)
 
+	opts = append([]BucketStoreOption{WithLogger(logger), WithIndexCache(indexCache)}, opts...)
 	store, err := NewBucketStore(
 		"tenant",
 		instrBkt,
@@ -1667,9 +1687,7 @@ func setupStoreForHintsTest(t *testing.T) (test.TB, *BucketStore, []*storepb.Ser
 		0,
 		hashcache.NewSeriesHashCache(1024*1024),
 		NewBucketStoreMetrics(nil),
-		WithLogger(logger),
-		WithIndexCache(indexCache),
-		WithStreamingSeriesPerBatch(65536),
+		opts...,
 	)
 	assert.NoError(tb, err)
 	assert.NoError(tb, store.SyncBlocks(context.Background()))
