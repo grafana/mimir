@@ -121,7 +121,7 @@ chmod +x mimirtool
 
 ### Use mimirtool
 
-The `mimirtool config convert` command converts Cortex 1.11 configuration files to Grafana Mimir 2.0 configuration files.
+The `mimirtool config convert` command converts Cortex 1.11 configuration files to Grafana Mimir 2.3 configuration files.
 It removes any configuration parameters that are no longer available in Grafana Mimir, and it renames configuration parameters that have a new name.
 If you have explicitly set configuration parameters to a value matching the Cortex default, by default, `mimirtool config convert` doesn't update the value.
 To have `mimirtool config convert` update explicitly set values from the Cortex defaults to the new Grafana Mimir defaults, provide the `--update-defaults` flag.
@@ -201,6 +201,9 @@ You can update to the Grafana Mimir Helm chart from the Cortex Helm chart.
       enabled: true
   ```
 
+  Ingester needs storage for the WAL and to form blocks for upload. The WAL was optional in Cortex with chunks, but not optional in Mimir.
+  A statefulset is the most convenient way to arrange that each pod gets a storage volume.
+
 **To migrate to the Grafana Mimir Helm chart:**
 
 1. Install the updated monitoring mixin.
@@ -232,73 +235,19 @@ You can update to the Grafana Mimir Helm chart from the Cortex Helm chart.
    mimirtool config convert --yaml-file cortex.yaml
    ```
 
-   c. Place the updated configuration under the `mimir.config` key at the top level of your Helm values file.
+   c. Place the updated configuration under the `mimir.structuredConfig` key at the top level of your Helm values file.
 
-   > **Note:** The Grafana Mimir Helm chart expects the configuration as a string value.
-   > You can provide a literal block string with the `|` symbol.
+   > **Note:** We added `mimir.structuredConfig` in mimir-distributed v3.0.0. This new field allow to override specific configuration
+   > without the need to rewrite the whole block string literal like in `mimir.config`.
 
    In your Helm values file:
 
    ```yaml
    mimir:
-     config: |
-       <CONFIGURATION FILE CONTENTS>
+     structuredConfig: <CONFIGURATION FILE CONTENTS>
    ```
 
-   d. Merge the templated configuration from the `mimir-distributed` `values.yaml` file.
-   The Cortex Helm chart sets some additional configuration using flags.
-   The Grafana Mimir Helm chart sets that additional configuration in the configuration file.
-
-   - Set `frontend_worker.frontend_address` to `'{{ template "mimir.fullname" . }}-query-frontend-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" . }}'`.
-   - Set `ruler.alertmanager_url` to `'dnssrvnoa+http://_http-metrics._tcp.{{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc.cluster.local/alertmanager'`.
-   - If you want to use memberlist as the ring KV store, set `memberlist.join_members` to `['{{ include "mimir.fullname" . }}-gossip-ring']`.
-   - Append the caching configuration to `blocks_storage.bucket_store`.
-   - Set `ingester.ring.num_tokens` to the existing value you set in `ingester.lifecycler.num_tokens`.
-     This is especially important if you are using the default Cortex Helm chart values as it sets this to `512`.
-
-   A partial Helm values file with the changes incorporated looks similar to:
-
-   ```yaml
-   mimir:
-     config: |
-       blocks_storage:
-         {{- if index .Values "memcached-chunks" "enabled" }}
-         chunks_cache:
-           backend: "memcached"
-           memcached:
-             addresses: dns+{{ template "mimir.fullname" . }}-memcached-chunks.{{ .Release.Namespace }}.svc:{{ (index .Values "memcached-chunks").port }}
-             max_item_size: {{ mul (index .Values "memcached-chunks").maxItemMemory 1024 1024 }}
-         {{- end }}
-         {{- if index .Values "memcached-metadata" "enabled" }}
-         metadata_cache:
-           backend: "memcached"
-           memcached:
-             addresses: dns+{{ template "mimir.fullname" . }}-memcached-metadata.{{ .Release.Namespace }}.svc:{{ (index .Values "memcached-metadata").port }}
-             max_item_size: {{ mul (index .Values "memcached-metadata").maxItemMemory 1024 1024 }}
-         {{- end }}
-         {{- if index .Values "memcached-queries" "enabled" }}
-         index_cache:
-           backend: "memcached"
-           memcached:
-             addresses: dns+{{ template "mimir.fullname" . }}-memcached-index-queries.{{ .Release.Namespace }}.svc:{{ (index .Values "memcached-index-queries").port }}
-             max_item_size: {{ mul (index .Values "memcached-index-queries").maxItemMemory 1024 1024 }}
-         {{- end }}
-       frontend_worker:
-         frontend_address: "{{ template "mimir.fullname" . }}-query-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" . }}"
-       ingester:
-         ring:
-           num_tokens: 512
-       memberlist:
-         join_members: ["{{ include "mimir.fullname" . }}-gossip-ring"]
-       ruler:
-         alertmanager_url: "dnssrvnoa+http://_http-metrics._tcp.{{ template "mimir.fullname" . }}-alertmanager-headless.{{ .Release.Namespace }}.svc.cluster.local/alertmanager"
-   ```
-
-   e. Remove the original Cortex `$.config` member.
-
-   > **Note:** The `$` symbol refers to the top level of the values file.
-
-   f. Set the ingester `podManagementPolicy` to `"OrderedReady"`.
+   d. Set the ingester `podManagementPolicy` to `"OrderedReady"`.
    The Grafana Mimir chart prefers `"Parallel"` for faster scale up, but this field is immutable on an existing StatefulSet.
 
    In your `values.yaml` file:
@@ -308,7 +257,7 @@ You can update to the Grafana Mimir Helm chart from the Cortex Helm chart.
      podManagementPolicy: "OrderedReady"
    ```
 
-   g. Set the `nameOverride` to `cortex`.
+   e. Set the `nameOverride` to `cortex`.
    This configuration parameter ensures that resources have the same names as those created by the Cortex Helm chart and ensures Kubernetes performs a rolling upgrade of existing resources instead of creating new resources.
 
    In your `values.yaml` file:
@@ -317,15 +266,19 @@ You can update to the Grafana Mimir Helm chart from the Cortex Helm chart.
    nameOverride: "cortex"
    ```
 
-   h. Disable MinIO.
+   f. Disable MinIO and set existing MinIO endpoint.
    The Grafana Mimir Helm chart enables MinIO by default for convenience during first time installs.
-   If you are migrating from Cortex, use your existing object storage, and disable MinIO.
+   If you are migrating from Cortex, use your existing object storage, set the endpoint to the `existingEndpoint` field,
+   and disable MinIO. You don't need to do any of this if you don't use MinIO.
+
+   > **Note:** We added `minio.existingEndpoint` in mimir-distributed 4.0.0 values.yaml.
 
    In your `values.yaml` file:
 
    ```yaml
    minio:
      enabled: false
+     existingEndpoint: false
    ```
 
 1. Run the Helm upgrade with the Grafana Mimir chart.
