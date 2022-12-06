@@ -135,3 +135,28 @@ func createDecbufFactoryWithBytes(t testing.TB, len int, b []byte) *DecbufFactor
 
 	return NewDecbufFactory(filePath)
 }
+func BenchmarkDecbufFactory_NewDecbufAtUnchecked(t *testing.B) {
+	table := crc32.MakeTable(crc32.Castagnoli)
+	contentLength := 4096
+	enc := prom_encoding.Encbuf{}
+
+	for i := 0; i < contentLength; i++ {
+		enc.PutByte(0x01)
+	}
+
+	enc.PutHash(crc32.New(table))
+	factory := createDecbufFactoryWithBytes(t, contentLength, enc.Get())
+	t.ResetTimer()
+
+	for i := 0; i < t.N; i++ {
+		d := factory.NewDecbufAtUnchecked(0)
+
+		if err := d.Err(); err != nil {
+			require.NoError(t, err)
+		}
+
+		if err := factory.Close(d); err != nil {
+			require.NoError(t, err)
+		}
+	}
+}
