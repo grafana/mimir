@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"sort"
+	"strings"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -444,10 +445,9 @@ func (t *PostingOffsetTableV2) LabelValues(name string, filter func(string) bool
 		}
 		s := yoloString(d.UvarintBytes()) // Label value.
 		if filter == nil || filter(s) {
-			// TODO: Do we need to allocate here since we're using a yolo string and
-			//  the bytes returned by UvarintBytes are invalidated on the next read of
-			//  the underlying reader?
-			values = append(values, s)
+			// Clone the yolo string since its bytes will be invalidated as soon as
+			// any other reads against the decoding buffer are performed.
+			values = append(values, strings.Clone(s))
 		}
 		if s == lastVal {
 			break
