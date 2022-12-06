@@ -1167,7 +1167,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
-			suite := prepareStoreWithTestBlocks(t, t.TempDir(), objstore.NewInMemBucket(), false, NewChunksLimiterFactory(0), NewSeriesLimiterFactory(0))
+			suite := prepareStoreWithTestBlocks(t, objstore.NewInMemBucket(), defaultPrepareStoreConfig(t))
 			var firstBlock *bucketBlock
 			// Find the block with the smallest timestamp in its ULID.
 			// The test setup creates two blocks - each takes 4 different timeseries; each has
@@ -1184,7 +1184,6 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 					firstBlock = b
 				}
 			}
-			suite.cache.SwapWith(noopCache{})
 
 			indexReader := firstBlock.indexReader()
 			defer indexReader.Close()
@@ -1293,14 +1292,13 @@ func (a mockSeriesHasher) Hash(seriesID storage.SeriesRef, lset labels.Labels, s
 // sliceSeriesChunkRefsSetIterator implements seriesChunkRefsSetIterator and
 // returns the provided err when the sets are exhausted.
 //
-//nolint:unused // dead code while we are working on PR 3355
+
 type sliceSeriesChunkRefsSetIterator struct {
 	current int
 	sets    []seriesChunkRefsSet
 	err     error
 }
 
-//nolint:unused // dead code while we are working on PR 3355
 func newSliceSeriesChunkRefsSetIterator(err error, sets ...seriesChunkRefsSet) seriesChunkRefsSetIterator {
 	return &sliceSeriesChunkRefsSetIterator{
 		current: -1,
@@ -1309,18 +1307,15 @@ func newSliceSeriesChunkRefsSetIterator(err error, sets ...seriesChunkRefsSet) s
 	}
 }
 
-//nolint:unused // dead code while we are working on PR 3355
 func (s *sliceSeriesChunkRefsSetIterator) Next() bool {
 	s.current++
 	return s.current < len(s.sets)
 }
 
-//nolint:unused // dead code while we are working on PR 3355
 func (s *sliceSeriesChunkRefsSetIterator) At() seriesChunkRefsSet {
 	return s.sets[s.current]
 }
 
-//nolint:unused // dead code while we are working on PR 3355
 func (s *sliceSeriesChunkRefsSetIterator) Err() error {
 	if s.current >= len(s.sets) {
 		return s.err

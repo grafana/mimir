@@ -214,8 +214,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         {
           alert: $.alertName('MemoryMapAreasTooHigh'),
           expr: |||
-            process_memory_map_areas{%(per_job_label)s=~".+(cortex|ingester.*|store-gateway.*)"} / process_memory_map_areas_limit{%(per_job_label)s=~".+(cortex|ingester.*|store-gateway.*)"} > 0.8
-          ||| % $._config,
+            process_memory_map_areas{%(job_regex)s} / process_memory_map_areas_limit{%(job_regex)s} > 0.8
+          ||| % { job_regex: $.jobMatcher('(%s|%s)' % [$._config.job_names.ingester, $._config.job_names.store_gateway]) },
           'for': '5m',
           labels: {
             severity: 'critical',
