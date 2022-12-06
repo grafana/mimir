@@ -113,7 +113,7 @@ Following a successful compaction, the original blocks are deleted from the stor
 The compactor is responsible for both marking blocks and for hard deletion.
 Soft deletion is based on a small `deletion-mark.json` file stored within the block location in the bucket.
 
-The soft delete mechanism gives time to queriers, rulers, and store-gateways to discover the new compacted blocks before the original blocks are deleted. If those original blocks were immediately hard deleted, some queries involving the compacted blocks could temporarily fail or return partial results.
+The soft delete mechanism gives queriers, rulers, and store-gateways time to discover the new compacted blocks before the original blocks are deleted. If those original blocks were immediately hard deleted, some queries involving the compacted blocks could temporarily fail or return partial results.
 
 ## Blocks retention
 
