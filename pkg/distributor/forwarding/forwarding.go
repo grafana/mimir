@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/textproto"
 	"net/url"
 	"strconv"
 	"strings"
@@ -25,6 +26,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/weaveworks/common/httpgrpc"
+	"github.com/weaveworks/common/middleware"
 	"github.com/weaveworks/common/user"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -35,8 +37,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
-
-const weaveWorksGrpcOrgID = "X-Scope-OrgID"
 
 type Forwarder interface {
 	services.Service
@@ -151,7 +151,7 @@ func (f *forwarder) newHTTPGrpcClientsPool() *client.Pool {
 }
 
 func (f *forwarder) createHTTPGrpcClient(addr string) (client.PoolClient, error) {
-	opts, err := f.cfg.GRPCClientConfig.DialOption(nil, nil)
+	opts, err := f.cfg.GRPCClientConfig.DialOption([]grpc.UnaryClientInterceptor{middleware.ClientUserHeaderInterceptor}, nil)
 
 	if err != nil {
 		return nil, err
@@ -572,7 +572,7 @@ func (r *request) doHTTPGrpc(ctx context.Context, body []byte) error {
 		Url:    u.Path,
 		Body:   body,
 		Headers: append(headers, &httpgrpc.Header{
-			Key:    weaveWorksGrpcOrgID,
+			Key:    textproto.CanonicalMIMEHeaderKey(user.OrgIDHeaderName),
 			Values: []string{r.user},
 		}),
 	}
@@ -592,7 +592,7 @@ func (r *request) doHTTPGrpc(ctx context.Context, body []byte) error {
 	r.exemplars.Add(float64(r.counts.ExemplarCount))
 
 	beforeTs := time.Now()
-	resp, err := h.Handle(ctx, req)
+	resp, err := h.Handle(user.InjectOrgID(ctx, r.user), req)
 	r.latency.Observe(time.Since(beforeTs).Seconds())
 
 	if err != nil {
