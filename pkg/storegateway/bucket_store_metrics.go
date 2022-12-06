@@ -49,6 +49,8 @@ type BucketStoreMetrics struct {
 	postingsFetchDuration prometheus.Histogram
 
 	indexHeaderReaderMetrics *indexheader.ReaderPoolMetrics
+
+	batchLoadDurations *prometheus.SummaryVec
 }
 
 func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
@@ -175,6 +177,12 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 	})
 
 	m.indexHeaderReaderMetrics = indexheader.NewReaderPoolMetrics(prometheus.WrapRegistererWithPrefix("cortex_bucket_store_", reg))
+
+	m.batchLoadDurations = promauto.With(reg).NewSummaryVec(prometheus.SummaryOpts{
+		Name:       "cortex_bucket_store_batch_load_duration",
+		Help:       "The time it takes to load a batch per stage.",
+		Objectives: map[float64]float64{0.99: 0.001},
+	}, []string{"stage"})
 
 	return &m
 }

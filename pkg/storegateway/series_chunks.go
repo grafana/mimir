@@ -4,8 +4,10 @@ package storegateway
 
 import (
 	"context"
+	"time"
 
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
@@ -58,8 +60,13 @@ func newSeriesChunksSeriesSet(from seriesChunksSetIterator) storepb.SeriesSet {
 	}
 }
 
-func newSeriesSetWithChunks(ctx context.Context, chunkReaders chunkReaders, chunksPool pool.Bytes, batches seriesChunkRefsSetIterator, stats *safeQueryStats) storepb.SeriesSet {
-	return newSeriesChunksSeriesSet(newPreloadingSetIterator[seriesChunksSet](ctx, 1, newLoadingSeriesChunksSetIterator(chunkReaders, chunksPool, batches, stats)))
+func newSeriesSetWithChunks(ctx context.Context, chunkReaders chunkReaders, chunksPool pool.Bytes, batches seriesChunkRefsSetIterator, stats *safeQueryStats, metrics *BucketStoreMetrics) storepb.SeriesSet {
+	var iterator seriesChunksSetIterator
+	iterator = newLoadingSeriesChunksSetIterator(chunkReaders, chunksPool, batches, stats)
+	iterator = newDurationMeasuringIterator(iterator, metrics.batchLoadDurations.WithLabelValues("chunks_load"))
+	iterator = newPreloadingSetIterator[seriesChunksSet](ctx, 1, iterator)
+	iterator = newDurationMeasuringIterator(iterator, metrics.batchLoadDurations.WithLabelValues("preload"))
+	return newSeriesChunksSeriesSet(iterator)
 }
 
 // Next advances to the next item. Once the underlying seriesChunksSet has been fully consumed
@@ -129,7 +136,6 @@ func (p *preloadingSetIterator[Set]) preload() {
 	defer close(p.preloaded)
 
 	for p.from.Next() {
-		// TODO dimitarvdimitrov instrument the time it takes to do one iteration
 		select {
 		case <-p.ctx.Done():
 			// If the context is done, we should just stop the preloading goroutine.
@@ -144,8 +150,6 @@ func (p *preloadingSetIterator[Set]) preload() {
 }
 
 func (p *preloadingSetIterator[Set]) Next() bool {
-	// TODO dimitarvdimitrov instrument the time we wait here
-
 	preloaded, ok := <-p.preloaded
 	if !ok {
 		// Iteration reached the end or context has been canceled.
@@ -235,4 +239,31 @@ func (c *loadingSeriesChunksSetIterator) At() seriesChunksSet {
 
 func (c *loadingSeriesChunksSetIterator) Err() error {
 	return c.err
+}
+
+type durationMeasuringIterator struct {
+	from             seriesChunksSetIterator
+	durationObserver prometheus.Observer
+}
+
+func newDurationMeasuringIterator(from seriesChunksSetIterator, durationObserver prometheus.Observer) *durationMeasuringIterator {
+	return &durationMeasuringIterator{
+		from:             from,
+		durationObserver: durationObserver,
+	}
+}
+
+func (m *durationMeasuringIterator) Next() bool {
+	start := time.Now()
+	next := m.from.Next()
+	m.durationObserver.Observe(time.Since(start).Seconds())
+	return next
+}
+
+func (m *durationMeasuringIterator) At() seriesChunksSet {
+	return m.from.At()
+}
+
+func (m *durationMeasuringIterator) Err() error {
+	return m.from.Err()
 }
