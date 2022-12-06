@@ -3,16 +3,22 @@
 package storegateway
 
 import (
-	"github.com/oklog/ulid"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/tsdb/chunks"
+	"context"
 
+	"github.com/go-kit/log"
+	"github.com/oklog/ulid"
+	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/hashcache"
+
+	"github.com/grafana/mimir/pkg/storage/sharding"
+	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 )
 
 // seriesChunkRefsSetIterator is the interface implemented by an iterator returning a sequence of seriesChunkRefsSet.
-//
-//nolint:unused // dead code while we are working on PR 3355
 type seriesChunkRefsSetIterator interface {
 	Next() bool
 	At() seriesChunkRefsSet
@@ -20,8 +26,6 @@ type seriesChunkRefsSetIterator interface {
 }
 
 // seriesChunkRefsIterator is the interface implemented by an iterator returning a sequence of seriesChunkRefs.
-//
-//nolint:unused // dead code while we are working on PR 3355
 type seriesChunkRefsIterator interface {
 	Next() bool
 	At() seriesChunkRefs
@@ -29,36 +33,28 @@ type seriesChunkRefsIterator interface {
 }
 
 // seriesChunkRefsSet holds a set of a set of series (sorted by labels) and their chunk references.
-//
-//nolint:unused // dead code while we are working on PR 3355
 type seriesChunkRefsSet struct {
 	// series sorted by labels.
 	series []seriesChunkRefs
 }
 
-//nolint:unused // dead code while we are working on PR 3355
 func newSeriesChunkRefsSet(capacity int) seriesChunkRefsSet {
 	return seriesChunkRefsSet{
 		series: make([]seriesChunkRefs, 0, capacity),
 	}
 }
 
-//nolint:unused // dead code while we are working on PR 3355
 func (b seriesChunkRefsSet) len() int {
 	return len(b.series)
 }
 
 // seriesChunkRefs holds a series with a list of chunk references.
-//
-//nolint:unused // dead code while we are working on PR 3355
 type seriesChunkRefs struct {
 	lset   labels.Labels
 	chunks []seriesChunkRef
 }
 
 // seriesChunkRef holds the reference to a chunk in a given block.
-//
-//nolint:unused // dead code while we are working on PR 3355
 type seriesChunkRef struct {
 	blockID          ulid.ULID
 	ref              chunks.ChunkRef
@@ -67,8 +63,6 @@ type seriesChunkRef struct {
 
 // Compare returns > 0 if m should be before other when sorting seriesChunkRef,
 // 0 if they're equal or < 0 if m should be after other.
-//
-//nolint:unused // dead code while we are working on PR 3355
 func (m seriesChunkRef) Compare(other seriesChunkRef) int {
 	if m.minTime < other.minTime {
 		return 1
@@ -444,4 +438,316 @@ func (s *deduplicatingSeriesChunkRefsSetIterator) Next() bool {
 	}
 	s.current = nextSet
 	return true
+}
+
+type limitingSeriesChunkRefsSetIterator struct {
+	from          seriesChunkRefsSetIterator
+	chunksLimiter ChunksLimiter
+	seriesLimiter SeriesLimiter
+
+	err          error
+	currentBatch seriesChunkRefsSet
+}
+
+func newLimitingSeriesChunkRefsSetIterator(from seriesChunkRefsSetIterator, chunksLimiter ChunksLimiter, seriesLimiter SeriesLimiter) *limitingSeriesChunkRefsSetIterator {
+	return &limitingSeriesChunkRefsSetIterator{
+		from:          from,
+		chunksLimiter: chunksLimiter,
+		seriesLimiter: seriesLimiter,
+	}
+}
+
+func (l *limitingSeriesChunkRefsSetIterator) Next() bool {
+	if l.err != nil {
+		return false
+	}
+
+	if !l.from.Next() {
+		l.err = l.from.Err()
+		return false
+	}
+
+	l.currentBatch = l.from.At()
+	err := l.seriesLimiter.Reserve(uint64(l.currentBatch.len()))
+	if err != nil {
+		l.err = errors.Wrap(err, "exceeded series limit")
+		return false
+	}
+
+	var totalChunks int
+	for _, s := range l.currentBatch.series {
+		totalChunks += len(s.chunks)
+	}
+
+	err = l.chunksLimiter.Reserve(uint64(totalChunks))
+	if err != nil {
+		l.err = errors.Wrap(err, "exceeded chunks limit")
+		return false
+	}
+	return true
+}
+
+func (l *limitingSeriesChunkRefsSetIterator) At() seriesChunkRefsSet {
+	return l.currentBatch
+}
+
+func (l *limitingSeriesChunkRefsSetIterator) Err() error {
+	return l.err
+}
+
+type loadingSeriesChunkRefsSetIterator struct {
+	ctx                 context.Context
+	postingsSetIterator *postingsSetsIterator
+	indexr              *bucketIndexReader
+	stats               *safeQueryStats
+	blockID             ulid.ULID
+	shard               *sharding.ShardSelector
+	seriesHasher        seriesHasher
+	skipChunks          bool
+	minTime, maxTime    int64
+
+	symbolizedLsetBuffer []symbolizedLabel
+	chksBuffer           []chunks.Meta
+
+	err        error
+	currentSet seriesChunkRefsSet
+}
+
+//nolint:unused // dead code while we are working on PR 3355
+func openBlockSeriesChunkRefsSetsIterator(
+	ctx context.Context,
+	batchSize int,
+	indexr *bucketIndexReader, // Index reader for block.
+	blockMeta *metadata.Meta,
+	matchers []*labels.Matcher, // Series matchers.
+	shard *sharding.ShardSelector, // Shard selector.
+	seriesHashCache *hashcache.BlockSeriesHashCache, // Block-specific series hash cache (used only if shard selector is specified).
+	chunksLimiter ChunksLimiter, // Rate limiter for loading chunks.
+	seriesLimiter SeriesLimiter, // Rate limiter for loading series.
+	skipChunks bool, // If true chunks are not loaded and minTime/maxTime are ignored.
+	minTime, maxTime int64, // Series must have data in this time range to be returned (ignored if skipChunks=true).
+	stats *safeQueryStats,
+	logger log.Logger,
+) (seriesChunkRefsSetIterator, error) {
+	if batchSize <= 0 {
+		return nil, errors.New("set size must be a positive number")
+	}
+
+	ps, err := indexr.ExpandedPostings(ctx, matchers, stats)
+	if err != nil {
+		return nil, errors.Wrap(err, "expanded matching postings")
+	}
+
+	// We can't compute the series hash yet because we're still missing the series labels.
+	// However, if the hash is already in the cache, then we can remove all postings for series
+	// not belonging to the shard.
+	if shard != nil {
+		var unsafeStats queryStats
+		ps, unsafeStats = filterPostingsByCachedShardHash(ps, shard, seriesHashCache)
+		stats.merge(&unsafeStats)
+	}
+
+	postingsIterator := newPostingsSetsIterator(ps, batchSize)
+	loadingIterator := newLoadingSeriesChunkRefsSetIterator(
+		ctx,
+		postingsIterator,
+		indexr,
+		stats,
+		blockMeta,
+		shard,
+		cachedSeriesHasher{cache: seriesHashCache},
+		skipChunks,
+		minTime,
+		maxTime,
+	)
+
+	limitingIterator := newLimitingSeriesChunkRefsSetIterator(
+		loadingIterator,
+		chunksLimiter,
+		seriesLimiter,
+	)
+
+	return limitingIterator, nil
+}
+
+func newLoadingSeriesChunkRefsSetIterator(
+	ctx context.Context,
+	postingsSetIterator *postingsSetsIterator,
+	indexr *bucketIndexReader,
+	stats *safeQueryStats,
+	blockMeta *metadata.Meta,
+	shard *sharding.ShardSelector,
+	seriesHasher seriesHasher,
+	skipChunks bool,
+	minTime int64,
+	maxTime int64,
+) *loadingSeriesChunkRefsSetIterator {
+	if skipChunks {
+		minTime, maxTime = blockMeta.MinTime, blockMeta.MaxTime
+	}
+
+	return &loadingSeriesChunkRefsSetIterator{
+		ctx:                 ctx,
+		postingsSetIterator: postingsSetIterator,
+		indexr:              indexr,
+		stats:               stats,
+		blockID:             blockMeta.ULID,
+		shard:               shard,
+		seriesHasher:        seriesHasher,
+		skipChunks:          skipChunks,
+		minTime:             minTime,
+		maxTime:             maxTime,
+	}
+}
+
+func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
+	if s.err != nil {
+		return false
+	}
+	if !s.postingsSetIterator.Next() {
+		return false
+	}
+	nextPostings := s.postingsSetIterator.At()
+	loadedSeries, err := s.indexr.preloadSeries(s.ctx, nextPostings, s.stats)
+	if err != nil {
+		s.err = errors.Wrap(err, "preload series")
+		return false
+	}
+
+	// Track the series loading statistics in a not synchronized data structure to avoid locking for each series
+	// and then merge before returning from the function.
+	loadStats := &queryStats{}
+	defer s.stats.merge(loadStats)
+
+	nextSet := newSeriesChunkRefsSet(len(nextPostings))
+
+	for _, id := range nextPostings {
+		lset, chks, err := s.loadSeriesForTime(id, loadedSeries, loadStats)
+		if err != nil {
+			s.err = errors.Wrap(err, "read series")
+			return false
+		}
+		if lset.Len() == 0 {
+			// No matching chunks for this time duration, skip series
+			continue
+		}
+
+		if !shardOwned(s.shard, s.seriesHasher, id, lset, loadStats) {
+			continue
+		}
+
+		nextSet.series = append(nextSet.series, seriesChunkRefs{
+			lset:   lset,
+			chunks: chks,
+		})
+	}
+	if nextSet.len() == 0 {
+		return s.Next() // we didn't find any suitable series in this set, try with the next one
+	}
+	s.currentSet = nextSet
+	return true
+}
+
+func (s *loadingSeriesChunkRefsSetIterator) At() seriesChunkRefsSet {
+	return s.currentSet
+}
+
+func (s *loadingSeriesChunkRefsSetIterator) Err() error {
+	return s.err
+}
+
+func (s *loadingSeriesChunkRefsSetIterator) loadSeriesForTime(ref storage.SeriesRef, loadedSeries *bucketIndexLoadedSeries, stats *queryStats) (labels.Labels, []seriesChunkRef, error) {
+	ok, err := loadedSeries.unsafeLoadSeriesForTime(ref, &s.symbolizedLsetBuffer, &s.chksBuffer, s.skipChunks, s.minTime, s.maxTime, stats)
+	if !ok || err != nil {
+		return labels.EmptyLabels(), nil, errors.Wrap(err, "inflateSeriesForTime")
+	}
+
+	lset, err := s.indexr.LookupLabelsSymbols(s.symbolizedLsetBuffer)
+	if err != nil {
+		return labels.EmptyLabels(), nil, errors.Wrap(err, "lookup labels symbols")
+	}
+
+	var chks []seriesChunkRef
+	if !s.skipChunks {
+		chks = metasToChunks(s.blockID, s.chksBuffer)
+	}
+
+	return lset, chks, nil
+}
+
+func metasToChunks(blockID ulid.ULID, metas []chunks.Meta) []seriesChunkRef {
+	chks := make([]seriesChunkRef, len(metas))
+	for i, meta := range metas {
+		chks[i] = seriesChunkRef{
+			minTime: meta.MinTime,
+			maxTime: meta.MaxTime,
+			ref:     meta.Ref,
+			blockID: blockID,
+		}
+	}
+	return chks
+}
+
+type seriesHasher interface {
+	Hash(seriesID storage.SeriesRef, lset labels.Labels, stats *queryStats) uint64
+}
+
+type cachedSeriesHasher struct {
+	cache *hashcache.BlockSeriesHashCache
+}
+
+func (b cachedSeriesHasher) Hash(id storage.SeriesRef, lset labels.Labels, stats *queryStats) uint64 {
+	stats.seriesHashCacheRequests++
+
+	hash, ok := b.cache.Fetch(id)
+	if !ok {
+		hash = lset.Hash()
+		b.cache.Store(id, hash)
+	} else {
+		stats.seriesHashCacheHits++
+	}
+	return hash
+}
+
+func shardOwned(shard *sharding.ShardSelector, hasher seriesHasher, id storage.SeriesRef, lset labels.Labels, stats *queryStats) bool {
+	if shard == nil {
+		return true
+	}
+	hash := hasher.Hash(id, lset, stats)
+
+	return hash%shard.ShardCount == shard.ShardIndex
+}
+
+type postingsSetsIterator struct {
+	postings []storage.SeriesRef
+
+	batchSize               int
+	nextBatchPostingsOffset int
+	currentBatch            []storage.SeriesRef
+}
+
+func newPostingsSetsIterator(postings []storage.SeriesRef, batchSize int) *postingsSetsIterator {
+	return &postingsSetsIterator{
+		postings:  postings,
+		batchSize: batchSize,
+	}
+}
+
+func (s *postingsSetsIterator) Next() bool {
+	if s.nextBatchPostingsOffset >= len(s.postings) {
+		return false
+	}
+
+	end := s.nextBatchPostingsOffset + s.batchSize
+	if end > len(s.postings) {
+		end = len(s.postings)
+	}
+	s.currentBatch = s.postings[s.nextBatchPostingsOffset:end]
+	s.nextBatchPostingsOffset += s.batchSize
+
+	return true
+}
+
+func (s *postingsSetsIterator) At() []storage.SeriesRef {
+	return s.currentBatch
 }

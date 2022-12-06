@@ -3,15 +3,25 @@
 package storegateway
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"sort"
 	"testing"
 
+	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/thanos-io/objstore"
+	"go.uber.org/atomic"
+
+	"github.com/grafana/mimir/pkg/storage/sharding"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestSeriesChunkRef_Compare(t *testing.T) {
@@ -759,17 +769,533 @@ func TestDeduplicatingSeriesChunkRefsSetIterator_PropagatesErrors(t *testing.T) 
 	assert.ErrorContains(t, chainedSet.Err(), "something went wrong")
 }
 
+func TestLimitingSeriesChunkRefsSetIterator(t *testing.T) {
+	testCases := map[string]struct {
+		sets                     []seriesChunkRefsSet
+		seriesLimit, chunksLimit int
+		upstreamErr              error
+
+		expectedSetsCount int
+		expectedErr       string
+	}{
+		"doesn't exceed limits": {
+			seriesLimit:       5,
+			chunksLimit:       5,
+			expectedSetsCount: 1,
+			sets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("l1", "v2"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("l2", "v1"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("l2", "v2"), chunks: make([]seriesChunkRef, 1)},
+				}},
+			},
+		},
+		"exceeds chunks limit": {
+			seriesLimit:       5,
+			chunksLimit:       9,
+			expectedSetsCount: 0,
+			expectedErr:       "exceeded chunks limit",
+			sets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("l1", "v2"), chunks: make([]seriesChunkRef, 2)},
+					{lset: labels.FromStrings("l2", "v1"), chunks: make([]seriesChunkRef, 3)},
+					{lset: labels.FromStrings("l2", "v2"), chunks: make([]seriesChunkRef, 4)},
+				}},
+			},
+		},
+		"exceeds chunks limit on second set": {
+			seriesLimit:       5,
+			chunksLimit:       3,
+			expectedSetsCount: 1,
+			expectedErr:       "exceeded chunks limit",
+			sets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("l1", "v2"), chunks: make([]seriesChunkRef, 1)},
+				}},
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l2", "v1"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("l2", "v2"), chunks: make([]seriesChunkRef, 1)},
+				}},
+			},
+		},
+		"exceeds series limit": {
+			seriesLimit:       3,
+			chunksLimit:       5,
+			expectedSetsCount: 0,
+			expectedErr:       "exceeded series limit",
+			sets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("l1", "v2"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("l2", "v1"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("l2", "v2"), chunks: make([]seriesChunkRef, 1)},
+				}},
+			},
+		},
+		"exceeds series limit on second set": {
+			seriesLimit:       3,
+			chunksLimit:       5,
+			expectedSetsCount: 1,
+			expectedErr:       "exceeded series limit",
+			sets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("l1", "v2"), chunks: make([]seriesChunkRef, 1)},
+				}},
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l2", "v1"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("l2", "v2"), chunks: make([]seriesChunkRef, 1)},
+				}},
+			},
+		},
+		"propagates error": {
+			seriesLimit:       5,
+			chunksLimit:       5,
+			upstreamErr:       errors.New("something went wrong"),
+			expectedSetsCount: 2,
+			expectedErr:       "something went wrong",
+			sets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("l1", "v2"), chunks: make([]seriesChunkRef, 1)},
+				}},
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l2", "v1"), chunks: make([]seriesChunkRef, 1)},
+					{lset: labels.FromStrings("l2", "v2"), chunks: make([]seriesChunkRef, 1)},
+				}},
+			},
+		},
+	}
+
+	for testName, testCase := range testCases {
+		testName, testCase := testName, testCase
+		t.Run(testName, func(t *testing.T) {
+			iterator := newLimitingSeriesChunkRefsSetIterator(
+				newSliceSeriesChunkRefsSetIterator(testCase.upstreamErr, testCase.sets...),
+				&limiter{limit: testCase.chunksLimit},
+				&limiter{limit: testCase.seriesLimit},
+			)
+
+			sets := readAllSeriesChunkRefsSet(iterator)
+			assert.Equal(t, testCase.expectedSetsCount, len(sets))
+			if testCase.expectedErr == "" {
+				assert.NoError(t, iterator.Err())
+			} else {
+				assert.ErrorContains(t, iterator.Err(), testCase.expectedErr)
+			}
+		})
+	}
+}
+
+func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
+	newTestBlock := prepareTestBlock(test.NewTB(t), func(t testing.TB, appender storage.Appender) {
+		for i := 0; i < 100; i++ {
+			_, err := appender.Append(0, labels.FromStrings("l1", fmt.Sprintf("v%d", i)), int64(i*10), 0)
+			assert.NoError(t, err)
+		}
+		assert.NoError(t, appender.Commit())
+	})
+
+	testCases := map[string]struct {
+		shard        *sharding.ShardSelector
+		matchers     []*labels.Matcher
+		seriesHasher mockSeriesHasher
+		skipChunks   bool
+		minT, maxT   int64
+		batchSize    int
+
+		expectedSets []seriesChunkRefsSet
+	}{
+		"loads one batch": {
+			minT:      0,
+			maxT:      10000,
+			batchSize: 100,
+			matchers:  []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", "v[1-4]")},
+			expectedSets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{{minTime: 10, maxTime: 10, ref: 26}}},
+					{lset: labels.FromStrings("l1", "v2"), chunks: []seriesChunkRef{{minTime: 20, maxTime: 20, ref: 234}}},
+					{lset: labels.FromStrings("l1", "v3"), chunks: []seriesChunkRef{{minTime: 30, maxTime: 30, ref: 442}}},
+					{lset: labels.FromStrings("l1", "v4"), chunks: []seriesChunkRef{{minTime: 40, maxTime: 40, ref: 650}}},
+				}},
+			},
+		},
+		"loads multiple batches": {
+			minT:      0,
+			maxT:      10000,
+			batchSize: 2,
+			matchers:  []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", "v[1-4]")},
+			expectedSets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1"), chunks: []seriesChunkRef{{minTime: 10, maxTime: 10, ref: 26}}},
+					{lset: labels.FromStrings("l1", "v2"), chunks: []seriesChunkRef{{minTime: 20, maxTime: 20, ref: 234}}},
+				}},
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v3"), chunks: []seriesChunkRef{{minTime: 30, maxTime: 30, ref: 442}}},
+					{lset: labels.FromStrings("l1", "v4"), chunks: []seriesChunkRef{{minTime: 40, maxTime: 40, ref: 650}}},
+				}},
+			},
+		},
+		"skips chunks": {
+			skipChunks: true,
+			minT:       0,
+			maxT:       40,
+			batchSize:  100,
+			matchers:   []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", "v[1-4]")},
+			expectedSets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1")},
+					{lset: labels.FromStrings("l1", "v2")},
+					{lset: labels.FromStrings("l1", "v3")},
+					{lset: labels.FromStrings("l1", "v4")},
+				}},
+			},
+		},
+		"doesn't return series if they are outside of minT/maxT": {
+			minT:         20,
+			maxT:         30,
+			batchSize:    100,
+			matchers:     []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", "v1")},
+			expectedSets: []seriesChunkRefsSet{},
+		},
+		"omits empty batches because they fall outside of minT/maxT": {
+			minT:      30,
+			maxT:      40,
+			batchSize: 2,
+			matchers:  []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", "v[1-4]")},
+			expectedSets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v3"), chunks: []seriesChunkRef{{minTime: 30, maxTime: 30, ref: 442}}},
+					{lset: labels.FromStrings("l1", "v4"), chunks: []seriesChunkRef{{minTime: 40, maxTime: 40, ref: 650}}},
+				}},
+			},
+		},
+		"returns no batches when no series are owned by shard": {
+			shard:        &sharding.ShardSelector{ShardIndex: 1, ShardCount: 2},
+			minT:         0,
+			maxT:         40,
+			batchSize:    2,
+			matchers:     []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", "v[1-4]")},
+			expectedSets: []seriesChunkRefsSet{},
+		},
+		"returns only series that are owned by shard": {
+			seriesHasher: mockSeriesHasher{
+				hashes: map[string]uint64{`{l1="v3"}`: 1},
+			},
+			shard:     &sharding.ShardSelector{ShardIndex: 1, ShardCount: 2},
+			minT:      0,
+			maxT:      40,
+			batchSize: 2,
+			matchers:  []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", "v[1-4]")},
+			expectedSets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v3"), chunks: []seriesChunkRef{{minTime: 30, maxTime: 30, ref: 442}}},
+				}},
+			},
+		},
+		"ignores mixT/maxT when skipping chunks": {
+			minT:       0,
+			maxT:       10,
+			skipChunks: true,
+			batchSize:  4,
+			matchers:   []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "l1", "v[1-4]")},
+			expectedSets: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("l1", "v1")},
+					{lset: labels.FromStrings("l1", "v2")},
+					{lset: labels.FromStrings("l1", "v3")},
+					{lset: labels.FromStrings("l1", "v4")},
+				}},
+			},
+		},
+	}
+
+	for testName, testCase := range testCases {
+		testName, testCase := testName, testCase
+		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
+			// Setup
+			block := newTestBlock()
+			indexr := block.indexReader()
+			postings, err := indexr.ExpandedPostings(context.Background(), testCase.matchers, newSafeQueryStats())
+			require.NoError(t, err)
+			postingsIterator := newPostingsSetsIterator(
+				postings,
+				testCase.batchSize,
+			)
+			loadingIterator := newLoadingSeriesChunkRefsSetIterator(
+				context.Background(),
+				postingsIterator,
+				indexr,
+				newSafeQueryStats(),
+				block.meta,
+				testCase.shard,
+				testCase.seriesHasher,
+				testCase.skipChunks,
+				testCase.minT,
+				testCase.maxT,
+			)
+
+			// Tests
+			sets := readAllSeriesChunkRefsSet(loadingIterator)
+			assert.NoError(t, loadingIterator.Err())
+			if !assert.Len(t, sets, len(testCase.expectedSets)) {
+				return
+			}
+
+			for i, actualSet := range sets {
+				expectedSet := testCase.expectedSets[i]
+				if !assert.Equalf(t, expectedSet.len(), actualSet.len(), "%d", i) {
+					continue
+				}
+				for j, actualSeries := range actualSet.series {
+					expectedSeries := expectedSet.series[j]
+					assert.Truef(t, labels.Equal(actualSeries.lset, expectedSeries.lset), "%d, %d: expected labels %s got %s", i, j, expectedSeries.lset, actualSeries.lset)
+					if !assert.Lenf(t, actualSeries.chunks, len(expectedSeries.chunks), "%d, %d", i, j) {
+						continue
+					}
+					for k, actualChunk := range actualSeries.chunks {
+						expectedChunk := expectedSeries.chunks[k]
+						assert.Equalf(t, expectedChunk.maxTime, actualChunk.maxTime, "%d, %d, %d", i, j, k)
+						assert.Equalf(t, expectedChunk.minTime, actualChunk.minTime, "%d, %d, %d", i, j, k)
+						assert.Equalf(t, int(expectedChunk.ref), int(actualChunk.ref), "%d, %d, %d", i, j, k)
+						assert.Equalf(t, block.meta.ULID, actualChunk.blockID, "%d, %d, %d", i, j, k)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	testCases := map[string]struct {
+		matcher        *labels.Matcher
+		batchSize      int
+		chunksLimit    int
+		seriesLimit    int
+		expectedErr    string
+		expectedSeries []seriesChunkRefsSet
+	}{
+		"chunks limits reached": {
+			matcher:     labels.MustNewMatcher(labels.MatchRegexp, "a", ".+"),
+			batchSize:   100,
+			chunksLimit: 1,
+			seriesLimit: 100,
+			expectedErr: "test limit exceeded",
+		},
+		"series limits reached": {
+			matcher:     labels.MustNewMatcher(labels.MatchRegexp, "a", ".+"),
+			batchSize:   100,
+			chunksLimit: 100,
+			seriesLimit: 1,
+			expectedErr: "test limit exceeded",
+		},
+		"selects all series in a single batch": {
+			matcher:     labels.MustNewMatcher(labels.MatchRegexp, "a", ".+"),
+			batchSize:   100,
+			chunksLimit: 100,
+			seriesLimit: 100,
+			expectedSeries: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("a", "1", "b", "1")},
+					{lset: labels.FromStrings("a", "1", "b", "2")},
+					{lset: labels.FromStrings("a", "2", "b", "1")},
+					{lset: labels.FromStrings("a", "2", "b", "2")},
+				}},
+			},
+		},
+		"selects all series in multiple batches": {
+			matcher:     labels.MustNewMatcher(labels.MatchRegexp, "a", ".+"),
+			batchSize:   1,
+			chunksLimit: 100,
+			seriesLimit: 100,
+			expectedSeries: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("a", "1", "b", "1")},
+				}},
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("a", "1", "b", "2")},
+				}},
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("a", "2", "b", "1")},
+				}},
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("a", "2", "b", "2")},
+				}},
+			},
+		},
+		"selects some series in single batch": {
+			matcher:     labels.MustNewMatcher(labels.MatchEqual, "a", "1"),
+			batchSize:   100,
+			chunksLimit: 100,
+			seriesLimit: 100,
+			expectedSeries: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("a", "1", "b", "1")},
+					{lset: labels.FromStrings("a", "1", "b", "2")},
+				}},
+			},
+		},
+		"selects some series in multiple batches": {
+			matcher:     labels.MustNewMatcher(labels.MatchEqual, "a", "1"),
+			batchSize:   1,
+			chunksLimit: 100,
+			seriesLimit: 100,
+			expectedSeries: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("a", "1", "b", "1")},
+				}},
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("a", "1", "b", "2")},
+				}},
+			},
+		},
+	}
+
+	for testName, testCase := range testCases {
+		testName, testCase := testName, testCase
+		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
+			suite := prepareStoreWithTestBlocks(t, objstore.NewInMemBucket(), defaultPrepareStoreConfig(t))
+			var firstBlock *bucketBlock
+			// Find the block with the smallest timestamp in its ULID.
+			// The test setup creates two blocks - each takes 4 different timeseries; each has
+			// a timestamp of time.Now() when its being created.
+			// We want the first created block because we want to assert on the series inside it.
+			// The block created first contains a known set of 4 series.
+			// TODO dimitarvdimitrov change this setup to use prepareTestBlock() and assert on the chunks too
+			for _, b := range suite.store.blocks {
+				if firstBlock == nil {
+					firstBlock = b
+					continue
+				}
+				if b.meta.ULID.Time() < firstBlock.meta.ULID.Time() {
+					firstBlock = b
+				}
+			}
+
+			indexReader := firstBlock.indexReader()
+			defer indexReader.Close()
+
+			iterator, err := openBlockSeriesChunkRefsSetsIterator(
+				ctx,
+				testCase.batchSize,
+				indexReader,
+				firstBlock.meta,
+				[]*labels.Matcher{testCase.matcher},
+				nil,
+				hashcache.NewSeriesHashCache(1024*1024).GetBlockCache(firstBlock.meta.ULID.String()),
+				&limiter{limit: testCase.chunksLimit},
+				&limiter{limit: testCase.seriesLimit},
+				false,
+				firstBlock.meta.MinTime,
+				firstBlock.meta.MaxTime,
+				newSafeQueryStats(),
+				log.NewNopLogger(),
+			)
+			require.NoError(t, err)
+
+			actualSeriesSets := readAllSeriesChunkRefsSet(iterator)
+
+			require.Lenf(t, actualSeriesSets, len(testCase.expectedSeries), "expected %d sets, but got %d", len(testCase.expectedSeries), len(actualSeriesSets))
+			for i, actualSeriesSet := range actualSeriesSets {
+				expectedSeriesSet := testCase.expectedSeries[i]
+				require.Equal(t, expectedSeriesSet.len(), actualSeriesSet.len())
+				for j, actualSeries := range actualSeriesSet.series {
+					expectedSeries := testCase.expectedSeries[i].series[j]
+
+					actualLset := actualSeries.lset
+					expectedLset := expectedSeries.lset
+					assert.Truef(t, labels.Equal(actualLset, expectedLset), "%d, %d: expected labels %s got labels %s", i, j, expectedLset, actualLset)
+
+					// We can't test anything else from the chunk ref because it is generated on the go in each test case
+					assert.Len(t, actualSeries.chunks, 1)
+					assert.Equal(t, firstBlock.meta.ULID, actualSeries.chunks[0].blockID)
+				}
+			}
+			if testCase.expectedErr != "" {
+				assert.ErrorContains(t, iterator.Err(), "test limit exceeded")
+			} else {
+				assert.NoError(t, iterator.Err())
+			}
+		})
+	}
+}
+
+func TestPostingsSetsIterator(t *testing.T) {
+	testCases := map[string]struct {
+		postings        []storage.SeriesRef
+		batchSize       int
+		expectedBatches [][]storage.SeriesRef
+	}{
+		"single series": {
+			postings:        []storage.SeriesRef{1},
+			batchSize:       3,
+			expectedBatches: [][]storage.SeriesRef{{1}},
+		},
+		"single batch": {
+			postings:        []storage.SeriesRef{1, 2, 3},
+			batchSize:       3,
+			expectedBatches: [][]storage.SeriesRef{{1, 2, 3}},
+		},
+		"two batches, evenly split": {
+			postings:        []storage.SeriesRef{1, 2, 3, 4},
+			batchSize:       2,
+			expectedBatches: [][]storage.SeriesRef{{1, 2}, {3, 4}},
+		},
+		"two batches, last not full": {
+			postings:        []storage.SeriesRef{1, 2, 3, 4, 5},
+			batchSize:       3,
+			expectedBatches: [][]storage.SeriesRef{{1, 2, 3}, {4, 5}},
+		},
+		"empty postings": {
+			postings:        []storage.SeriesRef{},
+			batchSize:       2,
+			expectedBatches: [][]storage.SeriesRef{},
+		},
+	}
+
+	for testName, testCase := range testCases {
+		testName, testCase := testName, testCase
+		t.Run(testName, func(t *testing.T) {
+			iterator := newPostingsSetsIterator(testCase.postings, testCase.batchSize)
+
+			var actualBatches [][]storage.SeriesRef
+			for iterator.Next() {
+				actualBatches = append(actualBatches, iterator.At())
+			}
+
+			assert.ElementsMatch(t, testCase.expectedBatches, actualBatches)
+		})
+	}
+}
+
+type mockSeriesHasher struct {
+	hashes map[string]uint64
+}
+
+func (a mockSeriesHasher) Hash(seriesID storage.SeriesRef, lset labels.Labels, stats *queryStats) uint64 {
+	return a.hashes[lset.String()]
+}
+
 // sliceSeriesChunkRefsSetIterator implements seriesChunkRefsSetIterator and
 // returns the provided err when the sets are exhausted.
 //
-//nolint:unused // dead code while we are working on PR 3355
+
 type sliceSeriesChunkRefsSetIterator struct {
 	current int
 	sets    []seriesChunkRefsSet
 	err     error
 }
 
-//nolint:unused // dead code while we are working on PR 3355
 func newSliceSeriesChunkRefsSetIterator(err error, sets ...seriesChunkRefsSet) seriesChunkRefsSetIterator {
 	return &sliceSeriesChunkRefsSetIterator{
 		current: -1,
@@ -778,21 +1304,30 @@ func newSliceSeriesChunkRefsSetIterator(err error, sets ...seriesChunkRefsSet) s
 	}
 }
 
-//nolint:unused // dead code while we are working on PR 3355
 func (s *sliceSeriesChunkRefsSetIterator) Next() bool {
 	s.current++
 	return s.current < len(s.sets)
 }
 
-//nolint:unused // dead code while we are working on PR 3355
 func (s *sliceSeriesChunkRefsSetIterator) At() seriesChunkRefsSet {
 	return s.sets[s.current]
 }
 
-//nolint:unused // dead code while we are working on PR 3355
 func (s *sliceSeriesChunkRefsSetIterator) Err() error {
 	if s.current >= len(s.sets) {
 		return s.err
+	}
+	return nil
+}
+
+type limiter struct {
+	limit   int
+	current atomic.Uint64
+}
+
+func (l *limiter) Reserve(num uint64) error {
+	if l.current.Add(num) > uint64(l.limit) {
+		return errors.New("test limit exceeded")
 	}
 	return nil
 }
