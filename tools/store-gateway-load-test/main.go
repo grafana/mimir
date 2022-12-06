@@ -10,8 +10,11 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/dns"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
+	"github.com/grafana/dskit/kv/codec"
+	"github.com/grafana/dskit/kv/memberlist"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
@@ -25,6 +28,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 type Config struct {
@@ -185,4 +189,57 @@ func getRandomRequestTimeRange(cfg *Config) (start, end int64) {
 	}
 
 	return
+}
+
+type noBlocksStoreLimits struct{}
+
+func (l *noBlocksStoreLimits) S3SSEType(userID string) string {
+	return ""
+}
+
+func (l *noBlocksStoreLimits) S3SSEKMSKeyID(userID string) string {
+	return ""
+}
+
+func (l *noBlocksStoreLimits) S3SSEKMSEncryptionContext(userID string) string {
+	return ""
+}
+
+func (l *noBlocksStoreLimits) MaxLabelsQueryLength(userID string) time.Duration {
+	return 0
+}
+
+func (l *noBlocksStoreLimits) MaxChunksPerQuery(userID string) int {
+	return 0
+}
+
+func (l *noBlocksStoreLimits) StoreGatewayTenantShardSize(userID string) int {
+	return 0
+}
+
+func initMemberlistKV(cfg *Config, reg prometheus.Registerer) (services.Service, error) {
+	cfg.Mimir.MemberlistKV.MetricsRegisterer = reg
+	cfg.Mimir.MemberlistKV.Codecs = []codec.Codec{
+		ring.GetCodec(),
+	}
+	dnsProviderReg := prometheus.WrapRegistererWithPrefix(
+		"cortex_",
+		prometheus.WrapRegistererWith(
+			prometheus.Labels{"component": "memberlist"},
+			reg,
+		),
+	)
+	dnsProvider := dns.NewProvider(util_log.Logger, dnsProviderReg, dns.GolangResolverType)
+	memberlistKV := memberlist.NewKVInitService(&cfg.Mimir.MemberlistKV, util_log.Logger, dnsProvider, reg)
+
+	// Update the config.
+	cfg.Mimir.Distributor.DistributorRing.KVStore.MemberlistKV = memberlistKV.GetMemberlistKV
+	cfg.Mimir.Ingester.IngesterRing.KVStore.MemberlistKV = memberlistKV.GetMemberlistKV
+	cfg.Mimir.StoreGateway.ShardingRing.KVStore.MemberlistKV = memberlistKV.GetMemberlistKV
+	cfg.Mimir.Compactor.ShardingRing.KVStore.MemberlistKV = memberlistKV.GetMemberlistKV
+	cfg.Mimir.Ruler.Ring.KVStore.MemberlistKV = memberlistKV.GetMemberlistKV
+	cfg.Mimir.Alertmanager.ShardingRing.KVStore.MemberlistKV = memberlistKV.GetMemberlistKV
+	cfg.Mimir.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.MemberlistKV = memberlistKV.GetMemberlistKV
+
+	return memberlistKV, nil
 }

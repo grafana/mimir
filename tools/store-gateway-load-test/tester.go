@@ -5,17 +5,10 @@ import (
 	"io"
 	"sort"
 	"sync"
-	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/dns"
-	"github.com/grafana/dskit/kv/codec"
-	"github.com/grafana/dskit/kv/memberlist"
-	"github.com/grafana/dskit/ring"
-	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/weaveworks/common/user"
 	"golang.org/x/sync/errgroup"
@@ -24,7 +17,6 @@ import (
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
-	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 type tester struct {
@@ -105,7 +97,6 @@ func (t *tester) sendRequestToAllStoreGatewayZones(ctx context.Context, minT int
 					return errors.Wrapf(err, "failed to create series request")
 				}
 
-				level.Debug(t.logger).Log("msg", "sending request to store-gateway", "endpoint", client.RemoteAddress())
 				receivedSeries, err := t.sendRequestToStoreGateway(gCtx, client, req, keepResults)
 				if err != nil {
 					return err
@@ -210,57 +201,4 @@ func (t *tester) sendRequestToStoreGateway(ctx context.Context, client querier.B
 	}
 
 	return receivedSeries, nil
-}
-
-type noBlocksStoreLimits struct{}
-
-func (l *noBlocksStoreLimits) S3SSEType(userID string) string {
-	return ""
-}
-
-func (l *noBlocksStoreLimits) S3SSEKMSKeyID(userID string) string {
-	return ""
-}
-
-func (l *noBlocksStoreLimits) S3SSEKMSEncryptionContext(userID string) string {
-	return ""
-}
-
-func (l *noBlocksStoreLimits) MaxLabelsQueryLength(userID string) time.Duration {
-	return 0
-}
-
-func (l *noBlocksStoreLimits) MaxChunksPerQuery(userID string) int {
-	return 0
-}
-
-func (l *noBlocksStoreLimits) StoreGatewayTenantShardSize(userID string) int {
-	return 0
-}
-
-func initMemberlistKV(cfg *Config, reg prometheus.Registerer) (services.Service, error) {
-	cfg.Mimir.MemberlistKV.MetricsRegisterer = reg
-	cfg.Mimir.MemberlistKV.Codecs = []codec.Codec{
-		ring.GetCodec(),
-	}
-	dnsProviderReg := prometheus.WrapRegistererWithPrefix(
-		"cortex_",
-		prometheus.WrapRegistererWith(
-			prometheus.Labels{"component": "memberlist"},
-			reg,
-		),
-	)
-	dnsProvider := dns.NewProvider(util_log.Logger, dnsProviderReg, dns.GolangResolverType)
-	memberlistKV := memberlist.NewKVInitService(&cfg.Mimir.MemberlistKV, util_log.Logger, dnsProvider, reg)
-
-	// Update the config.
-	cfg.Mimir.Distributor.DistributorRing.KVStore.MemberlistKV = memberlistKV.GetMemberlistKV
-	cfg.Mimir.Ingester.IngesterRing.KVStore.MemberlistKV = memberlistKV.GetMemberlistKV
-	cfg.Mimir.StoreGateway.ShardingRing.KVStore.MemberlistKV = memberlistKV.GetMemberlistKV
-	cfg.Mimir.Compactor.ShardingRing.KVStore.MemberlistKV = memberlistKV.GetMemberlistKV
-	cfg.Mimir.Ruler.Ring.KVStore.MemberlistKV = memberlistKV.GetMemberlistKV
-	cfg.Mimir.Alertmanager.ShardingRing.KVStore.MemberlistKV = memberlistKV.GetMemberlistKV
-	cfg.Mimir.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.MemberlistKV = memberlistKV.GetMemberlistKV
-
-	return memberlistKV, nil
 }
