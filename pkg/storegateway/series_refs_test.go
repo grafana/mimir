@@ -1212,7 +1212,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 				block.meta.MaxTime,
 				newSafeQueryStats(),
 				log.NewNopLogger(),
-				NewBucketStoreMetrics(prometheus.DefaultRegisterer),
+				NewBucketStoreMetrics(prometheus.NewRegistry()),
 			)
 			require.NoError(t, err)
 
