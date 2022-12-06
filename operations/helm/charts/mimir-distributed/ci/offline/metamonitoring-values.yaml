@@ -4,7 +4,7 @@ kubeVersionOverride: "1.20"
 metaMonitoring:
   serviceMonitor:
     enabled: true
-  prometheusRules:
+  prometheusRule:
     mimirRules: true
     mimirAlerts: true
   grafanaAgent:
