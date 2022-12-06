@@ -808,7 +808,10 @@ func foreachStore(t *testing.T, runTest func(t *testing.T, newSuite suiteFactory
 		b, err := filesystem.NewBucket(t.TempDir())
 		assert.NoError(t, err)
 		factory := func(opts ...prepareStoreConfigOption) *storeSuite {
-			opts = append(opts, withBucketStoreOptions(WithStreamingSeriesPerBatch(1000)))
+			// We want to force each Series() call to use more than one batch to catch some edge cases.
+			// This should make the implementation slightly slower, although test time
+			// should be dominated by the setup.
+			opts = append(opts, withBucketStoreOptions(WithStreamingSeriesPerBatch(10)))
 			return prepareStoreWithTestBlocks(t, b, defaultPrepareStoreConfig(t).apply(opts...))
 		}
 		runTest(t, factory)
