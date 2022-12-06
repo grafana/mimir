@@ -63,9 +63,9 @@ func newSeriesChunksSeriesSet(from seriesChunksSetIterator) storepb.SeriesSet {
 func newSeriesSetWithChunks(ctx context.Context, chunkReaders chunkReaders, chunksPool pool.Bytes, batches seriesChunkRefsSetIterator, stats *safeQueryStats, metrics *BucketStoreMetrics) storepb.SeriesSet {
 	var iterator seriesChunksSetIterator
 	iterator = newLoadingSeriesChunksSetIterator(chunkReaders, chunksPool, batches, stats)
-	iterator = newDurationMeasuringIterator[seriesChunksSet](iterator, metrics.batchLoadDurations.WithLabelValues("chunks_load"))
+	iterator = newDurationMeasuringIterator[seriesChunksSet](iterator, metrics.iteratorLoadDurations.WithLabelValues("chunks_load"))
 	iterator = newPreloadingSetIterator[seriesChunksSet](ctx, 1, iterator)
-	iterator = newDurationMeasuringIterator[seriesChunksSet](iterator, metrics.batchLoadDurations.WithLabelValues("chunk_preloaded"))
+	iterator = newDurationMeasuringIterator[seriesChunksSet](iterator, metrics.iteratorLoadDurations.WithLabelValues("chunk_preloaded"))
 	return newSeriesChunksSeriesSet(iterator)
 }
 
