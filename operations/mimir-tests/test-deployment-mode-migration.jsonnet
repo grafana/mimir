@@ -5,7 +5,7 @@ mimir {
     namespace: 'default',
     external_url: 'http://test',
 
-    deployment_mode: 'microservices',
+    deployment_mode: 'migration',
 
     storage_backend: 'gcs',
     blocks_storage_bucket_name: 'blocks-bucket',
