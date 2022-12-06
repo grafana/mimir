@@ -274,11 +274,6 @@ Grafana Mimir itself, and then writes those metrics to the same Grafana Mimir in
    metaMonitoring:
      serviceMonitor:
        enabled: true
-   prometheusRule:
-     mimirRules: true
-     mimirAlerts: true
-     # namespace - optional, as needed
-     # labels - for prom operator discovery optional, as needed
      grafanaAgent:
        enabled: true
        installOperator: true
