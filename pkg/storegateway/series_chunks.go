@@ -63,9 +63,9 @@ func newSeriesChunksSeriesSet(from seriesChunksSetIterator) storepb.SeriesSet {
 func newSeriesSetWithChunks(ctx context.Context, chunkReaders chunkReaders, chunksPool pool.Bytes, batches seriesChunkRefsSetIterator, stats *safeQueryStats, metrics *BucketStoreMetrics) storepb.SeriesSet {
 	var iterator seriesChunksSetIterator
 	iterator = newLoadingSeriesChunksSetIterator(chunkReaders, chunksPool, batches, stats)
-	iterator = newDurationMeasuringIterator(iterator, metrics.batchLoadDurations.WithLabelValues("chunks_load"))
+	iterator = newDurationMeasuringIterator[seriesChunksSet](iterator, metrics.batchLoadDurations.WithLabelValues("chunks_load"))
 	iterator = newPreloadingSetIterator[seriesChunksSet](ctx, 1, iterator)
-	iterator = newDurationMeasuringIterator(iterator, metrics.batchLoadDurations.WithLabelValues("preload"))
+	iterator = newDurationMeasuringIterator[seriesChunksSet](iterator, metrics.batchLoadDurations.WithLabelValues("chunk_preloaded"))
 	return newSeriesChunksSeriesSet(iterator)
 }
 
@@ -241,29 +241,29 @@ func (c *loadingSeriesChunksSetIterator) Err() error {
 	return c.err
 }
 
-type durationMeasuringIterator struct {
-	from             seriesChunksSetIterator
+type durationMeasuringIterator[Set any] struct {
+	from             genericIterator[Set]
 	durationObserver prometheus.Observer
 }
 
-func newDurationMeasuringIterator(from seriesChunksSetIterator, durationObserver prometheus.Observer) *durationMeasuringIterator {
-	return &durationMeasuringIterator{
+func newDurationMeasuringIterator[Set any](from genericIterator[Set], durationObserver prometheus.Observer) genericIterator[Set] {
+	return &durationMeasuringIterator[Set]{
 		from:             from,
 		durationObserver: durationObserver,
 	}
 }
 
-func (m *durationMeasuringIterator) Next() bool {
+func (m *durationMeasuringIterator[Set]) Next() bool {
 	start := time.Now()
 	next := m.from.Next()
 	m.durationObserver.Observe(time.Since(start).Seconds())
 	return next
 }
 
-func (m *durationMeasuringIterator) At() seriesChunksSet {
+func (m *durationMeasuringIterator[Set]) At() Set {
 	return m.from.At()
 }
 
-func (m *durationMeasuringIterator) Err() error {
+func (m *durationMeasuringIterator[Set]) Err() error {
 	return m.from.Err()
 }
