@@ -114,7 +114,7 @@ func (d *Decbuf) UvarintStr() string {
 }
 
 // UvarintBytes reads varint prefixed bytes into a byte slice consuming them but without
-// allocating. The bytes returned are no longer value after subsequent reads from the Decbuf.
+// allocating. The bytes returned are no longer valid after subsequent reads from the Decbuf.
 // If E is non-nil, this method returns an empty byte slice.
 func (d *Decbuf) UvarintBytes() []byte {
 	l := d.Uvarint64()
