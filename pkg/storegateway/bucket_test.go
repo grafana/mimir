@@ -1382,16 +1382,14 @@ func TestSeries_RequestAndResponseHints(t *testing.T) {
 		}
 	}
 
-	tb, store, seriesSet1, seriesSet2, block1, block2, close := setupStoreForHintsTest(t)
-
-	tb.Run("with default options", func(tb test.TB) {
+	t.Run("with default options", func(t *testing.T) {
+		tb, store, seriesSet1, seriesSet2, block1, block2, close := setupStoreForHintsTest(t)
 		tb.Cleanup(close)
 		runTestServerSeries(tb, store, newTestCases(seriesSet1, seriesSet2, block1, block2)...)
 	})
 
-	tb, store, seriesSet1, seriesSet2, block1, block2, close = setupStoreForHintsTest(t, WithStreamingSeriesPerBatch(5000))
-
-	tb.Run("with series streaming", func(tb test.TB) {
+	t.Run("with series streaming", func(t *testing.T) {
+		tb, store, seriesSet1, seriesSet2, block1, block2, close := setupStoreForHintsTest(t, WithStreamingSeriesPerBatch(5000))
 		tb.Cleanup(close)
 		runTestServerSeries(tb, store, newTestCases(seriesSet1, seriesSet2, block1, block2)...)
 	})
