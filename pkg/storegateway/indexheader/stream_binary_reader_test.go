@@ -44,13 +44,13 @@ func BenchmarkLookupSymbol(b *testing.B) {
 		// TODO: are these sensible value for name lookup percentage?
 		for _, percentageNameLookups := range []int{20, 40, 50, 60, 80} {
 			b.Run(fmt.Sprintf("NameLookups%v%%-Parallelism%v", percentageNameLookups, parallelism), func(b *testing.B) {
-				benchmarkLookupSymbol(b, ctx, bucketDir, idIndexV2, parallelism, percentageNameLookups, nameSymbols, valueSymbols)
+				benchmarkLookupSymbol(ctx, b, bucketDir, idIndexV2, parallelism, percentageNameLookups, nameSymbols, valueSymbols)
 			})
 		}
 	}
 }
 
-func benchmarkLookupSymbol(b *testing.B, ctx context.Context, bucketDir string, id ulid.ULID, parallelism int, percentageNameLookups int, nameSymbols []string, valueSymbols []string) {
+func benchmarkLookupSymbol(ctx context.Context, b *testing.B, bucketDir string, id ulid.ULID, parallelism int, percentageNameLookups int, nameSymbols []string, valueSymbols []string) {
 	br, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, bucketDir, id, 3)
 	require.NoError(b, err)
 	b.Cleanup(func() {
