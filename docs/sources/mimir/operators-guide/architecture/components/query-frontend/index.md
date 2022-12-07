@@ -44,7 +44,7 @@ The query-frontend uses a queuing mechanism to:
 
 - Ensure that large queries that might cause an out-of-memory (OOM) error in the querier are retried if a query fails.
   This enables administrators to under-provision memory for queries, or run more small queries in parallel, which helps to reduce the total cost of ownership.
-- Prevent multiple, large requests from being convoyed on a single querier by distributing queries among all queriers using a first-in, first-out queue.
+- Prevent multiple large requests from being picked up by a single querier by distributing queries among all queriers using a first-in, first-out queue.
 - Prevent a single tenant from denial-of-service-ing other tenants by fairly scheduling queries between tenants.
 
 ### Splitting

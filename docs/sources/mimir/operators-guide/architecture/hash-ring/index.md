@@ -23,7 +23,7 @@ For example, series are sharded across [ingesters]({{< relref "../components/ing
 The token of a given series is computed by hashing all of the series’ labels and the tenant ID: the result of which is an unsigned 32-bit integer within the space of the tokens.
 The ingester that owns that series is the instance that owns the range of the tokens, including the series' token.
 
-To divide up set of possible tokens (`2^32`) across the available instances within the cluster, all of the running instances of a given Grafana Mimir component, such as the ingesters, join a hash ring.
+To divide up the set of possible tokens (`2^32`) across the available instances within the cluster, all of the running instances of a given Grafana Mimir component, such as the ingesters, join a hash ring.
 The hash ring is a data structure that splits the space of the tokens into multiple ranges, and assigns each range to a given Grafana Mimir ring member.
 
 Upon startup, an instance generates random token values, and it registers them into the ring.
@@ -93,6 +93,6 @@ Grafana Mimir primarily uses the hash ring for sharding and replication.
 Features that are built using the hash ring:
 
 - **Service discovery**: Instances can discover each other looking up who is registered in the ring.
-- **Heartbeating**: Instances periodically send an heartbeat to the ring to signal they're up and running. An instance is considered unhealthy if misses the heartbeat for some period of time.
+- **Heartbeating**: Instances periodically send a heartbeat to the ring to signal they're up and running. An instance is considered unhealthy if it misses the heartbeat for some period of time.
 - **Zone-aware replication**: Zone-aware replication is the replication of data across failure domains and can be optionally enabled in Grafana Mimir. For more information, see [configuring zone-aware replication]({{< relref "../../configure/configure-zone-aware-replication.md" >}}).
 - **Shuffle sharding**: Grafana Mimir optionally supports shuffle sharding in a multi-tenant cluster, to reduce the blast radius of an outage and better isolate tenants. For more information, refer to [configure shuffle sharding]({{< relref "../../configure/configure-shuffle-sharding/index.md" >}}).
