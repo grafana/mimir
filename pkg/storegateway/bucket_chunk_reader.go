@@ -286,6 +286,9 @@ func (r chunkReaders) load(entries []seriesEntry, chunksPool *pool.BatchBytes, s
 	for _, reader := range r.readers {
 		reader := reader
 		g.Go(func() error {
+			// We don't need synchronisation on the access to entries because each chunk in
+			// every series will be loaded by exactly one reader. Since the chunks slices are already
+			// initialized to the correct length, they don't need to be resized and can just be accessed.
 			return reader.load(entries, chunksPool, stats)
 		})
 	}
