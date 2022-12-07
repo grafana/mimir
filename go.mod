@@ -27,7 +27,7 @@ require (
 	github.com/opentracing-contrib/go-stdlib v1.0.0
 	github.com/opentracing/opentracing-go v1.2.0
 	github.com/pkg/errors v0.9.1
-	github.com/prometheus/alertmanager v0.24.1-0.20221130160919-c60fafa6025c
+	github.com/prometheus/alertmanager v0.24.1-0.20221201154617-1b202b91bf26
 	github.com/prometheus/client_golang v1.14.0
 	github.com/prometheus/client_model v0.3.0
 	github.com/prometheus/common v0.37.0
@@ -41,7 +41,7 @@ require (
 	go.uber.org/atomic v1.10.0
 	go.uber.org/goleak v1.2.0
 	golang.org/x/crypto v0.1.0
-	golang.org/x/net v0.1.0
+	golang.org/x/net v0.2.0
 	golang.org/x/sync v0.1.0
 	golang.org/x/time v0.1.0
 	google.golang.org/grpc v1.50.1
@@ -67,7 +67,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.11.1
 	go.uber.org/multierr v1.8.0
 	golang.org/x/exp v0.0.0-20221031165847-c99f073a8326
-	golang.org/x/sys v0.1.0
+	golang.org/x/sys v0.2.0
 	google.golang.org/api v0.102.0
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	sigs.k8s.io/kustomize/kyaml v0.13.7
@@ -103,7 +103,7 @@ require (
 	github.com/benbjohnson/clock v1.3.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bradfitz/gomemcache v0.0.0-20221031212613-62deef7fc822 // indirect
-	github.com/cenkalti/backoff/v4 v4.1.3 // indirect
+	github.com/cenkalti/backoff/v4 v4.2.0 // indirect
 	github.com/cespare/xxhash v1.1.0 // indirect
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/chromedp/cdproto v0.0.0-20220629234738-4cfc9cdeeb92 // indirect
@@ -210,7 +210,7 @@ require (
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.36.4 // indirect
 	go.opentelemetry.io/otel/metric v0.33.0 // indirect
 	go.uber.org/zap v1.21.0 // indirect
-	golang.org/x/mod v0.6.0 // indirect
+	golang.org/x/mod v0.7.0 // indirect
 	golang.org/x/oauth2 v0.1.0 // indirect
 	golang.org/x/text v0.4.0 // indirect
 	golang.org/x/tools v0.2.0 // indirect
