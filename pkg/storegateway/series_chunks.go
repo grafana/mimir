@@ -65,7 +65,7 @@ func newSeriesSetWithChunks(ctx context.Context, chunkReaders chunkReaders, chun
 	iterator = newLoadingSeriesChunksSetIterator(chunkReaders, chunksPool, batches, stats)
 	iterator = newDurationMeasuringIterator[seriesChunksSet](iterator, metrics.iteratorLoadDurations.WithLabelValues("chunks_load"))
 	iterator = newPreloadingSetIterator[seriesChunksSet](ctx, 1, iterator)
-	iterator = newDurationMeasuringIterator[seriesChunksSet](iterator, metrics.iteratorLoadDurations.WithLabelValues("chunk_preloaded"))
+	iterator = newDurationMeasuringIterator[seriesChunksSet](iterator, metrics.iteratorLoadDurations.WithLabelValues("chunks_preloaded"))
 	return newSeriesChunksSeriesSet(iterator)
 }
 
