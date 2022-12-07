@@ -50,6 +50,7 @@ func (d *Decbuf) CheckCrc32(castagnoliTable *crc32.Table) {
 		maxChunkSize := 1024 * 1024 // TODO: what is a sensible size to use here?
 		chunkSize := math.Min(bytesToRead, maxChunkSize)
 
+		// TODO: Could this be replaced with a Peak() + Skip() to avoid allocation?
 		// TODO: pull byte slices from a pool rather than creating a new one every time?
 		b, err := d.r.Read(chunkSize)
 		if err != nil {
@@ -176,13 +177,25 @@ func (d *Decbuf) Be64() uint64 {
 		return 0
 	}
 
-	b, err := d.r.Read(8)
+	b, err := d.r.Peek(8)
 	if err != nil {
 		d.E = err
 		return 0
 	}
 
-	return binary.BigEndian.Uint64(b)
+	if len(b) != 8 {
+		d.E = ErrInvalidSize
+		return 0
+	}
+
+	v := binary.BigEndian.Uint64(b)
+	err = d.r.Skip(8)
+	if err != nil {
+		d.E = err
+		return 0
+	}
+
+	return v
 }
 
 func (d *Decbuf) Be32() uint32 {
@@ -190,13 +203,25 @@ func (d *Decbuf) Be32() uint32 {
 		return 0
 	}
 
-	b, err := d.r.Read(4)
+	b, err := d.r.Peek(4)
 	if err != nil {
 		d.E = err
 		return 0
 	}
 
-	return binary.BigEndian.Uint32(b)
+	if len(b) != 4 {
+		d.E = ErrInvalidSize
+		return 0
+	}
+
+	v := binary.BigEndian.Uint32(b)
+	err = d.r.Skip(4)
+	if err != nil {
+		d.E = err
+		return 0
+	}
+
+	return v
 }
 
 func (d *Decbuf) Byte() byte {
@@ -204,13 +229,25 @@ func (d *Decbuf) Byte() byte {
 		return 0
 	}
 
-	b, err := d.r.Read(1)
+	b, err := d.r.Peek(1)
 	if err != nil {
 		d.E = err
 		return 0
 	}
 
-	return b[0]
+	if len(b) != 1 {
+		d.E = ErrInvalidSize
+		return 0
+	}
+
+	v := b[0]
+	err = d.r.Skip(1)
+	if err != nil {
+		d.E = err
+		return 0
+	}
+
+	return v
 }
 
 func (d *Decbuf) Err() error { return d.E }

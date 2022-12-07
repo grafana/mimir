@@ -65,6 +65,34 @@ func FuzzDecbuf_Be32(f *testing.F) {
 	})
 }
 
+func BenchmarkDecbuf_Be32(t *testing.B) {
+	enc := prom_encoding.Encbuf{}
+	enc.PutBE32(uint32(0))
+	enc.PutBE32(uint32(1))
+	enc.PutBE32(uint32(0xFFFF_FFFF))
+
+	dec := createDecbufWithBytes(t, enc.Get())
+	t.ResetTimer()
+
+	for i := 0; i < t.N; i++ {
+		v1 := dec.Be32()
+		v2 := dec.Be32()
+		v3 := dec.Be32()
+
+		if err := dec.Err(); err != nil {
+			require.NoError(t, err)
+		}
+
+		if v1 != 0 || v2 != 0 || v3 != 0xFFFF_FFFF {
+			require.Equal(t, uint32(0), v1)
+			require.Equal(t, uint32(1), v2)
+			require.Equal(t, uint32(0xFFFF_FFFF), v3)
+		}
+
+		dec.ResetAt(0)
+	}
+}
+
 func TestDecbuf_Be32intHappyPath(t *testing.T) {
 	cases := []int{
 		0,
@@ -168,6 +196,34 @@ func FuzzDecbuf_Be64(f *testing.F) {
 		require.Equal(t, n, actual)
 		require.Equal(t, 0, dec.Len())
 	})
+}
+
+func BenchmarkDecbuf_Be64(t *testing.B) {
+	enc := prom_encoding.Encbuf{}
+	enc.PutBE64(uint64(0))
+	enc.PutBE64(uint64(1))
+	enc.PutBE64(uint64(0xFFFF_FFFF_FFFF_FFFF))
+
+	dec := createDecbufWithBytes(t, enc.Get())
+	t.ResetTimer()
+
+	for i := 0; i < t.N; i++ {
+		v1 := dec.Be64()
+		v2 := dec.Be64()
+		v3 := dec.Be64()
+
+		if err := dec.Err(); err != nil {
+			require.NoError(t, err)
+		}
+
+		if v1 != 0 || v2 != 0 || v3 != 0xFFFF_FFFF_FFFF_FFFF {
+			require.Equal(t, uint64(0), v1)
+			require.Equal(t, uint64(1), v2)
+			require.Equal(t, uint64(0xFFFF_FFFF_FFFF_FFFF), v3)
+		}
+
+		dec.ResetAt(0)
+	}
 }
 
 func TestDecbuf_SkipHappyPath(t *testing.T) {
@@ -401,7 +457,9 @@ func BenchmarkDecbuf_UvarintBytes(t *testing.B) {
 			require.NoError(t, err)
 		}
 
-		require.Len(t, b, 127)
+		if len(b) != len(val) {
+			require.Len(t, b, len(val))
+		}
 
 		dec.ResetAt(0)
 		if err := dec.Err(); err != nil {
