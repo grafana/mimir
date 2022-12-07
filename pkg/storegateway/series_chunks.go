@@ -60,12 +60,12 @@ func newSeriesChunksSeriesSet(from seriesChunksSetIterator) storepb.SeriesSet {
 	}
 }
 
-func newSeriesSetWithChunks(ctx context.Context, chunkReaders chunkReaders, chunksPool pool.Bytes, batches seriesChunkRefsSetIterator, stats *safeQueryStats, metrics *BucketStoreMetrics) storepb.SeriesSet {
+func newSeriesSetWithChunks(ctx context.Context, chunkReaders chunkReaders, chunksPool pool.Bytes, batches seriesChunkRefsSetIterator, stats *safeQueryStats, iteratorLoadDurations *prometheus.HistogramVec) storepb.SeriesSet {
 	var iterator seriesChunksSetIterator
 	iterator = newLoadingSeriesChunksSetIterator(chunkReaders, chunksPool, batches, stats)
-	iterator = newDurationMeasuringIterator[seriesChunksSet](iterator, metrics.iteratorLoadDurations.WithLabelValues("chunks_load"))
+	iterator = newDurationMeasuringIterator[seriesChunksSet](iterator, iteratorLoadDurations.WithLabelValues("chunks_load"))
 	iterator = newPreloadingSetIterator[seriesChunksSet](ctx, 1, iterator)
-	iterator = newDurationMeasuringIterator[seriesChunksSet](iterator, metrics.iteratorLoadDurations.WithLabelValues("chunks_preloaded"))
+	iterator = newDurationMeasuringIterator[seriesChunksSet](iterator, iteratorLoadDurations.WithLabelValues("chunks_preloaded"))
 	return newSeriesChunksSeriesSet(iterator)
 }
 
