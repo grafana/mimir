@@ -8,6 +8,7 @@ import (
 	"github.com/grafana/dskit/multierror"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 
 	"github.com/grafana/mimir/pkg/storage/series"
@@ -110,7 +111,7 @@ func (a *aggregationsQuerier) Select(sortSeries bool, hints *storage.SelectHints
 
 		fs, err := filterSamplesFromSeries(s, func(ts model.Time) bool {
 			return ts > a.rawSeriesCutoffTime
-		})
+		}, false)
 		if err != nil {
 			return storage.ErrSeriesSet(err)
 		}
@@ -140,7 +141,7 @@ func (a *aggregationsQuerier) Select(sortSeries bool, hints *storage.SelectHints
 
 		fs, err := filterSamplesFromSeries(s, func(ts model.Time) bool {
 			return ts <= a.rawSeriesCutoffTime
-		})
+		}, true)
 		if err != nil {
 			return storage.ErrSeriesSet(err)
 		}
@@ -159,7 +160,7 @@ func (a *aggregationsQuerier) Close() error {
 	return multierror.New(a.normalQuerier.Close(), a.aggQuerier.Close()).Err()
 }
 
-func filterSamplesFromSeries(s storage.Series, include func(ts model.Time) bool) (storage.Series, error) {
+func filterSamplesFromSeries(s storage.Series, include func(ts model.Time) bool, appendStaleMarker bool) (storage.Series, error) {
 	var includedSamples []model.SamplePair
 	it := s.Iterator()
 	for it.Next() {
@@ -174,6 +175,13 @@ func filterSamplesFromSeries(s storage.Series, include func(ts model.Time) bool)
 
 	if len(includedSamples) == 0 {
 		return nil, nil
+	}
+
+	if appendStaleMarker {
+		lastSample := includedSamples[len(includedSamples)-1]
+		lastSample.Timestamp++
+		lastSample.Value = model.SampleValue(value.StaleNaN)
+		includedSamples = append(includedSamples, lastSample)
 	}
 	return series.NewConcreteSeries(s.Labels(), includedSamples), nil
 }
