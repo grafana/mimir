@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/runutil"
+	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -42,6 +43,14 @@ func newBucketChunkReader(ctx context.Context, block *bucketBlock) *bucketChunkR
 func (r *bucketChunkReader) Close() error {
 	r.block.pendingReaders.Done()
 	return nil
+}
+
+// reset resets the chunks scheduled for loading. It does not release any loaded chunks.
+// Use the injected pool.BatchBytes to release the bytes.
+func (r *bucketChunkReader) reset() {
+	for i := range r.toLoad {
+		r.toLoad[i] = r.toLoad[i][:0]
+	}
 }
 
 // addLoad adds the chunk with id to the data set to be fetched.
@@ -248,4 +257,53 @@ func (b rawChunk) Appender() (chunkenc.Appender, error) {
 
 func (b rawChunk) NumSamples() int {
 	panic("invalid call")
+}
+
+// bucketChunkReaders holds a collection of chunkReader's for multiple blocks
+// and selects the correct chunk reader to use on each call to addLoad
+type bucketChunkReaders struct {
+	readers map[ulid.ULID]chunkReader
+}
+
+type chunkReader interface {
+	io.Closer
+
+	addLoad(id chunks.ChunkRef, seriesEntry, chunk int) error
+	load(result []seriesEntry, chunksPool *pool.BatchBytes, stats *safeQueryStats) error
+	reset()
+}
+
+func newChunkReaders(readersMap map[ulid.ULID]chunkReader) *bucketChunkReaders {
+	return &bucketChunkReaders{
+		readers: readersMap,
+	}
+}
+
+func (r bucketChunkReaders) addLoad(blockID ulid.ULID, id chunks.ChunkRef, seriesEntry, chunk int) error {
+	return r.readers[blockID].addLoad(id, seriesEntry, chunk)
+}
+
+func (r bucketChunkReaders) load(entries []seriesEntry, chunksPool *pool.BatchBytes, stats *safeQueryStats) error {
+	g := &errgroup.Group{}
+	for _, reader := range r.readers {
+		reader := reader
+		g.Go(func() error {
+			// We don't need synchronisation on the access to entries because each chunk in
+			// every series will be loaded by exactly one reader. Since the chunks slices are already
+			// initialized to the correct length, they don't need to be resized and can just be accessed.
+			return reader.load(entries, chunksPool, stats)
+		})
+	}
+
+	// Block until all goroutines are done. We need to wait for all goroutines and
+	// can't return on first error, otherwise a subsequent release of the bytes pool
+	// could cause a race condition.
+	return g.Wait()
+}
+
+// reset the chunks scheduled for loading.
+func (r *bucketChunkReaders) reset() {
+	for _, reader := range r.readers {
+		reader.reset()
+	}
 }

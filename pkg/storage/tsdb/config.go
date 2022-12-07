@@ -300,6 +300,7 @@ type BucketStoreConfig struct {
 
 	// Controls what to do when MaxConcurrent is exceeded: fail immediately or wait for a slot to run.
 	MaxConcurrentRejectOverLimit bool `yaml:"max_concurrent_reject_over_limit" category:"experimental"`
+	StreamingBatchSize           int  `yaml:"streaming_series_batch_size" category:"experimental"`
 }
 
 // RegisterFlags registers the BucketStore flags
@@ -329,6 +330,7 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.IndexHeaderLazyLoadingEnabled, "blocks-storage.bucket-store.index-header-lazy-loading-enabled", true, "If enabled, store-gateway will lazy load an index-header only once required by a query.")
 	f.DurationVar(&cfg.IndexHeaderLazyLoadingIdleTimeout, "blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout", 60*time.Minute, "If index-header lazy loading is enabled and this setting is > 0, the store-gateway will offload unused index-headers after 'idle timeout' inactivity.")
 	f.Uint64Var(&cfg.PartitionerMaxGapBytes, "blocks-storage.bucket-store.partitioner-max-gap-bytes", DefaultPartitionerMaxGapSize, "Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests.")
+	f.IntVar(&cfg.StreamingBatchSize, "blocks-storage.bucket-store.batch-series-size", 0, "If larger than 0, this option enables store-gateway series streaming. The store-gateway will load series from the bucket in batches instead of buffering them all in memory before returning to the querier. This option controls how many series to fetch per batch.")
 }
 
 // Validate the config.

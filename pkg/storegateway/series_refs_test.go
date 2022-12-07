@@ -9,15 +9,14 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
@@ -656,12 +655,15 @@ func TestSeriesSetWithoutChunks(t *testing.T) {
 		},
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
 	for name, testCase := range testCases {
 		name, testCase := name, testCase
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			chainedSet := newSeriesSetWithoutChunks(testCase.input)
+			chainedSet := newSeriesSetWithoutChunks(ctx, testCase.input)
 			actual := readAllSeriesLabels(chainedSet)
 			require.NoError(t, chainedSet.Err())
 			assert.Equal(t, testCase.expected, actual)
@@ -1075,6 +1077,32 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
+	newTestBlock := prepareTestBlock(test.NewTB(t), func(tb testing.TB, appender storage.Appender) {
+		earlySeries := []labels.Labels{
+			labels.FromStrings("a", "1", "b", "1"),
+			labels.FromStrings("a", "1", "b", "2"),
+		}
+
+		// Series with samples that start later, so we can expect their chunks' minT/maxT to be different
+		lateSeries := []labels.Labels{
+			labels.FromStrings("a", "2", "b", "1"),
+			labels.FromStrings("a", "2", "b", "2"),
+		}
+
+		const numSamples = 200
+		for i := int64(0); i < numSamples; i++ { // write 200 samples, so we get two chunks
+			for _, s := range earlySeries {
+				_, err := appender.Append(0, s, i, 0)
+				assert.NoError(t, err)
+			}
+			for _, s := range lateSeries {
+				_, err := appender.Append(0, s, numSamples+i, 0)
+				assert.NoError(t, err)
+			}
+		}
+		assert.NoError(t, appender.Commit())
+	})
+
 	testCases := map[string]struct {
 		matcher        *labels.Matcher
 		batchSize      int
@@ -1104,10 +1132,10 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 			seriesLimit: 100,
 			expectedSeries: []seriesChunkRefsSet{
 				{series: []seriesChunkRefs{
-					{lset: labels.FromStrings("a", "1", "b", "1")},
-					{lset: labels.FromStrings("a", "1", "b", "2")},
-					{lset: labels.FromStrings("a", "2", "b", "1")},
-					{lset: labels.FromStrings("a", "2", "b", "2")},
+					{lset: labels.FromStrings("a", "1", "b", "1"), chunks: []seriesChunkRef{{ref: 8, minTime: 0, maxTime: 124}, {ref: 57, minTime: 125, maxTime: 199}}},
+					{lset: labels.FromStrings("a", "1", "b", "2"), chunks: []seriesChunkRef{{ref: 95, minTime: 0, maxTime: 124}, {ref: 144, minTime: 125, maxTime: 199}}},
+					{lset: labels.FromStrings("a", "2", "b", "1"), chunks: []seriesChunkRef{{ref: 182, minTime: 200, maxTime: 332}, {ref: 234, minTime: 333, maxTime: 399}}},
+					{lset: labels.FromStrings("a", "2", "b", "2"), chunks: []seriesChunkRef{{ref: 270, minTime: 200, maxTime: 332}, {ref: 322, minTime: 333, maxTime: 399}}},
 				}},
 			},
 		},
@@ -1118,16 +1146,16 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 			seriesLimit: 100,
 			expectedSeries: []seriesChunkRefsSet{
 				{series: []seriesChunkRefs{
-					{lset: labels.FromStrings("a", "1", "b", "1")},
+					{lset: labels.FromStrings("a", "1", "b", "1"), chunks: []seriesChunkRef{{ref: 8, minTime: 0, maxTime: 124}, {ref: 57, minTime: 125, maxTime: 199}}},
 				}},
 				{series: []seriesChunkRefs{
-					{lset: labels.FromStrings("a", "1", "b", "2")},
+					{lset: labels.FromStrings("a", "1", "b", "2"), chunks: []seriesChunkRef{{ref: 95, minTime: 0, maxTime: 124}, {ref: 144, minTime: 125, maxTime: 199}}},
 				}},
 				{series: []seriesChunkRefs{
-					{lset: labels.FromStrings("a", "2", "b", "1")},
+					{lset: labels.FromStrings("a", "2", "b", "1"), chunks: []seriesChunkRef{{ref: 182, minTime: 200, maxTime: 332}, {ref: 234, minTime: 333, maxTime: 399}}},
 				}},
 				{series: []seriesChunkRefs{
-					{lset: labels.FromStrings("a", "2", "b", "2")},
+					{lset: labels.FromStrings("a", "2", "b", "2"), chunks: []seriesChunkRef{{ref: 270, minTime: 200, maxTime: 332}, {ref: 322, minTime: 333, maxTime: 399}}},
 				}},
 			},
 		},
@@ -1138,8 +1166,8 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 			seriesLimit: 100,
 			expectedSeries: []seriesChunkRefsSet{
 				{series: []seriesChunkRefs{
-					{lset: labels.FromStrings("a", "1", "b", "1")},
-					{lset: labels.FromStrings("a", "1", "b", "2")},
+					{lset: labels.FromStrings("a", "1", "b", "1"), chunks: []seriesChunkRef{{ref: 8, minTime: 0, maxTime: 124}, {ref: 57, minTime: 125, maxTime: 199}}},
+					{lset: labels.FromStrings("a", "1", "b", "2"), chunks: []seriesChunkRef{{ref: 95, minTime: 0, maxTime: 124}, {ref: 144, minTime: 125, maxTime: 199}}},
 				}},
 			},
 		},
@@ -1150,10 +1178,10 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 			seriesLimit: 100,
 			expectedSeries: []seriesChunkRefsSet{
 				{series: []seriesChunkRefs{
-					{lset: labels.FromStrings("a", "1", "b", "1")},
+					{lset: labels.FromStrings("a", "1", "b", "1"), chunks: []seriesChunkRef{{ref: 8, minTime: 0, maxTime: 124}, {ref: 57, minTime: 125, maxTime: 199}}},
 				}},
 				{series: []seriesChunkRefs{
-					{lset: labels.FromStrings("a", "1", "b", "2")},
+					{lset: labels.FromStrings("a", "1", "b", "2"), chunks: []seriesChunkRef{{ref: 95, minTime: 0, maxTime: 124}, {ref: 144, minTime: 125, maxTime: 199}}},
 				}},
 			},
 		},
@@ -1164,43 +1192,11 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
-			suite := prepareStoreWithTestBlocks(t, objstore.NewInMemBucket(), defaultPrepareStoreConfig(t))
-			var firstBlock *bucketBlock
-			// Find the block with the smallest timestamp in its ULID.
-			// The test setup creates two blocks - each takes 4 different timeseries; each has
-			// a timestamp of time.Now() when its being created.
-			// We want the first created block because we want to assert on the series inside it.
-			// The block created first contains a known set of 4 series.
-			// TODO dimitarvdimitrov change this setup to use prepareTestBlock() and assert on the chunks too
-			for _, b := range suite.store.blocks {
-				if firstBlock == nil {
-					firstBlock = b
-					continue
-				}
-				if b.meta.ULID.Time() < firstBlock.meta.ULID.Time() {
-					firstBlock = b
-				}
-			}
-
-			indexReader := firstBlock.indexReader()
+			var block = newTestBlock()
+			indexReader := block.indexReader()
 			defer indexReader.Close()
 
-			iterator, err := openBlockSeriesChunkRefsSetsIterator(
-				ctx,
-				testCase.batchSize,
-				indexReader,
-				firstBlock.meta,
-				[]*labels.Matcher{testCase.matcher},
-				nil,
-				hashcache.NewSeriesHashCache(1024*1024).GetBlockCache(firstBlock.meta.ULID.String()),
-				&limiter{limit: testCase.chunksLimit},
-				&limiter{limit: testCase.seriesLimit},
-				false,
-				firstBlock.meta.MinTime,
-				firstBlock.meta.MaxTime,
-				newSafeQueryStats(),
-				log.NewNopLogger(),
-			)
+			iterator, err := openBlockSeriesChunkRefsSetsIterator(ctx, testCase.batchSize, indexReader, block.meta, []*labels.Matcher{testCase.matcher}, nil, hashcache.NewSeriesHashCache(1024*1024).GetBlockCache(block.meta.ULID.String()), &limiter{limit: testCase.chunksLimit}, &limiter{limit: testCase.seriesLimit}, false, block.meta.MinTime, block.meta.MaxTime, newSafeQueryStats(), NewBucketStoreMetrics(prometheus.NewRegistry()))
 			require.NoError(t, err)
 
 			actualSeriesSets := readAllSeriesChunkRefsSet(iterator)
@@ -1208,7 +1204,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 			require.Lenf(t, actualSeriesSets, len(testCase.expectedSeries), "expected %d sets, but got %d", len(testCase.expectedSeries), len(actualSeriesSets))
 			for i, actualSeriesSet := range actualSeriesSets {
 				expectedSeriesSet := testCase.expectedSeries[i]
-				require.Equal(t, expectedSeriesSet.len(), actualSeriesSet.len())
+				require.Equal(t, expectedSeriesSet.len(), actualSeriesSet.len(), i)
 				for j, actualSeries := range actualSeriesSet.series {
 					expectedSeries := testCase.expectedSeries[i].series[j]
 
@@ -1216,9 +1212,14 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 					expectedLset := expectedSeries.lset
 					assert.Truef(t, labels.Equal(actualLset, expectedLset), "%d, %d: expected labels %s got labels %s", i, j, expectedLset, actualLset)
 
-					// We can't test anything else from the chunk ref because it is generated on the go in each test case
-					assert.Len(t, actualSeries.chunks, 1)
-					assert.Equal(t, firstBlock.meta.ULID, actualSeries.chunks[0].blockID)
+					require.Lenf(t, actualSeries.chunks, len(expectedSeries.chunks), "%d, %d", i, j)
+					for k, actualChunk := range actualSeries.chunks {
+						expectedChunk := expectedSeries.chunks[k]
+						assert.Equalf(t, block.meta.ULID, actualChunk.blockID, "%d, %d, %d", i, j, k)
+						assert.Equalf(t, int(expectedChunk.ref), int(actualChunk.ref), "%d, %d, %d", i, j, k)
+						assert.Equalf(t, expectedChunk.minTime, actualChunk.minTime, "%d, %d, %d", i, j, k)
+						assert.Equalf(t, expectedChunk.maxTime, actualChunk.maxTime, "%d, %d, %d", i, j, k)
+					}
 				}
 			}
 			if testCase.expectedErr != "" {
@@ -1288,8 +1289,6 @@ func (a mockSeriesHasher) Hash(seriesID storage.SeriesRef, lset labels.Labels, s
 
 // sliceSeriesChunkRefsSetIterator implements seriesChunkRefsSetIterator and
 // returns the provided err when the sets are exhausted.
-//
-
 type sliceSeriesChunkRefsSetIterator struct {
 	current int
 	sets    []seriesChunkRefsSet

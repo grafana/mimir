@@ -4,10 +4,14 @@ package storegateway
 
 import (
 	"context"
+	"time"
 
+	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
+	"github.com/grafana/mimir/pkg/util/pool"
 )
 
 // seriesChunksSetIterator is the interface implemented by an iterator returning a sequence of seriesChunksSet.
@@ -56,6 +60,18 @@ func newSeriesChunksSeriesSet(from seriesChunksSetIterator) storepb.SeriesSet {
 	}
 }
 
+func newSeriesSetWithChunks(ctx context.Context, chunkReaders bucketChunkReaders, chunksPool pool.Bytes, batches seriesChunkRefsSetIterator, stats *safeQueryStats, iteratorLoadDurations *prometheus.HistogramVec) storepb.SeriesSet {
+	var iterator seriesChunksSetIterator
+	iterator = newLoadingSeriesChunksSetIterator(chunkReaders, chunksPool, batches, stats)
+	iterator = newDurationMeasuringIterator[seriesChunksSet](iterator, iteratorLoadDurations.WithLabelValues("chunks_load"))
+	iterator = newPreloadingSetIterator[seriesChunksSet](ctx, 1, iterator)
+	// We are measuring the time we wait for a preloaded batch. In an ideal world this is 0 because there's always a preloaded batch waiting.
+	// But realistically it will not be. Along with the duration of the chunks_load iterator,
+	// we can determine where is the bottleneck in the streaming pipeline.
+	iterator = newDurationMeasuringIterator[seriesChunksSet](iterator, iteratorLoadDurations.WithLabelValues("chunks_preloaded"))
+	return newSeriesChunksSeriesSet(iterator)
+}
+
 // Next advances to the next item. Once the underlying seriesChunksSet has been fully consumed
 // (which means the call to Next moves to the next set), the seriesChunksSet is released. This
 // means that it's not safe to read from the values returned by At() after Next() is called again.
@@ -88,31 +104,38 @@ func (b *seriesChunksSeriesSet) Err() error {
 
 // preloadedSeriesChunksSet holds the result of preloading the next set. It can either contain
 // the preloaded set or an error, but not both.
-type preloadedSeriesChunksSet struct {
-	set seriesChunksSet
+type preloadedSeriesChunksSet[T any] struct {
+	set T
 	err error
 }
 
-type preloadingSeriesChunkSetIterator struct {
-	ctx     context.Context
-	from    seriesChunksSetIterator
-	current seriesChunksSet
+type genericIterator[V any] interface {
+	Next() bool
+	At() V
+	Err() error
+}
 
-	preloaded chan preloadedSeriesChunksSet
+type preloadingSetIterator[Set any] struct {
+	ctx  context.Context
+	from genericIterator[Set]
+
+	current Set
+
+	preloaded chan preloadedSeriesChunksSet[Set]
 	err       error
 }
 
-func newPreloadingSeriesChunkSetIterator(ctx context.Context, preloadedSetsCount int, from seriesChunksSetIterator) *preloadingSeriesChunkSetIterator {
-	preloadedSet := &preloadingSeriesChunkSetIterator{
+func newPreloadingSetIterator[Set any](ctx context.Context, preloadedSetsCount int, from genericIterator[Set]) *preloadingSetIterator[Set] {
+	preloadedSet := &preloadingSetIterator[Set]{
 		ctx:       ctx,
 		from:      from,
-		preloaded: make(chan preloadedSeriesChunksSet, preloadedSetsCount-1), // one will be kept outside the channel when the channel blocks
+		preloaded: make(chan preloadedSeriesChunksSet[Set], preloadedSetsCount-1), // one will be kept outside the channel when the channel blocks
 	}
 	go preloadedSet.preload()
 	return preloadedSet
 }
 
-func (p *preloadingSeriesChunkSetIterator) preload() {
+func (p *preloadingSetIterator[Set]) preload() {
 	defer close(p.preloaded)
 
 	for p.from.Next() {
@@ -120,16 +143,16 @@ func (p *preloadingSeriesChunkSetIterator) preload() {
 		case <-p.ctx.Done():
 			// If the context is done, we should just stop the preloading goroutine.
 			return
-		case p.preloaded <- preloadedSeriesChunksSet{set: p.from.At()}:
+		case p.preloaded <- preloadedSeriesChunksSet[Set]{set: p.from.At()}:
 		}
 	}
 
 	if p.from.Err() != nil {
-		p.preloaded <- preloadedSeriesChunksSet{err: p.from.Err()}
+		p.preloaded <- preloadedSeriesChunksSet[Set]{err: p.from.Err()}
 	}
 }
 
-func (p *preloadingSeriesChunkSetIterator) Next() bool {
+func (p *preloadingSetIterator[Set]) Next() bool {
 	preloaded, ok := <-p.preloaded
 	if !ok {
 		// Iteration reached the end or context has been canceled.
@@ -142,10 +165,108 @@ func (p *preloadingSeriesChunkSetIterator) Next() bool {
 	return p.err == nil
 }
 
-func (p *preloadingSeriesChunkSetIterator) At() seriesChunksSet {
+func (p *preloadingSetIterator[Set]) At() Set {
 	return p.current
 }
 
-func (p *preloadingSeriesChunkSetIterator) Err() error {
+func (p *preloadingSetIterator[Set]) Err() error {
 	return p.err
+}
+
+type loadingSeriesChunksSetIterator struct {
+	chunkReaders bucketChunkReaders
+	from         seriesChunkRefsSetIterator
+	chunksPool   pool.Bytes
+	stats        *safeQueryStats
+
+	current seriesChunksSet
+	err     error
+}
+
+func newLoadingSeriesChunksSetIterator(chunkReaders bucketChunkReaders, chunksPool pool.Bytes, from seriesChunkRefsSetIterator, stats *safeQueryStats) *loadingSeriesChunksSetIterator {
+	return &loadingSeriesChunksSetIterator{
+		chunkReaders: chunkReaders,
+		from:         from,
+		chunksPool:   chunksPool,
+		stats:        stats,
+	}
+}
+
+func (c *loadingSeriesChunksSetIterator) Next() bool {
+	if c.err != nil {
+		return false
+	}
+
+	if !c.from.Next() {
+		c.err = c.from.Err()
+		return false
+	}
+
+	nextUnloaded := c.from.At()
+	entries := make([]seriesEntry, nextUnloaded.len())
+	c.chunkReaders.reset()
+	for i, s := range nextUnloaded.series {
+		entries[i].lset = s.lset
+		entries[i].chks = make([]storepb.AggrChunk, len(s.chunks))
+
+		for j, chunk := range s.chunks {
+			entries[i].chks[j].MinTime = chunk.minTime
+			entries[i].chks[j].MaxTime = chunk.maxTime
+
+			err := c.chunkReaders.addLoad(chunk.blockID, chunk.ref, i, j)
+			if err != nil {
+				c.err = errors.Wrap(err, "preloading chunks")
+				return false
+			}
+		}
+	}
+
+	// Create a batched memory pool that can be released all at once.
+	chunksPool := &pool.BatchBytes{Delegate: c.chunksPool}
+
+	err := c.chunkReaders.load(entries, chunksPool, c.stats)
+	if err != nil {
+		c.err = errors.Wrap(err, "loading chunks")
+		return false
+	}
+	c.current = seriesChunksSet{
+		series:         entries,
+		chunksReleaser: chunksPool,
+	}
+	return true
+}
+
+func (c *loadingSeriesChunksSetIterator) At() seriesChunksSet {
+	return c.current
+}
+
+func (c *loadingSeriesChunksSetIterator) Err() error {
+	return c.err
+}
+
+type durationMeasuringIterator[Set any] struct {
+	from             genericIterator[Set]
+	durationObserver prometheus.Observer
+}
+
+func newDurationMeasuringIterator[Set any](from genericIterator[Set], durationObserver prometheus.Observer) genericIterator[Set] {
+	return &durationMeasuringIterator[Set]{
+		from:             from,
+		durationObserver: durationObserver,
+	}
+}
+
+func (m *durationMeasuringIterator[Set]) Next() bool {
+	start := time.Now()
+	next := m.from.Next()
+	m.durationObserver.Observe(time.Since(start).Seconds())
+	return next
+}
+
+func (m *durationMeasuringIterator[Set]) At() Set {
+	return m.from.At()
+}
+
+func (m *durationMeasuringIterator[Set]) Err() error {
+	return m.from.Err()
 }
