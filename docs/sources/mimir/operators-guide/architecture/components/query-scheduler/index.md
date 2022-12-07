@@ -13,7 +13,7 @@ The query-scheduler is an optional, stateless component that retains a queue of 
 
 [//]: # "Diagram source at https://docs.google.com/presentation/d/1bHp8_zcoWCYoNU2AhO2lSagQyuIrghkCncViSqn14cU/edit"
 
-The following flow describes how a queries moves through a Grafana Mimir cluster:
+The following flow describes how a query moves through a Grafana Mimir cluster:
 
 1. The [query-frontend]({{< relref "../query-frontend/index.md" >}}) receives queries, and then either splits and shards them, or serves them from the cache.
 1. The query-frontend enqueues the queries into a query-scheduler.
@@ -33,7 +33,7 @@ The query-scheduler is affected by the same scalability limits as the query-fron
 
 ## Configuration
 
-The use the query-scheduler, query-frontends and queriers are required to discover the addresses of the query-scheduler instances.
+To use the query-scheduler, query-frontends and queriers need to discover the addresses of query-scheduler instances.
 The query-scheduler supports two service discovery mechanisms:
 
 - DNS-based service discovery
