@@ -6,6 +6,9 @@
 package batch
 
 import (
+	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
+
 	"github.com/grafana/mimir/pkg/storage/chunk"
 )
 
@@ -22,8 +25,11 @@ func (bs *batchStream) reset() {
 	}
 }
 
-func (bs *batchStream) hasNext() bool {
-	return len(*bs) > 0
+func (bs *batchStream) hasNext() chunkenc.ValueType {
+	if len(*bs) > 0 {
+		return (*bs)[0].ValueTypes
+	}
+	return chunkenc.ValNone
 }
 
 func (bs *batchStream) next() {
@@ -39,64 +45,125 @@ func (bs *batchStream) atTime() int64 {
 
 func (bs *batchStream) at() (int64, float64) {
 	b := &(*bs)[0]
-	return b.Timestamps[b.Index], b.Values[b.Index]
+	return b.Timestamps[b.Index], b.SampleValues[b.Index]
 }
 
+func (bs *batchStream) atHistogram() (int64, *histogram.Histogram) {
+	b := &(*bs)[0]
+	return b.Timestamps[b.Index], b.HistogramValues[b.Index]
+}
+
+func (bs *batchStream) atFloatHistogram() (int64, *histogram.FloatHistogram) {
+	b := &(*bs)[0]
+	return b.Timestamps[b.Index], b.FloatHistogramValues[b.Index]
+}
+
+// mergeStreams merges streams of Batches of the same series over time.
+// Samples are simply merged by time when they are the same type (float/histogram/...), with the left stream taking precedence if the timestamps are equal.
+// When sample are different type, batches are not merged. In case of equal timestamps, histograms take precedence since they have more information.
 func mergeStreams(left, right batchStream, result batchStream, size int) batchStream {
+
 	// Reset the Index and Length of existing batches.
 	for i := range result {
 		result[i].Index = 0
 		result[i].Length = 0
 	}
+
 	resultLen := 1 // Number of batches in the final result.
 	b := &result[0]
 
-	// This function adds a new batch to the result
-	// if the current batch being appended is full.
-	checkForFullBatch := func() {
+	// Step to the next Batch in the result, create it if it does not exist
+	nextBatch := func(valueTypes chunkenc.ValueType) {
+		// The Index is the place at which new sample
+		// has to be appended, hence it tells the length.
+		b.Length = b.Index
+		resultLen++
+		if resultLen > len(result) {
+			// It is possible that result can grow longer
+			// then the one provided.
+			result = append(result, createBatch(valueTypes))
+		}
+		b = &result[resultLen-1]
+	}
+
+	// ensureBatchType sets the Batch type and returns true if it was successful
+	ensureBatchType := func(valueTypes chunkenc.ValueType) bool {
+		if b.ValueTypes == valueTypes {
+			return true
+		}
+		if b.ValueTypes == chunkenc.ValNone {
+			// Uninitialized Batch
+			initBatchType(b, valueTypes)
+			return true
+		}
+		// These should be rare, means that we're merging into something where the chunk type changed
+		if b.Index == 0 {
+			// Batch not written yet
+			result[resultLen-1] = createBatch(valueTypes)
+			b = &result[resultLen-1]
+			return true
+		}
+		// Batch already started, finish and start new
+		// We don't know it's type so return false (but it will either be None or have b.Index==0)
+		nextBatch(valueTypes)
+		return false
+	}
+
+	// Ensure that the batch we're writing to is not full and of the right type.
+	ensureBatch := func(valueTypes chunkenc.ValueType) {
 		if b.Index == size {
-			// The batch reached it intended size.
+			// The batch reached its intended size.
 			// Add another batch the the result
 			// and use it for further appending.
-
-			// The Index is the place at which new sample
-			// has to be appended, hence it tells the length.
-			b.Length = b.Index
-			resultLen++
-			if resultLen > len(result) {
-				// It is possible that result can grow longer
-				// then the one provided.
-				result = append(result, chunk.Batch{})
-			}
-			b = &result[resultLen-1]
+			nextBatch(valueTypes)
+		}
+		if !ensureBatchType(valueTypes) {
+			ensureBatchType(valueTypes)
 		}
 	}
 
-	for left.hasNext() && right.hasNext() {
-		checkForFullBatch()
-		t1, t2 := left.atTime(), right.atTime()
-		if t1 < t2 {
-			b.Timestamps[b.Index], b.Values[b.Index] = left.at()
-			left.next()
-		} else if t1 > t2 {
-			b.Timestamps[b.Index], b.Values[b.Index] = right.at()
-			right.next()
+	for {
+		if lt, rt := left.hasNext(), right.hasNext(); lt != chunkenc.ValNone && rt != chunkenc.ValNone {
+			t1, t2 := left.atTime(), right.atTime()
+			if t1 < t2 {
+				ensureBatch(lt)
+				populate(b, left, lt)
+				left.next()
+			} else if t1 > t2 {
+				ensureBatch(rt)
+				populate(b, right, rt)
+				right.next()
+			} else {
+				if (rt == chunkenc.ValHistogram || rt == chunkenc.ValFloatHistogram) && lt == chunkenc.ValFloat {
+					// Prefer historgrams over floats. Take left side if both has histograms.
+					ensureBatch(rt)
+					populate(b, right, rt)
+				} else {
+					ensureBatch(lt)
+					populate(b, left, lt)
+				}
+				left.next()
+				right.next()
+			}
+			b.Index++
 		} else {
-			b.Timestamps[b.Index], b.Values[b.Index] = left.at()
-			left.next()
-			right.next()
+			break
 		}
-		b.Index++
 	}
 
 	// This function adds all the samples from the provided
 	// batchStream into the result in the same order.
 	addToResult := func(bs batchStream) {
-		for ; bs.hasNext(); bs.next() {
-			checkForFullBatch()
-			b.Timestamps[b.Index], b.Values[b.Index] = bs.at()
-			b.Index++
-			b.Length++
+		for {
+			if t := bs.hasNext(); t != chunkenc.ValNone {
+				ensureBatch(t)
+				populate(b, bs, t)
+				b.Index++
+				b.Length++
+				bs.next()
+			} else {
+				break
+			}
 		}
 	}
 
@@ -112,4 +179,43 @@ func mergeStreams(left, right batchStream, result batchStream, size int) batchSt
 	result = result[:resultLen]
 	result.reset()
 	return result
+}
+
+func createBatch(valueTypes chunkenc.ValueType) (batch chunk.Batch) {
+	switch valueTypes {
+	case chunkenc.ValFloat:
+		batch.ValueTypes = chunkenc.ValFloat
+		batch.SampleValues = &[chunk.BatchSize]float64{}
+	case chunkenc.ValHistogram:
+		batch.ValueTypes = chunkenc.ValHistogram
+		batch.HistogramValues = &[chunk.BatchSize]*histogram.Histogram{}
+	case chunkenc.ValFloatHistogram:
+		batch.ValueTypes = chunkenc.ValFloatHistogram
+		batch.FloatHistogramValues = &[chunk.BatchSize]*histogram.FloatHistogram{}
+	}
+	return
+}
+
+// Call on uninitialized Batch to allocate the correct valueType array
+func initBatchType(batch *chunk.Batch, valueTypes chunkenc.ValueType) {
+	batch.ValueTypes = valueTypes
+	switch valueTypes {
+	case chunkenc.ValFloat:
+		batch.SampleValues = &[chunk.BatchSize]float64{}
+	case chunkenc.ValHistogram:
+		batch.HistogramValues = &[chunk.BatchSize]*histogram.Histogram{}
+	case chunkenc.ValFloatHistogram:
+		batch.FloatHistogramValues = &[chunk.BatchSize]*histogram.FloatHistogram{}
+	}
+}
+
+func populate(b *chunk.Batch, s batchStream, valueTypes chunkenc.ValueType) {
+	switch valueTypes {
+	case chunkenc.ValFloat:
+		b.Timestamps[b.Index], b.SampleValues[b.Index] = s.at()
+	case chunkenc.ValHistogram:
+		b.Timestamps[b.Index], b.HistogramValues[b.Index] = s.atHistogram()
+	case chunkenc.ValFloatHistogram:
+		b.Timestamps[b.Index], b.FloatHistogramValues[b.Index] = s.atFloatHistogram()
+	}
 }
