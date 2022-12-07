@@ -3022,9 +3022,10 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.max-concurrent-reject-over-limit
   [max_concurrent_reject_over_limit: <boolean> | default = false]
 
-  # (experimental) If larger than 0, store-gateway will load series from the
-  # store in batches and stream them to the querier instead of loading them all
-  # in memory. This option controls how many series to fetch per batch
+  # (experimental) If larger than 0, this option enables store-gateway series
+  # streaming. The store-gateway will load series from the bucket in batches
+  # instead of buffering them all in memory before returning to the querier.
+  # This option controls how many series to fetch per batch.
   # CLI flag: -blocks-storage.bucket-store.batch-series-size
   [streaming_series_batch_size: <int> | default = 0]
 
