@@ -1060,11 +1060,7 @@ func (s *BucketStore) synchronousSeriesSet(
 	begin := time.Now()
 	err := g.Wait()
 	if err != nil {
-		code := codes.Aborted
-		if s, ok := status.FromError(errors.Cause(err)); ok {
-			code = s.Code()
-		}
-		return nil, status.Error(code, err.Error())
+		return nil, err
 	}
 
 	getAllDuration := time.Since(begin)
