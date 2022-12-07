@@ -33,7 +33,7 @@ type metrics struct {
 	dirSyncFailures          prometheus.Counter
 	uploads                  prometheus.Counter
 	uploadFailures           prometheus.Counter
-	lastSuccessfulUploadTime *prometheus.GaugeVec
+	lastSuccessfulUploadTime prometheus.Gauge
 }
 
 func newMetrics(reg prometheus.Registerer) *metrics {
@@ -55,7 +55,7 @@ func newMetrics(reg prometheus.Registerer) *metrics {
 		Name: "thanos_shipper_upload_failures_total",
 		Help: "Total number of block upload failures",
 	})
-	m.lastSuccessfulUploadTime = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+	m.lastSuccessfulUploadTime = promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 		Name: "thanos_shipper_last_successful_upload_time",
 		Help: "Unix timestamp (in seconds) of the last successful TSDB block uploaded to the bucket.",
 	})
