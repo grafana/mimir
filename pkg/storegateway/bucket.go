@@ -891,8 +891,8 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 	span.Finish()
 
 	var (
-		seriesSets storepb.SeriesSet
-		resHints   = &hintspb.SeriesResponseHints{}
+		seriesSet storepb.SeriesSet
+		resHints  = &hintspb.SeriesResponseHints{}
 	)
 
 	if s.maxSeriesPerBatch <= 0 {
@@ -905,14 +905,14 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 			defer chunksPool.Release()
 		}
 
-		seriesSets, err = s.synchronousSeriesSet(ctx, req, stats, blocks, indexReaders, chunkr, chunksPool, resHints, shardSelector, matchers, chunksLimiter, seriesLimiter)
+		seriesSet, err = s.synchronousSeriesSet(ctx, req, stats, blocks, indexReaders, chunkr, chunksPool, resHints, shardSelector, matchers, chunksLimiter, seriesLimiter)
 	} else {
 		var readers *chunkReaders
 		if !req.SkipChunks {
 			readers = newChunkReaders(chunkr)
 		}
 
-		seriesSets, resHints, err = s.streamingSeriesSetForBlocks(ctx, req, blocks, indexReaders, readers, s.chunkPool, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
+		seriesSet, resHints, err = s.streamingSeriesSetForBlocks(ctx, req, blocks, indexReaders, readers, s.chunkPool, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
 	}
 
 	if err != nil {
@@ -926,18 +926,18 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 
 		// NOTE: We "carefully" assume series and chunks are sorted within each SeriesSet. This should be guaranteed by
 		// blockSeries method. In worst case deduplication logic won't deduplicate correctly, which will be accounted later.
-		for seriesSets.Next() {
+		for seriesSet.Next() {
 			var lset labels.Labels
 			var series storepb.Series
 
 			mergeStats.mergedSeriesCount++
 
-			// IMPORTANT: do not retain the memory returned by seriesSets.At() beyond this loop cycle
-			// because the subsequent call to seriesSets.Next() may release it.
+			// IMPORTANT: do not retain the memory returned by seriesSet.At() beyond this loop cycle
+			// because the subsequent call to seriesSet.Next() may release it.
 			if req.SkipChunks {
-				lset, _ = seriesSets.At()
+				lset, _ = seriesSet.At()
 			} else {
-				lset, series.Chunks = seriesSets.At()
+				lset, series.Chunks = seriesSet.At()
 
 				mergeStats.mergedChunksCount += len(series.Chunks)
 				s.metrics.chunkSizeBytes.Observe(float64(chunksSize(series.Chunks)))
@@ -948,8 +948,8 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 				return
 			}
 		}
-		if seriesSets.Err() != nil {
-			err = errors.Wrap(seriesSets.Err(), "expand series set")
+		if seriesSet.Err() != nil {
+			err = errors.Wrap(seriesSet.Err(), "expand series set")
 			return
 		}
 		mergeStats.mergeDuration = time.Since(begin)
