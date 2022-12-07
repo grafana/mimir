@@ -130,17 +130,15 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r = r.WithContext(ctx)
 	}
 
-	defer func() {
-		_ = r.Body.Close()
-	}()
+	defer func() { _ = r.Body.Close() }()
 
 	// Store the body contents in a seeker, so we can read it multiple times.
-	seeker, err := readIntoReadCloseSeeker(http.MaxBytesReader(w, r.Body, f.cfg.MaxBodySize))
+	bodyBytes, err := io.ReadAll(http.MaxBytesReader(w, r.Body, f.cfg.MaxBodySize))
 	if err != nil {
 		writeError(w, err)
 		return
 	}
-	r.Body = seeker
+	r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 
 	// Parse the form, as it's needed to build the activity for the activity-tracker.
 	if err := r.ParseForm(); err != nil {
@@ -148,18 +146,14 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Store the r.Form contents copy, as middlewares may modify it (like setting the default values).
+	// Store a copy of the params and restore the request state.
+	// Restore the body, so it can be read again if it's used to forward the request through a roundtripper.
+	// Restore the Form and PostForm, to avoid subtle bugs in middlewares, as they were set by ParseForm.
 	params := copyValues(r.Form)
+	r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+	r.Form, r.PostForm = nil, nil
 
-	// Seek the body back to the beginning, so it can be read again if it's used to forward the request through a roundtripper.
-	if _, err := seeker.Seek(0, io.SeekStart); err != nil {
-		writeError(w, err)
-		return
-	}
-
-	activityIndex := f.at.Insert(func() string {
-		return httpRequestActivity(r)
-	})
+	activityIndex := f.at.Insert(func() string { return httpRequestActivity(r, params) })
 	defer f.at.Delete(activityIndex)
 
 	startTime := time.Now()
@@ -298,13 +292,13 @@ func statsValue(name string, d time.Duration) string {
 	return name + ";dur=" + durationInMs
 }
 
-func httpRequestActivity(request *http.Request) string {
+func httpRequestActivity(request *http.Request, requestParams url.Values) string {
 	tenantID := "(unknown)"
 	if tenantIDs, err := tenant.TenantIDs(request.Context()); err == nil {
 		tenantID = tenant.JoinTenantIDs(tenantIDs)
 	}
 
-	params := request.Form.Encode()
+	params := requestParams.Encode()
 	if params == "" {
 		params = "(no params)"
 	}
@@ -312,16 +306,6 @@ func httpRequestActivity(request *http.Request) string {
 	// This doesn't have to be pretty, just useful for debugging, so prioritize efficiency.
 	return strings.Join([]string{tenantID, request.Method, request.URL.Path, params}, " ")
 }
-
-// readIntoReadCloseSeeker will create a new readCloseSeeker from the data provided by io.Reader.
-func readIntoReadCloseSeeker(r io.Reader) (readCloseSeeker, error) {
-	buf, err := io.ReadAll(r)
-	return readCloseSeeker{bytes.NewReader(buf)}, err
-}
-
-type readCloseSeeker struct{ *bytes.Reader }
-
-func (readCloseSeeker) Close() error { return nil }
 
 func copyValues(src url.Values) url.Values {
 	dst := make(url.Values, len(src))
