@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
@@ -63,7 +64,9 @@ func benchmarkLookupSymbol(b *testing.B, ctx context.Context, bucketDir string, 
 	b.ResetTimer()
 
 	b.RunParallel(func(pb *testing.PB) {
-		count := rand.Int()
+		// Use our own random source to avoid contention for the global random number generator.
+		random := rand.New(rand.NewSource(time.Now().UnixNano()))
+		count := random.Int()
 
 		for pb.Next() {
 			var indices []uint32
@@ -77,7 +80,7 @@ func benchmarkLookupSymbol(b *testing.B, ctx context.Context, bucketDir string, 
 				indicesToSymbol = valueMap
 			}
 
-			index := indices[rand.Intn(len(indices))]
+			index := indices[random.Intn(len(indices))]
 			expectedSymbol := indicesToSymbol[index]
 			actualSymbol, err := br.LookupSymbol(index)
 
