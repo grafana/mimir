@@ -126,6 +126,9 @@ type Config struct {
 	QueryScheduler      scheduler.Config                           `yaml:"query_scheduler"`
 	UsageStats          usagestats.Config                          `yaml:"usage_stats"`
 
+	QueryAggregationIngesters bool                `yaml:"query_aggregation_ingesters"`
+	AggregationIngesterRing   ingester.RingConfig `yaml:"aggregation_ingester_ring"`
+
 	Common CommonConfig `yaml:"common"`
 }
 
@@ -154,6 +157,8 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.Querier.RegisterFlags(f)
 	c.IngesterClient.RegisterFlags(f)
 	c.Ingester.RegisterFlags(f, logger)
+	f.BoolVar(&c.QueryAggregationIngesters, "querier.query-aggregation-ingesters", false, "Query aggregation ingesters")
+	c.AggregationIngesterRing.RegisterFlagsWithPrefix("aggregation-ingester.ring.", f, logger)
 	c.Flusher.RegisterFlags(f)
 	c.LimitsConfig.RegisterFlags(f)
 	c.Worker.RegisterFlags(f)
@@ -658,6 +663,9 @@ type Mimir struct {
 	ActivityTracker          *activitytracker.ActivityTracker
 	UsageStatsReporter       *usagestats.Reporter
 	BuildInfoHandler         http.Handler
+
+	AggregationIngesterRing *ring.Ring
+	AggregationDistributor  *distributor.Distributor
 
 	// Queryables that the querier should use to query the long term storage.
 	StoreQueryables []querier.QueryableWithFilter

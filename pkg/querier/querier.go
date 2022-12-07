@@ -38,9 +38,10 @@ import (
 
 // Config contains the configuration require to create a querier
 type Config struct {
-	Iterators            bool          `yaml:"iterators" category:"advanced"`
-	BatchIterators       bool          `yaml:"batch_iterators" category:"advanced"`
-	QueryIngestersWithin time.Duration `yaml:"query_ingesters_within" category:"advanced"`
+	Iterators                       bool          `yaml:"iterators" category:"advanced"`
+	BatchIterators                  bool          `yaml:"batch_iterators" category:"advanced"`
+	QueryIngestersWithin            time.Duration `yaml:"query_ingesters_within" category:"advanced"`
+	QueryAggregationIngestersWithin time.Duration `yaml:"query_aggregation_ingesters_within" category:"advanced"`
 
 	// QueryStoreAfter the time after which queries should also be sent to the store and not just ingesters.
 	QueryStoreAfter    time.Duration `yaml:"query_store_after" category:"advanced"`
@@ -70,6 +71,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.Iterators, "querier.iterators", false, "Use iterators to execute query, as opposed to fully materialising the series in memory.")
 	f.BoolVar(&cfg.BatchIterators, "querier.batch-iterators", true, "Use batch iterators to execute query, as opposed to fully materialising the series in memory.  Takes precedent over the -querier.iterators flag.")
 	f.DurationVar(&cfg.QueryIngestersWithin, queryIngestersWithinFlag, 13*time.Hour, "Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester.")
+	f.DurationVar(&cfg.QueryAggregationIngestersWithin, "querier.query-aggregation-ingesters-within", 10*time.Minute, "Max time for querying aggregation-ingesters. 0 = always.")
 	f.DurationVar(&cfg.MaxQueryIntoFuture, "querier.max-query-into-future", 10*time.Minute, "Maximum duration into the future you can query. 0 to disable.")
 	f.DurationVar(&cfg.QueryStoreAfter, queryStoreAfterFlag, 12*time.Hour, "The time after which a metric should be queried from storage and not just ingesters. 0 means all queries are sent to store. If this option is enabled, the time range of the query sent to the store-gateway will be manipulated to ensure the query end is not more recent than 'now - query-store-after'.")
 	f.BoolVar(&cfg.ShuffleShardingIngestersEnabled, "querier.shuffle-sharding-ingesters-enabled", true, fmt.Sprintf("Fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since -%s. If this setting is false or -%s is '0', queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).", queryIngestersWithinFlag, queryIngestersWithinFlag))
@@ -100,9 +102,20 @@ func getChunksIteratorFunction(cfg Config) chunkIteratorFunc {
 
 // New builds a queryable and promql engine.
 func New(cfg Config, limits *validation.Overrides, distributor Distributor, stores []QueryableWithFilter, reg prometheus.Registerer, logger log.Logger, tracker *activitytracker.ActivityTracker) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, *promql.Engine) {
+	return NewWithAggregationsDistributor(cfg, limits, distributor, nil, stores, reg, logger, tracker)
+}
+
+// distributorNormal provides access to "normal" ingesters, ingesting aggregated samples only
+// aggregationsDistributor provides access to "aggregation" ingesters, which have both raw and aggregated samples.
+func NewWithAggregationsDistributor(cfg Config, limits *validation.Overrides, distributorNormal, aggregationsDistributor Distributor, stores []QueryableWithFilter, reg prometheus.Registerer, logger log.Logger, tracker *activitytracker.ActivityTracker) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, *promql.Engine) {
 	iteratorFunc := getChunksIteratorFunction(cfg)
 
-	distributorQueryable := newDistributorQueryable(distributor, iteratorFunc, cfg.QueryIngestersWithin, logger)
+	distributorQueryable := newDistributorQueryable(distributorNormal, iteratorFunc, cfg.QueryIngestersWithin, logger)
+	if aggregationsDistributor != nil {
+		// Instead of "query ingesters within",
+		aggregationsQueryable := newDistributorQueryable(aggregationsDistributor, iteratorFunc, cfg.QueryAggregationIngestersWithin, logger)
+		distributorQueryable = newAggregationsQueryable(distributorQueryable, aggregationsQueryable, cfg.QueryAggregationIngestersWithin, logger)
+	}
 
 	ns := make([]QueryableWithFilter, len(stores))
 	for ix, s := range stores {
@@ -112,7 +125,7 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, stor
 		}
 	}
 	queryable := NewQueryable(distributorQueryable, ns, iteratorFunc, cfg, limits, logger)
-	exemplarQueryable := newDistributorExemplarQueryable(distributor, logger)
+	exemplarQueryable := newDistributorExemplarQueryable(distributorNormal, logger)
 
 	lazyQueryable := storage.QueryableFunc(func(ctx context.Context, mint int64, maxt int64) (storage.Querier, error) {
 		querier, err := queryable.Querier(ctx, mint, maxt)
@@ -411,7 +424,7 @@ func (q querier) mergeSeriesSets(sets []storage.SeriesSet) storage.SeriesSet {
 		if err := set.Err(); err != nil {
 			otherSets = append(otherSets, storage.ErrSeriesSet(err))
 		} else if len(nonChunkSeries) > 0 {
-			otherSets = append(otherSets, &sliceSeriesSet{series: nonChunkSeries, ix: -1})
+			otherSets = append(otherSets, newSliceSeriesSet(nonChunkSeries))
 		}
 	}
 
@@ -428,6 +441,10 @@ func (q querier) mergeSeriesSets(sets []storage.SeriesSet) storage.SeriesSet {
 
 	otherSets = append(otherSets, chunksSet)
 	return storage.NewMergeSeriesSet(otherSets, storage.ChainedSeriesMerge)
+}
+
+func newSliceSeriesSet(series []storage.Series) *sliceSeriesSet {
+	return &sliceSeriesSet{series: series, ix: -1}
 }
 
 type sliceSeriesSet struct {

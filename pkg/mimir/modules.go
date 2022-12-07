@@ -90,6 +90,9 @@ const (
 	UsageStats               string = "usage-stats"
 	All                      string = "all"
 
+	AggregationRing        string = "aggregation-ring"
+	AggregationDistributor string = "aggregation-distributor"
+
 	// Write Read and Backend are the targets used when using the read-write deployment mode.
 	Write   string = "write"
 	Read    string = "read"
@@ -294,6 +297,42 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	return t.Distributor, nil
 }
 
+func (t *Mimir) initAggregationIngesterRing() (services.Service, error) {
+	if !t.Cfg.isModuleEnabled(Querier) || !t.Cfg.QueryAggregationIngesters {
+		return nil, nil
+	}
+
+	var err error
+	t.AggregationIngesterRing, err = ring.New(t.Cfg.AggregationIngesterRing.ToRingConfig(), "aggregated-ingester", ingester.IngesterRingKey, util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer))
+	if err != nil {
+		return nil, err
+	}
+	return t.AggregationIngesterRing, nil
+}
+
+// Only used by querier.
+func (t *Mimir) initAggregationDistributorService() (serv services.Service, err error) {
+	if t.AggregationIngesterRing == nil {
+		return nil, nil
+	}
+
+	// Only enable shuffle sharding on the read path when `query-ingesters-within`
+	// is non-zero since otherwise we can't determine if an ingester should be part
+	// of a tenant's shuffle sharding subring (we compare its registration time with
+	// the lookback period).
+	if t.Cfg.Querier.ShuffleShardingIngestersEnabled && t.Cfg.Querier.QueryIngestersWithin > 0 {
+		t.Cfg.Distributor.ShuffleShardingLookbackPeriod = t.Cfg.Querier.QueryIngestersWithin
+	}
+
+	// Not joining ring. This is distributor embedded in querier.
+	t.AggregationDistributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides, t.AggregationIngesterRing, false, prometheus.WrapRegistererWithPrefix("aggregations_", t.Registerer), util_log.Logger)
+	if err != nil {
+		return
+	}
+
+	return t.AggregationDistributor, nil
+}
+
 func (t *Mimir) initDistributor() (serv services.Service, err error) {
 	t.API.RegisterDistributor(t.Distributor, t.Cfg.Distributor, t.Registerer)
 
@@ -306,7 +345,7 @@ func (t *Mimir) initQueryable() (serv services.Service, err error) {
 	querierRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "querier"}, t.Registerer)
 
 	// Create a querier queryable and PromQL engine
-	t.QuerierQueryable, t.ExemplarQueryable, t.QuerierEngine = querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryables, querierRegisterer, util_log.Logger, t.ActivityTracker)
+	t.QuerierQueryable, t.ExemplarQueryable, t.QuerierEngine = querier.NewWithAggregationsDistributor(t.Cfg.Querier, t.Overrides, t.Distributor, t.AggregationDistributor, t.StoreQueryables, querierRegisterer, util_log.Logger, t.ActivityTracker)
 
 	// Use the distributor to return metric metadata by default
 	t.MetadataSupplier = t.Distributor
@@ -743,6 +782,7 @@ func (t *Mimir) initMemberlistKV() (services.Service, error) {
 	t.Cfg.Ruler.Ring.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.Alertmanager.ShardingRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
+	t.Cfg.AggregationIngesterRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 
 	return t.MemberlistKV, nil
 }
@@ -819,6 +859,8 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(Read, nil)
 	mm.RegisterModule(Backend, nil)
 	mm.RegisterModule(All, nil)
+	mm.RegisterModule(AggregationRing, t.initAggregationIngesterRing, modules.UserInvisibleModule)
+	mm.RegisterModule(AggregationDistributor, t.initAggregationDistributorService, modules.UserInvisibleModule)
 
 	// Add dependencies
 	deps := map[string][]string{
@@ -831,10 +873,12 @@ func (t *Mimir) setupModuleManager() error {
 		OverridesExporter:        {Overrides},
 		Distributor:              {DistributorService, API},
 		DistributorService:       {Ring, Overrides},
+		AggregationRing:          {MemberlistKV},
+		AggregationDistributor:   {AggregationRing, Overrides},
 		Ingester:                 {IngesterService, API},
 		IngesterService:          {Overrides, RuntimeConfig, MemberlistKV},
 		Flusher:                  {Overrides, API},
-		Queryable:                {Overrides, DistributorService, Ring, API, StoreQueryable, MemberlistKV},
+		Queryable:                {Overrides, DistributorService, Ring, API, StoreQueryable, MemberlistKV, AggregationDistributor},
 		Querier:                  {TenantFederation},
 		StoreQueryable:           {Overrides, MemberlistKV},
 		QueryFrontendTripperware: {API, Overrides},

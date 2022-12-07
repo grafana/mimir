@@ -57,13 +57,15 @@ type RingConfig struct {
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
 func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
+	cfg.RegisterFlagsWithPrefix("ingester.ring.", f, logger)
+}
+
+func (cfg *RingConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet, logger log.Logger) {
 	hostname, err := os.Hostname()
 	if err != nil {
 		level.Error(logger).Log("msg", "failed to get hostname", "err", err)
 		os.Exit(1)
 	}
-
-	prefix := "ingester.ring."
 
 	// Ring flags
 	cfg.KVStore.Store = "memberlist" // Override default value.
