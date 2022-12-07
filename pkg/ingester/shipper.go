@@ -56,9 +56,9 @@ func newMetrics(reg prometheus.Registerer) *metrics {
 		Help: "Total number of block upload failures",
 	})
 	m.lastSuccessfulUploadTime = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-		Name: "mimir_ingester_shipper_bucket_last_successful_upload_time",
-		Help: "Second timestamp of the last successful TSDB block uploaded to the bucket.",
-	}, []string{"bucket"})
+		Name: "thanos_shipper_last_successful_upload_time",
+		Help: "Unix timestamp (in seconds) of the last successful TSDB block uploaded to the bucket.",
+	})
 
 	return &m
 }
@@ -169,7 +169,7 @@ func (s *Shipper) Sync(ctx context.Context) (uploaded int, err error) {
 			uploadErrs++
 			continue
 		} else {
-			s.metrics.lastSuccessfulUploadTime.WithLabelValues(s.bucket.Name()).SetToCurrentTime()
+			s.metrics.lastSuccessfulUploadTime.SetToCurrentTime()
 		}
 		meta.Uploaded = append(meta.Uploaded, m.ULID)
 		uploaded++
