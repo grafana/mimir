@@ -473,7 +473,7 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 			bytesPool := &mockedPool{parent: pool.NoopBytes{}}
 			readersMap := make(map[ulid.ULID]chunkReader, len(testCase.existingBlocks))
 			for _, block := range testCase.existingBlocks {
-				readersMap[block.ulid] = newFakeChunkReaderWithSeries(block.series, testCase.addLoadErr, testCase.loadErr)
+				readersMap[block.ulid] = newChunkReaderMockWithSeries(block.series, testCase.addLoadErr, testCase.loadErr)
 			}
 			readers := newChunkReaders(readersMap)
 
@@ -527,7 +527,7 @@ type chunkReaderMock struct {
 	toLoad map[chunks.ChunkRef]loadIdx
 }
 
-func newFakeChunkReaderWithSeries(series []seriesEntry, addLoadErr, loadErr error) *chunkReaderMock {
+func newChunkReaderMockWithSeries(series []seriesEntry, addLoadErr, loadErr error) *chunkReaderMock {
 	chks := map[chunks.ChunkRef]storepb.AggrChunk{}
 	for _, s := range series {
 		for i := range s.chks {
