@@ -907,7 +907,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 
 		seriesSet, err = s.synchronousSeriesSet(ctx, req, stats, blocks, indexReaders, chunkr, chunksPool, resHints, shardSelector, matchers, chunksLimiter, seriesLimiter)
 	} else {
-		var readers *chunkReaders
+		var readers *bucketChunkReaders
 		if !req.SkipChunks {
 			readers = newChunkReaders(chunkr)
 		}
@@ -1083,7 +1083,7 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 	req *storepb.SeriesRequest,
 	blocks []*bucketBlock,
 	indexReaders map[ulid.ULID]*bucketIndexReader,
-	chunkReaders *chunkReaders,
+	chunkReaders *bucketChunkReaders,
 	chunksPool pool.Bytes,
 	shardSelector *sharding.ShardSelector,
 	matchers []*labels.Matcher,

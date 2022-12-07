@@ -60,7 +60,7 @@ func newSeriesChunksSeriesSet(from seriesChunksSetIterator) storepb.SeriesSet {
 	}
 }
 
-func newSeriesSetWithChunks(ctx context.Context, chunkReaders chunkReaders, chunksPool pool.Bytes, batches seriesChunkRefsSetIterator, stats *safeQueryStats, iteratorLoadDurations *prometheus.HistogramVec) storepb.SeriesSet {
+func newSeriesSetWithChunks(ctx context.Context, chunkReaders bucketChunkReaders, chunksPool pool.Bytes, batches seriesChunkRefsSetIterator, stats *safeQueryStats, iteratorLoadDurations *prometheus.HistogramVec) storepb.SeriesSet {
 	var iterator seriesChunksSetIterator
 	iterator = newLoadingSeriesChunksSetIterator(chunkReaders, chunksPool, batches, stats)
 	iterator = newDurationMeasuringIterator[seriesChunksSet](iterator, iteratorLoadDurations.WithLabelValues("chunks_load"))
@@ -174,7 +174,7 @@ func (p *preloadingSetIterator[Set]) Err() error {
 }
 
 type loadingSeriesChunksSetIterator struct {
-	chunkReaders chunkReaders
+	chunkReaders bucketChunkReaders
 	from         seriesChunkRefsSetIterator
 	chunksPool   pool.Bytes
 	stats        *safeQueryStats
@@ -183,7 +183,7 @@ type loadingSeriesChunksSetIterator struct {
 	err     error
 }
 
-func newLoadingSeriesChunksSetIterator(chunkReaders chunkReaders, chunksPool pool.Bytes, from seriesChunkRefsSetIterator, stats *safeQueryStats) *loadingSeriesChunksSetIterator {
+func newLoadingSeriesChunksSetIterator(chunkReaders bucketChunkReaders, chunksPool pool.Bytes, from seriesChunkRefsSetIterator, stats *safeQueryStats) *loadingSeriesChunksSetIterator {
 	return &loadingSeriesChunksSetIterator{
 		chunkReaders: chunkReaders,
 		from:         from,

@@ -259,7 +259,9 @@ func (b rawChunk) NumSamples() int {
 	panic("invalid call")
 }
 
-type chunkReaders struct {
+// bucketChunkReaders holds a collection of chunkReader's for multiple blocks
+// and selects the correct chunk reader to use on each call to addLoad
+type bucketChunkReaders struct {
 	readers map[ulid.ULID]chunkReader
 }
 
@@ -271,17 +273,17 @@ type chunkReader interface {
 	reset()
 }
 
-func newChunkReaders(readersMap map[ulid.ULID]chunkReader) *chunkReaders {
-	return &chunkReaders{
+func newChunkReaders(readersMap map[ulid.ULID]chunkReader) *bucketChunkReaders {
+	return &bucketChunkReaders{
 		readers: readersMap,
 	}
 }
 
-func (r chunkReaders) addLoad(blockID ulid.ULID, id chunks.ChunkRef, seriesEntry, chunk int) error {
+func (r bucketChunkReaders) addLoad(blockID ulid.ULID, id chunks.ChunkRef, seriesEntry, chunk int) error {
 	return r.readers[blockID].addLoad(id, seriesEntry, chunk)
 }
 
-func (r chunkReaders) load(entries []seriesEntry, chunksPool *pool.BatchBytes, stats *safeQueryStats) error {
+func (r bucketChunkReaders) load(entries []seriesEntry, chunksPool *pool.BatchBytes, stats *safeQueryStats) error {
 	g := &errgroup.Group{}
 	for _, reader := range r.readers {
 		reader := reader
@@ -300,7 +302,7 @@ func (r chunkReaders) load(entries []seriesEntry, chunksPool *pool.BatchBytes, s
 }
 
 // reset the chunks scheduled for loading.
-func (r *chunkReaders) reset() {
+func (r *bucketChunkReaders) reset() {
 	for _, reader := range r.readers {
 		reader.reset()
 	}
