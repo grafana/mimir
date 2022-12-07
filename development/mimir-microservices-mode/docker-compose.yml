@@ -75,7 +75,7 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=compactor -server.http-listen-port=8006 -server.grpc-listen-port=9006 -activity-tracker.filepath=/activity/compactor-8006  -memberlist.nodename=compactor -memberlist.bind-port=10006 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist -compactor.block-upload-enabled=true"
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=compactor -server.http-listen-port=8006 -server.grpc-listen-port=9006 -activity-tracker.filepath=/activity/compactor-8006 -compactor.block-upload-enabled=true -memberlist.nodename=compactor -memberlist.bind-port=10006 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist"
     "depends_on":
       - "minio"
       - "distributor-1"
