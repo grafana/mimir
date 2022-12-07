@@ -27,7 +27,8 @@ type StreamBinaryReader struct {
 	factory *stream_encoding.DecbufFactory
 	toc     *BinaryTOC
 
-	// Symbols struct that keeps only 1/postingOffsetsInMemSampling in the memory, then looks up the rest via mmap.
+	// Symbols struct that keeps only 1/postingOffsetsInMemSampling in the memory, then looks up the
+	// rest via seeking to offsets in the index-header.
 	symbols *stream_index.Symbols
 	// Cache of the label name symbol lookups,
 	// as there are not many and they are half of all lookups.

@@ -95,24 +95,36 @@ func (f *FileReader) Peek(n int) ([]byte, error) {
 	return nil, nil
 }
 
-// Read returns the given number of bytes from the file segment, consuming them.
-// It is NOT valid to Read beyond the end of the file segment. In this case, a nil
-// byte slice and ErrInvalidSize error will be returned, and the remaining bytes
-// are consumed.
+// Read returns the given number of bytes from the file, consuming them. It is NOT
+// valid to Read beyond the end of the file. In this case, a nil byte slice and
+// ErrInvalidSize error will be returned, and the remaining bytes are consumed.
 func (f *FileReader) Read(n int) ([]byte, error) {
 	b := make([]byte, n)
+
+	err := f.ReadInto(b)
+	if err != nil {
+		return nil, err
+	}
+
+	return b, nil
+}
+
+// ReadInto reads len(b) bytes from the file into b, consuming them. It is NOT
+// valid to ReadInto beyond the end of the file. In this case, an ErrInvalidSize
+// error will be returned and the remaining bytes are consumed.
+func (f *FileReader) ReadInto(b []byte) error {
 	r, err := io.ReadFull(f.buf, b)
 	if r > 0 {
 		f.pos += r
 	}
 
 	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-		return nil, fmt.Errorf("%w reading %d bytes: %s", ErrInvalidSize, n, err)
+		return fmt.Errorf("%w reading %d bytes: %s", ErrInvalidSize, len(b), err)
 	} else if err != nil {
-		return nil, err
+		return err
 	}
 
-	return b[:r], nil
+	return nil
 }
 
 // Len returns the remaining number of bytes in the file segment.

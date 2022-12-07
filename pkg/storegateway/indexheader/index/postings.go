@@ -32,11 +32,6 @@ type PostingOffsetTable interface {
 	// LabelNames returns a list of all label names in this table.
 	LabelNames() ([]string, error)
 
-	// ForEachLabelName calls f for each label name in this table.
-	// If f returns a non-nil error for any label name, ForEachLabelName immediately returns that error
-	// and does not call f again.
-	ForEachLabelName(f func(name string) error) error
-
 	// LabelNameCount returns a value which is at least as large as the number of
 	// label names present in this table.
 	LabelNameCount() int
@@ -57,7 +52,7 @@ func NewPostingOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset i
 	return nil, fmt.Errorf("unknown index version %v", indexVersion)
 }
 
-func newV1PostingOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset int, indexLastPostingEnd uint64) (PostingOffsetTable, error) {
+func newV1PostingOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset int, indexLastPostingEnd uint64) (*PostingOffsetTableV1, error) {
 	t := PostingOffsetTableV1{
 		postings: map[string]map[string]index.Range{},
 	}
@@ -96,7 +91,7 @@ func newV1PostingOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset
 	return &t, nil
 }
 
-func newV2PostingOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset int, indexLastPostingEnd uint64, postingOffsetsInMemSampling int) (PostingOffsetTable, error) {
+func newV2PostingOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset int, indexLastPostingEnd uint64, postingOffsetsInMemSampling int) (*PostingOffsetTableV2, error) {
 	t := PostingOffsetTableV2{
 		factory:                     factory,
 		tableOffset:                 tableOffset,
@@ -226,22 +221,6 @@ func (t *PostingOffsetTableV1) LabelValues(name string, filter func(string) bool
 
 func (t *PostingOffsetTableV1) LabelNames() ([]string, error) {
 	labelNames := make([]string, 0, t.LabelNameCount())
-
-	err := t.ForEachLabelName(func(name string) error {
-		labelNames = append(labelNames, name)
-		return nil
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	sort.Strings(labelNames)
-
-	return labelNames, nil
-}
-
-func (t *PostingOffsetTableV1) ForEachLabelName(f func(name string) error) error {
 	allPostingsKeyName, _ := index.AllPostingsKey()
 
 	for name := range t.postings {
@@ -249,12 +228,12 @@ func (t *PostingOffsetTableV1) ForEachLabelName(f func(name string) error) error
 			continue
 		}
 
-		if err := f(name); err != nil {
-			return err
-		}
+		labelNames = append(labelNames, name)
 	}
 
-	return nil
+	sort.Strings(labelNames)
+
+	return labelNames, nil
 }
 
 func (t *PostingOffsetTableV1) LabelNameCount() int {
@@ -462,22 +441,6 @@ func (t *PostingOffsetTableV2) LabelValues(name string, filter func(string) bool
 
 func (t *PostingOffsetTableV2) LabelNames() ([]string, error) {
 	labelNames := make([]string, 0, t.LabelNameCount())
-
-	err := t.ForEachLabelName(func(name string) error {
-		labelNames = append(labelNames, name)
-		return nil
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	sort.Strings(labelNames)
-
-	return labelNames, nil
-}
-
-func (t *PostingOffsetTableV2) ForEachLabelName(f func(name string) error) error {
 	allPostingsKeyName, _ := index.AllPostingsKey()
 
 	for name := range t.postings {
@@ -485,12 +448,12 @@ func (t *PostingOffsetTableV2) ForEachLabelName(f func(name string) error) error
 			continue
 		}
 
-		if err := f(name); err != nil {
-			return err
-		}
+		labelNames = append(labelNames, name)
 	}
 
-	return nil
+	sort.Strings(labelNames)
+
+	return labelNames, nil
 }
 
 func (t *PostingOffsetTableV2) LabelNameCount() int {

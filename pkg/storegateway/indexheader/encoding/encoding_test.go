@@ -423,6 +423,41 @@ func TestDecbuf_UvarintBytesInsufficientBuffer(t *testing.T) {
 	require.ErrorIs(t, dec.Err(), ErrInvalidSize)
 }
 
+func TestDecbuf_UvarintBytesSkipDoesNotCauseBufferFill(t *testing.T) {
+	const (
+		expectedSlices = 32
+		expectedBytes  = 983
+	)
+
+	// This test verifies that when bytes are read in UvarintBytes, the Peek(n) and
+	// subsequent Skip(len(b)) does not cause a read from disk that invalidates the slice
+	// returned. It does this by creating multiple uvarint byte slices in the encoding
+	// buffer each with different content _and_ by ensuring there are more bytes written
+	// in total than the size of the underlying buffer (currently 4k).
+
+	enc := prom_encoding.Encbuf{}
+	for base := 0; base < expectedSlices; base++ {
+		var bytes []byte
+		for i := 0; i < expectedBytes; i++ {
+			bytes = append(bytes, byte(base))
+		}
+
+		enc.PutUvarintBytes(bytes)
+	}
+
+	dec := createDecbufWithBytes(t, enc.Get())
+	for base := 0; base < expectedSlices; base++ {
+		bytes := dec.UvarintBytes()
+
+		require.NoError(t, dec.Err())
+		require.Len(t, bytes, expectedBytes)
+
+		for _, v := range bytes {
+			require.Equal(t, byte(base), v)
+		}
+	}
+}
+
 func FuzzDecbuf_UvarintBytes(f *testing.F) {
 	f.Add([]byte{})
 	f.Add([]byte{0x12})

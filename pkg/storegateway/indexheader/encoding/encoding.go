@@ -45,28 +45,28 @@ func (d *Decbuf) CheckCrc32(castagnoliTable *crc32.Table) {
 
 	hash := crc32.New(castagnoliTable)
 	bytesToRead := d.r.Len() - 4
+	maxChunkSize := 1024 * 1024
+	rawBuf := make([]byte, maxChunkSize)
 
 	for bytesToRead > 0 {
-		maxChunkSize := 1024 * 1024 // TODO: what is a sensible size to use here?
 		chunkSize := math.Min(bytesToRead, maxChunkSize)
+		chunkBuf := rawBuf[0:chunkSize]
 
-		// TODO: Could this be replaced with a Peak() + Skip() to avoid allocation?
-		// TODO: pull byte slices from a pool rather than creating a new one every time?
-		b, err := d.r.Read(chunkSize)
+		err := d.r.ReadInto(chunkBuf)
 		if err != nil {
 			d.E = errors.Wrap(err, "read contents for CRC32 calculation")
 			return
 		}
 
-		if n, err := hash.Write(b); err != nil {
+		if n, err := hash.Write(chunkBuf); err != nil {
 			d.E = errors.Wrap(err, "write bytes to CRC32 calculation")
 			return
-		} else if n != len(b) {
-			d.E = fmt.Errorf("CRC32 calculation only wrote %v bytes, expected to write %v bytes", n, len(b))
+		} else if n != len(chunkBuf) {
+			d.E = fmt.Errorf("CRC32 calculation only wrote %v bytes, expected to write %v bytes", n, len(chunkBuf))
 			return
 		}
 
-		bytesToRead -= len(b)
+		bytesToRead -= len(chunkBuf)
 	}
 
 	actual := hash.Sum32()

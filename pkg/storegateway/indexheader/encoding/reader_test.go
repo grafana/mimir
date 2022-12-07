@@ -31,6 +31,28 @@ func TestReaders_Read(t *testing.T) {
 	})
 }
 
+func TestReaders_ReadInto(t *testing.T) {
+	testReaders(t, func(t *testing.T, r *FileReader) {
+		firstBuf := make([]byte, 5)
+		err := r.ReadInto(firstBuf)
+		require.NoError(t, err)
+		require.Equal(t, []byte("abcde"), firstBuf, "first read")
+
+		secondBuf := make([]byte, 5)
+		err = r.ReadInto(secondBuf)
+		require.NoError(t, err)
+		require.Equal(t, []byte("fghij"), secondBuf, "second read")
+
+		beyondEndBuf := make([]byte, 12)
+		err = r.ReadInto(beyondEndBuf)
+		require.ErrorIs(t, err, ErrInvalidSize)
+
+		afterEndBuf := make([]byte, 1)
+		err = r.ReadInto(afterEndBuf)
+		require.ErrorIs(t, err, ErrInvalidSize)
+	})
+}
+
 func TestReaders_Peek(t *testing.T) {
 	testReaders(t, func(t *testing.T, r *FileReader) {
 		firstPeek, err := r.Peek(5)
