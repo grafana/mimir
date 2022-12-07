@@ -73,7 +73,6 @@ var (
 	errInvalidOpeningConcurrency    = errors.New("invalid TSDB opening concurrency")
 	errInvalidCompactionInterval    = errors.New("invalid TSDB compaction interval")
 	errInvalidCompactionConcurrency = errors.New("invalid TSDB compaction concurrency")
-	errInvalidWALSegmentSizeBytes   = errors.New("invalid TSDB WAL segment size bytes")
 	errInvalidStripeSize            = errors.New("invalid TSDB stripe size")
 	errEmptyBlockranges             = errors.New("empty block ranges for TSDB")
 )
@@ -237,10 +236,6 @@ func (cfg *TSDBConfig) Validate() error {
 
 	if len(cfg.BlockRanges) == 0 {
 		return errEmptyBlockranges
-	}
-
-	if cfg.WALSegmentSizeBytes <= 0 {
-		return errInvalidWALSegmentSizeBytes
 	}
 
 	return nil
