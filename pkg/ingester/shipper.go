@@ -168,9 +168,8 @@ func (s *Shipper) Sync(ctx context.Context) (uploaded int, err error) {
 			level.Error(s.logger).Log("msg", "shipping failed", "block", m.ULID, "err", err)
 			uploadErrs++
 			continue
-		} else {
-			s.metrics.lastSuccessfulUploadTime.SetToCurrentTime()
 		}
+		s.metrics.lastSuccessfulUploadTime.SetToCurrentTime()
 		meta.Uploaded = append(meta.Uploaded, m.ULID)
 		uploaded++
 		s.metrics.uploads.Inc()
