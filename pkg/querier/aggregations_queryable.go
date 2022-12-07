@@ -37,7 +37,7 @@ func (a *aggregationsQueryable) UseQueryable(now time.Time, queryMinT, queryMaxT
 
 func (a *aggregationsQueryable) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 	queryTime := time.Now()
-	// We don't return raw series before cutoff time.
+	// We return aggregated series before this time, and raw series after this time.
 	rawSeriesCutoffTime := queryTime.Add(-a.provideRawSamplesFor)
 
 	normalQuerier, err := a.normalIngesters.Querier(ctx, mint, maxt)
