@@ -4,8 +4,10 @@ package storegateway
 
 import (
 	"context"
+	"time"
 
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
@@ -58,8 +60,16 @@ func newSeriesChunksSeriesSet(from seriesChunksSetIterator) storepb.SeriesSet {
 	}
 }
 
-func newSeriesSetWithChunks(ctx context.Context, chunkReaders chunkReaders, chunksPool pool.Bytes, batches seriesChunkRefsSetIterator, stats *safeQueryStats) storepb.SeriesSet {
-	return newSeriesChunksSeriesSet(newPreloadingSetIterator[seriesChunksSet](ctx, 1, newLoadingSeriesChunksSetIterator(chunkReaders, chunksPool, batches, stats)))
+func newSeriesSetWithChunks(ctx context.Context, chunkReaders chunkReaders, chunksPool pool.Bytes, batches seriesChunkRefsSetIterator, stats *safeQueryStats, iteratorLoadDurations *prometheus.HistogramVec) storepb.SeriesSet {
+	var iterator seriesChunksSetIterator
+	iterator = newLoadingSeriesChunksSetIterator(chunkReaders, chunksPool, batches, stats)
+	iterator = newDurationMeasuringIterator[seriesChunksSet](iterator, iteratorLoadDurations.WithLabelValues("chunks_load"))
+	iterator = newPreloadingSetIterator[seriesChunksSet](ctx, 1, iterator)
+	// We are measuring the time we wait for a preloaded batch. In an ideal world this is 0 because there's always a preloaded batch waiting.
+	// But realistically it will not be. Along with the duration of the chunks_load iterator,
+	// we can determine where is the bottleneck in the streaming pipeline.
+	iterator = newDurationMeasuringIterator[seriesChunksSet](iterator, iteratorLoadDurations.WithLabelValues("chunks_preloaded"))
+	return newSeriesChunksSeriesSet(iterator)
 }
 
 // Next advances to the next item. Once the underlying seriesChunksSet has been fully consumed
@@ -129,7 +139,6 @@ func (p *preloadingSetIterator[Set]) preload() {
 	defer close(p.preloaded)
 
 	for p.from.Next() {
-		// TODO dimitarvdimitrov instrument the time it takes to do one iteration
 		select {
 		case <-p.ctx.Done():
 			// If the context is done, we should just stop the preloading goroutine.
@@ -144,8 +153,6 @@ func (p *preloadingSetIterator[Set]) preload() {
 }
 
 func (p *preloadingSetIterator[Set]) Next() bool {
-	// TODO dimitarvdimitrov instrument the time we wait here
-
 	preloaded, ok := <-p.preloaded
 	if !ok {
 		// Iteration reached the end or context has been canceled.
@@ -235,4 +242,31 @@ func (c *loadingSeriesChunksSetIterator) At() seriesChunksSet {
 
 func (c *loadingSeriesChunksSetIterator) Err() error {
 	return c.err
+}
+
+type durationMeasuringIterator[Set any] struct {
+	from             genericIterator[Set]
+	durationObserver prometheus.Observer
+}
+
+func newDurationMeasuringIterator[Set any](from genericIterator[Set], durationObserver prometheus.Observer) genericIterator[Set] {
+	return &durationMeasuringIterator[Set]{
+		from:             from,
+		durationObserver: durationObserver,
+	}
+}
+
+func (m *durationMeasuringIterator[Set]) Next() bool {
+	start := time.Now()
+	next := m.from.Next()
+	m.durationObserver.Observe(time.Since(start).Seconds())
+	return next
+}
+
+func (m *durationMeasuringIterator[Set]) At() Set {
+	return m.from.At()
+}
+
+func (m *durationMeasuringIterator[Set]) Err() error {
+	return m.from.Err()
 }

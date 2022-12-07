@@ -49,6 +49,9 @@ type BucketStoreMetrics struct {
 	postingsFetchDuration prometheus.Histogram
 
 	indexHeaderReaderMetrics *indexheader.ReaderPoolMetrics
+
+	iteratorLoadDurations  *prometheus.HistogramVec
+	expandPostingsDuration prometheus.Histogram
 }
 
 func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
@@ -175,6 +178,18 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 	})
 
 	m.indexHeaderReaderMetrics = indexheader.NewReaderPoolMetrics(prometheus.WrapRegistererWithPrefix("cortex_bucket_store_", reg))
+
+	m.iteratorLoadDurations = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "cortex_bucket_store_iterator_load_duration",
+		Help:    "The time it takes an iterator to load the next item.",
+		Buckets: []float64{0.001, 0.01, 0.1, 0.3, 0.6, 1, 3, 6, 9, 20, 30, 60, 90, 120},
+	}, []string{"iterator"})
+
+	m.expandPostingsDuration = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+		Name:    "cortex_bucket_store_expanded_postings_duration",
+		Help:    "The time it takes to get a list of all series that match the request matcher.",
+		Buckets: []float64{0.001, 0.01, 0.1, 0.3, 0.6, 1, 3, 6, 9, 20, 30, 60, 90, 120},
+	})
 
 	return &m
 }

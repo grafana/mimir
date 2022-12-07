@@ -1131,6 +1131,7 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 				req.MinTime, req.MaxTime,
 				stats,
 				s.logger,
+				s.metrics,
 			)
 			if err != nil {
 				return errors.Wrapf(err, "fetch series for block %s", b.meta.ULID)
@@ -1161,7 +1162,7 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 	mergedBatches := mergedSeriesChunkRefsSetIterators(s.maxSeriesPerBatch, batches...)
 	var set storepb.SeriesSet
 	if chunkReaders != nil {
-		set = newSeriesSetWithChunks(ctx, *chunkReaders, chunksPool, mergedBatches, stats)
+		set = newSeriesSetWithChunks(ctx, *chunkReaders, chunksPool, mergedBatches, stats, s.metrics.iteratorLoadDurations)
 	} else {
 		set = newSeriesSetWithoutChunks(ctx, mergedBatches)
 	}
@@ -1193,6 +1194,7 @@ func (s *BucketStore) recordSeriesCallResult(safeStats *safeQueryStats) {
 	s.metrics.cachedPostingsCompressedSizeBytes.Add(float64(stats.cachedPostingsCompressedSizeSum))
 	s.metrics.seriesHashCacheRequests.Add(float64(stats.seriesHashCacheRequests))
 	s.metrics.seriesHashCacheHits.Add(float64(stats.seriesHashCacheHits))
+	s.metrics.expandPostingsDuration.Observe(float64(stats.expandedPostingsDuration))
 }
 
 func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool, minT, maxT, maxResolutionMillis int64, blockMatchers []*labels.Matcher) ([]*bucketBlock, map[ulid.ULID]*bucketIndexReader, map[ulid.ULID]chunkReader) {
