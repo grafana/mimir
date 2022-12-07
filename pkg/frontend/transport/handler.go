@@ -227,7 +227,6 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 		"sharded_queries", stats.LoadShardedQueries(),
 		"split_queries", stats.LoadSplitQueries(),
 		"insight", "true",
-		"user_id", userID,
 	}, formatQueryString(queryString)...)
 
 	if queryErr != nil {

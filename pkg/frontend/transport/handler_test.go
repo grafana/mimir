@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/concurrency"
@@ -206,4 +207,42 @@ func TestHandler_FailedRoundTrip(t *testing.T) {
 			assert.Equal(t, test.expectedMetrics, count)
 		})
 	}
+}
+
+func TestHandler_InsightKey(t *testing.T) {
+	var buf concurrency.SyncBuffer
+	logger := log.NewLogfmtLogger(&buf)
+
+	cfg := HandlerConfig{QueryStatsEnabled: true, MaxBodySize: 1024}
+	form := url.Values{
+		"query": []string{"some_metric"},
+		"time":  []string{"42"},
+	}
+	request := httptest.NewRequest("POST", "/api/v1/query", strings.NewReader(form.Encode()))
+	request.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	roundTripper := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		assert.NoError(t, req.ParseForm())
+
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader("{}")),
+		}, nil
+	})
+
+	reg := prometheus.NewPedanticRegistry()
+	handler := NewHandler(cfg, roundTripper, logger, reg)
+
+	req := request.WithContext(user.InjectOrgID(context.Background(), "12345"))
+	resp := httptest.NewRecorder()
+
+	handler.ServeHTTP(resp, req)
+	_, _ = io.ReadAll(resp.Body)
+	require.Equal(t, resp.Code, http.StatusOK)
+
+	assert.Eventually(t, func() bool {
+		logs := buf.String()
+		return strings.Contains(logs, "insight=true")
+		// Ensure that the dispatcher component emits logs with a "true" insight key,
+		// identifying these logs to be exposed to end users via the usage insights system.
+	}, 3*time.Second, time.Second)
 }
