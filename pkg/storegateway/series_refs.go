@@ -563,7 +563,7 @@ func openBlockSeriesChunkRefsSetsIterator(
 		minTime,
 		maxTime,
 	)
-	iterator = newDurationMeasuringIterator[seriesChunkRefsSet](iterator, metrics.iteratorLoadDurations.WithLabelValues("index_load"))
+	iterator = newDurationMeasuringIterator[seriesChunkRefsSet](iterator, metrics.iteratorLoadDurations.WithLabelValues("series_load"))
 	iterator = newLimitingSeriesChunkRefsSetIterator(iterator, chunksLimiter, seriesLimiter)
 	return iterator, nil
 }
