@@ -12,7 +12,7 @@ mimir {
 
     ruler_enabled: true,
     ruler_storage_bucket_name: 'rules-bucket',
-    ruler_remote_evaluation_enabled: true,
+    ruler_remote_evaluation_enabled: false,
 
     alertmanager_enabled: true,
     alertmanager_storage_bucket_name: 'alerts-bucket',
