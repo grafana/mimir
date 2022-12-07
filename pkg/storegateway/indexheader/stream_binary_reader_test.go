@@ -81,8 +81,15 @@ func benchmarkLookupSymbol(b *testing.B, ctx context.Context, bucketDir string, 
 			expectedSymbol := indicesToSymbol[index]
 			actualSymbol, err := br.LookupSymbol(index)
 
-			require.NoError(b, err)
-			require.Equal(b, expectedSymbol, actualSymbol)
+			// Why do we wrap require.NoError or require.Equal in an if block here? These methods perform some synchronisation
+			// that ends up dominating the benchmark, so we only want to call them if they're needed.
+			if err != nil {
+				require.NoError(b, err)
+			}
+
+			if actualSymbol != expectedSymbol {
+				require.Equal(b, expectedSymbol, actualSymbol)
+			}
 
 			count++
 		}
