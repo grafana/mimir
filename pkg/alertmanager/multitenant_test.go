@@ -56,7 +56,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-var (
+const (
 	simpleConfigOne = `route:
   receiver: dummy
 
@@ -230,7 +230,7 @@ func TestMultitenantAlertmanager_loadAndSyncConfigs(t *testing.T) {
 	require.True(t, cfgExists)
 	require.Equal(t, simpleConfigOne, currentConfig.RawConfig)
 
-	assert.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
 		# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.
 		# TYPE cortex_alertmanager_config_last_reload_successful gauge
 		cortex_alertmanager_config_last_reload_successful{user="user1"} 1
@@ -270,7 +270,7 @@ templates:
 	require.True(t, fileExists(t, filepath.Join(user3Dir, templatesDir, "first.tpl")))
 	require.True(t, fileExists(t, filepath.Join(user3Dir, templatesDir, "second.tpl")))
 
-	assert.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
 		# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.
 		# TYPE cortex_alertmanager_config_last_reload_successful gauge
 		cortex_alertmanager_config_last_reload_successful{user="user1"} 1
@@ -308,7 +308,7 @@ templates:
 	require.Zero(t, dirs["user3"]) // User3 is deleted, so we should have no more files for it.
 	require.False(t, fileExists(t, user3Dir))
 
-	assert.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
 		# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.
 		# TYPE cortex_alertmanager_config_last_reload_successful gauge
 		cortex_alertmanager_config_last_reload_successful{user="user1"} 1
@@ -338,7 +338,7 @@ templates:
 	require.True(t, fileExists(t, filepath.Join(user3Dir, templatesDir, "first.tpl")))
 	require.True(t, fileExists(t, filepath.Join(user3Dir, templatesDir, "second.tpl")))
 
-	assert.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
 		# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.
 		# TYPE cortex_alertmanager_config_last_reload_successful gauge
 		cortex_alertmanager_config_last_reload_successful{user="user1"} 1
@@ -568,7 +568,7 @@ receivers:
 				am := setupSingleMultitenantAlertmanager(t, cfg, store, overrides, logger, reg)
 
 				// Ensure the configs are synced correctly.
-				assert.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+				require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
 		# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.
 		# TYPE cortex_alertmanager_config_last_reload_successful gauge
 		cortex_alertmanager_config_last_reload_successful{user="user-1"} 1
