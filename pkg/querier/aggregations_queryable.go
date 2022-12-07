@@ -2,6 +2,7 @@ package querier
 
 import (
 	"context"
+	"math"
 	"time"
 
 	"github.com/go-kit/log"
@@ -180,7 +181,7 @@ func filterSamplesFromSeries(s storage.Series, include func(ts model.Time) bool,
 	if appendStaleMarker {
 		lastSample := includedSamples[len(includedSamples)-1]
 		lastSample.Timestamp++
-		lastSample.Value = model.SampleValue(value.StaleNaN)
+		lastSample.Value = model.SampleValue(math.Float64frombits(value.StaleNaN))
 		includedSamples = append(includedSamples, lastSample)
 	}
 	return series.NewConcreteSeries(s.Labels(), includedSamples), nil
