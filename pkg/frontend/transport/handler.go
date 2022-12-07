@@ -132,7 +132,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	defer func() { _ = r.Body.Close() }()
 
-	// Store the body contents in a seeker, so we can read it multiple times.
+	// Store the body contents, so we can read it multiple times.
 	bodyBytes, err := io.ReadAll(http.MaxBytesReader(w, r.Body, f.cfg.MaxBodySize))
 	if err != nil {
 		writeError(w, err)
