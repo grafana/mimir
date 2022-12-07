@@ -169,6 +169,10 @@ func (r *StreamBinaryReader) PostingsOffset(name, value string) (index.Range, er
 }
 
 func (r *StreamBinaryReader) LookupSymbol(o uint32) (string, error) {
+	if s, ok := r.nameSymbols[o]; ok {
+		return s, nil
+	}
+
 	cacheIndex := o % valueSymbolsCacheSize
 	r.valueSymbolsMx.Lock()
 	if cached := r.valueSymbols[cacheIndex]; cached.index == o && cached.symbol != "" {
@@ -177,10 +181,6 @@ func (r *StreamBinaryReader) LookupSymbol(o uint32) (string, error) {
 		return v, nil
 	}
 	r.valueSymbolsMx.Unlock()
-
-	if s, ok := r.nameSymbols[o]; ok {
-		return s, nil
-	}
 
 	if r.indexVersion == index.FormatV1 {
 		// For v1 little trick is needed. Refs are actual offset inside index, not index-header. This is different
