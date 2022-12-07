@@ -12,7 +12,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-const bufferSize = 4096
+const readerBufferSize = 4096
 
 // DecbufFactory creates new file-backed decoding buffer instances for a specific index-header file.
 type DecbufFactory struct {
@@ -24,7 +24,7 @@ func NewDecbufFactory(path string) *DecbufFactory {
 	return &DecbufFactory{
 		pool: sync.Pool{
 			New: func() any {
-				return bufio.NewReaderSize(nil, bufferSize)
+				return bufio.NewReaderSize(nil, readerBufferSize)
 			},
 		},
 		path: path,

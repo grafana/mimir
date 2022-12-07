@@ -123,6 +123,21 @@ func (d *Decbuf) UvarintBytes() []byte {
 		return []byte{}
 	}
 
+	// If the length of this uvarint slice is greater than the size of buffer used
+	// by our file reader, we can't Peek() it. Instead, we have to use the Read() method
+	// which will allocate its own slice to hold the results. We prefer to use Peek()
+	// when possible for performance but can't rely on slices always being less than
+	// the size of our buffer.
+	if l > readerBufferSize {
+		b, err := d.r.Read(int(l))
+		if err != nil {
+			d.E = err
+			return []byte{}
+		}
+
+		return b
+	}
+
 	b, err := d.r.Peek(int(l))
 	if err != nil {
 		d.E = err
