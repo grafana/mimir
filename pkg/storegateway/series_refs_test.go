@@ -9,7 +9,6 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
@@ -1197,23 +1196,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 			indexReader := block.indexReader()
 			defer indexReader.Close()
 
-			iterator, err := openBlockSeriesChunkRefsSetsIterator(
-				ctx,
-				testCase.batchSize,
-				indexReader,
-				block.meta,
-				[]*labels.Matcher{testCase.matcher},
-				nil,
-				hashcache.NewSeriesHashCache(1024*1024).GetBlockCache(block.meta.ULID.String()),
-				&limiter{limit: testCase.chunksLimit},
-				&limiter{limit: testCase.seriesLimit},
-				false,
-				block.meta.MinTime,
-				block.meta.MaxTime,
-				newSafeQueryStats(),
-				log.NewNopLogger(),
-				NewBucketStoreMetrics(prometheus.NewRegistry()),
-			)
+			iterator, err := openBlockSeriesChunkRefsSetsIterator(ctx, testCase.batchSize, indexReader, block.meta, []*labels.Matcher{testCase.matcher}, nil, hashcache.NewSeriesHashCache(1024*1024).GetBlockCache(block.meta.ULID.String()), &limiter{limit: testCase.chunksLimit}, &limiter{limit: testCase.seriesLimit}, false, block.meta.MinTime, block.meta.MaxTime, newSafeQueryStats(), NewBucketStoreMetrics(prometheus.NewRegistry()))
 			require.NoError(t, err)
 
 			actualSeriesSets := readAllSeriesChunkRefsSet(iterator)

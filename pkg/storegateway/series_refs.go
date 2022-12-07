@@ -5,7 +5,6 @@ package storegateway
 import (
 	"context"
 
-	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
@@ -529,7 +528,6 @@ func openBlockSeriesChunkRefsSetsIterator(
 	skipChunks bool, // If true chunks are not loaded and minTime/maxTime are ignored.
 	minTime, maxTime int64, // Series must have data in this time range to be returned (ignored if skipChunks=true).
 	stats *safeQueryStats,
-	logger log.Logger,
 	metrics *BucketStoreMetrics,
 ) (seriesChunkRefsSetIterator, error) {
 	if batchSize <= 0 {
