@@ -65,6 +65,9 @@ func newSeriesSetWithChunks(ctx context.Context, chunkReaders chunkReaders, chun
 	iterator = newLoadingSeriesChunksSetIterator(chunkReaders, chunksPool, batches, stats)
 	iterator = newDurationMeasuringIterator[seriesChunksSet](iterator, iteratorLoadDurations.WithLabelValues("chunks_load"))
 	iterator = newPreloadingSetIterator[seriesChunksSet](ctx, 1, iterator)
+	// We are measuring the time we wait for a preloaded batch. In an ideal world this is 0 because there's always a preloaded batch waiting.
+	// But realistically it will not be. Along with the duration of the chunks_load iterator,
+	// we can determine where is the bottleneck in the streaming pipeline.
 	iterator = newDurationMeasuringIterator[seriesChunksSet](iterator, iteratorLoadDurations.WithLabelValues("chunks_preloaded"))
 	return newSeriesChunksSeriesSet(iterator)
 }
