@@ -879,12 +879,12 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 
 	span, ctx := tracing.StartSpan(ctx, "bucket_store_preload_all")
 
-	blocks, indexReaders, chunkr := s.openBlocksForReading(ctx, req.SkipChunks, req.MinTime, req.MaxTime, req.MaxResolutionWindow, reqBlockMatchers)
+	blocks, indexReaders, chunkReaders := s.openBlocksForReading(ctx, req.SkipChunks, req.MinTime, req.MaxTime, req.MaxResolutionWindow, reqBlockMatchers)
 	// We must keep the readers open until all their data has been sent.
 	for _, r := range indexReaders {
 		defer runutil.CloseWithLogOnErr(s.logger, r, "close block index reader")
 	}
-	for _, r := range chunkr {
+	for _, r := range chunkReaders {
 		defer runutil.CloseWithLogOnErr(s.logger, r, "close block chunk reader")
 	}
 
@@ -905,11 +905,11 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 			defer chunksPool.Release()
 		}
 
-		seriesSet, err = s.synchronousSeriesSet(ctx, req, stats, blocks, indexReaders, chunkr, chunksPool, resHints, shardSelector, matchers, chunksLimiter, seriesLimiter)
+		seriesSet, err = s.synchronousSeriesSet(ctx, req, stats, blocks, indexReaders, chunkReaders, chunksPool, resHints, shardSelector, matchers, chunksLimiter, seriesLimiter)
 	} else {
 		var readers *bucketChunkReaders
 		if !req.SkipChunks {
-			readers = newChunkReaders(chunkr)
+			readers = newChunkReaders(chunkReaders)
 		}
 
 		seriesSet, resHints, err = s.streamingSeriesSetForBlocks(ctx, req, blocks, indexReaders, readers, s.chunkPool, shardSelector, matchers, chunksLimiter, seriesLimiter, stats)
@@ -952,8 +952,9 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 			err = errors.Wrap(seriesSet.Err(), "expand series set")
 			return
 		}
-		mergeStats.mergeDuration = time.Since(begin)
-		s.metrics.seriesMergeDuration.Observe(mergeStats.mergeDuration.Seconds())
+		mergeDuration := time.Since(begin)
+		mergeStats.mergeDuration += mergeDuration
+		s.metrics.seriesMergeDuration.Observe(mergeDuration.Seconds())
 
 		err = nil
 	})
