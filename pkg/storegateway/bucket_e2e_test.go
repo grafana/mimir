@@ -447,14 +447,14 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 				assert.Equal(t, tcase.expected[i], s.Labels)
 				assert.Equal(t, tcase.expectedChunkLen, len(s.Chunks))
 			}
-			assertSomeMetricsRecorded(t, len(tcase.expected), tcase.expectedChunkLen, s.metricsRegistry)
+			assertQueryStatsMetricsRecorded(t, len(tcase.expected), tcase.expectedChunkLen, s.metricsRegistry)
 		}); !ok {
 			return
 		}
 	}
 }
 
-func assertSomeMetricsRecorded(t *testing.T, numSeries int, numChunksPerSeries int, registry *prometheus.Registry) {
+func assertQueryStatsMetricsRecorded(t *testing.T, numSeries int, numChunksPerSeries int, registry *prometheus.Registry) {
 	t.Helper()
 
 	families, err := registry.Gather()
