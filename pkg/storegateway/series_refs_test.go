@@ -1289,8 +1289,6 @@ func (a mockSeriesHasher) Hash(seriesID storage.SeriesRef, lset labels.Labels, s
 
 // sliceSeriesChunkRefsSetIterator implements seriesChunkRefsSetIterator and
 // returns the provided err when the sets are exhausted.
-//
-
 type sliceSeriesChunkRefsSetIterator struct {
 	current int
 	sets    []seriesChunkRefsSet
