@@ -31,10 +31,6 @@ type PostingOffsetTable interface {
 
 	// LabelNames returns a list of all label names in this table.
 	LabelNames() ([]string, error)
-
-	// LabelNameCount returns a value which is at least as large as the number of
-	// label names present in this table.
-	LabelNameCount() int
 }
 
 type PostingOffsetTableV1 struct {
@@ -224,7 +220,7 @@ func (t *PostingOffsetTableV1) LabelValues(name string, filter func(string) bool
 }
 
 func (t *PostingOffsetTableV1) LabelNames() ([]string, error) {
-	labelNames := make([]string, 0, t.LabelNameCount())
+	labelNames := make([]string, 0, len(t.postings))
 	allPostingsKeyName, _ := index.AllPostingsKey()
 
 	for name := range t.postings {
@@ -238,13 +234,6 @@ func (t *PostingOffsetTableV1) LabelNames() ([]string, error) {
 	sort.Strings(labelNames)
 
 	return labelNames, nil
-}
-
-func (t *PostingOffsetTableV1) LabelNameCount() int {
-	// This count might include AllPostingsKey's name, but that's OK - we use this method
-	// to pre-allocate slices to hold all label names, and slightly over-allocating is acceptable
-	// in this case.
-	return len(t.postings)
 }
 
 type PostingOffsetTableV2 struct {
@@ -444,7 +433,7 @@ func (t *PostingOffsetTableV2) LabelValues(name string, filter func(string) bool
 }
 
 func (t *PostingOffsetTableV2) LabelNames() ([]string, error) {
-	labelNames := make([]string, 0, t.LabelNameCount())
+	labelNames := make([]string, 0, len(t.postings))
 	allPostingsKeyName, _ := index.AllPostingsKey()
 
 	for name := range t.postings {
@@ -458,13 +447,6 @@ func (t *PostingOffsetTableV2) LabelNames() ([]string, error) {
 	sort.Strings(labelNames)
 
 	return labelNames, nil
-}
-
-func (t *PostingOffsetTableV2) LabelNameCount() int {
-	// This count will include AllPostingsKey's name, but that's OK - we use this method
-	// to pre-allocate slices to hold all label names, and slightly over-allocating is acceptable
-	// in this case.
-	return len(t.postings)
 }
 
 func skipNAndName(d *stream_encoding.Decbuf, buf *int) {
