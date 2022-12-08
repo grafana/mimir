@@ -2,6 +2,19 @@ package telebot
 
 import "time"
 
+// PollType defines poll types.
+type PollType string
+
+const (
+	// NOTE:
+	// Despite "any" type isn't described in documentation,
+	// it needed for proper KeyboardButtonPollType marshaling.
+	PollAny PollType = "any"
+
+	PollQuiz    PollType = "quiz"
+	PollRegular PollType = "regular"
+)
+
 // Poll contains information about a poll.
 type Poll struct {
 	ID         string       `json:"id"`
