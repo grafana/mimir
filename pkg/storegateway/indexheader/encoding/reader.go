@@ -127,6 +127,11 @@ func (f *FileReader) ReadInto(b []byte) error {
 	return nil
 }
 
+// Size returns the length of the underlying buffer in bytes.
+func (f *FileReader) Size() int {
+	return f.buf.Size()
+}
+
 // Len returns the remaining number of bytes in the file segment.
 func (f *FileReader) Len() int {
 	return f.length - f.pos

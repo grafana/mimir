@@ -128,7 +128,7 @@ func (d *Decbuf) UvarintBytes() []byte {
 	// which will allocate its own slice to hold the results. We prefer to use Peek()
 	// when possible for performance but can't rely on slices always being less than
 	// the size of our buffer.
-	if l > readerBufferSize {
+	if l > uint64(d.r.Size()) {
 		b, err := d.r.Read(int(l))
 		if err != nil {
 			d.E = err
