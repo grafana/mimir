@@ -148,6 +148,10 @@ func newV2PostingOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset
 	}
 	// Trim any extra space in the slices.
 	for k, v := range t.postings {
+		if len(v.offsets) == cap(v.offsets) {
+			continue
+		}
+
 		l := make([]postingOffset, len(v.offsets))
 		copy(l, v.offsets)
 		t.postings[k].offsets = l
