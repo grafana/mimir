@@ -49,13 +49,13 @@ func (f *FileReader) ResetAt(off int) error {
 		return ErrInvalidSize
 	}
 
-	pos, err := f.file.Seek(int64(f.base+off), io.SeekStart)
+	_, err := f.file.Seek(int64(f.base+off), io.SeekStart)
 	if err != nil {
 		return err
 	}
 
 	f.buf.Reset(f.file)
-	f.pos = int(pos) - f.base
+	f.pos = off
 
 	return nil
 }
