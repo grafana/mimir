@@ -26,6 +26,7 @@ ingester:
       consul:
         host: consul:8500
     replication_factor: 1
+  native_histograms_enabled: true
 
 # These memberlist options will be only used if memberlist is activated via CLI option.
 memberlist:
