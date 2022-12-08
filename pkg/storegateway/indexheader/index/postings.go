@@ -30,7 +30,7 @@ type PostingOffsetTable interface {
 	// LabelValues returns a list of values for the label named name that match filter.
 	LabelValues(name string, filter func(string) bool) ([]string, error)
 
-	// LabelNames returns a list of all label names in this table.
+	// LabelNames returns a sorted list of all label names in this table.
 	LabelNames() ([]string, error)
 }
 
