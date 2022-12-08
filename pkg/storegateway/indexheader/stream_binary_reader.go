@@ -206,7 +206,6 @@ func (r *StreamBinaryReader) LabelValues(name string, filter func(string) bool) 
 	return r.postingsOffsetTable.LabelValues(name, filter)
 }
 
-// TODO: could this use nameSymbols somehow? Or be constructed up-front like nameSymbols is?
 func (r *StreamBinaryReader) LabelNames() ([]string, error) {
 	return r.postingsOffsetTable.LabelNames()
 }
