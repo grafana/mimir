@@ -111,9 +111,10 @@ func (s SamplePair) String() string {
 
 // Sample is a sample pair associated with a metric.
 type Sample struct {
-	Metric    Metric      `json:"metric"`
-	Value     SampleValue `json:"value"`
-	Timestamp Time        `json:"timestamp"`
+	Metric    Metric          `json:"metric"`
+	Value     SampleValue     `json:"value"`
+	Timestamp Time            `json:"timestamp"`
+	Histogram SampleHistogram `json:"histogram"`
 }
 
 // Equal compares first the metrics, then the timestamp, then the value. The
@@ -129,8 +130,11 @@ func (s *Sample) Equal(o *Sample) bool {
 	if !s.Timestamp.Equal(o.Timestamp) {
 		return false
 	}
+	if !s.Value.Equal(o.Value) {
+		return false
+	}
 
-	return s.Value.Equal(o.Value)
+	return s.Histogram.Equal(&o.Histogram)
 }
 
 func (s Sample) String() string {
@@ -142,30 +146,48 @@ func (s Sample) String() string {
 
 // MarshalJSON implements json.Marshaler.
 func (s Sample) MarshalJSON() ([]byte, error) {
+	if s.Histogram.Count != 0 {
+		v := struct {
+			Metric    Metric              `json:"metric"`
+			Histogram SampleHistogramPair `json:"histogram"`
+		}{
+			Metric: s.Metric,
+			Histogram: SampleHistogramPair{
+				Timestamp: s.Timestamp,
+				Histogram: s.Histogram,
+			},
+		}
+		return json.Marshal(&v)
+	} else {
+		v := struct {
+			Metric Metric     `json:"metric"`
+			Value  SamplePair `json:"value"`
+		}{
+			Metric: s.Metric,
+			Value: SamplePair{
+				Timestamp: s.Timestamp,
+				Value:     s.Value,
+			},
+		}
+		return json.Marshal(&v)
+	}
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (s *Sample) UnmarshalJSON(b []byte) error {
 	v := struct {
-		Metric Metric     `json:"metric"`
-		Value  SamplePair `json:"value"`
+		Metric    Metric              `json:"metric"`
+		Value     SamplePair          `json:"value"`
+		Histogram SampleHistogramPair `json:"histogram"`
 	}{
 		Metric: s.Metric,
 		Value: SamplePair{
 			Timestamp: s.Timestamp,
 			Value:     s.Value,
 		},
-	}
-
-	return json.Marshal(&v)
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (s *Sample) UnmarshalJSON(b []byte) error {
-	v := struct {
-		Metric Metric     `json:"metric"`
-		Value  SamplePair `json:"value"`
-	}{
-		Metric: s.Metric,
-		Value: SamplePair{
+		Histogram: SampleHistogramPair{
 			Timestamp: s.Timestamp,
-			Value:     s.Value,
+			Histogram: s.Histogram,
 		},
 	}
 
@@ -174,8 +196,13 @@ func (s *Sample) UnmarshalJSON(b []byte) error {
 	}
 
 	s.Metric = v.Metric
-	s.Timestamp = v.Value.Timestamp
-	s.Value = v.Value.Value
+	if v.Histogram.Timestamp != 0 {
+		s.Timestamp = v.Histogram.Timestamp
+		s.Histogram = v.Histogram.Histogram
+	} else {
+		s.Timestamp = v.Value.Timestamp
+		s.Value = v.Value.Value
+	}
 
 	return nil
 }

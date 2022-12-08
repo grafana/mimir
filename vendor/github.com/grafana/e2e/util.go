@@ -302,8 +302,19 @@ func GenerateHistogramSeries(name string, ts time.Time, additionalLabels ...prom
 
 	vector = append(vector, &model.Sample{
 		Metric:    metric,
-		Value:     model.SampleValue(value),
 		Timestamp: model.Time(tsMillis),
+		Histogram: model.SampleHistogram{
+			Count: 1,
+			Sum:   4500,
+			Buckets: model.HistogramBuckets{
+				{
+					Boundaries: 0,
+					Lower:      4466.7196729968955,
+					Upper:      4870.992343051145,
+					Count:      1,
+				},
+			},
+		},
 	})
 
 	matrix = append(matrix, &model.SampleStream{
