@@ -613,7 +613,7 @@ func (i *Ingester) applyTSDBSettings() {
 			},
 		}
 		db := i.getTSDB(userID)
-		if db == nil {
+		if db == nil || db.db == nil {
 			continue
 		}
 		if err := db.db.ApplyConfig(&cfg); err != nil {
