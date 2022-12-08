@@ -40,14 +40,14 @@ type Symbols struct {
 const symbolFactor = 32
 
 // NewSymbols returns a Symbols object for symbol lookups.
-func NewSymbols(factory *stream_encoding.DecbufFactory, version, offset int) (*Symbols, error) {
+func NewSymbols(factory *stream_encoding.DecbufFactory, version, offset int) (s *Symbols, err error) {
 	d := factory.NewDecbufAtChecked(offset, castagnoliTable)
-	defer factory.Close(d)
+	defer factory.CloseWithErrCapture(&err, d, "read symbols")
 	if err := d.Err(); err != nil {
 		return nil, fmt.Errorf("decode symbol table: %w", d.Err())
 	}
 
-	s := &Symbols{
+	s = &Symbols{
 		factory:     factory,
 		version:     version,
 		tableLength: d.Len() + 4, // NewDecbufAtChecked has already read the size of the table (4 bytes) by the time we get here.
@@ -73,9 +73,9 @@ func NewSymbols(factory *stream_encoding.DecbufFactory, version, offset int) (*S
 	return s, nil
 }
 
-func (s *Symbols) Lookup(o uint32) (string, error) {
+func (s *Symbols) Lookup(o uint32) (sym string, err error) {
 	d := s.factory.NewDecbufAtUnchecked(s.tableOffset)
-	defer s.factory.Close(d)
+	defer s.factory.CloseWithErrCapture(&err, d, "lookup symbol")
 	if err := d.Err(); err != nil {
 		return "", err
 	}
@@ -96,20 +96,20 @@ func (s *Symbols) Lookup(o uint32) (string, error) {
 		offsetInTable := int(o) - s.tableOffset
 		d.ResetAt(offsetInTable)
 	}
-	sym := d.UvarintStr()
+	sym = d.UvarintStr()
 	if d.Err() != nil {
 		return "", d.Err()
 	}
 	return sym, nil
 }
 
-func (s *Symbols) ReverseLookup(sym string) (uint32, error) {
+func (s *Symbols) ReverseLookup(sym string) (o uint32, err error) {
 	if len(s.offsets) == 0 {
 		return 0, fmt.Errorf("unknown symbol %q - no symbols", sym)
 	}
 
 	d := s.factory.NewDecbufAtUnchecked(s.tableOffset)
-	defer s.factory.Close(d)
+	defer s.factory.CloseWithErrCapture(&err, d, "reverse lookup symbol")
 	if err := d.Err(); err != nil {
 		return 0, err
 	}
@@ -120,13 +120,13 @@ func (s *Symbols) ReverseLookup(sym string) (uint32, error) {
 // ForEachSymbol performs a reverse lookup on each syms and passes the symbol and offset to f.
 // If the offset of a symbol cannot be looked up, iteration stops immediately and the error is
 // returned. If f returns an error, iteration stops immediately and the error is returned.
-func (s *Symbols) ForEachSymbol(syms []string, f func(sym string, offset uint32) error) error {
+func (s *Symbols) ForEachSymbol(syms []string, f func(sym string, offset uint32) error) (err error) {
 	if len(s.offsets) == 0 {
 		return errors.New("no symbols")
 	}
 
 	d := s.factory.NewDecbufAtUnchecked(s.tableOffset)
-	defer s.factory.Close(d)
+	defer s.factory.CloseWithErrCapture(&err, d, "iterate over symbols")
 	if err := d.Err(); err != nil {
 		return err
 	}

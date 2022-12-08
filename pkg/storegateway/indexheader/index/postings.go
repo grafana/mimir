@@ -158,9 +158,9 @@ func newV2PostingOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset
 
 // readOffsetTable reads an offset table and at the given position calls f for each
 // found entry. If f returns an error it stops decoding and returns the received error.
-func readOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset int, f func([]string, uint64, int) error) error {
+func readOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset int, f func([]string, uint64, int) error) (err error) {
 	d := factory.NewDecbufAtChecked(tableOffset, castagnoliTable)
-	defer factory.Close(d)
+	defer factory.CloseWithErrCapture(&err, d, "read offset table")
 
 	startLen := d.Len()
 	cnt := d.Be32()
@@ -266,7 +266,7 @@ type postingOffset struct {
 	tableOff int
 }
 
-func (t *PostingOffsetTableV2) PostingsOffset(name string, values ...string) ([]index.Range, error) {
+func (t *PostingOffsetTableV2) PostingsOffset(name string, values ...string) (r []index.Range, err error) {
 	e, ok := t.postings[name]
 	if !ok {
 		return nil, nil
@@ -285,7 +285,7 @@ func (t *PostingOffsetTableV2) PostingsOffset(name string, values ...string) ([]
 	}
 
 	d := t.factory.NewDecbufAtUnchecked(t.tableOffset)
-	defer t.factory.Close(d)
+	defer t.factory.CloseWithErrCapture(&err, d, "get postings offsets")
 	if err := d.Err(); err != nil {
 		return nil, err
 	}
@@ -392,7 +392,7 @@ func (t *PostingOffsetTableV2) PostingsOffset(name string, values ...string) ([]
 	return rngs, nil
 }
 
-func (t *PostingOffsetTableV2) LabelValues(name string, filter func(string) bool) ([]string, error) {
+func (t *PostingOffsetTableV2) LabelValues(name string, filter func(string) bool) (v []string, err error) {
 	e, ok := t.postings[name]
 	if !ok {
 		return nil, nil
@@ -405,7 +405,7 @@ func (t *PostingOffsetTableV2) LabelValues(name string, filter func(string) bool
 	// Don't Crc32 the entire postings offset table, this is very slow
 	// so hope any issues were caught at startup.
 	d := t.factory.NewDecbufAtUnchecked(t.tableOffset)
-	defer t.factory.Close(d)
+	defer t.factory.CloseWithErrCapture(&err, d, "get label values")
 
 	d.Skip(e.offsets[0].tableOff)
 	lastVal := e.offsets[len(e.offsets)-1].value

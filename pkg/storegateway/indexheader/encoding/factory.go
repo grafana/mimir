@@ -9,6 +9,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/grafana/dskit/multierror"
 	"github.com/pkg/errors"
 )
 
@@ -159,4 +160,15 @@ func (df *DecbufFactory) Close(d Decbuf) error {
 	}
 
 	return d.close()
+}
+
+// CloseWithErrCapture cleans up any resources associated with d,
+// capturing any errors that occur while cleaning up d in err.
+func (df *DecbufFactory) CloseWithErrCapture(err *error, d Decbuf, format string, a ...interface{}) {
+	merr := multierror.MultiError{}
+
+	merr.Add(*err)
+	merr.Add(errors.Wrapf(df.Close(d), format, a...))
+
+	*err = merr.Err()
 }
