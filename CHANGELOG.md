@@ -10,6 +10,7 @@
 * [ENHANCEMENT] Distributor: remove labels with empty values #2439
 * [ENHANCEMENT] Query-frontend: track query HTTP requests in the Activity Tracker. #3561
 * [BUGFIX] Log the names of services that are not yet running rather than `unsupported value type` when calling `/ready` and some services are not running. #3625
+* [BUGFIX] Alertmanager: Fix template spurious deletion with relative data dir. #3604
 
 ### Mixin
 
