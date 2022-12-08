@@ -1209,7 +1209,7 @@ func TestMultitenantCompactor_FinishBlockUpload(t *testing.T) {
 				bucketClient: &bkt,
 				cfgProvider:  cfgProvider,
 			}
-			c.compactorCfg.disableBackgroundValidationInFinishBlockUpload = true
+			c.compactorCfg.disableCompleteBlockUpload = true
 			r := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/upload/block/%s/finish", tc.blockID), nil)
 			if tc.tenantID != "" {
 				r = r.WithContext(user.InjectOrgID(r.Context(), tenantID))

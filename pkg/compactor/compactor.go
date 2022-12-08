@@ -118,7 +118,7 @@ type Config struct {
 	BlocksCompactorFactory BlocksCompactorFactory `yaml:"-"`
 
 	// used for unit tests only
-	disableBackgroundValidationInFinishBlockUpload bool `yaml:"-"`
+	disableCompleteBlockUpload bool `yaml:"-"`
 }
 
 // RegisterFlags registers the MultitenantCompactor flags.
