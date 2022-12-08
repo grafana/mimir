@@ -457,7 +457,7 @@ func (t *PostingOffsetTableV2) LabelNames() ([]string, error) {
 }
 
 func (t *PostingOffsetTableV2) LabelNameCount() int {
-	// This count might include AllPostingsKey's name, but that's OK - we use this method
+	// This count will include AllPostingsKey's name, but that's OK - we use this method
 	// to pre-allocate slices to hold all label names, and slightly over-allocating is acceptable
 	// in this case.
 	return len(t.postings)
