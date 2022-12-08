@@ -72,6 +72,7 @@ func TestPlayWithGrafanaMimirTutorial(t *testing.T) {
 	}
 
 	runTestPushSeriesAndQueryBack(t, mimir1)
+	runTestPushHistogramSeriesAndQueryBack(t, mimir2)
 }
 
 func runTestPushSeriesAndQueryBack(t *testing.T, mimir *e2emimir.MimirService) {
@@ -80,14 +81,15 @@ func runTestPushSeriesAndQueryBack(t *testing.T, mimir *e2emimir.MimirService) {
 
 	// Push some series to Mimir.
 	now := time.Now()
-	series, expectedVector, expectedMatrix := generateSeries("series_1", now, prompb.Label{Name: "foo", Value: "bar"})
+	seriesName := "series_1"
+	series, expectedVector, expectedMatrix := generateSeries(seriesName, now, prompb.Label{Name: "foo", Value: "bar"})
 
 	res, err := c.Push(series)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, res.StatusCode)
 
 	// Query the series.
-	result, err := c.Query("series_1", now)
+	result, err := c.Query(seriesName, now)
 	require.NoError(t, err)
 	require.Equal(t, model.ValVector, result.Type())
 	assert.Equal(t, expectedVector, result.(model.Vector))
@@ -100,7 +102,7 @@ func runTestPushSeriesAndQueryBack(t *testing.T, mimir *e2emimir.MimirService) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"__name__", "foo"}, labelNames)
 
-	rangeResult, err := c.QueryRange("series_1", now.Add(-15*time.Minute), now, 15*time.Second)
+	rangeResult, err := c.QueryRange(seriesName, now.Add(-15*time.Minute), now, 15*time.Second)
 	require.NoError(t, err)
 	require.Equal(t, model.ValMatrix, rangeResult.Type())
 	require.Equal(t, expectedMatrix, rangeResult.(model.Matrix))
@@ -112,17 +114,18 @@ func runTestPushHistogramSeriesAndQueryBack(t *testing.T, mimir *e2emimir.MimirS
 
 	// Push some series to Mimir.
 	now := time.Now()
-	series, _, _ := generateHistogramSeries("series_1", now, prompb.Label{Name: "foo", Value: "bar"})
+	seriesName := "series_2"
+	series, expectedVector, expectedMatrix := generateHistogramSeries(seriesName, now, prompb.Label{Name: "foo", Value: "bar"})
 
 	res, err := c.Push(series)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, res.StatusCode)
 
 	// Query the series.
-	// result, err := c.Query("series_1", now)
-	// require.NoError(t, err)
-	// require.Equal(t, model.ValVector, result.Type())
-	// assert.Equal(t, expectedVector, result.(model.Vector))
+	result, err := c.Query(seriesName, now)
+	require.NoError(t, err)
+	require.Equal(t, model.ValVector, result.Type())
+	assert.Equal(t, expectedVector, result.(model.Vector))
 
 	labelValues, err := c.LabelValues("foo", prometheusMinTime, prometheusMaxTime, nil)
 	require.NoError(t, err)
@@ -132,8 +135,8 @@ func runTestPushHistogramSeriesAndQueryBack(t *testing.T, mimir *e2emimir.MimirS
 	require.NoError(t, err)
 	require.Equal(t, []string{"__name__", "foo"}, labelNames)
 
-	// rangeResult, err := c.QueryRange("series_1", now.Add(-15*time.Minute), now, 15*time.Second)
-	// require.NoError(t, err)
-	// require.Equal(t, model.ValMatrix, rangeResult.Type())
-	// require.Equal(t, expectedMatrix, rangeResult.(model.Matrix))
+	rangeResult, err := c.QueryRange(seriesName, now.Add(-15*time.Minute), now, 15*time.Second)
+	require.NoError(t, err)
+	require.Equal(t, model.ValMatrix, rangeResult.Type())
+	require.Equal(t, expectedMatrix, rangeResult.(model.Matrix))
 }
