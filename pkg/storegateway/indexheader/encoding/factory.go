@@ -17,12 +17,12 @@ const readerBufferSize = 4096
 
 // DecbufFactory creates new file-backed decoding buffer instances for a specific index-header file.
 type DecbufFactory struct {
-	path string
+	files   *filePool
 }
 
-func NewDecbufFactory(path string) *DecbufFactory {
+func NewDecbufFactory(path string, maxFileHandles uint) *DecbufFactory {
 	return &DecbufFactory{
-		path: path,
+		files: newFilePool(path, maxFileHandles),
 	}
 }
 
@@ -31,17 +31,17 @@ func NewDecbufFactory(path string) *DecbufFactory {
 // by the contents and the expected checksum. This method checks the CRC of the content and will
 // return an error Decbuf if it does not match the expected CRC.
 func (df *DecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table) Decbuf {
-	f, err := os.Open(df.path)
+	f, err := df.files.get()
 	if err != nil {
 		return Decbuf{E: errors.Wrap(err, "open file for decbuf")}
 	}
 
 	// If we return early and don't include a Reader for our Decbuf, we are responsible
-	// for actually closing the file handle.
+	// for putting the file handle back in the pool.
 	closeFile := true
 	defer func() {
 		if closeFile {
-			_ = f.Close()
+			_ = df.files.put(f)
 		}
 	}()
 
@@ -96,17 +96,17 @@ func (df *DecbufFactory) NewDecbufAtUnchecked(offset int) Decbuf {
 // file, nor does it perform any form of integrity check. To create a decoding buffer for some subset
 // of the file or perform integrity checks use NewDecbufAtUnchecked or NewDecbufAtChecked.
 func (df *DecbufFactory) NewRawDecbuf() Decbuf {
-	f, err := os.Open(df.path)
+	f, err := df.files.get()
 	if err != nil {
 		return Decbuf{E: errors.Wrap(err, "open file for decbuf")}
 	}
 
 	// If we return early and don't include a Reader for our Decbuf, we are responsible
-	// for actually closing the file handle.
+	// for putting the file handle back in the pool.
 	closeFile := true
 	defer func() {
 		if closeFile {
-			_ = f.Close()
+			_ = df.files.put(f)
 		}
 	}()
 
@@ -125,9 +125,19 @@ func (df *DecbufFactory) NewRawDecbuf() Decbuf {
 	return Decbuf{r: reader}
 }
 
+// Stop cleans up resources associated with this DecbufFactory
+func (df *DecbufFactory) Stop() {
+	df.files.stop()
+}
+
 // Close cleans up any resources associated with the Decbuf
 func (df *DecbufFactory) Close(d Decbuf) error {
-	return d.close()
+	if d.r != nil {
+		d.close()
+		return df.files.put(d.r.file)
+	}
+
+	return nil
 }
 
 // CloseWithErrCapture cleans up any resources associated with d,
@@ -139,4 +149,59 @@ func (df *DecbufFactory) CloseWithErrCapture(err *error, d Decbuf, format string
 	merr.Add(errors.Wrapf(df.Close(d), format, a...))
 
 	*err = merr.Err()
+}
+
+// filePool maintains a pool of file handles up to a maximum number, creating
+// new handles and closing them when required. get and put operations on this
+// pool never block. If there are no available file handles, one will be created
+// on get. If the pool is full, the file handle is closed on put.
+type filePool struct {
+	path    string
+	handles chan *os.File
+}
+
+// newFilePool creates a new file pool for path with cap capacity. If cap is 0,
+// get always opens new file handles and put always closes them immediately.
+func newFilePool(path string, cap uint) *filePool {
+	return &filePool{
+		path: path,
+		// We don't care if cap is 0 which means the channel will be unbuffered. Because
+		// we have default cases for reads and writes to the channel, we will always open
+		// new files and close file handles immediately if the channel is unbuffered.
+		handles: make(chan *os.File, cap),
+	}
+}
+
+// get returns a pooled file handle if available or opens a new one if there
+// are no pooled handles available.
+func (p *filePool) get() (*os.File, error) {
+	select {
+	case f := <-p.handles:
+		return f, nil
+	default:
+		return os.Open(p.path)
+	}
+}
+
+// put returns a file handle to the pool if there is space available or closes
+// the file handle if there is not.
+func (p *filePool) put(f *os.File) error {
+	select {
+	case p.handles <- f:
+		return nil
+	default:
+		return f.Close()
+	}
+}
+
+// stop closes all pooled file handles.
+func (p *filePool) stop() {
+	for {
+		select {
+		case f := <-p.handles:
+			_ = f.Close()
+		default:
+			return
+		}
+	}
 }

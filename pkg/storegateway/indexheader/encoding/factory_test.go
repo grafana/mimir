@@ -13,139 +13,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestDecbufFactory_NewDecbufAtChecked(t *testing.T) {
-	table := crc32.MakeTable(crc32.Castagnoli)
+const testContentSize = 4096
 
-	t.Run("invalid CRC", func(t *testing.T) {
-		contentLength := 4096
-		enc := promencoding.Encbuf{}
+var table = crc32.MakeTable(crc32.Castagnoli)
 
-		for i := 0; i < contentLength; i++ {
-			enc.PutByte(0x01)
-		}
-
-		enc.PutBytes([]byte{0, 0, 0, 0})
-
-		factory := createDecbufFactoryWithBytes(t, contentLength, enc.Get())
-		d := factory.NewDecbufAtChecked(0, table)
-		t.Cleanup(func() {
-			require.NoError(t, factory.Close(d))
-		})
-
-		require.ErrorIs(t, d.Err(), ErrInvalidChecksum)
-	})
-
-	t.Run("invalid length", func(t *testing.T) {
-		contentLength := 4096
-		enc := promencoding.Encbuf{}
-
-		for i := 0; i < contentLength; i++ {
-			enc.PutByte(0x01)
-		}
-
-		enc.PutHash(crc32.New(table))
-
-		factory := createDecbufFactoryWithBytes(t, contentLength+1000, enc.Get())
-		d := factory.NewDecbufAtChecked(0, table)
-		t.Cleanup(func() {
-			require.NoError(t, factory.Close(d))
-		})
-
-		require.ErrorIs(t, d.Err(), ErrInvalidSize)
-	})
-
-	t.Run("happy path", func(t *testing.T) {
-		contentLength := 4096
-		enc := promencoding.Encbuf{}
-
-		for i := 0; i < contentLength; i++ {
-			enc.PutByte(0x01)
-		}
-
-		enc.PutHash(crc32.New(table))
-
-		factory := createDecbufFactoryWithBytes(t, contentLength, enc.Get())
-		d := factory.NewDecbufAtChecked(0, table)
-		t.Cleanup(func() {
-			require.NoError(t, factory.Close(d))
-		})
-
-		require.NoError(t, d.Err())
-		require.Equal(t, contentLength+4, d.Len())
-	})
-}
-
-func TestDecbufFactory_NewDecbufAtUnchecked(t *testing.T) {
-	table := crc32.MakeTable(crc32.Castagnoli)
-
-	t.Run("happy path", func(t *testing.T) {
-		contentLength := 4096
-		enc := promencoding.Encbuf{}
-
-		for i := 0; i < contentLength; i++ {
-			enc.PutByte(0x01)
-		}
-
-		enc.PutHash(crc32.New(table))
-
-		factory := createDecbufFactoryWithBytes(t, contentLength, enc.Get())
-		d := factory.NewDecbufAtUnchecked(0)
-		t.Cleanup(func() {
-			require.NoError(t, factory.Close(d))
-		})
-
-		require.NoError(t, d.Err())
-		require.Equal(t, contentLength+4, d.Len())
-	})
-}
-
-func TestDecbufFactory_NewDecbufRaw(t *testing.T) {
-	table := crc32.MakeTable(crc32.Castagnoli)
-
-	t.Run("happy path", func(t *testing.T) {
-		contentLength := 4096
-		enc := promencoding.Encbuf{}
-
-		for i := 0; i < contentLength; i++ {
-			enc.PutByte(0x01)
-		}
-
-		enc.PutHash(crc32.New(table))
-
-		factory := createDecbufFactoryWithBytes(t, contentLength, enc.Get())
-		d := factory.NewRawDecbuf()
-		t.Cleanup(func() {
-			require.NoError(t, factory.Close(d))
-		})
-
-		require.NoError(t, d.Err())
-		require.Equal(t, 4+contentLength+4, d.Len())
-	})
-}
-func createDecbufFactoryWithBytes(t testing.TB, len int, b []byte) *DecbufFactory {
-	// Prepend the contents of the buffer with the length of the content portion
-	// which does not include the trailing 4 bytes for a CRC 32.
-	lenBytes := make([]byte, 4)
-	binary.BigEndian.PutUint32(lenBytes, uint32(len))
-	b = append(lenBytes, b...)
-
-	dir := t.TempDir()
-	filePath := path.Join(dir, "test-file")
-	require.NoError(t, os.WriteFile(filePath, b, 0700))
-
-	return NewDecbufFactory(filePath)
-}
 func BenchmarkDecbufFactory_NewDecbufAtUnchecked(t *testing.B) {
-	table := crc32.MakeTable(crc32.Castagnoli)
-	contentLength := 4096
-	enc := promencoding.Encbuf{}
-
-	for i := 0; i < contentLength; i++ {
-		enc.PutByte(0x01)
-	}
-
+	enc := createTestEncoder(testContentSize)
 	enc.PutHash(crc32.New(table))
-	factory := createDecbufFactoryWithBytes(t, contentLength, enc.Get())
+
+	factory := createDecbufFactoryWithBytes(t, 1, testContentSize, enc)
 	t.ResetTimer()
 
 	for i := 0; i < t.N; i++ {
@@ -159,4 +35,118 @@ func BenchmarkDecbufFactory_NewDecbufAtUnchecked(t *testing.B) {
 			require.NoError(t, err)
 		}
 	}
+}
+
+func TestDecbufFactory_NewDecbufAtChecked_InvalidCRC(t *testing.T) {
+	enc := createTestEncoder(testContentSize)
+	enc.PutBytes([]byte{0, 0, 0, 0})
+
+	testDecbufFactory(t, testContentSize, enc, func(t *testing.T, factory *DecbufFactory) {
+		d := factory.NewDecbufAtChecked(0, table)
+		t.Cleanup(func() {
+			require.NoError(t, factory.Close(d))
+		})
+
+		require.ErrorIs(t, d.Err(), ErrInvalidChecksum)
+	})
+}
+
+func TestDecbufFactory_NewDecbufAtChecked_InvalidLength(t *testing.T) {
+	enc := createTestEncoder(testContentSize)
+	enc.PutHash(crc32.New(table))
+
+	testDecbufFactory(t, testContentSize+1000, enc, func(t *testing.T, factory *DecbufFactory) {
+		d := factory.NewDecbufAtChecked(0, table)
+		t.Cleanup(func() {
+			require.NoError(t, factory.Close(d))
+		})
+
+		require.ErrorIs(t, d.Err(), ErrInvalidSize)
+	})
+}
+
+func TestDecbufFactory_NewDecbufAtChecked_HappyPath(t *testing.T) {
+	enc := createTestEncoder(testContentSize)
+	enc.PutHash(crc32.New(table))
+
+	testDecbufFactory(t, testContentSize, enc, func(t *testing.T, factory *DecbufFactory) {
+		d := factory.NewDecbufAtChecked(0, table)
+		t.Cleanup(func() {
+			require.NoError(t, factory.Close(d))
+		})
+
+		require.NoError(t, d.Err())
+		require.Equal(t, testContentSize+crc32.Size, d.Len())
+	})
+}
+
+func TestDecbufFactory_NewDecbufAtUnchecked_HappyPath(t *testing.T) {
+	enc := createTestEncoder(testContentSize)
+	enc.PutHash(crc32.New(table))
+
+	testDecbufFactory(t, testContentSize, enc, func(t *testing.T, factory *DecbufFactory) {
+		d := factory.NewDecbufAtUnchecked(0)
+		t.Cleanup(func() {
+			require.NoError(t, factory.Close(d))
+		})
+
+		require.NoError(t, d.Err())
+		require.Equal(t, testContentSize+crc32.Size, d.Len())
+	})
+}
+
+func TestDecbufFactory_NewDecbufRaw_HappyPath(t *testing.T) {
+	enc := createTestEncoder(testContentSize)
+	enc.PutHash(crc32.New(table))
+
+	testDecbufFactory(t, testContentSize, enc, func(t *testing.T, factory *DecbufFactory) {
+		d := factory.NewRawDecbuf()
+		t.Cleanup(func() {
+			require.NoError(t, factory.Close(d))
+		})
+
+		require.NoError(t, d.Err())
+		require.Equal(t, 4+testContentSize+crc32.Size, d.Len())
+	})
+}
+
+func testDecbufFactory(t *testing.T, len int, enc promencoding.Encbuf, test func(t *testing.T, factory *DecbufFactory)) {
+	t.Run("pooling file handles", func(t *testing.T) {
+		factory := createDecbufFactoryWithBytes(t, 1, len, enc)
+		test(t, factory)
+	})
+
+	t.Run("no pooling file handles", func(t *testing.T) {
+		factory := createDecbufFactoryWithBytes(t, 0, len, enc)
+		test(t, factory)
+	})
+}
+
+func createTestEncoder(numBytes int) promencoding.Encbuf {
+	enc := promencoding.Encbuf{}
+
+	for i := 0; i < numBytes; i++ {
+		enc.PutByte(0x01)
+	}
+
+	return enc
+}
+
+func createDecbufFactoryWithBytes(t testing.TB, filePoolSize uint, len int, enc promencoding.Encbuf) *DecbufFactory {
+	// Prepend the contents of the buffer with the length of the content portion
+	// which does not include the trailing 4 bytes for a CRC 32.
+	lenBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(lenBytes, uint32(len))
+	bytes := append(lenBytes, enc.Get()...)
+
+	dir := t.TempDir()
+	filePath := path.Join(dir, "test-file")
+	require.NoError(t, os.WriteFile(filePath, bytes, 0700))
+
+	factory := NewDecbufFactory(filePath, filePoolSize)
+	t.Cleanup(func() {
+		factory.Stop()
+	})
+
+	return factory
 }

@@ -122,7 +122,7 @@ func TestReaders(t *testing.T) {
 			})
 
 			t.Run("stream binary reader", func(t *testing.T) {
-				br, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, tmpDir, id, 3)
+				br, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, tmpDir, id, 3, Config{})
 				require.NoError(t, err)
 				t.Cleanup(func() {
 					require.NoError(t, br.Close())

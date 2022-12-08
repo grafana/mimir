@@ -44,7 +44,7 @@ func TestSymbols(t *testing.T) {
 	filePath := path.Join(dir, "index")
 	require.NoError(t, os.WriteFile(filePath, buf.Get(), 0700))
 
-	df := streamencoding.NewDecbufFactory(filePath)
+	df := streamencoding.NewDecbufFactory(filePath, 0)
 	s, err := NewSymbols(df, index.FormatV2, symbolsStart)
 	require.NoError(t, err)
 

@@ -261,14 +261,3 @@ func (d *Decbuf) Byte() byte {
 
 func (d *Decbuf) Err() error { return d.E }
 func (d *Decbuf) Len() int   { return d.r.Len() }
-
-// close cleans up any resources associated with this Decbuf. This method
-// is unexported to ensure that all resource management is handled by DecbufFactory
-// which pools resources.
-func (d *Decbuf) close() error {
-	if d.r != nil {
-		return d.r.close()
-	}
-
-	return nil
-}
