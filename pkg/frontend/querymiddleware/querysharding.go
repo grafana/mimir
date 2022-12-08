@@ -376,7 +376,7 @@ func promqlResultToSamples(res *promql.Result) ([]SampleStream, error) {
 		for _, series := range v {
 			res = append(res, SampleStream{
 				Labels:  mimirpb.FromLabelsToLabelAdapters(series.Metric),
-				Samples: mimirpb.FromPointsToSamples(series.Points),
+				Samples: fromPointsToSamples(series.Points),
 			})
 		}
 		return res, nil
@@ -384,4 +384,14 @@ func promqlResultToSamples(res *promql.Result) ([]SampleStream, error) {
 	}
 
 	return nil, errors.Errorf("unexpected value type: [%s]", res.Value.Type())
+}
+
+// Note this is relatively expensive.
+func fromPointsToSamples(points []promql.Point) []mimirpb.Sample {
+	samples := make([]mimirpb.Sample, len(points))
+	for i := 0; i < len(points); i++ {
+		samples[i].TimestampMs = points[i].T
+		samples[i].Value = points[i].V
+	}
+	return samples
 }
