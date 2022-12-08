@@ -16,20 +16,12 @@ package model
 import (
 	"encoding/json"
 	"fmt"
-	"math"
 	"sort"
 	"strconv"
 	"strings"
 )
 
 var (
-	// ZeroSamplePair is the pseudo zero-value of SamplePair used to signal a
-	// non-existing sample pair. It is a SamplePair with timestamp Earliest and
-	// value 0.0. Note that the natural zero value of SamplePair has a timestamp
-	// of 0, which is possible to appear in a real SamplePair and thus not
-	// suitable to signal a non-existing SamplePair.
-	ZeroSamplePair = SamplePair{Timestamp: Earliest}
-
 	// ZeroSample is the pseudo zero-value of Sample used to signal a
 	// non-existing sample. It is a Sample with timestamp Earliest, value 0.0,
 	// and metric nil. Note that the natural zero value of Sample has a timestamp
@@ -38,82 +30,20 @@ var (
 	ZeroSample = Sample{Timestamp: Earliest}
 )
 
-// A SampleValue is a representation of a value for a given sample at a given
-// time.
-type SampleValue float64
+type SampleType int8
 
-// MarshalJSON implements json.Marshaler.
-func (v SampleValue) MarshalJSON() ([]byte, error) {
-	return json.Marshal(v.String())
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (v *SampleValue) UnmarshalJSON(b []byte) error {
-	if len(b) < 2 || b[0] != '"' || b[len(b)-1] != '"' {
-		return fmt.Errorf("sample value must be a quoted string")
-	}
-	f, err := strconv.ParseFloat(string(b[1:len(b)-1]), 64)
-	if err != nil {
-		return err
-	}
-	*v = SampleValue(f)
-	return nil
-}
-
-// Equal returns true if the value of v and o is equal or if both are NaN. Note
-// that v==o is false if both are NaN. If you want the conventional float
-// behavior, use == to compare two SampleValues.
-func (v SampleValue) Equal(o SampleValue) bool {
-	if v == o {
-		return true
-	}
-	return math.IsNaN(float64(v)) && math.IsNaN(float64(o))
-}
-
-func (v SampleValue) String() string {
-	return strconv.FormatFloat(float64(v), 'f', -1, 64)
-}
-
-// SamplePair pairs a SampleValue with a Timestamp.
-type SamplePair struct {
-	Timestamp Time
-	Value     SampleValue
-}
-
-// MarshalJSON implements json.Marshaler.
-func (s SamplePair) MarshalJSON() ([]byte, error) {
-	t, err := json.Marshal(s.Timestamp)
-	if err != nil {
-		return nil, err
-	}
-	v, err := json.Marshal(s.Value)
-	if err != nil {
-		return nil, err
-	}
-	return []byte(fmt.Sprintf("[%s,%s]", t, v)), nil
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (s *SamplePair) UnmarshalJSON(b []byte) error {
-	v := [...]json.Unmarshaler{&s.Timestamp, &s.Value}
-	return json.Unmarshal(b, &v)
-}
-
-// Equal returns true if this SamplePair and o have equal Values and equal
-// Timestamps. The semantics of Value equality is defined by SampleValue.Equal.
-func (s *SamplePair) Equal(o *SamplePair) bool {
-	return s == o || (s.Value.Equal(o.Value) && s.Timestamp.Equal(o.Timestamp))
-}
-
-func (s SamplePair) String() string {
-	return fmt.Sprintf("%s @[%s]", s.Value, s.Timestamp)
-}
+const (
+	STFloat SampleType = iota
+	STHistogram
+)
 
 // Sample is a sample pair associated with a metric.
 type Sample struct {
-	Metric    Metric      `json:"metric"`
-	Value     SampleValue `json:"value"`
-	Timestamp Time        `json:"timestamp"`
+	Metric    Metric          `json:"metric"`
+	Value     SampleValue     `json:"value"`
+	Timestamp Time            `json:"timestamp"`
+	Histogram SampleHistogram `json:"histogram"`
+	Type      SampleType
 }
 
 // Equal compares first the metrics, then the timestamp, then the value. The
@@ -129,43 +59,73 @@ func (s *Sample) Equal(o *Sample) bool {
 	if !s.Timestamp.Equal(o.Timestamp) {
 		return false
 	}
-
-	return s.Value.Equal(o.Value)
+	if s.Type != o.Type {
+		return false
+	}
+	if s.Type == STFloat {
+		return s.Value.Equal(o.Value)
+	}
+	return s.Histogram.Equal(&o.Histogram)
 }
 
 func (s Sample) String() string {
-	return fmt.Sprintf("%s => %s", s.Metric, SamplePair{
-		Timestamp: s.Timestamp,
-		Value:     s.Value,
-	})
+	if s.Type == STFloat {
+		return fmt.Sprintf("%s => %s", s.Metric, SamplePair{
+			Timestamp: s.Timestamp,
+			Value:     s.Value,
+		})
+	} else {
+		return fmt.Sprintf("%s => %s", s.Metric, SampleHistogramPair{
+			Timestamp: s.Timestamp,
+			Histogram: s.Histogram,
+		})
+	}
 }
 
 // MarshalJSON implements json.Marshaler.
 func (s Sample) MarshalJSON() ([]byte, error) {
+	if s.Type == STFloat {
+		v := struct {
+			Metric Metric     `json:"metric"`
+			Value  SamplePair `json:"value"`
+		}{
+			Metric: s.Metric,
+			Value: SamplePair{
+				Timestamp: s.Timestamp,
+				Value:     s.Value,
+			},
+		}
+		return json.Marshal(&v)
+	} else {
+		v := struct {
+			Metric    Metric              `json:"metric"`
+			Histogram SampleHistogramPair `json:"histogram"`
+		}{
+			Metric: s.Metric,
+			Histogram: SampleHistogramPair{
+				Timestamp: s.Timestamp,
+				Histogram: s.Histogram,
+			},
+		}
+		return json.Marshal(&v)
+	}
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (s *Sample) UnmarshalJSON(b []byte) error {
 	v := struct {
-		Metric Metric     `json:"metric"`
-		Value  SamplePair `json:"value"`
+		Metric    Metric              `json:"metric"`
+		Value     SamplePair          `json:"value"`
+		Histogram SampleHistogramPair `json:"histogram"`
 	}{
 		Metric: s.Metric,
 		Value: SamplePair{
 			Timestamp: s.Timestamp,
 			Value:     s.Value,
 		},
-	}
-
-	return json.Marshal(&v)
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (s *Sample) UnmarshalJSON(b []byte) error {
-	v := struct {
-		Metric Metric     `json:"metric"`
-		Value  SamplePair `json:"value"`
-	}{
-		Metric: s.Metric,
-		Value: SamplePair{
+		Histogram: SampleHistogramPair{
 			Timestamp: s.Timestamp,
-			Value:     s.Value,
+			Histogram: s.Histogram,
 		},
 	}
 
@@ -174,8 +134,14 @@ func (s *Sample) UnmarshalJSON(b []byte) error {
 	}
 
 	s.Metric = v.Metric
-	s.Timestamp = v.Value.Timestamp
-	s.Value = v.Value.Value
+	if v.Histogram.Timestamp != 0 {
+		s.Timestamp = v.Histogram.Timestamp
+		s.Histogram = v.Histogram.Histogram
+		s.Type = STHistogram
+	} else {
+		s.Timestamp = v.Value.Timestamp
+		s.Value = v.Value.Value
+	}
 
 	return nil
 }
@@ -221,80 +187,74 @@ func (s Samples) Equal(o Samples) bool {
 
 // SampleStream is a stream of Values belonging to an attached COWMetric.
 type SampleStream struct {
-	Metric Metric       `json:"metric"`
-	Values []SamplePair `json:"values"`
+	Metric     Metric                `json:"metric"`
+	Values     []SamplePair          `json:"values"`
+	Histograms []SampleHistogramPair `json:"histograms"`
+	Type       SampleType
 }
 
 func (ss SampleStream) String() string {
-	vals := make([]string, len(ss.Values))
-	for i, v := range ss.Values {
-		vals[i] = v.String()
+	var vals []string
+	if ss.Type == STFloat {
+		vals = make([]string, len(ss.Values))
+		for i, v := range ss.Values {
+			vals[i] = v.String()
+		}
+	} else {
+		vals = make([]string, len(ss.Histograms))
+		for i, v := range ss.Histograms {
+			vals[i] = v.String()
+		}
 	}
 	return fmt.Sprintf("%s =>\n%s", ss.Metric, strings.Join(vals, "\n"))
 }
 
-// Value is a generic interface for values resulting from a query evaluation.
-type Value interface {
-	Type() ValueType
-	String() string
+func (ss SampleStream) MarshalJSON() ([]byte, error) {
+	if ss.Type == STFloat {
+		v := struct {
+			Metric Metric       `json:"metric"`
+			Values []SamplePair `json:"values"`
+		}{
+			Metric: ss.Metric,
+			Values: ss.Values,
+		}
+		return json.Marshal(&v)
+	} else {
+		v := struct {
+			Metric     Metric                `json:"metric"`
+			Histograms []SampleHistogramPair `json:"histograms"`
+		}{
+			Metric:     ss.Metric,
+			Histograms: ss.Histograms,
+		}
+		return json.Marshal(&v)
+	}
 }
 
-func (Matrix) Type() ValueType  { return ValMatrix }
-func (Vector) Type() ValueType  { return ValVector }
-func (*Scalar) Type() ValueType { return ValScalar }
-func (*String) Type() ValueType { return ValString }
+func (ss *SampleStream) UnmarshalJSON(b []byte) error {
+	v := struct {
+		Metric     Metric                `json:"metric"`
+		Values     []SamplePair          `json:"values"`
+		Histograms []SampleHistogramPair `json:"histograms"`
+	}{
+		Metric:     ss.Metric,
+		Values:     ss.Values,
+		Histograms: ss.Histograms,
+	}
 
-type ValueType int
-
-const (
-	ValNone ValueType = iota
-	ValScalar
-	ValVector
-	ValMatrix
-	ValString
-)
-
-// MarshalJSON implements json.Marshaler.
-func (et ValueType) MarshalJSON() ([]byte, error) {
-	return json.Marshal(et.String())
-}
-
-func (et *ValueType) UnmarshalJSON(b []byte) error {
-	var s string
-	if err := json.Unmarshal(b, &s); err != nil {
+	if err := json.Unmarshal(b, &v); err != nil {
 		return err
 	}
-	switch s {
-	case "<ValNone>":
-		*et = ValNone
-	case "scalar":
-		*et = ValScalar
-	case "vector":
-		*et = ValVector
-	case "matrix":
-		*et = ValMatrix
-	case "string":
-		*et = ValString
-	default:
-		return fmt.Errorf("unknown value type %q", s)
-	}
-	return nil
-}
 
-func (e ValueType) String() string {
-	switch e {
-	case ValNone:
-		return "<ValNone>"
-	case ValScalar:
-		return "scalar"
-	case ValVector:
-		return "vector"
-	case ValMatrix:
-		return "matrix"
-	case ValString:
-		return "string"
+	ss.Metric = v.Metric
+	if len(v.Histograms) > 0 {
+		ss.Histograms = v.Histograms
+		ss.Type = STHistogram
+	} else {
+		ss.Values = v.Values
 	}
-	panic("ValueType.String: unhandled value type")
+
+	return nil
 }
 
 // Scalar is a scalar value evaluated at the set timestamp.

@@ -275,9 +275,47 @@ func generateTestHistogram(i int) *histogram.Histogram {
 	}
 }
 
+func generateTestSampleHistogram(i int) *model.SampleHistogram {
+	return &model.SampleHistogram{
+		Count: model.IntString(5 + i*4),
+		Sum:   model.FloatString(18.4 * float64(i+1)),
+		Buckets: model.HistogramBuckets{
+			&model.HistogramBucket{
+				Boundaries: 3,
+				Lower:      -0.001,
+				Upper:      0.001,
+				Count:      model.IntString(2 + i),
+			},
+			&model.HistogramBucket{
+				Boundaries: 0,
+				Lower:      0.7071067811865475,
+				Upper:      1,
+				Count:      model.IntString(1 + i),
+			},
+			&model.HistogramBucket{
+				Boundaries: 0,
+				Lower:      1,
+				Upper:      1.414213562373095,
+				Count:      model.IntString(2 + i),
+			},
+			&model.HistogramBucket{
+				Boundaries: 0,
+				Lower:      2,
+				Upper:      2.82842712474619,
+				Count:      model.IntString(1 + i),
+			},
+			&model.HistogramBucket{
+				Boundaries: 0,
+				Lower:      2.82842712474619,
+				Upper:      4,
+				Count:      model.IntString(1 + i),
+			},
+		},
+	}
+}
+
 func GenerateHistogramSeries(name string, ts time.Time, additionalLabels ...prompb.Label) (series []prompb.TimeSeries, vector model.Vector, matrix model.Matrix) {
 	tsMillis := TimeToMilliseconds(ts)
-	value := rand.Float64()
 
 	lbls := append(
 		[]prompb.Label{
@@ -292,7 +330,6 @@ func GenerateHistogramSeries(name string, ts time.Time, additionalLabels ...prom
 		Histograms: []prompb.Histogram{remote.HistogramToHistogramProto(tsMillis, generateTestHistogram(0))},
 	})
 
-	//TODO: FIX
 	// Generate the expected vector and matrix when querying it
 	metric := model.Metric{}
 	metric[labels.MetricName] = model.LabelValue(name)
@@ -302,18 +339,20 @@ func GenerateHistogramSeries(name string, ts time.Time, additionalLabels ...prom
 
 	vector = append(vector, &model.Sample{
 		Metric:    metric,
-		Value:     model.SampleValue(value),
 		Timestamp: model.Time(tsMillis),
+		Histogram: *generateTestSampleHistogram(0),
+		Type:      model.STHistogram,
 	})
 
 	matrix = append(matrix, &model.SampleStream{
 		Metric: metric,
-		Values: []model.SamplePair{
+		Histograms: []model.SampleHistogramPair{
 			{
 				Timestamp: model.Time(tsMillis),
-				Value:     model.SampleValue(value),
+				Histogram: *generateTestSampleHistogram(0),
 			},
 		},
+		Type: model.STHistogram,
 	})
 
 	return
@@ -346,8 +385,9 @@ func GenerateNHistogramSeries(nSeries, nExemplars int, name func() string, ts ti
 
 		vector = append(vector, &model.Sample{
 			Metric:    metric,
-			Value:     model.SampleValue(series[i].Samples[0].Value),
 			Timestamp: model.Time(tsMillis),
+			Histogram: *generateTestSampleHistogram(i),
+			Type:      model.STHistogram,
 		})
 	}
 	return
