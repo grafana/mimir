@@ -289,26 +289,10 @@ v1.7.0 to grafana/mimir-distributed v3.1.0 helm chart.
 
 4. Run the Helm upgrade with the Grafana Mimir chart.
 
-   a. Upgrade Cortex
-
    > **Note:** The name of the release must match your Cortex Helm chart release.
 
    ```bash
    helm upgrade <RELEASE> grafana/mimir-distributed [-n <NAMESPACE>]
-   ```
-   
-   b. Fix nginx.conf (may not be required)
-
-   > **Note:** If you didn't override `api.prometheus_http_prefix` you can ignore this step.
-
-   If you set `api.prometheus_http_prefix` when installing/upgrading to Mimir,
-   [the nginx.conf that will be created in the config-maps going to be invalid](https://github.com/grafana/mimir/issues/3086).
-   This issue is fixed in mimir-distributed v4.0.0. There is also option for not using nginx in mimir-distributed v4.0.0.
-
-   In the meantime, you can use the following command to patch the configuration. Make sure to run only the script once.
-
-   ```bash
-   kubectl get cm -n <namespace> <nginx-config-map-name> -o yaml | gsed  -e "/Rest of/{N;s/\n//;}" | kubectl apply -f -
    ```
 
 To verify that the cluster is operating correctly, use the [monitoring mixin dashboards]({{< relref "../operators-guide/monitor-grafana-mimir/dashboards/_index.md" >}}).
