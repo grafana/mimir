@@ -13,6 +13,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"golang.org/x/exp/slices"
 
 	stream_encoding "github.com/grafana/mimir/pkg/storegateway/indexheader/encoding"
 )
@@ -231,7 +232,7 @@ func (t *PostingOffsetTableV1) LabelNames() ([]string, error) {
 		labelNames = append(labelNames, name)
 	}
 
-	sort.Strings(labelNames)
+	slices.Sort(labelNames)
 
 	return labelNames, nil
 }
@@ -444,7 +445,7 @@ func (t *PostingOffsetTableV2) LabelNames() ([]string, error) {
 		labelNames = append(labelNames, name)
 	}
 
-	sort.Strings(labelNames)
+	slices.Sort(labelNames)
 
 	return labelNames, nil
 }
