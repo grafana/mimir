@@ -3227,7 +3227,7 @@ func TestIngester_seriesCountIsCorrectAfterClosingTSDBForDeletedTenant(t *testin
 	require.True(t, db.deletionMarkFound.Load())
 
 	// If we try to close TSDB now, it should succeed, even though TSDB is not idle and empty.
-	require.Equal(t, uint64(1), db.Head().NumSeries())
+	require.Equal(t, uint64(1), db.HeadNumSeries())
 	require.Equal(t, tsdbTenantMarkedForDeletion, i.closeAndDeleteUserTSDBIfIdle(userID))
 
 	// Closing should decrease series count.
@@ -4016,8 +4016,7 @@ func verifyCompactedHead(t *testing.T, i *Ingester, expected bool) {
 	db := i.getTSDB(userID)
 	require.NotNil(t, db)
 
-	h := db.Head()
-	require.Equal(t, expected, h.NumSeries() == 0)
+	require.Equal(t, expected, db.HeadNumSeries() == 0)
 }
 
 func pushSingleSampleWithMetadata(t *testing.T, i *Ingester) {
@@ -4096,9 +4095,7 @@ func TestHeadCompactionOnStartup(t *testing.T) {
 	db := ingester.getTSDB(userID)
 	require.NotNil(t, db)
 
-	h := db.Head()
-
-	dur := time.Duration(h.MaxTime()-h.MinTime()) * time.Millisecond
+	dur := time.Duration(db.HeadMaxTime()-db.HeadMinTime()) * time.Millisecond
 	require.True(t, dur <= 2*time.Hour)
 	require.Equal(t, 11, len(db.Blocks()))
 }
@@ -4320,7 +4317,7 @@ func TestIngesterNoFlushWithInFlightRequest(t *testing.T) {
 		if db == nil {
 			return false
 		}
-		return db.Head().NumSeries()
+		return db.HeadNumSeries()
 	})
 
 	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(`

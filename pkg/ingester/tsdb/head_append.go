@@ -49,11 +49,11 @@ func (a *initAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 }
 
 func (a *initAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
-	return 0, fmt.Errorf("exemplars not supported")
+	return 0, nil
 }
 
 func (a *initAppender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m metadata.Metadata) (storage.SeriesRef, error) {
-	return 0, fmt.Errorf("metadata not supported")
+	return 0, nil
 }
 
 // initTime initializes a head with the first timestamp. This only needs to be called
@@ -331,7 +331,7 @@ func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooTi
 // AppendExemplar for headAppender assumes the series ref already exists, and so it doesn't
 // use getOrCreate or make any of the lset sanity checks that Append does.
 func (a *headAppender) AppendExemplar(ref storage.SeriesRef, lset labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
-	return 0, fmt.Errorf("exemplars not supported")
+	return 0, nil
 }
 
 // UpdateMetadata for headAppender assumes the series ref already exists, and so it doesn't

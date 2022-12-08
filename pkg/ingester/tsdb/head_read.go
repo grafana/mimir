@@ -15,12 +15,12 @@ package tsdb
 
 import (
 	"context"
-	"fmt"
 	"math"
 	"sort"
 
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/tsdb"
 	"golang.org/x/exp/slices"
 
@@ -32,7 +32,18 @@ import (
 )
 
 func (h *Head) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {
-	return nil, fmt.Errorf("exemplars not supported")
+	return NoopExemplarQuerier(), nil
+}
+
+type noopExemplarQuerierQuerier struct{}
+
+func (n noopExemplarQuerierQuerier) Select(start, end int64, matchers ...[]*labels.Matcher) ([]exemplar.QueryResult, error) {
+	return nil, nil
+}
+
+// NoopExemplarQuerier is a storage.ExemplarQuerier that does nothing.
+func NoopExemplarQuerier() storage.ExemplarQuerier {
+	return noopExemplarQuerierQuerier{}
 }
 
 // Index returns an IndexReader against the block.
@@ -45,6 +56,75 @@ func (h *Head) indexRange(mint, maxt int64) *headIndexReader {
 		mint = hmin
 	}
 	return &headIndexReader{head: h, mint: mint, maxt: maxt}
+}
+
+func (h *Head) Querier(_ context.Context, mint, maxt int64) (storage.Querier, error) {
+	if maxt < h.MinTime() {
+		return storage.NoopQuerier(), nil
+	}
+
+	rh := NewRangeHead(h, mint, maxt)
+	querier, err := tsdb.NewBlockQuerier(rh, mint, maxt)
+	if err != nil {
+		return nil, errors.Wrapf(err, "open block querier for head %s", rh)
+	}
+
+	// Getting the querier above registers itself in the queue that the truncation waits on.
+	// So if the querier is currently not colliding with any truncation, we can continue to use it and still
+	// won't run into a race later since any truncation that comes after will wait on this querier if it overlaps.
+	shouldClose, getNew, newMint := h.IsQuerierCollidingWithTruncation(mint, maxt)
+	if shouldClose {
+		if err := querier.Close(); err != nil {
+			return nil, errors.Wrapf(err, "closing head block querier %s", rh)
+		}
+		querier = nil
+	}
+	if getNew {
+		rh := NewRangeHead(h, newMint, maxt)
+		querier, err = tsdb.NewBlockQuerier(rh, newMint, maxt)
+		if err != nil {
+			return nil, errors.Wrapf(err, "open block querier for head while getting new querier %s", rh)
+		}
+	}
+	if querier == nil {
+		querier = storage.NoopQuerier()
+	}
+	return querier, nil
+}
+
+func (h *Head) ChunkQuerier(ctx context.Context, mint int64, maxt int64) (storage.ChunkQuerier, error) {
+	if maxt < h.MinTime() {
+		return storage.NoopChunkedQuerier(), nil
+	}
+
+	rh := NewRangeHead(h, mint, maxt)
+	querier, err := tsdb.NewBlockChunkQuerier(rh, mint, maxt)
+	if err != nil {
+		return nil, errors.Wrapf(err, "open querier for head %s", rh)
+	}
+
+	// Getting the querier above registers itself in the queue that the truncation waits on.
+	// So if the querier is currently not colliding with any truncation, we can continue to use it and still
+	// won't run into a race later since any truncation that comes after will wait on this querier if it overlaps.
+	shouldClose, getNew, newMint := h.IsQuerierCollidingWithTruncation(mint, maxt)
+	if shouldClose {
+		if err := querier.Close(); err != nil {
+			return nil, errors.Wrapf(err, "closing head querier %s", rh)
+		}
+		querier = nil
+	}
+	if getNew {
+		rh := NewRangeHead(h, newMint, maxt)
+		querier, err = tsdb.NewBlockChunkQuerier(rh, newMint, maxt)
+		if err != nil {
+			return nil, errors.Wrapf(err, "open querier for head while getting new querier %s", rh)
+		}
+	}
+
+	if querier == nil {
+		querier = storage.NoopChunkedQuerier()
+	}
+	return querier, nil
 }
 
 type headIndexReader struct {

@@ -100,8 +100,7 @@ type Head struct {
 // HeadOptions are parameters for the Head block.
 type HeadOptions struct {
 	ChunkRange int64
-	// ChunkDirRoot is the parent directory of the chunks directory.
-	ChunkPool chunkenc.Pool
+	ChunkPool  chunkenc.Pool
 
 	// StripeSize sets the number of entries in the hash map, it must be a power of 2.
 	// A larger StripeSize will allocate more memory up-front, but will increase performance when handling a large number of series.

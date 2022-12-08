@@ -18,6 +18,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
+	tsdb_head_only "github.com/grafana/mimir/pkg/ingester/tsdb"
 	"github.com/grafana/mimir/pkg/util/extract"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 )
@@ -54,7 +55,9 @@ func (r tsdbCloseCheckResult) shouldClose() bool {
 }
 
 type userTSDB struct {
-	db             *tsdb.DB
+	db   *tsdb.DB
+	head *tsdb_head_only.Head
+
 	userID         string
 	activeSeries   *activeseries.ActiveSeries
 	seriesInMetric *metricCounter
@@ -92,43 +95,104 @@ type userTSDB struct {
 // Explicitly wrapping the tsdb.DB functions that we use.
 
 func (u *userTSDB) Appender(ctx context.Context) storage.Appender {
+	if u.head != nil {
+		return u.head.Appender(ctx)
+	}
 	return u.db.Appender(ctx)
 }
 
 // Querier returns a new querier over the data partition for the given time range.
 func (u *userTSDB) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+	if u.head != nil {
+		return u.head.Querier(ctx, mint, maxt)
+	}
 	return u.db.Querier(ctx, mint, maxt)
 }
 
 func (u *userTSDB) ChunkQuerier(ctx context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
+	if u.head != nil {
+		return u.head.ChunkQuerier(ctx, mint, maxt)
+	}
 	return u.db.ChunkQuerier(ctx, mint, maxt)
 }
 
 func (u *userTSDB) UnorderedChunkQuerier(ctx context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
+	if u.head != nil {
+		return u.head.ChunkQuerier(ctx, mint, maxt)
+	}
 	return u.db.UnorderedChunkQuerier(ctx, mint, maxt)
 }
 
 func (u *userTSDB) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {
+	if u.head != nil {
+		return u.head.ExemplarQuerier(ctx)
+	}
 	return u.db.ExemplarQuerier(ctx)
 }
 
-func (u *userTSDB) Head() *tsdb.Head {
-	return u.db.Head()
+func (u *userTSDB) HeadNumSeries() uint64 {
+	if u.head != nil {
+		return u.head.NumSeries()
+	}
+	return u.db.Head().NumSeries()
+}
+
+func (u *userTSDB) HeadMaxTime() int64 {
+	if u.head != nil {
+		return u.head.MaxTime()
+	}
+	return u.db.Head().MaxTime()
+}
+
+func (u *userTSDB) HeadMinTime() int64 {
+	if u.head != nil {
+		return u.head.MinTime()
+	}
+	return u.db.Head().MinTime()
+}
+
+func (u *userTSDB) HeadAppendableMinValidTime() (int64, bool) {
+	if u.head != nil {
+		return u.head.AppendableMinValidTime()
+	}
+	return u.db.Head().AppendableMinValidTime()
+}
+
+func (u *userTSDB) HeadIndex() (tsdb.IndexReader, error) {
+	if u.head != nil {
+		return u.head.Index()
+	}
+	return u.db.Head().Index()
 }
 
 func (u *userTSDB) Blocks() []*tsdb.Block {
+	if u.head != nil {
+		return nil
+	}
 	return u.db.Blocks()
 }
 
 func (u *userTSDB) Close() error {
+	if u.head != nil {
+		return u.head.Close()
+	}
 	return u.db.Close()
 }
 
 func (u *userTSDB) Compact() error {
+	if u.head != nil {
+		// Keep last 10 minutes only, remove older samples from memory
+		maxT := u.head.MaxTime()
+		maxT -= 10 * time.Minute.Milliseconds()
+		return u.head.Truncate(maxT)
+	}
 	return u.db.Compact()
 }
 
 func (u *userTSDB) StartTime() (int64, error) {
+	if u.head != nil {
+		return u.head.MinTime(), nil
+	}
 	return u.db.StartTime()
 }
 
@@ -145,6 +209,10 @@ func (u *userTSDB) casState(from, to tsdbState) bool {
 
 // compactHead compacts the Head block at specified block durations avoiding a single huge block.
 func (u *userTSDB) compactHead(blockDuration int64) error {
+	if u.head != nil {
+		return nil
+	}
+
 	if !u.casState(active, forceCompacting) {
 		return errors.New("TSDB head cannot be compacted because it is not in active state (possibly being closed or blocks shipping in progress)")
 	}
@@ -156,7 +224,7 @@ func (u *userTSDB) compactHead(blockDuration int64) error {
 	// So we wait for existing in-flight requests to finish. Future push requests would fail until compaction is over.
 	u.pushesInFlight.Wait()
 
-	h := u.Head()
+	h := u.db.Head()
 
 	minTime, maxTime := h.MinTime(), h.MaxTime()
 
@@ -190,7 +258,7 @@ func (u *userTSDB) PreCreation(metric labels.Labels) error {
 	}
 
 	// Total series limit.
-	if err := u.limiter.AssertMaxSeriesPerUser(u.userID, int(u.Head().NumSeries())); err != nil {
+	if err := u.limiter.AssertMaxSeriesPerUser(u.userID, int(u.HeadNumSeries())); err != nil {
 		return err
 	}
 
@@ -255,6 +323,9 @@ func (u *userTSDB) blocksToDelete(blocks []*tsdb.Block) map[ulid.ULID]struct{} {
 
 // updateCachedShippedBlocks reads the shipper meta file and updates the cached shipped blocks.
 func (u *userTSDB) updateCachedShippedBlocks() error {
+	if u.head != nil {
+		return nil
+	}
 	shippedBlocks, err := readShippedBlocks(u.db.Dir())
 	if err != nil {
 		return err
@@ -270,6 +341,10 @@ func (u *userTSDB) updateCachedShippedBlocks() error {
 
 // getCachedShippedBlocks returns the cached shipped blocks.
 func (u *userTSDB) getCachedShippedBlocks() map[ulid.ULID]struct{} {
+	if u.head != nil {
+		return nil
+	}
+
 	u.shippedBlocksMtx.Lock()
 	defer u.shippedBlocksMtx.Unlock()
 
@@ -280,6 +355,10 @@ func (u *userTSDB) getCachedShippedBlocks() map[ulid.ULID]struct{} {
 // getOldestUnshippedBlockTime returns the unix timestamp with milliseconds precision of the oldest
 // TSDB block not shipped to the storage yet, or 0 if all blocks have been shipped.
 func (u *userTSDB) getOldestUnshippedBlockTime() uint64 {
+	if u.head != nil {
+		return 0
+	}
+
 	shippedBlocks := u.getCachedShippedBlocks()
 	oldestTs := uint64(0)
 
@@ -316,8 +395,12 @@ func (u *userTSDB) shouldCloseTSDB(idleTimeout time.Duration) tsdbCloseCheckResu
 		return tsdbNotIdle
 	}
 
+	if u.head != nil {
+		return tsdbIdle
+	}
+
 	// If head is not compacted, we cannot close this yet.
-	if u.Head().NumSeries() > 0 {
+	if u.HeadNumSeries() > 0 {
 		return tsdbNotCompacted
 	}
 

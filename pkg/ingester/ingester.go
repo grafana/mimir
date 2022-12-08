@@ -48,6 +48,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/ingester/client"
+	tsdb_head_only "github.com/grafana/mimir/pkg/ingester/tsdb"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/chunk"
@@ -147,6 +148,8 @@ type Config struct {
 	InstanceLimitsFn func() *InstanceLimits `yaml:"-"`
 
 	IgnoreSeriesLimitForMetricNames string `yaml:"ignore_series_limit_for_metric_names" category:"advanced"`
+
+	UseHeadOnly bool `yaml:"use_head_only"`
 
 	// For testing, you can override the address and ID of this ingester.
 	ingesterClientFactory func(addr string, cfg client.Config) (client.HealthAndIngesterClient, error)
@@ -552,7 +555,7 @@ func (i *Ingester) updateUsageStats() {
 		}
 
 		// Track only tenants with at least 1 series.
-		numSeries := userDB.Head().NumSeries()
+		numSeries := userDB.HeadNumSeries()
 		if numSeries == 0 {
 			continue
 		}
@@ -704,7 +707,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 		perUserSeriesLimitCount   = 0
 		perMetricSeriesLimitCount = 0
 
-		minAppendTime, minAppendTimeAvailable = db.Head().AppendableMinValidTime()
+		minAppendTime, minAppendTimeAvailable = db.HeadAppendableMinValidTime()
 
 		updateFirstPartial = func(errFn func() error) {
 			if firstPartialErr == nil {
@@ -1183,7 +1186,7 @@ func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesReques
 	if db == nil {
 		return nil
 	}
-	index, err := db.Head().Index()
+	index, err := db.HeadIndex()
 	if err != nil {
 		return err
 	}
@@ -1212,7 +1215,7 @@ func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequ
 	if db == nil {
 		return nil
 	}
-	idx, err := db.Head().Index()
+	idx, err := db.HeadIndex()
 	if err != nil {
 		return err
 	}
@@ -1239,7 +1242,7 @@ func createUserStats(db *userTSDB) *client.UserStatsResponse {
 		IngestionRate:     apiRate + ruleRate,
 		ApiIngestionRate:  apiRate,
 		RuleIngestionRate: ruleRate,
-		NumSeries:         db.Head().NumSeries(),
+		NumSeries:         db.HeadNumSeries(),
 	}
 }
 
@@ -1577,61 +1580,73 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		instanceSeriesCount: &i.seriesCount,
 	}
 
-	maxExemplars := i.limiter.convertGlobalToLocalLimit(userID, i.limits.MaxGlobalExemplarsPerUser(userID))
-	oooTW := time.Duration(i.limits.OutOfOrderTimeWindow(userID))
-	// Create a new user database
-	db, err := tsdb.Open(udir, userLogger, tsdbPromReg, &tsdb.Options{
-		RetentionDuration:              i.cfg.BlocksStorageConfig.TSDB.Retention.Milliseconds(),
-		MinBlockDuration:               blockRanges[0],
-		MaxBlockDuration:               blockRanges[len(blockRanges)-1],
-		NoLockfile:                     true,
-		StripeSize:                     i.cfg.BlocksStorageConfig.TSDB.StripeSize,
-		HeadChunksWriteBufferSize:      i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteBufferSize,
-		HeadChunksEndTimeVariance:      i.cfg.BlocksStorageConfig.TSDB.HeadChunksEndTimeVariance,
-		WALCompression:                 i.cfg.BlocksStorageConfig.TSDB.WALCompressionEnabled,
-		WALSegmentSize:                 i.cfg.BlocksStorageConfig.TSDB.WALSegmentSizeBytes,
-		SeriesLifecycleCallback:        userDB,
-		BlocksToDelete:                 userDB.blocksToDelete,
-		EnableExemplarStorage:          true, // enable for everyone so we can raise the limit later
-		MaxExemplars:                   int64(maxExemplars),
-		SeriesHashCache:                i.seriesHashCache,
-		EnableMemorySnapshotOnShutdown: i.cfg.BlocksStorageConfig.TSDB.MemorySnapshotOnShutdown,
-		IsolationDisabled:              true,
-		HeadChunksWriteQueueSize:       i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteQueueSize,
-		AllowOverlappingCompaction:     false,                // always false since Mimir only uploads lvl 1 compacted blocks
-		OutOfOrderTimeWindow:           oooTW.Milliseconds(), // The unit must be same as our timestamps.
-		OutOfOrderCapMax:               int64(i.cfg.BlocksStorageConfig.TSDB.OutOfOrderCapacityMax),
-	}, nil)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to open TSDB: %s", udir)
-	}
-	db.DisableCompactions() // we will compact on our own schedule
+	if i.cfg.UseHeadOnly {
+		h, err := tsdb_head_only.NewHead(tsdbPromReg, userLogger, &tsdb_head_only.HeadOptions{
+			ChunkRange:     10 * time.Minute.Milliseconds(), // TODO: hardcoded.
+			StripeSize:     i.cfg.BlocksStorageConfig.TSDB.StripeSize,
+			SeriesCallback: userDB,
+		}, nil)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to create TSDB Head")
+		}
+		userDB.head = h
+	} else {
+		maxExemplars := i.limiter.convertGlobalToLocalLimit(userID, i.limits.MaxGlobalExemplarsPerUser(userID))
+		oooTW := time.Duration(i.limits.OutOfOrderTimeWindow(userID))
+		// Create a new user database
+		db, err := tsdb.Open(udir, userLogger, tsdbPromReg, &tsdb.Options{
+			RetentionDuration:              i.cfg.BlocksStorageConfig.TSDB.Retention.Milliseconds(),
+			MinBlockDuration:               blockRanges[0],
+			MaxBlockDuration:               blockRanges[len(blockRanges)-1],
+			NoLockfile:                     true,
+			StripeSize:                     i.cfg.BlocksStorageConfig.TSDB.StripeSize,
+			HeadChunksWriteBufferSize:      i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteBufferSize,
+			HeadChunksEndTimeVariance:      i.cfg.BlocksStorageConfig.TSDB.HeadChunksEndTimeVariance,
+			WALCompression:                 i.cfg.BlocksStorageConfig.TSDB.WALCompressionEnabled,
+			WALSegmentSize:                 i.cfg.BlocksStorageConfig.TSDB.WALSegmentSizeBytes,
+			SeriesLifecycleCallback:        userDB,
+			BlocksToDelete:                 userDB.blocksToDelete,
+			EnableExemplarStorage:          true, // enable for everyone so we can raise the limit later
+			MaxExemplars:                   int64(maxExemplars),
+			SeriesHashCache:                i.seriesHashCache,
+			EnableMemorySnapshotOnShutdown: i.cfg.BlocksStorageConfig.TSDB.MemorySnapshotOnShutdown,
+			IsolationDisabled:              true,
+			HeadChunksWriteQueueSize:       i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteQueueSize,
+			AllowOverlappingCompaction:     false,                // always false since Mimir only uploads lvl 1 compacted blocks
+			OutOfOrderTimeWindow:           oooTW.Milliseconds(), // The unit must be same as our timestamps.
+			OutOfOrderCapMax:               int64(i.cfg.BlocksStorageConfig.TSDB.OutOfOrderCapacityMax),
+		}, nil)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to open TSDB: %s", udir)
+		}
+		db.DisableCompactions() // we will compact on our own schedule
 
-	// Run compaction before using this TSDB. If there is data in head that needs to be put into blocks,
-	// this will actually create the blocks. If there is no data (empty TSDB), this is a no-op, although
-	// local blocks compaction may still take place if configured.
-	level.Info(userLogger).Log("msg", "Running compaction after WAL replay")
-	err = db.Compact()
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to compact TSDB: %s", udir)
-	}
+		// Run compaction before using this TSDB. If there is data in head that needs to be put into blocks,
+		// this will actually create the blocks. If there is no data (empty TSDB), this is a no-op, although
+		// local blocks compaction may still take place if configured.
+		level.Info(userLogger).Log("msg", "Running compaction after WAL replay")
+		err = db.Compact()
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to compact TSDB: %s", udir)
+		}
 
-	userDB.db = db
+		userDB.db = db
+	}
 	// We set the limiter here because we don't want to limit
 	// series during WAL replay.
 	userDB.limiter = i.limiter
 
-	if db.Head().NumSeries() > 0 {
+	if userDB.HeadNumSeries() > 0 {
 		// If there are series in the head, use max time from head. If this time is too old,
 		// TSDB will be eligible for flushing and closing sooner, unless more data is pushed to it quickly.
-		userDB.setLastUpdate(util.TimeFromMillis(db.Head().MaxTime()))
+		userDB.setLastUpdate(util.TimeFromMillis(userDB.HeadMaxTime()))
 	} else {
 		// If head is empty (eg. new TSDB), don't close it right after.
 		userDB.setLastUpdate(time.Now())
 	}
 
 	// Create a new shipper for this database
-	if i.cfg.BlocksStorageConfig.TSDB.IsBlocksShippingEnabled() {
+	if !i.cfg.UseHeadOnly && i.cfg.BlocksStorageConfig.TSDB.IsBlocksShippingEnabled() {
 		userDB.shipper = NewShipper(
 			userLogger,
 			tsdbPromReg,
@@ -1690,6 +1705,11 @@ func (i *Ingester) closeAllTSDB() {
 // openExistingTSDB walks the user tsdb dir, and opens a tsdb for each user. This may start a WAL replay, so we limit the number of
 // concurrently opening TSDB.
 func (i *Ingester) openExistingTSDB(ctx context.Context) error {
+	if i.cfg.UseHeadOnly {
+		level.Info(i.logger).Log("msg", "not opening TSDB, using head only")
+		return nil
+	}
+
 	level.Info(i.logger).Log("msg", "opening existing TSDBs")
 
 	queue := make(chan string)
@@ -1801,7 +1821,7 @@ func (i *Ingester) getMemorySeriesMetric() float64 {
 
 	count := uint64(0)
 	for _, db := range i.tsdbs {
-		count += db.Head().NumSeries()
+		count += db.HeadNumSeries()
 	}
 
 	return float64(count)
@@ -1964,8 +1984,7 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, allowed *util.
 		}
 
 		// Don't do anything, if there is nothing to compact.
-		h := userDB.Head()
-		if h.NumSeries() == 0 {
+		if userDB.HeadNumSeries() == 0 {
 			return nil
 		}
 
@@ -2048,7 +2067,7 @@ func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckRes
 	// At this point there are no more pushes to TSDB, and no possible compaction. Normally TSDB is empty,
 	// but if we're closing TSDB because of tenant deletion mark, then it may still contain some series.
 	// We need to remove these series from series count.
-	i.seriesCount.Sub(int64(userDB.Head().NumSeries()))
+	i.seriesCount.Sub(int64(userDB.HeadNumSeries()))
 
 	dir := userDB.db.Dir()
 
