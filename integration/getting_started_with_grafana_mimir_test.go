@@ -112,17 +112,19 @@ func runTestPushHistogramSeriesAndQueryBack(t *testing.T, mimir *e2emimir.MimirS
 
 	// Push some series to Mimir.
 	now := time.Now()
-	series, _, _ := generateHistogramSeries("series_1", now, prompb.Label{Name: "foo", Value: "bar"})
+	series, expectedVector, _ := generateHistogramSeries("series_1bc", now, prompb.Label{Name: "foobc", Value: "barbc"})
 
 	res, err := c.Push(series)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, res.StatusCode)
 
+	t.Log(series)
+
 	// Query the series.
-	// result, err := c.Query("series_1", now)
-	// require.NoError(t, err)
-	// require.Equal(t, model.ValVector, result.Type())
-	// assert.Equal(t, expectedVector, result.(model.Vector))
+	result, err := c.Query("series_1bc", now)
+	require.NoError(t, err)
+	require.Equal(t, model.ValVector, result.Type())
+	assert.Equal(t, expectedVector, result.(model.Vector))
 
 	labelValues, err := c.LabelValues("foo", prometheusMinTime, prometheusMaxTime, nil)
 	require.NoError(t, err)
