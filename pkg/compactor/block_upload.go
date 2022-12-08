@@ -299,7 +299,7 @@ func (c *MultitenantCompactor) completeBlockUpload(logger log.Logger, userBkt ob
 
 	// Upload meta file so block is considered complete
 	if err := c.uploadMeta(ctx, logger, meta, blockID, block.MetaFilename, userBkt); err != nil {
-		level.Error(logger).Log("msg", "error uploading block metadata file")
+		level.Error(logger).Log("msg", "error uploading block metadata file", "err", err)
 		if !errors.Is(err, context.Canceled) {
 			err := c.uploadValidationWithError(ctx, blockID, userBkt, err.Error())
 			if err != nil {
@@ -413,18 +413,19 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, blockID ulid.U
 	userBkt objstore.Bucket, meta metadata.Meta) error {
 
 	// create a temporary directory to download the block
-	// on normal compactors this will be in the compartor's data directory, but in other cases (like some tests)
+	// on normal compactors this will be in the compactor's data directory, but in other cases (like some tests)
 	// the fallback will be the system's temp directory
-	tmpDir := os.TempDir()
+	tmpDir := ""
 	if _, err := os.Stat(c.compactorCfg.DataDir); !os.IsNotExist(err) {
 		tmpDir = c.compactorCfg.DataDir
 	}
 	blockDir, err := os.MkdirTemp(tmpDir, "upload")
 
-	level.Debug(c.logger).Log("msg", "created temporary block directory", "dir", blockDir)
 	if err != nil {
 		return errors.Wrap(err, "failed to create temp dir")
 	}
+	level.Debug(c.logger).Log("msg", "created temporary block directory", "dir", blockDir)
+
 	defer func() {
 		level.Debug(c.logger).Log("msg", "removing temporary block directory", "dir", blockDir)
 		if err := os.RemoveAll(blockDir); err != nil {
@@ -441,7 +442,7 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, blockID ulid.U
 
 	// rename the temporary meta file name to the expected one locally so that the block can be inspected
 	_, err = os.Stat(filepath.Join(blockDir, uploadingMetaFilename))
-	if err == nil {
+	if err != nil {
 		return errors.Wrapf(err, "could not stat %s in download directory", uploadingMetaFilename)
 	}
 	err = os.Rename(filepath.Join(blockDir, uploadingMetaFilename), filepath.Join(blockDir, block.MetaFilename))
