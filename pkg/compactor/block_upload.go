@@ -37,6 +37,7 @@ import (
 const (
 	uploadingMetaFilename = "uploading-meta.json"
 	validationFilename    = "validation.json"
+	validationUpdateDelay = 1 * time.Minute
 )
 
 var rePath = regexp.MustCompile(`^(index|chunks/\d{6})$`)
@@ -282,9 +283,9 @@ func (c *MultitenantCompactor) completeBlockUpload(logger log.Logger, userBkt ob
 
 	if err := c.validateBlock(ctx, blockID, userBkt, meta); err != nil {
 		level.Error(logger).Log("msg", "error while validating block", "err", err)
+		close(ch)
+		wg.Wait()
 		if !errors.Is(err, context.Canceled) {
-			close(ch)
-			wg.Wait()
 			err := c.uploadValidationWithError(ctx, blockID, userBkt, err.Error())
 			if err != nil {
 				level.Error(logger).Log("msg", "error updating validation file after failed validation in object store", "err", err)
@@ -689,11 +690,14 @@ func (c *MultitenantCompactor) uploadValidation(ctx context.Context, logger log.
 func (c *MultitenantCompactor) periodicValidationUpdater(ctx context.Context, logger log.Logger, blockID ulid.ULID,
 	userBkt objstore.Bucket, ch chan string, wg *sync.WaitGroup, cancelFn func()) {
 	defer wg.Done()
+	delay := time.NewTimer(validationUpdateDelay)
+	defer delay.Stop()
 	for {
+		delay.Reset(validationUpdateDelay)
 		select {
 		case <-ch:
 			return
-		case <-time.After(1 * time.Minute):
+		case <-delay.C:
 			if err := c.uploadValidation(ctx, logger, blockID, userBkt); err != nil {
 				level.Warn(logger).Log("msg", "error during periodic update of validation file", "err", err)
 				cancelFn()
