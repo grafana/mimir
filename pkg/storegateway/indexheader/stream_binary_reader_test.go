@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/rand"
 	"path/filepath"
+	"sort"
 	"testing"
 	"time"
 
@@ -99,6 +100,48 @@ func benchmarkLookupSymbol(ctx context.Context, b *testing.B, bucketDir string, 
 			count++
 		}
 	})
+}
+
+func BenchmarkLabelNames(b *testing.B) {
+	ctx := context.Background()
+
+	bucketDir := b.TempDir()
+	bkt, err := filesystem.NewBucket(filepath.Join(bucketDir, "bkt"))
+	require.NoError(b, err)
+	b.Cleanup(func() {
+		require.NoError(b, bkt.Close())
+	})
+
+	for _, nameCount := range []int{20, 50, 100, 200} {
+		for _, valueCount := range []int{100, 500, 1000} {
+			nameSymbols := generateSymbols("name", nameCount)
+			valueSymbols := generateSymbols("value", valueCount)
+			idIndexV2, err := testhelper.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"), 124, metadata.NoneFunc)
+			require.NoError(b, err)
+			require.NoError(b, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, idIndexV2.String()), metadata.NoneFunc))
+
+			indexName := filepath.Join(bucketDir, idIndexV2.String(), block.IndexHeaderFilename)
+			require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
+
+			b.Run(fmt.Sprintf("%vNames%vValues", nameCount, valueCount), func(b *testing.B) {
+				br, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, bucketDir, idIndexV2, 3)
+				require.NoError(b, err)
+				b.Cleanup(func() {
+					require.NoError(b, br.Close())
+				})
+
+				sort.Strings(nameSymbols)
+				b.ResetTimer()
+
+				for i := 0; i < b.N; i++ {
+					actualNames, err := br.LabelNames()
+
+					require.NoError(b, err)
+					require.Equal(b, nameSymbols, actualNames)
+				}
+			})
+		}
+	}
 }
 
 func generateSymbols(suffix string, count int) []string {
