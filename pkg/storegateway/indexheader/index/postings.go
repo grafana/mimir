@@ -317,7 +317,7 @@ func (t *PostingOffsetTableV2) PostingsOffset(name string, values ...string) (r 
 			// │ └────────────────────────────────────────┘ │
 			// First, let's skip n and name.
 			skipNAndName(&d, &buf)
-			value := d.UvarintBytes() // Label value.
+			value := d.UvarintStr() // Label value.
 			postingOffset := int64(d.Uvarint64())
 
 			if len(newSameRngs) > 0 {
@@ -329,13 +329,13 @@ func (t *PostingOffsetTableV2) PostingsOffset(name string, values ...string) (r 
 				newSameRngs = newSameRngs[:0]
 			}
 
-			for string(value) >= wantedValue {
+			for value >= wantedValue {
 				// If wantedValue is equals of greater than current value, loop over all given wanted values in the values until
 				// this is no longer true or there are no more values wanted.
 				// This ensures we cover case when someone asks for postingsOffset(name, value1, value1, value1).
 
 				// Record on the way if wanted value is equal to the current value.
-				if string(value) == wantedValue {
+				if value == wantedValue {
 					newSameRngs = append(newSameRngs, index.Range{Start: postingOffset + postingLengthFieldSize})
 				}
 				valueIndex++
