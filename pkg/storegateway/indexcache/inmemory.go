@@ -345,14 +345,23 @@ func (c *InMemoryIndexCache) FetchExpandedPostings(_ context.Context, userID str
 	return c.get(cacheKeyExpandedPostings{userID, blockID, key})
 }
 
+func (c *InMemoryIndexCache) StoreSeriesParts(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, v []byte) {
+	// TODO dimitarvdimitrov
+}
+
 // StoreSeries stores the result of a Series() call.
-func (c *InMemoryIndexCache) StoreSeries(_ context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, v []byte) {
-	c.set(cacheKeySeries{userID, blockID, matchersKey, shardKey(shard)}, v)
+func (c *InMemoryIndexCache) StoreSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, part int, v []byte) {
+	c.set(cacheKeySeries{userID, blockID, matchersKey, shardKey(shard), part}, v)
+}
+
+func (c *InMemoryIndexCache) FetchSeriesParts(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector) (parts []byte, b bool) {
+	// TODO dimitarvdimitrov
+	return nil, false
 }
 
 // FetchSeries fetches the result of a Series() call.
-func (c *InMemoryIndexCache) FetchSeries(_ context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector) ([]byte, bool) {
-	return c.get(cacheKeySeries{userID, blockID, matchersKey, shardKey(shard)})
+func (c *InMemoryIndexCache) FetchSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, part int) ([]byte, bool) {
+	return c.get(cacheKeySeries{userID, blockID, matchersKey, shardKey(shard), part})
 }
 
 // StoreLabelNames stores the result of a LabelNames() call.
@@ -428,6 +437,7 @@ type cacheKeySeries struct {
 	block       ulid.ULID
 	matchersKey LabelMatchersKey
 	shard       string
+	part        int
 }
 
 func (c cacheKeySeries) typ() string {

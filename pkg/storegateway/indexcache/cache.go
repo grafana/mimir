@@ -60,10 +60,14 @@ type IndexCache interface {
 	// FetchExpandedPostings fetches the result of ExpandedPostings, encoded with an unspecified codec.
 	FetchExpandedPostings(ctx context.Context, userID string, blockID ulid.ULID, key LabelMatchersKey) ([]byte, bool)
 
+	// StoreSeriesParts stores the number of parts in which this series was cached
+	StoreSeriesParts(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, v []byte)
 	// StoreSeries stores the result of a Series() call.
-	StoreSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, v []byte)
+	StoreSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, part int, v []byte)
+	// FetchSeriesParts stores the number of parts in which this series was cached
+	FetchSeriesParts(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector) ([]byte, bool)
 	// FetchSeries fetches the result of a Series() call.
-	FetchSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector) ([]byte, bool)
+	FetchSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, part int) ([]byte, bool)
 
 	// StoreLabelNames stores the result of a LabelNames() call.
 	StoreLabelNames(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, v []byte)

@@ -393,11 +393,11 @@ func TestMemcachedIndexCache_FetchSeries(t *testing.T) {
 			// Store the postings expected before running the test.
 			ctx := context.Background()
 			for _, p := range testData.setup {
-				c.StoreSeries(ctx, p.userID, p.block, CanonicalLabelMatchersKey(p.matchers), p.shard, p.value)
+				c.StoreSeries(ctx, p.userID, p.block, CanonicalLabelMatchersKey(p.matchers), p.shard, 0, p.value)
 			}
 
 			// Fetch postings from cached and assert on it.
-			data, ok := c.FetchSeries(ctx, testData.fetchUserID, testData.fetchBlockID, testData.fetchKey, testData.fetchShard)
+			data, ok := c.FetchSeries(ctx, testData.fetchUserID, testData.fetchBlockID, testData.fetchKey, testData.fetchShard, 0)
 			assert.Equal(t, testData.expectedData, data)
 			assert.Equal(t, testData.expectedOk, ok)
 

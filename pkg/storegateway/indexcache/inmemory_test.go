@@ -172,10 +172,10 @@ func TestInMemoryIndexCache_UpdateItem(t *testing.T) {
 		{
 			typ: cacheTypeSeries,
 			set: func(id uint64, b []byte) {
-				cache.StoreSeries(ctx, user, uid(id), CanonicalLabelMatchersKey(matchers), shard, b)
+				cache.StoreSeries(ctx, user, uid(id), CanonicalLabelMatchersKey(matchers), shard, 0, b)
 			},
 			get: func(id uint64) ([]byte, bool) {
-				return cache.FetchSeries(ctx, user, uid(id), CanonicalLabelMatchersKey(matchers), shard)
+				return cache.FetchSeries(ctx, user, uid(id), CanonicalLabelMatchersKey(matchers), shard, 0)
 			},
 		},
 		{

@@ -1352,7 +1352,25 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 			indexReader := block.indexReader()
 			defer indexReader.Close()
 
-			iterator, err := openBlockSeriesChunkRefsSetsIterator(ctx, testCase.batchSize, indexReader, block.meta, []*labels.Matcher{testCase.matcher}, nil, hashcache.NewSeriesHashCache(1024*1024).GetBlockCache(block.meta.ULID.String()), &limiter{limit: testCase.chunksLimit}, &limiter{limit: testCase.seriesLimit}, false, block.meta.MinTime, block.meta.MaxTime, newSafeQueryStats(), NewBucketStoreMetrics(prometheus.NewRegistry()))
+			iterator, err := openBlockSeriesChunkRefsSetsIterator(
+				ctx,
+				testCase.batchSize,
+				"",
+				indexReader,
+				nil,
+				block.meta,
+				[]*labels.Matcher{testCase.matcher},
+				nil,
+				hashcache.NewSeriesHashCache(1024*1024).GetBlockCache(block.meta.ULID.String()),
+				&limiter{limit: testCase.chunksLimit},
+				&limiter{limit: testCase.seriesLimit},
+				false,
+				block.meta.MinTime,
+				block.meta.MaxTime,
+				newSafeQueryStats(),
+				NewBucketStoreMetrics(prometheus.NewRegistry()),
+				nil,
+			)
 			require.NoError(t, err)
 
 			actualSeriesSets := readAllSeriesChunkRefsSet(iterator)
