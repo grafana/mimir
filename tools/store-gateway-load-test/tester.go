@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"sort"
 	"sync"
@@ -186,7 +187,7 @@ func (t *tester) sendRequestToStoreGateway(ctx context.Context, client querier.B
 	if err != nil {
 		return nil, err
 	}
-
+	hasher := crc32.NewIEEE()
 	for {
 		// Ensure the context hasn't been canceled in the meanwhile).
 		if ctx.Err() != nil {
@@ -203,9 +204,14 @@ func (t *tester) sendRequestToStoreGateway(ctx context.Context, client querier.B
 
 		if keepResults {
 			if series := resp.GetSeries(); series != nil {
-				// Remove all chunks data. We only want to keep track of chunks refs.
+				// Keep only hashed chunks data to consume less memory.
 				for _, chunk := range series.Chunks {
-					chunk.Raw = nil
+					hasher.Reset()
+					_, err = hasher.Write(chunk.Raw.Data)
+					if err != nil {
+						return nil, err
+					}
+					chunk.Raw.Data = hasher.Sum(nil)
 				}
 
 				receivedSeries = append(receivedSeries, series)

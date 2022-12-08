@@ -96,7 +96,7 @@ func TestCompareSeries(t *testing.T) {
 			},
 			expectedErr: "the number of chunks don't match for series at position 1",
 		},
-		"should fail the series match, the number of chunks match but the actual chunks don't": {
+		"should fail the series match, the number of chunks match but the actual chunk refs don't": {
 			first: []*storepb.Series{
 				{
 					Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: "metric_1"}},
@@ -113,6 +113,27 @@ func TestCompareSeries(t *testing.T) {
 				}, {
 					Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: "metric_2"}},
 					Chunks: []storepb.AggrChunk{{MinTime: 15, MaxTime: 25}, {MinTime: 25, MaxTime: 35}},
+				},
+			},
+			expectedErr: "the chunks don't match for series at position 1",
+		},
+		"should fail the series match, the number of chunks match but the actual chunk contents don't": {
+			first: []*storepb.Series{
+				{
+					Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: "metric_1"}},
+					Chunks: []storepb.AggrChunk{{MinTime: 10, MaxTime: 20}, {MinTime: 20, MaxTime: 30, Raw: &storepb.Chunk{Data: []byte{1, 2, 3}}}},
+				}, {
+					Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: "metric_2"}},
+					Chunks: []storepb.AggrChunk{{MinTime: 15, MaxTime: 25}, {MinTime: 25, MaxTime: 35, Raw: &storepb.Chunk{Data: []byte{3, 2, 1}}}},
+				},
+			},
+			second: []*storepb.Series{
+				{
+					Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: "metric_1"}},
+					Chunks: []storepb.AggrChunk{{MinTime: 10, MaxTime: 20}, {MinTime: 20, MaxTime: 30, Raw: &storepb.Chunk{Data: []byte{1, 2, 3}}}},
+				}, {
+					Labels: []mimirpb.LabelAdapter{{Name: "__name__", Value: "metric_2"}},
+					Chunks: []storepb.AggrChunk{{MinTime: 15, MaxTime: 25}, {MinTime: 25, MaxTime: 35, Raw: &storepb.Chunk{Data: []byte{1, 2, 3}}}},
 				},
 			},
 			expectedErr: "the chunks don't match for series at position 1",
