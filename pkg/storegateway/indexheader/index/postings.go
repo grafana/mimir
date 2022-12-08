@@ -81,7 +81,7 @@ func newV1PostingOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset
 	}
 
 	if lastKey != nil {
-		prevRng.End = int64(indexLastPostingEnd) - crc32.Size
+		prevRng.End = int64(indexLastPostingEnd) - crc32.Size // Each posting offset table ends with a CRC32 checksum.
 		t.postings[lastKey[0]][lastKey[1]] = prevRng
 	}
 
@@ -141,7 +141,7 @@ func newV2PostingOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset
 		}
 		// In any case lastValOffset is unknown as don't have next posting anymore. Guess from TOC table.
 		// In worst case we will overfetch a few bytes.
-		t.postings[lastKey[0]].lastValOffset = int64(indexLastPostingEnd) - crc32.Size
+		t.postings[lastKey[0]].lastValOffset = int64(indexLastPostingEnd) - crc32.Size // Each posting offset table ends with a CRC32 checksum.
 	}
 	// Trim any extra space in the slices.
 	for k, v := range t.postings {
