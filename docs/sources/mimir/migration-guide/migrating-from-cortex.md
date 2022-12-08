@@ -216,13 +216,13 @@ v1.7.0 to grafana/mimir-distributed v3.1.0 helm chart.
 
    b. Install the recording and alerting rules into the ruler or a Prometheus server.
 
-1. Run the following command to add the Grafana Helm chart repository:
+2. Run the following command to add the Grafana Helm chart repository:
 
    ```bash
    helm repo add grafana https://grafana.github.io/helm-charts
    ```
 
-1. Convert the Cortex configuration in your `values.yaml` file.
+3. Convert the Cortex configuration in your `values.yaml` file.
 
    a. Extract the Cortex configuration and write the output to the `cortex.yaml` file.
 
@@ -233,7 +233,7 @@ v1.7.0 to grafana/mimir-distributed v3.1.0 helm chart.
    b. Use `mimirtool` to update the configuration.
 
    ```bash
-   mimirtool config convert --yaml-file cortex.yaml
+   mimirtool config convert --gem --yaml-file cortex.yaml --yaml-out mimir.yaml
    ```
 
    c. Clean up generated yaml config
@@ -243,7 +243,7 @@ v1.7.0 to grafana/mimir-distributed v3.1.0 helm chart.
 
    ```bash
    # require yq v4
-   yq 'del(.activity_tracker.filepath,.alertmanager.data_dir,.compactor.data_dir)'
+   yq -i 'del(.activity_tracker.filepath,.alertmanager.data_dir,.compactor.data_dir)' mimir.yaml
    ```
 
    d. Place the updated configuration under the `mimir.structuredConfig` key at the top level of your Helm values file.
@@ -287,22 +287,7 @@ v1.7.0 to grafana/mimir-distributed v3.1.0 helm chart.
      enabled: false
    ```
 
-   h. Fix nginx.conf (may not be required)
-
-   > **Note:** If you didn't override `api.prometheus_http_prefix` you can ignore this step.
-
-   If you set `api.prometheus_http_prefix` when installing/upgrading to Mimir,
-   [the nginx.conf that will be created in the config-maps going to be invalid](https://github.com/grafana/mimir/issues/3086).
-   This issue is fixed in mimir-distributed v4.0.0. Although there is also option for not using nginx in
-   mimir-distributed v4.0.0.
-
-   In the meantime, you can use the following command to patch the configuration.
-
-   ```bash
-   kubectl get cm -n <namespace> <nginx-config-map-name> -o yaml | gsed  -e "/Rest of/{N;s/\n//;}" | kubectl apply -f -
-   ```
-
-1. Run the Helm upgrade with the Grafana Mimir chart.
+4. Run the Helm upgrade with the Grafana Mimir chart.
 
    > **Note:** The name of the release must match your Cortex Helm chart release.
 
