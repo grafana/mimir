@@ -960,8 +960,7 @@ store_gateway_client:
 # CLI flag: -querier.shuffle-sharding-ingesters-enabled
 [shuffle_sharding_ingesters_enabled: <boolean> | default = true]
 
-# The maximum number of concurrent queries. This config option should be set on
-# query-frontend too when query sharding is enabled.
+# The maximum number of concurrent queries.
 # CLI flag: -querier.max-concurrent
 [max_concurrent: <int> | default = 20]
 
