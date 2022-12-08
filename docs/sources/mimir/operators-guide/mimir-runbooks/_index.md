@@ -476,6 +476,25 @@ How to **investigate**:
 
 - Look for details in the ingester logs
 
+### MimirIngesterInstanceHasNoTenants
+
+This alert fires when an ingester instance doesn't own any tenants and is therefore idling.
+
+How it **works**:
+
+- Ingesters join a hash ring that facilitates per-tenant request sharding across ingester replicas.
+- Distributors shard requests belonging to an individual tenant across a subset of ingester replicas. The number of replicas used per tenant is determined by the `-distributor.ingestion-tenant-shard-size` or the `ingestion_tenant_shard_size` limit.
+- When the tenant shard size is lower than the number of ingester replicas, some ingesters may not receive requests for any tenants.
+- This is more likely to happen in Mimir clusters with a lower number of tenants.
+
+How to **fix** it:
+
+There are three options:
+
+- Decrease the number of ingester replicas to match the highest number of shards per tenant or
+- Increase the shard size of one or more tenants to match the number of ingester replicas or
+- Set the shard size of one or more tenants to `0`; this will shard this tenant's requests across all ingesters.
+
 ### MimirQuerierHasNotScanTheBucket
 
 This alert fires when a Mimir querier is not successfully scanning blocks in the storage (bucket). A querier is expected to periodically iterate the bucket to find new and deleted blocks (defaults to every 5m) and if it's not successfully synching the bucket since a long time, it may end up querying only a subset of blocks, thus leading to potentially partial results.
