@@ -16,43 +16,63 @@ package tsdb
 import (
 	"context"
 	"fmt"
-	"io"
-	"math"
 	"math/rand"
-	"os"
-	"path"
-	"path/filepath"
 	"sort"
 	"strconv"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
-	"github.com/prometheus/prometheus/tsdb/record"
-	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
-	"github.com/prometheus/prometheus/tsdb/wal"
 )
 
 const (
 	defaultLabelName  = "labelName"
 	defaultLabelValue = "labelValue"
 )
+
+var DefaultBlockDuration = 2 * time.Hour.Milliseconds()
+
+// query runs a matcher query against the querier and fully expands its data.
+func query(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[string][]tsdbutil.Sample {
+	ss := q.Select(false, nil, matchers...)
+	defer func() {
+		require.NoError(t, q.Close())
+	}()
+
+	result := map[string][]tsdbutil.Sample{}
+	for ss.Next() {
+		series := ss.At()
+
+		samples := []tsdbutil.Sample{}
+		it := series.Iterator()
+		for it.Next() {
+			t, v := it.At()
+			samples = append(samples, sample{t: t, v: v})
+		}
+		require.NoError(t, it.Err())
+
+		if len(samples) == 0 {
+			continue
+		}
+
+		name := series.Labels().String()
+		result[name] = samples
+	}
+	require.NoError(t, ss.Err())
+	require.Equal(t, 0, len(ss.Warnings()))
+
+	return result
+}
 
 // genSeries generates series with a given number of labels and values.
 func genSeries(totalSeries, labelCount int, mint, maxt int64) []storage.Series {
@@ -77,19 +97,19 @@ func genSeries(totalSeries, labelCount int, mint, maxt int64) []storage.Series {
 	return series
 }
 
-func newTestHead(t testing.TB, chunkRange int64, _, _ bool) (*Head, *wal.WAL) {
+func newTestHead(t testing.TB, chunkRange int64, _, _ bool) *Head {
 	opts := DefaultHeadOptions()
 	opts.ChunkRange = chunkRange
 
 	h, err := NewHead(nil, nil, opts, nil)
 	require.NoError(t, err)
 
-	return h, nil
+	return h
 }
 
 func BenchmarkCreateSeries(b *testing.B) {
 	series := genSeries(b.N, 10, 0, 0)
-	h, _ := newTestHead(b, 10000, false, false)
+	h := newTestHead(b, 10000, false, false)
 	defer func() {
 		require.NoError(b, h.Close())
 	}()
@@ -102,64 +122,12 @@ func BenchmarkCreateSeries(b *testing.B) {
 	}
 }
 
-func populateTestWAL(t testing.TB, w *wal.WAL, recs []interface{}) {
-	var enc record.Encoder
-	for _, r := range recs {
-		switch v := r.(type) {
-		case []record.RefSeries:
-			require.NoError(t, w.Log(enc.Series(v, nil)))
-		case []record.RefSample:
-			require.NoError(t, w.Log(enc.Samples(v, nil)))
-		case []tombstones.Stone:
-			require.NoError(t, w.Log(enc.Tombstones(v, nil)))
-		case []record.RefExemplar:
-			require.NoError(t, w.Log(enc.Exemplars(v, nil)))
-		}
-	}
-}
-
-func readTestWAL(t testing.TB, dir string) (recs []interface{}) {
-	sr, err := wal.NewSegmentsReader(dir)
-	require.NoError(t, err)
-	defer sr.Close()
-
-	var dec record.Decoder
-	r := wal.NewReader(sr)
-
-	for r.Next() {
-		rec := r.Record()
-
-		switch dec.Type(rec) {
-		case record.Series:
-			series, err := dec.Series(rec, nil)
-			require.NoError(t, err)
-			recs = append(recs, series)
-		case record.Samples:
-			samples, err := dec.Samples(rec, nil)
-			require.NoError(t, err)
-			recs = append(recs, samples)
-		case record.Tombstones:
-			tstones, err := dec.Tombstones(rec, nil)
-			require.NoError(t, err)
-			recs = append(recs, tstones)
-		case record.Metadata:
-			meta, err := dec.Metadata(rec, nil)
-			require.NoError(t, err)
-			recs = append(recs, meta)
-		default:
-			t.Fatalf("unknown record type")
-		}
-	}
-	require.NoError(t, r.Err())
-	return recs
-}
-
 // TestHead_HighConcurrencyReadAndWrite generates 1000 series with a step of 15s and fills a whole block with samples,
 // this means in total it generates 4000 chunks because with a step of 15s there are 4 chunks per block per series.
 // While appending the samples to the head it concurrently queries them from multiple go routines and verifies that the
 // returned results are correct.
 func TestHead_HighConcurrencyReadAndWrite(t *testing.T) {
-	head, _ := newTestHead(t, DefaultBlockDuration, false, false)
+	head := newTestHead(t, DefaultBlockDuration, false, false)
 	defer func() {
 		require.NoError(t, head.Close())
 	}()
@@ -239,7 +207,7 @@ func TestHead_HighConcurrencyReadAndWrite(t *testing.T) {
 
 	// queryHead is a helper to query the head for a given time range and labelset.
 	queryHead := func(mint, maxt uint64, label labels.Label) (map[string][]tsdbutil.Sample, error) {
-		q, err := NewBlockQuerier(head, int64(mint), int64(maxt))
+		q, err := tsdb.NewBlockQuerier(head, int64(mint), int64(maxt))
 		if err != nil {
 			return nil, err
 		}
@@ -344,7 +312,7 @@ func TestHead_HighConcurrencyReadAndWrite(t *testing.T) {
 }
 
 func TestHead_ActiveAppenders(t *testing.T) {
-	head, _ := newTestHead(t, 1000, false, false)
+	head := newTestHead(t, 1000, false, false)
 	defer head.Close()
 
 	require.NoError(t, head.Init(0))
@@ -376,15 +344,8 @@ func TestHead_ActiveAppenders(t *testing.T) {
 	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
 }
 
-func TestHead_UnknownWALRecord(t *testing.T) {
-	head, w := newTestHead(t, 1000, false, false)
-	w.Log([]byte{255, 42})
-	require.NoError(t, head.Init(0))
-	require.NoError(t, head.Close())
-}
-
 func TestHead_Truncate(t *testing.T) {
-	h, _ := newTestHead(t, 1000, false, false)
+	h := newTestHead(t, 1000, false, false)
 	defer func() {
 		require.NoError(t, h.Close())
 	}()
@@ -396,35 +357,35 @@ func TestHead_Truncate(t *testing.T) {
 	s3, _, _ := h.getOrCreate(3, labels.FromStrings("a", "1", "b", "2"))
 	s4, _, _ := h.getOrCreate(4, labels.FromStrings("a", "2", "b", "2", "c", "1"))
 
-	s1.mmappedChunks = []*mmappedChunk{
+	s1.finishedChunks = []*memChunk{
 		{minTime: 0, maxTime: 999},
 		{minTime: 1000, maxTime: 1999},
 		{minTime: 2000, maxTime: 2999},
 	}
-	s2.mmappedChunks = []*mmappedChunk{
+	s2.finishedChunks = []*memChunk{
 		{minTime: 1000, maxTime: 1999},
 		{minTime: 2000, maxTime: 2999},
 		{minTime: 3000, maxTime: 3999},
 	}
-	s3.mmappedChunks = []*mmappedChunk{
+	s3.finishedChunks = []*memChunk{
 		{minTime: 0, maxTime: 999},
 		{minTime: 1000, maxTime: 1999},
 	}
-	s4.mmappedChunks = []*mmappedChunk{}
+	s4.finishedChunks = []*memChunk{}
 
 	// Truncation need not be aligned.
 	require.NoError(t, h.Truncate(1))
 
 	require.NoError(t, h.Truncate(2000))
 
-	require.Equal(t, []*mmappedChunk{
+	require.Equal(t, []*memChunk{
 		{minTime: 2000, maxTime: 2999},
-	}, h.series.getByID(s1.ref).mmappedChunks)
+	}, h.series.getByID(s1.ref).finishedChunks)
 
-	require.Equal(t, []*mmappedChunk{
+	require.Equal(t, []*memChunk{
 		{minTime: 2000, maxTime: 2999},
 		{minTime: 3000, maxTime: 3999},
-	}, h.series.getByID(s2.ref).mmappedChunks)
+	}, h.series.getByID(s2.ref).finishedChunks)
 
 	require.Nil(t, h.series.getByID(s3.ref))
 	require.Nil(t, h.series.getByID(s4.ref))
@@ -467,503 +428,6 @@ func TestHead_Truncate(t *testing.T) {
 		"a": {"1": struct{}{}, "2": struct{}{}},
 		"b": {"1": struct{}{}},
 	}, values)
-}
-
-// Validate various behaviors brought on by firstChunkID accounting for
-// garbage collected chunks.
-func TestMemSeries_truncateChunks(t *testing.T) {
-	dir := t.TempDir()
-	// This is usually taken from the Head, but passing manually here.
-	chunkDiskMapper, err := chunks.NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), chunks.DefaultWriteBufferSize, chunks.DefaultWriteQueueSize)
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, chunkDiskMapper.Close())
-	}()
-	const chunkRange = 2000
-
-	memChunkPool := sync.Pool{
-		New: func() interface{} {
-			return &memChunk{}
-		},
-	}
-
-	lbls := labels.FromStrings("a", "b")
-	s := newMemSeries(lbls, 1, lbls.Hash(), 0, defaultIsolationDisabled)
-
-	for i := 0; i < 4000; i += 5 {
-		ok, _ := s.append(int64(i), float64(i), 0, chunkDiskMapper, chunkRange)
-		require.True(t, ok, "sample append failed")
-	}
-
-	// Check that truncate removes half of the chunks and afterwards
-	// that the ID of the last chunk still gives us the same chunk afterwards.
-	countBefore := len(s.mmappedChunks) + 1 // +1 for the head chunk.
-	lastID := s.headChunkID(countBefore - 1)
-	lastChunk, _, err := s.chunk(lastID, chunkDiskMapper, &memChunkPool)
-	require.NoError(t, err)
-	require.NotNil(t, lastChunk)
-
-	chk, _, err := s.chunk(0, chunkDiskMapper, &memChunkPool)
-	require.NotNil(t, chk)
-	require.NoError(t, err)
-
-	s.truncateChunksBefore(2000, 0)
-
-	require.Equal(t, int64(2000), s.mmappedChunks[0].minTime)
-	_, _, err = s.chunk(0, chunkDiskMapper, &memChunkPool)
-	require.Equal(t, storage.ErrNotFound, err, "first chunks not gone")
-	require.Equal(t, countBefore/2, len(s.mmappedChunks)+1) // +1 for the head chunk.
-	chk, _, err = s.chunk(lastID, chunkDiskMapper, &memChunkPool)
-	require.NoError(t, err)
-	require.Equal(t, lastChunk, chk)
-}
-
-func TestHeadDeleteSeriesWithoutSamples(t *testing.T) {
-	for _, compress := range []bool{false, true} {
-		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
-			entries := []interface{}{
-				[]record.RefSeries{
-					{Ref: 10, Labels: labels.FromStrings("a", "1")},
-				},
-				[]record.RefSample{},
-				[]record.RefSeries{
-					{Ref: 50, Labels: labels.FromStrings("a", "2")},
-				},
-				[]record.RefSample{
-					{Ref: 50, T: 80, V: 1},
-					{Ref: 50, T: 90, V: 1},
-				},
-			}
-			head, w := newTestHead(t, 1000, compress, false)
-			defer func() {
-				require.NoError(t, head.Close())
-			}()
-
-			populateTestWAL(t, w, entries)
-
-			require.NoError(t, head.Init(math.MinInt64))
-
-			require.NoError(t, head.Delete(0, 100, labels.MustNewMatcher(labels.MatchEqual, "a", "1")))
-		})
-	}
-}
-
-func TestHeadDeleteSimple(t *testing.T) {
-	buildSmpls := func(s []int64) []sample {
-		ss := make([]sample, 0, len(s))
-		for _, t := range s {
-			ss = append(ss, sample{t: t, v: float64(t)})
-		}
-		return ss
-	}
-	smplsAll := buildSmpls([]int64{0, 1, 2, 3, 4, 5, 6, 7, 8, 9})
-	lblDefault := labels.Label{Name: "a", Value: "b"}
-	lblsDefault := labels.FromStrings("a", "b")
-
-	cases := []struct {
-		dranges    tombstones.Intervals
-		addSamples []sample // Samples to add after delete.
-		smplsExp   []sample
-	}{
-		{
-			dranges:  tombstones.Intervals{{Mint: 0, Maxt: 3}},
-			smplsExp: buildSmpls([]int64{4, 5, 6, 7, 8, 9}),
-		},
-		{
-			dranges:  tombstones.Intervals{{Mint: 1, Maxt: 3}},
-			smplsExp: buildSmpls([]int64{0, 4, 5, 6, 7, 8, 9}),
-		},
-		{
-			dranges:  tombstones.Intervals{{Mint: 1, Maxt: 3}, {Mint: 4, Maxt: 7}},
-			smplsExp: buildSmpls([]int64{0, 8, 9}),
-		},
-		{
-			dranges:  tombstones.Intervals{{Mint: 1, Maxt: 3}, {Mint: 4, Maxt: 700}},
-			smplsExp: buildSmpls([]int64{0}),
-		},
-		{ // This case is to ensure that labels and symbols are deleted.
-			dranges:  tombstones.Intervals{{Mint: 0, Maxt: 9}},
-			smplsExp: buildSmpls([]int64{}),
-		},
-		{
-			dranges:    tombstones.Intervals{{Mint: 1, Maxt: 3}},
-			addSamples: buildSmpls([]int64{11, 13, 15}),
-			smplsExp:   buildSmpls([]int64{0, 4, 5, 6, 7, 8, 9, 11, 13, 15}),
-		},
-		{
-			// After delete, the appended samples in the deleted range should be visible
-			// as the tombstones are clamped to head min/max time.
-			dranges:    tombstones.Intervals{{Mint: 7, Maxt: 20}},
-			addSamples: buildSmpls([]int64{11, 13, 15}),
-			smplsExp:   buildSmpls([]int64{0, 1, 2, 3, 4, 5, 6, 11, 13, 15}),
-		},
-	}
-
-	for _, compress := range []bool{false, true} {
-		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
-			for _, c := range cases {
-				head, w := newTestHead(t, 1000, compress, false)
-				require.NoError(t, head.Init(0))
-
-				app := head.Appender(context.Background())
-				for _, smpl := range smplsAll {
-					_, err := app.Append(0, lblsDefault, smpl.t, smpl.v)
-					require.NoError(t, err)
-
-				}
-				require.NoError(t, app.Commit())
-
-				// Delete the ranges.
-				for _, r := range c.dranges {
-					require.NoError(t, head.Delete(r.Mint, r.Maxt, labels.MustNewMatcher(labels.MatchEqual, lblDefault.Name, lblDefault.Value)))
-				}
-
-				// Add more samples.
-				app = head.Appender(context.Background())
-				for _, smpl := range c.addSamples {
-					_, err := app.Append(0, lblsDefault, smpl.t, smpl.v)
-					require.NoError(t, err)
-
-				}
-				require.NoError(t, app.Commit())
-
-				// Compare the samples for both heads - before and after the reloadBlocks.
-				reloadedW, err := wal.New(nil, nil, w.Dir(), compress) // Use a new wal to ensure deleted samples are gone even after a reloadBlocks.
-				require.NoError(t, err)
-				opts := DefaultHeadOptions()
-				opts.ChunkRange = 1000
-				opts.ChunkDirRoot = reloadedW.Dir()
-				reloadedHead, err := NewHead(nil, nil, reloadedW, nil, opts, nil)
-				require.NoError(t, err)
-				require.NoError(t, reloadedHead.Init(0))
-
-				// Compare the query results for both heads - before and after the reloadBlocks.
-			Outer:
-				for _, h := range []*Head{head, reloadedHead} {
-					q, err := NewBlockQuerier(h, h.MinTime(), h.MaxTime())
-					require.NoError(t, err)
-					actSeriesSet := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, lblDefault.Name, lblDefault.Value))
-					require.NoError(t, q.Close())
-					expSeriesSet := newMockSeriesSet([]storage.Series{
-						storage.NewListSeries(lblsDefault, func() []tsdbutil.Sample {
-							ss := make([]tsdbutil.Sample, 0, len(c.smplsExp))
-							for _, s := range c.smplsExp {
-								ss = append(ss, s)
-							}
-							return ss
-						}(),
-						),
-					})
-
-					for {
-						eok, rok := expSeriesSet.Next(), actSeriesSet.Next()
-						require.Equal(t, eok, rok)
-
-						if !eok {
-							require.NoError(t, h.Close())
-							require.NoError(t, actSeriesSet.Err())
-							require.Equal(t, 0, len(actSeriesSet.Warnings()))
-							continue Outer
-						}
-						expSeries := expSeriesSet.At()
-						actSeries := actSeriesSet.At()
-
-						require.Equal(t, expSeries.Labels(), actSeries.Labels())
-
-						smplExp, errExp := storage.ExpandSamples(expSeries.Iterator(), nil)
-						smplRes, errRes := storage.ExpandSamples(actSeries.Iterator(), nil)
-
-						require.Equal(t, errExp, errRes)
-						require.Equal(t, smplExp, smplRes)
-					}
-				}
-			}
-		})
-	}
-}
-
-func TestDeleteUntilCurMax(t *testing.T) {
-	hb, _ := newTestHead(t, 1000000, false, false)
-	defer func() {
-		require.NoError(t, hb.Close())
-	}()
-
-	numSamples := int64(10)
-	app := hb.Appender(context.Background())
-	smpls := make([]float64, numSamples)
-	for i := int64(0); i < numSamples; i++ {
-		smpls[i] = rand.Float64()
-		_, err := app.Append(0, labels.FromStrings("a", "b"), i, smpls[i])
-		require.NoError(t, err)
-	}
-	require.NoError(t, app.Commit())
-	require.NoError(t, hb.Delete(0, 10000, labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
-
-	// Test the series returns no samples. The series is cleared only after compaction.
-	q, err := NewBlockQuerier(hb, 0, 100000)
-	require.NoError(t, err)
-	res := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
-	require.True(t, res.Next(), "series is not present")
-	s := res.At()
-	it := s.Iterator()
-	require.False(t, it.Next(), "expected no samples")
-	for res.Next() {
-	}
-	require.NoError(t, res.Err())
-	require.Equal(t, 0, len(res.Warnings()))
-
-	// Add again and test for presence.
-	app = hb.Appender(context.Background())
-	_, err = app.Append(0, labels.FromStrings("a", "b"), 11, 1)
-	require.NoError(t, err)
-	require.NoError(t, app.Commit())
-	q, err = NewBlockQuerier(hb, 0, 100000)
-	require.NoError(t, err)
-	res = q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
-	require.True(t, res.Next(), "series don't exist")
-	exps := res.At()
-	it = exps.Iterator()
-	resSamples, err := storage.ExpandSamples(it, newSample)
-	require.NoError(t, err)
-	require.Equal(t, []tsdbutil.Sample{sample{11, 1}}, resSamples)
-	for res.Next() {
-	}
-	require.NoError(t, res.Err())
-	require.Equal(t, 0, len(res.Warnings()))
-}
-
-func TestDeletedSamplesAndSeriesStillInWALAfterCheckpoint(t *testing.T) {
-	numSamples := 10000
-
-	// Enough samples to cause a checkpoint.
-	hb, w := newTestHead(t, int64(numSamples)*10, false, false)
-
-	for i := 0; i < numSamples; i++ {
-		app := hb.Appender(context.Background())
-		_, err := app.Append(0, labels.FromStrings("a", "b"), int64(i), 0)
-		require.NoError(t, err)
-		require.NoError(t, app.Commit())
-	}
-	require.NoError(t, hb.Delete(0, int64(numSamples), labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
-	require.NoError(t, hb.Truncate(1))
-	require.NoError(t, hb.Close())
-
-	// Confirm there's been a checkpoint.
-	cdir, _, err := wal.LastCheckpoint(w.Dir())
-	require.NoError(t, err)
-	// Read in checkpoint and WAL.
-	recs := readTestWAL(t, cdir)
-	recs = append(recs, readTestWAL(t, w.Dir())...)
-
-	var series, samples, stones, metadata int
-	for _, rec := range recs {
-		switch rec.(type) {
-		case []record.RefSeries:
-			series++
-		case []record.RefSample:
-			samples++
-		case []tombstones.Stone:
-			stones++
-		case []record.RefMetadata:
-			metadata++
-		default:
-			t.Fatalf("unknown record type")
-		}
-	}
-	require.Equal(t, 1, series)
-	require.Equal(t, 9999, samples)
-	require.Equal(t, 1, stones)
-	require.Equal(t, 0, metadata)
-}
-
-func TestDelete_e2e(t *testing.T) {
-	numDatapoints := 1000
-	numRanges := 1000
-	timeInterval := int64(2)
-	// Create 8 series with 1000 data-points of different ranges, delete and run queries.
-	lbls := [][]labels.Label{
-		{
-			{Name: "a", Value: "b"},
-			{Name: "instance", Value: "localhost:9090"},
-			{Name: "job", Value: "prometheus"},
-		},
-		{
-			{Name: "a", Value: "b"},
-			{Name: "instance", Value: "127.0.0.1:9090"},
-			{Name: "job", Value: "prometheus"},
-		},
-		{
-			{Name: "a", Value: "b"},
-			{Name: "instance", Value: "127.0.0.1:9090"},
-			{Name: "job", Value: "prom-k8s"},
-		},
-		{
-			{Name: "a", Value: "b"},
-			{Name: "instance", Value: "localhost:9090"},
-			{Name: "job", Value: "prom-k8s"},
-		},
-		{
-			{Name: "a", Value: "c"},
-			{Name: "instance", Value: "localhost:9090"},
-			{Name: "job", Value: "prometheus"},
-		},
-		{
-			{Name: "a", Value: "c"},
-			{Name: "instance", Value: "127.0.0.1:9090"},
-			{Name: "job", Value: "prometheus"},
-		},
-		{
-			{Name: "a", Value: "c"},
-			{Name: "instance", Value: "127.0.0.1:9090"},
-			{Name: "job", Value: "prom-k8s"},
-		},
-		{
-			{Name: "a", Value: "c"},
-			{Name: "instance", Value: "localhost:9090"},
-			{Name: "job", Value: "prom-k8s"},
-		},
-	}
-	seriesMap := map[string][]tsdbutil.Sample{}
-	for _, l := range lbls {
-		seriesMap[labels.New(l...).String()] = []tsdbutil.Sample{}
-	}
-
-	hb, _ := newTestHead(t, 100000, false, false)
-	defer func() {
-		require.NoError(t, hb.Close())
-	}()
-
-	app := hb.Appender(context.Background())
-	for _, l := range lbls {
-		ls := labels.New(l...)
-		series := []tsdbutil.Sample{}
-		ts := rand.Int63n(300)
-		for i := 0; i < numDatapoints; i++ {
-			v := rand.Float64()
-			_, err := app.Append(0, ls, ts, v)
-			require.NoError(t, err)
-			series = append(series, sample{ts, v})
-			ts += rand.Int63n(timeInterval) + 1
-		}
-		seriesMap[labels.New(l...).String()] = series
-	}
-	require.NoError(t, app.Commit())
-	// Delete a time-range from each-selector.
-	dels := []struct {
-		ms     []*labels.Matcher
-		drange tombstones.Intervals
-	}{
-		{
-			ms:     []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "b")},
-			drange: tombstones.Intervals{{Mint: 300, Maxt: 500}, {Mint: 600, Maxt: 670}},
-		},
-		{
-			ms: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, "a", "b"),
-				labels.MustNewMatcher(labels.MatchEqual, "job", "prom-k8s"),
-			},
-			drange: tombstones.Intervals{{Mint: 300, Maxt: 500}, {Mint: 100, Maxt: 670}},
-		},
-		{
-			ms: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, "a", "c"),
-				labels.MustNewMatcher(labels.MatchEqual, "instance", "localhost:9090"),
-				labels.MustNewMatcher(labels.MatchEqual, "job", "prometheus"),
-			},
-			drange: tombstones.Intervals{{Mint: 300, Maxt: 400}, {Mint: 100, Maxt: 6700}},
-		},
-		// TODO: Add Regexp Matchers.
-	}
-	for _, del := range dels {
-		for _, r := range del.drange {
-			require.NoError(t, hb.Delete(r.Mint, r.Maxt, del.ms...))
-		}
-		matched := labels.Slice{}
-		for _, ls := range lbls {
-			s := labels.Selector(del.ms)
-			if s.Matches(ls) {
-				matched = append(matched, ls)
-			}
-		}
-		sort.Sort(matched)
-		for i := 0; i < numRanges; i++ {
-			q, err := NewBlockQuerier(hb, 0, 100000)
-			require.NoError(t, err)
-			defer q.Close()
-			ss := q.Select(true, nil, del.ms...)
-			// Build the mockSeriesSet.
-			matchedSeries := make([]storage.Series, 0, len(matched))
-			for _, m := range matched {
-				smpls := seriesMap[m.String()]
-				smpls = deletedSamples(smpls, del.drange)
-				// Only append those series for which samples exist as mockSeriesSet
-				// doesn't skip series with no samples.
-				// TODO: But sometimes SeriesSet returns an empty chunkenc.Iterator
-				if len(smpls) > 0 {
-					matchedSeries = append(matchedSeries, storage.NewListSeries(m, smpls))
-				}
-			}
-			expSs := newMockSeriesSet(matchedSeries)
-			// Compare both SeriesSets.
-			for {
-				eok, rok := expSs.Next(), ss.Next()
-				// Skip a series if iterator is empty.
-				if rok {
-					for !ss.At().Iterator().Next() {
-						rok = ss.Next()
-						if !rok {
-							break
-						}
-					}
-				}
-				require.Equal(t, eok, rok)
-				if !eok {
-					break
-				}
-				sexp := expSs.At()
-				sres := ss.At()
-				require.Equal(t, sexp.Labels(), sres.Labels())
-				smplExp, errExp := storage.ExpandSamples(sexp.Iterator(), nil)
-				smplRes, errRes := storage.ExpandSamples(sres.Iterator(), nil)
-				require.Equal(t, errExp, errRes)
-				require.Equal(t, smplExp, smplRes)
-			}
-			require.NoError(t, ss.Err())
-			require.Equal(t, 0, len(ss.Warnings()))
-		}
-	}
-}
-
-func boundedSamples(full []tsdbutil.Sample, mint, maxt int64) []tsdbutil.Sample {
-	for len(full) > 0 {
-		if full[0].T() >= mint {
-			break
-		}
-		full = full[1:]
-	}
-	for i, s := range full {
-		// labels.Labelinate on the first sample larger than maxt.
-		if s.T() > maxt {
-			return full[:i]
-		}
-	}
-	// maxt is after highest sample.
-	return full
-}
-
-func deletedSamples(full []tsdbutil.Sample, dranges tombstones.Intervals) []tsdbutil.Sample {
-	ds := make([]tsdbutil.Sample, 0, len(full))
-Outer:
-	for _, s := range full {
-		for _, r := range dranges {
-			if r.InBounds(s.T()) {
-				continue Outer
-			}
-		}
-		ds = append(ds, s)
-	}
-
-	return ds
 }
 
 func TestComputeChunkEndTime(t *testing.T) {
@@ -1009,13 +473,6 @@ func TestComputeChunkEndTime(t *testing.T) {
 }
 
 func TestMemSeries_append(t *testing.T) {
-	dir := t.TempDir()
-	// This is usually taken from the Head, but passing manually here.
-	chunkDiskMapper, err := chunks.NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), chunks.DefaultWriteBufferSize, chunks.DefaultWriteQueueSize)
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, chunkDiskMapper.Close())
-	}()
 	const chunkRange = 500
 
 	lbls := labels.Labels{}
@@ -1024,95 +481,48 @@ func TestMemSeries_append(t *testing.T) {
 	// Add first two samples at the very end of a chunk range and the next two
 	// on and after it.
 	// New chunk must correctly be cut at 1000.
-	ok, chunkCreated := s.append(998, 1, 0, chunkDiskMapper, chunkRange)
+	ok, chunkCreated := s.append(998, 1, 0, chunkRange)
 	require.True(t, ok, "append failed")
 	require.True(t, chunkCreated, "first sample created chunk")
 
-	ok, chunkCreated = s.append(999, 2, 0, chunkDiskMapper, chunkRange)
+	ok, chunkCreated = s.append(999, 2, 0, chunkRange)
 	require.True(t, ok, "append failed")
 	require.False(t, chunkCreated, "second sample should use same chunk")
 
-	ok, chunkCreated = s.append(1000, 3, 0, chunkDiskMapper, chunkRange)
+	ok, chunkCreated = s.append(1000, 3, 0, chunkRange)
 	require.True(t, ok, "append failed")
 	require.True(t, chunkCreated, "expected new chunk on boundary")
 
-	ok, chunkCreated = s.append(1001, 4, 0, chunkDiskMapper, chunkRange)
+	ok, chunkCreated = s.append(1001, 4, 0, chunkRange)
 	require.True(t, ok, "append failed")
 	require.False(t, chunkCreated, "second sample should use same chunk")
 
-	require.Equal(t, 1, len(s.mmappedChunks), "there should be only 1 mmapped chunk")
-	require.Equal(t, int64(998), s.mmappedChunks[0].minTime, "wrong chunk range")
-	require.Equal(t, int64(999), s.mmappedChunks[0].maxTime, "wrong chunk range")
+	require.Equal(t, 1, len(s.finishedChunks), "there should be only 1 mmapped chunk")
+	require.Equal(t, int64(998), s.finishedChunks[0].minTime, "wrong chunk range")
+	require.Equal(t, int64(999), s.finishedChunks[0].maxTime, "wrong chunk range")
 	require.Equal(t, int64(1000), s.headChunk.minTime, "wrong chunk range")
 	require.Equal(t, int64(1001), s.headChunk.maxTime, "wrong chunk range")
 
 	// Fill the range [1000,2000) with many samples. Intermediate chunks should be cut
 	// at approximately 120 samples per chunk.
 	for i := 1; i < 1000; i++ {
-		ok, _ := s.append(1001+int64(i), float64(i), 0, chunkDiskMapper, chunkRange)
+		ok, _ := s.append(1001+int64(i), float64(i), 0, chunkRange)
 		require.True(t, ok, "append failed")
 	}
 
-	require.Greater(t, len(s.mmappedChunks)+1, 7, "expected intermediate chunks")
+	require.Greater(t, len(s.finishedChunks)+1, 7, "expected intermediate chunks")
 
 	// All chunks but the first and last should now be moderately full.
-	for i, c := range s.mmappedChunks[1:] {
-		chk, err := chunkDiskMapper.Chunk(c.ref)
-		require.NoError(t, err)
+	for i, c := range s.finishedChunks[1:] {
+		chk := c.chunk
 		require.Greater(t, chk.NumSamples(), 100, "unexpected small chunk %d of length %d", i, chk.NumSamples())
 	}
-}
-
-func TestMemSeries_append_atVariableRate(t *testing.T) {
-	const samplesPerChunk = 120
-	dir := t.TempDir()
-	// This is usually taken from the Head, but passing manually here.
-	chunkDiskMapper, err := chunks.NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), chunks.DefaultWriteBufferSize, chunks.DefaultWriteQueueSize)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, chunkDiskMapper.Close())
-	})
-	chunkRange := DefaultBlockDuration
-
-	lbls := labels.Labels{}
-	s := newMemSeries(lbls, 1, lbls.Hash(), 0, defaultIsolationDisabled)
-
-	// At this slow rate, we will fill the chunk in two block durations.
-	slowRate := (DefaultBlockDuration * 2) / samplesPerChunk
-
-	var nextTs int64
-	var totalAppendedSamples int
-	for i := 0; i < samplesPerChunk/4; i++ {
-		ok, _ := s.append(nextTs, float64(i), 0, chunkDiskMapper, chunkRange)
-		require.Truef(t, ok, "slow sample %d was not appended", i)
-		nextTs += slowRate
-		totalAppendedSamples++
-	}
-	require.Equal(t, DefaultBlockDuration, s.nextAt, "after appending a samplesPerChunk/4 samples at a slow rate, we should aim to cut a new block at the default block duration %d, but it's set to %d", DefaultBlockDuration, s.nextAt)
-
-	// Suddenly, the rate increases and we receive a sample every millisecond.
-	for i := 0; i < math.MaxUint16; i++ {
-		ok, _ := s.append(nextTs, float64(i), 0, chunkDiskMapper, chunkRange)
-		require.Truef(t, ok, "quick sample %d was not appended", i)
-		nextTs++
-		totalAppendedSamples++
-	}
-	ok, chunkCreated := s.append(DefaultBlockDuration, float64(0), 0, chunkDiskMapper, chunkRange)
-	require.True(t, ok, "new chunk sample was not appended")
-	require.True(t, chunkCreated, "sample at block duration timestamp should create a new chunk")
-
-	var totalSamplesInChunks int
-	for i, c := range s.mmappedChunks {
-		totalSamplesInChunks += int(c.numSamples)
-		require.LessOrEqualf(t, c.numSamples, uint16(2*samplesPerChunk), "mmapped chunk %d has more than %d samples", i, 2*samplesPerChunk)
-	}
-	require.Equal(t, totalAppendedSamples, totalSamplesInChunks, "wrong number of samples in %d mmapped chunks", len(s.mmappedChunks))
 }
 
 func TestGCChunkAccess(t *testing.T) {
 	// Put a chunk, select it. GC it and then access it.
 	const chunkRange = 1000
-	h, _ := newTestHead(t, chunkRange, false, false)
+	h := newTestHead(t, chunkRange, false, false)
 	defer func() {
 		require.NoError(t, h.Close())
 	}()
@@ -1122,18 +532,18 @@ func TestGCChunkAccess(t *testing.T) {
 	s, _, _ := h.getOrCreate(1, labels.FromStrings("a", "1"))
 
 	// Appending 2 samples for the first chunk.
-	ok, chunkCreated := s.append(0, 0, 0, h.chunkDiskMapper, chunkRange)
+	ok, chunkCreated := s.append(0, 0, 0, chunkRange)
 	require.True(t, ok, "series append failed")
 	require.True(t, chunkCreated, "chunks was not created")
-	ok, chunkCreated = s.append(999, 999, 0, h.chunkDiskMapper, chunkRange)
+	ok, chunkCreated = s.append(999, 999, 0, chunkRange)
 	require.True(t, ok, "series append failed")
 	require.False(t, chunkCreated, "chunks was created")
 
 	// A new chunks should be created here as it's beyond the chunk range.
-	ok, chunkCreated = s.append(1000, 1000, 0, h.chunkDiskMapper, chunkRange)
+	ok, chunkCreated = s.append(1000, 1000, 0, chunkRange)
 	require.True(t, ok, "series append failed")
 	require.True(t, chunkCreated, "chunks was not created")
-	ok, chunkCreated = s.append(1999, 1999, 0, h.chunkDiskMapper, chunkRange)
+	ok, chunkCreated = s.append(1999, 1999, 0, chunkRange)
 	require.True(t, ok, "series append failed")
 	require.False(t, chunkCreated, "chunks was created")
 
@@ -1165,7 +575,7 @@ func TestGCChunkAccess(t *testing.T) {
 func TestGCSeriesAccess(t *testing.T) {
 	// Put a series, select it. GC it and then access it.
 	const chunkRange = 1000
-	h, _ := newTestHead(t, chunkRange, false, false)
+	h := newTestHead(t, chunkRange, false, false)
 	defer func() {
 		require.NoError(t, h.Close())
 	}()
@@ -1175,18 +585,18 @@ func TestGCSeriesAccess(t *testing.T) {
 	s, _, _ := h.getOrCreate(1, labels.FromStrings("a", "1"))
 
 	// Appending 2 samples for the first chunk.
-	ok, chunkCreated := s.append(0, 0, 0, h.chunkDiskMapper, chunkRange)
+	ok, chunkCreated := s.append(0, 0, 0, chunkRange)
 	require.True(t, ok, "series append failed")
 	require.True(t, chunkCreated, "chunks was not created")
-	ok, chunkCreated = s.append(999, 999, 0, h.chunkDiskMapper, chunkRange)
+	ok, chunkCreated = s.append(999, 999, 0, chunkRange)
 	require.True(t, ok, "series append failed")
 	require.False(t, chunkCreated, "chunks was created")
 
 	// A new chunks should be created here as it's beyond the chunk range.
-	ok, chunkCreated = s.append(1000, 1000, 0, h.chunkDiskMapper, chunkRange)
+	ok, chunkCreated = s.append(1000, 1000, 0, chunkRange)
 	require.True(t, ok, "series append failed")
 	require.True(t, chunkCreated, "chunks was not created")
-	ok, chunkCreated = s.append(1999, 1999, 0, h.chunkDiskMapper, chunkRange)
+	ok, chunkCreated = s.append(1999, 1999, 0, chunkRange)
 	require.True(t, ok, "series append failed")
 	require.False(t, chunkCreated, "chunks was created")
 
@@ -1218,7 +628,7 @@ func TestGCSeriesAccess(t *testing.T) {
 }
 
 func TestUncommittedSamplesNotLostOnTruncate(t *testing.T) {
-	h, _ := newTestHead(t, 1000, false, false)
+	h := newTestHead(t, 1000, false, false)
 	defer func() {
 		require.NoError(t, h.Close())
 	}()
@@ -1235,7 +645,7 @@ func TestUncommittedSamplesNotLostOnTruncate(t *testing.T) {
 
 	require.NoError(t, app.Commit())
 
-	q, err := NewBlockQuerier(h, 1500, 2500)
+	q, err := tsdb.NewBlockQuerier(h, 1500, 2500)
 	require.NoError(t, err)
 	defer q.Close()
 
@@ -1248,7 +658,7 @@ func TestUncommittedSamplesNotLostOnTruncate(t *testing.T) {
 }
 
 func TestRemoveSeriesAfterRollbackAndTruncate(t *testing.T) {
-	h, _ := newTestHead(t, 1000, false, false)
+	h := newTestHead(t, 1000, false, false)
 	defer func() {
 		require.NoError(t, h.Close())
 	}()
@@ -1265,7 +675,7 @@ func TestRemoveSeriesAfterRollbackAndTruncate(t *testing.T) {
 
 	require.NoError(t, app.Rollback())
 
-	q, err := NewBlockQuerier(h, 1500, 2500)
+	q, err := tsdb.NewBlockQuerier(h, 1500, 2500)
 	require.NoError(t, err)
 
 	ss := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "1"))
@@ -1278,227 +688,8 @@ func TestRemoveSeriesAfterRollbackAndTruncate(t *testing.T) {
 	require.Equal(t, (*memSeries)(nil), h.series.getByHash(lset.Hash(), lset))
 }
 
-func TestHead_LogRollback(t *testing.T) {
-	for _, compress := range []bool{false, true} {
-		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
-			h, w := newTestHead(t, 1000, compress, false)
-			defer func() {
-				require.NoError(t, h.Close())
-			}()
-
-			app := h.Appender(context.Background())
-			_, err := app.Append(0, labels.FromStrings("a", "b"), 1, 2)
-			require.NoError(t, err)
-
-			require.NoError(t, app.Rollback())
-			recs := readTestWAL(t, w.Dir())
-
-			require.Equal(t, 1, len(recs))
-
-			series, ok := recs[0].([]record.RefSeries)
-			require.True(t, ok, "expected series record but got %+v", recs[0])
-			require.Equal(t, []record.RefSeries{{Ref: 1, Labels: labels.FromStrings("a", "b")}}, series)
-		})
-	}
-}
-
-// TestWalRepair_DecodingError ensures that a repair is run for an error
-// when decoding a record.
-func TestWalRepair_DecodingError(t *testing.T) {
-	var enc record.Encoder
-	for name, test := range map[string]struct {
-		corrFunc  func(rec []byte) []byte // Func that applies the corruption to a record.
-		rec       []byte
-		totalRecs int
-		expRecs   int
-	}{
-		"decode_series": {
-			func(rec []byte) []byte {
-				return rec[:3]
-			},
-			enc.Series([]record.RefSeries{{Ref: 1, Labels: labels.FromStrings("a", "b")}}, []byte{}),
-			9,
-			5,
-		},
-		"decode_samples": {
-			func(rec []byte) []byte {
-				return rec[:3]
-			},
-			enc.Samples([]record.RefSample{{Ref: 0, T: 99, V: 1}}, []byte{}),
-			9,
-			5,
-		},
-		"decode_tombstone": {
-			func(rec []byte) []byte {
-				return rec[:3]
-			},
-			enc.Tombstones([]tombstones.Stone{{Ref: 1, Intervals: tombstones.Intervals{}}}, []byte{}),
-			9,
-			5,
-		},
-	} {
-		for _, compress := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s,compress=%t", name, compress), func(t *testing.T) {
-				dir := t.TempDir()
-
-				// Fill the wal and corrupt it.
-				{
-					w, err := wal.New(nil, nil, filepath.Join(dir, "wal"), compress)
-					require.NoError(t, err)
-
-					for i := 1; i <= test.totalRecs; i++ {
-						// At this point insert a corrupted record.
-						if i-1 == test.expRecs {
-							require.NoError(t, w.Log(test.corrFunc(test.rec)))
-							continue
-						}
-						require.NoError(t, w.Log(test.rec))
-					}
-
-					opts := DefaultHeadOptions()
-					opts.ChunkRange = 1
-					opts.ChunkDirRoot = w.Dir()
-					h, err := NewHead(nil, nil, w, nil, opts, nil)
-					require.NoError(t, err)
-					require.Equal(t, 0.0, prom_testutil.ToFloat64(h.metrics.walCorruptionsTotal))
-					initErr := h.Init(math.MinInt64)
-
-					err = errors.Cause(initErr) // So that we can pick up errors even if wrapped.
-					_, corrErr := err.(*wal.CorruptionErr)
-					require.True(t, corrErr, "reading the wal didn't return corruption error")
-					require.NoError(t, h.Close()) // Head will close the wal as well.
-				}
-
-				// Open the db to trigger a repair.
-				{
-					db, err := Open(dir, nil, nil, DefaultOptions(), nil)
-					require.NoError(t, err)
-					defer func() {
-						require.NoError(t, db.Close())
-					}()
-					require.Equal(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.walCorruptionsTotal))
-				}
-
-				// Read the wal content after the repair.
-				{
-					sr, err := wal.NewSegmentsReader(filepath.Join(dir, "wal"))
-					require.NoError(t, err)
-					defer sr.Close()
-					r := wal.NewReader(sr)
-
-					var actRec int
-					for r.Next() {
-						actRec++
-					}
-					require.NoError(t, r.Err())
-					require.Equal(t, test.expRecs, actRec, "Wrong number of intact records")
-				}
-			})
-		}
-	}
-}
-
-func TestHeadReadWriterRepair(t *testing.T) {
-	dir := t.TempDir()
-
-	const chunkRange = 1000
-
-	walDir := filepath.Join(dir, "wal")
-	// Fill the chunk segments and corrupt it.
-	{
-		w, err := wal.New(nil, nil, walDir, false)
-		require.NoError(t, err)
-
-		opts := DefaultHeadOptions()
-		opts.ChunkRange = chunkRange
-		opts.ChunkDirRoot = dir
-		opts.ChunkWriteQueueSize = 1 // We need to set this option so that we use the async queue. Upstream prometheus uses the queue directly.
-		h, err := NewHead(nil, nil, w, nil, opts, nil)
-		require.NoError(t, err)
-		require.Equal(t, 0.0, prom_testutil.ToFloat64(h.metrics.mmapChunkCorruptionTotal))
-		require.NoError(t, h.Init(math.MinInt64))
-
-		s, created, _ := h.getOrCreate(1, labels.FromStrings("a", "1"))
-		require.True(t, created, "series was not created")
-
-		for i := 0; i < 7; i++ {
-			ok, chunkCreated := s.append(int64(i*chunkRange), float64(i*chunkRange), 0, h.chunkDiskMapper, chunkRange)
-			require.True(t, ok, "series append failed")
-			require.True(t, chunkCreated, "chunk was not created")
-			ok, chunkCreated = s.append(int64(i*chunkRange)+chunkRange-1, float64(i*chunkRange), 0, h.chunkDiskMapper, chunkRange)
-			require.True(t, ok, "series append failed")
-			require.False(t, chunkCreated, "chunk was created")
-			require.NoError(t, h.chunkDiskMapper.CutNewFile())
-		}
-		require.NoError(t, h.Close())
-
-		// Verify that there are 6 segment files.
-		// It should only be 6 because the last call to .CutNewFile() won't
-		// take effect without another chunk being written.
-		files, err := os.ReadDir(mmappedChunksDir(dir))
-		require.NoError(t, err)
-		require.Equal(t, 6, len(files))
-
-		// Corrupt the 4th file by writing a random byte to series ref.
-		f, err := os.OpenFile(filepath.Join(mmappedChunksDir(dir), files[3].Name()), os.O_WRONLY, 0o666)
-		require.NoError(t, err)
-		n, err := f.WriteAt([]byte{67, 88}, chunks.HeadChunkFileHeaderSize+2)
-		require.NoError(t, err)
-		require.Equal(t, 2, n)
-		require.NoError(t, f.Close())
-	}
-
-	// Open the db to trigger a repair.
-	{
-		db, err := Open(dir, nil, nil, DefaultOptions(), nil)
-		require.NoError(t, err)
-		defer func() {
-			require.NoError(t, db.Close())
-		}()
-		require.Equal(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.mmapChunkCorruptionTotal))
-	}
-
-	// Verify that there are 3 segment files after the repair.
-	// The segments from the corrupt segment should be removed.
-	{
-		files, err := os.ReadDir(mmappedChunksDir(dir))
-		require.NoError(t, err)
-		require.Equal(t, 3, len(files))
-	}
-}
-
-func TestNewWalSegmentOnTruncate(t *testing.T) {
-	h, wlog := newTestHead(t, 1000, false, false)
-	defer func() {
-		require.NoError(t, h.Close())
-	}()
-	add := func(ts int64) {
-		app := h.Appender(context.Background())
-		_, err := app.Append(0, labels.FromStrings("a", "b"), ts, 0)
-		require.NoError(t, err)
-		require.NoError(t, app.Commit())
-	}
-
-	add(0)
-	_, last, err := wal.Segments(wlog.Dir())
-	require.NoError(t, err)
-	require.Equal(t, 0, last)
-
-	add(1)
-	require.NoError(t, h.Truncate(1))
-	_, last, err = wal.Segments(wlog.Dir())
-	require.NoError(t, err)
-	require.Equal(t, 1, last)
-
-	add(2)
-	require.NoError(t, h.Truncate(2))
-	_, last, err = wal.Segments(wlog.Dir())
-	require.NoError(t, err)
-	require.Equal(t, 2, last)
-}
-
 func TestAddDuplicateLabelName(t *testing.T) {
-	h, _ := newTestHead(t, 1000, false, false)
+	h := newTestHead(t, 1000, false, false)
 	defer func() {
 		require.NoError(t, h.Close())
 	}()
@@ -1515,411 +706,8 @@ func TestAddDuplicateLabelName(t *testing.T) {
 	add(labels.FromStrings("__name__", "up", "job", "prometheus", "le", "500", "le", "400", "unit", "s"), "le")
 }
 
-func TestMemSeriesIsolation(t *testing.T) {
-	if defaultIsolationDisabled {
-		t.Skip("skipping test since tsdb isolation is disabled")
-	}
-
-	// Put a series, select it. GC it and then access it.
-	lastValue := func(h *Head, maxAppendID uint64) int {
-		idx, err := h.Index()
-
-		require.NoError(t, err)
-
-		iso := h.iso.State(math.MinInt64, math.MaxInt64)
-		iso.maxAppendID = maxAppendID
-
-		chunks, err := h.chunksRange(math.MinInt64, math.MaxInt64, iso)
-		require.NoError(t, err)
-		// Hm.. here direct block chunk querier might be required?
-		querier := blockQuerier{
-			blockBaseQuerier: &blockBaseQuerier{
-				index:      idx,
-				chunks:     chunks,
-				tombstones: tombstones.NewMemTombstones(),
-
-				mint: 0,
-				maxt: 10000,
-			},
-		}
-
-		require.NoError(t, err)
-		defer querier.Close()
-
-		ss := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
-		_, seriesSet, ws, err := expandSeriesSet(ss)
-		require.NoError(t, err)
-		require.Equal(t, 0, len(ws))
-
-		for _, series := range seriesSet {
-			return int(series[len(series)-1].v)
-		}
-		return -1
-	}
-
-	addSamples := func(h *Head) int {
-		i := 1
-		for ; i <= 1000; i++ {
-			var app storage.Appender
-			// To initialize bounds.
-			if h.MinTime() == math.MaxInt64 {
-				app = &initAppender{head: h}
-			} else {
-				a := h.appender()
-				a.cleanupAppendIDsBelow = 0
-				app = a
-			}
-
-			_, err := app.Append(0, labels.FromStrings("foo", "bar"), int64(i), float64(i))
-			require.NoError(t, err)
-			require.NoError(t, app.Commit())
-		}
-		return i
-	}
-
-	testIsolation := func(h *Head, i int) {
-	}
-
-	// Test isolation without restart of Head.
-	hb, _ := newTestHead(t, 1000, false, false)
-	i := addSamples(hb)
-	testIsolation(hb, i)
-
-	// Test simple cases in different chunks when no appendID cleanup has been performed.
-	require.Equal(t, 10, lastValue(hb, 10))
-	require.Equal(t, 130, lastValue(hb, 130))
-	require.Equal(t, 160, lastValue(hb, 160))
-	require.Equal(t, 240, lastValue(hb, 240))
-	require.Equal(t, 500, lastValue(hb, 500))
-	require.Equal(t, 750, lastValue(hb, 750))
-	require.Equal(t, 995, lastValue(hb, 995))
-	require.Equal(t, 999, lastValue(hb, 999))
-
-	// Cleanup appendIDs below 500.
-	app := hb.appender()
-	app.cleanupAppendIDsBelow = 500
-	_, err := app.Append(0, labels.FromStrings("foo", "bar"), int64(i), float64(i))
-	require.NoError(t, err)
-	require.NoError(t, app.Commit())
-	i++
-
-	// We should not get queries with a maxAppendID below 500 after the cleanup,
-	// but they only take the remaining appendIDs into account.
-	require.Equal(t, 499, lastValue(hb, 10))
-	require.Equal(t, 499, lastValue(hb, 130))
-	require.Equal(t, 499, lastValue(hb, 160))
-	require.Equal(t, 499, lastValue(hb, 240))
-	require.Equal(t, 500, lastValue(hb, 500))
-	require.Equal(t, 995, lastValue(hb, 995))
-	require.Equal(t, 999, lastValue(hb, 999))
-
-	// Cleanup appendIDs below 1000, which means the sample buffer is
-	// the only thing with appendIDs.
-	app = hb.appender()
-	app.cleanupAppendIDsBelow = 1000
-	_, err = app.Append(0, labels.FromStrings("foo", "bar"), int64(i), float64(i))
-	require.NoError(t, err)
-	require.NoError(t, app.Commit())
-	require.Equal(t, 999, lastValue(hb, 998))
-	require.Equal(t, 999, lastValue(hb, 999))
-	require.Equal(t, 1000, lastValue(hb, 1000))
-	require.Equal(t, 1001, lastValue(hb, 1001))
-	require.Equal(t, 1002, lastValue(hb, 1002))
-	require.Equal(t, 1002, lastValue(hb, 1003))
-
-	i++
-	// Cleanup appendIDs below 1001, but with a rollback.
-	app = hb.appender()
-	app.cleanupAppendIDsBelow = 1001
-	_, err = app.Append(0, labels.FromStrings("foo", "bar"), int64(i), float64(i))
-	require.NoError(t, err)
-	require.NoError(t, app.Rollback())
-	require.Equal(t, 1000, lastValue(hb, 999))
-	require.Equal(t, 1000, lastValue(hb, 1000))
-	require.Equal(t, 1001, lastValue(hb, 1001))
-	require.Equal(t, 1002, lastValue(hb, 1002))
-	require.Equal(t, 1002, lastValue(hb, 1003))
-
-	require.NoError(t, hb.Close())
-
-	// Test isolation with restart of Head. This is to verify the num samples of chunks after m-map chunk replay.
-	hb, w := newTestHead(t, 1000, false, false)
-	i = addSamples(hb)
-	require.NoError(t, hb.Close())
-
-	wlog, err := wal.NewSize(nil, nil, w.Dir(), 32768, false)
-	require.NoError(t, err)
-	opts := DefaultHeadOptions()
-	opts.ChunkRange = 1000
-	opts.ChunkDirRoot = wlog.Dir()
-	hb, err = NewHead(nil, nil, wlog, nil, opts, nil)
-	defer func() { require.NoError(t, hb.Close()) }()
-	require.NoError(t, err)
-	require.NoError(t, hb.Init(0))
-
-	// No appends after restarting. Hence all should return the last value.
-	require.Equal(t, 1000, lastValue(hb, 10))
-	require.Equal(t, 1000, lastValue(hb, 130))
-	require.Equal(t, 1000, lastValue(hb, 160))
-	require.Equal(t, 1000, lastValue(hb, 240))
-	require.Equal(t, 1000, lastValue(hb, 500))
-
-	// Cleanup appendIDs below 1000, which means the sample buffer is
-	// the only thing with appendIDs.
-	app = hb.appender()
-	_, err = app.Append(0, labels.FromStrings("foo", "bar"), int64(i), float64(i))
-	i++
-	require.NoError(t, err)
-	require.NoError(t, app.Commit())
-	require.Equal(t, 1001, lastValue(hb, 998))
-	require.Equal(t, 1001, lastValue(hb, 999))
-	require.Equal(t, 1001, lastValue(hb, 1000))
-	require.Equal(t, 1001, lastValue(hb, 1001))
-	require.Equal(t, 1001, lastValue(hb, 1002))
-	require.Equal(t, 1001, lastValue(hb, 1003))
-
-	// Cleanup appendIDs below 1002, but with a rollback.
-	app = hb.appender()
-	_, err = app.Append(0, labels.FromStrings("foo", "bar"), int64(i), float64(i))
-	require.NoError(t, err)
-	require.NoError(t, app.Rollback())
-	require.Equal(t, 1001, lastValue(hb, 999))
-	require.Equal(t, 1001, lastValue(hb, 1000))
-	require.Equal(t, 1001, lastValue(hb, 1001))
-	require.Equal(t, 1001, lastValue(hb, 1002))
-	require.Equal(t, 1001, lastValue(hb, 1003))
-}
-
-func TestIsolationRollback(t *testing.T) {
-	if defaultIsolationDisabled {
-		t.Skip("skipping test since tsdb isolation is disabled")
-	}
-
-	// Rollback after a failed append and test if the low watermark has progressed anyway.
-	hb, _ := newTestHead(t, 1000, false, false)
-	defer func() {
-		require.NoError(t, hb.Close())
-	}()
-
-	app := hb.Appender(context.Background())
-	_, err := app.Append(0, labels.FromStrings("foo", "bar"), 0, 0)
-	require.NoError(t, err)
-	require.NoError(t, app.Commit())
-	require.Equal(t, uint64(1), hb.iso.lowWatermark())
-
-	app = hb.Appender(context.Background())
-	_, err = app.Append(0, labels.FromStrings("foo", "bar"), 1, 1)
-	require.NoError(t, err)
-	_, err = app.Append(0, labels.FromStrings("foo", "bar", "foo", "baz"), 2, 2)
-	require.Error(t, err)
-	require.NoError(t, app.Rollback())
-	require.Equal(t, uint64(2), hb.iso.lowWatermark())
-
-	app = hb.Appender(context.Background())
-	_, err = app.Append(0, labels.FromStrings("foo", "bar"), 3, 3)
-	require.NoError(t, err)
-	require.NoError(t, app.Commit())
-	require.Equal(t, uint64(3), hb.iso.lowWatermark(), "Low watermark should proceed to 3 even if append #2 was rolled back.")
-}
-
-func TestIsolationLowWatermarkMonotonous(t *testing.T) {
-	if defaultIsolationDisabled {
-		t.Skip("skipping test since tsdb isolation is disabled")
-	}
-
-	hb, _ := newTestHead(t, 1000, false, false)
-	defer func() {
-		require.NoError(t, hb.Close())
-	}()
-
-	app1 := hb.Appender(context.Background())
-	_, err := app1.Append(0, labels.FromStrings("foo", "bar"), 0, 0)
-	require.NoError(t, err)
-	require.NoError(t, app1.Commit())
-	require.Equal(t, uint64(1), hb.iso.lowWatermark(), "Low watermark should by 1 after 1st append.")
-
-	app1 = hb.Appender(context.Background())
-	_, err = app1.Append(0, labels.FromStrings("foo", "bar"), 1, 1)
-	require.NoError(t, err)
-	require.Equal(t, uint64(2), hb.iso.lowWatermark(), "Low watermark should be two, even if append is not committed yet.")
-
-	app2 := hb.Appender(context.Background())
-	_, err = app2.Append(0, labels.FromStrings("foo", "baz"), 1, 1)
-	require.NoError(t, err)
-	require.NoError(t, app2.Commit())
-	require.Equal(t, uint64(2), hb.iso.lowWatermark(), "Low watermark should stay two because app1 is not committed yet.")
-
-	is := hb.iso.State(math.MinInt64, math.MaxInt64)
-	require.Equal(t, uint64(2), hb.iso.lowWatermark(), "After simulated read (iso state retrieved), low watermark should stay at 2.")
-
-	require.NoError(t, app1.Commit())
-	require.Equal(t, uint64(2), hb.iso.lowWatermark(), "Even after app1 is committed, low watermark should stay at 2 because read is still ongoing.")
-
-	is.Close()
-	require.Equal(t, uint64(3), hb.iso.lowWatermark(), "After read has finished (iso state closed), low watermark should jump to three.")
-}
-
-func TestIsolationAppendIDZeroIsNoop(t *testing.T) {
-	if defaultIsolationDisabled {
-		t.Skip("skipping test since tsdb isolation is disabled")
-	}
-
-	h, _ := newTestHead(t, 1000, false, false)
-	defer func() {
-		require.NoError(t, h.Close())
-	}()
-
-	h.initTime(0)
-
-	s, _, _ := h.getOrCreate(1, labels.FromStrings("a", "1"))
-
-	ok, _ := s.append(0, 0, 0, h.chunkDiskMapper, h.chunkRange.Load())
-	require.True(t, ok, "Series append failed.")
-	require.Equal(t, 0, s.txs.txIDCount, "Series should not have an appendID after append with appendID=0.")
-}
-
-func TestHeadSeriesChunkRace(t *testing.T) {
-	for i := 0; i < 1000; i++ {
-		testHeadSeriesChunkRace(t)
-	}
-}
-
-func TestIsolationWithoutAdd(t *testing.T) {
-	if defaultIsolationDisabled {
-		t.Skip("skipping test since tsdb isolation is disabled")
-	}
-
-	hb, _ := newTestHead(t, 1000, false, false)
-	defer func() {
-		require.NoError(t, hb.Close())
-	}()
-
-	app := hb.Appender(context.Background())
-	require.NoError(t, app.Commit())
-
-	app = hb.Appender(context.Background())
-	_, err := app.Append(0, labels.FromStrings("foo", "baz"), 1, 1)
-	require.NoError(t, err)
-	require.NoError(t, app.Commit())
-
-	require.Equal(t, hb.iso.lastAppendID(), hb.iso.lowWatermark(), "High watermark should be equal to the low watermark")
-}
-
-func TestOutOfOrderSamplesMetric(t *testing.T) {
-	dir := t.TempDir()
-
-	db, err := Open(dir, nil, nil, DefaultOptions(), nil)
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, db.Close())
-	}()
-	db.DisableCompactions()
-
-	ctx := context.Background()
-	app := db.Appender(ctx)
-	for i := 1; i <= 5; i++ {
-		_, err = app.Append(0, labels.FromStrings("a", "b"), int64(i), 99)
-		require.NoError(t, err)
-	}
-	require.NoError(t, app.Commit())
-
-	// Test out of order metric.
-	require.Equal(t, 0.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples))
-	app = db.Appender(ctx)
-	_, err = app.Append(0, labels.FromStrings("a", "b"), 2, 99)
-	require.Equal(t, storage.ErrOutOfOrderSample, err)
-	require.Equal(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples))
-
-	_, err = app.Append(0, labels.FromStrings("a", "b"), 3, 99)
-	require.Equal(t, storage.ErrOutOfOrderSample, err)
-	require.Equal(t, 2.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples))
-
-	_, err = app.Append(0, labels.FromStrings("a", "b"), 4, 99)
-	require.Equal(t, storage.ErrOutOfOrderSample, err)
-	require.Equal(t, 3.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples))
-	require.NoError(t, app.Commit())
-
-	// Compact Head to test out of bound metric.
-	app = db.Appender(ctx)
-	_, err = app.Append(0, labels.FromStrings("a", "b"), DefaultBlockDuration*2, 99)
-	require.NoError(t, err)
-	require.NoError(t, app.Commit())
-
-	require.Equal(t, int64(math.MinInt64), db.head.minValidTime.Load())
-	require.NoError(t, db.Compact())
-	require.Greater(t, db.head.minValidTime.Load(), int64(0))
-
-	app = db.Appender(ctx)
-	_, err = app.Append(0, labels.FromStrings("a", "b"), db.head.minValidTime.Load()-2, 99)
-	require.Equal(t, storage.ErrOutOfBounds, err)
-	require.Equal(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.outOfBoundSamples))
-
-	_, err = app.Append(0, labels.FromStrings("a", "b"), db.head.minValidTime.Load()-1, 99)
-	require.Equal(t, storage.ErrOutOfBounds, err)
-	require.Equal(t, 2.0, prom_testutil.ToFloat64(db.head.metrics.outOfBoundSamples))
-	require.NoError(t, app.Commit())
-
-	// Some more valid samples for out of order.
-	app = db.Appender(ctx)
-	for i := 1; i <= 5; i++ {
-		_, err = app.Append(0, labels.FromStrings("a", "b"), db.head.minValidTime.Load()+DefaultBlockDuration+int64(i), 99)
-		require.NoError(t, err)
-	}
-	require.NoError(t, app.Commit())
-
-	// Test out of order metric.
-	app = db.Appender(ctx)
-	_, err = app.Append(0, labels.FromStrings("a", "b"), db.head.minValidTime.Load()+DefaultBlockDuration+2, 99)
-	require.Equal(t, storage.ErrOutOfOrderSample, err)
-	require.Equal(t, 4.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples))
-
-	_, err = app.Append(0, labels.FromStrings("a", "b"), db.head.minValidTime.Load()+DefaultBlockDuration+3, 99)
-	require.Equal(t, storage.ErrOutOfOrderSample, err)
-	require.Equal(t, 5.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples))
-
-	_, err = app.Append(0, labels.FromStrings("a", "b"), db.head.minValidTime.Load()+DefaultBlockDuration+4, 99)
-	require.Equal(t, storage.ErrOutOfOrderSample, err)
-	require.Equal(t, 6.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples))
-	require.NoError(t, app.Commit())
-}
-
-func testHeadSeriesChunkRace(t *testing.T) {
-	h, _ := newTestHead(t, 1000, false, false)
-	defer func() {
-		require.NoError(t, h.Close())
-	}()
-	require.NoError(t, h.Init(0))
-	app := h.Appender(context.Background())
-
-	s2, err := app.Append(0, labels.FromStrings("foo2", "bar"), 5, 0)
-	require.NoError(t, err)
-	for ts := int64(6); ts < 11; ts++ {
-		_, err = app.Append(s2, labels.EmptyLabels(), ts, 0)
-		require.NoError(t, err)
-	}
-	require.NoError(t, app.Commit())
-
-	var wg sync.WaitGroup
-	matcher := labels.MustNewMatcher(labels.MatchEqual, "", "")
-	q, err := NewBlockQuerier(h, 18, 22)
-	require.NoError(t, err)
-	defer q.Close()
-
-	wg.Add(1)
-	go func() {
-		h.updateMinMaxTime(20, 25)
-		h.gc()
-		wg.Done()
-	}()
-	ss := q.Select(false, nil, matcher)
-	for ss.Next() {
-	}
-	require.NoError(t, ss.Err())
-	wg.Wait()
-}
-
 func TestHeadLabelNamesValuesWithMinMaxRange(t *testing.T) {
-	head, _ := newTestHead(t, 1000, false, false)
+	head := newTestHead(t, 1000, false, false)
 	defer func() {
 		require.NoError(t, head.Close())
 	}()
@@ -1979,7 +767,7 @@ func TestHeadLabelNamesValuesWithMinMaxRange(t *testing.T) {
 }
 
 func TestHeadLabelValuesWithMatchers(t *testing.T) {
-	head, _ := newTestHead(t, 1000, false, false)
+	head := newTestHead(t, 1000, false, false)
 	t.Cleanup(func() { require.NoError(t, head.Close()) })
 
 	app := head.Appender(context.Background())
@@ -2038,7 +826,7 @@ func TestHeadLabelValuesWithMatchers(t *testing.T) {
 }
 
 func TestHeadLabelNamesWithMatchers(t *testing.T) {
-	head, _ := newTestHead(t, 1000, false, false)
+	head := newTestHead(t, 1000, false, false)
 	defer func() {
 		require.NoError(t, head.Close())
 	}()
@@ -2106,7 +894,7 @@ func TestHeadLabelNamesWithMatchers(t *testing.T) {
 }
 
 func TestHeadShardedPostings(t *testing.T) {
-	head, _ := newTestHead(t, 1000, false, false)
+	head := newTestHead(t, 1000, false, false)
 	defer func() {
 		require.NoError(t, head.Close())
 	}()
@@ -2170,7 +958,7 @@ func TestHeadShardedPostings(t *testing.T) {
 }
 
 func TestErrReuseAppender(t *testing.T) {
-	head, _ := newTestHead(t, 1000, false, false)
+	head := newTestHead(t, 1000, false, false)
 	defer func() {
 		require.NoError(t, head.Close())
 	}()
@@ -2206,7 +994,7 @@ func TestErrReuseAppender(t *testing.T) {
 
 func TestHeadMintAfterTruncation(t *testing.T) {
 	chunkRange := int64(2000)
-	head, _ := newTestHead(t, chunkRange, false, false)
+	head := newTestHead(t, chunkRange, false, false)
 
 	app := head.Appender(context.Background())
 	_, err := app.Append(0, labels.FromStrings("a", "b"), 100, 100)
@@ -2238,31 +1026,9 @@ func TestHeadMintAfterTruncation(t *testing.T) {
 	require.NoError(t, head.Close())
 }
 
-func TestHeadExemplars(t *testing.T) {
-	chunkRange := int64(2000)
-	head, _ := newTestHead(t, chunkRange, false, false)
-	app := head.Appender(context.Background())
-
-	l := labels.FromStrings("traceId", "123")
-	// It is perfectly valid to add Exemplars before the current start time -
-	// histogram buckets that haven't been update in a while could still be
-	// exported exemplars from an hour ago.
-	ref, err := app.Append(0, labels.FromStrings("a", "b"), 100, 100)
-	require.NoError(t, err)
-	_, err = app.AppendExemplar(ref, l, exemplar.Exemplar{
-		Labels: l,
-		HasTs:  true,
-		Ts:     -1000,
-		Value:  1,
-	})
-	require.NoError(t, err)
-	require.NoError(t, app.Commit())
-	require.NoError(t, head.Close())
-}
-
 func BenchmarkHeadLabelValuesWithMatchers(b *testing.B) {
 	chunkRange := int64(2000)
-	head, _ := newTestHead(b, chunkRange, false, false)
+	head := newTestHead(b, chunkRange, false, false)
 	b.Cleanup(func() { require.NoError(b, head.Close()) })
 
 	app := head.Appender(context.Background())
@@ -2292,24 +1058,17 @@ func BenchmarkHeadLabelValuesWithMatchers(b *testing.B) {
 }
 
 func TestIteratorSeekIntoBuffer(t *testing.T) {
-	dir := t.TempDir()
-	// This is usually taken from the Head, but passing manually here.
-	chunkDiskMapper, err := chunks.NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), chunks.DefaultWriteBufferSize, chunks.DefaultWriteQueueSize)
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, chunkDiskMapper.Close())
-	}()
 	const chunkRange = 500
 
 	lbls := labels.Labels{}
 	s := newMemSeries(lbls, 1, lbls.Hash(), 0, defaultIsolationDisabled)
 
 	for i := 0; i < 7; i++ {
-		ok, _ := s.append(int64(i), float64(i), 0, chunkDiskMapper, chunkRange)
+		ok, _ := s.append(int64(i), float64(i), 0, chunkRange)
 		require.True(t, ok, "sample append failed")
 	}
 
-	it := s.iterator(s.headChunkID(len(s.mmappedChunks)), nil, chunkDiskMapper, nil, nil)
+	it := s.iterator(s.headChunkID(len(s.finishedChunks)), nil)
 
 	// First point.
 	ok := it.Seek(0)
@@ -2355,125 +1114,11 @@ func TestIteratorSeekIntoBuffer(t *testing.T) {
 	require.False(t, ok)
 }
 
-// Tests https://github.com/prometheus/prometheus/issues/8221.
-func TestChunkNotFoundHeadGCRace(t *testing.T) {
-	db := newTestDB(t)
-	db.DisableCompactions()
-
-	var (
-		app        = db.Appender(context.Background())
-		ref        = storage.SeriesRef(0)
-		mint, maxt = int64(0), int64(0)
-		err        error
-	)
-
-	// Appends samples to span over 1.5 block ranges.
-	// 7 chunks with 15s scrape interval.
-	for i := int64(0); i <= 120*7; i++ {
-		ts := i * DefaultBlockDuration / (4 * 120)
-		ref, err = app.Append(ref, labels.FromStrings("a", "b"), ts, float64(i))
-		require.NoError(t, err)
-		maxt = ts
-	}
-	require.NoError(t, app.Commit())
-
-	// Get a querier before compaction (or when compaction is about to begin).
-	q, err := db.Querier(context.Background(), mint, maxt)
-	require.NoError(t, err)
-
-	// Query the compacted range and get the first series before compaction.
-	ss := q.Select(true, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
-	require.True(t, ss.Next())
-	s := ss.At()
-
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		// Compacting head while the querier spans the compaction time.
-		require.NoError(t, db.Compact())
-		require.Greater(t, len(db.Blocks()), 0)
-	}()
-
-	// Give enough time for compaction to finish.
-	// We expect it to be blocked until querier is closed.
-	<-time.After(3 * time.Second)
-
-	// Now consume after compaction when it's gone.
-	it := s.Iterator()
-	for it.Next() {
-		_, _ = it.At()
-	}
-	// It should error here without any fix for the mentioned issue.
-	require.NoError(t, it.Err())
-	for ss.Next() {
-		s = ss.At()
-		it := s.Iterator()
-		for it.Next() {
-			_, _ = it.At()
-		}
-		require.NoError(t, it.Err())
-	}
-	require.NoError(t, ss.Err())
-
-	require.NoError(t, q.Close())
-	wg.Wait()
-}
-
-// Tests https://github.com/prometheus/prometheus/issues/9079.
-func TestDataMissingOnQueryDuringCompaction(t *testing.T) {
-	db := newTestDB(t)
-	db.DisableCompactions()
-
-	var (
-		app        = db.Appender(context.Background())
-		ref        = storage.SeriesRef(0)
-		mint, maxt = int64(0), int64(0)
-		err        error
-	)
-
-	// Appends samples to span over 1.5 block ranges.
-	expSamples := make([]tsdbutil.Sample, 0)
-	// 7 chunks with 15s scrape interval.
-	for i := int64(0); i <= 120*7; i++ {
-		ts := i * DefaultBlockDuration / (4 * 120)
-		ref, err = app.Append(ref, labels.FromStrings("a", "b"), ts, float64(i))
-		require.NoError(t, err)
-		maxt = ts
-		expSamples = append(expSamples, sample{ts, float64(i)})
-	}
-	require.NoError(t, app.Commit())
-
-	// Get a querier before compaction (or when compaction is about to begin).
-	q, err := db.Querier(context.Background(), mint, maxt)
-	require.NoError(t, err)
-
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		// Compacting head while the querier spans the compaction time.
-		require.NoError(t, db.Compact())
-		require.Greater(t, len(db.Blocks()), 0)
-	}()
-
-	// Give enough time for compaction to finish.
-	// We expect it to be blocked until querier is closed.
-	<-time.After(3 * time.Second)
-
-	// Querying the querier that was got before compaction.
-	series := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
-	require.Equal(t, map[string][]tsdbutil.Sample{`{a="b"}`: expSamples}, series)
-
-	wg.Wait()
-}
-
 func TestIsQuerierCollidingWithTruncation(t *testing.T) {
-	db := newTestDB(t)
-	db.DisableCompactions()
+	head := newTestHead(t, 10000, false, false)
 
 	var (
-		app = db.Appender(context.Background())
+		app = head.Appender(context.Background())
 		ref = storage.SeriesRef(0)
 		err error
 	)
@@ -2485,8 +1130,8 @@ func TestIsQuerierCollidingWithTruncation(t *testing.T) {
 	require.NoError(t, app.Commit())
 
 	// This mocks truncation.
-	db.head.memTruncationInProcess.Store(true)
-	db.head.lastMemoryTruncationTime.Store(2000)
+	head.memTruncationInProcess.Store(true)
+	head.lastMemoryTruncationTime.Store(2000)
 
 	// Test that IsQuerierValid suggests correct querier ranges.
 	cases := []struct {
@@ -2503,7 +1148,7 @@ func TestIsQuerierCollidingWithTruncation(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(fmt.Sprintf("mint=%d,maxt=%d", c.mint, c.maxt), func(t *testing.T) {
-			shouldClose, getNew, newMint := db.head.IsQuerierCollidingWithTruncation(c.mint, c.maxt)
+			shouldClose, getNew, newMint := head.IsQuerierCollidingWithTruncation(c.mint, c.maxt)
 			require.Equal(t, c.expShouldClose, shouldClose)
 			require.Equal(t, c.expGetNew, getNew)
 			if getNew {
@@ -2511,974 +1156,4 @@ func TestIsQuerierCollidingWithTruncation(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestWaitForPendingReadersInTimeRange(t *testing.T) {
-	db := newTestDB(t)
-	db.DisableCompactions()
-
-	sampleTs := func(i int64) int64 { return i * DefaultBlockDuration / (4 * 120) }
-
-	var (
-		app = db.Appender(context.Background())
-		ref = storage.SeriesRef(0)
-		err error
-	)
-
-	for i := int64(0); i <= 3000; i++ {
-		ts := sampleTs(i)
-		ref, err = app.Append(ref, labels.FromStrings("a", "b"), ts, float64(i))
-		require.NoError(t, err)
-	}
-	require.NoError(t, app.Commit())
-
-	truncMint, truncMaxt := int64(1000), int64(2000)
-	cases := []struct {
-		mint, maxt int64
-		shouldWait bool
-	}{
-		{0, 500, false},     // Before truncation range.
-		{500, 1500, true},   // Overlaps with truncation at the start.
-		{1200, 1700, true},  // Within truncation range.
-		{1800, 2500, true},  // Overlaps with truncation at the end.
-		{2000, 2500, false}, // After truncation range.
-		{2100, 2500, false}, // After truncation range.
-	}
-	for _, c := range cases {
-		t.Run(fmt.Sprintf("mint=%d,maxt=%d,shouldWait=%t", c.mint, c.maxt, c.shouldWait), func(t *testing.T) {
-			checkWaiting := func(cl io.Closer) {
-				var waitOver atomic.Bool
-				go func() {
-					db.head.WaitForPendingReadersInTimeRange(truncMint, truncMaxt)
-					waitOver.Store(true)
-				}()
-				<-time.After(550 * time.Millisecond)
-				require.Equal(t, !c.shouldWait, waitOver.Load())
-				require.NoError(t, cl.Close())
-				<-time.After(550 * time.Millisecond)
-				require.True(t, waitOver.Load())
-			}
-
-			q, err := db.Querier(context.Background(), c.mint, c.maxt)
-			require.NoError(t, err)
-			checkWaiting(q)
-
-			cq, err := db.ChunkQuerier(context.Background(), c.mint, c.maxt)
-			require.NoError(t, err)
-			checkWaiting(cq)
-		})
-	}
-}
-
-func TestChunkSnapshot(t *testing.T) {
-	head, _ := newTestHead(t, 120*4, false, false)
-	defer func() {
-		head.opts.EnableMemorySnapshotOnShutdown = false
-		require.NoError(t, head.Close())
-	}()
-
-	type ex struct {
-		seriesLabels labels.Labels
-		e            exemplar.Exemplar
-	}
-
-	numSeries := 10
-	expSeries := make(map[string][]tsdbutil.Sample)
-	expTombstones := make(map[storage.SeriesRef]tombstones.Intervals)
-	expExemplars := make([]ex, 0)
-
-	addExemplar := func(app storage.Appender, ref storage.SeriesRef, lbls labels.Labels, ts int64) {
-		e := ex{
-			seriesLabels: lbls,
-			e: exemplar.Exemplar{
-				Labels: labels.FromStrings("traceID", fmt.Sprintf("%d", rand.Int())),
-				Value:  rand.Float64(),
-				Ts:     ts,
-			},
-		}
-		expExemplars = append(expExemplars, e)
-		_, err := app.AppendExemplar(ref, e.seriesLabels, e.e)
-		require.NoError(t, err)
-	}
-
-	checkSamples := func() {
-		q, err := NewBlockQuerier(head, math.MinInt64, math.MaxInt64)
-		require.NoError(t, err)
-		series := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"))
-		require.Equal(t, expSeries, series)
-	}
-	checkTombstones := func() {
-		tr, err := head.Tombstones()
-		require.NoError(t, err)
-		actTombstones := make(map[storage.SeriesRef]tombstones.Intervals)
-		require.NoError(t, tr.Iter(func(ref storage.SeriesRef, itvs tombstones.Intervals) error {
-			for _, itv := range itvs {
-				actTombstones[ref].Add(itv)
-			}
-			return nil
-		}))
-		require.Equal(t, expTombstones, actTombstones)
-	}
-	checkExemplars := func() {
-		actExemplars := make([]ex, 0, len(expExemplars))
-		err := head.exemplars.IterateExemplars(func(seriesLabels labels.Labels, e exemplar.Exemplar) error {
-			actExemplars = append(actExemplars, ex{
-				seriesLabels: seriesLabels,
-				e:            e,
-			})
-			return nil
-		})
-		require.NoError(t, err)
-		// Verifies both existence of right exemplars and order of exemplars in the buffer.
-		require.Equal(t, expExemplars, actExemplars)
-	}
-
-	var (
-		wlast, woffset int
-		err            error
-	)
-
-	closeHeadAndCheckSnapshot := func() {
-		require.NoError(t, head.Close())
-
-		_, sidx, soffset, err := LastChunkSnapshot(head.opts.ChunkDirRoot)
-		require.NoError(t, err)
-		require.Equal(t, wlast, sidx)
-		require.Equal(t, woffset, soffset)
-	}
-
-	openHeadAndCheckReplay := func() {
-		w, err := wal.NewSize(nil, nil, head.wal.Dir(), 32768, false)
-		require.NoError(t, err)
-		head, err = NewHead(nil, nil, w, nil, head.opts, nil)
-		require.NoError(t, err)
-		require.NoError(t, head.Init(math.MinInt64))
-
-		checkSamples()
-		checkTombstones()
-		checkExemplars()
-	}
-
-	{ // Initial data that goes into snapshot.
-		// Add some initial samples with >=1 m-map chunk.
-		app := head.Appender(context.Background())
-		for i := 1; i <= numSeries; i++ {
-			lbls := labels.FromStrings("foo", fmt.Sprintf("bar%d", i))
-			lblStr := lbls.String()
-			// Should m-map at least 1 chunk.
-			for ts := int64(1); ts <= 200; ts++ {
-				val := rand.Float64()
-				expSeries[lblStr] = append(expSeries[lblStr], sample{ts, val})
-				ref, err := app.Append(0, lbls, ts, val)
-				require.NoError(t, err)
-
-				// Add an exemplar and to create multiple WAL records.
-				if ts%10 == 0 {
-					addExemplar(app, ref, lbls, ts)
-					require.NoError(t, app.Commit())
-					app = head.Appender(context.Background())
-				}
-			}
-		}
-		require.NoError(t, app.Commit())
-
-		// Add some tombstones.
-		var enc record.Encoder
-		for i := 1; i <= numSeries; i++ {
-			ref := storage.SeriesRef(i)
-			itvs := tombstones.Intervals{
-				{Mint: 1234, Maxt: 2345},
-				{Mint: 3456, Maxt: 4567},
-			}
-			for _, itv := range itvs {
-				expTombstones[ref].Add(itv)
-			}
-			head.tombstones.AddInterval(ref, itvs...)
-			err := head.wal.Log(enc.Tombstones([]tombstones.Stone{
-				{Ref: ref, Intervals: itvs},
-			}, nil))
-			require.NoError(t, err)
-		}
-
-	}
-
-	// These references should be the ones used for the snapshot.
-	wlast, woffset, err = head.wal.LastSegmentAndOffset()
-	require.NoError(t, err)
-	if woffset != 0 && woffset < 32*1024 {
-		// The page is always filled before taking the snapshot.
-		woffset = 32 * 1024
-	}
-
-	{
-		// Creating snapshot and verifying it.
-		head.opts.EnableMemorySnapshotOnShutdown = true
-		closeHeadAndCheckSnapshot() // This will create a snapshot.
-
-		// Test the replay of snapshot.
-		openHeadAndCheckReplay()
-	}
-
-	{ // Additional data to only include in WAL and m-mapped chunks and not snapshot. This mimics having an old snapshot on disk.
-
-		// Add more samples.
-		app := head.Appender(context.Background())
-		for i := 1; i <= numSeries; i++ {
-			lbls := labels.FromStrings("foo", fmt.Sprintf("bar%d", i))
-			lblStr := lbls.String()
-			// Should m-map at least 1 chunk.
-			for ts := int64(201); ts <= 400; ts++ {
-				val := rand.Float64()
-				expSeries[lblStr] = append(expSeries[lblStr], sample{ts, val})
-				ref, err := app.Append(0, lbls, ts, val)
-				require.NoError(t, err)
-
-				// Add an exemplar and to create multiple WAL records.
-				if ts%10 == 0 {
-					addExemplar(app, ref, lbls, ts)
-					require.NoError(t, app.Commit())
-					app = head.Appender(context.Background())
-				}
-			}
-		}
-		require.NoError(t, app.Commit())
-
-		// Add more tombstones.
-		var enc record.Encoder
-		for i := 1; i <= numSeries; i++ {
-			ref := storage.SeriesRef(i)
-			itvs := tombstones.Intervals{
-				{Mint: 12345, Maxt: 23456},
-				{Mint: 34567, Maxt: 45678},
-			}
-			for _, itv := range itvs {
-				expTombstones[ref].Add(itv)
-			}
-			head.tombstones.AddInterval(ref, itvs...)
-			err := head.wal.Log(enc.Tombstones([]tombstones.Stone{
-				{Ref: ref, Intervals: itvs},
-			}, nil))
-			require.NoError(t, err)
-		}
-	}
-
-	{
-		// Close Head and verify that new snapshot was not created.
-		head.opts.EnableMemorySnapshotOnShutdown = false
-		closeHeadAndCheckSnapshot() // This should not create a snapshot.
-
-		// Test the replay of snapshot, m-map chunks, and WAL.
-		head.opts.EnableMemorySnapshotOnShutdown = true // Enabled to read from snapshot.
-		openHeadAndCheckReplay()
-	}
-
-	// Creating another snapshot should delete the older snapshot and replay still works fine.
-	wlast, woffset, err = head.wal.LastSegmentAndOffset()
-	require.NoError(t, err)
-	if woffset != 0 && woffset < 32*1024 {
-		// The page is always filled before taking the snapshot.
-		woffset = 32 * 1024
-	}
-
-	{
-		// Close Head and verify that new snapshot was created.
-		closeHeadAndCheckSnapshot()
-
-		// Verify that there is only 1 snapshot.
-		files, err := os.ReadDir(head.opts.ChunkDirRoot)
-		require.NoError(t, err)
-		snapshots := 0
-		for i := len(files) - 1; i >= 0; i-- {
-			fi := files[i]
-			if strings.HasPrefix(fi.Name(), chunkSnapshotPrefix) {
-				snapshots++
-				require.Equal(t, chunkSnapshotDir(wlast, woffset), fi.Name())
-			}
-		}
-		require.Equal(t, 1, snapshots)
-
-		// Test the replay of snapshot.
-		head.opts.EnableMemorySnapshotOnShutdown = true // Enabled to read from snapshot.
-
-		// Disabling exemplars to check that it does not hard fail replay
-		// https://github.com/prometheus/prometheus/issues/9437#issuecomment-933285870.
-		head.opts.EnableExemplarStorage = false
-		head.opts.MaxExemplars.Store(0)
-		expExemplars = expExemplars[:0]
-
-		openHeadAndCheckReplay()
-
-		require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.snapshotReplayErrorTotal))
-	}
-}
-
-func TestSnapshotError(t *testing.T) {
-	head, _ := newTestHead(t, 120*4, false, false)
-	defer func() {
-		head.opts.EnableMemorySnapshotOnShutdown = false
-		require.NoError(t, head.Close())
-	}()
-
-	// Add a sample.
-	app := head.Appender(context.Background())
-	lbls := labels.FromStrings("foo", "bar")
-	_, err := app.Append(0, lbls, 99, 99)
-	require.NoError(t, err)
-	require.NoError(t, app.Commit())
-
-	// Add some tombstones.
-	itvs := tombstones.Intervals{
-		{Mint: 1234, Maxt: 2345},
-		{Mint: 3456, Maxt: 4567},
-	}
-	head.tombstones.AddInterval(1, itvs...)
-
-	// Check existence of data.
-	require.NotNil(t, head.series.getByHash(lbls.Hash(), lbls))
-	tm, err := head.tombstones.Get(1)
-	require.NoError(t, err)
-	require.NotEqual(t, 0, len(tm))
-
-	head.opts.EnableMemorySnapshotOnShutdown = true
-	require.NoError(t, head.Close()) // This will create a snapshot.
-
-	// Remove the WAL so that we don't load from it.
-	require.NoError(t, os.RemoveAll(head.wal.Dir()))
-
-	// Corrupt the snapshot.
-	snapDir, _, _, err := LastChunkSnapshot(head.opts.ChunkDirRoot)
-	require.NoError(t, err)
-	files, err := os.ReadDir(snapDir)
-	require.NoError(t, err)
-	f, err := os.OpenFile(path.Join(snapDir, files[0].Name()), os.O_RDWR, 0)
-	require.NoError(t, err)
-	_, err = f.WriteAt([]byte{0b11111111}, 18)
-	require.NoError(t, err)
-	require.NoError(t, f.Close())
-
-	// Create new Head which should replay this snapshot.
-	w, err := wal.NewSize(nil, nil, head.wal.Dir(), 32768, false)
-	require.NoError(t, err)
-	// Testing https://github.com/prometheus/prometheus/issues/9437 with the registry.
-	head, err = NewHead(prometheus.NewRegistry(), nil, w, nil, head.opts, nil)
-	require.NoError(t, err)
-	require.NoError(t, head.Init(math.MinInt64))
-
-	// There should be no series in the memory after snapshot error since WAL was removed.
-	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.snapshotReplayErrorTotal))
-	require.Nil(t, head.series.getByHash(lbls.Hash(), lbls))
-	tm, err = head.tombstones.Get(1)
-	require.NoError(t, err)
-	require.Equal(t, 0, len(tm))
-}
-
-// Tests https://github.com/prometheus/prometheus/issues/9725.
-func TestChunkSnapshotReplayBug(t *testing.T) {
-	dir := t.TempDir()
-	wlog, err := wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, true)
-	require.NoError(t, err)
-
-	// Write few series records and samples such that the series references are not in order in the WAL
-	// for status_code="200".
-	var buf []byte
-	for i := 1; i <= 1000; i++ {
-		var ref chunks.HeadSeriesRef
-		if i <= 500 {
-			ref = chunks.HeadSeriesRef(i * 100)
-		} else {
-			ref = chunks.HeadSeriesRef((i - 500) * 50)
-		}
-		seriesRec := record.RefSeries{
-			Ref: ref,
-			Labels: labels.FromStrings(
-				"__name__", "request_duration",
-				"status_code", "200",
-				"foo", fmt.Sprintf("baz%d", rand.Int()),
-			),
-		}
-		// Add a sample so that the series is not garbage collected.
-		samplesRec := record.RefSample{Ref: ref, T: 1000, V: 1000}
-		var enc record.Encoder
-
-		rec := enc.Series([]record.RefSeries{seriesRec}, buf)
-		buf = rec[:0]
-		require.NoError(t, wlog.Log(rec))
-		rec = enc.Samples([]record.RefSample{samplesRec}, buf)
-		buf = rec[:0]
-		require.NoError(t, wlog.Log(rec))
-	}
-
-	// Write a corrupt snapshot to fail the replay on startup.
-	snapshotName := chunkSnapshotDir(0, 100)
-	cpdir := filepath.Join(dir, snapshotName)
-	require.NoError(t, os.MkdirAll(cpdir, 0o777))
-
-	err = os.WriteFile(filepath.Join(cpdir, "00000000"), []byte{1, 5, 3, 5, 6, 7, 4, 2, 2}, 0o777)
-	require.NoError(t, err)
-
-	opts := DefaultHeadOptions()
-	opts.ChunkDirRoot = dir
-	opts.EnableMemorySnapshotOnShutdown = true
-	head, err := NewHead(nil, nil, wlog, nil, opts, nil)
-	require.NoError(t, err)
-	require.NoError(t, head.Init(math.MinInt64))
-	defer func() {
-		require.NoError(t, head.Close())
-	}()
-
-	// Snapshot replay should error out.
-	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.snapshotReplayErrorTotal))
-
-	// Querying `request_duration{status_code!="200"}` should return no series since all of
-	// them have status_code="200".
-	q, err := NewBlockQuerier(head, math.MinInt64, math.MaxInt64)
-	require.NoError(t, err)
-	series := query(t, q,
-		labels.MustNewMatcher(labels.MatchEqual, "__name__", "request_duration"),
-		labels.MustNewMatcher(labels.MatchNotEqual, "status_code", "200"),
-	)
-	require.Len(t, series, 0, "there should be no series found")
-}
-
-func TestChunkSnapshotTakenAfterIncompleteSnapshot(t *testing.T) {
-	dir := t.TempDir()
-	wlog, err := wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, true)
-	require.NoError(t, err)
-
-	// Write a snapshot with .tmp suffix. This used to fail taking any further snapshots or replay of snapshots.
-	snapshotName := chunkSnapshotDir(0, 100) + ".tmp"
-	cpdir := filepath.Join(dir, snapshotName)
-	require.NoError(t, os.MkdirAll(cpdir, 0o777))
-
-	opts := DefaultHeadOptions()
-	opts.ChunkDirRoot = dir
-	opts.EnableMemorySnapshotOnShutdown = true
-	head, err := NewHead(nil, nil, wlog, nil, opts, nil)
-	require.NoError(t, err)
-	require.NoError(t, head.Init(math.MinInt64))
-
-	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.snapshotReplayErrorTotal))
-
-	// Add some samples for the snapshot.
-	app := head.Appender(context.Background())
-	_, err = app.Append(0, labels.FromStrings("foo", "bar"), 10, 10)
-	require.NoError(t, err)
-	require.NoError(t, app.Commit())
-
-	// Should not return any error for a successful snapshot.
-	require.NoError(t, head.Close())
-
-	// Verify the snapshot.
-	name, idx, offset, err := LastChunkSnapshot(dir)
-	require.NoError(t, err)
-	require.True(t, name != "")
-	require.Equal(t, 0, idx)
-	require.Greater(t, offset, 0)
-}
-
-// TestOOOWalReplay checks the replay at a low level.
-// TODO(codesome): Needs test for ooo WAL repair.
-func TestOOOWalReplay(t *testing.T) {
-	dir := t.TempDir()
-	wlog, err := wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, true)
-	require.NoError(t, err)
-	oooWlog, err := wal.NewSize(nil, nil, filepath.Join(dir, wal.WblDirName), 32768, true)
-	require.NoError(t, err)
-
-	opts := DefaultHeadOptions()
-	opts.ChunkRange = 1000
-	opts.ChunkDirRoot = dir
-	opts.OutOfOrderTimeWindow.Store(30 * time.Minute.Milliseconds())
-
-	h, err := NewHead(nil, nil, wlog, oooWlog, opts, nil)
-	require.NoError(t, err)
-	require.NoError(t, h.Init(0))
-
-	var expOOOSamples []sample
-	l := labels.FromStrings("foo", "bar")
-	appendSample := func(mins int64, isOOO bool) {
-		app := h.Appender(context.Background())
-		ts, v := mins*time.Minute.Milliseconds(), float64(mins)
-		_, err := app.Append(0, l, ts, v)
-		require.NoError(t, err)
-		require.NoError(t, app.Commit())
-
-		if isOOO {
-			expOOOSamples = append(expOOOSamples, sample{t: ts, v: v})
-		}
-	}
-
-	// In-order sample.
-	appendSample(60, false)
-
-	// Out of order samples.
-	appendSample(40, true)
-	appendSample(35, true)
-	appendSample(50, true)
-	appendSample(55, true)
-	appendSample(59, true)
-	appendSample(31, true)
-
-	// Check that Head's time ranges are set properly.
-	require.Equal(t, 60*time.Minute.Milliseconds(), h.MinTime())
-	require.Equal(t, 60*time.Minute.Milliseconds(), h.MaxTime())
-	require.Equal(t, 31*time.Minute.Milliseconds(), h.MinOOOTime())
-	require.Equal(t, 59*time.Minute.Milliseconds(), h.MaxOOOTime())
-
-	// Restart head.
-	require.NoError(t, h.Close())
-	wlog, err = wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, true)
-	require.NoError(t, err)
-	oooWlog, err = wal.NewSize(nil, nil, filepath.Join(dir, wal.WblDirName), 32768, true)
-	require.NoError(t, err)
-	h, err = NewHead(nil, nil, wlog, oooWlog, opts, nil)
-	require.NoError(t, err)
-	require.NoError(t, h.Init(0)) // Replay happens here.
-
-	// Get the ooo samples from the Head.
-	ms, ok, err := h.getOrCreate(l.Hash(), l)
-	require.NoError(t, err)
-	require.False(t, ok)
-	require.NotNil(t, ms)
-
-	xor, err := ms.oooHeadChunk.chunk.ToXOR()
-	require.NoError(t, err)
-
-	it := xor.Iterator(nil)
-	actOOOSamples := make([]sample, 0, len(expOOOSamples))
-	for it.Next() {
-		ts, v := it.At()
-		actOOOSamples = append(actOOOSamples, sample{t: ts, v: v})
-	}
-
-	// OOO chunk will be sorted. Hence sort the expected samples.
-	sort.Slice(expOOOSamples, func(i, j int) bool {
-		return expOOOSamples[i].t < expOOOSamples[j].t
-	})
-
-	require.Equal(t, expOOOSamples, actOOOSamples)
-
-	require.NoError(t, h.Close())
-}
-
-// TestOOOMmapReplay checks the replay at a low level.
-func TestOOOMmapReplay(t *testing.T) {
-	dir := t.TempDir()
-	wlog, err := wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, true)
-	require.NoError(t, err)
-	oooWlog, err := wal.NewSize(nil, nil, filepath.Join(dir, wal.WblDirName), 32768, true)
-	require.NoError(t, err)
-
-	opts := DefaultHeadOptions()
-	opts.ChunkRange = 1000
-	opts.ChunkDirRoot = dir
-	opts.OutOfOrderCapMax.Store(30)
-	opts.OutOfOrderTimeWindow.Store(1000 * time.Minute.Milliseconds())
-
-	h, err := NewHead(nil, nil, wlog, oooWlog, opts, nil)
-	require.NoError(t, err)
-	require.NoError(t, h.Init(0))
-
-	l := labels.FromStrings("foo", "bar")
-	appendSample := func(mins int64) {
-		app := h.Appender(context.Background())
-		ts, v := mins*time.Minute.Milliseconds(), float64(mins)
-		_, err := app.Append(0, l, ts, v)
-		require.NoError(t, err)
-		require.NoError(t, app.Commit())
-	}
-
-	// In-order sample.
-	appendSample(200)
-
-	// Out of order samples. 92 samples to create 3 m-map chunks.
-	for mins := int64(100); mins <= 191; mins++ {
-		appendSample(mins)
-	}
-
-	ms, ok, err := h.getOrCreate(l.Hash(), l)
-	require.NoError(t, err)
-	require.False(t, ok)
-	require.NotNil(t, ms)
-
-	require.Len(t, ms.oooMmappedChunks, 3)
-	// Verify that we can access the chunks without error.
-	for _, m := range ms.oooMmappedChunks {
-		chk, err := h.chunkDiskMapper.Chunk(m.ref)
-		require.NoError(t, err)
-		require.Equal(t, int(m.numSamples), chk.NumSamples())
-	}
-
-	expMmapChunks := make([]*mmappedChunk, 3)
-	copy(expMmapChunks, ms.oooMmappedChunks)
-
-	// Restart head.
-	require.NoError(t, h.Close())
-
-	wlog, err = wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, true)
-	require.NoError(t, err)
-	oooWlog, err = wal.NewSize(nil, nil, filepath.Join(dir, wal.WblDirName), 32768, true)
-	require.NoError(t, err)
-	h, err = NewHead(nil, nil, wlog, oooWlog, opts, nil)
-	require.NoError(t, err)
-	require.NoError(t, h.Init(0)) // Replay happens here.
-
-	// Get the mmap chunks from the Head.
-	ms, ok, err = h.getOrCreate(l.Hash(), l)
-	require.NoError(t, err)
-	require.False(t, ok)
-	require.NotNil(t, ms)
-
-	require.Len(t, ms.oooMmappedChunks, len(expMmapChunks))
-	// Verify that we can access the chunks without error.
-	for _, m := range ms.oooMmappedChunks {
-		chk, err := h.chunkDiskMapper.Chunk(m.ref)
-		require.NoError(t, err)
-		require.Equal(t, int(m.numSamples), chk.NumSamples())
-	}
-
-	actMmapChunks := make([]*mmappedChunk, len(expMmapChunks))
-	copy(actMmapChunks, ms.oooMmappedChunks)
-
-	require.Equal(t, expMmapChunks, actMmapChunks)
-
-	require.NoError(t, h.Close())
-}
-
-func TestHeadInit_DiscardChunksWithUnsupportedEncoding(t *testing.T) {
-	h, _ := newTestHead(t, 1000, false, false)
-	defer func() {
-		require.NoError(t, h.Close())
-	}()
-
-	require.NoError(t, h.Init(0))
-
-	ctx := context.Background()
-	app := h.Appender(ctx)
-	seriesLabels := labels.FromStrings("a", "1")
-	var seriesRef storage.SeriesRef
-	var err error
-	for i := 0; i < 400; i++ {
-		seriesRef, err = app.Append(0, seriesLabels, int64(i), float64(i))
-		require.NoError(t, err)
-	}
-
-	require.NoError(t, app.Commit())
-	require.Greater(t, prom_testutil.ToFloat64(h.metrics.chunksCreated), 1.0)
-
-	uc := newUnsupportedChunk()
-	// Make this chunk not overlap with the previous and the next
-	h.chunkDiskMapper.WriteChunk(chunks.HeadSeriesRef(seriesRef), 500, 600, uc, func(err error) { require.NoError(t, err) })
-
-	app = h.Appender(ctx)
-	for i := 700; i < 1200; i++ {
-		_, err := app.Append(0, seriesLabels, int64(i), float64(i))
-		require.NoError(t, err)
-	}
-
-	require.NoError(t, app.Commit())
-	require.Greater(t, prom_testutil.ToFloat64(h.metrics.chunksCreated), 4.0)
-
-	series, created, err := h.getOrCreate(seriesLabels.Hash(), seriesLabels)
-	require.NoError(t, err)
-	require.False(t, created, "should already exist")
-	require.NotNil(t, series, "should return the series we created above")
-
-	expChunks := make([]*mmappedChunk, len(series.mmappedChunks))
-	copy(expChunks, series.mmappedChunks)
-
-	require.NoError(t, h.Close())
-
-	wlog, err := wal.NewSize(nil, nil, filepath.Join(h.opts.ChunkDirRoot, "wal"), 32768, false)
-	require.NoError(t, err)
-	h, err = NewHead(nil, nil, wlog, nil, h.opts, nil)
-	require.NoError(t, err)
-	require.NoError(t, h.Init(0))
-
-	series, created, err = h.getOrCreate(seriesLabels.Hash(), seriesLabels)
-	require.NoError(t, err)
-	require.False(t, created, "should already exist")
-	require.NotNil(t, series, "should return the series we created above")
-
-	require.Equal(t, expChunks, series.mmappedChunks)
-}
-
-const (
-	UnsupportedMask   = 0b10000000
-	EncUnsupportedXOR = chunkenc.EncXOR | UnsupportedMask
-)
-
-// unsupportedChunk holds a XORChunk and overrides the Encoding() method.
-type unsupportedChunk struct {
-	*chunkenc.XORChunk
-}
-
-func newUnsupportedChunk() *unsupportedChunk {
-	return &unsupportedChunk{chunkenc.NewXORChunk()}
-}
-
-func (c *unsupportedChunk) Encoding() chunkenc.Encoding {
-	return EncUnsupportedXOR
-}
-
-// Tests https://github.com/prometheus/prometheus/issues/10277.
-func TestMmapPanicAfterMmapReplayCorruption(t *testing.T) {
-	dir := t.TempDir()
-	wlog, err := wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, false)
-	require.NoError(t, err)
-
-	opts := DefaultHeadOptions()
-	opts.ChunkRange = DefaultBlockDuration
-	opts.ChunkDirRoot = dir
-	opts.EnableExemplarStorage = true
-	opts.MaxExemplars.Store(config.DefaultExemplarsConfig.MaxExemplars)
-
-	h, err := NewHead(nil, nil, wlog, nil, opts, nil)
-	require.NoError(t, err)
-	require.NoError(t, h.Init(0))
-
-	lastTs := int64(0)
-	var ref storage.SeriesRef
-	lbls := labels.FromStrings("__name__", "testing", "foo", "bar")
-	addChunks := func() {
-		interval := DefaultBlockDuration / (4 * 120)
-		app := h.Appender(context.Background())
-		for i := 0; i < 250; i++ {
-			ref, err = app.Append(ref, lbls, lastTs, float64(lastTs))
-			lastTs += interval
-			if i%10 == 0 {
-				require.NoError(t, app.Commit())
-				app = h.Appender(context.Background())
-			}
-		}
-		require.NoError(t, app.Commit())
-	}
-
-	addChunks()
-
-	require.NoError(t, h.Close())
-	wlog, err = wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, false)
-	require.NoError(t, err)
-
-	mmapFilePath := filepath.Join(dir, "chunks_head", "000001")
-	f, err := os.OpenFile(mmapFilePath, os.O_WRONLY, 0o666)
-	require.NoError(t, err)
-	_, err = f.WriteAt([]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}, 17)
-	require.NoError(t, err)
-	require.NoError(t, f.Close())
-
-	h, err = NewHead(nil, nil, wlog, nil, opts, nil)
-	require.NoError(t, err)
-	require.NoError(t, h.Init(0))
-
-	addChunks()
-
-	require.NoError(t, h.Close())
-}
-
-// Tests https://github.com/prometheus/prometheus/issues/10277.
-func TestReplayAfterMmapReplayError(t *testing.T) {
-	dir := t.TempDir()
-	var h *Head
-	var err error
-
-	openHead := func() {
-		wlog, err := wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, false)
-		require.NoError(t, err)
-
-		opts := DefaultHeadOptions()
-		opts.ChunkRange = DefaultBlockDuration
-		opts.ChunkDirRoot = dir
-		opts.EnableMemorySnapshotOnShutdown = true
-		opts.MaxExemplars.Store(config.DefaultExemplarsConfig.MaxExemplars)
-
-		h, err = NewHead(nil, nil, wlog, nil, opts, nil)
-		require.NoError(t, err)
-		require.NoError(t, h.Init(0))
-	}
-
-	openHead()
-
-	itvl := int64(15 * time.Second / time.Millisecond)
-	lastTs := int64(0)
-	lbls := labels.FromStrings("__name__", "testing", "foo", "bar")
-	var expSamples []tsdbutil.Sample
-	addSamples := func(numSamples int) {
-		app := h.Appender(context.Background())
-		var ref storage.SeriesRef
-		for i := 0; i < numSamples; i++ {
-			ref, err = app.Append(ref, lbls, lastTs, float64(lastTs))
-			expSamples = append(expSamples, sample{t: lastTs, v: float64(lastTs)})
-			require.NoError(t, err)
-			lastTs += itvl
-			if i%10 == 0 {
-				require.NoError(t, app.Commit())
-				app = h.Appender(context.Background())
-			}
-		}
-		require.NoError(t, app.Commit())
-	}
-
-	// Creating multiple m-map files.
-	for i := 0; i < 5; i++ {
-		addSamples(250)
-		require.NoError(t, h.Close())
-		if i != 4 {
-			// Don't open head for the last iteration.
-			openHead()
-		}
-	}
-
-	files, err := os.ReadDir(filepath.Join(dir, "chunks_head"))
-	require.Equal(t, 5, len(files))
-
-	// Corrupt a m-map file.
-	mmapFilePath := filepath.Join(dir, "chunks_head", "000002")
-	f, err := os.OpenFile(mmapFilePath, os.O_WRONLY, 0o666)
-	require.NoError(t, err)
-	_, err = f.WriteAt([]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}, 17)
-	require.NoError(t, err)
-	require.NoError(t, f.Close())
-
-	openHead()
-
-	// There should be less m-map files due to corruption.
-	files, err = os.ReadDir(filepath.Join(dir, "chunks_head"))
-	require.Equal(t, 2, len(files))
-
-	// Querying should not panic.
-	q, err := NewBlockQuerier(h, 0, lastTs)
-	require.NoError(t, err)
-	res := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "__name__", "testing"))
-	require.Equal(t, map[string][]tsdbutil.Sample{lbls.String(): expSamples}, res)
-
-	require.NoError(t, h.Close())
-}
-
-func TestOOOAppendWithNoSeries(t *testing.T) {
-	dir := t.TempDir()
-	wlog, err := wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, true)
-	require.NoError(t, err)
-	oooWlog, err := wal.NewSize(nil, nil, filepath.Join(dir, wal.WblDirName), 32768, true)
-	require.NoError(t, err)
-
-	opts := DefaultHeadOptions()
-	opts.ChunkDirRoot = dir
-	opts.OutOfOrderCapMax.Store(30)
-	opts.OutOfOrderTimeWindow.Store(120 * time.Minute.Milliseconds())
-
-	h, err := NewHead(nil, nil, wlog, oooWlog, opts, nil)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, h.Close())
-	})
-	require.NoError(t, h.Init(0))
-
-	appendSample := func(lbls labels.Labels, ts int64) {
-		app := h.Appender(context.Background())
-		_, err := app.Append(0, lbls, ts*time.Minute.Milliseconds(), float64(ts))
-		require.NoError(t, err)
-		require.NoError(t, app.Commit())
-	}
-
-	verifyOOOSamples := func(lbls labels.Labels, expSamples int) {
-		ms, created, err := h.getOrCreate(lbls.Hash(), lbls)
-		require.NoError(t, err)
-		require.False(t, created)
-		require.NotNil(t, ms)
-
-		require.Nil(t, ms.headChunk)
-		require.NotNil(t, ms.oooHeadChunk)
-		require.Equal(t, expSamples, ms.oooHeadChunk.chunk.NumSamples())
-	}
-
-	verifyInOrderSamples := func(lbls labels.Labels, expSamples int) {
-		ms, created, err := h.getOrCreate(lbls.Hash(), lbls)
-		require.NoError(t, err)
-		require.False(t, created)
-		require.NotNil(t, ms)
-
-		require.Nil(t, ms.oooHeadChunk)
-		require.NotNil(t, ms.headChunk)
-		require.Equal(t, expSamples, ms.headChunk.chunk.NumSamples())
-	}
-
-	newLabels := func(idx int) labels.Labels { return labels.FromStrings("foo", fmt.Sprintf("%d", idx)) }
-
-	s1 := newLabels(1)
-	appendSample(s1, 300) // At 300m.
-	verifyInOrderSamples(s1, 1)
-
-	// At 239m, the sample cannot be appended to in-order chunk since it is
-	// beyond the minValidTime. So it should go in OOO chunk.
-	// Series does not exist for s2 yet.
-	s2 := newLabels(2)
-	appendSample(s2, 239) // OOO sample.
-	verifyOOOSamples(s2, 1)
-
-	// Similar for 180m.
-	s3 := newLabels(3)
-	appendSample(s3, 180) // OOO sample.
-	verifyOOOSamples(s3, 1)
-
-	// Now 179m is too old.
-	s4 := newLabels(4)
-	app := h.Appender(context.Background())
-	_, err = app.Append(0, s4, 179*time.Minute.Milliseconds(), float64(179))
-	require.Equal(t, storage.ErrTooOldSample, err)
-	require.NoError(t, app.Rollback())
-	verifyOOOSamples(s3, 1)
-
-	// Samples still go into in-order chunk for samples within
-	// appendable minValidTime.
-	s5 := newLabels(5)
-	appendSample(s5, 240)
-	verifyInOrderSamples(s5, 1)
-}
-
-func TestHeadMinOOOTimeUpdate(t *testing.T) {
-	dir := t.TempDir()
-	wlog, err := wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, true)
-	require.NoError(t, err)
-	oooWlog, err := wal.NewSize(nil, nil, filepath.Join(dir, wal.WblDirName), 32768, true)
-	require.NoError(t, err)
-
-	opts := DefaultHeadOptions()
-	opts.ChunkDirRoot = dir
-	opts.OutOfOrderTimeWindow.Store(10 * time.Minute.Milliseconds())
-
-	h, err := NewHead(nil, nil, wlog, oooWlog, opts, nil)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, h.Close())
-	})
-	require.NoError(t, h.Init(0))
-
-	appendSample := func(ts int64) {
-		lbls := labels.FromStrings("foo", "bar")
-		app := h.Appender(context.Background())
-		_, err := app.Append(0, lbls, ts*time.Minute.Milliseconds(), float64(ts))
-		require.NoError(t, err)
-		require.NoError(t, app.Commit())
-	}
-
-	appendSample(300) // In-order sample.
-
-	require.Equal(t, int64(math.MaxInt64), h.MinOOOTime())
-
-	appendSample(295) // OOO sample.
-	require.Equal(t, 295*time.Minute.Milliseconds(), h.MinOOOTime())
-
-	// Allowed window for OOO is >=290, which is before the earliest ooo sample 295, so it gets set to the lower value.
-	require.NoError(t, h.truncateOOO(0, 1))
-	require.Equal(t, 290*time.Minute.Milliseconds(), h.MinOOOTime())
-
-	appendSample(310) // In-order sample.
-	appendSample(305) // OOO sample.
-	require.Equal(t, 290*time.Minute.Milliseconds(), h.MinOOOTime())
-
-	// Now the OOO sample 295 was not gc'ed yet. And allowed window for OOO is now >=300.
-	// So the lowest among them, 295, is set as minOOOTime.
-	require.NoError(t, h.truncateOOO(0, 2))
-	require.Equal(t, 295*time.Minute.Milliseconds(), h.MinOOOTime())
 }

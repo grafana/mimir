@@ -398,7 +398,7 @@ func (a *headAppender) Commit() (err error) {
 		var ok, chunkCreated bool
 
 		if err == nil {
-			ok, chunkCreated = series.append(s.T, s.V, a.appendID, nil, chunkRange)
+			ok, chunkCreated = series.append(s.T, s.V, a.appendID, chunkRange)
 			if ok {
 				if s.T < inOrderMint {
 					inOrderMint = s.T
@@ -433,7 +433,7 @@ func (a *headAppender) Commit() (err error) {
 // the appendID for isolation. (The appendID can be zero, which results in no
 // isolation for this append.)
 // It is unsafe to call this concurrently with s.iterator(...) without holding the series lock.
-func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper chunkDiskMapper, chunkRange int64) (sampleInOrder, chunkCreated bool) {
+func (s *memSeries) append(t int64, v float64, appendID uint64, chunkRange int64) (sampleInOrder, chunkCreated bool) {
 	// Based on Gorilla white papers this offers near-optimal compression ratio
 	// so anything bigger that this has diminishing returns and increases
 	// the time range within which we have to decompress all samples.
@@ -472,7 +472,6 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper 
 		maxNextAt := s.nextAt
 
 		s.nextAt = computeChunkEndTime(c.minTime, c.maxTime, maxNextAt)
-		s.nextAt = addJitterToChunkEndTime(s.hash, c.minTime, s.nextAt, maxNextAt, s.chunkEndTimeVariance)
 	}
 	// If numSamples > samplesPerChunk*2 then our previous prediction was invalid,
 	// most likely because samples rate has changed and now they are arriving more frequently.
@@ -506,30 +505,6 @@ func computeChunkEndTime(start, cur, max int64) int64 {
 		return max
 	}
 	return start + (max-start)/n
-}
-
-// addJitterToChunkEndTime return chunk's nextAt applying a jitter based on the provided expected variance.
-// The variance is applied to the estimated chunk duration (nextAt - chunkMinTime); the returned updated chunk
-// end time is guaranteed to be between "chunkDuration - (chunkDuration*(variance/2))" to
-// "chunkDuration + chunkDuration*(variance/2)", and never greater than maxNextAt.
-func addJitterToChunkEndTime(seriesHash uint64, chunkMinTime, nextAt, maxNextAt int64, variance float64) int64 {
-	if variance <= 0 {
-		return nextAt
-	}
-
-	// Do not apply the jitter if the chunk is expected to be the last one of the chunk range.
-	if nextAt >= maxNextAt {
-		return nextAt
-	}
-
-	// Compute the variance to apply to the chunk end time. The variance is based on the series hash so that
-	// different TSDBs ingesting the same exact samples (e.g. in a distributed system like Cortex) will have
-	// the same chunks for a given period.
-	chunkDuration := nextAt - chunkMinTime
-	chunkDurationMaxVariance := int64(float64(chunkDuration) * variance)
-	chunkDurationVariance := int64(seriesHash % uint64(chunkDurationMaxVariance))
-
-	return min(maxNextAt, nextAt+chunkDurationVariance-(chunkDurationMaxVariance/2))
 }
 
 func (s *memSeries) cutNewHeadChunk(mint int64, chunkRange int64) *memChunk {

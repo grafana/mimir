@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb"
@@ -52,22 +53,8 @@ var (
 	ErrAppenderClosed = errors.New("appender closed")
 
 	// defaultIsolationDisabled is true if isolation is disabled by default.
-	defaultIsolationDisabled = false
+	defaultIsolationDisabled = true
 )
-
-// chunkDiskMapper is a temporary interface while we transition from
-// 0 size queue to queue based chunk disk mapper.
-type chunkDiskMapper interface {
-	CutNewFile() (returnErr error)
-	IterateAllChunks(f func(seriesRef chunks.HeadSeriesRef, chunkRef chunks.ChunkDiskMapperRef, mint, maxt int64, numSamples uint16, encoding chunkenc.Encoding) error) (err error)
-	Truncate(fileNo uint32) error
-	DeleteCorrupted(originalErr error) error
-	Size() (int64, error)
-	Close() error
-	Chunk(ref chunks.ChunkDiskMapperRef) (chunkenc.Chunk, error)
-	WriteChunk(seriesRef chunks.HeadSeriesRef, mint, maxt int64, chk chunkenc.Chunk, callback func(err error)) (chkRef chunks.ChunkDiskMapperRef)
-	IsQueueEmpty() bool
-}
 
 // Head handles reads and writes of time series data within a time window.
 type Head struct {
@@ -553,7 +540,7 @@ func (h *Head) truncateMemory(mint int64) (err error) {
 	}
 
 	h.metrics.headTruncateTotal.Inc()
-	return nil
+	return h.truncateSeriesAndChunkDiskMapper("truncateMemory")
 }
 
 // WaitForPendingReadersInTimeRange waits for queries overlapping with given range to finish querying.
@@ -630,6 +617,31 @@ func (h *Head) IsQuerierCollidingWithTruncation(querierMint, querierMaxt int64) 
 	//      |------truncation------|
 	//                              |---query---|
 	return false, false, 0
+}
+
+// truncateSeriesAndChunkDiskMapper is a helper function for truncateMemory and truncateOOO.
+// It runs GC on the Head and truncates the ChunkDiskMapper accordingly.
+func (h *Head) truncateSeriesAndChunkDiskMapper(caller string) error {
+	start := time.Now()
+	actualMint := h.gc()
+	level.Info(h.logger).Log("msg", "Head GC completed", "caller", caller, "duration", time.Since(start))
+	h.metrics.gcDuration.Observe(time.Since(start).Seconds())
+
+	if actualMint > h.minTime.Load() {
+		// The actual mint of the head is higher than the one asked to truncate.
+		appendableMinValidTime := h.appendableMinValidTime()
+		if actualMint < appendableMinValidTime {
+			h.minTime.Store(actualMint)
+			h.minValidTime.Store(actualMint)
+		} else {
+			// The actual min time is in the appendable window.
+			// So we set the mint to the appendableMinValidTime.
+			h.minTime.Store(appendableMinValidTime)
+			h.minValidTime.Store(appendableMinValidTime)
+		}
+	}
+
+	return nil
 }
 
 type Stats struct {
@@ -753,6 +765,11 @@ func (h *Head) gc() (actualInOrderMint int64) {
 	h.postings.Delete(deleted)
 
 	return actualInOrderMint
+}
+
+func (h *Head) Tombstones() (tombstones.Reader, error) {
+	// return empty
+	return tombstones.NewMemTombstones(), nil
 }
 
 // NumSeries returns the number of active series in the head.
@@ -1187,18 +1204,6 @@ func (mc *memChunk) OverlapsClosedInterval(mint, maxt int64) bool {
 
 func overlapsClosedInterval(mint1, maxt1, mint2, maxt2 int64) bool {
 	return mint1 <= maxt2 && mint2 <= maxt1
-}
-
-// mappedChunks describes a head chunk on disk that has been mmapped
-type mmappedChunk struct {
-	ref              chunks.ChunkDiskMapperRef
-	numSamples       uint16
-	minTime, maxTime int64
-}
-
-// Returns true if the chunk overlaps [mint, maxt].
-func (mc *mmappedChunk) OverlapsClosedInterval(mint, maxt int64) bool {
-	return overlapsClosedInterval(mc.minTime, mc.maxTime, mint, maxt)
 }
 
 type noopSeriesLifecycleCallback struct{}
