@@ -8,8 +8,8 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
-// FromLabelAdaptersToLabels casts []LabelAdapter to labels.Labels.
-// For now it's doing an expensive conversion: TODO figure out a faster way, maybe via PreallocTimeSeries.
+// FromLabelAdaptersToLabels converts []LabelAdapter to labels.Labels.
+// Note this is relatively expensive; see FromLabelAdaptersOverwriteLabels for a fast unsafe way.
 func FromLabelAdaptersToLabels(ls []LabelAdapter) labels.Labels {
 	builder := labels.NewScratchBuilder(len(ls))
 	for _, v := range ls {
@@ -19,10 +19,23 @@ func FromLabelAdaptersToLabels(ls []LabelAdapter) labels.Labels {
 }
 
 // FromLabelAdaptersToLabelsWithCopy converts []LabelAdapter to labels.Labels.
-// Do NOT use unsafe to convert between data types because this function may
-// get in input labels whose data structure is reused.
+// The output does not retain any part of the input.
 func FromLabelAdaptersToLabelsWithCopy(input []LabelAdapter) labels.Labels {
-	return FromLabelAdaptersToLabels(input).Copy()
+	return FromLabelAdaptersToLabels(input)
+}
+
+// Copy data in Labels, such that any future Overwrite of input won't modify the returned value.
+func CopyLabels(input labels.Labels) labels.Labels {
+	return input.Copy()
+}
+
+// Build a labels.Labels from LabelAdaptors, with amortized zero allocations.
+func FromLabelAdaptersOverwriteLabels(builder *labels.ScratchBuilder, ls []LabelAdapter, dest *labels.Labels) {
+	builder.Reset()
+	for _, v := range ls {
+		builder.Add(v.Name, v.Value)
+	}
+	builder.Overwrite(dest)
 }
 
 // FromLabelsToLabelAdapters casts labels.Labels to []LabelAdapter.

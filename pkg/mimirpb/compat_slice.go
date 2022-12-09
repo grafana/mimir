@@ -23,6 +23,11 @@ func FromLabelAdaptersToLabels(ls []LabelAdapter) labels.Labels {
 	return *(*labels.Labels)(unsafe.Pointer(&ls))
 }
 
+// This is like FromLabelAdaptersToLabels but easier for stringlabels to implement.
+func FromLabelAdaptersOverwriteLabels(_ *labels.ScratchBuilder, ls []LabelAdapter, dest *labels.Labels) {
+	*dest = FromLabelAdaptersToLabels(ls)
+}
+
 // FromLabelAdaptersToLabelsWithCopy converts []LabelAdapter to labels.Labels.
 // Do NOT use unsafe to convert between data types because this function may
 // get in input labels whose data structure is reused.
@@ -30,8 +35,8 @@ func FromLabelAdaptersToLabelsWithCopy(input []LabelAdapter) labels.Labels {
 	return CopyLabels(FromLabelAdaptersToLabels(input))
 }
 
-// CopyLabels efficiently copies labels input slice. To be used in cases where input slice
-// can be reused, but long-term copy is needed.
+// Copy data in Labels, such that any future Overwrite of input won't modify the returned value.
+// We make a single block of bytes to hold all strings, to save memory compared to Go rounding up the allocations.
 func CopyLabels(input []labels.Label) labels.Labels {
 	result := make(labels.Labels, len(input))
 

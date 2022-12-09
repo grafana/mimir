@@ -900,6 +900,8 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 	// fetch once per push request to avoid processing half the request differently
 	nativeHistogramsIngestionEnabled := i.limits.NativeHistogramsIngestionEnabled(userID)
 
+	var builder labels.ScratchBuilder
+	var nonCopiedLabels labels.Labels
 	for _, ts := range timeseries {
 		// The labels must be sorted (in our case, it's guaranteed a write request
 		// has sorted labels once hit the ingester).
@@ -947,7 +949,8 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 			}
 		}
 
-		nonCopiedLabels := mimirpb.FromLabelAdaptersToLabels(ts.Labels)
+		// MUST BE COPIED before being retained.
+		mimirpb.FromLabelAdaptersOverwriteLabels(&builder, ts.Labels, &nonCopiedLabels)
 		hash := nonCopiedLabels.Hash()
 		// Look up a reference for this series. The hash passed should be the output of Labels.Hash()
 		// and NOT the stable hashing because we use the stable hashing in ingesters only for query sharding.
@@ -967,7 +970,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 				}
 			} else {
 				// Copy the label set because both TSDB and the active series tracker may retain it.
-				copiedLabels = mimirpb.FromLabelAdaptersToLabelsWithCopy(ts.Labels)
+				copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
 
 				// Retain the reference in case there are multiple samples for the series.
 				if ref, err = app.Append(0, copiedLabels, s.TimestampMs, s.Value); err == nil {
@@ -1009,7 +1012,7 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 					}
 				} else {
 					// Copy the label set because both TSDB and the active series tracker may retain it.
-					copiedLabels = mimirpb.FromLabelAdaptersToLabelsWithCopy(ts.Labels)
+					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
 
 					// Retain the reference in case there are multiple samples for the series.
 					if ref, err = app.AppendHistogram(0, copiedLabels, h.Timestamp, ih, fh); err == nil {
