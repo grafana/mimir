@@ -5,6 +5,7 @@
 package integration
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -173,6 +174,71 @@ func TestReadWriteModeRecordingRule(t *testing.T) {
 	require.Equal(t, expectedVector, queryResult.(model.Vector))
 }
 
+func TestReadWriteModeAlertingRule(t *testing.T) {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	c, _, backendInstance := startReadWriteModeCluster(
+		t,
+		s,
+		map[string]string{
+			// Evaluate rules often and with no delay, so that we don't need to wait for metrics or alerts to show up.
+			"-ruler.evaluation-interval":       "2s",
+			"-ruler.poll-interval":             "2s",
+			"-ruler.evaluation-delay-duration": "0",
+			"-ruler.resend-delay":              "2s",
+		},
+	)
+
+	// Set up alertmanager config for tenant
+	alertmanagerConfig := `
+route:
+  receiver: test-receiver
+receivers:
+  - name: test-receiver
+`
+	require.NoError(t, c.SetAlertmanagerConfig(context.Background(), alertmanagerConfig, map[string]string{}))
+
+	// Create alerting rule
+	alert := yaml.Node{}
+	testAlertName := "test_alert"
+	alert.SetString(testAlertName)
+
+	expr := yaml.Node{}
+	expr.SetString("sum(test_series) > 0")
+
+	ruleGroup := rulefmt.RuleGroup{
+		Name:     "test_rule_group",
+		Interval: 1,
+		Rules: []rulefmt.RuleNode{
+			{
+				Alert: alert,
+				Expr:  expr,
+				For:   model.Duration(1 * time.Second),
+			},
+		},
+	}
+
+	require.NoError(t, c.SetRuleGroup(ruleGroup, "test_rule_group_namespace"))
+
+	// Push data that should trigger the alerting rule
+	pushTime := time.Now()
+	series, _, _ := generateSeries("test_series", pushTime, prompb.Label{Name: "foo", Value: "bar"})
+
+	res, err := c.Push(series)
+	require.NoError(t, err)
+	require.Equal(t, 200, res.StatusCode)
+
+	// Verify alert is firing
+	require.NoError(t, backendInstance.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(1), []string{"cortex_alertmanager_alerts_received_total"}, e2e.WaitMissingMetrics))
+
+	alerts, err := c.GetAlertsV1(context.Background())
+	require.NoError(t, err)
+	require.Len(t, alerts, 1)
+	require.Equal(t, testAlertName, alerts[0].Name())
+}
+
 func startReadWriteModeCluster(t *testing.T, s *e2e.Scenario, extraFlags ...map[string]string) (c *e2emimir.Client, writeInstance *e2emimir.MimirService, backendInstance *e2emimir.MimirService) {
 	minio := e2edb.NewMinio(9000, mimirBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio))
@@ -185,11 +251,12 @@ func startReadWriteModeCluster(t *testing.T, s *e2e.Scenario, extraFlags ...map[
 	}
 
 	flagSets = append(flagSets, extraFlags...)
-	flags := mergeFlags(flagSets...)
+	commonFlags := mergeFlags(flagSets...)
+	backendFlags := mergeFlags(commonFlags, map[string]string{"-ruler.alertmanager-url": "http://localhost:8080/alertmanager"})
 
-	readInstance := e2emimir.NewReadInstance("mimir-read-1", flags)
-	writeInstance = e2emimir.NewWriteInstance("mimir-write-1", flags)
-	backendInstance = e2emimir.NewBackendInstance("mimir-backend-1", flags)
+	readInstance := e2emimir.NewReadInstance("mimir-read-1", commonFlags)
+	writeInstance = e2emimir.NewWriteInstance("mimir-write-1", commonFlags)
+	backendInstance = e2emimir.NewBackendInstance("mimir-backend-1", backendFlags)
 	require.NoError(t, s.StartAndWaitReady(readInstance, writeInstance, backendInstance))
 
 	c, err := e2emimir.NewClient(writeInstance.HTTPEndpoint(), readInstance.HTTPEndpoint(), backendInstance.HTTPEndpoint(), backendInstance.HTTPEndpoint(), "user-1")
