@@ -49,8 +49,12 @@ If an alerting rule has a defined `for` duration, it enters the **PENDING** (`pe
 After the alert has been active for the entire `for` duration, it enters the **FIRING** (`firing`) state.
 The ruler then notifies Alertmanagers of any **FIRING** (`firing`) alerts.
 
-Configure the addresses of Alertmanagers with the `-ruler.alertmanager-url` flag, which supports the DNS service discovery format.
+Configure the addresses of Alertmanagers with the `-ruler.alertmanager-url` flag. This flag supports the DNS service discovery format.
 For more information about DNS service discovery, refer to [Supported discovery modes]({{< relref "../../../configure/about-dns-service-discovery.md" >}}).
+
+If you're using [Mimir's Alertmanager]({{< relref "../alertmanager.md" >}}), the address should point to Alertmanager's API.
+Alertmanager's API prefix is configured by the `-http.alertmanager-http-prefix` flag, and defaults to `/alertmanager`.
+For example, if Alertmanager is listening at `https://mimir-alertmanager.namespace.svc.cluster.local` and is using the default API prefix, set `-ruler.alertmanager-url` to `https://mimir-alertmanager.namespace.svc.cluster.local/alertmanager`.
 
 ## Federated rule groups
 
