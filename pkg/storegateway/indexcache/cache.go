@@ -23,6 +23,7 @@ const (
 	cacheTypeSeriesForRef     = "SeriesForRef"
 	cacheTypeExpandedPostings = "ExpandedPostings"
 	cacheTypeSeries           = "Series"
+	cacheTypeSeriesParts      = "SeriesParts"
 	cacheTypeLabelNames       = "LabelNames"
 	cacheTypeLabelValues      = "LabelValues"
 )
@@ -33,6 +34,7 @@ var (
 		cacheTypeSeriesForRef,
 		cacheTypeExpandedPostings,
 		cacheTypeSeries,
+		cacheTypeSeriesParts,
 		cacheTypeLabelNames,
 		cacheTypeLabelValues,
 	}
