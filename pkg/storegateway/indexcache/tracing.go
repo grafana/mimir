@@ -105,7 +105,7 @@ func (t *TracingIndexCache) FetchSeriesParts(ctx context.Context, userID string,
 
 func (t *TracingIndexCache) FetchSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, part int) ([]byte, bool) {
 	t0 := time.Now()
-	data, found := t.c.FetchSeries(ctx, userID, blockID, matchersKey, shard, 0)
+	data, found := t.c.FetchSeries(ctx, userID, blockID, matchersKey, shard, part)
 
 	spanLogger := spanlogger.FromContext(ctx, t.logger)
 	level.Debug(spanLogger).Log(

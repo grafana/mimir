@@ -10,6 +10,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
@@ -1260,10 +1261,12 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 	})
 
 	testCases := map[string]struct {
-		matcher        *labels.Matcher
-		batchSize      int
-		chunksLimit    int
-		seriesLimit    int
+		matcher     *labels.Matcher
+		batchSize   int
+		chunksLimit int
+		seriesLimit int
+		skipChunks  bool
+
 		expectedErr    string
 		expectedSeries []seriesChunkRefsSet
 	}{
@@ -1341,6 +1344,27 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 				}},
 			},
 		},
+		"selects all series in multiple batches with skipChunks": {
+			matcher:     labels.MustNewMatcher(labels.MatchRegexp, "a", ".+"),
+			batchSize:   1,
+			skipChunks:  true,
+			chunksLimit: 100,
+			seriesLimit: 100,
+			expectedSeries: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("a", "1", "b", "1")},
+				}},
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("a", "1", "b", "2")},
+				}},
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("a", "2", "b", "1")},
+				}},
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("a", "2", "b", "2")},
+				}},
+			},
+		},
 	}
 
 	for testName, testCase := range testCases {
@@ -1357,14 +1381,14 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 				testCase.batchSize,
 				"",
 				indexReader,
-				nil,
+				newInMemoryIndexCache(t),
 				block.meta,
 				[]*labels.Matcher{testCase.matcher},
 				nil,
 				hashcache.NewSeriesHashCache(1024*1024).GetBlockCache(block.meta.ULID.String()),
 				&limiter{limit: testCase.chunksLimit},
 				&limiter{limit: testCase.seriesLimit},
-				false,
+				testCase.skipChunks,
 				block.meta.MinTime,
 				block.meta.MaxTime,
 				newSafeQueryStats(),
@@ -1403,6 +1427,93 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
+	newTestBlock := prepareTestBlock(test.NewTB(t), func(tb testing.TB, appender storage.Appender) {
+		earlySeries := []labels.Labels{
+			labels.FromStrings("a", "1", "b", "1"),
+			labels.FromStrings("a", "1", "b", "2"),
+			labels.FromStrings("a", "2", "b", "1"),
+			labels.FromStrings("a", "2", "b", "2"),
+		}
+
+		for i := int64(0); i < 10; i++ { // write 200 samples, so we get two chunks
+			for _, s := range earlySeries {
+				_, err := appender.Append(0, s, i, 0)
+				assert.NoError(t, err)
+			}
+		}
+		assert.NoError(t, appender.Commit())
+	})
+
+	b := newTestBlock()
+	b.indexCache = newInMemoryIndexCache(t)
+
+	matchers := []*labels.Matcher{
+		labels.MustNewMatcher(labels.MatchEqual, "a", "1"),
+	}
+	expectedLabelSet := []labels.Labels{
+		labels.FromStrings("a", "1", "b", "1"),
+		labels.FromStrings("a", "1", "b", "2"),
+	}
+
+	indexReader := b.indexReader()
+	ss, err := openBlockSeriesChunkRefsSetsIterator(
+		context.Background(),
+		1,
+		"",
+		indexReader,
+		b.indexCache,
+		b.meta,
+		matchers,
+		nil,
+		nil,
+		&limiter{limit: 1000},
+		&limiter{limit: 1000},
+		true,
+		b.meta.MinTime, b.meta.MaxTime,
+		newSafeQueryStats(),
+		NewBucketStoreMetrics(nil),
+		log.NewNopLogger(),
+	)
+
+	require.NoError(t, err)
+	lset := extractLabelsFromSeriesChunkRefsSets(readAllSeriesChunkRefsSet(ss))
+	require.Equal(t, expectedLabelSet, lset)
+
+	// Cache should be filled by now. We pass a nil index reader to make sure.
+	indexReader = nil
+	ss, err = openBlockSeriesChunkRefsSetsIterator(
+		context.Background(),
+		1,
+		"",
+		indexReader,
+		b.indexCache,
+		b.meta,
+		matchers,
+		nil,
+		nil,
+		&limiter{limit: 1000},
+		&limiter{limit: 1000},
+		true,
+		b.meta.MinTime, b.meta.MaxTime,
+		newSafeQueryStats(),
+		NewBucketStoreMetrics(nil),
+		log.NewNopLogger(),
+	)
+	require.NoError(t, err)
+	lset = extractLabelsFromSeriesChunkRefsSets(readAllSeriesChunkRefsSet(ss))
+	require.Equal(t, expectedLabelSet, lset)
+}
+
+func extractLabelsFromSeriesChunkRefsSets(sets []seriesChunkRefsSet) (result []labels.Labels) {
+	for _, set := range sets {
+		for _, series := range set.series {
+			result = append(result, series.lset)
+		}
+	}
+	return
 }
 
 func TestPostingsSetsIterator(t *testing.T) {
