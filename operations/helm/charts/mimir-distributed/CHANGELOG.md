@@ -30,6 +30,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 * [ENHANCEMENT] Update the `rollout-operator` subchart to `0.2.0`. #3624
 * [ENHANCEMENT] Add ability to manage PrometheusRule for metamonitoring with Prometheus operator from the Helm chart. The alerts are disabled by default but can be enabled with `prometheusRule.mimirAlerts` set to `true`. To enable the default rules, set `mimirRules` to `true`. #2134 #2609
+* [BUGFIX] Enable `rollout-operator` to use PodSecurityPolicies if necessary
 
 ## 4.0.0
 

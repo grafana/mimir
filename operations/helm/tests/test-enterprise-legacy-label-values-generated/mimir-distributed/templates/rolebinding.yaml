@@ -16,3 +16,5 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: test-enterprise-legacy-label-values-enterprise-metrics
+- kind: ServiceAccount
+  name: test-enterprise-legacy-label-values-mimir-distributed

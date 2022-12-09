@@ -16,3 +16,5 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: gateway-enterprise-values-mimir
+- kind: ServiceAccount
+  name: gateway-enterprise-values-mimir-distributed
