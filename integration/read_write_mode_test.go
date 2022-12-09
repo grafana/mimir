@@ -20,12 +20,12 @@ import (
 	"github.com/grafana/mimir/integration/e2emimir"
 )
 
-func TestReadWriteModeQuerying(t *testing.T) {
+func TestReadWriteModeQueryingIngester(t *testing.T) {
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
 	defer s.Close()
 
-	c, _ := startReadWriteModeCluster(t, s)
+	c, _, _ := startReadWriteModeCluster(t, s)
 
 	// Push some data to the cluster.
 	now := time.Now()
@@ -56,12 +56,60 @@ func TestReadWriteModeQuerying(t *testing.T) {
 	require.Equal(t, []string{"__name__", "foo"}, labelNames)
 }
 
+func TestReadWriteModeQueryingStoreGateway(t *testing.T) {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	c, writeInstance, backendInstance := startReadWriteModeCluster(t, s, BlocksStorageFlags(), map[string]string{
+		// Frequently compact and ship blocks to storage so we can query them through the store gateway.
+		"-blocks-storage.tsdb.block-ranges-period":          "2s",
+		"-blocks-storage.tsdb.ship-interval":                "1s",
+		"-blocks-storage.tsdb.retention-period":             "3s",
+		"-blocks-storage.tsdb.head-compaction-idle-timeout": "1s",
+	})
+
+	// Push some data to the cluster.
+	now := time.Now()
+	series, expectedVector, expectedMatrix := generateSeries("test_series_1", now, prompb.Label{Name: "foo", Value: "bar"})
+
+	res, err := c.Push(series)
+	require.NoError(t, err)
+	require.Equal(t, 200, res.StatusCode)
+
+	// Wait until the TSDB head is shipped to storage, removed from the ingester in the write instance, and loaded by the
+	// store-gateway in the backend instance to ensure we're querying the store-gateway (and not the ingester).
+	require.NoError(t, writeInstance.WaitSumMetrics(e2e.GreaterOrEqual(1), "cortex_ingester_shipper_uploads_total"))
+	require.NoError(t, writeInstance.WaitSumMetrics(e2e.Equals(0), "cortex_ingester_memory_series"))
+	require.NoError(t, backendInstance.WaitSumMetrics(e2e.GreaterOrEqual(1), "cortex_bucket_store_blocks_loaded"))
+
+	// Verify we can read the data we just pushed, both with an instant query and a range query.
+	queryResult, err := c.Query("test_series_1", now)
+	require.NoError(t, err)
+	require.Equal(t, model.ValVector, queryResult.Type())
+	require.Equal(t, expectedVector, queryResult.(model.Vector))
+
+	rangeResult, err := c.QueryRange("test_series_1", now.Add(-5*time.Minute), now, 15*time.Second)
+	require.NoError(t, err)
+	require.Equal(t, model.ValMatrix, rangeResult.Type())
+	require.Equal(t, expectedMatrix, rangeResult.(model.Matrix))
+
+	// Verify we can retrieve the labels we just pushed.
+	labelValues, err := c.LabelValues("foo", prometheusMinTime, prometheusMaxTime, nil)
+	require.NoError(t, err)
+	require.Equal(t, model.LabelValues{"bar"}, labelValues)
+
+	labelNames, err := c.LabelNames(prometheusMinTime, prometheusMaxTime)
+	require.NoError(t, err)
+	require.Equal(t, []string{"__name__", "foo"}, labelNames)
+}
+
 func TestReadWriteModeRecordingRule(t *testing.T) {
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
 	defer s.Close()
 
-	c, backendInstance := startReadWriteModeCluster(
+	c, _, backendInstance := startReadWriteModeCluster(
 		t,
 		s,
 		map[string]string{
@@ -125,7 +173,7 @@ func TestReadWriteModeRecordingRule(t *testing.T) {
 	require.Equal(t, expectedVector, queryResult.(model.Vector))
 }
 
-func startReadWriteModeCluster(t *testing.T, s *e2e.Scenario, extraFlags ...map[string]string) (c *e2emimir.Client, backendInstance *e2emimir.MimirService) {
+func startReadWriteModeCluster(t *testing.T, s *e2e.Scenario, extraFlags ...map[string]string) (c *e2emimir.Client, writeInstance *e2emimir.MimirService, backendInstance *e2emimir.MimirService) {
 	minio := e2edb.NewMinio(9000, mimirBucketName)
 	require.NoError(t, s.StartAndWaitReady(minio))
 
@@ -140,7 +188,7 @@ func startReadWriteModeCluster(t *testing.T, s *e2e.Scenario, extraFlags ...map[
 	flags := mergeFlags(flagSets...)
 
 	readInstance := e2emimir.NewReadInstance("mimir-read-1", flags)
-	writeInstance := e2emimir.NewWriteInstance("mimir-write-1", flags)
+	writeInstance = e2emimir.NewWriteInstance("mimir-write-1", flags)
 	backendInstance = e2emimir.NewBackendInstance("mimir-backend-1", flags)
 	require.NoError(t, s.StartAndWaitReady(readInstance, writeInstance, backendInstance))
 
