@@ -346,7 +346,7 @@ func (c *InMemoryIndexCache) FetchExpandedPostings(_ context.Context, userID str
 }
 
 func (c *InMemoryIndexCache) StoreSeriesParts(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, v []byte) {
-	// TODO dimitarvdimitrov
+	c.set(cacheKeySeriesParts{userID, blockID, matchersKey, shardKey(shard)}, v)
 }
 
 // StoreSeries stores the result of a Series() call.
@@ -355,8 +355,7 @@ func (c *InMemoryIndexCache) StoreSeries(ctx context.Context, userID string, blo
 }
 
 func (c *InMemoryIndexCache) FetchSeriesParts(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector) (parts []byte, b bool) {
-	// TODO dimitarvdimitrov
-	return nil, false
+	return c.get(cacheKeySeriesParts{userID, blockID, matchersKey, shardKey(shard)})
 }
 
 // FetchSeries fetches the result of a Series() call.
@@ -445,6 +444,21 @@ func (c cacheKeySeries) typ() string {
 }
 
 func (c cacheKeySeries) size() uint64 {
+	return stringSize(c.userID) + ulidSize + stringSize(string(c.matchersKey)) + stringSize(c.shard) + 8
+}
+
+type cacheKeySeriesParts struct {
+	userID      string
+	block       ulid.ULID
+	matchersKey LabelMatchersKey
+	shard       string
+}
+
+func (c cacheKeySeriesParts) typ() string {
+	return cacheTypeSeriesParts
+}
+
+func (c cacheKeySeriesParts) size() uint64 {
 	return stringSize(c.userID) + ulidSize + stringSize(string(c.matchersKey)) + stringSize(c.shard)
 }
 

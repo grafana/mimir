@@ -179,6 +179,15 @@ func TestInMemoryIndexCache_UpdateItem(t *testing.T) {
 			},
 		},
 		{
+			typ: cacheTypeSeriesParts,
+			set: func(id uint64, b []byte) {
+				cache.StoreSeriesParts(ctx, user, uid(id), CanonicalLabelMatchersKey(matchers), shard, b)
+			},
+			get: func(id uint64) ([]byte, bool) {
+				return cache.FetchSeriesParts(ctx, user, uid(id), CanonicalLabelMatchersKey(matchers), shard)
+			},
+		},
+		{
 			typ: cacheTypeLabelNames,
 			set: func(id uint64, b []byte) {
 				cache.StoreLabelNames(ctx, user, uid(id), CanonicalLabelMatchersKey(matchers), b)
