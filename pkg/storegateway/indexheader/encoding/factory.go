@@ -13,6 +13,8 @@ import (
 	"github.com/pkg/errors"
 )
 
+// readerBufferSize is the size of the buffer used for reading index-header files. This
+// value is arbitrary and will likely change in the future based on profiling results.
 const readerBufferSize = 4096
 
 // DecbufFactory creates new file-backed decoding buffer instances for a specific index-header file.
@@ -63,25 +65,15 @@ func (df *DecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table) Decb
 		return Decbuf{E: errors.Wrapf(ErrInvalidSize, "insufficient bytes read for size (got %d, wanted %d)", n, 4)}
 	}
 
-	// If we return early and don't include a Reader for our Decbuf, we are responsible
-	// for putting our buffer back in the pool.
 	bufReader := df.pool.Get().(*bufio.Reader)
-	freeBuf := true
-	defer func() {
-		if freeBuf {
-			df.pool.Put(bufReader)
-		}
-	}()
-
 	contentLength := int(binary.BigEndian.Uint32(lengthBytes))
-	bufferLength := len(lengthBytes) + contentLength + 4
+	bufferLength := len(lengthBytes) + contentLength + crc32.Size
 	r, err := NewFileReader(f, offset, bufferLength, bufReader)
 	if err != nil {
 		return Decbuf{E: errors.Wrap(err, "create file reader")}
 	}
 
 	closeFile = false
-	freeBuf = false
 	d := Decbuf{r: r}
 
 	if d.ResetAt(4); d.Err() != nil {
@@ -132,16 +124,7 @@ func (df *DecbufFactory) NewRawDecbuf() Decbuf {
 		return Decbuf{E: errors.Wrap(err, "stat file for decbuf")}
 	}
 
-	// If we return early and don't include a Reader for our Decbuf, we are responsible
-	// for putting our buffer back in the pool.
 	bufReader := df.pool.Get().(*bufio.Reader)
-	freeBuf := true
-	defer func() {
-		if freeBuf {
-			df.pool.Put(bufReader)
-		}
-	}()
-
 	fileSize := stat.Size()
 	reader, err := NewFileReader(f, 0, int(fileSize), bufReader)
 	if err != nil {
@@ -149,7 +132,6 @@ func (df *DecbufFactory) NewRawDecbuf() Decbuf {
 	}
 
 	closeFile = false
-	freeBuf = false
 	return Decbuf{r: reader}
 }
 

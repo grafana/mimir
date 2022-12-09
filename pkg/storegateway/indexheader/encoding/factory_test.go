@@ -9,7 +9,7 @@ import (
 	"path"
 	"testing"
 
-	prom_encoding "github.com/prometheus/prometheus/tsdb/encoding"
+	promencoding "github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/stretchr/testify/require"
 )
 
@@ -18,7 +18,7 @@ func TestDecbufFactory_NewDecbufAtChecked(t *testing.T) {
 
 	t.Run("invalid CRC", func(t *testing.T) {
 		contentLength := 4096
-		enc := prom_encoding.Encbuf{}
+		enc := promencoding.Encbuf{}
 
 		for i := 0; i < contentLength; i++ {
 			enc.PutByte(0x01)
@@ -37,7 +37,7 @@ func TestDecbufFactory_NewDecbufAtChecked(t *testing.T) {
 
 	t.Run("invalid length", func(t *testing.T) {
 		contentLength := 4096
-		enc := prom_encoding.Encbuf{}
+		enc := promencoding.Encbuf{}
 
 		for i := 0; i < contentLength; i++ {
 			enc.PutByte(0x01)
@@ -56,7 +56,7 @@ func TestDecbufFactory_NewDecbufAtChecked(t *testing.T) {
 
 	t.Run("happy path", func(t *testing.T) {
 		contentLength := 4096
-		enc := prom_encoding.Encbuf{}
+		enc := promencoding.Encbuf{}
 
 		for i := 0; i < contentLength; i++ {
 			enc.PutByte(0x01)
@@ -80,7 +80,7 @@ func TestDecbufFactory_NewDecbufAtUnchecked(t *testing.T) {
 
 	t.Run("happy path", func(t *testing.T) {
 		contentLength := 4096
-		enc := prom_encoding.Encbuf{}
+		enc := promencoding.Encbuf{}
 
 		for i := 0; i < contentLength; i++ {
 			enc.PutByte(0x01)
@@ -104,7 +104,7 @@ func TestDecbufFactory_NewDecbufRaw(t *testing.T) {
 
 	t.Run("happy path", func(t *testing.T) {
 		contentLength := 4096
-		enc := prom_encoding.Encbuf{}
+		enc := promencoding.Encbuf{}
 
 		for i := 0; i < contentLength; i++ {
 			enc.PutByte(0x01)
@@ -138,7 +138,7 @@ func createDecbufFactoryWithBytes(t testing.TB, len int, b []byte) *DecbufFactor
 func BenchmarkDecbufFactory_NewDecbufAtUnchecked(t *testing.B) {
 	table := crc32.MakeTable(crc32.Castagnoli)
 	contentLength := 4096
-	enc := prom_encoding.Encbuf{}
+	enc := promencoding.Encbuf{}
 
 	for i := 0; i < contentLength; i++ {
 		enc.PutByte(0x01)

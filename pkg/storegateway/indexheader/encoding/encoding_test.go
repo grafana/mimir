@@ -9,8 +9,10 @@ import (
 	"strconv"
 	"testing"
 
-	prom_encoding "github.com/prometheus/prometheus/tsdb/encoding"
+	promencoding "github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestDecbuf_Be32HappyPath(t *testing.T) {
@@ -22,7 +24,7 @@ func TestDecbuf_Be32HappyPath(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(strconv.FormatInt(int64(c), 10), func(t *testing.T) {
-			enc := prom_encoding.Encbuf{}
+			enc := promencoding.Encbuf{}
 			enc.PutBE32(c)
 
 			dec := createDecbufWithBytes(t, enc.Get())
@@ -37,7 +39,7 @@ func TestDecbuf_Be32HappyPath(t *testing.T) {
 }
 
 func TestDecbuf_Be32InsufficientBuffer(t *testing.T) {
-	enc := prom_encoding.Encbuf{}
+	enc := promencoding.Encbuf{}
 	enc.PutBE32(0xFFFF_FFFF)
 
 	dec := createDecbufWithBytes(t, enc.Get()[:2])
@@ -51,7 +53,7 @@ func FuzzDecbuf_Be32(f *testing.F) {
 	f.Add(uint32(0xFFFF_FFFF))
 
 	f.Fuzz(func(t *testing.T, n uint32) {
-		enc := prom_encoding.Encbuf{}
+		enc := promencoding.Encbuf{}
 		enc.PutBE32(n)
 
 		dec := createDecbufWithBytes(t, enc.Get())
@@ -66,7 +68,7 @@ func FuzzDecbuf_Be32(f *testing.F) {
 }
 
 func BenchmarkDecbuf_Be32(t *testing.B) {
-	enc := prom_encoding.Encbuf{}
+	enc := promencoding.Encbuf{}
 	enc.PutBE32(uint32(0))
 	enc.PutBE32(uint32(1))
 	enc.PutBE32(uint32(0xFFFF_FFFF))
@@ -102,7 +104,7 @@ func TestDecbuf_Be32intHappyPath(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(strconv.Itoa(c), func(t *testing.T) {
-			enc := prom_encoding.Encbuf{}
+			enc := promencoding.Encbuf{}
 			enc.PutBE32int(c)
 
 			dec := createDecbufWithBytes(t, enc.Get())
@@ -117,7 +119,7 @@ func TestDecbuf_Be32intHappyPath(t *testing.T) {
 }
 
 func TestDecbuf_Be32intInsufficientBuffer(t *testing.T) {
-	enc := prom_encoding.Encbuf{}
+	enc := promencoding.Encbuf{}
 	enc.PutBE32int(0xFFFF_FFFF)
 
 	dec := createDecbufWithBytes(t, enc.Get()[:2])
@@ -135,7 +137,7 @@ func FuzzDecbuf_Be32int(f *testing.F) {
 			t.Skip()
 		}
 
-		enc := prom_encoding.Encbuf{}
+		enc := promencoding.Encbuf{}
 		enc.PutBE32int(n)
 
 		dec := createDecbufWithBytes(t, enc.Get())
@@ -158,7 +160,7 @@ func TestDecbuf_Be64HappyPath(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(strconv.FormatUint(c, 10), func(t *testing.T) {
-			enc := prom_encoding.Encbuf{}
+			enc := promencoding.Encbuf{}
 			enc.PutBE64(c)
 
 			dec := createDecbufWithBytes(t, enc.Get())
@@ -184,7 +186,7 @@ func FuzzDecbuf_Be64(f *testing.F) {
 	f.Add(uint64(0xFFFF_FFFF_FFFF_FFFF))
 
 	f.Fuzz(func(t *testing.T, n uint64) {
-		enc := prom_encoding.Encbuf{}
+		enc := promencoding.Encbuf{}
 		enc.PutBE64(n)
 
 		dec := createDecbufWithBytes(t, enc.Get())
@@ -199,7 +201,7 @@ func FuzzDecbuf_Be64(f *testing.F) {
 }
 
 func BenchmarkDecbuf_Be64(t *testing.B) {
-	enc := prom_encoding.Encbuf{}
+	enc := promencoding.Encbuf{}
 	enc.PutBE64(uint64(0))
 	enc.PutBE64(uint64(1))
 	enc.PutBE64(uint64(0xFFFF_FFFF_FFFF_FFFF))
@@ -229,7 +231,7 @@ func BenchmarkDecbuf_Be64(t *testing.B) {
 func TestDecbuf_SkipHappyPath(t *testing.T) {
 	expected := uint32(0x12345678)
 
-	enc := prom_encoding.Encbuf{}
+	enc := promencoding.Encbuf{}
 	enc.PutBE32(0xFFFF_FFFF)
 	enc.PutBE32(expected)
 
@@ -282,7 +284,7 @@ func TestDecbuf_UvarintHappyPath(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(strconv.Itoa(c.value), func(t *testing.T) {
-			enc := prom_encoding.Encbuf{}
+			enc := promencoding.Encbuf{}
 			enc.PutUvarint(c.value)
 
 			dec := createDecbufWithBytes(t, enc.Get())
@@ -297,7 +299,7 @@ func TestDecbuf_UvarintHappyPath(t *testing.T) {
 }
 
 func TestDecbuf_UvarintInsufficientBuffer(t *testing.T) {
-	enc := prom_encoding.Encbuf{}
+	enc := promencoding.Encbuf{}
 	enc.PutUvarint(0xFFFF_FFFF)
 
 	dec := createDecbufWithBytes(t, enc.Get()[:2])
@@ -315,7 +317,7 @@ func FuzzDecbuf_Uvarint(f *testing.F) {
 			t.Skip()
 		}
 
-		enc := prom_encoding.Encbuf{}
+		enc := promencoding.Encbuf{}
 		enc.PutUvarint(n)
 
 		dec := createDecbufWithBytes(t, enc.Get())
@@ -342,7 +344,7 @@ func TestDecbuf_Uvarint64HappyPath(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(strconv.FormatUint(c.value, 10), func(t *testing.T) {
-			enc := prom_encoding.Encbuf{}
+			enc := promencoding.Encbuf{}
 			enc.PutUvarint64(c.value)
 
 			dec := createDecbufWithBytes(t, enc.Get())
@@ -357,7 +359,7 @@ func TestDecbuf_Uvarint64HappyPath(t *testing.T) {
 }
 
 func TestDecbuf_Uvarint64InsufficientBuffer(t *testing.T) {
-	enc := prom_encoding.Encbuf{}
+	enc := promencoding.Encbuf{}
 	enc.PutUvarint64(0xFFFF_FFFF)
 
 	dec := createDecbufWithBytes(t, enc.Get()[:2])
@@ -374,7 +376,7 @@ func FuzzDecbuf_Uvarint64(f *testing.F) {
 	f.Add(uint64(0xFFFF_FFFF_FFFF_FFFF))
 
 	f.Fuzz(func(t *testing.T, n uint64) {
-		enc := prom_encoding.Encbuf{}
+		enc := promencoding.Encbuf{}
 		enc.PutUvarint64(n)
 
 		dec := createDecbufWithBytes(t, enc.Get())
@@ -392,6 +394,7 @@ func TestDecbuf_UvarintBytesHappyPath(t *testing.T) {
 		value             []byte
 		encodedSizeLength int
 	}{
+		{name: "nil slice", value: []byte(nil), encodedSizeLength: 1},
 		{name: "empty slice", value: []byte{}, encodedSizeLength: 1},
 		{name: "single byte", value: []byte{0x12}, encodedSizeLength: 1},
 		{name: "127 bytes", value: []byte("1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567"), encodedSizeLength: 1},
@@ -400,7 +403,7 @@ func TestDecbuf_UvarintBytesHappyPath(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			enc := prom_encoding.Encbuf{}
+			enc := promencoding.Encbuf{}
 			enc.PutUvarintBytes(c.value)
 
 			dec := createDecbufWithBytes(t, enc.Get())
@@ -408,14 +411,14 @@ func TestDecbuf_UvarintBytesHappyPath(t *testing.T) {
 
 			actual := dec.UvarintBytes()
 			require.NoError(t, dec.Err())
-			require.Equal(t, c.value, actual)
+			require.Condition(t, test.EqualSlices(c.value, actual), "%#v != %#v", c.value, actual)
 			require.Equal(t, 0, dec.Len())
 		})
 	}
 }
 
 func TestDecbuf_UvarintBytesInsufficientBuffer(t *testing.T) {
-	enc := prom_encoding.Encbuf{}
+	enc := promencoding.Encbuf{}
 	enc.PutUvarintBytes([]byte("123456"))
 
 	dec := createDecbufWithBytes(t, enc.Get()[:2])
@@ -435,7 +438,7 @@ func TestDecbuf_UvarintBytesSkipDoesNotCauseBufferFill(t *testing.T) {
 	// buffer each with different content _and_ by ensuring there are more bytes written
 	// in total than the size of the underlying buffer (currently 4k).
 
-	enc := prom_encoding.Encbuf{}
+	enc := promencoding.Encbuf{}
 	for base := 0; base < expectedSlices; base++ {
 		var bytes []byte
 		for i := 0; i < expectedBytes; i++ {
@@ -465,14 +468,14 @@ func FuzzDecbuf_UvarintBytes(f *testing.F) {
 	f.Add([]byte("12345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678"))
 
 	f.Fuzz(func(t *testing.T, b []byte) {
-		enc := prom_encoding.Encbuf{}
+		enc := promencoding.Encbuf{}
 		enc.PutUvarintBytes(b)
 
 		dec := createDecbufWithBytes(t, enc.Get())
 		require.NoError(t, dec.Err())
 		actual := dec.UvarintBytes()
 		require.NoError(t, dec.Err())
-		require.Equal(t, b, actual)
+		require.Condition(t, test.EqualSlices(b, actual), "%#v != %#v", b, actual)
 		require.Equal(t, 0, dec.Len())
 	})
 }
@@ -480,7 +483,7 @@ func FuzzDecbuf_UvarintBytes(f *testing.F) {
 func BenchmarkDecbuf_UvarintBytes(t *testing.B) {
 	// 127 bytes, the varint size will be 1 byte.
 	val := []byte("1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567")
-	enc := prom_encoding.Encbuf{}
+	enc := promencoding.Encbuf{}
 	enc.PutUvarintBytes(val)
 
 	dec := createDecbufWithBytes(t, enc.Get())
@@ -517,7 +520,7 @@ func TestDecbuf_UvarintStrHappyPath(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			enc := prom_encoding.Encbuf{}
+			enc := promencoding.Encbuf{}
 			enc.PutUvarintStr(c.value)
 
 			dec := createDecbufWithBytes(t, enc.Get())
@@ -532,7 +535,7 @@ func TestDecbuf_UvarintStrHappyPath(t *testing.T) {
 }
 
 func TestDecbuf_UvarintStrInsufficientBuffer(t *testing.T) {
-	enc := prom_encoding.Encbuf{}
+	enc := promencoding.Encbuf{}
 	enc.PutUvarintStr("123456")
 
 	dec := createDecbufWithBytes(t, enc.Get()[:2])
@@ -547,7 +550,7 @@ func FuzzDecbuf_UvarintStr(f *testing.F) {
 	f.Add("12345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678")
 
 	f.Fuzz(func(t *testing.T, s string) {
-		enc := prom_encoding.Encbuf{}
+		enc := promencoding.Encbuf{}
 		enc.PutUvarintStr(s)
 
 		dec := createDecbufWithBytes(t, enc.Get())
@@ -570,7 +573,7 @@ func TestDecbuf_Crc32(t *testing.T) {
 
 	t.Run("matches checksum (buffer larger than single read)", func(t *testing.T) {
 		bufferSize := 4*1024*1024 + 1
-		enc := prom_encoding.Encbuf{}
+		enc := promencoding.Encbuf{}
 
 		for enc.Len() < bufferSize {
 			enc.PutByte(0x01)
@@ -591,7 +594,7 @@ func TestDecbuf_Crc32(t *testing.T) {
 
 	t.Run("does not match checksum (buffer larger than single read)", func(t *testing.T) {
 		bufferSize := 4*1024*1024 + 1
-		enc := prom_encoding.Encbuf{}
+		enc := promencoding.Encbuf{}
 
 		for enc.Len() < bufferSize {
 			enc.PutByte(0x01)

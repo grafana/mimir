@@ -86,10 +86,7 @@ func (d *Decbuf) Skip(l int) {
 		return
 	}
 
-	err := d.r.Skip(l)
-	if err != nil {
-		d.E = err
-	}
+	d.E = d.r.Skip(l)
 }
 
 // ResetAt sets the pointer of the underlying FileReader to the absolute
@@ -101,10 +98,7 @@ func (d *Decbuf) ResetAt(off int) {
 		return
 	}
 
-	err := d.r.ResetAt(off)
-	if err != nil {
-		d.E = err
-	}
+	d.E = d.r.ResetAt(off)
 }
 
 // UvarintStr reads varint prefixed bytes into a string and consumes them. The string
@@ -115,12 +109,12 @@ func (d *Decbuf) UvarintStr() string {
 }
 
 // UvarintBytes reads varint prefixed bytes into a byte slice consuming them but without
-// allocating. The bytes returned are no longer valid after subsequent reads from the Decbuf.
+// allocating. The bytes returned are NO LONGER VALID after subsequent reads from the Decbuf.
 // If E is non-nil, this method returns an empty byte slice.
 func (d *Decbuf) UvarintBytes() []byte {
 	l := d.Uvarint64()
 	if d.E != nil {
-		return []byte{}
+		return nil
 	}
 
 	// If the length of this uvarint slice is greater than the size of buffer used
@@ -132,7 +126,7 @@ func (d *Decbuf) UvarintBytes() []byte {
 		b, err := d.r.Read(int(l))
 		if err != nil {
 			d.E = err
-			return []byte{}
+			return nil
 		}
 
 		return b
@@ -141,22 +135,22 @@ func (d *Decbuf) UvarintBytes() []byte {
 	b, err := d.r.Peek(int(l))
 	if err != nil {
 		d.E = err
-		return []byte{}
+		return nil
 	}
 
 	if len(b) != int(l) {
 		d.E = ErrInvalidSize
-		return []byte{}
+		return nil
 	}
 
 	if b == nil {
-		return []byte{}
+		return nil
 	}
 
 	err = d.r.Skip(len(b))
 	if err != nil {
 		d.E = err
-		return []byte{}
+		return nil
 	}
 
 	return b
@@ -269,7 +263,7 @@ func (d *Decbuf) Err() error { return d.E }
 func (d *Decbuf) Len() int   { return d.r.Len() }
 
 // close cleans up any resources associated with this Decbuf. This method
-// is private to ensure that all resource management is handled by DecbufFactory
+// is unexported to ensure that all resource management is handled by DecbufFactory
 // which pools resources.
 func (d *Decbuf) close() error {
 	if d.r != nil {

@@ -19,17 +19,17 @@ import (
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	stream_encoding "github.com/grafana/mimir/pkg/storegateway/indexheader/encoding"
-	stream_index "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
+	streamencoding "github.com/grafana/mimir/pkg/storegateway/indexheader/encoding"
+	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
 )
 
 type StreamBinaryReader struct {
-	factory *stream_encoding.DecbufFactory
+	factory *streamencoding.DecbufFactory
 	toc     *BinaryTOC
 
 	// Symbols struct that keeps only 1/postingOffsetsInMemSampling in the memory, then looks up the
 	// rest via seeking to offsets in the index-header.
-	symbols *stream_index.Symbols
+	symbols *streamindex.Symbols
 	// Cache of the label name symbol lookups,
 	// as there are not many and they are half of all lookups.
 	nameSymbols map[uint32]string
@@ -41,7 +41,7 @@ type StreamBinaryReader struct {
 		symbol string
 	}
 
-	postingsOffsetTable stream_index.PostingOffsetTable
+	postingsOffsetTable streamindex.PostingOffsetTable
 
 	version      int
 	indexVersion int
@@ -67,7 +67,7 @@ func NewStreamBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.
 }
 
 func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int) (bw *StreamBinaryReader, err error) {
-	r := &StreamBinaryReader{factory: stream_encoding.NewDecbufFactory(path)}
+	r := &StreamBinaryReader{factory: streamencoding.NewDecbufFactory(path)}
 
 	// Create a new raw decoding buffer with access to the entire index-header file to
 	// read initial version information and the table of contents.
@@ -101,12 +101,12 @@ func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int) (bw
 		return nil, fmt.Errorf("cannot read table-of-contents: %w", err)
 	}
 
-	r.symbols, err = stream_index.NewSymbols(r.factory, r.indexVersion, int(r.toc.Symbols))
+	r.symbols, err = streamindex.NewSymbols(r.factory, r.indexVersion, int(r.toc.Symbols))
 	if err != nil {
 		return nil, fmt.Errorf("cannot load symbols: %w", err)
 	}
 
-	r.postingsOffsetTable, err = stream_index.NewPostingOffsetTable(r.factory, int(r.toc.PostingsOffsetTable), r.indexVersion, indexLastPostingEnd, postingOffsetsInMemSampling)
+	r.postingsOffsetTable, err = streamindex.NewPostingOffsetTable(r.factory, int(r.toc.PostingsOffsetTable), r.indexVersion, indexLastPostingEnd, postingOffsetsInMemSampling)
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +129,7 @@ func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int) (bw
 
 // newBinaryTOCFromByteSlice return parsed TOC from given Decbuf. The Decbuf is expected to be
 // configured to access the entirety of the index-header file.
-func newBinaryTOCFromFile(d stream_encoding.Decbuf, indexHeaderSize int) (*BinaryTOC, error) {
+func newBinaryTOCFromFile(d streamencoding.Decbuf, indexHeaderSize int) (*BinaryTOC, error) {
 	tocOffset := indexHeaderSize - binaryTOCLen
 	if d.ResetAt(tocOffset); d.Err() != nil {
 		return nil, d.Err()

@@ -18,8 +18,8 @@ type FileReader struct {
 	pos    int
 }
 
-// NewFileReader creates a new FileReader for the segment of file beginning at base
-// with length total length using the supplied buffered reader.
+// NewFileReader creates a new FileReader for the segment of file beginning at base bytes
+// extending length bytes using the supplied buffered reader.
 func NewFileReader(file *os.File, base, length int, buf *bufio.Reader) (*FileReader, error) {
 	f := &FileReader{
 		file:   file,
@@ -36,14 +36,16 @@ func NewFileReader(file *os.File, base, length int, buf *bufio.Reader) (*FileRea
 	return f, nil
 }
 
-// Reset moves the cursor position to the beginning of the file segment.
+// Reset moves the cursor position to the beginning of the file segment including the
+// base set when the FileReader was created.
 func (f *FileReader) Reset() error {
 	return f.ResetAt(0)
 }
 
-// ResetAt moves the cursor position to the given absolute offset in the file segment.
-// Attempting to ResetAt to the end of the file is valid. Attempting to ResetAt _beyond_
-// the end of the file will return an error.
+// ResetAt moves the cursor position to the given offset in the file segment including
+// the base set when the FileReader was created. Attempting to ResetAt to the end of the
+// file segment is valid. Attempting to ResetAt _beyond_ the end of the file segment will
+// return an error.
 func (f *FileReader) ResetAt(off int) error {
 	if off > f.length {
 		return ErrInvalidSize
@@ -61,8 +63,8 @@ func (f *FileReader) ResetAt(off int) error {
 }
 
 // Skip advances the cursor position by the given number of bytes in the file segment.
-// Attempting to Skip to the end of the file is valid. Attempting to Skip _beyond_ the
-// end of the file will return an error.
+// Attempting to Skip to the end of the file segment is valid. Attempting to Skip _beyond_
+// the end of the file segment will return an error.
 func (f *FileReader) Skip(l int) error {
 	if l > f.Len() {
 		return ErrInvalidSize
@@ -95,9 +97,9 @@ func (f *FileReader) Peek(n int) ([]byte, error) {
 	return nil, nil
 }
 
-// Read returns the given number of bytes from the file, consuming them. It is NOT
-// valid to Read beyond the end of the file. In this case, a nil byte slice and
-// ErrInvalidSize error will be returned, and the remaining bytes are consumed.
+// Read returns the given number of bytes from the file segment, consuming them. It is
+// NOT valid to Read beyond the end of the file segment. In this case, a nil byte slice
+// and ErrInvalidSize error will be returned, and the remaining bytes are consumed.
 func (f *FileReader) Read(n int) ([]byte, error) {
 	b := make([]byte, n)
 
@@ -109,8 +111,8 @@ func (f *FileReader) Read(n int) ([]byte, error) {
 	return b, nil
 }
 
-// ReadInto reads len(b) bytes from the file into b, consuming them. It is NOT
-// valid to ReadInto beyond the end of the file. In this case, an ErrInvalidSize
+// ReadInto reads len(b) bytes from the file segment into b, consuming them. It is
+// NOT valid to ReadInto beyond the end of the file segment. In this case, an ErrInvalidSize
 // error will be returned and the remaining bytes are consumed.
 func (f *FileReader) ReadInto(b []byte) error {
 	r, err := io.ReadFull(f.buf, b)
@@ -132,13 +134,13 @@ func (f *FileReader) Size() int {
 	return f.buf.Size()
 }
 
-// Len returns the remaining number of bytes in the file segment.
+// Len returns the remaining number of bytes in the file segment owned by this reader.
 func (f *FileReader) Len() int {
 	return f.length - f.pos
 }
 
 // close closes the underlying resources used by this FileReader. This method
-// is private to ensure that all resource management is handled by DecbufFactory
+// is unexported to ensure that all resource management is handled by DecbufFactory
 // which pools resources.
 func (f *FileReader) close() error {
 	return f.file.Close()

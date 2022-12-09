@@ -14,7 +14,7 @@ import (
 
 	"github.com/prometheus/prometheus/tsdb/index"
 
-	stream_encoding "github.com/grafana/mimir/pkg/storegateway/indexheader/encoding"
+	streamencoding "github.com/grafana/mimir/pkg/storegateway/indexheader/encoding"
 )
 
 // The table gets initialized with sync.Once but may still cause a race
@@ -27,7 +27,7 @@ func init() {
 }
 
 type Symbols struct {
-	factory *stream_encoding.DecbufFactory
+	factory *streamencoding.DecbufFactory
 
 	version     int
 	tableLength int
@@ -40,7 +40,7 @@ type Symbols struct {
 const symbolFactor = 32
 
 // NewSymbols returns a Symbols object for symbol lookups.
-func NewSymbols(factory *stream_encoding.DecbufFactory, version, offset int) (s *Symbols, err error) {
+func NewSymbols(factory *streamencoding.DecbufFactory, version, offset int) (s *Symbols, err error) {
 	d := factory.NewDecbufAtChecked(offset, castagnoliTable)
 	defer factory.CloseWithErrCapture(&err, d, "read symbols")
 	if err := d.Err(); err != nil {
@@ -146,10 +146,10 @@ func (s *Symbols) ForEachSymbol(syms []string, f func(sym string, offset uint32)
 	return nil
 }
 
-func (s *Symbols) reverseLookup(sym string, d stream_encoding.Decbuf) (uint32, error) {
+func (s *Symbols) reverseLookup(sym string, d streamencoding.Decbuf) (uint32, error) {
 	i := sort.Search(len(s.offsets), func(i int) bool {
 		d.ResetAt(s.offsets[i])
-		return yoloString(d.UvarintBytes()) > sym
+		return string(d.UvarintBytes()) > sym
 	})
 
 	if i > 0 {

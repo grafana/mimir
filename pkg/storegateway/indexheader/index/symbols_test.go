@@ -17,7 +17,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/index"
 
-	stream_encoding "github.com/grafana/mimir/pkg/storegateway/indexheader/encoding"
+	streamencoding "github.com/grafana/mimir/pkg/storegateway/indexheader/encoding"
 )
 
 func TestMain(m *testing.M) {
@@ -44,7 +44,7 @@ func TestSymbols(t *testing.T) {
 	filePath := path.Join(dir, "index")
 	require.NoError(t, os.WriteFile(filePath, buf.Get(), 0700))
 
-	df := stream_encoding.NewDecbufFactory(filePath)
+	df := streamencoding.NewDecbufFactory(filePath)
 	s, err := NewSymbols(df, index.FormatV2, symbolsStart)
 	require.NoError(t, err)
 

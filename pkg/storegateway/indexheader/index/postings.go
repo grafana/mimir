@@ -15,7 +15,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"golang.org/x/exp/slices"
 
-	stream_encoding "github.com/grafana/mimir/pkg/storegateway/indexheader/encoding"
+	streamencoding "github.com/grafana/mimir/pkg/storegateway/indexheader/encoding"
 )
 
 const postingLengthFieldSize = 4
@@ -39,7 +39,7 @@ type PostingOffsetTableV1 struct {
 	postings map[string]map[string]index.Range
 }
 
-func NewPostingOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset int, indexVersion int, indexLastPostingEnd uint64, postingOffsetsInMemSampling int) (PostingOffsetTable, error) {
+func NewPostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset int, indexVersion int, indexLastPostingEnd uint64, postingOffsetsInMemSampling int) (PostingOffsetTable, error) {
 	if indexVersion == index.FormatV1 {
 		return newV1PostingOffsetTable(factory, tableOffset, indexLastPostingEnd)
 	} else if indexVersion == index.FormatV2 {
@@ -49,7 +49,7 @@ func NewPostingOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset i
 	return nil, fmt.Errorf("unknown index version %v", indexVersion)
 }
 
-func newV1PostingOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset int, indexLastPostingEnd uint64) (*PostingOffsetTableV1, error) {
+func newV1PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset int, indexLastPostingEnd uint64) (*PostingOffsetTableV1, error) {
 	t := PostingOffsetTableV1{
 		postings: map[string]map[string]index.Range{},
 	}
@@ -88,7 +88,7 @@ func newV1PostingOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset
 	return &t, nil
 }
 
-func newV2PostingOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset int, indexLastPostingEnd uint64, postingOffsetsInMemSampling int) (*PostingOffsetTableV2, error) {
+func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset int, indexLastPostingEnd uint64, postingOffsetsInMemSampling int) (*PostingOffsetTableV2, error) {
 	t := PostingOffsetTableV2{
 		factory:                     factory,
 		tableOffset:                 tableOffset,
@@ -159,7 +159,7 @@ func newV2PostingOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset
 
 // readOffsetTable reads an offset table and at the given position calls f for each
 // found entry. If f returns an error it stops decoding and returns the received error.
-func readOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset int, f func([]string, uint64, int) error) (err error) {
+func readOffsetTable(factory *streamencoding.DecbufFactory, tableOffset int, f func([]string, uint64, int) error) (err error) {
 	d := factory.NewDecbufAtChecked(tableOffset, castagnoliTable)
 	defer factory.CloseWithErrCapture(&err, d, "read offset table")
 
@@ -172,6 +172,7 @@ func readOffsetTable(factory *stream_encoding.DecbufFactory, tableOffset int, f 
 		// The Postings offset table takes only 2 keys per entry (name and value of label),
 		// and the LabelIndices offset table takes only 1 key per entry (a label name).
 		// Hence setting the size to max of both, i.e. 2.
+
 		keys := make([]string, 0, 2)
 
 		for i := 0; i < keyCount; i++ {
@@ -244,7 +245,7 @@ type PostingOffsetTableV2 struct {
 
 	postingOffsetsInMemSampling int
 
-	factory     *stream_encoding.DecbufFactory
+	factory     *streamencoding.DecbufFactory
 	tableOffset int
 }
 
@@ -450,7 +451,7 @@ func (t *PostingOffsetTableV2) LabelNames() ([]string, error) {
 	return labelNames, nil
 }
 
-func skipNAndName(d *stream_encoding.Decbuf, buf *int) {
+func skipNAndName(d *streamencoding.Decbuf, buf *int) {
 	if *buf == 0 {
 		// Keycount+LabelName are always the same number of bytes,
 		// and it's faster to skip than parse.
