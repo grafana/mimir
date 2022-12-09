@@ -1451,11 +1451,13 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 	b.indexCache = newInMemoryIndexCache(t)
 
 	matchers := []*labels.Matcher{
-		labels.MustNewMatcher(labels.MatchEqual, "a", "1"),
+		labels.MustNewMatcher(labels.MatchRegexp, "a", ".+"),
 	}
 	expectedLabelSet := []labels.Labels{
 		labels.FromStrings("a", "1", "b", "1"),
 		labels.FromStrings("a", "1", "b", "2"),
+		labels.FromStrings("a", "2", "b", "1"),
+		labels.FromStrings("a", "2", "b", "2"),
 	}
 
 	indexReader := b.indexReader()
@@ -1480,6 +1482,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 
 	require.NoError(t, err)
 	lset := extractLabelsFromSeriesChunkRefsSets(readAllSeriesChunkRefsSet(ss))
+	require.NoError(t, ss.Err())
 	require.Equal(t, expectedLabelSet, lset)
 
 	// Cache should be filled by now. We pass a nil index reader to make sure.
@@ -1504,6 +1507,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 	)
 	require.NoError(t, err)
 	lset = extractLabelsFromSeriesChunkRefsSets(readAllSeriesChunkRefsSet(ss))
+	require.NoError(t, ss.Err())
 	require.Equal(t, expectedLabelSet, lset)
 }
 
