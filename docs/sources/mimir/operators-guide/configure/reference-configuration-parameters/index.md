@@ -3016,6 +3016,11 @@ bucket_store:
     # CLI flag: -blocks-storage.bucket-store.index-header.map-populate-enabled
     [map_populate_enabled: <boolean> | default = false]
 
+    # (experimental) If enabled, the store-gateway will use an experimental
+    # streaming reader to load and parse index-header files.
+    # CLI flag: -blocks-storage.bucket-store.index-header.stream-reader-enabled
+    [stream_reader_enabled: <boolean> | default = false]
+
   # (experimental) True to reject queries above the max number of concurrent
   # queries to execute against long-term storage. If false, queries will block
   # until they are able to run.

@@ -410,7 +410,7 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 			require.Equal(t, 200, res.StatusCode)
 
 			// Wait until the TSDB head is compacted and shipped to the storage.
-			// The shipped block contains the 1st series, while the 2ns series in in the head.
+			// The shipped block contains the 1st series, while the 2nd series is in the head.
 			require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(1*cluster.NumInstances())), "cortex_ingester_shipper_uploads_total"))
 			require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(1*cluster.NumInstances())), "cortex_ingester_memory_series"))
 			require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(2*cluster.NumInstances())), "cortex_ingester_memory_series_created_total"))
