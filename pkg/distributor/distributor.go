@@ -984,7 +984,7 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 			req.Metadata = util.RemoveSliceIndexes(req.Metadata, removeIndexes)
 		}
 
-		if validatedSamples == 0 && validatedMetadata == 0 {
+		if validatedSamples == 0 && validatedHistograms == 0 && validatedMetadata == 0 {
 			return &mimirpb.WriteResponse{}, firstPartialErr
 		}
 
