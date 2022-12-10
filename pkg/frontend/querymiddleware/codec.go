@@ -372,6 +372,7 @@ func matrixMerge(resps []*PrometheusResponse) []SampleStream {
 				} // else there is no overlap, yay!
 			}
 			existing.Samples = append(existing.Samples, stream.Samples...)
+			existing.Histograms = append(existing.Histograms, stream.Histograms...) //TODO: filter like samples
 			output[metric] = existing
 		}
 	}

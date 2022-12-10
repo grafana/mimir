@@ -486,15 +486,21 @@ func extractMatrix(start, end int64, matrix []SampleStream) []SampleStream {
 
 func extractSampleStream(start, end int64, stream SampleStream) (SampleStream, bool) {
 	result := SampleStream{
-		Labels:  stream.Labels,
-		Samples: make([]mimirpb.Sample, 0, len(stream.Samples)),
+		Labels:     stream.Labels,
+		Samples:    make([]mimirpb.Sample, 0, len(stream.Samples)),
+		Histograms: make([]mimirpb.SampleHistogramPair, 0, len(stream.Histograms)),
 	}
 	for _, sample := range stream.Samples {
 		if start <= sample.TimestampMs && sample.TimestampMs <= end {
 			result.Samples = append(result.Samples, sample)
 		}
 	}
-	if len(result.Samples) == 0 {
+	for _, histogram := range stream.Histograms {
+		if start <= histogram.Timestamp && histogram.Timestamp <= end {
+			result.Histograms = append(result.Histograms, histogram)
+		}
+	}
+	if len(result.Samples) == 0 && len(result.Histograms) == 0 {
 		return SampleStream{}, false
 	}
 	return result, true

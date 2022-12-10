@@ -284,46 +284,91 @@ func (vs *vectorSampleStream) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &s); err != nil {
 		return err
 	}
-	*vs = vectorSampleStream{
-		Labels:  mimirpb.FromMetricsToLabelAdapters(s.Metric),
-		Samples: []mimirpb.Sample{{TimestampMs: int64(s.Timestamp), Value: float64(s.Value)}},
+	if s.Type == model.STFloat {
+		*vs = vectorSampleStream{
+			Labels:  mimirpb.FromMetricsToLabelAdapters(s.Metric),
+			Samples: []mimirpb.Sample{{TimestampMs: int64(s.Timestamp), Value: float64(s.Value)}},
+		}
+	} else {
+		buckets := make([]*mimirpb.HistogramBucket, len(s.Histogram.Buckets))
+		for i, bucket := range s.Histogram.Buckets {
+			buckets[i] = &mimirpb.HistogramBucket{
+				Boundaries: int32(bucket.Boundaries),
+				Lower:      float64(bucket.Lower),
+				Upper:      float64(bucket.Upper),
+				Count:      uint64(bucket.Count),
+			}
+		}
+		*vs = vectorSampleStream{
+			Labels:     mimirpb.FromMetricsToLabelAdapters(s.Metric),
+			Histograms: []mimirpb.SampleHistogramPair{{Timestamp: int64(s.Timestamp), Histogram: &mimirpb.SampleHistogram{Count: uint64(s.Histogram.Count), Sum: float64(s.Histogram.Sum), Buckets: buckets}}},
+		}
 	}
 	return nil
 }
 
 func (vs vectorSampleStream) MarshalJSON() ([]byte, error) {
-	if len(vs.Samples) != 1 {
-		return nil, fmt.Errorf("vector sample stream should have exactly one sample, got %d", len(vs.Samples))
+	if (len(vs.Samples) == 1) == (len(vs.Histograms) == 1) { // not XOR
+		return nil, fmt.Errorf("vector sample stream should have exactly one sample or one histogram, got %d samples and %d histograms", len(vs.Samples), len(vs.Histograms))
 	}
-	return json.Marshal(model.Sample{
-		Metric:    mimirpb.FromLabelAdaptersToMetric(vs.Labels),
-		Timestamp: model.Time(vs.Samples[0].TimestampMs),
-		Value:     model.SampleValue(vs.Samples[0].Value),
-	})
+	var sample model.Sample
+	if len(vs.Samples) == 1 {
+		sample = model.Sample{
+			Metric:    mimirpb.FromLabelAdaptersToMetric(vs.Labels),
+			Timestamp: model.Time(vs.Samples[0].TimestampMs),
+			Value:     model.SampleValue(vs.Samples[0].Value),
+		}
+	} else {
+		histogram := vs.Histograms[0].Histogram
+		buckets := make(model.HistogramBuckets, len(histogram.Buckets))
+		for i, bucket := range histogram.Buckets {
+			buckets[i] = &model.HistogramBucket{
+				Boundaries: int(bucket.Boundaries),
+				Lower:      model.FloatString(bucket.Lower),
+				Upper:      model.FloatString(bucket.Upper),
+				Count:      model.IntString(bucket.Count),
+			}
+		}
+		sample = model.Sample{
+			Metric:    mimirpb.FromLabelAdaptersToMetric(vs.Labels),
+			Timestamp: model.Time(vs.Histograms[0].Timestamp),
+			Histogram: model.SampleHistogram{
+				Count:   model.IntString(histogram.Count),
+				Sum:     model.FloatString(histogram.Sum),
+				Buckets: buckets,
+			},
+			Type: 1,
+		}
+	}
+	return json.Marshal(sample)
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
 func (s *SampleStream) UnmarshalJSON(data []byte) error {
 	var stream struct {
-		Metric model.Metric     `json:"metric"`
-		Values []mimirpb.Sample `json:"values"`
+		Metric     model.Metric                  `json:"metric"`
+		Values     []mimirpb.Sample              `json:"values"`
+		Histograms []mimirpb.SampleHistogramPair `json:"histograms"`
 	}
 	if err := json.Unmarshal(data, &stream); err != nil {
 		return err
 	}
 	s.Labels = mimirpb.FromMetricsToLabelAdapters(stream.Metric)
 	s.Samples = stream.Values
+	s.Histograms = stream.Histograms
 	return nil
 }
 
 // MarshalJSON implements json.Marshaler.
 func (s *SampleStream) MarshalJSON() ([]byte, error) {
 	stream := struct {
-		Metric model.Metric     `json:"metric"`
-		Values []mimirpb.Sample `json:"values"`
+		Metric     model.Metric                  `json:"metric"`
+		Values     []mimirpb.Sample              `json:"values"`
+		Histograms []mimirpb.SampleHistogramPair `json:"histograms"`
 	}{
-		Metric: mimirpb.FromLabelAdaptersToMetric(s.Labels),
-		Values: s.Samples,
+		Metric:     mimirpb.FromLabelAdaptersToMetric(s.Labels),
+		Values:     s.Samples,
+		Histograms: s.Histograms,
 	}
 	return json.Marshal(stream)
 }
