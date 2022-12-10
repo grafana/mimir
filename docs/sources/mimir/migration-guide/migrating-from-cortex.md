@@ -246,7 +246,7 @@ v1.7.0 to grafana/mimir-distributed v3.1.0 helm chart.
    yq -i 'del(.activity_tracker.filepath,.alertmanager.data_dir,.compactor.data_dir)' mimir.yaml
    ```
 
-   d. Place the updated configuration under the `mimir.structuredConfig` key at the top level of your Helm values file.
+   d. At the top level of your Helm values file, put the updated configuration under the `mimir.structuredConfig` key.
 
    > **Note:** We added `mimir.structuredConfig` in mimir-distributed v3.0.0. This new field allows overriding specific
    > configuration without the need to rewrite the whole block string literal like in `mimir.config`.
