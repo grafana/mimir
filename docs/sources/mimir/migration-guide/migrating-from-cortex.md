@@ -216,13 +216,13 @@ v1.7.0 to grafana/mimir-distributed v3.1.0 helm chart.
 
    b. Install the recording and alerting rules into the ruler or a Prometheus server.
 
-2. Run the following command to add the Grafana Helm chart repository:
+1. Run the following command to add the Grafana Helm chart repository:
 
    ```bash
    helm repo add grafana https://grafana.github.io/helm-charts
    ```
 
-3. Convert the Cortex configuration in your `values.yaml` file.
+1. Convert the Cortex configuration in your `values.yaml` file.
 
    a. Extract the Cortex configuration and write the output to the `cortex.yaml` file.
 
@@ -287,7 +287,7 @@ v1.7.0 to grafana/mimir-distributed v3.1.0 helm chart.
      enabled: false
    ```
 
-4. Run the Helm upgrade with the Grafana Mimir chart.
+1. Run the Helm upgrade with the Grafana Mimir chart.
 
    > **Note:** The name of the release must match your Cortex Helm chart release.
 
