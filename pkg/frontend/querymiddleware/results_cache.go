@@ -485,22 +485,31 @@ func extractMatrix(start, end int64, matrix []SampleStream) []SampleStream {
 }
 
 func extractSampleStream(start, end int64, stream SampleStream) (SampleStream, bool) {
+	if len(stream.Histograms) > 0 {
+		result := SampleStream{
+			Labels:     stream.Labels,
+			Histograms: make([]mimirpb.SampleHistogramPair, 0, len(stream.Histograms)),
+		}
+		for _, histogram := range stream.Histograms {
+			if start <= histogram.Timestamp && histogram.Timestamp <= end {
+				result.Histograms = append(result.Histograms, histogram)
+			}
+		}
+		if len(result.Histograms) == 0 {
+			return SampleStream{}, false
+		}
+		return result, true
+	}
 	result := SampleStream{
-		Labels:     stream.Labels,
-		Samples:    make([]mimirpb.Sample, 0, len(stream.Samples)),
-		Histograms: make([]mimirpb.SampleHistogramPair, 0, len(stream.Histograms)),
+		Labels:  stream.Labels,
+		Samples: make([]mimirpb.Sample, 0, len(stream.Samples)),
 	}
 	for _, sample := range stream.Samples {
 		if start <= sample.TimestampMs && sample.TimestampMs <= end {
 			result.Samples = append(result.Samples, sample)
 		}
 	}
-	for _, histogram := range stream.Histograms {
-		if start <= histogram.Timestamp && histogram.Timestamp <= end {
-			result.Histograms = append(result.Histograms, histogram)
-		}
-	}
-	if len(result.Samples) == 0 && len(result.Histograms) == 0 {
+	if len(result.Samples) == 0 {
 		return SampleStream{}, false
 	}
 	return result, true
