@@ -354,21 +354,33 @@ func (s *SampleStream) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	s.Labels = mimirpb.FromMetricsToLabelAdapters(stream.Metric)
-	s.Samples = stream.Values
-	s.Histograms = stream.Histograms
+	if len(stream.Values) > 0 {
+		s.Samples = stream.Values
+	}
+	if len(stream.Histograms) > 0 {
+		s.Histograms = stream.Histograms
+	}
 	return nil
 }
 
 // MarshalJSON implements json.Marshaler.
 func (s *SampleStream) MarshalJSON() ([]byte, error) {
+	if len(s.Histograms) > 0 {
+		stream := struct {
+			Metric     model.Metric                  `json:"metric"`
+			Histograms []mimirpb.SampleHistogramPair `json:"histograms"`
+		}{
+			Metric:     mimirpb.FromLabelAdaptersToMetric(s.Labels),
+			Histograms: s.Histograms,
+		}
+		return json.Marshal(stream)
+	}
 	stream := struct {
-		Metric     model.Metric                  `json:"metric"`
-		Values     []mimirpb.Sample              `json:"values"`
-		Histograms []mimirpb.SampleHistogramPair `json:"histograms"`
+		Metric model.Metric     `json:"metric"`
+		Values []mimirpb.Sample `json:"values"`
 	}{
-		Metric:     mimirpb.FromLabelAdaptersToMetric(s.Labels),
-		Values:     s.Samples,
-		Histograms: s.Histograms,
+		Metric: mimirpb.FromLabelAdaptersToMetric(s.Labels),
+		Values: s.Samples,
 	}
 	return json.Marshal(stream)
 }
