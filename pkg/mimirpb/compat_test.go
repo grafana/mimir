@@ -6,7 +6,6 @@
 package mimirpb
 
 import (
-	"encoding/json"
 	stdlibjson "encoding/json"
 	"math"
 	"testing"
@@ -55,7 +54,7 @@ func TestJsoniterUnmarshalForSample(t *testing.T) {
 }
 
 func TestStdlibJsonUnmarshalForSample(t *testing.T) {
-	testUnmarshalling(t, json.Unmarshal, "test sample")
+	testUnmarshalling(t, stdlibjson.Unmarshal, "test sample")
 }
 
 func testUnmarshalling(t *testing.T, unmarshalFn func(data []byte, v interface{}) error, expectedError string) {
