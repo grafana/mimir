@@ -186,8 +186,8 @@ To verify that the cluster is operating correctly, use the [monitoring mixin das
 
 ## Migrating to Grafana Mimir using Helm
 
-You can update to the Grafana Mimir Helm chart from the Cortex Helm chart. Specifically we will upgrade cortex-helm/cortex
-v1.7.0 to grafana/mimir-distributed v3.1.0 helm chart.
+You can migrate to the Grafana Mimir Helm chart (`grafana/mimir-distributed` v3.1.0) from the Cortex Helm chart 
+(`cortex-helm/cortex` v1.7.0).
 
 ### Before you begin
 
