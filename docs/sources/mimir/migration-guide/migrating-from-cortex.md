@@ -202,8 +202,8 @@ v1.7.0 to grafana/mimir-distributed v3.1.0 helm chart.
       enabled: true
   ```
 
-  Ingester needs storage for the WAL and to form blocks for upload. The WAL was optional in Cortex with chunks, but not optional in Mimir.
-  A statefulset is the most convenient way to arrange that each pod gets a storage volume.
+  The ingester needs storage capacity for write-ahead-logging (WAL) and to form blocks for uploading. The WAL was optional in Cortex with chunks, but not optional in Mimir.
+  A statefulset is the most convenient way to make sure that each pod gets a storage volume.
 
 **To migrate to the Grafana Mimir Helm chart:**
 
