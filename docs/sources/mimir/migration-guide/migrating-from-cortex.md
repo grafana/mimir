@@ -233,7 +233,7 @@ v1.7.0 to grafana/mimir-distributed v3.1.0 helm chart.
    b. Use `mimirtool` to update the configuration.
 
    ```bash
-   mimirtool config convert --gem --yaml-file cortex.yaml --yaml-out mimir.yaml
+   mimirtool config convert --yaml-file cortex.yaml --yaml-out mimir.yaml
    ```
 
    c. Clean up the generated YAML configuration.
