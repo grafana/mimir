@@ -268,7 +268,7 @@ v1.7.0 to grafana/mimir-distributed v3.1.0 helm chart.
      podManagementPolicy: "OrderedReady"
    ```
 
-   f. Set the `nameOverride` to `cortex`.
+   f. Set the `nameOverride` parameter to `cortex`.
    This configuration parameter ensures that resources have the same names as those created by the Cortex Helm chart and ensures Kubernetes performs a rolling upgrade of existing resources instead of creating new resources.
 
    In your `values.yaml` file:
