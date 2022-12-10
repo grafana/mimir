@@ -248,8 +248,8 @@ v1.7.0 to grafana/mimir-distributed v3.1.0 helm chart.
 
    d. At the top level of your Helm values file, put the updated configuration under the `mimir.structuredConfig` key.
 
-   > **Note:** We added `mimir.structuredConfig` in mimir-distributed v3.0.0. This new field allows overriding specific
-   > configuration without the need to rewrite the whole block string literal like in `mimir.config`.
+   > **Note:** The `mimir.structuredConfig` field, which is added in v3.0.0, allows you to override a specific
+   > configuration without needing to rewrite the whole block string literal, such as in `mimir.config`.
 
    In your Helm values file:
 
