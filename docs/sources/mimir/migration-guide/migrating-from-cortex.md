@@ -257,7 +257,17 @@ v1.7.0 to grafana/mimir-distributed v3.1.0 helm chart.
    mimir:
      structuredConfig: <CONFIGURATION FILE CONTENTS>
    ```
-
+   
+   Example:
+   
+   ```yaml
+   mimir:
+     structuredConfig: 
+       ingester:
+         ring:
+           num_tokens: 512
+   ```
+    
    e. Set the ingester `podManagementPolicy` to `"OrderedReady"`.
    The Grafana Mimir chart prefers `"Parallel"` for faster scale up, but this field is immutable on an existing StatefulSet.
 
