@@ -738,7 +738,11 @@ func BenchmarkBucketStoreLabelValues(tb *testing.B) {
 	series := generateSeries(card)
 	tb.Logf("Total %d series generated", len(series))
 
-	s := prepareStoreWithTestBlocksForSeries(tb, dir, bkt, false, NewChunksLimiterFactory(0), NewSeriesLimiterFactory(0), series)
+	prepareCfg := defaultPrepareStoreConfig(tb)
+	prepareCfg.tempDir = dir
+	prepareCfg.series = series
+
+	s := prepareStoreWithTestBlocks(tb, bkt, prepareCfg)
 	mint, maxt := s.store.TimeRange()
 	assert.Equal(tb, s.minTime, mint)
 	assert.Equal(tb, s.maxTime, maxt)

@@ -557,7 +557,7 @@ mimirtool analyze dashboard <file>...
 
 | Environment variable | Flag       | Description                                                               |
 | -------------------- | ---------- | ------------------------------------------------------------------------- |
-| -                    | `--output` | Sets the output file path, which by default is `prometheus-metrics.json`. |
+| -                    | `--output` | Sets the output file path, which by default is `metrics-in-grafana.json`. |
 
 #### Rule-file
 
@@ -570,9 +570,9 @@ mimirtool analyze rule-file <file>
 
 ##### Configuration
 
-| Environment variable | Flag       | Description                                                               |
-| -------------------- | ---------- | ------------------------------------------------------------------------- |
-| -                    | `--output` | Sets the output file path, which by default is `prometheus-metrics.json`. |
+| Environment variable | Flag       | Description                                                             |
+| -------------------- | ---------- | ----------------------------------------------------------------------- |
+| -                    | `--output` | Sets the output file path, which by default is `metrics-in-ruler.json`. |
 
 #### Prometheus
 

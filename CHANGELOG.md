@@ -1,9 +1,32 @@
 # Changelog
 
-## Grafana Mimir - main / unreleased
+## main / unreleased
 
-* [ENHANCEMENT] Ruler: Added `ruler.tls-enabled` configuration for alertmanager client. #3432
+### Grafana Mimir
+
+* [FEATURE] Store-gateway: streaming of series. The store-gateway can now stream results back to the querier instead of buffering them. This is expected to greatly reduce peak memory consumption while keeping latency the same. You can enable this feature by setting `-blocks-storage.bucket-store.batch-series-size` to a value in the high thousands (5000-10000). This is still an experimental feature and is subject to a changing API and instability. #3540 #3546 #3587 #3620 #3645 #3355
+* [ENHANCEMENT] Ruler: Added `-ruler.alertmanager-client.tls-enabled` configuration for alertmanager client. #3432 #3597
 * [ENHANCEMENT] Activity tracker logs now have `component=activity-tracker` label. #3556
+* [ENHANCEMENT] Distributor: remove labels with empty values #2439
+* [ENHANCEMENT] Query-frontend: track query HTTP requests in the Activity Tracker. #3561
+* [ENHANCEMENT] Store-gateway: Add experimental alternate implementation of index-header reader that does not use mmap. This reader is expected to improve stability of the store-gateway. This implementation can be enabled with the flag `-blocks-storage.bucket-store.index-header.stream-reader-enabled`. #3639
+* [BUGFIX] Log the names of services that are not yet running rather than `unsupported value type` when calling `/ready` and some services are not running. #3625
+* [BUGFIX] Alertmanager: Fix template spurious deletion with relative data dir. #3604
+
+### Mixin
+
+* [BUGFIX] Alerts: Fixed `MemoryMapAreasTooHigh` alert when Mimir is deployed in read-write mode. #3626
+* [BUGFIX] Alerts: Fixed `MimirCompactorSkippedBlocksWithOutOfOrderChunks` matching on non-existent label. #3628
+
+### Jsonnet
+
+* [ENHANCEMENT] Update `rollout-operator` to `v0.2.0`. #3624
+
+### Mimirtool
+
+### Documentation
+
+### Tools
 
 ## 2.5.0-rc.0
 

@@ -16,3 +16,5 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: large-values-mimir
+- kind: ServiceAccount
+  name: large-values-mimir-distributed

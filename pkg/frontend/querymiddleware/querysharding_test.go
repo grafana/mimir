@@ -1446,9 +1446,9 @@ func BenchmarkQuerySharding(b *testing.B) {
 			}
 
 			var (
-				start int64 = 0
-				end         = int64(1000 * tc.samplesPerSeries)
-				step        = (end - start) / 1000
+				start = int64(0)
+				end   = int64(1000 * tc.samplesPerSeries)
+				step  = (end - start) / 1000
 			)
 
 			req := &PrometheusRangeQueryRequest{

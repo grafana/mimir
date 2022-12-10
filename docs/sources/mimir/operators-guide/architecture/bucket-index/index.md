@@ -43,7 +43,7 @@ You can configure the frequency with which the bucket index is updated via `-com
 
 The use of the bucket index is optional, but the index is built and updated by the compactor even if `-blocks-storage.bucket-store.bucket-index.enabled=false`.
 This behavior ensures that the bucket index for any tenant exists and that query result consistency is guaranteed if a Grafana Mimir cluster operator enable the bucket index in a live cluster.
-The overhead introduced by keeping the bucket index updated is not signifcant.
+The overhead introduced by keeping the bucket index updated is not significant.
 
 ## How it's used by the querier
 
@@ -57,7 +57,7 @@ In addition, if the [metadata cache]({{< relref "../components/querier.md#metada
 
 <!-- Diagram source at https://docs.google.com/presentation/d/1bHp8_zcoWCYoNU2AhO2lSagQyuIrghkCncViSqn14cU/edit -->
 
-While in-memory, a background process keeps the bucket index updated periodically so that subsequent queries from the same tenant to the same querier instance uses the cached (and periodically updated) bucket index.
+While in-memory, a background process keeps the bucket index updated periodically so that subsequent queries from the same tenant to the same querier instance use the cached (and periodically updated) bucket index.
 
 The following configuration options determine bucket index update intervals:
 
@@ -67,13 +67,13 @@ The following configuration options determine bucket index update intervals:
   If downloading a bucket index fails, the failure is cached for a short time so that the backend storage doesn't experience a large volume of storage requests.
   This option configures the frequency with which the bucket store attempts to load a failed bucket index.
 
-If a bucket index is unused for the amount of time configured via `-blocks-storage.bucket-store.bucket-index.idle-timeout`, (for example, if a querier instance is not receiving any query from the tenant), the querier offload its, which stops the querier from updating it at regular intervals.
+If a bucket index is unused for the amount of time configured via `-blocks-storage.bucket-store.bucket-index.idle-timeout` (for example, if a querier instance is not receiving any query from the tenant), the querier removes it from memory and stops updating it at regular intervals.
 This is useful for tenants that are resharded to different queriers when [shuffle sharding]({{< relref "../../configure/configure-shuffle-sharding/index.md" >}}) is enabled.
 
-At query time the querier and ruler determine how old a bucket index is based on its `updated_at`.
+At query time the querier and ruler determine how old a bucket index is based on its `updated_at` field.
 If the age is older than the period configured via `-blocks-storage.bucket-store.bucket-index.max-stale-period` a query fails.
 This circuit breaker ensures queriers and rulers do not return any partial query results due to a stale view over the long-term storage.
 
 ## How it's used by the store-gateway
 
-The [store-gateway]({{< relref "../components/store-gateway.md" >}}), at startup and periodically, fetches the bucket index for each tenant that belong to their shard, and uses it as the source of truth for the blocks and deletion marks in the storage. This removes the need to periodically scan the bucket to discover blocks belonging to their shard.
+The [store-gateway]({{< relref "../components/store-gateway.md" >}}), at startup and periodically, fetches the bucket index for each tenant that belongs to its shard, and uses it as the source of truth for the blocks and deletion marks in the storage. This removes the need to periodically scan the bucket to discover blocks belonging to its shard.

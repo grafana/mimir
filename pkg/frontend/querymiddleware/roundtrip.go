@@ -251,7 +251,6 @@ func newQueryTripperware(
 		queryrange := newLimitedParallelismRoundTripper(next, codec, limits, queryRangeMiddleware...)
 		instant := defaultInstantQueryParamsRoundTripper(
 			newLimitedParallelismRoundTripper(next, codec, limits, queryInstantMiddleware...),
-			time.Now,
 		)
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
 			switch {
@@ -308,12 +307,20 @@ func isInstantQuery(path string) bool {
 	return strings.HasSuffix(path, instantQueryPathSuffix)
 }
 
-func defaultInstantQueryParamsRoundTripper(next http.RoundTripper, now func() time.Time) http.RoundTripper {
+func defaultInstantQueryParamsRoundTripper(next http.RoundTripper) http.RoundTripper {
 	return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
-		if isInstantQuery(r.URL.Path) && !r.URL.Query().Has("time") {
+		if isInstantQuery(r.URL.Path) && !r.Form.Has("time") && !r.URL.Query().Has("time") {
+			nowUnixStr := strconv.FormatInt(time.Now().Unix(), 10)
+
 			q := r.URL.Query()
-			q.Add("time", strconv.FormatInt(time.Now().Unix(), 10))
+			q.Add("time", nowUnixStr)
 			r.URL.RawQuery = q.Encode()
+
+			// If form was already parsed, add this param to the form too.
+			// (The form doesn't have "time", otherwise we'd not be here)
+			if r.Form != nil {
+				r.Form.Set("time", nowUnixStr)
+			}
 		}
 		return next.RoundTrip(r)
 	})

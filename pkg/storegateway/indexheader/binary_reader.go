@@ -9,7 +9,6 @@ import (
 	"bufio"
 	"context"
 	"encoding/binary"
-	"flag"
 	"hash"
 	"hash/crc32"
 	"io"
@@ -459,16 +458,8 @@ type BinaryReader struct {
 	postingOffsetsInMemSampling int
 }
 
-type BinaryReaderConfig struct {
-	MapPopulateEnabled bool `yaml:"map_populate_enabled" category:"experimental"`
-}
-
-func (cfg *BinaryReaderConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
-	f.BoolVar(&cfg.MapPopulateEnabled, prefix+"map-populate-enabled", false, "If enabled, the store-gateway will attempt to pre-populate the file system cache when memory-mapping index-header files.")
-}
-
 // NewBinaryReader loads or builds new index-header if not present on disk.
-func NewBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.BucketReader, dir string, id ulid.ULID, postingOffsetsInMemSampling int, cfg BinaryReaderConfig) (*BinaryReader, error) {
+func NewBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.BucketReader, dir string, id ulid.ULID, postingOffsetsInMemSampling int, cfg Config) (*BinaryReader, error) {
 	binfn := filepath.Join(dir, id.String(), block.IndexHeaderFilename)
 	br, err := newFileBinaryReader(binfn, postingOffsetsInMemSampling, cfg)
 	if err == nil {
@@ -486,7 +477,7 @@ func NewBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.Bucket
 	return newFileBinaryReader(binfn, postingOffsetsInMemSampling, cfg)
 }
 
-func newFileBinaryReader(path string, postingOffsetsInMemSampling int, cfg BinaryReaderConfig) (bw *BinaryReader, err error) {
+func newFileBinaryReader(path string, postingOffsetsInMemSampling int, cfg Config) (bw *BinaryReader, err error) {
 	f, err := mmap.OpenMmapFile(path, cfg.MapPopulateEnabled)
 	if err != nil {
 		return nil, err
