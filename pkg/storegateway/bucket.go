@@ -1190,7 +1190,7 @@ func (s *BucketStore) recordSeriesCallResult(safeStats *safeQueryStats) {
 	s.metrics.cachedPostingsCompressedSizeBytes.Add(float64(stats.cachedPostingsCompressedSizeSum))
 	s.metrics.seriesHashCacheRequests.Add(float64(stats.seriesHashCacheRequests))
 	s.metrics.seriesHashCacheHits.Add(float64(stats.seriesHashCacheHits))
-	s.metrics.expandPostingsDuration.Observe(float64(stats.expandedPostingsDuration))
+	s.metrics.expandPostingsDuration.Observe(stats.expandedPostingsDuration.Seconds())
 }
 
 func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool, minT, maxT, maxResolutionMillis int64, blockMatchers []*labels.Matcher) ([]*bucketBlock, map[ulid.ULID]*bucketIndexReader, map[ulid.ULID]chunkReader) {
