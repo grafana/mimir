@@ -49,7 +49,7 @@ rm -rf "$INTERMEDIATE_PATH"
 mkdir -p "$INTERMEDIATE_PATH"
 
 # Find testcases
-TESTS=$(find ${CHART_PATH}/ci -name '*values.yaml')
+TESTS="$(find ${CHART_PATH}/ci -name '*values.yaml')"
 
 for FILEPATH in $TESTS; do
   # Extract the filename (without extension).
@@ -59,7 +59,7 @@ for FILEPATH in $TESTS; do
 
   echo "Templating $TEST_NAME"
   set -x
-  helm template "${TEST_NAME}" ${CHART_PATH} -f "${FILEPATH}" --output-dir "${INTERMEDIATE_OUTPUT_DIR}" --namespace citestns
+  helm template "${TEST_NAME}" "${CHART_PATH}" -f "${FILEPATH}" --output-dir "${INTERMEDIATE_OUTPUT_DIR}" --namespace citestns
   set +x
 
   echo "Removing mutable config checksum, helm chart, application, image tag version for clarity"
