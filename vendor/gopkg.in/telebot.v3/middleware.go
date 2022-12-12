@@ -4,6 +4,13 @@ package telebot
 // which get called before the endpoint group or specific handler.
 type MiddlewareFunc func(HandlerFunc) HandlerFunc
 
+func applyMiddleware(h HandlerFunc, m ...MiddlewareFunc) HandlerFunc {
+	for i := len(m) - 1; i >= 0; i-- {
+		h = m[i](h)
+	}
+	return h
+}
+
 // Group is a separated group of handlers, united by the general middleware.
 type Group struct {
 	b          *Bot

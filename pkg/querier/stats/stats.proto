@@ -9,7 +9,7 @@ package stats;
 
 option go_package = "stats";
 
-import "github.com/gogo/protobuf/gogoproto/gogo.proto";
+import "gogoproto/gogo.proto";
 import "google/protobuf/duration.proto";
 
 option (gogoproto.marshaler_all) = true;
