@@ -146,5 +146,5 @@ To guarantee no downtime when scaling down [store-gateways]({{< relref "../archi
    1. In a browser, go to the `GET /store-gateway/ring` page that store-gateways expose on their HTTP port.
    1. Click **Forget** on the instances that you scaled down.
       Alternatively, wait for the duration of the value of `-store-gateway.sharding-ring.heartbeat-timeout` times 10.
-      The default value of  `-store-gateway.sharding-ring.heartbeat-timeout` is one minute.
+      The default value of `-store-gateway.sharding-ring.heartbeat-timeout` is one minute.
 1. Proceed with the next two store-gateway replicas. If you are using zone-aware replication, the proceed with the next zone.
