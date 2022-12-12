@@ -15,6 +15,8 @@ import (
 // value is arbitrary and will likely change in the future based on profiling results.
 const readerBufferSize = 4096
 
+var ErrPoolStopped = errors.New("file handle pool is stopped")
+
 // DecbufFactory creates new file-backed decoding buffer instances for a specific index-header file.
 type DecbufFactory struct {
 	files   *filePool
@@ -158,6 +160,8 @@ func (df *DecbufFactory) CloseWithErrCapture(err *error, d Decbuf, format string
 type filePool struct {
 	path    string
 	handles chan *os.File
+	mtx     sync.RWMutex
+	stopped bool
 }
 
 // newFilePool creates a new file pool for path with cap capacity. If cap is 0,
@@ -173,8 +177,16 @@ func newFilePool(path string, cap uint) *filePool {
 }
 
 // get returns a pooled file handle if available or opens a new one if there
-// are no pooled handles available.
+// are no pooled handles available. If this pool has been stopped, an error
+// is returned.
 func (p *filePool) get() (*os.File, error) {
+	p.mtx.RLock()
+	defer p.mtx.RUnlock()
+
+	if p.stopped {
+		return nil, ErrPoolStopped
+	}
+
 	select {
 	case f := <-p.handles:
 		return f, nil
@@ -184,8 +196,16 @@ func (p *filePool) get() (*os.File, error) {
 }
 
 // put returns a file handle to the pool if there is space available or closes
-// the file handle if there is not.
+// the file handle if there is not. If this pool has been stopped, the file handle
+// is closed immediately.
 func (p *filePool) put(f *os.File) error {
+	p.mtx.RLock()
+	defer p.mtx.RUnlock()
+
+	if p.stopped {
+		return f.Close()
+	}
+
 	select {
 	case p.handles <- f:
 		return nil
@@ -194,8 +214,14 @@ func (p *filePool) put(f *os.File) error {
 	}
 }
 
-// stop closes all pooled file handles.
+// stop closes all pooled file handles. After this method is called, subsequent
+// get calls will return an error and put calls will immediately close the file
+// handle.
 func (p *filePool) stop() {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+	p.stopped = true
+
 	for {
 		select {
 		case f := <-p.handles:

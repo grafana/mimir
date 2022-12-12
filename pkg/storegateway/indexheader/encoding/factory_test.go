@@ -110,6 +110,22 @@ func TestDecbufFactory_NewDecbufRaw_HappyPath(t *testing.T) {
 	})
 }
 
+func TestDecbufFactory_Stop(t *testing.T) {
+	enc := createTestEncoder(testContentSize)
+	enc.PutHash(crc32.New(table))
+
+	testDecbufFactory(t, testContentSize, enc, func(t *testing.T, factory *DecbufFactory) {
+		factory.Stop()
+
+		d := factory.NewRawDecbuf()
+		t.Cleanup(func() {
+			require.NoError(t, factory.Close(d))
+		})
+
+		require.ErrorIs(t, d.Err(), ErrPoolStopped)
+	})
+}
+
 func testDecbufFactory(t *testing.T, len int, enc promencoding.Encbuf, test func(t *testing.T, factory *DecbufFactory)) {
 	t.Run("pooling file handles", func(t *testing.T) {
 		factory := createDecbufFactoryWithBytes(t, 1, len, enc)
