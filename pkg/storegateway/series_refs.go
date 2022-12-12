@@ -83,6 +83,8 @@ func (b seriesChunkRefsSet) len() int {
 
 // release the internal series slice to a memory pool. This function call has no effect
 // if seriesChunkRefsSet was created to be not releasable.
+//
+// This function is not idempotent. Calling it twice would introduce subtle bugs.
 func (b seriesChunkRefsSet) release() {
 	if b.series == nil || !b.releasable {
 		return
@@ -90,9 +92,6 @@ func (b seriesChunkRefsSet) release() {
 
 	reuse := b.series[:0]
 	seriesChunkRefsSetPool.Put(&reuse)
-
-	// TODO this doesn't do what we want, because seriesChunkRefsSet is passed around by copy and not reference
-	b.series = nil
 }
 
 // seriesChunkRefs holds a series with a list of chunk references.
