@@ -142,8 +142,9 @@ To guarantee no downtime when scaling down [store-gateways]({{< relref "../archi
    for store-gateways, you can in parallel scale down any number of store-gateway instances in one zone at a time.
    Zone-aware replication is enabled by default in the `mimir-distributed` Helm chart.
 1. Stop the store-gateway instances you want to scale down.
-1. Remove the stopped instances from the store-gateway ring. In your browser go to the `GET /store-gateway/ring` page that store-gateways expose on their HTTP port
-   and click "Forget" on the instances that you scaled down.
-   Alternatively, you can wait for 10 times the value of `-store-gateway.sharding-ring.heartbeat-timeout` (1m by default)
-   for the store-gateways to be automatically forgotten from the ring.
+1. If you have set the value of `-store-gateway.sharding-ring.unregister-on-shutdown` to `false`, then remove the stopped instances from the store-gateway ring:
+   1. In a browser, go to the `GET /store-gateway/ring` page that store-gateways expose on their HTTP port.
+   1. Click **Forget** on the instances that you scaled down.
+      Alternatively, wait for the duration of the value of `-store-gateway.sharding-ring.heartbeat-timeout` times 10.
+      The default value of  `-store-gateway.sharding-ring.heartbeat-timeout` is one minute.
 1. Proceed with the next two store-gateway replicas. If you are using zone-aware replication, the proceed with the next zone.
