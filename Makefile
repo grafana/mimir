@@ -431,6 +431,8 @@ format-mixin: ## Format the mixin files.
 	@find $(MIXIN_PATH) -type f -name '*.libsonnet' | xargs jsonnetfmt -i
 
 HELM_REGO_POLICIES_PATH=operations/helm/policies
+HELM_RAW_MANIFESTS_PATH=operations/helm/tests/intermediate
+HELM_COMMITTED_MANIFESTS=operations/helm/tests
 
 conftest-fmt:
 	@conftest fmt $(HELM_REGO_POLICIES_PATH)
@@ -446,14 +448,13 @@ update-helm-dependencies:
 
 build-helm-tests: ## Build the helm golden records.
 build-helm-tests: update-helm-dependencies
-	@./operations/helm/tests/build.sh
-
-conftest-test: build-helm-tests
-	@tools/run-conftest.sh --policies-path $(HELM_REGO_POLICIES_PATH)
+	@./operations/helm/tests/build.sh --intermediate-path $(HELM_RAW_MANIFESTS_PATH) --output-path $(HELM_COMMITTED_MANIFESTS)
 
 conftest-quick-test: ## Does not rebuild the yaml manifests, use the target conftest-test for that
 conftest-quick-test:
-	@tools/run-conftest.sh --policies-path $(HELM_REGO_POLICIES_PATH)
+	@tools/run-conftest.sh --policies-path $(HELM_REGO_POLICIES_PATH) --manifests-path $(HELM_RAW_MANIFESTS_PATH)
+
+conftest-test: build-helm-tests conftest-quick-test
 
 check-helm-tests: ## Check the helm golden records.
 check-helm-tests: build-helm-tests conftest-test

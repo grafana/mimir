@@ -6,12 +6,47 @@ set -euo pipefail
 # use a normal sed on macOS if available
 SED=$(which gsed || which sed)
 
-CHART_PATH=operations/helm/charts/mimir-distributed
+CHART_PATH="operations/helm/charts/mimir-distributed"
+INTERMEDIATE_PATH=""
+OUTPUT_PATH=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+  --chart-path)
+    CHART_PATH="$2"
+    shift # skip param name
+    shift # skip param value
+    ;;
+  --output-path)
+    OUTPUT_PATH="$2"
+    shift # skip param name
+    shift # skip param value
+    ;;
+  --intermediate-path)
+    INTERMEDIATE_PATH="$2"
+    shift # skip param name
+    shift # skip param value
+    ;;
+  *)
+    break
+    ;;
+  esac
+done
+
+if [ -z "$OUTPUT_PATH" ] ; then
+  echo "Provide --output-path parameter for destination of generated and sanitized outputs"
+  exit 1
+fi
+
+if [ -z "$INTERMEDIATE_PATH" ] ; then
+  echo "Provide --manifests-path parameter for destination of raw manifests outputs"
+  exit 1
+fi
 
 # Start from a clean slate
-rm -rf operations/helm/tests/*-generated
-rm -rf operations/helm/tests/intermediate
-mkdir -p operations/helm/tests/intermediate
+rm -rf "$OUTPUT_PATH"/*-generated
+rm -rf "$INTERMEDIATE_PATH"
+mkdir -p "$INTERMEDIATE_PATH"
 
 # Find testcases
 TESTS=$(find ${CHART_PATH}/ci -name '*values.yaml')
@@ -19,8 +54,8 @@ TESTS=$(find ${CHART_PATH}/ci -name '*values.yaml')
 for FILEPATH in $TESTS; do
   # Extract the filename (without extension).
   TEST_NAME=$(basename -s '.yaml' "$FILEPATH")
-  INTERMEDIATE_OUTPUT_DIR="operations/helm/tests/intermediate/${TEST_NAME}-generated"
-  OUTPUT_DIR="operations/helm/tests/${TEST_NAME}-generated"
+  INTERMEDIATE_OUTPUT_DIR="${INTERMEDIATE_PATH}/${TEST_NAME}-generated"
+  OUTPUT_DIR="${OUTPUT_PATH}/${TEST_NAME}-generated"
 
   echo "Templating $TEST_NAME"
   set -x
