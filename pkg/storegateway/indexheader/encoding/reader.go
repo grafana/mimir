@@ -150,6 +150,8 @@ func (f *FileReader) Len() int {
 // is unexported to ensure that all resource management is handled by DecbufFactory
 // which pools resources.
 func (f *FileReader) close() error {
+	// Note that we don't do anything to clean up the buffer before returning it to the pool here:
+	// we reset the buffer when we retrieve it from the pool instead.
 	bufferPool.Put(f.buf)
 
 	return f.file.Close()
