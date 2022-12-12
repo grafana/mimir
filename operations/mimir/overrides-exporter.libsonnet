@@ -16,6 +16,8 @@
       'big_user',
       'super_user',
       'mega_user',
+      'user_24M',
+      'user_32M',
     ],
   },
 

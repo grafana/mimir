@@ -388,6 +388,40 @@
         compactor_tenant_shard_size: 2,
         compactor_split_groups: 2,
       },
+
+      user_24M+:: {
+        max_global_series_per_user: 24000000,  // 24M
+        max_global_metadata_per_user: std.ceil(self.max_global_series_per_user * 0.2),
+        max_global_metadata_per_metric: 10,
+
+        ingestion_rate: 3500000,  // 3.5M
+        ingestion_burst_size: 35000000,  // 35M
+
+        // 3500 rules
+        ruler_max_rules_per_rule_group: 20,
+        ruler_max_rule_groups_per_tenant: 175,
+
+        compactor_split_and_merge_shards: 4,
+        compactor_tenant_shard_size: 4,
+        compactor_split_groups: 4,
+      },
+
+      user_32M+:: {
+        max_global_series_per_user: 32000000,  // 32M
+        max_global_metadata_per_user: std.ceil(self.max_global_series_per_user * 0.2),
+        max_global_metadata_per_metric: 10,
+
+        ingestion_rate: 4500000,  // 4.5M
+        ingestion_burst_size: 45000000,  // 45M
+
+        // 4000 rules
+        ruler_max_rules_per_rule_group: 20,
+        ruler_max_rule_groups_per_tenant: 200,
+
+        compactor_split_and_merge_shards: 4,
+        compactor_tenant_shard_size: 4,
+        compactor_split_groups: 8,
+      },
     },
 
     // if not empty, passed to overrides.yaml as another top-level field

@@ -24,6 +24,7 @@
 ### Jsonnet
 
 * [ENHANCEMENT] Update `rollout-operator` to `v0.2.0`. #3624
+* [ENHANCEMENT] Add `user_24M` and `user_32M` classes to operations config. #3367
 
 ### Mimirtool
 
