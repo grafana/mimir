@@ -152,7 +152,7 @@ groups:
       severity: critical
   - alert: MimirIngesterInstanceHasNoTenants
     annotations:
-      message: Mimir Ingester {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace
+      message: Mimir ingester {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace
         }} has no tenants assigned.
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterinstancehasnotenants
     expr: |
