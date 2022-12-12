@@ -441,16 +441,19 @@ check-conftest-fmt: conftest-fmt
 conftest-verify:
 	@conftest verify -p $(HELM_REGO_POLICIES_PATH) --report notes
 
-conftest-test:
-	@tools/run-conftest.sh --do-dependency-update --policies-path $(HELM_REGO_POLICIES_PATH)
+update-helm-dependencies:
+	@./tools/update-helm-dependencies.sh operations/helm/charts/mimir-distributed
 
 build-helm-tests: ## Build the helm golden records.
-build-helm-tests: operations/helm/charts/mimir-distributed/charts
+build-helm-tests: update-helm-dependencies
 	@./operations/helm/tests/build.sh
 
+conftest-test: build-helm-tests
+	@tools/run-conftest.sh --policies-path $(HELM_REGO_POLICIES_PATH)
+
 check-helm-tests: ## Check the helm golden records.
-check-helm-tests: build-helm-tests
-	@./tools/find-diff-or-untracked.sh operations/helm/tests || (echo "Please rebuild helm tests output 'make build-helm-tests'" && false)
+check-helm-tests: build-helm-tests conftest-test
+	@./tools/find-diff-or-untracked.sh operations/helm/tests || (echo "Please rebuild helm tests output 'make check-helm-tests'" && false)
 
 endif
 

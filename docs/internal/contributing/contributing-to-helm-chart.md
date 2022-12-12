@@ -10,9 +10,11 @@ Please see the [general workflow](README.md#workflow) for reference.
 
 ## Updating compiled manifests
 
-We keep a compiled version of the helm chart for each values file in the `ci` directory.
+We keep a compiled version of the helm chart for each values file in the `operations/helm/charts/mimir-distributed/ci` directory and its sub-directories.
 This makes it easy to see how a given PR impacts the final output.
-A PR check will fail if you forget to update the compiled manifests, and you can use `make build-helm-tests` to update them.
+
+A PR check will fail if you forget to update the compiled manifests, and you can use `make build-helm-tests` to update them and `make check-helm-tests` to verify them.
+The verification runs [static checks](#static-checks) on the compiled manifests and shows any difference to the committed version.
 
 ## Versioning
 
@@ -116,6 +118,6 @@ cd operations/compare-helm-with-jsonnet
 
 ### Static checks
 
-Use the make targets `conftest-fmt`, `conftest-verify` and `conftest-test` to lint, verify and execute [conftest](https://www.conftest.dev/) static analysis tests.
+Use the make targets `conftest-fmt`, `conftest-verify` and `check-helm-tests` to lint, verify and execute [conftest](https://www.conftest.dev/) static analysis tests.
 
-The tests are verifying that the policies defined in `operations/helm/policies` are met for all Kubernetes manifests generated from configurations defined under `operations/helm/charts/mimir-distributed/ci`.
+The tests are verifying that the policies defined in `operations/helm/policies` are met for all Kubernetes manifests generated from configurations defined under `operations/helm/charts/mimir-distributed/ci` and its sub-directories.
