@@ -16,8 +16,8 @@
       'big_user',
       'super_user',
       'mega_user',
-      'gigantic_user',
-      'jumbo_user',
+      'user_24M',
+      'user_32M',
     ],
   },
 

@@ -389,7 +389,7 @@
         compactor_split_groups: 2,
       },
 
-      gigantic_user+:: {
+      user_24M+:: {
         max_global_series_per_user: 24000000,  // 24M
         max_global_metadata_per_user: std.ceil(self.max_global_series_per_user * 0.2),
         max_global_metadata_per_metric: 10,
@@ -406,7 +406,7 @@
         compactor_split_groups: 4,
       },
 
-      jumbo_user+:: {
+      user_32M+:: {
         max_global_series_per_user: 32000000,  // 32M
         max_global_metadata_per_user: std.ceil(self.max_global_series_per_user * 0.2),
         max_global_metadata_per_metric: 10,

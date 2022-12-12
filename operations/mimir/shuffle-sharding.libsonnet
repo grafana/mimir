@@ -78,14 +78,14 @@
       },
 
       // Target 24M active series.
-      gigantic_user+:: {
+      user_24M+:: {
         ingestion_tenant_shard_size: 360,
         store_gateway_tenant_shard_size: 30,
         ruler_tenant_shard_size: 8,
       },
 
       // Target 32M active series.
-      jumbo_user+:: {
+      user_32M+:: {
         ingestion_tenant_shard_size: 480,
         store_gateway_tenant_shard_size: 42,
         ruler_tenant_shard_size: 12,
