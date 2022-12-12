@@ -146,4 +146,4 @@ To guarantee no downtime when scaling down [store-gateways]({{< relref "../archi
    and click "Forget" on the instances that you scaled down.
    Alternatively, you can wait for 10 times the value of `-store-gateway.sharding-ring.heartbeat-timeout` (1m by default)
    for the store-gateways to be automatically forgotten from the ring.
-1. Proceed with the next two store-gateway replicas or the next zone when using zone-aware replication.
+1. Proceed with the next two store-gateway replicas. If you are using zone-aware replication, the proceed with the next zone.
