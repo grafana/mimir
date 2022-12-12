@@ -132,12 +132,8 @@ fetch-build-image: ## Fetch latest the docker build image. It can be used instea
 # https://docs.docker.com/buildx/working-with-buildx/#build-multi-platform-images
 push-multiarch-build-image: ## Push the docker build image.
 	@echo
-	# Build image for each platform separately... it tends to generate fewer errors.
-	$(SUDO) docker buildx build --platform linux/amd64 --progress=plain --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) mimir-build-image/
-	$(SUDO) docker buildx build --platform linux/arm64 --progress=plain --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) mimir-build-image/
-	# This command will run the same build as above, but it will reuse existing platform-specific images,
-	# put them together and push to registry.
-	$(SUDO) docker buildx build -o type=registry --platform linux/amd64,linux/arm64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) -t $(BUILD_IMAGE):$(IMAGE_TAG) mimir-build-image/
+	# Build and push mimir build image for linux/amd64 and linux/arm64
+	$(SUDO) docker buildx build -o type=registry --platform linux/amd64,linux/arm64 --progress=plain --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) -t $(BUILD_IMAGE):$(IMAGE_TAG) mimir-build-image/
 
 # We don't want find to scan inside a bunch of directories, to accelerate the
 # 'make: Entering directory '/go/src/github.com/grafana/mimir' phase.
@@ -202,7 +198,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr3584-1806872c5
+LATEST_BUILD_IMAGE_TAG ?= pr3702-cc811800b
 
 # TTY is parameterized to allow Google Cloud Builder to run builds,
 # as it currently disallows TTY devices. This value needs to be overridden
