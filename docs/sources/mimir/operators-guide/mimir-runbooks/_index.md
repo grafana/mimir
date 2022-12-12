@@ -484,7 +484,7 @@ How it **works**:
 
 - Ingesters join a hash ring that facilitates per-tenant request sharding across ingester replicas.
 - Distributors shard requests that belong to an individual tenant across a subset of ingester replicas. The number of replicas used per tenant is determined by the `-distributor.ingestion-tenant-shard-size` or the `ingestion_tenant_shard_size` limit.
-- When the tenant shard size is lower than the number of ingester replicas, some ingesters may not receive requests for any tenants.
+- When the tenant shard size is lower than the number of ingester replicas, some ingesters might not receive requests for any tenants.
 - This is more likely to happen in Mimir clusters with a lower number of tenants.
 
 How to **fix** it:
