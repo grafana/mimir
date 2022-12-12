@@ -49,7 +49,7 @@ func TestSymbols(t *testing.T) {
 	require.NoError(t, err)
 
 	// We store only 4 offsets to symbols.
-	require.Equal(t, 32, s.Size())
+	require.Len(t, s.offsets, 4)
 
 	for i := 99; i >= 0; i-- {
 		s, err := s.Lookup(uint32(i))

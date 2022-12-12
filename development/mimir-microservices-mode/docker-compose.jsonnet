@@ -226,7 +226,7 @@ std.manifestYamlDoc({
         '--enable-feature=exemplar-storage',
         '--enable-feature=native-histograms',
       ],
-      volumes: ['./config:/etc/prometheus'],
+      volumes: ['./config:/etc/prometheus', '../../operations/mimir-mixin-compiled/alerts.yaml:/etc/alerts/alerts.yaml'],
       ports: ['9090:9090'],
     },
   },
