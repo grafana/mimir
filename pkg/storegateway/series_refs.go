@@ -461,14 +461,15 @@ func newSeriesSetWithoutChunks(ctx context.Context, batches seriesChunkRefsSetIt
 }
 
 type cachingSeriesChunkRefsSetIterator struct {
-	ctx        context.Context
-	indexCache indexcache.IndexCache
-	tenantID   string
-	blockID    ulid.ULID
-	matchers   []*labels.Matcher
-	shard      *sharding.ShardSelector
-	logger     log.Logger
-	nextPart   int
+	ctx         context.Context
+	indexCache  indexcache.IndexCache
+	tenantID    string
+	blockID     ulid.ULID
+	matchers    []*labels.Matcher
+	shard       *sharding.ShardSelector
+	logger      log.Logger
+	nextPart    int
+	storedParts bool
 
 	from seriesChunkRefsSetIterator
 }
@@ -497,6 +498,11 @@ func newCachingSeriesChunkRefsSetIterator(
 
 func (c *cachingSeriesChunkRefsSetIterator) Next() bool {
 	if !c.from.Next() {
+		if c.storedParts || c.Err() != nil {
+			return false
+		}
+		storeCachedSeriesParts(c.ctx, c.indexCache, c.tenantID, c.blockID, c.matchers, c.shard, c.nextPart, c.logger)
+		c.storedParts = true
 		return false
 	}
 	storeCachedSeries(c.ctx, c.indexCache, c.tenantID, c.blockID, c.matchers, c.shard, c.nextPart, extractLabelsFromSeriesChunkRefs(c.from.At().series), c.logger)
@@ -517,63 +523,6 @@ func (c *cachingSeriesChunkRefsSetIterator) At() seriesChunkRefsSet {
 }
 
 func (c *cachingSeriesChunkRefsSetIterator) Err() error {
-	return c.from.Err()
-}
-
-type cachingSeriesChunkRefsSetPartsIterator struct {
-	ctx         context.Context
-	indexCache  indexcache.IndexCache
-	tenantID    string
-	blockID     ulid.ULID
-	matchers    []*labels.Matcher
-	shard       *sharding.ShardSelector
-	logger      log.Logger
-	totalParts  int
-	storedParts bool
-
-	from seriesChunkRefsSetIterator
-}
-
-func newCachingSeriesChunkRefsSetPartsIterator(
-	ctx context.Context,
-	indexCache indexcache.IndexCache,
-	tenantID string,
-	blockID ulid.ULID,
-	matchers []*labels.Matcher,
-	shard *sharding.ShardSelector,
-	logger log.Logger,
-	from seriesChunkRefsSetIterator,
-) *cachingSeriesChunkRefsSetPartsIterator {
-	return &cachingSeriesChunkRefsSetPartsIterator{
-		ctx:        ctx,
-		indexCache: indexCache,
-		tenantID:   tenantID,
-		blockID:    blockID,
-		matchers:   matchers,
-		shard:      shard,
-		logger:     logger,
-		from:       from,
-	}
-}
-
-func (c *cachingSeriesChunkRefsSetPartsIterator) Next() bool {
-	if !c.from.Next() {
-		if c.storedParts || c.Err() != nil {
-			return false
-		}
-		storeCachedSeriesParts(c.ctx, c.indexCache, c.tenantID, c.blockID, c.matchers, c.shard, c.totalParts, c.logger)
-		c.storedParts = true
-		return false
-	}
-	c.totalParts++
-	return true
-}
-
-func (c *cachingSeriesChunkRefsSetPartsIterator) At() seriesChunkRefsSet {
-	return c.from.At()
-}
-
-func (c *cachingSeriesChunkRefsSetPartsIterator) Err() error {
 	return c.from.Err()
 }
 
@@ -865,7 +814,6 @@ func openBlockSeriesChunkRefsSetsIterator(
 	iterator = newLimitingSeriesChunkRefsSetIterator(iterator, chunksLimiter, seriesLimiter)
 	if skipChunks {
 		iterator = newCachingSeriesChunkRefsSetIterator(ctx, indexCache, tenantID, blockMeta.ULID, matchers, shard, logger, iterator)
-		iterator = newCachingSeriesChunkRefsSetPartsIterator(ctx, indexCache, tenantID, blockMeta.ULID, matchers, shard, logger, iterator)
 	}
 	return iterator, nil
 }
