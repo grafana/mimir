@@ -144,6 +144,7 @@
 * [ENHANCEMENT] The query-tee node port (`$._config.query_tee_node_port`) is now optional. #3272
 * [ENHANCEMENT] Add support for autoscaling distributors. #3378
 * [ENHANCEMENT] Make auto-scaling logic ensure integer KEDA thresholds. #3512
+* [ENHANCEMENT] Add `user_24M` and `user_32M` classes to operations config. #3367
 * [BUGFIX] Fixed query-scheduler ring configuration for dedicated ruler's queries and query-frontends. #3237 #3239
 * [BUGFIX] Jsonnet: Fix auto-scaling so that ruler-querier CPU threshold is a string-encoded integer millicores value. #3520
 
