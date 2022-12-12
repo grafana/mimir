@@ -15,6 +15,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/oklog/ulid"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
 
@@ -22,6 +23,16 @@ import (
 	streamencoding "github.com/grafana/mimir/pkg/storegateway/indexheader/encoding"
 	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
 )
+
+type StreamBinaryReaderMetrics struct {
+	decbufFactory *streamencoding.DecbufFactoryMetrics
+}
+
+func NewStreamBinaryReaderMetrics(reg prometheus.Registerer) *StreamBinaryReaderMetrics {
+	return &StreamBinaryReaderMetrics{
+		decbufFactory: streamencoding.NewDecbufFactoryMetrics(reg),
+	}
+}
 
 type StreamBinaryReader struct {
 	factory *streamencoding.DecbufFactory
@@ -48,9 +59,9 @@ type StreamBinaryReader struct {
 }
 
 // NewStreamBinaryReader loads or builds new index-header if not present on disk.
-func NewStreamBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.BucketReader, dir string, id ulid.ULID, postingOffsetsInMemSampling int, cfg Config) (*StreamBinaryReader, error) {
+func NewStreamBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.BucketReader, dir string, id ulid.ULID, postingOffsetsInMemSampling int, metrics *StreamBinaryReaderMetrics, cfg Config) (*StreamBinaryReader, error) {
 	binfn := filepath.Join(dir, id.String(), block.IndexHeaderFilename)
-	br, err := newFileStreamBinaryReader(binfn, postingOffsetsInMemSampling, cfg)
+	br, err := newFileStreamBinaryReader(binfn, postingOffsetsInMemSampling, metrics, cfg)
 	if err == nil {
 		return br, nil
 	}
@@ -63,11 +74,13 @@ func NewStreamBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.
 	}
 
 	level.Debug(logger).Log("msg", "built index-header file", "path", binfn, "elapsed", time.Since(start))
-	return newFileStreamBinaryReader(binfn, postingOffsetsInMemSampling, cfg)
+	return newFileStreamBinaryReader(binfn, postingOffsetsInMemSampling, metrics, cfg)
 }
 
-func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int, cfg Config) (bw *StreamBinaryReader, err error) {
-	r := &StreamBinaryReader{factory: streamencoding.NewDecbufFactory(path, cfg.FileHandlePoolSize)}
+func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int, metrics *StreamBinaryReaderMetrics, cfg Config) (bw *StreamBinaryReader, err error) {
+	r := &StreamBinaryReader{
+		factory: streamencoding.NewDecbufFactory(path, cfg.FileHandlePoolSize, metrics.decbufFactory),
+	}
 
 	// Create a new raw decoding buffer with access to the entire index-header file to
 	// read initial version information and the table of contents.

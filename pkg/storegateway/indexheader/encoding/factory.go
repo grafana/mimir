@@ -9,6 +9,8 @@ import (
 
 	"github.com/grafana/dskit/multierror"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 // readerBufferSize is the size of the buffer used for reading index-header files. This
@@ -17,14 +19,49 @@ const readerBufferSize = 4096
 
 var ErrPoolStopped = errors.New("file handle pool is stopped")
 
+type DecbufFactoryMetrics struct {
+	openCount        prometheus.Counter
+	pooledOpenCount  prometheus.Counter
+	closeCount       prometheus.Counter
+	pooledCloseCount prometheus.Counter
+}
+
+func NewDecbufFactoryMetrics(reg prometheus.Registerer) *DecbufFactoryMetrics {
+	return &DecbufFactoryMetrics{
+		openCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "indexheader_stream_open_total",
+			Help: "Total number of times index-header file has been opened.",
+		}),
+		pooledOpenCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "indexheader_stream_pooled_open_total",
+			Help: "Total number of times a pooled index-header file has been used instead of opened.",
+		}),
+		closeCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "indexheader_stream_close_total",
+			Help: "Total number of times index-header file has been closed.",
+		}),
+		pooledCloseCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "indexheader_stream_pooled_close_total",
+			Help: "Total number of times pooled index-header file has been returned instead of closed.",
+		}),
+	}
+}
+
 // DecbufFactory creates new file-backed decoding buffer instances for a specific index-header file.
 type DecbufFactory struct {
 	files   *filePool
 }
 
-func NewDecbufFactory(path string, maxFileHandles uint) *DecbufFactory {
+func NewDecbufFactory(path string, maxFileHandles uint, metrics *DecbufFactoryMetrics) *DecbufFactory {
 	return &DecbufFactory{
-		files: newFilePool(path, maxFileHandles),
+		files: newFilePool(
+			path,
+			maxFileHandles,
+			metrics.openCount,
+			metrics.pooledOpenCount,
+			metrics.closeCount,
+			metrics.pooledCloseCount,
+		),
 	}
 }
 
@@ -162,17 +199,27 @@ type filePool struct {
 	handles chan *os.File
 	mtx     sync.RWMutex
 	stopped bool
+
+	opens        prometheus.Counter
+	pooledOpens  prometheus.Counter
+	closes       prometheus.Counter
+	pooledCloses prometheus.Counter
 }
 
 // newFilePool creates a new file pool for path with cap capacity. If cap is 0,
 // get always opens new file handles and put always closes them immediately.
-func newFilePool(path string, cap uint) *filePool {
+func newFilePool(path string, cap uint, opens prometheus.Counter, pooledOpens prometheus.Counter, closes prometheus.Counter, pooledCloses prometheus.Counter) *filePool {
 	return &filePool{
 		path: path,
 		// We don't care if cap is 0 which means the channel will be unbuffered. Because
 		// we have default cases for reads and writes to the channel, we will always open
 		// new files and close file handles immediately if the channel is unbuffered.
 		handles: make(chan *os.File, cap),
+
+		opens:        opens,
+		pooledOpens:  pooledOpens,
+		closes:       closes,
+		pooledCloses: pooledCloses,
 	}
 }
 
@@ -189,8 +236,10 @@ func (p *filePool) get() (*os.File, error) {
 
 	select {
 	case f := <-p.handles:
+		p.pooledOpens.Inc()
 		return f, nil
 	default:
+		p.opens.Inc()
 		return os.Open(p.path)
 	}
 }
@@ -208,8 +257,10 @@ func (p *filePool) put(f *os.File) error {
 
 	select {
 	case p.handles <- f:
+		p.pooledCloses.Inc()
 		return nil
 	default:
+		p.closes.Inc()
 		return f.Close()
 	}
 }
