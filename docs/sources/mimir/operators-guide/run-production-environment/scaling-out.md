@@ -136,7 +136,12 @@ The required amount of time to wait depends on your configuration and it's the m
 
 To guarantee no downtime when scaling down [store-gateways]({{< relref "../architecture/components/store-gateway.md" >}}), complete the following steps:
 
-1. Scale down no more than two store-gateways at the same time.
 1. Ensure at least `-store-gateway.sharding-ring.replication-factor` store-gateway instances are running (three when running Grafana Mimir with the default configuration).
-
-> **Note:** If you enabled [zone-aware replication]({{< relref "../configure/configure-zone-aware-replication.md" >}}) for store-gateways, you can in parallel scale down any number of store-gateway instances in one zone at a time.
+1. Scale down no more than two store-gateways at the same time. If you enabled [zone-aware replication]({{< relref "../configure/configure-zone-aware-replication.md" >}})
+   for store-gateways, you can in parallel scale down any number of store-gateway instances in one zone at a time. Zone-aware replication is enabled by default in the `mimir-distributed` Helm chart.
+1. Stop the store-gateway instances you want to scale down.
+1. Remove the stopped instances from the store-gateway ring. In your browser go to the `GET /store-gateway/ring` page that store-gateways expose on their HTTP port
+   and click "Forget" on the instances that you scaled down.
+   Alternatively, you can wait for 10 times the value of `-store-gateway.sharding-ring.heartbeat-timeout` (1m by default)
+   for the store-gateways to be automatically forgotten from the ring.
+1. Proceed with the next two store-gateway replicas or the next zone when using zone-aware replication.
