@@ -5694,7 +5694,7 @@
                   "kind": "field",
                   "name": "file_handle_pool_size",
                   "required": false,
-                  "desc": "Max number of file handles the store-gateway will keep open for each index-header file when using the streaming reader.",
+                  "desc": "Maximum number of file handles the store-gateway keeps open for each index-header file when using the streaming reader.",
                   "fieldValue": null,
                   "fieldDefaultValue": 1,
                   "fieldFlag": "blocks-storage.bucket-store.index-header.file-handle-pool-size",

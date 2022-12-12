@@ -340,7 +340,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout duration
     	If index-header lazy loading is enabled and this setting is > 0, the store-gateway will offload unused index-headers after 'idle timeout' inactivity. (default 1h0m0s)
   -blocks-storage.bucket-store.index-header.file-handle-pool-size uint
-    	[experimental] Max number of file handles the store-gateway will keep open for each index-header file when using the streaming reader. (default 1)
+    	[experimental] Maximum number of file handles the store-gateway keeps open for each index-header file when using the streaming reader. (default 1)
   -blocks-storage.bucket-store.index-header.map-populate-enabled
     	[experimental] If enabled, the store-gateway will attempt to pre-populate the file system cache when memory-mapping index-header files.
   -blocks-storage.bucket-store.index-header.stream-reader-enabled

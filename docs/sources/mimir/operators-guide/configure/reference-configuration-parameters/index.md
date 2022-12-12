@@ -3021,7 +3021,7 @@ bucket_store:
     # CLI flag: -blocks-storage.bucket-store.index-header.stream-reader-enabled
     [stream_reader_enabled: <boolean> | default = false]
 
-    # (experimental) Max number of file handles the store-gateway will keep open
+    # (experimental) Maximum number of file handles the store-gateway keeps open
     # for each index-header file when using the streaming reader.
     # CLI flag: -blocks-storage.bucket-store.index-header.file-handle-pool-size
     [file_handle_pool_size: <int> | default = 1]
