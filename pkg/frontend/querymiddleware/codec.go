@@ -25,6 +25,7 @@ import (
 	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/prometheus/common/model"
 	"github.com/weaveworks/common/httpgrpc"
+	"golang.org/x/exp/slices"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -380,7 +381,7 @@ func matrixMerge(resps []*PrometheusResponse) []SampleStream {
 	for key := range output {
 		keys = append(keys, key)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 
 	result := make([]SampleStream, 0, len(output))
 	for _, key := range keys {

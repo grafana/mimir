@@ -5,10 +5,10 @@ package activeseries
 import (
 	"fmt"
 	"math"
-	"sort"
 	"strings"
 
 	amlabels "github.com/prometheus/alertmanager/pkg/labels"
+	"golang.org/x/exp/slices"
 	"gopkg.in/yaml.v3"
 )
 
@@ -54,7 +54,7 @@ func customTrackersConfigString(cfg map[string]string) string {
 	}
 
 	// The map is traversed in an ordered fashion to make String representation stable and comparable.
-	sort.Strings(keys)
+	slices.Sort(keys)
 
 	var sb strings.Builder
 	for i, name := range keys {

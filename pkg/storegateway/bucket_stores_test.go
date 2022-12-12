@@ -13,7 +13,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -37,6 +36,7 @@ import (
 	filesystemstore "github.com/thanos-io/objstore/providers/filesystem"
 	"github.com/weaveworks/common/logging"
 	"go.uber.org/atomic"
+	"golang.org/x/exp/slices"
 	grpc_metadata "google.golang.org/grpc/metadata"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -686,7 +686,7 @@ func getUsersInDir(t *testing.T, dir string) []string {
 			result = append(result, fi.Name())
 		}
 	}
-	sort.Strings(result)
+	slices.Sort(result)
 	return result
 }
 

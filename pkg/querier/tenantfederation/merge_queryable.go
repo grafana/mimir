@@ -18,6 +18,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/weaveworks/common/user"
+	"golang.org/x/exp/slices"
 
 	"github.com/grafana/dskit/tenant"
 
@@ -268,7 +269,7 @@ func (m *mergeQuerier) mergeDistinctStringSliceWithTenants(f stringSliceFunc, te
 	for e := range resultMap {
 		result = append(result, e)
 	}
-	sort.Strings(result)
+	slices.Sort(result)
 	return result, warnings, nil
 }
 

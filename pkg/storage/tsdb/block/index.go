@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
@@ -688,6 +689,6 @@ func (ss stringset) slice() []string {
 	for k := range ss {
 		slice = append(slice, k)
 	}
-	sort.Strings(slice)
+	slices.Sort(slice)
 	return slice
 }

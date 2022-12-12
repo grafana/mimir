@@ -218,7 +218,7 @@ func (t *PostingOffsetTableV1) LabelValues(name string, filter func(string) bool
 			values = append(values, k)
 		}
 	}
-	sort.Strings(values)
+	slices.Sort(values)
 	return values, nil
 }
 

@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -19,6 +18,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/user"
+	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -403,7 +403,7 @@ func (i mockIndex) LabelNames(_ ...*labels.Matcher) ([]string, error) {
 	for k := range i.existingLabels {
 		l = append(l, k)
 	}
-	sort.Strings(l)
+	slices.Sort(l)
 	return l, nil
 }
 

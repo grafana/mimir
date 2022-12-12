@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"math/rand"
 	"path/filepath"
-	"sort"
 	"testing"
 	"time"
 
@@ -16,6 +15,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore/providers/filesystem"
+	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
@@ -130,7 +130,7 @@ func BenchmarkLabelNames(b *testing.B) {
 					require.NoError(b, br.Close())
 				})
 
-				sort.Strings(nameSymbols)
+				slices.Sort(nameSymbols)
 				b.ResetTimer()
 
 				for i := 0; i < b.N; i++ {

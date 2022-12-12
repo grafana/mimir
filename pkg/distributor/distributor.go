@@ -36,6 +36,7 @@ import (
 	"github.com/weaveworks/common/mtime"
 	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
+	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/dskit/tenant"
@@ -1345,7 +1346,7 @@ func (d *Distributor) LabelValuesForLabelName(ctx context.Context, from, to mode
 	}
 
 	// We need the values returned to be sorted.
-	sort.Strings(values)
+	slices.Sort(values)
 
 	return values, nil
 }
@@ -1645,7 +1646,7 @@ func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, match
 		values = append(values, v)
 	}
 
-	sort.Strings(values)
+	slices.Sort(values)
 
 	return values, nil
 }

@@ -47,6 +47,7 @@ import (
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
 	"go.uber.org/atomic"
+	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/sharding"
@@ -259,9 +260,9 @@ func TestBlockLabelNames(t *testing.T) {
 	allLabelNames := []string{"i", "n", "j", "p", "q", "r", "s", "t"}
 	jFooLabelNames := []string{"i", "j", "n", "p", "t"}
 	jNotFooLabelNames := []string{"i", "j", "n", "q", "r", "s"}
-	sort.Strings(allLabelNames)
-	sort.Strings(jFooLabelNames)
-	sort.Strings(jNotFooLabelNames)
+	slices.Sort(allLabelNames)
+	slices.Sort(jFooLabelNames)
+	slices.Sort(jNotFooLabelNames)
 
 	sl := NewLimiter(math.MaxUint64, promauto.With(nil).NewCounter(prometheus.CounterOpts{Name: "test"}))
 	newTestBucketBlock := prepareTestBlock(test.NewTB(t), appendTestSeries(series))
@@ -2026,7 +2027,7 @@ func labelNamesFromSeriesSet(series []*storepb.Series) []string {
 		labels = append(labels, k)
 	}
 
-	sort.Strings(labels)
+	slices.Sort(labels)
 	return labels
 }
 

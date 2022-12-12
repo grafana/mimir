@@ -11,7 +11,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -24,6 +23,7 @@ import (
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/thanos-io/objstore"
+	"golang.org/x/exp/slices"
 )
 
 const testFilename = "/random_object"
@@ -373,7 +373,7 @@ func verifyIter(t *testing.T, cb *CachingBucket, expectedFiles []string, expecte
 
 	hitsAfter := int(promtest.ToFloat64(cb.operationHits.WithLabelValues(objstore.OpIter, cfgName)))
 
-	sort.Strings(col.items)
+	slices.Sort(col.items)
 	assert.Equal(t, expectedFiles, col.items)
 
 	expectedHitsDiff := 0

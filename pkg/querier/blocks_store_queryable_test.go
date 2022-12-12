@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -30,6 +29,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/user"
+	"golang.org/x/exp/slices"
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -1996,7 +1996,7 @@ func namesFromSeries(series ...labels.Labels) []string {
 		names = append(names, name)
 	}
 
-	sort.Strings(names)
+	slices.Sort(names)
 	return names
 }
 
@@ -2015,7 +2015,7 @@ func valuesFromSeries(name string, series ...labels.Labels) []string {
 		values = append(values, name)
 	}
 
-	sort.Strings(values)
+	slices.Sort(values)
 	return values
 }
 

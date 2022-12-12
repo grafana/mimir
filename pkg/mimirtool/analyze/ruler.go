@@ -6,12 +6,11 @@
 package analyze
 
 import (
-	"sort"
-
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql/parser"
 	log "github.com/sirupsen/logrus"
+	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/mimirtool/rules/rwrulefmt"
 )
@@ -73,7 +72,7 @@ func ParseMetricsInRuleGroup(mir *MetricsInRuler, group rwrulefmt.RuleGroup, ns 
 		metricsInGroup = append(metricsInGroup, metric)
 		mir.OverallMetrics[metric] = struct{}{}
 	}
-	sort.Strings(metricsInGroup)
+	slices.Sort(metricsInGroup)
 
 	for _, err := range parseErrors {
 		parseErrs = append(parseErrs, err.Error())
