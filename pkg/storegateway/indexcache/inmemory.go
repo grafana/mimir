@@ -345,22 +345,14 @@ func (c *InMemoryIndexCache) FetchExpandedPostings(_ context.Context, userID str
 	return c.get(cacheKeyExpandedPostings{userID, blockID, key})
 }
 
-func (c *InMemoryIndexCache) StoreSeriesParts(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, v []byte) {
-	c.set(cacheKeySeriesParts{userID, blockID, matchersKey, shardKey(shard)}, v)
-}
-
 // StoreSeries stores the result of a Series() call.
-func (c *InMemoryIndexCache) StoreSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, part int, v []byte) {
-	c.set(cacheKeySeries{userID, blockID, matchersKey, shardKey(shard), part}, v)
-}
-
-func (c *InMemoryIndexCache) FetchSeriesParts(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector) (parts []byte, b bool) {
-	return c.get(cacheKeySeriesParts{userID, blockID, matchersKey, shardKey(shard)})
+func (c *InMemoryIndexCache) StoreSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, postingsKey PostingsKey, v []byte) {
+	c.set(cacheKeySeries{userID, blockID, matchersKey, shardKey(shard), postingsKey}, v)
 }
 
 // FetchSeries fetches the result of a Series() call.
-func (c *InMemoryIndexCache) FetchSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, part int) ([]byte, bool) {
-	return c.get(cacheKeySeries{userID, blockID, matchersKey, shardKey(shard), part})
+func (c *InMemoryIndexCache) FetchSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, postingsKey PostingsKey) ([]byte, bool) {
+	return c.get(cacheKeySeries{userID, blockID, matchersKey, shardKey(shard), postingsKey})
 }
 
 // StoreLabelNames stores the result of a LabelNames() call.
@@ -436,7 +428,7 @@ type cacheKeySeries struct {
 	block       ulid.ULID
 	matchersKey LabelMatchersKey
 	shard       string
-	part        int
+	postingsKey PostingsKey
 }
 
 func (c cacheKeySeries) typ() string {
@@ -444,22 +436,7 @@ func (c cacheKeySeries) typ() string {
 }
 
 func (c cacheKeySeries) size() uint64 {
-	return stringSize(c.userID) + ulidSize + stringSize(string(c.matchersKey)) + stringSize(c.shard) + 8
-}
-
-type cacheKeySeriesParts struct {
-	userID      string
-	block       ulid.ULID
-	matchersKey LabelMatchersKey
-	shard       string
-}
-
-func (c cacheKeySeriesParts) typ() string {
-	return cacheTypeSeriesParts
-}
-
-func (c cacheKeySeriesParts) size() uint64 {
-	return stringSize(c.userID) + ulidSize + stringSize(string(c.matchersKey)) + stringSize(c.shard)
+	return stringSize(c.userID) + ulidSize + stringSize(string(c.matchersKey)) + stringSize(c.shard) + stringSize(string(c.postingsKey))
 }
 
 type cacheKeyLabelNames struct {

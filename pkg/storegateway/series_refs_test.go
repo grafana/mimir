@@ -23,6 +23,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
+	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -1190,13 +1191,18 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 				context.Background(),
 				postingsIterator,
 				indexr,
+				noopCache{},
+				hashcache.NewSeriesHashCache(1).GetBlockCache(""),
 				newSafeQueryStats(),
 				block.meta,
+				testCase.matchers,
 				testCase.shard,
 				testCase.seriesHasher,
 				testCase.skipChunks,
 				testCase.minT,
 				testCase.maxT,
+				"t1",
+				log.NewNopLogger(),
 			)
 
 			// Tests
@@ -1436,9 +1442,11 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 			labels.FromStrings("a", "1", "b", "2"),
 			labels.FromStrings("a", "2", "b", "1"),
 			labels.FromStrings("a", "2", "b", "2"),
+			labels.FromStrings("a", "3", "b", "1"),
+			labels.FromStrings("a", "3", "b", "2"),
 		}
 
-		for i := int64(0); i < 10; i++ { // write 200 samples, so we get two chunks
+		for i := int64(0); i < 10; i++ {
 			for _, s := range earlySeries {
 				_, err := appender.Append(0, s, i, 0)
 				assert.NoError(t, err)
@@ -1458,12 +1466,16 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 		labels.FromStrings("a", "1", "b", "2"),
 		labels.FromStrings("a", "2", "b", "1"),
 		labels.FromStrings("a", "2", "b", "2"),
+		labels.FromStrings("a", "3", "b", "1"),
+		labels.FromStrings("a", "3", "b", "2"),
 	}
+
+	const batchSize = 5
 
 	indexReader := b.indexReader()
 	ss, err := openBlockSeriesChunkRefsSetsIterator(
 		context.Background(),
-		1,
+		batchSize,
 		"",
 		indexReader,
 		b.indexCache,
@@ -1485,14 +1497,13 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 	require.NoError(t, ss.Err())
 	require.Equal(t, expectedLabelSet, lset)
 
-	// Cache should be filled by now. We pass a nil index reader to make sure.
-	indexReader = nil
+	// Cache should be filled by now. Pass an index cache that fails the test if you try to access the postings
 	ss, err = openBlockSeriesChunkRefsSetsIterator(
 		context.Background(),
-		1,
+		batchSize,
 		"",
 		indexReader,
-		b.indexCache,
+		forbiddenFetchMultiSeriesForRefsIndexCache{b.indexCache, t},
 		b.meta,
 		matchers,
 		nil,
@@ -1509,6 +1520,17 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 	lset = extractLabelsFromSeriesChunkRefsSets(readAllSeriesChunkRefsSet(ss))
 	require.NoError(t, ss.Err())
 	require.Equal(t, expectedLabelSet, lset)
+}
+
+type forbiddenFetchMultiSeriesForRefsIndexCache struct {
+	indexcache.IndexCache
+
+	t *testing.T
+}
+
+func (c forbiddenFetchMultiSeriesForRefsIndexCache) FetchMultiSeriesForRefs(ctx context.Context, userID string, blockID ulid.ULID, ids []storage.SeriesRef) (hits map[storage.SeriesRef][]byte, misses []storage.SeriesRef) {
+	assert.Fail(c.t, "index cache FetchMultiSeriesForRefs should not be called")
+	return nil, nil
 }
 
 func extractLabelsFromSeriesChunkRefsSets(sets []seriesChunkRefsSet) (result []labels.Labels) {

@@ -220,34 +220,20 @@ func expandedPostingsCacheKey(userID string, blockID ulid.ULID, lmKey LabelMatch
 	return "E:" + userID + ":" + blockID.String() + ":" + base64.RawURLEncoding.EncodeToString(hash[0:])
 }
 
-func (c *MemcachedIndexCache) StoreSeriesParts(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, v []byte) {
-	c.set(ctx, cacheTypeSeries, seriesPartsCacheKey(userID, blockID, matchersKey, shard), v)
-}
-
 // StoreSeries stores the result of a Series() call.
-func (c *MemcachedIndexCache) StoreSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, part int, v []byte) {
-	c.set(ctx, cacheTypeSeries, seriesCacheKey(userID, blockID, matchersKey, shard, part), v)
-}
-
-func (c *MemcachedIndexCache) FetchSeriesParts(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector) (parts []byte, b bool) {
-	return c.get(ctx, cacheTypeSeriesParts, seriesPartsCacheKey(userID, blockID, matchersKey, shard))
+func (c *MemcachedIndexCache) StoreSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, postingsKey PostingsKey, v []byte) {
+	c.set(ctx, cacheTypeSeries, seriesCacheKey(userID, blockID, matchersKey, shard, postingsKey), v)
 }
 
 // FetchSeries fetches the result of a Series() call.
-func (c *MemcachedIndexCache) FetchSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, part int) ([]byte, bool) {
-	return c.get(ctx, cacheTypeSeries, seriesCacheKey(userID, blockID, matchersKey, shard, part))
+func (c *MemcachedIndexCache) FetchSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, postingsKey PostingsKey) ([]byte, bool) {
+	return c.get(ctx, cacheTypeSeries, seriesCacheKey(userID, blockID, matchersKey, shard, postingsKey))
 }
 
-func seriesCacheKey(userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, part int) string {
+func seriesCacheKey(userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, postingsKey PostingsKey) string {
 	hash := blake2b.Sum256([]byte(matchersKey))
 	// We use SS: as S: is already used for SeriesForRef
-	return "SS:" + userID + ":" + blockID.String() + ":" + shardKey(shard) + ":" + strconv.Itoa(part) + ":" + base64.RawURLEncoding.EncodeToString(hash[0:])
-}
-
-func seriesPartsCacheKey(userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector) string {
-	hash := blake2b.Sum256([]byte(matchersKey))
-	// We use SS: as S: is already used for SeriesForRef
-	return "SS:" + userID + ":" + blockID.String() + ":" + shardKey(shard) + ":parts:" + base64.RawURLEncoding.EncodeToString(hash[0:])
+	return "SS:" + userID + ":" + blockID.String() + ":" + shardKey(shard) + ":" + string(postingsKey) + ":" + base64.RawURLEncoding.EncodeToString(hash[0:])
 }
 
 // StoreLabelNames stores the result of a LabelNames() call.

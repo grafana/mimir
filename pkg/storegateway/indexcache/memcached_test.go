@@ -333,6 +333,8 @@ func TestMemcachedIndexCache_FetchSeries(t *testing.T) {
 	value3 := []byte{3}
 	shard1 := (*sharding.ShardSelector)(nil)
 	shard2 := &sharding.ShardSelector{ShardIndex: 1, ShardCount: 16}
+	postings1 := []storage.SeriesRef{1, 2}
+	postings2 := []storage.SeriesRef{2, 3}
 
 	tests := map[string]struct {
 		setup        []mockedSeries
@@ -341,7 +343,7 @@ func TestMemcachedIndexCache_FetchSeries(t *testing.T) {
 		fetchBlockID ulid.ULID
 		fetchKey     LabelMatchersKey
 		fetchShard   *sharding.ShardSelector
-		part         int
+		postings     []storage.SeriesRef
 		expectedData []byte
 		expectedOk   bool
 	}{
@@ -351,54 +353,41 @@ func TestMemcachedIndexCache_FetchSeries(t *testing.T) {
 			fetchBlockID: block1,
 			fetchKey:     CanonicalLabelMatchersKey(matchers1),
 			fetchShard:   shard1,
-			part:         1,
+			postings:     postings1,
 			expectedData: nil,
 			expectedOk:   false,
 		},
 		"should return no miss on hit": {
 			setup: []mockedSeries{
-				{userID: user1, block: block1, matchers: matchers1, shard: shard1, part: 1, value: value1},
-				{userID: user2, block: block1, matchers: matchers1, shard: shard1, part: 1, value: value2}, // different user
-				{userID: user1, block: block1, matchers: matchers1, shard: shard2, part: 1, value: value2}, // different shard
-				{userID: user1, block: block1, matchers: matchers2, shard: shard1, part: 1, value: value2}, // different matchers
-				{userID: user1, block: block2, matchers: matchers1, shard: shard1, part: 1, value: value3}, // different block
-				{userID: user1, block: block2, matchers: matchers1, shard: shard1, part: 2, value: value3}, // different part
+				{userID: user1, block: block1, matchers: matchers1, shard: shard1, postings: postings1, value: value1},
+				{userID: user2, block: block1, matchers: matchers1, shard: shard1, postings: postings1, value: value2}, // different user
+				{userID: user1, block: block1, matchers: matchers1, shard: shard2, postings: postings1, value: value2}, // different shard
+				{userID: user1, block: block1, matchers: matchers2, shard: shard1, postings: postings1, value: value2}, // different matchers
+				{userID: user1, block: block2, matchers: matchers1, shard: shard1, postings: postings1, value: value3}, // different block
+				{userID: user1, block: block2, matchers: matchers1, shard: shard1, postings: postings2, value: value3}, // different postings
 			},
 			fetchUserID:  user1,
 			fetchBlockID: block1,
 			fetchKey:     CanonicalLabelMatchersKey(matchers1),
 			fetchShard:   shard1,
-			part:         1,
+			postings:     postings1,
 			expectedData: value1,
 			expectedOk:   true,
 		},
 		"should return no hit on memcached error": {
 			setup: []mockedSeries{
-				{userID: user1, block: block1, matchers: matchers1, shard: shard1, value: value1},
-				{userID: user1, block: block1, matchers: matchers2, shard: shard1, value: value2},
-				{userID: user1, block: block2, matchers: matchers1, shard: shard1, value: value3},
+				{userID: user1, block: block1, matchers: matchers1, shard: shard1, postings: postings1, value: value1},
+				{userID: user1, block: block1, matchers: matchers2, shard: shard1, postings: postings1, value: value2},
+				{userID: user1, block: block2, matchers: matchers1, shard: shard1, postings: postings1, value: value3},
 			},
 			mockedErr:    context.DeadlineExceeded,
 			fetchUserID:  user1,
 			fetchBlockID: block1,
 			fetchKey:     CanonicalLabelMatchersKey(matchers1),
 			fetchShard:   shard1,
-			part:         1,
+			postings:     postings1,
 			expectedData: nil,
 			expectedOk:   false,
-		},
-		"should accept negative part": {
-			setup: []mockedSeries{
-				{userID: user1, block: block1, matchers: matchers1, shard: shard1, part: -1, value: value1},
-				{userID: user1, block: block1, matchers: matchers1, shard: shard1, part: 1, value: value2},
-			},
-			fetchUserID:  user1,
-			fetchBlockID: block1,
-			fetchKey:     CanonicalLabelMatchersKey(matchers1),
-			fetchShard:   shard1,
-			part:         -1,
-			expectedData: value1,
-			expectedOk:   true,
 		},
 	}
 
@@ -411,11 +400,11 @@ func TestMemcachedIndexCache_FetchSeries(t *testing.T) {
 			// Store the postings expected before running the test.
 			ctx := context.Background()
 			for _, p := range testData.setup {
-				c.StoreSeries(ctx, p.userID, p.block, CanonicalLabelMatchersKey(p.matchers), p.shard, p.part, p.value)
+				c.StoreSeries(ctx, p.userID, p.block, CanonicalLabelMatchersKey(p.matchers), p.shard, CanonicalPostingsKey(p.postings), p.value)
 			}
 
 			// Fetch postings from cached and assert on it.
-			data, ok := c.FetchSeries(ctx, testData.fetchUserID, testData.fetchBlockID, testData.fetchKey, testData.fetchShard, testData.part)
+			data, ok := c.FetchSeries(ctx, testData.fetchUserID, testData.fetchBlockID, testData.fetchKey, testData.fetchShard, CanonicalPostingsKey(testData.postings))
 			assert.Equal(t, testData.expectedData, data)
 			assert.Equal(t, testData.expectedOk, ok)
 
@@ -427,109 +416,6 @@ func TestMemcachedIndexCache_FetchSeries(t *testing.T) {
 			assert.Equal(t, float64(1), prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypeSeries)))
 			assert.Equal(t, expectedHits, prom_testutil.ToFloat64(c.hits.WithLabelValues(cacheTypeSeries)))
 			for _, typ := range remove(allCacheTypes, cacheTypeSeries) {
-				assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.requests.WithLabelValues(typ)))
-				assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.hits.WithLabelValues(typ)))
-			}
-		})
-	}
-}
-
-func TestMemcachedIndexCache_FetchSeriesParts(t *testing.T) {
-	t.Parallel()
-
-	// Init some data to conveniently define test cases later one.
-	user1 := "tenant1"
-	user2 := "tenant2"
-	block1 := ulid.MustNew(1, nil)
-	block2 := ulid.MustNew(2, nil)
-	matchers1 := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")}
-	matchers2 := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "baz", "boo")}
-	value1 := []byte{1}
-	value2 := []byte{2}
-	value3 := []byte{3}
-	shard1 := (*sharding.ShardSelector)(nil)
-	shard2 := &sharding.ShardSelector{ShardIndex: 1, ShardCount: 16}
-
-	tests := map[string]struct {
-		setup        []mockedSeries
-		mockedErr    error
-		fetchUserID  string
-		fetchBlockID ulid.ULID
-		fetchKey     LabelMatchersKey
-		fetchShard   *sharding.ShardSelector
-		part         int
-		expectedData []byte
-		expectedOk   bool
-	}{
-		"should return no hit on empty cache": {
-			setup:        []mockedSeries{},
-			fetchUserID:  user1,
-			fetchBlockID: block1,
-			fetchKey:     CanonicalLabelMatchersKey(matchers1),
-			fetchShard:   shard1,
-			part:         1,
-			expectedData: nil,
-			expectedOk:   false,
-		},
-		"should return no miss on hit": {
-			setup: []mockedSeries{
-				{userID: user1, block: block1, matchers: matchers1, shard: shard1, part: 1, value: value1},
-				{userID: user2, block: block1, matchers: matchers1, shard: shard1, part: 1, value: value2}, // different user
-				{userID: user1, block: block1, matchers: matchers1, shard: shard2, part: 1, value: value2}, // different shard
-				{userID: user1, block: block1, matchers: matchers2, shard: shard1, part: 1, value: value2}, // different matchers
-				{userID: user1, block: block2, matchers: matchers1, shard: shard1, part: 1, value: value3}, // different block
-				{userID: user1, block: block2, matchers: matchers1, shard: shard1, part: 2, value: value3}, // different part
-			},
-			fetchUserID:  user1,
-			fetchBlockID: block1,
-			fetchKey:     CanonicalLabelMatchersKey(matchers1),
-			fetchShard:   shard1,
-			part:         1,
-			expectedData: value1,
-			expectedOk:   true,
-		},
-		"should return no hit on memcached error": {
-			setup: []mockedSeries{
-				{userID: user1, block: block1, matchers: matchers1, shard: shard1, value: value1},
-				{userID: user1, block: block1, matchers: matchers2, shard: shard1, value: value2},
-				{userID: user1, block: block2, matchers: matchers1, shard: shard1, value: value3},
-			},
-			mockedErr:    context.DeadlineExceeded,
-			fetchUserID:  user1,
-			fetchBlockID: block1,
-			fetchKey:     CanonicalLabelMatchersKey(matchers1),
-			fetchShard:   shard1,
-			part:         1,
-			expectedData: nil,
-			expectedOk:   false,
-		},
-	}
-
-	for testName, testData := range tests {
-		t.Run(testName, func(t *testing.T) {
-			memcached := newMockedMemcachedClient(testData.mockedErr)
-			c, err := NewMemcachedIndexCache(log.NewNopLogger(), memcached, nil)
-			assert.NoError(t, err)
-
-			// Store the postings expected before running the test.
-			ctx := context.Background()
-			for _, p := range testData.setup {
-				c.StoreSeriesParts(ctx, p.userID, p.block, CanonicalLabelMatchersKey(p.matchers), p.shard, p.value)
-			}
-
-			// Fetch postings from cached and assert on it.
-			data, ok := c.FetchSeriesParts(ctx, testData.fetchUserID, testData.fetchBlockID, testData.fetchKey, testData.fetchShard)
-			assert.Equal(t, testData.expectedData, data)
-			assert.Equal(t, testData.expectedOk, ok)
-
-			// Assert on metrics.
-			expectedHits := 0.0
-			if testData.expectedOk {
-				expectedHits = 1.0
-			}
-			assert.Equal(t, float64(1), prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypeSeriesParts)))
-			assert.Equal(t, expectedHits, prom_testutil.ToFloat64(c.hits.WithLabelValues(cacheTypeSeriesParts)))
-			for _, typ := range remove(allCacheTypes, cacheTypeSeriesParts) {
 				assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.requests.WithLabelValues(typ)))
 				assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.hits.WithLabelValues(typ)))
 			}
@@ -852,7 +738,7 @@ type mockedSeries struct {
 	block    ulid.ULID
 	matchers []*labels.Matcher
 	shard    *sharding.ShardSelector
-	part     int
+	postings []storage.SeriesRef
 	value    []byte
 }
 

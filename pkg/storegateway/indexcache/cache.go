@@ -7,6 +7,9 @@ package indexcache
 
 import (
 	"context"
+	"crypto/sha1"
+	"encoding/base64"
+	"hash/fnv"
 	"sort"
 	"strings"
 
@@ -62,14 +65,10 @@ type IndexCache interface {
 	// FetchExpandedPostings fetches the result of ExpandedPostings, encoded with an unspecified codec.
 	FetchExpandedPostings(ctx context.Context, userID string, blockID ulid.ULID, key LabelMatchersKey) ([]byte, bool)
 
-	// StoreSeriesParts stores the number of parts in which this series was cached
-	StoreSeriesParts(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, v []byte)
 	// StoreSeries stores the result of a Series() call.
-	StoreSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, part int, v []byte)
-	// FetchSeriesParts stores the number of parts in which this series was cached
-	FetchSeriesParts(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector) ([]byte, bool)
+	StoreSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, postingsKey PostingsKey, v []byte)
 	// FetchSeries fetches the result of a Series() call.
-	FetchSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, part int) ([]byte, bool)
+	FetchSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, postingsKey PostingsKey) ([]byte, bool)
 
 	// StoreLabelNames stores the result of a LabelNames() call.
 	StoreLabelNames(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, v []byte)
@@ -80,6 +79,33 @@ type IndexCache interface {
 	StoreLabelValues(ctx context.Context, userID string, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey, v []byte)
 	// FetchLabelValues fetches the result of a LabelValues() call.
 	FetchLabelValues(ctx context.Context, userID string, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey) ([]byte, bool)
+}
+
+// PostingsKey represents a canonical key for a []storage.SeriesRef slice
+type PostingsKey string
+
+// CanonicalPostingsKey creates a canonical version of PostingsKey
+func CanonicalPostingsKey(postings []storage.SeriesRef) PostingsKey {
+	sorted := make([]byte, len(postings)*8)
+	for i, posting := range postings {
+		for octet := 0; octet < 8; octet++ {
+			sorted[i+octet] = byte(posting >> (octet * 8))
+		}
+	}
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i] < sorted[j]
+	})
+
+	// We hash the postings list twice to minimize the chance of collisions
+	hasher1 := fnv.New64a()
+	hasher2 := sha1.New()
+
+	_, _ = hasher1.Write(sorted)
+	_, _ = hasher2.Write(sorted)
+
+	checksum := hasher2.Sum(hasher1.Sum(nil))
+
+	return PostingsKey(base64.RawURLEncoding.EncodeToString(checksum))
 }
 
 // LabelMatchersKey represents a canonical key for a []*matchers.Matchers slice
