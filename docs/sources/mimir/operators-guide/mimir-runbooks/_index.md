@@ -489,11 +489,11 @@ How it **works**:
 
 How to **fix** it:
 
-There are three options:
+Choose one of three options:
 
-- Decrease the number of ingester replicas to match the highest number of shards per tenant or
-- Increase the shard size of one or more tenants to match the number of ingester replicas or
-- Set the shard size of one or more tenants to `0`; this will shard this tenant's requests across all ingesters.
+- Decrease the number of ingester replicas to match the highest number of shards per tenant.
+- Increase the shard size of one or more tenants to match the number of ingester replicas.
+- Set the shard size of one or more tenants to `0`; this will shard the given tenant’s requests across all ingesters.
 
 ### MimirQuerierHasNotScanTheBucket
 
