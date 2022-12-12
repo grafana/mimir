@@ -49,7 +49,7 @@ rm -rf "$INTERMEDIATE_PATH"
 mkdir -p "$INTERMEDIATE_PATH"
 
 # Find testcases
-TESTS="$(find ${CHART_PATH}/ci -name '*values.yaml')"
+TESTS=$(find "${CHART_PATH}/ci" -name '*values.yaml')
 
 for FILEPATH in $TESTS; do
   # Extract the filename (without extension).
@@ -64,6 +64,6 @@ for FILEPATH in $TESTS; do
 
   echo "Removing mutable config checksum, helm chart, application, image tag version for clarity"
   cp -r "${INTERMEDIATE_OUTPUT_DIR}" "${OUTPUT_DIR}"
-  find "${OUTPUT_DIR}/$(basename ${CHART_PATH})/templates" -type f -print0 | xargs -0 "${SED}" -E -i -- "/^\s+(checksum\/config|(helm.sh\/)?chart|app.kubernetes.io\/version|image: \"grafana\/(mimir|mimir-continuous-test|enterprise-metrics)):/d"
+  find "${OUTPUT_DIR}/"$(basename "${CHART_PATH}")"/templates" -type f -print0 | xargs -0 "${SED}" -E -i -- "/^\s+(checksum\/config|(helm.sh\/)?chart|app.kubernetes.io\/version|image: \"grafana\/(mimir|mimir-continuous-test|enterprise-metrics)):/d"
 
 done
