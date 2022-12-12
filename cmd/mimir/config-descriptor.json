@@ -1863,7 +1863,7 @@
           "kind": "field",
           "name": "max_concurrent",
           "required": false,
-          "desc": "The maximum number of concurrent queries. This config option should be set on query-frontend too when query sharding is enabled.",
+          "desc": "The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier.",
           "fieldValue": null,
           "fieldDefaultValue": 20,
           "fieldFlag": "querier.max-concurrent",

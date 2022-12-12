@@ -26,6 +26,8 @@
 
 ### Documentation
 
+* [BUGFIX] Querier: Remove assertion that the `-querier.max-concurrent` flag must also be set for the query-frontend. #3678
+
 ### Tools
 
 ## 2.5.0-rc.0
