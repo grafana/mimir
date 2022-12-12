@@ -4,10 +4,10 @@
 #
 # Or follow instructions on https://github.com/google/go-jsonnet
 
-.DEFAULT_GOAL := docker-compose-yml
+.DEFAULT_GOAL := docker-compose.yml
 
-docker-compose-yml: docker-compose.jsonnet
+docker-compose.yml: docker-compose.jsonnet
 	jsonnet -S docker-compose.jsonnet -o docker-compose.yml
 
-check: docker-compose-yml
+check: docker-compose.yml
 	@git diff --exit-code -- 'docker-compose.yml' || (echo "docker-compose.jsonnet and docker-compose.yml don't match in ${PWD}" && false)
