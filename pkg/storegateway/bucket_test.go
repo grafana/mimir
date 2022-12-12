@@ -969,7 +969,9 @@ func BenchmarkBucket_Series_WithSkipChunks(b *testing.B) {
 	tb := test.NewTB(b)
 	// 10e6 samples = ~1736 days with 15s scrape
 	runSeriesInterestingCases(tb, 10e6, 10e5, func(t test.TB, samplesPerSeries, series int) {
-		benchBucketSeries(t, true, samplesPerSeries, series, 1/100e6, 1/10e4, 1)
+		// Send only requests with 100% ratio because in Mimir we lookup series at block boundaries
+		// when skip chunks = true.
+		benchBucketSeries(t, true, samplesPerSeries, series, 1)
 	})
 }
 
