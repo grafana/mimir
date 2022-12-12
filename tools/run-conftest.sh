@@ -6,24 +6,24 @@ set -o errexit
 set -o pipefail
 
 GIT_REPO_ROOT=$(git rev-parse --show-toplevel || echo -n '/')
-CHART_PATH="$GIT_REPO_ROOT/operations/helm/charts/mimir-distributed"
-POLICIES_PATH="$GIT_REPO_ROOT/operations/helm/policies"
+CHART_PATH="operations/helm/charts/mimir-distributed"
+POLICIES_PATH="operations/helm/policies"
 MANIFESTS_PATH=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
   --chart-path)
-    CHART_PATH="$GIT_REPO_ROOT/$2"
+    CHART_PATH="$2"
     shift # skip param name
     shift # skip param value
     ;;
   --policies-path)
-    POLICIES_PATH="$GIT_REPO_ROOT/$2"
+    POLICIES_PATH="$2"
     shift # skip --policies-path
     shift # skip policies-path value
     ;;
   --manifests-path)
-    MANIFESTS_PATH="$GIT_REPO_ROOT/$2"
+    MANIFESTS_PATH="$2"
     shift # skip param name
     shift # skip param value
     ;;
@@ -44,8 +44,7 @@ VALUES_FILES_PATH=$CHART_PATH/ci
 for FILEPATH in $(find $VALUES_FILES_PATH -name '*.yaml'); do
   TEST_NAME=$(basename -s '.yaml' "$FILEPATH")
   MANIFEST_DIR="${MANIFESTS_PATH}/${TEST_NAME}-generated"
-  echo "Testing with values file $FILEPATH"
-  echo "and the generated YAML templates in $MANIFEST_DIR"
+  echo "Testing with values file $TEST_NAME with manifests in ${MANIFEST_DIR}"
   conftest test "$MANIFEST_DIR/"$(basename "$CHART_PATH")"/templates" -p "$POLICIES_PATH" --combine
   echo ""
 done
