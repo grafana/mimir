@@ -220,10 +220,11 @@ std.manifestYamlDoc({
 
   prometheus:: {
     prometheus: {
-      image: 'prom/prometheus:v2.32.1',
+      image: 'prom/prometheus:v2.40.5',
       command: [
         '--config.file=/etc/prometheus/prometheus.yaml',
         '--enable-feature=exemplar-storage',
+        '--enable-feature=native-histograms',
       ],
       volumes: ['./config:/etc/prometheus'],
       ports: ['9090:9090'],
