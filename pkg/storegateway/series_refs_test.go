@@ -25,6 +25,11 @@ import (
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
+func init() {
+	// Track the balance of gets/puts to seriesChunkRefsSetPool in all tests.
+	seriesChunkRefsSetPool = &trackedGenericPool{parent: seriesChunkRefsSetPool}
+}
+
 func TestSeriesChunkRef_Compare(t *testing.T) {
 	input := []seriesChunkRef{
 		{blockID: ulid.MustNew(0, nil), minTime: 2, maxTime: 5},
@@ -630,8 +635,10 @@ func TestMergedSeriesChunkRefsSet_Concurrency(t *testing.T) {
 		require.Equal(t, numIterators*numSetsPerIterator*numSeriesPerSet, actualSeries)
 	}
 
-	g, _ := errgroup.WithContext(context.Background())
+	// Reset the memory pool tracker.
+	seriesChunkRefsSetPool.(*trackedGenericPool).reset()
 
+	g, _ := errgroup.WithContext(context.Background())
 	for c := 0; c < concurrency; c++ {
 		g.Go(func() error {
 			for r := 0; r < runs/concurrency; r++ {
@@ -642,6 +649,11 @@ func TestMergedSeriesChunkRefsSet_Concurrency(t *testing.T) {
 	}
 
 	require.NoError(t, g.Wait())
+
+	// Ensure the seriesChunkRefsSet memory pool has been used and all slices pulled from
+	// pool have put back.
+	assert.Greater(t, seriesChunkRefsSetPool.(*trackedGenericPool).gets.Load(), int64(0))
+	assert.Equal(t, int64(0), seriesChunkRefsSetPool.(*trackedGenericPool).balance.Load())
 }
 
 func BenchmarkMergedSeriesChunkRefsSetIterators(b *testing.B) {

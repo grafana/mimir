@@ -11,6 +11,14 @@ import (
 	"github.com/pkg/errors"
 )
 
+// Generic memory pool with the same interface of sync.Pool.
+type Generic interface {
+	// Put is sync.Pool.Put().
+	Put(x any)
+	// Get is sync.Pool.Get().
+	Get() any
+}
+
 // Bytes is a pool of bytes that can be reused.
 type Bytes interface {
 	// Get returns a new byte slices that fits the given size.

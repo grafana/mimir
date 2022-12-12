@@ -1041,7 +1041,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 
 	runTestWithStore := func(t test.TB, st *BucketStore) {
 		if !t.IsBenchmark() {
-			st.chunkPool = &mockedPool{parent: st.chunkPool}
+			st.chunkPool = &trackedBytesPool{parent: st.chunkPool}
 		}
 
 		assert.NoError(t, st.SyncBlocks(context.Background()))
@@ -1081,8 +1081,8 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 		if !t.IsBenchmark() {
 			if !skipChunk {
 				// TODO(bwplotka): This is wrong negative for large number of samples (1mln). Investigate.
-				assert.Equal(t, 0, int(st.chunkPool.(*mockedPool).balance.Load()))
-				st.chunkPool.(*mockedPool).gets.Store(0)
+				assert.Equal(t, 0, int(st.chunkPool.(*trackedBytesPool).balance.Load()))
+				st.chunkPool.(*trackedBytesPool).gets.Store(0)
 			}
 
 			for _, b := range st.blocks {
@@ -1209,12 +1209,15 @@ func TestBucket_Series_Concurrency(t *testing.T) {
 	// Run the test with different batch sizes.
 	for _, batchSize := range []int{len(expectedSeries) / 100, len(expectedSeries) * 2} {
 		t.Run(fmt.Sprintf("batch size: %d", batchSize), func(t *testing.T) {
+			// Reset the memory pool tracker.
+			seriesChunkRefsSetPool.(*trackedGenericPool).reset()
+
 			metaFetcher, err := block.NewRawMetaFetcher(logger, instrumentedBucket)
 			assert.NoError(t, err)
 
 			chunkPool, err := pool.NewBucketedBytes(chunkBytesPoolMinSize, chunkBytesPoolMaxSize, 2, 1e9) // 1GB.
 			assert.NoError(t, err)
-			trackedChunkPool := &mockedPool{parent: chunkPool}
+			trackedChunkPool := &trackedBytesPool{parent: chunkPool}
 
 			// Create the bucket store.
 			store, err := NewBucketStore(
@@ -1258,17 +1261,22 @@ func TestBucket_Series_Concurrency(t *testing.T) {
 
 			// Ensure all chunks have been released to the pool.
 			require.Equal(t, 0, int(trackedChunkPool.balance.Load()))
+
+			// Ensure the seriesChunkRefsSet memory pool has been used and all slices pulled from
+			// pool have put back.
+			assert.Greater(t, seriesChunkRefsSetPool.(*trackedGenericPool).gets.Load(), int64(0))
+			assert.Equal(t, int64(0), seriesChunkRefsSetPool.(*trackedGenericPool).balance.Load())
 		})
 	}
 }
 
-type mockedPool struct {
+type trackedBytesPool struct {
 	parent  pool.Bytes
 	balance atomic.Uint64
 	gets    atomic.Uint64
 }
 
-func (m *mockedPool) Get(sz int) (*[]byte, error) {
+func (m *trackedBytesPool) Get(sz int) (*[]byte, error) {
 	b, err := m.parent.Get(sz)
 	if err != nil {
 		return nil, err
@@ -1278,9 +1286,31 @@ func (m *mockedPool) Get(sz int) (*[]byte, error) {
 	return b, nil
 }
 
-func (m *mockedPool) Put(b *[]byte) {
+func (m *trackedBytesPool) Put(b *[]byte) {
 	m.balance.Sub(uint64(cap(*b)))
 	m.parent.Put(b)
+}
+
+type trackedGenericPool struct {
+	parent  pool.Generic
+	balance atomic.Int64
+	gets    atomic.Int64
+}
+
+func (p *trackedGenericPool) Get() any {
+	p.balance.Inc()
+	p.gets.Inc()
+	return p.parent.Get()
+}
+
+func (p *trackedGenericPool) Put(x any) {
+	p.balance.Dec()
+	p.parent.Put(x)
+}
+
+func (p *trackedGenericPool) reset() {
+	p.balance.Store(0)
+	p.gets.Store(0)
 }
 
 // Regression test against: https://github.com/thanos-io/thanos/issues/2147.
