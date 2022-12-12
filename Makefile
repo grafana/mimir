@@ -461,7 +461,7 @@ format-makefiles: $(MAKE_FILES)
 clean: ## Cleanup the docker images, object files and executables.
 	$(SUDO) docker rmi $(IMAGE_NAMES) >/dev/null 2>&1 || true
 	$(SUDO) docker volume rm -f mimir-go-pkg mimir-go-cache
-	rm -rf -- $(UPTODATE_FILES) $(EXES) dist
+	rm -rf -- $(UPTODATE_FILES) $(EXES) .cache dist
 	# Remove executables built for multiarch images.
 	find . -type f -name '*_linux_arm64' -perm +u+x -exec rm {} \;
 	find . -type f -name '*_linux_amd64' -perm +u+x -exec rm {} \;
