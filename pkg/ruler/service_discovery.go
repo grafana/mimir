@@ -8,14 +8,13 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/dns"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-
-	"github.com/grafana/mimir/pkg/cacheutil"
 )
 
 const (
@@ -23,7 +22,7 @@ const (
 )
 
 type dnsServiceDiscovery struct {
-	Resolver cacheutil.AddressProvider
+	Resolver cache.AddressProvider
 
 	RefreshInterval time.Duration
 	QType           dns.QType
@@ -59,7 +58,7 @@ func (c dnsServiceDiscovery) resolve(ctx context.Context) ([]*targetgroup.Group,
 	return []*targetgroup.Group{tg}, nil
 }
 
-func dnsSD(rulerConfig *Config, resolver cacheutil.AddressProvider, qType dns.QType, url *url.URL) discovery.Config {
+func dnsSD(rulerConfig *Config, resolver cache.AddressProvider, qType dns.QType, url *url.URL) discovery.Config {
 	return dnsServiceDiscovery{
 		Resolver:        resolver,
 		RefreshInterval: rulerConfig.AlertmanagerRefreshInterval,

@@ -24,10 +24,10 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/tenant"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
-	"github.com/grafana/mimir/pkg/cache"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
