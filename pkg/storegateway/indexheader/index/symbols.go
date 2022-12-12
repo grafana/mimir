@@ -180,10 +180,6 @@ func (s *Symbols) reverseLookup(sym string, d streamencoding.Decbuf) (uint32, er
 	return uint32(s.tableLength - lastLen), nil
 }
 
-func (s *Symbols) Size() int {
-	return len(s.offsets) * 8
-}
-
 func yoloString(b []byte) string {
 	return *((*string)(unsafe.Pointer(&b)))
 }
