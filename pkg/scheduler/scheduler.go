@@ -68,6 +68,7 @@ type Scheduler struct {
 	// Metrics.
 	queueLength              *prometheus.GaugeVec
 	discardedRequests        *prometheus.CounterVec
+	cancelledRequests        *prometheus.CounterVec
 	connectedQuerierClients  prometheus.GaugeFunc
 	connectedFrontendClients prometheus.GaugeFunc
 	queueDuration            prometheus.Histogram
@@ -125,6 +126,10 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		Help: "Number of queries in the queue.",
 	}, []string{"user"})
 
+	s.cancelledRequests = promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
+		Name: "cortex_query_scheduler_cancelled_requests_total",
+		Help: "Total number of query requests that were cancelled after enqueuing.",
+	}, []string{"user"})
 	s.discardedRequests = promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_query_scheduler_discarded_requests_total",
 		Help: "Total number of query requests discarded.",
@@ -462,6 +467,7 @@ func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuer
 		// If the upstream request is cancelled (eg. frontend issued CANCEL or closed connection),
 		// we need to cancel the downstream req. Only way we can do that is to close the stream (by returning error here).
 		// Querier is expecting this semantics.
+		s.cancelledRequests.WithLabelValues(req.userID).Inc()
 		return req.ctx.Err()
 
 	case err := <-errCh:
@@ -565,6 +571,7 @@ func (s *Scheduler) stopping(_ error) error {
 func (s *Scheduler) cleanupMetricsForInactiveUser(user string) {
 	s.queueLength.DeleteLabelValues(user)
 	s.discardedRequests.DeleteLabelValues(user)
+	s.cancelledRequests.DeleteLabelValues(user)
 }
 
 func (s *Scheduler) getConnectedFrontendClientsMetric() float64 {

@@ -10,6 +10,7 @@
 * [ENHANCEMENT] Distributor: remove labels with empty values #2439
 * [ENHANCEMENT] Query-frontend: track query HTTP requests in the Activity Tracker. #3561
 * [ENHANCEMENT] Store-gateway: Add experimental alternate implementation of index-header reader that does not use mmap. This reader is expected to improve stability of the store-gateway. This implementation can be enabled with the flag `-blocks-storage.bucket-store.index-header.stream-reader-enabled`. #3639
+* [ENHANCEMENT] Query-scheduler: add `cortex_query_scheduler_cancelled_requests_total` metric to track the number of requests that are already cancelled when dequeued. #3696
 * [BUGFIX] Log the names of services that are not yet running rather than `unsupported value type` when calling `/ready` and some services are not running. #3625
 * [BUGFIX] Alertmanager: Fix template spurious deletion with relative data dir. #3604
 
