@@ -127,8 +127,8 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 	}, []string{"user"})
 
 	s.cancelledRequests = promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
-		Name:        "cortex_query_scheduler_cancelled_requests_total",
-		Help:        "Total number of query requests that were cancelled after enqueuing.",
+		Name: "cortex_query_scheduler_cancelled_requests_total",
+		Help: "Total number of query requests that were cancelled after enqueuing.",
 	}, []string{"user"})
 	s.discardedRequests = promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_query_scheduler_discarded_requests_total",
