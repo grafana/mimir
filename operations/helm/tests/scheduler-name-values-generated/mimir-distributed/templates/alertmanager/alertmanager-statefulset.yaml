@@ -41,6 +41,7 @@ spec:
         app.kubernetes.io/component: alertmanager
         app.kubernetes.io/part-of: memberlist
       annotations:
+        checksum/alertmanager-fallback-config: 397c712ddb9a02e91ceb82cb2961d1a0a5c4ad156f9f24368b5f0d10bf9d1988
       namespace: "citestns"
     spec:
       schedulerName: "my-scheduler"

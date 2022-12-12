@@ -225,7 +225,7 @@ GOVOLUMES=	-v $(shell pwd)/.cache:/go/cache:$(CONTAINER_MOUNT_OPTIONS) \
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
 SSHVOLUME=  -v ~/.ssh/:/root/.ssh:$(CONTAINER_MOUNT_OPTIONS)
 
-exes $(EXES) protos $(PROTO_GOS) lint lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt conftest-test conftest-verify check-helm-tests build-helm-tests: fetch-build-image
+exes $(EXES) protos $(PROTO_GOS) lint lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt conftest-test conftest-quick-test conftest-verify check-helm-tests build-helm-tests: fetch-build-image
 	@mkdir -p $(shell pwd)/.pkg
 	@mkdir -p $(shell pwd)/.cache
 	@echo
@@ -436,7 +436,7 @@ conftest-fmt:
 	@conftest fmt $(HELM_REGO_POLICIES_PATH)
 
 check-conftest-fmt: conftest-fmt
-	@./tools/find-diff-or-untracked.sh $(HELM_REGO_POLICIES_PATH) || (echo "Please format rego policies with 'make conftest-fmt'" && false)
+	@./tools/find-diff-or-untracked.sh $(HELM_REGO_POLICIES_PATH) || (echo "Format the rego policies by running 'make conftest-fmt' and commit the changes" && false)
 
 conftest-verify:
 	@conftest verify -p $(HELM_REGO_POLICIES_PATH) --report notes
@@ -451,9 +451,13 @@ build-helm-tests: update-helm-dependencies
 conftest-test: build-helm-tests
 	@tools/run-conftest.sh --policies-path $(HELM_REGO_POLICIES_PATH)
 
+conftest-quick-test: ## Does not rebuild the yaml manifests, use the target conftest-test for that
+conftest-quick-test:
+	@tools/run-conftest.sh --policies-path $(HELM_REGO_POLICIES_PATH)
+
 check-helm-tests: ## Check the helm golden records.
 check-helm-tests: build-helm-tests conftest-test
-	@./tools/find-diff-or-untracked.sh operations/helm/tests || (echo "Please rebuild helm tests output 'make check-helm-tests'" && false)
+	@./tools/find-diff-or-untracked.sh operations/helm/tests || (echo "Rebuild the Helm tests output by running 'make build-helm-tests' and commit the changes" && false)
 
 endif
 
