@@ -20,6 +20,7 @@
 * [ENHANCEMENT] Alerts: Added `MimirIngesterInstanceHasNoTenants` alert that fires when an ingester replica is not receiving write requests for any tenant. #3681
 * [BUGFIX] Alerts: Fixed `MemoryMapAreasTooHigh` alert when Mimir is deployed in read-write mode. #3626
 * [BUGFIX] Alerts: Fixed `MimirCompactorSkippedBlocksWithOutOfOrderChunks` matching on non-existent label. #3628
+* [BUGFIX] Dashboards: Fix `Rollout Progress` dashboard incorrectly using Gateway metrics when Gateway was not enabled. #3709
 
 ### Jsonnet
 
