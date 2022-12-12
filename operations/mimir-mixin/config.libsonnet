@@ -208,6 +208,42 @@
     // System mount point where mimir stores its data, used for baremetal
     // deployment only.
     instance_data_mountpoint: '/',
+    alertmanager_alerts: {
+      kubernetes: {
+        memory_allocation: |||
+          (container_memory_working_set_bytes{container="alertmanager"} / container_spec_memory_limit_bytes{container="alertmanager"}) > %(allocationpercent)s
+          and
+          (container_spec_memory_limit_bytes{container="alertmanager"} > 0)
+        |||,
+      },
+      baremetal: {
+        memory_allocation: |||
+          (process_resident_memory_bytes{job=~".*/alertmanager"} / on(%(instanceLabel)s) node_memory_MemTotal_bytes{}) > %(allocationpercent)s
+        |||,
+      },
+    },
+    ingester_alerts: {
+      kubernetes: {
+        memory_allocation: |||
+          (
+            # We use RSS instead of working set memory because of the ingester's extensive usage of mmap.
+            # See: https://github.com/grafana/mimir/issues/2466
+            container_memory_rss{container=~"(%(ingester)s|%(mimir_write)s|%(mimir_backend)s)"}
+              /
+            ( container_spec_memory_limit_bytes{container=~"(%(ingester)s|%(mimir_write)s|%(mimir_backend)s)"} > 0 )
+          ) > %(allocationpercent)s
+        |||,
+      },
+      baremetal: {
+        memory_allocation: |||
+          (
+            process_resident_memory_bytes{job=~".*/(%(ingester)s|%(mimir_write)s|%(mimir_backend)s)"}
+              /
+            on(%(instanceLabel)s) node_memory_MemTotal_bytes{}
+          ) > %(allocationpercent)s
+        |||,
+      },
+    },
     resources_panel_queries: {
       kubernetes: {
         cpu_usage: 'sum by(%(instanceLabel)s) (rate(container_cpu_usage_seconds_total{%(namespace)s,container=~"%(containerName)s"}[$__rate_interval]))',
