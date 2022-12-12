@@ -431,7 +431,7 @@ format-mixin: ## Format the mixin files.
 	@find $(MIXIN_PATH) -type f -name '*.libsonnet' | xargs jsonnetfmt -i
 
 HELM_REGO_POLICIES_PATH=operations/helm/policies
-HELM_RAW_MANIFESTS_PATH=operations/helm/tests/intermediate
+HELM_RAW_MANIFESTS_PATH=operations/helm/tests-intermediate
 HELM_COMMITTED_MANIFESTS=operations/helm/tests
 
 conftest-fmt:
