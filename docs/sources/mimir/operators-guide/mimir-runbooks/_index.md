@@ -493,7 +493,7 @@ Choose one of three options:
 
 - Increase the shard size of one or more tenants to match the number of ingester replicas.
 - Set the shard size of one or more tenants to `0`; this will shard the given tenant’s requests across all ingesters.
-- [Decrease the number of ingester replicas]({{< relref "../operators-guide/run-production-environment/scaling-out.md#scaling-down-ingesters" >}}) to match the highest number of shards per tenant.
+- [Decrease the number of ingester replicas]({{< relref "../../operators-guide/run-production-environment/scaling-out.md#scaling-down-ingesters" >}}) to match the highest number of shards per tenant.
 
 ### MimirQuerierHasNotScanTheBucket
 
