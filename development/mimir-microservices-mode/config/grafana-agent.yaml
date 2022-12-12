@@ -11,54 +11,34 @@ prometheus:
     - name: local
       host_filter: false
       scrape_configs:
-        - job_name: mimir-microservices-mode/distributor
+        - job_name: mimir-microservices
           static_configs:
-            - targets: ['distributor-1:8000', 'distributor-2:8001']
+            - targets:
+                - 'distributor-1:8000'
+                - 'distributor-2:8001'
+                - 'ingester-1:8002'
+                - 'ingester-2:8003'
+                - 'querier:8004'
+                - 'ruler-1:8021'
+                - 'ruler-2:8022'
+                - 'compactor:8006'
+                - 'query-frontend:8007'
+                - 'store-gateway-1:8008'
+                - 'store-gateway-2:8009'
+                - 'query-scheduler:8011'
               labels:
                 cluster: 'docker-compose'
                 namespace: 'mimir-microservices-mode'
-        - job_name: mimir-microservices-mode/ingester
-          static_configs:
-            - targets: ['ingester-1:8002', 'ingester-2:8003']
-              labels:
-                cluster: 'docker-compose'
-                namespace: 'mimir-microservices-mode'
-        - job_name: mimir-microservices-mode/querier
-          static_configs:
-            - targets: ['querier:8004']
-              labels:
-                cluster: 'docker-compose'
-                namespace: 'mimir-microservices-mode'
-        - job_name: mimir-microservices-mode/ruler
-          static_configs:
-            - targets: ['ruler-1:8021', 'ruler-2:8022']
-              labels:
-                cluster: 'docker-compose'
-                namespace: 'mimir-microservices-mode'
-        - job_name: mimir-microservices-mode/compactor
-          static_configs:
-            - targets: ['compactor:8006']
-              labels:
-                cluster: 'docker-compose'
-                namespace: 'mimir-microservices-mode'
-        - job_name: mimir-microservices-mode/query-frontend
-          static_configs:
-            - targets: ['query-frontend:8007']
-              labels:
-                cluster: 'docker-compose'
-                namespace: 'mimir-microservices-mode'
-        - job_name: mimir-microservices-mode/store-gateway
-          static_configs:
-            - targets: ['store-gateway-1:8008', 'store-gateway-2:8009']
-              labels:
-                cluster: 'docker-compose'
-                namespace: 'mimir-microservices-mode'
-        - job_name: mimir-microservices-mode/query-scheduler
-          static_configs:
-            - targets: ['query-scheduler:8011']
-              labels:
-                cluster: 'docker-compose'
-                namespace: 'mimir-microservices-mode'
+          relabel_configs:
+            - source_labels: ['__address__']
+              target_label: 'pod'
+              regex: '([^:]+)(:[0-9]+)?'
+              replacement: '${1}'
+            - source_labels: ['namespace', 'pod']
+              target_label: 'job'
+              separator: '/'
+              regex: '(.+?)(-\d+)?'
+              replacement: '${1}'
 
       remote_write:
         - url: http://distributor-1:8000/api/v1/push

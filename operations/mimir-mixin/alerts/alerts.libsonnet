@@ -244,6 +244,23 @@ local utils = import 'mixin-utils/utils.libsonnet';
             ||| % $._config,
           },
         },
+        {
+          // Alert if an ingester instance has no tenants assigned while other instances in the same cell do.
+          alert: $.alertName('IngesterInstanceHasNoTenants'),
+          'for': '1h',
+          expr: |||
+            (min by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ingester_memory_users) == 0)
+            and on (%(alert_aggregation_labels)s)
+            # Only if there's a least 1 tenant in Mimir.
+            (max by(%(alert_aggregation_labels)s) (cortex_ingester_memory_users) > 0)
+          ||| % $._config,
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: '%(product)s ingester %(alert_instance_variable)s in %(alert_aggregation_variables)s has no tenants assigned.' % $._config,
+          },
+        },
       ] + [
         {
           alert: $.alertName('RingMembersMismatch'),
