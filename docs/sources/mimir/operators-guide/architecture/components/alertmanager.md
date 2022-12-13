@@ -120,8 +120,8 @@ In the event of a cluster outage, this fallback mechanism recovers the backup of
 
 ## Ruler configuration
 
-[Ruler]({{< relref "ruler/index.md" >}}) must be configured with the addresses of Alertmanagers with the `-ruler.alertmanager-url` flag.
+You must configure the [ruler]({{< relref "ruler/index.md" >}}) with the addresses of Alertmanagers via the `-ruler.alertmanager-url` flag.
 
-The address should point to Alertmanager's API.
-Alertmanager's API prefix is configured by the `-http.alertmanager-http-prefix` flag, and defaults to `/alertmanager`.
-For example, if Alertmanager is listening at `https://mimir-alertmanager.namespace.svc.cluster.local` and is using the default API prefix, set `-ruler.alertmanager-url` to `https://mimir-alertmanager.namespace.svc.cluster.local/alertmanager`.
+Point the address to Alertmanager’s API.
+You can configure the Alertmanager’s API prefix via the `-http.alertmanager-http-prefix` flag, which defaults to `/alertmanager`.
+For example, if Alertmanager is listening at `http://mimir-alertmanager.namespace.svc.cluster.local` and is using the default API prefix, set `-ruler.alertmanager-url` to `https://mimir-alertmanager.namespace.svc.cluster.local/alertmanager`.
