@@ -27,7 +27,7 @@ var (
 // Err() method must be checked. New file-backed Decbuf instances must be created
 // via DecbufFactory
 type Decbuf struct {
-	r *FileReader
+	r *fileReader
 	E error
 }
 
@@ -38,13 +38,13 @@ func (d *Decbuf) Be32int() int { return int(d.Be32()) }
 // comparing the contents with the CRC32 checksum stored in the last four bytes.
 // CheckCrc32 consumes the contents of this Decbuf.
 func (d *Decbuf) CheckCrc32(castagnoliTable *crc32.Table) {
-	if d.r.Len() <= 4 {
+	if d.r.len() <= 4 {
 		d.E = ErrInvalidSize
 		return
 	}
 
 	hash := crc32.New(castagnoliTable)
-	bytesToRead := d.r.Len() - 4
+	bytesToRead := d.r.len() - 4
 	maxChunkSize := 1024 * 1024
 	rawBuf := make([]byte, maxChunkSize)
 
@@ -52,7 +52,7 @@ func (d *Decbuf) CheckCrc32(castagnoliTable *crc32.Table) {
 		chunkSize := math.Min(bytesToRead, maxChunkSize)
 		chunkBuf := rawBuf[0:chunkSize]
 
-		err := d.r.ReadInto(chunkBuf)
+		err := d.r.readInto(chunkBuf)
 		if err != nil {
 			d.E = errors.Wrap(err, "read contents for CRC32 calculation")
 			return
@@ -77,28 +77,28 @@ func (d *Decbuf) CheckCrc32(castagnoliTable *crc32.Table) {
 	}
 }
 
-// Skip advances the pointer of the underlying FileReader by the given number
+// Skip advances the pointer of the underlying fileReader by the given number
 // of bytes. If E is non-nil, this method has no effect. Skip-ing beyond the
-// end of the underlying FileReader will set E to an error and not advance the
-// pointer of the FileReader.
+// end of the underlying fileReader will set E to an error and not advance the
+// pointer of the fileReader.
 func (d *Decbuf) Skip(l int) {
 	if d.E != nil {
 		return
 	}
 
-	d.E = d.r.Skip(l)
+	d.E = d.r.skip(l)
 }
 
-// ResetAt sets the pointer of the underlying FileReader to the absolute
+// ResetAt sets the pointer of the underlying fileReader to the absolute
 // offset and discards any buffered data. If E is non-nil, this method has
-// no effect. ResetAt-ing beyond the end of the underlying FileReader will set
-// E to an error and not advance the pointer of FileReader.
+// no effect. ResetAt-ing beyond the end of the underlying fileReader will set
+// E to an error and not advance the pointer of fileReader.
 func (d *Decbuf) ResetAt(off int) {
 	if d.E != nil {
 		return
 	}
 
-	d.E = d.r.ResetAt(off)
+	d.E = d.r.resetAt(off)
 }
 
 // UvarintStr reads varint prefixed bytes into a string and consumes them. The string
@@ -118,12 +118,12 @@ func (d *Decbuf) UvarintBytes() []byte {
 	}
 
 	// If the length of this uvarint slice is greater than the size of buffer used
-	// by our file reader, we can't Peek() it. Instead, we have to use the Read() method
-	// which will allocate its own slice to hold the results. We prefer to use Peek()
+	// by our file reader, we can't peek() it. Instead, we have to use the read() method
+	// which will allocate its own slice to hold the results. We prefer to use peek()
 	// when possible for performance but can't rely on slices always being less than
 	// the size of our buffer.
-	if l > uint64(d.r.Size()) {
-		b, err := d.r.Read(int(l))
+	if l > uint64(d.r.size()) {
+		b, err := d.r.read(int(l))
 		if err != nil {
 			d.E = err
 			return nil
@@ -132,7 +132,7 @@ func (d *Decbuf) UvarintBytes() []byte {
 		return b
 	}
 
-	b, err := d.r.Peek(int(l))
+	b, err := d.r.peek(int(l))
 	if err != nil {
 		d.E = err
 		return nil
@@ -147,7 +147,7 @@ func (d *Decbuf) UvarintBytes() []byte {
 		return nil
 	}
 
-	err = d.r.Skip(len(b))
+	err = d.r.skip(len(b))
 	if err != nil {
 		d.E = err
 		return nil
@@ -160,7 +160,7 @@ func (d *Decbuf) Uvarint64() uint64 {
 	if d.E != nil {
 		return 0
 	}
-	b, err := d.r.Peek(10)
+	b, err := d.r.peek(10)
 	if err != nil {
 		d.E = err
 		return 0
@@ -172,7 +172,7 @@ func (d *Decbuf) Uvarint64() uint64 {
 		return 0
 	}
 
-	err = d.r.Skip(n)
+	err = d.r.skip(n)
 	if err != nil {
 		d.E = err
 		return 0
@@ -186,7 +186,7 @@ func (d *Decbuf) Be64() uint64 {
 		return 0
 	}
 
-	b, err := d.r.Peek(8)
+	b, err := d.r.peek(8)
 	if err != nil {
 		d.E = err
 		return 0
@@ -198,7 +198,7 @@ func (d *Decbuf) Be64() uint64 {
 	}
 
 	v := binary.BigEndian.Uint64(b)
-	err = d.r.Skip(8)
+	err = d.r.skip(8)
 	if err != nil {
 		d.E = err
 		return 0
@@ -212,7 +212,7 @@ func (d *Decbuf) Be32() uint32 {
 		return 0
 	}
 
-	b, err := d.r.Peek(4)
+	b, err := d.r.peek(4)
 	if err != nil {
 		d.E = err
 		return 0
@@ -224,7 +224,7 @@ func (d *Decbuf) Be32() uint32 {
 	}
 
 	v := binary.BigEndian.Uint32(b)
-	err = d.r.Skip(4)
+	err = d.r.skip(4)
 	if err != nil {
 		d.E = err
 		return 0
@@ -238,7 +238,7 @@ func (d *Decbuf) Byte() byte {
 		return 0
 	}
 
-	b, err := d.r.Peek(1)
+	b, err := d.r.peek(1)
 	if err != nil {
 		d.E = err
 		return 0
@@ -250,7 +250,7 @@ func (d *Decbuf) Byte() byte {
 	}
 
 	v := b[0]
-	err = d.r.Skip(1)
+	err = d.r.skip(1)
 	if err != nil {
 		d.E = err
 		return 0
@@ -260,12 +260,9 @@ func (d *Decbuf) Byte() byte {
 }
 
 func (d *Decbuf) Err() error { return d.E }
-func (d *Decbuf) Len() int   { return d.r.Len() }
+func (d *Decbuf) Len() int   { return d.r.len() }
 
-// close cleans up any resources associated with this Decbuf. This method
-// is unexported to ensure that all resource management is handled by DecbufFactory
-// which pools resources.
-func (d *Decbuf) close() error {
+func (d *Decbuf) Close() error {
 	if d.r != nil {
 		return d.r.close()
 	}

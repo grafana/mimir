@@ -343,6 +343,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] If enabled, the store-gateway will attempt to pre-populate the file system cache when memory-mapping index-header files.
   -blocks-storage.bucket-store.index-header.stream-reader-enabled
     	[experimental] If enabled, the store-gateway will use an experimental streaming reader to load and parse index-header files.
+  -blocks-storage.bucket-store.index-header.stream-reader-max-idle-file-handles uint
+    	[experimental] Maximum number of idle file handles the store-gateway keeps open for each index-header file when using the streaming reader. This option is used only when the index-header streaming reader is enabled. (default 1)
   -blocks-storage.bucket-store.max-chunk-pool-bytes uint
     	Max size - in bytes - of a chunks pool, used to reduce memory allocations. The pool is shared across all tenants. 0 to disable the limit. (default 2147483648)
   -blocks-storage.bucket-store.max-concurrent int

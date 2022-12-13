@@ -11,8 +11,17 @@ import (
 	"sync"
 )
 
-type FileReader struct {
+// readerBufferSize is the size of the buffer used for reading index-header files. This
+// value is arbitrary and will likely change in the future based on profiling results.
+const readerBufferSize = 4096
+
+type poolCloser interface {
+	put(*os.File) error
+}
+
+type fileReader struct {
 	file   *os.File
+	closer poolCloser
 	buf    *bufio.Reader
 	base   int
 	length int
@@ -25,17 +34,18 @@ var bufferPool = sync.Pool{
 	},
 }
 
-// NewFileReader creates a new FileReader for the segment of file beginning at base bytes
-// extending length bytes using the supplied buffered reader.
-func NewFileReader(file *os.File, base, length int) (*FileReader, error) {
-	f := &FileReader{
+// newFileReader creates a new fileReader for the segment of file beginning at base bytes,
+// extending length bytes, and closing the handle with closer.
+func newFileReader(file *os.File, base, length int, closer poolCloser) (*fileReader, error) {
+	f := &fileReader{
 		file:   file,
+		closer: closer,
 		buf:    bufferPool.Get().(*bufio.Reader),
 		base:   base,
 		length: length,
 	}
 
-	err := f.Reset()
+	err := f.reset()
 	if err != nil {
 		return nil, err
 	}
@@ -43,17 +53,17 @@ func NewFileReader(file *os.File, base, length int) (*FileReader, error) {
 	return f, nil
 }
 
-// Reset moves the cursor position to the beginning of the file segment including the
-// base set when the FileReader was created.
-func (f *FileReader) Reset() error {
-	return f.ResetAt(0)
+// reset moves the cursor position to the beginning of the file segment including the
+// base set when the fileReader was created.
+func (f *fileReader) reset() error {
+	return f.resetAt(0)
 }
 
-// ResetAt moves the cursor position to the given offset in the file segment including
-// the base set when the FileReader was created. Attempting to ResetAt to the end of the
-// file segment is valid. Attempting to ResetAt _beyond_ the end of the file segment will
+// resetAt moves the cursor position to the given offset in the file segment including
+// the base set when the fileReader was created. Attempting to resetAt to the end of the
+// file segment is valid. Attempting to resetAt _beyond_ the end of the file segment will
 // return an error.
-func (f *FileReader) ResetAt(off int) error {
+func (f *fileReader) resetAt(off int) error {
 	if off > f.length {
 		return ErrInvalidSize
 	}
@@ -69,11 +79,11 @@ func (f *FileReader) ResetAt(off int) error {
 	return nil
 }
 
-// Skip advances the cursor position by the given number of bytes in the file segment.
-// Attempting to Skip to the end of the file segment is valid. Attempting to Skip _beyond_
+// skip advances the cursor position by the given number of bytes in the file segment.
+// Attempting to skip to the end of the file segment is valid. Attempting to skip _beyond_
 // the end of the file segment will return an error.
-func (f *FileReader) Skip(l int) error {
-	if l > f.Len() {
+func (f *fileReader) skip(l int) error {
+	if l > f.len() {
 		return ErrInvalidSize
 	}
 
@@ -85,11 +95,11 @@ func (f *FileReader) Skip(l int) error {
 	return err
 }
 
-// Peek returns at most the given number of bytes from the file segment
+// peek returns at most the given number of bytes from the file segment
 // without consuming them. The bytes returned become invalid at the next
-// read. It is valid to Peek beyond the end of the file segment. In this
+// read. It is valid to peek beyond the end of the file segment. In this
 // case the available bytes are returned with a nil error.
-func (f *FileReader) Peek(n int) ([]byte, error) {
+func (f *fileReader) peek(n int) ([]byte, error) {
 	b, err := f.buf.Peek(n)
 	// bufio.Reader still returns what it read when it hits EOF and callers
 	// expect to be able to peek past the end of a file.
@@ -104,13 +114,13 @@ func (f *FileReader) Peek(n int) ([]byte, error) {
 	return nil, nil
 }
 
-// Read returns the given number of bytes from the file segment, consuming them. It is
-// NOT valid to Read beyond the end of the file segment. In this case, a nil byte slice
+// read returns the given number of bytes from the file segment, consuming them. It is
+// NOT valid to read beyond the end of the file segment. In this case, a nil byte slice
 // and ErrInvalidSize error will be returned, and the remaining bytes are consumed.
-func (f *FileReader) Read(n int) ([]byte, error) {
+func (f *fileReader) read(n int) ([]byte, error) {
 	b := make([]byte, n)
 
-	err := f.ReadInto(b)
+	err := f.readInto(b)
 	if err != nil {
 		return nil, err
 	}
@@ -118,10 +128,10 @@ func (f *FileReader) Read(n int) ([]byte, error) {
 	return b, nil
 }
 
-// ReadInto reads len(b) bytes from the file segment into b, consuming them. It is
-// NOT valid to ReadInto beyond the end of the file segment. In this case, an ErrInvalidSize
+// readInto reads len(b) bytes from the file segment into b, consuming them. It is
+// NOT valid to readInto beyond the end of the file segment. In this case, an ErrInvalidSize
 // error will be returned and the remaining bytes are consumed.
-func (f *FileReader) ReadInto(b []byte) error {
+func (f *fileReader) readInto(b []byte) error {
 	r, err := io.ReadFull(f.buf, b)
 	if r > 0 {
 		f.pos += r
@@ -136,23 +146,21 @@ func (f *FileReader) ReadInto(b []byte) error {
 	return nil
 }
 
-// Size returns the length of the underlying buffer in bytes.
-func (f *FileReader) Size() int {
+// size returns the length of the underlying buffer in bytes.
+func (f *fileReader) size() int {
 	return f.buf.Size()
 }
 
-// Len returns the remaining number of bytes in the file segment owned by this reader.
-func (f *FileReader) Len() int {
+// len returns the remaining number of bytes in the file segment owned by this reader.
+func (f *fileReader) len() int {
 	return f.length - f.pos
 }
 
-// close closes the underlying resources used by this FileReader. This method
-// is unexported to ensure that all resource management is handled by DecbufFactory
-// which pools resources.
-func (f *FileReader) close() error {
+// close cleans up the underlying resources used by this fileReader.
+func (f *fileReader) close() error {
 	// Note that we don't do anything to clean up the buffer before returning it to the pool here:
 	// we reset the buffer when we retrieve it from the pool instead.
 	bufferPool.Put(f.buf)
-
-	return f.file.Close()
+	// File handles are pooled, so we don't actually close the handle here, just return it.
+	return f.closer.put(f.file)
 }

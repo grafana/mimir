@@ -6,23 +6,61 @@ import (
 	"encoding/binary"
 	"hash/crc32"
 	"os"
+	"sync"
 
-	"github.com/grafana/dskit/multierror"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-// readerBufferSize is the size of the buffer used for reading index-header files. This
-// value is arbitrary and will likely change in the future based on profiling results.
-const readerBufferSize = 4096
+var ErrPoolStopped = errors.New("file handle pool is stopped")
+
+type DecbufFactoryMetrics struct {
+	openCount        prometheus.Counter
+	pooledOpenCount  prometheus.Counter
+	closeCount       prometheus.Counter
+	pooledCloseCount prometheus.Counter
+}
+
+func NewDecbufFactoryMetrics(reg prometheus.Registerer) *DecbufFactoryMetrics {
+	return &DecbufFactoryMetrics{
+		openCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "indexheader_stream_unpooled_open_total",
+			Help: "Total number of times index-header file has been opened instead of using a pooled handle.",
+		}),
+		pooledOpenCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "indexheader_stream_pooled_open_total",
+			Help: "Total number of times a pooled index-header file handle has been used instead of opened.",
+		}),
+		closeCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "indexheader_stream_unpooled_close_total",
+			Help: "Total number of times index-header file has been closed instead of returning the handle to the pool.",
+		}),
+		pooledCloseCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "indexheader_stream_pooled_close_total",
+			Help: "Total number of times pooled index-header file handle has been returned to the pool instead of closed.",
+		}),
+	}
+}
 
 // DecbufFactory creates new file-backed decoding buffer instances for a specific index-header file.
 type DecbufFactory struct {
-	path string
+	files *filePool
 }
 
-func NewDecbufFactory(path string) *DecbufFactory {
+func NewDecbufFactory(path string, maxIdleFileHandles uint, logger log.Logger, metrics *DecbufFactoryMetrics) *DecbufFactory {
 	return &DecbufFactory{
-		path: path,
+		files: newFilePool(
+			path,
+			maxIdleFileHandles,
+			logger,
+			metrics.openCount,
+			metrics.pooledOpenCount,
+			metrics.closeCount,
+			metrics.pooledCloseCount,
+		),
 	}
 }
 
@@ -31,17 +69,17 @@ func NewDecbufFactory(path string) *DecbufFactory {
 // by the contents and the expected checksum. This method checks the CRC of the content and will
 // return an error Decbuf if it does not match the expected CRC.
 func (df *DecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table) Decbuf {
-	f, err := os.Open(df.path)
+	f, err := df.files.get()
 	if err != nil {
 		return Decbuf{E: errors.Wrap(err, "open file for decbuf")}
 	}
 
 	// If we return early and don't include a Reader for our Decbuf, we are responsible
-	// for actually closing the file handle.
+	// for putting the file handle back in the pool.
 	closeFile := true
 	defer func() {
 		if closeFile {
-			_ = f.Close()
+			_ = df.files.put(f)
 		}
 	}()
 
@@ -59,7 +97,7 @@ func (df *DecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table) Decb
 
 	contentLength := int(binary.BigEndian.Uint32(lengthBytes))
 	bufferLength := len(lengthBytes) + contentLength + crc32.Size
-	r, err := NewFileReader(f, offset, bufferLength)
+	r, err := newFileReader(f, offset, bufferLength, df.files)
 	if err != nil {
 		return Decbuf{E: errors.Wrap(err, "create file reader")}
 	}
@@ -76,7 +114,7 @@ func (df *DecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table) Decb
 			return d
 		}
 
-		// Reset to the beginning of the content after reading it all for the CRC.
+		// reset to the beginning of the content after reading it all for the CRC.
 		d.ResetAt(4)
 	}
 
@@ -96,17 +134,17 @@ func (df *DecbufFactory) NewDecbufAtUnchecked(offset int) Decbuf {
 // file, nor does it perform any form of integrity check. To create a decoding buffer for some subset
 // of the file or perform integrity checks use NewDecbufAtUnchecked or NewDecbufAtChecked.
 func (df *DecbufFactory) NewRawDecbuf() Decbuf {
-	f, err := os.Open(df.path)
+	f, err := df.files.get()
 	if err != nil {
 		return Decbuf{E: errors.Wrap(err, "open file for decbuf")}
 	}
 
 	// If we return early and don't include a Reader for our Decbuf, we are responsible
-	// for actually closing the file handle.
+	// for putting the file handle back in the pool.
 	closeFile := true
 	defer func() {
 		if closeFile {
-			_ = f.Close()
+			_ = df.files.put(f)
 		}
 	}()
 
@@ -116,7 +154,7 @@ func (df *DecbufFactory) NewRawDecbuf() Decbuf {
 	}
 
 	fileSize := stat.Size()
-	reader, err := NewFileReader(f, 0, int(fileSize))
+	reader, err := newFileReader(f, 0, int(fileSize), df.files)
 	if err != nil {
 		return Decbuf{E: errors.Wrap(err, "file reader for decbuf")}
 	}
@@ -125,18 +163,104 @@ func (df *DecbufFactory) NewRawDecbuf() Decbuf {
 	return Decbuf{r: reader}
 }
 
-// Close cleans up any resources associated with the Decbuf
-func (df *DecbufFactory) Close(d Decbuf) error {
-	return d.close()
+// Stop cleans up resources associated with this DecbufFactory
+func (df *DecbufFactory) Stop() {
+	df.files.stop()
 }
 
-// CloseWithErrCapture cleans up any resources associated with d,
-// capturing any errors that occur while cleaning up d in err.
-func (df *DecbufFactory) CloseWithErrCapture(err *error, d Decbuf, format string, a ...interface{}) {
-	merr := multierror.MultiError{}
+// filePool maintains a pool of file handles up to a maximum number, creating
+// new handles and closing them when required. get and put operations on this
+// pool never block. If there are no available file handles, one will be created
+// on get. If the pool is full, the file handle is closed on put.
+type filePool struct {
+	path    string
+	logger  log.Logger
+	handles chan *os.File
+	mtx     sync.RWMutex
+	stopped bool
 
-	merr.Add(*err)
-	merr.Add(errors.Wrapf(df.Close(d), format, a...))
+	opens        prometheus.Counter
+	pooledOpens  prometheus.Counter
+	closes       prometheus.Counter
+	pooledCloses prometheus.Counter
+}
 
-	*err = merr.Err()
+// newFilePool creates a new file pool for path with cap capacity. If cap is 0,
+// get always opens new file handles and put always closes them immediately.
+func newFilePool(path string, cap uint, logger log.Logger, opens prometheus.Counter, pooledOpens prometheus.Counter, closes prometheus.Counter, pooledCloses prometheus.Counter) *filePool {
+	return &filePool{
+		path:   path,
+		logger: logger,
+		// We don't care if cap is 0 which means the channel will be unbuffered. Because
+		// we have default cases for reads and writes to the channel, we will always open
+		// new files and close file handles immediately if the channel is unbuffered.
+		handles: make(chan *os.File, cap),
+
+		opens:        opens,
+		pooledOpens:  pooledOpens,
+		closes:       closes,
+		pooledCloses: pooledCloses,
+	}
+}
+
+// get returns a pooled file handle if available or opens a new one if there
+// are no pooled handles available. If this pool has been stopped, an error
+// is returned.
+func (p *filePool) get() (*os.File, error) {
+	p.mtx.RLock()
+	defer p.mtx.RUnlock()
+
+	if p.stopped {
+		return nil, ErrPoolStopped
+	}
+
+	select {
+	case f := <-p.handles:
+		p.pooledOpens.Inc()
+		return f, nil
+	default:
+		p.opens.Inc()
+		return os.Open(p.path)
+	}
+}
+
+// put returns a file handle to the pool if there is space available or closes
+// the file handle if there is not. If this pool has been stopped, the file handle
+// is closed immediately.
+func (p *filePool) put(f *os.File) error {
+	p.mtx.RLock()
+	defer p.mtx.RUnlock()
+
+	if p.stopped {
+		return f.Close()
+	}
+
+	select {
+	case p.handles <- f:
+		p.pooledCloses.Inc()
+		return nil
+	default:
+		p.closes.Inc()
+		return f.Close()
+	}
+}
+
+// stop closes all pooled file handles. After this method is called, subsequent
+// get calls will return an error and put calls will immediately close the file
+// handle.
+func (p *filePool) stop() {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+	p.stopped = true
+
+	for {
+		select {
+		case f := <-p.handles:
+			if err := f.Close(); err != nil {
+				level.Warn(p.logger).Log("msg", "closing index-header file during pool stop", "path", p.path, "err", err)
+			}
+		default:
+			return
+		}
+	}
 }

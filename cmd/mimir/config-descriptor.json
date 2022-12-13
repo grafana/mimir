@@ -5689,6 +5689,17 @@
                   "fieldFlag": "blocks-storage.bucket-store.index-header.stream-reader-enabled",
                   "fieldType": "boolean",
                   "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "stream_reader_max_idle_file_handles",
+                  "required": false,
+                  "desc": "Maximum number of idle file handles the store-gateway keeps open for each index-header file when using the streaming reader. This option is used only when the index-header streaming reader is enabled.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 1,
+                  "fieldFlag": "blocks-storage.bucket-store.index-header.stream-reader-max-idle-file-handles",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,

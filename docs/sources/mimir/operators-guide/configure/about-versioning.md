@@ -93,6 +93,7 @@ The following features are currently experimental:
 - Store-gateway
   - `-blocks-storage.bucket-store.index-header.map-populate-enabled`
   - `-blocks-storage.bucket-store.index-header.stream-reader-enabled`
+  - `-blocks-storage.bucket-store.index-header.stream-reader-max-idle-file-handles`
   - `-blocks-storage.bucket-store.batch-series-size`
 - Blocks Storage, Alertmanager, and Ruler support for partitioning access to the same storage bucket
   - `-alertmanager-storage.storage-prefix`
