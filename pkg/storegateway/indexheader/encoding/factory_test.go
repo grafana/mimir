@@ -81,6 +81,29 @@ func TestDecbufFactory_NewDecbufAtChecked_HappyPath(t *testing.T) {
 	})
 }
 
+func TestDecbufFactory_NewDecbufAtChecked_MultipleInstances(t *testing.T) {
+	enc := createTestEncoder(testContentSize)
+	enc.PutHash(crc32.New(table))
+
+	testDecbufFactory(t, testContentSize, enc, func(t *testing.T, factory *DecbufFactory) {
+		d1 := factory.NewDecbufAtChecked(0, table)
+		t.Cleanup(func() {
+			require.NoError(t, factory.Close(d1))
+		})
+
+		require.NoError(t, d1.Err())
+		require.Equal(t, testContentSize+crc32.Size, d1.Len())
+
+		d2 := factory.NewDecbufAtChecked(0, table)
+		t.Cleanup(func() {
+			require.NoError(t, factory.Close(d2))
+		})
+
+		require.NoError(t, d2.Err())
+		require.Equal(t, testContentSize+crc32.Size, d2.Len())
+	})
+}
+
 func TestDecbufFactory_NewDecbufAtUnchecked_HappyPath(t *testing.T) {
 	enc := createTestEncoder(testContentSize)
 	enc.PutHash(crc32.New(table))

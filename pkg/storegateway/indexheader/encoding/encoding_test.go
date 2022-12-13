@@ -250,7 +250,7 @@ func TestDecbuf_SkipHappyPath(t *testing.T) {
 }
 
 func TestDecbuf_SkipMultipleBufferReads(t *testing.T) {
-	// The underlying FileReader buffers the file 4k bytes at a time. Ensure
+	// The underlying fileReader buffers the file 4k bytes at a time. Ensure
 	// that we can skip multiple 4k chunks without ending up with a short read.
 	bytes := make([]byte, 4096*5)
 	for i := 0; i < len(bytes); i++ {
@@ -433,8 +433,8 @@ func TestDecbuf_UvarintBytesSkipDoesNotCauseBufferFill(t *testing.T) {
 		expectedBytes  = 983
 	)
 
-	// This test verifies that when bytes are read in UvarintBytes, the Peek(n) and
-	// subsequent Skip(len(b)) does not cause a read from disk that invalidates the slice
+	// This test verifies that when bytes are read in UvarintBytes, the peek(n) and
+	// subsequent skip(len(b)) does not cause a read from disk that invalidates the slice
 	// returned. It does this by creating multiple uvarint byte slices in the encoding
 	// buffer each with different content _and_ by ensuring there are more bytes written
 	// in total than the size of the underlying buffer (currently 4k).
