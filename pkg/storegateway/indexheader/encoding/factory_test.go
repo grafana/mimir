@@ -32,7 +32,7 @@ func BenchmarkDecbufFactory_NewDecbufAtUnchecked(t *testing.B) {
 			require.NoError(t, err)
 		}
 
-		if err := factory.Close(d); err != nil {
+		if err := d.Close(); err != nil {
 			require.NoError(t, err)
 		}
 	}
@@ -45,7 +45,7 @@ func TestDecbufFactory_NewDecbufAtChecked_InvalidCRC(t *testing.T) {
 	testDecbufFactory(t, testContentSize, enc, func(t *testing.T, factory *DecbufFactory) {
 		d := factory.NewDecbufAtChecked(0, table)
 		t.Cleanup(func() {
-			require.NoError(t, factory.Close(d))
+			require.NoError(t, d.Close())
 		})
 
 		require.ErrorIs(t, d.Err(), ErrInvalidChecksum)
@@ -59,7 +59,7 @@ func TestDecbufFactory_NewDecbufAtChecked_InvalidLength(t *testing.T) {
 	testDecbufFactory(t, testContentSize+1000, enc, func(t *testing.T, factory *DecbufFactory) {
 		d := factory.NewDecbufAtChecked(0, table)
 		t.Cleanup(func() {
-			require.NoError(t, factory.Close(d))
+			require.NoError(t, d.Close())
 		})
 
 		require.ErrorIs(t, d.Err(), ErrInvalidSize)
@@ -73,7 +73,7 @@ func TestDecbufFactory_NewDecbufAtChecked_HappyPath(t *testing.T) {
 	testDecbufFactory(t, testContentSize, enc, func(t *testing.T, factory *DecbufFactory) {
 		d := factory.NewDecbufAtChecked(0, table)
 		t.Cleanup(func() {
-			require.NoError(t, factory.Close(d))
+			require.NoError(t, d.Close())
 		})
 
 		require.NoError(t, d.Err())
@@ -88,7 +88,7 @@ func TestDecbufFactory_NewDecbufAtChecked_MultipleInstances(t *testing.T) {
 	testDecbufFactory(t, testContentSize, enc, func(t *testing.T, factory *DecbufFactory) {
 		d1 := factory.NewDecbufAtChecked(0, table)
 		t.Cleanup(func() {
-			require.NoError(t, factory.Close(d1))
+			require.NoError(t, d1.Close())
 		})
 
 		require.NoError(t, d1.Err())
@@ -96,7 +96,7 @@ func TestDecbufFactory_NewDecbufAtChecked_MultipleInstances(t *testing.T) {
 
 		d2 := factory.NewDecbufAtChecked(0, table)
 		t.Cleanup(func() {
-			require.NoError(t, factory.Close(d2))
+			require.NoError(t, d2.Close())
 		})
 
 		require.NoError(t, d2.Err())
@@ -111,7 +111,7 @@ func TestDecbufFactory_NewDecbufAtUnchecked_HappyPath(t *testing.T) {
 	testDecbufFactory(t, testContentSize, enc, func(t *testing.T, factory *DecbufFactory) {
 		d := factory.NewDecbufAtUnchecked(0)
 		t.Cleanup(func() {
-			require.NoError(t, factory.Close(d))
+			require.NoError(t, d.Close())
 		})
 
 		require.NoError(t, d.Err())
@@ -126,7 +126,7 @@ func TestDecbufFactory_NewDecbufRaw_HappyPath(t *testing.T) {
 	testDecbufFactory(t, testContentSize, enc, func(t *testing.T, factory *DecbufFactory) {
 		d := factory.NewRawDecbuf()
 		t.Cleanup(func() {
-			require.NoError(t, factory.Close(d))
+			require.NoError(t, d.Close())
 		})
 
 		require.NoError(t, d.Err())
@@ -143,7 +143,7 @@ func TestDecbufFactory_Stop(t *testing.T) {
 
 		d := factory.NewRawDecbuf()
 		t.Cleanup(func() {
-			require.NoError(t, factory.Close(d))
+			require.NoError(t, d.Close())
 		})
 
 		require.ErrorIs(t, d.Err(), ErrPoolStopped)

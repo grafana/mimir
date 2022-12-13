@@ -11,14 +11,18 @@ import (
 	"sync"
 )
 
+type poolCloser interface {
+	put(*os.File) error
+}
+
 type fileReader struct {
 	file   *os.File
+	closer poolCloser
 	buf    *bufio.Reader
 	base   int
 	length int
 	pos    int
 }
-
 
 var bufferPool = sync.Pool{
 	New: func() any {
@@ -26,11 +30,12 @@ var bufferPool = sync.Pool{
 	},
 }
 
-// NewFileReader creates a new FileReader for the segment of file beginning at base bytes
-// extending length bytes using the supplied buffered reader.
-func newFileReader(file *os.File, base, length int) (*fileReader, error) {
+// newFileReader creates a new fileReader for the segment of file beginning at base bytes,
+// extending length bytes, and closing the handle with closer.
+func newFileReader(file *os.File, base, length int, closer poolCloser) (*fileReader, error) {
 	f := &fileReader{
 		file:   file,
+		closer: closer,
 		buf:    bufferPool.Get().(*bufio.Reader),
 		base:   base,
 		length: length,
@@ -147,12 +152,11 @@ func (f *fileReader) len() int {
 	return f.length - f.pos
 }
 
-// close closes the underlying resources used by this FileReader. This method
-// is unexported to ensure that all resource management is handled by DecbufFactory
-// which pools resources.
-func (f *FileReader) close() error {
+// close cleans up the underlying resources used by this fileReader.
+func (f *fileReader) close() error {
 	// Note that we don't do anything to clean up the buffer before returning it to the pool here:
 	// we reset the buffer when we retrieve it from the pool instead.
 	bufferPool.Put(f.buf)
-	return nil
+	// File handles are pooled, so we don't actually close the handle here, just return it.
+	return f.closer.put(f.file)
 }

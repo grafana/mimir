@@ -261,3 +261,11 @@ func (d *Decbuf) Byte() byte {
 
 func (d *Decbuf) Err() error { return d.E }
 func (d *Decbuf) Len() int   { return d.r.len() }
+
+func (d *Decbuf) Close() error {
+	if d.r != nil {
+		return d.r.close()
+	}
+
+	return nil
+}

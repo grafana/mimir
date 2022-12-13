@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -85,7 +86,7 @@ func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int, met
 	// Create a new raw decoding buffer with access to the entire index-header file to
 	// read initial version information and the table of contents.
 	d := r.factory.NewRawDecbuf()
-	defer r.factory.CloseWithErrCapture(&err, d, "new file stream binary reader")
+	defer runutil.CloseWithErrCapture(&err, &d, "new file stream binary reader")
 	if err = d.Err(); err != nil {
 		return nil, fmt.Errorf("cannot create decoding buffer: %w", err)
 	}

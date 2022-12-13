@@ -10,6 +10,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type closer struct{}
+
+func (c closer) put(file *os.File) error {
+	return file.Close()
+}
+
 func TestReaders_Read(t *testing.T) {
 	testReaders(t, func(t *testing.T, r *fileReader) {
 		firstRead, err := r.read(5)
@@ -184,7 +190,7 @@ func TestReaders_CreationWithEmptyContents(t *testing.T) {
 			require.NoError(t, f.Close())
 		})
 
-		r, err := newFileReader(f, 0, 0)
+		r, err := newFileReader(f, 0, 0, &closer{})
 		require.NoError(t, err)
 		require.ErrorIs(t, r.skip(1), ErrInvalidSize)
 		require.ErrorIs(t, r.resetAt(1), ErrInvalidSize)
@@ -205,7 +211,7 @@ func testReaders(t *testing.T, test func(t *testing.T, r *fileReader)) {
 			require.NoError(t, f.Close())
 		})
 
-		r, err := newFileReader(f, 0, len(testReaderContents))
+		r, err := newFileReader(f, 0, len(testReaderContents), &closer{})
 		require.NoError(t, err)
 
 		test(t, r)
@@ -225,7 +231,7 @@ func testReaders(t *testing.T, test func(t *testing.T, r *fileReader)) {
 			require.NoError(t, f.Close())
 		})
 
-		r, err := newFileReader(f, len(offsetBytes), len(testReaderContents))
+		r, err := newFileReader(f, len(offsetBytes), len(testReaderContents), &closer{})
 		require.NoError(t, err)
 
 		test(t, r)

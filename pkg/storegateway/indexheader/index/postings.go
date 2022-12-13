@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/grafana/dskit/runutil"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"golang.org/x/exp/slices"
@@ -161,7 +162,7 @@ func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 // found entry. If f returns an error it stops decoding and returns the received error.
 func readOffsetTable(factory *streamencoding.DecbufFactory, tableOffset int, f func([]string, uint64, int) error) (err error) {
 	d := factory.NewDecbufAtChecked(tableOffset, castagnoliTable)
-	defer factory.CloseWithErrCapture(&err, d, "read offset table")
+	defer runutil.CloseWithErrCapture(&err, &d, "read offset table")
 
 	startLen := d.Len()
 	cnt := d.Be32()
@@ -280,7 +281,7 @@ func (t *PostingOffsetTableV2) PostingsOffset(name string, values ...string) (r 
 	}
 
 	d := t.factory.NewDecbufAtUnchecked(t.tableOffset)
-	defer t.factory.CloseWithErrCapture(&err, d, "get postings offsets")
+	defer runutil.CloseWithErrCapture(&err, &d, "get postings offsets")
 	if err := d.Err(); err != nil {
 		return nil, err
 	}
@@ -400,7 +401,7 @@ func (t *PostingOffsetTableV2) LabelValues(name string, filter func(string) bool
 	// Don't Crc32 the entire postings offset table, this is very slow
 	// so hope any issues were caught at startup.
 	d := t.factory.NewDecbufAtUnchecked(t.tableOffset)
-	defer t.factory.CloseWithErrCapture(&err, d, "get label values")
+	defer runutil.CloseWithErrCapture(&err, &d, "get label values")
 
 	d.Skip(e.offsets[0].tableOff)
 	lastVal := e.offsets[len(e.offsets)-1].value

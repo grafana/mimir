@@ -631,7 +631,7 @@ func createDecbufWithBytes(t testing.TB, b []byte) Decbuf {
 	factory := NewDecbufFactory(filePath, 0, NewDecbufFactoryMetrics(reg))
 	decbuf := factory.NewRawDecbuf()
 	t.Cleanup(func() {
-		require.NoError(t, factory.Close(decbuf))
+		require.NoError(t, decbuf.Close())
 	})
 
 	require.NoError(t, decbuf.Err())

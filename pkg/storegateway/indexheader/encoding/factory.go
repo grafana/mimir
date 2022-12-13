@@ -6,8 +6,8 @@ import (
 	"encoding/binary"
 	"hash/crc32"
 	"os"
+	"sync"
 
-	"github.com/grafana/dskit/multierror"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -49,7 +49,7 @@ func NewDecbufFactoryMetrics(reg prometheus.Registerer) *DecbufFactoryMetrics {
 
 // DecbufFactory creates new file-backed decoding buffer instances for a specific index-header file.
 type DecbufFactory struct {
-	files   *filePool
+	files *filePool
 }
 
 func NewDecbufFactory(path string, maxFileHandles uint, metrics *DecbufFactoryMetrics) *DecbufFactory {
@@ -98,7 +98,7 @@ func (df *DecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table) Decb
 
 	contentLength := int(binary.BigEndian.Uint32(lengthBytes))
 	bufferLength := len(lengthBytes) + contentLength + crc32.Size
-	r, err := newFileReader(f, offset, bufferLength)
+	r, err := newFileReader(f, offset, bufferLength, df.files)
 	if err != nil {
 		return Decbuf{E: errors.Wrap(err, "create file reader")}
 	}
@@ -155,7 +155,7 @@ func (df *DecbufFactory) NewRawDecbuf() Decbuf {
 	}
 
 	fileSize := stat.Size()
-	reader, err := newFileReader(f, 0, int(fileSize))
+	reader, err := newFileReader(f, 0, int(fileSize), df.files)
 	if err != nil {
 		return Decbuf{E: errors.Wrap(err, "file reader for decbuf")}
 	}
@@ -167,27 +167,6 @@ func (df *DecbufFactory) NewRawDecbuf() Decbuf {
 // Stop cleans up resources associated with this DecbufFactory
 func (df *DecbufFactory) Stop() {
 	df.files.stop()
-}
-
-// Close cleans up any resources associated with the Decbuf
-func (df *DecbufFactory) Close(d Decbuf) error {
-	if d.r != nil {
-		d.close()
-		return df.files.put(d.r.file)
-	}
-
-	return nil
-}
-
-// CloseWithErrCapture cleans up any resources associated with d,
-// capturing any errors that occur while cleaning up d in err.
-func (df *DecbufFactory) CloseWithErrCapture(err *error, d Decbuf, format string, a ...interface{}) {
-	merr := multierror.MultiError{}
-
-	merr.Add(*err)
-	merr.Add(errors.Wrapf(df.Close(d), format, a...))
-
-	*err = merr.Err()
 }
 
 // filePool maintains a pool of file handles up to a maximum number, creating
