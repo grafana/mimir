@@ -27,6 +27,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	amconfig "github.com/prometheus/alertmanager/config"
+	"github.com/prometheus/alertmanager/template"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/weaveworks/common/httpgrpc"
@@ -259,6 +260,8 @@ type MultitenantAlertmanager struct {
 	// Stores the current set of configurations we're running in each tenant's Alertmanager.
 	// Used for comparing configurations as we synchronize them.
 	cfgs map[string]alertspb.AlertConfigDesc
+
+	amDefaultFuncsMtx sync.Mutex
 
 	logger              log.Logger
 	alertmanagerMetrics *alertmanagerMetrics
@@ -729,6 +732,15 @@ func (am *MultitenantAlertmanager) getTenantDirectory(userID string) string {
 	return filepath.Join(am.cfg.DataDir, userID)
 }
 
+func (am *MultitenantAlertmanager) tenantTemplateFactory(userID string) templateFactoryFunc {
+	return func(fileNames []string) (*template.Template, error) {
+		am.amDefaultFuncsMtx.Lock()
+		defer am.amDefaultFuncsMtx.Unlock()
+		template.DefaultFuncs["tenantID"] = func() string { return userID }
+		return template.FromGlobs(fileNames...)
+	}
+}
+
 func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *amconfig.Config, rawCfg string) (*Alertmanager, error) {
 	reg := prometheus.NewRegistry()
 
@@ -751,7 +763,7 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *amco
 		Store:                             am.store,
 		PersisterConfig:                   am.cfg.Persister,
 		Limits:                            am.limits,
-	}, reg)
+	}, reg, am.tenantTemplateFactory(userID))
 	if err != nil {
 		return nil, fmt.Errorf("unable to start Alertmanager for user %v: %v", userID, err)
 	}

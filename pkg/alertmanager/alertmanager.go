@@ -86,6 +86,7 @@ type Config struct {
 	Replicator        Replicator
 	Store             alertstore.AlertStore
 	PersisterConfig   PersisterConfig
+	TemplateFactory   templateFactoryFunc
 }
 
 // An Alertmanager manages the alerts for one user.
@@ -106,6 +107,7 @@ type Alertmanager struct {
 	wg              sync.WaitGroup
 	mux             *http.ServeMux
 	registry        *prometheus.Registry
+	templateFactory templateFactoryFunc
 
 	// Pipeline created during last ApplyConfig call. Used for testing only.
 	lastPipeline notify.Stage
@@ -143,9 +145,14 @@ type State interface {
 	WaitReady(context.Context) error
 }
 
+type templateFactoryFunc func(filePaths []string) (*template.Template, error)
+
 var (
 	// Returned when a user is not known to all replicas.
 	errAllReplicasUserNotFound = errors.New("all replicas returned user not found")
+	defaultTemplateFactory     = func(filePaths []string) (*template.Template, error) {
+		return template.FromGlobs(filePaths...)
+	}
 )
 
 // Replicator is used to exchange state with peers via the ring when sharding is enabled.
@@ -162,7 +169,7 @@ type Replicator interface {
 }
 
 // New creates a new Alertmanager.
-func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
+func New(cfg *Config, reg *prometheus.Registry, templateFactory templateFactoryFunc) (*Alertmanager, error) {
 	if cfg.TenantDataDir == "" {
 		return nil, fmt.Errorf("directory for tenant-specific AlertManager is not configured")
 	}
@@ -246,6 +253,11 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 		return nil, fmt.Errorf("failed to create alerts: %v", err)
 	}
 
+	am.templateFactory = defaultTemplateFactory
+	if am.cfg.TemplateFactory != nil {
+		am.templateFactory = am.cfg.TemplateFactory
+	}
+
 	am.api, err = api.New(api.Options{
 		Alerts:      am.alerts,
 		Silences:    am.silences,
@@ -312,7 +324,7 @@ func (am *Alertmanager) ApplyConfig(userID string, conf *config.Config, rawCfg s
 		templateFiles[i] = templateFilepath
 	}
 
-	tmpl, err := template.FromGlobs(templateFiles...)
+	tmpl, err := am.cfg.TemplateFactory(templateFiles)
 	if err != nil {
 		return err
 	}

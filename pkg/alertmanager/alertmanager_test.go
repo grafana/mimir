@@ -70,7 +70,7 @@ func createAlertmanagerAndSendAlerts(t *testing.T, alertGroups, groupsLimit, exp
 		ReplicationFactor: 1,
 		// We have to set this interval non-zero, though we don't need the persister to do anything.
 		PersisterConfig: PersisterConfig{Interval: time.Hour},
-	}, reg)
+	}, reg, defaultTemplateFactory)
 	require.NoError(t, err)
 	defer am.StopAndWait()
 
@@ -153,7 +153,7 @@ func TestDispatcherLoggerInsightKey(t *testing.T) {
 		Replicator:        &stubReplicator{},
 		ReplicationFactor: 1,
 		PersisterConfig:   PersisterConfig{Interval: time.Hour},
-	}, reg)
+	}, reg, defaultTemplateFactory)
 	require.NoError(t, err)
 	defer am.StopAndWait()
 
