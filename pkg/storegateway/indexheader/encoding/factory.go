@@ -29,16 +29,16 @@ type DecbufFactoryMetrics struct {
 func NewDecbufFactoryMetrics(reg prometheus.Registerer) *DecbufFactoryMetrics {
 	return &DecbufFactoryMetrics{
 		openCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "indexheader_stream_open_total",
-			Help: "Total number of times index-header file has been opened.",
+			Name: "indexheader_stream_unpooled_open_total",
+			Help: "Total number of times index-header file has been opened instead of using a pooled handle.",
 		}),
 		pooledOpenCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "indexheader_stream_pooled_open_total",
 			Help: "Total number of times a pooled index-header file has been used instead of opened.",
 		}),
 		closeCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "indexheader_stream_close_total",
-			Help: "Total number of times index-header file has been closed.",
+			Name: "indexheader_stream_unpooled_close_total",
+			Help: "Total number of times index-header file has been closed instead of returning the handle to the pool.",
 		}),
 		pooledCloseCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "indexheader_stream_pooled_close_total",
