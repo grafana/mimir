@@ -227,22 +227,6 @@ func (c flattenedSeriesChunkRefsIterator) Err() error {
 	return c.from.Err()
 }
 
-type seriesChunkRefsIteratorSeriesSetAdaptor struct {
-	from seriesChunkRefsIterator
-}
-
-func (s seriesChunkRefsIteratorSeriesSetAdaptor) Next() bool {
-	return s.from.Next()
-}
-
-func (s seriesChunkRefsIteratorSeriesSetAdaptor) At() (labels.Labels, []storepb.AggrChunk) {
-	return s.from.At().lset, nil
-}
-
-func (s seriesChunkRefsIteratorSeriesSetAdaptor) Err() error {
-	return s.from.Err()
-}
-
 type emptySeriesChunkRefsSetIterator struct {
 }
 
@@ -458,14 +442,6 @@ func newSeriesChunkRefsSeriesSet(from seriesChunkRefsSetIterator) storepb.Series
 
 func newSeriesSetWithoutChunks(ctx context.Context, batches seriesChunkRefsSetIterator) storepb.SeriesSet {
 	return newSeriesChunkRefsSeriesSet(newPreloadingSetIterator[seriesChunkRefsSet](ctx, 1, batches))
-}
-
-func extractLabelsFromSeriesChunkRefs(entries []seriesChunkRefs) (result []labels.Labels) {
-	result = make([]labels.Labels, len(entries))
-	for i := range result {
-		result[i] = entries[i].lset
-	}
-	return
 }
 
 func (s *seriesChunkRefsSeriesSet) Next() bool {
