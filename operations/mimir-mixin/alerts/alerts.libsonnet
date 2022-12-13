@@ -546,9 +546,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
             (
               # We use RSS instead of working set memory because of the ingester's extensive usage of mmap.
               # See: https://github.com/grafana/mimir/issues/2466
-              container_memory_rss{container="ingester"}
+              container_memory_rss{container=~"(ingester|mimir-write|mimir-backend)"}
                 /
-              ( container_spec_memory_limit_bytes{container="ingester"} > 0 )
+              ( container_spec_memory_limit_bytes{container=~"(ingester|mimir-write|mimir-backend)"} > 0 )
             ) > 0.65
           |||,
           'for': '15m',
@@ -557,7 +557,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
           annotations: {
             message: |||
-              Ingester %(alert_instance_variable)s in %(alert_aggregation_variables)s is using too much memory.
+              Container %(alert_instance_variable)s in %(alert_aggregation_variables)s is using too much memory.
             ||| % $._config,
           },
         },
@@ -567,9 +567,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
             (
               # We use RSS instead of working set memory because of the ingester's extensive usage of mmap.
               # See: https://github.com/grafana/mimir/issues/2466
-              container_memory_rss{container="ingester"}
+              container_memory_rss{container=~"(ingester|mimir-write|mimir-backend)"}
                 /
-              ( container_spec_memory_limit_bytes{container="ingester"} > 0 )
+              ( container_spec_memory_limit_bytes{container=~"(ingester|mimir-write|mimir-backend)"} > 0 )
             ) > 0.8
           |||,
           'for': '15m',
@@ -578,7 +578,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
           annotations: {
             message: |||
-              Ingester %(alert_instance_variable)s in %(alert_aggregation_variables)s is using too much memory.
+              Container %(alert_instance_variable)s in %(alert_aggregation_variables)s is using too much memory.
             ||| % $._config,
           },
         },
