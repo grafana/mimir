@@ -326,7 +326,7 @@ The example is generated with the following steps:
 
    The output is an excerpt of the real output to reduce the size:
 
-   ```
+   ```diff
    #... cut for size ...
 
    test, mimir-config, ConfigMap (v1) has changed:

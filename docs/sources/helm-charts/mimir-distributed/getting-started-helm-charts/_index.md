@@ -93,6 +93,8 @@ Using a custom namespace solves problems later on because you do not have to ove
          # empty, disabled.
    ```
 
+   > **Note:** To see all of the configurable parameters for a Helm chart installation, use `helm show values grafana/mimir-distributed`.
+
    An ingress enables you to externally access a Kubernetes cluster.
    Replace _`<ingress-host>`_ with a suitable hostname that DNS can resolve
    to the external IP address of the Kubernetes cluster.

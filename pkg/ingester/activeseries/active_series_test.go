@@ -16,8 +16,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/grafana/mimir/pkg/ingester/client"
 )
 
 func copyFn(l labels.Labels) labels.Labels { return l }
@@ -88,12 +86,12 @@ func TestActiveSeries_UpdateSeries_WithMatchers(t *testing.T) {
 	assert.True(t, valid)
 }
 
-func TestActiveSeries_ShouldCorrectlyHandleFingerprintCollisions(t *testing.T) {
-	metric := labels.NewBuilder(labels.FromStrings("__name__", "logs"))
-	ls1 := metric.Set("_", "ypfajYg2lsv").Labels(nil)
-	ls2 := metric.Set("_", "KiqbryhzUpn").Labels(nil)
+func TestActiveSeries_ShouldCorrectlyHandleHashCollisions(t *testing.T) {
+	// These two series have the same XXHash; for algo see https://github.com/Cyan4973/xxHash/issues/54#issuecomment-414061026
+	ls1 := labels.FromStrings("_z~!!a+0", "interesting_data_here_", "zzzzz%!z", "more_interesting_data_here")
+	ls2 := labels.FromStrings("_z-m\xaew\xa3\xc0", "interesting_data_here_", "zzzzz\xa5|z", "more_interesting_data_here")
 
-	require.True(t, client.Fingerprint(ls1) == client.Fingerprint(ls2))
+	require.True(t, ls1.Hash() == ls2.Hash())
 	c := NewActiveSeries(&Matchers{}, DefaultTimeout)
 	c.UpdateSeries(ls1, time.Now(), copyFn)
 	c.UpdateSeries(ls2, time.Now(), copyFn)

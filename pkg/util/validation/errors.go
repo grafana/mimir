@@ -18,7 +18,7 @@ import (
 
 // ValidationError is an error returned by series validation.
 //
-//nolint:golint // ignore stutter warning
+//nolint:revive // ignore stutter warning
 type ValidationError error
 
 // genericValidationError is a basic implementation of ValidationError which can be used when the
@@ -82,17 +82,6 @@ var duplicateLabelMsgFormat = globalerror.SeriesWithDuplicateLabelNames.Message(
 func newDuplicatedLabelError(series []mimirpb.LabelAdapter, labelName string) ValidationError {
 	return genericValidationError{
 		message: duplicateLabelMsgFormat,
-		cause:   labelName,
-		series:  series,
-	}
-}
-
-var labelsNotSortedMsgFormat = globalerror.SeriesLabelsNotSorted.Message(
-	"received a series where the label names are not alphabetically sorted, label: '%.200s' series: '%.200s'")
-
-func newLabelsNotSortedError(series []mimirpb.LabelAdapter, labelName string) ValidationError {
-	return genericValidationError{
-		message: labelsNotSortedMsgFormat,
 		cause:   labelName,
 		series:  series,
 	}

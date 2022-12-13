@@ -316,7 +316,7 @@ func (b *BucketValidationCommand) deleteTestObjects(ctx context.Context) error {
 			return errors.Wrapf(err, "failed to list objects")
 		}
 		if foundDeletedDir {
-			return errors.Errorf("List returned directory which is supposed to be deleted.")
+			return errors.Errorf("list returned directory which is supposed to be deleted")
 		}
 		expectedDirCount := len(b.objectNames) - iteration
 		if foundDirCount != expectedDirCount {

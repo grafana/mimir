@@ -1863,7 +1863,7 @@
           "kind": "field",
           "name": "max_concurrent",
           "required": false,
-          "desc": "The maximum number of concurrent queries. This config option should be set on query-frontend too when query sharding is enabled.",
+          "desc": "The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier.",
           "fieldValue": null,
           "fieldDefaultValue": 20,
           "fieldFlag": "querier.max-concurrent",
@@ -5678,6 +5678,17 @@
                   "fieldFlag": "blocks-storage.bucket-store.index-header.map-populate-enabled",
                   "fieldType": "boolean",
                   "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "stream_reader_enabled",
+                  "required": false,
+                  "desc": "If enabled, the store-gateway will use an experimental streaming reader to load and parse index-header files.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "blocks-storage.bucket-store.index-header.stream-reader-enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
@@ -5692,6 +5703,17 @@
               "fieldDefaultValue": false,
               "fieldFlag": "blocks-storage.bucket-store.max-concurrent-reject-over-limit",
               "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "streaming_series_batch_size",
+              "required": false,
+              "desc": "If larger than 0, this option enables store-gateway series streaming. The store-gateway will load series from the bucket in batches instead of buffering them all in memory before returning to the querier. This option controls how many series to fetch per batch.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "blocks-storage.bucket-store.batch-series-size",
+              "fieldType": "int",
               "fieldCategory": "experimental"
             }
           ],

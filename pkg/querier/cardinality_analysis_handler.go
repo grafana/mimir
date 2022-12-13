@@ -237,7 +237,7 @@ func toLabelValuesCardinalityResponse(seriesCountTotal uint64, cardinalityRespon
 	labels := make([]labelNamesCardinality, 0, len(cardinalityResponse.Items))
 
 	for _, cardinalityItem := range cardinalityResponse.Items {
-		var labelValuesSeriesCountTotal uint64 = 0
+		var labelValuesSeriesCountTotal uint64
 		cardinality := make([]labelValuesCardinality, 0, len(cardinalityItem.LabelValueSeries))
 
 		for labelValue, seriesCount := range cardinalityItem.LabelValueSeries {

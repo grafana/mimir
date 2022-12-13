@@ -154,7 +154,7 @@ func (s *mergedSeriesSet) Next() bool {
 	s.lset = lset
 
 	// Slice reuse is not generally safe with nested merge iterators.
-	// We err on the safe side an create a new slice.
+	// We err on the safe side and create a new slice.
 	s.chunks = make([]AggrChunk, 0, len(chksA)+len(chksB))
 
 	b := 0

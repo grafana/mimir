@@ -51,7 +51,14 @@ Mimirtool interacts with:
 
 ## Installation
 
-To install Grafana Mimirtool, refer to the [latest release](https://github.com/grafana/mimir/releases).
+To install Mimirtool, download the appropriate binary from the [latest release](https://github.com/grafana/mimir/releases/latest) for your operating system and architecture and make it executable.
+
+Alternatively, use a command line tool such as `curl` to download `mimirtool`. For example, for Linux with the AMD64 architecture, use the following command:
+
+```bash
+curl -fLo mimirtool https://github.com/grafana/mimir/releases/latest/download/mimirtool-linux-amd64
+chmod +x mimirtool
+```
 
 ## Configuration options
 
@@ -557,7 +564,7 @@ mimirtool analyze dashboard <file>...
 
 | Environment variable | Flag       | Description                                                               |
 | -------------------- | ---------- | ------------------------------------------------------------------------- |
-| -                    | `--output` | Sets the output file path, which by default is `prometheus-metrics.json`. |
+| -                    | `--output` | Sets the output file path, which by default is `metrics-in-grafana.json`. |
 
 #### Rule-file
 
@@ -570,9 +577,9 @@ mimirtool analyze rule-file <file>
 
 ##### Configuration
 
-| Environment variable | Flag       | Description                                                               |
-| -------------------- | ---------- | ------------------------------------------------------------------------- |
-| -                    | `--output` | Sets the output file path, which by default is `prometheus-metrics.json`. |
+| Environment variable | Flag       | Description                                                             |
+| -------------------- | ---------- | ----------------------------------------------------------------------- |
+| -                    | `--output` | Sets the output file path, which by default is `metrics-in-ruler.json`. |
 
 #### Prometheus
 

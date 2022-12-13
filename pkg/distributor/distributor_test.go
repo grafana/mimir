@@ -1244,6 +1244,23 @@ func TestDistributor_Push_LabelRemoval(t *testing.T) {
 				"foo", "bar", "some", "thing"),
 			expectedSeries: labels.FromStrings("__name__", "some_metric", "cluster", "one"),
 		},
+		// Remove blank labels.
+		{
+			inputSeries:    labels.FromStrings("__name__", "some_metric", "blank", "", "foo", "bar"),
+			expectedSeries: labels.FromStrings("__name__", "some_metric", "foo", "bar"),
+		},
+		{
+			inputSeries:    labels.FromStrings("__name__", "some_metric", "foo", "bar", "zzz_blank", ""),
+			expectedSeries: labels.FromStrings("__name__", "some_metric", "foo", "bar"),
+		},
+		{
+			inputSeries:    labels.FromStrings("__blank__", "", "__name__", "some_metric", "foo", "bar"),
+			expectedSeries: labels.FromStrings("__name__", "some_metric", "foo", "bar"),
+		},
+		{
+			inputSeries:    labels.FromStrings("__blank__", "", "__name__", "some_metric", "foo", "bar", "zzz_blank", ""),
+			expectedSeries: labels.FromStrings("__name__", "some_metric", "foo", "bar"),
+		},
 		// Don't remove any labels.
 		{
 			removeReplica:  false,
@@ -3942,7 +3959,7 @@ func (i *mockIngester) MetricsForLabelMatchers(ctx context.Context, req *client.
 		return nil, errFail
 	}
 
-	_, _, multiMatchers, err := client.FromMetricsForLabelMatchersRequest(req)
+	multiMatchers, err := client.FromMetricsForLabelMatchersRequest(req)
 	if err != nil {
 		return nil, err
 	}
@@ -4271,6 +4288,19 @@ func TestDistributorValidation(t *testing.T) {
 			}},
 		},
 
+		// Test validation passes when labels are unsorted.
+		{
+			labels: []labels.Labels{mimirpb.FromLabelAdaptersToLabels(
+				[]mimirpb.LabelAdapter{
+					{Name: "foo", Value: "bar"},
+					{Name: labels.MetricName, Value: "testmetric"},
+				})},
+			samples: []mimirpb.Sample{{
+				TimestampMs: int64(now),
+				Value:       1,
+			}},
+		},
+
 		// Test validation fails for samples from the future.
 		{
 			labels: []labels.Labels{labels.FromStrings(labels.MetricName, "testmetric", "foo", "bar")},
@@ -4405,7 +4435,7 @@ func TestRemoveReplicaLabel(t *testing.T) {
 	}
 }
 
-// This is not great, but we deal with unsorted labels when validating labels.
+// This is not great, but we deal with unsorted labels in prePushRelabelMiddleware.
 func TestShardByAllLabelsReturnsWrongResultsForUnsortedLabels(t *testing.T) {
 	val1 := shardByAllLabels("test", []mimirpb.LabelAdapter{
 		{Name: "__name__", Value: "foo"},
@@ -4444,9 +4474,9 @@ func TestSortLabels(t *testing.T) {
 
 	sortLabelsIfNeeded(unsorted)
 
-	sort.SliceIsSorted(unsorted, func(i, j int) bool {
+	require.True(t, sort.SliceIsSorted(unsorted, func(i, j int) bool {
 		return unsorted[i].Name < unsorted[j].Name
-	})
+	}))
 }
 
 func TestDistributor_Push_Relabel(t *testing.T) {

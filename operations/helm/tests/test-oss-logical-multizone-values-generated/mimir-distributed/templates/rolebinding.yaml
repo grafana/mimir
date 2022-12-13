@@ -16,3 +16,5 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: test-oss-logical-multizone-values-mimir
+- kind: ServiceAccount
+  name: test-oss-logical-multizone-values-mimir-distributed

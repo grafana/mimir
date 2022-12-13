@@ -133,7 +133,7 @@ groups:
         close to the limit.'
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirmemorymapareastoohigh
     expr: |
-      process_memory_map_areas{job=~".+(cortex|ingester.*|store-gateway.*)"} / process_memory_map_areas_limit{job=~".+(cortex|ingester.*|store-gateway.*)"} > 0.8
+      process_memory_map_areas{job=~".*/((ingester.*|cortex|mimir|mimir-write.*)|(store-gateway.*|cortex|mimir|mimir-backend.*))"} / process_memory_map_areas_limit{job=~".*/((ingester.*|cortex|mimir|mimir-write.*)|(store-gateway.*|cortex|mimir|mimir-backend.*))"} > 0.8
     for: 5m
     labels:
       severity: critical
@@ -150,6 +150,23 @@ groups:
     for: 5m
     labels:
       severity: critical
+  - alert: MimirIngesterInstanceHasNoTenants
+    annotations:
+      message: Mimir ingester {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace
+        }} has no tenants assigned.
+      runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterinstancehasnotenants
+    expr: |
+      (min by(cluster, namespace, instance) (cortex_ingester_memory_users) == 0)
+      and on (cluster, namespace)
+      # Only if there are more time-series than would be expected due to continuous testing load
+      (
+        sum by(cluster, namespace) (cortex_ingester_memory_series)
+        /
+        max by(cluster, namespace) (cortex_distributor_replication_factor)
+      ) > 100000
+    for: 1h
+    labels:
+      severity: warning
   - alert: MimirRingMembersMismatch
     annotations:
       message: |
@@ -567,9 +584,9 @@ groups:
         }} has not shipped any block in the last 4 hours.
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterhasnotshippedblocks
     expr: |
-      (min by(cluster, namespace, instance) (time() - thanos_objstore_bucket_last_successful_upload_time{job=~".+/ingester.*"}) > 60 * 60 * 4)
+      (min by(cluster, namespace, instance) (time() - thanos_shipper_last_successful_upload_time) > 60 * 60 * 4)
       and
-      (max by(cluster, namespace, instance) (thanos_objstore_bucket_last_successful_upload_time{job=~".+/ingester.*"}) > 0)
+      (max by(cluster, namespace, instance) (thanos_shipper_last_successful_upload_time) > 0)
       and
       # Only if the ingester has ingested samples over the last 4h.
       (max by(cluster, namespace, instance) (max_over_time(cluster_namespace_instance:cortex_ingester_ingested_samples_total:rate1m[4h])) > 0)
@@ -588,7 +605,7 @@ groups:
         }} has not shipped any block in the last 4 hours.
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterhasnotshippedblockssincestart
     expr: |
-      (max by(cluster, namespace, instance) (thanos_objstore_bucket_last_successful_upload_time{job=~".+/ingester.*"}) == 0)
+      (max by(cluster, namespace, instance) (thanos_shipper_last_successful_upload_time) == 0)
       and
       (max by(cluster, namespace, instance) (max_over_time(cluster_namespace_instance:cortex_ingester_ingested_samples_total:rate1m[4h])) > 0)
     for: 4h
@@ -823,7 +840,7 @@ groups:
         $labels.namespace }} has found and ignored blocks with out of order chunks.
       runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactorskippedblockswithoutoforderchunks
     expr: |
-      increase(cortex_compactor_blocks_marked_for_no_compaction_total{component="compactor", reason="block-index-out-of-order-chunk"}[5m]) > 0
+      increase(cortex_compactor_blocks_marked_for_no_compaction_total{reason="block-index-out-of-order-chunk"}[5m]) > 0
     for: 1m
     labels:
       severity: warning

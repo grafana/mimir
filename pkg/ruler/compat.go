@@ -261,7 +261,7 @@ func DefaultTenantManagerFactory(
 		}, []string{"user"})
 	}
 	return func(ctx context.Context, userID string, notifier *notifier.Manager, logger log.Logger, reg prometheus.Registerer) RulesManager {
-		var queryTime prometheus.Counter = nil
+		var queryTime prometheus.Counter
 		if rulerQuerySeconds != nil {
 			queryTime = rulerQuerySeconds.WithLabelValues(userID)
 		}

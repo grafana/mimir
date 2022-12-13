@@ -214,8 +214,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         {
           alert: $.alertName('MemoryMapAreasTooHigh'),
           expr: |||
-            process_memory_map_areas{%(per_job_label)s=~".+(cortex|ingester.*|store-gateway.*)"} / process_memory_map_areas_limit{%(per_job_label)s=~".+(cortex|ingester.*|store-gateway.*)"} > 0.8
-          ||| % $._config,
+            process_memory_map_areas{%(job_regex)s} / process_memory_map_areas_limit{%(job_regex)s} > 0.8
+          ||| % { job_regex: $.jobMatcher('(%s|%s)' % [$._config.job_names.ingester, $._config.job_names.store_gateway]) },
           'for': '5m',
           labels: {
             severity: 'critical',
@@ -242,6 +242,27 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: |||
               %(product)s in %(alert_aggregation_variables)s has a high failure rate when forwarding samples.
             ||| % $._config,
+          },
+        },
+        {
+          // Alert if an ingester instance has no tenants assigned while other instances in the same cell do.
+          alert: $.alertName('IngesterInstanceHasNoTenants'),
+          'for': '1h',
+          expr: |||
+            (min by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ingester_memory_users) == 0)
+            and on (%(alert_aggregation_labels)s)
+            # Only if there are more time-series than would be expected due to continuous testing load
+            (
+              sum by(%(alert_aggregation_labels)s) (cortex_ingester_memory_series)
+              /
+              max by(%(alert_aggregation_labels)s) (cortex_distributor_replication_factor)
+            ) > 100000
+          ||| % $._config,
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: '%(product)s ingester %(alert_instance_variable)s in %(alert_aggregation_variables)s has no tenants assigned.' % $._config,
           },
         },
       ] + [

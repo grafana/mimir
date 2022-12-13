@@ -440,18 +440,18 @@ func (c *nativeContext) Accept(errorMessage ...string) error {
 	return c.b.Accept(c.u.PreCheckoutQuery, errorMessage...)
 }
 
-func (c *nativeContext) Answer(resp *QueryResponse) error {
-	if c.u.Query == nil {
-		return errors.New("telebot: context inline query is nil")
-	}
-	return c.b.Answer(c.u.Query, resp)
-}
-
 func (c *nativeContext) Respond(resp ...*CallbackResponse) error {
 	if c.u.Callback == nil {
 		return errors.New("telebot: context callback is nil")
 	}
 	return c.b.Respond(c.u.Callback, resp...)
+}
+
+func (c *nativeContext) Answer(resp *QueryResponse) error {
+	if c.u.Query == nil {
+		return errors.New("telebot: context inline query is nil")
+	}
+	return c.b.Answer(c.u.Query, resp)
 }
 
 func (c *nativeContext) Set(key string, value interface{}) {

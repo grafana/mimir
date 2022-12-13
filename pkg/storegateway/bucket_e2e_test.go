@@ -17,10 +17,12 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gogo/status"
 	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
 	"github.com/weaveworks/common/httpgrpc"
@@ -34,6 +36,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/storegateway/testhelper"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 var (
@@ -67,6 +70,7 @@ type storeSuite struct {
 	store            *BucketStore
 	minTime, maxTime int64
 	cache            *swappableCache
+	metricsRegistry  *prometheus.Registry
 
 	logger log.Logger
 }
@@ -129,52 +133,94 @@ func newCustomSeriesLimiterFactory(limit uint64, code codes.Code) SeriesLimiterF
 	}
 }
 
-func prepareStoreWithTestBlocks(t testing.TB, dir string, bkt objstore.Bucket, manyParts bool, chunksLimiterFactory ChunksLimiterFactory, seriesLimiterFactory SeriesLimiterFactory) *storeSuite {
-	series := []labels.Labels{
-		labels.FromStrings("a", "1", "b", "1"),
-		labels.FromStrings("a", "1", "b", "2"),
-		labels.FromStrings("a", "2", "b", "1"),
-		labels.FromStrings("a", "2", "b", "2"),
-		labels.FromStrings("a", "1", "c", "1"),
-		labels.FromStrings("a", "1", "c", "2"),
-		labels.FromStrings("a", "2", "c", "1"),
-		labels.FromStrings("a", "2", "c", "2"),
-	}
-	return prepareStoreWithTestBlocksForSeries(t, dir, bkt, manyParts, chunksLimiterFactory, seriesLimiterFactory, series)
+type prepareStoreConfig struct {
+	tempDir              string
+	manyParts            bool
+	chunksLimiterFactory ChunksLimiterFactory
+	seriesLimiterFactory SeriesLimiterFactory
+	series               []labels.Labels
+	indexCache           indexcache.IndexCache
+	bucketStoreOpts      []BucketStoreOption
+	metricsRegistry      *prometheus.Registry
 }
 
-func prepareStoreWithTestBlocksForSeries(t testing.TB, dir string, bkt objstore.Bucket, manyParts bool, chunksLimiterFactory ChunksLimiterFactory, seriesLimiterFactory SeriesLimiterFactory, series []labels.Labels) *storeSuite {
+func (c *prepareStoreConfig) apply(opts ...prepareStoreConfigOption) *prepareStoreConfig {
+	for _, o := range opts {
+		o(c)
+	}
+	return c
+}
+
+func defaultPrepareStoreConfig(t testing.TB) *prepareStoreConfig {
+	return &prepareStoreConfig{
+		metricsRegistry:      prometheus.NewRegistry(),
+		tempDir:              t.TempDir(),
+		manyParts:            false,
+		seriesLimiterFactory: NewSeriesLimiterFactory(0),
+		chunksLimiterFactory: NewChunksLimiterFactory(0),
+		indexCache:           noopCache{},
+		series: []labels.Labels{
+			labels.FromStrings("a", "1", "b", "1"),
+			labels.FromStrings("a", "1", "b", "2"),
+			labels.FromStrings("a", "2", "b", "1"),
+			labels.FromStrings("a", "2", "b", "2"),
+			labels.FromStrings("a", "1", "c", "1"),
+			labels.FromStrings("a", "1", "c", "2"),
+			labels.FromStrings("a", "2", "c", "1"),
+			labels.FromStrings("a", "2", "c", "2"),
+		},
+	}
+}
+
+type prepareStoreConfigOption func(config *prepareStoreConfig)
+
+func withManyParts() prepareStoreConfigOption {
+	return func(config *prepareStoreConfig) {
+		config.manyParts = true
+	}
+}
+
+func withBucketStoreOptions(opts ...BucketStoreOption) prepareStoreConfigOption {
+	return func(config *prepareStoreConfig) {
+		config.bucketStoreOpts = opts
+	}
+}
+
+func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareStoreConfig) *storeSuite {
 	extLset := labels.FromStrings("ext1", "value1")
 
-	minTime, maxTime := prepareTestBlocks(t, time.Now(), 3, dir, bkt, series, extLset)
+	minTime, maxTime := prepareTestBlocks(t, time.Now(), 3, cfg.tempDir, bkt, cfg.series, extLset)
 
 	s := &storeSuite{
-		logger:  log.NewNopLogger(),
-		cache:   &swappableCache{},
-		minTime: minTime,
-		maxTime: maxTime,
+		logger:          log.NewNopLogger(),
+		metricsRegistry: cfg.metricsRegistry,
+		cache:           &swappableCache{IndexCache: cfg.indexCache},
+		minTime:         minTime,
+		maxTime:         maxTime,
 	}
 
-	metaFetcher, err := block.NewMetaFetcher(s.logger, 20, objstore.WithNoopInstr(bkt), dir, nil, []block.MetadataFilter{})
+	metaFetcher, err := block.NewMetaFetcher(s.logger, 20, objstore.WithNoopInstr(bkt), cfg.tempDir, nil, []block.MetadataFilter{})
 	assert.NoError(t, err)
+
+	// Have our options in the beginning so tests can override logger and index cache if they need to
+	storeOpts := append([]BucketStoreOption{WithLogger(s.logger), WithIndexCache(s.cache)}, cfg.bucketStoreOpts...)
 
 	store, err := NewBucketStore(
 		"tenant",
 		objstore.WithNoopInstr(bkt),
 		metaFetcher,
-		dir,
-		chunksLimiterFactory,
-		seriesLimiterFactory,
+		cfg.tempDir,
+		cfg.chunksLimiterFactory,
+		cfg.seriesLimiterFactory,
 		newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 		20,
 		mimir_tsdb.DefaultPostingOffsetInMemorySampling,
-		indexheader.BinaryReaderConfig{},
+		indexheader.Config{},
 		true,
 		time.Minute,
 		hashcache.NewSeriesHashCache(1024*1024),
-		NewBucketStoreMetrics(nil),
-		WithLogger(s.logger),
-		WithIndexCache(s.cache),
+		NewBucketStoreMetrics(s.metricsRegistry),
+		storeOpts...,
 	)
 	assert.NoError(t, err)
 	t.Cleanup(func() {
@@ -183,7 +229,7 @@ func prepareStoreWithTestBlocksForSeries(t testing.TB, dir string, bkt objstore.
 
 	s.store = store
 
-	if manyParts {
+	if cfg.manyParts {
 		s.store.partitioner = naivePartitioner{}
 	}
 
@@ -196,7 +242,7 @@ func prepareStoreWithTestBlocksForSeries(t testing.TB, dir string, bkt objstore.
 
 // TODO(bwplotka): Benchmark Series.
 //
-//nolint:golint
+//nolint:revive
 func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 	t.Helper()
 
@@ -401,20 +447,105 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 				assert.Equal(t, tcase.expected[i], s.Labels)
 				assert.Equal(t, tcase.expectedChunkLen, len(s.Chunks))
 			}
+			assertQueryStatsMetricsRecorded(t, len(tcase.expected), tcase.expectedChunkLen, s.metricsRegistry)
 		}); !ok {
 			return
 		}
 	}
 }
 
+func assertQueryStatsMetricsRecorded(t *testing.T, numSeries int, numChunksPerSeries int, registry *prometheus.Registry) {
+	t.Helper()
+
+	families, err := registry.Gather()
+	require.NoError(t, err, "couldn't gather metrics from BucketStore")
+	metrics, err := util.NewMetricFamilyMap(families)
+	require.NoError(t, err, "couldn't gather metrics from BucketStore")
+
+	toLabels := func(labelValuePairs []string) (result labels.Labels) {
+		if len(labelValuePairs)%2 != 0 {
+			t.Fatalf("invalid label name-value pairs %s", strings.Join(labelValuePairs, ""))
+		}
+		for i := 0; i < len(labelValuePairs); i += 2 {
+			result = append(result, labels.Label{Name: labelValuePairs[i], Value: labelValuePairs[i+1]})
+		}
+		return
+	}
+
+	numObservationsForSummaries := func(summaryName string, labelValuePairs ...string) uint64 {
+		summaryData := &util.SummaryData{}
+		for _, metric := range getMetricsMatchingLabels(metrics[summaryName], toLabels(labelValuePairs)) {
+			summaryData.AddSummary(metric.GetSummary())
+		}
+		m := &dto.Metric{}
+		require.NoError(t, summaryData.Metric(&prometheus.Desc{}).Write(m))
+		return m.GetSummary().GetSampleCount()
+	}
+
+	numObservationsForHistogram := func(histogramName string, labelValuePairs ...string) uint64 {
+		histogramData := &util.HistogramData{}
+		for _, metric := range getMetricsMatchingLabels(metrics[histogramName], toLabels(labelValuePairs)) {
+			histogramData.AddHistogram(metric.GetHistogram())
+		}
+		m := &dto.Metric{}
+		require.NoError(t, histogramData.Metric(&prometheus.Desc{}).Write(m))
+		return m.GetHistogram().GetSampleCount()
+	}
+
+	if numSeries > 0 {
+		assert.NotZero(t, numObservationsForSummaries("cortex_bucket_store_series_result_series"))
+		assert.NotZero(t, numObservationsForHistogram("cortex_bucket_store_expanded_postings_duration"))
+		assert.NotZero(t, numObservationsForSummaries("cortex_bucket_store_series_data_touched", "data_type", "postings"))
+		assert.NotZero(t, numObservationsForSummaries("cortex_bucket_store_series_data_touched", "data_type", "series"))
+		assert.NotZero(t, numObservationsForSummaries("cortex_bucket_store_series_data_fetched", "data_type", "postings"))
+		assert.NotZero(t, numObservationsForSummaries("cortex_bucket_store_series_data_fetched", "data_type", "series"))
+		assert.NotZero(t, numObservationsForHistogram("cortex_bucket_store_expanded_postings_duration"))
+		assert.NotZero(t, numObservationsForHistogram("cortex_bucket_store_series_get_all_duration_seconds"))
+		assert.NotZero(t, numObservationsForHistogram("cortex_bucket_store_series_merge_duration_seconds"))
+	}
+	if numChunksPerSeries > 0 {
+		assert.NotZero(t, numObservationsForSummaries("cortex_bucket_store_series_data_touched", "data_type", "chunks"))
+		assert.NotZero(t, numObservationsForSummaries("cortex_bucket_store_series_data_fetched", "data_type", "chunks"))
+	}
+}
+
+func getMetricsMatchingLabels(mf *dto.MetricFamily, selectors labels.Labels) []*dto.Metric {
+	var result []*dto.Metric
+	for _, m := range mf.GetMetric() {
+		if !matchesSelectors(m, selectors) {
+			continue
+		}
+		result = append(result, m)
+	}
+	return result
+}
+
+func matchesSelectors(m *dto.Metric, selectors labels.Labels) bool {
+	for _, l := range selectors {
+		found := false
+		for _, lp := range m.GetLabel() {
+			if l.Name != lp.GetName() || l.Value != lp.GetValue() {
+				continue
+			}
+
+			found = true
+			break
+		}
+
+		if !found {
+			return false
+		}
+	}
+
+	return true
+}
+
 func TestBucketStore_e2e(t *testing.T) {
-	foreachStore(t, func(t *testing.T, bkt objstore.Bucket) {
+	foreachStore(t, func(t *testing.T, newSuite suiteFactory) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		dir := t.TempDir()
-
-		s := prepareStoreWithTestBlocks(t, dir, bkt, false, NewChunksLimiterFactory(0), NewSeriesLimiterFactory(0))
+		s := newSuite()
 
 		if ok := t.Run("no index cache", func(t *testing.T) {
 			s.cache.SwapWith(noopCache{})
@@ -461,13 +592,14 @@ func (g naivePartitioner) Partition(length int, rng func(int) (uint64, uint64)) 
 // This tests if our, sometimes concurrent, fetches for different parts works.
 // Regression test against: https://github.com/thanos-io/thanos/issues/829.
 func TestBucketStore_ManyParts_e2e(t *testing.T) {
-	foreachStore(t, func(t *testing.T, bkt objstore.Bucket) {
+	foreachStore(t, func(t *testing.T, newSuite suiteFactory) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		dir := t.TempDir()
+		prepareCfg := defaultPrepareStoreConfig(t)
+		prepareCfg.manyParts = true
 
-		s := prepareStoreWithTestBlocks(t, dir, bkt, true, NewChunksLimiterFactory(0), NewSeriesLimiterFactory(0))
+		s := newSuite(withManyParts())
 
 		indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(s.logger, nil, indexcache.InMemoryIndexCacheConfig{
 			MaxItemSize: 1e5,
@@ -517,9 +649,11 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 			defer cancel()
 			bkt := objstore.NewInMemBucket()
 
-			dir := t.TempDir()
+			prepConfig := defaultPrepareStoreConfig(t)
+			prepConfig.chunksLimiterFactory = newCustomChunksLimiterFactory(testData.maxChunksLimit, testData.code)
+			prepConfig.seriesLimiterFactory = newCustomSeriesLimiterFactory(testData.maxSeriesLimit, testData.code)
 
-			s := prepareStoreWithTestBlocks(t, dir, bkt, false, newCustomChunksLimiterFactory(testData.maxChunksLimit, testData.code), newCustomSeriesLimiterFactory(testData.maxSeriesLimit, testData.code))
+			s := prepareStoreWithTestBlocks(t, bkt, prepConfig)
 			assert.NoError(t, s.store.SyncBlocks(ctx))
 
 			req := &storepb.SeriesRequest{
@@ -530,7 +664,6 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 				MaxTime: timestamp.FromTime(maxTime),
 			}
 
-			s.cache.SwapWith(noopCache{})
 			srv := newBucketStoreSeriesServer(ctx)
 			err := s.store.Series(req, srv)
 
@@ -548,14 +681,11 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 }
 
 func TestBucketStore_LabelNames_e2e(t *testing.T) {
-	foreachStore(t, func(t *testing.T, bkt objstore.Bucket) {
+	foreachStore(t, func(t *testing.T, newSuite suiteFactory) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		dir := t.TempDir()
-
-		s := prepareStoreWithTestBlocks(t, dir, bkt, false, NewChunksLimiterFactory(0), NewSeriesLimiterFactory(0))
-		s.cache.SwapWith(noopCache{})
+		s := newSuite()
 
 		mint, maxt := s.store.TimeRange()
 		assert.Equal(t, s.minTime, mint)
@@ -648,14 +778,11 @@ func TestBucketStore_LabelNames_e2e(t *testing.T) {
 }
 
 func TestBucketStore_LabelValues_e2e(t *testing.T) {
-	foreachStore(t, func(t *testing.T, bkt objstore.Bucket) {
+	foreachStore(t, func(t *testing.T, newSuite suiteFactory) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		dir := t.TempDir()
-
-		s := prepareStoreWithTestBlocks(t, dir, bkt, false, NewChunksLimiterFactory(0), NewSeriesLimiterFactory(0))
-		s.cache.SwapWith(noopCache{})
+		s := newSuite()
 
 		mint, maxt := s.store.TimeRange()
 		assert.Equal(t, s.minTime, mint)
@@ -742,12 +869,17 @@ func emptyToNil(values []string) []string {
 	return values
 }
 
-func foreachStore(t *testing.T, testFn func(t *testing.T, bkt objstore.Bucket)) {
+type suiteFactory func(...prepareStoreConfigOption) *storeSuite
+
+func foreachStore(t *testing.T, runTest func(t *testing.T, newSuite suiteFactory)) {
 	t.Parallel()
 
 	// Mandatory Inmem. Not parallel, to detect problem early.
 	if ok := t.Run("inmem", func(t *testing.T) {
-		testFn(t, objstore.NewInMemBucket())
+		factory := func(opts ...prepareStoreConfigOption) *storeSuite {
+			return prepareStoreWithTestBlocks(t, objstore.NewInMemBucket(), defaultPrepareStoreConfig(t).apply(opts...))
+		}
+		runTest(t, factory)
 	}); !ok {
 		return
 	}
@@ -756,10 +888,26 @@ func foreachStore(t *testing.T, testFn func(t *testing.T, bkt objstore.Bucket)) 
 	t.Run("filesystem", func(t *testing.T) {
 		t.Parallel()
 
-		dir := t.TempDir()
-
-		b, err := filesystem.NewBucket(dir)
+		b, err := filesystem.NewBucket(t.TempDir())
 		assert.NoError(t, err)
-		testFn(t, b)
+		factory := func(opts ...prepareStoreConfigOption) *storeSuite {
+			return prepareStoreWithTestBlocks(t, b, defaultPrepareStoreConfig(t).apply(opts...))
+		}
+		runTest(t, factory)
+	})
+
+	t.Run("streaming", func(t *testing.T) {
+		t.Parallel()
+
+		b, err := filesystem.NewBucket(t.TempDir())
+		assert.NoError(t, err)
+		factory := func(opts ...prepareStoreConfigOption) *storeSuite {
+			// We want to force each Series() call to use more than one batch to catch some edge cases.
+			// This should make the implementation slightly slower, although test time
+			// should be dominated by the setup.
+			opts = append(opts, withBucketStoreOptions(WithStreamingSeriesPerBatch(10)))
+			return prepareStoreWithTestBlocks(t, b, defaultPrepareStoreConfig(t).apply(opts...))
+		}
+		runTest(t, factory)
 	})
 }

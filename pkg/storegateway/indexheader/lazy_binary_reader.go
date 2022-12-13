@@ -19,9 +19,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/tsdb/index"
-	"go.uber.org/atomic"
-
 	"github.com/thanos-io/objstore"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
@@ -67,23 +66,18 @@ func NewLazyBinaryReaderMetrics(reg prometheus.Registerer) *LazyBinaryReaderMetr
 	}
 }
 
-// LazyBinaryReader wraps BinaryReader and loads (mmap) the index-header only upon
+// LazyBinaryReader wraps BinaryReader and loads (mmap or streaming read) the index-header only upon
 // the first Reader function is called.
 type LazyBinaryReader struct {
-	ctx                         context.Context
-	logger                      log.Logger
-	bkt                         objstore.BucketReader
-	dir                         string
-	filepath                    string
-	id                          ulid.ULID
-	postingOffsetsInMemSampling int
-	cfg                         BinaryReaderConfig
-	metrics                     *LazyBinaryReaderMetrics
-	onClosed                    func(*LazyBinaryReader)
+	logger   log.Logger
+	filepath string
+	metrics  *LazyBinaryReaderMetrics
+	onClosed func(*LazyBinaryReader)
 
-	readerMx  sync.RWMutex
-	reader    *BinaryReader
-	readerErr error
+	readerMx      sync.RWMutex
+	reader        Reader
+	readerErr     error
+	readerFactory func() (Reader, error)
 
 	// Keep track of the last time it was used.
 	usedAt *atomic.Int64
@@ -92,48 +86,42 @@ type LazyBinaryReader struct {
 // NewLazyBinaryReader makes a new LazyBinaryReader. If the index-header does not exist
 // on the local disk at dir location, this function will build it downloading required
 // sections from the full index stored in the bucket. However, this function doesn't load
-// (mmap) the index-header; it will be loaded at first Reader function call.
+// (mmap or streaming read) the index-header; it will be loaded at first Reader function call.
 func NewLazyBinaryReader(
 	ctx context.Context,
+	readerFactory func() (Reader, error),
 	logger log.Logger,
 	bkt objstore.BucketReader,
 	dir string,
 	id ulid.ULID,
-	postingOffsetsInMemSampling int,
-	cfg BinaryReaderConfig,
 	metrics *LazyBinaryReaderMetrics,
 	onClosed func(*LazyBinaryReader),
 ) (*LazyBinaryReader, error) {
-	filepath := filepath.Join(dir, id.String(), block.IndexHeaderFilename)
+	path := filepath.Join(dir, id.String(), block.IndexHeaderFilename)
 
 	// If the index-header doesn't exist we should download it.
-	if _, err := os.Stat(filepath); err != nil {
+	if _, err := os.Stat(path); err != nil {
 		if !os.IsNotExist(err) {
 			return nil, errors.Wrap(err, "read index header")
 		}
 
-		level.Debug(logger).Log("msg", "the index-header doesn't exist on disk; recreating", "path", filepath)
+		level.Debug(logger).Log("msg", "the index-header doesn't exist on disk; recreating", "path", path)
 
 		start := time.Now()
-		if err := WriteBinary(ctx, bkt, id, filepath); err != nil {
+		if err := WriteBinary(ctx, bkt, id, path); err != nil {
 			return nil, errors.Wrap(err, "write index header")
 		}
 
-		level.Debug(logger).Log("msg", "built index-header file", "path", filepath, "elapsed", time.Since(start))
+		level.Debug(logger).Log("msg", "built index-header file", "path", path, "elapsed", time.Since(start))
 	}
 
 	return &LazyBinaryReader{
-		ctx:                         ctx,
-		logger:                      logger,
-		bkt:                         bkt,
-		dir:                         dir,
-		filepath:                    filepath,
-		id:                          id,
-		postingOffsetsInMemSampling: postingOffsetsInMemSampling,
-		cfg:                         cfg,
-		metrics:                     metrics,
-		usedAt:                      atomic.NewInt64(time.Now().UnixNano()),
-		onClosed:                    onClosed,
+		logger:        logger,
+		filepath:      path,
+		metrics:       metrics,
+		usedAt:        atomic.NewInt64(time.Now().UnixNano()),
+		onClosed:      onClosed,
+		readerFactory: readerFactory,
 	}, nil
 }
 
@@ -251,7 +239,7 @@ func (r *LazyBinaryReader) load() (returnErr error) {
 	r.metrics.loadCount.Inc()
 	startTime := time.Now()
 
-	reader, err := NewBinaryReader(r.ctx, r.logger, r.bkt, r.dir, r.id, r.postingOffsetsInMemSampling, r.cfg)
+	reader, err := r.readerFactory()
 	if err != nil {
 		r.metrics.loadFailedCount.Inc()
 		r.readerErr = err

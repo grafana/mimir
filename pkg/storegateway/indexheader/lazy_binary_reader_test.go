@@ -19,6 +19,7 @@ import (
 	promtestutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
+	"github.com/thanos-io/objstore"
 
 	"github.com/thanos-io/objstore/providers/filesystem"
 
@@ -28,30 +29,23 @@ import (
 )
 
 func TestNewLazyBinaryReader_ShouldFailIfUnableToBuildIndexHeader(t *testing.T) {
-	ctx := context.Background()
-
-	tmpDir, err := os.MkdirTemp("", "test-indexheader")
-	require.NoError(t, err)
-	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
-
+	tmpDir := filepath.Join(t.TempDir(), "test-indexheader")
 	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
 	require.NoError(t, err)
-	defer func() { require.NoError(t, bkt.Close()) }()
+	t.Cleanup(func() { require.NoError(t, bkt.Close()) })
 
-	_, err = NewLazyBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, ulid.MustNew(0, nil), 3, BinaryReaderConfig{}, NewLazyBinaryReaderMetrics(nil), nil)
-	require.Error(t, err)
+	testLazyBinaryReader(t, bkt, tmpDir, ulid.ULID{}, func(t *testing.T, r *LazyBinaryReader, err error) {
+		require.Error(t, err)
+	})
 }
 
 func TestNewLazyBinaryReader_ShouldBuildIndexHeaderFromBucket(t *testing.T) {
 	ctx := context.Background()
 
-	tmpDir, err := os.MkdirTemp("", "test-indexheader")
-	require.NoError(t, err)
-	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
-
+	tmpDir := filepath.Join(t.TempDir(), "test-indexheader")
 	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
 	require.NoError(t, err)
-	defer func() { require.NoError(t, bkt.Close()) }()
+	t.Cleanup(func() { require.NoError(t, bkt.Close()) })
 
 	// Create block.
 	blockID, err := testhelper.CreateBlock(ctx, tmpDir, []labels.Labels{
@@ -61,38 +55,39 @@ func TestNewLazyBinaryReader_ShouldBuildIndexHeaderFromBucket(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), metadata.NoneFunc))
 
-	m := NewLazyBinaryReaderMetrics(nil)
-	r, err := NewLazyBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, BinaryReaderConfig{}, m, nil)
-	require.NoError(t, err)
-	require.True(t, r.reader == nil)
-	require.Equal(t, float64(0), promtestutil.ToFloat64(m.loadCount))
-	require.Equal(t, float64(0), promtestutil.ToFloat64(m.unloadCount))
+	testLazyBinaryReader(t, bkt, tmpDir, blockID, func(t *testing.T, r *LazyBinaryReader, err error) {
+		require.NoError(t, err)
+		require.Nil(t, r.reader)
+		t.Cleanup(func() {
+			require.NoError(t, r.Close())
+		})
 
-	// Should lazy load the index upon first usage.
-	v, err := r.IndexVersion()
-	require.NoError(t, err)
-	require.Equal(t, 2, v)
-	require.True(t, r.reader != nil)
-	require.Equal(t, float64(1), promtestutil.ToFloat64(m.loadCount))
-	require.Equal(t, float64(0), promtestutil.ToFloat64(m.unloadCount))
+		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.loadCount))
+		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.unloadCount))
 
-	labelNames, err := r.LabelNames()
-	require.NoError(t, err)
-	require.Equal(t, []string{"a"}, labelNames)
-	require.Equal(t, float64(1), promtestutil.ToFloat64(m.loadCount))
-	require.Equal(t, float64(0), promtestutil.ToFloat64(m.unloadCount))
+		// Should lazy load the index upon first usage.
+		v, err := r.IndexVersion()
+		require.NoError(t, err)
+		require.Equal(t, 2, v)
+		require.True(t, r.reader != nil)
+		require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.loadCount))
+		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.unloadCount))
+
+		labelNames, err := r.LabelNames()
+		require.NoError(t, err)
+		require.Equal(t, []string{"a"}, labelNames)
+		require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.loadCount))
+		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.unloadCount))
+	})
 }
 
 func TestNewLazyBinaryReader_ShouldRebuildCorruptedIndexHeader(t *testing.T) {
 	ctx := context.Background()
 
-	tmpDir, err := os.MkdirTemp("", "test-indexheader")
-	require.NoError(t, err)
-	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
-
+	tmpDir := filepath.Join(t.TempDir(), "test-indexheader")
 	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
 	require.NoError(t, err)
-	defer func() { require.NoError(t, bkt.Close()) }()
+	t.Cleanup(func() { require.NoError(t, bkt.Close()) })
 
 	// Create block.
 	blockID, err := testhelper.CreateBlock(ctx, tmpDir, []labels.Labels{
@@ -106,33 +101,34 @@ func TestNewLazyBinaryReader_ShouldRebuildCorruptedIndexHeader(t *testing.T) {
 	headerFilename := filepath.Join(tmpDir, blockID.String(), block.IndexHeaderFilename)
 	require.NoError(t, os.WriteFile(headerFilename, []byte("xxx"), os.ModePerm))
 
-	m := NewLazyBinaryReaderMetrics(nil)
-	r, err := NewLazyBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, BinaryReaderConfig{}, m, nil)
-	require.NoError(t, err)
-	require.True(t, r.reader == nil)
-	require.Equal(t, float64(0), promtestutil.ToFloat64(m.loadCount))
-	require.Equal(t, float64(0), promtestutil.ToFloat64(m.loadFailedCount))
-	require.Equal(t, float64(0), promtestutil.ToFloat64(m.unloadCount))
+	testLazyBinaryReader(t, bkt, tmpDir, blockID, func(t *testing.T, r *LazyBinaryReader, err error) {
+		require.NoError(t, err)
+		require.Nil(t, r.reader)
+		t.Cleanup(func() {
+			require.NoError(t, r.Close())
+		})
 
-	// Ensure it can read data.
-	labelNames, err := r.LabelNames()
-	require.NoError(t, err)
-	require.Equal(t, []string{"a"}, labelNames)
-	require.Equal(t, float64(1), promtestutil.ToFloat64(m.loadCount))
-	require.Equal(t, float64(0), promtestutil.ToFloat64(m.loadFailedCount))
-	require.Equal(t, float64(0), promtestutil.ToFloat64(m.unloadCount))
+		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.loadCount))
+		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.loadFailedCount))
+		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.unloadCount))
+
+		// Ensure it can read data.
+		labelNames, err := r.LabelNames()
+		require.NoError(t, err)
+		require.Equal(t, []string{"a"}, labelNames)
+		require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.loadCount))
+		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.loadFailedCount))
+		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.unloadCount))
+	})
 }
 
 func TestLazyBinaryReader_ShouldReopenOnUsageAfterClose(t *testing.T) {
 	ctx := context.Background()
 
-	tmpDir, err := os.MkdirTemp("", "test-indexheader")
-	require.NoError(t, err)
-	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
-
+	tmpDir := filepath.Join(t.TempDir(), "test-indexheader")
 	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
 	require.NoError(t, err)
-	defer func() { require.NoError(t, bkt.Close()) }()
+	t.Cleanup(func() { require.NoError(t, bkt.Close()) })
 
 	// Create block.
 	blockID, err := testhelper.CreateBlock(ctx, tmpDir, []labels.Labels{
@@ -142,49 +138,46 @@ func TestLazyBinaryReader_ShouldReopenOnUsageAfterClose(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), metadata.NoneFunc))
 
-	m := NewLazyBinaryReaderMetrics(nil)
-	r, err := NewLazyBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, BinaryReaderConfig{}, m, nil)
-	require.NoError(t, err)
-	require.True(t, r.reader == nil)
+	testLazyBinaryReader(t, bkt, tmpDir, blockID, func(t *testing.T, r *LazyBinaryReader, err error) {
+		require.NoError(t, err)
+		require.Nil(t, r.reader)
 
-	// Should lazy load the index upon first usage.
-	labelNames, err := r.LabelNames()
-	require.NoError(t, err)
-	require.Equal(t, []string{"a"}, labelNames)
-	require.Equal(t, float64(1), promtestutil.ToFloat64(m.loadCount))
-	require.Equal(t, float64(0), promtestutil.ToFloat64(m.loadFailedCount))
+		// Should lazy load the index upon first usage.
+		labelNames, err := r.LabelNames()
+		require.NoError(t, err)
+		require.Equal(t, []string{"a"}, labelNames)
+		require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.loadCount))
+		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.loadFailedCount))
 
-	// Close it.
-	require.NoError(t, r.Close())
-	require.True(t, r.reader == nil)
-	require.Equal(t, float64(1), promtestutil.ToFloat64(m.unloadCount))
-	require.Equal(t, float64(0), promtestutil.ToFloat64(m.unloadFailedCount))
-
-	// Should lazy load again upon next usage.
-	labelNames, err = r.LabelNames()
-	require.NoError(t, err)
-	require.Equal(t, []string{"a"}, labelNames)
-	require.Equal(t, float64(2), promtestutil.ToFloat64(m.loadCount))
-	require.Equal(t, float64(0), promtestutil.ToFloat64(m.loadFailedCount))
-
-	// Closing an already closed lazy reader should be a no-op.
-	for i := 0; i < 2; i++ {
+		// Close it.
 		require.NoError(t, r.Close())
-		require.Equal(t, float64(2), promtestutil.ToFloat64(m.unloadCount))
-		require.Equal(t, float64(0), promtestutil.ToFloat64(m.unloadFailedCount))
-	}
+		require.True(t, r.reader == nil)
+		require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.unloadCount))
+		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.unloadFailedCount))
+
+		// Should lazy load again upon next usage.
+		labelNames, err = r.LabelNames()
+		require.NoError(t, err)
+		require.Equal(t, []string{"a"}, labelNames)
+		require.Equal(t, float64(2), promtestutil.ToFloat64(r.metrics.loadCount))
+		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.loadFailedCount))
+
+		// Closing an already closed lazy reader should be a no-op.
+		for i := 0; i < 2; i++ {
+			require.NoError(t, r.Close())
+			require.Equal(t, float64(2), promtestutil.ToFloat64(r.metrics.unloadCount))
+			require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.unloadFailedCount))
+		}
+	})
 }
 
 func TestLazyBinaryReader_unload_ShouldReturnErrorIfNotIdle(t *testing.T) {
 	ctx := context.Background()
 
-	tmpDir, err := os.MkdirTemp("", "test-indexheader")
-	require.NoError(t, err)
-	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
-
+	tmpDir := filepath.Join(t.TempDir(), "test-indexheader")
 	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
 	require.NoError(t, err)
-	defer func() { require.NoError(t, bkt.Close()) }()
+	t.Cleanup(func() { require.NoError(t, bkt.Close()) })
 
 	// Create block.
 	blockID, err := testhelper.CreateBlock(ctx, tmpDir, []labels.Labels{
@@ -194,33 +187,36 @@ func TestLazyBinaryReader_unload_ShouldReturnErrorIfNotIdle(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), metadata.NoneFunc))
 
-	m := NewLazyBinaryReaderMetrics(nil)
-	r, err := NewLazyBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, BinaryReaderConfig{}, m, nil)
-	require.NoError(t, err)
-	require.True(t, r.reader == nil)
+	testLazyBinaryReader(t, bkt, tmpDir, blockID, func(t *testing.T, r *LazyBinaryReader, err error) {
+		require.NoError(t, err)
+		require.Nil(t, r.reader)
+		t.Cleanup(func() {
+			require.NoError(t, r.Close())
+		})
 
-	// Should lazy load the index upon first usage.
-	labelNames, err := r.LabelNames()
-	require.NoError(t, err)
-	require.Equal(t, []string{"a"}, labelNames)
-	require.Equal(t, float64(1), promtestutil.ToFloat64(m.loadCount))
-	require.Equal(t, float64(0), promtestutil.ToFloat64(m.loadFailedCount))
-	require.Equal(t, float64(0), promtestutil.ToFloat64(m.unloadCount))
-	require.Equal(t, float64(0), promtestutil.ToFloat64(m.unloadFailedCount))
+		// Should lazy load the index upon first usage.
+		labelNames, err := r.LabelNames()
+		require.NoError(t, err)
+		require.Equal(t, []string{"a"}, labelNames)
+		require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.loadCount))
+		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.loadFailedCount))
+		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.unloadCount))
+		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.unloadFailedCount))
 
-	// Try to unload but not idle since enough time.
-	require.Equal(t, errNotIdle, r.unloadIfIdleSince(time.Now().Add(-time.Minute).UnixNano()))
-	require.Equal(t, float64(1), promtestutil.ToFloat64(m.loadCount))
-	require.Equal(t, float64(0), promtestutil.ToFloat64(m.loadFailedCount))
-	require.Equal(t, float64(0), promtestutil.ToFloat64(m.unloadCount))
-	require.Equal(t, float64(0), promtestutil.ToFloat64(m.unloadFailedCount))
+		// Try to unload but not idle since enough time.
+		require.Equal(t, errNotIdle, r.unloadIfIdleSince(time.Now().Add(-time.Minute).UnixNano()))
+		require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.loadCount))
+		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.loadFailedCount))
+		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.unloadCount))
+		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.unloadFailedCount))
 
-	// Try to unload and idle since enough time.
-	require.NoError(t, r.unloadIfIdleSince(time.Now().UnixNano()))
-	require.Equal(t, float64(1), promtestutil.ToFloat64(m.loadCount))
-	require.Equal(t, float64(0), promtestutil.ToFloat64(m.loadFailedCount))
-	require.Equal(t, float64(1), promtestutil.ToFloat64(m.unloadCount))
-	require.Equal(t, float64(0), promtestutil.ToFloat64(m.unloadFailedCount))
+		// Try to unload and idle since enough time.
+		require.NoError(t, r.unloadIfIdleSince(time.Now().UnixNano()))
+		require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.loadCount))
+		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.loadFailedCount))
+		require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.unloadCount))
+		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.unloadFailedCount))
+	})
 }
 
 func TestLazyBinaryReader_LoadUnloadRaceCondition(t *testing.T) {
@@ -229,13 +225,10 @@ func TestLazyBinaryReader_LoadUnloadRaceCondition(t *testing.T) {
 
 	ctx := context.Background()
 
-	tmpDir, err := os.MkdirTemp("", "test-indexheader")
-	require.NoError(t, err)
-	defer func() { require.NoError(t, os.RemoveAll(tmpDir)) }()
-
+	tmpDir := filepath.Join(t.TempDir(), "test-indexheader")
 	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
 	require.NoError(t, err)
-	defer func() { require.NoError(t, bkt.Close()) }()
+	t.Cleanup(func() { require.NoError(t, bkt.Close()) })
 
 	// Create block.
 	blockID, err := testhelper.CreateBlock(ctx, tmpDir, []labels.Labels{
@@ -245,48 +238,72 @@ func TestLazyBinaryReader_LoadUnloadRaceCondition(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), metadata.NoneFunc))
 
-	m := NewLazyBinaryReaderMetrics(nil)
-	r, err := NewLazyBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, blockID, 3, BinaryReaderConfig{}, m, nil)
-	require.NoError(t, err)
-	require.True(t, r.reader == nil)
-	t.Cleanup(func() {
-		require.NoError(t, r.Close())
+	testLazyBinaryReader(t, bkt, tmpDir, blockID, func(t *testing.T, r *LazyBinaryReader, err error) {
+		require.NoError(t, err)
+		require.Nil(t, r.reader)
+		t.Cleanup(func() {
+			require.NoError(t, r.Close())
+		})
+
+		done := make(chan struct{})
+		time.AfterFunc(runDuration, func() { close(done) })
+		wg := sync.WaitGroup{}
+		wg.Add(2)
+
+		// Start a goroutine which continuously try to unload the reader.
+		go func() {
+			defer wg.Done()
+
+			for {
+				select {
+				case <-done:
+					return
+				default:
+					require.NoError(t, r.unloadIfIdleSince(0))
+				}
+			}
+		}()
+
+		// Try to read multiple times, while the other goroutine continuously try to unload it.
+		go func() {
+			defer wg.Done()
+
+			for {
+				select {
+				case <-done:
+					return
+				default:
+					_, err := r.PostingsOffset("a", "1")
+					require.True(t, err == nil || errors.Is(err, errUnloadedWhileLoading))
+				}
+			}
+		}()
+
+		// Wait until both goroutines have done.
+		wg.Wait()
+	})
+}
+
+func testLazyBinaryReader(t *testing.T, bkt objstore.BucketReader, dir string, id ulid.ULID, test func(t *testing.T, r *LazyBinaryReader, err error)) {
+	t.Run("BinaryReader", func(t *testing.T) {
+		ctx := context.Background()
+		logger := log.NewNopLogger()
+		factory := func() (Reader, error) {
+			return NewBinaryReader(ctx, logger, bkt, dir, id, 3, Config{})
+		}
+
+		reader, err := NewLazyBinaryReader(ctx, factory, logger, bkt, dir, id, NewLazyBinaryReaderMetrics(nil), nil)
+		test(t, reader, err)
 	})
 
-	done := make(chan struct{})
-	time.AfterFunc(runDuration, func() { close(done) })
-	wg := sync.WaitGroup{}
-	wg.Add(2)
-
-	// Start a goroutine which continuously try to unload the reader.
-	go func() {
-		defer wg.Done()
-
-		for {
-			select {
-			case <-done:
-				return
-			default:
-				require.NoError(t, r.unloadIfIdleSince(0))
-			}
+	t.Run("StreamBinaryReader", func(t *testing.T) {
+		ctx := context.Background()
+		logger := log.NewNopLogger()
+		factory := func() (Reader, error) {
+			return NewStreamBinaryReader(ctx, logger, bkt, dir, id, 3)
 		}
-	}()
 
-	// Try to read multiple times, while the other goroutine continuously try to unload it.
-	go func() {
-		defer wg.Done()
-
-		for {
-			select {
-			case <-done:
-				return
-			default:
-				_, err := r.PostingsOffset("a", "1")
-				require.True(t, err == nil || errors.Is(err, errUnloadedWhileLoading))
-			}
-		}
-	}()
-
-	// Wait until both goroutines have done.
-	wg.Wait()
+		reader, err := NewLazyBinaryReader(ctx, factory, logger, bkt, dir, id, NewLazyBinaryReaderMetrics(nil), nil)
+		test(t, reader, err)
+	})
 }
