@@ -32,7 +32,7 @@ func NewDecbufFactoryMetrics(reg prometheus.Registerer) *DecbufFactoryMetrics {
 		}),
 		pooledOpenCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "indexheader_stream_pooled_open_total",
-			Help: "Total number of times a pooled index-header file has been used instead of opened.",
+			Help: "Total number of times a pooled index-header file handle has been used instead of opened.",
 		}),
 		closeCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "indexheader_stream_unpooled_close_total",
@@ -40,7 +40,7 @@ func NewDecbufFactoryMetrics(reg prometheus.Registerer) *DecbufFactoryMetrics {
 		}),
 		pooledCloseCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "indexheader_stream_pooled_close_total",
-			Help: "Total number of times pooled index-header file has been returned instead of closed.",
+			Help: "Total number of times pooled index-header file handle has been returned to the pool instead of closed.",
 		}),
 	}
 }
