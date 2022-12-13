@@ -3021,12 +3021,6 @@ bucket_store:
     # CLI flag: -blocks-storage.bucket-store.index-header.stream-reader-enabled
     [stream_reader_enabled: <boolean> | default = false]
 
-  # (experimental) True to reject queries above the max number of concurrent
-  # queries to execute against long-term storage. If false, queries will block
-  # until they are able to run.
-  # CLI flag: -blocks-storage.bucket-store.max-concurrent-reject-over-limit
-  [max_concurrent_reject_over_limit: <boolean> | default = false]
-
   # (experimental) If larger than 0, this option enables store-gateway series
   # streaming. The store-gateway will load series from the bucket in batches
   # instead of buffering them all in memory before returning to the querier.

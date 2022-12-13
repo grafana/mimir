@@ -5696,17 +5696,6 @@
             },
             {
               "kind": "field",
-              "name": "max_concurrent_reject_over_limit",
-              "required": false,
-              "desc": "True to reject queries above the max number of concurrent queries to execute against long-term storage. If false, queries will block until they are able to run.",
-              "fieldValue": null,
-              "fieldDefaultValue": false,
-              "fieldFlag": "blocks-storage.bucket-store.max-concurrent-reject-over-limit",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
               "name": "streaming_series_batch_size",
               "required": false,
               "desc": "If larger than 0, this option enables store-gateway series streaming. The store-gateway will load series from the bucket in batches instead of buffering them all in memory before returning to the querier. This option controls how many series to fetch per batch.",
