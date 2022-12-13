@@ -743,10 +743,13 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 	}
 	nextPostings := s.postingsSetIterator.At()
 
-	// calculate the cache key before we filter out anything from the postings so that the key doesn't depend on the series hash cache
-	seriesCacheKey := indexcache.CanonicalPostingsKey(nextPostings)
+	var seriesCacheKey indexcache.PostingsKey
 	if s.skipChunks {
-		if cachedSet, isCached := fetchCachedSeries(s.ctx, s.tenantID, s.indexCache, s.blockID, s.matchers, s.shard, seriesCacheKey, s.logger); isCached {
+		// Calculate the cache key before we filter out anything from the postings,
+		// so that the key doesn't depend on the series hash cache or any other filtering we do on the postings list.
+		// Calculate the postings key only if we'll actually use it.
+		seriesCacheKey = indexcache.CanonicalPostingsKey(nextPostings)
+		if cachedSet, isCached := fetchCachedSeriesForPostings(s.ctx, s.tenantID, s.indexCache, s.blockID, s.matchers, s.shard, seriesCacheKey, s.logger); isCached {
 			s.currentSet = cachedSet
 			return true
 		}
@@ -807,7 +810,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 
 	s.currentSet = nextSet
 	if s.skipChunks {
-		storeCachedSeries(s.ctx, s.indexCache, s.tenantID, s.blockID, s.matchers, s.shard, seriesCacheKey, extractLabelsFromSeriesChunkRefs(nextSet.series), s.logger)
+		storeCachedSeriesForPostings(s.ctx, s.indexCache, s.tenantID, s.blockID, s.matchers, s.shard, seriesCacheKey, nextSet, s.logger)
 	}
 	return true
 }

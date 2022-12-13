@@ -1497,13 +1497,15 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 	require.NoError(t, ss.Err())
 	require.Equal(t, expectedLabelSet, lset)
 
+	b.indexCache = forbiddenFetchMultiSeriesForRefsIndexCache{b.indexCache, t}
+
 	// Cache should be filled by now. Pass an index cache that fails the test if you try to access the postings
 	ss, err = openBlockSeriesChunkRefsSetsIterator(
 		context.Background(),
 		batchSize,
 		"",
 		indexReader,
-		forbiddenFetchMultiSeriesForRefsIndexCache{b.indexCache, t},
+		b.indexCache,
 		b.meta,
 		matchers,
 		nil,

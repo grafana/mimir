@@ -9,7 +9,6 @@ import (
 	"context"
 	"crypto/sha1"
 	"encoding/base64"
-	"hash/fnv"
 	"sort"
 	"strings"
 
@@ -17,18 +16,19 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"golang.org/x/crypto/blake2b"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
 )
 
 const (
-	cacheTypePostings         = "Postings"
-	cacheTypeSeriesForRef     = "SeriesForRef"
-	cacheTypeExpandedPostings = "ExpandedPostings"
-	cacheTypeSeries           = "Series"
-	cacheTypeSeriesParts      = "SeriesParts"
-	cacheTypeLabelNames       = "LabelNames"
-	cacheTypeLabelValues      = "LabelValues"
+	cacheTypePostings          = "Postings"
+	cacheTypeSeriesForRef      = "SeriesForRef"
+	cacheTypeExpandedPostings  = "ExpandedPostings"
+	cacheTypeSeries            = "Series"
+	cacheTypeSeriesForPostings = "SeriesForPostings"
+	cacheTypeLabelNames        = "LabelNames"
+	cacheTypeLabelValues       = "LabelValues"
 )
 
 var (
@@ -37,7 +37,7 @@ var (
 		cacheTypeSeriesForRef,
 		cacheTypeExpandedPostings,
 		cacheTypeSeries,
-		cacheTypeSeriesParts,
+		cacheTypeSeriesForPostings,
 		cacheTypeLabelNames,
 		cacheTypeLabelValues,
 	}
@@ -66,9 +66,14 @@ type IndexCache interface {
 	FetchExpandedPostings(ctx context.Context, userID string, blockID ulid.ULID, key LabelMatchersKey) ([]byte, bool)
 
 	// StoreSeries stores the result of a Series() call.
-	StoreSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, postingsKey PostingsKey, v []byte)
+	StoreSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, v []byte)
 	// FetchSeries fetches the result of a Series() call.
-	FetchSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, postingsKey PostingsKey) ([]byte, bool)
+	FetchSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector) ([]byte, bool)
+
+	// StoreSeriesForPostings stores a series set for the provided postings.
+	StoreSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, postingsKey PostingsKey, v []byte)
+	// FetchSeriesForPostings fetches a series set for the provided postings.
+	FetchSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, postingsKey PostingsKey) ([]byte, bool)
 
 	// StoreLabelNames stores the result of a LabelNames() call.
 	StoreLabelNames(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, v []byte)

@@ -145,9 +145,15 @@ func (c noopCache) FetchExpandedPostings(_ context.Context, _ string, _ ulid.ULI
 	return nil, false
 }
 
-func (noopCache) StoreSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey indexcache.LabelMatchersKey, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey, v []byte) {
+func (noopCache) StoreSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey indexcache.LabelMatchersKey, shard *sharding.ShardSelector, v []byte) {
 }
-func (noopCache) FetchSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey indexcache.LabelMatchersKey, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey) ([]byte, bool) {
+func (noopCache) FetchSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey indexcache.LabelMatchersKey, shard *sharding.ShardSelector) ([]byte, bool) {
+	return nil, false
+}
+
+func (noopCache) StoreSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, matchersKey indexcache.LabelMatchersKey, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey, v []byte) {
+}
+func (noopCache) FetchSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, matchersKey indexcache.LabelMatchersKey, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey) ([]byte, bool) {
 	return nil, false
 }
 
@@ -581,23 +587,20 @@ func blockSeries(
 
 	reqStats := newSafeQueryStats()
 
-	ps, err := indexr.ExpandedPostings(ctx, matchers, reqStats)
-	if err != nil {
-		return nil, nil, errors.Wrap(err, "expanded matching posting")
-	}
-
-	// calculate the cache key before we filter out anything from the postings so that the key doesn't depend on the series hash cache
-	seriesCacheKey := indexcache.CanonicalPostingsKey(ps)
-
 	if skipChunks {
 		span.LogKV("msg", "manipulating mint/maxt to cover the entire block as skipChunks=true")
 		minTime, maxTime = indexr.block.meta.MinTime, indexr.block.meta.MaxTime
 
-		res, ok := fetchCachedSeries(ctx, indexr.block.userID, indexr.block.indexCache, indexr.block.meta.ULID, matchers, shard, seriesCacheKey, logger)
+		res, ok := fetchCachedSeries(ctx, indexr.block.userID, indexr.block.indexCache, indexr.block.meta.ULID, matchers, shard, logger)
 		if ok {
-			span.LogKV("msg", "using cached result", "len", res.len())
-			return &seriesChunkRefsIteratorSeriesSetAdaptor{newSeriesChunkRefsIterator(res)}, reqStats, nil
+			span.LogKV("msg", "using cached result", "len", len(res))
+			return newBucketSeriesSet(res), reqStats, nil
 		}
+	}
+
+	ps, err := indexr.ExpandedPostings(ctx, matchers, reqStats)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "expanded matching posting")
 	}
 
 	// We can't compute the series hash yet because we're still missing the series labels.
@@ -717,7 +720,7 @@ func blockSeries(
 	}
 
 	if skipChunks {
-		storeCachedSeries(ctx, indexr.block.indexCache, indexr.block.userID, indexr.block.meta.ULID, matchers, shard, seriesCacheKey, extractLabelsFromSeriesEntries(res), logger)
+		storeCachedSeries(ctx, indexr.block.indexCache, indexr.block.userID, indexr.block.meta.ULID, matchers, shard, res, logger)
 		reqStats.merge(&seriesCacheStats)
 		return newBucketSeriesSet(res), reqStats, nil
 	}
@@ -730,27 +733,69 @@ func blockSeries(
 	return newBucketSeriesSet(res), reqStats, nil
 }
 
-func extractLabelsFromSeriesEntries(entries []seriesEntry) (result []labels.Labels) {
-	result = make([]labels.Labels, len(entries))
-	for i := range result {
-		result[i] = entries[i].lset
-	}
-	return
-}
-
 type seriesCacheEntry struct {
 	LabelSets   []labels.Labels
 	MatchersKey indexcache.LabelMatchersKey
 	Shard       sharding.ShardSelector
 }
 
-func fetchCachedSeries(ctx context.Context, userID string, indexCache indexcache.IndexCache, blockID ulid.ULID, matchers []*labels.Matcher, shard *sharding.ShardSelector, postings indexcache.PostingsKey, logger log.Logger) (seriesChunkRefsSet, bool) {
+func fetchCachedSeries(ctx context.Context, userID string, indexCache indexcache.IndexCache, blockID ulid.ULID, matchers []*labels.Matcher, shard *sharding.ShardSelector, logger log.Logger) ([]seriesEntry, bool) {
 	matchersKey := indexcache.CanonicalLabelMatchersKey(matchers)
-	data, ok := indexCache.FetchSeries(ctx, userID, blockID, matchersKey, shard, postings)
+	data, ok := indexCache.FetchSeries(ctx, userID, blockID, matchersKey, shard)
+	if !ok {
+		return nil, false
+	}
+	var entry seriesCacheEntry
+	if err := decodeSnappyGob(data, &entry); err != nil {
+		level.Warn(spanlogger.FromContext(ctx, logger)).Log("msg", "can't decode series cache", "err", err)
+		return nil, false
+	}
+	if entry.MatchersKey != matchersKey {
+		level.Debug(spanlogger.FromContext(ctx, logger)).Log("msg", "cached series entry key doesn't match, possible collision", "cached_key", entry.MatchersKey, "requested_key", matchersKey)
+		return nil, false
+	}
+	if entry.Shard != maybeNilShard(shard) {
+		level.Debug(spanlogger.FromContext(ctx, logger)).Log("msg", "cached series shard doesn't match, possible collision", "cached_shard", entry.Shard, "requested_shard", maybeNilShard(shard))
+		return nil, false
+	}
+
+	res := make([]seriesEntry, len(entry.LabelSets))
+	for i, lset := range entry.LabelSets {
+		res[i].lset = lset
+	}
+	return res, true
+}
+
+func storeCachedSeries(ctx context.Context, indexCache indexcache.IndexCache, userID string, blockID ulid.ULID, matchers []*labels.Matcher, shard *sharding.ShardSelector, series []seriesEntry, logger log.Logger) {
+	entry := seriesCacheEntry{
+		LabelSets:   make([]labels.Labels, len(series)),
+		MatchersKey: indexcache.CanonicalLabelMatchersKey(matchers),
+		Shard:       maybeNilShard(shard),
+	}
+	for i, s := range series {
+		entry.LabelSets[i] = s.lset
+	}
+	data, err := encodeSnappyGob(entry)
+	if err != nil {
+		level.Error(spanlogger.FromContext(ctx, logger)).Log("msg", "can't encode series for caching", "err", err)
+		return
+	}
+	indexCache.StoreSeries(ctx, userID, blockID, entry.MatchersKey, shard, data)
+}
+
+type seriesForPostingsCacheEntry struct {
+	LabelSets   []labels.Labels
+	MatchersKey indexcache.LabelMatchersKey
+	Shard       sharding.ShardSelector
+}
+
+func fetchCachedSeriesForPostings(ctx context.Context, userID string, indexCache indexcache.IndexCache, blockID ulid.ULID, matchers []*labels.Matcher, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey, logger log.Logger) (seriesChunkRefsSet, bool) {
+	matchersKey := indexcache.CanonicalLabelMatchersKey(matchers)
+	data, ok := indexCache.FetchSeriesForPostings(ctx, userID, blockID, matchersKey, shard, postingsKey)
 	if !ok {
 		return seriesChunkRefsSet{}, false
 	}
-	var entry seriesCacheEntry
+	var entry seriesForPostingsCacheEntry
 	if err := decodeSnappyGob(data, &entry); err != nil {
 		level.Warn(spanlogger.FromContext(ctx, logger)).Log("msg", "can't decode series cache", "err", err)
 		return seriesChunkRefsSet{}, false
@@ -775,18 +820,22 @@ func fetchCachedSeries(ctx context.Context, userID string, indexCache indexcache
 	return res, true
 }
 
-func storeCachedSeries(ctx context.Context, indexCache indexcache.IndexCache, userID string, blockID ulid.ULID, matchers []*labels.Matcher, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey, series []labels.Labels, logger log.Logger) {
-	entry := seriesCacheEntry{
-		LabelSets:   series,
+func storeCachedSeriesForPostings(ctx context.Context, indexCache indexcache.IndexCache, userID string, blockID ulid.ULID, matchers []*labels.Matcher, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey, set seriesChunkRefsSet, logger log.Logger) {
+	entry := seriesForPostingsCacheEntry{
+		LabelSets:   make([]labels.Labels, set.len()),
 		MatchersKey: indexcache.CanonicalLabelMatchersKey(matchers),
 		Shard:       maybeNilShard(shard),
 	}
+	for i, s := range set.series {
+		entry.LabelSets[i] = s.lset
+	}
+
 	data, err := encodeSnappyGob(entry)
 	if err != nil {
 		level.Error(spanlogger.FromContext(ctx, logger)).Log("msg", "can't encode series for caching", "err", err)
 		return
 	}
-	indexCache.StoreSeries(ctx, userID, blockID, entry.MatchersKey, shard, postingsKey, data)
+	indexCache.StoreSeriesForPostings(ctx, userID, blockID, entry.MatchersKey, shard, postingsKey, data)
 }
 
 // debugFoundBlockSetOverview logs on debug level what exactly blocks we used for query in terms of

@@ -91,13 +91,13 @@ func (t *TracingIndexCache) FetchExpandedPostings(ctx context.Context, userID st
 	return data, found
 }
 
-func (t *TracingIndexCache) StoreSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, postingsKey PostingsKey, v []byte) {
-	t.c.StoreSeries(ctx, userID, blockID, matchersKey, shard, postingsKey, v)
+func (t *TracingIndexCache) StoreSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, v []byte) {
+	t.c.StoreSeries(ctx, userID, blockID, matchersKey, shard, v)
 }
 
-func (t *TracingIndexCache) FetchSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, postingsKey PostingsKey) ([]byte, bool) {
+func (t *TracingIndexCache) FetchSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector) ([]byte, bool) {
 	t0 := time.Now()
-	data, found := t.c.FetchSeries(ctx, userID, blockID, matchersKey, shard, postingsKey)
+	data, found := t.c.FetchSeries(ctx, userID, blockID, matchersKey, shard)
 
 	spanLogger := spanlogger.FromContext(ctx, t.logger)
 	level.Debug(spanLogger).Log(
@@ -108,6 +108,29 @@ func (t *TracingIndexCache) FetchSeries(ctx context.Context, userID string, bloc
 		"time elapsed", time.Since(t0),
 		"returned bytes", len(data),
 		"user_id", userID,
+	)
+
+	return data, found
+}
+
+func (t *TracingIndexCache) StoreSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, postingsKey PostingsKey, v []byte) {
+	t.c.StoreSeriesForPostings(ctx, userID, blockID, matchersKey, shard, postingsKey, v)
+}
+
+func (t *TracingIndexCache) FetchSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, postingsKey PostingsKey) ([]byte, bool) {
+	t0 := time.Now()
+	data, found := t.c.FetchSeriesForPostings(ctx, userID, blockID, matchersKey, shard, postingsKey)
+
+	spanLogger := spanlogger.FromContext(ctx, t.logger)
+	level.Debug(spanLogger).Log(
+		"msg", "IndexCache.FetchSeriesForPostings",
+		"requested key", matchersKey,
+		"shard", shardKey(shard),
+		"found", found,
+		"time elapsed", time.Since(t0),
+		"returned bytes", len(data),
+		"user_id", userID,
+		"postings_key", postingsKey,
 	)
 
 	return data, found

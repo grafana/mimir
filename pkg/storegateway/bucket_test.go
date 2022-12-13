@@ -2345,12 +2345,12 @@ type cacheNotExpectingToStoreSeries struct {
 	t *testing.T
 }
 
-func (c cacheNotExpectingToStoreSeries) StoreSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey indexcache.LabelMatchersKey, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey, v []byte) {
+func (c cacheNotExpectingToStoreSeries) StoreSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey indexcache.LabelMatchersKey, shard *sharding.ShardSelector, v []byte) {
 	c.t.Fatalf("StoreSeries should not be called")
 }
 
-func (c cacheNotExpectingToStoreSeries) StoreSeriesParts(ctx context.Context, userID string, blockID ulid.ULID, matchersKey indexcache.LabelMatchersKey, shard *sharding.ShardSelector, v []byte) {
-	c.t.Fatalf("StoreSeriesParts should not be called")
+func (c cacheNotExpectingToStoreSeries) StoreSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, matchersKey indexcache.LabelMatchersKey, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey, v []byte) {
+	c.t.Fatalf("StoreSeriesForPostings should not be called")
 }
 
 type headGenOptions struct {
