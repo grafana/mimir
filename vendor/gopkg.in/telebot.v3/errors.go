@@ -235,3 +235,8 @@ func Err(s string) error {
 		return nil
 	}
 }
+
+// wrapError returns new wrapped telebot-related error.
+func wrapError(err error) error {
+	return fmt.Errorf("telebot: %w", err)
+}

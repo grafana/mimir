@@ -6,6 +6,7 @@
 package indexheader
 
 import (
+	"flag"
 	"io"
 
 	"github.com/pkg/errors"
@@ -40,4 +41,14 @@ type Reader interface {
 
 	// LabelNames returns all label names in sorted order.
 	LabelNames() ([]string, error)
+}
+
+type Config struct {
+	MapPopulateEnabled  bool `yaml:"map_populate_enabled" category:"experimental"`
+	StreamReaderEnabled bool `yaml:"stream_reader_enabled" category:"experimental"`
+}
+
+func (cfg *Config) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
+	f.BoolVar(&cfg.MapPopulateEnabled, prefix+"map-populate-enabled", false, "If enabled, the store-gateway will attempt to pre-populate the file system cache when memory-mapping index-header files.")
+	f.BoolVar(&cfg.StreamReaderEnabled, prefix+"stream-reader-enabled", false, "If enabled, the store-gateway will use an experimental streaming reader to load and parse index-header files.")
 }

@@ -39,7 +39,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 		return help + "This config option should be set on query-frontend too when query sharding is enabled."
 	}
 
-	f.IntVar(&cfg.MaxConcurrent, "querier.max-concurrent", 20, sharedWithQueryFrontend("The maximum number of concurrent queries."))
+	f.IntVar(&cfg.MaxConcurrent, "querier.max-concurrent", 20, "The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier.")
 	f.DurationVar(&cfg.Timeout, "querier.timeout", 2*time.Minute, sharedWithQueryFrontend("The timeout for a query.")+" This also applies to queries evaluated by the ruler (internally or remotely).")
 	f.IntVar(&cfg.MaxSamples, "querier.max-samples", 50e6, sharedWithQueryFrontend("Maximum number of samples a single query can load into memory."))
 	f.DurationVar(&cfg.DefaultEvaluationInterval, "querier.default-evaluation-interval", time.Minute, sharedWithQueryFrontend("The default evaluation interval or step size for subqueries."))

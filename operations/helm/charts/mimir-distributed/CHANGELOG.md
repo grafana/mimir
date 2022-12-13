@@ -30,6 +30,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 * [ENHANCEMENT] Update the `rollout-operator` subchart to `0.2.0`. #3624
 * [ENHANCEMENT] Add ability to manage PrometheusRule for metamonitoring with Prometheus operator from the Helm chart. The alerts are disabled by default but can be enabled with `prometheusRule.mimirAlerts` set to `true`. To enable the default rules, set `mimirRules` to `true`. #2134 #2609
+* [BUGFIX] Enable `rollout-operator` to use PodSecurityPolicies if necessary
 
 ## 4.0.0
 
@@ -68,6 +69,7 @@ Entries should include a reference to the Pull Request that introduced the chang
   Mimir under the `metamonitoring` tenant; this enhancement does not apply to GEM. #3176
 * [ENHANCEMENT] Improve default rollout strategies. Now distributor, overrides_exporter, querier, query_frontend, admin_api, gateway, and graphite components can be upgraded more quickly and also can be rolled out with a single replica without downtime. #3029
 * [ENHANCEMENT] Metamonitoring: make scrape interval configurable. #2945
+* [ENHANCEMENT] Documented how to prevent a user from using a mismatched Helm chart `values.yaml` file. #3197
 * [ENHANCEMENT] Update compactor configuration to match Jsonnet. #3353
   * This also now matches production configuration from Grafana Cloud
   * Set `compactor.compaction_interval` to `30m` (Decreased from `1h`)

@@ -12,7 +12,7 @@ weight: 110
 
 Zone-aware replication is the replication of data across failure domains.
 Zone-aware replication helps to avoid data loss during a domain outage.
-Grafana Mimir defines failure domains as _zones_, which includes, but are not limited to:
+Grafana Mimir defines failure domains as _zones_. Depending on the underlying infrastructure that Grafana Mimir is deployed on, zones could be, for example,
 
 - Availability zones
 - Data centers

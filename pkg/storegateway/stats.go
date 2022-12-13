@@ -52,6 +52,8 @@ type queryStats struct {
 	mergedSeriesCount int
 	mergedChunksCount int
 	mergeDuration     time.Duration
+
+	expandedPostingsDuration time.Duration
 }
 
 func (s queryStats) merge(o *queryStats) *queryStats {
@@ -59,6 +61,7 @@ func (s queryStats) merge(o *queryStats) *queryStats {
 
 	s.postingsTouched += o.postingsTouched
 	s.postingsTouchedSizeSum += o.postingsTouchedSizeSum
+	s.postingsToFetch += o.postingsToFetch
 	s.postingsFetched += o.postingsFetched
 	s.postingsFetchedSizeSum += o.postingsFetchedSizeSum
 	s.postingsFetchCount += o.postingsFetchCount
@@ -94,6 +97,8 @@ func (s queryStats) merge(o *queryStats) *queryStats {
 	s.mergedSeriesCount += o.mergedSeriesCount
 	s.mergedChunksCount += o.mergedChunksCount
 	s.mergeDuration += o.mergeDuration
+
+	s.expandedPostingsDuration += o.expandedPostingsDuration
 
 	return &s
 }

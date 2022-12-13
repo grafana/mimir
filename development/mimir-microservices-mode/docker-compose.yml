@@ -228,6 +228,7 @@
       - "9090:9090"
     "volumes":
       - "./config:/etc/prometheus"
+      - "../../operations/mimir-mixin-compiled/alerts.yaml:/etc/alerts/alerts.yaml"
   "querier":
     "build":
       "context": "."

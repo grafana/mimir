@@ -5,7 +5,6 @@ package storegateway
 import (
 	"context"
 
-	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
@@ -170,7 +169,6 @@ func (emptySeriesChunkRefsSetIterator) Next() bool             { return false }
 func (emptySeriesChunkRefsSetIterator) At() seriesChunkRefsSet { return seriesChunkRefsSet{} }
 func (emptySeriesChunkRefsSetIterator) Err() error             { return nil }
 
-//nolint:unused // dead code while we are working on PR 3355
 func mergedSeriesChunkRefsSetIterators(mergedSize int, all ...seriesChunkRefsSetIterator) seriesChunkRefsSetIterator {
 	switch len(all) {
 	case 0:
@@ -339,20 +337,24 @@ func (s *mergedSeriesChunkRefsSet) At() seriesChunkRefsSet {
 	return s.current
 }
 
-type seriesSetWithoutChunks struct {
+type seriesChunkRefsSeriesSet struct {
 	from seriesChunkRefsSetIterator
 
 	currentIterator *seriesChunkRefsIteratorImpl
 }
 
-func newSeriesSetWithoutChunks(batches seriesChunkRefsSetIterator) storepb.SeriesSet {
-	return &seriesSetWithoutChunks{
-		from:            batches,
+func newSeriesChunkRefsSeriesSet(from seriesChunkRefsSetIterator) storepb.SeriesSet {
+	return &seriesChunkRefsSeriesSet{
+		from:            from,
 		currentIterator: newSeriesChunkRefsIterator(seriesChunkRefsSet{}),
 	}
 }
 
-func (s *seriesSetWithoutChunks) Next() bool {
+func newSeriesSetWithoutChunks(ctx context.Context, batches seriesChunkRefsSetIterator) storepb.SeriesSet {
+	return newSeriesChunkRefsSeriesSet(newPreloadingSetIterator[seriesChunkRefsSet](ctx, 1, batches))
+}
+
+func (s *seriesChunkRefsSeriesSet) Next() bool {
 	if s.currentIterator.Next() {
 		return true
 	}
@@ -371,11 +373,11 @@ func (s *seriesSetWithoutChunks) Next() bool {
 	return s.Next()
 }
 
-func (s *seriesSetWithoutChunks) At() (labels.Labels, []storepb.AggrChunk) {
+func (s *seriesChunkRefsSeriesSet) At() (labels.Labels, []storepb.AggrChunk) {
 	return s.currentIterator.At().lset, nil
 }
 
-func (s *seriesSetWithoutChunks) Err() error {
+func (s *seriesChunkRefsSeriesSet) Err() error {
 	return s.from.Err()
 }
 
@@ -513,7 +515,6 @@ type loadingSeriesChunkRefsSetIterator struct {
 	currentSet seriesChunkRefsSet
 }
 
-//nolint:unused // dead code while we are working on PR 3355
 func openBlockSeriesChunkRefsSetsIterator(
 	ctx context.Context,
 	batchSize int,
@@ -527,7 +528,7 @@ func openBlockSeriesChunkRefsSetsIterator(
 	skipChunks bool, // If true chunks are not loaded and minTime/maxTime are ignored.
 	minTime, maxTime int64, // Series must have data in this time range to be returned (ignored if skipChunks=true).
 	stats *safeQueryStats,
-	logger log.Logger,
+	metrics *BucketStoreMetrics,
 ) (seriesChunkRefsSetIterator, error) {
 	if batchSize <= 0 {
 		return nil, errors.New("set size must be a positive number")
@@ -547,10 +548,10 @@ func openBlockSeriesChunkRefsSetsIterator(
 		stats.merge(&unsafeStats)
 	}
 
-	postingsIterator := newPostingsSetsIterator(ps, batchSize)
-	loadingIterator := newLoadingSeriesChunkRefsSetIterator(
+	var iterator seriesChunkRefsSetIterator
+	iterator = newLoadingSeriesChunkRefsSetIterator(
 		ctx,
-		postingsIterator,
+		newPostingsSetsIterator(ps, batchSize),
 		indexr,
 		stats,
 		blockMeta,
@@ -560,14 +561,9 @@ func openBlockSeriesChunkRefsSetsIterator(
 		minTime,
 		maxTime,
 	)
-
-	limitingIterator := newLimitingSeriesChunkRefsSetIterator(
-		loadingIterator,
-		chunksLimiter,
-		seriesLimiter,
-	)
-
-	return limitingIterator, nil
+	iterator = newDurationMeasuringIterator[seriesChunkRefsSet](iterator, metrics.iteratorLoadDurations.WithLabelValues("series_load"))
+	iterator = newLimitingSeriesChunkRefsSetIterator(iterator, chunksLimiter, seriesLimiter)
+	return iterator, nil
 }
 
 func newLoadingSeriesChunkRefsSetIterator(
