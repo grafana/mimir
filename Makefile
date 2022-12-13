@@ -317,8 +317,6 @@ lint: check-makefiles
 		./pkg/...
 
 	# Use the faster slices.Sort where we can.
-	# See https://github.com/prometheus/prometheus/pull/11054 and https://github.com/prometheus/prometheus/pull/11318 for more
-	# background information on slices.Sort() and the real-world performance impact it can have.
 	# Note that we don't automatically suggest replacing sort.Float64s() with slices.Sort() as the documentation for slices.Sort()
 	# at the time of writing warns that slices.Sort() may not correctly handle NaN values.
 	faillint -paths \
