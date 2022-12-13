@@ -61,7 +61,7 @@ func TestShipper(t *testing.T) {
 	id1 := ulid.MustNew(1, nil)
 
 	t.Run("sync first block", func(t *testing.T) {
-		// No metrics have been uploaded yet.
+		// No blocks have been uploaded yet.
 		require.Equal(t, float64(0), testutil.ToFloat64(s.metrics.lastSuccessfulUploadTime))
 
 		createBlock(t, blocksDir, id1, metadata.Meta{
@@ -83,8 +83,6 @@ func TestShipper(t *testing.T) {
 		require.Equal(t, 1, uploaded)
 
 		// Verify that the lastSuccessfulUploadTime was updated to within the last 2 seconds.
-		// WARNING(jhesketh): This check is ultimately non-deterministic. If we get flakiness
-		//										on this/in the CI etc, we should increase the duration.
 		require.WithinDuration(t, time.Now(), time.UnixMilli(int64(testutil.ToFloat64(s.metrics.lastSuccessfulUploadTime)*1000)), 2*time.Second)
 
 		// Verify that shipper has created a file for itself.
