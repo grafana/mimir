@@ -95,7 +95,7 @@ func TestDecbufFactory_NewDecbufAtChecked_MultipleInstances(t *testing.T) {
 		require.NoError(t, d1.Close())
 
 		d2 := factory.NewDecbufAtChecked(0, table)
-		require.NoError(t, d1.Err())
+		require.NoError(t, d2.Err())
 		fd2 := d2.r.file.Fd()
 		require.NoError(t, d2.Close())
 
