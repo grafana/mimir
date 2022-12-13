@@ -3,6 +3,7 @@
 package encoding
 
 import (
+	"context"
 	"encoding/binary"
 	"hash/crc32"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	promencoding "github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 )
 
 const testContentSize = 4096
@@ -102,6 +104,41 @@ func TestDecbufFactory_NewDecbufAtChecked_MultipleInstances(t *testing.T) {
 
 		require.NoError(t, d2.Err())
 		require.Equal(t, testContentSize+crc32.Size, d2.Len())
+	})
+}
+
+func TestDecbufFactory_NewDecbufAtChecked_Concurrent(t *testing.T) {
+	enc := createTestEncoder(testContentSize)
+	enc.PutHash(crc32.New(table))
+
+	const (
+		runs        = 100
+		concurrency = 10
+	)
+
+	testDecbufFactory(t, testContentSize, enc, func(t *testing.T, factory *DecbufFactory) {
+		g, _ := errgroup.WithContext(context.Background())
+
+		for i := 0; i < concurrency; i++ {
+			g.Go(func() error {
+				for run := 0; run < runs; run++ {
+					d := factory.NewDecbufAtChecked(0, table)
+
+					if err := d.Err(); err != nil {
+						_ = d.Close()
+						return err
+					}
+
+					if err := d.Close(); err != nil {
+						return err
+					}
+				}
+
+				return nil
+			})
+		}
+
+		require.NoError(t, g.Wait())
 	})
 }
 
