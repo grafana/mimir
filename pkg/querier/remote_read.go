@@ -186,21 +186,37 @@ func seriesSetToQueryResponse(s storage.SeriesSet) (*client.QueryResponse, error
 	for s.Next() {
 		series := s.At()
 		samples := []mimirpb.Sample{}
+		histograms := []mimirpb.Histogram{}
 		it := series.Iterator()
-		for it.Next() == chunkenc.ValFloat {
-			t, v := it.At()
-			samples = append(samples, mimirpb.Sample{
-				TimestampMs: t,
-				Value:       v,
-			})
+		for {
+			typ := it.Next()
+			if typ == chunkenc.ValFloat {
+				t, v := it.At()
+				samples = append(samples, mimirpb.Sample{
+					TimestampMs: t,
+					Value:       v,
+				})
+			} else if typ == chunkenc.ValHistogram {
+				t, h := it.AtHistogram()
+				histograms = append(histograms, mimirpb.FromHistogramToHistogramProto(t, h))
+			} else {
+				break
+			}
 		}
 		if err := it.Err(); err != nil {
 			return nil, err
 		}
-		result.Timeseries = append(result.Timeseries, mimirpb.TimeSeries{
-			Labels:  mimirpb.FromLabelsToLabelAdapters(series.Labels()),
-			Samples: samples,
-		})
+		if len(histograms) > 0 {
+			result.Timeseries = append(result.Timeseries, mimirpb.TimeSeries{
+				Labels:     mimirpb.FromLabelsToLabelAdapters(series.Labels()),
+				Histograms: histograms,
+			})
+		} else {
+			result.Timeseries = append(result.Timeseries, mimirpb.TimeSeries{
+				Labels:  mimirpb.FromLabelsToLabelAdapters(series.Labels()),
+				Samples: samples,
+			})
+		}
 	}
 
 	return result, s.Err()

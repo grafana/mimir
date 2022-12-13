@@ -55,16 +55,8 @@ func TestQuerierRemoteRead(t *testing.T) {
 	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring
 	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
 
-	// Push a series for each user to Mimir.
-	now := time.Now()
-
 	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", "user-1")
 	require.NoError(t, err)
-
-	series, expectedVectors, _ := generateSeries("series_1", now)
-	res, err := c.Push(series)
-	require.NoError(t, err)
-	require.Equal(t, 200, res.StatusCode)
 
 	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
 	require.NoError(t, s.StartAndWaitReady(querier))
@@ -72,7 +64,20 @@ func TestQuerierRemoteRead(t *testing.T) {
 	// Wait until the querier has updated the ring.
 	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 
-	matcher, err := labels.NewMatcher(labels.MatchEqual, "__name__", "series_1")
+	runTestPushSeriesForQuerierRemoteRead(t, c, querier, "series_1", generateSeries)
+	runTestPushSeriesForQuerierRemoteRead(t, c, querier, "hseries_1", generateHistogramSeries)
+}
+
+func runTestPushSeriesForQuerierRemoteRead(t *testing.T, c *e2emimir.Client, querier *e2emimir.MimirService, seriesName string, genSeries generateSeriesFunc) {
+	// Push a series for each user to Mimir.
+	now := time.Now()
+
+	series, expectedVectors, _ := genSeries(seriesName, now)
+	res, err := c.Push(series)
+	require.NoError(t, err)
+	require.Equal(t, 200, res.StatusCode)
+
+	matcher, err := labels.NewMatcher(labels.MatchEqual, "__name__", seriesName)
 	require.NoError(t, err)
 
 	startMs := now.Add(-1*time.Minute).Unix() * 1000
@@ -125,10 +130,21 @@ func TestQuerierRemoteRead(t *testing.T) {
 	require.Len(t, resp.Results, 1)
 	require.Len(t, resp.Results[0].Timeseries, 1)
 	require.Len(t, resp.Results[0].Timeseries[0].Labels, 1)
-	require.Equal(t, "series_1", resp.Results[0].Timeseries[0].Labels[0].GetValue())
-	require.Len(t, resp.Results[0].Timeseries[0].Samples, 1)
-	require.Equal(t, int64(expectedVectors[0].Timestamp), resp.Results[0].Timeseries[0].Samples[0].Timestamp)
-	require.Equal(t, float64(expectedVectors[0].Value), resp.Results[0].Timeseries[0].Samples[0].Value)
+	require.Equal(t, seriesName, resp.Results[0].Timeseries[0].Labels[0].GetValue())
+	isSeriesFloat := len(resp.Results[0].Timeseries[0].Samples) == 1
+	isSeriesHistogram := len(resp.Results[0].Timeseries[0].Histograms) == 1
+	require.Equal(t, isSeriesFloat, !isSeriesHistogram)
+	if isSeriesFloat {
+		require.Equal(t, int64(expectedVectors[0].Timestamp), resp.Results[0].Timeseries[0].Samples[0].Timestamp)
+		require.Equal(t, float64(expectedVectors[0].Value), resp.Results[0].Timeseries[0].Samples[0].Value)
+	} else if isSeriesHistogram {
+		histogram := resp.Results[0].Timeseries[0].Histograms[0]
+		require.Equal(t, int64(expectedVectors[0].Timestamp), histogram.Timestamp)
+		require.Equal(t, uint64(expectedVectors[0].Histogram.Count), histogram.GetCountInt())
+		require.Equal(t, float64(expectedVectors[0].Histogram.Sum), histogram.Sum)
+		// TODO(zenador): compare the buckets instead of below
+		// require.Equal(t, expectedVectors[0].Histogram, histogram)
+	}
 }
 
 func TestQuerierStreamingRemoteRead(t *testing.T) {
