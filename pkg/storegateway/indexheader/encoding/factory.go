@@ -15,10 +15,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-// readerBufferSize is the size of the buffer used for reading index-header files. This
-// value is arbitrary and will likely change in the future based on profiling results.
-const readerBufferSize = 4096
-
 var ErrPoolStopped = errors.New("file handle pool is stopped")
 
 type DecbufFactoryMetrics struct {

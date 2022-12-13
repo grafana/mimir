@@ -11,6 +11,10 @@ import (
 	"sync"
 )
 
+// readerBufferSize is the size of the buffer used for reading index-header files. This
+// value is arbitrary and will likely change in the future based on profiling results.
+const readerBufferSize = 4096
+
 type poolCloser interface {
 	put(*os.File) error
 }
