@@ -11,6 +11,14 @@ import (
 	"github.com/pkg/errors"
 )
 
+// Interface defines the same functions of sync.Pool.
+type Interface interface {
+	// Put is sync.Pool.Put().
+	Put(x any)
+	// Get is sync.Pool.Get().
+	Get() any
+}
+
 // Bytes is a pool of bytes that can be reused.
 type Bytes interface {
 	// Get returns a new byte slices that fits the given size.
