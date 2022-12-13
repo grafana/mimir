@@ -8,6 +8,8 @@ import (
 	"os"
 	"sync"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -52,11 +54,12 @@ type DecbufFactory struct {
 	files *filePool
 }
 
-func NewDecbufFactory(path string, maxFileHandles uint, metrics *DecbufFactoryMetrics) *DecbufFactory {
+func NewDecbufFactory(path string, maxIdleFileHandles uint, logger log.Logger, metrics *DecbufFactoryMetrics) *DecbufFactory {
 	return &DecbufFactory{
 		files: newFilePool(
 			path,
-			maxFileHandles,
+			maxIdleFileHandles,
+			logger,
 			metrics.openCount,
 			metrics.pooledOpenCount,
 			metrics.closeCount,
@@ -175,6 +178,7 @@ func (df *DecbufFactory) Stop() {
 // on get. If the pool is full, the file handle is closed on put.
 type filePool struct {
 	path    string
+	logger  log.Logger
 	handles chan *os.File
 	mtx     sync.RWMutex
 	stopped bool
@@ -187,9 +191,10 @@ type filePool struct {
 
 // newFilePool creates a new file pool for path with cap capacity. If cap is 0,
 // get always opens new file handles and put always closes them immediately.
-func newFilePool(path string, cap uint, opens prometheus.Counter, pooledOpens prometheus.Counter, closes prometheus.Counter, pooledCloses prometheus.Counter) *filePool {
+func newFilePool(path string, cap uint, logger log.Logger, opens prometheus.Counter, pooledOpens prometheus.Counter, closes prometheus.Counter, pooledCloses prometheus.Counter) *filePool {
 	return &filePool{
-		path: path,
+		path:   path,
+		logger: logger,
 		// We don't care if cap is 0 which means the channel will be unbuffered. Because
 		// we have default cases for reads and writes to the channel, we will always open
 		// new files and close file handles immediately if the channel is unbuffered.
@@ -255,7 +260,9 @@ func (p *filePool) stop() {
 	for {
 		select {
 		case f := <-p.handles:
-			_ = f.Close()
+			if err := f.Close(); err != nil {
+				level.Warn(p.logger).Log("msg", "closing index-header files during pool stop", "path", p.path, "err", err)
+			}
 		default:
 			return
 		}

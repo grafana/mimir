@@ -3021,10 +3021,11 @@ bucket_store:
     # CLI flag: -blocks-storage.bucket-store.index-header.stream-reader-enabled
     [stream_reader_enabled: <boolean> | default = false]
 
-    # (experimental) Maximum number of file handles the store-gateway keeps open
-    # for each index-header file when using the streaming reader.
-    # CLI flag: -blocks-storage.bucket-store.index-header.file-handle-pool-size
-    [file_handle_pool_size: <int> | default = 1]
+    # (experimental) Maximum number of idle file handles the store-gateway keeps
+    # open for each index-header file when using the streaming reader. This
+    # option is used only when the index-header streaming reader is enabled.
+    # CLI flag: -blocks-storage.bucket-store.index-header.stream-reader-max-idle-file-handles
+    [stream_reader_max_idle_file_handles: <int> | default = 1]
 
   # (experimental) If larger than 0, this option enables store-gateway series
   # streaming. The store-gateway will load series from the bucket in batches

@@ -62,7 +62,7 @@ type StreamBinaryReader struct {
 // NewStreamBinaryReader loads or builds new index-header if not present on disk.
 func NewStreamBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.BucketReader, dir string, id ulid.ULID, postingOffsetsInMemSampling int, metrics *StreamBinaryReaderMetrics, cfg Config) (*StreamBinaryReader, error) {
 	binfn := filepath.Join(dir, id.String(), block.IndexHeaderFilename)
-	br, err := newFileStreamBinaryReader(binfn, postingOffsetsInMemSampling, metrics, cfg)
+	br, err := newFileStreamBinaryReader(binfn, postingOffsetsInMemSampling, logger, metrics, cfg)
 	if err == nil {
 		return br, nil
 	}
@@ -75,12 +75,12 @@ func NewStreamBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.
 	}
 
 	level.Debug(logger).Log("msg", "built index-header file", "path", binfn, "elapsed", time.Since(start))
-	return newFileStreamBinaryReader(binfn, postingOffsetsInMemSampling, metrics, cfg)
+	return newFileStreamBinaryReader(binfn, postingOffsetsInMemSampling, logger, metrics, cfg)
 }
 
-func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int, metrics *StreamBinaryReaderMetrics, cfg Config) (bw *StreamBinaryReader, err error) {
+func newFileStreamBinaryReader(path string, postingOffsetsInMemSampling int, logger log.Logger, metrics *StreamBinaryReaderMetrics, cfg Config) (bw *StreamBinaryReader, err error) {
 	r := &StreamBinaryReader{
-		factory: streamencoding.NewDecbufFactory(path, cfg.FileHandlePoolSize, metrics.decbufFactory),
+		factory: streamencoding.NewDecbufFactory(path, cfg.StreamReaderMaxIdleFileHandles, logger, metrics.decbufFactory),
 	}
 
 	// Create a new raw decoding buffer with access to the entire index-header file to
