@@ -257,7 +257,7 @@ func (p *filePool) stop() {
 		select {
 		case f := <-p.handles:
 			if err := f.Close(); err != nil {
-				level.Warn(p.logger).Log("msg", "closing index-header files during pool stop", "path", p.path, "err", err)
+				level.Warn(p.logger).Log("msg", "closing index-header file during pool stop", "path", p.path, "err", err)
 			}
 		default:
 			return
