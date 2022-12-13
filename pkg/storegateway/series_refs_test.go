@@ -1350,6 +1350,21 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 				}},
 			},
 		},
+		"selects all series in a single batch with skipChunks": {
+			matcher:     labels.MustNewMatcher(labels.MatchRegexp, "a", ".+"),
+			batchSize:   100,
+			skipChunks:  true,
+			chunksLimit: 100,
+			seriesLimit: 100,
+			expectedSeries: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("a", "1", "b", "1")},
+					{lset: labels.FromStrings("a", "1", "b", "2")},
+					{lset: labels.FromStrings("a", "2", "b", "1")},
+					{lset: labels.FromStrings("a", "2", "b", "2")},
+				}},
+			},
+		},
 		"selects all series in multiple batches with skipChunks": {
 			matcher:     labels.MustNewMatcher(labels.MatchRegexp, "a", ".+"),
 			batchSize:   1,
