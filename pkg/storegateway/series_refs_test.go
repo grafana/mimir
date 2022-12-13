@@ -1436,32 +1436,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 }
 
 func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
-	newTestBlock := prepareTestBlock(test.NewTB(t), func(tb testing.TB, appender storage.Appender) {
-		earlySeries := []labels.Labels{
-			labels.FromStrings("a", "1", "b", "1"),
-			labels.FromStrings("a", "1", "b", "2"),
-			labels.FromStrings("a", "2", "b", "1"),
-			labels.FromStrings("a", "2", "b", "2"),
-			labels.FromStrings("a", "3", "b", "1"),
-			labels.FromStrings("a", "3", "b", "2"),
-		}
-
-		for i := int64(0); i < 10; i++ {
-			for _, s := range earlySeries {
-				_, err := appender.Append(0, s, i, 0)
-				assert.NoError(t, err)
-			}
-		}
-		assert.NoError(t, appender.Commit())
-	})
-
-	b := newTestBlock()
-	b.indexCache = newInMemoryIndexCache(t)
-
-	matchers := []*labels.Matcher{
-		labels.MustNewMatcher(labels.MatchRegexp, "a", ".+"),
-	}
-	expectedLabelSet := []labels.Labels{
+	existingSeries := []labels.Labels{
 		labels.FromStrings("a", "1", "b", "1"),
 		labels.FromStrings("a", "1", "b", "2"),
 		labels.FromStrings("a", "2", "b", "1"),
@@ -1469,59 +1444,79 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 		labels.FromStrings("a", "3", "b", "1"),
 		labels.FromStrings("a", "3", "b", "2"),
 	}
+	newTestBlock := prepareTestBlock(test.NewTB(t), func(tb testing.TB, appender storage.Appender) {
+		for ts := int64(0); ts < 10; ts++ {
+			for _, s := range existingSeries {
+				_, err := appender.Append(0, s, ts, 0)
+				assert.NoError(t, err)
+			}
+		}
+		assert.NoError(t, appender.Commit())
+	})
 
-	const batchSize = 5
+	matchers := []*labels.Matcher{
+		labels.MustNewMatcher(labels.MatchRegexp, "a", ".+"),
+	}
 
-	indexReader := b.indexReader()
-	ss, err := openBlockSeriesChunkRefsSetsIterator(
-		context.Background(),
-		batchSize,
-		"",
-		indexReader,
-		b.indexCache,
-		b.meta,
-		matchers,
-		nil,
-		nil,
-		&limiter{limit: 1000},
-		&limiter{limit: 1000},
-		true,
-		b.meta.MinTime, b.meta.MaxTime,
-		newSafeQueryStats(),
-		NewBucketStoreMetrics(nil),
-		log.NewNopLogger(),
-	)
+	for batchSize := 1; batchSize < len(existingSeries)*2; batchSize++ {
+		batchSize := batchSize
+		t.Run(fmt.Sprintf("batch size %d", batchSize), func(t *testing.T) {
+			t.Parallel()
+			b := newTestBlock()
+			b.indexCache = newInMemoryIndexCache(t)
 
-	require.NoError(t, err)
-	lset := extractLabelsFromSeriesChunkRefsSets(readAllSeriesChunkRefsSet(ss))
-	require.NoError(t, ss.Err())
-	require.Equal(t, expectedLabelSet, lset)
+			indexReader := b.indexReader()
+			ss, err := openBlockSeriesChunkRefsSetsIterator(
+				context.Background(),
+				batchSize,
+				"",
+				indexReader,
+				b.indexCache,
+				b.meta,
+				matchers,
+				nil,
+				nil,
+				&limiter{limit: 1000},
+				&limiter{limit: 1000},
+				true,
+				b.meta.MinTime, b.meta.MaxTime,
+				newSafeQueryStats(),
+				NewBucketStoreMetrics(nil),
+				log.NewNopLogger(),
+			)
 
-	b.indexCache = forbiddenFetchMultiSeriesForRefsIndexCache{b.indexCache, t}
+			require.NoError(t, err)
+			lset := extractLabelsFromSeriesChunkRefsSets(readAllSeriesChunkRefsSet(ss))
+			require.NoError(t, ss.Err())
+			require.Equal(t, existingSeries, lset)
 
-	// Cache should be filled by now. Pass an index cache that fails the test if you try to access the postings
-	ss, err = openBlockSeriesChunkRefsSetsIterator(
-		context.Background(),
-		batchSize,
-		"",
-		indexReader,
-		b.indexCache,
-		b.meta,
-		matchers,
-		nil,
-		nil,
-		&limiter{limit: 1000},
-		&limiter{limit: 1000},
-		true,
-		b.meta.MinTime, b.meta.MaxTime,
-		newSafeQueryStats(),
-		NewBucketStoreMetrics(nil),
-		log.NewNopLogger(),
-	)
-	require.NoError(t, err)
-	lset = extractLabelsFromSeriesChunkRefsSets(readAllSeriesChunkRefsSet(ss))
-	require.NoError(t, ss.Err())
-	require.Equal(t, expectedLabelSet, lset)
+			// Cache should be filled by now. Pass an index cache that fails the test if you try to access the postings
+			b.indexCache = forbiddenFetchMultiSeriesForRefsIndexCache{b.indexCache, t}
+
+			ss, err = openBlockSeriesChunkRefsSetsIterator(
+				context.Background(),
+				batchSize,
+				"",
+				indexReader,
+				b.indexCache,
+				b.meta,
+				matchers,
+				nil,
+				nil,
+				&limiter{limit: 1000},
+				&limiter{limit: 1000},
+				true,
+				b.meta.MinTime, b.meta.MaxTime,
+				newSafeQueryStats(),
+				NewBucketStoreMetrics(nil),
+				log.NewNopLogger(),
+			)
+			require.NoError(t, err)
+			lset = extractLabelsFromSeriesChunkRefsSets(readAllSeriesChunkRefsSet(ss))
+			require.NoError(t, ss.Err())
+			require.Equal(t, existingSeries, lset)
+		})
+	}
 }
 
 type forbiddenFetchMultiSeriesForRefsIndexCache struct {
