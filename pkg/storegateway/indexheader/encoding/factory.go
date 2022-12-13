@@ -3,11 +3,9 @@
 package encoding
 
 import (
-	"bufio"
 	"encoding/binary"
 	"hash/crc32"
 	"os"
-	"sync"
 
 	"github.com/grafana/dskit/multierror"
 	"github.com/pkg/errors"
@@ -19,17 +17,11 @@ const readerBufferSize = 4096
 
 // DecbufFactory creates new file-backed decoding buffer instances for a specific index-header file.
 type DecbufFactory struct {
-	pool sync.Pool
 	path string
 }
 
 func NewDecbufFactory(path string) *DecbufFactory {
 	return &DecbufFactory{
-		pool: sync.Pool{
-			New: func() any {
-				return bufio.NewReaderSize(nil, readerBufferSize)
-			},
-		},
 		path: path,
 	}
 }
@@ -65,10 +57,9 @@ func (df *DecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table) Decb
 		return Decbuf{E: errors.Wrapf(ErrInvalidSize, "insufficient bytes read for size (got %d, wanted %d)", n, 4)}
 	}
 
-	bufReader := df.pool.Get().(*bufio.Reader)
 	contentLength := int(binary.BigEndian.Uint32(lengthBytes))
 	bufferLength := len(lengthBytes) + contentLength + crc32.Size
-	r, err := NewFileReader(f, offset, bufferLength, bufReader)
+	r, err := NewFileReader(f, offset, bufferLength)
 	if err != nil {
 		return Decbuf{E: errors.Wrap(err, "create file reader")}
 	}
@@ -124,9 +115,8 @@ func (df *DecbufFactory) NewRawDecbuf() Decbuf {
 		return Decbuf{E: errors.Wrap(err, "stat file for decbuf")}
 	}
 
-	bufReader := df.pool.Get().(*bufio.Reader)
 	fileSize := stat.Size()
-	reader, err := NewFileReader(f, 0, int(fileSize), bufReader)
+	reader, err := NewFileReader(f, 0, int(fileSize))
 	if err != nil {
 		return Decbuf{E: errors.Wrap(err, "file reader for decbuf")}
 	}
@@ -137,10 +127,6 @@ func (df *DecbufFactory) NewRawDecbuf() Decbuf {
 
 // Close cleans up any resources associated with the Decbuf
 func (df *DecbufFactory) Close(d Decbuf) error {
-	if d.r != nil {
-		df.pool.Put(d.r.buf)
-	}
-
 	return d.close()
 }
 

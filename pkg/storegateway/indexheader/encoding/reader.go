@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 )
 
 type FileReader struct {
@@ -18,12 +19,18 @@ type FileReader struct {
 	pos    int
 }
 
+var bufferPool = sync.Pool{
+	New: func() any {
+		return bufio.NewReaderSize(nil, readerBufferSize)
+	},
+}
+
 // NewFileReader creates a new FileReader for the segment of file beginning at base bytes
 // extending length bytes using the supplied buffered reader.
-func NewFileReader(file *os.File, base, length int, buf *bufio.Reader) (*FileReader, error) {
+func NewFileReader(file *os.File, base, length int) (*FileReader, error) {
 	f := &FileReader{
 		file:   file,
-		buf:    buf,
+		buf:    bufferPool.Get().(*bufio.Reader),
 		base:   base,
 		length: length,
 	}
@@ -143,5 +150,9 @@ func (f *FileReader) Len() int {
 // is unexported to ensure that all resource management is handled by DecbufFactory
 // which pools resources.
 func (f *FileReader) close() error {
+	// Note that we don't do anything to clean up the buffer before returning it to the pool here:
+	// we reset the buffer when we retrieve it from the pool instead.
+	bufferPool.Put(f.buf)
+
 	return f.file.Close()
 }
