@@ -97,7 +97,7 @@ func CanonicalPostingsKey(postings []storage.SeriesRef) PostingsKey {
 	})
 
 	// We hash the postings list twice to minimize the chance of collisions
-	hasher1 := fnv.New64a()
+	hasher1, _ := blake2b.New256(nil) // This will never return an error
 	hasher2 := sha1.New()
 
 	_, _ = hasher1.Write(sorted)
