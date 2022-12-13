@@ -5,7 +5,6 @@ set -e
 set -o errexit
 set -o pipefail
 
-GIT_REPO_ROOT=$(git rev-parse --show-toplevel || echo -n '/')
 CHART_PATH="operations/helm/charts/mimir-distributed"
 POLICIES_PATH="operations/helm/policies"
 MANIFESTS_PATH=""
@@ -33,18 +32,22 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if ! [ -n "$MANIFESTS_PATH" -a -d "$MANIFESTS_PATH" ] ; then
+if [ -z "$MANIFESTS_PATH" ] ; then
+  echo "Provide path to manifests to test in --manifests-path"
+  exit 1
+fi
+
+if ! [ -d "$MANIFESTS_PATH" ] ; then
   echo "The generated yaml templates in $MANIFESTS_PATH are not present, use 'make check-helm-tests' instead of calling this script directly"
   exit 1
 fi
 
+CHART_NAME=$(basename "${CHART_PATH}")
 
-VALUES_FILES_PATH=$CHART_PATH/ci
-
-for FILEPATH in $(find $VALUES_FILES_PATH -name '*.yaml'); do
+find "$CHART_PATH/ci" -name '*.yaml' | while read FILEPATH ; do
   TEST_NAME=$(basename -s '.yaml' "$FILEPATH")
   MANIFEST_DIR="${MANIFESTS_PATH}/${TEST_NAME}-generated"
   echo "Testing with values file $TEST_NAME with manifests in ${MANIFEST_DIR}"
-  conftest test "$MANIFEST_DIR/"$(basename "$CHART_PATH")"/templates" -p "$POLICIES_PATH" --combine
+  conftest test "$MANIFEST_DIR/$CHART_NAME/templates" -p "$POLICIES_PATH" --combine
   echo ""
 done
