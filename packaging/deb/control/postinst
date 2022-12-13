@@ -7,7 +7,7 @@
 set -e
 
 # shellcheck disable=1091
-[ -f /etc/sysconfig/mimir ] && . /etc/default/mimir
+[ -f /etc/default/mimir ] && . /etc/default/mimir
 
 case "$1" in
   configure)
