@@ -44,7 +44,7 @@ fi
 
 CHART_NAME=$(basename "${CHART_PATH}")
 
-find "$CHART_PATH/ci" -name '*.yaml' | while read FILEPATH ; do
+find "$CHART_PATH/ci" -name '*.yaml' | while read -r FILEPATH ; do
   TEST_NAME=$(basename -s '.yaml' "$FILEPATH")
   MANIFEST_DIR="${MANIFESTS_PATH}/${TEST_NAME}-generated"
   echo "Testing with values file $TEST_NAME with manifests in ${MANIFEST_DIR}"

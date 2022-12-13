@@ -10,9 +10,7 @@ cd "$CHART_PATH"
 
 DEPENDENCIES=$( helm dependency list )
 
-NOT_OK_DEPENDENCY=$( echo "$DEPENDENCIES" |tail +2|grep -v "^$"|grep -c -E -v "ok[[:space:]]*$" )
-
-if [ "$NOT_OK_DEPENDENCY" != "0" ] ; then
+if echo "$DEPENDENCIES" |tail +2|grep -v "^$"|grep -c -E -v "ok[[:space:]]*$" ; then
     helm dependency update && touch Chart.lock
 else
     echo "Helm dependencies are up to date"
