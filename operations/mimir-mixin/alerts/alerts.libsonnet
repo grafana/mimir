@@ -251,8 +251,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
           expr: |||
             (min by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ingester_memory_users) == 0)
             and on (%(alert_aggregation_labels)s)
-            # Only if there's a least 1 tenant in Mimir.
-            (max by(%(alert_aggregation_labels)s) (cortex_ingester_memory_users) > 0)
+            # Only if there are more time-series than would be expected due to continuous testing load
+            (
+              sum by(%(alert_aggregation_labels)s) (cortex_ingester_memory_series)
+              /
+              max by(%(alert_aggregation_labels)s) (cortex_distributor_replication_factor)
+            ) > 100000
           ||| % $._config,
           labels: {
             severity: 'warning',
