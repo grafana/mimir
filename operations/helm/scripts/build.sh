@@ -44,9 +44,10 @@ if [ -z "$INTERMEDIATE_PATH" ] ; then
 fi
 
 # Start from a clean slate
-rm -rf "$OUTPUT_PATH"/*-generated
 rm -rf "$INTERMEDIATE_PATH"
 mkdir -p "$INTERMEDIATE_PATH"
+rm -rf "$OUTPUT_PATH"
+mkdir -p "$OUTPUT_PATH"
 
 # Find testcases
 TESTS=$(find "${CHART_PATH}/ci" -name '*values.yaml')

@@ -427,9 +427,12 @@ check-mixin-tests: ## Test the mixin files.
 format-mixin: ## Format the mixin files.
 	@find $(MIXIN_PATH) -type f -name '*.libsonnet' | xargs jsonnetfmt -i
 
+# Helm static tests
+
+HELM_SCRIPTS_PATH=operations/helm/scripts
 HELM_REGO_POLICIES_PATH=operations/helm/policies
-HELM_RAW_MANIFESTS_PATH=operations/helm/tests-intermediate
-HELM_COMMITTED_MANIFESTS=operations/helm/tests
+HELM_RAW_MANIFESTS_PATH=operations/helm/manifests-intermediate
+HELM_REFERENCE_MANIFESTS=operations/helm/tests
 
 conftest-fmt:
 	@conftest fmt $(HELM_REGO_POLICIES_PATH)
@@ -441,21 +444,21 @@ conftest-verify:
 	@conftest verify -p $(HELM_REGO_POLICIES_PATH) --report notes
 
 update-helm-dependencies:
-	@./tools/update-helm-dependencies.sh operations/helm/charts/mimir-distributed
+	@./$(HELM_SCRIPTS_PATH)/update-helm-dependencies.sh operations/helm/charts/mimir-distributed
 
 build-helm-tests: ## Build the helm golden records.
 build-helm-tests: update-helm-dependencies
-	@./operations/helm/tests/build.sh --intermediate-path $(HELM_RAW_MANIFESTS_PATH) --output-path $(HELM_COMMITTED_MANIFESTS)
+	@./$(HELM_SCRIPTS_PATH)/build.sh --intermediate-path $(HELM_RAW_MANIFESTS_PATH) --output-path $(HELM_REFERENCE_MANIFESTS)
 
 conftest-quick-test: ## Does not rebuild the yaml manifests, use the target conftest-test for that
 conftest-quick-test:
-	@tools/run-conftest.sh --policies-path $(HELM_REGO_POLICIES_PATH) --manifests-path $(HELM_RAW_MANIFESTS_PATH)
+	@./$(HELM_SCRIPTS_PATH)/run-conftest.sh --policies-path $(HELM_REGO_POLICIES_PATH) --manifests-path $(HELM_RAW_MANIFESTS_PATH)
 
 conftest-test: build-helm-tests conftest-quick-test
 
 check-helm-tests: ## Check the helm golden records.
 check-helm-tests: build-helm-tests conftest-test
-	@./tools/find-diff-or-untracked.sh operations/helm/tests || (echo "Rebuild the Helm tests output by running 'make build-helm-tests' and commit the changes" && false)
+	@./tools/find-diff-or-untracked.sh $(HELM_REFERENCE_MANIFESTS) || (echo "Rebuild the Helm tests output by running 'make build-helm-tests' and commit the changes" && false)
 
 endif
 
