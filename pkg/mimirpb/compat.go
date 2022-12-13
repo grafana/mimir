@@ -205,6 +205,36 @@ func fromSpansToSpansProto(s []histogram.Span) []*BucketSpan {
 	return spans
 }
 
+func FromPromCommonToMimirSampleHistogram(src model.SampleHistogram) SampleHistogram {
+	buckets := make([]*HistogramBucket, len(src.Buckets))
+	for i, bucket := range src.Buckets {
+		buckets[i] = &HistogramBucket{
+			Boundaries: int32(bucket.Boundaries),
+			Lower:      float64(bucket.Lower),
+			Upper:      float64(bucket.Upper),
+			Count:      uint64(bucket.Count),
+		}
+	}
+	return SampleHistogram{Count: uint64(src.Count), Sum: float64(src.Sum), Buckets: buckets}
+}
+
+func FromMimirSampleToPromCommonHistogram(src SampleHistogram) model.SampleHistogram {
+	buckets := make(model.HistogramBuckets, len(src.Buckets))
+	for i, bucket := range src.Buckets {
+		buckets[i] = &model.HistogramBucket{
+			Boundaries: int(bucket.Boundaries),
+			Lower:      model.FloatString(bucket.Lower),
+			Upper:      model.FloatString(bucket.Upper),
+			Count:      model.IntString(bucket.Count),
+		}
+	}
+	return model.SampleHistogram{
+		Count:   model.IntString(src.Count),
+		Sum:     model.FloatString(src.Sum),
+		Buckets: buckets,
+	}
+}
+
 // FromPointsToSamples converts []promql.Point to []Sample.
 // TODO: adapt to also return histograms.
 func FromPointsToSamples(points []promql.Point) []Sample {

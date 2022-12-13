@@ -290,18 +290,10 @@ func (vs *vectorSampleStream) UnmarshalJSON(b []byte) error {
 			Samples: []mimirpb.Sample{{TimestampMs: int64(s.Timestamp), Value: float64(s.Value)}},
 		}
 	} else {
-		buckets := make([]*mimirpb.HistogramBucket, len(s.Histogram.Buckets))
-		for i, bucket := range s.Histogram.Buckets {
-			buckets[i] = &mimirpb.HistogramBucket{
-				Boundaries: int32(bucket.Boundaries),
-				Lower:      float64(bucket.Lower),
-				Upper:      float64(bucket.Upper),
-				Count:      uint64(bucket.Count),
-			}
-		}
+		h := mimirpb.FromPromCommonToMimirSampleHistogram(s.Histogram)
 		*vs = vectorSampleStream{
 			Labels:     mimirpb.FromMetricsToLabelAdapters(s.Metric),
-			Histograms: []mimirpb.SampleHistogramPair{{Timestamp: int64(s.Timestamp), Histogram: &mimirpb.SampleHistogram{Count: uint64(s.Histogram.Count), Sum: float64(s.Histogram.Sum), Buckets: buckets}}},
+			Histograms: []mimirpb.SampleHistogramPair{{Timestamp: int64(s.Timestamp), Histogram: &h}},
 		}
 	}
 	return nil
@@ -319,25 +311,11 @@ func (vs vectorSampleStream) MarshalJSON() ([]byte, error) {
 			Value:     model.SampleValue(vs.Samples[0].Value),
 		}
 	} else {
-		histogram := vs.Histograms[0].Histogram
-		buckets := make(model.HistogramBuckets, len(histogram.Buckets))
-		for i, bucket := range histogram.Buckets {
-			buckets[i] = &model.HistogramBucket{
-				Boundaries: int(bucket.Boundaries),
-				Lower:      model.FloatString(bucket.Lower),
-				Upper:      model.FloatString(bucket.Upper),
-				Count:      model.IntString(bucket.Count),
-			}
-		}
 		sample = model.Sample{
 			Metric:    mimirpb.FromLabelAdaptersToMetric(vs.Labels),
 			Timestamp: model.Time(vs.Histograms[0].Timestamp),
-			Histogram: model.SampleHistogram{
-				Count:   model.IntString(histogram.Count),
-				Sum:     model.FloatString(histogram.Sum),
-				Buckets: buckets,
-			},
-			Type: 1,
+			Histogram: mimirpb.FromMimirSampleToPromCommonHistogram(*vs.Histograms[0].Histogram),
+			Type:      1,
 		}
 	}
 	return json.Marshal(sample)

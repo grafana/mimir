@@ -367,7 +367,7 @@ func promqlResultToSamples(res *promql.Result) ([]SampleStream, error) {
 		for _, sample := range v {
 			res = append(res, SampleStream{
 				Labels:  mimirpb.FromLabelsToLabelAdapters(sample.Metric),
-				Samples: []mimirpb.Sample{{TimestampMs: sample.Point.T, Value: sample.Point.V}}})
+				Samples: mimirpb.FromPointsToSamples([]promql.Point{sample.Point})})
 		}
 		return res, nil
 
