@@ -31,8 +31,8 @@ func TestGettingStartedWithGrafanaMimir(t *testing.T) {
 	mimir := e2emimir.NewSingleBinary("mimir", nil, e2emimir.WithPorts(9009, 9095), e2emimir.WithConfigFile("demo.yaml"))
 	require.NoError(t, s.StartAndWaitReady(mimir))
 
-	runTestPushSeriesAndQueryBack(t, mimir)
-	runTestPushHistogramSeriesAndQueryBack(t, mimir)
+	runTestPushSeriesAndQueryBack(t, mimir, "series_1", generateSeries)
+	runTestPushSeriesAndQueryBack(t, mimir, "hseries_1", generateHistogramSeries)
 }
 
 func TestPlayWithGrafanaMimirTutorial(t *testing.T) {
@@ -71,51 +71,17 @@ func TestPlayWithGrafanaMimirTutorial(t *testing.T) {
 			labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
 	}
 
-	runTestPushSeriesAndQueryBack(t, mimir1)
-	runTestPushHistogramSeriesAndQueryBack(t, mimir2)
+	runTestPushSeriesAndQueryBack(t, mimir1, "series_1", generateSeries)
+	runTestPushSeriesAndQueryBack(t, mimir2, "hseries_1", generateHistogramSeries)
 }
 
-func runTestPushSeriesAndQueryBack(t *testing.T, mimir *e2emimir.MimirService) {
+func runTestPushSeriesAndQueryBack(t *testing.T, mimir *e2emimir.MimirService, seriesName string, genSeries generateSeriesFunc) {
 	c, err := e2emimir.NewClient(mimir.HTTPEndpoint(), mimir.HTTPEndpoint(), "", "", "user-1")
 	require.NoError(t, err)
 
 	// Push some series to Mimir.
 	now := time.Now()
-	seriesName := "series_1"
-	series, expectedVector, expectedMatrix := generateSeries(seriesName, now, prompb.Label{Name: "foo", Value: "bar"})
-
-	res, err := c.Push(series)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, res.StatusCode)
-
-	// Query the series.
-	result, err := c.Query(seriesName, now)
-	require.NoError(t, err)
-	require.Equal(t, model.ValVector, result.Type())
-	assert.Equal(t, expectedVector, result.(model.Vector))
-
-	labelValues, err := c.LabelValues("foo", prometheusMinTime, prometheusMaxTime, nil)
-	require.NoError(t, err)
-	require.Equal(t, model.LabelValues{"bar"}, labelValues)
-
-	labelNames, err := c.LabelNames(prometheusMinTime, prometheusMaxTime)
-	require.NoError(t, err)
-	require.Equal(t, []string{"__name__", "foo"}, labelNames)
-
-	rangeResult, err := c.QueryRange(seriesName, now.Add(-15*time.Minute), now, 15*time.Second)
-	require.NoError(t, err)
-	require.Equal(t, model.ValMatrix, rangeResult.Type())
-	require.Equal(t, expectedMatrix, rangeResult.(model.Matrix))
-}
-
-func runTestPushHistogramSeriesAndQueryBack(t *testing.T, mimir *e2emimir.MimirService) {
-	c, err := e2emimir.NewClient(mimir.HTTPEndpoint(), mimir.HTTPEndpoint(), "", "", "user-1")
-	require.NoError(t, err)
-
-	// Push some series to Mimir.
-	now := time.Now()
-	seriesName := "series_2"
-	series, expectedVector, expectedMatrix := generateHistogramSeries(seriesName, now, prompb.Label{Name: "foo", Value: "bar"})
+	series, expectedVector, expectedMatrix := genSeries(seriesName, now, prompb.Label{Name: "foo", Value: "bar"})
 
 	res, err := c.Push(series)
 	require.NoError(t, err)

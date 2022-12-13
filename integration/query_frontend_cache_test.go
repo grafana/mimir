@@ -77,6 +77,14 @@ func TestQueryFrontendUnalignedQuery(t *testing.T) {
 	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", user)
 	require.NoError(t, err)
 
+	runTestPushSeriesAndUnalignedQuery(t, c, queryFrontendAligned, queryFrontendUnaligned, user, "series_1", generateSeries, generateExpectedFloats)
+	runTestPushSeriesAndUnalignedQuery(t, c, queryFrontendAligned, queryFrontendUnaligned, user, "hseries_1", generateHistogramSeries, generateExpectedHistograms)
+}
+
+// generateExpectedFunc defines how to generate the expected float values or histograms from the expectedVector returned with the generated series
+type generateExpectedFunc func(start time.Time, end time.Time, step time.Duration, sampleTime time.Time, expectedVector model.Vector, seriesName string) model.Matrix
+
+func runTestPushSeriesAndUnalignedQuery(t *testing.T, c *e2emimir.Client, queryFrontendAligned, queryFrontendUnaligned *e2emimir.MimirService, user, seriesName string, genSeries generateSeriesFunc, genExpected generateExpectedFunc) {
 	const step = 1 * time.Minute
 
 	now := time.Now()
@@ -87,8 +95,7 @@ func TestQueryFrontendUnalignedQuery(t *testing.T) {
 
 	sampleTime := now.Add(-3 * time.Minute)
 
-	series, expectedVector, _ := generateSeries("series_1", sampleTime)
-	val := expectedVector[0].Value
+	series, expectedVector, _ := genSeries(seriesName, sampleTime)
 
 	res, err := c.Push(series)
 	require.NoError(t, err)
@@ -102,11 +109,11 @@ func TestQueryFrontendUnalignedQuery(t *testing.T) {
 		c, err := e2emimir.NewClient("", queryFrontendAligned.HTTPEndpoint(), "", "", user)
 		require.NoError(t, err)
 
-		res, err := c.QueryRange("series_1", start, end, step)
+		res, err := c.QueryRange(seriesName, start, end, step)
 		require.NoError(t, err)
 
 		// Verify that returned range has sample appearing after "sampleTime", all ts are step-aligned (truncated to step).
-		expected := generateExpectedValues(start.Truncate(step), end, step, sampleTime, val)
+		expected := genExpected(start.Truncate(step), end, step, sampleTime, expectedVector, seriesName)
 
 		require.Equal(t, res.Type(), model.ValMatrix)
 		require.Equal(t, res.(model.Matrix), expected)
@@ -117,19 +124,21 @@ func TestQueryFrontendUnalignedQuery(t *testing.T) {
 		c, err := e2emimir.NewClient("", queryFrontendUnaligned.HTTPEndpoint(), "", "", user)
 		require.NoError(t, err)
 
-		res, err := c.QueryRange("series_1", start, end, step)
+		res, err := c.QueryRange(seriesName, start, end, step)
 		require.NoError(t, err)
 
 		// Verify that returned result is not step-aligned ("now" is not step-aligned)
 		require.NotEqual(t, start, start.Truncate(step))
-		expected := generateExpectedValues(start, end, step, sampleTime, val)
+		expected := genExpected(start, end, step, sampleTime, expectedVector, seriesName)
 
 		require.Equal(t, res.Type(), model.ValMatrix)
 		require.Equal(t, res.(model.Matrix), expected)
 	}
 }
 
-func generateExpectedValues(start time.Time, end time.Time, step time.Duration, sampleTime time.Time, val model.SampleValue) model.Matrix {
+func generateExpectedFloats(start time.Time, end time.Time, step time.Duration, sampleTime time.Time, expectedVector model.Vector, seriesName string) model.Matrix {
+	val := expectedVector[0].Value
+
 	const loopbackPeriod = 5 * time.Minute
 
 	values := []model.SamplePair(nil)
@@ -145,8 +154,34 @@ func generateExpectedValues(start time.Time, end time.Time, step time.Duration, 
 
 	expected := model.Matrix{
 		&model.SampleStream{
-			Metric: map[model.LabelName]model.LabelValue{"__name__": "series_1"},
+			Metric: map[model.LabelName]model.LabelValue{"__name__": model.LabelValue(seriesName)},
 			Values: values,
+		},
+	}
+	return expected
+}
+
+func generateExpectedHistograms(start time.Time, end time.Time, step time.Duration, sampleTime time.Time, expectedVector model.Vector, seriesName string) model.Matrix {
+	hist := expectedVector[0].Histogram
+
+	const loopbackPeriod = 5 * time.Minute
+
+	histograms := []model.SampleHistogramPair(nil)
+	for ts := start; !ts.After(end); ts = ts.Add(step) {
+		if ts.Before(sampleTime) || ts.After(sampleTime.Add(loopbackPeriod)) {
+			continue
+		}
+		histograms = append(histograms, model.SampleHistogramPair{
+			Timestamp: model.Time(e2e.TimeToMilliseconds(ts)),
+			Histogram: hist,
+		})
+	}
+
+	expected := model.Matrix{
+		&model.SampleStream{
+			Metric:     map[model.LabelName]model.LabelValue{"__name__": model.LabelValue(seriesName)},
+			Histograms: histograms,
+			Type:       model.STHistogram,
 		},
 	}
 	return expected

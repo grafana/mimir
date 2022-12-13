@@ -18,6 +18,8 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/grafana/e2e"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/prompb"
 )
 
 var (
@@ -37,6 +39,12 @@ var (
 	prometheusMinTime = time.Unix(math.MinInt64/1000+62135596801, 0).UTC()
 	prometheusMaxTime = time.Unix(math.MaxInt64/1000-62135596801, 999999999).UTC()
 )
+
+// generateSeriesFunc defines what kind of series (and expected vectors/matrices) to generate - float samples or native histograms
+type generateSeriesFunc func(name string, ts time.Time, additionalLabels ...prompb.Label) (series []prompb.TimeSeries, vector model.Vector, matrix model.Matrix)
+
+// generateNSeriesFunc defines what kind of n * series (and expected vectors) to generate - float samples or native histograms
+// type generateNSeriesFunc func(nSeries, nExemplars int, name func() string, ts time.Time, additionalLabels func() []prompb.Label) (series []prompb.TimeSeries, vector model.Vector)
 
 func getMimirProjectDir() string {
 	if dir := os.Getenv("MIMIR_CHECKOUT_DIR"); dir != "" {
