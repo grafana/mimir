@@ -27,7 +27,7 @@ import (
 
 func init() {
 	// Track the balance of gets/puts to seriesChunkRefsSetPool in all tests.
-	seriesChunkRefsSetPool = &trackedGenericPool{parent: seriesChunkRefsSetPool}
+	seriesChunkRefsSetPool = &trackedPool{parent: seriesChunkRefsSetPool}
 }
 
 func TestSeriesChunkRef_Compare(t *testing.T) {
@@ -636,7 +636,7 @@ func TestMergedSeriesChunkRefsSet_Concurrency(t *testing.T) {
 	}
 
 	// Reset the memory pool tracker.
-	seriesChunkRefsSetPool.(*trackedGenericPool).reset()
+	seriesChunkRefsSetPool.(*trackedPool).reset()
 
 	g, _ := errgroup.WithContext(context.Background())
 	for c := 0; c < concurrency; c++ {
@@ -652,8 +652,8 @@ func TestMergedSeriesChunkRefsSet_Concurrency(t *testing.T) {
 
 	// Ensure the seriesChunkRefsSet memory pool has been used and all slices pulled from
 	// pool have put back.
-	assert.Greater(t, seriesChunkRefsSetPool.(*trackedGenericPool).gets.Load(), int64(0))
-	assert.Equal(t, int64(0), seriesChunkRefsSetPool.(*trackedGenericPool).balance.Load())
+	assert.Greater(t, seriesChunkRefsSetPool.(*trackedPool).gets.Load(), int64(0))
+	assert.Equal(t, int64(0), seriesChunkRefsSetPool.(*trackedPool).balance.Load())
 }
 
 func BenchmarkMergedSeriesChunkRefsSetIterators(b *testing.B) {
@@ -1529,7 +1529,7 @@ func createSeriesChunkRefsSet(minSeriesID, maxSeriesID int, releasable bool) ser
 
 	for seriesID := minSeriesID; seriesID <= maxSeriesID; seriesID++ {
 		set.series = append(set.series, seriesChunkRefs{
-			lset: labels.New(labels.Label{Name: labels.MetricName, Value: fmt.Sprintf("metric_%06d", seriesID)}),
+			lset: labels.FromStrings(labels.MetricName, fmt.Sprintf("metric_%06d", seriesID)),
 		})
 	}
 
@@ -1539,7 +1539,7 @@ func createSeriesChunkRefsSet(minSeriesID, maxSeriesID int, releasable bool) ser
 func TestCreateSeriesChunkRefsSet(t *testing.T) {
 	set := createSeriesChunkRefsSet(5, 7, true)
 	require.Len(t, set.series, 3)
-	assert.Equal(t, seriesChunkRefs{lset: labels.New(labels.Label{Name: labels.MetricName, Value: "metric_000005"})}, set.series[0])
-	assert.Equal(t, seriesChunkRefs{lset: labels.New(labels.Label{Name: labels.MetricName, Value: "metric_000006"})}, set.series[1])
-	assert.Equal(t, seriesChunkRefs{lset: labels.New(labels.Label{Name: labels.MetricName, Value: "metric_000007"})}, set.series[2])
+	assert.Equal(t, seriesChunkRefs{lset: labels.FromStrings(labels.MetricName, "metric_000005")}, set.series[0])
+	assert.Equal(t, seriesChunkRefs{lset: labels.FromStrings(labels.MetricName, "metric_000006")}, set.series[1])
+	assert.Equal(t, seriesChunkRefs{lset: labels.FromStrings(labels.MetricName, "metric_000007")}, set.series[2])
 }

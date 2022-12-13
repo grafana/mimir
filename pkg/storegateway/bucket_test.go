@@ -1212,7 +1212,7 @@ func TestBucket_Series_Concurrency(t *testing.T) {
 	for _, batchSize := range []int{len(expectedSeries) / 100, len(expectedSeries) * 2} {
 		t.Run(fmt.Sprintf("batch size: %d", batchSize), func(t *testing.T) {
 			// Reset the memory pool tracker.
-			seriesChunkRefsSetPool.(*trackedGenericPool).reset()
+			seriesChunkRefsSetPool.(*trackedPool).reset()
 
 			metaFetcher, err := block.NewRawMetaFetcher(logger, instrumentedBucket)
 			assert.NoError(t, err)
@@ -1266,8 +1266,8 @@ func TestBucket_Series_Concurrency(t *testing.T) {
 
 			// Ensure the seriesChunkRefsSet memory pool has been used and all slices pulled from
 			// pool have put back.
-			assert.Greater(t, seriesChunkRefsSetPool.(*trackedGenericPool).gets.Load(), int64(0))
-			assert.Equal(t, int64(0), seriesChunkRefsSetPool.(*trackedGenericPool).balance.Load())
+			assert.Greater(t, seriesChunkRefsSetPool.(*trackedPool).gets.Load(), int64(0))
+			assert.Equal(t, int64(0), seriesChunkRefsSetPool.(*trackedPool).balance.Load())
 		})
 	}
 }
@@ -1293,24 +1293,24 @@ func (m *trackedBytesPool) Put(b *[]byte) {
 	m.parent.Put(b)
 }
 
-type trackedGenericPool struct {
-	parent  pool.Generic
+type trackedPool struct {
+	parent  pool.Interface
 	balance atomic.Int64
 	gets    atomic.Int64
 }
 
-func (p *trackedGenericPool) Get() any {
+func (p *trackedPool) Get() any {
 	p.balance.Inc()
 	p.gets.Inc()
 	return p.parent.Get()
 }
 
-func (p *trackedGenericPool) Put(x any) {
+func (p *trackedPool) Put(x any) {
 	p.balance.Dec()
 	p.parent.Put(x)
 }
 
-func (p *trackedGenericPool) reset() {
+func (p *trackedPool) reset() {
 	p.balance.Store(0)
 	p.gets.Store(0)
 }

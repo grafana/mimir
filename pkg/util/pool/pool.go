@@ -11,8 +11,8 @@ import (
 	"github.com/pkg/errors"
 )
 
-// Generic memory pool with the same interface of sync.Pool.
-type Generic interface {
+// Interface defines the same functions of sync.Pool.
+type Interface interface {
 	// Put is sync.Pool.Put().
 	Put(x any)
 	// Get is sync.Pool.Get().

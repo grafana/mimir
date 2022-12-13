@@ -20,7 +20,7 @@ import (
 )
 
 var (
-	seriesChunkRefsSetPool = pool.Generic(&sync.Pool{
+	seriesChunkRefsSetPool = pool.Interface(&sync.Pool{
 		// Intentionally return nil if the pool is empty, so that the caller can preallocate
 		// the slice with the right size.
 		New: nil,
