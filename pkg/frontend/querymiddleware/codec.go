@@ -358,7 +358,7 @@ func matrixMerge(resps []*PrometheusResponse) []SampleStream {
 					Labels: stream.Labels,
 				}
 			}
-			// We need to make sure we don't repeat samples. This causes some visualisations to be broken in Grafana.
+			// We need to make sure we don't repeat samples/histograms. This causes some visualisations to be broken in Grafana.
 			// The prometheus API is inclusive of start and end timestamps.
 			if len(existing.Samples) > 0 && len(stream.Samples) > 0 {
 				existingEndTs := existing.Samples[len(existing.Samples)-1].TimestampMs
@@ -372,7 +372,20 @@ func matrixMerge(resps []*PrometheusResponse) []SampleStream {
 				} // else there is no overlap, yay!
 			}
 			existing.Samples = append(existing.Samples, stream.Samples...)
-			existing.Histograms = append(existing.Histograms, stream.Histograms...) //TODO: filter like samples
+
+			if len(existing.Histograms) > 0 && len(stream.Histograms) > 0 {
+				existingEndTs := existing.Histograms[len(existing.Histograms)-1].Timestamp
+				if existingEndTs == stream.Histograms[0].Timestamp {
+					// Typically this the cases where only 1 sample point overlap,
+					// so optimize with simple code.
+					stream.Histograms = stream.Histograms[1:]
+				} else if existingEndTs > stream.Histograms[0].Timestamp {
+					// Overlap might be big, use heavier algorithm to remove overlap.
+					stream.Histograms = sliceHistograms(stream.Histograms, existingEndTs)
+				} // else there is no overlap, yay!
+			}
+			existing.Histograms = append(existing.Histograms, stream.Histograms...)
+
 			output[metric] = existing
 		}
 	}
@@ -409,6 +422,23 @@ func sliceSamples(samples []mimirpb.Sample, minTs int64) []mimirpb.Sample {
 	})
 
 	return samples[searchResult:]
+}
+
+// sliceHistograms is the histogram version of sliceSamples
+func sliceHistograms(histograms []mimirpb.SampleHistogramPair, minTs int64) []mimirpb.SampleHistogramPair {
+	if len(histograms) <= 0 || minTs < histograms[0].Timestamp {
+		return histograms
+	}
+
+	if len(histograms) > 0 && minTs > histograms[len(histograms)-1].Timestamp {
+		return histograms[len(histograms):]
+	}
+
+	searchResult := sort.Search(len(histograms), func(i int) bool {
+		return histograms[i].Timestamp > minTs
+	})
+
+	return histograms[searchResult:]
 }
 
 func bodyBuffer(res *http.Response) ([]byte, error) {
