@@ -53,7 +53,7 @@ Mimirtool interacts with:
 
 To install Mimirtool, download the appropriate binary from the [latest release](https://github.com/grafana/mimir/releases/latest) for your operating system and architecture and make it executable.
 
-Alternatively, use a command line tool such as `curl` to download mimirtool. For example, for Linux with the AMD64 architecture:
+Alternatively, use a command line tool such as `curl` to download `mimirtool`. For example, for Linux with the AMD64 architecture, use the following command:
 
 ```bash
 curl -fLo mimirtool https://github.com/grafana/mimir/releases/latest/download/mimirtool-linux-amd64
