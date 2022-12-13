@@ -117,3 +117,11 @@ The Mimir Alertmanager also periodically stores the alert state in the storage b
 When an Alertmanager starts, it attempts to load the alerts state for a given tenant from other Alertmanager replicas. If the load from other Alertmanager replicas fails, the Alertmanager falls back to the state that is periodically stored in the storage backend.
 
 In the event of a cluster outage, this fallback mechanism recovers the backup of the previous state. Because backups are taken periodically, this fallback mechanism does not guarantee that the lastest state is restored.
+
+## Ruler configuration
+
+You must configure the [ruler]({{< relref "ruler/index.md" >}}) with the addresses of Alertmanagers via the `-ruler.alertmanager-url` flag.
+
+Point the address to Alertmanager’s API.
+You can configure Alertmanager’s API prefix via the `-http.alertmanager-http-prefix` flag, which defaults to `/alertmanager`.
+For example, if Alertmanager is listening at `http://mimir-alertmanager.namespace.svc.cluster.local` and it is using the default API prefix, set `-ruler.alertmanager-url` to `http://mimir-alertmanager.namespace.svc.cluster.local/alertmanager`.
