@@ -1,13 +1,18 @@
 ---
 aliases:
   - /docs/mimir/latest/operators-guide/deploying-grafana-mimir/getting-started-helm-charts/
+  - /docs/helm-charts/mimir-distributed/latest/get-started/
 description: Learn how to get started with Grafana Mimir using the Helm chart.
-menuTitle: Getting started using the Helm chart
-title: Getting started with Grafana Mimir using the Helm chart
+menuTitle: Get started
+title: Get started with Grafana Mimir using the Helm chart
 weight: 25
+keywords:
+  - Helm chart
+  - Kubernetes
+  - Grafana Mimir
 ---
 
-# Getting started with Grafana Mimir using the Helm chart
+# Get started with Grafana Mimir using the Helm chart
 
 The [Helm](https://helm.sh/) chart allows you to configure, install, and upgrade Grafana Mimir within a Kubernetes cluster.
 
@@ -17,7 +22,7 @@ The instructions that follow are common across any flavor of Kubernetes. They al
 
 It also assumes that you have an understanding of what the `kubectl` command does.
 
-> **Caution:** This getting-started procedure is primarily aimed at local or development setups. For setting up in a production environment refer to [Run Grafana Mimir in production using the Helm chart]({{< relref "../../run-production-environment-with-helm" >}}).
+> **Caution:** This procedure is primarily aimed at local or development setups. To set up in a production environment, see [Run Grafana Mimir in production using the Helm chart]({{< relref "../../run-production-environment-with-helm" >}}).
 
 ### Hardware requirements
 
