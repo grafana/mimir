@@ -158,8 +158,12 @@ groups:
     expr: |
       (min by(cluster, namespace, pod) (cortex_ingester_memory_users) == 0)
       and on (cluster, namespace)
-      # Only if there's a least 1 tenant in Mimir.
-      (max by(cluster, namespace) (cortex_ingester_memory_users) > 0)
+      # Only if there are more time-series than would be expected due to continuous testing load
+      (
+        sum by(cluster, namespace) (cortex_ingester_memory_series)
+        /
+        max by(cluster, namespace) (cortex_distributor_replication_factor)
+      ) > 100000
     for: 1h
     labels:
       severity: warning
