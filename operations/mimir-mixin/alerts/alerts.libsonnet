@@ -265,6 +265,23 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: '%(product)s ingester %(alert_instance_variable)s in %(alert_aggregation_variables)s has no tenants assigned.' % $._config,
           },
         },
+        {
+          // Alert if a ruler instance has no rule groups assigned while other instances in the same cell do.
+          alert: $.alertName('RulerInstanceHasNoRuleGroups'),
+          'for': '1h',
+          expr: |||
+            (min by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ruler_managers_total) == 0)
+            and on (%(alert_aggregation_labels)s)
+            # Only if other ruler instances of the same cell have rule groups assigned
+            (max by(%(alert_aggregation_labels)s) (cortex_ruler_managers_total) > 0)
+          ||| % $._config,
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: '%(product)s ruler %(alert_instance_variable)s in %(alert_aggregation_variables)s has no rule groups assigned.' % $._config,
+          },
+        },
       ] + [
         {
           alert: $.alertName('RingMembersMismatch'),
