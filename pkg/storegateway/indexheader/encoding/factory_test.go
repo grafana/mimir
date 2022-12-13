@@ -88,19 +88,25 @@ func TestDecbufFactory_NewDecbufAtChecked_MultipleInstances(t *testing.T) {
 	enc := createTestEncoder(testContentSize)
 	enc.PutHash(crc32.New(table))
 
-	testDecbufFactory(t, testContentSize, enc, func(t *testing.T, factory *DecbufFactory) {
-		d1 := factory.NewDecbufAtChecked(0, table)
-		require.NoError(t, d1.Err())
-		fd1 := d1.r.file.Fd()
-		require.NoError(t, d1.Close())
-
-		d2 := factory.NewDecbufAtChecked(0, table)
-		require.NoError(t, d2.Err())
-		fd2 := d2.r.file.Fd()
-		require.NoError(t, d2.Close())
-
-		require.Equal(t, fd1, fd2, "expected Decbuf instances to use the same file descriptor")
+	// Note that we create the factory ourselves instead of using testDecbufFactory because
+	// we only want to test the case where file handles are pooled and hence will be reused
+	// between different Decbuf instances.
+	factory := createDecbufFactoryWithBytes(t, 1, testContentSize, enc)
+	t.Cleanup(func() {
+		factory.Stop()
 	})
+
+	d1 := factory.NewDecbufAtChecked(0, table)
+	require.NoError(t, d1.Err())
+	fd1 := d1.r.file.Fd()
+	require.NoError(t, d1.Close())
+
+	d2 := factory.NewDecbufAtChecked(0, table)
+	require.NoError(t, d2.Err())
+	fd2 := d2.r.file.Fd()
+	require.NoError(t, d2.Close())
+
+	require.Equal(t, fd1, fd2, "expected Decbuf instances to use the same file descriptor")
 }
 
 func TestDecbufFactory_NewDecbufAtChecked_Concurrent(t *testing.T) {
