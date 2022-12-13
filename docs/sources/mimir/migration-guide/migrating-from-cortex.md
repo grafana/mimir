@@ -81,21 +81,17 @@ It provides a simple migration by generating Mimir configuration from Cortex con
 
   - Ruler endpoints
 
-    | Legacy                                                | Current                                             |
-    | ----------------------------------------------------- | --------------------------------------------------- |
-    | `/<legacy-http-prefix>/api/v1/rules`                  | `<prometheus-http-prefix>/api/v1/rules`             |
-    | `/<legacy-http-prefix>/api/v1/alerts`                 | `<prometheus-http-prefix>/api/v1/alerts`            |
-    | `/<legacy-http-prefix>/rules`                         | `/api/v1/rules` (see below)                         |
-    | `/<legacy-http-prefix>/rules/{namespace}`             | `/api/v1/rules/{namespace}` (see below)             |
-    | `/<legacy-http-prefix>/rules/{namespace}/{groupName}` | `/api/v1/rules/{namespace}/{groupName}` (see below) |
-    | `/<legacy-http-prefix>/rules/{namespace}`             | `/api/v1/rules/{namespace}` (see below)             |
-    | `/<legacy-http-prefix>/rules/{namespace}/{groupName}` | `/api/v1/rules/{namespace}/{groupName}` (see below) |
-    | `/<legacy-http-prefix>/rules/{namespace}`             | `/api/v1/rules/{namespace}` (see below)             |
-    | `/ruler_ring`                                         | `/ruler/ring`                                       |
-
-    > **Note:** The `/api/v1/rules/**` endpoints are considered deprecated with Mimir 2.0.0 and will be removed
-    > in Mimir 2.2.0. After upgrading to 2.0.0 we recommend switching uses to the equivalent
-    > `/<prometheus-http-prefix>/config/v1/**` endpoints that Mimir 2.0.0 introduces.
+    | Legacy                                                | Current                                                            |
+    |-------------------------------------------------------|--------------------------------------------------------------------|
+    | `/<legacy-http-prefix>/api/v1/rules`                  | `<prometheus-http-prefix>/api/v1/rules`                            |
+    | `/<legacy-http-prefix>/api/v1/alerts`                 | `<prometheus-http-prefix>/api/v1/alerts`                           |
+    | `/<legacy-http-prefix>/rules`                         | `<prometheus-http-prefix>/config/v1/rules`                         |
+    | `/<legacy-http-prefix>/rules/{namespace}`             | `<prometheus-http-prefix>/config/v1/rules/{namespace}`             |
+    | `/<legacy-http-prefix>/rules/{namespace}/{groupName}` | `<prometheus-http-prefix>/config/v1/rules/{namespace}/{groupName}` | 
+    | `/<legacy-http-prefix>/rules/{namespace}`             | `<prometheus-http-prefix>/config/v1/rules/{namespace}`             |
+    | `/<legacy-http-prefix>/rules/{namespace}/{groupName}` | `<prometheus-http-prefix>/config/v1/rules/{namespace}/{groupName}` |
+    | `/<legacy-http-prefix>/rules/{namespace}`             | `<prometheus-http-prefix>/config/v1/rules/{namespace}`             |
+    | `/ruler_ring`                                         | `/ruler/ring`                                                      |
 
   - Alertmanager endpoints
 
@@ -186,7 +182,7 @@ To verify that the cluster is operating correctly, use the [monitoring mixin das
 
 ## Migrating to Grafana Mimir using Helm
 
-You can migrate to the Grafana Mimir Helm chart (`grafana/mimir-distributed` v3.1.0) from the Cortex Helm chart 
+You can migrate to the Grafana Mimir Helm chart (`grafana/mimir-distributed` v3.1.0) from the Cortex Helm chart
 (`cortex-helm/cortex` v1.7.0).
 
 ### Before you begin
@@ -257,17 +253,17 @@ You can migrate to the Grafana Mimir Helm chart (`grafana/mimir-distributed` v3.
    mimir:
      structuredConfig: <CONFIGURATION FILE CONTENTS>
    ```
-   
+
    Example:
-   
+
    ```yaml
    mimir:
-     structuredConfig: 
+     structuredConfig:
        ingester:
          ring:
            num_tokens: 512
    ```
-    
+
    e. Set the ingester `podManagementPolicy` to `"OrderedReady"`.
    The Grafana Mimir chart prefers `"Parallel"` for faster scale up, but this field is immutable on an existing StatefulSet.
 
