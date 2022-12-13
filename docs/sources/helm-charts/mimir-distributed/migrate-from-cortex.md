@@ -1,11 +1,11 @@
 ---
-title: "Migrating from Cortex to Grafana Mimir"
-menuTitle: "Migrating from Cortex"
+title: "Migrate from Cortex to Grafana Mimir"
+menuTitle: "Migrate from Cortex"
 description: "Learn how to migrate your deployment of Cortex to Grafana Mimir to simplify the deployment and continued operation of a horizontally scalable, multi-tenant time series database with long-term storage."
 weight: 10
 ---
 
-# Migrating from Cortex to Grafana Mimir
+# Migrate from Cortex to Grafana Mimir
 
 This document guides an operator through the process of migrating a deployment of [Cortex](https://cortexmetrics.io/) to Grafana Mimir.
 It includes an overview of the steps required for any environment, and specific instructions for [environments deployed with Jsonnet](#migrating-to-grafana-mimir-using-jsonnet) and [environments deployed with Helm](#migrating-to-grafana-mimir-using-helm).

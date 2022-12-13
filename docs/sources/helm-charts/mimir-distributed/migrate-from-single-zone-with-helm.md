@@ -1,11 +1,11 @@
 ---
-title: "Migrate from single zone to zone-aware replication with Helm"
-menuTitle: "Migrate from single zone to zone-aware replication with Helm"
+title: "Migrate from single zone to zone-aware replication"
+menuTitle: "Migrate from single zone to zone-aware replication"
 description: "Learn how to migrate from having a single availability zone to full zone-aware replication using the Grafana Mimir Helm chart"
 weight: 10
 ---
 
-# Migrate from single zone to zone-aware replication with Helm
+# Migrate from single zone to zone-aware replication
 
 This document explains how to migrate stateful components from single zone to [zone-aware replication]({{< relref "../operators-guide/configure/configure-zone-aware-replication/" >}}) with Helm. The three components in question are the [alertmanager]({{< relref "../operators-guide/architecture/components/alertmanager.md" >}}), the [store-gateway]({{< relref "../operators-guide/architecture/components/store-gateway.md" >}}) and the [ingester]({{< relref "../operators-guide/architecture/components/ingester.md" >}}).
 
