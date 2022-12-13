@@ -90,20 +90,16 @@ func TestDecbufFactory_NewDecbufAtChecked_MultipleInstances(t *testing.T) {
 
 	testDecbufFactory(t, testContentSize, enc, func(t *testing.T, factory *DecbufFactory) {
 		d1 := factory.NewDecbufAtChecked(0, table)
-		t.Cleanup(func() {
-			require.NoError(t, d1.Close())
-		})
-
 		require.NoError(t, d1.Err())
-		require.Equal(t, testContentSize+crc32.Size, d1.Len())
+		fd1 := d1.r.file.Fd()
+		require.NoError(t, d1.Close())
 
 		d2 := factory.NewDecbufAtChecked(0, table)
-		t.Cleanup(func() {
-			require.NoError(t, d2.Close())
-		})
+		require.NoError(t, d1.Err())
+		fd2 := d2.r.file.Fd()
+		require.NoError(t, d2.Close())
 
-		require.NoError(t, d2.Err())
-		require.Equal(t, testContentSize+crc32.Size, d2.Len())
+		require.Equal(t, fd1, fd2, "expected Decbuf instances to use the same file descriptor")
 	})
 }
 
