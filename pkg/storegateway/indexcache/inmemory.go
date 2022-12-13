@@ -346,22 +346,22 @@ func (c *InMemoryIndexCache) FetchExpandedPostings(_ context.Context, userID str
 }
 
 // StoreSeries stores the result of a Series() call.
-func (c *InMemoryIndexCache) StoreSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, v []byte) {
+func (c *InMemoryIndexCache) StoreSeries(_ context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, v []byte) {
 	c.set(cacheKeySeries{userID, blockID, matchersKey, shardKey(shard)}, v)
 }
 
 // FetchSeries fetches the result of a Series() call.
-func (c *InMemoryIndexCache) FetchSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector) ([]byte, bool) {
+func (c *InMemoryIndexCache) FetchSeries(_ context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector) ([]byte, bool) {
 	return c.get(cacheKeySeries{userID, blockID, matchersKey, shardKey(shard)})
 }
 
 // StoreSeriesForPostings stores a series set for the provided postings.
-func (c *InMemoryIndexCache) StoreSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, postingsKey PostingsKey, v []byte) {
+func (c *InMemoryIndexCache) StoreSeriesForPostings(_ context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, postingsKey PostingsKey, v []byte) {
 	c.set(cacheKeySeriesForPostings{userID, blockID, matchersKey, shardKey(shard), postingsKey}, v)
 }
 
 // FetchSeriesForPostings fetches a series set for the provided postings.
-func (c *InMemoryIndexCache) FetchSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, postingsKey PostingsKey) ([]byte, bool) {
+func (c *InMemoryIndexCache) FetchSeriesForPostings(_ context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, postingsKey PostingsKey) ([]byte, bool) {
 	return c.get(cacheKeySeriesForPostings{userID, blockID, matchersKey, shardKey(shard), postingsKey})
 }
 
