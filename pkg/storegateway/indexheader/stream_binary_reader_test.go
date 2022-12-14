@@ -37,7 +37,7 @@ func BenchmarkLookupSymbol(b *testing.B) {
 	valueSymbols := generateSymbols("value", 1000)
 	idIndexV2, err := testhelper.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"), 124, metadata.NoneFunc)
 	require.NoError(b, err)
-	require.NoError(b, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, idIndexV2.String()), metadata.NoneFunc))
+	require.NoError(b, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, idIndexV2.String()), nil))
 
 	indexName := filepath.Join(bucketDir, idIndexV2.String(), block.IndexHeaderFilename)
 	require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
@@ -118,7 +118,7 @@ func BenchmarkLabelNames(b *testing.B) {
 			valueSymbols := generateSymbols("value", valueCount)
 			idIndexV2, err := testhelper.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"), 124, metadata.NoneFunc)
 			require.NoError(b, err)
-			require.NoError(b, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, idIndexV2.String()), metadata.NoneFunc))
+			require.NoError(b, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, idIndexV2.String()), nil))
 
 			indexName := filepath.Join(bucketDir, idIndexV2.String(), block.IndexHeaderFilename)
 			require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
@@ -160,7 +160,7 @@ func BenchmarkNewStreamBinaryReader(b *testing.B) {
 			valueSymbols := generateSymbols("value", valueCount)
 			idIndexV2, err := testhelper.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"), 124, metadata.NoneFunc)
 			require.NoError(b, err)
-			require.NoError(b, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, idIndexV2.String()), metadata.NoneFunc))
+			require.NoError(b, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, idIndexV2.String()), nil))
 
 			indexName := filepath.Join(bucketDir, idIndexV2.String(), block.IndexHeaderFilename)
 			require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))

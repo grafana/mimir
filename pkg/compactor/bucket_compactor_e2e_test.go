@@ -40,7 +40,6 @@ import (
 
 	"github.com/thanos-io/objstore"
 
-	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
@@ -451,7 +450,7 @@ func createAndUpload(t testing.TB, bkt objstore.Bucket, blocks []blockgenSpec, b
 	for _, b := range blocks {
 		id, meta := createBlock(ctx, t, prepareDir, b)
 		metas = append(metas, meta)
-		require.NoError(t, mimir_tsdb.UploadBlock(ctx, log.NewNopLogger(), bkt, filepath.Join(prepareDir, id.String()), nil))
+		require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(prepareDir, id.String()), nil))
 	}
 	for _, b := range blocksWithOutOfOrderChunks {
 		id, meta := createBlock(ctx, t, prepareDir, b)
@@ -460,7 +459,7 @@ func createAndUpload(t testing.TB, bkt objstore.Bucket, blocks []blockgenSpec, b
 		require.NoError(t, err)
 
 		metas = append(metas, meta)
-		require.NoError(t, mimir_tsdb.UploadBlock(ctx, log.NewNopLogger(), bkt, filepath.Join(prepareDir, id.String()), nil))
+		require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(prepareDir, id.String()), nil))
 	}
 
 	return metas
