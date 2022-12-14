@@ -507,7 +507,7 @@ How it **works**:
 
 How to **fix** it:
 
-- Increase the shard size of one or more tenants to match the number of ingester replicas.
+- Increase the shard size of one or more tenants to match the number of ruler replicas.
 - Set the shard size of one or more tenants to `0`; this will shard the given tenant's rule groups across all ingesters.
 - Decrease the total number of ruler replicas by the number of idle replicas.
 
