@@ -24,12 +24,13 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
+	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func init() {
 	// Track the balance of gets/puts to seriesChunkRefsSetPool in all tests.
-	seriesChunkRefsSetPool = &trackedPool{parent: seriesChunkRefsSetPool}
+	seriesChunkRefsSetPool = &pool.TrackedPool{Parent: seriesChunkRefsSetPool}
 }
 
 func TestSeriesChunkRef_Compare(t *testing.T) {
@@ -638,7 +639,7 @@ func TestMergedSeriesChunkRefsSet_Concurrency(t *testing.T) {
 	}
 
 	// Reset the memory pool tracker.
-	seriesChunkRefsSetPool.(*trackedPool).reset()
+	seriesChunkRefsSetPool.(*pool.TrackedPool).Reset()
 
 	g, _ := errgroup.WithContext(context.Background())
 	for c := 0; c < concurrency; c++ {
@@ -654,8 +655,8 @@ func TestMergedSeriesChunkRefsSet_Concurrency(t *testing.T) {
 
 	// Ensure the seriesChunkRefsSet memory pool has been used and all slices pulled from
 	// pool have put back.
-	assert.Greater(t, seriesChunkRefsSetPool.(*trackedPool).gets.Load(), int64(0))
-	assert.Equal(t, int64(0), seriesChunkRefsSetPool.(*trackedPool).balance.Load())
+	assert.Greater(t, seriesChunkRefsSetPool.(*pool.TrackedPool).Gets.Load(), int64(0))
+	assert.Equal(t, int64(0), seriesChunkRefsSetPool.(*pool.TrackedPool).Balance.Load())
 }
 
 func BenchmarkMergedSeriesChunkRefsSetIterators(b *testing.B) {

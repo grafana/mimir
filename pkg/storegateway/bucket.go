@@ -1156,7 +1156,7 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 	mergedBatches := mergedSeriesChunkRefsSetIterators(s.maxSeriesPerBatch, batches...)
 	var set storepb.SeriesSet
 	if chunkReaders != nil {
-		set = newSeriesSetWithChunks(ctx, *chunkReaders, chunksPool, mergedBatches, stats, s.metrics.iteratorLoadDurations)
+		set = newSeriesSetWithChunks(ctx, *chunkReaders, chunksPool, mergedBatches, s.maxSeriesPerBatch, stats, s.metrics.iteratorLoadDurations)
 	} else {
 		set = newSeriesSetWithoutChunks(ctx, mergedBatches)
 	}
