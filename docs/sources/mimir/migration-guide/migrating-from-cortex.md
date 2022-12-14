@@ -82,12 +82,12 @@ It provides a simple migration by generating Mimir configuration from Cortex con
   - Ruler endpoints
 
     | Legacy                                                | Current                                                            |
-    |-------------------------------------------------------|--------------------------------------------------------------------|
+    | ----------------------------------------------------- | ------------------------------------------------------------------ |
     | `/<legacy-http-prefix>/api/v1/rules`                  | `<prometheus-http-prefix>/api/v1/rules`                            |
     | `/<legacy-http-prefix>/api/v1/alerts`                 | `<prometheus-http-prefix>/api/v1/alerts`                           |
     | `/<legacy-http-prefix>/rules`                         | `<prometheus-http-prefix>/config/v1/rules`                         |
     | `/<legacy-http-prefix>/rules/{namespace}`             | `<prometheus-http-prefix>/config/v1/rules/{namespace}`             |
-    | `/<legacy-http-prefix>/rules/{namespace}/{groupName}` | `<prometheus-http-prefix>/config/v1/rules/{namespace}/{groupName}` | 
+    | `/<legacy-http-prefix>/rules/{namespace}/{groupName}` | `<prometheus-http-prefix>/config/v1/rules/{namespace}/{groupName}` |
     | `/<legacy-http-prefix>/rules/{namespace}`             | `<prometheus-http-prefix>/config/v1/rules/{namespace}`             |
     | `/<legacy-http-prefix>/rules/{namespace}/{groupName}` | `<prometheus-http-prefix>/config/v1/rules/{namespace}/{groupName}` |
     | `/<legacy-http-prefix>/rules/{namespace}`             | `<prometheus-http-prefix>/config/v1/rules/{namespace}`             |
@@ -191,7 +191,6 @@ You can migrate to the Grafana Mimir Helm chart (`grafana/mimir-distributed` v3.
 - Ensure that you are running ingesters using a Kubernetes StatefulSet.
 - We are using `yq` v4 to parse and mofidy yaml files.
 
-
   In the `values.yaml` file:
 
   ```
@@ -200,7 +199,7 @@ You can migrate to the Grafana Mimir Helm chart (`grafana/mimir-distributed` v3.
       enabled: true
   ```
 
-  The ingester needs storage capacity for write-ahead-logging (WAL) and to create blocks for uploading. 
+  The ingester needs storage capacity for write-ahead-logging (WAL) and to create blocks for uploading.
   The WAL was optional in Cortex with chunks, but not optional in Mimir.
   A StatefulSet is the most convenient way to make sure that each Pod gets a storage volume.
 
@@ -287,7 +286,7 @@ You can migrate to the Grafana Mimir Helm chart (`grafana/mimir-distributed` v3.
 
    g. Disable MinIO.
    The Grafana Mimir Helm chart enables MinIO by default for convenience during first time install.
-   If you are migrating from Cortex and have your existing object storage you must disable MinIO in Grafana Mimir Helm 
+   If you are migrating from Cortex and have your existing object storage you must disable MinIO in Grafana Mimir Helm
    chart custom values.yaml.
 
    In your `values.yaml` file:
