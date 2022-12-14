@@ -875,6 +875,9 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 		group := ""
 		if len(req.Timeseries) > 0 {
 			group = validation.FindGroupLabel(d.limits, userID, req.Timeseries[0].Labels)
+			if d.activeGroups.ActiveGroupLimitExceeded(userID, group) {
+				group = "other"
+			}
 		}
 
 		d.activeGroups.UpdateGroupTimestamp(userID, group, now)

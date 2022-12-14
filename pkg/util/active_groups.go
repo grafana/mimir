@@ -126,6 +126,18 @@ func (s *ActiveGroupsCleanupService) UpdateGroupTimestamp(user, group string, no
 	s.activeGroups.UpdateGroupTimestampForUser(user, group, now.UnixNano())
 }
 
+func (s *ActiveGroupsCleanupService) ActiveGroupLimitExceeded(userID, group string) bool {
+	if s.activeGroups == nil {
+		return false
+	}
+
+	s.activeGroups.mu.RLock()
+	defer s.activeGroups.mu.RUnlock()
+
+	_, containsGroup := s.activeGroups.timestampsPerUser[userID][group]
+	return !containsGroup && len(s.activeGroups.timestampsPerUser[userID]) >= maxGroupsPerUser
+}
+
 func (s *ActiveGroupsCleanupService) iteration(_ context.Context) error {
 	//inactiveUsers := s.activeGroups.PurgeInactiveGroupsForUser(time.Now().Add(-s.inactiveTimeout).UnixNano())
 	// Inactive Users - Delete all their metrics
