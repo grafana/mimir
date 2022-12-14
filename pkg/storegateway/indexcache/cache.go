@@ -91,22 +91,19 @@ type PostingsKey string
 
 // CanonicalPostingsKey creates a canonical version of PostingsKey
 func CanonicalPostingsKey(postings []storage.SeriesRef) PostingsKey {
-	sorted := make([]byte, len(postings)*8)
+	hashable := make([]byte, len(postings)*8)
 	for i, posting := range postings {
 		for octet := 0; octet < 8; octet++ {
-			sorted[i+octet] = byte(posting >> (octet * 8))
+			hashable[i+octet] = byte(posting >> (octet * 8))
 		}
 	}
-	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i] < sorted[j]
-	})
 
 	// We hash the postings list twice to minimize the chance of collisions
 	hasher1, _ := blake2b.New256(nil) // This will never return an error
 	hasher2 := sha1.New()
 
-	_, _ = hasher1.Write(sorted)
-	_, _ = hasher2.Write(sorted)
+	_, _ = hasher1.Write(hashable)
+	_, _ = hasher2.Write(hashable)
 
 	checksum := hasher2.Sum(hasher1.Sum(nil))
 
