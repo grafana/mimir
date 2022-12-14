@@ -110,7 +110,8 @@ type Distributor struct {
 	subservices        *services.Manager
 	subservicesWatcher *services.FailureWatcher
 
-	activeUsers *util.ActiveUsersCleanupService
+	activeUsers  *util.ActiveUsersCleanupService
+	activeGroups *util.ActiveGroupsCleanupService
 
 	ingestionRate             *util_math.EwmaRate
 	inflightPushRequests      atomic.Int64
@@ -421,6 +422,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 
 	d.replicationFactor.Set(float64(ingestersRing.ReplicationFactor()))
 	d.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(d.cleanupInactiveUser)
+	d.activeGroups = util.NewActiveGroupsCleanupWithDefaultValues(d.cleanupInactiveGroupsForUser)
 
 	d.forwarder = forwarding.NewForwarder(cfg.Forwarding, reg, log, limits)
 	// The forwarder is an optional feature, if it's disabled then d.forwarder will be nil.
@@ -430,7 +432,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 
 	d.pushWithMiddlewares = d.GetPushFunc(nil)
 
-	subservices = append(subservices, d.ingesterPool, d.activeUsers)
+	subservices = append(subservices, d.ingesterPool, d.activeUsers, d.activeGroups)
 	d.subservices, err = services.NewManager(subservices...)
 	if err != nil {
 		return nil, err
@@ -541,6 +543,13 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	if d.forwarder != nil {
 		d.forwarder.DeleteMetricsForUser(userID)
 	}
+}
+
+func (d *Distributor) cleanupInactiveGroupsForUser(userID, group string) {
+	d.dedupedSamples.DeleteLabelValues(userID, group)
+	d.discardedSamplesTooManyHaClusters.DeleteLabelValues(userID, group)
+	d.discardedSamplesRateLimited.DeleteLabelValues(userID, group)
+	d.sampleValidationMetrics.DeleteUserMetricsForGroup(userID, group)
 }
 
 // Called after distributor is asked to stop via StopAsync.
@@ -863,6 +872,13 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 		d.receivedRequests.WithLabelValues(userID).Add(1)
 		d.activeUsers.UpdateUserTimestamp(userID, now)
 
+		group := ""
+		if len(req.Timeseries) > 0 {
+			group = validation.FindGroupLabel(d.limits, userID, req.Timeseries[0].Labels)
+		}
+
+		d.activeGroups.UpdateGroupTimestamp(userID, group, now)
+
 		// A WriteRequest can only contain series or metadata but not both. This might change in the future.
 		validatedMetadata := 0
 		validatedSamples := 0
@@ -887,11 +903,6 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 		var minExemplarTS int64
 		if earliestSampleTimestampMs != math.MaxInt64 {
 			minExemplarTS = earliestSampleTimestampMs - 300000
-		}
-
-		group := ""
-		if len(req.Timeseries) > 0 {
-			group = validation.FindGroupLabel(d.limits, userID, req.Timeseries[0].Labels)
 		}
 
 		var firstPartialErr error

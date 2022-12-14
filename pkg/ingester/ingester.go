@@ -216,7 +216,8 @@ type Ingester struct {
 	// Value used by shipper as external label.
 	shipperIngesterID string
 
-	subservices *services.Manager
+	subservices  *services.Manager
+	activeGroups *util.ActiveGroupsCleanupService
 
 	tsdbMetrics *tsdbMetrics
 
@@ -406,6 +407,9 @@ func (i *Ingester) starting(ctx context.Context) error {
 		servs = append(servs, closeIdleService)
 	}
 
+	activeGroupsService := util.NewActiveGroupsCleanupWithDefaultValues(i.cleanupInactiveGroupsForUser)
+	servs = append(servs, activeGroupsService)
+
 	var err error
 	i.subservices, err = services.NewManager(servs...)
 	if err == nil {
@@ -483,6 +487,7 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 			i.applyTSDBSettings()
 
 		case <-activeSeriesTickerChan:
+			// Also update the active groups here
 			i.updateActiveSeries(time.Now())
 
 		case <-usageStatsUpdateTicker.C:
@@ -507,6 +512,8 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 		if userDB == nil {
 			continue
 		}
+
+		// Go through and clean up inactive groups
 
 		newMatchersConfig := i.limits.ActiveSeriesCustomTrackersConfig(userID)
 		if newMatchersConfig.String() != userDB.activeSeries.CurrentConfig().String() {
@@ -894,6 +901,8 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	if len(req.Timeseries) > 0 {
 		group = validation.FindGroupLabel(i.limits, userID, req.Timeseries[0].Labels)
 	}
+
+	i.activeGroups.UpdateGroupTimestamp(userID, group, time.Now())
 
 	if sampleOutOfBoundsCount > 0 {
 		i.metrics.discardedSamplesSampleOutOfBounds.WithLabelValues(userID, group).Add(float64(sampleOutOfBoundsCount))
@@ -2097,6 +2106,10 @@ func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckRes
 
 	level.Info(i.logger).Log("msg", "deleted local TSDB, due to being idle", "user", userID, "dir", dir)
 	return tsdbIdleClosed
+}
+
+func (i *Ingester) cleanupInactiveGroupsForUser(userID, group string) {
+	i.metrics.deletePerGroupMetricsForUser(userID, group)
 }
 
 // TransferOut implements ring.FlushTransferer.
