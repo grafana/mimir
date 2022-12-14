@@ -4,6 +4,7 @@ package storegateway
 
 import (
 	"context"
+	"strings"
 	"sync"
 
 	"github.com/go-kit/log"
@@ -845,17 +846,18 @@ func fetchCachedSeriesForPostings(ctx context.Context, userID string, indexCache
 	if !ok {
 		return seriesChunkRefsSet{}, false
 	}
+
 	var entry seriesForPostingsCacheEntry
 	if err := decodeSnappyGob(data, &entry); err != nil {
-		level.Warn(spanlogger.FromContext(ctx, logger)).Log("msg", "can't decode series cache", "err", err)
+		logSeiresForPostingsCacheEvent(ctx, logger, userID, blockID, matchers, shard, postingsKey, "msg", "can't decode series cache", "err", err)
 		return seriesChunkRefsSet{}, false
 	}
 	if entry.MatchersKey != matchersKey {
-		level.Debug(spanlogger.FromContext(ctx, logger)).Log("msg", "cached series entry key doesn't match, possible collision", "cached_key", entry.MatchersKey, "requested_key", matchersKey)
+		logSeiresForPostingsCacheEvent(ctx, logger, userID, blockID, matchers, shard, postingsKey, "msg", "cached series entry key doesn't match, possible collision", "cached_matchers", entry.MatchersKey)
 		return seriesChunkRefsSet{}, false
 	}
 	if entry.Shard != maybeNilShard(shard) {
-		level.Debug(spanlogger.FromContext(ctx, logger)).Log("msg", "cached series shard doesn't match, possible collision", "cached_shard", entry.Shard, "requested_shard", maybeNilShard(shard))
+		logSeiresForPostingsCacheEvent(ctx, logger, userID, blockID, matchers, shard, postingsKey, "msg", "cached series shard doesn't match, possible collision", "cached_shard", entry.Shard)
 		return seriesChunkRefsSet{}, false
 	}
 
@@ -882,10 +884,20 @@ func storeCachedSeriesForPostings(ctx context.Context, indexCache indexcache.Ind
 
 	data, err := encodeSnappyGob(entry)
 	if err != nil {
-		level.Error(spanlogger.FromContext(ctx, logger)).Log("msg", "can't encode series for caching", "err", err)
+		logSeiresForPostingsCacheEvent(ctx, logger, userID, blockID, matchers, shard, postingsKey, "msg", "can't encode series for caching", "err", err)
 		return
 	}
 	indexCache.StoreSeriesForPostings(ctx, userID, blockID, entry.MatchersKey, shard, postingsKey, data)
+}
+
+func logSeiresForPostingsCacheEvent(ctx context.Context, logger log.Logger, userID string, blockID ulid.ULID, matchers []*labels.Matcher, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey, msgAndArgs ...any) {
+	var matchersStr strings.Builder
+	for _, m := range matchers {
+		matchersStr.WriteString(m.String())
+		matchersStr.WriteString(",")
+	}
+	msgAndArgs = append(msgAndArgs, "tenant_id", userID, "block_ulid", blockID.String(), "matchers", matchersStr.String(), "requested_shard", maybeNilShard(shard), "postings_key", postingsKey)
+	level.Warn(spanlogger.FromContext(ctx, logger)).Log(msgAndArgs...)
 }
 
 type seriesHasher interface {
