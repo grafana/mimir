@@ -849,15 +849,15 @@ func fetchCachedSeriesForPostings(ctx context.Context, userID string, indexCache
 
 	var entry seriesForPostingsCacheEntry
 	if err := decodeSnappyGob(data, &entry); err != nil {
-		logSeiresForPostingsCacheEvent(ctx, logger, userID, blockID, matchers, shard, postingsKey, "msg", "can't decode series cache", "err", err)
+		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, matchers, shard, postingsKey, "msg", "can't decode series cache", "err", err)
 		return seriesChunkRefsSet{}, false
 	}
 	if entry.MatchersKey != matchersKey {
-		logSeiresForPostingsCacheEvent(ctx, logger, userID, blockID, matchers, shard, postingsKey, "msg", "cached series entry key doesn't match, possible collision", "cached_matchers", entry.MatchersKey)
+		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, matchers, shard, postingsKey, "msg", "cached series entry key doesn't match, possible collision", "cached_matchers", entry.MatchersKey)
 		return seriesChunkRefsSet{}, false
 	}
 	if entry.Shard != maybeNilShard(shard) {
-		logSeiresForPostingsCacheEvent(ctx, logger, userID, blockID, matchers, shard, postingsKey, "msg", "cached series shard doesn't match, possible collision", "cached_shard", entry.Shard)
+		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, matchers, shard, postingsKey, "msg", "cached series shard doesn't match, possible collision", "cached_shard", entry.Shard)
 		return seriesChunkRefsSet{}, false
 	}
 
@@ -884,13 +884,13 @@ func storeCachedSeriesForPostings(ctx context.Context, indexCache indexcache.Ind
 
 	data, err := encodeSnappyGob(entry)
 	if err != nil {
-		logSeiresForPostingsCacheEvent(ctx, logger, userID, blockID, matchers, shard, postingsKey, "msg", "can't encode series for caching", "err", err)
+		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, matchers, shard, postingsKey, "msg", "can't encode series for caching", "err", err)
 		return
 	}
 	indexCache.StoreSeriesForPostings(ctx, userID, blockID, entry.MatchersKey, shard, postingsKey, data)
 }
 
-func logSeiresForPostingsCacheEvent(ctx context.Context, logger log.Logger, userID string, blockID ulid.ULID, matchers []*labels.Matcher, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey, msgAndArgs ...any) {
+func logSeriesForPostingsCacheEvent(ctx context.Context, logger log.Logger, userID string, blockID ulid.ULID, matchers []*labels.Matcher, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey, msgAndArgs ...any) {
 	var matchersStr strings.Builder
 	for _, m := range matchers {
 		matchersStr.WriteString(m.String())
