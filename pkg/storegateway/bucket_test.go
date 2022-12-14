@@ -821,8 +821,8 @@ func uploadTestBlock(t testing.TB, tmpDir string, bkt objstore.Bucket, dataSetup
 		Source:     metadata.TestSource,
 	}, nil)
 	assert.NoError(t, err)
-	assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(tmpDir, "tmp", id.String()), metadata.NoneFunc))
-	assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(tmpDir, "tmp", id.String()), metadata.NoneFunc))
+	assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(tmpDir, "tmp", id.String()), nil))
+	assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(tmpDir, "tmp", id.String()), nil))
 
 	return id, h.MinTime(), h.MaxTime()
 }
@@ -1031,7 +1031,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 		assert.NoError(t, err)
 
 		assert.NoError(t, meta.WriteToDir(logger, filepath.Join(blockDir, id.String())))
-		assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(blockDir, id.String()), metadata.NoneFunc))
+		assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(blockDir, id.String()), nil))
 	}
 
 	ibkt := objstore.WithNoopInstr(bkt)
@@ -1168,7 +1168,7 @@ func TestBucket_Series_Concurrency(t *testing.T) {
 		expectedSeries = append(expectedSeries, blockSeries...)
 		expectedBlockIDs = append(expectedBlockIDs, blockID.String())
 
-		require.NoError(t, mimir_tsdb.UploadBlock(ctx, logger, bucket, filepath.Join(blockDir, blockID.String()), nil))
+		require.NoError(t, block.Upload(ctx, logger, bucket, filepath.Join(blockDir, blockID.String()), nil))
 	}
 	t.Log("generated test blocks")
 
@@ -1373,7 +1373,7 @@ func TestBucketSeries_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 
 		meta, err := metadata.InjectThanos(log.NewNopLogger(), filepath.Join(blockDir, id.String()), thanosMeta, nil)
 		assert.NoError(t, err)
-		assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(blockDir, id.String()), metadata.NoneFunc))
+		assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(blockDir, id.String()), nil))
 
 		b1 = &bucketBlock{
 			indexCache:  indexCache,
@@ -1412,7 +1412,7 @@ func TestBucketSeries_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 
 		meta, err := metadata.InjectThanos(log.NewNopLogger(), filepath.Join(blockDir, id.String()), thanosMeta, nil)
 		assert.NoError(t, err)
-		assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(blockDir, id.String()), metadata.NoneFunc))
+		assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(blockDir, id.String()), nil))
 
 		b2 = &bucketBlock{
 			indexCache:  indexCache,
@@ -1668,7 +1668,7 @@ func TestSeries_BlockWithMultipleChunks(t *testing.T) {
 
 	instrBkt := objstore.WithNoopInstr(bkt)
 	logger := log.NewNopLogger()
-	assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(headOpts.ChunkDirRoot, blk.String()), metadata.NoneFunc))
+	assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(headOpts.ChunkDirRoot, blk.String()), nil))
 
 	// Instance a real bucket store we'll use to query the series.
 	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil)
@@ -2060,7 +2060,7 @@ func BenchmarkBucketBlock_readChunkRange(b *testing.B) {
 	blockMeta, err := metadata.InjectThanos(logger, filepath.Join(tmpDir, blockID.String()), thanosMeta, nil)
 	assert.NoError(b, err)
 
-	assert.NoError(b, block.Upload(context.Background(), logger, bkt, filepath.Join(tmpDir, blockID.String()), metadata.NoneFunc))
+	assert.NoError(b, block.Upload(context.Background(), logger, bkt, filepath.Join(tmpDir, blockID.String()), nil))
 
 	// Create a chunk pool with buckets between 8B and 32KB.
 	chunkPool, err := pool.NewBucketedBytes(8, 32*1024, 2, 1e10)
@@ -2131,7 +2131,7 @@ func prepareBucket(b *testing.B) (*bucketBlock, *metadata.Meta) {
 	blockMeta, err := metadata.InjectThanos(logger, filepath.Join(tmpDir, blockID.String()), thanosMeta, nil)
 	assert.NoError(b, err)
 
-	assert.NoError(b, block.Upload(context.Background(), logger, bkt, filepath.Join(tmpDir, blockID.String()), metadata.NoneFunc))
+	assert.NoError(b, block.Upload(context.Background(), logger, bkt, filepath.Join(tmpDir, blockID.String()), nil))
 	assert.NoError(b, head.Close())
 
 	// Create chunk pool and partitioner using the same production settings.

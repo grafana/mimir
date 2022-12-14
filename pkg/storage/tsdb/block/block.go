@@ -92,29 +92,19 @@ func Download(ctx context.Context, logger log.Logger, bucket objstore.Bucket, id
 	return nil
 }
 
-// Upload uploads a TSDB block to the object storage. It verifies basic
-// features of Thanos block.
-func Upload(ctx context.Context, logger log.Logger, bkt objstore.Bucket, bdir string, hf metadata.HashFunc, options ...objstore.UploadOption) error {
-	return upload(ctx, logger, bkt, bdir, hf, true, options...)
-}
-
-// UploadPromBlock uploads a TSDB block to the object storage. It assumes
-// the block is used in Prometheus so it doesn't check Thanos external labels.
-func UploadPromBlock(ctx context.Context, logger log.Logger, bkt objstore.Bucket, bdir string, hf metadata.HashFunc, options ...objstore.UploadOption) error {
-	return upload(ctx, logger, bkt, bdir, hf, false, options...)
-}
-
-// upload uploads block from given block dir that ends with block id.
-// It makes sure cleanup is done on error to avoid partial block uploads.
-// TODO(bplotka): Ensure bucket operations have reasonable backoff retries.
-// NOTE: Upload updates `meta.Thanos.File` section.
-func upload(ctx context.Context, logger log.Logger, bkt objstore.Bucket, bdir string, hf metadata.HashFunc, checkExternalLabels bool, options ...objstore.UploadOption) error {
-	df, err := os.Stat(bdir)
+// Upload uploads a TSDB block to the object storage. Notes:
+//
+// - If meta parameter is supplied (not nil), then uploaded meta.json file reflects meta parameter. However local
+// meta.json file must still exist.
+//
+// - Meta struct is updated with gatherFileStats
+func Upload(ctx context.Context, logger log.Logger, bkt objstore.Bucket, blockDir string, meta *metadata.Meta) error {
+	df, err := os.Stat(blockDir)
 	if err != nil {
 		return err
 	}
 	if !df.IsDir() {
-		return errors.Errorf("%s is not a directory", bdir)
+		return errors.Errorf("%s is not a directory", blockDir)
 	}
 
 	// Verify dir.
@@ -123,33 +113,31 @@ func upload(ctx context.Context, logger log.Logger, bkt objstore.Bucket, bdir st
 		return errors.Wrap(err, "not a block dir")
 	}
 
-	meta, err := metadata.ReadFromDir(bdir)
-	if err != nil {
-		// No meta or broken meta file.
-		return errors.Wrap(err, "read meta")
-	}
-
-	if checkExternalLabels {
-		if meta.Thanos.Labels == nil || len(meta.Thanos.Labels) == 0 {
-			return errors.New("empty external labels are not allowed for Thanos block")
+	if meta == nil {
+		meta, err = metadata.ReadFromDir(blockDir)
+		if err != nil {
+			// No meta or broken meta file.
+			return errors.Wrap(err, "read meta")
 		}
 	}
 
-	metaEncoded := strings.Builder{}
-	meta.Thanos.Files, err = GatherFileStats(bdir, hf, logger)
+	// Note that entry for meta.json file will be incorrect and will reflect local file,
+	// not updated Meta struct.
+	meta.Thanos.Files, err = GatherFileStats(blockDir, metadata.NoneFunc, logger)
 	if err != nil {
 		return errors.Wrap(err, "gather meta file stats")
 	}
 
+	metaEncoded := strings.Builder{}
 	if err := meta.Write(&metaEncoded); err != nil {
 		return errors.Wrap(err, "encode meta file")
 	}
 
-	if err := objstore.UploadDir(ctx, logger, bkt, filepath.Join(bdir, ChunksDirname), path.Join(id.String(), ChunksDirname), options...); err != nil {
+	if err := objstore.UploadDir(ctx, logger, bkt, filepath.Join(blockDir, ChunksDirname), path.Join(id.String(), ChunksDirname)); err != nil {
 		return cleanUp(logger, bkt, id, errors.Wrap(err, "upload chunks"))
 	}
 
-	if err := objstore.UploadFile(ctx, logger, bkt, filepath.Join(bdir, IndexFilename), path.Join(id.String(), IndexFilename)); err != nil {
+	if err := objstore.UploadFile(ctx, logger, bkt, filepath.Join(blockDir, IndexFilename), path.Join(id.String(), IndexFilename)); err != nil {
 		return cleanUp(logger, bkt, id, errors.Wrap(err, "upload index"))
 	}
 
@@ -165,13 +153,13 @@ func upload(ctx context.Context, logger log.Logger, bkt objstore.Bucket, bdir st
 	return nil
 }
 
-func cleanUp(logger log.Logger, bkt objstore.Bucket, id ulid.ULID, err error) error {
+func cleanUp(logger log.Logger, bkt objstore.Bucket, id ulid.ULID, origErr error) error {
 	// Cleanup the dir with an uncancelable context.
 	cleanErr := Delete(context.Background(), logger, bkt, id)
 	if cleanErr != nil {
-		return errors.Wrapf(err, "failed to clean block after upload issue. Partial block in system. Err: %s", err.Error())
+		return errors.Wrapf(origErr, "failed to clean block after upload issue. Partial block in system. Err: %s", cleanErr.Error())
 	}
-	return err
+	return origErr
 }
 
 // MarkForDeletion creates a file which stores information about when the block was marked for deletion.

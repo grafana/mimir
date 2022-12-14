@@ -59,7 +59,7 @@ func TestReaders(t *testing.T) {
 		labels.FromStrings("a", "1", "longer-string", "2"),
 	}, 100, 0, 1000, labels.FromStrings("ext1", "1"), 124, metadata.NoneFunc)
 	require.NoError(t, err)
-	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, idIndexV2.String()), metadata.NoneFunc))
+	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, idIndexV2.String()), nil))
 
 	metaIndexV1, err := metadata.ReadFromDir("./testdata/index_format_v1")
 	require.NoError(t, err)
@@ -72,7 +72,7 @@ func TestReaders(t *testing.T) {
 	}, &metaIndexV1.BlockMeta)
 
 	require.NoError(t, err)
-	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, metaIndexV1.ULID.String()), metadata.NoneFunc))
+	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, metaIndexV1.ULID.String()), nil))
 
 	for _, id := range []ulid.ULID{idIndexV2, metaIndexV1.ULID} {
 		t.Run(id.String(), func(t *testing.T) {
@@ -273,7 +273,7 @@ func prepareIndexV2Block(t testing.TB, tmpDir string, bkt objstore.Bucket) *meta
 		Source:     metadata.TestSource,
 	}, &m.BlockMeta)
 	require.NoError(t, err)
-	require.NoError(t, block.Upload(context.Background(), log.NewNopLogger(), bkt, filepath.Join(tmpDir, m.ULID.String()), metadata.NoneFunc))
+	require.NoError(t, block.Upload(context.Background(), log.NewNopLogger(), bkt, filepath.Join(tmpDir, m.ULID.String()), nil))
 
 	return m
 }
@@ -340,7 +340,7 @@ func BenchmarkBinaryReader_LargerBlock(b *testing.B) {
 
 	blockID, err := testhelper.CreateBlock(ctx, tmpDir, seriesLabels, 100, 0, 1000, labels.FromStrings("ext1", "1"), 124, metadata.NoneFunc)
 	require.NoError(b, err)
-	require.NoError(b, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), metadata.NoneFunc))
+	require.NoError(b, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), nil))
 
 	filename := filepath.Join(tmpDir, "bkt", blockID.String(), block.IndexHeaderFilename)
 	require.NoError(b, WriteBinary(ctx, bkt, blockID, filename))
@@ -383,7 +383,7 @@ func benchmarkBinaryReaderLookupSymbol(b *testing.B, numSeries int) {
 	// Create a block.
 	id1, err := testhelper.CreateBlock(ctx, tmpDir, seriesLabels, 100, 0, 1000, labels.FromStrings("ext1", "1"), 124, metadata.NoneFunc)
 	require.NoError(b, err)
-	require.NoError(b, block.Upload(ctx, logger, bkt, filepath.Join(tmpDir, id1.String()), metadata.NoneFunc))
+	require.NoError(b, block.Upload(ctx, logger, bkt, filepath.Join(tmpDir, id1.String()), nil))
 
 	// Create an index reader.
 	reader, err := NewBinaryReader(ctx, logger, bkt, tmpDir, id1, postingOffsetsInMemSampling, Config{})
