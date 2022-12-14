@@ -189,6 +189,7 @@ You can migrate to the Grafana Mimir Helm chart (`grafana/mimir-distributed` v3.
 
 - Ensure that you are running the v1.7.0 release of the Cortex Helm chart.
 - Ensure that you are running ingesters using a Kubernetes StatefulSet.
+- We are using `yq` v4 to parse and mofidy yaml files.
 
   In the `values.yaml` file:
 
@@ -239,7 +240,6 @@ You can migrate to the Grafana Mimir Helm chart (`grafana/mimir-distributed` v3.
    those fields:
 
    ```bash
-   # require yq v4
    yq -i 'del(.activity_tracker.filepath,.alertmanager.data_dir,.compactor.data_dir)' mimir.yaml
    ```
 
