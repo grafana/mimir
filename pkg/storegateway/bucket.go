@@ -783,61 +783,6 @@ func storeCachedSeries(ctx context.Context, indexCache indexcache.IndexCache, us
 	indexCache.StoreSeries(ctx, userID, blockID, entry.MatchersKey, shard, data)
 }
 
-type seriesForPostingsCacheEntry struct {
-	LabelSets   []labels.Labels
-	MatchersKey indexcache.LabelMatchersKey
-	Shard       sharding.ShardSelector
-}
-
-func fetchCachedSeriesForPostings(ctx context.Context, userID string, indexCache indexcache.IndexCache, blockID ulid.ULID, matchers []*labels.Matcher, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey, logger log.Logger) (seriesChunkRefsSet, bool) {
-	matchersKey := indexcache.CanonicalLabelMatchersKey(matchers)
-	data, ok := indexCache.FetchSeriesForPostings(ctx, userID, blockID, matchersKey, shard, postingsKey)
-	if !ok {
-		return seriesChunkRefsSet{}, false
-	}
-	var entry seriesForPostingsCacheEntry
-	if err := decodeSnappyGob(data, &entry); err != nil {
-		level.Warn(spanlogger.FromContext(ctx, logger)).Log("msg", "can't decode series cache", "err", err)
-		return seriesChunkRefsSet{}, false
-	}
-	if entry.MatchersKey != matchersKey {
-		level.Debug(spanlogger.FromContext(ctx, logger)).Log("msg", "cached series entry key doesn't match, possible collision", "cached_key", entry.MatchersKey, "requested_key", matchersKey)
-		return seriesChunkRefsSet{}, false
-	}
-	if entry.Shard != maybeNilShard(shard) {
-		level.Debug(spanlogger.FromContext(ctx, logger)).Log("msg", "cached series shard doesn't match, possible collision", "cached_shard", entry.Shard, "requested_shard", maybeNilShard(shard))
-		return seriesChunkRefsSet{}, false
-	}
-
-	// This can be released by the caller because loadingSeriesChunkRefsSetIterator (this function's called) doesn't retain it
-	// after Next() will be called again.
-	res := newSeriesChunkRefsSet(len(entry.LabelSets), true)
-	for _, lset := range entry.LabelSets {
-		res.series = append(res.series, seriesChunkRefs{
-			lset: lset,
-		})
-	}
-	return res, true
-}
-
-func storeCachedSeriesForPostings(ctx context.Context, indexCache indexcache.IndexCache, userID string, blockID ulid.ULID, matchers []*labels.Matcher, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey, set seriesChunkRefsSet, logger log.Logger) {
-	entry := seriesForPostingsCacheEntry{
-		LabelSets:   make([]labels.Labels, set.len()),
-		MatchersKey: indexcache.CanonicalLabelMatchersKey(matchers),
-		Shard:       maybeNilShard(shard),
-	}
-	for i, s := range set.series {
-		entry.LabelSets[i] = s.lset
-	}
-
-	data, err := encodeSnappyGob(entry)
-	if err != nil {
-		level.Error(spanlogger.FromContext(ctx, logger)).Log("msg", "can't encode series for caching", "err", err)
-		return
-	}
-	indexCache.StoreSeriesForPostings(ctx, userID, blockID, entry.MatchersKey, shard, postingsKey, data)
-}
-
 // debugFoundBlockSetOverview logs on debug level what exactly blocks we used for query in terms of
 // labels and resolution. This is important because we allow mixed resolution results, so it is quite crucial
 // to be aware what exactly resolution we see on query.
