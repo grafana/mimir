@@ -861,7 +861,7 @@ func fetchCachedSeriesForPostings(ctx context.Context, userID string, indexCache
 		return seriesChunkRefsSet{}, false
 	}
 
-	// This can be released by the caller because loadingSeriesChunkRefsSetIterator (this function's called) doesn't retain it
+	// This can be released by the caller because loadingSeriesChunkRefsSetIterator (where this function is called) doesn't retain it
 	// after Next() will be called again.
 	res := newSeriesChunkRefsSet(len(entry.LabelSets), true)
 	for _, lset := range entry.LabelSets {
