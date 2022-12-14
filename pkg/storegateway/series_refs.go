@@ -604,7 +604,7 @@ type loadingSeriesChunkRefsSetIterator struct {
 	ctx                 context.Context
 	postingsSetIterator *postingsSetsIterator
 	indexr              *bucketIndexReader
-	seriesHashCache     *hashcache.BlockSeriesHashCache
+	seriesHashCache     seriesHashCache
 	indexCache          indexcache.IndexCache
 	stats               *safeQueryStats
 	blockID             ulid.ULID
@@ -633,6 +633,7 @@ func openBlockSeriesChunkRefsSetsIterator(
 	matchers []*labels.Matcher, // Series matchers.
 	shard *sharding.ShardSelector, // Shard selector.
 	seriesHashCache *hashcache.BlockSeriesHashCache, // Block-specific series hash cache (used only if shard selector is specified).
+	seriesHasher seriesHasher,
 	chunksLimiter ChunksLimiter, // Rate limiter for loading chunks.
 	seriesLimiter SeriesLimiter, // Rate limiter for loading series.
 	skipChunks bool, // If true chunks are not loaded and minTime/maxTime are ignored.
@@ -661,7 +662,7 @@ func openBlockSeriesChunkRefsSetsIterator(
 		blockMeta,
 		matchers,
 		shard,
-		cachedSeriesHasher{cache: seriesHashCache},
+		seriesHasher,
 		skipChunks,
 		minTime,
 		maxTime,
@@ -746,6 +747,11 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 		var unsafeStats queryStats
 		nextPostings, unsafeStats = filterPostingsByCachedShardHash(nextPostings, s.shard, s.seriesHashCache)
 		loadStats.merge(&unsafeStats)
+	}
+
+	if len(nextPostings) == 0 {
+		// All postings were part of another shard, try with the next set.
+		return s.Next()
 	}
 
 	loadedSeries, err := s.indexr.preloadSeries(s.ctx, nextPostings, s.stats)
@@ -904,8 +910,16 @@ type seriesHasher interface {
 	Hash(seriesID storage.SeriesRef, lset labels.Labels, stats *queryStats) uint64
 }
 
+type seriesHashCache interface {
+	Fetch(seriesID storage.SeriesRef) (uint64, bool)
+}
+
 type cachedSeriesHasher struct {
 	cache *hashcache.BlockSeriesHashCache
+}
+
+func (b cachedSeriesHasher) Fetch(seriesID storage.SeriesRef) (uint64, bool) {
+	return b.cache.Fetch(seriesID)
 }
 
 func (b cachedSeriesHasher) Hash(id storage.SeriesRef, lset labels.Labels, stats *queryStats) uint64 {

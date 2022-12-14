@@ -1130,6 +1130,7 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 				matchers,
 				shardSelector,
 				blockSeriesHashCache,
+				cachedSeriesHasher{blockSeriesHashCache},
 				chunksLimiter,
 				seriesLimiter,
 				req.SkipChunks,
