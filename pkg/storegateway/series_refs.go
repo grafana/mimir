@@ -749,11 +749,6 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 		loadStats.merge(&unsafeStats)
 	}
 
-	if len(nextPostings) == 0 {
-		// All postings were part of another shard, try with the next set.
-		return s.Next()
-	}
-
 	loadedSeries, err := s.indexr.preloadSeries(s.ctx, nextPostings, s.stats)
 	if err != nil {
 		s.err = errors.Wrap(err, "preload series")
