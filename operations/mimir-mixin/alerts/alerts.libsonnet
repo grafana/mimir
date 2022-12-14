@@ -555,9 +555,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
               ( container_spec_memory_limit_bytes{container=~"(%(ingester)s|%(mimir_write)s|%(mimir_backend)s)"} > 0 )
             ) > 0.65
           ||| % {
-            ingester: $._config.instance_names.ingester,
-            mimir_write: $._config.instance_names.mimir_write,
-            mimir_backend: $._config.instance_names.mimir_backend,
+            ingester: $._config.container_names.ingester,
+            mimir_write: $._config.container_names.mimir_write,
+            mimir_backend: $._config.container_names.mimir_backend,
           },
           'for': '15m',
           labels: {
@@ -580,9 +580,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
               ( container_spec_memory_limit_bytes{container=~"(%(ingester)s|%(mimir_write)s|%(mimir_backend)s)"} > 0 )
             ) > 0.8
           ||| % {
-            ingester: $._config.instance_names.ingester,
-            mimir_write: $._config.instance_names.mimir_write,
-            mimir_backend: $._config.instance_names.mimir_backend,
+            ingester: $._config.container_names.ingester,
+            mimir_write: $._config.container_names.mimir_write,
+            mimir_backend: $._config.container_names.mimir_backend,
           },
           'for': '15m',
           labels: {
