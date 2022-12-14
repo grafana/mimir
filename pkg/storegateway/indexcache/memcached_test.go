@@ -446,7 +446,6 @@ func TestMemcachedIndexCache_FetchSeries(t *testing.T) {
 		fetchBlockID ulid.ULID
 		fetchKey     LabelMatchersKey
 		fetchShard   *sharding.ShardSelector
-		postings     []storage.SeriesRef
 		expectedData []byte
 		expectedOk   bool
 	}{
