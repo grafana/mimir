@@ -124,11 +124,11 @@ func (t *TracingIndexCache) FetchSeriesForPostings(ctx context.Context, userID s
 	spanLogger := spanlogger.FromContext(ctx, t.logger)
 	level.Debug(spanLogger).Log(
 		"msg", "IndexCache.FetchSeriesForPostings",
-		"requested key", matchersKey,
+		"matchers_key", matchersKey,
 		"shard", shardKey(shard),
 		"found", found,
-		"time elapsed", time.Since(t0),
-		"returned bytes", len(data),
+		"time_elapsed", time.Since(t0),
+		"returned_bytes", len(data),
 		"user_id", userID,
 		"postings_key", postingsKey,
 	)
