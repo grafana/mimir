@@ -49,7 +49,6 @@ func BenchmarkCanonicalPostingsKey(b *testing.B) {
 	}
 	for numPostings := 10; numPostings <= len(ms); numPostings *= 10 {
 		b.Run(fmt.Sprintf("%d postings", numPostings), func(b *testing.B) {
-			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				_ = CanonicalPostingsKey(ms[:numPostings])
 			}
