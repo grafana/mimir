@@ -1473,7 +1473,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 		labels.MustNewMatcher(labels.MatchRegexp, "a", ".+"),
 	}
 
-	for batchSize := 1; batchSize < len(existingSeries)*2; batchSize++ {
+	for batchSize := 1; batchSize < len(existingSeries)+2; batchSize++ {
 		batchSize := batchSize
 		t.Run(fmt.Sprintf("batch size %d", batchSize), func(t *testing.T) {
 			t.Parallel()
