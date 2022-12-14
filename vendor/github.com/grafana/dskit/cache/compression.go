@@ -1,8 +1,3 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/chunk/cache/snappy.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Cortex Authors.
-
 package cache
 
 import (
@@ -17,7 +12,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/golang/snappy"
 
-	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/dskit/util/stringsutil"
 )
 
 const (
@@ -40,10 +35,9 @@ func (cfg *CompressionConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix st
 }
 
 func (cfg *CompressionConfig) Validate() error {
-	if cfg.Compression != "" && !util.StringsContain(supportedCompressions, cfg.Compression) {
+	if cfg.Compression != "" && !stringsutil.SliceContains(supportedCompressions, cfg.Compression) {
 		return errUnsupportedCompression
 	}
-
 	return nil
 }
 

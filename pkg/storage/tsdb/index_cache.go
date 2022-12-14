@@ -12,12 +12,11 @@ import (
 
 	"github.com/alecthomas/units"
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/grafana/mimir/pkg/cache"
-	"github.com/grafana/mimir/pkg/cacheutil"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -108,7 +107,7 @@ func newInMemoryIndexCache(cfg InMemoryIndexCacheConfig, logger log.Logger, regi
 }
 
 func newMemcachedIndexCache(cfg cache.MemcachedConfig, logger log.Logger, registerer prometheus.Registerer) (indexcache.IndexCache, error) {
-	client, err := cacheutil.NewMemcachedClientWithConfig(logger, "index-cache", cfg.ToMemcachedClientConfig(), registerer)
+	client, err := cache.NewMemcachedClientWithConfig(logger, "index-cache", cfg.ToMemcachedClientConfig(), prometheus.WrapRegistererWithPrefix("thanos_", registerer))
 	if err != nil {
 		return nil, errors.Wrap(err, "create index cache memcached client")
 	}

@@ -1,9 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/thanos-io/thanos/blob/main/pkg/store/cacheutil/memcached_client.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Thanos Authors.
-
-package cacheutil
+package cache
 
 import (
 	"context"
@@ -17,14 +12,13 @@ import (
 	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/dns"
-	"github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"gopkg.in/yaml.v2"
 
-	"github.com/grafana/mimir/pkg/util/gate"
+	"github.com/grafana/dskit/dns"
+	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/gate"
 )
 
 const (
@@ -45,17 +39,6 @@ var (
 	errMemcachedConfigNoAddrs                  = errors.New("no memcached addresses provided")
 	errMemcachedDNSUpdateIntervalNotPositive   = errors.New("DNS provider update interval must be positive")
 	errMemcachedMaxAsyncConcurrencyNotPositive = errors.New("max async concurrency must be positive")
-
-	defaultMemcachedClientConfig = MemcachedClientConfig{
-		Timeout:                   500 * time.Millisecond,
-		MaxIdleConnections:        100,
-		MaxAsyncConcurrency:       20,
-		MaxAsyncBufferSize:        10000,
-		MaxItemSize:               flagext.Bytes(1024 * 1024),
-		MaxGetMultiConcurrency:    100,
-		MaxGetMultiBatchSize:      0,
-		DNSProviderUpdateInterval: 10 * time.Second,
-	}
 )
 
 var (
@@ -167,16 +150,6 @@ func (c *MemcachedClientConfig) validate() error {
 	return nil
 }
 
-// parseMemcachedClientConfig unmarshals a buffer into a MemcachedClientConfig with default values.
-func parseMemcachedClientConfig(conf []byte) (MemcachedClientConfig, error) {
-	config := defaultMemcachedClientConfig
-	if err := yaml.Unmarshal(conf, &config); err != nil {
-		return MemcachedClientConfig{}, err
-	}
-
-	return config, nil
-}
-
 type memcachedClient struct {
 	logger   log.Logger
 	config   MemcachedClientConfig
@@ -224,16 +197,6 @@ type memcachedGetMultiResult struct {
 	err   error
 }
 
-// NewMemcachedClient makes a new RemoteCacheClient.
-func NewMemcachedClient(logger log.Logger, name string, conf []byte, reg prometheus.Registerer) (RemoteCacheClient, error) {
-	config, err := parseMemcachedClientConfig(conf)
-	if err != nil {
-		return nil, err
-	}
-
-	return NewMemcachedClientWithConfig(logger, name, config, reg)
-}
-
 // NewMemcachedClientWithConfig makes a new RemoteCacheClient.
 func NewMemcachedClientWithConfig(logger log.Logger, name string, config MemcachedClientConfig, reg prometheus.Registerer) (RemoteCacheClient, error) {
 	if err := config.validate(); err != nil {
@@ -264,7 +227,7 @@ func newMemcachedClient(
 ) (*memcachedClient, error) {
 	addressProvider := dns.NewProvider(
 		logger,
-		prometheus.WrapRegistererWithPrefix("thanos_memcached_", reg),
+		prometheus.WrapRegistererWithPrefix("memcached_", reg),
 		dns.MiekgdnsResolverType,
 	)
 
@@ -277,13 +240,13 @@ func newMemcachedClient(
 		asyncQueue:      make(chan func(), config.MaxAsyncBufferSize),
 		stop:            make(chan struct{}, 1),
 		getMultiGate: gate.New(
-			prometheus.WrapRegistererWithPrefix("thanos_memcached_getmulti_", reg),
+			prometheus.WrapRegistererWithPrefix("memcached_getmulti_", reg),
 			config.MaxGetMultiConcurrency,
 		),
 	}
 
 	c.clientInfo = promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
-		Name: "thanos_memcached_client_info",
+		Name: "memcached_client_info",
 		Help: "A metric with a constant '1' value labeled by configuration options from which memcached client was configured.",
 		ConstLabels: prometheus.Labels{
 			"timeout":                      config.Timeout.String(),
@@ -300,7 +263,7 @@ func newMemcachedClient(
 	)
 
 	c.operations = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-		Name: "thanos_memcached_operations_total",
+		Name: "memcached_operations_total",
 		Help: "Total number of operations against memcached.",
 	}, []string{"operation"})
 	c.operations.WithLabelValues(opGetMulti)
@@ -308,7 +271,7 @@ func newMemcachedClient(
 	c.operations.WithLabelValues(opDelete)
 
 	c.failures = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-		Name: "thanos_memcached_operation_failures_total",
+		Name: "memcached_operation_failures_total",
 		Help: "Total number of operations against memcached that failed.",
 	}, []string{"operation", "reason"})
 	for _, op := range []string{opGetMulti, opSet, opDelete} {
@@ -320,7 +283,7 @@ func newMemcachedClient(
 	}
 
 	c.skipped = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-		Name: "thanos_memcached_operation_skipped_total",
+		Name: "memcached_operation_skipped_total",
 		Help: "Total number of operations against memcached that have been skipped.",
 	}, []string{"operation", "reason"})
 	c.skipped.WithLabelValues(opGetMulti, reasonMaxItemSize)
@@ -328,7 +291,7 @@ func newMemcachedClient(
 	c.skipped.WithLabelValues(opSet, reasonAsyncBufferFull)
 
 	c.duration = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "thanos_memcached_operation_duration_seconds",
+		Name:    "memcached_operation_duration_seconds",
 		Help:    "Duration of operations against memcached.",
 		Buckets: []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.2, 0.5, 1, 3, 6, 10},
 	}, []string{"operation"})
@@ -337,7 +300,7 @@ func newMemcachedClient(
 	c.duration.WithLabelValues(opDelete)
 
 	c.dataSize = promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-		Name: "thanos_memcached_operation_data_size_bytes",
+		Name: "memcached_operation_data_size_bytes",
 		Help: "Tracks the size of the data stored in and fetched from memcached.",
 		Buckets: []float64{
 			32, 256, 512, 1024, 32 * 1024, 256 * 1024, 512 * 1024, 1024 * 1024, 32 * 1024 * 1024, 256 * 1024 * 1024, 512 * 1024 * 1024,

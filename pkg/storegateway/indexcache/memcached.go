@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/cache"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -20,7 +21,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"golang.org/x/crypto/blake2b"
 
-	"github.com/grafana/mimir/pkg/cacheutil"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 )
 
@@ -31,7 +31,7 @@ const (
 // MemcachedIndexCache is a memcached-based index cache.
 type MemcachedIndexCache struct {
 	logger    log.Logger
-	memcached cacheutil.MemcachedClient
+	memcached cache.MemcachedClient
 
 	// Metrics.
 	requests *prometheus.CounterVec
@@ -39,7 +39,7 @@ type MemcachedIndexCache struct {
 }
 
 // NewMemcachedIndexCache makes a new MemcachedIndexCache.
-func NewMemcachedIndexCache(logger log.Logger, memcached cacheutil.MemcachedClient, reg prometheus.Registerer) (*MemcachedIndexCache, error) {
+func NewMemcachedIndexCache(logger log.Logger, memcached cache.MemcachedClient, reg prometheus.Registerer) (*MemcachedIndexCache, error) {
 	c := &MemcachedIndexCache{
 		logger:    logger,
 		memcached: memcached,

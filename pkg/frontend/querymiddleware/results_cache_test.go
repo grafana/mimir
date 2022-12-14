@@ -14,12 +14,12 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/types"
+	"github.com/grafana/dskit/cache"
+	mimir_tsdb "github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/cache"
-	mimir_tsdb "github.com/grafana/mimir/pkg/cache"
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 

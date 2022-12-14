@@ -1,8 +1,3 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/storage/tsdb/memcache_client_config.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Cortex Authors.
-
 package cache
 
 import (
@@ -12,8 +7,6 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/flagext"
-
-	"github.com/grafana/mimir/pkg/cacheutil"
 )
 
 var (
@@ -59,8 +52,8 @@ func (cfg *MemcachedConfig) Validate() error {
 	return nil
 }
 
-func (cfg MemcachedConfig) ToMemcachedClientConfig() cacheutil.MemcachedClientConfig {
-	return cacheutil.MemcachedClientConfig{
+func (cfg MemcachedConfig) ToMemcachedClientConfig() MemcachedClientConfig {
+	return MemcachedClientConfig{
 		Addresses:                 cfg.GetAddresses(),
 		Timeout:                   cfg.Timeout,
 		MaxIdleConnections:        cfg.MaxIdleConnections,

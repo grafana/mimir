@@ -17,14 +17,13 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/runutil"
 	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/thanos-io/objstore"
-
-	"github.com/grafana/mimir/pkg/cache"
 )
 
 const testFilename = "/random_object"

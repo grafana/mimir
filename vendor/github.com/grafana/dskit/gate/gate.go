@@ -1,11 +1,3 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/thanos-io/thanos/blob/main/pkg/gate/gate.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Thanos Authors.
-// Provenance-includes-location: https://github.com/prometheus/prometheus/blob/main/util/gate/gate.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Prometheus Authors.
-
 package gate
 
 import (
