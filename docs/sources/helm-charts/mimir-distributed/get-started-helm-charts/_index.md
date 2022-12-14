@@ -14,7 +14,7 @@ keywords:
 
 # Get started with Grafana Mimir using the Helm chart
 
-The [Helm](https://helm.sh/) chart allows you to configure, install, and upgrade Grafana Mimir within a Kubernetes cluster.
+The Grafana Mimir [Helm](https://helm.sh/) chart allows you to configure, install, and upgrade Grafana Mimir within a Kubernetes cluster.
 
 ## Before you begin
 
