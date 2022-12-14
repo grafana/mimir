@@ -191,6 +191,7 @@ You can migrate to the Grafana Mimir Helm chart (`grafana/mimir-distributed` v3.
 - Ensure that you are running ingesters using a Kubernetes StatefulSet.
 - We are using `yq` v4 to parse and mofidy yaml files.
 
+
   In the `values.yaml` file:
 
   ```
