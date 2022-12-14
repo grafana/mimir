@@ -448,7 +448,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1024"
-        image: grafana/mimir:2.4.0
+        image: grafana/mimir:2.5.0
         imagePullPolicy: IfNotPresent
         name: mimir-read
         ports:
@@ -861,7 +861,7 @@ spec:
         - -store.max-query-length=768h
         - -target=backend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.4.0
+        image: grafana/mimir:2.5.0
         imagePullPolicy: IfNotPresent
         name: mimir-backend
         ports:
@@ -1029,7 +1029,7 @@ spec:
         - -store.max-query-length=768h
         - -target=backend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.4.0
+        image: grafana/mimir:2.5.0
         imagePullPolicy: IfNotPresent
         name: mimir-backend
         ports:
@@ -1197,7 +1197,7 @@ spec:
         - -store.max-query-length=768h
         - -target=backend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.4.0
+        image: grafana/mimir:2.5.0
         imagePullPolicy: IfNotPresent
         name: mimir-backend
         ports:
@@ -1326,7 +1326,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=write
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.4.0
+        image: grafana/mimir:2.5.0
         imagePullPolicy: IfNotPresent
         name: mimir-write
         ports:
@@ -1455,7 +1455,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=write
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.4.0
+        image: grafana/mimir:2.5.0
         imagePullPolicy: IfNotPresent
         name: mimir-write
         ports:
@@ -1584,7 +1584,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=write
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.4.0
+        image: grafana/mimir:2.5.0
         imagePullPolicy: IfNotPresent
         name: mimir-write
         ports:
