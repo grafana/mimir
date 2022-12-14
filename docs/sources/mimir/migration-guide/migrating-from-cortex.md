@@ -243,7 +243,7 @@ You can migrate to the Grafana Mimir Helm chart (`grafana/mimir-distributed` v3.
    clean up those fields:
 
    ```bash
-   yq -i 'del(.activity_tracker.filepath,.alertmanager.data_dir,.compactor.data_dir,.frontend_worker.frontend_address,.ingester.ring.tokens_file_path,.ruler.alertmanager_url)' mimir.yaml
+   yq -i 'del(.activity_tracker.filepath,.alertmanager.data_dir,.compactor.data_dir,.frontend_worker.frontend_address,.ingester.ring.tokens_file_path,.ruler.alertmanager_url,.ruler.rule_path,.runtime_config.file)' mimir.yaml
    ```
 
    d. At the top level of your custom Helm values file, put the updated configuration under the `mimir.structuredConfig` key.
