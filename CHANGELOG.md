@@ -40,7 +40,7 @@
 
 ### Tools
 
-## 2.5.0-rc.0
+## 2.5.0
 
 ### Grafana Mimir
 
