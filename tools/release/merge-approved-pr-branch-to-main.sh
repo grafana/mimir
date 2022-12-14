@@ -50,8 +50,8 @@ git checkout main
 # (git pull could fail in that case.)
 git reset --hard "$FULL_MAIN_NAME"
 
-# We use origin/BRANCH_NAME here to make sure we merge the correct version of the branch.
-# Previous "git fetch origin" updated it.
+# We use $FULL_BRANCH_NAME here to make sure we merge the correct version of the branch
+# as found on server (updated via git fetch origin), and not possibly outdated local copy.
 git merge -n -m "Merge branch $BRANCH_NAME to main." "$FULL_BRANCH_NAME" || (echo; echo "Merge failed. This can happen if there are unresolved merge conflicts."; echo "Please update $BRANCH_NAME to fix conflicts and run this script again."; exit 1)
 
 echo
