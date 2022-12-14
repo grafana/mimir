@@ -139,6 +139,18 @@ func (m *SampleValidationMetrics) DeleteUserMetrics(userID string) {
 	m.tooFarInFuture.DeletePartialMatch(filter)
 }
 
+func (m *SampleValidationMetrics) DeleteUserMetricsForGroup(userID, group string) {
+	m.missingMetricName.DeleteLabelValues(userID, group)
+	m.invalidMetricName.DeleteLabelValues(userID, group)
+	m.maxLabelNamesPerSeries.DeleteLabelValues(userID, group)
+	m.invalidLabel.DeleteLabelValues(userID, group)
+	m.labelNameTooLong.DeleteLabelValues(userID, group)
+	m.labelValueTooLong.DeleteLabelValues(userID, group)
+	m.duplicateLabelNames.DeleteLabelValues(userID, group)
+	m.labelsNotSorted.DeleteLabelValues(userID, group)
+	m.tooFarInFuture.DeleteLabelValues(userID, group)
+}
+
 func NewSampleValidationMetrics(r prometheus.Registerer) *SampleValidationMetrics {
 	return &SampleValidationMetrics{
 		missingMetricName:      DiscardedSamplesCounter(r, reasonMissingMetricName),
