@@ -77,4 +77,4 @@ done
 
 # Open the PR.
 git push -u origin "${BRANCH_NAME}"
-gh pr create --title "Merge ${LAST_RELEASE_BRANCH} to main" --body "In this PR I'm merging the ${LAST_RELEASE_BRANCH} branch to main branch. Please remember to merge it using **merge commit**."
+gh pr create --title "Merge ${LAST_RELEASE_BRANCH} to main" --body "In this PR I'm merging the ${LAST_RELEASE_BRANCH} branch to main branch. Please merge this PR using a **merge commit** or by using \`tools/release/merge-approved-pr-branch-to-main.sh\` script."
