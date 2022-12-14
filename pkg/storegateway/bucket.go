@@ -151,6 +151,12 @@ func (noopCache) FetchSeries(_ context.Context, _ string, _ ulid.ULID, _ indexca
 	return nil, false
 }
 
+func (noopCache) StoreSeriesForPostings(_ context.Context, _ string, _ ulid.ULID, _ indexcache.LabelMatchersKey, _ *sharding.ShardSelector, _ indexcache.PostingsKey, _ []byte) {
+}
+func (noopCache) FetchSeriesForPostings(_ context.Context, _ string, _ ulid.ULID, _ indexcache.LabelMatchersKey, _ *sharding.ShardSelector, _ indexcache.PostingsKey) ([]byte, bool) {
+	return nil, false
+}
+
 func (noopCache) StoreLabelNames(_ context.Context, _ string, _ ulid.ULID, _ indexcache.LabelMatchersKey, _ []byte) {
 }
 func (noopCache) FetchLabelNames(_ context.Context, _ string, _ ulid.ULID, _ indexcache.LabelMatchersKey) ([]byte, bool) {
@@ -1117,7 +1123,9 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 			part, err = openBlockSeriesChunkRefsSetsIterator(
 				ctx,
 				s.maxSeriesPerBatch,
+				s.userID,
 				indexr,
+				s.indexCache,
 				b.meta,
 				matchers,
 				shardSelector,
@@ -1128,6 +1136,7 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 				req.MinTime, req.MaxTime,
 				stats,
 				s.metrics,
+				s.logger,
 			)
 			if err != nil {
 				return errors.Wrapf(err, "fetch series for block %s", b.meta.ULID)

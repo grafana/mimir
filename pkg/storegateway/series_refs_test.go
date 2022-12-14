@@ -10,6 +10,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
@@ -22,6 +23,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
+	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -1189,13 +1191,18 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 				context.Background(),
 				postingsIterator,
 				indexr,
+				noopCache{},
+				hashcache.NewSeriesHashCache(1).GetBlockCache(""),
 				newSafeQueryStats(),
 				block.meta,
+				testCase.matchers,
 				testCase.shard,
 				testCase.seriesHasher,
 				testCase.skipChunks,
 				testCase.minT,
 				testCase.maxT,
+				"t1",
+				log.NewNopLogger(),
 			)
 
 			// Tests
@@ -1260,10 +1267,12 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 	})
 
 	testCases := map[string]struct {
-		matcher        *labels.Matcher
-		batchSize      int
-		chunksLimit    int
-		seriesLimit    int
+		matcher     *labels.Matcher
+		batchSize   int
+		chunksLimit int
+		seriesLimit int
+		skipChunks  bool
+
 		expectedErr    string
 		expectedSeries []seriesChunkRefsSet
 	}{
@@ -1341,6 +1350,42 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 				}},
 			},
 		},
+		"selects all series in a single batch with skipChunks": {
+			matcher:     labels.MustNewMatcher(labels.MatchRegexp, "a", ".+"),
+			batchSize:   100,
+			skipChunks:  true,
+			chunksLimit: 100,
+			seriesLimit: 100,
+			expectedSeries: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("a", "1", "b", "1")},
+					{lset: labels.FromStrings("a", "1", "b", "2")},
+					{lset: labels.FromStrings("a", "2", "b", "1")},
+					{lset: labels.FromStrings("a", "2", "b", "2")},
+				}},
+			},
+		},
+		"selects all series in multiple batches with skipChunks": {
+			matcher:     labels.MustNewMatcher(labels.MatchRegexp, "a", ".+"),
+			batchSize:   1,
+			skipChunks:  true,
+			chunksLimit: 100,
+			seriesLimit: 100,
+			expectedSeries: []seriesChunkRefsSet{
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("a", "1", "b", "1")},
+				}},
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("a", "1", "b", "2")},
+				}},
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("a", "2", "b", "1")},
+				}},
+				{series: []seriesChunkRefs{
+					{lset: labels.FromStrings("a", "2", "b", "2")},
+				}},
+			},
+		},
 	}
 
 	for testName, testCase := range testCases {
@@ -1352,7 +1397,25 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 			indexReader := block.indexReader()
 			defer indexReader.Close()
 
-			iterator, err := openBlockSeriesChunkRefsSetsIterator(ctx, testCase.batchSize, indexReader, block.meta, []*labels.Matcher{testCase.matcher}, nil, hashcache.NewSeriesHashCache(1024*1024).GetBlockCache(block.meta.ULID.String()), &limiter{limit: testCase.chunksLimit}, &limiter{limit: testCase.seriesLimit}, false, block.meta.MinTime, block.meta.MaxTime, newSafeQueryStats(), NewBucketStoreMetrics(prometheus.NewRegistry()))
+			iterator, err := openBlockSeriesChunkRefsSetsIterator(
+				ctx,
+				testCase.batchSize,
+				"",
+				indexReader,
+				newInMemoryIndexCache(t),
+				block.meta,
+				[]*labels.Matcher{testCase.matcher},
+				nil,
+				hashcache.NewSeriesHashCache(1024*1024).GetBlockCache(block.meta.ULID.String()),
+				&limiter{limit: testCase.chunksLimit},
+				&limiter{limit: testCase.seriesLimit},
+				testCase.skipChunks,
+				block.meta.MinTime,
+				block.meta.MaxTime,
+				newSafeQueryStats(),
+				NewBucketStoreMetrics(prometheus.NewRegistry()),
+				nil,
+			)
 			require.NoError(t, err)
 
 			actualSeriesSets := readAllSeriesChunkRefsSet(iterator)
@@ -1385,6 +1448,110 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
+	existingSeries := []labels.Labels{
+		labels.FromStrings("a", "1", "b", "1"),
+		labels.FromStrings("a", "1", "b", "2"),
+		labels.FromStrings("a", "2", "b", "1"),
+		labels.FromStrings("a", "2", "b", "2"),
+		labels.FromStrings("a", "3", "b", "1"),
+		labels.FromStrings("a", "3", "b", "2"),
+	}
+	newTestBlock := prepareTestBlock(test.NewTB(t), func(tb testing.TB, appender storage.Appender) {
+		for ts := int64(0); ts < 10; ts++ {
+			for _, s := range existingSeries {
+				_, err := appender.Append(0, s, ts, 0)
+				assert.NoError(t, err)
+			}
+		}
+		assert.NoError(t, appender.Commit())
+	})
+
+	matchers := []*labels.Matcher{
+		labels.MustNewMatcher(labels.MatchRegexp, "a", ".+"),
+	}
+
+	for batchSize := 1; batchSize < len(existingSeries)+2; batchSize++ {
+		batchSize := batchSize
+		t.Run(fmt.Sprintf("batch size %d", batchSize), func(t *testing.T) {
+			t.Parallel()
+			b := newTestBlock()
+			b.indexCache = newInMemoryIndexCache(t)
+
+			indexReader := b.indexReader()
+			ss, err := openBlockSeriesChunkRefsSetsIterator(
+				context.Background(),
+				batchSize,
+				"",
+				indexReader,
+				b.indexCache,
+				b.meta,
+				matchers,
+				nil,
+				nil,
+				&limiter{limit: 1000},
+				&limiter{limit: 1000},
+				true,
+				b.meta.MinTime, b.meta.MaxTime,
+				newSafeQueryStats(),
+				NewBucketStoreMetrics(nil),
+				log.NewNopLogger(),
+			)
+
+			require.NoError(t, err)
+			lset := extractLabelsFromSeriesChunkRefsSets(readAllSeriesChunkRefsSet(ss))
+			require.NoError(t, ss.Err())
+			require.Equal(t, existingSeries, lset)
+
+			// Cache should be filled by now. Pass an index cache that fails the test if you try to access the postings
+			b.indexCache = forbiddenFetchMultiSeriesForRefsIndexCache{b.indexCache, t}
+
+			ss, err = openBlockSeriesChunkRefsSetsIterator(
+				context.Background(),
+				batchSize,
+				"",
+				indexReader,
+				b.indexCache,
+				b.meta,
+				matchers,
+				nil,
+				nil,
+				&limiter{limit: 1000},
+				&limiter{limit: 1000},
+				true,
+				b.meta.MinTime, b.meta.MaxTime,
+				newSafeQueryStats(),
+				NewBucketStoreMetrics(nil),
+				log.NewNopLogger(),
+			)
+			require.NoError(t, err)
+			lset = extractLabelsFromSeriesChunkRefsSets(readAllSeriesChunkRefsSet(ss))
+			require.NoError(t, ss.Err())
+			require.Equal(t, existingSeries, lset)
+		})
+	}
+}
+
+type forbiddenFetchMultiSeriesForRefsIndexCache struct {
+	indexcache.IndexCache
+
+	t *testing.T
+}
+
+func (c forbiddenFetchMultiSeriesForRefsIndexCache) FetchMultiSeriesForRefs(ctx context.Context, userID string, blockID ulid.ULID, ids []storage.SeriesRef) (hits map[storage.SeriesRef][]byte, misses []storage.SeriesRef) {
+	assert.Fail(c.t, "index cache FetchMultiSeriesForRefs should not be called")
+	return nil, nil
+}
+
+func extractLabelsFromSeriesChunkRefsSets(sets []seriesChunkRefsSet) (result []labels.Labels) {
+	for _, set := range sets {
+		for _, series := range set.series {
+			result = append(result, series.lset)
+		}
+	}
+	return
 }
 
 func TestPostingsSetsIterator(t *testing.T) {

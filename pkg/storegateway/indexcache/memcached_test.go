@@ -318,6 +318,111 @@ func TestMemcachedIndexCache_FetchExpandedPostings(t *testing.T) {
 	}
 }
 
+func TestMemcachedIndexCache_FetchSeriesForPostings(t *testing.T) {
+	t.Parallel()
+
+	// Init some data to conveniently define test cases later one.
+	user1 := "tenant1"
+	user2 := "tenant2"
+	block1 := ulid.MustNew(1, nil)
+	block2 := ulid.MustNew(2, nil)
+	matchers1 := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")}
+	matchers2 := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "baz", "boo")}
+	value1 := []byte{1}
+	value2 := []byte{2}
+	value3 := []byte{3}
+	shard1 := (*sharding.ShardSelector)(nil)
+	shard2 := &sharding.ShardSelector{ShardIndex: 1, ShardCount: 16}
+	postings1 := []storage.SeriesRef{1, 2}
+	postings2 := []storage.SeriesRef{2, 3}
+
+	tests := map[string]struct {
+		setup        []mockedSeries
+		mockedErr    error
+		fetchUserID  string
+		fetchBlockID ulid.ULID
+		fetchKey     LabelMatchersKey
+		fetchShard   *sharding.ShardSelector
+		postings     []storage.SeriesRef
+		expectedData []byte
+		expectedOk   bool
+	}{
+		"should return no hit on empty cache": {
+			setup:        []mockedSeries{},
+			fetchUserID:  user1,
+			fetchBlockID: block1,
+			fetchKey:     CanonicalLabelMatchersKey(matchers1),
+			fetchShard:   shard1,
+			postings:     postings1,
+			expectedData: nil,
+			expectedOk:   false,
+		},
+		"should return no miss on hit": {
+			setup: []mockedSeries{
+				{userID: user1, block: block1, matchers: matchers1, shard: shard1, postings: postings1, value: value1},
+				{userID: user2, block: block1, matchers: matchers1, shard: shard1, postings: postings1, value: value2}, // different user
+				{userID: user1, block: block1, matchers: matchers1, shard: shard2, postings: postings1, value: value2}, // different shard
+				{userID: user1, block: block1, matchers: matchers2, shard: shard1, postings: postings1, value: value2}, // different matchers
+				{userID: user1, block: block2, matchers: matchers1, shard: shard1, postings: postings1, value: value3}, // different block
+				{userID: user1, block: block2, matchers: matchers1, shard: shard1, postings: postings2, value: value3}, // different postings
+			},
+			fetchUserID:  user1,
+			fetchBlockID: block1,
+			fetchKey:     CanonicalLabelMatchersKey(matchers1),
+			fetchShard:   shard1,
+			postings:     postings1,
+			expectedData: value1,
+			expectedOk:   true,
+		},
+		"should return no hit on memcached error": {
+			setup: []mockedSeries{
+				{userID: user1, block: block1, matchers: matchers1, shard: shard1, postings: postings1, value: value1},
+				{userID: user1, block: block1, matchers: matchers2, shard: shard1, postings: postings1, value: value2},
+				{userID: user1, block: block2, matchers: matchers1, shard: shard1, postings: postings1, value: value3},
+			},
+			mockedErr:    context.DeadlineExceeded,
+			fetchUserID:  user1,
+			fetchBlockID: block1,
+			fetchKey:     CanonicalLabelMatchersKey(matchers1),
+			fetchShard:   shard1,
+			postings:     postings1,
+			expectedData: nil,
+			expectedOk:   false,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			memcached := newMockedMemcachedClient(testData.mockedErr)
+			c, err := NewMemcachedIndexCache(log.NewNopLogger(), memcached, nil)
+			assert.NoError(t, err)
+
+			// Store the postings expected before running the test.
+			ctx := context.Background()
+			for _, p := range testData.setup {
+				c.StoreSeriesForPostings(ctx, p.userID, p.block, CanonicalLabelMatchersKey(p.matchers), p.shard, CanonicalPostingsKey(p.postings), p.value)
+			}
+
+			// Fetch postings from cached and assert on it.
+			data, ok := c.FetchSeriesForPostings(ctx, testData.fetchUserID, testData.fetchBlockID, testData.fetchKey, testData.fetchShard, CanonicalPostingsKey(testData.postings))
+			assert.Equal(t, testData.expectedData, data)
+			assert.Equal(t, testData.expectedOk, ok)
+
+			// Assert on metrics.
+			expectedHits := 0.0
+			if testData.expectedOk {
+				expectedHits = 1.0
+			}
+			assert.Equal(t, float64(1), prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypeSeriesForPostings)))
+			assert.Equal(t, expectedHits, prom_testutil.ToFloat64(c.hits.WithLabelValues(cacheTypeSeriesForPostings)))
+			for _, typ := range remove(allCacheTypes, cacheTypeSeriesForPostings) {
+				assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.requests.WithLabelValues(typ)))
+				assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.hits.WithLabelValues(typ)))
+			}
+		})
+	}
+}
+
 func TestMemcachedIndexCache_FetchSeries(t *testing.T) {
 	t.Parallel()
 
@@ -731,6 +836,7 @@ type mockedSeries struct {
 	block    ulid.ULID
 	matchers []*labels.Matcher
 	shard    *sharding.ShardSelector
+	postings []storage.SeriesRef
 	value    []byte
 }
 

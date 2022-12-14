@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/grafana/mimir/pkg/util/test"
@@ -36,6 +37,20 @@ func BenchmarkCanonicalLabelMatchersKey(b *testing.B) {
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				_ = CanonicalLabelMatchersKey(ms[:l])
+			}
+		})
+	}
+}
+
+func BenchmarkCanonicalPostingsKey(b *testing.B) {
+	ms := make([]storage.SeriesRef, 1_000_000)
+	for i := range ms {
+		ms[i] = storage.SeriesRef(i)
+	}
+	for numPostings := 10; numPostings <= len(ms); numPostings *= 10 {
+		b.Run(fmt.Sprintf("%d postings", numPostings), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				_ = CanonicalPostingsKey(ms[:numPostings])
 			}
 		})
 	}

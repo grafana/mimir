@@ -2319,8 +2319,8 @@ func TestBlockSeries_Cache(t *testing.T) {
 		}
 
 		// Cache should be filled by now.
-		// We break the LookupSymbol so we know for sure we'll be using the cache in the next calls.
-		indexr.dec.LookupSymbol = nil
+		// We break the index cache to not allow looking up series, so we know we don't look up series.
+		indexr.block.indexCache = forbiddenFetchMultiSeriesForRefsIndexCache{b.indexCache, t}
 		for i, tc := range testCases {
 			ss, _, err := blockSeries(context.Background(), indexr, nil, nil, tc.matchers, tc.shard, shc, nil, sl, true, b.meta.MinTime, b.meta.MaxTime, log.NewNopLogger())
 			require.NoError(t, err, "Unexpected error for test case %d", i)
@@ -2347,6 +2347,10 @@ type cacheNotExpectingToStoreSeries struct {
 
 func (c cacheNotExpectingToStoreSeries) StoreSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey indexcache.LabelMatchersKey, shard *sharding.ShardSelector, v []byte) {
 	c.t.Fatalf("StoreSeries should not be called")
+}
+
+func (c cacheNotExpectingToStoreSeries) StoreSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, matchersKey indexcache.LabelMatchersKey, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey, v []byte) {
+	c.t.Fatalf("StoreSeriesForPostings should not be called")
 }
 
 type headGenOptions struct {
