@@ -30,8 +30,3 @@ jobs:
         env:
           TEMP_DIR: ${{ runner.temp }}/conftest
         run: make BUILD_IN_CONTAINER=false conftest-verify
-
-      - name: Conftest Run Tests
-        env:
-          TEMP_DIR: ${{ runner.temp }}/conftest
-        run: make BUILD_IN_CONTAINER=false conftest-test
