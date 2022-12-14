@@ -34,7 +34,6 @@ type ingesterMetrics struct {
 	activeSeriesLoading               *prometheus.GaugeVec
 	activeSeriesPerUser               *prometheus.GaugeVec
 	activeSeriesCustomTrackersPerUser *prometheus.GaugeVec
-	activeGroupsPerUser               *prometheus.GaugeVec
 
 	// Global limit metrics
 	maxUsersGauge           prometheus.GaugeFunc

@@ -893,6 +893,9 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	group := ""
 	if len(req.Timeseries) > 0 {
 		group = validation.FindGroupLabel(i.limits, userID, req.Timeseries[0].Labels)
+		if i.activeGroups.ActiveGroupLimitExceeded(userID, group) {
+			group = "other"
+		}
 	}
 
 	i.activeGroups.UpdateGroupTimestamp(userID, group, time.Now())
