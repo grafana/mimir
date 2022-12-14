@@ -285,7 +285,9 @@ You can migrate to the Grafana Mimir Helm chart (`grafana/mimir-distributed` v3.
    ```
 
    g. Disable MinIO.
-   If you are migrating from Cortex, use your existing object storage, and disable MinIO.
+   The Grafana Mimir Helm chart enables MinIO by default for convenience during first time install.
+   If you are migrating from Cortex and have your existing object storage you must disable MinIO in Grafana Mimir Helm 
+   chart custom values.yaml.
 
    In your `values.yaml` file:
 
