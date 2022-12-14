@@ -178,8 +178,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         {
           alert: $.alertName('IngesterRestarts'),
           expr: |||
-            changes(process_start_time_seconds{%s=~".+(cortex|ingester.*)"}[30m]) >= 2
-          ||| % $._config.per_job_label,
+            changes(process_start_time_seconds{%s}[30m]) >= 2
+          ||| % $.jobMatcher($._config.job_names.ingester),
           labels: {
             // This alert is on a cause not symptom. A couple of ingesters restarts may be suspicious but
             // not necessarily an issue (eg. may happen because of the K8S node autoscaler), so we're

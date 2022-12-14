@@ -17,6 +17,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
+	"github.com/grafana/dskit/gate"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -32,7 +33,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
-	"github.com/grafana/mimir/pkg/util/gate"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -91,12 +91,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 
 	// The number of concurrent queries against the tenants BucketStores are limited.
 	queryGateReg := prometheus.WrapRegistererWithPrefix("cortex_bucket_stores_", reg)
-	var queryGate gate.Gate
-	if cfg.BucketStore.MaxConcurrentRejectOverLimit {
-		queryGate = gate.NewRejecting(cfg.BucketStore.MaxConcurrent)
-	} else {
-		queryGate = gate.NewBlocking(cfg.BucketStore.MaxConcurrent)
-	}
+	queryGate := gate.NewBlocking(cfg.BucketStore.MaxConcurrent)
 	queryGate = gate.NewInstrumented(queryGateReg, cfg.BucketStore.MaxConcurrent, queryGate)
 
 	u := &BucketStores{

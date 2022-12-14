@@ -221,7 +221,7 @@ GOVOLUMES=	-v mimir-go-cache:/go/cache \
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
 SSHVOLUME=  -v ~/.ssh/:/root/.ssh:$(CONTAINER_MOUNT_OPTIONS)
 
-exes $(EXES) protos $(PROTO_GOS) lint lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt conftest-test conftest-verify check-helm-tests build-helm-tests: fetch-build-image
+exes $(EXES) protos $(PROTO_GOS) lint lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt conftest-test conftest-quick-test conftest-verify check-helm-tests build-helm-tests: fetch-build-image
 	@echo ">>>> Entering build container: $@"
 	$(SUDO) time docker run --rm $(TTY) -i $(SSHVOLUME) $(GOVOLUMES) $(BUILD_IMAGE) GOOS=$(GOOS) GOARCH=$(GOARCH) BINARY_SUFFIX=$(BINARY_SUFFIX) $@;
 
@@ -423,27 +423,38 @@ check-mixin-tests: ## Test the mixin files.
 format-mixin: ## Format the mixin files.
 	@find $(MIXIN_PATH) -type f -name '*.libsonnet' | xargs jsonnetfmt -i
 
+# Helm static tests
+
+HELM_SCRIPTS_PATH=operations/helm/scripts
 HELM_REGO_POLICIES_PATH=operations/helm/policies
+HELM_RAW_MANIFESTS_PATH=operations/helm/manifests-intermediate
+HELM_REFERENCE_MANIFESTS=operations/helm/tests
 
 conftest-fmt:
 	@conftest fmt $(HELM_REGO_POLICIES_PATH)
 
 check-conftest-fmt: conftest-fmt
-	@./tools/find-diff-or-untracked.sh $(HELM_REGO_POLICIES_PATH) || (echo "Please format rego policies with 'make conftest-fmt'" && false)
+	@./tools/find-diff-or-untracked.sh $(HELM_REGO_POLICIES_PATH) || (echo "Format the rego policies by running 'make conftest-fmt' and commit the changes" && false)
 
 conftest-verify:
 	@conftest verify -p $(HELM_REGO_POLICIES_PATH) --report notes
 
-conftest-test:
-	@tools/run-conftest.sh --do-dependency-update --policies-path $(HELM_REGO_POLICIES_PATH)
+update-helm-dependencies:
+	@./$(HELM_SCRIPTS_PATH)/update-helm-dependencies.sh operations/helm/charts/mimir-distributed
 
 build-helm-tests: ## Build the helm golden records.
-build-helm-tests: operations/helm/charts/mimir-distributed/charts
-	@./operations/helm/tests/build.sh
+build-helm-tests: update-helm-dependencies
+	@./$(HELM_SCRIPTS_PATH)/build.sh --intermediate-path $(HELM_RAW_MANIFESTS_PATH) --output-path $(HELM_REFERENCE_MANIFESTS)
+
+conftest-quick-test: ## Does not rebuild the yaml manifests, use the target conftest-test for that
+conftest-quick-test:
+	@./$(HELM_SCRIPTS_PATH)/run-conftest.sh --policies-path $(HELM_REGO_POLICIES_PATH) --manifests-path $(HELM_RAW_MANIFESTS_PATH)
+
+conftest-test: build-helm-tests conftest-quick-test
 
 check-helm-tests: ## Check the helm golden records.
-check-helm-tests: build-helm-tests
-	@./tools/find-diff-or-untracked.sh operations/helm/tests || (echo "Please rebuild helm tests output 'make build-helm-tests'" && false)
+check-helm-tests: build-helm-tests conftest-test
+	@./tools/find-diff-or-untracked.sh $(HELM_REFERENCE_MANIFESTS) || (echo "Rebuild the Helm tests output by running 'make build-helm-tests' and commit the changes" && false)
 
 endif
 

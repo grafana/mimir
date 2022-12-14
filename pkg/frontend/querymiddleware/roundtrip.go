@@ -14,13 +14,13 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
 
-	"github.com/grafana/mimir/pkg/cache"
 	"github.com/grafana/mimir/pkg/util"
 )
 

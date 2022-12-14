@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
 	"sort"
 	"testing"
 
@@ -18,10 +19,16 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/util/test"
 )
+
+func init() {
+	// Track the balance of gets/puts to seriesChunkRefsSetPool in all tests.
+	seriesChunkRefsSetPool = &trackedPool{parent: seriesChunkRefsSetPool}
+}
 
 func TestSeriesChunkRef_Compare(t *testing.T) {
 	input := []seriesChunkRef{
@@ -577,6 +584,155 @@ func TestMergedSeriesChunkRefsSet(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestMergedSeriesChunkRefsSet_Concurrency(t *testing.T) {
+	const (
+		concurrency        = 10
+		runs               = 100
+		minIterators       = 2
+		maxIterators       = 20
+		minSetsPerIterator = 2
+		maxSetsPerIterator = 10
+		minSeriesPerSet    = 10
+		maxSeriesPerSet    = 50
+	)
+
+	runTest := func() {
+		// Randomize the test setup.
+		var (
+			numIterators       = minIterators + rand.Intn(maxIterators-minIterators)
+			numSetsPerIterator = minSetsPerIterator + rand.Intn(maxSetsPerIterator-minSetsPerIterator)
+			numSeriesPerSet    = minSeriesPerSet + rand.Intn(maxSeriesPerSet-minSeriesPerSet)
+		)
+
+		// Create the iterators.
+		iterators := make([]seriesChunkRefsSetIterator, 0, numIterators)
+		for iteratorIdx := 0; iteratorIdx < numIterators; iteratorIdx++ {
+			// Create the sets for this iterator.
+			sets := make([]seriesChunkRefsSet, 0, numSetsPerIterator)
+			for setIdx := 0; setIdx < numSetsPerIterator; setIdx++ {
+				minSeriesID := (iteratorIdx * numSetsPerIterator * numSeriesPerSet) + (setIdx * numSeriesPerSet)
+				maxSeriesID := minSeriesID + numSeriesPerSet - 1
+				sets = append(sets, createSeriesChunkRefsSet(minSeriesID, maxSeriesID, true))
+			}
+
+			iterators = append(iterators, newSliceSeriesChunkRefsSetIterator(nil, sets...))
+		}
+
+		// Run the actual test.
+		it := mergedSeriesChunkRefsSetIterators(50, iterators...)
+
+		actualSeries := 0
+		for it.Next() {
+			set := it.At()
+			actualSeries += len(set.series)
+			set.release()
+		}
+
+		require.NoError(t, it.Err())
+		require.Equal(t, numIterators*numSetsPerIterator*numSeriesPerSet, actualSeries)
+	}
+
+	// Reset the memory pool tracker.
+	seriesChunkRefsSetPool.(*trackedPool).reset()
+
+	g, _ := errgroup.WithContext(context.Background())
+	for c := 0; c < concurrency; c++ {
+		g.Go(func() error {
+			for r := 0; r < runs/concurrency; r++ {
+				runTest()
+			}
+			return nil
+		})
+	}
+
+	require.NoError(t, g.Wait())
+
+	// Ensure the seriesChunkRefsSet memory pool has been used and all slices pulled from
+	// pool have put back.
+	assert.Greater(t, seriesChunkRefsSetPool.(*trackedPool).gets.Load(), int64(0))
+	assert.Equal(t, int64(0), seriesChunkRefsSetPool.(*trackedPool).balance.Load())
+}
+
+func BenchmarkMergedSeriesChunkRefsSetIterators(b *testing.B) {
+	const (
+		numSetsPerIterator = 10
+		numSeriesPerSet    = 10
+		mergedBatchSize    = 5000
+	)
+
+	// Creates the series sets, guaranteeing series sorted by labels.
+	createUnreleasableSets := func(iteratorIdx int) []seriesChunkRefsSet {
+		sets := make([]seriesChunkRefsSet, 0, numSetsPerIterator)
+		for setIdx := 0; setIdx < numSetsPerIterator; setIdx++ {
+			minSeriesID := (iteratorIdx * numSetsPerIterator * numSeriesPerSet) + (setIdx * numSeriesPerSet)
+			maxSeriesID := minSeriesID + numSeriesPerSet - 1
+
+			// This set cannot be released because reused between multiple benchmark runs.
+			set := createSeriesChunkRefsSet(minSeriesID, maxSeriesID, false)
+			sets = append(sets, set)
+		}
+
+		return sets
+	}
+
+	for _, withDuplicatedSeries := range []bool{true, false} {
+		for numIterators := 1; numIterators <= 64; numIterators *= 2 {
+			// Create empty iterators that we can reuse in each benchmark run.
+			iterators := make([]seriesChunkRefsSetIterator, 0, numIterators)
+			for i := 0; i < numIterators; i++ {
+				iterators = append(iterators, newSliceSeriesChunkRefsSetIterator(nil))
+			}
+
+			// Create the sets for each underlying iterator. These sets cannot be released because
+			// will be used in multiple benchmark runs.
+			perIteratorSets := make([][]seriesChunkRefsSet, 0, numIterators)
+			for iteratorIdx := 0; iteratorIdx < numIterators; iteratorIdx++ {
+				if withDuplicatedSeries {
+					perIteratorSets = append(perIteratorSets, createUnreleasableSets(0))
+				} else {
+					perIteratorSets = append(perIteratorSets, createUnreleasableSets(iteratorIdx))
+				}
+			}
+
+			b.Run(fmt.Sprintf("with duplicated series = %t number of iterators = %d", withDuplicatedSeries, numIterators), func(b *testing.B) {
+				for n := 0; n < b.N; n++ {
+					// Reset iterators.
+					for i := 0; i < numIterators; i++ {
+						iterators[i].(*sliceSeriesChunkRefsSetIterator).reset(perIteratorSets[i])
+					}
+
+					// Merge the iterators and run through them.
+					it := mergedSeriesChunkRefsSetIterators(mergedBatchSize, iterators...)
+
+					actualSeries := 0
+					for it.Next() {
+						set := it.At()
+						actualSeries += len(set.series)
+
+						set.release()
+					}
+
+					if err := it.Err(); err != nil {
+						b.Fatal(it.Err())
+					}
+
+					// Ensure each benchmark run go through the same data set.
+					var expectedSeries int
+					if withDuplicatedSeries {
+						expectedSeries = numSetsPerIterator * numSeriesPerSet
+					} else {
+						expectedSeries = numIterators * numSetsPerIterator * numSeriesPerSet
+					}
+
+					if actualSeries != expectedSeries {
+						b.Fatalf("benchmark iterated through an unexpected number of series (expected: %d got: %d)", expectedSeries, actualSeries)
+					}
+				}
+			})
+		}
 	}
 }
 
@@ -1295,12 +1451,15 @@ type sliceSeriesChunkRefsSetIterator struct {
 	err     error
 }
 
-func newSliceSeriesChunkRefsSetIterator(err error, sets ...seriesChunkRefsSet) seriesChunkRefsSetIterator {
-	return &sliceSeriesChunkRefsSetIterator{
-		current: -1,
-		sets:    sets,
-		err:     err,
-	}
+func newSliceSeriesChunkRefsSetIterator(err error, sets ...seriesChunkRefsSet) *sliceSeriesChunkRefsSetIterator {
+	s := &sliceSeriesChunkRefsSetIterator{err: err}
+	s.reset(sets)
+	return s
+}
+
+func (s *sliceSeriesChunkRefsSetIterator) reset(sets []seriesChunkRefsSet) {
+	s.current = -1
+	s.sets = sets
 }
 
 func (s *sliceSeriesChunkRefsSetIterator) Next() bool {
@@ -1360,4 +1519,27 @@ func readAllSeriesChunkRefs(it seriesChunkRefsIterator) []seriesChunkRefs {
 		out = append(out, it.At())
 	}
 	return out
+}
+
+// createSeriesChunkRefsSet creates a seriesChunkRefsSet with series whose name is generated
+// based on the provided minSeriesID and maxSeriesID (both inclusive). Each series has the ID
+// incremented by +1.
+func createSeriesChunkRefsSet(minSeriesID, maxSeriesID int, releasable bool) seriesChunkRefsSet {
+	set := newSeriesChunkRefsSet(maxSeriesID-minSeriesID+1, releasable)
+
+	for seriesID := minSeriesID; seriesID <= maxSeriesID; seriesID++ {
+		set.series = append(set.series, seriesChunkRefs{
+			lset: labels.FromStrings(labels.MetricName, fmt.Sprintf("metric_%06d", seriesID)),
+		})
+	}
+
+	return set
+}
+
+func TestCreateSeriesChunkRefsSet(t *testing.T) {
+	set := createSeriesChunkRefsSet(5, 7, true)
+	require.Len(t, set.series, 3)
+	assert.Equal(t, seriesChunkRefs{lset: labels.FromStrings(labels.MetricName, "metric_000005")}, set.series[0])
+	assert.Equal(t, seriesChunkRefs{lset: labels.FromStrings(labels.MetricName, "metric_000006")}, set.series[1])
+	assert.Equal(t, seriesChunkRefs{lset: labels.FromStrings(labels.MetricName, "metric_000007")}, set.series[2])
 }

@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-
 package cache
 
 import (
@@ -9,19 +7,18 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 
-	"github.com/grafana/mimir/pkg/util/spanlogger"
+	"github.com/grafana/dskit/spanlogger"
 )
 
 // SpanlessTracingCache wraps a Cache and logs Fetch operation in the parent spans.
-// This is different than Thanos' TracingCache because this logs in the parent span
-// without creating a new span.
 type SpanlessTracingCache struct {
-	c      Cache
-	logger log.Logger
+	c        Cache
+	resolver spanlogger.TenantResolver
+	logger   log.Logger
 }
 
-func NewSpanlessTracingCache(cache Cache, logger log.Logger) Cache {
-	return SpanlessTracingCache{c: cache, logger: logger}
+func NewSpanlessTracingCache(cache Cache, logger log.Logger, resolver spanlogger.TenantResolver) Cache {
+	return SpanlessTracingCache{c: cache, resolver: resolver, logger: logger}
 }
 
 func (t SpanlessTracingCache) Store(ctx context.Context, data map[string][]byte, ttl time.Duration) {
@@ -31,7 +28,7 @@ func (t SpanlessTracingCache) Store(ctx context.Context, data map[string][]byte,
 func (t SpanlessTracingCache) Fetch(ctx context.Context, keys []string) (result map[string][]byte) {
 	var (
 		bytes  int
-		logger = spanlogger.FromContext(ctx, t.logger)
+		logger = spanlogger.FromContext(ctx, t.logger, t.resolver)
 	)
 	result = t.c.Fetch(ctx, keys)
 

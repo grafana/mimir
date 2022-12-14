@@ -4,13 +4,14 @@
 
 ### Grafana Mimir
 
+* [CHANGE] Store-gateway: Remove experimental `-blocks-storage.bucket-store.max-concurrent-reject-over-limit` flag. #3706
 * [FEATURE] Store-gateway: streaming of series. The store-gateway can now stream results back to the querier instead of buffering them. This is expected to greatly reduce peak memory consumption while keeping latency the same. You can enable this feature by setting `-blocks-storage.bucket-store.batch-series-size` to a value in the high thousands (5000-10000). This is still an experimental feature and is subject to a changing API and instability. #3540 #3546 #3587 #3620 #3645 #3355
 * [ENHANCEMENT] Added new metric `thanos_shipper_last_successful_upload_time`: Unix timestamp (in seconds) of the last successful TSDB block uploaded to the bucket. #3627
 * [ENHANCEMENT] Ruler: Added `-ruler.alertmanager-client.tls-enabled` configuration for alertmanager client. #3432 #3597
 * [ENHANCEMENT] Activity tracker logs now have `component=activity-tracker` label. #3556
 * [ENHANCEMENT] Distributor: remove labels with empty values #2439
 * [ENHANCEMENT] Query-frontend: track query HTTP requests in the Activity Tracker. #3561
-* [ENHANCEMENT] Store-gateway: Add experimental alternate implementation of index-header reader that does not use mmap. This reader is expected to improve stability of the store-gateway. This implementation can be enabled with the flag `-blocks-storage.bucket-store.index-header.stream-reader-enabled`. #3639
+* [ENHANCEMENT] Store-gateway: Add experimental alternate implementation of index-header reader that does not use memory mapped files. The index-header reader is expected to improve stability of the store-gateway. You can enable this implementation with the flag `-blocks-storage.bucket-store.index-header.stream-reader-enabled`. #3639 #3691 #3703
 * [ENHANCEMENT] Query-scheduler: add `cortex_query_scheduler_cancelled_requests_total` metric to track the number of requests that are already cancelled when dequeued. #3696
 * [BUGFIX] Log the names of services that are not yet running rather than `unsupported value type` when calling `/ready` and some services are not running. #3625
 * [BUGFIX] Alertmanager: Fix template spurious deletion with relative data dir. #3604
@@ -24,6 +25,7 @@
 * [BUGFIX] Alerts: Fixed `MimirIngesterHasNotShippedBlocks` and `MimirIngesterHasNotShippedBlocksSinceStart` alerts for when Mimir is deployed in read-write or monolithic modes and updated them to use new `thanos_shipper_last_successful_upload_time` metric. #3627
 * [BUGFIX] Alerts: Fixed `MemoryMapAreasTooHigh` alert when Mimir is deployed in read-write mode. #3626
 * [BUGFIX] Alerts: Fixed `MimirCompactorSkippedBlocksWithOutOfOrderChunks` matching on non-existent label. #3628
+* [BUGFIX] Dashboards: Fix `Rollout Progress` dashboard incorrectly using Gateway metrics when Gateway was not enabled. #3709
 
 ### Jsonnet
 

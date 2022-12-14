@@ -17,14 +17,13 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/runutil"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/thanos-io/objstore"
 	"golang.org/x/sync/errgroup"
-
-	"github.com/grafana/mimir/pkg/cache"
 )
 
 const (

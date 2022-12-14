@@ -11,11 +11,12 @@ import (
 	"path"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-	"go.uber.org/goleak"
-
+	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 
 	streamencoding "github.com/grafana/mimir/pkg/storegateway/indexheader/encoding"
 )
@@ -44,7 +45,8 @@ func TestSymbols(t *testing.T) {
 	filePath := path.Join(dir, "index")
 	require.NoError(t, os.WriteFile(filePath, buf.Get(), 0700))
 
-	df := streamencoding.NewDecbufFactory(filePath)
+	reg := prometheus.NewPedanticRegistry()
+	df := streamencoding.NewDecbufFactory(filePath, 0, log.NewNopLogger(), streamencoding.NewDecbufFactoryMetrics(reg))
 	s, err := NewSymbols(df, index.FormatV2, symbolsStart)
 	require.NoError(t, err)
 

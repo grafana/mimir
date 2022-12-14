@@ -120,7 +120,7 @@ spec:
           $value }} times in the last 30 mins.'
         runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterrestarts
       expr: |
-        changes(process_start_time_seconds{job=~".+(cortex|ingester.*)"}[30m]) >= 2
+        changes(process_start_time_seconds{job=~".*/(ingester.*|cortex|mimir|mimir-write.*)"}[30m]) >= 2
       labels:
         severity: warning
     - alert: MimirKVStoreFailure
