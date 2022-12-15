@@ -388,6 +388,7 @@ Examples:
 {{- define "mimir.componentSectionFromName" -}}
 {{- $componentsMap := dict
   "admin-api" "admin_api"
+  "admin-cache" "admin-cache"
   "alertmanager" "alertmanager"
   "chunks-cache" "chunks-cache"
   "compactor" "compactor"
