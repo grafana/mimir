@@ -17,6 +17,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
@@ -85,7 +86,7 @@ func GenerateBlockFromSpec(userID string, storageDir string, specs BlockSeriesSp
 	for s := range uniqueSymbols {
 		symbols = append(symbols, s)
 	}
-	sort.Strings(symbols)
+	slices.Sort(symbols)
 
 	// Write all chunks to segment files.
 	chunkw, err := chunks.NewWriter(filepath.Join(blockDir, "chunks"))

@@ -11,20 +11,19 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"sort"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/runutil"
 	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/thanos-io/objstore"
-
-	"github.com/grafana/mimir/pkg/cache"
+	"golang.org/x/exp/slices"
 )
 
 const testFilename = "/random_object"
@@ -374,7 +373,7 @@ func verifyIter(t *testing.T, cb *CachingBucket, expectedFiles []string, expecte
 
 	hitsAfter := int(promtest.ToFloat64(cb.operationHits.WithLabelValues(objstore.OpIter, cfgName)))
 
-	sort.Strings(col.items)
+	slices.Sort(col.items)
 	assert.Equal(t, expectedFiles, col.items)
 
 	expectedHitsDiff := 0

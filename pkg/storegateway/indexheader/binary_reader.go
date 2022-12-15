@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
+	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	mmap "github.com/grafana/mimir/pkg/storegateway/indexheader/fileutil"
@@ -854,7 +855,7 @@ func (r *BinaryReader) LabelValues(name string, filter func(string) bool) ([]str
 				values = append(values, k)
 			}
 		}
-		sort.Strings(values)
+		slices.Sort(values)
 		return values, nil
 
 	}
@@ -912,7 +913,7 @@ func (r *BinaryReader) LabelNames() ([]string, error) {
 		}
 		labelNames = append(labelNames, name)
 	}
-	sort.Strings(labelNames)
+	slices.Sort(labelNames)
 	return labelNames, nil
 }
 

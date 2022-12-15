@@ -203,6 +203,10 @@ func (c *loadingSeriesChunksSetIterator) Next() bool {
 	}
 
 	nextUnloaded := c.from.At()
+
+	// This data structure doesn't retain the seriesChunkRefsSet so it can be released once done.
+	defer nextUnloaded.release()
+
 	entries := make([]seriesEntry, nextUnloaded.len())
 	c.chunkReaders.reset()
 	for i, s := range nextUnloaded.series {

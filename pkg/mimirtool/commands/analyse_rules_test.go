@@ -6,11 +6,11 @@
 package commands
 
 import (
-	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/mimirtool/analyze"
 	"github.com/grafana/mimir/pkg/mimirtool/rules"
@@ -70,6 +70,6 @@ func TestParseMetricsInRuleFile(t *testing.T) {
 	for metric := range output.OverallMetrics {
 		metricsUsed = append(metricsUsed, metric)
 	}
-	sort.Strings(metricsUsed)
+	slices.Sort(metricsUsed)
 	assert.Equal(t, allMetricsInRuleTest, metricsUsed)
 }

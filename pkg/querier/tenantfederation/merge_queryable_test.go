@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -24,6 +23,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/user"
+	"golang.org/x/exp/slices"
 
 	"github.com/grafana/dskit/tenant"
 
@@ -211,7 +211,7 @@ func (m mockTenantQuerier) LabelValues(name string, matchers ...*labels.Matcher)
 	for k := range labelValues {
 		results = append(results, k)
 	}
-	sort.Strings(results)
+	slices.Sort(results)
 	return results, m.warnings, nil
 }
 
@@ -245,7 +245,7 @@ func (m mockTenantQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, st
 	for k := range labelValues {
 		results = append(results, k)
 	}
-	sort.Strings(results)
+	slices.Sort(results)
 	return results, m.warnings, nil
 }
 

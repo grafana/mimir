@@ -36,11 +36,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore/providers/filesystem"
+	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/thanos-io/objstore"
 
-	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
@@ -451,7 +451,7 @@ func createAndUpload(t testing.TB, bkt objstore.Bucket, blocks []blockgenSpec, b
 	for _, b := range blocks {
 		id, meta := createBlock(ctx, t, prepareDir, b)
 		metas = append(metas, meta)
-		require.NoError(t, mimir_tsdb.UploadBlock(ctx, log.NewNopLogger(), bkt, filepath.Join(prepareDir, id.String()), nil))
+		require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(prepareDir, id.String()), nil))
 	}
 	for _, b := range blocksWithOutOfOrderChunks {
 		id, meta := createBlock(ctx, t, prepareDir, b)
@@ -460,7 +460,7 @@ func createAndUpload(t testing.TB, bkt objstore.Bucket, blocks []blockgenSpec, b
 		require.NoError(t, err)
 
 		metas = append(metas, meta)
-		require.NoError(t, mimir_tsdb.UploadBlock(ctx, log.NewNopLogger(), bkt, filepath.Join(prepareDir, id.String()), nil))
+		require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(prepareDir, id.String()), nil))
 	}
 
 	return metas
@@ -850,7 +850,7 @@ func putOutOfOrderIndex(blockDir string, minTime int64, maxTime int64) error {
 	for s := range symbols {
 		syms = append(syms, s)
 	}
-	sort.Strings(syms)
+	slices.Sort(syms)
 	for _, s := range syms {
 		if err := iw.AddSymbol(s); err != nil {
 			return err

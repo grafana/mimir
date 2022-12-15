@@ -11,9 +11,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/rand"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -29,7 +29,9 @@ import (
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
+	"github.com/grafana/mimir/pkg/storegateway/testhelper"
 	e2eutil "github.com/grafana/mimir/pkg/storegateway/testhelper"
+	"github.com/grafana/mimir/pkg/util/test"
 	testutil "github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -89,140 +91,6 @@ func TestIsBlockDir(t *testing.T) {
 	}
 }
 
-func TestUpload(t *testing.T) {
-	testutil.VerifyNoLeak(t)
-
-	ctx := context.Background()
-
-	tmpDir := t.TempDir()
-
-	bkt := objstore.NewInMemBucket()
-	rand.Seed(1) // hard-coded sizes later in this test depend on values created "randomly" by CreateBlock.
-	b1, err := e2eutil.CreateBlock(ctx, tmpDir, fiveLabels,
-		100, 0, 1000, labels.FromStrings("ext1", "val1"), 124, metadata.NoneFunc)
-	require.NoError(t, err)
-	require.NoError(t, os.MkdirAll(path.Join(tmpDir, "test", b1.String()), os.ModePerm))
-
-	{
-		// Wrong dir.
-		err := Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "not-existing"), metadata.NoneFunc)
-		require.ErrorContains(t, err, "/not-existing: no such file or directory")
-	}
-	{
-		// Wrong existing dir (not a block).
-		err := Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test"), metadata.NoneFunc)
-		require.ErrorContains(t, err, "not a block dir: ulid: bad data size when unmarshaling")
-	}
-	{
-		// Empty block dir.
-		err := Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), metadata.NoneFunc)
-		require.ErrorContains(t, err, "/meta.json: no such file or directory")
-	}
-	testutil.Copy(t, path.Join(tmpDir, b1.String(), MetaFilename), path.Join(tmpDir, "test", b1.String(), MetaFilename))
-	{
-		// Missing chunks.
-		err := Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), metadata.NoneFunc)
-		require.ErrorContains(t, err, "/chunks: no such file or directory")
-	}
-	require.NoError(t, os.MkdirAll(path.Join(tmpDir, "test", b1.String(), ChunksDirname), os.ModePerm))
-	testutil.Copy(t, path.Join(tmpDir, b1.String(), ChunksDirname, "000001"), path.Join(tmpDir, "test", b1.String(), ChunksDirname, "000001"))
-	{
-		// Missing index file.
-		err := Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), metadata.NoneFunc)
-		require.ErrorContains(t, err, "/index: no such file or directory")
-	}
-	testutil.Copy(t, path.Join(tmpDir, b1.String(), IndexFilename), path.Join(tmpDir, "test", b1.String(), IndexFilename))
-	require.NoError(t, os.Remove(path.Join(tmpDir, "test", b1.String(), MetaFilename)))
-	{
-		// Missing meta.json file.
-		err := Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), metadata.NoneFunc)
-		require.ErrorContains(t, err, "/meta.json: no such file or directory")
-	}
-	testutil.Copy(t, path.Join(tmpDir, b1.String(), MetaFilename), path.Join(tmpDir, "test", b1.String(), MetaFilename))
-	{
-		// Full block.
-		require.NoError(t, Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), metadata.NoneFunc))
-		require.Equal(t, 3, len(bkt.Objects()))
-		// Note this value 3751 depends on random numbers, so we fix the seed earlier.
-		require.Equal(t, 3751, len(bkt.Objects()[path.Join(b1.String(), ChunksDirname, "000001")]))
-		require.Equal(t, 401, len(bkt.Objects()[path.Join(b1.String(), IndexFilename)]))
-		require.Equal(t, 570, len(bkt.Objects()[path.Join(b1.String(), MetaFilename)]))
-
-		// File stats are gathered.
-		require.Equal(t, fmt.Sprintf(`{
-	"ulid": "%s",
-	"minTime": 0,
-	"maxTime": 1000,
-	"stats": {
-		"numSamples": 500,
-		"numSeries": 5,
-		"numChunks": 5
-	},
-	"compaction": {
-		"level": 1,
-		"sources": [
-			"%s"
-		]
-	},
-	"version": 1,
-	"out_of_order": false,
-	"thanos": {
-		"labels": {
-			"ext1": "val1"
-		},
-		"downsample": {
-			"resolution": 124
-		},
-		"source": "test",
-		"files": [
-			{
-				"rel_path": "chunks/000001",
-				"size_bytes": 3751
-			},
-			{
-				"rel_path": "index",
-				"size_bytes": 401
-			},
-			{
-				"rel_path": "meta.json"
-			}
-		]
-	}
-}
-`, b1.String(), b1.String()), string(bkt.Objects()[path.Join(b1.String(), MetaFilename)]))
-	}
-	{
-		// Test Upload is idempotent.
-		require.NoError(t, Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), metadata.NoneFunc))
-		require.Equal(t, 3, len(bkt.Objects()))
-		require.Equal(t, 3751, len(bkt.Objects()[path.Join(b1.String(), ChunksDirname, "000001")]))
-		require.Equal(t, 401, len(bkt.Objects()[path.Join(b1.String(), IndexFilename)]))
-		require.Equal(t, 570, len(bkt.Objects()[path.Join(b1.String(), MetaFilename)]))
-	}
-	{
-		// Upload with no external labels should be blocked.
-		b2, err := e2eutil.CreateBlock(ctx, tmpDir, fiveLabels,
-			100, 0, 1000, labels.EmptyLabels(), 124, metadata.NoneFunc)
-		require.NoError(t, err)
-		err = Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, b2.String()), metadata.NoneFunc)
-		require.Error(t, err)
-		require.Equal(t, "empty external labels are not allowed for Thanos block", err.Error())
-		require.Equal(t, 3, len(bkt.Objects()))
-	}
-	{
-		// No external labels with UploadPromBlocks.
-		b2, err := e2eutil.CreateBlock(ctx, tmpDir, fiveLabels,
-			100, 0, 1000, labels.EmptyLabels(), 124, metadata.NoneFunc)
-		require.NoError(t, err)
-		err = UploadPromBlock(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, b2.String()), metadata.NoneFunc)
-		require.NoError(t, err)
-		require.Equal(t, 6, len(bkt.Objects()))
-		require.Equal(t, 3736, len(bkt.Objects()[path.Join(b2.String(), ChunksDirname, "000001")]))
-		require.Equal(t, 401, len(bkt.Objects()[path.Join(b2.String(), IndexFilename)]))
-		require.Equal(t, 549, len(bkt.Objects()[path.Join(b2.String(), MetaFilename)]))
-	}
-}
-
 func TestDelete(t *testing.T) {
 	testutil.VerifyNoLeak(t)
 	ctx := context.Background()
@@ -234,7 +102,7 @@ func TestDelete(t *testing.T) {
 		b1, err := e2eutil.CreateBlock(ctx, tmpDir, fiveLabels,
 			100, 0, 1000, labels.FromStrings("ext1", "val1"), 124, metadata.NoneFunc)
 		require.NoError(t, err)
-		require.NoError(t, Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, b1.String()), metadata.NoneFunc))
+		require.NoError(t, Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, b1.String()), nil))
 		require.Equal(t, 3, len(bkt.Objects()))
 
 		markedForDeletion := promauto.With(prometheus.NewRegistry()).NewCounter(prometheus.CounterOpts{Name: "test"})
@@ -248,7 +116,7 @@ func TestDelete(t *testing.T) {
 		b2, err := e2eutil.CreateBlock(ctx, tmpDir, fiveLabels,
 			100, 0, 1000, labels.FromStrings("ext1", "val1"), 124, metadata.NoneFunc)
 		require.NoError(t, err)
-		require.NoError(t, Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, b2.String()), metadata.NoneFunc))
+		require.NoError(t, Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, b2.String()), nil))
 		require.Equal(t, 3, len(bkt.Objects()))
 
 		// Remove meta.json and check if delete can delete it.
@@ -256,6 +124,196 @@ func TestDelete(t *testing.T) {
 		require.NoError(t, Delete(ctx, log.NewNopLogger(), bkt, b2))
 		require.Equal(t, 0, len(bkt.Objects()))
 	}
+}
+
+func TestUpload(t *testing.T) {
+	ctx := context.Background()
+
+	tmpDir := t.TempDir()
+
+	bkt := objstore.NewInMemBucket()
+	b1, err := testhelper.CreateBlock(ctx, tmpDir, []labels.Labels{
+		labels.FromStrings("a", "1"),
+		labels.FromStrings("a", "2"),
+		labels.FromStrings("a", "3"),
+		labels.FromStrings("a", "4"),
+		labels.FromStrings("b", "1"),
+	}, 100, 0, 1000, labels.FromStrings("ext1", "val1"), 124, metadata.NoneFunc)
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(path.Join(tmpDir, "test", b1.String()), os.ModePerm))
+
+	t.Run("wrong dir", func(t *testing.T) {
+		// Wrong dir.
+		err := Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "not-existing"), nil)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "/not-existing: no such file or directory")
+	})
+
+	t.Run("wrong existing dir (not a block)", func(t *testing.T) {
+		err := Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test"), nil)
+		require.EqualError(t, err, "not a block dir: ulid: bad data size when unmarshaling")
+	})
+
+	t.Run("empty block dir", func(t *testing.T) {
+		err := Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), nil)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "/meta.json: no such file or directory")
+	})
+
+	t.Run("missing chunks", func(t *testing.T) {
+		test.Copy(t, path.Join(tmpDir, b1.String(), MetaFilename), path.Join(tmpDir, "test", b1.String(), MetaFilename))
+
+		err := Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), nil)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "/chunks: no such file or directory")
+	})
+
+	t.Run("missing index file", func(t *testing.T) {
+		require.NoError(t, os.MkdirAll(path.Join(tmpDir, "test", b1.String(), ChunksDirname), 0777))
+		test.Copy(t, path.Join(tmpDir, b1.String(), ChunksDirname, "000001"), path.Join(tmpDir, "test", b1.String(), ChunksDirname, "000001"))
+
+		err := Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), nil)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "/index: no such file or directory")
+	})
+
+	t.Run("missing meta.json file", func(t *testing.T) {
+		test.Copy(t, path.Join(tmpDir, b1.String(), IndexFilename), path.Join(tmpDir, "test", b1.String(), IndexFilename))
+		require.NoError(t, os.Remove(path.Join(tmpDir, "test", b1.String(), MetaFilename)))
+
+		// Missing meta.json file.
+		err := Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), nil)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "/meta.json: no such file or directory")
+	})
+
+	t.Run("missing meta.json file, but valid metadata supplied as argument", func(t *testing.T) {
+		// Read meta.json from original block
+		meta, err := metadata.ReadFromDir(path.Join(tmpDir, b1.String()))
+		require.NoError(t, err)
+
+		// Make sure meta.json doesn't exist in "test"
+		require.NoError(t, os.RemoveAll(path.Join(tmpDir, "test", b1.String(), MetaFilename)))
+
+		// Missing meta.json file.
+		err = Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), meta)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "/meta.json: no such file or directory")
+	})
+
+	test.Copy(t, path.Join(tmpDir, b1.String(), MetaFilename), path.Join(tmpDir, "test", b1.String(), MetaFilename))
+
+	t.Run("full block", func(t *testing.T) {
+		// Full
+		require.NoError(t, Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), nil))
+		require.Equal(t, 3, len(bkt.Objects()))
+		chunkFileSize := getFileSize(t, filepath.Join(tmpDir, b1.String(), ChunksDirname, "000001"))
+		require.Equal(t, chunkFileSize, int64(len(bkt.Objects()[path.Join(b1.String(), ChunksDirname, "000001")])))
+		require.Equal(t, 401, len(bkt.Objects()[path.Join(b1.String(), IndexFilename)]))
+		require.Equal(t, 570, len(bkt.Objects()[path.Join(b1.String(), MetaFilename)]))
+
+		origMeta, err := metadata.ReadFromDir(path.Join(tmpDir, "test", b1.String()))
+		require.NoError(t, err)
+
+		uploadedMeta, err := DownloadMeta(context.Background(), log.NewNopLogger(), bkt, b1)
+		require.NoError(t, err)
+
+		files := uploadedMeta.Thanos.Files
+		require.Len(t, files, 3)
+		require.Equal(t, metadata.File{RelPath: "chunks/000001", SizeBytes: chunkFileSize}, files[0])
+		require.Equal(t, metadata.File{RelPath: "index", SizeBytes: 401}, files[1])
+		require.Equal(t, metadata.File{RelPath: "meta.json", SizeBytes: 0}, files[2]) // meta.json is added to the files without its size.
+
+		// clear files before comparing against original meta.json
+		uploadedMeta.Thanos.Files = nil
+
+		require.Equal(t, origMeta, &uploadedMeta)
+	})
+
+	t.Run("upload is idempotent", func(t *testing.T) {
+		// Test Upload is idempotent.
+		require.NoError(t, Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), nil))
+		require.Equal(t, 3, len(bkt.Objects()))
+		chunkFileSize := getFileSize(t, filepath.Join(tmpDir, b1.String(), ChunksDirname, "000001"))
+		require.Equal(t, chunkFileSize, int64(len(bkt.Objects()[path.Join(b1.String(), ChunksDirname, "000001")])))
+		require.Equal(t, 401, len(bkt.Objects()[path.Join(b1.String(), IndexFilename)]))
+		require.Equal(t, 570, len(bkt.Objects()[path.Join(b1.String(), MetaFilename)]))
+	})
+
+	t.Run("upload with no external labels works just fine", func(t *testing.T) {
+		// Upload with no external labels should be blocked.
+		b2, err := testhelper.CreateBlock(ctx, tmpDir, []labels.Labels{
+			labels.FromStrings("a", "1"),
+			labels.FromStrings("a", "2"),
+			labels.FromStrings("a", "3"),
+			labels.FromStrings("a", "4"),
+			labels.FromStrings("b", "1"),
+		}, 100, 0, 1000, labels.EmptyLabels(), 124, metadata.NoneFunc)
+		require.NoError(t, err)
+
+		err = Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, b2.String()), nil)
+		require.NoError(t, err)
+
+		chunkFileSize := getFileSize(t, filepath.Join(tmpDir, b2.String(), ChunksDirname, "000001"))
+		require.Equal(t, 6, len(bkt.Objects())) // 3 from b1, 3 from b2
+		require.Equal(t, chunkFileSize, int64(len(bkt.Objects()[path.Join(b2.String(), ChunksDirname, "000001")])))
+		require.Equal(t, 401, len(bkt.Objects()[path.Join(b2.String(), IndexFilename)]))
+		require.Equal(t, 549, len(bkt.Objects()[path.Join(b2.String(), MetaFilename)]))
+
+		origMeta, err := metadata.ReadFromDir(path.Join(tmpDir, b2.String()))
+		require.NoError(t, err)
+
+		uploadedMeta, err := DownloadMeta(context.Background(), log.NewNopLogger(), bkt, b2)
+		require.NoError(t, err)
+
+		// Files are not in the original meta.
+		uploadedMeta.Thanos.Files = nil
+		require.Equal(t, origMeta, &uploadedMeta)
+	})
+
+	t.Run("upload with supplied meta.json", func(t *testing.T) {
+		// Upload with no external labels should be blocked.
+		b3, err := testhelper.CreateBlock(ctx, tmpDir, []labels.Labels{
+			labels.FromStrings("a", "1"),
+			labels.FromStrings("a", "2"),
+			labels.FromStrings("a", "3"),
+			labels.FromStrings("a", "4"),
+			labels.FromStrings("b", "1"),
+		}, 100, 0, 1000, labels.EmptyLabels(), 124, metadata.NoneFunc)
+		require.NoError(t, err)
+
+		// Prepare metadata that will be uploaded to the bucket.
+		updatedMeta, err := metadata.ReadFromDir(path.Join(tmpDir, b3.String()))
+		require.NoError(t, err)
+		require.Empty(t, updatedMeta.Thanos.Labels)
+		require.Equal(t, metadata.TestSource, updatedMeta.Thanos.Source)
+		updatedMeta.Thanos.Labels = map[string]string{"a": "b", "c": "d"}
+		updatedMeta.Thanos.Source = "hello world"
+
+		// Upload block with new metadata.
+		err = Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, b3.String()), updatedMeta)
+		require.NoError(t, err)
+
+		// Verify that original (on-disk) meta.json is not changed
+		origMeta, err := metadata.ReadFromDir(path.Join(tmpDir, b3.String()))
+		require.NoError(t, err)
+		require.Empty(t, origMeta.Thanos.Labels)
+		require.Equal(t, metadata.TestSource, origMeta.Thanos.Source)
+
+		// Verify that meta.json uploaded in the bucket has updated values.
+		bucketMeta, err := DownloadMeta(context.Background(), log.NewNopLogger(), bkt, b3)
+		require.NoError(t, err)
+		require.Equal(t, updatedMeta.Thanos.Labels, bucketMeta.Thanos.Labels)
+		require.Equal(t, updatedMeta.Thanos.Source, bucketMeta.Thanos.Source)
+	})
+}
+
+func getFileSize(t *testing.T, filepath string) int64 {
+	t.Helper()
+
+	st, err := os.Stat(filepath)
+	require.NoError(t, err)
+	return st.Size()
 }
 
 func TestMarkForDeletion(t *testing.T) {
@@ -297,7 +355,7 @@ func TestMarkForDeletion(t *testing.T) {
 
 			tcase.preUpload(t, id, bkt)
 
-			require.NoError(t, Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, id.String()), metadata.NoneFunc))
+			require.NoError(t, Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, id.String()), nil))
 
 			c := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
 			err = MarkForDeletion(ctx, log.NewNopLogger(), bkt, id, "", c)
@@ -346,108 +404,13 @@ func TestMarkForNoCompact(t *testing.T) {
 
 			tcase.preUpload(t, id, bkt)
 
-			require.NoError(t, Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, id.String()), metadata.NoneFunc))
+			require.NoError(t, Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, id.String()), nil))
 
 			c := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
 			err = MarkForNoCompact(ctx, log.NewNopLogger(), bkt, id, metadata.ManualNoCompactReason, "", c)
 			require.NoError(t, err)
 			require.Equal(t, float64(tcase.blocksMarked), promtest.ToFloat64(c))
 		})
-	}
-}
-
-// TestHashDownload uploads an empty block to in-memory storage
-// and tries to download it to the same dir. It should not try
-// to download twice.
-func TestHashDownload(t *testing.T) {
-	testutil.VerifyNoLeak(t)
-
-	ctx := context.Background()
-
-	tmpDir := t.TempDir()
-
-	bkt := objstore.NewInMemBucket()
-	r := prometheus.NewRegistry()
-	instrumentedBkt := objstore.BucketWithMetrics("test", bkt, r)
-
-	b1, err := e2eutil.CreateBlockWithTombstone(ctx, tmpDir, []labels.Labels{
-		labels.FromStrings("a", "1"),
-	}, 100, 0, 1000, labels.FromStrings("ext1", "val1"), 42, metadata.SHA256Func)
-	require.NoError(t, err)
-
-	require.NoError(t, Upload(ctx, log.NewNopLogger(), instrumentedBkt, path.Join(tmpDir, b1.String()), metadata.SHA256Func))
-	require.Equal(t, 3, len(bkt.Objects()))
-
-	m, err := DownloadMeta(ctx, log.NewNopLogger(), bkt, b1)
-	require.NoError(t, err)
-
-	for _, fl := range m.Thanos.Files {
-		if fl.RelPath == MetaFilename {
-			continue
-		}
-		require.NotNilf(t, fl.Hash, "expected a hash for %s but got nil", fl.RelPath)
-	}
-
-	// Remove the hash from one file to check if we always download it.
-	m.Thanos.Files[1].Hash = nil
-
-	metaEncoded := strings.Builder{}
-	require.NoError(t, m.Write(&metaEncoded))
-	require.NoError(t, bkt.Upload(ctx, path.Join(b1.String(), MetaFilename), strings.NewReader(metaEncoded.String())))
-
-	// Only downloads MetaFile and IndexFile.
-	{
-		err = Download(ctx, log.NewNopLogger(), instrumentedBkt, m.ULID, path.Join(tmpDir, b1.String()))
-		require.NoError(t, err)
-		require.NoError(t, promtest.GatherAndCompare(r, strings.NewReader(`
-		# HELP thanos_objstore_bucket_operations_total Total number of all attempted operations against a bucket.
-        # TYPE thanos_objstore_bucket_operations_total counter
-        thanos_objstore_bucket_operations_total{bucket="test",operation="attributes"} 0
-        thanos_objstore_bucket_operations_total{bucket="test",operation="delete"} 0
-        thanos_objstore_bucket_operations_total{bucket="test",operation="exists"} 0
-        thanos_objstore_bucket_operations_total{bucket="test",operation="get"} 2
-        thanos_objstore_bucket_operations_total{bucket="test",operation="get_range"} 0
-        thanos_objstore_bucket_operations_total{bucket="test",operation="iter"} 2
-        thanos_objstore_bucket_operations_total{bucket="test",operation="upload"} 3
-		`), `thanos_objstore_bucket_operations_total`))
-	}
-
-	// Ensures that we always download MetaFile.
-	{
-		require.NoError(t, os.Remove(path.Join(tmpDir, b1.String(), MetaFilename)))
-		err = Download(ctx, log.NewNopLogger(), instrumentedBkt, m.ULID, path.Join(tmpDir, b1.String()))
-		require.NoError(t, err)
-		require.NoError(t, promtest.GatherAndCompare(r, strings.NewReader(`
-		# HELP thanos_objstore_bucket_operations_total Total number of all attempted operations against a bucket.
-        # TYPE thanos_objstore_bucket_operations_total counter
-        thanos_objstore_bucket_operations_total{bucket="test",operation="attributes"} 0
-        thanos_objstore_bucket_operations_total{bucket="test",operation="delete"} 0
-        thanos_objstore_bucket_operations_total{bucket="test",operation="exists"} 0
-        thanos_objstore_bucket_operations_total{bucket="test",operation="get"} 4
-        thanos_objstore_bucket_operations_total{bucket="test",operation="get_range"} 0
-        thanos_objstore_bucket_operations_total{bucket="test",operation="iter"} 4
-        thanos_objstore_bucket_operations_total{bucket="test",operation="upload"} 3
-		`), `thanos_objstore_bucket_operations_total`))
-	}
-
-	// Remove chunks => gets redownloaded.
-	// Always downloads MetaFile.
-	// Finally, downloads the IndexFile since we have removed its hash.
-	{
-		require.NoError(t, os.RemoveAll(path.Join(tmpDir, b1.String(), ChunksDirname)))
-		err = Download(ctx, log.NewNopLogger(), instrumentedBkt, m.ULID, path.Join(tmpDir, b1.String()))
-		require.NoError(t, err)
-		require.NoError(t, promtest.GatherAndCompare(r, strings.NewReader(`
-			# HELP thanos_objstore_bucket_operations_total Total number of all attempted operations against a bucket.
-			# TYPE thanos_objstore_bucket_operations_total counter
-			thanos_objstore_bucket_operations_total{bucket="test",operation="attributes"} 0
-			thanos_objstore_bucket_operations_total{bucket="test",operation="delete"} 0
-			thanos_objstore_bucket_operations_total{bucket="test",operation="exists"} 0
-			thanos_objstore_bucket_operations_total{bucket="test",operation="get"} 7
-			thanos_objstore_bucket_operations_total{bucket="test",operation="get_range"} 0
-			thanos_objstore_bucket_operations_total{bucket="test",operation="iter"} 6
-			thanos_objstore_bucket_operations_total{bucket="test",operation="upload"} 3
-			`), `thanos_objstore_bucket_operations_total`))
 	}
 }
 
@@ -466,7 +429,7 @@ func TestUploadCleanup(t *testing.T) {
 	{
 		errBkt := errBucket{Bucket: bkt, failSuffix: "/index"}
 
-		uploadErr := Upload(ctx, log.NewNopLogger(), errBkt, path.Join(tmpDir, b1.String()), metadata.NoneFunc)
+		uploadErr := Upload(ctx, log.NewNopLogger(), errBkt, path.Join(tmpDir, b1.String()), nil)
 		require.ErrorIs(t, uploadErr, errUploadFailed)
 
 		// If upload of index fails, block is deleted.
@@ -477,7 +440,7 @@ func TestUploadCleanup(t *testing.T) {
 	{
 		errBkt := errBucket{Bucket: bkt, failSuffix: "/meta.json"}
 
-		uploadErr := Upload(ctx, log.NewNopLogger(), errBkt, path.Join(tmpDir, b1.String()), metadata.NoneFunc)
+		uploadErr := Upload(ctx, log.NewNopLogger(), errBkt, path.Join(tmpDir, b1.String()), nil)
 		require.ErrorIs(t, uploadErr, errUploadFailed)
 
 		// If upload of meta.json fails, nothing is cleaned up.

@@ -247,8 +247,10 @@ func (r *LazyBinaryReader) load() (returnErr error) {
 	}
 
 	r.reader = reader
-	level.Debug(r.logger).Log("msg", "lazy loaded index-header file", "path", r.filepath, "elapsed", time.Since(startTime))
-	r.metrics.loadDuration.Observe(time.Since(startTime).Seconds())
+	elapsed := time.Since(startTime)
+
+	level.Debug(r.logger).Log("msg", "lazy loaded index-header file", "path", r.filepath, "elapsed", elapsed)
+	r.metrics.loadDuration.Observe(elapsed.Seconds())
 
 	return nil
 }

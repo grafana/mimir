@@ -288,6 +288,7 @@ To merge a release branch `release-X.Y` into `main`:
 2. Once approved, merge the PR with a **Merge** commit through one of the following strategies:
    - Temporarily enable "Allow merge commits" option in "Settings > Options"
    - Locally merge the `merge-release-X.Y-to-main` branch into `main`, and push the changes to `main` back to GitHub. This doesn't break `main` branch protection, since the PR has been approved already, and it also doesn't require removing the protection.
+   - Using `tools/release/merge-approved-pr-branch-to-main.sh` script, which will do the merge and push automatically (in a safe way).
 
 **How to create the PR using the script:**
 

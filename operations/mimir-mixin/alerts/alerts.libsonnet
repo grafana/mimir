@@ -178,8 +178,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         {
           alert: $.alertName('IngesterRestarts'),
           expr: |||
-            changes(process_start_time_seconds{%s=~".+(cortex|ingester.*)"}[30m]) >= 2
-          ||| % $._config.per_job_label,
+            changes(process_start_time_seconds{%s}[30m]) >= 2
+          ||| % $.jobMatcher($._config.job_names.ingester),
           labels: {
             // This alert is on a cause not symptom. A couple of ingesters restarts may be suspicious but
             // not necessarily an issue (eg. may happen because of the K8S node autoscaler), so we're
@@ -550,18 +550,22 @@ local utils = import 'mixin-utils/utils.libsonnet';
             (
               # We use RSS instead of working set memory because of the ingester's extensive usage of mmap.
               # See: https://github.com/grafana/mimir/issues/2466
-              container_memory_rss{container="ingester"}
+              container_memory_rss{container=~"(%(ingester)s|%(mimir_write)s|%(mimir_backend)s)"}
                 /
-              ( container_spec_memory_limit_bytes{container="ingester"} > 0 )
+              ( container_spec_memory_limit_bytes{container=~"(%(ingester)s|%(mimir_write)s|%(mimir_backend)s)"} > 0 )
             ) > 0.65
-          |||,
+          ||| % {
+            ingester: $._config.container_names.ingester,
+            mimir_write: $._config.container_names.mimir_write,
+            mimir_backend: $._config.container_names.mimir_backend,
+          },
           'for': '15m',
           labels: {
             severity: 'warning',
           },
           annotations: {
             message: |||
-              Ingester %(alert_instance_variable)s in %(alert_aggregation_variables)s is using too much memory.
+              Instance %(alert_instance_variable)s in %(alert_aggregation_variables)s is using too much memory.
             ||| % $._config,
           },
         },
@@ -571,18 +575,22 @@ local utils = import 'mixin-utils/utils.libsonnet';
             (
               # We use RSS instead of working set memory because of the ingester's extensive usage of mmap.
               # See: https://github.com/grafana/mimir/issues/2466
-              container_memory_rss{container="ingester"}
+              container_memory_rss{container=~"(%(ingester)s|%(mimir_write)s|%(mimir_backend)s)"}
                 /
-              ( container_spec_memory_limit_bytes{container="ingester"} > 0 )
+              ( container_spec_memory_limit_bytes{container=~"(%(ingester)s|%(mimir_write)s|%(mimir_backend)s)"} > 0 )
             ) > 0.8
-          |||,
+          ||| % {
+            ingester: $._config.container_names.ingester,
+            mimir_write: $._config.container_names.mimir_write,
+            mimir_backend: $._config.container_names.mimir_backend,
+          },
           'for': '15m',
           labels: {
             severity: 'critical',
           },
           annotations: {
             message: |||
-              Ingester %(alert_instance_variable)s in %(alert_aggregation_variables)s is using too much memory.
+              Instance %(alert_instance_variable)s in %(alert_aggregation_variables)s is using too much memory.
             ||| % $._config,
           },
         },

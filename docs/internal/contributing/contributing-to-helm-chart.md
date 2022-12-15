@@ -10,9 +10,19 @@ Please see the [general workflow](README.md#workflow) for reference.
 
 ## Updating compiled manifests
 
-We keep a compiled version of the helm chart for each values file in the `ci` directory.
+We keep a compiled version of the helm chart committed in the repository for each values file in the `operations/helm/charts/mimir-distributed/ci` directory and its sub-directories.
 This makes it easy to see how a given PR impacts the final output.
-A PR check will fail if you forget to update the compiled manifests, and you can use `make build-helm-tests` to update them.
+
+For each values file the helm chart is compiled into intermediate YAML manifests, then some frequently changing version information is removed from the manifests and the result is committed.
+
+A PR check will fail if you forget to update the compiled manifests, and you can use `make build-helm-tests` to update them and `make check-helm-tests` to verify them after commit.
+The PR check will also fail if [static checks](#static-checks) on the intermediate YAML manifests fail.
+
+### Static checks
+
+To lint, verify, and execute [conftest](https://www.conftest.dev/) static analysis tests, use the make targets `conftest-fmt`, `conftest-verify` and `check-helm-tests`.
+
+The tests verify that the policies defined in `operations/helm/policies` are met for all Kubernetes manifests that are generated from configurations that are defined in the `operations/helm/charts/mimir-distributed/ci` directory and its sub-directories.
 
 ## Versioning
 
@@ -113,9 +123,3 @@ This is useful to limit otherwise noisy output to only show objects of a certain
 cd operations/compare-helm-with-jsonnet
 ./compare-kustomize-outputs.sh ./helm/09-* ./jsonnet/09-* 'select(.kind == "StatefulSet")'
 ```
-
-### Static checks
-
-Use the make targets `conftest-fmt`, `conftest-verify` and `conftest-test` to lint, verify and execute [conftest](https://www.conftest.dev/) static analysis tests.
-
-The tests are verifying that the policies defined in `operations/helm/policies` are met for all Kubernetes manifests generated from configurations defined under `operations/helm/charts/mimir-distributed/ci`.
