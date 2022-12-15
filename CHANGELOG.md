@@ -38,6 +38,7 @@
 ### Documentation
 
 * [BUGFIX] Querier: Remove assertion that the `-querier.max-concurrent` flag must also be set for the query-frontend. #3678
+* [ENHANCEMENT] Update migration from cortex documentation. #3662
 
 ### Tools
 
