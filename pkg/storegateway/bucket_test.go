@@ -694,7 +694,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 	})
 }
 
-func newInMemoryIndexCache(t *testing.T) indexcache.IndexCache {
+func newInMemoryIndexCache(t testing.TB) indexcache.IndexCache {
 	cache, err := indexcache.NewInMemoryIndexCacheWithConfig(log.NewNopLogger(), nil, indexcache.DefaultInMemoryIndexCacheConfig)
 	require.NoError(t, err)
 	return cache
@@ -1110,9 +1110,10 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 	}
 
 	for testName, bucketStoreOpts := range map[string][]BucketStoreOption{
-		"with default options":                  {WithLogger(logger), WithChunkPool(chunkPool)},
-		"with series streaming (1K per batch)":  {WithLogger(logger), WithChunkPool(chunkPool), WithStreamingSeriesPerBatch(1000)},
-		"with series streaming (10K per batch)": {WithLogger(logger), WithChunkPool(chunkPool), WithStreamingSeriesPerBatch(10000)},
+		"with default options":                                 {WithLogger(logger), WithChunkPool(chunkPool)},
+		"with series streaming (1K per batch)":                 {WithLogger(logger), WithChunkPool(chunkPool), WithStreamingSeriesPerBatch(1000)},
+		"with series streaming (10K per batch)":                {WithLogger(logger), WithChunkPool(chunkPool), WithStreamingSeriesPerBatch(10000)},
+		"with series streaming and index cache (1K per batch)": {WithLogger(logger), WithChunkPool(chunkPool), WithStreamingSeriesPerBatch(10000), WithIndexCache(newInMemoryIndexCache(t))},
 	} {
 		st, err := NewBucketStore(
 			"test",
