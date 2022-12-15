@@ -35,6 +35,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## 4.2.0
 
+* [FEATURE] Add cache support for admin bucket. #3740
 * [ENHANCEMENT] Allow NGINX error log level to be overridden and access log to be disabled. #4230
 * [ENHANCEMENT] Update GEM image grafana/enterprise-metrics to v2.6.0. #4279
 
