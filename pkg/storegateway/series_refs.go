@@ -52,11 +52,11 @@ type seriesChunkRefsIterator interface {
 
 // seriesChunkRefsSet holds a set of a set of series (sorted by labels) and their chunk references.
 type seriesChunkRefsSet struct {
-	// series sorted by labels.
-	series []seriesChunkRefs
+	// Series sorted by labels.
+	Series []seriesChunkRefs
 
-	// releasable holds whether the series slice (but not its content) can be released to a memory pool.
-	releasable bool
+	// Releasable holds whether the series slice (but not its content) can be released to a memory pool.
+	Releasable bool
 }
 
 // newSeriesChunkRefsSet creates a new seriesChunkRefsSet with the given capacity.
@@ -65,7 +65,7 @@ type seriesChunkRefsSet struct {
 func newSeriesChunkRefsSet(capacity int, releasable bool) seriesChunkRefsSet {
 	var prealloc []seriesChunkRefs
 
-	// If it's releasable then we try to reuse a slice from the pool.
+	// If it's Releasable then we try to reuse a slice from the pool.
 	if releasable {
 		if reused := seriesChunkRefsSetPool.Get(); reused != nil {
 			prealloc = *(reused.(*[]seriesChunkRefs))
@@ -77,56 +77,56 @@ func newSeriesChunkRefsSet(capacity int, releasable bool) seriesChunkRefsSet {
 	}
 
 	return seriesChunkRefsSet{
-		series:     prealloc,
-		releasable: releasable,
+		Series:     prealloc,
+		Releasable: releasable,
 	}
 }
 
 func (b seriesChunkRefsSet) len() int {
-	return len(b.series)
+	return len(b.Series)
 }
 
 // release the internal series slice to a memory pool. This function call has no effect
-// if seriesChunkRefsSet was created to be not releasable.
+// if seriesChunkRefsSet was created to be not Releasable.
 //
 // This function is not idempotent. Calling it twice would introduce subtle bugs.
 func (b seriesChunkRefsSet) release() {
-	if b.series == nil || !b.releasable {
+	if b.Series == nil || !b.Releasable {
 		return
 	}
 
-	reuse := b.series[:0]
+	reuse := b.Series[:0]
 	seriesChunkRefsSetPool.Put(&reuse)
 }
 
 // seriesChunkRefs holds a series with a list of chunk references.
 type seriesChunkRefs struct {
-	lset   labels.Labels
-	chunks []seriesChunkRef
+	Lset   labels.Labels
+	Chunks []seriesChunkRef
 }
 
 // seriesChunkRef holds the reference to a chunk in a given block.
 type seriesChunkRef struct {
-	blockID          ulid.ULID
-	ref              chunks.ChunkRef
-	minTime, maxTime int64
+	BlockID          ulid.ULID
+	Ref              chunks.ChunkRef
+	MinTime, MaxTime int64
 }
 
 // Compare returns > 0 if m should be before other when sorting seriesChunkRef,
 // 0 if they're equal or < 0 if m should be after other.
 func (m seriesChunkRef) Compare(other seriesChunkRef) int {
-	if m.minTime < other.minTime {
+	if m.MinTime < other.MinTime {
 		return 1
 	}
-	if m.minTime > other.minTime {
+	if m.MinTime > other.MinTime {
 		return -1
 	}
 
 	// Same min time.
-	if m.maxTime < other.maxTime {
+	if m.MaxTime < other.MaxTime {
 		return 1
 	}
-	if m.maxTime > other.maxTime {
+	if m.MaxTime > other.MaxTime {
 		return -1
 	}
 	return 0
@@ -180,7 +180,7 @@ func (c *seriesChunkRefsIteratorImpl) At() seriesChunkRefs {
 	if c.currentOffset < 0 || c.currentOffset >= c.set.len() {
 		return seriesChunkRefs{}
 	}
-	return c.set.series[c.currentOffset]
+	return c.set.Series[c.currentOffset]
 }
 
 func (c *seriesChunkRefsIteratorImpl) Err() error {
@@ -315,7 +315,7 @@ func (s *mergedSeriesChunkRefsSet) Next() bool {
 		if !ok {
 			break
 		}
-		next.series = append(next.series, nextSeries)
+		next.Series = append(next.Series, nextSeries)
 	}
 
 	// We have reached the end of the iterator and next set is empty, so we can
@@ -378,9 +378,9 @@ func (s *mergedSeriesChunkRefsSet) nextUniqueEntry(a, b *seriesChunkRefsIterator
 	}
 
 	aAt := a.At()
-	lsetA, chksA := aAt.lset, aAt.chunks
+	lsetA, chksA := aAt.Lset, aAt.Chunks
 	bAt := b.At()
-	lsetB, chksB := bAt.lset, bAt.chunks
+	lsetB, chksB := bAt.Lset, bAt.Chunks
 
 	if d := labels.Compare(lsetA, lsetB); d > 0 {
 		toReturn = b.At()
@@ -395,11 +395,11 @@ func (s *mergedSeriesChunkRefsSet) nextUniqueEntry(a, b *seriesChunkRefsIterator
 	// Both a and b contains the same series. Go through all chunk references and concatenate them from both
 	// series sets. We best effortly assume chunk references are sorted by min time, so that the sorting by min
 	// time is honored in the returned chunk references too.
-	toReturn.lset = lsetA
+	toReturn.Lset = lsetA
 
 	// Slice reuse is not generally safe with nested merge iterators.
 	// We err on the safe side and create a new slice.
-	toReturn.chunks = make([]seriesChunkRef, 0, len(chksA)+len(chksB))
+	toReturn.Chunks = make([]seriesChunkRef, 0, len(chksA)+len(chksB))
 
 	bChunksOffset := 0
 Outer:
@@ -407,22 +407,22 @@ Outer:
 		for {
 			if bChunksOffset >= len(chksB) {
 				// No more b chunks.
-				toReturn.chunks = append(toReturn.chunks, chksA[aChunksOffset:]...)
+				toReturn.Chunks = append(toReturn.Chunks, chksA[aChunksOffset:]...)
 				break Outer
 			}
 
 			if chksA[aChunksOffset].Compare(chksB[bChunksOffset]) > 0 {
-				toReturn.chunks = append(toReturn.chunks, chksA[aChunksOffset])
+				toReturn.Chunks = append(toReturn.Chunks, chksA[aChunksOffset])
 				break
 			} else {
-				toReturn.chunks = append(toReturn.chunks, chksB[bChunksOffset])
+				toReturn.Chunks = append(toReturn.Chunks, chksB[bChunksOffset])
 				bChunksOffset++
 			}
 		}
 	}
 
 	if bChunksOffset < len(chksB) {
-		toReturn.chunks = append(toReturn.chunks, chksB[bChunksOffset:]...)
+		toReturn.Chunks = append(toReturn.Chunks, chksB[bChunksOffset:]...)
 	}
 
 	a.Next()
@@ -474,7 +474,7 @@ func (s *seriesChunkRefsSeriesSet) Next() bool {
 }
 
 func (s *seriesChunkRefsSeriesSet) At() (labels.Labels, []storepb.AggrChunk) {
-	return s.currentIterator.At().lset, nil
+	return s.currentIterator.At().Lset, nil
 }
 
 func (s *seriesChunkRefsSeriesSet) Err() error {
@@ -521,7 +521,7 @@ func (s *deduplicatingSeriesChunkRefsSetIterator) Next() bool {
 	// This can be released by the caller because deduplicatingSeriesChunkRefsSetIterator doesn't retain it
 	// after Next() will be called again.
 	nextSet := newSeriesChunkRefsSet(s.batchSize, true)
-	nextSet.series = append(nextSet.series, firstSeries)
+	nextSet.Series = append(nextSet.Series, firstSeries)
 
 	var nextSeries seriesChunkRefs
 	for i := 0; i < s.batchSize; {
@@ -530,15 +530,15 @@ func (s *deduplicatingSeriesChunkRefsSetIterator) Next() bool {
 		}
 		nextSeries = s.from.At()
 
-		if labels.Equal(nextSet.series[i].lset, nextSeries.lset) {
-			nextSet.series[i].chunks = append(nextSet.series[i].chunks, nextSeries.chunks...)
+		if labels.Equal(nextSet.Series[i].Lset, nextSeries.Lset) {
+			nextSet.Series[i].Chunks = append(nextSet.Series[i].Chunks, nextSeries.Chunks...)
 		} else {
 			i++
 			if i >= s.batchSize {
 				s.peek = &nextSeries
 				break
 			}
-			nextSet.series = append(nextSet.series, nextSeries)
+			nextSet.Series = append(nextSet.Series, nextSeries)
 		}
 	}
 	s.current = nextSet
@@ -580,8 +580,8 @@ func (l *limitingSeriesChunkRefsSetIterator) Next() bool {
 	}
 
 	var totalChunks int
-	for _, s := range l.currentBatch.series {
-		totalChunks += len(s.chunks)
+	for _, s := range l.currentBatch.Series {
+		totalChunks += len(s.Chunks)
 	}
 
 	err = l.chunksLimiter.Reserve(uint64(totalChunks))
@@ -769,9 +769,9 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 			continue
 		}
 
-		nextSet.series = append(nextSet.series, seriesChunkRefs{
-			lset:   lset,
-			chunks: chks,
+		nextSet.Series = append(nextSet.Series, seriesChunkRefs{
+			Lset:   lset,
+			Chunks: chks,
 		})
 	}
 
@@ -821,17 +821,17 @@ func metasToChunks(blockID ulid.ULID, metas []chunks.Meta) []seriesChunkRef {
 	chks := make([]seriesChunkRef, len(metas))
 	for i, meta := range metas {
 		chks[i] = seriesChunkRef{
-			minTime: meta.MinTime,
-			maxTime: meta.MaxTime,
-			ref:     meta.Ref,
-			blockID: blockID,
+			MinTime: meta.MinTime,
+			MaxTime: meta.MaxTime,
+			Ref:     meta.Ref,
+			BlockID: blockID,
 		}
 	}
 	return chks
 }
 
 type seriesForPostingsCacheEntry struct {
-	LabelSets   []labels.Labels
+	Set         seriesChunkRefsSet
 	MatchersKey indexcache.LabelMatchersKey
 	Shard       sharding.ShardSelector
 }
@@ -857,25 +857,14 @@ func fetchCachedSeriesForPostings(ctx context.Context, userID string, indexCache
 		return seriesChunkRefsSet{}, false
 	}
 
-	// This can be released by the caller because loadingSeriesChunkRefsSetIterator (where this function is called) doesn't retain it
-	// after Next() will be called again.
-	res := newSeriesChunkRefsSet(len(entry.LabelSets), true)
-	for _, lset := range entry.LabelSets {
-		res.series = append(res.series, seriesChunkRefs{
-			lset: lset,
-		})
-	}
-	return res, true
+	return entry.Set, true
 }
 
 func storeCachedSeriesForPostings(ctx context.Context, indexCache indexcache.IndexCache, userID string, blockID ulid.ULID, matchers []*labels.Matcher, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey, set seriesChunkRefsSet, logger log.Logger) {
 	entry := seriesForPostingsCacheEntry{
-		LabelSets:   make([]labels.Labels, set.len()),
+		Set:         set,
 		MatchersKey: indexcache.CanonicalLabelMatchersKey(matchers),
 		Shard:       maybeNilShard(shard),
-	}
-	for i, s := range set.series {
-		entry.LabelSets[i] = s.lset
 	}
 
 	data, err := encodeSnappyGob(entry)

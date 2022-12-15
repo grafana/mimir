@@ -209,15 +209,15 @@ func (c *loadingSeriesChunksSetIterator) Next() bool {
 
 	entries := make([]seriesEntry, nextUnloaded.len())
 	c.chunkReaders.reset()
-	for i, s := range nextUnloaded.series {
-		entries[i].lset = s.lset
-		entries[i].chks = make([]storepb.AggrChunk, len(s.chunks))
+	for i, s := range nextUnloaded.Series {
+		entries[i].lset = s.Lset
+		entries[i].chks = make([]storepb.AggrChunk, len(s.Chunks))
 
-		for j, chunk := range s.chunks {
-			entries[i].chks[j].MinTime = chunk.minTime
-			entries[i].chks[j].MaxTime = chunk.maxTime
+		for j, chunk := range s.Chunks {
+			entries[i].chks[j].MinTime = chunk.MinTime
+			entries[i].chks[j].MaxTime = chunk.MaxTime
 
-			err := c.chunkReaders.addLoad(chunk.blockID, chunk.ref, i, j)
+			err := c.chunkReaders.addLoad(chunk.BlockID, chunk.Ref, i, j)
 			if err != nil {
 				c.err = errors.Wrap(err, "preloading chunks")
 				return false
