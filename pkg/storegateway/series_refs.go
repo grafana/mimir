@@ -604,7 +604,7 @@ type loadingSeriesChunkRefsSetIterator struct {
 	ctx                 context.Context
 	postingsSetIterator *postingsSetsIterator
 	indexr              *bucketIndexReader
-	seriesHashCache     *hashcache.BlockSeriesHashCache
+	seriesHashCache     seriesHashCache
 	indexCache          indexcache.IndexCache
 	stats               *safeQueryStats
 	blockID             ulid.ULID
@@ -905,8 +905,16 @@ type seriesHasher interface {
 	Hash(seriesID storage.SeriesRef, lset labels.Labels, stats *queryStats) uint64
 }
 
+type seriesHashCache interface {
+	Fetch(seriesID storage.SeriesRef) (uint64, bool)
+}
+
 type cachedSeriesHasher struct {
 	cache *hashcache.BlockSeriesHashCache
+}
+
+func (b cachedSeriesHasher) Fetch(seriesID storage.SeriesRef) (uint64, bool) {
+	return b.cache.Fetch(seriesID)
 }
 
 func (b cachedSeriesHasher) Hash(id storage.SeriesRef, lset labels.Labels, stats *queryStats) uint64 {

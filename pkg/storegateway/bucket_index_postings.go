@@ -13,7 +13,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/encoding"
-	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/index"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
@@ -157,7 +156,7 @@ func (it *bigEndianPostings) length() int {
 // filterPostingsByCachedShardHash filters the input postings by the provided shard. It filters only
 // postings for which we have their series hash already in the cache; if a series is not in the cache,
 // postings will be kept in the output.
-func filterPostingsByCachedShardHash(ps []storage.SeriesRef, shard *sharding.ShardSelector, seriesHashCache *hashcache.BlockSeriesHashCache) (filteredPostings []storage.SeriesRef, stats queryStats) {
+func filterPostingsByCachedShardHash(ps []storage.SeriesRef, shard *sharding.ShardSelector, seriesHashCache seriesHashCache) (filteredPostings []storage.SeriesRef, stats queryStats) {
 	writeIdx := 0
 	stats.seriesHashCacheRequests = len(ps)
 
