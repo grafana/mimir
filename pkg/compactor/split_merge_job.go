@@ -4,11 +4,11 @@ package compactor
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
@@ -86,7 +86,7 @@ func (j *job) String() string {
 	}
 
 	// Keep the output stable for tests.
-	sort.Strings(blocks)
+	slices.Sort(blocks)
 
 	return fmt.Sprintf("stage: %s, range start: %d, range end: %d, shard: %s, blocks: %s",
 		j.stage, j.rangeStart, j.rangeEnd, j.shardID, strings.Join(blocks, ","))

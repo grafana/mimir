@@ -14,7 +14,6 @@ import (
 	"os"
 	"os/signal"
 	"path"
-	"sort"
 	"syscall"
 
 	gklog "github.com/go-kit/log"
@@ -22,6 +21,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/thanos-io/objstore"
 	"github.com/weaveworks/common/logging"
+	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -113,7 +113,7 @@ func convertTenantBlocks(ctx context.Context, userBucketClient objstore.Bucket, 
 		for l := range meta.Thanos.Labels {
 			labels = append(labels, l)
 		}
-		sort.Strings(labels)
+		slices.Sort(labels)
 
 		for _, l := range labels {
 			switch l {

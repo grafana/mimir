@@ -9,7 +9,6 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"sort"
 	"testing"
 	"time"
 
@@ -20,6 +19,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
+	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
@@ -235,7 +235,7 @@ func getSortedObjectKeys(bucketClient interface{}) []string {
 		for key := range typed.Objects() {
 			keys = append(keys, key)
 		}
-		sort.Strings(keys)
+		slices.Sort(keys)
 		return keys
 	}
 

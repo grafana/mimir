@@ -36,6 +36,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore/providers/filesystem"
+	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/thanos-io/objstore"
@@ -849,7 +850,7 @@ func putOutOfOrderIndex(blockDir string, minTime int64, maxTime int64) error {
 	for s := range symbols {
 		syms = append(syms, s)
 	}
-	sort.Strings(syms)
+	slices.Sort(syms)
 	for _, s := range syms {
 		if err := iw.AddSymbol(s); err != nil {
 			return err

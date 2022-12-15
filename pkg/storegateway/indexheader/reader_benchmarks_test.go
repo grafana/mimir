@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"math/rand"
 	"path/filepath"
-	"sort"
 	"testing"
 	"time"
 
@@ -16,10 +15,12 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore/providers/filesystem"
+	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/storegateway/testhelper"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func BenchmarkLookupSymbol(b *testing.B) {
@@ -54,7 +55,7 @@ func BenchmarkLookupSymbol(b *testing.B) {
 }
 
 func benchmarkLookupSymbol(ctx context.Context, b *testing.B, bucketDir string, id ulid.ULID, parallelism int, percentageNameLookups int, nameSymbols []string, valueSymbols []string) {
-	br, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, bucketDir, id, 3, NewStreamBinaryReaderMetrics(nil), Config{})
+	br, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, bucketDir, id, 32, NewStreamBinaryReaderMetrics(nil), Config{})
 	require.NoError(b, err)
 	b.Cleanup(func() {
 		require.NoError(b, br.Close())
@@ -124,24 +125,91 @@ func BenchmarkLabelNames(b *testing.B) {
 			require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
 
 			b.Run(fmt.Sprintf("%vNames%vValues", nameCount, valueCount), func(b *testing.B) {
-				br, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, bucketDir, idIndexV2, 3, NewStreamBinaryReaderMetrics(nil), Config{})
-				require.NoError(b, err)
-				b.Cleanup(func() {
-					require.NoError(b, br.Close())
+				benchmarkReaders(b, bucketDir, idIndexV2, func(b *testing.B, br Reader) {
+					slices.Sort(nameSymbols)
+					b.ResetTimer()
+
+					for i := 0; i < b.N; i++ {
+						actualNames, err := br.LabelNames()
+
+						require.NoError(b, err)
+						require.Equal(b, nameSymbols, actualNames)
+					}
 				})
-
-				sort.Strings(nameSymbols)
-				b.ResetTimer()
-
-				for i := 0; i < b.N; i++ {
-					actualNames, err := br.LabelNames()
-
-					require.NoError(b, err)
-					require.Equal(b, nameSymbols, actualNames)
-				}
 			})
 		}
 	}
+}
+
+func BenchmarkLabelValuesIndexV1(b *testing.B) {
+	ctx := context.Background()
+
+	bucketDir := b.TempDir()
+	bkt, err := filesystem.NewBucket(filepath.Join(bucketDir, "bkt"))
+	require.NoError(b, err)
+	b.Cleanup(func() {
+		require.NoError(b, bkt.Close())
+	})
+
+	metaIndexV1, err := metadata.ReadFromDir("./testdata/index_format_v1")
+	require.NoError(b, err)
+	test.Copy(b, "./testdata/index_format_v1", filepath.Join(bucketDir, metaIndexV1.ULID.String()))
+
+	_, err = metadata.InjectThanos(log.NewNopLogger(), filepath.Join(bucketDir, metaIndexV1.ULID.String()), metadata.Thanos{
+		Labels:     labels.FromStrings("ext1", "1").Map(),
+		Downsample: metadata.ThanosDownsample{Resolution: 0},
+		Source:     metadata.TestSource,
+	}, &metaIndexV1.BlockMeta)
+
+	require.NoError(b, err)
+	require.NoError(b, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, metaIndexV1.ULID.String()), nil))
+
+	indexName := filepath.Join(bucketDir, metaIndexV1.ULID.String(), block.IndexHeaderFilename)
+	require.NoError(b, WriteBinary(ctx, bkt, metaIndexV1.ULID, indexName))
+
+	benchmarkReaders(b, bucketDir, metaIndexV1.ULID, func(b *testing.B, br Reader) {
+		names, err := br.LabelNames()
+		require.NoError(b, err)
+
+		rand.Shuffle(len(names), func(i, j int) {
+			names[i], names[j] = names[j], names[i]
+		})
+
+		b.ResetTimer()
+
+		for i := 0; i < b.N; i++ {
+			name := names[i%len(names)]
+
+			values, err := br.LabelValues(name, func(s string) bool {
+				return true
+			})
+
+			require.NoError(b, err)
+			require.NotEmpty(b, values)
+		}
+	})
+}
+
+func benchmarkReaders(b *testing.B, bucketDir string, id ulid.ULID, benchmark func(b *testing.B, br Reader)) {
+	b.Run("StreamBinaryReader", func(b *testing.B) {
+		br, err := NewStreamBinaryReader(context.Background(), log.NewNopLogger(), nil, bucketDir, id, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+		require.NoError(b, err)
+		b.Cleanup(func() {
+			require.NoError(b, br.Close())
+		})
+
+		benchmark(b, br)
+	})
+
+	b.Run("BinaryReader", func(b *testing.B) {
+		br, err := NewBinaryReader(context.Background(), log.NewNopLogger(), nil, bucketDir, id, 32, Config{})
+		require.NoError(b, err)
+		b.Cleanup(func() {
+			require.NoError(b, br.Close())
+		})
+
+		benchmark(b, br)
+	})
 }
 
 func BenchmarkNewStreamBinaryReader(b *testing.B) {
@@ -167,7 +235,7 @@ func BenchmarkNewStreamBinaryReader(b *testing.B) {
 
 			b.Run(fmt.Sprintf("%vNames%vValues", nameCount, valueCount), func(b *testing.B) {
 				for i := 0; i < b.N; i++ {
-					br, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, bucketDir, idIndexV2, 3, NewStreamBinaryReaderMetrics(nil), Config{})
+					br, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, bucketDir, idIndexV2, 32, NewStreamBinaryReaderMetrics(nil), Config{})
 					require.NoError(b, err)
 					b.Cleanup(func() {
 						require.NoError(b, br.Close())

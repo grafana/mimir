@@ -15,6 +15,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/exp/slices"
 )
 
 func TestQueues(t *testing.T) {
@@ -497,7 +498,7 @@ func TestShuffleQueriersCorrectness(t *testing.T) {
 	for i := 0; i < queriersCount; i++ {
 		allSortedQueriers = append(allSortedQueriers, fmt.Sprintf("%d", i))
 	}
-	sort.Strings(allSortedQueriers)
+	slices.Sort(allSortedQueriers)
 
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	const tests = 1000
@@ -511,7 +512,7 @@ func TestShuffleQueriersCorrectness(t *testing.T) {
 
 		require.Equal(t, toSelect, len(selected))
 
-		sort.Strings(allSortedQueriers)
+		slices.Sort(allSortedQueriers)
 		prevQuerier := ""
 		for _, q := range allSortedQueriers {
 			require.True(t, prevQuerier < q, "non-unique querier")
