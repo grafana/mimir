@@ -162,21 +162,26 @@ func DefaultConfigHandler(actualCfg interface{}, defaultCfg interface{}) http.Ha
 	}
 }
 
+type yamlConfig struct {
+	YamlString string `json:"yaml"`
+}
 type configResponse struct {
-	Status string `json:"status"`
-	Config string `json:"data"`
+	Status string      `json:"status"`
+	Config *yamlConfig `json:"data"`
 }
 
-func (cfg *Config) statusConfigHandler() http.HandlerFunc {
+func (cfg *Config) statusConfigHandler(actualCfg interface{}) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		data, err := yaml.Marshal(cfg)
+		data, err := yaml.Marshal(actualCfg)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		response := configResponse{
 			Status: "success",
-			Config: string(data),
+			Config: &yamlConfig{
+				YamlString: string(data),
+			},
 		}
 
 		util.WriteJSONResponse(w, response)

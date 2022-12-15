@@ -199,27 +199,32 @@ func TestConfigOverrideHandler(t *testing.T) {
 }
 
 func TestStatusConfigHandler(t *testing.T) {
+	type testConfig struct {
+		Enabled bool `yaml:"enabled"`
+		MyInt   int  `yaml:"my_int"`
+	}
+
 	for _, tc := range []struct {
 		name               string
-		cfg                *Config
+		actualConfig       func() interface{}
 		expectedStatusCode int
 		expectedBody       string
 	}{
 		{
 			name: "normal config",
-			cfg: &Config{
-				SkipLabelNameValidationHeader: false,
+			actualConfig: func() interface{} {
+				return &testConfig{Enabled: true, MyInt: 123}
 			},
 			expectedStatusCode: 200,
-			expectedBody: "{\"status\":\"success\",\"data\":\"skip_label_name_validation_header_enabled: false\\n" +
-				"alertmanager_http_prefix: \\\"\\\"\\nprometheus_http_prefix: \\\"\\\"\\n\"}",
+			expectedBody:       "{\"status\":\"success\",\"data\":{\"yaml\":\"enabled: true\\nmy_int: 123\\n\"}}",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest("GET", "http://test.com/api/v1/status/config", nil)
 			w := httptest.NewRecorder()
 
-			h := tc.cfg.statusConfigHandler()
+			cfg := &Config{}
+			h := cfg.statusConfigHandler(tc.actualConfig())
 			h(w, req)
 			resp := w.Result()
 			assert.Equal(t, tc.expectedStatusCode, resp.StatusCode)
