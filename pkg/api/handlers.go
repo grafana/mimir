@@ -8,6 +8,7 @@ package api
 import (
 	"context"
 	"embed"
+	"fmt"
 	"html/template"
 	"net/http"
 	"path"
@@ -172,18 +173,16 @@ type configResponse struct {
 
 func (cfg *Config) statusConfigHandler(actualCfg interface{}) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		data, err := yaml.Marshal(actualCfg)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
 		response := configResponse{
 			Status: "success",
-			Config: &yamlConfig{
-				YamlString: string(data),
-			},
+			Config: &yamlConfig{},
 		}
-
+		data, err := yaml.Marshal(actualCfg)
+		if err != nil {
+			// adapted from https://github.com/prometheus/prometheus/blob/c3fac587ef3c7d515e319844042ee0dddab54cbc/config/config.go#L252
+			response.Config.YamlString = fmt.Sprintf("<error creating config string: %s>", err)
+		}
+		response.Config.YamlString = string(data)
 		util.WriteJSONResponse(w, response)
 	}
 }
