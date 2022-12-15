@@ -2046,11 +2046,93 @@ func BenchmarkFetchCachedSeriesForPostings(b *testing.B) {
 	}
 }
 
+func BenchmarkStoreCachedSeriesForPostings(b *testing.B) {
+	seriesChunkRefsSetFromLabelSets := func(labelSets []labels.Labels) (result seriesChunkRefsSet) {
+		for _, lset := range labelSets {
+			result.series = append(result.series, seriesChunkRefs{lset: lset})
+		}
+		return
+	}
+	testCases := map[string]struct {
+		seriesToCache seriesChunkRefsSet
+
+		matchersToCache []*labels.Matcher
+		shardToCache    *sharding.ShardSelector
+	}{
+		"with sharding": {
+			seriesToCache:   seriesChunkRefsSetFromLabelSets(generateSeries([]int{1})),
+			matchersToCache: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "1")},
+			shardToCache:    &sharding.ShardSelector{ShardIndex: 1, ShardCount: 10},
+		},
+		"without sharding": {
+			seriesToCache:   seriesChunkRefsSetFromLabelSets([]labels.Labels{labels.FromStrings("a", "1")}),
+			matchersToCache: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "1")},
+		},
+		"6000 series with 6 labels each": {
+			seriesToCache:   seriesChunkRefsSetFromLabelSets(generateSeries([]int{1, 2, 3, 10, 10, 10})),
+			matchersToCache: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "1")},
+		},
+		"6000 series with 6 labels with more repetitions": {
+			seriesToCache:   seriesChunkRefsSetFromLabelSets(generateSeries([]int{1, 1, 1, 1, 1, 6000})),
+			matchersToCache: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "1")},
+		},
+		"1000 series with 1 matcher": {
+			seriesToCache:   seriesChunkRefsSetFromLabelSets(generateSeries([]int{10, 10, 10})),
+			matchersToCache: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "1")},
+		},
+		"1000 series with 10 matchers": {
+			seriesToCache: seriesChunkRefsSetFromLabelSets(generateSeries([]int{10, 10, 10})),
+			matchersToCache: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "a", "0"),
+				labels.MustNewMatcher(labels.MatchEqual, "a", "1"),
+				labels.MustNewMatcher(labels.MatchEqual, "a", "2"),
+				labels.MustNewMatcher(labels.MatchEqual, "a", "3"),
+				labels.MustNewMatcher(labels.MatchEqual, "a", "4"),
+				labels.MustNewMatcher(labels.MatchEqual, "a", "5"),
+				labels.MustNewMatcher(labels.MatchEqual, "a", "6"),
+				labels.MustNewMatcher(labels.MatchEqual, "a", "7"),
+				labels.MustNewMatcher(labels.MatchEqual, "a", "8"),
+				labels.MustNewMatcher(labels.MatchEqual, "a", "9"),
+			},
+		},
+	}
+
+	for testName, testCase := range testCases {
+		testCase := testCase
+		b.Run(testName, func(b *testing.B) {
+			ctx := context.Background()
+			// We use a logger that fails the benchmark when used.
+			// We assume that on a failed cache attempt we log an error.
+			var logger log.Logger = testFailingLogger{b}
+			blockID := ulid.MustNew(1671103209, nil)
+			// We can use the same postings key for all cases because it's a fixed-length hash
+			postingsKey := indexcache.CanonicalPostingsKey([]storage.SeriesRef{1, 2, 3})
+
+			var mockCache indexcache.IndexCache = noopCache{}
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				storeCachedSeriesForPostings(ctx, mockCache, "tenant-1", blockID, testCase.matchersToCache, testCase.shardToCache, postingsKey, testCase.seriesToCache, logger)
+			}
+		})
+	}
+}
+
 func mustSnappyGobEncode(t testing.TB, v any) []byte {
 	t.Helper()
 	encoded, err := encodeSnappyGob(v)
 	require.NoError(t, err)
 	return encoded
+}
+
+type testFailingLogger struct {
+	tb testing.TB
+}
+
+func (t testFailingLogger) Log(keyvals ...interface{}) error {
+	assert.Fail(t.tb, "didn't expect logger to be called", "was called with %v", keyvals)
+	return nil
 }
 
 type mockIndexCache struct {
