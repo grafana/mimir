@@ -5,7 +5,7 @@ aliases:
 description: Learn how to get started with Grafana Mimir using the Helm chart.
 menuTitle: Get started
 title: Get started with Grafana Mimir using the Helm chart
-weight: 25
+weight: 20
 keywords:
   - Helm chart
   - Kubernetes

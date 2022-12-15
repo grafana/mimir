@@ -2,7 +2,7 @@
 title: "Migration guides"
 menuTitle: "Migration guides"
 description: "Migrate from different systems, versions, and products."
-weight: 10
+weight: 50
 keywords:
 ---
 

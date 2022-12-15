@@ -5,7 +5,7 @@ aliases:
   - docs/mimir/latest/operators-guide/running-production-environment-with-helm/
 menuTitle: "Run Grafana Mimir in production"
 description: "Learn how to run Grafana Mimir in production using the mimir-distributed Helm chart."
-weight: 90
+weight: 40
 ---
 
 # Run Grafana Mimir in production using the Helm chart
