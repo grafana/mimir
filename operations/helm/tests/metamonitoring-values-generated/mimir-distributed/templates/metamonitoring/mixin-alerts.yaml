@@ -363,15 +363,15 @@ spec:
     - alert: MimirAllocatingTooMuchMemory
       annotations:
         message: |
-          Ingester {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} is using too much memory.
+          Instance {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} is using too much memory.
         runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirallocatingtoomuchmemory
       expr: |
         (
           # We use RSS instead of working set memory because of the ingester's extensive usage of mmap.
           # See: https://github.com/grafana/mimir/issues/2466
-          container_memory_rss{container="ingester"}
+          container_memory_rss{container=~"(ingester|mimir-write|mimir-backend)"}
             /
-          ( container_spec_memory_limit_bytes{container="ingester"} > 0 )
+          ( container_spec_memory_limit_bytes{container=~"(ingester|mimir-write|mimir-backend)"} > 0 )
         ) > 0.65
       for: 15m
       labels:
@@ -379,15 +379,15 @@ spec:
     - alert: MimirAllocatingTooMuchMemory
       annotations:
         message: |
-          Ingester {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} is using too much memory.
+          Instance {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} is using too much memory.
         runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirallocatingtoomuchmemory
       expr: |
         (
           # We use RSS instead of working set memory because of the ingester's extensive usage of mmap.
           # See: https://github.com/grafana/mimir/issues/2466
-          container_memory_rss{container="ingester"}
+          container_memory_rss{container=~"(ingester|mimir-write|mimir-backend)"}
             /
-          ( container_spec_memory_limit_bytes{container="ingester"} > 0 )
+          ( container_spec_memory_limit_bytes{container=~"(ingester|mimir-write|mimir-backend)"} > 0 )
         ) > 0.8
       for: 15m
       labels:
