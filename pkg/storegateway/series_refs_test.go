@@ -1062,7 +1062,7 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 	testCases := map[string]struct {
 		shard        *sharding.ShardSelector
 		matchers     []*labels.Matcher
-		seriesHasher mockSeriesHasher
+		seriesHasher seriesHasher
 		skipChunks   bool
 		minT, maxT   int64
 		batchSize    int
@@ -1134,7 +1134,15 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 			},
 		},
 		"returns no batches when no series are owned by shard": {
-			shard:        &sharding.ShardSelector{ShardIndex: 1, ShardCount: 2},
+			shard: &sharding.ShardSelector{ShardIndex: 1, ShardCount: 2},
+			seriesHasher: mockSeriesHasher{
+				hashes: map[string]uint64{
+					`{l1="v1"}`: 0,
+					`{l1="v2"}`: 0,
+					`{l1="v3"}`: 0,
+					`{l1="v4"}`: 0,
+				},
+			},
 			minT:         0,
 			maxT:         40,
 			batchSize:    2,
@@ -1187,17 +1195,20 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 				postings,
 				testCase.batchSize,
 			)
+			hasher := testCase.seriesHasher
+			if hasher == nil {
+				hasher = cachedSeriesHasher{hashcache.NewSeriesHashCache(100).GetBlockCache("")}
+			}
 			loadingIterator := newLoadingSeriesChunkRefsSetIterator(
 				context.Background(),
 				postingsIterator,
 				indexr,
 				noopCache{},
-				hashcache.NewSeriesHashCache(1).GetBlockCache(""),
 				newSafeQueryStats(),
 				block.meta,
 				testCase.matchers,
 				testCase.shard,
-				testCase.seriesHasher,
+				hasher,
 				testCase.skipChunks,
 				testCase.minT,
 				testCase.maxT,
@@ -1208,7 +1219,7 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 			// Tests
 			sets := readAllSeriesChunkRefsSet(loadingIterator)
 			assert.NoError(t, loadingIterator.Err())
-			if !assert.Len(t, sets, len(testCase.expectedSets)) {
+			if !assert.Len(t, sets, len(testCase.expectedSets), testName) {
 				return
 			}
 
@@ -1408,7 +1419,6 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 				block.meta,
 				[]*labels.Matcher{testCase.matcher},
 				nil,
-				hashCache,
 				cachedSeriesHasher{hashCache},
 				&limiter{limit: testCase.chunksLimit},
 				&limiter{limit: testCase.seriesLimit},
@@ -1634,8 +1644,10 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 					b.indexCache = newInMemoryIndexCache(t)
 
 					// Run 1 with a cold cache
-					seriesHashCache := newSeriesHashCacheWithHashes(b.meta.ULID, testCase.cachedSeriesHashesWithColdCache)
-					seriesHasher := mockSeriesHasher{hashes: mockedSeriesHashes}
+					seriesHasher := mockSeriesHasher{
+						hashes: mockedSeriesHashes,
+						cached: testCase.cachedSeriesHashesWithColdCache,
+					}
 
 					statsColdCache := newSafeQueryStats()
 					indexReader := b.indexReader()
@@ -1648,12 +1660,12 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 						b.meta,
 						testCase.matchers,
 						testCase.shard,
-						seriesHashCache,
 						seriesHasher,
 						&limiter{limit: 1000},
 						&limiter{limit: 1000},
 						true,
-						b.meta.MinTime, b.meta.MaxTime,
+						b.meta.MinTime,
+						b.meta.MaxTime,
 						statsColdCache,
 						NewBucketStoreMetrics(nil),
 						log.NewNopLogger(),
@@ -1666,7 +1678,10 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 					assert.Equal(t, testCase.expectedSeriesReadFromBlockWithColdCache, statsColdCache.export().seriesFetched)
 
 					// Run 2 with a warm cache
-					seriesHashCache = newSeriesHashCacheWithHashes(b.meta.ULID, testCase.cachedSeriesHashesWithWarmCache)
+					seriesHasher = mockSeriesHasher{
+						hashes: mockedSeriesHashes,
+						cached: testCase.cachedSeriesHashesWithWarmCache,
+					}
 
 					statsWarnCache := newSafeQueryStats()
 					ss, err = openBlockSeriesChunkRefsSetsIterator(
@@ -1678,12 +1693,12 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 						b.meta,
 						testCase.matchers,
 						testCase.shard,
-						seriesHashCache,
 						seriesHasher,
 						&limiter{limit: 1000},
 						&limiter{limit: 1000},
 						true,
-						b.meta.MinTime, b.meta.MaxTime,
+						b.meta.MinTime,
+						b.meta.MaxTime,
 						statsWarnCache,
 						NewBucketStoreMetrics(nil),
 						log.NewNopLogger(),
@@ -1697,14 +1712,6 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 			}
 		})
 	}
-}
-
-func newSeriesHashCacheWithHashes(blockID ulid.ULID, postings map[storage.SeriesRef]uint64) *hashcache.BlockSeriesHashCache {
-	cache := hashcache.NewSeriesHashCache(10000).GetBlockCache(blockID.String())
-	for p, h := range postings {
-		cache.Store(p, h)
-	}
-	return cache
 }
 
 type forbiddenFetchMultiSeriesForRefsIndexCache struct {
@@ -1776,7 +1783,13 @@ func TestPostingsSetsIterator(t *testing.T) {
 }
 
 type mockSeriesHasher struct {
+	cached map[storage.SeriesRef]uint64
 	hashes map[string]uint64
+}
+
+func (a mockSeriesHasher) CachedHash(seriesID storage.SeriesRef, stats *queryStats) (uint64, bool) {
+	hash, isCached := a.cached[seriesID]
+	return hash, isCached
 }
 
 func (a mockSeriesHasher) Hash(seriesID storage.SeriesRef, lset labels.Labels, stats *queryStats) uint64 {

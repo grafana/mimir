@@ -604,7 +604,6 @@ type loadingSeriesChunkRefsSetIterator struct {
 	ctx                 context.Context
 	postingsSetIterator *postingsSetsIterator
 	indexr              *bucketIndexReader
-	seriesHashCache     seriesHashCache
 	indexCache          indexcache.IndexCache
 	stats               *safeQueryStats
 	blockID             ulid.ULID
@@ -632,7 +631,6 @@ func openBlockSeriesChunkRefsSetsIterator(
 	blockMeta *metadata.Meta,
 	matchers []*labels.Matcher, // Series matchers.
 	shard *sharding.ShardSelector, // Shard selector.
-	seriesHashCache *hashcache.BlockSeriesHashCache, // Block-specific series hash cache (used only if shard selector is specified).
 	seriesHasher seriesHasher,
 	chunksLimiter ChunksLimiter, // Rate limiter for loading chunks.
 	seriesLimiter SeriesLimiter, // Rate limiter for loading series.
@@ -657,7 +655,6 @@ func openBlockSeriesChunkRefsSetsIterator(
 		newPostingsSetsIterator(ps, batchSize),
 		indexr,
 		indexCache,
-		seriesHashCache,
 		stats,
 		blockMeta,
 		matchers,
@@ -679,7 +676,6 @@ func newLoadingSeriesChunkRefsSetIterator(
 	postingsSetIterator *postingsSetsIterator,
 	indexr *bucketIndexReader,
 	indexCache indexcache.IndexCache,
-	seriesHashCache *hashcache.BlockSeriesHashCache,
 	stats *safeQueryStats,
 	blockMeta *metadata.Meta,
 	matchers []*labels.Matcher,
@@ -705,7 +701,6 @@ func newLoadingSeriesChunkRefsSetIterator(
 		matchers:            matchers,
 		shard:               shard,
 		seriesHasher:        seriesHasher,
-		seriesHashCache:     seriesHashCache,
 		skipChunks:          skipChunks,
 		minTime:             minTime,
 		maxTime:             maxTime,
@@ -745,7 +740,7 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 	// not belonging to the shard.
 	if s.shard != nil {
 		var unsafeStats queryStats
-		nextPostings, unsafeStats = filterPostingsByCachedShardHash(nextPostings, s.shard, s.seriesHashCache)
+		nextPostings = filterPostingsByCachedShardHash(nextPostings, s.shard, s.seriesHasher, &unsafeStats)
 		loadStats.merge(&unsafeStats)
 	}
 
@@ -903,29 +898,27 @@ func logSeriesForPostingsCacheEvent(ctx context.Context, logger log.Logger, user
 
 type seriesHasher interface {
 	Hash(seriesID storage.SeriesRef, lset labels.Labels, stats *queryStats) uint64
-}
-
-type seriesHashCache interface {
-	Fetch(seriesID storage.SeriesRef) (uint64, bool)
+	CachedHash(seriesID storage.SeriesRef, stats *queryStats) (uint64, bool)
 }
 
 type cachedSeriesHasher struct {
 	cache *hashcache.BlockSeriesHashCache
 }
 
-func (b cachedSeriesHasher) Fetch(seriesID storage.SeriesRef) (uint64, bool) {
-	return b.cache.Fetch(seriesID)
+func (b cachedSeriesHasher) CachedHash(seriesID storage.SeriesRef, stats *queryStats) (uint64, bool) {
+	stats.seriesHashCacheRequests++
+	hash, isCached := b.cache.Fetch(seriesID)
+	if isCached {
+		stats.seriesHashCacheHits++
+	}
+	return hash, isCached
 }
 
 func (b cachedSeriesHasher) Hash(id storage.SeriesRef, lset labels.Labels, stats *queryStats) uint64 {
-	stats.seriesHashCacheRequests++
-
-	hash, ok := b.cache.Fetch(id)
+	hash, ok := b.CachedHash(id, stats)
 	if !ok {
 		hash = lset.Hash()
 		b.cache.Store(id, hash)
-	} else {
-		stats.seriesHashCacheHits++
 	}
 	return hash
 }
