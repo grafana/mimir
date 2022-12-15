@@ -128,6 +128,10 @@ func (s *ActiveUsersCleanupService) UpdateUserTimestamp(user string, now time.Ti
 
 func (s *ActiveUsersCleanupService) iteration(_ context.Context) error {
 	inactiveUsers := s.activeUsers.PurgeInactiveUsers(time.Now().Add(-s.inactiveTimeout).UnixNano())
+	// Inactive Users - Delete all their metrics
+	// Get Active Users
+	// Go through and cleanup their metrics (last seen timestamp)
+
 	for _, userID := range inactiveUsers {
 		s.cleanupFunc(userID)
 	}
