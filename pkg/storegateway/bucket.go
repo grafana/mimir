@@ -571,7 +571,7 @@ func blockSeries(
 	chunksPool *pool.BatchBytes, // Pool used to get memory buffers to store chunks. Required only if !skipChunks.
 	matchers []*labels.Matcher, // Series matchers.
 	shard *sharding.ShardSelector, // Shard selector.
-	seriesHashCache *hashcache.BlockSeriesHashCache, // Block-specific series hash cache (used only if shard selector is specified).
+	seriesHasher seriesHasher, // Block-specific series hash cache (used only if shard selector is specified).
 	chunksLimiter ChunksLimiter, // Rate limiter for loading chunks.
 	seriesLimiter SeriesLimiter, // Rate limiter for loading series.
 	skipChunks bool, // If true, chunks are not loaded and minTime/maxTime are ignored.
@@ -609,7 +609,7 @@ func blockSeries(
 	// not belonging to the shard.
 	var seriesCacheStats queryStats
 	if shard != nil {
-		ps, seriesCacheStats = filterPostingsByCachedShardHash(ps, shard, seriesHashCache)
+		ps = filterPostingsByCachedShardHash(ps, shard, seriesHasher, &seriesCacheStats)
 	}
 
 	if len(ps) == 0 {
@@ -663,20 +663,8 @@ func blockSeries(
 			}
 
 			// Skip the series if it doesn't belong to the shard.
-			if shard != nil {
-				hash, ok := seriesHashCache.Fetch(id)
-				seriesCacheStats.seriesHashCacheRequests++
-
-				if !ok {
-					hash = lset.Hash()
-					seriesHashCache.Store(id, hash)
-				} else {
-					seriesCacheStats.seriesHashCacheHits++
-				}
-
-				if hash%shard.ShardCount != shard.ShardIndex {
-					continue
-				}
+			if !shardOwned(shard, seriesHasher, id, lset, &seriesCacheStats) {
+				continue
 			}
 
 			// Check series limit after filtering out series not belonging to the requested shard (if any).
@@ -1044,7 +1032,7 @@ func (s *BucketStore) synchronousSeriesSet(
 				chunksPool,
 				matchers,
 				shardSelector,
-				blockSeriesHashCache,
+				cachedSeriesHasher{blockSeriesHashCache},
 				chunksLimiter,
 				seriesLimiter,
 				req.SkipChunks,
@@ -1130,7 +1118,7 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 				b.meta,
 				matchers,
 				shardSelector,
-				blockSeriesHashCache,
+				cachedSeriesHasher{blockSeriesHashCache},
 				chunksLimiter,
 				seriesLimiter,
 				req.SkipChunks,

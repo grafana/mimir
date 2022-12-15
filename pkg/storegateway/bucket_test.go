@@ -2213,7 +2213,7 @@ func benchmarkBlockSeriesWithConcurrency(b *testing.B, concurrency int, blockMet
 				chunkReader := blk.chunkReader(ctx)
 				chunksPool := &pool.BatchBytes{Delegate: pool.NoopBytes{}}
 
-				seriesSet, _, err := blockSeries(context.Background(), indexReader, chunkReader, chunksPool, matchers, shardSelector, seriesHashCache, chunksLimiter, seriesLimiter, req.SkipChunks, req.MinTime, req.MaxTime, log.NewNopLogger())
+				seriesSet, _, err := blockSeries(context.Background(), indexReader, chunkReader, chunksPool, matchers, shardSelector, cachedSeriesHasher{seriesHashCache}, chunksLimiter, seriesLimiter, req.SkipChunks, req.MinTime, req.MaxTime, log.NewNopLogger())
 				require.NoError(b, err)
 
 				// Ensure at least 1 series has been returned (as expected).
@@ -2313,7 +2313,7 @@ func TestBlockSeries_Cache(t *testing.T) {
 
 		indexr := b.indexReader()
 		for i, tc := range testCases {
-			ss, _, err := blockSeries(context.Background(), indexr, nil, nil, tc.matchers, tc.shard, shc, nil, sl, true, b.meta.MinTime, b.meta.MaxTime, log.NewNopLogger())
+			ss, _, err := blockSeries(context.Background(), indexr, nil, nil, tc.matchers, tc.shard, cachedSeriesHasher{shc}, nil, sl, true, b.meta.MinTime, b.meta.MaxTime, log.NewNopLogger())
 			require.NoError(t, err, "Unexpected error for test case %d", i)
 			lset := lsetFromSeriesSet(t, ss)
 			require.Equalf(t, tc.expectedLabelSet, lset, "Wrong label set for test case %d", i)
@@ -2323,7 +2323,7 @@ func TestBlockSeries_Cache(t *testing.T) {
 		// We break the index cache to not allow looking up series, so we know we don't look up series.
 		indexr.block.indexCache = forbiddenFetchMultiSeriesForRefsIndexCache{b.indexCache, t}
 		for i, tc := range testCases {
-			ss, _, err := blockSeries(context.Background(), indexr, nil, nil, tc.matchers, tc.shard, shc, nil, sl, true, b.meta.MinTime, b.meta.MaxTime, log.NewNopLogger())
+			ss, _, err := blockSeries(context.Background(), indexr, nil, nil, tc.matchers, tc.shard, cachedSeriesHasher{shc}, nil, sl, true, b.meta.MinTime, b.meta.MaxTime, log.NewNopLogger())
 			require.NoError(t, err, "Unexpected error for test case %d", i)
 			lset := lsetFromSeriesSet(t, ss)
 			require.Equalf(t, tc.expectedLabelSet, lset, "Wrong label set for test case %d", i)
@@ -2590,12 +2590,12 @@ func TestFilterPostingsByCachedShardHash(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			cache := hashcache.NewSeriesHashCache(1024 * 1024).GetBlockCache("test")
+			hasher := mockSeriesHasher{cached: make(map[storage.SeriesRef]uint64)}
 			for _, pair := range testData.cacheEntries {
-				cache.Store(storage.SeriesRef(pair[0]), pair[1])
+				hasher.cached[storage.SeriesRef(pair[0])] = pair[1]
 			}
 
-			actualPostings, _ := filterPostingsByCachedShardHash(testData.inputPostings, testData.shard, cache)
+			actualPostings := filterPostingsByCachedShardHash(testData.inputPostings, testData.shard, hasher, nil)
 			assert.Equal(t, testData.expectedPostings, actualPostings)
 		})
 	}
@@ -2610,9 +2610,10 @@ func TestFilterPostingsByCachedShardHash_NoAllocations(t *testing.T) {
 	for _, pair := range cacheEntries {
 		cache.Store(storage.SeriesRef(pair[0]), pair[1])
 	}
+	stats := &queryStats{}
 
 	assert.Equal(t, float64(0), testing.AllocsPerRun(1, func() {
-		filterPostingsByCachedShardHash(inputPostings, shard, cache)
+		filterPostingsByCachedShardHash(inputPostings, shard, cachedSeriesHasher{cache}, stats)
 	}))
 }
 
@@ -2639,7 +2640,7 @@ func BenchmarkFilterPostingsByCachedShardHash_AllPostingsShifted(b *testing.B) {
 		inputPostings = inputPostings[0:numPostings]
 		copy(inputPostings, originalPostings)
 
-		filterPostingsByCachedShardHash(inputPostings, shard, cache)
+		filterPostingsByCachedShardHash(inputPostings, shard, cachedSeriesHasher{cache}, nil)
 	}
 }
 
@@ -2658,6 +2659,6 @@ func BenchmarkFilterPostingsByCachedShardHash_NoPostingsShifted(b *testing.B) {
 	for n := 0; n < b.N; n++ {
 		// We reuse the same postings slice because we expect this test to not
 		// modify it (cache is empty).
-		filterPostingsByCachedShardHash(ps, shard, cache)
+		filterPostingsByCachedShardHash(ps, shard, cachedSeriesHasher{cache}, nil)
 	}
 }

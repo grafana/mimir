@@ -1062,7 +1062,7 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 	testCases := map[string]struct {
 		shard        *sharding.ShardSelector
 		matchers     []*labels.Matcher
-		seriesHasher mockSeriesHasher
+		seriesHasher seriesHasher
 		skipChunks   bool
 		minT, maxT   int64
 		batchSize    int
@@ -1134,7 +1134,15 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 			},
 		},
 		"returns no batches when no series are owned by shard": {
-			shard:        &sharding.ShardSelector{ShardIndex: 1, ShardCount: 2},
+			shard: &sharding.ShardSelector{ShardIndex: 1, ShardCount: 2},
+			seriesHasher: mockSeriesHasher{
+				hashes: map[string]uint64{
+					`{l1="v1"}`: 0,
+					`{l1="v2"}`: 0,
+					`{l1="v3"}`: 0,
+					`{l1="v4"}`: 0,
+				},
+			},
 			minT:         0,
 			maxT:         40,
 			batchSize:    2,
@@ -1187,17 +1195,20 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 				postings,
 				testCase.batchSize,
 			)
+			hasher := testCase.seriesHasher
+			if hasher == nil {
+				hasher = cachedSeriesHasher{hashcache.NewSeriesHashCache(100).GetBlockCache("")}
+			}
 			loadingIterator := newLoadingSeriesChunkRefsSetIterator(
 				context.Background(),
 				postingsIterator,
 				indexr,
 				noopCache{},
-				hashcache.NewSeriesHashCache(1).GetBlockCache(""),
 				newSafeQueryStats(),
 				block.meta,
 				testCase.matchers,
 				testCase.shard,
-				testCase.seriesHasher,
+				hasher,
 				testCase.skipChunks,
 				testCase.minT,
 				testCase.maxT,
@@ -1208,7 +1219,7 @@ func TestLoadingSeriesChunkRefsSetIterator(t *testing.T) {
 			// Tests
 			sets := readAllSeriesChunkRefsSet(loadingIterator)
 			assert.NoError(t, loadingIterator.Err())
-			if !assert.Len(t, sets, len(testCase.expectedSets)) {
+			if !assert.Len(t, sets, len(testCase.expectedSets), testName) {
 				return
 			}
 
@@ -1397,6 +1408,8 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 			indexReader := block.indexReader()
 			defer indexReader.Close()
 
+			hashCache := hashcache.NewSeriesHashCache(1024 * 1024).GetBlockCache(block.meta.ULID.String())
+
 			iterator, err := openBlockSeriesChunkRefsSetsIterator(
 				ctx,
 				testCase.batchSize,
@@ -1406,7 +1419,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 				block.meta,
 				[]*labels.Matcher{testCase.matcher},
 				nil,
-				hashcache.NewSeriesHashCache(1024*1024).GetBlockCache(block.meta.ULID.String()),
+				cachedSeriesHasher{hashCache},
 				&limiter{limit: testCase.chunksLimit},
 				&limiter{limit: testCase.seriesLimit},
 				testCase.skipChunks,
@@ -1450,16 +1463,18 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 	}
 }
 
+// TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching currently tests logic in loadingSeriesChunkRefsSetIterator.
+// If openBlockSeriesChunkRefsSetsIterator becomes more complex, consider making this a test for loadingSeriesChunkRefsSetIterator only.
 func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
-	existingSeries := []labels.Labels{
-		labels.FromStrings("a", "1", "b", "1"),
-		labels.FromStrings("a", "1", "b", "2"),
-		labels.FromStrings("a", "2", "b", "1"),
-		labels.FromStrings("a", "2", "b", "2"),
-		labels.FromStrings("a", "3", "b", "1"),
-		labels.FromStrings("a", "3", "b", "2"),
-	}
 	newTestBlock := prepareTestBlock(test.NewTB(t), func(tb testing.TB, appender storage.Appender) {
+		existingSeries := []labels.Labels{
+			labels.FromStrings("a", "1", "b", "1"), // series ref 32
+			labels.FromStrings("a", "1", "b", "2"), // series ref 48
+			labels.FromStrings("a", "2", "b", "1"), // series ref 64
+			labels.FromStrings("a", "2", "b", "2"), // series ref 80
+			labels.FromStrings("a", "3", "b", "1"), // series ref 96
+			labels.FromStrings("a", "3", "b", "2"), // series ref 112
+		}
 		for ts := int64(0); ts < 10; ts++ {
 			for _, s := range existingSeries {
 				_, err := appender.Append(0, s, ts, 0)
@@ -1469,67 +1484,232 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 		assert.NoError(t, appender.Commit())
 	})
 
-	matchers := []*labels.Matcher{
-		labels.MustNewMatcher(labels.MatchRegexp, "a", ".+"),
+	mockedSeriesHashes := map[string]uint64{
+		`{a="1", b="1"}`: 1,
+		`{a="1", b="2"}`: 0,
+		`{a="2", b="1"}`: 1,
+		`{a="2", b="2"}`: 0,
+		`{a="3", b="1"}`: 1,
+		`{a="3", b="2"}`: 0,
 	}
 
-	for batchSize := 1; batchSize < len(existingSeries)+2; batchSize++ {
-		batchSize := batchSize
-		t.Run(fmt.Sprintf("batch size %d", batchSize), func(t *testing.T) {
-			t.Parallel()
-			b := newTestBlock()
-			b.indexCache = newInMemoryIndexCache(t)
+	testCases := map[string]struct {
+		batchSizes []int
+		shard      *sharding.ShardSelector
+		matchers   []*labels.Matcher
 
-			indexReader := b.indexReader()
-			ss, err := openBlockSeriesChunkRefsSetsIterator(
-				context.Background(),
-				batchSize,
-				"",
-				indexReader,
-				b.indexCache,
-				b.meta,
-				matchers,
-				nil,
-				nil,
-				&limiter{limit: 1000},
-				&limiter{limit: 1000},
-				true,
-				b.meta.MinTime, b.meta.MaxTime,
-				newSafeQueryStats(),
-				NewBucketStoreMetrics(nil),
-				log.NewNopLogger(),
-			)
+		cachedSeriesHashesWithColdCache map[storage.SeriesRef]uint64
+		cachedSeriesHashesWithWarmCache map[storage.SeriesRef]uint64
 
-			require.NoError(t, err)
-			lset := extractLabelsFromSeriesChunkRefsSets(readAllSeriesChunkRefsSet(ss))
-			require.NoError(t, ss.Err())
-			require.Equal(t, existingSeries, lset)
+		expectedLabelSets                        []labels.Labels
+		expectedSeriesReadFromBlockWithColdCache int
+		expectedSeriesReadFromBlockWithWarmCache int
+	}{
+		"without sharding, without series hash caches": {
+			matchers:                                 []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "a", ".+")},
+			batchSizes:                               []int{1, 2, 3, 4, 5, 6, 7},
+			expectedSeriesReadFromBlockWithColdCache: 6,
+			expectedSeriesReadFromBlockWithWarmCache: 0,
+			expectedLabelSets: []labels.Labels{
+				labels.FromStrings("a", "1", "b", "1"),
+				labels.FromStrings("a", "1", "b", "2"),
+				labels.FromStrings("a", "2", "b", "1"),
+				labels.FromStrings("a", "2", "b", "2"),
+				labels.FromStrings("a", "3", "b", "1"),
+				labels.FromStrings("a", "3", "b", "2"),
+			},
+		},
+		"without sharding; series hash isn't looked at when request isn't sharded": {
+			matchers:   []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "a", ".+")},
+			batchSizes: []int{1, 2, 3, 4, 5, 6, 7},
+			cachedSeriesHashesWithWarmCache: map[storage.SeriesRef]uint64{ // have some bogus series hash cache
+				32:  1,
+				48:  2,
+				64:  3,
+				80:  4,
+				96:  5,
+				112: 6,
+			},
+			expectedSeriesReadFromBlockWithColdCache: 6,
+			expectedSeriesReadFromBlockWithWarmCache: 0,
+			expectedLabelSets: []labels.Labels{
+				labels.FromStrings("a", "1", "b", "1"),
+				labels.FromStrings("a", "1", "b", "2"),
+				labels.FromStrings("a", "2", "b", "1"),
+				labels.FromStrings("a", "2", "b", "2"),
+				labels.FromStrings("a", "3", "b", "1"),
+				labels.FromStrings("a", "3", "b", "2"),
+			},
+		},
+		"with sharding, cached series hashes": {
+			batchSizes: []int{1, 2, 3, 4},
+			matchers:   []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "a", ".+")},
+			shard:      &sharding.ShardSelector{ShardIndex: 1, ShardCount: 2},
+			cachedSeriesHashesWithColdCache: map[storage.SeriesRef]uint64{
+				32:  1,
+				48:  0,
+				64:  1,
+				80:  0,
+				96:  1,
+				112: 0,
+			},
+			cachedSeriesHashesWithWarmCache: map[storage.SeriesRef]uint64{
+				32:  1,
+				48:  0,
+				64:  1,
+				80:  0,
+				96:  1,
+				112: 0,
+			},
+			expectedSeriesReadFromBlockWithColdCache: 3, // we omit reading the block for series when know are outside of our shard
+			expectedSeriesReadFromBlockWithWarmCache: 0,
+			expectedLabelSets: []labels.Labels{
+				labels.FromStrings("a", "1", "b", "1"),
+				labels.FromStrings("a", "2", "b", "1"),
+				labels.FromStrings("a", "3", "b", "1"),
+			},
+		},
+		"with sharding without series hash cache": {
+			batchSizes:                               []int{1, 2, 3, 4},
+			matchers:                                 []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "a", ".+")},
+			shard:                                    &sharding.ShardSelector{ShardIndex: 1, ShardCount: 2},
+			cachedSeriesHashesWithColdCache:          map[storage.SeriesRef]uint64{},
+			expectedSeriesReadFromBlockWithColdCache: 6,
+			expectedSeriesReadFromBlockWithWarmCache: 0,
+			expectedLabelSets: []labels.Labels{
+				labels.FromStrings("a", "1", "b", "1"),
+				labels.FromStrings("a", "2", "b", "1"),
+				labels.FromStrings("a", "3", "b", "1"),
+			},
+		},
+		// This case simulates having different series hash caches on different store-gateway replicas.
+		// Having a batch size of 1 means that some batches are entirely of series what don't fall in our shard.
+		// The series in such batches may end up being read from the block and then discarded.
+		"with sharding, with different series hash caches before and after caching, whole batches with unowned series": {
+			matchers:   []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "a", ".+")},
+			batchSizes: []int{1},
+			shard:      &sharding.ShardSelector{ShardIndex: 1, ShardCount: 2},
+			cachedSeriesHashesWithColdCache: map[storage.SeriesRef]uint64{
+				32: 1,
+				48: 0,
+				64: 1,
+			},
+			cachedSeriesHashesWithWarmCache: map[storage.SeriesRef]uint64{
+				80:  0,
+				96:  1,
+				112: 0,
+			},
+			expectedSeriesReadFromBlockWithColdCache: 3 + 2, // 2 reads for the series on which we miss the hash cache, and 3 for series in our shard
+			expectedSeriesReadFromBlockWithWarmCache: 1,     // 1 read for the series on which we miss the hash cache and are not in our shard (so we also didn't cache them last time)
+			expectedLabelSets: []labels.Labels{
+				labels.FromStrings("a", "1", "b", "1"),
+				labels.FromStrings("a", "2", "b", "1"),
+				labels.FromStrings("a", "3", "b", "1"),
+			},
+		},
+		// This case simulates having different series hash caches on different store-gateway replicas.
+		// With batch size 2 at least one of the series in each batch is in our shard.
+		// This causes us to cache the result of the batch and not have to refresh the series even though we miss on the series hash cache.
+		"with sharding, with different series hash caches before and after caching, batches with some non-owned series": {
+			matchers:   []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "a", ".+")},
+			batchSizes: []int{2},
+			shard:      &sharding.ShardSelector{ShardIndex: 1, ShardCount: 2},
+			cachedSeriesHashesWithColdCache: map[storage.SeriesRef]uint64{
+				32: 1,
+				48: 0,
+				64: 1,
+			},
+			cachedSeriesHashesWithWarmCache: map[storage.SeriesRef]uint64{
+				80:  0,
+				96:  1,
+				112: 0,
+			},
+			expectedSeriesReadFromBlockWithColdCache: 3 + 2, // 2 reads for the series on which we miss the hash cache, and 3 for series in our shard
+			expectedSeriesReadFromBlockWithWarmCache: 0,     // at least one series in each batch was in our shard, so we should've cached everything
+			expectedLabelSets: []labels.Labels{
+				labels.FromStrings("a", "1", "b", "1"),
+				labels.FromStrings("a", "2", "b", "1"),
+				labels.FromStrings("a", "3", "b", "1"),
+			},
+		},
+	}
 
-			// Cache should be filled by now. Pass an index cache that fails the test if you try to access the postings
-			b.indexCache = forbiddenFetchMultiSeriesForRefsIndexCache{b.indexCache, t}
+	for testName, testCase := range testCases {
+		testCase := testCase
+		t.Run(testName, func(t *testing.T) {
+			for _, batchSize := range testCase.batchSizes {
+				batchSize := batchSize
+				t.Run(fmt.Sprintf("batch size %d", batchSize), func(t *testing.T) {
+					b := newTestBlock()
+					b.indexCache = newInMemoryIndexCache(t)
 
-			ss, err = openBlockSeriesChunkRefsSetsIterator(
-				context.Background(),
-				batchSize,
-				"",
-				indexReader,
-				b.indexCache,
-				b.meta,
-				matchers,
-				nil,
-				nil,
-				&limiter{limit: 1000},
-				&limiter{limit: 1000},
-				true,
-				b.meta.MinTime, b.meta.MaxTime,
-				newSafeQueryStats(),
-				NewBucketStoreMetrics(nil),
-				log.NewNopLogger(),
-			)
-			require.NoError(t, err)
-			lset = extractLabelsFromSeriesChunkRefsSets(readAllSeriesChunkRefsSet(ss))
-			require.NoError(t, ss.Err())
-			require.Equal(t, existingSeries, lset)
+					// Run 1 with a cold cache
+					seriesHasher := mockSeriesHasher{
+						hashes: mockedSeriesHashes,
+						cached: testCase.cachedSeriesHashesWithColdCache,
+					}
+
+					statsColdCache := newSafeQueryStats()
+					indexReader := b.indexReader()
+					ss, err := openBlockSeriesChunkRefsSetsIterator(
+						context.Background(),
+						batchSize,
+						"",
+						indexReader,
+						b.indexCache,
+						b.meta,
+						testCase.matchers,
+						testCase.shard,
+						seriesHasher,
+						&limiter{limit: 1000},
+						&limiter{limit: 1000},
+						true,
+						b.meta.MinTime,
+						b.meta.MaxTime,
+						statsColdCache,
+						NewBucketStoreMetrics(nil),
+						log.NewNopLogger(),
+					)
+
+					require.NoError(t, err)
+					lset := extractLabelsFromSeriesChunkRefsSets(readAllSeriesChunkRefsSet(ss))
+					require.NoError(t, ss.Err())
+					assert.Equal(t, testCase.expectedLabelSets, lset)
+					assert.Equal(t, testCase.expectedSeriesReadFromBlockWithColdCache, statsColdCache.export().seriesFetched)
+
+					// Run 2 with a warm cache
+					seriesHasher = mockSeriesHasher{
+						hashes: mockedSeriesHashes,
+						cached: testCase.cachedSeriesHashesWithWarmCache,
+					}
+
+					statsWarnCache := newSafeQueryStats()
+					ss, err = openBlockSeriesChunkRefsSetsIterator(
+						context.Background(),
+						batchSize,
+						"",
+						indexReader,
+						b.indexCache,
+						b.meta,
+						testCase.matchers,
+						testCase.shard,
+						seriesHasher,
+						&limiter{limit: 1000},
+						&limiter{limit: 1000},
+						true,
+						b.meta.MinTime,
+						b.meta.MaxTime,
+						statsWarnCache,
+						NewBucketStoreMetrics(nil),
+						log.NewNopLogger(),
+					)
+					require.NoError(t, err)
+					lset = extractLabelsFromSeriesChunkRefsSets(readAllSeriesChunkRefsSet(ss))
+					require.NoError(t, ss.Err())
+					assert.Equal(t, testCase.expectedLabelSets, lset)
+					assert.Equal(t, testCase.expectedSeriesReadFromBlockWithWarmCache, statsWarnCache.export().seriesFetched)
+				})
+			}
 		})
 	}
 }
@@ -1603,7 +1783,13 @@ func TestPostingsSetsIterator(t *testing.T) {
 }
 
 type mockSeriesHasher struct {
+	cached map[storage.SeriesRef]uint64
 	hashes map[string]uint64
+}
+
+func (a mockSeriesHasher) CachedHash(seriesID storage.SeriesRef, stats *queryStats) (uint64, bool) {
+	hash, isCached := a.cached[seriesID]
+	return hash, isCached
 }
 
 func (a mockSeriesHasher) Hash(seriesID storage.SeriesRef, lset labels.Labels, stats *queryStats) uint64 {
