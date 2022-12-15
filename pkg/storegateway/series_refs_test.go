@@ -2021,14 +2021,14 @@ func BenchmarkFetchCachedSeriesForPostings(b *testing.B) {
 			logger := log.NewNopLogger()
 			blockID := ulid.MustNew(1671103209, nil)
 
-			cachedStruct := seriesForPostingsCacheEntry{
-				LabelSets:   testCase.cachedEntryLabels,
-				MatchersKey: indexcache.CanonicalLabelMatchersKey(testCase.cachedEntryMatchers),
-				Shard:       maybeNilShard(testCase.cachedEntryShard),
-			}
 			var mockCache indexcache.IndexCache = mockIndexCache{fetchSeriesForPostingsResponse: mockIndexCacheEntry{
-				contents: mustSnappyGobEncode(b, cachedStruct),
-				cached:   true,
+				contents: mustEncodeCachedSeriesForPostings(
+					b,
+					seriesChunkRefsSetFromLabelSets(testCase.cachedEntryLabels),
+					indexcache.CanonicalLabelMatchersKey(testCase.cachedEntryMatchers),
+					maybeNilShard(testCase.cachedEntryShard),
+				),
+				cached: true,
 			}}
 
 			b.ReportAllocs()
@@ -2046,13 +2046,14 @@ func BenchmarkFetchCachedSeriesForPostings(b *testing.B) {
 	}
 }
 
-func BenchmarkStoreCachedSeriesForPostings(b *testing.B) {
-	seriesChunkRefsSetFromLabelSets := func(labelSets []labels.Labels) (result seriesChunkRefsSet) {
-		for _, lset := range labelSets {
-			result.series = append(result.series, seriesChunkRefs{lset: lset})
-		}
-		return
+func seriesChunkRefsSetFromLabelSets(labelSets []labels.Labels) (result seriesChunkRefsSet) {
+	for _, lset := range labelSets {
+		result.series = append(result.series, seriesChunkRefs{lset: lset})
 	}
+	return
+}
+
+func BenchmarkStoreCachedSeriesForPostings(b *testing.B) {
 	testCases := map[string]struct {
 		seriesToCache seriesChunkRefsSet
 
@@ -2124,6 +2125,12 @@ func mustSnappyGobEncode(t testing.TB, v any) []byte {
 	encoded, err := encodeSnappyGob(v)
 	require.NoError(t, err)
 	return encoded
+}
+
+func mustEncodeCachedSeriesForPostings(t testing.TB, set seriesChunkRefsSet, matchersKey indexcache.LabelMatchersKey, nonNilShard sharding.ShardSelector) []byte {
+	b, err := encodeCachedSeriesForPostings(set, matchersKey, nonNilShard)
+	require.NoError(t, err)
+	return b
 }
 
 type testFailingLogger struct {
