@@ -6,10 +6,13 @@ import (
 	"context"
 	"crypto/rand"
 	"math"
+	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
@@ -59,7 +62,7 @@ func (s BlockSeriesSpecs) MaxTime() int64 {
 
 // GenerateBlockFromSpec generates a TSDB block with series and chunks provided by the input specs.
 // This utility is intended just to be used for testing. Do not use it for any production code.
-func GenerateBlockFromSpec(userID string, storageDir string, specs BlockSeriesSpecs) (_ *metadata.Meta, returnErr error) {
+func GenerateBlockFromSpec(_ string, storageDir string, specs BlockSeriesSpecs) (_ *metadata.Meta, returnErr error) {
 	blockID := ulid.MustNew(ulid.Now(), rand.Reader)
 	blockDir := filepath.Join(storageDir, blockID.String())
 
@@ -158,6 +161,23 @@ func GenerateBlockFromSpec(userID string, storageDir string, specs BlockSeriesSp
 		return nil, err
 	}
 
+	// Enumerate created files (including the meta.json file that isn't there yet but will be).
+	files := []metadata.File{{RelPath: filepath.Join(blockID.String(), block.MetaFilename)}}
+	err = filepath.WalkDir(storageDir, func(path string, d os.DirEntry, _ error) error {
+		relPath, err := filepath.Rel(storageDir, path)
+		if err != nil {
+			return err
+		}
+
+		if !d.IsDir() && relPath != "" {
+			files = append(files, metadata.File{RelPath: relPath})
+		}
+		return nil
+	})
+	sort.Slice(files, func(i, j int) bool {
+		return strings.Compare(files[i].RelPath, files[j].RelPath) < 0
+	})
+
 	// Generate the meta.json file.
 	meta := &metadata.Meta{
 		BlockMeta: tsdb.BlockMeta{
@@ -172,6 +192,7 @@ func GenerateBlockFromSpec(userID string, storageDir string, specs BlockSeriesSp
 		},
 		Thanos: metadata.Thanos{
 			Version: metadata.ThanosVersion1,
+			Files:   files,
 		},
 	}
 
