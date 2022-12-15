@@ -407,8 +407,8 @@ func (i *Ingester) starting(ctx context.Context) error {
 		servs = append(servs, closeIdleService)
 	}
 
-	activeGroupsService := util.NewActiveGroupsCleanupWithDefaultValues(i.cleanupInactiveGroupsForUser)
-	servs = append(servs, activeGroupsService)
+	i.activeGroups = util.NewActiveGroupsCleanupWithDefaultValues(i.cleanupInactiveGroupsForUser)
+	servs = append(servs, i.activeGroups)
 
 	var err error
 	i.subservices, err = services.NewManager(servs...)

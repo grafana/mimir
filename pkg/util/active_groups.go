@@ -139,13 +139,11 @@ func (s *ActiveGroupsCleanupService) ActiveGroupLimitExceeded(userID, group stri
 }
 
 func (s *ActiveGroupsCleanupService) iteration(_ context.Context) error {
-	//inactiveUsers := s.activeGroups.PurgeInactiveGroupsForUser(time.Now().Add(-s.inactiveTimeout).UnixNano())
-	// Inactive Users - Delete all their metrics
-	// Get Active Users
-	// Go through and cleanup their metrics (last seen timestamp)
-
-	// for _, userID := range inactiveUsers {
-	// 	s.cleanupFunc(userID)
-	// }
+	for userID := range s.activeGroups.timestampsPerUser {
+		inactiveGroups := s.activeGroups.PurgeInactiveGroupsForUser(userID, time.Now().Add(-s.inactiveTimeout).UnixNano())
+		for _, group := range inactiveGroups {
+			s.cleanupFunc(userID, group)
+		}
+	}
 	return nil
 }
