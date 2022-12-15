@@ -1453,6 +1453,8 @@ func TestOpenBlockSeriesChunkRefsSetsIterator(t *testing.T) {
 	}
 }
 
+// TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching currently tests logic in loadingSeriesChunkRefsSetIterator.
+// If openBlockSeriesChunkRefsSetsIterator becomes more complex, consider making this a test for loadingSeriesChunkRefsSetIterator only.
 func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 	newTestBlock := prepareTestBlock(test.NewTB(t), func(tb testing.TB, appender storage.Appender) {
 		existingSeries := []labels.Labels{
