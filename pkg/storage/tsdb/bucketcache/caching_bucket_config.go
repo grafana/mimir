@@ -8,9 +8,8 @@ package bucketcache
 import (
 	"time"
 
+	"github.com/grafana/dskit/cache"
 	"github.com/thanos-io/objstore"
-
-	"github.com/grafana/mimir/pkg/cache"
 )
 
 // Codec for encoding and decoding results of Iter call.

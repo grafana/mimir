@@ -21,13 +21,15 @@ import (
 
 // ReaderPoolMetrics holds metrics tracked by ReaderPool.
 type ReaderPoolMetrics struct {
-	lazyReader *LazyBinaryReaderMetrics
+	lazyReader   *LazyBinaryReaderMetrics
+	streamReader *StreamBinaryReaderMetrics
 }
 
 // NewReaderPoolMetrics makes new ReaderPoolMetrics.
 func NewReaderPoolMetrics(reg prometheus.Registerer) *ReaderPoolMetrics {
 	return &ReaderPoolMetrics{
-		lazyReader: NewLazyBinaryReaderMetrics(reg),
+		lazyReader:   NewLazyBinaryReaderMetrics(reg),
+		streamReader: NewStreamBinaryReaderMetrics(reg),
 	}
 }
 
@@ -89,7 +91,7 @@ func (p *ReaderPool) NewBinaryReader(ctx context.Context, logger log.Logger, bkt
 
 	if cfg.StreamReaderEnabled {
 		readerFactory = func() (Reader, error) {
-			return NewStreamBinaryReader(ctx, logger, bkt, dir, id, postingOffsetsInMemSampling)
+			return NewStreamBinaryReader(ctx, logger, bkt, dir, id, postingOffsetsInMemSampling, p.metrics.streamReader, cfg)
 		}
 	} else {
 		readerFactory = func() (Reader, error) {

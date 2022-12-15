@@ -154,6 +154,13 @@
       alertmanager_im: componentNameRegexp.alertmanager_im,
       compactor: componentNameRegexp.compactor,
 
+      // Read-write deployment mode. The following matchers MUST match only
+      // the container when deployed in read-write deployment mode (e.g. "mimir-write"
+      // matcher shouldn't match "distributor" too).
+      mimir_write: componentNameRegexp.mimir_write,
+      mimir_read: componentNameRegexp.mimir_read,
+      mimir_backend: componentNameRegexp.mimir_backend,
+
       // The following are container matchers used to select all components in a given "path".
       // These matchers CAN match both instances deployed in "microservices" and "read-write" mode.
       local componentsGroupMatcher = function(components) std.join('|', std.map(function(name) componentNameRegexp[name], components)),

@@ -8,7 +8,6 @@ package analyze
 import (
 	"encoding/json"
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/grafana/regexp"
@@ -16,6 +15,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql/parser"
 	log "github.com/sirupsen/logrus"
+	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/mimirtool/minisdk"
 )
@@ -72,7 +72,7 @@ func ParseMetricsInBoard(mig *MetricsInGrafana, board minisdk.Board) {
 		metricsInBoard = append(metricsInBoard, metric)
 		mig.OverallMetrics[metric] = struct{}{}
 	}
-	sort.Strings(metricsInBoard)
+	slices.Sort(metricsInBoard)
 
 	mig.Dashboards = append(mig.Dashboards, DashboardMetrics{
 		Slug:        board.Slug,

@@ -23,16 +23,16 @@ import (
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/thanos-io/objstore"
 
-	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 )
 
 type metrics struct {
-	dirSyncs        prometheus.Counter
-	dirSyncFailures prometheus.Counter
-	uploads         prometheus.Counter
-	uploadFailures  prometheus.Counter
+	dirSyncs                 prometheus.Counter
+	dirSyncFailures          prometheus.Counter
+	uploads                  prometheus.Counter
+	uploadFailures           prometheus.Counter
+	lastSuccessfulUploadTime prometheus.Gauge
 }
 
 func newMetrics(reg prometheus.Registerer) *metrics {
@@ -54,6 +54,11 @@ func newMetrics(reg prometheus.Registerer) *metrics {
 		Name: "thanos_shipper_upload_failures_total",
 		Help: "Total number of block upload failures",
 	})
+	m.lastSuccessfulUploadTime = promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+		Name: "thanos_shipper_last_successful_upload_time",
+		Help: "Unix timestamp (in seconds) of the last successful TSDB block uploaded to the bucket.",
+	})
+
 	return &m
 }
 
@@ -166,6 +171,7 @@ func (s *Shipper) Sync(ctx context.Context) (uploaded int, err error) {
 		meta.Uploaded = append(meta.Uploaded, m.ULID)
 		uploaded++
 		s.metrics.uploads.Inc()
+		s.metrics.lastSuccessfulUploadTime.SetToCurrentTime()
 	}
 	if err := writeShipperMetaFile(s.logger, s.dir, meta); err != nil {
 		level.Warn(s.logger).Log("msg", "updating meta file failed", "err", err)
@@ -192,7 +198,7 @@ func (s *Shipper) upload(ctx context.Context, meta *metadata.Meta) error {
 	meta.Thanos.SegmentFiles = block.GetSegmentFiles(blockDir)
 
 	// Upload block with custom metadata.
-	return tsdb.UploadBlock(ctx, s.logger, s.bucket, blockDir, meta)
+	return block.Upload(ctx, s.logger, s.bucket, blockDir, meta)
 }
 
 // blockMetasFromOldest returns the block meta of each block found in dir

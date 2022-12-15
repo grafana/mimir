@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -30,6 +29,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
+	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 	grpc_metadata "google.golang.org/grpc/metadata"
 
@@ -964,7 +964,7 @@ func (q *blocksStoreQuerier) fetchLabelValuesFromStore(
 				"queried blocks", strings.Join(convertULIDsToString(myQueriedBlocks), " "))
 
 			// Values returned need not be sorted, but we need them to be sorted so we can merge.
-			sort.Strings(valuesResp.Values)
+			slices.Sort(valuesResp.Values)
 
 			// Store the result.
 			mtx.Lock()

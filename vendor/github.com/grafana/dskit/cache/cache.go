@@ -1,8 +1,3 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/thanos-io/thanos/blob/main/pkg/store/cache/cache.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Thanos Authors.
-
 package cache
 
 import (
@@ -13,8 +8,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-
-	"github.com/grafana/mimir/pkg/cacheutil"
 )
 
 // Cache is a generic interface.
@@ -62,7 +55,7 @@ func CreateClient(cacheName string, cfg BackendConfig, logger log.Logger, reg pr
 		return nil, nil
 
 	case BackendMemcached:
-		client, err := cacheutil.NewMemcachedClientWithConfig(logger, cacheName, cfg.Memcached.ToMemcachedClientConfig(), reg)
+		client, err := NewMemcachedClientWithConfig(logger, cacheName, cfg.Memcached.ToMemcachedClientConfig(), reg)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to create memcached client")
 		}

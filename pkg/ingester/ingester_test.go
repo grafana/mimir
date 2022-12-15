@@ -47,6 +47,7 @@ import (
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/middleware"
 	"github.com/weaveworks/common/user"
+	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 
@@ -1754,7 +1755,7 @@ func extractItemsWithSortedValues(responses []client.LabelNamesAndValuesResponse
 		items = append(items, res.Items...)
 	}
 	for _, it := range items {
-		sort.Strings(it.Values)
+		slices.Sort(it.Values)
 	}
 	return items
 }
@@ -4461,7 +4462,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 				uids = append(uids, uid)
 				totalPushes += len(requests)
 			}
-			sort.Strings(uids)
+			slices.Sort(uids)
 
 			pushIdx := 0
 			for _, uid := range uids {

@@ -1,8 +1,3 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/thanos-io/thanos/blob/main/pkg/cache/memcached.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Thanos Authors.
-
 package cache
 
 import (
@@ -13,14 +8,12 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-
-	"github.com/grafana/mimir/pkg/cacheutil"
 )
 
 // MemcachedCache is a memcached-based cache.
 type MemcachedCache struct {
 	logger    log.Logger
-	memcached cacheutil.RemoteCacheClient
+	memcached RemoteCacheClient
 	name      string
 
 	// Metrics.
@@ -29,7 +22,7 @@ type MemcachedCache struct {
 }
 
 // NewMemcachedCache makes a new MemcachedCache.
-func NewMemcachedCache(name string, logger log.Logger, memcached cacheutil.RemoteCacheClient, reg prometheus.Registerer) *MemcachedCache {
+func NewMemcachedCache(name string, logger log.Logger, memcached RemoteCacheClient, reg prometheus.Registerer) *MemcachedCache {
 	c := &MemcachedCache{
 		logger:    logger,
 		memcached: memcached,
@@ -37,13 +30,13 @@ func NewMemcachedCache(name string, logger log.Logger, memcached cacheutil.Remot
 	}
 
 	c.requests = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name:        "thanos_cache_memcached_requests_total",
+		Name:        "cache_memcached_requests_total",
 		Help:        "Total number of items requests to memcached.",
 		ConstLabels: prometheus.Labels{"name": name},
 	})
 
 	c.hits = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name:        "thanos_cache_memcached_hits_total",
+		Name:        "cache_memcached_hits_total",
 		Help:        "Total number of items requests to the cache that were a hit.",
 		ConstLabels: prometheus.Labels{"name": name},
 	})

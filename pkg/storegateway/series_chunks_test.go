@@ -470,7 +470,7 @@ func TestLoadingSeriesChunksSetIterator(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 			// Setup
-			bytesPool := &mockedPool{parent: pool.NoopBytes{}}
+			bytesPool := &trackedBytesPool{parent: pool.NoopBytes{}}
 			readersMap := make(map[ulid.ULID]chunkReader, len(testCase.existingBlocks))
 			for _, block := range testCase.existingBlocks {
 				readersMap[block.ulid] = newChunkReaderMockWithSeries(block.series, testCase.addLoadErr, testCase.loadErr)

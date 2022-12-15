@@ -22,6 +22,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/types"
+	"github.com/grafana/dskit/gate"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
@@ -35,6 +36,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/tracing"
+	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -48,7 +50,6 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/gate"
 	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -148,6 +149,12 @@ func (c noopCache) FetchExpandedPostings(_ context.Context, _ string, _ ulid.ULI
 func (noopCache) StoreSeries(_ context.Context, _ string, _ ulid.ULID, _ indexcache.LabelMatchersKey, _ *sharding.ShardSelector, _ []byte) {
 }
 func (noopCache) FetchSeries(_ context.Context, _ string, _ ulid.ULID, _ indexcache.LabelMatchersKey, _ *sharding.ShardSelector) ([]byte, bool) {
+	return nil, false
+}
+
+func (noopCache) StoreSeriesForPostings(_ context.Context, _ string, _ ulid.ULID, _ indexcache.LabelMatchersKey, _ *sharding.ShardSelector, _ indexcache.PostingsKey, _ []byte) {
+}
+func (noopCache) FetchSeriesForPostings(_ context.Context, _ string, _ ulid.ULID, _ indexcache.LabelMatchersKey, _ *sharding.ShardSelector, _ indexcache.PostingsKey) ([]byte, bool) {
 	return nil, false
 }
 
@@ -1117,7 +1124,9 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 			part, err = openBlockSeriesChunkRefsSetsIterator(
 				ctx,
 				s.maxSeriesPerBatch,
+				s.userID,
 				indexr,
+				s.indexCache,
 				b.meta,
 				matchers,
 				shardSelector,
@@ -1128,6 +1137,7 @@ func (s *BucketStore) streamingSeriesSetForBlocks(
 				req.MinTime, req.MaxTime,
 				stats,
 				s.metrics,
+				s.logger,
 			)
 			if err != nil {
 				return errors.Wrapf(err, "fetch series for block %s", b.meta.ULID)
@@ -1338,7 +1348,7 @@ func blockLabelNames(ctx context.Context, indexr *bucketIndexReader, matchers []
 	for n := range labelNames {
 		names = append(names, n)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 
 	storeCachedLabelNames(ctx, indexr.block.indexCache, indexr.block.userID, indexr.block.meta.ULID, matchers, names, logger)
 	return names, nil

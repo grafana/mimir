@@ -1,16 +1,11 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/thanos-io/thanos/blob/main/pkg/store/cacheutil/cacheutil.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Thanos Authors.
-
-package cacheutil
+package cache
 
 import (
 	"context"
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/grafana/mimir/pkg/util/gate"
+	"github.com/grafana/dskit/gate"
 )
 
 // doWithBatch do func with batch and gate. batchSize==0 means one batch. gate==nil means no gate.

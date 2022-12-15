@@ -16,7 +16,7 @@ require (
 	github.com/golang/snappy v0.0.4
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.0
-	github.com/grafana/dskit v0.0.0-20221110225216-188592c3d6fc
+	github.com/grafana/dskit v0.0.0-20221213192733-6a4490513ed8
 	github.com/grafana/e2e v0.1.1-0.20221209210459-74fea291f43a
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/json-iterator/go v1.1.12
@@ -52,10 +52,7 @@ require (
 require (
 	cloud.google.com/go/storage v1.27.0
 	github.com/alecthomas/chroma v0.10.0
-	github.com/bradfitz/gomemcache v0.0.0-20190913173617-a41fca850d0b
-	github.com/cespare/xxhash v1.1.0
 	github.com/dennwc/varint v1.0.0
-	github.com/facette/natsort v0.0.0-20181210072756-2cd4dd1e2dcb
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
 	github.com/google/go-cmp v0.5.9
 	github.com/google/go-github/v32 v32.1.0
@@ -105,7 +102,9 @@ require (
 	github.com/aws/smithy-go v1.11.1 // indirect
 	github.com/benbjohnson/clock v1.3.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
+	github.com/bradfitz/gomemcache v0.0.0-20221031212613-62deef7fc822 // indirect
 	github.com/cenkalti/backoff/v4 v4.2.0 // indirect
+	github.com/cespare/xxhash v1.1.0 // indirect
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/chromedp/cdproto v0.0.0-20220629234738-4cfc9cdeeb92 // indirect
 	github.com/chromedp/chromedp v0.8.2 // indirect
@@ -118,6 +117,7 @@ require (
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/efficientgo/e2e v0.13.1-0.20220923082810-8fa9daa8af8a // indirect
 	github.com/efficientgo/tools/core v0.0.0-20220817170617-6c25e3b627dd // indirect
+	github.com/facette/natsort v0.0.0-20181210072756-2cd4dd1e2dcb // indirect
 	github.com/fatih/color v1.13.0 // indirect
 	github.com/felixge/httpsnoop v1.0.3 // indirect
 	github.com/go-errors/errors v1.0.1 // indirect

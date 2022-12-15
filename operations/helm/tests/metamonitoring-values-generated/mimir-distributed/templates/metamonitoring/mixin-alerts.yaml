@@ -120,7 +120,7 @@ spec:
           $value }} times in the last 30 mins.'
         runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterrestarts
       expr: |
-        changes(process_start_time_seconds{job=~".+(cortex|ingester.*)"}[30m]) >= 2
+        changes(process_start_time_seconds{job=~".*/(ingester.*|cortex|mimir|mimir-write.*)"}[30m]) >= 2
       labels:
         severity: warning
     - alert: MimirKVStoreFailure
@@ -170,8 +170,12 @@ spec:
       expr: |
         (min by(cluster, namespace, pod) (cortex_ingester_memory_users) == 0)
         and on (cluster, namespace)
-        # Only if there's a least 1 tenant in Mimir.
-        (max by(cluster, namespace) (cortex_ingester_memory_users) > 0)
+        # Only if there are more time-series than would be expected due to continuous testing load
+        (
+          sum by(cluster, namespace) (cortex_ingester_memory_series)
+          /
+          max by(cluster, namespace) (cortex_distributor_replication_factor)
+        ) > 100000
       for: 1h
       labels:
         severity: warning
@@ -359,15 +363,15 @@ spec:
     - alert: MimirAllocatingTooMuchMemory
       annotations:
         message: |
-          Ingester {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} is using too much memory.
+          Instance {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} is using too much memory.
         runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirallocatingtoomuchmemory
       expr: |
         (
           # We use RSS instead of working set memory because of the ingester's extensive usage of mmap.
           # See: https://github.com/grafana/mimir/issues/2466
-          container_memory_rss{container="ingester"}
+          container_memory_rss{container=~"(ingester|mimir-write|mimir-backend)"}
             /
-          ( container_spec_memory_limit_bytes{container="ingester"} > 0 )
+          ( container_spec_memory_limit_bytes{container=~"(ingester|mimir-write|mimir-backend)"} > 0 )
         ) > 0.65
       for: 15m
       labels:
@@ -375,15 +379,15 @@ spec:
     - alert: MimirAllocatingTooMuchMemory
       annotations:
         message: |
-          Ingester {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} is using too much memory.
+          Instance {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} is using too much memory.
         runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirallocatingtoomuchmemory
       expr: |
         (
           # We use RSS instead of working set memory because of the ingester's extensive usage of mmap.
           # See: https://github.com/grafana/mimir/issues/2466
-          container_memory_rss{container="ingester"}
+          container_memory_rss{container=~"(ingester|mimir-write|mimir-backend)"}
             /
-          ( container_spec_memory_limit_bytes{container="ingester"} > 0 )
+          ( container_spec_memory_limit_bytes{container=~"(ingester|mimir-write|mimir-backend)"} > 0 )
         ) > 0.8
       for: 15m
       labels:
@@ -592,9 +596,9 @@ spec:
           }} has not shipped any block in the last 4 hours.
         runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterhasnotshippedblocks
       expr: |
-        (min by(cluster, namespace, pod) (time() - thanos_objstore_bucket_last_successful_upload_time{job=~".+/ingester.*"}) > 60 * 60 * 4)
+        (min by(cluster, namespace, pod) (time() - thanos_shipper_last_successful_upload_time) > 60 * 60 * 4)
         and
-        (max by(cluster, namespace, pod) (thanos_objstore_bucket_last_successful_upload_time{job=~".+/ingester.*"}) > 0)
+        (max by(cluster, namespace, pod) (thanos_shipper_last_successful_upload_time) > 0)
         and
         # Only if the ingester has ingested samples over the last 4h.
         (max by(cluster, namespace, pod) (max_over_time(cluster_namespace_pod:cortex_ingester_ingested_samples_total:rate1m[4h])) > 0)
@@ -613,7 +617,7 @@ spec:
           }} has not shipped any block in the last 4 hours.
         runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterhasnotshippedblockssincestart
       expr: |
-        (max by(cluster, namespace, pod) (thanos_objstore_bucket_last_successful_upload_time{job=~".+/ingester.*"}) == 0)
+        (max by(cluster, namespace, pod) (thanos_shipper_last_successful_upload_time) == 0)
         and
         (max by(cluster, namespace, pod) (max_over_time(cluster_namespace_pod:cortex_ingester_ingested_samples_total:rate1m[4h])) > 0)
       for: 4h

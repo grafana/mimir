@@ -6,7 +6,8 @@ local filename = 'mimir-rollout-progress.json';
   local config = $.queries {
     namespace_matcher: $.namespaceMatcher(),
     per_cluster_label: $._config.per_cluster_label,
-    gateway_job_matcher: $.jobMatcher($._config.job_names.gateway),
+    write_job_matcher: if $._config.gateway_enabled then $.jobMatcher($._config.job_names.gateway) else $.jobMatcher($._config.job_names.distributor),
+    read_job_matcher: if $._config.gateway_enabled then $.jobMatcher($._config.job_names.gateway) else $.jobMatcher($._config.job_names.query_frontend),
     all_services_regex: '.*(%s).*' % std.join('|', ['cortex-gw', 'distributor', 'ingester', 'query-frontend', 'query-scheduler', 'querier', 'compactor', 'store-gateway', 'ruler', 'alertmanager', 'overrides-exporter', 'cortex', 'mimir']),
   },
 
@@ -92,8 +93,8 @@ local filename = 'mimir-rollout-progress.json';
         //
         $.panel('Writes - 2xx') +
         $.newStatPanel(|||
-          sum(rate(cortex_request_duration_seconds_count{%(gateway_job_matcher)s, route=~"%(write_http_routes_regex)s",status_code=~"2.+"}[$__rate_interval])) /
-          sum(rate(cortex_request_duration_seconds_count{%(gateway_job_matcher)s, route=~"%(write_http_routes_regex)s"}[$__rate_interval]))
+          sum(rate(cortex_request_duration_seconds_count{%(write_job_matcher)s, route=~"%(write_http_routes_regex)s",status_code=~"2.+"}[$__rate_interval])) /
+          sum(rate(cortex_request_duration_seconds_count{%(write_job_matcher)s, route=~"%(write_http_routes_regex)s"}[$__rate_interval]))
         ||| % config, thresholds=[
           { color: 'green', value: null },
         ]) + {
@@ -103,8 +104,8 @@ local filename = 'mimir-rollout-progress.json';
 
         $.panel('Writes - 4xx') +
         $.newStatPanel(|||
-          sum(rate(cortex_request_duration_seconds_count{%(gateway_job_matcher)s, route=~"%(write_http_routes_regex)s",status_code=~"4.+"}[$__rate_interval])) /
-          sum(rate(cortex_request_duration_seconds_count{%(gateway_job_matcher)s, route=~"%(write_http_routes_regex)s"}[$__rate_interval]))
+          sum(rate(cortex_request_duration_seconds_count{%(write_job_matcher)s, route=~"%(write_http_routes_regex)s",status_code=~"4.+"}[$__rate_interval])) /
+          sum(rate(cortex_request_duration_seconds_count{%(write_job_matcher)s, route=~"%(write_http_routes_regex)s"}[$__rate_interval]))
         ||| % config, thresholds=[
           { color: 'green', value: null },
           { color: 'orange', value: 0.2 },
@@ -116,8 +117,8 @@ local filename = 'mimir-rollout-progress.json';
 
         $.panel('Writes - 5xx') +
         $.newStatPanel(|||
-          sum(rate(cortex_request_duration_seconds_count{%(gateway_job_matcher)s, route=~"%(write_http_routes_regex)s",status_code=~"5.+"}[$__rate_interval])) /
-          sum(rate(cortex_request_duration_seconds_count{%(gateway_job_matcher)s, route=~"%(write_http_routes_regex)s"}[$__rate_interval]))
+          sum(rate(cortex_request_duration_seconds_count{%(write_job_matcher)s, route=~"%(write_http_routes_regex)s",status_code=~"5.+"}[$__rate_interval])) /
+          sum(rate(cortex_request_duration_seconds_count{%(write_job_matcher)s, route=~"%(write_http_routes_regex)s"}[$__rate_interval]))
         ||| % config, thresholds=[
           { color: 'green', value: null },
           { color: 'red', value: 0.01 },
@@ -128,7 +129,7 @@ local filename = 'mimir-rollout-progress.json';
 
         $.panel('Writes 99th latency') +
         $.newStatPanel(|||
-          histogram_quantile(0.99, sum by (le) (%(per_cluster_label)s_job_route:cortex_request_duration_seconds_bucket:sum_rate{%(gateway_job_matcher)s, route=~"%(write_http_routes_regex)s"}))
+          histogram_quantile(0.99, sum by (le) (%(per_cluster_label)s_job_route:cortex_request_duration_seconds_bucket:sum_rate{%(write_job_matcher)s, route=~"%(write_http_routes_regex)s"}))
         ||| % config, unit='s', thresholds=[
           { color: 'green', value: null },
           { color: 'orange', value: 0.2 },
@@ -143,8 +144,8 @@ local filename = 'mimir-rollout-progress.json';
         //
         $.panel('Reads - 2xx') +
         $.newStatPanel(|||
-          sum(rate(cortex_request_duration_seconds_count{%(gateway_job_matcher)s, route=~"%(read_http_routes_regex)s",status_code=~"2.+"}[$__rate_interval])) /
-          sum(rate(cortex_request_duration_seconds_count{%(gateway_job_matcher)s, route=~"%(read_http_routes_regex)s"}[$__rate_interval]))
+          sum(rate(cortex_request_duration_seconds_count{%(read_job_matcher)s, route=~"%(read_http_routes_regex)s",status_code=~"2.+"}[$__rate_interval])) /
+          sum(rate(cortex_request_duration_seconds_count{%(read_job_matcher)s, route=~"%(read_http_routes_regex)s"}[$__rate_interval]))
         ||| % config, thresholds=[
           { color: 'green', value: null },
         ]) + {
@@ -154,8 +155,8 @@ local filename = 'mimir-rollout-progress.json';
 
         $.panel('Reads - 4xx') +
         $.newStatPanel(|||
-          sum(rate(cortex_request_duration_seconds_count{%(gateway_job_matcher)s, route=~"%(read_http_routes_regex)s",status_code=~"4.+"}[$__rate_interval])) /
-          sum(rate(cortex_request_duration_seconds_count{%(gateway_job_matcher)s, route=~"%(read_http_routes_regex)s"}[$__rate_interval]))
+          sum(rate(cortex_request_duration_seconds_count{%(read_job_matcher)s, route=~"%(read_http_routes_regex)s",status_code=~"4.+"}[$__rate_interval])) /
+          sum(rate(cortex_request_duration_seconds_count{%(read_job_matcher)s, route=~"%(read_http_routes_regex)s"}[$__rate_interval]))
         ||| % config, thresholds=[
           { color: 'green', value: null },
           { color: 'orange', value: 0.01 },
@@ -167,8 +168,8 @@ local filename = 'mimir-rollout-progress.json';
 
         $.panel('Reads - 5xx') +
         $.newStatPanel(|||
-          sum(rate(cortex_request_duration_seconds_count{%(gateway_job_matcher)s, route=~"%(read_http_routes_regex)s",status_code=~"5.+"}[$__rate_interval])) /
-          sum(rate(cortex_request_duration_seconds_count{%(gateway_job_matcher)s, route=~"%(read_http_routes_regex)s"}[$__rate_interval]))
+          sum(rate(cortex_request_duration_seconds_count{%(read_job_matcher)s, route=~"%(read_http_routes_regex)s",status_code=~"5.+"}[$__rate_interval])) /
+          sum(rate(cortex_request_duration_seconds_count{%(read_job_matcher)s, route=~"%(read_http_routes_regex)s"}[$__rate_interval]))
         ||| % config, thresholds=[
           { color: 'green', value: null },
           { color: 'red', value: 0.01 },
@@ -179,7 +180,7 @@ local filename = 'mimir-rollout-progress.json';
 
         $.panel('Reads 99th latency') +
         $.newStatPanel(|||
-          histogram_quantile(0.99, sum by (le) (%(per_cluster_label)s_job_route:cortex_request_duration_seconds_bucket:sum_rate{%(gateway_job_matcher)s, route=~"%(read_http_routes_regex)s"}))
+          histogram_quantile(0.99, sum by (le) (%(per_cluster_label)s_job_route:cortex_request_duration_seconds_bucket:sum_rate{%(read_job_matcher)s, route=~"%(read_http_routes_regex)s"}))
         ||| % config, unit='s', thresholds=[
           { color: 'green', value: null },
           { color: 'orange', value: 1 },
@@ -284,15 +285,15 @@ local filename = 'mimir-rollout-progress.json';
         $.panel('Latency vs 24h ago') +
         $.queryPanel([|||
           1 - (
-            avg_over_time(histogram_quantile(0.99, sum by (le) (%(per_cluster_label)s_job_route:cortex_request_duration_seconds_bucket:sum_rate{%(gateway_job_matcher)s, route=~"%(write_http_routes_regex)s"} offset 24h))[1h:])
+            avg_over_time(histogram_quantile(0.99, sum by (le) (%(per_cluster_label)s_job_route:cortex_request_duration_seconds_bucket:sum_rate{%(write_job_matcher)s, route=~"%(write_http_routes_regex)s"} offset 24h))[1h:])
             /
-            avg_over_time(histogram_quantile(0.99, sum by (le) (%(per_cluster_label)s_job_route:cortex_request_duration_seconds_bucket:sum_rate{%(gateway_job_matcher)s, route=~"%(write_http_routes_regex)s"}))[1h:])
+            avg_over_time(histogram_quantile(0.99, sum by (le) (%(per_cluster_label)s_job_route:cortex_request_duration_seconds_bucket:sum_rate{%(write_job_matcher)s, route=~"%(write_http_routes_regex)s"}))[1h:])
           )
         ||| % config, |||
           1 - (
-            avg_over_time(histogram_quantile(0.99, sum by (le) (%(per_cluster_label)s_job_route:cortex_request_duration_seconds_bucket:sum_rate{%(gateway_job_matcher)s, route=~"%(read_http_routes_regex)s"} offset 24h))[1h:])
+            avg_over_time(histogram_quantile(0.99, sum by (le) (%(per_cluster_label)s_job_route:cortex_request_duration_seconds_bucket:sum_rate{%(read_job_matcher)s, route=~"%(read_http_routes_regex)s"} offset 24h))[1h:])
             /
-            avg_over_time(histogram_quantile(0.99, sum by (le) (%(per_cluster_label)s_job_route:cortex_request_duration_seconds_bucket:sum_rate{%(gateway_job_matcher)s, route=~"%(read_http_routes_regex)s"}))[1h:])
+            avg_over_time(histogram_quantile(0.99, sum by (le) (%(per_cluster_label)s_job_route:cortex_request_duration_seconds_bucket:sum_rate{%(read_job_matcher)s, route=~"%(read_http_routes_regex)s"}))[1h:])
           )
         ||| % config], ['writes', 'reads']) + {
           yaxes: $.yaxes({

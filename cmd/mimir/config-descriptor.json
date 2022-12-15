@@ -5700,21 +5700,21 @@
                   "fieldFlag": "blocks-storage.bucket-store.index-header.stream-reader-enabled",
                   "fieldType": "boolean",
                   "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "stream_reader_max_idle_file_handles",
+                  "required": false,
+                  "desc": "Maximum number of idle file handles the store-gateway keeps open for each index-header file when using the streaming reader. This option is used only when the index-header streaming reader is enabled.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 1,
+                  "fieldFlag": "blocks-storage.bucket-store.index-header.stream-reader-max-idle-file-handles",
+                  "fieldType": "int",
+                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
               "fieldDefaultValue": null
-            },
-            {
-              "kind": "field",
-              "name": "max_concurrent_reject_over_limit",
-              "required": false,
-              "desc": "True to reject queries above the max number of concurrent queries to execute against long-term storage. If false, queries will block until they are able to run.",
-              "fieldValue": null,
-              "fieldDefaultValue": false,
-              "fieldFlag": "blocks-storage.bucket-store.max-concurrent-reject-over-limit",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
             },
             {
               "kind": "field",

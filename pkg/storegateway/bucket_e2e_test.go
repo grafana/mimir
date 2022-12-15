@@ -105,8 +105,8 @@ func prepareTestBlocks(t testing.TB, now time.Time, count int, dir string, bkt o
 		meta.Thanos.Labels = map[string]string{"ext2": "value2"}
 		assert.NoError(t, meta.WriteToDir(logger, dir2))
 
-		assert.NoError(t, block.Upload(ctx, logger, bkt, dir1, metadata.NoneFunc))
-		assert.NoError(t, block.Upload(ctx, logger, bkt, dir2, metadata.NoneFunc))
+		assert.NoError(t, block.Upload(ctx, logger, bkt, dir1, nil))
+		assert.NoError(t, block.Upload(ctx, logger, bkt, dir2, nil))
 
 		assert.NoError(t, os.RemoveAll(dir1))
 		assert.NoError(t, os.RemoveAll(dir2))

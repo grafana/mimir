@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-
 package cache
 
 import (
@@ -49,19 +47,19 @@ func WrapWithLRUCache(c Cache, name string, reg prometheus.Registerer, lruSize i
 		defaultTTL: defaultTTL,
 
 		requests: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name:        "cortex_cache_memory_requests_total",
+			Name:        "cache_memory_requests_total",
 			Help:        "Total number of requests to the in-memory cache.",
 			ConstLabels: map[string]string{"name": name},
 		}),
 		hits: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name:        "cortex_cache_memory_hits_total",
+			Name:        "cache_memory_hits_total",
 			Help:        "Total number of requests to the in-memory cache that were a hit.",
 			ConstLabels: map[string]string{"name": name},
 		}),
 	}
 
 	cache.items = promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
-		Name:        "cortex_cache_memory_items_count",
+		Name:        "cache_memory_items_count",
 		Help:        "Total number of items currently in the in-memory cache.",
 		ConstLabels: map[string]string{"name": name},
 	}, func() float64 {

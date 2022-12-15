@@ -16,6 +16,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/types"
+	"github.com/grafana/dskit/cache"
+	"github.com/grafana/dskit/tenant"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -25,7 +27,6 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/uber/jaeger-client-go"
 
-	"github.com/grafana/mimir/pkg/cache"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -86,7 +87,7 @@ func newResultsCache(cfg ResultsCacheConfig, logger log.Logger, reg prometheus.R
 	// when running in monolithic mode.
 	reg = prometheus.WrapRegistererWith(prometheus.Labels{"component": "query-frontend"}, reg)
 
-	client, err := cache.CreateClient("frontend-cache", cfg.BackendConfig, logger, reg)
+	client, err := cache.CreateClient("frontend-cache", cfg.BackendConfig, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg))
 	if err != nil {
 		return nil, err
 	} else if client == nil {
@@ -94,7 +95,7 @@ func newResultsCache(cfg ResultsCacheConfig, logger log.Logger, reg prometheus.R
 	}
 
 	return cache.NewVersioned(
-		cache.NewSpanlessTracingCache(client, logger),
+		cache.NewSpanlessTracingCache(client, logger, tenant.NewMultiResolver()),
 		resultsCacheVersion,
 	), nil
 }

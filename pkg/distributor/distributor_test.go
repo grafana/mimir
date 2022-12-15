@@ -41,6 +41,7 @@ import (
 	"github.com/weaveworks/common/mtime"
 	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
+	"golang.org/x/exp/slices"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -2452,7 +2453,7 @@ func TestDistributor_LabelNamesAndValues(t *testing.T) {
 
 			// sort label values to make stable assertion
 			for _, item := range response.Items {
-				sort.Strings(item.Values)
+				slices.Sort(item.Values)
 			}
 			assert.ElementsMatch(t, response.Items, expectedLabelValues)
 		})
@@ -4229,7 +4230,7 @@ func (i *mockIngester) LabelNames(ctx context.Context, req *client.LabelNamesReq
 			}
 		}
 	}
-	sort.Strings(response.LabelNames)
+	slices.Sort(response.LabelNames)
 
 	return &response, nil
 }

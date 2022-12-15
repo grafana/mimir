@@ -12,6 +12,7 @@ import (
 	"sort"
 	"unsafe"
 
+	"github.com/grafana/dskit/runutil"
 	"github.com/prometheus/prometheus/tsdb/index"
 
 	streamencoding "github.com/grafana/mimir/pkg/storegateway/indexheader/encoding"
@@ -42,7 +43,7 @@ const symbolFactor = 32
 // NewSymbols returns a Symbols object for symbol lookups.
 func NewSymbols(factory *streamencoding.DecbufFactory, version, offset int) (s *Symbols, err error) {
 	d := factory.NewDecbufAtChecked(offset, castagnoliTable)
-	defer factory.CloseWithErrCapture(&err, d, "read symbols")
+	defer runutil.CloseWithErrCapture(&err, &d, "read symbols")
 	if err := d.Err(); err != nil {
 		return nil, fmt.Errorf("decode symbol table: %w", d.Err())
 	}
@@ -75,7 +76,7 @@ func NewSymbols(factory *streamencoding.DecbufFactory, version, offset int) (s *
 
 func (s *Symbols) Lookup(o uint32) (sym string, err error) {
 	d := s.factory.NewDecbufAtUnchecked(s.tableOffset)
-	defer s.factory.CloseWithErrCapture(&err, d, "lookup symbol")
+	defer runutil.CloseWithErrCapture(&err, &d, "lookup symbol")
 	if err := d.Err(); err != nil {
 		return "", err
 	}
@@ -109,7 +110,7 @@ func (s *Symbols) ReverseLookup(sym string) (o uint32, err error) {
 	}
 
 	d := s.factory.NewDecbufAtUnchecked(s.tableOffset)
-	defer s.factory.CloseWithErrCapture(&err, d, "reverse lookup symbol")
+	defer runutil.CloseWithErrCapture(&err, &d, "reverse lookup symbol")
 	if err := d.Err(); err != nil {
 		return 0, err
 	}
@@ -126,7 +127,7 @@ func (s *Symbols) ForEachSymbol(syms []string, f func(sym string, offset uint32)
 	}
 
 	d := s.factory.NewDecbufAtUnchecked(s.tableOffset)
-	defer s.factory.CloseWithErrCapture(&err, d, "iterate over symbols")
+	defer runutil.CloseWithErrCapture(&err, &d, "iterate over symbols")
 	if err := d.Err(); err != nil {
 		return err
 	}
