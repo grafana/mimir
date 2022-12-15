@@ -10,6 +10,6 @@ keywords:
 
 # Grafana mimir-distributed Helm chart documentation
 
-The mimir-distributed Helm chart for Grafana Mimir and Grafana Enterprise Metrics allows you to configure, install, and upgrade Grafana Mimir or Grafana Enterprise Metrics within a Kubernetes cluster.
+The mimir-distributed Helm chart for Grafana Mimir and Grafana Enterprise Metrics (GEM) allows you to configure, install, and upgrade Grafana Mimir or Grafana Enterprise Metrics within a Kubernetes cluster.
 
 {{< section menuTitle="true" >}}

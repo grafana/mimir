@@ -2,14 +2,14 @@
 aliases:
   - /docs/mimir/latest/operators-guide/monitoring-grafana-mimir/collecting-metrics-and-logs/
 description: Learn how to collect metrics and logs from Grafana Mimir or GEM itself.
-menuTitle: Metamonitor Mimir or GEM
-title: Collect metrics and logs from Grafana Mimir or GEM itself
+menuTitle: Monitor Mimir or GEM itself
+title: Monitor Grafana Mimir or GEM itself
 weight: 60
 ---
 
-# Collect metrics and logs from Grafana Mimir or GEM itself
+# Monitor Grafana Mimir or GEM itself
 
-You can collect metrics and logs from a Mimir or GEM cluster.
+You can monitor Grafana Mimir or Grafana Enterprise Metrics itself, by collecting metrics and logs from Mimir or GEM that is running on a Kubernetes cluster. This is called _metamonitoring_.
 
 > **Note:** In Grafana, you can create dashboards and receive alerts about those metrics and logs. To set up dashboards and alerts,
 > see [Installing Grafana Mimir dashboards and alerts]({{< relref "installing-dashboards-and-alerts.md" >}}) or [Grafana Cloud: Self-hosted Grafana Mimir integration](https://grafana.com/docs/grafana-cloud/integrations/integrations/integration-mimir/)
@@ -34,76 +34,73 @@ The Helm chart can install and use the Grafana Agent operator.
 > you need to manually install all of the Kubernetes [Custom Resource Definitions (CRDs)](https://helm.sh/docs/chart_best_practices/custom_resource_definitions/) from the [Grafana Agent operator YAML files](https://github.com/grafana/agent/tree/main/production/operator/crds).
 
 It’s best to use the Grafana Agent operator for metrics and logs collection.
-However, if you prefer not to use it or you already have an existing Grafana Agent that you want to use, see [Collect metrics and logs via Grafana Agent](#collect-metrics-and-logs-via-grafana-agent) instead.
+However, if you prefer not to use it or you already have an existing Grafana Agent that you want to use, see _Collect metrics and logs via Grafana Agent_ documentation in Grafana Mimir version 2.5.0.
 
-TODO: ^ Replace with a relref to https://grafana.com/docs/mimir/latest/operators-guide/monitor-grafana-mimir/collecting-metrics-and-logs/#collect-metrics-and-logs-via-grafana-agent.
+1. Store credentials in a Secret:
+  
+   If Prometheus and Loki are running without authentication, then you scan skip this section.
+   Metamonitoring supports multiple ways of authentication for metrics and logs. If you are using a secret such as an API
+   key to authenticate with Prometheus or Loki, then you need to create a Kubernetes Secret with that secret.
 
-### Store credentials in a Secret
+   This is an example Kubernetes Secret:
 
-If Prometheus and Loki are running without authentication, then you scan skip this section.
-Metamonitoring supports multiple ways of authentication for metrics and logs. If you are using a secret such as an API
-key to authenticate with Prometheus or Loki, then you need to create a Kubernetes Secret with that secret.
+   ```yaml
+   apiVersion: v1
+   kind: Secret
+   metadata:
+     name: metamonitoring-credentials
+   data:
+     prometheus-api-key: FAKEACCESSKEY
+     loki-api-key: FAKESECRETKEY
+   ```
 
-This is an example Kubernetes Secret:
+   For information about how to create a Kubernetes Secret, see
+   [Creating a Secret](https://kubernetes.io/docs/concepts/configuration/secret/#creating-a-secret).
 
-```yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: metamonitoring-credentials
-data:
-  prometheus-api-key: FAKEACCESSKEY
-  loki-api-key: FAKESECRETKEY
-```
+1. Configure Helm chart values:
 
-For information about how to create a Kubernetes Secret, see
-[Creating a Secret](https://kubernetes.io/docs/concepts/configuration/secret/#creating-a-secret).
+   Merge the following YAML configuration into your Helm values file, and replace the values for `url`, `username`, `passwordSecretName`
+   , and `passwordSecretKey` with the details of the Prometheus and Loki clusters, and the Secret that you created. If your
+   Prometheus and Loki servers are running without authentication, then remove the `auth` blocks from the YAML below.
 
-TODO: Start here.
+   If you already have the Agent operator installed in your Kubernetes cluster, then set `installOperator: false`.
 
-### Configure Helm chart values
+   ```yaml
+   metaMonitoring:
+     serviceMonitor:
+       enabled: true
+     grafanaAgent:
+       enabled: true
+       installOperator: true
 
-Merge the following YAML configuration into your Helm values file, and replace the values for `url`, `username`, `passwordSecretName`
-, and `passwordSecretKey` with the details of the Prometheus and Loki clusters, and the Secret that you created. If your
-Prometheus and Loki servers are running without authentication, then remove the `auth` blocks from the YAML below.
+       logs:
+         remote:
+           url: "https://example.com/loki/api/v1/push"
+           auth:
+             username: "12345"
+             passwordSecretName: "metamonitoring-credentials"
+             passwordSecretKey: "prometheus-api-key"
 
-If you already have the Agent operator installed in your Kubernetes cluster, then set `installOperator: false`.
+       metrics:
+         remote:
+           url: "https://example.com/api/v1/push"
+           auth:
+             username: "54321"
+             passwordSecretName: "metamonitoring-credentials"
+             passwordSecretKey: "loki-api-key"
 
-```yaml
-metaMonitoring:
-  serviceMonitor:
-    enabled: true
-  grafanaAgent:
-    enabled: true
-    installOperator: true
-
-    logs:
-      remote:
-        url: "https://example.com/loki/api/v1/push"
-        auth:
-          username: "12345"
-          passwordSecretName: "metamonitoring-credentials"
-          passwordSecretKey: "prometheus-api-key"
-
-    metrics:
-      remote:
-        url: "https://example.com/api/v1/push"
-        auth:
-          username: "54321"
-          passwordSecretName: "metamonitoring-credentials"
-          passwordSecretKey: "loki-api-key"
-
-      scrapeK8s:
-        enabled: true
-        kubeStateMetrics:
-          namespace: kube-system
-          labelSelectors:
-            app.kubernetes.io/name: kube-state-metrics
-```
+         scrapeK8s:
+           enabled: true
+           kubeStateMetrics:
+             namespace: kube-system
+             labelSelectors:
+               app.kubernetes.io/name: kube-state-metrics
+   ```
 
 ### Send metrics back into Mimir or GEM
 
-You can also send the collected metamonitoring metrics to the installation of Mimir or GEM.
+You can also send the metrics that you collected (metamonitoring metrics)
+back into Mimir or GEM itself rather than sending them elsewhere.
 
 When you leave the `metamonitoring.grafanaAgent.metrics.remote.url` field empty,
 then the chart automatically fills in the address of the GEM gateway Service
