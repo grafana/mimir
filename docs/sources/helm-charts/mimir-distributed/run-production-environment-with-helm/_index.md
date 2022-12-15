@@ -46,8 +46,8 @@ Meet all the follow prerequisites:
 
 The `mimir-distributed` Helm chart comes with two sizing plans:
 
-- For 1M series: [small.yaml](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/small.yaml)
-- For 10M series: [large.yaml](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/large.yaml)
+- For 1M series: [`small.yaml`](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/small.yaml)
+- For 10M series: [`large.yaml`](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/large.yaml)
 
 These sizing plans are estimated based on experience from operating Grafana
 Mimir at Grafana Labs. The ideal size for your cluster depends on your
