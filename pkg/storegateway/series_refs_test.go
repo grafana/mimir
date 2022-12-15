@@ -1897,3 +1897,173 @@ func TestCreateSeriesChunkRefsSet(t *testing.T) {
 	assert.Equal(t, seriesChunkRefs{lset: labels.FromStrings(labels.MetricName, "metric_000006")}, set.series[1])
 	assert.Equal(t, seriesChunkRefs{lset: labels.FromStrings(labels.MetricName, "metric_000007")}, set.series[2])
 }
+
+func BenchmarkFetchCachedSeriesForPostings(b *testing.B) {
+	somePostingsKey := indexcache.CanonicalPostingsKey([]storage.SeriesRef{1, 2, 3})
+
+	testCases := map[string]struct {
+		cachedEntryLabels   []labels.Labels
+		cachedEntryMatchers []*labels.Matcher
+		cachedEntryShard    *sharding.ShardSelector
+
+		requestedMatchers    []*labels.Matcher
+		requestedShard       *sharding.ShardSelector
+		requestedPostingsKey indexcache.PostingsKey
+
+		expectedHit bool
+	}{
+		"with sharding": {
+			cachedEntryLabels:   generateSeries([]int{1}),
+			cachedEntryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "0")},
+			cachedEntryShard:    &sharding.ShardSelector{ShardIndex: 1, ShardCount: 10},
+
+			requestedMatchers:    []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "0")},
+			requestedShard:       &sharding.ShardSelector{ShardIndex: 1, ShardCount: 10},
+			requestedPostingsKey: somePostingsKey,
+			expectedHit:          true,
+		},
+		"without sharding": {
+			cachedEntryLabels:   []labels.Labels{labels.FromStrings("a", "1")},
+			cachedEntryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "0")},
+
+			requestedMatchers:    []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "0")},
+			requestedPostingsKey: somePostingsKey,
+			expectedHit:          true,
+		},
+		"6000 series with 6 labels each": {
+			cachedEntryLabels:   generateSeries([]int{1, 2, 3, 10, 10, 10}),
+			cachedEntryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "0")},
+
+			requestedMatchers:    []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "0")},
+			requestedPostingsKey: somePostingsKey,
+			expectedHit:          true,
+		},
+		"6000 series with 6 labels with more repetitions": {
+			cachedEntryLabels:   generateSeries([]int{1, 1, 1, 1, 1, 6000}),
+			cachedEntryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "0")},
+
+			requestedMatchers:    []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "0")},
+			requestedPostingsKey: somePostingsKey,
+			expectedHit:          true,
+		},
+		"1000 series with 1 matcher": {
+			cachedEntryLabels: generateSeries([]int{10, 10, 10}),
+			cachedEntryMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "a", "0"),
+			},
+			requestedMatchers:    []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "0")},
+			requestedPostingsKey: somePostingsKey,
+			expectedHit:          true,
+		},
+		"1000 series with 10 matchers": {
+			cachedEntryLabels: generateSeries([]int{10, 10, 10}),
+			cachedEntryMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "a", "0"),
+				labels.MustNewMatcher(labels.MatchEqual, "a", "1"),
+				labels.MustNewMatcher(labels.MatchEqual, "a", "2"),
+				labels.MustNewMatcher(labels.MatchEqual, "a", "3"),
+				labels.MustNewMatcher(labels.MatchEqual, "a", "4"),
+				labels.MustNewMatcher(labels.MatchEqual, "a", "5"),
+				labels.MustNewMatcher(labels.MatchEqual, "a", "6"),
+				labels.MustNewMatcher(labels.MatchEqual, "a", "7"),
+				labels.MustNewMatcher(labels.MatchEqual, "a", "8"),
+				labels.MustNewMatcher(labels.MatchEqual, "a", "9"),
+			},
+			requestedMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "a", "0"),
+				labels.MustNewMatcher(labels.MatchEqual, "a", "1"),
+				labels.MustNewMatcher(labels.MatchEqual, "a", "2"),
+				labels.MustNewMatcher(labels.MatchEqual, "a", "3"),
+				labels.MustNewMatcher(labels.MatchEqual, "a", "4"),
+				labels.MustNewMatcher(labels.MatchEqual, "a", "5"),
+				labels.MustNewMatcher(labels.MatchEqual, "a", "6"),
+				labels.MustNewMatcher(labels.MatchEqual, "a", "7"),
+				labels.MustNewMatcher(labels.MatchEqual, "a", "8"),
+				labels.MustNewMatcher(labels.MatchEqual, "a", "9"),
+			},
+			requestedPostingsKey: somePostingsKey,
+			expectedHit:          true,
+		},
+		"1000 series with 1 matcher, mismatching shard": {
+			cachedEntryLabels: generateSeries([]int{10, 10, 10}),
+			cachedEntryMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "a", "0"),
+			},
+			cachedEntryShard: &sharding.ShardSelector{ShardIndex: 1, ShardCount: 2},
+
+			requestedMatchers:    []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "1")},
+			requestedShard:       &sharding.ShardSelector{ShardIndex: 0, ShardCount: 2},
+			requestedPostingsKey: somePostingsKey,
+			expectedHit:          false,
+		},
+		"1000 series with 1 matcher, mismatching matchers": {
+			cachedEntryLabels:   generateSeries([]int{10, 10, 10}),
+			cachedEntryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "0")},
+
+			requestedMatchers:    []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "1")},
+			requestedPostingsKey: somePostingsKey,
+			expectedHit:          false,
+		},
+		"1000 series with 1 matcher, mismatching postingsKey": {
+			cachedEntryLabels:   generateSeries([]int{10, 10, 10}),
+			cachedEntryMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "0")},
+
+			requestedMatchers:    []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "1")},
+			requestedPostingsKey: indexcache.CanonicalPostingsKey([]storage.SeriesRef{4, 5, 6}),
+			expectedHit:          false,
+		},
+	}
+
+	for testName, testCase := range testCases {
+		testCase := testCase
+		b.Run(testName, func(b *testing.B) {
+			ctx := context.Background()
+			logger := log.NewNopLogger()
+			blockID := ulid.MustNew(1671103209, nil)
+
+			cachedStruct := seriesForPostingsCacheEntry{
+				LabelSets:   testCase.cachedEntryLabels,
+				MatchersKey: indexcache.CanonicalLabelMatchersKey(testCase.cachedEntryMatchers),
+				Shard:       maybeNilShard(testCase.cachedEntryShard),
+			}
+			var mockCache indexcache.IndexCache = mockIndexCache{fetchSeriesForPostingsResponse: mockIndexCacheEntry{
+				contents: mustSnappyGobEncode(b, cachedStruct),
+				cached:   true,
+			}}
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				set, ok := fetchCachedSeriesForPostings(ctx, "tenant-1", mockCache, blockID, testCase.requestedMatchers, testCase.requestedShard, testCase.requestedPostingsKey, logger)
+				assert.Equal(b, testCase.expectedHit, ok)
+				if testCase.expectedHit {
+					assert.NotZero(b, set)
+				} else {
+					assert.Zero(b, set)
+				}
+			}
+		})
+	}
+}
+
+func mustSnappyGobEncode(t testing.TB, v any) []byte {
+	t.Helper()
+	encoded, err := encodeSnappyGob(v)
+	require.NoError(t, err)
+	return encoded
+}
+
+type mockIndexCache struct {
+	indexcache.IndexCache
+
+	fetchSeriesForPostingsResponse mockIndexCacheEntry
+}
+
+type mockIndexCacheEntry struct {
+	contents []byte
+	cached   bool
+}
+
+func (c mockIndexCache) FetchSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, matchersKey indexcache.LabelMatchersKey, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey) ([]byte, bool) {
+	return c.fetchSeriesForPostingsResponse.contents, c.fetchSeriesForPostingsResponse.cached
+}
