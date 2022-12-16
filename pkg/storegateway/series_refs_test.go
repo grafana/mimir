@@ -1721,7 +1721,7 @@ type forbiddenFetchMultiSeriesForRefsIndexCache struct {
 	t *testing.T
 }
 
-func (c forbiddenFetchMultiSeriesForRefsIndexCache) FetchMultiSeriesForRefs(ctx context.Context, userID string, blockID ulid.ULID, ids []storage.SeriesRef) (hits map[storage.SeriesRef][]byte, misses []storage.SeriesRef) {
+func (c forbiddenFetchMultiSeriesForRefsIndexCache) FetchMultiSeriesForRefs(ctx context.Context, userID string, blockID ulid.ULID, ids []storage.SeriesRef, memPool *pool.SafeSlabPool[byte]) (hits map[storage.SeriesRef][]byte, misses []storage.SeriesRef) {
 	assert.Fail(c.t, "index cache FetchMultiSeriesForRefs should not be called")
 	return nil, nil
 }

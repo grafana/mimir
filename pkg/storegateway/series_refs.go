@@ -775,6 +775,9 @@ func (s *loadingSeriesChunkRefsSetIterator) Next() bool {
 		})
 	}
 
+	// At this point the cache memory pool can be released.
+	loadedSeries.cacheMemPool.Release()
+
 	if nextSet.len() == 0 {
 		// The next set we attempted to build is empty, so we can directly release it.
 		nextSet.release()

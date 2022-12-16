@@ -250,3 +250,28 @@ func (b *SlabPool[T]) Get(size int) []T {
 	*slab = (*slab)[:len(*slab)+size]
 	return (*slab)[len(*slab)-size : len(*slab) : len(*slab)]
 }
+
+type SafeSlabPool[T any] struct {
+	wrappedMx sync.Mutex
+	wrapped   *SlabPool[T]
+}
+
+func NewSafeSlabPool[T any](delegate Interface, slabSize int) *SafeSlabPool[T] {
+	return &SafeSlabPool[T]{
+		wrapped: NewSlabPool[T](delegate, slabSize),
+	}
+}
+
+func (b *SafeSlabPool[T]) Release() {
+	b.wrappedMx.Lock()
+	defer b.wrappedMx.Unlock()
+
+	b.Release()
+}
+
+func (b *SafeSlabPool[T]) Get(size int) []T {
+	b.wrappedMx.Lock()
+	defer b.wrappedMx.Unlock()
+
+	return b.wrapped.Get(size)
+}

@@ -154,7 +154,7 @@ func TestInMemoryIndexCache_UpdateItem(t *testing.T) {
 			},
 			get: func(id uint64) ([]byte, bool) {
 				seriesRef := storage.SeriesRef(id)
-				hits, _ := cache.FetchMultiSeriesForRefs(ctx, user, uid(id), []storage.SeriesRef{seriesRef})
+				hits, _ := cache.FetchMultiSeriesForRefs(ctx, user, uid(id), []storage.SeriesRef{seriesRef}, nil)
 				b, ok := hits[seriesRef]
 
 				return b, ok
@@ -348,7 +348,7 @@ func TestInMemoryIndexCache_Eviction_WithMetrics(t *testing.T) {
 	assert.Equal(t, float64(0), promtest.ToFloat64(cache.evicted.WithLabelValues(cacheTypePostings)))
 	assert.Equal(t, float64(0), promtest.ToFloat64(cache.evicted.WithLabelValues(cacheTypeSeriesForRef)))
 
-	sHits, sMisses := cache.FetchMultiSeriesForRefs(ctx, user, id, []storage.SeriesRef{1234})
+	sHits, sMisses := cache.FetchMultiSeriesForRefs(ctx, user, id, []storage.SeriesRef{1234}, nil)
 	assert.Equal(t, map[storage.SeriesRef][]byte{1234: {222, 223, 224}}, sHits, "key exists")
 	assert.Equal(t, emptySeriesMisses, sMisses)
 
@@ -378,7 +378,7 @@ func TestInMemoryIndexCache_Eviction_WithMetrics(t *testing.T) {
 	assert.Equal(t, emptyPostingsHits, pHits, "no such key")
 	assert.Equal(t, []labels.Label{lbls}, pMisses)
 
-	sHits, sMisses = cache.FetchMultiSeriesForRefs(ctx, user, id, []storage.SeriesRef{1234})
+	sHits, sMisses = cache.FetchMultiSeriesForRefs(ctx, user, id, []storage.SeriesRef{1234}, nil)
 	assert.Equal(t, emptySeriesHits, sHits, "no such key")
 	assert.Equal(t, []storage.SeriesRef{1234}, sMisses)
 

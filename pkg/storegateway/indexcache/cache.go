@@ -19,6 +19,7 @@ import (
 	"golang.org/x/crypto/blake2b"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
+	"github.com/grafana/mimir/pkg/util/pool"
 )
 
 const (
@@ -57,7 +58,7 @@ type IndexCache interface {
 
 	// FetchMultiSeriesForRefs fetches multiple series - each identified by ID - from the cache
 	// and returns a map containing cache hits, along with a list of missing IDs.
-	FetchMultiSeriesForRefs(ctx context.Context, userID string, blockID ulid.ULID, ids []storage.SeriesRef) (hits map[storage.SeriesRef][]byte, misses []storage.SeriesRef)
+	FetchMultiSeriesForRefs(ctx context.Context, userID string, blockID ulid.ULID, ids []storage.SeriesRef, memPool *pool.SafeSlabPool[byte]) (hits map[storage.SeriesRef][]byte, misses []storage.SeriesRef)
 
 	// StoreExpandedPostings stores the result of ExpandedPostings, encoded with an unspecified codec.
 	StoreExpandedPostings(ctx context.Context, userID string, blockID ulid.ULID, key LabelMatchersKey, v []byte)

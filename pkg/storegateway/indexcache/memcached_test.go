@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
@@ -212,7 +213,7 @@ func TestMemcachedIndexCache_FetchMultiSeriesForRef(t *testing.T) {
 			}
 
 			// Fetch series from cached and assert on it.
-			hits, misses := c.FetchMultiSeriesForRefs(ctx, testData.fetchUserID, testData.fetchBlockID, testData.fetchIds)
+			hits, misses := c.FetchMultiSeriesForRefs(ctx, testData.fetchUserID, testData.fetchBlockID, testData.fetchIds, nil)
 			assert.Equal(t, testData.expectedHits, hits)
 			assert.Equal(t, testData.expectedMisses, misses)
 
@@ -861,6 +862,10 @@ func newMockedMemcachedClient(mockedGetMultiErr error) *mockedMemcachedClient {
 }
 
 func (c *mockedMemcachedClient) GetMulti(ctx context.Context, keys []string) map[string][]byte {
+	return c.GetMultiWithMemoryPool(ctx, keys, nil)
+}
+
+func (c *mockedMemcachedClient) GetMultiWithMemoryPool(ctx context.Context, keys []string, pool memcache.MemoryPool) map[string][]byte {
 	if c.mockedGetMultiErr != nil {
 		return nil
 	}

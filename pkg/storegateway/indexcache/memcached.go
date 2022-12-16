@@ -22,6 +22,7 @@ import (
 	"golang.org/x/crypto/blake2b"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
+	"github.com/grafana/mimir/pkg/util/pool"
 )
 
 const (
@@ -153,7 +154,7 @@ func (c *MemcachedIndexCache) StoreSeriesForRef(ctx context.Context, userID stri
 // FetchMultiSeriesForRefs fetches multiple series - each identified by ID - from the cache
 // and returns a map containing cache hits, along with a list of missing IDs.
 // In case of error, it logs and return an empty cache hits map.
-func (c *MemcachedIndexCache) FetchMultiSeriesForRefs(ctx context.Context, userID string, blockID ulid.ULID, ids []storage.SeriesRef) (hits map[storage.SeriesRef][]byte, misses []storage.SeriesRef) {
+func (c *MemcachedIndexCache) FetchMultiSeriesForRefs(ctx context.Context, userID string, blockID ulid.ULID, ids []storage.SeriesRef, memPool *pool.SafeSlabPool[byte]) (hits map[storage.SeriesRef][]byte, misses []storage.SeriesRef) {
 	// Build the cache keys, while keeping a map between input id and the cache key
 	// so that we can easily reverse it back after the GetMulti().
 	keys := make([]string, 0, len(ids))
@@ -168,7 +169,7 @@ func (c *MemcachedIndexCache) FetchMultiSeriesForRefs(ctx context.Context, userI
 
 	// Fetch the keys from memcached in a single request.
 	c.requests.WithLabelValues(cacheTypeSeriesForRef).Add(float64(len(ids)))
-	results := c.memcached.GetMulti(ctx, keys)
+	results := c.memcached.GetMultiWithMemoryPool(ctx, keys, memPool)
 	if len(results) == 0 {
 		return nil, ids
 	}

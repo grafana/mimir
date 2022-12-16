@@ -317,7 +317,7 @@ func (c *Client) FlushAll() error {
 // memcache cache miss. The key must be at most 250 bytes in length.
 func (c *Client) Get(key string) (item *Item, err error) {
 	err = c.withKeyAddr(key, func(addr net.Addr) error {
-		return c.getFromAddr(addr, []string{key}, func(it *Item) { item = it })
+		return c.getFromAddr(addr, []string{key}, nil, func(it *Item) { item = it })
 	})
 	if err == nil && item == nil {
 		err = ErrCacheMiss
@@ -362,7 +362,7 @@ func (c *Client) withKeyRw(key string, fn func(*bufio.ReadWriter) error) error {
 	})
 }
 
-func (c *Client) getFromAddr(addr net.Addr, keys []string, cb func(*Item)) error {
+func (c *Client) getFromAddr(addr net.Addr, keys []string, pool MemoryPool, cb func(*Item)) error {
 	return c.withAddrRw(addr, func(rw *bufio.ReadWriter) error {
 		if _, err := fmt.Fprintf(rw, "gets %s\r\n", strings.Join(keys, " ")); err != nil {
 			return err
@@ -370,7 +370,7 @@ func (c *Client) getFromAddr(addr net.Addr, keys []string, cb func(*Item)) error
 		if err := rw.Flush(); err != nil {
 			return err
 		}
-		if err := parseGetResponse(rw.Reader, cb); err != nil {
+		if err := parseGetResponse(rw.Reader, pool, cb); err != nil {
 			return err
 		}
 		return nil
@@ -450,11 +450,20 @@ func (c *Client) touchFromAddr(addr net.Addr, keys []string, expiration int32) e
 	})
 }
 
+// TODO must be thread safe
+type MemoryPool interface {
+	Get(size int) []byte
+}
+
+func (c *Client) GetMulti(keys []string) (map[string]*Item, error) {
+	return c.GetMultiWithMemoryPool(keys, nil)
+}
+
 // GetMulti is a batch version of Get. The returned map from keys to
 // items may have fewer elements than the input slice, due to memcache
 // cache misses. Each key must be at most 250 bytes in length.
 // If no error is returned, the returned map will also be non-nil.
-func (c *Client) GetMulti(keys []string) (map[string]*Item, error) {
+func (c *Client) GetMultiWithMemoryPool(keys []string, pool MemoryPool) (map[string]*Item, error) {
 	var lk sync.Mutex
 	m := make(map[string]*Item)
 	addItemToMap := func(it *Item) {
@@ -478,7 +487,7 @@ func (c *Client) GetMulti(keys []string) (map[string]*Item, error) {
 	ch := make(chan error, buffered)
 	for addr, keys := range keyMap {
 		go func(addr net.Addr, keys []string) {
-			ch <- c.getFromAddr(addr, keys, addItemToMap)
+			ch <- c.getFromAddr(addr, keys, pool, addItemToMap)
 		}(addr, keys)
 	}
 
@@ -493,7 +502,7 @@ func (c *Client) GetMulti(keys []string) (map[string]*Item, error) {
 
 // parseGetResponse reads a GET response from r and calls cb for each
 // read and allocated Item
-func parseGetResponse(r *bufio.Reader, cb func(*Item)) error {
+func parseGetResponse(r *bufio.Reader, pool MemoryPool, cb func(*Item)) error {
 	for {
 		line, err := r.ReadSlice('\n')
 		if err != nil {
@@ -507,7 +516,13 @@ func parseGetResponse(r *bufio.Reader, cb func(*Item)) error {
 		if err != nil {
 			return err
 		}
-		it.Value = make([]byte, size+2)
+
+		if pool != nil {
+			it.Value = pool.Get(size+2)
+		} else {
+			it.Value = make([]byte, size+2)
+		}
+
 		_, err = io.ReadFull(r, it.Value)
 		if err != nil {
 			it.Value = nil

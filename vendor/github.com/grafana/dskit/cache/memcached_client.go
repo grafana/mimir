@@ -50,6 +50,7 @@ type RemoteCacheClient interface {
 	// GetMulti fetches multiple keys at once from remoteCache. In case of error,
 	// an empty map is returned and the error tracked/logged.
 	GetMulti(ctx context.Context, keys []string) map[string][]byte
+	GetMultiWithMemoryPool(ctx context.Context, keys []string, pool memcache.MemoryPool) map[string][]byte
 
 	// SetAsync enqueues an asynchronous operation to store a key into memcached.
 	// Returns an error in case it fails to enqueue the operation. In case the
@@ -70,7 +71,7 @@ type MemcachedClient = RemoteCacheClient
 
 // memcachedClientBackend is an interface used to mock the underlying client in tests.
 type memcachedClientBackend interface {
-	GetMulti(keys []string) (map[string]*memcache.Item, error)
+	GetMultiWithMemoryPool(keys []string, pool memcache.MemoryPool) (map[string]*memcache.Item, error)
 	Set(item *memcache.Item) error
 	Delete(key string) error
 }
@@ -382,11 +383,15 @@ func (c *memcachedClient) SetAsync(_ context.Context, key string, value []byte, 
 }
 
 func (c *memcachedClient) GetMulti(ctx context.Context, keys []string) map[string][]byte {
+	return c.GetMultiWithMemoryPool(ctx, keys, nil)
+}
+
+func (c *memcachedClient) GetMultiWithMemoryPool(ctx context.Context, keys []string, pool memcache.MemoryPool) map[string][]byte {
 	if len(keys) == 0 {
 		return nil
 	}
 
-	batches, err := c.getMultiBatched(ctx, keys)
+	batches, err := c.getMultiBatched(ctx, keys, pool)
 	if err != nil {
 		level.Warn(c.logger).Log("msg", "failed to fetch items from memcached", "numKeys", len(keys), "firstKey", keys[0], "err", err)
 
@@ -446,7 +451,7 @@ func (c *memcachedClient) Delete(ctx context.Context, key string) error {
 	return <-errCh
 }
 
-func (c *memcachedClient) getMultiBatched(ctx context.Context, keys []string) ([]map[string]*memcache.Item, error) {
+func (c *memcachedClient) getMultiBatched(ctx context.Context, keys []string, pool memcache.MemoryPool) ([]map[string]*memcache.Item, error) {
 	// Do not batch if the input keys are less than the max batch size.
 	if (c.config.MaxGetMultiBatchSize <= 0) || (len(keys) <= c.config.MaxGetMultiBatchSize) {
 		// Even if we're not splitting the input into batches, make sure that our single request
@@ -459,7 +464,7 @@ func (c *memcachedClient) getMultiBatched(ctx context.Context, keys []string) ([
 			defer c.getMultiGate.Done()
 		}
 
-		items, err := c.getMultiSingle(ctx, keys)
+		items, err := c.getMultiSingle(ctx, keys, pool)
 		if err != nil {
 			return nil, err
 		}
@@ -501,7 +506,7 @@ func (c *memcachedClient) getMultiBatched(ctx context.Context, keys []string) ([
 		batchKeys := sortedKeys[startIndex:endIndex]
 
 		res := &memcachedGetMultiResult{}
-		res.items, res.err = c.getMultiSingle(ctx, batchKeys)
+		res.items, res.err = c.getMultiSingle(ctx, batchKeys, pool)
 
 		results <- res
 		return nil
@@ -525,7 +530,7 @@ func (c *memcachedClient) getMultiBatched(ctx context.Context, keys []string) ([
 	return items, lastErr
 }
 
-func (c *memcachedClient) getMultiSingle(ctx context.Context, keys []string) (items map[string]*memcache.Item, err error) {
+func (c *memcachedClient) getMultiSingle(ctx context.Context, keys []string, pool memcache.MemoryPool) (items map[string]*memcache.Item, err error) {
 	start := time.Now()
 	c.operations.WithLabelValues(opGetMulti).Inc()
 
@@ -535,7 +540,7 @@ func (c *memcachedClient) getMultiSingle(ctx context.Context, keys []string) (it
 		// cache client backend.
 		return nil, ctx.Err()
 	default:
-		items, err = c.client.GetMulti(keys)
+		items, err = c.client.GetMultiWithMemoryPool(keys, pool)
 	}
 
 	if err != nil {

@@ -23,6 +23,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
+	"github.com/grafana/mimir/pkg/util/pool"
 )
 
 var DefaultInMemoryIndexCacheConfig = InMemoryIndexCacheConfig{
@@ -320,7 +321,7 @@ func (c *InMemoryIndexCache) StoreSeriesForRef(_ context.Context, userID string,
 
 // FetchMultiSeriesForRefs fetches multiple series - each identified by ID - from the cache
 // and returns a map containing cache hits, along with a list of missing IDs.
-func (c *InMemoryIndexCache) FetchMultiSeriesForRefs(_ context.Context, userID string, blockID ulid.ULID, ids []storage.SeriesRef) (hits map[storage.SeriesRef][]byte, misses []storage.SeriesRef) {
+func (c *InMemoryIndexCache) FetchMultiSeriesForRefs(_ context.Context, userID string, blockID ulid.ULID, ids []storage.SeriesRef, memPool *pool.SafeSlabPool[byte]) (hits map[storage.SeriesRef][]byte, misses []storage.SeriesRef) {
 	hits = map[storage.SeriesRef][]byte{}
 
 	for _, id := range ids {

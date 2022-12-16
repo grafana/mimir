@@ -135,7 +135,7 @@ func (noopCache) FetchMultiPostings(_ context.Context, _ string, _ ulid.ULID, ke
 }
 
 func (noopCache) StoreSeriesForRef(context.Context, string, ulid.ULID, storage.SeriesRef, []byte) {}
-func (noopCache) FetchMultiSeriesForRefs(_ context.Context, _ string, _ ulid.ULID, ids []storage.SeriesRef) (map[storage.SeriesRef][]byte, []storage.SeriesRef) {
+func (noopCache) FetchMultiSeriesForRefs(_ context.Context, _ string, _ ulid.ULID, ids []storage.SeriesRef, memPool *pool.SafeSlabPool[byte]) (map[storage.SeriesRef][]byte, []storage.SeriesRef) {
 	return map[storage.SeriesRef][]byte{}, ids
 }
 
@@ -1862,6 +1862,8 @@ type symbolizedLabel struct {
 // decodeSeriesForTime decodes a series entry from the given byte slice decoding only chunk metas that are within given min and max time.
 // If skipChunks is specified decodeSeriesForTime does not return any chunks, but only labels and only if at least single chunk is within time range.
 // decodeSeriesForTime returns false, when there are no series data for given time range.
+//
+// The input byte slice b is NOT retained after this function is called.
 func decodeSeriesForTime(b []byte, lset *[]symbolizedLabel, chks *[]chunks.Meta, skipChunks bool, selectMint, selectMaxt int64) (ok bool, err error) {
 	*lset = (*lset)[:0]
 	*chks = (*chks)[:0]

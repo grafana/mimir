@@ -28,6 +28,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
 	util_math "github.com/grafana/mimir/pkg/util/math"
+	"github.com/grafana/mimir/pkg/util/pool"
 )
 
 // expandedPostingsPromise is the promise returned by bucketIndexReader.expandedPostingsPromise.
@@ -474,7 +475,7 @@ func (r *bucketIndexReader) preloadSeries(ctx context.Context, ids []storage.Ser
 
 	// Load series from cache, overwriting the list of ids to preload
 	// with the missing ones.
-	fromCache, ids := r.block.indexCache.FetchMultiSeriesForRefs(ctx, r.block.userID, r.block.meta.ULID, ids)
+	fromCache, ids := r.block.indexCache.FetchMultiSeriesForRefs(ctx, r.block.userID, r.block.meta.ULID, ids, loaded.cacheMemPool)
 	for id, b := range fromCache {
 		loaded.addSeries(id, b)
 	}
@@ -565,11 +566,16 @@ type bucketIndexLoadedSeries struct {
 	// Keeps the series that have been loaded from the index.
 	seriesMx sync.Mutex
 	series   map[storage.SeriesRef][]byte
+
+	cacheMemPool *pool.SafeSlabPool[byte]
 }
+
+var experimentalPool = &sync.Pool{}
 
 func newBucketIndexLoadedSeries() *bucketIndexLoadedSeries {
 	return &bucketIndexLoadedSeries{
-		series: map[storage.SeriesRef][]byte{},
+		series:       map[storage.SeriesRef][]byte{},
+		cacheMemPool: pool.NewSafeSlabPool[byte](experimentalPool, 10000), // TODO 10000 is just a random number
 	}
 }
 

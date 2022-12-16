@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
+	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -53,9 +54,9 @@ func (t *TracingIndexCache) StoreSeriesForRef(ctx context.Context, userID string
 	t.c.StoreSeriesForRef(ctx, userID, blockID, id, v)
 }
 
-func (t *TracingIndexCache) FetchMultiSeriesForRefs(ctx context.Context, userID string, blockID ulid.ULID, ids []storage.SeriesRef) (hits map[storage.SeriesRef][]byte, misses []storage.SeriesRef) {
+func (t *TracingIndexCache) FetchMultiSeriesForRefs(ctx context.Context, userID string, blockID ulid.ULID, ids []storage.SeriesRef, memPool *pool.SafeSlabPool[byte]) (hits map[storage.SeriesRef][]byte, misses []storage.SeriesRef) {
 	t0 := time.Now()
-	hits, misses = t.c.FetchMultiSeriesForRefs(ctx, userID, blockID, ids)
+	hits, misses = t.c.FetchMultiSeriesForRefs(ctx, userID, blockID, ids, memPool)
 
 	spanLogger := spanlogger.FromContext(ctx, t.logger)
 	level.Debug(spanLogger).Log("msg", "IndexCache.FetchMultiSeriesForRefs",
