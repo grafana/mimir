@@ -10,7 +10,7 @@ weight: 40
 
 # Run Grafana Mimir in production using the Helm chart
 
-Beyond [Getting started with Grafana Mimir using the Helm chart]({{< relref "../deploy-grafana-mimir/getting-started-helm-charts" >}}),
+Beyond [Getting started with Grafana Mimir using the Helm chart]({{< relref "../get-started-helm-charts/" >}}),
 which covers setting up Grafana Mimir on a local Kubernetes cluster or
 within a low-risk development environment, you can prepare Grafana Mimir
 for production.
@@ -84,7 +84,7 @@ number_of_nodes >= max(number_of_ingesters_pods, number_of_store_gateway_pods)
 ```
 
 For more information about the failure modes of either the ingester or store-gateway
-component, refer to [Ingesters failure and data loss]({{< relref "../architecture/components/ingester/#ingesters-failure-and-data-loss">}})
+component, refer to [Ingesters failure and data loss](/docs/mimir/v2.5.x/operators-guide/architecture/components/ingester/#ingesters-failure-and-data-loss/)
 or [Store-gateway: Blocks sharding and replication]({{< relref "../architecture/components/store-gateway/#blocks-sharding-and-replication">}}).
 
 ## Decide whether you need geographical redundancy, fast rolling updates, or both.
