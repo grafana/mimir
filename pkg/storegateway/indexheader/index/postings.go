@@ -57,33 +57,31 @@ func newV1PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 
 	// Earlier V1 formats don't have a sorted postings offset table, so
 	// load the whole offset table into memory.
-	var lastKey []string
+	var lastKey string
+	var lastValue string
 	var prevRng index.Range
 
-	if err := readOffsetTable(factory, tableOffset, func(key []string, off uint64, _ int) error {
-		if len(key) != 2 {
-			return errors.Errorf("unexpected key length for posting table %d", len(key))
-		}
-
-		if lastKey != nil {
+	if err := readOffsetTable(factory, tableOffset, func(key string, value string, off uint64, _ int) error {
+		if len(t.postings) > 0 {
 			prevRng.End = int64(off - crc32.Size)
-			t.postings[lastKey[0]][lastKey[1]] = prevRng
+			t.postings[lastKey][lastValue] = prevRng
 		}
 
-		if _, ok := t.postings[key[0]]; !ok {
-			t.postings[key[0]] = map[string]index.Range{}
+		if _, ok := t.postings[key]; !ok {
+			t.postings[key] = map[string]index.Range{}
 		}
 
 		lastKey = key
+		lastValue = value
 		prevRng = index.Range{Start: int64(off + postingLengthFieldSize)}
 		return nil
 	}); err != nil {
 		return nil, errors.Wrap(err, "read postings table")
 	}
 
-	if lastKey != nil {
+	if len(t.postings) > 0 {
 		prevRng.End = int64(indexLastPostingEnd) - crc32.Size // Each posting offset table ends with a CRC32 checksum.
-		t.postings[lastKey[0]][lastKey[1]] = prevRng
+		t.postings[lastKey][lastValue] = prevRng
 	}
 
 	return &t, nil
@@ -99,50 +97,47 @@ func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 
 	lastTableOff := 0
 	valueCount := 0
-	var lastKey []string
+	var lastKey string
+	var lastValue string
 
 	// For the postings offset table we keep every label name but only every nth
 	// label value (plus the first and last one), to save memory.
-	if err := readOffsetTable(factory, tableOffset, func(key []string, off uint64, tableOff int) error {
-		if len(key) != 2 {
-			return errors.Errorf("unexpected key length for posting table %d", len(key))
-		}
-
-		if _, ok := t.postings[key[0]]; !ok {
+	if err := readOffsetTable(factory, tableOffset, func(key string, value string, off uint64, tableOff int) error {
+		if _, ok := t.postings[key]; !ok {
 			// Not seen before label name.
-			t.postings[key[0]] = &postingValueOffsets{}
-			if lastKey != nil {
+			if len(t.postings) > 0 {
 				// Always include last value for each label name, unless it was just added in previous iteration based
 				// on valueCount.
 				if (valueCount-1)%postingOffsetsInMemSampling != 0 {
-					t.postings[lastKey[0]].offsets = append(t.postings[lastKey[0]].offsets, postingOffset{value: lastKey[1], tableOff: lastTableOff})
+					t.postings[lastKey].offsets = append(t.postings[lastKey].offsets, postingOffset{value: lastValue, tableOff: lastTableOff})
 				}
-				t.postings[lastKey[0]].lastValOffset = int64(off - crc32.Size)
-				lastKey = nil
+				t.postings[lastKey].lastValOffset = int64(off - crc32.Size)
 			}
+			t.postings[key] = &postingValueOffsets{}
 			valueCount = 0
 		}
 
 		lastKey = key
+		lastValue = value
 		lastTableOff = tableOff
 		valueCount++
 
 		if (valueCount-1)%postingOffsetsInMemSampling == 0 {
-			t.postings[key[0]].offsets = append(t.postings[key[0]].offsets, postingOffset{value: key[1], tableOff: tableOff})
+			t.postings[key].offsets = append(t.postings[key].offsets, postingOffset{value: value, tableOff: tableOff})
 		}
 
 		return nil
 	}); err != nil {
 		return nil, errors.Wrap(err, "read postings table")
 	}
-	if lastKey != nil {
+	if len(t.postings) > 0 {
 		if (valueCount-1)%postingOffsetsInMemSampling != 0 {
 			// Always include last value for each label name if not included already based on valueCount.
-			t.postings[lastKey[0]].offsets = append(t.postings[lastKey[0]].offsets, postingOffset{value: lastKey[1], tableOff: lastTableOff})
+			t.postings[lastKey].offsets = append(t.postings[lastKey].offsets, postingOffset{value: lastValue, tableOff: lastTableOff})
 		}
 		// In any case lastValOffset is unknown as don't have next posting anymore. Guess from TOC table.
 		// In worst case we will overfetch a few bytes.
-		t.postings[lastKey[0]].lastValOffset = int64(indexLastPostingEnd) - crc32.Size // Each posting offset table ends with a CRC32 checksum.
+		t.postings[lastKey].lastValOffset = int64(indexLastPostingEnd) - crc32.Size // Each posting offset table ends with a CRC32 checksum.
 	}
 	// Trim any extra space in the slices.
 	for k, v := range t.postings {
@@ -160,7 +155,7 @@ func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 
 // readOffsetTable reads an offset table and at the given position calls f for each
 // found entry. If f returns an error it stops decoding and returns the received error.
-func readOffsetTable(factory *streamencoding.DecbufFactory, tableOffset int, f func([]string, uint64, int) error) (err error) {
+func readOffsetTable(factory *streamencoding.DecbufFactory, tableOffset int, f func(string, string, uint64, int) error) (err error) {
 	d := factory.NewDecbufAtChecked(tableOffset, castagnoliTable)
 	defer runutil.CloseWithErrCapture(&err, &d, "read offset table")
 
@@ -170,20 +165,21 @@ func readOffsetTable(factory *streamencoding.DecbufFactory, tableOffset int, f f
 	for d.Err() == nil && d.Len() > 0 && cnt > 0 {
 		offsetPos := startLen - d.Len()
 		keyCount := d.Uvarint()
+
 		// The Postings offset table takes only 2 keys per entry (name and value of label),
 		// and the LabelIndices offset table takes only 1 key per entry (a label name).
 		// Hence setting the size to max of both, i.e. 2.
-
-		keys := make([]string, 0, 2)
-
-		for i := 0; i < keyCount; i++ {
-			keys = append(keys, d.UvarintStr())
+		if keyCount != 2 {
+			return errors.Errorf("unexpected key length for posting table %d", keyCount)
 		}
+
+		key := d.UvarintStr()
+		value := d.UvarintStr()
 		o := d.Uvarint64()
 		if d.Err() != nil {
 			break
 		}
-		if err := f(keys, o, offsetPos); err != nil {
+		if err := f(key, value, o, offsetPos); err != nil {
 			return err
 		}
 		cnt--
