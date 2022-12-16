@@ -8,6 +8,9 @@
 package integration
 
 import (
+	"fmt"
+	"math/rand"
+	"strconv"
 	"testing"
 	"time"
 
@@ -55,7 +58,7 @@ func TestValidateSeparateMetrics(t *testing.T) {
 			)
 
 			if testData.configFlagSet {
-				flags["-validation.separate-metrics-label"] = "group-1"
+				flags["-validation.separate-metrics-label"] = "group_1"
 			}
 
 			// Start dependencies.
@@ -89,7 +92,7 @@ func TestValidateSeparateMetrics(t *testing.T) {
 				Name:  "Test|Invalid|Label|Char",
 				Value: "123",
 			}, prompb.Label{
-				Name:  "group-1",
+				Name:  "group_1",
 				Value: "test-group",
 			})
 
@@ -116,4 +119,64 @@ func TestValidateSeparateMetrics(t *testing.T) {
 			require.Equal(t, float64(1), metricNumSeries[0])
 		})
 	}
+}
+
+func TestSeparateMetricsInactiveGroups(t *testing.T) {
+
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	flags := mergeFlags(
+		BlocksStorageFlags(),
+		BlocksStorageS3Flags(),
+	)
+
+	flags["-validation.separate-metrics-label"] = "separate_metrics_group"
+
+	// Start dependencies.
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+	require.NoError(t, s.StartAndWaitReady(consul, minio))
+
+	// Start Mimir components.
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+	ingester1 := e2emimir.NewIngester("ingester-1", consul.NetworkHTTPEndpoint(), flags)
+	ingester2 := e2emimir.NewIngester("ingester-2", consul.NetworkHTTPEndpoint(), flags)
+	ingester3 := e2emimir.NewIngester("ingester-3", consul.NetworkHTTPEndpoint(), flags)
+	require.NoError(t, s.StartAndWaitReady(distributor, ingester1, ingester2, ingester3))
+
+	// Wait until distributor has updated the ring.
+	require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(3), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+
+	// Wait until ingesters have heartbeated the ring after all ingesters were active,
+	// in order to update the number of instances. Since we have no metric, we have to
+	// rely on a ugly sleep.
+	time.Sleep(2 * time.Second)
+
+	client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", userID)
+	require.NoError(t, err)
+
+	// Push series with different groups
+	for i := 0; i < 2; i++ {
+		series, _, _ := generateSeries("TestMetric", time.Now(), prompb.Label{
+			Name:  "separate_metrics_group",
+			Value: strconv.Itoa(rand.Int()),
+		}, prompb.Label{
+			Name:  "Test|Invalid|Label|Char",
+			Value: "123",
+		})
+
+		res, err := client.Push(series)
+		require.NoError(t, err)
+		require.Equal(t, 400, res.StatusCode)
+	}
+
+	metricNumSeries, err := distributor.SumMetrics([]string{"cortex_discarded_samples_total"},
+		e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "separate_metrics_group", "1")),
+		e2e.WaitMissingMetrics)
+
+	fmt.Println("FAZ: ", metricNumSeries, err)
 }
