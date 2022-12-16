@@ -266,7 +266,7 @@ func (b *SafeSlabPool[T]) Release() {
 	b.wrappedMx.Lock()
 	defer b.wrappedMx.Unlock()
 
-	b.Release()
+	b.wrapped.Release()
 }
 
 func (b *SafeSlabPool[T]) Get(size int) []T {
