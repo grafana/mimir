@@ -2120,13 +2120,6 @@ func BenchmarkStoreCachedSeriesForPostings(b *testing.B) {
 	}
 }
 
-func mustSnappyGobEncode(t testing.TB, v any) []byte {
-	t.Helper()
-	encoded, err := encodeSnappyGob(v)
-	require.NoError(t, err)
-	return encoded
-}
-
 func mustEncodeCachedSeriesForPostings(t testing.TB, set seriesChunkRefsSet, matchersKey indexcache.LabelMatchersKey, nonNilShard sharding.ShardSelector) []byte {
 	b, err := encodeCachedSeriesForPostings(set, matchersKey, nonNilShard)
 	require.NoError(t, err)
