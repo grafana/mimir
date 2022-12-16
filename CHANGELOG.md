@@ -17,6 +17,7 @@
 * [BUGFIX] Alertmanager: Fix template spurious deletion with relative data dir. #3604
 * [BUGFIX] Security: update prometheus/exporter-toolkit for CVE-2022-46146. #3675
 * [BUGFIX] Debian package: Fix post-install, environment file path and user creation. #3720
+* [BUGFIX] memberlist: Fix panic during Mimir startup when Mimir receives gossip message before it's ready. #3746
 
 ### Mixin
 
