@@ -9,7 +9,7 @@ weight: 10
 
 This document explains how to migrate stateful components from single zone to [zone-aware replication](/docs/mimir/v2.5.x/operators-guide/configure/configure-zone-aware-replication/) with Helm. The three components in question are the [alertmanager](/docs/mimir/v2.5.x/operators-guide/architecture/components/alertmanager/), the [store-gateway](/docs/mimir/v2.5.x/operators-guide/architecture/components/store-gateway/) and the [ingester](/docs/mimir/v2.5.x/operators-guide/architecture/components/ingester/).
 
-The migration path of the alertmanager and store-gateway is straight forward, however migrating ingesters is more complicated.
+The migration path of Alertmanager and store-gateway is straight forward, however migrating ingesters is more complicated.
 
 This document is applicable to both Grafana Mimir and Grafana Enterprise Metrics.
 
@@ -25,7 +25,7 @@ This document is applicable to both Grafana Mimir and Grafana Enterprise Metrics
 
 Using zone-aware replication for alertmanager is optional and is only available if alertmanager is deployed as a StatefulSet.
 
-### Configure zone-aware replication for alertmanagers
+### Configure zone-aware replication for Alertmanagers
 
 This section is about planning and configuring the availability zones defined under the `alertmanager.zoneAwareReplication` Helm value.
 
@@ -60,9 +60,9 @@ There are two use cases in general:
 
 Set the chosen configuration in your custom values (e.g. `custom.yaml`).
 
-> **Note**: The number of alertmanager pods that will be started is derived from `alertmanager.replicas`. Each zone will start `alertmanager.replicas / number of zones` pods, rounded up to the nearest integer value. For example if you have 3 zones, then `alertmanager.replicas=3` will yield 1 alertmanaer per zone, but `alertmanager.replicas=4` will yield 2 per zone, 6 in total.
+> **Note**: The number of alertmanager Pods that will be started is derived from `alertmanager.replicas`. Each zone will start `alertmanager.replicas / number of zones` pods, rounded up to the nearest integer value. For example if you have 3 zones, then `alertmanager.replicas=3` will yield 1 alertmanager per zone, but `alertmanager.replicas=4` will yield 2 per zone, 6 in total.
 
-### Migrate alertmanager
+### Migrate Alertmanager
 
 Before starting this procedure, set up your zones according to [Configure zone-aware replication for alertmanagers](#configure-zone-aware-replication-for-alertmanagers).
 
@@ -241,7 +241,7 @@ Before starting this procedure, set up your zones according to [Configure zone-a
      enabled: true
    ```
 
-   [//]: # "storegateway-step1"
+   [//]: # "store-gateway-step1"
 
 1. Upgrade the installation with the `helm` command and make sure to provide the flag `-f migrate.yaml` as the last flag.
 
@@ -263,7 +263,7 @@ Before starting this procedure, set up your zones according to [Configure zone-a
      enabled: true
    ```
 
-   [//]: # "storegateway-step2"
+   [//]: # "store-gateway-step2"
 
 1. Upgrade the installation with the `helm` command and make sure to provide the flag `-f migrate.yaml` as the last flag.
 
@@ -282,7 +282,7 @@ Before starting this procedure, set up your zones according to [Configure zone-a
      enabled: true
    ```
 
-   [//]: # "storegateway-step3"
+   [//]: # "store-gateway-step3"
 
    These values are actually the default, which means that removing the values `store_gateway.zoneAwareReplication.enabled` and `rollout_operator.enabled` is also a valid step.
 
@@ -336,7 +336,7 @@ Set the chosen configuration in your custom values (e.g. `custom.yaml`).
 There are two ways to do the migration:
 
 1. With downtime. In this [procedure](#migrate-ingesters-with-downtime) ingress is stopped to the cluster while ingesters are migrated. This is the quicker and simpler way. The time it takes to execute this migration depends on how fast ingesters restart and upload their data to object storage, but in general should be finished in an hour.
-1. Without downtime. This is a multi step [procedure](#migrate-ingesters-without-downtime) which requires additional hardware resources as the old and new ingesters run in parallel for some time. This is a complex migration that can take days and requires monitoring for increased resouce utilization. The minimum time it takes to do this migration can be calculated as (`querier.query_store_after`) + (2h TSDB blocks range period + `blocks_storage.tsdb.head_compaction_idle_timeout`) \* (1 + number_of_ingesters / 21). With the default values this means 12h + 3h \* (1 + number of ingesters / 21) = 15h + 3h \* (number_of_ingesters / 21). Add an extra 12 hours if shuffle sharding is enabled.
+1. Without downtime. This is a multi step [procedure](#migrate-ingesters-without-downtime) which requires additional hardware resources as the old and new ingesters run in parallel for some time. This is a complex migration that can take days and requires monitoring for increased resource utilization. The minimum time it takes to do this migration can be calculated as (`querier.query_store_after`) + (2h TSDB blocks range period + `blocks_storage.tsdb.head_compaction_idle_timeout`) \* (1 + number_of_ingesters / 21). With the default values this means 12h + 3h \* (1 + number of ingesters / 21) = 15h + 3h \* (number_of_ingesters / 21). Add an extra 12 hours if shuffle sharding is enabled.
 
 ### Migrate ingesters with downtime
 
@@ -479,7 +479,7 @@ Before starting this procedure, set up your zones according to [Configure zone-a
 
    If you have set the Mimir configuration parameter `ingester.instance_limits.max_series` via `mimir.config` or `mimir.structuredConfig` or via runtime overrides, double it for the duration of the migration.
 
-   If you have set per tenant limits in the Mimir configuration parameters `limits.max_global_series_per_user`, `limits.max_global_series_per_metric` via `mimir.config` or `mimir.sturcturedConfig` or via runtime overrides, double the set limits. For example:
+   If you have set per tenant limits in the Mimir configuration parameters `limits.max_global_series_per_user`, `limits.max_global_series_per_metric` via `mimir.config` or `mimir.structuredConfig` or via runtime overrides, double the set limits. For example:
 
    ```yaml
    runtimeConfig:
