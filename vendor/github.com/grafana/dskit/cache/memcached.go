@@ -8,6 +8,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/bradfitz/gomemcache/memcache"
 )
 
 // MemcachedCache is a memcached-based cache.
@@ -69,12 +70,22 @@ func (c *MemcachedCache) Store(ctx context.Context, data map[string][]byte, ttl 
 	}
 }
 
+type contextKey struct{}
+
+var MemoryPoolKey = contextKey{}
+
 // Fetch fetches multiple keys and returns a map containing cache hits, along with a list of missing keys.
 // In case of error, it logs and return an empty cache hits map.
-func (c *MemcachedCache) Fetch(ctx context.Context, keys []string) map[string][]byte {
+func (c *MemcachedCache) Fetch(ctx context.Context, keys []string) (results map[string][]byte) {
 	// Fetch the keys from memcached in a single request.
 	c.requests.Add(float64(len(keys)))
-	results := c.memcached.GetMulti(ctx, keys)
+
+	if memPool := ctx.Value(MemoryPoolKey); memPool != nil {
+		results = c.memcached.GetMultiWithMemoryPool(ctx, keys, memPool.(memcache.MemoryPool))
+	} else {
+		results = c.memcached.GetMulti(ctx, keys)
+	}
+
 	c.hits.Add(float64(len(results)))
 	return results
 }

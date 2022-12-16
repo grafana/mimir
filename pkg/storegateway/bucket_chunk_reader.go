@@ -11,8 +11,10 @@ import (
 	"encoding/binary"
 	"io"
 	"sort"
+	"sync"
 	"time"
 
+	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
@@ -91,6 +93,10 @@ func (r *bucketChunkReader) load(res []seriesEntry, chunksPool *pool.BatchBytes,
 	return g.Wait()
 }
 
+var chunksMemcachedPool = &sync.Pool{}
+
+const chunksMemcachedPoolSlabSize = mimir_tsdb.EstimatedMaxChunkSize * 10
+
 // loadChunks will read range [start, end] from the segment file with sequence number seq.
 // This data range covers chunks starting at supplied offsets.
 //
@@ -100,6 +106,12 @@ func (r *bucketChunkReader) load(res []seriesEntry, chunksPool *pool.BatchBytes,
 // different chunks in the res.
 func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, seq int, part Part, pIdxs []loadIdx, chunksPool *pool.BatchBytes, stats *safeQueryStats) error {
 	fetchBegin := time.Now()
+
+	// TODO inject the pool into ctx, so that will be passed to chunkRangeReader()
+	// TODO then release the pool in a defer
+	memPool := pool.NewSafeSlabPool[byte](chunksMemcachedPool, chunksMemcachedPoolSlabSize)
+	defer memPool.Release()
+	ctx = context.WithValue(ctx, cache.MemoryPoolKey, memPool)
 
 	// Get a reader for the required range.
 	reader, err := r.block.chunkRangeReader(ctx, seq, int64(part.Start), int64(part.End-part.Start))
