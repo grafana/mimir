@@ -487,7 +487,6 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 			i.applyTSDBSettings()
 
 		case <-activeSeriesTickerChan:
-			// Also update the active groups here
 			i.updateActiveSeries(time.Now())
 
 		case <-usageStatsUpdateTicker.C:
@@ -512,8 +511,6 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 		if userDB == nil {
 			continue
 		}
-
-		// Go through and clean up inactive groups
 
 		newMatchersConfig := i.limits.ActiveSeriesCustomTrackersConfig(userID)
 		if newMatchersConfig.String() != userDB.activeSeries.CurrentConfig().String() {
