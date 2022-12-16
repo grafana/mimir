@@ -666,13 +666,7 @@ func BenchmarkLoadingSeriesChunksSetIterator(b *testing.B) {
 				set := createSeriesChunkRefsSet(minSeriesID, maxSeriesID, false)
 
 				for seriesIdx := 0; seriesIdx < set.len(); seriesIdx++ {
-					set.series[seriesIdx].chunks = make([]seriesChunkRef, numChunksPerSeries)
-					for chunkIdx := 0; chunkIdx < numChunksPerSeries; chunkIdx++ {
-						set.series[seriesIdx].chunks[chunkIdx] = seriesChunkRef{
-							blockID: blockID,
-							ref:     chunks.ChunkRef(chunkIdx),
-						}
-					}
+					set.series[seriesIdx].chunks = generateSeriesChunkRef(blockID, numChunksPerSeries)
 				}
 
 				sets = append(sets, set)

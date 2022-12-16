@@ -58,7 +58,7 @@ func TestSeriesChunkRef_Compare(t *testing.T) {
 }
 
 func TestSeriesChunkRefsIterator(t *testing.T) {
-	c := generateSeriesChunkRef(5)
+	c := generateSeriesChunkRef(ulid.MustNew(1, nil), 5)
 	series1 := labels.FromStrings(labels.MetricName, "metric_1")
 	series2 := labels.FromStrings(labels.MetricName, "metric_2")
 	series3 := labels.FromStrings(labels.MetricName, "metric_3")
@@ -152,7 +152,7 @@ func TestSeriesChunkRefsIterator(t *testing.T) {
 
 func TestFlattenedSeriesChunkRefs(t *testing.T) {
 	// Generate some chunk fixtures so that we can ensure the right chunks are returned.
-	c := generateSeriesChunkRef(6)
+	c := generateSeriesChunkRef(ulid.MustNew(1, nil), 6)
 
 	testCases := map[string]struct {
 		input    seriesChunkRefsSetIterator
@@ -240,7 +240,7 @@ func TestFlattenedSeriesChunkRefs(t *testing.T) {
 
 func TestMergedSeriesChunkRefsSet(t *testing.T) {
 	// Generate some chunk fixtures so that we can ensure the right chunks are merged.
-	c := generateSeriesChunkRef(6)
+	c := generateSeriesChunkRef(ulid.MustNew(1, nil), 6)
 
 	testCases := map[string]struct {
 		batchSize    int
@@ -741,7 +741,7 @@ func BenchmarkMergedSeriesChunkRefsSetIterators(b *testing.B) {
 
 func TestSeriesSetWithoutChunks(t *testing.T) {
 	// Generate some chunk fixtures so that we can ensure the right chunks are returned.
-	c := generateSeriesChunkRef(6)
+	c := generateSeriesChunkRef(ulid.MustNew(1, nil), 6)
 
 	testCases := map[string]struct {
 		input    seriesChunkRefsSetIterator
@@ -832,7 +832,7 @@ func TestSeriesSetWithoutChunks(t *testing.T) {
 
 func TestDeduplicatingSeriesChunkRefsSetIterator(t *testing.T) {
 	// Generate some chunk fixtures so that we can ensure the right chunks are returned.
-	c := generateSeriesChunkRef(8)
+	c := generateSeriesChunkRef(ulid.MustNew(1, nil), 8)
 
 	series1 := labels.FromStrings("l1", "v1")
 	series2 := labels.FromStrings("l1", "v2")
@@ -1844,12 +1844,12 @@ func (l *limiter) Reserve(num uint64) error {
 	return nil
 }
 
-func generateSeriesChunkRef(num int) []seriesChunkRef {
+func generateSeriesChunkRef(blockID ulid.ULID, num int) []seriesChunkRef {
 	out := make([]seriesChunkRef, 0, num)
 
 	for i := 0; i < num; i++ {
 		out = append(out, seriesChunkRef{
-			blockID: ulid.MustNew(uint64(i), nil),
+			blockID: blockID,
 			ref:     chunks.ChunkRef(i),
 			minTime: int64(i),
 			maxTime: int64(i),
