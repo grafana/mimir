@@ -538,7 +538,8 @@ local filename = 'mimir-tenants.json';
         local title = 'Rate of Read Requests - query-frontend';
         $.panel(title) +
         $.queryPanel(
-          'sum(rate(cortex_query_frontend_queries_total{%s, container="query-frontend", user="$user"}[$__rate_interval]))' % $.namespaceMatcher(),
+          'sum(rate(cortex_query_frontend_queries_total{%(job)s, user="$user"}[$__rate_interval]))'
+          % { job: $.jobMatcher($._config.job_names.query_frontend) },
           'Queries / Sec'
         )
       )
@@ -547,7 +548,8 @@ local filename = 'mimir-tenants.json';
         $.panel(title) +
         $.queryPanel(
           [
-            'sum(cortex_query_scheduler_queue_length{%s, container="query-scheduler", user="$user"})' % $.namespaceMatcher(),
+            'sum(cortex_query_scheduler_queue_length{%(job)s, user="$user"})'
+            % { job: $.jobMatcher($._config.job_names.query_scheduler) },
           ],
           [
             'Queue Length',
@@ -561,7 +563,8 @@ local filename = 'mimir-tenants.json';
         local title = 'Rate of Read Requests - ruler-query-frontend';
         $.panel(title) +
         $.queryPanel(
-          'sum(rate(cortex_query_frontend_queries_total{%s, container="ruler-query-frontend", user="$user"}[$__rate_interval]))' % $.namespaceMatcher(),
+          'sum(rate(cortex_query_frontend_queries_total{%(job)s, user="$user"}[$__rate_interval]))'
+          % { job: $.jobMatcher($._config.job_names.ruler_query_frontend) },
           'Queries / Sec'
         )
       )
@@ -570,7 +573,8 @@ local filename = 'mimir-tenants.json';
         $.panel(title) +
         $.queryPanel(
           [
-            'sum(cortex_query_scheduler_queue_length{%s, container="ruler-query-scheduler", user="$user"})' % $.namespaceMatcher(),
+            'sum(cortex_query_scheduler_queue_length{%(job)s, user="$user"})'
+            % { job: $.jobMatcher($._config.job_names.ruler_query_frontend) },
           ],
           [
             'Queue Length',
