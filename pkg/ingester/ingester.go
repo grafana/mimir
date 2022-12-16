@@ -713,12 +713,39 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 		}
 	)
 
+	var hasEphemeralSamples, hasPersistentSamples bool
+	for _, ts := range req.Timeseries {
+		if !hasEphemeralSamples && ts.Ephemeral {
+			hasEphemeralSamples = true
+		}
+		if !hasPersistentSamples && !ts.Ephemeral {
+			hasPersistentSamples = true
+		}
+		if hasEphemeralSamples && hasPersistentSamples {
+			// exit loop early.
+			break
+		}
+	}
+
 	// Walk the samples, appending them to the users database
-	app := db.Appender(ctx).(extendedAppender)
+	var persistentApp, ephemeralApp, app extendedAppender
+	if hasPersistentSamples {
+		persistentApp = db.Appender(ctx).(extendedAppender)
+	}
+	if hasEphemeralSamples {
+		ephemeralApp = db.EphemeralAppender(ctx).(extendedAppender)
+	}
+
 	level.Debug(spanlog).Log("event", "got appender", "numSeries", len(req.Timeseries))
 
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)
 	for _, ts := range req.Timeseries {
+		if ts.Ephemeral {
+			app = ephemeralApp
+		} else {
+			app = persistentApp
+		}
+
 		// The labels must be sorted (in our case, it's guaranteed a write request
 		// has sorted labels once hit the ingester).
 
@@ -867,8 +894,15 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	)
 
 	startCommit := time.Now()
-	if err := app.Commit(); err != nil {
-		return nil, wrapWithUser(err, userID)
+	if hasEphemeralSamples {
+		if err := ephemeralApp.Commit(); err != nil {
+			return nil, wrapWithUser(err, userID)
+		}
+	}
+	if hasPersistentSamples {
+		if err := persistentApp.Commit(); err != nil {
+			return nil, wrapWithUser(err, userID)
+		}
 	}
 
 	commitDuration := time.Since(startCommit)

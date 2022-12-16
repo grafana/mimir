@@ -95,6 +95,11 @@ func (u *userTSDB) Appender(ctx context.Context) storage.Appender {
 	return u.db.Appender(ctx)
 }
 
+func (u *userTSDB) EphemeralAppender(ctx context.Context) storage.Appender {
+	// on first call, instantiate ephemeral TSDB.
+	return nil
+}
+
 // Querier returns a new querier over the data partition for the given time range.
 func (u *userTSDB) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 	return u.db.Querier(ctx, mint, maxt)

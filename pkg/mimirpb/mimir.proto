@@ -33,6 +33,8 @@ message TimeSeries {
   // Sorted by time, oldest sample first.
   repeated Sample samples = 2 [(gogoproto.nullable) = false];
   repeated Exemplar exemplars = 3 [(gogoproto.nullable) = false];
+
+  bool ephemeral = 1000; //set intentionally high to keep TimeSeries compatible with upstream Prometheus
 }
 
 message LabelPair {
