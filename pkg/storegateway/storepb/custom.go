@@ -391,7 +391,7 @@ type PreallocatingSliceMetric struct {
 // Unmarshal will give up on counting labels if it encounters unknown fields and will
 // fall back to Metric.Unmarshal
 //
-// The implementation of Unmarshal is copied from the implementaiton of
+// The implementation of Unmarshal is copied from the implementation of
 // Metric.Unmarshal and modified, so it only counts the labels instead of
 // also unmarshalling them.
 func (m *PreallocatingSliceMetric) Unmarshal(dAtA []byte) error {
