@@ -11,7 +11,7 @@ import (
 	"go.uber.org/atomic"
 )
 
-const maxGroupsPerUser int = 100
+const maxGroupsPerUser int = 1000
 
 type ActiveGroups struct {
 	mu                sync.RWMutex
@@ -51,13 +51,6 @@ func (ag *ActiveGroups) UpdateGroupTimestampForUser(userID, group string, ts int
 
 	ag.timestampsPerUser[userID][group] = newAtomic
 	ag.mu.Unlock()
-
-	// ag.mu.Lock()
-	// if groupTimestamps := ag.timestampsPerUser[userID]; groupTimestamps == nil {
-	// 	ag.timestampsPerUser[userID] = make(map[string]*atomic.Int64)
-	// }
-	// ag.timestampsPerUser[userID][group] = newAtomic
-	// ag.mu.Unlock()
 }
 
 func (ag *ActiveGroups) PurgeInactiveGroupsForUser(userID string, deadline int64) []string {
