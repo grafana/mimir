@@ -7,9 +7,9 @@ weight: 10
 
 # Migrate from single zone to zone-aware replication
 
-This document explains how to migrate stateful components from single zone to [zone-aware replication]({{< relref "../operators-guide/configure/configure-zone-aware-replication/" >}}) with Helm. The three components in question are the [alertmanager]({{< relref "../operators-guide/architecture/components/alertmanager.md" >}}), the [store-gateway]({{< relref "../operators-guide/architecture/components/store-gateway.md" >}}) and the [ingester]({{< relref "../operators-guide/architecture/components/ingester.md" >}}).
+This document explains how to migrate stateful components from single zone to [zone-aware replication](/docs/mimir/v2.5.x/operators-guide/configure/configure-zone-aware-replication/) with Helm. The three components in question are the [alertmanager](/docs/mimir/v2.5.x/operators-guide/architecture/components/alertmanager/), the [store-gateway](/docs/mimir/v2.5.x/operators-guide/architecture/components/store-gateway/) and the [ingester](/docs/mimir/v2.5.x/operators-guide/architecture/components/ingester/).
 
-The migration path of the alertmanager and store-gatway is straight forward, however migrating ingesters is more complicated.
+The migration path of the alertmanager and store-gateway is straight forward, however migrating ingesters is more complicated.
 
 This document is applicable to both Grafana Mimir and Grafana Enterprise Metrics.
 
@@ -19,7 +19,7 @@ This document is applicable to both Grafana Mimir and Grafana Enterprise Metrics
 
 1. The installation is already upgraded to `mimir-distributed` Helm chart version 4.0.0 or later.
 
-1. If you have modified the `mimir.config` value, please make sure to merge in the latest version from the chart. Or consider using `mimir.structuredConfig` instead, see [Manage the configuration of Grafana Mimir with Helm]({{< relref "../operators-guide/run-production-environment-with-helm/configuration-with-helm.md" >}})
+1. If you have modified the `mimir.config` value, please make sure to merge in the latest version from the chart. Or consider using `mimir.structuredConfig` instead, see [Manage the configuration of Grafana Mimir with Helm]({{< relref "../run-production-environment-with-helm/configuration-with-helm/" >}})
 
 ## Migrate alertmanager to zone-aware replication
 
@@ -547,7 +547,7 @@ Before starting this procedure, set up your zones according to [Configure zone-a
 
    1. If the current `<N>` above in `ingester.zoneAwareReplication.migration.replicas` is less than `ingester.replicas`, go back and increase `<N>` with at most 21 and repeat these four steps.
 
-1. If you are using [shuffle sharding]({{< relref "../operators-guide/configure/configure-shuffle-sharding" >}}), it must be turned off on the read path at this point.
+1. If you are using [shuffle sharding](/docs/mimir/v2.5.x/operators-guide/configure/configure-shuffle-sharding/), it must be turned off on the read path at this point.
 
    1. Update your configuration with these values and keep them until otherwise instructed.
 
@@ -691,7 +691,7 @@ Before starting this procedure, set up your zones according to [Configure zone-a
 
    The 3 hours is calculated from 2h TSDB block range period + `blocks_storage.tsdb.head_compaction_idle_timeout` Grafana Mimir parameters to give enough time for ingesters to remove stale series from memory. Stale series will be there due to series being moved between ingesters.
 
-1. If you are using [shuffle sharding]({{< relref "../operators-guide/configure/configure-shuffle-sharding" >}}):
+1. If you are using [shuffle sharding](/docs/mimir/v2.5.x/operators-guide/configure/configure-shuffle-sharding/):
 
    1. Wait an extra 12 hours.
 
