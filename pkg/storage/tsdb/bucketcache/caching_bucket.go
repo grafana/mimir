@@ -316,6 +316,10 @@ func (cb *CachingBucket) cachedAttributes(ctx context.Context, name, cfgName str
 	return attrs, nil
 }
 
+type contextKey struct{}
+
+var GetRangeMemoryPoolKey = contextKey{}
+
 func (cb *CachingBucket) cachedGetRange(ctx context.Context, name string, offset, length int64, cfgName string, cfg *getRangeConfig) (io.ReadCloser, error) {
 	cb.operationRequests.WithLabelValues(objstore.OpGetRange, cfgName).Inc()
 	cb.requestedGetRangeBytes.WithLabelValues(cfgName).Add(float64(length))
@@ -363,9 +367,14 @@ func (cb *CachingBucket) cachedGetRange(ctx context.Context, name string, offset
 		offsetKeys[off] = k
 	}
 
+	cacheFetchCtx := ctx
+	if memPool := ctx.Value(GetRangeMemoryPoolKey); memPool != nil {
+		cacheFetchCtx = context.WithValue(ctx, cache.MemoryPoolKey, memPool)
+	}
+
 	// Try to get all subranges from the cache.
 	totalCachedBytes := int64(0)
-	hits := cfg.cache.Fetch(ctx, keys)
+	hits := cfg.cache.Fetch(cacheFetchCtx, keys)
 	for _, b := range hits {
 		totalCachedBytes += int64(len(b))
 	}

@@ -14,7 +14,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
@@ -23,6 +22,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util/pool"
 )
@@ -111,7 +111,7 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, s
 	// TODO then release the pool in a defer
 	memPool := pool.NewSafeSlabPool[byte](chunksMemcachedPool, chunksMemcachedPoolSlabSize)
 	defer memPool.Release()
-	ctx = context.WithValue(ctx, cache.MemoryPoolKey, memPool)
+	ctx = context.WithValue(ctx, bucketcache.GetRangeMemoryPoolKey, memPool)
 
 	// Get a reader for the required range.
 	reader, err := r.block.chunkRangeReader(ctx, seq, int64(part.Start), int64(part.End-part.Start))
