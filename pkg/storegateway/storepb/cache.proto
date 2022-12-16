@@ -21,9 +21,8 @@ option (gogoproto.goproto_unrecognized_all) = false;
 option (gogoproto.goproto_sizecache_all) = false;
 
 message CachedSeries {
-  repeated cortexpb.Metric series = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "PreallocatingSliceMetric"];;
+  repeated cortexpb.Metric series = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "PreallocatingSliceMetric"];
   uint64 shardIndex = 2;
   uint64 shardCount = 3;
-
   string matchersKey = 4;
 }
