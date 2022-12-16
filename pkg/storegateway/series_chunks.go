@@ -110,14 +110,10 @@ func (b *seriesChunksSet) release() {
 		// Reset series and chunk entries, before putting back to the pool.
 		for i := range b.series {
 			for c := range b.series[i].chks {
-				b.series[i].chks[c].MinTime = 0
-				b.series[i].chks[c].MaxTime = 0
-				b.series[i].chks[c].Raw = nil
+				b.series[i].chks[c].Reset()
 			}
 
-			b.series[i].lset = nil
-			b.series[i].refs = nil
-			b.series[i].chks = nil
+			b.series[i] = seriesEntry{}
 		}
 
 		if b.seriesChunksPool != nil {
