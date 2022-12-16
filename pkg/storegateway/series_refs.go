@@ -832,12 +832,6 @@ func metasToChunks(blockID ulid.ULID, metas []chunks.Meta) []seriesChunkRef {
 	return chks
 }
 
-type seriesForPostingsCacheEntry struct {
-	LabelSets   []labels.Labels
-	MatchersKey indexcache.LabelMatchersKey
-	Shard       sharding.ShardSelector
-}
-
 func fetchCachedSeriesForPostings(ctx context.Context, userID string, indexCache indexcache.IndexCache, blockID ulid.ULID, matchers []*labels.Matcher, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey, logger log.Logger) (seriesChunkRefsSet, bool) {
 	matchersKey := indexcache.CanonicalLabelMatchersKey(matchers)
 	data, ok := indexCache.FetchSeriesForPostings(ctx, userID, blockID, matchersKey, shard, postingsKey)
@@ -888,13 +882,13 @@ func storeCachedSeriesForPostings(ctx context.Context, indexCache indexcache.Ind
 
 func encodeCachedSeriesForPostings(set seriesChunkRefsSet, matchersKey indexcache.LabelMatchersKey, nonNilShard sharding.ShardSelector) ([]byte, error) {
 	entry := &storepb.CachedSeries{
-		Series:      make([]mimirpb.Metric, set.len()),
+		Series:      make([]storepb.PreallocatingSliceMetric, set.len()),
 		MatchersKey: string(matchersKey),
 		ShardIndex:  nonNilShard.ShardIndex,
 		ShardCount:  nonNilShard.ShardCount,
 	}
 	for i, s := range set.series {
-		entry.Series[i] = mimirpb.Metric{Labels: mimirpb.FromLabelsToLabelAdapters(s.lset)}
+		entry.Series[i].Metric.Labels = mimirpb.FromLabelsToLabelAdapters(s.lset)
 	}
 
 	uncompressed, err := entry.Marshal()
