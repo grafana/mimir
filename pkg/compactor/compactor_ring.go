@@ -7,6 +7,7 @@ package compactor
 
 import (
 	"flag"
+	"fmt"
 	"os"
 	"time"
 
@@ -18,6 +19,13 @@ import (
 	"github.com/grafana/dskit/ring"
 
 	util_log "github.com/grafana/mimir/pkg/util/log"
+)
+
+const (
+	// ringNumTokens is how many tokens each compactor should have in the ring. We use a
+	// safe default instead of exposing to config option to the user in order to simplify
+	// the config.
+	ringNumTokens = 512
 )
 
 // RingConfig masks the ring lifecycler config which contains
@@ -74,6 +82,36 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	// Timeout durations
 	f.DurationVar(&cfg.WaitActiveInstanceTimeout, "compactor.ring.wait-active-instance-timeout", 10*time.Minute, "Timeout for waiting on compactor to become ACTIVE in the ring.")
+}
+
+func (cfg *RingConfig) ToBasicLifecyclerConfig(logger log.Logger) (ring.BasicLifecyclerConfig, error) {
+	instanceAddr, err := ring.GetInstanceAddr(cfg.InstanceAddr, cfg.InstanceInterfaceNames, logger)
+	if err != nil {
+		return ring.BasicLifecyclerConfig{}, err
+	}
+
+	instancePort := ring.GetInstancePort(cfg.InstancePort, cfg.ListenPort)
+
+	return ring.BasicLifecyclerConfig{
+		ID:                              cfg.InstanceID,
+		Addr:                            fmt.Sprintf("%s:%d", instanceAddr, instancePort),
+		HeartbeatPeriod:                 cfg.HeartbeatPeriod,
+		HeartbeatTimeout:                cfg.HeartbeatTimeout,
+		TokensObservePeriod:             cfg.ObservePeriod,
+		NumTokens:                       ringNumTokens,
+		KeepInstanceInTheRingOnShutdown: false,
+	}, nil
+}
+
+func (cfg *RingConfig) ToRingConfig() ring.Config {
+	rc := ring.Config{}
+	flagext.DefaultValues(&rc)
+
+	rc.KVStore = cfg.KVStore
+	rc.HeartbeatTimeout = cfg.HeartbeatTimeout
+	rc.ReplicationFactor = 1
+
+	return rc
 }
 
 // ToLifecyclerConfig returns a LifecyclerConfig based on the compactor

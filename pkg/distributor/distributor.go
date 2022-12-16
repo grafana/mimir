@@ -456,7 +456,7 @@ func newRingAndLifecycler(cfg RingConfig, instanceCount *atomic.Uint32, logger l
 	}
 
 	var delegate ring.BasicLifecyclerDelegate
-	delegate = ring.NewInstanceRegisterDelegate(ring.ACTIVE, ringNumTokens)
+	delegate = ring.NewInstanceRegisterDelegate(ring.ACTIVE, lifecyclerCfg.NumTokens)
 	delegate = newHealthyInstanceDelegate(instanceCount, cfg.HeartbeatTimeout, delegate)
 	delegate = ring.NewLeaveOnStoppingDelegate(delegate, logger)
 	delegate = ring.NewAutoForgetDelegate(ringAutoForgetUnhealthyPeriods*cfg.HeartbeatTimeout, delegate, logger)
@@ -466,7 +466,7 @@ func newRingAndLifecycler(cfg RingConfig, instanceCount *atomic.Uint32, logger l
 		return nil, nil, errors.Wrap(err, "failed to initialize distributors' lifecycler")
 	}
 
-	distributorsRing, err := ring.New(cfg.ToRingConfig(), "distributor", distributorRingKey, logger, prometheus.WrapRegistererWithPrefix("cortex_", reg))
+	distributorsRing, err := ring.NewWithStoreClientAndStrategy(cfg.ToRingConfig(), "distributor", distributorRingKey, kvStore, ring.NewDefaultReplicationStrategy(), prometheus.WrapRegistererWithPrefix("cortex_", reg), logger)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "failed to initialize distributors' ring client")
 	}
