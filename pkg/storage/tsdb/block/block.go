@@ -53,10 +53,6 @@ func Download(ctx context.Context, logger log.Logger, bucket objstore.Bucket, id
 	if err := objstore.DownloadFile(ctx, logger, bucket, path.Join(id.String(), MetaFilename), path.Join(dst, MetaFilename)); err != nil {
 		return err
 	}
-	m, err := metadata.ReadFromDir(dst)
-	if err != nil {
-		return errors.Wrapf(err, "reading meta from %s", dst)
-	}
 
 	ignoredPaths := []string{MetaFilename}
 	if err := objstore.DownloadDir(ctx, logger, bucket, id.String(), id.String(), dst, append(options, objstore.WithDownloadIgnoredPaths(ignoredPaths...))...); err != nil {
@@ -64,7 +60,7 @@ func Download(ctx context.Context, logger log.Logger, bucket objstore.Bucket, id
 	}
 
 	chunksDir := filepath.Join(dst, ChunksDirname)
-	_, err = os.Stat(chunksDir)
+	_, err := os.Stat(chunksDir)
 	if os.IsNotExist(err) {
 		// This can happen if block is empty. We cannot easily upload empty directory, so create one here.
 		return os.Mkdir(chunksDir, os.ModePerm)
