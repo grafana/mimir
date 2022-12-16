@@ -272,6 +272,61 @@ func TestDecbuf_SkipInsufficientBuffer(t *testing.T) {
 	require.ErrorIs(t, dec.Err(), ErrInvalidSize)
 }
 
+func TestDecbuf_SkipUvarintBytesHappyPath(t *testing.T) {
+	expected := uint32(0x567890AB)
+	enc := promencoding.Encbuf{}
+	enc.PutUvarintBytes([]byte{0x12, 0x34})
+	enc.PutBE32(expected)
+
+	dec := createDecbufWithBytes(t, enc.Get())
+	require.Equal(t, 7, dec.Len())
+
+	dec.SkipUvarintBytes()
+	require.NoError(t, dec.Err())
+	require.Equal(t, 4, dec.Len())
+
+	actual := dec.Be32()
+	require.NoError(t, dec.Err())
+	require.Equal(t, expected, actual)
+}
+
+func TestDecbuf_SkipUvarintBytesEndOfFile(t *testing.T) {
+	enc := promencoding.Encbuf{}
+	enc.PutBE32(0x12345678)
+
+	dec := createDecbufWithBytes(t, enc.Get())
+	dec.Be32()
+	require.NoError(t, dec.Err())
+	require.Equal(t, 0, dec.Len())
+
+	dec.SkipUvarintBytes()
+	require.ErrorIs(t, dec.Err(), ErrInvalidSize)
+}
+
+func TestDecbuf_SkipUvarintBytesOnlyHaveLength(t *testing.T) {
+	enc := promencoding.Encbuf{}
+	enc.PutUvarintBytes([]byte{0x12, 0x34})
+
+	bytes := enc.Get()
+	dec := createDecbufWithBytes(t, bytes[:len(bytes)-2])
+	require.Equal(t, 1, dec.Len())
+
+	dec.SkipUvarintBytes()
+	require.ErrorIs(t, dec.Err(), ErrInvalidSize)
+}
+
+func TestDecbuf_SkipUvarintBytesPartialValue(t *testing.T) {
+	enc := promencoding.Encbuf{}
+	enc.PutUvarintBytes([]byte{0x12, 0x34})
+
+	bytes := enc.Get()
+	dec := createDecbufWithBytes(t, bytes[:len(bytes)-1])
+	require.Equal(t, 2, dec.Len())
+
+	dec.SkipUvarintBytes()
+	require.ErrorIs(t, dec.Err(), ErrInvalidSize)
+}
+
 func TestDecbuf_UvarintHappyPath(t *testing.T) {
 	cases := []struct {
 		value int

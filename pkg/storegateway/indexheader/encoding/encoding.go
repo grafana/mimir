@@ -89,6 +89,13 @@ func (d *Decbuf) Skip(l int) {
 	d.E = d.r.skip(l)
 }
 
+// SkipUvarintBytes advances the pointer of the underlying fileReader past the
+// next varint-prefixed bytes. If E is non-nil, this method has no effect.
+func (d *Decbuf) SkipUvarintBytes() {
+	l := d.Uvarint64()
+	d.Skip(int(l))
+}
+
 // ResetAt sets the pointer of the underlying fileReader to the absolute
 // offset and discards any buffered data. If E is non-nil, this method has
 // no effect. ResetAt-ing beyond the end of the underlying fileReader will set

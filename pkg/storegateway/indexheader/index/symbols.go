@@ -88,7 +88,7 @@ func (s *Symbols) Lookup(o uint32) (sym string, err error) {
 		d.ResetAt(s.offsets[int(o/symbolFactor)])
 		// Walk until we find the one we want.
 		for i := o - (o / symbolFactor * symbolFactor); i > 0; i-- {
-			d.UvarintBytes()
+			d.SkipUvarintBytes()
 		}
 	} else {
 		// In v1, o is relative to the beginning of the whole index header file, so we
