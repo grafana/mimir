@@ -12,8 +12,8 @@ weight: 60
 You can monitor Grafana Mimir or Grafana Enterprise Metrics itself, by collecting metrics and logs from Mimir or GEM that is running on a Kubernetes cluster. This is called _metamonitoring_.
 
 > **Note:** In Grafana, you can create dashboards and receive alerts about those metrics and logs. To set up dashboards and alerts,
-> see [Installing Grafana Mimir dashboards and alerts]({{< relref "installing-dashboards-and-alerts.md" >}}) or [Grafana Cloud: Self-hosted Grafana Mimir integration](https://grafana.com/docs/grafana-cloud/integrations/integrations/integration-mimir/)
-.
+> see [Installing Grafana Mimir dashboards and alerts](/docs/mimir/v2.5.x/operators-guide/monitor-grafana-mimir/installing-dashboards-and-alerts/) or [Grafana Cloud: Self-hosted Grafana Mimir integration](/docs/grafana-cloud/integrations/integrations/integration-mimir/)
+> .
 
 In the Helm chart, you can configure where to send metrics and logs.
 You can send metrics to a Prometheus-compatible server
@@ -27,7 +27,7 @@ that has the same value as the instance label on Mimir metrics.
 ## Configure the Grafana Agent operator via the Helm chart
 
 You can configure your collection of metrics and logs
-by using the [Grafana Agent operator](https://grafana.com/docs/agent/latest/operator/).
+by using the [Grafana Agent operator](/docs/agent/latest/operator/).
 The Helm chart can install and use the Grafana Agent operator.
 
 > **Note:** Before the Helm chart can use the operator,
@@ -37,7 +37,7 @@ It’s best to use the Grafana Agent operator for metrics and logs collection.
 However, if you prefer not to use it or you already have an existing Grafana Agent that you want to use, see _Collect metrics and logs via Grafana Agent_ documentation in Grafana Mimir version 2.5.0.
 
 1. Store credentials in a Secret:
-  
+
    If Prometheus and Loki are running without authentication, then you scan skip this section.
    Metamonitoring supports multiple ways of authentication for metrics and logs. If you are using a secret such as an API
    key to authenticate with Prometheus or Loki, then you need to create a Kubernetes Secret with that secret.
