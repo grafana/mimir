@@ -17,8 +17,8 @@ jobs:
     - name: "Build website"
       run: |
         docker run \
-          -v ${PWD}/docs/sources/mimir:/hugo/content/docs/mimir/latest \
-          -v ${PWD}/docs/sources/helm-charts/mimir-distributed:/hugo/content/docs/helm-charts/mimir-distributed/latest \
+          -v ${PWD}/docs/sources/mimir:/hugo/content/docs/mimir/v2.5.x \
+          -v ${PWD}/docs/sources/helm-charts/mimir-distributed:/hugo/content/docs/helm-charts/mimir-distributed/next \
           -e HUGO_REFLINKSERRORLEVEL=ERROR \
           --rm \
             grafana/docs-base:latest \
