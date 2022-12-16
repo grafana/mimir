@@ -166,9 +166,7 @@ func readOffsetTable(factory *streamencoding.DecbufFactory, tableOffset int, f f
 		offsetPos := startLen - d.Len()
 		keyCount := d.Uvarint()
 
-		// The Postings offset table takes only 2 keys per entry (name and value of label),
-		// and the LabelIndices offset table takes only 1 key per entry (a label name).
-		// Hence setting the size to max of both, i.e. 2.
+		// The Postings offset table takes only 2 keys per entry (name and value of label).
 		if keyCount != 2 {
 			return errors.Errorf("unexpected key length for posting table %d", keyCount)
 		}
