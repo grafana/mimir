@@ -377,10 +377,23 @@ func (m *Series) PromLabels() labels.Labels {
 	return mimirpb.FromLabelAdaptersToLabels(m.Labels)
 }
 
+// PreallocatingSliceMetric overrides the Unmarshal behaviour of mimirpb.Metric.
 type PreallocatingSliceMetric struct {
 	mimirpb.Metric
 }
 
+// Unmarshal is like mimirpb.Metric.Unmarshal, but it preallocates the slice of labels
+// instead of growing it during append(). Unmarshal traverses the dAtA slice and counts the number of
+// Metric.Labels elements. Then it preallocates a slice of mimirpb.LabelAdapter with that capacity
+// and delegates the actual unmarshalling to Metric.Unmarshal.
+//
+// Unmarshal should be manually updated when new fields are added to Metric.
+// Unmarshal will give up on counting labels if it encounters unknown fields and will
+// fall back to Metric.Unmarshal
+//
+// The implementation of Unmarshal is copied from the implementaiton of
+// Metric.Unmarshal and modified, so it only counts the labels instead of
+// also unmarshalling them.
 func (m *PreallocatingSliceMetric) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
