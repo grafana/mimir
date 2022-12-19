@@ -63,7 +63,7 @@ func (g *gapBasedPartitioner) Partition(length int, rng func(int) (uint64, uint6
 		expandedBytes += p.End - p.Start
 	}
 
-	g.requestedBytes.Add(float64(stats.requestedRangesTotal))
+	g.requestedBytes.Add(float64(stats.requestedBytesTotal))
 	g.expandedBytes.Add(float64(expandedBytes))
 	g.requestedRanges.Add(float64(length))
 	g.expandedRanges.Add(float64(len(parts)))
@@ -74,7 +74,7 @@ func (g *gapBasedPartitioner) Partition(length int, rng func(int) (uint64, uint6
 
 type partitionStats struct {
 	extendedNonOverlappingRanges int
-	requestedRangesTotal         uint64
+	requestedBytesTotal          uint64
 }
 
 func (g *gapBasedPartitioner) partition(length int, rng func(int) (uint64, uint64)) (parts []Part, stats partitionStats) {
@@ -86,7 +86,7 @@ func (g *gapBasedPartitioner) partition(length int, rng func(int) (uint64, uint6
 
 		p := Part{}
 		p.Start, p.End = rng(j)
-		stats.requestedRangesTotal += p.End - p.Start
+		stats.requestedBytesTotal += p.End - p.Start
 
 		// Keep growing the range until the end or we encounter a large gap.
 		for ; k < length; k++ {
@@ -95,13 +95,13 @@ func (g *gapBasedPartitioner) partition(length int, rng func(int) (uint64, uint6
 			if p.End >= s {
 				// The start of the next range overlaps with the current range's end, so we can merge them.
 				// We count the extra bytes between the current range's end and the next one's end - that's what's been requested.
-				stats.requestedRangesTotal += e - p.End
+				stats.requestedBytesTotal += e - p.End
 			} else if p.End+g.maxGapBytes >= s {
 				// We can afford to fill a gap between the current range's end and the next range's start.
 				// We do so, but we also keep track of how much of it we do.
 				stats.extendedNonOverlappingRanges++
 				// We count the whole range as a request range since it doesn't overlap with the previous range.
-				stats.requestedRangesTotal += e - s
+				stats.requestedBytesTotal += e - s
 			} else {
 				break
 			}
