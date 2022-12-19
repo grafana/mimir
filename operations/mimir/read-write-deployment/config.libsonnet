@@ -30,7 +30,7 @@
   check_store_gateway_multi_zone: if !$._config.is_read_write_deployment_mode || $._config.multi_zone_store_gateway_enabled then null else
     error 'please set multi_zone_store_gateway_enabled to true when using Mimir read-write deployment mode',
 
-  check_querier_autoscaling: if !$._config.is_read_write_deployment_mode || !$._config.autoscaling_querier_enabled then null else
+  check_querier_autoscaling: if $._config.is_microservices_deployment_mode || !$._config.autoscaling_querier_enabled then null else
     error 'please set autoscaling_querier_enabled to false when using Mimir read-write deployment mode',
 
   check_ruler_remote_evaluation_enabled: if $._config.is_microservices_deployment_mode || !$._config.ruler_remote_evaluation_enabled then null else
