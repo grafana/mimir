@@ -18,6 +18,7 @@
 * [BUGFIX] Security: update prometheus/exporter-toolkit for CVE-2022-46146. #3675
 * [BUGFIX] Debian package: Fix post-install, environment file path and user creation. #3720
 * [BUGFIX] memberlist: Fix panic during Mimir startup when Mimir receives gossip message before it's ready. #3746
+* [BUGFIX] Store-gateway: make `cortex_bucket_store_partitioner_*` metrics are more accurate. #3769
 
 ### Mixin
 
