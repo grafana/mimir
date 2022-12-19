@@ -106,7 +106,6 @@ message QueryRequest {
   int64 start_timestamp_ms = 1;
   int64 end_timestamp_ms = 2;
   repeated LabelMatcher matchers = 3;
-  bool ephemeral = 4;
 }
 
 message ExemplarQueryRequest {

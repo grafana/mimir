@@ -51,6 +51,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/chunk"
+	"github.com/grafana/mimir/pkg/storage/ephemeral"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
@@ -1327,7 +1328,8 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 		return err
 	}
 
-	if req.GetEphemeral() {
+	eph, matchers, err := ephemeral.RemoveEphemeralMatcher(matchers)
+	if eph {
 		i.metrics.ephemeralQueries.Inc()
 	} else {
 		i.metrics.queries.Inc()
@@ -1360,16 +1362,16 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 
 	if streamType == QueryStreamChunks {
 		level.Debug(spanlog).Log("msg", "using queryStreamChunks")
-		numSeries, numSamples, err = i.queryStreamChunks(ctx, db, int64(from), int64(through), matchers, shard, stream, req.GetEphemeral())
+		numSeries, numSamples, err = i.queryStreamChunks(ctx, db, int64(from), int64(through), matchers, shard, stream, eph)
 	} else {
 		level.Debug(spanlog).Log("msg", "using queryStreamSamples")
-		numSeries, numSamples, err = i.queryStreamSamples(ctx, db, int64(from), int64(through), matchers, shard, stream, req.GetEphemeral())
+		numSeries, numSamples, err = i.queryStreamSamples(ctx, db, int64(from), int64(through), matchers, shard, stream, eph)
 	}
 	if err != nil {
 		return err
 	}
 
-	if req.GetEphemeral() {
+	if eph {
 		i.metrics.ephemeralQueriedSeries.Observe(float64(numSeries))
 		i.metrics.ephemeralQueriedSamples.Observe(float64(numSamples))
 	} else {
