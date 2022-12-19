@@ -94,8 +94,11 @@ func (g *gapBasedPartitioner) partition(length int, rng func(int) (uint64, uint6
 
 			if p.End >= s {
 				// The start of the next range overlaps with the current range's end, so we can merge them.
-				// We count the extra bytes between the current range's end and the next one's end - that's what's been requested.
-				stats.requestedBytesTotal += e - p.End
+				if p.End < e {
+					// If the next range extends after the current one,
+					// then we count the extra bytes between the current range's end and the next one's end.
+					stats.requestedBytesTotal += e - p.End
+				}
 			} else if p.End+g.maxGapBytes >= s {
 				// We can afford to fill a gap between the current range's end and the next range's start.
 				// We do so, but we also keep track of how much of it we do.

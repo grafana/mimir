@@ -22,7 +22,7 @@ func TestGapBasedPartitioner_Metrics(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	p := newGapBasedPartitioner(10, reg)
 
-	parts := p.Partition(6, func(i int) (uint64, uint64) {
+	parts := p.Partition(7, func(i int) (uint64, uint64) {
 		switch i {
 		case 0:
 			return 10, 12 // 2B, extended to next range
@@ -36,6 +36,8 @@ func TestGapBasedPartitioner_Metrics(t *testing.T) {
 			return 50, 52 // 2B, extended to next range
 		case 5:
 			return 50, 54 // 4B, with 2B overlapping with the previous range
+		case 6:
+			return 51, 53 // 2B, completely overlapping with the previous range
 		default:
 			return 0, 0
 		}
@@ -43,7 +45,7 @@ func TestGapBasedPartitioner_Metrics(t *testing.T) {
 
 	expected := []Part{
 		{Start: 10, End: 27, ElemRng: [2]int{0, 3}},
-		{Start: 38, End: 54, ElemRng: [2]int{3, 6}},
+		{Start: 38, End: 54, ElemRng: [2]int{3, 7}},
 	}
 	require.Equal(t, expected, parts)
 
@@ -54,7 +56,7 @@ func TestGapBasedPartitioner_Metrics(t *testing.T) {
 
 		# HELP cortex_bucket_store_partitioner_requested_ranges_total Total number of byte ranges required to fetch from the storage before they are passed to the partitioner.
 		# TYPE cortex_bucket_store_partitioner_requested_ranges_total counter
-		cortex_bucket_store_partitioner_requested_ranges_total 6
+		cortex_bucket_store_partitioner_requested_ranges_total 7
 
 		# HELP cortex_bucket_store_partitioner_expanded_bytes_total Total size of byte ranges required to fetch from the storage after they are extended by the partitioner.
 		# TYPE cortex_bucket_store_partitioner_expanded_bytes_total counter
