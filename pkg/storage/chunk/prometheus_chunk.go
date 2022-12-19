@@ -6,6 +6,7 @@
 package chunk
 
 import (
+	"fmt"
 	"io"
 
 	"github.com/pkg/errors"
@@ -74,11 +75,8 @@ func (p *prometheusXorChunk) Add(m model.SamplePair) (EncodedChunk, error) {
 	return nil, nil
 }
 
-// AddHistogram adds another histogram to the chunk. While Add works, it is only implemented
-// to make tests work, and should not be used in production. In particular, it appends
-// all histograms to single chunk, and uses new Appender for each Add.
 func (p *prometheusXorChunk) AddHistogram(timestamp int64, h *histogram.Histogram) (EncodedChunk, error) {
-	panic("cannot add histogram to sample chunk")
+	return nil, fmt.Errorf("cannot add histogram to sample chunk")
 }
 
 func (p *prometheusXorChunk) UnmarshalFromBuf(bytes []byte) error {
@@ -96,6 +94,7 @@ func (p *prometheusXorChunk) Encoding() Encoding {
 }
 
 // Wrapper around a Prometheus histogram chunk.
+// TODO add unit tests as in chunk_test.go https://github.com/grafana/mimir/issues/3767
 type prometheusHistogramChunk struct {
 	prometheusChunk
 }
@@ -104,11 +103,8 @@ func newPrometheusHistogramChunk() *prometheusHistogramChunk {
 	return &prometheusHistogramChunk{}
 }
 
-// Add adds another sample to the chunk. While Add works, it is only implemented
-// to make tests work, and should not be used in production. In particular, it appends
-// all samples to single chunk, and uses new Appender for each Add.
 func (p *prometheusHistogramChunk) Add(sample model.SamplePair) (EncodedChunk, error) {
-	panic("cannot add sample to histogram chunk")
+	return nil, fmt.Errorf("cannot add float sample to histogram chunk")
 }
 
 // AddHistogram adds another histogram to the chunk. While Add works, it is only implemented
@@ -194,6 +190,8 @@ func (p *prometheusChunkIterator) Batch(size int, valueType chunkenc.ValueType) 
 			batch.Timestamps[j] = t
 			batch.FloatHistogramValues[j] = fh
 		}
+	default:
+		panic(fmt.Sprintf("invalid chunk encoding %v", valueType))
 	}
 
 	j := 0

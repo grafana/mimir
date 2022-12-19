@@ -1404,7 +1404,10 @@ func (i *Ingester) queryStreamSamples(ctx context.Context, db *userTSDB, from, t
 		}
 
 		it := series.Iterator()
-		for it.Next() == chunkenc.ValFloat {
+		for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
+			if valType != chunkenc.ValFloat {
+				return 0, 0, fmt.Errorf("unsupported value type: %v", valType)
+			}
 			t, v := it.At()
 			ts.Samples = append(ts.Samples, mimirpb.Sample{Value: v, TimestampMs: t})
 		}

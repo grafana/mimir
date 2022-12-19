@@ -8,6 +8,7 @@ package querymiddleware
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"sync"
 	"testing"
@@ -451,7 +452,10 @@ func seriesSetToSampleStreams(set storage.SeriesSet) ([]SampleStream, error) {
 		stream := SampleStream{Labels: mimirpb.FromLabelsToLabelAdapters(set.At().Labels())}
 
 		it := set.At().Iterator()
-		for it.Next() == chunkenc.ValFloat {
+		for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
+			if valType != chunkenc.ValFloat {
+				return nil, fmt.Errorf("unsupported value type %v", valType)
+			}
 			t, v := it.At()
 			stream.Samples = append(stream.Samples, mimirpb.Sample{
 				Value:       v,
