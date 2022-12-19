@@ -154,7 +154,7 @@ func funcAggregateCounters(vals []parser.Value, args parser.Expressions, enh *Ev
 	// Make sure that the requested window is smaller than the matrix selector range.
 	ms := args[0].(*parser.MatrixSelector)
 	if window > ms.Range.Milliseconds() {
-		panic(fmt.Errorf("invalid window for raw_increase, can't be bigger than matrix selector range: window=%dms > range=%dms", window, ms.Range.Milliseconds()))
+		panic(fmt.Errorf("invalid window for aggregate_counters, can't be bigger than matrix selector range: window=%dms > range=%dms", window, ms.Range.Milliseconds()))
 	}
 
 	// No samples for zero samples in the range.
