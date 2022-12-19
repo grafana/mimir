@@ -112,13 +112,13 @@ func (d *Decbuf) ResetAt(off int) {
 // returned allocates its own memory may be used after subsequent reads from the Decbuf.
 // If E is non-nil, this method returns an empty string.
 func (d *Decbuf) UvarintStr() string {
-	return string(d.UvarintBytes())
+	return string(d.UnsafeUvarintBytes())
 }
 
-// UvarintBytes reads varint prefixed bytes into a byte slice consuming them but without
+// UnsafeUvarintBytes reads varint prefixed bytes into a byte slice consuming them but without
 // allocating. The bytes returned are NO LONGER VALID after subsequent reads from the Decbuf.
 // If E is non-nil, this method returns an empty byte slice.
-func (d *Decbuf) UvarintBytes() []byte {
+func (d *Decbuf) UnsafeUvarintBytes() []byte {
 	l := d.Uvarint64()
 	if d.E != nil {
 		return nil

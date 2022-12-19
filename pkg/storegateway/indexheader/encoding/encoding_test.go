@@ -445,7 +445,7 @@ func FuzzDecbuf_Uvarint64(f *testing.F) {
 	})
 }
 
-func TestDecbuf_UvarintBytesHappyPath(t *testing.T) {
+func TestDecbuf_UnsafeUvarintBytesHappyPath(t *testing.T) {
 	cases := []struct {
 		name              string
 		value             []byte
@@ -466,7 +466,7 @@ func TestDecbuf_UvarintBytesHappyPath(t *testing.T) {
 			dec := createDecbufWithBytes(t, enc.Get())
 			require.Equal(t, dec.Len(), c.encodedSizeLength+len(c.value))
 
-			actual := dec.UvarintBytes()
+			actual := dec.UnsafeUvarintBytes()
 			require.NoError(t, dec.Err())
 			require.Condition(t, test.EqualSlices(c.value, actual), "%#v != %#v", c.value, actual)
 			require.Equal(t, 0, dec.Len())
@@ -474,22 +474,22 @@ func TestDecbuf_UvarintBytesHappyPath(t *testing.T) {
 	}
 }
 
-func TestDecbuf_UvarintBytesInsufficientBuffer(t *testing.T) {
+func TestDecbuf_UnsafeUvarintBytesInsufficientBuffer(t *testing.T) {
 	enc := promencoding.Encbuf{}
 	enc.PutUvarintBytes([]byte("123456"))
 
 	dec := createDecbufWithBytes(t, enc.Get()[:2])
-	_ = dec.UvarintBytes()
+	_ = dec.UnsafeUvarintBytes()
 	require.ErrorIs(t, dec.Err(), ErrInvalidSize)
 }
 
-func TestDecbuf_UvarintBytesSkipDoesNotCauseBufferFill(t *testing.T) {
+func TestDecbuf_UnsafeUvarintBytesSkipDoesNotCauseBufferFill(t *testing.T) {
 	const (
 		expectedSlices = 32
 		expectedBytes  = 983
 	)
 
-	// This test verifies that when bytes are read in UvarintBytes, the peek(n) and
+	// This test verifies that when bytes are read in UnsafeUvarintBytes, the peek(n) and
 	// subsequent skip(len(b)) does not cause a read from disk that invalidates the slice
 	// returned. It does this by creating multiple uvarint byte slices in the encoding
 	// buffer each with different content _and_ by ensuring there are more bytes written
@@ -507,7 +507,7 @@ func TestDecbuf_UvarintBytesSkipDoesNotCauseBufferFill(t *testing.T) {
 
 	dec := createDecbufWithBytes(t, enc.Get())
 	for base := 0; base < expectedSlices; base++ {
-		bytes := dec.UvarintBytes()
+		bytes := dec.UnsafeUvarintBytes()
 
 		require.NoError(t, dec.Err())
 		require.Len(t, bytes, expectedBytes)
@@ -518,7 +518,7 @@ func TestDecbuf_UvarintBytesSkipDoesNotCauseBufferFill(t *testing.T) {
 	}
 }
 
-func FuzzDecbuf_UvarintBytes(f *testing.F) {
+func FuzzDecbuf_UnsafeUvarintBytes(f *testing.F) {
 	f.Add([]byte{})
 	f.Add([]byte{0x12})
 	f.Add([]byte("1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567"))
@@ -530,14 +530,14 @@ func FuzzDecbuf_UvarintBytes(f *testing.F) {
 
 		dec := createDecbufWithBytes(t, enc.Get())
 		require.NoError(t, dec.Err())
-		actual := dec.UvarintBytes()
+		actual := dec.UnsafeUvarintBytes()
 		require.NoError(t, dec.Err())
 		require.Condition(t, test.EqualSlices(b, actual), "%#v != %#v", b, actual)
 		require.Equal(t, 0, dec.Len())
 	})
 }
 
-func BenchmarkDecbuf_UvarintBytes(t *testing.B) {
+func BenchmarkDecbuf_UnsafeUvarintBytes(t *testing.B) {
 	// 127 bytes, the varint size will be 1 byte.
 	val := []byte("1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567")
 	enc := promencoding.Encbuf{}
@@ -547,7 +547,7 @@ func BenchmarkDecbuf_UvarintBytes(t *testing.B) {
 	t.ResetTimer()
 
 	for i := 0; i < t.N; i++ {
-		b := dec.UvarintBytes()
+		b := dec.UnsafeUvarintBytes()
 		if err := dec.Err(); err != nil {
 			require.NoError(t, err)
 		}

@@ -116,7 +116,7 @@ func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 
 		// Important: this value is only valid as long as we don't perform any further reads from d.
 		// If we need to retain its value, we must copy it before performing another read.
-		unsafeName := d.UvarintBytes()
+		unsafeName := d.UnsafeUvarintBytes()
 
 		if len(t.postings) == 0 || currentName != string(unsafeName) {
 			newKey := string(unsafeName)
@@ -414,7 +414,7 @@ func (t *PostingOffsetTableV2) PostingsOffset(name string, values ...string) (r 
 				// We know it exists as we never go further in this loop than e.offsets[i, i+1].
 
 				skipNAndName(&d, &buf)
-				d.UvarintBytes() // Label value.
+				d.UnsafeUvarintBytes() // Label value.
 				postingOffset := int64(d.Uvarint64())
 
 				for j := range newSameRngs {
@@ -456,13 +456,13 @@ func (t *PostingOffsetTableV2) LabelValues(name string, filter func(string) bool
 			// These are always the same number of bytes,
 			// and it's faster to skip than parse.
 			skip = d.Len()
-			d.Uvarint()      // Keycount.
-			d.UvarintBytes() // Label name.
+			d.Uvarint()            // Keycount.
+			d.UnsafeUvarintBytes() // Label name.
 			skip -= d.Len()
 		} else {
 			d.Skip(skip)
 		}
-		s := yoloString(d.UvarintBytes()) // Label value.
+		s := yoloString(d.UnsafeUvarintBytes()) // Label value.
 		if filter == nil || filter(s) {
 			// Clone the yolo string since its bytes will be invalidated as soon as
 			// any other reads against the decoding buffer are performed.
@@ -501,8 +501,8 @@ func skipNAndName(d *streamencoding.Decbuf, buf *int) {
 		// Keycount+LabelName are always the same number of bytes,
 		// and it's faster to skip than parse.
 		*buf = d.Len()
-		d.Uvarint()      // Keycount.
-		d.UvarintBytes() // Label name.
+		d.Uvarint()            // Keycount.
+		d.UnsafeUvarintBytes() // Label name.
 		*buf -= d.Len()
 		return
 	}
