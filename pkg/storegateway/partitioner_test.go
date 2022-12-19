@@ -22,18 +22,20 @@ func TestGapBasedPartitioner_Metrics(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	p := newGapBasedPartitioner(10, reg)
 
-	parts := p.Partition(5, func(i int) (uint64, uint64) {
+	parts := p.Partition(6, func(i int) (uint64, uint64) {
 		switch i {
 		case 0:
-			return 10, 12
+			return 10, 12 // 2B, extended to next range
 		case 1:
-			return 15, 18
+			return 15, 18 // 3B, extended to next range
 		case 2:
-			return 22, 27
+			return 22, 27 // 5B
 		case 3:
-			return 38, 41
+			return 38, 41 // 3B, extended to next range
 		case 4:
-			return 50, 52
+			return 50, 52 // 2B, extended to next range
+		case 5:
+			return 50, 54 // 4B, with 2B overlapping with the previous range
 		default:
 			return 0, 0
 		}
@@ -41,26 +43,30 @@ func TestGapBasedPartitioner_Metrics(t *testing.T) {
 
 	expected := []Part{
 		{Start: 10, End: 27, ElemRng: [2]int{0, 3}},
-		{Start: 38, End: 52, ElemRng: [2]int{3, 5}},
+		{Start: 38, End: 54, ElemRng: [2]int{3, 6}},
 	}
 	require.Equal(t, expected, parts)
 
 	assert.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
-		# HELP cortex_bucket_store_partitioner_requested_bytes_total Total size of byte ranges required to fetch from the storage before they are passed to the partitioner.
+		# HELP cortex_bucket_store_partitioner_requested_bytes_total Total size of byte ranges required to fetch from the storage before they are extended with maxGapBytes.
 		# TYPE cortex_bucket_store_partitioner_requested_bytes_total counter
-		cortex_bucket_store_partitioner_requested_bytes_total 15
+		cortex_bucket_store_partitioner_requested_bytes_total 17
 
 		# HELP cortex_bucket_store_partitioner_requested_ranges_total Total number of byte ranges required to fetch from the storage before they are passed to the partitioner.
 		# TYPE cortex_bucket_store_partitioner_requested_ranges_total counter
-		cortex_bucket_store_partitioner_requested_ranges_total 5
+		cortex_bucket_store_partitioner_requested_ranges_total 6
 
-		# HELP cortex_bucket_store_partitioner_expanded_bytes_total Total size of byte ranges returned by the partitioner after they've been combined together to reduce the number of bucket API calls.
+		# HELP cortex_bucket_store_partitioner_expanded_bytes_total Total size of byte ranges required to fetch from the storage after they are extended with maxGapBytes.
 		# TYPE cortex_bucket_store_partitioner_expanded_bytes_total counter
-		cortex_bucket_store_partitioner_expanded_bytes_total 31
+		cortex_bucket_store_partitioner_expanded_bytes_total 33
 
 		# HELP cortex_bucket_store_partitioner_expanded_ranges_total Total number of byte ranges returned by the partitioner after they've been combined together to reduce the number of bucket API calls.
 		# TYPE cortex_bucket_store_partitioner_expanded_ranges_total counter
 		cortex_bucket_store_partitioner_expanded_ranges_total 2
+
+		# HELP cortex_bucket_store_partitioner_extended_ranges_total Total number of byte ranges that were not overlapping but were joined because they were closer than maxGapBytes.
+		# TYPE cortex_bucket_store_partitioner_extended_ranges_total counter
+		cortex_bucket_store_partitioner_extended_ranges_total 3
 	`)))
 }
 

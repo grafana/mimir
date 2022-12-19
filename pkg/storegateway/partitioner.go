@@ -17,10 +17,11 @@ type gapBasedPartitioner struct {
 	maxGapBytes uint64
 
 	// Metrics.
-	requestedBytes  prometheus.Counter
-	requestedRanges prometheus.Counter
-	expandedBytes   prometheus.Counter
-	expandedRanges  prometheus.Counter
+	requestedBytes       prometheus.Counter
+	requestedRanges      prometheus.Counter
+	expandedBytes        prometheus.Counter
+	expandedRanges       prometheus.Counter
+	extendedRangesRanges prometheus.Counter
 }
 
 func newGapBasedPartitioner(maxGapBytes uint64, reg prometheus.Registerer) *gapBasedPartitioner {
@@ -28,11 +29,11 @@ func newGapBasedPartitioner(maxGapBytes uint64, reg prometheus.Registerer) *gapB
 		maxGapBytes: maxGapBytes,
 		requestedBytes: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_bucket_store_partitioner_requested_bytes_total",
-			Help: "Total size of byte ranges required to fetch from the storage before they are passed to the partitioner.",
+			Help: "Total size of byte ranges required to fetch from the storage before they are extended with maxGapBytes.",
 		}),
 		expandedBytes: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_bucket_store_partitioner_expanded_bytes_total",
-			Help: "Total size of byte ranges returned by the partitioner after they've been combined together to reduce the number of bucket API calls.",
+			Help: "Total size of byte ranges required to fetch from the storage after they are extended with maxGapBytes.",
 		}),
 		requestedRanges: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_bucket_store_partitioner_requested_ranges_total",
@@ -41,6 +42,10 @@ func newGapBasedPartitioner(maxGapBytes uint64, reg prometheus.Registerer) *gapB
 		expandedRanges: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_bucket_store_partitioner_expanded_ranges_total",
 			Help: "Total number of byte ranges returned by the partitioner after they've been combined together to reduce the number of bucket API calls.",
+		}),
+		extendedRangesRanges: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_bucket_store_partitioner_extended_ranges_total",
+			Help: "Total number of byte ranges that were not overlapping but were joined because they were closer than maxGapBytes.",
 		}),
 	}
 }
@@ -57,7 +62,7 @@ func (g *gapBasedPartitioner) Partition(length int, rng func(int) (uint64, uint6
 	}
 
 	// Run the upstream partitioner to compute the actual ranges that will be fetched.
-	parts := g.partition(length, rng)
+	parts, stats := g.partition(length, rng)
 
 	// Calculate the size of ranges that will be fetched.
 	expandedBytes := uint64(0)
@@ -65,15 +70,22 @@ func (g *gapBasedPartitioner) Partition(length int, rng func(int) (uint64, uint6
 		expandedBytes += p.End - p.Start
 	}
 
-	g.requestedBytes.Add(float64(requestedBytes))
+	g.requestedBytes.Add(float64(expandedBytes - stats.overextendedRange))
 	g.expandedBytes.Add(float64(expandedBytes))
 	g.requestedRanges.Add(float64(length))
 	g.expandedRanges.Add(float64(len(parts)))
+	g.extendedRangesRanges.Add(float64(stats.extendedNonOverlappingParts))
 
 	return parts
 }
 
-func (g *gapBasedPartitioner) partition(length int, rng func(int) (uint64, uint64)) (parts []Part) {
+type partitionStats struct {
+	overlappingParts            int
+	extendedNonOverlappingParts int
+	overextendedRange           uint64
+}
+
+func (g *gapBasedPartitioner) partition(length int, rng func(int) (uint64, uint64)) (parts []Part, stats partitionStats) {
 	j := 0
 	k := 0
 	for k < length {
@@ -87,7 +99,12 @@ func (g *gapBasedPartitioner) partition(length int, rng func(int) (uint64, uint6
 		for ; k < length; k++ {
 			s, e := rng(k)
 
-			if p.End+g.maxGapBytes < s {
+			if p.End >= s {
+				stats.overlappingParts++
+			} else if p.End+g.maxGapBytes >= s {
+				stats.extendedNonOverlappingParts++
+				stats.overextendedRange += s - p.End
+			} else {
 				break
 			}
 
@@ -98,5 +115,5 @@ func (g *gapBasedPartitioner) partition(length int, rng func(int) (uint64, uint6
 		p.ElemRng = [2]int{j, k}
 		parts = append(parts, p)
 	}
-	return parts
+	return
 }
