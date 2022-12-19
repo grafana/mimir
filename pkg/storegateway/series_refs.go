@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/golang/snappy"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
@@ -16,6 +17,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb/metadata"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
@@ -830,69 +832,80 @@ func metasToChunks(blockID ulid.ULID, metas []chunks.Meta) []seriesChunkRef {
 	return chks
 }
 
-type seriesForPostingsCacheEntry struct {
-	LabelSets   []labels.Labels
-	MatchersKey indexcache.LabelMatchersKey
-	Shard       sharding.ShardSelector
-}
-
 func fetchCachedSeriesForPostings(ctx context.Context, userID string, indexCache indexcache.IndexCache, blockID ulid.ULID, matchers []*labels.Matcher, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey, logger log.Logger) (seriesChunkRefsSet, bool) {
 	matchersKey := indexcache.CanonicalLabelMatchersKey(matchers)
 	data, ok := indexCache.FetchSeriesForPostings(ctx, userID, blockID, matchersKey, shard, postingsKey)
 	if !ok {
 		return seriesChunkRefsSet{}, false
 	}
-
-	var entry seriesForPostingsCacheEntry
-	if err := decodeSnappyGob(data, &entry); err != nil {
+	data, err := snappy.Decode(nil, data)
+	if err != nil {
+		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, matchers, shard, postingsKey, "msg", "can't decode series cache snappy", "err", err)
+		return seriesChunkRefsSet{}, false
+	}
+	var entry storepb.CachedSeries
+	if err = entry.Unmarshal(data); err != nil {
 		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, matchers, shard, postingsKey, "msg", "can't decode series cache", "err", err)
 		return seriesChunkRefsSet{}, false
 	}
-	if entry.MatchersKey != matchersKey {
+
+	if entry.MatchersKey != string(matchersKey) {
 		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, matchers, shard, postingsKey, "msg", "cached series entry key doesn't match, possible collision", "cached_matchers", entry.MatchersKey)
 		return seriesChunkRefsSet{}, false
 	}
-	if entry.Shard != maybeNilShard(shard) {
-		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, matchers, shard, postingsKey, "msg", "cached series shard doesn't match, possible collision", "cached_shard", entry.Shard)
+	if nonNilShard := maybeNilShard(shard); entry.ShardIndex != nonNilShard.ShardIndex || entry.ShardCount != nonNilShard.ShardCount {
+		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, matchers, shard, postingsKey, "msg", "cached series shard doesn't match, possible collision", "cached_shard_index", entry.ShardIndex, "cached_shard_count", entry.ShardCount)
 		return seriesChunkRefsSet{}, false
 	}
 
 	// This can be released by the caller because loadingSeriesChunkRefsSetIterator (where this function is called) doesn't retain it
 	// after Next() will be called again.
-	res := newSeriesChunkRefsSet(len(entry.LabelSets), true)
-	for _, lset := range entry.LabelSets {
+	res := newSeriesChunkRefsSet(len(entry.Series), true)
+	for _, lset := range entry.Series {
 		res.series = append(res.series, seriesChunkRefs{
-			lset: lset,
+			lset: mimirpb.FromLabelAdaptersToLabels(lset.Labels),
 		})
 	}
 	return res, true
 }
 
 func storeCachedSeriesForPostings(ctx context.Context, indexCache indexcache.IndexCache, userID string, blockID ulid.ULID, matchers []*labels.Matcher, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey, set seriesChunkRefsSet, logger log.Logger) {
-	entry := seriesForPostingsCacheEntry{
-		LabelSets:   make([]labels.Labels, set.len()),
-		MatchersKey: indexcache.CanonicalLabelMatchersKey(matchers),
-		Shard:       maybeNilShard(shard),
-	}
-	for i, s := range set.series {
-		entry.LabelSets[i] = s.lset
-	}
-
-	data, err := encodeSnappyGob(entry)
+	nonNilShard := maybeNilShard(shard)
+	matchersKey := indexcache.CanonicalLabelMatchersKey(matchers)
+	data, err := encodeCachedSeriesForPostings(set, matchersKey, nonNilShard)
 	if err != nil {
 		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, matchers, shard, postingsKey, "msg", "can't encode series for caching", "err", err)
 		return
 	}
-	indexCache.StoreSeriesForPostings(ctx, userID, blockID, entry.MatchersKey, shard, postingsKey, data)
+	indexCache.StoreSeriesForPostings(ctx, userID, blockID, matchersKey, shard, postingsKey, data)
+}
+
+func encodeCachedSeriesForPostings(set seriesChunkRefsSet, matchersKey indexcache.LabelMatchersKey, nonNilShard sharding.ShardSelector) ([]byte, error) {
+	entry := &storepb.CachedSeries{
+		Series:      make([]mimirpb.PreallocatingMetric, set.len()),
+		MatchersKey: string(matchersKey),
+		ShardIndex:  nonNilShard.ShardIndex,
+		ShardCount:  nonNilShard.ShardCount,
+	}
+	for i, s := range set.series {
+		entry.Series[i].Metric.Labels = mimirpb.FromLabelsToLabelAdapters(s.lset)
+	}
+
+	uncompressed, err := entry.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	return snappy.Encode(nil, uncompressed), nil
 }
 
 func logSeriesForPostingsCacheEvent(ctx context.Context, logger log.Logger, userID string, blockID ulid.ULID, matchers []*labels.Matcher, shard *sharding.ShardSelector, postingsKey indexcache.PostingsKey, msgAndArgs ...any) {
+	nonNilShard := maybeNilShard(shard)
 	var matchersStr strings.Builder
 	for _, m := range matchers {
 		matchersStr.WriteString(m.String())
 		matchersStr.WriteString(",")
 	}
-	msgAndArgs = append(msgAndArgs, "tenant_id", userID, "block_ulid", blockID.String(), "matchers", matchersStr.String(), "requested_shard", maybeNilShard(shard), "postings_key", postingsKey)
+	msgAndArgs = append(msgAndArgs, "tenant_id", userID, "block_ulid", blockID.String(), "matchers", matchersStr.String(), "requested_shard_index", nonNilShard.ShardIndex, "requested_shard_count", nonNilShard.ShardCount, "postings_key", postingsKey)
 	level.Warn(spanlogger.FromContext(ctx, logger)).Log(msgAndArgs...)
 }
 

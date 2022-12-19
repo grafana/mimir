@@ -248,8 +248,11 @@ func (c *MemcachedIndexCache) FetchSeriesForPostings(ctx context.Context, userID
 
 func seriesForPostingsCacheKey(userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, postingsKey PostingsKey) string {
 	hash := blake2b.Sum256([]byte(matchersKey))
-	// We use SP: as S: is already used for SeriesForRef and SS: is already used for Series
-	return "SP:" + userID + ":" + blockID.String() + ":" + shardKey(shard) + ":" + string(postingsKey) + ":" + base64.RawURLEncoding.EncodeToString(hash[0:])
+	// We use SP2: as
+	// * S: is already used for SeriesForRef
+	// * SS: is already used for Series
+	// * SP: was in use when using gob encoding
+	return "SP2:" + userID + ":" + blockID.String() + ":" + shardKey(shard) + ":" + string(postingsKey) + ":" + base64.RawURLEncoding.EncodeToString(hash[0:])
 }
 
 // StoreLabelNames stores the result of a LabelNames() call.
