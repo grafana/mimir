@@ -137,7 +137,6 @@ func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 
 			currentKey = newKey
 			t.postings[currentKey] = &postingValueOffsets{}
-			lastEntryOffsetInTable = -1
 			valuesForCurrentKey = 0
 		}
 
