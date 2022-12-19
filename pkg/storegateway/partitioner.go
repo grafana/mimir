@@ -45,7 +45,7 @@ func newGapBasedPartitioner(maxGapBytes uint64, reg prometheus.Registerer) *gapB
 		}),
 		extendedRanges: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_bucket_store_partitioner_extended_ranges_total",
-			Help: "Total number of byte ranges that were not overlapping but were joined because they were closer than the configured maximum gap.",
+			Help: "Total number of byte ranges that were not adjacent or overlapping but were joined because they were closer than the configured maximum gap.",
 		}),
 	}
 }

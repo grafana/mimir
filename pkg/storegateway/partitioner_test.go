@@ -64,7 +64,7 @@ func TestGapBasedPartitioner_Metrics(t *testing.T) {
 		# TYPE cortex_bucket_store_partitioner_expanded_ranges_total counter
 		cortex_bucket_store_partitioner_expanded_ranges_total 2
 
-		# HELP cortex_bucket_store_partitioner_extended_ranges_total Total number of byte ranges that were not overlapping but were joined because they were closer than the configured maximum gap.
+		# HELP cortex_bucket_store_partitioner_extended_ranges_total Total number of byte ranges that were not adjacent or overlapping but were joined because they were closer than the configured maximum gap.
 		# TYPE cortex_bucket_store_partitioner_extended_ranges_total counter
 		cortex_bucket_store_partitioner_extended_ranges_total 3
 	`)))
@@ -119,6 +119,25 @@ func TestGapBasedPartitioner_Partition(t *testing.T) {
 				{maxGapSize + 31, maxGapSize + 40},
 			},
 			expected: []Part{{Start: 1, End: maxGapSize + 100, ElemRng: [2]int{0, 3}}},
+		},
+		// Adjacent ranges
+		{
+			input: [][2]int{
+				{1, 10},
+				{10 + maxGapSize, 20 + maxGapSize},
+			},
+			expected: []Part{{Start: 1, End: maxGapSize + 20, ElemRng: [2]int{0, 2}}},
+		},
+		// Non-adjacent ranges by one
+		{
+			input: [][2]int{
+				{1, 10},
+				{11 + maxGapSize, 20 + maxGapSize},
+			},
+			expected: []Part{
+				{Start: 1, End: 10, ElemRng: [2]int{0, 1}},
+				{Start: 11 + maxGapSize, End: 20 + maxGapSize, ElemRng: [2]int{1, 2}},
+			},
 		},
 	} {
 		p := newGapBasedPartitioner(maxGapSize, nil)
