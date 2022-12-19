@@ -23,9 +23,9 @@
       'mem-ballast-size-bytes': null,
     },
 
-  mimir_write_zone_a_args:: {},
-  mimir_write_zone_b_args:: {},
-  mimir_write_zone_c_args:: {},
+  mimir_write_zone_a_args:: $.ingester_zone_a_args {},
+  mimir_write_zone_b_args:: $.ingester_zone_b_args {},
+  mimir_write_zone_c_args:: $.ingester_zone_c_args {},
 
   mimir_write_ports::
     std.uniq(
