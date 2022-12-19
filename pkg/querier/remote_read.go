@@ -7,6 +7,7 @@ package querier
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 
@@ -187,7 +188,10 @@ func seriesSetToQueryResponse(s storage.SeriesSet) (*client.QueryResponse, error
 		series := s.At()
 		samples := []mimirpb.Sample{}
 		it := series.Iterator()
-		for it.Next() != chunkenc.ValNone {
+		for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
+			if valType != chunkenc.ValFloat {
+				return nil, fmt.Errorf("unsupported value type %v", valType)
+			}
 			t, v := it.At()
 			samples = append(samples, mimirpb.Sample{
 				TimestampMs: t,
