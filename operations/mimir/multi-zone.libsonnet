@@ -26,8 +26,6 @@
     multi_zone_store_gateway_replicas: 0,
     multi_zone_store_gateway_max_unavailable: 10,
 
-    multi_zone_store_gateway_unregister_on_shutdown: false,
-
     // We can update the queryBlocksStorageConfig only once the migration is over. During the migration
     // we don't want to apply these changes to single-zone store-gateways too.
     queryBlocksStorageConfig+:: if !$._config.multi_zone_store_gateway_enabled || !$._config.multi_zone_store_gateway_read_path_enabled || $._config.multi_zone_store_gateway_migration_enabled then {} else {
@@ -197,16 +195,16 @@
   newStoreGatewayZoneContainer(zone, zone_args)::
     $.store_gateway_container +
     container.withArgs($.util.mapToFlags(
-      $.store_gateway_args + zone_args + {
+      // This first block contains flags that can be overridden.
+      {
+        // Do not unregister from ring at shutdown, so that no blocks re-shuffling occurs during rollouts.
+        'store-gateway.sharding-ring.unregister-on-shutdown': false,
+      } + $.store_gateway_args + zone_args + {
         'store-gateway.sharding-ring.instance-availability-zone': 'zone-%s' % zone,
         'store-gateway.sharding-ring.zone-awareness-enabled': true,
 
         // Use a different prefix so that both single-zone and multi-zone store-gateway rings can co-exists.
         'store-gateway.sharding-ring.prefix': 'multi-zone/',
-
-        // Do not unregister from ring at shutdown, so that no blocks re-shuffling occurs during rollouts.
-        // Can be configured by `multi_zone_store_gateway_unregister_on_shutdown` for when downscaling.
-        'store-gateway.sharding-ring.unregister-on-shutdown': $._config.multi_zone_store_gateway_unregister_on_shutdown,
       }
     )),
 
