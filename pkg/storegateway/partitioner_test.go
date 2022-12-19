@@ -48,7 +48,7 @@ func TestGapBasedPartitioner_Metrics(t *testing.T) {
 	require.Equal(t, expected, parts)
 
 	assert.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
-		# HELP cortex_bucket_store_partitioner_requested_bytes_total Total size of byte ranges required to fetch from the storage before they are extended with maxGapBytes.
+		# HELP cortex_bucket_store_partitioner_requested_bytes_total Total size of byte ranges required to fetch from the storage before they are extended by the partitioner.
 		# TYPE cortex_bucket_store_partitioner_requested_bytes_total counter
 		cortex_bucket_store_partitioner_requested_bytes_total 17
 
@@ -56,7 +56,7 @@ func TestGapBasedPartitioner_Metrics(t *testing.T) {
 		# TYPE cortex_bucket_store_partitioner_requested_ranges_total counter
 		cortex_bucket_store_partitioner_requested_ranges_total 6
 
-		# HELP cortex_bucket_store_partitioner_expanded_bytes_total Total size of byte ranges required to fetch from the storage after they are extended with maxGapBytes.
+		# HELP cortex_bucket_store_partitioner_expanded_bytes_total Total size of byte ranges required to fetch from the storage after they are extended by the partitioner.
 		# TYPE cortex_bucket_store_partitioner_expanded_bytes_total counter
 		cortex_bucket_store_partitioner_expanded_bytes_total 33
 
@@ -64,7 +64,7 @@ func TestGapBasedPartitioner_Metrics(t *testing.T) {
 		# TYPE cortex_bucket_store_partitioner_expanded_ranges_total counter
 		cortex_bucket_store_partitioner_expanded_ranges_total 2
 
-		# HELP cortex_bucket_store_partitioner_extended_ranges_total Total number of byte ranges that were not overlapping but were joined because they were closer than maxGapBytes.
+		# HELP cortex_bucket_store_partitioner_extended_ranges_total Total number of byte ranges that were not overlapping but were joined because they were closer than the configured maximum gap.
 		# TYPE cortex_bucket_store_partitioner_extended_ranges_total counter
 		cortex_bucket_store_partitioner_extended_ranges_total 3
 	`)))
