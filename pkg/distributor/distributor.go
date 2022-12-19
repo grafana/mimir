@@ -45,6 +45,7 @@ import (
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/extract"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -1182,6 +1183,8 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 	metadataKeys := make([]uint32, 0, len(req.Metadata))
 	seriesKeys := make([]uint32, 0, len(req.Timeseries))
 
+	forwardingRules := d.limits.ForwardingRules(userID)
+
 	// For each timeseries, compute a hash to distribute across ingesters
 	for _, ts := range req.Timeseries {
 		// Generate the sharding token based on the series labels without the HA replica
@@ -1192,6 +1195,15 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 		}
 
 		seriesKeys = append(seriesKeys, key)
+
+		// Set ephemeral flag based on forwarding rules. (TODO: allow ruler to set Ephemeral flag directly, and not overwrite it)
+		metric, _ := extract.UnsafeMetricNameFromLabelAdapters(ts.Labels)
+		if metric != "" {
+			rule, ok := forwardingRules[metric]
+			if ok {
+				ts.Ephemeral = !rule.Ingest
+			}
+		}
 	}
 
 	for _, m := range req.Metadata {

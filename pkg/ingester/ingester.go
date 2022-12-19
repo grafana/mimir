@@ -624,6 +624,19 @@ type extendedAppender interface {
 	storage.GetRef
 }
 
+type pushMetrics struct {
+	succeededSamplesCount     int
+	failedSamplesCount        int
+	succeededExemplarsCount   int
+	failedExemplarsCount      int
+	sampleOutOfBoundsCount    int
+	sampleOutOfOrderCount     int
+	sampleTooOldCount         int
+	newValueForTimestampCount int
+	perUserSeriesLimitCount   int
+	perMetricSeriesLimitCount int
+}
+
 // PushWithCleanup is the Push() implementation for blocks storage and takes a WriteRequest and adds it to the TSDB head.
 func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (*mimirpb.WriteResponse, error) {
 	// NOTE: because we use `unsafe` in deserialisation, we must not
@@ -692,17 +705,10 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	// Keep track of some stats which are tracked only if the samples will be
 	// successfully committed
 	var (
-		succeededSamplesCount     = 0
-		failedSamplesCount        = 0
-		succeededExemplarsCount   = 0
-		failedExemplarsCount      = 0
-		startAppend               = time.Now()
-		sampleOutOfBoundsCount    = 0
-		sampleOutOfOrderCount     = 0
-		sampleTooOldCount         = 0
-		newValueForTimestampCount = 0
-		perUserSeriesLimitCount   = 0
-		perMetricSeriesLimitCount = 0
+		startAppend = time.Now()
+
+		longTermMetrics  pushMetrics
+		ephemeralMetrics pushMetrics
 
 		minAppendTime, minAppendTimeAvailable = db.Head().AppendableMinValidTime()
 
@@ -728,22 +734,30 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	}
 
 	// Walk the samples, appending them to the users database
-	var persistentApp, ephemeralApp, app extendedAppender
+	var persistentApp, ephemeralApp extendedAppender
 	if hasPersistentSamples {
 		persistentApp = db.Appender(ctx).(extendedAppender)
 	}
 	if hasEphemeralSamples {
-		ephemeralApp = db.EphemeralAppender(ctx).(extendedAppender)
+		a := db.EphemeralAppender(ctx)
+		if a != nil {
+			ephemeralApp = a.(extendedAppender)
+		}
 	}
 
 	level.Debug(spanlog).Log("event", "got appender", "numSeries", len(req.Timeseries))
 
 	oooTW := i.limits.OutOfOrderTimeWindow(userID)
 	for _, ts := range req.Timeseries {
+		var perSeries *pushMetrics
+
+		var app extendedAppender
 		if ts.Ephemeral {
 			app = ephemeralApp
+			perSeries = &ephemeralMetrics
 		} else {
 			app = persistentApp
+			perSeries = &longTermMetrics
 		}
 
 		// The labels must be sorted (in our case, it's guaranteed a write request
@@ -755,8 +769,8 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 		// extend the fast path to fail early.
 		if oooTW <= 0 && minAppendTimeAvailable &&
 			len(ts.Samples) > 0 && len(ts.Exemplars) == 0 && allOutOfBounds(ts.Samples, minAppendTime) {
-			failedSamplesCount += len(ts.Samples)
-			sampleOutOfBoundsCount += len(ts.Samples)
+			perSeries.failedSamplesCount += len(ts.Samples)
+			perSeries.sampleOutOfBoundsCount += len(ts.Samples)
 
 			updateFirstPartial(func() error {
 				return newIngestErrSampleTimestampTooOld(model.Time(ts.Samples[0].TimestampMs), ts.Labels)
@@ -768,7 +782,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 		ref, copiedLabels := app.GetRef(mimirpb.FromLabelAdaptersToLabels(ts.Labels))
 
 		// To find out if any sample was added to this series, we keep old value.
-		oldSucceededSamplesCount := succeededSamplesCount
+		oldSucceededSamplesCount := perSeries.succeededSamplesCount
 
 		for _, s := range ts.Samples {
 			var err error
@@ -776,7 +790,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 			// If the cached reference exists, we try to use it.
 			if ref != 0 {
 				if _, err = app.Append(ref, copiedLabels, s.TimestampMs, s.Value); err == nil {
-					succeededSamplesCount++
+					perSeries.succeededSamplesCount++
 					continue
 				}
 			} else {
@@ -785,12 +799,12 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 				// Retain the reference in case there are multiple samples for the series.
 				if ref, err = app.Append(0, copiedLabels, s.TimestampMs, s.Value); err == nil {
-					succeededSamplesCount++
+					perSeries.succeededSamplesCount++
 					continue
 				}
 			}
 
-			failedSamplesCount++
+			perSeries.failedSamplesCount++
 
 			// Check if the error is a soft error we can proceed on. If so, we keep track
 			// of it, so that we can return it back to the distributor, which will return a
@@ -799,36 +813,36 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 			//nolint:errorlint // We don't expect the cause error to be wrapped.
 			switch cause := errors.Cause(err); cause {
 			case storage.ErrOutOfBounds:
-				sampleOutOfBoundsCount++
+				perSeries.sampleOutOfBoundsCount++
 				updateFirstPartial(func() error { return newIngestErrSampleTimestampTooOld(model.Time(s.TimestampMs), ts.Labels) })
 				continue
 
 			case storage.ErrOutOfOrderSample:
-				sampleOutOfOrderCount++
+				perSeries.sampleOutOfOrderCount++
 				updateFirstPartial(func() error { return newIngestErrSampleOutOfOrder(model.Time(s.TimestampMs), ts.Labels) })
 				continue
 
 			case storage.ErrTooOldSample:
-				sampleTooOldCount++
+				perSeries.sampleTooOldCount++
 				updateFirstPartial(func() error {
 					return newIngestErrSampleTimestampTooOldOOOEnabled(model.Time(s.TimestampMs), ts.Labels, oooTW)
 				})
 				continue
 
 			case storage.ErrDuplicateSampleForTimestamp:
-				newValueForTimestampCount++
+				perSeries.newValueForTimestampCount++
 				updateFirstPartial(func() error {
 					return newIngestErrSampleDuplicateTimestamp(model.Time(s.TimestampMs), ts.Labels)
 				})
 				continue
 
 			case errMaxSeriesPerUserLimitExceeded:
-				perUserSeriesLimitCount++
+				perSeries.perUserSeriesLimitCount++
 				updateFirstPartial(func() error { return makeLimitError(perUserSeriesLimit, i.limiter.FormatError(userID, cause)) })
 				continue
 
 			case errMaxSeriesPerMetricLimitExceeded:
-				perMetricSeriesLimitCount++
+				perSeries.perMetricSeriesLimitCount++
 				updateFirstPartial(func() error {
 					return makeMetricLimitError(perMetricSeriesLimit, copiedLabels, i.limiter.FormatError(userID, cause))
 				})
@@ -843,7 +857,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 			return nil, wrapWithUser(err, userID)
 		}
 
-		if i.cfg.ActiveSeriesMetricsEnabled && succeededSamplesCount > oldSucceededSamplesCount {
+		if i.cfg.ActiveSeriesMetricsEnabled && perSeries.succeededSamplesCount > oldSucceededSamplesCount {
 			db.activeSeries.UpdateSeries(mimirpb.FromLabelAdaptersToLabels(ts.Labels), startAppend, func(l labels.Labels) labels.Labels {
 				// we must already have copied the labels if succeededSamplesCount has been incremented.
 				return copiedLabels
@@ -857,7 +871,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 				updateFirstPartial(func() error {
 					return newIngestErrExemplarMissingSeries(model.Time(ts.Exemplars[0].TimestampMs), ts.Labels, ts.Exemplars[0].Labels)
 				})
-				failedExemplarsCount += len(ts.Exemplars)
+				perSeries.failedExemplarsCount += len(ts.Exemplars)
 			} else { // Note that else is explicit, rather than a continue in the above if, in case of additional logic post exemplar processing.
 				for _, ex := range ts.Exemplars {
 					e := exemplar.Exemplar{
@@ -868,7 +882,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 					}
 
 					if _, err = app.AppendExemplar(ref, nil, e); err == nil {
-						succeededExemplarsCount++
+						perSeries.succeededExemplarsCount++
 						continue
 					}
 
@@ -876,7 +890,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 					updateFirstPartial(func() error {
 						return wrappedTSDBIngestExemplarOtherErr(err, model.Time(ex.TimestampMs), ts.Labels, ex.Labels)
 					})
-					failedExemplarsCount++
+					perSeries.failedExemplarsCount++
 				}
 			}
 		}
@@ -887,10 +901,15 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 
 	level.Debug(spanlog).Log(
 		"event", "start commit",
-		"succeededSamplesCount", succeededSamplesCount,
-		"failedSamplesCount", failedSamplesCount,
-		"succeededExemplarsCount", succeededExemplarsCount,
-		"failedExemplarsCount", failedExemplarsCount,
+		"succeededSamplesCount", longTermMetrics.succeededSamplesCount,
+		"failedSamplesCount", longTermMetrics.failedSamplesCount,
+		"succeededExemplarsCount", longTermMetrics.succeededExemplarsCount,
+		"failedExemplarsCount", longTermMetrics.failedExemplarsCount,
+
+		"ephemeralSucceededSamplesCount", ephemeralMetrics.succeededSamplesCount,
+		"ephemeralFailedSamplesCount", ephemeralMetrics.failedSamplesCount,
+		"ephemeralSucceededExemplarsCount", ephemeralMetrics.succeededExemplarsCount,
+		"ephemeralFailedExemplarsCount", ephemeralMetrics.failedExemplarsCount,
 	)
 
 	startCommit := time.Now()
@@ -910,48 +929,51 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	level.Debug(spanlog).Log("event", "complete commit", "commitDuration", commitDuration.String())
 
 	// If only invalid samples are pushed, don't change "last update", as TSDB was not modified.
-	if succeededSamplesCount > 0 {
+	if longTermMetrics.succeededSamplesCount > 0 || ephemeralMetrics.succeededSamplesCount > 0 {
 		db.setLastUpdate(time.Now())
 	}
 
 	// Increment metrics only if the samples have been successfully committed.
 	// If the code didn't reach this point, it means that we returned an error
 	// which will be converted into an HTTP 5xx and the client should/will retry.
-	i.metrics.ingestedSamples.WithLabelValues(userID).Add(float64(succeededSamplesCount))
-	i.metrics.ingestedSamplesFail.WithLabelValues(userID).Add(float64(failedSamplesCount))
-	i.metrics.ingestedExemplars.Add(float64(succeededExemplarsCount))
-	i.metrics.ingestedExemplarsFail.Add(float64(failedExemplarsCount))
-	i.appendedSamplesStats.Inc(int64(succeededSamplesCount))
-	i.appendedExemplarsStats.Inc(int64(succeededExemplarsCount))
+	i.metrics.ingestedSamples.WithLabelValues(userID).Add(float64(longTermMetrics.succeededSamplesCount))
+	i.metrics.ingestedSamplesFail.WithLabelValues(userID).Add(float64(longTermMetrics.failedSamplesCount))
+	i.metrics.ingestedExemplars.Add(float64(longTermMetrics.succeededExemplarsCount))
+	i.metrics.ingestedExemplarsFail.Add(float64(longTermMetrics.failedExemplarsCount))
+	i.appendedSamplesStats.Inc(int64(longTermMetrics.succeededSamplesCount))
+	i.appendedExemplarsStats.Inc(int64(longTermMetrics.succeededExemplarsCount))
 
-	if sampleOutOfBoundsCount > 0 {
-		i.metrics.discardedSamplesSampleOutOfBounds.WithLabelValues(userID).Add(float64(sampleOutOfBoundsCount))
+	i.metrics.ephemeralIngestedSamples.WithLabelValues(userID).Add(float64(ephemeralMetrics.succeededSamplesCount))
+	i.metrics.ephemeralIngestedSamplesFail.WithLabelValues(userID).Add(float64(ephemeralMetrics.failedSamplesCount))
+
+	if longTermMetrics.sampleOutOfBoundsCount > 0 {
+		i.metrics.discardedSamplesSampleOutOfBounds.WithLabelValues(userID).Add(float64(longTermMetrics.sampleOutOfBoundsCount))
 	}
-	if sampleOutOfOrderCount > 0 {
-		i.metrics.discardedSamplesSampleOutOfOrder.WithLabelValues(userID).Add(float64(sampleOutOfOrderCount))
+	if longTermMetrics.sampleOutOfOrderCount > 0 {
+		i.metrics.discardedSamplesSampleOutOfOrder.WithLabelValues(userID).Add(float64(longTermMetrics.sampleOutOfOrderCount))
 	}
-	if sampleTooOldCount > 0 {
-		i.metrics.discardedSamplesSampleTooOld.WithLabelValues(userID).Add(float64(sampleTooOldCount))
+	if longTermMetrics.sampleTooOldCount > 0 {
+		i.metrics.discardedSamplesSampleTooOld.WithLabelValues(userID).Add(float64(longTermMetrics.sampleTooOldCount))
 	}
-	if newValueForTimestampCount > 0 {
-		i.metrics.discardedSamplesNewValueForTimestamp.WithLabelValues(userID).Add(float64(newValueForTimestampCount))
+	if longTermMetrics.newValueForTimestampCount > 0 {
+		i.metrics.discardedSamplesNewValueForTimestamp.WithLabelValues(userID).Add(float64(longTermMetrics.newValueForTimestampCount))
 	}
-	if perUserSeriesLimitCount > 0 {
-		i.metrics.discardedSamplesPerUserSeriesLimit.WithLabelValues(userID).Add(float64(perUserSeriesLimitCount))
+	if longTermMetrics.perUserSeriesLimitCount > 0 {
+		i.metrics.discardedSamplesPerUserSeriesLimit.WithLabelValues(userID).Add(float64(longTermMetrics.perUserSeriesLimitCount))
 	}
-	if perMetricSeriesLimitCount > 0 {
-		i.metrics.discardedSamplesPerMetricSeriesLimit.WithLabelValues(userID).Add(float64(perMetricSeriesLimitCount))
+	if longTermMetrics.perMetricSeriesLimitCount > 0 {
+		i.metrics.discardedSamplesPerMetricSeriesLimit.WithLabelValues(userID).Add(float64(longTermMetrics.perMetricSeriesLimitCount))
 	}
-	if succeededSamplesCount > 0 {
-		i.ingestionRate.Add(int64(succeededSamplesCount))
+	if longTermMetrics.succeededSamplesCount > 0 {
+		i.ingestionRate.Add(int64(longTermMetrics.succeededSamplesCount))
 
 		switch req.Source {
 		case mimirpb.RULE:
-			db.ingestedRuleSamples.Add(int64(succeededSamplesCount))
+			db.ingestedRuleSamples.Add(int64(longTermMetrics.succeededSamplesCount))
 		case mimirpb.API:
 			fallthrough
 		default:
-			db.ingestedAPISamples.Add(int64(succeededSamplesCount))
+			db.ingestedAPISamples.Add(int64(longTermMetrics.succeededSamplesCount))
 		}
 	}
 
@@ -1041,7 +1063,7 @@ func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesReque
 		return &client.LabelValuesResponse{}, nil
 	}
 
-	q, err := db.Querier(ctx, startTimestampMs, endTimestampMs)
+	q, err := db.Querier(ctx, startTimestampMs, endTimestampMs, false)
 	if err != nil {
 		return nil, err
 	}
@@ -1077,7 +1099,7 @@ func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest
 		return nil, err
 	}
 
-	q, err := db.Querier(ctx, mint, maxt)
+	q, err := db.Querier(ctx, mint, maxt, false)
 	if err != nil {
 		return nil, err
 	}
@@ -1116,7 +1138,7 @@ func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.Metr
 	}
 
 	mint, maxt := req.StartTimestampMs, req.EndTimestampMs
-	q, err := db.Querier(ctx, mint, maxt)
+	q, err := db.Querier(ctx, mint, maxt, false)
 	if err != nil {
 		return nil, err
 	}
@@ -1305,7 +1327,11 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 		return err
 	}
 
-	i.metrics.queries.Inc()
+	if req.GetEphemeral() {
+		i.metrics.ephemeralQueries.Inc()
+	} else {
+		i.metrics.queries.Inc()
+	}
 
 	db := i.getTSDB(userID)
 	if db == nil {
@@ -1334,23 +1360,28 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 
 	if streamType == QueryStreamChunks {
 		level.Debug(spanlog).Log("msg", "using queryStreamChunks")
-		numSeries, numSamples, err = i.queryStreamChunks(ctx, db, int64(from), int64(through), matchers, shard, stream)
+		numSeries, numSamples, err = i.queryStreamChunks(ctx, db, int64(from), int64(through), matchers, shard, stream, req.GetEphemeral())
 	} else {
 		level.Debug(spanlog).Log("msg", "using queryStreamSamples")
-		numSeries, numSamples, err = i.queryStreamSamples(ctx, db, int64(from), int64(through), matchers, shard, stream)
+		numSeries, numSamples, err = i.queryStreamSamples(ctx, db, int64(from), int64(through), matchers, shard, stream, req.GetEphemeral())
 	}
 	if err != nil {
 		return err
 	}
 
-	i.metrics.queriedSeries.Observe(float64(numSeries))
-	i.metrics.queriedSamples.Observe(float64(numSamples))
+	if req.GetEphemeral() {
+		i.metrics.ephemeralQueriedSeries.Observe(float64(numSeries))
+		i.metrics.ephemeralQueriedSamples.Observe(float64(numSamples))
+	} else {
+		i.metrics.queriedSeries.Observe(float64(numSeries))
+		i.metrics.queriedSamples.Observe(float64(numSamples))
+	}
 	level.Debug(spanlog).Log("series", numSeries, "samples", numSamples)
 	return nil
 }
 
-func (i *Ingester) queryStreamSamples(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) (numSeries, numSamples int, _ error) {
-	q, err := db.Querier(ctx, from, through)
+func (i *Ingester) queryStreamSamples(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer, ephemeral bool) (numSeries, numSamples int, _ error) {
+	q, err := db.Querier(ctx, from, through, ephemeral)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -1423,13 +1454,13 @@ func (i *Ingester) queryStreamSamples(ctx context.Context, db *userTSDB, from, t
 }
 
 // queryStreamChunks streams metrics from a TSDB. This implements the client.IngesterServer interface
-func (i *Ingester) queryStreamChunks(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) (numSeries, numSamples int, _ error) {
+func (i *Ingester) queryStreamChunks(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer, ephemeral bool) (numSeries, numSamples int, _ error) {
 	var q storage.ChunkQuerier
 	var err error
 	if i.limits.OutOfOrderTimeWindow(db.userID) > 0 {
-		q, err = db.UnorderedChunkQuerier(ctx, from, through)
+		q, err = db.UnorderedChunkQuerier(ctx, from, through, ephemeral)
 	} else {
-		q, err = db.ChunkQuerier(ctx, from, through)
+		q, err = db.ChunkQuerier(ctx, from, through, ephemeral)
 	}
 	if err != nil {
 		return 0, 0, err
@@ -1611,6 +1642,26 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		instanceSeriesCount: &i.seriesCount,
 	}
 
+	headOptions := &tsdb.HeadOptions{
+		ChunkRange:                     5 * time.Minute.Milliseconds(),
+		ChunkDirRoot:                   filepath.Join(udir, "ephemeral_chunks"),
+		ChunkWriteBufferSize:           i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteBufferSize,
+		ChunkEndTimeVariance:           0,
+		ChunkWriteQueueSize:            i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteQueueSize,
+		StripeSize:                     i.cfg.BlocksStorageConfig.TSDB.StripeSize,
+		SeriesCallback:                 userDB, // TODO fix limits. This uses standard limits and metrics, not ephemeral ones.
+		EnableExemplarStorage:          false,
+		EnableMemorySnapshotOnShutdown: false,
+		IsolationDisabled:              true,
+	}
+	headOptions.OutOfOrderCapMax.Store(int64(i.cfg.BlocksStorageConfig.TSDB.OutOfOrderCapacityMax))
+
+	eph, err := tsdb.NewHead(prometheus.WrapRegistererWithPrefix("ephemeral_", tsdbPromReg), log.With(userLogger, "ephemeral", "true"), nil, nil, headOptions, nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create storage for ephemeral samples")
+	}
+	userDB.ephemeral = eph
+
 	maxExemplars := i.limiter.convertGlobalToLocalLimit(userID, i.limits.MaxGlobalExemplarsPerUser(userID))
 	oooTW := time.Duration(i.limits.OutOfOrderTimeWindow(userID))
 	// Create a new user database
@@ -1651,6 +1702,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 	}
 
 	userDB.db = db
+
 	// We set the limiter here because we don't want to limit
 	// series during WAL replay.
 	userDB.limiter = i.limiter

@@ -31,6 +31,13 @@ type ingesterMetrics struct {
 	memMetadataCreatedTotal *prometheus.CounterVec
 	memMetadataRemovedTotal *prometheus.CounterVec
 
+	// Basic metrics for ephemeral data. Incomplete.
+	ephemeralIngestedSamples     *prometheus.CounterVec
+	ephemeralIngestedSamplesFail *prometheus.CounterVec
+	ephemeralQueries             prometheus.Counter
+	ephemeralQueriedSamples      prometheus.Histogram
+	ephemeralQueriedSeries       prometheus.Histogram
+
 	activeSeriesLoading               *prometheus.GaugeVec
 	activeSeriesPerUser               *prometheus.GaugeVec
 	activeSeriesCustomTrackersPerUser *prometheus.GaugeVec
@@ -104,6 +111,10 @@ func newIngesterMetrics(
 			Name: "cortex_ingester_ingested_samples_total",
 			Help: "The total number of samples ingested per user.",
 		}, []string{"user"}),
+		ephemeralIngestedSamples: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ingester_ingested_ephemeral_samples_total",
+			Help: "The total number of ephemeral samples ingested per user.",
+		}, []string{"user"}),
 		ingestedExemplars: promauto.With(r).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingester_ingested_exemplars_total",
 			Help: "The total number of exemplars ingested.",
@@ -115,6 +126,10 @@ func newIngesterMetrics(
 		ingestedSamplesFail: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ingester_ingested_samples_failures_total",
 			Help: "The total number of samples that errored on ingestion per user.",
+		}, []string{"user"}),
+		ephemeralIngestedSamplesFail: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ingester_ingested_ephemeral_samples_failures_total",
+			Help: "The total number of ephemeral samples that errored on ingestion per user.",
 		}, []string{"user"}),
 		ingestedExemplarsFail: promauto.With(r).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingester_ingested_exemplars_failures_total",
@@ -128,8 +143,18 @@ func newIngesterMetrics(
 			Name: "cortex_ingester_queries_total",
 			Help: "The total number of queries the ingester has handled.",
 		}),
+		ephemeralQueries: promauto.With(r).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingester_ephemeral_queries_total",
+			Help: "The total number of ephemeral queries the ingester has handled.",
+		}),
 		queriedSamples: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
 			Name: "cortex_ingester_queried_samples",
+			Help: "The total number of samples returned from queries.",
+			// Could easily return 10m samples per query - 10*(8^(8-1)) = 20.9m.
+			Buckets: prometheus.ExponentialBuckets(10, 8, 8),
+		}),
+		ephemeralQueriedSamples: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
+			Name: "cortex_ingester_ephemeral_queried_samples",
 			Help: "The total number of samples returned from queries.",
 			// Could easily return 10m samples per query - 10*(8^(8-1)) = 20.9m.
 			Buckets: prometheus.ExponentialBuckets(10, 8, 8),
@@ -142,6 +167,12 @@ func newIngesterMetrics(
 		}),
 		queriedSeries: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
 			Name: "cortex_ingester_queried_series",
+			Help: "The total number of series returned from queries.",
+			// A reasonable upper bound is around 100k - 10*(8^(6-1)) = 327k.
+			Buckets: prometheus.ExponentialBuckets(10, 8, 6),
+		}),
+		ephemeralQueriedSeries: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
+			Name: "cortex_ingester_ephemeral_queried_series",
 			Help: "The total number of series returned from queries.",
 			// A reasonable upper bound is around 100k - 10*(8^(6-1)) = 327k.
 			Buckets: prometheus.ExponentialBuckets(10, 8, 6),
@@ -366,6 +397,9 @@ type tsdbMetrics struct {
 	memSeriesCreatedTotal *prometheus.Desc
 	memSeriesRemovedTotal *prometheus.Desc
 
+	ephemeralMemSeriesCreatedTotal *prometheus.Desc
+	ephemeralMemSeriesRemovedTotal *prometheus.Desc
+
 	regs *util.UserRegistries
 }
 
@@ -553,6 +587,14 @@ func newTSDBMetrics(r prometheus.Registerer) *tsdbMetrics {
 			"cortex_ingester_memory_series_removed_total",
 			"The total number of series that were removed per user.",
 			[]string{"user"}, nil),
+		ephemeralMemSeriesCreatedTotal: prometheus.NewDesc(
+			"cortex_ingester_memory_ephemeral_series_created_total",
+			"The total number of series that were created per user.",
+			[]string{"user"}, nil),
+		ephemeralMemSeriesRemovedTotal: prometheus.NewDesc(
+			"cortex_ingester_memory_ephemeral_series_removed_total",
+			"The total number of series that were removed per user.",
+			[]string{"user"}, nil),
 	}
 
 	if r != nil {
@@ -609,6 +651,8 @@ func (sm *tsdbMetrics) Describe(out chan<- *prometheus.Desc) {
 
 	out <- sm.memSeriesCreatedTotal
 	out <- sm.memSeriesRemovedTotal
+	out <- sm.ephemeralMemSeriesCreatedTotal
+	out <- sm.ephemeralMemSeriesRemovedTotal
 }
 
 func (sm *tsdbMetrics) Collect(out chan<- prometheus.Metric) {
@@ -661,6 +705,9 @@ func (sm *tsdbMetrics) Collect(out chan<- prometheus.Metric) {
 
 	data.SendSumOfCountersPerUser(out, sm.memSeriesCreatedTotal, "prometheus_tsdb_head_series_created_total")
 	data.SendSumOfCountersPerUser(out, sm.memSeriesRemovedTotal, "prometheus_tsdb_head_series_removed_total")
+
+	data.SendSumOfCountersPerUser(out, sm.ephemeralMemSeriesCreatedTotal, "ephemeral_prometheus_tsdb_head_series_created_total")
+	data.SendSumOfCountersPerUser(out, sm.ephemeralMemSeriesRemovedTotal, "ephemeral_prometheus_tsdb_head_series_removed_total")
 }
 
 func (sm *tsdbMetrics) setRegistryForUser(userID string, registry *prometheus.Registry) {

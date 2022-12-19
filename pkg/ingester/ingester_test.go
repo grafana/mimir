@@ -825,6 +825,151 @@ func TestIngester_Push(t *testing.T) {
 	}
 }
 
+func TestIngester_PushEphemeral(t *testing.T) {
+	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
+	metricLabels := mimirpb.FromLabelAdaptersToLabels(metricLabelAdapters)
+	metricLabelSet := mimirpb.FromLabelAdaptersToMetric(metricLabelAdapters)
+	metricNames := []string{
+		"cortex_ingester_ingested_ephemeral_samples_total",
+		"cortex_ingester_ingested_ephemeral_samples_failures_total",
+		"cortex_ingester_memory_ephemeral_series",
+		"cortex_ingester_memory_users",
+		"cortex_ingester_memory_ephemeral_series_created_total",
+		"cortex_ingester_memory_ephemeral_series_removed_total",
+		"cortex_discarded_samples_total",
+		"cortex_ingester_active_series",
+	}
+	userID := "test"
+
+	tests := map[string]struct {
+		reqs                 []*mimirpb.WriteRequest
+		expectedErr          error
+		expectedIngested     model.Matrix
+		expectedMetrics      string
+		additionalMetrics    []string
+		disableActiveSeries  bool
+		maxExemplars         int
+		maxMetadataPerUser   int
+		maxMetadataPerMetric int
+	}{
+		"should succeed on pushing valid ephemeral series": {
+			reqs: []*mimirpb.WriteRequest{
+				mimirpb.ToWriteRequestEphemeral(
+					[]labels.Labels{metricLabels},
+					[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
+					true,
+					nil,
+					nil,
+					mimirpb.API),
+				mimirpb.ToWriteRequestEphemeral(
+					[]labels.Labels{metricLabels},
+					[]mimirpb.Sample{{Value: 2, TimestampMs: 10}},
+					true,
+					nil,
+					[]*mimirpb.MetricMetadata{
+						{MetricFamilyName: "metric_name_2", Help: "a help for metric_name_2", Unit: "", Type: mimirpb.GAUGE},
+					},
+					mimirpb.API),
+			},
+			expectedErr: nil,
+			expectedIngested: model.Matrix{
+				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 1, Timestamp: 9}, {Value: 2, Timestamp: 10}}},
+			},
+			additionalMetrics: nil,
+			expectedMetrics: `
+					# HELP cortex_ingester_ingested_ephemeral_samples_failures_total The total number of ephemeral samples that errored on ingestion per user.
+					# TYPE cortex_ingester_ingested_ephemeral_samples_failures_total counter
+					cortex_ingester_ingested_ephemeral_samples_failures_total{user="test"} 0
+					# HELP cortex_ingester_ingested_ephemeral_samples_total The total number of ephemeral samples ingested per user.
+					# TYPE cortex_ingester_ingested_ephemeral_samples_total counter
+					cortex_ingester_ingested_ephemeral_samples_total{user="test"} 2
+					# HELP cortex_ingester_memory_ephemeral_series_created_total The total number of series that were created per user.
+					# TYPE cortex_ingester_memory_ephemeral_series_created_total counter
+					cortex_ingester_memory_ephemeral_series_created_total{user="test"} 1
+					# HELP cortex_ingester_memory_ephemeral_series_removed_total The total number of series that were removed per user.
+					# TYPE cortex_ingester_memory_ephemeral_series_removed_total counter
+					cortex_ingester_memory_ephemeral_series_removed_total{user="test"} 0
+					# HELP cortex_ingester_active_series Number of currently active series per user.
+        	        # TYPE cortex_ingester_active_series gauge
+        	        cortex_ingester_active_series{user="test"} 1
+					# HELP cortex_ingester_memory_users The current number of users in memory.
+					# TYPE cortex_ingester_memory_users gauge
+					cortex_ingester_memory_users 1
+			`,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			registry := prometheus.NewRegistry()
+
+			// Create a mocked ingester
+			cfg := defaultIngesterTestConfig(t)
+			cfg.IngesterRing.ReplicationFactor = 1
+			cfg.ActiveSeriesMetricsEnabled = !testData.disableActiveSeries
+			limits := defaultLimitsTestConfig()
+			limits.MaxGlobalExemplarsPerUser = testData.maxExemplars
+			limits.MaxGlobalMetricsWithMetadataPerUser = testData.maxMetadataPerUser
+			limits.MaxGlobalMetadataPerMetric = testData.maxMetadataPerMetric
+
+			i, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, "", registry)
+			require.NoError(t, err)
+			require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+			defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
+
+			ctx := user.InjectOrgID(context.Background(), userID)
+
+			// Wait until the ingester is healthy
+			test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
+				return i.lifecycler.HealthyInstancesCount()
+			})
+
+			// Push timeseries
+			for idx, req := range testData.reqs {
+				// Push metrics to the ingester. Override the default cleanup method of mimirpb.ReuseSlice with a no-op one.
+				_, err := i.PushWithCleanup(ctx, push.NewParsedRequest(req))
+
+				// We expect no error on any request except the last one
+				// which may error (and in that case we assert on it)
+				if idx < len(testData.reqs)-1 {
+					assert.NoError(t, err)
+				} else {
+					assert.Equal(t, testData.expectedErr, err)
+				}
+			}
+
+			// Read back samples to see what has been really ingested
+			s := &stream{ctx: ctx}
+			err = i.QueryStream(&client.QueryRequest{
+				StartTimestampMs: math.MinInt64,
+				EndTimestampMs:   math.MaxInt64,
+				Matchers:         []*client.LabelMatcher{{Type: client.REGEX_MATCH, Name: labels.MetricName, Value: ".*"}},
+				Ephemeral:        true,
+			}, s)
+			require.NoError(t, err)
+
+			res, err := chunkcompat.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+			require.NoError(t, err)
+			if len(res) == 0 {
+				res = nil
+			}
+			assert.Equal(t, testData.expectedIngested, res)
+
+			// Update active series for metrics check.
+			if !testData.disableActiveSeries {
+				i.updateActiveSeries(time.Now())
+			}
+
+			// Append additional metrics to assert on.
+			mn := append(metricNames, testData.additionalMetrics...)
+
+			// Check tracked Prometheus metrics
+			err = testutil.GatherAndCompare(registry, strings.NewReader(testData.expectedMetrics), mn...)
+			assert.NoError(t, err)
+		})
+	}
+}
+
 func TestIngester_Push_ShouldCorrectlyTrackMetricsInMultiTenantScenario(t *testing.T) {
 	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
 	metricLabels := mimirpb.FromLabelAdaptersToLabels(metricLabelAdapters)

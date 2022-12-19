@@ -54,6 +54,14 @@ func ToWriteRequest(lbls []labels.Labels, samples []Sample, exemplars []*Exempla
 	return req
 }
 
+func ToWriteRequestEphemeral(lbls []labels.Labels, samples []Sample, ephemeral bool, exemplars []*Exemplar, metadata []*MetricMetadata, source WriteRequest_SourceEnum) *WriteRequest {
+	req := ToWriteRequest(lbls, samples, exemplars, metadata, source)
+	for i := range req.Timeseries {
+		req.Timeseries[i].Ephemeral = ephemeral
+	}
+	return req
+}
+
 // FromLabelAdaptersToLabels casts []LabelAdapter to labels.Labels.
 // It uses unsafe, but as LabelAdapter == labels.Label this should be safe.
 // This allows us to use labels.Labels directly in protos.

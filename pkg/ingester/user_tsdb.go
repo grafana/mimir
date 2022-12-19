@@ -7,6 +7,7 @@ package ingester
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -55,6 +56,7 @@ func (r tsdbCloseCheckResult) shouldClose() bool {
 
 type userTSDB struct {
 	db             *tsdb.DB
+	ephemeral      *tsdb.Head // storage for temporary samples
 	userID         string
 	activeSeries   *activeseries.ActiveSeries
 	seriesInMetric *metricCounter
@@ -96,20 +98,41 @@ func (u *userTSDB) Appender(ctx context.Context) storage.Appender {
 }
 
 func (u *userTSDB) EphemeralAppender(ctx context.Context) storage.Appender {
-	// on first call, instantiate ephemeral TSDB.
-	return nil
+	if u.ephemeral == nil {
+		return nil
+	}
+
+	return u.ephemeral.Appender(ctx)
 }
 
 // Querier returns a new querier over the data partition for the given time range.
-func (u *userTSDB) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+func (u *userTSDB) Querier(ctx context.Context, mint, maxt int64, ephemeral bool) (storage.Querier, error) {
+	if ephemeral {
+		if u.ephemeral == nil {
+			return nil, fmt.Errorf("ephemeral data not available")
+		}
+		return tsdb.NewBlockQuerier(u.ephemeral, mint, maxt)
+	}
 	return u.db.Querier(ctx, mint, maxt)
 }
 
-func (u *userTSDB) ChunkQuerier(ctx context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
+func (u *userTSDB) ChunkQuerier(ctx context.Context, mint, maxt int64, ephemeral bool) (storage.ChunkQuerier, error) {
+	if ephemeral {
+		if u.ephemeral == nil {
+			return nil, fmt.Errorf("ephemeral data not available")
+		}
+		return tsdb.NewBlockChunkQuerier(u.ephemeral, mint, maxt)
+	}
 	return u.db.ChunkQuerier(ctx, mint, maxt)
 }
 
-func (u *userTSDB) UnorderedChunkQuerier(ctx context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
+func (u *userTSDB) UnorderedChunkQuerier(ctx context.Context, mint, maxt int64, ephemeral bool) (storage.ChunkQuerier, error) {
+	if ephemeral {
+		if u.ephemeral == nil {
+			return nil, fmt.Errorf("ephemeral data not available")
+		}
+		return tsdb.NewBlockChunkQuerier(u.ephemeral, mint, maxt)
+	}
 	return u.db.UnorderedChunkQuerier(ctx, mint, maxt)
 }
 
