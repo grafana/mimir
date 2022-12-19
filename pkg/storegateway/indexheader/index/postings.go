@@ -140,6 +140,7 @@ func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 			valuesForCurrentKey = 0
 		}
 
+		// Retain every 1-in-postingOffsetsInMemSampling entries, starting with the first one.
 		if valuesForCurrentKey%postingOffsetsInMemSampling == 0 {
 			value := d.UvarintStr()
 			off := d.Uvarint64()
