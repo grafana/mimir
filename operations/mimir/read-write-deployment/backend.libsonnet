@@ -35,9 +35,9 @@
       'query-scheduler.max-used-instances': 2,
     },
 
-  mimir_backend_zone_a_args:: {},
-  mimir_backend_zone_b_args:: {},
-  mimir_backend_zone_c_args:: {},
+  mimir_backend_zone_a_args:: $.store_gateway_zone_a_args {},
+  mimir_backend_zone_b_args:: $.store_gateway_zone_b_args {},
+  mimir_backend_zone_c_args:: $.store_gateway_zone_c_args {},
 
   local mimir_backend_data_pvc =
     pvc.new() +
