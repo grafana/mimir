@@ -136,7 +136,7 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 	})
 }
 
-const dropped_labels_label = "__dropped_labels__"
+const droppedLabelsLabel = "__dropped_labels__"
 
 func funcAggregateCounters(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	var (
@@ -150,6 +150,7 @@ func funcAggregateCounters(vals []parser.Value, args parser.Expressions, enh *Ev
 	for i := 2; i < len(vals); i++ {
 		labelsToDrop = append(labelsToDrop, vals[i].(String).V)
 	}
+	sort.Strings(labelsToDrop)
 
 	// Make sure that the requested window is smaller than the matrix selector range.
 	ms := args[0].(*parser.MatrixSelector)
@@ -163,7 +164,7 @@ func funcAggregateCounters(vals []parser.Value, args parser.Expressions, enh *Ev
 		return enh.Out
 	}
 
-	dropped := samples.Metric.Get(dropped_labels_label)
+	dropped := samples.Metric.Get(droppedLabelsLabel)
 	if len(dropped) > 0 {
 		// Aggregated series.
 		aggregatedSeriesLabels = samples.Metric
@@ -199,18 +200,21 @@ func funcAggregateCounters(vals []parser.Value, args parser.Expressions, enh *Ev
 			prevValue = currPoint.V
 		}
 
-		aggregatedSeriesLabels = labels.NewBuilder(samples.Metric).Del(labelsToDrop...).Set(dropped_labels_label, strings.Join(labelsToDrop, ",")).Labels(nil)
+		aggregatedSeriesLabels = labels.NewBuilder(samples.Metric).Del(labelsToDrop...).Set(droppedLabelsLabel, strings.Join(labelsToDrop, ",")).Labels(nil)
 	}
 
 	if enh.signatureToMetricWithRunningTotal == nil {
-		enh.signatureToMetricWithRunningTotal = map[uint64]*metricWithRunningTotal{}
+		enh.signatureToMetricWithRunningTotal = map[int64]map[uint64]*metricWithRunningTotal{}
+	}
+	if enh.signatureToMetricWithRunningTotal[enh.Ts] == nil {
+		enh.signatureToMetricWithRunningTotal[enh.Ts] = map[uint64]*metricWithRunningTotal{}
 	}
 
 	seriesHash := aggregatedSeriesLabels.Hash()
-	if mrt, ok := enh.signatureToMetricWithRunningTotal[seriesHash]; ok {
-		mrt.runningTotal = resultValue
+	if mrt, ok := enh.signatureToMetricWithRunningTotal[enh.Ts][seriesHash]; ok {
+		mrt.runningTotal += resultValue
 	} else {
-		enh.signatureToMetricWithRunningTotal[seriesHash] = &metricWithRunningTotal{
+		enh.signatureToMetricWithRunningTotal[enh.Ts][seriesHash] = &metricWithRunningTotal{
 			metric:       aggregatedSeriesLabels,
 			runningTotal: resultValue,
 		}

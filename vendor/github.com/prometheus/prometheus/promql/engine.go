@@ -1019,7 +1019,7 @@ type EvalNodeHelper struct {
 	// funcHistogramQuantile.
 	signatureToMetricWithBuckets map[string]*metricWithBuckets
 	// funcAggregateCounters
-	signatureToMetricWithRunningTotal map[uint64]*metricWithRunningTotal
+	signatureToMetricWithRunningTotal map[int64]map[uint64]*metricWithRunningTotal
 	// label_replace.
 	regex *regexp.Regexp
 
@@ -1505,14 +1505,16 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 
 			var result Matrix
 
-			for _, mrt := range enh.signatureToMetricWithRunningTotal {
-				result = append(result, Series{
-					Metric: mrt.metric,
-					Points: []Point{{
-						T: ev.endTimestamp,
-						V: mrt.runningTotal,
-					}},
-				})
+			for ts, signatureToMetricWithRunningTotal := range enh.signatureToMetricWithRunningTotal {
+				for _, mrt := range signatureToMetricWithRunningTotal {
+					result = append(result, Series{
+						Metric: mrt.metric,
+						Points: []Point{{
+							T: ts,
+							V: mrt.runningTotal,
+						}},
+					})
+				}
 			}
 
 			return result, warnings
