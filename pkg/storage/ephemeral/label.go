@@ -33,7 +33,7 @@ func IsEphemeralQuery(matchers []*labels.Matcher) (bool, int, error) {
 // RemoveEphemeralMatcher returns the input matchers without the label matcher on the query shard (if any).
 func RemoveEphemeralMatcher(matchers []*labels.Matcher) (ephemeral bool, filtered []*labels.Matcher, err error) {
 	ephemeral, idx, err := IsEphemeralQuery(matchers)
-	if err != nil {
+	if err != nil || idx < 0 {
 		return false, matchers, err
 	}
 
