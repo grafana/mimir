@@ -116,9 +116,7 @@ func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 
 		// Important: this value is only valid as long as we don't perform any further reads from d.
 		// If we need to retain its value, we must copy it before performing another read.
-		unsafeName := d.UnsafeUvarintBytes()
-
-		if len(t.postings) == 0 || currentName != string(unsafeName) {
+		if unsafeName := d.UnsafeUvarintBytes(); len(t.postings) == 0 || currentName != string(unsafeName) {
 			newKey := string(unsafeName)
 
 			if lastEntryOffsetInTable != -1 {
