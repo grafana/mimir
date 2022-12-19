@@ -100,12 +100,12 @@ func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 
 	startLen := d.Len()
 	remainingCount := d.Be32()
-	currentKey := ""
+	currentName := ""
 	valuesForCurrentKey := 0
 	lastEntryOffsetInTable := -1
 
 	for d.Err() == nil && remainingCount > 0 {
-		lastKey := currentKey
+		lastName := currentName
 		offsetInTable := startLen - d.Len()
 		keyCount := d.Uvarint()
 
@@ -116,43 +116,43 @@ func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 
 		// Important: this value is only valid as long as we don't perform any further reads from d.
 		// If we need to retain its value, we must copy it before performing another read.
-		key := d.UvarintBytes()
+		name := d.UvarintBytes()
 
-		if len(t.postings) == 0 || currentKey != string(key) {
-			newKey := string(key)
+		if len(t.postings) == 0 || currentName != string(name) {
+			newKey := string(name)
 
 			if lastEntryOffsetInTable != -1 {
-				// We haven't recorded the last offset for the last value of the previous key.
-				// Go back and read the last value for the previous key.
+				// We haven't recorded the last offset for the last value of the previous name.
+				// Go back and read the last value for the previous name.
 				newValueOffset := d.Len()
 				d.ResetAt(lastEntryOffsetInTable + 4) // 4 bytes for entry count
 				d.Uvarint()                           // Skip the key count
-				d.SkipUvarintBytes()                  // Skip the key
+				d.SkipUvarintBytes()                  // Skip the name
 				value := d.UvarintStr()
-				t.postings[currentKey].offsets = append(t.postings[currentKey].offsets, postingOffset{value: value, tableOff: lastEntryOffsetInTable})
+				t.postings[currentName].offsets = append(t.postings[currentName].offsets, postingOffset{value: value, tableOff: lastEntryOffsetInTable})
 
 				// Skip ahead to where we were before we called ResetAt() above.
 				d.Skip(d.Len() - newValueOffset)
 			}
 
-			currentKey = newKey
-			t.postings[currentKey] = &postingValueOffsets{}
+			currentName = newKey
+			t.postings[currentName] = &postingValueOffsets{}
 			valuesForCurrentKey = 0
 		}
 
 		if valuesForCurrentKey%postingOffsetsInMemSampling == 0 {
 			value := d.UvarintStr()
 			off := d.Uvarint64()
-			t.postings[currentKey].offsets = append(t.postings[currentKey].offsets, postingOffset{value: value, tableOff: offsetInTable})
+			t.postings[currentName].offsets = append(t.postings[currentName].offsets, postingOffset{value: value, tableOff: offsetInTable})
 
-			if lastKey != currentKey {
-				t.postings[lastKey].lastValOffset = int64(off - crc32.Size)
+			if lastName != currentName {
+				t.postings[lastName].lastValOffset = int64(off - crc32.Size)
 			}
 
-			// If the current value is the last one for this key, we don't need to record it again.
+			// If the current value is the last one for this name, we don't need to record it again.
 			lastEntryOffsetInTable = -1
 		} else {
-			// We only need to store this value if it's the last one for this key.
+			// We only need to store this value if it's the last one for this name.
 			// Record our current position in the table and come back to it if it turns out this is the last value.
 			lastEntryOffsetInTable = offsetInTable
 
@@ -172,7 +172,7 @@ func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 		d.Uvarint()                           // Skip the key count
 		d.SkipUvarintBytes()                  // Skip the key
 		value := d.UvarintStr()
-		t.postings[currentKey].offsets = append(t.postings[currentKey].offsets, postingOffset{value: value, tableOff: lastEntryOffsetInTable})
+		t.postings[currentName].offsets = append(t.postings[currentName].offsets, postingOffset{value: value, tableOff: lastEntryOffsetInTable})
 	}
 
 	if d.Err() != nil {
@@ -182,7 +182,7 @@ func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 	if len(t.postings) > 0 {
 		// In any case lastValOffset is unknown as don't have next posting anymore. Guess from TOC table.
 		// In worst case we will overfetch a few bytes.
-		t.postings[currentKey].lastValOffset = int64(indexLastPostingEnd) - crc32.Size // Each posting offset table ends with a CRC32 checksum.
+		t.postings[currentName].lastValOffset = int64(indexLastPostingEnd) - crc32.Size // Each posting offset table ends with a CRC32 checksum.
 	}
 
 	if d.Err() != nil {
