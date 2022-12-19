@@ -54,13 +54,6 @@ func newGapBasedPartitioner(maxGapBytes uint64, reg prometheus.Registerer) *gapB
 // input ranges by combining entries that are separated by reasonably small gaps.
 // It is used to combine multiple small ranges from object storage into bigger, more efficient/cheaper ones.
 func (g *gapBasedPartitioner) Partition(length int, rng func(int) (uint64, uint64)) []Part {
-	// Calculate the size of requested ranges.
-	requestedBytes := uint64(0)
-	for i := 0; i < length; i++ {
-		start, end := rng(i)
-		requestedBytes += end - start
-	}
-
 	// Run the upstream partitioner to compute the actual ranges that will be fetched.
 	parts, stats := g.partition(length, rng)
 
@@ -70,7 +63,7 @@ func (g *gapBasedPartitioner) Partition(length int, rng func(int) (uint64, uint6
 		expandedBytes += p.End - p.Start
 	}
 
-	g.requestedBytes.Add(float64(expandedBytes - stats.overextendedRange))
+	g.requestedBytes.Add(float64(stats.requestedRangesTotal))
 	g.expandedBytes.Add(float64(expandedBytes))
 	g.requestedRanges.Add(float64(length))
 	g.expandedRanges.Add(float64(len(parts)))
@@ -81,7 +74,7 @@ func (g *gapBasedPartitioner) Partition(length int, rng func(int) (uint64, uint6
 
 type partitionStats struct {
 	extendedNonOverlappingRanges int
-	overextendedRange            uint64
+	requestedRangesTotal         uint64
 }
 
 func (g *gapBasedPartitioner) partition(length int, rng func(int) (uint64, uint64)) (parts []Part, stats partitionStats) {
@@ -93,6 +86,7 @@ func (g *gapBasedPartitioner) partition(length int, rng func(int) (uint64, uint6
 
 		p := Part{}
 		p.Start, p.End = rng(j)
+		stats.requestedRangesTotal += p.End - p.Start
 
 		// Keep growing the range until the end or we encounter a large gap.
 		for ; k < length; k++ {
@@ -100,11 +94,14 @@ func (g *gapBasedPartitioner) partition(length int, rng func(int) (uint64, uint6
 
 			if p.End >= s {
 				// The start of the next range overlaps with the current range's end, so we can merge them.
+				// We count the extra bytes between the current range's end and the next one's end - that's what's been requested.
+				stats.requestedRangesTotal += e - p.End
 			} else if p.End+g.maxGapBytes >= s {
 				// We can afford to fill a gap between the current range's end and the next range's start.
 				// We do so, but we also keep track of how much of it we do.
 				stats.extendedNonOverlappingRanges++
-				stats.overextendedRange += s - p.End
+				// We count the whole range as a request range since it doesn't overlap with the previous range.
+				stats.requestedRangesTotal += e - s
 			} else {
 				break
 			}
