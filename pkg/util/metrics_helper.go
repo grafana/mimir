@@ -675,6 +675,24 @@ func (r *UserRegistries) Registries() []UserRegistry {
 	return out
 }
 
+func (r *UserRegistries) GetRegistryForUser(user string) *prometheus.Registry {
+	r.regsMu.Lock()
+	defer r.regsMu.Unlock()
+
+	for idx := 0; idx < len(r.regs); idx++ {
+		if user != r.regs[idx].user {
+			continue
+		}
+
+		if r.regs[idx].reg == nil {
+			continue
+		}
+
+		return r.regs[idx].reg
+	}
+	return nil
+}
+
 func (r *UserRegistries) BuildMetricFamiliesPerUser() MetricFamiliesPerUser {
 	data := MetricFamiliesPerUser{}
 	for _, entry := range r.Registries() {

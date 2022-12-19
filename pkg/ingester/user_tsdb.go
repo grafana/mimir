@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/grafana/dskit/multierror"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
@@ -153,7 +154,13 @@ func (u *userTSDB) Close() error {
 }
 
 func (u *userTSDB) Compact() error {
-	return u.db.Compact()
+	var merr multierror.MultiError
+	if u.ephemeral != nil {
+		merr.Add(u.ephemeral.Truncate(time.Now().Add(-10 * time.Minute).UnixMilli()))
+	}
+
+	merr.Add(u.db.Compact())
+	return merr.Err()
 }
 
 func (u *userTSDB) StartTime() (int64, error) {
