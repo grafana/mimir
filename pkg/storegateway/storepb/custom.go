@@ -8,7 +8,6 @@ package storepb
 import (
 	"bytes"
 	"fmt"
-	"io"
 
 	"github.com/gogo/protobuf/types"
 	"github.com/pkg/errors"
@@ -395,6 +394,18 @@ type PreallocatingSliceMetric struct {
 // Metric.Unmarshal and modified, so it only counts the labels instead of
 // also unmarshalling them.
 func (m *PreallocatingSliceMetric) Unmarshal(dAtA []byte) error {
+	numLabels, ok := m.labelsCount(dAtA)
+	if ok {
+		m.Labels = make([]mimirpb.LabelAdapter, 0, numLabels)
+	}
+
+	return m.Metric.Unmarshal(dAtA)
+}
+
+// The implementation of labelsCount is copied from the implementation of
+// Metric.Unmarshal and modified, so it only counts the labels instead of
+// also unmarshalling them.
+func (m *PreallocatingSliceMetric) labelsCount(dAtA []byte) (int, bool) {
 	l := len(dAtA)
 	iNdEx := 0
 	numLabels := 0
@@ -403,10 +414,10 @@ loop:
 		var wire uint64
 		for shift := uint(0); ; shift += 7 {
 			if shift >= 64 {
-				return mimirpb.ErrIntOverflowMimir
+				return 0, false
 			}
 			if iNdEx >= l {
-				return io.ErrUnexpectedEOF
+				return 0, false
 			}
 			b := dAtA[iNdEx]
 			iNdEx++
@@ -418,23 +429,23 @@ loop:
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: Metric: wiretype end group for non-group")
+			return 0, false
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: Metric: illegal tag %d (wire type %d)", fieldNum, wire)
+			return 0, false
 		}
 		switch fieldNum {
 		case 1:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Labels", wireType)
+				return 0, false
 			}
 			var msglen int
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
-					return mimirpb.ErrIntOverflowMimir
+					return 0, false
 				}
 				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
+					return 0, false
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
@@ -444,23 +455,22 @@ loop:
 				}
 			}
 			if msglen < 0 {
-				return mimirpb.ErrInvalidLengthMimir
+				return 0, false
 			}
 			postIndex := iNdEx + msglen
 			if postIndex < 0 {
-				return mimirpb.ErrInvalidLengthMimir
+				return 0, false
 			}
 			if postIndex > l {
-				return io.ErrUnexpectedEOF
+				return 0, false
 			}
 			numLabels++
 			iNdEx = postIndex
 		default:
-			// There is a field we don't know about, so we're falling back to the proto unmarshalling
+			// There is a field we don't know about, so we can't make an assured decision based
 			break loop
 		}
 	}
 
-	m.Labels = make([]mimirpb.LabelAdapter, 0, numLabels)
-	return m.Metric.Unmarshal(dAtA)
+	return numLabels, true
 }
