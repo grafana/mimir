@@ -497,8 +497,8 @@ github.com/grafana/gomemcache v0.0.0-20220812141943-44b6cde200bb h1:CqfZjjd8iK3G
 github.com/grafana/gomemcache v0.0.0-20220812141943-44b6cde200bb/go.mod h1:H0wQNHz2YrLsuXOZozoeDmnHXkNCRmMW0gwFWDfEZDA=
 github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe h1:yIXAAbLswn7VNWBIvM71O2QsgfgW9fRXZNR0DXe6pDU=
 github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe/go.mod h1:MS2lj3INKhZjWNqd3N0m3J+Jxf3DAOnAH9VT3Sh9MUE=
-github.com/grafana/mimir-prometheus v0.0.0-20221219212458-3188d1a6f84b h1:6udUUaUAuPtTLgYJ5AstqT1VmuXQ47j9hKvnpqir9rA=
-github.com/grafana/mimir-prometheus v0.0.0-20221219212458-3188d1a6f84b/go.mod h1:F6ipwg2BncDRKefZv405ThOdZFrYtDng7os9j/1nutE=
+github.com/grafana/mimir-prometheus v0.0.0-20221219232516-53d8d7b5a27b h1:Pn5+7iXEbjGY3eIWcCJnV+zks2eJBcPgLJ+Mk1x0sUM=
+github.com/grafana/mimir-prometheus v0.0.0-20221219232516-53d8d7b5a27b/go.mod h1:F6ipwg2BncDRKefZv405ThOdZFrYtDng7os9j/1nutE=
 github.com/grafana/regexp v0.0.0-20221005093135-b4c2bcb0a4b6 h1:A3dhViTeFDSQcGOXuUi6ukCQSMyDtDISBp2z6OOo2YM=
 github.com/grafana/regexp v0.0.0-20221005093135-b4c2bcb0a4b6/go.mod h1:M5qHK+eWfAv8VR/265dIuEpL3fNfeC21tXXp9itM24A=
 github.com/grpc-ecosystem/go-grpc-middleware v1.1.0/go.mod h1:f5nM7jw/oeRSadq3xCzHAvxcr8HZnzsqU6ILg/0NiiE=
