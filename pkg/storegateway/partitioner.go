@@ -17,11 +17,11 @@ type gapBasedPartitioner struct {
 	maxGapBytes uint64
 
 	// Metrics.
-	requestedBytes       prometheus.Counter
-	requestedRanges      prometheus.Counter
-	expandedBytes        prometheus.Counter
-	expandedRanges       prometheus.Counter
-	extendedRangesRanges prometheus.Counter
+	requestedBytes  prometheus.Counter
+	requestedRanges prometheus.Counter
+	expandedBytes   prometheus.Counter
+	expandedRanges  prometheus.Counter
+	extendedRanges  prometheus.Counter
 }
 
 func newGapBasedPartitioner(maxGapBytes uint64, reg prometheus.Registerer) *gapBasedPartitioner {
@@ -43,7 +43,7 @@ func newGapBasedPartitioner(maxGapBytes uint64, reg prometheus.Registerer) *gapB
 			Name: "cortex_bucket_store_partitioner_expanded_ranges_total",
 			Help: "Total number of byte ranges returned by the partitioner after they've been combined together to reduce the number of bucket API calls.",
 		}),
-		extendedRangesRanges: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		extendedRanges: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_bucket_store_partitioner_extended_ranges_total",
 			Help: "Total number of byte ranges that were not overlapping but were joined because they were closer than maxGapBytes.",
 		}),
@@ -74,15 +74,14 @@ func (g *gapBasedPartitioner) Partition(length int, rng func(int) (uint64, uint6
 	g.expandedBytes.Add(float64(expandedBytes))
 	g.requestedRanges.Add(float64(length))
 	g.expandedRanges.Add(float64(len(parts)))
-	g.extendedRangesRanges.Add(float64(stats.extendedNonOverlappingParts))
+	g.extendedRanges.Add(float64(stats.extendedNonOverlappingRanges))
 
 	return parts
 }
 
 type partitionStats struct {
-	overlappingParts            int
-	extendedNonOverlappingParts int
-	overextendedRange           uint64
+	extendedNonOverlappingRanges int
+	overextendedRange            uint64
 }
 
 func (g *gapBasedPartitioner) partition(length int, rng func(int) (uint64, uint64)) (parts []Part, stats partitionStats) {
@@ -100,9 +99,11 @@ func (g *gapBasedPartitioner) partition(length int, rng func(int) (uint64, uint6
 			s, e := rng(k)
 
 			if p.End >= s {
-				stats.overlappingParts++
+				// The start of the next range overlaps with the current range's end, so we can merge them.
 			} else if p.End+g.maxGapBytes >= s {
-				stats.extendedNonOverlappingParts++
+				// We can afford to fill a gap between the current range's end and the next range's start.
+				// We do so, but we also keep track of how much of it we do.
+				stats.extendedNonOverlappingRanges++
 				stats.overextendedRange += s - p.End
 			} else {
 				break
