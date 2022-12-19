@@ -53,33 +53,14 @@ func Download(ctx context.Context, logger log.Logger, bucket objstore.Bucket, id
 	if err := objstore.DownloadFile(ctx, logger, bucket, path.Join(id.String(), MetaFilename), path.Join(dst, MetaFilename)); err != nil {
 		return err
 	}
-	m, err := metadata.ReadFromDir(dst)
-	if err != nil {
-		return errors.Wrapf(err, "reading meta from %s", dst)
-	}
 
 	ignoredPaths := []string{MetaFilename}
-	for _, fl := range m.Thanos.Files {
-		if fl.Hash == nil || fl.Hash.Func == metadata.NoneFunc || fl.RelPath == "" {
-			continue
-		}
-		actualHash, err := metadata.CalculateHash(filepath.Join(dst, fl.RelPath), fl.Hash.Func, logger)
-		if err != nil {
-			level.Info(logger).Log("msg", "failed to calculate hash when downloading; re-downloading", "relPath", fl.RelPath, "err", err)
-			continue
-		}
-
-		if fl.Hash.Equal(&actualHash) {
-			ignoredPaths = append(ignoredPaths, fl.RelPath)
-		}
-	}
-
 	if err := objstore.DownloadDir(ctx, logger, bucket, id.String(), id.String(), dst, append(options, objstore.WithDownloadIgnoredPaths(ignoredPaths...))...); err != nil {
 		return err
 	}
 
 	chunksDir := filepath.Join(dst, ChunksDirname)
-	_, err = os.Stat(chunksDir)
+	_, err := os.Stat(chunksDir)
 	if os.IsNotExist(err) {
 		// This can happen if block is empty. We cannot easily upload empty directory, so create one here.
 		return os.Mkdir(chunksDir, os.ModePerm)
@@ -123,7 +104,7 @@ func Upload(ctx context.Context, logger log.Logger, bkt objstore.Bucket, blockDi
 
 	// Note that entry for meta.json file will be incorrect and will reflect local file,
 	// not updated Meta struct.
-	meta.Thanos.Files, err = GatherFileStats(blockDir, metadata.NoneFunc, logger)
+	meta.Thanos.Files, err = GatherFileStats(blockDir)
 	if err != nil {
 		return errors.Wrap(err, "gather meta file stats")
 	}
@@ -305,7 +286,7 @@ func GetSegmentFiles(blockDir string) []string {
 }
 
 // GatherFileStats returns metadata.File entry for files inside TSDB block (index, chunks, meta.json).
-func GatherFileStats(blockDir string, hf metadata.HashFunc, logger log.Logger) (res []metadata.File, _ error) {
+func GatherFileStats(blockDir string) (res []metadata.File, _ error) {
 	files, err := os.ReadDir(filepath.Join(blockDir, ChunksDirname))
 	if err != nil {
 		return nil, errors.Wrapf(err, "read dir %v", filepath.Join(blockDir, ChunksDirname))
@@ -320,13 +301,6 @@ func GatherFileStats(blockDir string, hf metadata.HashFunc, logger log.Logger) (
 			RelPath:   filepath.Join(ChunksDirname, f.Name()),
 			SizeBytes: fi.Size(),
 		}
-		if hf != metadata.NoneFunc && !f.IsDir() {
-			h, err := metadata.CalculateHash(filepath.Join(blockDir, ChunksDirname, f.Name()), hf, logger)
-			if err != nil {
-				return nil, errors.Wrapf(err, "calculate hash %v", filepath.Join(ChunksDirname, f.Name()))
-			}
-			mf.Hash = &h
-		}
 		res = append(res, mf)
 	}
 
@@ -337,13 +311,6 @@ func GatherFileStats(blockDir string, hf metadata.HashFunc, logger log.Logger) (
 	mf := metadata.File{
 		RelPath:   indexFile.Name(),
 		SizeBytes: indexFile.Size(),
-	}
-	if hf != metadata.NoneFunc {
-		h, err := metadata.CalculateHash(filepath.Join(blockDir, IndexFilename), hf, logger)
-		if err != nil {
-			return nil, errors.Wrapf(err, "calculate hash %v", indexFile.Name())
-		}
-		mf.Hash = &h
 	}
 	res = append(res, mf)
 

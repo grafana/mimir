@@ -57,7 +57,7 @@ func TestReaders(t *testing.T) {
 		labels.FromStrings("a", "13"),
 		labels.FromStrings("a", "1", "longer-string", "1"),
 		labels.FromStrings("a", "1", "longer-string", "2"),
-	}, 100, 0, 1000, labels.FromStrings("ext1", "1"), 124, metadata.NoneFunc)
+	}, 100, 0, 1000, labels.FromStrings("ext1", "1"), 124)
 	require.NoError(t, err)
 	require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, idIndexV2.String()), nil))
 
@@ -338,7 +338,7 @@ func BenchmarkBinaryReader_LargerBlock(b *testing.B) {
 		}
 	}
 
-	blockID, err := testhelper.CreateBlock(ctx, tmpDir, seriesLabels, 100, 0, 1000, labels.FromStrings("ext1", "1"), 124, metadata.NoneFunc)
+	blockID, err := testhelper.CreateBlock(ctx, tmpDir, seriesLabels, 100, 0, 1000, labels.FromStrings("ext1", "1"), 124)
 	require.NoError(b, err)
 	require.NoError(b, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, blockID.String()), nil))
 
@@ -381,7 +381,7 @@ func benchmarkBinaryReaderLookupSymbol(b *testing.B, numSeries int) {
 	}
 
 	// Create a block.
-	id1, err := testhelper.CreateBlock(ctx, tmpDir, seriesLabels, 100, 0, 1000, labels.FromStrings("ext1", "1"), 124, metadata.NoneFunc)
+	id1, err := testhelper.CreateBlock(ctx, tmpDir, seriesLabels, 100, 0, 1000, labels.FromStrings("ext1", "1"), 124)
 	require.NoError(b, err)
 	require.NoError(b, block.Upload(ctx, logger, bkt, filepath.Join(tmpDir, id1.String()), nil))
 

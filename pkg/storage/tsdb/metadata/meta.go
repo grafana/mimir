@@ -118,8 +118,7 @@ type File struct {
 	// SizeBytes is optional (e.g meta.json does not show size).
 	SizeBytes int64 `json:"size_bytes,omitempty"`
 
-	// Hash is an optional hash of this file. Used for potentially avoiding an extra download.
-	Hash *ObjectHash `json:"hash,omitempty"`
+	// The json field "hash" is reserved because it is used by Thanos for the file hash.
 }
 
 type ThanosDownsample struct {
