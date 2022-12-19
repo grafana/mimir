@@ -63,7 +63,7 @@ func NewSymbols(factory *streamencoding.DecbufFactory, version, offset int) (s *
 		if s.seen%symbolFactor == 0 {
 			s.offsets = append(s.offsets, basePos+origLen-d.Len())
 		}
-		d.UnsafeUvarintBytes() // The symbol.
+		d.SkipUvarintBytes() // The symbol.
 		s.seen++
 	}
 
