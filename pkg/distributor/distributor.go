@@ -1200,8 +1200,9 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 		metric, _ := extract.UnsafeMetricNameFromLabelAdapters(ts.Labels)
 		if metric != "" {
 			rule, ok := forwardingRules[metric]
-			if ok {
-				ts.Ephemeral = !rule.Ingest
+			if ok && !rule.Ingest {
+				ts.Ephemeral = true
+				ts.Exemplars = nil
 			}
 		}
 	}
