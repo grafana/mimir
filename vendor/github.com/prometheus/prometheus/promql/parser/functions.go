@@ -279,7 +279,8 @@ var Functions = map[string]*Function{
 	},
 	"aggregate_counters": {
 		Name:       "aggregate_counters",
-		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar},
+		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar, ValueTypeString},
+		Variadic:   -1,
 		ReturnType: ValueTypeVector,
 	},
 	"resets": {

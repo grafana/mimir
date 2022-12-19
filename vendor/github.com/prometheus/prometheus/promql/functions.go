@@ -138,15 +138,18 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 
 const dropped_labels_label = "__dropped_labels__"
 
-var labelsToAggregate = []string{"label1", "label2"}
-
 func funcAggregateCounters(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	var (
 		samples                = vals[0].(Matrix)[0]
 		window                 = int64(vals[1].(Vector)[0].V)
+		labelsToDrop           = make([]string, 0, len(vals)-2)
 		resultValue            float64
 		aggregatedSeriesLabels labels.Labels
 	)
+
+	for i := 2; i < len(vals); i++ {
+		labelsToDrop = append(labelsToDrop, vals[i].(String).V)
+	}
 
 	// Make sure that the requested window is smaller than the matrix selector range.
 	ms := args[0].(*parser.MatrixSelector)
@@ -196,7 +199,7 @@ func funcAggregateCounters(vals []parser.Value, args parser.Expressions, enh *Ev
 			prevValue = currPoint.V
 		}
 
-		aggregatedSeriesLabels = labels.NewBuilder(samples.Metric).Del(labelsToAggregate...).Set(dropped_labels_label, strings.Join(labelsToAggregate, ",")).Labels(nil)
+		aggregatedSeriesLabels = labels.NewBuilder(samples.Metric).Del(labelsToDrop...).Set(dropped_labels_label, strings.Join(labelsToDrop, ",")).Labels(nil)
 	}
 
 	if enh.signatureToMetricWithRunningTotal == nil {
