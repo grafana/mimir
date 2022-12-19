@@ -46,11 +46,6 @@ type metricWithBuckets struct {
 	buckets buckets
 }
 
-type metricWithRunningTotal struct {
-	metric       labels.Labels
-	runningTotal float64
-}
-
 // bucketQuantile calculates the quantile 'q' based on the given buckets. The
 // buckets will be sorted by upperBound by this function (i.e. no sorting
 // needed before calling this function). The quantile value is interpolated

@@ -69,6 +69,11 @@ type engineMetrics struct {
 	queryResultSort      prometheus.Observer
 }
 
+type metricWithRunningTotal struct {
+	metric       labels.Labels
+	runningTotal float64
+}
+
 // convertibleToInt64 returns true if v does not over-/underflow an int64.
 func convertibleToInt64(v float64) bool {
 	return v <= maxInt64 && v >= minInt64
