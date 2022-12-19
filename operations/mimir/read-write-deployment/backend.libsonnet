@@ -66,7 +66,7 @@
       'store-gateway.sharding-ring.prefix': 'multi-zone/',
 
       // Do not unregister from ring at shutdown, so that no blocks re-shuffling occurs during rollouts.
-      'store-gateway.sharding-ring.unregister-on-shutdown': false,
+      'store-gateway.sharding-ring.unregister-on-shutdown': $._config.multi_zone_store_gateway_unregister_on_shutdown,
     })) +
     container.withVolumeMountsMixin([volumeMount.new('mimir-backend-data', '/data')]) +
     $.util.resourcesRequests(1, '12Gi') +

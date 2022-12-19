@@ -33,10 +33,10 @@
   check_querier_autoscaling: if !$._config.is_read_write_deployment_mode || !$._config.autoscaling_querier_enabled then null else
     error 'please set autoscaling_querier_enabled to false when using Mimir read-write deployment mode',
 
-  check_ruler_remote_evaluation_enabled: if !$._config.is_read_write_deployment_mode || !$._config.ruler_remote_evaluation_enabled then null else
+  check_ruler_remote_evaluation_enabled: if $._config.is_microservices_deployment_mode || !$._config.ruler_remote_evaluation_enabled then null else
     error 'please set ruler_remote_evaluation_enabled to false when using Mimir read-write deployment mode',
 
-  check_overrides_exporter_enabled: if !$._config.is_read_write_deployment_mode || !$._config.overrides_exporter_enabled then null else
+  check_overrides_exporter_enabled: if $._config.is_microservices_deployment_mode || !$._config.overrides_exporter_enabled then null else
     error 'please set overrides_exporter_enabled to false when using Mimir read-write deployment mode',
 
   check_memberlist_ring: if !$._config.is_read_write_deployment_mode || $._config.memberlist_ring_enabled then null else
