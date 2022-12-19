@@ -882,7 +882,7 @@ func storeCachedSeriesForPostings(ctx context.Context, indexCache indexcache.Ind
 
 func encodeCachedSeriesForPostings(set seriesChunkRefsSet, matchersKey indexcache.LabelMatchersKey, nonNilShard sharding.ShardSelector) ([]byte, error) {
 	entry := &storepb.CachedSeries{
-		Series:      make([]storepb.PreallocatingSliceMetric, set.len()),
+		Series:      make([]mimirpb.PreallocatingMetric, set.len()),
 		MatchersKey: string(matchersKey),
 		ShardIndex:  nonNilShard.ShardIndex,
 		ShardCount:  nonNilShard.ShardCount,

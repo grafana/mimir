@@ -14,14 +14,13 @@ option (gogoproto.marshaler_all) = true;
 option (gogoproto.unmarshaler_all) = true;
 option (gogoproto.goproto_getters_all) = false;
 
-// Do not generate XXX fields to reduce memory footprint and opening a door
-// for zero-copy casts to/from prometheus data types.
+// Do not generate XXX fields to reduce memory footprint.
 option (gogoproto.goproto_unkeyed_all) = false;
 option (gogoproto.goproto_unrecognized_all) = false;
 option (gogoproto.goproto_sizecache_all) = false;
 
 message CachedSeries {
-  repeated cortexpb.Metric series = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "PreallocatingSliceMetric"];
+  repeated cortexpb.Metric series = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.PreallocatingMetric"];
   uint64 shardIndex = 2;
   uint64 shardCount = 3;
   string matchersKey = 4;
