@@ -306,7 +306,7 @@ type PreallocatingMetric struct {
 // also unmarshalling them.
 func (m *PreallocatingMetric) Unmarshal(dAtA []byte) error {
 	numLabels, ok := m.labelsCount(dAtA)
-	if ok {
+	if ok && numLabels > 0 {
 		m.Labels = make([]LabelAdapter, 0, numLabels)
 	}
 

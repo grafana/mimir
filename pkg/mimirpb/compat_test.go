@@ -150,3 +150,93 @@ func TestFromPointsToSamples(t *testing.T) {
 
 	assert.Equal(t, expected, FromPointsToSamples(input))
 }
+
+func TestPreallocatingMetric(t *testing.T) {
+	t.Run("should be unmarshallable from the bytes of a default Metric", func(t *testing.T) {
+		metric := Metric{
+			Labels: []LabelAdapter{
+				{Name: "l1", Value: "v1"},
+				{Name: "l2", Value: "v2"},
+				{Name: "l3", Value: "v3"},
+				{Name: "l4", Value: "v4"},
+			},
+		}
+
+		metricBytes, err := metric.Marshal()
+		require.NoError(t, err)
+
+		preallocMetric := &PreallocatingMetric{}
+		require.NoError(t, preallocMetric.Unmarshal(metricBytes))
+
+		assert.Equal(t, metric, preallocMetric.Metric)
+	})
+
+	t.Run("should not break with invalid protobuf bytes (no panic)", func(t *testing.T) {
+		preallocMetric := &PreallocatingMetric{}
+		assert.Error(t, preallocMetric.Unmarshal([]byte{1, 3, 5, 6, 238, 55, 135}))
+	})
+
+	t.Run("should correctly preallocate Labels slice", func(t *testing.T) {
+		metric := Metric{
+			Labels: []LabelAdapter{
+				{Name: "l1", Value: "v1"},
+				{Name: "l2", Value: "v2"},
+				{Name: "l3", Value: "v3"},
+				{Name: "l4", Value: "v4"},
+				{Name: "l5", Value: "v5"},
+			},
+		}
+
+		metricBytes, err := metric.Marshal()
+		require.NoError(t, err)
+
+		preallocMetric := &PreallocatingMetric{}
+		require.NoError(t, preallocMetric.Unmarshal(metricBytes))
+
+		assert.Equal(t, metric, preallocMetric.Metric)
+		assert.Equal(t, len(metric.Labels), cap(preallocMetric.Labels))
+	})
+
+	t.Run("should not allocate a slice when there are 0 Labels (same as Metric's behaviour)", func(t *testing.T) {
+		metric := Metric{
+			Labels: []LabelAdapter{},
+		}
+
+		metricBytes, err := metric.Marshal()
+		require.NoError(t, err)
+
+		preallocMetric := &PreallocatingMetric{}
+		require.NoError(t, preallocMetric.Unmarshal(metricBytes))
+
+		assert.Nil(t, preallocMetric.Labels)
+	})
+
+	t.Run("should marshal to the same bytes as Metric", func(t *testing.T) {
+		preallocMetric := &PreallocatingMetric{Metric{
+			Labels: []LabelAdapter{
+				{Name: "l1", Value: "v1"},
+				{Name: "l2", Value: "v2"},
+				{Name: "l3", Value: "v3"},
+				{Name: "l4", Value: "v4"},
+				{Name: "l5", Value: "v5"},
+			},
+		}}
+
+		metric := Metric{
+			Labels: []LabelAdapter{
+				{Name: "l1", Value: "v1"},
+				{Name: "l2", Value: "v2"},
+				{Name: "l3", Value: "v3"},
+				{Name: "l4", Value: "v4"},
+				{Name: "l5", Value: "v5"},
+			},
+		}
+
+		preallocBytes, err := preallocMetric.Marshal()
+		require.NoError(t, err)
+		metricBytes, err := metric.Marshal()
+		require.NoError(t, err)
+
+		assert.Equal(t, metricBytes, preallocBytes)
+	})
+}
