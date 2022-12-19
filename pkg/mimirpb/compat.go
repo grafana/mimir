@@ -287,12 +287,12 @@ func init() {
 	jsoniter.RegisterTypeDecoderFunc("mimirpb.Sample", SampleJsoniterDecode)
 }
 
-// PreallocatingMetric overrides the Unmarshal behaviour of mimirpb.Metric.
+// PreallocatingMetric overrides the Unmarshal behaviour of Metric.
 type PreallocatingMetric struct {
 	Metric
 }
 
-// Unmarshal is like mimirpb.Metric.Unmarshal, but it preallocates the slice of labels
+// Unmarshal is like Metric.Unmarshal, but it preallocates the slice of labels
 // instead of growing it during append(). Unmarshal traverses the dAtA slice and counts the number of
 // Metric.Labels elements. Then it preallocates a slice of mimirpb.LabelAdapter with that capacity
 // and delegates the actual unmarshalling to Metric.Unmarshal.
