@@ -852,8 +852,15 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 			}
 
 			// The error looks an issue on our side, so we should rollback
-			if rollbackErr := app.Rollback(); rollbackErr != nil {
-				level.Warn(i.logger).Log("msg", "failed to rollback on error", "user", userID, "err", rollbackErr)
+			if persistentApp != nil {
+				if rollbackErr := persistentApp.Rollback(); rollbackErr != nil {
+					level.Warn(i.logger).Log("msg", "failed to rollback on error", "user", userID, "err", rollbackErr)
+				}
+			}
+			if ephemeralApp != nil {
+				if rollbackErr := ephemeralApp.Rollback(); rollbackErr != nil {
+					level.Warn(i.logger).Log("msg", "failed to rollback ephemeral on error", "user", userID, "err", rollbackErr)
+				}
 			}
 
 			return nil, wrapWithUser(err, userID)
