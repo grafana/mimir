@@ -246,11 +246,11 @@ func BenchmarkNewStreamBinaryReader(b *testing.B) {
 	}
 }
 
-func generateSymbols(suffix string, count int) []string {
+func generateSymbols(prefix string, count int) []string {
 	s := make([]string, 0, count)
 
 	for idx := 0; idx < count; idx++ {
-		s = append(s, fmt.Sprintf("%v-%v", suffix, idx))
+		s = append(s, fmt.Sprintf("%v-%v", prefix, idx))
 	}
 
 	return s
