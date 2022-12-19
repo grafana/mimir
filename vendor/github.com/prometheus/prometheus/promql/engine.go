@@ -1013,6 +1013,8 @@ type EvalNodeHelper struct {
 	Dmn map[uint64]labels.Labels
 	// funcHistogramQuantile.
 	signatureToMetricWithBuckets map[string]*metricWithBuckets
+	// funcAggregateCounters
+	signatureToMetricWithRunningTotal map[uint64]*metricWithRunningTotal
 	// label_replace.
 	regex *regexp.Regexp
 
@@ -1486,6 +1488,22 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 					Points: newp,
 				},
 			}, warnings
+		} else if e.Func.Name == "aggregate_counters" {
+			// Finalize the output of the counter aggregation based on the context in "enh".
+
+			var result Matrix
+
+			for _, mrt := range enh.signatureToMetricWithRunningTotal {
+				result = append(result, Series{
+					Metric: mrt.metric,
+					Points: []Point{{
+						T: ev.endTimestamp,
+						V: mrt.runningTotal,
+					}},
+				})
+			}
+
+			return result, warnings
 		}
 
 		if mat.ContainsSameLabelset() {

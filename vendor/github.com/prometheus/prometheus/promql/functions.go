@@ -136,11 +136,16 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 	})
 }
 
-func funcRawIncrease(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+const dropped_labels_label = "__dropped_labels__"
+
+var labelsToAggregate = []string{"label1", "label2"}
+
+func funcAggregateCounters(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	var (
-		samples     = vals[0].(Matrix)[0]
-		window      = int64(vals[1].(Vector)[0].V)
-		resultValue float64
+		samples                = vals[0].(Matrix)[0]
+		window                 = int64(vals[1].(Vector)[0].V)
+		resultValue            float64
+		aggregatedSeriesLabels labels.Labels
 	)
 
 	// Make sure that the requested window is smaller than the matrix selector range.
@@ -153,39 +158,62 @@ func funcRawIncrease(vals []parser.Value, args parser.Expressions, enh *EvalNode
 	// Or zero increase for one sample in the range.
 	if len(samples.Points) == 0 {
 		return enh.Out
-	} else if len(samples.Points) == 1 {
-		// TODO: should this be a raw increase of sample's value?
-		// TODO: if Prometheus just lost a bunch of scrapes, we can't say this is an increase.
-		return append(enh.Out, Sample{
-			Point: Point{V: 0},
-		})
 	}
 
-	// No increase if all samples are outside of the window, but we still generate the 0 sample (as there are samples in the range).
-	fromTs := enh.Ts - ms.VectorSelector.(*parser.VectorSelector).Offset.Milliseconds() - window
-	if samples.Points[len(samples.Points)-1].T < fromTs {
-		return append(enh.Out, Sample{
-			Point: Point{V: 0},
-		})
-	}
+	dropped := samples.Metric.Get(dropped_labels_label)
+	if len(dropped) > 0 {
+		// Aggregated series.
+		aggregatedSeriesLabels = samples.Metric
 
-	// Start with two points (last two), and keep adding more points to the evaluation window while they're in the window (T >= fromTs).
-	startIdx := len(samples.Points) - 2
-	for startIdx > 0 && samples.Points[startIdx-1].T >= fromTs {
-		startIdx--
-	}
-	resultValue = samples.Points[len(samples.Points)-1].V - samples.Points[startIdx].V
-	prevValue := samples.Points[startIdx].V
-	for _, currPoint := range samples.Points[startIdx+1:] {
-		if currPoint.V < prevValue {
-			resultValue += prevValue
+		// Take the last value of the series and add it together with the increases in the raw series.
+		resultValue = samples.Points[len(samples.Points)-1].V
+	} else {
+		// Raw series to aggregate.
+
+		if len(samples.Points) == 1 {
+			// TODO: should this be a raw increase of sample's value?
+			// TODO: if Prometheus just lost a bunch of scrapes, we can't say this is an increase.
+			return enh.Out
 		}
-		prevValue = currPoint.V
+
+		// No increase if all samples are outside of the window.
+		fromTs := enh.Ts - ms.VectorSelector.(*parser.VectorSelector).Offset.Milliseconds() - window
+		if samples.Points[len(samples.Points)-1].T < fromTs {
+			return enh.Out
+		}
+
+		// Start with two points (last two), and keep adding more points to the evaluation window while they're in the window (T >= fromTs).
+		startIdx := len(samples.Points) - 2
+		for startIdx > 0 && samples.Points[startIdx-1].T >= fromTs {
+			startIdx--
+		}
+		resultValue = samples.Points[len(samples.Points)-1].V - samples.Points[startIdx].V
+		prevValue := samples.Points[startIdx].V
+		for _, currPoint := range samples.Points[startIdx+1:] {
+			if currPoint.V < prevValue {
+				resultValue += prevValue
+			}
+			prevValue = currPoint.V
+		}
+
+		aggregatedSeriesLabels = labels.NewBuilder(samples.Metric).Del(labelsToAggregate...).Set(dropped_labels_label, strings.Join(labelsToAggregate, ",")).Labels(nil)
 	}
 
-	return append(enh.Out, Sample{
-		Point: Point{V: resultValue},
-	})
+	if enh.signatureToMetricWithRunningTotal == nil {
+		enh.signatureToMetricWithRunningTotal = map[uint64]*metricWithRunningTotal{}
+	}
+
+	seriesHash := aggregatedSeriesLabels.Hash()
+	if mrt, ok := enh.signatureToMetricWithRunningTotal[seriesHash]; ok {
+		mrt.runningTotal = resultValue
+	} else {
+		enh.signatureToMetricWithRunningTotal[seriesHash] = &metricWithRunningTotal{
+			metric:       aggregatedSeriesLabels,
+			runningTotal: resultValue,
+		}
+	}
+
+	return enh.Out
 }
 
 // === delta(Matrix parser.ValueTypeMatrix) Vector ===
@@ -885,6 +913,7 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 				Metric: mb.metric,
 				Point:  Point{V: bucketQuantile(q, mb.buckets)},
 			})
+			fmt.Printf("metric: %s, appended sample: %+v\n", mb.metric.String(), enh.Out[len(enh.Out)-1])
 		}
 	}
 
@@ -1177,7 +1206,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"quantile_over_time": funcQuantileOverTime,
 	"rad":                funcRad,
 	"rate":               funcRate,
-	"raw_increase":       funcRawIncrease,
+	"aggregate_counters": funcAggregateCounters,
 	"resets":             funcResets,
 	"round":              funcRound,
 	"scalar":             funcScalar,

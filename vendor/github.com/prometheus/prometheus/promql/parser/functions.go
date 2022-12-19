@@ -277,8 +277,8 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
 	},
-	"raw_increase": {
-		Name:       "raw_increase",
+	"aggregate_counters": {
+		Name:       "aggregate_counters",
 		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar},
 		ReturnType: ValueTypeVector,
 	},
