@@ -100,7 +100,7 @@ func CanonicalPostingsKey(postings []storage.SeriesRef) PostingsKey {
 const bytesPerPosting = int(unsafe.Sizeof(storage.SeriesRef(0)))
 
 // unsafeCastPostingsToBytes returns the postings as a slice of bytes with minimal allocations.
-// It casts the memory region of the underlying array to a slice of bytes.
+// It casts the memory region of the underlying array to a slice of bytes. The resulting byte slice is only valid as long as the postings slice exists and is unmodified.
 func unsafeCastPostingsToBytes(postings []storage.SeriesRef) []byte {
 	byteSlice := make([]byte, 0)
 	slicePtr := (*reflect.SliceHeader)(unsafe.Pointer(&byteSlice))
