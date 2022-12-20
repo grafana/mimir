@@ -177,6 +177,8 @@ type Config struct {
 
 	// Configuration for forwarding of metrics to alternative ingestion endpoint.
 	Forwarding forwarding.Config
+
+	ForwardToEphemeralStorage bool `yaml:"forward_to_ephemeral_storage"`
 }
 
 type InstanceLimits struct {
@@ -197,6 +199,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.Float64Var(&cfg.InstanceLimits.MaxIngestionRate, maxIngestionRateFlag, 0, "Max ingestion rate (samples/sec) that this distributor will accept. This limit is per-distributor, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. 0 = unlimited.")
 	f.IntVar(&cfg.InstanceLimits.MaxInflightPushRequests, maxInflightPushRequestsFlag, 2000, "Max inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.")
 	f.IntVar(&cfg.InstanceLimits.MaxInflightPushRequestsBytes, maxInflightPushRequestsBytesFlag, 0, "The sum of the request sizes in bytes of inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.")
+	f.BoolVar(&cfg.ForwardToEphemeralStorage, "distributor.forward-to-ephemeral-storage", false, "Use forwarding rules to forward metrics to ephemeral storage.")
 }
 
 // Validate config and returns error on failure
@@ -690,6 +693,7 @@ func (d *Distributor) wrapPushWithMiddlewares(externalMiddleware func(next push.
 	middlewares = append(middlewares, d.prePushRelabelMiddleware)
 	middlewares = append(middlewares, d.prePushValidationMiddleware)
 	middlewares = append(middlewares, d.prePushForwardingMiddleware)
+	middlewares = append(middlewares, d.prePushForwardingToEphemeralMiddleware)
 	if externalMiddleware != nil {
 		middlewares = append(middlewares, externalMiddleware)
 	}
@@ -1011,6 +1015,45 @@ func (d *Distributor) prePushForwardingMiddleware(next push.Func) push.Func {
 	}
 }
 
+// prePushForwardingToEphemeralMiddleware is used as push.Func middleware in front of push method.
+// If forwarding to ephemeral storage is enabled, this middleware uses forwarding rules to
+// set ephemeral flag.
+func (d *Distributor) prePushForwardingToEphemeralMiddleware(next push.Func) push.Func {
+	if !d.cfg.ForwardToEphemeralStorage {
+		return next
+	}
+
+	return func(ctx context.Context, pushReq *push.Request) (*mimirpb.WriteResponse, error) {
+		userID, err := tenant.TenantID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		req, err := pushReq.WriteRequest()
+		if err != nil {
+			return nil, err
+		}
+
+		forwardingRules := d.limits.ForwardingRules(userID)
+		if len(forwardingRules) > 0 {
+			for _, ts := range req.Timeseries {
+				ts.Ephemeral = false
+
+				metric, _ := extract.UnsafeMetricNameFromLabelAdapters(ts.Labels)
+				if metric == "" {
+					continue
+				}
+
+				if _, ok := forwardingRules[metric]; ok {
+					ts.Ephemeral = true
+					ts.Exemplars = nil
+				}
+			}
+		}
+
+		return next(ctx, pushReq)
+	}
+}
+
 // metricsMiddleware updates metrics which are expected to account for all received data,
 // including data that later gets modified or dropped.
 func (d *Distributor) metricsMiddleware(next push.Func) push.Func {
@@ -1183,8 +1226,6 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 	metadataKeys := make([]uint32, 0, len(req.Metadata))
 	seriesKeys := make([]uint32, 0, len(req.Timeseries))
 
-	forwardingRules := d.limits.ForwardingRules(userID)
-
 	// For each timeseries, compute a hash to distribute across ingesters
 	for _, ts := range req.Timeseries {
 		// Generate the sharding token based on the series labels without the HA replica
@@ -1195,16 +1236,6 @@ func (d *Distributor) push(ctx context.Context, pushReq *push.Request) (*mimirpb
 		}
 
 		seriesKeys = append(seriesKeys, key)
-
-		// Set ephemeral flag based on forwarding rules. (TODO: allow ruler to set Ephemeral flag directly, and not overwrite it)
-		metric, _ := extract.UnsafeMetricNameFromLabelAdapters(ts.Labels)
-		if metric != "" {
-			rule, ok := forwardingRules[metric]
-			if ok && !rule.Ingest {
-				ts.Ephemeral = true
-				ts.Exemplars = nil
-			}
-		}
 	}
 
 	for _, m := range req.Metadata {
