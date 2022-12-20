@@ -1684,6 +1684,16 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "max_groups_per_user",
+          "required": false,
+          "desc": "Maximum number of groups allowed per user by which specified metrics can be further separated.",
+          "fieldValue": null,
+          "fieldDefaultValue": 1000,
+          "fieldFlag": "distributor.max-groups-per-user",
+          "fieldType": "int"
         }
       ],
       "fieldValue": null,
@@ -2783,6 +2793,17 @@
           "fieldFlag": "ingester.ignore-series-limit-for-metric-names",
           "fieldType": "string",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "max_groups_per_user",
+          "required": false,
+          "desc": "Maximum number of groups allowed per user by which specified metrics can be further separated.",
+          "fieldValue": null,
+          "fieldDefaultValue": 1000,
+          "fieldFlag": "ingester.max-groups-per-user",
+          "fieldType": "int",
+          "fieldCategory": "advanced"
         }
       ],
       "fieldValue": null,
@@ -3067,7 +3088,7 @@
           "kind": "field",
           "name": "separate_metrics_label",
           "required": false,
-          "desc": "Label used to further separate specific metrics",
+          "desc": "Label used to further separate specific metrics.",
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "validation.separate-metrics-label",
