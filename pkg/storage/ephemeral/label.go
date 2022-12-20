@@ -25,7 +25,7 @@ func IsEphemeralQuery(matchers []*labels.Matcher) (bool, bool, int, error) {
 			case "both":
 				return true, true, idx, nil
 			default:
-				return false, false, idx, fmt.Errorf("invalid ephemeral label")
+				return false, true, idx, fmt.Errorf("invalid ephemeral label")
 			}
 		}
 	}

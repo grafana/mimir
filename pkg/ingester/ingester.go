@@ -1337,6 +1337,9 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 	}
 
 	eph, prstt, matchers, err := ephemeral.RemoveEphemeralMatcher(matchers)
+	if err != nil {
+		return err
+	}
 	if eph {
 		i.metrics.ephemeralQueries.Inc()
 	}
