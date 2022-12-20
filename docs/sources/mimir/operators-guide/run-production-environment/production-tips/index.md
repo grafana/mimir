@@ -34,7 +34,7 @@ For more information about estimating the required ingester disk space, refer to
 
 ### Ingester disk IOPS
 
-The IOPS (input/output operations per second) and latency performances of the ingester disks can affect both write and read requests.
+The IOPS (input/output operations per second) and latency of the ingester disks can affect both write and read requests.
 On the write path, the ingester writes to the write-ahead log (WAL) on disk.
 On the read path, the ingester reads from the series whose chunks have already been written to disk.
 
@@ -97,7 +97,7 @@ We recommend configuring the system's `file-max` ulimit at least to `65536` to a
 
 ### Store-gateway disk IOPS
 
-The IOPS and latency performances of the store-gateway disk can affect queries.
+The IOPS and latency of the store-gateway disk can affect queries.
 The store-gateway downloads the block’s [index-headers]({{< relref "../../architecture/binary-index-header.md" >}}) onto local disk, and reads them for each query that needs to fetch data from the long-term storage.
 
 For these reasons, run the store-gateways on disks such as SSDs that have fast disk speed.
@@ -114,7 +114,7 @@ For more information about required disk space, refer to [Compactor disk utiliza
 ### Ensure Memcached is properly scaled
 
 We recommend ensuring Memcached evictions happen infrequently.
-Grafana Mimir query performances might be negatively affected if your Memcached cluster evicts items frequently.
+Grafana Mimir query performance might be negatively affected if your Memcached cluster evicts items frequently.
 We recommend increasing your Memcached cluster replicas to add more memory to the cluster and reduce evictions.
 
 We also recommend running a dedicated Memcached cluster for each type of cache: query results, metadata, index, and chunks.
