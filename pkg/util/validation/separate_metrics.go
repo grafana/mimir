@@ -3,6 +3,8 @@
 package validation
 
 import (
+	"strings"
+
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
@@ -15,7 +17,7 @@ func FindGroupLabel(o *Overrides, userID string, labels []mimirpb.LabelAdapter) 
 
 	for _, label := range labels {
 		if label.Name == groupLabel {
-			return label.Value
+			return strings.Clone(label.Value)
 		}
 	}
 
