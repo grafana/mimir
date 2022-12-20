@@ -14,27 +14,29 @@ const (
 )
 
 // IsEphemeralQuery extracts a ShardSelector and the index it was pulled from the matcher list.
-func IsEphemeralQuery(matchers []*labels.Matcher) (bool, int, error) {
+func IsEphemeralQuery(matchers []*labels.Matcher) (bool, bool, int, error) {
 	for idx, matcher := range matchers {
 		if matcher.Name == EphemeralLabelName && matcher.Type == labels.MatchEqual {
 			switch matcher.Value {
 			case "true":
-				return true, idx, nil
+				return true, false, idx, nil
 			case "false":
-				return false, idx, nil
+				return false, true, idx, nil
+			case "both":
+				return true, true, idx, nil
 			default:
-				return false, idx, fmt.Errorf("invalid ephemeral label")
+				return false, false, idx, fmt.Errorf("invalid ephemeral label")
 			}
 		}
 	}
-	return false, -1, nil
+	return false, false, -1, nil
 }
 
 // RemoveEphemeralMatcher returns the input matchers without the label matcher on the query shard (if any).
-func RemoveEphemeralMatcher(matchers []*labels.Matcher) (ephemeral bool, filtered []*labels.Matcher, err error) {
-	ephemeral, idx, err := IsEphemeralQuery(matchers)
+func RemoveEphemeralMatcher(matchers []*labels.Matcher) (ephemeral bool, persistent bool, filtered []*labels.Matcher, err error) {
+	ephemeral, persistent, idx, err := IsEphemeralQuery(matchers)
 	if err != nil || idx < 0 {
-		return false, matchers, err
+		return false, false, matchers, err
 	}
 
 	// Create a new slice with the shard matcher removed.
@@ -42,5 +44,5 @@ func RemoveEphemeralMatcher(matchers []*labels.Matcher) (ephemeral bool, filtere
 	filtered = append(filtered, matchers[:idx]...)
 	filtered = append(filtered, matchers[idx+1:]...)
 
-	return ephemeral, filtered, nil
+	return ephemeral, persistent, filtered, nil
 }

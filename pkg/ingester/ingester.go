@@ -1072,7 +1072,7 @@ func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesReque
 		return &client.LabelValuesResponse{}, nil
 	}
 
-	q, err := db.Querier(ctx, startTimestampMs, endTimestampMs, false)
+	q, err := db.Querier(ctx, startTimestampMs, endTimestampMs, false, true)
 	if err != nil {
 		return nil, err
 	}
@@ -1108,7 +1108,7 @@ func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest
 		return nil, err
 	}
 
-	q, err := db.Querier(ctx, mint, maxt, false)
+	q, err := db.Querier(ctx, mint, maxt, false, true)
 	if err != nil {
 		return nil, err
 	}
@@ -1147,7 +1147,7 @@ func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.Metr
 	}
 
 	mint, maxt := req.StartTimestampMs, req.EndTimestampMs
-	q, err := db.Querier(ctx, mint, maxt, false)
+	q, err := db.Querier(ctx, mint, maxt, false, true)
 	if err != nil {
 		return nil, err
 	}
@@ -1336,10 +1336,11 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 		return err
 	}
 
-	eph, matchers, err := ephemeral.RemoveEphemeralMatcher(matchers)
+	eph, prstt, matchers, err := ephemeral.RemoveEphemeralMatcher(matchers)
 	if eph {
 		i.metrics.ephemeralQueries.Inc()
-	} else {
+	}
+	if prstt {
 		i.metrics.queries.Inc()
 	}
 
@@ -1370,10 +1371,10 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 
 	if streamType == QueryStreamChunks {
 		level.Debug(spanlog).Log("msg", "using queryStreamChunks")
-		numSeries, numSamples, err = i.queryStreamChunks(ctx, db, int64(from), int64(through), matchers, shard, stream, eph)
+		numSeries, numSamples, err = i.queryStreamChunks(ctx, db, int64(from), int64(through), matchers, shard, stream, eph, prstt)
 	} else {
 		level.Debug(spanlog).Log("msg", "using queryStreamSamples")
-		numSeries, numSamples, err = i.queryStreamSamples(ctx, db, int64(from), int64(through), matchers, shard, stream, eph)
+		numSeries, numSamples, err = i.queryStreamSamples(ctx, db, int64(from), int64(through), matchers, shard, stream, eph, prstt)
 	}
 	if err != nil {
 		return err
@@ -1382,7 +1383,8 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 	if eph {
 		i.metrics.ephemeralQueriedSeries.Observe(float64(numSeries))
 		i.metrics.ephemeralQueriedSamples.Observe(float64(numSamples))
-	} else {
+	}
+	if prstt {
 		i.metrics.queriedSeries.Observe(float64(numSeries))
 		i.metrics.queriedSamples.Observe(float64(numSamples))
 	}
@@ -1390,8 +1392,8 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 	return nil
 }
 
-func (i *Ingester) queryStreamSamples(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer, ephemeral bool) (numSeries, numSamples int, _ error) {
-	q, err := db.Querier(ctx, from, through, ephemeral)
+func (i *Ingester) queryStreamSamples(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer, ephemeral, persistent bool) (numSeries, numSamples int, _ error) {
+	q, err := db.Querier(ctx, from, through, ephemeral, persistent)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -1464,13 +1466,13 @@ func (i *Ingester) queryStreamSamples(ctx context.Context, db *userTSDB, from, t
 }
 
 // queryStreamChunks streams metrics from a TSDB. This implements the client.IngesterServer interface
-func (i *Ingester) queryStreamChunks(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer, ephemeral bool) (numSeries, numSamples int, _ error) {
+func (i *Ingester) queryStreamChunks(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer, ephemeral, persistent bool) (numSeries, numSamples int, _ error) {
 	var q storage.ChunkQuerier
 	var err error
 	if i.limits.OutOfOrderTimeWindow(db.userID) > 0 {
-		q, err = db.UnorderedChunkQuerier(ctx, from, through, ephemeral)
+		q, err = db.UnorderedChunkQuerier(ctx, from, through, ephemeral, persistent)
 	} else {
-		q, err = db.ChunkQuerier(ctx, from, through, ephemeral)
+		q, err = db.ChunkQuerier(ctx, from, through, ephemeral, persistent)
 	}
 	if err != nil {
 		return 0, 0, err
