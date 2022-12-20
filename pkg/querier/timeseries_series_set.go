@@ -53,7 +53,7 @@ type timeseries struct {
 	series mimirpb.TimeSeries
 }
 
-// timeSeriesSeriesIterator is a wrapper around a mimirpb.TimeSeries to implement the SeriesIterator interface
+// timeSeriesSeriesIterator is a wrapper around a mimirpb.TimeSeries to implement the chunkenc.Iterator.
 type timeSeriesSeriesIterator struct {
 	ts *timeseries
 	i  int
@@ -81,7 +81,7 @@ func (t *timeseries) Iterator() chunkenc.Iterator {
 	}
 }
 
-// Seek implements SeriesIterator interface
+// Seek implements implements chunkenc.Iterator.
 func (t *timeSeriesSeriesIterator) Seek(s int64) chunkenc.ValueType {
 	offset := 0
 	if t.i > 0 {
@@ -98,7 +98,7 @@ func (t *timeSeriesSeriesIterator) Seek(s int64) chunkenc.ValueType {
 	return chunkenc.ValNone
 }
 
-// At implements the SeriesIterator interface
+// At implements the implements chunkenc.Iterator.
 func (t *timeSeriesSeriesIterator) At() (int64, float64) {
 	if t.i < 0 || t.i >= len(t.ts.series.Samples) {
 		return 0, 0
@@ -116,13 +116,13 @@ func (t *timeSeriesSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHi
 	panic(errors.New("timeSeriesSeriesIterator: AtFloatHistogram is not implemented"))
 }
 
-// AtT implements the SeriesIterator interface
+// AtT implements implements chunkenc.Iterator.
 func (t *timeSeriesSeriesIterator) AtT() int64 {
 	ts, _ := t.At()
 	return ts
 }
 
-// Next implements the SeriesIterator interface
+// Next implements implements chunkenc.Iterator.
 func (t *timeSeriesSeriesIterator) Next() chunkenc.ValueType {
 	t.i++
 	if t.i < len(t.ts.series.Samples) {
@@ -131,5 +131,5 @@ func (t *timeSeriesSeriesIterator) Next() chunkenc.ValueType {
 	return chunkenc.ValNone
 }
 
-// Err implements the SeriesIterator interface
+// Err implements the implements chunkenc.Iterator.
 func (t *timeSeriesSeriesIterator) Err() error { return nil }
