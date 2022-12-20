@@ -72,9 +72,9 @@ type IndexCache interface {
 	FetchSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector) ([]byte, bool)
 
 	// StoreSeriesForPostings stores a series set for the provided postings.
-	StoreSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, postingsKey PostingsKey, v []byte)
+	StoreSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey PostingsKey, v []byte)
 	// FetchSeriesForPostings fetches a series set for the provided postings.
-	FetchSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, postingsKey PostingsKey) ([]byte, bool)
+	FetchSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey PostingsKey) ([]byte, bool)
 
 	// StoreLabelNames stores the result of a LabelNames() call.
 	StoreLabelNames(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, v []byte)
@@ -93,8 +93,18 @@ type PostingsKey string
 // CanonicalPostingsKey creates a canonical version of PostingsKey
 func CanonicalPostingsKey(postings []storage.SeriesRef) PostingsKey {
 	hashable := unsafeCastPostingsToBytes(postings)
-	checksum := blake2b.Sum256(hashable)
-	return PostingsKey(base64.RawURLEncoding.EncodeToString(checksum[:]))
+	// We use a hash size of 42 because that's how much room we have in the cache key after we base64-encode the hash.
+	// 42 * 4/3 = 56 (memcached limits keys to 250 bytes).
+	// See seriesForPostingsCacheKey for more details.
+	hasher, err := blake2b.New(42, nil)
+	if err != nil {
+		// Blake2 errors only when we provide an incompatible encryption key or size is more than 64 (ours is 42).
+		// This panic is so that tests fail if we mess those up.
+		panic(err)
+	}
+	_, _ = hasher.Write(hashable)
+	checksum := hasher.Sum(nil)
+	return PostingsKey(base64.RawURLEncoding.EncodeToString(checksum))
 }
 
 const bytesPerPosting = int(unsafe.Sizeof(storage.SeriesRef(0)))

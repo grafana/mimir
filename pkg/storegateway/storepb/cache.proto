@@ -23,5 +23,6 @@ message CachedSeries {
   repeated cortexpb.Metric series = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.PreallocatingMetric"];
   uint64 shardIndex = 2;
   uint64 shardCount = 3;
-  string matchersKey = 4;
+  reserved 4; // matchers key
+  bytes diffEncodedPostings = 5;
 }

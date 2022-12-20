@@ -356,13 +356,13 @@ func (c *InMemoryIndexCache) FetchSeries(_ context.Context, userID string, block
 }
 
 // StoreSeriesForPostings stores a series set for the provided postings.
-func (c *InMemoryIndexCache) StoreSeriesForPostings(_ context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, postingsKey PostingsKey, v []byte) {
-	c.set(cacheKeySeriesForPostings{userID, blockID, matchersKey, shardKey(shard), postingsKey}, v)
+func (c *InMemoryIndexCache) StoreSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey PostingsKey, v []byte) {
+	c.set(cacheKeySeriesForPostings{userID, blockID, shardKey(shard), postingsKey}, v)
 }
 
 // FetchSeriesForPostings fetches a series set for the provided postings.
-func (c *InMemoryIndexCache) FetchSeriesForPostings(_ context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, postingsKey PostingsKey) ([]byte, bool) {
-	return c.get(cacheKeySeriesForPostings{userID, blockID, matchersKey, shardKey(shard), postingsKey})
+func (c *InMemoryIndexCache) FetchSeriesForPostings(ctx context.Context, userID string, blockID ulid.ULID, shard *sharding.ShardSelector, postingsKey PostingsKey) ([]byte, bool) {
+	return c.get(cacheKeySeriesForPostings{userID, blockID, shardKey(shard), postingsKey})
 }
 
 // StoreLabelNames stores the result of a LabelNames() call.
@@ -451,7 +451,6 @@ func (c cacheKeySeries) size() uint64 {
 type cacheKeySeriesForPostings struct {
 	userID      string
 	block       ulid.ULID
-	matchersKey LabelMatchersKey
 	shard       string
 	postingsKey PostingsKey
 }
@@ -461,7 +460,7 @@ func (c cacheKeySeriesForPostings) typ() string {
 }
 
 func (c cacheKeySeriesForPostings) size() uint64 {
-	return stringSize(c.userID) + ulidSize + stringSize(string(c.matchersKey)) + stringSize(c.shard) + stringSize(string(c.postingsKey))
+	return stringSize(c.userID) + ulidSize + stringSize(c.shard) + stringSize(string(c.postingsKey))
 }
 
 type cacheKeyLabelNames struct {
