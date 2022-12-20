@@ -51,7 +51,7 @@ Mimirtool interacts with:
 
 ## Installation
 
-To install Mimirtool with Homebrew on macOS, run `brew install mimirtool`. 
+To install Mimirtool with Homebrew on macOS, run `brew install mimirtool`.
 
 To install Mimirtool in other environments, download the appropriate binary from the [latest release](https://github.com/grafana/mimir/releases/latest) for your operating system and architecture and make it executable.
 
