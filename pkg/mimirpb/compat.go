@@ -236,12 +236,58 @@ func FromMimirSampleToPromCommonHistogram(src SampleHistogram) model.SampleHisto
 }
 
 // FromPointsToSamples converts []promql.Point to []Sample.
-// TODO: adapt to also return histograms.
 func FromPointsToSamples(points []promql.Point) []Sample {
 	samples := make([]Sample, len(points))
 	for i := 0; i < len(points); i++ {
+		if points[i].H != nil {
+			continue
+		}
 		samples[i].TimestampMs = points[i].T
 		samples[i].Value = points[i].V
+	}
+	return samples
+}
+
+// FromPointsToHistograms converts []promql.Point to []SampleHistogramPair.
+func FromPointsToHistograms(points []promql.Point) []SampleHistogramPair {
+	samples := make([]SampleHistogramPair, len(points))
+	for i := 0; i < len(points); i++ {
+		h := points[i].H
+		if h == nil {
+			continue
+		}
+		buckets := make([]*HistogramBucket, 0)
+		it := h.AllBucketIterator()
+		for it.Next() {
+			bucket := it.At()
+			if bucket.Count == 0 {
+				continue // No need to expose empty buckets in JSON.
+			}
+			boundaries := 2 // Exclusive on both sides AKA open interval.
+			if bucket.LowerInclusive {
+				if bucket.UpperInclusive {
+					boundaries = 3 // Inclusive on both sides AKA closed interval.
+				} else {
+					boundaries = 1 // Inclusive only on lower end AKA right open.
+				}
+			} else {
+				if bucket.UpperInclusive {
+					boundaries = 0 // Inclusive only on upper end AKA left open.
+				}
+			}
+			buckets = append(buckets, &HistogramBucket{
+				Boundaries: int32(boundaries),
+				Lower:      bucket.Lower,
+				Upper:      bucket.Upper,
+				Count:      bucket.Count,
+			})
+		}
+		samples[i].Timestamp = points[i].T
+		samples[i].Histogram = &SampleHistogram{
+			Count:   h.Count,
+			Sum:     h.Sum,
+			Buckets: buckets,
+		}
 	}
 	return samples
 }

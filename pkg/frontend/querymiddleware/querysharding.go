@@ -366,8 +366,10 @@ func promqlResultToSamples(res *promql.Result) ([]SampleStream, error) {
 		res := make([]SampleStream, 0, len(v))
 		for _, sample := range v {
 			res = append(res, SampleStream{
-				Labels:  mimirpb.FromLabelsToLabelAdapters(sample.Metric),
-				Samples: mimirpb.FromPointsToSamples([]promql.Point{sample.Point})})
+				Labels:     mimirpb.FromLabelsToLabelAdapters(sample.Metric),
+				Samples:    mimirpb.FromPointsToSamples([]promql.Point{sample.Point}),
+				Histograms: mimirpb.FromPointsToHistograms([]promql.Point{sample.Point}),
+			})
 		}
 		return res, nil
 
@@ -375,8 +377,9 @@ func promqlResultToSamples(res *promql.Result) ([]SampleStream, error) {
 		res := make([]SampleStream, 0, len(v))
 		for _, series := range v {
 			res = append(res, SampleStream{
-				Labels:  mimirpb.FromLabelsToLabelAdapters(series.Metric),
-				Samples: mimirpb.FromPointsToSamples(series.Points),
+				Labels:     mimirpb.FromLabelsToLabelAdapters(series.Metric),
+				Samples:    mimirpb.FromPointsToSamples(series.Points),
+				Histograms: mimirpb.FromPointsToHistograms(series.Points),
 			})
 		}
 		return res, nil
