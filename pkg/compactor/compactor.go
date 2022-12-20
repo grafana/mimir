@@ -370,11 +370,7 @@ func newMultitenantCompactor(
 
 // Start the compactor.
 func (c *MultitenantCompactor) starting(ctx context.Context) error {
-	var (
-		err        error
-		ctxTimeout context.Context
-		cancel     context.CancelFunc
-	)
+	var err error
 
 	// Create bucket client.
 	c.bucketClient, err = c.bucketClientFactory(ctx)
@@ -399,7 +395,7 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 
 	c.ringSubservices, err = services.NewManager(c.ringLifecycler, c.ring)
 	if err != nil {
-		return errors.Wrap(err, "unable to start compactor ring dependencies")
+		return errors.Wrap(err, "unable to create compactor ring dependencies")
 	}
 
 	c.ringSubservicesWatcher = services.NewFailureWatcher()
@@ -408,7 +404,7 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 		return errors.Wrap(err, "unable to start compactor ring dependencies")
 	}
 
-	ctxTimeout, cancel = context.WithTimeout(ctx, c.compactorCfg.ShardingRing.WaitActiveInstanceTimeout)
+	ctxTimeout, cancel := context.WithTimeout(ctx, c.compactorCfg.ShardingRing.WaitActiveInstanceTimeout)
 	defer cancel()
 	if err = c.ringSubservices.AwaitHealthy(ctxTimeout); err != nil {
 		return errors.Wrap(err, "unable to start compactor ring dependencies")
@@ -418,9 +414,6 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	// MUST be done before starting any other component depending on the users scanner, because
 	// the users scanner depends on the ring (to check whether a user belongs to this shard or not).
 	level.Info(c.logger).Log("msg", "waiting until compactor is ACTIVE in the ring")
-
-	ctxTimeout, cancel = context.WithTimeout(ctx, c.compactorCfg.ShardingRing.WaitActiveInstanceTimeout)
-	defer cancel()
 	if err = ring.WaitInstanceState(ctxTimeout, c.ring, c.ringLifecycler.GetInstanceID(), ring.ACTIVE); err != nil {
 		return errors.Wrap(err, "compactor failed to become ACTIVE in the ring")
 	}
@@ -465,6 +458,7 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 }
 
 func newRingAndLifecycler(cfg RingConfig, logger log.Logger, reg prometheus.Registerer) (*ring.Ring, *ring.BasicLifecycler, error) {
+	reg = prometheus.WrapRegistererWithPrefix("cortex_", reg)
 	kvStore, err := kv.NewClient(cfg.KVStore, ring.GetCodec(), kv.RegistererWithKVName(reg, "compactor-lifecycler"), logger)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "failed to initialize compactors' KV store")
@@ -480,12 +474,12 @@ func newRingAndLifecycler(cfg RingConfig, logger log.Logger, reg prometheus.Regi
 	delegate = ring.NewLeaveOnStoppingDelegate(delegate, logger)
 	delegate = ring.NewAutoForgetDelegate(ringAutoForgetUnhealthyPeriods*lifecyclerCfg.HeartbeatTimeout, delegate, logger)
 
-	compactorsLifecycler, err := ring.NewBasicLifecycler(lifecyclerCfg, "compactor", ringKey, kvStore, delegate, logger, prometheus.WrapRegistererWithPrefix("cortex_", reg))
+	compactorsLifecycler, err := ring.NewBasicLifecycler(lifecyclerCfg, "compactor", ringKey, kvStore, delegate, logger, reg)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "failed to initialize compactors' lifecycler")
 	}
 
-	compactorsRing, err := ring.NewWithStoreClientAndStrategy(cfg.ToRingConfig(), "compactor", ringKey, kvStore, ring.NewDefaultReplicationStrategy(), prometheus.WrapRegistererWithPrefix("cortex_", reg), logger)
+	compactorsRing, err := ring.New(cfg.ToRingConfig(), "compactor", ringKey, logger, reg)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "failed to initialize compactors' ring client")
 	}
