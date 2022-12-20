@@ -63,7 +63,7 @@ func NewSymbols(factory *streamencoding.DecbufFactory, version, offset int) (s *
 		if s.seen%symbolFactor == 0 {
 			s.offsets = append(s.offsets, basePos+origLen-d.Len())
 		}
-		d.UvarintBytes() // The symbol.
+		d.SkipUvarintBytes() // The symbol.
 		s.seen++
 	}
 
@@ -88,7 +88,7 @@ func (s *Symbols) Lookup(o uint32) (sym string, err error) {
 		d.ResetAt(s.offsets[int(o/symbolFactor)])
 		// Walk until we find the one we want.
 		for i := o - (o / symbolFactor * symbolFactor); i > 0; i-- {
-			d.UvarintBytes()
+			d.SkipUvarintBytes()
 		}
 	} else {
 		// In v1, o is relative to the beginning of the whole index header file, so we
@@ -150,7 +150,7 @@ func (s *Symbols) ForEachSymbol(syms []string, f func(sym string, offset uint32)
 func (s *Symbols) reverseLookup(sym string, d streamencoding.Decbuf) (uint32, error) {
 	i := sort.Search(len(s.offsets), func(i int) bool {
 		d.ResetAt(s.offsets[i])
-		return string(d.UvarintBytes()) > sym
+		return string(d.UnsafeUvarintBytes()) > sym
 	})
 
 	if i > 0 {
@@ -163,7 +163,7 @@ func (s *Symbols) reverseLookup(sym string, d streamencoding.Decbuf) (uint32, er
 	var lastSymbol string
 	for d.Err() == nil && res <= s.seen {
 		lastLen = d.Len()
-		lastSymbol = yoloString(d.UvarintBytes())
+		lastSymbol = yoloString(d.UnsafeUvarintBytes())
 		if lastSymbol >= sym {
 			break
 		}

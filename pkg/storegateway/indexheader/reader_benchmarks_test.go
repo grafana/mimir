@@ -222,8 +222,8 @@ func BenchmarkNewStreamBinaryReader(b *testing.B) {
 		require.NoError(b, bkt.Close())
 	})
 
-	for _, nameCount := range []int{20, 50, 100, 200} {
-		for _, valueCount := range []int{100, 500, 1000} {
+	for _, nameCount := range []int{1, 20, 50, 100, 200} {
+		for _, valueCount := range []int{1, 10, 100, 500, 1000, 5000} {
 			nameSymbols := generateSymbols("name", nameCount)
 			valueSymbols := generateSymbols("value", valueCount)
 			idIndexV2, err := testhelper.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"), 124)
@@ -246,11 +246,11 @@ func BenchmarkNewStreamBinaryReader(b *testing.B) {
 	}
 }
 
-func generateSymbols(suffix string, count int) []string {
+func generateSymbols(prefix string, count int) []string {
 	s := make([]string, 0, count)
 
 	for idx := 0; idx < count; idx++ {
-		s = append(s, fmt.Sprintf("%v-%v", suffix, idx))
+		s = append(s, fmt.Sprintf("%v-%v", prefix, idx))
 	}
 
 	return s
