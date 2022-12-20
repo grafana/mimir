@@ -342,13 +342,13 @@ func verifySeries(t *testing.T, series storage.Series, l labels.Labels, samples 
 
 	it := series.Iterator()
 	for _, s := range samples {
-		require.True(t, it.Next() == chunkenc.ValFloat)
+		require.Equal(t, chunkenc.ValFloat, it.Next())
 		require.Nil(t, it.Err())
 		ts, v := it.At()
 		require.Equal(t, s.Value, v)
 		require.Equal(t, s.TimestampMs, ts)
 	}
-	require.False(t, it.Next() == chunkenc.ValFloat)
+	require.Equal(t, chunkenc.ValNone, it.Next())
 	require.Nil(t, it.Err())
 }
 

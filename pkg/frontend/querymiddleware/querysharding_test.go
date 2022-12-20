@@ -932,7 +932,7 @@ func TestQuerySharding_FunctionCorrectness(t *testing.T) {
 		"scalar": {},
 		"vector": {},
 		"pi":     {},
-		// Until support is added for querying histograms, thesse can be ignored:
+		// Until support is added for querying histograms, these can be ignored:
 		"histogram_count":    {},
 		"histogram_sum":      {},
 		"histogram_fraction": {},

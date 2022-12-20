@@ -86,27 +86,24 @@ func mergeStreams(left, right batchStream, result batchStream, size int) batchSt
 		b = &result[resultLen-1]
 	}
 
-	// ensureBatchType sets the Batch type and returns true if it was successful
-	ensureBatchType := func(valueTypes chunkenc.ValueType) bool {
-		if b.ValueTypes == valueTypes {
-			return true
+	ensureBatchType := func(valueTypes chunkenc.ValueType) {
+		for b.ValueTypes != valueTypes {
+			if b.ValueTypes == chunkenc.ValNone {
+				// Uninitialized Batch
+				initBatchType(b, valueTypes)
+				return
+			}
+			// These should be rare, means that we're merging into something where the chunk type changed
+			if b.Index == 0 {
+				// Batch not written yet
+				result[resultLen-1] = createBatch(valueTypes)
+				b = &result[resultLen-1]
+				return
+			}
+			// Batch already started, finish and start new
+			// We don't know its type so let the loop run one more time
+			nextBatch(valueTypes)
 		}
-		if b.ValueTypes == chunkenc.ValNone {
-			// Uninitialized Batch
-			initBatchType(b, valueTypes)
-			return true
-		}
-		// These should be rare, means that we're merging into something where the chunk type changed
-		if b.Index == 0 {
-			// Batch not written yet
-			result[resultLen-1] = createBatch(valueTypes)
-			b = &result[resultLen-1]
-			return true
-		}
-		// Batch already started, finish and start new
-		// We don't know it's type so return false (but it will either be None or have b.Index==0)
-		nextBatch(valueTypes)
-		return false
 	}
 
 	// Ensure that the batch we're writing to is not full and of the right type.
@@ -117,9 +114,7 @@ func mergeStreams(left, right batchStream, result batchStream, size int) batchSt
 			// and use it for further appending.
 			nextBatch(valueTypes)
 		}
-		if !ensureBatchType(valueTypes) {
-			ensureBatchType(valueTypes)
-		}
+		ensureBatchType(valueTypes)
 	}
 
 	for {

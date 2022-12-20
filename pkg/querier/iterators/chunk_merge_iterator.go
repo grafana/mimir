@@ -136,12 +136,12 @@ func (c *chunkMergeIterator) At() (t int64, v float64) {
 	return c.currTime, c.currValue
 }
 
-// Histogram support isn't complete yet, so this function just returns (0, nil).
+// Histogram support isn't complete yet
 func (c *chunkMergeIterator) AtHistogram() (int64, *histogram.Histogram) {
 	panic(errors.New("chunkMergeIterator: AtHistogram is not implemented"))
 }
 
-// Histogram suppport isn't complete yet, so this function just returns (0, nil).
+// Histogram suppport isn't complete yet
 func (c *chunkMergeIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
 	panic(errors.New("chunkMergeIterator: AtFloatHistogram is not implemented"))
 }

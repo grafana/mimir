@@ -144,8 +144,8 @@ func (a *iteratorAdapter) AtHistogram() (int64, *histogram.Histogram) {
 
 // AtFloatHistogram implements chunkenc.Iterator.
 func (a *iteratorAdapter) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
-	// It seems this method is sometimes called when there aren't any float histograms
-	// but there are regular histograms, so we can get of those instead.
+	// The promQL engine works on Float Histograms even if the underlying data is an integer histogram
+	// and will call AtFloatHistogram on a Histogram
 	var h *histogram.FloatHistogram
 	if a.curr.FloatHistogramValues != nil {
 		h = a.curr.FloatHistogramValues[a.curr.Index]
