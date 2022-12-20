@@ -148,7 +148,7 @@ type Config struct {
 
 	IgnoreSeriesLimitForMetricNames string `yaml:"ignore_series_limit_for_metric_names" category:"advanced"`
 
-	MaxGroupsPerUser int `yaml:"max_groups_per_user" category:advanced"`
+	MaxGroupsPerUser int `yaml:"max_groups_per_user" category:"advanced"`
 
 	// For testing, you can override the address and ID of this ingester.
 	ingesterClientFactory func(addr string, cfg client.Config) (client.HealthAndIngesterClient, error)
