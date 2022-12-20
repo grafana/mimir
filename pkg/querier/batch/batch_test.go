@@ -65,8 +65,8 @@ func TestSeekCorrectlyDealWithSinglePointChunks(t *testing.T) {
 	sut := NewChunkMergeIterator(chunks, 0, 0)
 
 	// Following calls mimics Prometheus's query engine behaviour for VectorSelector.
-	require.True(t, sut.Next() == chunkenc.ValFloat)
-	require.True(t, sut.Seek(0) == chunkenc.ValFloat)
+	require.Equal(t, chunkenc.ValFloat, sut.Next())
+	require.Equal(t, chunkenc.ValFloat, sut.Seek(0))
 
 	actual, val := sut.At()
 	require.Equal(t, float64(1*time.Second/time.Millisecond), val) // since mkChunk use ts as value.
