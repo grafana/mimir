@@ -177,6 +177,9 @@ type Config struct {
 
 	// Configuration for forwarding of metrics to alternative ingestion endpoint.
 	Forwarding forwarding.Config
+
+	// Limit on number of groups by which a specified metric can be further separated
+	MaxGroupsPerUser int `yaml:"max_groups_per_user"`
 }
 
 type InstanceLimits struct {
@@ -197,6 +200,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.Float64Var(&cfg.InstanceLimits.MaxIngestionRate, maxIngestionRateFlag, 0, "Max ingestion rate (samples/sec) that this distributor will accept. This limit is per-distributor, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. 0 = unlimited.")
 	f.IntVar(&cfg.InstanceLimits.MaxInflightPushRequests, maxInflightPushRequestsFlag, 2000, "Max inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.")
 	f.IntVar(&cfg.InstanceLimits.MaxInflightPushRequestsBytes, maxInflightPushRequestsBytesFlag, 0, "The sum of the request sizes in bytes of inflight push requests that this distributor can handle. This limit is per-distributor, not per-tenant. Additional requests will be rejected. 0 = unlimited.")
+	f.IntVar(&cfg.MaxGroupsPerUser, "distributor.max-groups-per-user", 1000, "Maximum number of groups allowed per user by which specified metrics can be further separated.")
 }
 
 // Validate config and returns error on failure
@@ -422,7 +426,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 
 	d.replicationFactor.Set(float64(ingestersRing.ReplicationFactor()))
 	d.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(d.cleanupInactiveUser)
-	d.activeGroups = util.NewActiveGroupsCleanupWithDefaultValues(d.cleanupInactiveGroupsForUser)
+	d.activeGroups = util.NewActiveGroupsCleanupWithDefaultValues(d.removeGroupMetricsForUser, d.cfg.MaxGroupsPerUser)
 
 	d.forwarder = forwarding.NewForwarder(cfg.Forwarding, reg, log, limits)
 	// The forwarder is an optional feature, if it's disabled then d.forwarder will be nil.
@@ -545,7 +549,7 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	}
 }
 
-func (d *Distributor) cleanupInactiveGroupsForUser(userID, group string) {
+func (d *Distributor) removeGroupMetricsForUser(userID, group string) {
 	d.dedupedSamples.DeleteLabelValues(userID, group)
 	d.discardedSamplesTooManyHaClusters.DeleteLabelValues(userID, group)
 	d.discardedSamplesRateLimited.DeleteLabelValues(userID, group)
@@ -759,10 +763,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next push.Func) push.Func {
 			}
 
 			if errors.Is(err, tooManyClustersError{}) {
-				group := ""
-				if len(req.Timeseries) > 0 {
-					group = validation.FindGroupLabel(d.limits, userID, req.Timeseries[0].Labels)
-				}
+				group := validation.GroupLabel(d.limits, userID, req.Timeseries)
 
 				d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group).Add(float64(numSamples))
 				return nil, httpgrpc.Errorf(http.StatusBadRequest, err.Error())
@@ -872,12 +873,9 @@ func (d *Distributor) prePushValidationMiddleware(next push.Func) push.Func {
 		d.receivedRequests.WithLabelValues(userID).Add(1)
 		d.activeUsers.UpdateUserTimestamp(userID, now)
 
-		group := ""
-		if len(req.Timeseries) > 0 {
-			group = validation.FindGroupLabel(d.limits, userID, req.Timeseries[0].Labels)
-			if d.activeGroups.ActiveGroupLimitExceeded(userID, group) {
-				group = "other"
-			}
+		group := validation.GroupLabel(d.limits, userID, req.Timeseries)
+		if d.activeGroups.ActiveGroupLimitExceeded(userID, group) {
+			group = "other"
 		}
 
 		if group != "" {
