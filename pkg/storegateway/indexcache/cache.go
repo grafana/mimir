@@ -7,10 +7,11 @@ package indexcache
 
 import (
 	"context"
-	"crypto/sha1"
 	"encoding/base64"
+	"reflect"
 	"sort"
 	"strings"
+	"unsafe"
 
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
@@ -91,23 +92,22 @@ type PostingsKey string
 
 // CanonicalPostingsKey creates a canonical version of PostingsKey
 func CanonicalPostingsKey(postings []storage.SeriesRef) PostingsKey {
-	hashable := make([]byte, len(postings)*8)
-	for i, posting := range postings {
-		for octet := 0; octet < 8; octet++ {
-			hashable[i+octet] = byte(posting >> (octet * 8))
-		}
-	}
+	hashable := unsafeCastPostingsToBytes(postings)
+	checksum := blake2b.Sum256(hashable)
+	return PostingsKey(base64.RawURLEncoding.EncodeToString(checksum[:]))
+}
 
-	// We hash the postings list twice to minimize the chance of collisions
-	hasher1, _ := blake2b.New256(nil) // This will never return an error
-	hasher2 := sha1.New()
+const bytesPerPosting = int(unsafe.Sizeof(storage.SeriesRef(0)))
 
-	_, _ = hasher1.Write(hashable)
-	_, _ = hasher2.Write(hashable)
-
-	checksum := hasher2.Sum(hasher1.Sum(nil))
-
-	return PostingsKey(base64.RawURLEncoding.EncodeToString(checksum))
+// unsafeCastPostingsToBytes returns the postings as a slice of bytes with minimal allocations.
+// It casts the memory region of the underlying array to a slice of bytes. The resulting byte slice is only valid as long as the postings slice exists and is unmodified.
+func unsafeCastPostingsToBytes(postings []storage.SeriesRef) []byte {
+	byteSlice := make([]byte, 0)
+	slicePtr := (*reflect.SliceHeader)(unsafe.Pointer(&byteSlice))
+	slicePtr.Data = (*reflect.SliceHeader)(unsafe.Pointer(&postings)).Data
+	slicePtr.Len = len(postings) * bytesPerPosting
+	slicePtr.Cap = slicePtr.Len
+	return byteSlice
 }
 
 // LabelMatchersKey represents a canonical key for a []*matchers.Matchers slice

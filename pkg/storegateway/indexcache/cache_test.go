@@ -6,6 +6,7 @@
 package indexcache
 
 import (
+	"encoding/base64"
 	"fmt"
 	"testing"
 
@@ -49,9 +50,71 @@ func BenchmarkCanonicalPostingsKey(b *testing.B) {
 	}
 	for numPostings := 10; numPostings <= len(ms); numPostings *= 10 {
 		b.Run(fmt.Sprintf("%d postings", numPostings), func(b *testing.B) {
+			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
 				_ = CanonicalPostingsKey(ms[:numPostings])
 			}
 		})
 	}
+}
+
+func TestUnsafeCastPostingsToBytes(t *testing.T) {
+	slowPostingsToBytes := func(postings []storage.SeriesRef) []byte {
+		byteSlice := make([]byte, len(postings)*8)
+		for i, posting := range postings {
+			for octet := 0; octet < 8; octet++ {
+				byteSlice[i*8+octet] = byte(posting >> (octet * 8))
+			}
+		}
+		return byteSlice
+	}
+	t.Run("base case", func(t *testing.T) {
+		postings := []storage.SeriesRef{1, 2}
+		assert.Equal(t, slowPostingsToBytes(postings), unsafeCastPostingsToBytes(postings))
+	})
+	t.Run("zero-length postings", func(t *testing.T) {
+		postings := make([]storage.SeriesRef, 0)
+		assert.Equal(t, slowPostingsToBytes(postings), unsafeCastPostingsToBytes(postings))
+	})
+	t.Run("nil postings", func(t *testing.T) {
+		assert.Equal(t, []byte(nil), unsafeCastPostingsToBytes(nil))
+	})
+	t.Run("more than 256 postings", func(t *testing.T) {
+		// Only casting a slice pointer truncates all postings to only their last byte.
+		postings := make([]storage.SeriesRef, 300)
+		for i := range postings {
+			postings[i] = storage.SeriesRef(i + 1)
+		}
+		assert.Equal(t, slowPostingsToBytes(postings), unsafeCastPostingsToBytes(postings))
+	})
+}
+
+func TestCanonicalPostingsKey(t *testing.T) {
+	t.Run("same length postings have different hashes", func(t *testing.T) {
+		postings1 := []storage.SeriesRef{1, 2, 3, 4}
+		postings2 := []storage.SeriesRef{5, 6, 7, 8}
+
+		assert.NotEqual(t, CanonicalPostingsKey(postings1), CanonicalPostingsKey(postings2))
+	})
+
+	t.Run("when postings are a subset of each other, they still have different hashes", func(t *testing.T) {
+		postings1 := []storage.SeriesRef{1, 2, 3, 4}
+		postings2 := []storage.SeriesRef{1, 2, 3, 4, 5}
+
+		assert.NotEqual(t, CanonicalPostingsKey(postings1), CanonicalPostingsKey(postings2))
+	})
+
+	t.Run("same postings with different slice capacities have same hashes", func(t *testing.T) {
+		postings1 := []storage.SeriesRef{1, 2, 3, 4}
+		postings2 := make([]storage.SeriesRef, 4, 8)
+		copy(postings2, postings1)
+
+		assert.Equal(t, CanonicalPostingsKey(postings1), CanonicalPostingsKey(postings2))
+	})
+
+	t.Run("postings key is a base64-encoded string (i.e. is printable)", func(t *testing.T) {
+		key := CanonicalPostingsKey([]storage.SeriesRef{1, 2, 3, 4})
+		_, err := base64.RawURLEncoding.DecodeString(string(key))
+		assert.NoError(t, err)
+	})
 }
