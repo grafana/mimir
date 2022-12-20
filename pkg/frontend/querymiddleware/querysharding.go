@@ -365,22 +365,33 @@ func promqlResultToSamples(res *promql.Result) ([]SampleStream, error) {
 	case promql.Vector:
 		res := make([]SampleStream, 0, len(v))
 		for _, sample := range v {
-			res = append(res, SampleStream{
-				Labels:     mimirpb.FromLabelsToLabelAdapters(sample.Metric),
-				Samples:    mimirpb.FromPointsToSamples([]promql.Point{sample.Point}),
-				Histograms: mimirpb.FromPointsToHistograms([]promql.Point{sample.Point}),
-			})
+			ss := SampleStream{
+				Labels: mimirpb.FromLabelsToLabelAdapters(sample.Metric),
+			}
+			if sample.Point.H != nil {
+				ss.Histograms = mimirpb.FromPointsToHistograms([]promql.Point{sample.Point})
+			} else {
+				ss.Samples = mimirpb.FromPointsToSamples([]promql.Point{sample.Point})
+			}
+			res = append(res, ss)
 		}
 		return res, nil
 
 	case promql.Matrix:
 		res := make([]SampleStream, 0, len(v))
 		for _, series := range v {
-			res = append(res, SampleStream{
-				Labels:     mimirpb.FromLabelsToLabelAdapters(series.Metric),
-				Samples:    mimirpb.FromPointsToSamples(series.Points),
-				Histograms: mimirpb.FromPointsToHistograms(series.Points),
-			})
+			ss := SampleStream{
+				Labels: mimirpb.FromLabelsToLabelAdapters(series.Metric),
+			}
+			samples := mimirpb.FromPointsToSamples(series.Points)
+			if len(samples) > 0 {
+				ss.Samples = samples
+			}
+			histograms := mimirpb.FromPointsToHistograms(series.Points)
+			if len(histograms) > 0 {
+				ss.Histograms = histograms
+			}
+			res = append(res, ss)
 		}
 		return res, nil
 

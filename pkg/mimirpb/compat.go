@@ -237,22 +237,24 @@ func FromMimirSampleToPromCommonHistogram(src SampleHistogram) model.SampleHisto
 
 // FromPointsToSamples converts []promql.Point to []Sample.
 func FromPointsToSamples(points []promql.Point) []Sample {
-	samples := make([]Sample, len(points))
-	for i := 0; i < len(points); i++ {
-		if points[i].H != nil {
+	samples := make([]Sample, 0)
+	for _, point := range points {
+		if point.H != nil {
 			continue
 		}
-		samples[i].TimestampMs = points[i].T
-		samples[i].Value = points[i].V
+		samples = append(samples, Sample{
+			TimestampMs: point.T,
+			Value:       point.V,
+		})
 	}
 	return samples
 }
 
 // FromPointsToHistograms converts []promql.Point to []SampleHistogramPair.
 func FromPointsToHistograms(points []promql.Point) []SampleHistogramPair {
-	samples := make([]SampleHistogramPair, len(points))
-	for i := 0; i < len(points); i++ {
-		h := points[i].H
+	samples := make([]SampleHistogramPair, 0)
+	for _, point := range points {
+		h := point.H
 		if h == nil {
 			continue
 		}
@@ -282,12 +284,14 @@ func FromPointsToHistograms(points []promql.Point) []SampleHistogramPair {
 				Count:      bucket.Count,
 			})
 		}
-		samples[i].Timestamp = points[i].T
-		samples[i].Histogram = &SampleHistogram{
-			Count:   h.Count,
-			Sum:     h.Sum,
-			Buckets: buckets,
-		}
+		samples = append(samples, SampleHistogramPair{
+			Timestamp: point.T,
+			Histogram: &SampleHistogram{
+				Count:   h.Count,
+				Sum:     h.Sum,
+				Buckets: buckets,
+			},
+		})
 	}
 	return samples
 }
