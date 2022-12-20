@@ -173,7 +173,7 @@ func generateExpectedHistograms(start time.Time, end time.Time, step time.Durati
 		}
 		histograms = append(histograms, model.SampleHistogramPair{
 			Timestamp: model.Time(e2e.TimeToMilliseconds(ts)),
-			Histogram: hist,
+			Histogram: *hist,
 		})
 	}
 
