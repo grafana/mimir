@@ -269,6 +269,7 @@ type Group struct {
 	metrics *Metrics
 
 	ruleGroupPostProcessFunc RuleGroupPostProcessFunc
+	alignExecutionTimeOnInterval bool
 }
 
 // This function will be used before each rule group evaluation if not nil.
@@ -286,6 +287,7 @@ type GroupOptions struct {
 	EvaluationDelay          *time.Duration
 	done                     chan struct{}
 	RuleGroupPostProcessFunc RuleGroupPostProcessFunc
+	AlignExecutionTimeOnInterval bool
 }
 
 // NewGroup makes a new Group with the given name, options, and rules.
@@ -323,6 +325,7 @@ func NewGroup(o GroupOptions) *Group {
 		logger:                   log.With(o.Opts.Logger, "file", o.File, "group", o.Name),
 		metrics:                  metrics,
 		ruleGroupPostProcessFunc: o.RuleGroupPostProcessFunc,
+		alignExecutionTimeOnInterval: o.AlignExecutionTimeOnInterval,
 	}
 }
 
@@ -545,11 +548,13 @@ func (g *Group) setLastEvaluation(ts time.Time) {
 
 // EvalTimestamp returns the immediately preceding consistently slotted evaluation time.
 func (g *Group) EvalTimestamp(startTime int64) time.Time {
-	var (
+	var offset int64
+	if !g.alignExecutionTimeOnInterval {
 		offset = int64(g.hash() % uint64(g.interval))
-		adjNow = startTime - offset
-		base   = adjNow - (adjNow % int64(g.interval))
-	)
+	}
+
+	adjNow := startTime - offset
+	base := adjNow - (adjNow % int64(g.interval))
 
 	return time.Unix(0, base+offset).UTC()
 }
@@ -897,6 +902,10 @@ func (g *Group) Equals(ng *Group) bool {
 		return false
 	}
 
+	if g.alignExecutionTimeOnInterval != ng.alignExecutionTimeOnInterval {
+		return false
+	}
+
 	for i, gr := range g.rules {
 		if gr.String() != ng.rules[i].String() {
 			return false
@@ -1176,6 +1185,7 @@ func (m *Manager) LoadGroups(
 				EvaluationDelay:          (*time.Duration)(rg.EvaluationDelay),
 				done:                     m.done,
 				RuleGroupPostProcessFunc: ruleGroupPostProcessFunc,
+				AlignExecutionTimeOnInterval: rg.AlignExecutionTimeOnInterval,
 			})
 		}
 	}

@@ -141,6 +141,8 @@ type RuleGroup struct {
 	Limit           int             `yaml:"limit,omitempty"`
 	Rules           []RuleNode      `yaml:"rules"`
 	SourceTenants   []string        `yaml:"source_tenants,omitempty"`
+
+	AlignExecutionTimeOnInterval bool `yaml:"align_execution_time_on_interval,omitempty"`
 }
 
 // Rule describes an alerting or recording rule.
