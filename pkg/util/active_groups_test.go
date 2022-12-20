@@ -13,8 +13,10 @@ import (
 	"golang.org/x/exp/slices"
 )
 
+const maxGroupsPerUser = 100
+
 func TestActiveGroups(t *testing.T) {
-	ag := NewActiveGroups()
+	ag := NewActiveGroups(maxGroupsPerUser)
 
 	ag.UpdateGroupTimestampForUser("user1", "group1", 10)
 	ag.UpdateGroupTimestampForUser("user1", "group2", 15)
@@ -46,7 +48,7 @@ func TestActiveGroups(t *testing.T) {
 
 func TestActiveGroupsConcurrentUpdateAndPurge(t *testing.T) {
 	numGroups := 10
-	ag := NewActiveGroups()
+	ag := NewActiveGroups(maxGroupsPerUser)
 	done := sync.WaitGroup{}
 	stop := atomic.NewBool(false)
 	latestTS := atomic.NewInt64(0)
@@ -90,11 +92,11 @@ func TestActiveGroupsConcurrentUpdateAndPurge(t *testing.T) {
 }
 
 func TestActiveGroupLimitExceeded(t *testing.T) {
-	agCleanupService := NewActiveGroupsCleanupWithDefaultValues(func(string, string) {})
+	agCleanupService := NewActiveGroupsCleanupWithDefaultValues(func(string, string) {}, maxGroupsPerUser)
 	ag := agCleanupService.activeGroups
 
-	// Send groups over the limit
-	for i := 0; i < 1000; i++ {
+	// Send number of groups to the limit
+	for i := 0; i < maxGroupsPerUser; i++ {
 		ag.UpdateGroupTimestampForUser("user1", fmt.Sprintf("%d", i), int64(i))
 	}
 
