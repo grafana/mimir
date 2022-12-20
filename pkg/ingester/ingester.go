@@ -147,6 +147,8 @@ type Config struct {
 	InstanceLimitsFn func() *InstanceLimits `yaml:"-"`
 
 	IgnoreSeriesLimitForMetricNames string `yaml:"ignore_series_limit_for_metric_names" category:"advanced"`
+
+	MaxGroupsPerUser int `yaml:"max_groups_per_user" category:"advanced"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -166,6 +168,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.DefaultLimits.RegisterFlags(f)
 
 	f.StringVar(&cfg.IgnoreSeriesLimitForMetricNames, "ingester.ignore-series-limit-for-metric-names", "", "Comma-separated list of metric names, for which the -ingester.max-global-series-per-metric limit will be ignored. Does not affect the -ingester.max-global-series-per-user limit.")
+	f.IntVar(&cfg.MaxGroupsPerUser, "ingester.max-groups-per-user", 1000, "Maximum number of groups allowed per user by which specified metrics can be further separated.")
 }
 
 func (cfg *Config) getIgnoreSeriesLimitForMetricNamesMap() map[string]struct{} {
@@ -400,7 +403,7 @@ func (i *Ingester) starting(ctx context.Context) error {
 		servs = append(servs, closeIdleService)
 	}
 
-	i.activeGroups = util.NewActiveGroupsCleanupWithDefaultValues(i.cleanupInactiveGroupsForUser)
+	i.activeGroups = util.NewActiveGroupsCleanupWithDefaultValues(i.removeGroupMetricsForUser, i.cfg.MaxGroupsPerUser)
 	servs = append(servs, i.activeGroups)
 
 	var err error
@@ -887,12 +890,9 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, pushReq *push.Request) (
 	i.appendedSamplesStats.Inc(int64(succeededSamplesCount))
 	i.appendedExemplarsStats.Inc(int64(succeededExemplarsCount))
 
-	group := ""
-	if len(req.Timeseries) > 0 {
-		group = validation.FindGroupLabel(i.limits, userID, req.Timeseries[0].Labels)
-		if i.activeGroups.ActiveGroupLimitExceeded(userID, group) {
-			group = "other"
-		}
+	group := validation.GroupLabel(i.limits, userID, req.Timeseries)
+	if i.activeGroups.ActiveGroupLimitExceeded(userID, group) {
+		group = "other"
 	}
 
 	if group != "" {
@@ -2109,7 +2109,7 @@ func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckRes
 	return tsdbIdleClosed
 }
 
-func (i *Ingester) cleanupInactiveGroupsForUser(userID, group string) {
+func (i *Ingester) removeGroupMetricsForUser(userID, group string) {
 	i.metrics.deletePerGroupMetricsForUser(userID, group)
 }
 

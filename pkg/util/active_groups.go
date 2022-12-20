@@ -11,45 +11,42 @@ import (
 	"go.uber.org/atomic"
 )
 
-const maxGroupsPerUser int = 1000
-
 type ActiveGroups struct {
 	mu                sync.RWMutex
 	timestampsPerUser map[string]map[string]*atomic.Int64 // map[user][group] -> timestamp
+	maxGroupsPerUser  int
 }
 
-func NewActiveGroups() *ActiveGroups {
+func NewActiveGroups(maxGroupsPerUser int) *ActiveGroups {
 	return &ActiveGroups{
 		timestampsPerUser: map[string]map[string]*atomic.Int64{},
+		maxGroupsPerUser:  maxGroupsPerUser,
 	}
 }
 
 func (ag *ActiveGroups) UpdateGroupTimestampForUser(userID, group string, ts int64) {
-	// Create new atomic before lock is acquired
-	newAtomic := atomic.NewInt64(ts)
-
 	ag.mu.RLock()
 	groupTimestamps := ag.timestampsPerUser[userID]
 	ag.mu.RUnlock()
 
 	if groupTimestamps == nil {
 		ag.mu.Lock()
-		ag.timestampsPerUser[userID] = make(map[string]*atomic.Int64)
-		ag.timestampsPerUser[userID][group] = newAtomic
+		ag.timestampsPerUser[userID] = map[string]*atomic.Int64{group: atomic.NewInt64(ts)}
 		ag.mu.Unlock()
 		return
 	}
 
-	ag.mu.Lock()
+	ag.mu.RLock()
 	groupTs := ag.timestampsPerUser[userID][group]
-	if groupTs != nil {
-		ag.mu.Unlock()
+	ag.mu.RUnlock()
 
+	if groupTs != nil {
 		groupTs.Store(ts)
 		return
 	}
 
-	ag.timestampsPerUser[userID][group] = newAtomic
+	ag.mu.Lock()
+	ag.timestampsPerUser[userID][group] = atomic.NewInt64(ts)
 	ag.mu.Unlock()
 }
 
@@ -100,9 +97,9 @@ type ActiveGroupsCleanupService struct {
 	inactiveTimeout time.Duration
 }
 
-func NewActiveGroupsCleanupService(cleanupInterval, inactiveTimeout time.Duration, cleanupFn func(string, string)) *ActiveGroupsCleanupService {
+func NewActiveGroupsCleanupService(cleanupInterval, inactiveTimeout time.Duration, maxGroupsPerUser int, cleanupFn func(string, string)) *ActiveGroupsCleanupService {
 	s := &ActiveGroupsCleanupService{
-		activeGroups:    NewActiveGroups(),
+		activeGroups:    NewActiveGroups(maxGroupsPerUser),
 		cleanupFunc:     cleanupFn,
 		inactiveTimeout: inactiveTimeout,
 	}
@@ -111,12 +108,8 @@ func NewActiveGroupsCleanupService(cleanupInterval, inactiveTimeout time.Duratio
 	return s
 }
 
-func NewActiveGroupsCleanupWithDefaultValues(cleanupFn func(string, string)) *ActiveGroupsCleanupService {
-	return NewActiveGroupsCleanupService(1*time.Minute, 20*time.Minute, cleanupFn)
-}
-
-func (s *ActiveGroupsCleanupService) UpdateGroupTimestamp(user, group string, now time.Time) {
-	s.activeGroups.UpdateGroupTimestampForUser(user, group, now.UnixNano())
+func NewActiveGroupsCleanupWithDefaultValues(cleanupFn func(string, string), maxGroupsPerUser int) *ActiveGroupsCleanupService {
+	return NewActiveGroupsCleanupService(1*time.Minute, 20*time.Minute, maxGroupsPerUser, cleanupFn)
 }
 
 func (s *ActiveGroupsCleanupService) ActiveGroupLimitExceeded(userID, group string) bool {
@@ -128,7 +121,12 @@ func (s *ActiveGroupsCleanupService) ActiveGroupLimitExceeded(userID, group stri
 	defer s.activeGroups.mu.RUnlock()
 
 	_, containsGroup := s.activeGroups.timestampsPerUser[userID][group]
-	return !containsGroup && len(s.activeGroups.timestampsPerUser[userID]) >= maxGroupsPerUser
+	return !containsGroup && len(s.activeGroups.timestampsPerUser[userID]) >= s.activeGroups.maxGroupsPerUser
+}
+
+func (s *ActiveGroupsCleanupService) UpdateGroupTimestamp(user, group string, now time.Time) {
+	// if active group limit exceeded, group = "other"
+	s.activeGroups.UpdateGroupTimestampForUser(user, group, now.UnixNano())
 }
 
 func (s *ActiveGroupsCleanupService) iteration(_ context.Context) error {
