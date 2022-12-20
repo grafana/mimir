@@ -55,3 +55,34 @@ func BenchmarkCanonicalPostingsKey(b *testing.B) {
 		})
 	}
 }
+
+func TestUnsafeCastPostingsToBytes(t *testing.T) {
+	slowPostingsToBytes := func(postings []storage.SeriesRef) []byte {
+		byteSlice := make([]byte, len(postings)*8)
+		for i, posting := range postings {
+			for octet := 0; octet < 8; octet++ {
+				byteSlice[i*8+octet] = byte(posting >> (octet * 8))
+			}
+		}
+		return byteSlice
+	}
+	t.Run("base case", func(t *testing.T) {
+		postings := []storage.SeriesRef{1, 2}
+		assert.Equal(t, slowPostingsToBytes(postings), unsafeCastPostingsToBytes(postings))
+	})
+	t.Run("zero-length postings", func(t *testing.T) {
+		postings := make([]storage.SeriesRef, 0)
+		assert.Equal(t, slowPostingsToBytes(postings), unsafeCastPostingsToBytes(postings))
+	})
+	t.Run("nil postings", func(t *testing.T) {
+		assert.Equal(t, []byte(nil), unsafeCastPostingsToBytes(nil))
+	})
+	t.Run("more than 256 postings", func(t *testing.T) {
+		// Only casting a slice pointer truncates all postings to only their last byte.
+		postings := make([]storage.SeriesRef, 300)
+		for i := range postings {
+			postings[i] = storage.SeriesRef(i + 1)
+		}
+		assert.Equal(t, slowPostingsToBytes(postings), unsafeCastPostingsToBytes(postings))
+	})
+}
