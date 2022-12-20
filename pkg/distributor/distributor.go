@@ -653,7 +653,7 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 	}
 
 	if d.limits.MaxGlobalExemplarsPerUser(userID) == 0 {
-		ts.Exemplars = nil
+		mimirpb.ClearExemplars(ts.TimeSeries)
 		return nil
 	}
 
@@ -693,7 +693,7 @@ func (d *Distributor) wrapPushWithMiddlewares(externalMiddleware func(next push.
 	middlewares = append(middlewares, d.prePushRelabelMiddleware)
 	middlewares = append(middlewares, d.prePushValidationMiddleware)
 	middlewares = append(middlewares, d.prePushForwardingMiddleware)
-	middlewares = append(middlewares, d.prePushForwardingToEphemeralMiddleware)
+	middlewares = append(middlewares, d.prePushEphemeralMiddleware)
 	if externalMiddleware != nil {
 		middlewares = append(middlewares, externalMiddleware)
 	}
@@ -1015,10 +1015,10 @@ func (d *Distributor) prePushForwardingMiddleware(next push.Func) push.Func {
 	}
 }
 
-// prePushForwardingToEphemeralMiddleware is used as push.Func middleware in front of push method.
+// prePushEphemeralMiddleware is used as push.Func middleware in front of push method.
 // If forwarding to ephemeral storage is enabled, this middleware uses forwarding rules to
 // set ephemeral flag.
-func (d *Distributor) prePushForwardingToEphemeralMiddleware(next push.Func) push.Func {
+func (d *Distributor) prePushEphemeralMiddleware(next push.Func) push.Func {
 	if !d.cfg.ForwardToEphemeralStorage {
 		return next
 	}
@@ -1045,7 +1045,7 @@ func (d *Distributor) prePushForwardingToEphemeralMiddleware(next push.Func) pus
 
 				if _, ok := forwardingRules[metric]; ok {
 					ts.Ephemeral = true
-					ts.Exemplars = nil
+					mimirpb.ClearExemplars(ts.TimeSeries)
 				}
 			}
 		}
