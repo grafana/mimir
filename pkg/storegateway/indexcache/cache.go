@@ -97,13 +97,15 @@ func CanonicalPostingsKey(postings []storage.SeriesRef) PostingsKey {
 	return PostingsKey(base64.RawURLEncoding.EncodeToString(checksum[:]))
 }
 
+var bytesPerPosting = int(unsafe.Sizeof(storage.SeriesRef(0)) / unsafe.Sizeof(byte(0)))
+
 // unsafeCastPostingsToBytes returns the postings as a slice of bytes with minimal allocations.
 // It casts the memory region of the underlying array to a slice of bytes.
 func unsafeCastPostingsToBytes(postings []storage.SeriesRef) []byte {
 	byteSlice := make([]byte, 0)
 	slicePtr := (*reflect.SliceHeader)(unsafe.Pointer(&byteSlice))
 	slicePtr.Data = (*reflect.SliceHeader)(unsafe.Pointer(&postings)).Data
-	slicePtr.Len = len(postings) * 8
+	slicePtr.Len = len(postings) * bytesPerPosting
 	slicePtr.Cap = slicePtr.Len
 	return byteSlice
 }
