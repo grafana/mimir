@@ -6,6 +6,7 @@
 package indexcache
 
 import (
+	"encoding/base64"
 	"fmt"
 	"testing"
 
@@ -85,5 +86,28 @@ func TestUnsafeCastPostingsToBytes(t *testing.T) {
 			postings[i] = storage.SeriesRef(i + 1)
 		}
 		assert.Equal(t, slowPostingsToBytes(postings), unsafeCastPostingsToBytes(postings))
+	})
+}
+
+func TestCanonicalPostingsKey(t *testing.T) {
+	t.Run("same length postings have different hashes", func(t *testing.T) {
+		postings1 := []storage.SeriesRef{1, 2, 3, 4}
+		postings2 := []storage.SeriesRef{5, 6, 7, 8}
+
+		assert.NotEqual(t, CanonicalPostingsKey(postings1), CanonicalPostingsKey(postings2))
+	})
+
+	t.Run("same postings with different slice capacities have same hashes", func(t *testing.T) {
+		postings1 := []storage.SeriesRef{1, 2, 3, 4}
+		postings2 := make([]storage.SeriesRef, 4, 8)
+		copy(postings2, postings1)
+
+		assert.Equal(t, CanonicalPostingsKey(postings1), CanonicalPostingsKey(postings2))
+	})
+
+	t.Run("postings key is a base64-encoded string (i.e. is printable)", func(t *testing.T) {
+		key := CanonicalPostingsKey([]storage.SeriesRef{1, 2, 3, 4})
+		_, err := base64.RawURLEncoding.DecodeString(string(key))
+		assert.NoError(t, err)
 	})
 }
