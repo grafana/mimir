@@ -264,22 +264,7 @@ func (m AggrChunk) Compare(b AggrChunk) int {
 		return -1
 	}
 
-	// We could use proto.Equal, but we need ordering as well.
-	for _, cmp := range []func() int{
-		func() int { return m.Raw.Compare(b.Raw) },
-		func() int { return m.Count.Compare(b.Count) },
-		func() int { return m.Sum.Compare(b.Sum) },
-		func() int { return m.Min.Compare(b.Min) },
-		func() int { return m.Max.Compare(b.Max) },
-		func() int { return m.Counter.Compare(b.Counter) },
-	} {
-		if c := cmp(); c == 0 {
-			continue
-		} else {
-			return c
-		}
-	}
-	return 0
+	return m.Raw.Compare(b.Raw)
 }
 
 // Compare returns positive 1 if chunk is smaller -1 if larger.

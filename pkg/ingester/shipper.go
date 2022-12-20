@@ -71,8 +71,6 @@ type Shipper struct {
 	metrics *metrics
 	bucket  objstore.Bucket
 	source  metadata.SourceType
-
-	hashFunc metadata.HashFunc
 }
 
 // NewShipper creates a new uploader that detects new TSDB blocks in dir and uploads them to
@@ -84,19 +82,17 @@ func NewShipper(
 	dir string,
 	bucket objstore.Bucket,
 	source metadata.SourceType,
-	hashFunc metadata.HashFunc,
 ) *Shipper {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 
 	return &Shipper{
-		logger:   logger,
-		dir:      dir,
-		bucket:   bucket,
-		metrics:  newMetrics(r),
-		source:   source,
-		hashFunc: hashFunc,
+		logger:  logger,
+		dir:     dir,
+		bucket:  bucket,
+		metrics: newMetrics(r),
+		source:  source,
 	}
 }
 

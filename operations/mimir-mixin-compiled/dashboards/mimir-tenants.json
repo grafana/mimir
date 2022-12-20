@@ -2202,7 +2202,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(rate(cortex_query_frontend_queries_total{cluster=~\"$cluster\", namespace=~\"$namespace\", container=\"query-frontend\", user=\"$user\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_query_frontend_queries_total{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir|mimir-read.*))\", user=\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "Queries / Sec",
@@ -2278,7 +2278,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(cortex_query_scheduler_queue_length{cluster=~\"$cluster\", namespace=~\"$namespace\", container=\"query-scheduler\", user=\"$user\"})",
+                        "expr": "sum(cortex_query_scheduler_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|mimir-backend.*))\", user=\"$user\"})",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "Queue Length",
@@ -2366,7 +2366,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(rate(cortex_query_frontend_queries_total{cluster=~\"$cluster\", namespace=~\"$namespace\", container=\"ruler-query-frontend\", user=\"$user\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_query_frontend_queries_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", user=\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "Queries / Sec",
@@ -2442,7 +2442,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(cortex_query_scheduler_queue_length{cluster=~\"$cluster\", namespace=~\"$namespace\", container=\"ruler-query-scheduler\", user=\"$user\"})",
+                        "expr": "sum(cortex_query_scheduler_queue_length{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-frontend.*))\", user=\"$user\"})",
                         "format": "time_series",
                         "intervalFactor": 2,
                         "legendFormat": "Queue Length",

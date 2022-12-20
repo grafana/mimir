@@ -9,10 +9,13 @@
 
     aws_region: error 'must specify AWS region',
 
-    // The deployment mode to use. Supported values are: microservices, read-write.
+    // The deployment mode to use. Supported values are:
+    // `microservices`: Provides only the k8s objects for each component as microservices.
+    // `read-write`: Provides only mimir-read, mimir-write, and mimir-backend k8s objects.
+    // `migration`: Provides both the microservices and read-write services.
     deployment_mode: 'microservices',
-    is_microservices_deployment_mode: $._config.deployment_mode == 'microservices',
-    is_read_write_deployment_mode: $._config.deployment_mode == 'read-write',
+    is_microservices_deployment_mode: $._config.deployment_mode == 'microservices' || $._config.deployment_mode == 'migration',
+    is_read_write_deployment_mode: $._config.deployment_mode == 'read-write' || $._config.deployment_mode == 'migration',
 
     // If false, ingesters are not unregistered on shutdown and left in the ring with
     // the LEAVING state. Setting to false prevents series resharding during ingesters rollouts,
@@ -460,10 +463,14 @@
   },
 
   // Check configured deployment mode to ensure configuration is correct and consistent.
-  check_deployment_mode: if $._config.deployment_mode == 'microservices' || $._config.deployment_mode == 'read-write' then null else
+  check_deployment_mode: if (
+    $._config.deployment_mode == 'microservices' ||
+    $._config.deployment_mode == 'read-write' ||
+    $._config.deployment_mode == 'migration'
+  ) then null else
     error 'unsupported deployment mode "%s"' % $._config.deployment_mode,
 
-  check_deployment_mode_mutually_exclusive: if $._config.is_microservices_deployment_mode != $._config.is_read_write_deployment_mode then null else
+  check_deployment_mode_mutually_exclusive: if $._config.deployment_mode == 'migration' || ($._config.is_microservices_deployment_mode != $._config.is_read_write_deployment_mode) then null else
     error 'do not explicitly set is_microservices_deployment_mode or is_read_write_deployment_mode, but use deployment_mode config option instead',
 
   local configMap = $.core.v1.configMap,

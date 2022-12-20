@@ -13,7 +13,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/encoding"
-	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/index"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
@@ -157,17 +156,11 @@ func (it *bigEndianPostings) length() int {
 // filterPostingsByCachedShardHash filters the input postings by the provided shard. It filters only
 // postings for which we have their series hash already in the cache; if a series is not in the cache,
 // postings will be kept in the output.
-func filterPostingsByCachedShardHash(ps []storage.SeriesRef, shard *sharding.ShardSelector, seriesHashCache *hashcache.BlockSeriesHashCache) (filteredPostings []storage.SeriesRef, stats queryStats) {
+func filterPostingsByCachedShardHash(ps []storage.SeriesRef, shard *sharding.ShardSelector, seriesHashCache seriesHasher, stats *queryStats) []storage.SeriesRef {
 	writeIdx := 0
-	stats.seriesHashCacheRequests = len(ps)
-
 	for readIdx := 0; readIdx < len(ps); readIdx++ {
 		seriesID := ps[readIdx]
-		hash, ok := seriesHashCache.Fetch(seriesID)
-		if ok {
-			stats.seriesHashCacheHits++
-		}
-
+		hash, ok := seriesHashCache.CachedHash(seriesID, stats)
 		// Keep the posting if it's not in the cache, or it's in the cache and belongs to our shard.
 		if !ok || hash%uint64(shard.ShardCount) == uint64(shard.ShardIndex) {
 			ps[writeIdx] = seriesID
@@ -182,7 +175,7 @@ func filterPostingsByCachedShardHash(ps []storage.SeriesRef, shard *sharding.Sha
 	// Shrink the size.
 	ps = ps[:writeIdx]
 
-	return ps, stats
+	return ps
 }
 
 // paddedPostings adds the v2 index padding to postings without expanding them
