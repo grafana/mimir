@@ -212,10 +212,10 @@ func FromPromCommonToMimirSampleHistogram(src model.SampleHistogram) SampleHisto
 			Boundaries: int32(bucket.Boundaries),
 			Lower:      float64(bucket.Lower),
 			Upper:      float64(bucket.Upper),
-			Count:      uint64(bucket.Count),
+			Count:      float64(bucket.Count),
 		}
 	}
-	return SampleHistogram{Count: uint64(src.Count), Sum: float64(src.Sum), Buckets: buckets}
+	return SampleHistogram{Count: float64(src.Count), Sum: float64(src.Sum), Buckets: buckets}
 }
 
 func FromMimirSampleToPromCommonHistogram(src SampleHistogram) model.SampleHistogram {
@@ -225,11 +225,11 @@ func FromMimirSampleToPromCommonHistogram(src SampleHistogram) model.SampleHisto
 			Boundaries: int(bucket.Boundaries),
 			Lower:      model.FloatString(bucket.Lower),
 			Upper:      model.FloatString(bucket.Upper),
-			Count:      model.IntString(bucket.Count),
+			Count:      model.FloatString(bucket.Count),
 		}
 	}
 	return model.SampleHistogram{
-		Count:   model.IntString(src.Count),
+		Count:   model.FloatString(src.Count),
 		Sum:     model.FloatString(src.Sum),
 		Buckets: buckets,
 	}

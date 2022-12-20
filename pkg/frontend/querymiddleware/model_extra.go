@@ -284,16 +284,16 @@ func (vs *vectorSampleStream) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &s); err != nil {
 		return err
 	}
-	if s.Type == model.STFloat {
-		*vs = vectorSampleStream{
-			Labels:  mimirpb.FromMetricsToLabelAdapters(s.Metric),
-			Samples: []mimirpb.Sample{{TimestampMs: int64(s.Timestamp), Value: float64(s.Value)}},
-		}
-	} else {
-		h := mimirpb.FromPromCommonToMimirSampleHistogram(s.Histogram)
+	if s.Histogram != nil {
+		h := mimirpb.FromPromCommonToMimirSampleHistogram(*s.Histogram)
 		*vs = vectorSampleStream{
 			Labels:     mimirpb.FromMetricsToLabelAdapters(s.Metric),
 			Histograms: []mimirpb.SampleHistogramPair{{Timestamp: int64(s.Timestamp), Histogram: &h}},
+		}
+	} else {
+		*vs = vectorSampleStream{
+			Labels:  mimirpb.FromMetricsToLabelAdapters(s.Metric),
+			Samples: []mimirpb.Sample{{TimestampMs: int64(s.Timestamp), Value: float64(s.Value)}},
 		}
 	}
 	return nil
@@ -311,11 +311,11 @@ func (vs vectorSampleStream) MarshalJSON() ([]byte, error) {
 			Value:     model.SampleValue(vs.Samples[0].Value),
 		}
 	} else {
+		h := mimirpb.FromMimirSampleToPromCommonHistogram(*vs.Histograms[0].Histogram)
 		sample = model.Sample{
 			Metric:    mimirpb.FromLabelAdaptersToMetric(vs.Labels),
 			Timestamp: model.Time(vs.Histograms[0].Timestamp),
-			Histogram: mimirpb.FromMimirSampleToPromCommonHistogram(*vs.Histograms[0].Histogram),
-			Type:      1,
+			Histogram: &h,
 		}
 	}
 	return json.Marshal(sample)

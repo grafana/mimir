@@ -30,20 +30,12 @@ var (
 	ZeroSample = Sample{Timestamp: Earliest}
 )
 
-type SampleType int8
-
-const (
-	STFloat SampleType = iota
-	STHistogram
-)
-
 // Sample is a sample pair associated with a metric.
 type Sample struct {
-	Metric    Metric          `json:"metric"`
-	Value     SampleValue     `json:"value"`
-	Timestamp Time            `json:"timestamp"`
-	Histogram SampleHistogram `json:"histogram"`
-	Type      SampleType
+	Metric    Metric           `json:"metric"`
+	Value     SampleValue      `json:"value"`
+	Timestamp Time             `json:"timestamp"`
+	Histogram *SampleHistogram `json:"histogram"`
 }
 
 // Equal compares first the metrics, then the timestamp, then the value. The
@@ -59,44 +51,28 @@ func (s *Sample) Equal(o *Sample) bool {
 	if !s.Timestamp.Equal(o.Timestamp) {
 		return false
 	}
-	if s.Type != o.Type {
-		return false
+	if s.Histogram != nil {
+		return s.Histogram.Equal(o.Histogram)
 	}
-	if s.Type == STFloat {
-		return s.Value.Equal(o.Value)
-	}
-	return s.Histogram.Equal(&o.Histogram)
+	return s.Value.Equal(o.Value)
 }
 
 func (s Sample) String() string {
-	if s.Type == STFloat {
-		return fmt.Sprintf("%s => %s", s.Metric, SamplePair{
-			Timestamp: s.Timestamp,
-			Value:     s.Value,
-		})
-	} else {
+	if s.Histogram != nil {
 		return fmt.Sprintf("%s => %s", s.Metric, SampleHistogramPair{
 			Timestamp: s.Timestamp,
-			Histogram: s.Histogram,
+			Histogram: *s.Histogram,
 		})
 	}
+	return fmt.Sprintf("%s => %s", s.Metric, SamplePair{
+		Timestamp: s.Timestamp,
+		Value:     s.Value,
+	})
 }
 
 // MarshalJSON implements json.Marshaler.
 func (s Sample) MarshalJSON() ([]byte, error) {
-	if s.Type == STFloat {
-		v := struct {
-			Metric Metric     `json:"metric"`
-			Value  SamplePair `json:"value"`
-		}{
-			Metric: s.Metric,
-			Value: SamplePair{
-				Timestamp: s.Timestamp,
-				Value:     s.Value,
-			},
-		}
-		return json.Marshal(&v)
-	} else {
+	if s.Histogram != nil {
 		v := struct {
 			Metric    Metric              `json:"metric"`
 			Histogram SampleHistogramPair `json:"histogram"`
@@ -104,26 +80,54 @@ func (s Sample) MarshalJSON() ([]byte, error) {
 			Metric: s.Metric,
 			Histogram: SampleHistogramPair{
 				Timestamp: s.Timestamp,
-				Histogram: s.Histogram,
+				Histogram: *s.Histogram,
 			},
 		}
 		return json.Marshal(&v)
 	}
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (s *Sample) UnmarshalJSON(b []byte) error {
 	v := struct {
-		Metric    Metric              `json:"metric"`
-		Value     SamplePair          `json:"value"`
-		Histogram SampleHistogramPair `json:"histogram"`
+		Metric Metric     `json:"metric"`
+		Value  SamplePair `json:"value"`
 	}{
 		Metric: s.Metric,
 		Value: SamplePair{
 			Timestamp: s.Timestamp,
 			Value:     s.Value,
 		},
-		Histogram: SampleHistogramPair{
+	}
+	return json.Marshal(&v)
+}
+
+type sampleHistogramPairPtr struct {
+	Timestamp Time
+	Histogram *SampleHistogram
+}
+
+func (s *sampleHistogramPairPtr) UnmarshalJSON(buf []byte) error {
+	tmp := []interface{}{&s.Timestamp, &s.Histogram}
+	wantLen := len(tmp)
+	if err := json.Unmarshal(buf, &tmp); err != nil {
+		return err
+	}
+	if gotLen := len(tmp); gotLen != wantLen {
+		return fmt.Errorf("wrong number of fields: %d != %d", gotLen, wantLen)
+	}
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (s *Sample) UnmarshalJSON(b []byte) error {
+	v := struct {
+		Metric    Metric                 `json:"metric"`
+		Value     SamplePair             `json:"value"`
+		Histogram sampleHistogramPairPtr `json:"histogram"`
+	}{
+		Metric: s.Metric,
+		Value: SamplePair{
+			Timestamp: s.Timestamp,
+			Value:     s.Value,
+		},
+		Histogram: sampleHistogramPairPtr{
 			Timestamp: s.Timestamp,
 			Histogram: s.Histogram,
 		},
@@ -134,10 +138,9 @@ func (s *Sample) UnmarshalJSON(b []byte) error {
 	}
 
 	s.Metric = v.Metric
-	if v.Histogram.Timestamp != 0 {
+	if v.Histogram.Histogram != nil {
 		s.Timestamp = v.Histogram.Timestamp
 		s.Histogram = v.Histogram.Histogram
-		s.Type = STHistogram
 	} else {
 		s.Timestamp = v.Value.Timestamp
 		s.Value = v.Value.Value
@@ -190,42 +193,48 @@ type SampleStream struct {
 	Metric     Metric                `json:"metric"`
 	Values     []SamplePair          `json:"values"`
 	Histograms []SampleHistogramPair `json:"histograms"`
-	Type       SampleType
 }
 
 func (ss SampleStream) String() string {
-	var vals []string
-	if ss.Type == STFloat {
-		vals = make([]string, len(ss.Values))
-		for i, v := range ss.Values {
-			vals[i] = v.String()
-		}
-	} else {
-		vals = make([]string, len(ss.Histograms))
-		for i, v := range ss.Histograms {
-			vals[i] = v.String()
-		}
+	valuesLength := len(ss.Values)
+	vals := make([]string, valuesLength+len(ss.Histograms))
+	for i, v := range ss.Values {
+		vals[i] = v.String()
+	}
+	for i, v := range ss.Histograms {
+		vals[i+valuesLength] = v.String()
 	}
 	return fmt.Sprintf("%s =>\n%s", ss.Metric, strings.Join(vals, "\n"))
 }
 
 func (ss SampleStream) MarshalJSON() ([]byte, error) {
-	if ss.Type == STFloat {
+	if len(ss.Histograms) > 0 && len(ss.Values) > 0 {
 		v := struct {
-			Metric Metric       `json:"metric"`
-			Values []SamplePair `json:"values"`
+			Metric     Metric                `json:"metric"`
+			Values     []SamplePair          `json:"values"`
+			Histograms []SampleHistogramPair `json:"histograms"`
 		}{
-			Metric: ss.Metric,
-			Values: ss.Values,
+			Metric:     ss.Metric,
+			Values:     ss.Values,
+			Histograms: ss.Histograms,
 		}
 		return json.Marshal(&v)
-	} else {
+	} else if len(ss.Histograms) > 0 {
 		v := struct {
 			Metric     Metric                `json:"metric"`
 			Histograms []SampleHistogramPair `json:"histograms"`
 		}{
 			Metric:     ss.Metric,
 			Histograms: ss.Histograms,
+		}
+		return json.Marshal(&v)
+	} else {
+		v := struct {
+			Metric Metric       `json:"metric"`
+			Values []SamplePair `json:"values"`
+		}{
+			Metric: ss.Metric,
+			Values: ss.Values,
 		}
 		return json.Marshal(&v)
 	}
@@ -247,12 +256,8 @@ func (ss *SampleStream) UnmarshalJSON(b []byte) error {
 	}
 
 	ss.Metric = v.Metric
-	if len(v.Histograms) > 0 {
-		ss.Histograms = v.Histograms
-		ss.Type = STHistogram
-	} else {
-		ss.Values = v.Values
-	}
+	ss.Values = v.Values
+	ss.Histograms = v.Histograms
 
 	return nil
 }

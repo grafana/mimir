@@ -17,7 +17,7 @@ require (
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.0
 	github.com/grafana/dskit v0.0.0-20221213192733-6a4490513ed8
-	github.com/grafana/e2e v0.1.1-0.20221209210459-74fea291f43a
+	github.com/grafana/e2e v0.1.1-0.20221220153032-0e7b2838f556
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/json-iterator/go v1.1.12
 	github.com/minio/minio-go/v7 v7.0.37
@@ -250,4 +250,4 @@ replace github.com/vimeo/galaxycache => github.com/thanos-community/galaxycache 
 // + https://github.com/go-yaml/yaml/pull/876
 replace gopkg.in/yaml.v3 => github.com/colega/go-yaml-yaml v0.0.0-20220720105220-255a8d16d094
 
-replace github.com/prometheus/common => github.com/zenador/prometheus-common v0.0.0-20221209210106-3f0f8c31fabd
+replace github.com/prometheus/common => github.com/zenador/prometheus-common v0.0.0-20221220150952-792823a40855

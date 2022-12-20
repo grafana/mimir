@@ -114,7 +114,7 @@ message BucketSpan {
 }
 
 message SampleHistogram {
-  uint64 count = 1;
+  double count = 1;
   double sum = 2;
   repeated HistogramBucket buckets = 3;
 }
@@ -123,7 +123,7 @@ message HistogramBucket {
   int32 boundaries = 1;
   double lower = 2;
   double upper = 3;
-  uint64 count = 4;
+  double count = 4;
 }
 
 message SampleHistogramPair {

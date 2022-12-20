@@ -498,8 +498,8 @@ github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9 h1:LQAhgcUPnzdjU
 github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9/go.mod h1:AHHlOEv1+GGQ3ktHMlhuTUwo3zljV3QJbC0+8o2kn+4=
 github.com/grafana/dskit v0.0.0-20221213192733-6a4490513ed8 h1:xVld//+NUMsvMNJ/pcWYHbf6MNLMpW4OQVenjfNsO8U=
 github.com/grafana/dskit v0.0.0-20221213192733-6a4490513ed8/go.mod h1:gNzHl84UZNg3QRc2vPbwHXGqMs6kQeVX+4U9jB3gC+k=
-github.com/grafana/e2e v0.1.1-0.20221209210459-74fea291f43a h1:io2mvJ5QyvRoC6PQY+eKNi/sg87/d7n0hF3MGmBHiC4=
-github.com/grafana/e2e v0.1.1-0.20221209210459-74fea291f43a/go.mod h1:MlqucDPAthrkYxaqBpdVRNbrlQU1fAyceI6W4fiC6r4=
+github.com/grafana/e2e v0.1.1-0.20221220153032-0e7b2838f556 h1:kUvG2unjvs0zIIiJ7Kq995Xj6dmqMgJ6KAvAMtdHLRQ=
+github.com/grafana/e2e v0.1.1-0.20221220153032-0e7b2838f556/go.mod h1:mBPjmZB+TJmHv6dYgRdZc+b9ZeevD6DjqSYpO57jDHs=
 github.com/grafana/gomemcache v0.0.0-20220812141943-44b6cde200bb h1:CqfZjjd8iK3G1TV8Wf0u7WTY+0RxIEbmcgxftt9qVtw=
 github.com/grafana/gomemcache v0.0.0-20220812141943-44b6cde200bb/go.mod h1:H0wQNHz2YrLsuXOZozoeDmnHXkNCRmMW0gwFWDfEZDA=
 github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe h1:yIXAAbLswn7VNWBIvM71O2QsgfgW9fRXZNR0DXe6pDU=
@@ -886,8 +886,8 @@ github.com/yuin/goldmark v1.1.32/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9de
 github.com/yuin/goldmark v1.2.1/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.3.5/go.mod h1:mwnBkeHKe2W/ZEtQ+71ViKU8L12m81fl3OWwC1Zlc8k=
 github.com/yuin/goldmark v1.4.13/go.mod h1:6yULJ656Px+3vBD8DxQVa3kxgyrAnzto9xy5taEt/CY=
-github.com/zenador/prometheus-common v0.0.0-20221209210106-3f0f8c31fabd h1:nZwGRO922WRjelTWLqo5JJOfnkJI/NxgOnnFyI9tDj4=
-github.com/zenador/prometheus-common v0.0.0-20221209210106-3f0f8c31fabd/go.mod h1:MBXfmBQZrK5XpbCkjofnXs96LD2QQ7fEq4C0xjC/yec=
+github.com/zenador/prometheus-common v0.0.0-20221220150952-792823a40855 h1:71vRIiVHYe/Rr7sj8HB4vyhW7UrxZC0TY4UMB9Nx1uE=
+github.com/zenador/prometheus-common v0.0.0-20221220150952-792823a40855/go.mod h1:MBXfmBQZrK5XpbCkjofnXs96LD2QQ7fEq4C0xjC/yec=
 go.etcd.io/etcd/api/v3 v3.5.0/go.mod h1:cbVKeC6lCfl7j/8jBhAK6aIYO9XOjdptoxU/nLQcPvs=
 go.etcd.io/etcd/api/v3 v3.5.4 h1:OHVyt3TopwtUQ2GKdd5wu3PmmipR4FTwCqoEjSyRdIc=
 go.etcd.io/etcd/api/v3 v3.5.4/go.mod h1:5GB2vv4A4AOn3yk7MftYGHkUfGtDHnEraIjym4dYz5A=

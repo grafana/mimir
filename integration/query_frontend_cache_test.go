@@ -181,7 +181,6 @@ func generateExpectedHistograms(start time.Time, end time.Time, step time.Durati
 		&model.SampleStream{
 			Metric:     map[model.LabelName]model.LabelValue{"__name__": model.LabelValue(seriesName)},
 			Histograms: histograms,
-			Type:       model.STHistogram,
 		},
 	}
 	return expected
