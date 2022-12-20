@@ -97,6 +97,13 @@ func TestCanonicalPostingsKey(t *testing.T) {
 		assert.NotEqual(t, CanonicalPostingsKey(postings1), CanonicalPostingsKey(postings2))
 	})
 
+	t.Run("when postings are a subset of each other, they still have different hashes", func(t *testing.T) {
+		postings1 := []storage.SeriesRef{1, 2, 3, 4}
+		postings2 := []storage.SeriesRef{1, 2, 3, 4, 5}
+
+		assert.NotEqual(t, CanonicalPostingsKey(postings1), CanonicalPostingsKey(postings2))
+	})
+
 	t.Run("same postings with different slice capacities have same hashes", func(t *testing.T) {
 		postings1 := []storage.SeriesRef{1, 2, 3, 4}
 		postings2 := make([]storage.SeriesRef, 4, 8)
