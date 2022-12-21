@@ -266,8 +266,9 @@ func (d *Decbuf) Byte() byte {
 	return v
 }
 
-func (d *Decbuf) Err() error { return d.E }
-func (d *Decbuf) Len() int   { return d.r.len() }
+func (d *Decbuf) Err() error    { return d.E }
+func (d *Decbuf) Len() int      { return d.r.len() }
+func (d *Decbuf) Position() int { return d.r.pos }
 
 func (d *Decbuf) Close() error {
 	if d.r != nil {
