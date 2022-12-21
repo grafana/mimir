@@ -48,7 +48,7 @@ func main() {
 		totalSeries:   atomic.NewInt64(0),
 	}
 	done := &sync.WaitGroup{}
-	done.Add(1 + concurrency)
+	done.Add(concurrency)
 
 	queriesChan := make(chan queryRequest)
 	go produceQueries(reader, queriesChan, stats, done)
@@ -106,7 +106,9 @@ func sendQueries(queriesChan chan queryRequest, queryEndpoint string, stats requ
 		m, err := client.QueryRange(context.Background(), r.query, time.UnixMilli(r.start), time.UnixMilli(r.end), r.step, continuoustest.WithResultsCacheEnabled(false))
 		if err != nil {
 			logger.Log("msg", "query failed", "err", err, "query", fmt.Sprintf("%v", r))
-			stats.failedQueries.Inc()
+			if stats.failedQueries.Inc() > 1000 {
+				return
+			}
 			continue
 		}
 		stats.totalSeries.Add(int64(m.Len()))
@@ -118,7 +120,6 @@ func sendQueries(queriesChan chan queryRequest, queryEndpoint string, stats requ
 // parses each new line as space delimited `float64_param_start float64_param_end float64_param_step param_query`
 // where param_query is everything after the third space.
 func produceQueries(reader *os.File, queriesChan chan queryRequest, stats requestStats, done *sync.WaitGroup) {
-	defer done.Done()
 	defer close(queriesChan)
 
 	runID := strconv.FormatInt(time.Now().Unix(), 10)
