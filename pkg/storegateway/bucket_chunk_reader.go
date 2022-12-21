@@ -68,7 +68,7 @@ func (r *bucketChunkReader) addLoad(id chunks.ChunkRef, seriesEntry, chunk int) 
 }
 
 // load all added chunks and saves resulting chunks to res.
-func (r *bucketChunkReader) load(res []seriesEntry, chunksPool *pool.BatchBytes, stats *safeQueryStats) error {
+func (r *bucketChunkReader) load(res []seriesEntry, chunksPool *pool.SafeSlabPool[byte], stats *safeQueryStats) error {
 	g, ctx := errgroup.WithContext(r.ctx)
 
 	for seq, pIdxs := range r.toLoad {
@@ -98,7 +98,7 @@ func (r *bucketChunkReader) load(res []seriesEntry, chunksPool *pool.BatchBytes,
 // passed to multiple concurrent invocations. However, this shouldn't require a mutex
 // because part and pIdxs is only read, and different calls are expected to write to
 // different chunks in the res.
-func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, seq int, part Part, pIdxs []loadIdx, chunksPool *pool.BatchBytes, stats *safeQueryStats) error {
+func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, seq int, part Part, pIdxs []loadIdx, chunksPool *pool.SafeSlabPool[byte], stats *safeQueryStats) error {
 	fetchBegin := time.Now()
 
 	// Get a reader for the required range.
@@ -202,12 +202,9 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, s
 	return nil
 }
 
-func populateChunk(out *storepb.AggrChunk, in chunkenc.Chunk, chunksPool *pool.BatchBytes) error {
+func populateChunk(out *storepb.AggrChunk, in chunkenc.Chunk, chunksPool *pool.SafeSlabPool[byte]) error {
 	if in.Encoding() == chunkenc.EncXOR {
-		b, err := saveChunk(in.Bytes(), chunksPool)
-		if err != nil {
-			return err
-		}
+		b := saveChunk(in.Bytes(), chunksPool)
 		out.Raw = &storepb.Chunk{Type: storepb.Chunk_XOR, Data: b}
 		return nil
 	}
@@ -217,13 +214,10 @@ func populateChunk(out *storepb.AggrChunk, in chunkenc.Chunk, chunksPool *pool.B
 // saveChunk saves a copy of b's payload to a buffer pulled from chunksPool.
 // The buffer containing the chunk data is returned.
 // The returned slice becomes invalid once chunksPool is released.
-func saveChunk(b []byte, chunksPool *pool.BatchBytes) ([]byte, error) {
-	dst, err := chunksPool.Get(len(b))
-	if err != nil {
-		return nil, err
-	}
+func saveChunk(b []byte, chunksPool *pool.SafeSlabPool[byte]) []byte {
+	dst := chunksPool.Get(len(b))
 	copy(dst, b)
-	return dst, nil
+	return dst
 }
 
 type loadIdx struct {
@@ -269,7 +263,7 @@ type chunkReader interface {
 	io.Closer
 
 	addLoad(id chunks.ChunkRef, seriesEntry, chunk int) error
-	load(result []seriesEntry, chunksPool *pool.BatchBytes, stats *safeQueryStats) error
+	load(result []seriesEntry, chunksPool *pool.SafeSlabPool[byte], stats *safeQueryStats) error
 	reset()
 }
 
@@ -283,7 +277,7 @@ func (r bucketChunkReaders) addLoad(blockID ulid.ULID, id chunks.ChunkRef, serie
 	return r.readers[blockID].addLoad(id, seriesEntry, chunk)
 }
 
-func (r bucketChunkReaders) load(entries []seriesEntry, chunksPool *pool.BatchBytes, stats *safeQueryStats) error {
+func (r bucketChunkReaders) load(entries []seriesEntry, chunksPool *pool.SafeSlabPool[byte], stats *safeQueryStats) error {
 	g := &errgroup.Group{}
 	for _, reader := range r.readers {
 		reader := reader

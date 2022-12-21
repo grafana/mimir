@@ -751,17 +751,14 @@ func (f *chunkReaderMock) addLoad(id chunks.ChunkRef, seriesEntry, chunk int) er
 	return nil
 }
 
-func (f *chunkReaderMock) load(result []seriesEntry, chunksPool *pool.BatchBytes, _ *safeQueryStats) error {
+func (f *chunkReaderMock) load(result []seriesEntry, chunksPool *pool.SafeSlabPool[byte], _ *safeQueryStats) error {
 	if f.loadErr != nil {
 		return f.loadErr
 	}
 	for chunkRef, indices := range f.toLoad {
 		// Take bytes from the pool, so we can assert on number of allocations and that frees are happening
 		chunkData := f.chunks[chunkRef].Raw.Data
-		copiedChunkData, err := chunksPool.Get(len(chunkData))
-		if err != nil {
-			return fmt.Errorf("couldn't copy test data: %w", err)
-		}
+		copiedChunkData := chunksPool.Get(len(chunkData))
 		copy(copiedChunkData, chunkData)
 		result[indices.seriesEntry].chks[indices.chunk].Raw = &storepb.Chunk{Data: copiedChunkData}
 	}

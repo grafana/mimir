@@ -11,17 +11,23 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 
+	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/pool"
 )
 
-// Mimir compacts blocks up to 24h. Assuming a 5s scrape interval as worst case scenario,
-// and 120 samples per chunk, there could be 86400 * (1 / 5) * (1 / 120) = 144 chunks for
-// a series in the biggest block. Using a slab size of 1000 looks a good trade-off to support
-// high frequency scraping without wasting too much memory in case of queries hitting a low
-// number of chunks (across series).
-const seriesChunksSlabSize = 1000
+const (
+	// Mimir compacts blocks up to 24h. Assuming a 5s scrape interval as worst case scenario,
+	// and 120 samples per chunk, there could be 86400 * (1 / 5) * (1 / 120) = 144 chunks for
+	// a series in the biggest block. Using a slab size of 1000 looks a good trade-off to support
+	// high frequency scraping without wasting too much memory in case of queries hitting a low
+	// number of chunks (across series).
+	seriesChunksSlabSize = 1000
+
+	// Selected so that the largest common-use-case chunk of 16k bytes can be served from the pool
+	chunkBytesSlabSize = tsdb.EstimatedMaxChunkSize
+)
 
 var (
 	seriesEntrySlicePool = pool.Interface(&sync.Pool{
@@ -31,6 +37,12 @@ var (
 	})
 
 	seriesChunksSlicePool = pool.Interface(&sync.Pool{
+		// Intentionally return nil if the pool is empty, so that the caller can preallocate
+		// the slice with the right size.
+		New: nil,
+	})
+
+	chunkBytesSlicePool = pool.Interface(&sync.Pool{
 		// Intentionally return nil if the pool is empty, so that the caller can preallocate
 		// the slice with the right size.
 		New: nil,
@@ -345,7 +357,7 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 	}
 
 	// Create a batched memory pool that can be released all at once.
-	chunksPool := &pool.BatchBytes{Delegate: c.chunksPool}
+	chunksPool := pool.NewSafeSlabPool[byte](chunkBytesSlicePool, chunkBytesSlabSize)
 
 	err := c.chunkReaders.load(nextSet.series, chunksPool, c.stats)
 	if err != nil {

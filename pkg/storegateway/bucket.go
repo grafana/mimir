@@ -568,7 +568,7 @@ func blockSeries(
 	ctx context.Context,
 	indexr *bucketIndexReader, // Index reader for block.
 	chunkr chunkReader, // Chunk reader for block.
-	chunksPool *pool.BatchBytes, // Pool used to get memory buffers to store chunks. Required only if !skipChunks.
+	chunksPool *pool.SafeSlabPool[byte], // Pool used to get memory buffers to store chunks. Required only if !skipChunks.
 	matchers []*labels.Matcher, // Series matchers.
 	shard *sharding.ShardSelector, // Shard selector.
 	seriesHasher seriesHasher, // Block-specific series hash cache (used only if shard selector is specified).
@@ -891,12 +891,12 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 	)
 
 	if s.maxSeriesPerBatch <= 0 {
-		var chunksPool *pool.BatchBytes
+		var chunksPool *pool.SafeSlabPool[byte]
 
 		// All the memory allocated from the pool for the chunks will be released at the end.
 		// Required only if we'll fetch the chunks.
 		if !req.SkipChunks {
-			chunksPool = &pool.BatchBytes{Delegate: s.chunkPool}
+			chunksPool = pool.NewSafeSlabPool[byte](chunkBytesSlicePool, chunkBytesSlabSize)
 			defer chunksPool.Release()
 		}
 
@@ -995,7 +995,7 @@ func (s *BucketStore) synchronousSeriesSet(
 	blocks []*bucketBlock,
 	indexReaders map[ulid.ULID]*bucketIndexReader,
 	chunkReaders map[ulid.ULID]chunkReader,
-	chunksPool *pool.BatchBytes,
+	chunksPool *pool.SafeSlabPool[byte],
 	resHints *hintspb.SeriesResponseHints,
 	shardSelector *sharding.ShardSelector,
 	matchers []*labels.Matcher,
