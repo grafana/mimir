@@ -69,6 +69,11 @@ type engineMetrics struct {
 	queryResultSort      prometheus.Observer
 }
 
+type metricWithRunningTotal struct {
+	metric       labels.Labels
+	runningTotal float64
+}
+
 // convertibleToInt64 returns true if v does not over-/underflow an int64.
 func convertibleToInt64(v float64) bool {
 	return v <= maxInt64 && v >= minInt64
@@ -1013,6 +1018,8 @@ type EvalNodeHelper struct {
 	Dmn map[uint64]labels.Labels
 	// funcHistogramQuantile.
 	signatureToMetricWithBuckets map[string]*metricWithBuckets
+	// funcAggregateCounters
+	signatureToMetricWithRunningTotal map[uint64]*metricWithRunningTotal
 	// label_replace.
 	regex *regexp.Regexp
 
@@ -1310,6 +1317,10 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			}
 		}
 
+		if e.Func.Name == "aggregate_counters" && ev.startTimestamp != ev.endTimestamp {
+			ev.errorf("aggregate_counters() can only be used with instant queries, range queries are not supported")
+		}
+
 		// Check if the function has a matrix argument.
 		var (
 			matrixArgIndex int
@@ -1352,12 +1363,19 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		// Evaluate any non-matrix arguments.
 		otherArgs := make([]Matrix, len(e.Args))
 		otherInArgs := make([]Vector, len(e.Args))
+		stringArgs := make([]bool, len(e.Args))
 		for i, e := range e.Args {
 			if i != matrixArgIndex {
 				val, ws := ev.eval(e)
-				otherArgs[i] = val.(Matrix)
-				otherInArgs[i] = Vector{Sample{}}
-				inArgs[i] = otherInArgs[i]
+				switch val.(type) {
+				case String:
+					stringArgs[i] = true
+					inArgs[i] = val
+				default:
+					otherArgs[i] = val.(Matrix)
+					otherInArgs[i] = Vector{Sample{}}
+					inArgs[i] = otherInArgs[i]
+				}
 				warnings = append(warnings, ws...)
 			}
 		}
@@ -1410,7 +1428,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 				// They are scalar, so it is safe to use the step number
 				// when looking up the argument, as there will be no gaps.
 				for j := range e.Args {
-					if j != matrixArgIndex {
+					if j != matrixArgIndex && !stringArgs[j] {
 						otherInArgs[j][0].V = otherArgs[j][0].Points[step].V
 					}
 				}
@@ -1486,6 +1504,22 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 					Points: newp,
 				},
 			}, warnings
+		} else if e.Func.Name == "aggregate_counters" {
+			// Finalize the output of the counter aggregation based on the context in "enh".
+
+			var result Matrix
+
+			for _, mrt := range enh.signatureToMetricWithRunningTotal {
+				result = append(result, Series{
+					Metric: mrt.metric,
+					Points: []Point{{
+						T: ev.startTimestamp,
+						V: mrt.runningTotal,
+					}},
+				})
+			}
+
+			return result, warnings
 		}
 
 		if mat.ContainsSameLabelset() {

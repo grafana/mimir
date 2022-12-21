@@ -106,35 +106,96 @@ func (u *userTSDB) EphemeralAppender(ctx context.Context) storage.Appender {
 	return u.ephemeral.Appender(ctx)
 }
 
+func getQuerier[T any](wantEq, wantPq bool, getEq, getPq func() (T, error), merge func(T, T) T) (T, error) {
+	var eq, pq T
+	var err error
+
+	if !wantEq && !wantPq {
+		return eq, fmt.Errorf("no querier wanted")
+	}
+
+	if wantEq {
+		eq, err = getEq()
+		if err != nil {
+			return eq, err
+		}
+
+		if !wantPq {
+			return eq, nil
+		}
+	}
+
+	pq, err = getPq()
+	if err != nil {
+		return pq, err
+	}
+
+	if wantEq {
+		return merge(eq, pq), nil
+	}
+
+	return pq, nil
+}
+
 // Querier returns a new querier over the data partition for the given time range.
-func (u *userTSDB) Querier(ctx context.Context, mint, maxt int64, ephemeral bool) (storage.Querier, error) {
-	if ephemeral {
-		if u.ephemeral == nil {
-			return nil, fmt.Errorf("ephemeral data not available")
-		}
-		return tsdb.NewBlockQuerier(u.ephemeral, mint, maxt)
-	}
-	return u.db.Querier(ctx, mint, maxt)
+func (u *userTSDB) Querier(ctx context.Context, mint, maxt int64, ephemeral, persistent bool) (storage.Querier, error) {
+	return getQuerier(
+		ephemeral,
+		persistent,
+		func() (storage.Querier, error) {
+			if u.ephemeral == nil {
+				return nil, fmt.Errorf("ephemeral data not available")
+			}
+
+			return tsdb.NewBlockQuerier(u.ephemeral, mint, maxt)
+		},
+		func() (storage.Querier, error) {
+			return u.db.Querier(ctx, mint, maxt)
+		},
+		func(q1, q2 storage.Querier) storage.Querier {
+			return storage.NewMergeQuerier([]storage.Querier{q1, q2}, nil, storage.ChainedSeriesMerge)
+		},
+	)
 }
 
-func (u *userTSDB) ChunkQuerier(ctx context.Context, mint, maxt int64, ephemeral bool) (storage.ChunkQuerier, error) {
-	if ephemeral {
-		if u.ephemeral == nil {
-			return nil, fmt.Errorf("ephemeral data not available")
-		}
-		return tsdb.NewBlockChunkQuerier(u.ephemeral, mint, maxt)
-	}
-	return u.db.ChunkQuerier(ctx, mint, maxt)
+func (u *userTSDB) ChunkQuerier(ctx context.Context, mint, maxt int64, ephemeral bool, persistent bool) (storage.ChunkQuerier, error) {
+	return getQuerier(
+		ephemeral,
+		persistent,
+		func() (storage.ChunkQuerier, error) {
+			if u.ephemeral == nil {
+				return nil, fmt.Errorf("ephemeral data not available")
+			}
+
+			return tsdb.NewBlockChunkQuerier(u.ephemeral, mint, maxt)
+		},
+		func() (storage.ChunkQuerier, error) {
+			return u.db.ChunkQuerier(ctx, mint, maxt)
+		},
+		func(q1, q2 storage.ChunkQuerier) storage.ChunkQuerier {
+			return storage.NewMergeChunkQuerier([]storage.ChunkQuerier{q1, q2}, nil, storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge))
+		},
+	)
 }
 
-func (u *userTSDB) UnorderedChunkQuerier(ctx context.Context, mint, maxt int64, ephemeral bool) (storage.ChunkQuerier, error) {
-	if ephemeral {
-		if u.ephemeral == nil {
-			return nil, fmt.Errorf("ephemeral data not available")
-		}
-		return tsdb.NewBlockChunkQuerier(u.ephemeral, mint, maxt)
-	}
-	return u.db.UnorderedChunkQuerier(ctx, mint, maxt)
+func (u *userTSDB) UnorderedChunkQuerier(ctx context.Context, mint, maxt int64, ephemeral, persistent bool) (storage.ChunkQuerier, error) {
+	return getQuerier(
+		ephemeral,
+		persistent,
+		func() (storage.ChunkQuerier, error) {
+			if u.ephemeral == nil {
+				return nil, fmt.Errorf("ephemeral data not available")
+			}
+
+			return tsdb.NewBlockChunkQuerier(u.ephemeral, mint, maxt)
+		},
+		func() (storage.ChunkQuerier, error) {
+			return u.db.UnorderedChunkQuerier(ctx, mint, maxt)
+		},
+		func(q1, q2 storage.ChunkQuerier) storage.ChunkQuerier {
+			return storage.NewMergeChunkQuerier([]storage.ChunkQuerier{q1, q2}, nil, storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge))
+		},
+	)
 }
 
 func (u *userTSDB) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {
