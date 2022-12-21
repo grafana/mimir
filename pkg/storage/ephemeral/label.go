@@ -36,7 +36,7 @@ func IsEphemeralQuery(matchers []*labels.Matcher) (bool, bool, int, error) {
 func RemoveEphemeralMatcher(matchers []*labels.Matcher) (ephemeral bool, persistent bool, filtered []*labels.Matcher, err error) {
 	ephemeral, persistent, idx, err := IsEphemeralQuery(matchers)
 	if err != nil || idx < 0 {
-		return false, false, matchers, err
+		return false, true, matchers, err
 	}
 
 	// Create a new slice with the shard matcher removed.
