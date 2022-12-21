@@ -18,7 +18,8 @@
     $.store_gateway_args +
     $.compactor_args +
     $.query_scheduler_args +
-    $.ruler_args + {
+    $.ruler_args +
+    $.overrides_exporter_args {
       target: 'backend',
 
       // Do not conflict with /data/tsdb and /data/tokens used by store-gateway.
